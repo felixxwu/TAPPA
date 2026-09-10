@@ -133,6 +133,14 @@ The pre-pivot `ghost_car.gd`'s whole display stack rides along on every pose:
   own shader is unshaded and never writes ALPHA. Run after `_apply_rival_car`
   (which reshapes the meshes) in `setup()`, so a stage's fresh body is always
   re-ghosted. Base alpha is `rival_ghost_opacity`.
+- **Full alpha means OPAQUE, not "blended at 1.0"** — `_write_alpha` (the one
+  funnel both the start-line park and the proximity fade write through) flips
+  the materials to `TRANSPARENCY_DISABLED` + depth writes when the effective
+  alpha reaches 1, and back to the blended mode below it. Without the flip, a
+  fully-"opaque" ghost still drew in the transparent queue with no depth
+  writes, so a single-mesh body whose cab overlaps its own bed (the Acty)
+  rendered the truck bed through the cab — reading exactly like inverted
+  normals. The mode changes only on the crossing, not per frame.
 - **Slope** — `_basis_from` builds the body basis from the road's own surface
   normal (`_surface_normal`, finite-difference height probes `NORMAL_PROBE_M`
   apart) with the travel direction projected onto that plane, so the ghost
@@ -228,7 +236,8 @@ nothing.
 `world.gd._build_start_line` hands that same `RivalGhost` into
 `StartLine.setup(..., ghost)`. `StartLine` does not own the ghost's lifecycle —
 it outlives this node, kept posing through RUNNING — it parks the ghost ON the
-line (`pose_at_distance(0.0)`, solid — the pre-pivot grid's front slot, with the
+line (`pose_at_distance(0.0)`, solid through the OPAQUE path — the pre-pivot
+grid's front slot, with the
 player staged one `start_queue_gap` behind it) through
 MENU/FLY_IN/REVEAL, then drives it off down the lead-in in the DEPART phase at
 the profile's own pace, hiding it (with the re-entry gate above) once it is

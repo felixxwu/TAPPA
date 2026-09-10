@@ -245,6 +245,8 @@ func _field_player_car() -> void:
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	if RunSession.is_active():
 		_field_car(RunSession.car_instance_id())
+	elif FreePlay.has_plan():
+		_field_free_play_car()
 	else:
 		$Car.apply_car(0)
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
@@ -311,7 +313,9 @@ func _build_overlays_and_benchmark() -> void:
 	perf.engine_audio = $Car.get_node_or_null("EngineAudio")  # live audio-overrun readout
 	add_child(perf)
 
-	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref).
+	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref);
+	# Settings → Dev → "Complete stage" relays the same way (the menu owns the
+	# SettingsMenu instance, this scene owns the car / track / stage manager).
 	var pause_menu := _pause_menu()
 	if pause_menu != null:
 		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
@@ -321,6 +325,8 @@ func _build_overlays_and_benchmark() -> void:
 		# scene owns. See features/camera.md.
 		if not pause_menu.photo_mode_requested.is_connected(_on_photo_mode_requested):
 			pause_menu.photo_mode_requested.connect(_on_photo_mode_requested)
+		if not pause_menu.dev_complete_stage_requested.is_connected(_dev_complete_stage):
+			pause_menu.dev_complete_stage_requested.connect(_dev_complete_stage)
 		# Arm the pause menu now the world is generated — it's default-inert
 		# (fail-closed) so the Pause button / Esc can't open it during the awaited
 		# generation above, where pausing would freeze the tree mid-build and let the
@@ -621,7 +627,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# read RallySession.current_event() here is deleted (todo/roguelike-pivot.md);
 	# the roguelike run session (stage 3) is its replacement.
 	var event := RunSession.current_stage_params() if RunSession.is_active() \
-		else {}
+		else FreePlay.event()
 	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
 		else TrackGenParams.for_config(cfg)
 	# The dry-start search may relocate the generation origin onto dry ground. Derive
@@ -1627,11 +1633,11 @@ func _rival_seed() -> int:
 # --- Session run-scene integration ------------------------------------------
 
 # Dev cheat (F key, features/debug-tools.md): skip straight to the finish of the
-# current stage. Debug-build only (release/web ignore it) and only inside an active
-# run — Rally Challenge today, the roguelike run session once it lands — with a live
-# StageManager. Teleports the car onto the finish line and force-completes the
-# stage, so the whole completion → reward → progression flow fires exactly as it
-# would on a real finish.
+# current stage. Gated on SettingsMenu.dev_tools_enabled() (on in every build,
+# including release/web) and only inside an active run with a live StageManager.
+# Teleports the car onto the finish line and force-completes the stage, so the
+# whole completion → reward → progression flow fires exactly as it would on a
+# real finish.
 #
 # Gated on DrivingContext.session_active(), not any one session's is_active(): a
 # check tied to a single session type silently excludes every other one.
@@ -1648,6 +1654,22 @@ func _unhandled_input(event: InputEvent) -> void:
 	# handler can transition the scene and detach this node, making a later
 	# get_viewport() call return null.
 	get_viewport().set_input_as_handled()
+	_dev_complete_stage()
+
+
+# The skip-to-finish body behind BOTH the F key (above) and the pause menu's
+# Settings → Dev "Complete stage" button (PauseMenu relays the SettingsMenu signal;
+# wired in _build_overlays_and_benchmark). Re-checks the whole gate rather than
+# trusting the caller: the button is offered per-build-time session state, so a
+# signal from a menu built mid-run can arrive when the run has since ended or the
+# stage has already completed — a stale press must do nothing.
+func _dev_complete_stage() -> void:
+	if not SettingsMenu.dev_tools_enabled() or not DrivingContext.session_active():
+		return
+	if _stage_manager == null or _track_progress == null:
+		return
+	if _stage_manager.phase() == StageManager.Phase.COMPLETE:
+		return
 	$Car.reset_to(_track_progress.jump_to_finish())
 	_stage_manager.force_complete()
 
@@ -1894,6 +1916,25 @@ func _field_car(instance_id: int) -> void:
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
+	_event_hp_at_finish = _event_start_hp
+	_event_toe_at_finish = $Car.damage.toe_array()
+	_event_distance_at_finish = 0.0
+
+
+# The FREE PLAY field (see free_play.gd): any catalogue car, plus the plan's chosen
+# boosts AND the player's equipped skills, riding the same effects funnel a run's
+# car rides — a synthetic owned-shaped dict, never Save's persisted cars, so a
+# sandbox drive cannot write HP or boosts into the profile. Unbound by design: with
+# no instance_id, DamageModel never persists (its unbound branch), matching free
+# roam's nothing-at-stake contract.
+func _field_free_play_car() -> void:
+	var spec: Dictionary = CarLibrary.all()[FreePlay.car_index()]
+	var owned := {
+		"model_id": String(spec.get("id", "")),
+		"boosts": FreePlay.boost_effects() + SkillLibrary.equipped_effects(Save.profile),
+	}
+	$Car.apply_owned(owned)
+	_event_start_hp = $Car.damage.hp
 	_event_hp_at_finish = _event_start_hp
 	_event_toe_at_finish = $Car.damage.toe_array()
 	_event_distance_at_finish = 0.0

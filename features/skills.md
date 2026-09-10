@@ -37,6 +37,11 @@ already follow (`save_manager.gd`'s "The meta shop" section): every precondition
 (ownership, the unlock gate, the equip cap) is checked BEFORE `spend_money`, so a
 caller never half-spends into a purchase that was going to be rejected anyway.
 
+The one bypass is `Save.dev_grant_all_skills()` — the Settings → Dev → "Unlock all
+skills" cheat ([settings.md](settings.md) → "Developer-only pages"). It moves every
+catalogue id straight to OWNED, ignoring thresholds and prices (no money moves), and
+touches nothing else; a call that grants nothing writes nothing.
+
 ## The catalogue
 
 `SkillLibrary.SKILLS` — a flat `Array[Dictionary]`, each entry `{id, label,

@@ -61,30 +61,15 @@ matters for the Rally Challenge's rating ceiling, the one place a car can still 
 powerful to enter ([rally-challenge.md](rally-challenge.md)). A future screen that wants to
 let a player duck under that ceiling has the whole mechanism waiting; nothing today writes
 it.
-An over-ceiling car (over a Rally Challenge's performance ceiling — career rallies have
-none) still parks in the lineup
-with a plain Start; pressing Start pops a **"Too powerful"** prompt whose only
-route through is **Change Upgrades**, which opens the gated upgrades menu so the
-player sheds power themselves (detune slider / ballast / stripping parts). That
-fix is a **permanent** garage edit — it persists after the rally, not a temporary
-per-rally detune — and once the build is under the cap the player closes the menu
-and re-presses Start to launch. See [menus.md](menus.md) →
-CARPARK. The **pre-event start-line** menu offers the same
-Change-Upgrades prompt on Start (see [start-line.md](start-line.md)). (Rallies
-have no hard power floor, so an underpowered car can still enter a higher class — it
-just gets a non-blocking "Underpowered" warning at car selection in the HQ car park.) In the
-upgrades grid the detune slider lives behind the `tune` tile, and its value label reads the
-car's live power-to-weight at that setting (`200 HP/T`, via
-`UpgradesGrid._detune_label_text` → `effective_meta`) while the tile beneath carries the
-percentage — the slider is the place you care about the OUTCOME, so you can dial to a
-target band by eye. The label shows **only** that power-to-weight readout — no
-cap or limit text — the whole-build **performance rating** and any ceiling live in the
-page's own readout row and on the **gated close button** (which turns red and blocks
-closing while over — see [menus.md](menus.md)). Hosts source that ceiling from
-`DrivingContext.rating_limit()`; only a Rally Challenge has one, and the HQ lift omits it
-for free tuning. The
-detune slider always spans the full 0–100 % — eligibility is enforced by that
-gated button, not by capping the slider.
+The over-ceiling UX today is the hub CAR page: an over-cap car for a challenge
+period is SHOWN but unconfirmable ("Over the rating cap" on its card,
+`hub_shell.gd::_build_car`), with the period ceiling from
+`ChallengeRunMode.displayed_ceiling`. Shedding power means detuning — the one
+deliberate power-to-weight reduction lever left post-pivot (ballast and
+part-stripping are retired with the parts model; see
+[engine-swap.md](engine-swap.md)). The old car-park "Too powerful" prompt, the
+upgrades-grid detune tile (`UpgradesGrid._detune_label_text`) and its gated close
+button are deleted with their hosts.
 
 ## Application (`TuningLibrary.apply`)
 
@@ -151,10 +136,10 @@ invariant *live re-derive == a fresh `apply_owned` of the same final state*.
 | `tuning_brake_authority` | `0.3` | Half-span of `brake_bias` the slider moves from the car's default. |
 | `tuning_aero_authority` | `0.5` | Max downforce fraction shifted front↔rear at slider \|1\|. |
 
-Health is restored only by the free between-event field repair (tuned by the
-`field_repair_*` fractions — see [damage.md](damage.md)); there is no full-restore
-action and a wrecked car never comes back. The lift shows **Health** as a percentage
-(not a raw HP number, which reads as horsepower) and flags a wrecked (0%) car.
+Health is restored only by the free between-stage field repair (tuned by the
+`field_repair_*` fractions — see [damage.md](damage.md)); there is no paid
+full-restore action any more, and no wreck state to flag — 0 HP is a driving
+state, not an ending (see [damage.md](damage.md) "state, not event").
 
 ## The tuning UI (`TuningPanel`)
 

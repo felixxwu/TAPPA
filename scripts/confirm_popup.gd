@@ -83,60 +83,9 @@ static func open(host: Node, title: String, body: String, actions: Array,
 	popup._build(title, body, default_index)
 	return popup
 
-# RESERVE THE SCREEN, THEN COMMIT. For the "do an irreversible thing and tell the
-# player what happened" shape — grant a challenge reward, say — where
-# doing it first and presenting second is a silent data loss: `open` REFUSES while
-# another modal is up (see MODAL_GROUP), so the transaction lands and its one and only
-# reveal is dropped. This inverts the order so that state is unrepresentable: the modal
-# slot is acquired FIRST, and `commit` runs only once the popup that will report it is
-# already on screen. If the slot cannot be had, `commit` IS NEVER CALLED and null comes
-# back — the caller has mutated nothing and can simply return.
-#
-# WHY A DEFERRED BODY RATHER THAN "commit returns the text". Because one real caller
-# (world.gd's challenge reward) must `await` its mutation, a synchronous
-# "Callable -> String" contract can't express it. So the popup is built with
-# `placeholder` and the body is filled in afterwards: `commit` may be a plain function
-# OR a coroutine, its return value is awaited either way, and if it hands back a
-# non-empty String that becomes the body. A commit that needs to compose the body from
-# several steps (or emit no string at all) can instead call `popup.set_body(...)` on
-# the popup it is passed. `open_committing` is therefore itself a coroutine — call it
-# as `await ConfirmPopup.open_committing(...)`.
-#
-# `commit` is called with the live popup as its single argument, so it can set the body,
-# read the popup, or ignore it (a zero-arg Callable is accepted too).
-#
-# Deliberately NO `allow_stack`: the whole point is the refusal, and a commit that is
-# allowed to stack over another modal has no reason to use this entry point.
-static func open_committing(host: Node, title: String, placeholder: String,
-		actions: Array, commit: Callable, default_index := 0,
-		back_index := -1) -> ConfirmPopup:
-	if not commit.is_valid():
-		push_warning("ConfirmPopup.open_committing('%s') needs a valid commit callable." % title)
-		return null
-	var popup := open(host, title, placeholder, actions, default_index, back_index)
-	if popup == null:
-		return null  # slot refused -> the mutation deliberately does not run
-	var produced: Variant = null
-	if commit.get_argument_count() > 0:
-		produced = await commit.call(popup)
-	else:
-		produced = await commit.call()
-	# An awaited commit gives the player time to dismiss the popup first, so it may be
-	# gone by now — the mutation still happened and was still reported, which is the
-	# guarantee; there is simply nothing left to write to.
-	if not is_instance_valid(popup) or popup.is_queued_for_deletion():
-		return null
-	if produced is String and not String(produced).is_empty():
-		popup.set_body(String(produced))
-	return popup
-
-
-# Replace the body text of a live popup. Used by open_committing to fill in the
-# placeholder once the mutation it reserved the screen for has completed; safe to call
-# on a popup the player has already dismissed (it simply does nothing).
-func set_body(text: String) -> void:
-	if is_instance_valid(_body_label):
-		_body_label.text = text
+# open_committing / set_body are DELETED: their one awaited caller (world.gd's
+# challenge reward) presents through plain open(), and no live code reserves a
+# modal slot around a transaction any more.
 
 
 func _build(title: String, body: String, default_index: int) -> void:
@@ -229,7 +178,7 @@ func _build(title: String, body: String, default_index: int) -> void:
 	# or it collapses to ~0 (a ScrollContainer reports no minimum on the axis it
 	# scrolls) and the message is hidden behind a scrollbar. UITheme.fit_body_scroll
 	# owns that measurement — including the re-fit once the Label has a real width,
-	# which is also what keeps set_body() (open_committing's deferred body) honest.
+	# which is also what keeps a caller that swaps the body text honest.
 	# It caps against the viewport as a last resort only; a normal body never scrolls.
 	UITheme.fit_body_scroll(scroll, body_label, panel_width)
 

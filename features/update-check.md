@@ -1,16 +1,16 @@
 # Update check (native builds)
 
 On launch, the **native** builds ask whether a newer build has shipped and — if
-one has — raise a single dismissible prompt over the title shot with a link to the
-store they came from. Nothing else about the game changes: it is one GET, off the
+one has — raise a single dismissible prompt over the hub's MAIN page with a link to
+the store they came from. Nothing else about the game changes: it is one GET, off the
 boot critical path, and every failure mode is a silent no-op.
 
-**Tests:** `tests/headless/test_update_check.gd`
+**Tests:** `tests/headless/test_update_check.gd` (the policy), `tests/headless/test_hub_shell.gd` (the placement: headless is a silent no-op; the prompt records its dismissal when answered)
 
 | Piece | Where |
 |---|---|
 | The policy (parsing, the decision, the fetch, the destination) | `scripts/update_check.gd` (`UpdateCheck`) |
-| Placement + the modal | **DELETED** with the diegetic hub — it was `hq.gd` → `_check_for_update`. `UpdateCheck` itself is live and tested, and nothing calls it |
+| Placement + the modal | `scripts/hub_shell.gd` → `_check_for_update` / `_show_update_prompt` — re-homed from the deleted diegetic hub's title shot to the flat hub's MAIN page (fired from `_ready` off the boot critical path, MAIN-only re-checked after the await) |
 | The published document | `.github/workflows/deploy.yml` → `deploy-pages` → *Generate docs/version.json* |
 | The "this is a Play build" marker | `export_presets.cfg` → `preset.2` (`custom_features="play"`) |
 | Tests | `tests/headless/test_update_check.gd` |

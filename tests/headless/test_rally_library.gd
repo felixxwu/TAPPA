@@ -92,91 +92,13 @@ func test_every_special_is_open_class() -> void:
 # left to resolve. Region unlock in the pivot is linear and carries no per-part gating.
 
 
-func test_map_pins_are_well_formed_and_never_stack() -> void:
-	# Well-formedness only — never specific coordinates, which are authored data a
-	# designer nudges freely. A pin outside [0,1]^2 lands off the map plane, and two
-	# pins on top of each other are unpickable, so both are structural bugs a corner
-	# re-site can introduce silently.
-	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this test asserts nothing)")
-	# The bound is RallyLibrary's, not a copy: authoring code (suggest_map_pos /
-	# map_pos_is_free) and this guard must enforce ONE number or an author can be handed a
-	# "legal" pin this test then rejects.
-	var min_separation: float = RallyLibrary.MIN_PIN_SEPARATION
-	var seen: Array[Vector2] = []
-	for rally in RallyLibrary.all():
-		# `map_pos` is DELETED CONTENT — it positioned a pin on the world map, and the map
-		# went with the overworld (todo/roguelike-pivot.md). Rallies authored since then do
-		# not carry one, and requiring it would force new content to author a coordinate for
-		# a screen that no longer exists. What still holds, and is what this test is for, is
-		# that a pin WHICH IS authored is a legal one: in range, and not stacked on another.
-		# The whole field goes in the stage-2 cleanup that removes the RALLIES table's
-		# non-event fields; this loop goes with it.
-		if not rally.has("map_pos"):
-			continue
-		var pos: Vector2 = rally.get("map_pos", Vector2(-1, -1))
-		var rid := String(rally.get("id", "?"))
-		assert_between(pos.x, 0.0, 1.0, "rally %s map_pos.x is in [0, 1]" % rid)
-		assert_between(pos.y, 0.0, 1.0, "rally %s map_pos.y is in [0, 1]" % rid)
-		for other in seen:
-			# The message HANDS BACK THE FIX rather than just naming the rule: a stacked pin
-			# is almost always a pasted placeholder, and the author's next question is "so
-			# what coordinate may I use?". suggest_map_pos re-derives a free one in the same
-			# region from the live roster, so the answer cannot go stale the way a listed
-			# coordinate in a comment would.
-			assert_gt(pos.distance_to(other), min_separation,
-				"rally %s pin is stacked on another pin (min separation %.3f). Use map_pos: %s — from RallyLibrary.suggest_map_pos(\"%s\")" % [
-					rid, min_separation,
-					RallyLibrary.suggest_map_pos(String(rally.get("region", ""))),
-					String(rally.get("region", ""))])
-		seen.append(pos)
-
-
-# suggest_map_pos is the seam that makes a legal `map_pos` COMPUTABLE instead of prose, so
-# what it returns must satisfy the very rules the guards above enforce — otherwise pasting
-# its answer would swap one red test for another.
-#
-# Pins no coordinate and no region: it asks the helper for a pin for every region the
-# CURRENT roster actually uses, and checks the structural properties. A designer may move
-# any pin, add a region or retune map_reveal_radius and this still holds.
-func test_suggest_map_pos_returns_a_legal_free_pin_for_every_authored_region() -> void:
-	var regions: Array = []
-	for rally in RallyLibrary.all():
-		var r := String(rally.get("region", ""))
-		if r != "" and not regions.has(r):
-			regions.append(r)
-	assert_gt(regions.size(), 0, "the roster authors at least one region (else this asserts nothing)")
-	var min_separation: float = RallyLibrary.MIN_PIN_SEPARATION
-	for region_id in regions:
-		var pos: Vector2 = RallyLibrary.suggest_map_pos(region_id)
-		assert_between(pos.x, 0.0, 1.0, "suggestion for '%s' is on the map in x" % region_id)
-		assert_between(pos.y, 0.0, 1.0, "suggestion for '%s' is on the map in y" % region_id)
-		var nearest := INF
-		for rally in RallyLibrary.all():
-			nearest = minf(nearest, pos.distance_to(RallyLibrary.map_pos_of(rally)))
-		assert_gt(nearest, min_separation,
-			"suggestion for '%s' clears every existing pin by more than the separation bound" % region_id)
-		# Reachability: it must fall inside SOME authored rally's reveal circle, or a rally
-		# pinned there would be stranded outside the explorable map.
-		var reachable := false
-		for rally in RallyLibrary.all():
-			if pos.distance_to(RallyLibrary.map_pos_of(rally)) <= RallyLibrary.reveal_radius_of(rally):
-				reachable = true
-				break
-		assert_true(reachable, "suggestion for '%s' is inside an existing rally's reveal circle" % region_id)
-		# And the predicate form agrees with the generator — they are one rule.
-		assert_true(RallyLibrary.map_pos_is_free(pos),
-			"suggestion for '%s' passes map_pos_is_free" % region_id)
-
-
-func test_map_pos_is_free_rejects_a_pin_on_top_of_an_authored_one() -> void:
-	# The predicate's contract, not any particular coordinate: an existing pin's own
-	# position is never free, and neither is the HQ centre (the illegal placeholder that
-	# used to sit in the rally template).
-	assert_gt(RallyLibrary.all().size(), 0, "RallyLibrary.all() is non-empty (else this asserts nothing)")
-	var taken := RallyLibrary.map_pos_of(RallyLibrary.all()[0])
-	assert_false(RallyLibrary.map_pos_is_free(taken), "an authored pin's own position is not free")
-	assert_false(RallyLibrary.map_pos_is_free(RallyLibrary.HQ_MAP_POS), "the HQ centre is not free")
-	assert_false(RallyLibrary.map_pos_is_free(Vector2(-0.5, 0.5)), "a position off the map is not free")
+# test_map_pins_are_well_formed_and_never_stack,
+# test_suggest_map_pos_returns_a_legal_free_pin_for_every_authored_region and
+# test_map_pos_is_free_rejects_a_pin_on_top_of_an_authored_one are DELETED with the
+# pin-placement machinery they exercised (MIN_PIN_SEPARATION / suggest_map_pos /
+# map_pos_is_free / map_pos_of — see rally_library.gd's "Map exploration: DELETED" note).
+# The RALLIES rows keep their authored map_pos values as inert data; nothing reads them,
+# so there is no structural property left to guard.
 
 
 func test_event_is_wet_reads_the_weather_tables_classification() -> void:
@@ -530,23 +452,19 @@ func test_turn_splits_override_rescales_to_total() -> void:
 
 # test_a_gated_parts_prerequisite_is_reached_no_later_than_the_part_itself and
 # test_engine_swapping_is_the_first_special_the_map_reaches DELETED: both read
-# RallyLibrary.reveal_depths(), which seeds its reachability waves from
+# RallyLibrary.reveal_depths(), which seeded its reachability waves from
 # `prize_car_id(rally) != "" and CarLibrary.STARTER_MODEL_IDS.has(...)` -- with every
-# `prize_car` field deleted (see the "Opening rally / prize tests DELETED" note above),
-# reveal_depths() now returns {} against the shipped roster, so both would fail on a
-# condition this task's required deletion causes, not a real regression in either
-# invariant. Restoring them is the overworld-map wave's job once reveal_depths gets a
-# non-prize seed.
+# `prize_car` field deleted, reveal_depths() returned {} against the shipped roster, so
+# both would have failed on a condition that deletion caused, not a real regression in
+# either invariant. reveal_depths() itself is now deleted with the HQ map (see the
+# "Map exploration: DELETED" note below); neither invariant has a map to walk any more.
 
 
 # --- Progress / stars & the special ladder -----------------------------------------------------
-
-func test_podium_count_tracks_profile() -> void:
-	var profile := {"rallies": {
-		"shakedown": {"completed": true},
-		"coastal_sprint": {"completed": false},
-	}}
-	assert_eq(RallyLibrary.podium_count(profile), 1, "only podiumed rallies count")
+# test_podium_count_tracks_profile is DELETED with RallyLibrary.podium_count() (deleted
+# with the rally-podium bookkeeping — see the "podium_count() is DELETED" note in
+# rally_library.gd). The profile's per-rally "completed" flag remains save-side state;
+# nothing in the live rally surface derives a count from it any more.
 
 
 # test_every_finish_scores_and_the_podium_scores_more and
@@ -555,184 +473,15 @@ func test_podium_count_tracks_profile() -> void:
 # the star ledger (todo/roguelike-pivot.md decision 21).
 
 
-# --- Map exploration: the geometric reveal gate ------------------------------
-# Synthetic rosters only: reveal now depends on a rally's authored map_pos, which is
-# exactly the kind of tunable content a designer nudges freely.
-
-# The player's OPENING RALLY, one just inside its lit circle, and one far out in the dark
-# that only the near rally's own circle can reach.
-#
-# The opening rally is the map's only starting light: HQ lights nothing (see
-# RallyLibrary.lit_sources), so a profile with no starter recorded sees a wholly dark map.
-# Radii are expressed as fractions of the configured radius rather than as literals.
-const START_CAR := "fx_start_car"
-
-
-func _install_geometric_reveal_roster() -> void:
-	var r: float = Config.data.map_reveal_radius
-	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
-	var roster: Array[Dictionary] = [
-		# The opening rally: awards the starter, so it is lit from the start, completed or
-		# not, and its circle is what the player explores out of.
-		{"id": "r_start", "name": "Opening", "region": "home", "special": false,
-			"difficulty": 1, "restriction": {}, "map_pos": hq, "prize_car": START_CAR,
-			"reveal_radius": r, "events": []},
-		# Inside the opening rally's circle, and lights a wide circle of its own that
-		# reaches r_far.
-		{"id": "r_near", "name": "Near", "region": "home", "special": false,
-			"difficulty": 1, "restriction": {}, "map_pos": hq + Vector2(r * 0.5, 0.0),
-			"reveal_radius": r * 2.0, "events": []},
-		# Outside the opening rally's circle, but inside r_near's once that is completed.
-		{"id": "r_far", "name": "Far", "region": "greece", "special": false,
-			"difficulty": 2, "restriction": {}, "map_pos": hq + Vector2(r * 2.0, 0.0),
-			"events": []},
-		# Beyond every circle on the roster — nothing here can ever light it.
-		{"id": "r_unreachable", "name": "Unreachable", "region": "greece", "special": false,
-			"difficulty": 2, "restriction": {}, "map_pos": hq + Vector2(r * 20.0, 0.0),
-			"events": []},
-	]
-	RallyLibrary.override_for_test(roster)
-
-
-func test_a_rally_inside_the_opening_rallys_circle_is_revealed_from_the_start() -> void:
-	_install_geometric_reveal_roster()
-	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
-	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_start"), fresh),
-		"the opening rally is lit before the player has driven anything")
-	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_near"), fresh),
-		"a pin inside the opening rally's circle is lit from the start")
-	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), fresh),
-		"a pin outside it starts dark")
-
-
-# COMPLETION AND THE STARTER ARE THE ONLY THINGS THAT REVEAL A RALLY. A profile that names no
-# starter has no opening rally, so nothing it has done lights anything, and the map must not
-# quietly re-light itself for them.
-#
-# This test used to read "HQ is no longer a light source ... therefore no light at all", because
-# `map_hq_reveal_radius` shipped at 0.0. It no longer does: the overworld stands the player at the
-# garage to pick their first car, and with HQ unlit the fog veil darkens the screen and the
-# frontier push shoves the car while they choose. So HQ now lights a small circle — deliberately
-# too small to touch any shipped pin, which `test_the_hq_circle_alone_reveals_no_rally` pins
-# against the real roster.
-#
-# HQ is therefore neutralised HERE rather than asserted about, because this test is about the
-# starter/completion rule and the fixture roster puts a pin at the middle: leaving the tunable
-# live would make this fail on a fact it does not care about. Restored immediately, and before any
-# assertion, so a failure cannot leak the override into another test.
-func test_a_profile_with_no_starter_sees_a_wholly_dark_map() -> void:
-	_install_geometric_reveal_roster()
-	var was := Config.data.map_hq_reveal_radius
-	Config.data.map_hq_reveal_radius = 0.0
-	var no_starter := {"rallies": {}}
-	var lit: Array[String] = []
-	for rally in RallyLibrary.all():
-		if RallyLibrary.rally_revealed(rally, no_starter):
-			lit.append(String(rally.get("id", "?")))
-	Config.data.map_hq_reveal_radius = was
-	assert_eq(lit, [] as Array[String],
-		"with no completion and no starter, nothing is revealed by progress alone")
-
-
-func test_completing_a_rally_lights_the_map_around_that_rally() -> void:
-	# The whole mechanic: progress is SPATIAL. Completing r_near lights a circle around
-	# r_near's own pin, which is what reveals r_far — a rally that no amount of completing
-	# anything else would have opened.
-	_install_geometric_reveal_roster()
-	var profile := {"rallies": {"r_start": {"completed": true}}, "starter_model_id": START_CAR}
-	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), profile),
-		"completing a rally elsewhere does not light the far corner")
-	profile["rallies"]["r_near"] = {"completed": true}
-	assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), profile),
-		"completing the neighbouring rally lights it")
-
-
-func test_an_incomplete_rally_lights_nothing() -> void:
-	# Only COMPLETED rallies light the map — merely reaching one must not open its
-	# neighbours, or the frontier would run away from the player.
-	_install_geometric_reveal_roster()
-	var profile := {"rallies": {"r_near": {"completed": false, "best_placed": 0}},
-		"starter_model_id": START_CAR}
-	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_far"), profile),
-		"an entered-but-unfinished rally lights nothing")
-
-
-func test_a_rally_beyond_every_circle_stays_dark() -> void:
-	# Guards the test above from passing vacuously: the predicate must be capable of
-	# saying no even with the whole roster completed.
-	_install_geometric_reveal_roster()
-	# Every rally completed EXCEPT r_unreachable itself — a completed rally lights a circle
-	# centred on its own pin, so marking it done would trivially reveal it.
-	var profile := {"rallies": {}}
-	for rally in RallyLibrary.all():
-		if String(rally["id"]) == "r_unreachable":
-			continue
-		profile["rallies"][String(rally["id"])] = {"completed": true}
-	assert_false(RallyLibrary.rally_revealed(RallyLibrary.by_id("r_unreachable"), profile),
-		"a pin outside every circle is unreachable however much is completed")
-
-
-# The map table draws its reveal graph (hq._build_reveal_links) only over ground the player
-# has LIT. An edge running out into the fog would hand them the shape of a roster they have
-# not explored yet — which is the one thing the dark is there to withhold.
-func test_the_reveal_graph_links_only_pairs_that_are_both_revealed() -> void:
-	_install_geometric_reveal_roster()
-	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
-	assert_true(_graph_links(RallyLibrary.reveal_link_pairs(fresh), "r_start", "r_near"),
-		"two revealed neighbours are linked")
-	assert_false(_graph_links(RallyLibrary.reveal_link_pairs(fresh), "r_near", "r_far"),
-		"a neighbour still in the fog is not, close enough to be lit by it or not")
-	for pair in RallyLibrary.reveal_link_pairs(fresh):
-		for rid in pair:
-			assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id(String(rid)), fresh),
-				"%s is out of the fog, so the edge it ends at may be drawn" % rid)
-	# r_near and r_far ARE adjacent — completing r_near is what lights r_far — so the edge
-	# appears the moment the fog leaves it. Without this the assertion above could pass
-	# vacuously on a pair the graph would never have drawn at any distance.
-	var explored := {"rallies": {"r_near": {"completed": true}},
-		"starter_model_id": START_CAR}
-	assert_true(_graph_links(RallyLibrary.reveal_link_pairs(explored), "r_near", "r_far"),
-		"lighting the far pin draws the link that was there all along")
-
-
-# Whether the reveal graph holds an edge between two rallies, in either order (the pairs are
-# unordered — see RallyLibrary.reveal_link_pairs).
-func _graph_links(pairs: Array, a: String, b: String) -> bool:
-	for pair in pairs:
-		if (pair[0] == a and pair[1] == b) or (pair[0] == b and pair[1] == a):
-			return true
-	return false
-
-
-func test_distance_beyond_frontier_is_zero_once_revealed_and_shrinks_as_you_approach() -> void:
-	_install_geometric_reveal_roster()
-	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
-	assert_eq(RallyLibrary.distance_beyond_frontier(RallyLibrary.by_id("r_near"), fresh), 0.0,
-		"a revealed rally is zero distance beyond the frontier")
-	var far_before := RallyLibrary.distance_beyond_frontier(RallyLibrary.by_id("r_far"), fresh)
-	assert_gt(far_before, 0.0, "a dark rally reports a positive gap")
-	var profile := {"rallies": {"r_near": {"completed": true}}, "starter_model_id": START_CAR}
-	assert_lt(RallyLibrary.distance_beyond_frontier(RallyLibrary.by_id("r_far"), profile),
-		far_before, "lighting the map toward it closes the gap")
-
-
-func test_spending_stars_cannot_close_a_reveal_gate() -> void:
-	# Reveal must never read anything the player can SPEND, or buying something would take
-	# back a rally they had already opened. Geometric reveal can't regress by construction,
-	# and this pins that: drain the ledger to zero and every open rally stays open.
-	var profile := {"rallies": {}}
-	for rally in RallyLibrary.all():
-		profile["rallies"][String(rally["id"])] = {"completed": true, "best_placed": 1}
-	var open_before: Array = []
-	for rally in RallyLibrary.all():
-		if RallyLibrary.rally_revealed(rally, profile):
-			open_before.append(String(rally["id"]))
-	assert_gt(open_before.size(), 0, "some rallies are open to begin with")
-	profile["stars_earned"] = 50
-	profile["stars_spent"] = 50  # balance now zero
-	for rid in open_before:
-		assert_true(RallyLibrary.rally_revealed(RallyLibrary.by_id(rid), profile),
-			"%s stays open after the balance is spent to zero" % rid)
+# --- Map exploration: DELETED with the HQ map ---------------------------------
+# The geometric reveal suite is gone with the machinery it pinned (rally_revealed /
+# lit_sources / reveal_link_pairs / distance_beyond_frontier / HQ_MAP_POS /
+# map_reveal_radius — see rally_library.gd's "Map exploration: DELETED" note): the
+# diegetic HQ map and overworld are deleted, so there is no reveal gate to exercise.
+# Deleted tests: the opening-circle/completion-lighting/dark-map cases,
+# test_the_reveal_graph_links_only_pairs_that_are_both_revealed (+ _graph_links),
+# test_distance_beyond_frontier_*, test_spending_stars_cannot_close_a_reveal_gate,
+# test_the_hq_circle_alone_reveals_no_rally and the garage-placement determinism test.
 
 
 # NOTE: a test lived here pinning "only the LAST special completed finishes the game".
@@ -741,28 +490,23 @@ func test_spending_stars_cannot_close_a_reveal_gate() -> void:
 # means anything.
 
 
-func test_incomplete_enterable_query_respects_eligibility_and_reveal() -> void:
-	# The query integrates is_eligible with the map-reveal gate. Runs on a SYNTHETIC roster
+func test_incomplete_enterable_query_respects_eligibility() -> void:
+	# The query integrates is_eligible with the completion record. Runs on a SYNTHETIC roster
 	# rather than the shipped one: what a given car can enter depends on authored
-	# restrictions and authored pin positions, both of which a designer retunes freely.
+	# restrictions, which a designer retunes freely. (The map-reveal gate this query also
+	# applied is DELETED with the diegetic HQ map — with no map there is nothing to be
+	# locked behind, so eligibility alone answers "can I enter".)
 	#
-	# Three rallies, all incomplete: one lit and enterable, one lit but of a class the car
-	# is not in, one enterable-but-DARK. A correct query returns exactly the first.
-	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
-	var far: Vector2 = hq + Vector2(Config.data.map_reveal_radius * 5.0, 0.0)
+	# Two rallies, both incomplete: one in the car's class, one not. A correct query
+	# returns exactly the first.
 	RallyLibrary.override_for_test([
-		# The opening rally, so it is the roster's one starting light — nothing else is lit
-		# until something is completed (HQ lights nothing).
 		{"id": "q_open", "name": "Open", "region": "home", "special": false, "difficulty": 1,
-			"prize_car": START_CAR,
-			"map_pos": hq, "restriction": {"drive_mode": CarLibrary.AWD}, "events": []},
+			"restriction": {"drive_mode": CarLibrary.AWD}, "events": []},
 		{"id": "q_out_of_class", "name": "Out Of Class", "region": "home", "special": false,
-			"difficulty": 1, "map_pos": hq,
+			"difficulty": 1,
 			"restriction": {"drive_mode": CarLibrary.FWD}, "events": []},
-		{"id": "q_dark", "name": "Dark", "region": "home", "special": false, "difficulty": 1,
-			"map_pos": far, "restriction": {"drive_mode": CarLibrary.AWD}, "events": []},
 	] as Array[Dictionary])
-	var profile := {"rallies": {}, "starter_model_id": START_CAR}
+	var profile := {"rallies": {}}
 	# The car carries an ENGINE (a before_each fixture, not a shipped entry) and a door
 	# count, because engine-derived restrictions (displacement / cylinders) and doors_*
 	# resolve through those fields and REJECT a car that cannot supply them.
@@ -773,22 +517,20 @@ func test_incomplete_enterable_query_respects_eligibility_and_reveal() -> void:
 	for r in RallyLibrary.incomplete_rallies_enterable_by(car, profile):
 		ids.append(String(r["id"]))
 	assert_eq(ids, ["q_open"],
-		"only the rally that is BOTH lit and in-class is offered")
+		"only the rally that is in-class is offered")
 
 
 func test_a_completed_rally_is_never_offered_as_enterable() -> void:
 	# The query is the anti-soft-lock "what can I still do" answer, so anything already
-	# finished must drop out of it even though completing it left its pin lit.
-	var hq: Vector2 = RallyLibrary.HQ_MAP_POS
+	# finished must drop out of it.
 	RallyLibrary.override_for_test([
 		{"id": "q_done", "name": "Done", "region": "home", "special": false, "difficulty": 1,
-			"map_pos": hq, "restriction": {}, "prize_car": START_CAR, "events": []},
+			"restriction": {}, "events": []},
 	] as Array[Dictionary])
 	var car := {"mass": 1500.0, "peak_torque": 400.0, "redline": 6500.0,
 		"tire_compound": 1.0, "drive_mode": CarLibrary.AWD, "country": "DE",
 		"engine": "fx_i4", "doors": 2}
-	var fresh := {"rallies": {}, "starter_model_id": START_CAR}
-	assert_eq(RallyLibrary.incomplete_rallies_enterable_by(car, fresh).size(), 1,
+	assert_eq(RallyLibrary.incomplete_rallies_enterable_by(car, {"rallies": {}}).size(), 1,
 		"offered while incomplete")
 	assert_eq(RallyLibrary.incomplete_rallies_enterable_by(
 		car, {"rallies": {"q_done": {"completed": true}}}).size(), 0,
@@ -842,99 +584,29 @@ func test_every_shipped_stage_authors_a_forestiness_that_grows_something() -> vo
 # there is nothing left to assert until that design lands.
 
 
-# THE CONSTANT MUST RESOLVE. `ENGINE_SWAP_UNLOCK_RALLY` is an id authored on the library
-# rather than a reference the roster carries, so a rally rename cannot break it loudly. A
-# content-existence check, not a gameplay one any more: since decision 17 (stage 6)
-# re-gated engine swapping as a purchased-unlock flag (`Save.KEY_ENGINE_SWAP_UNLOCKED`,
-# read by `RallyLibrary.engine_swaps_unlocked`), this constant no longer feeds that gate at
-# all — winning the rally it names does nothing for swapping. It survives only as the id
-# `engine_swap_unlock_rally_name()` displays, so this test now just guards THAT lookup.
-# Trimmed (todo/roguelike-pivot.md decisions 21 & 28): used to also assert the rally reads
-# as awarding the engine-swap CAPABILITY (RallyLibrary.prize_capability_id /
-# CAPABILITY_ENGINE_SWAP / has_prize) and that it is the only rally that does. Those three
-# are all deleted with the prize-rally system.
-func test_the_engine_swap_unlock_rally_resolves() -> void:
-	CarFixtures.restore()
-	var owner := RallyLibrary.by_id(RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
-	assert_false(owner.is_empty(),
-		"ENGINE_SWAP_UNLOCK_RALLY ('%s') is a real rally on the roster"
-			% RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY)
+# test_the_engine_swap_unlock_rally_resolves is DELETED: ENGINE_SWAP_UNLOCK_RALLY went
+# when the Engine Swap became a mid-run boost (BoostLibrary "engine_swap") with no meta
+# unlock and no gating rally — there is no constant left to resolve. The roster entry it
+# named ("front_runners") stays as an ordinary special, and the roster tests above already
+# guard that every special names a real region.
 
 
-# HQ'S OWN CIRCLE MUST NOT REVEAL A RALLY. `map_hq_reveal_radius` ships non-zero so the garage
-# forecourt is lit — the overworld stands the player there to pick their first car, and an unlit
-# car gets the fog veil across the screen and the frontier push shoving it while they choose.
-#
-# But HQ's circle feeds the SAME `lit_sources` that gates entry, so too large a radius hands the
-# player the pins nearest the middle for nothing. That is exactly why this shipped at 0.0 while
-# the HQ table was the only hub, and it is the regression this test exists to prevent: the value
-# is now a compromise between "the garage is lit" and "nothing is unlocked unearned", and the
-# second half has no other guard.
-#
-# Pins the RELATIONSHIP, never the radius: raise the tunable past the nearest pin, or move a pin
-# in under the circle, and this fails. Uses the shipped roster deliberately — it is the shipped
-# pin layout that has to satisfy it (a catalogue-contract test, like the roster invariants above).
-func test_the_hq_circle_alone_reveals_no_rally() -> void:
-	var was := Config.data.map_hq_reveal_radius
-	assert_gt(was, 0.0,
-		"HQ lights something, else the overworld's starter pick happens in the dark")
-
-	# A profile that has completed nothing and has no starter: HQ's circle is the ONLY source.
-	var fresh: Dictionary = {Save.KEY_RALLIES: {}}
-	var sources := RallyLibrary.lit_sources(fresh)
-	assert_eq(sources.size(), 1,
-		"a fresh profile with no starter is lit by HQ and nothing else")
-
-	var revealed: Array[String] = []
-	for rally in RallyLibrary.all():
-		if RallyLibrary.rally_revealed(rally, fresh):
-			revealed.append(String(rally.get("id", "")))
-	assert_eq(revealed, [] as Array[String],
-		"HQ's circle lights the garage but reveals NO rally — anything here is unlocked unearned")
-
-	# And the complement, so the assertion above cannot pass by the circle being degenerate:
-	# a big enough radius DOES reveal something, proving the test can see reveals at all.
-	Config.data.map_hq_reveal_radius = 0.5
-	var wide := 0
-	for rally in RallyLibrary.all():
-		if RallyLibrary.rally_revealed(rally, fresh):
-			wide += 1
-	Config.data.map_hq_reveal_radius = was
-	assert_gt(wide, 0,
-		"a deliberately huge HQ radius does reveal rallies — so the check above is not vacuous")
-
-
-# test_the_garage_stands_beside_the_first_car_rally DELETED: it asserted the garage
-# repositions beside the player's OPENING rally (RallyLibrary.opening_rally_id_for), which
-# is now always "" against the shipped roster (see the "Opening rally / prize tests
-# DELETED" note above) -- hq_map_pos always resolves to the centre fallback, so
-# `assert_gt(moved, 0, ...)` would fail on every starter, not on a real positioning bug.
-# test_the_garage_position_is_deterministic_for_a_profile below is unaffected (it only
-# checks that the SAME profile yields the SAME position, whatever that position is).
-
-
-
-# DETERMINISM. The position feeds the road network and the garage pad, both of which are folded
-# into the chunk cache's invalidation key — so the same profile must always resolve to the same
-# spot, or a relaunch silently re-bakes the whole map.
-func test_the_garage_position_is_deterministic_for_a_profile() -> void:
-	for model_id in CarLibrary.STARTER_MODEL_IDS:
-		var profile: Dictionary = {Save.KEY_RALLIES: {}, "starter_model_id": model_id}
-		assert_eq(RallyLibrary.hq_map_pos(profile), RallyLibrary.hq_map_pos(profile),
-			"same profile, same garage — the cache key depends on it")
+# test_the_hq_circle_alone_reveals_no_rally, the garage-placement DELETED notes and
+# test_the_garage_position_is_deterministic_for_a_profile are DELETED with the reveal
+# machinery they read (lit_sources / map_hq_reveal_radius / hq_map_pos) — the diegetic HQ
+# map and overworld are gone, so there is no circle, no garage pad and no fog left to pin.
 
 
 # ---------------------------------------------------------------------------------------
-# The authoring templates carry a PASTEABLE map_pos literal. Keep it legal, and keep the
-# two copies in step.
+# The authoring templates carry a PASTEABLE map_pos literal. Keep the two copies in step.
 #
 # Why this exists: readiness round 009 replaced the template's literal with "paste the
-# result of RallyLibrary.suggest_map_pos(...)". That is correct advice and useless to an
-# author who cannot run the project — round 010's probe authored no rally at all. So the
-# literal is back as the default and the function is the escalation path. A baked literal
-# rots, though: someone authors a pin next to it, or pastes it and makes it an authored pin
-# itself. These two tests are what stop it rotting SILENTLY — they fail with the
-# replacement value already computed.
+# result of RallyLibrary.suggest_map_pos(...)". That advice is gone with the function
+# (deleted with the pin-placement machinery), so the literal is all an author has — and a
+# baked literal rots silently when someone pastes it and makes it an authored pin itself.
+# test_the_template_map_pos_is_still_a_legal_free_pin (which recomputed a replacement via
+# suggest_map_pos) is DELETED with that machinery; the two templates agreeing is still
+# guarded below.
 func _template_map_pos_from(path: String) -> Vector2:
 	var text := FileAccess.get_file_as_string(path)
 	assert_false(text.is_empty(), "template file %s is readable" % path)
@@ -946,20 +618,6 @@ func _template_map_pos_from(path: String) -> Vector2:
 	if m == null:
 		return Vector2.ZERO
 	return Vector2(float(m.get_string(1)), float(m.get_string(2)))
-
-
-func test_the_template_map_pos_is_still_a_legal_free_pin() -> void:
-	var pin := _template_map_pos_from("res://scripts/region_library.gd")
-	var replacement: Vector2 = RallyLibrary.suggest_map_pos("")
-	for r in RallyLibrary.all():
-		var authored: Vector2 = r.get("map_pos", Vector2.ZERO)
-		assert_gt(pin.distance_to(authored), RallyLibrary.MIN_PIN_SEPARATION,
-			("the template's pasteable map_pos %s is no longer free — rally '%s' now sits at "
-			+ "%s. Replace the literal in BOTH scripts/region_library.gd's REGIONS template "
-			+ "AND tests/headless/test_region_assets.gd's _unreachable_region_fix with %s "
-			+ "(a currently-free pin). If it went stale because someone PASTED it, that is "
-			+ "the expected lifecycle: rotate it to the new value.")
-			% [pin, r.get("id", "?"), authored, replacement])
 
 
 func test_both_authoring_templates_offer_the_same_map_pos() -> void:

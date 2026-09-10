@@ -10,8 +10,8 @@
 pinned by `tests/headless/test_hub_shell.gd` (`test_every_page_is_keyboard_navigable`).
 
 The shared horizontal, side-scrolling card widget that replaced the vertical
-row-of-buttons list on the hub's **MAIN**, **REGION**, **CAR**, **SHOP** and **SKILLS**
-pages ([hub-shell.md](hub-shell.md)). **CHALLENGE, STATS and SETTINGS were
+row-of-buttons list on the hub's **MAIN**, **REGION**, **CAR**, **SHOP**, **SKILLS**
+pages and the three **FREEPLAY** steps ([hub-shell.md](hub-shell.md)). **CHALLENGE, STATS and SETTINGS were
 NOT converted** — those weren't in the set this asked for (STATS in particular has
 nothing choosable to put on a card; CHALLENGE stayed plain rows).
 

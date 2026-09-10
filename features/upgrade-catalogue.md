@@ -230,9 +230,8 @@ unknown op).
 
 The **legacy part-unlock sets** (`Save.KEY_LEGACY_PART_UNLOCKS`,
 `Save.MOVED_PART_UNLOCKS`), which grandfathered players past a re-sited `unlocked_by_rally`
-gate, went with the gates. The engine-swap capability's equivalent survives one level up in
-`RallyLibrary.engine_swaps_unlocked`, re-gated as a meta-shop purchase (decision 17) — see
-[engine-swap.md](engine-swap.md).
+gate, went with the gates. The engine-swap capability itself is now the mid-run
+`BoostLibrary` "engine_swap" pick — see [engine-swap.md](engine-swap.md).
 
 ## Tests
 

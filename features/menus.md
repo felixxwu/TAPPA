@@ -28,7 +28,7 @@ Everything here described the **diegetic 3D hub**: `hq.tscn` + `hq.gd`
 `hq_tuning_lift.gd`, `hq_present_reveal.gd`, `hq_environment.gd`), the overworld, the
 3D map table with its new-rally reveal parade, the car park, `podium.tscn` and
 `standings.tscn`. **All of it is deleted** — decision 9 chose a flat 2D UI outright, and
-stage 2b of `todo/roguelike-pivot-plan.md` removed the scenes and their 29 collaborator
+stage 2b of the (since deleted) pivot plan removed the scenes and their 29 collaborator
 scripts; decisions 19 and 30 took the podium and the standings interstitial.
 
 Do not go looking for a "hub station", a `CarparkMode`, a camera pose, or an
@@ -237,6 +237,14 @@ A **mobile-control** pick applies just as immediately to the live `MobileControl
 (the `SettingsMenu.scheme_changed` signal → `MobileControls.set_scheme`), so the
 on-screen touch layout rebuilds the instant you choose it rather than only on the next
 run.
+The dev page's **Complete stage** action — offered by this host only, because the
+menu is built mid-run here and session-less in the hub — relays upward the same
+delegate-to-world way as "Reset to track": `SettingsMenu.dev_complete_stage_requested`
+→ the pause menu's own `dev_complete_stage_requested` signal, which `world.gd`
+connects to `_dev_complete_stage` (the body shared with the F skip-to-finish cheat,
+re-gated inside so a stale signal can't fire); the menu then `resume()`s so the
+finish panel the skip raises answers. See [settings.md](settings.md) → "Developer-only
+pages" and [debug-tools.md](debug-tools.md) → "Skip to finish".
 The menu is **default-inert** (`_input_enabled` starts `false`, mirroring
 `StageManager`'s `_armed` gate): the Pause button and `ui_cancel` do nothing until
 `world.gd` calls `set_input_enabled(true)` **after world generation completes**. This

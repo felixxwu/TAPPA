@@ -41,10 +41,10 @@ run only those sections. A bare `/housekeeping` runs everything.
   **~5 minutes** (see `features/testing.md`).
 - Report any failures with the assertion + file.
 - **Cross-check against known baseline failures** before calling anything a
-  regression — check the auto-memory index (`MEMORY.md`) for pre-existing
-  failures (e.g. reward-system stuck-player grant, car-spawns, chase-camera
-  orbit). A failure already recorded there is not new; a failure NOT recorded
-  there is the interesting one.
+  regression — this repo keeps no `MEMORY.md` failure index, so the baseline is
+  the clean tree: `git stash -u && ./run_tests.sh --fast <name> && git stash pop`.
+  A failure that reproduces on a clean tree is pre-existing, not new; one that
+  only fails with local changes is the interesting one.
 
 ### 2. Test-suite runtime hasn't regressed
 
@@ -128,13 +128,11 @@ Point at it instead of deleting anything in this sweep.
 ### 7. Oversized scripts / refactor candidates
 
 - `wc -l scripts/*.gd | sort -rn | head`. **Measure, don't trust this list** —
-  it moves every month. As of 2026-08 the giants, descending, are `hq.gd`
-  (~4700), `game_config.gd` (~3800), `terrain_manager.gd` (~2900),
-  `overworld.gd` (~2700), `world.gd` (~2560), `car.gd` (~2510),
-  `rally_library.gd` (~2220), then a tail of >1000-line scripts
-  (`overworld_map.gd`, `save_manager.gd`, `settings_menu.gd`,
-  `mobile_controls.gd`, `start_line.gd`, `upgrade_library.gd`,
-  `rally_session.gd`, `overworld_picker.gd`). Flag scripts that have
+  it moves every month. As of 2026-09 (post-pivot: the 3D hub, overworld and
+  rally career scripts are deleted) the giants, descending, are
+  `game_config.gd` (~4200), `terrain_manager.gd` (~3080), `car.gd` (~2520),
+  `world.gd` (~2400), `rally_library.gd` (~1610), `save_manager.gd` (~1520),
+  then `settings_menu.gd` (~1380) and `mobile_controls.gd` (~1120). Flag scripts that have
   grown a lot since the last sweep or that mix several responsibilities — these
   are refactor candidates. Don't refactor here; note it and suggest a split.
 - Also worth flagging: a single function that's very long, deeply nested
@@ -155,9 +153,11 @@ Point at it instead of deleting anything in this sweep.
 ### 9. Menu navigability
 
 Per `CLAUDE.md`, every menu must be keyboard + gamepad navigable. Spot-check
-that menus built recently call `MenuNav.attach(...)` (flat overlays) or wire a
-`menu_*` branch in `hq.gd._unhandled_input` (diegetic HQ stations), and have a
-nav test. Grep new/changed menu scripts for `MenuNav.attach`.
+that menus built recently call `MenuNav.attach(...)` — every menu is a flat
+page now (the diegetic 3D HQ and its `hq.gd._unhandled_input` spatial pattern
+were deleted in the pivot), so there is no second wiring pattern to accept.
+Grep new/changed menu scripts for `MenuNav.attach`, and check a nav test
+covers each new menu.
 
 ### 10. Loose ends in code
 
@@ -177,8 +177,8 @@ green in tests and broken in the editor.
   script warning it prints — these are the ones nobody sees until they open the
   editor.
 - Enumerate the root scenes explicitly (`ls *.tscn` — currently `main.tscn`,
-  `hq.tscn`, `overworld.tscn`, `garage.tscn`, `podium.tscn`, `standings.tscn`,
-  `corner_catalog.tscn`, `exhaust_lab.tscn`, `car.tscn`) and check
+  `hub.tscn`, `menu_showcase.tscn`, `garage.tscn`, `corner_catalog.tscn`,
+  `exhaust_lab.tscn`, `car.tscn`) and check
   each `ext_resource` path in them still exists on disk. A dangling
   `ext_resource` is the classic post-refactor rot.
 - Check `.uid` files whose sibling script is gone, and scripts with no `.uid`.
@@ -188,9 +188,10 @@ green in tests and broken in the editor.
 `project.godot` is hand-authored data that nothing type-checks, so it drifts
 silently when scripts move or features are removed.
 
-- **Autoloads** — the `[autoload]` block registers ~11 singletons (`Config`,
-  `Save`, `Cloud`, `InputRemap`, `RallySession`, `ChallengeSession`, `Benchmark`,
-  `DisplayStretch`, `WebFullscreen`, `PerfLog`, `Music`). Check each `res://scripts/*.gd` path
+- **Autoloads** — the `[autoload]` block registers 12 singletons (`Config`,
+  `Save`, `Cloud`, `InputRemap`, `RunSession`, `Benchmark`, `DisplayStretch`,
+  `WebFullscreen`, `PerfLog`, `Music`, `Audio`, `CarPreviewCache` — the pivot
+  merged the old Rally/Challenge session autoloads into `RunSession`). Check each `res://scripts/*.gd` path
   still exists, and flag any autoload nothing references (grep the singleton
   name across `scripts/`) — a resident singleton with no callers is dead weight
   loaded on every boot, including on the weakest phone.
@@ -205,23 +206,26 @@ silently when scripts move or features are removed.
 
 ### 13. Save-schema compatibility
 
-`scripts/save_manager.gd` versions the save file (`SCHEMA_VERSION`) and steps
-old files forward through `_migrate_step(from_version, p)`. A miss here destroys
-real player progress, so treat it as higher severity than anything else in this
-sweep.
+`scripts/save_manager.gd` versions the save file (`SCHEMA_VERSION := 7`).
+Post-pivot there is NO migration ladder — `_migrate()` REFUSES any profile
+whose `schema_version` doesn't match exactly (older or newer) and then
+backfills missing top-level keys from `_default_profile()`. A miss here
+destroys real player progress, so treat it as higher severity than anything
+else in this sweep.
 
-- If recent work added a persisted field, check it either got a migration step
-  **or** is covered by the missing-key backfill — and that `SCHEMA_VERSION` was
-  bumped iff a step was added.
-- Verify the migration chain is contiguous: every version between the oldest
-  supported and current has a `_migrate_step` branch, and each branch sets
-  `schema_version` to exactly `from_version + 1`.
+- If recent work added a persisted field, check it is declared in
+  `_default_profile()` (that is what makes the backfill cover it) — and that
+  `SCHEMA_VERSION` was NOT bumped (a bump orphans every existing save, and is
+  reserved for deliberate reset waves).
+- If a PERSISTED KEY STRING was renamed (e.g. the skills rename keeping
+  `"bought_perks"`), check the old name survives on disk deliberately and the
+  const's comment says so — renaming the string is the data-loss trap here.
 - Check `todo/web-save-persistence.md` against what's landed (§5 rules apply), and
   confirm `features/save-persistence.md` documents the current schema version.
 
 ### 14. Generated data caches
 
-`data/` holds exactly two committed generated artifacts:
+`data/` holds three committed generated artifacts:
 
 - **`data/track_cache.json`** — the track-turn lockfile, baked by
   `./cache_tracks.sh` (which `./cache_all.sh` now just wraps). Read by
@@ -230,6 +234,9 @@ sweep.
   `./export_eligibility.sh` (`tools/export_eligibility.gd`) for
   `tools/fit_map_pins.py`. Regenerate after any change to a restriction band,
   car or engine.
+- **`data/menu_showcase_cache.res`** — the hub's 3D background track cache
+  (todo/menu-background-showcase.md), baked by `./cache_menu_showcase.sh`. Stale
+  after any track-generation change; same re-check rule as below.
 
 If generation code changed after the bake, the game ships content that no longer
 matches the generator — invisible in tests.
@@ -244,18 +251,17 @@ matches the generator — invisible in tests.
   makes entries silently default). `track_cache.gd` also carries a
   `constants_fingerprint()` guard — note if it's stale.
 - **There is no opponent-field cache, and adding one back is wrong.** The old
-  `data/opponent_cache.json` / `cache_opponents.sh` are gone: the rival grid is
-  drawn matched to the PLAYER's car rating, so a field is a function of the
-  player as well as the rally and cannot be keyed on rally properties alone
-  (`rally_library.gd` → `generate_opponent_field`'s `player_rating`,
-  `rally_session.gd` → `_generate_event_tracks` path). If a sweep "finds" the
-  cache missing, that's the design, not drift.
+  `data/opponent_cache.json` / `cache_opponents.sh` are gone: post-pivot the
+  only "rival" is a pace-line ghost (`scripts/rival_ghost.gd`) that the stage
+  target time is computed from — there is no grid to prebake. If a sweep
+  "finds" the cache missing, that's the design, not drift.
 
 ### 15. Build, export presets and CI health
 
 Nothing else in this sweep looks at how the game actually ships.
 
-- **CI** — `.github/workflows/deploy.yml`. Check the last few runs
+- **CI** — `.github/workflows/test.yml` (suite) and `deploy.yml` (ship). Check
+  the last few runs (`gh run list -L 5`)
   (`gh run list -L 5`) and surface failures. Per the `google-play-publishing`
   auto-memory a first Play publish is still pending; note anything blocking it.
 - **Presets vs scripts** — `export_presets.cfg` defines `Web`, `Android`,
@@ -399,10 +405,9 @@ an existing utility already covers, dead abstractions, needless indirection.
 
 - **Fan out — don't read the tree serially.** `scripts/` alone has multi-
   thousand-line files — run `wc -l scripts/*.gd | sort -rn | head -12` to get
-  the current shape rather than trusting a list; as of 2026-08 that is `hq.gd`
-  (~4700), `game_config.gd` (~3800), `terrain_manager.gd` (~2900),
-  `overworld.gd` (~2700), `world.gd` (~2560), `car.gd` (~2510) and
-  `rally_library.gd` (~2220).
+  the current shape rather than trusting a list; as of 2026-09 that is
+  `game_config.gd` (~4200), `terrain_manager.gd` (~3080), `car.gd` (~2520),
+  `world.gd` (~2400) and `rally_library.gd` (~1610).
   Spawn several `Explore` / `general-purpose` subagents, each owning a slice
   (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
   the menu scripts, the terrain files), each returning candidate simplifications

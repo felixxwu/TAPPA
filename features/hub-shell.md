@@ -45,15 +45,16 @@ next, so a stale page can never sit under the tree still claiming input.
 
 | Page | Offers |
 | --- | --- |
-| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop, Skills, Rally challenge, Lifetime stats, Settings, Quit |
+| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop, Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit |
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones shown "Locked" with their pay rate (not the gate they hide behind) |
 | `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
 | `SUMMARY` | Stages cleared, money earned, per-stage times |
-| `SHOP` | ONE flat card list: every `BoostLibrary.CATALOGUE` id (level, price of the next level, `BoostLibrary.effect_range_text`) plus the Engine Swap unlock — no sub-page hop |
+| `SHOP` | ONE flat card list: every `BoostLibrary.CATALOGUE` id (level, price of the next level, `BoostLibrary.effect_range_text`) — engine swap included, now that it is a boost — no sub-page hop |
 | `SKILLS` | One row per `SkillLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([skills.md](skills.md)) |
 | `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
 | `CHALLENGE` | The three periods, one row each — stage count + rating cap; a period already run is shown and unfocusable ([rally-challenge.md](rally-challenge.md)) |
 | `SETTINGS` | The shared `SettingsMenu` ([menus.md](menus.md) → *Account page*) — audio, display, camera, gearbox, key bindings, mobile controls, account/cloud save, Reset progress |
+| `FREEPLAY_CAR` / `FREEPLAY_REGION` / `FREEPLAY_SETUP` | The Free Play sandbox flow — see below |
 
 **`SETTINGS` was missing entirely for a while**: the diegetic HQ used to offer it, the
 pivot's flat rebuild never added an equivalent row, and the only surviving route was
@@ -63,7 +64,8 @@ mounts the same `SettingsMenu` instance the pause menu does, so both hosts prese
 identical options (per that script's own header comment) and neither route can drift.
 
 `_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`,
-`SKILLS`/`STATS`/`CHALLENGE → MAIN`, and `SETTINGS → MAIN` (via `_settings_back()`, which
+`SKILLS`/`STATS`/`CHALLENGE → MAIN`, `FREEPLAY_SETUP → FREEPLAY_REGION →
+FREEPLAY_CAR → MAIN`, and `SETTINGS → MAIN` (via `_settings_back()`, which
 gives `SettingsMenu.go_back()` first refusal — its own sub-pages, and the Account page's
 sign-in sub-forms in turn, back out one level at a time before the shell backs out to
 `MAIN`; the same "first refusal" shape `pause_menu.gd::_on_settings_back` uses).
@@ -83,7 +85,7 @@ hardware once and then run whichever you like. See [region-runs.md](region-runs.
 Car BUYING lives on the `CAR` page rather than a `SHOP` sub-page, per decision 28's own
 wording ("the car select screen offers a Buy action for unowned cars") — one list serves
 both picking and buying, since a player looking at "which car" is already looking at
-exactly the list a shop would show. Boost levels and the Engine Swap unlock are different:
+exactly the list a shop would show. Boost levels are different:
 permanent purchases with no tie to picking a car for THIS run, so they hang off `MAIN`
 instead. See [region-runs.md](region-runs.md) → *The meta tier* for what each purchase
 actually does.
@@ -123,6 +125,21 @@ that meta is the framework's own opt-out, and it is required rather than optiona
 it finds, so setting `focus_mode` alone is silently undone and the keyboard lands on a dead
 row.
 
+## Free play — the session-less sandbox
+
+Three carousel pages off MAIN (`_build_freeplay_car` → `_build_freeplay_region` →
+`_build_freeplay_setup`): ANY catalogue car (unowned cars are lent, not bought), ANY
+region (the unlock gate is a progression rule for runs; a sandbox has none), and any
+combination of the `BoostLibrary` catalogue as toggle cards. Start writes a plan to
+`FreePlay` (`scripts/free_play.gd`) and boots the run scene — whose session-less
+branch consumes it: `world.gd::_field_free_play_car` fields the chosen car with the
+chosen boosts (plus equipped skills) on the same effects funnel a run's car rides,
+and generation uses the plan's stage dict (`FreePlay.event()`). No clock, no run
+state, nothing persisted — the car is unbound, so damage never touches the save, and
+the finish panel's Next returns to the hub through the existing no-session branch.
+`RunSession.start`/`start_region`/`resume` clear the plan so a real run never
+inherits it.
+
 ## The run summary is one-shot
 
 `_ready()` opens `SUMMARY` instead of `MAIN` whenever `RunSession.last_result()` is
@@ -158,7 +175,6 @@ a player loses a run they meant to finish.
   leaderboard, no standing, and no explanation of the placement reward — `hq_challenge.gd`
   did all three and is deleted. See `todo/roguelike-pivot.md` → *Salvaged from
   `hq_challenge.gd`* for the orchestration a full screen would reproduce.
-- **No re-displayed "locked" swap UI.** The Engine Swap unlock can be BOUGHT (the `SHOP`
-  page), but there is no picker screen yet that re-checks
-  `RallyLibrary.engine_swaps_unlocked` and shows a locked state — see
-  [engine-swap.md](engine-swap.md) for the two old consumers that used to and are gone.
+- **The Engine Swap is a mid-run boost pick now** (BoostLibrary `"engine_swap"`,
+  the catalogue's POWER entry); the old one-time SHOP unlock and its gate are
+  deleted — see [engine-swap.md](engine-swap.md).

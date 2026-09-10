@@ -9,8 +9,13 @@ extends RefCounted
 #
 # This file is also the home of the pure functions the rest of the game needs:
 #   * is_eligible(rally, car_meta)            — can this car enter?
-#   * rally_revealed / lit_sources           — the map-exploration reveal gate
 #   * incomplete_rallies_enterable_by(...)     — the anti-soft-lock query
+#
+# The map-exploration reveal gate (rally_revealed / lit_sources / reveal_depths /
+# hq_map_pos, plus the pin-placement helpers suggest_map_pos / map_pos_is_free) is
+# DELETED with the diegetic HQ map (todo/roguelike-pivot.md "The overworld map").
+# The RALLIES rows keep their authored `map_pos` fields as inert data until that
+# field goes in the roster's own cleanup pass.
 #
 # Determinism is the whole point: TrackGenerator.generate is deterministic for a
 # given (seed, turn_count, width), so re-attempting a rally regenerates the SAME
@@ -32,7 +37,7 @@ const WEATHER_DRY := "dry"
 const WEATHER_RAIN := "rain"
 # Dust storm — authored only onto region == "greece" events (see events below and
 # features/weather.md); not enforced here (the funnel stays tolerant of any string),
-# but asserted by test_rally_library.gd::test_sandstorm_only_authored_on_greece_events.
+# but asserted by test_menu_showcase_geometry.gd::test_sandstorm_is_eligible_only_in_the_desert_regions.
 const WEATHER_SANDSTORM := "sandstorm"
 # Fog — a VISIBILITY condition, and the only DIFFICULTY lever in the table (rivals
 # have no eyes, so their times are unchanged). Authored onto FEW events, in the
@@ -72,20 +77,12 @@ const WEATHER_NIGHT := "night"
 # drives the reward tier (clamped by progress) and sort order — the p/w band is the
 # visible requirement. `events` is exactly 3 EventDefs (a special's are longer).
 #
-# `map_pos` IS the progression graph. A rally opens when the player has lit the map out to
-# it: HQ starts lit, and every completed rally lights a circle around its own pin (see
-# `rally_revealed` / `lit_sources`). So a pin's POSITION decides what it opens and what
-# opens it, and moving a pin re-derives its neighbourhood for free. Optional
-# `reveal_radius` (float, normalised map units) lets one rally open a wider frontier than
-# the GameConfig default.
-#
-# DO NOT PICK A map_pos BY EYE, and do not paste one out of a comment — both go stale the
-# moment a pin moves. `RallyLibrary.suggest_map_pos("<your region id>")` returns a legal,
-# currently-free pin in that corner (>MIN_PIN_SEPARATION from every existing pin AND close
-# enough to an authored one that the new rally is reachable); `map_pos_is_free(pos)` checks
-# one you chose yourself. The last author to eyeball it landed 0.021 from an existing pin
-# and turned test_map_pins_are_well_formed_and_never_stack red — that test now prints a
-# suggested coordinate in its failure message, so you can paste the fix straight out of it.
+# `map_pos` is DELETED CONTENT: it positioned a pin on the diegetic HQ map table, and the
+# map went with the overworld (todo/roguelike-pivot.md). Nothing reads it — a rally's
+# `region` tag and `id` are what the live game uses — but the authored values stay in the
+# rows (ids key saved progress; dropping the field wholesale is the roster cleanup's job,
+# not a side effect of touching a neighbour). The pin-placement machinery that used to
+# govern them (suggest_map_pos / map_pos_is_free / MIN_PIN_SEPARATION) went with the map.
 #
 # The retired fields are `reveal_after` and `requires_completions`,
 # two global wave counters whose unlocks had no visible relationship to the rally just won.
@@ -173,12 +170,11 @@ const RALLIES: Array[Dictionary] = [
 		],
 	},
 	{
-		# Unlocks ENGINE SWAPPING (the capability, not the token — see
-		# RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY). It is the lowest rung on the ladder, so it
-		# sits on the difficulty-1 event right beside HQ: revealed from the very first map
-		# view, so a player can go and win the garage's most interesting mechanic
-		# immediately. It was The Foothills Trial, which now carries Snow Tires instead.
-		"id": "front_runners", "name": "Upgrade: Engine Swap", "region": "home", "difficulty": 1,
+		# Used to be the engine-swap CAPABILITY unlock special; the capability is gone
+		# (the Engine Swap is a mid-run BoostLibrary pick now), so this is an ordinary
+		# early special — its events still feed the region stage pool like every other
+		# roster entry. The id stays: ids key saved progress.
+		"id": "front_runners", "name": "Front Runners", "region": "home", "difficulty": 1,
 		"special": true,
 		"map_pos": Vector2(0.465, 0.615),
 		# An ordinary early event beside HQ, CLASS-FREE (no body or class field, just a p/w
@@ -448,11 +444,10 @@ const RALLIES: Array[Dictionary] = [
 	# endgame. Their `id` / `difficulty` / `restriction` / `events` are untouched — ids key saved
 	# progress, and the other three are otherwise-ordinary authored fields.
 	#
-	# WHAT A SPECIAL MUST AWARD, then, is one of exactly three things: a CAR, a PART, or a
-	# CAPABILITY (engine swapping — see ENGINE_SWAP_UNLOCK_RALLY, which is gated here rather than
-	# through UpgradeLibrary because a capability is not a part). That is no longer only a
-	# convention in this comment: `test_rally_library.gd` asserts it against the shipped roster,
-	# so the flag cannot be left behind a third time.
+	# WHAT A SPECIAL MUST AWARD is unset post-pivot (decisions 21 & 28 deleted prizes and
+	# the capability): `special: true` today only marks the LONGER event list a region's
+	# stage pool draws from, and the old "car, part or capability" invariant test is
+	# deleted with the prize system it encoded.
 	#
 	# `gc_showdown` stays ordinary for the same reason it always was: it gates nothing, so it
 	# remains the pure star-payer the endgame finishes on.
@@ -1051,36 +1046,12 @@ static func _time_at_offset(s: PackedFloat32Array, t: PackedFloat32Array, off: f
 
 
 # --- Progress / stars / anti-soft-lock ------------------------------------
-
-# Count of rallies this profile has PODIUMED (top-3), the single progression metric
-# (caps the car reward tier). NOT a count of rallies finished.
-#
-# THE GATE IS ON THE WRITE, NOT ON ANY ONE FIELD. `Save.record_podium_rally` has exactly one
-# caller (`rally_session.gd`, inside `_award_podium_rewards`, which runs only
-# `if podium_or_opening`), so a 5th-place finish writes NOTHING into the rally's record —
-# which makes EVERY field of that record podium-gated: `completed`, `best_placed` and
-# `best_combined_ms` alike. **There is no untainted sibling field to escape through.**
-# Counting `best_placed > 0` instead of `completed` yields the same podium number under a
-# more honest-sounding name, and that is the trap: it reads like "finished in any
-# position" and is not.
-#
-# There is NO "finished in any position" counter anywhere in the save schema. A feature
-# that needs one must ADD persistence for it (declared in `_default_profile()` so
-# `_migrate`'s key backfill seeds existing saves) — not derive one from this record.
-# Do not label UI off this as "rallies finished" or "rallies completed"; it means
-# "podium finishes".
-static func podium_count(profile: Dictionary) -> int:
-	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
-	var n := 0
-	for rally_id in rallies:
-		if rallies[rally_id].get("completed", false):
-			n += 1
-	return n
-
-
-# DEPRECATED — use podium_count(). Counts PODIUM (top-3) finishes, not rallies finished.
-static func completed_count(profile: Dictionary) -> int:
-	return podium_count(profile)
+# podium_count() is DELETED with the rally-podium bookkeeping on the save side: the
+# profile's per-rally record is podium-gated on the WRITE (Save.record_podium_rally), so
+# "count the completed flags" was always a PODIUM count, never a finish count, and the
+# reward-tier cap it fed went with the prize system (todo/roguelike-pivot.md decisions
+# 21/28). See the save schema's own docs before deriving any "rallies finished" number
+# from that record — there is no such counter in the schema.
 
 
 # --- Star scoring: DELETED (todo/roguelike-pivot.md decision 21) -------------
@@ -1103,16 +1074,12 @@ static func is_special(rally: Dictionary) -> bool:
 # and RewardSystem.draw_car, which drew from this — are gone, along with the `prize_car`
 # field on every RALLIES entry.
 #
-# `prize_car_id` ITSELF SURVIVES, deliberately, as a narrower exception: with the field
-# gone it now always returns "" (rally.get("prize_car", "") has nothing left to find), but
-# deleting the function outright would require gutting `opening_rally_id_for` /
-# `hq_map_pos` / `lit_sources` / `reveal_depths` below — the overworld map-reveal geometry,
-# which is a SEPARATE, larger deletion ("The overworld map" in the pivot doc's What gets
-# deleted, not this task's four items) and is currently config-gated off
-# (`GameConfig.overworld_enabled == false`). Keeping the field's accessor as an always-""
-# stub lets that whole subsystem degrade to its own already-coded empty-map fallback with
-# no code changes here, rather than this task reaching into a wave it does not own. See
-# this agent's report for the full reasoning.
+# `prize_car_id` SURVIVES as an always-"" stub, deliberately: `opening_rally_id_for` below
+# is derived from this accessor, and with every `prize_car` field gone from the roster it
+# returns "" — that function's documented "no rally awards this model" answer, which every
+# caller already handles. (The map-reveal geometry that also called it — hq_map_pos /
+# lit_sources / reveal_depths — kept this stub alive longer, and has since been deleted
+# with the diegetic HQ map.)
 static func prize_car_id(rally: Dictionary) -> String:
 	return String(rally.get("prize_car", ""))
 
@@ -1140,467 +1107,53 @@ static func opening_rally_id_for(model_id: String) -> String:
 	return ""
 
 
-# --- Map exploration: the reveal gate ----------------------------------------
-# A rally opens because the player has DRIVEN THEIR WAY TO IT, not because a counter
-# ticked over. See features/map-exploration.md.
-#
-# The map starts dark except for a circle around HQ; every rally the player completes
-# lights a circle around its OWN map_pos; a rally is revealed when it falls inside any
-# lit circle. So the player pushes the frontier outward from the middle and chooses
-# which direction to go, rather than being handed the next wave.
-#
-# This replaced the old global wave counters — `reveal_after` on ordinary rallies and
-# `requires_completions` on specials, both read through a `completions_required` shim.
-# Those were a pure drip-feed: the rally you unlocked had no relationship to the rally
-# you had just won, so a win in one corner opened a rally in another for no reason the
-# player could see. The geometric rule makes the map itself the progression graph, and
-# it is SELF-MAINTAINING — move a pin and its neighbourhood re-derives, where the old
-# scheme needed every authored rung re-checked by hand.
-#
-# Pure function of (profile.rallies, RALLIES): no fog state is stored, so there is
-# nothing to persist and nothing to migrate.
-
-# Where HQ — the garage the player starts at — sits on the world map, normalised 0..1
-# like a rally's map_pos. Near the CENTRE, so exploration runs outward toward all four
-# corners rather than along a single axis. (This is the position the old present box
-# used, for the same reason: the middle of the table reads as "here", not as content.)
-const HQ_MAP_POS := Vector2(0.5, 0.5)
-
-# The closest two pins may sit, in normalised map units. Two pins nearer than this are
-# unpickable on the HQ map table, so this is a STRUCTURAL bound, not a tuning knob — it is
-# the number test_rally_library.gd::test_map_pins_are_well_formed_and_never_stack enforces,
-# and it lives here rather than in that test so authoring code and the guard cannot drift.
-const MIN_PIN_SEPARATION := 0.03
+# --- Map exploration: DELETED with the HQ map --------------------------------
+# The reveal gate (rally_revealed / lit_sources / position_revealed / position_lit_by /
+# reveal_link_pairs / distance_beyond_frontier / reveal_depths / nearest_locked_special_id
+# / reveal_radius_of), the garage placement it served (hq_map_pos / HQ_MAP_POS /
+# HQ_BESIDE_RALLY_GAP_M) and the pin-placement helpers (suggest_map_pos /
+# map_pos_is_free / MIN_PIN_SEPARATION / map_pos_of) are gone with the diegetic HQ map
+# and overworld (todo/roguelike-pivot.md "The overworld map"): progression is the flat
+# hub menus + region runs, and with no map there is nothing to reveal. rally_completed
+# went with it — see its note below the engine-swap one.
 
 
-# A LEGAL, CURRENTLY-FREE pin for a new rally in `region_id` — paste the result straight
-# into a new RALLIES row's `map_pos`.
-#
-# WHY THIS IS A FUNCTION AND NOT A COMMENT. `map_pos` used to be the one field of the
-# copy-pasteable rally template that could not be pasted: its rule was PROSE ("in your
-# corner, >0.03 from every other pin, within map_reveal_radius of one") sitting next to a
-# placeholder Vector2(0.5, 0.5) that is itself illegal — it is HQ. An author who pastes and
-# nudges is doing 40-odd distance computations in their head, and the last one to try landed
-# 0.021 from an existing pin and turned the pin-spacing guard red. A LIST of free
-# coordinates would go stale the moment a pin moves; a function re-derives from whatever is
-# authored right now, so it cannot.
-#
-# The result satisfies all three constraints at once:
-#   * inside [0,1]^2 (with a margin, so it is not clipped at the map edge);
-#   * more than `min_separation` from EVERY existing pin and from HQ_MAP_POS;
-#   * within the anchor rally's own reveal radius, so the new rally is reachable by
-#     exploring (test_every_shipped_rally_is_reachable_by_exploring_from_hq).
-#
-# The anchor is the first rally already authored in `region_id`, so the suggestion lands in
-# THAT CORNER of the map — which is what keeps a rally's name, region and terrain agreeing
-# with where its pin is (see the geography note above RALLIES). An unknown/empty region, or
-# a brand-new region with no rally yet, anchors on HQ instead — the middle of the map — and
-# the author should then move it into their corner and re-run this with a neighbouring
-# rally's region, or simply re-check the result against `map_pos_is_free()`.
-#
-# Deterministic (a fixed spiral of candidates, no RNG): the same roster always yields the
-# same suggestion. Returns Vector2(-1, -1) if the map is genuinely full at this separation,
-# which is a real answer and not a legal pin, so callers must check.
-static func suggest_map_pos(region_id := "", min_separation := MIN_PIN_SEPARATION) -> Vector2:
-	var anchor := HQ_MAP_POS
-	var reach := Config.data.map_reveal_radius if Config.data != null else 0.18
-	for rally in all():
-		if String(rally.get("region", "")) == region_id and region_id != "":
-			anchor = map_pos_of(rally)
-			reach = reveal_radius_of(rally)
-			break
-	var sep := maxf(min_separation, 0.0001)
-	# Rings from just outside the separation bound out to just inside the reveal radius,
-	# each rotated by the golden angle so candidates never line up into a grid.
-	var r := sep * 1.25
-	var ring := 0
-	while r <= maxf(reach * 0.9, sep * 1.25):
-		var base := float(ring) * 2.39996323  # golden angle, radians
-		for i in 24:
-			var a := base + TAU * float(i) / 24.0
-			var cand := anchor + Vector2(cos(a), sin(a)) * r
-			if map_pos_is_free(cand, min_separation):
-				return Vector2(snappedf(cand.x, 0.001), snappedf(cand.y, 0.001))
-		r += sep * 0.5
-		ring += 1
-	return Vector2(-1, -1)
-
-
-# Whether `pos` is a legal pin RIGHT NOW: on the map (with a margin) and clear of every
-# authored pin and of HQ by more than `min_separation`. The predicate form of the rule
-# test_map_pins_are_well_formed_and_never_stack enforces, so an author (or a tool) can
-# check a hand-picked coordinate without re-deriving the arithmetic.
-static func map_pos_is_free(pos: Vector2, min_separation := MIN_PIN_SEPARATION) -> bool:
-	var margin := maxf(min_separation, 0.0)
-	if pos.x < margin or pos.x > 1.0 - margin or pos.y < margin or pos.y > 1.0 - margin:
-		return false
-	# A small cushion above the bound: the guard test asserts STRICTLY greater than
-	# min_separation, so a suggestion sitting exactly on it would be red.
-	var need := min_separation * 1.1
-	if pos.distance_to(HQ_MAP_POS) <= need:
-		return false
-	for rally in all():
-		if pos.distance_to(map_pos_of(rally)) <= need:
-			return false
-	return true
-
-## Metres between the garage pad and the rally pad it stands beside, edge to edge. The two pads
-## must not merge: OverworldPads flattens a circle per pin, and overlapping interiors are held at
-## the AVERAGE of their two levels, so neither sits at its own — visible as a garage on a slope.
-## Also keeps the garage clear of the zone's dwell circle so parking at one is never parking at
-## both. Metres rather than map units because the pads are authored in metres.
-const HQ_BESIDE_RALLY_GAP_M := 18.0
-
-
-## WHERE THE GARAGE STANDS, for `profile`. Not a constant any more.
-##
-## The player's garage is planted beside the rally that gave them their FIRST CAR — the one their
-## career started in. `HQ_MAP_POS` remains the answer before a starter is chosen (and the fallback
-## whenever the starter cannot be resolved), so a fresh profile still finds a garage in the middle
-## to pick a car at.
-##
-## WHY THIS IS PROFILE-DERIVED AND NOT LIVE. The position feeds the road network
-## (`OverworldRoads` builds an `__hq__` node from it), the garage PAD, the reach set the precompute
-## bakes, the default spawn and the garage building itself — and the first two are folded into the
-## chunk cache's invalidation key. So it is resolved ONCE at hub build and is stable for that
-## session: moving it mid-session would mean re-carving terrain under a driving car. In practice it
-## changes exactly once, between the starter pick and the next hub visit, and the re-bake rides the
-## loading screen the player is already watching on the way back from their opening rally.
-##
-## Offset DIRECTION is deterministic (toward the map centre, or +X for a rally already at it), so
-## the same profile always rebuilds the same world — the cache key depends on it.
-## `size_m` defaults to the LIVE overworld size rather than a literal, so every caller agrees on
-## where the garage is without having to pass it — the offset is authored in metres and only
-## becomes map units by dividing by the world's edge length.
-static func hq_map_pos(profile: Dictionary, size_m: float = -1.0) -> Vector2:
-	var world_m := size_m
-	if world_m <= 0.0:
-		world_m = Config.data.overworld_size_m if Config.data != null else 1000.0
-	var starter := String(profile.get("starter_model_id", ""))
-	if starter == "":
-		return HQ_MAP_POS
-	var opening_id := opening_rally_id_for(starter)
-	if opening_id == "":
-		return HQ_MAP_POS
-	var rally := by_id(opening_id)
-	if rally.is_empty():
-		return HQ_MAP_POS
-	var pin := map_pos_of(rally)
-	# Edge-to-edge gap plus both radii, converted to map units by the live world size.
-	var cfg: GameConfig = Config.data
-	var gap_m: float = HQ_BESIDE_RALLY_GAP_M 		+ (cfg.overworld_pad_zone_radius_m if cfg != null else 12.0) 		+ (cfg.overworld_pad_garage_radius_m if cfg != null else 21.0)
-	var step := gap_m / maxf(world_m, 1.0)
-	var toward := HQ_MAP_POS - pin
-	var dir := toward.normalized() if not toward.is_zero_approx() else Vector2.RIGHT
-	# Clamped so a rally near an edge cannot push the garage off the map.
-	return Vector2(clampf(pin.x + dir.x * step, 0.0, 1.0),
-		clampf(pin.y + dir.y * step, 0.0, 1.0))
-
-
-# How far a completed rally lights the map around itself, in normalised map units. A
-# rally may author its own `reveal_radius` so a headline event opens a wider frontier
-# than an ordinary one; absent (the usual case) it takes the GameConfig default, which
-# is where the pacing is actually tuned.
-static func reveal_radius_of(rally: Dictionary) -> float:
-	var authored := float(rally.get("reveal_radius", 0.0))
-	if authored > 0.0:
-		return authored
-	return Config.data.map_reveal_radius
-
-
-# The lit sources on the map right now: HQ (always), plus every completed rally, as
-# (centre, radius) pairs in normalised map space. The single derivation shared by the
-# reveal predicate and by the HQ table's fog mask, so what the player can ENTER and what
-# the player can SEE can never disagree.
-static func lit_sources(profile: Dictionary) -> Array:
-	# HQ LIGHTS A SMALL CIRCLE, and this used to say it lit nothing.
-	#
-	# It lit nothing because seeding the map with HQ's own circle opened the handful of pins
-	# nearest the middle on a fresh profile for no reason the player had earned, and because the
-	# player began INSIDE a rally, so the middle was ordinary fogged ground.
-	#
-	# The OVERWORLD changed the second premise: the player now stands at the garage and picks
-	# their first car there, before any rally. With HQ unlit the fog veil darkens the screen and
-	# the frontier push shoves the car while they are choosing. So `map_hq_reveal_radius` ships
-	# small and non-zero — deliberately too small to touch any shipped pin, which is what keeps
-	# the FIRST premise intact. `test_the_hq_circle_alone_reveals_no_rally` pins that against the
-	# real roster: raise the radius past the nearest pin and it fails.
-	#
-	# The circle follows the GARAGE, which is no longer the map centre — it stands beside the
-	# player's first-car rally (see `hq_map_pos`).
-	var out: Array = []
-	var hq_radius: float = Config.data.map_hq_reveal_radius
-	if hq_radius > 0.0:
-		out.append([hq_map_pos(profile), hq_radius])
-	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
-	# ONE pass over the roster. The opening rally is picked out HERE rather than through
-	# opening_rally_id_for + by_id, which would each walk `all()` again — and this function
-	# is called once per rally by the reveal predicate, so an extra scan is paid n times
-	# over. Same rule, a third of the work.
-	var starter := String(profile.get("starter_model_id", ""))
-	for rally in all():
-		var completed := bool(rallies.get(rally["id"], {}).get("completed", false))
-		# The player's OPENING rally lights its corner from the very start, completed or
-		# not (todo/opening-rally.md). It is where their career begins — they are dropped
-		# into it before the map is ever shown — so it is lit for the same reason HQ used
-		# to be: it is not somewhere to be reached, it is somewhere they already are.
-		#
-		# This is also the ANTI-STRANDING guard. The opening rally can sit well outside any
-		# other circle, so a player who quits mid-run would otherwise come back to a map
-		# with no way to reach the one rally the whole opening depends on — a dead end
-		# created by pressing Quit. Lighting it here rather than special-casing
-		# rally_revealed keeps fog, pin state and entry on the SAME derivation, which is
-		# what stops what the player can SEE drifting from what they can ENTER.
-		var is_opening := starter != "" and prize_car_id(rally) == starter
-		if not completed and not is_opening:
-			continue
-		out.append([map_pos_of(rally), reveal_radius_of(rally)])
-	# DEAD-END GUARD. Every source is a completed rally or the opening one, so a player who
-	# HAS picked a starter but whose starter_model_id no rally awards would light NOTHING —
-	# a permanently dark map with no way back, since the picker keys on `starter_picked` and
-	# never re-runs. STARTER_MODEL_IDS and the `prize_car` set are two independent
-	# authorings held in sync by convention alone, and a roster edit or a cloud profile from
-	# another build is enough to break it.
-	#
-	# Gated on a starter being RECORDED, not merely on `out` being empty: a profile that has
-	# not picked yet legitimately sees a dark map (it has not started, and the map is not
-	# even reachable from there) — lighting the middle for it would put HQ's circle back by
-	# the back door, which is the thing this whole change removed.
-	if out.is_empty() and starter != "":
-		out.append([hq_map_pos(profile), Config.data.map_reveal_radius])
-	return out
-
-
-# A rally's pin position, normalised 0..1. Centre-of-map is the fallback for a synthetic
-# test rally that authors none — deliberately the same point as HQ, so such a rally reads
-# as "always lit" rather than landing somewhere arbitrary and dark.
-static func map_pos_of(rally: Dictionary) -> Vector2:
-	return rally.get("map_pos", HQ_MAP_POS)
-
-
-# Whether the special that gates `item_id`-style capabilities has been won. Used for the
-# engine-swap CAPABILITY gate: tokens drop and bank from the start, but cannot be spent
-# until this opens. See features/engine-swap.md.
-# How far `rally` sits OUTSIDE the lit region, in normalised map units: 0.0 once it is
-# revealed, otherwise the gap between its pin and the nearest lit circle's edge. This is
-# the geometric replacement for "which rung is this special on" — with reveal driven by
-# distance rather than by a counter, "how far is it from where I've got to" is the only
-# meaningful ordering of what the player has not reached yet.
-static func distance_beyond_frontier(rally: Dictionary, profile: Dictionary) -> float:
-	var pos := map_pos_of(rally)
-	var best := INF
-	for src in lit_sources(profile):
-		var centre: Vector2 = src[0]
-		var radius: float = src[1]
-		best = minf(best, pos.distance_to(centre) - radius)
-	return maxf(best, 0.0)
-
-
-# How many WAVES of exploration each rally sits behind THE STARTING LINE, ignoring car
-# eligibility:
-# repeatedly light everything currently reachable and complete it, counting rounds. Wave 1
-# is what a fresh profile can enter; wave 2 is what those unlock, and so on. A rally no
-# amount of exploring can reach is absent from the returned dict entirely.
-#
-# This is the roster's REACHABILITY ORDER, and it is what "opens before" means now — NOT
-# euclidean distance from HQ. The two genuinely disagree: reveal spreads as a corridor
-# along the chain of pins, so a rally that is nearer in a straight line can sit many waves
-# further out because nothing lights the gap in between. Anything asserting authored order
-# (which special is reached first, that a prerequisite precedes its dependent) must read
-# this rather than a distance.
-#
-# Deliberately ignores cars: it answers "is the MAP connected and in what order", which is
-# the authored-geometry question. Whether the player has something eligible to drive at
-# each step is a separate, garage-dependent question.
-# Seeded from the OPENING RALLIES — every starter's own event, all of them at once. HQ
-# lights nothing (see lit_sources), so an unseeded walk would light nothing and report the
-# whole roster as unreachable. Taking the union rather than one starter's opening keeps
-# this the geometry-only question it claims to be: whichever car the player picks, their
-# start is one of these, and asking about a single one would smuggle a garage-dependent
-# assumption into an answer about the map. The per-starter walk that DOES account for cars
-# is tools/sim_career.gd::solve_reachability.
-static func reveal_depths() -> Dictionary:
-	var out := {}
-	var profile := {Save.KEY_RALLIES: {}}
-	for rally in all():
-		if prize_car_id(rally) != "" and CarLibrary.STARTER_MODEL_IDS.has(prize_car_id(rally)):
-			profile[Save.KEY_RALLIES][String(rally["id"])] = {"completed": true}
-			out[String(rally["id"])] = 1
-	var wave := 1
-	while true:
-		var fresh: Array = []
-		for rally in all():
-			var rid := String(rally["id"])
-			if out.has(rid):
-				continue
-			if rally_revealed(rally, profile):
-				fresh.append(rid)
-		if fresh.is_empty():
-			return out
-		wave += 1
-		for rid in fresh:
-			out[rid] = wave
-			profile[Save.KEY_RALLIES][rid] = {"completed": true}
-	return out
-
-
-# The next SPECIAL the player is heading for: the unrevealed one closest to the frontier
-# they have already lit ("" once every special is revealed). Roster order breaks a tie.
-#
-# The map table teases THIS special only, and is now the only surface that names it (the
-# garage's carrot line, which quoted the same id, is gone — see
-# features/map-exploration.md). It replaced next_locked_special_id,
-# which picked the lowest authored rung of a ladder that no longer exists — nearest-to-
-# reach is what "next" means once the player chooses their own direction.
-static func nearest_locked_special_id(profile: Dictionary) -> String:
-	var best := ""
-	var best_gap := INF
-	for rally in all():
-		if not is_special(rally) or rally_revealed(rally, profile):
-			continue
-		var gap := distance_beyond_frontier(rally, profile)
-		if best == "" or gap < best_gap:
-			best = String(rally["id"])
-			best_gap = gap
-	return best
-
-
-# Display name of ENGINE_SWAP_UNLOCK_RALLY. NO LONGER LOAD-BEARING for the unlock itself —
-# winning this rally does nothing for engine_swaps_unlocked any more (see its own comment
-# below); this named the rally for the deleted diegetic-hub locked-swap row and car-park
-# confirm popup (both gone with hq.gd, todo/roguelike-pivot.md decision 9), and currently
-# has no caller. Left in place rather than deleted: harmless, and ENGINE_SWAP_UNLOCK_RALLY
-# itself still needs to resolve to a real rally (see test_the_engine_swap_unlock_rally_resolves).
-static func engine_swap_unlock_rally_name() -> String:
-	return String(by_id(ENGINE_SWAP_UNLOCK_RALLY).get("name", ""))
-
-
-# MONEY SEAM CLOSED (todo/roguelike-pivot.md decision 17: "engine swap is re-gated as a meta
-# shop purchase" rather than retired). This used to read a rally-completion flag off
-# ENGINE_SWAP_UNLOCK_RALLY below; that rally is now an ordinary one (winning it does nothing
-# for this gate — record_podium_rally has no gameplay caller at all any more) and the gate
-# reads a purchased-unlock flag instead: `Save.KEY_ENGINE_SWAP_UNLOCKED`, set by
-# `Save.buy_engine_swap_unlock()` (features/engine-swap.md). The MECHANISM this gate guards
-# is untouched by the parts deletion — EngineSwap's maths, Save.swap_engines, car.gd's
-# _apply_engine_swap and UpgradeLibrary.effective_meta's engine resolution all still work.
-#
-# Takes an explicit `profile` Dictionary, not `Save.profile`, so a synthetic test profile
-# keeps working without touching the real autoload — `Save.engine_swap_unlocked()` is the
-# convenience reader for live callers that already have `Save.profile` in hand.
-static func engine_swaps_unlocked(profile: Dictionary) -> bool:
-	return bool(profile.get(Save.KEY_ENGINE_SWAP_UNLOCKED, false))
-
-
-# The rally that USED TO gate engine swapping, before decision 17 re-gated it as a meta
-# shop purchase (see engine_swaps_unlocked's own comment — it no longer reads this at all).
-# Kept as a named id rather than deleted: it is still an ordinary roster entry (`special:
-# true` was left on it; see the "special must award..." note lower in this file) and
-# engine_swap_unlock_rally_name() still resolves it. (The part unlocks that used to be
-# gated the other way round, by UpgradeLibrary.unlocked_by_rally, are deleted with the
-# parts model.)
-const ENGINE_SWAP_UNLOCK_RALLY := "front_runners"
+# engine_swaps_unlocked + ENGINE_SWAP_UNLOCK_RALLY are deleted: the Engine Swap is a
+# mid-run boost now (BoostLibrary "engine_swap"), with no meta unlock and no gating
+# rally. The roster entry "front_runners" itself stays — it is an ordinary special.
 
 
 # NOTE: `all_specials_completed` — the win/credits beat — is DELETED (decision 45's
 # closing clause). The pivot has no endgame: clearing the last region leaves every region
 # unlocked and repeatable, with no credits roll. Leaving the predicate would have left a
 # trigger hanging on a condition nothing can satisfy once specials stop being a ladder.
-# Whether a rally has already been COMPLETED (a podium/top-3 finish — see the save-schema note
-# above `podium_count()`, never "attempted in any position", which the schema does not track).
-# The same inline `.get(KEY_RALLIES, {}).get(id, {}).get("completed", false)` every other reader
-# of this field already does (podium_count, all_specials_completed, lit_sources, ...), factored
-# out once so a caller outside this file — overworld_zone.gd's idle-tube dimming — has a named
-# predicate to call instead of reaching into the profile dict itself.
-static func rally_completed(rally: Dictionary, profile: Dictionary) -> bool:
-	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
-	return bool(rallies.get(String(rally.get("id", "")), {}).get("completed", false))
-
-
-# Whether a rally's pin is REVEALED (enterable) yet: does its map_pos fall inside any lit
-# circle — HQ's, or one lit by a rally the player has already completed. ONE rule for every
-# rally on the roster, whatever it awards. The single reveal predicate shared by the map
-# pins (hq.gd), the anti-soft-lock eligibility query, and the reward-draw walk. (Completion
-# is a separate check the callers do — a revealed rally may still be incomplete or done.)
-#
-# Distances are compared SQUARED to keep this allocation- and sqrt-free: it is called once
-# per rally per map refresh, and again per cell when the fog mask is rasterised.
-static func rally_revealed(rally: Dictionary, profile: Dictionary) -> bool:
-	return position_revealed(map_pos_of(rally), profile)
-
-
-# Whether an arbitrary point on the map is lit. Factored out of rally_revealed so the fog
-# mask shades the map with the EXACT predicate that gates entry, rather than a lookalike
-# that could drift from it.
-static func position_revealed(pos: Vector2, profile: Dictionary) -> bool:
-	return position_lit_by(pos, lit_sources(profile))
-
-
-# The containment test itself, against an ALREADY-BUILT source list. Split out so a caller
-# asking about many points at once (reveal_link_pairs, one query per pin) pays for
-# lit_sources ONCE instead of once per point, without hand-rolling a second copy of the rule
-# that could drift from the one that gates entry.
-static func position_lit_by(pos: Vector2, sources: Array) -> bool:
-	for src in sources:
-		var centre: Vector2 = src[0]
-		var radius: float = src[1]
-		if pos.distance_squared_to(centre) <= radius * radius:
-			return true
-	return false
-
-
-# The map's REVEAL GRAPH, as unordered pairs of rally ids: the pairs sitting close enough
-# that completing either would light the other. The HQ table draws one dotted line per pair
-# (hq._build_reveal_links) — this is where the pairing itself is decided, alongside the
-# reveal rule it is derived from.
-#
-# BOTH ends must already be revealed. An edge is a statement about ground the player has
-# lit; drawn across the dark it hands them the shape of the whole roster before they have
-# been anywhere, which is exactly what the fog exists to withhold — and 30-odd unreached
-# pins webbed together turns the unexplored map into the busiest thing on the table. Kept to
-# revealed pairs, the graph GROWS as the player explores: it draws the route they made.
-#
-# ONE entry per unordered pair, emitted when the link works in EITHER direction — reveal
-# radius is per-rally, so A can reach B without B reaching A, and listing both directions
-# would just double the geometry on every symmetric pair.
-static func reveal_link_pairs(profile: Dictionary) -> Array:
-	var rallies := all()
-	var sources := lit_sources(profile)
-	# Position and lit-ness are asked once per RALLY, not once per pair: the pair loop is
-	# already O(n²) and lit_sources walks the whole roster to build its list, so asking
-	# inside the inner loop would make a map refresh cubic in the roster size.
-	var pins: Array[Vector2] = []
-	var lit: Array[bool] = []
-	for rally in rallies:
-		var mp := map_pos_of(rally)
-		pins.append(mp)
-		lit.append(position_lit_by(mp, sources))
-	var out: Array = []
-	for a in rallies.size():
-		if not lit[a]:
-			continue
-		for b in range(a + 1, rallies.size()):
-			if not lit[b]:
-				continue
-			var reach := maxf(reveal_radius_of(rallies[a]), reveal_radius_of(rallies[b]))
-			if pins[a].distance_squared_to(pins[b]) > reach * reach:
-				continue
-			out.append([String(rallies[a]["id"]), String(rallies[b]["id"])])
-	return out
+# `rally_completed` is deleted with the HQ map's reveal machinery: its one caller outside
+# this file was overworld_zone.gd's idle-tube dimming, gone with the overworld. The
+# profile's per-rally "completed" flag survives in the save schema — it is PODIUM-gated on
+# the write (see the podium_count note above), so readers inline
+# `.get(KEY_RALLIES, {}).get(id, {}).get("completed", false)` knowing it never means
+# "attempted in any position".
 
 
 # Anti-soft-lock query for the reward system: the still-incomplete rallies a
-# given car can currently enter (revealed — inside the lit region of the map — and
-# eligible in-band).
+# given car can currently enter.
 #
 # Entry is categorical now, so "can enter" is a plain eligibility check — there is no
-# performance ceiling to duck under and no detune to consider.
+# performance ceiling to duck under and no detune to consider. The map-reveal gate this
+# also used to apply (`rally_revealed`) is deleted with the diegetic HQ map: with no map
+# there is nothing to be locked behind, so eligibility alone answers the query.
+#
+# The completion filter reads the CALLER's profile dict at its legacy "rallies" key,
+# best-effort: Save declares and reads no rally record any more (deleted with the HQ map
+# — region runs keep their own cleared-ledger, and old profiles carry the dict on disk
+# unread), so a profile without the key simply offers every eligible rally. That is the
+# anti-soft-lock direction — better to re-offer a completed rally than lock the player
+# out of everything.
 static func incomplete_rallies_enterable_by(car_meta: Dictionary, profile: Dictionary) -> Array:
-	var rallies: Dictionary = profile.get(Save.KEY_RALLIES, {})
+	var rallies: Dictionary = profile.get("rallies", {})
 	var out: Array = []
 	for rally in all():
 		if rallies.get(rally["id"], {}).get("completed", false):
-			continue
-		if not rally_revealed(rally, profile):
 			continue
 		if is_eligible(rally, car_meta):
 			out.append(rally)

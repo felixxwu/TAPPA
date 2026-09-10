@@ -35,7 +35,7 @@ func test_safe_shot_arcs_single_count_uses_the_midpoint_of_the_safe_range() -> v
 	assert_almost_eq(arcs[0], 50.0, 0.001)
 
 
-# Mirrors test_rally_library.gd::test_sandstorm_only_authored_on_greece_events'
+# Succeeds the deleted test_rally_library.gd sandstorm-authorship test — the desert-region rule it pinned'
 # shape for the showcase's own per-region weather-eligibility table (decision 3,
 # todo/menu-background-showcase.md): every region maps to a non-empty set of REAL
 # WeatherLibrary ids, and the two "no nonsense combinations" exclusions the user

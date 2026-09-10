@@ -1,64 +1,44 @@
 # Engine Swap & Detune
 
-**Sources:** `scripts/engine_swap.gd` (`EngineSwap`, pure math/lookup module),
-the `swap_engines` / `set_engine_detune` mutators in `scripts/save_manager.gd`,
-the `_apply_engine_swap` fielding step in `scripts/car.gd`, the
-`effective_meta` feed-through in `scripts/upgrade_library.gd`, the
-`engine_detune` scaling read by `TuningLibrary.apply` in
-`scripts/tuning_library.gd` (detune is stored in the per-car `tuning` bag but is
-**not** a `TuningLibrary.AXES` entry), and the unlock purchase in
-`scripts/save_manager.gd` (`buy_engine_swap_unlock`).
+**Sources:** the mid-run boost in `scripts/boost_library.gd` (`CATALOG` ->
+`"engine_swap"`) through the `engine_power_mult` row in
+`scripts/upgrade_library.gd` (`UpgradeLibrary.EFFECTS`, multiplying
+`GameConfig.peak_torque`), with its magnitude `GameConfig.run_boost_engine_power_mult`;
+plus the legacy owned-car read path -- `scripts/engine_swap.gd` (`EngineSwap`,
+pure math/lookup module) and the `_apply_engine_swap` fielding step in
+`scripts/car.gd` -- which still resolves cars in existing saves that carry a
+`swapped_engine`.
 
-**There is no UI.** Every screen this doc used to describe — the upgrades grid's `engine`
-and `tune` tiles, the car-park swap mode with its two-way hp/tonne preview, the garage
-action row — went with the parts model and the diegetic hub. What remains is the whole
-mechanism plus the shop row that unlocks it.
+**The Engine Swap is a MID-RUN BOOST now.** This supersedes the old decision-17
+one-time meta unlock, which is deleted along with its shop row, its
+`Save.buy_engine_swap_unlock` mutator and the `KEY_ENGINE_SWAP_UNLOCKED` flag:
+the swap is picked between stages exactly like the other boosts, dies with the
+run, and is sold up levels in the shop like every other `BoostLibrary` entry.
+It is the catalogue's POWER pick -- a stronger engine's torque curve via the
+`engine_power_mult` EFFECTS row on the per-car `peak_torque`, deliberately NOT
+`global_torque_scale` (a hidden uniform de-rate, never a per-car effect target).
+The old garage "move any engine into any other car" mutators (`Save.swap_engines`
+/ `set_engine_detune`) are deleted with the HQ lift that hosted them; their
+per-car keys survive as READ paths for old saves only.
 
-**Tests:** `tests/headless/test_engine_swap.gd`, `tests/headless/test_save_manager.gd`, `tests/headless/test_upgrade_library.gd`
+**Engine detune** is a per-car value (0-100%) that scales the fitted engine's
+torque, and remains the only DELIBERATE power-to-weight *reduction* lever for a
+challenge's rating ceiling (the weight slot's free ballast parts are retired --
+see [upgrade-catalogue.md](upgrade-catalogue.md) -> the `weight` slot). With the
+detune slider's host gone it is read-path-only too.
 
-**Engine swap** lets the player move any owned car's engine into any other
-owned car. Swapping is **free and unlimited** once unlocked — nothing is spent,
-so a player can trade engines around the garage as often as they like, including
-reverting a car to its own stock engine.
-**Health is irrelevant**: a damaged car swaps fine and keeps its current HP
-through the exchange (no repair coupling). **Engine detune** is a per-car tuning
-slider (0–100%) that directly scales the fitted engine's torque, letting a car
-be deliberately hobbled (e.g. to fit a rally's power-to-weight band) without
-touching its parts. It is now the only DELIBERATE power-to-weight *reduction* lever: the
-weight slot's free ballast parts, which added mass to drop p/w the other way, are retired
-(see [upgrade-catalogue.md](upgrade-catalogue.md) → the `weight` slot). Otherwise the
-player sheds power by stripping parts.
+**Tests:** `tests/headless/test_engine_swap.gd` (the pure module),
+`tests/headless/test_boost_library.gd` (the boost entry),
+`tests/headless/test_upgrade_library.gd` (the EFFECTS row)
 
-**Capability gate.** Swapping is unavailable until the Engine Swap unlock is BOUGHT in the
-meta shop (`todo/roguelike-pivot.md` decision 17 — re-gated as a purchase rather than
-retired, stage 6 of `todo/roguelike-pivot-plan.md`). `RallyLibrary.engine_swaps_unlocked(profile)`
-reads `Save.KEY_ENGINE_SWAP_UNLOCKED`, a plain persisted bool; `Save.buy_engine_swap_unlock()`
-spends `GameConfig.engine_swap_unlock_price` and sets it, once, for good — there is no way to
-lose the capability afterward, matching the old "rally win is permanent" shape. `HubShell`'s
-SHOP page (`_build_shop`) is the only current seller.
-
-This REPLACED a rally-completion gate: `RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY :=
-"front_runners"` ("Upgrade: Engine Swap") used to be the whole gate — winning it flipped
-swapping on. That rally is now an ordinary roster entry; winning it does nothing for this
-gate any more (`RallyLibrary.engine_swaps_unlocked`'s own comment). The constant survives
-only because `engine_swap_unlock_rally_name()` still resolves it, and nothing currently
-calls that either — see that function's own comment.
-
-**No current UI consumer re-displays "locked".** Both of the gate's old consumers —
-`UpgradeOptions.engine_swap_blocked_reason` and `hq._show_swap_confirm` — were deleted with
-the parts model and the diegetic hub (`hq.gd`) respectively, before the flat shell existed.
-The flat shell has no swap-picker screen yet at all (only the shop's *unlock* row), so
-today `Save.engine_swap_unlocked()` / `RallyLibrary.engine_swaps_unlocked(Save.profile)` has
-no reader besides tests. Building that picker — and re-checking the gate from it — is not
-stage 6's job; note this the next time a "Locked" swap UI is added, rather than assuming
-one of the two deleted consumers above still exists.
-
-`Save.swap_engines` itself does not check the gate; both entry points do, and it
-stays a pure mutator.
+Both of the old gate's consumers — `UpgradeOptions.engine_swap_blocked_reason`
+and `hq._show_swap_confirm` — were deleted with the parts model and the
+diegetic hub (`hq.gd`); the gate itself followed them.
 
 Distinguish from [upgrade-catalogue.md](upgrade-catalogue.md): slottable
-upgrades permanently change a car's baseline. A swap costs nothing and changes
-nothing permanently — it just changes which `EngineLibrary` entry the car
+upgrades permanently change a car's baseline. The engine-swap BOOST changes
+nothing permanently — it dies with the run, exactly like every other
+`BoostLibrary` pick, and changes only how much torque this run's car makes.
 currently runs, and can be undone at any time by swapping back. Detune is ordinary
 [tuning.md](tuning.md): free, reversible, stored per-car, never written to the
 authored `.tres`.
@@ -109,8 +89,8 @@ result.
   `layout` run through `layout_label_from`; `""` if unknown.
 - **`display_name(entry, owned) -> String`** — the car's name, prefixed with
   the swapped-in engine's layout when non-stock (e.g. `"V8 Rondel Twist"`); the plain
-  name otherwise. Used everywhere an owned car's name is shown (lift, car
-  park, HQ stats).
+  name otherwise. Used everywhere an owned car's name is shown — today the hub CAR
+  page's cards and the run summary.
 - **`recompute_mass(m_total, m_stock_engine, m_new_engine) -> float`** — total
   mass with the engine component swapped out:
 
@@ -162,7 +142,7 @@ start-line rivals ended up on their cars' stock engines
 | Call | Applies | Use for |
 |---|---|---|
 | `apply_car(index, rebuild_audio := true)` | the CarLibrary entry's **stock** engine, nothing else | a generic **catalogue model** — free-roam previews, flavour props, the dev car-cycle. Stock is the *correct* answer here. |
-| `apply_owned(owned)` | stock baseline → **engine swap** → upgrades → tuning → damage, then one terminal voice rebuild | a **saved `OwnedCar`**: the player's car, HQ car-park and tuning-lift props. |
+| `apply_owned(owned)` | stock baseline → **engine swap** → upgrades → tuning → damage, then one terminal voice rebuild | a **saved `OwnedCar`** — fielding the player's own car (run fielding, hub previews). |
 | `fit_engine(engine_id)` | **only** the engine swap (+ suspension re-sync + voice rebuild) | a **catalogue model running a non-stock engine** — i.e. a rival with an engine swap, where there is no `OwnedCar` to hand. Call after `apply_car(index, false)`. |
 
 `fit_engine` deliberately does **not** do what `apply_owned` does: no upgrades, no

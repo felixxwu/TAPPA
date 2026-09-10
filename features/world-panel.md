@@ -3,7 +3,7 @@
 > **DORMANT: the class is live, nothing hosts it.** Every screen that used to be a world
 > panel — the car park, the tuning lift, the title and the garage — lived on `hq.gd`, and
 > the diegetic 3D hub was deleted outright by decision 9 (stage 2b of
-> `todo/roguelike-pivot-plan.md`). `scripts/world_panel.gd`, `scripts/world_panel_host.gd`,
+> `todo/roguelike-pivot.md`). `scripts/world_panel.gd`, `scripts/world_panel_host.gd`,
 > their `GameConfig` block and `tests/headless/test_world_panel.gd` all survive and still
 > pass, but **no production code constructs a `WorldPanel` any more** — grep and see. The
 > flat shell ([hub-shell.md](hub-shell.md)) is `CanvasLayer` pages throughout.
@@ -28,7 +28,9 @@ hosting / hot-reload tests this file used to name were in `test_menu_flow.gd`, d
 the hub it drove (see [testing.md](testing.md)). None of them
 asserted a POSITION; placements are hand-tuned, see below.
 
-Design: [`docs/superpowers/specs/2026-08-10-world-space-menus-design.md`](../docs/superpowers/specs/2026-08-10-world-space-menus-design.md).
+Design notes live in an untracked `docs/superpowers/specs/` scratch folder on the
+original author's machine — deliberately not linked here, since it is gitignored and a
+clone can never resolve it. This file is the design's surviving record.
 
 A `WorldPanel` is **a menu that exists in the 3D world**: it hosts an ordinary menu
 `Control` tree in an off-screen `SubViewport` and shows it on a **non-billboarded**

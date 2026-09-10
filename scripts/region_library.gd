@@ -78,13 +78,11 @@ const DEFAULT_TREE_MIX: Array = [
 #          "id": "<region_id>_trial", "name": "<Rally Name>",     # EDIT both
 #          "region": "<region_id>",                               # EDIT: your new region's id
 #          "difficulty": 2, "special": false, "restriction": {},  # {} = open to every car
-#          "map_pos": Vector2(0.05, 0.46),  # PASTE AS-IS — a currently-free pin, legal today
-#              # (clear of every authored pin and of HQ by well over RallyLibrary.MIN_PIN_SEPARATION,
-#              # and close enough to an existing pin to be reachable). A guard test keeps this
-#              # literal honest: test_the_template_map_pos_is_still_a_legal_free_pin reddens and
-#              # prints a replacement if someone authors a pin near it.
-#              # Want it in a specific corner instead? `RallyLibrary.suggest_map_pos("<region_id>")`
-#              # computes one at runtime — but you do NOT need to run anything to use this row.
+#          "map_pos": Vector2(0.05, 0.46),  # INERT (the map is deleted with the overworld);
+#              # keep the literal, and keep it in step with test_region_assets.gd's
+#              # _unreachable_region_fix (test_both_authoring_templates_offer_the_same_map_pos
+#              # pins the two copies agreeing). The pin-placement helpers that used to vet it
+#              # (RallyLibrary.suggest_map_pos / MIN_PIN_SEPARATION) went with the map.
 #          "events": [  # 3 stages. `water_level` should match the region's own waterline, and
 #              # the stages must NOT all share one weather (test_every_multi_stage_rally_mixes_weather).
 #              {"seed": 90001, "turn_count": 20, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},
@@ -162,7 +160,12 @@ const REGIONS: Array[Dictionary] = [
 			 "size_scale": Vector2(0.90, 3.0)},   # 6.75 x 22.5 m, ratio 0.30
 		],
 	},
-	# Greece. Ships the three swapped textures + sky, plus a Greek tree
+	# "The Peninsula" — the Greek-INSPIRED arid region. It is the one region whose
+	# old working name named a real-world country outright; every sibling is a
+	# geographic feature ("The Lakes", "The Taiga", "The Alps"), so this one now is
+	# too. The id ("greece") and the -greece texture filenames stay: ids key saved
+	# progress and renaming assets buys nothing. Ships the three swapped textures
+	# + sky, plus a Greek tree
 	# split: 70% the star-shaped Greek billboard (tree-greece.webp, a large low, dry
 	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
 	# (the smaller "home" profile), so the arid stands read as mostly-olive with a few
@@ -174,7 +177,7 @@ const REGIONS: Array[Dictionary] = [
 	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
-		"id": "greece", "order": 3, "name": "Greece",
+		"id": "greece", "order": 3, "name": "The Peninsula",
 		"water_level": -12.0,
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",

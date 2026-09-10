@@ -54,18 +54,12 @@ Three reasons the change was worth making:
    keeps *playing through*, and it is legible from the driver's seat (the engine sputters,
    the limiter arrives early) rather than announced by a screen.
 
-A damaged car still races — badly. The car park warns ("Damaged — the engine is down on
-power. Repair it at the lift.") but never blocks entry, and there is no health at which it
-blocks entry.
-
-**The warning is not "is this car pristine".** It fires from `Save.car_handles_badly`,
-which reads health against `GameConfig.damage_misfire_health_threshold` — the SAME number
-that decides when the engine starts misfiring, i.e. the point damage stops being cosmetic
-and starts costing power. It used to call `Save.car_needs_repair`, which is true of ANY
-car that is not pristine (and counts bent alignment too), so the red line appeared over
-"HEALTH 100%" and taught the player to ignore it. Repair is still offered for any lost
-health — "is this worth repairing" and "is this car hurt" are different questions, and
-they are now different calls.
+A damaged car still races — badly, and there is no health at which anything blocks
+fielding it. The old car-park warning ("Damaged — the engine is down on power. Repair it
+at the lift.") and its `Save.car_handles_badly` source are deleted with the car park and
+the paid lift repair: the misfire itself (`damage_misfire_health_threshold` on
+`DamageModel`) is the whole warning now — the point damage stops being cosmetic and starts
+costing power is felt on the road, not read off a menu.
 
 ## State (`DamageModel`)
 
@@ -346,10 +340,9 @@ nothing listening in `world.gd`, and no code path anywhere that reacts to the mo
 touches zero. A car at 0 HP is simply a car whose `damage_ramp` has saturated: worst
 misfire (capped at `damage_misfire_level_max`), lowest rev cap
 (`damage_rev_limit_min_fraction`, floored by `MIN_REDLINE_IDLE_RATIO`), whatever wheel toe
-it has accumulated — and it drives. It stays in the garage with its upgrades fitted (parts
-are consumed on fit, so they were never returned in the first place), it can be raced again
-immediately, and the free between-event repair lifts it back off the floor without the
-player spending anything.
+it has accumulated — and it drives. Nothing un-owns it or unfits anything on it; it can
+be fielded again immediately, and the free between-stage repair lifts it back off the
+floor without the player spending anything.
 
 That "state, not event" framing is what let the whole wreck layer be deleted rather than
 merely made survivable. An event needs a handler, and every handler needed a policy: what
@@ -368,8 +361,8 @@ roam now behaves like everywhere else: you keep driving the car you damaged.
 
 Every car — including the starter — takes damage the same way, and none of them can be
 lost. **There is no anti-soft-lock machinery, because nothing can strand a player**: a car
-at 0 HP is still a drivable car, and HP climbs back via the free between-event field repair
-and the paid repair at the lift. `Save.wreck_car`, `car_is_wrecked`, `all_cars_wrecked`,
+at 0 HP is still a drivable car, and HP climbs back via the free between-stage field
+repair. `Save.wreck_car`, `car_is_wrecked`, `all_cars_wrecked`,
 `ensure_wreck_safety_net` and the free rescue car that existed to dig the player out are
 all retired.
 

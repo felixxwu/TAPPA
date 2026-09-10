@@ -22,8 +22,9 @@ extends RefCounted
 # GameConfig.global_torque_scale, which engine.gd's own comment names as a HIDDEN
 # GLOBAL DE-RATE (a balance knob meant to scale every car uniformly, not a per-car
 # effect target), so hooking a boost onto it would fight that field's real job. The
-# other six categories all land on ordinary per-car GameConfig fields with no such
-# conflict.
+# engine_swap entry instead multiplies cfg.peak_torque — the per-car published figure —
+# through the engine_power_mult EFFECTS row, and every other category lands on an
+# ordinary per-car GameConfig field the same way.
 #
 # MAGNITUDES ARE TUNABLE DATA (CLAUDE.md) and live on GameConfig
 # (config/game_config.tres, "Roguelike Run Boosts") — never a const here, and no test
@@ -71,6 +72,14 @@ const CATALOGUE := {
 		"label": "Streamlined body",
 		"effect_fields": {"drag_mult": "run_boost_drag_mult"},
 		"level_direction": -1,  # lower drag_mult = less drag = more boost
+	},
+	# The Engine Swap, re-homed (was the meta shop's one-time unlock; that purchase and
+	# its dead mutators are deleted). A mid-run POWER boost: a stronger engine's torque
+	# curve, via the engine_power_mult EFFECTS row on cfg.peak_torque.
+	"engine_swap": {
+		"label": "Engine swap",
+		"effect_fields": {"engine_power_mult": "run_boost_engine_power_mult"},
+		"level_direction": 1,  # higher peak_torque = more power = more boost
 	},
 }
 

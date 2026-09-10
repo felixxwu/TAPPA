@@ -338,9 +338,9 @@ circle and pay its placement stars. `Save.MOVED_PART_UNLOCKS` is the data the mi
 reads, so a future move is a row plus an arm.
 
 **Save migration v5 → v6.** The follow-up move of the engine-swap capability off
-`sp_woodland_trial` (so it could carry Snow Tires) uses the same pattern for the same
-reason: a career that completed that rally is granted the capability directly via
-`Save.KEY_LEGACY_ENGINE_SWAP`, which `RallyLibrary.engine_swaps_unlocked` checks first.
+`sp_woodland_trial` (so it could carry Snow Tires) used the same pattern for the same
+reason (a completed rally granted the capability via `Save.KEY_LEGACY_ENGINE_SWAP`).
+That whole gate is deleted now — the Engine Swap is a mid-run boost.
 
 Verified with `./report_eligibility.sh` (2/2/2/3 eligible cars on the four restricted
 rallies) and `./sim_career.sh`.

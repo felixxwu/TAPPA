@@ -26,6 +26,7 @@ func before_each() -> void:
 
 
 func after_each() -> void:
+	FreePlay.clear()
 	if RunSession.is_active():
 		RunSession.pause_run()
 	_save.clear_run()
@@ -189,6 +190,97 @@ func test_touch_navigation_walks_main_to_region_to_car_and_back() -> void:
 	assert_eq(_shell._view, HubShell.View.REGION, "back from CAR must return to region select")
 
 
+func _popup_button(popup: ConfirmPopup, label: String) -> Button:
+	for node in popup.find_children("*", "Button", true, false):
+		if String((node as Button).text).to_lower() == label.to_lower():
+			return node
+	return null
+
+
+# --- Update check placement (re-homed from the deleted diegetic hub) -------------
+
+# Under headless UpdateCheck.applicable() is false BY DESIGN (no stamped build number),
+# so the boot-time check must be a silent no-op here — no popup, no request. This pins
+# the gate: a future edit that fires the prompt in the editor/test runner fails loudly.
+func test_the_boot_time_update_check_is_a_silent_no_op_under_headless() -> void:
+	_shell._check_for_update()
+	await get_tree().process_frame
+	assert_null(ConfirmPopup.any_open(get_tree()),
+		"headless/editor builds raise no update prompt")
+
+
+# The prompt itself, driven through the split-out _show_update_prompt so the platform
+# gate does not have to be fought. Both buttons record the dismissal (the player has
+# now SEEN this build), and the store button's callback shells out — not pressed here.
+func test_the_update_prompt_records_its_dismissal_when_answered() -> void:
+	_shell._show_update_prompt(61, 74)
+	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(popup, "the prompt is up over the hub")
+	assert_not_null(_popup_button(popup, "Not now"),
+		"leaving is the left/Back action (Esc / gamepad-B routes to it)")
+	assert_not_null(_popup_button(popup, UpdateCheck.store_label()),
+		"and the store action is the focused one (default index 1)")
+	assert_eq(int(_save.get_setting(UpdateCheck.DISMISSED_SETTING, 0)), 0,
+		"setup: nothing recorded yet — an unshown prompt must not count as dismissed")
+	var not_now := _popup_button(popup, "Not now")
+	assert_not_null(not_now, "the dismissing action exists")
+	not_now.pressed.emit()
+	await get_tree().process_frame
+	assert_eq(int(_save.get_setting(UpdateCheck.DISMISSED_SETTING, 0)), 74,
+		"answering records the build the player was told about")
+	assert_false(is_instance_valid(popup), "and the prompt dismisses")
+
+
+# --- Free play (the session-less sandbox) ---------------------------------------
+
+# The whole three-page flow in one test: MAIN's card enters it, EVERY catalogue car is
+# offered (owned or not), every region (locked or not), boosts toggle in any
+# combination, and Start writes the FreePlay plan the world consumes. Pressing by
+# card text keeps this on the SCREEN GRAPH, not the layout.
+func test_freeplay_flow_picks_car_region_and_boosts_into_a_plan() -> void:
+	var unowned := ""
+	for spec in CarLibrary.all():
+		var mid := String(spec.get("id", ""))
+		if not mid.is_empty() and not _save.owns_model(mid):
+			unowned = String(spec.get("name", mid))
+			break
+	assert_ne(unowned, "", "setup: the fixture roster has an unowned car to lend")
+	var first_region: Dictionary = RegionLibrary.ordered()[0]
+	var region_name := String(first_region.get("name", ""))
+
+	assert_true(_press("Free play"), "MAIN offers the free play card")
+	assert_eq(_shell._view, HubShell.View.FREEPLAY_CAR)
+	assert_true(_all_texts().contains(unowned.to_upper()),
+		"an unowned car is offered — free play lends it")
+
+	assert_true(_press(unowned), "picking the car advances to the region page")
+	assert_eq(_shell._view, HubShell.View.FREEPLAY_REGION)
+
+	assert_true(_press(region_name), "picking a region advances to the upgrade page")
+	assert_eq(_shell._view, HubShell.View.FREEPLAY_SETUP)
+
+	var boost_label := BoostLibrary.label_for(String(BoostLibrary.CATALOGUE.keys()[0]))
+	assert_false(_all_texts().contains("SELECTED"),
+		"setup: nothing is selected yet")
+	assert_true(_press(boost_label), "toggling the boost selects it")
+	assert_true(_all_texts().contains("SELECTED"),
+		"the page rebuilds with the selection legible")
+
+	assert_true(_press("Start free play"), "Start launches the sandbox drive")
+	assert_true(FreePlay.has_plan(), "the plan is written for the world to consume")
+	assert_true(FreePlay.boost_effects().size() >= 1,
+		"the toggled boost rides the plan's effects list")
+	assert_false(FreePlay.event().is_empty(),
+		"the plan carries a real TrackGenParams-shaped stage from the region pool")
+
+
+func test_backing_out_of_free_play_leaves_no_plan_behind() -> void:
+	assert_true(_press("Free play"))
+	_shell._back()
+	assert_eq(_shell._view, HubShell.View.MAIN, "back from the car page returns to MAIN")
+	assert_false(FreePlay.has_plan(), "no half-picked plan survives backing out")
+
+
 # --- Navigation (the CLAUDE.md contract) --------------------------------------
 
 # The rule, on every page the shell can show: a menu reachable only by pointer is not
@@ -199,7 +291,8 @@ func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
 			HubShell.View.SUMMARY, HubShell.View.SHOP,
 			HubShell.View.SKILLS, HubShell.View.STATS, HubShell.View.CHALLENGE,
-			HubShell.View.SETTINGS]:
+			HubShell.View.SETTINGS, HubShell.View.FREEPLAY_CAR,
+			HubShell.View.FREEPLAY_REGION, HubShell.View.FREEPLAY_SETUP]:
 		_shell._show(view)
 		await get_tree().process_frame
 		assert_not_null(MenuNav.of(_page()),
@@ -223,7 +316,8 @@ func test_every_page_is_keyboard_navigable() -> void:
 # specifically must let the world show in its own empty space, not just around its edges).
 func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> void:
 	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SHOP, HubShell.View.SKILLS]:
+			HubShell.View.SHOP, HubShell.View.SKILLS, HubShell.View.FREEPLAY_CAR,
+			HubShell.View.FREEPLAY_REGION, HubShell.View.FREEPLAY_SETUP]:
 		_shell._show(view)
 		await get_tree().process_frame
 		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
@@ -610,25 +704,6 @@ func test_buying_a_boost_level_raises_it_and_spends_money() -> void:
 	assert_true(_press(BoostLibrary.label_for(id)), "setup: the boost's card is on the page")
 	assert_eq(_save.boost_level(id), 1, "the level went up by one")
 	assert_eq(_save.money(), 0, "and the price was spent")
-
-
-func test_buying_the_engine_swap_unlock_flips_the_flag() -> void:
-	_save.profile[_save.KEY_MONEY] = _save.engine_swap_unlock_price()
-	assert_false(_save.engine_swap_unlocked(), "setup: locked")
-	_shell._show(HubShell.View.SHOP)
-	await get_tree().process_frame
-	assert_true(_press("Engine Swap"), "setup: the unlock card is on the page")
-	assert_true(_save.engine_swap_unlocked(), "the flag is now set")
-
-
-func test_the_engine_swap_row_is_shown_but_not_focusable_once_bought() -> void:
-	_save.profile[_save.KEY_ENGINE_SWAP_UNLOCKED] = true
-	_shell._show(HubShell.View.SHOP)
-	await get_tree().process_frame
-	assert_true(_all_texts().contains("ENGINE SWAP"),
-		"the card is still shown, saying the capability is owned")
-	assert_false(_confirmable_texts().contains("ENGINE SWAP"),
-		"but it is not confirmable — nothing left to buy")
 
 
 # --- Skills + lifetime stats (stage 7) -------------------------------------------

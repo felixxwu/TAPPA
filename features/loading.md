@@ -75,9 +75,9 @@ starts. That swaps the headline for `"Loading stage 2 of 3…"` (uppercased by
 far through it they are while they wait.
 
 `total` is the RUN'S OWN stage count (`RunSession.stage_count()`), **not** a constant:
-the opening rallies run a single stage (`todo/opening-rally.md`). A total of 1 or less is a
-no-op and keeps the default headline — "stage 1 of 1" is noise, and implies a series that
-is not there. The index is clamped, because it comes from live session state that sits AT
+a region run is 8 stages, a challenge's count comes from its period. A total of 1 or less
+is a no-op and keeps the default headline — "stage 1 of 1" is noise, and implies a series
+that is not there. The index is clamped, because it comes from live session state that sits AT
 the total once the last stage is done.
 
 This line used to carry a **wet-stage tell** instead (`set_weather` → `"Loading stage…

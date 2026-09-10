@@ -805,6 +805,18 @@ func has_nitrous() -> bool:
 ## the player. (The pre-pivot grid queued its rivals BEHIND the line at this same
 ## spacing; the one-rival revival parks ahead instead.)
 @export var start_queue_gap := 7.0
+## The DEPART roll-up (restored from the pre-pivot grid, which shuffled every
+## remaining car — player included — up a slot as each rival drove off): the player
+## is scripted from its staged slot onto the line while the rival departs, so the
+## pose at control-regain is the one the player just watched, not a hidden teleport.
+## These four shape the scripted roll: decel divisor for the v²/d brake-distance
+## model, brake margin (m) absorbs reaction lag, coast band (m) between full
+## throttle and the brake point, creep speed (m/s) below which the foot brake lifts
+## so the auto box does not grab reverse against the hold.
+@export var start_roll_decel_divisor := 28.0
+@export var start_roll_brake_margin_m := 0.25
+@export var start_roll_coast_band_m := 1.0
+@export var start_roll_creep_speed := 1.5
 ## Seconds the fly from the orbit pose to the reveal shot takes.
 @export var start_reveal_fly_seconds := 1.2
 ## The reveal shot: a low 3/4 in front of the rival on its grid slot — the eye sits
@@ -1497,81 +1509,12 @@ func has_nitrous() -> bool:
 ## the many HQ scene builds cheap.
 @export_range(0, 1000) var hq_tree_count := 320
 @export_range(0, 1000) var hq_bush_count := 320
-## Map table: centre position, block size, and the 3D map plane laid on its top.
+## Map table: centre position and block size. (The 3D map plane that used to lie on its
+## top, the pin-selection radius, the reveal-link dashes, the fog mask and the
+## map_reveal_radius / map_hq_reveal_radius exploration radii are DELETED with the
+## diegetic HQ map and its reveal gate — RallyLibrary's "Map exploration: DELETED" note.)
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 4.6)
-@export var hq_map_plane_size := Vector2(4.2, 4.2)
-## How close (metres, on the map plane) the view centre has to be to a pin for that pin to
-## count as SELECTED. Past this the cursor holds nothing and Enter does nothing.
-##
-## Without a limit the cursor always snapped to the nearest pin however far away it was, so
-## pressing Enter over empty ocean opened whichever rally happened to be least distant —
-## a menu the player did not ask for, for a place they were not looking at.
-@export_range(0.05, 3.0, 0.05) var map_select_radius_m := 0.55
-## Opacity of the dotted lines drawn between rallies that unlock one another on the map
-## table. 0 hides them entirely.
-@export_range(0.0, 1.0, 0.01) var map_link_alpha := 0.85
-## Colour of those lines (RGB only — map_link_alpha supplies the opacity).
-@export var map_link_color := Color(1.0, 0.96, 0.86)
-## Dash and gap length (metres, on the map plane) of those lines.
-@export_range(0.005, 0.2, 0.005) var map_link_dash_m := 0.035
-@export_range(0.005, 0.2, 0.005) var map_link_gap_m := 0.030
-## WIDTH of the dashes, in metres on the map plane. This is the knob that actually governs
-## whether the graph is readable: the links used to be drawn as PRIMITIVE_LINES, which are
-## one PIXEL wide no matter the camera distance, so on a 400-px-tall render target they were
-## a shimmering hairline. They are triangle strips now and have a real world width.
-@export_range(0.002, 0.06, 0.001) var map_link_width_m := 0.011
-## A darker line drawn UNDER each dash, slightly wider, purely for contrast. The map plane
-## is a full-colour world texture at full brightness where explored, so a light line has
-## nothing to separate it from pale terrain; the outline gives it an edge everywhere. Set
-## the width to 0 to drop the outline pass entirely.
-@export_range(0.0, 0.08, 0.001) var map_link_outline_width_m := 0.020
-## Colour AND opacity of that outline (alpha is used here, unlike map_link_color).
-@export var map_link_outline_color := Color(0.03, 0.02, 0.0, 0.55)
-## How bright the UNEXPLORED map reads, as a fraction of its lit colour (0 = black,
-## 1 = no fog at all). The terrain stays legible through it on purpose: the world should
-## look like somewhere you have not been yet, not a hole in the table — the player is meant
-## to be able to make out the coastline they are heading for.
-@export_range(0.0, 1.0, 0.01) var map_fog_unlit_brightness := 0.4
-## Width of the falloff at a lit circle's edge, in normalised map units. Softens the rim so
-## the frontier reads as fog thinning out rather than a cut line.
-@export_range(0.0, 0.5, 0.005) var map_fog_edge_softness := 0.05
-## Map exploration (features/map-exploration.md): how far a lit source reaches, in
-## NORMALISED map units (the same 0..1 space as a rally's map_pos), so the radius is
-## independent of the plane's metre size. Every rally the player has completed lights a
-## circle of this radius around its OWN map_pos — as does their opening rally, completed or
-## not — and a rally is revealed when it falls inside any lit circle. HQ itself lights
-## NOTHING (see map_hq_reveal_radius). A rally may author its own `reveal_radius` to open a
-## wider frontier than this default. Bigger = the world opens faster and in bigger jumps.
-@export_range(0.01, 1.0, 0.005) var map_reveal_radius := 0.16
-## The radius HQ itself lights, independently of any rally. SHIPPED AT 0.0 — HQ lights
-## NOTHING, and is not drawn on the map at all.
-##
-## It used to be 0.16, which opened the handful of pins nearest the middle on a fresh
-## profile. That existed because the player had to start somewhere; they now start inside
-## their own OPENING RALLY (todo/opening-rally.md), which is a starting point they drove to
-## rather than one the map granted, so the pins beside HQ unlock the ordinary way like
-## every other.
-##
-## Kept as a tunable rather than deleted: "how much does home light" is a real design
-## question that may be worth revisiting, and the map tests use it to light a whole
-## synthetic roster without having to complete anything. Any value above 0 puts the circle
-## back — and would also want an HQ landmark on the table again: `scripts/map_house.gd`
-## builds one and is kept for exactly that, currently unreferenced.
-## Radius of the circle HQ itself lights, in normalised map units. 0 = HQ lights nothing.
-##
-## SHIPS SMALL AND NON-ZERO, which is a change from the 0.0 this had while the HQ table was the
-## only hub. It went to 0 because the player used to begin INSIDE their opening rally, so the
-## middle of the map was ordinary fogged ground and lighting it opened the nearest pins for
-## nothing. The OVERWORLD changed that premise: the player now starts standing at the garage and
-## picks their first car there, so the middle is "somewhere they already are" — the same
-## justification RallyLibrary.lit_sources gives for lighting the opening rally. Left at 0 the
-## fog veil darkens the screen and the frontier push shoves the car while the player is choosing.
-##
-## It is kept DELIBERATELY SMALL: big enough to cover the garage pad
-## (overworld_pad_garage_radius_m) and no bigger, so no rally pin falls inside it and nothing is
-## unlocked unearned. test_rally_library.gd pins that relationship — raise this and it fails.
-@export_range(0.0, 1.0, 0.005) var map_hq_reveal_radius := 0.03
 ## Tuning lift: centre position + overall footprint (posts span this width; also
 ## the pickable click volume).
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
@@ -4153,6 +4096,10 @@ func spectator_params() -> Dictionary:
 @export_range(1.0, 1.5, 0.01) var run_boost_brake_mult := 1.12
 ## "Streamlined body" — drag_coefficient multiplier (below 1.0 = less drag).
 @export_range(0.5, 1.0, 0.01) var run_boost_drag_mult := 0.92
+## "Engine swap" — peak_torque multiplier (above 1.0 = a stronger engine's curve).
+## Deliberately NOT global_torque_scale, which engine.gd names as a hidden global
+## de-rate for uniform balance, not a per-car effect target (see BoostLibrary's header).
+@export_range(1.0, 1.5, 0.01) var run_boost_engine_power_mult := 1.15
 
 
 @export_group("Roguelike Meta Shop")
@@ -4180,8 +4127,8 @@ func spectator_params() -> Dictionary:
 @export_range(0.0, 0.3, 0.01) var boost_level_magnitude_step := 0.08
 ## Price of the one-time Engine Swap unlock (todo/roguelike-pivot.md decision 17 — re-gated as
 ## a meta shop purchase, replacing the old rally-completion gate). Read by
-## Save.engine_swap_unlock_price / buy_engine_swap_unlock.
-@export_range(0.0, 50000.0, 100.0) var engine_swap_unlock_price := 6000.0
+## (engine_swap_unlock_price is deleted — the Engine Swap is a mid-run boost now,
+## priced by the boost ladder like every other BoostLibrary entry.)
 
 
 @export_group("Roguelike Skills")

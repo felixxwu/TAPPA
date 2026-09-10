@@ -33,18 +33,6 @@ func _clean() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-func test_dev_three_star_all_rallies_completes_everything_and_finishes_the_game() -> void:
-	# Dev cheat: every rally becomes completed + 3-starred (1st place). Regions no
-	# longer gate anything, so the end state to assert is the one that now ends the
-	# game: every SPECIAL completed, which is what fires the credits. Treats the
-	# catalogues as opaque (no dependency on any entry).
-	_save.dev_three_star_all_rallies()
-	for rally in RallyLibrary.all():
-		var rid := String(rally["id"])
-		assert_true(_save.rally_podiumed(rid), "rally %s marked completed" % rid)
-		assert_eq(_save.best_placement(rid), 1, "rally %s is 3-starred (1st place)" % rid)
-
-
 func test_default_profile_is_empty_and_valid() -> void:
 	assert_false(_save.has_save(), "no file on disk yet -> has_save() false")
 	assert_eq(_save.profile["schema_version"], _save.SCHEMA_VERSION, "default carries current schema")
@@ -54,8 +42,6 @@ func test_default_profile_is_empty_and_valid() -> void:
 
 func test_round_trip_survives_save_and_reload() -> void:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.add_item("fx_consumable", 2)
-	_save.record_podium_rally("alpine", 123456)
 	_save.set_tuning(car["instance_id"], {"brake_bias": 0.55})
 	_save.save_now()
 	assert_true(_save.has_save(), "file written to disk")
@@ -65,9 +51,6 @@ func test_round_trip_survives_save_and_reload() -> void:
 	_save.load_or_new()
 	assert_eq(_save.profile["cars"].size(), 1, "owned car reloaded")
 	assert_eq(_save.profile["cars"][0]["model_id"], "fx_light_rwd", "model id reloaded")
-	assert_eq(int(_save.profile["inventory"]["fx_consumable"]), 2, "inventory reloaded")
-	assert_true(_save.rally_podiumed("alpine"), "rally completion reloaded")
-	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 123456, "best time reloaded")
 	assert_almost_eq(float(_save.profile["cars"][0]["tuning"]["brake_bias"]), 0.55, 0.001, "tuning reloaded")
 
 
@@ -241,45 +224,10 @@ func test_buy_boost_level_refuses_once_the_level_is_at_the_cap() -> void:
 	assert_eq(_save.profile, before, "nothing changes — money included")
 
 
-func test_complete_rally_is_idempotent_and_keeps_best_time() -> void:
-	_save.record_podium_rally("alpine", 5000)
-	_save.record_podium_rally("alpine", 6000)  # slower: should not replace
-	_save.record_podium_rally("alpine", 4000)  # faster: should replace
-	assert_eq(_save.podium_rally_count(), 1, "completing the same rally twice counts once")
-	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 4000, "keeps the fastest time")
-
-
-# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) -------------------------
-# The whole "Star ledger" test block (a fresh profile's empty ledger, a completion crediting
-# a placement and returning it, re-winning for stars, award_stars / spend_stars, the ledger
-# surviving a save/reload, an old profile backfilling to zero) is gone with
-# Save.stars_earned / stars_spent / stars_available / award_stars / spend_stars and
-# RallyLibrary.stars_for_placement — see Save._default_profile()'s "Star ledger: DELETED"
-# note. Two of those tests mixed STAR assertions with BOOKKEEPING assertions
-# (record_podium_rally's `completed` / `best_placed` / `best_combined_ms` survive the star
-# deletion — see that function's own comment); their bookkeeping halves are kept below,
-# trimmed of the star half.
-
-func test_a_dnf_does_not_corrupt_the_best_placement_record() -> void:
-	# The one case record_podium_rally's own guard exists for: a DNF (combined_ms <= 0) must
-	# not overwrite a real best time, and a placed=0 call must not demote a real best
-	# placement. Used to also assert this "pays nothing"; that half is gone with the ledger.
-	_save.record_podium_rally("alpine", 60_000, 1)
-	_save.record_podium_rally("alpine", 0, 0)
-	assert_eq(int(_save.profile["rallies"]["alpine"]["best_combined_ms"]), 60_000,
-		"a DNF does not overwrite the recorded best time")
-	assert_eq(_save.best_placement("alpine"), 1, "nor does it demote the recorded best placement")
-
-
-func test_a_worse_replay_keeps_the_best_placement_record() -> void:
-	# The record follows the BEST placement ever achieved, not the most recent — so a
-	# scrappier replay must not demote it. Used to also assert what a worse replay "pays";
-	# that half is gone with the ledger.
-	_save.record_podium_rally("alpine", 60_000, 1)
-	_save.record_podium_rally("alpine", 90_000, 4)  # off the podium; RallyLibrary.PODIUM_PLACES is deleted
-	assert_eq(_save.best_placement("alpine"), 1, "the record is still the best finish")
-
-
+# --- Rally completion records: DELETED with the HQ map (nothing writes or reads a
+# rally record any more — region runs keep their own KEY_REGIONS_CLEARED ledger, and
+# the dev 3-star cheat is gone with the map it lit). The idempotent-best-time, DNF-guard
+# and best-placement tests went with the record.
 
 
 func test_damage_past_zero_keeps_the_car_and_its_bent_wheels() -> void:
@@ -478,17 +426,6 @@ func test_apply_damage_clamps_at_zero_rather_than_going_negative() -> void:
 	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "HP rests at exactly 0, never negative")
 
 
-func test_consume_item_respects_counts() -> void:
-	# Any id will do: add_item/consume_item are generic inventory bookkeeping and do not
-	# consult the catalogue.
-	var item := "fx_consumable"
-	_save.add_item(item, 2)
-	assert_true(_save.consume_item(item, 1), "consume succeeds when stock available")
-	assert_eq(int(_save.profile["inventory"][item]), 1, "count decremented")
-	assert_false(_save.consume_item(item, 5), "consume fails when stock insufficient")
-	assert_eq(int(_save.profile["inventory"][item]), 1, "failed consume leaves count untouched")
-
-
 func _rng(seed_value: int) -> RandomNumberGenerator:
 	var r := RandomNumberGenerator.new()
 	r.seed = seed_value
@@ -511,22 +448,16 @@ func test_migration_refuses_newer_version() -> void:
 
 
 
-func test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile() -> void:
-	# Cleaned up in the tolerant sanitise pass rather than a schema migration, so older
-	# builds can still read the profile (no SCHEMA_VERSION bump).
-	_save.profile["inventory"] = {"repair_kit": 4, "fx_consumable": 2}
-	_save.profile = _save._sanitise(_save.profile)
-	var inv: Dictionary = _save.profile["inventory"]
-	assert_false(inv.has("repair_kit"), "the dead consumable is stripped on load")
-	assert_eq(int(inv.get("fx_consumable", 0)), 2, "live consumables are untouched")
+# test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile: DELETED — the
+# whole inventory subsystem is gone, so there is no live consumable to protect and the
+# retired-id strip went with it.
 
 
 func test_migration_backfills_missing_keys() -> void:
 	# A correctly-versioned but partial dict gets missing keys filled from default.
 	var partial := {"schema_version": _save.SCHEMA_VERSION, "cars": []}
 	var migrated: Dictionary = _save._migrate(partial)
-	assert_true(migrated.has("inventory"), "missing inventory backfilled")
-	assert_true(migrated.has("rallies"), "missing rallies backfilled")
+	assert_true(migrated.has("boost_levels"), "missing boost ladder backfilled")
 	assert_true(migrated.has("settings"), "missing settings bag backfilled (old profiles)")
 
 
@@ -606,61 +537,6 @@ func test_reset_new_game_overwrites_with_fresh_profile() -> void:
 	assert_true(_save.has_save(), "new game written to disk immediately")
 
 
-func test_swap_engines_exchanges_current_engines() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var stock_a: String = CarLibrary.by_id("fx_light_rwd")["engine"]
-	var stock_b: String = CarLibrary.by_id("fx_rwd_coupe")["engine"]
-	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "the swap succeeds")
-	# Re-fetch (grant_car returns a live ref, but re-read to be explicit).
-	a = _save.get_car(a["instance_id"])
-	b = _save.get_car(b["instance_id"])
-	assert_eq(String(a.get("swapped_engine", "")), stock_b, "Fixture Roadster now runs the Fixture Coupe engine")
-	assert_eq(String(b.get("swapped_engine", "")), stock_a, "Fixture Coupe now runs the Fixture Roadster engine")
-
-
-func test_swap_with_identical_engines_is_a_noop() -> void:
-	# Two instances of the same model run the same engine, so there is nothing to
-	# exchange and the swap reports no change. Swaps are free now, so nothing is at stake
-	# in the refusal — but a caller that believed a no-op had happened would repaint the
-	# garage for a change that never occurred.
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_light_rwd")
-	assert_false(_save.swap_engines(a["instance_id"], b["instance_id"]),
-		"swapping identical current engines is a no-op")
-
-
-func test_swapping_back_restores_stock_and_clears_field() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.swap_engines(a["instance_id"], b["instance_id"])
-	_save.swap_engines(a["instance_id"], b["instance_id"])  # swap back
-	a = _save.get_car(a["instance_id"])
-	b = _save.get_car(b["instance_id"])
-	assert_eq(String(a.get("swapped_engine", "")), "", "Fixture Roadster back to stock -> field cleared")
-	assert_eq(String(b.get("swapped_engine", "")), "", "Fixture Coupe back to stock -> field cleared")
-
-
-func test_swap_succeeds_between_damaged_cars() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.apply_damage(b["instance_id"], 1.0)  # b below max HP — no longer a blocker
-	assert_true(_save.swap_engines(a["instance_id"], b["instance_id"]), "a damaged car swaps fine")
-	b = _save.get_car(b["instance_id"])
-	assert_lt(float(b.get("hp", 0.0)), float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"]),
-		"the swap did not repair the damaged car")
-
-
-func test_set_engine_detune_clamps_and_persists() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.set_engine_detune(a["instance_id"], 0.5)
-	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 0.5, 0.0001, "stores fraction")
-	_save.set_engine_detune(a["instance_id"], 1.7)
-	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 1.0, 0.0001, "clamps above 1")
-	_save.set_engine_detune(a["instance_id"], -0.3)
-	assert_almost_eq(float(_save.get_car(a["instance_id"])["tuning"]["engine_detune"]), 0.0, 0.0001, "clamps below 0")
-
-
 # --- Drivetrain conversion: no longer a money sink ---------------------------------
 #
 # Decision 52 (a per-car purchase, Save.buy_drive_mode) is superseded: a conversion is now
@@ -674,53 +550,8 @@ func test_drivetrain_override_defaults_for_legacy_car() -> void:
 	assert_eq(int(legacy.get("drivetrain_override", -1)), -1, "missing key reads as stock")
 
 
-# --- Selected car promotes to the front of the lineup ------------------------
-
-func test_selecting_a_car_promotes_it_to_front_and_shifts_others_down() -> void:
-	# Grant three cars: they land in append order [a, b, c].
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var c: Dictionary = _save.grant_car("fx_awd")
-	_save.set_selected_car(int(c["instance_id"]))
-	var ids := _instance_ids()
-	# c jumps to front; a and b keep their relative order, shifted down one.
-	assert_eq(ids, [int(c["instance_id"]), int(a["instance_id"]), int(b["instance_id"])],
-		"selected car promoted to front, others keep relative order")
-
-
-func test_selecting_the_front_car_is_a_no_op() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.set_selected_car(int(a["instance_id"]))  # a is already at index 0
-	assert_eq(_instance_ids(), [int(a["instance_id"]), int(b["instance_id"])],
-		"selecting the already-front car leaves order unchanged")
-
-
-func test_selecting_an_unowned_id_does_not_corrupt_the_lineup() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var before := _instance_ids()
-	_save.set_selected_car(-1)  # no owned car matches
-	assert_eq(_instance_ids(), before, "unowned/-1 selection leaves the array intact")
-
-
-func test_promoted_order_survives_save_and_reload() -> void:
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.grant_car("fx_rwd_coupe")
-	var c: Dictionary = _save.grant_car("fx_awd")
-	_save.set_selected_car(int(c["instance_id"]))
-	_save.save_now()
-	_save.profile = {}
-	_save.load_or_new()
-	assert_eq(int(_save.profile["cars"][0]["instance_id"]), int(c["instance_id"]),
-		"most recently selected car is first after reload")
-
-
-func _instance_ids() -> Array:
-	var ids := []
-	for car in _save.profile.get("cars", []):
-		ids.append(int(car["instance_id"]))
-	return ids
+# --- Selected car: DELETED with the garage lift (nothing selects a car any more —
+# the hub fields whichever car the player confirms; RunSession holds the run's own car).
 
 
 # --- Cloud-save bookkeeping ---------------------------------------------------
@@ -831,168 +662,9 @@ func test_adopting_a_profile_keeps_this_devices_settings() -> void:
 	assert_eq(_save.get_setting("probe_setting", ""), "this_device")
 
 
-# --- New-rally reveal acknowledgement ----------------------------------------
+# --- New-rally reveal: DELETED with the HQ map (no reveal parade exists to
+# acknowledge; the seeding tests went with _seed_reveals_if_needed).
 
-func test_marking_a_rally_revealed_survives_a_save_and_load() -> void:
-	assert_false(_save.rally_revealed_seen("some_rally"),
-		"a rally nobody has been shown reads as not yet revealed")
-	_save.mark_rally_revealed("some_rally")
-	_save.save_now()     # the ordinary save() is debounced; force the write
-	_save.load_or_new()  # re-read the file from disk
-	assert_true(_save.rally_revealed_seen("some_rally"),
-		"the acknowledgement round-trips through a save + load")
-
-
-func test_marking_a_rally_revealed_keeps_its_other_state() -> void:
-	# The flag lives in the SAME per-rally record as `completed`, so writing one must
-	# not clobber the other in either order.
-	_save.record_podium_rally("some_rally", 60_000, 1)
-	_save.mark_rally_revealed("some_rally")
-	assert_true(_save.rally_podiumed("some_rally"), "the completion is still there")
-	assert_eq(_save.best_placement("some_rally"), 1, "the best placement is still there")
-	assert_true(_save.rally_revealed_seen("some_rally"))
-
-
-func test_a_progressed_profile_with_no_reveal_flags_wants_seeding() -> void:
-	# THE BACKFILL TRAP: a save written before the reveal feature existed carries no
-	# flags at all, and treating that as "nothing revealed yet" would parade every open
-	# rally at a player who has been looking at them for weeks.
-	assert_false(_save.needs_reveal_seeding(), "a brand-new career has nothing to backfill")
-	_save.record_podium_rally("some_rally", 60_000, 1)
-	assert_true(_save.needs_reveal_seeding(),
-		"career progress with not one reveal flag is a pre-feature save")
-	_save.mark_rally_revealed("some_rally")
-	assert_false(_save.needs_reveal_seeding(),
-		"once any flag exists the profile has been through the seeding")
-
-
-# FINDING 1: the backfill used to be a call site living in hq.gd (_seed_reveals_if_needed),
-# invoked from two places (_enter_table, _on_cloud_profile_replaced) — a third path that
-# reaches the map or replaces the profile could silently forget it. It now lives INSIDE
-# Save, run at the points a profile actually becomes live, so it cannot be skipped by a
-# future entry point. These tests exercise that directly through load_or_new/adopt_profile
-# rather than through hq.gd at all.
-func test_load_or_new_seeds_an_existing_career_with_no_reveal_flags() -> void:
-	RallyLibrary.override_for_test([
-		# Reveal is geometric: a pin AT HQ is open from the start, one parked far outside
-		# every circle never opens. (map_pos, not a wave count, is what locks a rally now.)
-		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
-			"special": false, "map_pos": RallyLibrary.HQ_MAP_POS, "restriction": {}, "events": []},
-		{"id": "sm_locked", "name": "Save Locked", "region": "home", "difficulty": 2,
-			"special": false, "map_pos": RallyLibrary.HQ_MAP_POS + Vector2(0.9, 0.0),
-			"restriction": {}, "events": []},
-	])
-	_save.record_podium_rally("sm_open", 60_000, 1)  # career progress, but no reveal flags at all
-	assert_true(_save.needs_reveal_seeding())
-	_save.save_now()
-
-	_save.load_or_new()  # the profile becoming live is what must trigger the backfill
-
-	assert_true(_save.rally_revealed_seen("sm_open"),
-		"an already-open (and completed) rally is seeded as seen on load, no parade")
-	assert_false(_save.rally_revealed_seen("sm_locked"),
-		"a rally that never unlocked is not seeded — it still gets a real reveal later")
-	assert_false(_save.needs_reveal_seeding(), "the profile now carries reveal flags")
-	RallyLibrary.reset()
-
-
-func test_adopt_profile_seeds_a_restored_career_with_no_reveal_flags() -> void:
-	# A cloud restore onto a fresh device must not parade the whole roster either —
-	# same backfill, reached through the OTHER point a profile becomes live.
-	RallyLibrary.override_for_test([
-		{"id": "sm_open", "name": "Save Open", "region": "home", "difficulty": 1,
-			"special": false, "map_pos": RallyLibrary.HQ_MAP_POS, "restriction": {}, "events": []},
-	])
-	var incoming: Dictionary = _save._default_profile()
-	incoming["rallies"] = {"sm_open": {"completed": true, "best_combined_ms": 1, "best_placed": 1}}
-	assert_true(_save.adopt_profile(incoming))
-	assert_true(_save.rally_revealed_seen("sm_open"),
-		"a restored career's already-open rally is seeded as seen, not paraded")
-	RallyLibrary.reset()
-
-# --- Star sinks: DELETED (todo/roguelike-pivot.md decisions 21 and the parts model) ---
-# The paid garage repair (repair_car / repair_price / car_needs_repair / car_handles_badly)
-# and the whole part-purchase surface (can_buy_part / buy_part / can_buy_drive_mode /
-# buy_drive_mode / part_price / drive_mode_price / install_upgrade / set_upgrade_enabled)
-# are RETIRED OUTRIGHT. An earlier wave left the purchase predicates dangling -- signatures
-# kept, always refusing -- because upgrade_options.gd and upgrades_grid.gd still called them
-# by name; both of those files are now deleted too, so the stubs went with them.
-#
-# What replaces them: money (economy stage) buys CARS and BOOST LEVELS, not slottable parts.
-# There is no persistent parts model to buy into any more -- see the pivot spec's
-# "Upgrades -- RR's two-tier model".
-
-# --- Legacy nitrous migration tests: DELETED (decisions 34 and the parts model) --------
-# Three tests lived here covering a v-something save whose nitrous part came back parked,
-# and the migration's duty not to override a deliberate off-switch or invent nitrous for a
-# car that never had it. All three drove installed_upgrades / disabled_upgrades /
-# UpgradeLibrary.is_enabled -- the persistent parts model -- through the migration ladder.
-# Both are deleted: there is no ladder (SCHEMA_VERSION now refuses a non-matching profile
-# outright) and no per-car part lists for it to repair.
-
-# --- v4 -> v5 / v5 -> v6 migration tests: DELETED (todo/roguelike-pivot.md decision 34) --
-# test_migration_v4_grants_parts_whose_unlock_rally_moved,
-# test_migration_v4_does_not_fake_the_new_rally_completion,
-# test_migration_v5_keeps_engine_swapping_for_a_career_that_won_the_old_rally and
-# test_migration_v5_does_not_grant_engine_swapping_to_a_career_that_never_won_it all drove
-# Save._migrate_step / _MIGRATABLE_FROM / MOVED_PART_UNLOCKS / OLD_ENGINE_SWAP_UNLOCK_RALLY,
-# all deleted with the whole migration ladder -- no migration is written for the pivot, so a
-# pre-pivot profile resets instead (see Save.SCHEMA_VERSION's own comment).
-# test_engine_swaps_unlock_by_winning_the_current_rally below is untouched -- it exercises
-# the surviving, non-legacy unlock path.
-
-
-
-# The gate is a purchased flag now (todo/roguelike-pivot.md decision 17), not a rally
-# completion — winning ENGINE_SWAP_UNLOCK_RALLY does nothing for it any more.
-func test_engine_swaps_unlock_by_purchasing_the_shop_flag() -> void:
-	var profile: Dictionary = _save._default_profile()
-	assert_false(RallyLibrary.engine_swaps_unlocked(profile), "setup: locked on a fresh profile")
-	# Winning the OLD gating rally is explicitly NOT the unlock any more.
-	profile[_save.KEY_RALLIES] = {
-		RallyLibrary.ENGINE_SWAP_UNLOCK_RALLY: {"completed": true, "best_placed": 1},
-	}
-	assert_false(RallyLibrary.engine_swaps_unlocked(profile),
-		"winning the old gating rally no longer opens engine swapping")
-	profile[_save.KEY_ENGINE_SWAP_UNLOCKED] = true
-	assert_true(RallyLibrary.engine_swaps_unlocked(profile),
-		"the purchased-unlock flag is the whole gate")
-
-
-func test_buy_engine_swap_unlock_spends_money_and_sets_the_flag() -> void:
-	_save.profile[_save.KEY_MONEY] = _save.engine_swap_unlock_price()
-	assert_false(_save.engine_swap_unlocked(), "setup: locked")
-	assert_true(_save.buy_engine_swap_unlock(), "an affordable purchase goes through")
-	assert_true(_save.engine_swap_unlocked(), "and the flag is now set")
-	assert_eq(_save.money(), 0, "the price is fully spent")
-
-
-func test_buy_engine_swap_unlock_refuses_when_unaffordable_and_changes_nothing() -> void:
-	_save.profile[_save.KEY_MONEY] = 0
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_engine_swap_unlock(), "an unaffordable purchase is refused")
-	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
-
-
-func test_buy_engine_swap_unlock_refuses_a_second_purchase() -> void:
-	_save.profile[_save.KEY_MONEY] = _save.engine_swap_unlock_price() * 5
-	assert_true(_save.buy_engine_swap_unlock(), "setup: first purchase succeeds")
-	var balance_after_first: int = _save.money()
-	assert_false(_save.buy_engine_swap_unlock(), "a second purchase is refused — one-time only")
-	assert_eq(_save.money(), balance_after_first, "and nothing more is spent")
-
-
-# test_a_fresh_profile_has_no_legacy_grants DELETED: KEY_LEGACY_ENGINE_SWAP /
-# KEY_LEGACY_PART_UNLOCKS are no longer declared in _default_profile() at all
-# (todo/roguelike-pivot.md decision 34 -- see that dict's own comment), so indexing
-# either off a fresh profile now errors instead of reading a default.
-
-
-
-# --- The roguelike run-meta block (todo/roguelike-pivot.md) --------------------
-# These are the keys a failed run must NOT touch. Soft permadeath destroys the run --
-# stage progress, its boosts, the car's damage -- and nothing here. That asymmetry IS the
-# progression design, so it gets a test rather than a comment.
 
 func test_a_fresh_profile_declares_the_run_meta_block() -> void:
 	var p: Dictionary = _save._default_profile()
@@ -1080,6 +752,26 @@ func test_equip_skill_refuses_past_the_config_cap_and_changes_nothing() -> void:
 	SkillLibrary.reset()
 
 
+# The dev cheat behind Settings → Dev → "Unlock all skills": ownership of every
+# catalogue entry at once, bypassing the unlock threshold — and IDEMPOTENT, so a
+# second press grants (and writes) nothing.
+func test_dev_grant_all_skills_is_idempotent() -> void:
+	SkillLibrary.override_for_test(_FX_SKILLS)
+	# Below its unlock threshold on purpose: the cheat must not care.
+	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 0}
+	_save.profile[_save.KEY_MONEY] = 700
+	assert_eq(_save.dev_grant_all_skills(), _FX_SKILLS.size(),
+		"every catalogue entry is granted")
+	assert_true(_save.owns_skill(_FX_PERK_ID), "ownership lands despite the lock")
+	assert_eq(_save.money(), 700, "the grant moves no money")
+	assert_eq((_save.profile[_save.KEY_EQUIPPED_SKILLS] as Array).size(), 0,
+		"equipping stays the Skills page's own step")
+	var settled: Dictionary = _save.profile.duplicate(true)
+	assert_eq(_save.dev_grant_all_skills(), 0, "a second call grants nothing")
+	assert_eq(_save.profile, settled, "and writes nothing doing it")
+	SkillLibrary.reset()
+
+
 # --- Every persisted key is DECLARED, not conjured (ratchet) --------------------
 # The defect this guards, found by the small-model-readiness loop in round 014: a probe
 # added a `rallies_finished` counter with `profile["rallies_finished"] = ... + 1` and a
@@ -1127,100 +819,6 @@ func test_every_persisted_key_written_is_declared_in_the_default_profile() -> vo
 		+ "See the `cloud_revision` / `username` comments for the shape to copy.")
 
 
-# --- Guard: a "finished" metric may not be derived from the podium-gated record ---------
-#
-# WHY (round 015). A probe asked to "track how many rallies the player has finished" added
-# `RallyLibrary.finished_count()` counting rallies with `best_placed > 0`, and put
-# "Rallies finished: N" on the profile screen. Every test passed and the number is WRONG:
-# `Save.record_podium_rally` has exactly one caller (`rally_session.gd`, inside
-# `_award_podium_rewards`, gated on `podium_or_opening`), so a 5th-place finish writes
-# nothing into the rally's record. The gate is on the WRITE, which makes every field of the
-# record podium-gated — so `best_placed > 0` is the podium count wearing a better name.
-#
-# Round 003 had already planted the warning, but its reasoning named only the `completed`
-# flag, so `best_placed` read as an untainted sibling to escape through. The note has now
-# failed twice on this route; this is the executable check that replaces a third one.
-#
-# Derived from the source tree, so a file or function added tomorrow is covered without
-# touching this test. It does NOT forbid the sanctioned fix: a real finish counter is a NEW
-# persisted key (declared in `_default_profile()`), and reading that key touches none of
-# the gated fields below.
-const GATED_RECORD_FIELDS := ["completed", "best_placed", "best_combined_ms"]
-
-
-func _gd_scripts_under(dir_path: String, out: Array[String]) -> void:
-	var d := DirAccess.open(dir_path)
-	if d == null:
-		return
-	for f in d.get_files():
-		if f.ends_with(".gd"):
-			out.append(dir_path.path_join(f))
-	for sub in d.get_directories():
-		_gd_scripts_under(dir_path.path_join(sub), out)
-
-
-func test_no_finish_named_symbol_derives_from_the_podium_gated_rally_record() -> void:
-	var files: Array[String] = []
-	_gd_scripts_under("res://scripts", files)
-	assert_gt(files.size(), 50, "sanity: expected to find the scripts/ tree")
-
-	var gated := RegEx.new()
-	gated.compile('\\.get\\("(?:%s)"' % "|".join(GATED_RECORD_FIELDS))
-	var func_re := RegEx.new()
-	func_re.compile("^(?:static\\s+)?func\\s+([A-Za-z0-9_]+)")
-
-	var offenders: Array[String] = []
-	for path in files:
-		var src := FileAccess.get_file_as_string(path)
-		assert_ne(src, "", "could not read %s" % path)
-		var current := ""
-		var line_no := 0
-		for line in src.split("\n"):
-			line_no += 1
-			var m := func_re.search(line)
-			if m != null:
-				current = m.get_string(1)
-			if current.to_lower().contains("finish") and gated.search(line) != null:
-				offenders.append("%s:%d in %s() — %s"
-					% [path, line_no, current, line.strip_edges()])
-
-	assert_eq(offenders, ([] as Array[String]),
-		"these 'finish'-named symbols read a PODIUM-GATED field of a rally's save record: %s. "
-		% str(offenders)
-		+ "That number is not a finish count. Save.record_podium_rally is called from exactly one "
-		+ "site (rally_session.gd, inside _award_podium_rewards, gated on `podium_or_opening`), "
-		+ "so a 5th-place finish writes NOTHING into the record — `completed`, `best_placed` and "
-		+ "`best_combined_ms` are all equally podium-gated and there is no untainted sibling "
-		+ "field to escape through. To count finishes in any position, ADD a persisted counter: "
-		+ "declare it in Save._default_profile() (so _migrate's key backfill seeds existing "
-		+ "saves), increment it on the any-finish path, and read that key instead. "
-		+ "See Save.rally_podiumed() and RallyLibrary.podium_count() for what the record CAN "
-		+ "honestly tell you.")
-
-
-# --- Guard: the runtime tripwire for an undeclared persisted key -------------------------
-#
-# The RUNTIME half of `test_every_persisted_key_written_is_declared_in_the_default_profile`
-# above (round 015). That static check catches the mistake in CI, but two independent probes
-# of this codebase made it anyway, because neither ran the suite — and the failure is silent
-# (`profile.get(key, 0)` reads 0 whether or not the key was ever declared). `save()` now
-# announces it via push_error, so it surfaces in the editor with no test run at all.
-#
-# These exercise the PURE detector rather than the push_error wrapper, deliberately: asserting
-# on an emitted engine error is brittle, and the interesting logic is entirely in "which keys
-# count as unknown".
-func test_a_code_written_undeclared_profile_key_is_detected() -> void:
-	_save.profile = _save._default_profile()
-	_save._note_known_profile_keys()
-	assert_eq(_save._undeclared_profile_keys(), ([] as Array[String]),
-		"a freshly defaulted profile declares everything it holds")
-
-	_save.profile["totally_made_up_counter"] = 3
-	assert_eq(_save._undeclared_profile_keys(), (["totally_made_up_counter"] as Array[String]),
-		"a key written by code and absent from _default_profile() must be reported — that is "
-		+ "the defect the tripwire exists for")
-
-
 func test_a_retired_key_already_on_disk_is_not_reported() -> void:
 	# A real player's profile can carry a top-level key that has since been retired: load
 	# backfills missing keys but never prunes extra ones. Shouting about those would be a
@@ -1250,36 +848,3 @@ func test_a_retired_key_already_on_disk_is_not_reported() -> void:
 # green while the player saw the podium count.
 #
 # Derived from the source, so it covers keys that do not exist yet.
-func test_the_podium_gated_recorder_writes_no_finish_named_profile_key() -> void:
-	var src := FileAccess.get_file_as_string("res://scripts/save_manager.gd")
-	assert_ne(src, "", "could not read save_manager.gd")
-
-	var lines := src.split("\n")
-	var start := -1
-	for i in lines.size():
-		if lines[i].begins_with("func record_podium_rally("):
-			start = i
-			break
-	assert_gt(start, -1,
-		"could not find func record_podium_rally() — if it was renamed, update this guard "
-		+ "(and keep the gate warning in its docstring)")
-
-	# The function body runs to the next top-level func.
-	var writes := RegEx.new()
-	writes.compile('profile\\["([a-z_]+)"\\]\\s*=')
-	var offenders: Array[String] = []
-	for i in range(start + 1, lines.size()):
-		var line := lines[i]
-		if line.begins_with("func ") or line.begins_with("static func "):
-			break
-		var m := writes.search(line)
-		if m != null and m.get_string(1).contains("finish"):
-			offenders.append("line %d: %s" % [i + 1, line.strip_edges()])
-
-	assert_eq(offenders, ([] as Array[String]),
-		"record_podium_rally() writes these 'finish'-named profile keys: %s. " % str(offenders)
-		+ "That function has exactly ONE caller — rally_session.gd, inside "
-		+ "_award_podium_rewards, which runs only `if podium_or_opening` — so anything written "
-		+ "there is PODIUM-GATED and a finish counter bumped in it counts podiums. Move the "
-		+ "increment to the any-finish gate (`var finished := not _dnf` in "
-		+ "rally_session.gd::_resolve_results, beside _award_any_finish_bonus_stars) instead.")

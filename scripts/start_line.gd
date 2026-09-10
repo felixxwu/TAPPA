@@ -18,9 +18,11 @@ extends Node3D
 #   3. REVEAL   — arrived at the rival, the rival card appears: the driver's name,
 #      the car they wear, and the gold time to beat. Start (button only) sends the
 #      rival off.
-#   4. DEPART   — the rival drives off down the lead-in at its profile pace. Only
-#      once it is properly away (start_lead_in_ahead_m past the line) does the
-#      fade begin — the player never sees the countdown before the rival has left.
+#   4. DEPART   — the rival drives off down the lead-in at its profile pace, and the
+#      player rolls up onto the line behind it (the restored grid shuffle — see
+#      _roll_player_up). Only once it is properly away (start_lead_in_ahead_m past
+#      the line) does the fade begin — the player never sees the countdown before
+#      the rival has left.
 #   5. FADE     — the screen fades to black; at full black the camera hands back
 #      to the player's SELECTED camera (via the CameraManager), the driving UI returns
 #      and StageManager.begin_countdown() starts the countdown; then it fades back in.
@@ -423,8 +425,8 @@ func _stat_row(caption: String, role: String) -> Dictionary:
 func _refresh_rival_card() -> void:
 	if _rival_card == null:
 		return
-	var show: bool = is_instance_valid(_ghost) and _ghost.has_profile() and _ghost.target_ms() > 0
-	if not show:
+	var should_show: bool = is_instance_valid(_ghost) and _ghost.has_profile() and _ghost.target_ms() > 0
+	if not should_show:
 		return
 	_rival_name_label.text = _ghost.rival_name()
 	_rival_name_label.visible = _rival_name_label.text != ""
@@ -506,10 +508,14 @@ func _timed_process(delta: float) -> void:
 		Seq.REVEAL:
 			pass  # holds on the rival shot; Start (launch) sends the rival off
 		Seq.DEPART:
-			# The rival drives off down the lead-in at its profile pace. Only once it
-			# is properly away does the fade begin — the player never sees the
-			# countdown until the rival has left (the whole point of the send-off).
+			# The rival drives off down the lead-in at its profile pace, and the
+			# player rolls up onto the line behind it — the restored grid shuffle:
+			# what the player watches happen is the pose control resumes from, so
+			# the handoff never has to teleport the car (see _release_player).
+			# Only once the rival is properly away does the fade begin — the player
+			# never sees the countdown until the rival has left.
 			_seq_t += delta
+			_roll_player_up()
 			if is_instance_valid(_ghost):
 				_depart_s += _ghost.departure_speed(_depart_s) * delta
 				_ghost.pose_at_distance(_depart_s)
@@ -640,6 +646,51 @@ func _begin_departure() -> void:
 	_seq_t = 0.0
 
 
+# The restored DEPART shuffle (pre-pivot _roll_grid_to_slots rolled every remaining
+# grid car one slot forward per frame; the one-rival revival only ever has the player
+# to roll). Target is the line itself, grounded like every other grid pose was.
+func _roll_player_up() -> void:
+	if not _player_staged:
+		return
+	_roll_car_to(_player, _ground(_start_xform.origin))
+
+
+# Roll a scripted car UP TO `target` and brake to a stop ON it, instead of flooring it
+# and coasting past — ported verbatim from the pre-pivot grid. Drives forward while
+# well behind, coasts into a speed-aware brake point, then brakes+holds — easing to a
+# halt at the target. The staging's lateral/yaw axis locks keep it on rails; forward
+# (local -Z) stays free, which is exactly the one DOF a shuffle wants.
+func _roll_car_to(car, target: Vector3) -> void:
+	if car == null or not is_instance_valid(car) or not ("ai_controlled" in car):
+		return
+	var cfg := _cfg()
+	var fwd := (-_start_xform.basis.z).normalized()
+	var dist: float = (target - car.global_position).dot(fwd)
+	var v: float = car.linear_velocity.length()
+	var brake_dist: float = v * v / cfg.start_roll_decel_divisor + cfg.start_roll_brake_margin_m
+	if dist <= brake_dist:
+		# On/at the target: brake to a stop, then hold on the handbrake. Cut the brake
+		# pedal once nearly stopped so the auto box doesn't grab reverse against the hold.
+		car.ai_throttle = -1.0 if v > cfg.start_roll_creep_speed else 0.0
+		car.ai_handbrake = true
+	elif dist > brake_dist + cfg.start_roll_coast_band_m:
+		car.ai_throttle = 1.0    # well behind: roll up
+		car.ai_handbrake = false
+	else:
+		car.ai_throttle = 0.0    # coast into the brake point
+		car.ai_handbrake = false
+
+
+# Drop a world point onto the terrain, keeping the player's ride height above it —
+# ported from the pre-pivot grid so the roll-up's target sits on the actual road.
+func _ground(pos: Vector3) -> Vector3:
+	if _terrain != null and is_instance_valid(_terrain) and _terrain.has_method("height_at"):
+		var ride: float = _start_xform.origin.y - _terrain.height_at(
+			_start_xform.origin.x, _start_xform.origin.z)
+		pos.y = _terrain.height_at(pos.x, pos.z) + ride
+	return pos
+
+
 func _begin_fade() -> void:
 	_seq = Seq.FADE_OUT
 	_seq_t = 0.0
@@ -662,9 +713,12 @@ func _handoff() -> void:
 		_stage_manager.begin_countdown()
 
 
-# Undo the staging scripting so the run drives normally, and snap the player exactly onto
-# the start line (hidden by the fade). The StageManager forces the handbrake through the
-# countdown, so the car holds at the line until GO.
+# Undo the staging scripting so the run drives normally, and square the player up
+# exactly onto the start line (hidden by the fade). The DEPART roll-up has already
+# brought the car here, so this is a last-inches correction of any residual creep or
+# brake-dive — NOT the move itself; before the roll-up was restored this reset was a
+# full queue-gap teleport the fade had to hide. The StageManager forces the handbrake
+# through the countdown, so the car holds at the line until GO.
 func _release_player() -> void:
 	if not _player_staged or not (_player is VehicleBody3D) or not ("ai_controlled" in _player):
 		return
@@ -677,6 +731,11 @@ func _release_player() -> void:
 		_player.drivetrain.engine.auto = _player_auto_was
 	if _player.has_method("reset_to"):
 		_player.reset_to(_start_xform)
+	else:
+		# Same fallback _stage_player uses: a body without reset_to (a test stub, or
+		# any non-physics stand-in) takes the bare transform write, which sticks
+		# wherever the physics server is not authoritative over it.
+		_player.global_transform = _start_xform
 	_player_staged = false
 
 

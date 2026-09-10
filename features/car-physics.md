@@ -76,9 +76,10 @@ for each).
 3. **Steering — a grip servo, not an angle:** steering input is the **share of the front
    tires' available cornering grip** the driver is asking for; `Car._update_steering` works
    the wheel angle until the tires deliver it. It runs **after** `drivetrain.step()` so it
-   closes its loop on this tick's own tire measurements. See
-   [todo/grip-servo-steering.md](../todo/grip-servo-steering.md) for the full derivation and
-   the three things driving corrected.
+   closes its loop on this tick's own tire measurements. The derivation spec is gone
+   with the pivot; the behaviour is pinned by
+   `tests/headless/test_grip_servo_steering.gd`, and this section is its surviving
+   prose account.
    - **The zero point.** There is one wheel angle at which the front tires do no sideways
      work: pointing them along the direction they are already travelling. `null = steering +
      slip_angle`, from each front wheel's OWN measured slip angle
@@ -227,12 +228,11 @@ count, and no `RandomNumberGenerator` state carried between ticks (phases come f
 integer hash of `(seed, octave)`, so evaluation order cannot matter). Two runs of the
 same stage therefore meet the identical gust at the identical point on the road.
 
-Why it matters: every stage has a **global leaderboard** keyed by
-`RallyLibrary.stage_key` (the deleted global leaderboards). A wind
-that differed run to run would silently stop every storm board comparing like with
-like. Keying on *distance* rather than time also makes gusts **learnable** — the same
-gust waits in the same place every attempt — which is fairer play as well as fairer
-scoring. Distance comes from the existing `TrackProgress.progress_offset()` odometer,
+Why it matters (the original global leaderboards are deleted, but the reasoning
+stands): keying on *distance* rather than time makes gusts **learnable** — the same
+gust waits in the same place every attempt — which is fairer play, and every run of
+the same stage meeting the identical gust keeps stage target times honest against
+the pace line they are computed from. Distance comes from the existing `TrackProgress.progress_offset()` odometer,
 not a private one, so wind is keyed to the same along-track metric the HUD and the
 stage gate use.
 
@@ -351,10 +351,10 @@ now read `wheel_mount()`. Pinned by `tests/headless/test_live_refit_suspension.g
 
 ### Static rest pose (`settled_ride_height`)
 
-Display / prop cars — the roadside opponent wreck (`world.gd`), the podium finishers
-(`podium.gd`), and the HQ parked lineup (`hq.gd`) — both deleted — were placed **analytically at rest
-and frozen at once**, instead of being dropped as live physics bodies and frozen a beat
-later. That old drop-and-settle was a recurring bug source: it depended on a ground
+Display / prop cars — today the pace-line rival ghost (`rival_ghost.gd`; the
+roadside wreck, podium and HQ lineup hosts are deleted with the pivot) — are placed
+**analytically at rest and frozen at once**, instead of being dropped as live physics
+bodies and frozen a beat later. That old drop-and-settle was a recurring bug source: it depended on a ground
 collider being present under the car (the wreck sank through the streamed-in-only-near-
 the-player terrain), on the car not rolling on a slope, and on the landing impact not
 knocking HP off it — plus the freeze timing.
@@ -388,20 +388,20 @@ failing loudly if a Godot upgrade shifts the solver — so the constants can't s
 drift. A caller seats the car on its ground plane, lifts the body by
 `settled_ride_height()`, droops the wheels, then freezes `FREEZE_MODE_STATIC`.
 
-**Ground-conforming wheels (uneven ground / the lift).** Props that sit on real,
-possibly-uneven ground (HQ car-park lineup, HQ tuning lift, roadside wrecks) use
+**Ground-conforming wheels (uneven ground).** Props that sit on real,
+possibly-uneven ground — today the rival ghost over its stage terrain (HQ car-park,
+lift and wreck hosts are deleted) — use
 **`car.settle_wheels_to_ground(ground_at)`** instead of the flat `settle_wheel_visuals()`.
 It droops each wheel Visual so the **tyre bottom sits on `ground_at(wheel_world_pos)`**
 (geometric contact), clamped to `[0, wheel_rest_length]` — so a wheel over lower ground
 extends further and one over higher ground tucks up, and a wheel with no ground in reach
 dangles at full droop. If `ground_at` returns a **non-finite** value (e.g. a raycast miss),
-that wheel keeps the analytic `settle_wheel_visuals` droop rather than dangling. HQ contexts
-pass **`car.ground_raycast()`** (a downward ray against the lot floor, self excluded); this
-is what makes the tuning-lift wheels rest on the floor when down and **extend as the lift
-raises** (re-settled each frame from the raise tween). Roadside wrecks pass
-`terrain.height_at`. The **podium keeps the flat `settle_wheel_visuals()`** (staged platform,
-no ground collider). **`Car.compression_budget(cfg)`** (static) returns how far a wheel can
-droop below the rest plane — used by the wreck site gate.
+that wheel keeps the analytic `settle_wheel_visuals` droop rather than dangling. The
+rival ghost passes its stage terrain's `height_at` (a self-excluded downward ray —
+**`car.ground_raycast()`** — survives for any future host that needs one). The deleted
+HQ-lift "wheels extend as the lift raises" behaviour went with its host.
+**`Car.compression_budget(cfg)`** (static) returns how far a wheel can droop below the
+rest plane.
 
 **Undoing a settle: `car.clear_wheel_visual_droop()`.** Both settle functions translate the wheel
 `Visual` **down**, and nothing on the live path ever translates it back (`_update_visuals` only
@@ -409,8 +409,9 @@ spins and steers), so the offset is permanent until something clears it. That is
 which stays frozen forever — but a car that is settled while frozen and then handed **back to the
 player** renders its wheels sunk by up to a full `wheel_rest_length` below where the solver
 actually has them, i.e. a tyre visibly cutting through the ground with the physics perfectly
-healthy. Call this whenever a settled prop becomes a driven car again. Exactly one place does that
-transition today: the overworld garage lift (`features/overworld.md` → "The lift").
+healthy. Call this whenever a settled prop becomes a driven car again. No live caller
+makes that transition today (the overworld garage lift that did is deleted); the helper
+stays for the next host that freezes a car and hands it back.
 
 ## Weight distribution (centre of mass)
 

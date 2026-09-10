@@ -27,8 +27,7 @@ extends Control
 # reading button text.
 #
 # SHOP is stage 6's meta shop (todo/roguelike-pivot.md "Upgrades — RR's two-tier
-# model" + "Car acquisition — RR's shop"): every boost ladder and the Engine Swap
-# unlock in one flat list, reached from MAIN rather than from the run's own car-select
+# model" + "Car acquisition — RR's shop"): every boost ladder in one flat list, reached from MAIN rather than from the run's own car-select
 # flow, since they are permanent purchases available any time, not something tied to
 # picking a car for THIS run. Car BUYING, per decision 28's wording ("the car select
 # screen offers a Buy action for unowned cars"), is folded into the existing CAR page
@@ -46,7 +45,8 @@ extends Control
 # pages. STATS is pure read-out (LifetimeStats.IDS, one row each) — CLAUDE.md's menu-nav
 # trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
 # its Back action is the page's ONE focusable control; see _build_stats().
-enum View { MAIN, REGION, CAR, SUMMARY, SHOP, SKILLS, STATS, CHALLENGE, SETTINGS }
+enum View { MAIN, REGION, CAR, SUMMARY, SHOP, SKILLS, STATS, CHALLENGE, SETTINGS,
+	FREEPLAY_CAR, FREEPLAY_REGION, FREEPLAY_SETUP }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
 # through the script resource — calling a static via the autoload instance is a
@@ -62,6 +62,15 @@ var _pending_region := ""
 # share that page, since "which of my cars" is the identical question. Cleared on every
 # entry to REGION so a back-and-forth cannot start a region run as a challenge.
 var _pending_challenge := ""
+# The Free Play flow's picks, held across its three pages (car -> region -> upgrades).
+# Reset whenever the flow is entered from MAIN, so an abandoned half-picked plan never
+# survives into a later one. Deliberately shell state, not FreePlay state: FreePlay's
+# plan is only written on Start (the moment the choices are final), so a stale plan can
+# never leak into a world boot the player backed out of.
+var _fp_car := 0
+var _fp_region := ""
+var _fp_boosts: Array[String] = []
+
 # The shared SettingsMenu instance while the SETTINGS page is live — null otherwise. Held so
 # _back()/the page's own Back button can give it first refusal (its own sub-pages back out
 # to its category list before this shell backs out to MAIN), mirroring pause_menu.gd's
@@ -95,6 +104,11 @@ func _ready() -> void:
 		_show(View.SUMMARY)
 	else:
 		_show(View.MAIN)
+	# The "a newer native build is out" check (features/update-check.md) — re-homed
+	# here from the deleted diegetic hub's title shot. Not awaited: the hub must be
+	# interactive while the GET is in flight, and every failure inside is a silent
+	# no-op by design.
+	_check_for_update()
 	# Warms CarPreviewCache so that by the time a player reaches the CAR page, every car's
 	# preview is already built and the selection can move between them with no per-car lag
 	# at all. Idempotent: cheap to call on every hub visit, since a car already cached is
@@ -138,6 +152,9 @@ func _title_for(view: int) -> String:
 		View.STATS: return "Lifetime stats"
 		View.CHALLENGE: return "Rally challenge"
 		View.SETTINGS: return "Settings"
+		View.FREEPLAY_CAR: return "Free play — pick a car"
+		View.FREEPLAY_REGION: return "Free play — pick a region"
+		View.FREEPLAY_SETUP: return "Free play — upgrades"
 		_: return ""
 
 
@@ -195,6 +212,9 @@ func _show(view: int) -> void:
 		View.STATS: _build_stats()
 		View.CHALLENGE: _build_challenge()
 		View.SETTINGS: _build_settings()
+		View.FREEPLAY_CAR: _build_freeplay_car()
+		View.FREEPLAY_REGION: _build_freeplay_region()
+		View.FREEPLAY_SETUP: _build_freeplay_setup()
 	# `remember: false` — each page is rebuilt from scratch, so there is no earlier focus
 	# on it worth restoring; the first action is always the right landing spot.
 	MenuNav.attach(_page, {"on_back": _back})
@@ -213,6 +233,9 @@ func _back() -> void:
 		View.SKILLS: _show(View.MAIN)
 		View.STATS: _show(View.MAIN)
 		View.CHALLENGE: _show(View.MAIN)
+		View.FREEPLAY_CAR: _show(View.MAIN)
+		View.FREEPLAY_REGION: _show(View.FREEPLAY_CAR)
+		View.FREEPLAY_SETUP: _show(View.FREEPLAY_REGION)
 		# Give the shared SettingsMenu first refusal: its own sub-pages (Audio, Account's
 		# sign-in form, …) back out to its category list before this shell backs out to MAIN.
 		View.SETTINGS: _settings_back()
@@ -237,7 +260,8 @@ func _row(text: String, on_press: Callable) -> Button:
 
 # --- Card carousel plumbing ---------------------------------------------------
 #
-# Five screens (MAIN, REGION, CAR, SHOP, SKILLS) present their choices
+# Eight screens (MAIN, REGION, CAR, SHOP, SKILLS, the three FREEPLAY steps)
+# present their choices
 # as a CardCarousel (features/card-carousel.md) instead of a vertical row list: one
 # carousel per page, added to the body ahead of any plain labels/rows that page
 # still wants (e.g. the "Money: N" readout). CHALLENGE / STATS keep the plain row
@@ -249,6 +273,12 @@ func _row(text: String, on_press: Callable) -> Button:
 # white only, uniform 6px stroke, round caps/joins — so the carousels read as one
 # system rather than a mix of clip-art. CAR cards swap this out for a real
 # CarCardPreview once it is built (see _sync_car_previews).
+# How far the icon's rect is inset from the visual slot's edges, as a fraction of the
+# slot per side — the icon used to fill the whole top half of the card, which read as a
+# full-bleed illustration rather than an icon; a ~55%-width mark leaves the card room
+# to breathe around it. A look constant, not a tunable (no designer retune expected).
+const _CARD_ICON_INSET := 0.22
+
 func _card_icon(icon: String) -> Control:
 	var path := "res://icons/cards/%s.svg" % icon
 	# A fallback for ids with no authored icon (a test fixture's fx_* id, say) rather
@@ -260,7 +290,14 @@ func _card_icon(icon: String) -> Control:
 	tex.texture = load(path)
 	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tex.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tex.anchor_left = _CARD_ICON_INSET
+	tex.anchor_right = 1.0 - _CARD_ICON_INSET
+	tex.anchor_top = _CARD_ICON_INSET * 0.8
+	tex.anchor_bottom = 1.0 - _CARD_ICON_INSET * 0.8
+	tex.offset_left = 0.0
+	tex.offset_right = 0.0
+	tex.offset_top = 0.0
+	tex.offset_bottom = 0.0
 	return tex
 
 
@@ -277,7 +314,8 @@ func _page_margin_for(view: int) -> float:
 
 
 func _is_carousel_view(view: int) -> bool:
-	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.SKILLS]
+	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.SKILLS,
+		View.FREEPLAY_CAR, View.FREEPLAY_REGION, View.FREEPLAY_SETUP]
 
 
 # Build a carousel and mount it as the page's whole selectable body (any plain,
@@ -297,12 +335,14 @@ func _build_carousel() -> CardCarousel:
 	return carousel
 
 
-# Append a text-card (icon placeholder + title/subtitle) to `carousel`. Mirrors the
-# old _row()'s disabled-and-unfocusable convention: a disabled card stays on screen
-# (shown, dimmed) but neither lands the cursor's confirm nor fires `on_confirm`
-# (CardCarousel.confirmed simply never emits for a disabled index).
+# Append a text-card (icon + centred title/subtitle, and an optional third
+# state/price line) to `carousel` — the ONE card shape across every page, so the
+# carousels read as a system. Mirrors the old _row()'s disabled-and-unfocusable
+# convention: a disabled card stays on screen (shown, dimmed) but neither lands
+# the cursor's confirm nor fires `on_confirm` (CardCarousel.confirmed simply never
+# emits for a disabled index).
 func _text_card(carousel: CardCarousel, title: String, subtitle: String,
-		disabled: bool, icon: String) -> void:
+		disabled: bool, icon: String, extra := "", extra_variant := "") -> void:
 	var card := carousel.add_card(disabled)
 	card.visual.add_child(_card_icon(icon))
 	var title_label := UITheme.label(title)
@@ -312,6 +352,10 @@ func _text_card(carousel: CardCarousel, title: String, subtitle: String,
 		var sub := UITheme.label(subtitle, "dim")
 		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.info.add_child(sub)
+	if extra != "":
+		var line := UITheme.label(extra, extra_variant)
+		line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.info.add_child(line)
 
 
 # --- MAIN --------------------------------------------------------------------
@@ -343,6 +387,8 @@ func _build_main() -> void:
 	# splitting them.
 	_text_card(carousel, "Rally challenge", "", false, "rally_challenge")
 	actions.append(func() -> void: _show(View.CHALLENGE))
+	_text_card(carousel, "Free play", "", false, "car")
+	actions.append(func() -> void: _show(View.FREEPLAY_CAR))
 	_text_card(carousel, "Lifetime stats", "", false, "stats")
 	actions.append(func() -> void: _show(View.STATS))
 	_text_card(carousel, "Settings", "", false, "settings")
@@ -350,6 +396,45 @@ func _build_main() -> void:
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 
 	_action("Quit", func() -> void: get_tree().quit())
+
+
+# --- Update check (features/update-check.md) ----------------------------------
+# Ported from the deleted hq.gd::_check_for_update: native builds only (web is served
+# from a build-unique path, so a browser player is always current; headless/editor have
+# no stamped build number), Cloud.rest's single HTTPRequest owner is reused rather than
+# adding a second client for one GET per boot, and MAIN-ONLY, re-checked AFTER the await
+# — the fetch outlives the boot frame, and an update notice landing on top of a screen
+# the player walked into is an interruption; the next boot to MAIN raises it instead.
+# Dismissal is recorded from the ACTIONS (ConfirmPopup.open returns null when another
+# modal owns the screen — a prompt that never appeared must not count as shown).
+func _check_for_update() -> void:
+	if not UpdateCheck.applicable():
+		return
+	var latest: int = await UpdateCheck.fetch_latest_build(Cloud.rest)
+	if not is_inside_tree() or _view != View.MAIN:
+		return
+	var current := UpdateCheck.current_build()
+	var dismissed := int(Save.get_setting(UpdateCheck.DISMISSED_SETTING, 0))
+	if not UpdateCheck.should_prompt(current, latest, dismissed):
+		return
+	_show_update_prompt(current, latest)
+
+
+# Split out of _check_for_update so the prompt itself is testable without fighting the
+# platform gate (UpdateCheck.applicable() is false under headless by design).
+func _show_update_prompt(current: int, latest: int) -> void:
+	var remember := func() -> void:
+		Save.set_setting(UpdateCheck.DISMISSED_SETTING, latest)
+	ConfirmPopup.open(self, "Update available",
+		UpdateCheck.prompt_body(current, latest),
+		[
+			# Leaving is left, proceeding is right (features/menus.md -> "Button order");
+			# Back routes to index 0, so Esc / gamepad-B is "Not now".
+			{"label": "Not now", "callback": remember},
+			{"label": UpdateCheck.store_label(), "callback": func() -> void:
+				remember.call()
+				OS.shell_open(UpdateCheck.store_url())},
+		], 1)
 
 
 func _resume_run() -> void:
@@ -541,15 +626,6 @@ func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
 		card.visual.add_child(CarPreviewCache.get_or_build(car_refs[i]))
 
 
-# The letter a placeholder card icon shows for a car ref (see _sync_car_previews) — an
-# owned-car Dictionary or a CarLibrary catalogue index, the same two shapes
-# CarCardPreview._ready already accepts.
-func _car_ref_name(car_ref) -> String:
-	if car_ref is Dictionary:
-		return String(CarLibrary.for_owned(car_ref).get("name", "car"))
-	return String(CarLibrary.all()[int(car_ref)].get("name", "car"))
-
-
 func _buy_car(model_id: String) -> void:
 	if Save.buy_car(model_id):
 		# Rebuild in place: the bought car now belongs in the owned list above and must
@@ -628,6 +704,88 @@ func _build_challenge() -> void:
 	_action("Back", func() -> void: _show(View.MAIN))
 
 
+# --- FREE PLAY -------------------------------------------------------------------
+# A session-less sandbox drive (scripts/free_play.gd): any catalogue car, any region's
+# stage pool (locked regions included — nothing is at stake), any combination of the
+# in-run boosts, no clock and no run state. Three pages, each one carousel, each
+# confirm advancing to the next; the setup page's Start writes the FreePlay plan and
+# boots the run scene, whose session-less branch consumes it (world.gd
+# -> _field_free_play_car / FreePlay.event).
+
+func _build_freeplay_car() -> void:
+	_fp_car = 0
+	_fp_region = ""
+	_fp_boosts = []
+	var carousel := _build_carousel()
+	# Parallel to the carousel's cards: the CarLibrary INDEX each card represents.
+	var indices: Array[int] = []
+	for index in CarLibrary.all().size():
+		var spec: Dictionary = CarLibrary.all()[index]
+		var model_id := String(spec.get("id", ""))
+		if model_id.is_empty():
+			continue
+		_text_card(carousel, String(spec.get("name", model_id)),
+			"Owned" if Save.owns_model(model_id) else "Not owned — free play lends it",
+			false, "car")
+		indices.append(index)
+	carousel.confirmed.connect(func(i: int) -> void:
+		_fp_car = indices[i]
+		_show(View.FREEPLAY_REGION))
+	_action("Back", func() -> void: _show(View.MAIN))
+
+
+func _build_freeplay_region() -> void:
+	var carousel := _build_carousel()
+	# Parallel to the carousel's cards: the region id each card represents. EVERY
+	# region is selectable — the unlock gate is a progression rule for runs, and free
+	# play has no progression to protect.
+	var ids: Array[String] = []
+	for region in RegionLibrary.ordered():
+		var id := String(region.get("id", ""))
+		if id == "":
+			continue
+		_text_card(carousel, String(region.get("name", id)), "Any stage from this region",
+			false, "region")
+		ids.append(id)
+	carousel.confirmed.connect(func(i: int) -> void:
+		_fp_region = ids[i]
+		_show(View.FREEPLAY_SETUP))
+	_action("Back", func() -> void: _show(View.FREEPLAY_CAR))
+
+
+func _build_freeplay_setup() -> void:
+	var carousel := _build_carousel()
+	# Parallel to the carousel's cards: the boost id each card toggles. Confirming a
+	# card TOGGLES it (any combination, order-free) and rebuilds the page so every
+	# card's Selected/Not state is legible; Start is what actually launches.
+	var ids: Array[String] = []
+	for id in BoostLibrary.CATALOGUE:
+		var boost_id := String(id)
+		_text_card(carousel, BoostLibrary.label_for(boost_id),
+			"Selected — tap to remove" if _fp_boosts.has(boost_id) else "Tap to add",
+			false, boost_id)
+		ids.append(boost_id)
+	carousel.confirmed.connect(func(i: int) -> void:
+		if _fp_boosts.has(ids[i]):
+			_fp_boosts.erase(ids[i])
+		else:
+			_fp_boosts.append(ids[i])
+		_show(View.FREEPLAY_SETUP))
+	_action("Start free play", func() -> void: _start_free_play())
+	_action("Back", func() -> void: _show(View.FREEPLAY_REGION))
+
+
+func _start_free_play() -> void:
+	if _fp_region == "":
+		return
+	# One stage drawn from the chosen region's pool, seeded from the clock so every
+	# entry can roll a different road (RegionStagePool.draw(region, count, seed)).
+	var event: Dictionary = RegionStagePool.draw(_fp_region, 1,
+		int(Time.get_unix_time_from_system()))[0]
+	FreePlay.begin(_fp_car, event, _fp_boosts)
+	Scenes.change_to(get_tree(), Scenes.MAIN)
+
+
 # --- SUMMARY -----------------------------------------------------------------
 
 # One screen for BOTH outcomes — cleared the region, or stopped by the clock. A run that
@@ -656,20 +814,21 @@ func _build_summary() -> void:
 # --- SHOP ----------------------------------------------------------------------
 # Stage 6's meta shop (todo/roguelike-pivot.md "Upgrades — RR's two-tier model" + "Car
 # acquisition — RR's shop"). Reached from MAIN, not from the run-starting flow: boost
-# levels and the Engine Swap unlock are permanent purchases available any time, unlike car
+# levels are permanent purchases available any time, unlike car
 # buying, which decision 28 keeps on the CAR page above (see that function's own comment).
 #
 # ONE flat list — every purchasable sits side by side in the same carousel, no
 # boost-levels sub-page: these are all permanent money sinks a player comparison-shops
 # between, so burying half of them a click deeper hid them from the exact screen where
-# the money gets spent.
+# the money gets spent. The Engine Swap is a mid-run boost pick now (BoostLibrary
+# "engine_swap"), sold up levels here like every other boost.
 #
 # One card per BoostLibrary.CATALOGUE id: its level (out of GameConfig.boost_level_max),
 # the price of the NEXT level, and the effect range the whole ladder covers (decision 42
 # — "the shop shows the effect range per level ... so the purchase is legible without a
-# live car to compute against"; BoostLibrary.effect_range_text is that formatting), then
-# the Engine Swap unlock card. Confirming a card makes the purchase; a card at its cap,
-# already bought, or the player cannot afford is disabled (shown, dimmed — CardCarousel's
+# live car to compute against"; BoostLibrary.effect_range_text is that formatting).
+# Confirming a card makes the purchase; a card at its cap or the player cannot afford
+# is disabled (shown, dimmed — CardCarousel's
 # own disabled convention, same as a locked region card), so the cursor's confirm can
 # never land on a dead purchase.
 func _build_shop() -> void:
@@ -684,41 +843,21 @@ func _build_shop() -> void:
 		var label := BoostLibrary.label_for(boost_id)
 		var at_cap := level >= max_level
 		var price := Save.boost_level_price(boost_id)
-		var card := carousel.add_card(at_cap or Save.money() < price)
-		card.visual.add_child(_card_icon(boost_id))
-		var title := UITheme.label(label)
-		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.info.add_child(title)
-		var sub := UITheme.label("Lv %d/%d, rolls %s" % [level, max_level,
-			BoostLibrary.effect_range_text(boost_id)], "dim")
-		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.info.add_child(sub)
-		# Appended in a branch rather than a ternary: the two strings' intent differs
-		# (a state vs a price) and each wants its own theme colour, not just its own text.
+		# The third line is a state ("MAX") or a price ("Next — N"), each with its
+		# own theme colour — chosen in a branch, not a ternary, so the two intents
+		# stay visibly separate.
+		var extra := "Next — %d" % price
+		var extra_variant := "gold"
 		if at_cap:
-			var max_lbl := UITheme.label("MAX")
-			max_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			card.info.add_child(max_lbl)
-		else:
-			var price_lbl := UITheme.label("Next — %d" % price, "gold")
-			price_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			card.info.add_child(price_lbl)
+			extra = "MAX"
+			extra_variant = ""
+		_text_card(carousel, label, "Lv %d/%d, rolls %s" % [level, max_level,
+				BoostLibrary.effect_range_text(boost_id)],
+			at_cap or Save.money() < price, boost_id, extra, extra_variant)
 		actions.append(func() -> void: _buy_boost_level(boost_id))
-
-	var unlocked := Save.engine_swap_unlocked()
-	var swap_price := Save.engine_swap_unlock_price()
-	_text_card(carousel, "Engine Swap",
-		"Unlocked" if unlocked else "Unlock — %d" % swap_price,
-		unlocked or Save.money() < swap_price, "engine_swap")
-	actions.append(_buy_engine_swap_unlock)
 
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 	_action("Back", func() -> void: _show(View.MAIN))
-
-
-func _buy_engine_swap_unlock() -> void:
-	if Save.buy_engine_swap_unlock():
-		_show(View.SHOP)
 
 
 func _buy_boost_level(id: String) -> void:

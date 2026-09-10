@@ -21,10 +21,15 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
+	# A dev-page test starts a challenge run; never let one leak into other files.
+	if RunSession.is_active():
+		RunSession.pause_run()
 
 
 func after_each() -> void:
 	get_tree().paused = false
+	if RunSession.is_active():
+		RunSession.pause_run()
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
@@ -203,6 +208,61 @@ func test_gearbox_page_is_keyboard_and_gamepad_navigable() -> void:
 # (todo/roguelike-pivot.md decision 21).
 
 
+# --- Dev page ----------------------------------------------------------------
+#
+# Three actions (features/settings.md → "Developer-only pages"): Add money, Unlock
+# all skills, and the mid-run-only Complete stage. Dev visibility itself is covered
+# by the players/dev-builds tests further down.
+
+# "Add money" banks the fixed dev grant through the one money funnel and the page
+# reports the new balance.
+func test_dev_add_money_banks_the_grant() -> void:
+	var before: int = _save.money()
+	var menu := _make_menu()
+	_dev_button(menu, "Add money").pressed.emit()
+	assert_eq(_save.money(), before + SettingsMenu.DEV_MONEY_GRANT,
+		"the dev grant lands in the balance")
+	assert_string_contains(menu._dev_status.text.to_lower(), "balance",
+		"the page reports the new balance")
+
+
+# "Unlock all skills" grants OWNERSHIP of every catalogue entry (the roster is
+# authored data — iterated as opaque input, its size is deliberately not pinned) at
+# no cost: thresholds, prices and the balance are all untouched.
+func test_dev_unlock_all_skills_owns_every_catalogue_entry() -> void:
+	var money_before: int = _save.money()
+	var menu := _make_menu()
+	_dev_button(menu, "Unlock all skills").pressed.emit()
+	for entry in SkillLibrary.all():
+		assert_true(_save.owns_skill(String(entry["id"])),
+			"every catalogue entry is owned after the press")
+	assert_eq(_save.money(), money_before, "the grant costs no money")
+
+
+# "Complete stage" is a MID-RUN action: the hub (no live session) never offers the
+# button, the pause menu (session live at build time) does, and pressing it only
+# emits the host-facing signal — the menu owns no car or stage to complete itself.
+func test_dev_complete_stage_offered_only_mid_run() -> void:
+	assert_false(DrivingContext.session_active(), "setup: the hub has no live run")
+	var hub_menu := _make_menu()
+	assert_null(_dev_button(hub_menu, "Complete stage"),
+		"no Complete stage button without a live run")
+
+	var car: Dictionary = _save.grant_car("fx_light_rwd")
+	assert_true(RunSession.start(ChallengeLibrary.DAILY, car,
+		int(Time.get_unix_time_from_system())), "setup: a challenge run is live")
+	var run_menu := _make_menu()
+	var button := _dev_button(run_menu, "Complete stage")
+	assert_not_null(button, "the button is offered while a run is live")
+
+	var fired := [false]
+	run_menu.dev_complete_stage_requested.connect(func() -> void: fired[0] = true)
+	button.pressed.emit()
+	assert_true(fired[0], "pressing it emits dev_complete_stage_requested")
+
+	RunSession.pause_run()
+
+
 # --- Reset progress ----------------------------------------------------------
 
 # Starting over is a PLAYER setting, not dev tooling: the category is offered even
@@ -242,7 +302,6 @@ func test_wipe_button_asks_before_destroying_anything() -> void:
 # Confirming does the wipe: a fresh new-game profile, and the page reports it.
 func test_confirming_the_modal_wipes_the_save() -> void:
 	_save.grant_car("fx_light_rwd")
-	_save.add_item("fx_consumable")
 	var menu := _make_menu()
 	_reset_button(menu, "Wipe all progress").pressed.emit()
 	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
@@ -254,8 +313,8 @@ func test_confirming_the_modal_wipes_the_save() -> void:
 	await get_tree().process_frame
 
 	assert_eq(int(_save.profile["cars"].size()), 0, "confirming clears all owned cars")
-	assert_true((_save.profile["inventory"] as Dictionary).is_empty(),
-		"and the inventory with them")
+	assert_true((_save.profile[Save.KEY_BOOST_LEVELS] as Dictionary).is_empty(),
+		"and the boost ladder with them")
 	assert_string_contains(menu._reset_status.text.to_lower(), "wiped",
 		"the page reports what happened")
 

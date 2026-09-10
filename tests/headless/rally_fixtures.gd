@@ -7,20 +7,18 @@ extends RefCounted
 #
 # The roster spans the axes tests exercise: an open (no-restriction) workhorse
 # with events, a drive-mode gate (RWD and FWD), a country gate, a body/engine gate,
-# a MAP-REVEAL gate (a pin parked outside HQ's lit circle), and a SPECIAL.
-# Restrictions are purely CATEGORICAL, like the shipped roster — there is no
-# power band any more (see RallyLibrary.ineligibility_reason). All live in the
-# real "home" region (a structural id RegionLibrary always ships) so region grouping
-# resolves.
+# a SPECIAL, and a rally parked outside the others. Restrictions are purely
+# CATEGORICAL, like the shipped roster — there is no power band any more (see
+# RallyLibrary.ineligibility_reason). All live in the real "home" region (a structural
+# id RegionLibrary always ships) so region grouping resolves.
 #
-# `map_pos` is load-bearing here, not decoration: reveal is geometric now
-# (RallyLibrary.rally_revealed), so a fixture's PIN POSITION is what decides whether it is
-# enterable. Every rally meant to be open from a fresh profile is parked inside HQ's lit
-# circle at RallyLibrary.HQ_MAP_POS; fx_gated is deliberately outside it, and fx_open
-# authors a wide reveal_radius that reaches fx_gated — so "complete fx_open to open
-# fx_gated" is the reveal case a test can exercise. Keep the two facts in sync if you move
-# either pin. Positions are well inside 0..1 so no fixture depends on edge clamping. Events set a very low water_level so track generation never
-# has to route around lakes — a fixture stage generates fast and deterministically.
+# The `map_pos` / `reveal_radius` fields are INERT AUTHORED DATA: they used to place each
+# fixture's pin and reveal circle on the diegetic HQ map, but the map — and with it
+# RallyLibrary.rally_revealed / lit_sources — is deleted (todo/roguelike-pivot.md). They
+# are kept only in step with the shipped RALLIES rows, which still author the same fields
+# as dead data; nothing reads either. Events set a very low water_level so track
+# generation never has to route around lakes — a fixture stage generates fast and
+# deterministically.
 #
 # Eligibility (RallyLibrary.is_eligible) reads the CAR catalogue, so a test that
 # checks eligibility should also CarFixtures.install() its cars; RallyFixtures only
@@ -44,8 +42,8 @@ static func rallies() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
 			"id": "fx_open", "name": "Fixture Open", "region": "home",
-			# Sits inside HQ's lit circle, and lights a WIDE circle of its own so completing
-			# it reveals fx_gated — the fixture's one reveal-progression edge.
+			# map_pos/reveal_radius are inert authored data (see the header note) — the
+			# reveal circle this used to light is deleted with the HQ map.
 			"difficulty": 1, "special": false, "map_pos": Vector2(0.50, 0.56),
 			"reveal_radius": 0.30,
 			"restriction": {},  # open class — the "any rally with events" workhorse
@@ -71,16 +69,16 @@ static func rallies() -> Array[Dictionary]:
 		},
 		{
 			"id": "fx_gated", "name": "Fixture Gated", "region": "home",
-			# OUTSIDE HQ's lit circle on purpose: dark on a fresh profile, revealed once
-			# fx_open is completed (whose reveal_radius reaches this pin).
+			# The one body-gated fixture (its pin's old "outside the lit circle" placement
+			# went with the map).
 			"difficulty": 3, "special": false, "map_pos": Vector2(0.50, 0.78),
 			"restriction": {"doors_max": 2},  # two-door only — a body gate, not a performance one
 			"events": [_event(4001), _event(4002), _event(4003)],
 		},
 		{
 			"id": "fx_showdown", "name": "Fixture Special", "region": "home",
-			# Parked inside HQ's lit circle so it is open from the start — a test that just
-			# wants "a special rally to run" can enter it without completing anything first.
+			# No restriction and no completion gate — a test that just wants "a special
+			# rally to run" can enter it directly.
 			"difficulty": 4, "special": true, "map_pos": Vector2(0.42, 0.46),
 			"restriction": {},  # open so any car can finish
 			"events": [_event(9001), _event(9002), _event(9003)],

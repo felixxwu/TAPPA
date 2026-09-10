@@ -265,12 +265,35 @@ func test_the_ghost_car_is_actually_translucent() -> void:
 
 func test_the_rival_is_solid_at_the_start_line() -> void:
 	# The grid park (pose_at_distance) renders the rival OPAQUE: it is the subject
-	# of the start-line shot, and translucency there would read as broken.
+	# of the start-line shot, and translucency there would read as broken. "Opaque"
+	# means the OPAQUE render path, not merely alpha 1.0 — a blended material at
+	# full alpha still draws in the transparent queue with no depth writes, which
+	# is how the Acty's truck bed used to show through its own cab body.
 	var ghost := _display_ghost()
 	ghost.pose_at_distance(0.0)
+	assert_false(ghost._ghost_materials.is_empty(), "setup: the ghost has materials")
 	for mat in ghost._ghost_materials:
 		assert_almost_eq(mat.albedo_color.a, 1.0, 0.001,
 			"the parked rival wears full opacity")
+		assert_eq(mat.transparency, BaseMaterial3D.TRANSPARENCY_DISABLED,
+			"it draws through the OPAQUE path (depth writes on)")
+		assert_eq(mat.depth_draw_mode, BaseMaterial3D.DEPTH_DRAW_ALWAYS,
+			"so its own body occludes itself — cab hides the truck bed")
+
+
+func test_a_faded_ghost_returns_to_the_blended_pass() -> void:
+	# The mode flip cuts both ways: park solid, then fade (the proximity path), and
+	# the materials must return to alpha blending — otherwise the first fade after
+	# a start-line departure would leave an unblended, hard-edged ghost.
+	Config.data.rival_ghost_opacity = 0.5
+	var ghost := _display_ghost()
+	ghost.pose_at_distance(0.0)
+	ghost._set_alpha(1.0)  # the run-time path: factor 1 = the configured 0.5 base
+	for mat in ghost._ghost_materials:
+		assert_eq(mat.transparency, BaseMaterial3D.TRANSPARENCY_ALPHA,
+			"below full alpha the ghost blends again")
+		assert_almost_eq(mat.albedo_color.a, 0.5, 0.001, "at the configured opacity")
+	Config.data.rival_ghost_opacity = 0.4
 
 
 func test_the_ghost_tilts_onto_a_sloped_road() -> void:

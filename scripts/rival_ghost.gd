@@ -134,6 +134,7 @@ static func _bracket(arr: PackedFloat32Array, x: float) -> Array:
 	var lo := 0
 	var hi := n - 1
 	while hi - lo > 1:
+		@warning_ignore("integer_division")  # floor division is the point of the bisection
 		var mid := (lo + hi) / 2
 		if arr[mid] <= x:
 			lo = mid
@@ -147,9 +148,9 @@ static func _bracket(arr: PackedFloat32Array, x: float) -> Array:
 # Distance (m) along the track the rival has covered at race time `t` (s), per
 # `profile` ({"s","t"} from RegionRunMode.stage_target_profile). 0.0 for an
 # empty/degenerate profile.
-static func distance_at_time(profile: Dictionary, t: float) -> float:
-	var t_arr: PackedFloat32Array = profile.get("t", PackedFloat32Array())
-	var s_arr: PackedFloat32Array = profile.get("s", PackedFloat32Array())
+static func distance_at_time(pace: Dictionary, t: float) -> float:
+	var t_arr: PackedFloat32Array = pace.get("t", PackedFloat32Array())
+	var s_arr: PackedFloat32Array = pace.get("s", PackedFloat32Array())
 	if t_arr.is_empty() or s_arr.is_empty():
 		return 0.0
 	var b := _bracket(t_arr, t)
@@ -162,9 +163,9 @@ static func distance_at_time(profile: Dictionary, t: float) -> float:
 # empty/degenerate profile. This is the HUD delta's other half: world.gd/
 # stage_manager.gd call this at the PLAYER's live distance and compare the result
 # against the player's own elapsed stage time.
-static func time_at_distance(profile: Dictionary, s_m: float) -> float:
-	var s_arr: PackedFloat32Array = profile.get("s", PackedFloat32Array())
-	var t_arr: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+static func time_at_distance(pace: Dictionary, s_m: float) -> float:
+	var s_arr: PackedFloat32Array = pace.get("s", PackedFloat32Array())
+	var t_arr: PackedFloat32Array = pace.get("t", PackedFloat32Array())
 	if s_arr.is_empty() or t_arr.is_empty():
 		return 0.0
 	var b := _bracket(s_arr, s_m)
@@ -175,8 +176,8 @@ static func time_at_distance(profile: Dictionary, s_m: float) -> float:
 
 # Total profile duration (s) — the last sample of profile["t"], or 0.0 for an
 # empty/degenerate profile (no target, nothing to show).
-static func profile_duration(profile: Dictionary) -> float:
-	var t_arr: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+static func profile_duration(pace: Dictionary) -> float:
+	var t_arr: PackedFloat32Array = pace.get("t", PackedFloat32Array())
 	return t_arr[t_arr.size() - 1] if not t_arr.is_empty() else 0.0
 
 
@@ -189,10 +190,10 @@ static func profile_duration(profile: Dictionary) -> float:
 # the start-line card shows; omitted/empty keeps the neutral baseline body.
 # Safe to call again with a new `profile` on a stage change — the Car is reused,
 # not rebuilt, and re-wears the new stage's rival car if it differs.
-func setup(track_progress: Node, terrain: Node, profile: Dictionary, rival: Dictionary = {}) -> void:
+func setup(track_progress: Node, terrain: Node, pace: Dictionary, rival: Dictionary = {}) -> void:
 	_track_progress = track_progress
 	_terrain = terrain
-	_profile = profile
+	_profile = pace
 	_reentry_s = -1.0  # a fresh stage's ghost has not departed anywhere yet
 	if _car == null:
 		_car = Scenes.car_scene().instantiate() as Node3D
@@ -294,8 +295,7 @@ func pose_at_distance(s_m: float) -> void:
 		return
 	_pose_car_at_distance(s_m)
 	_car.visible = true
-	for mat in _ghost_materials:
-		mat.albedo_color.a = 1.0
+	_write_alpha(1.0)
 	if _nametag != null:
 		_nametag.modulate.a = 1.0
 		_nametag.outline_modulate.a = 1.0
@@ -437,13 +437,35 @@ func _ghost_material(source: Material, alpha: float) -> StandardMaterial3D:
 	return mat
 
 
+# Write the ghost materials' effective alpha AND the render mode that alpha needs.
+# The subtlety this exists for: an alpha of 1.0 on a TRANSPARENCY_ALPHA material with
+# DEPTH_DRAW_DISABLED is still a TRANSPARENT-queue draw — no depth writes, so a
+# single-mesh body whose cab overlaps its own truck bed (the Acty) rendered the bed
+# THROUGH the cab on the start line, exactly as if its normals were inverted. At
+# full alpha the materials therefore flip to true OPAQUE (transparency disabled,
+# depth writes on) and self-occlusion comes back; below it they return to the
+# blended, depth-write-free ghost look (the overlapping-panels tradeoff that mode
+# was chosen for). The mode only changes when the value crosses the boundary — the
+# proximity fade writes the float every frame, this toggles at most on the crossing.
+func _write_alpha(a: float) -> void:
+	var opaque := a >= 0.999
+	for mat in _ghost_materials:
+		mat.albedo_color.a = a
+		var want := BaseMaterial3D.TRANSPARENCY_DISABLED if opaque \
+			else BaseMaterial3D.TRANSPARENCY_ALPHA
+		if mat.transparency != want:
+			mat.transparency = want
+		var depth := BaseMaterial3D.DEPTH_DRAW_ALWAYS if opaque \
+			else BaseMaterial3D.DEPTH_DRAW_DISABLED
+		if mat.depth_draw_mode != depth:
+			mat.depth_draw_mode = depth
+
+
 # Scale every ghost material's alpha by `factor` (0 = invisible, 1 = configured
 # opacity).
 func _set_alpha(factor: float) -> void:
 	var base: float = clampf(Config.data.rival_ghost_opacity, 0.0, 1.0)
-	var a := base * clampf(factor, 0.0, 1.0)
-	for mat in _ghost_materials:
-		mat.albedo_color.a = a
+	_write_alpha(base * clampf(factor, 0.0, 1.0))
 	if _nametag != null:
 		# The tag fades WITH the car. Left opaque it would hang in the air over an
 		# invisible ghost as the player overlaps it.

@@ -121,77 +121,8 @@ func test_a_confirm_popup_cannot_open_over_a_username_popup() -> void:
 	assert_null(ConfirmPopup.open(_host, "Second", "B", _actions_with_flag([""])),
 		"and the exclusivity holds in the other direction too")
 
-# --- open_committing: reserve the screen, THEN commit -------------------------
-# The bug: an irreversible save transaction ran BEFORE a presentation that can be
-# refused, so the transaction landed and its one and only reveal was dropped (two
-# mystery boxes opened, one reveal seen). open_committing acquires the modal slot
-# first, so "committed but unreportable" cannot happen.
-
-func test_open_committing_runs_the_mutation_and_shows_its_body() -> void:
-	var ran := [0]
-	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
-		[{"label": "OK", "callback": Callable()}],
-		func(_p: ConfirmPopup) -> String:
-			ran[0] += 1
-			return "the reward")
-	assert_not_null(popup, "with the slot free, the popup opens")
-	assert_eq(ran[0], 1, "and the mutation ran exactly once")
-	assert_eq(popup._body_label.text, "the reward",
-		"the body the commit produced replaced the placeholder")
-
-
-func test_open_committing_does_not_run_the_mutation_when_a_modal_is_up() -> void:
-	assert_not_null(ConfirmPopup.open(_host, "First", "B", _actions_with_flag([""])),
-		"setup: something else owns the screen")
-	var ran := [0]
-	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
-		[{"label": "OK", "callback": Callable()}],
-		func(_p: ConfirmPopup) -> String:
-			ran[0] += 1
-			return "spent")
-	assert_null(popup, "refused, like any other second modal")
-	assert_eq(ran[0], 0,
-		"and CRUCIALLY the irreversible mutation never ran — nothing was spent")
-
-
-func test_open_committing_awaits_a_coroutine_commit() -> void:
-	# world.gd's challenge reward must await its grant, so the commit contract has to
-	# accept a coroutine, not just a plain function.
-	var ran := [0]
-	var tree := get_tree()
-	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
-		[{"label": "OK", "callback": Callable()}],
-		func(_p: ConfirmPopup) -> String:
-			await tree.process_frame
-			ran[0] += 1
-			return "granted")
-	assert_eq(ran[0], 1, "the coroutine commit completed before the call returned")
-	assert_eq(popup._body_label.text, "granted", "and its body landed on the popup")
-
-
-func test_open_committing_lets_the_commit_fill_the_body_itself() -> void:
-	# A commit with nothing to return can still report, by writing to the popup it was
-	# handed — the same reason the body is deferred rather than a return value.
-	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "placeholder",
-		[{"label": "OK", "callback": Callable()}],
-		func(p: ConfirmPopup) -> void:
-			p.set_body("written by the commit"))
-	assert_eq(popup._body_label.text, "written by the commit",
-		"set_body fills the placeholder in")
-
-
-func test_open_committing_returns_an_ordinary_popup() -> void:
-	var flag := [""]
-	var popup: ConfirmPopup = await ConfirmPopup.open_committing(_host, "T", "...",
-		_actions_with_flag(flag), func(_p: ConfirmPopup) -> String: return "body")
-	assert_eq(ConfirmPopup.any_open(get_tree()), popup, "it holds the modal slot")
-	var buttons := popup.find_children("*", "Button", true, false)
-	assert_eq(buttons.size(), 2, "one button per action, as usual")
-	popup.trigger_back()
-	assert_eq(flag[0], "yes", "Back routes to the first (leftmost) action, as usual")
-	await get_tree().process_frame
-	assert_false(is_instance_valid(popup), "and it dismisses itself")
-
+# --- open_committing: DELETED with its entry point (no caller reserves a modal
+# slot around a transaction any more) -----------------------------------------
 
 # --- Long body: scroll, don't push the buttons off screen ---------------------
 # A ConfirmPopup has no touch dismissal other than its own buttons (trigger_back
@@ -263,12 +194,14 @@ func test_a_multi_line_body_is_shown_in_full_without_scrolling() -> void:
 	_assert_body_fully_visible(popup._body_label, "multi-line body")
 
 func test_replacing_the_body_regrows_the_scroll_to_fit_it() -> void:
-	# open_committing fills in a placeholder AFTER the popup is on screen, so the
-	# fit must follow the new text rather than staying sized to the placeholder.
+	# A caller that swaps the body text AFTER the popup is on screen (the deleted
+	# open_committing did; any future async reveal will) must get a fit that follows
+	# the new text rather than staying sized to the old one. Driven through the
+	# label directly now that set_body is gone.
 	var popup := ConfirmPopup.open(_host, "T", "Working...", _actions_with_flag([""]))
 	await get_tree().process_frame
-	popup.set_body("The mystery box paid out a brand new turbocharger for your car, "
-		+ "plus a healthy pile of cash to spend on the next one you fancy.")
+	popup._body_label.text = "The mystery box paid out a brand new turbocharger for your car, " \
+		+ "plus a healthy pile of cash to spend on the next one you fancy."
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_gt(popup._body_label.get_line_count(), 1, "setup: the replacement body wraps")

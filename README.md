@@ -14,7 +14,8 @@ it's the north star the implementation ladders up to.
 
 > **Mid-pivot.** The game is being rebuilt from a Gran-Turismo-style career loop
 > into the roguelike above. `todo/roguelike-pivot.md` is the settled decision
-> record and wins over every other document; `todo/roguelike-pivot-plan.md` is the
+> record and wins over every other document (the pivot plan that sequenced the
+> work, `todo/roguelike-pivot-plan.md`, is deleted — every item landed and was verified).
 > order of work. Feature docs under `features/` may still describe deleted systems
 > — they are being swept as the pivot lands.
 

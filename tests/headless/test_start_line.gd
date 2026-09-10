@@ -175,7 +175,6 @@ func _make(event_index := 0) -> StartLine:
 # owned-car dict.
 func _start_session_car() -> Dictionary:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.set_selected_car(int(owned["instance_id"]))
 	RunSession.auto_load_scenes = false
 	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
 		int(Time.get_unix_time_from_system())), "setup: the session car is fielded")
@@ -239,6 +238,50 @@ func test_the_player_stages_one_slot_behind_the_rival_on_the_line() -> void:
 			"the staged pose is one queue gap BEHIND the line (local +Z)")
 	assert_gt(_player.global_position.distance_to(sl._start_xform.origin), 1.0,
 			"the player is not staged ON the line — the rival is")
+
+
+# The restored DEPART shuffle (pre-pivot _roll_grid_to_slots): as the rival drives
+# off, the staged player is scripted forward off its queue slot — ai_throttle pinned
+# while well behind, braking onto the line once there — so the pose the player
+# WATCHED is the pose control resumes from, and the handoff's square-up is a
+# correction rather than a hidden teleport. StubPlayer has no driving script, so
+# this pins the scripting state machine and the end pose, not the live-body motion.
+func test_depart_scripts_the_staged_player_up_toward_the_line() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "setup: on the rival")
+	sl.launch()
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART, "setup: the rival is off")
+	assert_eq(_player.ai_throttle, 0.0, "setup: the staged player sits idle")
+	sl._process(0.1)
+	assert_eq(_player.ai_throttle, 1.0,
+			"DEPART scripts the player rolling up from its queue slot")
+	assert_false(_player.ai_handbrake, "no hold while there is road to make up")
+
+
+func test_the_roll_up_brakes_onto_the_line_instead_of_coasting_past() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	sl.launch()
+	# Put the stub ON the line (a live body would have rolled there): at the target
+	# at rest, _roll_car_to must hold on the handbrake with throttle cut.
+	_player.global_position = sl._start_xform.origin
+	sl._roll_player_up()
+	assert_eq(_player.ai_throttle, 0.0, "throttle cut once at the line")
+	assert_true(_player.ai_handbrake, "braked to a stop ON the slot, not coasting past")
+
+
+func test_the_handoff_squares_the_player_up_onto_the_line() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	sl.launch()
+	for i in 400:
+		if sl.sequence_phase() != StartLine.Seq.DEPART:
+			break
+		sl._process(0.1)
+	sl._process(Config.data.start_fade_seconds + 0.01)  # full black -> handoff
+	assert_almost_eq(_player.global_position.distance_to(sl._start_xform.origin), 0.0, 0.001,
+			"control resumes from the line the player rolled up onto")
 
 
 # --- MENU / camera -----------------------------------------------------------

@@ -380,6 +380,7 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 func start(kind_str: String, owned_car: Dictionary, unix_time: int) -> bool:
 	if _active:
 		return false
+	FreePlay.clear()  # a real run never inherits the sandbox's chosen car/boosts
 	var m := ChallengeRunMode.for_kind(kind_str, unix_time)
 	if m == null:
 		return false
@@ -397,6 +398,7 @@ func start(kind_str: String, owned_car: Dictionary, unix_time: int) -> bool:
 func start_region(region_id_str: String, owned_car: Dictionary, run_seed := 0) -> bool:
 	if _active:
 		return false
+	FreePlay.clear()  # a real run never inherits the sandbox's chosen car/boosts
 	return begin(RegionRunMode.for_region(region_id_str, run_seed), owned_car)
 
 
@@ -406,6 +408,7 @@ func start_region(region_id_str: String, owned_car: Dictionary, run_seed := 0) -
 func resume(unix_time: int) -> bool:
 	if _active:
 		return true
+	FreePlay.clear()  # a real run never inherits the sandbox's chosen car/boosts
 	var run := resumable_run(Save.profile, unix_time)
 	if run.is_empty():
 		return false
@@ -458,14 +461,6 @@ func discard_run(unix_time: int) -> void:
 		run_mode.record_outcome({"dnf": true, "completed": false,
 			"cumulative_ms": 0, "abandoned": true}, unix_time)
 	Save.clear_run()
-
-
-# Back-compat name for the stale-run path (a run whose period has since rolled over).
-# Same rule: a stale run has still been attempted.
-func discard_stale_run(unix_time: int) -> void:
-	if not has_stale_run(Save.profile, unix_time):
-		return
-	discard_run(unix_time)
 
 
 func _persist() -> void:

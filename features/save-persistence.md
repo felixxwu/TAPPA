@@ -151,11 +151,9 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   never touches the live car; it scales the magnitude `BoostLibrary.magnitude_for`
   hands to a FUTURE in-run pick — see [region-runs.md](region-runs.md) → *The meta
   tier*. `Save.boost_level(id)` / `boost_level_price(id)` / `buy_boost_level(id)`.
-- `engine_swap_unlocked` (`Save.KEY_ENGINE_SWAP_UNLOCKED`, bool) — the Engine Swap
-  capability's one-time purchased-unlock flag (decision 17). Read by
-  `RallyLibrary.engine_swaps_unlocked(profile)`; written by
-  `Save.buy_engine_swap_unlock()`. Replaced a rally-completion flag — see
-  [engine-swap.md](engine-swap.md) → *Capability gate*.
+- (DELETED) `engine_swap_unlocked` — the Engine Swap is a mid-run boost now; the
+  flag, its reader and its buyer went together (see [engine-swap.md](engine-swap.md)).
+  Old profiles keep the key on disk, unread and undeclared.
 - `run` (`Save.KEY_RUN`) — **the one run slot**, holding an in-progress run of either
   kind (a region run or a Daily/Weekly/Monthly challenge). `set_run` / `clear_run` are
   its only writers, `is_challenge_locked(instance_id)` is the car lock over it, and

@@ -81,7 +81,7 @@ const _SHOT_OFFSET := Vector3(10.0, 9.0, 10.0)
 
 # Which WeatherLibrary ids each region may cycle through — the showcase's own
 # equivalent of RallyLibrary authoring "sandstorm" only onto region == "greece"
-# events (test_rally_library.gd::test_sandstorm_only_authored_on_greece_events) and
+# events (test_menu_showcase_geometry.gd::test_sandstorm_is_eligible_only_in_the_desert_regions) and
 # "snow" only onto region == "snow" ones. Every id used here must be a real
 # WeatherLibrary entry (test_menu_showcase_geometry.gd asserts it), and every region
 # must map to a non-empty list.

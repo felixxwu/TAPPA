@@ -5,7 +5,7 @@ pick a car, and drive **8 stages back to back against a fixed clock**. Miss a
 stage's target time and the run is over on the spot — that is the only hard fail
 state in the game. Money is banked at every stage clear and never taken back.
 
-**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_boost_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_save_manager.gd` (the meta shop: `buy_car`/`buy_boost_level`/`buy_engine_swap_unlock`), `tests/headless/test_hub_shell.gd` (the SHOP screen + nav)
+**Tests:** `tests/headless/test_region_run.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_boost_library.gd`, `tests/headless/test_challenge_session.gd`, `tests/headless/test_save_manager.gd` (the meta shop: `buy_car`/`buy_boost_level`), `tests/headless/test_hub_shell.gd` (the SHOP screen + nav)
 
 This doc owns the **run spine** — the session, its strategy seam, the stage draw,
 the timer, the money and the between-stage pick. The Daily/Weekly/Monthly
@@ -13,7 +13,7 @@ challenge, which is the spine's *other* caller, is documented in
 [rally-challenge.md](rally-challenge.md).
 
 **Stages 3-6 are landed:** the spine, region select + linear unlock, in-run boosts,
-and now the meta shop (boost LEVELS, car purchasing, the Engine Swap unlock) — see
+and now the meta shop (boost LEVELS, car purchasing) — see
 "The meta tier" below. Lifetime stats + skills (stage 7) and coins (stage 8,
 [collectables.md](collectables.md)) are landed too, as is the pass that wired the skills
 to real effects (decision 51) — every stage of the pivot plan is now built.
@@ -306,15 +306,16 @@ permadeath").
 
 ### The catalogue and its draw
 
-`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — six entries, each an
+`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — seven entries, each an
 `effect` dict keyed by an **existing** `UpgradeLibrary.EFFECTS` row (no second
 effects system): `mass_mult`, `tire_grip_mult`, `shift_time_set`,
-`downforce_front`/`_rear`, and two new rows added alongside this stage —
-`brake_force_mult` (`GameConfig.brake_torque`) and `drag_mult`
-(`GameConfig.drag_coefficient`). RR's `engineForce` category is deliberately not
-reproduced: its natural GameConfig target, `global_torque_scale`, is a hidden
-global de-rate (engine.gd's own comment), not a per-car effect field, so hooking
-a boost onto it would fight that knob's real job.
+`downforce_front`/`_rear`, `brake_force_mult` (`GameConfig.brake_torque`),
+`drag_mult` (`GameConfig.drag_coefficient`), and — the Engine Swap, re-homed
+from its old one-time meta unlock — `engine_power_mult` (`GameConfig.peak_torque`,
+the catalogue's POWER pick). RR's `engineForce` category maps onto none of the
+forbidden knobs: `global_torque_scale` is a hidden global de-rate (engine.gd's
+own comment), not a per-car effect field, so the engine swap multiplies the
+per-car `peak_torque` instead.
 
 Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
 Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
@@ -373,7 +374,7 @@ the only legitimate writer of `drivetrain_override` (onto the duplicated fieldin
 never `Save`'s persisted car — see *Where boosts live* above). `HubShell`'s old
 `DRIVETRAIN` / `DRIVETRAIN_CAR` shop pages are deleted along with the purchase path.
 
-### The meta tier — boost levels, car purchasing, the Engine Swap unlock
+### The meta tier — boost levels, car purchasing
 
 Stage 6 built all three. They are thin wrappers over
 `Save.spend_money` sharing one refusal
@@ -422,11 +423,11 @@ when unaffordable. This is what retires the old dead end: a fresh profile owns n
 but decision 28's starting purse means the very page that used to say "no cars yet" now
 lists something it can afford.
 
-**The Engine Swap unlock.** Re-gated as a one-time meta purchase (decision 17) —
-`RallyLibrary.engine_swaps_unlocked` now reads `Save.KEY_ENGINE_SWAP_UNLOCKED` instead of
-a rally-completion flag; see [engine-swap.md](engine-swap.md) → *Capability gate* for the
-full history. `Save.buy_engine_swap_unlock()` spends `GameConfig.engine_swap_unlock_price`
-and refuses a second purchase once bought.
+**The Engine Swap is a mid-run boost now** — one of the seven `BoostLibrary`
+entries above (`"engine_swap"`), picked between stages and sold up levels in
+the shop like every other boost. The decision-17 one-time meta unlock is
+deleted with its `Save.buy_engine_swap_unlock` mutator; see
+[engine-swap.md](engine-swap.md) for the full history.
 
 ## Known placeholder — resolved
 

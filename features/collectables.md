@@ -13,7 +13,7 @@ argument), `scripts/region_run_mode.gd` (`stage_money`'s fourth argument),
 ledger), `tests/headless/test_hud.gd` (`test_coin_counter_starts_hidden_and_shows_on_first_call`)
 
 RR's coins (`todo/roguelike-pivot.md` decisions 13, 35, 36, 50 — stage 8 of
-`todo/roguelike-pivot-plan.md`, the last feature stage of the pivot). Money
+the deleted pivot plan, the last feature stage of the pivot). Money
 collectables scattered on a region-run stage, **off the racing line**, so picking
 one up is a real gamble against the fixed clock: leaving the fast line costs time,
 the timer is the run's only fail state (decision 4), and there is no other reason

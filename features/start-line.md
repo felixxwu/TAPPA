@@ -29,9 +29,10 @@ builds a `StartLine` and the countdown arms immediately.
 > pressed, Start flies the camera to a low 3/4 shot in front of the rival, the
 > rival card appears only when the camera arrives, and a second Start **sends
 > the rival off** — the countdown waits until it has actually driven away.
-> `setup()` still takes no `leaders` argument, and the grid-spawn / roll-up /
+> `setup()` still takes no `leaders` argument, and the grid-spawn /
 > proximity-attenuation machinery stays gone — one parked ghost replaces the
-> three-car queue.
+> three-car queue — though the grid shuffle's roll-up itself is back in DEPART
+> (below), one car wide.
 
 > **The rival is a ghost, not a field** ([rival-ghost.md](rival-ghost.md)).
 > A staged region run's fixed clock (`RegionRunMode.stage_target_ms`) is
@@ -74,7 +75,7 @@ builds a `StartLine` and the countdown arms immediately.
      Car only"). Before the parts model was deleted this screen also hosted an
      `UpgradesGrid` for swapping parts or detuning pre-stage; upgrades have
      nothing to show once parts are gone and boosts are picked **between**
-     stages instead (`todo/roguelike-pivot-plan.md` stage 5). `car.gd`'s
+     stages instead (the deleted pivot plan's stage 5). `car.gd`'s
      `refit_upgrades()` — the live re-derive that page drove — is kept
      specifically for stage 5 to apply a picked boost through; see its own
      comment.
@@ -106,15 +107,25 @@ builds a `StartLine` and the countdown arms immediately.
    forward from the line down the lead-in at the profile's own pace
    (`RivalGhost.departure_speed`, posed by distance each frame), while the
    camera holds the reveal shot and the overlay hides (the commitment press
-   already happened). Only once it is `start_lead_in_ahead_m` past the line —
-   properly away — is it hidden (`mark_departed_at`, arming the re-entry gate
-   in [rival-ghost.md](rival-ghost.md)) and the fade begun. The player never
+   already happened). While the rival draws the eye, the PLAYER rolls up from
+   its staged queue slot onto the line the rival vacates — the pre-pivot grid
+   shuffle RESTORED (`_roll_player_up` every DEPART frame into `_roll_car_to`,
+   ported verbatim from the old grid: full throttle while well behind, a coast
+   into the speed-aware brake point, then brake+handbrake hold ON the slot,
+   `_ground` dropping the target onto the road and the staging's lateral/yaw
+   axis locks keeping it on rails) — so the pose the player watches arrive is
+   the one control resumes from. Only once the rival is
+   `start_lead_in_ahead_m` past the line — properly away — is it hidden
+   (`mark_departed_at`, arming the re-entry gate in
+   [rival-ghost.md](rival-ghost.md)) and the fade begun. The player never
    sees the countdown before the rival has left.
 5. **FADE_OUT / FADE_IN** — the screen fades to
    black (`start_fade_seconds` each half). At full black the camera hands back to the
    player's **selected** camera (chase or bonnet, via `CameraManager`), the
-   driving UI returns, the player is released from staging and snapped exactly
-   onto the line, and `StageManager.begin_countdown()` starts the countdown;
+   driving UI returns, the player is released from staging and squared up
+   exactly onto the line — a last-inches correction of the roll-up's residual
+   creep, not the move itself — and `StageManager.begin_countdown()` starts
+   the countdown;
    then the screen fades back in. Without a rival, Start goes straight from a
    passed eligibility gate to `Seq.FADE_OUT`; a press mid-fly is ignored for
    the fly's second or so, the way the deleted sequence treated input between
@@ -151,15 +162,19 @@ road), seated
 scripted like the old grid cars were (`ai_controlled` + zeroed `ai_throttle` /
 `ai_steer`, axis-locked laterally and in yaw so it can't drift during the MENU
 orbit idle) and released at the hand-off (`_release_player`): AI override and
-axis locks cleared, gearbox-auto restored, snapped UP ONTO the line via
-`reset_to(_start_xform)` under cover of the fade.
+axis locks cleared, gearbox-auto restored, squared UP ONTO the line via
+`reset_to(_start_xform)` under cover of the fade — a last-inches correction
+of whatever creep the DEPART roll-up (above) left behind, the roll-up being
+the move itself (before it was restored this reset WAS the move: a full
+queue-gap teleport the fade had to hide).
 
 What parks on the line today is the ONE ghost, SOLID: `setup()` calls
 `RivalGhost.pose_at_distance(0.0)` — ON the line, dead in the player's wheel
 tracks — and nothing
-re-poses it until DEPART drives it off. The **roll-up and
-per-car proximity attenuation staging** that kept three extra cars alive
-through the old sequence stay gone; the ghost is kinematic and
+re-poses it until DEPART drives it off. The **per-car proximity
+attenuation staging** that kept three extra cars alive through the old
+sequence stays gone — but the shuffle's ROLL-UP is restored, one car wide
+(the player's DEPART roll); the ghost is kinematic and
 collision-free, so it neither shoves the staged player nor needs despawning —
 there is nothing left to spawn, sequence or despawn but the player and the
 rival that was always going to drive the stage.
@@ -188,15 +203,16 @@ button clears the viewport's focus owner outright and nothing else re-grabs it.
 | `start_fade_seconds` | Length of each half (out, back) of the hand-off fade. |
 | `start_spawn_clearance` | Height (m) the player is seated above the road at spawn. |
 | `start_queue_gap` | Grid gap (m) the PLAYER stages behind the rival (who owns the line). |
+| `start_roll_decel_divisor` / `start_roll_brake_margin_m` / `start_roll_coast_band_m` / `start_roll_creep_speed` | The DEPART roll-up's brake choreography: decel divisor of the v²/d stop-distance model, brake margin (m) added to it, coast band (m) ahead of the brake point, creep speed (m/s) below which the foot brake lifts so the auto box doesn't grab reverse against the handbrake hold. |
 | `start_lead_in_ahead_m` | How far past the line the DEPART drive-off must reach before the fade/countdown begin. |
 | `start_reveal_fly_seconds` | Fly from the orbit pose to the reveal shot. |
 | `start_reveal_cam_front_m` / `_side_m` / `_height_m` / `_look_height_m` / `start_reveal_cam_fov` | The reveal shot: a low 3/4 in front of the rival on its grid slot. |
 
 See [configuration.md](configuration.md). Most of the reveal-only knobs the
 pre-pivot screen read came back with the one-rival revival (`start_queue_gap`,
-`start_reveal_*` — old defaults included); the `start_queue_stagger_seconds`
-and `start_roll_*` knobs stayed deleted with the
-queue and roll-up they drove, and the `start_lead_in_*` road reservation
+`start_reveal_*` — old defaults included), and the `start_roll_*` knobs came
+back with the restored DEPART roll-up; `start_queue_stagger_seconds` stayed
+deleted with the queue it drove, and the `start_lead_in_*` road reservation
 remains the generator's — the start line only READS `start_lead_in_ahead_m`
 now, as the DEPART send-off distance.
 
@@ -219,7 +235,9 @@ no idle timer auto-flies), Start triggers the fly (FOV and anchor landed), the
 rival card appears only in REVEAL and not during the menu, a carless ghost
 reveals the card without the fly, Start from REVEAL sends the rival off
 (DEPART) and the countdown begins only once the drive-off has run its
-distance, and a `null` ghost (a challenge
+distance, the DEPART roll-up scripts the staged player up toward the line and
+brakes onto it instead of coasting past (the hand-off then squaring it up
+onto the line), and a `null` ghost (a challenge
 stage, or a degenerate track) is a harmless no-op that never leaves the MENU
 or shows a card. See
 [rival-ghost.md](rival-ghost.md) for the ghost's own maths/pose/display tests

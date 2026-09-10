@@ -26,7 +26,7 @@ forget) the per-widget setup.
 > continuous 3D space where "left/right" meant *cycle the parked car* or *pan the map camera*
 > rather than *move focus to the neighbour widget*. That whole hub — `hq.tscn`, `hq.gd` and
 > its nine collaborator scripts — was deleted in the roguelike pivot (decision 9,
-> `todo/roguelike-pivot.md`; demolition in `todo/roguelike-pivot-plan.md` stage 2b). With no
+> `todo/roguelike-pivot.md`; demolition in the pivot plan's stage 2b, spec since deleted). With no
 > spatial hub left to navigate, the second regime is gone with it, not merely undocumented:
 > **every menu in the game is a flat widget list now**, and `CLAUDE.md` has already been
 > corrected to point here rather than at `hq.gd`. If a future screen ever needs a

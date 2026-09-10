@@ -67,7 +67,6 @@ const SCHEMA_VERSION := 7
 # unless a SCHEMA_VERSION bump comes with the change (there is no migration to pair it
 # with any more — see that const's own comment).
 const KEY_CARS := "cars"
-const KEY_RALLIES := "rallies"
 
 # --- Roguelike run-meta keys (todo/roguelike-pivot.md) -------------------------
 # Everything a failed run must NOT touch. Soft permadeath destroys the run -- stage
@@ -91,22 +90,6 @@ const KEY_BOOST_LEVELS := "boost_levels"      # boost id -> purchased level (met
 const KEY_BOUGHT_SKILLS := "bought_perks"      # skill ids owned
 const KEY_EQUIPPED_SKILLS := "equipped_perks"  # skill ids currently slotted (capped)
 const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
-# The Engine Swap capability's purchased-unlock flag (todo/roguelike-pivot.md decision 17 —
-# re-gated as a meta shop purchase). Read by RallyLibrary.engine_swaps_unlocked, which used
-# to read a rally-completion flag; see that function's own comment.
-const KEY_ENGINE_SWAP_UNLOCKED := "engine_swap_unlocked"
-
-# Consumables that no longer exist, erased from `inventory` on load (see _sanitise).
-# A LIST rather than a branch per id, because retiring a consumable is a recurring event
-# and three copies of the same two lines is how one of them ends up forgotten:
-#   repair_kit          — repair kits are gone; between-event field repair is free.
-#   mystery_box         — parts are bought with stars at any time, so a random box that
-#                         opens onto a part had nothing left to offer.
-#   engine_swap_token   — engine swapping is unlimited once its rally unlocks it, so
-#                         there is no per-swap cost left to hold.
-# The ids are LITERALS, deliberately: the catalogue entries they name have been deleted,
-# so there is no constant left to reference, and an old profile still spells them this way.
-const RETIRED_ITEM_IDS := ["repair_kit", "mystery_box", "engine_swap_token"]
 
 # Default profile location. Kept as a settable property (not a hard const) so
 # named save slots can be layered on later without reworking the API, and so
@@ -340,11 +323,6 @@ func load_or_new() -> void:
 		return
 	profile = _sanitise(migrated)
 	_note_known_profile_keys()
-	# Backfill the new-rally reveal's `revealed` flags on a profile that predates the
-	# feature (see _seed_reveals_if_needed). Runs HERE — the moment a profile becomes
-	# live — rather than being left to whoever happens to reach the map/HQ, so a future
-	# entry point can never forget to seat it.
-	_seed_reveals_if_needed()
 
 
 # Read + JSON-parse a profile file. Returns {} on any failure (missing,
@@ -380,16 +358,6 @@ func _sanitise(p: Dictionary) -> Dictionary:
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
 	p[KEY_CARS] = kept
-	# Drop RETIRED consumables from older profiles. Done HERE, in the tolerant sanitise
-	# pass, rather than as a schema migration: the key is inert once nothing reads it, and
-	# a SCHEMA_VERSION bump would make every older build refuse the profile outright — too
-	# high a price for cleaning up a dead key, especially with cloud save moving profiles
-	# between devices on different builds.
-	var inv: Dictionary = p.get("inventory", {})
-	for dead_id in RETIRED_ITEM_IDS:
-		if inv.has(dead_id):
-			inv.erase(dead_id)
-			p["inventory"] = inv
 	return p
 
 
@@ -517,11 +485,6 @@ func adopt_profile(incoming: Dictionary) -> bool:
 	profile = _sanitise(migrated)
 	_note_known_profile_keys()
 	profile["settings"] = device_settings
-	# A restored career lands with no reveal flags on it, so without this the next map
-	# open would parade the whole roster at somebody who has already played it (see
-	# _seed_reveals_if_needed). Idempotent: a career that already carries flags is left
-	# alone (needs_reveal_seeding() is false).
-	_seed_reveals_if_needed()
 	return true
 
 
@@ -546,10 +509,6 @@ func _default_profile() -> Dictionary:
 		"starter_model_id": "",
 		"next_instance_id": 1,
 		KEY_CARS: [],
-		"selected_instance_id": -1,
-		"inventory": {},
-		KEY_RALLIES: {},
-		"reward_history": [],
 		# The run-meta block. Declared here because the ratchet test below requires every
 		# persisted key to be DECLARED rather than conjured at the write site.
 		#
@@ -565,7 +524,6 @@ func _default_profile() -> Dictionary:
 		KEY_BOUGHT_SKILLS: [],
 		KEY_EQUIPPED_SKILLS: [],
 		KEY_LIFETIME: {},
-		KEY_ENGINE_SWAP_UNLOCKED: false,
 		"settings": {},
 		# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) ---
 		# `stars_earned` / `stars_spent` are gone outright, not migrated: the pivot replaced
@@ -663,8 +621,6 @@ func grant_car(model_id: String) -> Dictionary:
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
 	profile[KEY_CARS].append(car)
-	if not profile.get("reward_history", []).has(model_id):
-		profile["reward_history"].append(model_id)
 	save()
 	return car
 
@@ -732,51 +688,14 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 	save()
 
 
-# Fit a COSMETIC wheel style — a donor car's stable CarLibrary id — to an owned car
-# (features/wheel-customization.md). Free, ungated and reversible: no token, no
-# consumable, no eligibility rules, and it changes NOTHING but the wheel texture.
-# "Stock" is canonically represented as the key being ABSENT (an empty id, or the
-# car's own model_id, erases it), which keeps the owned dict's hash — the key the HQ
-# car-prop caches use — stable across a revert. No schema migration is needed: an
-# absent per-car key already means stock, exactly as swapped_engine does.
-func set_wheels(instance_id: int, wheel_id: String) -> void:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	if wheel_id.is_empty() or wheel_id == String(car.get("model_id", "")):
-		car.erase("wheels")
-	else:
-		car["wheels"] = wheel_id
-	save()
+# set_wheels is DELETED (its TuningPanel host route is gone — no caller passes an
+# on_wheels callback, so the write path was unreachable). The per-car "wheels" key
+# READ path stays: car.gd still resolves a saved style for cars in existing profiles.
 
-
-# Exchange the CURRENT engines of two owned cars (features/engine-swap.md).
-#
-# FREE AND UNLIMITED once the capability is unlocked by its special rally. Each swap used
-# to spend an engine swap token, including reverting to stock — that consumable is gone,
-# so the rally unlock is now the whole gate and a player can rearrange their garage as
-# often as they like. Health is irrelevant and a damaged car keeps its HP.
-#
-# Each car's swapped_engine is set to the OTHER's current engine, then cleared to "" when
-# the result equals that car's own stock engine (so "stock" is canonical and the name
-# reverts). Returns false (no change) when the swap is not allowed or would be a no-op.
-func swap_engines(id_a: int, id_b: int) -> bool:
-	if id_a == id_b:
-		return false
-	var a := get_car(id_a)
-	var b := get_car(id_b)
-	if not EngineSwap.can_swap(a, b):
-		return false
-	var stock_a := String(CarLibrary.by_id(String(a["model_id"])).get("engine", ""))
-	var stock_b := String(CarLibrary.by_id(String(b["model_id"])).get("engine", ""))
-	var cur_a := EngineSwap.current_engine_id(a, stock_a)
-	var cur_b := EngineSwap.current_engine_id(b, stock_b)
-	if cur_a == cur_b:
-		return false  # nothing to exchange
-	_set_engine(a, stock_a, cur_b)
-	_set_engine(b, stock_b, cur_a)
-	save()
-	return true
+# swap_engines / set_engine_detune are DELETED: the Engine Swap is a mid-run boost
+# (BoostLibrary "engine_swap") now, and the garage-lift UI that wrote these keys is gone
+# with the HQ. The per-car "swapped_engine" / "tuning.engine_detune" READ paths stay
+# (CarLibrary.apply_owned) so cars in existing profiles still resolve their engines.
 
 
 # --- Run car lock -------------------------------------------------------------
@@ -808,7 +727,7 @@ func set_run(run: Dictionary) -> void:
 	save()
 
 
-# Clear the stored run (RunSession.discard_stale_run / _clear_persisted on finish) —
+# Clear the stored run (RunSession.discard_run / _clear_persisted on finish) —
 # no run stored, nothing to resume.
 func clear_run() -> void:
 	profile[KEY_RUN] = {}
@@ -823,69 +742,6 @@ func set_challenge_results(results: Dictionary) -> void:
 
 
 # Set a car's engine to engine_id, clearing the swap field when it matches stock.
-func _set_engine(car: Dictionary, stock_id: String, engine_id: String) -> void:
-	if engine_id == stock_id or engine_id.is_empty():
-		car.erase("swapped_engine")
-	else:
-		car["swapped_engine"] = engine_id
-
-
-# Set a car's engine detune (0..1 torque scale) — a tuning-lift value stored in the
-# per-car tuning bag. Clamped to [0,1]. 1.0 = full power (the default everywhere).
-func set_engine_detune(instance_id: int, frac: float) -> void:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	var tuning: Dictionary = car.get("tuning", {})
-	tuning["engine_detune"] = clampf(frac, 0.0, 1.0)
-	car["tuning"] = tuning
-	save()
-
-
-# --- Selected car ------------------------------------------------------------
-# The player always has one owned car "selected" — the one raised on the garage
-# tuning lift. It's the default car the lift tunes/upgrades, and
-# (unless a rally car-select overrides it) the one fielded. Stored as an instance
-# id, resolved lazily so it always points at a still-owned car.
-# (todo/menus.md, cited here, is deleted — todo/roguelike-pivot.md decision 44.)
-
-# The selected OwnedCar, or {} if the player owns nothing. Falls back to (and
-# records) the first owned car when the stored id is unset or no longer owned —
-# so the selection self-heals if the stored instance is no longer in the garage.
-func selected_car() -> Dictionary:
-	var cars: Array = profile.get(KEY_CARS, [])
-	if cars.is_empty():
-		return {}
-	var id := int(profile.get("selected_instance_id", -1))
-	var car := get_car(id)
-	if car.is_empty():
-		car = cars[0]
-		set_selected_car(int(car.get("instance_id", -1)))
-	return car
-
-
-func selected_instance_id() -> int:
-	var car := selected_car()
-	return int(car.get("instance_id", -1)) if not car.is_empty() else -1
-
-
-func set_selected_car(instance_id: int) -> void:
-	profile["selected_instance_id"] = instance_id
-	# Promote the selected car to the front of the lineup so the most recently
-	# selected car appears first — persisted via the cars array, so it survives
-	# a relaunch. Car park lineups iterate profile["cars"], so reordering here is
-	# all it takes. No-op for unowned/-1 ids (e.g. starter previews).
-	var cars: Array = profile.get(KEY_CARS, [])
-	for i in cars.size():
-		if int(cars[i].get("instance_id", -1)) == instance_id:
-			if i > 0:
-				var car: Dictionary = cars[i]
-				cars.remove_at(i)
-				cars.insert(0, car)
-			break
-	save()
-
-
 # --- Player settings (device/UI preferences, not progress) -------------------
 # A flat key->value bag under profile["settings"] for preferences like the chosen
 # mobile control scheme. Old profiles missing the key are backfilled on load
@@ -902,31 +758,6 @@ func set_setting(key: String, value: Variant) -> void:
 	profile["settings"] = settings
 	save()
 
-
-# --- Inventory + upgrade install --------------------------------------------
-
-func add_item(item_id: String, n := 1, do_save := true) -> void:
-	var inv: Dictionary = profile["inventory"]
-	inv[item_id] = int(inv.get(item_id, 0)) + n
-	if not profile.get("reward_history", []).has(item_id):
-		profile["reward_history"].append(item_id)
-	if do_save:
-		save()
-
-
-# Remove n of an item from inventory if available. Returns true on success.
-func consume_item(item_id: String, n := 1, do_save := true) -> bool:
-	var inv: Dictionary = profile["inventory"]
-	var have := int(inv.get(item_id, 0))
-	if have < n:
-		return false
-	if have == n:
-		inv.erase(item_id)
-	else:
-		inv[item_id] = have - n
-	if do_save:
-		save()
-	return true
 
 
 # THE PERSISTENT PARTS MODEL IS DELETED (todo/roguelike-pivot.md -> "What gets deleted").
@@ -1035,7 +866,7 @@ func add_money(amount: int) -> int:
 # Returns whether the purchase went through, so a caller can never half-spend.
 #
 # THE ONE FUNNEL every purchase goes through (buy_car, buy_boost_level,
-# buy_engine_swap_unlock, buy_skill) — LifetimeStats.MONEY_SPENT is written HERE so it
+# buy_skill) — LifetimeStats.MONEY_SPENT is written HERE so it
 # covers every sink automatically, the same reasoning as add_money's own comment.
 # Never called on a refused purchase (every buy_* checks its own precondition first),
 # so a rejected buy never inflates this counter.
@@ -1105,28 +936,6 @@ func buy_boost_level(id: String) -> bool:
 	return true
 
 
-# Whether the Engine Swap capability has been purchased — what
-# RallyLibrary.engine_swaps_unlocked reads (that function takes an explicit profile
-# Dictionary rather than calling here, so synthetic-profile tests keep working; this is the
-# convenience reader for live callers that already have `Save.profile`).
-func engine_swap_unlocked() -> bool:
-	return bool(profile.get(KEY_ENGINE_SWAP_UNLOCKED, false))
-
-
-func engine_swap_unlock_price() -> int:
-	return int(round(Config.data.engine_swap_unlock_price))
-
-
-# Buy the Engine Swap unlock — a ONE-TIME purchase (decision 17), never sold twice. Refuses
-# (no mutation) if already unlocked or unaffordable.
-func buy_engine_swap_unlock() -> bool:
-	if engine_swap_unlocked():
-		return false
-	if not spend_money(engine_swap_unlock_price()):
-		return false
-	profile[KEY_ENGINE_SWAP_UNLOCKED] = true
-	save()
-	return true
 
 
 # --- Lifetime stats (todo/roguelike-pivot.md "Lifetime global stats") -----------
@@ -1240,278 +1049,53 @@ func unequip_skill(id: String) -> bool:
 	return true
 
 
-# --- Rally completion --------------------------------------------------------
-
-# Record a top-3 rally finish. Idempotent for the `completed` flag; updates the
-# best combined time when a faster one comes in. The CAR reward is NOT granted
-# here (re-wins are farmable -- see reward-system.md); this only records progress.
-#
-# STAR CREDITING IS GONE (todo/roguelike-pivot.md decision 21). This function used to
-# also pay stars for the placement via RallyLibrary.stars_for_placement and write them
-# into profile["stars_earned"] -- that whole ledger is deleted (see the "Star ledger:
-# DELETED" note on _default_profile()) and this now does ONLY the completion/placement
-# bookkeeping below. That bookkeeping is NOT part of the star economy and stays: it is
-# what everything that reads a rally's `completed` / `best_placed` / `best_combined_ms`
-# depends on. (The parts model's `rally_gate_met` was its last real consumer and is deleted
-# too, so this is now bookkeeping ahead of stage 3's RunSession.) Returns nothing any
-# more -- it used to return the stars gained.
-#
-# NAMED FOR ITS GATE, AND THE NAME IS THE WARNING. Was `complete_rally()` until round 016,
-# which is a name that lied: with `RallySession` deleted, the only caller left is the dev
-# cheat (`dev_three_star_rally`) -- the real gameplay caller returns with `RunSession` in
-# the pivot's stage 3, and it must call this ONLY on a podium (or the opening rally's first
-# attempt), never on every finish, for the same reason the old rally_session.gd call site
-# was gated on `podium_or_opening`.
-#
-# THEREFORE: ANYTHING YOU INCREMENT OR WRITE IN HERE IS PODIUM-GATED, including a brand-new
-# profile key of your own. A "rallies finished" counter incremented in this function counts
-# PODIUMS and will read as a wrong number to the player, however honestly you named the key.
-#
-# Written HERE, at the site where the mistake is made, rather than only on the reading side
-# (`podium_count`, `rally_podiumed`): round 016 measured a probe that never opened either of
-# those and incremented a new key in this function instead.
-func record_podium_rally(rally_id: String, combined_ms: int, placed: int = 0) -> void:
-	var rallies: Dictionary = profile[KEY_RALLIES]
-	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
-	rec["completed"] = true
-	# Only a REAL time can become the best time. A DNF arrives as combined_ms <= 0, and
-	# without this guard it would sail through the "faster than the record" test -- every
-	# negative is less than every positive -- and install itself as an unbeatable best.
-	# Only the opening rally can complete on a DNF (todo/opening-rally.md), so this is the
-	# one caller that can reach here without a time; the guard lives with the field it
-	# protects rather than at that call site, since nothing downstream wants a negative
-	# best_combined_ms regardless of who wrote it.
-	if combined_ms > 0 and (int(rec.get("best_combined_ms", 0)) <= 0
-			or combined_ms < int(rec["best_combined_ms"])):
-		rec["best_combined_ms"] = combined_ms
-	# Track the BEST (lowest) finishing position ever achieved here. Placement rating used
-	# to drive the map's star display; that display is gone with the ledger, but the field
-	# itself still answers "how well has this rally ever gone", so it stays. Lower placement
-	# is better; 0 means "never placed".
-	if placed > 0 and (int(rec.get("best_placed", 0)) <= 0 or placed < int(rec["best_placed"])):
-		rec["best_placed"] = placed
-	rallies[rally_id] = rec
-	save()
+# Dev cheat (Settings → Dev → "Unlock all skills"): grant OWNERSHIP of every
+# SkillLibrary catalogue entry at once, bypassing the unlock thresholds and prices
+# buy_skill enforces, so the Skills page can equip any of them. Returns how many
+# ids were newly granted; a call that grants nothing writes nothing. Deliberately
+# touches NOTHING else — no money moves (that's "Add money"'s job) and the
+# EQUIPPED list is left alone: owning a skill is not slotting it, and equipping
+# stays the Skills page's own capped step (equip_skill).
+func dev_grant_all_skills() -> int:
+	var bought: Array = profile.get(KEY_BOUGHT_SKILLS, [])
+	var granted := 0
+	for entry in SkillLibrary.all():
+		var id := String(entry["id"])
+		if bought.has(id):
+			continue
+		bought.append(id)
+		granted += 1
+	if granted > 0:
+		profile[KEY_BOUGHT_SKILLS] = bought
+		save()
+	return granted
 
 
-# --- Spending stars: DELETED (todo/roguelike-pivot.md decision 21) ---------------
+# --- Rally economy: DELETED with the star ledger (todo/roguelike-pivot.md decision 21) --
 #
 # Save.stars_available / award_stars / spend_stars are gone outright -- the ledger they
 # read and write no longer exists (see the "Star ledger: DELETED" note on
 # _default_profile()).
 #
 # THE PAID GARAGE REPAIR IS RETIRED, NOT STUBBED. repair_car / repair_price and their
-# car_needs_repair / car_handles_badly predicates are deleted entirely (per
-# todo/roguelike-pivot.md's "What gets deleted": between-run resets leave a paid repair
-# nothing to do once the run loop lands, and a between-stage repair PICK replaces it --
-# see the pivot doc's Repair section). They had no callers left in the parts model, so
-# there is nothing to strand.
+# car_needs_repair / car_handles_badly predicates are deleted entirely -- a between-stage
+# repair PICK replaces it (see the pivot doc's Repair section).
 #
-# BUYING A PART IS GONE WITH THE PARTS MODEL. part_price / can_buy_part / buy_part were
-# left refusing by the star-economy wave purely so upgrade_options.gd and upgrades_grid.gd
-# kept compiling; both files are now deleted, so all three are deleted too rather than
-# stubbed. Same for apply_build_plan (UpgradeLibrary.auto_build_plan, the solver it
-# committed, is deleted).
+# BUYING A PART IS GONE WITH THE PARTS MODEL. part_price / can_buy_part / buy_part and
+# apply_build_plan are deleted (their UI hosts went first).
 #
-# DRIVETRAIN CONVERSION IS NO LONGER A MONEY SINK. Decision 52 made it the sixth money
-# sink (a per-car purchase, drive_mode_price / buy_drive_mode / drive_mode_available), but
-# that is superseded: a conversion is now a run-scoped mid-run upgrade, picked between
-# stages exactly like a boost (RunSession.choose_drivetrain / drivetrain_override) — it
-# dies with the run like everything else in the boost tier, so there is nothing to buy or
-# persist here. See features/region-runs.md -> "Between-stage pick: repair, boost, or
-# drivetrain conversion".
-
-
-# record_stage_result (adaptive difficulty) used to live here. Its only caller was
-# RallySession, deleted with the rival field it adapted (todo/roguelike-pivot.md
-# decision 5); AiDifficulty is deleted too, so this seam is gone rather than
-# left calling into a class that no longer exists.
-
-
-# Did this rally's record get written at all — i.e. did the player PODIUM it (or was it
-# the opening rally's first attempt)? NOT "did the player finish it".
+# DRIVETRAIN CONVERSION IS NO LONGER A MONEY SINK. Decision 52's per-car purchase is
+# superseded: a conversion is a run-scoped mid-run upgrade (RunSession.choose_drivetrain),
+# so there is nothing left to buy here.
 #
-# THE GATE IS ON THE WRITE, NOT ON ANY ONE FIELD. `Save.record_podium_rally` has exactly one
-# caller (`rally_session.gd`, inside `_award_podium_rewards`, which runs only
-# `if podium_or_opening`), so a 5th-place finish writes NOTHING into the rally's record.
-# That makes EVERY field of the record podium-gated — `completed`, `best_placed` and
-# `best_combined_ms` alike. Deriving a "rallies finished" count from `best_placed > 0`
-# instead of from `completed` therefore gets you the SAME podium number under a different
-# name; there is no untainted sibling field to escape through.
+# record_podium_rally / rally_podiumed / best_placement / podium_rally_count / the reveal
+# seeding and the dev 3-star cheats that topped this ledger up are DELETED with the HQ
+# map: no live caller writes or reads a rally record any more (region runs track their
+# own KEY_REGIONS_CLEARED ledger). Old profiles keep their "rallies" dict on disk,
+# unread and undeclared. The dev page's one Save-side mutator now is
+# dev_grant_all_skills above (skills), plus plain add_money for its "Add money".
 #
-# Was named `rally_completed()` until round 015, which is the lie this comment replaces.
-func rally_podiumed(rally_id: String) -> bool:
-	return profile[KEY_RALLIES].get(rally_id, {}).get("completed", false)
+# record_stage_result (adaptive difficulty) used to live here too -- its only caller was
+# RallySession, deleted with the rival field it adapted (decision 5).
 
 
-# --- New-rally reveal acknowledgement ----------------------------------------
-#
-# Whether the player has been SHOWN that this rally opened up (the map-table reveal
-# sequence — hq_table.gd `_run_reveal_sequence`). Stored per rally, beside `completed`, so
-# everything known about a rally lives in one record and a rally id that stops existing
-# takes its flag with it instead of orphaning an entry in a parallel list.
-#
-# Only the ACKNOWLEDGEMENT is persisted, never the unlock itself: whether a rally is
-# available is always derived from the profile (RallyLibrary.rally_revealed + an owned
-# eligible car). A missing key reads false through the normal .get default, so no
-# SCHEMA_VERSION bump was needed. See features/save-persistence.md.
-func rally_revealed_seen(rally_id: String) -> bool:
-	return bool(profile[KEY_RALLIES].get(rally_id, {}).get("revealed", false))
-
-
-func mark_rally_revealed(rally_id: String, save_now := true) -> void:
-	var rallies: Dictionary = profile[KEY_RALLIES]
-	var rec: Dictionary = rallies.get(rally_id, {"completed": false, "best_combined_ms": 0, "best_placed": 0})
-	rec["revealed"] = true
-	rallies[rally_id] = rec
-	if save_now:
-		save()
-
-
-# True when this profile predates the reveal feature (or was just restored from the
-# cloud onto a device that has never run the sequence): it has career progress, yet not
-# one rally carries a `revealed` flag. `false` is exactly the WRONG default for such a
-# save — a player with a dozen open rallies would get a dozen-pin parade on next
-# launch — so the caller seeds what is already open as already-seen instead of
-# playing it. See hq.gd `_seed_reveals_if_needed`.
-func needs_reveal_seeding() -> bool:
-	# "Career progress" is read straight off the profile rather than through
-	# RallyLibrary.podium_count, so the backfill decision doesn't depend on the
-	# shipped roster still containing the rallies this save finished.
-	var progressed := false
-	for rec in profile[KEY_RALLIES].values():
-		var r: Dictionary = rec
-		if bool(r.get("revealed", false)):
-			return false
-		if bool(r.get("completed", false)):
-			progressed = true
-	return progressed  # a brand-new career has nothing to backfill; its first reveals are real
-
-
-# THE BACKFILL ITSELF — moved here (rather than left as a call hq.gd makes on entering
-# the map) so it runs at the points a profile actually BECOMES LIVE (load_or_new,
-# adopt_profile) and can never be forgotten by a future scene/entry point that also
-# reaches the map or replaces the profile. A caller reaching the map through some path
-# nobody has written yet still gets the seeded profile, because the seeding already
-# happened when that profile was loaded/adopted — there is nothing left for hq.gd to do.
-#
-# Seeds every rally that is UNLOCKED (RallyLibrary.rally_revealed) or already COMPLETED,
-# deliberately WITHOUT the eligible-owned-car clause hq.gd's `_pending_reveals` applies:
-# seeding's job is "anything already open should already read as seen", not "anything the
-# player could currently enter" — and it keeps this autoload independent of hq's
-# `_entry_plan` (owned cars, engine/tune headroom, etc). Completed rallies are seeded
-# alongside unlocked-but-not-yet-completed ones purely so the "no flags at all" state
-# can't survive the pass — otherwise a progressed profile with nothing currently open
-# would re-seed (and so swallow) its next real reveal.
-func _seed_reveals_if_needed() -> void:
-	if not needs_reveal_seeding():
-		return
-	for rally in RallyLibrary.all():
-		var rid := String(rally["id"])
-		if rally_podiumed(rid) or RallyLibrary.rally_revealed(rally, profile):
-			mark_rally_revealed(rid, false)
-	save()
-
-
-# Dev cheat (Settings → Dev): mark EVERY rally 3-starred (1st place) so the whole map is
-# lit at once (RallyLibrary.rally_revealed) and any part of the game can be reached
-# without grinding to it.
-func dev_three_star_all_rallies() -> void:
-	for rally in RallyLibrary.all():
-		dev_three_star_rally(String(rally["id"]), false)
-	save()
-
-
-# The combined time a dev win records. A plausible-but-unremarkable figure rather than 0,
-# which would read as an impossible world record on every leaderboard the rally feeds.
-const DEV_WIN_TIME_MS := 300_000
-
-
-# Dev cheat (the rally-detail panel's dev button): mark ONE rally 3-starred, as though the
-# player had just won it outright. The per-rally counterpart to the mass cheat above, and
-# the one that matters for map exploration: reveal is geometric, so completing a single
-# rally lights the circle around THAT pin and opens whatever it neighbours — which is
-# exactly the step-by-step progression a designer wants to walk without driving 17 waves of
-# rallies. Doing it one pin at a time is what the mass cheat cannot show, since that lights
-# the entire map in one go.
-#
-# `persist` is false when a caller is looping (one disk write at the end instead of N).
-func dev_three_star_rally(rally_id: String, persist := true) -> void:
-	# Goes through record_podium_rally rather than writing the record by hand, so the cheat
-	# marks `completed` / `best_placed` exactly as a real 1st place would. It used to also pay
-	# STARS this way; that ledger is gone (todo/roguelike-pivot.md decision 21), so this cheat
-	# no longer pays anything — it only marks the completion and grants whatever
-	# _grant_rally_prizes below still hands over.
-	#
-	# Reusing the real path is also what stops the two drifting: whatever record_podium_rally
-	# starts recording next lands here for free.
-	# Captured BEFORE record_podium_rally, which is what sets `completed` — afterwards there is no
-	# way to tell a first win from a re-win, and the prizes are first-win-only.
-	var first_win := not rally_podiumed(rally_id)
-	record_podium_rally(rally_id, DEV_WIN_TIME_MS, 1)
-	if first_win:
-		_grant_rally_prizes(rally_id)
-	if persist:
-		save()
-
-
-# Hand over whatever a rally awards, exactly as finishing it would (features/prize-rallies.md).
-#
-# The cheat used to record the completion and pay the stars but hand over NOTHING — so a
-# dev-completed career had every rally ticked off and an empty garage, which is useless for
-# testing anything downstream of owning the car or part a rally exists to give.
-#
-# THE PART HALF IS GONE. This used to also hand over the part a special's unlock gated,
-# through RewardSystem.grant_special_unlock and UpgradeLibrary.unlocked_by — both deleted
-# with the persistent parts model (todo/roguelike-pivot.md -> "What gets deleted"). There is
-# no part to grant any more, so only the prize car is left, and RallyLibrary.prize_car_id is
-# itself a stub returning "" (see the prize-rally deletion), which makes this whole dev
-# helper a no-op until the money shop lands in stage 6.
-func _grant_rally_prizes(rally_id: String) -> void:
-	var rally := RallyLibrary.by_id(rally_id)
-	if rally.is_empty():
-		return
-	var prize_car := RallyLibrary.prize_car_id(rally)
-	if prize_car != "" and not owns_model(prize_car):
-		grant_car(prize_car)
-
-
-# Best (lowest) finishing position ever achieved in a rally, or 0 if never placed.
-# Used to drive the world-map star rating via RallyLibrary.stars_for_placement; that
-# ledger is deleted (todo/roguelike-pivot.md decision 21), so this is now pure bookkeeping
-# with no reader of its own yet.
-#
-# 0 DOES NOT MEAN "NEVER FINISHED", and a consumer that reads it that way is wrong. This field
-# is only ever written by record_podium_rally, whose single caller is podium-gated (see its
-# comment), so a player who FINISHED 5th has 0 here just as one who never entered does. `> 0`
-# therefore means PODIUMED, not completed — label any UI off it accordingly, and if you need
-# "did they finish", there is no such counter in the save schema (add persistence for one).
-# Written down because a map readout guarded itself with `if placement > 0:  # only show if the
-# rally has been completed` — correct code, wrong reason, which is how the next edit goes wrong.
-func best_placement(rally_id: String) -> int:
-	return int(profile[KEY_RALLIES].get(rally_id, {}).get("best_placed", 0))
-
-
-# Number of rallies PODIUMED (top-3) — the progression metric driving the CAR reward-tier
-# ceiling. (Map REVEAL keys off nothing of the sort any more: a rally opens when the player
-# has lit the map out to it, see RallyLibrary.rally_revealed.)
-#
-# WHAT THIS IS NOT: it is not "rallies the player has finished". The gate is on the
-# WRITE, not on any one field — `record_podium_rally` is called from exactly one site
-# (rally_session.gd, inside `_award_podium_rewards`, gated on
-# `var podium_or_opening := top3 or opening_first`), so finishing 5th writes nothing into
-# the record and EVERY field of it is podium-gated: `completed`, `best_placed` and
-# `best_combined_ms` alike. Counting `best_placed > 0` is the same podium number wearing a
-# better name — there is no untainted sibling field to escape through.
-#
-# NO counter of finishes-in-any-position exists anywhere in the save schema — if you need
-# one, add persistence for it (declared in `_default_profile()`) rather than deriving it
-# from this record, and never label UI "RALLIES FINISHED: N" off this value.
-# Delegates to RallyLibrary so the metric has one definition.
-func podium_rally_count() -> int:
-	return RallyLibrary.podium_count(profile)
-
-
-# DEPRECATED — use podium_rally_count(). Counts PODIUM (top-3) finishes, not finishes.
-func completed_rally_count() -> int:
-	return podium_rally_count()

@@ -130,9 +130,8 @@ func _unreachable_region_fix(rid: String) -> String:
 		"\t{\n" +
 		"\t\t\"id\": \"%s_trial\", \"name\": \"<Rally Name>\",  # EDIT the name\n" +
 		"\t\t\"region\": \"%s\", \"difficulty\": 2, \"special\": false, \"restriction\": {},\n" +
-		"\t\t# map_pos below is a currently-free pin you can paste as-is (the same literal the\n" +
-		"\t\t# REGIONS template in scripts/region_library.gd carries). Want a specific corner?\n" +
-		"\t\t# RallyLibrary.suggest_map_pos(\"<region_id>\") computes one.\n" +
+		"\t\t# map_pos below is inert authored data (the map is deleted with the overworld);\n" +
+		"\t\t# keep it in step with the REGIONS template in scripts/region_library.gd.\n" +
 		"\t\t\"map_pos\": Vector2(0.05, 0.46),\n" +
 		"\t\t# 3 stages; water_level should match the region's waterline, and the stages must\n" +
 		"\t\t# not all share one weather.\n" +

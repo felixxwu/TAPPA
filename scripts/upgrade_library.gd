@@ -139,6 +139,12 @@ const EFFECTS := {
 	# model — braking and drag are their own axes, not inputs either of those two care
 	# about — so both are cfg-only, exactly like tire_grip_mult's sibling rows above.
 	"brake_force_mult": {"field": "brake_torque", "op": "mult", "feeds_pw": false},
+	# The engine-swap boost's row. peak_torque is the PER-CAR published figure engine.gd
+	# builds its curve from (cfg.peak_torque, engine.gd::_torque_at) — a plain mult on it
+	# is "a stronger engine was fitted", and feeds_pw so the swapped car rates as the
+	# more powerful build it now is. NOT global_torque_scale: that field is a hidden
+	# uniform de-rate (see BoostLibrary's header), never a per-car effect target.
+	"engine_power_mult": {"field": "peak_torque", "op": "mult", "feeds_pw": true},
 	"drag_mult":         {"field": "drag_coefficient", "op": "mult", "feeds_pw": false},
 	# --- THE PERK ROWS (todo/roguelike-pivot.md decision 51) ----------------------
 	# Skills reach gameplay through THIS table and a car's `boosts` list, exactly as the

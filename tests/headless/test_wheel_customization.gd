@@ -250,58 +250,12 @@ func test_option_index_finds_the_worn_style_and_defaults_to_stock() -> void:
 
 # --- Save round-trip -------------------------------------------------------------
 
-func test_set_wheels_round_trips() -> void:
-	var id: int = _save.selected_instance_id()
-	var donor := _other_car_id("fx_light_rwd")
-	_save.set_wheels(id, donor)
-	assert_eq(String(_save.get_car(id).get("wheels", "")), donor, "the style is stored")
-	# And it survives a save/load cycle.
-	_save.save_now()
-	_save.load_or_new()
-	assert_eq(String(_save.get_car(id).get("wheels", "")), donor, "the style persists")
 
-
-# "Stock" is canonically the key being ABSENT — that keeps owned.hash() (the key the HQ
-# car-prop caches use) identical to a never-customised car, so a revert invalidates the
-# cached prop exactly as a fit does.
-func test_reverting_to_stock_erases_the_key_and_restores_the_hash() -> void:
-	var id: int = _save.selected_instance_id()
-	var before: int = _save.get_car(id).hash()
-	var donor := _other_car_id("fx_light_rwd")
-	_save.set_wheels(id, donor)
-	assert_ne(_save.get_car(id).hash(), before, "fitting wheels changes the owned hash")
-	_save.set_wheels(id, "")
-	assert_false(_save.get_car(id).has("wheels"), "an empty id erases the key")
-	assert_eq(_save.get_car(id).hash(), before, "reverting restores the original hash")
-	# Passing the car's OWN model id is also a revert, not a stored self-reference.
-	_save.set_wheels(id, "fx_light_rwd")
-	assert_false(_save.get_car(id).has("wheels"), "the car's own id erases the key")
-
-
-# A new car is born stock: no wheels key, so no migration is needed for old saves.
 func test_new_cars_carry_no_wheels_key() -> void:
 	var car: Dictionary = _save.grant_car("fx_awd")
 	assert_false(car.has("wheels"), "a granted car has no wheels key")
 
 
-func test_set_wheels_on_an_unknown_car_is_a_no_op() -> void:
-	_save.set_wheels(-999, "fx_awd")
-	pass_test("setting wheels on a car that doesn't exist doesn't crash")
-
-
-# Wheels are a SEPARATE system: fitting them never touches the engine-swap state.
-func test_wheels_are_independent_of_the_engine_swap_system() -> void:
-	var id: int = _save.selected_instance_id()
-	_save.set_wheels(id, _other_car_id("fx_light_rwd"))
-	var car: Dictionary = _save.get_car(id)
-	assert_false(car.has("swapped_engine"), "fitting wheels doesn't touch the engine")
-
-
-# --- Cosmetic-only guarantee -----------------------------------------------------
-
-# THE load-bearing test: a car wearing someone else's wheels must be physically
-# identical to the same car on stock wheels. Compares the whole resolved config, so a
-# future change that lets the donor's radius/width leak through fails here.
 func test_fitting_wheels_changes_no_physics() -> void:
 	var scene: PackedScene = load("res://car.tscn")
 	var stock_owned := {"model_id": "fx_light_rwd", "instance_id": 1, "hp": 800.0}

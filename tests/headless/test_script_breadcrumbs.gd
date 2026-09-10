@@ -29,7 +29,7 @@ const SCRIPTS_DIR := "res://scripts"
 # RECURSIVE, and that is the point (fixed round 027). This walked only the TOP level of
 # scripts/ until then, so every file in a SUBDIRECTORY escaped the convention entirely —
 # `scripts/cloud/` (13 files, 12 of them with no breadcrumb at all) and
-# `scripts/multiplayer/` (5). Both directories were created AFTER the convention landed,
+# `scripts/multiplayer/` (5, since deleted with the pivot). Both directories were created AFTER the convention landed,
 # which is exactly the decay this guard's own header warns about: "a convention that only
 # holds for the files that happened to exist on the day of the sweep decays from that day
 # onward." A non-recursive scan re-opens that hole for every new directory.
@@ -161,11 +161,8 @@ const BREADCRUMB_BASELINE := [
 	"platform.gd",
 	"polygon_icon.gd",
 	"post_process_view.gd",
-	"present_box.gd",
 	"ps1_material.gd",
 	"rain_field.gd",
-	"rally_flag.gd",
-	"rally_trophy.gd",
 	"registry.gd",
 	"repair_reveal.gd",
 	"road_markings.gd",

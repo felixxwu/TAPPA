@@ -6,7 +6,7 @@
 >
 > The settled decision record and the system-by-system design live in
 > **`todo/roguelike-pivot.md`**; the order of work lives in
-> **`todo/roguelike-pivot-plan.md`**. **If this file and that spec ever disagree,
+> **`todo/roguelike-pivot.md`**. **If this file and that record ever disagree,
 > the spec wins** — it is authoritative, this file is the north star it ladders
 > up to.
 
@@ -269,10 +269,11 @@ target costs every remaining stage's payout too.
 
 Two things that gamble requires:
 
-- **Signposting is not optional.** Stages are drawn from a pool the player may
-  never have driven, so a coin they can't see coming isn't a decision — it's a
-  memory test. Coins get flagged far enough ahead to commit or decline (the
-  pacenote strip is the natural place), and placed in clear sight.
+- **No signposting — decision 50.** The original vision demanded flagged coins
+  ("a coin you can't see coming isn't a decision, it's a memory test");
+  decision 50 amends that to DROPPED — coins are placed in clear sight and
+  flagged nowhere (see [features/collectables.md](features/collectables.md) → "No signposting,
+  anywhere"). The gamble is reading the road, not the pacenote strip.
 - **Coins bank at stage clear**, not at run end. With off-line placement the
   detour already risks the run; losing the coins as well would punish the same
   gamble twice.
@@ -322,7 +323,8 @@ One number, always going up, always spendable.
 ## The hub — flat, not diegetic
 
 The hub is **ordinary menu screens**: title, hub, region select, car select and
-buy, shop, skills, stats, between-stage pick, run summary, settings. Every one
+buy, shop, skills, a free-play sandbox (any car, any region, any boost combination,
+nothing at stake), stats, between-stage pick, run summary, settings. Every one
 of them keyboard- and gamepad-navigable, with a nav test — that rule doesn't bend
 for a flat UI.
 
@@ -373,7 +375,7 @@ review passes is settled, and the settled record is
 **`todo/roguelike-pivot.md` › _Decisions already taken_** — that is the
 authoritative list, deliberately not duplicated here so the two can't drift. Read
 it for the *why* behind anything above; read
-`todo/roguelike-pivot-plan.md` for the order the work happens in.
+the deleted `todo/roguelike-pivot-plan.md` for the order the work happened in.
 
 What remains genuinely open is **tuning, not design**: the pace values that set
 the difficulty curve, per-car HP and impact costs, boost and skill pricing, coin

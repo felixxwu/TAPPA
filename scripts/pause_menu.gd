@@ -11,8 +11,9 @@ extends CanvasLayer
 # decision 5.) The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
-# scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu too.
-# See features/menus.md.
+# scene's CameraManager (wired below); the dev page's mid-run-only "Complete stage" relays
+# to world.gd (dev_complete_stage_requested); ui_cancel (Esc / gamepad B) toggles the menu
+# too. See features/menus.md.
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
 # Emitted when the player picks "Reset to track" — world.gd snaps the live car onto
@@ -24,6 +25,12 @@ signal reset_to_track_requested
 # the frozen shot is unobstructed. The tree stays PAUSED throughout — leaving photo
 # mode comes back to this menu, still frozen, via return_from_photo_mode().
 signal photo_mode_requested
+# Relay for the shared SettingsMenu's dev-page "Complete stage" action (offered only
+# while a run is live — see SettingsMenu._build_dev_page). world.gd connects this and
+# runs the same skip-to-finish the F dev key triggers (_dev_complete_stage); the
+# menu then resumes so the finish panel answers. Same delegate-upward shape as
+# reset_to_track_requested: neither host owns the car / stage.
+signal dev_complete_stage_requested
 
 @export var camera_manager: CameraManager
 # The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
@@ -120,6 +127,15 @@ func return_from_photo_mode() -> void:
 	set_input_enabled(true)
 	open()
 	UITheme.focus_grab.bind(_photo_button).call_deferred()
+
+
+# Settings → Dev → "Complete stage": hand the skip to the host (world.gd owns the
+# car and the StageManager), then unfreeze and close — the F-key path runs
+# unpaused, and the completion panel the skip raises would sit frozen behind this
+# overlay otherwise.
+func _on_dev_complete_stage_requested() -> void:
+	dev_complete_stage_requested.emit()
+	resume()
 
 
 # Pop the quit confirm; quit_to_hq() runs only if the player accepts. A run of EITHER
@@ -313,6 +329,7 @@ func _build_settings_panel() -> Control:
 	settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_menu.camera_changed.connect(_on_camera_changed)
 	settings_menu.scheme_changed.connect(_on_scheme_changed)
+	settings_menu.dev_complete_stage_requested.connect(_on_dev_complete_stage_requested)
 	scroll.add_child(settings_menu)
 
 	# Single bottom button: on a sub-page it backs out to the category list; on the

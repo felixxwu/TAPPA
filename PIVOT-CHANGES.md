@@ -12,7 +12,7 @@ two minutes instead of reading 1,661 lines of spec.
 | --- | --- |
 | The gist (you are here) | this file |
 | Why any given thing is the way it is | `todo/roguelike-pivot.md` — **54 numbered decisions, authoritative** |
-| The task sequence that built it | `todo/roguelike-pivot-plan.md` |
+| The task sequence that built it | `todo/roguelike-pivot-plan.md` (deleted — every stage landed) |
 | The design north star | `gameplay.md` |
 | How any one system works today | `features/` (indexed in `features/README.md`) |
 
