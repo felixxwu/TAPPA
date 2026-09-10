@@ -221,6 +221,26 @@ seams not to work around, and where the decision record lives.
   code — never weaken thresholds, flip signs, or delete assertions just to
   get back to green.
 
+## Delegating implementation to subagents
+
+- **Use Sonnet subagents for implementation work whenever possible.** Spawning an
+  agent with `model: "sonnet"` (the `Agent` tool's model parameter) keeps the
+  expensive model's context free for planning, review and testing. Default to
+  Sonnet for the mechanical middle of a task: writing the code for a settled
+  plan, mechanical refactors, adding/updating tests and `features/` docs,
+  repetitive edits across many files, and search/exploration.
+- Keep the top-level (Opus) agent for the parts that actually need it: deciding
+  the approach, brainstorming specs with the user, arbitrating a confusing test
+  failure, and the final review of what came back. Escalate to a larger model
+  only when a Sonnet subagent's output is wrong twice, or the work is
+  architectural rather than mechanical from the outset.
+- Give Sonnet subagents a tight brief — the files they own, the files that are
+  off limits, what "done" looks like, and what siblings are doing (see
+  "Parallel agents share this checkout"). Vague briefs are what make a small
+  model fail, not the model.
+- The testing rules still bind them: subagents implement, the parent runs the
+  tests.
+
 ## Parallel agents share this checkout
 
 - **Assume other agents are editing this same working tree right now, and NEVER
