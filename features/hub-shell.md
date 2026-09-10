@@ -168,6 +168,18 @@ to. The rule is defensible; discovering it after the fact is not.
 `MAIN` therefore lists **Resume run first**, above New run. Putting it anywhere else is how
 a player loses a run they meant to finish.
 
+### MAIN rebuilds when the cloud pull lands
+
+The Resume card is decided from `Save.profile` at the moment `_build_main` runs — but on a
+signed-in device the boot pull is **asynchronous** (`Cloud._kick_off_initial_pull` →
+`CloudSync.apply_remote` → `profile_replaced`), so the cloud's copy of the profile can
+arrive *after* MAIN has already been built. `_ready` therefore connects
+`Cloud.profile_replaced` to `_on_profile_replaced`, which re-shows `MAIN` if that is the
+live view. Without it a run paused on another device (or before a re-install) showed no
+Resume card on first load and only appeared once the player navigated away and back. Other
+views are deliberately left alone — the player is mid-interaction on them, and each re-reads
+the profile the next time it is opened.
+
 ## Known gaps, by design
 
 - **The challenge screen is MINIMAL, deliberately.** `CHALLENGE` names each period, its
