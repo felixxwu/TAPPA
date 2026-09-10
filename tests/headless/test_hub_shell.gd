@@ -330,6 +330,42 @@ func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> voi
 		assert_almost_eq(box.bg_color.a, 1.0, 0.01, "view %d's body must stay opaque" % view)
 
 
+# The corner build-version label (features/update-check.md, hub_shell.gd
+# `_build_version_label`). The test runner's project.godot ships the unstamped
+# "0.0-dev" — the same value the editor sees — so under a normal test run the
+# label must not appear at all rather than render "0.0-dev" or an empty box.
+func test_main_page_hides_the_version_label_when_the_build_is_unstamped() -> void:
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_eq(UpdateCheck.current_build(), -1,
+		"precondition: the test runner's version is unstamped")
+	for label in _page().find_children("*", "Label", true, false):
+		assert_ne((label as Label).text, "0.0-DEV",
+			"an unstamped build must not render its raw version string")
+
+
+# Overrides application/config/version to a stamped value for the duration of the
+# test to exercise the "build IS stamped" branch without depending on the runner's
+# own (unstamped) version.
+func test_main_page_shows_a_stamped_version_as_passive_non_nav_chrome() -> void:
+	var prev: String = ProjectSettings.get_setting("application/config/version", "")
+	ProjectSettings.set_setting("application/config/version", "0.61 (b154d5c)")
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	var found: Array = []
+	for label in _page().find_children("*", "Label", true, false):
+		if (label as Label).text == "0.61 (B154D5C)":
+			found.append(label)
+	ProjectSettings.set_setting("application/config/version", prev)
+	assert_eq(found.size(), 1, "a stamped version renders exactly one corner label")
+	if found.size() == 1:
+		var l := found[0] as Label
+		assert_eq(l.focus_mode, Control.FOCUS_NONE,
+			"the version label must never be focusable")
+		assert_false(_buttons().has(l),
+			"the version label must not be counted among the page's focusable controls")
+
+
 func test_back_walks_the_page_stack_and_stops_at_the_root() -> void:
 	_shell._show(HubShell.View.CAR)
 	_shell._back()

@@ -168,6 +168,18 @@ to. The rule is defensible; discovering it after the fact is not.
 `MAIN` therefore lists **Resume run first**, above New run. Putting it anywhere else is how
 a player loses a run they meant to finish.
 
+### MAIN shows the build version in the corner
+
+`_build_main` finishes by calling `_build_version_label`, which drops a small dim
+label into `_page`'s bottom-right corner showing the raw stamped
+`application/config/version` string (see [update-check.md](update-check.md)) — a
+Play tester can read off which build landed on their device without any network
+call. Added straight to `_page` (the full-rect modal Control), not to `body()`, so
+it floats free of the card carousel/body box layout; hidden entirely when the
+version is unstamped/unparseable (`UpdateCheck.display_version` returns `""`).
+Passive chrome only — it is never made focusable and never joins `MenuNav`'s
+widget list, so it cannot perturb keyboard/gamepad nav order.
+
 ### MAIN rebuilds when the cloud pull lands
 
 The Resume card is decided from `Save.profile` at the moment `_build_main` runs — but on a

@@ -3859,6 +3859,11 @@ func spectator_params() -> Dictionary:
 ## Screen margin (pixels) around the minimap panel and inside the full-screen map.
 @export_range(0.0, 120.0) var overworld_map_margin_px := 24.0
 
+## Screen margin (pixels) around the build-version label in the hub's bottom corner
+## (hub_shell.gd's MAIN page — features/hub-shell.md). Passive chrome only, not a
+## MenuNav widget.
+@export_range(0.0, 60.0) var hub_version_label_margin_px := 8.0
+
 ## Foliage density in the overworld, as a MULTIPLIER on the stage scatter counts
 ## (`trees_per_turn` / the rock groups). Well below 1 on purpose.
 ##

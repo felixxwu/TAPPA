@@ -353,6 +353,28 @@ func _build_main() -> void:
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 
 	_action("Quit", func() -> void: get_tree().quit())
+	_build_version_label()
+
+
+# Passive build-version readout, bottom-right corner of the MAIN page, so a Play
+# tester can read off which build landed on their device (features/update-check.md).
+# Added straight to `_page` (the full-rect modal Control), NOT to body() — it must
+# float free of the body box/carousel layout and never join MenuNav's focusable set.
+# Hidden entirely for an unstamped build (editor, local run) rather than showing an
+# empty/placeholder string.
+func _build_version_label() -> void:
+	var raw := str(ProjectSettings.get_setting("application/config/version", ""))
+	var text := UpdateCheck.display_version(raw)
+	if text.is_empty():
+		return
+	var l := UITheme.label(text, "dim")
+	l.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	l.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	l.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var m := Config.data.hub_version_label_margin_px
+	l.position -= Vector2(m, m)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_page.add_child(l)
 
 
 # --- Update check (features/update-check.md) ----------------------------------
