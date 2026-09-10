@@ -62,6 +62,16 @@ func _grant(model := "fx_light_rwd") -> Dictionary:
 	return _save.grant_car(model)
 
 
+# Push a car's HP well below run_boost_healthy_threshold, HOWEVER that tunable is
+# set — half of it, never a hardcoded HP number — so a test can rely on the pending
+# pick offering repair (the non-reward branch) regardless of where a designer tunes
+# the threshold.
+func _damage_below_threshold(car: Dictionary) -> void:
+	var iid := int(car["instance_id"])
+	var hp: float = float(_save.get_car(iid)["hp"])
+	_save.apply_damage(iid, hp * (1.0 - Config.data.run_boost_healthy_threshold * 0.5))
+
+
 # Enough synthetic events to fill an 8-stage run with no repeats.
 func _rallies() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
@@ -107,7 +117,14 @@ func _start(seed_value := RUN_SEED) -> Dictionary:
 func _drive(elapsed_ms: int) -> void:
 	RunSession.report_event_result(elapsed_ms)
 	if RunSession.pick_awaiting():
-		RunSession.choose_repair()
+		# Repair may not be on offer (the undamaged-arrival reward pick, Task 2) — fall
+		# back to taking the first boost so the run keeps moving either way. This
+		# helper only cares about advancing, never about which pick mechanic resolved.
+		if RunSession.offer_repair():
+			RunSession.choose_repair()
+		else:
+			var pick: Array = RunSession.pending_pick()
+			RunSession.choose_boost(String((pick[0] as Dictionary).get("id", "")))
 	if RunSession.is_active():
 		RunSession.continue_to_next_stage()
 		@warning_ignore("return_value_discarded")
@@ -480,8 +497,10 @@ func test_continue_to_next_stage_refuses_while_a_pick_is_awaiting() -> void:
 
 
 func test_choosing_repair_resolves_the_pick_exactly_like_the_old_automatic_path() -> void:
-	_start()
+	var car := _start()
+	_damage_below_threshold(car)  # below the healthy-arrival threshold: repair is on offer
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.offer_repair(), "setup: repair is offered on a damaged car")
 
 	RunSession.choose_repair()
 
@@ -683,3 +702,76 @@ func test_a_resumed_run_keeps_its_picked_drivetrain_conversion() -> void:
 
 	assert_eq(RunSession.drivetrain_override(), mode,
 		"the picked layout survives a pause/resume, same as boosts")
+
+
+# --- Task 1: a new run always starts the car at 100% health ---------------------
+
+func test_beginning_a_run_restores_a_damaged_car_to_full_health() -> void:
+	var car := _grant()
+	var iid := int(car["instance_id"])
+	var max_hp := float(_save.get_car(iid)["hp"])
+	_save.apply_damage(iid, max_hp * 0.5)
+	assert_lt(float(_save.get_car(iid)["hp"]), max_hp, "setup: the car carries damage in")
+
+	assert_true(RunSession.start_region(REGION, _save.get_car(iid), RUN_SEED))
+
+	assert_almost_eq(float(_save.get_car(iid)["hp"]), max_hp, 0.001,
+		"a new run always starts the car at 100% health")
+
+
+func test_beginning_a_run_on_an_already_full_car_changes_nothing() -> void:
+	var car := _grant()
+	var iid := int(car["instance_id"])
+	var max_hp := float(_save.get_car(iid)["hp"])
+
+	assert_true(RunSession.start_region(REGION, car, RUN_SEED))
+
+	assert_almost_eq(float(_save.get_car(iid)["hp"]), max_hp, 0.001)
+
+
+# --- Task 2: an undamaged car earns an extra boost pick instead of a repair row ----
+
+func test_a_damaged_car_yields_the_usual_choice_count_and_offers_repair() -> void:
+	var car := _start()
+	_damage_below_threshold(car)
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	assert_true(RunSession.pick_awaiting())
+	assert_true(RunSession.offer_repair(), "below the threshold, repair is still offered")
+	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices,
+		"below the threshold, the usual number of boosts is drawn")
+
+
+func test_a_healthy_car_yields_one_extra_choice_and_offers_no_repair() -> void:
+	_start()  # a freshly granted car begin()s at full health (Task 1)
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	assert_true(RunSession.pick_awaiting())
+	assert_false(RunSession.offer_repair(),
+		"at or above the threshold, the reward pick offers no repair row")
+	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices + 1,
+		"the reward is exactly one MORE boost pick than usual")
+
+
+func test_choose_repair_refuses_on_a_pick_that_does_not_offer_repair() -> void:
+	_start()  # full health -> the reward pick, no repair on offer
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_false(RunSession.offer_repair(), "setup: repair is not on offer")
+
+	RunSession.choose_repair()
+
+	assert_true(RunSession.pick_awaiting(),
+		"choose_repair() refuses rather than silently repairing when it isn't offered")
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"…and nothing was applied")
+
+
+func test_the_reward_draw_still_clamps_to_the_catalogue_size() -> void:
+	# run_boost_choices + 1 can exceed the catalogue; BoostLibrary.draw already clamps
+	# (its own contract), so the pending pick must never exceed the catalogue size.
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.pending_pick().size() <= BoostLibrary.CATALOGUE.size(),
+		"the drawn pick never exceeds the catalogue's own size")

@@ -268,94 +268,24 @@ func _row(text: String, on_press: Callable) -> Button:
 # list — they were not in the set this conversion asked for, and STATS in
 # particular has nothing choosable to put on a card.
 
-# A card's visual-slot icon — one white-outline SVG from icons/cards/, named by what
-# the card IS (a boost/skill id, "car", "region", …). The whole set shares one style:
-# white only, uniform 6px stroke, round caps/joins — so the carousels read as one
-# system rather than a mix of clip-art. CAR cards swap this out for a real
-# CarCardPreview once it is built (see _sync_car_previews).
-# How far the icon's rect is inset from the visual slot's edges, as a fraction of the
-# slot per side — the icon used to fill the whole top half of the card, which read as a
-# full-bleed illustration rather than an icon; a ~55%-width mark leaves the card room
-# to breathe around it. A look constant, not a tunable (no designer retune expected).
-const _CARD_ICON_INSET := 0.22
+# CARDS AND CAROUSELS LIVE IN CardUI (scripts/card_ui.gd) — the icon loader, the one
+# text-card shape and the carousel builder were all extracted there so the between-stage
+# pick panel could share them (run_pick_panel.gd), and this file's private copies are
+# gone. CAR cards still swap their icon out for a real CarCardPreview once one is built
+# (see _sync_car_previews).
 
-func _card_icon(icon: String) -> Control:
-	var path := "res://icons/cards/%s.svg" % icon
-	# A fallback for ids with no authored icon (a test fixture's fx_* id, say) rather
-	# than an empty slot — but a MISSING SHIPPED icon stays loud, caught by
-	# test_hub_shell's every-catalogue-icon-exists guard instead of degrading here.
-	if not ResourceLoader.exists(path):
-		path = "res://icons/cards/generic.svg"
-	var tex := TextureRect.new()
-	tex.texture = load(path)
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tex.anchor_left = _CARD_ICON_INSET
-	tex.anchor_right = 1.0 - _CARD_ICON_INSET
-	tex.anchor_top = _CARD_ICON_INSET * 0.8
-	tex.anchor_bottom = 1.0 - _CARD_ICON_INSET * 0.8
-	tex.offset_left = 0.0
-	tex.offset_right = 0.0
-	tex.offset_top = 0.0
-	tex.offset_bottom = 0.0
-	return tex
-
-
-# The five carousel pages want to run edge to edge, unlike every other MenuPage (whose
-# body box deliberately hugs its content with a wide gap to the screen edge — menu_page.gd
-# rule 1). A carousel's own clip_contents already keeps it from spilling into the 3D scene,
-# so it doesn't need that margin doing the same job twice, and a wide margin is exactly what
-# was squeezing it down to only 2-3 cards' worth of screen space.
-const _CAROUSEL_PAGE_MARGIN := 8.0
+# The carousel pages run edge to edge (CardUI.CAROUSEL_PAGE_MARGIN); every other page keeps
+# MenuPage's ordinary wide margin.
 const _DEFAULT_PAGE_MARGIN := 24.0
 
+
 func _page_margin_for(view: int) -> float:
-	return _CAROUSEL_PAGE_MARGIN if _is_carousel_view(view) else _DEFAULT_PAGE_MARGIN
+	return CardUI.CAROUSEL_PAGE_MARGIN if _is_carousel_view(view) else _DEFAULT_PAGE_MARGIN
 
 
 func _is_carousel_view(view: int) -> bool:
 	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.SKILLS,
 		View.FREEPLAY_CAR, View.FREEPLAY_REGION, View.FREEPLAY_SETUP]
-
-
-# Build a carousel and mount it as the page's whole selectable body (any plain,
-# non-choosable labels the caller wants above it — e.g. "Money: N" — should be
-# added to _page.body() BEFORE calling this).
-func _build_carousel() -> CardCarousel:
-	var carousel := CardCarousel.new()
-	_page.body().add_child(carousel)
-	# Claim the full logical frame width, minus the page's own margin/padding chrome —
-	# `fit_to_available_width` then rounds DOWN to a whole number of cards so a card is
-	# never chopped in half at the visible edge, and set_body_width feeds that width to
-	# the (otherwise content-hugging) MenuPage box so it actually grows to it.
-	var avail := WorldPanel.layout_frame_size(_page, Vector2(480.0, 360.0)).x
-	var chrome := _CAROUSEL_PAGE_MARGIN * 2.0 + UITheme.PANEL_PAD * 2.0
-	carousel.fit_to_available_width(avail - chrome)
-	_page.set_body_width(carousel.custom_minimum_size.x)
-	return carousel
-
-
-# Append a text-card (icon + centred title/subtitle, and an optional third
-# state/price line) to `carousel` — the ONE card shape across every page, so the
-# carousels read as a system. Mirrors the old _row()'s disabled-and-unfocusable
-# convention: a disabled card stays on screen (shown, dimmed) but neither lands
-# the cursor's confirm nor fires `on_confirm` (CardCarousel.confirmed simply never
-# emits for a disabled index).
-func _text_card(carousel: CardCarousel, title: String, subtitle: String,
-		disabled: bool, icon: String, extra := "", extra_variant := "") -> void:
-	var card := carousel.add_card(disabled)
-	card.visual.add_child(_card_icon(icon))
-	var title_label := UITheme.label(title)
-	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.info.add_child(title_label)
-	if subtitle != "":
-		var sub := UITheme.label(subtitle, "dim")
-		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.info.add_child(sub)
-	if extra != "":
-		var line := UITheme.label(extra, extra_variant)
-		line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.info.add_child(line)
 
 
 # --- MAIN --------------------------------------------------------------------
@@ -364,7 +294,7 @@ func _build_main() -> void:
 	var money := UITheme.label("Money: %d" % Save.money())
 	_page.body().add_child(money)
 
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
 
 	# A paused run is offered FIRST, because the alternative — starting anything else —
@@ -373,25 +303,25 @@ func _build_main() -> void:
 	var resumable: Dictionary = RunSessionScript.resumable_run(
 		Save.profile, int(Time.get_unix_time_from_system()))
 	if not resumable.is_empty():
-		_text_card(carousel, "Resume run", "", false, "resume_run")
+		CardUI.text_card(carousel, "Resume run", "", false, "resume_run")
 		actions.append(_resume_run)
 
-	_text_card(carousel, "New run", "", false, "new_run")
+	CardUI.text_card(carousel, "New run", "", false, "new_run")
 	actions.append(func() -> void: _show(View.REGION))
-	_text_card(carousel, "Shop", "", false, "shop")
+	CardUI.text_card(carousel, "Shop", "", false, "shop")
 	actions.append(func() -> void: _show(View.SHOP))
-	_text_card(carousel, "Skills", "", false, "skills")
+	CardUI.text_card(carousel, "Skills", "", false, "skills")
 	actions.append(func() -> void: _show(View.SKILLS))
 	# Rally challenge sits AFTER Shop/Skills: it is a secondary way to start a run, so
 	# it follows the primary one (New run) and its menu-alternatives, rather than
 	# splitting them.
-	_text_card(carousel, "Rally challenge", "", false, "rally_challenge")
+	CardUI.text_card(carousel, "Rally challenge", "", false, "rally_challenge")
 	actions.append(func() -> void: _show(View.CHALLENGE))
-	_text_card(carousel, "Free play", "", false, "car")
+	CardUI.text_card(carousel, "Free play", "", false, "car")
 	actions.append(func() -> void: _show(View.FREEPLAY_CAR))
-	_text_card(carousel, "Lifetime stats", "", false, "stats")
+	CardUI.text_card(carousel, "Lifetime stats", "", false, "stats")
 	actions.append(func() -> void: _show(View.STATS))
-	_text_card(carousel, "Settings", "", false, "settings")
+	CardUI.text_card(carousel, "Settings", "", false, "settings")
 	actions.append(func() -> void: _show(View.SETTINGS))
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 
@@ -454,7 +384,7 @@ func _resume_run() -> void:
 # cannot land on a dead row.
 func _build_region() -> void:
 	_pending_challenge = ""
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	var ids: Array[String] = []
 	var cleared: Array = Save.profile.get(Save.KEY_REGIONS_CLEARED, [])
 	for region in RegionLibrary.ordered():
@@ -468,14 +398,14 @@ func _build_region() -> void:
 			# behind: the locked card is one glance wide, and the gate region's own card
 			# sitting a swipe away already answers "what unlocks this" better than a
 			# second-hand name on a locked card does.
-			_text_card(carousel, region_name, "Locked — pays $%d/stage" % reward,
+			CardUI.text_card(carousel, region_name, "Locked — pays $%d/stage" % reward,
 				true, "region_locked")
 			ids.append("")
 			continue
 		var mark := "$%d/stage" % reward
 		if cleared.has(id):
 			mark += " — Cleared"
-		_text_card(carousel, region_name, mark, false, "region")
+		CardUI.text_card(carousel, region_name, mark, false, "region")
 		ids.append(id)
 	carousel.confirmed.connect(func(i: int) -> void:
 		if ids[i] != "":
@@ -509,7 +439,7 @@ func _build_car() -> void:
 		_page.body().add_child(UITheme.label(
 			"Rating cap: %d" % int(classified["ceiling"])))
 
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: either an owned-car Dictionary to start a run
 	# with, or a model id String to buy — whichever `confirmed` should act on.
 	var actions: Array = []
@@ -531,7 +461,7 @@ func _build_car() -> void:
 		var label := String(spec.get("name", entry.get("model_id", "car")))
 		var over_cap := _pending_challenge != "" and not eligible_ids.has(iid)
 		var card := carousel.add_card(over_cap)
-		card.visual.add_child(_card_icon("car"))
+		card.visual.add_child(CardUI.card_icon("car"))
 		card.info.add_child(UITheme.label(label))
 		if over_cap:
 			card.info.add_child(UITheme.label("Over the rating cap", "dim"))
@@ -550,7 +480,7 @@ func _build_car() -> void:
 		var car_name := String(spec.get("name", model_id))
 		var cant_afford := Save.money() < cost
 		var card := carousel.add_card(cant_afford)
-		card.visual.add_child(_card_icon("car"))
+		card.visual.add_child(CardUI.card_icon("car"))
 		card.info.add_child(UITheme.label(car_name))
 		card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
 		# Appended in a branch rather than a ternary: a null/String ternary is an
@@ -581,8 +511,52 @@ func _build_car() -> void:
 		elif action is String:
 			_buy_car(action))
 
+	# The spec sheet for whichever card is highlighted. A PAGE ACTION rather than an info
+	# icon ON the card: a card's own press already means "start a run with this" / "buy
+	# this", and CardCarousel gives a card one confirm, not two — so a per-card icon would
+	# either need a pointer (breaking CLAUDE.md's keyboard+gamepad rule) or steal the
+	# confirm that buys the car. As an action it sits in the same focusable row as Back and
+	# reads the carousel's live selection, so it works identically on a pad.
+	_action("Show stats", func() -> void:
+		_show_car_stats(car_refs[carousel.selected_index()]))
+
 	_action("Back", func() -> void:
 		_show(View.CHALLENGE if _pending_challenge != "" else View.REGION))
+
+
+# The plain (no comparison) car spec sheet, over the car page. `ref` is a `car_refs` entry:
+# an owned-car Dictionary, or a catalogue index for a car the player does not own yet — the
+# unowned case passes an EMPTY owned dict, so the sheet reads the showroom car with no
+# upgrades, tuning or engine swap resolved onto it, which is exactly what a car you have
+# not bought is.
+func _show_car_stats(ref: Variant) -> void:
+	var owned: Dictionary = ref if ref is Dictionary else {}
+	var meta: Dictionary = CarLibrary.for_owned(owned) if ref is Dictionary \
+		else CarLibrary.all()[int(ref)]
+	if meta.is_empty():
+		return
+	var page := MenuPage.open_modal(self, {"margin": 24.0,
+		"title": String(meta.get("name", "Car"))})
+	page.body().add_child(CarStatsPanel.build(CarStats.values(owned, meta)))
+	var close := func() -> void:
+		# Hide and leave the claimer group BEFORE freeing, because _show() below rebuilds
+		# the page underneath in this SAME frame. MenuNav.screen_claimer skips a claimer
+		# that is queued for deletion or hidden, but we free the parent CanvasLayer rather
+		# than this page, and the deletion flag reports on the node it was called on — so
+		# without this the dying modal can still read as the live claimer for a frame and
+		# swallow the rebuilt page's input. Same reasoning as
+		# world.gd::_teardown_interstitial_page.
+		page.hide()
+		page.remove_from_group(MenuNav.SCREEN_CLAIMER_GROUP)
+		var layer := page.get_parent()
+		if is_instance_valid(layer):
+			layer.queue_free()
+		# Rebuild the page underneath so its carousel re-claims focus.
+		_show(_view)
+	var back := UITheme.button("Back")
+	back.pressed.connect(close)
+	page.add_action(back)
+	MenuNav.attach(page, {"on_back": close})
 
 
 # Keep a live CarCardPreview on every card the carousel can ACTUALLY show at once
@@ -610,7 +584,7 @@ func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
 			var preview: CarCardPreview = card.visual.get_child(0)
 			card.visual.remove_child(preview)
 			CarPreviewCache.park(preview)
-			card.visual.add_child(_card_icon("car"))
+			card.visual.add_child(CardUI.card_icon("car"))
 
 	# Give every card that entered the window its car's preview — cached already (a car
 	# seen earlier this visit, or warmed in the background) or built fresh otherwise. A
@@ -716,7 +690,7 @@ func _build_freeplay_car() -> void:
 	_fp_car = 0
 	_fp_region = ""
 	_fp_boosts = []
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: the CarLibrary INDEX each card represents.
 	var indices: Array[int] = []
 	for index in CarLibrary.all().size():
@@ -724,7 +698,7 @@ func _build_freeplay_car() -> void:
 		var model_id := String(spec.get("id", ""))
 		if model_id.is_empty():
 			continue
-		_text_card(carousel, String(spec.get("name", model_id)),
+		CardUI.text_card(carousel, String(spec.get("name", model_id)),
 			"Owned" if Save.owns_model(model_id) else "Not owned — free play lends it",
 			false, "car")
 		indices.append(index)
@@ -735,7 +709,7 @@ func _build_freeplay_car() -> void:
 
 
 func _build_freeplay_region() -> void:
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: the region id each card represents. EVERY
 	# region is selectable — the unlock gate is a progression rule for runs, and free
 	# play has no progression to protect.
@@ -744,7 +718,7 @@ func _build_freeplay_region() -> void:
 		var id := String(region.get("id", ""))
 		if id == "":
 			continue
-		_text_card(carousel, String(region.get("name", id)), "Any stage from this region",
+		CardUI.text_card(carousel, String(region.get("name", id)), "Any stage from this region",
 			false, "region")
 		ids.append(id)
 	carousel.confirmed.connect(func(i: int) -> void:
@@ -754,14 +728,14 @@ func _build_freeplay_region() -> void:
 
 
 func _build_freeplay_setup() -> void:
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: the boost id each card toggles. Confirming a
 	# card TOGGLES it (any combination, order-free) and rebuilds the page so every
 	# card's Selected/Not state is legible; Start is what actually launches.
 	var ids: Array[String] = []
 	for id in BoostLibrary.CATALOGUE:
 		var boost_id := String(id)
-		_text_card(carousel, BoostLibrary.label_for(boost_id),
+		CardUI.text_card(carousel, BoostLibrary.label_for(boost_id),
 			"Selected — tap to remove" if _fp_boosts.has(boost_id) else "Tap to add",
 			false, boost_id)
 		ids.append(boost_id)
@@ -823,18 +797,19 @@ func _build_summary() -> void:
 # the money gets spent. The Engine Swap is a mid-run boost pick now (BoostLibrary
 # "engine_swap"), sold up levels here like every other boost.
 #
-# One card per BoostLibrary.CATALOGUE id: its level (out of GameConfig.boost_level_max),
-# the price of the NEXT level, and the effect range the whole ladder covers (decision 42
-# — "the shop shows the effect range per level ... so the purchase is legible without a
-# live car to compute against"; BoostLibrary.effect_range_text is that formatting).
-# Confirming a card makes the purchase; a card at its cap or the player cannot afford
-# is disabled (shown, dimmed — CardCarousel's
-# own disabled convention, same as a locked region card), so the cursor's confirm can
-# never land on a dead purchase.
+# One card per BoostLibrary.CATALOGUE id: its level (1-based — Save.boost_level's 0 means
+# "never upgraded", displayed as "Lv 1" since that's the level whose base magnitude the
+# player already has, not "no level"), the current increase that level gives right now
+# (BoostLibrary.current_effect_text_for — "how far the level I OWN pushes it", not the
+# whole ladder's range or the next level's delta: the total rung count and the "how much
+# more" figure are deliberately not shown), and the price of the NEXT level. Confirming a
+# card makes the purchase; a card at its cap or the player cannot afford is disabled
+# (shown, dimmed — CardCarousel's own disabled convention, same as a locked region card),
+# so the cursor's confirm can never land on a dead purchase.
 func _build_shop() -> void:
 	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
 	var max_level := int(Config.data.boost_level_max)
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
 
 	for id in BoostLibrary.CATALOGUE:
@@ -851,8 +826,8 @@ func _build_shop() -> void:
 		if at_cap:
 			extra = "MAX"
 			extra_variant = ""
-		_text_card(carousel, label, "Lv %d/%d, rolls %s" % [level, max_level,
-				BoostLibrary.effect_range_text(boost_id)],
+		CardUI.text_card(carousel, label, "Lv %d, %s" % [level + 1,
+				BoostLibrary.current_effect_text_for(boost_id)],
 			at_cap or Save.money() < price, boost_id, extra, extra_variant)
 		actions.append(func() -> void: _buy_boost_level(boost_id))
 
@@ -870,8 +845,10 @@ func _buy_boost_level(id: String) -> void:
 # per SkillLibrary.all() entry, in ONE of three states — locked (unlock stat below its
 # threshold, shown but not focusable, same idiom as a locked region), purchasable (a Buy
 # row), or owned (an Equip/Unequip row, gated on GameConfig.skill_max_equipped once
-# every owned slot is full). NO GAMEPLAY EFFECT YET — see SkillLibrary's own header —
-# this page is the gate/purchase/equip state machine, not a stat-boosting one.
+# every owned slot is full). This page is only the gate/purchase/equip state machine —
+# an equipped skill's actual EFFECT is applied at fielding time, not here:
+# SkillLibrary.equipped_effects rides the same UpgradeLibrary.EFFECTS + car `boosts` seam
+# a run's boosts do (decision 51), merged by world.gd::_owned_with_run_effects.
 
 func _build_skills() -> void:
 	# The equipped count is the page's ONE header line, deliberately not joined by a
@@ -882,7 +859,7 @@ func _build_skills() -> void:
 	var cap := int(Config.data.skill_max_equipped)
 	_page.body().add_child(UITheme.label("Equipped: %d/%d" % [equipped.size(), cap]))
 
-	var carousel := _build_carousel()
+	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
 
 	for skill in SkillLibrary.all():
@@ -891,21 +868,21 @@ func _build_skills() -> void:
 			continue
 		var label := SkillLibrary.label_for(id)
 		if not SkillLibrary.is_unlocked(id, Save.profile):
-			_text_card(carousel, label, "Locked — %s" % SkillLibrary.unlock_label(id),
+			CardUI.text_card(carousel, label, "Locked — %s" % SkillLibrary.unlock_label(id),
 				true, id)
 			actions.append(func() -> void: pass)
 			continue
 		if not Save.owns_skill(id):
 			var price := SkillLibrary.price_of(id)
-			_text_card(carousel, label, "Buy — %d" % price,
+			CardUI.text_card(carousel, label, "Buy — %d" % price,
 				Save.money() < price, id)
 			actions.append(func() -> void: _buy_skill(id))
 			continue
 		if Save.skill_equipped(id):
-			_text_card(carousel, label, "Equipped — tap to unequip", false, id)
+			CardUI.text_card(carousel, label, "Equipped — tap to unequip", false, id)
 			actions.append(func() -> void: _unequip_skill(id))
 		else:
-			_text_card(carousel, label, "Tap to equip",
+			CardUI.text_card(carousel, label, "Tap to equip",
 				equipped.size() >= cap, id)
 			actions.append(func() -> void: _equip_skill(id))
 

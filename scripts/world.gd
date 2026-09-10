@@ -1893,32 +1893,45 @@ func _field_car(instance_id: int) -> void:
 		$Car.apply_car(0)
 		return
 	if RunSession.is_active():
-		# RUN-SCOPED BOOSTS (todo/roguelike-pivot.md "Upgrades — RR's two-tier model",
-		# features/region-runs.md -> "Where boosts live, and what wipes them"). Merged
-		# onto a DUPLICATED copy of the owned-car dict, never the live reference
-		# Save.get_car returned — writing "boosts" onto that would persist a run's
-		# temporary picks straight into the profile, which must never happen (they are
-		# wiped when the run ends, win or lose; see RunSession._finish_locally).
-		owned = owned.duplicate(true)
-		# SKILLS RIDE THE SAME SEAM (todo/roguelike-pivot.md decision 51: "the seam is
-		# UpgradeLibrary.EFFECTS + a car's boosts list; do not build a parallel modifier
-		# path"). The two lists differ in LIFETIME, not in mechanism: a boost is run-scoped
-		# and wiped when the run ends, while an equipped skill is a permanent profile
-		# purchase — so skills are re-derived from the profile on every stage boot rather
-		# than carried on the run object. Both land on the same duplicated dict, which is
-		# what keeps either of them out of the saved profile.
-		owned["boosts"] = RunSession.boosts() + SkillLibrary.equipped_effects(Save.profile)
-		# THE MID-RUN DRIVETRAIN CONVERSION (same seam, same lifetime as the boosts above —
-		# see RunSession.choose_drivetrain / drivetrain_override). Written onto this same
-		# duplicated dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override
-		# sees it for exactly as long as the run does.
-		owned["drivetrain_override"] = RunSession.drivetrain_override()
+		owned = _owned_with_run_effects(owned)
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
 	_event_hp_at_finish = _event_start_hp
 	_event_toe_at_finish = $Car.damage.toe_array()
 	_event_distance_at_finish = 0.0
+
+
+# The owned-car dict AS THE RUN ACTUALLY DRIVES IT — the persisted car plus this run's
+# temporary effects. Used both to field the car and to draw the between-stage stats sheet,
+# which is the point of it being one function: a "before" column built from the bare
+# persisted dict would read as though the run carried no boosts at all, and would then
+# count this run's existing picks a second time in the "after".
+#
+# RUN-SCOPED BOOSTS (todo/roguelike-pivot.md "Upgrades — RR's two-tier model",
+# features/region-runs.md -> "Where boosts live, and what wipes them"). Merged onto a
+# DUPLICATED copy of the owned-car dict, never the live reference Save.get_car returned —
+# writing "boosts" onto that would persist a run's temporary picks straight into the
+# profile, which must never happen (they are wiped when the run ends, win or lose; see
+# RunSession._finish_locally).
+#
+# SKILLS RIDE THE SAME SEAM (todo/roguelike-pivot.md decision 51: "the seam is
+# UpgradeLibrary.EFFECTS + a car's boosts list; do not build a parallel modifier path").
+# The two lists differ in LIFETIME, not in mechanism: a boost is run-scoped and wiped when
+# the run ends, while an equipped skill is a permanent profile purchase — so skills are
+# re-derived from the profile on every stage boot rather than carried on the run object.
+# Both land on the same duplicated dict, which is what keeps either of them out of the
+# saved profile.
+#
+# THE MID-RUN DRIVETRAIN CONVERSION (same seam, same lifetime as the boosts above — see
+# RunSession.choose_drivetrain / drivetrain_override). Written onto this same duplicated
+# dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override sees it for
+# exactly as long as the run does.
+func _owned_with_run_effects(owned: Dictionary) -> Dictionary:
+	var out := owned.duplicate(true)
+	out["boosts"] = RunSession.boosts() + SkillLibrary.equipped_effects(Save.profile)
+	out["drivetrain_override"] = RunSession.drivetrain_override()
+	return out
 
 
 # The FREE PLAY field (see free_play.gd): any catalogue car, plus the plan's chosen
@@ -2076,17 +2089,120 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_reset_props_for_replay()
 	# Car into replay playback.
 	($Car as Node).begin_replay(_replay_recorder)
-	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(),
-		_on_interstitial_choice, RunSession.drivetrain_choices())
+	_open_pick_panel()
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
 
 
-# The interstitial's row was pressed — "repair", a boost id, "drivetrain:<mode>", or ""
-# (plain Continue, offered when RunSession had no pick to draw). Applies the choice, tears
-# the overlay down, then either carries the run into the next stage or — if this was the
-# run's final/failed stage, so RunSession is no longer active — signals that the player has
-# seen the result.
+# Open (or RE-open, after a cancelled confirmation) the card list. Split out of
+# _present_standings_overlay so Cancel can come back to it without re-running any of the
+# replay/camera setup above — the pick is still unresolved on RunSession at that point, so
+# `pending_pick()` rebuilds the identical set of cards.
+func _open_pick_panel() -> void:
+	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(),
+		_on_interstitial_choice, RunSession.drivetrain_choices(), RunSession.offer_repair())
+
+
+# The interstitial's card was pressed — "repair", a boost id, "drivetrain:<mode>", or ""
+# (plain Continue, offered when RunSession had no pick to draw).
+#
+# THE PICK IS NOT APPLIED HERE ANY MORE. An upgrade first has to be CONFIRMED against what
+# it would do to the car, because "Lightweight parts" does not tell the player they are
+# also giving up nothing, or how much: the sequence is
+#
+#   card pressed -> car stats, before -> after, Apply / Cancel   (_confirm_pick)
+#                -> skill-unlock progress, Continue              (_show_skill_progress)
+#                -> apply + advance                              (_apply_pick)
+#
+# and CANCEL returns to the card list with nothing spent, so the player can pick something
+# else — the pick is still unresolved on RunSession at that point, which is exactly what
+# `_pick_awaiting` already guarantees (continue_to_next_stage refuses until it resolves).
+#
+# TWO CHOICES SKIP THE STATS STEP. Repair moves no stat on the sheet (it restores the HP a
+# stage cost, which the sheet's Durability row reports as the car's CEILING, not its
+# current condition), and the bare Continue is not a pick at all. Both go straight to the
+# progress screen, so the between-stage sequence has the same shape whatever the player
+# chose — see features/region-runs.md.
 func _on_interstitial_choice(choice: String) -> void:
+	if choice == "" or choice == "repair":
+		_show_skill_progress(choice)
+		return
+	_confirm_pick(choice)
+
+
+# Each step REPLACES the interstitial rather than stacking a modal on top of it — one
+# screen on show at a time, `_interstitial_page` always pointing at whichever it is, so
+# `_teardown_interstitial` keeps working unchanged and no two pages fight over the screen
+# claim (MenuNav.SCREEN_CLAIMER_GROUP, which MenuPage.open_modal joins).
+#
+# NOT a ConfirmPopup, which would be the obvious host for an Apply/Cancel pair: its body
+# is a plain autowrap Label and `set_body` was deleted (see confirm_popup.gd's own note),
+# so it cannot host a stats grid at all.
+func _swap_interstitial(title: String) -> MenuPage:
+	_teardown_interstitial_page()
+	_interstitial_page = MenuPage.open_modal(self, {"margin": 24.0, "title": title})
+	return _interstitial_page
+
+
+# Step 1 — what would this pick do to the car? Built on the SAME panel and preview the
+# hub's car popup uses, so the two can never disagree about what an effect is worth.
+# Apply carries on to the progress screen; Cancel goes back to the card list with nothing
+# spent and the pick still unresolved, which is what lets the player choose something else.
+func _confirm_pick(choice: String) -> void:
+	var owned: Dictionary = Save.get_car(RunSession.car_instance_id())
+	var meta: Dictionary = CarLibrary.for_owned(owned)
+	if meta.is_empty():
+		# No car to compare against (a synthetic or missing instance): there is nothing
+		# honest to show, so skip straight on rather than rendering an empty sheet.
+		_show_skill_progress(choice)
+		return
+	# The run's live boosts and equipped skills are already on the car when it is fielded,
+	# but NOT on the dict Save.get_car returns — so the "before" column has to be that same
+	# merged view, or every row would read as though the run carried no boosts at all and
+	# the "after" would count this run's existing picks a second time.
+	owned = _owned_with_run_effects(owned)
+	var pick := {"drivetrain": int(choice.substr("drivetrain:".length()))} \
+		if choice.begins_with("drivetrain:") else BoostLibrary.boost_for(choice)
+	var title := "%s conversion" % CarLibrary.drive_text(int(pick.get("drivetrain", -1))) \
+		if pick.has("drivetrain") else BoostLibrary.label_for(choice)
+	var page := _swap_interstitial(title)
+	page.body().add_child(CarStatsPanel.build(
+		CarStats.values(owned, meta), CarStats.preview(owned, meta, pick)))
+	var apply := UITheme.button("Apply")
+	apply.pressed.connect(func() -> void: _show_skill_progress(choice))
+	page.add_action(apply)
+	var cancel := UITheme.button("Cancel")
+	cancel.pressed.connect(_open_pick_panel_again)
+	page.add_action(cancel)
+	MenuNav.attach(page, {"on_back": _open_pick_panel_again})
+
+
+# Cancel, and gamepad B / Esc on the confirmation — both mean "I want a different pick".
+func _open_pick_panel_again() -> void:
+	_teardown_interstitial_page()
+	_open_pick_panel()
+
+
+# Step 2 — how much closer did that stage get the player to a skill? Shown for EVERY
+# choice, including repair and the bare Continue: the lifetime counters moved on the stage
+# just driven regardless of what was picked afterwards, and a screen that appeared only
+# after an upgrade would read as a reward for upgrading rather than a progress report.
+func _show_skill_progress(choice: String) -> void:
+	var page := _swap_interstitial("Skill progress")
+	page.body().add_child(SkillProgressPanel.build(Save.profile))
+	var carry_on := UITheme.button("Continue")
+	carry_on.pressed.connect(func() -> void: _apply_pick(choice))
+	page.add_action(carry_on)
+	# No `on_back`: this screen is a read-out with nothing to decide, and backing out of it
+	# would leave the pick applied-but-unadvanced. Continue is the only way on, exactly
+	# like the bare-Continue shape of the pick panel itself.
+	MenuNav.attach(page, {})
+
+
+# Step 3 — apply the confirmed choice, tear the overlay down, then either carry the run
+# into the next stage or, if this was the run's final/failed stage (RunSession no longer
+# active), signal that the player has seen the result. This is the original
+# _on_interstitial_choice body, now reached only once the player has confirmed.
+func _apply_pick(choice: String) -> void:
 	if choice == "repair":
 		RunSession.choose_repair()
 	elif choice.begins_with("drivetrain:"):
@@ -2101,12 +2217,32 @@ func _on_interstitial_choice(choice: String) -> void:
 
 
 func _teardown_interstitial() -> void:
+	_teardown_interstitial_page()
+	_on_leaderboard_hidden_changed(true)   # dismissed -> engine audible again
+
+
+# Free whichever interstitial screen is up WITHOUT un-muting the engine — the between-stage
+# sequence swaps pages several times (cards -> stats -> progress, and back to cards on
+# Cancel) and the engine must stay muted across the whole of it. Only
+# `_teardown_interstitial`, which ends the sequence, restores the audio.
+func _teardown_interstitial_page() -> void:
 	if is_instance_valid(_interstitial_page):
+		# HIDE BEFORE FREEING, which is what actually releases the screen claim this frame.
+		# The page joined MenuNav.SCREEN_CLAIMER_GROUP (MenuPage.open_modal), and
+		# MenuNav.screen_claimer skips a claimer that is either queued for deletion OR not
+		# visible in tree. We free the page's parent CanvasLayer, not the page — and
+		# `is_queued_for_deletion()` reports on the node it was called on, so the child page
+		# is not reliably flagged even though it dies with its parent. That gap does not
+		# matter for a plain dismissal, but the between-stage sequence opens the NEXT page
+		# in the same frame it frees this one, and a stale claimer would then swallow the new
+		# page's input for a frame. Hiding is the mechanism the group's own doc names for
+		# releasing a claim, so it closes the gap without depending on engine free semantics.
+		_interstitial_page.hide()
+		_interstitial_page.remove_from_group(MenuNav.SCREEN_CLAIMER_GROUP)
 		var layer := _interstitial_page.get_parent()
 		if is_instance_valid(layer):
 			layer.queue_free()
 	_interstitial_page = null
-	_on_leaderboard_hidden_changed(true)   # dismissed -> engine audible again
 
 
 # Restore every knocked-over prop before the replay so it plays back against an intact

@@ -1,8 +1,10 @@
 # Card carousel
 
-**Source:** `scripts/card_carousel.gd` (`CardCarousel`), `scripts/car_card_preview.gd`
-(`CarCardPreview`, the CAR page's spinning 3D thumbnail), `scripts/car_preview_cache.gd`
-(`CarPreviewCache` autoload — the session-lifetime cache of built previews, keyed by car).
+**Source:** `scripts/card_carousel.gd` (`CardCarousel`), `scripts/card_ui.gd` (`CardUI` —
+the extracted reusable card-building API, see *`CardUI` — the reusable card API* below),
+`scripts/car_card_preview.gd` (`CarCardPreview`, the CAR page's spinning 3D thumbnail),
+`scripts/car_preview_cache.gd` (`CarPreviewCache` autoload — the session-lifetime cache of
+built previews, keyed by car).
 
 **Tests:** `tests/headless/test_card_carousel.gd`, `tests/headless/test_car_card_preview.gd`
 (the CAR page's 3D thumbnail specifically), `tests/headless/test_car_preview_cache.gd`
@@ -389,6 +391,18 @@ the car's current cosmetic state — an owned car's cached preview could go stal
 paint/wheels/engine change via another menu (wheel customisation, engine swap) mid-session
 without anything invalidating that cache entry. Not addressed here; flagged for whoever
 next touches those flows.
+
+## `CardUI` — the reusable card API
+
+`scripts/card_ui.gd` (`CardUI`) pulls the card-BUILDING half of this widget — `card_icon`,
+`text_card`, `build_carousel` — out of `hub_shell.gd` so a second screen
+(`run_pick_panel.gd`, the between-stage pick) can build the exact same card shape without
+duplicating the logic inline. **Temporary duplication, deliberate, not yet cleaned up:**
+`hub_shell.gd` still carries its own private equivalents of the same three helpers
+(`_card_icon`/`_text_card`/`_build_carousel`) — `CardUI` is the canonical version going
+forward, and `hub_shell.gd`'s copies are pending consolidation onto it. Until that lands,
+treat `CardUI` as the one to extend for a THIRD caller, and don't be surprised the two
+private/public copies look near-identical — that's the known migration debt, not a bug.
 
 ## Known open decisions (unilateral — flag for design review)
 

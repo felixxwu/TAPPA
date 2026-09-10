@@ -62,6 +62,14 @@ inside the session:
 | What does a finished run record? | `record_outcome(result, t)` | the period's one-attempt outcome | the `regions_cleared` ledger (stage 4) |
 | Does clearing a stage offer a boost pick? | `offers_boost_pick()` / `boost_choices(i)` | never — repair stays automatic | always (unless it was the run's own final/failed stage) |
 
+**A new run always starts the car at 100% health.** `RunSession.begin()` calls
+`Save.restore_car_to_full(_car_instance_id)` alongside its other `_pending_*` resets —
+a damaged car from a previous run (or from browsing the garage) never carries that
+damage into a fresh one. This is the ONLY OTHER place besides `Save.grant_car` (a
+brand-new car) that sets `hp` to `max_hp`; every other HP change in the game is either
+`apply_damage` (impact), `heal_car` (the self-healing trickle) or a field repair —
+i.e. repairs happen only via a repair pick, or a fresh run, never silently mid-run.
+
 ## One run slot
 
 `profile[Save.KEY_RUN]` (`"run"`) holds an in-progress run **of either kind** —
@@ -250,14 +258,40 @@ the clock — `over` in `report_event_result`), the automatic repair is replaced
 with a drawn pick:
 
 ```gdscript
-_pending_pick = _mode.boost_choices(_stage_index)   # BoostLibrary entries
+var healthy := Save.car_health_fraction(_car_instance_id) >= Config.data.run_boost_healthy_threshold
+_pick_offers_repair = not healthy
+var count := Config.data.run_boost_choices + 1 if healthy else -1  # -1 = mode's own default
+_pending_pick = _mode.boost_choices(_stage_index, count)
 _pick_awaiting = true                               # continue_to_next_stage() now refuses
 ```
+
+**The undamaged-arrival reward.** If the run's own car is at or above
+`GameConfig.run_boost_healthy_threshold` (a fraction of `max_hp`; resolved via
+`Save.car_health_fraction`, which reads `hp`/`max_hp` the same way
+`heal_car`/`apply_field_repair_to` do) at the moment the pick is drawn, the pick draws
+`run_boost_choices + 1` boosts and offers **no repair row** — arriving undamaged earns
+an extra boost instead of a repair option nobody needed. Below the threshold it's the
+usual `run_boost_choices` boosts plus repair, unchanged. `RunMode.boost_choices(stage_index,
+count := -1)` takes the override (`RegionRunMode.boost_choices` uses it when >= 0, its
+own `Config.data.run_boost_choices` otherwise); `BoostLibrary.draw` already clamps
+`count` to the catalogue size, so the +1 is always safe.
+
+The answer is resolved **once**, at draw time, and persisted verbatim
+(`RunSession._pick_offers_repair`, written into `_persist()`'s `pick_offers_repair`
+key) rather than re-derived on resume — the car's HP can move between the draw and a
+resume (self-healing, damage), and the pick must keep offering the same choice it
+originally offered. `RunSession.offer_repair()` is the read: world.gd passes it
+straight through as `RunPickPanel.open`'s `offer_repair` argument
+(`RunPickPanel.open(host, pick, on_choice, drivetrain_choices := [], offer_repair :=
+true)`), which is what makes the repair button disappear from the reward pick.
 
 `RunSession.choose_repair()` / `.choose_boost(id)` resolve it — repair goes
 through the same `Save.apply_field_repair_to` every other transition uses (so
 `take_pending_repair()` / world.gd's between-stage repair popup are unchanged for
-the repair case), and a boost is appended to the run's own list:
+the repair case), and a boost is appended to the run's own list. `choose_repair()`
+**refuses** (a no-op, same style as its existing "no pick outstanding" guard) when
+`_pick_offers_repair` is false — repair must not be reachable on the reward pick even
+if something bypasses the UI's hidden button.
 
 ```gdscript
 func boosts() -> Array   # this run's picks so far, {"id","effect"} — UpgradeLibrary's shape
@@ -296,9 +330,11 @@ the saved profile.
 so `UpgradeLibrary.active_effects` sees them (via `_field_car` → `apply_owned` →
 `UpgradeLibrary.apply`) without a single byte reaching `profile["cars"]`. They
 persist across a **pause/resume** of the same run (`_persist()`/`resume()` carry
-`boosts` and `pick_awaiting` in the run record — a resumed run mid-pick
-re-derives the *same* offer via `_mode.boost_choices(_stage_index)`, since the
-draw is a pure function of `(run_seed, stage_index)`) and are wiped **the moment
+`boosts`, `pick_awaiting` and `pick_offers_repair` in the run record — a resumed run
+mid-pick re-derives the *same* offer via `_mode.boost_choices(_stage_index, count)`,
+passing the SAME count the original draw used (derived from the persisted
+`pick_offers_repair`, not re-read from the car's current HP) since the draw itself is
+a pure function of `(run_seed, stage_index, count)`) and are wiped **the moment
 the run ends, win or lose**: `_finish_locally()` clears `_boosts` in memory and
 `_clear_persisted()` deletes the whole run record — including `boosts` — from
 `Save`, so nothing survives into the next run (`todo/roguelike-pivot.md`, "Soft
@@ -319,9 +355,10 @@ per-car `peak_torque` instead.
 
 Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
 Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
-`_brake_mult`, `_drag_mult`, plus `run_boost_choices` for how many are drawn) —
-`BoostLibrary.effect_for` re-reads them live, never bakes a value in, and no test
-may pin the shipped numbers (CLAUDE.md).
+`_brake_mult`, `_drag_mult`, plus `run_boost_choices` for how many are drawn and
+`run_boost_healthy_threshold` for the undamaged-arrival reward's health cutoff, see
+above) — `BoostLibrary.effect_for` re-reads them live, never bakes a value in, and no
+test may pin the shipped numbers (CLAUDE.md).
 
 `BoostLibrary.draw(seed_value, count)` picks `count` **distinct** entries with no
 replacement, seeded by `RegionRunMode._boost_seed(stage_index) = run_seed +
@@ -332,22 +369,47 @@ tie-break to reason about.
 
 ### The pick screen
 
-`RunPickPanel.open(host, pick, on_choice, drivetrain_choices)`
-(`scripts/run_pick_panel.gd`) builds the modal — a repair button, one row per drawn
-boost, one row per offered drivetrain conversion (`drivetrain_choices`, from
-`RunSession.drivetrain_choices()` — every `Drivetrain.DriveMode` except whichever one the
-fielded car is currently running), or a bare "Continue" when `pick` is empty — as a
-`MenuPage` wired through `MenuNav.attach` (`tests/headless/test_run_pick_panel.gd` is the
-nav test CLAUDE.md requires). It is deliberately decoupled from `world.gd`/`$Car`/the
+`RunPickPanel.open(host, pick, on_choice, drivetrain_choices := [], offer_repair :=
+true)` (`scripts/run_pick_panel.gd`) builds the modal — a repair button (omitted
+when `offer_repair` is false — the undamaged-arrival reward pick, see above), one
+row per drawn boost, one row per offered drivetrain conversion
+(`drivetrain_choices`, from `RunSession.drivetrain_choices()` — every
+`Drivetrain.DriveMode` except whichever one the fielded car is currently running),
+or a bare "Continue" when `pick` is empty — as a `MenuPage` wired through
+`MenuNav.attach` (`tests/headless/test_run_pick_panel.gd` is the nav test CLAUDE.md
+requires). `world.gd` passes `RunSession.offer_repair()` straight through as the
+fifth argument. It is deliberately decoupled from `world.gd`/`$Car`/the
 replay machinery so it can be tested without booting a world scene at all.
 `world.gd._present_standings_overlay` hosts it over the just-finished stage's cinematic
 replay — the same beat that used to load the now-deleted `standings.tscn` (decision 30:
-no more per-stage leaderboards) — and `_on_interstitial_choice` applies the pick (routing
-a `"drivetrain:<mode>"` choice to `RunSession.choose_drivetrain`, same as `"repair"` and a
-boost id go to `choose_repair`/`choose_boost`), tears the modal down, then either
-continues the run (`RunSession.continue_to_next_stage()`) or, if the run just ended, emits
+no more per-stage leaderboards).
+
+### Three screens now, not one
+
+Picking a card no longer applies it immediately. `world.gd`'s interstitial sequence is
+now `RunPickPanel` (pick a boost/drivetrain/repair) → `_confirm_pick` (what it does to the
+car — a `CarStatsPanel` before/after built off `CarStats.preview`, Apply/Cancel) →
+`_show_skill_progress` (`SkillProgressPanel` — how far the stage moved every skill gate,
+Continue) → `_apply_pick` (applies the pick for real and advances the run). See
+[car-stats.md](car-stats.md) for what the middle two screens actually build and why
+`preview` never mutates the profile.
+
+Each step REPLACES the interstitial page rather than stacking pages, and **Cancel on the
+stats screen returns to the card list with the pick still unresolved** — nothing is
+applied, nothing is persisted, the player just gets another look at the same drawn cards.
+**Repair and the bare "Continue" (an empty pick) skip the stats step entirely** — a repair
+has no car-stat sheet worth comparing (it restores `wheel_toe`, not a `CarStats` row) and
+an empty pick has nothing to preview — going straight to `_show_skill_progress`.
+
+`_on_interstitial_choice` is the seam that applies whichever pick was confirmed (routing a
+`"drivetrain:<mode>"` choice to `RunSession.choose_drivetrain`, same as `"repair"` and a
+boost id go to `choose_repair`/`choose_boost`), tears the modal down, then either continues
+the run (`RunSession.continue_to_next_stage()`) or, if the run just ended, emits
 `run_interstitial_dismissed` so `_on_run_finished` (mode-agnostic — challenge and region
-both wait on it before returning to the hub) knows the player has seen the result.
+both wait on it before returning to the hub) knows the player has seen the result. Not
+tested at the `world.gd` layer — instantiating `main.tscn` costs ~15s per test
+(`features/testing.md`), so this three-step relay is covered by compile-time checking plus
+the already-tested panel builders (`car-stats.md`'s test files) it calls in sequence.
 
 ### Drivetrain conversion — the seventh option in the between-stage pick
 

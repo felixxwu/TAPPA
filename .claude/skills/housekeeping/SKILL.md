@@ -41,10 +41,18 @@ run only those sections. A bare `/housekeeping` runs everything.
   **~5 minutes** (see `features/testing.md`).
 - Report any failures with the assertion + file.
 - **Cross-check against known baseline failures** before calling anything a
-  regression — this repo keeps no `MEMORY.md` failure index, so the baseline is
-  the clean tree: `git stash -u && ./run_tests.sh --fast <name> && git stash pop`.
-  A failure that reproduces on a clean tree is pre-existing, not new; one that
-  only fails with local changes is the interesting one.
+  regression — this repo keeps no `MEMORY.md` failure index, so establish the
+  baseline by READING, never by rewinding the tree. **Do not run `git stash`,
+  `git restore`, `git checkout -- <file>` or `git reset --hard`** — CLAUDE.md
+  forbids all four outright, because parallel agents share this one checkout and
+  a stash race silently destroys another agent's in-flight work with no way
+  back. Instead: check whether the failing assertion touches anything in
+  `git diff` / `git status` at all (if it doesn't, it isn't yours), read the
+  test's history with `git log -p -- <test file>` and the last green run's
+  output, and re-run the same file with `--fast <name>` to confirm the failure
+  is deterministic rather than a flake. If that genuinely cannot settle it, say
+  so in the sweep report and let the user arbitrate — an unresolved attribution
+  is a fine outcome; a lost edit is not.
 
 ### 2. Test-suite runtime hasn't regressed
 
@@ -235,7 +243,7 @@ else in this sweep.
   `tools/fit_map_pins.py`. Regenerate after any change to a restriction band,
   car or engine.
 - **`data/menu_showcase_cache.res`** — the hub's 3D background track cache
-  (todo/menu-background-showcase.md), baked by `./cache_menu_showcase.sh`. Stale
+  (spec deleted; see `features/menu-showcase.md`), baked by `./cache_menu_showcase.sh`. Stale
   after any track-generation change; same re-check rule as below.
 
 If generation code changed after the bake, the game ships content that no longer

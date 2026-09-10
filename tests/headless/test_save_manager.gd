@@ -273,6 +273,42 @@ func test_heal_car_ignores_a_non_positive_amount() -> void:
 		"heal_car is not a back door into apply_damage")
 
 
+# restore_car_to_full — the ONLY other writer besides grant_car that sets hp to max_hp.
+# Used by RunSession.begin() so a new run always starts at 100% health.
+func test_restore_car_to_full_heals_a_damaged_car_to_max_hp() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	var max_hp := float(_save.get_car(id)["hp"])
+	_save.apply_damage(id, 500.0)
+	assert_lt(float(_save.get_car(id)["hp"]), max_hp, "setup: the car is damaged")
+
+	_save.restore_car_to_full(id)
+
+	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
+		"a full restore brings a damaged car back to its authored max_hp")
+
+
+func test_restore_car_to_full_changes_nothing_on_an_already_full_car() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	var max_hp := float(_save.get_car(id)["hp"])
+
+	_save.restore_car_to_full(id)
+
+	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
+		"restoring an already-full car is a no-op on its HP")
+
+
+func test_car_health_fraction_reflects_current_over_max_hp() -> void:
+	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
+	var id := int(car["instance_id"])
+	assert_almost_eq(_save.car_health_fraction(id), 1.0, 0.001,
+		"a freshly granted car is at full health")
+	var max_hp := float(_save.get_car(id)["hp"])
+	_save.apply_damage(id, max_hp * 0.5)
+	assert_almost_eq(_save.car_health_fraction(id), 0.5, 0.01)
+
+
 func test_damage_is_one_way_apart_from_the_field_repair() -> void:
 	# There is no full restore any more (repair kits are gone), so HP only ever climbs
 	# back through the free between-event field repair — and never past max.

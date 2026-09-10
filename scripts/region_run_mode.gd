@@ -221,8 +221,13 @@ func offers_boost_pick() -> bool:
 
 
 # BoostLibrary.draw is seeded from THIS RUN, never the wall clock — see _boost_seed.
-func boost_choices(stage_index: int) -> Array:
-	return BoostLibrary.draw(_boost_seed(stage_index), Config.data.run_boost_choices)
+# `count` overrides the default draw (run_boost_choices) when >= 0 — see run_mode.gd's
+# boost_choices doc; RunSession passes run_boost_choices + 1 for the undamaged-arrival
+# reward. BoostLibrary.draw clamps to the catalogue size regardless, so an oversized
+# count is always safe.
+func boost_choices(stage_index: int, count: int = -1) -> Array:
+	var n := count if count >= 0 else Config.data.run_boost_choices
+	return BoostLibrary.draw(_boost_seed(stage_index), n)
 
 
 # The run's own seed, offset by the stage the pick is FOR — the same "bump by a large

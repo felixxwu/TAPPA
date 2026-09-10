@@ -104,3 +104,19 @@ func test_raise_lifetime_stat_from_zero() -> void:
 	assert_eq(_save.lifetime_stat("fx_best"), 0)
 	_save.raise_lifetime_stat("fx_best", 1)
 	assert_eq(_save.lifetime_stat("fx_best"), 1)
+
+
+# --- progress_text ------------------------------------------------------------------
+
+func test_progress_text_renders_current_over_threshold() -> void:
+	assert_eq(LifetimeStats.progress_text(150, 800), "150/800")
+
+
+func test_progress_text_clamps_above_the_threshold() -> void:
+	# A lifetime counter keeps growing past a gate it already cleared; the display must
+	# not read as a broken progress bar ("1240/800").
+	assert_eq(LifetimeStats.progress_text(1240, 800), "800/800")
+
+
+func test_progress_text_floors_at_zero_for_a_negative_current() -> void:
+	assert_eq(LifetimeStats.progress_text(-5, 800), "0/800")

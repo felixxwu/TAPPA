@@ -327,6 +327,7 @@ run_money_region_multiplier = 2.0
 challenge_completion_money = 500.0
 run_starting_money = 2600.0
 run_boost_choices = 3
+run_boost_healthy_threshold = 0.95
 run_boost_mass_mult = 0.93
 run_boost_grip_mult = 1.08
 run_boost_shift_time_s = 0.12
