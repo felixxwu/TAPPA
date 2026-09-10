@@ -308,8 +308,16 @@ func _build_main() -> void:
 
 	CardUI.text_card(carousel, "New run", "", false, "new_run")
 	actions.append(func() -> void: _show(View.REGION))
-	CardUI.text_card(carousel, "Shop", "", false, "shop")
-	actions.append(func() -> void: _show(View.SHOP))
+	# The shop is GATED on owning a car. Every shop ladder is a permanent money sink, so a
+	# carless player who spends down there can end up unable to afford ANY car — a dead end
+	# with no way back, since money only comes from running stages and a run needs a car.
+	# Buying the first car (the CAR page) has to come first.
+	var has_car := not (Save.profile.get(Save.KEY_CARS, []) as Array).is_empty()
+	CardUI.text_card(carousel, "Shop", "Buy a car first" if not has_car else "",
+		not has_car, "shop")
+	actions.append(func() -> void:
+		if has_car:
+			_show(View.SHOP))
 	CardUI.text_card(carousel, "Skills", "", false, "skills")
 	actions.append(func() -> void: _show(View.SKILLS))
 	# Rally challenge sits AFTER Shop/Skills: it is a secondary way to start a run, so
