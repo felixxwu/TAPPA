@@ -285,6 +285,18 @@ seams not to work around, and where the decision record lives.
   before retrying (name the exact files/area from what the failed attempt
   revealed, don't make it guess again), and if the second attempt also
   misses, escalate rather than trying a third time.
+- **Reuse a live subagent for direct continuations; spawn fresh otherwise.**
+  If the next task is a direct continuation of one a subagent just did in
+  the same area — addressing review feedback on code it just wrote, the
+  next step of a plan it's already holding context for — `SendMessage` back
+  to that same subagent instead of spawning a new one; it resumes with full
+  context, so you skip paying to re-derive what it already learned. Don't
+  default to this as a blanket pattern, though: spawn a fresh subagent for
+  work that's unrelated, or independent enough to parallelize — a single
+  long-lived subagent serializes work that could run concurrently, and its
+  context keeps growing turn over turn (stale exploration and superseded
+  diffs pile up, and even cached tokens still cost to resend), so it stops
+  being cheap once it's carried more than a couple of continuations.
 
 ## Parallel agents share this checkout
 
