@@ -279,6 +279,18 @@ headlight_amount={
 "type": "float",
 "value": 0.0
 }
+wind_strength={
+"type": "float",
+"value": 0.0
+}
+wind_speed={
+"type": "float",
+"value": 0.0
+}
+wind_dir={
+"type": "vec3",
+"value": Vector3(1, 0, 0)
+}
 ow_fog_mask={
 "type": "sampler2D",
 "value": null

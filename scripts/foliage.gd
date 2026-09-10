@@ -110,6 +110,14 @@ static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: 
 		billboard_texture: Texture2D = null, use_region_profile: bool = false,
 		size_scale: Vector2 = Vector2.ONE) -> Node:
 	var cfg: GameConfig = Config.data
+	# Seed the base wind sway here, at spawn, rather than from a scene-specific script:
+	# spawn_trees is the ONE call site for every tree field in the game (stage, podium,
+	# menu showcase — see the doc comment above TREE_TEXTURE), so seeding it here means
+	# every caller's trees sway without each needing its own WindSway push. seed_base
+	# (not base) because a STAGE has already pushed its condition's own strength by the
+	# time this runs — see the guard's comment in wind_sway.gd for why that ordering
+	# makes an unconditional push a bug.
+	WindSway.seed_base(cfg)
 	var tex: Texture2D = billboard_texture if billboard_texture != null else TREE_TEXTURE
 	var size := cfg.region_tree_billboard_size_m if use_region_profile else cfg.tree_size_m
 	# Per-species BASELINE PROPORTIONS, on top of the profile's size (features/trees.md).

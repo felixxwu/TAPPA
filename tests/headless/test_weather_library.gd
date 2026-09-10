@@ -268,6 +268,10 @@ func test_a_wind_block_names_only_config_fields_that_exist() -> void:
 			if lightning.has(key):
 				assert_true(cfg.get(String(lightning[key])) != null,
 					"%s names a real GameConfig field" % String(lightning[key]))
+		var foliage_wind_field := String(entry.get("foliage_wind", ""))
+		if foliage_wind_field != "":
+			assert_true(cfg.get(foliage_wind_field) != null,
+				"%s names a real GameConfig field" % foliage_wind_field)
 
 
 # --- Wetness classification --------------------------------------------------

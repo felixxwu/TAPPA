@@ -54,6 +54,7 @@ omitted key means "this condition does not have that feature":
 | `lightning` | cosmetic **flash**: `flash` / `duration` / `interval_min` / `interval_max` → GameConfig fields (`LIGHTNING_KEYS`). Omitted ⇒ no flashes. Read by `world.gd` → `_start_lightning` |
 | `sky_panorama` | GameConfig field holding a **sky texture path** the condition swaps in, overriding whatever the region chose. Omitted ⇒ the region's sky is left alone. Only `night` names one |
 | `headlights` | GameConfig field holding the **strength** (0..1) of the fake headlight cone this condition switches on. Omitted ⇒ the car's lights stay off and every cone uniform is a bit-for-bit no-op. Read by `HeadlightCone`; cosmetic, so it is **not** in `physics_fields` |
+| `foliage_wind` | GameConfig field holding the tree wind-sway **strength** for this condition. Omitted ⇒ the shared base `foliage_wind_strength` — deliberately the case for every condition but `storm`/`sandstorm`, since wind reads the same everywhere except in a storm. Read by `WindSway`; cosmetic, so it is **not** in `physics_fields` — see [trees.md](trees.md) → "Wind sway" |
 
 **`sky_panorama` is deliberately NOT a sixth `LOOK_KEYS` entry.** `LOOK_KEYS` is
 all-or-nothing — an entry with a `look` block must name every one of the five
@@ -278,6 +279,17 @@ disagree.
   - `sand_wind_dir_deg` — a single fixed compass heading (0 = world +X, 90 = world
     +Z) the dust blows toward for the whole stage, regardless of which way the car
     or camera faces.
+  - `sand_foliage_wind_strength` — tree wind-sway strength on a sandstorm stage,
+    named by the entry's `foliage_wind` key. Above the shared base, below storm's
+    (dust carries no rain). See [trees.md](trees.md) → "Wind sway".
+
+- The tree wind-sway base, near `foliage_light_amount` in the Lighting group —
+  shared by EVERY condition unless it names its own `foliage_wind` field:
+  - `foliage_wind_strength` — sway at a tree's tip, as a fraction of its height.
+  - `foliage_wind_speed` — sway oscillations per second.
+  - `foliage_wind_dir_deg` — heading (0 = world +X, 90 = world +Z) trees lean
+    toward when the live condition names no `wind_dir` of its own. See
+    [trees.md](trees.md) → "Wind sway".
 
 - The fog block, prefixed **`mist_`** rather than `fog_` purely to avoid colliding
   with the BASE environment knobs `fog_density` / `fog_sky_affect` every stage uses:
@@ -310,6 +322,10 @@ disagree.
     named by the entry's `headlights` key. Authored well BELOW night's, and that
     is the whole point of the field existing — see "Headlights on more than
     night" below.
+  - `storm_foliage_wind_strength` — the tree wind-sway strength on a storm stage,
+    named by the entry's `foliage_wind` key. Authored ABOVE the shared base
+    `foliage_wind_strength` — a stormy sky, not just a stormy road. See
+    [trees.md](trees.md) → "Wind sway".
 
 - The night block, prefixed **`night_`** — a `look` block plus a road darken, and
   nothing else (it authors no `grip_mult`, no `wind`, no `particles`, no

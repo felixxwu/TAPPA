@@ -1694,6 +1694,10 @@ func has_nitrous() -> bool:
 ## blows toward. A single fixed direction, not per-event, so "one wind direction"
 ## reads consistently for the whole stage regardless of which way the car is facing.
 @export_range(0.0, 360.0) var sand_wind_dir_deg := 45.0
+## Tree wind-sway strength on a sandstorm stage — a stormy sky, so authored above
+## foliage_wind_strength (below storm's, since sand carries no rain). See
+## scripts/wind_sway.gd; purely cosmetic.
+@export_range(0.0, 0.5) var sand_foliage_wind_strength := 0.08
 
 # --- Fog (weather == RallyLibrary.WEATHER_FOG) --------------------------------
 # Prefixed `mist_` rather than `fog_` purely to avoid colliding with the BASE
@@ -1748,6 +1752,10 @@ func has_nitrous() -> bool:
 ## TOWARD. Shared by the crosswind force and the rain particles' wind direction, so
 ## the drops visibly stream the same way the car is being pushed.
 @export_range(0.0, 360.0) var storm_wind_dir_deg := 200.0
+## Tree wind-sway strength on a storm stage — a stormy sky, not just a stormy road,
+## so this is authored well above foliage_wind_strength. See scripts/wind_sway.gd;
+## purely cosmetic, so it is not part of the wind body-force block above.
+@export_range(0.0, 0.5) var storm_foliage_wind_strength := 0.11
 ## Peak brightness multiplier of a lightning flash, applied to the storm fog/sky
 ## colour for storm_lightning_duration_s. Purely cosmetic (no light node exists —
 ## see features/rendering.md). Keep it modest: a flash that blanks the screen
@@ -2019,6 +2027,15 @@ func has_nitrous() -> bool:
 ## 0 = flat (unlit), 1 = full shading. Strength on billboard trees. Independent
 ## of terrain_light_amount but conventionally kept equal so trees match the ground.
 @export_range(0.0, 1.0) var foliage_light_amount := 1.0
+## Base wind sway at a tree's tip, as a fraction of its height — every weather
+## condition unless it names its own "foliage_wind" field in WeatherLibrary (storm,
+## sandstorm). See scripts/wind_sway.gd.
+@export_range(0.0, 0.5) var foliage_wind_strength := 0.035
+## Sway oscillations per second (radians/s scale). Shared by every condition.
+@export_range(0.0, 6.0) var foliage_wind_speed := 1.1
+## Heading (degrees, 0 = world +X, 90 = world +Z) trees lean toward when the live
+## condition names no wind heading of its own (see WeatherLibrary's "wind_dir" key).
+@export_range(0.0, 360.0) var foliage_wind_dir_deg := 35.0
 ## World-space direction TO the sun (need not be normalised; normalised on use).
 ## ALIGNED TO THE SKYBOX: panoramas are pre-rolled (tools/align_sky_sun.py) so the
 ## sun sits at the image centre, which is +Z in Godot's panorama mapping (verified

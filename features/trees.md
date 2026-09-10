@@ -4,11 +4,13 @@
 the shared tree/bush meshes + materials), `scripts/tree_scatter.gd`
 (`class_name TreeScatter`), `scripts/billboard_field.gd`
 (`class_name BillboardField`, trees), `scripts/tree_mesh_field.gd`
-
-**Tests:** `tests/headless/test_tree_scatter.gd`, `tests/headless/test_billboard_field.gd`
-(`class_name TreeMeshField`, bushes), `textures/tree.png` (home tree cutout),
-`models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired in
+(`class_name TreeMeshField`, bushes), `scripts/wind_sway.gd` (`class_name WindSway`)
++ `shaders/wind_sway.gdshaderinc` (the wind sway), `textures/tree.png` (home tree
+cutout), `models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired in
 `scripts/world.gd._generate_track()`.
+
+**Tests:** `tests/headless/test_tree_scatter.gd`, `tests/headless/test_billboard_field.gd`,
+`tests/headless/test_wind_sway.gd`
 
 Trees are ALWAYS opaque billboard cutouts (`BillboardField`); bushes are ALWAYS
 low-poly 3D meshes (`TreeMeshField`). There is no longer any billboard-vs-mesh
@@ -524,3 +526,61 @@ retuning it:
   behaviour (you hit the trunk, not the canopy), but it is genuinely surprising, so
   don't "fix" it by scaling collision off `size_scale` without deciding that felling
   should change too.
+
+## Wind sway
+
+Standing trees bend in the wind — a per-vertex offset in
+`shaders/billboard_opaque.gdshader`'s STANDING branch (`#include
+"res://shaders/wind_sway.gdshaderinc"`, `wind_sway_offset(origin, VERTEX.y, height)`),
+computed in the vertex stage so it costs zero CPU per frame: trees are `MultiMesh`
+instances with no per-instance CPU object to animate, so the alternative would be
+touching every live tree's transform buffer every frame for a purely cosmetic wobble.
+
+The maths lives in `shaders/wind_sway.gdshaderinc::wind_sway_offset` — a deterministic
+per-instance phase hashed off the instance's horizontal world origin (so neighbouring
+trees don't sway in lockstep with no per-instance uniform needed), two summed sines at
+different rates so the motion doesn't read as a metronome, and a `height_frac^2` bend
+profile so the base stays planted and only the crown moves.
+
+**Transport is `global uniform`**, exactly like the headlight cone
+([rendering.md](rendering.md) → "The fake headlight cone") and for the same reason:
+foliage materials are built in several scripts with no common registry and trees
+stream in continuously as terrain chunks generate, so a per-material push would need
+re-registration bookkeeping on every chunk load that a global sidesteps entirely.
+`scripts/wind_sway.gd` (`class_name WindSway`) is the driver — pure transport, no
+logic beyond what `WeatherLibrary` names.
+
+**Wind reads the SAME everywhere except in a storm.** `WindSway.strength()` reads the
+live condition's own `"foliage_wind"` entry in `WeatherLibrary` (see
+[weather.md](weather.md)) when it names one, else the shared base
+`GameConfig.foliage_wind_strength`. Only `storm` and `sandstorm` name a field
+(`storm_foliage_wind_strength`, `sand_foliage_wind_strength`), authored well above the
+base — a stormy sky, not just a stormy road. This is pure authoring: no
+`weather == "storm"` branch exists anywhere in the sway path, the same discipline
+`WeatherLibrary`'s header requires of every consumer.
+
+`world.gd._apply_weather_look` pushes the live condition's sway (it's a look, so
+that's its home); `_exit_tree` resets it — but, unlike the headlight cone, to the
+**base** wind, not zero: the podium and menu showcase render the same tree shader, and
+foliage outside a stage should still look alive rather than perfectly still.
+`Foliage.spawn_trees` also seeds the base wind at spawn (`WindSway.seed_base`), since
+it's the one call site for every tree field in the game (stage, podium, showcase) and
+the podium/showcase callers never run `_apply_weather_look` to push anything of their
+own. `seed_base` pushes ONLY when the global is still 0, and that guard is
+load-bearing: on a stage `_apply_weather_look` runs BEFORE `_generate_track` scatters
+the trees, so an unconditional seed here would land afterwards and flatten a storm
+back to calm.
+
+**FELLED trees deliberately do not sway** — a toppled tree lies on the ground and its
+mesh-space `VERTEX.y` is no longer "up" (see the FELLED branch in
+`billboard_opaque.gdshader`), so bending by `height_frac` would swing the fallen trunk
+sideways along the ground rather than leaving it still. The collapsed plane-1 branch
+(zero-area, never rasterised) is skipped for the same reason the headlight cone skips
+it — there's nothing there to move.
+
+**Bushes do NOT sway — an open seam.** `shaders/tree_canopy.gdshader` (the bush
+canopy) animates `VERTEX` in *model space*, not world space (see
+[rendering.md](rendering.md)'s bush section), so a world-space offset like
+`wind_sway_offset` would need a model→world basis transform to apply correctly, which
+this change does not add. Left for a later pass — see `shaders/tree_canopy.gdshader`
+if picking this up.

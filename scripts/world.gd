@@ -2269,6 +2269,11 @@ func _process(_delta: float) -> void:
 # every exit path regardless of destination, which a per-destination reset would not.
 func _exit_tree() -> void:
 	HeadlightCone.reset()
+	# Same leak the cone guards against: the podium/menu showcase render trees with
+	# the same shader, so a storm-strength sway must not keep blowing after this
+	# stage is exited. Unlike the cone, WindSway.reset() lands on the shared BASE
+	# wind rather than 0 — off-stage foliage should still be alive.
+	WindSway.reset()
 	# Same reasoning, different mechanism: weather_sun_mult is a runtime value on the
 	# SHARED Config.data, and nothing calls Config.reset(), so a night stage would
 	# otherwise leave the HQ and podium dimmed — both spawn trees through
@@ -2336,6 +2341,11 @@ func _apply_weather_look(cfg: GameConfig) -> void:
 	# no "road_tint" and no "particles", so all three blocks are skipped and the stage
 	# is left byte-identical to a world with no weather system at all.
 	var entry := WeatherLibrary.by_id(cfg.weather)
+	# Tree wind sway is a LOOK (same reasoning as headlight_amount above: authored
+	# per-condition, driven as a shader global, zero CPU per frame) so it's pushed
+	# here rather than from a physics path. A no-op on a condition naming no
+	# "foliage_wind" — it lands on the shared base, the same as every other condition.
+	WindSway.push(cfg, cfg.weather)
 	# Re-seeded from the authored baseline every stage boot for the same reason the
 	# road tint is: a condition with no look block must leave a CLEAN 1.0 behind, or
 	# a dry stage would inherit the previous night/storm dimming on its car.

@@ -678,6 +678,15 @@ authored — a lower `headlights` value on that entry — never a shader change.
 Fragment cost therefore lands only on terrain — the one surface with near-total
 screen coverage — while everything else rides an existing vertex computation.
 
+**Tree wind sway follows the identical pattern**, one shader over: `billboard_opaque`
+also `#include`s `shaders/wind_sway.gdshaderinc` and adds `wind_sway_offset(origin,
+VERTEX.y, height)` straight into `world_pos` in its STANDING branch, entirely in the
+vertex stage. Its globals (`wind_strength`, `wind_speed`, `wind_dir`) are declared
+alongside the cone's in `project.godot`'s `[shader_globals]` and driven by
+`scripts/wind_sway.gd` (`class_name WindSway`) — see [trees.md](trees.md) → "Wind
+sway" for the full writeup and [weather.md](weather.md) for the per-condition
+authoring (`WeatherLibrary`'s `foliage_wind` key).
+
 **Transport is `global uniform`**, declared in `project.godot`'s
 `[shader_globals]` section (the project had none before) and written via
 `RenderingServer.global_shader_parameter_set`. The rationale is **correctness

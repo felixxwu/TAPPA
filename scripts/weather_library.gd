@@ -58,6 +58,14 @@ extends RefCounted
 #                              burns is per-condition, because the cone is ADDED to a
 #                              light term whose brightness differs per condition. Read by
 #                              HeadlightCone; cosmetic, so it is not in physics_fields().
+#   "foliage_wind"   String  — GameConfig field holding the tree-sway strength for
+#                              this condition. Omitted => the shared base
+#                              (foliage_wind_strength), which is deliberately the
+#                              case for every condition but the stormy ones: wind
+#                              reads the SAME everywhere except in a storm, where it
+#                              authors higher. Read by WindSway; purely cosmetic, so
+#                              it is not in physics_fields() — trees rustling harder
+#                              changes no lap time.
 #   "lightning"      Dict    — an occasional cosmetic flash, mapping "flash"/
 #                              "duration"/"interval_min"/"interval_max" to GameConfig
 #                              fields (see LIGHTNING_KEYS). Omitted => no flashes.
@@ -128,6 +136,8 @@ const CONDITIONS: Array[Dictionary] = [
 		# Dust CAKES on the surface, so the albedo is lerped toward a dust colour
 		# rather than darkened — expressed by naming a colour field, not by a mode.
 		"road_tint": {"amount": "sand_road_tint", "color": "sand_road_tint_color"},
+		# Same reasoning as storm's — see the "foliage_wind" key doc above.
+		"foliage_wind": "sand_foliage_wind_strength",
 	},
 	# Fog: the cheapest condition in the table — no particles at all, no grip
 	# multiplier, no road tint, just the environment knobs pushed hard. It attacks
@@ -190,6 +200,9 @@ const CONDITIONS: Array[Dictionary] = [
 		# white. Everything else about the cone (colour, range, angles, aim, separation)
 		# is shared with night.
 		"headlights": "storm_headlight_amount",
+		# A stormy sky, not just a stormy road — trees rustle harder than the shared
+		# base sway. See the "foliage_wind" key doc above and WindSway.
+		"foliage_wind": "storm_foliage_wind_strength",
 	},
 	# Snowfall. Authored onto the alpine region's events (features/snow-region.md); the
 	# same placement convention sandstorm follows for the desert.
@@ -389,7 +402,7 @@ static func headlight_amount(cfg: GameConfig, id: String) -> float:
 # see physics_fields() for that, and the rule it states.
 static func config_fields(entry: Dictionary) -> Array:
 	var out: Array = []
-	for key in ["grip_mult", "particle_count", "wind_dir", "particle_speed", "headlights"]:
+	for key in ["grip_mult", "particle_count", "wind_dir", "particle_speed", "headlights", "foliage_wind"]:
 		var field := String(entry.get(key, ""))
 		if field != "":
 			out.append(field)

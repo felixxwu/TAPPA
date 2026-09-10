@@ -52,6 +52,7 @@ uniform float light_amount = 0.0;
 varying vec3 v_tint;
 
 #include "res://shaders/headlight_cone.gdshaderinc"
+#include "res://shaders/wind_sway.gdshaderinc"
 
 void vertex() {
 	// Per-instance world origin (base, column 3 of the model matrix) and its scaled
@@ -103,6 +104,17 @@ void vertex() {
 		float sx = length(MODEL_MATRIX[0].xyz);
 		vec3 local = (right * (VERTEX.x * sx) + up * (VERTEX.y * height)) * scale;
 		world_pos = origin + local;
+		// Wind sway — STANDING trees only. Not applied in the felled branch (a
+		// toppled tree lies on the ground and its mesh-space y is no longer "up",
+		// so bending by height_frac would swing it sideways along the ground) and
+		// not in the collapsed plane-1 branch above (zero-area, never rasterised).
+		// VERTEX.y is already the mesh's normalized 0..1 height (confirmed by the
+		// `up * (VERTEX.y * height)` term just above), so it's passed straight
+		// through as height_frac. Deliberately UN-SCALED by `scale`: scale is the
+		// near/far shrink-out toward the trunk-axis pivot, and multiplying the sway
+		// by it would make a collapsing tree's canopy swing away from its own base
+		// as it shrinks, instead of shrinking straight down onto it.
+		world_pos += wind_sway_offset(origin, VERTEX.y, height);
 		// Card normal == to_cam (horizontal). Same math as the terrain bake; the
 		// dot naturally ignores sun_dir's vertical component against a flat normal.
 		float ndl = max(dot(to_cam, sun_dir), 0.0);
