@@ -214,6 +214,15 @@ func drivetrain_override() -> int:
 func drivetrain_choices() -> Array:
 	if not _pick_awaiting:
 		return []
+	return _available_drivetrain_modes()
+
+
+# The non-current DriveMode values available for conversion RIGHT NOW — the computation
+# behind drivetrain_choices(), minus that function's _pick_awaiting guard. Split out so a
+# pick-building call site (report_event_result / resume) can compute the pool of
+# "drivetrain:<mode>" pseudo-ids to fold into boost_choices() BEFORE _pick_awaiting is set
+# true, without duplicating this loop. [] when the run's car has vanished.
+func _available_drivetrain_modes() -> Array:
 	var owned: Dictionary = Save.get_car(_car_instance_id)
 	if owned.is_empty():
 		return []
@@ -223,6 +232,19 @@ func drivetrain_choices() -> Array:
 	for mode in Drivetrain.DriveMode.values():
 		if int(mode) != current:
 			out.append(int(mode))
+	return out
+
+
+# The drivetrain pseudo-ids ("drivetrain:<DriveMode int>") to fold into the SAME draw
+# pool as the boost catalogue when building a pick (boost_choices' `drivetrain_ids`
+# arg) — AWD-only when it's available, deliberately NOT every mode
+# _available_drivetrain_modes() would offer via drivetrain_choices(): an AWD
+# conversion is the one conversion worth surfacing as a random mid-run pick, so it's
+# the only one competing with the boosts for a slot. [] once the car is already AWD.
+func _pool_drivetrain_ids() -> Array:
+	var out: Array = []
+	if _available_drivetrain_modes().has(Drivetrain.DriveMode.AWD):
+		out.append("drivetrain:%d" % int(Drivetrain.DriveMode.AWD))
 	return out
 
 
@@ -463,7 +485,8 @@ func resume(unix_time: int) -> bool:
 	# Re-derive with the SAME count the original draw used — a healthy-arrival pick
 	# drew run_boost_choices + 1 and offered no repair, so it must resume that way too.
 	var resume_count := -1 if _pick_offers_repair else Config.data.run_boost_choices + 1
-	_pending_pick = _mode.boost_choices(_stage_index, resume_count) if _pick_awaiting else []
+	_pending_pick = _mode.boost_choices(_stage_index, resume_count, _pool_drivetrain_ids()) \
+		if _pick_awaiting else []
 	_active = true
 	_stage_running = true
 	return true
@@ -585,7 +608,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		var healthy := Save.car_health_fraction(_car_instance_id) >= Config.data.run_boost_healthy_threshold
 		_pick_offers_repair = not healthy
 		var count := Config.data.run_boost_choices + 1 if healthy else -1
-		_pending_pick = _mode.boost_choices(_stage_index, count)
+		_pending_pick = _mode.boost_choices(_stage_index, count, _pool_drivetrain_ids())
 		_pick_awaiting = true
 	else:
 		# Every mode that does not opt into the pick (the challenge) keeps the old

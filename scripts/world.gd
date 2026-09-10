@@ -2100,7 +2100,7 @@ func _present_standings_overlay(_event_index: int) -> void:
 # `pending_pick()` rebuilds the identical set of cards.
 func _open_pick_panel() -> void:
 	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(),
-		_on_interstitial_choice, RunSession.drivetrain_choices(), RunSession.offer_repair())
+		_on_interstitial_choice, RunSession.offer_repair())
 
 
 # The interstitial's card was pressed — "repair", a boost id, "drivetrain:<mode>", or ""

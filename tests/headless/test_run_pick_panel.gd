@@ -60,7 +60,7 @@ func test_a_plain_continue_page_is_keyboard_navigable() -> void:
 # Nav reaches every enabled card and a disabled one cannot land a confirm.
 func test_nav_reaches_every_enabled_card_and_skips_a_disabled_one() -> void:
 	var page := RunPickPanel.open(_host, _pick(["a", "b"]), func(_x: String) -> void: pass,
-		[], false)  # no repair card offered — nothing disabled in this shape to begin with
+		false)  # no repair card offered — nothing disabled in this shape to begin with
 	var carousel := _carousel(page)
 	assert_eq(carousel.card_count(), 2)
 	for i in carousel.card_count():
@@ -85,7 +85,7 @@ func test_a_non_empty_pick_offers_repair_plus_one_card_per_boost() -> void:
 
 func test_offer_repair_false_omits_the_repair_card() -> void:
 	var page := RunPickPanel.open(_host, _pick(["a", "b", "c"]), func(_x: String) -> void: pass,
-		[], false)
+		false)
 	assert_eq(_carousel(page).card_count(), 3, "3 boosts, no repair card when not offered")
 
 
@@ -112,10 +112,25 @@ func test_confirming_the_repair_card_reports_repair() -> void:
 	assert_eq(choices, ["repair"])
 
 
+# A boost card shows the purchased level it will draw at (1-based, hub_shell.gd's own
+# "Lv %d" convention) so the player can tell "Grip" apart from an upgraded "Grip Lv 2".
+func test_a_boost_card_shows_its_level() -> void:
+	var page := RunPickPanel.open(_host, _pick(["fx_boost_x"]),
+		func(_x: String) -> void: pass, false)
+	var card := _carousel(page).get_card(0)
+	var labels := card.info.find_children("*", "Label", true, false)
+	var texts: Array[String] = []
+	for label in labels:
+		texts.append((label as Label).text)
+	# UITheme.label() uppercases everything it's given (rule 2's house style), so the
+	# rendered text reads "LV 1", not "Lv 1" — the level shown is still 1-based underneath.
+	assert_true(texts.has("LV 1"), "an un-upgraded boost reads Lv 1, never Lv 0")
+
+
 func test_confirming_a_boost_card_reports_its_id() -> void:
 	var choices: Array = []
 	var page := RunPickPanel.open(_host, _pick(["fx_boost_x"]),
-		func(choice: String) -> void: choices.append(choice), [], false)
+		func(choice: String) -> void: choices.append(choice), false)
 	var carousel := _carousel(page)
 	assert_eq(carousel.card_count(), 1)
 	carousel.confirmed.emit(0)
@@ -130,27 +145,38 @@ func test_pressing_continue_reports_an_empty_choice() -> void:
 	assert_eq(choices, [""])
 
 
-# --- Drivetrain conversion: a card alongside repair and the drawn boosts ----------
+# --- Drivetrain conversion: rendered from a `pick` entry, same as a boost ---------
+#
+# A conversion is no longer a separate list appended on top — it's an entry the CALLER
+# (RunSession.pending_pick(), via the merged BoostLibrary.draw_from_ids pool) already
+# drew INTO `pick` itself, shaped {"id": "drivetrain:<mode>", "drivetrain_mode": mode}.
+# This file only proves the panel renders/reports whichever shape a `pick` entry has.
 
-func test_a_drivetrain_choice_adds_one_card_and_stays_navigable() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass,
-		[Drivetrain.DriveMode.AWD])
+func _drivetrain_entry(mode: int) -> Dictionary:
+	return {"id": "drivetrain:%d" % mode, "drivetrain_mode": mode}
+
+
+func test_a_drivetrain_pick_entry_adds_one_card_and_stays_navigable() -> void:
+	var pick := _pick(["a"])
+	pick.append(_drivetrain_entry(Drivetrain.DriveMode.AWD))
+	var page := RunPickPanel.open(_host, pick, func(_x: String) -> void: pass)
 	assert_eq(_carousel(page).card_count(), 3, "1 boost + repair + 1 conversion card")
 	assert_not_null(MenuNav.of(page), "still keyboard/gamepad navigable with a conversion card")
 
 
 func test_confirming_a_drivetrain_card_reports_its_mode() -> void:
 	var choices: Array = []
-	var page := RunPickPanel.open(_host, _pick(["a"]),
-		func(choice: String) -> void: choices.append(choice),
-		[Drivetrain.DriveMode.AWD], false)
+	var pick := _pick(["a"])
+	pick.append(_drivetrain_entry(Drivetrain.DriveMode.AWD))
+	var page := RunPickPanel.open(_host, pick,
+		func(choice: String) -> void: choices.append(choice), false)
 	var carousel := _carousel(page)
 	# boost, then the one conversion (repair omitted here).
 	carousel.confirmed.emit(1)
 	assert_eq(choices, ["drivetrain:%d" % Drivetrain.DriveMode.AWD])
 
 
-func test_no_drivetrain_choices_offers_no_conversion_card() -> void:
+func test_no_drivetrain_entry_offers_no_conversion_card() -> void:
 	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
 	assert_eq(_carousel(page).card_count(), 2, "just the boost and repair — no conversion drawn")
 

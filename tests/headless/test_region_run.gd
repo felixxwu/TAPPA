@@ -628,6 +628,25 @@ func test_a_pending_pick_offers_every_non_current_drivetrain_layout() -> void:
 		"every OTHER layout is offered")
 
 
+func test_an_available_awd_conversion_competes_in_the_same_pool_as_boosts() -> void:
+	# fx_light_rwd (the default _grant() fixture) is not AWD, so an AWD conversion is
+	# available — RunSession folds it into the SAME draw pool as the boost catalogue
+	# (RunSession._pool_drivetrain_ids, region_run_mode.gd boost_choices), rather than
+	# appending it on top: the pick's total size must stay exactly run_boost_choices
+	# regardless of whether AWD happened to be drawn.
+	var car := _start()  # a fresh car is at full health -> the undamaged-arrival reward pick
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(int(car["instance_id"])))
+	assert_ne(stock, Drivetrain.DriveMode.AWD, "setup: AWD conversion is available")
+	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices + 1,
+		"the pick's total size (the usual reward count) is unaffected by whether AWD is in the pool")
+	for entry in RunSession.pending_pick():
+		var id := String((entry as Dictionary).get("id", ""))
+		if id.begins_with("drivetrain:"):
+			assert_eq(int((entry as Dictionary)["drivetrain_mode"]), Drivetrain.DriveMode.AWD,
+				"the only drivetrain conversion ever offered in the pool is AWD")
+
+
 func test_choosing_a_drivetrain_conversion_resolves_the_pick_and_takes_no_repair() -> void:
 	_start()
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
@@ -768,10 +787,12 @@ func test_choose_repair_refuses_on_a_pick_that_does_not_offer_repair() -> void:
 		"…and nothing was applied")
 
 
-func test_the_reward_draw_still_clamps_to_the_catalogue_size() -> void:
-	# run_boost_choices + 1 can exceed the catalogue; BoostLibrary.draw already clamps
-	# (its own contract), so the pending pick must never exceed the catalogue size.
+func test_the_reward_draw_still_clamps_to_the_pool_size() -> void:
+	# run_boost_choices + 1 can exceed the catalogue; BoostLibrary.draw_from_ids already
+	# clamps (its own contract), so the pending pick must never exceed the pool it's drawn
+	# from — the boost catalogue plus, at most, one AWD conversion pseudo-entry (see
+	# RunSession._pool_drivetrain_ids).
 	_start()
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
-	assert_true(RunSession.pending_pick().size() <= BoostLibrary.CATALOGUE.size(),
-		"the drawn pick never exceeds the catalogue's own size")
+	assert_true(RunSession.pending_pick().size() <= BoostLibrary.CATALOGUE.size() + 1,
+		"the drawn pick never exceeds the catalogue-plus-AWD pool's own size")

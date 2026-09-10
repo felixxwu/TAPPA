@@ -218,8 +218,27 @@ static func label_for(id: String) -> String:
 # Draws WITHOUT replacement — the same boost never appears twice in one pick — capped at
 # the catalogue's own size rather than repeating to fill `count`, since (unlike a
 # region's stage pool) there is no "must fill exactly N" requirement here.
+#
+# Thin wrapper over `draw_from_ids`, the generic primitive: this just supplies the
+# catalogue's own id list and maps the picked ids through `boost_for`.
 static func draw(seed_value: int, count: int) -> Array:
-	var ids: Array = CATALOGUE.keys()
+	var picked_ids := draw_from_ids(seed_value, count, CATALOGUE.keys())
+	var out: Array = []
+	for id in picked_ids:
+		out.append(boost_for(id))
+	return out
+
+
+# THE GENERIC PRIMITIVE `draw` sits on top of: `count` distinct ids drawn WITHOUT
+# replacement from an ARBITRARY `ids` list (not necessarily CATALOGUE.keys()),
+# deterministic in `seed_value`, capped at `ids`' own size. Returns the picked ids
+# themselves — not boost dicts — so a caller can mix ids from more than one source
+# into one pool before resolving them. region_run_mode.gd uses this directly to fold
+# drivetrain pseudo-ids ("drivetrain:<DriveMode int>") into the SAME draw pool as the
+# boost catalogue, so the between-stage pick offers one pool of N options rather than
+# boosts plus a separately-appended drivetrain list. [] for an empty pool or
+# count <= 0.
+static func draw_from_ids(seed_value: int, count: int, ids: Array) -> Array:
 	if ids.is_empty() or count <= 0:
 		return []
 	var rng := RandomNumberGenerator.new()
@@ -231,7 +250,4 @@ static func draw(seed_value: int, count: int) -> Array:
 		var i := rng.randi_range(0, bag.size() - 1)
 		picked_ids.append(bag[i])
 		bag.remove_at(i)
-	var out: Array = []
-	for id in picked_ids:
-		out.append(boost_for(id))
-	return out
+	return picked_ids

@@ -17,12 +17,17 @@ extends RefCounted
 #
 # Two shapes, driven entirely by whether `pick` is empty:
 #   * non-empty — a CardCarousel (CardUI, the same card shape the hub's pages use): one
-#     card per drawn boost, PLUS a repair card when `offer_repair` says the car needs one,
-#     PLUS one card per available drivetrain conversion (repair and the conversions are
-#     never one of `pick`'s own entries — they don't go through the boost effects funnel,
-#     so neither is a BoostLibrary id). Confirming any card is the whole interaction: it
-#     both CHOOSES and REPORTS the choice in one press ("the player picks exactly one" —
-#     there is nothing left to confirm).
+#     card per entry in `pick`, PLUS a repair card when `offer_repair` says the car needs
+#     one. `pick` (RunSession.pending_pick()) is drawn from ONE merged pool — the boost
+#     catalogue plus, when available, an AWD conversion pseudo-entry — so an entry is
+#     EITHER a BoostLibrary id (`{"id", "effect"}`) OR a drivetrain conversion
+#     (`{"id": "drivetrain:<DriveMode int>", "drivetrain_mode": ...}`); this file renders
+#     whichever shape it's handed rather than sourcing conversions from a second list.
+#     A boost card's subtitle shows its purchased level 1-based ("Lv %d", Save.boost_level(id)
+#     + 1 — hub_shell.gd's own convention: an un-upgraded boost is level 0 in Save but
+#     draws its level-1 magnitude, so it reads "Lv 1", never "Lv 0"). Confirming any card
+#     is the whole interaction: it both CHOOSES and REPORTS the choice in one press ("the
+#     player picks exactly one" — there is nothing left to confirm).
 #   * empty — every mode that doesn't offer a pick (the challenge) and this run's own
 #     final/failed stage (report_event_result never draws one then) get a bare
 #     Continue action instead.
@@ -35,18 +40,20 @@ extends RefCounted
 # `page.get_parent()` when the pick/Continue is done. (A stats-confirmation step is planned
 # on top of this — on_choice reporting the choice, separate from the caller's teardown, is
 # what leaves room for that without this file changing.)
+#
+# The page's own backdrop is deliberately TRANSPARENT (alpha 0.0, below) so the 3D world
+# shows through the gaps between cards — each card keeps its own opaque background
+# (card_carousel.gd's _card_stylebox, UITheme.panel_box(1.0)), so legibility is unaffected.
 
 
 # Build and return the modal, hosted on `host` via MenuPage.open_modal (see that
-# function's own doc for why a modal must always go through it). `drivetrain_choices` is
-# RunSession.drivetrain_choices() — the DriveMode ints worth offering as a conversion right
-# now, [] when none is drawn (mirrors `pick`'s own empty contract). `offer_repair` is the
+# function's own doc for why a modal must always go through it). `offer_repair` is the
 # caller's own "does the car need one" decision (RunSession/world.gd) — this class does not
 # look at car health itself, so a healthy car simply passes false and gets no repair card.
 static func open(host: Node, pick: Array, on_choice: Callable,
-		drivetrain_choices: Array = [], offer_repair: bool = true) -> MenuPage:
+		offer_repair: bool = true) -> MenuPage:
 	var title := "Choose a boost" if not pick.is_empty() else "Stage complete"
-	var page := MenuPage.open_modal(host, {"margin": 24.0, "title": title})
+	var page := MenuPage.open_modal(host, {"margin": 24.0, "title": title, "alpha": 0.0})
 	if pick.is_empty():
 		var continue_btn := UITheme.button("Continue")
 		continue_btn.pressed.connect(func() -> void: on_choice.call(""))
@@ -61,17 +68,23 @@ static func open(host: Node, pick: Array, on_choice: Callable,
 			payloads.append("repair")
 		for entry in pick:
 			var id := String((entry as Dictionary).get("id", ""))
-			# icons/cards/ is already keyed by boost/skill id — the same catalogue the hub's
-			# shop cards draw from — so the boost id doubles as the icon name; an id with no
-			# authored icon (a test fixture's synthetic id) falls back to generic.svg inside
-			# CardUI.card_icon.
-			CardUI.text_card(carousel, BoostLibrary.label_for(id), "", false, id)
+			if id.begins_with("drivetrain:"):
+				var mode_int := int(id.substr("drivetrain:".length()))
+				CardUI.text_card(carousel, "Convert to %s" % Drivetrain.DriveMode.keys()[mode_int],
+					"", false, "drivetrain")
+			else:
+				# icons/cards/ is already keyed by boost/skill id — the same catalogue the
+				# hub's shop cards draw from — so the boost id doubles as the icon name; an
+				# id with no authored icon (a test fixture's synthetic id) falls back to
+				# generic.svg inside CardUI.card_icon.
+				#
+				# Level shown 1-based (hub_shell.gd's own "Lv %d" convention — an
+				# un-upgraded boost is level 0 in Save but reads "Lv 1", the level whose
+				# magnitude it actually draws), so the player sees which purchased tier
+				# they're about to pick up, not just the boost's name.
+				CardUI.text_card(carousel, BoostLibrary.label_for(id),
+					"Lv %d" % (Save.boost_level(id) + 1), false, id)
 			payloads.append(id)
-		for mode in drivetrain_choices:
-			var mode_int := int(mode)
-			CardUI.text_card(carousel, "Convert to %s" % Drivetrain.DriveMode.keys()[mode_int],
-				"", false, "drivetrain")
-			payloads.append("drivetrain:%d" % mode_int)
 		carousel.confirmed.connect(func(i: int) -> void: on_choice.call(payloads[i]))
 	MenuNav.attach(page, {})
 	return page

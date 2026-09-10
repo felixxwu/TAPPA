@@ -220,14 +220,30 @@ func offers_boost_pick() -> bool:
 	return true
 
 
-# BoostLibrary.draw is seeded from THIS RUN, never the wall clock — see _boost_seed.
-# `count` overrides the default draw (run_boost_choices) when >= 0 — see run_mode.gd's
-# boost_choices doc; RunSession passes run_boost_choices + 1 for the undamaged-arrival
-# reward. BoostLibrary.draw clamps to the catalogue size regardless, so an oversized
-# count is always safe.
-func boost_choices(stage_index: int, count: int = -1) -> Array:
+# BoostLibrary.draw_from_ids is seeded from THIS RUN, never the wall clock — see
+# _boost_seed. `count` overrides the default draw (run_boost_choices) when >= 0 — see
+# run_mode.gd's boost_choices doc; RunSession passes run_boost_choices + 1 for the
+# undamaged-arrival reward.
+#
+# THE POOL IS MERGED, not boosts-plus-appended-conversions: `drivetrain_ids` (RunSession's
+# "drivetrain:<mode>" pseudo-ids) go into the SAME bag as the boost catalogue's own ids, so
+# exactly `n` total options are drawn regardless of how many drivetrain conversions happen
+# to be available — draw_from_ids clamps to the pool size regardless, so an oversized count
+# is always safe. Each picked id is then resolved to its own shape: a "drivetrain:<mode>"
+# id becomes {"id", "drivetrain_mode"}; anything else resolves through BoostLibrary.boost_for
+# same as before, {"id", "effect"}.
+func boost_choices(stage_index: int, count: int = -1, drivetrain_ids: Array = []) -> Array:
 	var n := count if count >= 0 else Config.data.run_boost_choices
-	return BoostLibrary.draw(_boost_seed(stage_index), n)
+	var pool: Array = BoostLibrary.CATALOGUE.keys() + drivetrain_ids
+	var picked := BoostLibrary.draw_from_ids(_boost_seed(stage_index), n, pool)
+	var out: Array = []
+	for id in picked:
+		var id_str := String(id)
+		if id_str.begins_with("drivetrain:"):
+			out.append({"id": id_str, "drivetrain_mode": int(id_str.substr("drivetrain:".length()))})
+		else:
+			out.append(BoostLibrary.boost_for(id_str))
+	return out
 
 
 # The run's own seed, offset by the stage the pick is FOR — the same "bump by a large
