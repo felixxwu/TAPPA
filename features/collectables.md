@@ -56,18 +56,20 @@ placed for it.
 
 `CoinLayout.plan(centerline, finish_len, track_width, seed_value, params)` is pure:
 no scene, no car, no RNG state outside the call. It reads `GameConfig
-.coin_layout_params()` — `count`, `lane_spread_frac`, `start_margin_m`,
+.coin_layout_params()` — `count`, `lane_inner_frac`, `lane_spread_frac`, `start_margin_m`,
 `end_margin_m` — and:
 
 1. Splits the usable arc length (`finish_len` minus both margins) into `count` equal
    segments and draws one arc offset per segment (stratified, not pure random —
    spreads coins across the whole stage instead of letting them cluster wherever the
    RNG happens to land, the same reasoning `TreeScatter`'s grid uses).
-2. For each, picks a side of the centerline (`side` = ±1) and a lateral distance of
-   `track_width / 2 * lane_spread_frac * rand()` — **always within the carriageway**
-   (`abs(lateral) <= track_width / 2`), never beyond the visible road edge.
-   `lane_spread_frac` (0-1) is how far toward the edge a coin can land; 0 pins every
-   coin to the centerline.
+2. For each, picks a side of the centerline (`side` = ±1) and a lateral distance
+   drawn from the band `track_width / 2 * [lane_inner_frac, lane_spread_frac]` —
+   coins hug the **road edge** (so taking one is a small line-widening detour, not a
+   freebie on the racing line) but are **always within the carriageway**
+   (`abs(lateral) <= track_width / 2`), never out in the trees like the old
+   beyond-the-edge placement. `lane_inner_frac` is clamped to `lane_spread_frac`, so
+   a mis-set config narrows the band to a single line rather than inverting it.
 3. Samples the centerline's position + tangent at that arc offset (mirrors
    `SignLayout._tangent_at`) and offsets perpendicular to it.
 
@@ -189,7 +191,8 @@ All of it is a plain tunable (CLAUDE.md — no test may pin a chosen value here)
 | --- | --- |
 | `coins_enabled` | Master switch, mirrors `signs_enabled`/`rocks_enabled` |
 | `coins_per_stage` | How many `CoinLayout.plan` places (0-12) |
-| `coin_lane_spread_frac` | How far from the centerline a coin can land, as a fraction (0-1) of the half-width — always within the carriageway |
+| `coin_lane_spread_frac` | OUTER edge of the band a coin lands in, as a fraction (0-1) of the half-width — 1.0 is the visible road edge, never beyond |
+| `coin_lane_inner_frac` | INNER edge of that band — pushes coins off the racing line and out toward the road edge |
 | `coin_start_margin_m` / `coin_end_margin_m` | Arc-length kept clear of the start/finish |
 | `coin_pickup_radius_m` | Pickup trigger radius — read LIVE by `CoinField`, the `coin_magnet` seam |
 | `coin_money` | Money per coin, banked at stage clear |
