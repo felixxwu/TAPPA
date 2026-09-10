@@ -2059,6 +2059,18 @@ func has_nitrous() -> bool:
 ## and 100% progress stay at the END of the generated track, NOT the end of this
 ## runoff. 0 disables it.
 @export var track_runoff_m := 20.0
+## Height (m) of the JUMP crest — the vertical bump TrackProfile adds on top of the
+## terrain height along a "Jump" piece's road (features/track.md). Together with
+## jump_span_m this sets the ONE number that matters: the speed above which a car
+## actually leaves the ground, TrackProfile.launch_speed() =
+## (span / PI) * sqrt(g / (2 * height)). Tune the pair to that threshold, not to how
+## tall the bump looks. 0 flattens every jump (the crest becomes a no-op).
+@export var jump_height_m := 2.0
+## Arc length (m) the JUMP crest is spread over, centred in its piece and clamped to
+## TrackProfile.PIECE_LENGTH_M so the crest's zero-slope ends stay inside the jump and
+## never disturb the neighbouring corners. Counter-intuitively a LONGER span is a
+## HARDER launch to trigger at the same height — see TrackProfile.launch_speed().
+@export var jump_span_m := 60.0
 ## How forested this track is, in [0, 1] — the fraction of area covered by trees.
 ## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
 ## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by

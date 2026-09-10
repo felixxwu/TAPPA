@@ -582,6 +582,7 @@ var _cv_f_outer: float        # outer edge of the flatten transition band
 var _cv_f_outer_sq: float
 var _cv_outer_sq: float       # search band (whichever of flatten/cliff reaches furthest), squared
 var _cv_cliffs: bool
+var _cv_jumps: Array          # TrackProfile.plan() output for this bake; [] is the common case
 var _cv_eff_max: float
 var _cv_c_inner: float
 var _cv_c_rise: float
@@ -2150,7 +2151,8 @@ static func smooth_ramp(d: float, inner: float, outer: float) -> float:
 # the road cross-section is laterally flat regardless of tessellation density — there is no
 # sampling-step knob to tune. All fields are keyed by GLOBAL grid index so adjacent chunks
 # agree on shared edges with no stitching. `transition_m` is the band width OUTSIDE width/2.
-func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false, on_progress: Callable = Callable()) -> void:
+func bake_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false, on_progress: Callable = Callable(), jumps: Array = []) -> void:
+	_cv_jumps = jumps
 	road_heights = {}
 	road_blend = {}
 	track_weights = {}
@@ -2391,11 +2393,31 @@ func _bake_vertex_block(cgx: int, cgz: int) -> void:
 			var footx := _cv_ax[seg] + _cv_dx[seg] * t
 			var footz := _cv_ay[seg] + _cv_dy[seg] * t
 			var d := sqrt(_cv_best_dsq)
-			# Flatten: pull road-band vertices to the noise height at their exact foot.
+			# Flatten: pull road-band vertices to the noise height at their exact foot, plus
+			# the vertical-channel jump offset (TrackProfile) at this foot's arc distance.
+			# `road_heights` is the SINGLE point every consumer funnels through — the chunk
+			# grid, the HeightMapShape3D collision, and baked_height_at all derive from it —
+			# so adding the crest here is what makes it impossible for the visible mesh and
+			# the physics the car actually drives on to disagree. It also gets lateral
+			# feathering for free: road_blend lerps TOWARD road_heights, so the crest fades
+			# out across the transition band exactly like the road flatten does.
+			#
+			# `s` (arc distance at the foot) used to be computed only in the cliff branch
+			# below; hoisted up here for the jump lookup too, but ONLY when there are jumps
+			# to apply (`_cv_jumps` non-empty) or cliffs are active — a jumpless, cliffless
+			# bake (the common case) pays nothing extra per vertex.
 			if _cv_best_dsq < _cv_f_outer_sq:
 				var gv := Vector2i(_cv_vx0 + vx, _cv_vz0 + vz)
-				road_heights[gv] = _noise_height_at(footx, footz)
+				var jump_off := 0.0
+				if not _cv_jumps.is_empty():
+					jump_off = TrackProfile.offset_at(_cv_arc[seg] + t * _cv_len[seg], _cv_jumps)
+				road_heights[gv] = _noise_height_at(footx, footz) + jump_off
 				road_blend[gv] = smooth_ramp(d, _cv_f_inner, _cv_f_outer)
+			# KNOWN AND ACCEPTED (same pre-existing asymmetry as the road carve, see the
+			# comment near line 534): bare height_at() falling back to _noise_height_at for
+			# an uncached coord will not see this crest either. Also accepted: at the crest
+			# the road sits above the surrounding terrain and drops off over the transition
+			# band, so the shoulder becomes a small cliff — the user has accepted this look.
 			if not _cv_cliffs:
 				continue
 			# Cliff offset: side · camber(arc) · profile(d) · eff_max.
@@ -2607,8 +2629,8 @@ func _sep_window(src: PackedFloat32Array, w: int, h: int, r: int, is_min: bool) 
 # instead of freezing. It never changes the baked RESULT — only the pacing — but because
 # the bake then contains `await`, set_track/bake_track are always coroutines: call them
 # with `await` (with should_yield=false they never actually suspend, completing same-frame).
-func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false, on_progress: Callable = Callable()) -> void:
-	await bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first, surface_feather_m, should_yield, on_progress)
+func set_track(centerline: Curve2D, width: float, transition_m: float, tarmac_fraction: float = 0.0, tarmac_first: bool = false, surface_feather_m: float = 6.0, should_yield: bool = false, on_progress: Callable = Callable(), jumps: Array = []) -> void:
+	await bake_track(centerline, width, transition_m, tarmac_fraction, tarmac_first, surface_feather_m, should_yield, on_progress, jumps)
 	for coord in _chunks:
 		_chunks[coord].setup(self, coord)
 

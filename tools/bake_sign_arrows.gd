@@ -51,7 +51,35 @@ const SIGNS: Array[Dictionary] = [
 	{"corner": "6", "key": "arrow_6", "label": "6"},
 	{"corner": "Square", "key": "arrow_square", "label": "SQ"},
 	{"corner": "Hairpin", "key": "arrow_uturn", "label": "U"},
+	# The Jump: CornerLibrary's "Jump" curve is a dead-straight 60 m line in PLAN
+	# view (its whole character is VERTICAL — see track_profile.gd), so pulling its
+	# 2D polyline the normal way would bake a boring straight shaft that tells the
+	# player nothing. The house rule is "the art IS the real shape" — for every other
+	# entry that means the plan-view bend, but a jump's real shape lives in the SIDE
+	# PROFILE instead, so this entry draws THAT: the raised-cosine crest from
+	# TrackProfile.offset_at, sampled into a polyline in the same meter-space
+	# convention _corner_polyline returns (x = distance along, y = height, entry at
+	# the origin). Same idea, different axis. `no_direction` marks it as bearing no
+	# left/right handedness — see the bake loop below. `no_head` marks it as NOT
+	# an arrow — see the "why no arrowhead" comment on _arrow_geometry.
+	{"corner": "Jump", "key": "arrow_jump", "label": "JMP", "no_direction": true, "no_head": true},
 ]
+
+# Side-profile sample count for the Jump polyline (see _jump_profile_polyline).
+const JUMP_PROFILE_STEPS := 24
+# The crest is really ~2 m over 60 m — flat as a pancake at 256px. The board is a
+# PICTOGRAM of the shape (same licence the plan-view arrows take: angles are
+# preserved but the whole polyline is rescaled to fill the box), so exaggerate the
+# rise-to-span ratio by this factor purely so the bump reads at a glance.
+#
+# First cut used 6.0 and it read WRONG: bound by the 60 m width (see
+# _arrow_geometry — the uniform fit scale is min(avail.x/60, avail.y/height), and
+# 60 stays the binding side long before the exaggerated height catches up), the
+# rendered hump came out barely taller than the stroke itself. Combined with an
+# arrowhead stuck on the exit end (fixed below by no_head), the whole thing read
+# as "gentle numbered bend" — the one thing this board must never be mistaken
+# for. 16.0 gives a hump tall enough to read as a hill through the same scaling.
+const JUMP_PROFILE_EXAGGERATION := 16.0
 
 
 var _glyph_cache: Dictionary = {}   # "<text>@<font_size>" -> measured ink Rect2
@@ -62,10 +90,27 @@ func _init() -> void:
 	var gallery: Array[Dictionary] = []  # {name, img} for the contact sheet
 	for sign in SIGNS:
 		var poly := _corner_polyline(String(sign["corner"]))
-		for flip in [false, true]:
+		# The Jump has no left/right — a car goes over a crest the same way whichever
+		# hand it's on, and mirror_points is geometrically a no-op on its dead-straight
+		# plan-view curve anyway (see track_profile.gd / CornerLibrary "Jump"). Baking
+		# a _left/_right pair here would be two identical files under different names:
+		# a dangling distinction with nothing behind it. So a `no_direction` sign bakes
+		# ONE face under its bare key, and Pacenotes.arrow_key returns that same bare
+		# key regardless of flip — no half-pair, no missing texture.
+		var dirs: Array = [] if sign.get("no_direction", false) else [false, true]
+		if dirs.is_empty():
+			var tex_name: String = String(sign["key"])
+			var img := await _bake_face(poly, String(sign["label"]), false,
+				bool(sign.get("no_head", false)))
+			img.save_png("%s/%s.png" % [OUT, tex_name])
+			print("SAVED %s/%s.png" % [OUT, tex_name])
+			gallery.append({"name": tex_name, "img": img})
+			continue
+		for flip in dirs:
 			var dir := "left" if flip else "right"
 			var tex_name := "%s_%s" % [sign["key"], dir]
-			var img := await _bake_face(poly, String(sign["label"]), flip)
+			var img := await _bake_face(poly, String(sign["label"]), flip,
+				bool(sign.get("no_head", false)))
 			img.save_png("%s/%s.png" % [OUT, tex_name])
 			print("SAVED %s/%s.png" % [OUT, tex_name])
 			gallery.append({"name": tex_name, "img": img})
@@ -76,15 +121,38 @@ func _init() -> void:
 
 # The corner centerline as a meter-space polyline (entry at origin, heading +Y).
 func _corner_polyline(corner: String) -> PackedVector2Array:
+	if corner == TrackProfile.CORNER_NAME:
+		return _jump_profile_polyline()
 	for spec in CornerLibrary.CORNERS:
 		if String(spec["name"]) == corner:
 			return CornerLibrary.build_curve(spec).tessellate()
 	return PackedVector2Array([Vector2.ZERO, Vector2(0, 10)])
 
 
+# The Jump's SIDE PROFILE as a meter-space polyline: x = distance along the piece,
+# y = height above the road, sampled straight off TrackProfile.offset_at (the exact
+# raised-cosine the terrain bake raises the crest with) so the board really is a
+# picture of the shape the car drives over. Height is exaggerated per
+# JUMP_PROFILE_EXAGGERATION — see its comment — and everything downstream
+# (_arrow_geometry) already rescales the polyline to fill the box uniformly, so this
+# is the only place the exaggeration needs to happen.
+func _jump_profile_polyline() -> PackedVector2Array:
+	var span := TrackProfile.PIECE_LENGTH_M
+	var jumps := [{"center_m": span * 0.5, "height_m": 1.0, "span_m": span}]
+	var pts := PackedVector2Array()
+	for i in JUMP_PROFILE_STEPS + 1:
+		var x := span * i / float(JUMP_PROFILE_STEPS)
+		var y := TrackProfile.offset_at(x, jumps) * JUMP_PROFILE_EXAGGERATION
+		pts.append(Vector2(x, y))
+	return pts
+
+
 # Render one board face to an Image: light-brown board + ink border, the arrow filling
-# the face, the grade nested in the concave side of the bend.
-func _bake_face(poly: PackedVector2Array, label: String, flip: bool) -> Image:
+# the face, the grade nested in the concave side of the bend. `no_head` (the Jump)
+# draws a headless profile line plus a ground baseline instead of an arrow — see
+# the comment on _arrow_geometry for why.
+func _bake_face(poly: PackedVector2Array, label: String, flip: bool,
+		no_head: bool = false) -> Image:
 	var size := Vector2i(TEX, TEX)
 	var vp := SubViewport.new()
 	vp.size = size
@@ -110,7 +178,7 @@ func _bake_face(poly: PackedVector2Array, label: String, flip: bool) -> Image:
 	var font_size := int(face_size.y * h_frac)
 	var ink := await _measure_glyph(label, font_size)
 	var layout := _solve_layout(poly, arrow_box, flip,
-		Rect2(face_pos, face_size), ink.size)
+		Rect2(face_pos, face_size), ink.size, no_head)
 
 	var arrow := _ArrowDraw.new()
 	arrow.geom = layout["geom"]
@@ -139,17 +207,18 @@ func _bake_face(poly: PackedVector2Array, label: String, flip: bool) -> Image:
 # sides — fall back to the nearest free slot (its belly), and only if no slot is free
 # at all does the arrow shrink.
 func _solve_layout(poly: PackedVector2Array, box: Rect2, flip: bool, face: Rect2,
-		glyph: Vector2) -> Dictionary:
+		glyph: Vector2, no_head: bool = false) -> Dictionary:
 	# Preferred glyph position: bottom corner on the inside of the bend, inset from
-	# the border by the same margin the arrow keeps.
+	# the border by the same margin the arrow keeps. A headless (symmetric) shape has
+	# no "inside of the bend", so just park it bottom-right like a normal caption.
 	var inset := face.size * LABEL_INSET
 	var lo := face.position + inset
 	var hi := face.position + face.size - inset - glyph
-	var want := Vector2(lo.x if flip else hi.x, hi.y)
+	var want := hi if no_head else Vector2(lo.x if flip else hi.x, hi.y)
 
 	var geom := {}
 	for mul in ARROW_SHRINK:
-		geom = _arrow_geometry(poly, box, flip, mul)
+		geom = _arrow_geometry(poly, box, flip, mul, no_head)
 		var pad: float = float(geom["width"]) * LABEL_CLEARANCE
 		var best := Vector2.INF
 		var best_cost := INF
@@ -210,11 +279,29 @@ func _measure_glyph(label: String, font_size: int) -> Rect2:
 
 # Screen-space geometry for the arrow: the corner polyline fitted (and optionally
 # mirrored) into `box` at `mul` of its full size, plus the arrowhead triangle.
-# Returns {"stroke": PackedVector2Array, "width": float, "head": PackedVector2Array}.
+# Returns {"stroke": PackedVector2Array, "width": float, "head": PackedVector2Array,
+# "ground": PackedVector2Array}.
+#
+# WHY NO ARROWHEAD FOR A JUMP (`no_head`). Every other board here IS a directional
+# arrow — it enters at the tail dot and exits through the head, and that head is
+# what tells the eye which way the ink runs. The Jump profile is a raised cosine,
+# symmetric and zero at both ends — it has no "direction", so tacking an arrowhead
+# onto its exit end does two things wrong at once: it claims a direction that
+# doesn't exist, and its own angled ink lands right where the profile's back-down
+# slope should read, erasing the very thing (return-to-baseline) that makes it a
+# hump and not a ramp. Dropping the head — and the tail's oversized entry dot,
+# equally directional — leaves a plain symmetric line, which is what a headless
+# shape asks for `no_head` also adds a `ground` segment: a flat baseline spanning
+# the same two screen points the profile itself starts and ends on. Without it an
+# unlabelled curve defaults to reading as a PLAN-view bend (every other board is
+# one); the ground line is what tells the eye "this is elevation, and the curve
+# rises off this line and comes back down to it" — see the coordinator note this
+# was added in response to.
 func _arrow_geometry(points: PackedVector2Array, box: Rect2, flip: bool,
-		mul: float) -> Dictionary:
+		mul: float, no_head: bool = false) -> Dictionary:
 	if points.size() < 2:
-		return {"stroke": PackedVector2Array(), "width": 1.0, "head": PackedVector2Array()}
+		return {"stroke": PackedVector2Array(), "width": 1.0, "head": PackedVector2Array(),
+			"ground": PackedVector2Array()}
 	# Fit the meter-space polyline uniformly (preserve angles, so the bend still
 	# reads as the true turn intensity).
 	var lo := points[0]
@@ -245,14 +332,19 @@ func _arrow_geometry(points: PackedVector2Array, box: Rect2, flip: bool,
 		# +Y up in meters -> -Y on screen, so entry sits low and exit points up.
 		screen.append(Vector2(dx, -dy))
 
-	# Arrowhead at the exit, aligned to the last segment.
-	var tip := screen[screen.size() - 1]
-	var dir := (tip - screen[screen.size() - 2]).normalized()
-	var perp := Vector2(-dir.y, dir.x)
-	var head := width * 1.9
-	var apex := tip + dir * head * 0.5
-	var base1 := tip - dir * head * 0.5 + perp * head * 0.6
-	var base2 := tip - dir * head * 0.5 - perp * head * 0.6
+	# Arrowhead at the exit, aligned to the last segment — skipped entirely for a
+	# headless (no direction) shape; see the header comment above.
+	var apex := Vector2.ZERO
+	var base1 := Vector2.ZERO
+	var base2 := Vector2.ZERO
+	if not no_head:
+		var tip := screen[screen.size() - 1]
+		var dir := (tip - screen[screen.size() - 2]).normalized()
+		var perp := Vector2(-dir.y, dir.x)
+		var head := width * 1.9
+		apex = tip + dir * head * 0.5
+		base1 = tip - dir * head * 0.5 + perp * head * 0.6
+		base2 = tip - dir * head * 0.5 - perp * head * 0.6
 
 	# Centre the FULL drawn ink (shaft stroke + arrowhead), not just the centerline —
 	# otherwise the arrow leans toward its arrowhead side.
@@ -261,19 +353,29 @@ func _arrow_geometry(points: PackedVector2Array, box: Rect2, flip: bool,
 	for p in screen:
 		ink_lo = ink_lo.min(p)
 		ink_hi = ink_hi.max(p)
-	for p in [apex, base1, base2]:
-		ink_lo = ink_lo.min(p)
-		ink_hi = ink_hi.max(p)
+	if not no_head:
+		for p in [apex, base1, base2]:
+			ink_lo = ink_lo.min(p)
+			ink_hi = ink_hi.max(p)
 	ink_lo -= Vector2(radius, radius)
 	ink_hi += Vector2(radius, radius)
 	var shift := box.position + box.size * 0.5 - (ink_lo + ink_hi) * 0.5
 	for i in screen.size():
 		screen[i] += shift
-	return {
+	var out := {
 		"stroke": screen,
 		"width": width,
-		"head": PackedVector2Array([apex + shift, base1 + shift, base2 + shift]),
+		"head": PackedVector2Array() if no_head else
+			PackedVector2Array([apex + shift, base1 + shift, base2 + shift]),
+		"ground": PackedVector2Array(),
 	}
+	if no_head:
+		# The profile already starts and ends at the same meter-space height (the
+		# crest is zero at both piece boundaries), so its own first/last screen
+		# points already sit at the ground level — the baseline is just the flat
+		# line between them.
+		out["ground"] = PackedVector2Array([screen[0], screen[screen.size() - 1]])
+	return out
 
 
 # True if any of the arrow's drawn ink lands inside `rect`. The shaft is tested as a

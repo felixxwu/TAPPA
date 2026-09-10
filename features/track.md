@@ -3,10 +3,13 @@
 **Source:** `scripts/corner_library.gd` (`class_name CornerLibrary`),
 `scripts/corner_catalog.gd` (`class_name CornerCatalog`), `corner_catalog.tscn`,
 `scripts/track_generator.gd` (`class_name TrackGenerator`),
+`scripts/track_profile.gd` (`class_name TrackProfile` — the VERTICAL channel; see
+*Jumps* below),
 `scripts/stage_config.gd` (`class_name StageConfig` — the canonical event→config
 writer every generation site resolves its params through).
 
-**Tests:** `tests/headless/test_corner_library.gd`, `tests/headless/test_track_generator.gd`, `tests/headless/test_track_gen_params.gd`, `tests/headless/test_track_gen_water.gd`, `tests/headless/test_track_cache.gd`
+**Tests:** `tests/headless/test_corner_library.gd`, `tests/headless/test_track_generator.gd`,
+`tests/headless/test_track_profile.gd`, `tests/headless/test_track_gen_params.gd`, `tests/headless/test_track_gen_water.gd`, `tests/headless/test_track_cache.gd`
 
 Defines the **shape vocabulary** for rally corners and chains them into a
 generated stage that is painted onto the terrain at startup.
@@ -26,8 +29,9 @@ terrain surface is a separate, future step.
 
 The shipped set: the **gradient 1–6** (1 ≈ 85°/~18 m radius sharpest … 6 ≈
 12°/~108 m radius gentlest — both angle and radius grow with the number),
-**Square** (sharp ~90°), **Hairpin** (~180°, a 3-point curve) and **Straight**
-(50 m line). Turns **3–5** are tightened (smaller radius, same angle); turns
+**Square** (sharp ~90°), **Hairpin** (~180°, a 3-point curve), **Jump** (a 60 m
+dead-straight line whose character is entirely VERTICAL — see *Jumps* below) and
+**Straight** (50 m line). Turns **3–5** are tightened (smaller radius, same angle); turns
 **1**, **2**, **Square** and **Hairpin** carry a longer entry lead-in (a
 lengthened entry tangent) with their sharpness unchanged.
 
@@ -38,7 +42,7 @@ loads `CornerLibrary`, lays every corner out in a left-to-right row, and draws
 each one's centerline, control-point markers, tangent handles, a green entry
 dot, and a name label. Used to eyeball and tune the shapes.
 
-Two capture wrappers sit alongside it, because the row view auto-fits all nine shapes
+Two capture wrappers sit alongside it, because the row view auto-fits every shape
 and a single corner ends up too small to judge:
 
 | Tool | What it gives |
@@ -97,9 +101,16 @@ the road around lakes.
 - **Per-corner rarity (`CORNER_WEIGHTS`):** a multiplier per authored corner, keyed by
   `CornerLibrary` corner NAME, that scales its sampling weight on **every** track
   regardless of `straightness` (which is why there's no unbiased fast path any more).
-  Today `1` and `Square` sit at `0.5` (about half as common as an unweighted corner) and
-  `Hairpin` at `0.2` (about five times rarer); a corner missing from the table keeps its
-  full, even share. `_candidate_weight_multiplier` resolves it, floored at
+  Today `1` and `Square` sit at `0.5` (about half as common as an unweighted corner),
+  `Hairpin` at `0.2` (about five times rarer) and `Jump` at `0.1` (rarer still); a corner
+  missing from the table keeps its full, even share. **The `Jump` weight is doing more
+  work than the others** and is the one not to "tidy up": a Jump is dead straight, so
+  `_corner_straightness` scores it `1.0` and the straightness bias would otherwise make it
+  the single most-favoured candidate at any `straightness > 0` — i.e. it would carpet the
+  easy, early-run stages. On top of that `mirror_points` is a no-op on a straight line, so
+  Jump's left and right flips are geometrically identical and it contributes the *same*
+  candidate twice where every real corner contributes two distinct ones; its weight is
+  halved again to cancel that. `_candidate_weight_multiplier` resolves it, floored at
   `CORNER_WEIGHT_MIN` so a `0` can't divide by zero in the draw or silently exile a
   shape. **Multiplied** into the weight rather than folded into
   `_candidate_straightness`, so one corner's rarity relative to another is identical at
@@ -109,9 +120,7 @@ the road around lakes.
   choice about a specific corner rather than a property its curve can express; the cost
   is that a rename would silently reset the multiplier, which
   `test_corner_weights_name_real_corners` guards. `CORNER_WEIGHTS` is folded into
-  `constants_fingerprint()`, so a retune auto-invalidates the committed track cache —
-  and since it changes every stage's layout, retuning it also warrants a
-  `TrackCache.BOARD_EPOCH` bump.
+  `constants_fingerprint()`, so a retune auto-invalidates the committed track cache.
 - **No consecutive hairpins (hard rule):** a candidate whose corner is
   a hairpin SHAPE is rejected outright when the piece already at the
   frontier is also one — a 180° straight into another 180° reads as a switchback
@@ -132,6 +141,18 @@ the road around lakes.
   so it selects the `Hairpin` alone today and widens only if a new near-180° shape is
   authored. `HAIRPIN_STRAIGHTNESS_MAX` is folded into `constants_fingerprint()`, so
   the committed track cache auto-invalidates.
+- **No consecutive jumps (hard rule):** a `Jump` candidate is rejected outright when the
+  piece already at the frontier is also a `Jump`. Same mechanism and same place in
+  `_search`'s candidate loop as the hairpin rule above (before `_build_candidate`, so the
+  pairing costs no tessellation), but **keyed on the corner NAME**, not on derived
+  geometry — a deliberate departure from `_is_hairpin`, not an oversight. "Near-180°" is a
+  distinguishing SHAPE, so deriving it survives a rename; "dead straight" is not (the plain
+  `Straight` is dead straight too), and a jump's real identity is its name plus the
+  vertical crest `TrackProfile` bakes onto it afterwards — neither of which the 2D curve
+  expresses, so there is no geometry here to derive from. The cost of any name-keyed rule
+  is that a rename silently disables it; `test_track_profile.gd`'s
+  `test_corner_name_matches_a_real_authored_corner` is the guard that makes a rename fail
+  loudly instead.
 - **Frame transform:** a `Transform2D` (`frame_transform`) maps each corner's
   local space (x = right, y = forward) onto the current end pose; a **left**
   turn is a right-hand corner with its x mirrored (`mirror_points`). Joins are
@@ -224,6 +245,96 @@ the road around lakes.
   the other shape inputs, the same `runoff_m` is passed when deriving opponent
   target times (it can change which final corner is chosen).
 
+## Jumps — the vertical channel (`TrackProfile`)
+
+`scripts/track_profile.gd` (`class_name TrackProfile`, pure static functions) is the
+track's **vertical** channel: a signed height offset in metres keyed on **arc distance
+along the centerline**, added on top of the terrain noise height when the road is baked.
+Deliberately the same shape as `TrackSurface.tarmac_weight(dist, …)` — scene-free,
+unit-testable, and feeding BOTH the look and the feel from one function.
+
+It exists because the corner vocabulary is **strictly 2D**: a `Curve2D` in the XZ plane
+has nowhere to put a crest, and the road's height is not authored at all — `bake_track`
+reads it from the terrain. So "a turn type with a jump in it" cannot be a `CORNERS` entry
+alone. The `Jump` corner supplies the *piece* (and therefore the pacenote, the DFS
+placement and the cache entry); `TrackProfile` supplies the *crest*.
+
+- **Profile shape — a raised cosine**, `y = h/2 · (1 + cos(2π·x/L))` over
+  `x ∈ [-L/2, L/2]`. Chosen because it is zero in **both value and slope** at each end,
+  so the crest is self-contained inside its piece and the road either side is untouched.
+  Anything without that property (a ramp, a parabola) puts a visible kink — and a physics
+  step — where the jump meets the ordinary terrain-following road.
+- **`plan(centerline, pieces, height_m, span_m)`** — one crest per `Jump` piece, as
+  `{ center_m, height_m, span_m }` in arc distance. Mirrors `Pacenotes.build` /
+  `SignLayout.plan`: the corner starts after the piece's connecting straight, and the arc
+  offset comes from `get_closest_offset`. The span is **clamped to `PIECE_LENGTH_M`**, so
+  a mis-set config knob can never bleed the crest into the neighbouring corners.
+  `PIECE_LENGTH_M` must equal the authored `Jump` curve's length — `test_track_profile.gd`
+  pins the two together rather than pinning the number.
+- **`offset_at(s, jumps)`** — the height offset at arc distance `s`; exactly `0.0` outside
+  every crest, so an empty plan (the common case — most stages draw no jump at all) is a
+  free no-op. This is called **per road vertex**, which is why the empty case matters.
+- **`launch_speed(h, L)` — the number that actually matters.** A car leaves the ground when
+  the road's downward curvature outruns gravity, `v²·κ > g`. The apex curvature of the
+  cosine above is `κ = 2π²h / L²`, so
+
+  > **`v_launch = sqrt(g/κ) = (L/π) · sqrt(g / 2h)`**
+
+  That single threshold is the design lever: it is what makes a jump one that FAST cars
+  clear and slow ones merely get light over. **`L` matters far more than `h`** (it is
+  squared, and on the numerator) — counter-intuitively, a *longer* crest of the same
+  height is a *harder* launch to trigger, because it is gentler, not bigger. Tune the
+  `h`/`L` pair to the threshold speed you want, not to how tall the bump looks.
+
+### Where the crest enters the bake
+
+`TerrainManager._bake_vertex_block`, at the one line that decides road height:
+
+```gdscript
+road_heights[gv] = _noise_height_at(footx, footz) + TrackProfile.offset_at(s, _cv_jumps)
+```
+
+This seam is load-bearing, and the reason to keep the offset here rather than anywhere
+else: **`road_heights` is the single point every consumer funnels through** — the chunk
+grid, the `HeightMapShape3D` collision, and `baked_height_at` all derive from it. Putting
+the crest here makes it impossible for the visible mesh and the physics the car actually
+drives on to disagree. It also gets **lateral feathering for free**, because `road_blend`
+lerps *toward* `road_heights`, so the crest fades across the transition band exactly like
+the road flatten does. `bake_track` / `set_track` take a trailing `jumps: Array = []`
+(default empty = pre-jump behaviour, byte-identical); `world.gd._carve_road_into_terrain`
+plans them against the **runoff-extended** curve it is about to bake, and the arc distance
+`s` is computed per vertex only when there are jumps or cliffs to apply.
+
+### Known and accepted
+
+Both were weighed and deliberately left; neither is a bug to "discover" later.
+
+- **`height_at()` does not see the crest** when it falls back to `_noise_height_at` for an
+  uncached coord — the *same* pre-existing asymmetry the road carve already has (see the
+  comment near `_noise_height_at` about the road carve not being applied there).
+- **The shoulder becomes a small cliff.** At the apex the road sits ~2 m above the
+  surrounding terrain and drops off over the transition band. Accepted for now; the fix, if
+  wanted, is a wider lateral fade for jump pieces specifically.
+
+### Time modelling
+
+`LapTimeModel` folds a crest ceiling into its pass-1 speed cap (`_jump_cap2`), alongside
+the cornering and geared-top-speed caps. This is not optional polish: a `Jump` piece is
+dead straight in 2D, so curvature alone reads it as **free speed**, while the real car is
+airborne with no drive and no grip — and since the per-stage target time is the only fail
+state, an unmodelled jump quietly tightens every stage that draws one. The cap is exactly
+`launch_speed` (past it the car is ballistic, so more speed buys nothing the model can
+use), applied across the whole span, and there is deliberately **no landing-scrub term** —
+that would need suspension/attitude data this point-mass model does not have.
+
+### Pacenote
+
+`Pacenotes` skips only the plain `Straight`, so the `Jump` piece gets its own note for
+free — "jump", with the next note ("3 left") following it, which is the intended read.
+Its board is direction-less (`arrow_jump`, no `_left`/`_right` pair): a jump has no
+handedness, and `mirror_points` is a no-op on its straight curve anyway. `SignLayout`
+deliberately does **not** plant a roadside board for it — the art is HUD-strip only.
+
 ## Turn cache (`TrackCache`)
 
 The DFS search is deterministic per `TrackGenParams`, so every shipped rally
@@ -257,27 +368,14 @@ the deleted career session's track pre-solve). Design:
   (`TrackGenerator.constants_fingerprint`), so a corner or constant edit invalidates the
   cache automatically — just regenerate. Only a genuine algorithm/control-flow change
   the constants don't capture needs a manual `TrackCache.CACHE_VERSION` bump.
-  **`TrackCache.BOARD_EPOCH` lives right next to `CACHE_VERSION` in this file for
-  exactly this reason — bump it too, in the same edit, whenever you bump
-  `CACHE_VERSION`.** And note the trap the wording above can hide: the trigger for a
-  `BOARD_EPOCH` bump is **any change that alters track shape**, not only a
-  `CACHE_VERSION` bump. A `CornerLibrary.CORNERS` edit (or a generator-constant edit)
-  invalidates the *cache* automatically via the fingerprint, so it needs no
-  `CACHE_VERSION` bump — but the auto-fingerprint is **not** folded into
-  `stage_key()`, which stamps only `BOARD_EPOCH`. So a shape edit with no manual
-  `BOARD_EPOCH` bump is precisely the silent-stale-board case, arrived at without ever
-  touching `CACHE_VERSION`. Bumped to **3** for the smoothed `Square` corner (minimum
-  radius 4.7 m -> 8.4 m), and to **4** for `TrackGenerator.CORNER_WEIGHTS` (the candidate
-  draw became weighted at every straightness, including `0` where it was a plain
-  shuffle). `BOARD_EPOCH` is folded into `RallyLibrary.stage_key()`
-  (see the deleted global leaderboards), which is the id every
-  posted the deleted global leaderboards entry is keyed by. A
-  `CACHE_VERSION` bump means the cached track for a stage changed shape, so any
-  time already posted against that stage's old key is no longer a fair
-  comparison — `BOARD_EPOCH` forces a fresh key and the board starts clean for
-  that stage. Bumping `CACHE_VERSION` alone, without also bumping
-  `BOARD_EPOCH`, leaves old leaderboard entries silently attached to a stage
-  whose layout has since changed underneath them.
+  **`TrackCache.BOARD_EPOCH` is GONE** — it and `RallyLibrary.stage_key()` existed only
+  to re-key the global stage leaderboards when a stage's shape changed, and the
+  leaderboards were deleted in the roguelike pivot (see `../PIVOT-CHANGES.md`). A shape
+  edit today therefore needs **no epoch bump at all**: regenerate the cache and you are
+  done. Nothing else keys off track shape — a region run's target time is derived from
+  the current shape every time, so there is no stale-board case left to guard against.
+  (This paragraph previously described the bump as mandatory; it was stale, and cost an
+  agent a hunt for a constant that no longer exists.)
 - **Diagnosing a bake failure:** the baker prints
   `track cache: rally X seed N did not complete` when `generate` returns
   `complete == false` for an event. `cache_tracks.sh` has no per-event mode, so use
@@ -377,7 +475,9 @@ shader change.
 `track_width`, `track_clearance`, `track_seed`, `track_turn_count`,
 `track_straightness`, `track_runoff_m` (straight runoff road past the finish,
 default 20 m — see the *Finish runoff* generation bullet above),
-`track_transition_cells`, `track_tarmac_fraction`,
+`track_transition_cells`, `track_tarmac_fraction`, `jump_height_m` / `jump_span_m`
+(the crest — tune the PAIR to the launch speed you want, per the formula in *Jumps*
+above, not to how tall the bump looks),
 `track_surface_transition_m`, `tarmac_color` in `config/game_config.tres` (the
 `Track` group of `GameConfig`). Lane paint lives in the `Road Markings` group:
 `road_markings_enabled`, `road_marking_color`, `road_marking_width_m`,
@@ -404,6 +504,11 @@ corners, `build_curve` yields a non-degenerate `Curve2D` (≥ 2 points, positive
 length, starts at origin) for each, the documented right-hand turn direction and
 1→6 sharpness ordering hold, and the catalog scene builds one label per corner.
 
+It also covers the jump rules: no two `Jump` pieces back to back (swept across seeds and
+both bias extremes, since `straightness 1.0` is exactly where the pairing would appear),
+and that the rarity weight leaves the `Jump` reachable but rare — a loose band, not a
+pinned frequency, since the weight is a tunable.
+
 `tests/headless/test_track_generator.gd` — the geometry helpers (`frame_transform`,
 `mirror_points`, `rasterize_cells`, `exit_heading`) and the search: determinism
 per seed, exact corner count, start at the spawn frame, no cell overlap between
@@ -417,6 +522,16 @@ input-sensitive, and origin-independent; `rebuild_from_pieces` reproduces a live
 misses to `{}` and hits rebuild; `generate_cached` falls back to live on a miss;
 `StageConfig.canonical_event_config` applies event overrides onto a fresh base; and the
 committed `data/track_cache.json` covers every event with a matching `source_hash`.
+
+`tests/headless/test_track_profile.gd` — the vertical channel: the crest is zero outside
+its span and peaks at its centre; it reaches zero in both VALUE and SLOPE at each end (the
+property that lets it join the surrounding road without a kink); an absent, zero-height or
+zero-span crest is exactly a no-op; `plan` emits one crest per `Jump` piece and clamps an
+over-long span into the piece; and `launch_speed` matches `sqrt(g / κ)` for the apex
+curvature measured numerically off `offset_at` — so the formula and the shape the car
+actually drives on can never drift apart. Plus the two name/geometry guards the
+name-keyed generator rule depends on (`CORNER_NAME` is a real authored corner;
+`PIECE_LENGTH_M` tracks that corner's curve length).
 
 `tests/headless/test_road_markings.gd` — `RoadMarkings.build()` against a straight
 curve + stub terrain: paint appears on tarmac and not on gravel, the disabled flag

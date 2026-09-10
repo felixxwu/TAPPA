@@ -588,3 +588,43 @@ func test_candidate_order_is_a_deterministic_permutation() -> void:
 			assert_false(seen.has(id), "candidate %s appears once" % id)
 			seen[id] = true
 			assert_eq(str(b[i]), str(c), "same seed -> same order at index %d" % i)
+
+
+func test_generated_tracks_never_place_two_jumps_in_a_row() -> void:
+	# Same shape as the hairpin ban, and swept the same way — across seeds and both bias
+	# extremes, because straightness 1.0 is exactly where the pairing would appear: a
+	# Jump is dead straight in 2D, so _corner_straightness scores it 1.0 and the
+	# straightness bias favours it hardest precisely on the easy, early-run stages.
+	for seed_value in range(1, 16):
+		for straightness in [0.0, 1.0]:
+			var result := await TrackGenerator.generate(
+				_params(START_POS, START_HEADING, seed_value, 12, 6.0, 0.0, 0.0, straightness))
+			var pieces: Array = result["pieces"]
+			for i in range(1, pieces.size()):
+				var pair_is_double_jump := \
+					String(pieces[i - 1]["corner"]) == TrackProfile.CORNER_NAME \
+					and String(pieces[i]["corner"]) == TrackProfile.CORNER_NAME
+				assert_false(pair_is_double_jump,
+					"seed %d straightness %s: pieces %d/%d are both jumps"
+						% [seed_value, straightness, i - 1, i])
+
+
+func test_the_jump_is_rare_but_not_exiled() -> void:
+	# Guard the rarity weight against both failure directions at once. A Jump must still
+	# be REACHABLE (a weight typo, or a rule that over-reaches, could silently remove the
+	# shape from the game entirely), but it must not be COMMON — left unweighted it would
+	# be the most-drawn piece in the set, since it is the straightest candidate there is
+	# and its left/right flips are geometrically identical. Deliberately a loose band on a
+	# large sample rather than a pinned frequency: the weight is a tunable, so this asserts
+	# only the property a designer retuning it would still want to hold.
+	var jumps := 0
+	var total := 0
+	for seed_value in range(1, 16):
+		for piece in (await _generate(seed_value, 12))["pieces"]:
+			total += 1
+			if String(piece["corner"]) == TrackProfile.CORNER_NAME:
+				jumps += 1
+	assert_gt(total, 0, "tracks generated at all (else this test asserts nothing)")
+	assert_gt(jumps, 0, "the Jump is still drawn — the rarity weight has not exiled it")
+	assert_lt(float(jumps) / float(total), 0.25,
+		"the Jump stays a set-piece, not the default filler (%d of %d pieces)" % [jumps, total])

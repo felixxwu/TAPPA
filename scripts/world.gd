@@ -552,7 +552,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Phase 2 — "Carving road into terrain…": the road bake (flatten + surface split +
 	# cliffs) and the final waterline pass it makes possible.
-	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"])
+	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"], result.get("pieces", []))
 
 	# Phase 3 — "Precomputing chunks…" / "Building terrain…": every chunk the play area
 	# realistically requests, then the initial ring built once from that cache.
@@ -752,7 +752,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 # cliffs) — the heaviest single step — then repaint the loading preview's waterline now that
 # the bake makes a correct one possible.
 func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
-		road_centerline: Curve2D, water_bounds: Rect2) -> void:
+		road_centerline: Curve2D, water_bounds: Rect2, pieces: Array) -> void:
 	var interactive := _interactive(loading)
 	# Road band + surface split, derived in the one place every baker shares
 	# (TerrainManager.bake_args) so the Seed Lab's preview bake can't drift from this
@@ -763,6 +763,14 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 	# Cliff params onto the terrain before the bake reads them (mirrors the Lighting
 	# group applied earlier); the cliff pass runs inside set_track → bake_track.
 	cfg.apply_cliffs(_floor())
+	# Vertical channel: plan the crests against `road_centerline`, the SAME curve about
+	# to be baked (already reassigned to the runoff-extended curve by the caller, past
+	# _with_finish_runoff). The runoff is appended past the finish, so offsets from the
+	# start are identical either way, but planning against the baked curve keeps that a
+	# fact rather than a coincidence. [] when the generated track has no Jump piece —
+	# TrackProfile.offset_at treats an empty plan as a free no-op.
+	var jumps := TrackProfile.plan(
+		road_centerline, pieces, cfg.jump_height_m, cfg.jump_span_m)
 	# Baking the road into the terrain (flatten + surface split + cliffs) is the heaviest
 	# single step; give it its own label and let it yield frames (interactive path only —
 	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
@@ -772,7 +780,7 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 	var carve_progress := loading.set_carve_progress if interactive else Callable()
 	await $Floor.set_track(road_centerline, bake_args[0], bake_args[1],
 		bake_args[2], bake_args[3], bake_args[4],
-		interactive, carve_progress)
+		interactive, carve_progress, jumps)
 	if interactive:
 		loading.set_carve_progress(1.0)  # snap to fully-white once carving is done
 	# FINAL water pass — the only one that can be right, and it lands HERE, straight

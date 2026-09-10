@@ -23,6 +23,13 @@ class_name LapTimeModel
 # What this model still does NOT read: brake torque/bias, gearbox ratios, shift time,
 # turbo lag, suspension, weight distribution, tyre width. Braking in particular is a
 # single friction-circle term, so two cars alike but for their brakes time identically.
+#
+# JUMP CRESTS are folded into the pass-1 speed ceiling alongside cornering and geared
+# top speed (see _jump_cap2): a Jump piece is dead straight in 2D, so kappa alone would
+# read it as free speed, while the terrain bake actually raises a crest a fast car
+# launches off. What is NOT modelled is the car's time spent airborne or the landing
+# scrub — see _jump_cap2's header for why that's a deliberate simplification, not an
+# oversight.
 
 static var G: float = Platform.gravity()  # m/s^2, single source of truth: physics/3d/default_gravity (const can't call into Platform)
 const ROLLING_G := 0.2          # baseline rolling-resistance decel (fraction of g)
@@ -141,6 +148,15 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 	# and the braking pass respect it: you cannot arrive at a corner above a speed you
 	# could never reach.
 	var top2 := _geared_top_speed_sq(car_meta)
+	# Jump crests (vertical channel). track_result carries both the centerline and the
+	# pieces TrackProfile.plan needs; a track with no "Jump" piece (or no "pieces" key at
+	# all, e.g. every synthetic test track) plans an empty list, which makes _jump_cap2 a
+	# hard no-op below — byte-identical to before this existed. Config-driven height/span
+	# rather than reading them off `event`/`car_meta`: a jump is a property of the TRACK,
+	# the same reasoning RallyLibrary already applies to tarmac fraction and cliffiness.
+	var cfg: GameConfig = Config.data
+	var jumps := TrackProfile.plan(centerline, track_result.get("pieces", []) as Array,
+			cfg.jump_height_m, cfg.jump_span_m)
 	var cap2 := PackedFloat32Array(); cap2.resize(n)
 	var cap_ceiling := V_CAP_MAX_MS * V_CAP_MAX_MS
 	for i in n:
@@ -152,6 +168,9 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 		# 0.0 means "this meta does not describe a gearbox" — see _geared_top_speed_sq.
 		if top2 > 0.0:
 			cap2[i] = minf(cap2[i], top2)
+		# V_UNBOUNDED off any crest — see _jump_cap2 for the derivation and the judgement
+		# calls (span-wide band, exact-launch-speed threshold, no landing-scrub term).
+		cap2[i] = minf(cap2[i], _jump_cap2(s[i], jumps))
 
 	# --- Pass 2: forward accel pass (v^2), standing start at s=0 --------------
 	var fwd2 := PackedFloat32Array(); fwd2.resize(n)
@@ -218,6 +237,50 @@ static func optimum_profile(track_result: Dictionary, car_meta: Dictionary, even
 static func optimum_ms(track_result: Dictionary, car_meta: Dictionary, event: Dictionary = {},
 		grip_mult := 1.0, power_mult := 1.0, mu_override := -1.0) -> int:
 	return int(optimum_profile(track_result, car_meta, event, grip_mult, power_mult, mu_override)["total_ms"])
+
+
+# Speed-squared ceiling (m/s)^2 imposed by a jump crest at arc distance `s_i`, or
+# V_UNBOUNDED where no crest reaches that far — same sentinel/units as the cornering
+# ceiling above, so a plain `minf` composes it into cap2 with no branch and no sqrt per
+# sample. `jumps` is TrackProfile.plan's output; empty (the common case — most stages
+# draw no jump at all) makes this loop zero-iterations and the whole function a no-op.
+#
+# THREE JUDGEMENT CALLS, all made here rather than in TrackProfile because they are
+# about how a QSS LAP-TIME MODEL should treat a crest, not about the crest's geometry:
+#
+# 1. CAPPED AT EXACTLY launch_speed, not a fraction of it. A real driver does carry a
+#    jump airborne — they just gain nothing from doing so: past launch speed the car is
+#    ballistic, not driven, so it cannot accelerate, corner, or brake, and whatever speed
+#    it lands with is landing physics, not this model. launch_speed IS the ceiling on
+#    USEFUL speed, not a safety margin under it: undershooting costs real time,
+#    overshooting buys nothing on this model's terms. So exactly launch_speed, not
+#    launch_speed * some slack factor.
+#
+# 2. APPLIED OVER THE WHOLE SPAN, not just the apex sample. The cornering cap gets a
+#    smooth per-sample ceiling for free because kappa is sampled continuously along a
+#    corner; there is no equivalent vertical-curvature sample here, only the piece's one
+#    authored (height, span) pair TrackProfile reduces the crest to. Deriving a full
+#    per-sample vertical-curvature curve just to taper the cap toward the shoulders would
+#    duplicate TrackProfile's own derivation for a piece that's already only 60 m of a
+#    stage that can run kilometres. Capping the WHOLE span at the apex threshold is
+#    coarser near the shoulders (a real car could truly carry a hair more speed there)
+#    but never optimistic — exactly the direction a QSS ceiling should err.
+#
+# 3. NO LANDING-SCRUB TERM. The cap alone already makes the model less optimistic than
+#    the un-modelled 2D read (free speed); adding a distance/impact-loss term on top
+#    would need data this point-mass file doesn't have (suspension travel, landing
+#    attitude) and risks OVER-correcting the very number the cap exists to fix. Simpler
+#    is more honest here, not less: say what's not modelled (see the file header) rather
+#    than guess at it.
+static func _jump_cap2(s_i: float, jumps: Array) -> float:
+	var cap := V_UNBOUNDED
+	for j in jumps:
+		var span: float = float(j.get("span_m", 0.0))
+		if span <= 0.0 or absf(s_i - float(j.get("center_m", 0.0))) >= span * 0.5:
+			continue
+		var v_launch := TrackProfile.launch_speed(float(j.get("height_m", 0.0)), span)
+		cap = minf(cap, v_launch * v_launch)
+	return cap
 
 
 # Longitudinal grip left over after cornering, on a friction circle whose RADIUS
