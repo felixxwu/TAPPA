@@ -62,7 +62,7 @@ const SIGNS: Array[Dictionary] = [
 	# the origin). Same idea, different axis. `no_direction` marks it as bearing no
 	# left/right handedness — see the bake loop below. `no_head` marks it as NOT
 	# an arrow — see the "why no arrowhead" comment on _arrow_geometry.
-	{"corner": "Jump", "key": "arrow_jump", "label": "JMP", "no_direction": true, "no_head": true},
+	{"corner": "Jump", "key": "arrow_jump", "label": "J", "no_direction": true, "no_head": true},
 ]
 
 # Side-profile sample count for the Jump polyline (see _jump_profile_polyline).
@@ -78,8 +78,9 @@ const JUMP_PROFILE_STEPS := 24
 # rendered hump came out barely taller than the stroke itself. Combined with an
 # arrowhead stuck on the exit end (fixed below by no_head), the whole thing read
 # as "gentle numbered bend" — the one thing this board must never be mistaken
-# for. 16.0 gives a hump tall enough to read as a hill through the same scaling.
-const JUMP_PROFILE_EXAGGERATION := 16.0
+# for. 26.0 gives a hump tall enough to read as a hill through the same scaling,
+# filling a comfortable fraction of the face instead of sitting as a low ripple.
+const JUMP_PROFILE_EXAGGERATION := 26.0
 
 
 var _glyph_cache: Dictionary = {}   # "<text>@<font_size>" -> measured ink Rect2
@@ -384,7 +385,12 @@ func _arrow_geometry(points: PackedVector2Array, box: Rect2, flip: bool,
 func _ink_hits(geom: Dictionary, rect: Rect2) -> bool:
 	var stroke: PackedVector2Array = geom["stroke"]
 	var radius: float = float(geom["width"]) * 0.5
-	var tail_r := radius * TAIL_DOT
+	var ground: PackedVector2Array = geom.get("ground", PackedVector2Array())
+	var no_head := not ground.is_empty()
+	# The oversized entry blob only means something for a directional arrow ("the
+	# corner starts here") — a headless profile has no entry, so both ends use the
+	# plain radius.
+	var tail_r := radius if no_head else radius * TAIL_DOT
 	for i in stroke.size():
 		var r := tail_r if i == 0 else radius
 		if _disc_hits(stroke[i], r, rect):
@@ -408,6 +414,13 @@ func _ink_hits(geom: Dictionary, rect: Rect2) -> bool:
 				var p := head[0] * wa + head[1] * wb + head[2] * (1.0 - wa - wb)
 				if rect.has_point(p):
 					return true
+	if not ground.is_empty():
+		var gr := radius * 0.5
+		var seg := ground[1] - ground[0]
+		var steps := int(seg.length() / maxf(gr, 0.001)) + 1
+		for s in steps + 1:
+			if _disc_hits(ground[0] + seg * (s / float(steps)), gr, rect):
+				return true
 	return false
 
 
@@ -489,7 +502,10 @@ func _label(parent: Control, pos: Vector2, size: Vector2, text: String,
 
 
 # Draws the arrow geometry solved by _arrow_geometry: a thick, round-jointed stroke
-# with a fat entry blob at the tail and the head triangle at the exit.
+# with a fat entry blob at the tail and the head triangle at the exit. A `ground`
+# entry (the Jump) instead draws a thinner baseline UNDER the profile stroke — the
+# element that tells the eye this is an elevation view, not a plan-view bend; see
+# the header comment on _arrow_geometry.
 class _ArrowDraw extends Node2D:
 	var geom: Dictionary = {}
 	var color := Color.BLACK
@@ -499,11 +515,17 @@ class _ArrowDraw extends Node2D:
 		if stroke.size() < 2:
 			return
 		var radius: float = float(geom["width"]) * 0.5
+		var ground: PackedVector2Array = geom.get("ground", PackedVector2Array())
+		if ground.size() == 2:
+			# Ground first, so the profile stroke draws on top of it at the two
+			# points where they meet (the crest's zero-height ends).
+			draw_line(ground[0], ground[1], color, float(geom["width"]) * 0.5)
 		for i in range(1, stroke.size()):
 			draw_line(stroke[i - 1], stroke[i], color, float(geom["width"]))
 		for p in stroke:
 			draw_circle(p, radius, color)
-		draw_circle(stroke[0], radius * TAIL_DOT, color)
 		var head: PackedVector2Array = geom.get("head", PackedVector2Array())
 		if head.size() == 3:
+			# Directional shape: fat entry blob at the tail, arrowhead at the exit.
+			draw_circle(stroke[0], radius * TAIL_DOT, color)
 			draw_colored_polygon(head, color)
