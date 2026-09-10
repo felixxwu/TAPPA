@@ -22,9 +22,10 @@ extends RefCounted
 # GameConfig.global_torque_scale, which engine.gd's own comment names as a HIDDEN
 # GLOBAL DE-RATE (a balance knob meant to scale every car uniformly, not a per-car
 # effect target), so hooking a boost onto it would fight that field's real job. The
-# engine_swap entry instead multiplies cfg.peak_torque — the per-car published figure —
-# through the engine_power_mult EFFECTS row, and every other category lands on an
-# ordinary per-car GameConfig field the same way.
+# engine-swap POWER pick lives outside this catalogue entirely — it is a genuine
+# EngineLibrary swap (RunSession._pool_engine_swap_ids / features/engine-swap.md), not
+# an EFFECTS row — and every other category lands on an ordinary per-car GameConfig
+# field the same way.
 #
 # MAGNITUDES ARE TUNABLE DATA (CLAUDE.md) and live on GameConfig
 # (config/game_config.tres, "Roguelike Run Boosts") — never a const here, and no test
@@ -81,14 +82,12 @@ const CATALOGUE := {
 		"effect_fields": {"drag_mult": "run_boost_drag_mult"},
 		"level_direction": -1,  # lower drag_mult = less drag = more boost
 	},
-	# The Engine Swap, re-homed (was the meta shop's one-time unlock; that purchase and
-	# its dead mutators are deleted). A mid-run POWER boost: a stronger engine's torque
-	# curve, via the engine_power_mult EFFECTS row on cfg.peak_torque.
-	"engine_swap": {
-		"label": "Engine swap",
-		"effect_fields": {"engine_power_mult": "run_boost_engine_power_mult"},
-		"level_direction": 1,  # higher peak_torque = more power = more boost
-	},
+	# NOTE: the Engine Swap is NOT a CATALOGUE entry — it is a GENUINE engine swap now
+	# (RunSession._pool_engine_swap_ids' "engine_swap:<EngineLibrary id>" pseudo-id,
+	# folded into the SAME draw pool as this catalogue by RegionRunMode.boost_choices,
+	# exactly like the AWD drivetrain conversion). It used to be a flat peak_torque
+	# multiplier via the engine_power_mult EFFECTS row; that is retired — see
+	# features/engine-swap.md.
 }
 
 
@@ -218,8 +217,27 @@ static func label_for(id: String) -> String:
 # Draws WITHOUT replacement — the same boost never appears twice in one pick — capped at
 # the catalogue's own size rather than repeating to fill `count`, since (unlike a
 # region's stage pool) there is no "must fill exactly N" requirement here.
+#
+# Thin wrapper over `draw_from_ids`, the generic primitive: this just supplies the
+# catalogue's own id list and maps the picked ids through `boost_for`.
 static func draw(seed_value: int, count: int) -> Array:
-	var ids: Array = CATALOGUE.keys()
+	var picked_ids := draw_from_ids(seed_value, count, CATALOGUE.keys())
+	var out: Array = []
+	for id in picked_ids:
+		out.append(boost_for(id))
+	return out
+
+
+# THE GENERIC PRIMITIVE `draw` sits on top of: `count` distinct ids drawn WITHOUT
+# replacement from an ARBITRARY `ids` list (not necessarily CATALOGUE.keys()),
+# deterministic in `seed_value`, capped at `ids`' own size. Returns the picked ids
+# themselves — not boost dicts — so a caller can mix ids from more than one source
+# into one pool before resolving them. region_run_mode.gd uses this directly to fold
+# drivetrain pseudo-ids ("drivetrain:<DriveMode int>") into the SAME draw pool as the
+# boost catalogue, so the between-stage pick offers one pool of N options rather than
+# boosts plus a separately-appended drivetrain list. [] for an empty pool or
+# count <= 0.
+static func draw_from_ids(seed_value: int, count: int, ids: Array) -> Array:
 	if ids.is_empty() or count <= 0:
 		return []
 	var rng := RandomNumberGenerator.new()
@@ -231,7 +249,4 @@ static func draw(seed_value: int, count: int) -> Array:
 		var i := rng.randi_range(0, bag.size() - 1)
 		picked_ids.append(bag[i])
 		bag.remove_at(i)
-	var out: Array = []
-	for id in picked_ids:
-		out.append(boost_for(id))
-	return out
+	return picked_ids

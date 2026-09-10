@@ -261,7 +261,7 @@ with a drawn pick:
 var healthy := Save.car_health_fraction(_car_instance_id) >= Config.data.run_boost_healthy_threshold
 _pick_offers_repair = not healthy
 var count := Config.data.run_boost_choices + 1 if healthy else -1  # -1 = mode's own default
-_pending_pick = _mode.boost_choices(_stage_index, count)
+_pending_pick = _mode.boost_choices(_stage_index, count, _pool_drivetrain_ids())
 _pick_awaiting = true                               # continue_to_next_stage() now refuses
 ```
 
@@ -269,12 +269,14 @@ _pick_awaiting = true                               # continue_to_next_stage() n
 `GameConfig.run_boost_healthy_threshold` (a fraction of `max_hp`; resolved via
 `Save.car_health_fraction`, which reads `hp`/`max_hp` the same way
 `heal_car`/`apply_field_repair_to` do) at the moment the pick is drawn, the pick draws
-`run_boost_choices + 1` boosts and offers **no repair row** — arriving undamaged earns
-an extra boost instead of a repair option nobody needed. Below the threshold it's the
-usual `run_boost_choices` boosts plus repair, unchanged. `RunMode.boost_choices(stage_index,
-count := -1)` takes the override (`RegionRunMode.boost_choices` uses it when >= 0, its
-own `Config.data.run_boost_choices` otherwise); `BoostLibrary.draw` already clamps
-`count` to the catalogue size, so the +1 is always safe.
+`run_boost_choices + 1` options and offers **no repair row** — arriving undamaged earns
+an extra option instead of a repair choice nobody needed. Below the threshold it's the
+usual `run_boost_choices` options plus repair, unchanged. `RunMode.boost_choices(stage_index,
+count := -1, extra_ids := [])` takes the override (`RegionRunMode.boost_choices` uses
+`count` when >= 0, its own `Config.data.run_boost_choices` otherwise); `extra_ids` is
+folded into the SAME pool as the boost catalogue before the draw (see *The catalogue and
+its draw* below), and `BoostLibrary.draw_from_ids` already clamps `count` to that pool's
+size, so the +1 is always safe.
 
 The answer is resolved **once**, at draw time, and persisted verbatim
 (`RunSession._pick_offers_repair`, written into `_persist()`'s `pick_offers_repair`
@@ -282,8 +284,8 @@ key) rather than re-derived on resume — the car's HP can move between the draw
 resume (self-healing, damage), and the pick must keep offering the same choice it
 originally offered. `RunSession.offer_repair()` is the read: world.gd passes it
 straight through as `RunPickPanel.open`'s `offer_repair` argument
-(`RunPickPanel.open(host, pick, on_choice, drivetrain_choices := [], offer_repair :=
-true)`), which is what makes the repair button disappear from the reward pick.
+(`RunPickPanel.open(host, pick, on_choice, offer_repair := true)`), which is what makes
+the repair button disappear from the reward pick.
 
 `RunSession.choose_repair()` / `.choose_boost(id)` resolve it — repair goes
 through the same `Save.apply_field_repair_to` every other transition uses (so
@@ -331,10 +333,12 @@ so `UpgradeLibrary.active_effects` sees them (via `_field_car` → `apply_owned`
 `UpgradeLibrary.apply`) without a single byte reaching `profile["cars"]`. They
 persist across a **pause/resume** of the same run (`_persist()`/`resume()` carry
 `boosts`, `pick_awaiting` and `pick_offers_repair` in the run record — a resumed run
-mid-pick re-derives the *same* offer via `_mode.boost_choices(_stage_index, count)`,
-passing the SAME count the original draw used (derived from the persisted
-`pick_offers_repair`, not re-read from the car's current HP) since the draw itself is
-a pure function of `(run_seed, stage_index, count)`) and are wiped **the moment
+mid-pick re-derives the *same* offer via `_mode.boost_choices(_stage_index, count,
+_pool_drivetrain_ids())`, passing the SAME count the original draw used (derived from the
+persisted `pick_offers_repair`, not re-read from the car's current HP) since the draw
+itself is a pure function of `(run_seed, stage_index, count, the drivetrain pool)`, and
+the drivetrain pool re-derives identically because it depends only on the car's own
+drivetrain state, unchanged by a pause) and are wiped **the moment
 the run ends, win or lose**: `_finish_locally()` clears `_boosts` in memory and
 `_clear_persisted()` deletes the whole run record — including `boosts` — from
 `Save`, so nothing survives into the next run (`todo/roguelike-pivot.md`, "Soft
@@ -342,16 +346,14 @@ permadeath").
 
 ### The catalogue and its draw
 
-`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — seven entries, each an
+`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — six entries, each an
 `effect` dict keyed by an **existing** `UpgradeLibrary.EFFECTS` row (no second
 effects system): `mass_mult`, `tire_grip_mult`, `shift_time_set`,
 `downforce_front`/`_rear`, `brake_force_mult` (`GameConfig.brake_torque`),
-`drag_mult` (`GameConfig.drag_coefficient`), and — the Engine Swap, re-homed
-from its old one-time meta unlock — `engine_power_mult` (`GameConfig.peak_torque`,
-the catalogue's POWER pick). RR's `engineForce` category maps onto none of the
-forbidden knobs: `global_torque_scale` is a hidden global de-rate (engine.gd's
-own comment), not a per-car effect field, so the engine swap multiplies the
-per-car `peak_torque` instead.
+`drag_mult` (`GameConfig.drag_coefficient`). The catalogue's POWER pick — the
+Engine Swap — is **not** in this table any more; see *The engine swap* below and
+[engine-swap.md](engine-swap.md) for why it's a genuine `EngineLibrary` swap,
+not an EFFECTS multiplier.
 
 Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
 Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
@@ -360,29 +362,45 @@ Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
 above) — `BoostLibrary.effect_for` re-reads them live, never bakes a value in, and no
 test may pin the shipped numbers (CLAUDE.md).
 
-`BoostLibrary.draw(seed_value, count)` picks `count` **distinct** entries with no
-replacement, seeded by `RegionRunMode._boost_seed(stage_index) = run_seed +
-stage_index * 104729` — the same "big prime stride" convention
-`features/rally-challenge.md` documents for bumping a challenge stage's retry
-seed. No sort step (unlike `RegionStagePool.draw`), so there is no sort-stability
-tie-break to reason about.
+`BoostLibrary.draw(seed_value, count)` picks `count` **distinct** entries from
+`CATALOGUE.keys()` with no replacement — a thin wrapper over the generic primitive
+`BoostLibrary.draw_from_ids(seed_value, count, ids)`, which does the same distinct,
+no-replacement, seeded draw over an **arbitrary** id list. `RegionRunMode.boost_choices`
+calls `draw_from_ids` directly with a MERGED pool — `BoostLibrary.CATALOGUE.keys() +
+extra_ids` (the AWD conversion pseudo-id and/or the engine-swap pseudo-id) — so the
+between-stage pick offers exactly `count` total options from
+ONE bag, never boosts-plus-appended-conversions. Both are seeded by
+`RegionRunMode._boost_seed(stage_index) = run_seed + stage_index * 104729` — the same
+"big prime stride" convention `features/rally-challenge.md` documents for bumping a
+challenge stage's retry seed. No sort step (unlike `RegionStagePool.draw`), so there is
+no sort-stability tie-break to reason about. A picked id resolves to `BoostLibrary.
+boost_for(id)` (`{"id","effect"}`) unless it begins with `"drivetrain:"` (resolves to
+`{"id", "drivetrain_mode"}` — see *Drivetrain conversion* below for where those ids come
+from) or `"engine_swap:"` (resolves to `{"id", "engine_id"}` — see *The engine swap*
+below).
 
 ### The pick screen
 
-`RunPickPanel.open(host, pick, on_choice, drivetrain_choices := [], offer_repair :=
-true)` (`scripts/run_pick_panel.gd`) builds the modal — a repair button (omitted
+`RunPickPanel.open(host, pick, on_choice, offer_repair := true)`
+(`scripts/run_pick_panel.gd`) builds the modal — a repair button (omitted
 when `offer_repair` is false — the undamaged-arrival reward pick, see above), one
-row per drawn boost, one row per offered drivetrain conversion
-(`drivetrain_choices`, from `RunSession.drivetrain_choices()` — every
-`Drivetrain.DriveMode` except whichever one the fielded car is currently running),
-or a bare "Continue" when `pick` is empty — as a `MenuPage` wired through
+card per entry in `pick` (a boost card, showing its purchased level 1-based as
+`"Lv %d" % (Save.boost_level(id) + 1)` — the same convention `hub_shell.gd`'s shop cards
+use, so an un-upgraded boost reads "Lv 1", never "Lv 0" — or, for an entry whose id begins
+with `"drivetrain:"`, a "Convert to X" card, or for one beginning with `"engine_swap:"`, a
+card titled `"<hp>HP <layout>"` with subtitle `"+<hp_delta> HP"` — `pick` itself can carry
+any of these shapes now, see above), or a bare "Continue" when `pick` is empty — as a
+`MenuPage` wired through
 `MenuNav.attach` (`tests/headless/test_run_pick_panel.gd` is the nav test CLAUDE.md
 requires). `world.gd` passes `RunSession.offer_repair()` straight through as the
-fifth argument. It is deliberately decoupled from `world.gd`/`$Car`/the
+fourth argument. It is deliberately decoupled from `world.gd`/`$Car`/the
 replay machinery so it can be tested without booting a world scene at all.
 `world.gd._present_standings_overlay` hosts it over the just-finished stage's cinematic
 replay — the same beat that used to load the now-deleted `standings.tscn` (decision 30:
-no more per-stage leaderboards).
+no more per-stage leaderboards). The page's own backdrop is deliberately transparent
+(`"alpha": 0.0` in the `open_modal` opts) so the 3D world shows through the gaps between
+cards — each card keeps its own opaque background (`card_carousel.gd`'s
+`_card_stylebox`), so legibility is unaffected.
 
 ### Three screens now, not one
 
@@ -411,7 +429,7 @@ tested at the `world.gd` layer — instantiating `main.tscn` costs ~15s per test
 (`features/testing.md`), so this three-step relay is covered by compile-time checking plus
 the already-tested panel builders (`car-stats.md`'s test files) it calls in sequence.
 
-### Drivetrain conversion — the seventh option in the between-stage pick
+### Drivetrain conversion — an AWD option competing in the SAME pool as boosts
 
 **Decision 52 is superseded.** It originally sold a drivetrain conversion as a
 permanent, per-car money sink (`Save.buy_drive_mode`) — that purchase surface is
@@ -419,22 +437,72 @@ deleted outright. A conversion is now a **run-scoped mid-run upgrade**, offered 
 same between-stage pick as repair and the drawn boosts: free, chosen exactly once per
 pick, and gone the moment the run ends, win or lose — the same lifetime as a boost.
 
+Only **AWD** is offered, and only when the car isn't already AWD — not every
+`Drivetrain.DriveMode` the car could switch to. `RunSession._pool_drivetrain_ids()`
+returns `["drivetrain:%d" % Drivetrain.DriveMode.AWD]` when AWD is available, `[]`
+otherwise, and that's what `report_event_result`/`resume()` pass as `boost_choices`'s
+`drivetrain_ids` — folded into the SAME draw pool as the boost catalogue (see *The
+catalogue and its draw* above), so an AWD conversion competes with the boosts for one of
+the `run_boost_choices` slots rather than appearing as a guaranteed extra card. This is
+deliberately narrower than `RunSession.drivetrain_choices()` (unchanged, still every
+non-current `DriveMode`) — that function now exists purely to answer "what conversions
+exist at all" for other callers (its own tests, `RunSession.choose_drivetrain`'s
+contract), not to enumerate what the between-stage pick offers.
+
 `RunSession._drivetrain_override` (-1 = "the fielded car's own stock/current layout")
 mirrors `_boosts` exactly: reset in `begin()`, restored from the run record in
 `resume()`, persisted in `_persist()`, wiped in `_finish_locally()`.
-`RunSession.drivetrain_choices()` returns every `Drivetrain.DriveMode` value except
-whichever one the car is currently running (its picked override if one is active, else
-`UpgradeLibrary.stock_drive_mode`) — [] when no pick is outstanding, mirroring
-`pending_pick()`'s own empty contract. `RunSession.choose_drivetrain(mode)` resolves the
-pick, same "the player picks exactly one" rule `choose_repair`/`choose_boost` follow —
-unlike boosts, a second conversion picked later in the run **replaces** the first rather
-than stacking (a car has one driveline at a time).
+`RunSession.choose_drivetrain(mode)` resolves the pick, same "the player picks exactly
+one" rule `choose_repair`/`choose_boost` follow — unlike boosts, a second conversion
+picked later in the run **replaces** the first rather than stacking (a car has one
+driveline at a time).
 
 `UpgradeLibrary.resolve_drive_override` no longer gates on a purchase — it is a bare
 range check against `Drivetrain.DriveMode.values()`, since `world.gd::_field_car` is now
 the only legitimate writer of `drivetrain_override` (onto the duplicated fielding dict,
 never `Save`'s persisted car — see *Where boosts live* above). `HubShell`'s old
 `DRIVETRAIN` / `DRIVETRAIN_CAR` shop pages are deleted along with the purchase path.
+
+### The engine swap — a genuine EngineLibrary swap, deterministic
+
+The eighth option alongside repair, the drawn boosts and the AWD conversion: a REAL
+engine dropped into the run's car via the already-built `EngineSwap` module + `car.gd::
+_apply_engine_swap` pipeline (see [engine-swap.md](engine-swap.md) for that pipeline in
+full). It is deliberately NOT random — `RunSession._pool_engine_swap_ids()` offers
+exactly **the next most powerful `EngineLibrary` engine relative to the car's current
+one** (`RunSession._current_engine_id()`, which prefers this run's own swap over the
+persisted car's `swapped_engine`/stock engine, exactly like `EngineSwap.
+current_engine_id`), ranked by `CarLibrary.peak_power_kw({"peak_torque", "redline"})` —
+among every engine strictly more powerful than the current one, the smallest such power,
+i.e. the immediate next rung up. `[]` once the car is already running the catalogue's
+most powerful engine, the same "drop the option once it has nothing left to offer" shape
+`_pool_drivetrain_ids()` uses for AWD. Folded into the SAME draw pool as the boosts and
+the drivetrain conversion (`RunSession._pool_drivetrain_ids() + _pool_engine_swap_ids()`
+as `extra_ids`), so it competes for a slot rather than appearing as a guaranteed extra.
+
+`RunSession._with_engine_swap_display(pick)` — called at BOTH pick-building call sites
+(`report_event_result`, `resume`) so a live draw and a resumed draw can't disagree —
+stamps `hp` and `hp_delta` onto any drawn `engine_swap:` entry, via `CarLibrary.
+horsepower({"peak_torque", "redline"})` (the same derivation the car stats panel uses)
+against the car's current engine. `RunPickPanel` reads those fields straight off the
+entry to build its card (see *The pick screen* above).
+
+`RunSession._engine_swap_id` (`""` = "the car's own stock/previously-swapped engine")
+mirrors `_boosts`/`_drivetrain_override` exactly: reset in `begin()`, restored from the
+run record in `resume()` (`"engine_swap_id"` key), persisted in `_persist()`, wiped in
+`_finish_locally()`. `RunSession.choose_engine_swap(id)` resolves the pick, same "the
+player picks exactly one" rule the other `choose_*` methods follow — unlike a boost, a
+second swap picked later **replaces** the first rather than stacking (a car has one
+engine at a time), same as a drivetrain conversion.
+
+`world.gd::_owned_with_run_effects` (called from `_field_car`, the same seam that merges
+`boosts` and `drivetrain_override` onto the duplicated fielding dict) sets `owned
+["swapped_engine"] = RunSession.engine_swap_id()` whenever that id is non-empty — that
+single write is the WHOLE integration: `car.gd::apply_owned` already reads `swapped_engine`
+and runs `_apply_engine_swap`, bringing the swapped engine's real torque curve, redline,
+mass, weight distribution and gearbox/gearing along with it. Never touches `Save`'s
+persisted car, and dies with the run like every other boost — see *Where boosts live*
+above.
 
 ### The meta tier — boost levels, car purchasing
 

@@ -92,6 +92,14 @@ var _boosts: Array = []
 # DUPLICATED owned-car dict _boosts is merged onto. Reset by begin() and
 # _finish_locally(), same as _boosts.
 var _drivetrain_override := -1
+# The engine swapped into this run's car, or "" for "runs its own stock engine" — same
+# RUN-SCOPED lifetime as _boosts/_drivetrain_override above (dies with the run, never
+# touches Save's persisted car; world.gd._field_car merges it onto the same DUPLICATED
+# owned-car dict). Unlike _drivetrain_override, which world.gd feeds through
+# UpgradeLibrary.resolve_drive_override, this is fed straight into `owned["swapped_engine"]`
+# — the exact field car.gd::_apply_engine_swap already reads for a saved OwnedCar (see
+# features/engine-swap.md). Reset by begin() and _finish_locally(), same as the others.
+var _engine_swap_id := ""
 
 
 # --- Read surface --------------------------------------------------------------
@@ -207,6 +215,13 @@ func drivetrain_override() -> int:
 	return _drivetrain_override
 
 
+# The engine swapped into this run's car so far, or "" for "the car's own stock engine".
+# world.gd merges this onto the fielded car's `swapped_engine` field; it is never written
+# to Save.
+func engine_swap_id() -> String:
+	return _engine_swap_id
+
+
 # The non-current DriveMode values worth offering as a conversion in the pending pick —
 # i.e. every layout except whichever one the fielded car is ALREADY running (its picked
 # override if one is active, else its own authored stock layout). Empty when no pick is
@@ -214,6 +229,15 @@ func drivetrain_override() -> int:
 func drivetrain_choices() -> Array:
 	if not _pick_awaiting:
 		return []
+	return _available_drivetrain_modes()
+
+
+# The non-current DriveMode values available for conversion RIGHT NOW — the computation
+# behind drivetrain_choices(), minus that function's _pick_awaiting guard. Split out so a
+# pick-building call site (report_event_result / resume) can compute the pool of
+# "drivetrain:<mode>" pseudo-ids to fold into boost_choices() BEFORE _pick_awaiting is set
+# true, without duplicating this loop. [] when the run's car has vanished.
+func _available_drivetrain_modes() -> Array:
 	var owned: Dictionary = Save.get_car(_car_instance_id)
 	if owned.is_empty():
 		return []
@@ -224,6 +248,96 @@ func drivetrain_choices() -> Array:
 		if int(mode) != current:
 			out.append(int(mode))
 	return out
+
+
+# The drivetrain pseudo-ids ("drivetrain:<DriveMode int>") to fold into the SAME draw
+# pool as the boost catalogue when building a pick (boost_choices' `drivetrain_ids`
+# arg) — AWD-only when it's available, deliberately NOT every mode
+# _available_drivetrain_modes() would offer via drivetrain_choices(): an AWD
+# conversion is the one conversion worth surfacing as a random mid-run pick, so it's
+# the only one competing with the boosts for a slot. [] once the car is already AWD.
+func _pool_drivetrain_ids() -> Array:
+	var out: Array = []
+	if _available_drivetrain_modes().has(Drivetrain.DriveMode.AWD):
+		out.append("drivetrain:%d" % int(Drivetrain.DriveMode.AWD))
+	return out
+
+
+# The engine this run's car is ACTUALLY RUNNING right now: this run's own swap if one
+# has been picked, else whatever the persisted car itself is running (its own swap from
+# a previous run's ownership, or its CarLibrary stock engine) — resolved the same way
+# car.gd/effective_meta do, via EngineSwap.current_engine_id. "" if the run's car has
+# vanished from the save.
+func _current_engine_id() -> String:
+	if not _engine_swap_id.is_empty():
+		return _engine_swap_id
+	var owned: Dictionary = Save.get_car(_car_instance_id)
+	if owned.is_empty():
+		return ""
+	var stock_id := String(CarLibrary.for_owned(owned).get("engine", ""))
+	return EngineSwap.current_engine_id(owned, stock_id)
+
+
+# The engine-swap pseudo-id ("engine_swap:<EngineLibrary id>") to fold into the SAME draw
+# pool as the boost catalogue and the drivetrain conversion — the NEXT MOST POWERFUL
+# EngineLibrary engine relative to the car's current one (_current_engine_id), i.e. among
+# every engine STRICTLY more powerful, the one with the SMALLEST power (the immediate next
+# rung up). [] once the car is already running the catalogue's most powerful engine, or if
+# its current engine can't be resolved — mirrors _pool_drivetrain_ids' "drop the option
+# once it has nothing left to offer" shape (the AWD-conversion precedent).
+#
+# Power is CarLibrary.peak_power_kw({"peak_torque", "redline"}) — that function's own doc
+# says entry keys override the referenced engine, so a synthetic dict of just those two
+# fields ranks a bare EngineLibrary entry with no car involved. Ties broken by catalogue
+# order (deterministic, never random, never dependent on dictionary iteration order that
+# could vary) — the first engine encountered at the smallest strictly-greater power wins.
+func _pool_engine_swap_ids() -> Array:
+	var current_id := _current_engine_id()
+	if current_id.is_empty():
+		return []
+	var current_eng := EngineLibrary.by_id(current_id)
+	if current_eng.is_empty():
+		return []
+	var current_power := CarLibrary.peak_power_kw(
+		{"peak_torque": current_eng.get("peak_torque", 0.0), "redline": current_eng.get("redline_rpm", 0.0)})
+	var best_id := ""
+	var best_power := 0.0
+	for eng in EngineLibrary.all():
+		var eng_dict := eng as Dictionary
+		var power := CarLibrary.peak_power_kw(
+			{"peak_torque": eng_dict.get("peak_torque", 0.0), "redline": eng_dict.get("redline_rpm", 0.0)})
+		if power > current_power and (best_id.is_empty() or power < best_power):
+			best_id = String(eng_dict.get("id", ""))
+			best_power = power
+	return ["engine_swap:%s" % best_id] if not best_id.is_empty() else []
+
+
+# Adds `hp`/`hp_delta` display fields to every `pick` entry that carries an `engine_id` —
+# both pick-building call sites (report_event_result, resume) route through this ONE
+# helper so a live draw and a resumed draw can never disagree on what they display.
+# RunSession is the only layer holding BOTH the drawn engine and the car's CURRENT one, so
+# this is where the delta has to be computed. `hp` reuses CarLibrary.horsepower exactly —
+# the same peak_power_kw * KW_KG_TO_HP_TONNE / 1000.0 the car stats panel shows — rather
+# than re-deriving the constant.
+func _with_engine_swap_display(pick: Array) -> Array:
+	if pick.is_empty():
+		return pick
+	var current_id := _current_engine_id()
+	var current_eng := EngineLibrary.by_id(current_id)
+	var current_hp := CarLibrary.horsepower(
+		{"peak_torque": current_eng.get("peak_torque", 0.0), "redline": current_eng.get("redline_rpm", 0.0)}) \
+		if not current_eng.is_empty() else 0.0
+	for entry in pick:
+		var entry_dict := entry as Dictionary
+		var engine_id := String(entry_dict.get("engine_id", ""))
+		if engine_id.is_empty():
+			continue
+		var new_eng := EngineLibrary.by_id(engine_id)
+		var hp := CarLibrary.horsepower(
+			{"peak_torque": new_eng.get("peak_torque", 0.0), "redline": new_eng.get("redline_rpm", 0.0)})
+		entry_dict["hp"] = hp
+		entry_dict["hp_delta"] = hp - current_hp
+	return pick
 
 
 # Drop the terminal result once a screen has SHOWN it. The hub shell reads last_result()
@@ -382,6 +496,7 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_pick_offers_repair = true
 	_boosts = []
 	_drivetrain_override = -1
+	_engine_swap_id = ""
 	# New runs always start at 100% health (never carry damage from a previous run) —
 	# repairs should only ever happen from a repair pick or a fresh run, never silently.
 	Save.restore_car_to_full(_car_instance_id)
@@ -450,6 +565,7 @@ func resume(unix_time: int) -> bool:
 	_last_result = {}
 	_boosts = (run.get("boosts", []) as Array).duplicate(true)
 	_drivetrain_override = int(run.get("drivetrain_override", -1))
+	_engine_swap_id = String(run.get("engine_swap_id", ""))
 	# A pick that was still awaiting a choice when this run was last persisted
 	# RE-DERIVES rather than being stored verbatim — boost_choices is a pure function
 	# of (the mode's own seed, stage_index), so this always matches what was offered
@@ -463,7 +579,8 @@ func resume(unix_time: int) -> bool:
 	# Re-derive with the SAME count the original draw used — a healthy-arrival pick
 	# drew run_boost_choices + 1 and offered no repair, so it must resume that way too.
 	var resume_count := -1 if _pick_offers_repair else Config.data.run_boost_choices + 1
-	_pending_pick = _mode.boost_choices(_stage_index, resume_count) if _pick_awaiting else []
+	_pending_pick = _with_engine_swap_display(_mode.boost_choices(_stage_index, resume_count,
+		_pool_drivetrain_ids() + _pool_engine_swap_ids())) if _pick_awaiting else []
 	_active = true
 	_stage_running = true
 	return true
@@ -499,6 +616,7 @@ func _persist() -> void:
 		"boosts": _boosts.duplicate(true), "pick_awaiting": _pick_awaiting,
 		"pick_offers_repair": _pick_offers_repair,
 		"drivetrain_override": _drivetrain_override,
+		"engine_swap_id": _engine_swap_id,
 	}
 	record.merge(_mode.to_record(), true)
 	Save.set_run(record)
@@ -585,7 +703,8 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		var healthy := Save.car_health_fraction(_car_instance_id) >= Config.data.run_boost_healthy_threshold
 		_pick_offers_repair = not healthy
 		var count := Config.data.run_boost_choices + 1 if healthy else -1
-		_pending_pick = _mode.boost_choices(_stage_index, count)
+		_pending_pick = _with_engine_swap_display(_mode.boost_choices(_stage_index, count,
+			_pool_drivetrain_ids() + _pool_engine_swap_ids()))
 		_pick_awaiting = true
 	else:
 		# Every mode that does not opt into the pick (the challenge) keeps the old
@@ -722,6 +841,23 @@ func choose_drivetrain(mode: int) -> void:
 	_persist()
 
 
+# Resolve the pending pick by swapping this run's fielded car to `id` (an EngineLibrary
+# id) for the rest of the run — the eighth option alongside repair, the drawn boosts and
+# the drivetrain conversion. Like choose_drivetrain (and unlike choose_boost), this
+# REPLACES rather than stacks: a car has one engine, so a later swap simply overwrites the
+# earlier one. Refuses (no-op) unless a pick is awaiting. An id that isn't a real
+# EngineLibrary entry still resolves the pick — same "the player has made a choice" rule
+# choose_boost/choose_drivetrain follow for a stale id — but changes nothing.
+func choose_engine_swap(id: String) -> void:
+	if not _pick_awaiting:
+		return
+	if not EngineLibrary.by_id(id).is_empty():
+		_engine_swap_id = id
+	_pending_pick = []
+	_pick_awaiting = false
+	_persist()
+
+
 func _finish_locally() -> void:
 	_last_result = {
 		"mode": mode_id(), "period_key": period_key(), "kind": kind(),
@@ -740,6 +876,7 @@ func _finish_locally() -> void:
 	# explicitly rather than left to fall out of begin() resetting it for the NEXT run.
 	_boosts = []
 	_drivetrain_override = -1
+	_engine_swap_id = ""
 	_pending_pick = []
 	_pick_awaiting = false
 	_pick_offers_repair = true

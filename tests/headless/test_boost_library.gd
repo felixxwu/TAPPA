@@ -302,6 +302,48 @@ func test_a_zero_or_negative_count_draws_nothing() -> void:
 	assert_eq(BoostLibrary.draw(1, -3), [])
 
 
+# --- draw_from_ids(): the generic pool primitive draw() sits on ------------------
+#
+# region_run_mode.gd feeds this arbitrary ids — the boost catalogue's own ids plus a
+# "drivetrain:<mode>" pseudo-id — so these tests deliberately use a synthetic pool
+# rather than CATALOGUE.keys(), proving the function makes no assumption about what
+# an id "means".
+
+func test_draw_from_ids_is_deterministic_in_its_seed() -> void:
+	var pool := ["a", "b", "c", "drivetrain:1"]
+	var x := BoostLibrary.draw_from_ids(42, 2, pool)
+	var y := BoostLibrary.draw_from_ids(42, 2, pool)
+	assert_eq(x, y, "the same seed draws the identical ids every time")
+
+
+func test_draw_from_ids_never_repeats_within_one_pick() -> void:
+	var pool := ["a", "b", "c", "drivetrain:1"]
+	var picked := BoostLibrary.draw_from_ids(5, pool.size(), pool)
+	var seen: Dictionary = {}
+	for id in picked:
+		assert_false(seen.has(id), "id '%s' was drawn twice in one pick" % id)
+		seen[id] = true
+
+
+func test_draw_from_ids_is_capped_at_the_pools_own_size() -> void:
+	var pool := ["a", "b", "drivetrain:1"]
+	var picked := BoostLibrary.draw_from_ids(1, pool.size() + 50, pool)
+	assert_eq(picked.size(), pool.size(),
+		"asking for more than the pool holds never repeats to fill the count")
+
+
+func test_draw_from_ids_returns_only_ids_from_the_given_pool() -> void:
+	var pool := ["a", "b", "c", "drivetrain:1"]
+	for id in BoostLibrary.draw_from_ids(77, 3, pool):
+		assert_true(pool.has(id), "drawn id '%s' came from the given pool" % id)
+
+
+func test_draw_from_ids_is_empty_for_an_empty_pool_or_non_positive_count() -> void:
+	assert_eq(BoostLibrary.draw_from_ids(1, 3, []), [])
+	assert_eq(BoostLibrary.draw_from_ids(1, 0, ["a", "b"]), [])
+	assert_eq(BoostLibrary.draw_from_ids(1, -1, ["a", "b"]), [])
+
+
 # --- label_for -------------------------------------------------------------------
 
 func test_label_for_is_never_blank_for_a_real_id() -> void:

@@ -137,5 +137,12 @@ func offers_boost_pick() -> bool:
 # passes run_boost_choices + 1 when the run's car is above
 # run_boost_healthy_threshold (the undamaged-arrival reward), -1 otherwise to mean
 # "use the mode's own default".
-func boost_choices(_stage_index: int, _count: int = -1) -> Array:
+#
+# `extra_ids` are pseudo-ids of the shape "drivetrain:<DriveMode int>" (RunSession
+# derives them from drivetrain_choices()) or "engine_swap:<EngineLibrary id>"
+# (RunSession derives it from _pool_engine_swap_ids()) that a mode opting into the
+# pick should mix into the SAME draw pool as its boost catalogue, via
+# BoostLibrary.draw_from_ids, rather than appending them as extra cards on top —
+# see RegionRunMode.boost_choices.
+func boost_choices(_stage_index: int, _count: int = -1, _extra_ids: Array = []) -> Array:
 	return []

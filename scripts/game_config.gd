@@ -4122,10 +4122,9 @@ func spectator_params() -> Dictionary:
 @export_range(1.0, 1.5, 0.01) var run_boost_brake_mult := 1.12
 ## "Streamlined body" — drag_coefficient multiplier (below 1.0 = less drag).
 @export_range(0.5, 1.0, 0.01) var run_boost_drag_mult := 0.92
-## "Engine swap" — peak_torque multiplier (above 1.0 = a stronger engine's curve).
-## Deliberately NOT global_torque_scale, which engine.gd names as a hidden global
-## de-rate for uniform balance, not a per-car effect target (see BoostLibrary's header).
-@export_range(1.0, 1.5, 0.01) var run_boost_engine_power_mult := 1.15
+# NOTE: there is deliberately no run_boost_engine_power_mult any more — the Engine Swap
+# is a genuine EngineLibrary swap now (RunSession._pool_engine_swap_ids), not a flat
+# peak_torque multiplier. See features/engine-swap.md.
 
 
 @export_group("Roguelike Meta Shop")
