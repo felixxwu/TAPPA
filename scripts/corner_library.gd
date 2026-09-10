@@ -87,6 +87,23 @@ const CORNERS: Array[Dictionary] = [
 		],
 	},
 	{
+		# The JUMP: dead straight in 2D — its whole character is VERTICAL. The crest
+		# itself is not authored here; TrackProfile owns the height profile and the
+		# terrain bake adds it on top of the terrain height. This entry exists so the
+		# jump is a real piece in the DFS chain and therefore gets its own pacenote
+		# ("jump", then "3 left" on the next note) for free — Pacenotes skips only the
+		# plain Straight, so any named corner is called.
+		#
+		# The length MUST stay TrackProfile.PIECE_LENGTH_M: the crest is centred in
+		# this piece and clamped to it, so that its zero-slope ends land inside the
+		# jump and never disturb the neighbouring corners' road grade.
+		"name": "Jump",
+		"points": [
+			[Vector2(0.000, 0.000),  Vector2(0.000, 0.000), Vector2(0.000, 0.000)],
+			[Vector2(0.000, 60.000), Vector2(0.000, 0.000), Vector2(0.000, 0.000)],
+		],
+	},
+	{
 		"name": "Straight",
 		"points": [
 			[Vector2(0.000, 0.000),  Vector2(0.000, 0.000), Vector2(0.000, 0.000)],

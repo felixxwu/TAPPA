@@ -12,7 +12,7 @@ the rally-detail panel in `scripts/rally_detail.gd`, and the session-aware field
 `scripts/world.gd`.
 
 **Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`,
-`tests/headless/test_pause_menu.gd`, `tests/headless/test_settings_menu.gd`,
+`tests/headless/test_pause_menu.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_settings_menu.gd`,
 `tests/headless/test_text_field.gd`, `tests/headless/test_hub_shell.gd`
 
 **This file is the SHELL — the routing, the house rules and the screens that are not
@@ -186,28 +186,36 @@ labels were shifted left to clear it) — a square button bearing a **proper dra
 pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars,
 since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
 game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Reset to
-track**, **Settings** and **Quit to HQ**.
+track**, **Photo Mode**, **Settings** and **Quit to HQ**.
 Resume unfreezes and closes. **Reset to track** snaps the car **onto the centerline
 beside its current position** — "the middle of the road, regardless of where the car
-is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query).
-This is deliberately **not** `recovery_pose()` (which the off-track reset / stuck
-watchdog use): that pose is pinned to the *furthest* offset reached and freezes the
-moment the car stops banking progress, so a strayed car would reset to a stale point that's
-no longer beside it — feeling like the button does nothing. It's also **not** the full
-start-line reset (`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track"
-menu item is now the **only** player-facing way to reset — there is no direct reset
-input any more (see [controls.md](controls.md)). The menu owns no car reference, so it
-emits `reset_to_track_requested`; `world.gd` connects that in `_ready` and performs
-the reset (`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion
-and suppresses the teleport's impact damage — free), then the menu `resume()`s so the
-player drops straight back in. `reset_to()` does **not** trust a bare `global_transform`
-write — that only sticks when done inside the physics step, so a reset fired from a menu
-signal (outside the physics frame) or on a stuck, **sleeping** body was silently reverted
-by the physics server next frame (the car looked like it never moved, while the `R` reset,
-which runs inside `_physics_process`, always worked). Instead it wakes the body and
-**queues** the pose; `car.gd::_integrate_forces` applies it via `state.transform` — the
-authoritative physics-write point — so it lands regardless of when the reset was fired.
-Settings shows the **shared `SettingsMenu`** (camera
+is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query). This is
+deliberately **not** `recovery_pose()` (which the off-track reset / stuck watchdog use):
+that pose is pinned to the *furthest* offset reached and freezes the moment the car stops
+banking progress, so a strayed car would reset to a stale point that's no longer beside
+it — feeling like the button does nothing. It's also **not** the full start-line reset
+(`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track" menu item is now
+the **only** player-facing way to reset — there is no direct reset input any more (see
+[controls.md](controls.md)). The menu owns no car reference, so it emits
+`reset_to_track_requested`; `world.gd` connects that in `_ready` and performs the reset
+(`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion and suppresses
+the teleport's impact damage — free), then the menu `resume()`s so the player drops straight
+back in. `reset_to()` does **not** trust a bare `global_transform` write — that only sticks
+when done inside the physics step, so a reset fired from a menu signal (outside the physics
+frame) or on a stuck, **sleeping** body was silently reverted by the physics server next
+frame (the car looked like it never moved, while the `R` reset, which runs inside
+`_physics_process`, always worked). Instead it wakes the body and **queues** the pose;
+`car.gd::_integrate_forces` applies it via `state.transform` — the authoritative
+physics-write point — so it lands regardless of when the reset was fired.
+
+**Photo Mode** enters a free-fly frozen-world camera (see [camera.md](camera.md)); the
+tree stays **paused** throughout and the menu is **disarmed** while photo mode is active,
+so Esc and the Pause button belong to the camera. Exiting photo mode re-opens the pause
+menu (still frozen). Touch players get their own on-screen control set for it (thumbstick,
+altitude buttons, back/hide) since there's no Esc key on a phone — see
+[camera.md](camera.md) › *On-screen touch controls*.
+
+**Settings** shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the hub's own Settings page — see
 [hub-shell.md](hub-shell.md)), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops a confirm and, on accept (`quit_to_hq`), unfreezes and

@@ -8,7 +8,7 @@ ordered cycle list `[CHASE, BONNET]` and makes exactly one camera `current` at a
 time. Appending another `Camera3D` + `Mode` entry to its `ORDER` list extends the
 cycle.
 
-**Tests:** `tests/headless/test_camera_manager.gd`, `tests/headless/test_chase_camera_aim.gd`, `tests/headless/test_chase_camera_fov.gd`, `tests/headless/test_chase_camera_ground.gd`, `tests/headless/test_chase_camera_shake.gd`
+**Tests:** `tests/headless/test_camera_manager.gd`, `tests/headless/test_chase_camera_aim.gd`, `tests/headless/test_chase_camera_fov.gd`, `tests/headless/test_chase_camera_ground.gd`, `tests/headless/test_chase_camera_shake.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_photo_mode_controls.gd`
 
 ## Persistence & the settings page
 
@@ -280,3 +280,110 @@ the fixed-offset shots just use `replay_fov`.
 See [event-replay.md](event-replay.md) for the full shot list. It goes away with the
 overlay once the standings screen closes (the player's chosen `CameraManager` mode
 resumes on the next event / return to HQ).
+
+## Photo Mode camera
+
+**Source:** `scripts/photo_mode.gd` (`class_name PhotoModeCamera`, extends `Camera3D`).
+Not part of the `CameraManager` cycle — it's a **standalone free-fly camera created on
+demand** by `world.gd` when the player picks "Photo Mode" from the in-run pause menu (see
+[menus.md](menus.md) → "Pause menu"). The whole world stays **frozen** (`get_tree().paused`
+remains `true`); only the camera moves, seating itself on the transform and FOV of the
+gameplay camera that was active when the player paused, so the shot doesn't jump.
+
+Controls are **deliberately raw physical keys**, not `InputMap` actions, because WASD are the
+rebindable driving keys and Ctrl/Shift have no actions: **W/A/S/D** move the camera
+**laterally** in the horizontal plane (diagonals normalised so two keys are no faster than
+one), **Shift** raises altitude and **Ctrl** lowers it on the **world Y axis** (so looking
+straight up doesn't hijack vertical movement), the **mouse looks** around (yaw and pitch,
+pitch clamped to ±89 degrees to prevent singularities; no roll — the free camera starts
+level), and **Esc** (the `ui_cancel` action, or gamepad **Start** / the `pause` action)
+leaves. While photo mode is active, the pause menu is **disarmed** — Esc and the Pause
+button talk to the photo camera, not the menu — and the HUD / `MobileControls` / `SpeedLines`
+are hidden. Exiting frees the camera, restores the chrome, calls `CameraManager.activate_current()`
+to re-seat the gameplay camera, and opens the pause menu again via `PauseMenu.return_from_photo_mode()`.
+
+The camera owns the mouse pointer (captured in `enter()`, released on `exit()` or if
+`_exit_tree` fires without an explicit exit — a defensive safety so a host that frees the
+camera can't strand a captured mouse). The lifetime is owned by `world.gd` (`_on_photo_mode_requested`),
+which creates one, calls `enter(from)` to seat it on the current gameplay camera, and frees it
+when the `exited` signal fires.
+
+**Movement speed and mouse sensitivity** are read from `GameConfig`:
+
+- `photo_move_speed` (m/s) — how fast the camera travels in any direction (WASD movement
+  and Ctrl/Shift altitude change use the same speed, travel direction is normalised so diagonal
+  movement is no faster than cardinal).
+- `photo_look_sensitivity` — **radians of turn per pixel** of mouse motion (applied to
+  `InputEventMouseMotion.relative`).
+
+### On-screen touch controls
+
+**Source:** `scripts/photo_mode_controls.gd` (`class_name PhotoModeControls`, extends
+`CanvasLayer`). Photo mode's mouse+keyboard story (above) leaves a phone with no way to
+move the camera or even leave — there's no Esc key, and `MobileControls`/the Pause button
+are hidden for the duration. `world.gd` (`_on_photo_mode_requested`) closes that gap by
+building a `PhotoModeControls` overlay, but **only when `Platform.is_touch()` is true**;
+desktop and native keep the raw-key/mouse path above and get no overlay at all. It's freed
+in lockstep with the camera in `_on_photo_mode_finished`. Like the camera, its
+`process_mode` is `PROCESS_MODE_ALWAYS` — the tree stays paused for the whole of photo
+mode, and this overlay has to keep working through that.
+
+It follows the `mobile_controls.gd` idiom throughout (see [mobile-controls.md](mobile-controls.md)):
+raw `InputEventScreenTouch`/`InputEventScreenDrag` rather than `Control` buttons, so
+several fingers register at once; pointer-index → region-name tracking; `Rect2` hit
+regions recomputed on viewport resize (`_layout`/`_compute_rects`).
+
+**Widgets:** an analogue thumbstick bottom-left (stick up = forward, right = strafe
+right — the WASD equivalent), UP/DOWN buttons bottom-right (the Ctrl/Shift altitude
+equivalent, on world up), a BACK button top-left (leaves photo mode, same as Esc), and a
+HIDE button top-right (hides every widget for a clean, chrome-free shot).
+
+**Gestures**, layered underneath the widgets: a one-finger drag anywhere off a widget
+looks around (`PhotoModeCamera.look_by`, same sign convention as the mouse path — dragging
+right turns the view left), and a two-finger pinch anywhere zooms the fov
+(`PhotoModeCamera.zoom_by`). The one-finger look is suppressed for as long as a second
+finger is down, so a pinch can never also swing the camera (`_register_free_pointer`
+promotes the pair to a pinch and drops `_look_owner`).
+
+**While hidden, a plain TAP restores the widgets** — but a drag still looks and a pinch
+still zooms, so a player can compose a shot with the chrome completely gone and only tap
+to bring it back when they're done. `PhotoModeControls.is_tap` classifies a
+press-then-release as a tap only if it barely moved and didn't linger
+(`_TAP_MAX_DIST_PX`/`_TAP_MAX_DURATION_S`). The important corner: while hidden,
+`hit_test` returns `""` unconditionally — **hidden means gone, not merely invisible** —
+so a tap anywhere, including right over the now-invisible BACK button, restores the UI
+instead of leaving photo mode outright.
+
+**Feeding the camera:** each frame `PhotoModeControls` pushes a `Vector3` into
+`PhotoModeCamera.touch_axis` (stick → x/z, held UP/DOWN → y), which `_process` adds to the
+keyboard's `input_axis()` before calling `apply_move` — `apply_move` normalises the summed
+direction, so holding the stick fully over and a key at the same time still can't exceed
+`photo_move_speed`. `PhotoModeCamera.zoom_by(factor)` divides the live `fov` by the pinch
+ratio and clamps it to `GameConfig`'s `photo_fov_min` / `photo_fov_max` (see
+[configuration.md](configuration.md)). The third new knob,
+`photo_touch_look_sensitivity`, is the drag-to-look figure in radians per pixel — kept
+separate from the mouse's `photo_look_sensitivity` because a finger drag and a mouse
+delta don't cover comparable pixel ranges.
+
+> Note that the opening `fov` is inherited from whichever gameplay camera photo mode
+> took over, and is deliberately NOT clamped into the pinch range on entry — the shot
+> opens exactly as the player saw it. The chase camera's speed/nitrous FOV boost can
+> therefore start it wider than `photo_fov_max`, in which case the first pinch snaps it
+> into range.
+
+> **Known limitation — no web touch-drop watchdog.** `mobile_controls.gd` survives mobile
+> browsers dropping `touchend` events with an elaborate JS pointer-watchdog that rebuilds
+> pressed state from the browser's own live pointer list every frame (see
+> [mobile-controls.md](mobile-controls.md) → *Stuck-touch recovery*).
+> `PhotoModeControls` has **no such watchdog** — it trusts the engine's touch events
+> directly. So on a touch **web** build, a dropped release can strand the thumbstick or a
+> held UP/DOWN button in the pressed state. If this turns out to bite in practice, port
+> the same watchdog pattern over rather than re-deriving it from scratch.
+
+One non-obvious piece of the takeover: `world.gd` (`_set_photo_mode_chrome`) also flips the
+`PostProcess` `SubViewportContainer` to `PROCESS_MODE_ALWAYS` for the duration. Its `_process`
+is what mirrors the current camera into the `SubViewport` that actually renders the world (see
+[rendering.md](rendering.md) and `post_process_view.gd`); left `PAUSABLE` it freezes with
+everything else and the photo camera would fly around with nothing on screen changing. It goes
+back to `PROCESS_MODE_INHERIT` on the way out, in the same one writer, so the overlays can
+never come back with the mirror left running.

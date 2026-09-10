@@ -102,7 +102,7 @@ the skills.
 | [wheel-dust.md](wheel-dust.md) | `WheelParticles` — cheap surface debris flung from the driven wheels under wheelspin (one CPU pool + MultiMesh, ring-buffered; per-particle colour/size/roll picks gravel clods, grass blades, or nothing on tarmac) |
 | [engine-smoke.md](engine-smoke.md) | `EngineSmoke` — grey smoke puffed from the bonnet on each damage misfire (own small CPU pool + MultiMesh, grows & fades) |
 | [exhaust-flames.md](exhaust-flames.md) | `ExhaustFlames` — backfire flame from each exhaust pipe on a rev-limiter bang and while nitrous delivers; plus the exhaust lab dev scene for positioning the pipes |
-| [camera.md](camera.md) | Chase camera follow behavior |
+| [camera.md](camera.md) | Camera modes: chase follow, bonnet hood, replay cinematic, and photo mode free-fly |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the live "player vs rival pace" delta ([rival-ghost.md](rival-ghost.md)); the old permanent live-standings readout (`LiveStandings`) is deleted |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding, the pause menu, modals (vertical slice; full diegetic UI deferred) |
 | [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row, the diegetic-HQ spatial regime. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
@@ -139,6 +139,7 @@ the skills.
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |
 | Exhaust flames | `scripts/exhaust_flames.gd`, `scripts/exhaust_lab.gd`, `exhaust_lab.tscn` |
 | Track generation | `scripts/track_generator.gd` |
+| Jumps / road vertical profile | `scripts/track_profile.gd` (`TrackProfile` — the crest offset keyed on arc distance, the launch-speed formula), the `Jump` entry in `scripts/corner_library.gd`, the `road_heights` seam in `scripts/terrain_manager.gd` — see [track.md](track.md) → *Jumps* |
 | Track turn cache | `scripts/track_cache.gd` (`TrackCache`), `data/track_cache.json`, `tools/generate_track_cache.gd`, `tools/verify_track_cache.gd`, `cache_tracks.sh` |
 | Eligibility report (rally x car authoring check) | `tools/report_eligibility.gd`/`.tscn`, `report_eligibility.sh` — see [rally-roster.md](rally-roster.md) |
 | Eligibility matrix for pin fitting (rally x car, `source_hash`-guarded) | `tools/export_eligibility.gd`, `export_eligibility.sh`, `data/eligibility.json`, consumed by `tools/fit_map_pins.py` |

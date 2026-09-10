@@ -316,6 +316,11 @@ func _build_overlays_and_benchmark() -> void:
 	if pause_menu != null:
 		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
 			pause_menu.reset_to_track_requested.connect(_on_reset_to_track_requested)
+		# Pause-menu "Photo Mode" hands the frozen screen up here too — the free-fly
+		# camera has to take over the viewport and hide the HUD, both of which this
+		# scene owns. See features/camera.md.
+		if not pause_menu.photo_mode_requested.is_connected(_on_photo_mode_requested):
+			pause_menu.photo_mode_requested.connect(_on_photo_mode_requested)
 		# Arm the pause menu now the world is generated — it's default-inert
 		# (fail-closed) so the Pause button / Esc can't open it during the awaited
 		# generation above, where pausing would freeze the tree mid-build and let the
@@ -547,7 +552,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Phase 2 — "Carving road into terrain…": the road bake (flatten + surface split +
 	# cliffs) and the final waterline pass it makes possible.
-	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"])
+	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"], result.get("pieces", []))
 
 	# Phase 3 — "Precomputing chunks…" / "Building terrain…": every chunk the play area
 	# realistically requests, then the initial ring built once from that cache.
@@ -747,7 +752,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 # cliffs) — the heaviest single step — then repaint the loading preview's waterline now that
 # the bake makes a correct one possible.
 func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
-		road_centerline: Curve2D, water_bounds: Rect2) -> void:
+		road_centerline: Curve2D, water_bounds: Rect2, pieces: Array) -> void:
 	var interactive := _interactive(loading)
 	# Road band + surface split, derived in the one place every baker shares
 	# (TerrainManager.bake_args) so the Seed Lab's preview bake can't drift from this
@@ -758,6 +763,14 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 	# Cliff params onto the terrain before the bake reads them (mirrors the Lighting
 	# group applied earlier); the cliff pass runs inside set_track → bake_track.
 	cfg.apply_cliffs(_floor())
+	# Vertical channel: plan the crests against `road_centerline`, the SAME curve about
+	# to be baked (already reassigned to the runoff-extended curve by the caller, past
+	# _with_finish_runoff). The runoff is appended past the finish, so offsets from the
+	# start are identical either way, but planning against the baked curve keeps that a
+	# fact rather than a coincidence. [] when the generated track has no Jump piece —
+	# TrackProfile.offset_at treats an empty plan as a free no-op.
+	var jumps := TrackProfile.plan(
+		road_centerline, pieces, cfg.jump_height_m, cfg.jump_span_m)
 	# Baking the road into the terrain (flatten + surface split + cliffs) is the heaviest
 	# single step; give it its own label and let it yield frames (interactive path only —
 	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
@@ -767,7 +780,7 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 	var carve_progress := loading.set_carve_progress if interactive else Callable()
 	await $Floor.set_track(road_centerline, bake_args[0], bake_args[1],
 		bake_args[2], bake_args[3], bake_args[4],
-		interactive, carve_progress)
+		interactive, carve_progress, jumps)
 	if interactive:
 		loading.set_carve_progress(1.0)  # snap to fully-white once carving is done
 	# FINAL water pass — the only one that can be right, and it lands HERE, straight
@@ -1520,6 +1533,12 @@ var _distant_terrain: DistantTerrain
 # session runs and freed with the scene on the next event reload.
 var _start_line: StartLine
 
+# The free-fly PHOTO MODE camera while it's up, else null (see _on_photo_mode_requested).
+var _photo_camera: PhotoModeCamera
+# On-screen touch controls for photo mode, built alongside the camera ONLY on a touch
+# device (Platform.is_touch()) — see _on_photo_mode_requested/_on_photo_mode_finished.
+var _photo_controls: PhotoModeControls
+
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
@@ -1645,6 +1664,72 @@ func _on_reset_to_track_requested() -> void:
 	if _track_progress == null or not has_node("Car"):
 		return
 	$Car.reset_to(_track_progress.manual_reset_pose())
+
+
+# Pause-menu Photo Mode: hand the screen to a free-fly PhotoModeCamera with the tree
+# still paused (the pause menu deliberately does not unpause on the way in), so the
+# world is frozen and only the viewpoint moves. This scene owns the pieces the camera
+# needs taken care of:
+#
+#  - the HUD / touch controls / speed lines are hidden, so the shot is unobstructed;
+#  - PostProcess is switched to PROCESS_MODE_ALWAYS. Its _process mirrors the current
+#    camera into the SubViewport that actually renders the world (see
+#    post_process_view.gd) — left PAUSABLE it freezes with everything else and the
+#    photo camera would move with nothing on screen changing.
+#
+# Every one of those is put back in _on_photo_mode_finished.
+func _on_photo_mode_requested() -> void:
+	if is_instance_valid(_photo_camera):
+		return  # already flying (a double-press); nothing to do
+	_photo_camera = PhotoModeCamera.new()
+	_photo_camera.name = "PhotoModeCamera"
+	_photo_camera.exited.connect(_on_photo_mode_finished)
+	add_child(_photo_camera)
+	_photo_camera.enter(get_viewport().get_camera_3d())
+	_set_photo_mode_chrome(false)
+	# Touch controls: the phone has no Esc key and MobileControls is hidden above, so
+	# without these a touch player would be stuck flying with no way out. Desktop/native
+	# gets none — the mouse+keyboard path above already covers it.
+	if Platform.is_touch():
+		_photo_controls = PhotoModeControls.new()
+		_photo_controls.name = "PhotoModeControls"
+		add_child(_photo_controls)
+		_photo_controls.setup(_photo_camera)
+
+
+# Esc in photo mode: drop the camera, restore the chrome, re-assert the player's chosen
+# gameplay camera and give the (still frozen) pause menu back.
+func _on_photo_mode_finished() -> void:
+	if is_instance_valid(_photo_controls):
+		remove_child(_photo_controls)
+		_photo_controls.queue_free()
+	_photo_controls = null
+	if is_instance_valid(_photo_camera):
+		# Detach BEFORE queue_free: the free lands at the end of the frame, so a photo
+		# mode re-opened in the same frame would otherwise collide with the dying node's
+		# name and land as "PhotoModeCamera2".
+		remove_child(_photo_camera)
+		_photo_camera.queue_free()
+	_photo_camera = null
+	_set_photo_mode_chrome(true)
+	if has_node("CameraManager"):
+		($CameraManager as CameraManager).activate_current()
+	var pause_menu := _pause_menu()
+	if pause_menu != null:
+		pause_menu.return_from_photo_mode()
+
+
+# Show (`on = true`) or hide the in-run screen furniture around the photo camera, and
+# flip the post-process mirror between PAUSABLE and ALWAYS with it. One writer for both
+# halves so an early return can never restore the overlays but leave the mirror running.
+func _set_photo_mode_chrome(on: bool) -> void:
+	for node_name in ["HUD", "MobileControls", "SpeedLines"]:
+		var layer := get_node_or_null(node_name) as CanvasLayer
+		if layer != null:
+			layer.visible = on
+	var post := get_node_or_null("PostProcess") as Node
+	if post != null:
+		post.process_mode = (Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_ALWAYS)
 
 
 # Whether this run should open with the pre-event start-line scene: a session run

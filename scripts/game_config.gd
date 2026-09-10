@@ -1139,6 +1139,23 @@ func has_nitrous() -> bool:
 ## roadside re-plant) always snaps, never eases. 0 disables easing entirely (snap always).
 @export_range(0.0, 20.0) var replay_fov_smoothing := 5.0
 
+## PHOTO MODE (features/camera.md) — the free-fly camera the pause menu opens with the
+## world frozen. Fly speed in metres/second (WASD laterally, Ctrl/Shift for altitude);
+## the camera has no acceleration, so this is simply how fast it travels while a key is
+## held.
+@export_range(1.0, 200.0) var photo_move_speed := 25.0
+## Mouse look sensitivity — RADIANS of turn per pixel of mouse motion.
+@export_range(0.0005, 0.02) var photo_look_sensitivity := 0.003
+## Touch look sensitivity — RADIANS of turn per PIXEL of one-finger drag
+## (photo_mode_controls.gd). Kept separate from photo_look_sensitivity: a finger drag
+## covers far more screen distance than a mouse pushes in relative motion for the same
+## intended turn, so the two need independent tuning.
+@export_range(0.0005, 0.02) var photo_touch_look_sensitivity := 0.004
+## Pinch-zoom FOV limits (degrees) for photo mode on touch — pinching fingers apart
+## zooms IN (toward photo_fov_min), pinching together zooms out (toward photo_fov_max).
+@export_range(10.0, 90.0) var photo_fov_min := 20.0
+@export_range(10.0, 120.0) var photo_fov_max := 90.0
+
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car
 ## (todo/diegetic-hq.md). 0 snaps instantly.
@@ -2042,6 +2059,18 @@ func has_nitrous() -> bool:
 ## and 100% progress stay at the END of the generated track, NOT the end of this
 ## runoff. 0 disables it.
 @export var track_runoff_m := 20.0
+## Height (m) of the JUMP crest — the vertical bump TrackProfile adds on top of the
+## terrain height along a "Jump" piece's road (features/track.md). Together with
+## jump_span_m this sets the ONE number that matters: the speed above which a car
+## actually leaves the ground, TrackProfile.launch_speed() =
+## (span / PI) * sqrt(g / (2 * height)). Tune the pair to that threshold, not to how
+## tall the bump looks. 0 flattens every jump (the crest becomes a no-op).
+@export var jump_height_m := 2.0
+## Arc length (m) the JUMP crest is spread over, centred in its piece and clamped to
+## TrackProfile.PIECE_LENGTH_M so the crest's zero-slope ends stay inside the jump and
+## never disturb the neighbouring corners. Counter-intuitively a LONGER span is a
+## HARDER launch to trigger at the same height — see TrackProfile.launch_speed().
+@export var jump_span_m := 60.0
 ## How forested this track is, in [0, 1] — the fraction of area covered by trees.
 ## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
 ## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by

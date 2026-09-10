@@ -5,6 +5,13 @@
 
 **Tests:** `tests/headless/test_mobile_controls.gd`, `tests/headless/test_web_fullscreen.gd`
 
+> **Sibling overlay:** `scripts/photo_mode_controls.gd` (`PhotoModeControls`) is a
+> separate, smaller touch overlay built only while Photo Mode is active — it follows the
+> raw-touch/pointer-index idiom described in this file but has its own widgets (a
+> thumbstick, altitude buttons, back/hide) and its own gestures (look-drag, pinch-zoom).
+> See [camera.md](camera.md) → *Photo Mode camera* → *On-screen touch controls* for the
+> full writeup; it is **not** covered by the tests or code below.
+
 On-screen touch controls for phones, with **six selectable schemes** chosen on the
 title screen's Settings page (see [menus.md](menus.md)) and persisted per-player.
 

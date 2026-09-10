@@ -85,6 +85,15 @@ func test_arrow_key_matches_the_sign_direction_convention() -> void:
 	assert_eq(Pacenotes.arrow_key("Hairpin", false), "arrow_uturn_left", "hairpin glyph")
 
 
+func test_arrow_key_jump_has_no_direction() -> void:
+	# The Jump has no left/right (see tools/bake_sign_arrows.gd's `no_direction`
+	# comment) — one bare-keyed board covers both flips, so `flip` must not change
+	# the returned key.
+	assert_eq(Pacenotes.arrow_key("Jump", false), "arrow_jump", "no dir suffix")
+	assert_eq(Pacenotes.arrow_key("Jump", true), "arrow_jump", "flip doesn't change the key")
+	assert_true(Config.data.sign_textures.has("arrow_jump"), "jump board is registered")
+
+
 func test_arrow_key_agrees_with_the_signs_for_shared_shapes() -> void:
 	# Lock the intent: HUD and roadside signs read the same way, so their direction
 	# mapping is identical for every shape the signs also plant.

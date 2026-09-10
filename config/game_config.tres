@@ -148,6 +148,8 @@ track_width = 7.0
 track_seed = 2
 track_turn_count = 30
 track_runoff_m = 30.0
+jump_height_m = 2.0
+jump_span_m = 60.0
 track_progress_max_dist_m = 15.0
 off_road_margin_m = 2.0
 off_road_reset_timeout_s = 6.0
@@ -188,7 +190,8 @@ sign_textures = {
 "arrow_square_left": "res://textures/signs/arrow_square_left.png",
 "arrow_square_right": "res://textures/signs/arrow_square_right.png",
 "arrow_uturn_left": "res://textures/signs/arrow_uturn_left.png",
-"arrow_uturn_right": "res://textures/signs/arrow_uturn_right.png"
+"arrow_uturn_right": "res://textures/signs/arrow_uturn_right.png",
+"arrow_jump": "res://textures/signs/arrow_jump.png"
 }
 hq_reveal_pan_time = 0.7
 hq_reveal_hold_time = 1.1

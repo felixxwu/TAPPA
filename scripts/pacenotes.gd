@@ -74,5 +74,10 @@ static func arrow_key(corner: String, flip: bool) -> String:
 			return "arrow_square_%s" % dir
 		"Hairpin":
 			return "arrow_uturn_%s" % dir
+		"Jump":
+			# No left/right board for a jump — see tools/bake_sign_arrows.gd's
+			# `no_direction` comment: it bakes ONE bare-keyed face, so `flip` is
+			# ignored here on purpose rather than being routed through `dir`.
+			return "arrow_jump"
 		_:  # numbered gradient "1".."6"
 			return "arrow_%s_%s" % [corner, dir]
