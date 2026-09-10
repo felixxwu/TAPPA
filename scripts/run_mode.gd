@@ -132,5 +132,10 @@ func offers_boost_pick() -> bool:
 # re-asks this on resume). Empty for any mode that answers false to
 # offers_boost_pick() above — RunSession never calls it in that case, but every
 # mode gets a safe default regardless.
-func boost_choices(_stage_index: int) -> Array:
+#
+# `count`, when >= 0, overrides the mode's own default draw count — RunSession
+# passes run_boost_choices + 1 when the run's car is above
+# run_boost_healthy_threshold (the undamaged-arrival reward), -1 otherwise to mean
+# "use the mode's own default".
+func boost_choices(_stage_index: int, _count: int = -1) -> Array:
 	return []

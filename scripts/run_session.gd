@@ -71,6 +71,13 @@ var _pending_pick: Array = []
 # True while _pending_pick is awaiting choose_repair()/choose_boost(). Blocks
 # continue_to_next_stage() — the player picks exactly one before the run advances.
 var _pick_awaiting := false
+# Whether the pending pick offers repair as one of its options, resolved ONCE at the
+# moment the pick is drawn (alongside _pending_pick) and persisted with the rest of
+# the pick state so a resumed run does not re-roll the answer against a car whose HP
+# may have moved since. False when the run's car was above
+# Config.data.run_boost_healthy_threshold at draw time (the undamaged-arrival reward:
+# one extra boost, no repair) — see offer_repair().
+var _pick_offers_repair := true
 # This run's OWN picked boosts, in pick order — {"id","effect"}, UpgradeLibrary's
 # shape. RUN-SCOPED: never written to Save's persisted car (world.gd._field_car
 # merges this onto a DUPLICATED owned-car dict at fielding time), so nothing here can
@@ -174,6 +181,16 @@ func pending_pick() -> Array:
 # choose_boost). continue_to_next_stage() refuses to advance while this holds.
 func pick_awaiting() -> bool:
 	return _pick_awaiting
+
+
+# Whether the pending pick offers repair as one of its options — false for the
+# undamaged-arrival reward pick (car above run_boost_healthy_threshold at draw time:
+# one extra boost, no repair). Resolved once when the pick is drawn, not live, so it
+# stays stable across a resume. world.gd passes this straight through as
+# RunPickPanel.open's `offer_repair` argument. Meaningless (defaults true) when no
+# pick is outstanding.
+func offer_repair() -> bool:
+	return _pick_offers_repair
 
 
 # This run's picked boosts so far, in pick order — the exact shape
@@ -362,8 +379,12 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_last_result = {}
 	_pending_pick = []
 	_pick_awaiting = false
+	_pick_offers_repair = true
 	_boosts = []
 	_drivetrain_override = -1
+	# New runs always start at 100% health (never carry damage from a previous run) —
+	# repairs should only ever happen from a repair pick or a fresh run, never silently.
+	Save.restore_car_to_full(_car_instance_id)
 	_active = true
 	_stage_running = true
 	# Written HERE, the one shared entry point BOTH callers (region + challenge) pass
@@ -435,7 +456,14 @@ func resume(unix_time: int) -> bool:
 	# before (todo/roguelike-pivot.md: "a resumed run offers the same choice it
 	# offered before").
 	_pick_awaiting = bool(run.get("pick_awaiting", false))
-	_pending_pick = _mode.boost_choices(_stage_index) if _pick_awaiting else []
+	# offer_repair is NOT re-derived like the picks above — it was resolved once
+	# against the car's HP at draw time, and the car's HP can move (self-healing,
+	# damage) between then and a resume, so it is persisted verbatim instead.
+	_pick_offers_repair = bool(run.get("pick_offers_repair", true))
+	# Re-derive with the SAME count the original draw used — a healthy-arrival pick
+	# drew run_boost_choices + 1 and offered no repair, so it must resume that way too.
+	var resume_count := -1 if _pick_offers_repair else Config.data.run_boost_choices + 1
+	_pending_pick = _mode.boost_choices(_stage_index, resume_count) if _pick_awaiting else []
 	_active = true
 	_stage_running = true
 	return true
@@ -469,6 +497,7 @@ func _persist() -> void:
 		"stage_index": _stage_index, "stage_times_ms": _stage_times_ms.duplicate(),
 		"dnf": _dnf, "money_earned": _money_earned,
 		"boosts": _boosts.duplicate(true), "pick_awaiting": _pick_awaiting,
+		"pick_offers_repair": _pick_offers_repair,
 		"drivetrain_override": _drivetrain_override,
 	}
 	record.merge(_mode.to_record(), true)
@@ -549,7 +578,14 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		# player gives up a boost to take it. Nothing is applied until choose_repair()
 		# / choose_boost() resolves the pick; continue_to_next_stage() refuses to
 		# advance until one of them has.
-		_pending_pick = _mode.boost_choices(_stage_index)
+		# The undamaged-arrival reward: a car above run_boost_healthy_threshold draws
+		# one EXTRA boost and offers no repair row instead of the usual choices +
+		# repair. Resolved once, here, against the car's HP right now — see
+		# _pick_offers_repair's doc for why this is persisted rather than re-derived.
+		var healthy := Save.car_health_fraction(_car_instance_id) >= Config.data.run_boost_healthy_threshold
+		_pick_offers_repair = not healthy
+		var count := Config.data.run_boost_choices + 1 if healthy else -1
+		_pending_pick = _mode.boost_choices(_stage_index, count)
 		_pick_awaiting = true
 	else:
 		# Every mode that does not opt into the pick (the challenge) keeps the old
@@ -637,9 +673,12 @@ func take_pending_repair() -> Dictionary:
 # before this stage landed is that it is now a CHOICE instead of automatic, and
 # choosing it costs the boost the player didn't take. world.gd's between-stage boot
 # still consumes it via take_pending_repair(), unchanged. No-op if no pick is
-# outstanding (a stray second call, or a mode that never draws one).
+# outstanding (a stray second call, or a mode that never draws one). REFUSES (also a
+# no-op) if the pending pick doesn't offer repair — the undamaged-arrival reward pick
+# (offer_repair() false): repair must not be reachable there, so this is a real guard,
+# not silent success dressed up as one.
 func choose_repair() -> void:
-	if not _pick_awaiting:
+	if not _pick_awaiting or not _pick_offers_repair:
 		return
 	_pending_repair = Save.apply_field_repair_to(_car_instance_id)
 	_pending_pick = []
@@ -703,6 +742,7 @@ func _finish_locally() -> void:
 	_drivetrain_override = -1
 	_pending_pick = []
 	_pick_awaiting = false
+	_pick_offers_repair = true
 	if _mode != null:
 		_mode.record_outcome(_last_result, int(Time.get_unix_time_from_system()))
 	# THE ONE HARD FAIL STATE (decision 4) — a challenge run never sets _failed (its

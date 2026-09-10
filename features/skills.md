@@ -2,7 +2,7 @@
 
 **Source:** `scripts/skill_library.gd` (`SkillLibrary` — the authored catalogue + `equipped_effects`), `scripts/save_manager.gd` (`Save.buy_skill` / `equip_skill` / `unequip_skill` / `owns_skill` — the purchase/equip mutators; `Save.heal_car`), `scripts/hub_shell.gd` (`HubShell._build_skills` — the shop/equip page), `scripts/game_config.gd` (`skill_max_equipped`, `@export_group("Roguelike Skills")`), `scripts/upgrade_library.gd` (the `EFFECTS` skill rows + `_reseed_globals`), `scripts/world.gd` (`_field_car` — where an equipped skill reaches the car).
 
-**Tests:** `tests/headless/test_skill_library.gd`, `tests/headless/test_save_manager.gd` (skill purchase byte-identical-on-refusal), `tests/headless/test_hub_shell.gd` (the SKILLS page + its nav), `tests/headless/test_card_carousel.gd` (the carousel widget itself)
+**Tests:** `tests/headless/test_skill_library.gd`, `tests/headless/test_save_manager.gd` (skill purchase byte-identical-on-refusal), `tests/headless/test_hub_shell.gd` (the SKILLS page + its nav), `tests/headless/test_card_carousel.gd` (the carousel widget itself), `tests/headless/test_skill_progress_panel.gd` (the between-stage progress read-out below)
 
 A straight lift from RR (`todo/roguelike-pivot.md` "Skills — a straight lift from
 RR", stage 7 of `todo/roguelike-pivot-plan.md`): permanent, money-bought upgrades
@@ -134,3 +134,15 @@ Equip/Unequip card depending on state. Keyboard + gamepad navigable via `MenuNav
 (the carousel is one focusable unit that owns its own left/right — see
 [menu-navigation.md](menu-navigation.md) → *A widget that owns its own left/right*), per
 CLAUDE.md.
+
+## The between-stage progress screen
+
+`SkillProgressPanel` ([car-stats.md](car-stats.md) — it's documented there alongside its
+sibling `CarStatsPanel`, since both are built and tested the same way) is a SEPARATE
+read-out from this page: it shows right after `world.gd`'s upgrade confirmation, one row
+per `SkillLibrary.all()` entry, saying how far every lifetime-stat gate moved from the
+stage just driven — `"Damage taken: 150/800"` while locked, "Unlocked — buy in the shop"
+once the gate is met but unbought, "Owned" once bought. Every gated counter only ever
+grows (`features/lifetime-stats.md`), so this screen exists because a stage that went
+badly still moved something the player can't see until they happen to reopen this SKILLS
+page — without it that progress is silent.

@@ -54,6 +54,10 @@ const CATALOGUE := {
 		"label": "Quick-shift gearbox",
 		"effect_fields": {"shift_time_set": "run_boost_shift_time_s"},
 		"level_direction": -1,  # lower shift time = faster = more boost
+		# A "set" op replaces the car's shift time outright, so the shop shows the
+		# absolute seconds it sets rather than a percentage of a baseline that does not
+		# exist — see current_effect_text.
+		"unit": "s", "decimals": 2,
 	},
 	"aero": {
 		"label": "Aero kit",
@@ -62,6 +66,10 @@ const CATALOGUE := {
 			"downforce_rear": "run_boost_downforce_n",
 		},
 		"level_direction": 1,  # more downforce = more boost
+		# An "add" op stacks on the car's own downforce, so likewise no percentage — the
+		# authored unit is N per (m/s)², which is what the shop prints. Both axles take
+		# the same number and current_effect_text de-duplicates them into one figure.
+		"unit": "N", "decimals": 1,
 	},
 	"brakes": {
 		"label": "Big brakes",
@@ -121,26 +129,68 @@ static func effect_for(id: String) -> Dictionary:
 	return magnitude_for(id, Save.boost_level(id))
 
 
-# Shop display text (decision 42): the % swing a boost's magnitude gets pushed by across the
-# WHOLE purchasable ladder (level 1 through GameConfig.boost_level_max), not a bare level
-# number or the raw GameConfig magnitude — a raw multiplier means nothing to a player without
-# knowing the car's own baseline stat, so this is expressed purely as "how far a level pushes
-# it", which reads the same regardless of the effect's op (mult/add/set). Always shown
-# ascending (the smaller-magnitude end first), signed so the direction of the swing is
-# visible. "" for an unknown id.
-static func effect_range_text(id: String) -> String:
+# Shop display text: WHAT THIS BOOST DOES TO THE CAR at `level` — the figure the shop
+# card puts under the level, so "Lv 1" is never shown without what level 1 actually buys.
+#
+# READ THIS BEFORE CHANGING IT. The obvious implementation — `(level_scale(level,
+# direction) - 1.0) * 100.0`, i.e. how far the LEVEL has pushed the magnitude — is wrong,
+# and was shipped and reverted once. `level_scale` is exactly 1.0 at level 0 by design,
+# so that expression renders the un-upgraded boost (the one the shop shows most often,
+# and the one every fresh profile sees) as "+0%": a card reading "Lv 1, +0%" states that
+# the boost does nothing, which is the opposite of true. The player does not care how far
+# a level moved the number; they care what the boost gives them.
+#
+# So the figure is derived from the RESOLVED MAGNITUDE (`magnitude_for`, already
+# level-scaled and read live off Config.data) against no-boost at all, per effect op —
+# because "as a percentage" is only meaningful for one of the three ops:
+#   * "mult" — the magnitude IS a ratio to no-boost, so (m - 1) as a signed %. Five of
+#     the seven catalogue entries are this, including every entry the request's own
+#     example named ("an upgraded weight reduction is always -8% ... upgraded once
+#     it's -16%"): a mult compounds, so successive levels roughly double the swing.
+#   * "add"  — added ON TOP of whatever the car already has (downforce, authored in N per
+#     (m/s)²), so there is no baseline to be a percentage OF. Shown as the signed amount
+#     with the entry's `unit`.
+#   * "set"  — replaces the car's value outright (shift time, in seconds), so likewise no
+#     baseline. Shown as the absolute value it sets, with the entry's `unit`.
+# An entry with several effect keys (the aero kit drives both axles) formats each and
+# joins them, de-duplicated — both axles take the same number, so that reads as one
+# figure rather than the same figure twice.
+#
+# Pure in its two arguments (no Save read), mirroring the `magnitude_for` split so the
+# relationship stays testable without a profile. "" for an unknown id.
+static func current_effect_text(id: String, level: int) -> String:
 	var entry: Dictionary = CATALOGUE.get(id, {})
 	if entry.is_empty():
 		return ""
-	var direction := int(entry.get("level_direction", 1))
-	var cfg: GameConfig = Config.data
-	var lo := (level_scale(1, direction) - 1.0) * 100.0
-	var hi := (level_scale(cfg.boost_level_max, direction) - 1.0) * 100.0
-	if hi < lo:
-		var t := lo
-		lo = hi
-		hi = t
-	return "%+.0f%% to %+.0f%%" % [lo, hi]
+	var magnitude := magnitude_for(id, level)
+	var unit := String(entry.get("unit", ""))
+	var decimals := int(entry.get("decimals", 2))
+	var parts: Array[String] = []
+	for effect_key in magnitude:
+		var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
+		var value := float(magnitude[effect_key])
+		var text := ""
+		match op:
+			"add":
+				text = "%+.*f" % [decimals, value]
+			"set":
+				text = "%.*f" % [decimals, value]
+			_:
+				# "mult", and the safe default for a row this file has not seen: a ratio
+				# to no-boost reads as a percentage swing.
+				text = "%+.0f%%" % ((value - 1.0) * 100.0)
+		if not unit.is_empty() and op != "mult":
+			text = "%s %s" % [text, unit]
+		if not parts.has(text):
+			parts.append(text)
+	return " / ".join(parts)
+
+
+# `current_effect_text` at whatever level the player has actually purchased
+# (Save.boost_level) — what the shop card shows for a boost's current increase. "" for an
+# unknown id, same as `current_effect_text`.
+static func current_effect_text_for(id: String) -> String:
+	return current_effect_text(id, Save.boost_level(id))
 
 
 # One boost entry, in the exact shape UpgradeLibrary.active_effects reads:

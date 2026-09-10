@@ -669,6 +669,37 @@ func heal_car(instance_id: int, amount: float) -> void:
 	save()
 
 
+# Full restore to max_hp — the ONLY writer besides grant_car (a brand-new car) that
+# sets hp to full. Used by RunSession.begin() so a new run always starts at 100%
+# health regardless of what a previous run left the car at (repairs should only ever
+# happen via a repair pick or a fresh run — never silently). No-op if the car can't be
+# found. Resolves max_hp the same way heal_car / apply_field_repair_to do.
+func restore_car_to_full(instance_id: int) -> void:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var max_hp := float(entry.get("max_hp", car["hp"])) if not entry.is_empty() else float(car["hp"])
+	car["hp"] = max_hp
+	save()
+
+
+# Fraction of max_hp the car currently has (1.0 = full, 0.0 = empty). Used by
+# RegionRunMode.boost_choices to decide whether the run's car qualifies for the
+# undamaged-arrival reward (an extra boost pick, no repair row). Resolves max_hp the
+# same way heal_car / apply_field_repair_to do. Returns 1.0 (treated as full/healthy)
+# if the car can't be found — nothing to underperform against.
+func car_health_fraction(instance_id: int) -> float:
+	var car := get_car(instance_id)
+	if car.is_empty():
+		return 1.0
+	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
+	var max_hp := float(entry.get("max_hp", car["hp"])) if not entry.is_empty() else float(car["hp"])
+	if max_hp <= 0.0:
+		return 1.0
+	return clampf(float(car["hp"]) / max_hp, 0.0, 1.0)
+
+
 # Persist a car's per-wheel damage misalignment (radians, ordered like
 # DamageModel.WHEEL_NAMES). Written at each event boundary alongside apply_damage so
 # a car carries its bent wheels between events (features/damage.md).
@@ -987,9 +1018,12 @@ func raise_lifetime_stat(id: String, value: int) -> void:
 # Equipping is a SEPARATE step from owning — skill_equipped / equip_skill /
 # unequip_skill — capped at GameConfig.skill_max_equipped (RR's PERK_MAX_EQUIPPED = 3).
 #
-# NO GAMEPLAY EFFECT YET (see SkillLibrary's own header) — buy_skill/equip_skill only
-# move an id between these three lists; nothing currently reads KEY_EQUIPPED_SKILLS
-# for anything but display.
+# THE MUTATORS ARE BOOKKEEPING ONLY: buy_skill/equip_skill just move an id between these
+# three lists. The gameplay effect is applied elsewhere, at fielding time —
+# SkillLibrary.equipped_effects reads KEY_EQUIPPED_SKILLS and rides the same
+# UpgradeLibrary.EFFECTS + car `boosts` seam a run's boosts do (decision 51), merged by
+# world.gd::_owned_with_run_effects. So do not read "nothing here applies a skill" as
+# "skills do nothing".
 
 func owns_skill(id: String) -> bool:
 	return (profile.get(KEY_BOUGHT_SKILLS, []) as Array).has(id)

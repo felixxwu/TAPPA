@@ -4084,6 +4084,11 @@ func spectator_params() -> Dictionary:
 ## How many DISTINCT boosts are drawn for one between-stage pick, on top of the always-offered
 ## repair. Clamped to the catalogue's own size (BoostLibrary.draw) if this exceeds it.
 @export_range(1, 6) var run_boost_choices := 3
+## Health fraction (of max_hp) the run's car must be AT OR ABOVE to earn the
+## undamaged-arrival reward: one extra boost pick (run_boost_choices + 1) and NO
+## repair row, instead of the usual run_boost_choices + repair. Rewards arriving at
+## a stage without needing the repair in the first place.
+@export_range(0.5, 1.0, 0.01) var run_boost_healthy_threshold := 0.95
 ## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost).
 @export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.93
 ## "Sticky tyres" — tire_grip_mult (above 1.0 = more grip).

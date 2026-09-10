@@ -555,6 +555,36 @@ func test_progression_reads_the_authored_order_not_array_position() -> void:
 # Decision 28: the CAR page is no longer a dead end for a car-less profile — a fresh
 # profile is seeded with money (GameConfig.run_starting_money) and the page lists
 # unowned cars with a Buy action.
+# "Show stats" is a PAGE ACTION (features/card-carousel.md / hub_shell.gd's own header
+# on _action("Show stats", ...)) rather than a per-card icon, precisely so it stays
+# reachable on keyboard/gamepad without a pointer — CLAUDE.md's menu-navigation rule.
+func test_car_page_offers_a_focusable_show_stats_action() -> void:
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	var found := false
+	for b in _buttons():
+		if String((b as Button).text).to_upper().contains("SHOW STATS"):
+			found = true
+	assert_true(found, "the CAR page exposes Show stats as a focusable Button")
+
+
+func test_show_stats_opens_a_spec_sheet_modal_over_the_highlighted_card() -> void:
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	assert_true(_press("Show stats"), "setup: the action is reachable via the screen graph")
+	await get_tree().process_frame
+	# The modal is its own MenuPage.open_modal layer under the shell, not nested inside
+	# _page() — see menu_page.gd's header on why it needs its own CanvasLayer.
+	var grid := _shell.find_children("*", "GridContainer", true, false)
+	assert_false(grid.is_empty(), "the spec sheet's 2-column grid is mounted over the car page")
+	var back_buttons: Array = []
+	for b in _shell.find_children("*", "Button", true, false):
+		if String((b as Button).text).to_upper().contains("BACK"):
+			back_buttons.append(b)
+	assert_false(back_buttons.is_empty(), "the modal offers its own Back action back to the card")
+	(back_buttons[0] as Button).pressed.emit()
+
+
 func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 	assert_true((_save.profile.get(_save.KEY_CARS, []) as Array).is_empty(),
 		"setup: nothing owned yet")
@@ -693,6 +723,38 @@ func test_shop_lists_boosts_and_engine_swap_in_one_carousel() -> void:
 			"boost %s is on the shop page itself" % id)
 	assert_true(_all_texts().contains("ENGINE SWAP"),
 		"the Engine Swap unlock is in the same list — no sub-page hop")
+
+
+# Level display is 1-based even though Save.boost_level storage is 0-based: an
+# un-upgraded boost (stored level 0) must read "Lv 1", never "Lv 0" — and the total rung
+# count / "rolls X to Y" ladder range must not appear at all now that the card only shows
+# the current level, current increase and upgrade price.
+func test_shop_card_shows_a_one_based_level_for_an_unupgraded_boost() -> void:
+	var id: String = BoostLibrary.CATALOGUE.keys()[0]
+	assert_eq(_save.boost_level(id), 0, "setup: never purchased")
+	_shell._show(HubShell.View.SHOP)
+	await get_tree().process_frame
+	var c := _carousel()
+	assert_not_null(c, "the shop presents its wares as a carousel")
+	var text := _card_text(c, 0)
+	assert_true(text.contains("LV 1"), "a never-upgraded boost displays as level 1, not 0")
+	assert_false(text.contains("/"), "the total rung count is no longer shown on the card")
+	assert_false(text.contains("ROLLS"), "the old 'rolls X to Y' ladder-range wording is gone")
+
+
+# Buying a level bumps the displayed level by one too, tracking storage exactly.
+func test_shop_card_level_display_tracks_a_purchased_level() -> void:
+	var id: String = BoostLibrary.CATALOGUE.keys()[0]
+	_save.profile[_save.KEY_MONEY] = _save.boost_level_price(id)
+	_shell._show(HubShell.View.SHOP)
+	await get_tree().process_frame
+	assert_true(_press(BoostLibrary.label_for(id)), "setup: buy one level")
+	assert_eq(_save.boost_level(id), 1, "setup: stored level is now 1")
+	_shell._show(HubShell.View.SHOP)
+	await get_tree().process_frame
+	var c := _carousel()
+	assert_true(_card_text(c, 0).contains("LV 2"),
+		"a boost stored at level 1 displays as level 2 (stored + 1)")
 
 
 func test_buying_a_boost_level_raises_it_and_spends_money() -> void:

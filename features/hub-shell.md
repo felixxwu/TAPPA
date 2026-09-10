@@ -49,7 +49,7 @@ next, so a stale page can never sit under the tree still claiming input.
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones shown "Locked" with their pay rate (not the gate they hide behind) |
 | `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
 | `SUMMARY` | Stages cleared, money earned, per-stage times |
-| `SHOP` | ONE flat card list: every `BoostLibrary.CATALOGUE` id (level, price of the next level, `BoostLibrary.effect_range_text`) — engine swap included, now that it is a boost — no sub-page hop |
+| `SHOP` | ONE flat card list: every `BoostLibrary.CATALOGUE` id, shown as a 1-based current level (`Save.boost_level` storage is 0-based; the card displays `stored + 1`, so a never-upgraded boost reads "Lv 1"), what the boost actually does to the car at that level (`BoostLibrary.current_effect_text_for`, e.g. `-7%` — derived from the RESOLVED MAGNITUDE, never from how far the level pushed it, which reads as `+0%` on every un-upgraded boost; a `set`/`add` effect with no baseline to be a percentage of shows an absolute figure with its authored unit instead, e.g. `0.12 s`), and the price of the next level — no total rung count and no "how much the next level gives" shown — engine swap included, now that it is a boost — no sub-page hop |
 | `SKILLS` | One row per `SkillLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([skills.md](skills.md)) |
 | `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
 | `CHALLENGE` | The three periods, one row each — stage count + rating cap; a period already run is shown and unfocusable ([rally-challenge.md](rally-challenge.md)) |

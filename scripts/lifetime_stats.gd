@@ -149,6 +149,23 @@ static func label_for(id: String) -> String:
 	return String(STATS.get(id, {}).get("label", id))
 
 
+# HOW FAR ALONG a gate the player is, as "150/800" — the counter's current value over the
+# threshold it has to reach. What the between-stage skill-progress screen shows against
+# each locked skill, so the run just driven is visibly moving the player toward something
+# rather than only toward the next stage.
+#
+# Deliberately the BARE FRACTION with no label, unlike `goal_for`: the caller pairs it with
+# whichever name its layout wants in the adjacent column (the stat's own `label_for`, or
+# the skill's), and a fraction that arrived with "Damage taken: " already glued on could
+# not be placed in a second column.
+#
+# `current` is CLAMPED to `threshold` for display only. A lifetime counter keeps growing
+# after a gate is met, and "1240/800" reads as a broken progress bar; the gate itself is
+# still decided by SkillLibrary.is_unlocked off the real value, never by this text.
+static func progress_text(current: int, threshold: int) -> String:
+	return "%d/%d" % [mini(maxi(current, 0), maxi(threshold, 0)), maxi(threshold, 0)]
+
+
 # The IMPERATIVE phrase a skill's unlock gate renders as — goal_for(DAMAGE_TAKEN, 300)
 # is "take 300 damage", an instruction to the player rather than the stats page's
 # "Damage taken" read-out name. `threshold` lands wherever the entry's "goal" template

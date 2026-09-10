@@ -2,7 +2,7 @@ extends GutTest
 # BoostLibrary (scripts/boost_library.gd) — the in-run boost catalogue and its
 # seeded draw (todo/roguelike-pivot.md -> "Upgrades — RR's two-tier model", stage 5
 # of todo/roguelike-pivot-plan.md), plus the stage 6 meta-level scaling
-# (magnitude_for / effect_for / effect_range_text).
+# (magnitude_for / effect_for / current_effect_text).
 #
 # Per CLAUDE.md nothing here may pin a shipped magnitude (run_boost_mass_mult,
 # boost_level_magnitude_step and friends are GameConfig tunables a designer retunes
@@ -78,7 +78,7 @@ func test_effect_for_reads_its_magnitude_live_off_config() -> void:
 		"the boost's magnitude is whatever GameConfig currently says, not a baked constant")
 
 
-# --- The meta seam (stage 6): magnitude_for / effect_for / effect_range_text -----
+# --- The meta seam (stage 6): magnitude_for / effect_for / current_effect_text -----
 
 # LEVEL 0 IS ALWAYS A NO-OP. Whatever step a designer authors, an id with no purchased
 # level rolls the bare GameConfig magnitude unchanged — this is what keeps the test above
@@ -135,14 +135,125 @@ func test_effect_for_scales_with_the_purchased_level_on_save() -> void:
 		"effect_for resolves exactly the level Save has on record")
 
 
-func test_effect_range_text_is_never_blank_for_a_real_id() -> void:
+# WHAT THE SHOP CARD SAYS A BOOST DOES. The figure is the boost's effect ON THE CAR at a
+# given level, NOT how far that level pushed the magnitude — see current_effect_text's own
+# header for why the latter is wrong (it renders every un-upgraded boost as "+0%", i.e. as
+# doing nothing). So the contract at level 0 is the opposite of a no-op: the bare
+# GameConfig magnitude still has to read as a real effect.
+func test_current_effect_text_at_level_zero_still_reports_a_real_effect() -> void:
+	Config.data.boost_level_magnitude_step = 0.3  # a level step must not be what makes it non-zero
 	for id in BoostLibrary.CATALOGUE:
-		assert_false(BoostLibrary.effect_range_text(id).is_empty(),
-			"boost '%s' has no effect range text" % id)
+		var text := BoostLibrary.current_effect_text(id, 0)
+		assert_ne(text, "", "'%s' at level 0 has something to say" % id)
+		assert_ne(text, "+0%", "'%s' at level 0 does not claim to do nothing" % id)
 
 
-func test_effect_range_text_is_blank_for_an_unknown_id() -> void:
-	assert_eq(BoostLibrary.effect_range_text("not_a_real_boost"), "")
+# A "mult" boost's base magnitude must push the SAME WAY its level ladder does: a
+# lightweight kit whose mass_mult sat above 1.0 would make the car heavier while its
+# levels made it lighter. A relationship, not a pinned number — any sane tuning satisfies
+# it, and a magnitude of exactly 1.0 (a boost that does nothing) is genuinely broken.
+func test_a_multiplier_boosts_base_magnitude_pushes_the_way_its_levels_do() -> void:
+	for id in BoostLibrary.CATALOGUE:
+		var direction := int((BoostLibrary.CATALOGUE[id] as Dictionary).get("level_direction", 1))
+		for effect_key in BoostLibrary.magnitude_for(id, 0):
+			var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
+			if String(desc.get("op", "mult")) != "mult":
+				continue
+			var magnitude := float(BoostLibrary.magnitude_for(id, 0)[effect_key])
+			assert_ne(magnitude, 1.0, "'%s' actually changes %s" % [id, effect_key])
+			if direction > 0:
+				assert_gt(magnitude, 1.0,
+					"'%s' raises %s, matching its +1 level_direction" % [id, effect_key])
+			else:
+				assert_lt(magnitude, 1.0,
+					"'%s' lowers %s, matching its -1 level_direction" % [id, effect_key])
+
+
+# A multiplier boost reads as a signed percentage, and the sign follows level_direction
+# (which the test above pins to the magnitude's own side of 1.0).
+func test_a_multiplier_boost_reads_as_a_signed_percentage() -> void:
+	for id in BoostLibrary.CATALOGUE:
+		if not _is_pure_mult(id):
+			continue
+		var direction := int((BoostLibrary.CATALOGUE[id] as Dictionary).get("level_direction", 1))
+		var text := BoostLibrary.current_effect_text(id, 0)
+		assert_true(text.ends_with("%"), "'%s' is expressed as a percentage" % id)
+		if direction > 0:
+			assert_true(text.begins_with("+"), "'%s' shows a '+' sign" % id)
+		else:
+			assert_true(text.begins_with("-"), "'%s' shows a '-' sign" % id)
+
+
+# An "add" or "set" boost has no baseline to be a percentage OF (downforce stacks on the
+# car's own; shift time replaces it), so it reports an absolute figure carrying the
+# catalogue entry's authored unit instead — never a fabricated percentage.
+func test_an_additive_or_set_boost_reads_as_an_absolute_figure_with_its_unit() -> void:
+	var checked := 0
+	for id in BoostLibrary.CATALOGUE:
+		if _is_pure_mult(id):
+			continue
+		var unit := String((BoostLibrary.CATALOGUE[id] as Dictionary).get("unit", ""))
+		assert_ne(unit, "", "'%s' authors a display unit for its non-mult effect" % id)
+		var text := BoostLibrary.current_effect_text(id, 0)
+		assert_false(text.contains("%"),
+			"'%s' does not invent a percentage it has no baseline for" % id)
+		assert_true(text.ends_with(unit), "'%s' carries its unit (%s)" % [id, unit])
+		checked += 1
+	assert_gt(checked, 0, "the catalogue still has a non-mult entry for this to cover")
+
+
+# A higher purchased level moves the reported figure — the level ladder has to be visible
+# on the card, or buying a level tells the player nothing.
+func test_current_effect_text_changes_with_the_purchased_level() -> void:
+	Config.data.boost_level_magnitude_step = 0.1
+	for id in BoostLibrary.CATALOGUE:
+		assert_ne(BoostLibrary.current_effect_text(id, 1), BoostLibrary.current_effect_text(id, 3),
+			"'%s' level 1 and level 3 read as different figures" % id)
+
+
+# The aero kit drives BOTH axles off one GameConfig field, so the two effect keys resolve
+# to the same number — the card shows that figure once, not twice.
+func test_an_entry_driving_several_effect_keys_off_one_field_shows_one_figure() -> void:
+	for id in BoostLibrary.CATALOGUE:
+		var magnitude := BoostLibrary.magnitude_for(id, 0)
+		if magnitude.size() < 2:
+			continue
+		var distinct := {}
+		for effect_key in magnitude:
+			distinct[float(magnitude[effect_key])] = true
+		if distinct.size() > 1:
+			continue  # genuinely different numbers SHOULD both be shown
+		assert_false(BoostLibrary.current_effect_text(id, 0).contains("/"),
+			"'%s' de-duplicates its identical per-key figures" % id)
+
+
+func test_current_effect_text_is_blank_for_an_unknown_id() -> void:
+	assert_eq(BoostLibrary.current_effect_text("not_a_real_boost", 2), "")
+
+
+# current_effect_text_for reads Save.boost_level live, same integration contract as
+# effect_for.
+func test_current_effect_text_for_reads_the_purchased_level_on_save() -> void:
+	Config.data.boost_level_magnitude_step = 0.2
+	Save.profile[Save.KEY_BOOST_LEVELS] = {"grip": 3}
+	assert_eq(BoostLibrary.current_effect_text_for("grip"), BoostLibrary.current_effect_text("grip", 3),
+		"current_effect_text_for resolves exactly the level Save has on record")
+
+
+func test_current_effect_text_for_falls_back_to_level_zero_when_never_purchased() -> void:
+	assert_eq(BoostLibrary.current_effect_text_for("grip"), BoostLibrary.current_effect_text("grip", 0),
+		"an un-upgraded boost (stored level 0, displayed as 'Lv 1') reports its base effect")
+
+
+# True when every effect key a catalogue entry drives is a "mult" row — the entries whose
+# figure is a percentage. Read off UpgradeLibrary.EFFECTS rather than hardcoded here, so a
+# retyped or newly added row is classified correctly without editing this file.
+func _is_pure_mult(id: String) -> bool:
+	for effect_key in BoostLibrary.magnitude_for(id, 0):
+		var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
+		if String(desc.get("op", "mult")) != "mult":
+			return false
+	return true
 
 
 # --- draw(): deterministic, repeat-free, real ids ---------------------------------
