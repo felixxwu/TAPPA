@@ -225,22 +225,25 @@ func offers_boost_pick() -> bool:
 # run_mode.gd's boost_choices doc; RunSession passes run_boost_choices + 1 for the
 # undamaged-arrival reward.
 #
-# THE POOL IS MERGED, not boosts-plus-appended-conversions: `drivetrain_ids` (RunSession's
-# "drivetrain:<mode>" pseudo-ids) go into the SAME bag as the boost catalogue's own ids, so
-# exactly `n` total options are drawn regardless of how many drivetrain conversions happen
-# to be available — draw_from_ids clamps to the pool size regardless, so an oversized count
-# is always safe. Each picked id is then resolved to its own shape: a "drivetrain:<mode>"
-# id becomes {"id", "drivetrain_mode"}; anything else resolves through BoostLibrary.boost_for
-# same as before, {"id", "effect"}.
-func boost_choices(stage_index: int, count: int = -1, drivetrain_ids: Array = []) -> Array:
+# THE POOL IS MERGED, not boosts-plus-appended-extras: `extra_ids` (RunSession's
+# "drivetrain:<mode>" and "engine_swap:<engine id>" pseudo-ids) go into the SAME bag as
+# the boost catalogue's own ids, so exactly `n` total options are drawn regardless of how
+# many of those extras happen to be available — draw_from_ids clamps to the pool size
+# regardless, so an oversized count is always safe. Each picked id is then resolved to its
+# own shape: a "drivetrain:<mode>" id becomes {"id", "drivetrain_mode"}; an
+# "engine_swap:<id>" id becomes {"id", "engine_id"}; anything else resolves through
+# BoostLibrary.boost_for same as before, {"id", "effect"}.
+func boost_choices(stage_index: int, count: int = -1, extra_ids: Array = []) -> Array:
 	var n := count if count >= 0 else Config.data.run_boost_choices
-	var pool: Array = BoostLibrary.CATALOGUE.keys() + drivetrain_ids
+	var pool: Array = BoostLibrary.CATALOGUE.keys() + extra_ids
 	var picked := BoostLibrary.draw_from_ids(_boost_seed(stage_index), n, pool)
 	var out: Array = []
 	for id in picked:
 		var id_str := String(id)
 		if id_str.begins_with("drivetrain:"):
 			out.append({"id": id_str, "drivetrain_mode": int(id_str.substr("drivetrain:".length()))})
+		elif id_str.begins_with("engine_swap:"):
+			out.append({"id": id_str, "engine_id": id_str.substr("engine_swap:".length())})
 		else:
 			out.append(BoostLibrary.boost_for(id_str))
 	return out

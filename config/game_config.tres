@@ -334,7 +334,6 @@ run_boost_shift_time_s = 0.12
 run_boost_downforce_n = 3.0
 run_boost_brake_mult = 1.12
 run_boost_drag_mult = 0.92
-run_boost_engine_power_mult = 1.15
 boost_level_max = 5
 boost_level_price_base = 1500.0
 boost_level_price_growth = 1.7

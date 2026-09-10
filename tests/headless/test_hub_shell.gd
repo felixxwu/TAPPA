@@ -770,15 +770,16 @@ func test_every_catalogued_boost_and_skill_has_a_card_icon() -> void:
 			"skill '%s' has no icon in icons/cards/" % id)
 
 
-func test_shop_lists_boosts_and_engine_swap_in_one_carousel() -> void:
+func test_shop_lists_every_leveled_boost_in_one_carousel() -> void:
 	_shell._show(HubShell.View.SHOP)
 	await get_tree().process_frame
 	assert_not_null(_carousel(), "the shop presents its wares as a carousel")
 	for id in BoostLibrary.CATALOGUE:
 		assert_true(_all_texts().contains(BoostLibrary.label_for(String(id)).to_upper()),
 			"boost %s is on the shop page itself" % id)
-	assert_true(_all_texts().contains("ENGINE SWAP"),
-		"the Engine Swap unlock is in the same list — no sub-page hop")
+	# The Engine Swap is NOT here any more: it is a genuine, deterministic mid-run engine
+	# swap now (RunSession._pool_engine_swap_ids), not a leveled BoostLibrary entry with a
+	# shop price — see features/engine-swap.md.
 
 
 # Level display is 1-based even though Save.boost_level storage is 0-based: an

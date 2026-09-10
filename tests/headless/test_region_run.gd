@@ -723,6 +723,138 @@ func test_a_resumed_run_keeps_its_picked_drivetrain_conversion() -> void:
 		"the picked layout survives a pause/resume, same as boosts")
 
 
+# --- The between-stage pick: an engine swap -------------------------------------------
+#
+# Mirrors the drivetrain-conversion section above: a genuine EngineLibrary swap offered
+# in the SAME between-stage pick pool, deterministic (the next most powerful engine
+# relative to the car's current one), run-scoped, and gone when the run ends.
+# CarFixtures installs exactly two engines (fx_i4, fx_v8), with fx_v8 strictly more
+# powerful — the default _grant() car (fx_light_rwd) runs fx_i4, so a swap to fx_v8 is
+# always available and always the offered id.
+
+func test_the_pool_offers_the_next_most_powerful_engine() -> void:
+	_start()
+	var ids := RunSession._pool_engine_swap_ids()
+	assert_eq(ids.size(), 1, "a strictly more powerful engine exists")
+	var offered_id := String(ids[0]).substr("engine_swap:".length())
+	var offered := EngineLibrary.by_id(offered_id)
+	var current := EngineLibrary.by_id("fx_i4")
+	var offered_power := CarLibrary.peak_power_kw(
+		{"peak_torque": offered["peak_torque"], "redline": offered["redline_rpm"]})
+	var current_power := CarLibrary.peak_power_kw(
+		{"peak_torque": current["peak_torque"], "redline": current["redline_rpm"]})
+	assert_gt(offered_power, current_power, "the offered engine is strictly more powerful")
+	# No catalogue engine sits strictly between the two — the smallest strictly-greater one.
+	for eng in EngineLibrary.all():
+		var power := CarLibrary.peak_power_kw(
+			{"peak_torque": eng["peak_torque"], "redline": eng["redline_rpm"]})
+		if power > current_power:
+			assert_gte(power, offered_power, "%s is not a smaller strictly-greater engine" % eng["id"])
+
+
+func test_the_pool_is_empty_once_the_car_already_runs_the_most_powerful_engine() -> void:
+	_start()
+	var ids := RunSession._pool_engine_swap_ids()
+	var offered_id := String(ids[0]).substr("engine_swap:".length())
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_engine_swap(offered_id)
+
+	assert_true(RunSession._pool_engine_swap_ids().is_empty(),
+		"already running the most powerful catalogue engine -> no swap left to offer")
+
+
+func test_an_available_engine_swap_competes_in_the_same_pool_as_boosts() -> void:
+	var car := _start()  # a fresh car is at full health -> the undamaged-arrival reward pick
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices + 1,
+		"the pick's total size is unaffected by whether an engine swap is in the pool")
+	for entry in RunSession.pending_pick():
+		var id := String((entry as Dictionary).get("id", ""))
+		if id.begins_with("engine_swap:"):
+			assert_eq(id, "engine_swap:fx_v8", "the only engine swap ever offered is the next rung up")
+			assert_gt(float((entry as Dictionary).get("hp_delta", 0.0)), 0.0,
+				"a swap is only ever offered as a power gain")
+
+
+func test_choosing_an_engine_swap_resolves_the_pick_and_takes_no_repair() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+
+	RunSession.choose_engine_swap(offered_id)
+
+	assert_false(RunSession.pick_awaiting(), "the pick is resolved")
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"taking a swap costs the repair, not the other way round")
+	assert_eq(RunSession.engine_swap_id(), offered_id, "the chosen engine is recorded on the run")
+
+
+func test_an_engine_swap_never_reaches_the_persisted_car() -> void:
+	var car := _start()
+	var iid := int(car["instance_id"])
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+
+	RunSession.choose_engine_swap(offered_id)
+
+	assert_false(_save.get_car(iid).has("swapped_engine"),
+		"a run's swap is RUN state, never written to Save's persisted car")
+
+
+func test_a_later_engine_swap_replaces_the_earlier_one_rather_than_stacking() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var first := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+	RunSession.choose_engine_swap(first)
+	assert_eq(RunSession.engine_swap_id(), first, "setup: the first pick is recorded")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	# The pool is now empty (the car already runs the most powerful engine), so a second
+	# pick offers no swap option to choose — assert the run keeps exactly one engine
+	# recorded rather than stacking, via a direct call mirroring choose_drivetrain's own
+	# "the run only ever runs ONE X at a time" test.
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_engine_swap(first)  # a stale re-pick of the same id still no-ops cleanly
+
+	assert_eq(RunSession.engine_swap_id(), first,
+		"the run only ever runs ONE engine at a time")
+
+
+func test_engine_swap_does_not_survive_a_completed_or_failed_run() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+	RunSession.choose_engine_swap(offered_id)
+	assert_ne(RunSession.engine_swap_id(), "", "setup: a swap was picked")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)  # fail the run
+
+	assert_false(RunSession.is_active(), "setup: the run failed")
+	assert_eq(RunSession.engine_swap_id(), "",
+		"a failed run wipes its swap too — soft permadeath, not just the loss")
+
+
+func test_a_resumed_run_keeps_its_picked_engine_swap() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+	RunSession.choose_engine_swap(offered_id)
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.pause_run()
+	assert_true(RunSession.resume(int(Time.get_unix_time_from_system())))
+
+	assert_eq(RunSession.engine_swap_id(), offered_id,
+		"the picked engine survives a pause/resume, same as boosts")
+
+
 # --- Task 1: a new run always starts the car at 100% health ---------------------
 
 func test_beginning_a_run_restores_a_damaged_car_to_full_health() -> void:

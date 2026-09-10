@@ -19,10 +19,13 @@ extends RefCounted
 #   * non-empty — a CardCarousel (CardUI, the same card shape the hub's pages use): one
 #     card per entry in `pick`, PLUS a repair card when `offer_repair` says the car needs
 #     one. `pick` (RunSession.pending_pick()) is drawn from ONE merged pool — the boost
-#     catalogue plus, when available, an AWD conversion pseudo-entry — so an entry is
-#     EITHER a BoostLibrary id (`{"id", "effect"}`) OR a drivetrain conversion
-#     (`{"id": "drivetrain:<DriveMode int>", "drivetrain_mode": ...}`); this file renders
-#     whichever shape it's handed rather than sourcing conversions from a second list.
+#     catalogue plus, when available, an AWD conversion pseudo-entry and/or a next-rung-up
+#     engine swap pseudo-entry — so an entry is EITHER a BoostLibrary id (`{"id", "effect"}`)
+#     OR a drivetrain conversion (`{"id": "drivetrain:<DriveMode int>", "drivetrain_mode":
+#     ...}`) OR an engine swap (`{"id": "engine_swap:<EngineLibrary id>", "engine_id",
+#     "hp", "hp_delta"}` — the last two stamped on by RunSession._with_engine_swap_display);
+#     this file renders whichever shape it's handed rather than sourcing extras from a
+#     second list.
 #     A boost card's subtitle shows its purchased level 1-based ("Lv %d", Save.boost_level(id)
 #     + 1 — hub_shell.gd's own convention: an un-upgraded boost is level 0 in Save but
 #     draws its level-1 magnitude, so it reads "Lv 1", never "Lv 0"). Confirming any card
@@ -32,9 +35,10 @@ extends RefCounted
 #     final/failed stage (report_event_result never draws one then) get a bare
 #     Continue action instead.
 #
-# `on_choice` is called with "repair", a boost id, "drivetrain:<DriveMode int>", or ""
-# (plain Continue) the instant a card is confirmed / Continue is pressed. This class does
-# not know what happens next — RunSession.choose_repair / choose_boost / choose_drivetrain /
+# `on_choice` is called with "repair", a boost id, "drivetrain:<DriveMode int>",
+# "engine_swap:<EngineLibrary id>", or "" (plain Continue) the instant a card is confirmed
+# / Continue is pressed. This class does not know what happens next —
+# RunSession.choose_repair / choose_boost / choose_drivetrain / choose_engine_swap /
 # continue_to_next_stage all live one level up, in world.gd, which owns applying the pick
 # and advancing (or ending) the run. The CALLER also owns tearing the panel down — free
 # `page.get_parent()` when the pick/Continue is done. (A stats-confirmation step is planned
@@ -72,6 +76,19 @@ static func open(host: Node, pick: Array, on_choice: Callable,
 				var mode_int := int(id.substr("drivetrain:".length()))
 				CardUI.text_card(carousel, "Convert to %s" % Drivetrain.DriveMode.keys()[mode_int],
 					"", false, "drivetrain")
+			elif id.begins_with("engine_swap:"):
+				# RunSession._with_engine_swap_display already stamped "hp"/"hp_delta" onto
+				# this entry — title reads e.g. "250HP V6" (hp + the donor's layout label,
+				# EngineSwap.layout_label already uppercased/stripped so UITheme.label's own
+				# uppercasing is a no-op here), subtitle "+100 HP" (the delta over the car's
+				# current engine, always positive — _pool_engine_swap_ids only ever offers a
+				# STRICTLY more powerful engine).
+				var engine_id := String((entry as Dictionary).get("engine_id", ""))
+				var hp := int(round(float((entry as Dictionary).get("hp", 0.0))))
+				var hp_delta := int(round(float((entry as Dictionary).get("hp_delta", 0.0))))
+				var layout := EngineSwap.layout_label(engine_id)
+				var card_title := "%dHP %s" % [hp, layout] if not layout.is_empty() else "%dHP" % hp
+				CardUI.text_card(carousel, card_title, "+%d HP" % hp_delta, false, "engine_swap")
 			else:
 				# icons/cards/ is already keyed by boost/skill id — the same catalogue the
 				# hub's shop cards draw from — so the boost id doubles as the icon name; an

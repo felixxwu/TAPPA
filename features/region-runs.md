@@ -272,8 +272,8 @@ _pick_awaiting = true                               # continue_to_next_stage() n
 `run_boost_choices + 1` options and offers **no repair row** — arriving undamaged earns
 an extra option instead of a repair choice nobody needed. Below the threshold it's the
 usual `run_boost_choices` options plus repair, unchanged. `RunMode.boost_choices(stage_index,
-count := -1, drivetrain_ids := [])` takes the override (`RegionRunMode.boost_choices` uses
-`count` when >= 0, its own `Config.data.run_boost_choices` otherwise); `drivetrain_ids` is
+count := -1, extra_ids := [])` takes the override (`RegionRunMode.boost_choices` uses
+`count` when >= 0, its own `Config.data.run_boost_choices` otherwise); `extra_ids` is
 folded into the SAME pool as the boost catalogue before the draw (see *The catalogue and
 its draw* below), and `BoostLibrary.draw_from_ids` already clamps `count` to that pool's
 size, so the +1 is always safe.
@@ -346,16 +346,14 @@ permadeath").
 
 ### The catalogue and its draw
 
-`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — seven entries, each an
+`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — six entries, each an
 `effect` dict keyed by an **existing** `UpgradeLibrary.EFFECTS` row (no second
 effects system): `mass_mult`, `tire_grip_mult`, `shift_time_set`,
 `downforce_front`/`_rear`, `brake_force_mult` (`GameConfig.brake_torque`),
-`drag_mult` (`GameConfig.drag_coefficient`), and — the Engine Swap, re-homed
-from its old one-time meta unlock — `engine_power_mult` (`GameConfig.peak_torque`,
-the catalogue's POWER pick). RR's `engineForce` category maps onto none of the
-forbidden knobs: `global_torque_scale` is a hidden global de-rate (engine.gd's
-own comment), not a per-car effect field, so the engine swap multiplies the
-per-car `peak_torque` instead.
+`drag_mult` (`GameConfig.drag_coefficient`). The catalogue's POWER pick — the
+Engine Swap — is **not** in this table any more; see *The engine swap* below and
+[engine-swap.md](engine-swap.md) for why it's a genuine `EngineLibrary` swap,
+not an EFFECTS multiplier.
 
 Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
 Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
@@ -369,15 +367,17 @@ test may pin the shipped numbers (CLAUDE.md).
 `BoostLibrary.draw_from_ids(seed_value, count, ids)`, which does the same distinct,
 no-replacement, seeded draw over an **arbitrary** id list. `RegionRunMode.boost_choices`
 calls `draw_from_ids` directly with a MERGED pool — `BoostLibrary.CATALOGUE.keys() +
-drivetrain_ids` — so the between-stage pick offers exactly `count` total options from
+extra_ids` (the AWD conversion pseudo-id and/or the engine-swap pseudo-id) — so the
+between-stage pick offers exactly `count` total options from
 ONE bag, never boosts-plus-appended-conversions. Both are seeded by
 `RegionRunMode._boost_seed(stage_index) = run_seed + stage_index * 104729` — the same
 "big prime stride" convention `features/rally-challenge.md` documents for bumping a
 challenge stage's retry seed. No sort step (unlike `RegionStagePool.draw`), so there is
 no sort-stability tie-break to reason about. A picked id resolves to `BoostLibrary.
-boost_for(id)` (`{"id","effect"}`) unless it begins with `"drivetrain:"`, in which case
-it resolves to `{"id", "drivetrain_mode"}` instead — see *Drivetrain conversion* below
-for where `drivetrain_ids` comes from.
+boost_for(id)` (`{"id","effect"}`) unless it begins with `"drivetrain:"` (resolves to
+`{"id", "drivetrain_mode"}` — see *Drivetrain conversion* below for where those ids come
+from) or `"engine_swap:"` (resolves to `{"id", "engine_id"}` — see *The engine swap*
+below).
 
 ### The pick screen
 
@@ -387,8 +387,10 @@ when `offer_repair` is false — the undamaged-arrival reward pick, see above), 
 card per entry in `pick` (a boost card, showing its purchased level 1-based as
 `"Lv %d" % (Save.boost_level(id) + 1)` — the same convention `hub_shell.gd`'s shop cards
 use, so an un-upgraded boost reads "Lv 1", never "Lv 0" — or, for an entry whose id begins
-with `"drivetrain:"`, a "Convert to X" card — `pick` itself can carry either shape now, see
-above), or a bare "Continue" when `pick` is empty — as a `MenuPage` wired through
+with `"drivetrain:"`, a "Convert to X" card, or for one beginning with `"engine_swap:"`, a
+card titled `"<hp>HP <layout>"` with subtitle `"+<hp_delta> HP"` — `pick` itself can carry
+any of these shapes now, see above), or a bare "Continue" when `pick` is empty — as a
+`MenuPage` wired through
 `MenuNav.attach` (`tests/headless/test_run_pick_panel.gd` is the nav test CLAUDE.md
 requires). `world.gd` passes `RunSession.offer_repair()` straight through as the
 fourth argument. It is deliberately decoupled from `world.gd`/`$Car`/the
@@ -460,6 +462,47 @@ range check against `Drivetrain.DriveMode.values()`, since `world.gd::_field_car
 the only legitimate writer of `drivetrain_override` (onto the duplicated fielding dict,
 never `Save`'s persisted car — see *Where boosts live* above). `HubShell`'s old
 `DRIVETRAIN` / `DRIVETRAIN_CAR` shop pages are deleted along with the purchase path.
+
+### The engine swap — a genuine EngineLibrary swap, deterministic
+
+The eighth option alongside repair, the drawn boosts and the AWD conversion: a REAL
+engine dropped into the run's car via the already-built `EngineSwap` module + `car.gd::
+_apply_engine_swap` pipeline (see [engine-swap.md](engine-swap.md) for that pipeline in
+full). It is deliberately NOT random — `RunSession._pool_engine_swap_ids()` offers
+exactly **the next most powerful `EngineLibrary` engine relative to the car's current
+one** (`RunSession._current_engine_id()`, which prefers this run's own swap over the
+persisted car's `swapped_engine`/stock engine, exactly like `EngineSwap.
+current_engine_id`), ranked by `CarLibrary.peak_power_kw({"peak_torque", "redline"})` —
+among every engine strictly more powerful than the current one, the smallest such power,
+i.e. the immediate next rung up. `[]` once the car is already running the catalogue's
+most powerful engine, the same "drop the option once it has nothing left to offer" shape
+`_pool_drivetrain_ids()` uses for AWD. Folded into the SAME draw pool as the boosts and
+the drivetrain conversion (`RunSession._pool_drivetrain_ids() + _pool_engine_swap_ids()`
+as `extra_ids`), so it competes for a slot rather than appearing as a guaranteed extra.
+
+`RunSession._with_engine_swap_display(pick)` — called at BOTH pick-building call sites
+(`report_event_result`, `resume`) so a live draw and a resumed draw can't disagree —
+stamps `hp` and `hp_delta` onto any drawn `engine_swap:` entry, via `CarLibrary.
+horsepower({"peak_torque", "redline"})` (the same derivation the car stats panel uses)
+against the car's current engine. `RunPickPanel` reads those fields straight off the
+entry to build its card (see *The pick screen* above).
+
+`RunSession._engine_swap_id` (`""` = "the car's own stock/previously-swapped engine")
+mirrors `_boosts`/`_drivetrain_override` exactly: reset in `begin()`, restored from the
+run record in `resume()` (`"engine_swap_id"` key), persisted in `_persist()`, wiped in
+`_finish_locally()`. `RunSession.choose_engine_swap(id)` resolves the pick, same "the
+player picks exactly one" rule the other `choose_*` methods follow — unlike a boost, a
+second swap picked later **replaces** the first rather than stacking (a car has one
+engine at a time), same as a drivetrain conversion.
+
+`world.gd::_owned_with_run_effects` (called from `_field_car`, the same seam that merges
+`boosts` and `drivetrain_override` onto the duplicated fielding dict) sets `owned
+["swapped_engine"] = RunSession.engine_swap_id()` whenever that id is non-empty — that
+single write is the WHOLE integration: `car.gd::apply_owned` already reads `swapped_engine`
+and runs `_apply_engine_swap`, bringing the swapped engine's real torque curve, redline,
+mass, weight distribution and gearbox/gearing along with it. Never touches `Save`'s
+persisted car, and dies with the run like every other boost — see *Where boosts live*
+above.
 
 ### The meta tier — boost levels, car purchasing
 

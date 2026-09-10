@@ -843,8 +843,9 @@ func _build_summary() -> void:
 # ONE flat list — every purchasable sits side by side in the same carousel, no
 # boost-levels sub-page: these are all permanent money sinks a player comparison-shops
 # between, so burying half of them a click deeper hid them from the exact screen where
-# the money gets spent. The Engine Swap is a mid-run boost pick now (BoostLibrary
-# "engine_swap"), sold up levels here like every other boost.
+# the money gets spent. The Engine Swap is NOT here — it is a genuine, deterministic
+# mid-run engine swap now (RunSession._pool_engine_swap_ids, features/engine-swap.md),
+# not a leveled purchase.
 #
 # One card per BoostLibrary.CATALOGUE id: its level (1-based — Save.boost_level's 0 means
 # "never upgraded", displayed as "Lv 1" since that's the level whose base magnitude the

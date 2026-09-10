@@ -156,6 +156,13 @@ func _drivetrain_entry(mode: int) -> Dictionary:
 	return {"id": "drivetrain:%d" % mode, "drivetrain_mode": mode}
 
 
+# Same idea for the engine swap: RunSession._with_engine_swap_display already stamps
+# "hp"/"hp_delta" onto the drawn entry before RunPickPanel ever sees it — this file only
+# proves the panel renders/reports whichever shape it's handed.
+func _engine_swap_entry(engine_id: String, hp: float, hp_delta: float) -> Dictionary:
+	return {"id": "engine_swap:%s" % engine_id, "engine_id": engine_id, "hp": hp, "hp_delta": hp_delta}
+
+
 func test_a_drivetrain_pick_entry_adds_one_card_and_stays_navigable() -> void:
 	var pick := _pick(["a"])
 	pick.append(_drivetrain_entry(Drivetrain.DriveMode.AWD))
@@ -179,6 +186,33 @@ func test_confirming_a_drivetrain_card_reports_its_mode() -> void:
 func test_no_drivetrain_entry_offers_no_conversion_card() -> void:
 	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
 	assert_eq(_carousel(page).card_count(), 2, "just the boost and repair — no conversion drawn")
+
+
+# --- The engine swap entry ---------------------------------------------------------
+
+func test_an_engine_swap_pick_entry_adds_one_card_and_stays_navigable() -> void:
+	var pick := _pick(["a"])
+	pick.append(_engine_swap_entry("fx_v8", 300.0, 100.0))
+	var page := RunPickPanel.open(_host, pick, func(_x: String) -> void: pass)
+	assert_eq(_carousel(page).card_count(), 3, "1 boost + repair + 1 engine swap card")
+	assert_not_null(MenuNav.of(page), "still keyboard/gamepad navigable with an engine swap card")
+
+
+func test_confirming_an_engine_swap_card_reports_its_id() -> void:
+	var choices: Array = []
+	var pick := _pick(["a"])
+	pick.append(_engine_swap_entry("fx_v8", 300.0, 100.0))
+	var page := RunPickPanel.open(_host, pick,
+		func(choice: String) -> void: choices.append(choice), false)
+	var carousel := _carousel(page)
+	# boost, then the one engine swap (repair omitted here).
+	carousel.confirmed.emit(1)
+	assert_eq(choices, ["engine_swap:fx_v8"])
+
+
+func test_no_engine_swap_entry_offers_no_swap_card() -> void:
+	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
+	assert_eq(_carousel(page).card_count(), 2, "just the boost and repair — no swap drawn")
 
 
 # --- Builds with no world scene ----------------------------------------------------

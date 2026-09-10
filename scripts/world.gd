@@ -1928,10 +1928,24 @@ func _field_car(instance_id: int) -> void:
 # RunSession.choose_drivetrain / drivetrain_override). Written onto this same duplicated
 # dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override sees it for
 # exactly as long as the run does.
+#
+# THE MID-RUN ENGINE SWAP (same seam, same lifetime again — see
+# RunSession.choose_engine_swap / engine_swap_id). Setting "swapped_engine" here is the
+# WHOLE integration: car.gd::apply_owned already reads that field and runs
+# _apply_engine_swap (features/engine-swap.md), bringing the swapped engine's real torque
+# curve, redline, mass, weight distribution and gearbox/gearing along with it — nothing
+# else has to know a swap happened. When engine_swap_id() is "" (no swap picked), this
+# simply omits the key, which is the same as it being unset: _apply_engine_swap resolves
+# via EngineSwap.current_engine_id, which falls back to `owned`'s own stock/previously-
+# swapped engine either way. A swapped id EQUAL to the car's own current engine is a safe
+# no-op too — _apply_engine_swap returns immediately when current == stock.
 func _owned_with_run_effects(owned: Dictionary) -> Dictionary:
 	var out := owned.duplicate(true)
 	out["boosts"] = RunSession.boosts() + SkillLibrary.equipped_effects(Save.profile)
 	out["drivetrain_override"] = RunSession.drivetrain_override()
+	var swap_id := RunSession.engine_swap_id()
+	if not swap_id.is_empty():
+		out["swapped_engine"] = swap_id
 	return out
 
 
@@ -2218,6 +2232,8 @@ func _apply_pick(choice: String) -> void:
 		RunSession.choose_repair()
 	elif choice.begins_with("drivetrain:"):
 		RunSession.choose_drivetrain(int(choice.substr("drivetrain:".length())))
+	elif choice.begins_with("engine_swap:"):
+		RunSession.choose_engine_swap(choice.substr("engine_swap:".length()))
 	elif choice != "":
 		RunSession.choose_boost(choice)
 	_teardown_interstitial()

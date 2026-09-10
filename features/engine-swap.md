@@ -1,25 +1,34 @@
 # Engine Swap & Detune
 
-**Sources:** the mid-run boost in `scripts/boost_library.gd` (`CATALOG` ->
-`"engine_swap"`) through the `engine_power_mult` row in
-`scripts/upgrade_library.gd` (`UpgradeLibrary.EFFECTS`, multiplying
-`GameConfig.peak_torque`), with its magnitude `GameConfig.run_boost_engine_power_mult`;
-plus the legacy owned-car read path -- `scripts/engine_swap.gd` (`EngineSwap`,
-pure math/lookup module) and the `_apply_engine_swap` fielding step in
-`scripts/car.gd` -- which still resolves cars in existing saves that carry a
-`swapped_engine`.
+**Sources:** the mid-run swap — `scripts/run_session.gd` (`RunSession.
+_pool_engine_swap_ids`, `_current_engine_id`, `_with_engine_swap_display`,
+`choose_engine_swap`, `engine_swap_id`), `scripts/region_run_mode.gd`
+(`RegionRunMode.boost_choices`'s `"engine_swap:"` id branch) and
+`scripts/world.gd` (`_owned_with_run_effects` writing `owned["swapped_engine"]`)
+— through the pre-existing `scripts/engine_swap.gd` (`EngineSwap`, pure
+math/lookup module) and the `_apply_engine_swap` fielding step in
+`scripts/car.gd`, which this feature REUSES rather than reimplements; plus the
+legacy owned-car read path, which still resolves cars in existing saves that
+carry a `swapped_engine`.
 
-**The Engine Swap is a MID-RUN BOOST now.** This supersedes the old decision-17
-one-time meta unlock, which is deleted along with its shop row, its
-`Save.buy_engine_swap_unlock` mutator and the `KEY_ENGINE_SWAP_UNLOCKED` flag:
-the swap is picked between stages exactly like the other boosts, dies with the
-run, and is sold up levels in the shop like every other `BoostLibrary` entry.
-It is the catalogue's POWER pick -- a stronger engine's torque curve via the
-`engine_power_mult` EFFECTS row on the per-car `peak_torque`, deliberately NOT
-`global_torque_scale` (a hidden uniform de-rate, never a per-car effect target).
-The old garage "move any engine into any other car" mutators (`Save.swap_engines`
-/ `set_engine_detune`) are deleted with the HQ lift that hosted them; their
-per-car keys survive as READ paths for old saves only.
+**The Engine Swap is a genuine, deterministic MID-RUN engine swap.** It is
+offered in the SAME between-stage pick as the other boosts and the AWD
+drivetrain conversion, run-scoped (dies with the run, never touches `Save`'s
+persisted car), but it is NOT a `BoostLibrary` catalogue entry and carries no
+purchasable level: `RunSession._pool_engine_swap_ids()` offers exactly **the
+next most powerful `EngineLibrary` engine relative to the car's current one**
+(ranked by `CarLibrary.peak_power_kw`), never a random pick, and `[]` once the
+car already runs the catalogue's most powerful engine — see
+[region-runs.md](region-runs.md) → "The engine swap" for the full pick-pool
+mechanics. This supersedes an earlier flat `engine_power_mult` multiplier on
+`cfg.peak_torque` — the `BoostLibrary.CATALOGUE["engine_swap"]` entry and its
+magnitude field `GameConfig.run_boost_engine_power_mult` are both deleted,
+since nothing else read either — which itself had superseded the original
+decision-17 one-time meta unlock (`Save.buy_engine_swap_unlock`,
+`KEY_ENGINE_SWAP_UNLOCKED`, both long deleted). The old garage "move any engine
+into any other car" mutators (`Save.swap_engines` / `set_engine_detune`) are
+deleted with the HQ lift that hosted them; their per-car keys survive as READ
+paths for old saves only.
 
 **Engine detune** is a per-car value (0-100%) that scales the fitted engine's
 torque, and remains the only DELIBERATE power-to-weight *reduction* lever for a
@@ -28,18 +37,20 @@ see [upgrade-catalogue.md](upgrade-catalogue.md) -> the `weight` slot). With the
 detune slider's host gone it is read-path-only too.
 
 **Tests:** `tests/headless/test_engine_swap.gd` (the pure module),
-`tests/headless/test_boost_library.gd` (the boost entry),
-`tests/headless/test_upgrade_library.gd` (the EFFECTS row)
+`tests/headless/test_region_run.gd` (the "between-stage pick: an engine swap"
+section — `_pool_engine_swap_ids`' next-most-powerful selection, `choose_engine_swap`,
+no-reach-Save, wipe-on-finish, resume), `tests/headless/test_run_pick_panel.gd` (the
+`"engine_swap:"` pick-entry card render/report)
 
 Both of the old gate's consumers — `UpgradeOptions.engine_swap_blocked_reason`
 and `hq._show_swap_confirm` — were deleted with the parts model and the
 diegetic hub (`hq.gd`); the gate itself followed them.
 
 Distinguish from [upgrade-catalogue.md](upgrade-catalogue.md): slottable
-upgrades permanently change a car's baseline. The engine-swap BOOST changes
-nothing permanently — it dies with the run, exactly like every other
-`BoostLibrary` pick, and changes only how much torque this run's car makes.
-currently runs, and can be undone at any time by swapping back. Detune is ordinary
+upgrades permanently change a car's baseline. The engine swap changes nothing
+permanently either — it dies with the run, exactly like every other
+between-stage pick, and changes only which engine this run's car currently
+runs, gone the moment the run ends (win or lose). Detune is ordinary
 [tuning.md](tuning.md): free, reversible, stored per-car, never written to the
 authored `.tres`.
 
@@ -304,6 +315,17 @@ behaviour. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
 covers `TuningLibrary.apply`'s `engine_detune` torque scaling.
+
+**The mid-run swap** — `test_region_run.gd`'s "between-stage pick: an engine swap"
+section: `_pool_engine_swap_ids()` offers the next strictly-more-powerful catalogue
+engine and no engine sits strictly between it and the current one; the pool empties
+once the car already runs the most powerful engine; the pool competes in the SAME
+draw as the boosts and AWD without changing the pick's total size;
+`choose_engine_swap` records the id, resolves the pick, and takes no repair; a later
+swap replaces rather than stacks; the swap never reaches `Save`'s persisted car; it
+is wiped on run end (win or lose) and survives a pause/resume. `test_run_pick_panel.gd`
+covers an `"engine_swap:"` pick entry rendering its card and reporting its id, and
+that no card is drawn when the pick carries none.
 
 **The UI tests are gone with the UI** (`test_upgrades_grid.gd` for the two tiles,
 the deleted `test_menu_flow.gd` for car-park swap mode and its confirm). There is no detune-to-enter
