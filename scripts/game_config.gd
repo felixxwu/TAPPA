@@ -3466,8 +3466,7 @@ func barrier_render_params() -> Dictionary:
 func coin_layout_params() -> Dictionary:
 	return {
 		"count": coins_per_stage,
-		"offset_m": coin_offset_m,
-		"offset_jitter_m": coin_offset_jitter_m,
+		"lane_spread_frac": coin_lane_spread_frac,
 		"start_margin_m": coin_start_margin_m,
 		"end_margin_m": coin_end_margin_m,
 	}
@@ -3486,6 +3485,9 @@ func coin_render_params() -> Dictionary:
 		"pickup_sfx_duration_sec": coin_pickup_sfx_duration_sec,
 		"render_distance_m": tree_render_distance_m,
 		"render_fade_m": tree_render_fade_m,
+		"spin_deg_per_sec": coin_spin_deg_per_sec,
+		"bob_speed": coin_bob_speed,
+		"bob_amplitude_m": coin_bob_amplitude_m,
 	}
 
 
@@ -4024,9 +4026,12 @@ func spectator_params() -> Dictionary:
 # _build_coins — a REGION-RUN mechanic only (RunSession.mode_id() == RunMode.REGION);
 # a challenge run never spawns them. See features/collectables.md.
 #
-# OFF THE RACING LINE, ON PURPOSE (decision 35): coin_offset_m is a FLOOR beyond the
-# visible road edge, not a look-and-feel knob — 0 would let a coin sit reachable
-# without leaving the road, defeating the whole mechanic.
+# ON THE CARRIAGEWAY, ON PURPOSE (decision 35 REVERSED by explicit user request,
+# 2026-09 — see todo/roguelike-pivot.md decision 35's note and features/collectables.md).
+# Coins used to sit beyond the road edge as a gamble; they now sit WITHIN the road so
+# they're visually obvious and collectable without leaving the racing surface.
+# coin_lane_spread_frac controls how far from the centerline they can land, as a
+# fraction of the half-width.
 #
 # NO SIGNPOSTING (decision 50, amending 35): there is deliberately no "warning
 # distance" field here, and none should be added — a coin is met by driving into it,
@@ -4038,14 +4043,11 @@ func spectator_params() -> Dictionary:
 ## (decision 51 wires skill effects after this stage) — nothing reads this through a
 ## skill today.
 @export_range(0, 12) var coins_per_stage := 4
-## Minimum lateral distance (m) a coin's centre sits BEYOND the visible road edge
-## (track_width / 2). This is the gamble decision 35 wants: a coin is never
-## reachable without actually leaving the road.
-@export_range(0.0, 8.0) var coin_offset_m := 2.0
-## Extra random spread (m) added on top of coin_offset_m, so coins land anywhere in
-## [edge + coin_offset_m, edge + coin_offset_m + this] rather than all on one fixed
-## line parallel to the road.
-@export_range(0.0, 8.0) var coin_offset_jitter_m := 2.5
+## How far a coin's centre can land from the road centerline, as a fraction of the
+## half-width (track_width / 2). 0 pins every coin to the centerline; 1.0 allows a
+## coin right at the visible road edge. Coins are ALWAYS within the carriageway
+## (abs(lateral) <= half_width * this) — never beyond it.
+@export_range(0.0, 1.0) var coin_lane_spread_frac := 0.6
 ## Arc-length (m) kept clear of the start line — no coin in the opening straight.
 @export_range(0.0, 200.0) var coin_start_margin_m := 40.0
 ## Arc-length (m) kept clear of the finish — no coin in the closing straight.
@@ -4058,14 +4060,22 @@ func spectator_params() -> Dictionary:
 ## stage's payout (decision 36) — see RegionRunMode.stage_money. A missed stage's
 ## coins pay nothing, same as the rest of that stage's money.
 @export_range(0.0, 500.0) var coin_money := 40.0
-## Visual radius (m) of the coin disc mesh.
-@export_range(0.05, 1.5) var coin_visual_radius_m := 0.32
+## Visual radius (m) of the coin disc mesh. Bumped up from the original off-track
+## coin's size so a floating, spinning coin reads clearly at speed.
+@export_range(0.05, 1.5) var coin_visual_radius_m := 0.5
 ## Visual thickness (m) of the coin disc mesh.
 @export_range(0.01, 0.5) var coin_visual_thickness_m := 0.08
-## Height (m) a coin hovers above the road-adjacent ground it's placed on.
-@export_range(0.0, 2.0) var coin_hover_m := 0.5
+## Height (m) a coin hovers above the road-adjacent ground it's placed on. Roughly
+## windscreen height so it reads clearly from the driver's seat while approaching.
+@export_range(0.0, 2.5) var coin_hover_m := 1.2
 ## Coin disc colour.
 @export var coin_color := Color(0.97, 0.80, 0.13)
+## Spin rate (deg/sec) of a floating coin about its vertical axis.
+@export_range(0.0, 720.0) var coin_spin_deg_per_sec := 180.0
+## Angular speed (rad/sec) of a coin's gentle vertical bob (sine wave).
+@export_range(0.0, 10.0) var coin_bob_speed := 2.0
+## Amplitude (m) of a coin's vertical bob, added on top of coin_hover_m.
+@export_range(0.0, 0.5) var coin_bob_amplitude_m := 0.12
 ## Pitch (Hz) of the pickup chime. Deliberately set apart from sfx_beep_frequency_hz
 ## (the standard cue default) so a coin reads as its own distinct, brighter sound.
 @export var coin_pickup_sfx_freq_hz := 1600.0

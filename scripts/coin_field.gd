@@ -4,17 +4,22 @@ extends Node3D
 # Tests: tests/headless/test_coin_field.gd — extend in the same change.
 #
 # Builds + owns one stage's coins from a CoinLayout plan (todo/roguelike-pivot.md
-# decisions 13, 35, 36, 50). Each coin is a small flat-lit disc mesh (no physics
-# body — see BushField for the same choice and why): a per-tick PROXIMITY query
-# against the car, not a collider, so a coin can vanish the instant it's collected
-# without a physics-frame lag. One-shot per coin (never re-arms once collected,
-# unlike BushField's bushes — a spent coin stays spent for the rest of the stage).
+# decisions 13, 35, 36, 50 — decision 35 REVERSED by explicit user request, see
+# features/collectables.md). Each coin is a small disc mesh, oriented UPRIGHT and
+# floating at driver-visible height ON the carriageway, spinning + bobbing
+# continuously so it reads clearly at speed (no physics body — see BushField for
+# the same "no collider" choice and why): a per-tick PROXIMITY query against the
+# car, not a collider, so a coin can vanish the instant it's collected without a
+# physics-frame lag. One-shot per coin (never re-arms once collected, unlike
+# BushField's bushes — a spent coin stays spent for the rest of the stage).
 #
 # THE PICKUP RADIUS IS READ LIVE FROM GameConfig EVERY TICK, never cached at build()
 # — see _timed_physics_process. That is deliberate: SkillLibrary's "coin_magnet"
 # ("wider coin pickup radius") is wired in a LATER pass (decision 51) and its whole
 # job is to widen GameConfig.coin_pickup_radius_m before this reads it; caching the
-# radius here would give that pass nothing to reach.
+# radius here would give that pass nothing to reach. The pickup query is 2D XZ
+# (distance_squared_to on Vector2), so the coin's hover height / bob never affects
+# whether it's in pickup range — only the visual Y position moves.
 
 signal coin_collected(index: int, total_collected: int)
 
@@ -33,8 +38,13 @@ var _car: Node = null
 var _points: PackedVector2Array = PackedVector2Array()  # coin world XZ, index-stable
 var _collected: PackedByteArray = PackedByteArray()      # 1 once picked up
 var _meshes: Array[MeshInstance3D] = []
+var _base_y: PackedFloat32Array = PackedFloat32Array()  # terrain height + hover, per coin
 var _pickup_sfx_freq := 0.0
 var _pickup_sfx_duration := 0.0
+var _spin_deg_per_sec := 0.0
+var _bob_speed := 0.0
+var _bob_amplitude_m := 0.0
+var _t := 0.0
 
 
 # Build every coin from a CoinLayout.plan() result. `terrain` sits the disc on the
@@ -45,6 +55,9 @@ func build(layout: Array, terrain: TerrainManager, car: Node, params: Dictionary
 	_car = car
 	_pickup_sfx_freq = float(params.get("pickup_sfx_freq_hz", 0.0))
 	_pickup_sfx_duration = float(params.get("pickup_sfx_duration_sec", 0.0))
+	_spin_deg_per_sec = float(params.get("spin_deg_per_sec", 0.0))
+	_bob_speed = float(params.get("bob_speed", 0.0))
+	_bob_amplitude_m = float(params.get("bob_amplitude_m", 0.0))
 	var radius: float = maxf(0.01, float(params.get("radius_m", 0.32)))
 	var thickness: float = maxf(0.01, float(params.get("thickness_m", 0.08)))
 	var hover: float = float(params.get("hover_m", 0.5))
@@ -67,10 +80,15 @@ func build(layout: Array, terrain: TerrainManager, car: Node, params: Dictionary
 		mmi.mesh = mesh
 		mmi.material_override = mat
 		mmi.position = Vector3(pos.x, y, pos.y)
+		# Stand the disc upright (a CylinderMesh's flat faces default to facing
+		# +Y/-Y) so the coin reads face-on to a driver approaching at speed, like a
+		# real coin standing on edge. _process spins it about Y from here.
+		mmi.rotation = Vector3(PI * 0.5, 0.0, 0.0)
 		MeshUtil.apply_visibility_range(mmi, render_dist, render_fade)
 		add_child(mmi)
 		_meshes.append(mmi)
 		_points.append(pos)
+		_base_y.append(y)
 		coin_count += 1
 	_collected.resize(coin_count)  # PackedByteArray zero-fills new elements
 
@@ -85,6 +103,41 @@ func _material(col: Color) -> ShaderMaterial:
 	mat.set_shader_parameter("sky_color", Color(0.55, 0.6, 0.7))
 	mat.set_shader_parameter("ground_color", Color(0.35, 0.3, 0.25))
 	return mat
+
+
+const PHASE_STEP_RAD := 1.7  # arbitrary per-coin phase offset so coins don't move in lockstep
+
+func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"coin_field", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(delta: float) -> void:
+	if _meshes.is_empty() or collected_count >= coin_count:
+		return
+	_t += delta
+	for i in _meshes.size():
+		if i < _collected.size() and _collected[i] != 0:
+			continue
+		var anim := animate(i, _t, _spin_deg_per_sec, _bob_speed, _bob_amplitude_m)
+		var mmi := _meshes[i]
+		mmi.transform.basis = Basis(Vector3.UP, anim["spin_rad"]) * Basis(Vector3.RIGHT, PI * 0.5)
+		mmi.position.y = _base_y[i] + anim["y_offset"]
+
+
+# Pure: the spin angle (rad, about the world vertical) and vertical bob offset (m,
+# on top of the coin's resting hover height) for coin `index` at elapsed time `t`.
+# Static + side-effect-free so the "coins float and spin" contract is unit-testable
+# without a scene or a process tick (CLAUDE.md — test the logic). `index` phase-
+# offsets both so coins don't move in lockstep.
+static func animate(index: int, t: float, spin_deg_per_sec: float,
+		bob_speed: float, bob_amplitude_m: float) -> Dictionary:
+	var phase := float(index) * PHASE_STEP_RAD
+	return {
+		"spin_rad": deg_to_rad(spin_deg_per_sec) * t + phase,
+		"y_offset": sin(t * bob_speed + phase) * bob_amplitude_m,
+	}
 
 
 func _physics_process(delta: float) -> void:

@@ -13,11 +13,15 @@ argument), `scripts/region_run_mode.gd` (`stage_money`'s fourth argument),
 ledger), `tests/headless/test_hud.gd` (`test_coin_counter_starts_hidden_and_shows_on_first_call`)
 
 RR's coins (`todo/roguelike-pivot.md` decisions 13, 35, 36, 50 — stage 8 of
-the deleted pivot plan, the last feature stage of the pivot). Money
-collectables scattered on a region-run stage, **off the racing line**, so picking
-one up is a real gamble against the fixed clock: leaving the fast line costs time,
-the timer is the run's only fail state (decision 4), and there is no other reason
-this game would ever ask a player to swerve.
+the deleted pivot plan, the last feature stage of the pivot; decision 35's
+off-the-line placement was **SUPERSEDED in 2026-09 by explicit user request** — see
+that decision's note). Money collectables scattered on a region-run stage,
+**ON the carriageway**, near the racing line with some lateral spread, floating at
+driver-visible height and spinning continuously so they're visually obvious to a
+driver approaching at speed. Picking one up costs a beat of attention, not a
+detour off the road — the gamble decision 35 originally wanted is gone; what
+remains is a collectable a player can actually see coming and grab without
+leaving the fast line.
 
 ## The mechanic, end to end
 
@@ -48,21 +52,22 @@ RunMode.REGION` short-circuits it, exactly like the opposite check
 has no per-stage money to boost and no fail state to gamble against, so nothing is
 placed for it.
 
-## Placement — off the racing line, deterministically (CoinLayout)
+## Placement — on the carriageway, deterministically (CoinLayout)
 
 `CoinLayout.plan(centerline, finish_len, track_width, seed_value, params)` is pure:
 no scene, no car, no RNG state outside the call. It reads `GameConfig
-.coin_layout_params()` — `count`, `offset_m`, `offset_jitter_m`, `start_margin_m`,
+.coin_layout_params()` — `count`, `lane_spread_frac`, `start_margin_m`,
 `end_margin_m` — and:
 
 1. Splits the usable arc length (`finish_len` minus both margins) into `count` equal
    segments and draws one arc offset per segment (stratified, not pure random —
    spreads coins across the whole stage instead of letting them cluster wherever the
    RNG happens to land, the same reasoning `TreeScatter`'s grid uses).
-2. For each, picks a road edge (`side` = ±1) and a lateral distance of
-   `track_width / 2 + offset_m + rand() * offset_jitter_m` — **always at least
-   `offset_m` beyond the visible road edge**. That floor is the whole mechanic
-   (decision 35): a coin is never reachable without actually leaving the road.
+2. For each, picks a side of the centerline (`side` = ±1) and a lateral distance of
+   `track_width / 2 * lane_spread_frac * rand()` — **always within the carriageway**
+   (`abs(lateral) <= track_width / 2`), never beyond the visible road edge.
+   `lane_spread_frac` (0-1) is how far toward the edge a coin can land; 0 pins every
+   coin to the centerline.
 3. Samples the centerline's position + tangent at that arc offset (mirrors
    `SignLayout._tangent_at`) and offsets perpendicular to it.
 
@@ -85,14 +90,32 @@ from `RegionStagePool.draw(region_id, stage_count, run_seed)` — the persisted
 bookkeeping. This is exactly the guarantee `TreeScatter`'s tree/bush/rock passes
 already rely on; coins just add a fourth offset to the same seed.
 
+## Look — floating and spinning (CoinField)
+
+Each coin is a small disc (`CylinderMesh`, `ps1_models_lit.gdshader` — mirrors
+`BarrierSection`'s material build), placed at the road-adjacent terrain height plus
+`coin_hover_m` (~1.2m by default — roughly windscreen height, so it's visible to an
+approaching driver rather than sitting underfoot). The mesh is rotated 90° about X
+at build time so the disc stands **upright** (a `CylinderMesh`'s flat faces default
+to +Y/-Y) — it reads face-on like a real coin standing in the air, not a flat coaster
+lying on the ground.
+
+`CoinField._process` continuously **spins** every un-collected coin about the world
+vertical axis at `coin_spin_deg_per_sec` (default ~180°/s) and **bobs** it vertically
+with `sin(t * coin_bob_speed) * coin_bob_amplitude_m` on top of its resting hover
+height, phase-offset per coin index (`CoinField.PHASE_STEP_RAD`) so a field of coins
+doesn't move in lockstep. `CoinField.animate(index, t, spin_deg_per_sec, bob_speed,
+bob_amplitude_m)` is the pure core (mirrors `find_pickups` below) — returns
+`{"spin_rad", "y_offset"}` — so the spin/bob math is unit-testable without a scene or
+a process tick. Work is skipped entirely once every coin on the stage is collected.
+
 ## Pickup (CoinField)
 
-Each coin is a small flat-lit disc (`CylinderMesh`, `ps1_models_lit.gdshader` —
-mirrors `BarrierSection`'s material build), placed at the road-adjacent terrain
-height plus `coin_hover_m`. **No physics body** — like `BushField`'s pass-through
-bushes, a coin is a per-tick **proximity query**, not a collider, so it can vanish
-the instant it's collected with no physics-frame lag and no risk of the car bogging
-down on it.
+**No physics body** — like `BushField`'s pass-through bushes, a coin is a per-tick
+**proximity query**, not a collider, so it can vanish the instant it's collected
+with no physics-frame lag and no risk of the car bogging down on it. The pickup
+query is 2D XZ (`find_pickups` below), so the coin's hover height and vertical bob
+never affect whether it's in pickup range — only its visual Y position moves.
 
 `CoinField.find_pickups(car_xz, points, collected, radius)` is the pure core: which
 not-yet-collected indices lie within `radius` of the car, by squared distance. Only
@@ -149,9 +172,7 @@ DIFFERENT things with it:
   .stage_money(stage_index, elapsed_ms, target_ms, coins_collected)` is only called
   inside `report_event_result`'s `if not missed:` branch, same as the rest of that
   stage's payout. This follows directly from decision 14 (a failed run keeps 100% of
-  the money it earned) rather than being a separate rule: since decision 35 already
-  makes the detour a gamble against the clock, losing the coin money too on a missed
-  stage would punish the same gamble twice.
+  the money it earned) rather than being a separate rule.
 
 `stage_money`'s coin term is `coins_collected * GameConfig.coin_money`, added AFTER
 `(completion + fast_bonus) * region_scale` rather than inside it — a coin is worth a
@@ -168,12 +189,12 @@ All of it is a plain tunable (CLAUDE.md — no test may pin a chosen value here)
 | --- | --- |
 | `coins_enabled` | Master switch, mirrors `signs_enabled`/`rocks_enabled` |
 | `coins_per_stage` | How many `CoinLayout.plan` places (0-12) |
-| `coin_offset_m` | Minimum lateral distance beyond the road edge — the decision-35 floor |
-| `coin_offset_jitter_m` | Extra random spread on top of `coin_offset_m` |
+| `coin_lane_spread_frac` | How far from the centerline a coin can land, as a fraction (0-1) of the half-width — always within the carriageway |
 | `coin_start_margin_m` / `coin_end_margin_m` | Arc-length kept clear of the start/finish |
 | `coin_pickup_radius_m` | Pickup trigger radius — read LIVE by `CoinField`, the `coin_magnet` seam |
 | `coin_money` | Money per coin, banked at stage clear |
 | `coin_visual_radius_m` / `coin_visual_thickness_m` / `coin_hover_m` / `coin_color` | The disc mesh's look |
+| `coin_spin_deg_per_sec` / `coin_bob_speed` / `coin_bob_amplitude_m` | The floating coin's continuous spin + bob |
 | `coin_pickup_sfx_freq_hz` / `coin_pickup_sfx_duration_sec` | The pickup chime |
 
 `coin_layout_params()` bundles the placement fields for `CoinLayout.plan` (mirrors

@@ -126,6 +126,13 @@ Settled with the user during the brainstorm that produced this file:
     memory test rather than a decision. That reasoning still stands and the
     consequence is accepted: a first run through a stage will not see a coin
     coming. Off-line placement survives; only the warning goes.
+
+    **SUPERSEDED (2026-09, explicit user request).** The off-line placement half of
+    this decision is reversed: coins now sit ON the carriageway, near the racing
+    line with some lateral spread, floating at driver-visible height and spinning
+    continuously so they read clearly at speed. The "no signposting" half (decision
+    50) is untouched — see `features/collectables.md` for the current mechanic and
+    `scripts/coin_layout.gd` / `scripts/coin_field.gd` for the implementation.
 36. **Coin money banks at stage clear**, not at run end. This follows from
     decision 14 (a failed run keeps its money) rather than being a separate
     choice: with off-line placement the detour already risks the run, and losing

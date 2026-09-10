@@ -897,8 +897,9 @@ func _place_world_props(cfg: GameConfig, result: Dictionary, road_centerline: Cu
 	if cfg.barriers_enabled:
 		_build_barriers(cfg, result)
 
-	# Stage coins (decisions 13, 35, 36, 50) — a REGION-RUN mechanic only. Placed
-	# off the road so a pickup costs time against the clock; see _build_coins.
+	# Stage coins (decisions 13, 35, 36, 50 — 35 reversed by user request) — a
+	# REGION-RUN mechanic only. Placed on the carriageway, floating and spinning
+	# for visibility; see _build_coins.
 	if cfg.coins_enabled:
 		_build_coins(cfg, road_centerline, finish_len)
 

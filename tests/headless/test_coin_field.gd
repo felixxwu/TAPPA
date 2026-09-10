@@ -1,9 +1,10 @@
 extends GutTest
 # CoinField (scripts/coin_field.gd) — builds a stage's coins from a CoinLayout plan
 # and runs the pickup proximity query (todo/roguelike-pivot.md decisions 13, 35, 36,
-# 50). Mirrors test_sign_field.gd: a bare TerrainManager, no catalogue or generated
-# track. find_pickups is pure (no scene, no physics tick needed) so the "collected
-# once, not twice" contract is checked directly.
+# 50 — decision 35 REVERSED by explicit user request, see features/collectables.md).
+# Mirrors test_sign_field.gd: a bare TerrainManager, no catalogue or generated
+# track. find_pickups and animate are both pure (no scene, no tick needed) so their
+# contracts are checked directly.
 
 # A dynamic body standing in for the car (only global_transform is read).
 class FakeCar:
@@ -54,6 +55,42 @@ func test_find_pickups_can_return_several_at_once() -> void:
 	var collected := PackedByteArray([0, 0, 0])
 	var hits := CoinField.find_pickups(Vector2.ZERO, points, collected, 1.0)
 	assert_eq(hits, [0, 1], "every not-yet-collected point in range comes back")
+
+
+# --- animate: pure spin/bob logic --------------------------------------------------
+
+func test_animate_spins_faster_over_time() -> void:
+	var early := CoinField.animate(0, 0.1, 180.0, 2.0, 0.1)
+	var later := CoinField.animate(0, 1.0, 180.0, 2.0, 0.1)
+	assert_gt(later["spin_rad"], early["spin_rad"], "spin angle keeps increasing with time")
+
+
+func test_animate_zero_spin_rate_never_rotates() -> void:
+	var a := CoinField.animate(2, 0.0, 0.0, 2.0, 0.1)
+	var b := CoinField.animate(2, 5.0, 0.0, 2.0, 0.1)
+	assert_eq(a["spin_rad"], b["spin_rad"], "zero deg/sec leaves the spin angle fixed")
+
+
+func test_animate_bob_offset_stays_within_the_amplitude() -> void:
+	var amplitude := 0.15
+	for i in range(20):
+		var t := float(i) * 0.37
+		var anim := CoinField.animate(0, t, 180.0, 2.0, amplitude)
+		assert_true(absf(anim["y_offset"]) <= amplitude + 0.001,
+			"the bob never exceeds its configured amplitude")
+
+
+func test_animate_zero_bob_amplitude_never_moves_vertically() -> void:
+	var anim := CoinField.animate(3, 1.23, 180.0, 2.0, 0.0)
+	assert_eq(anim["y_offset"], 0.0)
+
+
+func test_animate_phase_offsets_different_coins() -> void:
+	# Different indices must not move in lockstep — that's the whole point of the
+	# per-coin phase offset (CLAUDE.md: relationship, not a pinned magnitude).
+	var a := CoinField.animate(0, 1.0, 180.0, 2.0, 0.1)
+	var b := CoinField.animate(1, 1.0, 180.0, 2.0, 0.1)
+	assert_ne(a["spin_rad"], b["spin_rad"], "different coins spin out of phase")
 
 
 # --- build(): the scene side ------------------------------------------------------
