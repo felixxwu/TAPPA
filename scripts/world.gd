@@ -1527,6 +1527,9 @@ var _start_line: StartLine
 
 # The free-fly PHOTO MODE camera while it's up, else null (see _on_photo_mode_requested).
 var _photo_camera: PhotoModeCamera
+# On-screen touch controls for photo mode, built alongside the camera ONLY on a touch
+# device (Platform.is_touch()) — see _on_photo_mode_requested/_on_photo_mode_finished.
+var _photo_controls: PhotoModeControls
 
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
@@ -1676,11 +1679,23 @@ func _on_photo_mode_requested() -> void:
 	add_child(_photo_camera)
 	_photo_camera.enter(get_viewport().get_camera_3d())
 	_set_photo_mode_chrome(false)
+	# Touch controls: the phone has no Esc key and MobileControls is hidden above, so
+	# without these a touch player would be stuck flying with no way out. Desktop/native
+	# gets none — the mouse+keyboard path above already covers it.
+	if Platform.is_touch():
+		_photo_controls = PhotoModeControls.new()
+		_photo_controls.name = "PhotoModeControls"
+		add_child(_photo_controls)
+		_photo_controls.setup(_photo_camera)
 
 
 # Esc in photo mode: drop the camera, restore the chrome, re-assert the player's chosen
 # gameplay camera and give the (still frozen) pause menu back.
 func _on_photo_mode_finished() -> void:
+	if is_instance_valid(_photo_controls):
+		remove_child(_photo_controls)
+		_photo_controls.queue_free()
+	_photo_controls = null
 	if is_instance_valid(_photo_camera):
 		# Detach BEFORE queue_free: the free lands at the end of the frame, so a photo
 		# mode re-opened in the same frame would otherwise collide with the dying node's

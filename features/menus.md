@@ -211,7 +211,9 @@ physics-write point — so it lands regardless of when the reset was fired.
 **Photo Mode** enters a free-fly frozen-world camera (see [camera.md](camera.md)); the
 tree stays **paused** throughout and the menu is **disarmed** while photo mode is active,
 so Esc and the Pause button belong to the camera. Exiting photo mode re-opens the pause
-menu (still frozen).
+menu (still frozen). Touch players get their own on-screen control set for it (thumbstick,
+altitude buttons, back/hide) since there's no Esc key on a phone — see
+[camera.md](camera.md) › *On-screen touch controls*.
 
 **Settings** shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the hub's own Settings page — see

@@ -171,6 +171,8 @@ servo measures the grip limit instead of predicting it. See
 | `replay_fov_smoothing` | 5.0 | Easing rate for replay FOV changes (cuts always snap) |
 | `photo_move_speed` | 25.0 | Photo mode free-fly camera lateral/vertical movement speed (m/s) |
 | `photo_look_sensitivity` | 0.003 | Photo mode mouse look sensitivity (multiplier on mouse delta per frame) |
+| `photo_touch_look_sensitivity` | 0.004 | Photo mode **touch** drag-to-look sensitivity (radians per pixel of drag) — kept separate from `photo_look_sensitivity` since a finger drag and a mouse delta cover different pixel ranges. See [camera.md](camera.md) › *On-screen touch controls* |
+| `photo_fov_min` / `photo_fov_max` | 20.0 / 90.0 | Photo mode pinch-zoom FOV clamp (degrees) — pinching apart zooms in toward `photo_fov_min`, pinching together zooms out toward `photo_fov_max` |
 | `fog_density` | 0.02 | Environment fog thickness |
 | `background_color` | (0.35,0.3,0.45) | Sky + fog color |
 

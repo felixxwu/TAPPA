@@ -35,6 +35,14 @@ var _prev_mouse_mode := Input.MOUSE_MODE_VISIBLE
 # what the suite can assert.
 var _wants_capture := false
 
+# Movement axis pushed by PhotoModeControls (touch thumbstick + up/down buttons), in the
+# same x=right/y=up/z=forward camera-local convention as input_axis(). Added to the
+# keyboard axis each frame (see _process) so touch and keyboard can't be driven at once
+# on a device that somehow has both — apply_move already normalises the summed
+# direction, so holding the stick fully over AND a key can't exceed photo_move_speed.
+# Reset on exit() so a stale value can't survive into the next time photo mode opens.
+var touch_axis := Vector3.ZERO
+
 
 func _init() -> void:
 	# The whole point: run while the tree is paused. Without this the camera would be
@@ -90,7 +98,7 @@ func _process(delta: float) -> void:
 	# `delta` is the UNSCALED frame time here: the tree is paused, so a paused-tree
 	# node's delta is still real seconds — the camera flies at the same speed however
 	# long the frame took.
-	apply_move(input_axis(), delta)
+	apply_move(input_axis() + touch_axis, delta)
 
 
 # The held movement keys as a camera-LOCAL axis triple: x = right, y = up, z = forward.
@@ -171,8 +179,18 @@ func exit() -> void:
 	if not _entered:
 		return
 	_entered = false
+	touch_axis = Vector3.ZERO
 	release_mouse()
 	exited.emit()
+
+
+# Scale the fov by `factor` (a pinch's separation ratio — >1 pinching apart, <1 pinching
+# together) and clamp to the config's touch pinch-zoom range. Pinching apart zooms IN
+# (narrower fov reads as "closer"), so factor multiplies the fov DOWN, not up.
+func zoom_by(factor: float) -> void:
+	if factor <= 0.0:
+		return
+	fov = clampf(fov / factor, Config.data.photo_fov_min, Config.data.photo_fov_max)
 
 
 func is_active() -> bool:

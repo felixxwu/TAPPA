@@ -1146,6 +1146,15 @@ func has_nitrous() -> bool:
 @export_range(1.0, 200.0) var photo_move_speed := 25.0
 ## Mouse look sensitivity — RADIANS of turn per pixel of mouse motion.
 @export_range(0.0005, 0.02) var photo_look_sensitivity := 0.003
+## Touch look sensitivity — RADIANS of turn per PIXEL of one-finger drag
+## (photo_mode_controls.gd). Kept separate from photo_look_sensitivity: a finger drag
+## covers far more screen distance than a mouse pushes in relative motion for the same
+## intended turn, so the two need independent tuning.
+@export_range(0.0005, 0.02) var photo_touch_look_sensitivity := 0.004
+## Pinch-zoom FOV limits (degrees) for photo mode on touch — pinching fingers apart
+## zooms IN (toward photo_fov_min), pinching together zooms out (toward photo_fov_max).
+@export_range(10.0, 90.0) var photo_fov_min := 20.0
+@export_range(10.0, 120.0) var photo_fov_max := 90.0
 
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car
