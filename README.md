@@ -12,12 +12,17 @@ perks, boost levels and lifetime stats all survive it. You lose runs and get
 stronger anyway. See [`gameplay.md`](gameplay.md) for the full design vision —
 it's the north star the implementation ladders up to.
 
-> **Mid-pivot.** The game is being rebuilt from a Gran-Turismo-style career loop
-> into the roguelike above. `todo/roguelike-pivot.md` is the settled decision
-> record and wins over every other document (the pivot plan that sequenced the
-> work, `todo/roguelike-pivot-plan.md`, is deleted — every item landed and was verified).
-> order of work. Feature docs under `features/` may still describe deleted systems
-> — they are being swept as the pivot lands.
+> **The pivot has landed.** The game was a Gran-Turismo-style rally career and is
+> now the roguelike above; roughly half the old codebase was deleted in September
+> 2026. [`PIVOT-CHANGES.md`](PIVOT-CHANGES.md) is the two-minute map of what
+> changed, and `todo/roguelike-pivot.md` is the settled decision record that wins
+> over every other document. A few feature docs under `features/` may still
+> describe deleted systems — fix them as you find them.
+
+**Describing the game anywhere?** [`docs/store-listing.md`](docs/store-listing.md)
+is the single source of truth for the pitch — tagline, short and full store
+descriptions, the words to avoid, and the checklist of every surface (itch.io,
+Google Play, the GitHub About field) that has to be kept in sync.
 
 ## Engine version
 
