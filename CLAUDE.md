@@ -248,6 +248,15 @@ seams not to work around, and where the decision record lives.
   yourself for genuinely trivial single-line edits where spawning would cost
   more than it saves, and for the planning/review work this section already
   reserves for the top-level agent.
+- **There is a floor below delegation isn't worth it.** A single
+  well-localized edit under ~20 lines, or one targeted lookup answerable in
+  1-2 tool calls, costs more in spawn overhead (fresh system prompt, tool
+  schemas, re-derived context) than it saves — do those inline. Delegation
+  pays off once a task needs real exploration or multi-file work; below that
+  line it's pure overhead. Don't fan out N subagents for a task that's
+  actually one coherent piece of work either — parallelism only pays when
+  the pieces are genuinely independent, otherwise you're paying N times the
+  spawn overhead plus cross-agent coordination for nothing.
 - **Don't explore before you delegate.** If a task needs figuring out where
   something lives or how it works before it can be implemented, hand the
   whole thing — investigation and implementation — to the subagent. Don't
@@ -268,6 +277,14 @@ seams not to work around, and where the decision record lives.
   unfamiliar area of the codebase, or a subagent asking a clarifying
   question are not by themselves grounds to escalate — send back a sharper
   brief and let Sonnet retry first.
+- **A bad dispatch counts as one of the two strikes, not a free redo.** If a
+  subagent explored the wrong area or came back with the wrong thing because
+  the brief was underspecified, don't just quietly redispatch as if nothing
+  happened — that silently doubles the spawn-and-explore cost. That attempt
+  counts toward the "wrong twice" escalation threshold above. Fix the brief
+  before retrying (name the exact files/area from what the failed attempt
+  revealed, don't make it guess again), and if the second attempt also
+  misses, escalate rather than trying a third time.
 
 ## Parallel agents share this checkout
 
