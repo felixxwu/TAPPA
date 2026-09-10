@@ -17,10 +17,11 @@ func _centerline() -> Curve2D:
 	return TrackFixtures.straight(LENGTH)["centerline"] as Curve2D
 
 
-func _params(count := 5, lane_spread_frac := 0.6,
+func _params(count := 5, lane_spread_frac := 0.9, lane_inner_frac := 0.7,
 		start_margin := 40.0, end_margin := 40.0) -> Dictionary:
 	return {
 		"count": count, "lane_spread_frac": lane_spread_frac,
+		"lane_inner_frac": lane_inner_frac,
 		"start_margin_m": start_margin, "end_margin_m": end_margin,
 	}
 
@@ -37,7 +38,7 @@ func test_zero_or_negative_count_places_nothing() -> void:
 
 func test_margins_that_consume_the_whole_stage_place_nothing() -> void:
 	# start_margin + end_margin >= finish_len leaves no usable arc length at all.
-	var params := _params(4, 0.6, LENGTH, LENGTH)
+	var params := _params(4, 0.9, 0.7, LENGTH, LENGTH)
 	assert_eq(CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 1, params).size(), 0)
 
 
@@ -45,7 +46,7 @@ func test_every_coin_sits_within_the_carriageway() -> void:
 	# Decision 35 (reversed) — the whole mechanic now. A straight track's
 	# perpendicular is pure +/-X, so the lateral distance is just abs(pos.x).
 	var layout := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 7,
-		_params(8, 0.8))
+		_params(8, 0.8, 0.5))
 	assert_gt(layout.size(), 0, "setup: some coins were placed")
 	var half_w := TRACK_WIDTH * 0.5
 	for entry in layout:
@@ -55,19 +56,44 @@ func test_every_coin_sits_within_the_carriageway() -> void:
 
 
 func test_zero_spread_places_coins_exactly_on_the_centerline() -> void:
-	# Sanity guard, not a pinned value (CLAUDE.md): 0 spread collapses to exactly
-	# the centerline (lateral == 0), not a fudge factor.
-	var layout := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 3, _params(4, 0.0))
+	# Sanity guard, not a pinned value (CLAUDE.md): a zero-width band at 0 collapses
+	# to exactly the centerline (lateral == 0), not a fudge factor.
+	var layout := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 3, _params(4, 0.0, 0.0))
 	for entry in layout:
 		var pos: Vector2 = entry["pos"]
 		assert_almost_eq(absf(pos.x), 0.0, 0.001)
 
 
+func test_no_coin_lands_inside_the_inner_fraction() -> void:
+	# The point of the band: coins hug the road EDGE, so nothing sits on the racing
+	# line. Contract, not a tuned value — it holds for any inner fraction.
+	var inner := 0.6
+	var layout := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 11,
+		_params(10, 1.0, inner))
+	assert_gt(layout.size(), 0, "setup: some coins were placed")
+	var half_w := TRACK_WIDTH * 0.5
+	for entry in layout:
+		var pos: Vector2 = entry["pos"]
+		assert_true(absf(pos.x) >= half_w * inner - 0.001,
+			"a coin never lands inside the inner band, i.e. never on the racing line")
+
+
+func test_an_inner_fraction_above_the_outer_one_never_inverts_the_band() -> void:
+	# A mis-set config narrows the band to a single line instead of producing
+	# negative-width nonsense or coins off the road.
+	var layout := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 5,
+		_params(6, 0.4, 0.9))
+	var half_w := TRACK_WIDTH * 0.5
+	for entry in layout:
+		var pos: Vector2 = entry["pos"]
+		assert_almost_eq(absf(pos.x), half_w * 0.4, 0.001)
+
+
 func test_larger_spread_fraction_allows_wider_lateral_offsets() -> void:
 	# Sanity guard on the RELATIONSHIP, not a pinned magnitude: a bigger fraction
 	# widens the band coins can land in (up to the road edge), it never shrinks it.
-	var narrow := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 3, _params(10, 0.2))
-	var wide := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 3, _params(10, 1.0))
+	var narrow := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 3, _params(10, 0.2, 0.0))
+	var wide := CoinLayout.plan(_centerline(), LENGTH, TRACK_WIDTH, 3, _params(10, 1.0, 0.0))
 	var narrow_max := 0.0
 	for entry in narrow:
 		var pos: Vector2 = entry["pos"]

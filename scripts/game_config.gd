@@ -3466,6 +3466,7 @@ func barrier_render_params() -> Dictionary:
 func coin_layout_params() -> Dictionary:
 	return {
 		"count": coins_per_stage,
+		"lane_inner_frac": coin_lane_inner_frac,
 		"lane_spread_frac": coin_lane_spread_frac,
 		"start_margin_m": coin_start_margin_m,
 		"end_margin_m": coin_end_margin_m,
@@ -4047,7 +4048,12 @@ func spectator_params() -> Dictionary:
 ## half-width (track_width / 2). 0 pins every coin to the centerline; 1.0 allows a
 ## coin right at the visible road edge. Coins are ALWAYS within the carriageway
 ## (abs(lateral) <= half_width * this) — never beyond it.
-@export_range(0.0, 1.0) var coin_lane_spread_frac := 0.6
+@export_range(0.0, 1.0) var coin_lane_spread_frac := 0.92
+## Minimum lateral offset from the centerline, same units as coin_lane_spread_frac.
+## Together they form the band a coin lands in: this pushes coins out toward the road
+## EDGE (so taking one is a small line-widening detour) while the max above keeps them
+## on the carriageway rather than off in the trees.
+@export_range(0.0, 1.0) var coin_lane_inner_frac := 0.7
 ## Arc-length (m) kept clear of the start line — no coin in the opening straight.
 @export_range(0.0, 200.0) var coin_start_margin_m := 40.0
 ## Arc-length (m) kept clear of the finish — no coin in the closing straight.

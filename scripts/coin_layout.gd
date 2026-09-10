@@ -11,8 +11,9 @@ extends RefCounted
 # ON THE CARRIAGEWAY, BY CONSTRUCTION (decision 35, REVERSED by explicit user
 # request — see todo/roguelike-pivot.md decision 35's note and
 # features/collectables.md). Every coin sits WITHIN the road: its lateral offset from
-# the centerline is at most `half_width * lane_spread_frac`, so it's always on the
-# racing surface and always reachable without leaving it.
+# the centerline lands in the band `half_width * [lane_inner_frac, lane_spread_frac]`,
+# so a coin hugs the EDGE of the road (a small line-widening detour to take) while
+# still being on the racing surface — never out in the trees.
 #
 # NO SIGNPOSTING (decision 50, amending 35). This planner has no notion of "ahead" —
 # it hands back plain world positions, and nothing upstream (pacenotes, HUD) is told
@@ -33,9 +34,11 @@ const TANGENT_EPS_M := 0.5
 
 # Plan every coin for a stage. `params` (see GameConfig.coin_layout_params):
 #   count             how many coins to place
-#   lane_spread_frac  max lateral offset from the centerline, as a fraction of the
-#                     half-width (track_width / 2) — 0 pins coins to the centerline,
-#                     1.0 allows the visible road edge; never beyond it
+#   lane_inner_frac   MINIMUM lateral offset from the centerline, as a fraction of
+#                     the half-width (track_width / 2) — keeps coins off the racing
+#                     line and out toward the edge
+#   lane_spread_frac  MAXIMUM lateral offset, same units — 1.0 is the visible road
+#                     edge; never beyond it, so a coin is never off the track
 #   start_margin_m    arc-length kept clear of the start line
 #   end_margin_m      arc-length kept clear of the finish
 #
@@ -55,7 +58,10 @@ static func plan(centerline: Curve2D, finish_len: float, track_width: float,
 	var usable := finish_len - start_margin - end_margin
 	if usable <= 0.0:
 		return out
-	var lane_spread_frac: float = clampf(float(params.get("lane_spread_frac", 0.0)), 0.0, 1.0)
+	var lane_max: float = clampf(float(params.get("lane_spread_frac", 0.0)), 0.0, 1.0)
+	# Inner bound can't exceed the outer one — a mis-set config narrows the band to a
+	# single line rather than inverting it.
+	var lane_min: float = clampf(float(params.get("lane_inner_frac", 0.0)), 0.0, lane_max)
 	var half_w := track_width * 0.5
 
 	var rng := RandomNumberGenerator.new()
@@ -68,7 +74,7 @@ static func plan(centerline: Curve2D, finish_len: float, track_width: float,
 		var lo := start_margin + segment * float(i)
 		var arc := clampf(lo + rng.randf() * segment, 0.0, finish_len)
 		var side := 1 if rng.randf() < 0.5 else -1
-		var lateral := half_w * lane_spread_frac * rng.randf()
+		var lateral := half_w * (lane_min + (lane_max - lane_min) * rng.randf())
 		var pos := centerline.sample_baked(arc)
 		var tangent := _tangent_at(centerline, arc, finish_len)
 		var perp := Vector2(-tangent.y, tangent.x)
