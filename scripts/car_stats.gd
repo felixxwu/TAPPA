@@ -23,6 +23,18 @@ extends RefCounted
 # already folded in. A panel reading the authored entry directly would show the showroom
 # car, not the one the player is about to drive.
 #
+# WHAT THIS SHEET CANNOT SHOW, and why a caller must not rely on it alone. An effect only
+# reaches a car's META if `UpgradeLibrary.EFFECTS` marks it `feeds_pw` or `feeds_grip`;
+# everything else is applied straight onto the car's LIVE GameConfig by `apply()` and never
+# touches the meta at all. Three of the seven boosts are in that second group —
+# `shift_time_set` (Quick-shift gearbox), `brake_force_mult` (Big brakes) and `drag_mult`
+# (Streamlined body) — and there is no row here for shift time, brake force or drag, so
+# taking any of those three moves NOTHING on this sheet. That is not a bug to fix by
+# widening `effective_meta`, whose narrow contract is a deliberate safeguard (its own header
+# explains it); it is a limit a caller has to cover. `world.gd::_confirm_pick` therefore
+# prints the boost's own `BoostLibrary.current_effect_text_for` figure alongside the sheet,
+# so a confirmation is never a wall of unchanged numbers.
+#
 # WHY grip_meta AND NOT effective_meta, which is the more obvious call: `effective_meta`
 # deliberately folds in only the effects that feed power-to-weight, and its header says
 # so. The GRIP-feeding pair — `tire_compound` and the two `downforce_*` fields, which is

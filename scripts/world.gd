@@ -2165,6 +2165,16 @@ func _confirm_pick(choice: String) -> void:
 	var title := "%s conversion" % CarLibrary.drive_text(int(pick.get("drivetrain", -1))) \
 		if pick.has("drivetrain") else BoostLibrary.label_for(choice)
 	var page := _swap_interstitial(title)
+	# THE BOOST'S OWN FIGURE, ABOVE THE SHEET. Not decoration: three of the seven boosts
+	# (Quick-shift gearbox, Big brakes, Streamlined body) drive effects that `EFFECTS` marks
+	# neither feeds_pw nor feeds_grip, so they never reach the car's meta and move NO row on
+	# the sheet below — see CarStats' header. Without this line their confirmation would be a
+	# wall of unchanged numbers under an "Apply" button. A drivetrain conversion needs no
+	# such line: it moves the sheet's own Drivetrain row.
+	if not pick.has("drivetrain"):
+		var effect_text := BoostLibrary.current_effect_text_for(choice)
+		if effect_text != "":
+			page.body().add_child(UITheme.label(effect_text, "green"))
 	page.body().add_child(CarStatsPanel.build(
 		CarStats.values(owned, meta), CarStats.preview(owned, meta, pick)))
 	var apply := UITheme.button("Apply")

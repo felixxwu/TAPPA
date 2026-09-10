@@ -134,7 +134,7 @@ func test_values_a_grip_feeding_boost_moves_the_grip_row() -> void:
 func test_preview_does_not_mutate_the_passed_in_owned_dict() -> void:
 	var owned := {"boosts": [], "drivetrain_override": -1}
 	var meta := _synthetic_meta()
-	CarStats.preview(owned, meta, {"id": "fx", "effect": {"peak_torque_mult": 1.2}})
+	CarStats.preview(owned, meta, {"id": "fx", "effect": {"engine_power_mult": 1.2}})
 	assert_eq((owned["boosts"] as Array).size(), 0,
 		"previewing a boost pick must not append it to the caller's own boosts array")
 	assert_eq(int(owned["drivetrain_override"]), -1,
@@ -144,7 +144,7 @@ func test_preview_does_not_mutate_the_passed_in_owned_dict() -> void:
 func test_preview_of_a_boost_pick_moves_the_stat_it_targets() -> void:
 	var meta := _synthetic_meta()
 	var before := CarStats.values({}, meta)
-	var after := CarStats.preview({}, meta, {"id": "fx", "effect": {"peak_torque_mult": 1.5}})
+	var after := CarStats.preview({}, meta, {"id": "fx", "effect": {"engine_power_mult": 1.5}})
 	assert_gt(after["torque"], before["torque"], "the previewed boost's stat moved")
 
 

@@ -1,5 +1,8 @@
 class_name CardUI
 extends RefCounted
+# Docs: features/card-carousel.md — update in the same change as this file.
+# Tests: tests/headless/test_run_pick_panel.gd, tests/headless/test_hub_shell.gd — extend in the same change.
+#
 # Shared card-carousel building blocks, pulled out of hub_shell.gd so a second screen
 # (run_pick_panel.gd) can use the exact same card shape without duplicating it inline.
 #
