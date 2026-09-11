@@ -124,6 +124,8 @@ func test_confirm_fires_for_an_enabled_card() -> void:
 	_carousel.confirmed.connect(func(i): confirmed.append(i))
 	_carousel.select(0, false)
 	_carousel._confirm_selected()
+	assert_true(confirmed.is_empty(), "confirmed must not fire until the flash finishes")
+	_carousel.skip_confirm_flash()
 	assert_eq(confirmed, [0])
 
 
@@ -151,7 +153,49 @@ func test_tapping_the_already_centred_card_confirms() -> void:
 	_carousel.confirmed.connect(func(i): confirmed.append(i))
 	_carousel.select(0, false)
 	_carousel._tap_card(0)
+	_carousel.skip_confirm_flash()
 	assert_eq(confirmed, [0], "tapping the centred card confirms it")
+
+
+# The confirm is a beat, not an instant cut: the card flashes card_carousel_confirm_flash_count
+# times before `confirmed` fires, and every other interaction is locked out for that beat.
+func test_confirming_flashes_before_confirmed_fires() -> void:
+	var confirmed: Array = []
+	_carousel.confirmed.connect(func(i): confirmed.append(i))
+	_carousel.select(0, false)
+	_carousel._confirm_selected()
+	assert_true(confirmed.is_empty(), "confirmed must wait for the flash")
+	# Let the tween run for real, rather than skipping it, so this test also proves the
+	# flash actually completes and fires on its own — not just that skip_confirm_flash works.
+	await get_tree().create_timer(Config.data.card_carousel_confirm_flash_duration_s + 0.2).timeout
+	assert_eq(confirmed, [0], "confirmed fires once the flash has played out")
+
+
+func test_confirming_a_card_blocks_navigation_until_the_flash_finishes() -> void:
+	_carousel.select(0, false)
+	_carousel._confirm_selected()
+	_carousel.select(1, false)
+	assert_eq(_carousel.selected_index(), 0, "selection must not change mid-flash")
+	_carousel.skip_confirm_flash()
+	_carousel.select(1, false)
+	assert_eq(_carousel.selected_index(), 1, "selection is free to move again once the flash is done")
+
+
+func test_confirming_a_card_blocks_a_second_confirm_until_the_flash_finishes() -> void:
+	var confirmed: Array = []
+	_carousel.confirmed.connect(func(i): confirmed.append(i))
+	_carousel.select(0, false)
+	_carousel._confirm_selected()
+	_carousel._confirm_selected()  # a mash of the same input mid-flash
+	_carousel.skip_confirm_flash()
+	assert_eq(confirmed, [0], "the mashed second confirm must not double-fire or restart the flash")
+
+
+func test_skip_confirm_flash_is_a_no_op_when_nothing_is_confirming() -> void:
+	var confirmed: Array = []
+	_carousel.confirmed.connect(func(i): confirmed.append(i))
+	_carousel.skip_confirm_flash()  # must not error or fire confirmed out of nowhere
+	assert_true(confirmed.is_empty())
 
 
 # Regression: ONE tap delivered TWICE. With Godot's emulate_mouse_from_touch (on by
@@ -209,6 +253,7 @@ func test_two_separate_taps_still_select_then_confirm() -> void:
 			_carousel._on_card_gui_input(touch, 1)
 
 	assert_eq(_carousel.selected_index(), 1)
+	_carousel.skip_confirm_flash()
 	assert_eq(confirmed, [1], "the second tap on the now-centred card confirms it")
 
 

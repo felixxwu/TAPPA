@@ -81,6 +81,14 @@ var _drag_start_offset := 0.0
 # next press (_begin_drag), which is what makes two genuine taps still count as two.
 var _gesture_tapped := false
 var _visible_count := 1
+# The index of the card currently playing its confirm flash, or -1 when none is. Sits
+# between "tapped/confirm-pressed" and the `confirmed` signal actually firing — see
+# _confirm_selected — so a confirm reads as a deliberate beat rather than an instant cut
+# to the next page. While set, every other interaction (navigating, tapping, a second
+# confirm) is ignored: the choice is already made, and _layout must not touch this card's
+# alpha, which the flash tween owns exclusively for the duration.
+var _confirm_index := -1
+var _confirm_tween: Tween
 
 
 func _init() -> void:
@@ -323,7 +331,7 @@ func selected_index() -> int:
 # not auto-skip on directional nav, matching how a disabled MenuPage row is merely
 # unfocusable rather than invisible to the cursor.
 func select(index: int, animate: bool = true) -> void:
-	if _cards.is_empty():
+	if _cards.is_empty() or _confirm_index != -1:
 		return
 	index = clampi(index, 0, _cards.size() - 1)
 	var changed := index != _selected
@@ -376,9 +384,14 @@ func _layout() -> void:
 		var x := centre_x - _card_width() * 0.5 + i * (_card_width() + Config.data.card_carousel_gap) - _offset
 		var card_pos := Vector2(x, (size.y - _card_height()) * 0.5)
 		card.root.position = card_pos
-		var alpha := 1.0 if i == _selected else Config.data.card_carousel_unselected_alpha
-		alpha *= card.entrance
-		card.root.modulate.a = alpha
+		# A card mid-confirm-flash keeps whatever alpha its flash tween last set (on both
+		# the card and its shadow) — _layout still runs under it (a window resize can land
+		# mid-flash), and stomping the alpha here would cut the flash off or make it jump.
+		var confirming := i == _confirm_index
+		if not confirming:
+			var alpha := 1.0 if i == _selected else Config.data.card_carousel_unselected_alpha
+			alpha *= card.entrance
+			card.root.modulate.a = alpha
 
 		# The card's ACTUAL size (it can be taller than _card_height() if a caller's
 		# content pushed it) — before the card's first layout pass that size can still be
@@ -393,10 +406,11 @@ func _layout() -> void:
 		# alpha as the card; being non-overlapping, that never double-darkens a pixel.
 		card.shadow_right.position = card_pos + Vector2(card_size.x, off)
 		card.shadow_right.size = Vector2(off, card_size.y)
-		card.shadow_right.modulate.a = alpha
 		card.shadow_bottom.position = card_pos + Vector2(off, card_size.y)
 		card.shadow_bottom.size = Vector2(card_size.x - off, off)
-		card.shadow_bottom.modulate.a = alpha
+		if not confirming:
+			card.shadow_right.modulate.a = card.root.modulate.a
+			card.shadow_bottom.modulate.a = card.root.modulate.a
 
 
 func _notification(what: int) -> void:
@@ -434,12 +448,55 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+# Confirming a card is not instant: the card flashes card_carousel_confirm_flash_count
+# times over card_carousel_confirm_flash_duration_s, THEN `confirmed` fires and the caller
+# acts on the pick — a beat that reads as "your choice registered" rather than an instant
+# cut to whatever the card does. Re-entrant taps/keys/nav are ignored for the duration
+# (_confirm_index != -1 guards every other entry point), so mashing the confirm input
+# cannot double-fire or restart the flash mid-way.
 func _confirm_selected() -> void:
 	if _selected < 0 or _selected >= _cards.size():
 		return
-	if _cards[_selected].disabled:
+	if _cards[_selected].disabled or _confirm_index != -1:
 		return
-	confirmed.emit(_selected)
+	_confirm_index = _selected
+	var card := _cards[_selected]
+	var flashes: int = Config.data.card_carousel_confirm_flash_count
+	var leg: float = Config.data.card_carousel_confirm_flash_duration_s / maxf(1.0, flashes * 2.0)
+	_confirm_tween = create_tween()
+	for i in flashes:
+		_confirm_tween.tween_callback(_set_card_alpha.bind(card, Config.data.card_carousel_unselected_alpha))
+		_confirm_tween.tween_interval(leg)
+		_confirm_tween.tween_callback(_set_card_alpha.bind(card, 1.0))
+		_confirm_tween.tween_interval(leg)
+	_confirm_tween.tween_callback(_finish_confirm)
+
+
+# Sets a card's OWN and its shadow's alpha directly, bypassing _layout — the same split
+# _layout itself keeps (card.root's alpha, mirrored onto both shadow strips) so the flash
+# never desyncs the card from its shadow.
+func _set_card_alpha(card: Card, alpha: float) -> void:
+	card.root.modulate.a = alpha
+	card.shadow_right.modulate.a = alpha
+	card.shadow_bottom.modulate.a = alpha
+
+
+func _finish_confirm() -> void:
+	var index := _confirm_index
+	_confirm_index = -1
+	confirmed.emit(index)
+
+
+# Test/host seam: jump straight to the end of a running confirm flash, firing `confirmed`
+# immediately instead of waiting out card_carousel_confirm_flash_duration_s — the flash
+# itself is not what a test asserting on `confirmed` cares about. No-op if nothing is
+# confirming. Mirrors finish_entrance_animation's role for the entrance fade.
+func skip_confirm_flash() -> void:
+	if _confirm_index == -1:
+		return
+	if _confirm_tween != null and _confirm_tween.is_valid():
+		_confirm_tween.kill()
+	_finish_confirm()
 
 
 # --- Mouse / touch ------------------------------------------------------------
@@ -484,6 +541,10 @@ func _begin_drag(global_x: float) -> void:
 # not in `_tap_card` — `_tap_card` stays the plain "a tap landed on card N" seam the tests
 # drive directly.
 func _on_card_gui_input(event: InputEvent, index: int) -> void:
+	# The choice is already made and its flash is playing — nothing a pointer does to any
+	# card (including the one flashing) should start a new drag or land a second tap.
+	if _confirm_index != -1:
+		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
@@ -527,6 +588,9 @@ func _tap_card(index: int) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	# The choice is already made and its flash is playing — no nav, no new drag.
+	if _confirm_index != -1:
+		return
 	# Native ui_left/ui_right would otherwise move focus to the next sibling widget
 	# (Godot's built-in focus-neighbour search runs AFTER gui_input if unhandled) —
 	# intercept here so arrow keys / D-pad / left stick move the SELECTED CARD instead,

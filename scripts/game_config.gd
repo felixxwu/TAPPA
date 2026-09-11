@@ -4259,3 +4259,8 @@ func spectator_params() -> Dictionary:
 ## Delay between one card's fade-in starting and the next card's, so the whole strip fades
 ## in left to right rather than all at once — 0 disables the stagger (still fades, together).
 @export_range(0.0, 0.3, 0.01) var card_carousel_entrance_stagger_s := 0.3
+## How long a card flashes for after it's confirmed (tapped/ui_accept'd while already
+## selected), before `confirmed` fires and the caller acts on the pick.
+@export_range(0.1, 2.0, 0.05) var card_carousel_confirm_flash_duration_s := 0.5
+## How many times the card flashes within card_carousel_confirm_flash_duration_s.
+@export_range(1, 6, 1) var card_carousel_confirm_flash_count := 2
