@@ -867,6 +867,19 @@ func apply_field_repair_to(instance_id: int) -> Dictionary:
 		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
 
 
+# A FULL field repair: 100% of the HP lost so far and every wheel straightened
+# completely (fractions of 1.0). This is what RunSession.choose_repair() applies when
+# the player explicitly picks "Repair the car" over an upgrade at the between-stage
+# pick (todo/mid-run-upgrade-menu.md) — choosing repair is meant to fully undo the
+# damage taken so far, not the smaller automatic patch-up every other stage
+# transition gets via apply_field_repair_to. `instance_id` < 0 (nothing fielded) is a
+# no-op, not an error.
+func apply_full_field_repair_to(instance_id: int) -> Dictionary:
+	if instance_id < 0:
+		return {"repaired": false}
+	return field_repair(instance_id, 1.0, 1.0)
+
+
 # --- Money (todo/roguelike-pivot.md decision 21) ------------------------------
 #
 # The single currency, and the whole of it: earned per stage CLEARED (decision 36 —

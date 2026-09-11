@@ -496,7 +496,7 @@ func test_continue_to_next_stage_refuses_while_a_pick_is_awaiting() -> void:
 	assert_true(RunSession.is_active(), "…and stays active, not stuck or ended")
 
 
-func test_choosing_repair_resolves_the_pick_exactly_like_the_old_automatic_path() -> void:
+func test_choosing_repair_fully_repairs_the_car() -> void:
 	var car := _start()
 	_damage_below_threshold(car)  # below the healthy-arrival threshold: repair is on offer
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
@@ -507,8 +507,12 @@ func test_choosing_repair_resolves_the_pick_exactly_like_the_old_automatic_path(
 	assert_false(RunSession.pick_awaiting(), "the pick is resolved")
 	assert_true(RunSession.pending_pick().is_empty())
 	var repair := RunSession.take_pending_repair()
-	assert_false(repair.is_empty(),
-		"choosing repair leaves the same pending repair the old automatic path did")
+	assert_false(repair.is_empty(), "choosing repair leaves a pending repair summary")
+	assert_almost_eq(float(repair["hp_after"]), float(repair["max_hp"]), 0.01,
+		"choosing repair (over an upgrade) fully restores HP, not a partial patch-up")
+	var iid := int(car["instance_id"])
+	for v in _save.get_car(iid)["wheel_toe"]:
+		assert_almost_eq(float(v), 0.0, 0.001, "every wheel is fully straightened")
 	RunSession.continue_to_next_stage()
 	assert_eq(RunSession.events_completed(), 1, "and the run now advances")
 

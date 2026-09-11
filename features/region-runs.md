@@ -295,12 +295,14 @@ decide whether to open `RunPickPanel.open_repair_or_upgrade` first or skip strai
 to `RunPickPanel.open_category_choice` (see *The pick screens* below).
 
 `RunSession.choose_repair()` / `.choose_boost(id)` resolve it — repair goes
-through the same `Save.apply_field_repair_to` every other transition uses (so
-`take_pending_repair()` / world.gd's between-stage repair popup are unchanged for
-the repair case), and a boost is appended to the run's own list. `choose_repair()`
-**refuses** (a no-op, same style as its existing "no pick outstanding" guard) when
-`_pick_offers_repair` is false — repair must not be reachable on the reward pick even
-if something bypasses the UI's hidden button.
+through `Save.apply_full_field_repair_to`, a FULL repair (100% of lost HP, every
+wheel fully straightened) rather than the fractional `apply_field_repair_to` every
+other (automatic) transition uses, since the player gave up a boost specifically to
+fix the car (`take_pending_repair()` / world.gd's between-stage repair popup are
+otherwise unchanged for the repair case), and a boost is appended to the run's own
+list. `choose_repair()` **refuses** (a no-op, same style as its existing "no pick
+outstanding" guard) when `_pick_offers_repair` is false — repair must not be
+reachable on the reward pick even if something bypasses the UI's hidden button.
 
 ```gdscript
 func boosts() -> Array   # this run's picks so far, {"id","effect"} — UpgradeLibrary's shape

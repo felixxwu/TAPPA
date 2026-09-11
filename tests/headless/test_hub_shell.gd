@@ -491,6 +491,27 @@ func test_continuing_from_the_summary_clears_the_result() -> void:
 	assert_eq(_shell._view, HubShell.View.MAIN, "and the player lands back on the main page")
 
 
+# A run's end is the biggest moment in the loop, and used to read identically to a stat
+# sheet either way. The summary now fires a ConfirmPopup announcement distinguishing the
+# two outcomes before the plain stats underneath.
+func test_clearing_the_region_announces_a_distinct_outcome() -> void:
+	RunSession._last_result = {"completed": true, "stages_completed": 8,
+		"stage_count": 8, "money_earned": 900, "stage_times_ms": []}
+	_shell._show(HubShell.View.SUMMARY)
+	var popup := ConfirmPopup.any_open(get_tree())
+	assert_not_null(popup, "clearing the region announces its outcome")
+	assert_eq(String(popup.get_meta("modal_title", "")), "REGION CLEARED!")
+
+
+func test_missing_the_clock_announces_a_distinct_outcome() -> void:
+	RunSession._last_result = {"completed": false, "failed": true, "stages_completed": 3,
+		"stage_count": 8, "money_earned": 400, "stage_times_ms": [1000, 2000, 3000]}
+	_shell._show(HubShell.View.SUMMARY)
+	var popup := ConfirmPopup.any_open(get_tree())
+	assert_not_null(popup, "a run stopped by the clock announces its outcome")
+	assert_eq(String(popup.get_meta("modal_title", "")), "RUN OVER")
+
+
 # --- Decision 48: the paused-run confirm --------------------------------------
 
 # The shell owes the other half of decision 48. Discarding a paused run BURNS its attempt,

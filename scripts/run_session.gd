@@ -814,19 +814,20 @@ func take_pending_repair() -> Dictionary:
 
 # --- Resolving the between-stage pick -------------------------------------------
 
-# Resolve the pending pick by taking the repair. Exactly the SAME field repair every
-# other stage transition applies (Save.apply_field_repair_to) — the only change from
-# before this stage landed is that it is now a CHOICE instead of automatic, and
-# choosing it costs the boost the player didn't take. world.gd's between-stage boot
-# still consumes it via take_pending_repair(), unchanged. No-op if no pick is
-# outstanding (a stray second call, or a mode that never draws one). REFUSES (also a
-# no-op) if the pending pick doesn't offer repair — the undamaged-arrival reward pick
-# (offer_repair() false): repair must not be reachable there, so this is a real guard,
-# not silent success dressed up as one.
+# Resolve the pending pick by taking the repair. Unlike every other stage transition,
+# which applies the smaller automatic patch-up (Save.apply_field_repair_to), choosing
+# repair here is a full repair (Save.apply_full_field_repair_to) — 100% of lost HP and
+# every wheel fully straightened — since the player gave up a boost specifically to
+# fix the car, not to nudge it. world.gd's between-stage boot still consumes it via
+# take_pending_repair(), unchanged. No-op if no pick is outstanding (a stray second
+# call, or a mode that never draws one). REFUSES (also a no-op) if the pending pick
+# doesn't offer repair — the undamaged-arrival reward pick (offer_repair() false):
+# repair must not be reachable there, so this is a real guard, not silent success
+# dressed up as one.
 func choose_repair() -> void:
 	if not _pick_awaiting or not _pick_offers_repair:
 		return
-	_pending_repair = Save.apply_field_repair_to(_car_instance_id)
+	_pending_repair = Save.apply_full_field_repair_to(_car_instance_id)
 	_pending_pick = []
 	_pick_awaiting = false
 	_persist()

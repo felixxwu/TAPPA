@@ -405,6 +405,27 @@ func test_apply_field_repair_to_no_ops_when_nothing_is_fielded() -> void:
 	assert_false(summary.get("repaired", false), "no fielded car -> nothing repaired")
 
 
+# --- apply_full_field_repair_to: the player-chosen full repair -----------------
+
+func test_apply_full_field_repair_to_fully_restores_hp_and_straightens_wheels() -> void:
+	var id := int(_save.grant_car("fx_rwd_coupe")["instance_id"])
+	_save.apply_damage(id, 400.0)
+	_save.set_wheel_toe(id, [0.08, -0.06, 0.04, -0.02])
+
+	var summary: Dictionary = _save.apply_full_field_repair_to(id)
+
+	assert_true(bool(summary.get("repaired", false)), "a damaged car is repaired")
+	assert_almost_eq(float(summary["hp_after"]), float(summary["max_hp"]), 0.001,
+		"the full repair restores HP to max, not a fraction of what was lost")
+	for v in _save.get_car(id)["wheel_toe"]:
+		assert_almost_eq(float(v), 0.0, 0.0001, "every wheel is fully straightened")
+
+
+func test_apply_full_field_repair_to_no_ops_when_nothing_is_fielded() -> void:
+	var summary: Dictionary = _save.apply_full_field_repair_to(-1)
+	assert_false(summary.get("repaired", false), "no fielded car -> nothing repaired")
+
+
 func test_field_repair_skips_a_pristine_car() -> void:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")  # full hp, straight wheels
 	var summary: Dictionary = _save.field_repair(car["instance_id"], 0.2, 0.5)
