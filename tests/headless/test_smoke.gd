@@ -130,8 +130,8 @@ func test_a_challenge_stage_generates_its_track_and_places_no_coins() -> void:
 	# The other arm of the coins gate (features/collectables.md): a challenge has no
 	# per-stage money to boost and no fail state to gamble against, so nothing is placed
 	# even though coins_enabled stays on. The REGION arm is
-	# test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter, which builds
-	# a cheap minimal world of its own.
+	# test_a_region_run_stage_places_a_coin_field, which builds a cheap minimal world
+	# of its own.
 	assert_null(scene.get_node_or_null("CoinField"), "a challenge stage places no coins")
 
 	scene.free()
@@ -177,7 +177,7 @@ func test_a_challenge_stage_stages_the_start_line_like_a_rally_event() -> void:
 	CarFixtures.restore()
 
 
-func test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter() -> void:
+func test_a_region_run_stage_places_a_coin_field() -> void:
 	# The real world.gd._build_coins wiring (features/collectables.md): a REGION run
 	# (not a challenge — see the two tests above, which cover that gate's other arm)
 	# builds a CoinField and reveals the HUD's coin counter. minimal_world() keeps this
@@ -204,11 +204,6 @@ func test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter() -
 	assert_not_null(coin_field, "a region-run stage builds a CoinField")
 	assert_eq(int(coin_field.get("coin_count")), int(Config.data.coins_per_stage),
 		"it places exactly coins_per_stage coins")
-	var hud: Node = scene.get_node("HUD")
-	var coin_label := hud.get_node("CoinLabel") as Label
-	assert_true(coin_label.visible, "the HUD counter is revealed once coins are placed")
-	assert_eq(coin_label.text, "Coins: 0", "and starts at zero collected")
-
 	scene.free()
 	_leave_run()
 	CarFixtures.restore()

@@ -1239,16 +1239,7 @@ func _build_coins(cfg: GameConfig, road_centerline: Curve2D, finish_len: float) 
 	field.name = "CoinField"
 	add_child(field)
 	field.build(layout, _floor(), $Car, cfg.coin_render_params())
-	field.coin_collected.connect(_on_coin_collected)
 	_coin_field = field
-	var hud_node := $HUD
-	hud_node.set_coin_count(0)
-
-
-# Live "coins taken this stage" HUD readout, on every pickup (CoinField.coin_collected).
-func _on_coin_collected(_index: int, total_collected: int) -> void:
-	var hud_node := $HUD
-	hud_node.set_coin_count(total_collected)
 
 
 # Finish + start arches: the inflatable gates straddling the road

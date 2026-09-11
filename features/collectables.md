@@ -4,13 +4,19 @@
 `scripts/coin_field.gd` (`CoinField` — builds the coins + runs the pickup query),
 `scripts/game_config.gd` (`@export_group("Roguelike Collectables")`,
 `coin_layout_params()`, `coin_render_params()`), `scripts/world.gd`
-(`_build_coins`, `_on_coin_collected`), `scripts/hud.gd` (`set_coin_count`,
-`_build_coin_label`), `scripts/run_session.gd` (`report_event_result`'s third
+(`_build_coins`), `scripts/run_session.gd` (`report_event_result`'s third
 argument), `scripts/region_run_mode.gd` (`stage_money`'s fourth argument),
 `scripts/lifetime_stats.gd` (`COINS_COLLECTED`).
 **Tests:** `tests/headless/test_coin_layout.gd`, `tests/headless/test_coin_field.gd`,
 `tests/headless/test_region_run.gd` (the "Coins" section — banking + the lifetime
-ledger), `tests/headless/test_hud.gd` (`test_coin_counter_starts_hidden_and_shows_on_first_call`)
+ledger).
+
+**No HUD readout.** Coins are collected and banked silently — there is no
+top-right (or any) HUD counter showing how many have been picked up on the
+current stage. That display existed briefly (`hud.gd`'s `CoinLabel`/
+`set_coin_count`) and was removed by explicit user request; the pickup chime
+(below) is the only in-run feedback a player gets. Do not re-add a HUD
+counter without being asked.
 
 RR's coins (`todo/roguelike-pivot.md` decisions 13, 35, 36, 50 — stage 8 of
 the deleted pivot plan, the last feature stage of the pivot; decision 35's
@@ -33,7 +39,6 @@ world.gd._place_world_props
        └─ CoinField.build(layout, ...)      — the meshes + the pickup query
             └─ CoinField._physics_process   — proximity check every tick
                  └─ coin_collected(index, total) signal
-                      ├─ world.gd._on_coin_collected → HUD.set_coin_count(total)
                       └─ CoinField itself → Audio.play_beep(...)  (the pickup chime)
 
 world.gd._on_session_event_completed (stage finish)
@@ -139,16 +144,7 @@ up, multiplying `GameConfig.coins_per_stage` before `coin_layout_params()` reads
 which is why the count is fetched at build time from the config rather than passed
 down from a caller. Neither skill is named anywhere in this file's code.
 
-## HUD + audio
-
-`hud.gd` carries a top-right `CoinLabel` (`set_coin_count(n)`), the mirror image of
-the top-left speed/gear stack — hidden until first shown, change-gated like every
-other HUD readout. It starts hidden in `_ready` and is revealed the first time
-`world.gd._build_coins` calls `set_coin_count(0)` (i.e. only on a region-run stage
-that actually placed coins); a challenge, or a region stage whose layout happened to
-roll empty, never reveals it. This is a plain **direct call from world.gd**, not
-routed through `StageManager`'s `_hud_can` capability gate — that gate exists for
-methods `StageManager` itself calls, and `StageManager` never touches coins.
+## Audio
 
 The pickup chime goes through the one legitimate path for a one-shot sound in this
 project — `Audio.play_beep(frequency_hz, duration_sec)` (see
