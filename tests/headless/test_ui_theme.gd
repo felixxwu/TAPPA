@@ -129,3 +129,42 @@ func test_ui_scale_is_a_sane_factor() -> void:
 	# Sanity only (never pin the chosen value): positive and monotonic.
 	assert_gt(UITheme.UI_SCALE, 0.0, "UI_SCALE is positive")
 	assert_true(UITheme.px(20) > UITheme.px(10), "px is monotonic")
+
+
+# An invisible surface casts no shadow. UIHardShadowBox's shadow rect is normally hidden
+# under the widget's own opaque face (only the down-right sliver shows); behind a
+# zero-alpha fill there is nothing to hide it, so the whole offset rect used to show at
+# full strength and read as a big dark translucent panel — the "dark container around all
+# the cards" on a carousel page, whose MenuPage body is deliberately transparent.
+func test_a_transparent_wrapped_box_casts_no_shadow() -> void:
+	var opaque := UITheme.shadowed(UITheme.panel_box(1.0)) as UIHardShadowBox
+	assert_not_null(opaque, "shadowed() returns the wrapper")
+	assert_true(opaque.casts_shadow(), "a box with a real fill still casts")
+
+	var clear := UITheme.shadowed(UITheme.panel_box(0.0)) as UIHardShadowBox
+	assert_false(clear.casts_shadow(), "a fully transparent box casts nothing")
+
+	var empty := UITheme.shadowed(StyleBoxEmpty.new()) as UIHardShadowBox
+	assert_false(empty.casts_shadow(), "a StyleBoxEmpty casts nothing")
+
+	# The wrapper must still forward the wrapped box's padding either way, or a
+	# transparent panel's children would reflow when the shadow is skipped.
+	assert_eq(clear.get_margin(SIDE_LEFT), UITheme.panel_box(0.0).get_margin(SIDE_LEFT),
+		"content margins are forwarded regardless of whether the shadow draws")
+
+
+# A transparent MenuPage body (what the carousel pages ask for) must come out
+# non-casting end to end, not just at the UITheme helper level.
+func test_a_transparent_menu_page_body_casts_no_shadow() -> void:
+	var page := MenuPage.new({"alpha": 0.0})
+	add_child(page)
+	var box := page.panel().get_theme_stylebox("panel") as UIHardShadowBox
+	assert_not_null(box, "the body box is shadow-wrapped as before")
+	assert_false(box.casts_shadow(), "a transparent body paints no shadow rect")
+	page.free()
+
+	var solid := MenuPage.new({})
+	add_child(solid)
+	var solid_box := solid.panel().get_theme_stylebox("panel") as UIHardShadowBox
+	assert_true(solid_box.casts_shadow(), "an ordinary opaque page still casts")
+	solid.free()

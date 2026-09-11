@@ -115,6 +115,19 @@ Two different mechanisms draw the SAME look, for two different reasons:
   wrapper to any Button/Panel/PanelContainer still on the theme's plain default look (see
   house rule 5 above).
 
+**An INVISIBLE box casts no shadow.** `UIHardShadowBox._draw` skips the shadow rect
+entirely when the wrapped box paints no fill — a `StyleBoxEmpty`, or a `StyleBoxFlat` whose
+`bg_color.a` is 0 (`_inner_casts_shadow`). The shadow is normally mostly *hidden under* the
+widget's own opaque face, with only the down-right sliver poking out; with a transparent
+fill there is nothing to hide it, so the whole offset rect shows at its full 20% black and
+reads as a large dark translucent panel the size of the widget. That was the carousel-page
+bug: `menu_page.gd` wraps its body box in `shadowed()`, and a carousel page's body is
+deliberately `panel_box(0.0)` (see [card-carousel.md](card-carousel.md) → *The gaps show
+the live 3D showcase*), so the "transparent" body painted a dark grey box around the whole
+carousel. Buttons, cards and opaque panels have a real fill and still cast as before. If
+you add a new surface that must stay invisible, it gets this for free — don't reach for a
+per-call-site opt-out.
+
 Neither form uses `StyleBoxFlat`'s own `shadow_*` properties: that shadow rect is the box
 expanded by `shadow_size` on ALL sides before the offset, so `shadow_size = 0` draws
 nothing at all, and any size > 0 leaks the shadow out of the top-left edge too — a purely

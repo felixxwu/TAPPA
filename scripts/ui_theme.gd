@@ -316,9 +316,23 @@ static func card_shadow_box() -> StyleBoxFlat:
 # in the game) and by call sites that build a stylebox override by hand (`panel()`,
 # `mark_selected`, `mark_focused`, `mark_panel_focused`, `reward_card_box`) so a
 # widget's shadow never disappears when it becomes selected/focused.
+#
+# Copies `box`'s own margins onto the wrapper's REAL `content_margin_*` properties here,
+# at construction time, rather than leaving the wrapper to forward them lazily on demand:
+# `StyleBox`'s scriptable virtuals in this Godot version are only `_draw`,
+# `_get_draw_rect`, `_get_minimum_size` and `_test_mask` — there is no `_get_style_margin`
+# to override, so a GDScript class defining one is silently never called, and
+# `get_margin()` falls back to its unset-content-margin default of 0 for every side. Left
+# that way, every wrapped Container's children would sit flush against its edges instead
+# of padded — baking the real values in here, once, is what makes `get_margin()` return
+# them correctly afterwards with no virtual involved.
 static func shadowed(box: StyleBox) -> StyleBox:
 	var wrapper := UIHardShadowBox.new()
 	wrapper.inner = box
+	wrapper.content_margin_left = box.get_margin(SIDE_LEFT)
+	wrapper.content_margin_top = box.get_margin(SIDE_TOP)
+	wrapper.content_margin_right = box.get_margin(SIDE_RIGHT)
+	wrapper.content_margin_bottom = box.get_margin(SIDE_BOTTOM)
 	return wrapper
 
 
