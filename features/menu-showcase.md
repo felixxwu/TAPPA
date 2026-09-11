@@ -297,34 +297,49 @@ events and `"snow"` only onto `region == "snow"` ones
 cycle dry/rain/fog/storm/night; greece cycles dry/sandstorm/night; snow
 cycles dry/snow/night. Never rain in the snow segment, never snow outside it.
 
-**Split into two halves, for a reason found while implementing it:**
+**Split into three halves, for reasons found while implementing it:**
 
-- **The GROUND half** (`_apply_segment_road_tint`) is a live shader uniform change
-  on the segment's own (never-shared) material — cheap, and applied continuously to
-  EVERY segment regardless of which one the camera is looking at. It's the exact
-  read-modify-write `world.gd::_tint_road` does (re-seed `albedo_color`/
-  `tarmac_color` to the segment's own baseline, then multiply-darken or lerp toward
-  a named colour per the condition's `road_tint` entry), just against a segment's
-  own material instead of the one `$Floor.chunk_material` a real stage repaints in
-  place.
-- **The ENVIRONMENT half** (`_apply_segment_environment`) is NOT applied
-  continuously, and deliberately drops one piece `world.gd::_apply_overcast_look`
-  does: it also writes `TerrainManager.sun_color`/`sky_color`, which only take
-  effect on the terrain's next BAKE. Chunks already spawned keep their baked-in
-  vertex lighting forever — six already-built, never-rebuilt segments can't cheaply
-  re-light the way a real stage does by rebaking before the player ever sees it. So
-  only the shared `WorldEnvironment`'s sky/fog/background is swapped (there is
-  exactly one `WorldEnvironment` for the whole scene, so it couldn't show six skies
-  at once regardless), and only for whichever segment the camera CURRENTLY frames —
-  applied exactly at the moment of a camera CUT (`_process` compares
-  `_camera.current_shot()` against `_viewed_shot` each frame and re-applies on
-  change), so the swap is never seen happening. `MenuShowcase._shot_segments` maps
-  each shot index back to the segment it was built from, so this works regardless of
-  how many shots any one segment ended up contributing.
+- **The GROUND TINT half** (`_apply_segment_road_tint`) is a live shader uniform change
+  on the segment's own (never-shared) material. It's the exact read-modify-write
+  `world.gd::_tint_road` does (re-seed `albedo_color`/`tarmac_color` to the segment's
+  own baseline, then multiply-darken or lerp toward a named colour per the condition's
+  `road_tint` entry), just against a segment's own material instead of the one
+  `$Floor.chunk_material` a real stage repaints in place.
+- **The ENVIRONMENT half** (`_apply_segment_environment`) swaps the ONE shared
+  `WorldEnvironment`'s sky/fog/background — it can only ever reflect whichever segment
+  the camera CURRENTLY frames (there is exactly one `WorldEnvironment` for the whole
+  scene, so it couldn't show six skies at once regardless).
+- **The TERRAIN RELIGHT half** used to be impossible for exactly the reason the old
+  version of this doc described: `world.gd::_apply_overcast_look` re-lights a stage by
+  writing `TerrainManager.sun_color`/`sky_color`, which only take effect on the
+  terrain's NEXT BAKE, and six already-built, never-rebuilt segments couldn't cheaply
+  re-light the way a real stage does. That's now solved by a dual pre-bake instead of a
+  live re-bake — see [terrain.md](terrain.md) → "Dual day/night bake" for the mechanism.
+  A segment whose eligible weather includes a condition carrying `WeatherLibrary`'s
+  `terrain_relight` key (today only `"night"`) gets `TerrainManager.bake_night_colors`
+  turned on and both a day and a night vertex-colour array baked per chunk up front;
+  `_commit_segment_weather` swaps a segment's spawned chunks onto whichever one its
+  current weather id wants via `TerrainManager.set_vertex_color_profile`. Every other
+  eligible condition (dry/rain/fog/storm/sandstorm/snow) still leaves the terrain bake
+  untouched, exactly as before.
+- **All three are gated to camera CUTS, never mid-shot** — `_process` compares
+  `_camera.current_shot()` against `_viewed_shot` each frame, and only on a CHANGE does
+  it commit the pending weather for the segment being cut from and the segment being
+  cut to (`_commit_segment_weather`), then swap the environment
+  (`_apply_segment_environment`). `MenuShowcase._shot_segments` maps each shot index
+  back to the segment it was built from, so this works regardless of how many shots any
+  one segment ended up contributing. **The one exception**: `_reroll_segment_weather`
+  commits IMMEDIATELY, bypassing the gate, for a segment the camera is NOT currently
+  framing — there's nothing to protect there, and gating it too would leave an
+  off-camera segment stalled on stale weather (visually and in its terrain profile)
+  until its own next cut, for no benefit. `_segment_pending_weather` is the id a reroll
+  just picked but hasn't necessarily applied yet; `_segment_weather_ids` is what's
+  actually showing.
 - **Not built at all**: particles (rain/sand/snow quads), the lightning flash, wind,
-  and headlights. All of `WeatherLibrary`'s per-condition blocks beyond `look` and
-  `road_tint` are skipped — deliberately, as excessive for a decorative background
-  that has no chase camera or car to hang them off, not an oversight.
+  and headlights. All of `WeatherLibrary`'s per-condition blocks beyond `look`,
+  `road_tint` and (night only) `terrain_relight` are skipped — deliberately, as
+  excessive for a decorative background that has no chase camera or car to hang them
+  off, not an oversight.
 
 ## Foliage and the mobile LOD-tier cap
 

@@ -271,6 +271,16 @@ const CONDITIONS: Array[Dictionary] = [
 		# happening UNDER the region's sky while night replaces it outright. Applied
 		# after the region look, so it overrides whatever the region chose.
 		"sky_panorama": "night_sky_panorama",
+		# Marks night as the one condition whose ground darkening is worth RE-BAKING
+		# terrain vertex colours for, rather than only a road_tint uniform -- see
+		# features/terrain.md -> "Dual day/night bake". A plain bool, not a field name
+		# (there is no per-condition tuning here, just an opt-in flag): night bakes
+		# near-black (night_sun_energy_mult sits at the bottom of its range), while every
+		# other dimmed-day condition (rain/storm/sand/mist) is carried well enough by its
+		# existing road_tint. OPTIONAL and unique to night -- no consumer of this table
+		# reads it besides menu_showcase.gd, and it names no GameConfig field, so it is
+		# NOT in config_fields()/physics_fields() and cannot re-key the opponent cache.
+		"terrain_relight": true,
 	},
 ]
 

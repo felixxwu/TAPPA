@@ -345,6 +345,25 @@ func test_night_names_a_sky_and_no_other_condition_does() -> void:
 			"'%s' leaves the region's sky alone" % String(entry.get("id", "")))
 
 
+func test_night_names_terrain_relight_and_no_other_condition_does() -> void:
+	# terrain_relight opts a condition into menu_showcase.gd's dual day/night terrain
+	# bake (see features/terrain.md -> "Dual day/night bake"). Night is the only
+	# condition whose ground darkening is worth pre-baking a second vertex-colour
+	# array for; every other dimmed-day condition is carried by its road_tint alone.
+	var night := WeatherLibrary.by_id(RallyLibrary.WEATHER_NIGHT)
+	assert_true(bool(night.get("terrain_relight", false)), "night opts into the relight")
+	for entry in WeatherLibrary.all():
+		if String(entry.get("id", "")) == RallyLibrary.WEATHER_NIGHT:
+			continue
+		assert_false(entry.has("terrain_relight"),
+			"'%s' leaves the terrain bake alone" % String(entry.get("id", "")))
+	# A plain flag, not a per-condition field name — config_fields()/physics_fields()
+	# only ever collect FIELD NAMES they read out of an entry, and neither reads
+	# "terrain_relight" at all, so night's presence there changes neither.
+	assert_eq(WeatherLibrary.physics_fields(night).size(), 0,
+		"night's terrain_relight cannot affect a lap time")
+
+
 func test_there_is_a_default_sky_for_regions_that_name_none() -> void:
 	# home / home_coast author no sky_panorama. The region look now assigns
 	# unconditionally, falling back to this — which is what stops a Greece or night

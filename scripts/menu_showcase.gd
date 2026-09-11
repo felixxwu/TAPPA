@@ -16,21 +16,30 @@ extends Node3D
 # cycles, every now and then, through weather ids ELIGIBLE FOR ITS OWN REGION (never
 # rain in the snow segment, never snow outside it — see _REGION_WEATHER_IDS) —
 # snapping, not blending, reusing WeatherLibrary's existing discrete entries. Split
-# into two halves for a reason found while implementing it:
+# into three halves for a reason found while implementing it:
 #
-#   - The GROUND half (road_tint on a segment's own material) is a live shader
-#     uniform change — cheap, correct to apply on EVERY segment continuously,
-#     regardless of which one the camera is looking at.
-#   - The ENVIRONMENT half (sky/fog/background) is NOT: `world.gd::_apply_overcast_look`
-#     also writes `TerrainManager.sun_color`/`sky_color`, which only take effect on
-#     the next BAKE — chunks already spawned keep their baked-in vertex lighting
-#     forever. Six already-built, never-rebuilt segments can't cheaply re-light like
-#     a real stage does, so the sun/sky-tint-on-terrain half is DELIBERATELY DROPPED
-#     here — only the shared WorldEnvironment's sky/fog/background is swapped, and
-#     only for whichever segment the camera currently frames (there is exactly one
-#     WorldEnvironment for the whole scene, so it can't show six skies at once
-#     anyway). The swap happens exactly at a camera CUT, never mid-shot, so the
-#     change is never seen happening.
+#   - The GROUND TINT half (road_tint on a segment's own material) is a live shader
+#     uniform change — cheap on its own, but see the gating note below.
+#   - The ENVIRONMENT half (sky/fog/background) touches the ONE shared WorldEnvironment,
+#     so it can only ever reflect whichever segment the camera currently frames.
+#   - The TERRAIN RELIGHT half (this file's own dual day/night bake — see
+#     features/terrain.md → "Dual day/night bake" and TerrainManager.bake_night_colors)
+#     used to be impossible here: `world.gd::_apply_overcast_look` re-lights a stage by
+#     writing `TerrainManager.sun_color`/`sky_color`, which only takes effect on the
+#     NEXT bake, and six already-built, never-rebuilt segments can't cheaply re-bake like
+#     a real stage does. Segments whose eligible weather can go night now instead PRE-BAKE
+#     a second ("night") vertex-colour array per chunk alongside the normal one, and swap
+#     a segment's already-spawned meshes onto it via TerrainChunk.apply_vertex_color_profile
+#     — no live re-bake, just picking which pre-baked array a mesh's COLOR channel points
+#     at. Every OTHER condition (rain/fog/storm/sand/snow) still leaves the terrain bake
+#     alone — see WeatherLibrary's `terrain_relight` key, night's only.
+#
+#   All three are gated to camera CUTS, never mid-shot: a near-black night ground (or a
+#   re-tinted one) popping in on the segment the camera is CURRENTLY framing is a visible
+#   flash. A reroll on a segment the camera is NOT looking at commits immediately instead
+#   — there's nothing to protect, and stalling it until that segment's next cut would leave
+#   it looking dry (or fully time-lagged) for the segment's own next several shots. See
+#   _reroll_segment_weather / _commit_segment_weather / _process.
 #
 # FOLIAGE (phase 2's remaining piece) and the MOBILE LOD-TIER CAP (decision 5) are
 # both implemented too: trees/bushes are scattered ONCE over the whole track (same
@@ -112,6 +121,10 @@ var _segment_floors: Array[TerrainManager] = []
 # Dictionary-per-segment so _process's per-frame walk stays a flat loop.
 var _segment_region_ids: Array[String] = []
 var _segment_weather_ids: Array[String] = []
+# The id a reroll just picked, not yet applied to a CURRENTLY FRAMED segment's ground/
+# terrain (see _reroll_segment_weather / _commit_segment_weather). Equal to
+# _segment_weather_ids[i] except in that one gated window.
+var _segment_pending_weather: Array[String] = []
 var _segment_reroll_timers: PackedFloat32Array = PackedFloat32Array()
 var _segment_baseline_tarmac: Array[Color] = []
 # shot index -> the segment it was built from, so the environment swap below can
@@ -319,6 +332,22 @@ func _build(force_live: bool = false, capture: MenuShowcaseCache = null) -> void
 		floor_tm.noise_seed = SHOWCASE_SEED
 		cfg.apply_cliffs(floor_tm)
 		cfg.apply_terrain_lod(floor_tm)
+		# Real baked terrain lighting (see the class comment's "TERRAIN RELIGHT half") —
+		# every segment gets the normal DAY bake now, and one whose eligible weather can
+		# go night also gets a second, NIGHT one alongside it.
+		cfg.apply_terrain_light(floor_tm)
+		if _segment_wants_night_relight(region_id):
+			floor_tm.bake_night_colors = true
+			floor_tm.night_sun_dir = floor_tm.sun_dir
+			# Mirrors world.gd::_apply_overcast_look's own night seating exactly (sun scaled
+			# by night_sun_energy_mult, alpha preserved; sky replaced outright; ground
+			# untouched) — the showcase's bake must agree with what a real night stage bakes.
+			var night_sun: Color = cfg.sun_color * cfg.night_sun_energy_mult
+			night_sun.a = cfg.sun_color.a
+			floor_tm.night_sun_color = night_sun
+			floor_tm.night_sky_color = cfg.night_sky_color
+			floor_tm.night_ground_color = cfg.ground_color
+			floor_tm.night_light_amount = floor_tm.light_amount
 		# Force the lowest tier's LOD bands specifically (apply_terrain_lod above
 		# seats the AUTHORED baseline, i.e. whichever tier a real stage most
 		# recently resolved into cfg.terrain_lod_bands_m — never mutate that shared
@@ -377,8 +406,11 @@ func _build(force_live: bool = false, capture: MenuShowcaseCache = null) -> void
 		_segment_region_ids.append(region_id)
 		_segment_baseline_tarmac.append(floor_tm.chunk_material.get_shader_parameter("tarmac_color"))
 		_segment_weather_ids.append(WeatherLibrary.DEFAULT_ID)
+		_segment_pending_weather.append(WeatherLibrary.DEFAULT_ID)
 		_segment_reroll_timers.append(0.0)
-		_reroll_segment_weather(i)  # picks the initial id and sets the real reroll timer
+		_reroll_segment_weather(i)  # picks the initial id and sets the real reroll timer;
+		# _viewed_shot is still -1 here (no camera yet), so this commits immediately —
+		# every segment starts fully applied, ground/terrain/tint agreeing from frame one.
 
 		var _tf0 := Time.get_ticks_msec()
 		var look := RegionLibrary.look_of(region_id)
@@ -418,6 +450,13 @@ func _process(delta: float) -> void:
 			_reroll_segment_weather(i)
 	var shot_idx := _camera.current_shot()
 	if shot_idx != _viewed_shot and shot_idx < _shot_segments.size():
+		# Commit any weather that rerolled WHILE this segment was on screen — safe now,
+		# it's about to leave frame — and whatever is pending on the segment we're
+		# cutting TO, so its ground/terrain/tint are all correct from this shot's very
+		# first frame rather than catching up next tick.
+		if _viewed_shot >= 0 and _viewed_shot < _shot_segments.size():
+			_commit_segment_weather(_shot_segments[_viewed_shot])
+		_commit_segment_weather(_shot_segments[shot_idx])
 		_viewed_shot = shot_idx
 		_apply_segment_environment(_shot_segments[shot_idx])
 
@@ -429,11 +468,39 @@ static func eligible_weather_ids(region_id: String) -> Array:
 	return _REGION_WEATHER_IDS.get(region_id, [WeatherLibrary.DEFAULT_ID])
 
 
+# Which of `region_id`'s eligible ids ever wants a terrain re-bake (see WeatherLibrary's
+# `terrain_relight` key — today only night). Pure lookup: the answer decides whether
+# _floor_for_segment's caller turns bake_night_colors on for this segment at all.
+static func _segment_wants_night_relight(region_id: String) -> bool:
+	for id in eligible_weather_ids(region_id):
+		if bool(WeatherLibrary.by_id(id).get("terrain_relight", false)):
+			return true
+	return false
+
+
+# Picks the segment's NEXT weather id and starts its hold timer. Never applies it
+# directly to a segment the camera is CURRENTLY framing — see the class comment's
+# gating note — except during the initial build, where _viewed_shot is still -1 and
+# there is no "currently framed" segment to protect yet.
 func _reroll_segment_weather(i: int) -> void:
 	var eligible := eligible_weather_ids(_segment_region_ids[i])
-	_segment_weather_ids[i] = eligible[randi() % eligible.size()]
+	_segment_pending_weather[i] = eligible[randi() % eligible.size()]
 	_segment_reroll_timers[i] = randf_range(_WEATHER_REROLL_MIN_S, _WEATHER_REROLL_MAX_S)
+	if _viewed_shot < 0 or _shot_segments.is_empty() or i != _shot_segments[_viewed_shot]:
+		_commit_segment_weather(i)
+
+
+# Applies segment i's PENDING weather id to its ground tint and (if this segment was
+# ever seated for it) its terrain colour profile. Idempotent when nothing changed —
+# a cut that lands with no reroll in between just re-applies the same id.
+func _commit_segment_weather(i: int) -> void:
+	_segment_weather_ids[i] = _segment_pending_weather[i]
 	_apply_segment_road_tint(i)
+	var floor_tm := _segment_floors[i]
+	if floor_tm.bake_night_colors:
+		var entry := WeatherLibrary.by_id(_segment_weather_ids[i])
+		var profile: StringName = &"night" if bool(entry.get("terrain_relight", false)) else &"day"
+		floor_tm.set_vertex_color_profile(profile)
 
 
 # The GROUND half of the weather look (see the class comment for why it's split from

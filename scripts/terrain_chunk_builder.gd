@@ -28,6 +28,8 @@ var _vertices: PackedVector3Array
 var _uvs: PackedVector2Array
 var _lights: PackedColorArray         # empty when unlit (vertex_colors treats as white)
 var _colors: PackedColorArray
+var _night_lights: PackedColorArray   # empty unless _lit and _m.bake_night_colors
+var _night_colors: PackedColorArray   # empty unless _lit and _m.bake_night_colors
 var _uv2s: PackedVector2Array
 var _ph: PackedFloat32Array           # pure-height halo (lit only)
 var _has_cliffs: bool                 # cheap gate: skip cliff lookups when none baked
@@ -59,11 +61,16 @@ func _init(manager: TerrainManager, chunk_coord: Vector2i, stride: int = 1) -> v
 	_colors = PackedColorArray(); _colors.resize(_count)
 	_uv2s = PackedVector2Array(); _uv2s.resize(_count)
 	_lights = PackedColorArray()
+	_night_lights = PackedColorArray()
+	_night_colors = PackedColorArray()
 	if _lit:
 		_lights.resize(_count)
 		# The batched pure-height halo is only used by the stride-1 (full-res) path.
 		if _stride == 1:
 			_ph = PackedFloat32Array(); _ph.resize(_hs * _hs)
+		if _m.bake_night_colors:
+			_night_lights.resize(_count)
+			_night_colors.resize(_count)
 
 
 # Run every phase in order: halo rows (lit only), vertex rows, colour rows, uv2 rows.
@@ -81,6 +88,9 @@ func build() -> void:
 			_vertex_row_coarse(zi)
 	for zi in _samples:
 		_m._vertex_color_row(coord, zi, _lights, _colors, _samples, _stride)
+	if _lit and _m.bake_night_colors:
+		for zi in _samples:
+			_m._vertex_color_row(coord, zi, _night_lights, _night_colors, _samples, _stride)
 	for zi in _samples:
 		_m._surface_uv2_row(coord, zi, _uv2s, _samples, _stride)
 
@@ -110,6 +120,7 @@ func data() -> Dictionary:
 		"uv2s": _uv2s,
 		"indices": indices,
 		"lights": _lights,   # per-vertex baked light (empty when unlit) — served by light_at
+		"night_colors": _night_colors,  # second bake (empty unless _m.bake_night_colors)
 		"grid_n": _samples,  # vertices per edge (SAMPLES for full-res, fewer for coarse)
 		"stride": _stride,   # L0 cells per grid cell (1 = full-res)
 	}
@@ -146,6 +157,10 @@ func _vertex_row_coarse(zi: int) -> void:
 			_lights[idx] = _m._light_from_neighbours(
 				_sampled_height(gx - 1, gz), _sampled_height(gx + 1, gz),
 				_sampled_height(gx, gz - 1), _sampled_height(gx, gz + 1))
+			if _m.bake_night_colors:
+				_night_lights[idx] = _m._night_light_from_neighbours(
+					_sampled_height(gx - 1, gz), _sampled_height(gx + 1, gz),
+					_sampled_height(gx, gz - 1), _sampled_height(gx, gz + 1))
 		# Blend road vertices toward the baked road height by their weight.
 		if _m.road_blend.has(vidx):
 			h = lerpf(h, _m.road_heights[vidx], _m.road_blend[vidx])
@@ -189,6 +204,9 @@ func _vertex_row(zi: int) -> void:
 			var c := (zi + 1) * _hs + (xi + 1)
 			h = _ph[c]
 			_lights[idx] = _m._light_from_neighbours(_ph[c - 1], _ph[c + 1], _ph[c - _hs], _ph[c + _hs])
+			if _m.bake_night_colors:
+				_night_lights[idx] = _m._night_light_from_neighbours(
+					_ph[c - 1], _ph[c + 1], _ph[c - _hs], _ph[c + _hs])
 		else:
 			# Unlit: no halo, so add the cliff offset onto the pure noise directly.
 			h = TerrainManager._sample_height(_noises, _amplitudes, wx, wz)

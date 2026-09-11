@@ -24,6 +24,18 @@ var _collision: CollisionShape3D
 # editor/test builds (which build every level up front).
 var _lazy_finest := false
 
+# Dual day/night vertex-colour bake — menu_showcase.gd only (see TerrainManager.
+# bake_night_colors and features/terrain.md → "Dual day/night bake"). One PackedColorArray
+# per LOD level, index-parallel with _mesh_instances; empty for a level with no night data
+# (pruned, or the chunk predates bake_night_colors). Populated by apply_data from
+# `data["night_colors_by_level"]`.
+var _night_colors_by_level: Array = []
+# The DAY colour array per level, stashed lazily the first time a level is swapped to
+# night, so switching back is an exact restore rather than a re-derivation. Empty entries
+# mean "never swapped" for that level.
+var _day_colors_by_level: Array = []
+var _color_profile: StringName = &"day"
+
 
 func _init() -> void:
 	_collision = CollisionShape3D.new()
@@ -64,6 +76,14 @@ func apply_data(manager: TerrainManager, chunk_coord: Vector2i, data: Dictionary
 		_mesh_instances[i].mesh = meshes[i]   # may be null (pruned coarse / lazy finest)
 	_lazy_finest = not data.get("coarse", false) and not meshes.is_empty() \
 		and meshes[0] == null
+	# Fresh geometry always starts on the DAY bake — night_colors_by_level is the pre-baked
+	# swap target, not what's currently applied. A stashed day array from a PREVIOUS setup()
+	# is invalid against new meshes, so it's dropped rather than carried forward; the caller
+	# (menu_showcase.gd) re-applies the segment's current profile right after a spawn if the
+	# segment is currently night.
+	_night_colors_by_level = data.get("night_colors_by_level", [])
+	_day_colors_by_level = []
+	_color_profile = &"day"
 	_apply_level_bands(manager)
 
 	# Collision only when the full-res heightfield is present (full-res chunks). Coarse
@@ -136,6 +156,53 @@ func set_finest_detail(manager: TerrainManager, data: Dictionary, on: bool) -> v
 		return
 	mi.mesh = TerrainLod.build_finest(manager, coord, data, manager.lod_skirt_m) if on else null
 	_apply_level_bands(manager)
+
+
+# Swap this chunk's mesh COLOR channel — ONLY the colour channel, not positions/UVs/
+# indices, which are identical between profiles — between the pre-baked day and night
+# vertex colours (see TerrainManager.bake_night_colors / features/terrain.md → "Dual
+# day/night bake"). No-op if already on `profile`. A level with no night data (this
+# chunk predates bake_night_colors, or TerrainLod pruned that level) is left on its
+# current colours rather than erroring — not every level need carry both.
+#
+# Godot mechanics: there's no cheap in-place COLOR-only update to an already-built
+# ArrayMesh surface, so this reads the surface's arrays back, replaces just
+# ARRAY_COLOR, and resubmits — a data copy of already-resident arrays, not a rebuild
+# (mirrors the read-back-and-rebuild pattern foliage.gd already uses elsewhere).
+func apply_vertex_color_profile(profile: StringName) -> void:
+	if profile == _color_profile:
+		return
+	for i in _mesh_instances.size():
+		var mesh := _mesh_instances[i].mesh as ArrayMesh
+		if mesh == null or mesh.get_surface_count() == 0:
+			continue
+		var arrays := mesh.surface_get_arrays(0)
+		if profile == &"night":
+			var night: PackedColorArray = _night_colors_by_level[i] \
+				if i < _night_colors_by_level.size() else PackedColorArray()
+			if night.is_empty():
+				continue
+			while _day_colors_by_level.size() <= i:
+				_day_colors_by_level.append(PackedColorArray())
+			if (_day_colors_by_level[i] as PackedColorArray).is_empty():
+				_day_colors_by_level[i] = (arrays[Mesh.ARRAY_COLOR] as PackedColorArray).duplicate()
+			arrays[Mesh.ARRAY_COLOR] = night
+		else:
+			if i >= _day_colors_by_level.size() or (_day_colors_by_level[i] as PackedColorArray).is_empty():
+				continue  # never swapped to night, nothing to restore
+			arrays[Mesh.ARRAY_COLOR] = _day_colors_by_level[i]
+		mesh.clear_surfaces()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	_color_profile = profile
+
+
+# Whether this chunk carries night colour data for at least one level — false for a
+# chunk built before bake_night_colors was turned on.
+func has_night_colors() -> bool:
+	for arr in _night_colors_by_level:
+		if arr is PackedColorArray and not (arr as PackedColorArray).is_empty():
+			return true
+	return false
 
 
 # Whether the finest level currently has a built mesh (tests / debug).

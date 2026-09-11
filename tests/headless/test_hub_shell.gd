@@ -127,6 +127,11 @@ func _touch_tap_selected_card(carousel: CardCarousel) -> void:
 	release.pressed = false
 	release.position = pos
 	carousel._on_card_gui_input(release, index)
+	# A real confirm now plays a flash before `confirmed` fires (card_carousel.gd
+	# _confirm_selected) — this helper is testing the MENU WALK the tap leads to, not the
+	# flash itself (that's card_carousel.gd's own confirm-flash tests), so skip straight to
+	# the end of it.
+	carousel.skip_confirm_flash()
 
 
 # A real drag gesture starting on the carousel's own BACKGROUND (not any specific card —
