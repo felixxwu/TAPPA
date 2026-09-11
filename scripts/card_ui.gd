@@ -112,9 +112,9 @@ static func _refit_carousel(page: MenuPage, carousel: CardCarousel) -> void:
 	if not is_instance_valid(page) or not is_instance_valid(carousel):
 		return
 	# Claim the full logical frame width, minus the page's own margin/padding chrome —
-	# `fit_to_available_width` then rounds DOWN to a whole number of cards so a card is
-	# never chopped in half at the visible edge, and set_body_width feeds that width to
-	# the (otherwise content-hugging) MenuPage box so it actually grows to it.
+	# fit_to_available_width claims that whole budget (a partial card can peek in at the
+	# clipped edge; see card_carousel.gd), and set_body_width feeds the same width to the
+	# (otherwise content-hugging) MenuPage box so it actually grows to it.
 	var avail := WorldPanel.layout_frame_size(page, Vector2(480.0, 360.0)).x
 	var chrome := CAROUSEL_PAGE_MARGIN * 2.0 + UITheme.PANEL_PAD * 2.0
 	carousel.fit_to_available_width(avail - chrome)

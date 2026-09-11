@@ -36,18 +36,18 @@ func test_declares_a_minimum_width_wide_enough_to_peek_neighbours() -> void:
 
 
 # fit_to_available_width is what a host calls to make the carousel run edge to edge
-# instead of the default couple-of-peeks width — it must round DOWN to a whole, ODD
-# number of cards, never leave a fractional remainder that would clip a card in half at
-# the visible edge (the strip always centres the selected card, so only an odd visible
-# count keeps an equal number of whole cards on both sides).
-func test_fit_to_available_width_uses_a_whole_odd_number_of_cards() -> void:
+# instead of the default couple-of-peeks width — it must claim the WHOLE budget offered,
+# not round down to a whole number of cards. A neighbour that only partially fits is
+# meant to peek in at the strip's own clipped edge (the visible cue that there's more to
+# scroll), not be rounded away into blank margin.
+func test_fit_to_available_width_claims_the_whole_budget() -> void:
 	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
-	# Exactly 4 units of room: only 3 cards (the next odd number down) may fit, not 4.
-	_carousel.fit_to_available_width(unit * 4.0)
-	var width := _carousel.custom_minimum_size.x
-	var shown := int(round((width + Config.data.card_carousel_gap) / unit))
-	assert_eq(shown % 2, 1, "an even visible count clips a card in half at one edge")
-	assert_true(width < unit * 4.0, "must not claim more than what was actually offered")
+	# 3.5 units of room — deliberately NOT a whole number of cards, so a width equal to
+	# the budget (rather than 3 or 4 whole cards' worth) proves nothing gets rounded away.
+	var avail := unit * 3.5
+	_carousel.fit_to_available_width(avail)
+	assert_almost_eq(_carousel.custom_minimum_size.x, avail, 0.01,
+		"must claim exactly what was offered, not round down to a whole number of cards")
 
 
 func test_fit_to_available_width_never_returns_less_than_one_card() -> void:
@@ -57,14 +57,19 @@ func test_fit_to_available_width_never_returns_less_than_one_card() -> void:
 
 # visible_card_count is what a host with an expensive per-card visual (a live 3D preview,
 # say — see hub_shell.gd's _refresh_car_previews) uses to decide how many it can afford to
-# keep built at once. It must reflect whatever fit_to_available_width actually decided,
-# not some independent guess.
-func test_visible_card_count_matches_what_fit_to_available_width_decided() -> void:
+# keep built at once. A partially-visible edge card still needs a real preview, so this
+# must count it as visible rather than only counting cards that fit whole.
+func test_visible_card_count_counts_a_partial_edge_card_as_visible() -> void:
 	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
-	_carousel.fit_to_available_width(unit * 4.0)
-	var width := _carousel.custom_minimum_size.x
-	var expected := int(round((width + Config.data.card_carousel_gap) / unit))
-	assert_eq(_carousel.visible_card_count(), expected)
+	var card_width: float = Config.data.card_carousel_card_width
+	# Half-width reaches 1px past the near edge of the card TWO units out from centre (a
+	# sliver of it visible) but not as far as the near edge of the card three units out —
+	# so the true visible set is the centred card, one full card, and a sliver of a third
+	# on each side: 5 cards, not 3.
+	var half_width := 2.0 * unit - card_width * 0.5 + 1.0
+	_carousel.fit_to_available_width(half_width * 2.0)
+	assert_eq(_carousel.visible_card_count(), 5)
+	assert_eq(_carousel.visible_card_count() % 2, 1, "must stay odd: equal radius on both sides of the centred card")
 
 
 func test_get_card_returns_the_same_handle_add_card_returned() -> void:

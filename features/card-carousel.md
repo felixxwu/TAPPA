@@ -230,17 +230,29 @@ current logical frame width via `WorldPanel.layout_frame_size(_page, ...).x` (th
 through `_page.set_body_width(...)` — otherwise the box would still hug back down to
 whatever narrow width the carousel used to default to.
 
-`CardCarousel.fit_to_available_width(avail_width)` is what turns that raw pixel budget
-into an actual card count: it rounds DOWN to a whole, ODD number of cards (`unit :=
-card_width + gap`; `count := floor((avail_width + gap) / unit)`, forced odd) rather than
-whatever fraction of a card happens to fit. Odd matters, not just whole: `_layout()`
-always centres the SELECTED card exactly on the carousel's own centre-x, so an odd visible
-count is the only way to get an equal number of whole cards peeking on both sides — an
-even count would show one more full card on one side than the other, i.e. a card sliced in
-half at the far edge, which is the exact "clipping" bug this method exists to rule out.
-`clip_contents` on the carousel stays on regardless (a catalogue longer than the visible
-count still needs to hide the far-off cards) — it's just that every card `clip_contents`
-ever cuts is either fully inside the strip or fully outside it, never straddling the edge.
+`CardCarousel.fit_to_available_width(avail_width)` claims that WHOLE pixel budget —
+`custom_minimum_size.x = max(avail_width, card_width)` — rather than rounding down to a
+whole number of cards. `_layout()` always centres the SELECTED card exactly on the
+carousel's own centre-x regardless of how many cards fit, so nothing about the centring
+depends on the count being whole or odd; a neighbour that only PARTIALLY fits inside the
+claimed width is left peeking in at the strip's own `clip_contents` edge instead of being
+rounded away into blank margin on both sides. That partial card is deliberate — it's the
+visible cue that there's more to scroll — not the "clipping" bug it used to be read as (an
+earlier version of this method rounded down to a whole, odd card count specifically to
+avoid it; that traded a legible "there's more" hint for wasted edge-to-edge space, and was
+reversed on request). `clip_contents` on the carousel is what makes a partial card read as
+"sliced by the screen edge" rather than as a layout glitch — it always cuts cleanly at the
+strip's own bounds, never mid-render.
+
+`visible_card_count()` — the estimate a host with an expensive per-card visual (a live 3D
+preview, say) uses to decide how many cards to keep built around the selection, see
+"CarCardPreview and the visible window" below — counts a partially-visible edge card as
+visible too: the RADIUS (in whole cards) from the centred card to the claimed width's edge
+is `floor((half_width + card_width/2) / unit)` — a card at that radius has its NEAR edge
+still inside `half_width`, even if its far edge is clipped off. Rounding the radius down
+(rather than up) is what keeps it exact: a card whose near edge has already crossed
+`half_width` isn't visible at all, not even a sliver of it, so counting it would ask the
+host to build a preview nothing will ever show.
 
 ### The fit has to be re-run on every window resize, not just once at open
 

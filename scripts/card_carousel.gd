@@ -95,28 +95,38 @@ func _init() -> void:
 
 # Widen the carousel's minimum width to use `avail_width` — called by a host that wants
 # the carousel to run edge to edge instead of the default peek-a-couple-neighbours width
-# from _init(). Rounds DOWN to a whole, ODD number of visible cards (so the selected card
-# sits exactly centred with an equal number of whole cards either side) rather than
-# whatever fraction happens to fit avail_width — a fractional card at the strip's clipped
-# edge is a card sliced in half, which is exactly the "don't clip" case this exists to
-# avoid. Falls back to one bare card's width if avail_width can't fit even that.
+# from _init(). Claims the WHOLE budget rather than rounding down to a whole number of
+# cards: the selected card still lands exactly centred (`_layout`'s `centre_x = size.x *
+# 0.5` doesn't care how many cards fit), but now a neighbour that only PARTIALLY fits is
+# left peeking in at the strip's own clipped edge instead of being rounded away into a
+# blank margin — that partial card is the visible cue that there's more to scroll, not a
+# bug to hide. Falls back to one bare card's width if avail_width can't fit even that (so
+# the carousel is never narrower than a single card).
 func fit_to_available_width(avail_width: float) -> void:
 	var unit := _card_width() + Config.data.card_carousel_gap
-	var count := int(floor((avail_width + Config.data.card_carousel_gap) / unit))
-	count = maxi(count, 1)
-	if count % 2 == 0:
-		count -= 1
-	count = maxi(count, 1)
-	_visible_count = count
-	custom_minimum_size.x = count * _card_width() + (count - 1) * Config.data.card_carousel_gap
+	custom_minimum_size.x = maxf(avail_width, _card_width())
+	# The RADIUS (in whole cards, INCLUDING a card only partially revealed) from the
+	# centred card out to the edge of the claimed width — used only by
+	# visible_card_count() below, not by this method's own sizing. A card at radius `r`
+	# sits `r * unit` from the centred card, so its near edge is `r * unit - card_width/2`
+	# from centre; it counts as visible as long as that near edge is still inside the
+	# half-width, i.e. `r < (half_width + card_width/2) / unit` — floor of the right-hand
+	# side is the largest such `r` (0 always counts: the centred card itself).
+	var half_width := custom_minimum_size.x * 0.5
+	var radius := int(floor((half_width + _card_width() * 0.5) / unit))
+	_visible_count = radius * 2 + 1
 	_layout()
 
 
-# How many cards fit_to_available_width decided can be on screen at once (always odd —
-# see fit_to_available_width). A host with an expensive per-card visual (a live 3D
-# preview, say) can use this to only keep that many live around the current selection
-# instead of building one for every card up front — see CarCardPreview's caller in
-# hub_shell.gd for why that matters. 1 before fit_to_available_width has ever run.
+# An estimate of how many cards fit_to_available_width decided could be ON SCREEN at
+# once, INCLUDING a partially-visible card peeking in at each edge (always odd — see
+# fit_to_available_width). A host with an expensive per-card visual (a live 3D preview,
+# say) can use this to only keep that many live around the current selection instead of
+# building one for every card up front — see CarCardPreview's caller in hub_shell.gd for
+# why that matters. Deliberately generous (rounds partial cards UP to a full one) rather
+# than exact, since a card that's genuinely on screen — even sliced by clip_contents —
+# still needs a real preview, not a blank slot. 1 before fit_to_available_width has ever
+# run.
 func visible_card_count() -> int:
 	return _visible_count
 
