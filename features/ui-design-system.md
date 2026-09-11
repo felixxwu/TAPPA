@@ -41,7 +41,9 @@ bakes in 2–4 as the defaults:
    helpers mark their label (`ui_title_size` meta) so `enforce()`'s size reset
    skips it — `enforce()` still uppercases it (rule 1 still applies). A label
    that wants the bigger size MUST go through one of these two helpers, never a
-   bare `add_theme_font_size_override` — that leaves no marker, so the next
+   bare `add_theme_font_size_override` (the one exception is the loading screen's
+   headline below, which sits outside the enforced-menu system entirely — see why
+   there). Elsewhere, a bare override leaves no marker, so the next
    `enforce()` pass (a view change, a focus refresh) silently resets it back to
    `FONT_SIZE`.
 3. **Single-line menu buttons are a fixed, compact height** (`UITheme.MENU_ROW_H`).
@@ -263,6 +265,12 @@ Specific design-system touches:
 - **Pause** (`pause_menu.gd`) — `PAUSED` on a black title plate (button wording
   unchanged).
 - **HUD** (`hud.gd`) — the run timer is white (neutral ink), the stage-complete banner green.
+- **Loading screen** (`loading_screen.gd`) — `_title`/`_dots` (the "LOADING STAGE 2 OF 8…"
+  headline, the one thing on the screen) render at `UITheme.TITLE_FONT_SIZE` directly, not
+  through `UITheme.title()`: the screen never calls `UITheme.enforce()` (it isn't a menu —
+  it has no buttons and its text isn't player-authored-length, so there's nothing rule 1/3
+  need to guard), so there's no size-reset to dodge and no need for the `ui_title_size`
+  marker. The tip line underneath (`_step`) stays at `UITheme.FONT_SIZE`.
 
 ## A passive readout in a row of buttons (`UITheme.readout_box`)
 

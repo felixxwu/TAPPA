@@ -83,15 +83,19 @@ func _init() -> void:
 	headline.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(headline)
 
+	# The headline (title + dots) is the one thing on this screen, so it wears
+	# UITheme.TITLE_FONT_SIZE — same exception as UITheme.title()/card_title() (see
+	# features/ui-design-system.md house rule 2). Both labels share it since they sit
+	# side by side as one continuous line of text.
 	_title = Label.new()
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_title.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
+	_title.add_theme_font_size_override("font_size", UITheme.TITLE_FONT_SIZE)
 	headline.add_child(_title)
 
 	_dots = Label.new()
 	_dots.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_dots.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
+	_dots.add_theme_font_size_override("font_size", UITheme.TITLE_FONT_SIZE)
 	headline.add_child(_dots)
 
 	# Defaults — set_title() strips the trailing "…" (the animated dots
