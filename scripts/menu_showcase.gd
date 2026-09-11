@@ -90,7 +90,6 @@ const _REGION_WEATHER_IDS := {
 	"home_coast": ["dry", "rain", "fog", "storm", "night"],
 	"taiga": ["dry", "rain", "fog", "storm", "night"],
 	"greece": ["dry", "sandstorm", "night"],
-	"greece_coast": ["dry", "sandstorm", "night"],
 	"snow": ["dry", "snow", "night"],
 }
 # How long a segment holds a weather id before rolling the next one. Cosmetic

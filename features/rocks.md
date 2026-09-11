@@ -139,8 +139,8 @@ defaulting to `1.0` so a region that authors nothing still gets rocks. It is whi
 in `LOOK_KEYS` — without that, `look_of()` drops it silently and every region renders at
 the default.
 
-As shipped: **Greece** is stoniest, **the Alps** sparsest, everything else the middle
-(and `greece_coast` inherits Greece's value through `look_from`). The reasoning is in the
+As shipped: **Greece** is stoniest, **the Alps** sparsest, everything else the middle.
+The reasoning is in the
 region entries — Greece is the one region with no ground cover at all, so rocks are what
 fill a verge that is otherwise bare; deep snow buries loose stone, so the Alps keep only
 the few boulders too big to cover, rather than dropping to zero.

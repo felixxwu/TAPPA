@@ -49,7 +49,13 @@ Settled with the user during the brainstorm that produced this file:
    3D space the camera flies through and becomes ordinary menu screens.
 10. **`greece_coast` gets more authored rallies** rather than being folded or
     topped up procedurally — every region carries a real pool of its own.
-    (Pool size later fixed at 16 by decision 32.)
+    (Pool size later fixed at 16 by decision 32.) **Superseded 2026-09:**
+    `greece_coast` was later removed from the region catalogue entirely; its
+    rallies were retagged into `greece` rather than deleted. The catalogue is
+    now five regions — country (`home`), peninsula (`greece`), taiga, lakes
+    (`home_coast`), Alps (`snow`), in that authored `order` — and `home_coast`
+    ("The Lakes") carries a much higher `water_level` than every other region.
+    See `RegionLibrary.REGIONS` and `features/regions.md`.
 11. **The stage target time is FIXED, not car-relative** — computed from a
     reference car, so a faster car is straightforwardly better.
 12. **A cleared region stays repeatable at full payout.** This is the economy's
@@ -356,7 +362,9 @@ whole geometric reveal system (`RallyLibrary.rally_revealed`, `lit_sources`,
 
 `RegionLibrary.REGIONS` (`scripts/region_library.gd`) already holds the six
 regions with stable ids — `home`, `home_coast`, `taiga`, `greece`,
-`greece_coast`, `snow` — plus their look and `water_level`. Today a region is
+`greece_coast`, `snow` — plus their look and `water_level`. **`greece_coast` was
+later removed (2026-09)**, so the catalogue is now five regions; see the note on
+decision 10 above and `features/regions.md`. Today a region is
 explicitly **not** a gate (`features/regions.md` says so in as many words); this
 pivot makes it the *only* gate. Two things to add:
 

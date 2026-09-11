@@ -87,3 +87,96 @@ func test_apply_event_config_falls_back_to_baseline_with_no_region_context() -> 
 	StageConfig.apply_event_config(cfg, {})
 	assert_eq(cfg.track_water_level_m, base.track_water_level_m,
 		"no region tag and no event override -> GameConfig baseline")
+
+
+# --- Stage-based hilliness/curviness (StageConfig.stage_scale + apply_event_config) --
+# LOGIC only, per CLAUDE.md: no assertion here may fail if the authored
+# stage_hilliness_scale_*/stage_curviness_scale_* values in game_config.tres were
+# retuned to another reasonable setting — everything is built on synthetic min/max.
+
+func test_stage_scale_interpolates_linearly_between_synthetic_min_and_max() -> void:
+	assert_almost_eq(StageConfig.stage_scale(0, 8, 1.0, 2.0), 1.0, 0.0001,
+		"first stage lands on min_v")
+	assert_almost_eq(StageConfig.stage_scale(7, 8, 1.0, 2.0), 2.0, 0.0001,
+		"last stage lands on max_v")
+	var mid := StageConfig.stage_scale(3, 8, 1.0, 2.0)
+	assert_true(mid > 1.0 and mid < 2.0, "a middle stage lands strictly between min_v and max_v")
+	# Monotonic across the whole range, for any reasonable min/max including a
+	# DECREASING one (a designer could author max_v < min_v).
+	for min_v in [0.0, 1.0, 0.5]:
+		for max_v in [1.0, 2.5, 0.2]:
+			var prev := StageConfig.stage_scale(0, 8, min_v, max_v)
+			for i in range(1, 8):
+				var cur := StageConfig.stage_scale(i, 8, min_v, max_v)
+				if max_v >= min_v:
+					assert_true(cur >= prev - 0.0001,
+						"scale is non-decreasing stage over stage when max_v >= min_v")
+				else:
+					assert_true(cur <= prev + 0.0001,
+						"scale is non-increasing stage over stage when max_v < min_v")
+				prev = cur
+
+
+func test_stage_scale_clamps_out_of_range_indices() -> void:
+	assert_almost_eq(StageConfig.stage_scale(-3, 8, 1.0, 2.0), 1.0, 0.0001,
+		"a negative index clamps to min_v")
+	assert_almost_eq(StageConfig.stage_scale(99, 8, 1.0, 2.0), 2.0, 0.0001,
+		"an index past the end clamps to max_v")
+
+
+func test_stage_scale_with_one_stage_is_always_min_v() -> void:
+	assert_almost_eq(StageConfig.stage_scale(0, 1, 1.0, 2.0), 1.0, 0.0001,
+		"a single-stage run has nothing to interpolate across, so it's pinned to min_v")
+
+
+func test_negative_stage_index_leaves_terrain_and_straightness_unscaled() -> void:
+	var cfg := GameConfig.new()
+	StageConfig.apply_event_config(cfg, {
+		"terrain_layer1_amplitude": 20.0, "straightness": 0.5,
+	})  # stage_index defaults to -1
+	assert_eq(cfg.terrain_layer1_amplitude, 20.0,
+		"no run stage known -> hilliness scale is not applied")
+	assert_eq(cfg.track_straightness, 0.5,
+		"no run stage known -> curviness scale is not applied")
+
+
+func test_later_stage_is_hillier_and_curvier_than_an_earlier_stage_for_any_scale_config() -> void:
+	# apply_event_config always reads the authored .tres fresh (`load(Config.CONFIG_PATH)`),
+	# not a caller-supplied config, so exercising a non-identity scale means
+	# temporarily retuning the cached authored resource itself (Godot's resource
+	# cache returns the SAME instance for the same path) — saved and restored
+	# below, and deliberately NOT the shipped values (CLAUDE.md: never pin a
+	# tunable), just some min < max on both axes to prove the relationship.
+	var base: GameConfig = load(Config.CONFIG_PATH)
+	var saved := {
+		"hmin": base.stage_hilliness_scale_min, "hmax": base.stage_hilliness_scale_max,
+		"cmin": base.stage_curviness_scale_min, "cmax": base.stage_curviness_scale_max,
+	}
+	base.stage_hilliness_scale_min = 0.8
+	base.stage_hilliness_scale_max = 1.6
+	base.stage_curviness_scale_min = 1.0
+	base.stage_curviness_scale_max = 1.8
+
+	var event := {"terrain_layer1_amplitude": 20.0, "terrain_layer2_amplitude": 4.0,
+		"terrain_layer3_amplitude": 2.0, "straightness": 0.6}
+
+	var first := GameConfig.new()
+	StageConfig.apply_event_config(first, event, 0, 8)
+	var last := GameConfig.new()
+	StageConfig.apply_event_config(last, event, 7, 8)
+
+	base.stage_hilliness_scale_min = saved["hmin"]
+	base.stage_hilliness_scale_max = saved["hmax"]
+	base.stage_curviness_scale_min = saved["cmin"]
+	base.stage_curviness_scale_max = saved["cmax"]
+
+	assert_true(last.terrain_layer1_amplitude > first.terrain_layer1_amplitude,
+		"stage 8 is hillier than stage 1 (layer 1)")
+	assert_true(last.terrain_layer2_amplitude > first.terrain_layer2_amplitude,
+		"stage 8 is hillier than stage 1 (layer 2)")
+	assert_true(last.terrain_layer3_amplitude > first.terrain_layer3_amplitude,
+		"stage 8 is hillier than stage 1 (layer 3)")
+	assert_true(last.track_straightness < first.track_straightness,
+		"stage 8 is curvier (lower straightness) than stage 1")
+	assert_true(last.track_straightness >= 0.0 and last.track_straightness <= 1.0,
+		"straightness stays clamped to [0, 1] even after the curviness scale")

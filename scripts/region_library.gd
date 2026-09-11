@@ -59,7 +59,7 @@ const DEFAULT_TREE_MIX: Array = [
 # A REGION THAT IS A VARIANT OF ANOTHER MUST NOT CLONE ITS LOOK BLOCK. Author
 # `"look_from": "<other_region_id>"` and then only the keys that DIFFER — that is this
 # table's authoring idiom, not internal plumbing. Worked examples below: `taiga` is home
-# with its own trees, `greece_coast` is greece with its own waterline. `water_level` is
+# with its own trees, `home_coast` is home with its own (much higher) waterline. `water_level` is
 # never inherited — every corner authors its own (see water_level_of). Ids are
 # load-bearing: "home" is hardcoded in world.gd._current_region_look(), so never rename it.
 #
@@ -101,6 +101,7 @@ const REGIONS: Array[Dictionary] = [
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
 		"id": "home", "order": 0, "name": "Rally Country",
+		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
 		"water_level": -12.0,
 		# size_scale 1.25 uniform — the home forest 25% bigger than the profile's
 		# authored card (7.5 -> 9.375 m). Done HERE, on the species, rather than by
@@ -120,12 +121,6 @@ const REGIONS: Array[Dictionary] = [
 			 "size_scale": Vector2(1.25, 1.25)},   # 9.375 x 9.375 m
 		],
 		"spawn_bush_mesh": true,
-	},
-	# The same forest look with the sea raised — a lakeland / forested shore.
-	{
-		"id": "home_coast", "order": 1, "name": "The Lakes",
-		"look_from": "home",
-		"water_level": -5.0,
 	},
 	# The taiga — the NW corner. Deliberately the THINNEST region in the catalogue:
 	# `look_from: "home"` takes home's sky, gravel, tarmac, lane paint, terrain tints
@@ -177,7 +172,7 @@ const REGIONS: Array[Dictionary] = [
 	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
-		"id": "greece", "order": 3, "name": "The Peninsula",
+		"id": "greece", "order": 1, "name": "The Peninsula",
 		"water_level": -12.0,
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
@@ -195,11 +190,14 @@ const REGIONS: Array[Dictionary] = [
 		"road_marking_color": Color(0.85, 0.70, 0.16),
 		"grass_particle_color": Color(0.52, 0.49, 0.38),
 	},
-	# The same arid look with the sea raised — the Mediterranean shoreline.
+	# The same forest look with the sea raised — a lakeland / forested shore.
+	# `water_level` is set MUCH higher than every other region's (all -12.0) so the
+	# lakes read as unmistakably flooded rather than merely "a bit wetter" — see
+	# water_level_of below and features/regions.md / features/lakes.md.
 	{
-		"id": "greece_coast", "order": 4, "name": "The Coast",
-		"look_from": "greece",
-		"water_level": -5.0,
+		"id": "home_coast", "order": 3, "name": "The Lakes",
+		"look_from": "home",
+		"water_level": 3.0,
 	},
 	# The alpine NE corner. The one region that does more than look different: it is
 	# also the first to influence HANDLING, via the two non-LOOK_KEYS blocks below.
@@ -213,7 +211,7 @@ const REGIONS: Array[Dictionary] = [
 	# grass_particle_color turns the wheel spray white — the home green would read as
 	# grass blades flung off a snowfield.
 	{
-		"id": "snow", "order": 5, "name": "The Alps",
+		"id": "snow", "order": 4, "name": "The Alps",
 		"water_level": -12.0,
 		"sky_panorama": "res://textures/sky-snow.jpg",
 		"grass_texture": "res://textures/snow-ground.jpg",

@@ -139,8 +139,9 @@ func test_the_draw_never_repeats_a_stage_while_the_pool_lasts() -> void:
 
 
 func test_a_pool_smaller_than_the_run_refills_rather_than_returning_a_short_run() -> void:
-	# `greece_coast` ships 3 events against an 8-stage run until stage 4's authoring
-	# pass. A repeated stage is a thin region; a 3-stage "8-stage run" is a broken one.
+	# A thin region (once `greece_coast` before it was removed and its rallies moved
+	# into `greece`) could ship far fewer events than an 8-stage run needs. A repeated
+	# stage is a thin region; a 3-stage "8-stage run" is a broken one.
 	var tiny: Array[Dictionary] = [_rally("fx_tiny", "fx_tiny_region", 1, [1, 2])]
 	RallyLibrary.override_for_test(tiny)
 	var drawn := RegionStagePool.draw("fx_tiny_region", 8, 99)
@@ -168,8 +169,9 @@ func test_the_drawn_run_escalates_by_the_parent_rallys_difficulty() -> void:
 # a chosen difficulty, or any tuned number.
 
 # Every region must be able to fill a run — and then some. This is a CONTENT contract, not
-# a tuning value: a region below the floor is not "badly balanced", it is unplayable, and
-# before this pass greece_coast had three events against a run that wants eight.
+# a tuning value: a region below the floor is not "badly balanced", it is unplayable — an
+# earlier `greece_coast` region once had three events against a run that wants eight,
+# before it was removed and its rallies folded into `greece`.
 #
 # The floor is two full runs with no repeats, so a player who runs a region twice does not
 # see the same stage twice. RegionStagePool refills a short bag rather than failing, which

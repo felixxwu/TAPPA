@@ -834,9 +834,65 @@ later stages. [regions.md](regions.md) has always been right about this. See
 [rendering.md](rendering.md) for the shader/sky plumbing itself. Terrain tints/layers per region are a reserved, unused hook —
 no region ships them yet.
 
+## Stage-based hilliness and curviness
+
+A region run drives 8 stages back to back (`RegionRunMode.STAGE_COUNT`, see
+`PIVOT-CHANGES.md`), and later stages are meant to read as harder terrain:
+hillier and curvier than the first. Rather than a bespoke per-stage table, this
+is a multiplier layered on top of whatever the rally's own authored event
+already sets (`RallyLibrary.RALLIES` entries' `terrain_layer1_amplitude` /
+`straightness`), so a region keeps its own character and the run-progress trend
+is additive.
+
+`StageConfig.apply_event_config(cfg, event, stage_index, stage_count)` — the
+canonical event→config writer (see the "TWO ENTRY POINTS" note above) — takes
+two extra, defaulted parameters: `stage_index` (0-based, `-1` means "no run
+stage known") and `stage_count` (default 8). When a stage index is given, AFTER
+the per-event fields are seated:
+
+- `terrain_layer{1,2,3}_amplitude` are each multiplied by
+  `StageConfig.stage_scale(stage_index, stage_count,
+  cfg.stage_hilliness_scale_min, cfg.stage_hilliness_scale_max)` — hilliness.
+- `track_straightness` is reduced by
+  `StageConfig.stage_scale(stage_index, stage_count,
+  cfg.stage_curviness_scale_min, cfg.stage_curviness_scale_max)`:
+  `track_straightness = clamp(1 - (1 - track_straightness) * curviness_scale, 0, 1)`
+  — curviness (straightness moves toward 0 as the scale grows past 1.0).
+
+`StageConfig.stage_scale(stage_index, stage_count, min_v, max_v)` is the shared
+interpolation: linear from `min_v` at `stage_index == 0` to `max_v` at
+`stage_index == stage_count - 1`, clamped for any index outside that range.
+Pure and static — unit-tested directly with synthetic min/max rather than the
+authored `GameConfig` values (CLAUDE.md bans pinning a tunable).
+
+All four scale fields are authored on `GameConfig`
+(`config/game_config.tres`): `stage_hilliness_scale_min` / `_max` and
+`stage_curviness_scale_min` / `_max`. Default `1.0`/`1.0` (identity — no change
+across the run) until a designer tunes stage 8 upward; a region-run designer
+raising `_max` above `1.0` is what actually makes stage 8 the hilliest/curviest
+stage.
+
+**Who calls with a real stage index:** `DrivingContext.apply_stage_config`
+(`scripts/driving_context.gd`), the sole consumer at CONSUME time
+(`world.gd._ready`), passes `RunSession.events_completed()` (0-based, the
+stage currently being driven) and `RunSession.stage_count()` whenever a region
+run is active. Every other caller — the Seed Lab preview
+(`settings_menu.gd`), the offline track-cache tools (`tools/generate_track_cache.gd`,
+`tools/calibrate_benchmark.gd`, `tools/probe_track_event.gd`), `track_cache.gd`
+(the target-time lockfile), and `benchmark_mode.gd` — omits the new
+parameters, so `stage_index` defaults to `-1` and neither scale applies; those
+callers have no run in progress and must stay bit-identical to the event's
+authored values.
+
+Tests: `tests/headless/test_stage_config.gd` — `stage_scale`'s interpolation
+(monotonic between synthetic min/max, endpoints, clamping) and that
+`apply_event_config` leaves `terrain_layer*_amplitude`/`track_straightness`
+untouched by the scale when `stage_index` is omitted (`-1`).
+
 ## Related config
 
-`terrain_layer{1,2,3}_{wavelength,amplitude}` and `terrain_tile_per_meter`. For the overworld:
+`terrain_layer{1,2,3}_{wavelength,amplitude}`, `terrain_tile_per_meter`,
+`stage_hilliness_scale_{min,max}`, `stage_curviness_scale_{min,max}`. For the overworld:
 `overworld_edge_taper_m` / `overworld_edge_depth_m` (the coastline) and
 `overworld_pad_zone_radius_m` / `overworld_pad_garage_radius_m` / `overworld_pad_feather_m` /
 `overworld_pad_max_grade` / `overworld_pad_max_feather_m` (the flat pads — all five are baked, so

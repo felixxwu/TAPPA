@@ -1876,6 +1876,19 @@ func has_nitrous() -> bool:
 ## Layer 3 amplitude (m): height of the finest surface bumps.
 @export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.0
 
+## Per-run-stage hilliness scaling (features/terrain.md → "Stage-based hilliness
+## and curviness"). `StageConfig.apply_event_config` multiplies every terrain
+## layer's amplitude by `StageConfig.stage_scale(stage_index, stage_count,
+## stage_hilliness_scale_min, stage_hilliness_scale_max)` — stage 1 of a
+## region run (`RegionRunMode.STAGE_COUNT`) uses `_min`, stage 8 uses `_max`,
+## interpolated linearly in between. 1.0 = the event's authored amplitude
+## unchanged; only applies when a stage index is known (an active RunSession),
+## so free roam / benchmark / the Seed Lab preview are unaffected.
+@export_range(0.0, 3.0) var stage_hilliness_scale_min := 1.0
+## Hilliness scale applied at the LAST stage of a run (stage 8 by default). See
+## `stage_hilliness_scale_min`.
+@export_range(0.0, 3.0) var stage_hilliness_scale_max := 1.0
+
 @export_group("PS1 Look")
 ## Logical render height of the WHOLE frame (3D and UI): a positive value renders
 ## at that fixed height; 0 follows the window height (device-native). Crisper
@@ -2012,6 +2025,18 @@ func has_nitrous() -> bool:
 ## so their stages are easier. Changes the generated SHAPE, so opponent target times
 ## are derived with the same value (RallySession._compute_event_data).
 @export_range(0.0, 1.0) var track_straightness := 0.0
+## Per-run-stage curviness scaling (features/terrain.md → "Stage-based hilliness
+## and curviness"). `StageConfig.apply_event_config` uses `StageConfig.stage_scale`
+## (same interpolation as `stage_hilliness_scale_min`/`_max`) to scale UP how much
+## of the event's authored straightness is kept away: `track_straightness` is
+## reduced toward 0 as the multiplier grows past 1.0, so stage 1 stays as
+## straight as authored (`_min`, default 1.0 = no change) and stage 8 is the
+## curviest (`_max`). Only applies when a stage index is known (an active
+## RunSession).
+@export_range(0.0, 3.0) var stage_curviness_scale_min := 1.0
+## Curviness scale applied at the LAST stage of a run (stage 8 by default). See
+## `stage_curviness_scale_min`.
+@export_range(0.0, 3.0) var stage_curviness_scale_max := 1.0
 ## Length (m) of the straight runoff road appended AFTER the finish line, so the
 ## car has room to skid to a stop past the arch. Treated as a real road piece: it is
 ## collision-checked in the track generator (the finish corner backtracks if the

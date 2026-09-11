@@ -188,7 +188,7 @@ durable is the two region locks and the reasons behind each condition's placemen
 | dry | ~30 | everywhere |
 | night | ~14 | every region |
 | rain / fog / storm | ~13 each | the temperate pins (`home`, `home_coast`, a few `greece`) |
-| sandstorm | ~13 | the desert only (`greece` / `greece_coast`) |
+| sandstorm | ~13 | the desert only (`region == "greece"`) |
 | snowfall | ~12 | the alpine NE only (`region == "snow"`) |
 
 The 2026-08 geography pass (see [rally-roster.md](rally-roster.md)) re-tagged most of
@@ -218,7 +218,7 @@ read the current placement out of `RallyLibrary.RALLIES` (grep `"weather"`).
   `physics_fields` and never re-keys the opponent cache. See
   [snow-region.md](snow-region.md).
 - **Sandstorm** — the other REGION LOCK, also intact: desert-only, i.e. the arid
-  `greece` / `greece_coast` palette and a pin in the SW/S sand. A sandstorm on a green
+  `greece` palette and a pin in the SW/S sand. A sandstorm on a green
   forest stage would look wrong. Note the `RALLIES` header comment calls this
   "test-enforced" — **it is not**: no test in `tests/headless/` asserts it, so it is a
   placement convention like the rest.

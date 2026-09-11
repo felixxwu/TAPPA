@@ -59,7 +59,7 @@ func test_sandstorm_is_eligible_only_in_the_desert_regions() -> void:
 	for region in RegionLibrary.ordered():
 		var region_id := String(region["id"])
 		var eligible: Array = MenuShowcase.eligible_weather_ids(region_id)
-		var is_desert := region_id in ["greece", "greece_coast"]
+		var is_desert := region_id in ["greece"]
 		assert_eq(eligible.has("sandstorm"), is_desert,
 			"sandstorm eligible iff %s is a desert region" % region_id)
 
@@ -73,6 +73,6 @@ func test_snow_is_eligible_only_in_the_snow_region() -> void:
 
 
 func test_rain_is_never_eligible_in_the_desert_or_snow_regions() -> void:
-	for region_id in ["greece", "greece_coast", "snow"]:
+	for region_id in ["greece", "snow"]:
 		var eligible: Array = MenuShowcase.eligible_weather_ids(region_id)
 		assert_false(eligible.has("rain"), "%s never rolls rain" % region_id)
