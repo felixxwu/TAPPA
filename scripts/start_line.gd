@@ -18,7 +18,7 @@ extends Node3D
 #   3. REVEAL   — arrived at the rival, the rival card appears: the driver's name,
 #      the car they wear, and the gold time to beat. Start (button only) sends the
 #      rival off.
-#   4. DEPART   — the rival drives off down the lead-in at its profile pace, and the
+#   4. DEPART   — the rival drives off down the lead-in under its own power, and the
 #      player rolls up onto the line behind it (the restored grid shuffle — see
 #      _roll_player_up). Only once it is properly away (start_lead_in_ahead_m past
 #      the line) does the fade begin — the player never sees the countdown before
@@ -42,7 +42,9 @@ extends Node3D
 # `setup()` a `RivalGhost` it owns (outliving this node — the ghost keeps posing
 # through RUNNING for the live HUD delta). This node parks it ON the grid
 # (`RivalGhost.pose_at_distance`) for MENU/FLY_IN/REVEAL, then drives it off in
-# DEPART (posed along the track at its profile speed). At the end of the departure
+# DEPART — and for THAT phase alone it is a real, simulated car (full physics, real
+# suspension load, real dirt and tyre marks: `RivalGhost.begin_live_departure`) rather
+# than a posed one. At the end of the departure
 # it is hidden and gated (`mark_departed_at`) until the run's own clock catches up
 # to where the drive-off left it — so it never pops back onto the line, and
 # world.gd/StageManager take over (`RivalGhost.pose_at`, off `StageManager.elapsed()`)
@@ -517,9 +519,18 @@ func _timed_process(delta: float) -> void:
 			_seq_t += delta
 			_roll_player_up()
 			if is_instance_valid(_ghost):
-				_depart_s += _ghost.departure_speed(_depart_s) * delta
-				_ghost.pose_at_distance(_depart_s)
-			if _depart_s >= _depart_target or not is_instance_valid(_ghost):
+				# The rival is a REAL, simulated car for this one phase (see
+				# _begin_departure): it launches under its own power, so the distance
+				# comes back MEASURED off the body rather than integrated off the pace
+				# profile. Everything downstream of here is unchanged.
+				_depart_s = _ghost.drive_departure(delta)
+			# A simulated launch can go wrong in ways a posed one could not — a spin, a
+			# barrier, a stall — so the phase is also bounded by a timeout. Without it a
+			# rival that never reaches the lead-in mark would strand the player on the
+			# start line with no countdown and no way out.
+			var away := _depart_s >= _depart_target
+			var timed_out := _seq_t >= _cfg().start_depart_timeout_seconds
+			if away or timed_out or not is_instance_valid(_ghost):
 				if is_instance_valid(_ghost):
 					# Hidden under the coming fade, and gated off until the run's own
 					# clock reaches this far (see RivalGhost.mark_departed_at).
@@ -642,6 +653,13 @@ func _begin_departure() -> void:
 		_rival_card.visible = false
 	_depart_s = 0.0
 	_depart_target = _cfg().start_lead_in_ahead_m
+	# The rival stops being a posed ghost here and becomes a real car for the length of
+	# the send-off — the camera is parked on it from a low 3/4 and the launch IS the
+	# shot, so the suspension squat, the dirt off the driven wheels and the ruts it
+	# leaves all have to be the real thing (features/rival-ghost.md). It goes back to
+	# posed at mark_departed_at, before the run's HUD delta ever reads it.
+	if is_instance_valid(_ghost):
+		_ghost.begin_live_departure(_depart_s)
 	_seq = Seq.DEPART
 	_seq_t = 0.0
 

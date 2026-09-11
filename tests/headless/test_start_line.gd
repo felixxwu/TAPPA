@@ -78,6 +78,26 @@ class StubGhost:
 			_stub_car = Node3D.new()
 			add_child(_stub_car)
 		return _stub_car
+	# The send-off hands the real ghost's body to the physics server and then MEASURES
+	# how far it actually got (features/rival-ghost.md); there is no body here, so the
+	# stub records the handover and rolls the distance on at a fixed pace instead — the
+	# contract StartLine depends on is "begin, then drive_departure returns a growing
+	# distance", not how the metres are produced.
+	const STUB_DEPART_SPEED := 10.0
+	var live_departures: Array = []
+	var _stub_s := 0.0
+	func begin_live_departure(s_m: float) -> void:
+		live_departures.append(s_m)
+		_stub_s = s_m
+	func drive_departure(delta: float) -> float:
+		if live_departures.is_empty():
+			return _stub_s
+		_stub_s += STUB_DEPART_SPEED * delta
+		return _stub_s
+	var departed_at: Array = []
+	func mark_departed_at(s_m: float) -> void:
+		departed_at.append(s_m)
+		super.mark_departed_at(s_m)
 
 
 # A profiled ghost ready for the reveal path, with the driver name the card tests pin.
@@ -284,6 +304,27 @@ func test_the_handoff_squares_the_player_up_onto_the_line() -> void:
 			"control resumes from the line the player rolled up onto")
 
 
+# A REAL car can spin, stall or hit something on the way off the line, where the old
+# posed send-off could only ever arrive. The phase is therefore bounded: a rival that
+# never reaches the away mark still hands the screen on, so a bad launch can never
+# strand the player on the start line with no countdown and no way out.
+func test_a_rival_that_never_gets_away_still_ends_the_departure() -> void:
+	Config.data.start_lead_in_ahead_m = 500.0  # unreachable within the timeout
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	sl.launch()
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART, "setup: the send-off is running")
+	var timeout: float = Config.data.start_depart_timeout_seconds
+	sl._process(timeout * 0.5)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART,
+			"it waits for the rival while there is still time on the bound")
+	sl._process(timeout * 0.5 + 0.01)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT,
+			"but the phase ends on the bound rather than waiting forever")
+	assert_eq(ghost.departed_at.size(), 1,
+			"and the ghost is still told where it was left, so the re-entry gate is armed")
+
+
 # --- MENU / camera -----------------------------------------------------------
 
 func test_menu_hides_hud_and_takes_the_camera() -> void:
@@ -395,14 +436,18 @@ func test_start_from_the_reveal_sends_the_rival_off_before_the_countdown() -> vo
 	sl.launch()
 	assert_true(sl.has_launched(), "Start from the reveal passes the gates")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART, "and sends the rival off, not the fade")
+	assert_eq(ghost.live_departures, [0.0],
+			"the send-off hands the ghost's body to the physics server from the line — "
+			+ "the drive-off is a REAL car, not a posed one (features/rival-ghost.md)")
+	var posed_at_launch := ghost.pose_distance_calls.size()
 	sl._process(0.1)
-	assert_gt(ghost.pose_distance_calls.size(), 1, "the drive-off poses the ghost onward")
-	assert_lt(ghost.pose_distance_calls[ghost.pose_distance_calls.size() - 1],
-			Config.data.start_lead_in_ahead_m,
+	assert_eq(ghost.pose_distance_calls.size(), posed_at_launch,
+			"and nothing poses it afterwards — the simulation owns the body now")
+	assert_lt(sl._depart_s, Config.data.start_lead_in_ahead_m,
 			"mid-departure the rival is still short of the away mark")
 	assert_eq(_stage.begin_calls, 0, "no countdown while the rival is still on the road")
 
-	# Wait out the drive-off (posed by distance at ~1 m/s on this stub profile).
+	# Wait out the drive-off (the stub rolls the measured distance on per frame).
 	for i in 300:
 		if sl.sequence_phase() != StartLine.Seq.DEPART:
 			break

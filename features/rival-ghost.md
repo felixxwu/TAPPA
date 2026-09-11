@@ -10,6 +10,11 @@ by `scripts/world.gd` (`_setup_rival_ghost`, `_build_start_line`),
 `scripts/stage_manager.gd` (`setup_target_profile`, `_update_rival`, the HUD
 delta).
 
+Its one live moment — the start-line drive-off — also owns the only other nodes
+in its name: `RivalTireMarks` / `RivalWheelParticles`
+(`world.gd::_setup_rival_effects`; [tire-marks.md](tire-marks.md),
+[wheel-dust.md](wheel-dust.md)).
+
 **Tests:** `tests/headless/test_rival_ghost.gd`, `tests/headless/test_region_run.gd`,
 `tests/headless/test_stage_manager.gd`, `tests/headless/test_start_line.gd`,
 `tests/headless/test_hud.gd`, `tests/headless/test_kinematic_pose.gd`
@@ -17,9 +22,10 @@ delta).
 A staged region run's one fail state — `RegionRunMode.stage_target_ms`'s fixed,
 reference-car clock (`todo/roguelike-pivot.md` decisions 4/11; see
 [region-runs.md](region-runs.md)) — used to be a silent number. This makes it a
-visible **rival**: a second, posed-not-simulated `Car` driving the same
-pace-scaled profile the clock is derived from, shown at the start line and kept
-posing through the run for a live HUD delta.
+visible **rival**: a second `Car` — posed, not simulated, for all but the
+start-line send-off — driving the same pace-scaled profile the clock is derived
+from, shown at the start line and kept posing through the run for a live HUD
+delta.
 
 This is **not** the deleted rival field back (`todo/roguelike-pivot.md` decision
 5 still holds). There is exactly ONE ghost car, it is never a race opponent —
@@ -109,12 +115,14 @@ Two posing entry points on the same `Car`, selected by what the caller has:
   `_elapsed` during RUNNING, un-looped (it holds at the finish once the
   profile's duration passes). Also applies the proximity fade/cull below.
 - **`pose_at_distance(s)`** — a raw track distance (m from the origin sample):
-  the start line's grid slot (ON the line, `s = 0`) and the DEPART drive-off are
-  DISTANCES, not times on the profile, so `start_line.gd` poses the
-  parked/departing rival with this. Renders the car **SOLID** — the rival is the
-  subject of the start-line shot, and a see-through car on the grid reads as
-  broken; translucency is the run-time reading aid. Same posing path and guards
-  as `pose_at`.
+  the start line's grid slot (ON the line, `s = 0`) is a DISTANCE, not a time on
+  the profile, so `start_line.gd` parks the rival with this. Renders the car
+  **SOLID** — the rival is the subject of the start-line shot, and a see-through
+  car on the grid reads as broken; translucency is the run-time reading aid.
+  Same posing path and guards as `pose_at`.
+
+Both are **inert while the body is live** (the departure below) — the physics
+server owns it then, and a pose write would fight the simulation.
 
 (The ghost's own-clock `advance`/`reset` pair — the looping MENU idle an
 earlier start line drove — is gone: the rival parks on the grid instead of
@@ -171,16 +179,60 @@ The pre-pivot `ghost_car.gd`'s whole display stack rides along on every pose:
 - **Nametag** — a `Label3D` over the car (`rival_ghost_nametag_*` keys)
   naming the driver, fading with the car.
 
-## The start-line send-off and the re-entry gate
+## The start-line send-off: the one LIVE moment
 
 The start line doesn't just park the ghost — after the reveal, Start sends it
-off (`start_line.gd`'s DEPART phase) driving forward from the line (the parked
-grid slot, `s = 0`) at the
-profile's own pace (`departure_speed(s)`, the profile's `ds/dt`). When it is
-`start_lead_in_ahead_m` past the line, `mark_departed_at(s)` hides it and arms
-`_reentry_s`: through the early run, `pose_at` keeps the ghost hidden until
-the profile's own distance at `StageManager.elapsed()` passes that point — the
-player's clock "catches up" to where the drive-off left the rival — so it
+off (`start_line.gd`'s DEPART phase). **For that phase alone the rival is a real,
+simulated car rather than a posed one.** The camera is parked on it from a low
+3/4 and the launch IS the shot, so it has to behave like a car being launched:
+the suspension squats and loads, the driven wheels spin up and bite, gravel goes
+up off them and ruts get dug into the road. None of that can be faked from a
+pose — a frozen body's solver never runs, so its suspension has no travel and its
+wheels are never in contact, which is also precisely the gate every effect system
+tests.
+
+`begin_live_departure(s)` performs the handover, and it is the **pre-pivot grid
+prop's setup** (`start_line.gd::_spawn_prop`, deleted with the rival field) one
+car wide:
+
+| Step | Why |
+|------|-----|
+| `kinematic_pose = false`, `freeze = false` | the drivetrain steps and the physics server integrates the body again |
+| `reset_to(<the posed slot>)` | a bare transform write on a body the server has just taken back is discarded (`car.gd::reset_to`) — this is what stacked every pre-pivot prop at the origin |
+| `collision_mask = 1`, **layer stays `0`** | it needs a road under its wheels, but the player is being scripted up onto the line right behind it and must never be shoved. A zero layer is stricter than the pre-pivot grid's per-pair collision exceptions, and needs no bookkeeping |
+| `drivetrain.terrain = <the ghost's terrain>` | `car.gd::_resolve_terrain` looks at SIBLINGS, and the ghost's car is parented to the `RivalGhost` node — so it finds none, the tyres sit on base μ, and `WheelParticles` bails outright (its emit returns early on a null terrain) |
+| `engine.auto = true` | so throttle alone pulls it off the line (restored on end) |
+| `ai_controlled`, `ai_throttle = 1.0` | scripted, not driven |
+| `axis_lock_linear_x` + `axis_lock_angular_y` | it tracks straight down the lead-in without needing a steering controller — the same two locks the staged player wears (`start_line.gd::_stage_player`), on the same world axes |
+
+`drive_departure(delta)` then advances one frame and returns the arc length
+covered since the line, **measured** off the body's own forward speed rather than
+integrated off the profile: a real car goes as fast as its engine and the surface
+allow, and a wheelspinning launch covering less ground than its pace curve says
+it should IS the shot. `departure_speed(s)` (the profile's `ds/dt`) is still the
+ghost's pace elsewhere — it drives the wheel spin on every posed frame — it just
+no longer sets the drive-off's.
+
+**Tyre marks and thrown dirt** come from `TireMarks` / `WheelParticles` instances
+of the rival's own (`world.gd::_setup_rival_effects` — `RivalTireMarks` /
+`RivalWheelParticles`), since both systems track exactly one car. They need **no
+enable flag**: both gate per wheel on `is_in_contact()`, which a frozen body never
+satisfies, so they are silent through the ghost's posed life by construction and
+live exactly when the rival is.
+
+Everything **before and after** the send-off stays posed — the grid park reads the
+profile exactly, and the run-long HUD delta depends on it. `mark_departed_at(s)`
+therefore calls `end_live_departure()` itself (unfreeze → freeze, script dropped,
+collision mask back to `0`, `engine.auto` restored) before hiding the ghost and
+arming `_reentry_s`, so no path can leave a live, throttle-pinned rival loose in
+the run.
+
+**The re-entry gate.** When it is `start_lead_in_ahead_m` past the line — or once
+`start_depart_timeout_seconds` elapses, since a REAL launch can spin, stall or hit
+something where a posed one could only ever arrive — `mark_departed_at(s)` hides
+it and arms `_reentry_s`: through the early run, `pose_at` keeps the ghost hidden
+until the profile's own distance at `StageManager.elapsed()` passes that point —
+the player's clock "catches up" to where the drive-off left the rival — so it
 never pops back onto the start line the moment the run starts posing it.
 
 ## The rival's car and name
@@ -244,9 +296,9 @@ it outlives this node, kept posing through RUNNING — it parks the ghost ON the
 line (`pose_at_distance(0.0)`, solid through the OPAQUE path — the pre-pivot
 grid's front slot, with the
 player staged one `start_queue_gap` behind it) through
-MENU/FLY_IN/REVEAL, then drives it off down the lead-in in the DEPART phase at
-the profile's own pace, hiding it (with the re-entry gate above) once it is
-properly away; `StageManager` poses it per-frame again from the countdown on.
+MENU/FLY_IN/REVEAL, then sends it off down the lead-in in the DEPART phase under
+its own power (`begin_live_departure` — a real simulated car for that phase, see
+above), hiding it (with the re-entry gate above) once it is properly away; `StageManager` poses it per-frame again from the countdown on.
 See [start-line.md](start-line.md).
 
 ## Live HUD delta

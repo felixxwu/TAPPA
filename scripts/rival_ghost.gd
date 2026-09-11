@@ -34,6 +34,24 @@ const NORMAL_PROBE_M := 3.0
 # Half-span of the tangent samples the slip yaw's curvature is read over.
 const SLIP_EPS_M := 4.0
 
+# --- Live departure (the start-line send-off) ---------------------------------
+# The drive-off is the ONE moment the rival is a real simulated car rather than a
+# posed one: the camera is parked on it from a low 3/4 and the launch is the shot,
+# so the suspension has to squat, the wheels have to spin up and bite, and the
+# effect systems (TireMarks / WheelParticles, wired by world.gd onto this car)
+# need real drivetrain readings to lay ruts and throw dirt off. Posing cannot
+# produce any of that — a frozen body's solver never runs, so its wheels are never
+# in contact and every effect gate reads zero. See features/rival-ghost.md.
+# Everything before and after the send-off stays posed: the grid park reads the
+# profile exactly, and the run-long HUD delta depends on it.
+
+# The collision mask the car wears while live, so its wheels have a road (and the
+# roadside furniture) to bite on. Its LAYER stays 0 throughout (see setup): the
+# player is scripted up onto the line right behind it and must never be shoved by
+# it — a zero layer is stricter than the pre-pivot grid's per-pair collision
+# exceptions and needs no bookkeeping.
+const DEPART_COLLISION_MASK := 1
+
 # Driver names for the rival reveal card (start_line.gd), picked deterministically
 # per stage. Authored, not generated: the pool is small enough that a fixed cast
 # reads as a roster the player recognises, and parody-adjacent to the car names.
@@ -111,6 +129,16 @@ var _player: Node3D = null
 # up" to where the drive-off left the rival), so it doesn't pop back onto the line.
 # <= 0 means no gate (never departed / already re-entered).
 var _reentry_s := -1.0
+# Live-departure state (begin_live_departure .. end_live_departure): whether the
+# body is currently being simulated rather than posed, and the arc length it has
+# actually covered since the line — MEASURED off the body's own forward speed,
+# because a real car goes as fast as its engine and the surface allow rather than
+# at the profile's pace.
+var _live_depart := false
+var _live_s := 0.0
+# The gearbox-auto setting the ghost's engine had before the departure forced it on,
+# restored by end_live_departure (mirrors start_line.gd's _player_auto_was).
+var _live_auto_was := false
 
 
 # Point the proximity fade/visibility at the player's car (world.gd wires this after
@@ -198,6 +226,8 @@ func setup(track_progress: Node, terrain: Node, pace: Dictionary, rival: Diction
 	_terrain = terrain
 	_profile = pace
 	_reentry_s = -1.0  # a fresh stage's ghost has not departed anywhere yet
+	_live_depart = false
+	_live_s = 0.0
 	if _car == null:
 		_car = Scenes.car_scene().instantiate() as Node3D
 		_car.kinematic_pose = true
@@ -294,6 +324,8 @@ func has_profile() -> bool:
 # close as the subject of the shot — translucency is the run-time reading aid, and
 # a see-through rival on the grid just looks broken.
 func pose_at_distance(s_m: float) -> void:
+	if _live_depart:
+		return  # the physics server owns the body mid-departure; posing would fight it
 	if not is_instance_valid(_car) or not has_profile() or _track_progress == null:
 		return
 	_pose_car_at_distance(s_m)
@@ -318,10 +350,114 @@ func departure_speed(s_m: float) -> float:
 # The start-line drive-off just ended at `s_m`: hide the ghost and arm the re-entry
 # gate pose_at() honours through the early run (see _reentry_s).
 func mark_departed_at(s_m: float) -> void:
+	# Whatever ended the drive-off (arrival, or the start line's safety timeout),
+	# the body goes back to the physics server's hands-off kinematic mode here —
+	# so no path can leave a live, throttle-pinned rival loose in the run.
+	end_live_departure()
 	_reentry_s = maxf(s_m, 0.0)
 	if is_instance_valid(_car):
 		_car.visible = false
 	_set_alpha(0.0)
+
+
+# --- Live departure: the one simulated moment (features/rival-ghost.md) -------
+
+# Hand the ghost's body to the physics server for the start-line send-off, from the
+# track distance it is parked at. From here until end_live_departure() the rival is a
+# REAL car: the drivetrain steps, the suspension loads and squats under the launch,
+# the wheels spin up and dig in, and the TireMarks / WheelParticles instances world.gd
+# wires onto this car start reading non-zero (both gate on `wheel.is_in_contact()`,
+# which a frozen body never satisfies — so they stay silent through the rest of the
+# ghost's posed life by construction, with no enable flag needed).
+#
+# This is the pre-pivot grid prop's setup (`start_line.gd::_spawn_prop`, deleted with
+# the field), one car wide: unfreeze, script it with `ai_controlled` + full throttle,
+# force the auto box so the throttle actually pulls away, and AXIS-LOCK it laterally
+# and in yaw so it tracks straight down the lead-in instead of needing a steering
+# controller. Same two locks the staged player wears (`start_line.gd::_stage_player`),
+# for the same reason and on the same world axes.
+func begin_live_departure(s_m: float) -> void:
+	if _live_depart or not is_instance_valid(_car) or not has_profile() or _track_progress == null:
+		return
+	# Pose it on the slot one last time WHILE still kinematic, so the simulation starts
+	# from exactly the pose the reveal shot framed...
+	_pose_car_at_distance(maxf(s_m, 0.0))
+	var launch: Transform3D = _car.global_transform
+	_live_s = maxf(s_m, 0.0)
+	_live_depart = true
+	_car.kinematic_pose = false
+	_car.freeze = false
+	_car.collision_mask = DEPART_COLLISION_MASK
+	# ...then re-place it through car.gd's queued-teleport path: a bare transform write
+	# on a body the physics server has just taken back is discarded (see car.gd::reset_to),
+	# which is how the pre-pivot props all ended up stacked at the origin.
+	if _car.has_method("reset_to"):
+		_car.reset_to(launch)
+	# car.gd resolves its drivetrain terrain from a SIBLING (_resolve_terrain), and the
+	# ghost's car is parented to THIS node rather than the world — so it finds none and
+	# every surface read comes back flat. Wire the terrain the ghost was set up with
+	# directly: without it the tyres sit on base mu and WheelParticles bails outright
+	# (its emit returns early on a null terrain), which is exactly the thrown-up dirt
+	# the send-off exists to show.
+	var dt: Variant = _car.get("drivetrain")
+	if dt != null:
+		if _terrain != null and _terrain.has_method("surface_at"):
+			dt.terrain = _terrain
+		if dt.engine != null:
+			_live_auto_was = dt.engine.auto
+			dt.engine.auto = true  # auto box, so throttle alone pulls it off the line
+	# Scripted, not driven. The profile no longer sets the pace here — the car does.
+	_car.ai_controlled = true
+	_car.ai_handbrake = false
+	_car.ai_throttle = 1.0
+	_car.ai_steer = 0.0
+	_car.axis_lock_linear_x = true
+	_car.axis_lock_angular_y = true
+
+
+# Advance one frame of the live drive-off and return the arc length covered since the
+# line, for the caller's "properly away" test. No-op (returning the last distance)
+# when no departure is live, so a caller can drive this unconditionally.
+func drive_departure(delta: float) -> float:
+	if not _live_depart or not is_instance_valid(_car):
+		return _live_s
+	var forward: Vector3 = -_car.global_transform.basis.z
+	# MEASURED, not integrated off the profile: a wheelspinning launch covers less
+	# ground than its pace curve says it should, and that difference IS the shot.
+	_live_s += maxf(_car.linear_velocity.dot(forward), 0.0) * delta
+	return _live_s
+
+
+# Whether the body is currently simulated rather than posed.
+func is_live_departing() -> bool:
+	return _live_depart
+
+
+# Put the body back in the physics server's hands-off kinematic mode — the posed ghost
+# the run reads its HUD delta off, and full collision isolation. Idempotent; called by
+# mark_departed_at, so no normal path has to remember it.
+func end_live_departure() -> void:
+	if not _live_depart:
+		return
+	_live_depart = false
+	if not is_instance_valid(_car):
+		return
+	_car.ai_controlled = false
+	_car.ai_throttle = 0.0
+	_car.ai_steer = 0.0
+	_car.ai_handbrake = false
+	_car.axis_lock_linear_x = false
+	_car.axis_lock_angular_y = false
+	var dt: Variant = _car.get("drivetrain")
+	if dt != null and dt.engine != null:
+		dt.engine.auto = _live_auto_was
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	_car.kinematic_pose = true
+	_car.freeze = true
+	_car.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	_car.collision_layer = 0
+	_car.collision_mask = 0
 
 
 func hide_ghost() -> void:
@@ -337,6 +473,8 @@ func free_ghost() -> void:
 	_ghost_materials.clear()
 	_ghost_meshes.clear()
 	_reentry_s = -1.0
+	_live_depart = false
+	_live_s = 0.0
 
 
 
@@ -347,6 +485,8 @@ func free_ghost() -> void:
 # profile's own distance at `t` passes where the drive-off left it, the ghost stays
 # hidden (see _reentry_s).
 func pose_at(t: float) -> void:
+	if _live_depart:
+		return  # as pose_at_distance: never pose a body the physics server is simulating
 	if not is_instance_valid(_car) or not has_profile() or _track_progress == null:
 		return
 	var s := distance_at_time(_profile, t)

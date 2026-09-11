@@ -229,6 +229,10 @@ class StubTerrain:
 	var slope := 0.0
 	func height_at(x: float, _z: float) -> float:
 		return slope * x
+	# The real TerrainManager's surface classifier, which the live departure wires onto
+	# the ghost's drivetrain (all road, no tarmac — a gravel stage).
+	func surface_at(_x: float, _z: float) -> Vector2:
+		return Vector2(1.0, 0.0)
 
 
 func _display_ghost(terrain: Node = null) -> RivalGhost:
@@ -381,6 +385,78 @@ func test_departure_speed_reads_the_profile_pace() -> void:
 	# The constant-speed profile runs at exactly _SPEED m/s.
 	assert_almost_eq(ghost.departure_speed(7.0), _SPEED, 0.5,
 		"the drive-off runs at the profile's own pace")
+
+
+# --- The live start-line departure (features/rival-ghost.md) ------------------
+# The send-off is the one moment the rival is a REAL simulated car rather than a posed
+# one, so the suspension loads, the wheels bite and the effect pools (tyre marks, thrown
+# dirt) have something to read. These pin that handover in both directions.
+
+func test_the_departure_hands_the_body_to_the_physics_server() -> void:
+	var ghost := _display_ghost()
+	ghost.pose_at_distance(0.0)
+	assert_false(ghost.is_live_departing(), "setup: parked on the line, posed")
+	assert_true(ghost.car().kinematic_pose, "setup: and not simulated")
+	ghost.begin_live_departure(0.0)
+	assert_true(ghost.is_live_departing(), "the send-off goes live")
+	var car := ghost.car()
+	assert_false(car.kinematic_pose,
+		"the body is simulated, not posed — a posed body's solver never runs, so it "
+		+ "has no suspension travel and its wheels are never in contact")
+	assert_false(car.freeze, "and the physics server integrates it again")
+	assert_true(car.ai_controlled, "scripted rather than driven by player input")
+	assert_gt(car.ai_throttle, 0.0, "it launches under its own power")
+
+
+func test_the_departing_rival_can_never_shove_the_player() -> void:
+	# The player is scripted UP onto the line a few metres behind the departing rival,
+	# and the pose it arrives at is the one control resumes from — so a rival that could
+	# touch it would corrupt the hand-off. Only the MASK opens (a road to drive on).
+	var ghost := _display_ghost()
+	ghost.begin_live_departure(0.0)
+	var car := ghost.car()
+	assert_eq(car.collision_layer, 0, "nothing can collide WITH the rival, live or not")
+	assert_ne(car.collision_mask, 0, "but it collides with the world it drives on")
+
+
+func test_the_departing_rival_gets_a_terrain_to_read() -> void:
+	# The ghost's car is parented to the RivalGhost node, so car.gd's sibling lookup
+	# finds no terrain — the surfaces read flat and WheelParticles bails outright on a
+	# null terrain, which is exactly the thrown-up dirt the send-off exists to show.
+	var terrain := StubTerrain.new()
+	add_child_autofree(terrain)
+	var ghost := _display_ghost(terrain)
+	assert_null(ghost.car().drivetrain.terrain, "setup: the parented car resolves none")
+	ghost.begin_live_departure(0.0)
+	assert_eq(ghost.car().drivetrain.terrain, terrain,
+		"going live wires the ghost's own terrain onto the drivetrain")
+
+
+func test_posing_is_inert_while_the_body_is_simulated() -> void:
+	var ghost := _display_ghost()
+	ghost.begin_live_departure(0.0)
+	var launched: Transform3D = ghost.car().global_transform
+	ghost.pose_at_distance(80.0)
+	assert_eq(ghost.car().global_transform, launched,
+		"pose_at_distance does not fight the simulation for the body")
+	ghost.pose_at(3.0)
+	assert_eq(ghost.car().global_transform, launched, "nor does the run's pose_at")
+
+
+func test_ending_the_departure_restores_the_posed_ghost() -> void:
+	# The run's HUD delta is read off a POSED ghost, so the body has to come all the way
+	# back — including its collision isolation — however the departure ended.
+	var ghost := _display_ghost()
+	ghost.begin_live_departure(0.0)
+	ghost.mark_departed_at(25.0)   # what the start line calls when the rival is away
+	assert_false(ghost.is_live_departing(), "the departure is over")
+	var car := ghost.car()
+	assert_true(car.kinematic_pose, "posed again")
+	assert_true(car.freeze, "and back out of the physics server's hands")
+	assert_false(car.ai_controlled, "with the launch script dropped")
+	assert_eq(car.collision_mask, 0, "and fully isolated again for the run")
+	ghost.pose_at(2.0)
+	assert_true(car.visible, "and it poses normally once the clock catches up")
 
 
 func test_the_departed_ghost_stays_hidden_until_the_clock_catches_up() -> void:

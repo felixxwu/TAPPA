@@ -817,6 +817,11 @@ func has_nitrous() -> bool:
 @export var start_roll_brake_margin_m := 0.25
 @export var start_roll_coast_band_m := 1.0
 @export var start_roll_creep_speed := 1.5
+## Safety bound (seconds) on the DEPART phase. The rival drives off the line under
+## REAL physics, so unlike the posed send-off it can spin, stall or hit something and
+## never reach start_lead_in_ahead_m; the phase ends anyway once this elapses, so a bad
+## launch can never strand the player on the start line with no countdown.
+@export var start_depart_timeout_seconds := 6.0
 ## Seconds the fly from the orbit pose to the reveal shot takes.
 @export var start_reveal_fly_seconds := 1.2
 ## The reveal shot: a low 3/4 in front of the rival on its grid slot — the eye sits

@@ -39,10 +39,11 @@ builds a `StartLine` and the countdown arms immediately.
 > visualised as a single posed `Car` — `RivalGhost` — driving `world.gd`'s
 > pace-scaled profile. The start line parks it on its grid slot
 > (`RivalGhost.pose_at_distance`, `start_queue_gap` down the lead-in) through
-> MENU/FLY_IN/REVEAL, drives it off down the lead-in in DEPART, and it keeps
+> MENU/FLY_IN/REVEAL, sends it off down the lead-in in DEPART (the one phase it
+> is really simulated), and it keeps
 > driving through the countdown/run afterward for the live HUD delta
 > ([hud.md](hud.md)). This is a much lighter thing than the deleted field — ONE
-> car, posed not simulated — so it does not reopen decision 5 ("no rival
+> car, posed everywhere but the send-off — so it does not reopen decision 5 ("no rival
 > field"): there is still no opponent to race position against, only a pace
 > line to read a delta off.
 
@@ -103,9 +104,21 @@ builds a `StartLine` and the countdown arms immediately.
    (`_refresh_rival_card`) and re-filled on reveal entry; it hides entirely
    when there is no ghost or no target (challenge stages, degenerate tracks,
    plain dev boots), restoring the header + clear-band shape.
-4. **DEPART** — Start from the REVEAL sends the rival off: the ghost drives
-   forward from the line down the lead-in at the profile's own pace
-   (`RivalGhost.departure_speed`, posed by distance each frame), while the
+4. **DEPART** — Start from the REVEAL sends the rival off — and for this phase
+   alone the rival is a **real, simulated car** rather than a posed ghost
+   (`RivalGhost.begin_live_departure`; see
+   [rival-ghost.md](rival-ghost.md) → "The start-line send-off"). The camera is
+   parked on it from a low 3/4 and the launch IS the shot, so it launches under
+   its own power with the suspension loading, the driven wheels lighting up, and
+   gravel and ruts going down behind it (its own `RivalTireMarks` /
+   `RivalWheelParticles`) — none of which a posed body can produce, since a frozen
+   body's solver never runs and its wheels are never in contact. Its collision
+   LAYER stays zero throughout, so it can never shove the player rolling up behind
+   it. The distance it has covered is MEASURED off the body
+   (`RivalGhost.drive_departure`) rather than integrated off the profile, and the
+   phase is also bounded by `start_depart_timeout_seconds` — a real launch can spin
+   or stall where a posed one could only ever arrive, and a stranded rival must not
+   strand the player with it. Meanwhile the
    camera holds the reveal shot and the overlay hides (the commitment press
    already happened). While the rival draws the eye, the PLAYER rolls up from
    its staged queue slot onto the line the rival vacates — the pre-pivot grid
@@ -116,7 +129,8 @@ builds a `StartLine` and the countdown arms immediately.
    axis locks keeping it on rails) — so the pose the player watches arrive is
    the one control resumes from. Only once the rival is
    `start_lead_in_ahead_m` past the line — properly away — is it hidden
-   (`mark_departed_at`, arming the re-entry gate in
+   (`mark_departed_at`, which also ends the live departure and puts the body back
+   in posed/kinematic hands, then arms the re-entry gate in
    [rival-ghost.md](rival-ghost.md)) and the fade begun. The player never
    sees the countdown before the rival has left.
 5. **FADE_OUT / FADE_IN** — the screen fades to
@@ -205,6 +219,7 @@ button clears the viewport's focus owner outright and nothing else re-grabs it.
 | `start_queue_gap` | Grid gap (m) the PLAYER stages behind the rival (who owns the line). |
 | `start_roll_decel_divisor` / `start_roll_brake_margin_m` / `start_roll_coast_band_m` / `start_roll_creep_speed` | The DEPART roll-up's brake choreography: decel divisor of the v²/d stop-distance model, brake margin (m) added to it, coast band (m) ahead of the brake point, creep speed (m/s) below which the foot brake lifts so the auto box doesn't grab reverse against the handbrake hold. |
 | `start_lead_in_ahead_m` | How far past the line the DEPART drive-off must reach before the fade/countdown begin. |
+| `start_depart_timeout_seconds` | Safety bound on DEPART. The rival drives off under REAL physics, so it can spin or stall and never reach the mark; the phase ends anyway once this elapses. |
 | `start_reveal_fly_seconds` | Fly from the orbit pose to the reveal shot. |
 | `start_reveal_cam_front_m` / `_side_m` / `_height_m` / `_look_height_m` / `start_reveal_cam_fov` | The reveal shot: a low 3/4 in front of the rival on its grid slot. |
 

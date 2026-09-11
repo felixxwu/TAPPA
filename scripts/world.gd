@@ -1351,7 +1351,7 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		# returns {}) and a plain dev boot has no session at all. A degenerate track's
 		# empty profile frees any ghost left over from a previous (solvable) stage
 		# rather than posing it on nothing.
-		_setup_rival_ghost(staged)
+		_setup_rival_ghost(staged, road_centerline)
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and
@@ -1585,13 +1585,17 @@ func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -
 # same-run stage regeneration rather than leaking a Car per stage. An unsolvable
 # stage's empty profile frees a ghost left over from an earlier, solvable one — a
 # stale rival posed on nothing is worse than no rival at all.
-func _setup_rival_ghost(staged: bool) -> void:
+func _setup_rival_ghost(staged: bool, road_centerline: Curve2D = null) -> void:
 	var profile: Dictionary = {}
 	if staged and RunSession.is_active():
 		profile = RunSession.stage_target_profile()
 	if profile.is_empty():
 		if is_instance_valid(_rival_ghost):
 			_rival_ghost.free_ghost()
+		# The ghost's car is gone, so its effect pools have nothing to track — drop them
+		# rather than leaving last stage's ruts drawn over the regenerated track.
+		_replace_named_child("RivalTireMarks")
+		_replace_named_child("RivalWheelParticles")
 		_stage_manager.setup_target_profile({})
 		return
 	# The rival's identity for THIS stage: a real CarLibrary car whose benchmark pace
@@ -1605,7 +1609,35 @@ func _setup_rival_ghost(staged: bool) -> void:
 	# The player's car drives the ghost's proximity fade/cull (features/rival-ghost.md).
 	if has_node("Car"):
 		_rival_ghost.set_player($Car as Node3D)
+	_setup_rival_effects(road_centerline)
 	_stage_manager.setup_target_profile(profile, _rival_ghost)
+
+
+# Tyre marks + thrown dirt for the RIVAL's car, on their own instances (both systems
+# track exactly one car). The rival is a posed ghost for all but the start-line
+# send-off, where it becomes a real simulated car (RivalGhost.begin_live_departure) —
+# and these are what make that moment read as real: ruts dug off the line and gravel
+# flung from the driven wheels, the same look the player's own launch has.
+#
+# No enable flag is needed to keep them quiet the rest of the time: both gate per wheel
+# on `is_in_contact()`, and a frozen kinematic body's solver never runs, so its wheels
+# are never in contact. They are live exactly when the rival is.
+func _setup_rival_effects(road_centerline: Curve2D) -> void:
+	var ghost_car := _rival_ghost.car()
+	if ghost_car == null:
+		return
+	var cfg: GameConfig = Config.data
+	var marks := _ensure_child("RivalTireMarks",
+		func() -> Node: return TireMarks.new()) as TireMarks
+	marks.setup(road_centerline, ghost_car, _floor(), cfg.track_width * 0.5)
+	var dust := _ensure_child("RivalWheelParticles",
+		func() -> Node: return WheelParticles.new()) as WheelParticles
+	dust.setup(ghost_car)
+	# Same per-region debris look the player's pool wears, so the rival's spray matches
+	# the ground it is standing on rather than reverting to the home world's green.
+	var region_look := _current_region_look()
+	dust.set_grass_color_override(region_look.get("grass_particle_color", Color(0, 0, 0, 0)))
+	dust.set_grass_square_override(bool(region_look.get("grass_particle_square", false)))
 
 
 # The rival driver-name seed: the run's own seed (RegionRunMode.run_seed; 0 for a
