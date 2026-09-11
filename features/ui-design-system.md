@@ -1,7 +1,7 @@
 # UI design system
 
 **Sources:** `scripts/ui_theme.gd` (`UITheme`), `theme/ui_theme.tres` (generated),
-`tools/build_ui_theme.gd` (generator), `fonts/` (Syne Mono), and the
+`tools/build_ui_theme.gd` (generator), `fonts/` (Jersey 10), and the
 project default-theme wiring in `project.godot` (`[gui] theme/custom`).
 
 **Tests:** `tests/headless/test_ui_theme.gd`, `tests/headless/test_ui_theme_fmt.gd`
@@ -13,8 +13,10 @@ game: a retro arcade / terminal aesthetic.
 
 ## The look
 
-- **Hand-drawn monospace font** (Syne Mono) — stat read-outs and money columns
-  line up while the lettering keeps a characterful, slightly informal feel.
+- **Pixel-grid monospace font** (Jersey 10) — stat read-outs and money columns
+  line up, and the face is drawn to a pixel grid so it stays sharp/unaliased on
+  the game's low-res render target instead of blurring like a smooth-scaling
+  face would (see "Fonts & licensing" below for why this replaced Syne Mono).
 - **Pure-black, sharp-cornered panels** — no rounded corners, no gradients, no
   blur.
 - **Crisp white text with a hard drop shadow** (the chunky terminal look). One
@@ -293,9 +295,30 @@ godot --headless --script tools/build_ui_theme.gd
 
 ## Fonts & licensing
 
-`fonts/SyneMono.ttf` is the UI face — a hand-drawn monospace bundled under the SIL
-Open Font License (`fonts/SyneMono-OFL.txt`). To try a different face, drop a TTF
-in `fonts/`, point `UITheme.FONT_PATH` at it, and re-run the theme generator.
+`fonts/Jersey10.ttf` is the UI face — a pixel-grid monospace bundled under the SIL
+Open Font License (`fonts/Jersey10-OFL.txt`). It replaced the previous face,
+Syne Mono (still in `fonts/` for reference, unused): Syne Mono is a hand-drawn
+face designed for smooth up-scaling, and at the game's low native resolution
+its curves rasterised inconsistently and read as blurry once anti-aliased.
+Jersey 10 is designed to be read unscaled at low pixel densities, so it stays
+crisp instead.
+
+**Crisp rendering is two things, not one — the face alone isn't enough.**
+`fonts/Jersey10.ttf.import` also disables antialiasing (`antialiasing=0`),
+hinting (`hinting=0`) and subpixel positioning (`subpixel_positioning=0`), and
+pins `oversampling=1.0`. Antialiasing/subpixel positioning are the actual
+source of blur: with them on (the Godot default), glyph edges are
+greyscale-blended and glyph origins sit at fractional pixel offsets, which
+smooths a smooth-scaling face but muddies a pixel face's hard edges and breaks
+its pixel-grid alignment. Any future font swap should carry the same
+`.import` overrides, not just point `FONT_PATH` at a new TTF — a pixel font
+imported with default settings will still look blurry.
+
+To try a different face: drop a TTF in `fonts/`, point `UITheme.FONT_PATH` at
+it, copy the same `.import` overrides onto its `.import` file (Godot generates
+one with defaults on first import — force a reimport after editing it by
+deleting the corresponding file under `.godot/imported/` and re-opening the
+project), then re-run the theme generator.
 
 
 ## Gauge captions — the one drop-shadow exception
