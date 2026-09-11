@@ -72,6 +72,37 @@ Signals: `selection_changed(index)`, `confirmed(index)`.
   over from exactly where the snap had reached. Drag release, tap-to-select and
   keyboard/gamepad movement all share the same animated snap through `select()`.
 
+## One tap is delivered TWICE, and must still count as one tap
+
+Godot's `input_devices/pointing/emulate_mouse_from_touch` is ON by default and this project
+doesn't turn it off, so a single finger tap arrives as an `InputEventScreenTouch`
+press/release pair AND a synthesised `InputEventMouseButton` press/release pair (touch
+press, mouse press, touch release, mouse release — each touch event is immediately followed
+by its emulated twin, so both presses precede both releases). `_on_card_gui_input` handles
+both event types, so both releases used to call `_tap_card` on the same card: the first
+`select()`ed it, which made the second one's `index == _selected` test true, so it
+**confirmed** it. Net effect: tapping ANY non-centred card fired its action instead of just
+scrolling it to the centre — the documented tap-to-select/tap-to-confirm rule above was
+silently dead on a touch device.
+
+Reported against the hub's MAIN page ("tapping Shop while New run is centred jumps straight
+into the shop"), but it was never MAIN-specific: MAIN is simply the page whose cards are all
+enabled, so it was where the phantom confirm had something to do. SHOP/SKILLS looked correct
+only because most of their cards are disabled (locked, at MAX, or unaffordable) and
+`_confirm_selected` drops a disabled index on the floor.
+
+The fix is a per-GESTURE latch, `_gesture_tapped`: set when a release acts on a tap, cleared
+by the next press in `_begin_drag`. Deduping by gesture rather than by event type is
+deliberate — neither type can be dropped (the mouse pair is all a desktop player sends, the
+touch pair carries the drag frame the section below depends on), and per-gesture state stays
+correct however many pointer devices a platform decides to emulate. The latch lives in the
+EVENT handler, not in `_tap_card`, so `_tap_card` stays the plain "a tap landed on card N"
+seam the tests drive directly. Covered by
+`test_a_touch_tap_delivered_twice_by_mouse_emulation_taps_only_once` and
+`test_two_separate_taps_still_select_then_confirm`. Note that the unit tests calling
+`_tap_card` directly can never catch this class of bug — it lives entirely in the event
+path above that seam.
+
 ## Touch drag must convert through a common (global) coordinate frame
 
 `InputEventScreenTouch`/`InputEventScreenDrag` positions are LOCAL to whichever control

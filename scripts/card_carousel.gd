@@ -76,6 +76,10 @@ var _tween: Tween
 var _drag_active := false
 var _drag_start_x := 0.0
 var _drag_start_offset := 0.0
+# One finger-down-to-finger-up gesture may be DELIVERED TWICE — see _on_card_gui_input's
+# release branch. True once this gesture's tap has already been acted on; cleared by the
+# next press (_begin_drag), which is what makes two genuine taps still count as two.
+var _gesture_tapped := false
 var _visible_count := 1
 
 
@@ -454,8 +458,31 @@ func _begin_drag(global_x: float) -> void:
 	_drag_active = true
 	_drag_start_x = global_x
 	_drag_start_offset = _offset
+	# A NEW gesture: whatever the last one did, this one is allowed its own single tap.
+	_gesture_tapped = false
 
 
+# ONE TAP MUST ONLY EVER FIRE _tap_card ONCE, and that is not free: on a touch device a
+# single finger tap arrives here TWICE, because Godot's
+# `input_devices/pointing/emulate_mouse_from_touch` (ON by default, and this project doesn't
+# turn it off) synthesises a full InputEventMouseButton press/release pair alongside the real
+# InputEventScreenTouch pair. Both branches below are live, so the sequence for one tap is
+# touch-press, mouse-press, touch-release, mouse-release — and the two releases used to run
+# _tap_card twice in a row on the same card. The first call selected the card, which made the
+# second call's `index == _selected` test TRUE, so it CONFIRMED it: tapping any non-centred
+# card fired its action immediately instead of merely scrolling it to the centre. Reported on
+# the hub's MAIN page — tapping "Shop" while "New run" was centred jumped straight into the
+# shop. It was never MAIN-specific; MAIN is just the page whose cards are all enabled, so it
+# was where the phantom confirm had something to do (SHOP/SKILLS cards are mostly disabled —
+# locked, at MAX, or unaffordable — and _confirm_selected drops a disabled index on the
+# floor, which is why those pages LOOKED correct).
+#
+# Deduped by gesture rather than by event type: neither type can simply be dropped (the mouse
+# pair is the only one a desktop player sends, the touch pair carries the drag frame
+# _on_card_gui_input's touch branch needs), and per-gesture state stays correct however many
+# pointer devices a platform decides to emulate. The guard lives HERE, in the event handler,
+# not in `_tap_card` — `_tap_card` stays the plain "a tap landed on card N" seam the tests
+# drive directly.
 func _on_card_gui_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -465,7 +492,8 @@ func _on_card_gui_input(event: InputEvent, index: int) -> void:
 			else:
 				var dragged := absf(mb.global_position.x - _drag_start_x) > 4.0
 				_drag_active = false
-				if not dragged:
+				if not dragged and not _gesture_tapped:
+					_gesture_tapped = true
 					_tap_card(index)
 	elif event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
@@ -485,7 +513,8 @@ func _on_card_gui_input(event: InputEvent, index: int) -> void:
 		else:
 			var dragged2 := absf(touch_x - _drag_start_x) > 4.0
 			_drag_active = false
-			if not dragged2:
+			if not dragged2 and not _gesture_tapped:
+				_gesture_tapped = true
 				_tap_card(index)
 
 
