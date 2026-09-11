@@ -24,9 +24,9 @@ game: a retro arcade / terminal aesthetic.
 
 ## House rules (enforced)
 
-These are hard rules, not suggestions — `UITheme.enforce(root)` applies 1–3 to
-every `Label`/`Button` under a menu root, and the global theme bakes in 2–4 as the
-defaults:
+These are hard rules, not suggestions — `UITheme.enforce(root)` applies 1–3 and 5 to
+every `Label`/`Button`/`Panel`/`PanelContainer` under a menu root, and the global theme
+bakes in 2–4 as the defaults:
 
 1. **All menu text is UPPERCASE** (`UITheme.caps`).
 2. **One fixed font size everywhere** (`UITheme.FONT_SIZE`, deliberately small) —
@@ -50,6 +50,12 @@ defaults:
    generalises — the inversion earns its keep on a SMALL marker that has to win against
    map paper, and stops paying at panel size. Any further exception should be argued
    and listed here, not added quietly; the rule is what makes the look coherent.
+
+5. **Every themed Button/Panel casts UITheme's hard down-right shadow** — see
+   "Card drop shadow" below. Applied by `enforce()` at runtime rather than baked into
+   the saved theme; a widget that already carries its own stylebox override (a
+   selected/focused row, a carousel card, `UITheme.panel()`) already wraps itself and
+   is left alone.
 
 Menu builders call `UITheme.enforce(root)` once after building; screens with
 dynamic text re-run it whenever that text changes (HQ on every view change /
@@ -86,12 +92,43 @@ tuning rather than the shared design-system palette.
 
 ### Card drop shadow
 
-`UITheme.card_shadow_box()` (flat black, 20% alpha, sharp corners) and
-`UITheme.card_shadow_offset()` (`CARD_SHADOW_AUTHORED = 5` authored px, scaled by
-`UITheme.px`) define the hard down-right shadow every carousel card casts. The shadow is
-drawn as a separate quad behind the card rather than through `StyleBoxFlat.shadow_*` —
-see [card-carousel.md](card-carousel.md) → *Cards cast a sharp drop shadow* for why, and
-for how `CardCarousel._layout` positions and dims it.
+Every carousel card, and (since house rule 5) every themed Button/Panel/PanelContainer in
+the game, casts a hard, zero-blur black shadow offset down-right — the CSS equivalent of
+`box-shadow: 5px 5px 0 rgba(0,0,0,0.2)`. `UITheme.card_shadow_box()` (flat black, 20%
+alpha, sharp corners) and `UITheme.card_shadow_offset()` (`CARD_SHADOW_AUTHORED = 5`
+authored px, scaled by `UITheme.px`) hold the fill/offset; `UITheme.CARD_SHADOW_COLOR` is
+the shared colour constant.
+
+Two different mechanisms draw the SAME look, for two different reasons:
+
+- **`CardCarousel`** draws it as a separate quad (`card.shadow`, a sibling `Panel`) — see
+  [card-carousel.md](card-carousel.md) → *Cards cast a sharp drop shadow* for why (its
+  cards are absolute-positioned outside normal layout, and `card.root` clips its own
+  contents), and → *A shared CanvasGroup, not independent alpha* for why root and shadow
+  are grouped under one `CanvasGroup` rather than dimmed independently.
+- **Everything else** gets the shadow baked into a single StyleBox via
+  `UIHardShadowBox`/`UITheme.shadowed(box)` (`scripts/ui_hard_shadow_box.gd`) — a StyleBox
+  WRAPPER that draws the shadow rect then delegates to the wrapped box's own `draw()`, all
+  in one draw call. `UITheme.panel()`, `mark_selected`, `mark_focused`,
+  `mark_panel_focused`, `reward_card_box()` and `menu_page.gd`'s body panel all call
+  `shadowed()` on their own hand-built stylebox; `UITheme.enforce()` applies the same
+  wrapper to any Button/Panel/PanelContainer still on the theme's plain default look (see
+  house rule 5 above).
+
+Neither form uses `StyleBoxFlat`'s own `shadow_*` properties: that shadow rect is the box
+expanded by `shadow_size` on ALL sides before the offset, so `shadow_size = 0` draws
+nothing at all, and any size > 0 leaks the shadow out of the top-left edge too — a purely
+diagonal, zero-blur offset is unreachable through it.
+
+**`UIHardShadowBox` must never be baked into the SAVED global theme
+(`theme/ui_theme.tres`).** That resource loads during early project boot, before
+autoloads are guaranteed to exist — embedding a custom-script StyleBox in it once made
+that early load corrupt identifier resolution for OTHER scripts that reference an
+autoload (`world_panel.gd`'s `DisplayStretch.DESIGN_HEIGHT` failed to resolve, crashing
+the engine with a SIGSEGV on every test run). `tools/build_ui_theme.gd` therefore keeps
+`_btn_box`/`_build_panels` UNWRAPPED — `UITheme.enforce()` applies the shadow at runtime
+instead, which is safe because it always runs well after boot. If you're tempted to bake
+a `shadowed()` box into the theme generator again, don't — this is why.
 
 ## Single source of truth
 

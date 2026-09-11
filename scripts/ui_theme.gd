@@ -219,6 +219,25 @@ static func _role_color(role: String) -> Color:
 		_: return INK
 
 
+# A themed Button's face for a given state — pure black normally, lifted a hair and
+# underlined green when `selected` (hover/pressed/focus). Shared by
+# tools/build_ui_theme.gd (the plain, unwrapped form baked into the saved global theme)
+# and `enforce` below (the shadow-wrapped form applied at runtime) so the two can never
+# drift apart into two different button recipes.
+static func btn_box(bg: Color, selected: bool = false) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.content_margin_left = px(14)
+	box.content_margin_right = px(14)
+	box.content_margin_top = px(4)
+	box.content_margin_bottom = px(4)
+	if selected:
+		box.border_width_bottom = px(3)
+		box.border_color = GREEN
+	# Sharp corners, no outer border — the defining trait of the look.
+	return box
+
+
 # --- Panels ------------------------------------------------------------------
 
 # A pure-black, sharp-cornered panel box (rule 4). Defaults to fully opaque;
@@ -251,10 +270,11 @@ static func readout_box() -> StyleBox:
 	return box if box != null else panel_box()
 
 
-# A PanelContainer wearing `panel_box`. Drop children straight in.
+# A PanelContainer wearing `panel_box`, cast with the theme-wide hard shadow (see
+# `shadowed` below). Drop children straight in.
 static func panel(alpha: float = 1.0, pad: int = 14) -> PanelContainer:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", panel_box(alpha, pad))
+	p.add_theme_stylebox_override("panel", shadowed(panel_box(alpha, pad)))
 	return p
 
 
@@ -272,6 +292,11 @@ static func panel(alpha: float = 1.0, pad: int = 14) -> PanelContainer:
 # CardCarousel.add_card, which positions the quad in _layout.
 const CARD_SHADOW_AUTHORED := 5.0
 
+# Flat black at 20% alpha — the shadow's fill, shared by the sibling-quad form
+# (card_shadow_box, for CardCarousel's absolute-positioned cards) and the
+# baked-in wrapper form (UIHardShadowBox, for everything themed).
+const CARD_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.2)
+
 # The shadow's pixel offset (x == y), scaled from the 400px authoring canvas.
 static func card_shadow_offset() -> float:
 	return float(px(CARD_SHADOW_AUTHORED))
@@ -280,19 +305,32 @@ static func card_shadow_offset() -> float:
 # The shadow quad's fill: flat black at 20% alpha, sharp corners, no padding.
 static func card_shadow_box() -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.0, 0.0, 0.0, 0.2)
+	box.bg_color = CARD_SHADOW_COLOR
 	return box
+
+
+# Wrap any StyleBox with the same hard, zero-blur shadow — the THEME-WIDE form used by
+# every ordinary Button/Panel/PanelContainer (see UIHardShadowBox for why this can be a
+# single wrapped draw call here, unlike CardCarousel's sibling-quad form). Used both by
+# tools/build_ui_theme.gd (bakes it into the global theme, covering every Button/Panel
+# in the game) and by call sites that build a stylebox override by hand (`panel()`,
+# `mark_selected`, `mark_focused`, `mark_panel_focused`, `reward_card_box`) so a
+# widget's shadow never disappears when it becomes selected/focused.
+static func shadowed(box: StyleBox) -> StyleBox:
+	var wrapper := UIHardShadowBox.new()
+	wrapper.inner = box
+	return wrapper
 
 
 # A solid black, sharp-cornered reward-card stylebox with a green accent border (a
 # reward is a positive event — GREEN is the design system's "positive" colour).
 # Shared by the upgrade reveal and the podium car-reveal cards.
-static func reward_card_box() -> StyleBoxFlat:
+static func reward_card_box() -> StyleBox:
 	var style := panel_box(0.92, 22)
 	style.border_color = GREEN
 	for side in ["left", "top", "right", "bottom"]:
 		style.set("border_width_" + side, 2)
-	return style
+	return shadowed(style)
 
 
 # --- Scrolling body text -----------------------------------------------------
@@ -447,8 +485,9 @@ static func mark_selected(btn: Button, selected: bool) -> void:
 		box.border_color = GREEN
 	for side in ["left", "top", "right", "bottom"]:
 		box.set("content_margin_" + side, 10.0)
+	var wrapped := shadowed(box)
 	for state in ["normal", "hover", "pressed"]:
-		btn.add_theme_stylebox_override(state, box)
+		btn.add_theme_stylebox_override(state, wrapped)
 	btn.add_theme_color_override("font_color", GREEN if selected else INK)
 
 
@@ -470,7 +509,7 @@ static func mark_focused(btn: Button, focused: bool) -> void:
 		box.content_margin_right = 14
 		box.content_margin_top = 4
 		box.content_margin_bottom = 4
-		btn.add_theme_stylebox_override("normal", box)
+		btn.add_theme_stylebox_override("normal", shadowed(box))
 		btn.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	else:
 		btn.remove_theme_stylebox_override("normal")
@@ -505,7 +544,7 @@ static func mark_panel_focused(container: PanelContainer, focused: bool, pad: in
 	box.content_margin_top = p
 	box.content_margin_right = p
 	box.content_margin_bottom = p
-	container.add_theme_stylebox_override("panel", box)
+	container.add_theme_stylebox_override("panel", shadowed(box))
 
 
 # Grab keyboard/gamepad focus on `ctrl`, but only when it can actually take it —
@@ -601,13 +640,15 @@ static func flank(inner: Control, active: bool) -> HBoxContainer:
 
 # --- Rule enforcement --------------------------------------------------------
 
-# Apply the house rules to every Label/Button under a menu root:
+# Apply the house rules to every Label/Button/Panel under a menu root:
 #   1. uppercase the text,
 #   2. lock the font size to FONT_SIZE,
-#   3. give plain single-line buttons the fixed compact height.
+#   3. give plain single-line buttons the fixed compact height,
+#   5. cast the hard down-right card-shadow (see "Card drop shadow" below).
 # Idempotent and cheap — menu builders call it once after building, and screens
 # with dynamic text (e.g. HQ) re-run it whenever that text changes so the rules
-# keep holding. Leaves layout/colour alone; only normalises text, size, height.
+# keep holding. Leaves layout/colour alone; only normalises text, size, height,
+# and (for widgets still on the theme's own default look) the shadow.
 static func enforce(root: Node) -> void:
 	for node in root.find_children("*", "Label", true, false):
 		var l := node as Label
@@ -620,3 +661,38 @@ static func enforce(root: Node) -> void:
 		# A "single-line menu" button: no embedded layout, no manual line break.
 		if b.get_child_count() == 0 and not b.text.contains("\n"):
 			b.custom_minimum_size.y = MENU_ROW_H
+		_shadow_button(b)
+	for node in root.find_children("*", "PanelContainer", true, false):
+		_shadow_panel(node as Control)
+	for node in root.find_children("*", "Panel", true, false):
+		_shadow_panel(node as Control)
+
+
+# Rule 5: every themed Button/Panel casts UITheme's hard card-shadow, same as a
+# CardCarousel card. This is applied HERE, at runtime, rather than baked into the saved
+# global theme (theme/ui_theme.tres): that resource loads during early project boot,
+# before autoloads are guaranteed to exist, and embedding a custom-script StyleBox
+# (UIHardShadowBox) in it once corrupted identifier resolution for OTHER scripts that
+# reference an autoload (world_panel.gd's `DisplayStretch.DESIGN_HEIGHT`), crashing the
+# engine on every test run. `enforce()` always runs well after boot, so it's safe here.
+#
+# Skipped for a widget that already carries its OWN stylebox override — mark_selected,
+# mark_focused, panel(), reward_card_box() and menu_page.gd's body box all call
+# `shadowed()` themselves already; re-wrapping here would double the shadow (and, for a
+# manually-managed button like mark_focused's, fight with the state it's mid-transition
+# to). A plain `UITheme.button()`/native Button or Panel with no override still wears
+# only the theme's UNWRAPPED default look, so those are exactly what this reaches.
+static func _shadow_button(b: Button) -> void:
+	if b.has_theme_stylebox_override("normal"):
+		return
+	b.add_theme_stylebox_override("normal", shadowed(btn_box(BLACK)))
+	b.add_theme_stylebox_override("hover", shadowed(btn_box(SURFACE_HOVER, true)))
+	b.add_theme_stylebox_override("pressed", shadowed(btn_box(SURFACE_HOVER, true)))
+	b.add_theme_stylebox_override("focus", shadowed(btn_box(SURFACE_HOVER, true)))
+	b.add_theme_stylebox_override("disabled", shadowed(btn_box(Color(0.03, 0.03, 0.03, 0.9))))
+
+
+static func _shadow_panel(p: Control) -> void:
+	if p == null or p.has_theme_stylebox_override("panel"):
+		return
+	p.add_theme_stylebox_override("panel", shadowed(panel_box(1.0)))

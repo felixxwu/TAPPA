@@ -36,12 +36,26 @@ signal selection_changed(index: int)
 signal confirmed(index: int)
 
 class Card:
+	# `group` is what actually sits in the strip and carries the card's slot position AND
+	# its selected/unselected dimming (see _layout) — `root` and `shadow` live INSIDE it
+	# at fixed local offsets and are always left at full alpha themselves. This is a
+	# CanvasGroup, not a plain Control: it composites its children into one buffer before
+	# they're blended against the background, so an UNSELECTED (translucent) card doesn't
+	# show its own shadow bleeding through its face. Dimming `root` and `shadow`
+	# INDEPENDENTLY (the previous approach) alpha-blended each of them against the
+	# background separately, and root's opaque black covers all but a thin sliver of
+	# shadow beneath it — so the covered region got a second, extra layer of translucent
+	# black stacked under the already-translucent card, reading visibly darker than the
+	# poking-out sliver at the edge where only the shadow itself shows. Compositing first
+	# means the group looks like ONE flat surface (card blocking shadow within the
+	# overlap, shadow visible only where it truly pokes out) and THEN the whole thing
+	# dims uniformly.
+	var group: CanvasGroup
 	var root: PanelContainer
 	# The sharp drop-shadow quad drawn BEHIND `root`, offset down-right by
-	# UITheme.card_shadow_offset(). A sibling of `root` under `_strip` (not a child of it)
+	# UITheme.card_shadow_offset(). A sibling of `root` under `group` (not a child of it)
 	# because `root` clips its contents and paints its own opaque black fill over anything
-	# underneath — a shadow has to live outside the card to be seen at all. `_layout` keeps
-	# it glued to the card's rect and matches its dimming.
+	# underneath — a shadow has to live outside the card to be seen at all.
 	var shadow: Panel
 	var visual: Control
 	var info: VBoxContainer
@@ -135,12 +149,20 @@ func _card_stylebox() -> StyleBoxFlat:
 func add_card(disabled: bool = false) -> Card:
 	var card := Card.new()
 	card.disabled = disabled
-	# Added to _strip BEFORE card.root so it draws underneath it (siblings paint in tree
-	# order), and mouse-ignoring so it never eats a tap meant for a card.
+	# The group is what _layout positions/dims; root and shadow sit inside it at fixed
+	# LOCAL offsets (see the Card class comment for why compositing them first matters).
+	card.group = CanvasGroup.new()
+	_strip.add_child(card.group)
+
+	# Added to the group BEFORE card.root so it draws underneath it (siblings paint in
+	# tree order), and mouse-ignoring so it never eats a tap meant for a card. Its local
+	# position is fixed at creation — only its size tracks root's actual rect, in _layout.
 	card.shadow = Panel.new()
 	card.shadow.add_theme_stylebox_override("panel", UITheme.card_shadow_box())
 	card.shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_strip.add_child(card.shadow)
+	var shadow_off := UITheme.card_shadow_offset()
+	card.shadow.position = Vector2(shadow_off, shadow_off)
+	card.group.add_child(card.shadow)
 
 	card.root = PanelContainer.new()
 	card.root.custom_minimum_size = Vector2(_card_width(), _card_height())
@@ -203,7 +225,7 @@ func add_card(disabled: bool = false) -> Card:
 	card.visual.child_entered_tree.connect(_prepare_incoming_child)
 	card.info.child_entered_tree.connect(_prepare_incoming_child)
 
-	_strip.add_child(card.root)
+	card.group.add_child(card.root)
 	var index := _cards.size()
 	card.root.gui_input.connect(_on_card_gui_input.bind(index))
 	_cards.append(card)
@@ -302,19 +324,19 @@ func _layout() -> void:
 	for i in _cards.size():
 		var card := _cards[i]
 		var x := centre_x - _card_width() * 0.5 + i * (_card_width() + Config.data.card_carousel_gap) - _offset
-		card.root.position = Vector2(x, (size.y - _card_height()) * 0.5)
-		card.root.modulate.a = 1.0 if i == _selected \
+		# The GROUP carries the slot position and the selected/unselected dimming; root
+		# and shadow sit at fixed local offsets inside it and stay at full alpha
+		# themselves (see the Card class comment for why — dimming them individually let
+		# the shadow bleed through a translucent card's own face).
+		card.group.position = Vector2(x, (size.y - _card_height()) * 0.5)
+		card.group.modulate.a = 1.0 if i == _selected \
 			else Config.data.card_carousel_unselected_alpha
-		# The shadow tracks the card's ACTUAL rect (a card can be taller than
-		# _card_height() if a caller's content pushed it) and dims with it, so an
-		# unselected card's shadow fades exactly as far as the card does.
-		var shadow_off := UITheme.card_shadow_offset()
-		card.shadow.position = card.root.position + Vector2(shadow_off, shadow_off)
-		# Before the card's first layout pass its size can still be zero — fall back to the
-		# nominal card rect so the shadow is never a degenerate sliver on the first frame.
+		# The shadow tracks the card's ACTUAL size (a card can be taller than
+		# _card_height() if a caller's content pushed it) — before the card's first layout
+		# pass that size can still be zero, so fall back to the nominal card rect rather
+		# than leave the shadow a degenerate sliver on the first frame.
 		card.shadow.size = card.root.size if card.root.size.x > 0.0 \
 			else Vector2(_card_width(), _card_height())
-		card.shadow.modulate.a = card.root.modulate.a
 
 
 func _notification(what: int) -> void:
