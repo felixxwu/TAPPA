@@ -221,82 +221,61 @@ seams not to work around, and where the decision record lives.
   code — never weaken thresholds, flip signs, or delete assertions just to
   get back to green.
 
-## Delegating implementation to subagents
+## Model posture: Sonnet drives, Opus is invoked deliberately
 
-- **Use Sonnet subagents for implementation work whenever possible.** Spawning an
-  agent with `model: "sonnet"` (the `Agent` tool's model parameter) keeps the
-  expensive model's context free for planning, review and testing. Default to
-  Sonnet for the mechanical middle of a task: writing the code for a settled
-  plan, mechanical refactors, adding/updating tests and `features/` docs,
-  repetitive edits across many files, and search/exploration.
-- Keep the top-level (Opus) agent for the parts that actually need it: deciding
-  the approach, brainstorming specs with the user, arbitrating a confusing test
-  failure, and the final review of what came back. Escalate to a larger model
-  only when a Sonnet subagent's output is wrong twice, or the work is
-  architectural rather than mechanical from the outset.
-- Give Sonnet subagents a tight brief — the files they own, the files that are
-  off limits, what "done" looks like, and what siblings are doing (see
-  "Parallel agents share this checkout"). Vague briefs are what make a small
-  model fail, not the model.
-- The testing rules still bind them: subagents implement, the parent runs the
-  tests.
-- **Default to delegating, not judgment-calling it.** Don't decide per-task
-  whether something is "small enough to just do yourself" — if a task
-  involves writing/editing code, searching more than a couple of files, or
-  reading more than one file's worth of implementation detail, spawn a
-  Sonnet subagent for it rather than doing it inline. Reserve doing it
-  yourself for genuinely trivial single-line edits where spawning would cost
-  more than it saves, and for the planning/review work this section already
-  reserves for the top-level agent.
-- **There is a floor below delegation isn't worth it.** A single
-  well-localized edit under ~20 lines, or one targeted lookup answerable in
-  1-2 tool calls, costs more in spawn overhead (fresh system prompt, tool
-  schemas, re-derived context) than it saves — do those inline. Delegation
-  pays off once a task needs real exploration or multi-file work; below that
-  line it's pure overhead. Don't fan out N subagents for a task that's
-  actually one coherent piece of work either — parallelism only pays when
-  the pieces are genuinely independent, otherwise you're paying N times the
-  spawn overhead plus cross-agent coordination for nothing.
-- **Don't explore before you delegate.** If a task needs figuring out where
-  something lives or how it works before it can be implemented, hand the
-  whole thing — investigation and implementation — to the subagent. Don't
-  have the top-level agent Glob/Grep/Read its way to an understanding first
-  "to write a better brief"; a good brief states the goal and constraints,
-  not the answer. Exploring it yourself just duplicates the tokens the
-  subagent is about to spend anyway.
-- **Subagents report back terse.** A subagent's final report should be a
-  summary: what changed, which files, what tests should cover it — not
-  pasted file contents, full diffs, or command output. Tell them this
-  explicitly in the brief when it isn't already implied. If you need to
-  verify their work, open the specific file yourself rather than asking them
-  to paste it back to you.
-- **Escalation is a last resort, not a default response to friction.** Only
-  escalate a task to a larger model after a Sonnet subagent has been wrong
-  twice on it, or the task is unambiguously architectural (a design decision
-  with no settled plan yet) from the outset. A confusing result, an
-  unfamiliar area of the codebase, or a subagent asking a clarifying
-  question are not by themselves grounds to escalate — send back a sharper
-  brief and let Sonnet retry first.
-- **A bad dispatch counts as one of the two strikes, not a free redo.** If a
-  subagent explored the wrong area or came back with the wrong thing because
-  the brief was underspecified, don't just quietly redispatch as if nothing
-  happened — that silently doubles the spawn-and-explore cost. That attempt
-  counts toward the "wrong twice" escalation threshold above. Fix the brief
-  before retrying (name the exact files/area from what the failed attempt
-  revealed, don't make it guess again), and if the second attempt also
-  misses, escalate rather than trying a third time.
-- **Reuse a live subagent for direct continuations; spawn fresh otherwise.**
-  If the next task is a direct continuation of one a subagent just did in
-  the same area — addressing review feedback on code it just wrote, the
-  next step of a plan it's already holding context for — `SendMessage` back
-  to that same subagent instead of spawning a new one; it resumes with full
-  context, so you skip paying to re-derive what it already learned. Don't
-  default to this as a blanket pattern, though: spawn a fresh subagent for
-  work that's unrelated, or independent enough to parallelize — a single
-  long-lived subagent serializes work that could run concurrently, and its
-  context keeps growing turn over turn (stale exploration and superseded
-  diffs pile up, and even cached tokens still cost to resend), so it stops
-  being cheap once it's carried more than a couple of continuations.
+- **Sonnet is the default interactive model, not Opus.** Don't start from
+  "Opus does everything and delegates the mechanical parts down" — that
+  still bills Opus for planning, briefing, reading every report, and final
+  review on every task, which adds up even when delegation itself is done
+  well. Start from Sonnet driving the whole task directly, and bring in
+  Opus only for the two cases below. Most feature work in this codebase —
+  a new menu, a new card/upgrade, wiring a stat into an existing system,
+  test coverage for an existing pattern — is mechanical enough that Sonnet
+  alone should carry it start to finish, tests included.
+- **Opus plans upfront, before code gets written, for genuinely
+  architectural work.** If a task involves a new system, a design decision
+  with no settled shape yet, or a change that touches shared
+  physics/config/core scene setup broadly enough that a wrong turn would be
+  expensive to unwind — spawn an Opus subagent FIRST to produce the plan
+  (approach, files touched, sequencing, open questions), before any code is
+  written. Planning upfront is cheap; discovering three files in that a
+  Sonnet-authored approach doesn't work is not. Sonnet then executes the
+  settled plan. This mirrors the old "brainstorm specs with the user"
+  role — Opus still owns deciding the approach, just as a one-shot
+  consult rather than as the thing driving every turn.
+- **Opus is invoked reactively when something doesn't work, not
+  proactively as a safety net.** For everything else, let Sonnet run the
+  task, including its own testing and iteration. Only escalate to an Opus
+  subagent when Sonnet has genuinely gotten stuck: the same test fails
+  twice after a real fix attempt (not the same fix retried), a result
+  looks wrong in a way Sonnet can't diagnose, or a change has architectural
+  implications that only became visible once Sonnet was in the code (at
+  that point treat it as the upfront-planning case, done retroactively).
+  A confusing error message or an unfamiliar corner of the codebase is not
+  by itself a reason to escalate — that's what Sonnet re-reading the
+  relevant `features/*.md` file and retrying once is for.
+- **When escalating reactively, hand Opus the failure, not a fresh start.**
+  Brief the Opus subagent with what was tried, what broke, and the
+  concrete symptom — not just the original task description — so it
+  spends its tokens diagnosing rather than re-deriving context Sonnet
+  already has. Once Opus proposes the fix, either have it apply the fix
+  directly if it's small, or hand the fix back to Sonnet to implement and
+  test if there's more mechanical work attached to it.
+- **A repeated failure on the same task is a signal to stop retrying, not
+  a reason to keep trying inline.** If Sonnet is wrong twice on the same
+  problem (including once you've already looped in Opus reactively), stop
+  and escalate/replan rather than attempting a third variation — the
+  pattern from the old rules still holds: a bad attempt counts toward the
+  threshold, a fixed/sharper brief on retry doesn't reset it for free.
+- The testing rules still bind regardless of which model is driving: run
+  the tests relevant to the change before declaring it complete.
+- **This changes who plans, not who tests or reviews.** Sonnet driving the
+  task doesn't mean skipping tests or a final look at the diff — those
+  still happen, just performed by whichever model is currently in the
+  driver's seat (Sonnet, unless Opus was invoked). The point of this
+  section is to stop paying for an expensive model's involvement on tasks
+  that don't need architectural judgment, not to relax the testing or
+  review bar.
 
 ## Parallel agents share this checkout
 
