@@ -156,23 +156,43 @@ equivalent of `box-shadow: 5px 5px 0 rgba(0,0,0,0.2)`. Without it a black card o
 3D background read flat; the offset quad gives it a sense of sitting *above* the page,
 in keeping with the PS1-era, no-soft-edges look (blurred shadows would fight it).
 
-Mechanically the shadow is **a sibling `Panel` under `_strip`, added immediately BEFORE
-its card's `root`** (siblings paint in tree order, so it lands underneath), stored on the
-`Card` handle as `card.shadow`. It cannot be a child of the card: `card.root` paints an
-opaque black fill and sets `clip_contents`, so anything inside it is both covered and
-clipped. `_layout` glues the quad to the card's actual rect (`card.root.size`, not the
-nominal `_card_height()` — a card whose content grew is still fully shadowed), offsets it
-by `UITheme.card_shadow_offset()` on both axes, and copies `card.root.modulate.a` so an
-unselected card's shadow fades exactly as far as the card does. It is
-`MOUSE_FILTER_IGNORE`, so it never swallows a tap meant for a card.
+Mechanically the shadow is **a sibling `Panel`, added immediately BEFORE its card's
+`root`** (siblings paint in tree order, so it lands underneath), stored on the `Card`
+handle as `card.shadow`. It cannot be a child of the card: `card.root` paints an opaque
+black fill and sets `clip_contents`, so anything inside it is both covered and clipped.
+`shadow`'s LOCAL position is fixed at creation to `UITheme.card_shadow_offset()` on both
+axes; `_layout` only ever updates its `size` to track the card's actual rect
+(`card.root.size`, not the nominal `_card_height()` — a card whose content grew is still
+fully shadowed). It is `MOUSE_FILTER_IGNORE`, so it never swallows a tap meant for a card.
 
 **Not `StyleBoxFlat`'s own `shadow_*` properties.** That shadow rect is the box *expanded
 by `shadow_size` on all sides* and then offset: `shadow_size = 0` draws nothing at all,
 and any size > 0 leaks shadow out of the top-left edge too — so a purely diagonal,
 zero-blur offset is unreachable through it. The fill and offset live in
 `UITheme.card_shadow_box()` / `UITheme.card_shadow_offset()`
-(`CARD_SHADOW_AUTHORED`, scaled through `UITheme.px`) so any future card surface can wear
-the same shadow.
+(`CARD_SHADOW_AUTHORED`, scaled through `UITheme.px`) — see
+[ui-design-system.md](ui-design-system.md) → *Card drop shadow* for the theme-wide sibling
+mechanism (`UIHardShadowBox`) every ordinary Button/Panel in the game wears instead.
+
+## A shared CanvasGroup, not independent alpha
+
+`card.root` and `card.shadow` sit inside a THIRD node, `card.group` (a `CanvasGroup`) —
+they are not direct children of `_strip` any more. `_layout` positions and dims `group`,
+never `root`/`shadow` directly, which always stay at `modulate.a = 1.0`.
+
+This exists because dimming root and shadow INDEPENDENTLY — the original approach — read
+wrong on an unselected (translucent) card: root's opaque black fill covers all but a thin
+sliver of shadow beneath it (the shadow pokes out only by `card_shadow_offset()` at the
+bottom-right edge), so once root itself turned translucent, that whole covered region
+showed TWO stacked layers of partial black — root's own dimmed fill AND the shadow behind
+it bleeding through — reading visibly darker than the thin sliver where only the shadow
+shows alone. A `CanvasGroup` composites its children into one buffer BEFORE that buffer is
+blended against the background, so with root and shadow left at full internal alpha, the
+opaque card still fully hides the shadow within the overlap inside that buffer — exactly
+as it does when fully selected — and only THEN does the group's own `modulate.a` dim the
+whole pre-composited result once, uniformly. `card.group.position` is what carries the
+card's slot coordinate now; `card.root`/`card.shadow` never move again after creation
+(only `shadow.size` still updates, per above).
 
 ## Edge to edge, and never a clipped card
 

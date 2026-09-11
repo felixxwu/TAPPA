@@ -78,14 +78,18 @@ func test_enforce_applies_rules_across_a_menu_tree() -> void:
 func test_mark_selected_underlines_green_when_selected() -> void:
 	var b := Button.new()
 	UITheme.mark_selected(b, true)
-	var box := b.get_theme_stylebox("normal") as StyleBoxFlat
-	assert_not_null(box, "a stylebox is applied")
+	# mark_selected wraps the box with the theme-wide hard shadow (UITheme.shadowed) —
+	# unwrap it to reach the StyleBoxFlat-specific border properties.
+	var wrapper := b.get_theme_stylebox("normal") as UIHardShadowBox
+	assert_not_null(wrapper, "a shadow-wrapped stylebox is applied")
+	var box := wrapper.inner as StyleBoxFlat
+	assert_not_null(box, "the wrapped stylebox is a StyleBoxFlat")
 	assert_eq(box.border_width_bottom, 3, "selected row has a bottom underline")
 	assert_eq(box.border_color, UITheme.GREEN, "underline is green")
 	assert_eq(b.get_theme_color("font_color"), UITheme.GREEN, "selected text is green")
 	# Unselected: no underline.
 	UITheme.mark_selected(b, false)
-	var off := b.get_theme_stylebox("normal") as StyleBoxFlat
+	var off := (b.get_theme_stylebox("normal") as UIHardShadowBox).inner as StyleBoxFlat
 	assert_eq(off.border_width_bottom, 0, "unselected row has no underline")
 	b.free()
 
