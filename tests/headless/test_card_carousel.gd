@@ -288,6 +288,7 @@ func test_starting_a_drag_mid_snap_kills_the_running_snap() -> void:
 
 func test_unselected_cards_are_dimmed_and_selected_is_opaque() -> void:
 	_carousel.select(1, false)
+	_carousel.finish_entrance_animation()
 	for i in _carousel.card_count():
 		var expected := 1.0 if i == 1 else Config.data.card_carousel_unselected_alpha
 		assert_almost_eq(_carousel._cards[i].root.modulate.a, expected, 0.001)
@@ -399,6 +400,7 @@ func test_each_card_casts_an_offset_shadow_behind_it() -> void:
 # sitting behind its own card.
 func test_shadow_strips_dim_with_their_card() -> void:
 	_carousel.select(1, false)
+	_carousel.finish_entrance_animation()
 	for i in _carousel.card_count():
 		var card := _carousel.get_card(i)
 		var expected := 1.0 if i == 1 else Config.data.card_carousel_unselected_alpha
@@ -406,6 +408,63 @@ func test_shadow_strips_dim_with_their_card() -> void:
 			"card %d's right shadow strip must dim with the card" % i)
 		assert_almost_eq(card.shadow_bottom.modulate.a, expected, 0.001,
 			"card %d's bottom shadow strip must dim with the card" % i)
+
+
+# --- Entrance fade-in: cards fade in one by one whenever the list is (re)built -------
+
+# Every card starts invisible and fades toward its final (selection-dependent) alpha —
+# a fresh add_card must never show its card at full opacity on the very first frame.
+func test_a_freshly_added_card_starts_faded_out() -> void:
+	var fresh := CardCarousel.new()
+	add_child_autofree(fresh)
+	var card := fresh.add_card()
+	assert_almost_eq(card.root.modulate.a, 0.0, 0.001,
+		"a card must start transparent so the entrance fade has somewhere to animate from")
+
+
+# First card first: with card_carousel_entrance_stagger_s > 0, an earlier index's fade
+# starts (and so finishes) before a later index's has even begun.
+func test_cards_fade_in_one_by_one_first_card_first() -> void:
+	var fresh := CardCarousel.new()
+	add_child_autofree(fresh)
+	for i in 3:
+		fresh.add_card()
+	var stagger: float = Config.data.card_carousel_entrance_stagger_s
+	await get_tree().create_timer(stagger * 0.5).timeout
+	var card0 := fresh.get_card(0)
+	var card1 := fresh.get_card(1)
+	var card2 := fresh.get_card(2)
+	assert_gt(card0.root.modulate.a, 0.0,
+		"the first card's fade must have already started")
+	assert_almost_eq(card1.root.modulate.a, 0.0, 0.001,
+		"the second card's fade must not have started yet")
+	assert_almost_eq(card2.root.modulate.a, 0.0, 0.001,
+		"the third card's fade must not have started yet")
+
+
+# finish_entrance_animation is the test/host seam for skipping straight to steady state;
+# it must actually land every card (and its shadow strips) at full progress.
+func test_finish_entrance_animation_jumps_every_card_to_full_progress() -> void:
+	var fresh := CardCarousel.new()
+	add_child_autofree(fresh)
+	for i in 3:
+		fresh.add_card()
+	fresh.finish_entrance_animation()
+	for i in fresh.card_count():
+		assert_almost_eq(fresh.get_card(i).entrance, 1.0, 0.001,
+			"card %d must be fully faded in after finish_entrance_animation" % i)
+
+
+# Restarting: a page that rebuilds its carousel from scratch (hub_shell.gd's _show, e.g.
+# on Back from a sub-menu) must see the SAME fade-in again, not a carousel that's already
+# fully visible because it happened before.
+func test_a_new_carousel_restarts_the_entrance_fade_even_after_an_earlier_one_finished() -> void:
+	_carousel.finish_entrance_animation()  # the before_each carousel is already settled
+	var rebuilt := CardCarousel.new()
+	add_child_autofree(rebuilt)
+	var card := rebuilt.add_card()
+	assert_almost_eq(card.root.modulate.a, 0.0, 0.001,
+		"a brand new carousel (as built on every page (re)show) must fade in from scratch")
 
 
 # --- CardUI.build_carousel: the resize hookup ---------------------------------

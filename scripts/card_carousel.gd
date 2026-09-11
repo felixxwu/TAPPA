@@ -60,6 +60,11 @@ class Card:
 	var visual: Control
 	var info: VBoxContainer
 	var disabled := false
+	# 0.0 (just added, invisible) -> 1.0 (fully faded in). Multiplied into the
+	# selection alpha _layout computes, so a card fades in to whatever its final
+	# opacity should be (full if selected, dimmed otherwise) rather than always to 1.0.
+	var entrance := 0.0
+	var entrance_tween: Tween
 
 var _cards: Array[Card] = []
 var _selected := 0
@@ -239,7 +244,39 @@ func add_card(disabled: bool = false) -> Card:
 	card.root.gui_input.connect(_on_card_gui_input.bind(index))
 	_cards.append(card)
 	_layout()
+	_animate_entrance(card, index)
 	return card
+
+
+# Fade the card in from transparent, first card first — staggered by index so the whole
+# strip visibly builds left to right rather than popping in all at once. Every card added
+# to a freshly built CardCarousel gets its own animation, and since every page rebuilds a
+# BRAND NEW CardCarousel on each _show() (hub_shell.gd), this restarts automatically every
+# time a card list is shown — including navigating back from a sub-menu — with no extra
+# "has this been shown before" state to track.
+func _animate_entrance(card: Card, index: int) -> void:
+	var tween := create_tween()
+	card.entrance_tween = tween
+	tween.set_ease(Tween.EASE_OUT)
+	if index > 0:
+		tween.tween_interval(index * Config.data.card_carousel_entrance_stagger_s)
+	var set_entrance := func(v: float) -> void:
+		card.entrance = v
+		_layout()
+	tween.tween_method(set_entrance, 0.0, 1.0, Config.data.card_carousel_entrance_duration_s)
+
+
+# Test/host seam: jump every card straight to fully faded-in, skipping the stagger/fade
+# tweens entirely. Nothing in production calls this — the whole point of the entrance
+# animation is for a player to see it — but a test that only cares about steady-state
+# alpha (selection dimming, shadow dimming) shouldn't have to await the real animation
+# duration on every run just to get past it.
+func finish_entrance_animation() -> void:
+	for card in _cards:
+		if card.entrance_tween != null and card.entrance_tween.is_valid():
+			card.entrance_tween.kill()
+		card.entrance = 1.0
+	_layout()
 
 
 func _prepare_incoming_child(node: Node) -> void:
@@ -336,6 +373,7 @@ func _layout() -> void:
 		var card_pos := Vector2(x, (size.y - _card_height()) * 0.5)
 		card.root.position = card_pos
 		var alpha := 1.0 if i == _selected else Config.data.card_carousel_unselected_alpha
+		alpha *= card.entrance
 		card.root.modulate.a = alpha
 
 		# The card's ACTUAL size (it can be taller than _card_height() if a caller's

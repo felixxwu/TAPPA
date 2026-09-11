@@ -120,8 +120,36 @@ group), not hardcoded in the script: `card_carousel_aspect`, `card_carousel_card
 `card_carousel_gap`, `card_carousel_unselected_alpha`, `card_carousel_snap_duration_s`,
 `card_carousel_drag_step_fraction` (reserved for a future drag-vs-tap threshold refinement
 — the shipped `end_drag_and_snap` already snaps to nearest regardless),
-`card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed), and
-`card_carousel_visible_width_factor` (below).
+`card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed),
+`card_carousel_visible_width_factor` (below), and `card_carousel_entrance_duration_s` /
+`card_carousel_entrance_stagger_s` (the entrance fade below).
+
+## Cards fade in, one by one, every time the list is (re)built
+
+`add_card` starts each card at `modulate.a == 0` and tweens a per-card `Card.entrance`
+progress value (0 -> 1) up over `card_carousel_entrance_duration_s`, delayed by
+`index * card_carousel_entrance_stagger_s` — so card 0 starts fading immediately, card 1
+a beat later, and so on, reading as the strip building itself left to right rather than
+popping in all at once. `_layout()` multiplies `entrance` into the alpha it already
+computes for selection dimming (`card.entrance * (1.0 if selected else
+unselected_alpha)`), so a card fades in to whatever its STEADY-STATE opacity should be —
+full if it's the initially-selected card, dimmed otherwise — never all the way to 1.0
+regardless of selection. The shadow strips reuse that same final `alpha`, so they fade in
+in lockstep with their card with no separate bookkeeping.
+
+**This restarts on its own, with no "already shown" flag to track.** Every hub page
+rebuilds a BRAND NEW `CardCarousel` on each `HubShell._show()` call (`build_carousel`
+creates one via `CardCarousel.new()`, and every card is added fresh via `add_card`) — so
+pressing Back from a sub-menu back to a carousel page runs through `_show()` again, which
+means a genuinely new carousel with every `Card.entrance` starting at 0. The animation
+living entirely on per-card state (not on the page or on some "has this carousel ever
+been shown" latch) is what makes restarting the default rather than something a caller
+has to opt into.
+
+`CardCarousel.finish_entrance_animation()` is a test/host seam only — it kills every
+card's entrance tween and jumps `entrance` to 1.0 for every card, so a test that only
+cares about steady-state alpha (selection/shadow dimming) doesn't have to await the real
+fade duration. Nothing in production calls it.
 
 ## A card needs a visible edge, not just a gap — but not necessarily a border
 

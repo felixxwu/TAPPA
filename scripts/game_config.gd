@@ -4249,3 +4249,8 @@ func spectator_params() -> Dictionary:
 @export_range(1.2, 5.0, 0.1) var card_carousel_visible_width_factor := 2.6
 ## Gap between adjacent cards, in the same logical units as card_carousel_card_width.
 @export_range(0.0, 200.0, 2.0) var card_carousel_gap := 36.0
+## How long each card takes to fade in from transparent when the carousel is first shown.
+@export_range(0.05, 1.0, 0.01) var card_carousel_entrance_duration_s := 0.25
+## Delay between one card's fade-in starting and the next card's, so the whole strip fades
+## in left to right rather than all at once — 0 disables the stagger (still fades, together).
+@export_range(0.0, 0.3, 0.01) var card_carousel_entrance_stagger_s := 0.05
