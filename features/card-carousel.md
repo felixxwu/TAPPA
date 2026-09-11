@@ -317,6 +317,16 @@ unaffected — `_card_stylebox`'s `panel_box(1.0)` is independent of the page th
 sit on — so only the truly empty space (the gaps between cards, and around them) opens up
 onto the showcase; nothing about a card's own read as a solid surface changes.
 
+**A transparent body must not cast the theme-wide shadow either.** `menu_page.gd` wraps its
+body box in `UITheme.shadowed()`, and that wrapper drew its 20%-black offset rect
+unconditionally — normally invisible under the panel's own opaque face, but with `alpha:
+0.0` there is no face to hide it, so the full body-sized rect showed through as "a dark
+transparent container around all the cards". `UIHardShadowBox._draw` now skips the shadow
+when the wrapped box has no fill — see
+[ui-design-system.md](ui-design-system.md) → *Card drop shadow* → *An INVISIBLE box casts
+no shadow*. The cards' own `shadow_right`/`shadow_bottom` slivers are a separate mechanism
+and unaffected.
+
 `MenuPage`'s body box **hugs its content's minimum width** (`menu_page.gd`'s
 `_scroll.horizontal_scroll_mode = SCROLL_MODE_DISABLED` propagates the child's real
 minimum width up to the box). Cards are absolute-positioned children of `_strip`, a plain
