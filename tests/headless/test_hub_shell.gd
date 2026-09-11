@@ -317,15 +317,16 @@ func test_every_page_is_keyboard_navigable() -> void:
 # panel resting over the world, not a wall of pure black either way, but a carousel page
 # specifically must let the world show in its own empty space, not just around its edges).
 func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> void:
-	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SHOP, HubShell.View.SKILLS, HubShell.View.FREEPLAY_CAR,
-			HubShell.View.FREEPLAY_REGION, HubShell.View.FREEPLAY_SETUP]:
+	for view in [HubShell.View.TITLE, HubShell.View.MAIN, HubShell.View.REGION,
+			HubShell.View.CAR, HubShell.View.SHOP, HubShell.View.SKILLS,
+			HubShell.View.FREEPLAY_CAR, HubShell.View.FREEPLAY_REGION,
+			HubShell.View.FREEPLAY_SETUP]:
 		_shell._show(view)
 		await get_tree().process_frame
 		var box := (_page().panel().get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
 		assert_almost_eq(box.bg_color.a, 0.0, 0.01, "view %d's body must be transparent" % view)
 
-	for view in [HubShell.View.TITLE, HubShell.View.STATS, HubShell.View.CHALLENGE,
+	for view in [HubShell.View.STATS, HubShell.View.CHALLENGE,
 			HubShell.View.SETTINGS]:
 		_shell._show(view)
 		await get_tree().process_frame

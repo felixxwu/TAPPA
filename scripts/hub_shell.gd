@@ -232,6 +232,11 @@ func _show(view: int) -> void:
 		# PANEL_PAD inset the body from a margin build_carousel no longer accounts for,
 		# leaving a gap between the carousel's cards and the literal screen edge.
 		page_opts["padding"] = CardUI.CAROUSEL_PAGE_PADDING
+	elif view == View.TITLE:
+		# TAPPA stands alone on the splash — no card grid to keep legible against a
+		# transparent box here, just the logo itself, so drop the body box's opaque
+		# black panel_box background the same way carousel pages do.
+		page_opts["alpha"] = 0.0
 	_page = MenuPage.open_modal(self, page_opts)
 	match view:
 		View.TITLE: _build_title()
