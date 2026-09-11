@@ -221,55 +221,54 @@ the slot shows its whole ladder — see [upgrade-catalogue.md](upgrade-catalogue
 `UpgradeLibrary.apply()` handles **both** induction effect keys through ONE
 `"install_induction"` op, with everything that differs between them living in the
 `EFFECTS` descriptor row rather than in a branch — `enable` (the flag this part
-switches on), `clears` (the rival part's state, as `{field: value}`) and `gain_key`
-(the sub-key `effective_meta` rates power-to-weight from):
+switches on) and `gain_key` (the sub-key `effective_meta` rates power-to-weight from):
 
 ```gdscript
 "install_induction":
     cfg.set(String(desc["enable"]), true)
-    for ckey in (desc["clears"] as Dictionary):
-        cfg.set(ckey, (desc["clears"] as Dictionary)[ckey])
     for tkey in (val as Dictionary):
         cfg.set(tkey, (val as Dictionary)[tkey])
 ```
 
-So an induction upgrade is just "switch this on, switch the other off, stamp these
-fields" — the same mechanism for the small turbo, the big turbo, the supercharger, or a
-future fourth part, which is a table row rather than another `match` arm.
+So an induction upgrade is just "switch this on, stamp these fields" — the same
+mechanism for the turbo and the supercharger (or a future third induction axis), which
+is a table row rather than another `match` arm.
 
-**The `clears` is symmetric, on purpose.** Fitting the blower zeroes `turbo_enabled`;
-fitting a turbo zeroes *both* `supercharger_enabled` and `supercharger_boost_gain`.
-Slot exclusivity (`Save._enable_exclusive`) already means only one of the two can be
-ENABLED, and `EngineLibrary.apply` rebuilds the baseline first — but relying on that
-would leave the two multipliers free to stack the moment a stock engine authored a real
-`supercharger_boost_gain`. The table makes it structural instead of circumstantial.
-
-Only one `"turbo"`-slot part can be fitted+enabled at a time
-(`UpgradeLibrary.SLOTS`), so a car can't stack `turbo_small` and
-`turbo_large` — installing one replaces the other in that slot.
+**Turbo and supercharger STACK (a real twincharger) — this used to be mutually
+exclusive, and no longer is.** A `clears` key here once zeroed the rival's enable flag
+and gain, back when both shared one `UpgradeLibrary.SLOTS` PURCHASE slot (a permanent-
+part mechanism the roguelike pivot deleted). That's gone now: `BoostLibrary`'s mid-run
+boosts have no such slot, `apply()` no longer clears anything, and `EngineSim.step()`
+already multiplied the turbo factor and the supercharger factor together
+UNCONDITIONALLY (see the crank formula in *Supercharger* below) — the physics never
+actually assumed exclusivity, only the old purchase UI did. This was made explicit on
+purpose (`todo/mid-run-upgrade-menu.md`): a player who already rolled a turbo mid-run
+must never have a later supercharger roll take that progress away.
 
 ### Rated at peak boost (`effective_meta`)
 
 `UpgradeLibrary.effective_meta(owned_car, meta)` computes the car's displayed
 stats (HP / power-to-weight, used for both the garage screen and
-`RallyLibrary.is_eligible` banding). It resolves a `boost_gain` — starting
-from the current engine's stock `turbo_boost_gain`, then overridden by an
-installed `install_turbo` upgrade's `turbo_boost_gain` if one is fitted+
-enabled — and applies it as:
+`RallyLibrary.is_eligible` banding). Since the two axes can both be live at once, it
+tracks each SEPARATELY — starting from the current engine's own stock
+`turbo_boost_gain`/`supercharger_boost_gain`, each overridden independently by a
+fitted `install_turbo`/`install_supercharger` boost on that axis — then combines them
+MULTIPLICATIVELY, mirroring the sim's own crank formula rather than adding or picking
+one:
 
 ```gdscript
-out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + boost_gain)
+out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + turbo_gain) * (1.0 + supercharger_gain)
 ```
 
-i.e. the displayed/eligibility torque is rated **at full (peak) boost**, the
-same multiplier the sim itself applies at `boost == 1.0`. This runs before
-the engine-detune scaling, so a boosted-but-detuned car's rating reflects
-both.
+i.e. the displayed/eligibility torque is rated **at full (peak) boost on every fitted
+axis**, the same multiplier the sim itself applies at `boost == 1.0` /
+`sc_boost == 1.0`. This runs before the engine-detune scaling, so a boosted-but-detuned
+car's rating reflects both.
 
 **Rival pace floors go through the same path.**
 `RallyLibrary.generate_opponent_field` boosts each rival's raw `CarLibrary`
-entry via `effective_meta({}, car)` (empty owned-car → no upgrades, no detune,
-just the engine's stock `turbo_boost_gain`) before feeding it to
+entry via `effective_meta({}, car)` (empty owned-car → no boosts, no detune,
+just the engine's own stock gains) before feeding it to
 `LapTimeModel.optimum_ms`. Without this the floor would fall back to the
 engine's unboosted `peak_torque`, so a turbo car's rival would run
 artificially slow — out of step with the player's boosted stats and the car's
@@ -322,10 +321,12 @@ crank += throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction
     * (1.0 + sc_boost * cfg.supercharger_boost_gain)
 ```
 
-The two forced-induction paths multiply, but because turbo and blower share
-one upgrade slot only one is ever non-unity in practice — and
-`install_supercharger` explicitly clears `turbo_enabled` so the whistle, BOV
-and anti-lag layers can't fire on a blown car.
+**The two forced-induction paths multiply, and both CAN be non-unity at once now** — a
+car can genuinely run turbo AND supercharger together (see *Turbo and supercharger
+STACK* above). `turbo_enabled` and `supercharger_enabled` are independent flags with
+nothing clearing one when the other switches on, so a twincharged car's whistle, BOV
+and anti-lag layers (turbo) play right alongside its whine (supercharger) — which is
+the point: a real twincharger sounds like both at once.
 
 **How it plays against Big Turbo.** Its peak gain is only a little higher, so
 the two are close on paper; the real advantage is the *shape* — full boost the

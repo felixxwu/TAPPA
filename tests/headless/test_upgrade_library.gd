@@ -142,21 +142,20 @@ func test_installing_an_induction_sets_its_enable_flag() -> void:
 	assert_gt(cfg.turbo_boost_gain, 0.0, "and seats the gain the boost authored")
 
 
-# The pair of effects that must cancel each other. A car cannot be running a turbo AND a
-# blower: whichever is applied last has to clear the other's enable flag AND the belt gain
-# that switches its physics on, or the car quietly runs both.
-func test_an_induction_clears_the_one_it_replaces() -> void:
+# Turbo and supercharger STACK now (a real twincharger) — order must not matter, and
+# neither part clears the other's enable flag or gain.
+func test_turbo_and_supercharger_stack_regardless_of_order() -> void:
 	var cfg := GameConfig.new()
 	UpgradeLibrary.apply(_car(["fx_supercharger", "fx_turbo_big"]), cfg)
-	assert_true(cfg.turbo_enabled, "the turbo applied last is the one running")
-	assert_false(cfg.supercharger_enabled, "and the blower it replaced is switched off")
-	assert_eq(cfg.supercharger_boost_gain, 0.0,
-		"its belt gain is cleared too — the enable flag alone leaves the physics on")
+	assert_true(cfg.turbo_enabled, "both parts are running")
+	assert_true(cfg.supercharger_enabled, "both parts are running")
+	assert_gt(cfg.turbo_boost_gain, 0.0)
+	assert_gt(cfg.supercharger_boost_gain, 0.0)
 
 	var other := GameConfig.new()
 	UpgradeLibrary.apply(_car(["fx_turbo_big", "fx_supercharger"]), other)
-	assert_true(other.supercharger_enabled, "and the cancellation works the other way round")
-	assert_false(other.turbo_enabled)
+	assert_true(other.turbo_enabled, "order does not matter")
+	assert_true(other.supercharger_enabled, "order does not matter")
 
 
 func test_the_write_fields_op_splats_its_fields_with_no_enable_flag() -> void:
@@ -191,6 +190,25 @@ func test_effective_meta_mirrors_a_feeds_pw_effect() -> void:
 	assert_lt(float(boosted["mass"]), float(meta["mass"]),
 		"a feeds_pw effect reaches the derived meta, not just the live config")
 	assert_eq(meta["mass"], 1200.0, "and the caller's dict is not mutated")
+
+
+# Turbo and supercharger stack in effective_meta too, MULTIPLICATIVELY — mirroring
+# EngineSim.step()'s crank formula, which multiplies the two forced-induction factors
+# together rather than adding or picking one. Fitting both must rate STRICTLY higher
+# than fitting either alone.
+func test_effective_meta_combines_turbo_and_supercharger_multiplicatively() -> void:
+	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
+	var turbo_only := float(UpgradeLibrary.effective_meta(_car(["fx_turbo_big"]), meta)["peak_torque"])
+	var supercharger_only := float(
+		UpgradeLibrary.effective_meta(_car(["fx_supercharger"]), meta)["peak_torque"])
+	var both := float(
+		UpgradeLibrary.effective_meta(_car(["fx_turbo_big", "fx_supercharger"]), meta)["peak_torque"])
+	assert_gt(both, turbo_only, "having both rates higher than turbo alone")
+	assert_gt(both, supercharger_only, "having both rates higher than the supercharger alone")
+	# both == base * (1+turbo_gain) * (1+sc_gain), exactly — not base * (1+turbo_gain+sc_gain).
+	var turbo_factor := turbo_only / float(meta["peak_torque"])
+	var supercharger_factor := supercharger_only / float(meta["peak_torque"])
+	assert_almost_eq(both, float(meta["peak_torque"]) * turbo_factor * supercharger_factor, 0.01)
 
 
 # Nitrous is deliberately feeds_pw FALSE: it is a per-stage resource, not a permanent power

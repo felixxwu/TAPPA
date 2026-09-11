@@ -430,6 +430,20 @@ signed percentage of the boost-gain field plus the entry's `display_suffix` (e.g
 "+45% torque at full boost") — its own third shape, alongside the existing
 mult-as-percentage and add/set-as-absolute-figure branches.
 
+**Turbo and supercharger STACK with each other — rolling both across a run genuinely
+combines them (a twincharger), on purpose.** They used to be mutually exclusive under
+the old permanent-part shop (fitting one cleared the other), but that exclusivity was a
+purchase-slot rule, never a physics one — `EngineSim.step()` already multiplied the two
+factors together unconditionally. `UpgradeLibrary.EFFECTS`'s `install_turbo`/
+`install_supercharger` rows no longer clear anything, and `effective_meta` tracks each
+axis's gain independently and combines them multiplicatively — see
+[forced-induction.md](forced-induction.md) → "Turbo and supercharger STACK". This is
+exactly what `BoostLibrary.stacks()` (above) means by "stacks": a repeat roll of the
+SAME part is still a dead pick (its own `op` is `install_induction`, which overwrites
+rather than compounds), but rolling the *other* forced-induction part is never
+punished — the player who already has a turbo keeps it if a later roll lands on
+supercharger instead.
+
 ### The pick screens
 
 Four steps now, each a card list (`scripts/run_pick_panel.gd`), chained by
