@@ -122,6 +122,14 @@ static func px(authored: float) -> int:
 # rendered size still lands on a clean one — don't just let the scale drift it.
 const FONT_SIZE := int(13 * UI_SCALE + 0.5)
 
+# Rule 2's ONE documented exception: a title/heading reads better at 2x FONT_SIZE
+# (screen titles via `title()`, card names via `card_title()`) — see house rule 2
+# in features/ui-design-system.md for where this is and isn't used. An exact
+# integer multiple of FONT_SIZE stays on Jersey 10's pixel grid the same way
+# FONT_SIZE itself does (confirmed with tools/render_font_sizes.py at 36px), so
+# this is derived rather than a second independently-picked magic number.
+const TITLE_FONT_SIZE := FONT_SIZE * 2
+
 # --- Rule 3: fixed, compact height for single-line menu buttons --------------
 const MENU_ROW_H := int(30 * UI_SCALE + 0.5)
 # A modest min width so short buttons (BACK, QUIT) still read as a bar.
@@ -166,10 +174,24 @@ static func label(text: String, role: String = "ink") -> Label:
 	return l
 
 
-# A screen title — same size as everything else (rule 2), just centred.
+# A screen title — TITLE_FONT_SIZE (rule 2's one exception), centred. Marked so
+# `enforce()` leaves its size alone instead of resetting it to FONT_SIZE like every
+# other label under a menu root.
 static func title(text: String) -> Label:
 	var l := label(text)
+	l.add_theme_font_size_override("font_size", TITLE_FONT_SIZE)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.set_meta("ui_title_size", true)
+	return l
+
+
+# A card's own name/heading (CardCarousel's card.info, first line) at TITLE_FONT_SIZE —
+# same exception as `title()`, for the one other place a title-sized label recurs.
+# Left-aligned (card.info is a tight VBox, not a centred screen header).
+static func card_title(text: String, role: String = "ink") -> Label:
+	var l := label(text, role)
+	l.add_theme_font_size_override("font_size", TITLE_FONT_SIZE)
+	l.set_meta("ui_title_size", true)
 	return l
 
 
@@ -665,7 +687,10 @@ static func enforce(root: Node) -> void:
 	for node in root.find_children("*", "Label", true, false):
 		var l := node as Label
 		l.text = caps(l.text)
-		l.add_theme_font_size_override("font_size", FONT_SIZE)
+		# Rule 1 (uppercase) always applies; rule 2's size reset skips a title/card_title
+		# label (ui_title_size meta) — see TITLE_FONT_SIZE above.
+		if not l.has_meta("ui_title_size"):
+			l.add_theme_font_size_override("font_size", FONT_SIZE)
 	for node in root.find_children("*", "Button", true, false):
 		var b := node as Button
 		b.text = caps(b.text)

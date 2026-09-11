@@ -75,6 +75,30 @@ func test_enforce_applies_rules_across_a_menu_tree() -> void:
 	root.free()
 
 
+func test_title_and_card_title_use_the_bigger_size() -> void:
+	var t := UITheme.title("Choose a name")
+	assert_eq(t.get_theme_font_size("font_size"), UITheme.TITLE_FONT_SIZE, "title() uses TITLE_FONT_SIZE")
+	var ct := UITheme.card_title("MX-5")
+	assert_eq(ct.get_theme_font_size("font_size"), UITheme.TITLE_FONT_SIZE, "card_title() uses TITLE_FONT_SIZE")
+	t.free()
+	ct.free()
+
+
+func test_enforce_leaves_a_title_labels_size_alone() -> void:
+	# Rule 2's one exception: a title/card_title label keeps its bigger size across
+	# enforce() (a view change, a focus refresh) instead of being reset to FONT_SIZE
+	# like every other label — enforce() must still uppercase it (rule 1 stands).
+	var root := VBoxContainer.new()
+	var t := UITheme.title("standings")
+	root.add_child(t)
+	add_child(root)
+
+	UITheme.enforce(root)
+	assert_eq(t.text, "STANDINGS", "rule 1 still applies to a title label")
+	assert_eq(t.get_theme_font_size("font_size"), UITheme.TITLE_FONT_SIZE, "rule 2's size reset skips it")
+	root.free()
+
+
 func test_mark_selected_underlines_green_when_selected() -> void:
 	var b := Button.new()
 	UITheme.mark_selected(b, true)

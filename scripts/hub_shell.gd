@@ -511,7 +511,7 @@ func _build_car() -> void:
 		var over_cap := _pending_challenge != "" and not eligible_ids.has(iid)
 		var card := carousel.add_card(over_cap)
 		card.visual.add_child(CardUI.card_icon("car"))
-		card.info.add_child(UITheme.label(label))
+		card.info.add_child(UITheme.card_title(label))
 		if over_cap:
 			card.info.add_child(UITheme.label("Over the rating cap", "dim"))
 			actions.append(null)
@@ -530,7 +530,7 @@ func _build_car() -> void:
 		var cant_afford := Save.money() < cost
 		var card := carousel.add_card(cant_afford)
 		card.visual.add_child(CardUI.card_icon("car"))
-		card.info.add_child(UITheme.label(car_name))
+		card.info.add_child(UITheme.card_title(car_name))
 		card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
 		# Appended in a branch rather than a ternary: a null/String ternary is an
 		# INCOMPATIBLE_TERNARY warning, which the strict-error tests treat as a failure.

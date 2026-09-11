@@ -32,7 +32,18 @@ bakes in 2–4 as the defaults:
 
 1. **All menu text is UPPERCASE** (`UITheme.caps`).
 2. **One fixed font size everywhere** (`UITheme.FONT_SIZE`, deliberately small) —
-   no per-screen size hierarchy; titles, headings, body and buttons all match.
+   no per-screen size hierarchy; body and buttons all match. **One documented
+   exception, TITLES:** a screen title (`UITheme.title()`) and a card's own name
+   (`UITheme.card_title()`, `CardCarousel`'s card.info first line) render at
+   `UITheme.TITLE_FONT_SIZE` (2x `FONT_SIZE`) instead — a heading reads better
+   larger, and an exact multiple of `FONT_SIZE` stays on Jersey 10's pixel grid
+   the same way `FONT_SIZE` itself does (see "Fonts & licensing" below). Both
+   helpers mark their label (`ui_title_size` meta) so `enforce()`'s size reset
+   skips it — `enforce()` still uppercases it (rule 1 still applies). A label
+   that wants the bigger size MUST go through one of these two helpers, never a
+   bare `add_theme_font_size_override` — that leaves no marker, so the next
+   `enforce()` pass (a view change, a focus refresh) silently resets it back to
+   `FONT_SIZE`.
 3. **Single-line menu buttons are a fixed, compact height** (`UITheme.MENU_ROW_H`).
    Multi-line rows (e.g. the settings option rows, which embed their own layout)
    are left to size themselves.

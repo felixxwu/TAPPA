@@ -54,7 +54,7 @@ static func text_card(carousel: CardCarousel, title: String, subtitle: String,
 		disabled: bool, icon: String, extra := "", extra_variant := "") -> void:
 	var card := carousel.add_card(disabled)
 	card.visual.add_child(card_icon(icon))
-	var title_label := UITheme.label(title)
+	var title_label := UITheme.card_title(title)
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.info.add_child(title_label)
 	if subtitle != "":
