@@ -238,6 +238,7 @@ func test_the_update_prompt_records_its_dismissal_when_answered() -> void:
 # combination, and Start writes the FreePlay plan the world consumes. Pressing by
 # card text keeps this on the SCREEN GRAPH, not the layout.
 func test_freeplay_flow_picks_car_region_and_boosts_into_a_plan() -> void:
+	_shell._show(HubShell.View.MAIN)
 	var unowned := ""
 	for spec in CarLibrary.all():
 		var mid := String(spec.get("id", ""))
@@ -275,6 +276,7 @@ func test_freeplay_flow_picks_car_region_and_boosts_into_a_plan() -> void:
 
 
 func test_backing_out_of_free_play_leaves_no_plan_behind() -> void:
+	_shell._show(HubShell.View.MAIN)
 	assert_true(_press("Free play"))
 	_shell._back()
 	assert_eq(_shell._view, HubShell.View.MAIN, "back from the car page returns to MAIN")
@@ -288,8 +290,8 @@ func test_backing_out_of_free_play_leaves_no_plan_behind() -> void:
 # page on every transition and a nav wiring that is only correct on the first build is the
 # failure this guards.
 func test_every_page_is_keyboard_navigable() -> void:
-	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SUMMARY, HubShell.View.SHOP,
+	for view in [HubShell.View.TITLE, HubShell.View.MAIN, HubShell.View.REGION,
+			HubShell.View.CAR, HubShell.View.SUMMARY, HubShell.View.SHOP,
 			HubShell.View.SKILLS, HubShell.View.STATS, HubShell.View.CHALLENGE,
 			HubShell.View.SETTINGS, HubShell.View.FREEPLAY_CAR,
 			HubShell.View.FREEPLAY_REGION, HubShell.View.FREEPLAY_SETUP]:
@@ -323,7 +325,8 @@ func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> voi
 		var box := (_page().panel().get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
 		assert_almost_eq(box.bg_color.a, 0.0, 0.01, "view %d's body must be transparent" % view)
 
-	for view in [HubShell.View.STATS, HubShell.View.CHALLENGE, HubShell.View.SETTINGS]:
+	for view in [HubShell.View.TITLE, HubShell.View.STATS, HubShell.View.CHALLENGE,
+			HubShell.View.SETTINGS]:
 		_shell._show(view)
 		await get_tree().process_frame
 		var box := (_page().panel().get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
@@ -447,9 +450,15 @@ func test_showing_a_page_frees_the_previous_one() -> void:
 
 # --- The screen graph ---------------------------------------------------------
 
-func test_the_shell_opens_on_the_main_page_with_no_result_parked() -> void:
+func test_the_shell_opens_on_the_title_page_with_no_result_parked() -> void:
+	assert_eq(_shell._view, HubShell.View.TITLE,
+		"a fresh boot lands on the title splash")
+
+
+func test_starting_from_the_title_page_reaches_the_main_page() -> void:
+	assert_true(_press("Start"), "the title page offers a way in")
 	assert_eq(_shell._view, HubShell.View.MAIN,
-		"a fresh boot lands on the main page")
+		"Start moves from the title splash into the main page")
 
 
 # The run's outcome has to survive the scene change back here, or the player is dropped at

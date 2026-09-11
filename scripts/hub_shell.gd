@@ -45,7 +45,7 @@ extends Control
 # pages. STATS is pure read-out (LifetimeStats.IDS, one row each) — CLAUDE.md's menu-nav
 # trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
 # its Back action is the page's ONE focusable control; see _build_stats().
-enum View { MAIN, REGION, CAR, SUMMARY, SHOP, SKILLS, STATS, CHALLENGE, SETTINGS,
+enum View { TITLE, MAIN, REGION, CAR, SUMMARY, SHOP, SKILLS, STATS, CHALLENGE, SETTINGS,
 	FREEPLAY_CAR, FREEPLAY_REGION, FREEPLAY_SETUP }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
@@ -98,17 +98,21 @@ func _ready() -> void:
 		_showcase = load("res://menu_showcase.tscn").instantiate()
 		add_child(_showcase)
 	# A run that ended hands control back here (world.gd -> Scenes.hub_path()). Show its
-	# summary rather than the main menu, or the player is dropped at a title screen with no
-	# idea whether they cleared the region — the run's outcome is the whole point of it.
+	# summary directly rather than the TITLE splash, or the player has to tap through a
+	# logo screen with no idea whether they cleared the region — the run's outcome is the
+	# whole point of it. A cold boot has no result to show, so it gets the splash and taps
+	# through Start into MAIN itself (_enter_game).
 	if not RunSession.last_result().is_empty():
 		_show(View.SUMMARY)
+		# The "a newer native build is out" check (features/update-check.md) — re-homed
+		# here from the deleted diegetic hub's title shot. Not awaited: the hub must be
+		# interactive while the GET is in flight, and every failure inside is a silent
+		# no-op by design. On a cold boot this runs from _enter_game instead, once the
+		# player actually reaches MAIN — it is MAIN-only (see _check_for_update), and
+		# firing it while the player is still looking at TITLE would race Start.
+		_check_for_update()
 	else:
-		_show(View.MAIN)
-	# The "a newer native build is out" check (features/update-check.md) — re-homed
-	# here from the deleted diegetic hub's title shot. Not awaited: the hub must be
-	# interactive while the GET is in flight, and every failure inside is a silent
-	# no-op by design.
-	_check_for_update()
+		_show(View.TITLE)
 	# THE BOOT PULL LANDS AFTER THIS PAGE IS BUILT. A signed-in player's cloud profile
 	# is downloaded asynchronously just after boot (Cloud._kick_off_initial_pull), so a
 	# run paused on another device — or on this one, before a re-install — only enters
@@ -161,6 +165,9 @@ func _on_profile_replaced() -> void:
 # a "TAPPA" title there said nothing the page's own content didn't.
 func _title_for(view: int) -> String:
 	match view:
+		# TITLE builds its own big logo label straight into the body (see _build_title) —
+		# a MenuPage "title" opt renders at TITLE_FONT_SIZE, half the 72px the splash wants.
+		View.TITLE: return ""
 		View.REGION: return "Pick a region"
 		View.CAR: return "Pick a car"
 		View.SUMMARY:
@@ -227,6 +234,7 @@ func _show(view: int) -> void:
 		page_opts["padding"] = CardUI.CAROUSEL_PAGE_PADDING
 	_page = MenuPage.open_modal(self, page_opts)
 	match view:
+		View.TITLE: _build_title()
 		View.MAIN: _build_main()
 		View.REGION: _build_region()
 		View.CAR: _build_car()
@@ -310,6 +318,38 @@ func _page_margin_for(view: int) -> float:
 func _is_carousel_view(view: int) -> bool:
 	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.SKILLS,
 		View.FREEPLAY_CAR, View.FREEPLAY_REGION, View.FREEPLAY_SETUP]
+
+
+# --- TITLE ---------------------------------------------------------------------
+
+# The game's cold-boot splash: TAPPA large in the middle of the screen, Start/Quit at
+# the bottom. Skipped on a run-end return to the hub (see _ready) — it is the app's
+# front door, not something inserted between every screen and the one before it.
+func _build_title() -> void:
+	var logo := UITheme.label("TAPPA")
+	logo.add_theme_font_size_override("font_size", UITheme.px(72))
+	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_page.body().add_child(logo)
+
+	# Leaving (Quit) is leftmost, proceeding (Start) is rightmost — features/menus.md
+	# "Button order". Quit is omitted where it would do nothing (see _quit_applicable).
+	if _quit_applicable():
+		_action("Quit", func() -> void: get_tree().quit())
+	_action("Start", _enter_game)
+
+
+# A browser tab can't meaningfully close itself from a script, so a Quit button there
+# would just sit dead on screen — the same reasoning Platform.is_web() gates elsewhere
+# (see fps_setting.gd, web_fullscreen.gd).
+func _quit_applicable() -> bool:
+	return not Platform.is_web()
+
+
+# TITLE's Start button. The only path off TITLE, so it always lands on MAIN — a
+# finished run never reaches TITLE in the first place (see _ready).
+func _enter_game() -> void:
+	_show(View.MAIN)
+	_check_for_update()
 
 
 # --- MAIN --------------------------------------------------------------------
