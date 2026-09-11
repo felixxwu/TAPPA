@@ -316,15 +316,30 @@ func _pool_engine_swap_ids() -> Array:
 
 # The WHOLE pick pool, resolved: every id `_mode.boost_pool_ids` currently offers
 # (the full BoostLibrary catalogue plus whatever drivetrain/engine-swap pseudo-ids are
-# available right now), mapped through BoostLibrary.resolve_id and stamped with the
-# engine swap's hp/hp_delta display fields — the ONE place both pick-building call
-# sites (report_event_result, resume) build `_pending_pick`, so they can never disagree
-# on what an id resolves to.
+# available right now), minus any id this run has ALREADY picked that wouldn't do
+# anything more the second time (BoostLibrary.stacks — "Quick-shift gearbox" or a
+# turbo/supercharger a second time is a dead roll, not a stronger one; "Sticky tyres" or
+# "Aero kit" a second time genuinely grips/downforces harder, so those stay in the
+# pool). Mapped through BoostLibrary.resolve_id and stamped with the engine swap's
+# hp/hp_delta display fields — the ONE place both pick-building call sites
+# (report_event_result, resume) build `_pending_pick`, so they can never disagree on
+# what an id resolves to.
+#
+# Drivetrain/engine-swap pseudo-ids need no filtering here: their own availability
+# check (_pool_drivetrain_ids/_pool_engine_swap_ids) already drops them from `ids` once
+# a repeat would be redundant (already AWD; already running the next engine up), so
+# `stacks()` is never even asked about them.
 func _resolve_pick_pool() -> Array:
 	var ids := _mode.boost_pool_ids(_stage_index, _pool_drivetrain_ids() + _pool_engine_swap_ids())
+	var already_picked := {}
+	for b in _boosts:
+		already_picked[String((b as Dictionary).get("id", ""))] = true
 	var out: Array = []
 	for id in ids:
-		out.append(BoostLibrary.resolve_id(String(id)))
+		var id_str := String(id)
+		if already_picked.has(id_str) and not BoostLibrary.stacks(id_str):
+			continue
+		out.append(BoostLibrary.resolve_id(id_str))
 	return _with_engine_swap_display(out)
 
 

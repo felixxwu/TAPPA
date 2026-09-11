@@ -473,3 +473,34 @@ func test_resolve_id_resolves_an_engine_swap_pseudo_id() -> void:
 
 func test_resolve_id_is_empty_for_an_unknown_id() -> void:
 	assert_eq(BoostLibrary.resolve_id("not_a_real_boost"), {})
+
+
+# --- stacks() — the mid-run repeat guard's seam -----------------------------------
+
+# A "set" or "install_induction" entry overwrites the same value on every pick, so a
+# second pick of it does nothing more than the first.
+func test_stacks_is_false_for_a_set_or_induction_entry() -> void:
+	for id in BoostLibrary.CATALOGUE:
+		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
+		var has_non_stacking_op := false
+		for effect_key in (entry["effect_fields"] as Dictionary):
+			var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
+			if op == "set" or op == "install_induction":
+				has_non_stacking_op = true
+		if has_non_stacking_op:
+			assert_false(BoostLibrary.stacks(id), "'%s' does not stack" % id)
+
+
+# A "mult" or "add" entry compounds with itself across repeats.
+func test_stacks_is_true_for_a_mult_or_add_entry() -> void:
+	var found := false
+	for id in BoostLibrary.CATALOGUE:
+		if not _is_pure_mult(id):
+			continue
+		assert_true(BoostLibrary.stacks(id), "'%s' stacks" % id)
+		found = true
+	assert_true(found, "the catalogue still has a mult entry for this to cover")
+
+
+func test_stacks_defaults_true_for_an_unknown_id() -> void:
+	assert_true(BoostLibrary.stacks("not_a_real_boost"))

@@ -305,6 +305,32 @@ static func resolve_id(id: String) -> Dictionary:
 	return boost_for(id)
 
 
+# Whether a SECOND pick of `id` in the same run would do anything MORE than the first —
+# false for an entry whose op OVERWRITES the same value every time it's applied ("set",
+# "install_induction": a repeat pick lands on the identical number, a dead roll rather
+# than a stronger one) as opposed to one that COMPOUNDS ("mult"/"add" — two "Sticky
+# tyres" picks really do grip harder than one, since apply() walks the whole `boosts`
+# list and multiplies/adds each entry in turn onto the same freshly-reseeded baseline).
+# Read off UpgradeLibrary.EFFECTS rather than hardcoded here, so a retyped or newly added
+# op is classified correctly with no catalogue edit — same "derive, don't duplicate"
+# convention as category_of. `true` (assume it stacks) for an unknown id: callers only
+# consult this for an id already known to be in the catalogue, and stacking is the safe
+# default (it just means "don't bother filtering this one").
+#
+# Drivetrain/engine-swap pseudo-ids are NOT handled here — they never reach this
+# function, because their own availability check already drops them from the pool once
+# a repeat would be redundant (RunSession._pool_drivetrain_ids/_pool_engine_swap_ids).
+static func stacks(id: String) -> bool:
+	var entry: Dictionary = CATALOGUE.get(id, {})
+	if entry.is_empty():
+		return true
+	for effect_key in (entry.get("effect_fields", {}) as Dictionary):
+		var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
+		if op == "set" or op == "install_induction":
+			return false
+	return true
+
+
 # Display text for a pick row. `id` for an unknown entry, so a stale/miskeyed id is
 # visible rather than blank.
 static func label_for(id: String) -> String:

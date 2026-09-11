@@ -530,6 +530,41 @@ func test_choosing_a_boost_records_it_on_the_run_and_takes_no_repair() -> void:
 	assert_true(picked_ids.has(id), "the chosen boost is recorded on the run")
 
 
+# A non-stacking pick ("gearbox" — an absolute shift time, a dead repeat) drops out of
+# the NEXT pool once taken; a stacking pick ("grip" — a multiplier that compounds)
+# stays offered, since a second one genuinely does more.
+func test_a_non_stacking_boost_is_not_offered_again_after_being_picked() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_boost("gearbox")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	var ids: Array = []
+	for entry in RunSession.pending_pick():
+		ids.append(String((entry as Dictionary).get("id", "")))
+	assert_false(ids.has("gearbox"), "a repeat of a non-stacking boost is a dead roll, so it's excluded")
+
+
+func test_a_stacking_boost_is_still_offered_after_being_picked() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_boost("grip")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	var ids: Array = []
+	for entry in RunSession.pending_pick():
+		ids.append(String((entry as Dictionary).get("id", "")))
+	assert_true(ids.has("grip"), "a stacking boost genuinely does more the second time, so it stays offered")
+
+
 func test_a_boost_pick_never_reaches_the_persisted_car() -> void:
 	var car := _start()
 	var iid := int(car["instance_id"])

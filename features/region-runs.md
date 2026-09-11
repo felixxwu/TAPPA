@@ -387,6 +387,18 @@ Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
 above) — `BoostLibrary.effect_for` re-reads them live, never bakes a value in, and no
 test may pin the shipped numbers (CLAUDE.md).
 
+**A non-stacking id already picked this run is excluded from later pools.**
+`RunSession._resolve_pick_pool()` drops any id already in `_boosts` for which
+`BoostLibrary.stacks(id)` is false — an entry whose EFFECTS row `op` is `"set"` or
+`"install_induction"` overwrites the exact same value every time it's applied, so a
+repeat is a dead roll, not a stronger one (`"gearbox"`, `"turbo"`, `"supercharger"`).
+A `"mult"`/`"add"` entry (`"grip"`, `"lightweight"`, `"aero"`, `"brakes"`,
+`"streamline"`) genuinely compounds — `apply()` walks the whole `boosts` list onto the
+same freshly-reseeded baseline every stage — so those stay in the pool and can be
+picked repeatedly. Drivetrain/engine-swap pseudo-ids need no such filtering: their own
+availability check already drops them once a repeat would be redundant (already AWD;
+already running the next engine up).
+
 **There is no draw or seed any more.** `RunMode.boost_pool_ids(stage_index, extra_ids)`
 returns the WHOLE pool — `BoostLibrary.CATALOGUE.keys() + extra_ids` (the AWD
 conversion pseudo-id and/or the engine-swap pseudo-id) — with nothing narrowed and
