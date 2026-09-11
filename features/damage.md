@@ -414,9 +414,19 @@ freebie this used to be (decision 8: repair has to compete, or it is not a decis
 
 **The repair is a CHOICE, and applying it is deferred until it is made.**
 `RunSession.report_event_result` draws the pick; nothing is applied until
-`choose_repair()` calls `Save.apply_field_repair_to(_car_instance_id)` and stashes its
-summary in `_pending_repair`, read once via `take_pending_repair()` on the next stage's
-boot. Choosing a boost instead means the car simply stays as damaged as it finished.
+`choose_repair()` calls `Save.apply_full_field_repair_to(_car_instance_id)` and stashes
+its summary in `_pending_repair`, read once via `take_pending_repair()` on the next
+stage's boot. Choosing a boost instead means the car simply stays as damaged as it
+finished.
+
+**Choosing repair is a FULL repair, not the fractional automatic patch-up.**
+`apply_full_field_repair_to` calls `field_repair` with fractions of `1.0`/`1.0` —
+100% of the HP lost so far and every wheel fully straightened — because the player
+gave up a boost specifically to fix the car. This is distinct from
+`apply_field_repair_to` (the `field_repair_hp_fraction`/`field_repair_toe_fraction`
+partial patch-up every OTHER stage transition applies automatically — the final-stage
+silent repair and the challenge mode's automatic repair, which never offer the
+repair-vs-upgrade choice at all).
 
 `field_repair` returns `{repaired, hp_before, hp_after, max_hp, hp_gained}`. It reports
 `repaired: false` — and writes nothing — for a pristine car (full HP, straight wheels), the
