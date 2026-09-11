@@ -360,14 +360,30 @@ jobs:
           path: build/android-play/rally.aab
           if-no-files-found: error
 
-      - name: Upload to Google Play
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: ${{ env.PACKAGE_NAME }}
-          releaseFiles: build/android-play/rally.aab
-          tracks: ${{ env.TRACK }}
-          status: completed
+      - name: Upload to Google Play (via fastlane supply)
+        # Switched from r0adkll/upload-google-play@v1 (2026-09-11): that action
+        # wraps the googleapis JS client, which opens a Play "Edit" session and
+        # then performs the .aab upload as a separate call — on a slow upload
+        # the Edit's short server-side TTL lapses mid-upload with
+        # "This edit has expired, please create a new Edit.", and the action
+        # has no retry. Hit twice in a row (runs #648, #651), both failing
+        # ~39s into the upload with the build itself having already succeeded.
+        # fastlane's `supply` is the actively-maintained tool teams migrate to
+        # for exactly this failure mode.
+        env:
+          SUPPLY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          gem install fastlane -NV
+          fastlane supply \
+            --package_name "${PACKAGE_NAME}" \
+            --aab build/android-play/rally.aab \
+            --track "${TRACK}" \
+            --release_status completed \
+            --skip_upload_apk true \
+            --skip_upload_metadata true \
+            --skip_upload_images true \
+            --skip_upload_screenshots true
 
   deploy-pages:
     name: Deploy /docs to GitHub Pages

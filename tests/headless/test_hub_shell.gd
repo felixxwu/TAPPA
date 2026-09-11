@@ -127,6 +127,11 @@ func _touch_tap_selected_card(carousel: CardCarousel) -> void:
 	release.pressed = false
 	release.position = pos
 	carousel._on_card_gui_input(release, index)
+	# A real confirm now plays a flash before `confirmed` fires (card_carousel.gd
+	# _confirm_selected) — this helper is testing the MENU WALK the tap leads to, not the
+	# flash itself (that's card_carousel.gd's own confirm-flash tests), so skip straight to
+	# the end of it.
+	carousel.skip_confirm_flash()
 
 
 # A real drag gesture starting on the carousel's own BACKGROUND (not any specific card —
@@ -317,15 +322,16 @@ func test_every_page_is_keyboard_navigable() -> void:
 # panel resting over the world, not a wall of pure black either way, but a carousel page
 # specifically must let the world show in its own empty space, not just around its edges).
 func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> void:
-	for view in [HubShell.View.MAIN, HubShell.View.REGION, HubShell.View.CAR,
-			HubShell.View.SHOP, HubShell.View.SKILLS, HubShell.View.FREEPLAY_CAR,
-			HubShell.View.FREEPLAY_REGION, HubShell.View.FREEPLAY_SETUP]:
+	for view in [HubShell.View.TITLE, HubShell.View.MAIN, HubShell.View.REGION,
+			HubShell.View.CAR, HubShell.View.SHOP, HubShell.View.SKILLS,
+			HubShell.View.FREEPLAY_CAR, HubShell.View.FREEPLAY_REGION,
+			HubShell.View.FREEPLAY_SETUP]:
 		_shell._show(view)
 		await get_tree().process_frame
 		var box := (_page().panel().get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
 		assert_almost_eq(box.bg_color.a, 0.0, 0.01, "view %d's body must be transparent" % view)
 
-	for view in [HubShell.View.TITLE, HubShell.View.STATS, HubShell.View.CHALLENGE,
+	for view in [HubShell.View.STATS, HubShell.View.CHALLENGE,
 			HubShell.View.SETTINGS]:
 		_shell._show(view)
 		await get_tree().process_frame

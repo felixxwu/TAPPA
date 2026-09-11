@@ -14,7 +14,7 @@ const SHOT_DWELL := 6.0
 # reads as a slow crane move rather than a locked-off photograph. Small relative to
 # the distances shots are framed at.
 const DRIFT_RADIUS_M := 1.2
-const DRIFT_SPEED := 0.15  # rad/s
+const DRIFT_SPEED := 0.5  # rad/s
 
 # Each entry: {"pos": Vector3, "look_at": Vector3}, authored by the caller.
 var _shots: Array = []
