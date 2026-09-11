@@ -155,8 +155,8 @@ func _init(opts: Dictionary = {}) -> void:
 	_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER  # hug the content's height
 	_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_panel.add_theme_stylebox_override("panel", UITheme.panel_box(
-		float(opts.get("alpha", 1.0)), int(opts.get("padding", UITheme.PANEL_PAD))))
+	_panel.add_theme_stylebox_override("panel", UITheme.shadowed(UITheme.panel_box(
+		float(opts.get("alpha", 1.0)), int(opts.get("padding", UITheme.PANEL_PAD)))))
 	# A row that wants more width than the box must never spill past the background into
 	# the 3D scene behind it. Content is also wrapped where it can be (the HFlowContainer
 	# tile grid in upgrades_grid.gd), so this is a safety net, not the mechanism.

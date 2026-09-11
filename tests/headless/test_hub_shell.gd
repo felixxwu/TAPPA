@@ -320,13 +320,13 @@ func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> voi
 			HubShell.View.FREEPLAY_REGION, HubShell.View.FREEPLAY_SETUP]:
 		_shell._show(view)
 		await get_tree().process_frame
-		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
+		var box := (_page().panel().get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
 		assert_almost_eq(box.bg_color.a, 0.0, 0.01, "view %d's body must be transparent" % view)
 
 	for view in [HubShell.View.STATS, HubShell.View.CHALLENGE, HubShell.View.SETTINGS]:
 		_shell._show(view)
 		await get_tree().process_frame
-		var box := _page().panel().get_theme_stylebox("panel") as StyleBoxFlat
+		var box := (_page().panel().get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
 		assert_almost_eq(box.bg_color.a, 1.0, 0.01, "view %d's body must stay opaque" % view)
 
 
