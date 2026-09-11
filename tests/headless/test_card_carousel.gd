@@ -240,9 +240,7 @@ func test_drag_release_snaps_back_when_short_of_the_next_card() -> void:
 func test_snap_travels_through_intermediate_positions_before_landing() -> void:
 	_carousel.select(0, false)
 	await get_tree().process_frame
-	# The GROUP carries the card's slot position now (root sits fixed at the group's
-	# local origin — see the Card class comment), so that's what travels during a snap.
-	var card1: CanvasGroup = _carousel._cards[1].group
+	var card1: Control = _carousel._cards[1].root
 	var start_x := card1.position.x
 
 	_carousel.select(1, true)
@@ -287,9 +285,7 @@ func test_unselected_cards_are_dimmed_and_selected_is_opaque() -> void:
 	_carousel.select(1, false)
 	for i in _carousel.card_count():
 		var expected := 1.0 if i == 1 else Config.data.card_carousel_unselected_alpha
-		# The dimming lives on the GROUP (root + shadow composited first, then the whole
-		# thing dimmed) — see the Card class comment for why.
-		assert_almost_eq(_carousel._cards[i].group.modulate.a, expected, 0.001)
+		assert_almost_eq(_carousel._cards[i].root.modulate.a, expected, 0.001)
 
 
 # Regression: card.root is an absolute-positioned child of a plain (non-layout) Control,
@@ -353,43 +349,55 @@ func test_content_added_to_visual_or_info_never_captures_its_own_input() -> void
 
 
 # Every card casts a SHARP drop shadow down-right, so the cards read as objects sitting
-# above the page rather than flat rectangles. root and shadow sit inside a shared
-# CanvasGroup at fixed LOCAL offsets (shadow offset by UITheme.card_shadow_offset() on
-# both axes from root, which stays at the group's local origin) — a sibling of root
-# rather than a child of it, since root's own panel is opaque black and clips its
-# contents, so a shadow drawn inside it could never be seen.
+# above the page rather than flat rectangles. Only the L-shaped SLIVER that actually
+# pokes out from under the opaque card is drawn, split into two non-overlapping strips
+# (shadow_right, shadow_bottom) — siblings of root, not children of it, since root's own
+# panel is opaque black and clips its contents, so a shadow drawn inside it could never
+# be seen.
 func test_each_card_casts_an_offset_shadow_behind_it() -> void:
 	var off := UITheme.card_shadow_offset()
 	assert_gt(off, 0.0, "a zero offset would hide the shadow entirely behind the card")
 	for i in _carousel.card_count():
 		var card := _carousel.get_card(i)
-		assert_not_null(card.group, "card %d has no group" % i)
-		assert_not_null(card.shadow, "card %d has no shadow" % i)
-		assert_eq(card.root.get_parent(), card.group, "card %d's root must live in its group" % i)
-		assert_eq(card.shadow.get_parent(), card.group, "card %d's shadow must live in its group" % i)
-		assert_almost_eq(card.root.position, Vector2.ZERO, Vector2(0.01, 0.01),
-			"card %d's root sits at its group's local origin" % i)
-		assert_almost_eq(card.shadow.position, Vector2(off, off), Vector2(0.01, 0.01),
-			"card %d's shadow is not offset down-right of the card" % i)
-		assert_almost_eq(card.shadow.size, card.root.size, Vector2(0.01, 0.01),
-			"card %d's shadow must match the card's own rect" % i)
-		assert_lt(card.shadow.get_index(), card.root.get_index(),
-			"card %d's shadow must be drawn BEHIND the card, not over it" % i)
-		assert_eq(card.shadow.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+		assert_not_null(card.shadow_right, "card %d has no right shadow strip" % i)
+		assert_not_null(card.shadow_bottom, "card %d has no bottom shadow strip" % i)
+		var pos: Vector2 = card.root.position
+		var sz: Vector2 = card.root.size
+		assert_almost_eq(card.shadow_right.position, pos + Vector2(sz.x, off),
+			Vector2(0.01, 0.01), "card %d's right shadow strip sits right of the card" % i)
+		assert_almost_eq(card.shadow_right.size, Vector2(off, sz.y), Vector2(0.01, 0.01),
+			"card %d's right shadow strip spans the card's full height" % i)
+		assert_almost_eq(card.shadow_bottom.position, pos + Vector2(off, sz.y),
+			Vector2(0.01, 0.01), "card %d's bottom shadow strip sits below the card" % i)
+		assert_almost_eq(card.shadow_bottom.size, Vector2(sz.x - off, off), Vector2(0.01, 0.01),
+			"card %d's bottom shadow strip spans the card's width minus the offset" % i)
+		assert_lt(card.shadow_right.get_index(), card.root.get_index(),
+			"card %d's right shadow strip must be drawn BEHIND the card, not over it" % i)
+		assert_lt(card.shadow_bottom.get_index(), card.root.get_index(),
+			"card %d's bottom shadow strip must be drawn BEHIND the card, not over it" % i)
+		assert_eq(card.shadow_right.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+			"a shadow must never swallow a tap meant for a card")
+		assert_eq(card.shadow_bottom.mouse_filter, Control.MOUSE_FILTER_IGNORE,
 			"a shadow must never swallow a tap meant for a card")
 
 
-# Regression: dimming root and shadow INDEPENDENTLY (rather than compositing them first
-# via the shared CanvasGroup) alpha-blended each of them against the background on its
-# own — root's opaque fill covers all but a thin sliver of shadow beneath it, so that
-# covered region got a SECOND translucent black layer stacked under the already-
-# translucent card, reading visibly darker than the sliver where only the shadow shows.
-# root and shadow must therefore stay at full alpha themselves; only the group dims.
-func test_root_and_shadow_stay_opaque_so_only_the_group_dims() -> void:
+# Regression: a single FULL offset shadow rect sitting behind an unselected (translucent)
+# card double-blended — the opaque card normally hides all but the true sliver, but once
+# the card itself turns translucent the ~95% it used to hide shows through TOO, stacking
+# a second translucent layer under the already-translucent card and reading visibly
+# darker than the sliver at the true edge. Splitting the shadow into the two
+# NON-OVERLAPPING strips that never sit under the card removes the seam entirely, so
+# root and both strips can each be dimmed by the exact same alpha with no artifact — a
+# CanvasGroup that composited them first and dimmed once (the earlier fix for this same
+# bug) was reverted: it isn't supported under the GL Compatibility renderer this project
+# ships with, and rendered as one shadow spanning the whole carousel container instead of
+# sitting behind its own card.
+func test_shadow_strips_dim_with_their_card() -> void:
 	_carousel.select(1, false)
 	for i in _carousel.card_count():
 		var card := _carousel.get_card(i)
-		assert_almost_eq(card.root.modulate.a, 1.0, 0.001,
-			"card %d's root must not carry its own dimming" % i)
-		assert_almost_eq(card.shadow.modulate.a, 1.0, 0.001,
-			"card %d's shadow must not carry its own dimming" % i)
+		var expected := 1.0 if i == 1 else Config.data.card_carousel_unselected_alpha
+		assert_almost_eq(card.shadow_right.modulate.a, expected, 0.001,
+			"card %d's right shadow strip must dim with the card" % i)
+		assert_almost_eq(card.shadow_bottom.modulate.a, expected, 0.001,
+			"card %d's bottom shadow strip must dim with the card" % i)

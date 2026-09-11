@@ -156,14 +156,29 @@ equivalent of `box-shadow: 5px 5px 0 rgba(0,0,0,0.2)`. Without it a black card o
 3D background read flat; the offset quad gives it a sense of sitting *above* the page,
 in keeping with the PS1-era, no-soft-edges look (blurred shadows would fight it).
 
-Mechanically the shadow is **a sibling `Panel`, added immediately BEFORE its card's
-`root`** (siblings paint in tree order, so it lands underneath), stored on the `Card`
-handle as `card.shadow`. It cannot be a child of the card: `card.root` paints an opaque
-black fill and sets `clip_contents`, so anything inside it is both covered and clipped.
-`shadow`'s LOCAL position is fixed at creation to `UITheme.card_shadow_offset()` on both
-axes; `_layout` only ever updates its `size` to track the card's actual rect
+Mechanically the shadow is drawn as **only the L-shaped SLIVER that actually pokes out
+from under the opaque card** — split into two non-overlapping `Panel` strips,
+`card.shadow_right` (full card height, to the right) and `card.shadow_bottom` (card
+width minus the offset, below) — rather than one full offset square. Both are added to
+`_strip` immediately BEFORE the card's `root` (siblings paint in tree order, so they
+land underneath) and are `MOUSE_FILTER_IGNORE`, so neither ever swallows a tap meant for
+a card. Neither can be a child of the card: `card.root` paints an opaque black fill and
+sets `clip_contents`, so anything inside it is both covered and clipped. `_layout`
+recomputes both strips' position AND size every pass from the card's actual rect
 (`card.root.size`, not the nominal `_card_height()` — a card whose content grew is still
-fully shadowed). It is `MOUSE_FILTER_IGNORE`, so it never swallows a tap meant for a card.
+fully shadowed):
+
+```
+shadow_right.position  = card.position + Vector2(card.size.x, off)
+shadow_right.size      = Vector2(off, card.size.y)
+shadow_bottom.position = card.position + Vector2(off, card.size.y)
+shadow_bottom.size     = Vector2(card.size.x - off, off)
+```
+
+where `off == UITheme.card_shadow_offset()`. These two rects are exactly the full offset
+square (`card.position + Vector2(off, off)`, size `card.size`) MINUS its intersection
+with the card's own rect — i.e. the part a full square would have drawn but the opaque
+card would have hidden anyway.
 
 **Not `StyleBoxFlat`'s own `shadow_*` properties.** That shadow rect is the box *expanded
 by `shadow_size` on all sides* and then offset: `shadow_size = 0` draws nothing at all,
@@ -174,25 +189,33 @@ zero-blur offset is unreachable through it. The fill and offset live in
 [ui-design-system.md](ui-design-system.md) → *Card drop shadow* for the theme-wide sibling
 mechanism (`UIHardShadowBox`) every ordinary Button/Panel in the game wears instead.
 
-## A shared CanvasGroup, not independent alpha
+## Why two non-overlapping strips, not one square dimmed as a group
 
-`card.root` and `card.shadow` sit inside a THIRD node, `card.group` (a `CanvasGroup`) —
-they are not direct children of `_strip` any more. `_layout` positions and dims `group`,
-never `root`/`shadow` directly, which always stay at `modulate.a = 1.0`.
+Two things were tried and discarded before landing on the sliver-strips shape above:
 
-This exists because dimming root and shadow INDEPENDENTLY — the original approach — read
-wrong on an unselected (translucent) card: root's opaque black fill covers all but a thin
-sliver of shadow beneath it (the shadow pokes out only by `card_shadow_offset()` at the
-bottom-right edge), so once root itself turned translucent, that whole covered region
-showed TWO stacked layers of partial black — root's own dimmed fill AND the shadow behind
-it bleeding through — reading visibly darker than the thin sliver where only the shadow
-shows alone. A `CanvasGroup` composites its children into one buffer BEFORE that buffer is
-blended against the background, so with root and shadow left at full internal alpha, the
-opaque card still fully hides the shadow within the overlap inside that buffer — exactly
-as it does when fully selected — and only THEN does the group's own `modulate.a` dim the
-whole pre-composited result once, uniformly. `card.group.position` is what carries the
-card's slot coordinate now; `card.root`/`card.shadow` never move again after creation
-(only `shadow.size` still updates, per above).
+1. **One full offset square, dimmed independently of the card.** This is what a naive
+   reading of "draw a shadow behind the card" produces, and it looks right SELECTED
+   (fully opaque) — the card's opaque black fill hides all of the square except the true
+   sliver at the bottom-right. But dimming an UNSELECTED (translucent) card this way reads
+   wrong: root's fill covers ~95% of the square, so once root itself turns translucent,
+   that whole covered region shows TWO stacked layers of partial black — root's own
+   dimmed fill AND the square shadow behind it bleeding through — reading visibly darker
+   than the thin sliver where only the shadow shows alone.
+2. **The same full square, wrapped with `card.root` inside a shared `CanvasGroup`,
+   dimming the group instead of root/shadow individually.** A `CanvasGroup` composites
+   its children into one buffer BEFORE that buffer is blended against the background, so
+   with root and shadow left at full internal alpha, the opaque card still fully hides
+   the shadow within the overlap inside that buffer, and only the group's own
+   `modulate.a` dims the pre-composited result once. This is the textbook fix for the
+   artifact in (1) — but `CanvasGroup` is **not supported under the GL Compatibility
+   renderer this project ships with** (`renderer/rendering_method="gl_compatibility"` in
+   `project.godot`), and rendered as one shadow spanning the ENTIRE carousel container
+   rather than sitting behind its own card.
+
+Splitting the shadow into the two strips that genuinely never overlap the card sidesteps
+the whole problem: there is no hidden region to reveal, so `root`, `shadow_right` and
+`shadow_bottom` can each be dimmed independently by the exact same alpha with no seam —
+no compositing node of any kind required, so nothing renderer-specific to trip over.
 
 ## Edge to edge, and never a clipped card
 
