@@ -154,6 +154,64 @@ func test_tapping_the_already_centred_card_confirms() -> void:
 	assert_eq(confirmed, [0], "tapping the centred card confirms it")
 
 
+# Regression: ONE tap delivered TWICE. With Godot's emulate_mouse_from_touch (on by
+# default), a single finger tap produces an InputEventScreenTouch pair AND a synthesised
+# InputEventMouseButton pair, and _on_card_gui_input handles both types — so the two
+# releases ran _tap_card twice on the same card. The first select()ed it, which made the
+# second one's "is this the centred card?" test true, so it CONFIRMED: tapping any
+# non-centred card fired its action instead of just scrolling it to the centre (reported
+# on the hub MAIN page as "tapping Shop jumps straight into the shop"). The whole gesture
+# must land exactly one tap, whatever mix of pointer events the platform emulates.
+func test_a_touch_tap_delivered_twice_by_mouse_emulation_taps_only_once() -> void:
+	var confirmed: Array = []
+	_carousel.confirmed.connect(func(i): confirmed.append(i))
+	_carousel.select(0, false)
+	await get_tree().process_frame
+
+	var card1: Control = _carousel._cards[1].root
+	var local := Vector2(10.0, 10.0)
+	var global_x: float = (card1.get_global_transform() * local).x
+
+	# The real event order for one finger tap: each touch event is immediately followed by
+	# its emulated mouse twin, so both presses precede both releases.
+	for pressed in [true, false]:
+		var touch := InputEventScreenTouch.new()
+		touch.pressed = pressed
+		touch.position = local
+		_carousel._on_card_gui_input(touch, 1)
+		var mouse := InputEventMouseButton.new()
+		mouse.button_index = MOUSE_BUTTON_LEFT
+		mouse.pressed = pressed
+		mouse.global_position = Vector2(global_x, 0.0)
+		mouse.position = local
+		_carousel._on_card_gui_input(mouse, 1)
+
+	assert_eq(_carousel.selected_index(), 1, "the tap moves the selection to card 1")
+	assert_true(confirmed.is_empty(),
+		"and must NOT confirm — the duplicate event is the same tap, not a second one")
+
+
+# ...but two GENUINE taps still confirm: the dedupe is per gesture (cleared on the next
+# press), not a one-tap-ever latch.
+func test_two_separate_taps_still_select_then_confirm() -> void:
+	var confirmed: Array = []
+	_carousel.confirmed.connect(func(i): confirmed.append(i))
+	_carousel.select(0, false)
+	await get_tree().process_frame
+
+	var card1: Control = _carousel._cards[1].root
+	var local := Vector2(10.0, 10.0)
+	for tap in 2:
+		for pressed in [true, false]:
+			var touch := InputEventScreenTouch.new()
+			touch.pressed = pressed
+			touch.position = local
+			_carousel._on_card_gui_input(touch, 1)
+
+	assert_eq(_carousel.selected_index(), 1)
+	assert_eq(confirmed, [1], "the second tap on the now-centred card confirms it")
+
+
 # Drag-and-release snaps to the NEAREST card rather than leaving the strip parked
 # between two of them.
 # Regression: a touch press was recorded LOCAL TO THE PRESSED CARD (_on_card_gui_input is
