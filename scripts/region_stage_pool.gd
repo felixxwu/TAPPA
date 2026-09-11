@@ -63,13 +63,14 @@ static func pool_size(region_id: String) -> int:
 # is reproducible.
 #
 # NO REPEATS while the pool lasts. Decision 32 sets the authored floor at 16 events
-# per region — two 8-stage runs with no repeats — and three regions are still under
-# it (`taiga` 15, `home_coast` 12, `greece_coast` 3); the authoring pass that fixes
-# that is stage 4's. Until then `greece_coast` cannot even fill ONE run, so the bag
-# REFILLS rather than the draw returning a short run: a repeated stage is a thin
-# region, an 8-stage run that is only 3 stages long is a broken one. The refill is a
-# stopgap for unauthored content, not a design — once every region clears 16 events
-# it can never fire.
+# per region — two 8-stage runs with no repeats — and some regions may still fall
+# short of it (`taiga` was 15 for a while); when a pool is thinner than `stage_count`
+# the bag REFILLS rather than the draw returning a short run: a repeated stage is a
+# thin region, an 8-stage run that is only 3 stages long is a broken one. The refill
+# is a stopgap for unauthored content, not a design — once every region clears 16
+# events it can never fire. (The formerly-thinnest region, `greece_coast`, was
+# removed entirely rather than authored up further — its rallies moved into
+# `greece` — see RegionLibrary.REGIONS.)
 static func draw(region_id: String, stage_count: int, run_seed: int) -> Array:
 	var pool := events_in(region_id)
 	if pool.is_empty() or stage_count <= 0:

@@ -37,7 +37,7 @@ literal you can keep; `map_pos` used to be the one whose rule was prose ("in you
 **A region that is a variant of another inherits, it does not clone.** Author
 `look_from` plus only the keys that differ — see
 [`look_from` — one-level look inheritance](#look_from--one-level-look-inheritance)
-below; `taiga` and `greece_coast` are the worked examples.
+below; `taiga` and `home_coast` are the worked examples.
 
 **Never invent an asset filename.** Every `res://` path a region authors (sky, grass,
 gravel, trees) must be a file that already exists in the repo — list `textures/` and
@@ -47,11 +47,23 @@ plausible, and a dangling path ships as an untextured world. Guarded by
 
 A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
 height — applied to whichever rallies are tagged with it. It is **not a corner
-of the map**, even though it started life that way. The game ships six:
-`home` (the original green forest/plain world), `home_coast` (that same look
-with the sea raised), `greece` (arid), `greece_coast` (arid, sea raised), `snow`
-(the alpine NE massif — see [snow-region.md](snow-region.md)) and `taiga` (the NW
-boreal corner: home's look with one much taller tree).
+of the map**, even though it started life that way. The game ships five, in
+their authored progression `order` (see *Progression* below): `home` ("Rally
+Country", the original green forest/plain world), `greece` ("The Peninsula",
+arid), `taiga` ("The Taiga", the NW boreal corner: home's look with one much
+taller tree), `home_coast` ("The Lakes", that same forest look with the sea
+raised — its `water_level` is set MUCH higher than every other region's, so
+the lakes read as unmistakably flooded) and `snow` ("The Alps", the alpine NE
+massif — see [snow-region.md](snow-region.md)).
+
+**`greece_coast` ("The Coast") was removed (2026-09).** It was the arid
+shoreline look — `look_from: "greece"` plus a raised `water_level` — worn by
+five rallies (`gc_island_gp`, `gc_harbour_run`, `gc_cliff_road`,
+`gc_olive_terraces`, `gc_lighthouse_climb`). Rather than deleting that content,
+every one of those rallies was retagged to `region: "greece"` and its events'
+per-event `water_level` repointed from the old coastal `-4.0` to greece's own
+baseline `-12.0` — see `scripts/rally_library.gd`. `home_coast` ("The Lakes")
+remains the game's one lake/coastal-water look.
 
 **A region is no longer look-only.** `snow` also carries HANDLING: per-surface grip
 overrides, a deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS`
@@ -106,11 +118,6 @@ baseline), and an optional `look_from` (see below). Ships today:
   with Greece's 30% of ordinary trees, both Alps conifers and the taiga spire,
   all of which are tuned against its current value; raising the profile would
   scale all four. See [trees.md](trees.md).
-- `home_coast` ("The Lakes") — the same forest look with the water raised: it
-  authors `look_from: "home"` (so it inherits home's `tree_mix` /
-  `spawn_bush_mesh` / everything else in `LOOK_KEYS`) plus its own, higher
-  `water_level` (`-5.0`). It authors no look keys of its own — the whole point
-  of this corner is "home, but wetter."
 - `greece` ("Greece", the arid look — the SW/S desert) — `sky_panorama`, `grass_texture`,
   `gravel_texture` (all `res://textures/*`), plus a Greek tree **split**:
   `tree_mix` = 70% `res://textures/tree-greece.webp` (the `region` sizing
@@ -128,10 +135,13 @@ baseline), and an optional `look_from` (see below). Ships today:
   mismatch on this arid ground). Terrain tints are still **not** overridden —
   Greece inherits the home tints. Its own `water_level` is `-12.0` (the same
   baseline as home — an unrelated corner, not "home but drier").
-- `greece_coast` ("The Coast") — the arid shoreline look, worn today by a single
-  rally on the SE sea:
-  `look_from: "greece"` plus its own, higher `water_level` (`-5.0`), the same
-  "same look, sea raised" pattern as `home_coast`.
+- `home_coast` ("The Lakes") — the same forest look with the water raised: it
+  authors `look_from: "home"` (so it inherits home's `tree_mix` /
+  `spawn_bush_mesh` / everything else in `LOOK_KEYS`) plus its own,
+  **much higher** `water_level` (`3.0`, against every other region's `-12.0`
+  baseline — clearly above ground level, not merely "a bit wetter"). It authors
+  no look keys of its own — the whole point of this corner is "home, but
+  flooded."
 - `snow` ("The Alps", the NE alpine massif) — `sky_panorama`, `grass_texture`
   (snow), `gravel_texture` (packed snow), a lightened `tarmac_color` (a dusting
   over asphalt, not a different material), a white `grass_particle_color` (the
@@ -219,7 +229,7 @@ for two different reasons:
   exists to theme). Folding it into `look_of`'s override-dict would put it a
   step too late in the pipeline. This is also why `look_from` inheritance
   explicitly does NOT extend to `water_level` (see below) — the whole point of
-  `home_coast` / `greece_coast` is "same look, own waterline."
+  `home_coast` is "same look, own (much higher) waterline."
 
 ### Region waterline (`water_level_of` / `has_water_level`)
 
@@ -239,11 +249,10 @@ API is split into two functions specifically so callers can't skip the check
 by accident.
 
 `look_from` inheritance (below) deliberately does **not** extend to
-`water_level` — `home_coast` and `greece_coast` each author their own
-`water_level` directly, rather than inheriting their parent's and needing a
-separate override to raise it. If `water_level` were folded into the
-inherited block, "same look, higher water" would need an override on top of
-an inherited default, for no benefit.
+`water_level` — `home_coast` authors its own `water_level` directly, rather
+than inheriting home's and needing a separate override to raise it. If
+`water_level` were folded into the inherited block, "same look, much higher
+water" would need an override on top of an inherited default, for no benefit.
 
 ### `look_from` — one-level look inheritance
 
@@ -256,10 +265,10 @@ on top — so the region's own keys win over anything it also inherited.
 Resolution is **exactly one level**: a parent's own `look_from` (if it had
 one) is not followed, so chains and cycles are structurally impossible.
 
-`home_coast` inherits `home`'s block; `greece_coast` inherits `greece`'s —
-each then adds only its own higher `water_level` (handled outside `look_of`,
-per above). `taiga` is the other pattern: `look_from: "home"` plus a single
-overridden `tree_mix`, i.e. "home with taller trees" in two authored keys
+`home_coast` inherits `home`'s block wholesale and adds only its own, much
+higher `water_level` (handled outside `look_of`, per above). `taiga` is the
+other pattern: `look_from: "home"` plus a single overridden `tree_mix`, i.e.
+"home with taller trees" in two authored keys
 instead of a duplicated block.
 
 `look_from` is itself deliberately **NOT** a `LOOK_KEYS` entry — if it were,
@@ -347,14 +356,15 @@ every re-fit slides pins across terrain zones and the geography under them has t
 re-read afterwards (the 2026-08 pass did exactly that: names, `region` tags and
 per-event terrain were all re-authored to match the pixels, while the save-key `id`s
 stayed put). A region tag says only "this stage wears this look at this waterline",
-and the tags follow the terrain, so the split today is **14 `home`, 8 `greece`,
-6 `snow`, 5 `taiga`, 4 `home_coast`, 1 `greece_coast`** — the five `taiga` rallies are
-the NW cluster, re-tagged out of `home` when that corner was split off (their `id`s
-still carry older prefixes, so read `region`, never the id); `greece_coast` is one rally on the SE sea, and
-the coastal looks are worn only by the handful of pins genuinely standing on water
-(the SE bay at a -4 waterline, the central rivers at -7). Nothing may assume a region
-owns a contiguous patch of map, holds a minimum number of rallies, or holds any at
-all.
+and the tags follow the terrain — the five `taiga` rallies are the NW cluster,
+re-tagged out of `home` when that corner was split off (their `id`s still carry
+older prefixes, so read `region`, never the id). **`greece_coast` was removed
+(2026-09)**: its five rallies were retagged to `region: "greece"` rather than
+deleted (see the note in "Ships today" above), so `greece`'s count grew and
+there is no longer a `greece_coast` count at all. The coastal look is worn only
+by `home_coast`'s rallies, the handful of pins genuinely standing on water.
+Nothing may assume a region owns a contiguous patch of map, holds a minimum
+number of rallies, or holds any at all.
 
 **The old per-region invariant is retired.** Before globally-gated special
 events, the rule was "at most one showdown per region, and exactly one wherever
@@ -362,8 +372,8 @@ a region holds rallies" (`RegionLibrary.showdown_of` picked that one rally out).
 Specials are now gated by the same geometric reveal rule as every other rally
 (`RallyLibrary.rally_revealed`), so they have no relationship to a region's
 contents: **a region may hold any number of specials, including none.** Today
-they are bunched — four sit in `home` and one in `greece`, with neither coastal
-region holding any — precisely because nothing in the code cares; it's map
+they are bunched — four sit in `home` and one in `greece`, with `home_coast`
+holding none — precisely because nothing in the code cares; it's map
 composition, not a gating rule. A region holding zero specials still resolves
 its look/waterline normally.
 
@@ -509,6 +519,9 @@ influenced how a stage drives rather than only how it looks. See
 
 ## Progression: linear region unlock
 
+The shipped `order`: `home` ("Rally Country", 0) → `greece` ("The Peninsula", 1)
+→ `taiga` ("The Taiga", 2) → `home_coast` ("The Lakes", 3) → `snow` ("The Alps", 4).
+
 - **Regions unlock in AUTHORED order.** Each `REGIONS` entry carries an `order` field;
   order 0 is always open and every other region is gated on the one before it appearing in
   `Save.KEY_REGIONS_CLEARED`. `RegionLibrary.order_of` / `ordered` / `is_unlocked` /
@@ -540,7 +553,11 @@ other job is the LOOK (`look_of` / `water_level_of` / `surface_grip_of` / `deep_
 (never the shipped Greek roster or textures): `region_for_rally`/`rallies_in`
 round-trip, `look_of`'s override-vs-omit and
 `look_from` inheritance behaviour, and `has_water_level`/`water_level_of`
-with synthetic values. The `region` tag on every rally is asserted in
+with synthetic values, plus one shipped-roster contract test —
+`test_lakes_region_has_a_higher_water_level_than_every_other_region` — that
+reads the REAL `RegionLibrary.REGIONS` and asserts the RELATIONSHIP `home_coast`
+("The Lakes") is designed around (its `water_level` strictly above every other
+region's), never pinning the actual numbers. The `region` tag on every rally is asserted in
 `tests/headless/test_rally_library.gd`. The linear unlock and its display (every region
 listed in authored order, a locked row shown with its gate and unfocusable) are covered in
 `tests/headless/test_hub_shell.gd`; the region-run draw that reads the tag is in

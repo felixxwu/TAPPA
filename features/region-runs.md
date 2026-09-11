@@ -123,17 +123,19 @@ Rules:
   and terrain amplitude *together*.) Escalation comes from the ordering and from the
   clock tightening — never from editing content.
 
-### Pool sizes, and the one that cannot fill a run
+### Pool sizes, and the region that used to be unable to fill a run
 
 Decision 32 sets the floor at **16 authored events per region** — two 8-stage runs
-with no repeats. Against that bar today: `home` 36, `greece` 24, `snow` 18 pass;
-`taiga` 15, `home_coast` 12 and `greece_coast` 3 do not. **Stage 4 owns that
-authoring pass**, and those regions are not really playable until it lands.
+with no repeats. `greece_coast` was, for a while, the region that fell far short of
+it (three events, one rally) — it was removed from the catalogue entirely (2026-09)
+rather than authored up to the floor, and its rallies were retagged into `greece`
+instead of being deleted (see `features/regions.md`). Every region left in the
+catalogue today clears the floor.
 
-Until then the draw **refills the bag** rather than returning a short run: a repeated
-stage is a thin region, an 8-stage run that is only 3 stages long is a broken one.
-`taiga` at 15 still fills a run without repeats — the 16 floor is about two runs, not
-one — so `greece_coast` is the only region the refill actually fires for.
+The draw still **refills the bag** rather than returning a short run whenever a
+region's pool is thinner than the run length: a repeated stage is a thin region, an
+8-stage run that is only 3 stages long is a broken one. That refill is a stopgap for
+unauthored content, not a design — see `RegionStagePool.draw`.
 
 ## The timer — the one fail state
 

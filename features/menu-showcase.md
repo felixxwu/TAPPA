@@ -294,7 +294,7 @@ equivalent of `RallyLibrary` authoring `"sandstorm"` only onto `region == "greec
 events and `"snow"` only onto `region == "snow"` ones
 (`test_menu_showcase_geometry.gd` mirrors `test_rally_library.gd`'s
 `test_sandstorm_is_eligible_only_in_the_desert_regions` shape for it): home/home_coast/taiga
-cycle dry/rain/fog/storm/night; greece/greece_coast cycle dry/sandstorm/night; snow
+cycle dry/rain/fog/storm/night; greece cycles dry/sandstorm/night; snow
 cycles dry/snow/night. Never rain in the snow segment, never snow outside it.
 
 **Split into two halves, for a reason found while implementing it:**
