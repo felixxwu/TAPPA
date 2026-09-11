@@ -112,7 +112,15 @@ static func px(authored: float) -> int:
 	return int(round(authored * UI_SCALE))
 
 
-const FONT_SIZE := int(16 * UI_SCALE + 0.5)
+# Jersey 10 doesn't ship hinted bitmap strikes, so its outline-to-pixel rounding
+# only lands clean at certain point sizes — off those sizes, stroke widths that
+# should match come out 1px apart and glyphs read as uneven/disfigured. 18px was
+# found to be the sweet spot by rendering the face across a size sweep
+# (tools/render_font_sizes.py) and eyeballing the result; the authored value
+# below is picked to land exactly on 18 at the current UI_SCALE. If UI_SCALE
+# ever changes (see below), re-run that sweep and re-pick BOTH numbers so the
+# rendered size still lands on a clean one — don't just let the scale drift it.
+const FONT_SIZE := int(13 * UI_SCALE + 0.5)
 
 # --- Rule 3: fixed, compact height for single-line menu buttons --------------
 const MENU_ROW_H := int(30 * UI_SCALE + 0.5)

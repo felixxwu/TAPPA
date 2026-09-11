@@ -24,7 +24,7 @@ func test_theme_uses_the_house_font() -> void:
 
 
 func test_primary_font_loads() -> void:
-	assert_not_null(UITheme.font(), "the UI font (Syne Mono) loads")
+	assert_not_null(UITheme.font(), "the UI font (Jersey 10) loads")
 
 
 func test_label_helper_applies_role_colour() -> void:
@@ -116,7 +116,7 @@ func test_panel_box_is_black_and_sharp_cornered() -> void:
 
 func test_px_scales_authored_sizes_consistently() -> void:
 	# The design constants and px() must agree — whatever UI_SCALE is tuned to.
-	assert_eq(UITheme.FONT_SIZE, UITheme.px(16), "FONT_SIZE is the scaled authored 16")
+	assert_eq(UITheme.FONT_SIZE, UITheme.px(13), "FONT_SIZE is the scaled authored 13")
 	assert_eq(UITheme.MENU_ROW_H, UITheme.px(30), "MENU_ROW_H is the scaled authored 30")
 	assert_eq(UITheme.px(0), 0, "px(0) stays 0")
 

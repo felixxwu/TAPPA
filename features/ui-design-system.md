@@ -320,6 +320,22 @@ one with defaults on first import — force a reimport after editing it by
 deleting the corresponding file under `.godot/imported/` and re-opening the
 project), then re-run the theme generator.
 
+### The rendered size matters, not just the face
+
+Jersey 10 ships no hinted bitmap strikes, so its outline-to-pixel rounding
+only lands clean at certain point sizes — off those sizes, stroke widths that
+should read as the same thickness come out 1px apart and glyphs look
+uneven/disfigured even with antialiasing correctly off. `tools/render_font_sizes.py`
+sweeps a size range with the same hard-threshold rendering the game actually
+uses, so the sizes can be eyeballed side by side rather than guessed; **18px**
+was picked this way. `UITheme.FONT_SIZE`'s authored constant is chosen so
+`authored * UI_SCALE` lands exactly on 18 at the CURRENT `UI_SCALE` — if
+`UI_SCALE` is ever retuned (e.g. `render_height` changes), re-run the sweep
+and re-pick both the authored constant and the target size, rather than
+letting the scale silently drift the rendered size off the sweet spot. This
+same caveat would apply to any future pixel-font swap: check its size sweep
+before assuming a "sharp" import alone is enough.
+
 
 ## Gauge captions — the one drop-shadow exception
 
