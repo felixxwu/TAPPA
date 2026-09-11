@@ -80,6 +80,37 @@ const CAROUSEL_PAGE_MARGIN := 8.0
 static func build_carousel(page: MenuPage) -> CardCarousel:
 	var carousel := CardCarousel.new()
 	page.body().add_child(carousel)
+	_refit_carousel(page, carousel)
+	# The fit above only accounts for the window size AT THE MOMENT the page opened — a
+	# player who resizes/maximizes the window (or rotates a device) while the page stays
+	# open kept whichever width that was, reported as "the card list doesn't extend to the
+	# edges of the screen, it clips at a certain width". Re-run the same fit on every later
+	# resize so the carousel keeps tracking the window instead of freezing at its first size.
+	var window := page.get_window()
+	if window != null:
+		# A LAMBDA, not `Callable(CardUI, "_refit_carousel").bind(page, carousel)` — bound
+		# Callables to the same static method compare equal for `is_connected`/duplicate-
+		# connect checks regardless of their bound arguments (every carousel page rebuild
+		# in hub_shell.gd's `_show` hit "Signal already connected" from the SECOND page
+		# opened onward, since all of them bind the same underlying method), while each
+		# lambda is its own distinct object.
+		var refit := func() -> void: _refit_carousel(page, carousel)
+		window.size_changed.connect(refit)
+		# Windows outlive any one page, so the connection must be torn down with the
+		# carousel it targets or it would silently pile up (and keep firing into a freed
+		# `page`/`carousel` pair) every time a carousel page opens and closes.
+		carousel.tree_exiting.connect(func() -> void:
+			if window.size_changed.is_connected(refit):
+				window.size_changed.disconnect(refit))
+	return carousel
+
+
+# Re-derive the carousel's width from the current window size and re-apply it — the body
+# of build_carousel's own initial fit, factored out so the size_changed hookup above can
+# reuse it verbatim.
+static func _refit_carousel(page: MenuPage, carousel: CardCarousel) -> void:
+	if not is_instance_valid(page) or not is_instance_valid(carousel):
+		return
 	# Claim the full logical frame width, minus the page's own margin/padding chrome —
 	# `fit_to_available_width` then rounds DOWN to a whole number of cards so a card is
 	# never chopped in half at the visible edge, and set_body_width feeds that width to
@@ -88,4 +119,3 @@ static func build_carousel(page: MenuPage) -> CardCarousel:
 	var chrome := CAROUSEL_PAGE_MARGIN * 2.0 + UITheme.PANEL_PAD * 2.0
 	carousel.fit_to_available_width(avail - chrome)
 	page.set_body_width(carousel.custom_minimum_size.x)
-	return carousel

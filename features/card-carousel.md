@@ -242,6 +242,28 @@ half at the far edge, which is the exact "clipping" bug this method exists to ru
 count still needs to hide the far-off cards) — it's just that every card `clip_contents`
 ever cuts is either fully inside the strip or fully outside it, never straddling the edge.
 
+### The fit has to be re-run on every window resize, not just once at open
+
+`CardUI.build_carousel` (`card_ui.gd`) — the shared home for the sizing above, now that
+`hub_shell.gd`'s and `run_pick_panel.gd`'s private copies both point at it — used to call
+`fit_to_available_width` exactly once, at the moment the carousel page opened. A player who
+resized or maximized the window (or rotated a device) while a carousel page stayed open kept
+whichever width the window happened to be at open time forever: reported as "the card list
+doesn't extend to the edges of the screen, it clips at a certain width". `build_carousel` now
+also connects the page's `Window.size_changed` to re-run the same fit
+(`CardUI._refit_carousel`), so the carousel keeps tracking the window instead of freezing at
+its first size. The hook is torn down on the carousel's own `tree_exiting` (a `Window`
+outlives any one page, so leaving the connection wired past the carousel's lifetime would
+both leak one per page opened AND keep firing into a freed `page`/`carousel` pair —
+`_refit_carousel` also guards with `is_instance_valid` on both for the frame between
+`tree_exiting` and the disconnect actually landing).
+
+The hookup uses a **lambda**, not `Callable(CardUI, "_refit_carousel").bind(page, carousel)`:
+Godot's `Signal.connect`/`is_connected` treat two bound `Callable`s to the same static method
+as equal regardless of their bound arguments, so binding gave "Signal already connected" the
+moment a SECOND carousel page was ever opened (every `hub_shell.gd` page change hit it). Each
+lambda closure is its own distinct object, which sidesteps the comparison entirely.
+
 ## A card must never grow past card_width, or it overlaps its neighbour
 
 `card.root` (the card's `PanelContainer`) is an absolute-positioned child of `_strip`, a

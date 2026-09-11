@@ -401,3 +401,42 @@ func test_shadow_strips_dim_with_their_card() -> void:
 			"card %d's right shadow strip must dim with the card" % i)
 		assert_almost_eq(card.shadow_bottom.modulate.a, expected, 0.001,
 			"card %d's bottom shadow strip must dim with the card" % i)
+
+
+# --- CardUI.build_carousel: the resize hookup ---------------------------------
+#
+# Regression: build_carousel used to size the carousel ONCE, when the page opened, via
+# fit_to_available_width(current window width). A player who resized or maximized the
+# window while a carousel page (MAIN/REGION/CAR/SHOP/SKILLS) stayed open kept whichever
+# width the window happened to be at open time forever — reported as "the card list
+# doesn't extend to the edges of the screen, it clips at a certain width". build_carousel
+# must hook the window's own size_changed so the carousel keeps tracking it, and must tear
+# that hook down when the carousel goes away or every carousel page ever opened leaks one.
+
+func test_build_carousel_hooks_window_resize() -> void:
+	var page := MenuPage.new()
+	add_child_autofree(page)
+	var window := page.get_window()
+	var before := window.size_changed.get_connections().size()
+	var carousel := CardUI.build_carousel(page)
+	assert_eq(window.size_changed.get_connections().size(), before + 1,
+		"build_carousel must hook the window's resize signal to keep the carousel edge-to-edge")
+	assert_true(carousel.custom_minimum_size.x > 0.0)
+
+
+func test_build_carousel_unhooks_window_resize_when_the_carousel_is_freed() -> void:
+	# NOT add_child_autofree: this test frees `page` itself mid-test and asserts on the
+	# connection count right after, so an autofree queued from an EARLIER test (its
+	# queue_free lands on some later idle frame, not necessarily before this synchronous
+	# check runs) must not be able to shift the count out from under it.
+	var host := Control.new()
+	add_child_autofree(host)
+	var page := MenuPage.new()
+	host.add_child(page)
+	var window := page.get_window()
+	var before := window.size_changed.get_connections().size()
+	CardUI.build_carousel(page)
+	assert_eq(window.size_changed.get_connections().size(), before + 1)
+	page.free()
+	assert_eq(window.size_changed.get_connections().size(), before,
+		"freeing the carousel/page must drop the resize hook, or it leaks one per page opened")
