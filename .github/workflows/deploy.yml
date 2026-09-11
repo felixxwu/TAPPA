@@ -374,7 +374,7 @@ jobs:
           SUPPLY_JSON_KEY_DATA: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
-          gem install fastlane -NV
+          sudo gem install fastlane -NV
           fastlane supply \
             --package_name "${PACKAGE_NAME}" \
             --aab build/android-play/rally.aab \
