@@ -551,6 +551,8 @@ func _build_car() -> void:
 	var car_refs: Array = []
 
 	var owned: Array = Save.profile.get(Save.KEY_CARS, [])
+	owned.sort_custom(func(a, b) -> bool:
+		return int(CarLibrary.for_owned(a).get("cost", 0)) < int(CarLibrary.for_owned(b).get("cost", 0)))
 	for car in owned:
 		var entry: Dictionary = car
 		var iid := int(entry.get("instance_id", -1))
@@ -570,7 +572,11 @@ func _build_car() -> void:
 		car_refs.append(entry)
 
 	var catalogue := CarLibrary.all()
-	for index in catalogue.size():
+	var shop_indices: Array[int] = []
+	shop_indices.assign(range(catalogue.size()))
+	shop_indices.sort_custom(func(a: int, b: int) -> bool:
+		return int(catalogue[a].get("cost", 0)) < int(catalogue[b].get("cost", 0)))
+	for index in shop_indices:
 		var spec: Dictionary = catalogue[index]
 		var model_id := String(spec.get("id", ""))
 		if model_id.is_empty() or Save.owns_model(model_id):
@@ -794,9 +800,14 @@ func _build_freeplay_car() -> void:
 	# same shape _build_car's car_refs uses, so _sync_car_previews (built for that page)
 	# works unchanged here and free play's cars get the same live CarCardPreview instead
 	# of a flat "car" icon.
+	var fp_catalogue := CarLibrary.all()
+	var sorted_indices: Array[int] = []
+	sorted_indices.assign(range(fp_catalogue.size()))
+	sorted_indices.sort_custom(func(a: int, b: int) -> bool:
+		return int(fp_catalogue[a].get("cost", 0)) < int(fp_catalogue[b].get("cost", 0)))
 	var indices: Array[int] = []
-	for index in CarLibrary.all().size():
-		var spec: Dictionary = CarLibrary.all()[index]
+	for index in sorted_indices:
+		var spec: Dictionary = fp_catalogue[index]
 		var model_id := String(spec.get("id", ""))
 		if model_id.is_empty():
 			continue
