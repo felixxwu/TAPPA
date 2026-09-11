@@ -199,6 +199,14 @@ func test_the_roll_carousel_is_decorative_only() -> void:
 	var page := RunPickPanel.open_roll(_host, pick, "power", func(_x: String) -> void: pass)
 	var carousel := _carousel(page)
 	assert_eq(carousel.focus_mode, Control.FOCUS_NONE, "the carousel itself is not focusable")
+	# The carousel's own mouse_filter only stops a tap on its BACKGROUND — each card is a
+	# separate Control with its own direct gui_input connection (card_carousel.gd), which
+	# a parent's mouse_filter does nothing to block. Every card must ALSO ignore input, or
+	# a tap straight on a card could still move the highlight (or confirm a different one)
+	# after the spin lands — reading as "I might still be able to change this".
+	for i in carousel.card_count():
+		assert_eq(carousel.get_card(i).root.mouse_filter, Control.MOUSE_FILTER_IGNORE,
+			"card %d ignores taps too, not just the carousel's own background" % i)
 
 
 func _next_button(page: MenuPage) -> Button:

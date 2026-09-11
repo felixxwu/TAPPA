@@ -168,6 +168,15 @@ static func open_roll(host: Node, pick: Array, category: String, on_done: Callab
 	carousel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for entry in entries:
 		_add_pick_card(carousel, entry)
+	# The carousel's OWN mouse_filter above only stops a press on its background (the
+	# gaps between/around cards) — each CARD is a separate Control with its own direct
+	# gui_input connection (card_carousel.gd's tap-to-select/tap-to-confirm), which a
+	# parent's mouse_filter does nothing to block. Without this, a tap straight on a
+	# card could still move the highlight — or even confirm a different card — after
+	# the spin has already landed, reading as "I might still be able to change this",
+	# which is exactly the illusion of choice this screen must not offer.
+	for i in carousel.card_count():
+		carousel.get_card(i).root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var winner_index := randi() % entries.size() if entries.size() > 1 else 0
 	var winner_id := String(entries[winner_index].get("id", "")) if not entries.is_empty() else ""
 	var next_btn := UITheme.button("Next")
