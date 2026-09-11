@@ -186,6 +186,9 @@ func test_an_engine_swap_entry_renders_and_can_be_rolled() -> void:
 	var page := RunPickPanel.open_roll(_host, pick, "power",
 		func(choice: String) -> void: choices.append(choice))
 	assert_eq(_carousel(page).card_count(), 2, "gearbox + the one engine swap, both power")
+	_next_button(page).pressed.emit()
+	assert_true(choices[0] == "gearbox" or choices[0] == "engine_swap:fx_v8",
+		"the winner is one of the two power entries actually offered")
 
 
 func test_the_roll_carousel_is_decorative_only() -> void:

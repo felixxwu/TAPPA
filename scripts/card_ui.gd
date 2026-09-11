@@ -75,8 +75,8 @@ static func text_card(carousel: CardCarousel, title: String, subtitle: String,
 #
 # 0.0, not some small-but-nonzero inset: "edge to edge" was asked to mean the literal
 # screen edge, cards (and now a partial card — see card_carousel.gd) clipped flush against
-# it, not a page still floating a few pixels in from the corner. `RunPickPanel.open`
-# (run_pick_panel.gd) is the one caller that does NOT want this — its page keeps a real
+# it, not a page still floating a few pixels in from the corner. the `RunPickPanel` step builders
+# (run_pick_panel.gd) are the callers that do NOT want this — each page keeps a real
 # 24px margin like an ordinary MenuPage — so it passes its own `page_margin`/`body_padding`
 # through to build_carousel rather than taking these defaults.
 const CAROUSEL_PAGE_MARGIN := 0.0
@@ -88,7 +88,7 @@ const CAROUSEL_PAGE_PADDING := 0.0
 # whatever `page` was actually constructed with (MenuPage's own "margin"/"padding" opts) —
 # they default to CAROUSEL_PAGE_MARGIN/CAROUSEL_PAGE_PADDING (0.0, true edge to edge),
 # which is what every hub_shell.gd carousel page uses; a caller that opened its page with
-# a real margin (RunPickPanel.open's 24px) must pass that same value here too, or the
+# a real margin (any RunPickPanel step's 24px) must pass that same value here too, or the
 # carousel claims more width than the page's own clip_contents actually leaves visible.
 static func build_carousel(page: MenuPage, page_margin: float = CAROUSEL_PAGE_MARGIN,
 		body_padding: float = CAROUSEL_PAGE_PADDING) -> CardCarousel:

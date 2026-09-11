@@ -60,7 +60,7 @@ inside the session:
 | What does clearing it pay? | `stage_money(i, elapsed, target, coins)` | `0` (paid once, at the end) | completion + fast bonus + coin money |
 | What is persisted? | `to_record()` / `is_resumable(t)` | `{period_key, kind}`, stale once the period rolls | `{region_id, run_seed, stage_count}`, never stale |
 | What does a finished run record? | `record_outcome(result, t)` | the period's one-attempt outcome | the `regions_cleared` ledger (stage 4) |
-| Does clearing a stage offer a boost pick? | `offers_boost_pick()` / `boost_choices(i)` | never — repair stays automatic | always (unless it was the run's own final/failed stage) |
+| Does clearing a stage offer a boost pick? | `offers_boost_pick()` / `boost_pool_ids(i, extras)` | never — repair stays automatic | always (unless it was the run's own final/failed stage) |
 
 **A new run always starts the car at 100% health.** `RunSession.begin()` calls
 `Save.restore_car_to_full(_car_instance_id)` alongside its other `_pending_*` resets —

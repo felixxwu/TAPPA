@@ -2,8 +2,8 @@
 
 **Sources:** the mid-run swap — `scripts/run_session.gd` (`RunSession.
 _pool_engine_swap_ids`, `_current_engine_id`, `_with_engine_swap_display`,
-`choose_engine_swap`, `engine_swap_id`), `scripts/region_run_mode.gd`
-(`RegionRunMode.boost_choices`'s `"engine_swap:"` id branch) and
+`choose_engine_swap`, `engine_swap_id`), `scripts/boost_library.gd`
+(`BoostLibrary.resolve_id`'s `"engine_swap:"` id branch) and
 `scripts/world.gd` (`_owned_with_run_effects` writing `owned["swapped_engine"]`)
 — through the pre-existing `scripts/engine_swap.gd` (`EngineSwap`, pure
 math/lookup module) and the `_apply_engine_swap` fielding step in

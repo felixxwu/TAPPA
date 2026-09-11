@@ -685,8 +685,8 @@ func restore_car_to_full(instance_id: int) -> void:
 
 
 # Fraction of max_hp the car currently has (1.0 = full, 0.0 = empty). Used by
-# RegionRunMode.boost_choices to decide whether the run's car qualifies for the
-# undamaged-arrival reward (an extra boost pick, no repair row). Resolves max_hp the
+# RunSession.report_event_result to decide whether the run's car qualifies for the
+# undamaged-arrival reward (no repair row on the pick screen). Resolves max_hp the
 # same way heal_car / apply_field_repair_to do. Returns 1.0 (treated as full/healthy)
 # if the car can't be found — nothing to underperform against.
 func car_health_fraction(instance_id: int) -> float:

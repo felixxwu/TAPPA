@@ -132,7 +132,7 @@ const CATALOGUE := {
 	},
 	# NOTE: the Engine Swap is NOT a CATALOGUE entry — it is a GENUINE engine swap now
 	# (RunSession._pool_engine_swap_ids' "engine_swap:<EngineLibrary id>" pseudo-id,
-	# folded into the SAME draw pool as this catalogue by RegionRunMode.boost_choices,
+	# folded into the SAME pool as this catalogue by RegionRunMode.boost_pool_ids,
 	# exactly like the AWD drivetrain conversion). It used to be a flat peak_torque
 	# multiplier via the engine_power_mult EFFECTS row; that is retired — see
 	# features/engine-swap.md.

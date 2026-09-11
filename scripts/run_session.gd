@@ -193,11 +193,11 @@ func pick_awaiting() -> bool:
 
 
 # Whether the pending pick offers repair as one of its options — false for the
-# undamaged-arrival reward pick (car above run_boost_healthy_threshold at draw time:
-# one extra boost, no repair). Resolved once when the pick is drawn, not live, so it
-# stays stable across a resume. world.gd passes this straight through as
-# RunPickPanel.open's `offer_repair` argument. Meaningless (defaults true) when no
-# pick is outstanding.
+# undamaged-arrival reward pick (car above run_boost_healthy_threshold at draw time: no
+# repair row, every roll lands on a real upgrade). Resolved once when the pick is drawn,
+# not live, so it stays stable across a resume. world.gd reads this to decide whether to
+# open RunPickPanel.open_repair_or_upgrade first or skip straight to the category choice.
+# Meaningless (defaults true) when no pick is outstanding.
 func offer_repair() -> bool:
 	return _pick_offers_repair
 
@@ -235,9 +235,10 @@ func drivetrain_choices() -> Array:
 
 # The non-current DriveMode values available for conversion RIGHT NOW — the computation
 # behind drivetrain_choices(), minus that function's _pick_awaiting guard. Split out so a
-# pick-building call site (report_event_result / resume) can compute the pool of
-# "drivetrain:<mode>" pseudo-ids to fold into boost_choices() BEFORE _pick_awaiting is set
-# true, without duplicating this loop. [] when the run's car has vanished.
+# pick-building call site (report_event_result / resume, via _resolve_pick_pool) can
+# compute the pool of "drivetrain:<mode>" pseudo-ids to fold into boost_pool_ids() BEFORE
+# _pick_awaiting is set true, without duplicating this loop. [] when the run's car has
+# vanished.
 func _available_drivetrain_modes() -> Array:
 	var owned: Dictionary = Save.get_car(_car_instance_id)
 	if owned.is_empty():
@@ -251,9 +252,9 @@ func _available_drivetrain_modes() -> Array:
 	return out
 
 
-# The drivetrain pseudo-ids ("drivetrain:<DriveMode int>") to fold into the SAME draw
-# pool as the boost catalogue when building a pick (boost_choices' `drivetrain_ids`
-# arg) — AWD-only when it's available, deliberately NOT every mode
+# The drivetrain pseudo-ids ("drivetrain:<DriveMode int>") to fold into the SAME pool
+# as the boost catalogue when building a pick (boost_pool_ids' `extra_ids` arg) —
+# AWD-only when it's available, deliberately NOT every mode
 # _available_drivetrain_modes() would offer via drivetrain_choices(): an AWD
 # conversion is the one conversion worth surfacing as a random mid-run pick, so it's
 # the only one competing with the boosts for a slot. [] once the car is already AWD.
@@ -313,13 +314,6 @@ func _pool_engine_swap_ids() -> Array:
 	return ["engine_swap:%s" % best_id] if not best_id.is_empty() else []
 
 
-# Adds `hp`/`hp_delta` display fields to every `pick` entry that carries an `engine_id` —
-# both pick-building call sites (report_event_result, resume) route through this ONE
-# helper so a live draw and a resumed draw can never disagree on what they display.
-# RunSession is the only layer holding BOTH the drawn engine and the car's CURRENT one, so
-# this is where the delta has to be computed. `hp` reuses CarLibrary.horsepower exactly —
-# the same peak_power_kw * KW_KG_TO_HP_TONNE / 1000.0 the car stats panel shows — rather
-# than re-deriving the constant.
 # The WHOLE pick pool, resolved: every id `_mode.boost_pool_ids` currently offers
 # (the full BoostLibrary catalogue plus whatever drivetrain/engine-swap pseudo-ids are
 # available right now), mapped through BoostLibrary.resolve_id and stamped with the
@@ -334,6 +328,13 @@ func _resolve_pick_pool() -> Array:
 	return _with_engine_swap_display(out)
 
 
+# Adds `hp`/`hp_delta` display fields to every `pick` entry that carries an `engine_id` —
+# both pick-building call sites (report_event_result, resume) route through this ONE
+# helper so a live draw and a resumed draw can never disagree on what they display.
+# RunSession is the only layer holding BOTH the drawn engine and the car's CURRENT one, so
+# this is where the delta has to be computed. `hp` reuses CarLibrary.horsepower exactly —
+# the same peak_power_kw * KW_KG_TO_HP_TONNE / 1000.0 the car stats panel shows — rather
+# than re-deriving the constant.
 func _with_engine_swap_display(pick: Array) -> Array:
 	if pick.is_empty():
 		return pick
