@@ -220,6 +220,11 @@ func _show(view: int) -> void:
 	var page_opts := {"margin": _page_margin_for(view), "title": _title_for(view)}
 	if _is_carousel_view(view):
 		page_opts["alpha"] = 0.0
+		# Zero body padding too, matching CardUI.build_carousel's own edge-to-edge defaults
+		# (CAROUSEL_PAGE_MARGIN/CAROUSEL_PAGE_PADDING) — otherwise MenuPage's default
+		# PANEL_PAD inset the body from a margin build_carousel no longer accounts for,
+		# leaving a gap between the carousel's cards and the literal screen edge.
+		page_opts["padding"] = CardUI.CAROUSEL_PAGE_PADDING
 	_page = MenuPage.open_modal(self, page_opts)
 	match view:
 		View.MAIN: _build_main()

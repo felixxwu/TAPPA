@@ -72,15 +72,29 @@ static func text_card(carousel: CardCarousel, title: String, subtitle: String,
 # A carousel's own clip_contents already keeps it from spilling past the screen, so it
 # doesn't need that margin doing the same job twice, and a wide margin is exactly what
 # would squeeze it down to only 2-3 cards' worth of screen space.
-const CAROUSEL_PAGE_MARGIN := 8.0
+#
+# 0.0, not some small-but-nonzero inset: "edge to edge" was asked to mean the literal
+# screen edge, cards (and now a partial card — see card_carousel.gd) clipped flush against
+# it, not a page still floating a few pixels in from the corner. `RunPickPanel.open`
+# (run_pick_panel.gd) is the one caller that does NOT want this — its page keeps a real
+# 24px margin like an ordinary MenuPage — so it passes its own `page_margin`/`body_padding`
+# through to build_carousel rather than taking these defaults.
+const CAROUSEL_PAGE_MARGIN := 0.0
+const CAROUSEL_PAGE_PADDING := 0.0
 
 # Build a carousel and mount it as `page`'s whole selectable body (any plain,
 # non-choosable labels the caller wants above it — e.g. a "Money: N" readout — should be
-# added to page.body() BEFORE calling this).
-static func build_carousel(page: MenuPage) -> CardCarousel:
+# added to page.body() BEFORE calling this). `page_margin`/`body_padding` must match
+# whatever `page` was actually constructed with (MenuPage's own "margin"/"padding" opts) —
+# they default to CAROUSEL_PAGE_MARGIN/CAROUSEL_PAGE_PADDING (0.0, true edge to edge),
+# which is what every hub_shell.gd carousel page uses; a caller that opened its page with
+# a real margin (RunPickPanel.open's 24px) must pass that same value here too, or the
+# carousel claims more width than the page's own clip_contents actually leaves visible.
+static func build_carousel(page: MenuPage, page_margin: float = CAROUSEL_PAGE_MARGIN,
+		body_padding: float = CAROUSEL_PAGE_PADDING) -> CardCarousel:
 	var carousel := CardCarousel.new()
 	page.body().add_child(carousel)
-	_refit_carousel(page, carousel)
+	_refit_carousel(page, carousel, page_margin, body_padding)
 	# The fit above only accounts for the window size AT THE MOMENT the page opened — a
 	# player who resizes/maximizes the window (or rotates a device) while the page stays
 	# open kept whichever width that was, reported as "the card list doesn't extend to the
@@ -88,13 +102,13 @@ static func build_carousel(page: MenuPage) -> CardCarousel:
 	# resize so the carousel keeps tracking the window instead of freezing at its first size.
 	var window := page.get_window()
 	if window != null:
-		# A LAMBDA, not `Callable(CardUI, "_refit_carousel").bind(page, carousel)` — bound
-		# Callables to the same static method compare equal for `is_connected`/duplicate-
-		# connect checks regardless of their bound arguments (every carousel page rebuild
-		# in hub_shell.gd's `_show` hit "Signal already connected" from the SECOND page
-		# opened onward, since all of them bind the same underlying method), while each
-		# lambda is its own distinct object.
-		var refit := func() -> void: _refit_carousel(page, carousel)
+		# A LAMBDA, not `Callable(CardUI, "_refit_carousel").bind(page, carousel, ...)` —
+		# bound Callables to the same static method compare equal for
+		# `is_connected`/duplicate-connect checks regardless of their bound arguments (every
+		# carousel page rebuild in hub_shell.gd's `_show` hit "Signal already connected"
+		# from the SECOND page opened onward, since all of them bind the same underlying
+		# method), while each lambda is its own distinct object.
+		var refit := func() -> void: _refit_carousel(page, carousel, page_margin, body_padding)
 		window.size_changed.connect(refit)
 		# Windows outlive any one page, so the connection must be torn down with the
 		# carousel it targets or it would silently pile up (and keep firing into a freed
@@ -108,7 +122,8 @@ static func build_carousel(page: MenuPage) -> CardCarousel:
 # Re-derive the carousel's width from the current window size and re-apply it — the body
 # of build_carousel's own initial fit, factored out so the size_changed hookup above can
 # reuse it verbatim.
-static func _refit_carousel(page: MenuPage, carousel: CardCarousel) -> void:
+static func _refit_carousel(page: MenuPage, carousel: CardCarousel,
+		page_margin: float, body_padding: float) -> void:
 	if not is_instance_valid(page) or not is_instance_valid(carousel):
 		return
 	# Claim the full logical frame width, minus the page's own margin/padding chrome —
@@ -116,6 +131,6 @@ static func _refit_carousel(page: MenuPage, carousel: CardCarousel) -> void:
 	# clipped edge; see card_carousel.gd), and set_body_width feeds the same width to the
 	# (otherwise content-hugging) MenuPage box so it actually grows to it.
 	var avail := WorldPanel.layout_frame_size(page, Vector2(480.0, 360.0)).x
-	var chrome := CAROUSEL_PAGE_MARGIN * 2.0 + UITheme.PANEL_PAD * 2.0
+	var chrome := page_margin * 2.0 + body_padding * 2.0
 	carousel.fit_to_available_width(avail - chrome)
 	page.set_body_width(carousel.custom_minimum_size.x)

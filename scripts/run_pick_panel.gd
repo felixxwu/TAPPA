@@ -63,7 +63,11 @@ static func open(host: Node, pick: Array, on_choice: Callable,
 		continue_btn.pressed.connect(func() -> void: on_choice.call(""))
 		page.add_action(continue_btn)
 	else:
-		var carousel := CardUI.build_carousel(page)
+		# This page was opened with a real 24px margin (above) and MenuPage's default body
+		# padding, NOT CardUI's edge-to-edge defaults (0/0, what hub_shell.gd's carousel
+		# pages use) — build_carousel must be told that explicitly, or it claims more width
+		# than this page's own clip_contents actually leaves visible.
+		var carousel := CardUI.build_carousel(page, 24.0, UITheme.PANEL_PAD)
 		# Parallel to the carousel's cards: the payload string `on_choice` gets when that
 		# card is confirmed.
 		var payloads: Array[String] = []
