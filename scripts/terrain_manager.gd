@@ -37,7 +37,12 @@ const ChunkScript := preload("res://scripts/terrain_chunk.gd")
 # TerrainLod.build_all has turned them into GPU meshes. cache_chunk erases them from
 # the cached dict; TerrainChunk.apply_data must never fall back to rebuilding meshes
 # from a cached dict (it checks for `vertices` and errors loudly instead).
-const DEAD_AFTER_PREBAKE := ["vertices", "uvs", "colors", "uv2s", "indices"]
+const DEAD_AFTER_PREBAKE := ["vertices", "uvs", "colors", "uv2s", "indices",
+	# The raw full-res night_colors array (present only when bake_night_colors is on)
+	# is likewise dead the moment TerrainLod has sliced it into per-level
+	# night_colors_by_level -- unlike THAT array (a LIVE need menu_showcase swaps
+	# against at runtime), nothing reads the full-res copy again.
+	"night_colors"]
 
 @export var noise_seed: int = 1337:
 	set(value):
@@ -114,6 +119,20 @@ var sun_dir: Vector3 = Vector3(0.4, 0.9, 0.35).normalized()
 var sun_color: Color = Color(0.5, 0.5, 0.5)
 var sky_color: Color = Color(0.5, 0.5, 0.5)
 var ground_color: Color = Color(0.35, 0.35, 0.35)
+
+# Second, NIGHT vertex-colour bake — menu_showcase.gd only (see features/terrain.md →
+# "Dual day/night bake"). When bake_night_colors is true, TerrainChunkBuilder bakes a
+# SECOND per-vertex colour array alongside the normal one, using the night_* fields
+# below instead of the live day ones above. Off by default, so every stage path (which
+# never sets this) is byte-identical to before — the showcase is the only caller that
+# turns it on, so it can swap a segment's already-spawned chunks between the two bakes
+# without a live re-bake when its weather cycles to/from night.
+var bake_night_colors: bool = false
+var night_sun_dir: Vector3 = Vector3(0.4, 0.9, 0.35).normalized()
+var night_sun_color: Color = Color(0.5, 0.5, 0.5)
+var night_sky_color: Color = Color(0.5, 0.5, 0.5)
+var night_ground_color: Color = Color(0.35, 0.35, 0.35)
+var night_light_amount: float = 0.0
 
 # Terrain LOD (features/terrain.md). The display mesh is decimated by distance:
 # each loaded chunk carries one MeshInstance per TerrainLod.LOD_STRIDES level, and
@@ -868,7 +887,27 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 	# the HeightMapShape3D and every height_at read) off-lattice, so the terrain you drove on one
 	# launch differed from the next by up to half a step.
 	_apply_height_quantum(data)
+	if bake_night_colors:
+		# Only _apply_road_carve and _apply_pad_flatten touch COLOR at all, and only its
+		# ALPHA (the road blend weight) — RGB is left exactly as the builder wrote it (see
+		# their own comments). night_colors was built with the SAME pre-carve alpha, so it
+		# only needs that one channel re-synced to the final day array, not a re-bake.
+		_sync_night_alpha(data)
 	return data
+
+
+# Copy the final day COLOR array's alpha (road blend weight, possibly touched by the road
+# carve / pad flatten above) onto night_colors — see compute_chunk_data's call site.
+func _sync_night_alpha(data: Dictionary) -> void:
+	var day: PackedColorArray = data.get("colors", PackedColorArray())
+	var night: PackedColorArray = data.get("night_colors", PackedColorArray())
+	if night.is_empty() or night.size() != day.size():
+		return
+	for i in night.size():
+		var c := night[i]
+		c.a = day[i].a
+		night[i] = c
+	data["night_colors"] = night
 
 
 # --- The shared preamble of the five _apply_* chunk modifiers -------------------------------
@@ -1524,15 +1563,36 @@ func _bake_light(noises: Array, amplitudes: PackedFloat32Array, wx: float, wz: f
 func _light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color:
 	if light_amount <= 0.0:
 		return Color(1, 1, 1)
+	return _light_profile(hl, hr, hd, hu, sun_dir, sun_color, sky_color, ground_color, light_amount)
+
+
+# Night sibling of _light_from_neighbours: same neighbour heights (so it needs no extra
+# sampling), the night_* fields instead of the live day ones. Only ever called when
+# bake_night_colors is true (TerrainChunkBuilder gates it). White (no-op) when
+# night_light_amount is 0.
+func _night_light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color:
+	if night_light_amount <= 0.0:
+		return Color(1, 1, 1)
+	return _light_profile(hl, hr, hd, hu, night_sun_dir, night_sun_color, night_sky_color,
+		night_ground_color, night_light_amount)
+
+
+# The lighting math itself, parameterised over a light profile (sun direction/colour, sky/
+# ground ambient, overall amount) rather than reading the live fields directly — shared by
+# the day bake and the night bake so the two can never drift apart. Mirrors
+# shaders/ps1_models_lit.gdshader (hemisphere ambient + one directional sun). Callers already
+# checked their own profile's `amount > 0.0` gate.
+func _light_profile(hl: float, hr: float, hd: float, hu: float, dir: Vector3, sun: Color,
+		sky: Color, ground: Color, amount: float) -> Color:
 	var n := Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized()
 	var hemi := n.y * 0.5 + 0.5
-	var ambient := ground_color.lerp(sky_color, hemi)
-	var ndl: float = maxf(n.dot(sun_dir), 0.0)
+	var ambient := ground.lerp(sky, hemi)
+	var ndl: float = maxf(n.dot(dir), 0.0)
 	var lit := Color(
-		ambient.r + sun_color.r * ndl,
-		ambient.g + sun_color.g * ndl,
-		ambient.b + sun_color.b * ndl)
-	return Color(1, 1, 1).lerp(lit, light_amount)
+		ambient.r + sun.r * ndl,
+		ambient.g + sun.g * ndl,
+		ambient.b + sun.b * ndl)
+	return Color(1, 1, 1).lerp(lit, amount)
 
 
 # Chunk coordinate (integer grid) containing a world position.
@@ -1873,9 +1933,13 @@ func cache_chunk(coord: Vector2i) -> void:
 		# Coarse: build only the LOD levels this chunk can ever display, each sampled
 		# directly at its own stride. No full-res grid, no collision, no cache-backed
 		# height/light queries (those fall through to noise for this coord).
+		var coarse_night: Array = []
+		if bake_night_colors:
+			coarse_night.resize(TerrainLod.LOD_STRIDES.size())
 		_chunk_cache[coord] = {
 			"center": Vector3((coord.x + 0.5) * CHUNK_M, 0.0, (coord.y + 0.5) * CHUNK_M),
-			"lod_meshes": TerrainLod.build_levels_from(self, coord, cls["l_min"], lod_skirt_m),
+			"lod_meshes": TerrainLod.build_levels_from(self, coord, cls["l_min"], lod_skirt_m, coarse_night),
+			"night_colors_by_level": coarse_night,
 			"coarse": true,
 		}
 		_log_precompute_vram()
@@ -1885,7 +1949,12 @@ func cache_chunk(coord: Vector2i) -> void:
 	# so runtime chunk spawns are a cheap node build + mesh assign, not a mesh build.
 	# The FINEST level is skipped under lazy_finest_lod (see that field) and rebuilt on
 	# demand from `heights` + `l0_light` + the live track fields.
-	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m, 1 if lazy_finest_lod else 0)
+	var full_res_night: Array = []
+	if bake_night_colors:
+		full_res_night.resize(TerrainLod.LOD_STRIDES.size())
+	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m, 1 if lazy_finest_lod else 0, full_res_night)
+	if bake_night_colors:
+		data["night_colors_by_level"] = full_res_night
 	data["coarse"] = false
 	if lazy_finest_lod or capture_encoded_light:
 		# The one finest-level input that is NOT derivable from what the cache retains:
@@ -2007,6 +2076,13 @@ func corridor_complete() -> bool:
 #  - road_heights / road_blend / cliff_offsets: read ONLY by TerrainChunkBuilder, and
 #    the corridor is fully cached, so no chunk will ever be built again in play.
 #    track_weights / track_surface are KEPT — surface_at() drives per-tick grip.
+#
+# NOT touched here, on purpose: `night_colors_by_level` (menu_showcase.gd only, see
+# bake_night_colors). It is a LIVE need — TerrainChunk.apply_vertex_color_profile swaps a
+# chunk's mesh COLOR against it at runtime, not just at load — so it must never be folded
+# into a load-only free. In practice this function never runs against the showcase anyway
+# (its scene root has no `load_finished` signal), but the invariant is stated here where a
+# future caller might otherwise assume every load-only array is safe to sweep.
 func free_load_only_data() -> void:
 	# A bounded world keeps its baked light. Both premises of the free fail there: chunks are
 	# generated in PLAY (not once behind a loading screen), so `lights` is a live input to
@@ -3079,8 +3155,24 @@ func _spawn_chunk(coord: Vector2i, data: Dictionary) -> void:
 	var chunk: TerrainChunk = ChunkScript.new()
 	add_child(chunk)
 	chunk.apply_data(self, coord, data)
+	if _vertex_color_profile != &"day":
+		chunk.apply_vertex_color_profile(_vertex_color_profile)
 	_chunks[coord] = chunk
 	integrations_total += 1
+
+
+# Menu-showcase-only: the vertex-colour profile ("day" / "night") every currently-spawned
+# and future chunk should wear. See TerrainChunk.apply_vertex_color_profile and
+# features/terrain.md → "Dual day/night bake". A live stage never calls this — the field
+# stays "day" and _spawn_chunk's check above is then a no-op.
+var _vertex_color_profile: StringName = &"day"
+
+
+func set_vertex_color_profile(profile: StringName) -> void:
+	_vertex_color_profile = profile
+	for chunk in _chunks.values():
+		if is_instance_valid(chunk):
+			chunk.apply_vertex_color_profile(profile)
 
 
 func _rebuild_loaded() -> void:

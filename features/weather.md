@@ -55,6 +55,7 @@ omitted key means "this condition does not have that feature":
 | `sky_panorama` | GameConfig field holding a **sky texture path** the condition swaps in, overriding whatever the region chose. Omitted ⇒ the region's sky is left alone. Only `night` names one |
 | `headlights` | GameConfig field holding the **strength** (0..1) of the fake headlight cone this condition switches on. Omitted ⇒ the car's lights stay off and every cone uniform is a bit-for-bit no-op. Read by `HeadlightCone`; cosmetic, so it is **not** in `physics_fields` |
 | `foliage_wind` | GameConfig field holding the tree wind-sway **strength** for this condition. Omitted ⇒ the shared base `foliage_wind_strength` — deliberately the case for every condition but `storm`/`sandstorm`, since wind reads the same everywhere except in a storm. Read by `WindSway`; cosmetic, so it is **not** in `physics_fields` — see [trees.md](trees.md) → "Wind sway" |
+| `terrain_relight` | A plain `true`/omitted flag (not a field name — there is no per-condition tuning here). Marks a condition whose ground darkening is worth pre-baking a second terrain vertex-colour array for, rather than only a `road_tint` uniform. Read ONLY by `menu_showcase.gd` (see [terrain.md](terrain.md) → "Dual day/night bake") — no real stage reads it, since a stage just re-bakes its one terrain instance directly. Omitted ⇒ `false`. Not in `config_fields`/`physics_fields` (it names no GameConfig field and cannot affect a lap time) |
 
 **`sky_panorama` is deliberately NOT a sixth `LOOK_KEYS` entry.** `LOOK_KEYS` is
 all-or-nothing — an entry with a `look` block must name every one of the five
@@ -468,6 +469,14 @@ path every condition uses: the low `night_sun_energy_mult` scales
 `TerrainManager.sun_color` in `world.gd::_apply_overcast_look`, and the terrain
 bakes that dark light into its vertex colours at chunk generation. By the time
 any shader runs, the world is already dark.
+
+**That path assumes ONE terrain instance re-baked per stage — the menu showcase's six
+never-rebuilt segments can't use it directly**, so night is also the one condition
+carrying `"terrain_relight": true` in its entry (see the table above), which tells
+`menu_showcase.gd` to pre-bake a SECOND vertex-colour array per chunk up front and swap
+a segment onto it instead of re-baking live. See [terrain.md](terrain.md) → "Dual
+day/night bake" for the mechanism; nothing here or in `WeatherLibrary` changes for a
+real stage, which still just re-bakes.
 
 **The re-lighting is a fake headlight cone**, evaluated analytically in the
 shaders from a handful of `global uniform`s — no light node is added, and none
