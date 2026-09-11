@@ -43,14 +43,18 @@ func test_every_catalogue_effect_key_has_an_effects_row() -> void:
 
 
 # Every catalogue entry must resolve to a real GameConfig field — the OTHER silent-death
-# trap (_cfg_set refuses a write to a field that doesn't exist).
+# trap (_cfg_set refuses a write to a field that doesn't exist). A dict-shaped mapping
+# (turbo/supercharger — see boost_library.gd's CATALOGUE header) names several cfg
+# fields at once, so its OWN values are checked rather than the dict itself.
 func test_every_catalogue_cfg_field_is_a_real_config_property() -> void:
 	var cfg := GameConfig.new()
 	for id in BoostLibrary.CATALOGUE:
 		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
-		for cfg_field in (entry["effect_fields"] as Dictionary).values():
-			assert_true(String(cfg_field) in cfg,
-				"boost '%s' reads GameConfig.%s, which does not exist" % [id, cfg_field])
+		for spec in (entry["effect_fields"] as Dictionary).values():
+			var cfg_fields := (spec as Dictionary).values() if spec is Dictionary else [spec]
+			for cfg_field in cfg_fields:
+				assert_true(String(cfg_field) in cfg,
+					"boost '%s' reads GameConfig.%s, which does not exist" % [id, cfg_field])
 
 
 # --- boost_for / effect_for: the shape the funnel reads --------------------------
@@ -99,16 +103,65 @@ func test_a_higher_level_pushes_the_magnitude_further_in_its_authored_direction(
 	Config.data.boost_level_magnitude_step = 0.1
 	for id in BoostLibrary.CATALOGUE:
 		var direction := int((BoostLibrary.CATALOGUE[id] as Dictionary).get("level_direction", 1))
-		var field: String = (BoostLibrary.CATALOGUE[id]["effect_fields"] as Dictionary).keys()[0]
-		var lvl0 := float(BoostLibrary.magnitude_for(id, 0)[field])
-		var lvl1 := float(BoostLibrary.magnitude_for(id, 1)[field])
-		var lvl3 := float(BoostLibrary.magnitude_for(id, 3)[field])
+		var lvl0 := _leveled_scalar(id, 0)
+		var lvl1 := _leveled_scalar(id, 1)
+		var lvl3 := _leveled_scalar(id, 3)
 		if direction > 0:
 			assert_gt(lvl1, lvl0, "'%s' level 1 rolls higher than level 0" % id)
 			assert_gt(lvl3, lvl1, "'%s' level 3 rolls higher still than level 1" % id)
 		else:
 			assert_lt(lvl1, lvl0, "'%s' level 1 rolls lower than level 0" % id)
 			assert_lt(lvl3, lvl1, "'%s' level 3 rolls lower still than level 1" % id)
+
+
+# The one number a catalogue entry's level ladder actually moves: its first effect key's
+# value, or — for a dict-shaped entry (turbo/supercharger) — the sub-field named by
+# `display_subfield`, the one sub-field `scaled_subfields` marks as level-scaled.
+func _leveled_scalar(id: String, level: int) -> float:
+	var entry: Dictionary = BoostLibrary.CATALOGUE[id]
+	var effect_key := String((entry["effect_fields"] as Dictionary).keys()[0])
+	var value: Variant = BoostLibrary.magnitude_for(id, level)[effect_key]
+	if value is Dictionary:
+		return float((value as Dictionary)[String(entry.get("display_subfield", ""))])
+	return float(value)
+
+
+# A dict-shaped entry's FIXED sub-fields (the part's spool character/drag — not named in
+# `scaled_subfields`) must never move with the purchased level; only the one scaled
+# sub-field does. Without this a "level" on a turbo would silently also change its spool
+# behaviour, which no other boost's level does.
+func test_an_induction_entrys_fixed_subfields_never_scale_with_level() -> void:
+	Config.data.boost_level_magnitude_step = 0.3
+	for id in BoostLibrary.CATALOGUE:
+		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
+		for effect_key in (entry["effect_fields"] as Dictionary):
+			var spec: Variant = (entry["effect_fields"] as Dictionary)[effect_key]
+			if not (spec is Dictionary):
+				continue
+			var scaled: Array = entry.get("scaled_subfields", [])
+			var lvl0: Dictionary = BoostLibrary.magnitude_for(id, 0)[effect_key]
+			var lvl3: Dictionary = BoostLibrary.magnitude_for(id, 3)[effect_key]
+			for sub_field in (spec as Dictionary):
+				if scaled.has(sub_field):
+					continue
+				assert_eq(float(lvl0[sub_field]), float(lvl3[sub_field]),
+					"'%s's fixed sub-field '%s' does not scale with level" % [id, sub_field])
+
+
+# boost_for's effect dict is exactly what UpgradeLibrary.apply()'s install_induction arm
+# splats onto a live config — every sub-key it names must be a real GameConfig field.
+func test_an_induction_boosts_effect_dict_targets_real_config_fields() -> void:
+	var cfg := GameConfig.new()
+	for id in BoostLibrary.CATALOGUE:
+		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
+		for effect_key in (entry["effect_fields"] as Dictionary):
+			if not ((entry["effect_fields"] as Dictionary)[effect_key] is Dictionary):
+				continue
+			var b := BoostLibrary.boost_for(id)
+			var sub: Dictionary = (b["effect"] as Dictionary)[effect_key]
+			for target_field in sub:
+				assert_true(String(target_field) in cfg,
+					"'%s' installs %s, which does not exist on GameConfig" % [id, target_field])
 
 
 # The sanity guard: however aggressively a designer sets the step (or however high the
@@ -186,11 +239,13 @@ func test_a_multiplier_boost_reads_as_a_signed_percentage() -> void:
 
 # An "add" or "set" boost has no baseline to be a percentage OF (downforce stacks on the
 # car's own; shift time replaces it), so it reports an absolute figure carrying the
-# catalogue entry's authored unit instead — never a fabricated percentage.
+# catalogue entry's authored unit instead — never a fabricated percentage. Induction
+# entries (turbo/supercharger) are their OWN third shape — see the dedicated test below —
+# so they're excluded here rather than made to satisfy "has a unit, no percentage".
 func test_an_additive_or_set_boost_reads_as_an_absolute_figure_with_its_unit() -> void:
 	var checked := 0
 	for id in BoostLibrary.CATALOGUE:
-		if _is_pure_mult(id):
+		if _is_pure_mult(id) or _is_induction(id):
 			continue
 		var unit := String((BoostLibrary.CATALOGUE[id] as Dictionary).get("unit", ""))
 		assert_ne(unit, "", "'%s' authors a display unit for its non-mult effect" % id)
@@ -254,6 +309,34 @@ func _is_pure_mult(id: String) -> bool:
 		if String(desc.get("op", "mult")) != "mult":
 			return false
 	return true
+
+
+# True for a dict-shaped entry (turbo/supercharger) — current_effect_text's third shape,
+# neither a plain mult/add/set figure.
+func _is_induction(id: String) -> bool:
+	for effect_key in BoostLibrary.magnitude_for(id, 0):
+		if BoostLibrary.magnitude_for(id, 0)[effect_key] is Dictionary:
+			return true
+	return false
+
+
+# An induction boost's text is a signed percentage (its one scaled sub-field, the boost
+# gain, as a swing) with its authored suffix — its own shape, distinct from both a mult
+# entry's baseline-relative percentage and an add/set entry's absolute-with-unit figure.
+func test_an_induction_boost_reads_as_a_signed_percentage_with_its_suffix() -> void:
+	var checked := 0
+	for id in BoostLibrary.CATALOGUE:
+		if not _is_induction(id):
+			continue
+		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
+		var suffix := String(entry.get("display_suffix", ""))
+		var text := BoostLibrary.current_effect_text(id, 0)
+		assert_true(text.begins_with("+"), "'%s' shows a '+' sign" % id)
+		assert_true(text.contains("%"), "'%s' is expressed as a percentage" % id)
+		if not suffix.is_empty():
+			assert_true(text.ends_with(suffix), "'%s' carries its display suffix" % id)
+		checked += 1
+	assert_gt(checked, 0, "the catalogue has an induction entry for this to cover")
 
 
 # --- draw(): deterministic, repeat-free, real ids ---------------------------------
@@ -354,3 +437,39 @@ func test_label_for_is_never_blank_for_a_real_id() -> void:
 
 func test_label_for_falls_back_to_the_id_when_unknown() -> void:
 	assert_eq(BoostLibrary.label_for("ghost_boost"), "ghost_boost")
+
+
+# --- category_of / resolve_id — the mid-run upgrade menu's seam ------------------
+
+func test_every_catalogue_entry_has_a_real_category() -> void:
+	for id in BoostLibrary.CATALOGUE:
+		var category := BoostLibrary.category_of(id)
+		assert_true(category == "power" or category == "handling",
+			"'%s' has a real category, not '%s'" % [id, category])
+
+
+func test_category_of_classifies_the_pseudo_id_families() -> void:
+	assert_eq(BoostLibrary.category_of("drivetrain:1"), "handling")
+	assert_eq(BoostLibrary.category_of("engine_swap:fx_v8"), "power")
+
+
+func test_category_of_is_blank_for_an_unknown_id() -> void:
+	assert_eq(BoostLibrary.category_of("not_a_real_boost"), "")
+
+
+func test_resolve_id_matches_boost_for_for_a_catalogue_id() -> void:
+	var id: String = BoostLibrary.CATALOGUE.keys()[0]
+	assert_eq(BoostLibrary.resolve_id(id), BoostLibrary.boost_for(id))
+
+
+func test_resolve_id_resolves_a_drivetrain_pseudo_id() -> void:
+	assert_eq(BoostLibrary.resolve_id("drivetrain:2"), {"id": "drivetrain:2", "drivetrain_mode": 2})
+
+
+func test_resolve_id_resolves_an_engine_swap_pseudo_id() -> void:
+	assert_eq(BoostLibrary.resolve_id("engine_swap:fx_v8"),
+		{"id": "engine_swap:fx_v8", "engine_id": "fx_v8"})
+
+
+func test_resolve_id_is_empty_for_an_unknown_id() -> void:
+	assert_eq(BoostLibrary.resolve_id("not_a_real_boost"), {})

@@ -1,30 +1,24 @@
 extends GutTest
-# RunPickPanel (scripts/run_pick_panel.gd) — the between-stage MODAL (repair vs. a
-# drawn boost, or a bare Continue), replacing the deleted standings.tscn interstitial
-# (todo/roguelike-pivot.md "Between stages: repair or boost", stage 5).
+# RunPickPanel (scripts/run_pick_panel.gd) — the between-stage MODAL, redesigned per
+# todo/mid-run-upgrade-menu.md into four steps: open_continue (no pick to offer),
+# open_repair_or_upgrade, open_category_choice, open_roll (the slot-machine reveal).
 #
 # THE NAV TEST CLAUDE.md requires of every menu: keyboard/gamepad reachability via
-# MenuNav.attach, on a Control host with no world/scene needed at all — this panel is
-# deliberately decoupled from world.gd/$Car/the replay machinery for exactly this
-# reason (see the class doc).
-#
-# A non-empty pick renders as a CardCarousel now (CardUI, the same shape the hub's own
-# pages use) rather than a Button per row — the Continue-only shape is unchanged.
+# MenuNav.attach, on a Control host with no world/scene needed at all — every builder
+# below is deliberately decoupled from world.gd/$Car/the replay machinery for exactly
+# this reason (see the class doc).
 
 var _host: Control
 
 
 func before_each() -> void:
+	Config.reset()
 	_host = Control.new()
 	add_child_autofree(_host)
 
 
-# The one focusable control on a Continue-only page (no carousel involved).
-func _continue_button(page: MenuPage) -> Button:
-	for node in page.find_children("*", "Button", true, false):
-		if (node as Button).focus_mode != Control.FOCUS_NONE:
-			return node as Button
-	return null
+func after_each() -> void:
+	Config.reset()
 
 
 func _carousel(page: MenuPage) -> CardCarousel:
@@ -32,8 +26,10 @@ func _carousel(page: MenuPage) -> CardCarousel:
 	return (found[0] as CardCarousel) if not found.is_empty() else null
 
 
-# Synthetic pick entries — a plain {id, effect} dict is all RunPickPanel reads (see
-# open()'s pick loop), so there is no need to depend on a real catalogue boost existing.
+# Synthetic pick entries — a plain {id, effect} dict is all the panel reads for a
+# catalogue boost, so there is no need to depend on a real catalogue entry existing.
+# Ids default to real handling/power catalogue members so BoostLibrary.category_of
+# classifies them without a fixture.
 func _pick(ids: Array) -> Array:
 	var out: Array = []
 	for id in ids:
@@ -41,185 +37,181 @@ func _pick(ids: Array) -> Array:
 	return out
 
 
-# --- Navigation (the CLAUDE.md contract) ------------------------------------------
-
-func test_a_pick_page_is_keyboard_navigable() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a", "b"]), func(_x: String) -> void: pass)
-	assert_not_null(MenuNav.of(page), "the pick page has a MenuNav attached")
-	var carousel := _carousel(page)
-	assert_not_null(carousel, "the non-empty pick renders as a carousel")
-	assert_gt(carousel.card_count(), 0, "the pick page offers at least one card")
-
-
-func test_a_plain_continue_page_is_keyboard_navigable() -> void:
-	var page := RunPickPanel.open(_host, [], func(_x: String) -> void: pass)
-	assert_not_null(MenuNav.of(page), "the continue-only page has a MenuNav attached")
-	assert_not_null(_continue_button(page), "the continue-only page offers a focusable control")
-
-
-# Nav reaches every enabled card and a disabled one cannot land a confirm.
-func test_nav_reaches_every_enabled_card_and_skips_a_disabled_one() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a", "b"]), func(_x: String) -> void: pass,
-		false)  # no repair card offered — nothing disabled in this shape to begin with
-	var carousel := _carousel(page)
-	assert_eq(carousel.card_count(), 2)
-	for i in carousel.card_count():
-		assert_false(carousel.get_card(i).disabled, "every drawn-boost card is enabled")
-	# A disabled card never fires confirmed (card_carousel.gd _confirm_selected) — proven
-	# directly rather than by faking a disabled catalogue entry this file has no business
-	# authoring.
-	var fired: Array = []
-	carousel.confirmed.connect(func(i: int) -> void: fired.append(i))
-	carousel.get_card(0).disabled = true
-	carousel.select(0, false)
-	carousel._confirm_selected()
-	assert_eq(fired, [], "a disabled card cannot land a confirm")
-
-
-# --- Shape: a card per boost, plus repair (when offered), plus conversions --------
-
-func test_a_non_empty_pick_offers_repair_plus_one_card_per_boost() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a", "b", "c"]), func(_x: String) -> void: pass)
-	assert_eq(_carousel(page).card_count(), 4, "3 boosts + the repair card")
-
-
-func test_offer_repair_false_omits_the_repair_card() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a", "b", "c"]), func(_x: String) -> void: pass,
-		false)
-	assert_eq(_carousel(page).card_count(), 3, "3 boosts, no repair card when not offered")
-
-
-func test_offer_repair_defaults_true_for_existing_callers() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
-	assert_eq(_carousel(page).card_count(), 2, "1 boost + repair, offer_repair defaults true")
-
-
-func test_an_empty_pick_offers_only_continue() -> void:
-	var page := RunPickPanel.open(_host, [], func(_x: String) -> void: pass)
-	assert_null(_carousel(page), "the empty-pick shape has no carousel at all")
-	assert_not_null(_continue_button(page))
-
-
-# --- Confirming a card reports the choice, and nothing more -----------------------
-
-func test_confirming_the_repair_card_reports_repair() -> void:
-	var choices: Array = []
-	var page := RunPickPanel.open(_host, _pick(["a"]),
-		func(choice: String) -> void: choices.append(choice))
-	var carousel := _carousel(page)
-	# Repair is added first (see open()'s own ordering).
-	carousel.confirmed.emit(0)
-	assert_eq(choices, ["repair"])
-
-
-# A boost card shows the purchased level it will draw at (1-based, hub_shell.gd's own
-# "Lv %d" convention) so the player can tell "Grip" apart from an upgraded "Grip Lv 2".
-func test_a_boost_card_shows_its_level() -> void:
-	var page := RunPickPanel.open(_host, _pick(["fx_boost_x"]),
-		func(_x: String) -> void: pass, false)
-	var card := _carousel(page).get_card(0)
-	var labels := card.info.find_children("*", "Label", true, false)
-	var texts: Array[String] = []
-	for label in labels:
-		texts.append((label as Label).text)
-	# UITheme.label() uppercases everything it's given (rule 2's house style), so the
-	# rendered text reads "LV 1", not "Lv 1" — the level shown is still 1-based underneath.
-	assert_true(texts.has("LV 1"), "an un-upgraded boost reads Lv 1, never Lv 0")
-
-
-func test_confirming_a_boost_card_reports_its_id() -> void:
-	var choices: Array = []
-	var page := RunPickPanel.open(_host, _pick(["fx_boost_x"]),
-		func(choice: String) -> void: choices.append(choice), false)
-	var carousel := _carousel(page)
-	assert_eq(carousel.card_count(), 1)
-	carousel.confirmed.emit(0)
-	assert_eq(choices, ["fx_boost_x"])
-
-
-func test_pressing_continue_reports_an_empty_choice() -> void:
-	var choices: Array = []
-	var page := RunPickPanel.open(_host, [],
-		func(choice: String) -> void: choices.append(choice))
-	_continue_button(page).pressed.emit()
-	assert_eq(choices, [""])
-
-
-# --- Drivetrain conversion: rendered from a `pick` entry, same as a boost ---------
-#
-# A conversion is no longer a separate list appended on top — it's an entry the CALLER
-# (RunSession.pending_pick(), via the merged BoostLibrary.draw_from_ids pool) already
-# drew INTO `pick` itself, shaped {"id": "drivetrain:<mode>", "drivetrain_mode": mode}.
-# This file only proves the panel renders/reports whichever shape a `pick` entry has.
-
 func _drivetrain_entry(mode: int) -> Dictionary:
 	return {"id": "drivetrain:%d" % mode, "drivetrain_mode": mode}
 
 
-# Same idea for the engine swap: RunSession._with_engine_swap_display already stamps
-# "hp"/"hp_delta" onto the drawn entry before RunPickPanel ever sees it — this file only
-# proves the panel renders/reports whichever shape it's handed.
 func _engine_swap_entry(engine_id: String, hp: float, hp_delta: float) -> Dictionary:
 	return {"id": "engine_swap:%s" % engine_id, "engine_id": engine_id, "hp": hp, "hp_delta": hp_delta}
 
 
-func test_a_drivetrain_pick_entry_adds_one_card_and_stays_navigable() -> void:
-	var pick := _pick(["a"])
-	pick.append(_drivetrain_entry(Drivetrain.DriveMode.AWD))
-	var page := RunPickPanel.open(_host, pick, func(_x: String) -> void: pass)
-	assert_eq(_carousel(page).card_count(), 3, "1 boost + repair + 1 conversion card")
-	assert_not_null(MenuNav.of(page), "still keyboard/gamepad navigable with a conversion card")
+# --- open_continue -----------------------------------------------------------------
+
+func test_open_continue_is_keyboard_navigable() -> void:
+	var page := RunPickPanel.open_continue(_host, func(_x: String) -> void: pass)
+	assert_not_null(MenuNav.of(page), "the continue page has a MenuNav attached")
+	assert_eq(_carousel(page).card_count(), 1, "one Continue card")
 
 
-func test_confirming_a_drivetrain_card_reports_its_mode() -> void:
+func test_confirming_continue_reports_an_empty_choice() -> void:
 	var choices: Array = []
-	var pick := _pick(["a"])
-	pick.append(_drivetrain_entry(Drivetrain.DriveMode.AWD))
-	var page := RunPickPanel.open(_host, pick,
-		func(choice: String) -> void: choices.append(choice), false)
+	var page := RunPickPanel.open_continue(_host, func(choice: String) -> void: choices.append(choice))
+	_carousel(page).confirmed.emit(0)
+	assert_eq(choices, [""])
+
+
+# --- open_repair_or_upgrade ---------------------------------------------------------
+
+func test_open_repair_or_upgrade_offers_two_navigable_cards() -> void:
+	var page := RunPickPanel.open_repair_or_upgrade(_host, func(_x: String) -> void: pass)
+	assert_not_null(MenuNav.of(page), "keyboard/gamepad navigable")
+	assert_eq(_carousel(page).card_count(), 2, "repair + upgrade")
+
+
+func test_confirming_repair_reports_repair() -> void:
+	var choices: Array = []
+	var page := RunPickPanel.open_repair_or_upgrade(_host, func(choice: String) -> void: choices.append(choice))
+	_carousel(page).confirmed.emit(0)
+	assert_eq(choices, ["repair"])
+
+
+func test_confirming_upgrade_reports_upgrade() -> void:
+	var choices: Array = []
+	var page := RunPickPanel.open_repair_or_upgrade(_host, func(choice: String) -> void: choices.append(choice))
+	_carousel(page).confirmed.emit(1)
+	assert_eq(choices, ["upgrade"])
+
+
+# --- open_category_choice ------------------------------------------------------------
+
+func test_open_category_choice_is_keyboard_navigable() -> void:
+	var pick := _pick(["grip", "gearbox"])
+	var page := RunPickPanel.open_category_choice(_host, pick, func(_x: String) -> void: pass)
+	assert_not_null(MenuNav.of(page), "keyboard/gamepad navigable")
+	assert_eq(_carousel(page).card_count(), 2, "handling + power")
+
+
+func test_both_categories_enabled_when_both_have_entries() -> void:
+	var pick := _pick(["grip", "gearbox"])  # grip=handling, gearbox=power
+	var page := RunPickPanel.open_category_choice(_host, pick, func(_x: String) -> void: pass)
 	var carousel := _carousel(page)
-	# boost, then the one conversion (repair omitted here).
-	carousel.confirmed.emit(1)
+	assert_false(carousel.get_card(0).disabled, "handling has an entry")
+	assert_false(carousel.get_card(1).disabled, "power has an entry")
+
+
+func test_a_category_with_nothing_to_roll_is_disabled() -> void:
+	var pick := _pick(["grip", "aero"])  # both handling, nothing for power
+	var page := RunPickPanel.open_category_choice(_host, pick, func(_x: String) -> void: pass)
+	var carousel := _carousel(page)
+	assert_false(carousel.get_card(0).disabled, "handling has entries")
+	assert_true(carousel.get_card(1).disabled, "power has nothing to roll")
+
+
+func test_confirming_a_category_reports_its_name() -> void:
+	var choices: Array = []
+	var pick := _pick(["grip", "gearbox"])
+	var page := RunPickPanel.open_category_choice(_host, pick,
+		func(choice: String) -> void: choices.append(choice))
+	_carousel(page).confirmed.emit(1)
+	assert_eq(choices, ["power"])
+
+
+# --- open_roll -----------------------------------------------------------------------
+
+func test_open_roll_is_keyboard_navigable() -> void:
+	var pick := _pick(["grip", "aero", "brakes"])
+	var page := RunPickPanel.open_roll(_host, pick, "handling", func(_x: String) -> void: pass)
+	assert_not_null(MenuNav.of(page), "keyboard/gamepad navigable")
+
+
+func test_open_roll_only_renders_cards_in_the_chosen_category() -> void:
+	var pick := _pick(["grip", "aero", "gearbox"])  # 2 handling, 1 power
+	var page := RunPickPanel.open_roll(_host, pick, "handling", func(_x: String) -> void: pass)
+	assert_eq(_carousel(page).card_count(), 2, "only the handling entries are shown")
+
+
+# The winner on_done reports must always be one of the entries the panel was actually
+# handed for that category — never the other category's, never something outside `pick`
+# entirely. The winner is fixed the instant open_roll builds the page (before any spin
+# runs), so pressing Next directly (bypassing its disabled flag, same as emitting any
+# other signal) is enough to observe it without waiting out the real animation. Repeated
+# since randi() is not seeded/controllable from here.
+func test_the_rolled_winner_always_comes_from_the_given_category() -> void:
+	var pick := _pick(["grip", "aero", "gearbox"])
+	var handling_ids := ["grip", "aero"]
+	for _i in 20:
+		# An Array, not a plain String local: a lambda captures an outer local BY VALUE
+		# in GDScript, so reassigning it from inside the callback would never be seen
+		# out here — mutating a shared Array (append) is the idiom every other test in
+		# this file already uses for the same reason.
+		var choices: Array = []
+		var page := RunPickPanel.open_roll(_host, pick, "handling",
+			func(choice: String) -> void: choices.append(choice))
+		_next_button(page).pressed.emit()
+		var winner := String(choices[0])
+		assert_true(handling_ids.has(winner), "winner '%s' came from the handling entries" % winner)
+		page.queue_free()
+
+
+func test_a_single_entry_category_skips_the_spin_and_enables_next_immediately() -> void:
+	var pick := _pick(["gearbox"])  # the only power entry with no engine swap available
+	var page := RunPickPanel.open_roll(_host, pick, "power", func(_x: String) -> void: pass)
+	assert_false(_next_button(page).disabled, "nothing to spin toward with one entry")
+
+
+func test_confirming_next_reports_the_winner_id() -> void:
+	var pick := _pick(["gearbox"])
+	var choices: Array = []
+	var page := RunPickPanel.open_roll(_host, pick, "power",
+		func(choice: String) -> void: choices.append(choice))
+	_next_button(page).pressed.emit()
+	assert_eq(choices, ["gearbox"])
+
+
+func test_a_drivetrain_entry_renders_and_can_be_rolled() -> void:
+	var pick := _pick(["gearbox"])
+	pick.append(_drivetrain_entry(Drivetrain.DriveMode.AWD))
+	var choices: Array = []
+	var page := RunPickPanel.open_roll(_host, pick, "handling",
+		func(choice: String) -> void: choices.append(choice))
+	assert_eq(_carousel(page).card_count(), 1, "only the one handling (drivetrain) entry")
+	_next_button(page).pressed.emit()
 	assert_eq(choices, ["drivetrain:%d" % Drivetrain.DriveMode.AWD])
 
 
-func test_no_drivetrain_entry_offers_no_conversion_card() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
-	assert_eq(_carousel(page).card_count(), 2, "just the boost and repair — no conversion drawn")
-
-
-# --- The engine swap entry ---------------------------------------------------------
-
-func test_an_engine_swap_pick_entry_adds_one_card_and_stays_navigable() -> void:
-	var pick := _pick(["a"])
+func test_an_engine_swap_entry_renders_and_can_be_rolled() -> void:
+	var pick := _pick(["gearbox"])
 	pick.append(_engine_swap_entry("fx_v8", 300.0, 100.0))
-	var page := RunPickPanel.open(_host, pick, func(_x: String) -> void: pass)
-	assert_eq(_carousel(page).card_count(), 3, "1 boost + repair + 1 engine swap card")
-	assert_not_null(MenuNav.of(page), "still keyboard/gamepad navigable with an engine swap card")
-
-
-func test_confirming_an_engine_swap_card_reports_its_id() -> void:
 	var choices: Array = []
-	var pick := _pick(["a"])
+	var page := RunPickPanel.open_roll(_host, pick, "power",
+		func(choice: String) -> void: choices.append(choice))
+	assert_eq(_carousel(page).card_count(), 2, "gearbox + the one engine swap, both power")
+
+
+func test_the_roll_carousel_is_decorative_only() -> void:
+	# The player must not be able to nudge the highlight off the landed winner — see
+	# open_roll's own doc for why this is deliberate, not an oversight.
+	var pick := _pick(["gearbox"])
 	pick.append(_engine_swap_entry("fx_v8", 300.0, 100.0))
-	var page := RunPickPanel.open(_host, pick,
-		func(choice: String) -> void: choices.append(choice), false)
+	var page := RunPickPanel.open_roll(_host, pick, "power", func(_x: String) -> void: pass)
 	var carousel := _carousel(page)
-	# boost, then the one engine swap (repair omitted here).
-	carousel.confirmed.emit(1)
-	assert_eq(choices, ["engine_swap:fx_v8"])
+	assert_eq(carousel.focus_mode, Control.FOCUS_NONE, "the carousel itself is not focusable")
 
 
-func test_no_engine_swap_entry_offers_no_swap_card() -> void:
-	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
-	assert_eq(_carousel(page).card_count(), 2, "just the boost and repair — no swap drawn")
+func _next_button(page: MenuPage) -> Button:
+	# UITheme.button() uppercases its label (rule 2's house style), so the rendered
+	# text reads "NEXT", not "Next".
+	for node in page.find_children("*", "Button", true, false):
+		if (node as Button).text == "NEXT":
+			return node as Button
+	return null
 
 
-# --- Builds with no world scene ----------------------------------------------------
+# --- Builds with no world scene ------------------------------------------------------
 
 func test_builds_with_no_world_scene() -> void:
 	# Nothing above touches $Car, world.gd or the replay machinery — the whole suite runs
 	# against a bare Control host, which is the point: proven here explicitly so a future
 	# change that sneaks in a world/scene dependency fails loudly.
-	var page := RunPickPanel.open(_host, _pick(["a"]), func(_x: String) -> void: pass)
+	var page := RunPickPanel.open_continue(_host, func(_x: String) -> void: pass)
 	assert_not_null(page)

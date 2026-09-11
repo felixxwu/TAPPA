@@ -630,21 +630,27 @@ func test_a_pending_pick_offers_every_non_current_drivetrain_layout() -> void:
 
 func test_an_available_awd_conversion_competes_in_the_same_pool_as_boosts() -> void:
 	# fx_light_rwd (the default _grant() fixture) is not AWD, so an AWD conversion is
-	# available — RunSession folds it into the SAME draw pool as the boost catalogue
-	# (RunSession._pool_drivetrain_ids, region_run_mode.gd boost_choices), rather than
-	# appending it on top: the pick's total size must stay exactly run_boost_choices
-	# regardless of whether AWD happened to be drawn.
+	# available — RunSession folds it into the SAME pool as the boost catalogue
+	# (RunSession._pool_drivetrain_ids, region_run_mode.gd boost_pool_ids) rather than
+	# appending it on top of a draw: the pool is now the WHOLE catalogue plus whatever
+	# extras are available (todo/mid-run-upgrade-menu.md), so its size is exactly the
+	# catalogue's own size plus one AWD entry — never a random subset.
 	var car := _start()  # a fresh car is at full health -> the undamaged-arrival reward pick
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
 	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(int(car["instance_id"])))
 	assert_ne(stock, Drivetrain.DriveMode.AWD, "setup: AWD conversion is available")
-	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices + 1,
-		"the pick's total size (the usual reward count) is unaffected by whether AWD is in the pool")
-	for entry in RunSession.pending_pick():
+	var pending_pick_now: Array = RunSession.pending_pick()
+	var extras := RunSession._pool_engine_swap_ids().size()
+	assert_eq(pending_pick_now.size(), BoostLibrary.CATALOGUE.size() + 1 + extras,
+		"the whole catalogue plus the one AWD conversion (plus any engine swap available)")
+	var drivetrain_seen := 0
+	for entry in pending_pick_now:
 		var id := String((entry as Dictionary).get("id", ""))
 		if id.begins_with("drivetrain:"):
+			drivetrain_seen += 1
 			assert_eq(int((entry as Dictionary)["drivetrain_mode"]), Drivetrain.DriveMode.AWD,
 				"the only drivetrain conversion ever offered in the pool is AWD")
+	assert_eq(drivetrain_seen, 1, "the AWD conversion appears exactly once")
 
 
 func test_choosing_a_drivetrain_conversion_resolves_the_pick_and_takes_no_repair() -> void:
@@ -766,9 +772,11 @@ func test_the_pool_is_empty_once_the_car_already_runs_the_most_powerful_engine()
 func test_an_available_engine_swap_competes_in_the_same_pool_as_boosts() -> void:
 	var car := _start()  # a fresh car is at full health -> the undamaged-arrival reward pick
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
-	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices + 1,
-		"the pick's total size is unaffected by whether an engine swap is in the pool")
-	for entry in RunSession.pending_pick():
+	var pending_pick_now: Array = RunSession.pending_pick()
+	var extra_drivetrain := RunSession._pool_drivetrain_ids().size()
+	assert_eq(pending_pick_now.size(), BoostLibrary.CATALOGUE.size() + 1 + extra_drivetrain,
+		"the whole catalogue plus the one engine swap (plus AWD, also available on this car)")
+	for entry in pending_pick_now:
 		var id := String((entry as Dictionary).get("id", ""))
 		if id.begins_with("engine_swap:"):
 			assert_eq(id, "engine_swap:fx_v8", "the only engine swap ever offered is the next rung up")
@@ -880,9 +888,14 @@ func test_beginning_a_run_on_an_already_full_car_changes_nothing() -> void:
 	assert_almost_eq(float(_save.get_car(iid)["hp"]), max_hp, 0.001)
 
 
-# --- Task 2: an undamaged car earns an extra boost pick instead of a repair row ----
+# --- Task 2: an undamaged car earns the whole catalogue with no repair row --------
+#
+# Redesigned per todo/mid-run-upgrade-menu.md: the pool is now always the WHOLE
+# catalogue regardless of health (there is no "+1" any more since there's no draw to
+# size) — the reward is entirely that the repair option disappears, so every roll lands
+# on a real upgrade instead of the usual repair-or-upgrade choice.
 
-func test_a_damaged_car_yields_the_usual_choice_count_and_offers_repair() -> void:
+func test_a_damaged_car_offers_the_full_pool_and_repair() -> void:
 	var car := _start()
 	_damage_below_threshold(car)
 
@@ -890,11 +903,13 @@ func test_a_damaged_car_yields_the_usual_choice_count_and_offers_repair() -> voi
 
 	assert_true(RunSession.pick_awaiting())
 	assert_true(RunSession.offer_repair(), "below the threshold, repair is still offered")
-	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices,
-		"below the threshold, the usual number of boosts is drawn")
+	assert_eq(RunSession.pending_pick().size(),
+		BoostLibrary.CATALOGUE.size() + RunSession._pool_drivetrain_ids().size()
+			+ RunSession._pool_engine_swap_ids().size(),
+		"the pool is the whole catalogue plus whatever extras are available")
 
 
-func test_a_healthy_car_yields_one_extra_choice_and_offers_no_repair() -> void:
+func test_a_healthy_car_offers_the_full_pool_and_no_repair() -> void:
 	_start()  # a freshly granted car begin()s at full health (Task 1)
 
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
@@ -902,8 +917,10 @@ func test_a_healthy_car_yields_one_extra_choice_and_offers_no_repair() -> void:
 	assert_true(RunSession.pick_awaiting())
 	assert_false(RunSession.offer_repair(),
 		"at or above the threshold, the reward pick offers no repair row")
-	assert_eq(RunSession.pending_pick().size(), Config.data.run_boost_choices + 1,
-		"the reward is exactly one MORE boost pick than usual")
+	assert_eq(RunSession.pending_pick().size(),
+		BoostLibrary.CATALOGUE.size() + RunSession._pool_drivetrain_ids().size()
+			+ RunSession._pool_engine_swap_ids().size(),
+		"the pool is the same whole catalogue as the damaged case — the reward is 'no repair', not a bigger pool")
 
 
 func test_choose_repair_refuses_on_a_pick_that_does_not_offer_repair() -> void:
@@ -919,12 +936,20 @@ func test_choose_repair_refuses_on_a_pick_that_does_not_offer_repair() -> void:
 		"…and nothing was applied")
 
 
-func test_the_reward_draw_still_clamps_to_the_pool_size() -> void:
-	# run_boost_choices + 1 can exceed the catalogue; BoostLibrary.draw_from_ids already
-	# clamps (its own contract), so the pending pick must never exceed the pool it's drawn
-	# from — the boost catalogue plus, at most, one AWD conversion pseudo-entry (see
-	# RunSession._pool_drivetrain_ids).
+func test_the_pending_pick_never_exceeds_the_catalogue_plus_available_extras() -> void:
 	_start()
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
-	assert_true(RunSession.pending_pick().size() <= BoostLibrary.CATALOGUE.size() + 1,
-		"the drawn pick never exceeds the catalogue-plus-AWD pool's own size")
+	assert_true(RunSession.pending_pick().size() <= BoostLibrary.CATALOGUE.size() + 2,
+		"the pool never exceeds the catalogue plus (at most) one AWD entry and one engine swap")
+
+
+# Every id in the pool resolves to a real catalogue boost or a real drivetrain/engine-swap
+# pseudo-entry — nothing in the pool names something BoostLibrary.resolve_id can't handle.
+func test_every_pending_pick_entry_is_a_real_pool_member() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	for entry in RunSession.pending_pick():
+		var id := String((entry as Dictionary).get("id", ""))
+		var known := BoostLibrary.CATALOGUE.has(id) \
+			or id.begins_with("drivetrain:") or id.begins_with("engine_swap:")
+		assert_true(known, "pool entry '%s' is a real catalogue id or pseudo-id" % id)

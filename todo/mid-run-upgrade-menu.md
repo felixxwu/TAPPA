@@ -1,6 +1,15 @@
 # Mid-run upgrade menu — repair/upgrade → power/handling → random roll
 
-**Status: draft, not yet implemented — brainstorming with the user before writing code.**
+**Status: IMPLEMENTED.** Category split confirmed (gearbox/turbo/supercharger/engine
+swap = power; everything else = handling — turbo/supercharger added after the initial
+brainstorm, see below). Roll-from-whole-catalogue confirmed. Spin timing is
+`GameConfig.upgrade_roll_spin_ticks`/`upgrade_roll_spin_duration_s`.
+
+**Turbo/supercharger added to Power**, reusing the existing
+`install_turbo`/`install_supercharger` EFFECTS rows (features/forced-induction.md)
+as two new `BoostLibrary.CATALOGUE` entries, fully levelable in the meta shop like
+every other boost — see features/region-runs.md → "Turbo and supercharger as boosts"
+for the generalized dict-shaped `effect_fields` this required.
 
 ## The ask
 
@@ -34,40 +43,23 @@ Stored as a new `"category"` field (`"power"` / `"handling"`) on each
 classifies the two pseudo-id families (`drivetrain:` → handling, `engine_swap:` → power)
 so callers never need to special-case the prefixes themselves.
 
-## What does NOT change (deliberately)
+## DECIDED: roll from the entire catalogue, not a pre-drawn subset
 
-**`RunSession`'s draw stays exactly as it is today.** `report_event_result`/`resume`
-still call `_mode.boost_choices(...)` and still draw `Config.data.run_boost_choices`
-(default 3) distinct entries — or `+1` for the undamaged-arrival reward — from the
-merged pool (`BoostLibrary.CATALOGUE.keys() + drivetrain/engine-swap extras`), exactly
-as `RegionRunMode.boost_choices` does now. `RunSession.pending_pick()`,
-`choose_boost()`/`choose_drivetrain()`/`choose_engine_swap()`/`choose_repair()`, the
-persisted `pick_awaiting`/`pick_offers_repair` fields, and every existing
-`tests/headless/test_region_run.gd` assertion about pick size/content are untouched.
-
-Why keep the pre-draw instead of rolling from the WHOLE catalogue per category: it's a
-much smaller change (zero `RunSession`/`RegionRunMode`/persistence changes, zero
-resume-safety work, zero test churn in `test_region_run.gd`), and it still delivers the
-ask — the player picks a direction, then something in that direction is randomly
-chosen for them. The trade-off: with only 3-4 pre-drawn entries, a category can end up
-with zero eligible entries in a given pick (e.g. all 3 draws land on handling ids). See
-below for how that's handled.
+Superseding the earlier draft: `RunSession` no longer pre-draws
+`Config.data.run_boost_choices` random entries. Instead the pending pick is the WHOLE
+pool — every `BoostLibrary.CATALOGUE` id plus whatever drivetrain/engine-swap pseudo-ids
+are currently available — so both categories are always populated (short of both
+`gearbox` and an engine swap being simultaneously unavailable, which cannot happen:
+`gearbox` is always in the catalogue). `run_boost_choices` is retired outright (removed
+from `GameConfig` and `config/game_config.tres`) — there is no draw left for it to size.
 
 **The reveal step is presentation-only, not persisted.** If the app closes mid-flow
 (after picking a category, before pressing Next), nothing has been committed —
 `choose_boost`/etc. haven't run yet — so on resume the flow simply restarts at step 1
-against the same re-derived `pending_pick()`. This mirrors how `_confirm_pick`/
+against the same re-derived full pool. This mirrors how `_confirm_pick`/
 `_show_skill_progress` already work today (not persisted, restart from the card list on
-resume) — no new persisted state needed.
-
-## Handling an empty/skewed category
-
-Because the pool actually drawn is small (3-4 entries), one of the two categories can
-have zero eligible entries this pick (e.g. `run_boost_choices = 3` and all three drawn
-ids are `grip`/`aero`/`lightweight` — no power entry at all). The category-choice
-screen (step 2) disables that card — same "locked rows stay visible, disabled,
-`menu_nav_skip`" convention already used for locked regions/unaffordable shop rows
-(`features/menus.md`) — rather than hiding it or letting it roll from an empty pool.
+resume) — no new persisted state needed, and the roll itself uses a plain `randi()`
+(never seeded/persisted) since nothing depends on it surviving a resume.
 
 ## File-by-file plan
 
@@ -154,15 +146,13 @@ place of the old single-card-list description, and note the category split table
 - No new test touches `world.gd`'s `_confirm_pick`/step-chaining — same as today,
   that layer is compile-checked only (`main.tscn` instantiation cost), not unit tested.
 
-## Open questions for the user
+## Resolved during implementation
 
-1. Is the **3-way pre-draw staying at `run_boost_choices` (default 3)** an acceptable
-   trade-off, given it means a category can come up empty/disabled on a given pick? The
-   alternative (roll from the ENTIRE catalogue per category, not just the pre-drawn
-   subset) is a materially bigger change — it touches `RunSession`'s draw/persistence
-   and `test_region_run.gd`'s pinned pick-size assertions — but guarantees both
-   categories always have something to offer.
-2. Any preference on the **spin/reveal feel** (roughly how long it should run, how many
-   "tick" steps) — I'll default to something in the ~1.5-2.5s range with 8-10 ticks,
-   authored as new `GameConfig` fields (not hardcoded) so it's designer-tunable, unless
-   you'd rather specify numbers now.
+- Roll from the entire catalogue (not a pre-drawn subset) — confirmed.
+- Spin feel: `upgrade_roll_spin_ticks` (default 10), `upgrade_roll_spin_duration_s`
+  (default 1.8s) — confirmed as GameConfig tunables.
+- Turbo/supercharger added to Power, fully levelable — confirmed (the bigger of two
+  options offered), requiring `BoostLibrary.magnitude_for`/`current_effect_text` to
+  support a dict-shaped `effect_fields` value (several cfg fields under one effect
+  key, only one of which scales with level) alongside the existing scalar shape.
+- Undamaged-arrival reward: kept as "skip repair only", no reroll mechanic added.

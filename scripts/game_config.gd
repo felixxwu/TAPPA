@@ -4132,13 +4132,9 @@ func spectator_params() -> Dictionary:
 # are the UNLEVELED base magnitudes — BoostLibrary.magnitude_for(id, level) scales them by
 # `boost_level_magnitude_step` below (@export_group("Roguelike Meta Shop")) before a pick is
 # drawn, so a level-0 boost (nothing purchased) still rolls exactly the number authored here.
-## How many DISTINCT boosts are drawn for one between-stage pick, on top of the always-offered
-## repair. Clamped to the catalogue's own size (BoostLibrary.draw) if this exceeds it.
-@export_range(1, 6) var run_boost_choices := 3
 ## Health fraction (of max_hp) the run's car must be AT OR ABOVE to earn the
-## undamaged-arrival reward: one extra boost pick (run_boost_choices + 1) and NO
-## repair row, instead of the usual run_boost_choices + repair. Rewards arriving at
-## a stage without needing the repair in the first place.
+## undamaged-arrival reward: NO repair row on the pick screen, so every roll lands on a
+## real upgrade instead of the usual repair-or-upgrade choice.
 @export_range(0.5, 1.0, 0.01) var run_boost_healthy_threshold := 0.95
 ## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost).
 @export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.93
@@ -4155,6 +4151,41 @@ func spectator_params() -> Dictionary:
 # NOTE: there is deliberately no run_boost_engine_power_mult any more — the Engine Swap
 # is a genuine EngineLibrary swap now (RunSession._pool_engine_swap_ids), not a flat
 # peak_torque multiplier. See features/engine-swap.md.
+#
+# "Turbocharger" / "Supercharger" — the SAME install_turbo/install_supercharger EFFECTS
+# rows the permanent-part model used (features/forced-induction.md), now authored as
+# in-run boosts. Only the *_boost_gain field SCALES with a purchased level (it's the
+# part's actual strength); the rest are the part's fixed "personality" (spool character/
+# drag) and never scale — see BoostLibrary.CATALOGUE's "turbo"/"supercharger" entries and
+# magnitude_for's dict-shaped effect_fields handling.
+## Torque multiplier at full boost — the turbo boost's scaled field.
+@export_range(0.05, 1.5, 0.01) var run_boost_turbo_boost_gain := 0.45
+## Shaft speed (rad/s) boost saturates at — fixed, does not scale with level.
+@export_range(2000.0, 20000.0, 100.0) var run_boost_turbo_omega_ref := 10000.0
+## Turbo shaft rotational inertia (kg·m²) — fixed, does not scale with level.
+@export_range(0.001, 0.05, 0.001) var run_boost_turbo_inertia := 0.008
+## Always-on crank friction (N·m) the fitted turbo adds — fixed, does not scale with level.
+@export_range(0.0, 40.0, 0.5) var run_boost_turbo_parasitic_friction := 8.0
+## Torque multiplier at full belt boost — the supercharger boost's scaled field.
+@export_range(0.05, 1.5, 0.01) var run_boost_supercharger_boost_gain := 0.4
+## Engine rpm belt boost saturates at — fixed, does not scale with level.
+@export_range(1000.0, 12000.0, 100.0) var run_boost_supercharger_rpm_ref := 5000.0
+## Belt drag on the crank (N·m per 1000 rpm) — fixed, does not scale with level.
+@export_range(0.0, 40.0, 0.5) var run_boost_supercharger_parasitic_coef := 6.0
+
+
+@export_group("Roguelike Upgrade Roll")
+# The mid-run upgrade menu's slot-machine-style reveal (todo/mid-run-upgrade-menu.md,
+# run_pick_panel.gd's open_roll) — a scripted CardCarousel.select() sequence that ticks
+# toward the randomly-rolled winner, slowing down as it lands. A LOOK/FEEL tunable, same
+# "nothing in tests/headless/ may pin one" rule as every other magnitude in this file.
+## How many ticks the spin takes before landing on the winner. More ticks reads as a
+## longer build-up; fewer as a quick flick.
+@export_range(4, 24) var upgrade_roll_spin_ticks := 10
+## Total time (seconds) the spin runs, start to landing on the winner. Individual tick
+## intervals are NOT even — they grow across the spin (see open_roll's _spin) so it
+## visibly decelerates into the landing rather than stopping abruptly.
+@export_range(0.5, 5.0, 0.1) var upgrade_roll_spin_duration_s := 1.8
 
 
 @export_group("Roguelike Meta Shop")

@@ -40,16 +40,33 @@ extends RefCounted
 # `GameConfig.boost_level_magnitude_step` ("Roguelike Meta Shop") — level 0 is always an
 # exact no-op, so a fresh id with no purchased level still rolls the bare GameConfig
 # number above unchanged.
+#
+# EACH ENTRY ALSO CARRIES A `category` — "power" or "handling" — read by the mid-run
+# upgrade menu (todo/mid-run-upgrade-menu.md, run_pick_panel.gd): the player picks a
+# direction first, then ONE entry from that category is rolled at random. `category_of`
+# below is the one place a caller resolves a category, for a catalogue id or either
+# pseudo-id family (drivetrain:/engine_swap:) alike — never re-derive it at a call site.
+#
+# AN `effect_fields` VALUE IS EITHER A STRING (one cfg field -> one scaled float — every
+# entry above) OR A DICTIONARY (several cfg fields written at once under ONE effect key —
+# "turbo"/"supercharger" below, whose EFFECTS row is `install_induction`: apply() splats
+# a whole sub-dict onto the live config in one go, not one scalar). For a dict-shaped
+# entry, `scaled_subfields` names which of ITS keys the purchased level actually scales
+# (the part's real strength — boost gain); every other key is a FIXED characteristic of
+# the part (spool inertia, saturation point, parasitic drag) that never scales with
+# level. See magnitude_for and current_effect_text for where this shape is read.
 const CATALOGUE := {
 	"lightweight": {
 		"label": "Lightweight parts",
 		"effect_fields": {"mass_mult": "run_boost_mass_mult"},
 		"level_direction": -1,  # lower mass_mult = lighter = more boost
+		"category": "handling",
 	},
 	"grip": {
 		"label": "Sticky tyres",
 		"effect_fields": {"tire_grip_mult": "run_boost_grip_mult"},
 		"level_direction": 1,  # higher tire_grip_mult = more boost
+		"category": "handling",
 	},
 	"gearbox": {
 		"label": "Quick-shift gearbox",
@@ -59,6 +76,7 @@ const CATALOGUE := {
 		# absolute seconds it sets rather than a percentage of a baseline that does not
 		# exist — see current_effect_text.
 		"unit": "s", "decimals": 2,
+		"category": "power",
 	},
 	"aero": {
 		"label": "Aero kit",
@@ -71,16 +89,46 @@ const CATALOGUE := {
 		# authored unit is N per (m/s)², which is what the shop prints. Both axles take
 		# the same number and current_effect_text de-duplicates them into one figure.
 		"unit": "N", "decimals": 1,
+		"category": "handling",
 	},
 	"brakes": {
 		"label": "Big brakes",
 		"effect_fields": {"brake_force_mult": "run_boost_brake_mult"},
 		"level_direction": 1,  # higher brake_force_mult = more boost
+		"category": "handling",
 	},
 	"streamline": {
 		"label": "Streamlined body",
 		"effect_fields": {"drag_mult": "run_boost_drag_mult"},
 		"level_direction": -1,  # lower drag_mult = less drag = more boost
+		"category": "handling",
+	},
+	"turbo": {
+		"label": "Turbocharger",
+		"effect_fields": {"install_turbo": {
+			"turbo_boost_gain": "run_boost_turbo_boost_gain",
+			"turbo_omega_ref": "run_boost_turbo_omega_ref",
+			"turbo_inertia": "run_boost_turbo_inertia",
+			"turbo_parasitic_friction": "run_boost_turbo_parasitic_friction",
+		}},
+		"scaled_subfields": ["turbo_boost_gain"],
+		"display_subfield": "turbo_boost_gain",
+		"display_suffix": "torque at full boost",
+		"level_direction": 1,  # higher turbo_boost_gain = more boost
+		"category": "power",
+	},
+	"supercharger": {
+		"label": "Supercharger",
+		"effect_fields": {"install_supercharger": {
+			"supercharger_boost_gain": "run_boost_supercharger_boost_gain",
+			"supercharger_rpm_ref": "run_boost_supercharger_rpm_ref",
+			"supercharger_parasitic_coef": "run_boost_supercharger_parasitic_coef",
+		}},
+		"scaled_subfields": ["supercharger_boost_gain"],
+		"display_subfield": "supercharger_boost_gain",
+		"display_suffix": "torque at full boost",
+		"level_direction": 1,  # higher supercharger_boost_gain = more boost
+		"category": "power",
 	},
 	# NOTE: the Engine Swap is NOT a CATALOGUE entry — it is a GENUINE engine swap now
 	# (RunSession._pool_engine_swap_ids' "engine_swap:<EngineLibrary id>" pseudo-id,
@@ -108,16 +156,32 @@ static func level_scale(level: int, direction: int) -> float:
 # (mirrors UpgradeFixtures.boost's "unknown id -> {}" contract, so a bad id degrades to
 # nothing rather than erroring). Pure in its two arguments — no Save read — so the
 # level-scaling relationship is testable without a profile.
+#
+# An `effect_fields` value that IS a Dictionary (turbo/supercharger — see the CATALOGUE
+# header) resolves to a SUB-dict instead of a scaled float: each of ITS keys is read off
+# the named cfg field and scaled ONLY if it's named in the entry's `scaled_subfields`,
+# otherwise passed through unscaled (a fixed characteristic of the part). This is the one
+# place that shape is handled — apply()'s install_induction arm already expects exactly
+# this sub-dict, unchanged.
 static func magnitude_for(id: String, level: int) -> Dictionary:
 	var entry: Dictionary = CATALOGUE.get(id, {})
 	if entry.is_empty():
 		return {}
 	var cfg: GameConfig = Config.data
 	var scale := level_scale(level, int(entry.get("level_direction", 1)))
+	var scaled_subfields: Array = entry.get("scaled_subfields", [])
 	var out := {}
 	for effect_key in (entry["effect_fields"] as Dictionary):
-		var cfg_field := String((entry["effect_fields"] as Dictionary)[effect_key])
-		out[effect_key] = float(cfg.get(cfg_field)) * scale
+		var spec: Variant = (entry["effect_fields"] as Dictionary)[effect_key]
+		if spec is Dictionary:
+			var sub := {}
+			for target_field in (spec as Dictionary):
+				var cfg_field := String((spec as Dictionary)[target_field])
+				var value := float(cfg.get(cfg_field))
+				sub[target_field] = value * scale if scaled_subfields.has(target_field) else value
+			out[effect_key] = sub
+		else:
+			out[effect_key] = float(cfg.get(String(spec))) * scale
 	return out
 
 
@@ -166,6 +230,19 @@ static func current_effect_text(id: String, level: int) -> String:
 	var decimals := int(entry.get("decimals", 2))
 	var parts: Array[String] = []
 	for effect_key in magnitude:
+		# A DICT-SHAPED entry (turbo/supercharger — install_induction's op, which is
+		# neither mult/add/set): show the ONE scaled sub-field (`display_subfield`) as a
+		# signed percentage — it IS the boost's own gain, not a ratio-to-baseline like a
+		# mult row, so it skips the (value - 1.0) shift the mult branch below applies.
+		if magnitude[effect_key] is Dictionary:
+			var sub: Dictionary = magnitude[effect_key]
+			var gain := float(sub.get(String(entry.get("display_subfield", "")), 0.0))
+			var suffix := String(entry.get("display_suffix", ""))
+			var dict_text := "+%.0f%% %s" % [gain * 100.0, suffix] if not suffix.is_empty() \
+				else "+%.0f%%" % (gain * 100.0)
+			if not parts.has(dict_text):
+				parts.append(dict_text)
+			continue
 		var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
 		var value := float(magnitude[effect_key])
 		var text := ""
@@ -199,6 +276,33 @@ static func boost_for(id: String) -> Dictionary:
 	if effect.is_empty():
 		return {}
 	return {"id": id, "effect": effect}
+
+
+# "power" or "handling" for a catalogue id, OR either pseudo-id family the between-stage
+# pick pool also carries — "drivetrain:<mode>" (the AWD conversion) reads as "handling",
+# "engine_swap:<id>" (a genuine engine swap) reads as "power". "" for an unknown id. The
+# ONE place a caller resolves a category — run_pick_panel.gd's category-choice screen and
+# random roll both filter through this rather than re-deriving the prefix checks.
+static func category_of(id: String) -> String:
+	if id.begins_with("drivetrain:"):
+		return "handling"
+	if id.begins_with("engine_swap:"):
+		return "power"
+	return String(CATALOGUE.get(id, {}).get("category", ""))
+
+
+# One pick-pool id, resolved to the shape RunPickPanel/UpgradeLibrary read — {"id",
+# "effect"} for a catalogue id, {"id", "drivetrain_mode"} for "drivetrain:<mode>", {"id",
+# "engine_id"} for "engine_swap:<id>". {} for an unknown id (mirrors boost_for's own
+# contract). The ONE place a caller resolves a pool id into its display/apply shape —
+# RunSession and the (now-retired) per-mode draw used to each carry their own copy of
+# this mapping; this is the single version both funnel through.
+static func resolve_id(id: String) -> Dictionary:
+	if id.begins_with("drivetrain:"):
+		return {"id": id, "drivetrain_mode": int(id.substr("drivetrain:".length()))}
+	if id.begins_with("engine_swap:"):
+		return {"id": id, "engine_id": id.substr("engine_swap:".length())}
+	return boost_for(id)
 
 
 # Display text for a pick row. `id` for an unknown entry, so a stale/miskeyed id is

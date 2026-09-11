@@ -220,41 +220,17 @@ func offers_boost_pick() -> bool:
 	return true
 
 
-# BoostLibrary.draw_from_ids is seeded from THIS RUN, never the wall clock — see
-# _boost_seed. `count` overrides the default draw (run_boost_choices) when >= 0 — see
-# run_mode.gd's boost_choices doc; RunSession passes run_boost_choices + 1 for the
-# undamaged-arrival reward.
+# THE WHOLE POOL, not a random subset (todo/mid-run-upgrade-menu.md): the player picks a
+# direction (power/handling) THEMSELVES on the pick screen, then ONE entry from that
+# category is rolled at random — so every entry has to be offered up front for the
+# category screen to know what's actually available, rather than pre-narrowing to a
+# small drawn sample that could leave a whole category empty. `extra_ids` (RunSession's
+# "drivetrain:<mode>" and "engine_swap:<engine id>" pseudo-ids) are folded into the SAME
+# pool as the boost catalogue's own ids, exactly like the old draw did, so a conversion or
+# swap competes as just another catalogue entry rather than a guaranteed extra.
 #
-# THE POOL IS MERGED, not boosts-plus-appended-extras: `extra_ids` (RunSession's
-# "drivetrain:<mode>" and "engine_swap:<engine id>" pseudo-ids) go into the SAME bag as
-# the boost catalogue's own ids, so exactly `n` total options are drawn regardless of how
-# many of those extras happen to be available — draw_from_ids clamps to the pool size
-# regardless, so an oversized count is always safe. Each picked id is then resolved to its
-# own shape: a "drivetrain:<mode>" id becomes {"id", "drivetrain_mode"}; an
-# "engine_swap:<id>" id becomes {"id", "engine_id"}; anything else resolves through
-# BoostLibrary.boost_for same as before, {"id", "effect"}.
-func boost_choices(stage_index: int, count: int = -1, extra_ids: Array = []) -> Array:
-	var n := count if count >= 0 else Config.data.run_boost_choices
-	var pool: Array = BoostLibrary.CATALOGUE.keys() + extra_ids
-	var picked := BoostLibrary.draw_from_ids(_boost_seed(stage_index), n, pool)
-	var out: Array = []
-	for id in picked:
-		var id_str := String(id)
-		if id_str.begins_with("drivetrain:"):
-			out.append({"id": id_str, "drivetrain_mode": int(id_str.substr("drivetrain:".length()))})
-		elif id_str.begins_with("engine_swap:"):
-			out.append({"id": id_str, "engine_id": id_str.substr("engine_swap:".length())})
-		else:
-			out.append(BoostLibrary.boost_for(id_str))
-	return out
-
-
-# The run's own seed, offset by the stage the pick is FOR — the same "bump by a large
-# prime stride" convention world.gd already uses to re-roll a challenge stage's seed on
-# retry (features/rally-challenge.md -> "Stage-generation retry"), reused here so a
-# resumed run's pick matches what it drew the first time (deterministic in
-# (run_seed, stage_index), nothing else). Distinct from RegionStagePool's own stage
-# draw, which is keyed on run_seed alone — this needs a SECOND, independent seed per
-# stage so the two draws (which stage, which boosts) can't accidentally correlate.
-func _boost_seed(stage_index: int) -> int:
-	return run_seed + stage_index * 104729
+# Deterministic in nothing but `extra_ids` itself (no RNG, no seed) — the whole point is
+# that this is the FULL pool, not a draw, so a resumed run trivially re-derives the same
+# list with no persistence needed.
+func boost_pool_ids(_stage_index: int, extra_ids: Array = []) -> Array:
+	return BoostLibrary.CATALOGUE.keys() + extra_ids

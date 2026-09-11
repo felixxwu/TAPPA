@@ -10,6 +10,15 @@ upgrades, `effective_meta`), `scripts/engine_audio_synth.gd` /
 
 **Tests:** `tests/headless/test_turbo.gd`, `tests/headless/test_engine.gd`, `tests/headless/test_engine_audio.gd`, `tests/headless/test_engine_library.gd`, `tests/headless/test_upgrade_library.gd`
 
+**A third acquisition route:** `BoostLibrary.CATALOGUE`'s `"turbo"`/`"supercharger"`
+entries (`scripts/boost_library.gd`) offer these same two parts as an in-run,
+run-scoped upgrade in the mid-run pick's "More Power" category
+(`todo/mid-run-upgrade-menu.md`, [region-runs.md](region-runs.md) → "Turbo and
+supercharger as boosts") — the SAME `install_turbo`/`install_supercharger` EFFECTS
+rows below, walked through `UpgradeLibrary.active_effects`/`apply()` exactly like
+any other boost. Only the boost's `*_boost_gain` scales with a purchased meta-shop
+level; the rest of each part's authored character is fixed.
+
 Turbo and supercharger are both properties of the **engine**, not the car —
 same pattern as the torque curve and gearbox (see
 [engine-and-transmission.md](engine-and-transmission.md)). Either can arrive

@@ -64,9 +64,10 @@ var _pending_repair: Dictionary = {}
 var _last_result: Dictionary = {}
 # --- The between-stage pick (todo/roguelike-pivot.md "Between stages: repair or
 # boost", stage 5) ---------------------------------------------------------------
-# The boosts drawn for the pick currently awaiting a choice — BoostLibrary entries,
-# {"id","effect"}. Empty when no pick is outstanding (every mode that answers false
-# to RunMode.offers_boost_pick, and this run's own final/failed stage).
+# EVERY id offered for the pick currently awaiting a choice — the WHOLE catalogue plus
+# any available drivetrain/engine-swap pseudo-ids, resolved via BoostLibrary.resolve_id
+# (see _resolve_pick_pool). Empty when no pick is outstanding (every mode that answers
+# false to RunMode.offers_boost_pick, and this run's own final/failed stage).
 var _pending_pick: Array = []
 # True while _pending_pick is awaiting choose_repair()/choose_boost(). Blocks
 # continue_to_next_stage() — the player picks exactly one before the run advances.
@@ -76,7 +77,7 @@ var _pick_awaiting := false
 # the pick state so a resumed run does not re-roll the answer against a car whose HP
 # may have moved since. False when the run's car was above
 # Config.data.run_boost_healthy_threshold at draw time (the undamaged-arrival reward:
-# one extra boost, no repair) — see offer_repair().
+# no repair row, so every roll lands on a real upgrade) — see offer_repair().
 var _pick_offers_repair := true
 # This run's OWN picked boosts, in pick order — {"id","effect"}, UpgradeLibrary's
 # shape. RUN-SCOPED: never written to Save's persisted car (world.gd._field_car
@@ -319,6 +320,20 @@ func _pool_engine_swap_ids() -> Array:
 # this is where the delta has to be computed. `hp` reuses CarLibrary.horsepower exactly —
 # the same peak_power_kw * KW_KG_TO_HP_TONNE / 1000.0 the car stats panel shows — rather
 # than re-deriving the constant.
+# The WHOLE pick pool, resolved: every id `_mode.boost_pool_ids` currently offers
+# (the full BoostLibrary catalogue plus whatever drivetrain/engine-swap pseudo-ids are
+# available right now), mapped through BoostLibrary.resolve_id and stamped with the
+# engine swap's hp/hp_delta display fields — the ONE place both pick-building call
+# sites (report_event_result, resume) build `_pending_pick`, so they can never disagree
+# on what an id resolves to.
+func _resolve_pick_pool() -> Array:
+	var ids := _mode.boost_pool_ids(_stage_index, _pool_drivetrain_ids() + _pool_engine_swap_ids())
+	var out: Array = []
+	for id in ids:
+		out.append(BoostLibrary.resolve_id(String(id)))
+	return _with_engine_swap_display(out)
+
+
 func _with_engine_swap_display(pick: Array) -> Array:
 	if pick.is_empty():
 		return pick
@@ -567,20 +582,16 @@ func resume(unix_time: int) -> bool:
 	_drivetrain_override = int(run.get("drivetrain_override", -1))
 	_engine_swap_id = String(run.get("engine_swap_id", ""))
 	# A pick that was still awaiting a choice when this run was last persisted
-	# RE-DERIVES rather than being stored verbatim — boost_choices is a pure function
-	# of (the mode's own seed, stage_index), so this always matches what was offered
-	# before (todo/roguelike-pivot.md: "a resumed run offers the same choice it
-	# offered before").
+	# RE-DERIVES rather than being stored verbatim — boost_pool_ids is a pure function
+	# of extra_ids alone (the WHOLE catalogue, no draw/seed), so this always matches
+	# what was offered before (todo/roguelike-pivot.md: "a resumed run offers the same
+	# choice it offered before").
 	_pick_awaiting = bool(run.get("pick_awaiting", false))
 	# offer_repair is NOT re-derived like the picks above — it was resolved once
 	# against the car's HP at draw time, and the car's HP can move (self-healing,
 	# damage) between then and a resume, so it is persisted verbatim instead.
 	_pick_offers_repair = bool(run.get("pick_offers_repair", true))
-	# Re-derive with the SAME count the original draw used — a healthy-arrival pick
-	# drew run_boost_choices + 1 and offered no repair, so it must resume that way too.
-	var resume_count := -1 if _pick_offers_repair else Config.data.run_boost_choices + 1
-	_pending_pick = _with_engine_swap_display(_mode.boost_choices(_stage_index, resume_count,
-		_pool_drivetrain_ids() + _pool_engine_swap_ids())) if _pick_awaiting else []
+	_pending_pick = _resolve_pick_pool() if _pick_awaiting else []
 	_active = true
 	_stage_running = true
 	return true
@@ -691,20 +702,20 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		@warning_ignore("return_value_discarded")
 		Save.apply_field_repair_to(_car_instance_id)
 	elif _mode.offers_boost_pick():
-		# THE PICK (todo/roguelike-pivot.md, "Between stages: repair or boost"). Repair
-		# stops being automatic and becomes ONE option among the drawn boosts — the
-		# player gives up a boost to take it. Nothing is applied until choose_repair()
-		# / choose_boost() resolves the pick; continue_to_next_stage() refuses to
-		# advance until one of them has.
-		# The undamaged-arrival reward: a car above run_boost_healthy_threshold draws
-		# one EXTRA boost and offers no repair row instead of the usual choices +
-		# repair. Resolved once, here, against the car's HP right now — see
-		# _pick_offers_repair's doc for why this is persisted rather than re-derived.
+		# THE PICK (todo/roguelike-pivot.md, "Between stages: repair or boost"; see
+		# todo/mid-run-upgrade-menu.md for the player-directed power/handling redesign).
+		# Repair stops being automatic and becomes ONE top-level option alongside
+		# upgrading — the player gives up a boost to take it. Nothing is applied until
+		# choose_repair() / choose_boost() resolves the pick; continue_to_next_stage()
+		# refuses to advance until one of them has.
+		# The undamaged-arrival reward: a car above run_boost_healthy_threshold offers
+		# no repair row at all, so the player is never tempted to waste a roll on a
+		# repair nobody needed — every roll lands on a real upgrade instead. Resolved
+		# once, here, against the car's HP right now — see _pick_offers_repair's doc
+		# for why this is persisted rather than re-derived.
 		var healthy := Save.car_health_fraction(_car_instance_id) >= Config.data.run_boost_healthy_threshold
 		_pick_offers_repair = not healthy
-		var count := Config.data.run_boost_choices + 1 if healthy else -1
-		_pending_pick = _with_engine_swap_display(_mode.boost_choices(_stage_index, count,
-			_pool_drivetrain_ids() + _pool_engine_swap_ids()))
+		_pending_pick = _resolve_pick_pool()
 		_pick_awaiting = true
 	else:
 		# Every mode that does not opt into the pick (the challenge) keeps the old

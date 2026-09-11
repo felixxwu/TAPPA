@@ -100,9 +100,10 @@ static func values(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 
 
 # The sheet the car WOULD have if `pick` were taken, for the confirmation popup's "after"
-# column. `pick` is either a boost entry in `UpgradeLibrary.active_effects`' own shape
-# ({"id": String, "effect": Dictionary} — what `BoostLibrary.boost_for` returns) or a
-# drivetrain conversion ({"drivetrain": DriveMode int}).
+# column. `pick` is a boost entry in `UpgradeLibrary.active_effects`' own shape
+# ({"id": String, "effect": Dictionary} — what `BoostLibrary.boost_for` returns), a
+# drivetrain conversion ({"drivetrain": DriveMode int}), or an engine swap
+# ({"engine_swap": EngineLibrary id}).
 #
 # PURE PREVIEW. The owned dict is DEEP-duplicated before anything is appended, because the
 # dict `Save.get_car` hands back is the live profile reference: appending a candidate boost
@@ -118,6 +119,10 @@ static func preview(owned_car: Dictionary, meta: Dictionary, pick: Dictionary) -
 	var probe := owned_car.duplicate(true)
 	if pick.has("drivetrain"):
 		probe["drivetrain_override"] = int(pick["drivetrain"])
+	elif pick.has("engine_swap"):
+		# The exact field car.gd::_apply_engine_swap / world.gd::_owned_with_run_effects
+		# read for a swapped engine — see features/engine-swap.md.
+		probe["swapped_engine"] = String(pick["engine_swap"])
 	elif pick.has("effect"):
 		var boosts: Array = (probe.get("boosts", []) as Array).duplicate()
 		boosts.append(pick)

@@ -2131,29 +2131,62 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
 
 
-# Open (or RE-open, after a cancelled confirmation) the card list. Split out of
-# _present_standings_overlay so Cancel can come back to it without re-running any of the
-# replay/camera setup above — the pick is still unresolved on RunSession at that point, so
-# `pending_pick()` rebuilds the identical set of cards.
+# Open the top of the pick chain. Split out of _present_standings_overlay so the chain's
+# own steps stay simple functions rather than being buried in the replay/camera setup
+# above; none of them back out to here (no step offers `on_back` — see open_roll's doc for
+# why the roll specifically cannot be cancelled), so this only ever runs once per stage.
+#
+# THREE ENTRY SHAPES (todo/mid-run-upgrade-menu.md): no pick at all (a challenge stage,
+# or this run's own final/failed stage) gets a bare Continue; the undamaged-arrival
+# reward (offer_repair() false) skips straight to the category choice, since there is no
+# repair option to weigh against upgrading; everything else starts at repair-or-upgrade.
 func _open_pick_panel() -> void:
-	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(),
-		_on_interstitial_choice, RunSession.offer_repair())
+	var pick := RunSession.pending_pick()
+	if pick.is_empty():
+		_interstitial_page = RunPickPanel.open_continue(self, _on_interstitial_choice)
+	elif RunSession.offer_repair():
+		_interstitial_page = RunPickPanel.open_repair_or_upgrade(self, _on_repair_or_upgrade)
+	else:
+		_open_category_panel()
 
 
-# The interstitial's card was pressed — "repair", a boost id, "drivetrain:<mode>", or ""
-# (plain Continue, offered when RunSession had no pick to draw).
+# Repair-or-upgrade resolved. "repair" reports straight through the same seam a bare
+# Continue does (both skip the stats step — see _on_interstitial_choice); "upgrade"
+# carries on to the direction choice.
+func _on_repair_or_upgrade(choice: String) -> void:
+	if choice == "repair":
+		_on_interstitial_choice("repair")
+	else:
+		_open_category_panel()
+
+
+func _open_category_panel() -> void:
+	_teardown_interstitial_page()
+	_interstitial_page = RunPickPanel.open_category_choice(self, RunSession.pending_pick(),
+		_open_roll_panel)
+
+
+func _open_roll_panel(category: String) -> void:
+	_teardown_interstitial_page()
+	_interstitial_page = RunPickPanel.open_roll(self, RunSession.pending_pick(), category,
+		_on_interstitial_choice)
+
+
+# The roll landed and Next was pressed — "repair" (from the repair-or-upgrade step), a
+# boost id, "drivetrain:<mode>", "engine_swap:<id>", or "" (plain Continue, offered when
+# RunSession had no pick to draw).
 #
-# THE PICK IS NOT APPLIED HERE ANY MORE. An upgrade first has to be CONFIRMED against what
-# it would do to the car, because "Lightweight parts" does not tell the player they are
-# also giving up nothing, or how much: the sequence is
+# THE PICK IS NOT APPLIED HERE ANY MORE. An upgrade first shows what it would do to the
+# car, because "Lightweight parts" does not tell the player they are also giving up
+# nothing, or how much: the sequence is
 #
-#   card pressed -> car stats, before -> after, Apply / Cancel   (_confirm_pick)
-#                -> skill-unlock progress, Continue              (_show_skill_progress)
-#                -> apply + advance                              (_apply_pick)
+#   card pressed -> car stats, before -> after, Next   (_confirm_pick)
+#                -> skill-unlock progress, Continue    (_show_skill_progress)
+#                -> apply + advance                    (_apply_pick)
 #
-# and CANCEL returns to the card list with nothing spent, so the player can pick something
-# else — the pick is still unresolved on RunSession at that point, which is exactly what
-# `_pick_awaiting` already guarantees (continue_to_next_stage refuses until it resolves).
+# There is no Cancel any more — the roll already committed the choice
+# (todo/mid-run-upgrade-menu.md: "the user has no choice"), so _confirm_pick's stats step
+# is read-only, a plain Next carrying on rather than an Apply/Cancel pair.
 #
 # TWO CHOICES SKIP THE STATS STEP. Repair moves no stat on the sheet (it restores the HP a
 # stage cost, which the sheet's Durability row reports as the car's CEILING, not its
@@ -2183,8 +2216,8 @@ func _swap_interstitial(title: String) -> MenuPage:
 
 # Step 1 — what would this pick do to the car? Built on the SAME panel and preview the
 # hub's car popup uses, so the two can never disagree about what an effect is worth.
-# Apply carries on to the progress screen; Cancel goes back to the card list with nothing
-# spent and the pick still unresolved, which is what lets the player choose something else.
+# READ-ONLY: the roll already committed the choice (todo/mid-run-upgrade-menu.md — "the
+# user has no choice"), so there is no Cancel any more — Next is the only way on.
 func _confirm_pick(choice: String) -> void:
 	var owned: Dictionary = Save.get_car(RunSession.car_instance_id())
 	var meta: Dictionary = CarLibrary.for_owned(owned)
@@ -2198,36 +2231,37 @@ func _confirm_pick(choice: String) -> void:
 	# merged view, or every row would read as though the run carried no boosts at all and
 	# the "after" would count this run's existing picks a second time.
 	owned = _owned_with_run_effects(owned)
-	var pick := {"drivetrain": int(choice.substr("drivetrain:".length()))} \
-		if choice.begins_with("drivetrain:") else BoostLibrary.boost_for(choice)
-	var title := "%s conversion" % CarLibrary.drive_text(int(pick.get("drivetrain", -1))) \
-		if pick.has("drivetrain") else BoostLibrary.label_for(choice)
+	var pick: Dictionary
+	var title: String
+	if choice.begins_with("drivetrain:"):
+		var mode := int(choice.substr("drivetrain:".length()))
+		pick = {"drivetrain": mode}
+		title = "%s conversion" % CarLibrary.drive_text(mode)
+	elif choice.begins_with("engine_swap:"):
+		var engine_id := choice.substr("engine_swap:".length())
+		pick = {"engine_swap": engine_id}
+		var layout := EngineSwap.layout_label(engine_id)
+		title = "%s engine swap" % layout if not layout.is_empty() else "Engine swap"
+	else:
+		pick = BoostLibrary.boost_for(choice)
+		title = BoostLibrary.label_for(choice)
 	var page := _swap_interstitial(title)
 	# THE BOOST'S OWN FIGURE, ABOVE THE SHEET. Not decoration: three of the seven boosts
 	# (Quick-shift gearbox, Big brakes, Streamlined body) drive effects that `EFFECTS` marks
 	# neither feeds_pw nor feeds_grip, so they never reach the car's meta and move NO row on
 	# the sheet below — see CarStats' header. Without this line their confirmation would be a
-	# wall of unchanged numbers under an "Apply" button. A drivetrain conversion needs no
-	# such line: it moves the sheet's own Drivetrain row.
-	if not pick.has("drivetrain"):
+	# wall of unchanged numbers under a "Next" button. A drivetrain conversion or an engine
+	# swap needs no such line: each moves the sheet's own Drivetrain/power rows directly.
+	if not pick.has("drivetrain") and not pick.has("engine_swap"):
 		var effect_text := BoostLibrary.current_effect_text_for(choice)
 		if effect_text != "":
 			page.body().add_child(UITheme.label(effect_text, "green"))
 	page.body().add_child(CarStatsPanel.build(
 		CarStats.values(owned, meta), CarStats.preview(owned, meta, pick)))
-	var apply := UITheme.button("Apply")
-	apply.pressed.connect(func() -> void: _show_skill_progress(choice))
-	page.add_action(apply)
-	var cancel := UITheme.button("Cancel")
-	cancel.pressed.connect(_open_pick_panel_again)
-	page.add_action(cancel)
-	MenuNav.attach(page, {"on_back": _open_pick_panel_again})
-
-
-# Cancel, and gamepad B / Esc on the confirmation — both mean "I want a different pick".
-func _open_pick_panel_again() -> void:
-	_teardown_interstitial_page()
-	_open_pick_panel()
+	var next_btn := UITheme.button("Next")
+	next_btn.pressed.connect(func() -> void: _show_skill_progress(choice))
+	page.add_action(next_btn)
+	MenuNav.attach(page, {})
 
 
 # Step 2 — how much closer did that stage get the player to a skill? Shown for EVERY

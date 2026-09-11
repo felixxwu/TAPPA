@@ -124,25 +124,21 @@ func offers_boost_pick() -> bool:
 	return false
 
 
-# The boosts drawn for the pick ahead of stage `stage_index` (the stage about to
-# be ENTERED, i.e. RunSession._stage_index after the just-cleared stage's cursor
-# advance) — BoostLibrary entries, `{"id","effect"}`. MUST be deterministic in
-# (this mode's own seed, stage_index) so a resumed run re-derives the identical
-# offer (RunSession persists only `pick_awaiting`, not the picks themselves, and
-# re-asks this on resume). Empty for any mode that answers false to
-# offers_boost_pick() above — RunSession never calls it in that case, but every
-# mode gets a safe default regardless.
-#
-# `count`, when >= 0, overrides the mode's own default draw count — RunSession
-# passes run_boost_choices + 1 when the run's car is above
-# run_boost_healthy_threshold (the undamaged-arrival reward), -1 otherwise to mean
-# "use the mode's own default".
+# EVERY id offered for the pick ahead of stage `stage_index` (the stage about to be
+# ENTERED, i.e. RunSession._stage_index after the just-cleared stage's cursor advance) —
+# plain catalogue/pseudo ids, NOT resolved entries (RunSession.roll_pick / the merged
+# resolution in BoostLibrary.resolve_id does that). The WHOLE pool, not a random subset
+# (todo/mid-run-upgrade-menu.md): the player picks power/handling themselves, then ONE
+# entry from that category is rolled — so nothing here decides which; it only decides
+# WHAT EXISTS to roll from. Must be deterministic given `extra_ids` alone so a resumed
+# run trivially re-derives the identical pool with no persistence needed. Empty for any
+# mode that answers false to offers_boost_pick() above — RunSession never calls it in
+# that case, but every mode gets a safe default regardless.
 #
 # `extra_ids` are pseudo-ids of the shape "drivetrain:<DriveMode int>" (RunSession
-# derives them from drivetrain_choices()) or "engine_swap:<EngineLibrary id>"
-# (RunSession derives it from _pool_engine_swap_ids()) that a mode opting into the
-# pick should mix into the SAME draw pool as its boost catalogue, via
-# BoostLibrary.draw_from_ids, rather than appending them as extra cards on top —
-# see RegionRunMode.boost_choices.
-func boost_choices(_stage_index: int, _count: int = -1, _extra_ids: Array = []) -> Array:
+# derives them from drivetrain_choices()) or "engine_swap:<EngineLibrary id>" (RunSession
+# derives it from _pool_engine_swap_ids()) that a mode opting into the pick should mix
+# into the SAME pool as its boost catalogue, rather than appending them as extra cards
+# on top — see RegionRunMode.boost_pool_ids.
+func boost_pool_ids(_stage_index: int, _extra_ids: Array = []) -> Array:
 	return []
