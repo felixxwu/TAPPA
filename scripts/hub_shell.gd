@@ -785,17 +785,26 @@ func _build_freeplay_car() -> void:
 	_fp_region = ""
 	_fp_boosts = []
 	var carousel := CardUI.build_carousel(_page)
-	# Parallel to the carousel's cards: the CarLibrary INDEX each card represents.
+	# Parallel to the carousel's cards: the CarLibrary INDEX each card represents — the
+	# same shape _build_car's car_refs uses, so _sync_car_previews (built for that page)
+	# works unchanged here and free play's cars get the same live CarCardPreview instead
+	# of a flat "car" icon.
 	var indices: Array[int] = []
 	for index in CarLibrary.all().size():
 		var spec: Dictionary = CarLibrary.all()[index]
 		var model_id := String(spec.get("id", ""))
 		if model_id.is_empty():
 			continue
-		CardUI.text_card(carousel, String(spec.get("name", model_id)),
-			"Owned" if Save.owns_model(model_id) else "Not owned — free play lends it",
-			false, "car")
+		var card := carousel.add_card(false)
+		card.visual.add_child(CardUI.card_icon("car"))
+		card.info.add_child(UITheme.card_title(String(spec.get("name", model_id))))
+		card.info.add_child(UITheme.label(
+			"Owned" if Save.owns_model(model_id) else "Not owned — free play lends it", "dim"))
 		indices.append(index)
+
+	_sync_car_previews(carousel, indices)
+	carousel.selection_changed.connect(func(_i): _sync_car_previews(carousel, indices))
+
 	carousel.confirmed.connect(func(i: int) -> void:
 		_fp_car = indices[i]
 		_show(View.FREEPLAY_REGION))
