@@ -877,6 +877,7 @@ func _build_summary() -> void:
 	var result: Dictionary = RunSession.last_result()
 	var done := int(result.get("stages_completed", 0))
 	var total := int(result.get("stage_count", 0))
+	_announce_run_outcome(result, done, total)
 	_page.body().add_child(UITheme.label("Stages cleared: %d / %d" % [done, total]))
 	_page.body().add_child(UITheme.label("Money earned: %d" % int(result.get("money_earned", 0))))
 
@@ -891,6 +892,28 @@ func _build_summary() -> void:
 	_action("Continue", func() -> void:
 		RunSession.clear_last_result()
 		_show(View.MAIN))
+
+
+# The run's END is the biggest moment in the loop — clearing all eight stages, or being
+# stopped cold by a missed target (decision 4's one hard fail state) — and the plain stat
+# sheet above reads identically for both, which is exactly the "happens a bit silently"
+# problem this fixes. A ConfirmPopup fired the instant the summary builds makes the moment
+# land: the player has to acknowledge what just happened, in words, before the numbers.
+# Refused (returns null) only if another modal already owns the screen — no different from
+# any other ConfirmPopup caller in the shell, see features/modals.md → "One modal at a time".
+func _announce_run_outcome(result: Dictionary, done: int, total: int) -> void:
+	var money := int(result.get("money_earned", 0))
+	var cleared := bool(result.get("completed", false))
+	var title: String
+	var body: String
+	if cleared:
+		title = "REGION CLEARED!"
+		body = "All %d stages cleared. $%d banked." % [total, money]
+	else:
+		title = "RUN OVER"
+		body = "Missed the target on stage %d. $%d banked from the %d stage%s you cleared." % [
+			done + 1, money, done, "" if done == 1 else "s"]
+	ConfirmPopup.open(self, title, body, [{"label": "OK", "callback": Callable()}])
 
 
 # --- SHOP ----------------------------------------------------------------------

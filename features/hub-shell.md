@@ -49,7 +49,7 @@ next, so a stale page can never sit under the tree still claiming input.
 | `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop (**disabled while the profile owns no car** — reads "Buy a car first"; every shop ladder is a permanent sink, so spending there before owning a car can leave a player unable to afford one, and money only comes from running stages), Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit |
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones shown "Locked" with their pay rate (not the gate they hide behind) |
 | `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
-| `SUMMARY` | Stages cleared, money earned, per-stage times |
+| `SUMMARY` | A `ConfirmPopup` announcement ("REGION CLEARED!" / "RUN OVER") fires as the page builds, then: stages cleared, money earned, per-stage times |
 | `SHOP` | ONE flat card list: every `BoostLibrary.CATALOGUE` id, shown as a 1-based current level (`Save.boost_level` storage is 0-based; the card displays `stored + 1`, so a never-upgraded boost reads "Lv 1"), what the boost actually does to the car at that level (`BoostLibrary.current_effect_text_for`, e.g. `-7%` — derived from the RESOLVED MAGNITUDE, never from how far the level pushed it, which reads as `+0%` on every un-upgraded boost; a `set`/`add` effect with no baseline to be a percentage of shows an absolute figure with its authored unit instead, e.g. `0.12 s`), and the price of the next level — no total rung count and no "how much the next level gives" shown — engine swap included, now that it is a boost — no sub-page hop |
 | `SKILLS` | One row per `SkillLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([skills.md](skills.md)) |
 | `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
@@ -163,6 +163,19 @@ A summary that failed to clear would trap the player on it forever.
 One screen serves **both** outcomes — region cleared, and stopped by the clock. A run that
 ends on a missed target has no placement to celebrate, and the same information is worth
 reading either way (`gameplay.md` → *The run, end to end*).
+
+### The outcome is announced, not just tallied
+
+`_build_summary` opens a `ConfirmPopup` ([modals.md](modals.md)) the instant it runs, before
+adding the stat labels — `_announce_run_outcome`. Clearing the region reads "REGION
+CLEARED!" with the stages/money one-liner; missing a stage's target (the one hard fail
+state, decision 4) reads "RUN OVER" and names which stage it happened on. The plain stat
+sheet below used to be the ONLY feedback either outcome got, which read the same whether
+the run had just gone the distance or died on stage 2 — the popup is what makes the moment
+register before the player reads the numbers. It follows the same "one modal at a time"
+rule as every other `ConfirmPopup` caller here (`_start_run`'s abandon-run confirm, the
+update-available prompt): if something else already owns the screen, the announcement is
+silently refused rather than queued.
 
 ## Decision 48's confirm lives here
 
