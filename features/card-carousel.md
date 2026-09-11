@@ -72,6 +72,28 @@ Signals: `selection_changed(index)`, `confirmed(index)`.
   over from exactly where the snap had reached. Drag release, tap-to-select and
   keyboard/gamepad movement all share the same animated snap through `select()`.
 
+## Confirming is a beat, not an instant cut
+
+`_confirm_selected()` (the already-centred card being tapped, or `ui_accept`/`menu_select`
+pressed) does not emit `confirmed` on the spot. Instead the card flashes — alpha toggled
+between full and `card_carousel_unselected_alpha`,
+`Config.data.card_carousel_confirm_flash_count` times over
+`Config.data.card_carousel_confirm_flash_duration_s` — and only once that plays out does
+`confirmed(index)` fire and the caller act on the pick. The flash is what makes a confirm
+read as "your choice registered" rather than a jump-cut straight into the next page.
+
+While a card is mid-flash (`_confirm_index != -1`) every other entry point is locked out:
+`select()`, a second `_confirm_selected()`, a tap on any card, and background drag/nav all
+no-op or are ignored, so mashing the confirm input can't double-fire or restart the
+animation. `_layout()` also leaves that one card's (and its shadow's) alpha alone for the
+duration — it's owned by the flash tween, not the usual selected/unselected dimming.
+
+`skip_confirm_flash()` is the test/host seam: jumps straight to `confirmed` firing, for a
+test that cares about the confirm wiring rather than the flash animation itself (see
+`test_card_carousel.gd`'s confirm-flash tests, and `test_hub_shell.gd`'s
+`_touch_tap_selected_card`, which uses it to keep its menu-walk tests from needing to wait
+out the real flash duration).
+
 ## One tap is delivered TWICE, and must still count as one tap
 
 Godot's `input_devices/pointing/emulate_mouse_from_touch` is ON by default and this project
@@ -152,8 +174,10 @@ group), not hardcoded in the script: `card_carousel_aspect`, `card_carousel_card
 `card_carousel_drag_step_fraction` (reserved for a future drag-vs-tap threshold refinement
 — the shipped `end_drag_and_snap` already snaps to nearest regardless),
 `card_carousel_car_spin_deg_per_s` (the CAR page's turntable speed),
-`card_carousel_visible_width_factor` (below), and `card_carousel_entrance_duration_s` /
-`card_carousel_entrance_stagger_s` (the entrance fade below).
+`card_carousel_visible_width_factor` (below), `card_carousel_entrance_duration_s` /
+`card_carousel_entrance_stagger_s` (the entrance fade below), and
+`card_carousel_confirm_flash_duration_s` / `card_carousel_confirm_flash_count` (the confirm
+flash above).
 
 ## Cards fade in, one by one, every time the list is (re)built
 
