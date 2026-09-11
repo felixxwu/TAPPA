@@ -18,7 +18,7 @@ plain chrome, not a `MenuNav` widget — never focusable, never in the nav order
 | Piece | Where |
 |---|---|
 | The policy (parsing, the decision, the fetch, the destination) | `scripts/update_check.gd` (`UpdateCheck`) |
-| Placement + the modal | `scripts/hub_shell.gd` → `_check_for_update` / `_show_update_prompt` — re-homed from the deleted diegetic hub's title shot to the flat hub's MAIN page (fired from `_ready` off the boot critical path, MAIN-only re-checked after the await) |
+| Placement + the modal | `scripts/hub_shell.gd` → `_check_for_update` / `_show_update_prompt` — re-homed from the deleted diegetic hub's title shot to the flat hub's MAIN page (fired from `_enter_game`, TITLE's Start handler, off the boot critical path, MAIN-only re-checked after the await — a cold boot no longer fires it straight from `_ready`, since the player is looking at the TITLE splash first and firing it there would race Start) |
 | The corner build-version label | `scripts/hub_shell.gd` → `_build_version_label` (MAIN only, added straight to `_page` so it floats free of the body box); the show/hide decision is `UpdateCheck.display_version`; `GameConfig.hub_version_label_margin_px` sets its corner margin |
 | The published document | `.github/workflows/deploy.yml` → `deploy-pages` → *Generate docs/version.json* |
 | The "this is a Play build" marker | `export_presets.cfg` → `preset.2` (`custom_features="play"`) |

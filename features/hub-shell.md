@@ -38,13 +38,14 @@ whole shell is still smaller than any single one of the nine hub scripts it repl
 
 ## The nine pages
 
-`HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `SKILLS`,
+`HubShell.View` — `TITLE`, `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `SKILLS`,
 `STATS`, `CHALLENGE`, `SETTINGS`. One page is
 live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
 next, so a stale page can never sit under the tree still claiming input.
 
 | Page | Offers |
 | --- | --- |
+| `TITLE` | The cold-boot splash: "TAPPA" at `UITheme.px(72)` (a one-off literal, not `TITLE_FONT_SIZE` — see `UITheme.px`) centred in the middle of the screen, with Start (proceeds to `MAIN`) and Quit (`get_tree().quit()`, omitted on web — `_quit_applicable()`) as the page's bottom action row. Skipped on a run-end return to the hub (see "The run summary is one-shot" below); it is the app's front door, not a page inserted between every screen and the one before it |
 | `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop (**disabled while the profile owns no car** — reads "Buy a car first"; every shop ladder is a permanent sink, so spending there before owning a car can leave a player unable to afford one, and money only comes from running stages), Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit |
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones shown "Locked" with their pay rate (not the gate they hide behind) |
 | `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
@@ -130,7 +131,10 @@ row.
 Three carousel pages off MAIN (`_build_freeplay_car` → `_build_freeplay_region` →
 `_build_freeplay_setup`): ANY catalogue car (unowned cars are lent, not bought), ANY
 region (the unlock gate is a progression rule for runs; a sandbox has none), and any
-combination of the `BoostLibrary` catalogue as toggle cards. Start writes a plan to
+combination of the `BoostLibrary` catalogue as toggle cards. `_build_freeplay_car`
+builds its cards the same way `_build_car` does (a catalogue-index `car_refs` array
+fed to `_sync_car_previews`), so free play's car page shows the same live
+`CarCardPreview` 3D viewports as the main CAR page instead of a flat icon. Start writes a plan to
 `FreePlay` (`scripts/free_play.gd`) and boots the run scene — whose session-less
 branch consumes it: `world.gd::_field_free_play_car` fields the chosen car with the
 chosen boosts (plus equipped skills) on the same effects funnel a run's car rides,
@@ -142,10 +146,13 @@ inherits it.
 
 ## The run summary is one-shot
 
-`_ready()` opens `SUMMARY` instead of `MAIN` whenever `RunSession.last_result()` is
+`_ready()` opens `SUMMARY` instead of `TITLE` whenever `RunSession.last_result()` is
 non-empty. A run that ends hands control back here via `world.gd` →
-`Scenes.hub_path()`, and without this the player is dropped at a title screen with no idea
-whether they cleared the region.
+`Scenes.hub_path()`, and without this the player is dropped at the TITLE splash with no
+idea whether they cleared the region — so a run-end return bypasses `TITLE` outright and
+goes straight to `SUMMARY`; only a genuine cold boot (no result parked) shows `TITLE`.
+`TITLE`'s own Start button always lands on `MAIN` (`_enter_game`) — nothing else reaches
+`TITLE`, so there is only the one destination to wire.
 
 That makes clearing the result load-bearing: `RunSession.clear_last_result()` exists for
 exactly this, is called only by the screen that displayed the result, and is deliberately
