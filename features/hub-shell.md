@@ -131,7 +131,10 @@ row.
 Three carousel pages off MAIN (`_build_freeplay_car` → `_build_freeplay_region` →
 `_build_freeplay_setup`): ANY catalogue car (unowned cars are lent, not bought), ANY
 region (the unlock gate is a progression rule for runs; a sandbox has none), and any
-combination of the `BoostLibrary` catalogue as toggle cards. Start writes a plan to
+combination of the `BoostLibrary` catalogue as toggle cards. `_build_freeplay_car`
+builds its cards the same way `_build_car` does (a catalogue-index `car_refs` array
+fed to `_sync_car_previews`), so free play's car page shows the same live
+`CarCardPreview` 3D viewports as the main CAR page instead of a flat icon. Start writes a plan to
 `FreePlay` (`scripts/free_play.gd`) and boots the run scene — whose session-less
 branch consumes it: `world.gd::_field_free_play_car` fields the chosen car with the
 chosen boosts (plus equipped skills) on the same effects funnel a run's car rides,

@@ -738,6 +738,21 @@ func test_a_previously_seen_car_reuses_its_cached_preview_without_respawning() -
 		"a car seen earlier this visit must reuse its CACHED preview, not spawn a new one")
 
 
+# Free play's car page must show the same live CarCardPreview 3D viewports as the main
+# CAR page, not the flat "car" icon it used before — the two pages share the same
+# car_refs -> _sync_car_previews wiring.
+func test_freeplay_car_page_shows_a_live_preview_on_the_selected_card() -> void:
+	_shell._show(HubShell.View.FREEPLAY_CAR)
+	await get_tree().process_frame
+	var carousel := _carousel()
+	assert_not_null(carousel)
+	assert_gt(carousel.card_count(), 0, "setup: the catalogue has at least one car")
+
+	var card := carousel.get_card(carousel.selected_index())
+	assert_true(card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview,
+		"the selected free-play car card must show a live CarCardPreview")
+
+
 func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
 	var cheapest := ""
 	var cheapest_cost := -1
