@@ -92,10 +92,13 @@ static func _ids_for_category(pick: Array, category: String) -> Array[String]:
 	return out
 
 
-# Step 2: the player's own choice of direction. A category with nothing to roll (should
-# not happen with the full catalogue in play — "gearbox" alone always keeps Power
-# non-empty — but guarded the same "locked rows stay visible, disabled" way every other
-# disabled card in this project is) shows disabled rather than being hidden.
+# Step 2: the player's own choice of direction. A category can genuinely run dry within
+# a run — Power exhausts once "gearbox", "turbo" and "supercharger" have each been
+# picked once (all three are non-stacking, BoostLibrary.stacks(), so a repeat is
+# excluded from later pools) and the engine swap has nothing left to offer (the car
+# already runs the catalogue's most powerful engine). A category with nothing to roll
+# is guarded the same "locked rows stay visible, disabled" way every other disabled
+# card in this project is, rather than being hidden.
 static func open_category_choice(host: Node, pick: Array, on_choice: Callable) -> MenuPage:
 	var page := _open(host, "Choose a direction")
 	var carousel := CardUI.build_carousel(page, 24.0, UITheme.PANEL_PAD)
