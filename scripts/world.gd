@@ -2144,6 +2144,9 @@ func _show_stage_reward() -> void:
 	if coins > 0:
 		page.body().add_child(UITheme.label(
 			"Coins: %d ($%d)" % [coins, RunSession.last_stage_coin_money()]))
+	var clear_bonus := RunSession.last_stage_clear_bonus()
+	if clear_bonus > 0:
+		page.body().add_child(UITheme.label("Region cleared: $%d" % clear_bonus))
 	page.body().add_child(UITheme.label("Total money: $%d" % Save.money()))
 	var carry_on := UITheme.button("Continue")
 	carry_on.pressed.connect(_open_pick_panel)

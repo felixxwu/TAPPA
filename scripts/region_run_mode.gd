@@ -170,12 +170,15 @@ func stage_failed(_stage_index: int, elapsed_ms: int, target_ms: int) -> bool:
 
 
 # Banked the moment the stage is cleared (decision 36), so a run that dies on stage
-# 6 keeps everything stages 1-5 paid. All three of the pivot's money sources live
-# here — a completion amount that grows with stages cleared, a bonus proportional to
-# the time saved against the target, and (stage 8) `coins_collected` * GameConfig
-# .coin_money. Coins are added AFTER the region scale, not inside it: a coin is
-# worth a flat amount everywhere — decision 31's "later region pays more" story is
-# about the stage-clear reward, not the collectable gamble on top of it.
+# 6 keeps everything stages 1-5 paid. Four money sources live here — a completion
+# amount that grows with stages cleared, a bonus proportional to the time saved
+# against the target, (stage 8) `coins_collected` * GameConfig.coin_money, and — on
+# the run's OWN final stage only — a region-clear bonus. Coins and the clear bonus
+# are both scaled by `region_scale`, same as completion+bonus: a coin or a cleared
+# region is worth more in a richer region, same story as the stage-clear reward
+# itself (decision 31 extended, 2026-09 — was: "coins are worth a flat amount
+# everywhere, the region scale is only about the stage-clear reward"; the clear
+# bonus is new, not a re-read of an existing term).
 func stage_money(stage_index: int, elapsed_ms: int, target_ms: int,
 		coins_collected: int = 0) -> int:
 	var cfg: GameConfig = Config.data
@@ -186,8 +189,25 @@ func stage_money(stage_index: int, elapsed_ms: int, target_ms: int,
 		var saved := clampf(float(target_ms - elapsed_ms) / float(target_ms), 0.0, 1.0)
 		bonus = cfg.run_fast_bonus_money * saved
 	var region_scale := pow(cfg.run_money_region_multiplier, float(region_index()))
-	var coin_total := float(maxi(0, coins_collected)) * cfg.coin_money
-	return maxi(0, int(round((completion + bonus) * region_scale + coin_total)))
+	var coin_total := float(maxi(0, coins_collected)) * cfg.coin_money * region_scale
+	var clear_bonus := float(stage_clear_bonus(stage_index))
+	return maxi(0, int(round((completion + bonus) * region_scale + coin_total + clear_bonus)))
+
+
+# THE REGION-CLEAR REWARD, isolated (see RunMode.stage_clear_bonus's doc — this is
+# what the reward screen reads to show it as its own line, and what stage_money folds
+# in above). Only the run's own final stage (index stage_count()-1) carries it, and
+# only on a genuine clear — a missed final stage never reaches stage_money at all
+# (RunSession.report_event_result only calls it when the stage was not missed), so
+# there is no separate "did the run finish?" check to get wrong here. Scaled by the
+# SAME region_scale as the rest of this region's payouts, so a deeper region's stage-8
+# bonus is proportionally as much richer as its ordinary stage-clear reward.
+func stage_clear_bonus(stage_index: int) -> int:
+	if stage_index < stage_count() - 1:
+		return 0
+	var cfg: GameConfig = Config.data
+	var region_scale := pow(cfg.run_money_region_multiplier, float(region_index()))
+	return maxi(0, int(round(cfg.run_region_clear_money_base * region_scale)))
 
 
 # Record a CLEARED region on the profile. This is the ledger RegionLibrary.is_unlocked

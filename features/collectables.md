@@ -48,7 +48,7 @@ world.gd._on_session_event_completed (stage finish)
             └─ if the stage was NOT missed:
                  RegionRunMode.stage_money(idx, elapsed_ms, target_ms, coins_collected)
                    → completion + fast_bonus, region-scaled, PLUS
-                     coins_collected * GameConfig.coin_money  (flat, unscaled)
+                     coins_collected * GameConfig.coin_money, ALSO region-scaled
 ```
 
 A challenge run never reaches `_build_coins`'s payload — `RunSession.mode_id() !=
@@ -172,12 +172,11 @@ DIFFERENT things with it:
   stage's payout. This follows directly from decision 14 (a failed run keeps 100% of
   the money it earned) rather than being a separate rule.
 
-`stage_money`'s coin term is `coins_collected * GameConfig.coin_money`, added AFTER
-`(completion + fast_bonus) * region_scale` rather than inside it — a coin is worth a
-flat amount everywhere; the region scale's job (decision 31) is to make progressing
-beat grinding on the *stage-clear* reward specifically, not on the collectable
-gamble sitting on top of it. See [region-runs.md](region-runs.md) → *Money* for the
-full formula in context.
+`stage_money`'s coin term is `coins_collected * GameConfig.coin_money * region_scale`
+(2026-09 — was flat everywhere; `coin_money` is now the region-0 rate). A coin in a
+deeper region is worth proportionally more, same as the rest of that region's payouts
+— see [region-runs.md](region-runs.md) → *Money* for the full formula in context,
+including the region-clear bonus paid on stage 8.
 
 ## GameConfig — `@export_group("Roguelike Collectables")`
 
@@ -191,7 +190,7 @@ All of it is a plain tunable (CLAUDE.md — no test may pin a chosen value here)
 | `coin_lane_inner_frac` | INNER edge of that band — pushes coins off the racing line and out toward the road edge |
 | `coin_start_margin_m` / `coin_end_margin_m` | Arc-length kept clear of the start/finish |
 | `coin_pickup_radius_m` | Pickup trigger radius — read LIVE by `CoinField`, the `coin_magnet` seam |
-| `coin_money` | Money per coin, banked at stage clear |
+| `coin_money` | Money per coin at region 0, banked at stage clear, region-scaled |
 | `coin_visual_radius_m` / `coin_visual_thickness_m` / `coin_hover_m` / `coin_color` | The disc mesh's look |
 | `coin_spin_deg_per_sec` / `coin_bob_speed` / `coin_bob_amplitude_m` | The floating coin's continuous spin + bob |
 | `coin_pickup_sfx_freq_hz` / `coin_pickup_sfx_duration_sec` | The pickup chime |

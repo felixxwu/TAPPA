@@ -3985,10 +3985,10 @@ func spectator_params() -> Dictionary:
 # car, not a mid-tier one.
 ## Pace multiplier on stage 1 of the first region — the loosest clock in the game.
 ## 1.0 = the point-mass optimum exactly; higher = more slack.
-@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.6
+@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.85
 ## How much tighter the clock gets per stage WITHIN a run. Over an 8-stage run the last
 ## stage is 7x this below the first, which is the run's own escalation curve.
-@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.035
+@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.07
 ## How much tighter the clock gets per REGION in the unlock order (decision 22). This is
 ## the whole of region difficulty — there are no re-authored per-region bands.
 @export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.075
@@ -4016,6 +4016,12 @@ func spectator_params() -> Dictionary:
 ## what stops "farm region 1 forever": the same effort pays more deeper in, so
 ## progressing beats grinding without taking the repeatable-region valve away.
 @export_range(1.0, 4.0, 0.05) var run_money_region_multiplier := 2.0
+## Paid once, on top of the ordinary stage-clear reward, for beating the run's own
+## FINAL stage (stage 8) — the region-clear bonus (RegionRunMode.stage_money). Scaled
+## by run_money_region_multiplier exactly like every other term in stage_money, so
+## clearing a deep region's stage 8 pays proportionally more than clearing an early
+## one's. 0 removes the bonus.
+@export_range(0.0, 20000.0, 25.0) var run_region_clear_money_base := 1000.0
 ## The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays
 ## (ChallengeRunMode.try_grant_completion_reward). Flat rather than curved: a challenge has
 ## no target time to be fast against, and its whole reward is the placement.
@@ -4072,10 +4078,13 @@ func spectator_params() -> Dictionary:
 ## cached — see that script's header. THE SINGLE FINDABLE VALUE the later
 ## "coin_magnet" skill pass (decision 51, "wider coin pickup radius") widens.
 @export_range(0.1, 5.0) var coin_pickup_radius_m := 1.4
-## Money paid per coin collected, banked at STAGE CLEAR alongside the rest of that
-## stage's payout (decision 36) — see RegionRunMode.stage_money. A missed stage's
-## coins pay nothing, same as the rest of that stage's money.
-@export_range(0.0, 500.0) var coin_money := 40.0
+## Money paid per coin collected, before the region scale, banked at STAGE CLEAR
+## alongside the rest of that stage's payout (decision 36) — see
+## RegionRunMode.stage_money. A missed stage's coins pay nothing, same as the rest of
+## that stage's money. Scaled by run_money_region_multiplier like every other term in
+## stage_money (2026-09 — was flat everywhere), so this is the region-0 rate; a coin
+## on a deeper region is worth this times that region's own multiplier.
+@export_range(0.0, 500.0) var coin_money := 150.0
 ## Visual radius (m) of the coin disc mesh. Bumped up from the original off-track
 ## coin's size so a floating, spinning coin reads clearly at speed.
 @export_range(0.05, 1.5) var coin_visual_radius_m := 0.5
