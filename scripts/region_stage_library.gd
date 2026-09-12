@@ -202,45 +202,45 @@ const STAGES: Dictionary = {
 		],
 		# slot 1 (difficulty tier 1)
 		[
-			{"seed": 900015, "turn_count": 17, "straightness": 0.835, "terrain_layer1_amplitude": 14.3, "forestiness": 0.33, "surface_mix": 0.1, "cliffiness": 0.35, "water_level": -7.0},
-			{"seed": 900016, "turn_count": 17, "straightness": 0.835, "terrain_layer1_amplitude": 14.3, "forestiness": 0.33, "surface_mix": 0.1, "cliffiness": 0.35, "water_level": -7.0},
-			{"seed": 900017, "turn_count": 17, "straightness": 0.835, "terrain_layer1_amplitude": 14.3, "forestiness": 0.33, "surface_mix": 0.1, "cliffiness": 0.35, "water_level": -7.0},
+			{"seed": 900015, "turn_count": 17, "straightness": 0.757, "terrain_layer1_amplitude": 14.3, "forestiness": 0.631, "surface_mix": 0.1, "cliffiness": 0.35, "water_level": -7.0},
+			{"seed": 900016, "turn_count": 17, "straightness": 0.757, "terrain_layer1_amplitude": 14.3, "forestiness": 0.631, "surface_mix": 0.1, "cliffiness": 0.35, "water_level": -7.0},
+			{"seed": 900017, "turn_count": 17, "straightness": 0.757, "terrain_layer1_amplitude": 14.3, "forestiness": 0.631, "surface_mix": 0.1, "cliffiness": 0.35, "water_level": -7.0},
 		],
 		# slot 2 (difficulty tier 2)
 		[
-			{"seed": 65001, "turn_count": 22, "straightness": 0.8, "terrain_layer1_amplitude": 18.6, "forestiness": 0.57, "surface_mix": 0.4, "cliffiness": 0.45, "water_level": -7.0},
-			{"seed": 65002, "turn_count": 22, "straightness": 0.8, "terrain_layer1_amplitude": 18.6, "forestiness": 0.57, "surface_mix": 0.4, "cliffiness": 0.45, "water_level": -7.0},
-			{"seed": 65003, "turn_count": 22, "straightness": 0.8, "terrain_layer1_amplitude": 18.6, "forestiness": 0.57, "surface_mix": 0.4, "cliffiness": 0.45, "water_level": -7.0},
+			{"seed": 65001, "turn_count": 22, "straightness": 0.664, "terrain_layer1_amplitude": 18.6, "forestiness": 0.693, "surface_mix": 0.4, "cliffiness": 0.45, "water_level": -7.0},
+			{"seed": 65002, "turn_count": 22, "straightness": 0.664, "terrain_layer1_amplitude": 18.6, "forestiness": 0.693, "surface_mix": 0.4, "cliffiness": 0.45, "water_level": -7.0},
+			{"seed": 65003, "turn_count": 22, "straightness": 0.664, "terrain_layer1_amplitude": 18.6, "forestiness": 0.693, "surface_mix": 0.4, "cliffiness": 0.45, "water_level": -7.0},
 		],
 		# slot 3 (difficulty tier 2)
 		[
-			{"seed": 65004, "turn_count": 22, "straightness": 0.775, "terrain_layer1_amplitude": 22.9, "forestiness": 0.65, "surface_mix": 0.35, "cliffiness": 0.55, "water_level": -7.0},
-			{"seed": 900018, "turn_count": 22, "straightness": 0.775, "terrain_layer1_amplitude": 22.9, "forestiness": 0.65, "surface_mix": 0.35, "cliffiness": 0.55, "water_level": -7.0},
-			{"seed": 900019, "turn_count": 22, "straightness": 0.775, "terrain_layer1_amplitude": 22.9, "forestiness": 0.65, "surface_mix": 0.35, "cliffiness": 0.55, "water_level": -7.0},
+			{"seed": 65004, "turn_count": 22, "straightness": 0.571, "terrain_layer1_amplitude": 22.9, "forestiness": 0.754, "surface_mix": 0.35, "cliffiness": 0.55, "water_level": -7.0},
+			{"seed": 900018, "turn_count": 22, "straightness": 0.571, "terrain_layer1_amplitude": 22.9, "forestiness": 0.754, "surface_mix": 0.35, "cliffiness": 0.55, "water_level": -7.0},
+			{"seed": 900019, "turn_count": 22, "straightness": 0.571, "terrain_layer1_amplitude": 22.9, "forestiness": 0.754, "surface_mix": 0.35, "cliffiness": 0.55, "water_level": -7.0},
 		],
 		# slot 4 (difficulty tier 3)
 		[
-			{"seed": 3001, "turn_count": 29, "straightness": 0.75, "terrain_layer1_amplitude": 27.1, "forestiness": 0.53, "surface_mix": 0.5, "cliffiness": 0.4, "water_level": -7.0, "weather": "rain"},
-			{"seed": 3004, "turn_count": 29, "straightness": 0.75, "terrain_layer1_amplitude": 27.1, "forestiness": 0.53, "surface_mix": 0.5, "cliffiness": 0.4, "water_level": -7.0, "weather": "rain"},
-			{"seed": 3012, "turn_count": 29, "straightness": 0.75, "terrain_layer1_amplitude": 27.1, "forestiness": 0.53, "surface_mix": 0.5, "cliffiness": 0.4, "water_level": -7.0, "weather": "rain"},
+			{"seed": 3001, "turn_count": 29, "straightness": 0.479, "terrain_layer1_amplitude": 27.1, "forestiness": 0.816, "surface_mix": 0.5, "cliffiness": 0.4, "water_level": -7.0, "weather": "rain"},
+			{"seed": 3004, "turn_count": 29, "straightness": 0.479, "terrain_layer1_amplitude": 27.1, "forestiness": 0.816, "surface_mix": 0.5, "cliffiness": 0.4, "water_level": -7.0, "weather": "rain"},
+			{"seed": 3012, "turn_count": 29, "straightness": 0.479, "terrain_layer1_amplitude": 27.1, "forestiness": 0.816, "surface_mix": 0.5, "cliffiness": 0.4, "water_level": -7.0, "weather": "rain"},
 		],
 		# slot 5 (difficulty tier 3)
 		[
-			{"seed": 22001, "turn_count": 20, "straightness": 0.6, "terrain_layer1_amplitude": 31.4, "forestiness": 0.45, "surface_mix": 0.1, "cliffiness": 0.8, "water_level": -7.0, "weather": "night"},
-			{"seed": 22102, "turn_count": 20, "straightness": 0.6, "terrain_layer1_amplitude": 31.4, "forestiness": 0.45, "surface_mix": 0.1, "cliffiness": 0.8, "water_level": -7.0, "weather": "night"},
-			{"seed": 22203, "turn_count": 20, "straightness": 0.6, "terrain_layer1_amplitude": 31.4, "forestiness": 0.45, "surface_mix": 0.1, "cliffiness": 0.8, "water_level": -7.0, "weather": "night"},
+			{"seed": 22001, "turn_count": 20, "straightness": 0.386, "terrain_layer1_amplitude": 31.4, "forestiness": 0.877, "surface_mix": 0.1, "cliffiness": 0.8, "water_level": -7.0, "weather": "night"},
+			{"seed": 22102, "turn_count": 20, "straightness": 0.386, "terrain_layer1_amplitude": 31.4, "forestiness": 0.877, "surface_mix": 0.1, "cliffiness": 0.8, "water_level": -7.0, "weather": "night"},
+			{"seed": 22203, "turn_count": 20, "straightness": 0.386, "terrain_layer1_amplitude": 31.4, "forestiness": 0.877, "surface_mix": 0.1, "cliffiness": 0.8, "water_level": -7.0, "weather": "night"},
 		],
 		# slot 6 (difficulty tier 4)
 		[
-			{"seed": 36001, "turn_count": 35, "straightness": 0.6, "terrain_layer1_amplitude": 35.7, "forestiness": 0.33, "surface_mix": 1.0, "cliffiness": 0.75, "water_level": -4.0},
-			{"seed": 36002, "turn_count": 35, "straightness": 0.6, "terrain_layer1_amplitude": 35.7, "forestiness": 0.33, "surface_mix": 1.0, "cliffiness": 0.75, "water_level": -4.0},
-			{"seed": 36003, "turn_count": 35, "straightness": 0.6, "terrain_layer1_amplitude": 35.7, "forestiness": 0.33, "surface_mix": 1.0, "cliffiness": 0.75, "water_level": -4.0},
+			{"seed": 36001, "turn_count": 35, "straightness": 0.293, "terrain_layer1_amplitude": 35.7, "forestiness": 0.939, "surface_mix": 1.0, "cliffiness": 0.75, "water_level": -4.0},
+			{"seed": 36002, "turn_count": 35, "straightness": 0.293, "terrain_layer1_amplitude": 35.7, "forestiness": 0.939, "surface_mix": 1.0, "cliffiness": 0.75, "water_level": -4.0},
+			{"seed": 36003, "turn_count": 35, "straightness": 0.293, "terrain_layer1_amplitude": 35.7, "forestiness": 0.939, "surface_mix": 1.0, "cliffiness": 0.75, "water_level": -4.0},
 		],
 		# slot 7 (difficulty tier 4)
 		[
-			{"seed": 900020, "turn_count": 45, "straightness": 0.573, "terrain_layer1_amplitude": 40.0, "forestiness": 0.33, "surface_mix": 0.1, "cliffiness": 0.9, "water_level": -7.0, "weather": "night"},
-			{"seed": 900021, "turn_count": 45, "straightness": 0.573, "terrain_layer1_amplitude": 40.0, "forestiness": 0.33, "surface_mix": 0.1, "cliffiness": 0.9, "water_level": -7.0, "weather": "night"},
-			{"seed": 900022, "turn_count": 45, "straightness": 0.573, "terrain_layer1_amplitude": 40.0, "forestiness": 0.33, "surface_mix": 0.1, "cliffiness": 0.9, "water_level": -7.0, "weather": "night"},
+			{"seed": 900020, "turn_count": 45, "straightness": 0.2, "terrain_layer1_amplitude": 40.0, "forestiness": 1.0, "surface_mix": 0.1, "cliffiness": 0.9, "water_level": -7.0, "weather": "night"},
+			{"seed": 900021, "turn_count": 45, "straightness": 0.2, "terrain_layer1_amplitude": 40.0, "forestiness": 1.0, "surface_mix": 0.1, "cliffiness": 0.9, "water_level": -7.0, "weather": "night"},
+			{"seed": 900022, "turn_count": 45, "straightness": 0.2, "terrain_layer1_amplitude": 40.0, "forestiness": 1.0, "surface_mix": 0.1, "cliffiness": 0.9, "water_level": -7.0, "weather": "night"},
 		],
 	],
 	"snow": [
