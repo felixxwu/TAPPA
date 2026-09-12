@@ -25,10 +25,12 @@ func before_each() -> void:
 	_save.load_or_new()
 	RunSession.auto_load_scenes = false
 	_leave_run()
+	FreePlay.clear()
 
 
 func after_each() -> void:
 	_leave_run()
+	FreePlay.clear()
 	RunSession.auto_load_scenes = true
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
@@ -775,6 +777,48 @@ func test_a_stages_resolved_config_equals_the_canonical_event_config() -> void:
 		assert_eq(cfg.get(field), canonical.get(field),
 			"%s: the stage's live config must equal the canonical event config" % field)
 	assert_gt(compared, 0, "setup: the GameConfig exposes script variables to diff")
+
+
+# Regression: free play (scripts/free_play.gd) is session-less by design, so
+# apply_stage_config's RunSession-only branch silently left it out — the road was
+# routed/water-avoided against FreePlay.event()'s seed while $Floor (and everything
+# bake_track samples to write road_heights) kept whatever cfg.track_seed a previous
+# scene had left behind. Two unrelated landscapes sharing one reconciled waterline:
+# invisible on flat terrain, but on a hilly stage they can diverge by tens of
+# meters, flooding a long stretch of road the avoidance never saw. See
+# features/lakes.md ("the terrain seed the game actually bakes must equal
+# params.seed").
+func test_apply_stage_config_seats_a_free_play_plan_with_no_session_active() -> void:
+	assert_false(RunSession.is_active(), "setup: free play is session-less")
+	var event := {
+		"seed": 918273, "turn_count": 8, "water_level": -3.0, "water_enabled": true,
+		"forestiness": 0.6, "cliffiness": 0.4, "terrain_layer1_amplitude": 40.0,
+	}
+	FreePlay.begin(0, event, [])
+
+	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
+	DrivingContext.apply_stage_config(cfg)
+
+	assert_eq(cfg.track_seed, int(event["seed"]),
+		"the plan's seed reaches the config $Floor is seeded from")
+	assert_almost_eq(cfg.track_water_level_m, float(event["water_level"]), 0.001,
+		"the rendered water level matches the level the road was generated against")
+	assert_almost_eq(cfg.terrain_layer1_amplitude, float(event["terrain_layer1_amplitude"]), 0.001,
+		"the terrain relief the road is routed against is the plan's, not the default")
+	assert_almost_eq(cfg.cliff_amount, float(event["cliffiness"]), 0.001,
+		"the plan's cliffiness reaches the config")
+
+
+# A session-less call with no free-play plan set either (the dev boot / benchmark
+# path) must leave cfg untouched — applying {} would reset every field to the
+# baseline and wipe whatever the caller deliberately wrote first.
+func test_apply_stage_config_is_a_no_op_with_no_session_and_no_free_play_plan() -> void:
+	assert_false(RunSession.is_active())
+	assert_false(FreePlay.has_plan())
+	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
+	cfg.track_seed = -1  # a value no roll/base would produce, so an overwrite is observable
+	DrivingContext.apply_stage_config(cfg)
+	assert_eq(cfg.track_seed, -1, "no session and no plan: cfg is left exactly as authored")
 
 
 # --- DrivingContext.session_active ---------------------------------------------

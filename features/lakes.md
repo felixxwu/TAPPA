@@ -80,6 +80,24 @@ Water is sampled at **world-absolute** coordinates, so the generated shape now
 depends on `water_level` **and** the world origin (previously it was
 pose-independent). Rules that keep opponent times correct:
 
+0. **The terrain seed the game actually bakes must equal `params.seed`.**
+   `TrackGenParams.for_event` builds `water_sampler` from `event["seed"]`, and the
+   DFS/dry-start avoidance validates dryness against that landscape — but `$Floor`
+   (and everything `bake_track` samples to write `road_heights`) is seeded from
+   `cfg.track_seed`, written only by `StageConfig.apply_event_config`
+   (`DrivingContext.apply_stage_config` is the one consume-time call site). If
+   something reaches generation without going through that funnel, the road is
+   routed/avoided-around-water on one landscape and actually baked on a different,
+   unrelated one sharing the same reconciled waterline. On flat terrain the two
+   noise fields land close enough that nothing shows; on hilly terrain they diverge
+   by tens of meters, so wherever the *unvalidated* landscape happens to dip, the
+   road drives into a long, many-meters-deep flood the avoidance never saw. This is
+   exactly the bug free play had (fixed by giving `apply_stage_config` a
+   session-less branch for `FreePlay.event()` — see
+   [hub-shell.md](hub-shell.md)): every new session-less/sandbox entry point must
+   route its stage dict through `StageConfig.apply_event_config` before
+   generation, not just hand `TrackGenParams.for_event` the event directly.
+
 1. `water_level` is a shape parameter — carried in `TrackGenParams`, so every
    `generate()` carries it (like `straightness`).
 2. Target derivation and the run scene use the same origin — both go through
