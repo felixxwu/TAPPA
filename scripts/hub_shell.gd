@@ -360,9 +360,6 @@ func _enter_game() -> void:
 # --- MAIN --------------------------------------------------------------------
 
 func _build_main() -> void:
-	var money := UITheme.label("Money: %d" % Save.money())
-	_page.body().add_child(money)
-
 	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
 
@@ -403,7 +400,24 @@ func _build_main() -> void:
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 
 	_action("Quit", func() -> void: get_tree().quit())
+	_build_money_label()
 	_build_version_label()
+
+
+# MAIN's money readout, top-left corner. Added straight to `_page`, NOT to body() —
+# like _build_version_label, it must float free of the body box/carousel layout so
+# that the carousel's cards stay pinned at the exact vertical middle of the screen
+# regardless of what's shown above or below them (the card box centres on its own
+# content, so anything sharing that VBox with the carousel would pull it off-centre).
+func _build_money_label() -> void:
+	var l := UITheme.label("Money: %d" % Save.money())
+	l.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	l.grow_horizontal = Control.GROW_DIRECTION_END
+	l.grow_vertical = Control.GROW_DIRECTION_END
+	var m := Config.data.hub_version_label_margin_px
+	l.position += Vector2(m, m)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_page.add_child(l)
 
 
 # Passive build-version readout, bottom-right corner of the MAIN page, so a Play
@@ -999,13 +1013,15 @@ func _buy_boost_level(id: String) -> void:
 # a run's boosts do (decision 51), merged by world.gd::_owned_with_run_effects.
 
 func _build_skills() -> void:
-	# The equipped count is the page's ONE header line, deliberately not joined by a
-	# "Money: N" readout: the header must occupy the same height on every visit so the
-	# carousel below doesn't jump, and the money a Buy card needs is already on the
-	# card itself ("Buy — 5000", dimmed when unaffordable).
+	# The equipped count and the money readout share the SAME header line rather than
+	# stacking as two rows: the header must occupy the same height on every visit so the
+	# carousel below doesn't jump, and a player deciding whether to equip or unequip a
+	# skill (which doesn't cost anything) still benefits from seeing what they have to
+	# spend on the ones they don't own yet.
 	var equipped := Save.equipped_skills()
 	var cap := int(Config.data.skill_max_equipped)
-	_page.body().add_child(UITheme.label("Equipped: %d/%d" % [equipped.size(), cap]))
+	_page.body().add_child(UITheme.label(
+		"Equipped: %d/%d   Money: %d" % [equipped.size(), cap, Save.money()]))
 
 	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
