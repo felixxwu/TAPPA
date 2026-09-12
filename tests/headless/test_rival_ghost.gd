@@ -201,6 +201,23 @@ func test_setup_applies_the_picked_car_to_the_ghosts_body() -> void:
 	ghost.free_ghost()
 
 
+func test_setup_silences_the_ghosts_engine_audio() -> void:
+	# EngineAudio._ready() plays unconditionally regardless of kinematic_pose (that flag
+	# only gates car.gd's OWN _physics_process), so without an explicit silence the ghost's
+	# engine voice would idle audibly the moment it entered the tree — a car that is meant
+	# to never fire its engine (rebuild_audio is false, so it's never even reconfigured
+	# onto the rival's own engine). Mirrors car_prop.gd's silencing of every other display/
+	# queue prop.
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	ghost.setup(null, null, _constant_speed_profile(), {"car_index": 0, "name": "Test Driver"})
+	var audio := (ghost.car() as Node).get_node_or_null("EngineAudio")
+	assert_not_null(audio, "setup: the ghost's car has an EngineAudio node")
+	assert_eq(audio.process_mode, Node.PROCESS_MODE_DISABLED,
+		"the ghost's engine voice is silenced so it can never be heard on the track")
+	ghost.free_ghost()
+
+
 func test_setup_without_a_rival_keeps_the_neutral_baseline() -> void:
 	var ghost := RivalGhost.new()
 	add_child_autofree(ghost)
