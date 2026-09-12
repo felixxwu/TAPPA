@@ -2131,50 +2131,25 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
 
 
-# Open the top of the pick chain. Split out of _present_standings_overlay so the chain's
-# own steps stay simple functions rather than being buried in the replay/camera setup
-# above; none of them back out to here (no step offers `on_back` — see open_roll's doc for
-# why the roll specifically cannot be cancelled), so this only ever runs once per stage.
+# Open the pick chain. Split out of _present_standings_overlay so it stays a simple
+# function rather than being buried in the replay/camera setup above; this only ever
+# runs once per stage.
 #
-# THREE ENTRY SHAPES (todo/mid-run-upgrade-menu.md): no pick at all (a challenge stage,
-# or this run's own final/failed stage) gets a bare Continue; the undamaged-arrival
-# reward (offer_repair() false) skips straight to the category choice, since there is no
-# repair option to weigh against upgrading; everything else starts at repair-or-upgrade.
+# TWO ENTRY SHAPES: no pick at all (a challenge stage, or this run's own final/failed
+# stage) gets a bare Continue; everything else gets one card list — repair (only when
+# RunSession.offer_repair() is true), a pre-rolled handling upgrade, a pre-rolled power
+# upgrade (RunPickPanel.open_pick).
 func _open_pick_panel() -> void:
 	var pick := RunSession.pending_pick()
 	if pick.is_empty():
 		_interstitial_page = RunPickPanel.open_continue(self, _on_interstitial_choice)
-	elif RunSession.offer_repair():
-		_interstitial_page = RunPickPanel.open_repair_or_upgrade(self, _on_repair_or_upgrade)
 	else:
-		_open_category_panel()
+		_interstitial_page = RunPickPanel.open_pick(self, pick, RunSession.offer_repair(),
+			_on_interstitial_choice)
 
 
-# Repair-or-upgrade resolved. "repair" reports straight through the same seam a bare
-# Continue does (both skip the stats step — see _on_interstitial_choice); "upgrade"
-# carries on to the direction choice.
-func _on_repair_or_upgrade(choice: String) -> void:
-	if choice == "repair":
-		_on_interstitial_choice("repair")
-	else:
-		_open_category_panel()
-
-
-func _open_category_panel() -> void:
-	_teardown_interstitial_page()
-	_interstitial_page = RunPickPanel.open_category_choice(self, RunSession.pending_pick(),
-		_open_roll_panel)
-
-
-func _open_roll_panel(category: String) -> void:
-	_teardown_interstitial_page()
-	_interstitial_page = RunPickPanel.open_roll(self, RunSession.pending_pick(), category,
-		_on_interstitial_choice)
-
-
-# The roll landed and Next was pressed — "repair" (from the repair-or-upgrade step), a
-# boost id, "drivetrain:<mode>", "engine_swap:<id>", or "" (plain Continue, offered when
-# RunSession had no pick to draw).
+# A card was confirmed — "repair", a boost id, "drivetrain:<mode>", "engine_swap:<id>",
+# or "" (plain Continue, offered when RunSession had no pick to draw).
 #
 # THE PICK IS NOT APPLIED HERE ANY MORE. An upgrade first shows what it would do to the
 # car, because "Lightweight parts" does not tell the player they are also giving up

@@ -194,10 +194,10 @@ func pick_awaiting() -> bool:
 
 # Whether the pending pick offers repair as one of its options — false for the
 # undamaged-arrival reward pick (car above run_boost_healthy_threshold at draw time: no
-# repair row, every roll lands on a real upgrade). Resolved once when the pick is drawn,
-# not live, so it stays stable across a resume. world.gd reads this to decide whether to
-# open RunPickPanel.open_repair_or_upgrade first or skip straight to the category choice.
-# Meaningless (defaults true) when no pick is outstanding.
+# repair row, every card is a real upgrade). Resolved once when the pick is drawn, not
+# live, so it stays stable across a resume. world.gd passes this straight to
+# RunPickPanel.open_pick to show or omit the repair card. Meaningless (defaults true)
+# when no pick is outstanding.
 func offer_repair() -> bool:
 	return _pick_offers_repair
 

@@ -314,9 +314,9 @@ The answer is resolved **once**, at draw time, and persisted verbatim
 (`RunSession._pick_offers_repair`, written into `_persist()`'s `pick_offers_repair`
 key) rather than re-derived on resume — the car's HP can move between the draw and a
 resume (self-healing, damage), and the pick must keep offering the same choice it
-originally offered. `RunSession.offer_repair()` is the read: world.gd uses it to
-decide whether to open `RunPickPanel.open_repair_or_upgrade` first or skip straight
-to `RunPickPanel.open_category_choice` (see *The pick screens* below).
+originally offered. `RunSession.offer_repair()` is the read: world.gd passes it
+straight to `RunPickPanel.open_pick`, which shows or omits the repair card
+accordingly (see *The pick screen* below).
 
 `RunSession.choose_repair()` / `.choose_boost(id)` resolve it — repair goes
 through `Save.apply_full_field_repair_to`, a FULL repair (100% of lost HP, every
@@ -376,13 +376,13 @@ the run ends, win or lose**: `_finish_locally()` clears `_boosts` in memory and
 `Save`, so nothing survives into the next run (`todo/roguelike-pivot.md`, "Soft
 permadeath").
 
-**The category-and-roll step itself is NOT persisted.** Once the pool is drawn,
-nothing is committed until the player presses Next on the roll screen
+**The pre-rolled candidates themselves are NOT persisted.** `RunPickPanel.open_pick`
+draws one handling id and one power id (plain unseeded `randi()`) fresh every time the
+page is built, and nothing is committed until the player confirms a card
 (`RunSession.choose_boost`/`choose_drivetrain`/`choose_engine_swap` haven't run yet) —
-so an app restart mid-roll (category chosen, item revealed, Next not yet pressed)
-simply re-opens the pick from the top against the same re-derived pool, exactly like
-a cancelled `_confirm_pick` already did before this redesign. See
-`todo/mid-run-upgrade-menu.md` for the full reasoning.
+so an app restart before that simply re-opens the pick from the top against the same
+re-derived pool and redraws fresh candidates, exactly like a cancelled `_confirm_pick`
+already did.
 
 ### The catalogue and its pool
 
@@ -402,8 +402,8 @@ an EFFECTS multiplier.
 `BoostLibrary.category_of(id)`, which also classifies the two pseudo-id families
 (`"drivetrain:"` → handling, `"engine_swap:"` → power). Power: `gearbox`, `turbo`,
 `supercharger`, the engine swap. Handling: `lightweight`, `grip`, `aero`, `brakes`,
-`streamline`, the AWD conversion. This is what the category-choice screen (below)
-offers as "Better Handling" / "More Power".
+`streamline`, the AWD conversion. This is what the pick screen (below) pre-rolls one
+candidate from, per category, as its "Better Handling" / "More Power" card.
 
 Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
 Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
@@ -470,65 +470,55 @@ rather than compounds), but rolling the *other* forced-induction part is never
 punished — the player who already has a turbo keeps it if a later roll lands on
 supercharger instead.
 
-### The pick screens
+### The pick screen
 
-Four steps now, each a card list (`scripts/run_pick_panel.gd`), chained by
-`world.gd`'s `_open_pick_panel` → `_on_repair_or_upgrade` → `_open_category_panel` →
-`_open_roll_panel`:
+One card list now (`scripts/run_pick_panel.gd`), opened straight from `world.gd`'s
+`_open_pick_panel`:
 
 1. **`RunPickPanel.open_continue(host, on_choice)`** — no pick to offer at all (a
    challenge stage, or this run's own final/failed stage): a single "Continue" card.
-2. **`RunPickPanel.open_repair_or_upgrade(host, on_choice)`** — "Repair the car" /
-   "Upgrade car", only shown when `RunSession.offer_repair()` is true; the
-   undamaged-arrival reward skips straight to step 3.
-3. **`RunPickPanel.open_category_choice(host, pick, on_choice)`** — "Better
-   Handling" / "More Power", each disabled when that category has nothing to roll in
-   `pick` (`BoostLibrary.category_of`) — same "locked rows stay visible, disabled"
-   convention as everywhere else.
-4. **`RunPickPanel.open_roll(host, pick, category, on_done)`** — the slot-machine
-   reveal: a `CardCarousel` of every `pick` entry in the chosen category (a boost
-   card showing its purchased level 1-based as `"Lv %d" % (Save.boost_level(id) +
-   1)` — the same convention `hub_shell.gd`'s shop cards use — a `"drivetrain:"` "Convert
-   to X" card, or an `"engine_swap:"` card titled `"<hp>HP <layout>"` with subtitle
-   `"+<hp_delta> HP"`), a winner drawn with plain unseeded `randi()` (see *the
-   category-and-roll step is NOT persisted*, above), and a scripted spin
-   (`Config.data.upgrade_roll_spin_ticks` ticks over
-   `upgrade_roll_spin_duration_s`, `@export_group("Roguelike Upgrade Roll")`) that
-   lands on it. The carousel is DECORATIVE ONLY (`focus_mode`/`mouse_filter` turned
-   off) — the only interactive control is a **Next** button, disabled until the spin
-   lands, which reports the winner's id. No `on_back`: once a category is chosen the
-   roll cannot be cancelled — "the user has no choice"
-   (`todo/mid-run-upgrade-menu.md`).
+2. **`RunPickPanel.open_pick(host, pick, offer_repair, on_choice)`** — up to three
+   cards: "Repair the car" (only when `RunSession.offer_repair()` is true), one
+   PRE-ROLLED handling upgrade, one PRE-ROLLED power upgrade. Each upgrade card is
+   drawn once with plain unseeded `randi()` from that category's pool
+   (`BoostLibrary.category_of`) the instant the page builds (a boost card showing its
+   purchased level 1-based as `"Lv %d" % (Save.boost_level(id) + 1)` — the same
+   convention `hub_shell.gd`'s shop cards use — a `"drivetrain:"` "Convert to X" card,
+   or an `"engine_swap:"` card titled `"<hp>HP <layout>"` with subtitle
+   `"+<hp_delta> HP"`), and disabled when that category has nothing to draw from —
+   same "locked rows stay visible, disabled" convention as everywhere else. Confirming
+   a card reports "repair" or the pre-rolled winner's id directly; there is no
+   separate category step and no slot-machine reveal — the player picks a direction
+   AND a specific option in one step (see *the pre-rolled candidates are NOT
+   persisted*, above).
 
 Every step is wired through `MenuNav.attach` (`tests/headless/test_run_pick_panel.gd`
 is the nav test CLAUDE.md requires). Each is deliberately decoupled from
 `world.gd`/`$Car`/the replay machinery so it can be tested without booting a world
-scene at all. `world.gd._present_standings_overlay` hosts the chain over the
-just-finished stage's cinematic replay — the same beat that used to load the
-now-deleted `standings.tscn` (decision 30: no more per-stage leaderboards). Every
-page's backdrop is deliberately transparent (`"alpha": 0.0` in the `open_modal`
-opts) so the 3D world shows through the gaps between cards — each card keeps its own
-opaque background (`card_carousel.gd`'s `_card_stylebox`), so legibility is
-unaffected.
+scene at all. `world.gd._present_standings_overlay` hosts it over the just-finished
+stage's cinematic replay — the same beat that used to load the now-deleted
+`standings.tscn` (decision 30: no more per-stage leaderboards). The page's backdrop
+is deliberately transparent (`"alpha": 0.0` in the `open_modal` opts) so the 3D world
+shows through the gaps between cards — each card keeps its own opaque background
+(`card_carousel.gd`'s `_card_stylebox`), so legibility is unaffected.
 
-### Six screens now, not one
+### Three screens now, not one
 
-Picking a card no longer applies it immediately. `world.gd`'s interstitial sequence
-is now the four pick screens above (repair-or-upgrade → category → roll) →
-`_confirm_pick` (what the ROLLED choice does to the car — a `CarStatsPanel`
-before/after built off `CarStats.preview`, read-only, a single **Next**) →
-`_show_skill_progress` (`SkillProgressPanel` — how far the stage moved every skill
-gate, Continue) → `_apply_pick` (applies the pick for real and advances the run). See
-[car-stats.md](car-stats.md) for what the stats/preview step actually builds and why
-`preview` never mutates the profile.
+Picking a card no longer applies it immediately. `world.gd`'s interstitial sequence is
+the pick screen above → `_confirm_pick` (what the chosen option does to the car — a
+`CarStatsPanel` before/after built off `CarStats.preview`, read-only, a single
+**Next**) → `_show_skill_progress` (`SkillProgressPanel` — how far the stage moved
+every skill gate, Continue) → `_apply_pick` (applies the pick for real and advances
+the run). See [car-stats.md](car-stats.md) for what the stats/preview step actually
+builds and why `preview` never mutates the profile.
 
 Each step REPLACES the interstitial page rather than stacking pages. **There is no
-Cancel any more** — the roll already committed the choice
-(`todo/mid-run-upgrade-menu.md`: "the user has no choice"), so `_confirm_pick`'s
-stats step is read-only and `MenuNav.attach`s with no `on_back`. **Repair and the
-bare "Continue" (an empty pick) skip the stats step entirely** — a repair has no
-car-stat sheet worth comparing (it restores `wheel_toe`, not a `CarStats` row) and an
-empty pick has nothing to preview — going straight to `_show_skill_progress`.
+Cancel any more** — confirming a card already committed the choice, so
+`_confirm_pick`'s stats step is read-only and `MenuNav.attach`s with no `on_back`.
+**Repair and the bare "Continue" (an empty pick) skip the stats step entirely** — a
+repair has no car-stat sheet worth comparing (it restores `wheel_toe`, not a
+`CarStats` row) and an empty pick has nothing to preview — going straight to
+`_show_skill_progress`.
 
 `_on_interstitial_choice` is the seam that applies whichever pick the roll landed on
 (routing a `"drivetrain:<mode>"` choice to `RunSession.choose_drivetrain`, an
@@ -599,7 +589,7 @@ guaranteed extra card.
 pool can't disagree — stamps `hp` and `hp_delta` onto any `engine_swap:` entry, via
 `CarLibrary.horsepower({"peak_torque", "redline"})` (the same derivation the car stats
 panel uses) against the car's current engine. `RunPickPanel` reads those fields straight
-off the entry to build its card (see *The pick screens* above).
+off the entry to build its card (see *The pick screen* above).
 
 `RunSession._engine_swap_id` (`""` = "the car's own stock/previously-swapped engine")
 mirrors `_boosts`/`_drivetrain_override` exactly: reset in `begin()`, restored from the
