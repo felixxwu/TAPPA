@@ -231,7 +231,9 @@ no `Save.lose_money`.
 ```
 stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_saved)
               * region_multiplier^region_index
-              + coins_collected * GameConfig.coin_money
+              + coins_collected * GameConfig.coin_money * region_multiplier^region_index
+              + (GameConfig.run_region_clear_money_base * region_multiplier^region_index
+                 if this is the run's final stage — stage 8 — else 0)
 ```
 
 - **completion**, growing with stages cleared, so surviving deep into a run is where
@@ -251,14 +253,23 @@ stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_sa
   scale (stage 0, no bonus, no coins) — the "$X/stage" figure shown against every
   region, locked or not;
 - **coins** (decisions 13/35/36, stage 8 — see [collectables.md](collectables.md)),
-  added AFTER the region scale rather than inside it: a coin is worth a flat amount
-  everywhere, and the region scale's job is specifically to make progressing beat
-  grinding on the stage-clear reward, not on the collectable gamble sitting on top of
-  it. `RegionRunMode.stage_money(stage_index, elapsed_ms, target_ms, coins_collected)`
-  is where all four terms meet; `RunSession.report_event_result`'s third argument is
+  scaled by the SAME region multiplier as the rest of the payout (2026-09 — was a
+  flat amount everywhere; `GameConfig.coin_money` is now the region-0 rate).
+  `RegionRunMode.stage_money(stage_index, elapsed_ms, target_ms, coins_collected)`
+  is where all five terms meet; `RunSession.report_event_result`'s third argument is
   what carries `coins_collected` in from `CoinField.collected_count`, and only reaches
   `stage_money` when the stage is NOT missed — a run that dies keeps its coin money
-  exactly like the rest of the stage's payout (decision 36).
+  exactly like the rest of the stage's payout (decision 36);
+- **the region-clear bonus** (2026-09, new) — `GameConfig.run_region_clear_money_base`,
+  scaled by the region multiplier, paid ONLY when `stage_index` is the run's own final
+  stage (`stage_count() - 1`, i.e. clearing stage 8). Folded into the ordinary
+  stage-clear payout rather than a separate `Save.add_money` call in
+  `record_outcome()`, so it flows through the exact same path as every other
+  stage-clear source: `RunSession.report_event_result`'s `_last_stage_money` (shown on
+  the stage-reward screen's "Earned: $X"), `money_earned()`'s running tally, and
+  `Save.add_money`. A run that fails on stage 8 never calls `stage_money` for it (the
+  `missed` guard in `report_event_result`), so the bonus is genuinely gated on
+  clearing the region, not merely reaching its last stage.
 
 `Save.money()` / `add_money()` / `spend_money()` are the whole currency surface.
 `RunSession.money_earned()` is the run's own running tally, for the run summary.

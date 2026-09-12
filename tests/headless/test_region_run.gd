@@ -385,6 +385,40 @@ func test_a_faster_clear_is_never_worth_less_than_a_slower_one() -> void:
 	assert_true(quick >= late, "saving more time pays at least as well")
 
 
+func test_clearing_the_runs_final_stage_pays_a_region_clear_bonus() -> void:
+	# 2026-09: stage 8 (index stage_count() - 1) carries a one-off bonus on top of the
+	# ordinary stage-clear payout. Relationship only (CLAUDE.md): the SAME stage_money
+	# call, with and without GameConfig.run_region_clear_money_base switched off,
+	# must never pay less with the bonus live.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var target := 100_000
+	var elapsed := 50_000
+	var last_index := mode.stage_count() - 1
+	var with_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var without_bonus := mode.stage_money(last_index, elapsed, target)
+	assert_true(with_bonus >= without_bonus,
+		"clearing the run's final stage pays at least as well with the bonus live")
+
+
+func test_the_region_clear_bonus_only_lands_on_the_final_stage() -> void:
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var target := 100_000
+	var elapsed := 50_000
+	var last_index := mode.stage_count() - 1
+	var final_with_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var final_without_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.reset()
+	var not_final := mode.stage_money(last_index - 1, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var not_final_without_bonus := mode.stage_money(last_index - 1, elapsed, target)
+	assert_eq(not_final, not_final_without_bonus,
+		"a non-final stage's payout never moves with the clear-bonus config")
+	assert_true(final_with_bonus >= final_without_bonus,
+		"only the final stage's payout can move with the clear-bonus config")
+
+
 func test_the_run_reports_what_it_banked() -> void:
 	_start()
 	_drive(maxi(1, RunSession.stage_target_ms() - 1))
@@ -452,6 +486,29 @@ func test_a_stage_with_no_coins_reports_zero_coin_money() -> void:
 	_drive(maxi(1, RunSession.stage_target_ms() - 1))
 	assert_eq(RunSession.last_stage_coins(), 0)
 	assert_eq(RunSession.last_stage_coin_money(), 0)
+
+
+func test_coins_pay_more_in_a_deeper_region() -> void:
+	# 2026-09: coins are region-scaled, same as the rest of the stage-clear payout —
+	# no longer a flat amount everywhere. Relationship only (CLAUDE.md):
+	# run_money_region_multiplier is a tunable a designer could set to 1.0, which
+	# would make this equal, never inverted — hence >=, not >.
+	var target := 100_000
+	var shallow_id := "fx_coin_region_shallow"
+	var deep_id := "fx_coin_region_deep"
+	RegionLibrary.override_for_test([
+		{"id": shallow_id, "order": 0},
+		{"id": deep_id, "order": 3},
+	])
+	var shallow := RegionRunMode.new(shallow_id, RUN_SEED)
+	var deep := RegionRunMode.new(deep_id, RUN_SEED)
+	var shallow_coin_money := shallow.stage_money(0, 50_000, target, 3) \
+		- shallow.stage_money(0, 50_000, target, 0)
+	var deep_coin_money := deep.stage_money(0, 50_000, target, 3) \
+		- deep.stage_money(0, 50_000, target, 0)
+	RegionLibrary.reset()
+	assert_true(deep_coin_money >= shallow_coin_money,
+		"a coin in a later-order region pays at least as well as an earlier one")
 
 
 func test_a_missed_stages_coins_pay_no_money() -> void:
