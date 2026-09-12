@@ -18,12 +18,9 @@ extends VBoxContainer
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately; the HQ has no camera so it just saves
 #     and the choice is applied on the next run.
-#   • Gearbox — pick the transmission mode (automatic / manual), persisted under
-#     SettingsMenu.GEARBOX_SETTING_KEY. This is the ONLY way to choose automatic:
-#     it replaced the old `toggle_gearbox` (T) runtime toggle, which was unreachable
-#     on touch (no mobile scheme has shift buttons) and on a controller. car.gd
-#     mirrors `gearbox_auto()` onto the live engine every tick, so a change from the
-#     pause menu applies mid-run without any signal.
+#   • Gearbox — the transmission is always automatic now; there is no manual option
+#     and no settings row for it. `SettingsMenu.gearbox_auto()` always returns true;
+#     car.gd mirrors it onto the live engine every tick.
 #   • Key bindings — rebind the keyboard and controller controls. Each driving
 #     action (InputRemap.ACTIONS) gets a row with a keyboard button and a controller
 #     button showing its current binding; tapping one listens for the next key /
@@ -62,19 +59,6 @@ signal page_changed(is_root: bool)
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
 const _BIND_BUTTON_W := 168.0 * UITheme.UI_SCALE
 
-# Save-profile key for the transmission mode (1 = automatic, 0 = manual). Stored as an
-# int so it rides the shared _refresh_selection highlight helper with the camera / fps /
-# scheme rows. Unset falls back to the authored GameConfig baseline.
-const GEARBOX_SETTING_KEY := "gearbox_auto"
-const GEARBOX_AUTO := 1
-const GEARBOX_MANUAL := 0
-const GEARBOX_OPTIONS := [
-	{"value": GEARBOX_AUTO, "name": "Automatic",
-		"desc": "The car changes gear for you — the only mode on touch controls."},
-	{"value": GEARBOX_MANUAL, "name": "Manual",
-		"desc": "You shift yourself with the shift up / shift down controls."},
-]
-
 # Standing copy on the Reset progress page: the warning shown above the button, and
 # the body of the confirm modal (which appends the cloud line when signed in). One
 # string so the page and the prompt cannot describe the same destruction differently.
@@ -109,7 +93,6 @@ static func dev_tools_enabled() -> bool:
 var camera_rows: Array = []
 var scheme_rows: Array = []
 var fps_rows: Array = []
-var gearbox_rows: Array = []
 # Key-binding rows, exposed for tests / hosts:
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
@@ -127,7 +110,6 @@ var master_value_label: Label
 var music_slider: HSlider
 var music_value_label: Label
 var _camera_page: VBoxContainer
-var _gearbox_page: VBoxContainer
 var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
 var _benchmark_page: VBoxContainer
@@ -196,7 +178,6 @@ func _build() -> void:
 	_build_audio_page()
 	_build_display_page()
 	_build_camera_page()
-	_build_gearbox_page()
 	_build_controls_page()
 	_build_schemes_page()
 	_build_benchmark_page()
@@ -210,7 +191,7 @@ func _build() -> void:
 	# this so adding a page only means adding an entry here.
 	_pages = {
 		"list": _list_page, "audio": _audio_page, "display": _display_page,
-		"camera": _camera_page, "gearbox": _gearbox_page, "controls": _controls_page,
+		"camera": _camera_page, "controls": _controls_page,
 		"schemes": _scheme_page, "benchmark": _benchmark_page, "dev": _dev_page,
 		"account": _account_page, "reset": _reset_page, "seedlab": _seedlab_page,
 	}
@@ -219,7 +200,6 @@ func _build() -> void:
 	_page_on_show = {"seedlab": _regen_seedlab}
 
 	_refresh_camera_selection()
-	_refresh_gearbox_selection()
 	_refresh_scheme_selection()
 	_refresh_fps_selection()
 	_refresh_controls_selection()
@@ -243,7 +223,6 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Audio", show_audio))
 	list_grid.add_child(_make_nav_button("Display", show_page.bind("display")))
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
-	list_grid.add_child(_make_nav_button("Gearbox", show_gearbox))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
 	list_grid.add_child(_make_nav_button("Account", show_page.bind("account")))
@@ -300,17 +279,6 @@ func _build_camera_page() -> void:
 	_camera_page.add_child(_make_heading("Camera"))
 	_camera_page.add_child(_make_sub("Pick your camera angle:"))
 	_build_option_page(_camera_page, CameraManager.MODES, "mode", camera_rows, select_camera)
-
-
-func _build_gearbox_page() -> void:
-	# Gearbox sub-page — automatic vs manual transmission. Same flat name+blurb rows as
-	# the camera / fps pages, so keyboard + gamepad nav (ui_up/ui_down + ui_accept,
-	# focus seated by focus_current_page) comes for free.
-	_gearbox_page = _make_page()
-	add_child(_gearbox_page)
-	_gearbox_page.add_child(_make_heading("Gearbox"))
-	_gearbox_page.add_child(_make_sub("Choose how you change gear:"))
-	_build_option_page(_gearbox_page, GEARBOX_OPTIONS, "value", gearbox_rows, select_gearbox)
 
 
 func _build_controls_page() -> void:
@@ -553,10 +521,6 @@ func show_camera() -> void:
 	show_page("camera")
 
 
-func show_gearbox() -> void:
-	show_page("gearbox")
-
-
 func show_controls() -> void:
 	show_page("controls")
 
@@ -632,27 +596,10 @@ func _refresh_camera_selection() -> void:
 	_refresh_selection(camera_rows, CameraManager.SETTING_KEY, int(CameraManager.ORDER[0]))
 
 
-# Persist the transmission mode. No live-apply signal is needed: car.gd reads
-# gearbox_auto() every physics tick while the driver is in control, so flipping this
-# from the in-run pause menu takes effect as soon as the game unpauses.
-func select_gearbox(value: int) -> void:
-	Save.set_setting(GEARBOX_SETTING_KEY, value)
-	_refresh_gearbox_selection()
-
-
-# Is the transmission automatic? The saved player choice, defaulting to the authored
-# GameConfig baseline (`auto_gearbox`) while unset. Static so car.gd can ask without
-# holding a menu instance — this is the single runtime source of truth for the mode.
+# Is the transmission automatic? Always true now — there is no manual option.
+# Static so car.gd can ask without holding a menu instance.
 static func gearbox_auto() -> bool:
-	var default := GEARBOX_AUTO if Config.data.auto_gearbox else GEARBOX_MANUAL
-	return int(Save.get_setting(GEARBOX_SETTING_KEY, default)) == GEARBOX_AUTO
-
-
-func _refresh_gearbox_selection() -> void:
-	# The default comes from the authored config rather than a constant, which is the only
-	# reason this needs its own one-liner rather than sharing camera/fps's call shape.
-	_refresh_selection(gearbox_rows, GEARBOX_SETTING_KEY,
-		GEARBOX_AUTO if Config.data.auto_gearbox else GEARBOX_MANUAL)
+	return true
 
 
 func _refresh_scheme_selection() -> void:
@@ -883,7 +830,7 @@ func _make_action_button(text: String, on_press: Callable) -> Button:
 	return button
 
 
-# Fill an options page (camera / fps / gearbox / mobile-scheme) from a table of
+# Fill an options page (camera / fps / mobile-scheme) from a table of
 # entries: clear `rows`, then build + append one row per entry, keyed by
 # `key_field` (e.g. "mode", "value", "id"). `row_builder` lets a page swap in a
 # richer row (the scheme page's diagram-carrying _make_scheme_row) while sharing
@@ -896,7 +843,7 @@ func _build_option_page(page: VBoxContainer, options: Array, key_field: String,
 		page.add_child(row_builder.call(key, entry, rows, on_select))
 
 
-# The flat name+blurb row shared by the camera / fps / gearbox pages: a full-width
+# The flat name+blurb row shared by the camera / fps pages: a full-width
 # Button carrying the option's name and how-to text, no diagram.
 func _make_option_row(key: int, entry: Dictionary, rows: Array, on_select: Callable) -> Button:
 	var button := _make_row_button(UITheme.px(64))
