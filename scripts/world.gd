@@ -2149,14 +2149,18 @@ func _show_stage_reward() -> void:
 
 # Open the top of the pick chain. Split out of _present_standings_overlay so the chain's
 # own steps stay simple functions rather than being buried in the replay/camera setup
-# above; none of them back out to here (no step offers `on_back` — see open_roll's doc for
-# why the roll specifically cannot be cancelled), so this only ever runs once per stage.
+# above. Tears down whatever interstitial is currently up FIRST — _show_stage_reward is
+# always the caller now, and RunPickPanel.open_continue/open_repair_or_upgrade build a
+# fresh page rather than replacing one (unlike _swap_interstitial's own steps further
+# down the chain), so without this the reward screen would stay on top of the pick
+# panel instead of being replaced by it.
 #
 # THREE ENTRY SHAPES (todo/mid-run-upgrade-menu.md): no pick at all (a challenge stage,
 # or this run's own final/failed stage) gets a bare Continue; the undamaged-arrival
 # reward (offer_repair() false) skips straight to the category choice, since there is no
 # repair option to weigh against upgrading; everything else starts at repair-or-upgrade.
 func _open_pick_panel() -> void:
+	_teardown_interstitial_page()
 	var pick := RunSession.pending_pick()
 	if pick.is_empty():
 		_interstitial_page = RunPickPanel.open_continue(self, _on_interstitial_choice)
