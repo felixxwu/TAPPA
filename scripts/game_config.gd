@@ -3985,10 +3985,10 @@ func spectator_params() -> Dictionary:
 # car, not a mid-tier one.
 ## Pace multiplier on stage 1 of the first region — the loosest clock in the game.
 ## 1.0 = the point-mass optimum exactly; higher = more slack.
-@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.6
+@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.85
 ## How much tighter the clock gets per stage WITHIN a run. Over an 8-stage run the last
 ## stage is 7x this below the first, which is the run's own escalation curve.
-@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.035
+@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.07
 ## How much tighter the clock gets per REGION in the unlock order (decision 22). This is
 ## the whole of region difficulty — there are no re-authored per-region bands.
 @export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.075
