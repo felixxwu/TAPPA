@@ -3988,10 +3988,10 @@ func spectator_params() -> Dictionary:
 @export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.6
 ## How much tighter the clock gets per stage WITHIN a run. Over an 8-stage run the last
 ## stage is 7x this below the first, which is the run's own escalation curve.
-@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.03
+@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.035
 ## How much tighter the clock gets per REGION in the unlock order (decision 22). This is
 ## the whole of region difficulty — there are no re-authored per-region bands.
-@export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.05
+@export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.075
 ## The floor no combination of the two steps may take the pace below. Stops a deep region's
 ## late stages from demanding a time under the optimum, which nothing could clear.
 @export_range(0.5, 2.0, 0.01) var run_target_pace_min := 1.05
