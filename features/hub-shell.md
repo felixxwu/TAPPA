@@ -144,6 +144,17 @@ the finish panel's Next returns to the hub through the existing no-session branc
 `RunSession.start`/`start_region`/`resume` clear the plan so a real run never
 inherits it.
 
+`DrivingContext.apply_stage_config` seats `FreePlay.event()` through
+`StageConfig.apply_event_config` when no session is active (mirroring the
+`RunSession.is_active()` branch), so free play's seed/hilliness/cliffs/surface-grip
+reach `cfg`/`$Floor` the same way a real run's do. This used to be missed — free
+play routed the road and checked water avoidance against the event's seed while
+`$Floor` baked terrain from whatever `cfg.track_seed` a previous scene had left
+behind, so the road was validated against one landscape and driven on a completely
+different one. Invisible on flat terrain (the two noise fields land close enough),
+but on a hilly stage they can diverge by tens of meters, flooding a long stretch of
+road the avoidance never saw. See [lakes.md](lakes.md).
+
 ## The run summary is one-shot
 
 `_ready()` opens `SUMMARY` instead of `TITLE` whenever `RunSession.last_result()` is
