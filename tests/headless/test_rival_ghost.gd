@@ -119,6 +119,32 @@ func test_pose_at_distance_without_a_track_is_harmless() -> void:
 	assert_eq(ghost.car().global_position, before, "the pose call was a no-op")
 
 
+func test_finish_and_hide_poses_at_the_given_finish_then_hides() -> void:
+	# The caller (StageManager) passes the track's own finish distance, which can sit
+	# past the profile's own last "s" sample — finish_and_hide must drive there, not
+	# clamp to the profile, before hiding.
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	var track := StubTrack.new()
+	add_child_autofree(track)
+	ghost.setup(track, null, _constant_speed_profile(), {})
+	var car := ghost.car()
+	ghost.finish_and_hide(_LENGTH_M + 25.0)
+	assert_almost_eq(car.global_position.x, _LENGTH_M + 25.0, 0.001,
+		"posed all the way to the actual finish distance, past the profile's own last sample")
+	assert_false(car.visible, "hidden once it reaches the finish, not left parked on the track")
+
+
+func test_finish_and_hide_with_no_usable_span_just_hides() -> void:
+	var ghost := RivalGhost.new()
+	add_child_autofree(ghost)
+	var track := StubTrack.new()
+	add_child_autofree(track)
+	ghost.setup(track, null, _constant_speed_profile(), {})
+	ghost.finish_and_hide(-1.0)  # no finish_offset/origin_offset span available
+	assert_false(ghost.car().visible, "still hides even with nothing to pose to")
+
+
 # --- Rival identity: pick_rival (features/rival-ghost.md) ---------------------
 # The real roster + real CarPerformance benchmark solves — the pick's whole point is
 # matching the shipped cars' measured pace, so a synthetic roster would test nothing.
