@@ -2149,13 +2149,16 @@ func _show_stage_reward() -> void:
 
 # Open the pick screen. Split out of _show_stage_reward's Continue so it stays a simple
 # function rather than being buried in the replay/camera setup above; this only ever
-# runs once per stage.
+# runs once per stage. Tears down whatever interstitial is currently up FIRST — without
+# it, the stage-reward screen above would stay on top of the pick panel instead of
+# being replaced by it.
 #
 # TWO ENTRY SHAPES: no pick at all (a challenge stage, or this run's own final/failed
 # stage) gets a bare Continue; everything else gets one card list — repair (only when
 # RunSession.offer_repair() is true), a pre-rolled handling upgrade, a pre-rolled power
 # upgrade (RunPickPanel.open_pick).
 func _open_pick_panel() -> void:
+	_teardown_interstitial_page()
 	var pick := RunSession.pending_pick()
 	if pick.is_empty():
 		_interstitial_page = RunPickPanel.open_continue(self, _on_interstitial_choice)
