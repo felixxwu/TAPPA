@@ -110,6 +110,12 @@ const CATALOGUE := {
 			"turbo_omega_ref": "run_boost_turbo_omega_ref",
 			"turbo_inertia": "run_boost_turbo_inertia",
 			"turbo_parasitic_friction": "run_boost_turbo_parasitic_friction",
+			# Audio gains — fixed personality, not scaled by level (see scaled_subfields
+			# below). Without these the boost enabled the turbo's physics but left the
+			# audio layers silent, since a stock NA engine authors zero gain for them.
+			"engine_turbo_whistle_gain": "run_boost_turbo_whistle_gain",
+			"engine_turbo_bov_gain": "run_boost_turbo_bov_gain",
+			"engine_turbo_antilag_bang_gain": "run_boost_turbo_antilag_bang_gain",
 		}},
 		"scaled_subfields": ["turbo_boost_gain"],
 		"display_subfield": "turbo_boost_gain",
@@ -123,6 +129,10 @@ const CATALOGUE := {
 			"supercharger_boost_gain": "run_boost_supercharger_boost_gain",
 			"supercharger_rpm_ref": "run_boost_supercharger_rpm_ref",
 			"supercharger_parasitic_coef": "run_boost_supercharger_parasitic_coef",
+			# Audio gain — fixed personality, not scaled by level. Without this the boost
+			# turned on the belt physics but left the whine layer silent, since a stock NA
+			# engine authors zero gain for it.
+			"engine_supercharger_whine_gain": "run_boost_supercharger_whine_gain",
 		}},
 		"scaled_subfields": ["supercharger_boost_gain"],
 		"display_subfield": "supercharger_boost_gain",

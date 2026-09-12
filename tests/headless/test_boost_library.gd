@@ -504,3 +504,23 @@ func test_stacks_is_true_for_a_mult_or_add_entry() -> void:
 
 func test_stacks_defaults_true_for_an_unknown_id() -> void:
 	assert_true(BoostLibrary.stacks("not_a_real_boost"))
+
+
+# Regression: picking the turbo/supercharger boost mid-run used to enable the physics
+# (turbo_enabled/supercharger_enabled + a non-zero *_boost_gain) but leave the audio
+# gain fields untouched, so a car whose stock engine authors zero gain for them (i.e.
+# every non-turbo/non-blown catalogue engine) ran completely silent despite the part
+# being genuinely fitted and doing real work. install_turbo/install_supercharger's
+# effect dict must carry the audio gains too, and installing both — a real twincharger
+# (features/forced-induction.md → "Turbo and supercharger STACK") — must leave both
+# audible at once rather than one clobbering the other's gain.
+func test_installing_turbo_and_supercharger_boosts_together_leaves_both_audible() -> void:
+	var cfg := GameConfig.new()
+	var owned_car := {"boosts": [BoostLibrary.boost_for("turbo"), BoostLibrary.boost_for("supercharger")]}
+	UpgradeLibrary.apply(owned_car, cfg)
+	assert_true(cfg.turbo_enabled)
+	assert_true(cfg.supercharger_enabled)
+	assert_gt(cfg.engine_turbo_whistle_gain, 0.0,
+		"a mid-run turbo boost must give the whistle layer a real gain, not the stock engine's zero")
+	assert_gt(cfg.engine_supercharger_whine_gain, 0.0,
+		"a mid-run supercharger boost must give the whine layer a real gain, not the stock engine's zero")

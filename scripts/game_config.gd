@@ -4147,6 +4147,17 @@ func spectator_params() -> Dictionary:
 @export_range(1000.0, 12000.0, 100.0) var run_boost_supercharger_rpm_ref := 5000.0
 ## Belt drag on the crank (N·m per 1000 rpm) — fixed, does not scale with level.
 @export_range(0.0, 40.0, 0.5) var run_boost_supercharger_parasitic_coef := 6.0
+## Spool-whistle audio gain for the turbo boost — fixed, does not scale with level. Without
+## this the boost fitted turbo_enabled/boost physics but left the audio gain fields at
+## whatever the car's own (usually NA, zero-gain) engine authored, so a mid-run turbo pickup
+## ran silent.
+@export_range(-1.0, 1.0, 0.001) var run_boost_turbo_whistle_gain := 0.015
+## Blow-off valve audio gain for the turbo boost — fixed, does not scale with level.
+@export_range(-1.0, 1.0, 0.001) var run_boost_turbo_bov_gain := 0.005
+## Anti-lag bang audio gain for the turbo boost — fixed, does not scale with level.
+@export_range(-1.0, 1.0, 0.001) var run_boost_turbo_antilag_bang_gain := 0.0
+## Belt-whine audio gain for the supercharger boost — fixed, does not scale with level.
+@export_range(-1.0, 1.0, 0.001) var run_boost_supercharger_whine_gain := 0.02
 
 
 @export_group("Roguelike Upgrade Roll")

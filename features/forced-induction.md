@@ -245,6 +245,23 @@ actually assumed exclusivity, only the old purchase UI did. This was made explic
 purpose (`todo/mid-run-upgrade-menu.md`): a player who already rolled a turbo mid-run
 must never have a later supercharger roll take that progress away.
 
+**The mid-run boost's `effect_fields` dict carries its own audio gains, not just
+physics.** `BoostLibrary.CATALOGUE`'s `"turbo"`/`"supercharger"` entries author
+`engine_turbo_whistle_gain` / `engine_turbo_bov_gain` / `engine_turbo_antilag_bang_gain`
+(turbo) and `engine_supercharger_whine_gain` (supercharger) inside their
+`install_turbo`/`install_supercharger` sub-dicts, sourced from fixed (never
+level-scaled — absent from `scaled_subfields`) `GameConfig` fields
+`run_boost_turbo_whistle_gain` / `run_boost_turbo_bov_gain` /
+`run_boost_turbo_antilag_bang_gain` / `run_boost_supercharger_whine_gain`. Without
+these, picking the part mid-run switched on real physics (`turbo_enabled` +
+a non-zero `*_boost_gain`) but left the audio gain fields at whatever the car's OWN
+engine authored — zero, for every catalogue engine that isn't already
+stock-turbocharged/supercharged — so a mid-run pickup on an ordinary NA car ran
+completely silent despite doing real work. The stock route (`EngineLibrary.apply()`
+copying an engine's own authored gains) is unaffected; this only closes the gap for
+the boost-catalogue route. Regression test:
+`test_boost_library.gd`'s `test_installing_turbo_and_supercharger_boosts_together_leaves_both_audible`.
+
 ### Rated at peak boost (`effective_meta`)
 
 `UpgradeLibrary.effective_meta(owned_car, meta)` computes the car's displayed
@@ -429,6 +446,9 @@ authored gain, and `reset()` clearing it.
 `turbo_drive_gain`, `turbo_drag_coef`, `turbo_antilag`, `turbo_antilag_drive`,
 `supercharger_enabled`, `supercharger_boost_gain`, `supercharger_rpm_ref`,
 `supercharger_parasitic_coef`, `engine_turbo_whistle_gain`, `engine_turbo_bov_gain`,
-`engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`. See
+`engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`,
+`run_boost_turbo_whistle_gain`, `run_boost_turbo_bov_gain`,
+`run_boost_turbo_antilag_bang_gain`, `run_boost_supercharger_whine_gain` (the
+mid-run boost's own fixed audio-gain personality — see above). See
 [configuration.md](configuration.md), [engine-and-transmission.md](engine-and-transmission.md),
 [engine-audio.md](engine-audio.md), and [upgrade-catalogue.md](upgrade-catalogue.md).
