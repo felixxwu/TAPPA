@@ -460,6 +460,7 @@ func test_every_night_lit_shader_includes_the_cone() -> void:
 		"res://shaders/ps1_models.gdshader",
 		"res://shaders/ps1_terrain_snow.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
+		"res://shaders/ps1_models_ghost.gdshader",
 		"res://shaders/billboard_opaque.gdshader",
 		"res://shaders/tree_canopy.gdshader",
 	]
@@ -480,6 +481,7 @@ func test_the_cone_is_added_to_the_light_term_never_multiplied() -> void:
 		"res://shaders/ps1_models.gdshader",
 		"res://shaders/ps1_terrain_snow.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
+		"res://shaders/ps1_models_ghost.gdshader",
 		"res://shaders/billboard_opaque.gdshader",
 		"res://shaders/tree_canopy.gdshader",
 	]
