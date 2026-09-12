@@ -607,11 +607,18 @@ design exists to rule out.
 global uniforms. No geometry, no draw calls, no per-frame CPU work beyond one
 uniform push. The include declares the uniforms (`hl_pos`, `hl_dir`, `hl_right`,
 `hl_color`, `hl_range`, `hl_cos_inner`, `hl_cos_outer`, `hl_separation`,
-`headlight_amount`) and two functions: `_headlight_cone_at(world_pos, apex)` — a
-`smoothstep` between the outer and inner cosines against `dot(dir, to_fragment)`,
-times a linear range attenuation — and `headlight_lit(world_pos)`, which combines
-the lamps and scales by `headlight_amount`. It is the ONE source of truth — the
-five shaders the headlights can fall on all `#include` it rather than restating
+`headlight_amount`) and two function PAIRS: `_headlight_cone_at(world_pos, apex)`
+— a `smoothstep` between the outer and inner cosines against `dot(dir,
+to_fragment)`, times a linear range attenuation — and `headlight_lit(world_pos)`,
+which combines the lamps and scales by `headlight_amount`. Each has a
+normal-aware overload (`..., world_normal)`) that additionally multiplies in
+`smoothstep(-0.15, 0.4, dot(world_normal, to_light))`, floored rather than
+hard-clamped at zero so faceted low-poly bodywork doesn't step at facet edges
+near grazing angles. Car shaders (`ps1_models_lit`, `ps1_models_ghost`) use the
+normal-aware overload so a car's REAR panels — e.g. a rival ahead of the player,
+still geometrically inside the cone's angle/range — don't light up from behind;
+every other includer uses the plain form. It is the ONE source of truth — the
+six shaders the headlights can fall on all `#include` it rather than restating
 the maths.
 
 **Two lamps, combined with `max()` not a sum.** The pair shares aim, range, angles
@@ -622,7 +629,7 @@ third light; `max()` holds the overlap at lamp brightness so the pair reads as a
 widened pool. **`hl_separation == 0` skips the second cone entirely** on a branch
 taken uniformly across the whole draw — the cheap case for a GPU — which is why the
 single-cone setting is genuinely cheaper and not just a look. The doubling is paid
-per-FRAGMENT only on terrain; the other four shaders evaluate per-vertex.
+per-FRAGMENT only on terrain; the other five shaders evaluate per-vertex.
 
 **Aim.** `hl_dir` is not simply the car's forward: the driver pitches it down by
 `headlight_pitch_deg` about the car's own right axis. Without that the cone runs
@@ -664,7 +671,7 @@ authored — a lower `headlights` value on that entry — never a shader change.
 | Shader | Stage | Why |
 |---|---|---|
 | `ps1_models` (terrain), `ps1_terrain_snow` | **fragment** | Terrain cells reach 25 m across at the coarsest LOD band, so a per-vertex cone would snap its soft edge to triangle boundaries. World position comes from `(INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz` — a mat4 multiply per fragment, accepted because `ps1_models` is banned from having a `vertex()` stage to hand one down. |
-| `ps1_models_lit` (cars, barriers, arch) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. |
+| `ps1_models_lit` (cars, barriers, arch), `ps1_models_ghost` (faded rival) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. Both pass their world normal into the facing-aware overload, since the ghost duplicates the lit shader's vertex block verbatim and must reject backfaces identically or the rival's rear-panel glow would flicker as it crosses the alpha-1 threshold between the two shaders. |
 | `billboard_opaque` (trees) | vertex | Folded into the existing `varying vec3 v_tint`, in **both** branches — the felled branch computes an ambient-only tint, so a knocked-over tree would otherwise sit unlit inside the pool. Cards are small, so per-vertex is visually identical. |
 | `tree_canopy` (bushes) | vertex + fragment | Had no lighting term at all, so it gets a new `varying float v_headlight`; `hl_color` is applied in the fragment so the varying stays scalar. |
 

@@ -40,7 +40,10 @@ void vertex() {
 	// could not brighten it. Per-vertex, reusing the existing varying — no new
 	// interpolator. Car bodywork sits at the cone apex and so is lit by its own
 	// headlights, which is wanted: the car must not float unlit in the dark.
-	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
+	// Facing-aware overload (passing wn) so a car's REAR panels — e.g. a rival
+	// ahead of the player, still geometrically inside the cone volume — don't
+	// light up from behind.
+	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn);
 }
 
 void fragment() {
