@@ -54,7 +54,7 @@ next, so a stale page can never sit under the tree still claiming input.
 | `SKILLS` | Header line: equipped count AND money, sharing one row (not stacked) so the header's height stays constant and the carousel below doesn't jump. One card per `SkillLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([skills.md](skills.md)) |
 | `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
 | `CHALLENGE` | The three periods, one row each — stage count + rating cap; a period already run is shown and unfocusable ([rally-challenge.md](rally-challenge.md)) |
-| `SETTINGS` | The shared `SettingsMenu` ([menus.md](menus.md) → *Account page*) — audio, display, camera, gearbox, key bindings, mobile controls, account/cloud save, Reset progress |
+| `SETTINGS` | The shared `SettingsMenu` ([menus.md](menus.md) → *Account page*) — audio, display, camera, key bindings, mobile controls, account/cloud save, Reset progress |
 | `FREEPLAY_CAR` / `FREEPLAY_REGION` / `FREEPLAY_SETUP` | The Free Play sandbox flow — see below |
 
 **`SETTINGS` was missing entirely for a while**: the diegetic HQ used to offer it, the

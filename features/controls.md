@@ -33,14 +33,14 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 
 All actions use a 0.2 deadzone.
 
-There is **no gearbox toggle input** any more. Manual vs automatic transmission is a
-**setting** — Settings → **Gearbox** (`scripts/settings_menu.gd` → `_build_gearbox_page`
-/ `select_gearbox`), persisted under `SettingsMenu.GEARBOX_SETTING_KEY` and defaulting
-to the authored `GameConfig.auto_gearbox`. `car.gd` mirrors `SettingsMenu.gearbox_auto()`
-onto the live engine every tick while the driver is in control, so changing it from the
-in-run pause menu applies straight away. The old `toggle_gearbox` (T) action was retired:
-T is unreachable on a phone, no mobile control scheme has shift buttons at all (so touch
-players need automatic), and its controller button was reassigned to `nitrous`.
+There is **no gearbox toggle input** any more, and **no manual transmission option**.
+The transmission is always automatic — `SettingsMenu.gearbox_auto()` always returns
+`true`, and there is no Settings → Gearbox page to change it. `car.gd` mirrors it onto
+the live engine every tick while the driver is in control. The old `toggle_gearbox` (T)
+action was retired earlier (T was unreachable on a phone, and no mobile control scheme
+has shift buttons); its controller button was reassigned to `nitrous`. The manual-shift
+engine code (`engine.gd`'s `request_shift`, the `shift_up`/`shift_down` input actions)
+is still present but unreachable from the settings UI.
 
 There is **no direct "reset car" input** — resetting the car onto the track is only
 available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →
@@ -103,7 +103,8 @@ Deck / PlayStation, button glyphs follow the SDL standard layout):
   cornering grip**, not a wheel angle — half deflection asks for half of the grip they have
   left, and full deflection asks for all of it. See
   [car-physics.md](car-physics.md) → Steering.
-- **Bumpers are the shift paddles** (manual gearbox), face buttons cover the
+- **Bumpers map to `shift_up`/`shift_down`** (unreachable now that there is no manual
+  gearbox option — the transmission is always automatic), face buttons cover the
   remaining toggles, and the D-pad cycles drive mode.
 
 The debug overlays (`toggle_debug_arrows`, `toggle_perf_overlay`) and the

@@ -514,9 +514,9 @@ var weather_sun_mult := 1.0
 # so the engine idling never creeps the car.
 @export var clutch_engage_speed := 4.0
 @export var shift_time := 0.25  # seconds of open clutch + throttle cut per shift
-## Default transmission mode: true = automatic. Only the DEFAULT — the player's
-## Settings -> Gearbox choice (SettingsMenu.GEARBOX_SETTING_KEY) wins once set, and
-## car.gd mirrors it onto the live engine each tick.
+## Default transmission mode: true = automatic. The transmission is always
+## automatic now (SettingsMenu.gearbox_auto() always returns true); this field
+## is unused pending a broader cleanup of the manual-shift engine code.
 @export var auto_gearbox := false
 ## Automatic-mode upshift point, as a fraction of redline. Each gear upshifts at
 ## the ground speed where it reaches this fraction of redline rpm. Must stay
