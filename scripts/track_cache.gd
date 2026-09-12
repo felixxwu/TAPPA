@@ -88,16 +88,21 @@ static func lookup(params: TrackGenParams, cfg: GameConfig) -> Dictionary:
 	return TrackGenerator.rebuild_from_pieces(_deserialize_pieces(entry.get("pieces", [])), params)
 
 
-# The cache key of every rally event, resolved through the canonical event config —
-# the exact keys the lockfile is stored under. Used to fingerprint the whole rally
-# library's generation inputs WITHOUT generating any track (the hash-based CI check).
+# The cache key of every authored RegionStageLibrary stage, resolved through the
+# canonical event config — the exact keys the lockfile is stored under. Used to
+# fingerprint the whole stage catalogue's generation inputs WITHOUT generating any
+# track (the hash-based CI check).
+#
+# One key per stage, not per stage-position: every candidate is authored FINAL for
+# its one slot (no runtime stage_scale any more — see
+# todo/region-stage-slots-redesign.md), so each of the 120 stages needs exactly one
+# cache key.
 static func all_event_keys() -> Array:
 	var keys: Array = []
-	for rally in RallyLibrary.all():
-		for event in rally.get("events", []):
-			var cfg := StageConfig.canonical_event_config(event)
-			var params := TrackGenParams.for_event(event, cfg)
-			keys.append(key_for(params, cfg))
+	for stage in RegionStageLibrary.all_stages():
+		var cfg := StageConfig.canonical_event_config(stage)
+		var params := TrackGenParams.for_event(stage, cfg)
+		keys.append(key_for(params, cfg))
 	return keys
 
 

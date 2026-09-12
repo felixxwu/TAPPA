@@ -248,15 +248,20 @@ curve*.
 
 ### Test-catalogue seam — `CarFixtures`
 
-All four content libraries — `CarLibrary`, `EngineLibrary`, `RallyLibrary`,
-`UpgradeLibrary` — expose the same small seam so tests don't have to reach into
-(and get broken by) the shipped catalogue:
+`CarLibrary` and `EngineLibrary` expose the same small `Array[Dictionary]` seam so
+tests don't have to reach into (and get broken by) the shipped catalogue:
 
-- `all()` — returns the active roster (shipped `CARS`/`ENGINES`/`RALLIES`/
-  `UPGRADES` unless overridden).
+- `all()` — returns the active roster (shipped `CARS`/`ENGINES` unless overridden).
 - `override_for_test(list)` — swaps the active roster to `list` for the rest
   of the process.
 - `reset()` — drops the override and falls back to the shipped const.
+
+`RegionStageLibrary` follows the same override/reset/all shape but its catalogue is
+Dictionary-shaped (`{region_id: [8 slots of 3 candidates]}`), not a flat
+`Array[Dictionary]`, so it does NOT share the generic `Registry.Seam` helper the
+others use — see `features/region-stage-library.md`. `RallyLibrary`/`UpgradeLibrary`
+are both deleted (`todo/region-stage-slots-redesign.md`, `todo/roguelike-pivot.md`);
+`CarFixtures` (cars), `RegionStageFixtures` (stages) are the fixtures tests install.
 
 The seam is **inert in production**: an empty/unset override is treated as
 "no override" and every lookup falls straight back to the real shipped const,

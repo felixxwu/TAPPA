@@ -96,12 +96,9 @@ func test_load_event_copies_terrain() -> void:
 	await get_tree().process_frame
 	# Find an event that overrides layer-1 amplitude (opaque scan; no hard-coded id).
 	var picked: Dictionary = {}
-	for rally in RallyLibrary.all():
-		for event in rally.get("events", []):
-			if event.has("terrain_layer1_amplitude"):
-				picked = event
-				break
-		if not picked.is_empty():
+	for event in RegionStageLibrary.all_stages():
+		if event.has("terrain_layer1_amplitude"):
+			picked = event
 			break
 	assert_false(picked.is_empty(), "found an event overriding terrain amplitude")
 	_menu._load_event(picked)
@@ -144,7 +141,7 @@ func test_event_picker_remembers_focus() -> void:
 func test_loaded_event_matches_career_cache_key() -> void:
 	_menu.show_seedlab()
 	await get_tree().process_frame
-	var event: Dictionary = RallyLibrary.all()[0]["events"][0]
+	var event: Dictionary = RegionStageLibrary.all_stages()[0]
 	_menu._load_event(event)
 	await get_tree().process_frame
 	# Career derivation.
@@ -189,8 +186,7 @@ func test_event_picker_opens_and_is_navigable() -> void:
 func test_load_event_copies_into_inputs() -> void:
 	_menu.show_seedlab()
 	await get_tree().process_frame
-	var rally: Dictionary = RallyLibrary.all()[0]
-	var event: Dictionary = rally["events"][0]
+	var event: Dictionary = RegionStageLibrary.all_stages()[0]
 	_menu._load_event(event)
 	await get_tree().process_frame
 	await get_tree().process_frame

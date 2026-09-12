@@ -348,7 +348,7 @@ deleted along with their gates. A car in the wrong `drive_mode` for a restricted
 conversion to offer outside an active run, so `RallyDetail.convertible_for` always
 returns false. The roster ships two stock **FWD** cars — the **Focus**
 (`id: "focus"`) and the **Renault Twingo** (`id: "twingo"`), both home entrants of the
-Front Runners rally (see `features/rally-roster.md`); the MX-5/Viper/XJS are RWD; the
+Front Runners rally (see `features/region-stage-library.md`); the MX-5/Viper/XJS are RWD; the
 Acty is AWD.
 
 **AWD handbrake exception:** AWD is normally one rigid locked driveline, so a
@@ -451,4 +451,4 @@ A surface-specialised compound is worth different amounts on different stages, s
 performance rating — which benchmarks at a frozen grip — cannot price it. Rather than
 inventing a number for it, the opponent field is fitted with **whatever tyre the player
 is running**, so the advantage cancels out instead of going uncharged. See
-[rally-roster.md](rally-roster.md) → "Tyre mirroring".
+[region-stage-library.md](region-stage-library.md) → "Tyre mirroring".

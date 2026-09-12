@@ -17,7 +17,7 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	RallyFixtures.install()
+	RegionStageFixtures.install()
 	CarFixtures.install()
 
 
@@ -28,7 +28,7 @@ func after_each() -> void:
 		if is_instance_valid(n) and not (n as Node).is_queued_for_deletion():
 			(n as Node).queue_free()
 	CarFixtures.restore()
-	RallyFixtures.restore()
+	RegionStageFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):

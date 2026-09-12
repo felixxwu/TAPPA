@@ -26,9 +26,10 @@ extends RefCounted
 #   "car_index"  int            — CarLibrary catalogue index (ANY car; ownership
 #                                 is not consulted, that is the point)
 #   "event"      Dictionary     — the TrackGenParams-shaped stage dict the drive
-#                                 generates from (RegionStagePool.draw(region, 1,
-#                                 seed)[0] at setup time, so the player can re-enter
-#                                 free play for a fresh roll)
+#                                 generates from (one of RegionStageLibrary.all_stages_in
+#                                 (region), sampled uniformly at setup time — see
+#                                 HubShell._start_free_play — so the player can
+#                                 re-enter free play for a fresh roll)
 #   "boost_ids"  Array[String]  — the BoostLibrary ids to apply for the drive
 
 

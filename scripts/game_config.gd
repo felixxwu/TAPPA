@@ -371,7 +371,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## event's authored `weather` field — the ONE funnel into the live config, so a new
 ## scene-entry site can't route weather around it. Session-less callers (free roam,
 ## benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
-@export var weather := RallyLibrary.WEATHER_DRY
+@export var weather := StageFields.WEATHER_DRY
 # The active condition's sun_energy_mult, seated by world.gd::_apply_overcast_look
 # each stage boot (and reset to 1.0 there when the condition has no look block).
 # NOT exported and NOT authored: it is a derived runtime value, mirroring onto the
@@ -1588,7 +1588,7 @@ func has_nitrous() -> bool:
 @export_range(0.05, 4.0) var road_tile_per_meter := 0.5
 
 ## Flat overcast grey used as background_color / fog_light_color / horizon on a
-## wet stage (weather == RallyLibrary.WEATHER_RAIN). Applied by the weather look
+## wet stage (weather == StageFields.WEATHER_RAIN). Applied by the weather look
 ## override, layered after the region look so rain wins. See features/weather.md.
 @export var rain_background_color := Color(0.55, 0.55, 0.58)
 ## Dimmer, cooler ambient sky colour (upward-facing surfaces) on a wet stage.
@@ -1607,7 +1607,7 @@ func has_nitrous() -> bool:
 @export_range(0, 2000) var rain_particle_count := 300
 
 ## Flat dusty-tan background/fog colour on a sandstorm stage (weather ==
-## RallyLibrary.WEATHER_SANDSTORM, authored only onto region == "greece" events).
+## StageFields.WEATHER_SANDSTORM, authored only onto region == "greece" events).
 ## Applied by the same weather look override as rain, layered after the region
 ## look. See features/weather.md.
 @export var sand_background_color := Color(0.72, 0.6, 0.42)
@@ -1647,7 +1647,7 @@ func has_nitrous() -> bool:
 ## scripts/wind_sway.gd; purely cosmetic.
 @export_range(0.0, 0.5) var sand_foliage_wind_strength := 0.08
 
-# --- Fog (weather == RallyLibrary.WEATHER_FOG) --------------------------------
+# --- Fog (weather == StageFields.WEATHER_FOG) --------------------------------
 # Prefixed `mist_` rather than `fog_` purely to avoid colliding with the BASE
 # environment knobs `fog_density` / `fog_sky_affect` above, which every stage uses.
 # Fog is a VISIBILITY condition only: it authors NO grip multiplier (so μ is exactly
@@ -1667,7 +1667,7 @@ func has_nitrous() -> bool:
 ## washes out into a featureless white dome instead of punching through the murk).
 @export_range(0.0, 1.0) var mist_fog_sky_affect := 0.95
 
-# --- Storm (weather == RallyLibrary.WEATHER_STORM) ----------------------------
+# --- Storm (weather == StageFields.WEATHER_STORM) ----------------------------
 # Rain's look and rain's particle kind, authored heavier, plus a crosswind and an
 # occasional lightning flash. See features/weather.md.
 ## Global tyre μ multiplier on a storm stage — a storm is wetter than plain rain, so
@@ -1757,7 +1757,7 @@ func has_nitrous() -> bool:
 ## Fixed world-space heading the snow drifts toward (0 = +X, 90 = +Z).
 @export_range(0.0, 360.0) var snowfall_wind_dir_deg := 200.0
 
-# --- Night (weather == RallyLibrary.WEATHER_NIGHT) ----------------------------
+# --- Night (weather == StageFields.WEATHER_NIGHT) ----------------------------
 # A DARK stage re-lit only by a fake headlight cone in front of the player's car
 # (todo/night-weather-and-headlights.md). Two halves:
 #   1. The LOOK block below — the same five environment knobs every other condition
@@ -1880,19 +1880,6 @@ func has_nitrous() -> bool:
 @export_range(1.0, 200.0) var terrain_layer3_wavelength := 3.0
 ## Layer 3 amplitude (m): height of the finest surface bumps.
 @export_range(0.0, 10.0) var terrain_layer3_amplitude := 0.0
-
-## Per-run-stage hilliness scaling (features/terrain.md → "Stage-based hilliness
-## and curviness"). `StageConfig.apply_event_config` multiplies every terrain
-## layer's amplitude by `StageConfig.stage_scale(stage_index, stage_count,
-## stage_hilliness_scale_min, stage_hilliness_scale_max)` — stage 1 of a
-## region run (`RegionRunMode.STAGE_COUNT`) uses `_min`, stage 8 uses `_max`,
-## interpolated linearly in between. 1.0 = the event's authored amplitude
-## unchanged; only applies when a stage index is known (an active RunSession),
-## so free roam / benchmark / the Seed Lab preview are unaffected.
-@export_range(0.0, 3.0) var stage_hilliness_scale_min := 1.0
-## Hilliness scale applied at the LAST stage of a run (stage 8 by default). See
-## `stage_hilliness_scale_min`.
-@export_range(0.0, 3.0) var stage_hilliness_scale_max := 1.0
 
 @export_group("PS1 Look")
 ## Logical render height of the WHOLE frame (3D and UI): a positive value renders
@@ -2026,22 +2013,10 @@ func has_nitrous() -> bool:
 ## Bias toward straighter, easier turns during track generation, in [0, 1]. 0 = no
 ## bias (corners chosen freely, the default for free-roam); higher favours gentler
 ## corners and longer connecting straights, yielding a less twisty stage. Set per
-## rally event by RallyLibrary.event_straightness — earlier-game events run higher
+## rally event by StageFields.event_straightness — earlier-game events run higher
 ## so their stages are easier. Changes the generated SHAPE, so opponent target times
 ## are derived with the same value (RallySession._compute_event_data).
 @export_range(0.0, 1.0) var track_straightness := 0.0
-## Per-run-stage curviness scaling (features/terrain.md → "Stage-based hilliness
-## and curviness"). `StageConfig.apply_event_config` uses `StageConfig.stage_scale`
-## (same interpolation as `stage_hilliness_scale_min`/`_max`) to scale UP how much
-## of the event's authored straightness is kept away: `track_straightness` is
-## reduced toward 0 as the multiplier grows past 1.0, so stage 1 stays as
-## straight as authored (`_min`, default 1.0 = no change) and stage 8 is the
-## curviest (`_max`). Only applies when a stage index is known (an active
-## RunSession).
-@export_range(0.0, 3.0) var stage_curviness_scale_min := 1.0
-## Curviness scale applied at the LAST stage of a run (stage 8 by default). See
-## `stage_curviness_scale_min`.
-@export_range(0.0, 3.0) var stage_curviness_scale_max := 1.0
 ## Length (m) of the straight runoff road appended AFTER the finish line, so the
 ## car has room to skid to a stop past the arch. Treated as a real road piece: it is
 ## collision-checked in the track generator (the finish corner backtracks if the
@@ -2064,7 +2039,7 @@ func has_nitrous() -> bool:
 ## How forested this track is, in [0, 1] — the fraction of area covered by trees.
 ## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
 ## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by
-## RallyLibrary.event_forestiness; the default (1.0) keeps free-roam fully wooded.
+## StageFields.event_forestiness; the default (1.0) keeps free-roam fully wooded.
 ## Bushes ignore this (they scatter everywhere).
 @export_range(0.0, 1.0) var track_forestiness := 1.0
 ## Wavelength, in metres, of the Perlin noise that breaks the trees into forest
@@ -2077,7 +2052,7 @@ func has_nitrous() -> bool:
 ## track switches surface exactly ONCE along its length (gravel→tarmac or
 ## tarmac→gravel, picked deterministically from track_seed), so this also fixes
 ## where the switch sits. 0 = all gravel, 1 = all tarmac. Set per rally event by
-## RallyLibrary.event_tarmac_fraction; the default (0) keeps free-roam all gravel.
+## StageFields.event_tarmac_fraction; the default (0) keeps free-roam all gravel.
 @export_range(0.0, 1.0) var track_tarmac_fraction := 0.0
 ## Length, in metres ALONG the track, of the smooth feather where the surface
 ## switches between gravel and tarmac — the lengthwise analogue of the
@@ -2182,7 +2157,7 @@ func has_nitrous() -> bool:
 @export var cliff_enabled := true
 ## Along-track period, in metres, of the 1-D camber noise that drives the cliffs —
 ## how quickly a cliff swaps sides. GLOBAL (same for every event); only the height
-## is scaled per event (cliff_amount / RallyLibrary.event_cliffiness).
+## is scaled per event (cliff_amount / StageFields.event_cliffiness).
 @export_range(5.0, 500.0) var cliff_wavelength_m := 100.0
 ## Scales the raw camber noise before the [-1, 1] clamp. Higher ⇒ the signal spends
 ## more time saturated at ±1 (frequent full-height cliffs); lower ⇒ mostly gentle.
@@ -3348,7 +3323,7 @@ static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
 	return tire_surface_mult_for({
 		"tire_snow_grip_mult": snow_mult,
 		"tire_tarmac_grip_mult": tarmac_mult,
-	}, fill_tire_context({}, tarmac_weight, snowy, RallyLibrary.WEATHER_DRY))
+	}, fill_tire_context({}, tarmac_weight, snowy, StageFields.WEATHER_DRY))
 
 
 func apply_car_light(mat: ShaderMaterial) -> void:

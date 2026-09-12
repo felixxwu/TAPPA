@@ -20,7 +20,7 @@ extends RefCounted
 # but an id):
 #
 #   "id"             String  — stable id, matches the authored event `weather` string
-#                              and RallyLibrary.WEATHER_* / GameConfig.weather.
+#                              and StageFields.WEATHER_* / GameConfig.weather.
 #   "grip_mult"      String  — GameConfig field holding the global tyre μ multiplier.
 #                              "" / omitted => exactly 1.0 (see grip_mult()).
 #   "particles"      String  — WeatherField particle kind ("rain" / "sand"). ""/omitted
@@ -89,7 +89,7 @@ const LOOK_KEYS := [
 ]
 
 # The id every unknown/absent condition resolves to. Load-bearing: by_id() returns
-# this entry for a typo'd string, mirroring RallyLibrary.event_weather's tolerance.
+# this entry for a typo'd string, mirroring StageFields.event_weather's tolerance.
 const DEFAULT_ID := "dry"
 
 const CONDITIONS: Array[Dictionary] = [

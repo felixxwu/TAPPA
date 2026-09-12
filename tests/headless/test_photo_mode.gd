@@ -20,7 +20,7 @@ func before_all() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	RallyFixtures.install()
+	RegionStageFixtures.install()
 	SceneTestHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
@@ -32,7 +32,7 @@ func before_all() -> void:
 func after_all() -> void:
 	get_tree().paused = false
 	_scene.free()
-	RallyFixtures.restore()
+	RegionStageFixtures.restore()
 	Config.reset()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:

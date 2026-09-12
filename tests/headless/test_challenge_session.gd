@@ -717,12 +717,10 @@ func test_apply_stage_config_writes_the_stages_rolled_params_into_the_config() -
 	# the two that produced the road-into-the-lake bug when they were dropped.
 	assert_almost_eq(cfg.track_water_level_m, float(stage["water_level"]), 0.001,
 		"the RENDERED water level matches the level the road was generated against")
-	# Scaled by stage progress (features/terrain.md — stage_hilliness_scale_min/max),
-	# not the event's raw rolled value directly.
-	var hilliness_scale := StageConfig.stage_scale(RunSession.events_completed(),
-		RunSession.stage_count(), cfg.stage_hilliness_scale_min, cfg.stage_hilliness_scale_max)
+	# No run-position scaling any more (todo/region-stage-slots-redesign.md): the
+	# stage's authored/rolled amplitude reaches the config unchanged.
 	assert_almost_eq(cfg.terrain_layer1_amplitude,
-		float(stage["terrain_layer1_amplitude"]) * hilliness_scale, 0.001,
+		float(stage["terrain_layer1_amplitude"]), 0.001,
 		"the terrain relief the road is routed against is the stage's, not the default")
 	assert_almost_eq(cfg.track_forestiness, float(stage["forestiness"]), 0.001,
 		"the stage's forestiness reaches the config")
@@ -766,11 +764,7 @@ func test_a_stages_resolved_config_equals_the_canonical_event_config() -> void:
 
 	var cfg: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate()
 	DrivingContext.apply_stage_config(cfg)
-	# Same stage_index/stage_count DrivingContext.apply_stage_config passes, so the
-	# run's stage-progress hilliness/curviness scaling (features/terrain.md) is
-	# applied identically on both sides of the comparison.
-	var canonical := StageConfig.canonical_event_config(stage,
-		RunSession.events_completed(), RunSession.stage_count())
+	var canonical := StageConfig.canonical_event_config(stage)
 
 	var compared := 0
 	for prop in cfg.get_property_list():

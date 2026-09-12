@@ -447,7 +447,7 @@ static func _load_factor(car_meta: Dictionary, mass: float) -> float:
 
 static func _surface_grip(car_meta: Dictionary, event: Dictionary, skill_grip_mult := 1.0) -> float:
 	var base := float(car_meta.get("tire_compound", 1.0))
-	var tarmac := RallyLibrary.event_tarmac_fraction(event)
+	var tarmac := StageFields.event_tarmac_fraction(event)
 	var cfg: GameConfig = Config.data
 	var mu := base * ((1.0 - tarmac) * cfg.gravel_grip + tarmac * cfg.tarmac_grip)
 	# The fitted tyre's SURFACE-DEPENDENT term, through the same rule the live physics
@@ -456,9 +456,9 @@ static func _surface_grip(car_meta: Dictionary, event: Dictionary, skill_grip_mu
 	# for a RIVAL's car as often as the player's; absent (every car without such a
 	# compound) reads as the 1.0 identity, which makes this an exact no-op there.
 	mu *= GameConfig.tire_surface_mult_for(car_meta, GameConfig.fill_tire_context(
-		{}, tarmac, cfg.ground_is_snow(), RallyLibrary.event_weather(event)))
+		{}, tarmac, cfg.ground_is_snow(), StageFields.event_weather(event)))
 	# Unconditional: WeatherLibrary resolves dry (and any unknown string) to exactly
 	# 1.0, so there is no per-condition branch here and a new condition needs no edit.
 	# skill_grip_mult is the ghost's driver-skill term (1.0 = no-op); it multiplies the
 	# same mu the weather/surface model scales, which is why it needed no new concept.
-	return mu * WeatherLibrary.grip_mult(cfg, RallyLibrary.event_weather(event)) * maxf(skill_grip_mult, 0.0)
+	return mu * WeatherLibrary.grip_mult(cfg, StageFields.event_weather(event)) * maxf(skill_grip_mult, 0.0)

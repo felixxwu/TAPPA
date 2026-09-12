@@ -87,8 +87,7 @@ static func apply_stage_config(cfg: GameConfig) -> void:
 	if RunSession.is_active():
 		var stage := RunSession.current_stage_params()
 		if not stage.is_empty():
-			StageConfig.apply_event_config(cfg, stage, RunSession.events_completed(),
-				RunSession.stage_count())
+			StageConfig.apply_event_config(cfg, stage)
 
 
 # Whether `instance_id` is the car the stored run — of EITHER kind — is COMMITTED to.

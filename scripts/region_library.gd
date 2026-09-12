@@ -63,37 +63,17 @@ const DEFAULT_TREE_MIX: Array = [
 # never inherited — every corner authors its own (see water_level_of). Ids are
 # load-bearing: "home" is hardcoded in world.gd._current_region_look(), so never rename it.
 #
-# ADDING A ROW HERE IS A FOUR-PART CHANGE, and part 2 is the one that ships half-done: a
-# REGIONS entry is INERT alone — a rally's `region` tag is the only thing that ever
-# selects a region, so an untagged one renders nowhere.
+# ADDING A ROW HERE IS A THREE-PART CHANGE, and part 2 is the one that ships half-done: a
+# REGIONS entry is INERT alone — a matching key in RegionStageLibrary.STAGES is the only
+# thing that ever selects a region, so an unstaged one renders nowhere.
 #   1. the row below (never invent a filename — `ls textures/`, see above);
-#   2. reachability: ADD A NEW RALLY to RallyLibrary.RALLIES (scripts/rally_library.gd) —
-#      paste the template below and edit the # EDIT fields. Do NOT satisfy this by
-#      retagging an existing rally: that goes green while silently restyling a rally whose
-#      map_pos and authored weather belong to its OLD region (a probe moved a mid-map
-#      fog/night rally into an arid canyon that way). Guarded by test_region_assets.gd ->
-#      test_every_region_is_reachable_from_at_least_one_rally.
-#
-#      {
-#          "id": "<region_id>_trial", "name": "<Rally Name>",     # EDIT both
-#          "region": "<region_id>",                               # EDIT: your new region's id
-#          "difficulty": 2, "special": false, "restriction": {},  # {} = open to every car
-#          "map_pos": Vector2(0.05, 0.46),  # INERT (the map is deleted with the overworld);
-#              # keep the literal, and keep it in step with test_region_assets.gd's
-#              # _unreachable_region_fix (test_both_authoring_templates_offer_the_same_map_pos
-#              # pins the two copies agreeing). The pin-placement helpers that used to vet it
-#              # (RallyLibrary.suggest_map_pos / MIN_PIN_SEPARATION) went with the map.
-#          "events": [  # 3 stages. `water_level` should match the region's own waterline, and
-#              # the stages must NOT all share one weather (test_every_multi_stage_rally_mixes_weather).
-#              {"seed": 90001, "turn_count": 20, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},
-#              {"seed": 90002, "turn_count": 20, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0, "weather": "rain"},
-#              {"seed": 90003, "turn_count": 21, "forestiness": 0.5, "surface_mix": 0.4, "straightness": 0.85, "cliffiness": 0.4, "water_level": -12.0, "terrain_layer1_amplitude": 28.0},
-#          ],
-#      },
-#      Those are every field a rally needs; `prize_car`, `reveal_radius` and per-event
-#      `weather` are optional (and "sandstorm" is desert-only, test-enforced).
+#   2. reachability: ADD AN 8-SLOT x 3-CANDIDATE STAGE GRID keyed with your new region's
+#      id to RegionStageLibrary.STAGES (scripts/region_stage_library.gd) — see that file's
+#      header for the exact shape and per-candidate field list, and
+#      todo/region-stage-slots-redesign.md for the design record. Guarded by
+#      test_region_assets.gd -> test_every_region_has_authored_stages.
 #   3. features/regions.md — the prose region list (test_region_docs.gd fails on this);
-#   4. features/terrain.md if the row changes how terrain is built.
+#      features/terrain.md too, if the row changes how terrain is built.
 const REGIONS: Array[Dictionary] = [
 	# The existing world. It authors its foliage split explicitly so the split is
 	# config-driven everywhere (100% home tree.png, 3D ground-cover bushes on); every
@@ -470,15 +450,6 @@ static func _resolve_fields(cfg: GameConfig, block: Dictionary) -> Dictionary:
 				% [key, field])
 	return out
 
-static func region_for_rally(rally_id: String) -> Dictionary:
-	return by_id(String(RallyLibrary.by_id(rally_id).get("region", "")))
-
-static func rallies_in(region_id: String) -> Array:
-	var out: Array = []
-	for rally in RallyLibrary.all():
-		if String(rally.get("region", "")) == region_id:
-			out.append(rally)
-	return out
 
 # The tree species split for a resolved region look: the authored `tree_mix`, or the
 # default single home tree when a region authors none (free roam / unknown id). Each

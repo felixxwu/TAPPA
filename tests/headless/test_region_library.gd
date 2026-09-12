@@ -32,47 +32,11 @@ func _regions() -> Array[Dictionary]:
 		{"id": R_E, "name": "E"},
 	]
 
-# rallies: regions hold an arbitrary number of specials — two, one, and none —
-# because a region no longer gates anything (that's RallyLibrary's star ladder).
-func _rallies() -> Array[Dictionary]:
-	return [
-		{"id": "a1", "special": false, "region": R_A},
-		{"id": "a_s1", "special": true, "requires_completions": 1, "region": R_A},
-		{"id": "a_s2", "special": true, "requires_completions": 2, "region": R_A},
-		{"id": "b1", "special": false, "region": R_B},
-		{"id": "b_s1", "special": true, "requires_completions": 1, "region": R_B},
-		{"id": "c1", "special": false, "region": R_C},
-	]
-
 func before_each() -> void:
 	RegionLibrary.override_for_test(_regions())
-	RallyLibrary.override_for_test(_rallies())
 
 func after_each() -> void:
 	RegionLibrary.reset()
-	RallyLibrary.reset()
-
-func test_grouping_round_trip() -> void:
-	assert_eq(RegionLibrary.region_for_rally("b1").get("id", ""), R_B)
-	var ids := []
-	for r in RegionLibrary.rallies_in(R_B):
-		ids.append(r["id"])
-	assert_eq(ids, ["b1", "b_s1"])
-
-func test_a_region_may_hold_any_number_of_specials() -> void:
-	# Regions don't gate progression any more, so the old "exactly one showdown
-	# per region" invariant is retired: grouping must cope with 2, 1 and 0.
-	var counts := {}
-	for region_id in [R_A, R_B, R_C, R_E]:
-		var n := 0
-		for r in RegionLibrary.rallies_in(region_id):
-			if RallyLibrary.is_special(r):
-				n += 1
-		counts[region_id] = n
-	assert_eq(counts[R_A], 2, "a region can hold several specials")
-	assert_eq(counts[R_B], 1)
-	assert_eq(counts[R_C], 0, "a region can hold no special at all")
-	assert_eq(counts[R_E], 0, "a region with no rallies groups to nothing")
 
 func test_look_of_returns_only_present_overrides() -> void:
 	assert_eq(RegionLibrary.look_of(R_A), {})  # no overrides authored

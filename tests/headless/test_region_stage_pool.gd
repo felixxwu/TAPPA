@@ -1,55 +1,49 @@
 extends GutTest
-# RegionStagePool (scripts/region_stage_pool.gd) — the region's authored event pool
-# and the seeded 8-stage draw a roguelike run takes out of it
-# (todo/roguelike-pivot.md → "Stage draw"). Pure logic, no scene, no Save.
+# RegionStagePool (scripts/region_stage_pool.gd) — the seeded per-slot draw a
+# roguelike run takes out of RegionStageLibrary (todo/region-stage-slots-redesign.md,
+# superseding todo/roguelike-pivot.md → "Stage draw"). Pure logic, no scene, no Save.
 #
-# Runs against a SYNTHETIC rally catalogue throughout: the shipped RALLIES table is
+# Runs against a SYNTHETIC region layout throughout: the shipped STAGES table is
 # content and is always subject to change, so nothing here may depend on a
-# particular authored rally, a particular event count, or a particular region's
-# pool size (CLAUDE.md's testing rules). What IS asserted is the pool's CONTRACT —
-# it flattens, it annotates, the draw is deterministic, it draws only real pool
-# members, it never repeats while the pool lasts, and it comes back easiest-first.
+# particular authored candidate or a particular region's slot count (CLAUDE.md's
+# testing rules). What IS asserted is the draw's CONTRACT — it is deterministic in
+# the run seed, it draws only real authored candidates, it draws exactly one per
+# slot in slot order, it stamps region/slot/candidate, and it never mutates the
+# catalogue.
 
 const REGION := "fx_pool_region"
-const OTHER_REGION := "fx_other_region"
 
 
 func before_each() -> void:
-	RallyLibrary.override_for_test(_rallies())
+	RegionStageLibrary.override_for_test(_regions())
 
 
 func after_each() -> void:
-	RallyLibrary.reset()
+	RegionStageLibrary.reset()
 
 
-# A synthetic region of 4 rallies / 10 events, spanning three difficulty tiers and
-# including a ONE-event rally — the pool must be counted, never assumed to be
-# 3 x rallies (`shakedown` and friends carry one event apiece in the real table).
-# Plus one rally in a DIFFERENT region, which must never appear in this pool.
-func _rallies() -> Array[Dictionary]:
-	var out: Array[Dictionary] = [
-		_rally("fx_a", REGION, 1, [101, 102, 103]),
-		_rally("fx_b", REGION, 3, [201, 202, 203]),
-		_rally("fx_c", REGION, 2, [301, 302, 303]),
-		_rally("fx_d", REGION, 2, [401]),
-		_rally("fx_elsewhere", OTHER_REGION, 1, [901, 902, 903]),
-	]
-	return out
-
-
-func _rally(id: String, region: String, difficulty: int, seeds: Array) -> Dictionary:
-	var events: Array = []
-	for s in seeds:
-		events.append({
-			"seed": int(s), "turn_count": 8, "forestiness": 0.4, "surface_mix": 0.5,
-			"straightness": 0.6, "cliffiness": 0.3, "water_level": -50.0,
-			"terrain_layer1_amplitude": 12.0,
-		})
+# A synthetic region of 8 slots x 3 candidates — the real shape — plus a second
+# region, which must never leak into the first's draw.
+func _regions() -> Dictionary:
 	return {
-		"id": id, "name": id, "region": region, "difficulty": difficulty,
-		"special": false, "restriction": {}, "map_pos": Vector2(0.5, 0.5),
-		"events": events,
+		REGION: _slots(100),
+		"fx_other_region": _slots(900),
 	}
+
+
+func _slots(seed_base: int) -> Array:
+	var slots: Array = []
+	for slot_index in 8:
+		var candidates: Array = []
+		for c in 3:
+			var seed_value := seed_base + slot_index * 10 + c
+			candidates.append({
+				"seed": seed_value, "turn_count": 8, "forestiness": 0.4, "surface_mix": 0.5,
+				"straightness": 0.6, "cliffiness": 0.3, "water_level": -50.0,
+				"terrain_layer1_amplitude": 12.0,
+			})
+		slots.append(candidates)
+	return slots
 
 
 func _seeds_of(stages: Array) -> Array:
@@ -59,56 +53,20 @@ func _seeds_of(stages: Array) -> Array:
 	return out
 
 
-# --- The pool ------------------------------------------------------------------
-
-func test_the_pool_is_every_event_of_every_rally_tagged_with_the_region() -> void:
-	var pool := RegionStagePool.events_in(REGION)
-	var expected := 0
-	for rally in RallyLibrary.all():
-		if String(rally["region"]) == REGION:
-			expected += (rally["events"] as Array).size()
-	assert_eq(pool.size(), expected,
-		"the pool is COUNTED from the events arrays, never rallies x 3")
-	assert_eq(RegionStagePool.pool_size(REGION), expected, "pool_size agrees with events_in")
+func _all_seeds_in(region_id: String) -> Array:
+	var out: Array = []
+	for slot in RegionStageLibrary.slots_in(region_id):
+		for c in slot:
+			out.append(int((c as Dictionary).get("seed", 0)))
+	return out
 
 
-func test_the_pool_excludes_every_other_regions_events() -> void:
-	var seeds := _seeds_of(RegionStagePool.events_in(REGION))
-	for s in _seeds_of(RegionStagePool.events_in(OTHER_REGION)):
-		assert_false(seeds.has(s), "an event tagged to another region is not in this pool")
+# --- The draw --------------------------------------------------------------------
 
-
-func test_every_pooled_stage_carries_its_region_and_its_parents_difficulty() -> void:
-	# The region tag is load-bearing, not decoration: StageConfig.apply_event_config
-	# resolves the waterline and the per-region grip/deep-snow overrides off it, so a
-	# stage that lost it would generate as the wrong corner of the world.
-	for stage in RegionStagePool.events_in(REGION):
-		assert_eq(String(stage["region"]), REGION, "the stage knows its region")
-		assert_true(stage.has("rally_id"), "and which rally it came from")
-		var parent := RallyLibrary.by_id(String(stage["rally_id"]))
-		assert_eq(int(stage["difficulty"]), int(parent["difficulty"]),
-			"and carries its parent rally's authored difficulty")
-
-
-func test_pooling_never_mutates_the_catalogue() -> void:
-	@warning_ignore("return_value_discarded")
-	RegionStagePool.events_in(REGION)
-	for rally in RallyLibrary.all():
-		for event in (rally["events"] as Array):
-			assert_false((event as Dictionary).has("difficulty"),
-				"the pool's annotations land on a COPY — the authored event is untouched")
-
-
-func test_an_unknown_region_has_an_empty_pool_and_draws_nothing() -> void:
-	assert_eq(RegionStagePool.events_in("no_such_region"), [])
-	assert_eq(RegionStagePool.draw("no_such_region", 8, 1234), [])
-
-
-# --- The draw ------------------------------------------------------------------
-
-func test_the_draw_returns_exactly_the_requested_number_of_stages() -> void:
+func test_the_draw_returns_one_stage_per_requested_slot() -> void:
 	assert_eq(RegionStagePool.draw(REGION, 8, 7777).size(), 8)
-	assert_eq(RegionStagePool.draw(REGION, 3, 7777).size(), 3)
+	assert_eq(RegionStagePool.draw(REGION, 3, 7777).size(), 3,
+		"a shorter run only draws its first N slots")
 	assert_eq(RegionStagePool.draw(REGION, 0, 7777), [],
 		"a zero-stage run draws nothing rather than erroring")
 
@@ -122,98 +80,58 @@ func test_the_draw_is_deterministic_in_its_seed() -> void:
 	assert_eq(_seeds_of(a), _seeds_of(b), "the same run seed draws the same stages")
 
 
-func test_every_drawn_stage_is_a_real_pooled_event() -> void:
-	var pool_seeds := _seeds_of(RegionStagePool.events_in(REGION))
+func test_every_drawn_stage_is_a_real_authored_candidate() -> void:
+	var pool_seeds := _all_seeds_in(REGION)
 	for stage in RegionStagePool.draw(REGION, 8, 31337):
 		assert_true(pool_seeds.has(int(stage["seed"])),
 			"a drawn stage is authored content, never a fabricated one")
-		assert_eq(String(stage["region"]), REGION, "and keeps its region tag through the draw")
 
 
-func test_the_draw_never_repeats_a_stage_while_the_pool_lasts() -> void:
-	var seeds := _seeds_of(RegionStagePool.draw(REGION, 8, 555))
-	var seen := {}
-	for s in seeds:
-		assert_false(seen.has(s), "no stage is drawn twice when the pool can cover the run")
-		seen[s] = true
+func test_every_drawn_stage_carries_its_region_slot_and_candidate() -> void:
+	# The region tag is load-bearing, not decoration: StageConfig.apply_event_config
+	# resolves the waterline and the per-region grip/deep-snow overrides off it, so a
+	# stage that lost it would generate as the wrong corner of the world.
+	var drawn := RegionStagePool.draw(REGION, 8, 2024)
+	for slot_index in drawn.size():
+		var stage: Dictionary = drawn[slot_index]
+		assert_eq(String(stage["region"]), REGION, "the stage knows its region")
+		assert_eq(int(stage["slot"]), slot_index, "the stage knows its slot position")
+		assert_true(int(stage["candidate"]) >= 0 and int(stage["candidate"]) < 3,
+			"the stage knows which of the slot's 3 candidates was drawn")
 
 
-func test_a_pool_smaller_than_the_run_refills_rather_than_returning_a_short_run() -> void:
-	# A thin region (once `greece_coast` before it was removed and its rallies moved
-	# into `greece`) could ship far fewer events than an 8-stage run needs. A repeated
-	# stage is a thin region; a 3-stage "8-stage run" is a broken one.
-	var tiny: Array[Dictionary] = [_rally("fx_tiny", "fx_tiny_region", 1, [1, 2])]
-	RallyLibrary.override_for_test(tiny)
-	var drawn := RegionStagePool.draw("fx_tiny_region", 8, 99)
-	assert_eq(drawn.size(), 8, "the run is still full length")
-	for stage in drawn:
-		assert_true([1, 2].has(int(stage["seed"])), "…filled only from the region's own pool")
+func test_the_draw_visits_slots_in_order() -> void:
+	# Each drawn stage's slot index must equal its position in the returned array —
+	# the array order IS the escalation now, so nothing may reorder it.
+	var drawn := RegionStagePool.draw(REGION, 8, 3131)
+	for i in drawn.size():
+		assert_eq(int(drawn[i]["slot"]), i, "slot %d landed at array position %d" % [int(drawn[i]["slot"]), i])
 
 
-func test_the_drawn_run_escalates_by_the_parent_rallys_difficulty() -> void:
-	# Ordering, not values: whatever the authored tiers are, the run must never get
-	# EASIER as it goes, so the last stage is the hardest of the drawn set.
-	var previous := -1
-	for stage in RegionStagePool.draw(REGION, 8, 8080):
-		var d := int(stage["difficulty"])
-		assert_true(d >= previous, "stage difficulty never drops as the run progresses")
-		previous = d
+func test_drawing_never_mutates_the_catalogue() -> void:
+	@warning_ignore("return_value_discarded")
+	RegionStagePool.draw(REGION, 8, 55)
+	for slot in RegionStageLibrary.slots_in(REGION):
+		for c in slot:
+			assert_false((c as Dictionary).has("region"),
+				"the draw's stamping lands on a COPY — the authored candidate is untouched")
 
 
-# --- The shipped roster's own contract (decision 46) ---------------------------
-#
-# These three read the REAL RallyLibrary, unlike everything above: their subject IS the
-# shipped content, so each drops the synthetic override this file installs in before_each.
-# That is the narrow exception CLAUDE.md allows — "iterating the whole table as opaque
-# input is fine; that's the code's contract" — and none of them pins a particular entry,
-# a chosen difficulty, or any tuned number.
-
-# Every region must be able to fill a run — and then some. This is a CONTENT contract, not
-# a tuning value: a region below the floor is not "badly balanced", it is unplayable — an
-# earlier `greece_coast` region once had three events against a run that wants eight,
-# before it was removed and its rallies folded into `greece`.
-#
-# The floor is two full runs with no repeats, so a player who runs a region twice does not
-# see the same stage twice. RegionStagePool refills a short bag rather than failing, which
-# keeps a half-authored region playable during development — this test is what stops that
-# stopgap becoming the shipped experience.
-func test_every_region_can_fill_two_runs_without_repeats() -> void:
-	RallyLibrary.reset()  # the SHIPPED roster is this test's subject
-	var floor_needed := RegionRunMode.STAGE_COUNT * 2
-	for region in RegionLibrary.all():
-		var id := String(region.get("id", ""))
-		var pool := RegionStagePool.events_in(id)
-		assert_gte(pool.size(), floor_needed,
-			"region '%s' has %d events; a run draws %d, and the floor is two runs with no repeats"
-				% [id, pool.size(), RegionRunMode.STAGE_COUNT])
+func test_an_unknown_region_draws_nothing() -> void:
+	assert_eq(RegionStagePool.draw("no_such_region", 8, 1234), [])
 
 
-# The draw orders stages by their parent rally's difficulty, so a region whose rallies all
-# sit on one rung has an ordering that orders nothing — the run has no gradient. Asserts a
-# SPREAD exists, never which rung any particular rally is on: difficulty is authored data a
-# designer retunes freely.
-func test_every_region_offers_more_than_one_difficulty() -> void:
-	RallyLibrary.reset()  # the SHIPPED roster is this test's subject
-	for region in RegionLibrary.all():
-		var id := String(region.get("id", ""))
-		var seen := {}
-		for event in RegionStagePool.events_in(id):
-			seen[int((event as Dictionary).get("difficulty", 0))] = true
-		assert_gt(seen.size(), 1,
-			"region '%s' has only one difficulty, so ordering the draw by difficulty is a no-op"
-				% id)
+func test_a_different_run_seed_can_draw_different_candidates() -> void:
+	# Determinism (same seed -> same draw) is covered above; this is its converse — a
+	# draw that ignored the RNG and always took candidate 0 would still pass every
+	# other test in this file, so the actual randomness needs its own assertion.
+	var seen_seed_sets := {}
+	for run_seed in range(20):
+		seen_seed_sets[str(_seeds_of(RegionStagePool.draw(REGION, 8, run_seed)))] = true
+	assert_gt(seen_seed_sets.size(), 1,
+		"20 different run seeds should not all draw the identical set of candidates")
 
 
-# Seeds are the identity of a generated track: two events sharing one seed generate the
-# same road, so a "different" stage is the stage you just drove. Cheap to assert, and the
-# kind of thing an authoring pass gets wrong by copying a block and forgetting the number.
-func test_no_two_authored_events_share_a_seed() -> void:
-	RallyLibrary.reset()  # the SHIPPED roster is this test's subject
-	var seen := {}
-	for rally in RallyLibrary.all():
-		for event in (rally.get("events", []) as Array):
-			var seed_value := int((event as Dictionary).get("seed", 0))
-			assert_false(seen.has(seed_value),
-				"seed %d is authored twice (%s and %s) — they generate the same road"
-					% [seed_value, String(seen.get(seed_value, "")), String(rally.get("id", ""))])
-			seen[seed_value] = String(rally.get("id", ""))
+# The shipped roster's own structural contract (enough slots per region, no shared
+# seeds) is covered in tests/headless/test_region_stage_library.gd — no need to
+# duplicate it here; this file's subject is the DRAW, not the catalogue.

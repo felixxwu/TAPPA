@@ -130,10 +130,10 @@ Consequence worth knowing: less relief means fewer deep hollows for the waterlin
 so **frozen lakes are rarer here than they were**. The waterlines were left at -12/-13
 (the "up in the foothills" rung of the roster's ladder) rather than raised to chase the
 ice back, because a high sea over low relief floods the track — the pairing constraint in
-[rally-roster.md](rally-roster.md).
+[region-stage-library.md](region-stage-library.md).
 
 The Alps also feel the lap-time model's **road gradient** term more than anywhere else
-(see [rally-roster.md](rally-roster.md) -> the QSS model). `G*sin(theta)` is a fixed
+(see [region-stage-library.md](region-stage-library.md) -> the QSS model). `G*sin(theta)` is a fixed
 subtraction from a drive budget that low grip has already shrunk, so 14 of the region's
 18 stages get slower once hills are modelled, up to about +2%. That term exists precisely
 so the rival field pays for a climb the player is paying for; before it, a 2WD car

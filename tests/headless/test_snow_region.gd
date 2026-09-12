@@ -273,10 +273,10 @@ func test_the_snowfall_condition_carries_no_grip_multiplier() -> void:
 	# frozen ground — two levers over one variable. It must therefore also stay out of
 	# physics_fields, so it never re-keys the opponent cache for a change it cannot make.
 	var cfg: GameConfig = Config.data
-	assert_eq(WeatherLibrary.grip_mult(cfg, RallyLibrary.WEATHER_SNOW), 1.0,
+	assert_eq(WeatherLibrary.grip_mult(cfg, StageFields.WEATHER_SNOW), 1.0,
 		"snowfall does not touch grip")
-	var entry := WeatherLibrary.by_id(RallyLibrary.WEATHER_SNOW)
-	assert_eq(String(entry.get("id", "")), RallyLibrary.WEATHER_SNOW,
+	var entry := WeatherLibrary.by_id(StageFields.WEATHER_SNOW)
+	assert_eq(String(entry.get("id", "")), StageFields.WEATHER_SNOW,
 		"setup: the snow condition is a real entry, not the dry fallback")
 	assert_eq(WeatherLibrary.physics_fields(entry), [],
 		"and names nothing that could change a lap time")

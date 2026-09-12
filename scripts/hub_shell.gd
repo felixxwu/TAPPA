@@ -871,10 +871,15 @@ func _build_freeplay_setup() -> void:
 func _start_free_play() -> void:
 	if _fp_region == "":
 		return
-	# One stage drawn from the chosen region's pool, seeded from the clock so every
-	# entry can roll a different road (RegionStagePool.draw(region, count, seed)).
-	var event: Dictionary = RegionStagePool.draw(_fp_region, 1,
-		int(Time.get_unix_time_from_system()))[0]
+	# One stage drawn uniformly from the chosen region's WHOLE stage grid (every slot,
+	# every candidate — not RegionStagePool.draw, which always returns slot 0 first
+	# for a 1-stage request; free play has no run position to escalate against, so it
+	# samples the full 8x3 catalogue instead), seeded from the clock so every entry
+	# can roll a different road.
+	var stages := RegionStageLibrary.all_stages_in(_fp_region)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(Time.get_unix_time_from_system())
+	var event: Dictionary = stages[rng.randi_range(0, stages.size() - 1)]
 	FreePlay.begin(_fp_car, event, _fp_boosts)
 	Scenes.change_to(get_tree(), Scenes.MAIN)
 

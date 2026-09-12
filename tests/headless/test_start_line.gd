@@ -142,7 +142,6 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
@@ -169,16 +168,15 @@ func after_each() -> void:
 	RunSession.auto_load_scenes = true
 	Config.reset()
 	CarFixtures.restore()
-	RallyFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-# Fixture Open: a rally with an event count for the subtitle.
+# A stand-in stage set with an event count for the subtitle.
 func _rally() -> Dictionary:
-	return RallyLibrary.by_id("fx_open")
+	return {"name": "Fixture Open", "events": [{}, {}, {}]}
 
 
 func _make(event_index := 0) -> StartLine:
@@ -534,23 +532,10 @@ func test_hand_off_restores_the_selected_camera_not_always_chase() -> void:
 	assert_false(_chase.current, "the start line does not force chase over the chosen mode")
 
 
-# --- Eligibility gates (unchanged behaviour) ---------------------------------
-
-func test_launch_is_gated_by_rally_eligibility() -> void:
-	_start_session_car()
-	var sl := _make()
-	sl._rally = {"restriction": {"engine_min_l": 999.0}}
-	sl.launch()
-	assert_false(sl.has_launched(), "launch() is blocked when the fielded car is ineligible")
-	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the sequence does not advance when blocked")
-
-
-func test_launch_proceeds_when_the_car_is_eligible() -> void:
-	_start_session_car()
-	var sl := _make()
-	sl._rally = {}  # open class: no restriction to fail
-	sl.launch()
-	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
+# The eligibility gate (RallyLibrary.ineligibility_reason) is deleted
+# (todo/region-stage-slots-redesign.md) — world.gd never handed StartLine a rally
+# dict with a real `restriction` field, so the gate was a permanent no-op. launch()
+# is unconditional now; see the sequence-progression tests elsewhere in this file.
 
 
 # --- Pre-race menus (unchanged behaviour) ------------------------------------
@@ -623,7 +608,6 @@ func test_challenge_menus_bind_to_the_challenge_car_not_the_rally_one() -> void:
 func test_challenge_fades_straight_to_the_countdown() -> void:
 	_start_challenge()
 	var sl := _make_challenge()
-	sl._rally = _challenge_rally()
 	sl.launch()
 	assert_true(sl.has_launched(), "Start launches (the eligible locked car passes the gate)")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "Start fades straight out")

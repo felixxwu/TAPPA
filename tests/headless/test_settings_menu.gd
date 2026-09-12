@@ -15,7 +15,7 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	RallyFixtures.install()
+	RegionStageFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -34,7 +34,7 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	CarFixtures.restore()
-	RallyFixtures.restore()
+	RegionStageFixtures.restore()
 
 
 func _clean() -> void:

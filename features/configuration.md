@@ -302,7 +302,7 @@ the deleted rival ghost for what each knob does and how the solve uses it.
 ### Rival Field & Pace
 The DIFFICULTY dials behind a rally's opponent field, read by `rally_library.gd`
 (`generate_opponent_field`, `_pace_band`, `swap_weight`). See
-[rally-roster.md](rally-roster.md), the deleted adaptive difficulty and
+[region-stage-library.md](region-stage-library.md), the deleted adaptive difficulty and
 the deleted opponent-wreck system for what each one does to a field.
 
 | Property | Old const | Purpose |

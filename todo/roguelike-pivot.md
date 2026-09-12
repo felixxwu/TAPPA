@@ -38,12 +38,21 @@ Settled with the user during the brainstorm that produced this file:
    finishing a region's 8th stage unlocks the next region.
 3. **A run is 8 stages** (RR's `TOTAL_STAGES = 8`), and a "stage" is ONE
    procedurally-generated point-to-point event — not a 3-event rally.
+   **Superseded 2026-09** (`todo/region-stage-slots-redesign.md`): "stage" now
+   means a fixed SLOT (0-7) in a region's authored 8×3 grid, not a draw off a
+   flat pool — see decision 7 below.
 4. **Missing the timer ends the run.** That is the only hard fail state.
 5. **Rivals are dropped entirely.** You race the clock, not a field.
 6. **Damage cannot end a run directly** — it degrades the car so you miss the
    timer. TAPPA's existing "HP floors at 0, car stays drivable" rule survives.
 7. **Stages are drawn from the authored rally pool**, per region, rather than
-   generated from scratch.
+   generated from scratch. **Superseded 2026-09**
+   (`todo/region-stage-slots-redesign.md`): the flat per-region pool +
+   difficulty-sort draw is replaced by a fixed 8-slot × 3-candidate grid per
+   region (`RegionStageLibrary`); `RegionStagePool.draw` now picks one
+   candidate per slot, in slot order, off the run seed — no pool, no sort, no
+   "region too thin" refill. The old rally wrapper (`RallyLibrary.RALLIES`,
+   named rallies, `restriction`/`special`/`map_pos`) is deleted along with it.
 8. **Upgrades and car acquisition follow RR** — see those sections below.
 9. **The diegetic 3D HQ is dropped for a simple flat UI.** The hub stops being a
    3D space the camera flies through and becomes ordinary menu screens.
@@ -116,6 +125,10 @@ Settled with the user during the brainstorm that produced this file:
     `home` (36), `greece` (24) and `snow` (18) already pass; `taiga` (15) is one
     event short; `home_coast` (12) and `greece_coast` (3) need real authoring.
     So this is a content pass across three regions, not a `greece_coast` one-off.
+    **Superseded 2026-09** (`todo/region-stage-slots-redesign.md`): a "pool" no
+    longer exists to have a floor on — every region structurally has exactly
+    8 slots × 3 candidates (24 stages), so the floor and the "region too thin"
+    refill it guarded against are both retired, not just satisfied.
     Supersedes decision 10's "8-stage pool" wording.
 33. **A doomed run is driven out.** No retire option and no unwinnable-run
     warning: missing the timer ends the run anyway, so the worst case is one

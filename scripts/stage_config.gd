@@ -38,23 +38,21 @@ extends RefCounted
 # IDEMPOTENT by construction (it reloads `base` on every call), which is what lets
 # DrivingContext.apply_stage_config call it at CONSUME time — world.gd._ready —
 # rather than each scene producer having to remember to push it first.
-# `stage_index` (0-based, `RunSession.events_completed()`) and `stage_count`
-# (`RunSession.stage_count()`, default `RegionRunMode.STAGE_COUNT` = 8) scale
-# hilliness/curviness by run progress — see "Stage-based hilliness and
-# curviness" below. `stage_index < 0` (the default) means "no session stage is
-# known" and applies neither scale, so free roam, the Seed Lab preview, the
-# offline track-cache tools and benchmark mode are unaffected.
-static func apply_event_config(cfg: GameConfig, event: Dictionary,
-		stage_index: int = -1, stage_count: int = 8) -> void:
+#
+# NO run-position scaling any more (todo/region-stage-slots-redesign.md deleted
+# `stage_scale`/the `stage_index >= 0` block): every candidate in RegionStageLibrary is
+# authored FINAL for its slot, so this function writes exactly what the event/candidate
+# dict says, nothing more.
+static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 	var base: GameConfig = load(Config.CONFIG_PATH)
 	cfg.track_seed = int(event.get("seed", base.track_seed))
 	cfg.track_turn_count = int(event.get("turn_count", base.track_turn_count))
-	cfg.track_straightness = RallyLibrary.event_straightness(event)
-	cfg.track_width = RallyLibrary.event_width(event)
-	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
-	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
-	cfg.weather = RallyLibrary.event_weather(event)   # WEATHER_DRY / WEATHER_RAIN; see features/weather.md
-	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
+	cfg.track_straightness = StageFields.event_straightness(event)
+	cfg.track_width = StageFields.event_width(event)
+	cfg.track_forestiness = StageFields.event_forestiness(event)
+	cfg.track_tarmac_fraction = StageFields.event_tarmac_fraction(event)
+	cfg.weather = StageFields.event_weather(event)   # WEATHER_DRY / WEATHER_RAIN; see features/weather.md
+	cfg.cliff_amount = StageFields.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
 	cfg.water_enabled = bool(event.get("water_enabled", base.water_enabled))
 	# event -> event's region (if the caller seated one, see RallySession.current_event() /
 	# _generate_event_tracks) -> the authored baseline. See TrackGenParams.resolve_water_level.
@@ -90,34 +88,6 @@ static func apply_event_config(cfg: GameConfig, event: Dictionary,
 	cfg.terrain_layer3_wavelength = float(event.get("terrain_layer3_wavelength", base.terrain_layer3_wavelength))
 	cfg.terrain_layer3_amplitude = float(event.get("terrain_layer3_amplitude", base.terrain_layer3_amplitude))
 
-	# Stage-based hilliness and curviness (features/terrain.md): later stages of a
-	# run are hillier and curvier. Applied AFTER the per-event authored values
-	# above, as a multiplier/reduction on top of them, so the region's own
-	# character is preserved and only the run's overall difficulty trend is added.
-	if stage_index >= 0:
-		var hilliness_scale := stage_scale(stage_index, stage_count,
-			base.stage_hilliness_scale_min, base.stage_hilliness_scale_max)
-		cfg.terrain_layer1_amplitude *= hilliness_scale
-		cfg.terrain_layer2_amplitude *= hilliness_scale
-		cfg.terrain_layer3_amplitude *= hilliness_scale
-		var curviness_scale := stage_scale(stage_index, stage_count,
-			base.stage_curviness_scale_min, base.stage_curviness_scale_max)
-		cfg.track_straightness = clampf(
-			1.0 - (1.0 - cfg.track_straightness) * curviness_scale, 0.0, 1.0)
-
-
-# Linear interpolation of a stage-progress scale, `min_v` at `stage_index == 0`
-# through `max_v` at `stage_index == stage_count - 1`, clamped to that range for
-# any out-of-bounds index. Pure, so it is unit-testable with a synthetic
-# min/max rather than the authored GameConfig values (CLAUDE.md: never pin a
-# tunable value — only the relationship "later stage -> scale moves toward
-# max_v" holds for any reasonable min/max).
-static func stage_scale(stage_index: int, stage_count: int, min_v: float, max_v: float) -> float:
-	if stage_count <= 1:
-		return min_v
-	var t := clampf(float(stage_index) / float(stage_count - 1), 0.0, 1.0)
-	return lerpf(min_v, max_v, t)
-
 
 # The canonical, event-resolved config for track generation: a fresh duplicate of
 # the authored base with this event's overrides applied. Every generation site (the
@@ -129,8 +99,7 @@ static func stage_scale(stage_index: int, stage_count: int, min_v: float, max_v:
 # `RallySession.canonical_event_config(...)`. StageConfig is never instantiated,
 # so there is nothing for an instance method to hang off; both entry points are
 # statics and both stay unit-testable with no scene.
-static func canonical_event_config(event: Dictionary, stage_index: int = -1,
-		stage_count: int = 8) -> GameConfig:
+static func canonical_event_config(event: Dictionary) -> GameConfig:
 	var cfg := (load(Config.CONFIG_PATH) as GameConfig).duplicate() as GameConfig
-	apply_event_config(cfg, event, stage_index, stage_count)
+	apply_event_config(cfg, event)
 	return cfg
