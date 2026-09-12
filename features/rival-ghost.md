@@ -112,8 +112,15 @@ agree on where "0%" and "100%" are.
 Two posing entry points on the same `Car`, selected by what the caller has:
 
 - **`pose_at(t)`** — a race time: `StageManager` drives this off its own
-  `_elapsed` during RUNNING, un-looped (it holds at the finish once the
-  profile's duration passes). Also applies the proximity fade/cull below.
+  `_elapsed` during RUNNING, un-looped, until the profile's duration passes.
+  Also applies the proximity fade/cull below.
+- **`finish_and_hide(finish_s)`** — called once by `StageManager` the moment
+  `_elapsed` reaches the profile's duration: poses the car one last time at
+  the track's own finish distance (`finish_offset() - origin_offset()`, which
+  can sit a hair past the profile's own last `"s"` sample — see
+  `distance_at_time`'s clamp) so the rival visibly reaches the line, then
+  hides it. The rival crosses the finish and disappears rather than parking
+  short of it and hanging around on the track for the rest of the run.
 - **`pose_at_distance(s)`** — a raw track distance (m from the origin sample):
   the start line's grid slot (ON the line, `s = 0`) is a DISTANCE, not a time on
   the profile, so `start_line.gd` parks the rival with this. Renders the car
@@ -313,8 +320,10 @@ See [start-line.md](start-line.md).
 `StageManager.setup_target_profile(profile, ghost)` seats both; every RUNNING
 tick, `_update_rival`:
 
-1. Reposes `ghost` (if any) at `_elapsed` — `pose_at`, un-looped, so it holds at
-   the finish once the rival's own time is up rather than looping mid-run.
+1. Reposes `ghost` (if any) at `_elapsed` — `pose_at`, un-looped — until the
+   rival's own time is up, then calls `finish_and_hide` once (gated by
+   `StageManager._rival_finished`) so the ghost drives to the actual finish
+   and disappears rather than looping or parking mid-run.
 2. Computes the player's live along-track distance:
    `progress_percent() * (finish_offset() - origin_offset())`.
 3. Looks up `RivalGhost.time_at_distance(profile, player_s)` — the rival's time

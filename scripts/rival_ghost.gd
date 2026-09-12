@@ -468,6 +468,23 @@ func end_live_departure() -> void:
 	_car.collision_mask = 0
 
 
+# The rival's target time is up: pose it one last time at `finish_s` — the track's
+# own finish distance (StageManager passes finish_offset() - origin_offset()), which
+# can sit a hair past the profile's own last "s" sample (see distance_at_time's
+# clamp) — so the car visibly reaches the line rather than parking short of it, then
+# hide it so it doesn't linger on the track for the rest of the run. `finish_s <= 0.0`
+# (no usable span) skips the extra pose and just hides. No-op mid-departure — the
+# physics server owns the body then, same guard as pose_at/pose_at_distance.
+func finish_and_hide(finish_s: float) -> void:
+	if _live_depart:
+		return
+	if finish_s > 0.0 and is_instance_valid(_car) and has_profile() and _track_progress != null:
+		_pose_car_at_distance(finish_s)
+		_apply_visibility(_car.global_position)
+	hide_ghost()
+	_set_alpha(0.0)
+
+
 func hide_ghost() -> void:
 	if is_instance_valid(_car):
 		_car.visible = false
