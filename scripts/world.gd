@@ -2140,6 +2140,10 @@ func _present_standings_overlay(_event_index: int) -> void:
 func _show_stage_reward() -> void:
 	var page := _swap_interstitial("Stage complete")
 	page.body().add_child(UITheme.label("Earned: $%d" % RunSession.last_stage_money()))
+	var coins := RunSession.last_stage_coins()
+	if coins > 0:
+		page.body().add_child(UITheme.label(
+			"Coins: %d ($%d)" % [coins, RunSession.last_stage_coin_money()]))
 	page.body().add_child(UITheme.label("Total money: $%d" % Save.money()))
 	var carry_on := UITheme.button("Continue")
 	carry_on.pressed.connect(_open_pick_panel)

@@ -408,6 +408,14 @@ func test_a_missed_stage_reports_zero_last_stage_money() -> void:
 	assert_eq(RunSession.last_stage_money(), 0, "a missed stage pays nothing")
 
 
+func test_a_missed_stage_reports_zero_last_stage_coin_money() -> void:
+	_start()
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1, 0.0, 5)
+	assert_eq(RunSession.last_stage_coins(), 0,
+		"decision 36 — a missed stage's coins pay nothing, so nothing is reported here")
+	assert_eq(RunSession.last_stage_coin_money(), 0)
+
+
 # --- Coins (decisions 13, 35, 36, 50) --------------------------------------------
 
 func test_coins_collected_never_pay_less_than_none() -> void:
@@ -426,6 +434,24 @@ func test_coin_money_banks_with_the_stage_that_cleared_it() -> void:
 	if RunSession.pick_awaiting():
 		RunSession.choose_repair()
 	assert_gt(_save.money(), 0, "a cleared stage with coins pays out, coins included")
+
+
+# The reward screen (world.gd's _show_stage_reward) shows coins collected separately
+# from the stage's total payout, via last_stage_coins()/last_stage_coin_money().
+func test_last_stage_coins_reports_what_the_stage_collected() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1), 0.0, 2)
+	assert_eq(RunSession.last_stage_coins(), 2, "the two coins picked up this stage")
+	assert_gt(RunSession.last_stage_coin_money(), 0, "collecting coins paid something")
+	assert_true(RunSession.last_stage_coin_money() <= RunSession.last_stage_money(),
+		"the coin money is only part of the stage's whole payout")
+
+
+func test_a_stage_with_no_coins_reports_zero_coin_money() -> void:
+	_start()
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_eq(RunSession.last_stage_coins(), 0)
+	assert_eq(RunSession.last_stage_coin_money(), 0)
 
 
 func test_a_missed_stages_coins_pay_no_money() -> void:
