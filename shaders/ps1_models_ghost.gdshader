@@ -44,7 +44,11 @@ void vertex() {
 	float ndl = max(dot(wn, normalize(light_dir)), 0.0);
 	vec3 lit = ambient + sun_color * ndl;
 	v_light = mix(vec3(1.0), lit, light_amount);
-	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
+	// Facing-aware overload (passing wn) — see ps1_models_lit.gdshader; the ghost
+	// duplicates that shader's lighting maths so both must reject backfaces
+	// identically, or the rival's rear-panel glow would flicker in/out as it
+	// crosses the alpha-1 threshold between this shader and ps1_models_lit.
+	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn);
 }
 
 void fragment() {
