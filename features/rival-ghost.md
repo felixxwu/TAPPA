@@ -266,7 +266,14 @@ REAL car from the CarLibrary roster, chosen to make the clock believable:
   used: `use_isolated_config()` so `apply_car`'s config writes cannot clobber
   the fielded player car, a `Config.data` value snapshot/restore around it as
   the belt-and-braces net, and `rebuild_audio = false` since a kinematic ghost
-  never fires its engine. `apply_car` relocating wheels and resetting the pose
+  never fires its engine. `setup()` also calls `car.silence_engine_audio()`
+  once, right after `add_child(_car)` — `EngineAudio._ready()` calls `play()`
+  unconditionally (`kinematic_pose` only gates `car.gd`'s own
+  `_physics_process`, not the audio node's), so without this the ghost's
+  engine voice would idle audibly from the moment it entered the tree. Same
+  silencing every other display/queue prop uses (`car_prop.gd`); `PROCESS_MODE_DISABLED`
+  persists across the live-departure freeze/unfreeze cycle, so the rival stays
+  silent through the send-off too. `apply_car` relocating wheels and resetting the pose
   is destructive to a LIVE body but harmless here — the body is frozen,
   zero-collision, and `_pose_car_at_distance` writes its transform every frame.
 - **The name** — an authored pool (`RIVAL_NAMES`, twelve parody-adjacent driver

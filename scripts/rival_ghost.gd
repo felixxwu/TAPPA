@@ -243,6 +243,14 @@ func setup(track_progress: Node, terrain: Node, pace: Dictionary, rival: Diction
 		_car.collision_layer = 0
 		_car.collision_mask = 0
 		add_child(_car)
+		# EngineAudio._ready() plays unconditionally (kinematic_pose only stops car.gd's
+		# OWN _physics_process, not the audio node's), so without this the ghost's engine
+		# voice starts idling the moment it enters the tree and is heard whenever the
+		# player is close enough — audible for a car that should be silent (rebuild_audio
+		# is false below, so it never even gets reconfigured onto the rival's own engine).
+		# Same silencing every other display/queue prop uses (car_prop.gd).
+		if _car.has_method("silence_engine_audio"):
+			_car.silence_engine_audio()
 	_apply_rival_car(rival)
 	# AFTER _apply_rival_car: apply_car reshapes the meshes, so a translucent pass run
 	# before it would leave the new meshes solid.
