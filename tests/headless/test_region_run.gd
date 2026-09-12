@@ -392,6 +392,22 @@ func test_the_run_reports_what_it_banked() -> void:
 		"the run's own tally agrees with what reached the profile")
 
 
+# The between-stage reward screen (world.gd's _show_stage_reward) reads
+# last_stage_money() to show what THIS stage paid, separately from the running total.
+func test_last_stage_money_reports_what_the_just_cleared_stage_paid() -> void:
+	_start()
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_gt(RunSession.last_stage_money(), 0, "the cleared stage paid something")
+	assert_eq(RunSession.last_stage_money(), _save.money(),
+		"the first stage's own payout is the whole running total so far")
+
+
+func test_a_missed_stage_reports_zero_last_stage_money() -> void:
+	_start()
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)
+	assert_eq(RunSession.last_stage_money(), 0, "a missed stage pays nothing")
+
+
 # --- Coins (decisions 13, 35, 36, 50) --------------------------------------------
 
 func test_coins_collected_never_pay_less_than_none() -> void:
