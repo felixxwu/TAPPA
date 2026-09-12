@@ -1,9 +1,30 @@
-# Mid-run upgrade menu — repair/upgrade → power/handling → random roll
+# Mid-run upgrade menu — one pick screen, pre-rolled per category
 
-**Status: IMPLEMENTED.** Category split confirmed (gearbox/turbo/supercharger/engine
+**Status: SUPERSEDED (reverted 2026-09-12).** This spec's original multi-step flow
+(repair/upgrade → power/handling → a slot-machine roll) shipped, but the player
+disliked being forced to use whatever the roll landed on after already choosing a
+direction — "the issue where players can choose which direction to upgrade their car
+in but they are forced to use whatever upgrade is randomly selected for them". The
+category split (handling vs. power) and the whole-catalogue pool stayed; the
+roll-then-commit step is gone.
+
+**Current shape: back to ONE menu, three cards.** `RunPickPanel.open_pick` pre-rolls
+one candidate per category with plain `randi()` the instant the page is built —
+"Repair the car" (when `RunSession.offer_repair()`), one pre-rolled handling upgrade,
+one pre-rolled power upgrade — and the player picks directly among the three. No
+separate category step, no spin/reveal animation; confirming a card commits that
+exact option. `_confirm_pick`'s stats screen still follows, unchanged. See
+`features/region-runs.md` → "The pick screen" / "Three screens now, not one" for the
+current implementation, and `run_pick_panel.gd`'s class doc.
+
+The rest of this file describes the now-superseded roll-based design, kept for
+history:
+
+---
+
+Category split confirmed (gearbox/turbo/supercharger/engine
 swap = power; everything else = handling — turbo/supercharger added after the initial
-brainstorm, see below). Roll-from-whole-catalogue confirmed. Spin timing is
-`GameConfig.upgrade_roll_spin_ticks`/`upgrade_roll_spin_duration_s`.
+brainstorm, see below). Roll-from-whole-catalogue confirmed (this part is still true).
 
 **Turbo/supercharger added to Power**, reusing the existing
 `install_turbo`/`install_supercharger` EFFECTS rows (features/forced-induction.md)

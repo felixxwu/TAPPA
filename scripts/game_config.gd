@@ -4160,20 +4160,6 @@ func spectator_params() -> Dictionary:
 @export_range(-1.0, 1.0, 0.001) var run_boost_supercharger_whine_gain := 0.02
 
 
-@export_group("Roguelike Upgrade Roll")
-# The mid-run upgrade menu's slot-machine-style reveal (todo/mid-run-upgrade-menu.md,
-# run_pick_panel.gd's open_roll) — a scripted CardCarousel.select() sequence that ticks
-# toward the randomly-rolled winner, slowing down as it lands. A LOOK/FEEL tunable, same
-# "nothing in tests/headless/ may pin one" rule as every other magnitude in this file.
-## How many ticks the spin takes before landing on the winner. More ticks reads as a
-## longer build-up; fewer as a quick flick.
-@export_range(4, 24) var upgrade_roll_spin_ticks := 10
-## Total time (seconds) the spin runs, start to landing on the winner. Individual tick
-## intervals are NOT even — they grow across the spin (see open_roll's _spin) so it
-## visibly decelerates into the landing rather than stopping abruptly.
-@export_range(0.5, 5.0, 0.1) var upgrade_roll_spin_duration_s := 1.8
-
-
 @export_group("Roguelike Meta Shop")
 # THE META TIER (todo/roguelike-pivot.md -> "Upgrades — RR's two-tier model", stage 6 of
 # todo/roguelike-pivot-plan.md). Boost LEVELS, purchased with money and persisted on the

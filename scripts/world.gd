@@ -2147,50 +2147,25 @@ func _show_stage_reward() -> void:
 	MenuNav.attach(page, {})
 
 
-# Open the top of the pick chain. Split out of _present_standings_overlay so the chain's
-# own steps stay simple functions rather than being buried in the replay/camera setup
-# above; none of them back out to here (no step offers `on_back` — see open_roll's doc for
-# why the roll specifically cannot be cancelled), so this only ever runs once per stage.
+# Open the pick screen. Split out of _show_stage_reward's Continue so it stays a simple
+# function rather than being buried in the replay/camera setup above; this only ever
+# runs once per stage.
 #
-# THREE ENTRY SHAPES (todo/mid-run-upgrade-menu.md): no pick at all (a challenge stage,
-# or this run's own final/failed stage) gets a bare Continue; the undamaged-arrival
-# reward (offer_repair() false) skips straight to the category choice, since there is no
-# repair option to weigh against upgrading; everything else starts at repair-or-upgrade.
+# TWO ENTRY SHAPES: no pick at all (a challenge stage, or this run's own final/failed
+# stage) gets a bare Continue; everything else gets one card list — repair (only when
+# RunSession.offer_repair() is true), a pre-rolled handling upgrade, a pre-rolled power
+# upgrade (RunPickPanel.open_pick).
 func _open_pick_panel() -> void:
 	var pick := RunSession.pending_pick()
 	if pick.is_empty():
 		_interstitial_page = RunPickPanel.open_continue(self, _on_interstitial_choice)
-	elif RunSession.offer_repair():
-		_interstitial_page = RunPickPanel.open_repair_or_upgrade(self, _on_repair_or_upgrade)
 	else:
-		_open_category_panel()
+		_interstitial_page = RunPickPanel.open_pick(self, pick, RunSession.offer_repair(),
+			_on_interstitial_choice)
 
 
-# Repair-or-upgrade resolved. "repair" reports straight through the same seam a bare
-# Continue does (both skip the stats step — see _on_interstitial_choice); "upgrade"
-# carries on to the direction choice.
-func _on_repair_or_upgrade(choice: String) -> void:
-	if choice == "repair":
-		_on_interstitial_choice("repair")
-	else:
-		_open_category_panel()
-
-
-func _open_category_panel() -> void:
-	_teardown_interstitial_page()
-	_interstitial_page = RunPickPanel.open_category_choice(self, RunSession.pending_pick(),
-		_open_roll_panel)
-
-
-func _open_roll_panel(category: String) -> void:
-	_teardown_interstitial_page()
-	_interstitial_page = RunPickPanel.open_roll(self, RunSession.pending_pick(), category,
-		_on_interstitial_choice)
-
-
-# The roll landed and Next was pressed — "repair" (from the repair-or-upgrade step), a
-# boost id, "drivetrain:<mode>", "engine_swap:<id>", or "" (plain Continue, offered when
-# RunSession had no pick to draw).
+# A card was confirmed — "repair", a boost id, "drivetrain:<mode>", "engine_swap:<id>",
+# or "" (plain Continue, offered when RunSession had no pick to draw).
 #
 # THE PICK IS NOT APPLIED HERE ANY MORE. An upgrade first shows what it would do to the
 # car, because "Lightweight parts" does not tell the player they are also giving up
@@ -2200,9 +2175,9 @@ func _open_roll_panel(category: String) -> void:
 #                -> skill-unlock progress, Continue    (_show_skill_progress)
 #                -> apply + advance                    (_apply_pick)
 #
-# There is no Cancel any more — the roll already committed the choice
-# (todo/mid-run-upgrade-menu.md: "the user has no choice"), so _confirm_pick's stats step
-# is read-only, a plain Next carrying on rather than an Apply/Cancel pair.
+# There is no Cancel any more — confirming a card already committed the choice, so
+# _confirm_pick's stats step is read-only, a plain Next carrying on rather than an
+# Apply/Cancel pair.
 #
 # TWO CHOICES SKIP THE STATS STEP. Repair moves no stat on the sheet (it restores the HP a
 # stage cost, which the sheet's Durability row reports as the car's CEILING, not its
@@ -2232,8 +2207,8 @@ func _swap_interstitial(title: String) -> MenuPage:
 
 # Step 1 — what would this pick do to the car? Built on the SAME panel and preview the
 # hub's car popup uses, so the two can never disagree about what an effect is worth.
-# READ-ONLY: the roll already committed the choice (todo/mid-run-upgrade-menu.md — "the
-# user has no choice"), so there is no Cancel any more — Next is the only way on.
+# READ-ONLY: confirming the card already committed the choice, so there is no Cancel
+# any more — Next is the only way on.
 func _confirm_pick(choice: String) -> void:
 	var owned: Dictionary = Save.get_car(RunSession.car_instance_id())
 	var meta: Dictionary = CarLibrary.for_owned(owned)
