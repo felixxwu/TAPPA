@@ -293,6 +293,12 @@ func _current_engine_id() -> String:
 # fields ranks a bare EngineLibrary entry with no car involved. Ties broken by catalogue
 # order (deterministic, never random, never dependent on dictionary iteration order that
 # could vary) — the first engine encountered at the smallest strictly-greater power wins.
+#
+# Engines whose gain over the current one is under MIN_SWAP_HP_GAIN (30hp) are excluded
+# entirely — a swap that's barely an upgrade isn't worth offering, so this steps over
+# those rungs to the next one that actually clears the bar, same as _pool_drivetrain_ids
+# dropping an option once it has nothing meaningful left to offer.
+const MIN_SWAP_HP_GAIN := 30.0
 func _pool_engine_swap_ids() -> Array:
 	var current_id := _current_engine_id()
 	if current_id.is_empty():
@@ -302,13 +308,14 @@ func _pool_engine_swap_ids() -> Array:
 		return []
 	var current_power := CarLibrary.peak_power_kw(
 		{"peak_torque": current_eng.get("peak_torque", 0.0), "redline": current_eng.get("redline_rpm", 0.0)})
+	var min_gain_kw := MIN_SWAP_HP_GAIN * 1000.0 / CarLibrary.KW_KG_TO_HP_TONNE
 	var best_id := ""
 	var best_power := 0.0
 	for eng in EngineLibrary.all():
 		var eng_dict := eng as Dictionary
 		var power := CarLibrary.peak_power_kw(
 			{"peak_torque": eng_dict.get("peak_torque", 0.0), "redline": eng_dict.get("redline_rpm", 0.0)})
-		if power > current_power and (best_id.is_empty() or power < best_power):
+		if power - current_power >= min_gain_kw and (best_id.is_empty() or power < best_power):
 			best_id = String(eng_dict.get("id", ""))
 			best_power = power
 	return ["engine_swap:%s" % best_id] if not best_id.is_empty() else []
