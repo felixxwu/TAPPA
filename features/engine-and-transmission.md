@@ -176,7 +176,7 @@ every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its rea
 ### Displacement, cylinders and doors (rally-restriction metadata)
 
 Three catalogue fields exist purely so rally restrictions can theme a class by
-body/engine shape ([rally-roster.md](rally-roster.md)). Which catalogue owns each
+body/engine shape ([region-stage-library.md](region-stage-library.md)). Which catalogue owns each
 is decided by **what an engine swap must change**:
 
 - **`displacement_l`** (float, litres) lives on the **engine** (`ENGINES`). It is an

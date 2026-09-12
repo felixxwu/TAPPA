@@ -1,38 +1,24 @@
 # Regions
 
-**Source:** `scripts/region_library.gd` (`RegionLibrary`), the `region` tag on
-`RallyLibrary.RALLIES` (`scripts/rally_library.gd`), `world.gd._apply_region_look` (and
+**Source:** `scripts/region_library.gd` (`RegionLibrary`), `scripts/region_stage_library.gd`
+(`RegionStageLibrary` — the region's authored 8×3 stage grid, replacing the deleted
+`RallyLibrary.RALLIES`/`region` tag), `world.gd._apply_region_look` (and
 `_current_region_look`), `scripts/region_stage_pool.gd` (the run's stage draw) and
 `HubShell`'s REGION page.
 
-**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_rally_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_hub_shell.gd`
+**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_stage_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_hub_shell.gd`
 
 **Adding a region takes TWO edits.** An entry in `RegionLibrary.REGIONS` is inert on
-its own — the only thing that ever selects a region is a rally's `region` tag in
-`RallyLibrary.RALLIES`. Add the region AND **a new rally** tagged with its id, or you
-have shipped a region that renders nowhere while every region test still passes.
-`tests/headless/test_region_assets.gd` →
-`test_every_region_is_reachable_from_at_least_one_rally` guards this, and its failure
-message prints the exact minimal `RALLIES` row to paste (the same template lives in the
-comment above `RegionLibrary.REGIONS`). Do **not** satisfy it by re-pointing an existing
-rally's `region`: that goes green while silently restyling a stage whose `map_pos` and
-authored weather were written for its old corner. Do both edits in the same change —
-"ready for a rally to reference later" is a shipped half-feature.
+its own — the only thing that ever selects a region is a matching key in
+`RegionStageLibrary.STAGES`. Add the region AND **an 8×3 stage grid keyed with its
+id** (`scripts/region_stage_library.gd`), or you have shipped a region that renders
+nowhere while every region test still passes. `tests/headless/test_region_assets.gd` →
+`test_every_region_has_authored_stages` guards this. Do both edits in the same change —
+"ready for stages to be authored later" is a shipped half-feature.
 
-**Do not pick the new rally's `map_pos` by eye.** Every other field in that template is a
-literal you can keep; `map_pos` used to be the one whose rule was prose ("in your corner,
-`>0.03` from every other pin, within `map_reveal_radius` of one") next to a placeholder
-`Vector2(0.5, 0.5)` that is itself illegal — it is HQ. Ask for one instead:
-
-- `RallyLibrary.suggest_map_pos("<region_id>")` returns a legal, currently-free pin
-  anchored on an existing rally in that region — deterministic, derived from the live
-  roster, so it cannot go stale the way a listed coordinate would. For a brand-new region
-  with no rally yet it anchors on HQ (the map centre); pass a neighbouring region's id to
-  land the suggestion in the corner you actually want, then re-check it.
-- `RallyLibrary.map_pos_is_free(pos)` checks a coordinate you chose yourself.
-- `RallyLibrary.MIN_PIN_SEPARATION` is the single source of the `0.03` bound — the
-  authoring helpers and `test_map_pins_are_well_formed_and_never_stack` both read it, and
-  that test's failure message now prints a suggested legal coordinate to paste.
+The old `map_pos`/`suggest_map_pos`/`MIN_PIN_SEPARATION` per-rally pin-fitting
+machinery is deleted (`todo/region-stage-slots-redesign.md`) along with the world map
+it placed pins on — a region no longer needs a map position at all.
 
 **A region that is a variant of another inherits, it does not clone.** Author
 `look_from` plus only the keys that differ — see
@@ -86,7 +72,7 @@ enterable once the player's lit map reached its `map_pos` (`rally_revealed` /
 completed-rally counter. All three are deleted with the map. The
 credits/win beat fires once **every** special event is completed
 (`RallyLibrary.all_specials_completed`), not tied to any region — see
-[rally-roster.md](rally-roster.md).
+[region-stage-library.md](region-stage-library.md).
 
 The map's NW corner is the `taiga` region ("The Taiga") and carries five rallies,
 all re-tagged out of `home` — which is what pulls `home` in to the map's centre.
@@ -347,7 +333,7 @@ below. Grass and gravel still follow the override-only rule.
 ## Rallies tagged by region
 
 Every `RallyLibrary.RALLIES` entry carries `"region": "<region_id>"`. See
-[rally-roster.md](rally-roster.md) for the roster itself and per-rally
+[region-stage-library.md](region-stage-library.md) for the roster itself and per-rally
 `map_pos` / `special` geometric-reveal semantics.
 
 **Regions are not quadrants, and membership is lopsided.** Pins are positioned by

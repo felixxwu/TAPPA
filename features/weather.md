@@ -192,7 +192,7 @@ durable is the two region locks and the reasons behind each condition's placemen
 | sandstorm | ~13 | the desert only (`region == "greece"`) |
 | snowfall | ~12 | the alpine NE only (`region == "snow"`) |
 
-The 2026-08 geography pass (see [rally-roster.md](rally-roster.md)) re-tagged most of
+The 2026-08 geography pass (see [region-stage-library.md](region-stage-library.md)) re-tagged most of
 the roster, so the guidance below is stated in terms of the TERRAIN A PIN SITS ON, not
 a region name — most rallies now carry `region: "home"` regardless of what their id
 says, and "the coastal regions" is no longer a useful way to pick out coastal stages.

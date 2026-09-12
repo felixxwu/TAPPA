@@ -105,7 +105,6 @@ var _tune_panel: TuningPanel         # the shared handling-axis tuning sliders
 var _menu_last_back: Button          # back button _build_menu_overlay just created
 var _pause_menu: PauseMenu           # for the Exit button; pause itself is off while staged
 var _exit_button: Button
-var _rally: Dictionary = {}          # this event's rally (its restriction gates launch)
 var _subtitle_label: Label
 var _fade: CanvasLayer
 var _fade_rect: ColorRect
@@ -193,7 +192,6 @@ func setup(player: Node3D, terrain: Node, stage_manager: Node, rally: Dictionary
 		# until DEPART drives it off. The PLAYER stages one queue gap BEHIND it (see
 		# _stage_xform), the pre-pivot grid order: rival on the line, player queued.
 		_ghost.pose_at_distance(0.0)
-	_rally = rally  # kept so launch() can re-check eligibility after a pre-race edit
 	_stage_manager = stage_manager
 	_camera_manager = camera_manager
 	_hud = hud
@@ -609,20 +607,6 @@ func launch() -> void:
 		# The commitment press already happened (MENU); this one sends the rival off.
 		_begin_departure()
 		return
-	if not _rally.is_empty():
-		var owned := _driven_car()
-		if not owned.is_empty():
-			var entry := CarLibrary.for_owned(owned)
-			var meta := UpgradeLibrary.effective_meta(owned, entry)
-			# Entry is categorical (body / country / doors / engine / drive mode). Nothing
-			# reachable from this screen can change the KIND of car any more — the Upgrades
-			# page went with the parts model (decision 29: the start line offers Tune Car
-			# only) — so an ineligible car is simply refused with no route to fix it here.
-			var reason := RallyLibrary.ineligibility_reason(_rally, meta)
-			if reason != "":
-				ConfirmPopup.open(self, "Can't start", reason,
-					[ {"label": "Cancel", "callback": Callable()} ], 0, 0)
-				return
 	if _seq == Seq.REVEAL:
 		_begin_departure()
 		return

@@ -244,7 +244,7 @@ invisible here, and no amount of retuning will make them visible.
 
 That gap is closed elsewhere, by **matching rather than pricing**: the rival field runs
 the player's tyre, so the term cancels instead of needing a number. See
-[rally-roster.md](rally-roster.md) → "Tyre mirroring".
+[region-stage-library.md](region-stage-library.md) → "Tyre mirroring".
 
 `CarPerformance.merged_meta` does carry those two keys, but only so the RIVAL/ghost path
 can read them — they leave the rating byte-identical.

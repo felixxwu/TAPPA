@@ -23,7 +23,7 @@ func before_all() -> void:
 	# The challenge tests below grant cars and start runs through the LIVE Save
 	# autoload, so point it at a throwaway profile before anything here can write.
 	SaveTestHelpers.redirect(TEST_PATH)
-	RallyFixtures.install()
+	RegionStageFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	await get_tree().physics_frame  # let world._ready() generate + apply + build
@@ -31,7 +31,7 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_scene.free()
-	RallyFixtures.restore()
+	RegionStageFixtures.restore()
 	SaveTestHelpers.cleanup(TEST_PATH)
 
 
@@ -62,13 +62,13 @@ func test_music_director_autoload_is_registered() -> void:
 
 
 func test_entering_a_rally_event_generates_its_track() -> void:
-	# Entering a rally event = writing its (seed, turn_count, width) into
-	# Config.data, then generating — the same Config mutation pattern apply_car
-	# uses. Assert that flow builds a track without error (rally-roster.md).
-	var event: Dictionary = RallyLibrary.by_id("fx_open")["events"][0]
+	# Entering a stage = writing its (seed, turn_count, width) into Config.data,
+	# then generating — the same Config mutation pattern apply_car uses. Assert
+	# that flow builds a track without error.
+	var event: Dictionary = RegionStageFixtures.one_stage()
 	Config.data.track_seed = int(event["seed"])
 	Config.data.track_turn_count = int(event["turn_count"])
-	Config.data.track_width = RallyLibrary.event_width(event)
+	Config.data.track_width = StageFields.event_width(event)
 	_scene._generate_track(Config.data)
 	# The flow completes and the scene is still valid (no crash building the
 	# rally's track from its seed).

@@ -91,51 +91,75 @@ migrated (decision 34).
 
 ## The stage draw
 
-`RegionStagePool.draw(region_id, stage_count, run_seed)`.
+`RegionStagePool.draw(region_id, stage_count, run_seed)`. Full design record:
+`todo/region-stage-slots-redesign.md` (supersedes decisions 3, 7 and 32 of
+`todo/roguelike-pivot.md`). See also `features/region-stage-library.md` for the
+authoring shape.
 
-The pool is `RallyLibrary.RALLIES` **flattened**: every rally tagged with the region
-contributes its `events` array. The 3-event rally wrapper is exactly what the pivot
-deletes, so a stage is one event and the pool is **counted, never multiplied by 3**
-(`shakedown`, `hm_timber_trophy` and `hm_forest_gt` carry one event apiece).
+Each region authors a **fixed 8×3 grid** in `RegionStageLibrary.STAGES`: 8 stage
+SLOTS (one per position in an 8-stage run, gentlest at slot 0 and hardest at slot 7),
+each with exactly 3 authored CANDIDATE stages. `draw` picks **one candidate per
+slot, uniformly at random, in slot order** — there is no pool, no difficulty sort,
+and no "thinner than the run" case, because every slot always has exactly 3
+candidates:
 
-Each pooled stage is a **copy** of the authored event plus three annotations:
+```gdscript
+static func draw(region_id: String, stage_count: int, run_seed: int) -> Array:
+    var slots := RegionStageLibrary.slots_in(region_id)   # 8 slots x 3 candidates
+    var rng := RandomNumberGenerator.new()
+    rng.seed = run_seed
+    var out: Array = []
+    for slot_index in range(mini(stage_count, slots.size())):
+        var candidates: Array = slots[slot_index]
+        var candidate_index := rng.randi_range(0, candidates.size() - 1)
+        out.append(_stamp(candidates[candidate_index], region_id, slot_index, candidate_index))
+    return out
+```
+
+Each drawn stage is a **copy** of the chosen candidate plus three stamped fields:
 
 - `region` — load-bearing, not decoration: `StageConfig.apply_event_config` resolves
   the waterline and the per-region grip / deep-snow / frozen-water overrides off it,
   so a stage that lost it would generate as the wrong corner of the world;
-- `rally_id` — provenance, for debugging a drawn run;
-- `difficulty` — the parent rally's authored tier, which is what the draw orders by.
+- `slot` — the stage's fixed position (0-7); this IS the difficulty signal now;
+- `candidate` — which of the slot's 3 seeds was drawn, for provenance/debugging (in
+  place of the old `rally_id`).
 
 Rules:
 
-- **Seeded.** Deterministic in `(region_id, stage_count, run_seed)`, and the seed is
-  persisted — so a resumed run re-derives byte-identical stages and a bug report
-  carrying the seed is reproducible.
-- **No repeats while the pool lasts.**
-- **Easiest first,** by the parent rally's `difficulty`, with the authored seed as a
-  tie-break (`Array.sort_custom` is not stable, and an unstable order would break the
-  resume guarantee above). So the run escalates and stage 8 is the hardest drawn.
-- **The events are never mutated.** Every authored `(seed, turn_count)` pair is
+- **Seeded.** Deterministic in `(region_id, run_seed)` (a fixed `stage_count` of 8
+  picks one candidate per slot), and the seed is persisted — so a resumed run
+  re-derives byte-identical stages and a bug report carrying the seed is
+  reproducible.
+- **Escalation is authored, not computed.** Each slot's 3 candidates are hand-tuned
+  for that slot's difficulty (straightness, terrain amplitude, turn count) — there is
+  no runtime interpolation any more (`StageConfig.stage_scale` and the
+  `stage_hilliness_scale_*`/`stage_curviness_scale_*` `GameConfig` fields are
+  deleted). The clock still separately tightens by stage index
+  (`RegionRunMode.target_pace`'s `run_target_pace_stage_step`) — two escalation
+  signals, deliberately reinforcing rather than one computed from the other.
+- **The candidates are never mutated.** Every authored `(seed, turn_count)` pair is
   hand-verified to route and is baked into `data/track_cache.json`; nudging
   `turn_count` or re-rolling `water_level` / `terrain_layer1_amplitude` would miss the
   lockfile and hand the player a combination no shipped content has exercised. (This
   is the same trap `ChallengeLibrary.stages_for` documents when it rolls water level
-  and terrain amplitude *together*.) Escalation comes from the ordering and from the
-  clock tightening — never from editing content.
+  and terrain amplitude *together*.)
+- **The cache key no longer depends on WHERE in the run a candidate lands** — only on
+  its own authored shape (seed, turn_count, straightness, terrain fingerprint, …),
+  since there is no more stage-index-dependent scaling. `TrackCache.all_event_keys()`
+  and `tools/generate_track_cache.gd` both walk `RegionStageLibrary.all_stages()`
+  (120 stamped candidates across 5 regions, +2 flat `for_config` entries) exactly
+  once each — no per-stage-position multiplier. A change to either enumeration must
+  keep the other in lockstep or the lockfile's `source_hash` freshness check
+  (`tools/verify_track_cache.gd`) silently passes while runs still miss the cache.
 
-### Pool sizes, and the region that used to be unable to fill a run
+### Pool sizes — retired
 
-Decision 32 sets the floor at **16 authored events per region** — two 8-stage runs
-with no repeats. `greece_coast` was, for a while, the region that fell far short of
-it (three events, one rally) — it was removed from the catalogue entirely (2026-09)
-rather than authored up to the floor, and its rallies were retagged into `greece`
-instead of being deleted (see `features/regions.md`). Every region left in the
-catalogue today clears the floor.
-
-The draw still **refills the bag** rather than returning a short run whenever a
-region's pool is thinner than the run length: a repeated stage is a thin region, an
-8-stage run that is only 3 stages long is a broken one. That refill is a stopgap for
-unauthored content, not a design — see `RegionStagePool.draw`.
+The old "16 authored events per region" floor (decision 32) and the "refill the bag
+when the pool is thinner than the run" stopgap no longer apply: every region
+structurally has exactly 8 slots × 3 candidates = 24 stages, so there is no pool to
+run thin. Adding content now means authoring a 4th candidate onto an existing slot
+(or retuning an existing one), not adding rows to a flat pool.
 
 ## The timer — the one fail state
 

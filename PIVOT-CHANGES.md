@@ -143,6 +143,17 @@ survives only to backfill a key missing from a correctly-versioned profile.
 - `engine_detune` is stored, read and applied with no slider anywhere
   (`features/tuning.md`).
 
+## A second, smaller pivot: region stage slots (2026-09)
+
+After the roguelike pivot shipped, the authored-rally-pool model it introduced
+(decision 7) was itself replaced: `todo/region-stage-slots-redesign.md` swaps the
+flat per-region pool + difficulty-sort draw for a fixed 8-slot × 3-candidate grid
+per region. The `RallyLibrary.RALLIES` wrapper (named rallies, `restriction`,
+`special`, `map_pos` — all pre-pivot residue `features/rally-roster.md` had been
+tracking as dead since stage 2b) is deleted along with it. See
+`features/region-stage-library.md` for how it works today, and decisions 3/7/32 in
+`todo/roguelike-pivot.md` for what it superseded.
+
 ## Test suite
 
 ~2,553 tests, **~350 s** — over the ~5 min budget in CLAUDE.md and knowingly so. ~140 s

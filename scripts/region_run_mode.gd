@@ -23,10 +23,12 @@ extends RunMode
 # progressing — which is what stops "farm the first region forever" without taking
 # the repeatable-region grind valve away (decision 12).
 
-# A run is 8 stages (RR's TOTAL_STAGES). Not a GameConfig tunable: the whole
-# progression — the money curve's exponent, the pace ramp, decision 32's 16-event
-# pool floor ("two runs with no repeats") — is authored against this number, so it
-# is a design constant, not a knob.
+# A run is 8 stages. Not a GameConfig tunable: the whole progression — the money
+# curve's exponent, the pace ramp, and RegionStageLibrary's 8-SLOT-per-region shape
+# (todo/region-stage-slots-redesign.md) — is authored against this number, so it is a
+# design constant, not a knob. RegionStageLibrary.slots_in(region_id) must have at
+# least this many slots for every region, or RegionStagePool.draw silently returns a
+# short run.
 const STAGE_COUNT := 8
 
 var region_id := ""

@@ -80,67 +80,29 @@ func test_every_look_from_names_a_real_region_that_is_not_itself_derived() -> vo
 				% [rid, parent] + " one hop only, so a generation would be dropped")
 
 
-# Every rally's region tag must name a region that exists. RallyLibrary's own suite
-# asserts this too; it is repeated here against the LOOK path specifically, because a
-# rally tagged with a region that resolves to {} drives a stage with no look overrides
-# at all rather than failing.
-func test_every_rally_region_resolves_to_a_look() -> void:
-	for rally in RallyLibrary.all():
-		var rid := String(rally.get("region", ""))
+# Every RegionStageLibrary key must name a region that exists in RegionLibrary — a
+# stage tagged with a region that resolves to {} drives with no look overrides at all
+# rather than failing.
+func test_every_region_stage_library_key_resolves_to_a_look() -> void:
+	for rid in RegionStageLibrary.region_ids():
 		assert_ne(RegionLibrary.index_of(rid), -1,
-			"rally %s names region '%s', which is not in the catalogue"
-				% [rally.get("id", "?"), rid])
+			"RegionStageLibrary region '%s' is not in the RegionLibrary catalogue" % rid)
 
 
-# The REVERSE direction of the test above, and the one that actually bites when someone
-# ADDS a region. A region is only ever reached through a rally's `region` tag — nothing
-# else selects one — so an entry added to REGIONS that no rally names is dead data: it
-# never renders, it never appears on the map, and every region test above still passes
-# because they all iterate REGIONS rather than what the game can reach. That is a silent
-# half-finished feature, which is why it is asserted here rather than left to review.
-# (Found by the small-model-readiness loop, round 002: a probe added a complete, valid
-# region and stopped, because nothing told it the rally tag was the other half.)
-#
-# This pins no authored value: it does not care WHICH regions exist, how many, or which
-# rallies claim them — only that the two authored tables agree. Retuning either passes.
-func test_every_region_is_reachable_from_at_least_one_rally() -> void:
-	var claimed := {}
-	for rally in RallyLibrary.all():
-		claimed[String(rally.get("region", ""))] = true
+# The REVERSE direction: every authored region must actually have stages, or
+# RegionStagePool.draw silently returns nothing for it and the region is unplayable
+# despite existing. Unlike the old rally-tag model, RegionStageLibrary keys ARE the
+# reachability — this just confirms the two authored tables (REGIONS, STAGES) agree.
+func test_every_region_has_authored_stages() -> void:
+	var staged := {}
+	for rid in RegionStageLibrary.region_ids():
+		staged[rid] = true
 	for region in RegionLibrary.all():
 		var rid := String(region.get("id", ""))
-		assert_true(claimed.has(rid), _unreachable_region_fix(rid))
-
-
-# The failure message hands back the PATCH, not a complaint. Rounds 007/008 of the
-# readiness loop failed here twice in opposite directions: one probe read "give a rally
-# a region tag" as licence to RETAG an existing rally (green suite, a mid-map fog/night
-# rally silently restyled into an arid canyon), the next was told not to retag and so
-# tagged nothing at all. Both happened because authoring a new rally looked like an
-# unscoped research task. So: spell out that retagging is not the fix, and paste the
-# whole minimal row with the region id already filled in.
-func _unreachable_region_fix(rid: String) -> String:
-	return ("region '%s' is in REGIONS but no rally in RallyLibrary.RALLIES tags it, so " +
-		"nothing can ever reach it: it renders nowhere and appears on no map pin.\n" +
-		"THE FIX IS TO ADD A NEW RALLY, not to retag an existing one — retagging turns " +
-		"this test green while silently restyling a rally whose map_pos and authored " +
-		"weather belong to its OLD region.\n" +
-		"Paste this into RallyLibrary.RALLIES (scripts/rally_library.gd) and edit the " +
-		"marked fields:\n" +
-		"\t{\n" +
-		"\t\t\"id\": \"%s_trial\", \"name\": \"<Rally Name>\",  # EDIT the name\n" +
-		"\t\t\"region\": \"%s\", \"difficulty\": 2, \"special\": false, \"restriction\": {},\n" +
-		"\t\t# map_pos below is inert authored data (the map is deleted with the overworld);\n" +
-		"\t\t# keep it in step with the REGIONS template in scripts/region_library.gd.\n" +
-		"\t\t\"map_pos\": Vector2(0.05, 0.46),\n" +
-		"\t\t# 3 stages; water_level should match the region's waterline, and the stages must\n" +
-		"\t\t# not all share one weather.\n" +
-		"\t\t\"events\": [\n" +
-		"\t\t\t{\"seed\": 90001, \"turn_count\": 20, \"forestiness\": 0.5, \"surface_mix\": 0.4, \"straightness\": 0.85, \"cliffiness\": 0.4, \"water_level\": -12.0, \"terrain_layer1_amplitude\": 28.0},\n" +
-		"\t\t\t{\"seed\": 90002, \"turn_count\": 20, \"forestiness\": 0.5, \"surface_mix\": 0.4, \"straightness\": 0.85, \"cliffiness\": 0.4, \"water_level\": -12.0, \"terrain_layer1_amplitude\": 28.0, \"weather\": \"rain\"},\n" +
-		"\t\t\t{\"seed\": 90003, \"turn_count\": 21, \"forestiness\": 0.5, \"surface_mix\": 0.4, \"straightness\": 0.85, \"cliffiness\": 0.4, \"water_level\": -12.0, \"terrain_layer1_amplitude\": 28.0},\n" +
-		"\t\t],\n" +
-		"\t},") % [rid, rid, rid]
+		assert_true(staged.has(rid),
+			("region '%s' is in REGIONS but has no entry in RegionStageLibrary.STAGES, " +
+				"so RegionStagePool.draw returns nothing for it — add an 8-slot x 3-candidate " +
+				"entry keyed '%s' to scripts/region_stage_library.gd.") % [rid, rid])
 
 
 # Every `res://` path authored ANYWHERE in a REGIONS entry must point at a real file.

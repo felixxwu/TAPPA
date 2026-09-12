@@ -22,7 +22,7 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	RallyLibrary.override_for_test(_rallies())
+	RegionStageLibrary.override_for_test(_regions())
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -41,7 +41,7 @@ func after_each() -> void:
 	RunSession.auto_load_scenes = true
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
-	RallyLibrary.reset()
+	RegionStageLibrary.reset()
 	CarFixtures.restore()
 	Config.reset()
 
@@ -72,23 +72,20 @@ func _damage_below_threshold(car: Dictionary) -> void:
 	_save.apply_damage(iid, hp * (1.0 - Config.data.run_boost_healthy_threshold * 0.5))
 
 
-# Enough synthetic events to fill an 8-stage run with no repeats.
-func _rallies() -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	for i in 4:
-		var events: Array = []
-		for j in 3:
-			events.append({
-				"seed": 5000 + i * 10 + j, "turn_count": 8, "forestiness": 0.4,
+# A synthetic region shaped like the real RegionStageLibrary: 8 slots x 3 candidates,
+# enough to fill an 8-stage run with no repeats.
+func _regions() -> Dictionary:
+	var slots: Array = []
+	for slot_index in 8:
+		var candidates: Array = []
+		for c in 3:
+			candidates.append({
+				"seed": 5000 + slot_index * 10 + c, "turn_count": 8, "forestiness": 0.4,
 				"surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.3,
 				"water_level": -50.0, "terrain_layer1_amplitude": 12.0,
 			})
-		out.append({
-			"id": "fx_run_%d" % i, "name": "Fixture Run %d" % i, "region": REGION,
-			"difficulty": 1 + i, "special": false, "restriction": {},
-			"map_pos": Vector2(0.5, 0.5), "events": events,
-		})
-	return out
+		slots.append(candidates)
+	return {REGION: slots}
 
 
 # A synthetic track for the target-time solve. A real generated result is not needed

@@ -145,16 +145,13 @@ builds a `StartLine` and the countdown arms immediately.
    the fly's second or so, the way the deleted sequence treated input between
    its phases.
 
-**Eligibility gate** — Pressing **Start** resolves the driven car
-(`DrivingContext.driven_car()`), computes its effective stats
-(`UpgradeLibrary.effective_meta`) and calls
-`RallyLibrary.ineligibility_reason(_rally, meta)`; if non-empty, launch is
-blocked with a **"Can't start"** `ConfirmPopup` carrying the reason and a
-**Cancel** button — there is no "Change Upgrades" route from here any more,
-since nothing reachable from this screen can change the KIND of car (an engine
-swap or drivetrain conversion) now that the Upgrades page is gone. The gate is
-purely **categorical** (body type, country, doors, cylinders, displacement,
-drive mode); there is no power-to-weight band or detune-to-qualify flow.
+**Eligibility gate — deleted.** Pressing **Start** used to resolve the driven car
+and check it against a rally's `restriction` dict
+(`RallyLibrary.ineligibility_reason`), blocking launch with a **"Can't start"**
+popup. `world.gd._build_start_line` never actually handed `StartLine` a rally dict
+with a real `restriction` — always a synthesized `{"name": …}` — so the gate was a
+permanent no-op in practice; it's removed along with `RallyLibrary`
+(`todo/region-stage-slots-redesign.md`). `launch()` is unconditional now.
 
 **Who reveals, by construction** — `_driven_car()` resolves to whichever car
 `RunSession`/`DrivingContext` has locked for the active run. The rival GHOST

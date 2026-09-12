@@ -1158,16 +1158,13 @@ func _build_event_picker() -> void:
 	list.add_theme_constant_override("separation", 6)
 	scroll.add_child(list)
 	list.add_child(_make_heading("Preview stage"))
-	for rally in RallyLibrary.all():
-		var name_text := "%s  (%s)" % [String(rally.get("name", "?")),
-			String(rally.get("region", ""))]
-		list.add_child(_make_sub(name_text))
-		var events: Array = rally.get("events", [])
-		for i in events.size():
-			var event: Dictionary = events[i]
-			var label := "Stage %d — seed %d, %d turns" % [i + 1,
-				int(event.get("seed", 0)), int(event.get("turn_count", 0))]
-			var btn := _make_action_button(label, _load_event.bind(event))
+	for region_id in RegionStageLibrary.region_ids():
+		list.add_child(_make_sub(String(region_id)))
+		for stage in RegionStageLibrary.all_stages_in(String(region_id)):
+			var label := "Slot %d cand %d — seed %d, %d turns" % [
+				int(stage.get("slot", 0)), int(stage.get("candidate", 0)),
+				int(stage.get("seed", 0)), int(stage.get("turn_count", 0))]
+			var btn := _make_action_button(label, _load_event.bind(stage))
 			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			btn.focus_entered.connect(_remember_event_focus.bind(btn))
 			list.add_child(btn)
@@ -1204,7 +1201,7 @@ func _load_event(event: Dictionary) -> void:
 	_seed_spin.value = float(int(event.get("seed", base.track_seed)))
 	_level_spin.value = float(event.get("water_level", base.track_water_level_m))
 	_turns_spin.value = float(int(event.get("turn_count", base.track_turn_count)))
-	_straight_spin.value = RallyLibrary.event_straightness(event)
+	_straight_spin.value = StageFields.event_straightness(event)
 	_t1w.value = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))
 	_t1a.value = float(event.get("terrain_layer1_amplitude", base.terrain_layer1_amplitude))
 	_t2w.value = float(event.get("terrain_layer2_wavelength", base.terrain_layer2_wavelength))
@@ -1216,7 +1213,7 @@ func _load_event(event: Dictionary) -> void:
 	_regen_seedlab()
 
 
-# The lab's inputs as an EventDef — the same dict shape RallyLibrary events use.
+# The lab's inputs as an EventDef — the same dict shape RegionStageLibrary stages use.
 # The preview generates from THIS through the exact career path (see _regen_seedlab),
 # so what the lab shows matches what the stage actually generates.
 func _seedlab_event() -> Dictionary:

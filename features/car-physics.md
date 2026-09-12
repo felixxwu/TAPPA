@@ -178,7 +178,7 @@ for each).
 	 only via the `aero_kit` upgrade, so a stock car makes none at all. (This
 	 previously claimed every car carried a small `downforce_rear`; it never did.)
 	 `LapTimeModel` now reads the same coefficients, so an aero kit moves AI and
-	 ghost times as well as the driven car — see rally-roster.md → Lap-time model.
+	 ghost times as well as the driven car — see region-stage-library.md → Lap-time model.
    - *Crosswind:* on a windy condition only — see "Crosswind" below.
 5. **Self-righting assist:** a roll+pitch torque (`level_assist_torque`) eases the
    chassis back toward level (`car.gd` → `_apply_level_assist`). The torque axis is

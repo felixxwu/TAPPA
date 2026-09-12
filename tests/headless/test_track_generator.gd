@@ -315,17 +315,17 @@ func test_every_rally_event_generates_a_complete_track_quickly() -> void:
 	Config.reset()
 	var clearance: float = Config.data.track_clearance
 	var t0 := Time.get_ticks_msec()
-	for rally in RallyLibrary.RALLIES:
-		for event in rally["events"]:
-			var r := await TrackGenerator.generate(_params(
-				Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
-				int(event.get("turn_count", 10)), RallyLibrary.event_width(event), clearance,
-				0.0, RallyLibrary.event_straightness(event)))
-			assert_true(r["complete"],
-				"rally %s seed %d generates a complete track (no partial)" % [
-					rally["id"], int(event.get("seed", 0))])
+	for event in RegionStageLibrary.all_stages():
+		var r := await TrackGenerator.generate(_params(
+			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
+			int(event.get("turn_count", 10)), StageFields.event_width(event), clearance,
+			0.0, StageFields.event_straightness(event)))
+		assert_true(r["complete"],
+			"region %s slot %d candidate %d seed %d generates a complete track (no partial)" % [
+				event.get("region", "?"), int(event.get("slot", -1)),
+				int(event.get("candidate", -1)), int(event.get("seed", 0))])
 	assert_lt(Time.get_ticks_msec() - t0, 180000,
-		"all rally tracks generate well under the old blow-up's ~8 min (one seed used to take ~474s)")
+		"all stage tracks generate well under the old blow-up's ~8 min (one seed used to take ~474s)")
 
 
 func test_zero_runoff_reports_no_segment() -> void:

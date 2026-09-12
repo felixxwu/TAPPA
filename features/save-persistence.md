@@ -131,7 +131,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   `special: true` rallies no differently from ordinary ones. Winning a
   gated upgrade part (`UpgradeDef.unlocked_by_rally`) reads the same
   `completed` flag on the naming special's rally record — again nothing new.
-  See [rally-roster.md](rally-roster.md) for the ladder and
+  See [region-stage-library.md](region-stage-library.md) for the ladder and
   the deleted reward system for where the gate is applied to the
   draw pool.
 - `money` (`Save.KEY_MONEY`) — the **single currency**, and the whole economy's

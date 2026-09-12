@@ -148,7 +148,7 @@ result.
 There are **three** ways to put an engine on a car, and choosing wrong fails
 *silently*: the car simply runs the wrong engine, with no error. That is exactly how
 start-line rivals ended up on their cars' stock engines
-(see [rally-roster.md](rally-roster.md) → rival builds).
+(see [region-stage-library.md](region-stage-library.md) → rival builds).
 
 | Call | Applies | Use for |
 |---|---|---|

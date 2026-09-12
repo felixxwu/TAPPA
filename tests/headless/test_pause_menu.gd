@@ -21,7 +21,7 @@ func before_all() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	RallyFixtures.install()
+	RegionStageFixtures.install()
 	SceneTestHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
@@ -40,7 +40,7 @@ func before_all() -> void:
 func after_all() -> void:
 	get_tree().paused = false
 	_scene.free()
-	RallyFixtures.restore()
+	RegionStageFixtures.restore()
 	# minimal_world() trims the LIVE Config singleton (track_turn_count, trees_per_turn,
 	# rocks_enabled) and leaves restoring it to whoever runs next. Put it back here so a
 	# later file that reads ambient config doesn't silently inherit a stripped world —

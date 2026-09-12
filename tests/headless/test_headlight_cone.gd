@@ -18,7 +18,7 @@ func after_each() -> void:
 
 func _night_cfg() -> GameConfig:
 	var cfg := GameConfig.new()
-	cfg.weather = RallyLibrary.WEATHER_NIGHT
+	cfg.weather = StageFields.WEATHER_NIGHT
 	return cfg
 
 
@@ -282,8 +282,8 @@ func test_strength_is_clamped_to_unit_range() -> void:
 func test_night_authors_every_look_key() -> void:
 	# world.gd reads the five LOOK_KEYS as an unguarded set, so a partially authored
 	# look block would crash the stage boot rather than degrade.
-	var entry := WeatherLibrary.by_id(RallyLibrary.WEATHER_NIGHT)
-	assert_eq(String(entry.get("id", "")), RallyLibrary.WEATHER_NIGHT, "the night entry exists")
+	var entry := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
+	assert_eq(String(entry.get("id", "")), StageFields.WEATHER_NIGHT, "the night entry exists")
 	var look: Dictionary = entry.get("look", {})
 	for key in WeatherLibrary.LOOK_KEYS:
 		assert_true(look.has(key), "night authors the '%s' look key" % key)
@@ -293,14 +293,14 @@ func test_night_is_purely_a_look_and_never_touches_physics() -> void:
 	# Decision 4 of the spec, pinned: night must contribute nothing to
 	# physics_fields, which keys the opponent cache. If it ever did, every night
 	# stage would silently invalidate cached opponent times and need rebalancing.
-	var entry := WeatherLibrary.by_id(RallyLibrary.WEATHER_NIGHT)
+	var entry := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
 	assert_false(entry.has("grip_mult"), "night does not scale grip")
 	assert_false(entry.has("wind"), "night has no wind")
 	assert_false(entry.has("particles"), "night constructs no particle field")
 	assert_eq(WeatherLibrary.physics_fields(entry), [],
 		"night names no physics field, so it cannot churn the opponent cache")
 	var cfg := GameConfig.new()
-	assert_eq(WeatherLibrary.grip_mult(cfg, RallyLibrary.WEATHER_NIGHT), 1.0,
+	assert_eq(WeatherLibrary.grip_mult(cfg, StageFields.WEATHER_NIGHT), 1.0,
 		"grip on a night stage is exactly dry")
 
 
@@ -308,7 +308,7 @@ func test_the_dark_conditions_switch_the_headlights_on() -> void:
 	# The two conditions dark enough for a driver to reach for the lights. Structure
 	# only: that each arms the cone at all, never how brightly — the strengths differ
 	# (each condition's world is dark to a different degree) and are inspector tuning.
-	for id in [RallyLibrary.WEATHER_NIGHT, RallyLibrary.WEATHER_STORM]:
+	for id in [StageFields.WEATHER_NIGHT, StageFields.WEATHER_STORM]:
 		var cfg := GameConfig.new()
 		cfg.weather = id
 		assert_true(HeadlightCone.has_headlights(cfg), "'%s' switches the lights on" % id)
@@ -332,14 +332,14 @@ func test_night_names_a_sky_and_no_other_condition_does() -> void:
 	# happening under the region's sky, night is a different sky. The key is optional
 	# by design, so this pins that the mechanism stays opt-in rather than becoming a
 	# sixth mandatory look key every existing entry would have to author.
-	var night := WeatherLibrary.by_id(RallyLibrary.WEATHER_NIGHT)
+	var night := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
 	var field := String(night.get("sky_panorama", ""))
 	assert_ne(field, "", "night names a sky field")
 	var cfg := GameConfig.new()
 	assert_true(cfg.get(field) is String, "and it names a real GameConfig field")
 	assert_ne(String(cfg.get(field)), "", "which holds a path")
 	for entry in WeatherLibrary.all():
-		if String(entry.get("id", "")) == RallyLibrary.WEATHER_NIGHT:
+		if String(entry.get("id", "")) == StageFields.WEATHER_NIGHT:
 			continue
 		assert_false(entry.has("sky_panorama"),
 			"'%s' leaves the region's sky alone" % String(entry.get("id", "")))
@@ -350,10 +350,10 @@ func test_night_names_terrain_relight_and_no_other_condition_does() -> void:
 	# bake (see features/terrain.md -> "Dual day/night bake"). Night is the only
 	# condition whose ground darkening is worth pre-baking a second vertex-colour
 	# array for; every other dimmed-day condition is carried by its road_tint alone.
-	var night := WeatherLibrary.by_id(RallyLibrary.WEATHER_NIGHT)
+	var night := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
 	assert_true(bool(night.get("terrain_relight", false)), "night opts into the relight")
 	for entry in WeatherLibrary.all():
-		if String(entry.get("id", "")) == RallyLibrary.WEATHER_NIGHT:
+		if String(entry.get("id", "")) == StageFields.WEATHER_NIGHT:
 			continue
 		assert_false(entry.has("terrain_relight"),
 			"'%s' leaves the terrain bake alone" % String(entry.get("id", "")))

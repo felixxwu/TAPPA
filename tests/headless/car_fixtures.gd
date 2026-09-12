@@ -8,10 +8,9 @@ extends RefCounted
 #
 # The four cars span the axes tests exercise: drivetrain (RWD/FWD/AWD), weight
 # bias (nose-heavy / tail-heavy / ~50-50), body size, and power-to-weight band.
-# They also carry the rally-restriction metadata the real catalogue authors:
-# `doors` on the car (a body property) and `displacement_l` on the engine (an
-# engine property that follows an engine swap) — see
-# RallyLibrary.ineligibility_reason.
+# They also carry `doors` on the car (a body property) and `displacement_l` on the
+# engine (an engine property that follows an engine swap) — categorical fields that
+# used to feed rally-restriction eligibility (deleted, todo/region-stage-slots-redesign.md).
 
 const RWD := 0
 const AWD := 1
