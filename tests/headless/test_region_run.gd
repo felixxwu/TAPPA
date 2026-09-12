@@ -899,6 +899,34 @@ func test_a_resumed_run_keeps_its_picked_engine_swap() -> void:
 		"the picked engine survives a pause/resume, same as boosts")
 
 
+# A mid-tier engine that's only a small hp gain over fx_i4 (< MIN_SWAP_HP_GAIN) must be
+# skipped over in favour of fx_v8 — a swap that's barely an upgrade isn't worth offering.
+func test_the_pool_skips_an_engine_swap_under_the_minimum_hp_gain() -> void:
+	var engines := CarFixtures.engines()
+	engines.append({
+		"id": "fx_i4_plus", "name": "Fixture i4+", "layout": "i4", "displacement_l": 2.1, "mass": 120.0,
+		"redline_rpm": 7000.0, "peak_torque": 230.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
+		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"gear_ratios": [3.5, 2.0, 1.4, 1.0, 0.8], "final_drive": 4.0, "shift_time": 0.30,
+	})
+	EngineLibrary.override_for_test(engines)
+
+	var current := EngineLibrary.by_id("fx_i4")
+	var mid := EngineLibrary.by_id("fx_i4_plus")
+	var current_hp := CarLibrary.horsepower(
+		{"peak_torque": current["peak_torque"], "redline": current["redline_rpm"]})
+	var mid_hp := CarLibrary.horsepower(
+		{"peak_torque": mid["peak_torque"], "redline": mid["redline_rpm"]})
+	assert_lt(mid_hp - current_hp, RunSession.MIN_SWAP_HP_GAIN,
+		"setup: fx_i4_plus is a real but too-small gain over fx_i4")
+
+	_start()
+	var ids := RunSession._pool_engine_swap_ids()
+	assert_eq(ids.size(), 1, "exactly one swap offered")
+	assert_eq(String(ids[0]), "engine_swap:fx_v8",
+		"the too-small fx_i4_plus rung is skipped in favour of the next one that clears the bar")
+
+
 # --- Task 1: a new run always starts the car at 100% health ---------------------
 
 func test_beginning_a_run_restores_a_damaged_car_to_full_health() -> void:

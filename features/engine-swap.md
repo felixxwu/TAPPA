@@ -17,8 +17,11 @@ drivetrain conversion, run-scoped (dies with the run, never touches `Save`'s
 persisted car), but it is NOT a `BoostLibrary` catalogue entry and carries no
 purchasable level: `RunSession._pool_engine_swap_ids()` offers exactly **the
 next most powerful `EngineLibrary` engine relative to the car's current one**
-(ranked by `CarLibrary.peak_power_kw`), never a random pick, and `[]` once the
-car already runs the catalogue's most powerful engine — see
+(ranked by `CarLibrary.peak_power_kw`) that gains at least `MIN_SWAP_HP_GAIN`
+(30hp) over the current engine — a smaller increment is skipped in favour of
+the next rung that clears the bar — never a random pick, and `[]` once no
+remaining engine clears that bar (including once the car already runs the
+catalogue's most powerful engine) — see
 [region-runs.md](region-runs.md) → "The engine swap" for the full pick-pool
 mechanics. This supersedes an earlier flat `engine_power_mult` multiplier on
 `cfg.peak_torque` — the `BoostLibrary.CATALOGUE["engine_swap"]` entry and its
