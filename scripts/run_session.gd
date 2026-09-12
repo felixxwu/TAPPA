@@ -52,6 +52,11 @@ var _dnf := false
 # wreck flag and is never set by anything today.
 var _failed := false
 var _money_earned := 0
+# What the stage JUST reported paid, 0 for a missed stage — purely transient display
+# state for the between-stage reward screen (world.gd's _show_stage_reward), not
+# persisted: a resumed run has already shown its last stage's reward, so there is
+# nothing to reconstruct across a pause/resume.
+var _last_stage_money := 0
 # The current stage's target time in ms, seated by set_stage_track() once the track
 # has actually been generated. 0 = no target (a challenge stage, or a track that
 # failed to solve) — the fail rule can never fire on it.
@@ -173,6 +178,11 @@ func failed() -> bool:
 # stage clear (decision 36), not at run end, so a failed run keeps every penny.
 func money_earned() -> int:
 	return _money_earned
+
+
+# What the just-reported stage paid, 0 for a missed stage. See _last_stage_money's doc.
+func last_stage_money() -> int:
+	return _last_stage_money
 
 
 func last_result() -> Dictionary:
@@ -525,6 +535,7 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_dnf = false
 	_failed = false
 	_money_earned = 0
+	_last_stage_money = 0
 	_stage_target_ms = 0
 	_stage_target_profile = {}
 	_pending_repair = {}
@@ -703,6 +714,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 	var missed := _mode.stage_failed(driven_index, elapsed_ms, _stage_target_ms)
 	_stage_index += 1
 	var is_final := _stage_index >= stage_count()
+	_last_stage_money = 0
 	if not missed:
 		Save.add_lifetime_stat(LifetimeStats.STAGES_CLEARED)
 		# MONEY BANKS AT STAGE CLEAR, not at run end (decision 36), so a run that dies
@@ -711,6 +723,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		var earned := _mode.stage_money(driven_index, elapsed_ms, _stage_target_ms, coins_collected)
 		if earned > 0:
 			_money_earned += earned
+			_last_stage_money = earned
 			Save.add_money(earned)
 	_stage_target_ms = 0
 	_stage_target_profile = {}

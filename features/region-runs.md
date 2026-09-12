@@ -511,16 +511,27 @@ opts) so the 3D world shows through the gaps between cards — each card keeps i
 opaque background (`card_carousel.gd`'s `_card_stylebox`), so legibility is
 unaffected.
 
-### Six screens now, not one
+### Seven screens now, not one
 
 Picking a card no longer applies it immediately. `world.gd`'s interstitial sequence
-is now the four pick screens above (repair-or-upgrade → category → roll) →
+now opens with `_show_stage_reward` (`"Earned: $%d"` off
+`RunSession.last_stage_money()`, `"Total money: $%d"` off `Save.money()`, a single
+**Continue** — shown for EVERY stage result, including a missed one, which pays $0
+but should still tell the player plainly rather than jumping straight to a bare
+Continue) → the four pick screens above (repair-or-upgrade → category → roll) →
 `_confirm_pick` (what the ROLLED choice does to the car — a `CarStatsPanel`
 before/after built off `CarStats.preview`, read-only, a single **Next**) →
 `_show_skill_progress` (`SkillProgressPanel` — how far the stage moved every skill
 gate, Continue) → `_apply_pick` (applies the pick for real and advances the run). See
 [car-stats.md](car-stats.md) for what the stats/preview step actually builds and why
 `preview` never mutates the profile.
+
+`RunSession.last_stage_money()` is deliberately transient (unlike `money_earned()`,
+the run's running tally, which IS persisted) — it exists only to answer "what did
+that stage just pay", is set once per `report_event_result` call (0 for a missed
+stage) and read exactly once, immediately after, by `_show_stage_reward`. Nothing
+reconstructs it across a pause/resume because nothing needs to: a resumed run has
+already shown its last stage's reward screen.
 
 Each step REPLACES the interstitial page rather than stacking pages. **There is no
 Cancel any more** — the roll already committed the choice

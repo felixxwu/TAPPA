@@ -2127,8 +2127,24 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_reset_props_for_replay()
 	# Car into replay playback.
 	($Car as Node).begin_replay(_replay_recorder)
-	_open_pick_panel()
+	_show_stage_reward()
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
+
+
+# Step 0 — the reward. Shown for EVERY stage result, including a missed stage (which
+# pays $0 but still ends the run right here, so the player should see that plainly
+# rather than jumping straight to a bare Continue) — what this stage just paid, and
+# the running total, before any pick is offered. RunSession.last_stage_money() is
+# transient (see its own doc) so this can only ever be read right here, immediately
+# after report_event_result set it.
+func _show_stage_reward() -> void:
+	var page := _swap_interstitial("Stage complete")
+	page.body().add_child(UITheme.label("Earned: $%d" % RunSession.last_stage_money()))
+	page.body().add_child(UITheme.label("Total money: $%d" % Save.money()))
+	var carry_on := UITheme.button("Continue")
+	carry_on.pressed.connect(_open_pick_panel)
+	page.add_action(carry_on)
+	MenuNav.attach(page, {})
 
 
 # Open the top of the pick chain. Split out of _present_standings_overlay so the chain's
