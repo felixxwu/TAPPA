@@ -16,9 +16,15 @@ CANDIDATE stages. That's 24 stages per region, 120 across the 5 regions
 (`home`, `greece`, `taiga`, `home_coast`, `snow`).
 
 A candidate's shape is authored FINAL for its slot — no runtime scaling — so slot 0's
-candidates are hand-tuned gentle/straight and slot 7's twisty/hilly, per region
-character (see `RegionStageLibrary`'s header comment for the per-region amplitude/
-waterline bands). Every candidate's `(seed, turn_count, straightness,
+candidates are hand-tuned gentle/straight and slot 7's twisty/hilly. The 3 candidates
+within a slot no longer vary at all except by `seed` — same turn_count/straightness/
+terrain/forestiness/surface_mix/cliffiness/water_level/weather, so a slot is one
+authored stage with 3 track-generation rolls (see `RegionStageLibrary`'s header
+comment for the per-region waterline/character notes). `terrain_layer1_amplitude` is
+shared across every region and comes from `RegionStageLibrary.SLOT_AMPLITUDE` — a
+flat linear ramp, 10.0 at slot 0 (stage 1) to 40.0 at slot 7 (stage 8); region
+character now comes entirely from forestiness/cliffiness/surface_mix/water_level/
+weather, not amplitude. Every candidate's `(seed, turn_count, straightness,
 terrain_layer*_amplitude)` combination was hand-verified to complete a real DFS
 track generation before being committed — see `tools/probe_track_event.gd` for how
 to re-verify one after an edit.
