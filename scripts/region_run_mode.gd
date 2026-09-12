@@ -190,17 +190,24 @@ func stage_money(stage_index: int, elapsed_ms: int, target_ms: int,
 		bonus = cfg.run_fast_bonus_money * saved
 	var region_scale := pow(cfg.run_money_region_multiplier, float(region_index()))
 	var coin_total := float(maxi(0, coins_collected)) * cfg.coin_money * region_scale
-	# THE REGION-CLEAR REWARD. Only the run's own final stage (index stage_count()-1)
-	# carries it, and only on a genuine clear — a missed final stage never reaches
-	# stage_money at all (RunSession.report_event_result only calls it when the stage
-	# was not missed), so there is no separate "did the run finish?" check to get
-	# wrong here. Scaled by the SAME region_scale as the rest of this region's
-	# payouts, so a deeper region's stage-8 bonus is proportionally as much richer as
-	# its ordinary stage-clear reward.
-	var clear_bonus := 0.0
-	if stage_index >= stage_count() - 1:
-		clear_bonus = cfg.run_region_clear_money_base * region_scale
+	var clear_bonus := float(stage_clear_bonus(stage_index))
 	return maxi(0, int(round((completion + bonus) * region_scale + coin_total + clear_bonus)))
+
+
+# THE REGION-CLEAR REWARD, isolated (see RunMode.stage_clear_bonus's doc — this is
+# what the reward screen reads to show it as its own line, and what stage_money folds
+# in above). Only the run's own final stage (index stage_count()-1) carries it, and
+# only on a genuine clear — a missed final stage never reaches stage_money at all
+# (RunSession.report_event_result only calls it when the stage was not missed), so
+# there is no separate "did the run finish?" check to get wrong here. Scaled by the
+# SAME region_scale as the rest of this region's payouts, so a deeper region's stage-8
+# bonus is proportionally as much richer as its ordinary stage-clear reward.
+func stage_clear_bonus(stage_index: int) -> int:
+	if stage_index < stage_count() - 1:
+		return 0
+	var cfg: GameConfig = Config.data
+	var region_scale := pow(cfg.run_money_region_multiplier, float(region_index()))
+	return maxi(0, int(round(cfg.run_region_clear_money_base * region_scale)))
 
 
 # Record a CLEARED region on the profile. This is the ledger RegionLibrary.is_unlocked

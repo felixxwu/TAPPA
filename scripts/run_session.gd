@@ -62,6 +62,10 @@ var _last_stage_money := 0
 # transient, display-only lifetime as _last_stage_money — see its doc.
 var _last_stage_coins := 0
 var _last_stage_coin_money := 0
+# The region-clear bonus folded into the stage just reported (0 on any stage but the
+# run's own final one, and 0 there too on a missed clear). Same transient, display-only
+# lifetime as _last_stage_money above.
+var _last_stage_clear_bonus := 0
 # The current stage's target time in ms, seated by set_stage_track() once the track
 # has actually been generated. 0 = no target (a challenge stage, or a track that
 # failed to solve) — the fail rule can never fire on it.
@@ -198,6 +202,13 @@ func last_stage_coins() -> int:
 
 func last_stage_coin_money() -> int:
 	return _last_stage_coin_money
+
+
+# The region-clear bonus folded into last_stage_money() above (0 unless the
+# just-reported stage was the run's own final one AND it was cleared). See
+# _last_stage_clear_bonus's doc.
+func last_stage_clear_bonus() -> int:
+	return _last_stage_clear_bonus
 
 
 func last_result() -> Dictionary:
@@ -734,6 +745,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 	_last_stage_money = 0
 	_last_stage_coins = 0
 	_last_stage_coin_money = 0
+	_last_stage_clear_bonus = 0
 	if not missed:
 		Save.add_lifetime_stat(LifetimeStats.STAGES_CLEARED)
 		# MONEY BANKS AT STAGE CLEAR, not at run end (decision 36), so a run that dies
@@ -752,6 +764,7 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 			# coins_collected * Config.data.coin_money by hand here.
 			_last_stage_coin_money = earned - _mode.stage_money(
 				driven_index, elapsed_ms, _stage_target_ms, 0)
+		_last_stage_clear_bonus = _mode.stage_clear_bonus(driven_index)
 	_stage_target_ms = 0
 	_stage_target_profile = {}
 	var over := missed or is_final

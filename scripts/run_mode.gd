@@ -89,6 +89,16 @@ func stage_money(_stage_index: int, _elapsed_ms: int, _target_ms: int,
 	return 0
 
 
+# The portion of stage_money's result (if any) that is a ONE-OFF region-clear bonus
+# rather than the ordinary per-stage payout — RegionRunMode.stage_money folds this
+# into its return value, this is the isolated read the reward screen wants to show
+# it as its own line (mirrors how RunSession isolates the coin term). 0 for every
+# mode by default; only RegionRunMode overrides it, and only its own final stage
+# index returns non-zero.
+func stage_clear_bonus(_stage_index: int) -> int:
+	return 0
+
+
 # The mode-specific half of the persisted run slot. RunSession merges the shared
 # half (car_instance_id / stage_index / stage_times_ms) on top and adds "mode".
 func to_record() -> Dictionary:

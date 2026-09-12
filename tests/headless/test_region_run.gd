@@ -419,6 +419,32 @@ func test_the_region_clear_bonus_only_lands_on_the_final_stage() -> void:
 		"only the final stage's payout can move with the clear-bonus config")
 
 
+func test_stage_clear_bonus_isolates_the_same_term_stage_money_folds_in() -> void:
+	# RunSession reads stage_clear_bonus() separately (last_stage_clear_bonus(), the
+	# reward screen's "Region cleared: $X" line) — it must never disagree with what
+	# stage_money() itself actually added for the run's final stage.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var target := 100_000
+	var elapsed := 50_000
+	var last_index := mode.stage_count() - 1
+	var not_final := last_index - 1
+	assert_eq(mode.stage_clear_bonus(not_final), 0,
+		"a non-final stage carries no clear bonus")
+	var isolated := mode.stage_clear_bonus(last_index)
+	var with_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var without_bonus := mode.stage_money(last_index, elapsed, target)
+	assert_eq(isolated, with_bonus - without_bonus,
+		"the isolated bonus is exactly the difference stage_money shows")
+
+
+func test_last_stage_clear_bonus_reports_zero_on_a_non_final_stage() -> void:
+	_start()
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_eq(RunSession.last_stage_clear_bonus(), 0,
+		"stage 1 of a fresh run is nowhere near the run's final stage")
+
+
 func test_the_run_reports_what_it_banked() -> void:
 	_start()
 	_drive(maxi(1, RunSession.stage_target_ms() - 1))

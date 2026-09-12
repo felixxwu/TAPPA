@@ -269,7 +269,12 @@ stage_money = (base * growth^stages_cleared + fast_bonus * fraction_of_target_sa
   the stage-reward screen's "Earned: $X"), `money_earned()`'s running tally, and
   `Save.add_money`. A run that fails on stage 8 never calls `stage_money` for it (the
   `missed` guard in `report_event_result`), so the bonus is genuinely gated on
-  clearing the region, not merely reaching its last stage.
+  clearing the region, not merely reaching its last stage. `RunMode.stage_clear_bonus
+  (stage_index)` isolates JUST this term (mirrors how `_last_stage_coin_money` isolates
+  the coin term) — `RegionRunMode` overrides it with the same `region_scale`
+  calculation `stage_money` folds in, `report_event_result` reads it into
+  `_last_stage_clear_bonus`/`RunSession.last_stage_clear_bonus()`, and the reward
+  screen shows it as its own `"Region cleared: $%d"` line when non-zero.
 
 `Save.money()` / `add_money()` / `spend_money()` are the whole currency surface.
 `RunSession.money_earned()` is the run's own running tally, for the run summary.
@@ -518,8 +523,10 @@ shows through the gaps between cards — each card keeps its own opaque backgrou
 Picking a card no longer applies it immediately. `world.gd`'s interstitial sequence
 now opens with `_show_stage_reward` (`"Earned: $%d"` off
 `RunSession.last_stage_money()`; when the stage collected any coins, a `"Coins: %d
-($%d)"` line off `RunSession.last_stage_coins()`/`last_stage_coin_money()`;
-`"Total money: $%d"` off `Save.money()`; a single **Continue** — shown for EVERY
+($%d)"` line off `RunSession.last_stage_coins()`/`last_stage_coin_money()`; when the
+stage carried a region-clear bonus (2026-09, stage 8 only), a `"Region cleared: $%d"`
+line off `RunSession.last_stage_clear_bonus()`; `"Total money: $%d"` off
+`Save.money()`; a single **Continue** — shown for EVERY
 stage result, including a missed one, which pays $0 but should still tell the player
 plainly rather than jumping straight to a bare Continue) → the pick screen above →
 `_confirm_pick` (what the chosen option does to the car — a `CarStatsPanel`
