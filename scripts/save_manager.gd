@@ -36,8 +36,13 @@ signal flushed()
 # (schemas 1-6) is deleted along with the legacy backfill keys it wrote. A profile whose
 # `schema_version` does not match exactly — older OR newer — is refused by `_migrate()`
 # and `load_or_new()` falls back to a fresh default, exactly as it already does for an
-# unreadable file: the ON-DISK FILE IS KEPT, UNTOUCHED (never overwritten by the fresh
-# session), only the LIVE session starts clean. That is deliberate, not an oversight:
+# unreadable file: the ON-DISK FILE IS LEFT AS-IS FOR THIS LOAD (nothing overwrites it on
+# the spot), and the LIVE session starts clean instead of guessing how to interpret it.
+# It is NOT protected forever — the fresh profile saves normally, so the player's first
+# purchase or finished run legitimately supersedes it (see load_or_new()'s own comment;
+# a save_disabled flag used to sit here to keep the file untouched, and instead silently
+# blocked every save for the rest of the session — see that function for the bug this
+# was). That is deliberate, not an oversight:
 #
 #   - Decision 34 says "a pre-pivot profile resets whatever its version" — the pivot
 #     replaces the whole economy (stars -> money) and the whole reward model (prize
@@ -325,13 +330,29 @@ func load_or_new() -> void:
 		return
 	var migrated := _migrate(loaded)
 	if migrated.is_empty():
-		# A newer-than-known or unmigratable file: keep it untouched on disk and
-		# run on a fresh in-memory profile rather than clobbering it.
-		push_warning("Save: profile at %s is unreadable/newer than v%d — starting fresh, file kept"
+		# A newer-than-known or unmigratable (e.g. pre-pivot) file: run on a fresh
+		# in-memory profile rather than guessing how to interpret it.
+		#
+		# DELIBERATELY NOT save_disabled = true. That used to be set here on the theory
+		# of "keep the untrusted file untouched on disk" — but save_disabled blocks EVERY
+		# future save() / save_now(), not just the one that would have clobbered this
+		# file on the spot. The result was silent, total, and permanent: every pre-pivot
+		# player's on-disk profile is at a stale schema_version, so THIS branch runs on
+		# their very first post-pivot launch, and once it set save_disabled the player
+		# could buy cars and finish runs all session with literally nothing reaching
+		# disk — and the same stale file would still be there refusing again on every
+		# subsequent launch, forever. That is exactly the bug reported as "runs and cars
+		# bought are still not saved properly" post-pivot.
+		#
+		# The fresh profile assigned below must be able to save normally: the first
+		# legitimate save() this session is what properly supersedes the unreadable
+		# file, which is precisely decision 34's intent ("a pre-pivot profile resets
+		# whatever its version") — a reset that can never actually take if nothing is
+		# ever allowed to write the replacement.
+		push_warning("Save: profile at %s is unreadable/newer than v%d — starting fresh"
 			% [profile_path, SCHEMA_VERSION])
 		profile = _default_profile()
 		_note_known_profile_keys()
-		save_disabled = true
 		return
 	profile = _sanitise(migrated)
 	_note_known_profile_keys()

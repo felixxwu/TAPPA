@@ -280,17 +280,29 @@ persisted `completed` KEY is unchanged (renaming it would need a save migration)
   (`_prune_unknown_upgrades`) dropped part ids that no longer resolved against the
   upgrade catalogue; that catalogue is deleted, so the pass has nothing left to prune.
 - **Migration: THERE IS NONE ANY MORE.** `_migrate` refuses any profile whose
-  `schema_version` is not exactly `SCHEMA_VERSION` (currently **7**) — it returns `{}`, the
-  loader keeps the file untouched on disk, runs on a fresh in-memory profile and sets
-  `save_disabled = true` so nothing overwrites it. What survives of the old chain is one
-  step: a **key backfill** from `_default_profile()`, so a new key added without a version
-  bump appears on an existing profile.
+  `schema_version` is not exactly `SCHEMA_VERSION` (currently **7**) — it returns `{}`, and
+  the loader runs on a fresh in-memory profile instead of guessing how to interpret it.
+  What survives of the old chain is one step: a **key backfill** from `_default_profile()`,
+  so a new key added without a version bump appears on an existing profile.
 
   This is deliberate and it is a ONE-WAY door. The roguelike pivot deleted the career loop,
   the star ledger and the parts model wholesale, so there is no sensible mapping from a
   pre-pivot profile: a v6 save's stars, installed upgrades, rally podiums and reward
   history describe systems that no longer exist. Guessing would hand the player a career
-  reconstructed from nothing. Refusing and keeping the file is the honest failure.
+  reconstructed from nothing. Starting fresh instead is the honest failure.
+
+  **The fresh profile is NOT `save_disabled`.** An earlier version of this refusal path set
+  `save_disabled = true` on the theory of "leave the untrusted file alone" — but that flag
+  blocks *every* future `save()`/`save_now()`, not just one avoided overwrite. Since every
+  pre-pivot save sits at a stale `schema_version`, this branch runs on literally every
+  returning player's first post-pivot launch — so the bug was total and silent: buy a car,
+  finish a run, a whole session of progress, and none of it ever reached disk, because the
+  fresh profile could never save. The same stale file would refuse again next launch, so it
+  never even self-healed. That was the real cause of a "runs and cars bought are not saved"
+  report after the pivot shipped — see `test_a_refused_pre_pivot_profile_can_still_save_new_progress`
+  in `test_save_manager.gd`. The fresh profile now saves exactly like a brand-new one: the
+  player's first legitimate write is what actually supersedes the file the loader couldn't
+  read as current, which is what the "one-way door" was supposed to mean all along.
 
   > The five authored steps that used to live here (1→2 unbinding the shared inventory
   > pool, 2→3 clearing a detune with nothing left to duck under, 3→4 seeding adaptive

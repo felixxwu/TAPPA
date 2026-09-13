@@ -501,6 +501,28 @@ func test_migration_refuses_newer_version() -> void:
 	assert_true(_save._migrate(future).is_empty(), "a newer-version profile is refused (returns empty)")
 
 
+# Regression: load_or_new() used to set save_disabled = true whenever the on-disk profile
+# was refused (wrong/older schema_version — exactly the state of EVERY pre-pivot save on
+# its first post-pivot launch). That flag blocks every future save()/save_now(), so the
+# fresh profile this branch hands the player could never actually reach disk: buy a car,
+# finish a run, all session — nothing saved, and the same stale file would refuse again on
+# the very next launch. This is the "runs and cars bought are still not saved properly"
+# bug reported after the pivot. Pins that a refused load leaves saving enabled and a real
+# write actually lands.
+func test_a_refused_pre_pivot_profile_can_still_save_new_progress() -> void:
+	var f := FileAccess.open(TEST_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"schema_version": _save.SCHEMA_VERSION - 1, "cars": []}))
+	f.close()
+	_save.load_or_new()
+	assert_eq(_save.profile["cars"].size(), 0, "refused profile replaced with a fresh default")
+	assert_false(_save.save_disabled, "saving is NOT disabled just because the old file was refused")
+	_save.grant_car("fx_light_rwd")
+	_save.save_now()
+	var on_disk: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(TEST_PATH))
+	assert_eq((on_disk["cars"] as Array).size(), 1,
+		"the new car actually reached disk, superseding the refused pre-pivot file")
+
+
 # test_migration_v2_restores_full_power_to_detuned_cars and
 # test_migration_v1_strips_the_unbound_inventory DELETED: both drove
 # Save._migrate_step's per-version transforms (2 -> 3, 1 -> 2), which are deleted along
