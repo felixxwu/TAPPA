@@ -139,10 +139,26 @@ CLAUDE.md.
 
 `SkillProgressPanel` ([car-stats.md](car-stats.md) — it's documented there alongside its
 sibling `CarStatsPanel`, since both are built and tested the same way) is a SEPARATE
-read-out from this page: it shows right after `world.gd`'s upgrade confirmation, one row
-per `SkillLibrary.all()` entry, saying how far every lifetime-stat gate moved from the
-stage just driven — `"Damage taken: 150/800"` while locked, "Unlocked — buy in the shop"
-once the gate is met but unbought, "Owned" once bought. Every gated counter only ever
-grows (`features/lifetime-stats.md`), so this screen exists because a stage that went
-badly still moved something the player can't see until they happen to reopen this SKILLS
-page — without it that progress is silent.
+read-out from this page: it shows right after `world.gd`'s upgrade confirmation, as a
+real `CardCarousel` — the same horizontal card strip this SKILLS page and the run-pick
+panel use ([card-carousel.md](card-carousel.md)), built through `CardUI.build_carousel` /
+`CardUI.text_card`, not a look-alike vertical list — but only for skills whose
+lifetime-stat gate actually moved during the stage
+just driven, an OWNED skill or a skill whose gate sat still gets no card, so the screen
+stays focused instead of listing every skill every time. Each card names the skill,
+shows `"+<delta>"` for what this stage specifically added, and its state below that —
+`"Damage taken: 150/800"` while locked, "Unlocked — buy in the shop" once the gate is met
+but unbought. The delta is computed against `world.gd`'s `_stage_start_lifetime`, a
+snapshot of `Save.profile[Save.KEY_LIFETIME]` taken in `_on_stage_started` before the
+stage's own stat updates land — without that snapshot there'd be nothing to diff against.
+Every gated counter only ever grows (`features/lifetime-stats.md`), so this screen exists
+because a stage that went badly still moved something the player can't see until they
+happen to reopen this SKILLS page — without it that progress is silent.
+
+That screen is **focusable**, like every other carousel page: `world.gd`'s
+`_show_skill_progress` attaches `MenuNav` with the carousel as `first`, so left/right
+scroll the cards and up/down reach the Continue action, and it wires the carousel's own
+`confirmed` to the same "carry on" Continue does (nothing there chooses anything, so an
+accept press must not be a dead input). It was previously documented as deliberately
+read-only and non-focusable, a plain `VBoxContainer` of bordered boxes; that decision was
+reversed on request — a card list the player can't move through isn't one.

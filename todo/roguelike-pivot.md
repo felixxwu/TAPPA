@@ -981,6 +981,16 @@ on a fitted aero part. Decision 24 makes tuning ungated, so the wing must become
 plain per-car property. `tests/headless/test_aero_visibility.gd` and
 `test_aero_visible_traversal.gd` pin the current behaviour.
 
+**2026-09-13 update:** the ungated wing (part of decision 24) turned out to be
+undesired — it showed on every car with an `_aero` mesh in both the car picker
+visualiser and stage gameplay regardless of whether the run had actually picked
+the `aero` boost. The gate is reinstated: `car.gd::_apply_aero_visibility(owned)`
+now checks `UpgradeLibrary.aero_fitted(owned)` (does `owned["boosts"]` contain an
+`"aero"` entry — boosts replaced the old installed-parts model), called from
+`apply_owned`, `_rederive_live_config`, and `set_body_hidden(false)`; `apply_car`
+(unowned fielding) clears `_last_owned` so a stale wing doesn't survive a
+re-fielding. See `features/aero-parts.md`.
+
 ### The test blast radius is the dominant cost of stage 2
 
 Of 226 test files: **49** touch `RallyLibrary`, **23** `UpgradeLibrary`, **21**

@@ -46,6 +46,27 @@ func test_every_style_builds_real_geometry() -> void:
 		assert_gt(faces, 0, "%s has triangles" % BarrierSection.style_name(style))
 
 
+func test_material_lighting_routes_through_apply_car_light() -> void:
+	# Regression: BarrierSection._mat() used to hardcode sun_color/sky_color/
+	# ground_color/light_dir as literal constants, so barriers never dimmed on a
+	# night/storm stage (see features/rendering.md → "Every new fake-lit material
+	# must route through here"). It must instead match whatever
+	# GameConfig.apply_car_light pushes onto any other prop.
+	var cfg: GameConfig = Config.data
+	var s := _section(BarrierSection.Style.ARMCO)
+	var meshes := _meshes(s)
+	assert_gt(meshes.size(), 0, "ARMCO builds mesh instances")
+	var mat := meshes[0].material_override as ShaderMaterial
+	assert_eq(mat.get_shader_parameter("sun_color"), cfg.weather_lit(cfg.sun_color),
+		"barrier sun_color matches the shared weather-aware helper")
+	assert_eq(mat.get_shader_parameter("sky_color"), cfg.weather_lit(cfg.sky_color),
+		"barrier sky_color matches the shared weather-aware helper")
+	assert_eq(mat.get_shader_parameter("ground_color"), cfg.ground_color,
+		"barrier ground_color matches GameConfig's ground_color")
+	assert_eq(mat.get_shader_parameter("light_dir"), cfg.sun_direction,
+		"barrier light_dir follows the config sun direction")
+
+
 func test_every_style_stands_on_the_ground() -> void:
 	for style in BarrierSection.Style.values():
 		var s := _section(style)

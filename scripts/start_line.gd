@@ -338,10 +338,10 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 
 	var rival_box := VBoxContainer.new()
 	rival_box.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
-	rival_box.custom_minimum_size = Vector2(UITheme.px(300), 0)  # width for the stat row to lay caption|value
+	rival_box.custom_minimum_size = Vector2(UITheme.px(300), 0)  # width for the centred name/car/time stack
 	_rival_card.add_child(rival_box)
 
-	_rival_name_label = UITheme.label("", "ink")
+	_rival_name_label = UITheme.card_title("", "ink")
 	_rival_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	rival_box.add_child(_rival_name_label)
 
@@ -349,9 +349,9 @@ func _build_overlay(rally: Dictionary, event_index: int) -> void:
 	_rival_car_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	rival_box.add_child(_rival_car_label)
 
-	var time_row := _stat_row("Time to beat", "gold")
-	_rival_time_label = time_row["value"]
-	rival_box.add_child(time_row["row"])
+	var time_stack := _stat_stack("Time to beat", "gold")
+	_rival_time_label = time_stack["value"]
+	rival_box.add_child(time_stack["stack"])
 
 	_refresh_rival_card()
 	# The CARD itself is the REVEAL phase's to show: hidden through MENU and the fly,
@@ -399,19 +399,19 @@ func _row_button(text: String, on_press: Callable) -> Button:
 	return UITheme.row_button(text, on_press)
 
 
-# A labelled stat row for the rival card: a left-aligned caption (dim) and a
-# right-aligned value tinted by `role`. Returns { row, value } so the card can point
-# a label at the value. Revived verbatim from the deleted per-opponent reveal card.
-func _stat_row(caption: String, role: String) -> Dictionary:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", UITheme.GAP_WIDE)
+# A labelled stat stack for the rival card: a centred caption (dim) sitting above a
+# centred, title-sized value tinted by `role`. Returns { stack, value } so the card
+# can point a label at the value.
+func _stat_stack(caption: String, role: String) -> Dictionary:
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 	var cap := UITheme.label(caption, "dim")
-	cap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var value := UITheme.label("", role)
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	row.add_child(cap)
-	row.add_child(value)
-	return {"row": row, "value": value}
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var value := UITheme.card_title("", role)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(cap)
+	stack.add_child(value)
+	return {"stack": stack, "value": value}
 
 
 # Fill the rival card from the wired ghost: the driver's name, the car they wear

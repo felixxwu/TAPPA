@@ -22,8 +22,10 @@ extends CanvasLayer
 #
 # The headline's trailing ellipsis is ANIMATED (0 → 1 → 2 → 3 dots, looping)
 # rather than a static "…". Because the headline is center-aligned the dots
-# live in a SIBLING label whose width is pinned to 3 monospace glyph slots, so
-# adding/removing visible dots never shifts the centered base text.
+# live in a SIBLING label whose custom_minimum_size is pinned to the pixel width
+# of 3 "." glyphs (measured from the font directly), so adding/removing visible
+# dots never shifts the centered base text — this does NOT rely on the font
+# being monospace (Jersey10, the current UI font, is not).
 
 # Drawn above the HUD (layer 2) and mobile controls (layer 3).
 const _LAYER := 100
@@ -96,6 +98,10 @@ func _init() -> void:
 	_dots = Label.new()
 	_dots.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_dots.add_theme_font_size_override("font_size", UITheme.TITLE_FONT_SIZE)
+	_dots.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	var dot_w := UITheme.font().get_string_size(
+		".".repeat(_MAX_DOTS), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.TITLE_FONT_SIZE).x
+	_dots.custom_minimum_size = Vector2(dot_w, 0)
 	headline.add_child(_dots)
 
 	# Defaults — set_title() strips the trailing "…" (the animated dots
@@ -135,14 +141,14 @@ func _process(delta: float) -> void:
 		_refresh_dots()
 
 
-# Rewrite the dots label so the first _dot_count slots are "." and the rest are
-# spaces. The Syne Mono UI font is monospace, so "." and " " occupy the same
-# glyph advance — the label's width (and thus the headline pair's centered
-# position) is invariant under this change.
+# Rewrite the dots label to show _dot_count dots, left-aligned inside a box whose
+# custom_minimum_size is pinned to the pixel width of _MAX_DOTS dots (set in
+# _init) — so the headline pair's centered position is invariant under this
+# change regardless of whether the UI font is monospace.
 func _refresh_dots() -> void:
 	if _dots == null:
 		return
-	_dots.text = ".".repeat(_dot_count) + " ".repeat(_MAX_DOTS - _dot_count)
+	_dots.text = ".".repeat(_dot_count)
 
 
 # Set the headline (defaults to "Loading stage…"; the HQ uses its own wording).

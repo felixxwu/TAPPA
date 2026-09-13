@@ -3,8 +3,8 @@
 **Source:** `scripts/car_stats.gd` (`CarStats` — the sheet as data: `ROWS`, `values`,
 `preview`, `row`/`label_for`/`format`/`direction`/`change`), `scripts/car_stats_panel.gd`
 (`CarStatsPanel` — the plain/comparison 2-column read-out), `scripts/skill_progress_panel.gd`
-(`SkillProgressPanel` — the between-stage skill-gate read-out, a sibling widget built the
-same way), `scripts/lifetime_stats.gd` (`LifetimeStats.progress_text` — the clamped
+(`SkillProgressPanel` — the between-stage skill-gate read-out; a sibling in WHERE it is
+shown, but built as a `CardCarousel` via `CardUI`, not as a stats grid), `scripts/lifetime_stats.gd` (`LifetimeStats.progress_text` — the clamped
 `"150/800"` fraction `SkillProgressPanel` shows per locked skill), `scripts/hub_shell.gd`
 (`_show_car_stats` — the CAR page's "Show stats" popup), `scripts/world.gd` (the
 between-stage `_confirm_pick` → `_show_skill_progress` → `_apply_pick` sequence).
@@ -108,13 +108,49 @@ world scene.
 
 ## `SkillProgressPanel` — the sheet's sibling, for skill gates
 
-`SkillProgressPanel.build(profile)` is a separate widget with the same shape (2-column
-`GridContainer`, one `Control` returned for the caller to mount) answering a different
-question: "how much closer did that stage just get me to my NEXT skill". One row per
-`SkillLibrary.all()` entry — locked shows `LifetimeStats.progress_text(current, threshold)`
-against the gating stat's name (`"Damage taken: 150/800"`), gate-met-but-unbought shows
-"Unlocked — buy in the shop" (green), owned shows "Owned" (green). See
-[skills.md](skills.md) for the gate mechanics `is_unlocked`/`unlock_of` this reads.
+`SkillProgressPanel.build(page, profile, before_lifetime)` is a separate widget answering a
+different question: "how much closer did THIS STAGE get me to my next skill" — not every
+skill, only the ones that moved. `before_lifetime` is a snapshot of `Save.KEY_LIFETIME`
+taken before the stage (`world.gd`'s `_stage_start_lifetime`, captured in
+`_on_stage_started`); a skill's card is built only when `current - before > 0` on its gate
+stat, and never for an already-owned skill — nothing left to progress.
+
+**It is a real `CardCarousel`, not a bespoke list.** Unlike `CarStatsPanel` (which returns a
+`Control` for the caller to mount), this one MOUNTS ITSELF into the caller's `MenuPage` via
+`CardUI.build_carousel(page, SkillProgressPanel.PAGE_MARGIN, UITheme.PANEL_PAD)` — the same
+margin/padding pair `world.gd`'s interstitial modal is opened with, which
+`build_carousel` has to be told or the strip claims more width than the page leaves visible
+— and returns the carousel so the caller can wire nav and confirm. Cards are appended with
+`CardUI.text_card`, so this screen has the identical card shape (icon slot keyed by the
+skill id, drop shadow, dimmed-unless-selected, horizontal side-scroll) as the run-pick panel
+and the hub pages. See [card-carousel.md](card-carousel.md).
+
+Per card: title is the skill name, subtitle is the state line — locked shows
+`LifetimeStats.progress_text(current, threshold)` against the gating stat's name
+(`"Damage taken: 150/800"`), gate-met-but-unbought shows "Unlocked — buy in the shop" — and
+the extra line is `"+<delta>"` in green for this stage's contribution. An all-quiet stage
+(nothing moved) shows a single "No skill progress / this stage" card (not disabled — there
+is nothing being refused, and a carousel whose only card is disabled has nowhere for the
+cursor to land) instead of an empty strip. See [skills.md](skills.md) for the gate mechanics
+`is_unlocked`/`unlock_of` this reads.
+
+**Opened with a transparent body box, unlike its sibling steps.** `world.gd`'s
+`_swap_interstitial` now takes an `alpha` param (default `1.0`, the opaque
+`panel_box` every stats-sheet step wants); `_show_skill_progress` passes `0.0` — the
+same transparent-box look `hub_shell.gd` gives its own carousel pages
+(`page_opts["alpha"] = 0.0` there). Left opaque, the cards rendered on top of a
+solid black rectangle that was visually indistinguishable from the cards' own black
+faces, reading as a plain block rather than a card strip floating over the replay.
+
+**Focusable, deliberately — this reversed an earlier decision.** The panel used to be
+documented as read-only and NOT focusable (every card a Label, the caller's dismiss control
+the one focusable thing on screen). A `CardCarousel` is one focusable unit by design, so
+`world.gd`'s `_show_skill_progress` now calls `MenuNav.attach(page, {"first": carousel})`:
+left/right scroll the cards, up/down reach Continue, and `carousel.confirmed` is connected
+to the same `_apply_pick` the Continue button fires so an accept press on the focused
+carousel is never a dead input. Nothing on the screen chooses anything — every path off it
+goes to the same place — so making it navigable costs no ambiguity and satisfies CLAUDE.md's
+menu-navigation rule more directly than the old "only one focusable thing" arrangement did.
 
 `LifetimeStats.progress_text(current, threshold)` CLAMPS `current` into `[0, threshold]` for
 display only — a lifetime counter keeps growing after its gate is met, and `"1240/800"`

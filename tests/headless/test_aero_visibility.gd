@@ -1,13 +1,55 @@
 extends GutTest
-# Aero MESHES on a REAL booted car: a spoiler/splitter is a mesh tagged `_aero` inside a
-# car body's glb. It used to be HIDDEN by default and revealed only when the aero PART was
-# fitted; that gate went with the parts model (todo/roguelike-pivot.md decision 24 — the
-# wing is "a plain per-car property" now, and the property is the authored geometry), so
-# what is left to test is the one thing car.gd still does with the tag: the body-material
-# pass must leave an aero mesh's own material alone.
-#
-# The deleted half (`_set_aero_visible` / `_apply_aero_visibility`, and the pure-traversal
-# file test_aero_visible_traversal.gd that covered it) went with the gate.
+# Aero-part visibility: spoilers/splitters (meshes tagged `_aero` inside a car
+# body) are hidden by default and revealed only when the "aero" run boost
+# (BoostLibrary.CATALOGUE["aero"]) is fitted — reinstated after a brief spell
+# (todo/roguelike-pivot.md decision 24) where the wing was unconditional on
+# every car. Tests the LOGIC (traversal + reveal-follows-fitted-state), never an
+# authored value; the aero boost's numeric effect is covered in
+# test_upgrade_library.gd.
+
+const Car = preload("res://scripts/car.gd")
+
+
+# Build a bare body node with two aero meshes (one nested) + one non-aero mesh.
+func _make_body() -> Node3D:
+	var body := Node3D.new()
+	var wing := MeshInstance3D.new()
+	wing.name = "wing_aero"
+	body.add_child(wing)
+	var door := MeshInstance3D.new()
+	door.name = "door_panel"
+	body.add_child(door)
+	var group := Node3D.new()
+	group.name = "front"
+	body.add_child(group)
+	var splitter := MeshInstance3D.new()
+	splitter.name = "splitter_aero"
+	group.add_child(splitter)
+	return body
+
+
+func test_set_aero_visible_hides_only_aero_meshes() -> void:
+	var body := _make_body()
+	add_child_autofree(body)
+	Car._set_aero_visible(body, false)
+	assert_false(body.get_node("wing_aero").visible, "top-level aero mesh hidden")
+	assert_false(body.get_node("front/splitter_aero").visible, "nested aero mesh hidden")
+	assert_true(body.get_node("door_panel").visible, "non-aero mesh untouched")
+
+
+func test_set_aero_visible_reveals_aero_meshes() -> void:
+	var body := _make_body()
+	add_child_autofree(body)
+	Car._set_aero_visible(body, false)
+	Car._set_aero_visible(body, true)
+	assert_true(body.get_node("wing_aero").visible, "top-level aero mesh revealed")
+	assert_true(body.get_node("front/splitter_aero").visible, "nested aero mesh revealed")
+
+
+func test_set_aero_visible_null_body_is_noop() -> void:
+	Car._set_aero_visible(null, true)  # must not crash
+	assert_true(true, "null body is a safe no-op")
+
 
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
@@ -25,21 +67,17 @@ func _first_model_car() -> Dictionary:
 	return {}
 
 
-func before_all() -> void:
+func before_each() -> void:
 	SceneHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
-	add_child(_scene)
+	add_child_autofree(_scene)
 
 
-func after_all() -> void:
-	_scene.free()
+func after_each() -> void:
 	Config.reset()
 
 
-# THE WING IS PART OF THE BODY. Nothing hides it any more, so revealing a model car's body
-# must reveal its aero meshes with it — the regression this guards is a re-introduced
-# default-hide (which is exactly how the old code started).
-func test_revealing_a_model_body_leaves_its_aero_meshes_visible() -> void:
+func test_body_reveal_hides_wing_by_default() -> void:
 	var found := _first_model_car()
 	if found.is_empty():
 		pass_test("no glb-body car in the catalogue; skipping")
@@ -48,16 +86,79 @@ func test_revealing_a_model_body_leaves_its_aero_meshes_visible() -> void:
 	var body := car.get_node(String(found.spec["model_node"]))
 	var stub := MeshInstance3D.new()
 	stub.name = "stub_aero"
-	autofree(stub)
 	body.add_child(stub)
 	car.apply_car(int(found.index))
-	assert_true(stub.visible, "an aero mesh is shown with the body it belongs to")
-	assert_true(stub.is_visible_in_tree(), "and is actually on screen")
-	# The debug-overlay round trip must not lose it either.
+	assert_false(stub.visible, "wing hidden by default when a body is revealed")
+
+
+func test_aero_visibility_follows_fitted_state() -> void:
+	var found := _first_model_car()
+	if found.is_empty():
+		pass_test("no glb-body car in the catalogue; skipping")
+		return
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var body := car.get_node(String(found.spec["model_node"]))
+	var stub := MeshInstance3D.new()
+	stub.name = "stub_aero"
+	body.add_child(stub)
+	car.apply_car(int(found.index))
+	var model_id := String(found.spec["id"])
+	car._apply_aero_visibility({
+		"model_id": model_id, "boosts": [{"id": "aero", "effect": {}}],
+	})
+	assert_true(stub.visible, "wing shown when the aero boost is fitted")
+	car._apply_aero_visibility({
+		"model_id": model_id, "boosts": [{"id": "grip", "effect": {}}],
+	})
+	assert_false(stub.visible, "wing hidden with a different boost fitted")
+	car._apply_aero_visibility({"model_id": model_id, "boosts": []})
+	assert_false(stub.visible, "wing hidden with no boosts fitted")
+
+
+func test_set_body_hidden_restore_keeps_wing_for_fitted_car() -> void:
+	var found := _first_model_car()
+	if found.is_empty():
+		pass_test("no glb-body car in the catalogue; skipping")
+		return
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var body := car.get_node(String(found.spec["model_node"]))
+	var stub := MeshInstance3D.new()
+	stub.name = "stub_aero"
+	body.add_child(stub)
+	car.apply_car(int(found.index))
+	car._apply_aero_visibility({
+		"model_id": String(found.spec["id"]), "boosts": [{"id": "aero", "effect": {}}],
+	})
+	assert_true(stub.visible, "precondition: wing shown")
 	car.set_body_hidden(true)
-	assert_false(stub.is_visible_in_tree(), "hidden with the whole body")
+	# set_body_hidden(true) hides the whole body (the wing's parent), not the wing's
+	# own `visible` flag, so check effective tree visibility rather than the local flag.
+	assert_false(stub.is_visible_in_tree(), "wing hidden while body is hidden")
 	car.set_body_hidden(false)
-	assert_true(stub.is_visible_in_tree(), "and back with it")
+	assert_true(stub.visible, "wing restored for a fitted car after un-hiding")
+
+
+func test_apply_car_clears_stale_aero_fitting() -> void:
+	# A car re-fielded via apply_car (unowned: free-roam / prop / opponent) must not
+	# inherit a wing left over from a prior apply_owned fielding of the same instance.
+	var found := _first_model_car()
+	if found.is_empty():
+		pass_test("no glb-body car in the catalogue; skipping")
+		return
+	var car: VehicleBody3D = _scene.get_node("Car")
+	var body := car.get_node(String(found.spec["model_node"]))
+	var stub := MeshInstance3D.new()
+	stub.name = "stub_aero"
+	body.add_child(stub)
+	car.apply_car(int(found.index))
+	car._apply_aero_visibility({
+		"model_id": String(found.spec["id"]), "boosts": [{"id": "aero", "effect": {}}],
+	})
+	assert_true(stub.visible, "precondition: wing shown")
+	car.apply_car(int(found.index))
+	car.set_body_hidden(true)
+	car.set_body_hidden(false)
+	assert_false(stub.visible, "re-fielding via apply_car drops the stale aero fitting")
 
 
 func test_aero_meshes_keep_their_own_material() -> void:
@@ -76,12 +177,10 @@ func test_aero_meshes_keep_their_own_material() -> void:
 	wing.name = "wing_aero"
 	wing.mesh = BoxMesh.new()  # needs a surface for a surface-0 material slot
 	wing.set_surface_override_material(0, sentinel)
-	autofree(wing)
 	body.add_child(wing)
 	var panel := MeshInstance3D.new()
 	panel.name = "spare_panel"  # non-aero: should be re-skinned
 	panel.mesh = BoxMesh.new()
-	autofree(panel)
 	body.add_child(panel)
 	# _apply_model_material walks find_children(..., owned=true) like the real glb
 	# import, so injected nodes need an owner to be seen (mirrors imported meshes).

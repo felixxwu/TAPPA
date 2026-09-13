@@ -40,8 +40,8 @@ func _ready() -> void:
 	add_child(sl)
 	var rally := {"name": "The Beast"}
 	var leaders := [
-		{"name": "Rival 3", "car_name": "Porker 930 Turbo", "time_ms": 75430},
-		{"name": "Rival 1", "car_name": "Swerve Serpent RT/10", "time_ms": 78120},
+		{"name": "Rival 3", "car_name": "Porker Turbo", "time_ms": 75430},
+		{"name": "Rival 1", "car_name": "Serpent RT/10", "time_ms": 78120},
 		{"name": "Rival 7", "car_name": "Fjord Focal ST", "time_ms": 80050},
 	]
 	sl._build_overlay(rally, 1, leaders)

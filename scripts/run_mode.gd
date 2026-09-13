@@ -50,7 +50,7 @@ func stages() -> Array:
 	return []
 
 
-# A short human label for the run ("Daily Challenge", "Rally Country"). UI only.
+# A short human label for the run ("Daily Challenge", "The Green"). UI only.
 func display_name() -> String:
 	return ""
 

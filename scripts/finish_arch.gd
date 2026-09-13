@@ -33,7 +33,6 @@ const ARCH_SHADER := preload("res://shaders/ps1_models_lit.gdshader")
 # --- Look ---------------------------------------------------------------------
 @export var arch_color: Color = Color(0.86, 0.30, 0.16)   # inflatable orange-red
 @export var seam_color: Color = Color(0.72, 0.23, 0.12)   # darker inflatable seams
-@export var sun_direction: Vector3 = Vector3(0.35, 0.85, 0.4)
 
 # --- Banners ------------------------------------------------------------------
 # The banners carry live EVENT info — rendered as Label3D text laid just proud of
@@ -380,14 +379,13 @@ func _quad(w: float, h: float) -> QuadMesh:
 
 # ---------------------------------------------------------------------------
 # Material — flat-lit PS1 shader so the arch catches the same fake sun as the car.
+# Lighting routes through GameConfig.apply_car_light — the shared weather-aware
+# helper — so the arch dims on a night/storm stage like every other prop (see
+# features/rendering.md → "Every new fake-lit material must route through here").
 # ---------------------------------------------------------------------------
 func _make_material(col: Color) -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
 	mat.shader = ARCH_SHADER
 	mat.set_shader_parameter("albedo_color", col)
-	mat.set_shader_parameter("light_amount", 0.85)
-	mat.set_shader_parameter("light_dir", sun_direction.normalized())
-	mat.set_shader_parameter("sun_color", Color(0.55, 0.52, 0.48))
-	mat.set_shader_parameter("sky_color", Color(0.55, 0.6, 0.7))
-	mat.set_shader_parameter("ground_color", Color(0.35, 0.3, 0.25))
+	Config.data.apply_car_light(mat)
 	return mat

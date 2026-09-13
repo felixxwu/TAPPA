@@ -4,14 +4,14 @@
 full-rect `Control` the shell builds pages under). Built on `MenuPage` + `MenuNav`
 ([menu-navigation.md](menu-navigation.md)).
 
-**`MAIN`, `REGION`, `CAR`, `SHOP` and `SKILLS` present their choices as a
+**`MAIN`, `REGION`, `CAR`, `CARS`, `SHOP` and `SKILLS` present their choices as a
 `CardCarousel`** ([card-carousel.md](card-carousel.md)) — a horizontal, side-scrolling
 card list — rather than a vertical row-of-buttons list. `CHALLENGE`,
 `STATS` and `SETTINGS` were left as plain rows (not in scope for that conversion; STATS
 in particular is pure read-out with nothing to put on a card). Where this doc below
 still describes a page's choices as "one row per X", read that as "one CARD per X" for
 the five converted pages — the underlying data/eligibility logic every section describes
-is unchanged, only the presentation moved.
+is unchanged, only the presentation moved. (`CARS` joined the converted set with it.)
 
 **Tests:** `tests/headless/test_hub_shell.gd`
 
@@ -23,7 +23,7 @@ stage 2b of the roguelike pivot; decision 9 chose a flat 2D UI outright. See
 ## Deliberately plain, and deliberately temporary
 
 Stage 3's bar was *the loop runs start to finish*, not *the loop looks good*, and that bar
-still holds — the shell is stacked pages of plain buttons, now nine of them rather than
+still holds — the shell is stacked pages of plain buttons, now ten of them rather than
 four (stage 6 added `SHOP` in place, on this same script, rather than
 spinning off a dedicated one; stage 7 added `SKILLS` and `STATS`; stage 9 added
 `CHALLENGE`; `SETTINGS` was added afterwards — see below, it was missing entirely for a
@@ -36,9 +36,9 @@ invest in its looks, and do not grow it past what a plain button list can hold**
 future screen its own script if it needs anything richer than a row-of-buttons page. The
 whole shell is still smaller than any single one of the nine hub scripts it replaced.
 
-## The nine pages
+## The ten pages
 
-`HubShell.View` — `TITLE`, `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `SKILLS`,
+`HubShell.View` — `TITLE`, `MAIN`, `REGION`, `CAR`, `CARS`, `SUMMARY`, `SHOP`, `SKILLS`,
 `STATS`, `CHALLENGE`, `SETTINGS`. One page is
 live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
 next, so a stale page can never sit under the tree still claiming input.
@@ -46,9 +46,10 @@ next, so a stale page can never sit under the tree still claiming input.
 | Page | Offers |
 | --- | --- |
 | `TITLE` | The cold-boot splash: "TAPPA" at `UITheme.px(72)` (a one-off literal, not `TITLE_FONT_SIZE` — see `UITheme.px`) centred in the middle of the screen, with Start (proceeds to `MAIN`) and Quit (`get_tree().quit()`, omitted on web — `_quit_applicable()`) as the page's bottom action row. Its body box is transparent (`alpha: 0.0` in `_show`'s `page_opts`, the same mechanism the carousel pages use — see below) so the logo stands alone with no black panel behind it, just the 3D `menu_showcase` through it like the carousel pages get. Skipped on a run-end return to the hub (see "The run summary is one-shot" below); it is the app's front door, not a page inserted between every screen and the one before it |
-| `MAIN` | **Resume run** (only when one is paused), New run, Shop (**disabled while the profile owns no car** — reads "Buy a car first"; every shop ladder is a permanent sink, so spending there before owning a car can leave a player unable to afford one, and money only comes from running stages), Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit. Money is a top-left readout added straight to the page (`_build_money_label`, mirroring `_build_version_label`'s bottom-right one) rather than a `body()` row, so it can't pull the carousel's cards off the exact vertical middle of the screen — the card box centres on its own content, and any row sharing that VBox with the carousel shifts it |
+| `MAIN` | **Resume run** (only when one is paused), New run, **Cars** (opens `CARS`, the full-roster browser, with `_cars_return_view = MAIN`), Shop (**disabled while the profile owns no car** — reads "Buy a car first"; every shop ladder is a permanent sink, so spending there before owning a car can leave a player unable to afford one, and money only comes from running stages), Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit. Money is a top-left readout added straight to the page (`_build_money_label`, mirroring `_build_version_label`'s bottom-right one) rather than a `body()` row, so it can't pull the carousel's cards off the exact vertical middle of the screen — the card box centres on its own content, and any row sharing that VBox with the carousel shifts it |
 | `REGION` | Every region in AUTHORED order, marked when cleared; locked ones shown "Locked" with their pay rate (not the gate they hide behind) |
-| `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
+| `CAR` | Every OWNED car only (selectable to start the run), plus a trailing "Buy new cars" card that opens `CARS` (`_cars_return_view = CAR`, so Back returns here with `_pending_region`/`_pending_challenge` intact rather than dropping to `MAIN`) |
+| `CARS` | The full roster — every `CarLibrary` car, sorted by cost. Owned ones render as a shown-but-disabled "Owned" card (same convention as a locked region); unowned ones keep the old `Buy <name> — <cost>` card (decision 28). Reached from `MAIN`'s "Cars" card or `CAR`'s "Buy new cars" card; Back returns to whichever opened it via `_cars_return_view`. A successful buy rebuilds in place — UNLESS it was opened via `CAR`, in which case it jumps straight to `CAR` instead (`_buy_car` branches on `_cars_return_view`): a purchase made mid run-select is done the moment it lands, so bouncing the player onward to `CAR` with the new car already listed saves the extra Back press a "stay and rebuild" would cost them |
 | `SUMMARY` | A `ConfirmPopup` announcement ("REGION CLEARED!" / "RUN OVER") fires as the page builds, then: stages cleared, money earned, per-stage times |
 | `SHOP` | ONE flat card list: every `BoostLibrary.CATALOGUE` id, shown as a 1-based current level (`Save.boost_level` storage is 0-based; the card displays `stored + 1`, so a never-upgraded boost reads "Lv 1"), what the boost actually does to the car at that level (`BoostLibrary.current_effect_text_for`, e.g. `-7%` — derived from the RESOLVED MAGNITUDE, never from how far the level pushed it, which reads as `+0%` on every un-upgraded boost; a `set`/`add` effect with no baseline to be a percentage of shows an absolute figure with its authored unit instead, e.g. `0.12 s`), and the price of the next level — no total rung count and no "how much the next level gives" shown — engine swap included, now that it is a boost — no sub-page hop |
 | `SKILLS` | Header line: equipped count AND money, sharing one row (not stacked) so the header's height stays constant and the carousel below doesn't jump. One card per `SkillLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([skills.md](skills.md)) |
@@ -66,7 +67,8 @@ identical options (per that script's own header comment) and neither route can d
 
 `_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`,
 `SKILLS`/`STATS`/`CHALLENGE → MAIN`, `FREEPLAY_SETUP → FREEPLAY_REGION →
-FREEPLAY_CAR → MAIN`, and `SETTINGS → MAIN` (via `_settings_back()`, which
+FREEPLAY_CAR → MAIN`, `CARS → _cars_return_view` (`MAIN` or `CAR`, whichever opened it),
+and `SETTINGS → MAIN` (via `_settings_back()`, which
 gives `SettingsMenu.go_back()` first refusal — its own sub-pages, and the Account page's
 sign-in sub-forms in turn, back out one level at a time before the shell backs out to
 `MAIN`; the same "first refusal" shape `pause_menu.gd::_on_settings_back` uses).
@@ -83,13 +85,15 @@ steps (the same split skills use): a bought layout becomes a free switch, since 
 hardware once and then run whichever you like. See [region-runs.md](region-runs.md) →
 *The meta tier*.
 
-Car BUYING lives on the `CAR` page rather than a `SHOP` sub-page, per decision 28's own
-wording ("the car select screen offers a Buy action for unowned cars") — one list serves
-both picking and buying, since a player looking at "which car" is already looking at
-exactly the list a shop would show. Boost levels are different:
-permanent purchases with no tie to picking a car for THIS run, so they hang off `MAIN`
-instead. See [region-runs.md](region-runs.md) → *The meta tier* for what each purchase
-actually does.
+Car BUYING lives on `CARS` rather than a `SHOP` sub-page, per decision 28's own wording
+("the car select screen offers a Buy action for unowned cars") — reached either from
+`MAIN` (browsing the roster on its own) or from `CAR`'s "Buy new cars" card (buying
+mid run-select, returning to `CAR` afterward so the picked region/challenge survives).
+`CAR` itself stays "which of my cars do I take" — owned cars only, no buy rows — since
+mixing a shop into the run-select list made every run start double as a shopping trip.
+Boost levels are different: permanent purchases with no tie to picking a car for THIS
+run, so they hang off `MAIN` instead. See [region-runs.md](region-runs.md) → *The meta
+tier* for what each purchase actually does.
 
 ## Navigation is a hard requirement, not a nicety
 
@@ -97,8 +101,8 @@ actually does.
 new menu to ship with a nav test in the same piece of work. Every page here goes through
 `MenuNav.attach`. On a still-row-based page, every body row is a `Button` rather than a
 `Label` **because `MenuNav` only walks focusable controls** — a label row would be
-invisible to the keyboard and silently break the contract. On the five carousel pages
-(`MAIN`/`REGION`/`CAR`/`SHOP`/`SKILLS`), the `CardCarousel` itself is the one focusable
+invisible to the keyboard and silently break the contract. On the six carousel pages
+(`MAIN`/`REGION`/`CAR`/`CARS`/`SHOP`/`SKILLS`), the `CardCarousel` itself is the one focusable
 unit MenuNav lands on instead — it sets its own `FOCUS_ALL`, so MenuNav needs no special
 case for it (see [card-carousel.md](card-carousel.md)). `test_hub_shell.gd` walks all nine
 views and asserts each has a `MenuNav` and at least one focusable control (a carousel
@@ -130,19 +134,28 @@ row.
 
 Three carousel pages off MAIN (`_build_freeplay_car` → `_build_freeplay_region` →
 `_build_freeplay_setup`): ANY catalogue car (unowned cars are lent, not bought), ANY
-region (the unlock gate is a progression rule for runs; a sandbox has none), and any
-combination of the `BoostLibrary` catalogue as toggle cards. `_build_freeplay_car`
+region (the unlock gate is a progression rule for runs; a sandbox has none), and on
+the setup page, any combination of the `BoostLibrary` catalogue as toggle cards PLUS
+any `EngineLibrary` engine as a single-select swap (a leading "Stock engine" card
+clears it) — unrestricted, unlike `RunSession`'s mid-run engine-swap pick
+(`features/engine-swap.md`), which only ever offers the next rung up from the car's
+current engine; free play protects no progression, so every catalogue engine is
+offerable. Boost cards use their plain `BoostLibrary` id; engine cards are
+distinguished in the same `ids` array by an `"engine:"` prefix (`_FP_ENGINE_ID_PREFIX`)
+so one `confirmed` handler can route a toggle vs. a select. `_build_freeplay_car`
 builds its cards the same way `_build_car` does (a catalogue-index `car_refs` array
 fed to `_sync_car_previews`), so free play's car page shows the same live
 `CarCardPreview` 3D viewports as the main CAR page instead of a flat icon. Start writes a plan to
 `FreePlay` (`scripts/free_play.gd`) and boots the run scene — whose session-less
 branch consumes it: `world.gd::_field_free_play_car` fields the chosen car with the
 chosen boosts (plus equipped skills) on the same effects funnel a run's car rides,
-and generation uses the plan's stage dict (`FreePlay.event()`). No clock, no run
-state, nothing persisted — the car is unbound, so damage never touches the save, and
-the finish panel's Next returns to the hub through the existing no-session branch.
-`RunSession.start`/`start_region`/`resume` clear the plan so a real run never
-inherits it.
+sets `swapped_engine` from `FreePlay.engine_swap_id()` when a swap was picked (the
+same `car.gd::apply_owned` → `_apply_engine_swap` integration a real run's
+`RunSession.engine_swap_id()` rides), and generation uses the plan's stage dict
+(`FreePlay.event()`). No clock, no run state, nothing persisted — the car is unbound,
+so damage never touches the save, and the finish panel's Next returns to the hub
+through the existing no-session branch. `RunSession.start`/`start_region`/`resume`
+clear the plan so a real run never inherits it.
 
 `DrivingContext.apply_stage_config` seats `FreePlay.event()` through
 `StageConfig.apply_event_config` when no session is active (mirroring the
@@ -210,6 +223,37 @@ it floats free of the card carousel/body box layout; hidden entirely when the
 version is unstamped/unparseable (`UpdateCheck.display_version` returns `""`).
 Passive chrome only — it is never made focusable and never joins `MenuNav`'s
 widget list, so it cannot perturb keyboard/gamepad nav order.
+
+### Carousel pages remember their highlighted card across a rebuild
+
+Every carousel page (`_show`, hub_shell.gd) tears down its `_page` and calls
+`CardUI.build_carousel` fresh each time it runs — so Back from a sub-page, or a purchase
+on CAR/CARS, throws away the old `CardCarousel` and its selection along with it. Without
+remembering that selection, the rebuilt carousel always defaults to index 0
+(`card_carousel.gd`'s `_selected := 0`), which read as the highlighted card randomly
+jumping back to the first one on MAIN, CAR and CARS alike.
+
+The fix is the same shape on all three pages: a `HubShell` instance var holds the
+highlighted card's IDENTITY, not its index (an index would point at the wrong card once
+the row order shifts — see below), updated on `CardCarousel.selection_changed` and read
+back after the next `add_card` loop to call `carousel.select(restored_index, false)`
+before wiring `confirmed`/other signals:
+
+- `_main_selected_card` (String) — MAIN's cards are a FIXED list of titles ("New run",
+  "Cars", "Shop", …), so the title text itself is the identity. Keyed by title rather than
+  index because "Resume run" only appears while a run is paused, which would otherwise
+  shift every card below it down one slot and misalign a remembered index.
+- `_car_selected_id` (int) — CAR's owned-car cards, keyed by each car's `instance_id`
+  (`Save.KEY_CARS` entry), because they're sorted by cost and a repair/upgrade can shift
+  that order.
+- `_cars_selected_model` (String) — CARS's catalogue cards, keyed by model id, because
+  buying a car moves it from the "Buy" list into "Owned" without changing its identity.
+
+All three fall back to index 0 (an unmatched `find`/loop leaves the restore a no-op) when
+the remembered identity isn't in the new build — a fresh `HubShell`, or a car that's been
+sold. See card-carousel.md's entrance-fade section for the follow-on fix this exposed: the
+entrance fade used to stagger strictly by index, so restoring a selection deep in a long
+list (CARS) meant waiting seconds to see the highlighted card actually appear.
 
 ### MAIN rebuilds when the cloud pull lands
 

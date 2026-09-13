@@ -13,7 +13,7 @@ extends GutTest
 
 const SYNTHETIC_META := {
 	"mass": 1200.0, "peak_torque": 300.0, "redline": 6000.0, "max_hp": 800.0,
-	"drive_mode": 0, "tire_compound": 0.9,
+	"shift_time": 0.3, "drive_mode": 0, "tire_compound": 0.9,
 	"weight_front": 0.5, "downforce_front": 0.0, "downforce_rear": 0.0,
 	"wheel_width_front": 0.2, "wheel_width_rear": 0.2,
 }
@@ -145,7 +145,7 @@ func test_preview_of_a_boost_pick_moves_the_stat_it_targets() -> void:
 	var meta := _synthetic_meta()
 	var before := CarStats.values({}, meta)
 	var after := CarStats.preview({}, meta, {"id": "fx", "effect": {"engine_power_mult": 1.5}})
-	assert_gt(after["torque"], before["torque"], "the previewed boost's stat moved")
+	assert_gt(after["power"], before["power"], "the previewed boost's stat moved")
 
 
 func test_preview_of_a_drivetrain_pick_moves_the_drive_row() -> void:

@@ -155,8 +155,6 @@ func _prototype(style: int, pitch: float, params: Dictionary) -> Dictionary:
 	# keys), while BarrierSection.style is typed as its own enum.
 	proto.style = style as BarrierSection.Style
 	proto.length = pitch
-	if params.has("sun_direction"):
-		proto.sun_direction = params["sun_direction"]
 	proto.build()  # explicit: never entered the tree, so _ready() has not run
 	var entry := {"parts": proto.parts(), "aabb": proto.local_aabb()}
 	proto.free()

@@ -59,12 +59,14 @@ forwarding to the label. `set_step()` **locks** the step line (`_step_locked`) s
 
 The headline's trailing ellipsis is **animated** (0 → 1 → 2 → 3 dots, looping on
 `LoadingScreen._DOT_STEP_SEC`) rather than a static "…". Because the headline is
-center-aligned, the dots live in a **sibling label** (`_dots`) whose text is always
-`_MAX_DOTS` characters wide (visible "." plus padding spaces); the Syne Mono UI font is
-monospace, so every slot is the same glyph advance, and the label's width — and thus the
-centered base text's position — never shifts as the visible dot count changes. `set_title()`
-strips a trailing "…" from the supplied text so the static character and the animated dots
-don't stack.
+center-aligned, the dots live in a **sibling label** (`_dots`) with a `custom_minimum_size`
+pinned (once, in `_init`) to the pixel width of `_MAX_DOTS` "." glyphs, measured directly
+from `UITheme.font()` — the label's text itself just holds the visible dots (0 to
+`_MAX_DOTS`, no padding). Sizing off a measured pixel width rather than a fixed character
+count means this holds even though the UI font (Jersey10) is **not** monospace — an earlier
+version relied on monospace character padding and visibly shifted the headline when the UI
+font changed away from the old (monospace) Syne Mono. `set_title()` strips a trailing "…"
+from the supplied text so the static character and the animated dots don't stack.
 
 ## The stage counter
 

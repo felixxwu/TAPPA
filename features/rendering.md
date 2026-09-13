@@ -399,12 +399,28 @@ is the one place that knows the rule: multiply RGB by the runtime
 a dim lake transparent rather than dark).
 
 Route any new fake-lit material through it. The existing users:
-`apply_car_light` (`ps1_models_lit.gdshader`), `apply_foliage_light`
-(`billboard_opaque.gdshader`, mirroring the car helper so trees and car can't
-drift apart), `LakeField.build` (`water.gdshader` colours + the sun-glint sparkle)
-and `SignField._material_for` (`albedo_color`). Terrain is the exception — it
-takes the same dimming through the vertex-colour bake instead. Full write-up in
-[weather.md](weather.md) → "Unshaded means nothing dims for free".
+`apply_car_light` (`ps1_models_lit.gdshader` — cars, rocks (`Foliage.rock_mesh`),
+barrier modules (`BarrierSection._mat`, see [barriers.md](barriers.md)), coins
+(`CoinField._material`, see [collectables.md](collectables.md)), and the finish
+arch (`FinishArch._make_material`, see [finish-arch.md](finish-arch.md))),
+`apply_foliage_light` (`billboard_opaque.gdshader`, mirroring the car helper so
+trees and car can't drift apart), `LakeField.build` (`water.gdshader` colours +
+the sun-glint sparkle) and `SignField._material_for` (`albedo_color`). Terrain
+is the exception — it takes the same dimming through the vertex-colour bake
+instead. Full write-up in [weather.md](weather.md) → "Unshaded means nothing
+dims for free".
+
+**Every new fake-lit material must route through here — a hardcoded literal is
+a bug, not a style choice.** `BarrierSection._mat()`, `CoinField._material()`
+and `FinishArch._make_material()` all shipped with an identical copy-pasted
+block hardcoding `sun_color`/`sky_color`/`ground_color`/`light_dir` as literal
+`Color`/`Vector3` values instead of calling `apply_car_light` — so barriers
+(crash barriers on the outside of corners), coins, and the finish arch never
+dimmed on a night or storm stage while every other prop around them did. All
+three now route through `apply_car_light` like rocks do; each also dropped a
+dead, never-fed `sun_direction` export/const (`BarrierField`/`world.gd` never
+actually wired one in). Before adding another hand-built `ShaderMaterial` on
+this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
 
 ## Environment
 

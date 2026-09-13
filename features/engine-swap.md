@@ -39,6 +39,19 @@ challenge's rating ceiling (the weight slot's free ballast parts are retired --
 see [upgrade-catalogue.md](upgrade-catalogue.md) -> the `weight` slot). With the
 detune slider's host gone it is read-path-only too.
 
+**Free play** offers a THIRD, unrestricted way to pick an engine swap:
+`scripts/hub_shell.gd`'s `FREEPLAY_SETUP` page lists every `EngineLibrary`
+engine as a single-select card (plus a "Stock engine" card to clear it) —
+unlike the mid-run pick above, it is not limited to the next rung up, since
+free play has no progression to protect (see
+[hub-shell.md](hub-shell.md) → "Free play — the session-less sandbox"). The
+choice rides `scripts/free_play.gd` (`FreePlay.begin`'s `engine_id` param,
+`FreePlay.engine_swap_id()`) and `scripts/world.gd`
+(`_field_free_play_car` writing `owned["swapped_engine"]`) — the exact same
+`swapped_engine` field and `apply_owned` → `_apply_engine_swap` fielding path
+a real run's swap rides, just fed from a session-less plan instead of
+`RunSession`.
+
 **Tests:** `tests/headless/test_engine_swap.gd` (the pure module),
 `tests/headless/test_region_run.gd` (the "between-stage pick: an engine swap"
 section — `_pool_engine_swap_ids`' next-most-powerful selection, `choose_engine_swap`,

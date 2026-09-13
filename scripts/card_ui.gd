@@ -53,6 +53,21 @@ static func card_icon(icon: String) -> Control:
 static func text_card(carousel: CardCarousel, title: String, subtitle: String,
 		disabled: bool, icon: String, extra := "", extra_variant := "") -> void:
 	var card := carousel.add_card(disabled)
+	fill_card(card, title, subtitle, icon, extra, extra_variant)
+
+
+# Same content as text_card, but written into an ALREADY-ADDED card rather than creating
+# one — the seam run_pick_panel.gd uses to first add a card as a "?" placeholder and
+# later overwrite it in place once the player reveals it (RunPickPanel.open_pick), so
+# the card keeps its position/focus in the carousel across the reveal.
+static func fill_card(card: CardCarousel.Card, title: String, subtitle: String,
+		icon: String, extra := "", extra_variant := "") -> void:
+	for child in card.visual.get_children():
+		card.visual.remove_child(child)
+		child.queue_free()
+	for child in card.info.get_children():
+		card.info.remove_child(child)
+		child.queue_free()
 	card.visual.add_child(card_icon(icon))
 	var title_label := UITheme.card_title(title)
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

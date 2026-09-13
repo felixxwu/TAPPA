@@ -1,9 +1,12 @@
 # Aero parts (spoilers & splitters)
 
-Spoilers and front splitters are the **visual** half of the `aero` upgrade slot
-([upgrade-catalogue.md](upgrade-catalogue.md)) — the downforce effect and
-aero-balance tuning ([tuning.md](tuning.md)) already exist; this is only the
-mesh reveal.
+Spoilers and front splitters are the **visual** half of the `aero` run boost
+(`BoostLibrary.CATALOGUE["aero"]`) — the downforce effect already exists via
+`UpgradeLibrary`; this is only the mesh reveal. This was briefly ungated
+(decision 24 of `todo/roguelike-pivot.md`, "the wing shows on every car
+regardless of boost") but that made the wing visible in the car picker and in
+stages even when the run hadn't picked the aero boost, which was undesired —
+the gate was reinstated so the wing again reflects the actually-fitted state.
 
 **Tests:** `tests/headless/test_aero_visibility.gd`
 
@@ -45,10 +48,10 @@ mesh reveal.
 - Whenever a glb body is revealed (`_apply_model_visibility`), wings are hidden
   by default — so free-roam, opponents, and un-upgraded owned cars show none.
 - `_apply_aero_visibility(owned)` re-reveals them on the active body iff
-  `UpgradeLibrary.aero_tuning_unlocked(owned)` (aero kit fitted **and** enabled).
-  It runs at the end of `apply_owned` and the live re-derive
-  (`_rederive_live_config`, used by the start-line Upgrades menu), so toggling
-  the aero part off in the upgrades menu removes the wing immediately.
+  `UpgradeLibrary.aero_fitted(owned)` (the "aero" boost is present in
+  `owned["boosts"]`). It runs at the end of `apply_owned` and the live re-derive
+  (`_rederive_live_config`, used by the start-line Upgrades menu), so the wing
+  stays in sync with `owned["boosts"]` any time the config is re-derived.
 - `set_body_hidden(false)` (debug hitbox overlay) re-applies the cached
   `_last_owned` so the wing returns after the overlay is toggled off.
 

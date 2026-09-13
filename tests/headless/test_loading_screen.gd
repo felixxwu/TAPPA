@@ -89,9 +89,10 @@ func test_set_step_locks_the_tip_cycle() -> void:
 # --- Animated ellipsis -------------------------------------------------------
 # The headline's trailing "…" is replaced by an animated 0 → 1 → 2 → 3 dot
 # field in a SIBLING label, so the center-aligned base text never shifts when
-# the dot count changes. The dots label is always _MAX_DOTS characters wide
-# (visible "." + padding spaces); the monospace UI font guarantees every slot
-# is the same advance, so the label's width is invariant.
+# the dot count changes. The dots label's TEXT just holds the visible dots
+# (no space padding); constant width instead comes from custom_minimum_size,
+# pinned in _init() to the pixel width of _MAX_DOTS dots — this holds
+# regardless of whether the UI font is monospace.
 
 func test_headline_strips_the_static_ellipsis() -> void:
 	# The "…" that used to terminate the headline is now animated dots in a
@@ -106,7 +107,7 @@ func test_dots_start_empty() -> void:
 	var screen := LoadingScreen.new()
 	add_child_autofree(screen)
 	assert_eq(screen._dot_count, 0, "starts at 0 visible dots")
-	assert_eq(screen._dots.text, "   ", "0 dots = three spaces (constant width)")
+	assert_eq(screen._dots.text, "", "0 dots = no visible text")
 
 
 func test_dots_cycle_zero_through_three() -> void:
@@ -114,29 +115,31 @@ func test_dots_cycle_zero_through_three() -> void:
 	add_child_autofree(screen)
 	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
 	assert_eq(screen._dot_count, 1, "one step -> 1 dot")
-	assert_eq(screen._dots.text, ".  ", "1 dot + 2 spaces")
+	assert_eq(screen._dots.text, ".", "1 dot")
 	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
 	assert_eq(screen._dot_count, 2, "two steps -> 2 dots")
-	assert_eq(screen._dots.text, ".. ", "2 dots + 1 space")
+	assert_eq(screen._dots.text, "..", "2 dots")
 	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
 	assert_eq(screen._dot_count, 3, "three steps -> 3 dots")
-	assert_eq(screen._dots.text, "...", "3 dots, no padding")
+	assert_eq(screen._dots.text, "...", "3 dots")
 	# Fourth step wraps back to 0.
 	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
 	assert_eq(screen._dot_count, 0, "wraps back to 0 after 3")
-	assert_eq(screen._dots.text, "   ", "back to three spaces")
+	assert_eq(screen._dots.text, "", "back to no visible text")
 
 
-# The whole point of the separate dots label: its text is ALWAYS _MAX_DOTS
-# characters, so the label width (and thus the centered headline pair's
-# position) never changes as dots cycle. A monospace font makes equal-length
-# strings equal-width.
-func test_dots_label_is_always_constant_width() -> void:
+# The whole point of the separate dots label: its custom_minimum_size is pinned to
+# the pixel width of _MAX_DOTS dots (set once in _init), so the label's LAID-OUT
+# width (and thus the centered headline pair's position) never changes as dots
+# cycle — even though the label's own text length varies from 0 to _MAX_DOTS.
+func test_dots_label_has_constant_minimum_width() -> void:
 	var screen := LoadingScreen.new()
 	add_child_autofree(screen)
+	var expected_w := screen._dots.custom_minimum_size.x
+	assert_true(expected_w > 0.0, "a fixed minimum width is pinned")
 	for _i in 5:
-		assert_eq(screen._dots.text.length(), LoadingScreen._MAX_DOTS,
-			"dots label is always _MAX_DOTS chars (constant width under monospace)")
+		assert_eq(screen._dots.custom_minimum_size.x, expected_w,
+			"dots label's minimum width never changes as the dot count cycles")
 		screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
 
 

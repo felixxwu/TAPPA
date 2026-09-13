@@ -99,6 +99,17 @@ func test_money_accumulates_and_survives_a_reload() -> void:
 	assert_eq(_save.money(), 150, "the balance round-trips through the save file")
 
 
+func test_debounce_timer_keeps_running_while_tree_paused() -> void:
+	# pause_menu.gd holds get_tree().paused = true for as long as the pause
+	# overlay is open. A debounce timer left at the default PROCESS_MODE_PAUSABLE
+	# would silently stop advancing for that whole window instead of ~1s, so a
+	# mutation made just before/during a paused menu would sit unsaved until the
+	# menu closes — a crash/force-quit in that window then loses it. The timer
+	# must therefore always process regardless of tree pause.
+	assert_eq(_save._debounce.process_mode, Node.PROCESS_MODE_ALWAYS,
+		"debounced save must still tick down while the game is paused")
+
+
 func test_banking_a_non_positive_amount_never_moves_the_balance() -> void:
 	var before: int = _save.money()
 	@warning_ignore("return_value_discarded")

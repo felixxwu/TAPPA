@@ -201,7 +201,12 @@ model the catalogue no longer carries, so callers keep using `is_empty()` as the
 
 ## API
 
-`Save.profile` (the loaded dict), `load_or_new()`, `save()` (debounced ~1s),
+`Save.profile` (the loaded dict), `load_or_new()`, `save()` (debounced ~1s —
+the debounce `Timer` runs with `process_mode = PROCESS_MODE_ALWAYS` so it still
+fires while `get_tree().paused` is true; `pause_menu.gd` holds the tree paused
+for as long as the pause overlay is open, and a pausable timer would strand a
+dirty-but-unwritten mutation for that whole window instead of ~1s — a
+force-quit/crash during that window would then lose it),
 `save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
 that mutate + autosave: `grant_car(model_id)`, `get_car(instance_id)`,
 `apply_damage(instance_id, amount)` (subtracts the lost HP, **clamped at 0** —

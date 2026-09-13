@@ -493,20 +493,38 @@ One card list now (`scripts/run_pick_panel.gd`), opened straight from `world.gd`
 
 1. **`RunPickPanel.open_continue(host, on_choice)`** — no pick to offer at all (a
    challenge stage, or this run's own final/failed stage): a single "Continue" card.
-2. **`RunPickPanel.open_pick(host, pick, offer_repair, on_choice)`** — up to three
-   cards: "Repair the car" (only when `RunSession.offer_repair()` is true), one
-   PRE-ROLLED handling upgrade, one PRE-ROLLED power upgrade. Each upgrade card is
-   drawn once with plain unseeded `randi()` from that category's pool
-   (`BoostLibrary.category_of`) the instant the page builds (a boost card showing its
-   purchased level 1-based as `"Lv %d" % (Save.boost_level(id) + 1)` — the same
-   convention `hub_shell.gd`'s shop cards use — a `"drivetrain:"` "Convert to X" card,
-   or an `"engine_swap:"` card titled `"<hp>HP <layout>"` with subtitle
-   `"+<hp_delta> HP"`), and disabled when that category has nothing to draw from —
-   same "locked rows stay visible, disabled" convention as everywhere else. Confirming
-   a card reports "repair" or the pre-rolled winner's id directly; there is no
-   separate category step and no slot-machine reveal — the player picks a direction
-   AND a specific option in one step (see *the pre-rolled candidates are NOT
-   persisted*, above).
+2. **`RunPickPanel.open_pick(host, pick, offer_repair, health_fraction, on_choice)`** —
+   up to three cards. "Repair the car" (only when `RunSession.offer_repair()` is true)
+   is subtitled with the REAL before/after health, `"%d%% -> 100%%"` off the passed-in
+   `health_fraction` — `choose_repair()` (run_session.gd) always applies a FULL repair,
+   so "100%" is exact, not a guess. One PRE-ROLLED handling upgrade, one PRE-ROLLED
+   power upgrade. Each upgrade card is drawn once with plain unseeded `randi()` from
+   that category's pool (`BoostLibrary.category_of`) the instant the page builds, but
+   shown as a face-down `"?"` card (`CardUI.fill_card`, generic icon) rather than its
+   real content — the winner is only revealed in place (title/level/icon, same shapes
+   as before: a boost's `"Lv %d, <effect>"` subtitle, the effect text being
+   `BoostLibrary.current_effect_text_for(id)` — the SAME figure hub_shell.gd's shop
+   cards show, so e.g. an aero kit's card states its added downforce rather than just
+   its name — a `"drivetrain:"` "Convert to X" card, or an `"engine_swap:"`
+   `"<hp>HP <layout>"` / `"+<hp_delta> HP"` card) only once the player actually
+   CONFIRMS it (taps it, or presses accept while it's centred) — the FIRST confirm on a
+   still-"?" card only reveals it and is swallowed, a SECOND confirm on the same
+   (now-revealed) card is what reports the choice. This is deliberately keyed off
+   `CardCarousel.confirmed`, not `selection_changed`: reveal must never happen from mere
+   navigation, or a card the player lands on BY DEFAULT (e.g. the handling slot when no
+   repair card is offered, centred from the very first frame with no input at all) would
+   read as already chosen the instant the page opens. See `RunPickPanel.open_pick`'s
+   `confirmed` handler — `pending[i]` gone (erased on reveal) is what tells it a second
+   confirm on that index should fall through to `on_choice` instead of revealing again.
+   This makes the per-card roll legible as a roll (you must look before you can pick)
+   instead of reading as two pre-decided options. A category with nothing to draw from
+   is disabled ("Better Handling"/"More Power") rather than hidden or made a `"?"` —
+   same "locked rows stay visible, disabled" convention as everywhere else, and a
+   disabled card's `confirmed` never fires at all (`CardCarousel`'s own convention), so
+   it never enters the reveal dance. There is no separate category step — the player
+   still picks a DIRECTION and a specific pre-rolled option, just with the option's
+   content hidden until confirmed once (see *the pre-rolled candidates are NOT
+   persisted*, above — revealing a card commits nothing either).
 
 Every step is wired through `MenuNav.attach` (`tests/headless/test_run_pick_panel.gd`
 is the nav test CLAUDE.md requires). Each is deliberately decoupled from
@@ -521,12 +539,14 @@ shows through the gaps between cards — each card keeps its own opaque backgrou
 ### Four screens now, not one
 
 Picking a card no longer applies it immediately. `world.gd`'s interstitial sequence
-now opens with `_show_stage_reward` (`"Earned: $%d"` off
-`RunSession.last_stage_money()`; when the stage collected any coins, a `"Coins: %d
-($%d)"` line off `RunSession.last_stage_coins()`/`last_stage_coin_money()`; when the
-stage carried a region-clear bonus (2026-09, stage 8 only), a `"Region cleared: $%d"`
-line off `RunSession.last_stage_clear_bonus()`; `"Total money: $%d"` off
-`Save.money()`; a single **Continue** — shown for EVERY
+now opens with `_show_stage_reward` (`"Total money: $%d"` shown FIRST holding the
+PRE-stage total, then one row per second — `"Stage complete: $%d"` off the base
+component of `RunSession.last_stage_money()`; when the stage collected any coins, a
+`"Coins: %d ($%d)"` line off `RunSession.last_stage_coins()`/`last_stage_coin_money()`;
+when the stage carried a region-clear bonus (2026-09, stage 8 only), a `"Region
+cleared: $%d"` line off `RunSession.last_stage_clear_bonus()` — each reveal bumping the
+"Total money" row up by that row's own amount, paced by
+`Config.data.stage_reward_reveal_step_s` (1s); a single **Continue** — shown for EVERY
 stage result, including a missed one, which pays $0 but should still tell the player
 plainly rather than jumping straight to a bare Continue) → the pick screen above →
 `_confirm_pick` (what the chosen option does to the car — a `CarStatsPanel`

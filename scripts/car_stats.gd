@@ -26,11 +26,13 @@ extends RefCounted
 # WHAT THIS SHEET CANNOT SHOW, and why a caller must not rely on it alone. An effect only
 # reaches a car's META if `UpgradeLibrary.EFFECTS` marks it `feeds_pw` or `feeds_grip`;
 # everything else is applied straight onto the car's LIVE GameConfig by `apply()` and never
-# touches the meta at all. Three of the seven boosts are in that second group —
-# `shift_time_set` (Quick-shift gearbox), `brake_force_mult` (Big brakes) and `drag_mult`
-# (Streamlined body) — and there is no row here for shift time, brake force or drag, so
-# taking any of those three moves NOTHING on this sheet. That is not a bug to fix by
-# widening `effective_meta`, whose narrow contract is a deliberate safeguard (its own header
+# touches the meta at all. Two of the seven boosts are in that second group —
+# `brake_force_mult` (Big brakes) and `drag_mult` (Streamlined body) — and there is no row
+# here for brake force or drag, so taking either of those moves NOTHING on this sheet. The
+# Shift time row reads `shift_time` straight off the base engine meta, so it shows the
+# car's stock gearbox figure but does NOT move for `shift_time_set` (Quick-shift gearbox),
+# since that boost never touches the meta either. That is not a bug to fix by widening
+# `effective_meta`, whose narrow contract is a deliberate safeguard (its own header
 # explains it); it is a limit a caller has to cover. `world.gd::_confirm_pick` therefore
 # prints the boost's own `BoostLibrary.current_effect_text_for` figure alongside the sheet,
 # so a confirmation is never a wall of unchanged numbers.
@@ -61,7 +63,7 @@ const NEUTRAL := 0
 # carries a colour.
 const ROWS: Array[Dictionary] = [
 	{"id": "power", "label": "Power", "unit": "hp", "decimals": 0, "direction": BETTER},
-	{"id": "torque", "label": "Torque", "unit": "Nm", "decimals": 0, "direction": BETTER},
+	{"id": "shift_time", "label": "Shift time", "unit": "s", "decimals": 2, "direction": WORSE},
 	{"id": "mass", "label": "Weight", "unit": "kg", "decimals": 0, "direction": WORSE},
 	{"id": "pw", "label": "Power/weight", "unit": "hp/t", "decimals": 0, "direction": BETTER},
 	{"id": "grip", "label": "Grip", "unit": "G", "decimals": 2, "direction": BETTER},
@@ -85,7 +87,7 @@ static func values(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 	var cfg: GameConfig = Config.data
 	return {
 		"power": CarLibrary.horsepower(eff),
-		"torque": float(eff.get("peak_torque", 0.0)),
+		"shift_time": float(eff.get("shift_time", 0.0)),
 		"mass": float(eff.get("mass", 0.0)),
 		"pw": CarLibrary.power_to_weight_hp_tonne(eff),
 		# Rated WITH downforce at the shared reference speed, which is why `label_for`

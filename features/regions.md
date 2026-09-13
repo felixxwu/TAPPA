@@ -34,8 +34,8 @@ plausible, and a dangling path ships as an untextured world. Guarded by
 A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
 height — applied to whichever rallies are tagged with it. It is **not a corner
 of the map**, even though it started life that way. The game ships five, in
-their authored progression `order` (see *Progression* below): `home` ("Rally
-Country", the original green forest/plain world), `greece` ("The Peninsula",
+their authored progression `order` (see *Progression* below): `home` ("The
+Green", the original green forest/plain world), `greece` ("The Dunes",
 arid), `taiga` ("The Taiga", the NW boreal corner: home's look with one much
 taller tree), `home_coast` ("The Lakes", that same forest look with the sea
 raised — its `water_level` is set MUCH higher than every other region's, so
@@ -104,7 +104,7 @@ baseline), and an optional `look_from` (see below). Ships today:
   with Greece's 30% of ordinary trees, both Alps conifers and the taiga spire,
   all of which are tuned against its current value; raising the profile would
   scale all four. See [trees.md](trees.md).
-- `greece` ("Greece", the arid look — the SW/S desert) — `sky_panorama`, `grass_texture`,
+- `greece` ("The Dunes", the arid look — the SW/S desert) — `sky_panorama`, `grass_texture`,
   `gravel_texture` (all `res://textures/*`), plus a Greek tree **split**:
   `tree_mix` = 70% `res://textures/tree-greece.webp` (the `region` sizing
   profile) + 30% `res://textures/tree.png` (the `home` profile), and
@@ -505,7 +505,7 @@ influenced how a stage drives rather than only how it looks. See
 
 ## Progression: linear region unlock
 
-The shipped `order`: `home` ("Rally Country", 0) → `greece` ("The Peninsula", 1)
+The shipped `order`: `home` ("The Green", 0) → `greece` ("The Dunes", 1)
 → `taiga` ("The Taiga", 2) → `home_coast` ("The Lakes", 3) → `snow` ("The Alps", 4).
 
 - **Regions unlock in AUTHORED order.** Each `REGIONS` entry carries an `order` field;

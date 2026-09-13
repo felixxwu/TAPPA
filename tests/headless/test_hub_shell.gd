@@ -266,11 +266,17 @@ func test_freeplay_flow_picks_car_region_and_boosts_into_a_plan() -> void:
 	assert_eq(_shell._view, HubShell.View.FREEPLAY_SETUP)
 
 	var boost_label := BoostLibrary.label_for(String(BoostLibrary.CATALOGUE.keys()[0]))
-	assert_false(_all_texts().contains("SELECTED"),
-		"setup: nothing is selected yet")
+	assert_true(_all_texts().contains("STOCK ENGINE"),
+		"setup: stock engine is offered and selected by default")
+	assert_false(_all_texts().contains("SELECTED — TAP TO REMOVE"),
+		"setup: no boost is selected yet")
 	assert_true(_press(boost_label), "toggling the boost selects it")
-	assert_true(_all_texts().contains("SELECTED"),
-		"the page rebuilds with the selection legible")
+	assert_true(_all_texts().contains("SELECTED — TAP TO REMOVE"),
+		"the page rebuilds with the boost's selection legible")
+
+	var swap_engine: Dictionary = EngineLibrary.all()[0]
+	var swap_name := String(swap_engine.get("name", ""))
+	assert_true(_press(swap_name), "picking an engine swaps it in")
 
 	assert_true(_press("Start free play"), "Start launches the sandbox drive")
 	assert_true(FreePlay.has_plan(), "the plan is written for the world to consume")
@@ -278,6 +284,8 @@ func test_freeplay_flow_picks_car_region_and_boosts_into_a_plan() -> void:
 		"the toggled boost rides the plan's effects list")
 	assert_false(FreePlay.event().is_empty(),
 		"the plan carries a real TrackGenParams-shaped stage from the region pool")
+	assert_eq(FreePlay.engine_swap_id(), String(swap_engine.get("id", "")),
+		"the picked engine rides the plan for world.gd to field")
 
 
 func test_backing_out_of_free_play_leaves_no_plan_behind() -> void:
@@ -390,6 +398,35 @@ func test_the_main_page_reaches_settings() -> void:
 	_shell._show(HubShell.View.MAIN)
 	assert_true(_press("Settings"), "the main page offers a Settings row")
 	assert_eq(_shell._view, HubShell.View.SETTINGS, "pressing it opens the settings page")
+
+
+# Regression: MAIN rebuilds its carousel from scratch every time _show(View.MAIN) runs
+# (e.g. Back from SKILLS), which used to reset the highlight to the first card
+# regardless of what the player had centred — same class of bug as CAR/CARS's own
+# selection reset, fixed by remembering the highlighted card's TITLE (_main_selected_card
+# in hub_shell.gd) rather than its index, since "Resume run" appearing/disappearing above
+# it would otherwise point a remembered index at the wrong row.
+func test_main_page_keeps_the_previously_selected_card_highlighted_after_a_round_trip() -> void:
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	var carousel := _carousel()
+	var skills_index := -1
+	for i in carousel.card_count():
+		if _card_text(carousel, i).contains("SKILLS"):
+			skills_index = i
+	assert_ne(skills_index, -1, "setup: Skills is a card on the MAIN page")
+	carousel.select(skills_index, false)
+
+	assert_true(_press("Skills"), "setup: Skills opens the Skills page")
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.SKILLS)
+	assert_true(_press("Back"), "setup: Skills offers a Back action")
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.MAIN)
+
+	carousel = _carousel()
+	assert_true(_card_text(carousel, carousel.selected_index()).contains("SKILLS"),
+		"MAIN keeps Skills highlighted after a round trip, not resetting to the first card")
 
 
 # Regression: SettingsMenu was originally mounted inside a SECOND TouchScrollContainer,
@@ -683,7 +720,7 @@ func test_a_car_less_profile_can_buy_from_the_cars_page() -> void:
 	assert_gt(_save.money(), 0, "setup: decision 28 seeds a starting purse")
 	_shell._show(HubShell.View.CARS)
 	await get_tree().process_frame
-	assert_true(_all_texts().contains("BUY"), "the cars page offers a Buy action, not a dead end")
+	assert_true(_all_texts().contains("$"), "the cars page offers a buy action, not a dead end")
 
 
 func test_car_page_offers_buy_new_cars_when_the_profile_owns_nothing() -> void:
@@ -731,6 +768,58 @@ func test_cars_from_main_returns_to_main_even_after_a_prior_run_select_visit() -
 	await get_tree().process_frame
 	assert_eq(_shell._view, HubShell.View.MAIN,
 		"Back from CARS opened via MAIN must return to MAIN")
+
+
+# A purchase made mid run-select (CARS opened via CAR's "Buy new cars" card) must land
+# the player straight back on CAR with the new car already in the owned list — they came
+# here to pick a car for THIS run, not to browse, so an extra Back press after a
+# completed buy would be pure friction.
+func test_buying_a_car_from_the_run_picker_returns_straight_to_car_select() -> void:
+	var cheapest := ""
+	var cheapest_cost := -1
+	for spec in CarLibrary.all():
+		var cost := int(spec.get("cost", 0))
+		if cheapest_cost < 0 or cost < cheapest_cost:
+			cheapest = String(spec.get("id", ""))
+			cheapest_cost = cost
+	_save.profile[_save.KEY_MONEY] = cheapest_cost
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	assert_true(_press("Buy new cars"), "setup: the trailing card is reachable")
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.CARS, "setup: now browsing the full roster")
+
+	assert_true(_press("$"), "setup: a buy row is on the page")
+	await get_tree().process_frame
+	assert_true(_save.owns_model(cheapest), "the cheapest car is now owned")
+	assert_eq(_shell._view, HubShell.View.CAR,
+		"buying mid run-select returns straight to CAR, not CARS")
+	assert_true(_all_texts().contains(
+		String((CarLibrary.by_id(cheapest) as Dictionary).get("name", cheapest)).to_upper()),
+		"the newly bought car is now offered on the run-select page")
+
+
+# Buying from MAIN's own "Cars" browse (not mid run-select) stays on CARS — a player
+# shopping for several cars in a row keeps browsing rather than getting bounced to MAIN
+# after each purchase.
+func test_buying_a_car_from_the_main_cars_browse_stays_on_cars() -> void:
+	var cheapest := ""
+	var cheapest_cost := -1
+	for spec in CarLibrary.all():
+		var cost := int(spec.get("cost", 0))
+		if cheapest_cost < 0 or cost < cheapest_cost:
+			cheapest = String(spec.get("id", ""))
+			cheapest_cost = cost
+	_save.profile[_save.KEY_MONEY] = cheapest_cost
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_true(_press("Cars"), "setup: MAIN offers a Cars card")
+	await get_tree().process_frame
+	assert_true(_press("$"), "setup: a buy row is on the page")
+	await get_tree().process_frame
+	assert_true(_save.owns_model(cheapest), "the cheapest car is now owned")
+	assert_eq(_shell._view, HubShell.View.CARS,
+		"buying from MAIN's browse rebuilds CARS in place")
 
 
 func test_cars_page_shows_owned_cars_as_owned_and_not_buyable() -> void:
@@ -848,7 +937,7 @@ func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
 	_save.profile[_save.KEY_MONEY] = cheapest_cost
 	_shell._show(HubShell.View.CARS)
 	await get_tree().process_frame
-	assert_true(_press("Buy"), "setup: a buy row is on the page")
+	assert_true(_press("$"), "setup: a buy row is on the page")
 	assert_true(_save.owns_model(cheapest), "the cheapest car is now owned")
 
 
@@ -876,7 +965,7 @@ func test_buying_a_car_keeps_a_different_previously_selected_car_highlighted() -
 	assert_ne(other_index, -1, "setup: the other car has a card on the page")
 	carousel.select(other_index, false)
 
-	assert_true(_press("Buy"), "setup: the cheapest row is bought instead")
+	assert_true(_press("$"), "setup: the cheapest row is bought instead")
 	await get_tree().process_frame
 
 	carousel = _carousel()

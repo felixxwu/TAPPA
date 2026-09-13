@@ -1551,6 +1551,11 @@ var _event_toe_at_finish: Array = []
 # the crossing for the same reason HP is — the post-finish coast down the runoff is not
 # part of the stage.
 var _event_distance_at_finish := 0.0
+# Lifetime-stats snapshot taken at stage start (_on_stage_started), so
+# SkillProgressPanel can show what THIS stage added to each skill's gate counter rather
+# than the lifetime total. Every counter in Save.KEY_LIFETIME only ever grows, so a plain
+# dict copy is enough to diff against later.
+var _stage_start_lifetime: Dictionary = {}
 
 
 # Build the HUD pacenote strip for this stage (features/hud.md) and wire the strip's
@@ -1978,12 +1983,20 @@ func _owned_with_run_effects(owned: Dictionary) -> Dictionary:
 # sandbox drive cannot write HP or boosts into the profile. Unbound by design: with
 # no instance_id, DamageModel never persists (its unbound branch), matching free
 # roam's nothing-at-stake contract.
+#
+# THE ENGINE SWAP rides the same seam a real run's does (see
+# _owned_with_run_effects's own comment on this): setting "swapped_engine" is the
+# whole integration, since car.gd::apply_owned already reads it. Omitted when
+# FreePlay.engine_swap_id() is "" (stock engine picked), same as a real run.
 func _field_free_play_car() -> void:
 	var spec: Dictionary = CarLibrary.all()[FreePlay.car_index()]
 	var owned := {
 		"model_id": String(spec.get("id", "")),
 		"boosts": FreePlay.boost_effects() + SkillLibrary.equipped_effects(Save.profile),
 	}
+	var swap_id := FreePlay.engine_swap_id()
+	if not swap_id.is_empty():
+		owned["swapped_engine"] = swap_id
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	_event_hp_at_finish = _event_start_hp
@@ -2063,6 +2076,7 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 
 
 func _on_stage_started() -> void:
+	_stage_start_lifetime = (Save.profile.get(Save.KEY_LIFETIME, {}) as Dictionary).duplicate()
 	if _replay_recorder != null:
 		_replay_recorder.start()
 
@@ -2139,19 +2153,55 @@ func _present_standings_overlay(_event_index: int) -> void:
 # after report_event_result set it.
 func _show_stage_reward() -> void:
 	var page := _swap_interstitial("Stage complete")
-	page.body().add_child(UITheme.label("Earned: $%d" % RunSession.last_stage_money()))
+
+	# RunSession.last_stage_money() is the FULL amount already banked into Save.money()
+	# (stage_money() folds coins + clear bonus into one total — see its own doc), so the
+	# pre-stage total is derived by subtracting it back off, and coins/clear bonus below
+	# are a breakdown of that same total, not additive extras.
 	var coins := RunSession.last_stage_coins()
-	if coins > 0:
-		page.body().add_child(UITheme.label(
-			"Coins: %d ($%d)" % [coins, RunSession.last_stage_coin_money()]))
+	var coin_money := RunSession.last_stage_coin_money()
 	var clear_bonus := RunSession.last_stage_clear_bonus()
+	var base_earned := RunSession.last_stage_money() - coin_money - clear_bonus
+
+	var running_total := Save.money() - RunSession.last_stage_money()
+	var total_label := UITheme.label("Total money: $%d" % running_total)
+	page.body().add_child(total_label)
+
+	var rows: Array[Dictionary] = [{"text": "Stage complete: $%d" % base_earned,
+		"amount": base_earned}]
+	if coins > 0:
+		rows.append({"text": "Coins: %d ($%d)" % [coins, coin_money], "amount": coin_money})
 	if clear_bonus > 0:
-		page.body().add_child(UITheme.label("Region cleared: $%d" % clear_bonus))
-	page.body().add_child(UITheme.label("Total money: $%d" % Save.money()))
+		rows.append({"text": "Region cleared: $%d" % clear_bonus, "amount": clear_bonus})
+
+	# Rows are added fully laid out but transparent from the start — never `visible =
+	# false`, which pulls a Control out of the VBox's layout and would re-flow the
+	# page's height (and the Continue button under it) each time a new row appears.
+	var row_labels: Array[Label] = []
+	for row in rows:
+		var l := UITheme.label(row["text"])
+		l.modulate.a = 0.0
+		page.body().add_child(l)
+		row_labels.append(l)
+
 	var carry_on := UITheme.button("Continue")
 	carry_on.pressed.connect(_open_pick_panel)
 	page.add_action(carry_on)
+	UITheme.enforce(page)
 	MenuNav.attach(page, {})
+
+	for i in row_labels.size():
+		await get_tree().create_timer(Config.data.stage_reward_reveal_step_s).timeout
+		# The player can advance past this screen (Continue -> _open_pick_panel, which
+		# tears this page down via _swap_interstitial) while a timer above is still
+		# pending — without this guard, the next line hits a freed `row_labels[i]`/
+		# `total_label` ("previously freed"), reported as a runtime error on the very
+		# next stage transition.
+		if not is_instance_valid(page):
+			return
+		row_labels[i].create_tween().tween_property(row_labels[i], "modulate:a", 1.0, 0.2)
+		running_total += rows[i]["amount"]
+		total_label.text = UITheme.caps("Total money: $%d" % running_total)
 
 
 # Open the pick screen. Split out of _show_stage_reward's Continue so it stays a simple
@@ -2170,8 +2220,9 @@ func _open_pick_panel() -> void:
 	if pick.is_empty():
 		_interstitial_page = RunPickPanel.open_continue(self, _on_interstitial_choice)
 	else:
+		var health := Save.car_health_fraction(RunSession.car_instance_id())
 		_interstitial_page = RunPickPanel.open_pick(self, pick, RunSession.offer_repair(),
-			_on_interstitial_choice)
+			health, _on_interstitial_choice)
 
 
 # A card was confirmed — "repair", a boost id, "drivetrain:<mode>", "engine_swap:<id>",
@@ -2209,9 +2260,9 @@ func _on_interstitial_choice(choice: String) -> void:
 # NOT a ConfirmPopup, which would be the obvious host for an Apply/Cancel pair: its body
 # is a plain autowrap Label and `set_body` was deleted (see confirm_popup.gd's own note),
 # so it cannot host a stats grid at all.
-func _swap_interstitial(title: String) -> MenuPage:
+func _swap_interstitial(title: String, alpha: float = 1.0) -> MenuPage:
 	_teardown_interstitial_page()
-	_interstitial_page = MenuPage.open_modal(self, {"margin": 24.0, "title": title})
+	_interstitial_page = MenuPage.open_modal(self, {"margin": 24.0, "title": title, "alpha": alpha})
 	return _interstitial_page
 
 
@@ -2262,6 +2313,7 @@ func _confirm_pick(choice: String) -> void:
 	var next_btn := UITheme.button("Next")
 	next_btn.pressed.connect(func() -> void: _show_skill_progress(choice))
 	page.add_action(next_btn)
+	UITheme.enforce(page)
 	MenuNav.attach(page, {})
 
 
@@ -2270,15 +2322,27 @@ func _confirm_pick(choice: String) -> void:
 # just driven regardless of what was picked afterwards, and a screen that appeared only
 # after an upgrade would read as a reward for upgrading rather than a progress report.
 func _show_skill_progress(choice: String) -> void:
-	var page := _swap_interstitial("Skill progress")
-	page.body().add_child(SkillProgressPanel.build(Save.profile))
+	# alpha 0 — a real CardCarousel wants to float over the replay behind it (the same
+	# transparent-body-box look hub_shell.gd gives its own carousel pages), not sit inside
+	# the opaque panel_box every stats-sheet step uses. With the box left opaque the cards
+	# rendered on top of a solid black rectangle indistinguishable from their own black
+	# faces — this is what fixes that, not another change to the cards themselves.
+	var page := _swap_interstitial("Skill progress", 0.0)
+	# A real CardCarousel, the same widget the pick panel and the hub pages use — so this
+	# screen reads as one of the game's card lists rather than a bespoke vertical list.
+	# It is the page's focusable body (left/right scroll the cards), with Continue below it.
+	var carousel := SkillProgressPanel.build(page, Save.profile, _stage_start_lifetime)
 	var carry_on := UITheme.button("Continue")
 	carry_on.pressed.connect(func() -> void: _apply_pick(choice))
 	page.add_action(carry_on)
+	# Confirming a card carries on, exactly like the button: nothing on this screen chooses
+	# anything, so an accept press on the focused carousel must not be a dead input.
+	carousel.confirmed.connect(func(_i: int) -> void: _apply_pick(choice))
+	UITheme.enforce(page)
 	# No `on_back`: this screen is a read-out with nothing to decide, and backing out of it
 	# would leave the pick applied-but-unadvanced. Continue is the only way on, exactly
 	# like the bare-Continue shape of the pick panel itself.
-	MenuNav.attach(page, {})
+	MenuNav.attach(page, {"first": carousel})
 
 
 # Step 3 — apply the confirmed choice, tear the overlay down, then either carry the run

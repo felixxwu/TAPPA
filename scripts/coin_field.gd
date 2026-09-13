@@ -24,10 +24,6 @@ extends Node3D
 signal coin_collected(index: int, total_collected: int)
 
 const COIN_SHADER := preload("res://shaders/ps1_models_lit.gdshader")
-# Flat, front-lit-ish default sun the coin material shades against — mirrors
-# BarrierSection's own default (nothing feeds world.gd's light direction into
-# roadside props today; see that script's `sun_direction`).
-const _SUN_DIR := Vector3(0.35, 0.85, 0.4)
 
 # How many coins were placed / collected this stage. Renderer-independent counts
 # (mirrors SignField.sign_count) so headless tests don't need to inspect children.
@@ -93,15 +89,14 @@ func build(layout: Array, terrain: TerrainManager, car: Node, params: Dictionary
 	_collected.resize(coin_count)  # PackedByteArray zero-fills new elements
 
 
+# Lighting routes through GameConfig.apply_car_light — the shared weather-aware
+# helper — so coins dim on a night/storm stage like every other prop (see
+# features/rendering.md → "Every new fake-lit material must route through here").
 func _material(col: Color) -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
 	mat.shader = COIN_SHADER
 	mat.set_shader_parameter("albedo_color", col)
-	mat.set_shader_parameter("light_amount", 0.9)
-	mat.set_shader_parameter("light_dir", _SUN_DIR.normalized())
-	mat.set_shader_parameter("sun_color", Color(0.55, 0.52, 0.48))
-	mat.set_shader_parameter("sky_color", Color(0.55, 0.6, 0.7))
-	mat.set_shader_parameter("ground_color", Color(0.35, 0.3, 0.25))
+	Config.data.apply_car_light(mat)
 	return mat
 
 

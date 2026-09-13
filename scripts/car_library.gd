@@ -113,7 +113,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Miot Roadster",  # parody of the Mazda MX-5. ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		# Durability ~8/10: bulletproof Skyactiv reliability + trivially cheap/easy to fix,
 		# but a ~1058 kg flyweight roadster with little crash mass — reliable, not a tank.
-		"id": "mx5", "country": "JP", "car_type": "roadster", "doors": 2, "max_hp": 1050.0, "reward_tier": 2, "cost": 7500,
+		"id": "mx5", "country": "JP", "car_type": "roadster", "doors": 2, "max_hp": 1050.0, "reward_tier": 2, "cost": 4000,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
 		"tire_compound": 0.9,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"brake_bias": 0.4,  # front share of foot-brake torque (50/50 RWD roadster)
@@ -200,7 +200,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/acty/wheel.png",
 	},
 	{
-		"name": "Swerve Surger R/T",  # parody of the '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
+		"name": "Surger R/T",  # parody of the '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
 		# Durability ~9/10: famously stout low-stressed 440 big-block, brutally simple to
 		# fix, huge aftermarket, and a ~1670 kg heavy-steel body that shrugs off abuse — a tank.
 		"id": "charger", "country": "US", "car_type": "muscle", "doors": 2, "max_hp": 1300.0, "reward_tier": 3, "cost": 15000,
@@ -223,7 +223,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/charger/wheel.png",
 	},
 	{
-		"name": "Porker 930 Turbo",  # parody of the Porsche 911 Turbo. 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
+		"name": "Porker Turbo",  # parody of the Porsche 911 Turbo. 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
 		# Durability ~4/10: rigid well-built shell, but a high-strung turbo flat-6 needing
 		# scheduled valve/turbo rebuilds and pricey specialist-only work — high-maintenance.
 		"id": "porsche911", "country": "DE", "car_type": "coupe", "doors": 2, "max_hp": 750.0, "reward_tier": 3, "cost": 14000,
@@ -244,7 +244,7 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/911/wheel.png",
 	},
 	{
-		"name": "Swerve Serpent RT/10",  # parody of the Dodge Viper RT/10. 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
+		"name": "Serpent RT/10",  # parody of the Dodge Viper RT/10. 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
 		# Durability ~6/10: deliberately simple low-revving V10 that's hard to kill and
 		# cheap to service, rigid tube frame + ~1520 kg mass, but crude build and composite
 		# panels that crack — a reliable brute held back by rawness.

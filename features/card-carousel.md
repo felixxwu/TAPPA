@@ -613,6 +613,14 @@ forward, and `hub_shell.gd`'s copies are pending consolidation onto it. Until th
 treat `CardUI` as the one to extend for a THIRD caller, and don't be surprised the two
 private/public copies look near-identical — that's the known migration debt, not a bug.
 
+That third caller now exists: `scripts/skill_progress_panel.gd` (`SkillProgressPanel`, the
+between-stage skill-gate read-out — [car-stats.md](car-stats.md)) builds through
+`CardUI.build_carousel`/`CardUI.text_card` too. It's the READ-ONLY-CONTENT case for this
+widget: no card chooses anything, but the carousel is still focusable and navigable and its
+`confirmed` is wired by the host to the same Continue action, because a card list the player
+can't move through doesn't read as a card list. Use it as the pattern if another
+informational screen wants the card look.
+
 ## Known open decisions (unilateral — flag for design review)
 
 - **Card width / aspect / dim alpha / snap duration** are all authored defaults in

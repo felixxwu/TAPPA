@@ -201,6 +201,11 @@ func _ready() -> void:
 	_debounce = Timer.new()
 	_debounce.one_shot = true
 	_debounce.wait_time = SAVE_DEBOUNCE_SEC
+	# Must keep ticking while get_tree().paused is true (pause_menu.gd holds the
+	# tree paused for as long as the pause overlay is open) — otherwise a
+	# mutation made just before/during a paused menu sits dirty-but-unwritten
+	# until the menu closes, and a force-quit/crash in that window loses it.
+	_debounce.process_mode = Node.PROCESS_MODE_ALWAYS
 	_debounce.timeout.connect(save_now)
 	add_child(_debounce)
 	load_or_new()

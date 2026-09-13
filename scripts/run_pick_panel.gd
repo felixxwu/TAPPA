@@ -17,17 +17,28 @@ extends RefCounted
 #
 #   open_continue — no pick to offer (a challenge stage, or this run's own final/failed
 #                   stage): one "Continue" card.
-#   open_pick     — ONE menu, up to three cards: "Repair the car" (omitted when
+#   open_pick     — takes the car's current health_fraction too (world.gd reads it via
+#                   Save.car_health_fraction(RunSession.car_instance_id())) so the repair
+#                   card can state the real before/after numbers rather than a vague
+#                   "restores health". ONE menu, up to three cards: "Repair the car" (omitted when
 #                   RunSession.offer_repair() is false — the undamaged-arrival reward),
 #                   one PRE-ROLLED handling upgrade, one PRE-ROLLED power upgrade. Each
-#                   upgrade card is drawn once with plain randi() from that category's
-#                   pool (BoostLibrary.category_of) the instant the page is built, and
-#                   disabled when the category has nothing to draw — so the player picks
-#                   a DIRECTION and a specific pre-rolled option in one step, never a
-#                   category followed by a separate random reveal. Nothing is committed
-#                   by drawing the cards: RunSession.choose_* only runs once a card is
-#                   confirmed, so an app restart before that simply reopens this menu and
-#                   redraws fresh candidates with no inconsistency.
+#                   upgrade is drawn once with plain randi() from that category's pool
+#                   (BoostLibrary.category_of) the instant the page is built, but shown
+#                   as a "?" card (CardUI.fill_card with a generic icon) until the
+#                   player actually CONFIRMS it (taps/accepts it) — the first confirm on
+#                   a pending card only reveals its real title/level/icon in place and
+#                   consumes that input, a second confirm is what actually picks it. This
+#                   is deliberate even for a card the player lands on by default (no
+#                   repair card ahead of it): reveal is NOT tied to mere selection/
+#                   navigation, so simply landing on a "?" card is never mistaken for
+#                   picking it blind — every winner is shown before it can be chosen. A
+#                   category with nothing to draw is disabled ("Better Handling"/"More
+#                   Power") rather than hidden or made a "?". Nothing is committed by
+#                   drawing OR revealing a card: RunSession.choose_* only runs once a
+#                   card is confirmed a SECOND time, so an app restart before that simply
+#                   reopens this menu and redraws (and re-hides) fresh candidates with no
+#                   inconsistency.
 #
 # `on_choice` reports a choice (the winner's id, or "repair") the instant it's made; this
 # class does not know what happens next — RunSession.choose_repair/choose_boost/
@@ -83,17 +94,27 @@ static func _entry_for_id(pick: Array, id: String) -> Dictionary:
 # One card list, up to three cards: repair (when offered), a pre-rolled handling
 # upgrade, a pre-rolled power upgrade. Each upgrade is drawn once with plain randi()
 # from its category's pool the instant this page is built — NOT seeded/persisted, since
-# nothing is committed until the card is confirmed (RunSession.choose_* hasn't run yet),
-# so an app restart before that simply reopens this menu and redraws fresh candidates
-# with no inconsistency. A category with nothing to draw from is disabled rather than
-# hidden, the same "locked rows stay visible" treatment every other disabled card in
-# this project gets.
-static func open_pick(host: Node, pick: Array, offer_repair: bool, on_choice: Callable) -> MenuPage:
+# nothing is committed until the card is confirmed a SECOND time (RunSession.choose_*
+# hasn't run yet), so an app restart before that simply reopens this menu and redraws
+# fresh candidates with no inconsistency. A category with nothing to draw from is
+# disabled rather than hidden, the same "locked rows stay visible" treatment every other
+# disabled card in this project gets.
+static func open_pick(host: Node, pick: Array, offer_repair: bool, health_fraction: float,
+		on_choice: Callable) -> MenuPage:
 	var page := _open(host, "Stage complete")
 	var carousel := CardUI.build_carousel(page, 24.0, UITheme.PANEL_PAD)
 	var payloads: Array[String] = []
+	# index -> the pre-rolled entry still hidden behind a "?" card. Populated below for
+	# every drawn handling/power winner, then drained by the confirmed handler below the
+	# FIRST time the player confirms that card — see the block comment above open_pick
+	# for why the roll itself still happens now, up front, rather than at reveal time.
+	var pending: Dictionary = {}
 	if offer_repair:
-		CardUI.text_card(carousel, "Repair the car", "", false, "repair")
+		# choose_repair() always applies a FULL repair (Save.apply_full_field_repair_to,
+		# run_session.gd), so the subtitle can state the exact before/after health
+		# rather than a vague "restores health" — "62% -> 100%" is what actually changes.
+		var pct := int(round(health_fraction * 100.0))
+		CardUI.text_card(carousel, "Repair the car", "%d%% -> 100%%" % pct, false, "repair")
 		payloads.append("repair")
 	for category in ["handling", "power"]:
 		var ids := _ids_for_category(pick, category)
@@ -104,9 +125,23 @@ static func open_pick(host: Node, pick: Array, offer_repair: bool, on_choice: Ca
 			payloads.append("")
 		else:
 			var winner_id := ids[randi() % ids.size()]
-			_add_pick_card(carousel, _entry_for_id(pick, winner_id))
+			var card := carousel.add_card(false)
+			CardUI.fill_card(card, "?", "", "generic")
+			pending[payloads.size()] = {"card": card, "entry": _entry_for_id(pick, winner_id)}
 			payloads.append(winner_id)
-	carousel.confirmed.connect(func(i: int) -> void: on_choice.call(payloads[i]))
+	# The FIRST confirm (tap, or ui_accept) on a still-pending card only reveals its real
+	# content in place and swallows that input — it does NOT report a choice. A second
+	# confirm on the same (now-revealed) card falls through to on_choice. This keeps a
+	# default-landed "?" card (no repair card ahead of it, so it's centred from the very
+	# first frame) from being pick-able before the player has actually seen what it is:
+	# reveal only ever happens in response to a genuine confirm, never to mere selection.
+	carousel.confirmed.connect(func(i: int) -> void:
+		if pending.has(i):
+			var info: Dictionary = pending[i]
+			_add_pick_card(carousel, info["entry"], info["card"])
+			pending.erase(i)
+			return
+		on_choice.call(payloads[i]))
 	MenuNav.attach(page, {})
 	return page
 
@@ -115,12 +150,20 @@ static func open_pick(host: Node, pick: Array, offer_repair: bool, on_choice: Ca
 # ({"id","effect"}), a drivetrain conversion ({"id","drivetrain_mode"}), or an engine
 # swap ({"id","engine_id","hp","hp_delta"}). Factored out so open_pick renders exactly
 # the same card shapes the rest of the game already uses for these ids.
-static func _add_pick_card(carousel: CardCarousel, entry: Dictionary) -> void:
+#
+# `into`, when given, is an already-added "?" placeholder card (see open_pick's reveal)
+# to overwrite in place via CardUI.fill_card instead of appending a brand-new card via
+# CardUI.text_card — keeps the reveal from shifting card positions/focus in the carousel.
+static func _add_pick_card(carousel: CardCarousel, entry: Dictionary,
+		into: CardCarousel.Card = null) -> void:
 	var id := String(entry.get("id", ""))
 	if id.begins_with("drivetrain:"):
 		var mode_int := int(entry.get("drivetrain_mode", 0))
-		CardUI.text_card(carousel, "Convert to %s" % Drivetrain.DriveMode.keys()[mode_int],
-			"", false, "drivetrain")
+		var title := "Convert to %s" % Drivetrain.DriveMode.keys()[mode_int]
+		if into != null:
+			CardUI.fill_card(into, title, "", "drivetrain")
+		else:
+			CardUI.text_card(carousel, title, "", false, "drivetrain")
 	elif id.begins_with("engine_swap:"):
 		# RunSession._with_engine_swap_display already stamped "hp"/"hp_delta" onto this
 		# entry — title reads e.g. "250HP V6" (hp + the donor's layout label,
@@ -133,7 +176,10 @@ static func _add_pick_card(carousel: CardCarousel, entry: Dictionary) -> void:
 		var hp_delta := int(round(float(entry.get("hp_delta", 0.0))))
 		var layout := EngineSwap.layout_label(engine_id)
 		var card_title := "%dHP %s" % [hp, layout] if not layout.is_empty() else "%dHP" % hp
-		CardUI.text_card(carousel, card_title, "+%d HP" % hp_delta, false, "engine_swap")
+		if into != null:
+			CardUI.fill_card(into, card_title, "+%d HP" % hp_delta, "engine_swap")
+		else:
+			CardUI.text_card(carousel, card_title, "+%d HP" % hp_delta, false, "engine_swap")
 	else:
 		# icons/cards/ is already keyed by boost/skill id — the same catalogue the hub's
 		# shop cards draw from — so the boost id doubles as the icon name; an id with no
@@ -144,7 +190,14 @@ static func _add_pick_card(carousel: CardCarousel, entry: Dictionary) -> void:
 		# boost is level 0 in Save but reads "Lv 1", the level whose magnitude it
 		# actually draws), so the player sees which purchased tier they're about to
 		# land on, not just the boost's name.
-		CardUI.text_card(carousel, BoostLibrary.label_for(id),
-			"Lv %d" % (Save.boost_level(id) + 1), false, id)
-
-
+		#
+		# Same "Lv %d, <effect>" shape hub_shell.gd's shop cards use
+		# (current_effect_text_for — the increase the level the player would land on
+		# ALREADY gives, not the ladder's whole range) so a boost's card says what it
+		# actually changes (e.g. "Lv 2, +0.3G downforce") instead of just its name.
+		var title := BoostLibrary.label_for(id)
+		var subtitle := "Lv %d, %s" % [Save.boost_level(id) + 1, BoostLibrary.current_effect_text_for(id)]
+		if into != null:
+			CardUI.fill_card(into, title, subtitle, id)
+		else:
+			CardUI.text_card(carousel, title, subtitle, false, id)

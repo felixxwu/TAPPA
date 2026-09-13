@@ -75,6 +75,9 @@ var _pending_challenge := ""
 var _fp_car := 0
 var _fp_region := ""
 var _fp_boosts: Array[String] = []
+# The EngineLibrary id the setup page has swapped in, or "" for the car's stock
+# engine — same reset/lifetime rules as _fp_boosts above.
+var _fp_engine_id := ""
 
 # Where CARS (the full-roster browser) returns to on Back: MAIN when opened from the
 # main menu's "Cars" card, or CAR when opened via that page's "Buy new cars" card mid
@@ -90,6 +93,14 @@ var _cars_return_view: int = View.MAIN
 # to the first card.
 var _car_selected_id := -1
 var _cars_selected_model := ""
+
+# Same idea as _car_selected_id/_cars_selected_model, for MAIN: which card to
+# re-highlight next time _build_main runs (e.g. Back from REGION/CARS/SHOP/etc, which
+# all rebuild MAIN from scratch via _show). Keyed by the card's title text rather than
+# an id/index — MAIN's row of cards is fixed but its LENGTH isn't ("Resume run" only
+# shows while a run is paused), so an index would point at the wrong card once that
+# shifts everything below it.
+var _main_selected_card := ""
 
 # The shared SettingsMenu instance while the SETTINGS page is live — null otherwise. Held so
 # _back()/the page's own Back button can give it first refusal (its own sub-pages back out
@@ -402,7 +413,14 @@ func _build_title() -> void:
 	# Quit is omitted where it would do nothing (see _quit_applicable).
 	if _quit_applicable():
 		var quit := UITheme.button("Quit")
-		quit.pressed.connect(func() -> void: get_tree().quit())
+		# get_tree().quit() called from script does NOT raise
+		# NOTIFICATION_WM_CLOSE_REQUEST (that's the OS window-close signal only),
+		# so save_manager.gd's _notification() handler never runs — flush
+		# explicitly first or a save still sitting in the 1s debounce window
+		# (a just-bought car, a just-updated run) is lost on exit.
+		quit.pressed.connect(func() -> void:
+			Save.flush_and_sync()
+			get_tree().quit())
 		buttons.add_child(quit)
 
 
@@ -425,6 +443,10 @@ func _enter_game() -> void:
 func _build_main() -> void:
 	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
+	# Parallel to actions: each card's title text, so the selection restored below (and
+	# tracked afterward) survives "Resume run" appearing/disappearing above everything
+	# else — see _main_selected_card's comment.
+	var titles: Array[String] = []
 
 	# A paused run is offered FIRST, because the alternative — starting anything else —
 	# discards it and burns its attempt (decision 48). Putting Resume anywhere but the top
@@ -434,13 +456,16 @@ func _build_main() -> void:
 	if not resumable.is_empty():
 		CardUI.text_card(carousel, "Resume run", "", false, "resume_run")
 		actions.append(_resume_run)
+		titles.append("Resume run")
 
 	CardUI.text_card(carousel, "New run", "", false, "new_run")
 	actions.append(func() -> void: _show(View.REGION))
+	titles.append("New run")
 	CardUI.text_card(carousel, "Cars", "", false, "car")
 	actions.append(func() -> void:
 		_cars_return_view = View.MAIN
 		_show(View.CARS))
+	titles.append("Cars")
 	# The shop is GATED on owning a car. Every shop ladder is a permanent money sink, so a
 	# carless player who spends down there can end up unable to afford ANY car — a dead end
 	# with no way back, since money only comes from running stages and a run needs a car.
@@ -451,20 +476,36 @@ func _build_main() -> void:
 	actions.append(func() -> void:
 		if has_car:
 			_show(View.SHOP))
+	titles.append("Shop")
 	CardUI.text_card(carousel, "Skills", "", false, "skills")
 	actions.append(func() -> void: _show(View.SKILLS))
+	titles.append("Skills")
 	# Rally challenge sits AFTER Shop/Skills: it is a secondary way to start a run, so
 	# it follows the primary one (New run) and its menu-alternatives, rather than
 	# splitting them.
 	CardUI.text_card(carousel, "Rally challenge", "", false, "rally_challenge")
 	actions.append(func() -> void: _show(View.CHALLENGE))
+	titles.append("Rally challenge")
 	CardUI.text_card(carousel, "Free play", "", false, "car")
 	actions.append(func() -> void: _show(View.FREEPLAY_CAR))
+	titles.append("Free play")
 	CardUI.text_card(carousel, "Lifetime stats", "", false, "stats")
 	actions.append(func() -> void: _show(View.STATS))
+	titles.append("Lifetime stats")
 	CardUI.text_card(carousel, "Settings", "", false, "settings")
 	actions.append(func() -> void: _show(View.SETTINGS))
+	titles.append("Settings")
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
+
+	# Re-highlight whichever card was selected before the last rebuild (Back from
+	# REGION/CARS/SHOP/SKILLS/CHALLENGE/FREEPLAY/STATS/SETTINGS all rebuild MAIN from
+	# scratch via _show). Falls back to index 0 when the title isn't in this build, e.g.
+	# the shell's very first MAIN or "Resume run" having dropped out.
+	var restore_index := titles.find(_main_selected_card)
+	if restore_index != -1:
+		carousel.select(restore_index, false)
+	carousel.selection_changed.connect(func(i: int): _main_selected_card = titles[i])
+	_main_selected_card = titles[carousel.selected_index()]
 
 	# MAIN is a root (see _back's comment on REGION/CAR/etc.), so there is no Esc/gamepad-B
 	# route back to the splash — this button is the only way back to TITLE once a player has
@@ -647,6 +688,7 @@ func _build_car() -> void:
 		var card := carousel.add_card(over_cap)
 		card.visual.add_child(CardUI.card_icon("car"))
 		card.info.add_child(UITheme.card_title(label))
+		card.info.add_child(UITheme.label(_car_summary_stats(entry, spec), "dim"))
 		if over_cap:
 			card.info.add_child(UITheme.label("Over the rating cap", "dim"))
 			actions.append(null)
@@ -749,11 +791,12 @@ func _build_cars() -> void:
 		var card := carousel.add_card(owned or cant_afford)
 		card.visual.add_child(CardUI.card_icon("car"))
 		card.info.add_child(UITheme.card_title(car_name))
+		card.info.add_child(UITheme.label(_car_summary_stats({}, spec), "dim"))
 		if owned:
 			card.info.add_child(UITheme.label("Owned", "dim"))
 			actions.append(null)
 		else:
-			card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
+			card.info.add_child(UITheme.label("$%d" % cost, "gold"))
 			# Appended in a branch rather than a ternary: a null/String ternary is an
 			# INCOMPATIBLE_TERNARY warning, which the strict-error tests treat as a failure.
 			var action = null
@@ -786,6 +829,14 @@ func _build_cars() -> void:
 		_show_car_stats(car_refs[carousel.selected_index()]))
 
 	_action("Back", func() -> void: _show(_cars_return_view))
+
+
+# A one-line "power / weight" summary for a car list card, so a car list never makes the
+# player open the full spec sheet just to compare the two stats they actually shop on.
+# `owned` is {} for an unowned catalogue car, same convention as CarStats.values elsewhere.
+func _car_summary_stats(owned: Dictionary, meta: Dictionary) -> String:
+	var stats := CarStats.values(owned, meta)
+	return "%s · %s" % [CarStats.format("power", stats["power"]), CarStats.format("mass", stats["mass"])]
 
 
 # The plain (no comparison) car spec sheet, over the car page. `ref` is a `car_refs` entry:
@@ -871,9 +922,13 @@ func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
 
 func _buy_car(model_id: String) -> void:
 	if Save.buy_car(model_id):
-		# Rebuild in place: the bought car now belongs in the "Owned" list above and must
-		# drop out of the buy list below it.
-		_show(View.CARS)
+		# Buying mid run-select (CARS opened via CAR's "Buy new cars" card) jumps straight
+		# back to CAR with the new car now in the owned list — the player came here to pick
+		# a car for THIS run, not to browse, so landing them back on the roster after a buy
+		# they already completed would just be an extra Back press every time. Buying from
+		# MAIN's own "Cars" browse, by contrast, rebuilds CARS in place so a player buying
+		# several cars in a row keeps browsing rather than getting bounced to MAIN each time.
+		_show(View.CAR if _cars_return_view == View.CAR else View.CARS)
 
 
 # Start the region run — but a PAUSED run of either kind is a single slot (decision 27),
@@ -959,6 +1014,7 @@ func _build_freeplay_car() -> void:
 	_fp_car = 0
 	_fp_region = ""
 	_fp_boosts = []
+	_fp_engine_id = ""
 	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: the CarLibrary INDEX each card represents — the
 	# same shape _build_car's car_refs uses, so _sync_car_previews (built for that page)
@@ -1010,11 +1066,17 @@ func _build_freeplay_region() -> void:
 	_action("Back", func() -> void: _show(View.FREEPLAY_CAR))
 
 
+# Prefix on an engine card's id, distinguishing it from a plain BoostLibrary id in
+# the shared `ids` array below — engine cards SELECT (radio, one at a time) rather
+# than TOGGLE like boost cards, so the confirm handler branches on this prefix.
+const _FP_ENGINE_ID_PREFIX := "engine:"
+
+
 func _build_freeplay_setup() -> void:
 	var carousel := CardUI.build_carousel(_page)
-	# Parallel to the carousel's cards: the boost id each card toggles. Confirming a
-	# card TOGGLES it (any combination, order-free) and rebuilds the page so every
-	# card's Selected/Not state is legible; Start is what actually launches.
+	# Parallel to the carousel's cards: a boost id (toggled — any combination) or an
+	# "engine:<id>" pseudo-id (selected — at most one). Confirming either rebuilds the
+	# page so every card's state is legible; Start is what actually launches.
 	var ids: Array[String] = []
 	for id in BoostLibrary.CATALOGUE:
 		var boost_id := String(id)
@@ -1022,11 +1084,33 @@ func _build_freeplay_setup() -> void:
 			"Selected — tap to remove" if _fp_boosts.has(boost_id) else "Tap to add",
 			false, boost_id)
 		ids.append(boost_id)
+
+	# Every catalogue engine, unrestricted (free play protects no progression, same
+	# reasoning as the region/car pages) — plus a leading "Stock engine" card that
+	# clears the swap. Confirming an engine card SELECTS it rather than toggling, so
+	# at most one is ever swapped in.
+	CardUI.text_card(carousel, "Stock engine",
+		"Selected" if _fp_engine_id.is_empty() else "Tap to select",
+		false, "stock_engine")
+	ids.append("")
+	for engine in EngineLibrary.all():
+		var engine_id := String(engine.get("id", ""))
+		if engine_id.is_empty():
+			continue
+		var pseudo_id := _FP_ENGINE_ID_PREFIX + engine_id
+		CardUI.text_card(carousel, String(engine.get("name", engine_id)),
+			"Selected" if _fp_engine_id == engine_id else "Tap to select",
+			false, pseudo_id)
+		ids.append(pseudo_id)
+
 	carousel.confirmed.connect(func(i: int) -> void:
-		if _fp_boosts.has(ids[i]):
-			_fp_boosts.erase(ids[i])
+		var id := ids[i]
+		if id == "" or id.begins_with(_FP_ENGINE_ID_PREFIX):
+			_fp_engine_id = id.trim_prefix(_FP_ENGINE_ID_PREFIX)
+		elif _fp_boosts.has(id):
+			_fp_boosts.erase(id)
 		else:
-			_fp_boosts.append(ids[i])
+			_fp_boosts.append(id)
 		_show(View.FREEPLAY_SETUP))
 	_action("Start free play", func() -> void: _start_free_play())
 	_action("Back", func() -> void: _show(View.FREEPLAY_REGION))
@@ -1044,7 +1128,7 @@ func _start_free_play() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(Time.get_unix_time_from_system())
 	var event: Dictionary = stages[rng.randi_range(0, stages.size() - 1)]
-	FreePlay.begin(_fp_car, event, _fp_boosts)
+	FreePlay.begin(_fp_car, event, _fp_boosts, _fp_engine_id)
 	Scenes.change_to(get_tree(), Scenes.MAIN)
 
 

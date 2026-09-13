@@ -37,8 +37,6 @@ const STYLE_NAMES := {
 @export var style: Style = Style.ARMCO
 @export var length: float = 2.0          # module length along Z (the stitch pitch)
 @export var joint_overlap: float = 0.06  # how far continuous parts overrun each end
-@export var sun_direction: Vector3 = Vector3(0.35, 0.85, 0.4)
-
 # --- Palettes (per style, kept together so the whole look is tweakable here) ---
 const _STEEL := Color(0.60, 0.63, 0.62)
 const _STEEL_DARK := Color(0.33, 0.35, 0.35)
@@ -267,16 +265,16 @@ func _add_cyl(radius: float, height: float, pos: Vector3, col: Color,
 
 
 # Flat-lit PS1 material, cached per colour so repeated parts share one material.
+# Lighting is routed through GameConfig.apply_car_light — the same helper every
+# other fake-lit prop (rocks, cars) uses — so barriers dim with weather/night
+# instead of always rendering at hardcoded full daylight (see features/rendering.md
+# → "weather_lit — the shared rule for fake lighting").
 func _mat(col: Color) -> ShaderMaterial:
 	if _mats.has(col):
 		return _mats[col]
 	var mat := ShaderMaterial.new()
 	mat.shader = BARRIER_SHADER
 	mat.set_shader_parameter("albedo_color", col)
-	mat.set_shader_parameter("light_amount", 0.85)
-	mat.set_shader_parameter("light_dir", sun_direction.normalized())
-	mat.set_shader_parameter("sun_color", Color(0.55, 0.52, 0.48))
-	mat.set_shader_parameter("sky_color", Color(0.55, 0.6, 0.7))
-	mat.set_shader_parameter("ground_color", Color(0.35, 0.3, 0.25))
+	Config.data.apply_car_light(mat)
 	_mats[col] = mat
 	return mat

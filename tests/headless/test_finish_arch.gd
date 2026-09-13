@@ -35,6 +35,21 @@ func test_builds_a_solid_arch_body() -> void:
 	assert_true(body.material_override is ShaderMaterial, "arch uses a ShaderMaterial")
 
 
+func test_material_lighting_routes_through_apply_car_light() -> void:
+	# Regression: FinishArch._make_material() used to hardcode sun_color/sky_color/
+	# ground_color/light_dir as literal constants, so the arch never dimmed on a
+	# night/storm stage (see features/rendering.md → "Every new fake-lit material
+	# must route through here"). It must instead match whatever
+	# GameConfig.apply_car_light pushes onto any other prop.
+	var cfg: GameConfig = Config.data
+	var body := _arch.get_node_or_null("ArchBody") as MeshInstance3D
+	var mat: ShaderMaterial = body.material_override
+	assert_eq(mat.get_shader_parameter("sun_color"), cfg.weather_lit(cfg.sun_color))
+	assert_eq(mat.get_shader_parameter("sky_color"), cfg.weather_lit(cfg.sky_color))
+	assert_eq(mat.get_shader_parameter("ground_color"), cfg.ground_color)
+	assert_eq(mat.get_shader_parameter("light_dir"), cfg.sun_direction)
+
+
 func test_arch_spans_its_opening_and_height() -> void:
 	var body := _arch.get_node("ArchBody") as MeshInstance3D
 	var aabb := body.mesh.get_aabb()

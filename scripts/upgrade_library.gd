@@ -217,6 +217,18 @@ static func active_effects(owned_car: Dictionary) -> Array:
 	return owned_car.get("boosts", [])
 
 
+# Whether the "aero" boost (BoostLibrary.CATALOGUE["aero"], the rear wing) is
+# currently active on `owned_car` — i.e. present by id in its `boosts` list. Car.gd
+# reads this to decide whether to reveal the wing mesh: unlike every other boost
+# (a pure GameConfig number), aero also drives a visual, so it needs its own fitted
+# check rather than a value car.gd would have to re-derive from active_effects itself.
+static func aero_fitted(owned_car: Dictionary) -> bool:
+	for entry in active_effects(owned_car):
+		if String((entry as Dictionary).get("id", "")) == "aero":
+			return true
+	return false
+
+
 # --- Effect application (pipeline step 2) ------------------------------------
 
 # Apply every ACTIVE effect on top of the CarLibrary baseline that apply_car

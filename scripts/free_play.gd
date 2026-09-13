@@ -31,6 +31,12 @@ extends RefCounted
 #                                 HubShell._start_free_play — so the player can
 #                                 re-enter free play for a fresh roll)
 #   "boost_ids"  Array[String]  — the BoostLibrary ids to apply for the drive
+#   "engine_id"  String         — an EngineLibrary id to swap onto the car, or ""
+#                                 for its stock engine. Unrestricted, like the car
+#                                 and region picks: free play has no progression to
+#                                 protect, so every catalogue engine is offerable —
+#                                 unlike RunSession's mid-run pick, which only ever
+#                                 offers the next rung up from the car's current one.
 
 
 static var _plan := {}
@@ -40,11 +46,12 @@ static var _plan := {}
 # at each boost's CURRENT purchased level (BoostLibrary.effect_for — the same
 # magnitude a real run's pick would roll), so free play previews what the player
 # actually has rather than a hypothetical maxed build.
-static func begin(car_index: int, event: Dictionary, boost_ids: Array) -> void:
+static func begin(car_index: int, event: Dictionary, boost_ids: Array, engine_id: String = "") -> void:
 	_plan = {
 		"car_index": car_index,
 		"event": event.duplicate(true),
 		"boost_ids": boost_ids.duplicate(),
+		"engine_id": engine_id,
 	}
 
 
@@ -74,6 +81,15 @@ static func boost_effects() -> Array:
 			continue
 		out.append({"id": String(id), "effect": effect})
 	return out
+
+
+
+# The EngineLibrary id the plan swaps onto the car, or "" for its stock engine —
+# world.gd::_field_free_play_car merges this onto the synthetic owned dict's
+# "swapped_engine" field the same way RunSession.engine_swap_id() feeds a real
+# run's car.gd::_apply_engine_swap (features/engine-swap.md).
+static func engine_swap_id() -> String:
+	return String(_plan.get("engine_id", "")) if has_plan() else ""
 
 
 static func clear() -> void:

@@ -1255,6 +1255,10 @@ func has_nitrous() -> bool:
 ## leaderboards (stage result + overall) fill in (Standings._reveal_standings). See
 ## podium_reveal_step for why the two screens keep separate fields.
 @export var standings_reveal_step := 0.3
+## Seconds between each earnings row appearing on the stage-complete screen
+## (world.gd._show_stage_reward) — the running "Total money" row updates by that row's
+## amount each time a new one is revealed.
+@export var stage_reward_reveal_step_s := 1.0
 ## Inner / outer radius (m) of the tree+bush scatter ring around each focal area.
 @export var podium_scenery_ring_inner := 14.0
 @export var podium_scenery_ring_outer := 34.0
@@ -4059,7 +4063,7 @@ func spectator_params() -> Dictionary:
 ## SkillLibrary's "lucky_coins" ("more coins spawn per stage") is NOT wired yet
 ## (decision 51 wires skill effects after this stage) — nothing reads this through a
 ## skill today.
-@export_range(0, 12) var coins_per_stage := 4
+@export_range(0, 12) var coins_per_stage := 8
 ## How far a coin's centre can land from the road centerline, as a fraction of the
 ## half-width (track_width / 2). 0 pins every coin to the centerline; 1.0 allows a
 ## coin right at the visible road edge. Coins are ALWAYS within the carriageway
@@ -4084,7 +4088,7 @@ func spectator_params() -> Dictionary:
 ## that stage's money. Scaled by run_money_region_multiplier like every other term in
 ## stage_money (2026-09 — was flat everywhere), so this is the region-0 rate; a coin
 ## on a deeper region is worth this times that region's own multiplier.
-@export_range(0.0, 500.0) var coin_money := 150.0
+@export_range(0.0, 500.0) var coin_money := 75.0
 ## Visual radius (m) of the coin disc mesh. Bumped up from the original off-track
 ## coin's size so a floating, spinning coin reads clearly at speed.
 @export_range(0.05, 1.5) var coin_visual_radius_m := 0.5
@@ -4166,7 +4170,8 @@ func spectator_params() -> Dictionary:
 ## Anti-lag bang audio gain for the turbo boost — fixed, does not scale with level.
 @export_range(-1.0, 1.0, 0.001) var run_boost_turbo_antilag_bang_gain := 0.0
 ## Belt-whine audio gain for the supercharger boost — fixed, does not scale with level.
-@export_range(-1.0, 1.0, 0.001) var run_boost_supercharger_whine_gain := 0.02
+## Matches the pre-pivot persistent supercharger part's authored gain (0.06).
+@export_range(-1.0, 1.0, 0.001) var run_boost_supercharger_whine_gain := 0.06
 
 
 @export_group("Roguelike Meta Shop")

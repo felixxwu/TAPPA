@@ -80,7 +80,7 @@ const REGIONS: Array[Dictionary] = [
 	# other look field inherits the scene (main.tscn / hq_environment) + GameConfig
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
-		"id": "home", "order": 0, "name": "Rally Country",
+		"id": "home", "order": 0, "name": "The Green",
 		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
 		"water_level": -12.0,
 		# size_scale 1.25 uniform — the home forest 25% bigger than the profile's
@@ -135,7 +135,7 @@ const REGIONS: Array[Dictionary] = [
 			 "size_scale": Vector2(0.90, 3.0)},   # 6.75 x 22.5 m, ratio 0.30
 		],
 	},
-	# "The Peninsula" — the Greek-INSPIRED arid region. It is the one region whose
+	# "The Dunes" — the Greek-INSPIRED arid region. It is the one region whose
 	# old working name named a real-world country outright; every sibling is a
 	# geographic feature ("The Lakes", "The Taiga", "The Alps"), so this one now is
 	# too. The id ("greece") and the -greece texture filenames stay: ids key saved
@@ -152,7 +152,7 @@ const REGIONS: Array[Dictionary] = [
 	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
-		"id": "greece", "order": 1, "name": "The Peninsula",
+		"id": "greece", "order": 1, "name": "The Dunes",
 		"water_level": -12.0,
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",

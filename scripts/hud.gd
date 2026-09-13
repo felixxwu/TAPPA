@@ -248,6 +248,7 @@ func _ready() -> void:
 	_next_button.name = "NextButton"
 	_next_button.pressed.connect(func() -> void: finish_next_pressed.emit())
 	$StageCompletePanel/Box.add_child(_next_button)
+	UITheme.enforce(_stage_complete_panel)  # the house-wide button shadow (rule 5)
 	MenuNav.attach(_stage_complete_panel, {"first": _next_button})
 
 
