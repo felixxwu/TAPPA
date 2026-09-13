@@ -296,7 +296,7 @@ func test_backing_out_of_free_play_leaves_no_plan_behind() -> void:
 # failure this guards.
 func test_every_page_is_keyboard_navigable() -> void:
 	for view in [HubShell.View.TITLE, HubShell.View.MAIN, HubShell.View.REGION,
-			HubShell.View.CAR, HubShell.View.SUMMARY, HubShell.View.SHOP,
+			HubShell.View.CAR, HubShell.View.CARS, HubShell.View.SUMMARY, HubShell.View.SHOP,
 			HubShell.View.SKILLS, HubShell.View.STATS, HubShell.View.CHALLENGE,
 			HubShell.View.SETTINGS, HubShell.View.FREEPLAY_CAR,
 			HubShell.View.FREEPLAY_REGION, HubShell.View.FREEPLAY_SETUP]:
@@ -323,7 +323,7 @@ func test_every_page_is_keyboard_navigable() -> void:
 # specifically must let the world show in its own empty space, not just around its edges).
 func test_carousel_pages_have_a_transparent_body_and_others_stay_opaque() -> void:
 	for view in [HubShell.View.TITLE, HubShell.View.MAIN, HubShell.View.REGION,
-			HubShell.View.CAR, HubShell.View.SHOP, HubShell.View.SKILLS,
+			HubShell.View.CAR, HubShell.View.CARS, HubShell.View.SHOP, HubShell.View.SKILLS,
 			HubShell.View.FREEPLAY_CAR, HubShell.View.FREEPLAY_REGION,
 			HubShell.View.FREEPLAY_SETUP]:
 		_shell._show(view)
@@ -644,9 +644,6 @@ func test_owning_a_car_re_enables_the_shop() -> void:
 		"once a car is owned the shop row is confirmable again")
 
 
-# Decision 28: the CAR page is no longer a dead end for a car-less profile — a fresh
-# profile is seeded with money (GameConfig.run_starting_money) and the page lists
-# unowned cars with a Buy action.
 # "Show stats" is a PAGE ACTION (features/card-carousel.md / hub_shell.gd's own header
 # on _action("Show stats", ...)) rather than a per-card icon, precisely so it stays
 # reachable on keyboard/gamepad without a pointer — CLAUDE.md's menu-navigation rule.
@@ -661,7 +658,7 @@ func test_car_page_offers_a_focusable_show_stats_action() -> void:
 
 
 func test_show_stats_opens_a_spec_sheet_modal_over_the_highlighted_card() -> void:
-	_shell._show(HubShell.View.CAR)
+	_shell._show(HubShell.View.CARS)
 	await get_tree().process_frame
 	assert_true(_press("Show stats"), "setup: the action is reachable via the screen graph")
 	await get_tree().process_frame
@@ -677,13 +674,73 @@ func test_show_stats_opens_a_spec_sheet_modal_over_the_highlighted_card() -> voi
 	(back_buttons[0] as Button).pressed.emit()
 
 
-func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
+# Decision 28: the car roster is never a dead end for a car-less profile — a fresh
+# profile is seeded with money (GameConfig.run_starting_money) and CARS lists unowned
+# cars with a Buy action, reachable from CAR's own "Buy new cars" trailing card.
+func test_a_car_less_profile_can_buy_from_the_cars_page() -> void:
 	assert_true((_save.profile.get(_save.KEY_CARS, []) as Array).is_empty(),
 		"setup: nothing owned yet")
 	assert_gt(_save.money(), 0, "setup: decision 28 seeds a starting purse")
+	_shell._show(HubShell.View.CARS)
+	await get_tree().process_frame
+	assert_true(_all_texts().contains("BUY"), "the cars page offers a Buy action, not a dead end")
+
+
+func test_car_page_offers_buy_new_cars_when_the_profile_owns_nothing() -> void:
 	_shell._show(HubShell.View.CAR)
 	await get_tree().process_frame
-	assert_true(_all_texts().contains("BUY"), "the car page offers a Buy action, not a dead end")
+	assert_true(_all_texts().contains("BUY NEW CARS"),
+		"a car-less run-select page still offers a way to buy a car")
+
+
+func test_buy_new_cars_opens_the_full_roster_and_back_returns_to_car_select() -> void:
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	assert_true(_press("Buy new cars"), "setup: the trailing card is reachable")
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.CARS, "Buy new cars opens the full roster")
+	for spec in CarLibrary.all():
+		var name := String(spec.get("name", spec.get("id", "")))
+		assert_true(_all_texts().contains(name.to_upper()),
+			"CARS lists every catalogue car, owned or not: %s" % name)
+
+	assert_true(_press("Back"), "setup: CARS offers a Back action")
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.CAR,
+		"Back from CARS returns to CAR when opened via Buy new cars, not to MAIN")
+
+
+# Regression guard for the return-view plumbing: opening CARS straight from MAIN's own
+# "Cars" card must send Back to MAIN, not wherever a PRIOR CARS visit (e.g. via CAR's
+# Buy new cars) last pointed it — _cars_return_view must be set on every entry, not just
+# read.
+func test_cars_from_main_returns_to_main_even_after_a_prior_run_select_visit() -> void:
+	_shell._show(HubShell.View.CAR)
+	await get_tree().process_frame
+	assert_true(_press("Buy new cars"))
+	await get_tree().process_frame
+	assert_true(_press("Back"))  # back to CAR, leaving _cars_return_view stale at CAR
+	await get_tree().process_frame
+
+	_shell._show(HubShell.View.MAIN)
+	await get_tree().process_frame
+	assert_true(_press("Cars"), "MAIN offers a Cars card")
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.CARS)
+	assert_true(_press("Back"))
+	await get_tree().process_frame
+	assert_eq(_shell._view, HubShell.View.MAIN,
+		"Back from CARS opened via MAIN must return to MAIN")
+
+
+func test_cars_page_shows_owned_cars_as_owned_and_not_buyable() -> void:
+	var owned_id := String((CarLibrary.all()[0] as Dictionary).get("id", ""))
+	_save.grant_car(owned_id)
+	_shell._show(HubShell.View.CARS)
+	await get_tree().process_frame
+	assert_true(_all_texts().contains("OWNED"), "an owned car is labeled Owned")
+	assert_false(_confirmable_texts().contains("OWNED"),
+		"an owned car's card is shown but not confirmable — there's nothing left to do with it")
 
 
 # A live CarCardPreview is a real SubViewport + a full car.tscn instantiation — three
@@ -695,7 +752,7 @@ func test_a_car_less_profile_can_buy_from_the_car_page() -> void:
 # and a card that stays in the window across a selection move keeps its SAME preview node
 # untouched rather than being rebuilt.
 func test_car_page_shows_a_live_preview_on_every_visible_card() -> void:
-	_shell._show(HubShell.View.CAR)
+	_shell._show(HubShell.View.CARS)
 	await get_tree().process_frame
 	var carousel := _carousel()
 	assert_not_null(carousel)
@@ -736,7 +793,7 @@ func test_car_page_shows_a_live_preview_on_every_visible_card() -> void:
 # time the selection moved. A car's preview must be CACHED by car ref and simply
 # reparented back when that car re-enters view, not rebuilt.
 func test_a_previously_seen_car_reuses_its_cached_preview_without_respawning() -> void:
-	_shell._show(HubShell.View.CAR)
+	_shell._show(HubShell.View.CARS)
 	await get_tree().process_frame
 	var carousel := _carousel()
 	assert_not_null(carousel)
@@ -789,17 +846,49 @@ func test_buying_a_car_from_the_shop_moves_it_into_the_owned_list() -> void:
 			cheapest = String(spec.get("id", ""))
 			cheapest_cost = cost
 	_save.profile[_save.KEY_MONEY] = cheapest_cost
-	_shell._show(HubShell.View.CAR)
+	_shell._show(HubShell.View.CARS)
 	await get_tree().process_frame
 	assert_true(_press("Buy"), "setup: a buy row is on the page")
 	assert_true(_save.owns_model(cheapest), "the cheapest car is now owned")
+
+
+# Buying a car rebuilds the CARS carousel from scratch (_build_cars runs again via
+# _show), which used to reset the highlighted card back to index 0 regardless of what
+# the player had centred — see _cars_selected_model's comment in hub_shell.gd. The fix
+# tracks the highlighted MODEL, not its index, since a purchase can shift row order.
+func test_buying_a_car_keeps_a_different_previously_selected_car_highlighted() -> void:
+	var sorted_ids: Array[String] = []
+	for spec in CarLibrary.all():
+		sorted_ids.append(String(spec.get("id", "")))
+	assert_gte(sorted_ids.size(), 2, "setup: at least two catalogue cars to choose between")
+	var cheapest := sorted_ids[0]
+	var other := sorted_ids[1]
+	var other_name := String((CarLibrary.by_id(other) as Dictionary).get("name", other))
+	_save.profile[_save.KEY_MONEY] = int((CarLibrary.by_id(cheapest) as Dictionary).get("cost", 0))
+
+	_shell._show(HubShell.View.CARS)
+	await get_tree().process_frame
+	var carousel := _carousel()
+	var other_index := -1
+	for i in carousel.card_count():
+		if _card_text(carousel, i).contains(other_name.to_upper()):
+			other_index = i
+	assert_ne(other_index, -1, "setup: the other car has a card on the page")
+	carousel.select(other_index, false)
+
+	assert_true(_press("Buy"), "setup: the cheapest row is bought instead")
+	await get_tree().process_frame
+
+	carousel = _carousel()
+	assert_true(_card_text(carousel, carousel.selected_index()).contains(other_name.to_upper()),
+		"the rebuilt CARS page keeps the previously highlighted car centred, not index 0")
 
 
 # An unaffordable row is disabled AND carries menu_nav_skip — the same rule the REGION
 # page's locked rows follow (see test_a_locked_region_is_shown_but_not_focusable).
 func test_an_unaffordable_car_row_is_shown_but_not_focusable() -> void:
 	_save.profile[_save.KEY_MONEY] = 0
-	_shell._show(HubShell.View.CAR)
+	_shell._show(HubShell.View.CARS)
 	await get_tree().process_frame
 	assert_false(_confirmable_texts().contains("BUY"),
 		"with no money, no Buy card is confirmable")

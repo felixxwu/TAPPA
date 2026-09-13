@@ -30,8 +30,9 @@ extends Control
 # model" + "Car acquisition — RR's shop"): every boost ladder in one flat list, reached from MAIN rather than from the run's own car-select
 # flow, since they are permanent purchases available any time, not something tied to
 # picking a car for THIS run. Car BUYING, per decision 28's wording ("the car select
-# screen offers a Buy action for unowned cars"), is folded into the existing CAR page
-# instead of living here — see _build_car().
+# screen offers a Buy action for unowned cars"), lives on CARS — the full-roster browser
+# reached from MAIN's "Cars" card or from CAR's "Buy new cars" card — not here.
+# See _build_cars() / _build_car().
 #
 # CHALLENGE is stage 9's MINIMAL entry point for the Daily/Weekly/Monthly challenge
 # (decision 15 keeps the mode; RunSession has always been able to drive it through
@@ -46,12 +47,16 @@ extends Control
 # trap for a page like this is that a wall of Labels leaves nothing focusable at all, so
 # its Back action is the page's ONE focusable control; see _build_stats().
 enum View { TITLE, MAIN, REGION, CAR, SUMMARY, SHOP, SKILLS, STATS, CHALLENGE, SETTINGS,
-	FREEPLAY_CAR, FREEPLAY_REGION, FREEPLAY_SETUP }
+	FREEPLAY_CAR, FREEPLAY_REGION, FREEPLAY_SETUP, CARS }
 
 # RunSession is an autoload with no class_name, so its STATIC members must be reached
 # through the script resource — calling a static via the autoload instance is a
 # STATIC_CALLED_ON_INSTANCE warning, which test_smoke.gd treats as a failure.
 const RunSessionScript = preload("res://scripts/run_session.gd")
+
+# Sentinel `actions` entry for CAR's trailing "Buy new cars" card — distinct from a real
+# model id String (which the same confirmed handler dispatches to _buy_car).
+const _BUY_NEW_CARS := "__buy_new_cars__"
 
 var _view: int = View.MAIN
 var _page: MenuPage = null
@@ -70,6 +75,21 @@ var _pending_challenge := ""
 var _fp_car := 0
 var _fp_region := ""
 var _fp_boosts: Array[String] = []
+
+# Where CARS (the full-roster browser) returns to on Back: MAIN when opened from the
+# main menu's "Cars" card, or CAR when opened via that page's "Buy new cars" card mid
+# run-select — the latter must land back on CAR (with _pending_region/_pending_challenge
+# still intact) rather than MAIN, or a challenge/region pick would be silently discarded.
+var _cars_return_view: int = View.MAIN
+
+# Which card CAR/CARS should re-highlight on rebuild (a purchase, or closing the stats
+# sheet, both go through _show and rebuild the carousel from scratch — see _build_car /
+# _build_cars). Identity, not index: an instance_id for CAR's owned-car cards (their
+# sort order can shift as costs/upgrades change) and a model id for CARS's catalogue
+# cards. Empty/-1 means "no remembered selection", so a fresh HubShell still defaults
+# to the first card.
+var _car_selected_id := -1
+var _cars_selected_model := ""
 
 # The shared SettingsMenu instance while the SETTINGS page is live — null otherwise. Held so
 # _back()/the page's own Back button can give it first refusal (its own sub-pages back out
@@ -170,6 +190,7 @@ func _title_for(view: int) -> String:
 		View.TITLE: return ""
 		View.REGION: return "Pick a region"
 		View.CAR: return "Pick a car"
+		View.CARS: return "Cars"
 		View.SUMMARY:
 			var completed := bool(RunSession.last_result().get("completed", false))
 			return "Region cleared" if completed else "Run over"
@@ -252,6 +273,14 @@ func _show(view: int) -> void:
 		View.FREEPLAY_CAR: _build_freeplay_car()
 		View.FREEPLAY_REGION: _build_freeplay_region()
 		View.FREEPLAY_SETUP: _build_freeplay_setup()
+		View.CARS: _build_cars()
+	# House rules (uppercase, fixed font size, fixed button height, the hard drop shadow
+	# every button/panel elsewhere in the game wears — UITheme.enforce's rule 5) were never
+	# applied on this shell: every other menu script calls this after building
+	# (account_menu.gd, pause_menu.gd, settings_menu.gd, ...) but this file's pages were
+	# built without it, so every button here rendered flat. Idempotent, so this is safe to
+	# call even on SETTINGS, whose SettingsMenu child already enforces itself.
+	UITheme.enforce(_page)
 	# `remember: false` — each page is rebuilt from scratch, so there is no earlier focus
 	# on it worth restoring; the first action is always the right landing spot.
 	MenuNav.attach(_page, {"on_back": _back})
@@ -273,6 +302,10 @@ func _back() -> void:
 		View.FREEPLAY_CAR: _show(View.MAIN)
 		View.FREEPLAY_REGION: _show(View.FREEPLAY_CAR)
 		View.FREEPLAY_SETUP: _show(View.FREEPLAY_REGION)
+		# CARS is opened either from MAIN or from CAR's "Buy new cars" card — Back must
+		# return to whichever opened it, not always MAIN, or a mid-run-select car purchase
+		# would silently drop the player back at the main menu.
+		View.CARS: _show(_cars_return_view)
 		# Give the shared SettingsMenu first refusal: its own sub-pages (Audio, Account's
 		# sign-in form, …) back out to its category list before this shell backs out to MAIN.
 		View.SETTINGS: _settings_back()
@@ -297,7 +330,7 @@ func _row(text: String, on_press: Callable) -> Button:
 
 # --- Card carousel plumbing ---------------------------------------------------
 #
-# Eight screens (MAIN, REGION, CAR, SHOP, SKILLS, the three FREEPLAY steps)
+# Nine screens (MAIN, REGION, CAR, CARS, SHOP, SKILLS, the three FREEPLAY steps)
 # present their choices
 # as a CardCarousel (features/card-carousel.md) instead of a vertical row list: one
 # carousel per page, added to the body ahead of any plain labels/rows that page
@@ -322,7 +355,7 @@ func _page_margin_for(view: int) -> float:
 
 func _is_carousel_view(view: int) -> bool:
 	return view in [View.MAIN, View.REGION, View.CAR, View.SHOP, View.SKILLS,
-		View.FREEPLAY_CAR, View.FREEPLAY_REGION, View.FREEPLAY_SETUP]
+		View.FREEPLAY_CAR, View.FREEPLAY_REGION, View.FREEPLAY_SETUP, View.CARS]
 
 
 # --- TITLE ---------------------------------------------------------------------
@@ -334,13 +367,43 @@ func _build_title() -> void:
 	var logo := UITheme.label("TAPPA")
 	logo.add_theme_font_size_override("font_size", UITheme.px(72))
 	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Opt out of UITheme.enforce's rule 2 (lock every Label to FONT_SIZE) the same way
+	# UITheme.title()/card_title() do — otherwise the enforce() call this page now makes
+	# (for the button shadow, rule 5) stomps the 72px override right back down.
+	logo.set_meta("ui_title_size", true)
 	_page.body().add_child(logo)
 
-	# Leaving (Quit) is leftmost, proceeding (Start) is rightmost — features/menus.md
-	# "Button order". Quit is omitted where it would do nothing (see _quit_applicable).
+	# Added straight to `_page`, NOT to _page's centred title/body/actions column (see
+	# _build_money_label / _build_version_label for the same float-free-of-the-column
+	# pattern) — the splash wants TAPPA anchored dead centre and Start/Quit pinned to the
+	# bottom of the SCREEN, not just below the logo in a column that centres itself as one
+	# block. A CenterContainer spanning the page's full width is what centres the button
+	# stack HORIZONTALLY without knowing its width up front — a plain anchors_preset only
+	# centres a control around a point, not a variable-width VBoxContainer around itself.
+	# MenuNav.attach walks the whole page tree (find_children), so buttons living here
+	# rather than under add_action() are still reached.
+	var footer := CenterContainer.new()
+	footer.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	footer.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var m := Config.data.hub_version_label_margin_px
+	footer.position.y -= m
+	_page.add_child(footer)
+
+	var buttons := VBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", UITheme.GAP)
+	footer.add_child(buttons)
+
+	# Proceeding (Start) above leaving (Quit) — stacked vertically now rather than the
+	# left-right "leave is leftmost" order features/menus.md describes for a row.
+	var start := UITheme.button("Start")
+	start.pressed.connect(_enter_game)
+	buttons.add_child(start)
+	# Quit is omitted where it would do nothing (see _quit_applicable).
 	if _quit_applicable():
-		_action("Quit", func() -> void: get_tree().quit())
-	_action("Start", _enter_game)
+		var quit := UITheme.button("Quit")
+		quit.pressed.connect(func() -> void: get_tree().quit())
+		buttons.add_child(quit)
 
 
 # A browser tab can't meaningfully close itself from a script, so a Quit button there
@@ -374,10 +437,14 @@ func _build_main() -> void:
 
 	CardUI.text_card(carousel, "New run", "", false, "new_run")
 	actions.append(func() -> void: _show(View.REGION))
+	CardUI.text_card(carousel, "Cars", "", false, "car")
+	actions.append(func() -> void:
+		_cars_return_view = View.MAIN
+		_show(View.CARS))
 	# The shop is GATED on owning a car. Every shop ladder is a permanent money sink, so a
 	# carless player who spends down there can end up unable to afford ANY car — a dead end
 	# with no way back, since money only comes from running stages and a run needs a car.
-	# Buying the first car (the CAR page) has to come first.
+	# Buying the first car (the Cars page) has to come first.
 	var has_car := not (Save.profile.get(Save.KEY_CARS, []) as Array).is_empty()
 	CardUI.text_card(carousel, "Shop", "Buy a car first" if not has_car else "",
 		not has_car, "shop")
@@ -399,7 +466,11 @@ func _build_main() -> void:
 	actions.append(func() -> void: _show(View.SETTINGS))
 	carousel.confirmed.connect(func(i: int) -> void: actions[i].call())
 
-	_action("Quit", func() -> void: get_tree().quit())
+	# MAIN is a root (see _back's comment on REGION/CAR/etc.), so there is no Esc/gamepad-B
+	# route back to the splash — this button is the only way back to TITLE once a player has
+	# passed through it. Replaces the old direct-Quit action on this page (TITLE's own Quit
+	# already covers "leave the app"; a second one here served no different purpose).
+	_action("Back", func() -> void: _show(View.TITLE))
 	_build_money_label()
 	_build_version_label()
 
@@ -529,13 +600,11 @@ func _build_region() -> void:
 
 # --- CAR ---------------------------------------------------------------------
 
-# Owned cars are selectable to start the run; unowned cars offer a Buy action, per
-# decision 28's own wording ("the car select screen offers a Buy action for unowned
-# cars") — one combined screen rather than a separate shop page for cars, so buying and
-# picking share the exact same list a player is already looking at. This is also what
-# retires the old dead end: a fresh profile owns nothing, but decision 28 seeds it with
-# money (GameConfig.run_starting_money), so the same page that used to say "no cars yet"
-# now lists something it can actually afford.
+# Owned cars only — this is "which of my cars do I take", not a shop. Buying is a
+# separate concern that lives on CARS (below): a trailing "Buy new cars" card opens it,
+# with _cars_return_view set so its Back lands back here (region/challenge pick intact)
+# rather than at MAIN. A fresh profile owns nothing but decision 28 seeds it with money
+# (GameConfig.run_starting_money), so "Buy new cars" is never a dead end even then.
 func _build_car() -> void:
 	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
 	# A CHALLENGE pick judges every owned car against the period's rating ceiling
@@ -585,32 +654,15 @@ func _build_car() -> void:
 			actions.append(entry)
 		car_refs.append(entry)
 
-	var catalogue := CarLibrary.all()
-	var shop_indices: Array[int] = []
-	shop_indices.assign(range(catalogue.size()))
-	shop_indices.sort_custom(func(a: int, b: int) -> bool:
-		return int(catalogue[a].get("cost", 0)) < int(catalogue[b].get("cost", 0)))
-	for index in shop_indices:
-		var spec: Dictionary = catalogue[index]
-		var model_id := String(spec.get("id", ""))
-		if model_id.is_empty() or Save.owns_model(model_id):
-			continue
-		var cost := int(spec.get("cost", 0))
-		var car_name := String(spec.get("name", model_id))
-		var cant_afford := Save.money() < cost
-		var card := carousel.add_card(cant_afford)
-		card.visual.add_child(CardUI.card_icon("car"))
-		card.info.add_child(UITheme.card_title(car_name))
-		card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
-		# Appended in a branch rather than a ternary: a null/String ternary is an
-		# INCOMPATIBLE_TERNARY warning, which the strict-error tests treat as a failure.
-		# The list is deliberately mixed (Dictionary = start the run, String = buy, null =
-		# can't afford it right now) — confirmed's handler below dispatches on exactly that.
-		var action = null
-		if not cant_afford:
-			action = model_id
-		actions.append(action)
-		car_refs.append(index)
+	# Trailing card: opens CARS (the full-roster browser) so a player short on cars, or
+	# just shopping, can buy one — returning here afterward with _pending_region/
+	# _pending_challenge untouched. null in car_refs (never a real preview/stats target;
+	# both _sync_car_previews and "Show stats" below skip a null entry).
+	var browse_card := carousel.add_card(false)
+	browse_card.visual.add_child(CardUI.card_icon("car"))
+	browse_card.info.add_child(UITheme.card_title("Buy new cars"))
+	actions.append(_BUY_NEW_CARS)
+	car_refs.append(null)
 
 	# A live CarCardPreview is a real SubViewport + a full car.tscn instantiation (every
 	# embedded car glb body, before pruning) — genuinely expensive PER CAR, not just per
@@ -620,27 +672,120 @@ func _build_car() -> void:
 	# warmed in the background from HubShell._ready(), so by the time a player reaches
 	# this page every car is normally already built, and even a cache miss only costs one
 	# car's spawn, never a whole burst.
+	# Re-highlight whatever was selected before the last rebuild (a purchase or closing
+	# the stats sheet both call _show, which throws away the old CardCarousel — see the
+	# _car_selected_id comment above). Falls back to index 0 (select()'s already-selected
+	# no-op) when the id isn't in this build, e.g. a fresh page or a sold car.
+	for i in car_refs.size():
+		var entry = car_refs[i]
+		if entry is Dictionary and int(entry.get("instance_id", -1)) == _car_selected_id:
+			carousel.select(i, false)
+			break
+
 	_sync_car_previews(carousel, car_refs)
-	carousel.selection_changed.connect(func(_i): _sync_car_previews(carousel, car_refs))
+	carousel.selection_changed.connect(func(i: int):
+		var entry = car_refs[i]
+		_car_selected_id = int(entry.get("instance_id", -1)) if entry is Dictionary else -1
+		_sync_car_previews(carousel, car_refs))
+	_car_selected_id = int((car_refs[carousel.selected_index()] as Dictionary).get("instance_id", -1)) \
+		if car_refs[carousel.selected_index()] is Dictionary else -1
 
 	carousel.confirmed.connect(func(i: int) -> void:
 		var action = actions[i]
 		if action is Dictionary:
 			_start_run(action)
-		elif action is String:
-			_buy_car(action))
+		elif action == _BUY_NEW_CARS:
+			_cars_return_view = View.CAR
+			_show(View.CARS))
 
 	# The spec sheet for whichever card is highlighted. A PAGE ACTION rather than an info
 	# icon ON the card: a card's own press already means "start a run with this" / "buy
 	# this", and CardCarousel gives a card one confirm, not two — so a per-card icon would
 	# either need a pointer (breaking CLAUDE.md's keyboard+gamepad rule) or steal the
 	# confirm that buys the car. As an action it sits in the same focusable row as Back and
-	# reads the carousel's live selection, so it works identically on a pad.
+	# reads the carousel's live selection, so it works identically on a pad. Guarded for
+	# null: the trailing "Buy new cars" card has no spec sheet to show.
 	_action("Show stats", func() -> void:
-		_show_car_stats(car_refs[carousel.selected_index()]))
+		var ref = car_refs[carousel.selected_index()]
+		if ref != null:
+			_show_car_stats(ref))
 
 	_action("Back", func() -> void:
 		_show(View.CHALLENGE if _pending_challenge != "" else View.REGION))
+
+
+# --- CARS ----------------------------------------------------------------------
+
+# The full-roster browser, reached from MAIN's "Cars" card or CAR's "Buy new cars" card
+# (decision 28's "the car select screen offers a Buy action for unowned cars" — now this
+# page's job rather than CAR's, so the run-select flow stays "which of my cars", not a
+# shop). Every catalogue car is listed: owned ones as a shown-but-disabled "Owned" card
+# (same convention as a locked region — visible so the roster reads as complete, not
+# pressable because there is nothing left to do with a car you already have), unowned
+# ones as the same "Buy — cost" card CAR used to show. Back returns to _cars_return_view.
+func _build_cars() -> void:
+	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	var carousel := CardUI.build_carousel(_page)
+	# Parallel to the carousel's cards: a model id String to buy, or null (owned, or too
+	# expensive to afford right now) — see the CAR page's own comment on this convention.
+	var actions: Array = []
+	# Parallel to the carousel's cards: a catalogue index for _sync_car_previews/Show stats.
+	var car_refs: Array = []
+
+	var catalogue := CarLibrary.all()
+	var indices: Array[int] = []
+	indices.assign(range(catalogue.size()))
+	indices.sort_custom(func(a: int, b: int) -> bool:
+		return int(catalogue[a].get("cost", 0)) < int(catalogue[b].get("cost", 0)))
+	for index in indices:
+		var spec: Dictionary = catalogue[index]
+		var model_id := String(spec.get("id", ""))
+		if model_id.is_empty():
+			continue
+		var car_name := String(spec.get("name", model_id))
+		var cost := int(spec.get("cost", 0))
+		var owned := Save.owns_model(model_id)
+		var cant_afford := not owned and Save.money() < cost
+		var card := carousel.add_card(owned or cant_afford)
+		card.visual.add_child(CardUI.card_icon("car"))
+		card.info.add_child(UITheme.card_title(car_name))
+		if owned:
+			card.info.add_child(UITheme.label("Owned", "dim"))
+			actions.append(null)
+		else:
+			card.info.add_child(UITheme.label("Buy — %d" % cost, "gold"))
+			# Appended in a branch rather than a ternary: a null/String ternary is an
+			# INCOMPATIBLE_TERNARY warning, which the strict-error tests treat as a failure.
+			var action = null
+			if not cant_afford:
+				action = model_id
+			actions.append(action)
+		car_refs.append(index)
+
+	# Re-highlight whatever model was selected before the last rebuild (a purchase, or
+	# closing the stats sheet, both rebuild the carousel from scratch via _show — see
+	# _cars_selected_model's comment). Falls back to index 0 when the model isn't in
+	# this build, e.g. a fresh page.
+	for i in car_refs.size():
+		if String(catalogue[car_refs[i]].get("id", "")) == _cars_selected_model:
+			carousel.select(i, false)
+			break
+
+	_sync_car_previews(carousel, car_refs)
+	carousel.selection_changed.connect(func(i: int):
+		_cars_selected_model = String(catalogue[car_refs[i]].get("id", ""))
+		_sync_car_previews(carousel, car_refs))
+	_cars_selected_model = String(catalogue[car_refs[carousel.selected_index()]].get("id", ""))
+
+	carousel.confirmed.connect(func(i: int) -> void:
+		var action = actions[i]
+		if action is String:
+			_buy_car(action))
+
+	_action("Show stats", func() -> void:
+		_show_car_stats(car_refs[carousel.selected_index()]))
+
+	_action("Back", func() -> void: _show(_cars_return_view))
 
 
 # The plain (no comparison) car spec sheet, over the car page. `ref` is a `car_refs` entry:
@@ -675,6 +820,7 @@ func _show_car_stats(ref: Variant) -> void:
 	var back := UITheme.button("Back")
 	back.pressed.connect(close)
 	page.add_action(back)
+	UITheme.enforce(page)
 	MenuNav.attach(page, {"on_back": close})
 
 
@@ -710,6 +856,10 @@ func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
 	# card that STAYED in the window across this call already shows the right thing and
 	# is left untouched.
 	for i in wanted:
+		# The trailing "Buy new cars" card (CAR page only) has a null ref — no preview to
+		# build, just leave its placeholder icon in place.
+		if car_refs[i] == null:
+			continue
 		var card := carousel.get_card(i)
 		if card.visual.get_child_count() > 0 and card.visual.get_child(0) is CarCardPreview:
 			continue
@@ -721,9 +871,9 @@ func _sync_car_previews(carousel: CardCarousel, car_refs: Array) -> void:
 
 func _buy_car(model_id: String) -> void:
 	if Save.buy_car(model_id):
-		# Rebuild in place: the bought car now belongs in the owned list above and must
+		# Rebuild in place: the bought car now belongs in the "Owned" list above and must
 		# drop out of the buy list below it.
-		_show(View.CAR)
+		_show(View.CARS)
 
 
 # Start the region run — but a PAUSED run of either kind is a single slot (decision 27),

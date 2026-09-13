@@ -181,16 +181,30 @@ flash above).
 
 ## Cards fade in, one by one, every time the list is (re)built
 
-`add_card` starts each card at `modulate.a == 0` and tweens a per-card `Card.entrance`
-progress value (0 -> 1) up over `card_carousel_entrance_duration_s`, delayed by
-`index * card_carousel_entrance_stagger_s` — so card 0 starts fading immediately, card 1
-a beat later, and so on, reading as the strip building itself left to right rather than
-popping in all at once. `_layout()` multiplies `entrance` into the alpha it already
-computes for selection dimming (`card.entrance * (1.0 if selected else
-unselected_alpha)`), so a card fades in to whatever its STEADY-STATE opacity should be —
-full if it's the initially-selected card, dimmed otherwise — never all the way to 1.0
+`add_card` starts each card at `modulate.a == 0` and defers (`call_deferred`) the start of
+a per-card `Card.entrance` progress tween (0 -> 1, over `card_carousel_entrance_duration_s`)
+until the current call stack finishes — so a caller that restores a remembered selection
+with `select()` right after its `add_card` loop (hub_shell.gd's `_build_car`/`_build_cars`
+— see below) gets to do so before any fade actually starts. `_animate_entrance` then delays
+each card's tween by `abs(index - _selected) * card_carousel_entrance_stagger_s`: the
+SELECTED card starts fading immediately and the rest fan outward from it in both
+directions, reading as the strip building itself out from wherever the player's eye
+already is rather than always left to right. (When `_selected` is 0 — the common case,
+a fresh MAIN/REGION/SHOP/SKILLS page — this degenerates to the old left-to-right order.)
+This is why the fix for "reopening the CARS page miles down a long list took seconds to
+show anything" lives here rather than in hub_shell.gd: hub_shell only had to remember
+which car to reselect, and the stagger fanning out from `_selected` made that selection
+visible immediately regardless of its position in the list. `_layout()` multiplies
+`entrance` into the alpha it already computes for selection dimming (`card.entrance *
+(1.0 if selected else unselected_alpha)`), so a card fades in to whatever its STEADY-STATE
+opacity should be — full if selected, dimmed otherwise — never all the way to 1.0
 regardless of selection. The shadow strips reuse that same final `alpha`, so they fade in
 in lockstep with their card with no separate bookkeeping.
+
+`Card.entrance_started` guards against the deferred `_animate_entrance` call landing AFTER
+`finish_entrance_animation()` (below) already jumped a card to steady state — without it, a
+test/host that finishes the animation before the deferred call fires would see its card
+yanked back to invisible and re-faded a frame later.
 
 **This restarts on its own, with no "already shown" flag to track.** Every hub page
 rebuilds a BRAND NEW `CardCarousel` on each `HubShell._show()` call (`build_carousel`

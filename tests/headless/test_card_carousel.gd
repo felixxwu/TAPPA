@@ -545,6 +545,25 @@ func test_cards_fade_in_one_by_one_first_card_first() -> void:
 		"the third card's fade must not have started yet")
 
 
+# Regression: a page that rebuilds with a REMEMBERED selection deep in a long list (e.g.
+# hub_shell.gd's CARS page restoring car 30 of 40 after a purchase) used to still stagger
+# by raw index — the player's actual card wouldn't even start fading for seconds. The
+# stagger must fan out from whichever card is selected, so the card the player is actually
+# looking at appears first regardless of its position in the list.
+func test_entrance_fade_fans_out_from_the_selected_card_not_index_zero() -> void:
+	var fresh := CardCarousel.new()
+	add_child_autofree(fresh)
+	for i in 5:
+		fresh.add_card()
+	fresh.select(4, false)  # mimics restoring a selection before the deferred fade starts
+	var stagger: float = Config.data.card_carousel_entrance_stagger_s
+	await get_tree().create_timer(stagger * 0.5).timeout
+	assert_gt(fresh.get_card(4).root.modulate.a, 0.0,
+		"the selected card (index 4) must be the first to fade in")
+	assert_almost_eq(fresh.get_card(0).root.modulate.a, 0.0, 0.001,
+		"the farthest card from the selection (index 0) must not have started yet")
+
+
 # finish_entrance_animation is the test/host seam for skipping straight to steady state;
 # it must actually land every card (and its shadow strips) at full progress.
 func test_finish_entrance_animation_jumps_every_card_to_full_progress() -> void:

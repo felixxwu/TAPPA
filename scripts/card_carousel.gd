@@ -65,6 +65,10 @@ class Card:
 	# opacity should be (full if selected, dimmed otherwise) rather than always to 1.0.
 	var entrance := 0.0
 	var entrance_tween: Tween
+	# Guards against _animate_entrance (deferred — see add_card) firing AFTER
+	# finish_entrance_animation already jumped this card to steady state, which would
+	# otherwise yank it back to 0.0 and restart the fade a frame late.
+	var entrance_started := false
 
 var _cards: Array[Card] = []
 var _selected := 0
@@ -256,22 +260,32 @@ func add_card(disabled: bool = false) -> Card:
 	card.root.gui_input.connect(_on_card_gui_input.bind(index))
 	_cards.append(card)
 	_layout()
-	_animate_entrance(card, index)
+	# Deferred rather than immediate: a caller (hub_shell.gd's _build_car/_build_cars)
+	# restores a remembered selection with select() AFTER its add_card loop finishes, in
+	# the same synchronous call — so _selected isn't final yet at add_card time. Deferring
+	# lets that select() land first, so the stagger below fans out from the RIGHT card.
+	call_deferred("_animate_entrance", card, index)
 	return card
 
 
-# Fade the card in from transparent, first card first — staggered by index so the whole
-# strip visibly builds left to right rather than popping in all at once. Every card added
-# to a freshly built CardCarousel gets its own animation, and since every page rebuilds a
-# BRAND NEW CardCarousel on each _show() (hub_shell.gd), this restarts automatically every
-# time a card list is shown — including navigating back from a sub-menu — with no extra
-# "has this been shown before" state to track.
+# Fade the card in from transparent, staggered outward from the SELECTED card rather than
+# from index 0 — a player who opens the list already centred on card 30 of 40 (a remembered
+# selection — see add_card's comment) would otherwise wait for cards 0-29 to finish
+# staggering in before their own card even starts. Every card added to a freshly built
+# CardCarousel gets its own animation, and since every page rebuilds a BRAND NEW
+# CardCarousel on each _show() (hub_shell.gd), this restarts automatically every time a
+# card list is shown — including navigating back from a sub-menu — with no extra "has this
+# been shown before" state to track.
 func _animate_entrance(card: Card, index: int) -> void:
+	if card.entrance_started:
+		return  # finish_entrance_animation already settled this card — see its comment.
+	card.entrance_started = true
 	var tween := create_tween()
 	card.entrance_tween = tween
 	tween.set_ease(Tween.EASE_OUT)
-	if index > 0:
-		tween.tween_interval(index * Config.data.card_carousel_entrance_stagger_s)
+	var distance := absi(index - _selected)
+	if distance > 0:
+		tween.tween_interval(distance * Config.data.card_carousel_entrance_stagger_s)
 	var set_entrance := func(v: float) -> void:
 		card.entrance = v
 		_layout()
@@ -288,6 +302,7 @@ func finish_entrance_animation() -> void:
 		if card.entrance_tween != null and card.entrance_tween.is_valid():
 			card.entrance_tween.kill()
 		card.entrance = 1.0
+		card.entrance_started = true
 	_layout()
 
 
