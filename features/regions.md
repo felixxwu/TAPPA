@@ -387,9 +387,10 @@ Called from `_ready` immediately after `env.fog_sky_affect = cfg.fog_sky_affect`
 settles):
 
 1. Resolve the driven stage's region — `RunSession.region_id()` when a REGION RUN is
-   active, else `"home"`. A challenge stage is rolled from the period hash and authors no
-   region, so it wears the plain home look; so does a dev boot of `main.tscn` with no
-   session. Cached per world (`_region_look_cache`), since it cannot change mid-stage.
+   active, else `FreePlay.region_id()` when a free-play plan is set, else `"home"`. A
+   challenge stage is rolled from the period hash and authors no region, so it wears the
+   plain home look; so does a dev boot of `main.tscn` with no session. Cached per world
+   (`_region_look_cache`), since it cannot change mid-stage.
 
    > This hardcoded `"home"` from the stage-2 demolition until stage 9 — its comment said
    > the region-select system would give it a real answer, and stage 4 built that system
@@ -397,6 +398,13 @@ settles):
    > sky and tree mix**. The HANDLING overrides were never affected: `StageConfig` reads
    > `event["region"]` off the drawn stage dict, which was always correct. Guarded now by
    > `test_world_fielding.gd`.
+   >
+   > **Free play had the same bug, separately**: `FreePlay` (`scripts/free_play.gd`)
+   > stored no region id at all, so `RunSession.is_active()` was false during a free-play
+   > drive and `_current_region_look()` always fell through to `"home"` regardless of
+   > which region the player picked on the Free Play region page — fixed by threading
+   > `hub_shell.gd`'s `_fp_region` into `FreePlay.begin(..., region_id)` /
+   > `FreePlay.region_id()` and adding the `elif FreePlay.has_plan()` branch above.
 2. `var look := RegionLibrary.look_of(region_id)`; if empty (home, or an
    unrecognised id), return — no-op, leaving `main.tscn`'s baseline untouched.
 3. Apply only the keys present:

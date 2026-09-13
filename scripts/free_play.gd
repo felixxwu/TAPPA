@@ -37,6 +37,10 @@ extends RefCounted
 #                                 protect, so every catalogue engine is offerable —
 #                                 unlike RunSession's mid-run pick, which only ever
 #                                 offers the next rung up from the car's current one.
+#   "region_id"  String         — the RegionLibrary id the stage was drawn from, so
+#                                 world.gd::_current_region_look can render the
+#                                 chosen region's terrain/tree look even though
+#                                 RunSession is not active during free play.
 
 
 static var _plan := {}
@@ -46,12 +50,13 @@ static var _plan := {}
 # at each boost's CURRENT purchased level (BoostLibrary.effect_for — the same
 # magnitude a real run's pick would roll), so free play previews what the player
 # actually has rather than a hypothetical maxed build.
-static func begin(car_index: int, event: Dictionary, boost_ids: Array, engine_id: String = "") -> void:
+static func begin(car_index: int, event: Dictionary, boost_ids: Array, engine_id: String = "", region_id: String = "") -> void:
 	_plan = {
 		"car_index": car_index,
 		"event": event.duplicate(true),
 		"boost_ids": boost_ids.duplicate(),
 		"engine_id": engine_id,
+		"region_id": region_id,
 	}
 
 
@@ -90,6 +95,11 @@ static func boost_effects() -> Array:
 # run's car.gd::_apply_engine_swap (features/engine-swap.md).
 static func engine_swap_id() -> String:
 	return String(_plan.get("engine_id", "")) if has_plan() else ""
+
+
+# The RegionLibrary id the drive's stage was drawn from, or "" if no plan is set.
+static func region_id() -> String:
+	return String(_plan.get("region_id", "")) if has_plan() else ""
 
 
 static func clear() -> void:

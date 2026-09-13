@@ -1128,7 +1128,7 @@ func _start_free_play() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(Time.get_unix_time_from_system())
 	var event: Dictionary = stages[rng.randi_range(0, stages.size() - 1)]
-	FreePlay.begin(_fp_car, event, _fp_boosts, _fp_engine_id)
+	FreePlay.begin(_fp_car, event, _fp_boosts, _fp_engine_id, _fp_region)
 	Scenes.change_to(get_tree(), Scenes.MAIN)
 
 

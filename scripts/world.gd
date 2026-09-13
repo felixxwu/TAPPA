@@ -2574,6 +2574,10 @@ func _current_region_look() -> Dictionary:
 		var run_region := RunSession.region_id()
 		if run_region != "":
 			region_id = run_region
+	elif FreePlay.has_plan():
+		var fp_region := FreePlay.region_id()
+		if fp_region != "":
+			region_id = fp_region
 	_region_look_cache = RegionLibrary.look_of(region_id)
 	_region_look_ready = true
 	return _region_look_cache

@@ -365,6 +365,11 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 		out["peak_torque"] = eng.get("peak_torque", 0.0)
 	if not out.has("redline"):
 		out["redline"] = eng.get("redline_rpm", 0.0)
+	# shift_time never lived on the CarLibrary entry (car_library.gd's own header says
+	# so) — without this seed CarStats.values() always fell back to its 0.0 default,
+	# showing "0.00 s" on every car's spec sheet regardless of gearbox.
+	if not out.has("shift_time") and eng.has("shift_time"):
+		out["shift_time"] = eng["shift_time"]
 	if current_id != stock_id and out.has("mass"):
 		var stock_eng := EngineLibrary.by_id(stock_id)
 		out["mass"] = EngineSwap.recompute_mass(

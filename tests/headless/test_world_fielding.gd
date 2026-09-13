@@ -127,6 +127,23 @@ func test_a_region_runs_stage_wears_that_regions_look() -> void:
 		"the driven stage resolves the RUN's region, not the home default")
 
 
+func test_a_free_play_stage_wears_its_picked_regions_look() -> void:
+	# The same "not home by coincidence" guard as the region-run test above, but for
+	# FreePlay's separate route into _current_region_look: FreePlay.begin() used to store
+	# no region id at all, so RunSession.is_active() being false always fell through to
+	# "home" regardless of which region the player picked on the Free Play region page.
+	var ordered := RegionLibrary.ordered()
+	var region := String(ordered[ordered.size() - 1]["id"])
+	var stages := RegionStageLibrary.all_stages_in(region)
+	FreePlay.begin(0, stages[0], [], "", region)
+	_scene = load("res://main.tscn").instantiate()
+	add_child_autofree(_scene)
+	await get_tree().process_frame
+	FreePlay.clear()
+	assert_eq(_scene._current_region_look(), RegionLibrary.look_of(region),
+		"a free-play drive resolves the PICKED region, not the home default")
+
+
 func test_a_stage_with_no_region_falls_back_to_the_home_look() -> void:
 	# The fallback arm of the same branch. Driven with NO SESSION rather than with a
 	# CHALLENGE run, deliberately: both take the identical `region_id` path (a challenge

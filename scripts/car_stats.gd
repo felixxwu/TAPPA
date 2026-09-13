@@ -29,9 +29,10 @@ extends RefCounted
 # touches the meta at all. Two of the seven boosts are in that second group —
 # `brake_force_mult` (Big brakes) and `drag_mult` (Streamlined body) — and there is no row
 # here for brake force or drag, so taking either of those moves NOTHING on this sheet. The
-# Shift time row reads `shift_time` straight off the base engine meta, so it shows the
-# car's stock gearbox figure but does NOT move for `shift_time_set` (Quick-shift gearbox),
-# since that boost never touches the meta either. That is not a bug to fix by widening
+# Shift time row reads `shift_time` off the fitted engine (seeded onto the meta by
+# `effective_meta`, same as peak_torque/redline), so it shows the car's stock gearbox
+# figure but does NOT move for `shift_time_set` (Quick-shift gearbox), since that boost
+# never touches the meta. That is not a bug to fix by widening
 # `effective_meta`, whose narrow contract is a deliberate safeguard (its own header
 # explains it); it is a limit a caller has to cover. `world.gd::_confirm_pick` therefore
 # prints the boost's own `BoostLibrary.current_effect_text_for` figure alongside the sheet,
