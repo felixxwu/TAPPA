@@ -53,7 +53,7 @@ func test_every_registered_axis_has_a_blend_rule() -> void:
 	# distinguishable from the 0.0 that merely means "not on that channel right now".
 	# Probing cannot make that distinction, and a probing version of this test failed a
 	# correct weather axis in round 006.
-	var ctx := GameConfig.fill_tire_context({}, 0.0, false, RallyLibrary.WEATHER_DRY)
+	var ctx := GameConfig.fill_tire_context({}, 0.0, false, StageFields.WEATHER_DRY)
 	for axis in GameConfig.TIRE_SURFACE_AXES:
 		var channel := String(axis["channel"])
 		assert_false(is_nan(GameConfig._channel_weight(channel, ctx)),
@@ -88,7 +88,7 @@ func test_an_unfitted_car_is_an_exact_no_op() -> void:
 	var ctx := {}
 	for snowy in [true, false]:
 		for w in [0.0, 0.5, 1.0]:
-			GameConfig.fill_tire_context(ctx, w, snowy, RallyLibrary.WEATHER_DRY)
+			GameConfig.fill_tire_context(ctx, w, snowy, StageFields.WEATHER_DRY)
 			assert_almost_eq(GameConfig.tire_surface_mult_for(neutral, ctx), 1.0, 1e-6,
 				"all-neutral axes must be an exact no-op (snowy=%s, tarmac=%s)" % [snowy, w])
 			assert_almost_eq(GameConfig.tire_surface_mult_for({}, ctx), 1.0, 1e-6,
@@ -110,7 +110,7 @@ func test_a_live_config_and_a_car_meta_resolve_identically() -> void:
 	var ctx := {}
 	for snowy in [true, false]:
 		for w in [0.0, 0.35, 1.0]:
-			GameConfig.fill_tire_context(ctx, w, snowy, RallyLibrary.WEATHER_DRY)
+			GameConfig.fill_tire_context(ctx, w, snowy, StageFields.WEATHER_DRY)
 			assert_almost_eq(GameConfig.tire_surface_mult_for(cfg, ctx),
 				GameConfig.tire_surface_mult_for(meta, ctx), 1e-6,
 				"config and car_meta must resolve the same (snowy=%s, tarmac=%s)" % [snowy, w])
@@ -121,10 +121,10 @@ func test_the_stage_context_carries_weather_even_though_no_axis_reads_it_yet() -
 	# a wet-weather axis stays a one-file change. If someone "tidies" it away as unused,
 	# the next weather-keyed axis silently becomes a three-file change again — which is
 	# exactly the round-006 failure this design was corrected to prevent.
-	var ctx := GameConfig.fill_tire_context({}, 0.5, false, RallyLibrary.WEATHER_RAIN)
+	var ctx := GameConfig.fill_tire_context({}, 0.5, false, StageFields.WEATHER_RAIN)
 	assert_true(ctx.has("weather"),
 		"fill_tire_context must carry the stage weather so a weather-keyed axis needs no caller edit")
-	assert_eq(String(ctx["weather"]), RallyLibrary.WEATHER_RAIN,
+	assert_eq(String(ctx["weather"]), StageFields.WEATHER_RAIN,
 		"fill_tire_context must pass the weather through unchanged")
 	assert_true(ctx.has("tarmac") and ctx.has("snowy"),
 		"fill_tire_context must carry the surface context every existing channel reads")

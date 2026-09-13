@@ -12,7 +12,7 @@ the rally-detail panel in `scripts/rally_detail.gd`, and the session-aware field
 `scripts/world.gd`.
 
 **Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`,
-`tests/headless/test_pause_menu.gd`, `tests/headless/test_settings_menu.gd`,
+`tests/headless/test_pause_menu.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_settings_menu.gd`,
 `tests/headless/test_text_field.gd`, `tests/headless/test_hub_shell.gd`
 
 **This file is the SHELL — the routing, the house rules and the screens that are not
@@ -28,7 +28,7 @@ Everything here described the **diegetic 3D hub**: `hq.tscn` + `hq.gd`
 `hq_tuning_lift.gd`, `hq_present_reveal.gd`, `hq_environment.gd`), the overworld, the
 3D map table with its new-rally reveal parade, the car park, `podium.tscn` and
 `standings.tscn`. **All of it is deleted** — decision 9 chose a flat 2D UI outright, and
-stage 2b of `todo/roguelike-pivot-plan.md` removed the scenes and their 29 collaborator
+stage 2b of the (since deleted) pivot plan removed the scenes and their 29 collaborator
 scripts; decisions 19 and 30 took the podium and the standings interstitial.
 
 Do not go looking for a "hub station", a `CarparkMode`, a camera pose, or an
@@ -40,7 +40,7 @@ Do not go looking for a "hub station", a `CarparkMode`, a camera pose, or an
 hub.tscn (HubShell)
   ├─ New run ─▶ region select ─▶ car select ─▶ RunSession.start_region
   ├─ Rally challenge ─▶ period ─▶ car select ─▶ RunSession.start
-  ├─ Shop / Perks / Lifetime stats            (all flat pages on the same script)
+  ├─ Shop / Skills / Lifetime stats            (all flat pages on the same script)
   └─ Resume run ─▶ RunSession.resume
        └─ main.tscn (one stage) ─ start line ─▶ countdown ─▶ RUN
             ├─ StageManager.stage_completed ─▶ RunSession.report_event_result
@@ -167,10 +167,10 @@ is no `features/hq.md` — the doc this section used to point at went with the c
 
 With a `RunSession` active, `world._ready` fields the player's OwnedCar through
 `Car.apply_owned` (the CarLibrary baseline, then the effects funnel carrying the run's
-picked boosts and the player's equipped perks, then tuning, then the damage bound from
+picked boosts and the player's equipped skills, then tuning, then the damage bound from
 the saved HP) instead of the default `apply_car(0)`, and wires this stage's
 `StageManager.stage_completed` into `RunSession.report_event_result`. See
-[region-runs.md](region-runs.md) and [perks.md](perks.md).
+[region-runs.md](region-runs.md) and [skills.md](skills.md).
 
 There is **no second exit** from the run: `world.gd` has no wreck screen and nothing
 listens for a car reaching 0 HP, because nothing is signalled when it does. With no
@@ -186,28 +186,36 @@ labels were shifted left to clear it) — a square button bearing a **proper dra
 pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars,
 since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
 game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Reset to
-track**, **Settings** and **Quit to HQ**.
+track**, **Photo Mode**, **Settings** and **Quit to HQ**.
 Resume unfreezes and closes. **Reset to track** snaps the car **onto the centerline
 beside its current position** — "the middle of the road, regardless of where the car
-is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query).
-This is deliberately **not** `recovery_pose()` (which the off-track reset / stuck
-watchdog use): that pose is pinned to the *furthest* offset reached and freezes the
-moment the car stops banking progress, so a strayed car would reset to a stale point that's
-no longer beside it — feeling like the button does nothing. It's also **not** the full
-start-line reset (`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track"
-menu item is now the **only** player-facing way to reset — there is no direct reset
-input any more (see [controls.md](controls.md)). The menu owns no car reference, so it
-emits `reset_to_track_requested`; `world.gd` connects that in `_ready` and performs
-the reset (`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion
-and suppresses the teleport's impact damage — free), then the menu `resume()`s so the
-player drops straight back in. `reset_to()` does **not** trust a bare `global_transform`
-write — that only sticks when done inside the physics step, so a reset fired from a menu
-signal (outside the physics frame) or on a stuck, **sleeping** body was silently reverted
-by the physics server next frame (the car looked like it never moved, while the `R` reset,
-which runs inside `_physics_process`, always worked). Instead it wakes the body and
-**queues** the pose; `car.gd::_integrate_forces` applies it via `state.transform` — the
-authoritative physics-write point — so it lands regardless of when the reset was fired.
-Settings shows the **shared `SettingsMenu`** (camera
+is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query). This is
+deliberately **not** `recovery_pose()` (which the off-track reset / stuck watchdog use):
+that pose is pinned to the *furthest* offset reached and freezes the moment the car stops
+banking progress, so a strayed car would reset to a stale point that's no longer beside
+it — feeling like the button does nothing. It's also **not** the full start-line reset
+(`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track" menu item is now
+the **only** player-facing way to reset — there is no direct reset input any more (see
+[controls.md](controls.md)). The menu owns no car reference, so it emits
+`reset_to_track_requested`; `world.gd` connects that in `_ready` and performs the reset
+(`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion and suppresses
+the teleport's impact damage — free), then the menu `resume()`s so the player drops straight
+back in. `reset_to()` does **not** trust a bare `global_transform` write — that only sticks
+when done inside the physics step, so a reset fired from a menu signal (outside the physics
+frame) or on a stuck, **sleeping** body was silently reverted by the physics server next
+frame (the car looked like it never moved, while the `R` reset, which runs inside
+`_physics_process`, always worked). Instead it wakes the body and **queues** the pose;
+`car.gd::_integrate_forces` applies it via `state.transform` — the authoritative
+physics-write point — so it lands regardless of when the reset was fired.
+
+**Photo Mode** enters a free-fly frozen-world camera (see [camera.md](camera.md)); the
+tree stays **paused** throughout and the menu is **disarmed** while photo mode is active,
+so Esc and the Pause button belong to the camera. Exiting photo mode re-opens the pause
+menu (still frozen). Touch players get their own on-screen control set for it (thumbstick,
+altitude buttons, back/hide) since there's no Esc key on a phone — see
+[camera.md](camera.md) › *On-screen touch controls*.
+
+**Settings** shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the hub's own Settings page — see
 [hub-shell.md](hub-shell.md)), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops a confirm and, on accept (`quit_to_hq`), unfreezes and
@@ -229,6 +237,14 @@ A **mobile-control** pick applies just as immediately to the live `MobileControl
 (the `SettingsMenu.scheme_changed` signal → `MobileControls.set_scheme`), so the
 on-screen touch layout rebuilds the instant you choose it rather than only on the next
 run.
+The dev page's **Complete stage** action — offered by this host only, because the
+menu is built mid-run here and session-less in the hub — relays upward the same
+delegate-to-world way as "Reset to track": `SettingsMenu.dev_complete_stage_requested`
+→ the pause menu's own `dev_complete_stage_requested` signal, which `world.gd`
+connects to `_dev_complete_stage` (the body shared with the F skip-to-finish cheat,
+re-gated inside so a stale signal can't fire); the menu then `resume()`s so the
+finish panel the skip raises answers. See [settings.md](settings.md) → "Developer-only
+pages" and [debug-tools.md](debug-tools.md) → "Skip to finish".
 The menu is **default-inert** (`_input_enabled` starts `false`, mirroring
 `StageManager`'s `_armed` gate): the Pause button and `ui_cancel` do nothing until
 `world.gd` calls `set_input_enabled(true)` **after world generation completes**. This

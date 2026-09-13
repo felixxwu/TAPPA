@@ -305,10 +305,14 @@ emits **`profile_replaced`**, re-emitted by `Cloud`. The deleted `hq.gd` rebuilt
 (`_on_cloud_profile_replaced`): clearing its car cache, rebuilding the lineup or the lift
 car depending on the view, and refreshing the map pins.
 
-**`HubShell` does not connect to it.** Its pages are rebuilt on every transition
-(`_show()` frees and rebuilds), so a page opened after the download is correct — but a
-page already on screen when it lands shows a stale money figure or car list until the
-player navigates. Minor next to the boot-gate gap below, and the same fix would cover it.
+**`HubShell` connects to it for `MAIN` only** (`_on_profile_replaced` → re-`_show(MAIN)`).
+MAIN is the page whose contents are decided the instant it is shown and cannot wait: the
+**Resume run** card is offered from `RunSession.resumable_run(Save.profile, …)`, so a run
+that arrived with the boot pull was invisible on first load until the player navigated away
+and back. Every other view is left alone — the player is mid-interaction on it, and
+`_show()` frees and rebuilds each page on entry, so a page opened after the download is
+correct anyway. The residual gap is cosmetic: a non-MAIN page already on screen when the
+download lands keeps a stale money figure or car list until the player leaves it.
 
 **The handler no-ops until the HQ exists (`_hq_built`).** `_ready` connects
 `profile_replaced` *before* it awaits the boot pull — it has to, since that pull is

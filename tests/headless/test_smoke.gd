@@ -23,7 +23,7 @@ func before_all() -> void:
 	# The challenge tests below grant cars and start runs through the LIVE Save
 	# autoload, so point it at a throwaway profile before anything here can write.
 	SaveTestHelpers.redirect(TEST_PATH)
-	RallyFixtures.install()
+	RegionStageFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	await get_tree().physics_frame  # let world._ready() generate + apply + build
@@ -31,7 +31,7 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_scene.free()
-	RallyFixtures.restore()
+	RegionStageFixtures.restore()
 	SaveTestHelpers.cleanup(TEST_PATH)
 
 
@@ -62,13 +62,13 @@ func test_music_director_autoload_is_registered() -> void:
 
 
 func test_entering_a_rally_event_generates_its_track() -> void:
-	# Entering a rally event = writing its (seed, turn_count, width) into
-	# Config.data, then generating — the same Config mutation pattern apply_car
-	# uses. Assert that flow builds a track without error (rally-roster.md).
-	var event: Dictionary = RallyLibrary.by_id("fx_open")["events"][0]
+	# Entering a stage = writing its (seed, turn_count, width) into Config.data,
+	# then generating — the same Config mutation pattern apply_car uses. Assert
+	# that flow builds a track without error.
+	var event: Dictionary = RegionStageFixtures.one_stage()
 	Config.data.track_seed = int(event["seed"])
 	Config.data.track_turn_count = int(event["turn_count"])
-	Config.data.track_width = RallyLibrary.event_width(event)
+	Config.data.track_width = StageFields.event_width(event)
 	_scene._generate_track(Config.data)
 	# The flow completes and the scene is still valid (no crash building the
 	# rally's track from its seed).
@@ -130,8 +130,8 @@ func test_a_challenge_stage_generates_its_track_and_places_no_coins() -> void:
 	# The other arm of the coins gate (features/collectables.md): a challenge has no
 	# per-stage money to boost and no fail state to gamble against, so nothing is placed
 	# even though coins_enabled stays on. The REGION arm is
-	# test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter, which builds
-	# a cheap minimal world of its own.
+	# test_a_region_run_stage_places_a_coin_field, which builds a cheap minimal world
+	# of its own.
 	assert_null(scene.get_node_or_null("CoinField"), "a challenge stage places no coins")
 
 	scene.free()
@@ -177,7 +177,7 @@ func test_a_challenge_stage_stages_the_start_line_like_a_rally_event() -> void:
 	CarFixtures.restore()
 
 
-func test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter() -> void:
+func test_a_region_run_stage_places_a_coin_field() -> void:
 	# The real world.gd._build_coins wiring (features/collectables.md): a REGION run
 	# (not a challenge — see the two tests above, which cover that gate's other arm)
 	# builds a CoinField and reveals the HUD's coin counter. minimal_world() keeps this
@@ -204,11 +204,6 @@ func test_a_region_run_stage_places_a_coin_field_and_reveals_the_hud_counter() -
 	assert_not_null(coin_field, "a region-run stage builds a CoinField")
 	assert_eq(int(coin_field.get("coin_count")), int(Config.data.coins_per_stage),
 		"it places exactly coins_per_stage coins")
-	var hud: Node = scene.get_node("HUD")
-	var coin_label := hud.get_node("CoinLabel") as Label
-	assert_true(coin_label.visible, "the HUD counter is revealed once coins are placed")
-	assert_eq(coin_label.text, "Coins: 0", "and starts at zero collected")
-
 	scene.free()
 	_leave_run()
 	CarFixtures.restore()

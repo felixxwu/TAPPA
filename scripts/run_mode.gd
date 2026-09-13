@@ -89,6 +89,16 @@ func stage_money(_stage_index: int, _elapsed_ms: int, _target_ms: int,
 	return 0
 
 
+# The portion of stage_money's result (if any) that is a ONE-OFF region-clear bonus
+# rather than the ordinary per-stage payout — RegionRunMode.stage_money folds this
+# into its return value, this is the isolated read the reward screen wants to show
+# it as its own line (mirrors how RunSession isolates the coin term). 0 for every
+# mode by default; only RegionRunMode overrides it, and only its own final stage
+# index returns non-zero.
+func stage_clear_bonus(_stage_index: int) -> int:
+	return 0
+
+
 # The mode-specific half of the persisted run slot. RunSession merges the shared
 # half (car_instance_id / stage_index / stage_times_ms) on top and adds "mode".
 func to_record() -> Dictionary:
@@ -124,13 +134,21 @@ func offers_boost_pick() -> bool:
 	return false
 
 
-# The boosts drawn for the pick ahead of stage `stage_index` (the stage about to
-# be ENTERED, i.e. RunSession._stage_index after the just-cleared stage's cursor
-# advance) — BoostLibrary entries, `{"id","effect"}`. MUST be deterministic in
-# (this mode's own seed, stage_index) so a resumed run re-derives the identical
-# offer (RunSession persists only `pick_awaiting`, not the picks themselves, and
-# re-asks this on resume). Empty for any mode that answers false to
-# offers_boost_pick() above — RunSession never calls it in that case, but every
-# mode gets a safe default regardless.
-func boost_choices(_stage_index: int) -> Array:
+# EVERY id offered for the pick ahead of stage `stage_index` (the stage about to be
+# ENTERED, i.e. RunSession._stage_index after the just-cleared stage's cursor advance) —
+# plain catalogue/pseudo ids, NOT resolved entries (RunSession.roll_pick / the merged
+# resolution in BoostLibrary.resolve_id does that). The WHOLE pool, not a random subset
+# (todo/mid-run-upgrade-menu.md): the player picks power/handling themselves, then ONE
+# entry from that category is rolled — so nothing here decides which; it only decides
+# WHAT EXISTS to roll from. Must be deterministic given `extra_ids` alone so a resumed
+# run trivially re-derives the identical pool with no persistence needed. Empty for any
+# mode that answers false to offers_boost_pick() above — RunSession never calls it in
+# that case, but every mode gets a safe default regardless.
+#
+# `extra_ids` are pseudo-ids of the shape "drivetrain:<DriveMode int>" (RunSession
+# derives them from drivetrain_choices()) or "engine_swap:<EngineLibrary id>" (RunSession
+# derives it from _pool_engine_swap_ids()) that a mode opting into the pick should mix
+# into the SAME pool as its boost catalogue, rather than appending them as extra cards
+# on top — see RegionRunMode.boost_pool_ids.
+func boost_pool_ids(_stage_index: int, _extra_ids: Array = []) -> Array:
 	return []

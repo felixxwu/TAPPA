@@ -38,16 +38,21 @@ extends RefCounted
 # IDEMPOTENT by construction (it reloads `base` on every call), which is what lets
 # DrivingContext.apply_stage_config call it at CONSUME time — world.gd._ready —
 # rather than each scene producer having to remember to push it first.
+#
+# NO run-position scaling any more (todo/region-stage-slots-redesign.md deleted
+# `stage_scale`/the `stage_index >= 0` block): every candidate in RegionStageLibrary is
+# authored FINAL for its slot, so this function writes exactly what the event/candidate
+# dict says, nothing more.
 static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 	var base: GameConfig = load(Config.CONFIG_PATH)
 	cfg.track_seed = int(event.get("seed", base.track_seed))
 	cfg.track_turn_count = int(event.get("turn_count", base.track_turn_count))
-	cfg.track_straightness = RallyLibrary.event_straightness(event)
-	cfg.track_width = RallyLibrary.event_width(event)
-	cfg.track_forestiness = RallyLibrary.event_forestiness(event)
-	cfg.track_tarmac_fraction = RallyLibrary.event_tarmac_fraction(event)
-	cfg.weather = RallyLibrary.event_weather(event)   # WEATHER_DRY / WEATHER_RAIN; see features/weather.md
-	cfg.cliff_amount = RallyLibrary.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
+	cfg.track_straightness = StageFields.event_straightness(event)
+	cfg.track_width = StageFields.event_width(event)
+	cfg.track_forestiness = StageFields.event_forestiness(event)
+	cfg.track_tarmac_fraction = StageFields.event_tarmac_fraction(event)
+	cfg.weather = StageFields.event_weather(event)   # WEATHER_DRY / WEATHER_RAIN; see features/weather.md
+	cfg.cliff_amount = StageFields.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
 	cfg.water_enabled = bool(event.get("water_enabled", base.water_enabled))
 	# event -> event's region (if the caller seated one, see RallySession.current_event() /
 	# _generate_event_tracks) -> the authored baseline. See TrackGenParams.resolve_water_level.

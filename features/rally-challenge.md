@@ -133,7 +133,7 @@ few call sites noted below.
   dict, `{"name": String(info["rally_name"])}`, where `info` comes from
   `_arch_event_info()` (below) — there is no authored `RALLIES` restriction
   dict behind either kind of run any more, so `StartLine`'s `_rally` is always
-  effectively open-class. See [rally-roster.md](rally-roster.md) → "Dead code
+  effectively open-class. See [region-stage-library.md](region-stage-library.md) → "Dead code
   awaiting demolition" for why `RallyLibrary.ineligibility_reason` is still
   called here but is a permanent no-op today.
 - **`world.gd._arch_event_info()`** is the single source of event framing for

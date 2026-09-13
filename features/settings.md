@@ -115,6 +115,30 @@ and so was invisible in release builds; it is now its own **player** category
 a second copy — one route to an irreversible action, guarded by a confirm modal
 rather than by hiding. Dev builds simply see both categories.
 
+**The Dev page is three actions** (`SettingsMenu._build_dev_page`), each reporting
+through the page's `_dev_status` line:
+
+- **Add money** — banks a fixed `SettingsMenu.DEV_MONEY_GRANT` (a dev amount, not
+  a tunable, so it is deliberately not a GameConfig field) through the one money
+  funnel `Save.add_money`, and reports the new balance.
+- **Unlock all skills** — `Save.dev_grant_all_skills()`: OWNERSHIP of every
+  `SkillLibrary` catalogue entry at once, bypassing the unlock thresholds and
+  prices `buy_skill` enforces, so the Skills page can equip any of them. It moves
+  no money and never touches the equipped list — owning is not slotting — and is
+  idempotent (a second press grants 0 and writes nothing).
+- **Complete stage** — the pause-menu route to the F skip-to-finish cheat
+  ([debug-tools.md](debug-tools.md) → "Skip to finish"), offered ONLY while a run
+  is live (`DrivingContext.session_active()` at BUILD time: the hub builds this
+  menu with no run, so the button is absent; the pause menu builds it mid-run, so
+  it is present). It emits `SettingsMenu.dev_complete_stage_requested`; the pause
+  menu relays it upward and `world.gd` runs the shared `_dev_complete_stage` body,
+  which re-checks the whole gate so a stale signal can't fire. Routing detail in
+  [menus.md](menus.md) → "Pause menu".
+
+The per-car "Unlock …" button list this page used to carry is gone — cars are a
+shop purchase now ([region-runs.md](region-runs.md)); `Save.grant_car` remains the
+plain mutator tests use to seed a fixture car.
+
 **Confirming the wipe reloads the hub scene** (`SettingsMenu._wipe_progress` →
 `_reload_after_wipe`, at the end of the local wipe and again after the cloud
 publish resolves when signed in). `Save.reset_new_game()` only replaces the

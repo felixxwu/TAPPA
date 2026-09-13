@@ -15,7 +15,7 @@ gutless car for the rest of the run — a misfiring, rev-limited engine and bent
 a clock that is now much harder to beat, which is the whole of the cost (decision 6:
 damage never wrecks; it makes the timer harder). HP climbs back two ways: the
 **between-stage pit repair**, which the player must CHOOSE over a boost
-([region-runs.md](region-runs.md)), and the **self-heal trickle** an equipped perk buys
+([region-runs.md](region-runs.md)), and the **self-heal trickle** an equipped skill buys
 (below). The paid star repair at the tuning lift is deleted with the star economy and the
 lift (decision 21).
 
@@ -54,18 +54,12 @@ Three reasons the change was worth making:
    keeps *playing through*, and it is legible from the driver's seat (the engine sputters,
    the limiter arrives early) rather than announced by a screen.
 
-A damaged car still races — badly. The car park warns ("Damaged — the engine is down on
-power. Repair it at the lift.") but never blocks entry, and there is no health at which it
-blocks entry.
-
-**The warning is not "is this car pristine".** It fires from `Save.car_handles_badly`,
-which reads health against `GameConfig.damage_misfire_health_threshold` — the SAME number
-that decides when the engine starts misfiring, i.e. the point damage stops being cosmetic
-and starts costing power. It used to call `Save.car_needs_repair`, which is true of ANY
-car that is not pristine (and counts bent alignment too), so the red line appeared over
-"HEALTH 100%" and taught the player to ignore it. Repair is still offered for any lost
-health — "is this worth repairing" and "is this car hurt" are different questions, and
-they are now different calls.
+A damaged car still races — badly, and there is no health at which anything blocks
+fielding it. The old car-park warning ("Damaged — the engine is down on power. Repair it
+at the lift.") and its `Save.car_handles_badly` source are deleted with the car park and
+the paid lift repair: the misfire itself (`damage_misfire_health_threshold` on
+`DamageModel`) is the whole warning now — the point damage stops being cosmetic and starts
+costing power is felt on the road, not read off a menu.
 
 ## State (`DamageModel`)
 
@@ -346,10 +340,9 @@ nothing listening in `world.gd`, and no code path anywhere that reacts to the mo
 touches zero. A car at 0 HP is simply a car whose `damage_ramp` has saturated: worst
 misfire (capped at `damage_misfire_level_max`), lowest rev cap
 (`damage_rev_limit_min_fraction`, floored by `MIN_REDLINE_IDLE_RATIO`), whatever wheel toe
-it has accumulated — and it drives. It stays in the garage with its upgrades fitted (parts
-are consumed on fit, so they were never returned in the first place), it can be raced again
-immediately, and the free between-event repair lifts it back off the floor without the
-player spending anything.
+it has accumulated — and it drives. Nothing un-owns it or unfits anything on it; it can
+be fielded again immediately, and the free between-stage repair lifts it back off the
+floor without the player spending anything.
 
 That "state, not event" framing is what let the whole wreck layer be deleted rather than
 merely made survivable. An event needs a handler, and every handler needed a policy: what
@@ -368,8 +361,8 @@ roam now behaves like everywhere else: you keep driving the car you damaged.
 
 Every car — including the starter — takes damage the same way, and none of them can be
 lost. **There is no anti-soft-lock machinery, because nothing can strand a player**: a car
-at 0 HP is still a drivable car, and HP climbs back via the free between-event field repair
-and the paid repair at the lift. `Save.wreck_car`, `car_is_wrecked`, `all_cars_wrecked`,
+at 0 HP is still a drivable car, and HP climbs back via the free between-stage field
+repair. `Save.wreck_car`, `car_is_wrecked`, `all_cars_wrecked`,
 `ensure_wreck_safety_net` and the free rescue car that existed to dig the player out are
 all retired.
 
@@ -393,10 +386,10 @@ stop a discontinuous velocity reading as a crash, which has nothing to do with m
 
 **`damage_regen_hp_per_s` is 0.0 on the authored baseline**, so this is a no-op for
 every car unless something writes it. The only writer is the effects funnel: the
-"Self Healing" perk's `EFFECTS` row (`damage_regen_set`) sets it from
-`perk_heal_hp_per_s`, and `UpgradeLibrary._reseed_globals` puts it back to 0.0 the
-moment the perk comes off. `DamageModel` itself knows nothing about perks — it reads a
-config knob like every other rule here. See [perks.md](perks.md).
+"Self Healing" skill's `EFFECTS` row (`damage_regen_set`) sets it from
+`skill_heal_hp_per_s`, and `UpgradeLibrary._reseed_globals` puts it back to 0.0 the
+moment the skill comes off. `DamageModel` itself knows nothing about skills — it reads a
+config knob like every other rule here. See [skills.md](skills.md).
 
 It heals HP **only**. `wheel_toe` stays bent (only `field_repair` straightens wheels),
 so a self-healing car still has a reason to take the between-stage repair. A stage that
@@ -421,9 +414,19 @@ freebie this used to be (decision 8: repair has to compete, or it is not a decis
 
 **The repair is a CHOICE, and applying it is deferred until it is made.**
 `RunSession.report_event_result` draws the pick; nothing is applied until
-`choose_repair()` calls `Save.apply_field_repair_to(_car_instance_id)` and stashes its
-summary in `_pending_repair`, read once via `take_pending_repair()` on the next stage's
-boot. Choosing a boost instead means the car simply stays as damaged as it finished.
+`choose_repair()` calls `Save.apply_full_field_repair_to(_car_instance_id)` and stashes
+its summary in `_pending_repair`, read once via `take_pending_repair()` on the next
+stage's boot. Choosing a boost instead means the car simply stays as damaged as it
+finished.
+
+**Choosing repair is a FULL repair, not the fractional automatic patch-up.**
+`apply_full_field_repair_to` calls `field_repair` with fractions of `1.0`/`1.0` —
+100% of the HP lost so far and every wheel fully straightened — because the player
+gave up a boost specifically to fix the car. This is distinct from
+`apply_field_repair_to` (the `field_repair_hp_fraction`/`field_repair_toe_fraction`
+partial patch-up every OTHER stage transition applies automatically — the final-stage
+silent repair and the challenge mode's automatic repair, which never offer the
+repair-vs-upgrade choice at all).
 
 `field_repair` returns `{repaired, hp_before, hp_after, max_hp, hp_gained}`. It reports
 `repaired: false` — and writes nothing — for a pristine car (full HP, straight wheels), the
@@ -510,7 +513,7 @@ the "certain point" past which damage stops weakening the engine),
 `wreck_recovery_hp_fraction` and `wreck_settle_max_seconds` were **removed** with the
 wreck flow. `config/game_config.tres` overrides neither of the two new knobs, so their
 `game_config.gd` defaults (0.8 and 0.6) are what ships. Per-car `max_hp` is CarLibrary
-metadata, **not** a `GameConfig` field. The between-event pit repair and the perk-driven
+metadata, **not** a `GameConfig` field. The between-event pit repair and the skill-driven
 `damage_regen_hp_per_s` trickle are the only two heals there are.
 Tuning numbers are placeholders pending playtest (the mechanism is fixed, the
 values are not).

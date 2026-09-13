@@ -209,6 +209,22 @@ func test_lit_car_shader_has_fake_lighting() -> void:
 	assert_true(src.contains("void vertex()"), "ps1_models_lit computes lighting per-vertex")
 
 
+func test_car_headlight_cone_rejects_backfaces() -> void:
+	# The headlight cone must not light a car's REAR panels just because they sit
+	# geometrically inside the cone's angle/range — it needs to know which way the
+	# surface faces. Both car shaders share this lighting maths (the ghost variant
+	# duplicates ps1_models_lit's vertex block), so both must pass their world
+	# normal into a facing-aware headlight_lit() call, and the include must define
+	# a variant that actually consumes a normal.
+	for path in ["res://shaders/ps1_models_lit.gdshader", "res://shaders/ps1_models_ghost.gdshader"]:
+		var src := FileAccess.get_file_as_string(path)
+		assert_true(src.contains("headlight_lit(") and src.contains(", wn)"),
+			path + " passes its world normal (wn) into headlight_lit()")
+	var inc_src := FileAccess.get_file_as_string("res://shaders/headlight_cone.gdshaderinc")
+	assert_true(inc_src.contains("vec3 world_normal"),
+		"headlight_cone.gdshaderinc defines a normal-aware cone/lit variant")
+
+
 func test_terrain_shader_has_no_vertex_stage() -> void:
 	# Performance guard: the shared terrain shader must NOT carry a vertex() stage.
 	# The terrain is the heaviest geometry (tens of thousands of vertices in the

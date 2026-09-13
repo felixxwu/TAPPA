@@ -79,15 +79,28 @@ static func rating_limit_for_car(instance_id: int) -> float:
 # actually rendered and collided against is built from cfg.track_water_level_m
 # (world.gd._build_lakes), not from params.water_level.
 #
-# An active session with an empty stage dict (a run already over) and the
-# session-less callers — free roam, benchmark, dev boot — leave cfg exactly as the
-# caller authored it; applying {} would reset every field to the baseline and wipe
-# those deliberate writes.
+# An active session with an empty stage dict (a run already over), a free-play
+# drive with no plan set, and the remaining session-less callers — benchmark, dev
+# boot — leave cfg exactly as the caller authored it; applying {} would reset every
+# field to the baseline and wipe those deliberate writes.
+#
+# Free play (scripts/free_play.gd) is session-less by design, so it needs its own
+# branch here rather than RunSession's: without this, world.gd seeded $Floor's
+# terrain from cfg.track_seed (the baseline/previous-run value) while
+# TrackGenParams.for_event routed the road and checked water avoidance against
+# FreePlay.event()'s seed — two unrelated landscapes sharing one waterline. On flat
+# terrain the two noise fields land close enough that nothing shows; on hilly
+# terrain they diverge by tens of meters, so wherever the UNVALIDATED landscape
+# happened to dip, the road drove straight into a many-meter-deep flood the
+# avoidance never saw. See features/lakes.md.
 static func apply_stage_config(cfg: GameConfig) -> void:
+	var stage := {}
 	if RunSession.is_active():
-		var stage := RunSession.current_stage_params()
-		if not stage.is_empty():
-			StageConfig.apply_event_config(cfg, stage)
+		stage = RunSession.current_stage_params()
+	elif FreePlay.has_plan():
+		stage = FreePlay.event()
+	if not stage.is_empty():
+		StageConfig.apply_event_config(cfg, stage)
 
 
 # Whether `instance_id` is the car the stored run — of EITHER kind — is COMMITTED to.

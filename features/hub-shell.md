@@ -4,6 +4,15 @@
 full-rect `Control` the shell builds pages under). Built on `MenuPage` + `MenuNav`
 ([menu-navigation.md](menu-navigation.md)).
 
+**`MAIN`, `REGION`, `CAR`, `SHOP` and `SKILLS` present their choices as a
+`CardCarousel`** ([card-carousel.md](card-carousel.md)) — a horizontal, side-scrolling
+card list — rather than a vertical row-of-buttons list. `CHALLENGE`,
+`STATS` and `SETTINGS` were left as plain rows (not in scope for that conversion; STATS
+in particular is pure read-out with nothing to put on a card). Where this doc below
+still describes a page's choices as "one row per X", read that as "one CARD per X" for
+the five converted pages — the underlying data/eligibility logic every section describes
+is unchanged, only the presentation moved.
+
 **Tests:** `tests/headless/test_hub_shell.gd`
 
 The game's main scene and **the only way into a run**. It replaces the diegetic 3D hub
@@ -14,9 +23,9 @@ stage 2b of the roguelike pivot; decision 9 chose a flat 2D UI outright. See
 ## Deliberately plain, and deliberately temporary
 
 Stage 3's bar was *the loop runs start to finish*, not *the loop looks good*, and that bar
-still holds — the shell is stacked pages of plain buttons, now ten of them rather than
-four (stage 6 added `SHOP` / `BOOST_SHOP` in place, on this same script, rather than
-spinning off a dedicated one; stage 7 added `PERKS` and `STATS`; stage 9 added
+still holds — the shell is stacked pages of plain buttons, now nine of them rather than
+four (stage 6 added `SHOP` in place, on this same script, rather than
+spinning off a dedicated one; stage 7 added `SKILLS` and `STATS`; stage 9 added
 `CHALLENGE`; `SETTINGS` was added afterwards — see below, it was missing entirely for a
 while). A `DRIVETRAIN` / `DRIVETRAIN_CAR` pair sold drivetrain conversions here as a
 permanent purchase for a time (decision 52); that is superseded — a conversion is now a
@@ -27,25 +36,26 @@ invest in its looks, and do not grow it past what a plain button list can hold**
 future screen its own script if it needs anything richer than a row-of-buttons page. The
 whole shell is still smaller than any single one of the nine hub scripts it replaced.
 
-## The ten pages
+## The nine pages
 
-`HubShell.View` — `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `BOOST_SHOP`, `PERKS`,
+`HubShell.View` — `TITLE`, `MAIN`, `REGION`, `CAR`, `SUMMARY`, `SHOP`, `SKILLS`,
 `STATS`, `CHALLENGE`, `SETTINGS`. One page is
 live at a time; `_show(view)` frees the previous page's `CanvasLayer` before building the
 next, so a stale page can never sit under the tree still claiming input.
 
 | Page | Offers |
 | --- | --- |
-| `MAIN` | Money, **Resume run** (only when one is paused), New run, Shop, Perks, Lifetime stats, Settings, Quit |
-| `REGION` | Every region in AUTHORED order, marked when cleared; locked ones named with their gate |
+| `TITLE` | The cold-boot splash: "TAPPA" at `UITheme.px(72)` (a one-off literal, not `TITLE_FONT_SIZE` — see `UITheme.px`) centred in the middle of the screen, with Start (proceeds to `MAIN`) and Quit (`get_tree().quit()`, omitted on web — `_quit_applicable()`) as the page's bottom action row. Its body box is transparent (`alpha: 0.0` in `_show`'s `page_opts`, the same mechanism the carousel pages use — see below) so the logo stands alone with no black panel behind it, just the 3D `menu_showcase` through it like the carousel pages get. Skipped on a run-end return to the hub (see "The run summary is one-shot" below); it is the app's front door, not a page inserted between every screen and the one before it |
+| `MAIN` | **Resume run** (only when one is paused), New run, Shop (**disabled while the profile owns no car** — reads "Buy a car first"; every shop ladder is a permanent sink, so spending there before owning a car can leave a player unable to afford one, and money only comes from running stages), Skills, Rally challenge, Free play, Lifetime stats, Settings, Quit. Money is a top-left readout added straight to the page (`_build_money_label`, mirroring `_build_version_label`'s bottom-right one) rather than a `body()` row, so it can't pull the carousel's cards off the exact vertical middle of the screen — the card box centres on its own content, and any row sharing that VBox with the carousel shifts it |
+| `REGION` | Every region in AUTHORED order, marked when cleared; locked ones shown "Locked" with their pay rate (not the gate they hide behind) |
 | `CAR` | Every owned car (selectable to start the run) PLUS every unowned `CarLibrary` car with a `Buy <name> — <cost>` row (decision 28) |
-| `SUMMARY` | Stages cleared, money earned, per-stage times |
-| `SHOP` | Boost levels (→ `BOOST_SHOP`), the Engine Swap unlock |
-| `BOOST_SHOP` | One row per `BoostLibrary.CATALOGUE` id: level, price of the next level, `BoostLibrary.effect_range_text` |
-| `PERKS` | One row per `PerkLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([perks.md](perks.md)) |
+| `SUMMARY` | A `ConfirmPopup` announcement ("REGION CLEARED!" / "RUN OVER") fires as the page builds, then: stages cleared, money earned, per-stage times |
+| `SHOP` | ONE flat card list: every `BoostLibrary.CATALOGUE` id, shown as a 1-based current level (`Save.boost_level` storage is 0-based; the card displays `stored + 1`, so a never-upgraded boost reads "Lv 1"), what the boost actually does to the car at that level (`BoostLibrary.current_effect_text_for`, e.g. `-7%` — derived from the RESOLVED MAGNITUDE, never from how far the level pushed it, which reads as `+0%` on every un-upgraded boost; a `set`/`add` effect with no baseline to be a percentage of shows an absolute figure with its authored unit instead, e.g. `0.12 s`), and the price of the next level — no total rung count and no "how much the next level gives" shown — engine swap included, now that it is a boost — no sub-page hop |
+| `SKILLS` | Header line: equipped count AND money, sharing one row (not stacked) so the header's height stays constant and the carousel below doesn't jump. One card per `SkillLibrary.all()` entry — locked (naming its gate), Buy, or Equip/Unequip ([skills.md](skills.md)) |
 | `STATS` | The lifetime ledger, one row per `LifetimeStats` id ([lifetime-stats.md](lifetime-stats.md)) |
 | `CHALLENGE` | The three periods, one row each — stage count + rating cap; a period already run is shown and unfocusable ([rally-challenge.md](rally-challenge.md)) |
-| `SETTINGS` | The shared `SettingsMenu` ([menus.md](menus.md) → *Account page*) — audio, display, camera, gearbox, key bindings, mobile controls, account/cloud save, Reset progress |
+| `SETTINGS` | The shared `SettingsMenu` ([menus.md](menus.md) → *Account page*) — audio, display, camera, key bindings, mobile controls, account/cloud save, Reset progress |
+| `FREEPLAY_CAR` / `FREEPLAY_REGION` / `FREEPLAY_SETUP` | The Free Play sandbox flow — see below |
 
 **`SETTINGS` was missing entirely for a while**: the diegetic HQ used to offer it, the
 pivot's flat rebuild never added an equivalent row, and the only surviving route was
@@ -54,8 +64,9 @@ pivot's flat rebuild never added an equivalent row, and the only surviving route
 mounts the same `SettingsMenu` instance the pause menu does, so both hosts present
 identical options (per that script's own header comment) and neither route can drift.
 
-`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`, `BOOST_SHOP → SHOP → MAIN`,
-`PERKS`/`STATS`/`CHALLENGE → MAIN`, and `SETTINGS → MAIN` (via `_settings_back()`, which
+`_back()` (Esc / gamepad B) walks `CAR → REGION → MAIN`,
+`SKILLS`/`STATS`/`CHALLENGE → MAIN`, `FREEPLAY_SETUP → FREEPLAY_REGION →
+FREEPLAY_CAR → MAIN`, and `SETTINGS → MAIN` (via `_settings_back()`, which
 gives `SettingsMenu.go_back()` first refusal — its own sub-pages, and the Account page's
 sign-in sub-forms in turn, back out one level at a time before the shell backs out to
 `MAIN`; the same "first refusal" shape `pause_menu.gd::_on_settings_back` uses).
@@ -68,14 +79,14 @@ they never opened.
 Drivetrain conversions are the sixth money sink and hang off `SHOP`, per-car rather than
 as a global unlock — buying AWD on one car says nothing about another, because the
 conversion is a physical change to that car. Buying and RUNNING a layout are separate
-steps (the same split perks use): a bought layout becomes a free switch, since you buy the
+steps (the same split skills use): a bought layout becomes a free switch, since you buy the
 hardware once and then run whichever you like. See [region-runs.md](region-runs.md) →
 *The meta tier*.
 
 Car BUYING lives on the `CAR` page rather than a `SHOP` sub-page, per decision 28's own
 wording ("the car select screen offers a Buy action for unowned cars") — one list serves
 both picking and buying, since a player looking at "which car" is already looking at
-exactly the list a shop would show. Boost levels and the Engine Swap unlock are different:
+exactly the list a shop would show. Boost levels are different:
 permanent purchases with no tie to picking a car for THIS run, so they hang off `MAIN`
 instead. See [region-runs.md](region-runs.md) → *The meta tier* for what each purchase
 actually does.
@@ -84,12 +95,16 @@ actually does.
 
 `CLAUDE.md` requires **every** menu in the game to be keyboard + gamepad navigable, and a
 new menu to ship with a nav test in the same piece of work. Every page here goes through
-`MenuNav.attach`, and every body row is a `Button` rather than a `Label` **because
-`MenuNav` only walks focusable controls** — a label row would be invisible to the keyboard
-and silently break the contract. `test_hub_shell.gd` walks all ten views and asserts each
-has a `MenuNav` and at least one focusable control — including `SHOP` and `BOOST_SHOP`
-even when every purchasable row on them is disabled (unaffordable or at its level cap):
-`Back` is always a live `_action`, so the assertion holds regardless of the player's money.
+`MenuNav.attach`. On a still-row-based page, every body row is a `Button` rather than a
+`Label` **because `MenuNav` only walks focusable controls** — a label row would be
+invisible to the keyboard and silently break the contract. On the five carousel pages
+(`MAIN`/`REGION`/`CAR`/`SHOP`/`SKILLS`), the `CardCarousel` itself is the one focusable
+unit MenuNav lands on instead — it sets its own `FOCUS_ALL`, so MenuNav needs no special
+case for it (see [card-carousel.md](card-carousel.md)). `test_hub_shell.gd` walks all nine
+views and asserts each has a `MenuNav` and at least one focusable control (a carousel
+counts as one) — including `SHOP` even when every purchasable card
+on it is disabled (unaffordable or at its level cap): `Back` is always a live `_action`,
+so the assertion holds regardless of the player's money.
 
 The test file pins the **screen graph and the navigation**, and deliberately nothing about
 looks, wording or button order — stages 7–8 still rewrite parts of it, and a layout
@@ -102,20 +117,53 @@ before it being in `Save.KEY_REGIONS_CLEARED`. The page lists them via
 `RegionLibrary.ordered()` — **never array position**, which that table's header states
 carries no meaning.
 
-A locked region stays on the page, named, saying what opens it. Hiding it leaves a new
-player with one row and no idea the game continues; showing it unpressable with no
-explanation is worse. Its button is `disabled` **and carries the `menu_nav_skip` meta** —
+A locked region stays on the page, named, marked "Locked — pays $N/stage" — deliberately
+NOT naming the gate it hides behind (the gate region's own card, a swipe away, answers
+that better than a second-hand name does). Hiding it leaves a new player with one row and
+no idea the game continues; showing it unpressable with no explanation is worse. Its button is `disabled` **and carries the `menu_nav_skip` meta** —
 that meta is the framework's own opt-out, and it is required rather than optional:
 `MenuNav.attach` runs *after* the page is built and re-enables focus on every `BaseButton`
 it finds, so setting `focus_mode` alone is silently undone and the keyboard lands on a dead
 row.
 
+## Free play — the session-less sandbox
+
+Three carousel pages off MAIN (`_build_freeplay_car` → `_build_freeplay_region` →
+`_build_freeplay_setup`): ANY catalogue car (unowned cars are lent, not bought), ANY
+region (the unlock gate is a progression rule for runs; a sandbox has none), and any
+combination of the `BoostLibrary` catalogue as toggle cards. `_build_freeplay_car`
+builds its cards the same way `_build_car` does (a catalogue-index `car_refs` array
+fed to `_sync_car_previews`), so free play's car page shows the same live
+`CarCardPreview` 3D viewports as the main CAR page instead of a flat icon. Start writes a plan to
+`FreePlay` (`scripts/free_play.gd`) and boots the run scene — whose session-less
+branch consumes it: `world.gd::_field_free_play_car` fields the chosen car with the
+chosen boosts (plus equipped skills) on the same effects funnel a run's car rides,
+and generation uses the plan's stage dict (`FreePlay.event()`). No clock, no run
+state, nothing persisted — the car is unbound, so damage never touches the save, and
+the finish panel's Next returns to the hub through the existing no-session branch.
+`RunSession.start`/`start_region`/`resume` clear the plan so a real run never
+inherits it.
+
+`DrivingContext.apply_stage_config` seats `FreePlay.event()` through
+`StageConfig.apply_event_config` when no session is active (mirroring the
+`RunSession.is_active()` branch), so free play's seed/hilliness/cliffs/surface-grip
+reach `cfg`/`$Floor` the same way a real run's do. This used to be missed — free
+play routed the road and checked water avoidance against the event's seed while
+`$Floor` baked terrain from whatever `cfg.track_seed` a previous scene had left
+behind, so the road was validated against one landscape and driven on a completely
+different one. Invisible on flat terrain (the two noise fields land close enough),
+but on a hilly stage they can diverge by tens of meters, flooding a long stretch of
+road the avoidance never saw. See [lakes.md](lakes.md).
+
 ## The run summary is one-shot
 
-`_ready()` opens `SUMMARY` instead of `MAIN` whenever `RunSession.last_result()` is
+`_ready()` opens `SUMMARY` instead of `TITLE` whenever `RunSession.last_result()` is
 non-empty. A run that ends hands control back here via `world.gd` →
-`Scenes.hub_path()`, and without this the player is dropped at a title screen with no idea
-whether they cleared the region.
+`Scenes.hub_path()`, and without this the player is dropped at the TITLE splash with no
+idea whether they cleared the region — so a run-end return bypasses `TITLE` outright and
+goes straight to `SUMMARY`; only a genuine cold boot (no result parked) shows `TITLE`.
+`TITLE`'s own Start button always lands on `MAIN` (`_enter_game`) — nothing else reaches
+`TITLE`, so there is only the one destination to wire.
 
 That makes clearing the result load-bearing: `RunSession.clear_last_result()` exists for
 exactly this, is called only by the screen that displayed the result, and is deliberately
@@ -126,6 +174,19 @@ A summary that failed to clear would trap the player on it forever.
 One screen serves **both** outcomes — region cleared, and stopped by the clock. A run that
 ends on a missed target has no placement to celebrate, and the same information is worth
 reading either way (`gameplay.md` → *The run, end to end*).
+
+### The outcome is announced, not just tallied
+
+`_build_summary` opens a `ConfirmPopup` ([modals.md](modals.md)) the instant it runs, before
+adding the stat labels — `_announce_run_outcome`. Clearing the region reads "REGION
+CLEARED!" with the stages/money one-liner; missing a stage's target (the one hard fail
+state, decision 4) reads "RUN OVER" and names which stage it happened on. The plain stat
+sheet below used to be the ONLY feedback either outcome got, which read the same whether
+the run had just gone the distance or died on stage 2 — the popup is what makes the moment
+register before the player reads the numbers. It follows the same "one modal at a time"
+rule as every other `ConfirmPopup` caller here (`_start_run`'s abandon-run confirm, the
+update-available prompt): if something else already owns the screen, the announcement is
+silently refused rather than queued.
 
 ## Decision 48's confirm lives here
 
@@ -138,6 +199,30 @@ to. The rule is defensible; discovering it after the fact is not.
 `MAIN` therefore lists **Resume run first**, above New run. Putting it anywhere else is how
 a player loses a run they meant to finish.
 
+### MAIN shows the build version in the corner
+
+`_build_main` finishes by calling `_build_version_label`, which drops a small dim
+label into `_page`'s bottom-right corner showing the raw stamped
+`application/config/version` string (see [update-check.md](update-check.md)) — a
+Play tester can read off which build landed on their device without any network
+call. Added straight to `_page` (the full-rect modal Control), not to `body()`, so
+it floats free of the card carousel/body box layout; hidden entirely when the
+version is unstamped/unparseable (`UpdateCheck.display_version` returns `""`).
+Passive chrome only — it is never made focusable and never joins `MenuNav`'s
+widget list, so it cannot perturb keyboard/gamepad nav order.
+
+### MAIN rebuilds when the cloud pull lands
+
+The Resume card is decided from `Save.profile` at the moment `_build_main` runs — but on a
+signed-in device the boot pull is **asynchronous** (`Cloud._kick_off_initial_pull` →
+`CloudSync.apply_remote` → `profile_replaced`), so the cloud's copy of the profile can
+arrive *after* MAIN has already been built. `_ready` therefore connects
+`Cloud.profile_replaced` to `_on_profile_replaced`, which re-shows `MAIN` if that is the
+live view. Without it a run paused on another device (or before a re-install) showed no
+Resume card on first load and only appeared once the player navigated away and back. Other
+views are deliberately left alone — the player is mid-interaction on them, and each re-reads
+the profile the next time it is opened.
+
 ## Known gaps, by design
 
 - **The challenge screen is MINIMAL, deliberately.** `CHALLENGE` names each period, its
@@ -145,7 +230,6 @@ a player loses a run they meant to finish.
   leaderboard, no standing, and no explanation of the placement reward — `hq_challenge.gd`
   did all three and is deleted. See `todo/roguelike-pivot.md` → *Salvaged from
   `hq_challenge.gd`* for the orchestration a full screen would reproduce.
-- **No re-displayed "locked" swap UI.** The Engine Swap unlock can be BOUGHT (the `SHOP`
-  page), but there is no picker screen yet that re-checks
-  `RallyLibrary.engine_swaps_unlocked` and shows a locked state — see
-  [engine-swap.md](engine-swap.md) for the two old consumers that used to and are gone.
+- **The Engine Swap is a mid-run boost pick now** (BoostLibrary `"engine_swap"`,
+  the catalogue's POWER entry); the old one-time SHOP unlock and its gate are
+  deleted — see [engine-swap.md](engine-swap.md).

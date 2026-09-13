@@ -67,6 +67,26 @@ const CORNER_WEIGHTS := {
 	"1": 0.5,        # tightest numbered turn (~85°)
 	"Square": 0.5,   # sharp ~90°
 	"Hairpin": 0.2,  # ~180° — the rarest shape in the set
+	# "Jump" (TrackProfile.CORNER_NAME) is a dead-straight 60 m line — its whole
+	# character is the vertical crest baked onto it by the terrain pass, which this
+	# 2D weight table can't see. Left unweighted it would be the single most
+	# common event in the game, for two reasons neither of which is obvious from
+	# this table alone:
+	#   1. _corner_straightness returns 1.0 for a dead-straight curve, so Jump is
+	#      the STRAIGHTEST possible candidate — meaning it's the MOST favoured one
+	#      by STRAIGHTNESS_BIAS at any straightness > 0. That's backwards: jumps
+	#      should read as a deliberate spike of drama, not the default filler that
+	#      fills up the early, easy, high-straightness stretches of a run.
+	#   2. mirror_points negates x, which is a no-op on a straight line (x is 0
+	#      the whole way) — so Jump's left- and right-flip candidates are
+	#      geometrically IDENTICAL. Every real corner contributes two distinct
+	#      candidates to the draw; Jump contributes the same candidate twice,
+	#      silently doubling its effective share versus this weight alone.
+	# Set at hairpin-level rarity (0.2) and then halved again to cancel the doubled
+	# candidate from point 2, landing at 0.1 — roughly twice as rare as a Hairpin,
+	# which is deliberate: a Hairpin is still a corner you drive through, a Jump is
+	# a set-piece event and should feel rarer than the rarest ordinary corner.
+	"Jump": 0.1,
 }
 # Floor on a resolved corner multiplier. Keeps a weight strictly positive: the weighted
 # draw computes pow(u, 1.0 / weight), so a 0 in CORNER_WEIGHTS would divide by zero, and
@@ -740,8 +760,25 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 		# corner's spec back up by name — `pieces` records the name, and _corner_straightness
 		# is memoised, so this is a short scan over the ~9 authored corners plus a dict hit.
 		var prev_is_hairpin := false
+		# Whether the piece at the frontier is a Jump, for the no-consecutive-jump
+		# rule below. Unlike prev_is_hairpin this is keyed on the corner NAME
+		# (TrackProfile.CORNER_NAME) rather than derived geometry, and that's a
+		# deliberate departure from _is_hairpin's pattern, not an oversight:
+		# "near-180°" is a SHAPE that genuinely distinguishes a hairpin from every
+		# other authored corner, so deriving it from _corner_straightness survives a
+		# rename. "Dead straight" has no such distinguishing power — the plain
+		# "Straight" piece is dead straight too, so any straightness threshold either
+		# also catches Straight (wrong) or is tuned so tight it only ever matches the
+		# literal Jump curve (no better than just checking the name). A Jump's real
+		# identity is its name plus the vertical crest TrackProfile bakes onto it
+		# afterwards, neither of which the 2D curve expresses — so there is no
+		# geometry here to derive from in the first place. The cost, same as any
+		# name-keyed rule: renaming "Jump" silently disables this check. Guard that
+		# the same way test_corner_weights_name_real_corners guards "Hairpin" et al.
+		var prev_is_jump := false
 		if not pieces.is_empty():
 			var prev_corner := String(pieces[pieces.size() - 1]["corner"])
+			prev_is_jump = prev_corner == TrackProfile.CORNER_NAME
 			for spec in corners:
 				if String(spec["name"]) == prev_corner:
 					prev_is_hairpin = _is_hairpin(spec)
@@ -755,6 +792,15 @@ static func _search(start_pos: Vector2, start_heading: Vector2, turn_count: int,
 			# piece below), while _candidate_template is depth-invariant and cached
 			# across generate() calls.
 			if prev_is_hairpin and _is_hairpin(corners[cand["corner_index"]]):
+				continue
+			# Ban jump-into-jump, same shape and same reasoning as the hairpin rule
+			# above (rejected pre-tessellation, contextual rather than baked into the
+			# shared candidate template). Two Jumps back to back would chain two
+			# 60 m dead-straight crests with nothing gentle between them — a
+			# double-jump reads as a bug, not a feature, and the terrain bake has no
+			# way to blend two crests placed end to end. See prev_is_jump above for
+			# why this checks the corner NAME rather than derived geometry.
+			if prev_is_jump and String(corners[cand["corner_index"]]["name"]) == TrackProfile.CORNER_NAME:
 				continue
 			var built := _build_candidate(cand, corners, frame_pos, frame_heading)
 			# Overlap test (early-exits on the first overlapping cell) + footprint cells.

@@ -38,9 +38,13 @@ extends RefCounted
 # values are GRADE-BAKED — read the Palette section below before editing a colour.
 # See features/ui-design-system.md.
 
-# Syne Mono is the UI face: a hand-drawn monospace, so stat read-outs and money
-# columns line up while the lettering keeps a characterful, slightly informal feel.
-const FONT_PATH := "res://fonts/SyneMono.ttf"
+# Jersey 10 is the UI face: a pixel-grid monospace built for low-res displays, so
+# stat read-outs and money columns line up and stay crisp/unblurred at the game's
+# native resolution instead of aliasing like a face designed for smooth scaling
+# (the old Syne Mono, still in fonts/ for reference). Import settings that keep it
+# sharp (no antialiasing, no hinting, pixel-snapped positioning) live on
+# fonts/Jersey10.ttf.import — see features/ui-design-system.md.
+const FONT_PATH := "res://fonts/Jersey10.ttf"
 
 # --- Palette -----------------------------------------------------------------
 # Surfaces are pure black; over the 3D world panels stay nearly opaque so the
@@ -108,7 +112,23 @@ static func px(authored: float) -> int:
 	return int(round(authored * UI_SCALE))
 
 
-const FONT_SIZE := int(16 * UI_SCALE + 0.5)
+# Jersey 10 doesn't ship hinted bitmap strikes, so its outline-to-pixel rounding
+# only lands clean at certain point sizes — off those sizes, stroke widths that
+# should match come out 1px apart and glyphs read as uneven/disfigured. 18px was
+# found to be the sweet spot by rendering the face across a size sweep
+# (tools/render_font_sizes.py) and eyeballing the result; the authored value
+# below is picked to land exactly on 18 at the current UI_SCALE. If UI_SCALE
+# ever changes (see below), re-run that sweep and re-pick BOTH numbers so the
+# rendered size still lands on a clean one — don't just let the scale drift it.
+const FONT_SIZE := int(13 * UI_SCALE + 0.5)
+
+# Rule 2's ONE documented exception: a title/heading reads better at 2x FONT_SIZE
+# (screen titles via `title()`, card names via `card_title()`) — see house rule 2
+# in features/ui-design-system.md for where this is and isn't used. An exact
+# integer multiple of FONT_SIZE stays on Jersey 10's pixel grid the same way
+# FONT_SIZE itself does (confirmed with tools/render_font_sizes.py at 36px), so
+# this is derived rather than a second independently-picked magic number.
+const TITLE_FONT_SIZE := FONT_SIZE * 2
 
 # --- Rule 3: fixed, compact height for single-line menu buttons --------------
 const MENU_ROW_H := int(30 * UI_SCALE + 0.5)
@@ -154,10 +174,24 @@ static func label(text: String, role: String = "ink") -> Label:
 	return l
 
 
-# A screen title — same size as everything else (rule 2), just centred.
+# A screen title — TITLE_FONT_SIZE (rule 2's one exception), centred. Marked so
+# `enforce()` leaves its size alone instead of resetting it to FONT_SIZE like every
+# other label under a menu root.
 static func title(text: String) -> Label:
 	var l := label(text)
+	l.add_theme_font_size_override("font_size", TITLE_FONT_SIZE)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.set_meta("ui_title_size", true)
+	return l
+
+
+# A card's own name/heading (CardCarousel's card.info, first line) at TITLE_FONT_SIZE —
+# same exception as `title()`, for the one other place a title-sized label recurs.
+# Left-aligned (card.info is a tight VBox, not a centred screen header).
+static func card_title(text: String, role: String = "ink") -> Label:
+	var l := label(text, role)
+	l.add_theme_font_size_override("font_size", TITLE_FONT_SIZE)
+	l.set_meta("ui_title_size", true)
 	return l
 
 
@@ -219,6 +253,25 @@ static func _role_color(role: String) -> Color:
 		_: return INK
 
 
+# A themed Button's face for a given state — pure black normally, lifted a hair and
+# underlined green when `selected` (hover/pressed/focus). Shared by
+# tools/build_ui_theme.gd (the plain, unwrapped form baked into the saved global theme)
+# and `enforce` below (the shadow-wrapped form applied at runtime) so the two can never
+# drift apart into two different button recipes.
+static func btn_box(bg: Color, selected: bool = false) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.content_margin_left = px(14)
+	box.content_margin_right = px(14)
+	box.content_margin_top = px(4)
+	box.content_margin_bottom = px(4)
+	if selected:
+		box.border_width_bottom = px(3)
+		box.border_color = GREEN
+	# Sharp corners, no outer border — the defining trait of the look.
+	return box
+
+
 # --- Panels ------------------------------------------------------------------
 
 # A pure-black, sharp-cornered panel box (rule 4). Defaults to fully opaque;
@@ -251,22 +304,81 @@ static func readout_box() -> StyleBox:
 	return box if box != null else panel_box()
 
 
-# A PanelContainer wearing `panel_box`. Drop children straight in.
+# A PanelContainer wearing `panel_box`, cast with the theme-wide hard shadow (see
+# `shadowed` below). Drop children straight in.
 static func panel(alpha: float = 1.0, pad: int = 14) -> PanelContainer:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", panel_box(alpha, pad))
+	p.add_theme_stylebox_override("panel", shadowed(panel_box(alpha, pad)))
 	return p
+
+
+# --- Card drop shadow --------------------------------------------------------
+
+# A SHARP (zero-blur) drop shadow cast down-right by a card, so cards read as physical
+# objects sitting above the page rather than flat black rectangles. Authored as CSS would
+# put it: offset 5px 5px, no blur, black at 20% alpha.
+#
+# NOT StyleBoxFlat's own shadow_* properties: those expand the shadow rect by
+# `shadow_size` on ALL sides before offsetting it, so a zero-blur, purely-diagonal
+# offset is unreachable (size 0 draws nothing at all, and any size > 0 leaks the shadow
+# out of the top-left edge too). A plain offset quad drawn BEHIND the card is the exact
+# shape, so that is what card_shadow_offset()/card_shadow_box() are for — see
+# CardCarousel.add_card, which positions the quad in _layout.
+const CARD_SHADOW_AUTHORED := 5.0
+
+# Flat black at 20% alpha — the shadow's fill, shared by the sibling-quad form
+# (card_shadow_box, for CardCarousel's absolute-positioned cards) and the
+# baked-in wrapper form (UIHardShadowBox, for everything themed).
+const CARD_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.2)
+
+# The shadow's pixel offset (x == y), scaled from the 400px authoring canvas.
+static func card_shadow_offset() -> float:
+	return float(px(CARD_SHADOW_AUTHORED))
+
+
+# The shadow quad's fill: flat black at 20% alpha, sharp corners, no padding.
+static func card_shadow_box() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = CARD_SHADOW_COLOR
+	return box
+
+
+# Wrap any StyleBox with the same hard, zero-blur shadow — the THEME-WIDE form used by
+# every ordinary Button/Panel/PanelContainer (see UIHardShadowBox for why this can be a
+# single wrapped draw call here, unlike CardCarousel's sibling-quad form). Used both by
+# tools/build_ui_theme.gd (bakes it into the global theme, covering every Button/Panel
+# in the game) and by call sites that build a stylebox override by hand (`panel()`,
+# `mark_selected`, `mark_focused`, `mark_panel_focused`, `reward_card_box`) so a
+# widget's shadow never disappears when it becomes selected/focused.
+#
+# Copies `box`'s own margins onto the wrapper's REAL `content_margin_*` properties here,
+# at construction time, rather than leaving the wrapper to forward them lazily on demand:
+# `StyleBox`'s scriptable virtuals in this Godot version are only `_draw`,
+# `_get_draw_rect`, `_get_minimum_size` and `_test_mask` — there is no `_get_style_margin`
+# to override, so a GDScript class defining one is silently never called, and
+# `get_margin()` falls back to its unset-content-margin default of 0 for every side. Left
+# that way, every wrapped Container's children would sit flush against its edges instead
+# of padded — baking the real values in here, once, is what makes `get_margin()` return
+# them correctly afterwards with no virtual involved.
+static func shadowed(box: StyleBox) -> StyleBox:
+	var wrapper := UIHardShadowBox.new()
+	wrapper.inner = box
+	wrapper.content_margin_left = box.get_margin(SIDE_LEFT)
+	wrapper.content_margin_top = box.get_margin(SIDE_TOP)
+	wrapper.content_margin_right = box.get_margin(SIDE_RIGHT)
+	wrapper.content_margin_bottom = box.get_margin(SIDE_BOTTOM)
+	return wrapper
 
 
 # A solid black, sharp-cornered reward-card stylebox with a green accent border (a
 # reward is a positive event — GREEN is the design system's "positive" colour).
 # Shared by the upgrade reveal and the podium car-reveal cards.
-static func reward_card_box() -> StyleBoxFlat:
+static func reward_card_box() -> StyleBox:
 	var style := panel_box(0.92, 22)
 	style.border_color = GREEN
 	for side in ["left", "top", "right", "bottom"]:
 		style.set("border_width_" + side, 2)
-	return style
+	return shadowed(style)
 
 
 # --- Scrolling body text -----------------------------------------------------
@@ -421,8 +533,9 @@ static func mark_selected(btn: Button, selected: bool) -> void:
 		box.border_color = GREEN
 	for side in ["left", "top", "right", "bottom"]:
 		box.set("content_margin_" + side, 10.0)
+	var wrapped := shadowed(box)
 	for state in ["normal", "hover", "pressed"]:
-		btn.add_theme_stylebox_override(state, box)
+		btn.add_theme_stylebox_override(state, wrapped)
 	btn.add_theme_color_override("font_color", GREEN if selected else INK)
 
 
@@ -444,7 +557,7 @@ static func mark_focused(btn: Button, focused: bool) -> void:
 		box.content_margin_right = 14
 		box.content_margin_top = 4
 		box.content_margin_bottom = 4
-		btn.add_theme_stylebox_override("normal", box)
+		btn.add_theme_stylebox_override("normal", shadowed(box))
 		btn.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	else:
 		btn.remove_theme_stylebox_override("normal")
@@ -479,7 +592,7 @@ static func mark_panel_focused(container: PanelContainer, focused: bool, pad: in
 	box.content_margin_top = p
 	box.content_margin_right = p
 	box.content_margin_bottom = p
-	container.add_theme_stylebox_override("panel", box)
+	container.add_theme_stylebox_override("panel", shadowed(box))
 
 
 # Grab keyboard/gamepad focus on `ctrl`, but only when it can actually take it —
@@ -575,18 +688,23 @@ static func flank(inner: Control, active: bool) -> HBoxContainer:
 
 # --- Rule enforcement --------------------------------------------------------
 
-# Apply the house rules to every Label/Button under a menu root:
+# Apply the house rules to every Label/Button/Panel under a menu root:
 #   1. uppercase the text,
 #   2. lock the font size to FONT_SIZE,
-#   3. give plain single-line buttons the fixed compact height.
+#   3. give plain single-line buttons the fixed compact height,
+#   5. cast the hard down-right card-shadow (see "Card drop shadow" below).
 # Idempotent and cheap — menu builders call it once after building, and screens
 # with dynamic text (e.g. HQ) re-run it whenever that text changes so the rules
-# keep holding. Leaves layout/colour alone; only normalises text, size, height.
+# keep holding. Leaves layout/colour alone; only normalises text, size, height,
+# and (for widgets still on the theme's own default look) the shadow.
 static func enforce(root: Node) -> void:
 	for node in root.find_children("*", "Label", true, false):
 		var l := node as Label
 		l.text = caps(l.text)
-		l.add_theme_font_size_override("font_size", FONT_SIZE)
+		# Rule 1 (uppercase) always applies; rule 2's size reset skips a title/card_title
+		# label (ui_title_size meta) — see TITLE_FONT_SIZE above.
+		if not l.has_meta("ui_title_size"):
+			l.add_theme_font_size_override("font_size", FONT_SIZE)
 	for node in root.find_children("*", "Button", true, false):
 		var b := node as Button
 		b.text = caps(b.text)
@@ -594,3 +712,38 @@ static func enforce(root: Node) -> void:
 		# A "single-line menu" button: no embedded layout, no manual line break.
 		if b.get_child_count() == 0 and not b.text.contains("\n"):
 			b.custom_minimum_size.y = MENU_ROW_H
+		_shadow_button(b)
+	for node in root.find_children("*", "PanelContainer", true, false):
+		_shadow_panel(node as Control)
+	for node in root.find_children("*", "Panel", true, false):
+		_shadow_panel(node as Control)
+
+
+# Rule 5: every themed Button/Panel casts UITheme's hard card-shadow, same as a
+# CardCarousel card. This is applied HERE, at runtime, rather than baked into the saved
+# global theme (theme/ui_theme.tres): that resource loads during early project boot,
+# before autoloads are guaranteed to exist, and embedding a custom-script StyleBox
+# (UIHardShadowBox) in it once corrupted identifier resolution for OTHER scripts that
+# reference an autoload (world_panel.gd's `DisplayStretch.DESIGN_HEIGHT`), crashing the
+# engine on every test run. `enforce()` always runs well after boot, so it's safe here.
+#
+# Skipped for a widget that already carries its OWN stylebox override — mark_selected,
+# mark_focused, panel(), reward_card_box() and menu_page.gd's body box all call
+# `shadowed()` themselves already; re-wrapping here would double the shadow (and, for a
+# manually-managed button like mark_focused's, fight with the state it's mid-transition
+# to). A plain `UITheme.button()`/native Button or Panel with no override still wears
+# only the theme's UNWRAPPED default look, so those are exactly what this reaches.
+static func _shadow_button(b: Button) -> void:
+	if b.has_theme_stylebox_override("normal"):
+		return
+	b.add_theme_stylebox_override("normal", shadowed(btn_box(BLACK)))
+	b.add_theme_stylebox_override("hover", shadowed(btn_box(SURFACE_HOVER, true)))
+	b.add_theme_stylebox_override("pressed", shadowed(btn_box(SURFACE_HOVER, true)))
+	b.add_theme_stylebox_override("focus", shadowed(btn_box(SURFACE_HOVER, true)))
+	b.add_theme_stylebox_override("disabled", shadowed(btn_box(Color(0.03, 0.03, 0.03, 0.9))))
+
+
+static func _shadow_panel(p: Control) -> void:
+	if p == null or p.has_theme_stylebox_override("panel"):
+		return
+	p.add_theme_stylebox_override("panel", shadowed(panel_box(1.0)))

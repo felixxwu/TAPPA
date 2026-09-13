@@ -18,12 +18,9 @@ extends VBoxContainer
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately; the HQ has no camera so it just saves
 #     and the choice is applied on the next run.
-#   • Gearbox — pick the transmission mode (automatic / manual), persisted under
-#     SettingsMenu.GEARBOX_SETTING_KEY. This is the ONLY way to choose automatic:
-#     it replaced the old `toggle_gearbox` (T) runtime toggle, which was unreachable
-#     on touch (no mobile scheme has shift buttons) and on a controller. car.gd
-#     mirrors `gearbox_auto()` onto the live engine every tick, so a change from the
-#     pause menu applies mid-run without any signal.
+#   • Gearbox — the transmission is always automatic now; there is no manual option
+#     and no settings row for it. `SettingsMenu.gearbox_auto()` always returns true;
+#     car.gd mirrors it onto the live engine every tick.
 #   • Key bindings — rebind the keyboard and controller controls. Each driving
 #     action (InputRemap.ACTIONS) gets a row with a keyboard button and a controller
 #     button showing its current binding; tapping one listens for the next key /
@@ -51,24 +48,16 @@ signal camera_changed(mode: int)
 # Emitted when the touch-control scheme is picked, so a live MobileControls (the
 # run's, via the pause menu) can switch the on-screen controls immediately.
 signal scheme_changed(id: int)
+# Emitted when the dev page's "Complete stage" action is pressed, so the live run
+# scene (world.gd, via the pause menu's relay — it owns the car / track / stage
+# manager this menu has no reference to) can skip to the finish exactly as the F
+# dev key does. No payload: the stage to complete is the one being driven.
+signal dev_complete_stage_requested
 # Emitted on every page switch; is_root == the category list is showing.
 signal page_changed(is_root: bool)
 # Fixed width for the key-binding buttons (and their column captions), wide enough
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
 const _BIND_BUTTON_W := 168.0 * UITheme.UI_SCALE
-
-# Save-profile key for the transmission mode (1 = automatic, 0 = manual). Stored as an
-# int so it rides the shared _refresh_selection highlight helper with the camera / fps /
-# scheme rows. Unset falls back to the authored GameConfig baseline.
-const GEARBOX_SETTING_KEY := "gearbox_auto"
-const GEARBOX_AUTO := 1
-const GEARBOX_MANUAL := 0
-const GEARBOX_OPTIONS := [
-	{"value": GEARBOX_AUTO, "name": "Automatic",
-		"desc": "The car changes gear for you — the only mode on touch controls."},
-	{"value": GEARBOX_MANUAL, "name": "Manual",
-		"desc": "You shift yourself with the shift up / shift down controls."},
-]
 
 # Standing copy on the Reset progress page: the warning shown above the button, and
 # the body of the confirm modal (which appends the cloud line when signed in). One
@@ -76,6 +65,10 @@ const GEARBOX_OPTIONS := [
 const RESET_WARNING := "Start a brand new game. Every car, star, upgrade and " \
 	+ "rally result is erased — on this device and, while you are signed in, in " \
 	+ "the cloud. This cannot be undone."
+
+# The dev page's "Add money" grant. A dev amount, not a tunable — it exists to
+# make the shop reachable while poking at the game, so it is not a GameConfig field.
+const DEV_MONEY_GRANT := 10000
 
 # Test override for dev_tools_enabled(): -1 = use the real default, 0 = force
 # off, 1 = force on. Lets a test assert the off case even though the shipped
@@ -100,7 +93,6 @@ static func dev_tools_enabled() -> bool:
 var camera_rows: Array = []
 var scheme_rows: Array = []
 var fps_rows: Array = []
-var gearbox_rows: Array = []
 # Key-binding rows, exposed for tests / hosts:
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
@@ -118,12 +110,11 @@ var master_value_label: Label
 var music_slider: HSlider
 var music_value_label: Label
 var _camera_page: VBoxContainer
-var _gearbox_page: VBoxContainer
 var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
 var _benchmark_page: VBoxContainer
 var _dev_page: VBoxContainer
-var _dev_status: Label  # feedback line on the dev page ("Granted …", "Fitted …")
+var _dev_status: Label  # feedback line on the dev page ("Added …", "Granted …")
 var _reset_page: VBoxContainer
 var _reset_status: Label  # warning line, replaced with the outcome after a wipe
 var _account_page: VBoxContainer
@@ -187,7 +178,6 @@ func _build() -> void:
 	_build_audio_page()
 	_build_display_page()
 	_build_camera_page()
-	_build_gearbox_page()
 	_build_controls_page()
 	_build_schemes_page()
 	_build_benchmark_page()
@@ -201,7 +191,7 @@ func _build() -> void:
 	# this so adding a page only means adding an entry here.
 	_pages = {
 		"list": _list_page, "audio": _audio_page, "display": _display_page,
-		"camera": _camera_page, "gearbox": _gearbox_page, "controls": _controls_page,
+		"camera": _camera_page, "controls": _controls_page,
 		"schemes": _scheme_page, "benchmark": _benchmark_page, "dev": _dev_page,
 		"account": _account_page, "reset": _reset_page, "seedlab": _seedlab_page,
 	}
@@ -210,7 +200,6 @@ func _build() -> void:
 	_page_on_show = {"seedlab": _regen_seedlab}
 
 	_refresh_camera_selection()
-	_refresh_gearbox_selection()
 	_refresh_scheme_selection()
 	_refresh_fps_selection()
 	_refresh_controls_selection()
@@ -234,7 +223,6 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Audio", show_audio))
 	list_grid.add_child(_make_nav_button("Display", show_page.bind("display")))
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
-	list_grid.add_child(_make_nav_button("Gearbox", show_gearbox))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
 	list_grid.add_child(_make_nav_button("Account", show_page.bind("account")))
@@ -293,17 +281,6 @@ func _build_camera_page() -> void:
 	_build_option_page(_camera_page, CameraManager.MODES, "mode", camera_rows, select_camera)
 
 
-func _build_gearbox_page() -> void:
-	# Gearbox sub-page — automatic vs manual transmission. Same flat name+blurb rows as
-	# the camera / fps pages, so keyboard + gamepad nav (ui_up/ui_down + ui_accept,
-	# focus seated by focus_current_page) comes for free.
-	_gearbox_page = _make_page()
-	add_child(_gearbox_page)
-	_gearbox_page.add_child(_make_heading("Gearbox"))
-	_gearbox_page.add_child(_make_sub("Choose how you change gear:"))
-	_build_option_page(_gearbox_page, GEARBOX_OPTIONS, "value", gearbox_rows, select_gearbox)
-
-
 func _build_controls_page() -> void:
 	# Key-bindings sub-page — one row per action, a keyboard + a controller button.
 	_controls_page = _make_page()
@@ -345,31 +322,23 @@ func _build_benchmark_page() -> void:
 
 
 func _build_dev_page() -> void:
-	# Dev sub-page — unlock any car / upgrade in the game, or skip ahead. Wiping the
-	# save is NOT here: it is a player setting now, on its own Reset progress page
-	# (which dev builds see too), so there is exactly one route to it.
+	# Dev sub-page — three actions: money for the shop, every skill owned, and
+	# (mid-run only) the skip-to-finish the F key already offers. Wiping the save is
+	# NOT here: it is a player setting, on its own Reset progress page (which dev
+	# builds see too), so there is exactly one route to it.
 	_dev_page = _make_page()
 	add_child(_dev_page)
 	_dev_page.add_child(_make_heading("Dev"))
-	_dev_status = _make_sub("Unlock anything.")
+	_dev_status = _make_sub("Developer actions.")
 	_dev_page.add_child(_dev_status)
-	_dev_page.add_child(_make_action_button("3-star all rallies (unlock all regions)", _three_star_all_rallies))
-	# The "Add 1 star" dev button that used to sit here topped up the star ledger without
-	# racing. Deleted along with the ledger itself (todo/roguelike-pivot.md decision 21) —
-	# there is nothing left to add to, and money (its replacement) does not exist yet.
-	# The "Complete rally (win now)" shortcut that used to sit here — instantly
-	# finish the active rally with a perfect time and jump to the podium — was
-	# RallySession-gated. Deleted along with RallySession and the rival field it
-	# served (todo/roguelike-pivot.md decision 5).
-	_dev_page.add_child(_make_sub("Unlock a car:"))
-	for car in CarLibrary.all():
-		var car_id := String(car["id"])
-		var car_name := String(car["name"])
-		_dev_page.add_child(_make_action_button("Unlock %s" % car_name, _grant_car.bind(car_id, car_name)))
-	# "Fit an upgrade to the selected car" and its `dev_car_upgraded` signal went with the
-	# persistent parts model (todo/roguelike-pivot.md -> "What gets deleted"). There is no
-	# catalogue to list and nothing to fit; the equivalent dev tool for run boosts belongs
-	# with the boost system in stage 5.
+	_dev_page.add_child(_make_action_button("Add money", _add_money))
+	_dev_page.add_child(_make_action_button("Unlock all skills", _unlock_all_skills))
+	# "Complete stage" is offered ONLY while a run is live: the hub builds this menu
+	# with no session (nothing to complete), the pause menu mid-run with one. The
+	# gate is at BUILD time, so a hub-built page simply has no button; world.gd
+	# re-checks on the signal anyway, so a press from a stale menu can't fire it.
+	if DrivingContext.session_active():
+		_dev_page.add_child(_make_action_button("Complete stage", _complete_stage))
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -552,10 +521,6 @@ func show_camera() -> void:
 	show_page("camera")
 
 
-func show_gearbox() -> void:
-	show_page("gearbox")
-
-
 func show_controls() -> void:
 	show_page("controls")
 
@@ -631,27 +596,10 @@ func _refresh_camera_selection() -> void:
 	_refresh_selection(camera_rows, CameraManager.SETTING_KEY, int(CameraManager.ORDER[0]))
 
 
-# Persist the transmission mode. No live-apply signal is needed: car.gd reads
-# gearbox_auto() every physics tick while the driver is in control, so flipping this
-# from the in-run pause menu takes effect as soon as the game unpauses.
-func select_gearbox(value: int) -> void:
-	Save.set_setting(GEARBOX_SETTING_KEY, value)
-	_refresh_gearbox_selection()
-
-
-# Is the transmission automatic? The saved player choice, defaulting to the authored
-# GameConfig baseline (`auto_gearbox`) while unset. Static so car.gd can ask without
-# holding a menu instance — this is the single runtime source of truth for the mode.
+# Is the transmission automatic? Always true now — there is no manual option.
+# Static so car.gd can ask without holding a menu instance.
 static func gearbox_auto() -> bool:
-	var default := GEARBOX_AUTO if Config.data.auto_gearbox else GEARBOX_MANUAL
-	return int(Save.get_setting(GEARBOX_SETTING_KEY, default)) == GEARBOX_AUTO
-
-
-func _refresh_gearbox_selection() -> void:
-	# The default comes from the authored config rather than a constant, which is the only
-	# reason this needs its own one-liner rather than sharing camera/fps's call shape.
-	_refresh_selection(gearbox_rows, GEARBOX_SETTING_KEY,
-		GEARBOX_AUTO if Config.data.auto_gearbox else GEARBOX_MANUAL)
+	return true
 
 
 func _refresh_scheme_selection() -> void:
@@ -832,23 +780,34 @@ func _reload_after_wipe() -> void:
 
 
 # --- Dev actions -------------------------------------------------------------
+#
+# The dev page's three actions. None of them is a setting, so nothing here persists
+# a player choice — they mutate the profile (Save) or the live run (via the signal)
+# and report through _dev_status.
 
-# Dev: 3-star every rally, which also completes every region's showdown and so
-# finishes the game (regions no longer unlock in sequence — see
-# RallyLibrary.all_specials_completed / features/regions.md).
-func _three_star_all_rallies() -> void:
-	Save.dev_three_star_all_rallies()
-	_dev_status.text = "3-starred all rallies — every special event completed."
-
-
-# Grant a fresh owned instance of any car in the library (no rally required).
-func _grant_car(model_id: String, display_name: String) -> void:
-	Save.grant_car(model_id)
-	_dev_status.text = "Granted %s." % display_name
+# Bank the fixed dev grant and report the new balance (Save.add_money returns it).
+func _add_money() -> void:
+	_dev_status.text = "Added %d. Balance: %d." % [DEV_MONEY_GRANT,
+		Save.add_money(DEV_MONEY_GRANT)]
 
 
-# _add_star() (Save.award_stars) was deleted with the star ledger
-# (todo/roguelike-pivot.md decision 21) — see the dev-page comment above.
+# Grant OWNERSHIP of every SkillLibrary entry at once (Save.dev_grant_all_skills —
+# thresholds and prices bypassed), so the Skills page can equip any of them. Money
+# and equipped slots are the mutator's own no-go list, not this button's business.
+func _unlock_all_skills() -> void:
+	var granted := Save.dev_grant_all_skills()
+	if granted > 0:
+		_dev_status.text = "Granted %d skills." % granted
+	else:
+		_dev_status.text = "All skills already owned."
+
+
+# "Complete stage" only relays — world.gd owns the car, the track and the stage
+# manager, and performs the same skip-to-finish the F dev key triggers (the pause
+# menu forwards this signal to it; the hub never connects it, matching the button's
+# own mid-run-only offering above).
+func _complete_stage() -> void:
+	dev_complete_stage_requested.emit()
 
 
 # --- Row builders ------------------------------------------------------------
@@ -871,7 +830,7 @@ func _make_action_button(text: String, on_press: Callable) -> Button:
 	return button
 
 
-# Fill an options page (camera / fps / gearbox / mobile-scheme) from a table of
+# Fill an options page (camera / fps / mobile-scheme) from a table of
 # entries: clear `rows`, then build + append one row per entry, keyed by
 # `key_field` (e.g. "mode", "value", "id"). `row_builder` lets a page swap in a
 # richer row (the scheme page's diagram-carrying _make_scheme_row) while sharing
@@ -884,7 +843,7 @@ func _build_option_page(page: VBoxContainer, options: Array, key_field: String,
 		page.add_child(row_builder.call(key, entry, rows, on_select))
 
 
-# The flat name+blurb row shared by the camera / fps / gearbox pages: a full-width
+# The flat name+blurb row shared by the camera / fps pages: a full-width
 # Button carrying the option's name and how-to text, no diagram.
 func _make_option_row(key: int, entry: Dictionary, rows: Array, on_select: Callable) -> Button:
 	var button := _make_row_button(UITheme.px(64))
@@ -1146,16 +1105,13 @@ func _build_event_picker() -> void:
 	list.add_theme_constant_override("separation", 6)
 	scroll.add_child(list)
 	list.add_child(_make_heading("Preview stage"))
-	for rally in RallyLibrary.all():
-		var name_text := "%s  (%s)" % [String(rally.get("name", "?")),
-			String(rally.get("region", ""))]
-		list.add_child(_make_sub(name_text))
-		var events: Array = rally.get("events", [])
-		for i in events.size():
-			var event: Dictionary = events[i]
-			var label := "Stage %d — seed %d, %d turns" % [i + 1,
-				int(event.get("seed", 0)), int(event.get("turn_count", 0))]
-			var btn := _make_action_button(label, _load_event.bind(event))
+	for region_id in RegionStageLibrary.region_ids():
+		list.add_child(_make_sub(String(region_id)))
+		for stage in RegionStageLibrary.all_stages_in(String(region_id)):
+			var label := "Slot %d cand %d — seed %d, %d turns" % [
+				int(stage.get("slot", 0)), int(stage.get("candidate", 0)),
+				int(stage.get("seed", 0)), int(stage.get("turn_count", 0))]
+			var btn := _make_action_button(label, _load_event.bind(stage))
 			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			btn.focus_entered.connect(_remember_event_focus.bind(btn))
 			list.add_child(btn)
@@ -1192,7 +1148,7 @@ func _load_event(event: Dictionary) -> void:
 	_seed_spin.value = float(int(event.get("seed", base.track_seed)))
 	_level_spin.value = float(event.get("water_level", base.track_water_level_m))
 	_turns_spin.value = float(int(event.get("turn_count", base.track_turn_count)))
-	_straight_spin.value = RallyLibrary.event_straightness(event)
+	_straight_spin.value = StageFields.event_straightness(event)
 	_t1w.value = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))
 	_t1a.value = float(event.get("terrain_layer1_amplitude", base.terrain_layer1_amplitude))
 	_t2w.value = float(event.get("terrain_layer2_wavelength", base.terrain_layer2_wavelength))
@@ -1204,7 +1160,7 @@ func _load_event(event: Dictionary) -> void:
 	_regen_seedlab()
 
 
-# The lab's inputs as an EventDef — the same dict shape RallyLibrary events use.
+# The lab's inputs as an EventDef — the same dict shape RegionStageLibrary stages use.
 # The preview generates from THIS through the exact career path (see _regen_seedlab),
 # so what the lab shows matches what the stage actually generates.
 func _seedlab_event() -> Dictionary:

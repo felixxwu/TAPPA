@@ -15,7 +15,7 @@ var data: GameConfig
 # UpgradeLibrary.apply's RESEED pre-pass is that reader: an effect targeting a GLOBAL field
 # (a coin radius, a money rate) has no per-car re-seed to reset it the way a car field does,
 # so the funnel restores those fields from here before every apply — otherwise the same
-# multiplier would stack on itself on every stage boot, and un-equipping the perk would
+# multiplier would stack on itself on every stage boot, and un-equipping the skill would
 # never give the number back. See UpgradeLibrary.EFFECTS' `reseed` flag.
 var _authored: GameConfig
 

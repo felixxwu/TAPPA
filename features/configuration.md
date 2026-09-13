@@ -75,12 +75,12 @@ runtime is free to retune itself). `Config.authored_value(field, fallback)` read
 off it.
 
 Its one caller is `UpgradeLibrary._reseed_globals`. A per-car field mutated by the effects
-funnel is re-seeded by `car.gd::apply_car` on the next fielding, but the perk rows
+funnel is re-seeded by `car.gd::apply_car` on the next fielding, but the skill rows
 (`todo/roguelike-pivot.md` decision 51) target GLOBAL tunables — a coin radius, a money
 rate, a stage-target pace — that nothing re-seeds, on a `Config.data` that outlives every
 scene. Without a pristine copy to read there is no way back to the authored number, so a
-multiplier would compound stage after stage and un-equipping the perk would never undo it.
-See [perks.md](perks.md) → *Why every perk row carries `reseed`*.
+multiplier would compound stage after stage and un-equipping the skill would never undo it.
+See [skills.md](skills.md) → *Why every skill row carries `reseed`*.
 
 Note the difference from `snapshot_values()` above: that captures the LIVE config at a
 moment (including engine fields written at fielding time); this is the authored file, and
@@ -136,7 +136,7 @@ servo measures the grip limit instead of predicting it. See
 | `clutch_max_torque` | 250.0 | Max clutch holding torque |
 | `clutch_engage_speed` | 4.0 | Coast speed below which auto-clutch opens |
 | `shift_time` | 0.25 | Clutch-open throttle cut per gear change (s); **overridden per-car** by `CarLibrary` |
-| `auto_gearbox` | false | Start in auto mode. No runtime toggle keybind any more — the old `toggle_gearbox` (T) input action has been removed from `project.godot` entirely; gearbox mode is now a settings-menu choice (`scripts/settings_menu.gd`'s `GEARBOX_SETTING_KEY`, read via `gearbox_auto()`) |
+| `auto_gearbox` | false | Unused — the transmission is always automatic now (`SettingsMenu.gearbox_auto()` always returns `true`); there is no gearbox settings row or runtime toggle |
 | `nitrous_boost_gain` | 0.0 | Extra torque fraction while nitrous is held (delivered torque × `(1 + this)`); 0 = no nitrous fitted. See [nitrous.md](nitrous.md) |
 | `nitrous_tank_seconds` | 0.0 | Seconds of nitrous a full tank holds; 0 = no nitrous fitted. `has_nitrous()` is true only when both this and `nitrous_boost_gain` are positive. See [nitrous.md](nitrous.md) |
 | `upshift_redline_fraction` | 0.90 | Auto upshift at this % of redline |
@@ -169,6 +169,10 @@ servo measures the grip limit instead of predicting it. See
 | `replay_frame_screen_fraction` | 0.32 | …and the share of viewport height it should span. Higher = tighter framing |
 | `replay_frame_fov_min` / `_max` | 14.0 / 75.0 | Long / wide ends of that framed zoom (degrees) |
 | `replay_fov_smoothing` | 5.0 | Easing rate for replay FOV changes (cuts always snap) |
+| `photo_move_speed` | 25.0 | Photo mode free-fly camera lateral/vertical movement speed (m/s) |
+| `photo_look_sensitivity` | 0.003 | Photo mode mouse look sensitivity (multiplier on mouse delta per frame) |
+| `photo_touch_look_sensitivity` | 0.004 | Photo mode **touch** drag-to-look sensitivity (radians per pixel of drag) — kept separate from `photo_look_sensitivity` since a finger drag and a mouse delta cover different pixel ranges. See [camera.md](camera.md) › *On-screen touch controls* |
+| `photo_fov_min` / `photo_fov_max` | 20.0 / 90.0 | Photo mode pinch-zoom FOV clamp (degrees) — pinching apart zooms in toward `photo_fov_min`, pinching together zooms out toward `photo_fov_max` |
 | `fog_density` | 0.02 | Environment fog thickness |
 | `background_color` | (0.35,0.3,0.45) | Sky + fog color |
 
@@ -298,7 +302,7 @@ the deleted rival ghost for what each knob does and how the solve uses it.
 ### Rival Field & Pace
 The DIFFICULTY dials behind a rally's opponent field, read by `rally_library.gd`
 (`generate_opponent_field`, `_pace_band`, `swap_weight`). See
-[rally-roster.md](rally-roster.md), the deleted adaptive difficulty and
+[region-stage-library.md](region-stage-library.md), the deleted adaptive difficulty and
 the deleted opponent-wreck system for what each one does to a field.
 
 | Property | Old const | Purpose |
@@ -364,7 +368,7 @@ a cleared stage pays. Read by `RegionRunMode` (`scripts/region_run_mode.gd`); se
 | `run_stage_money_base` | Payout for clearing the first stage of a run, before the growth curve and the region scale. |
 | `run_stage_money_growth` | Multiplied in once per stage already cleared, so surviving deep into a run is where the money is. |
 | `run_fast_bonus_money` | The most a fast clear can add on top, paid in proportion to the fraction of the target saved. |
-| `run_money_region_step` | How much richer each region in the unlock order is, as a fraction added per index (decision 31). |
+| `run_money_region_multiplier` | How much richer each region in the unlock order is, as a multiplier compounded per index — region N pays this raised to the Nth power (decision 31). 2.0 = every region pays double the one before it. |
 | `challenge_completion_money` | The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays. |
 
 > **Tune the pace knobs against real driving, not against the model.** `LapTimeModel`'s

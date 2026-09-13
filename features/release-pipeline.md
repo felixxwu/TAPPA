@@ -113,6 +113,27 @@ them too.
 uninstall before update). `publish-play` refuses to, because Play App Signing
 verifies every upload against the same upload key.
 
+## `publish-play`'s upload step — fastlane `supply`, not `r0adkll/upload-google-play`
+
+`publish-play`'s final step uploads `rally.aab` to Play via `fastlane supply`
+(`gem install fastlane -NV` then `fastlane supply --package_name ... --aab ...
+--track ... --release_status completed`, with the metadata/image/screenshot
+uploads skipped since this project doesn't maintain Play store listing assets
+through the API), reading `PLAY_SERVICE_ACCOUNT_JSON` via the `SUPPLY_JSON_KEY_DATA`
+env var fastlane's `supply` expects.
+
+Previously used `r0adkll/upload-google-play@v1`, replaced 2026-09-11 after it
+failed twice in a row (runs #648, #651) with `This edit has expired, please
+create a new Edit.` ~39s into the `.aab` upload, in both cases *after* the
+build itself had already succeeded — i.e. the build/signing pipeline was never
+the problem. That action opens a Play "Edit" session and performs the upload
+as a separate call against the googleapis JS client; the Edit has a short
+server-side TTL, and a sluggish upload can lapse it mid-transfer with no retry
+built into the action. `fastlane supply` is the actively-maintained tool most
+teams migrate to for this exact failure mode. There is no drop-in official
+Google Actions replacement — `google-github-actions/upload-google-play` does
+not exist, despite sounding like it should.
+
 ## Gotchas
 
 - **The first Play upload must be done by hand.** The Play Developer API rejects

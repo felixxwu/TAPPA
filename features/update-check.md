@@ -1,16 +1,25 @@
 # Update check (native builds)
 
 On launch, the **native** builds ask whether a newer build has shipped and — if
-one has — raise a single dismissible prompt over the title shot with a link to the
-store they came from. Nothing else about the game changes: it is one GET, off the
+one has — raise a single dismissible prompt over the hub's MAIN page with a link to
+the store they came from. Nothing else about the game changes: it is one GET, off the
 boot critical path, and every failure mode is a silent no-op.
 
-**Tests:** `tests/headless/test_update_check.gd`
+The hub's MAIN page also shows the raw stamped `application/config/version` string
+as a small passive label in the bottom-right corner (`HubShell._build_version_label`),
+so a player — a Play tester especially — can read off which build they're on without
+any network request. It reuses `UpdateCheck.display_version` to decide WHETHER to
+show anything: an unstamped/unparseable version (the editor's `0.0-dev`, empty in a
+local run) hides the label instead of rendering an empty box or a stray "()". It is
+plain chrome, not a `MenuNav` widget — never focusable, never in the nav order.
+
+**Tests:** `tests/headless/test_update_check.gd` (the policy + `display_version`), `tests/headless/test_hub_shell.gd` (the placement: headless is a silent no-op; the prompt records its dismissal when answered; the corner label's visibility and nav-exclusion)
 
 | Piece | Where |
 |---|---|
 | The policy (parsing, the decision, the fetch, the destination) | `scripts/update_check.gd` (`UpdateCheck`) |
-| Placement + the modal | **DELETED** with the diegetic hub — it was `hq.gd` → `_check_for_update`. `UpdateCheck` itself is live and tested, and nothing calls it |
+| Placement + the modal | `scripts/hub_shell.gd` → `_check_for_update` / `_show_update_prompt` — re-homed from the deleted diegetic hub's title shot to the flat hub's MAIN page (fired from `_enter_game`, TITLE's Start handler, off the boot critical path, MAIN-only re-checked after the await — a cold boot no longer fires it straight from `_ready`, since the player is looking at the TITLE splash first and firing it there would race Start) |
+| The corner build-version label | `scripts/hub_shell.gd` → `_build_version_label` (MAIN only, added straight to `_page` so it floats free of the body box); the show/hide decision is `UpdateCheck.display_version`; `GameConfig.hub_version_label_margin_px` sets its corner margin |
 | The published document | `.github/workflows/deploy.yml` → `deploy-pages` → *Generate docs/version.json* |
 | The "this is a Play build" marker | `export_presets.cfg` → `preset.2` (`custom_features="play"`) |
 | Tests | `tests/headless/test_update_check.gd` |

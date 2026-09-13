@@ -54,6 +54,8 @@ omitted key means "this condition does not have that feature":
 | `lightning` | cosmetic **flash**: `flash` / `duration` / `interval_min` / `interval_max` → GameConfig fields (`LIGHTNING_KEYS`). Omitted ⇒ no flashes. Read by `world.gd` → `_start_lightning` |
 | `sky_panorama` | GameConfig field holding a **sky texture path** the condition swaps in, overriding whatever the region chose. Omitted ⇒ the region's sky is left alone. Only `night` names one |
 | `headlights` | GameConfig field holding the **strength** (0..1) of the fake headlight cone this condition switches on. Omitted ⇒ the car's lights stay off and every cone uniform is a bit-for-bit no-op. Read by `HeadlightCone`; cosmetic, so it is **not** in `physics_fields` |
+| `foliage_wind` | GameConfig field holding the tree wind-sway **strength** for this condition. Omitted ⇒ the shared base `foliage_wind_strength` — deliberately the case for every condition but `storm`/`sandstorm`, since wind reads the same everywhere except in a storm. Read by `WindSway`; cosmetic, so it is **not** in `physics_fields` — see [trees.md](trees.md) → "Wind sway" |
+| `terrain_relight` | A plain `true`/omitted flag (not a field name — there is no per-condition tuning here). Marks a condition whose ground darkening is worth pre-baking a second terrain vertex-colour array for, rather than only a `road_tint` uniform. Read ONLY by `menu_showcase.gd` (see [terrain.md](terrain.md) → "Dual day/night bake") — no real stage reads it, since a stage just re-bakes its one terrain instance directly. Omitted ⇒ `false`. Not in `config_fields`/`physics_fields` (it names no GameConfig field and cannot affect a lap time) |
 
 **`sky_panorama` is deliberately NOT a sixth `LOOK_KEYS` entry.** `LOOK_KEYS` is
 all-or-nothing — an entry with a `look` block must name every one of the five
@@ -187,10 +189,10 @@ durable is the two region locks and the reasons behind each condition's placemen
 | dry | ~30 | everywhere |
 | night | ~14 | every region |
 | rain / fog / storm | ~13 each | the temperate pins (`home`, `home_coast`, a few `greece`) |
-| sandstorm | ~13 | the desert only (`greece` / `greece_coast`) |
+| sandstorm | ~13 | the desert only (`region == "greece"`) |
 | snowfall | ~12 | the alpine NE only (`region == "snow"`) |
 
-The 2026-08 geography pass (see [rally-roster.md](rally-roster.md)) re-tagged most of
+The 2026-08 geography pass (see [region-stage-library.md](region-stage-library.md)) re-tagged most of
 the roster, so the guidance below is stated in terms of the TERRAIN A PIN SITS ON, not
 a region name — most rallies now carry `region: "home"` regardless of what their id
 says, and "the coastal regions" is no longer a useful way to pick out coastal stages.
@@ -217,7 +219,7 @@ read the current placement out of `RallyLibrary.RALLIES` (grep `"weather"`).
   `physics_fields` and never re-keys the opponent cache. See
   [snow-region.md](snow-region.md).
 - **Sandstorm** — the other REGION LOCK, also intact: desert-only, i.e. the arid
-  `greece` / `greece_coast` palette and a pin in the SW/S sand. A sandstorm on a green
+  `greece` palette and a pin in the SW/S sand. A sandstorm on a green
   forest stage would look wrong. Note the `RALLIES` header comment calls this
   "test-enforced" — **it is not**: no test in `tests/headless/` asserts it, so it is a
   placement convention like the rest.
@@ -278,6 +280,17 @@ disagree.
   - `sand_wind_dir_deg` — a single fixed compass heading (0 = world +X, 90 = world
     +Z) the dust blows toward for the whole stage, regardless of which way the car
     or camera faces.
+  - `sand_foliage_wind_strength` — tree wind-sway strength on a sandstorm stage,
+    named by the entry's `foliage_wind` key. Above the shared base, below storm's
+    (dust carries no rain). See [trees.md](trees.md) → "Wind sway".
+
+- The tree wind-sway base, near `foliage_light_amount` in the Lighting group —
+  shared by EVERY condition unless it names its own `foliage_wind` field:
+  - `foliage_wind_strength` — sway at a tree's tip, as a fraction of its height.
+  - `foliage_wind_speed` — sway oscillations per second.
+  - `foliage_wind_dir_deg` — heading (0 = world +X, 90 = world +Z) trees lean
+    toward when the live condition names no `wind_dir` of its own. See
+    [trees.md](trees.md) → "Wind sway".
 
 - The fog block, prefixed **`mist_`** rather than `fog_` purely to avoid colliding
   with the BASE environment knobs `fog_density` / `fog_sky_affect` every stage uses:
@@ -310,6 +323,10 @@ disagree.
     named by the entry's `headlights` key. Authored well BELOW night's, and that
     is the whole point of the field existing — see "Headlights on more than
     night" below.
+  - `storm_foliage_wind_strength` — the tree wind-sway strength on a storm stage,
+    named by the entry's `foliage_wind` key. Authored ABOVE the shared base
+    `foliage_wind_strength` — a stormy sky, not just a stormy road. See
+    [trees.md](trees.md) → "Wind sway".
 
 - The night block, prefixed **`night_`** — a `look` block plus a road darken, and
   nothing else (it authors no `grip_mult`, no `wind`, no `particles`, no
@@ -452,6 +469,14 @@ path every condition uses: the low `night_sun_energy_mult` scales
 `TerrainManager.sun_color` in `world.gd::_apply_overcast_look`, and the terrain
 bakes that dark light into its vertex colours at chunk generation. By the time
 any shader runs, the world is already dark.
+
+**That path assumes ONE terrain instance re-baked per stage — the menu showcase's six
+never-rebuilt segments can't use it directly**, so night is also the one condition
+carrying `"terrain_relight": true` in its entry (see the table above), which tells
+`menu_showcase.gd` to pre-bake a SECOND vertex-colour array per chunk up front and swap
+a segment onto it instead of re-baking live. See [terrain.md](terrain.md) → "Dual
+day/night bake" for the mechanism; nothing here or in `WeatherLibrary` changes for a
+real stage, which still just re-bakes.
 
 **The re-lighting is a fake headlight cone**, evaluated analytically in the
 shaders from a handful of `global uniform`s — no light node is added, and none

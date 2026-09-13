@@ -12,7 +12,7 @@ two minutes instead of reading 1,661 lines of spec.
 | --- | --- |
 | The gist (you are here) | this file |
 | Why any given thing is the way it is | `todo/roguelike-pivot.md` — **54 numbered decisions, authoritative** |
-| The task sequence that built it | `todo/roguelike-pivot-plan.md` |
+| The task sequence that built it | `todo/roguelike-pivot-plan.md` (deleted — every stage landed) |
 | The design north star | `gameplay.md` |
 | How any one system works today | `features/` (indexed in `features/README.md`) |
 
@@ -142,6 +142,17 @@ survives only to backfill a key missing from a correctly-versioned profile.
   view. Each file says what a rebuild owes.
 - `engine_detune` is stored, read and applied with no slider anywhere
   (`features/tuning.md`).
+
+## A second, smaller pivot: region stage slots (2026-09)
+
+After the roguelike pivot shipped, the authored-rally-pool model it introduced
+(decision 7) was itself replaced: `todo/region-stage-slots-redesign.md` swaps the
+flat per-region pool + difficulty-sort draw for a fixed 8-slot × 3-candidate grid
+per region. The `RallyLibrary.RALLIES` wrapper (named rallies, `restriction`,
+`special`, `map_pos` — all pre-pivot residue `features/rally-roster.md` had been
+tracking as dead since stage 2b) is deleted along with it. See
+`features/region-stage-library.md` for how it works today, and decisions 3/7/32 in
+`todo/roguelike-pivot.md` for what it superseded.
 
 ## Test suite
 

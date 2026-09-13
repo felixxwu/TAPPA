@@ -1,0 +1,67 @@
+[gd_scene format=3]
+
+; The hub's background showcase (todo/menu-background-showcase.md, phase 1
+; prototype). WorldEnvironment and Floor are deliberately the SAME sub-resources
+; main.tscn authors (same shader, same textures, same terrain layers) rather than a
+; second hand-rolled copy — see features/menu-showcase.md. The root script
+; (menu_showcase.gd) replaces world.gd; this scene never runs a run/session, a car,
+; or any of main.tscn's UI layers.
+
+[ext_resource type="Script" path="res://scripts/menu_showcase.gd" id="1_showcase"]
+[ext_resource type="Shader" uid="uid://ddlrcp8opyqg" path="res://shaders/ps1_models.gdshader" id="2_models"]
+[ext_resource type="Script" uid="uid://bp1qxl2gv47a8" path="res://scripts/terrain_layer.gd" id="3_layer"]
+[ext_resource type="Texture2D" uid="uid://buvotoc4e4cy7" path="res://textures/grass.jpg" id="4_grass"]
+[ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="5_gravel"]
+[ext_resource type="Texture2D" uid="uid://bcx6lhspkcwhl" path="res://textures/sky_field.png" id="6_sky"]
+[ext_resource type="Script" uid="uid://dbdwx7yc650em" path="res://scripts/terrain_manager.gd" id="7_terrain"]
+
+[sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
+panorama = ExtResource("6_sky")
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+fog_enabled = true
+fog_light_color = Color(0.482, 0.498, 0.403, 1)
+fog_density = 0.005
+fog_sky_affect = 0.15
+
+[sub_resource type="Resource" id="layer_base"]
+script = ExtResource("3_layer")
+
+[sub_resource type="Resource" id="layer_a"]
+script = ExtResource("3_layer")
+wavelength_m = 15.0
+amplitude_m = 0.4
+
+[sub_resource type="Resource" id="layer_b"]
+script = ExtResource("3_layer")
+wavelength_m = 3.0
+amplitude_m = 0.1
+
+[sub_resource type="ShaderMaterial" id="mat_floor"]
+render_priority = 0
+shader = ExtResource("2_models")
+shader_parameter/albedo_texture = ExtResource("4_grass")
+shader_parameter/road_texture = ExtResource("5_gravel")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+shader_parameter/blend_road = true
+shader_parameter/road_uv_scale = 1.0
+shader_parameter/tarmac_color = Color(0.32, 0.32, 0.34, 1)
+
+[node name="MenuShowcase" type="Node3D"]
+script = ExtResource("1_showcase")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Floor" type="Node3D" parent="."]
+script = ExtResource("7_terrain")
+layers = Array[ExtResource("3_layer")]([SubResource("layer_base"), SubResource("layer_a"), SubResource("layer_b")])
+chunk_material = SubResource("mat_floor")
+defer_initial_build = true
+focus_path = NodePath("")

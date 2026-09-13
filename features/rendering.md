@@ -226,15 +226,10 @@ Five things about it that are load-bearing rather than incidental:
 - **The maths is sRGB-space**, not linear: `TEXTURE` is the SubViewport's
   already-encoded output. That suits the era; don't "correct" it.
 
-Scope is the 3D frame of **both** the stage and the HQ — world, props, cars and
-sky. In the HQ that includes the hub geometry, the map table and the parked
-lineup; its station **overlays** are CanvasLayers above the container and stay
-ungraded, exactly like the HUD. Note the HQ's clickable stations (table, lift,
-pins) are `Area3D`s picked through the ROOT viewport, which is why the container
-sets `mouse_filter = IGNORE` — `disable_3d` only skips the render pass, so the
-camera stays current and picking is unaffected. `test_render_smoke.gd` →
-`test_hq_hosts_the_same_post_process_pass` pins both the shared world and the
-mouse-filter.
+Scope is the 3D frame of the **stage** — world, props, cars and sky. (The old
+diegetic HQ shared this pass; it is deleted with the pivot — the flat hub needs
+no 3D render at all.) The HUD and every menu overlay are CanvasLayers above the
+container and stay ungraded. `test_render_smoke.gd` pins the shared world.
 
 **The one exception, and it is deliberate: a `WorldPanel` IS graded.** A menu hosted
 in the 3D world (see [world-panel.md](world-panel.md)) is a `Sprite3D` *inside* the
@@ -322,9 +317,7 @@ live in `GameConfig` under the **Speed Lines** group.
 the fallback default (the authored `GameConfig.speed_lines_enabled`), `resolve()`,
 and an `apply(tree, on)` that persists the choice AND pushes it to every live
 overlay (they join `SpeedLinesSetting.GROUP` in `_ready`). This follows the
-per-setting apply-owner pattern documented in
-[menus.md](menus.md) → "Adding a setting"; `scripts/fps_setting.gd` is the
-exemplar. `Config.data.speed_lines_enabled` is the **authored baseline only** — a
+per-setting apply-owner pattern; `scripts/fps_setting.gd` is the exemplar. `Config.data.speed_lines_enabled` is the **authored baseline only** — a
 player toggle must never write it, or the default drifts with player input.
 
 `speed_lines.gd` wires itself **unconditionally** (material bound, static look
@@ -553,7 +546,7 @@ correctly under world-space simulation — under the old `local_coords = true` s
 the "wind" would have rotated with the camera, which is exactly backwards. Covered
 by `test_render_smoke.gd::test_sandstorm_field_is_a_single_cheap_draw_with_wind_direction`.
 Sandstorm is authored only onto `region == "greece"` events — see
-`RallyLibrary.WEATHER_SANDSTORM` and `test_rally_library.gd::test_sandstorm_only_authored_on_greece_events`.
+`RallyLibrary.WEATHER_SANDSTORM` and `test_menu_showcase_geometry.gd::test_sandstorm_is_eligible_only_in_the_desert_regions`.
 
 **Fog** is the cheapest condition in the table and the purest use of this section's
 "look is made of fog" mechanism: it is *only* a look block. `mist_fog_density_mult`
@@ -582,9 +575,9 @@ gameplay event, not an effect — and purely cosmetic, so it may use `randf()`.
 
 ### The fake headlight cone (`shaders/headlight_cone.gdshaderinc`)
 
-A dark weather condition re-lights a wedge in front of the player's car. Design
-doc: `todo/night-weather-and-headlights.md`; the weather-table half is in
-[weather.md](weather.md) → "Night".
+A dark weather condition re-lights a wedge in front of the player's car. (The
+design spec `todo/night-weather-and-headlights.md` is gone; the weather-table
+half is in [weather.md](weather.md) → "Night".)
 
 **Which conditions have it is authored, not hardcoded.** The cone is armed by the
 weather table's optional `headlights` key, naming the GameConfig field that holds
@@ -614,11 +607,18 @@ design exists to rule out.
 global uniforms. No geometry, no draw calls, no per-frame CPU work beyond one
 uniform push. The include declares the uniforms (`hl_pos`, `hl_dir`, `hl_right`,
 `hl_color`, `hl_range`, `hl_cos_inner`, `hl_cos_outer`, `hl_separation`,
-`headlight_amount`) and two functions: `_headlight_cone_at(world_pos, apex)` — a
-`smoothstep` between the outer and inner cosines against `dot(dir, to_fragment)`,
-times a linear range attenuation — and `headlight_lit(world_pos)`, which combines
-the lamps and scales by `headlight_amount`. It is the ONE source of truth — the
-five shaders the headlights can fall on all `#include` it rather than restating
+`headlight_amount`) and two function PAIRS: `_headlight_cone_at(world_pos, apex)`
+— a `smoothstep` between the outer and inner cosines against `dot(dir,
+to_fragment)`, times a linear range attenuation — and `headlight_lit(world_pos)`,
+which combines the lamps and scales by `headlight_amount`. Each has a
+normal-aware overload (`..., world_normal)`) that additionally multiplies in
+`smoothstep(-0.15, 0.4, dot(world_normal, to_light))`, floored rather than
+hard-clamped at zero so faceted low-poly bodywork doesn't step at facet edges
+near grazing angles. Car shaders (`ps1_models_lit`, `ps1_models_ghost`) use the
+normal-aware overload so a car's REAR panels — e.g. a rival ahead of the player,
+still geometrically inside the cone's angle/range — don't light up from behind;
+every other includer uses the plain form. It is the ONE source of truth — the
+six shaders the headlights can fall on all `#include` it rather than restating
 the maths.
 
 **Two lamps, combined with `max()` not a sum.** The pair shares aim, range, angles
@@ -629,7 +629,7 @@ third light; `max()` holds the overlap at lamp brightness so the pair reads as a
 widened pool. **`hl_separation == 0` skips the second cone entirely** on a branch
 taken uniformly across the whole draw — the cheap case for a GPU — which is why the
 single-cone setting is genuinely cheaper and not just a look. The doubling is paid
-per-FRAGMENT only on terrain; the other four shaders evaluate per-vertex.
+per-FRAGMENT only on terrain; the other five shaders evaluate per-vertex.
 
 **Aim.** `hl_dir` is not simply the car's forward: the driver pitches it down by
 `headlight_pitch_deg` about the car's own right axis. Without that the cone runs
@@ -658,7 +658,7 @@ ALBEDO = surface * (light + hl_color * headlight_lit(world_pos));
 
 At `headlight_amount == 0` the function returns exactly `0.0`, making every one of
 these shaders a **bit-for-bit no-op** — which is what lets the cone ship inside
-shaders that every unlit stage, the podium and the HQ also use.
+the shaders that every unlit stage also uses.
 
 **The flip side, and why the strength is per-condition:** a condition that only
 *dims* the day rather than blacking it out (storm — its `sun_energy_mult` is a
@@ -671,12 +671,21 @@ authored — a lower `headlights` value on that entry — never a shader change.
 | Shader | Stage | Why |
 |---|---|---|
 | `ps1_models` (terrain), `ps1_terrain_snow` | **fragment** | Terrain cells reach 25 m across at the coarsest LOD band, so a per-vertex cone would snap its soft edge to triangle boundaries. World position comes from `(INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz` — a mat4 multiply per fragment, accepted because `ps1_models` is banned from having a `vertex()` stage to hand one down. |
-| `ps1_models_lit` (cars, barriers, arch) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. |
+| `ps1_models_lit` (cars, barriers, arch), `ps1_models_ghost` (faded rival) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. Both pass their world normal into the facing-aware overload, since the ghost duplicates the lit shader's vertex block verbatim and must reject backfaces identically or the rival's rear-panel glow would flicker as it crosses the alpha-1 threshold between the two shaders. |
 | `billboard_opaque` (trees) | vertex | Folded into the existing `varying vec3 v_tint`, in **both** branches — the felled branch computes an ambient-only tint, so a knocked-over tree would otherwise sit unlit inside the pool. Cards are small, so per-vertex is visually identical. |
 | `tree_canopy` (bushes) | vertex + fragment | Had no lighting term at all, so it gets a new `varying float v_headlight`; `hl_color` is applied in the fragment so the varying stays scalar. |
 
 Fragment cost therefore lands only on terrain — the one surface with near-total
 screen coverage — while everything else rides an existing vertex computation.
+
+**Tree wind sway follows the identical pattern**, one shader over: `billboard_opaque`
+also `#include`s `shaders/wind_sway.gdshaderinc` and adds `wind_sway_offset(origin,
+VERTEX.y, height)` straight into `world_pos` in its STANDING branch, entirely in the
+vertex stage. Its globals (`wind_strength`, `wind_speed`, `wind_dir`) are declared
+alongside the cone's in `project.godot`'s `[shader_globals]` and driven by
+`scripts/wind_sway.gd` (`class_name WindSway`) — see [trees.md](trees.md) → "Wind
+sway" for the full writeup and [weather.md](weather.md) for the per-condition
+authoring (`WeatherLibrary`'s `foliage_wind` key).
 
 **Transport is `global uniform`**, declared in `project.godot`'s
 `[shader_globals]` section (the project had none before) and written via
@@ -689,9 +698,9 @@ bookkeeping on every chunk load. Globals cannot go stale when a chunk appears
 mid-frame.
 
 **The scene-leak trap:** global shader parameters **persist across scene
-changes**, and the podium and HQ draw trees and ground with these same shaders.
-A stage that lit its headlights and did not clear up after itself would leave a
-stray cone burning on those screens. `world.gd::_exit_tree` therefore calls `HeadlightCone.reset()`
+changes**. A stage that lit its headlights and did not clear up after itself
+would leave a stray cone burning on whatever scene comes next (the hub's 3D
+menu showcase included). `world.gd::_exit_tree` therefore calls `HeadlightCone.reset()`
 unconditionally — every exit path, regardless of destination — which a
 per-destination reset would not cover. Same reasoning as
 `WorldRuntime.apply_deep_snow` being called unconditionally each stage boot (via each host's
@@ -899,9 +908,8 @@ shader sources) is covered by `test_render_smoke.gd` — see
 windowed and was chronically flaky, so the actual rendered look is not asserted
 pixel-for-pixel. Eyeball intentional look changes in the running app.
 
-### Flat ground planes (HQ apron / podium floor)
+### Flat ground planes (HQ apron / podium floor) — HISTORICAL
 
-The HQ hub and the podium share one flat-ground builder,
 `MeshUtil.feathered_ground_mesh(size, subdiv, pads, feather)` — a grass plane with
 rectangular tarmac `pads` cut into it, the tarmac weight written per vertex into
 `COLOR.a` and blended by the road-blend shader (`ps1_models.gdshader`,
@@ -931,8 +939,11 @@ podium floor: 2,337 / 4,480).
 
 `subdiv` is now only the coarse lattice, and both callers read it from
 `GameConfig.ground_subdiv_for(web, touch)` (`ground_subdiv` /
-`ground_subdiv_web_touch`) rather than hardcoding it — `HQEnvironment.build` and
-the deleted `podium.gd::_build_environment`. Verification aid:
+`ground_subdiv_web_touch`) rather than hardcoding it. Both production callers
+(`HQEnvironment.build`, `podium.gd::_build_environment`) are deleted with the
+pivot, so the builder's live users are `tools/render_ground_feather.gd` and
+`test_mesh_util.gd` — kept because the non-uniform grid below is the pattern any
+future flat-ground host should reuse. Verification aid:
 `tools/render_ground_feather.gd` renders the apron and a podium pad with the old
 uniform grid and the new one (`docs/perf/ground_*.png`) so the band can be
 compared directly.

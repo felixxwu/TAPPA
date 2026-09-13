@@ -35,7 +35,10 @@ const LIGHT_ENCODE_SCALE := 2.0
 # Build the decimated ArrayMesh for one level from a chunk's full-res `data`
 # dict (the shape compute_chunk_data returns). `stride` picks every stride-th L0
 # vertex along each edge; `skirt_m` (>0) hangs a downward wall off the perimeter.
-static func build_level(data: Dictionary, stride: int, skirt_m: float) -> ArrayMesh:
+# `night_out`, when passed non-empty (size 1, e.g. `[null]`), gets this level's resampled
+# NIGHT colour array written into `night_out[0]` — empty if `data` carries no night bake.
+static func build_level(data: Dictionary, stride: int, skirt_m: float,
+		night_out: Array = []) -> ArrayMesh:
 	var samples: int = TerrainManager.SAMPLES
 	var per_edge := samples - 1
 	assert(per_edge % stride == 0, "LOD stride must divide SAMPLES-1")
@@ -64,6 +67,10 @@ static func build_level(data: Dictionary, stride: int, skirt_m: float) -> ArrayM
 			if has_uv2:
 				uv2s.append(full_uv2[fidx])
 
+	if not night_out.is_empty():
+		night_out[0] = _resample_night_colors(
+			data.get("night_colors", PackedColorArray()), samples, stride, n, skirt_m)
+
 	return grid_mesh(verts, uvs, colors, uv2s, n, skirt_m)
 
 
@@ -73,10 +80,29 @@ static func build_level(data: Dictionary, stride: int, skirt_m: float) -> ArrayM
 # moment it is created, so a level prebaked for a chunk that is not currently spawned is
 # pure resident VRAM). A null level is not a hole: TerrainChunk extends the next present
 # level's visibility band down to cover it.
-static func build_all(data: Dictionary, skirt_m: float, from_level: int = 0) -> Array:
+#
+# `night_colors_out`, when passed non-empty (any length — it is resized to LOD_STRIDES.size()
+# here), is filled with this chunk's resampled NIGHT colour array per level (empty
+# PackedColorArray for a level with no night bake, or a level below `from_level`) — see
+# TerrainManager.cache_chunk, the only caller that passes one.
+static func build_all(data: Dictionary, skirt_m: float, from_level: int = 0,
+		night_colors_out: Array = []) -> Array:
 	var out: Array = []
+	var want_night := not night_colors_out.is_empty()
+	if want_night:
+		night_colors_out.resize(LOD_STRIDES.size())
 	for i in LOD_STRIDES.size():
-		out.append(null if i < from_level else build_level(data, LOD_STRIDES[i], skirt_m))
+		if i < from_level:
+			out.append(null)
+			if want_night:
+				night_colors_out[i] = PackedColorArray()
+			continue
+		if want_night:
+			var slot: Array = [null]
+			out.append(build_level(data, LOD_STRIDES[i], skirt_m, slot))
+			night_colors_out[i] = slot[0]
+		else:
+			out.append(build_level(data, LOD_STRIDES[i], skirt_m))
 	return out
 
 
@@ -169,8 +195,11 @@ static func build_finest(manager: TerrainManager, coord: Vector2i, data: Diction
 
 # Mesh an n×n grid (data["grid_n"]) as one surface, stride 1, with a downward skirt.
 # Used for COARSE chunks whose grid was already generated at the target stride, so
-# there is nothing to decimate — the grid IS the level.
-static func mesh_from_grid(data: Dictionary, skirt_m: float) -> ArrayMesh:
+# there is nothing to decimate — the grid IS the level. `night_out`, when passed
+# non-empty (size 1), gets this level's resampled NIGHT colour array in `night_out[0]`
+# — the grid's own night_colors resampled only for the skirt duplication (stride 1,
+# the grid IS already at this level's resolution, same as the day colours above).
+static func mesh_from_grid(data: Dictionary, skirt_m: float, night_out: Array = []) -> ArrayMesh:
 	var n: int = data["grid_n"]
 	# Copy so the skirt append doesn't mutate the cached grid arrays.
 	var verts: PackedVector3Array = (data["vertices"] as PackedVector3Array).duplicate()
@@ -179,6 +208,9 @@ static func mesh_from_grid(data: Dictionary, skirt_m: float) -> ArrayMesh:
 	var has_uv2: bool = data.has("uv2s") and not (data["uv2s"] as PackedVector2Array).is_empty()
 	var uv2s: PackedVector2Array = (data["uv2s"] as PackedVector2Array).duplicate() if has_uv2 else PackedVector2Array()
 
+	if not night_out.is_empty():
+		night_out[0] = _resample_night_colors(data.get("night_colors", PackedColorArray()), n, 1, n, skirt_m)
+
 	return grid_mesh(verts, uvs, colors, uv2s, n, skirt_m)
 
 
@@ -186,17 +218,35 @@ static func mesh_from_grid(data: Dictionary, skirt_m: float) -> ArrayMesh:
 # generate that level's grid at its own stride and mesh it. No full-res grid is built,
 # so the expensive per-vertex work is confined to the few coarse vertices the chunk
 # can actually display.
+#
+# `night_colors_out`, when passed non-empty, is filled per level (empty PackedColorArray
+# for a pruned level or one with no night bake) — see TerrainManager.cache_chunk, the
+# only caller that passes one. Reuses the SAME per-level TerrainChunkBuilder pass that
+# already builds the day mesh, rather than a second build — the night light is a second
+# arithmetic evaluation on neighbours already sampled (TerrainChunkBuilder), not a
+# second geometry pass.
 static func build_levels_from(manager: TerrainManager, coord: Vector2i, l_min: int,
-		skirt_m: float) -> Array:
+		skirt_m: float, night_colors_out: Array = []) -> Array:
 	var out: Array = []
 	out.resize(LOD_STRIDES.size())
+	var want_night := not night_colors_out.is_empty()
+	if want_night:
+		night_colors_out.resize(LOD_STRIDES.size())
 	for i in LOD_STRIDES.size():
 		if i < l_min:
 			out[i] = null
+			if want_night:
+				night_colors_out[i] = PackedColorArray()
 			continue
 		var b := TerrainChunkBuilder.new(manager, coord, LOD_STRIDES[i])
 		b.build()
-		out[i] = mesh_from_grid(b.data(), skirt_m)
+		var bd := b.data()
+		if want_night:
+			var slot: Array = [null]
+			out[i] = mesh_from_grid(bd, skirt_m, slot)
+			night_colors_out[i] = slot[0]
+		else:
+			out[i] = mesh_from_grid(bd, skirt_m)
 	return out
 
 
@@ -269,14 +319,11 @@ static func grid_mesh(verts: PackedVector3Array, uvs: PackedVector2Array,
 	return mesh
 
 
-# Append a downward skirt around the n×n grid perimeter: for each edge vertex,
-# add a copy pushed down by skirt_m, then stitch consecutive edge/skirt pairs into
-# quads. The skirt reuses the edge vertex's UV/colour so it shades like the ground.
-static func _add_skirt(verts: PackedVector3Array, uvs: PackedVector2Array,
-		colors: PackedColorArray, uv2s: PackedVector2Array, indices: PackedInt32Array,
-		n: int, has_uv2: bool, skirt_m: float) -> void:
-	# Perimeter vertex grid-indices in a continuous loop (top edge L→R, right edge
-	# T→B, bottom edge R→L, left edge B→T), each appearing once.
+# Perimeter vertex grid-indices of an n×n grid in a continuous loop (top edge L→R,
+# right edge T→B, bottom edge R→L, left edge B→T), each appearing once. Shared by
+# _add_skirt (which lowers a copy of each) and _resample_night_colors (which needs the
+# SAME order to duplicate a level's night colours onto its skirt vertices).
+static func _perimeter_ring(n: int) -> PackedInt32Array:
 	var ring: PackedInt32Array = []
 	for xi in n:                       # top row (zi = 0)
 		ring.append(xi)
@@ -286,6 +333,39 @@ static func _add_skirt(verts: PackedVector3Array, uvs: PackedVector2Array,
 		ring.append((n - 1) * n + xi)
 	for zi in range(n - 2, 0, -1):     # left column (xi = 0)
 		ring.append(zi * n)
+	return ring
+
+
+# Resample a chunk's NIGHT colour array (full-res or already-at-level) the same way
+# build_level/mesh_from_grid resample the day one: subsample at `stride`, then duplicate
+# the ring entries for the skirt — using the SAME _perimeter_ring order, so a night array
+# lines up index-for-index with the day colours already baked into the mesh (see
+# terrain_chunk.gd::apply_vertex_color_profile, which swaps one array for the other on an
+# already-built surface). Empty in (no night bake for this chunk) → empty out.
+static func _resample_night_colors(full_night: PackedColorArray, source_edge: int,
+		stride: int, n: int, skirt_m: float) -> PackedColorArray:
+	if full_night.is_empty():
+		return PackedColorArray()
+	var colors := PackedColorArray()
+	for zi in n:
+		var fz := zi * stride
+		for xi in n:
+			var fx := xi * stride
+			colors.append(full_night[fz * source_edge + fx])
+	if skirt_m > 0.0:
+		var ring := _perimeter_ring(n)
+		for gi in ring:
+			colors.append(colors[gi])
+	return colors
+
+
+# Append a downward skirt around the n×n grid perimeter: for each edge vertex,
+# add a copy pushed down by skirt_m, then stitch consecutive edge/skirt pairs into
+# quads. The skirt reuses the edge vertex's UV/colour so it shades like the ground.
+static func _add_skirt(verts: PackedVector3Array, uvs: PackedVector2Array,
+		colors: PackedColorArray, uv2s: PackedVector2Array, indices: PackedInt32Array,
+		n: int, has_uv2: bool, skirt_m: float) -> void:
+	var ring := _perimeter_ring(n)
 
 	# Add a lowered copy of each ring vertex; remember its new index.
 	var skirt_base := verts.size()

@@ -54,10 +54,10 @@ func test_omitted_keys_fall_back_to_authored_baseline_not_prior_event() -> void:
 func test_apply_event_config_carries_weather_and_defaults_to_dry() -> void:
 	var cfg := GameConfig.new()
 	StageConfig.apply_event_config(cfg, {"weather": "rain"})
-	assert_eq(cfg.weather, RallyLibrary.WEATHER_RAIN, "rain event seats rain onto the config")
+	assert_eq(cfg.weather, StageFields.WEATHER_RAIN, "rain event seats rain onto the config")
 	# An event with no weather key at all leaves the config dry.
 	StageConfig.apply_event_config(cfg, {})
-	assert_eq(cfg.weather, RallyLibrary.WEATHER_DRY, "omitted weather key resolves to dry")
+	assert_eq(cfg.weather, StageFields.WEATHER_DRY, "omitted weather key resolves to dry")
 
 
 # --- Waterline resolution: event -> region -> GameConfig baseline --------------
@@ -87,3 +87,13 @@ func test_apply_event_config_falls_back_to_baseline_with_no_region_context() -> 
 	StageConfig.apply_event_config(cfg, {})
 	assert_eq(cfg.track_water_level_m, base.track_water_level_m,
 		"no region tag and no event override -> GameConfig baseline")
+
+
+# Stage-based hilliness/curviness scaling (StageConfig.stage_scale, the
+# stage_hilliness_scale_*/stage_curviness_scale_* GameConfig fields, and the
+# `stage_index >= 0` block in apply_event_config) is DELETED
+# (todo/region-stage-slots-redesign.md): every RegionStageLibrary candidate is
+# authored FINAL for its one slot, so a stage's authored terrain/straightness reach
+# the config completely unscaled regardless of where in a run it lands. Covered by
+# test_event_terrain_override_flows_into_config above (no run-position argument
+# exists any more to vary).

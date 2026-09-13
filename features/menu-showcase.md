@@ -1,0 +1,405 @@
+# Menu background showcase (`MenuShowcase` / `MenuShowcaseCamera`)
+
+All six phases of the (since deleted) `todo/menu-background-showcase.md`'s build are implemented. Read
+that file for the design decisions behind each choice; this file describes what's
+actually shipped.
+
+**Sources:** `scripts/menu_showcase.gd` (`class_name MenuShowcase`), `scripts/menu_showcase_camera.gd`
+(`class_name MenuShowcaseCamera`), `menu_showcase.tscn`, the spawn in
+`scripts/hub_shell.gd::_ready`.
+
+**Tests:** `tests/headless/test_menu_showcase.gd` (integration — builds the full
+six-segment scene once in `before_all`), `tests/headless/test_menu_showcase_geometry.gd`
+(pure segment/border-safety/weather-eligibility maths, no terrain built),
+`tests/headless/test_menu_showcase_camera.gd`.
+
+## What it is
+
+A live 3D scene behind `HubShell`'s flat 2D pages: one fixed-seed track sliced into
+six arc-length SEGMENTS, one per `RegionLibrary` region, each wearing that region's
+ground look. A `MenuShowcaseCamera` cuts between fixed shots in every segment, never
+closer than a fixed margin to a segment boundary, and each segment independently
+cycles through weather conditions eligible for its own region. No car, no run, no
+player input — pure scenery.
+
+## Hosting: no `SubViewport` needed
+
+`hub.tscn`'s root (`HubShell`) is a `Control`. `MenuShowcase` is added as a plain
+child of it in `hub_shell.gd::_ready` (`_showcase = load("res://menu_showcase.tscn").instantiate();
+add_child(_showcase)`), NOT via the `SubViewport`/`Sprite3D` compositing trick
+`WorldPanel` uses ([world-panel.md](world-panel.md)) — that mechanism is for
+embedding 2D UI *into* a 3D scene at an angle, the opposite problem. `Node3D` and
+`CanvasItem` content coexist natively in one `Viewport`, with 2D always compositing
+over 3D, so the hub's existing pages need no changes at all to draw on top of it.
+
+**Skipped under headless** (`Platform.is_headless()` gate in `hub_shell.gd`): it
+costs a real (if small) multi-segment track generation, which every hub test would
+otherwise pay for zero visual benefit. `test_menu_showcase.gd` is the dedicated
+coverage of the scene itself, built directly rather than through the hub.
+
+## Loading feedback — the same `LoadingScreen` a real stage uses
+
+Godot's own boot bar only covers engine + `.pck` load + script compile
+([loading.md](loading.md)) — six `TrackGenerator`/`TerrainManager` bakes plus
+foliage is exactly the class of heavy, synchronous-looking work
+`scripts/loading_screen.gd` (`class_name LoadingScreen`) exists to cover for a
+stage, and the hub background needed the identical thing: without it (and without
+yielding — see below), the hub sat COMPLETELY FROZEN from the moment Godot's own
+boot bar hit 100% until `_build()` finally returned. `MenuShowcase._build()` builds
+its own `LoadingScreen` instance and calls `set_title("Loading…")` — this is the
+"other callers build their OWN instance for a menu-transition wait" reuse
+`loading_screen.gd`'s own header comment already documents as intended (it used to
+name `hq.gd`/`hq_challenge.gd`, both deleted in the pivot; this is a second, live
+example of the same pattern). `.finish()` (a plain `queue_free()`) tears it down
+once `_built` flips true. Skipped entirely under headless, same gate as everywhere
+else in this file.
+
+**A loading screen alone doesn't fix a frozen frame — it still has to be allowed to
+PAINT.** The screen only becomes visible on a frame Godot actually renders, and
+nothing in `_build()`'s original version ever yielded back to the engine — every
+`await` inside it resolved same-frame (an empty `Callable()` passed as
+`should_yield`/`on_progress`), so the whole six-segment build ran inside what
+was, from the renderer's point of view, one giant frame. The fix mirrors
+`world.gd`'s own staged-loading idiom exactly, via the same shared helper:
+`WorldRuntime.yield_frame(get_tree(), headless)` (a plain `await
+tree.process_frame`, a no-op under headless so tests stay synchronous) — after
+every segment finishes entirely, and in batches of `_YIELD_BATCH` (8, matching
+`world.gd`'s own corridor-precompute batch size) inside the per-chunk
+cache/spawn loops (`_cache_segment_chunks`, `_spawn_segment`, both now
+coroutines). `TerrainManager.set_track` is also called with `should_yield = true`
+(interactive only) so even the single heaviest step — the bake itself — releases
+the main thread periodically rather than running to completion in one block.
+
+## Build performance
+
+`_build()` prints a per-phase timing breakdown on every build (`print("menu
+showcase build: …")`, headless included) — added to answer "where does the time
+actually go" with real numbers instead of guessing, and left in as ongoing perf
+visibility (the same instinct behind `TerrainManager`'s own
+`"terrain precompute: …"` print). Measured on the shipped `SHOWCASE_SEED`/
+`TURN_COUNT`:
+
+| Phase | Naive (six bakes) | Shared bake | + no collision | + `MenuShowcaseCache` |
+|---|---|---|---|---|
+| Track generation | 597 ms | 527 ms | 405 ms | 407 ms* |
+| **Bake** | **14,209 ms (77%)** | **2,289 ms** | 2,189 ms | **0 ms** |
+| Corridor + chunk cache | 3,049 ms | 2,866 ms | 2,645 ms | 2,947 ms |
+| Chunk spawn (mesh/collision) | 182 ms (1%) | 107 ms | 143 ms | 98 ms |
+| Foliage | 304 ms | 259 ms | 311 ms | 63 ms |
+| **Total** | **18,376 ms** | **6,081 ms** | **5,725 ms** | **3,546 ms** |
+
+\* Not really "track generation" any more on a cache hit — that bucket now
+measures `MenuShowcaseCache.load_if_valid()`'s file read/deserialize, the
+timer checkpoint just wasn't renamed for it.
+
+Things this measurement settled, worth keeping in mind before optimising further:
+
+- **Chunk mesh/collision spawning was never the bottleneck** (1% of the original
+  total) — this is what ruled out caching precomputed chunk MESHES, and a first
+  attempt at `MenuShowcaseCache` PROVED it the hard way: caching each segment's
+  whole `TerrainManager._chunk_cache` (heights + prebaked LOD meshes) verbatim
+  produced a **59 MB** file and made the build **slower** (3.6s vs 5.8s live) —
+  deserializing hundreds of prebaked `Mesh` resources back off disk cost nearly as
+  much as building them costs live. That result is now the reason
+  `MenuShowcaseCache` deliberately does NOT cache per-chunk data — see its own
+  header comment. `corridor + chunk cache` is therefore permanently a live phase.
+- **Collision is pure overhead here and is disabled** (`floor_tm.collision_ring =
+  -1000`, set right after `apply_terrain_lod`): nothing in this scene has a body to
+  collide with the ground (no car, no player), so `cache_chunk`'s own "actual
+  expensive step" comment — committing a full `SAMPLES×SAMPLES` `PhysicsServer3D`
+  heightfield per chunk — never needs to run at all. A negative `collision_ring`
+  makes `_collision_band_chunks`' Chebyshev test false for every coord (an
+  `absi()` distance can never be `<=` a negative number), which also lets more
+  chunks qualify for the cheap coarse/LOD-only path in `cache_chunk` (a chunk
+  needs `l_min==0 OR in_collision_band` to be full-res; removing the second
+  disjunct leaves only the distance-based one). Smaller win than hoped (~200ms) —
+  most of `cache_chunk`'s remaining cost is evidently the per-vertex
+  `compute_chunk_data` height/colour/UV2 fill and the LOD mesh build, not the
+  collision shape.
+- **`MenuShowcaseCache` (committed as `data/menu_showcase_cache.res`, 3.4 MB)
+  caches only what's cheap to store and expensive to compute** — the track shape
+  (`pieces`), the shared bake dictionaries, and the foliage scatter points. It
+  eliminates the bake entirely and cuts foliage from ~300ms to ~60ms (the scatter's
+  own grid search is skipped, not just re-run faster). See "One track, six
+  segments" below for how it's generated/consulted, and
+  `tools/generate_menu_showcase_cache.gd` / `cache_menu_showcase.sh` for the
+  regeneration tool (mirrors `tools/generate_track_cache.gd` / `cache_tracks.sh`).
+- **`corridor + chunk cache` is now the largest remaining phase** (2,947 ms, ~83%
+  of the cached total). The one lever left untried is shrinking
+  `_CORRIDOR_LEASH_M` (currently 50m — sized like a real stage's off-track leash,
+  which this scene has no equivalent need for: the camera never leaves a small
+  fixed offset from the road, ~15m at most across every shot) — directly cuts the
+  chunk COUNT built, but shrink it too far and a shot's far edge could show a
+  hole/pop-in at the frame boundary, which nobody authoring this blind can safely
+  judge. Left untouched for that reason.
+
+## `MenuShowcaseCache` — the committed build-time cache
+
+`scripts/menu_showcase_cache.gd` (`class_name MenuShowcaseCache extends Resource`),
+committed as `data/menu_showcase_cache.res`. `_build()` tries
+`MenuShowcaseCache.load_if_valid(cfg)` first; a hit supplies the track's `pieces`
+(rebuilt into a `Curve2D` via `TrackGenerator.rebuild_from_pieces` — the same
+no-search reconstruction `TrackCache.lookup()` uses), the five bake dictionaries
+(assigned onto every segment exactly like the live "bake once, share everywhere"
+path — see below), and the whole-track tree/bush scatter points. A miss (file
+absent, or `version_tag` doesn't match `MenuShowcaseCache.version_tag_for(cfg)` —
+folding in `TrackGenerator.constants_fingerprint()` and
+`TrackCache.terrain_fingerprint(cfg)`, both **reused directly** rather than
+re-derived) falls back to the exact live path that existed before this cache did,
+with **no error and no correctness dependency on the cache existing** — the same
+contract `TrackCache`'s own lockfile makes.
+
+**Regenerated by `tools/generate_menu_showcase_cache.gd`** (invoked via
+`cache_menu_showcase.sh`), mirroring `tools/generate_track_cache.gd` /
+`cache_tracks.sh` exactly: a scene-run (not `--script`) headless tool, since
+`Config` and the other autoloads only exist in a scene run. It instantiates
+`menu_showcase.tscn` with `skip_auto_build = true` (set BEFORE `add_child()`, so
+the normal `_ready()`-driven build never fires and races the explicit call), then
+calls the scene's `build_and_capture()` — `_build(force_live=true, capture)`, which
+populates the given `MenuShowcaseCache` as it computes everything live — and
+`ResourceSaver.save()`s the result.
+
+**Deliberately does NOT cache per-chunk data** (heights, prebaked LOD meshes, the
+coarse/full-res classification) — this WAS tried and measured, not assumed: see
+"Build performance" above for the 59 MB / build-got-SLOWER result that ruled it
+out. `MenuShowcaseCache` only ever holds cheap-to-store, expensive-to-**compute**
+data (a track shape, five small dictionaries, and two point arrays) — 3.4 MB
+committed, and every phase it touches (track generation, the bake, the foliage
+scatter) drops to at or near zero on a hit.
+
+## One track, six segments (`MenuShowcase._build`)
+
+Builds a track from a hardcoded seed (`SHOWCASE_SEED`, `TURN_COUNT`, `STRAIGHTNESS`
+— authored/tunable by eye, not asserted in tests) using `TrackGenerator.generate()`
+directly on a cache miss — no `RunSession`, no car. `segment_bounds(total_length,
+segment_count)` (a pure, tested static function) splits the generated centerline
+into `segment_count` evenly-spaced arc-length ranges, one per
+`RegionLibrary.ordered()` entry **in that array order** — a deliberate, feature-local
+reuse of an ordering `regions.md` otherwise says carries no meaning; here it's purely
+a display convenience for which segment gets which region.
+
+**Why six separate `TerrainManager` instances, and why that's NOT six times the
+terrain cost:** each segment gets its own `TerrainManager` (segment 0 reuses the
+scene's own authored `$Floor` node; segments 1-5 are `TerrainManager.new()`), each
+carrying its own duplicated `chunk_material` so texturing one segment can never
+bleed into another. All six instances bake the **same centerline** with the **same
+`noise_seed`** and the same `cfg.apply_cliffs`/`bake_args`, so the underlying height
+field is byte-identical across every segment boundary — only the *surface material*
+differs, which is what keeps the ground seamless where two regions meet despite
+being six separate objects. The total resident geometry is the same either way (one
+instance blending six looks over N chunks vs. six instances each owning a disjoint
+1/6th of the same N chunks) — see the deleted menu-showcase spec's decision 4
+correction for the reasoning this avoided repeating.
+
+**The bake itself runs ONCE, not six times** (`MenuShowcase._capture_baked_fields`/
+`_share_baked_fields`). Found while profiling (see "Build performance" below): since
+every segment bakes the exact same `(centerline, bake_args, noise_seed, cliff
+params)`, `TerrainManager.bake_track` was computing six byte-identical copies of its
+five output dictionaries (`road_heights`, `road_blend`, `track_weights`,
+`track_surface`, `cliff_offsets`). The first segment bakes for real
+(`floor_tm.set_track(...)`); every other segment has those same five Dictionary
+OBJECTS assigned directly onto its own fields (GDScript dictionaries are reference
+types) instead of baking again. This is safe only because nothing downstream ever
+mutates them (every consumer — `height_at`, `vertex_colors`, `surface_at`, … — is
+read-only) and because nothing in this scene ever calls
+`TerrainManager.free_load_only_data()` — the one thing that WOULD clear them, and
+which auto-wires itself only onto a parent exposing a `load_finished` signal
+(`world.gd`'s), which `MenuShowcase` never does.
+
+**Splitting one shared corridor, not six independent ones**
+(`MenuShowcase._coords_in_range`): `corridor_coords()` is computed ONCE over the
+whole track, then each segment's `TerrainManager` gets only the coords whose chunk
+centre's arc-length position — via `Curve2D.get_closest_offset`, the same
+"nearest point on the curve" query the road-surface code uses elsewhere — falls in
+that segment's `[lo, hi]` range (inclusive on both ends, so a chunk exactly on a
+shared boundary gets built into both neighbours rather than neither — a harmless
+duplicate, not a gap).
+
+**Why chunks are spawned directly (`_spawn_segment`) instead of
+`build_initial()`/`_reconcile`:** those build only a RING (`target_coords`, radius
+`load_radius`) around ONE focus point, meant for a focus that keeps moving and
+streams the rest in over time (a real stage's car). Nothing here ever moves, and a
+segment's corridor is a curving BAND along its stretch of road, not a disc around
+one point — a single ring left real, camera-visible holes (`"terrain cache miss …
+corridor region invariant broke"`) everywhere the road bent away from
+`build_initial()`'s default focus (world-origin, since no `focus_path` was wired).
+The fix: call `TerrainManager._spawn_one(coord)` — the same shared "read from
+`_chunk_cache`, else …" ladder `_reconcile` itself calls per coord — directly for
+every coord in the segment's own corridor slice, then `flush_detail_queue()`. No
+focus, no eviction, no streaming: the correct one-shot equivalent for a scene that
+never moves.
+
+**Why `menu_showcase.tscn` duplicates `main.tscn`'s `WorldEnvironment`/`Floor`
+sub-resources instead of loading `main.tscn` itself:** `main.tscn`'s root script is
+`world.gd`, whose `_ready()` immediately drives the full run-boot pipeline
+(`LoadingScreen`, `RunSession`, the car, damage, coins, …) — instantiating it as a
+shortcut to "borrow its Floor node" would run all of that unintentionally.
+Duplicating the two node blocks (same shader, same textures, same terrain-layer
+resources, same `Environment` params) gets byte-identical rendering with none of
+that. There's no `DirectionalLight3D` to duplicate either — a stage's terrain
+lighting is baked per-vertex by `TerrainManager` itself (`_bake_light`/
+`vertex_colors`), not a scene light.
+
+**Per-segment ground look** (`_apply_region_ground_look`) mirrors
+`world.gd::_apply_region_look`'s ground/tarmac handling exactly (apply only the keys
+the region actually overrides — `grass_texture` → `albedo_texture`, `gravel_texture`
+→ `road_texture`, `tarmac_color` falling back to `cfg.tarmac_color`) — but
+deliberately NOT the sky/fog half of that function, which one shared
+`WorldEnvironment` can't represent for six regions simultaneously; see the weather
+section below for how that's actually handled.
+
+**A material is ALWAYS duplicated, even for a region (home) that authors no
+override today**, and even for segment 0's already-in-the-scene `$Floor` node:
+`menu_showcase.tscn` embeds `chunk_material` as a plain sub-resource with no
+`resource_local_to_scene`, so — exactly like `main.tscn`'s `PanoramaSkyMaterial` (see
+[regions.md](regions.md) → "The sky no longer leaks between stages") — it is the
+SAME object across every instantiation of this scene in one process. Mutating it in
+place would leak whichever region/weather happened to occupy segment 0 into every
+later hub open.
+
+**Known limitation, not guarded automatically:** the border-safety rule only guards
+ADJACENT segments along the road's own arc length. It does not check whether the
+generated track loops back SPATIALLY close to a distant, non-adjacent segment. A
+pathological seed could route two arc-far segments close enough in world space for a
+wide shot in one to see the other's ground. `SHOWCASE_SEED` is eyeballed for this
+the way any authored look is eyeballed.
+
+## `MenuShowcaseCamera` and border safety
+
+Modelled on `ReplayCamera`'s shape ([event-replay.md](event-replay.md)) — a
+deterministic, testable `_tick(delta)`, a fixed per-shot dwell (`SHOT_DWELL`),
+`look_at` per shot — but with **no followed target**: shots are fixed
+`{"pos": Vector3, "look_at": Vector3}` points authored by the caller, not a car
+being tracked. A small circular drift (`DRIFT_RADIUS_M`/`DRIFT_SPEED`) is added
+around each shot's own position so a held shot reads as a slow crane move rather
+than a locked-off photograph.
+
+**Border safety** (`safe_shot_arcs(lo, hi, margin_m, ahead_m, count)`, a pure,
+tested static function): a shot's arc-length position AND its look-ahead point
+(`s + ahead_m`) must both stay at least `_BORDER_MARGIN_M` clear of both segment
+boundaries. A segment too short for the margin/ahead/count combination gets NO
+shots rather than an unsafe one — `_build_segment_shots` skips it silently. On the
+shipped `SHOWCASE_SEED`/`TURN_COUNT`, every segment clears it
+(`test_camera_rotation_covers_every_region_segment` asserts the full rotation
+includes all six).
+
+## Per-segment weather cycle
+
+Each segment independently cycles, every 20-45 seconds (`_WEATHER_REROLL_MIN_S`/
+`_MAX_S`, cosmetic timing — non-deterministic `randf_range` is fine here, the same
+allowance `world.gd`'s lightning-flash scheduler documents), through weather ids
+ELIGIBLE FOR ITS OWN REGION — snapping to a new `WeatherLibrary` condition, never
+blending. `_REGION_WEATHER_IDS` is the showcase's own eligibility table, the
+equivalent of `RallyLibrary` authoring `"sandstorm"` only onto `region == "greece"`
+events and `"snow"` only onto `region == "snow"` ones
+(`test_menu_showcase_geometry.gd` mirrors `test_rally_library.gd`'s
+`test_sandstorm_is_eligible_only_in_the_desert_regions` shape for it): home/home_coast/taiga
+cycle dry/rain/fog/storm/night; greece cycles dry/sandstorm/night; snow
+cycles dry/snow/night. Never rain in the snow segment, never snow outside it.
+
+**Split into three halves, for reasons found while implementing it:**
+
+- **The GROUND TINT half** (`_apply_segment_road_tint`) is a live shader uniform change
+  on the segment's own (never-shared) material. It's the exact read-modify-write
+  `world.gd::_tint_road` does (re-seed `albedo_color`/`tarmac_color` to the segment's
+  own baseline, then multiply-darken or lerp toward a named colour per the condition's
+  `road_tint` entry), just against a segment's own material instead of the one
+  `$Floor.chunk_material` a real stage repaints in place.
+- **The ENVIRONMENT half** (`_apply_segment_environment`) swaps the ONE shared
+  `WorldEnvironment`'s sky/fog/background — it can only ever reflect whichever segment
+  the camera CURRENTLY frames (there is exactly one `WorldEnvironment` for the whole
+  scene, so it couldn't show six skies at once regardless).
+- **The TERRAIN RELIGHT half** used to be impossible for exactly the reason the old
+  version of this doc described: `world.gd::_apply_overcast_look` re-lights a stage by
+  writing `TerrainManager.sun_color`/`sky_color`, which only take effect on the
+  terrain's NEXT BAKE, and six already-built, never-rebuilt segments couldn't cheaply
+  re-light the way a real stage does. That's now solved by a dual pre-bake instead of a
+  live re-bake — see [terrain.md](terrain.md) → "Dual day/night bake" for the mechanism.
+  A segment whose eligible weather includes a condition carrying `WeatherLibrary`'s
+  `terrain_relight` key (today only `"night"`) gets `TerrainManager.bake_night_colors`
+  turned on and both a day and a night vertex-colour array baked per chunk up front;
+  `_commit_segment_weather` swaps a segment's spawned chunks onto whichever one its
+  current weather id wants via `TerrainManager.set_vertex_color_profile`. Every other
+  eligible condition (dry/rain/fog/storm/sandstorm/snow) still leaves the terrain bake
+  untouched, exactly as before.
+- **All three are gated to camera CUTS, never mid-shot** — `_process` compares
+  `_camera.current_shot()` against `_viewed_shot` each frame, and only on a CHANGE does
+  it commit the pending weather for the segment being cut from and the segment being
+  cut to (`_commit_segment_weather`), then swap the environment
+  (`_apply_segment_environment`). `MenuShowcase._shot_segments` maps each shot index
+  back to the segment it was built from, so this works regardless of how many shots any
+  one segment ended up contributing. **The one exception**: `_reroll_segment_weather`
+  commits IMMEDIATELY, bypassing the gate, for a segment the camera is NOT currently
+  framing — there's nothing to protect there, and gating it too would leave an
+  off-camera segment stalled on stale weather (visually and in its terrain profile)
+  until its own next cut, for no benefit. `_segment_pending_weather` is the id a reroll
+  just picked but hasn't necessarily applied yet; `_segment_weather_ids` is what's
+  actually showing.
+- **Not built at all**: particles (rain/sand/snow quads), the lightning flash, wind,
+  and headlights. All of `WeatherLibrary`'s per-condition blocks beyond `look`,
+  `road_tint` and (night only) `terrain_relight` are skipped — deliberately, as
+  excessive for a decorative background that has no chase camera or car to hang them
+  off, not an oversight.
+
+## Foliage and the mobile LOD-tier cap
+
+Both implemented. **Foliage** follows the same "compute once over the whole track,
+split by segment" shape as the corridor: `TreeScatter.scatter` runs ONCE against the
+full generated `result["pieces"]`/road-rejection cells (exactly
+`world.gd::_build_foliage`'s call, just fed this scene's own track), for both trees
+and the wider bush-footprint rejection, then `MenuShowcase._points_in_range` (the
+scatter-point equivalent of `_coords_in_range`, same `get_closest_offset` split)
+divides the results per segment. Each segment spawns its own
+`Foliage.spawn_trees`/`spawn_bushes` fields from its own filtered points and its own
+`RegionLibrary.tree_mix`/`spawns_bush_mesh(look)` — home's mixed-species split,
+Greece's 70/30 canopy, the Alps' sparse conifers and no bushes, exactly as a real
+stage would render that region. Trees are spawned with `with_collision = false`
+(nothing here ever collides with anything). One scatter, one shared RNG draw per
+species — a tree near a segment boundary is never double-placed or dropped, unlike
+re-scattering per segment would risk.
+
+**The mobile LOD-tier cap** forces every segment's `TerrainManager` to
+`cfg.terrain_lod_bands_web_touch_m` (and `cfg.tree_render_distance_web_touch_m` for
+foliage) — the lowest in-run quality tier — regardless of the device actually
+running it, per decision 5. `cfg.apply_terrain_lod(floor_tm)` still seats the
+authored baseline for every OTHER LOD field (skirt, collision ring, precompute
+pruning, etc.); only `lod_band_ends_m` is overridden afterward, and the shared
+`Config.data.terrain_lod_bands_m` field itself is never mutated — a real stage
+booted right after closing the hub still resolves its own tier correctly.
+
+## Tests
+
+`tests/headless/test_menu_showcase.gd` — built ONCE in `before_all` (six
+`TerrainManager` bakes/chunk-computes over a real track is not cheap — a cache hit
+in this checkout makes it cheaper still, but the test doesn't assume one) and
+shared read-only across its tests: the build completes and the camera is live; one
+`TerrainManager` per region with at least one built chunk each; the camera
+rotation covers every segment; no two segments ever share a material instance;
+road-tint application/reversion; the environment swap on a forced cut; at least
+one region spawned a tree billboard field over the whole track; which build path
+(cache/live) this run actually covers, printed rather than asserted since a fresh
+clone may have no committed cache yet; and a SEPARATE forced-`force_live=true`
+scene proving the live fallback still produces a fully correct build even when a
+valid cache exists (`MenuShowcaseCache` must never be a correctness dependency —
+see its own header). `tests/headless/test_menu_showcase_cache.gd` — pure
+`MenuShowcaseCache` logic with no terrain or disk I/O beyond checking whether the
+committed file happens to exist: `version_tag_for`'s determinism, `is_valid`'s
+accept/reject cases (matching tag, stale tag, null), and a clean miss when the
+committed file is absent. `tests/headless/test_menu_showcase_geometry.gd` — pure
+maths with no terrain: segment-boundary splitting, `safe_shot_arcs`'
+border-clearance and too-short-segment cases, and the weather-eligibility table's
+compatibility invariants (every id real, sandstorm/snow/rain restricted to the
+right regions). `tests/headless/test_menu_showcase_camera.gd` — mirrors
+`test_replay_camera.gd`'s deterministic-tick coverage for the fixed-shot case:
+faces the current shot's `look_at`, advances on the fixed dwell, wraps around,
+doesn't crash on an empty shot list.
+
+**The loading-screen/yield fix itself is untested**, the same way `world.gd`'s own
+staged-loading presentation is: `WorldRuntime.yield_frame` is a no-op under
+`--headless` by design (so tests stay synchronous), so there is nothing a headless
+test can observe about frame pacing or a frozen render — see
+[event-replay.md](event-replay.md)'s own "the presentation path is currently
+untested" note for the same shape of gap. What `test_menu_showcase.gd` DOES cover
+(the build completes and produces the right end state) is unaffected either way,
+since `_built`/the scene's final shape don't depend on how many frames the build
+took to get there.

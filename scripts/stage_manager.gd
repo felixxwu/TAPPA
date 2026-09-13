@@ -55,6 +55,7 @@ var _results_emitted := false  # true once proceed_to_results() has fired stage_
 # the HUD delta number below.
 var _target_profile: Dictionary = {}
 var _ghost: RivalGhost = null
+var _rival_finished := false  # true once the ghost has reached the finish and been hidden
 # Rally pacenote strip (features/hud.md), wired by setup_pacenotes() from world.gd on
 # every run (no P1 rival needed — pacenotes are just track reading). _pace_fracs[i] is
 # the progress fraction (0..1) of turn i's corner entry, ascending. _pace_cursor is the
@@ -104,6 +105,7 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	# staged region run re-wires it via setup_target_profile() after this.
 	_target_profile = {}
 	_ghost = null
+	_rival_finished = false
 	_hide_delta()
 	# Clear pacenotes from a previous arm; world.gd re-wires them via setup_pacenotes().
 	_pace_fracs = []
@@ -158,6 +160,7 @@ func begin_countdown() -> void:
 func setup_target_profile(profile: Dictionary, ghost: RivalGhost = null) -> void:
 	_target_profile = profile
 	_ghost = ghost
+	_rival_finished = false
 
 
 # Wire the HUD pacenote strip: the per-corner progress fractions (0..1) of each turn
@@ -215,20 +218,30 @@ func _hide_off_road_warning() -> void:
 
 
 # The rival ghost + HUD delta (features/rival-ghost.md), ticked once per RUNNING
-# frame. Keeps posing `_ghost` off THIS stage's own elapsed clock (un-looped —
-# RivalGhost.pose_at holds it at the finish once the profile's duration passes,
-# rather than the start-line reveal's looping idle) and computes
+# frame. Keeps posing `_ghost` off THIS stage's own elapsed clock until its target
+# time is up, then drives it the rest of the way to the ACTUAL finish (the track's
+# own span, which can sit a hair past the profile's own last sample) and hides it —
+# the rival crosses the line and disappears rather than parking short of it and
+# hanging around on the track for the remainder of the run — and computes
 # "player elapsed - rival's time at the PLAYER'S live distance" for the HUD. A
 # positive delta is the player BEHIND the rival's pace (red); negative is AHEAD
 # (green) — see hud.gd's show_delta.
 func _update_rival() -> void:
-	if is_instance_valid(_ghost):
-		_ghost.pose_at(_elapsed)
-	if _target_profile.is_empty() or _progress == null \
-			or not (_progress.has_method("origin_offset") and _progress.has_method("finish_offset")):
+	var span := 0.0
+	var have_span := _progress != null \
+			and _progress.has_method("origin_offset") and _progress.has_method("finish_offset")
+	if have_span:
+		span = _progress.finish_offset() - _progress.origin_offset()
+	if is_instance_valid(_ghost) and not _rival_finished:
+		var duration := RivalGhost.profile_duration(_target_profile)
+		if duration > 0.0 and _elapsed >= duration:
+			_rival_finished = true
+			_ghost.finish_and_hide(span if have_span and span > 0.0 else -1.0)
+		else:
+			_ghost.pose_at(_elapsed)
+	if _target_profile.is_empty() or not have_span:
 		_hide_delta()
 		return
-	var span: float = _progress.finish_offset() - _progress.origin_offset()
 	if span <= 0.0:
 		_hide_delta()
 		return

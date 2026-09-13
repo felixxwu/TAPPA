@@ -18,7 +18,7 @@ func after_each() -> void:
 func test_by_id_falls_back_to_the_dry_entry_for_an_unknown_id() -> void:
 	# A typo'd authored string, an id from an older build, or a condition removed
 	# from the table must degrade to a plain dry stage rather than an empty dict
-	# every consumer would then have to guard. Mirrors RallyLibrary.event_weather.
+	# every consumer would then have to guard. Mirrors StageFields.event_weather.
 	var dry := WeatherLibrary.by_id(WeatherLibrary.DEFAULT_ID)
 	assert_eq(String(dry.get("id", "")), WeatherLibrary.DEFAULT_ID, "the dry entry exists")
 	assert_eq(WeatherLibrary.by_id("no_such_condition"), dry, "unknown id -> the dry entry")
@@ -268,6 +268,10 @@ func test_a_wind_block_names_only_config_fields_that_exist() -> void:
 			if lightning.has(key):
 				assert_true(cfg.get(String(lightning[key])) != null,
 					"%s names a real GameConfig field" % String(lightning[key]))
+		var foliage_wind_field := String(entry.get("foliage_wind", ""))
+		if foliage_wind_field != "":
+			assert_true(cfg.get(foliage_wind_field) != null,
+				"%s names a real GameConfig field" % foliage_wind_field)
 
 
 # --- Wetness classification --------------------------------------------------

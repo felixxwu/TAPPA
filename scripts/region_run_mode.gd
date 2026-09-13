@@ -23,10 +23,12 @@ extends RunMode
 # progressing — which is what stops "farm the first region forever" without taking
 # the repeatable-region grind valve away (decision 12).
 
-# A run is 8 stages (RR's TOTAL_STAGES). Not a GameConfig tunable: the whole
-# progression — the money curve's exponent, the pace ramp, decision 32's 16-event
-# pool floor ("two runs with no repeats") — is authored against this number, so it
-# is a design constant, not a knob.
+# A run is 8 stages. Not a GameConfig tunable: the whole progression — the money
+# curve's exponent, the pace ramp, and RegionStageLibrary's 8-SLOT-per-region shape
+# (todo/region-stage-slots-redesign.md) — is authored against this number, so it is a
+# design constant, not a knob. RegionStageLibrary.slots_in(region_id) must have at
+# least this many slots for every region, or RegionStagePool.draw silently returns a
+# short run.
 const STAGE_COUNT := 8
 
 var region_id := ""
@@ -89,6 +91,19 @@ func to_record() -> Dictionary:
 # hardest and best-paid one.
 func region_index() -> int:
 	return maxi(0, RegionLibrary.order_of(region_id))
+
+
+# The region-picker's "reward per stage" figure: the FIRST stage's base completion
+# payout at this region's scale (stage 0's growth exponent is 0, so this is exactly
+# `run_stage_money_base * region_scale` — no bonus, no coins, the flat floor every
+# stage in the region pays at least). Static and keyed on `region_id_str` directly
+# (not an instance) because the region picker shows this for every region, unlocked
+# or not, without starting a run for each one.
+static func base_stage_reward(region_id_str: String) -> int:
+	var cfg: GameConfig = Config.data
+	var order := maxi(0, RegionLibrary.order_of(region_id_str))
+	var scale := pow(cfg.run_money_region_multiplier, float(order))
+	return maxi(0, int(round(cfg.run_stage_money_base * scale)))
 
 
 # The multiplier applied to the reference-car optimum to get this stage's target.
@@ -155,12 +170,15 @@ func stage_failed(_stage_index: int, elapsed_ms: int, target_ms: int) -> bool:
 
 
 # Banked the moment the stage is cleared (decision 36), so a run that dies on stage
-# 6 keeps everything stages 1-5 paid. All three of the pivot's money sources live
-# here — a completion amount that grows with stages cleared, a bonus proportional to
-# the time saved against the target, and (stage 8) `coins_collected` * GameConfig
-# .coin_money. Coins are added AFTER the region scale, not inside it: a coin is
-# worth a flat amount everywhere — decision 31's "later region pays more" story is
-# about the stage-clear reward, not the collectable gamble on top of it.
+# 6 keeps everything stages 1-5 paid. Four money sources live here — a completion
+# amount that grows with stages cleared, a bonus proportional to the time saved
+# against the target, (stage 8) `coins_collected` * GameConfig.coin_money, and — on
+# the run's OWN final stage only — a region-clear bonus. Coins and the clear bonus
+# are both scaled by `region_scale`, same as completion+bonus: a coin or a cleared
+# region is worth more in a richer region, same story as the stage-clear reward
+# itself (decision 31 extended, 2026-09 — was: "coins are worth a flat amount
+# everywhere, the region scale is only about the stage-clear reward"; the clear
+# bonus is new, not a re-read of an existing term).
 func stage_money(stage_index: int, elapsed_ms: int, target_ms: int,
 		coins_collected: int = 0) -> int:
 	var cfg: GameConfig = Config.data
@@ -170,9 +188,26 @@ func stage_money(stage_index: int, elapsed_ms: int, target_ms: int,
 	if target_ms > 0 and elapsed_ms < target_ms:
 		var saved := clampf(float(target_ms - elapsed_ms) / float(target_ms), 0.0, 1.0)
 		bonus = cfg.run_fast_bonus_money * saved
-	var region_scale := 1.0 + cfg.run_money_region_step * float(region_index())
-	var coin_total := float(maxi(0, coins_collected)) * cfg.coin_money
-	return maxi(0, int(round((completion + bonus) * region_scale + coin_total)))
+	var region_scale := pow(cfg.run_money_region_multiplier, float(region_index()))
+	var coin_total := float(maxi(0, coins_collected)) * cfg.coin_money * region_scale
+	var clear_bonus := float(stage_clear_bonus(stage_index))
+	return maxi(0, int(round((completion + bonus) * region_scale + coin_total + clear_bonus)))
+
+
+# THE REGION-CLEAR REWARD, isolated (see RunMode.stage_clear_bonus's doc — this is
+# what the reward screen reads to show it as its own line, and what stage_money folds
+# in above). Only the run's own final stage (index stage_count()-1) carries it, and
+# only on a genuine clear — a missed final stage never reaches stage_money at all
+# (RunSession.report_event_result only calls it when the stage was not missed), so
+# there is no separate "did the run finish?" check to get wrong here. Scaled by the
+# SAME region_scale as the rest of this region's payouts, so a deeper region's stage-8
+# bonus is proportionally as much richer as its ordinary stage-clear reward.
+func stage_clear_bonus(stage_index: int) -> int:
+	if stage_index < stage_count() - 1:
+		return 0
+	var cfg: GameConfig = Config.data
+	var region_scale := pow(cfg.run_money_region_multiplier, float(region_index()))
+	return maxi(0, int(round(cfg.run_region_clear_money_base * region_scale)))
 
 
 # Record a CLEARED region on the profile. This is the ledger RegionLibrary.is_unlocked
@@ -207,17 +242,17 @@ func offers_boost_pick() -> bool:
 	return true
 
 
-# BoostLibrary.draw is seeded from THIS RUN, never the wall clock — see _boost_seed.
-func boost_choices(stage_index: int) -> Array:
-	return BoostLibrary.draw(_boost_seed(stage_index), Config.data.run_boost_choices)
-
-
-# The run's own seed, offset by the stage the pick is FOR — the same "bump by a large
-# prime stride" convention world.gd already uses to re-roll a challenge stage's seed on
-# retry (features/rally-challenge.md -> "Stage-generation retry"), reused here so a
-# resumed run's pick matches what it drew the first time (deterministic in
-# (run_seed, stage_index), nothing else). Distinct from RegionStagePool's own stage
-# draw, which is keyed on run_seed alone — this needs a SECOND, independent seed per
-# stage so the two draws (which stage, which boosts) can't accidentally correlate.
-func _boost_seed(stage_index: int) -> int:
-	return run_seed + stage_index * 104729
+# THE WHOLE POOL, not a random subset (todo/mid-run-upgrade-menu.md): the player picks a
+# direction (power/handling) THEMSELVES on the pick screen, then ONE entry from that
+# category is rolled at random — so every entry has to be offered up front for the
+# category screen to know what's actually available, rather than pre-narrowing to a
+# small drawn sample that could leave a whole category empty. `extra_ids` (RunSession's
+# "drivetrain:<mode>" and "engine_swap:<engine id>" pseudo-ids) are folded into the SAME
+# pool as the boost catalogue's own ids, exactly like the old draw did, so a conversion or
+# swap competes as just another catalogue entry rather than a guaranteed extra.
+#
+# Deterministic in nothing but `extra_ids` itself (no RNG, no seed) — the whole point is
+# that this is the FULL pool, not a draw, so a resumed run trivially re-derives the same
+# list with no persistence needed.
+func boost_pool_ids(_stage_index: int, extra_ids: Array = []) -> Array:
+	return BoostLibrary.CATALOGUE.keys() + extra_ids

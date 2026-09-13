@@ -245,6 +245,8 @@ func _field_player_car() -> void:
 	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	if RunSession.is_active():
 		_field_car(RunSession.car_instance_id())
+	elif FreePlay.has_plan():
+		_field_free_play_car()
 	else:
 		$Car.apply_car(0)
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
@@ -311,11 +313,20 @@ func _build_overlays_and_benchmark() -> void:
 	perf.engine_audio = $Car.get_node_or_null("EngineAudio")  # live audio-overrun readout
 	add_child(perf)
 
-	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref).
+	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref);
+	# Settings → Dev → "Complete stage" relays the same way (the menu owns the
+	# SettingsMenu instance, this scene owns the car / track / stage manager).
 	var pause_menu := _pause_menu()
 	if pause_menu != null:
 		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
 			pause_menu.reset_to_track_requested.connect(_on_reset_to_track_requested)
+		# Pause-menu "Photo Mode" hands the frozen screen up here too — the free-fly
+		# camera has to take over the viewport and hide the HUD, both of which this
+		# scene owns. See features/camera.md.
+		if not pause_menu.photo_mode_requested.is_connected(_on_photo_mode_requested):
+			pause_menu.photo_mode_requested.connect(_on_photo_mode_requested)
+		if not pause_menu.dev_complete_stage_requested.is_connected(_dev_complete_stage):
+			pause_menu.dev_complete_stage_requested.connect(_dev_complete_stage)
 		# Arm the pause menu now the world is generated — it's default-inert
 		# (fail-closed) so the Pause button / Esc can't open it during the awaited
 		# generation above, where pausing would freeze the tree mid-build and let the
@@ -547,7 +558,7 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Phase 2 — "Carving road into terrain…": the road bake (flatten + surface split +
 	# cliffs) and the final waterline pass it makes possible.
-	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"])
+	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"], result.get("pieces", []))
 
 	# Phase 3 — "Precomputing chunks…" / "Building terrain…": every chunk the play area
 	# realistically requests, then the initial ring built once from that cache.
@@ -616,7 +627,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# read RallySession.current_event() here is deleted (todo/roguelike-pivot.md);
 	# the roguelike run session (stage 3) is its replacement.
 	var event := RunSession.current_stage_params() if RunSession.is_active() \
-		else {}
+		else FreePlay.event()
 	var params: TrackGenParams = TrackGenParams.for_event(event, cfg) if not event.is_empty() \
 		else TrackGenParams.for_config(cfg)
 	# The dry-start search may relocate the generation origin onto dry ground. Derive
@@ -747,7 +758,7 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 # cliffs) — the heaviest single step — then repaint the loading preview's waterline now that
 # the bake makes a correct one possible.
 func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
-		road_centerline: Curve2D, water_bounds: Rect2) -> void:
+		road_centerline: Curve2D, water_bounds: Rect2, pieces: Array) -> void:
 	var interactive := _interactive(loading)
 	# Road band + surface split, derived in the one place every baker shares
 	# (TerrainManager.bake_args) so the Seed Lab's preview bake can't drift from this
@@ -758,6 +769,14 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 	# Cliff params onto the terrain before the bake reads them (mirrors the Lighting
 	# group applied earlier); the cliff pass runs inside set_track → bake_track.
 	cfg.apply_cliffs(_floor())
+	# Vertical channel: plan the crests against `road_centerline`, the SAME curve about
+	# to be baked (already reassigned to the runoff-extended curve by the caller, past
+	# _with_finish_runoff). The runoff is appended past the finish, so offsets from the
+	# start are identical either way, but planning against the baked curve keeps that a
+	# fact rather than a coincidence. [] when the generated track has no Jump piece —
+	# TrackProfile.offset_at treats an empty plan as a free no-op.
+	var jumps := TrackProfile.plan(
+		road_centerline, pieces, cfg.jump_height_m, cfg.jump_span_m)
 	# Baking the road into the terrain (flatten + surface split + cliffs) is the heaviest
 	# single step; give it its own label and let it yield frames (interactive path only —
 	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
@@ -767,7 +786,7 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 	var carve_progress := loading.set_carve_progress if interactive else Callable()
 	await $Floor.set_track(road_centerline, bake_args[0], bake_args[1],
 		bake_args[2], bake_args[3], bake_args[4],
-		interactive, carve_progress)
+		interactive, carve_progress, jumps)
 	if interactive:
 		loading.set_carve_progress(1.0)  # snap to fully-white once carving is done
 	# FINAL water pass — the only one that can be right, and it lands HERE, straight
@@ -878,8 +897,9 @@ func _place_world_props(cfg: GameConfig, result: Dictionary, road_centerline: Cu
 	if cfg.barriers_enabled:
 		_build_barriers(cfg, result)
 
-	# Stage coins (decisions 13, 35, 36, 50) — a REGION-RUN mechanic only. Placed
-	# off the road so a pickup costs time against the clock; see _build_coins.
+	# Stage coins (decisions 13, 35, 36, 50 — 35 reversed by user request) — a
+	# REGION-RUN mechanic only. Placed on the carriageway, floating and spinning
+	# for visibility; see _build_coins.
 	if cfg.coins_enabled:
 		_build_coins(cfg, road_centerline, finish_len)
 
@@ -1219,16 +1239,7 @@ func _build_coins(cfg: GameConfig, road_centerline: Curve2D, finish_len: float) 
 	field.name = "CoinField"
 	add_child(field)
 	field.build(layout, _floor(), $Car, cfg.coin_render_params())
-	field.coin_collected.connect(_on_coin_collected)
 	_coin_field = field
-	var hud_node := $HUD
-	hud_node.set_coin_count(0)
-
-
-# Live "coins taken this stage" HUD readout, on every pickup (CoinField.coin_collected).
-func _on_coin_collected(_index: int, total_collected: int) -> void:
-	var hud_node := $HUD
-	hud_node.set_coin_count(total_collected)
 
 
 # Finish + start arches: the inflatable gates straddling the road
@@ -1340,7 +1351,7 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		# returns {}) and a plain dev boot has no session at all. A degenerate track's
 		# empty profile frees any ghost left over from a previous (solvable) stage
 		# rather than posing it on nothing.
-		_setup_rival_ghost(staged)
+		_setup_rival_ghost(staged, road_centerline)
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and
@@ -1520,6 +1531,12 @@ var _distant_terrain: DistantTerrain
 # session runs and freed with the scene on the next event reload.
 var _start_line: StartLine
 
+# The free-fly PHOTO MODE camera while it's up, else null (see _on_photo_mode_requested).
+var _photo_camera: PhotoModeCamera
+# On-screen touch controls for photo mode, built alongside the camera ONLY on a touch
+# device (Platform.is_touch()) — see _on_photo_mode_requested/_on_photo_mode_finished.
+var _photo_controls: PhotoModeControls
+
 # Working HP the fielded car started this event with, so the event's HP loss can
 # be reported back to the session at completion. Set when fielding a session car.
 var _event_start_hp := 0.0
@@ -1568,29 +1585,83 @@ func _setup_pacenotes(track_result: Dictionary, staged: bool, cfg: GameConfig) -
 # same-run stage regeneration rather than leaking a Car per stage. An unsolvable
 # stage's empty profile frees a ghost left over from an earlier, solvable one — a
 # stale rival posed on nothing is worse than no rival at all.
-func _setup_rival_ghost(staged: bool) -> void:
+func _setup_rival_ghost(staged: bool, road_centerline: Curve2D = null) -> void:
 	var profile: Dictionary = {}
 	if staged and RunSession.is_active():
 		profile = RunSession.stage_target_profile()
 	if profile.is_empty():
 		if is_instance_valid(_rival_ghost):
 			_rival_ghost.free_ghost()
+		# The ghost's car is gone, so its effect pools have nothing to track — drop them
+		# rather than leaving last stage's ruts drawn over the regenerated track.
+		_replace_named_child("RivalTireMarks")
+		_replace_named_child("RivalWheelParticles")
 		_stage_manager.setup_target_profile({})
 		return
+	# The rival's identity for THIS stage: a real CarLibrary car whose benchmark pace
+	# best matches the target clock, plus a driver name seeded from the run so it is
+	# stable for a given stage of a given run (features/rival-ghost.md). The ghost's
+	# DRIVING stays the target profile exactly — the car is the body the clock wears.
+	var rival: Dictionary = RivalGhost.pick_rival(RunSession.stage_target_pace(), _rival_seed())
 	_rival_ghost = _ensure_child("RivalGhost",
 		func() -> Node: return RivalGhost.new()) as RivalGhost
-	_rival_ghost.setup(_track_progress, _floor(), profile)
+	_rival_ghost.setup(_track_progress, _floor(), profile, rival)
+	# The player's car drives the ghost's proximity fade/cull (features/rival-ghost.md).
+	if has_node("Car"):
+		_rival_ghost.set_player($Car as Node3D)
+	_setup_rival_effects(road_centerline)
 	_stage_manager.setup_target_profile(profile, _rival_ghost)
+
+
+# Tyre marks + thrown dirt for the RIVAL's car, on their own instances (both systems
+# track exactly one car). The rival is a posed ghost for all but the start-line
+# send-off, where it becomes a real simulated car (RivalGhost.begin_live_departure) —
+# and these are what make that moment read as real: ruts dug off the line and gravel
+# flung from the driven wheels, the same look the player's own launch has.
+#
+# No enable flag is needed to keep them quiet the rest of the time: both gate per wheel
+# on `is_in_contact()`, and a frozen kinematic body's solver never runs, so its wheels
+# are never in contact. They are live exactly when the rival is.
+func _setup_rival_effects(road_centerline: Curve2D) -> void:
+	var ghost_car := _rival_ghost.car()
+	if ghost_car == null:
+		return
+	var cfg: GameConfig = Config.data
+	var marks := _ensure_child("RivalTireMarks",
+		func() -> Node: return TireMarks.new()) as TireMarks
+	marks.setup(road_centerline, ghost_car, _floor(), cfg.track_width * 0.5)
+	var dust := _ensure_child("RivalWheelParticles",
+		func() -> Node: return WheelParticles.new()) as WheelParticles
+	dust.setup(ghost_car)
+	# Same per-region debris look the player's pool wears, so the rival's spray matches
+	# the ground it is standing on rather than reverting to the home world's green.
+	var region_look := _current_region_look()
+	dust.set_grass_color_override(region_look.get("grass_particle_color", Color(0, 0, 0, 0)))
+	dust.set_grass_square_override(bool(region_look.get("grass_particle_square", false)))
+
+
+# The rival driver-name seed: the run's own seed (RegionRunMode.run_seed; 0 for a
+# mode without one) offset by the stage index, so a stage names the same rival every
+# replay of the same run while stages and runs differ — the same determinism
+# convention as RegionRunMode's _boost_seed, without colliding with its stride.
+func _rival_seed() -> int:
+	var m := RunSession.mode()
+	var run_seed := 0
+	if m != null:
+		var value: Variant = m.get("run_seed")
+		if value != null:
+			run_seed = int(value)
+	return run_seed + RunSession.events_completed() * 31
 
 
 # --- Session run-scene integration ------------------------------------------
 
 # Dev cheat (F key, features/debug-tools.md): skip straight to the finish of the
-# current stage. Debug-build only (release/web ignore it) and only inside an active
-# run — Rally Challenge today, the roguelike run session once it lands — with a live
-# StageManager. Teleports the car onto the finish line and force-completes the
-# stage, so the whole completion → reward → progression flow fires exactly as it
-# would on a real finish.
+# current stage. Gated on SettingsMenu.dev_tools_enabled() (on in every build,
+# including release/web) and only inside an active run with a live StageManager.
+# Teleports the car onto the finish line and force-completes the stage, so the
+# whole completion → reward → progression flow fires exactly as it would on a
+# real finish.
 #
 # Gated on DrivingContext.session_active(), not any one session's is_active(): a
 # check tied to a single session type silently excludes every other one.
@@ -1607,6 +1678,22 @@ func _unhandled_input(event: InputEvent) -> void:
 	# handler can transition the scene and detach this node, making a later
 	# get_viewport() call return null.
 	get_viewport().set_input_as_handled()
+	_dev_complete_stage()
+
+
+# The skip-to-finish body behind BOTH the F key (above) and the pause menu's
+# Settings → Dev "Complete stage" button (PauseMenu relays the SettingsMenu signal;
+# wired in _build_overlays_and_benchmark). Re-checks the whole gate rather than
+# trusting the caller: the button is offered per-build-time session state, so a
+# signal from a menu built mid-run can arrive when the run has since ended or the
+# stage has already completed — a stale press must do nothing.
+func _dev_complete_stage() -> void:
+	if not SettingsMenu.dev_tools_enabled() or not DrivingContext.session_active():
+		return
+	if _stage_manager == null or _track_progress == null:
+		return
+	if _stage_manager.phase() == StageManager.Phase.COMPLETE:
+		return
 	$Car.reset_to(_track_progress.jump_to_finish())
 	_stage_manager.force_complete()
 
@@ -1623,6 +1710,72 @@ func _on_reset_to_track_requested() -> void:
 	if _track_progress == null or not has_node("Car"):
 		return
 	$Car.reset_to(_track_progress.manual_reset_pose())
+
+
+# Pause-menu Photo Mode: hand the screen to a free-fly PhotoModeCamera with the tree
+# still paused (the pause menu deliberately does not unpause on the way in), so the
+# world is frozen and only the viewpoint moves. This scene owns the pieces the camera
+# needs taken care of:
+#
+#  - the HUD / touch controls / speed lines are hidden, so the shot is unobstructed;
+#  - PostProcess is switched to PROCESS_MODE_ALWAYS. Its _process mirrors the current
+#    camera into the SubViewport that actually renders the world (see
+#    post_process_view.gd) — left PAUSABLE it freezes with everything else and the
+#    photo camera would move with nothing on screen changing.
+#
+# Every one of those is put back in _on_photo_mode_finished.
+func _on_photo_mode_requested() -> void:
+	if is_instance_valid(_photo_camera):
+		return  # already flying (a double-press); nothing to do
+	_photo_camera = PhotoModeCamera.new()
+	_photo_camera.name = "PhotoModeCamera"
+	_photo_camera.exited.connect(_on_photo_mode_finished)
+	add_child(_photo_camera)
+	_photo_camera.enter(get_viewport().get_camera_3d())
+	_set_photo_mode_chrome(false)
+	# Touch controls: the phone has no Esc key and MobileControls is hidden above, so
+	# without these a touch player would be stuck flying with no way out. Desktop/native
+	# gets none — the mouse+keyboard path above already covers it.
+	if Platform.is_touch():
+		_photo_controls = PhotoModeControls.new()
+		_photo_controls.name = "PhotoModeControls"
+		add_child(_photo_controls)
+		_photo_controls.setup(_photo_camera)
+
+
+# Esc in photo mode: drop the camera, restore the chrome, re-assert the player's chosen
+# gameplay camera and give the (still frozen) pause menu back.
+func _on_photo_mode_finished() -> void:
+	if is_instance_valid(_photo_controls):
+		remove_child(_photo_controls)
+		_photo_controls.queue_free()
+	_photo_controls = null
+	if is_instance_valid(_photo_camera):
+		# Detach BEFORE queue_free: the free lands at the end of the frame, so a photo
+		# mode re-opened in the same frame would otherwise collide with the dying node's
+		# name and land as "PhotoModeCamera2".
+		remove_child(_photo_camera)
+		_photo_camera.queue_free()
+	_photo_camera = null
+	_set_photo_mode_chrome(true)
+	if has_node("CameraManager"):
+		($CameraManager as CameraManager).activate_current()
+	var pause_menu := _pause_menu()
+	if pause_menu != null:
+		pause_menu.return_from_photo_mode()
+
+
+# Show (`on = true`) or hide the in-run screen furniture around the photo camera, and
+# flip the post-process mirror between PAUSABLE and ALWAYS with it. One writer for both
+# halves so an early return can never restore the overlays but leave the mirror running.
+func _set_photo_mode_chrome(on: bool) -> void:
+	for node_name in ["HUD", "MobileControls", "SpeedLines"]:
+		var layer := get_node_or_null(node_name) as CanvasLayer
+		if layer != null:
+			layer.visible = on
+	var post := get_node_or_null("PostProcess") as Node
+	if post != null:
+		post.process_mode = (Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_ALWAYS)
 
 
 # Whether this run should open with the pre-event start-line scene: a session run
@@ -1764,29 +1917,75 @@ func _field_car(instance_id: int) -> void:
 		$Car.apply_car(0)
 		return
 	if RunSession.is_active():
-		# RUN-SCOPED BOOSTS (todo/roguelike-pivot.md "Upgrades — RR's two-tier model",
-		# features/region-runs.md -> "Where boosts live, and what wipes them"). Merged
-		# onto a DUPLICATED copy of the owned-car dict, never the live reference
-		# Save.get_car returned — writing "boosts" onto that would persist a run's
-		# temporary picks straight into the profile, which must never happen (they are
-		# wiped when the run ends, win or lose; see RunSession._finish_locally).
-		owned = owned.duplicate(true)
-		# PERKS RIDE THE SAME SEAM (todo/roguelike-pivot.md decision 51: "the seam is
-		# UpgradeLibrary.EFFECTS + a car's boosts list; do not build a parallel modifier
-		# path"). The two lists differ in LIFETIME, not in mechanism: a boost is run-scoped
-		# and wiped when the run ends, while an equipped perk is a permanent profile
-		# purchase — so perks are re-derived from the profile on every stage boot rather
-		# than carried on the run object. Both land on the same duplicated dict, which is
-		# what keeps either of them out of the saved profile.
-		owned["boosts"] = RunSession.boosts() + PerkLibrary.equipped_effects(Save.profile)
-		# THE MID-RUN DRIVETRAIN CONVERSION (same seam, same lifetime as the boosts above —
-		# see RunSession.choose_drivetrain / drivetrain_override). Written onto this same
-		# duplicated dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override
-		# sees it for exactly as long as the run does.
-		owned["drivetrain_override"] = RunSession.drivetrain_override()
+		owned = _owned_with_run_effects(owned)
 	$Car.apply_owned(owned)
 	_event_start_hp = $Car.damage.hp
 	# Safe defaults until the finish crossing overwrites them (_on_finish_reached).
+	_event_hp_at_finish = _event_start_hp
+	_event_toe_at_finish = $Car.damage.toe_array()
+	_event_distance_at_finish = 0.0
+
+
+# The owned-car dict AS THE RUN ACTUALLY DRIVES IT — the persisted car plus this run's
+# temporary effects. Used both to field the car and to draw the between-stage stats sheet,
+# which is the point of it being one function: a "before" column built from the bare
+# persisted dict would read as though the run carried no boosts at all, and would then
+# count this run's existing picks a second time in the "after".
+#
+# RUN-SCOPED BOOSTS (todo/roguelike-pivot.md "Upgrades — RR's two-tier model",
+# features/region-runs.md -> "Where boosts live, and what wipes them"). Merged onto a
+# DUPLICATED copy of the owned-car dict, never the live reference Save.get_car returned —
+# writing "boosts" onto that would persist a run's temporary picks straight into the
+# profile, which must never happen (they are wiped when the run ends, win or lose; see
+# RunSession._finish_locally).
+#
+# SKILLS RIDE THE SAME SEAM (todo/roguelike-pivot.md decision 51: "the seam is
+# UpgradeLibrary.EFFECTS + a car's boosts list; do not build a parallel modifier path").
+# The two lists differ in LIFETIME, not in mechanism: a boost is run-scoped and wiped when
+# the run ends, while an equipped skill is a permanent profile purchase — so skills are
+# re-derived from the profile on every stage boot rather than carried on the run object.
+# Both land on the same duplicated dict, which is what keeps either of them out of the
+# saved profile.
+#
+# THE MID-RUN DRIVETRAIN CONVERSION (same seam, same lifetime as the boosts above — see
+# RunSession.choose_drivetrain / drivetrain_override). Written onto this same duplicated
+# dict, never Save's persisted car, so UpgradeLibrary.resolve_drive_override sees it for
+# exactly as long as the run does.
+#
+# THE MID-RUN ENGINE SWAP (same seam, same lifetime again — see
+# RunSession.choose_engine_swap / engine_swap_id). Setting "swapped_engine" here is the
+# WHOLE integration: car.gd::apply_owned already reads that field and runs
+# _apply_engine_swap (features/engine-swap.md), bringing the swapped engine's real torque
+# curve, redline, mass, weight distribution and gearbox/gearing along with it — nothing
+# else has to know a swap happened. When engine_swap_id() is "" (no swap picked), this
+# simply omits the key, which is the same as it being unset: _apply_engine_swap resolves
+# via EngineSwap.current_engine_id, which falls back to `owned`'s own stock/previously-
+# swapped engine either way. A swapped id EQUAL to the car's own current engine is a safe
+# no-op too — _apply_engine_swap returns immediately when current == stock.
+func _owned_with_run_effects(owned: Dictionary) -> Dictionary:
+	var out := owned.duplicate(true)
+	out["boosts"] = RunSession.boosts() + SkillLibrary.equipped_effects(Save.profile)
+	out["drivetrain_override"] = RunSession.drivetrain_override()
+	var swap_id := RunSession.engine_swap_id()
+	if not swap_id.is_empty():
+		out["swapped_engine"] = swap_id
+	return out
+
+
+# The FREE PLAY field (see free_play.gd): any catalogue car, plus the plan's chosen
+# boosts AND the player's equipped skills, riding the same effects funnel a run's
+# car rides — a synthetic owned-shaped dict, never Save's persisted cars, so a
+# sandbox drive cannot write HP or boosts into the profile. Unbound by design: with
+# no instance_id, DamageModel never persists (its unbound branch), matching free
+# roam's nothing-at-stake contract.
+func _field_free_play_car() -> void:
+	var spec: Dictionary = CarLibrary.all()[FreePlay.car_index()]
+	var owned := {
+		"model_id": String(spec.get("id", "")),
+		"boosts": FreePlay.boost_effects() + SkillLibrary.equipped_effects(Save.profile),
+	}
+	$Car.apply_owned(owned)
+	_event_start_hp = $Car.damage.hp
 	_event_hp_at_finish = _event_start_hp
 	_event_toe_at_finish = $Car.damage.toe_array()
 	_event_distance_at_finish = 0.0
@@ -1845,7 +2044,7 @@ func _on_session_event_completed(elapsed_seconds: float) -> void:
 	# _on_finish_reached), NOT here: this handler fires on the NEXT button, by which time
 	# the car has skidded to a stop / idled in the runoff, and any barrier clip during
 	# that post-finish coast would be wrongly charged to the event's damage.
-	# SIGNED, not clamped at 0: the "self_healing" perk (decision 51) can leave a stage
+	# SIGNED, not clamped at 0: the "self_healing" skill (decision 51) can leave a stage
 	# with MORE HP than it started, and clamping here would silently throw that repair
 	# away at every stage boundary. RunSession.report_event_result reads the sign.
 	var hp_lost: float = _event_start_hp - _event_hp_at_finish
@@ -1928,21 +2127,171 @@ func _present_standings_overlay(_event_index: int) -> void:
 	_reset_props_for_replay()
 	# Car into replay playback.
 	($Car as Node).begin_replay(_replay_recorder)
-	_interstitial_page = RunPickPanel.open(self, RunSession.pending_pick(),
-		_on_interstitial_choice, RunSession.drivetrain_choices())
+	_show_stage_reward()
 	_on_leaderboard_hidden_changed(false)   # shown -> engine muted
 
 
-# The interstitial's row was pressed — "repair", a boost id, "drivetrain:<mode>", or ""
-# (plain Continue, offered when RunSession had no pick to draw). Applies the choice, tears
-# the overlay down, then either carries the run into the next stage or — if this was the
-# run's final/failed stage, so RunSession is no longer active — signals that the player has
-# seen the result.
+# Step 0 — the reward. Shown for EVERY stage result, including a missed stage (which
+# pays $0 but still ends the run right here, so the player should see that plainly
+# rather than jumping straight to a bare Continue) — what this stage just paid, and
+# the running total, before any pick is offered. RunSession.last_stage_money() is
+# transient (see its own doc) so this can only ever be read right here, immediately
+# after report_event_result set it.
+func _show_stage_reward() -> void:
+	var page := _swap_interstitial("Stage complete")
+	page.body().add_child(UITheme.label("Earned: $%d" % RunSession.last_stage_money()))
+	var coins := RunSession.last_stage_coins()
+	if coins > 0:
+		page.body().add_child(UITheme.label(
+			"Coins: %d ($%d)" % [coins, RunSession.last_stage_coin_money()]))
+	var clear_bonus := RunSession.last_stage_clear_bonus()
+	if clear_bonus > 0:
+		page.body().add_child(UITheme.label("Region cleared: $%d" % clear_bonus))
+	page.body().add_child(UITheme.label("Total money: $%d" % Save.money()))
+	var carry_on := UITheme.button("Continue")
+	carry_on.pressed.connect(_open_pick_panel)
+	page.add_action(carry_on)
+	MenuNav.attach(page, {})
+
+
+# Open the pick screen. Split out of _show_stage_reward's Continue so it stays a simple
+# function rather than being buried in the replay/camera setup above; this only ever
+# runs once per stage. Tears down whatever interstitial is currently up FIRST — without
+# it, the stage-reward screen above would stay on top of the pick panel instead of
+# being replaced by it.
+#
+# TWO ENTRY SHAPES: no pick at all (a challenge stage, or this run's own final/failed
+# stage) gets a bare Continue; everything else gets one card list — repair (only when
+# RunSession.offer_repair() is true), a pre-rolled handling upgrade, a pre-rolled power
+# upgrade (RunPickPanel.open_pick).
+func _open_pick_panel() -> void:
+	_teardown_interstitial_page()
+	var pick := RunSession.pending_pick()
+	if pick.is_empty():
+		_interstitial_page = RunPickPanel.open_continue(self, _on_interstitial_choice)
+	else:
+		_interstitial_page = RunPickPanel.open_pick(self, pick, RunSession.offer_repair(),
+			_on_interstitial_choice)
+
+
+# A card was confirmed — "repair", a boost id, "drivetrain:<mode>", "engine_swap:<id>",
+# or "" (plain Continue, offered when RunSession had no pick to draw).
+#
+# THE PICK IS NOT APPLIED HERE ANY MORE. An upgrade first shows what it would do to the
+# car, because "Lightweight parts" does not tell the player they are also giving up
+# nothing, or how much: the sequence is
+#
+#   card pressed -> car stats, before -> after, Next   (_confirm_pick)
+#                -> skill-unlock progress, Continue    (_show_skill_progress)
+#                -> apply + advance                    (_apply_pick)
+#
+# There is no Cancel any more — confirming a card already committed the choice, so
+# _confirm_pick's stats step is read-only, a plain Next carrying on rather than an
+# Apply/Cancel pair.
+#
+# TWO CHOICES SKIP THE STATS STEP. Repair moves no stat on the sheet (it restores the HP a
+# stage cost, which the sheet's Durability row reports as the car's CEILING, not its
+# current condition), and the bare Continue is not a pick at all. Both go straight to the
+# progress screen, so the between-stage sequence has the same shape whatever the player
+# chose — see features/region-runs.md.
 func _on_interstitial_choice(choice: String) -> void:
+	if choice == "" or choice == "repair":
+		_show_skill_progress(choice)
+		return
+	_confirm_pick(choice)
+
+
+# Each step REPLACES the interstitial rather than stacking a modal on top of it — one
+# screen on show at a time, `_interstitial_page` always pointing at whichever it is, so
+# `_teardown_interstitial` keeps working unchanged and no two pages fight over the screen
+# claim (MenuNav.SCREEN_CLAIMER_GROUP, which MenuPage.open_modal joins).
+#
+# NOT a ConfirmPopup, which would be the obvious host for an Apply/Cancel pair: its body
+# is a plain autowrap Label and `set_body` was deleted (see confirm_popup.gd's own note),
+# so it cannot host a stats grid at all.
+func _swap_interstitial(title: String) -> MenuPage:
+	_teardown_interstitial_page()
+	_interstitial_page = MenuPage.open_modal(self, {"margin": 24.0, "title": title})
+	return _interstitial_page
+
+
+# Step 1 — what would this pick do to the car? Built on the SAME panel and preview the
+# hub's car popup uses, so the two can never disagree about what an effect is worth.
+# READ-ONLY: confirming the card already committed the choice, so there is no Cancel
+# any more — Next is the only way on.
+func _confirm_pick(choice: String) -> void:
+	var owned: Dictionary = Save.get_car(RunSession.car_instance_id())
+	var meta: Dictionary = CarLibrary.for_owned(owned)
+	if meta.is_empty():
+		# No car to compare against (a synthetic or missing instance): there is nothing
+		# honest to show, so skip straight on rather than rendering an empty sheet.
+		_show_skill_progress(choice)
+		return
+	# The run's live boosts and equipped skills are already on the car when it is fielded,
+	# but NOT on the dict Save.get_car returns — so the "before" column has to be that same
+	# merged view, or every row would read as though the run carried no boosts at all and
+	# the "after" would count this run's existing picks a second time.
+	owned = _owned_with_run_effects(owned)
+	var pick: Dictionary
+	var title: String
+	if choice.begins_with("drivetrain:"):
+		var mode := int(choice.substr("drivetrain:".length()))
+		pick = {"drivetrain": mode}
+		title = "%s conversion" % CarLibrary.drive_text(mode)
+	elif choice.begins_with("engine_swap:"):
+		var engine_id := choice.substr("engine_swap:".length())
+		pick = {"engine_swap": engine_id}
+		var layout := EngineSwap.layout_label(engine_id)
+		title = "%s engine swap" % layout if not layout.is_empty() else "Engine swap"
+	else:
+		pick = BoostLibrary.boost_for(choice)
+		title = BoostLibrary.label_for(choice)
+	var page := _swap_interstitial(title)
+	# THE BOOST'S OWN FIGURE, ABOVE THE SHEET. Not decoration: three of the seven boosts
+	# (Quick-shift gearbox, Big brakes, Streamlined body) drive effects that `EFFECTS` marks
+	# neither feeds_pw nor feeds_grip, so they never reach the car's meta and move NO row on
+	# the sheet below — see CarStats' header. Without this line their confirmation would be a
+	# wall of unchanged numbers under a "Next" button. A drivetrain conversion or an engine
+	# swap needs no such line: each moves the sheet's own Drivetrain/power rows directly.
+	if not pick.has("drivetrain") and not pick.has("engine_swap"):
+		var effect_text := BoostLibrary.current_effect_text_for(choice)
+		if effect_text != "":
+			page.body().add_child(UITheme.label(effect_text, "green"))
+	page.body().add_child(CarStatsPanel.build(
+		CarStats.values(owned, meta), CarStats.preview(owned, meta, pick)))
+	var next_btn := UITheme.button("Next")
+	next_btn.pressed.connect(func() -> void: _show_skill_progress(choice))
+	page.add_action(next_btn)
+	MenuNav.attach(page, {})
+
+
+# Step 2 — how much closer did that stage get the player to a skill? Shown for EVERY
+# choice, including repair and the bare Continue: the lifetime counters moved on the stage
+# just driven regardless of what was picked afterwards, and a screen that appeared only
+# after an upgrade would read as a reward for upgrading rather than a progress report.
+func _show_skill_progress(choice: String) -> void:
+	var page := _swap_interstitial("Skill progress")
+	page.body().add_child(SkillProgressPanel.build(Save.profile))
+	var carry_on := UITheme.button("Continue")
+	carry_on.pressed.connect(func() -> void: _apply_pick(choice))
+	page.add_action(carry_on)
+	# No `on_back`: this screen is a read-out with nothing to decide, and backing out of it
+	# would leave the pick applied-but-unadvanced. Continue is the only way on, exactly
+	# like the bare-Continue shape of the pick panel itself.
+	MenuNav.attach(page, {})
+
+
+# Step 3 — apply the confirmed choice, tear the overlay down, then either carry the run
+# into the next stage or, if this was the run's final/failed stage (RunSession no longer
+# active), signal that the player has seen the result. This is the original
+# _on_interstitial_choice body, now reached only once the player has confirmed.
+func _apply_pick(choice: String) -> void:
 	if choice == "repair":
 		RunSession.choose_repair()
 	elif choice.begins_with("drivetrain:"):
 		RunSession.choose_drivetrain(int(choice.substr("drivetrain:".length())))
+	elif choice.begins_with("engine_swap:"):
+		RunSession.choose_engine_swap(choice.substr("engine_swap:".length()))
 	elif choice != "":
 		RunSession.choose_boost(choice)
 	_teardown_interstitial()
@@ -1953,12 +2302,32 @@ func _on_interstitial_choice(choice: String) -> void:
 
 
 func _teardown_interstitial() -> void:
+	_teardown_interstitial_page()
+	_on_leaderboard_hidden_changed(true)   # dismissed -> engine audible again
+
+
+# Free whichever interstitial screen is up WITHOUT un-muting the engine — the between-stage
+# sequence swaps pages several times (cards -> stats -> progress, and back to cards on
+# Cancel) and the engine must stay muted across the whole of it. Only
+# `_teardown_interstitial`, which ends the sequence, restores the audio.
+func _teardown_interstitial_page() -> void:
 	if is_instance_valid(_interstitial_page):
+		# HIDE BEFORE FREEING, which is what actually releases the screen claim this frame.
+		# The page joined MenuNav.SCREEN_CLAIMER_GROUP (MenuPage.open_modal), and
+		# MenuNav.screen_claimer skips a claimer that is either queued for deletion OR not
+		# visible in tree. We free the page's parent CanvasLayer, not the page — and
+		# `is_queued_for_deletion()` reports on the node it was called on, so the child page
+		# is not reliably flagged even though it dies with its parent. That gap does not
+		# matter for a plain dismissal, but the between-stage sequence opens the NEXT page
+		# in the same frame it frees this one, and a stale claimer would then swallow the new
+		# page's input for a frame. Hiding is the mechanism the group's own doc names for
+		# releasing a claim, so it closes the gap without depending on engine free semantics.
+		_interstitial_page.hide()
+		_interstitial_page.remove_from_group(MenuNav.SCREEN_CLAIMER_GROUP)
 		var layer := _interstitial_page.get_parent()
 		if is_instance_valid(layer):
 			layer.queue_free()
 	_interstitial_page = null
-	_on_leaderboard_hidden_changed(true)   # dismissed -> engine audible again
 
 
 # Restore every knocked-over prop before the replay so it plays back against an intact
@@ -2162,6 +2531,11 @@ func _process(_delta: float) -> void:
 # every exit path regardless of destination, which a per-destination reset would not.
 func _exit_tree() -> void:
 	HeadlightCone.reset()
+	# Same leak the cone guards against: the podium/menu showcase render trees with
+	# the same shader, so a storm-strength sway must not keep blowing after this
+	# stage is exited. Unlike the cone, WindSway.reset() lands on the shared BASE
+	# wind rather than 0 — off-stage foliage should still be alive.
+	WindSway.reset()
 	# Same reasoning, different mechanism: weather_sun_mult is a runtime value on the
 	# SHARED Config.data, and nothing calls Config.reset(), so a night stage would
 	# otherwise leave the HQ and podium dimmed — both spawn trees through
@@ -2229,6 +2603,11 @@ func _apply_weather_look(cfg: GameConfig) -> void:
 	# no "road_tint" and no "particles", so all three blocks are skipped and the stage
 	# is left byte-identical to a world with no weather system at all.
 	var entry := WeatherLibrary.by_id(cfg.weather)
+	# Tree wind sway is a LOOK (same reasoning as headlight_amount above: authored
+	# per-condition, driven as a shader global, zero CPU per frame) so it's pushed
+	# here rather than from a physics path. A no-op on a condition naming no
+	# "foliage_wind" — it lands on the shared base, the same as every other condition.
+	WindSway.push(cfg, cfg.weather)
 	# Re-seeded from the authored baseline every stage boot for the same reason the
 	# road tint is: a condition with no look block must leave a CLEAN 1.0 behind, or
 	# a dry stage would inherit the previous night/storm dimming on its car.

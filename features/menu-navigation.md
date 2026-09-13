@@ -5,7 +5,7 @@
 `input_blocked`, `screen_claimer`) and `scripts/ui_theme.gd` (`focus_grab`,
 `focus_grab_first`, `first_focusable`, the focus stylebox that paints the cursor).
 
-**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`, `tests/headless/test_hub_shell.gd`
+**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`, `tests/headless/test_hub_shell.gd`, `tests/headless/test_card_carousel.gd` (the `menu_nav_handles_side` seam)
 
 Every menu in the game is navigable with **up / down / left / right / enter / back**, on
 keyboard *and* controller, alongside mouse / touch. This doc is the framework; the screens
@@ -26,7 +26,7 @@ forget) the per-widget setup.
 > continuous 3D space where "left/right" meant *cycle the parked car* or *pan the map camera*
 > rather than *move focus to the neighbour widget*. That whole hub — `hq.tscn`, `hq.gd` and
 > its nine collaborator scripts — was deleted in the roguelike pivot (decision 9,
-> `todo/roguelike-pivot.md`; demolition in `todo/roguelike-pivot-plan.md` stage 2b). With no
+> `todo/roguelike-pivot.md`; demolition in the pivot plan's stage 2b, spec since deleted). With no
 > spatial hub left to navigate, the second regime is gone with it, not merely undocumented:
 > **every menu in the game is a flat widget list now**, and `CLAUDE.md` has already been
 > corrected to point here rather than at `hq.gd`. If a future screen ever needs a
@@ -47,7 +47,14 @@ forget) the per-widget setup.
    no fragile `project.godot` surgery. **On a slider** (any `Range`) left/right instead
    *adjusts the value* by its `step` rather than moving focus, so the cursor merely
    resting on a slider is enough to change it — up/down still move focus off to the next
-   row.
+   row. **A widget that owns its own left/right** gets first refusal before the slider
+   case: if `focused.has_method("menu_nav_handles_side")`, `MenuNav` calls it and stops —
+   the method returns `true` when it consumed the press, `false` to fall through to
+   normal focus-neighbour movement (so up/down can still leave the widget).
+   `CardCarousel` ([card-carousel.md](card-carousel.md)) is the first user: left/right
+   there move the selected card instead of moving focus to a sibling widget. Named
+   generically rather than special-casing `CardCarousel` here, so the next such widget
+   needs no framework change either.
 4. **Back** — routes **both** `ui_cancel` **and** `menu_back` to `on_back` (omit it and
    the host keeps its own back handling).
 5. **Scroll-follow** — switches every `ScrollContainer` under `root` to `follow_focus`,
@@ -118,7 +125,7 @@ the pre-stage **start line**'s MENU row and its **Tune Car** overlay
 attaches `MenuNav` too, but has **no live caller left** since the persistent parts model
 that hosted it was deleted (`todo/roguelike-pivot.md` — the upgrades grid it used to pop out
 of, `upgrades_grid.gd`, is gone) — it's orphaned code, not a reachable menu, until something
-(the stage-5/6 boost shop, most likely) re-hosts it or it's deleted outright.
+(the shop, most likely) re-hosts it or it's deleted outright.
 
 > **When you add or change a menu, wire its navigation in the same piece of work.** Call
 > **`MenuNav.attach(root, {first = <button>, on_back = <Callable>})`** once after building

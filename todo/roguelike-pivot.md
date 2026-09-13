@@ -38,18 +38,33 @@ Settled with the user during the brainstorm that produced this file:
    finishing a region's 8th stage unlocks the next region.
 3. **A run is 8 stages** (RR's `TOTAL_STAGES = 8`), and a "stage" is ONE
    procedurally-generated point-to-point event — not a 3-event rally.
+   **Superseded 2026-09** (`todo/region-stage-slots-redesign.md`): "stage" now
+   means a fixed SLOT (0-7) in a region's authored 8×3 grid, not a draw off a
+   flat pool — see decision 7 below.
 4. **Missing the timer ends the run.** That is the only hard fail state.
 5. **Rivals are dropped entirely.** You race the clock, not a field.
 6. **Damage cannot end a run directly** — it degrades the car so you miss the
    timer. TAPPA's existing "HP floors at 0, car stays drivable" rule survives.
 7. **Stages are drawn from the authored rally pool**, per region, rather than
-   generated from scratch.
+   generated from scratch. **Superseded 2026-09**
+   (`todo/region-stage-slots-redesign.md`): the flat per-region pool +
+   difficulty-sort draw is replaced by a fixed 8-slot × 3-candidate grid per
+   region (`RegionStageLibrary`); `RegionStagePool.draw` now picks one
+   candidate per slot, in slot order, off the run seed — no pool, no sort, no
+   "region too thin" refill. The old rally wrapper (`RallyLibrary.RALLIES`,
+   named rallies, `restriction`/`special`/`map_pos`) is deleted along with it.
 8. **Upgrades and car acquisition follow RR** — see those sections below.
 9. **The diegetic 3D HQ is dropped for a simple flat UI.** The hub stops being a
    3D space the camera flies through and becomes ordinary menu screens.
 10. **`greece_coast` gets more authored rallies** rather than being folded or
     topped up procedurally — every region carries a real pool of its own.
-    (Pool size later fixed at 16 by decision 32.)
+    (Pool size later fixed at 16 by decision 32.) **Superseded 2026-09:**
+    `greece_coast` was later removed from the region catalogue entirely; its
+    rallies were retagged into `greece` rather than deleted. The catalogue is
+    now five regions — country (`home`), peninsula (`greece`), taiga, lakes
+    (`home_coast`), Alps (`snow`), in that authored `order` — and `home_coast`
+    ("The Lakes") carries a much higher `water_level` than every other region.
+    See `RegionLibrary.REGIONS` and `features/regions.md`.
 11. **The stage target time is FIXED, not car-relative** — computed from a
     reference car, so a faster car is straightforwardly better.
 12. **A cleared region stays repeatable at full payout.** This is the economy's
@@ -110,6 +125,10 @@ Settled with the user during the brainstorm that produced this file:
     `home` (36), `greece` (24) and `snow` (18) already pass; `taiga` (15) is one
     event short; `home_coast` (12) and `greece_coast` (3) need real authoring.
     So this is a content pass across three regions, not a `greece_coast` one-off.
+    **Superseded 2026-09** (`todo/region-stage-slots-redesign.md`): a "pool" no
+    longer exists to have a floor on — every region structurally has exactly
+    8 slots × 3 candidates (24 stages), so the floor and the "region too thin"
+    refill it guarded against are both retired, not just satisfied.
     Supersedes decision 10's "8-stage pool" wording.
 33. **A doomed run is driven out.** No retire option and no unwinnable-run
     warning: missing the timer ends the run anyway, so the worst case is one
@@ -126,6 +145,13 @@ Settled with the user during the brainstorm that produced this file:
     memory test rather than a decision. That reasoning still stands and the
     consequence is accepted: a first run through a stage will not see a coin
     coming. Off-line placement survives; only the warning goes.
+
+    **SUPERSEDED (2026-09, explicit user request).** The off-line placement half of
+    this decision is reversed: coins now sit ON the carriageway, near the racing
+    line with some lateral spread, floating at driver-visible height and spinning
+    continuously so they read clearly at speed. The "no signposting" half (decision
+    50) is untouched — see `features/collectables.md` for the current mechanic and
+    `scripts/coin_layout.gd` / `scripts/coin_field.gd` for the implementation.
 36. **Coin money banks at stage clear**, not at run end. This follows from
     decision 14 (a failed run keeps its money) rather than being a separate
     choice: with off-line placement the detour already risks the run, and losing
@@ -349,7 +375,9 @@ whole geometric reveal system (`RallyLibrary.rally_revealed`, `lit_sources`,
 
 `RegionLibrary.REGIONS` (`scripts/region_library.gd`) already holds the six
 regions with stable ids — `home`, `home_coast`, `taiga`, `greece`,
-`greece_coast`, `snow` — plus their look and `water_level`. Today a region is
+`greece_coast`, `snow` — plus their look and `water_level`. **`greece_coast` was
+later removed (2026-09)**, so the catalogue is now five regions; see the note on
+decision 10 above and `features/regions.md`. Today a region is
 explicitly **not** a gate (`features/regions.md` says so in as many words); this
 pivot makes it the *only* gate. Two things to add:
 

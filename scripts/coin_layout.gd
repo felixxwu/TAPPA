@@ -8,10 +8,12 @@ extends RefCounted
 # generated stage's centerline + finish length, it returns one placement dict per
 # coin. CoinField (the Node3D) turns these into meshes + the pickup trigger.
 #
-# OFF THE RACING LINE, BY CONSTRUCTION (decision 35). Every coin sits AT LEAST
-# `offset_m` beyond the visible road edge (track_width / 2) — never on the
-# carriageway, never reachable without leaving it. `offset_jitter_m` spreads coins
-# across a band beyond that floor rather than pinning them all to one fixed line.
+# ON THE CARRIAGEWAY, BY CONSTRUCTION (decision 35, REVERSED by explicit user
+# request — see todo/roguelike-pivot.md decision 35's note and
+# features/collectables.md). Every coin sits WITHIN the road: its lateral offset from
+# the centerline lands in the band `half_width * [lane_inner_frac, lane_spread_frac]`,
+# so a coin hugs the EDGE of the road (a small line-widening detour to take) while
+# still being on the racing surface — never out in the trees.
 #
 # NO SIGNPOSTING (decision 50, amending 35). This planner has no notion of "ahead" —
 # it hands back plain world positions, and nothing upstream (pacenotes, HUD) is told
@@ -31,14 +33,18 @@ const TANGENT_EPS_M := 0.5
 
 
 # Plan every coin for a stage. `params` (see GameConfig.coin_layout_params):
-#   count            how many coins to place
-#   offset_m         minimum lateral distance beyond the road edge
-#   offset_jitter_m  extra random spread on top of offset_m
-#   start_margin_m   arc-length kept clear of the start line
-#   end_margin_m     arc-length kept clear of the finish
+#   count             how many coins to place
+#   lane_inner_frac   MINIMUM lateral offset from the centerline, as a fraction of
+#                     the half-width (track_width / 2) — keeps coins off the racing
+#                     line and out toward the edge
+#   lane_spread_frac  MAXIMUM lateral offset, same units — 1.0 is the visible road
+#                     edge; never beyond it, so a coin is never off the track
+#   start_margin_m    arc-length kept clear of the start line
+#   end_margin_m      arc-length kept clear of the finish
 #
-# Returns an Array of {"pos": Vector2, "side": int} — side is +1/-1, the road edge
-# the coin sits off (no other consumer needs it; kept for tests/debugging).
+# Returns an Array of {"pos": Vector2, "side": int} — side is +1/-1, which side of
+# the centerline the coin sits on (no other consumer needs it; kept for
+# tests/debugging).
 static func plan(centerline: Curve2D, finish_len: float, track_width: float,
 		seed_value: int, params: Dictionary) -> Array:
 	var out: Array = []
@@ -52,8 +58,10 @@ static func plan(centerline: Curve2D, finish_len: float, track_width: float,
 	var usable := finish_len - start_margin - end_margin
 	if usable <= 0.0:
 		return out
-	var offset_m: float = maxf(0.0, float(params.get("offset_m", 0.0)))
-	var offset_jitter: float = maxf(0.0, float(params.get("offset_jitter_m", 0.0)))
+	var lane_max: float = clampf(float(params.get("lane_spread_frac", 0.0)), 0.0, 1.0)
+	# Inner bound can't exceed the outer one — a mis-set config narrows the band to a
+	# single line rather than inverting it.
+	var lane_min: float = clampf(float(params.get("lane_inner_frac", 0.0)), 0.0, lane_max)
 	var half_w := track_width * 0.5
 
 	var rng := RandomNumberGenerator.new()
@@ -66,7 +74,7 @@ static func plan(centerline: Curve2D, finish_len: float, track_width: float,
 		var lo := start_margin + segment * float(i)
 		var arc := clampf(lo + rng.randf() * segment, 0.0, finish_len)
 		var side := 1 if rng.randf() < 0.5 else -1
-		var lateral := half_w + offset_m + rng.randf() * offset_jitter
+		var lateral := half_w * (lane_min + (lane_max - lane_min) * rng.randf())
 		var pos := centerline.sample_baked(arc)
 		var tangent := _tangent_at(centerline, arc, finish_len)
 		var perp := Vector2(-tangent.y, tangent.x)

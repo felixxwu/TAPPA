@@ -44,6 +44,26 @@ func test_build_number_rejects_junk() -> void:
 			"unparseable version %s has no build number" % [junk])
 
 
+# --- Hub corner label text (features/update-check.md, hub_shell.gd) ---------
+
+func test_display_version_echoes_a_stamped_version() -> void:
+	# Any parseable stamped string is shown VERBATIM — the label is a raw read-out,
+	# not a reformatting of the version.
+	assert_eq(UpdateCheck.display_version("0.61 (b154d5c)"), "0.61 (b154d5c)",
+		"a parseable version is shown as-is")
+
+
+func test_display_version_hides_for_the_dev_version() -> void:
+	assert_eq(UpdateCheck.display_version("0.0-dev"), "",
+		"the unstamped editor/test version must not render as a version string")
+
+
+func test_display_version_hides_for_empty_or_junk() -> void:
+	for junk in ["", "   ", "nonsense"]:
+		assert_eq(UpdateCheck.display_version(junk), "",
+			"unparseable version %s must hide the label rather than show it" % [junk])
+
+
 # --- The prompt decision ------------------------------------------------------
 
 func test_prompts_when_a_newer_build_exists() -> void:

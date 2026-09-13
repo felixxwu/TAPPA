@@ -98,13 +98,11 @@ func test_a_document_without_a_profile_field_is_unreadable() -> void:
 	assert_true(CloudSync.from_document("nonsense").is_empty())
 
 
-func test_profile_description_counts_cars_and_completed_rallies() -> void:
-	var described := CloudSync.describe_profile({
-		"cars": [{}, {}, {}],
-		"rallies": {"a": {"completed": true}, "b": {"completed": false}, "c": {"completed": true}},
-	})
+func test_profile_description_counts_cars() -> void:
+	# (The completed-rallies half is deleted with the rally record — a profile's
+	# summary no longer counts podiums nothing writes any more.)
+	var described := CloudSync.describe_profile({"cars": [{}, {}, {}]})
 	assert_string_contains(described, "3 cars")
-	assert_string_contains(described, "2 rallies")
 
 
 # --- The conflict matrix ------------------------------------------------------

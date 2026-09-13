@@ -22,7 +22,7 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	RallyLibrary.override_for_test(_rallies())
+	RegionStageLibrary.override_for_test(_regions())
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -41,7 +41,7 @@ func after_each() -> void:
 	RunSession.auto_load_scenes = true
 	_clean()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
-	RallyLibrary.reset()
+	RegionStageLibrary.reset()
 	CarFixtures.restore()
 	Config.reset()
 
@@ -62,23 +62,30 @@ func _grant(model := "fx_light_rwd") -> Dictionary:
 	return _save.grant_car(model)
 
 
-# Enough synthetic events to fill an 8-stage run with no repeats.
-func _rallies() -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	for i in 4:
-		var events: Array = []
-		for j in 3:
-			events.append({
-				"seed": 5000 + i * 10 + j, "turn_count": 8, "forestiness": 0.4,
+# Push a car's HP well below run_boost_healthy_threshold, HOWEVER that tunable is
+# set — half of it, never a hardcoded HP number — so a test can rely on the pending
+# pick offering repair (the non-reward branch) regardless of where a designer tunes
+# the threshold.
+func _damage_below_threshold(car: Dictionary) -> void:
+	var iid := int(car["instance_id"])
+	var hp: float = float(_save.get_car(iid)["hp"])
+	_save.apply_damage(iid, hp * (1.0 - Config.data.run_boost_healthy_threshold * 0.5))
+
+
+# A synthetic region shaped like the real RegionStageLibrary: 8 slots x 3 candidates,
+# enough to fill an 8-stage run with no repeats.
+func _regions() -> Dictionary:
+	var slots: Array = []
+	for slot_index in 8:
+		var candidates: Array = []
+		for c in 3:
+			candidates.append({
+				"seed": 5000 + slot_index * 10 + c, "turn_count": 8, "forestiness": 0.4,
 				"surface_mix": 0.5, "straightness": 0.6, "cliffiness": 0.3,
 				"water_level": -50.0, "terrain_layer1_amplitude": 12.0,
 			})
-		out.append({
-			"id": "fx_run_%d" % i, "name": "Fixture Run %d" % i, "region": REGION,
-			"difficulty": 1 + i, "special": false, "restriction": {},
-			"map_pos": Vector2(0.5, 0.5), "events": events,
-		})
-	return out
+		slots.append(candidates)
+	return {REGION: slots}
 
 
 # A synthetic track for the target-time solve. A real generated result is not needed
@@ -107,7 +114,14 @@ func _start(seed_value := RUN_SEED) -> Dictionary:
 func _drive(elapsed_ms: int) -> void:
 	RunSession.report_event_result(elapsed_ms)
 	if RunSession.pick_awaiting():
-		RunSession.choose_repair()
+		# Repair may not be on offer (the undamaged-arrival reward pick, Task 2) — fall
+		# back to taking the first boost so the run keeps moving either way. This
+		# helper only cares about advancing, never about which pick mechanic resolved.
+		if RunSession.offer_repair():
+			RunSession.choose_repair()
+		else:
+			var pick: Array = RunSession.pending_pick()
+			RunSession.choose_boost(String((pick[0] as Dictionary).get("id", "")))
 	if RunSession.is_active():
 		RunSession.continue_to_next_stage()
 		@warning_ignore("return_value_discarded")
@@ -371,11 +385,95 @@ func test_a_faster_clear_is_never_worth_less_than_a_slower_one() -> void:
 	assert_true(quick >= late, "saving more time pays at least as well")
 
 
+func test_clearing_the_runs_final_stage_pays_a_region_clear_bonus() -> void:
+	# 2026-09: stage 8 (index stage_count() - 1) carries a one-off bonus on top of the
+	# ordinary stage-clear payout. Relationship only (CLAUDE.md): the SAME stage_money
+	# call, with and without GameConfig.run_region_clear_money_base switched off,
+	# must never pay less with the bonus live.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var target := 100_000
+	var elapsed := 50_000
+	var last_index := mode.stage_count() - 1
+	var with_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var without_bonus := mode.stage_money(last_index, elapsed, target)
+	assert_true(with_bonus >= without_bonus,
+		"clearing the run's final stage pays at least as well with the bonus live")
+
+
+func test_the_region_clear_bonus_only_lands_on_the_final_stage() -> void:
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var target := 100_000
+	var elapsed := 50_000
+	var last_index := mode.stage_count() - 1
+	var final_with_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var final_without_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.reset()
+	var not_final := mode.stage_money(last_index - 1, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var not_final_without_bonus := mode.stage_money(last_index - 1, elapsed, target)
+	assert_eq(not_final, not_final_without_bonus,
+		"a non-final stage's payout never moves with the clear-bonus config")
+	assert_true(final_with_bonus >= final_without_bonus,
+		"only the final stage's payout can move with the clear-bonus config")
+
+
+func test_stage_clear_bonus_isolates_the_same_term_stage_money_folds_in() -> void:
+	# RunSession reads stage_clear_bonus() separately (last_stage_clear_bonus(), the
+	# reward screen's "Region cleared: $X" line) — it must never disagree with what
+	# stage_money() itself actually added for the run's final stage.
+	var mode := RegionRunMode.new(REGION, RUN_SEED)
+	var target := 100_000
+	var elapsed := 50_000
+	var last_index := mode.stage_count() - 1
+	var not_final := last_index - 1
+	assert_eq(mode.stage_clear_bonus(not_final), 0,
+		"a non-final stage carries no clear bonus")
+	var isolated := mode.stage_clear_bonus(last_index)
+	var with_bonus := mode.stage_money(last_index, elapsed, target)
+	Config.data.run_region_clear_money_base = 0.0
+	var without_bonus := mode.stage_money(last_index, elapsed, target)
+	assert_eq(isolated, with_bonus - without_bonus,
+		"the isolated bonus is exactly the difference stage_money shows")
+
+
+func test_last_stage_clear_bonus_reports_zero_on_a_non_final_stage() -> void:
+	_start()
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_eq(RunSession.last_stage_clear_bonus(), 0,
+		"stage 1 of a fresh run is nowhere near the run's final stage")
+
+
 func test_the_run_reports_what_it_banked() -> void:
 	_start()
 	_drive(maxi(1, RunSession.stage_target_ms() - 1))
 	assert_eq(RunSession.money_earned(), _save.money(),
 		"the run's own tally agrees with what reached the profile")
+
+
+# The between-stage reward screen (world.gd's _show_stage_reward) reads
+# last_stage_money() to show what THIS stage paid, separately from the running total.
+func test_last_stage_money_reports_what_the_just_cleared_stage_paid() -> void:
+	_start()
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_gt(RunSession.last_stage_money(), 0, "the cleared stage paid something")
+	assert_eq(RunSession.last_stage_money(), _save.money(),
+		"the first stage's own payout is the whole running total so far")
+
+
+func test_a_missed_stage_reports_zero_last_stage_money() -> void:
+	_start()
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)
+	assert_eq(RunSession.last_stage_money(), 0, "a missed stage pays nothing")
+
+
+func test_a_missed_stage_reports_zero_last_stage_coin_money() -> void:
+	_start()
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1, 0.0, 5)
+	assert_eq(RunSession.last_stage_coins(), 0,
+		"decision 36 — a missed stage's coins pay nothing, so nothing is reported here")
+	assert_eq(RunSession.last_stage_coin_money(), 0)
 
 
 # --- Coins (decisions 13, 35, 36, 50) --------------------------------------------
@@ -396,6 +494,47 @@ func test_coin_money_banks_with_the_stage_that_cleared_it() -> void:
 	if RunSession.pick_awaiting():
 		RunSession.choose_repair()
 	assert_gt(_save.money(), 0, "a cleared stage with coins pays out, coins included")
+
+
+# The reward screen (world.gd's _show_stage_reward) shows coins collected separately
+# from the stage's total payout, via last_stage_coins()/last_stage_coin_money().
+func test_last_stage_coins_reports_what_the_stage_collected() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1), 0.0, 2)
+	assert_eq(RunSession.last_stage_coins(), 2, "the two coins picked up this stage")
+	assert_gt(RunSession.last_stage_coin_money(), 0, "collecting coins paid something")
+	assert_true(RunSession.last_stage_coin_money() <= RunSession.last_stage_money(),
+		"the coin money is only part of the stage's whole payout")
+
+
+func test_a_stage_with_no_coins_reports_zero_coin_money() -> void:
+	_start()
+	_drive(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_eq(RunSession.last_stage_coins(), 0)
+	assert_eq(RunSession.last_stage_coin_money(), 0)
+
+
+func test_coins_pay_more_in_a_deeper_region() -> void:
+	# 2026-09: coins are region-scaled, same as the rest of the stage-clear payout —
+	# no longer a flat amount everywhere. Relationship only (CLAUDE.md):
+	# run_money_region_multiplier is a tunable a designer could set to 1.0, which
+	# would make this equal, never inverted — hence >=, not >.
+	var target := 100_000
+	var shallow_id := "fx_coin_region_shallow"
+	var deep_id := "fx_coin_region_deep"
+	RegionLibrary.override_for_test([
+		{"id": shallow_id, "order": 0},
+		{"id": deep_id, "order": 3},
+	])
+	var shallow := RegionRunMode.new(shallow_id, RUN_SEED)
+	var deep := RegionRunMode.new(deep_id, RUN_SEED)
+	var shallow_coin_money := shallow.stage_money(0, 50_000, target, 3) \
+		- shallow.stage_money(0, 50_000, target, 0)
+	var deep_coin_money := deep.stage_money(0, 50_000, target, 3) \
+		- deep.stage_money(0, 50_000, target, 0)
+	RegionLibrary.reset()
+	assert_true(deep_coin_money >= shallow_coin_money,
+		"a coin in a later-order region pays at least as well as an earlier one")
 
 
 func test_a_missed_stages_coins_pay_no_money() -> void:
@@ -479,17 +618,23 @@ func test_continue_to_next_stage_refuses_while_a_pick_is_awaiting() -> void:
 	assert_true(RunSession.is_active(), "…and stays active, not stuck or ended")
 
 
-func test_choosing_repair_resolves_the_pick_exactly_like_the_old_automatic_path() -> void:
-	_start()
+func test_choosing_repair_fully_repairs_the_car() -> void:
+	var car := _start()
+	_damage_below_threshold(car)  # below the healthy-arrival threshold: repair is on offer
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.offer_repair(), "setup: repair is offered on a damaged car")
 
 	RunSession.choose_repair()
 
 	assert_false(RunSession.pick_awaiting(), "the pick is resolved")
 	assert_true(RunSession.pending_pick().is_empty())
 	var repair := RunSession.take_pending_repair()
-	assert_false(repair.is_empty(),
-		"choosing repair leaves the same pending repair the old automatic path did")
+	assert_false(repair.is_empty(), "choosing repair leaves a pending repair summary")
+	assert_almost_eq(float(repair["hp_after"]), float(repair["max_hp"]), 0.01,
+		"choosing repair (over an upgrade) fully restores HP, not a partial patch-up")
+	var iid := int(car["instance_id"])
+	for v in _save.get_car(iid)["wheel_toe"]:
+		assert_almost_eq(float(v), 0.0, 0.001, "every wheel is fully straightened")
 	RunSession.continue_to_next_stage()
 	assert_eq(RunSession.events_completed(), 1, "and the run now advances")
 
@@ -509,6 +654,41 @@ func test_choosing_a_boost_records_it_on_the_run_and_takes_no_repair() -> void:
 	for b in RunSession.boosts():
 		picked_ids.append(String((b as Dictionary)["id"]))
 	assert_true(picked_ids.has(id), "the chosen boost is recorded on the run")
+
+
+# A non-stacking pick ("gearbox" — an absolute shift time, a dead repeat) drops out of
+# the NEXT pool once taken; a stacking pick ("grip" — a multiplier that compounds)
+# stays offered, since a second one genuinely does more.
+func test_a_non_stacking_boost_is_not_offered_again_after_being_picked() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_boost("gearbox")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	var ids: Array = []
+	for entry in RunSession.pending_pick():
+		ids.append(String((entry as Dictionary).get("id", "")))
+	assert_false(ids.has("gearbox"), "a repeat of a non-stacking boost is a dead roll, so it's excluded")
+
+
+func test_a_stacking_boost_is_still_offered_after_being_picked() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_boost("grip")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	var ids: Array = []
+	for entry in RunSession.pending_pick():
+		ids.append(String((entry as Dictionary).get("id", "")))
+	assert_true(ids.has("grip"), "a stacking boost genuinely does more the second time, so it stays offered")
 
 
 func test_a_boost_pick_never_reaches_the_persisted_car() -> void:
@@ -609,6 +789,31 @@ func test_a_pending_pick_offers_every_non_current_drivetrain_layout() -> void:
 		"every OTHER layout is offered")
 
 
+func test_an_available_awd_conversion_competes_in_the_same_pool_as_boosts() -> void:
+	# fx_light_rwd (the default _grant() fixture) is not AWD, so an AWD conversion is
+	# available — RunSession folds it into the SAME pool as the boost catalogue
+	# (RunSession._pool_drivetrain_ids, region_run_mode.gd boost_pool_ids) rather than
+	# appending it on top of a draw: the pool is now the WHOLE catalogue plus whatever
+	# extras are available (todo/mid-run-upgrade-menu.md), so its size is exactly the
+	# catalogue's own size plus one AWD entry — never a random subset.
+	var car := _start()  # a fresh car is at full health -> the undamaged-arrival reward pick
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var stock := UpgradeLibrary.stock_drive_mode(_save.get_car(int(car["instance_id"])))
+	assert_ne(stock, Drivetrain.DriveMode.AWD, "setup: AWD conversion is available")
+	var pending_pick_now: Array = RunSession.pending_pick()
+	var extras := RunSession._pool_engine_swap_ids().size()
+	assert_eq(pending_pick_now.size(), BoostLibrary.CATALOGUE.size() + 1 + extras,
+		"the whole catalogue plus the one AWD conversion (plus any engine swap available)")
+	var drivetrain_seen := 0
+	for entry in pending_pick_now:
+		var id := String((entry as Dictionary).get("id", ""))
+		if id.begins_with("drivetrain:"):
+			drivetrain_seen += 1
+			assert_eq(int((entry as Dictionary)["drivetrain_mode"]), Drivetrain.DriveMode.AWD,
+				"the only drivetrain conversion ever offered in the pool is AWD")
+	assert_eq(drivetrain_seen, 1, "the AWD conversion appears exactly once")
+
+
 func test_choosing_a_drivetrain_conversion_resolves_the_pick_and_takes_no_repair() -> void:
 	_start()
 	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
@@ -683,3 +888,257 @@ func test_a_resumed_run_keeps_its_picked_drivetrain_conversion() -> void:
 
 	assert_eq(RunSession.drivetrain_override(), mode,
 		"the picked layout survives a pause/resume, same as boosts")
+
+
+# --- The between-stage pick: an engine swap -------------------------------------------
+#
+# Mirrors the drivetrain-conversion section above: a genuine EngineLibrary swap offered
+# in the SAME between-stage pick pool, deterministic (the next most powerful engine
+# relative to the car's current one), run-scoped, and gone when the run ends.
+# CarFixtures installs exactly two engines (fx_i4, fx_v8), with fx_v8 strictly more
+# powerful — the default _grant() car (fx_light_rwd) runs fx_i4, so a swap to fx_v8 is
+# always available and always the offered id.
+
+func test_the_pool_offers_the_next_most_powerful_engine() -> void:
+	_start()
+	var ids := RunSession._pool_engine_swap_ids()
+	assert_eq(ids.size(), 1, "a strictly more powerful engine exists")
+	var offered_id := String(ids[0]).substr("engine_swap:".length())
+	var offered := EngineLibrary.by_id(offered_id)
+	var current := EngineLibrary.by_id("fx_i4")
+	var offered_power := CarLibrary.peak_power_kw(
+		{"peak_torque": offered["peak_torque"], "redline": offered["redline_rpm"]})
+	var current_power := CarLibrary.peak_power_kw(
+		{"peak_torque": current["peak_torque"], "redline": current["redline_rpm"]})
+	assert_gt(offered_power, current_power, "the offered engine is strictly more powerful")
+	# No catalogue engine sits strictly between the two — the smallest strictly-greater one.
+	for eng in EngineLibrary.all():
+		var power := CarLibrary.peak_power_kw(
+			{"peak_torque": eng["peak_torque"], "redline": eng["redline_rpm"]})
+		if power > current_power:
+			assert_gte(power, offered_power, "%s is not a smaller strictly-greater engine" % eng["id"])
+
+
+func test_the_pool_is_empty_once_the_car_already_runs_the_most_powerful_engine() -> void:
+	_start()
+	var ids := RunSession._pool_engine_swap_ids()
+	var offered_id := String(ids[0]).substr("engine_swap:".length())
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_engine_swap(offered_id)
+
+	assert_true(RunSession._pool_engine_swap_ids().is_empty(),
+		"already running the most powerful catalogue engine -> no swap left to offer")
+
+
+func test_an_available_engine_swap_competes_in_the_same_pool_as_boosts() -> void:
+	var car := _start()  # a fresh car is at full health -> the undamaged-arrival reward pick
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var pending_pick_now: Array = RunSession.pending_pick()
+	var extra_drivetrain := RunSession._pool_drivetrain_ids().size()
+	assert_eq(pending_pick_now.size(), BoostLibrary.CATALOGUE.size() + 1 + extra_drivetrain,
+		"the whole catalogue plus the one engine swap (plus AWD, also available on this car)")
+	for entry in pending_pick_now:
+		var id := String((entry as Dictionary).get("id", ""))
+		if id.begins_with("engine_swap:"):
+			assert_eq(id, "engine_swap:fx_v8", "the only engine swap ever offered is the next rung up")
+			assert_gt(float((entry as Dictionary).get("hp_delta", 0.0)), 0.0,
+				"a swap is only ever offered as a power gain")
+
+
+func test_choosing_an_engine_swap_resolves_the_pick_and_takes_no_repair() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+
+	RunSession.choose_engine_swap(offered_id)
+
+	assert_false(RunSession.pick_awaiting(), "the pick is resolved")
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"taking a swap costs the repair, not the other way round")
+	assert_eq(RunSession.engine_swap_id(), offered_id, "the chosen engine is recorded on the run")
+
+
+func test_an_engine_swap_never_reaches_the_persisted_car() -> void:
+	var car := _start()
+	var iid := int(car["instance_id"])
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+
+	RunSession.choose_engine_swap(offered_id)
+
+	assert_false(_save.get_car(iid).has("swapped_engine"),
+		"a run's swap is RUN state, never written to Save's persisted car")
+
+
+func test_a_later_engine_swap_replaces_the_earlier_one_rather_than_stacking() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var first := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+	RunSession.choose_engine_swap(first)
+	assert_eq(RunSession.engine_swap_id(), first, "setup: the first pick is recorded")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	# The pool is now empty (the car already runs the most powerful engine), so a second
+	# pick offers no swap option to choose — assert the run keeps exactly one engine
+	# recorded rather than stacking, via a direct call mirroring choose_drivetrain's own
+	# "the run only ever runs ONE X at a time" test.
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	RunSession.choose_engine_swap(first)  # a stale re-pick of the same id still no-ops cleanly
+
+	assert_eq(RunSession.engine_swap_id(), first,
+		"the run only ever runs ONE engine at a time")
+
+
+func test_engine_swap_does_not_survive_a_completed_or_failed_run() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+	RunSession.choose_engine_swap(offered_id)
+	assert_ne(RunSession.engine_swap_id(), "", "setup: a swap was picked")
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.report_event_result(RunSession.stage_target_ms() + 1)  # fail the run
+
+	assert_false(RunSession.is_active(), "setup: the run failed")
+	assert_eq(RunSession.engine_swap_id(), "",
+		"a failed run wipes its swap too — soft permadeath, not just the loss")
+
+
+func test_a_resumed_run_keeps_its_picked_engine_swap() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var offered_id := String(String(RunSession._pool_engine_swap_ids()[0]).substr("engine_swap:".length()))
+	RunSession.choose_engine_swap(offered_id)
+	RunSession.continue_to_next_stage()
+	@warning_ignore("return_value_discarded")
+	RunSession.set_stage_track(_track())
+
+	RunSession.pause_run()
+	assert_true(RunSession.resume(int(Time.get_unix_time_from_system())))
+
+	assert_eq(RunSession.engine_swap_id(), offered_id,
+		"the picked engine survives a pause/resume, same as boosts")
+
+
+# A mid-tier engine that's only a small hp gain over fx_i4 (< MIN_SWAP_HP_GAIN) must be
+# skipped over in favour of fx_v8 — a swap that's barely an upgrade isn't worth offering.
+func test_the_pool_skips_an_engine_swap_under_the_minimum_hp_gain() -> void:
+	var engines := CarFixtures.engines()
+	engines.append({
+		"id": "fx_i4_plus", "name": "Fixture i4+", "layout": "i4", "displacement_l": 2.1, "mass": 120.0,
+		"redline_rpm": 7000.0, "peak_torque": 230.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
+		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
+		"gear_ratios": [3.5, 2.0, 1.4, 1.0, 0.8], "final_drive": 4.0, "shift_time": 0.30,
+	})
+	EngineLibrary.override_for_test(engines)
+
+	var current := EngineLibrary.by_id("fx_i4")
+	var mid := EngineLibrary.by_id("fx_i4_plus")
+	var current_hp := CarLibrary.horsepower(
+		{"peak_torque": current["peak_torque"], "redline": current["redline_rpm"]})
+	var mid_hp := CarLibrary.horsepower(
+		{"peak_torque": mid["peak_torque"], "redline": mid["redline_rpm"]})
+	assert_lt(mid_hp - current_hp, RunSession.MIN_SWAP_HP_GAIN,
+		"setup: fx_i4_plus is a real but too-small gain over fx_i4")
+
+	_start()
+	var ids := RunSession._pool_engine_swap_ids()
+	assert_eq(ids.size(), 1, "exactly one swap offered")
+	assert_eq(String(ids[0]), "engine_swap:fx_v8",
+		"the too-small fx_i4_plus rung is skipped in favour of the next one that clears the bar")
+
+
+# --- Task 1: a new run always starts the car at 100% health ---------------------
+
+func test_beginning_a_run_restores_a_damaged_car_to_full_health() -> void:
+	var car := _grant()
+	var iid := int(car["instance_id"])
+	var max_hp := float(_save.get_car(iid)["hp"])
+	_save.apply_damage(iid, max_hp * 0.5)
+	assert_lt(float(_save.get_car(iid)["hp"]), max_hp, "setup: the car carries damage in")
+
+	assert_true(RunSession.start_region(REGION, _save.get_car(iid), RUN_SEED))
+
+	assert_almost_eq(float(_save.get_car(iid)["hp"]), max_hp, 0.001,
+		"a new run always starts the car at 100% health")
+
+
+func test_beginning_a_run_on_an_already_full_car_changes_nothing() -> void:
+	var car := _grant()
+	var iid := int(car["instance_id"])
+	var max_hp := float(_save.get_car(iid)["hp"])
+
+	assert_true(RunSession.start_region(REGION, car, RUN_SEED))
+
+	assert_almost_eq(float(_save.get_car(iid)["hp"]), max_hp, 0.001)
+
+
+# --- Task 2: an undamaged car earns the whole catalogue with no repair row --------
+#
+# Redesigned per todo/mid-run-upgrade-menu.md: the pool is now always the WHOLE
+# catalogue regardless of health (there is no "+1" any more since there's no draw to
+# size) — the reward is entirely that the repair option disappears, so every roll lands
+# on a real upgrade instead of the usual repair-or-upgrade choice.
+
+func test_a_damaged_car_offers_the_full_pool_and_repair() -> void:
+	var car := _start()
+	_damage_below_threshold(car)
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	assert_true(RunSession.pick_awaiting())
+	assert_true(RunSession.offer_repair(), "below the threshold, repair is still offered")
+	assert_eq(RunSession.pending_pick().size(),
+		BoostLibrary.CATALOGUE.size() + RunSession._pool_drivetrain_ids().size()
+			+ RunSession._pool_engine_swap_ids().size(),
+		"the pool is the whole catalogue plus whatever extras are available")
+
+
+func test_a_healthy_car_offers_the_full_pool_and_no_repair() -> void:
+	_start()  # a freshly granted car begin()s at full health (Task 1)
+
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+
+	assert_true(RunSession.pick_awaiting())
+	assert_false(RunSession.offer_repair(),
+		"at or above the threshold, the reward pick offers no repair row")
+	assert_eq(RunSession.pending_pick().size(),
+		BoostLibrary.CATALOGUE.size() + RunSession._pool_drivetrain_ids().size()
+			+ RunSession._pool_engine_swap_ids().size(),
+		"the pool is the same whole catalogue as the damaged case — the reward is 'no repair', not a bigger pool")
+
+
+func test_choose_repair_refuses_on_a_pick_that_does_not_offer_repair() -> void:
+	_start()  # full health -> the reward pick, no repair on offer
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_false(RunSession.offer_repair(), "setup: repair is not on offer")
+
+	RunSession.choose_repair()
+
+	assert_true(RunSession.pick_awaiting(),
+		"choose_repair() refuses rather than silently repairing when it isn't offered")
+	assert_true(RunSession.take_pending_repair().is_empty(),
+		"…and nothing was applied")
+
+
+func test_the_pending_pick_never_exceeds_the_catalogue_plus_available_extras() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	assert_true(RunSession.pending_pick().size() <= BoostLibrary.CATALOGUE.size() + 2,
+		"the pool never exceeds the catalogue plus (at most) one AWD entry and one engine swap")
+
+
+# Every id in the pool resolves to a real catalogue boost or a real drivetrain/engine-swap
+# pseudo-entry — nothing in the pool names something BoostLibrary.resolve_id can't handle.
+func test_every_pending_pick_entry_is_a_real_pool_member() -> void:
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	for entry in RunSession.pending_pick():
+		var id := String((entry as Dictionary).get("id", ""))
+		var known := BoostLibrary.CATALOGUE.has(id) \
+			or id.begins_with("drivetrain:") or id.begins_with("engine_swap:")
+		assert_true(known, "pool entry '%s' is a real catalogue id or pseudo-id" % id)

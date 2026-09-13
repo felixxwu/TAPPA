@@ -52,6 +52,20 @@ var _dnf := false
 # wreck flag and is never set by anything today.
 var _failed := false
 var _money_earned := 0
+# What the stage JUST reported paid, 0 for a missed stage — purely transient display
+# state for the between-stage reward screen (world.gd's _show_stage_reward), not
+# persisted: a resumed run has already shown its last stage's reward, so there is
+# nothing to reconstruct across a pause/resume.
+var _last_stage_money := 0
+# Coins picked up on the stage just reported, and the money they alone are worth (0 on
+# a missed stage — decision 36's coin gamble, same as _last_stage_money above). Same
+# transient, display-only lifetime as _last_stage_money — see its doc.
+var _last_stage_coins := 0
+var _last_stage_coin_money := 0
+# The region-clear bonus folded into the stage just reported (0 on any stage but the
+# run's own final one, and 0 there too on a missed clear). Same transient, display-only
+# lifetime as _last_stage_money above.
+var _last_stage_clear_bonus := 0
 # The current stage's target time in ms, seated by set_stage_track() once the track
 # has actually been generated. 0 = no target (a challenge stage, or a track that
 # failed to solve) — the fail rule can never fire on it.
@@ -64,13 +78,21 @@ var _pending_repair: Dictionary = {}
 var _last_result: Dictionary = {}
 # --- The between-stage pick (todo/roguelike-pivot.md "Between stages: repair or
 # boost", stage 5) ---------------------------------------------------------------
-# The boosts drawn for the pick currently awaiting a choice — BoostLibrary entries,
-# {"id","effect"}. Empty when no pick is outstanding (every mode that answers false
-# to RunMode.offers_boost_pick, and this run's own final/failed stage).
+# EVERY id offered for the pick currently awaiting a choice — the WHOLE catalogue plus
+# any available drivetrain/engine-swap pseudo-ids, resolved via BoostLibrary.resolve_id
+# (see _resolve_pick_pool). Empty when no pick is outstanding (every mode that answers
+# false to RunMode.offers_boost_pick, and this run's own final/failed stage).
 var _pending_pick: Array = []
 # True while _pending_pick is awaiting choose_repair()/choose_boost(). Blocks
 # continue_to_next_stage() — the player picks exactly one before the run advances.
 var _pick_awaiting := false
+# Whether the pending pick offers repair as one of its options, resolved ONCE at the
+# moment the pick is drawn (alongside _pending_pick) and persisted with the rest of
+# the pick state so a resumed run does not re-roll the answer against a car whose HP
+# may have moved since. False when the run's car was above
+# Config.data.run_boost_healthy_threshold at draw time (the undamaged-arrival reward:
+# no repair row, so every roll lands on a real upgrade) — see offer_repair().
+var _pick_offers_repair := true
 # This run's OWN picked boosts, in pick order — {"id","effect"}, UpgradeLibrary's
 # shape. RUN-SCOPED: never written to Save's persisted car (world.gd._field_car
 # merges this onto a DUPLICATED owned-car dict at fielding time), so nothing here can
@@ -85,6 +107,14 @@ var _boosts: Array = []
 # DUPLICATED owned-car dict _boosts is merged onto. Reset by begin() and
 # _finish_locally(), same as _boosts.
 var _drivetrain_override := -1
+# The engine swapped into this run's car, or "" for "runs its own stock engine" — same
+# RUN-SCOPED lifetime as _boosts/_drivetrain_override above (dies with the run, never
+# touches Save's persisted car; world.gd._field_car merges it onto the same DUPLICATED
+# owned-car dict). Unlike _drivetrain_override, which world.gd feeds through
+# UpgradeLibrary.resolve_drive_override, this is fed straight into `owned["swapped_engine"]`
+# — the exact field car.gd::_apply_engine_swap already reads for a saved OwnedCar (see
+# features/engine-swap.md). Reset by begin() and _finish_locally(), same as the others.
+var _engine_swap_id := ""
 
 
 # --- Read surface --------------------------------------------------------------
@@ -159,6 +189,28 @@ func money_earned() -> int:
 	return _money_earned
 
 
+# What the just-reported stage paid, 0 for a missed stage. See _last_stage_money's doc.
+func last_stage_money() -> int:
+	return _last_stage_money
+
+
+# Coins picked up on the just-reported stage, and the money they alone contributed to
+# last_stage_money() above (0 on a missed stage). See _last_stage_coins' doc.
+func last_stage_coins() -> int:
+	return _last_stage_coins
+
+
+func last_stage_coin_money() -> int:
+	return _last_stage_coin_money
+
+
+# The region-clear bonus folded into last_stage_money() above (0 unless the
+# just-reported stage was the run's own final one AND it was cleared). See
+# _last_stage_clear_bonus's doc.
+func last_stage_clear_bonus() -> int:
+	return _last_stage_clear_bonus
+
+
 func last_result() -> Dictionary:
 	return _last_result
 
@@ -176,6 +228,16 @@ func pick_awaiting() -> bool:
 	return _pick_awaiting
 
 
+# Whether the pending pick offers repair as one of its options — false for the
+# undamaged-arrival reward pick (car above run_boost_healthy_threshold at draw time: no
+# repair row, every card is a real upgrade). Resolved once when the pick is drawn, not
+# live, so it stays stable across a resume. world.gd passes this straight to
+# RunPickPanel.open_pick to show or omit the repair card. Meaningless (defaults true)
+# when no pick is outstanding.
+func offer_repair() -> bool:
+	return _pick_offers_repair
+
+
 # This run's picked boosts so far, in pick order — the exact shape
 # UpgradeLibrary.active_effects reads off an owned car's "boosts" key. world.gd
 # merges this onto the fielded car; it is never written to Save.
@@ -190,6 +252,13 @@ func drivetrain_override() -> int:
 	return _drivetrain_override
 
 
+# The engine swapped into this run's car so far, or "" for "the car's own stock engine".
+# world.gd merges this onto the fielded car's `swapped_engine` field; it is never written
+# to Save.
+func engine_swap_id() -> String:
+	return _engine_swap_id
+
+
 # The non-current DriveMode values worth offering as a conversion in the pending pick —
 # i.e. every layout except whichever one the fielded car is ALREADY running (its picked
 # override if one is active, else its own authored stock layout). Empty when no pick is
@@ -197,6 +266,16 @@ func drivetrain_override() -> int:
 func drivetrain_choices() -> Array:
 	if not _pick_awaiting:
 		return []
+	return _available_drivetrain_modes()
+
+
+# The non-current DriveMode values available for conversion RIGHT NOW — the computation
+# behind drivetrain_choices(), minus that function's _pick_awaiting guard. Split out so a
+# pick-building call site (report_event_result / resume, via _resolve_pick_pool) can
+# compute the pool of "drivetrain:<mode>" pseudo-ids to fold into boost_pool_ids() BEFORE
+# _pick_awaiting is set true, without duplicating this loop. [] when the run's car has
+# vanished.
+func _available_drivetrain_modes() -> Array:
 	var owned: Dictionary = Save.get_car(_car_instance_id)
 	if owned.is_empty():
 		return []
@@ -207,6 +286,132 @@ func drivetrain_choices() -> Array:
 		if int(mode) != current:
 			out.append(int(mode))
 	return out
+
+
+# The drivetrain pseudo-ids ("drivetrain:<DriveMode int>") to fold into the SAME pool
+# as the boost catalogue when building a pick (boost_pool_ids' `extra_ids` arg) —
+# AWD-only when it's available, deliberately NOT every mode
+# _available_drivetrain_modes() would offer via drivetrain_choices(): an AWD
+# conversion is the one conversion worth surfacing as a random mid-run pick, so it's
+# the only one competing with the boosts for a slot. [] once the car is already AWD.
+func _pool_drivetrain_ids() -> Array:
+	var out: Array = []
+	if _available_drivetrain_modes().has(Drivetrain.DriveMode.AWD):
+		out.append("drivetrain:%d" % int(Drivetrain.DriveMode.AWD))
+	return out
+
+
+# The engine this run's car is ACTUALLY RUNNING right now: this run's own swap if one
+# has been picked, else whatever the persisted car itself is running (its own swap from
+# a previous run's ownership, or its CarLibrary stock engine) — resolved the same way
+# car.gd/effective_meta do, via EngineSwap.current_engine_id. "" if the run's car has
+# vanished from the save.
+func _current_engine_id() -> String:
+	if not _engine_swap_id.is_empty():
+		return _engine_swap_id
+	var owned: Dictionary = Save.get_car(_car_instance_id)
+	if owned.is_empty():
+		return ""
+	var stock_id := String(CarLibrary.for_owned(owned).get("engine", ""))
+	return EngineSwap.current_engine_id(owned, stock_id)
+
+
+# The engine-swap pseudo-id ("engine_swap:<EngineLibrary id>") to fold into the SAME draw
+# pool as the boost catalogue and the drivetrain conversion — the NEXT MOST POWERFUL
+# EngineLibrary engine relative to the car's current one (_current_engine_id), i.e. among
+# every engine STRICTLY more powerful, the one with the SMALLEST power (the immediate next
+# rung up). [] once the car is already running the catalogue's most powerful engine, or if
+# its current engine can't be resolved — mirrors _pool_drivetrain_ids' "drop the option
+# once it has nothing left to offer" shape (the AWD-conversion precedent).
+#
+# Power is CarLibrary.peak_power_kw({"peak_torque", "redline"}) — that function's own doc
+# says entry keys override the referenced engine, so a synthetic dict of just those two
+# fields ranks a bare EngineLibrary entry with no car involved. Ties broken by catalogue
+# order (deterministic, never random, never dependent on dictionary iteration order that
+# could vary) — the first engine encountered at the smallest strictly-greater power wins.
+#
+# Engines whose gain over the current one is under MIN_SWAP_HP_GAIN (30hp) are excluded
+# entirely — a swap that's barely an upgrade isn't worth offering, so this steps over
+# those rungs to the next one that actually clears the bar, same as _pool_drivetrain_ids
+# dropping an option once it has nothing meaningful left to offer.
+const MIN_SWAP_HP_GAIN := 30.0
+func _pool_engine_swap_ids() -> Array:
+	var current_id := _current_engine_id()
+	if current_id.is_empty():
+		return []
+	var current_eng := EngineLibrary.by_id(current_id)
+	if current_eng.is_empty():
+		return []
+	var current_power := CarLibrary.peak_power_kw(
+		{"peak_torque": current_eng.get("peak_torque", 0.0), "redline": current_eng.get("redline_rpm", 0.0)})
+	var min_gain_kw := MIN_SWAP_HP_GAIN * 1000.0 / CarLibrary.KW_KG_TO_HP_TONNE
+	var best_id := ""
+	var best_power := 0.0
+	for eng in EngineLibrary.all():
+		var eng_dict := eng as Dictionary
+		var power := CarLibrary.peak_power_kw(
+			{"peak_torque": eng_dict.get("peak_torque", 0.0), "redline": eng_dict.get("redline_rpm", 0.0)})
+		if power - current_power >= min_gain_kw and (best_id.is_empty() or power < best_power):
+			best_id = String(eng_dict.get("id", ""))
+			best_power = power
+	return ["engine_swap:%s" % best_id] if not best_id.is_empty() else []
+
+
+# The WHOLE pick pool, resolved: every id `_mode.boost_pool_ids` currently offers
+# (the full BoostLibrary catalogue plus whatever drivetrain/engine-swap pseudo-ids are
+# available right now), minus any id this run has ALREADY picked that wouldn't do
+# anything more the second time (BoostLibrary.stacks — "Quick-shift gearbox" or a
+# turbo/supercharger a second time is a dead roll, not a stronger one; "Sticky tyres" or
+# "Aero kit" a second time genuinely grips/downforces harder, so those stay in the
+# pool). Mapped through BoostLibrary.resolve_id and stamped with the engine swap's
+# hp/hp_delta display fields — the ONE place both pick-building call sites
+# (report_event_result, resume) build `_pending_pick`, so they can never disagree on
+# what an id resolves to.
+#
+# Drivetrain/engine-swap pseudo-ids need no filtering here: their own availability
+# check (_pool_drivetrain_ids/_pool_engine_swap_ids) already drops them from `ids` once
+# a repeat would be redundant (already AWD; already running the next engine up), so
+# `stacks()` is never even asked about them.
+func _resolve_pick_pool() -> Array:
+	var ids := _mode.boost_pool_ids(_stage_index, _pool_drivetrain_ids() + _pool_engine_swap_ids())
+	var already_picked := {}
+	for b in _boosts:
+		already_picked[String((b as Dictionary).get("id", ""))] = true
+	var out: Array = []
+	for id in ids:
+		var id_str := String(id)
+		if already_picked.has(id_str) and not BoostLibrary.stacks(id_str):
+			continue
+		out.append(BoostLibrary.resolve_id(id_str))
+	return _with_engine_swap_display(out)
+
+
+# Adds `hp`/`hp_delta` display fields to every `pick` entry that carries an `engine_id` —
+# both pick-building call sites (report_event_result, resume) route through this ONE
+# helper so a live draw and a resumed draw can never disagree on what they display.
+# RunSession is the only layer holding BOTH the drawn engine and the car's CURRENT one, so
+# this is where the delta has to be computed. `hp` reuses CarLibrary.horsepower exactly —
+# the same peak_power_kw * KW_KG_TO_HP_TONNE / 1000.0 the car stats panel shows — rather
+# than re-deriving the constant.
+func _with_engine_swap_display(pick: Array) -> Array:
+	if pick.is_empty():
+		return pick
+	var current_id := _current_engine_id()
+	var current_eng := EngineLibrary.by_id(current_id)
+	var current_hp := CarLibrary.horsepower(
+		{"peak_torque": current_eng.get("peak_torque", 0.0), "redline": current_eng.get("redline_rpm", 0.0)}) \
+		if not current_eng.is_empty() else 0.0
+	for entry in pick:
+		var entry_dict := entry as Dictionary
+		var engine_id := String(entry_dict.get("engine_id", ""))
+		if engine_id.is_empty():
+			continue
+		var new_eng := EngineLibrary.by_id(engine_id)
+		var hp := CarLibrary.horsepower(
+			{"peak_torque": new_eng.get("peak_torque", 0.0), "redline": new_eng.get("redline_rpm", 0.0)})
+		entry_dict["hp"] = hp
+		entry_dict["hp_delta"] = hp - current_hp
+	return pick
 
 
 # Drop the terminal result once a screen has SHOWN it. The hub shell reads last_result()
@@ -231,6 +436,21 @@ func stage_target_ms() -> int:
 # set_stage_track(); {} for a mode with no target (challenge) or a degenerate track.
 func stage_target_profile() -> Dictionary:
 	return _stage_target_profile
+
+
+# The multiplier between the reference car's optimum and this stage's target — the
+# same `target_pace` the mode used to scale stage_target_profile's every sample.
+# The rival ghost's CAR pick reads it (RivalGhost.pick_rival matches a real car's
+# benchmark ratio to this pace), not the ghost's DRIVING, which stays pinned to the
+# profile exactly as the clock does. 0.0 for a mode with no target concept (the base
+# RunMode and ChallengeRunMode declare no target_pace) — no ghost exists then anyway.
+# Read off the MODE rather than reverse-engineered from the seated profile (whose
+# reference-side total would cost a second LapTimeModel solve to recover), so it can
+# never disagree with the pace the target itself was built from.
+func stage_target_pace() -> float:
+	if _mode == null or not _mode.has_method("target_pace"):
+		return 0.0
+	return _mode.call("target_pace", _stage_index)
 
 
 # A human label for the run, for the arch banner and the run summary.
@@ -341,14 +561,22 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 	_dnf = false
 	_failed = false
 	_money_earned = 0
+	_last_stage_money = 0
+	_last_stage_coins = 0
+	_last_stage_coin_money = 0
 	_stage_target_ms = 0
 	_stage_target_profile = {}
 	_pending_repair = {}
 	_last_result = {}
 	_pending_pick = []
 	_pick_awaiting = false
+	_pick_offers_repair = true
 	_boosts = []
 	_drivetrain_override = -1
+	_engine_swap_id = ""
+	# New runs always start at 100% health (never carry damage from a previous run) —
+	# repairs should only ever happen from a repair pick or a fresh run, never silently.
+	Save.restore_car_to_full(_car_instance_id)
 	_active = true
 	_stage_running = true
 	# Written HERE, the one shared entry point BOTH callers (region + challenge) pass
@@ -365,6 +593,7 @@ func begin(run_mode: RunMode, owned_car: Dictionary) -> bool:
 func start(kind_str: String, owned_car: Dictionary, unix_time: int) -> bool:
 	if _active:
 		return false
+	FreePlay.clear()  # a real run never inherits the sandbox's chosen car/boosts
 	var m := ChallengeRunMode.for_kind(kind_str, unix_time)
 	if m == null:
 		return false
@@ -382,6 +611,7 @@ func start(kind_str: String, owned_car: Dictionary, unix_time: int) -> bool:
 func start_region(region_id_str: String, owned_car: Dictionary, run_seed := 0) -> bool:
 	if _active:
 		return false
+	FreePlay.clear()  # a real run never inherits the sandbox's chosen car/boosts
 	return begin(RegionRunMode.for_region(region_id_str, run_seed), owned_car)
 
 
@@ -391,6 +621,7 @@ func start_region(region_id_str: String, owned_car: Dictionary, run_seed := 0) -
 func resume(unix_time: int) -> bool:
 	if _active:
 		return true
+	FreePlay.clear()  # a real run never inherits the sandbox's chosen car/boosts
 	var run := resumable_run(Save.profile, unix_time)
 	if run.is_empty():
 		return false
@@ -411,13 +642,18 @@ func resume(unix_time: int) -> bool:
 	_last_result = {}
 	_boosts = (run.get("boosts", []) as Array).duplicate(true)
 	_drivetrain_override = int(run.get("drivetrain_override", -1))
+	_engine_swap_id = String(run.get("engine_swap_id", ""))
 	# A pick that was still awaiting a choice when this run was last persisted
-	# RE-DERIVES rather than being stored verbatim — boost_choices is a pure function
-	# of (the mode's own seed, stage_index), so this always matches what was offered
-	# before (todo/roguelike-pivot.md: "a resumed run offers the same choice it
-	# offered before").
+	# RE-DERIVES rather than being stored verbatim — boost_pool_ids is a pure function
+	# of extra_ids alone (the WHOLE catalogue, no draw/seed), so this always matches
+	# what was offered before (todo/roguelike-pivot.md: "a resumed run offers the same
+	# choice it offered before").
 	_pick_awaiting = bool(run.get("pick_awaiting", false))
-	_pending_pick = _mode.boost_choices(_stage_index) if _pick_awaiting else []
+	# offer_repair is NOT re-derived like the picks above — it was resolved once
+	# against the car's HP at draw time, and the car's HP can move (self-healing,
+	# damage) between then and a resume, so it is persisted verbatim instead.
+	_pick_offers_repair = bool(run.get("pick_offers_repair", true))
+	_pending_pick = _resolve_pick_pool() if _pick_awaiting else []
 	_active = true
 	_stage_running = true
 	return true
@@ -445,21 +681,15 @@ func discard_run(unix_time: int) -> void:
 	Save.clear_run()
 
 
-# Back-compat name for the stale-run path (a run whose period has since rolled over).
-# Same rule: a stale run has still been attempted.
-func discard_stale_run(unix_time: int) -> void:
-	if not has_stale_run(Save.profile, unix_time):
-		return
-	discard_run(unix_time)
-
-
 func _persist() -> void:
 	var record := {
 		"mode": _mode.mode_id(), "car_instance_id": _car_instance_id,
 		"stage_index": _stage_index, "stage_times_ms": _stage_times_ms.duplicate(),
 		"dnf": _dnf, "money_earned": _money_earned,
 		"boosts": _boosts.duplicate(true), "pick_awaiting": _pick_awaiting,
+		"pick_offers_repair": _pick_offers_repair,
 		"drivetrain_override": _drivetrain_override,
+		"engine_swap_id": _engine_swap_id,
 	}
 	record.merge(_mode.to_record(), true)
 	Save.set_run(record)
@@ -489,12 +719,12 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		# same as money (todo/roguelike-pivot.md "Lifetime global stats").
 		Save.add_lifetime_stat(LifetimeStats.DAMAGE_TAKEN, int(round(hp_lost)))
 	elif _car_instance_id >= 0 and hp_lost < 0.0:
-		# A NEGATIVE loss is a NET HEAL — the "self_healing" perk (decision 51) mended
+		# A NEGATIVE loss is a NET HEAL — the "self_healing" skill (decision 51) mended
 		# more than the stage cost. world.gd passes the delta signed for exactly this
 		# case; persisting it is what lets the trickle repair damage carried in from an
 		# EARLIER stage rather than only cancelling this one's. No lifetime stat: nothing
-		# was taken, and DAMAGE_TAKEN is a monotonic ledger (it gates a perk unlock, so
-		# letting it run backwards would un-unlock a perk the player had earned).
+		# was taken, and DAMAGE_TAKEN is a monotonic ledger (it gates a skill unlock, so
+		# letting it run backwards would un-unlock a skill the player had earned).
 		Save.heal_car(_car_instance_id, -hp_lost)
 	# METRES DRIVEN, counted on every stage whether or not it was missed — the distance
 	# was driven either way. world.gd snapshots it at the finish crossing off
@@ -512,6 +742,10 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 	var missed := _mode.stage_failed(driven_index, elapsed_ms, _stage_target_ms)
 	_stage_index += 1
 	var is_final := _stage_index >= stage_count()
+	_last_stage_money = 0
+	_last_stage_coins = 0
+	_last_stage_coin_money = 0
+	_last_stage_clear_bonus = 0
 	if not missed:
 		Save.add_lifetime_stat(LifetimeStats.STAGES_CLEARED)
 		# MONEY BANKS AT STAGE CLEAR, not at run end (decision 36), so a run that dies
@@ -520,7 +754,17 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		var earned := _mode.stage_money(driven_index, elapsed_ms, _stage_target_ms, coins_collected)
 		if earned > 0:
 			_money_earned += earned
+			_last_stage_money = earned
 			Save.add_money(earned)
+		if coins_collected > 0:
+			_last_stage_coins = coins_collected
+			# The coin term ISOLATED from the rest of stage_money's formula, via the
+			# zero-coin call of the SAME function — this can never drift from what
+			# stage_money's own coin term actually computed, unlike re-deriving
+			# coins_collected * Config.data.coin_money by hand here.
+			_last_stage_coin_money = earned - _mode.stage_money(
+				driven_index, elapsed_ms, _stage_target_ms, 0)
+		_last_stage_clear_bonus = _mode.stage_clear_bonus(driven_index)
 	_stage_target_ms = 0
 	_stage_target_profile = {}
 	var over := missed or is_final
@@ -534,12 +778,20 @@ func report_event_result(elapsed_ms: int, hp_lost: float = 0.0, coins_collected:
 		@warning_ignore("return_value_discarded")
 		Save.apply_field_repair_to(_car_instance_id)
 	elif _mode.offers_boost_pick():
-		# THE PICK (todo/roguelike-pivot.md, "Between stages: repair or boost"). Repair
-		# stops being automatic and becomes ONE option among the drawn boosts — the
-		# player gives up a boost to take it. Nothing is applied until choose_repair()
-		# / choose_boost() resolves the pick; continue_to_next_stage() refuses to
-		# advance until one of them has.
-		_pending_pick = _mode.boost_choices(_stage_index)
+		# THE PICK (todo/roguelike-pivot.md, "Between stages: repair or boost"; see
+		# todo/mid-run-upgrade-menu.md for the player-directed power/handling redesign).
+		# Repair stops being automatic and becomes ONE top-level option alongside
+		# upgrading — the player gives up a boost to take it. Nothing is applied until
+		# choose_repair() / choose_boost() resolves the pick; continue_to_next_stage()
+		# refuses to advance until one of them has.
+		# The undamaged-arrival reward: a car above run_boost_healthy_threshold offers
+		# no repair row at all, so the player is never tempted to waste a roll on a
+		# repair nobody needed — every roll lands on a real upgrade instead. Resolved
+		# once, here, against the car's HP right now — see _pick_offers_repair's doc
+		# for why this is persisted rather than re-derived.
+		var healthy := Save.car_health_fraction(_car_instance_id) >= Config.data.run_boost_healthy_threshold
+		_pick_offers_repair = not healthy
+		_pending_pick = _resolve_pick_pool()
 		_pick_awaiting = true
 	else:
 		# Every mode that does not opt into the pick (the challenge) keeps the old
@@ -622,16 +874,20 @@ func take_pending_repair() -> Dictionary:
 
 # --- Resolving the between-stage pick -------------------------------------------
 
-# Resolve the pending pick by taking the repair. Exactly the SAME field repair every
-# other stage transition applies (Save.apply_field_repair_to) — the only change from
-# before this stage landed is that it is now a CHOICE instead of automatic, and
-# choosing it costs the boost the player didn't take. world.gd's between-stage boot
-# still consumes it via take_pending_repair(), unchanged. No-op if no pick is
-# outstanding (a stray second call, or a mode that never draws one).
+# Resolve the pending pick by taking the repair. Unlike every other stage transition,
+# which applies the smaller automatic patch-up (Save.apply_field_repair_to), choosing
+# repair here is a full repair (Save.apply_full_field_repair_to) — 100% of lost HP and
+# every wheel fully straightened — since the player gave up a boost specifically to
+# fix the car, not to nudge it. world.gd's between-stage boot still consumes it via
+# take_pending_repair(), unchanged. No-op if no pick is outstanding (a stray second
+# call, or a mode that never draws one). REFUSES (also a no-op) if the pending pick
+# doesn't offer repair — the undamaged-arrival reward pick (offer_repair() false):
+# repair must not be reachable there, so this is a real guard, not silent success
+# dressed up as one.
 func choose_repair() -> void:
-	if not _pick_awaiting:
+	if not _pick_awaiting or not _pick_offers_repair:
 		return
-	_pending_repair = Save.apply_field_repair_to(_car_instance_id)
+	_pending_repair = Save.apply_full_field_repair_to(_car_instance_id)
 	_pending_pick = []
 	_pick_awaiting = false
 	_persist()
@@ -673,6 +929,23 @@ func choose_drivetrain(mode: int) -> void:
 	_persist()
 
 
+# Resolve the pending pick by swapping this run's fielded car to `id` (an EngineLibrary
+# id) for the rest of the run — the eighth option alongside repair, the drawn boosts and
+# the drivetrain conversion. Like choose_drivetrain (and unlike choose_boost), this
+# REPLACES rather than stacks: a car has one engine, so a later swap simply overwrites the
+# earlier one. Refuses (no-op) unless a pick is awaiting. An id that isn't a real
+# EngineLibrary entry still resolves the pick — same "the player has made a choice" rule
+# choose_boost/choose_drivetrain follow for a stale id — but changes nothing.
+func choose_engine_swap(id: String) -> void:
+	if not _pick_awaiting:
+		return
+	if not EngineLibrary.by_id(id).is_empty():
+		_engine_swap_id = id
+	_pending_pick = []
+	_pick_awaiting = false
+	_persist()
+
+
 func _finish_locally() -> void:
 	_last_result = {
 		"mode": mode_id(), "period_key": period_key(), "kind": kind(),
@@ -691,8 +964,10 @@ func _finish_locally() -> void:
 	# explicitly rather than left to fall out of begin() resetting it for the NEXT run.
 	_boosts = []
 	_drivetrain_override = -1
+	_engine_swap_id = ""
 	_pending_pick = []
 	_pick_awaiting = false
+	_pick_offers_repair = true
 	if _mode != null:
 		_mode.record_outcome(_last_result, int(Time.get_unix_time_from_system()))
 	# THE ONE HARD FAIL STATE (decision 4) — a challenge run never sets _failed (its

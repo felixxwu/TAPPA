@@ -221,6 +221,62 @@ seams not to work around, and where the decision record lives.
   code — never weaken thresholds, flip signs, or delete assertions just to
   get back to green.
 
+## Model posture: Sonnet drives, Opus is invoked deliberately
+
+- **Sonnet is the default interactive model, not Opus.** Don't start from
+  "Opus does everything and delegates the mechanical parts down" — that
+  still bills Opus for planning, briefing, reading every report, and final
+  review on every task, which adds up even when delegation itself is done
+  well. Start from Sonnet driving the whole task directly, and bring in
+  Opus only for the two cases below. Most feature work in this codebase —
+  a new menu, a new card/upgrade, wiring a stat into an existing system,
+  test coverage for an existing pattern — is mechanical enough that Sonnet
+  alone should carry it start to finish, tests included.
+- **Opus plans upfront, before code gets written, for genuinely
+  architectural work.** If a task involves a new system, a design decision
+  with no settled shape yet, or a change that touches shared
+  physics/config/core scene setup broadly enough that a wrong turn would be
+  expensive to unwind — spawn an Opus subagent FIRST to produce the plan
+  (approach, files touched, sequencing, open questions), before any code is
+  written. Planning upfront is cheap; discovering three files in that a
+  Sonnet-authored approach doesn't work is not. Sonnet then executes the
+  settled plan. This mirrors the old "brainstorm specs with the user"
+  role — Opus still owns deciding the approach, just as a one-shot
+  consult rather than as the thing driving every turn.
+- **Opus is invoked reactively when something doesn't work, not
+  proactively as a safety net.** For everything else, let Sonnet run the
+  task, including its own testing and iteration. Only escalate to an Opus
+  subagent when Sonnet has genuinely gotten stuck: the same test fails
+  twice after a real fix attempt (not the same fix retried), a result
+  looks wrong in a way Sonnet can't diagnose, or a change has architectural
+  implications that only became visible once Sonnet was in the code (at
+  that point treat it as the upfront-planning case, done retroactively).
+  A confusing error message or an unfamiliar corner of the codebase is not
+  by itself a reason to escalate — that's what Sonnet re-reading the
+  relevant `features/*.md` file and retrying once is for.
+- **When escalating reactively, hand Opus the failure, not a fresh start.**
+  Brief the Opus subagent with what was tried, what broke, and the
+  concrete symptom — not just the original task description — so it
+  spends its tokens diagnosing rather than re-deriving context Sonnet
+  already has. Once Opus proposes the fix, either have it apply the fix
+  directly if it's small, or hand the fix back to Sonnet to implement and
+  test if there's more mechanical work attached to it.
+- **A repeated failure on the same task is a signal to stop retrying, not
+  a reason to keep trying inline.** If Sonnet is wrong twice on the same
+  problem (including once you've already looped in Opus reactively), stop
+  and escalate/replan rather than attempting a third variation — the
+  pattern from the old rules still holds: a bad attempt counts toward the
+  threshold, a fixed/sharper brief on retry doesn't reset it for free.
+- The testing rules still bind regardless of which model is driving: run
+  the tests relevant to the change before declaring it complete.
+- **This changes who plans, not who tests or reviews.** Sonnet driving the
+  task doesn't mean skipping tests or a final look at the diff — those
+  still happen, just performed by whichever model is currently in the
+  driver's seat (Sonnet, unless Opus was invoked). The point of this
+  section is to stop paying for an expensive model's involvement on tasks
+  that don't need architectural judgment, not to relax the testing or
+  review bar.
+
 ## Parallel agents share this checkout
 
 - **Assume other agents are editing this same working tree right now, and NEVER

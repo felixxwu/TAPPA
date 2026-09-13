@@ -1,0 +1,64 @@
+name: Tests
+
+# PR gate for the headless GUT suite. The Release workflow (deploy.yml) has no
+# test job and only triggers on push to main — by the time it runs, a red test
+# is too late to stop anything. This workflow is the missing pre-merge half:
+# it runs the SAME runner a developer would (`./run_tests.sh`, GUT vendored in
+# addons/gut/) on every PR that targets main, and never deploys anything, so
+# a manual dispatch from the Actions tab is always safe.
+#
+# Kept in its own file rather than added to deploy.yml's `on:` because a
+# pull_request trigger there would run the whole release pipeline on PRs —
+# exports and store uploads are not something a docs PR should be able to do.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Read-only is all a test run needs.
+permissions:
+  contents: read
+
+# A new push to the same PR cancels the previous run — the suite takes ~9 min
+# on a CI-class container, so stale runs pile up fast without this.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned to the same version as deploy.yml and the local editor — the test
+  # runner's --fixed-fps 60 / physics assumptions don't vary by patch, but the
+  # class-cache warmup output does, and CI should match what developers see.
+  GODOT_VERSION: "4.6.3"
+
+jobs:
+  headless:
+    name: GUT headless suite
+    runs-on: ubuntu-latest
+    # Worst case legit run: install (~1 min) + runner's own caps (WARMUP 300s
+    # + TEST 1800s) + shutdown. 40 min kills a wedged runner the runner's own
+    # TEST_STALL/timeout net somehow missed.
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      # run_tests.sh is self-contained: it honours $GODOT, does its own
+      # class-cache warmup with a timeout cap, sandboxes the player profile via
+      # GUT run hooks, and applies TEST_TIMEOUT/TEST_STALL hang nets. No import
+      # step here — the runner's warmup already covers it.
+      - name: Run the headless suite
+        run: ./run_tests.sh
+        env:
+          GODOT: /usr/local/bin/godot

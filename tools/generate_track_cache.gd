@@ -12,18 +12,25 @@ func _ready() -> void:
 	var entries: Dictionary = {}
 	var keys: Array = []
 	var failures := 0
-	for rally in RallyLibrary.all():
-		for event in rally.get("events", []):
-			print("track cache: generating rally %s seed %d ..." % [rally.get("id", "?"), int(event.get("seed", -1))])
-			var cfg := StageConfig.canonical_event_config(event)
-			var params := TrackGenParams.for_event(event, cfg)
-			var result := await TrackGenerator.generate(params)
-			var key := TrackCache.key_for(params, cfg)
-			keys.append(key)
-			if not result["complete"]:
-				push_error("track cache: rally %s seed %d did not complete" % [rally.get("id", "?"), params.seed])
-				failures += 1
-			entries[key] = { "pieces": _serialize(result["pieces"]), "complete": result["complete"] }
+	# Every authored RegionStageLibrary stage is baked exactly once — one candidate,
+	# one slot, one cache key (no runtime stage-position scaling any more; see
+	# todo/region-stage-slots-redesign.md). Must stay in lockstep with
+	# TrackCache.all_event_keys.
+	for stage in RegionStageLibrary.all_stages():
+		print("track cache: generating region %s slot %d/%d candidate %d seed %d ..." % [
+			stage.get("region", "?"), int(stage.get("slot", -1)), RegionRunMode.STAGE_COUNT,
+			int(stage.get("candidate", -1)), int(stage.get("seed", -1))])
+		var cfg := StageConfig.canonical_event_config(stage)
+		var params := TrackGenParams.for_event(stage, cfg)
+		var result := await TrackGenerator.generate(params)
+		var key := TrackCache.key_for(params, cfg)
+		keys.append(key)
+		if not result["complete"]:
+			push_error("track cache: region %s slot %d candidate %d seed %d did not complete" % [
+				stage.get("region", "?"), int(stage.get("slot", -1)),
+				int(stage.get("candidate", -1)), params.seed])
+			failures += 1
+		entries[key] = { "pieces": _serialize(result["pieces"]), "complete": result["complete"] }
 	# Non-event (for_config) parameter sets — the benchmark boot and a default-config
 	# boot of main.tscn. world.gd routes these through TrackGenerator.generate() with an
 	# OPTIONAL cache consult (generate_optional_cached), so baking them removes the live

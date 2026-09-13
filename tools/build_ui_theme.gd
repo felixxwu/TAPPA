@@ -46,6 +46,16 @@ func _build_label(theme: Theme) -> void:
 
 # Pure-black, sharp-cornered buttons (rule 4). Hover/pressed lift the face a hair
 # and underline it green for feedback; no focus ring (menus are tap-driven).
+#
+# NOT wrapped in UITheme.shadowed() here, even though every themed Button in the game
+# should cast the same hard shadow a carousel card does (features/ui-design-system.md →
+# "Card drop shadow"): this .tres is the project's DEFAULT THEME, loaded during early
+# project boot — before autoloads are guaranteed to exist. Embedding a custom-script
+# StyleBox (UIHardShadowBox) inside it made that boot-time load pull the script in early
+# enough to corrupt identifier resolution for OTHER scripts that reference an autoload
+# (world_panel.gd's `DisplayStretch.DESIGN_HEIGHT`), crashing the engine on ANY test run.
+# UITheme.enforce() applies the same shadow at RUNTIME instead — well after boot, and
+# every menu already calls it — so the button styleboxes here stay plain.
 func _build_button(theme: Theme) -> void:
 	theme.set_stylebox("normal", "Button", _btn_box(UITheme.BLACK))
 	theme.set_stylebox("hover", "Button", _btn_box(UITheme.SURFACE_HOVER, true))
@@ -61,21 +71,14 @@ func _build_button(theme: Theme) -> void:
 
 
 # Compact: small vertical padding (the fixed row height comes from the button's
-# min size — see UITheme.MENU_ROW_H / enforce).
+# min size — see UITheme.MENU_ROW_H / enforce). Delegates to UITheme.btn_box so
+# UITheme.enforce() can build the exact same look at runtime, wrapped in its shadow.
 func _btn_box(bg: Color, selected: bool = false) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = bg
-	box.content_margin_left = UITheme.px(14)
-	box.content_margin_right = UITheme.px(14)
-	box.content_margin_top = UITheme.px(4)
-	box.content_margin_bottom = UITheme.px(4)
-	if selected:
-		box.border_width_bottom = UITheme.px(3)
-		box.border_color = UITheme.GREEN
-	# Sharp corners, no outer border — the defining trait of the look.
-	return box
+	return UITheme.btn_box(bg, selected)
 
 
+# Plain (unwrapped) styleboxes for the same boot-time reason _build_button leaves its own
+# unwrapped — UITheme.enforce() applies the shadow to these at runtime instead.
 func _build_panels(theme: Theme) -> void:
 	var box := StyleBoxFlat.new()
 	box.bg_color = UITheme.BLACK  # pure black (rule 4)

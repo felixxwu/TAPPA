@@ -222,14 +222,14 @@ func apply_loss(amount: float) -> void:
 	hp = maxf(0.0, hp - amount)
 
 
-# The SELF-HEAL tick (PerkLibrary "self_healing", todo/roguelike-pivot.md decision 51).
+# The SELF-HEAL tick (SkillLibrary "self_healing", todo/roguelike-pivot.md decision 51).
 # Trickle `cfg.damage_regen_hp_per_s` back into the pool, capped at max_hp, on the same
 # physics step the impact damage above is measured on.
 #
 # 0.0 ON THE AUTHORED BASELINE, so this is a no-op for every car that has not equipped the
-# perk — the field is written by the effects funnel (UpgradeLibrary.EFFECTS
-# "damage_regen_set") and reseeded back to 0.0 the moment the perk comes off. Nothing here
-# knows what a perk is; it just reads a config field, exactly like every other damage knob.
+# skill — the field is written by the effects funnel (UpgradeLibrary.EFFECTS
+# "damage_regen_set") and reseeded back to 0.0 the moment the skill comes off. Nothing here
+# knows what a skill is; it just reads a config field, exactly like every other damage knob.
 #
 # HEALING DOES NOT STRAIGHTEN WHEELS. `wheel_toe` is bent by nudge_wheels and only a pit
 # repair (Save.field_repair) bends it back — a car that heals its HP mid-stage still

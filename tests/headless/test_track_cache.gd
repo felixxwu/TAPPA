@@ -98,27 +98,33 @@ func test_canonical_event_config_applies_overrides() -> void:
 	var base := load(Config.CONFIG_PATH) as GameConfig
 	assert_eq(cfg2.terrain_layer1_amplitude, base.terrain_layer1_amplitude, "omitted field uses base")
 
-# Lockfile contract: every rally event resolves to a key present in the committed
-# data/track_cache.json with complete == true. A stale/missing entry fails here and
-# in CI — rerun ./cache_tracks.sh. (By design this fails after any seed/terrain
-# retune until the lockfile is regenerated; the message says how to fix it.)
+# Lockfile contract: every authored RegionStageLibrary stage resolves to a key
+# present in the committed data/track_cache.json with complete == true. A
+# stale/missing entry fails here and in CI — rerun ./cache_tracks.sh. (By design
+# this fails after any seed/terrain retune until the lockfile is regenerated; the
+# message says how to fix it.)
+#
+# One key per stage, not per stage-position: every candidate is authored FINAL for
+# its one slot (no runtime scale any more — todo/region-stage-slots-redesign.md), so
+# each of the 120 stages needs exactly one cache entry (see TrackCache.all_event_keys).
 #
 # Uses raw_entry(), NOT lookup(): both assertions are about the stored entry, so
-# rebuilding each event's geometry buys nothing here and cost ~47 s across the ~97
-# authored events (over 7% of the whole suite). That the rebuild itself is faithful
-# is covered on a small synthetic track by test_lookup_hit_rebuilds_track and
+# rebuilding each stage's geometry buys nothing here and would cost more across the
+# 120 authored stages. That the rebuild itself is faithful is covered on a small
+# synthetic track by test_lookup_hit_rebuilds_track and
 # test_rebuild_matches_live_generation above.
 func test_committed_cache_covers_every_event() -> void:
 	TrackCache.reset()  # force a real load from disk
-	for rally in RallyLibrary.all():
-		for event in rally.get("events", []):
-			var cfg := StageConfig.canonical_event_config(event)
-			var params := TrackGenParams.for_event(event, cfg)
-			var entry := TrackCache.raw_entry(params, cfg)
-			assert_false(entry.is_empty(),
-				"rally %s seed %d missing from lockfile — run ./cache_tracks.sh" % [rally.get("id", "?"), params.seed])
-			if not entry.is_empty():
-				assert_true(entry["complete"], "cached track for rally %s is complete" % rally.get("id", "?"))
+	for stage in RegionStageLibrary.all_stages():
+		var cfg := StageConfig.canonical_event_config(stage)
+		var params := TrackGenParams.for_event(stage, cfg)
+		var entry := TrackCache.raw_entry(params, cfg)
+		assert_false(entry.is_empty(),
+			"region %s slot %d candidate %d missing from lockfile — run ./cache_tracks.sh" % [
+				stage.get("region", "?"), int(stage.get("slot", -1)), int(stage.get("candidate", -1))])
+		if not entry.is_empty():
+			assert_true(entry["complete"], "cached track for region %s slot %d is complete" % [
+				stage.get("region", "?"), int(stage.get("slot", -1))])
 
 # Weather must never reach track generation: it is not a shape determinant, and
 # routing it into generation would invalidate all baked track-cache entries for no

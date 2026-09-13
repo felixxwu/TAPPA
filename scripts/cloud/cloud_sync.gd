@@ -387,16 +387,8 @@ static func from_document(doc: Variant) -> Dictionary:
 # here rather than in the UI so the prompt cannot drift from what is compared.
 static func describe_profile(p: Dictionary) -> String:
 	var cars: int = (p.get(Save.KEY_CARS, []) as Array).size()
-	var done := 0
-	var rallies: Variant = p.get(Save.KEY_RALLIES, {})
-	if typeof(rallies) == TYPE_DICTIONARY:
-		for key in rallies as Dictionary:
-			var entry: Variant = (rallies as Dictionary)[key]
-			if typeof(entry) == TYPE_DICTIONARY and bool((entry as Dictionary).get("completed", false)):
-				done += 1
 	var car_word := "car" if cars == 1 else "cars"
-	var rally_word := "rally" if done == 1 else "rallies"
-	return "%d %s, %d %s completed" % [cars, car_word, done, rally_word]
+	return "%d %s" % [cars, car_word]
 
 
 # --- Internals ---------------------------------------------------------------

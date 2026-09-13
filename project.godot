@@ -33,6 +33,7 @@ WebFullscreen="*res://scripts/web_fullscreen.gd"
 PerfLog="*res://scripts/perf_log.gd"
 Music="*res://scripts/music_director.gd"
 Audio="*res://scripts/audio.gd"
+CarPreviewCache="*res://scripts/car_preview_cache.gd"
 
 [display]
 
@@ -277,6 +278,18 @@ hl_cos_outer={
 headlight_amount={
 "type": "float",
 "value": 0.0
+}
+wind_strength={
+"type": "float",
+"value": 0.0
+}
+wind_speed={
+"type": "float",
+"value": 0.0
+}
+wind_dir={
+"type": "vec3",
+"value": Vector3(1, 0, 0)
 }
 ow_fog_mask={
 "type": "sampler2D",

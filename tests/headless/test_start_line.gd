@@ -5,11 +5,15 @@ extends GutTest
 # car/stage/camera stubs, so the sequence is tested without booting the run scene.
 # See features/start-line.md.
 #
-# A per-opponent FLY_IN + REVEAL phase (the three real top rivals lined up ahead in
-# their actual cars) used to sit between MENU and the fade. Deleted along with the
-# rival field it dramatized (todo/roguelike-pivot.md decision 5) — decision 29 keeps
-# this MENU, only the reveal goes. `setup()` no longer takes a `leaders` argument, and
-# `Seq` is just MENU / FADE_OUT / FADE_IN / DONE.
+# The per-opponent FLY_IN + REVEAL (the three real top rivals queued ahead in their
+# actual cars, one Next press each) died with the rival field in the pivot, but its
+# SHAPE is revived for the one rival the roguelike kept: the ghost parks ON THE GRID
+# ahead of the player, the MENU orbits until Start, Start flies the camera to a low
+# 3/4 shot in front of the rival (Seq is MENU / FLY_IN / REVEAL / DEPART / FADE_OUT /
+# FADE_IN / DONE), the rival card — driver, car, time to beat — appears only when the
+# fly lands, and a second Start SENDS THE RIVAL OFF: the countdown waits until it has
+# driven away (DEPART). `setup()` still takes no `leaders` argument; the grid is one
+# parked ghost, not a field.
 
 
 # Records the launch hand-off (StartLine -> StageManager.begin_countdown()).
@@ -56,15 +60,68 @@ class StubTerrain:
 		return GROUND_Y
 
 
-# Records advance() calls without touching RivalGhost's real Car/track machinery
-# (Scenes.car_scene().instantiate() is heavier than this file's stubs elsewhere want)
-# — enough to prove StartLine's MENU idle actually drives whatever ghost world.gd
-# hands it (features/rival-ghost.md).
+# Records pose_at_distance() calls without touching RivalGhost's real track machinery
+# (TrackProgress sampling is heavier than this file's stubs elsewhere want) — enough
+# to prove StartLine parks whatever ghost world.gd hands it ON THE GRID and then
+# leaves it alone (features/rival-ghost.md). car() hands back a bare Node3D so the
+# reveal's camera anchor has a transform to frame; give_car = false models the
+# neutral-baseline ghost (no pickable roster car), whose reveal has no fly.
 class StubGhost:
 	extends RivalGhost
-	var advance_calls := 0
-	func advance(_delta: float) -> void:
-		advance_calls += 1
+	var pose_distance_calls: Array = []
+	var give_car := true
+	var _stub_car: Node3D = null
+	func pose_at_distance(s_m: float) -> void:
+		pose_distance_calls.append(s_m)
+	func car() -> Node3D:
+		if give_car and _stub_car == null:
+			_stub_car = Node3D.new()
+			add_child(_stub_car)
+		return _stub_car
+	# The send-off hands the real ghost's body to the physics server and then MEASURES
+	# how far it actually got (features/rival-ghost.md); there is no body here, so the
+	# stub records the handover and rolls the distance on at a fixed pace instead — the
+	# contract StartLine depends on is "begin, then drive_departure returns a growing
+	# distance", not how the metres are produced.
+	const STUB_DEPART_SPEED := 10.0
+	var live_departures: Array = []
+	var _stub_s := 0.0
+	func begin_live_departure(s_m: float) -> void:
+		live_departures.append(s_m)
+		_stub_s = s_m
+	func drive_departure(delta: float) -> float:
+		if live_departures.is_empty():
+			return _stub_s
+		_stub_s += STUB_DEPART_SPEED * delta
+		return _stub_s
+	var departed_at: Array = []
+	func mark_departed_at(s_m: float) -> void:
+		departed_at.append(s_m)
+		super.mark_departed_at(s_m)
+
+
+# A profiled ghost ready for the reveal path, with the driver name the card tests pin.
+func _ghost_for_reveal(with_car := true) -> StubGhost:
+	var ghost := StubGhost.new()
+	add_child_autofree(ghost)
+	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 9.5])}
+	ghost._car_index = 0 if with_car else -1
+	ghost._rival_name = "R. Ostmeyer"
+	ghost.give_car = with_car
+	return ghost
+
+
+# Wire a StartLine around a pre-built ghost and drive it from setup through Start +
+# the (shrunk) fly into REVEAL — the "camera arrives at the rival" moment.
+func _revealed_sl(ghost: StubGhost) -> StartLine:
+	Config.data.start_reveal_fly_seconds = 0.01
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	sl.launch()               # Start: the orbit freezes and the fly begins
+	sl._process(0.1)          # past the (shrunk) fly -> REVEAL (or straight there, no car)
+	return sl
 
 
 const TEST_PATH := "user://test_start_line_profile.json"
@@ -85,7 +142,6 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	RallyFixtures.install()
 	_save = get_node("/root/Save")
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
@@ -112,16 +168,15 @@ func after_each() -> void:
 	RunSession.auto_load_scenes = true
 	Config.reset()
 	CarFixtures.restore()
-	RallyFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-# Fixture Open: a rally with an event count for the subtitle.
+# A stand-in stage set with an event count for the subtitle.
 func _rally() -> Dictionary:
-	return RallyLibrary.by_id("fx_open")
+	return {"name": "Fixture Open", "events": [{}, {}, {}]}
 
 
 func _make(event_index := 0) -> StartLine:
@@ -138,7 +193,6 @@ func _make(event_index := 0) -> StartLine:
 # owned-car dict.
 func _start_session_car() -> Dictionary:
 	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	_save.set_selected_car(int(owned["instance_id"]))
 	RunSession.auto_load_scenes = false
 	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
 		int(Time.get_unix_time_from_system())), "setup: the session car is fielded")
@@ -185,6 +239,90 @@ func test_start_line_car_spawns_a_clearance_above_the_road() -> void:
 		"the staged player is seated a clearance above the ground")
 
 
+func test_the_player_stages_one_slot_behind_the_rival_on_the_line() -> void:
+	# The pre-pivot grid order: the rival owns the start line, the player queues one
+	# grid gap behind it — and the hand-off (under the fade) snaps the player UP ONTO
+	# the line for the countdown.
+	var terrain := StubTerrain.new()
+	add_child_autofree(terrain)
+	var ghost := _ghost_for_reveal()
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, terrain, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	var slot: Vector3 = sl._start_xform.origin \
+			+ sl._start_xform.basis * Vector3(0.0, 0.0, Config.data.start_queue_gap)
+	assert_almost_eq(_player.global_position.distance_to(slot), 0.0, 0.001,
+			"the staged pose is one queue gap BEHIND the line (local +Z)")
+	assert_gt(_player.global_position.distance_to(sl._start_xform.origin), 1.0,
+			"the player is not staged ON the line — the rival is")
+
+
+# The restored DEPART shuffle (pre-pivot _roll_grid_to_slots): as the rival drives
+# off, the staged player is scripted forward off its queue slot — ai_throttle pinned
+# while well behind, braking onto the line once there — so the pose the player
+# WATCHED is the pose control resumes from, and the handoff's square-up is a
+# correction rather than a hidden teleport. StubPlayer has no driving script, so
+# this pins the scripting state machine and the end pose, not the live-body motion.
+func test_depart_scripts_the_staged_player_up_toward_the_line() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "setup: on the rival")
+	sl.launch()
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART, "setup: the rival is off")
+	assert_eq(_player.ai_throttle, 0.0, "setup: the staged player sits idle")
+	sl._process(0.1)
+	assert_eq(_player.ai_throttle, 1.0,
+			"DEPART scripts the player rolling up from its queue slot")
+	assert_false(_player.ai_handbrake, "no hold while there is road to make up")
+
+
+func test_the_roll_up_brakes_onto_the_line_instead_of_coasting_past() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	sl.launch()
+	# Put the stub ON the line (a live body would have rolled there): at the target
+	# at rest, _roll_car_to must hold on the handbrake with throttle cut.
+	_player.global_position = sl._start_xform.origin
+	sl._roll_player_up()
+	assert_eq(_player.ai_throttle, 0.0, "throttle cut once at the line")
+	assert_true(_player.ai_handbrake, "braked to a stop ON the slot, not coasting past")
+
+
+func test_the_handoff_squares_the_player_up_onto_the_line() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	sl.launch()
+	for i in 400:
+		if sl.sequence_phase() != StartLine.Seq.DEPART:
+			break
+		sl._process(0.1)
+	sl._process(Config.data.start_fade_seconds + 0.01)  # full black -> handoff
+	assert_almost_eq(_player.global_position.distance_to(sl._start_xform.origin), 0.0, 0.001,
+			"control resumes from the line the player rolled up onto")
+
+
+# A REAL car can spin, stall or hit something on the way off the line, where the old
+# posed send-off could only ever arrive. The phase is therefore bounded: a rival that
+# never reaches the away mark still hands the screen on, so a bad launch can never
+# strand the player on the start line with no countdown and no way out.
+func test_a_rival_that_never_gets_away_still_ends_the_departure() -> void:
+	Config.data.start_lead_in_ahead_m = 500.0  # unreachable within the timeout
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	sl.launch()
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART, "setup: the send-off is running")
+	var timeout: float = Config.data.start_depart_timeout_seconds
+	sl._process(timeout * 0.5)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART,
+			"it waits for the rival while there is still time on the bound")
+	sl._process(timeout * 0.5 + 0.01)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT,
+			"but the phase ends on the bound rather than waiting forever")
+	assert_eq(ghost.departed_at.size(), 1,
+			"and the ghost is still told where it was left, so the re-entry gate is armed")
+
+
 # --- MENU / camera -----------------------------------------------------------
 
 func test_menu_hides_hud_and_takes_the_camera() -> void:
@@ -194,25 +332,128 @@ func test_menu_hides_hud_and_takes_the_camera() -> void:
 	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "it waits in the MENU phase")
 
 
-# --- Rival ghost (features/rival-ghost.md) -----------------------------------
+# --- Rival ghost + the revived reveal (features/rival-ghost.md) ---------------
 
-func test_menu_idle_advances_a_wired_ghost() -> void:
-	var ghost := StubGhost.new()
-	add_child_autofree(ghost)
-	ghost._profile = {"s": PackedFloat32Array([0.0, 10.0]), "t": PackedFloat32Array([0.0, 1.0])}
+func test_setup_parks_the_rival_on_the_grid_and_leaves_it_there() -> void:
+	var ghost := _ghost_for_reveal()
 	var sl := StartLine.new()
 	add_child_autofree(sl)
 	sl.set_process(false)
 	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
-	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "setup: waiting in MENU")
-	sl._process(0.1)
-	assert_eq(ghost.advance_calls, 1, "the MENU idle drives the wired ghost every frame")
+	assert_eq(ghost.pose_distance_calls, [0.0],
+			"setup poses the rival ON the line — the pre-pivot grid's front slot")
+	for i in 12:
+		sl._process(0.1)
+	assert_eq(ghost.pose_distance_calls.size(), 1,
+			"the MENU orbit never re-poses the ghost — it holds its grid slot")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU,
+			"the MENU orbits the player until Start is pressed — nothing auto-flies")
 
 
 func test_no_ghost_is_a_harmless_no_op() -> void:
 	var sl := _make()  # no ghost handed in (the default null) — a challenge stage, e.g.
 	sl._process(0.1)
 	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the MENU idle runs fine with no ghost at all")
+
+
+# --- Rival card + the reveal that shows it (features/start-line.md, rival-ghost.md)
+# The deleted per-opponent reveal card's revival, trimmed to the one ghost rival:
+# driver name, worn car, gold time to beat — shown only when the fly lands, never
+# during the menu idle, and no card at all with no ghost.
+
+func test_the_rival_card_names_the_driver_car_and_time_to_beat() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	Config.data.start_reveal_fly_seconds = 0.01
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	assert_false(sl.rival_card_visible(), "the card waits for the reveal — not the whole menu")
+	sl.launch()
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FLY_IN, "Start flies the camera to the rival")
+	sl._process(0.1)  # past the (shrunk) fly
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "the fly lands in the reveal")
+	assert_true(sl.rival_card_visible(), "only now does the card show")
+	# The house enforce pass uppercases every Label's text (rules §1), so the card
+	# shows the caps form — compare against UITheme.caps, not the raw source string.
+	assert_eq(sl.rival_card_name(), UITheme.caps("R. Ostmeyer"), "the driver's name is on the card")
+	assert_eq(sl.rival_card_car(), UITheme.caps(String(CarLibrary.all()[0].get("name", ""))),
+			"the card names the car the rival wears")
+	assert_eq(sl.rival_card_time(), UITheme.format_time(9500, "\u2014"),
+			"the gold row shows the profile's own total, formatted like the HUD clock")
+
+
+func test_the_rival_card_hides_without_a_ghost() -> void:
+	var sl := _make()  # no ghost handed in — a challenge stage, e.g.
+	assert_false(sl.rival_card_visible(), "no ghost, no rival card")
+	assert_eq(sl.rival_card_time(), "", "and no time to beat either")
+	for i in 20:
+		sl._process(0.1)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "no rival, no auto-fly — the menu just idles")
+	assert_false(sl.rival_card_visible(), "and no card ever appears")
+
+
+func test_the_rival_card_hides_the_car_line_for_the_neutral_baseline() -> void:
+	# A ghost with a target but no pickable car (car_index -1, car() invalid) shows
+	# the time but no bogus model name — the baseline body is not a car in the
+	# roster, and there is nothing to fly the camera to either.
+	var ghost := _ghost_for_reveal(false)
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	Config.data.start_reveal_fly_seconds = 0.01
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	sl.launch()              # Start, but no car to frame
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL,
+			"no car to frame: the card shows without the fly")
+	assert_true(sl.rival_card_visible(), "the time to beat still shows")
+	assert_eq(sl.rival_card_car(), "", "no roster car, no car line")
+
+
+func test_the_menu_orbits_until_start_is_pressed() -> void:
+	var ghost := _ghost_for_reveal()
+	var sl := StartLine.new()
+	add_child_autofree(sl)
+	sl.set_process(false)
+	sl.setup(_player, null, _stage, _rally(), 0, _cam_mgr, _hud, null, null, ghost)
+	for i in 20:
+		sl._process(0.1)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU,
+			"the orbit idles on the player until Start — no idle timer auto-flies")
+	assert_false(sl.rival_card_visible(), "and the card stays hidden while it orbits")
+
+
+func test_start_from_the_reveal_sends_the_rival_off_before_the_countdown() -> void:
+	# The send-off: Start from the REVEAL drives the rival off down the lead-in
+	# (DEPART), and only once it is properly away does the fade (then the countdown)
+	# begin — the player never sees the countdown before the rival has left.
+	Config.data.start_lead_in_ahead_m = 3.0  # a short lead-in keeps the drive-off quick
+	var ghost := _ghost_for_reveal()
+	var sl := _revealed_sl(ghost)
+	assert_eq(sl.sequence_phase(), StartLine.Seq.REVEAL, "setup: parked on the rival")
+	sl.launch()
+	assert_true(sl.has_launched(), "Start from the reveal passes the gates")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.DEPART, "and sends the rival off, not the fade")
+	assert_eq(ghost.live_departures, [0.0],
+			"the send-off hands the ghost's body to the physics server from the line — "
+			+ "the drive-off is a REAL car, not a posed one (features/rival-ghost.md)")
+	var posed_at_launch := ghost.pose_distance_calls.size()
+	sl._process(0.1)
+	assert_eq(ghost.pose_distance_calls.size(), posed_at_launch,
+			"and nothing poses it afterwards — the simulation owns the body now")
+	assert_lt(sl._depart_s, Config.data.start_lead_in_ahead_m,
+			"mid-departure the rival is still short of the away mark")
+	assert_eq(_stage.begin_calls, 0, "no countdown while the rival is still on the road")
+
+	# Wait out the drive-off (the stub rolls the measured distance on per frame).
+	for i in 300:
+		if sl.sequence_phase() != StartLine.Seq.DEPART:
+			break
+		sl._process(0.1)
+	assert_gt(ghost._reentry_s, 0.0, "the completed departure armed the ghost's re-entry gate")
+	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "once properly away, the fade begins")
+	sl._process(Config.data.start_fade_seconds + 0.01)
+	assert_eq(_stage.begin_calls, 1, "and only at full black does the countdown start")
 
 
 func test_start_overlay_uses_the_house_button_row_height() -> void:
@@ -291,23 +532,10 @@ func test_hand_off_restores_the_selected_camera_not_always_chase() -> void:
 	assert_false(_chase.current, "the start line does not force chase over the chosen mode")
 
 
-# --- Eligibility gates (unchanged behaviour) ---------------------------------
-
-func test_launch_is_gated_by_rally_eligibility() -> void:
-	_start_session_car()
-	var sl := _make()
-	sl._rally = {"restriction": {"engine_min_l": 999.0}}
-	sl.launch()
-	assert_false(sl.has_launched(), "launch() is blocked when the fielded car is ineligible")
-	assert_eq(sl.sequence_phase(), StartLine.Seq.MENU, "the sequence does not advance when blocked")
-
-
-func test_launch_proceeds_when_the_car_is_eligible() -> void:
-	_start_session_car()
-	var sl := _make()
-	sl._rally = {}  # open class: no restriction to fail
-	sl.launch()
-	assert_true(sl.has_launched(), "launch() proceeds when there is no eligibility gate to fail")
+# The eligibility gate (RallyLibrary.ineligibility_reason) is deleted
+# (todo/region-stage-slots-redesign.md) — world.gd never handed StartLine a rally
+# dict with a real `restriction` field, so the gate was a permanent no-op. launch()
+# is unconditional now; see the sequence-progression tests elsewhere in this file.
 
 
 # --- Pre-race menus (unchanged behaviour) ------------------------------------
@@ -380,7 +608,6 @@ func test_challenge_menus_bind_to_the_challenge_car_not_the_rally_one() -> void:
 func test_challenge_fades_straight_to_the_countdown() -> void:
 	_start_challenge()
 	var sl := _make_challenge()
-	sl._rally = _challenge_rally()
 	sl.launch()
 	assert_true(sl.has_launched(), "Start launches (the eligible locked car passes the gate)")
 	assert_eq(sl.sequence_phase(), StartLine.Seq.FADE_OUT, "Start fades straight out")

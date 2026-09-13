@@ -64,7 +64,7 @@ invocation.
 | `test_track_generator.gd` → `test_every_rally_event_generates_a_complete_track_quickly` | **94 s** | **No** — see *The irreducible sweeps* below. It grew with the roster: stage 4 authored 20 more events, and this generates every one of them live |
 | `test_smoke.gd` | 32 s | Partly done. Its two challenge-stage world builds were merged into one (a challenge track is generated LIVE — the seed is rolled from the period hash, so no lockfile covers it and `minimal_world()` cannot trim it either, because `TrackGenParams.for_event` overrides the turn count). ~25 s recovered; the remaining build is load-bearing |
 | `test_terrain_memory.gd` | 24 s | **No cheap lever.** 21 tests, each baking a road into its own `TerrainManager` — and what they assert IS what the cache keeps and drops between builds, so sharing one manager would destroy the subject |
-| `test_world_fielding.gd` | 18 s | Partly done. Every test here boots `main.tscn` because the seam under test (`world.gd::_field_car`) is only reachable that way. Two tests were merged into one build, one was deleted as duplicate coverage of `test_perk_library.gd`, and its challenge-fallback case was re-pointed at a NO-SESSION boot — the identical `region_id` branch for ~5 s instead of ~25 s |
+| `test_world_fielding.gd` | 18 s | Partly done. Every test here boots `main.tscn` because the seam under test (`world.gd::_field_car`) is only reachable that way. Two tests were merged into one build, one was deleted as duplicate coverage of `test_skill_library.gd`, and its challenge-fallback case was re-pointed at a NO-SESSION boot — the identical `region_id` branch for ~5 s instead of ~25 s |
 | `test_car_types.gd` / `test_car_library.gd` / `test_retune.gd` / `test_car.gd` | 16 / 12 / 14 / 7 s | **No** — per-car physics sweeps over the whole roster, already on `SimTest`'s cached settle where applicable |
 | `test_terrain_precompute.gd` | 10 s | **No** — chunk prebake work it asserts on directly |
 | The flat tail — ~175 further files | ~90 s | **No cheap lever found** (2026-09-04) |
@@ -248,15 +248,20 @@ curve*.
 
 ### Test-catalogue seam — `CarFixtures`
 
-All four content libraries — `CarLibrary`, `EngineLibrary`, `RallyLibrary`,
-`UpgradeLibrary` — expose the same small seam so tests don't have to reach into
-(and get broken by) the shipped catalogue:
+`CarLibrary` and `EngineLibrary` expose the same small `Array[Dictionary]` seam so
+tests don't have to reach into (and get broken by) the shipped catalogue:
 
-- `all()` — returns the active roster (shipped `CARS`/`ENGINES`/`RALLIES`/
-  `UPGRADES` unless overridden).
+- `all()` — returns the active roster (shipped `CARS`/`ENGINES` unless overridden).
 - `override_for_test(list)` — swaps the active roster to `list` for the rest
   of the process.
 - `reset()` — drops the override and falls back to the shipped const.
+
+`RegionStageLibrary` follows the same override/reset/all shape but its catalogue is
+Dictionary-shaped (`{region_id: [8 slots of 3 candidates]}`), not a flat
+`Array[Dictionary]`, so it does NOT share the generic `Registry.Seam` helper the
+others use — see `features/region-stage-library.md`. `RallyLibrary`/`UpgradeLibrary`
+are both deleted (`todo/region-stage-slots-redesign.md`, `todo/roguelike-pivot.md`);
+`CarFixtures` (cars), `RegionStageFixtures` (stages) are the fixtures tests install.
 
 The seam is **inert in production**: an empty/unset override is treated as
 "no override" and every lookup falls straight back to the real shipped const,
@@ -418,7 +423,7 @@ removed.
 | `test_username_popup.gd` (new) | The `UsernamePopup` sanitiser rules and the name's profile round-trip — `UsernamePopup` is live and had no other coverage |
 | `test_settings_menu.gd` | The two dev-tooling visibility tests (`dev_tools_override` gating Benchmark / Dev / Seed lab out of the category list) |
 | `test_tuning_panel.gd` | The slider-alignment case (every handling-axis slider is the same width) |
-| `test_world_fielding.gd` (new) | "the run scene fields the bound session car", ported off `RallySession` onto `RunSession` — and extended to cover the perk/boost merge at the same seam |
+| `test_world_fielding.gd` (new) | "the run scene fields the bound session car", ported off `RallySession` onto `RunSession` — and extended to cover the skill/boost merge at the same seam |
 
 **What was lost, and it is worth knowing.** Roughly 190 tests went with their subjects and
 could not be ported, because the thing they asserted no longer exists: the HQ's station

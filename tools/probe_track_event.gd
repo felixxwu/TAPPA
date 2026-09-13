@@ -1,9 +1,9 @@
 extends Node
-# Single-event track-generation probe — the "why did rally X seed N not complete?"
+# Single-event track-generation probe — the "why did this stage's seed not complete?"
 # debugging tool for the message tools/generate_track_cache.gd emits
-# ("track cache: rally %s seed %d did not complete").
+# ("track cache: region %s slot %d candidate %d seed %d did not complete").
 #
-# Generates ONE rally event (or an ad-hoc seed) exactly the way the cache baker
+# Generates ONE stage event (or an ad-hoc seed) exactly the way the cache baker
 # does — same TrackGenParams factory, same TrackGenerator.generate — and prints the
 # resolved params, the waterline picture around the start, and how many corners the
 # DFS actually placed. It writes NOTHING: data/track_cache.json is never touched, so
@@ -15,8 +15,8 @@ extends Node
 #
 # Usage from the repo root (see ./probe_track.sh for a wrapper):
 #   $GODOT --headless --path . res://tools/probe_track_event.tscn -- \
-#       --rally=gc_island_gp                    # every event of one rally
-#   ... -- --rally=gc_island_gp --seed=54103    # a single event
+#       --from-region=home                      # every stage of one region
+#   ... -- --from-region=home --seed=54103      # a single stage by seed
 #   ... -- --seed=54103 --turns=31 --straightness=0.2 --water=-4.0   # ad-hoc
 # Exit code 1 if any probed event failed to complete, else 0.
 
@@ -34,7 +34,7 @@ func _ready() -> void:
 	var args := _parse_args()
 	var events := _events_for(args)
 	if events.is_empty():
-		print("probe: no events matched — pass --rally=<id> and/or --seed=<n>")
+		print("probe: no events matched — pass --from-region=<id> and/or --seed=<n>")
 		get_tree().quit(2)
 		return
 	var failures := 0
@@ -55,24 +55,21 @@ func _parse_args() -> Dictionary:
 	return out
 
 
-# Either the authored events of a rally (optionally narrowed to one seed), or a
+# Either the authored stages of a region (optionally narrowed to one seed), or a
 # synthetic event built from the flags.
 func _events_for(args: Dictionary) -> Array:
 	var want_seed: int = int(args["seed"]) if args.has("seed") else -1
-	if args.has("rally"):
+	if args.has("from-region"):
 		var out: Array = []
-		for rally in RallyLibrary.all():
-			if String(rally.get("id", "")) != String(args["rally"]):
-				continue
-			for ev in rally.get("events", []):
-				if want_seed < 0 or int(ev.get("seed", -1)) == want_seed:
-					var copy: Dictionary = ev.duplicate(true)
-					copy["_rally"] = rally.get("id", "?")
-					out.append(copy)
+		for ev in RegionStageLibrary.all_stages_in(String(args["from-region"])):
+			if want_seed < 0 or int(ev.get("seed", -1)) == want_seed:
+				var copy: Dictionary = ev.duplicate(true)
+				copy["_stage"] = "%s/slot%d/c%d" % [ev.get("region", "?"), int(ev.get("slot", -1)), int(ev.get("candidate", -1))]
+				out.append(copy)
 		return out
 	if want_seed < 0:
 		return []
-	var synthetic: Dictionary = {"seed": want_seed, "_rally": "(ad-hoc)"}
+	var synthetic: Dictionary = {"seed": want_seed, "_stage": "(ad-hoc)"}
 	if args.has("turns"):
 		synthetic["turn_count"] = int(args["turns"])
 	if args.has("straightness"):
@@ -89,7 +86,7 @@ func _probe(event: Dictionary) -> bool:
 	# uses, so a probe here is the same generation the baker performs.
 	var cfg := StageConfig.canonical_event_config(event)
 	var p := TrackGenParams.for_event(event, cfg)
-	print("--- rally %s seed %d ---" % [event.get("_rally", "?"), p.seed])
+	print("--- stage %s seed %d ---" % [event.get("_stage", "?"), p.seed])
 	print("  turns=%d width=%.1f clearance=%.1f straightness=%.2f runoff=%.1f reserve_behind=%.1f"
 		% [p.turn_count, p.width, p.clearance, p.straightness, p.runoff_m, p.reserve_behind])
 	print("  water_enabled=%s water_level=%.2f (authored %.2f) shore_clearance=%.2f"

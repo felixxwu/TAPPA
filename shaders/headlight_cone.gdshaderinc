@@ -1,6 +1,7 @@
 // Fake headlight cone — the ONE source of truth, included by every shader the
 // headlights can fall on (ps1_models, ps1_terrain_snow, ps1_models_lit,
-// billboard_opaque, tree_canopy). See todo/night-weather-and-headlights.md.
+// ps1_models_ghost, billboard_opaque, tree_canopy). See
+// todo/night-weather-and-headlights.md.
 //
 // WHY THIS EXISTS AT ALL: terrain shading is baked into vertex colours on the CPU
 // (TerrainManager.vertex_colors writes ARRAY_COLOR per chunk), and the renderer has
@@ -46,6 +47,28 @@ float _headlight_cone_at(vec3 world_pos, vec3 apex) {
 	return cone * att;
 }
 
+// Facing-aware variant for shaders that carry a world-space normal (car meshes).
+// Without this, a point geometrically inside the cone's angle/range lights up
+// regardless of which way it faces — e.g. the REAR of a rival car ahead of the
+// player reads as lit, because it still sits inside the cone volume even though
+// it faces away from the lamp. `v` (apex→point) is already computed above for the
+// angle test; the direction FROM the point TO the apex is just its negation, so
+// this costs one extra dot, no new normalize/length.
+//
+// Floored, not hard-clamped at 0: per-vertex Gouraud shading on a faceted low-poly
+// body would otherwise step sharply at facet edges near grazing angles, reading as
+// a hole punched in the car. The floor keeps a faint wrap instead of a hard cutoff,
+// matching the smoothstep idiom the angle/distance terms already use.
+float _headlight_cone_at(vec3 world_pos, vec3 apex, vec3 world_normal) {
+	vec3 v = world_pos - apex;
+	float d = length(v);
+	vec3 to_light = -v / max(d, 0.001);
+	float facing = smoothstep(-0.15, 0.4, dot(world_normal, to_light));
+	float cone = smoothstep(hl_cos_outer, hl_cos_inner, dot(v / max(d, 0.001), hl_dir));
+	float att = 1.0 - smoothstep(0.0, hl_range, d);
+	return cone * att * facing;
+}
+
 // Scalar cone strength at a world position. Returned as a FLOAT, not a colour, so
 // shaders that must carry it across the vertex→fragment boundary can use a
 // `varying float` rather than adding a vec3 interpolator (bushes are numerous and
@@ -77,6 +100,24 @@ float headlight_lit(vec3 world_pos) {
 	vec3 lamp_offset = hl_right * (hl_separation * 0.5);
 	float left = _headlight_cone_at(world_pos, hl_pos - lamp_offset);
 	float right = _headlight_cone_at(world_pos, hl_pos + lamp_offset);
+	return max(left, right) * headlight_amount;
+}
+
+// Facing-aware overload for car meshes, which already have a world-space normal
+// on hand for their own baked sun term. Per-lamp facing is combined via the same
+// max() as the plain cone, before headlight_amount is applied — max() of two
+// continuous, non-negative per-lamp terms is itself continuous, so there is no
+// seam or double-dark boundary between the two lamps' visibility.
+float headlight_lit(vec3 world_pos, vec3 world_normal) {
+	if (headlight_amount <= 0.0) {
+		return 0.0;
+	}
+	if (hl_separation <= 0.0) {
+		return _headlight_cone_at(world_pos, hl_pos, world_normal) * headlight_amount;
+	}
+	vec3 lamp_offset = hl_right * (hl_separation * 0.5);
+	float left = _headlight_cone_at(world_pos, hl_pos - lamp_offset, world_normal);
+	float right = _headlight_cone_at(world_pos, hl_pos + lamp_offset, world_normal);
 	return max(left, right) * headlight_amount;
 }
 

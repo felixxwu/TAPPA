@@ -80,6 +80,17 @@ static func current_build() -> int:
 	return build_number(str(ProjectSettings.get_setting("application/config/version", "")))
 
 
+# The text the hub's corner build-version label shows for a raw
+# application/config/version string, or "" to hide the label entirely.
+#
+# Deliberately re-parses with build_number rather than just checking non-empty: an
+# unstamped/placeholder value ("0.0-dev", or empty in the editor / a local run) must
+# degrade the same way the update check itself disables — a raw "0.0-dev" or "()"
+# floating in a screen corner would look like a bug, not a build id.
+static func display_version(raw: String) -> String:
+	return raw.strip_edges() if build_number(raw) > 0 else ""
+
+
 # True when this build is one the player has to update by hand. False disables the
 # whole feature — no request is made at all.
 static func applicable() -> bool:

@@ -82,7 +82,7 @@ func _show() -> void:
 	_layer = layer
 	var backdrop := ColorRect.new()
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	backdrop.color = Color(0.03, 0.03, 0.05, 1.0)
+	backdrop.color = UITheme.MODAL_DIM
 	layer.add_child(backdrop)
 	# A full-rect, textless Button underneath catches a tap ANYWHERE and provides
 	# keyboard/gamepad navigability (FOCUS_ALL + grab_focus → ui_accept fires it).

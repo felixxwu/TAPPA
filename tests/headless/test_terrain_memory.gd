@@ -116,6 +116,77 @@ func test_apply_data_without_meshes_or_source_arrays_errors_and_keeps_collision(
 		"collision only needs heights, so it still builds")
 
 
+# --- Dual day/night bake (menu_showcase.gd only) --------------------------------
+# See features/terrain.md -> "Dual day/night bake". Logic/structure only — no
+# tuned colour is pinned, and the manager here is a synthetic one, not a real
+# region's catalogue entry.
+
+func _baked_night_manager() -> TerrainManager:
+	var m := _make_manager()
+	m.light_amount = 1.0
+	m.bake_night_colors = true
+	m.night_light_amount = 0.4
+	m.night_sun_color = Color(0.9, 0.2, 0.2)
+	m.night_sky_color = Color(0.1, 0.1, 0.6)
+	m.night_ground_color = Color(0.05, 0.05, 0.05)
+	var line := _straight_centerline()
+	await m.bake_track(line, 7.0, 3.0)
+	m.precompute_corridor(line, 25.0)
+	return m
+
+
+func test_night_colors_by_level_is_cached_and_survives_the_load_free() -> void:
+	var m: TerrainManager = await _baked_night_manager()
+	var coord := Vector2i(1, 0)
+	var data: Dictionary = m._chunk_cache[coord]
+	var by_level: Array = data.get("night_colors_by_level", [])
+	assert_eq(by_level.size(), TerrainLod.LOD_STRIDES.size(), "one slot per LOD level")
+	for arr in by_level:
+		assert_true(arr is PackedColorArray, "each level's slot is a colour array")
+	assert_false(data.has("night_colors"),
+		"the raw full-res array is dropped once sliced into night_colors_by_level")
+	m.free_load_only_data()
+	assert_true(m._chunk_cache[coord].has("night_colors_by_level"),
+		"a LIVE need (menu_showcase swaps against it at runtime) -- must survive the load-only free")
+
+
+func test_a_manager_with_bake_night_colors_off_caches_no_night_data() -> void:
+	var m: TerrainManager = await _baked_manager()  # bake_night_colors left at its false default
+	var data: Dictionary = m._chunk_cache[Vector2i(1, 0)]
+	assert_false(data.has("night_colors_by_level"),
+		"a stage/test path that never opts in stores nothing extra")
+
+
+func test_chunk_swaps_between_day_and_night_and_restores_exactly() -> void:
+	var m: TerrainManager = await _baked_night_manager()
+	m.update_focus(Vector3(50, 0, 0))
+	var coord := m.chunk_coord_for(Vector3(50, 0, 0))
+	var chunk: TerrainChunk = m._chunks[coord]
+	var mesh0: ArrayMesh = chunk._mesh_instances[0].mesh
+	var day_colors: PackedColorArray = mesh0.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+
+	chunk.apply_vertex_color_profile(&"night")
+	var night_colors: PackedColorArray = mesh0.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	assert_ne(night_colors, day_colors, "the mesh's COLOR channel actually changed")
+	assert_eq(night_colors.size(), day_colors.size(), "swap never changes vertex count")
+
+	chunk.apply_vertex_color_profile(&"day")
+	var restored: PackedColorArray = mesh0.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	assert_eq(restored, day_colors, "swapping back restores the exact day array")
+
+
+func test_swapping_a_chunk_with_no_night_data_is_a_safe_no_op() -> void:
+	var m: TerrainManager = await _baked_manager()  # bake_night_colors off
+	m.update_focus(Vector3(50, 0, 0))
+	var coord := m.chunk_coord_for(Vector3(50, 0, 0))
+	var chunk: TerrainChunk = m._chunks[coord]
+	var mesh0: ArrayMesh = chunk._mesh_instances[0].mesh
+	var before: PackedColorArray = mesh0.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	chunk.apply_vertex_color_profile(&"night")  # no night data cached -- must not crash
+	assert_eq(mesh0.surface_get_arrays(0)[Mesh.ARRAY_COLOR], before,
+		"no night data to swap onto, so the day colours are left exactly alone")
+
+
 # --- 1.7: the baked lights + its sentinel ---------------------------------------
 
 func test_light_at_serves_baked_light_before_the_free() -> void:

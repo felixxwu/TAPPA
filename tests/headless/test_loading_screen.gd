@@ -40,6 +40,117 @@ func test_step_starts_on_a_random_tip() -> void:
 		"the initial step line is one of the authored tips (uppercased)")
 
 
+# --- Tip cycling -------------------------------------------------------------
+# The tip cycles to a fresh draw every LoadingScreen._TIP_CYCLE_SEC while the
+# overlay is up, so a long load doesn't sit on one sentence for its whole
+# duration. _process() is driven directly with a synthetic delta rather than
+# awaiting a real 7-second timer — the cycle logic is what's under test, not
+# the engine's clock.
+
+func _uppercased_tips() -> Array[String]:
+	var upper_tips: Array[String] = []
+	for tip in LoadingTips.TIPS:
+		upper_tips.append(tip.to_upper())
+	return upper_tips
+
+
+func test_tip_cycles_to_a_new_tip_after_seven_seconds() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	var before := screen._step.text
+	# A delta just past the cycle threshold should swap the tip. LoadingTips.random()
+	# never repeats the previous draw (the pool has 21 entries), so the new text differs.
+	screen._process(LoadingScreen._TIP_CYCLE_SEC + 0.01)
+	assert_ne(screen._step.text, before, "the tip changed once the cycle interval elapsed")
+	assert_true(_uppercased_tips().has(screen._step.text),
+		"and the new tip is still one of the authored entries")
+
+
+func test_tip_does_not_cycle_before_seven_seconds() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	var before := screen._step.text
+	screen._process(LoadingScreen._TIP_CYCLE_SEC - 0.01)
+	assert_eq(screen._step.text, before, "the tip is unchanged before the cycle interval")
+
+
+# A caller that claims the step line with set_step() ("Uploading…",
+# "Preparing the garage…") owns it — the tip cycle must not overwrite their
+# status text on the next tick.
+func test_set_step_locks_the_tip_cycle() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen.set_step("Uploading…")
+	var locked := screen._step.text
+	screen._process(LoadingScreen._TIP_CYCLE_SEC + 0.01)
+	assert_eq(screen._step.text, locked, "a locked step line survives a cycle tick")
+
+
+# --- Animated ellipsis -------------------------------------------------------
+# The headline's trailing "…" is replaced by an animated 0 → 1 → 2 → 3 dot
+# field in a SIBLING label, so the center-aligned base text never shifts when
+# the dot count changes. The dots label is always _MAX_DOTS characters wide
+# (visible "." + padding spaces); the monospace UI font guarantees every slot
+# is the same advance, so the label's width is invariant.
+
+func test_headline_strips_the_static_ellipsis() -> void:
+	# The "…" that used to terminate the headline is now animated dots in a
+	# separate label — set_title() strips it so the two don't stack ("……").
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	assert_false(screen._title.text.ends_with("…"),
+		"no static ellipsis on the base headline (the animated dots replace it)")
+
+
+func test_dots_start_empty() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	assert_eq(screen._dot_count, 0, "starts at 0 visible dots")
+	assert_eq(screen._dots.text, "   ", "0 dots = three spaces (constant width)")
+
+
+func test_dots_cycle_zero_through_three() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
+	assert_eq(screen._dot_count, 1, "one step -> 1 dot")
+	assert_eq(screen._dots.text, ".  ", "1 dot + 2 spaces")
+	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
+	assert_eq(screen._dot_count, 2, "two steps -> 2 dots")
+	assert_eq(screen._dots.text, ".. ", "2 dots + 1 space")
+	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
+	assert_eq(screen._dot_count, 3, "three steps -> 3 dots")
+	assert_eq(screen._dots.text, "...", "3 dots, no padding")
+	# Fourth step wraps back to 0.
+	screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
+	assert_eq(screen._dot_count, 0, "wraps back to 0 after 3")
+	assert_eq(screen._dots.text, "   ", "back to three spaces")
+
+
+# The whole point of the separate dots label: its text is ALWAYS _MAX_DOTS
+# characters, so the label width (and thus the centered headline pair's
+# position) never changes as dots cycle. A monospace font makes equal-length
+# strings equal-width.
+func test_dots_label_is_always_constant_width() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	for _i in 5:
+		assert_eq(screen._dots.text.length(), LoadingScreen._MAX_DOTS,
+			"dots label is always _MAX_DOTS chars (constant width under monospace)")
+		screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
+
+
+# set_stage produces "LOADING STAGE N OF M" on the base label (no ellipsis);
+# the animated dots follow it in the sibling label.
+func test_set_stage_strips_ellipsis_and_keeps_stage_number() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen.set_stage(1, 8)
+	assert_false(screen._title.text.ends_with("…"), "no static ellipsis on a staged headline")
+	assert_true(screen._title.text.contains("2"), "the stage number is present")
+	assert_true(screen._title.text.contains("8"), "and the total")
+
+
 # The tip survives an actual world generation: world.gd's stage progression (used to
 # forward each stage label — "Placing signs…", "Generating track…" — into this same
 # label) must not overwrite it any more. Checked mid-generation, since the overlay is

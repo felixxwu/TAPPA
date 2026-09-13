@@ -207,7 +207,7 @@ suspension normal force and therefore picks up weight transfer; the point mass
 has no axles to transfer between. Coarse but the *same curve* is the point: the
 rating now moves in the direction the car does, which matters well beyond the
 number on the upgrades page, because the AI field is paced off this same solve
-([rally-roster.md](rally-roster.md)).
+([region-stage-library.md](region-stage-library.md)).
 
 **It does not measure — at all:**
 
@@ -422,7 +422,7 @@ the deleted adaptive difficulty steers: it hands
 turn up in better or worse machinery accordingly. Two consequences for this file:
 
 - Rival builds now include **build levels** as well as an engine swap
-  ([rally-roster.md](rally-roster.md)), so a combo's rating is computed from
+  ([region-stage-library.md](region-stage-library.md)), so a combo's rating is computed from
   `CarPerformance.merged_meta` — tyres and downforce included, as the rating requires.
 - Anything the rating cannot see becomes a way for a rival to be quicker than the number
   it was matched on. That is exactly why **nitrous is barred from every build level**: it
@@ -580,7 +580,7 @@ again.
 
 ## Related
 
-- [rally-roster.md](rally-roster.md) — `LapTimeModel`'s day job: PAR times,
+- [region-stage-library.md](region-stage-library.md) — `LapTimeModel`'s day job: PAR times,
   rival times and the opponent field.
 - the deleted rival ghost — the other seam into `optimum_profile`
   (`grip_mult` / `power_mult`), also no-op at its defaults.

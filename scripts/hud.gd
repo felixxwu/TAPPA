@@ -88,14 +88,6 @@ var _off_road_label: Label
 # Last countdown TENTH shown, so show_off_road only re-formats when the displayed
 # value moves (-1 = nothing shown yet), matching the run timer's discipline.
 var _last_off_road_tenths := -1
-# "Coins taken this stage" (features/collectables.md) — a live top-right counter,
-# the mirror image of the top-left speed/gear readout. Hidden until world.gd's
-# _build_coins actually places coins on a region-run stage (a challenge, or a stage
-# whose layout rolled empty, never calls set_coin_count and the label stays hidden).
-var _coin_label: Label
-# Last displayed count, so set_coin_count only re-formats on an actual change,
-# matching every other readout's discipline.
-var _last_coin_count := -1
 # Rally pacenote strip (features/hud.md): a row of turn boards along the top — the
 # current turn (arrow + grade, full opacity) with the upcoming turns queued, dimmer,
 # to its right. Reads left-to-right and slides left as corners are passed. Built in
@@ -248,7 +240,6 @@ func _ready() -> void:
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_build_cut_flash_label()
 	_build_off_road_label()
-	_build_coin_label()
 	_build_delta_label()
 	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
 	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
@@ -450,37 +441,6 @@ func hide_off_road() -> void:
 	_last_off_road_tenths = -1
 
 
-# "Coins taken this stage" (features/collectables.md): top-right, mirroring the
-# top-left speed/gear stack. Starts hidden — world.gd only calls set_coin_count on a
-# region-run stage that actually placed coins, so a challenge (or a stage whose
-# layout rolled empty) never shows it.
-func _build_coin_label() -> void:
-	_coin_label = Label.new()
-	_coin_label.name = "CoinLabel"
-	_coin_label.anchor_left = 1.0
-	_coin_label.anchor_right = 1.0
-	_coin_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_coin_label.offset_left = -108.0
-	_coin_label.offset_top = 8.0
-	_coin_label.offset_right = -8.0
-	_coin_label.offset_bottom = 28.0
-	_coin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_coin_label.add_theme_font_size_override("font_size", UITheme.px(14))
-	_coin_label.add_theme_color_override("font_color", UITheme.GOLD)
-	_coin_label.visible = false
-	add_child(_coin_label)
-
-
-# Show/update the coin counter, revealing it on first call. Change-gated on the
-# count itself, matching every other readout's discipline.
-func set_coin_count(count: int) -> void:
-	_coin_label.visible = true
-	if count == _last_coin_count:
-		return
-	_last_coin_count = count
-	_coin_label.text = "Coins: %d" % count
-
-
 # Corner-cut flash: a small top-centre tag, on its own row under the pacenote strip
 # (nothing shares the spot now that the "vs P1" pace popup is gone).
 func _build_cut_flash_label() -> void:
@@ -651,8 +611,8 @@ func show_countdown(seconds_left: float) -> void:
 
 # Live "player vs rival pace" delta (features/rival-ghost.md): sits directly under
 # the run timer, top-left, so it reads as "the timer, and how it compares" rather
-# than competing with the top-right coin counter or the top-centre pacenote strip /
-# cut-flash tag. Starts hidden; StageManager reveals it once a staged region run
+# than competing with the top-centre pacenote strip / cut-flash tag. Starts hidden;
+# StageManager reveals it once a staged region run
 # actually wires a target profile (show_delta) and hides it again for a challenge
 # stage / degenerate track (hide_delta).
 func _build_delta_label() -> void:

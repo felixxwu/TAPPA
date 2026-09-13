@@ -6,8 +6,12 @@ extends Node
 # Makes the run's one fail state — the fixed clock in RegionRunMode.stage_target_ms
 # (todo/roguelike-pivot.md decision 4/11) — visible as a "rival": a second, posed-not-
 # simulated Car driving the pace-scaled profile RegionRunMode.stage_target_profile()
-# produces. See features/rival-ghost.md for the full picture (start-line reveal +
-# live HUD delta); this file is just the maths + the Car it drives.
+# produces, wearing a REAL car from the CarLibrary roster (pick_rival) whose benchmark
+# pace best matches the target clock — so the start-line reveal names and shows a car
+# that plausibly drives that time. The ghost still drives the PROFILE regardless of
+# what the car could actually do (the profile IS the fail state; the body is costume).
+# See features/rival-ghost.md for the full picture (start-line reveal + live HUD
+# delta); this file is the maths, the rival's identity, and the Car it drives.
 #
 # The maths is two pure inversions of the profile's parallel {"s","t"} arrays (no
 # live Car needed, so they're tested without instancing one):
@@ -21,15 +25,88 @@ extends Node
 # so a plain lerp between neighbours is exact for "s" and a good approximation for the
 # (non-linear) "t" — the same accuracy the profile is sampled at everywhere else.
 
-# Lateral offset (m) the ghost is nudged by at spawn, so it doesn't sit exactly on
-# top of the player at t=0/s=0 during the start-line reveal (both begin at the same
-# point on the centerline). Purely cosmetic — the ghost's own along-track pose is
-# otherwise identical to the profile.
-const GHOST_LATERAL_OFFSET_M := 2.5
 # How far ahead along the centerline the tangent sample is taken, for facing.
 const TANGENT_EPS_M := 0.5
 
+# Half-span of the forward/lateral height probes that read the road slope under
+# the ghost (see _surface_normal).
+const NORMAL_PROBE_M := 3.0
+# Half-span of the tangent samples the slip yaw's curvature is read over.
+const SLIP_EPS_M := 4.0
+
+# --- Live departure (the start-line send-off) ---------------------------------
+# The drive-off is the ONE moment the rival is a real simulated car rather than a
+# posed one: the camera is parked on it from a low 3/4 and the launch is the shot,
+# so the suspension has to squat, the wheels have to spin up and bite, and the
+# effect systems (TireMarks / WheelParticles, wired by world.gd onto this car)
+# need real drivetrain readings to lay ruts and throw dirt off. Posing cannot
+# produce any of that — a frozen body's solver never runs, so its wheels are never
+# in contact and every effect gate reads zero. See features/rival-ghost.md.
+# Everything before and after the send-off stays posed: the grid park reads the
+# profile exactly, and the run-long HUD delta depends on it.
+
+# The collision mask the car wears while live, so its wheels have a road (and the
+# roadside furniture) to bite on. Its LAYER stays 0 throughout (see setup): the
+# player is scripted up onto the line right behind it and must never be shoved by
+# it — a zero layer is stricter than the pre-pivot grid's per-pair collision
+# exceptions and needs no bookkeeping.
+const DEPART_COLLISION_MASK := 1
+
+# Driver names for the rival reveal card (start_line.gd), picked deterministically
+# per stage. Authored, not generated: the pool is small enough that a fixed cast
+# reads as a roster the player recognises, and parody-adjacent to the car names.
+const RIVAL_NAMES: Array[String] = [
+	"K. Vaati", "R. Ostmeyer", "T. Beaumont", "S. Kervinen",
+	"M. Doss", "H. Yagami", "P. Lindqvist", "D. Okonkwo",
+	"V. Salteri", "J. Rourke", "A. Petrov", "N. Castellan",
+]
+
+
+# Pick the rival's identity for a stage: a REAL CarLibrary car whose benchmark pace
+# best matches the stage's target clock, plus a driver name. Pure + static so tests
+# can pin the contract without instancing a Car.
+#
+# `pace` is RegionRunMode.target_pace(stage_index) — the multiplier from the
+# REFERENCE car's optimum to the target time. A car "as fast as the target" is one
+# whose own benchmark time sits the same multiplier away from the reference's:
+# benchmark_ms(car) / benchmark_ms(reference) ≈ pace. Both are solved on the SAME
+# frozen benchmark track (CarPerformance caches each solve), so the ratio carries
+# over to a real stage closely enough for a believable body — the ghost drives the
+# target profile exactly regardless (see the class header), so the pick is costume,
+# not physics. <=0 pace (no target) or an unsolvable roster returns {} — the caller
+# spawns no ghost anyway when there is no profile, and the ghost then keeps the
+# neutral baseline body.
+#
+# `name_seed` picks the driver name (posmod, so any int is safe) — world.gd derives it
+# from the run's seed + stage index, making the name stable for a given stage of a
+# given run while varying across runs and stages.
+static func pick_rival(pace: float, name_seed: int) -> Dictionary:
+	if pace <= 0.0:
+		return {}
+	var ref_ms := CarPerformance.benchmark_ms(CarPerformance.REFERENCE_CAR)
+	if ref_ms <= 0:
+		return {}
+	var best_index := -1
+	var best_gap := INF
+	var cars := CarLibrary.all()
+	for i in cars.size():
+		# merged_meta({}, entry) resolves the entry's ENGINE id into the torque/redline
+		# keys the solver reads — the raw entry carries only the engine's id (see
+		# CarLibrary's header). Same shape CarStatBounds rates catalogue cars with.
+		var ms := CarPerformance.benchmark_ms(CarPerformance.merged_meta({}, cars[i]))
+		if ms <= 0:
+			continue  # unsolvable spec — never pick it, however well it would match
+		var gap := absf(float(ms) / float(ref_ms) - pace)
+		if gap < best_gap:
+			best_gap = gap
+			best_index = i
+	if best_index < 0:
+		return {}
+	return {"car_index": best_index, "name": RIVAL_NAMES[posmod(name_seed, RIVAL_NAMES.size())]}
+
 var _car: Node3D = null  # a Car (VehicleBody3D + car.gd), Node3D-typed like start_line.gd's _player -- ungualified so script-only members (kinematic_pose, freeze) resolve dynamically
+var _car_index := -1     # the CarLibrary entry the rival wears (pick_rival), -1 = neutral baseline
+var _rival_name := ""    # the driver name the start-line card shows (pick_rival), "" = unnamed
 # TrackProgress — read via origin_offset()/sample_at() only (duck-typed so a bare
 # test double works), never written. See features/rival-ghost.md for why the ghost
 # is posed in TrackProgress's arc-length space rather than the raw generated
@@ -37,8 +114,38 @@ var _car: Node3D = null  # a Car (VehicleBody3D + car.gd), Node3D-typed like sta
 var _track_progress: Node = null
 var _terrain: Node = null
 var _profile: Dictionary = {}   # {"s","t"} pace-scaled, from RunSession.stage_target_profile()
-var _t := 0.0
-var _looping := false
+# Translucent material overrides for every mesh under the ghost's car — retained so
+# the proximity fade can drive alpha per frame without re-walking the mesh tree.
+# Parallel to _ghost_meshes: _ghost_materials[i] is the override for _ghost_meshes[i],
+# which _write_alpha attaches and detaches as the alpha crosses full opacity.
+var _ghost_materials: Array[ShaderMaterial] = []
+var _ghost_meshes: Array[MeshInstance3D] = []
+# The driver-name Label3D floating over the ghost (fades with the car via _set_alpha).
+var _nametag: Label3D = null
+# The player's car, for the proximity fade/cull (set_player). Null in bare harnesses.
+var _player: Node3D = null
+# Re-entry gate after the start-line departure: the ghost stays hidden until the
+# profile's own distance at the run clock passes this (the player's clock "catches
+# up" to where the drive-off left the rival), so it doesn't pop back onto the line.
+# <= 0 means no gate (never departed / already re-entered).
+var _reentry_s := -1.0
+# Live-departure state (begin_live_departure .. end_live_departure): whether the
+# body is currently being simulated rather than posed, and the arc length it has
+# actually covered since the line — MEASURED off the body's own forward speed,
+# because a real car goes as fast as its engine and the surface allow rather than
+# at the profile's pace.
+var _live_depart := false
+var _live_s := 0.0
+# The gearbox-auto setting the ghost's engine had before the departure forced it on,
+# restored by end_live_departure (mirrors start_line.gd's _player_auto_was).
+var _live_auto_was := false
+
+
+# Point the proximity fade/visibility at the player's car (world.gd wires this after
+# setup). Without it the ghost renders at full configured opacity at any range —
+# fine for tests and bare harnesses, wrong for a run.
+func set_player(player: Node3D) -> void:
+	_player = player
 
 
 # --- Pure profile maths (testable with a synthetic {"s","t"} dict) ----------------
@@ -58,6 +165,7 @@ static func _bracket(arr: PackedFloat32Array, x: float) -> Array:
 	var lo := 0
 	var hi := n - 1
 	while hi - lo > 1:
+		@warning_ignore("integer_division")  # floor division is the point of the bisection
 		var mid := (lo + hi) / 2
 		if arr[mid] <= x:
 			lo = mid
@@ -71,9 +179,9 @@ static func _bracket(arr: PackedFloat32Array, x: float) -> Array:
 # Distance (m) along the track the rival has covered at race time `t` (s), per
 # `profile` ({"s","t"} from RegionRunMode.stage_target_profile). 0.0 for an
 # empty/degenerate profile.
-static func distance_at_time(profile: Dictionary, t: float) -> float:
-	var t_arr: PackedFloat32Array = profile.get("t", PackedFloat32Array())
-	var s_arr: PackedFloat32Array = profile.get("s", PackedFloat32Array())
+static func distance_at_time(pace: Dictionary, t: float) -> float:
+	var t_arr: PackedFloat32Array = pace.get("t", PackedFloat32Array())
+	var s_arr: PackedFloat32Array = pace.get("s", PackedFloat32Array())
 	if t_arr.is_empty() or s_arr.is_empty():
 		return 0.0
 	var b := _bracket(t_arr, t)
@@ -86,9 +194,9 @@ static func distance_at_time(profile: Dictionary, t: float) -> float:
 # empty/degenerate profile. This is the HUD delta's other half: world.gd/
 # stage_manager.gd call this at the PLAYER's live distance and compare the result
 # against the player's own elapsed stage time.
-static func time_at_distance(profile: Dictionary, s_m: float) -> float:
-	var s_arr: PackedFloat32Array = profile.get("s", PackedFloat32Array())
-	var t_arr: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+static func time_at_distance(pace: Dictionary, s_m: float) -> float:
+	var s_arr: PackedFloat32Array = pace.get("s", PackedFloat32Array())
+	var t_arr: PackedFloat32Array = pace.get("t", PackedFloat32Array())
 	if s_arr.is_empty() or t_arr.is_empty():
 		return 0.0
 	var b := _bracket(s_arr, s_m)
@@ -99,8 +207,8 @@ static func time_at_distance(profile: Dictionary, s_m: float) -> float:
 
 # Total profile duration (s) — the last sample of profile["t"], or 0.0 for an
 # empty/degenerate profile (no target, nothing to show).
-static func profile_duration(profile: Dictionary) -> float:
-	var t_arr: PackedFloat32Array = profile.get("t", PackedFloat32Array())
+static func profile_duration(pace: Dictionary) -> float:
+	var t_arr: PackedFloat32Array = pace.get("t", PackedFloat32Array())
 	return t_arr[t_arr.size() - 1] if not t_arr.is_empty() else 0.0
 
 
@@ -108,12 +216,18 @@ static func profile_duration(profile: Dictionary) -> float:
 
 # Build (once) and wire the ghost's Car. `track_progress` supplies the arc-length
 # space (origin_offset/sample_at) the ghost is posed in; `terrain` seats it on the
-# ground the same way start_line.gd seats the player. Safe to call again with a new
-# `profile` on a stage change — the Car is reused, not rebuilt.
-func setup(track_progress: Node, terrain: Node, profile: Dictionary) -> void:
+# ground the same way start_line.gd seats the player. `rival` (optional) is
+# pick_rival()'s output — the CarLibrary entry the rival wears and the driver name
+# the start-line card shows; omitted/empty keeps the neutral baseline body.
+# Safe to call again with a new `profile` on a stage change — the Car is reused,
+# not rebuilt, and re-wears the new stage's rival car if it differs.
+func setup(track_progress: Node, terrain: Node, pace: Dictionary, rival: Dictionary = {}) -> void:
 	_track_progress = track_progress
 	_terrain = terrain
-	_profile = profile
+	_profile = pace
+	_reentry_s = -1.0  # a fresh stage's ghost has not departed anywhere yet
+	_live_depart = false
+	_live_s = 0.0
 	if _car == null:
 		_car = Scenes.car_scene().instantiate() as Node3D
 		_car.kinematic_pose = true
@@ -129,7 +243,39 @@ func setup(track_progress: Node, terrain: Node, profile: Dictionary) -> void:
 		_car.collision_layer = 0
 		_car.collision_mask = 0
 		add_child(_car)
+		# EngineAudio._ready() plays unconditionally (kinematic_pose only stops car.gd's
+		# OWN _physics_process, not the audio node's), so without this the ghost's engine
+		# voice starts idling the moment it enters the tree and is heard whenever the
+		# player is close enough — audible for a car that should be silent (rebuild_audio
+		# is false below, so it never even gets reconfigured onto the rival's own engine).
+		# Same silencing every other display/queue prop uses (car_prop.gd).
+		if _car.has_method("silence_engine_audio"):
+			_car.silence_engine_audio()
+	_apply_rival_car(rival)
+	# AFTER _apply_rival_car: apply_car reshapes the meshes, so a translucent pass run
+	# before it would leave the new meshes solid.
+	_make_translucent(_car)
+	_build_nametag()
 	_car.visible = true
+
+
+# Reshape the ghost's body to a real CarLibrary entry (pick_rival's car_index) —
+# the same path the old start-line grid props used: isolate the config FIRST (apply_car
+# mutates a GameConfig; without isolation it would clobber the player car's engine/
+# gearbox in the shared Config.data), snapshot the live config VALUES around it as the
+# belt-and-braces net for any path that bypasses isolation, and skip the engine-voice
+# rebuild (a kinematic ghost never fires its engine). apply_car also relocates wheels
+# and resets the pose — destructive to a LIVE body, harmless here: the body is frozen,
+# zero-collision, and _pose_car_at_distance writes its transform every frame anyway.
+func _apply_rival_car(rival: Dictionary) -> void:
+	_car_index = int(rival.get("car_index", -1))
+	_rival_name = String(rival.get("name", ""))
+	if _car_index < 0 or not (_car is Node and _car.has_method("apply_car")):
+		return
+	var snapshot: Dictionary = Config.data.snapshot_values()
+	_car.use_isolated_config()
+	_car.apply_car(_car_index, false)
+	Config.data.restore_values(snapshot)
 
 
 func has_car() -> bool:
@@ -140,6 +286,38 @@ func car() -> Node3D:
 	return _car
 
 
+# --- Rival identity (the start-line reveal card reads these) --------------------
+
+# The profile as handed to setup(), for callers that need the target clock itself
+# (start_line.gd formats profile_duration as the time to beat).
+func profile() -> Dictionary:
+	return _profile
+
+
+# The stage target in whole ms — the profile's own last sample, which by construction
+# sits within float rounding of RegionRunMode.stage_target_ms (see its comment for why
+# the two are computed separately rather than one chaining the other's rounding).
+func target_ms() -> int:
+	return int(round(profile_duration(_profile) * 1000.0))
+
+
+# The rival's driver name from pick_rival, or "" when unnamed (no target / test stub).
+func rival_name() -> String:
+	return _rival_name
+
+
+# The CarLibrary entry index the rival wears (-1 = neutral baseline), and its display
+# name for the card — resolved fresh from the roster so a renamed entry shows renamed.
+func rival_car_index() -> int:
+	return _car_index
+
+
+func rival_car_name() -> String:
+	if _car_index < 0 or _car_index >= CarLibrary.all().size():
+		return ""
+	return String(CarLibrary.all()[_car_index].get("name", ""))
+
+
 # Whether this ghost has anything to show — an empty profile means the stage's
 # track was degenerate (no target, per RegionRunMode.stage_target_ms), so there is
 # no rival to pose.
@@ -147,12 +325,164 @@ func has_profile() -> bool:
 	return not _profile.is_empty() and profile_duration(_profile) > 0.0
 
 
-# Reset the ghost's own clock to the start of the profile. `looping` selects the
-# start-line reveal's fmod(t, duration) idle (advance()); a live run instead drives
-# the ghost from an EXTERNAL clock via pose_at(), which ignores this entirely.
-func reset(looping := false) -> void:
-	_t = 0.0
-	_looping = looping
+# Pose the ghost at a raw track distance (m from the origin sample) instead of a
+# profile race time — the start-line grid slot (ON the line, s=0) and the departure
+# animation are DISTANCES, not times on the profile. Same posing path and guards as
+# pose_at(), but renders SOLID: the start-line park and send-off frame the rival up
+# close as the subject of the shot — translucency is the run-time reading aid, and
+# a see-through rival on the grid just looks broken.
+func pose_at_distance(s_m: float) -> void:
+	if _live_depart:
+		return  # the physics server owns the body mid-departure; posing would fight it
+	if not is_instance_valid(_car) or not has_profile() or _track_progress == null:
+		return
+	_pose_car_at_distance(s_m)
+	_car.visible = true
+	_write_alpha(1.0)
+	if _nametag != null:
+		_nametag.modulate.a = 1.0
+		_nametag.outline_modulate.a = 1.0
+
+
+# The ghost's speed (m/s) at a track distance, straight off the profile's own
+# derivative — the pace the departure animation drives the car off the line at.
+# Falls back to a standing-start crawl pace when the profile is flat around `s_m`.
+func departure_speed(s_m: float) -> float:
+	var t_a := time_at_distance(_profile, s_m)
+	var t_b := time_at_distance(_profile, s_m + 1.0)
+	if t_b <= t_a:
+		return 5.0
+	return 1.0 / (t_b - t_a)
+
+
+# The start-line drive-off just ended at `s_m`: hide the ghost and arm the re-entry
+# gate pose_at() honours through the early run (see _reentry_s).
+func mark_departed_at(s_m: float) -> void:
+	# Whatever ended the drive-off (arrival, or the start line's safety timeout),
+	# the body goes back to the physics server's hands-off kinematic mode here —
+	# so no path can leave a live, throttle-pinned rival loose in the run.
+	end_live_departure()
+	_reentry_s = maxf(s_m, 0.0)
+	if is_instance_valid(_car):
+		_car.visible = false
+	_set_alpha(0.0)
+
+
+# --- Live departure: the one simulated moment (features/rival-ghost.md) -------
+
+# Hand the ghost's body to the physics server for the start-line send-off, from the
+# track distance it is parked at. From here until end_live_departure() the rival is a
+# REAL car: the drivetrain steps, the suspension loads and squats under the launch,
+# the wheels spin up and dig in, and the TireMarks / WheelParticles instances world.gd
+# wires onto this car start reading non-zero (both gate on `wheel.is_in_contact()`,
+# which a frozen body never satisfies — so they stay silent through the rest of the
+# ghost's posed life by construction, with no enable flag needed).
+#
+# This is the pre-pivot grid prop's setup (`start_line.gd::_spawn_prop`, deleted with
+# the field), one car wide: unfreeze, script it with `ai_controlled` + full throttle,
+# force the auto box so the throttle actually pulls away, and AXIS-LOCK it laterally
+# and in yaw so it tracks straight down the lead-in instead of needing a steering
+# controller. Same two locks the staged player wears (`start_line.gd::_stage_player`),
+# for the same reason and on the same world axes.
+func begin_live_departure(s_m: float) -> void:
+	if _live_depart or not is_instance_valid(_car) or not has_profile() or _track_progress == null:
+		return
+	# Pose it on the slot one last time WHILE still kinematic, so the simulation starts
+	# from exactly the pose the reveal shot framed...
+	_pose_car_at_distance(maxf(s_m, 0.0))
+	var launch: Transform3D = _car.global_transform
+	_live_s = maxf(s_m, 0.0)
+	_live_depart = true
+	_car.kinematic_pose = false
+	_car.freeze = false
+	_car.collision_mask = DEPART_COLLISION_MASK
+	# ...then re-place it through car.gd's queued-teleport path: a bare transform write
+	# on a body the physics server has just taken back is discarded (see car.gd::reset_to),
+	# which is how the pre-pivot props all ended up stacked at the origin.
+	if _car.has_method("reset_to"):
+		_car.reset_to(launch)
+	# car.gd resolves its drivetrain terrain from a SIBLING (_resolve_terrain), and the
+	# ghost's car is parented to THIS node rather than the world — so it finds none and
+	# every surface read comes back flat. Wire the terrain the ghost was set up with
+	# directly: without it the tyres sit on base mu and WheelParticles bails outright
+	# (its emit returns early on a null terrain), which is exactly the thrown-up dirt
+	# the send-off exists to show.
+	var dt: Variant = _car.get("drivetrain")
+	if dt != null:
+		if _terrain != null and _terrain.has_method("surface_at"):
+			dt.terrain = _terrain
+		if dt.engine != null:
+			_live_auto_was = dt.engine.auto
+			dt.engine.auto = true  # auto box, so throttle alone pulls it off the line
+	# Scripted, not driven. The profile no longer sets the pace here — the car does.
+	_car.ai_controlled = true
+	_car.ai_handbrake = false
+	_car.ai_throttle = 1.0
+	_car.ai_steer = 0.0
+	_car.axis_lock_linear_x = true
+	_car.axis_lock_angular_y = true
+
+
+# Advance one frame of the live drive-off and return the arc length covered since the
+# line, for the caller's "properly away" test. No-op (returning the last distance)
+# when no departure is live, so a caller can drive this unconditionally.
+func drive_departure(delta: float) -> float:
+	if not _live_depart or not is_instance_valid(_car):
+		return _live_s
+	var forward: Vector3 = -_car.global_transform.basis.z
+	# MEASURED, not integrated off the profile: a wheelspinning launch covers less
+	# ground than its pace curve says it should, and that difference IS the shot.
+	_live_s += maxf(_car.linear_velocity.dot(forward), 0.0) * delta
+	return _live_s
+
+
+# Whether the body is currently simulated rather than posed.
+func is_live_departing() -> bool:
+	return _live_depart
+
+
+# Put the body back in the physics server's hands-off kinematic mode — the posed ghost
+# the run reads its HUD delta off, and full collision isolation. Idempotent; called by
+# mark_departed_at, so no normal path has to remember it.
+func end_live_departure() -> void:
+	if not _live_depart:
+		return
+	_live_depart = false
+	if not is_instance_valid(_car):
+		return
+	_car.ai_controlled = false
+	_car.ai_throttle = 0.0
+	_car.ai_steer = 0.0
+	_car.ai_handbrake = false
+	_car.axis_lock_linear_x = false
+	_car.axis_lock_angular_y = false
+	var dt: Variant = _car.get("drivetrain")
+	if dt != null and dt.engine != null:
+		dt.engine.auto = _live_auto_was
+	_car.linear_velocity = Vector3.ZERO
+	_car.angular_velocity = Vector3.ZERO
+	_car.kinematic_pose = true
+	_car.freeze = true
+	_car.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	_car.collision_layer = 0
+	_car.collision_mask = 0
+
+
+# The rival's target time is up: pose it one last time at `finish_s` — the track's
+# own finish distance (StageManager passes finish_offset() - origin_offset()), which
+# can sit a hair past the profile's own last "s" sample (see distance_at_time's
+# clamp) — so the car visibly reaches the line rather than parking short of it, then
+# hide it so it doesn't linger on the track for the rest of the run. `finish_s <= 0.0`
+# (no usable span) skips the extra pose and just hides. No-op mid-departure — the
+# physics server owns the body then, same guard as pose_at/pose_at_distance.
+func finish_and_hide(finish_s: float) -> void:
+	if _live_depart:
+		return
+	if finish_s > 0.0 and is_instance_valid(_car) and has_profile() and _track_progress != null:
+		_pose_car_at_distance(finish_s)
+		_apply_visibility(_car.global_position)
+	hide_ghost()
+	_set_alpha(0.0)
 
 
 func hide_ghost() -> void:
@@ -164,28 +494,36 @@ func free_ghost() -> void:
 	if is_instance_valid(_car):
 		_car.queue_free()
 	_car = null
+	_nametag = null  # a child of the car; freed with it
+	_ghost_materials.clear()
+	_ghost_meshes.clear()
+	_reentry_s = -1.0
+	_live_depart = false
+	_live_s = 0.0
 
-
-# Advance the ghost's OWN clock by `delta` and repose it — the start-line idle
-# (looping) and, if a caller chooses to keep driving it that way, a live run
-# (un-looped: it holds at the finish once `t` passes the profile's duration, rather
-# than looping mid-run). No-op with no car or nothing to show.
-func advance(delta: float) -> void:
-	if not is_instance_valid(_car) or not has_profile():
-		return
-	_t += delta
-	if _looping:
-		_t = fmod(_t, profile_duration(_profile))
-	pose_at(_t)
 
 
 # Pose the ghost at an EXTERNAL race time (StageManager.elapsed(), during RUNNING) —
-# the counterpart to advance()'s self-driven clock. No-op with no car, no profile,
-# or no track_progress (a bare test/dev harness with no live track).
+# the counterpart to pose_at_distance()'s raw-distance form (the start-line grid
+# slot). No-op with no car, no profile, or no track_progress (a bare test/dev
+# harness with no live track). Honours the post-departure re-entry gate: until the
+# profile's own distance at `t` passes where the drive-off left it, the ghost stays
+# hidden (see _reentry_s).
 func pose_at(t: float) -> void:
+	if _live_depart:
+		return  # as pose_at_distance: never pose a body the physics server is simulating
 	if not is_instance_valid(_car) or not has_profile() or _track_progress == null:
 		return
-	_pose_car_at_distance(distance_at_time(_profile, t))
+	var s := distance_at_time(_profile, t)
+	if _reentry_s > 0.0:
+		if s < _reentry_s:
+			if _car.visible:
+				_car.visible = false
+				_set_alpha(0.0)
+			return
+		_reentry_s = -1.0  # caught up — normal posing from here on
+	_pose_car_at_distance(s)
+	_apply_visibility(_car.global_position)
 
 
 func _pose_car_at_distance(s: float) -> void:
@@ -194,19 +532,247 @@ func _pose_car_at_distance(s: float) -> void:
 	var origin: float = _track_progress.origin_offset()
 	var here: Vector2 = _track_progress.sample_at(origin + s)
 	var ahead: Vector2 = _track_progress.sample_at(origin + s + TANGENT_EPS_M)
-	var fwd := Vector3(ahead.x - here.x, 0.0, ahead.y - here.y)
-	if fwd.length() < 0.001:
-		fwd = -_car.global_transform.basis.z
-	var basis := Basis.looking_at(fwd, Vector3.UP)
+	var speed := departure_speed(s)
+	var basis := _basis_from(ahead - here, _slip_at(s, speed), here)
 	var pos := Vector3(here.x, _ground_y(here.x, here.y), here.y)
-	# Nudge sideways off the centerline, purely cosmetic (see GHOST_LATERAL_OFFSET_M) —
-	# applied in the car's own right vector so it stays a consistent lane-width offset
-	# through corners rather than a fixed world-space nudge.
-	pos += basis.x * GHOST_LATERAL_OFFSET_M
 	_car.global_transform = Transform3D(basis, pos)
+	_drive_wheels(speed)
+	# Droop the wheel Visuals onto the road the body was just seated against — a
+	# frozen body's solver never runs, so without this the wheels sit tucked up in
+	# the arches. ONE Vector3 argument: the callable is invoked as ground_at.call(
+	# wheel.global_position), and a two-float lambda parses fine and then fails at
+	# runtime the instant the ghost is first posed.
+	if _car.has_method("settle_wheels_to_ground"):
+		_car.settle_wheels_to_ground(func(p: Vector3) -> float:
+			return _ground_y(p.x, p.z))
 
 
 func _ground_y(x: float, z: float) -> float:
 	if _terrain != null and _terrain.has_method("height_at"):
 		return _terrain.height_at(x, z) + Config.data.start_spawn_clearance
 	return Config.data.start_spawn_clearance
+
+
+# --- Ghost display (transparency, slope, slip, wheels — features/rival-ghost.md) ---
+
+# Build the translucent override for every mesh under the ghost's car (and let
+# _write_alpha decide whether it is worn — at full alpha it is not). The car's own
+# shader (ps1_models_lit.gdshader) never writes ALPHA, so
+# GeometryInstance3D.transparency is a no-op on it — a real material override is the
+# only thing that makes the ghost see-through.
+func _make_translucent(c: Node) -> void:
+	var alpha: float = clampf(Config.data.rival_ghost_opacity, 0.0, 1.0)
+	_ghost_materials.clear()
+	_ghost_meshes.clear()
+	for mesh in _mesh_instances(c):
+		var mat := _ghost_material(mesh.get_active_material(0))
+		# Retained so the proximity fade can drive alpha per frame without re-walking
+		# the mesh tree or rebuilding materials. _write_alpha does the attaching:
+		# at full alpha the override comes OFF entirely (see there).
+		_ghost_materials.append(mat)
+		_ghost_meshes.append(mesh)
+	_write_alpha(alpha)
+
+
+func _mesh_instances(node: Node) -> Array:
+	var out: Array = []
+	if node is MeshInstance3D:
+		out.append(node)
+	for child in node.get_children():
+		out.append_array(_mesh_instances(child))
+	return out
+
+
+# A translucent stand-in for `source`, carrying its texture/tint AND its fake
+# lighting across (shaders/ps1_models_ghost.gdshader). Carrying the light block over
+# is the point: with a plain unshaded material the rival lost the car's fake sun and
+# read as a flat, much lighter car than the player's parked beside it.
+func _ghost_material(source: Material) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/ps1_models_ghost.gdshader")
+	mat.set_shader_parameter("albedo_color", Color(1.0, 1.0, 1.0, 1.0))
+	if source is ShaderMaterial:
+		var sm := source as ShaderMaterial
+		# Surface, then the fake-lighting block — copied from the SOURCE rather than
+		# re-derived from Config, so the ghost inherits whatever weather-dimmed values
+		# car.gd last pushed onto the real body.
+		for key in ["albedo_texture", "albedo_color", "texture_tile",
+				"light_amount", "light_dir", "sun_color", "sky_color", "ground_color"]:
+			var v = sm.get_shader_parameter(key)
+			if v != null:
+				mat.set_shader_parameter(key, v)
+	elif source is BaseMaterial3D:
+		# No shader to copy a light block from (a plain material somewhere under the
+		# body) — light it from the live config, same values apply_car_light pushes.
+		var bm := source as BaseMaterial3D
+		if bm.albedo_texture != null:
+			mat.set_shader_parameter("albedo_texture", bm.albedo_texture)
+		mat.set_shader_parameter("albedo_color", bm.albedo_color)
+		Config.data.apply_car_light(mat)
+	else:
+		Config.data.apply_car_light(mat)
+	return mat
+
+
+# Write the ghost materials' effective alpha AND decide whether the ghost wears them
+# at all. The subtlety this exists for: a blended material at alpha 1.0 with no depth
+# writes is still a TRANSPARENT-queue draw, so a single-mesh body whose cab overlaps
+# its own truck bed (the Acty) rendered the bed THROUGH the cab on the start line,
+# exactly as if its normals were inverted. At full alpha the overrides therefore come
+# OFF and the body renders with its OWN materials — opaque, depth-writing, and lit by
+# the car's own ps1_models_lit shader, which is exactly what the player's car wears.
+# Below full alpha the overrides go back on: the blended, depth-write-free ghost look
+# (the overlapping-panels tradeoff that mode was chosen for), still fake-lit by
+# ps1_models_ghost so the rival sits in the same light as the player. The overrides
+# only change when the value crosses the boundary — the proximity fade writes the
+# float every frame, this attaches/detaches at most on the crossing.
+func _write_alpha(a: float) -> void:
+	var opaque := a >= 0.999
+	for i in _ghost_materials.size():
+		var mat: ShaderMaterial = _ghost_materials[i]
+		mat.set_shader_parameter("ghost_alpha", a)
+		var mesh: MeshInstance3D = _ghost_meshes[i] if i < _ghost_meshes.size() else null
+		if mesh == null or not is_instance_valid(mesh):
+			continue
+		var want: Material = null if opaque else mat
+		if mesh.material_override != want:
+			mesh.material_override = want
+
+
+# Scale every ghost material's alpha by `factor` (0 = invisible, 1 = configured
+# opacity).
+func _set_alpha(factor: float) -> void:
+	var base: float = clampf(Config.data.rival_ghost_opacity, 0.0, 1.0)
+	_write_alpha(base * clampf(factor, 0.0, 1.0))
+	if _nametag != null:
+		# The tag fades WITH the car. Left opaque it would hang in the air over an
+		# invisible ghost as the player overlaps it.
+		_nametag.modulate.a = clampf(factor, 0.0, 1.0)
+		_nametag.outline_modulate.a = clampf(factor, 0.0, 1.0)
+
+
+# Cull by distance and fade OUT as the player closes in: at zero separation the
+# ghost is fully transparent, reaching full opacity at rival_ghost_fade_near_m — a
+# solid-looking car you are overlapping fills the screen and hides the road.
+# Deliberately NOT gated on Platform.is_headless(): both `visible` and the material
+# alpha are plain node state, so keeping them assertable under the (headless) test
+# runner is what features/testing.md asks for.
+func _apply_visibility(where: Vector3) -> void:
+	if _player == null:
+		_car.visible = true
+		_set_alpha(1.0)
+		return
+	var dist: float = _player.global_position.distance_to(where)
+	_car.visible = dist <= Config.data.rival_ghost_visible_m
+	var fade_near: float = Config.data.rival_ghost_fade_near_m
+	var near := 1.0 if fade_near <= 0.0 else clampf(dist / fade_near, 0.0, 1.0)
+	_set_alpha(near)
+
+
+# The ghost's body basis at a track point: forward from the centerline tangent,
+# up from the road's own surface normal (so it pitches and rolls with the road —
+# a world-up ghost floats nose-level on every climb), plus a slip yaw about the
+# SURFACE normal so it slides nose-into corners like a rally car.
+func _basis_from(forward: Vector2, slip: float, at: Vector2) -> Basis:
+	var flat := Vector3(forward.x, 0.0, forward.y)
+	if flat.length() < 0.001:
+		flat = -_car.global_transform.basis.z
+	flat = flat.normalized()
+	var up := _surface_normal(at, Vector2(flat.x, flat.z))
+	# Project the travel direction onto the surface plane so forward and up stay
+	# perpendicular (looking_at would otherwise skew the basis on a steep slope).
+	var fwd := (flat - up * flat.dot(up))
+	if fwd.length() < 0.001:
+		fwd = flat
+	var aimed := Basis.looking_at(fwd.normalized(), up)
+	# Yaw about the SURFACE normal, not world up, so slip on a cambered corner still
+	# keeps the wheels on the road.
+	#
+	# NEGATED, and this is not a fudge. `slip` is derived from curvature measured in
+	# the 2D curve space, which is Vector2(world_x, world_z) — so its angles are
+	# atan2(z, x). A rotation of Basis(UP, +a) sends +Z toward +X, which DECREASES
+	# that 2D angle. The two conventions therefore run opposite, and feeding the 2D
+	# sign straight in yaws the car out of the corner instead of into it: a rally
+	# car slides nose-INSIDE, and the ghost must not do the opposite at every bend.
+	return Basis(up, -slip) * aimed
+
+
+# The road's surface normal at a track point, from forward/lateral height probes.
+func _surface_normal(at: Vector2, forward: Vector2) -> Vector3:
+	if _terrain == null or not _terrain.has_method("height_at"):
+		return Vector3.UP
+	var fwd_n := forward.normalized()
+	var right := Vector2(fwd_n.y, -fwd_n.x)
+	var d := NORMAL_PROBE_M
+	var f_ahead: float = _terrain.height_at(at.x + fwd_n.x * d, at.y + fwd_n.y * d)
+	var f_back: float = _terrain.height_at(at.x - fwd_n.x * d, at.y - fwd_n.y * d)
+	var r_pos: float = _terrain.height_at(at.x + right.x * d, at.y + right.y * d)
+	var r_neg: float = _terrain.height_at(at.x - right.x * d, at.y - right.y * d)
+	# Tangents spanning 2d in each direction.
+	var t_f := Vector3(fwd_n.x * 2.0 * d, f_ahead - f_back, fwd_n.y * 2.0 * d)
+	var t_r := Vector3(right.x * 2.0 * d, r_pos - r_neg, right.y * 2.0 * d)
+	var n := t_r.cross(t_f)
+	if n.length() < 0.0001:
+		return Vector3.UP
+	n = n.normalized()
+	return n if n.y > 0.0 else -n
+
+
+# The slip yaw (rad) at a track distance: the centripetal demand of the profile's
+# own speed through the centerline's curvature there, scaled/clamped by config. A
+# physically-motivated stand-in for the deleted pace solver's optimum slip angle:
+# lateral demand v²·κ against gravity, atan'd into an angle the body can wear.
+func _slip_at(s: float, speed: float) -> float:
+	var origin: float = _track_progress.origin_offset()
+	var back: Vector2 = _track_progress.sample_at(origin + s - SLIP_EPS_M)
+	var here: Vector2 = _track_progress.sample_at(origin + s)
+	var ahead: Vector2 = _track_progress.sample_at(origin + s + SLIP_EPS_M)
+	var t0 := here - back
+	var t1 := ahead - here
+	if t0.length() < 0.001 or t1.length() < 0.001:
+		return 0.0
+	var cross: float = t0.x * t1.y - t0.y * t1.x
+	var curvature: float = cross / (t0.length() * t1.length())
+	curvature /= maxf((t0.length() + t1.length()) * 0.5, 0.001)
+	var demand := speed * speed * absf(curvature) / 9.8
+	var slip := atan(demand) * Config.data.rival_ghost_slip_scale
+	var max_rad := deg_to_rad(clampf(Config.data.rival_ghost_max_slip_deg, 0.0, 90.0))
+	return clampf(slip, 0.0, max_rad) * signf(curvature)
+
+
+# Fill drivetrain.replay_omega from the profile speed so car.gd's kinematic_pose
+# branch spins the wheel Visuals — without it the ghost slides down the road on four
+# dead wheels (drivetrain.step() never runs in this mode).
+func _drive_wheels(speed: float) -> void:
+	if not ("drivetrain" in _car) or _car.drivetrain == null:
+		return
+	var radius: float = Config.data.wheel_radius
+	if "config" in _car and _car.config != null:
+		radius = _car.config.wheel_radius
+	if radius <= 0.0:
+		return
+	var omega := speed / radius
+	for wheel in _car.drivetrain.visuals:
+		_car.drivetrain.replay_omega[wheel] = omega
+
+
+# The driver-name tag floating over the ghost (rival_ghost_nametag_* keys). A child
+# of the car so the per-frame transform write carries it along; billboards so it
+# always faces the camera. Rebuilt on setup so a stage's fresh rival renames it.
+func _build_nametag() -> void:
+	if _nametag != null and is_instance_valid(_nametag):
+		_nametag.queue_free()
+		_nametag = null
+	var cfg := Config.data
+	if not cfg.rival_ghost_nametag_enabled or _rival_name == "":
+		return
+	_nametag = Label3D.new()
+	_nametag.text = _rival_name
+	_nametag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_nametag.no_depth_test = true
+	_nametag.font_size = int(round(cfg.rival_ghost_nametag_size_m * 100.0))
+	_nametag.outline_size = 8
+	_nametag.position = Vector3(0.0, cfg.rival_ghost_nametag_height_m, 0.0)
+	_nametag.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	if is_instance_valid(_car):
+		_car.add_child(_nametag)

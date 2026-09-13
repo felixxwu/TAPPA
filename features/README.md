@@ -8,9 +8,9 @@ oriented before diving into source.
 `rally` is a small PS1-aesthetic **rally roguelike** built in **Godot 4.6**
 (GL Compatibility renderer). You pick a region and drive eight stages back to back
 on one car; the per-stage target time is the only fail state. Money banked from
-stages you clear buys cars, permanent perks and boost levels between runs, and a
+stages you clear buys cars, permanent skills and boost levels between runs, and a
 failed run keeps none of its in-run boosts — only the lifetime counters that gate
-the perks.
+the skills.
 
 > **New to this codebase, or last saw it before September 2026?** Read
 > [`../PIVOT-CHANGES.md`](../PIVOT-CHANGES.md) first. The game was a rally *career*
@@ -58,9 +58,9 @@ the perks.
 | [configuration.md](configuration.md) | `GameConfig` resource — every tunable, the `Config` autoload |
 | [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, rally completion) at `user://profile.json` |
 | [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
-| [rally-roster.md](rally-roster.md) | `RallyLibrary` — the curated rally list + pure functions (eligibility, QSS-based PAR times via `LapTimeModel`) |
+| [region-stage-library.md](region-stage-library.md) | `RegionStageLibrary` — the authored 8-slots-×-3-candidates stage grid per region, `RegionStagePool`'s slot-pick draw, `StageFields`'s pure field getters (replaces the deleted `RallyLibrary`/rally-pool model) |
 | [car-performance.md](car-performance.md) | `CarPerformance` — a car's speed as ONE number (Forza-style, higher = faster), derived from a simulated lap of the fixed `BenchmarkTrack` rather than a formula over stats; the `benchmark_*` knobs, the reference-car anchor, and the downforce / drive-mode solver enrichment behind it |
-| [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm / fog / storm / snowfall / night) — the `WeatherLibrary` table that is the single source of truth for every condition, `RallyLibrary.event_weather`, the `GameConfig` blocks it names, the `StageConfig.apply_event_config` funnel that seats it, and the fake headlight cone night re-lights the world with (authored on five stages, one per region) |
+| [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm / fog / storm / snowfall / night) — the `WeatherLibrary` table that is the single source of truth for every condition, `StageFields.event_weather`, the `GameConfig` blocks it names, the `StageConfig.apply_event_config` funnel that seats it, and the fake headlight cone night re-lights the world with (authored on five stages, one per region) |
 | [snow-region.md](snow-region.md) | The Alps — the map's NE corner. The first region to influence HANDLING as well as look: per-surface grip overrides, deep snow you sink into and bog down in, frozen lakes you drive on, snowfall, and the six rallies (two carrying re-sited part unlocks) |
 | [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, per-corner waterlines, the unconditional sky re-seed that stops one region's sky leaking into the next stage. Regions gate NOTHING any more — look + `water_level` only |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset. **Per-stage distance, NOT career progress** — run state lives in [save-persistence.md](save-persistence.md) |
@@ -68,7 +68,7 @@ the perks.
 | [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) + the tuning-lift UI |
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
-| [engine-swap.md](engine-swap.md) | `EngineSwap` — free/unlimited/reversible engine exchange between owned cars — the only gate is a one-time meta-shop purchase; neither a token nor car health blocks a swap — engine mass + weight-distribution recompute, and the engine-detune power knob (a slider in the upgrades menu) |
+| [engine-swap.md](engine-swap.md) | The Engine Swap as a genuine, deterministic MID-RUN engine swap (`RunSession._pool_engine_swap_ids`' next-most-powerful `EngineLibrary` engine, fielded via the existing `EngineSwap` + `car.gd::_apply_engine_swap` pipeline), plus the legacy owned-car `swapped_engine` read path and the engine-detune power knob |
 | [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeRunMode` (the challenge half of `RunSession`: eligibility, period outcome, placement reward), the entry-point screen |
 | [region-runs.md](region-runs.md) | The roguelike region run — `RunSession` + `RunMode`, `RegionStagePool`, `BoostLibrary` and the repair-vs-boost between-stage pick, the fixed reference-car timer, run-over on a missed target, money banked per stage clear |
 | [collectables.md](collectables.md) | Stage coins — `CoinLayout` (off-the-racing-line, seeded placement), `CoinField` (the disc mesh + pickup proximity query), the HUD counter, the pickup chime, and how coin money banks with the stage payout at stage clear |
@@ -102,13 +102,16 @@ the perks.
 | [wheel-dust.md](wheel-dust.md) | `WheelParticles` — cheap surface debris flung from the driven wheels under wheelspin (one CPU pool + MultiMesh, ring-buffered; per-particle colour/size/roll picks gravel clods, grass blades, or nothing on tarmac) |
 | [engine-smoke.md](engine-smoke.md) | `EngineSmoke` — grey smoke puffed from the bonnet on each damage misfire (own small CPU pool + MultiMesh, grows & fades) |
 | [exhaust-flames.md](exhaust-flames.md) | `ExhaustFlames` — backfire flame from each exhaust pipe on a rev-limiter bang and while nitrous delivers; plus the exhaust lab dev scene for positioning the pipes |
-| [camera.md](camera.md) | Chase camera follow behavior |
+| [camera.md](camera.md) | Camera modes: chase follow, bonnet hood, replay cinematic, and photo mode free-fly |
 | [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the live "player vs rival pace" delta ([rival-ghost.md](rival-ghost.md)); the old permanent live-standings readout (`LiveStandings`) is deleted |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding, the pause menu, modals (vertical slice; full diegetic UI deferred) |
 | [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row, the diegetic-HQ spatial regime. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
+| [card-carousel.md](card-carousel.md) | **`CardCarousel`** — the horizontal, side-scrolling card widget that replaced the vertical row list on the hub's MAIN/REGION/CAR/SHOP/SKILLS pages. Cards, drag/snap, tap-to-select-vs-confirm, and the `menu_nav_handles_side` seam into `MenuNav` |
 | [hub-shell.md](hub-shell.md) | The flat main scene (`HubShell` + `hub.tscn`) — main / region / car / run-summary pages on `MenuPage` + `MenuNav`, and decision 48's abandon-run confirm. Replaces the deleted diegetic 3D hub |
-| [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure; the ledger perk unlock gates read |
-| [perks.md](perks.md) | The perk catalogue (`PerkLibrary`) and its locked → purchasable → owned → equipped state machine — money-bought, gated on lifetime stats, capped by `GameConfig.perk_max_equipped`; effects ride the `UpgradeLibrary.EFFECTS` funnel via the fielded car's `boosts` list |
+| [menu-showcase.md](menu-showcase.md) | **`MenuShowcase`/`MenuShowcaseCamera`** — the live 3D scenic background behind the hub's pages: one fixed-seed track sliced into six region-themed segments, a border-safe camera rotation, and a per-region weather cycle. Foliage and the mobile LOD-tier cap are still open (the spec is deleted) |
+| [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure; the ledger skill unlock gates read |
+| [car-stats.md](car-stats.md) | `CarStats`/`CarStatsPanel` — the plain/comparison car spec sheet (absolute figures, not `StatBar`'s roster-relative bar), why it reads `grip_meta` not `effective_meta`, `preview`'s no-mutation guarantee; `SkillProgressPanel` — the between-stage skill-gate read-out sitting right after it |
+| [skills.md](skills.md) | The skill catalogue (`SkillLibrary`) and its locked → purchasable → owned → equipped state machine — money-bought, gated on lifetime stats, capped by `GameConfig.skill_max_equipped`; effects ride the `UpgradeLibrary.EFFECTS` funnel via the fielded car's `boosts` list |
 | [settings.md](settings.md) | **Adding or changing a persisted setting** — the one-module-per-setting apply-owner pattern (`*_setting.gd`), boot re-application, the shared `SettingsMenu` used by both the title screen and the pause menu, and the developer-only pages |
 | [modals.md](modals.md) | **Modals and confirms** — `ConfirmPopup`, the one-modal-at-a-time `MODAL_GROUP`, the scrolled-body / pinned-exit modal page shape, `MenuPage.open_modal`, and `MenuNav.input_blocked` |
 | [world-panel.md](world-panel.md) | `WorldPanel` — menus hosted in the 3D world, welded off-square to an anchor (4 HQ screens; shipped ON) |
@@ -137,9 +140,8 @@ the perks.
 | Corner shapes | `scripts/corner_library.gd`, `scripts/corner_catalog.gd`, `corner_catalog.tscn` |
 | Exhaust flames | `scripts/exhaust_flames.gd`, `scripts/exhaust_lab.gd`, `exhaust_lab.tscn` |
 | Track generation | `scripts/track_generator.gd` |
+| Jumps / road vertical profile | `scripts/track_profile.gd` (`TrackProfile` — the crest offset keyed on arc distance, the launch-speed formula), the `Jump` entry in `scripts/corner_library.gd`, the `road_heights` seam in `scripts/terrain_manager.gd` — see [track.md](track.md) → *Jumps* |
 | Track turn cache | `scripts/track_cache.gd` (`TrackCache`), `data/track_cache.json`, `tools/generate_track_cache.gd`, `tools/verify_track_cache.gd`, `cache_tracks.sh` |
-| Eligibility report (rally x car authoring check) | `tools/report_eligibility.gd`/`.tscn`, `report_eligibility.sh` — see [rally-roster.md](rally-roster.md) |
-| Eligibility matrix for pin fitting (rally x car, `source_hash`-guarded) | `tools/export_eligibility.gd`, `export_eligibility.sh`, `data/eligibility.json`, consumed by `tools/fit_map_pins.py` |
 | Benchmark fidelity calibration (C1 — does the rating rank cars like real stages?) | `tools/calibrate_benchmark.gd`/`.tscn`, `calibrate_benchmark.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
 | Pace-floor calibration (C2 — what `PACE_MIN_FLOOR` can and cannot be derived from) | `tools/calibrate_pace_floor.gd`/`.tscn`, `calibrate_pace_floor.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
 | Cache freshness hook | `.githooks/pre-commit` (regenerates + stages stale `data/*.json` lockfiles on commit), `install_hooks.sh` (one-time `core.hooksPath` setup) — see [track.md](track.md) → *Turn cache* |
@@ -154,10 +156,10 @@ the perks.
 | Pacenote strip | `scripts/pacenotes.gd` (`Pacenotes` — note list, arrow keys, progress fractions), `scripts/hud.gd` (the strip), `scripts/stage_manager.gd` (advance) |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
-| Rally roster | `scripts/rally_library.gd` (`RallyLibrary` — rallies, eligibility, opponents, progress), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) |
+| Region stage library | `scripts/region_stage_library.gd` (`RegionStageLibrary` — the authored 8×3 stage grid), `scripts/stage_fields.gd` (`StageFields` — field getters), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) — see [region-stage-library.md](region-stage-library.md) |
 | Car performance rating | `scripts/car_performance.gd` (`CarPerformance` — rating, benchmark time, `merged_meta`), `scripts/benchmark_track.gd` (`BenchmarkTrack` — the fixed test track) |
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the linear unlock order) |
-| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`, `effective_meta`/`grip_meta`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts), `scripts/perk_library.gd` (`PerkLibrary` — the permanent perks) |
+| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`, `effective_meta`/`grip_meta`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts), `scripts/skill_library.gd` (`SkillLibrary` — the permanent skills) |
 | Roster-wide stat scale | `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max), `scripts/stat_bar.gd` (`StatBar` — segmented bar widget drawn against it) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the start line) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |
@@ -174,6 +176,7 @@ the perks.
 | Scene wiring | `scripts/world.gd`, `main.tscn` |
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard_opaque.gdshader` |
 | Headlight cone (night + storm) | `shaders/headlight_cone.gdshaderinc` (the shared `global uniform` block + `headlight_lit()`, included by the five lit shaders), `scripts/headlight_cone.gd` (`HeadlightCone` — `amount` / `has_headlights` / `params` / `push` / `reset`), the weather table's `headlights` key (`scripts/weather_library.gd` → `headlight_amount`), `project.godot` `[shader_globals]`, `scripts/world.gd` (`_process` / `_exit_tree`) — see [rendering.md](rendering.md), [weather.md](weather.md) |
+| Tree wind sway | `shaders/wind_sway.gdshaderinc` (the shared `global uniform` block + `wind_sway_offset()`, included by `billboard_opaque`), `scripts/wind_sway.gd` (`WindSway` — `strength` / `direction_deg` / `params` / `push` / `base` / `reset`), the weather table's `foliage_wind` key (`scripts/weather_library.gd`), `project.godot` `[shader_globals]`, `scripts/world.gd` (`_apply_weather_look` / `_exit_tree`), `scripts/foliage.gd` (`spawn_trees` seeds the base) — see [trees.md](trees.md), [weather.md](weather.md) |
 | Weather dimming of fake-lit materials | `scripts/game_config.gd` (`weather_lit` — the rule; `apply_car_light` / `apply_foliage_light`; the runtime `weather_sun_mult`), `scripts/world.gd` (`_apply_overcast_look` seeds it, `_apply_weather_look` re-seeds 1.0, `_exit_tree` resets it), and the callers `scripts/billboard_field.gd`, `scripts/lake_field.gd`, `scripts/sign_field.gd` — see [weather.md](weather.md), [rendering.md](rendering.md) |
 | Sky panorama | `scripts/world.gd` (`_apply_region_look` seeds it unconditionally from the region look or `GameConfig.default_sky_panorama`; `_apply_weather_look` lets a condition override it — only night does, via `night_sky_panorama` / `textures/sky-night.jpg`), `main.tscn` (`WorldEnvironment`'s shared `PanoramaSkyMaterial`) — see [regions.md](regions.md), [weather.md](weather.md) |
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/perf_overlay.gd` |

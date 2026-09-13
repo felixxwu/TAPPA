@@ -371,7 +371,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## event's authored `weather` field — the ONE funnel into the live config, so a new
 ## scene-entry site can't route weather around it. Session-less callers (free roam,
 ## benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
-@export var weather := RallyLibrary.WEATHER_DRY
+@export var weather := StageFields.WEATHER_DRY
 # The active condition's sun_energy_mult, seated by world.gd::_apply_overcast_look
 # each stage boot (and reset to 1.0 there when the condition has no look block).
 # NOT exported and NOT authored: it is a derived runtime value, mirroring onto the
@@ -514,9 +514,9 @@ var weather_sun_mult := 1.0
 # so the engine idling never creeps the car.
 @export var clutch_engage_speed := 4.0
 @export var shift_time := 0.25  # seconds of open clutch + throttle cut per shift
-## Default transmission mode: true = automatic. Only the DEFAULT — the player's
-## Settings -> Gearbox choice (SettingsMenu.GEARBOX_SETTING_KEY) wins once set, and
-## car.gd mirrors it onto the live engine each tick.
+## Default transmission mode: true = automatic. The transmission is always
+## automatic now (SettingsMenu.gearbox_auto() always returns true); this field
+## is unused pending a broader cleanup of the manual-shift engine code.
 @export var auto_gearbox := false
 ## Automatic-mode upshift point, as a fraction of redline. Each gear upshifts at
 ## the ground speed where it reaches this fraction of redline rpm. Must stay
@@ -775,9 +775,9 @@ func has_nitrous() -> bool:
 ## as the countdown starts. Runs inside an active RunSession stage; a plain
 ## dev boot of main.tscn skips straight to the countdown. Off restores that old
 ## behaviour. The per-opponent reveal this sequence used to run between the MENU
-## and the fade — a rival queue rolling up, launching one at a time — is deleted
-## along with the rival field (todo/roguelike-pivot.md decision 5; decision 29
-## keeps the MENU).
+## and the fade — a rival queue rolling up, launching one at a time — died with the
+## rival field (todo/roguelike-pivot.md decision 5); what runs today is its
+## one-rival revival: the ghost parked on the grid, one automatic fly, then the card.
 @export var start_line_enabled := true
 ## Orbit camera angular speed (rad/s) around the car during the start reveal.
 @export var start_orbit_speed := 0.5
@@ -800,6 +800,64 @@ func has_nitrous() -> bool:
 @export var start_spawn_clearance := 0.5
 ## Field of view (degrees) of the start-line orbit camera during the reveal.
 @export_range(30.0, 120.0) var start_orbit_fov := 70.0
+## Grid gap (m) the rival ghost parks AHEAD of the player on the start line — one
+## car-plus slot down the lead-in, so the reveal camera frames it separately from
+## the player. (The pre-pivot grid queued its rivals BEHIND the line at this same
+## spacing; the one-rival revival parks ahead instead.)
+@export var start_queue_gap := 7.0
+## The DEPART roll-up (restored from the pre-pivot grid, which shuffled every
+## remaining car — player included — up a slot as each rival drove off): the player
+## is scripted from its staged slot onto the line while the rival departs, so the
+## pose at control-regain is the one the player just watched, not a hidden teleport.
+## These four shape the scripted roll: decel divisor for the v²/d brake-distance
+## model, brake margin (m) absorbs reaction lag, coast band (m) between full
+## throttle and the brake point, creep speed (m/s) below which the foot brake lifts
+## so the auto box does not grab reverse against the hold.
+@export var start_roll_decel_divisor := 28.0
+@export var start_roll_brake_margin_m := 0.25
+@export var start_roll_coast_band_m := 1.0
+@export var start_roll_creep_speed := 1.5
+## Safety bound (seconds) on the DEPART phase. The rival drives off the line under
+## REAL physics, so unlike the posed send-off it can spin, stall or hit something and
+## never reach start_lead_in_ahead_m; the phase ends anyway once this elapses, so a bad
+## launch can never strand the player on the start line with no countdown.
+@export var start_depart_timeout_seconds := 6.0
+## Seconds the fly from the orbit pose to the reveal shot takes.
+@export var start_reveal_fly_seconds := 1.2
+## The reveal shot: a low 3/4 in front of the rival on its grid slot — the eye sits
+## front (front_m), to its right (side_m) and above (height_m) in the rival's own
+## heading, looking back at it at look_height_m. Defaults carried over from the
+## deleted per-opponent reveal, whose shot this revives for the one ghost.
+@export var start_reveal_cam_front_m := 6.0
+@export var start_reveal_cam_side_m := 4.0
+@export var start_reveal_cam_height_m := 1.0
+@export var start_reveal_cam_look_height_m := 0.8
+## Field of view (degrees) the reveal shot settles on.
+@export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
+
+@export_group("Rival ghost")
+# The rival ghost's DISPLAY layer (features/rival-ghost.md) — the target-clock car
+# posed along the pace profile through the run. Restored with the pre-pivot
+# ghost_car.gd display stack; the pace itself is the profile, not config.
+## Base opacity of the rival ghost's translucent material overrides (0.1–1.0).
+@export_range(0.05, 1.0) var rival_ghost_opacity := 0.4
+## Distance (m) beyond which the ghost is culled entirely — a rendering budget, the
+## pose stays valid at any range.
+@export_range(50.0, 2000.0) var rival_ghost_visible_m := 400.0
+## Distance (m) at which the proximity fade reaches full opacity; inside it the
+## ghost fades toward invisible as the player closes in, so an overlapped ghost
+## can't fill the screen and hide the road. 0 disables the fade.
+@export_range(0.0, 60.0) var rival_ghost_fade_near_m := 14.0
+## Show the driver-name Label3D over the ghost.
+@export var rival_ghost_nametag_enabled := true
+## Height (m) of the nametag above the ghost's car.
+@export_range(0.5, 8.0) var rival_ghost_nametag_height_m := 2.2
+## Text size (m) of the nametag.
+@export_range(0.1, 3.0) var rival_ghost_nametag_size_m := 0.55
+## Multiplier on the curvature-derived slip yaw the ghost wears in corners.
+@export_range(0.0, 3.0) var rival_ghost_slip_scale := 1.0
+## Cap (degrees) on the ghost's slip yaw, so hairpins can't spin it sideways.
+@export_range(0.0, 90.0) var rival_ghost_max_slip_deg := 45.0
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
@@ -837,8 +895,8 @@ func has_nitrous() -> bool:
 @export_range(0.0, 2000.0) var impact_max_loss := 450.0
 ## HP regained per second while driving. A LIVE field, not an authoring knob: it is 0.0 on
 ## the authored baseline (nothing heals by default) and the effects funnel writes it — the
-## "Self Healing" perk's EFFECTS row sets it from perk_heal_hp_per_s, and UpgradeLibrary's
-## reseed pre-pass puts it back to 0.0 the moment the perk is unequipped. Applied by
+## "Self Healing" skill's EFFECTS row sets it from skill_heal_hp_per_s, and UpgradeLibrary's
+## reseed pre-pass puts it back to 0.0 the moment the skill is unequipped. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export_range(0.0, 50.0, 0.5) var damage_regen_hp_per_s := 0.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
@@ -1097,6 +1155,23 @@ func has_nitrous() -> bool:
 ## tightly, lower drifts behind it like a hand on a zoom rocker. A CUT (shot change or a
 ## roadside re-plant) always snaps, never eases. 0 disables easing entirely (snap always).
 @export_range(0.0, 20.0) var replay_fov_smoothing := 5.0
+
+## PHOTO MODE (features/camera.md) — the free-fly camera the pause menu opens with the
+## world frozen. Fly speed in metres/second (WASD laterally, Ctrl/Shift for altitude);
+## the camera has no acceleration, so this is simply how fast it travels while a key is
+## held.
+@export_range(1.0, 200.0) var photo_move_speed := 25.0
+## Mouse look sensitivity — RADIANS of turn per pixel of mouse motion.
+@export_range(0.0005, 0.02) var photo_look_sensitivity := 0.003
+## Touch look sensitivity — RADIANS of turn per PIXEL of one-finger drag
+## (photo_mode_controls.gd). Kept separate from photo_look_sensitivity: a finger drag
+## covers far more screen distance than a mouse pushes in relative motion for the same
+## intended turn, so the two need independent tuning.
+@export_range(0.0005, 0.02) var photo_touch_look_sensitivity := 0.004
+## Pinch-zoom FOV limits (degrees) for photo mode on touch — pinching fingers apart
+## zooms IN (toward photo_fov_min), pinching together zooms out (toward photo_fov_max).
+@export_range(10.0, 90.0) var photo_fov_min := 20.0
+@export_range(10.0, 120.0) var photo_fov_max := 90.0
 
 @export_group("Menu / HQ")
 ## Seconds the HQ menu camera takes to ease into framing the focused car
@@ -1439,81 +1514,12 @@ func has_nitrous() -> bool:
 ## the many HQ scene builds cheap.
 @export_range(0, 1000) var hq_tree_count := 320
 @export_range(0, 1000) var hq_bush_count := 320
-## Map table: centre position, block size, and the 3D map plane laid on its top.
+## Map table: centre position and block size. (The 3D map plane that used to lie on its
+## top, the pin-selection radius, the reveal-link dashes, the fog mask and the
+## map_reveal_radius / map_hq_reveal_radius exploration radii are DELETED with the
+## diegetic HQ map and its reveal gate — RallyLibrary's "Map exploration: DELETED" note.)
 @export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
 @export var hq_table_size := Vector3(4.6, 0.9, 4.6)
-@export var hq_map_plane_size := Vector2(4.2, 4.2)
-## How close (metres, on the map plane) the view centre has to be to a pin for that pin to
-## count as SELECTED. Past this the cursor holds nothing and Enter does nothing.
-##
-## Without a limit the cursor always snapped to the nearest pin however far away it was, so
-## pressing Enter over empty ocean opened whichever rally happened to be least distant —
-## a menu the player did not ask for, for a place they were not looking at.
-@export_range(0.05, 3.0, 0.05) var map_select_radius_m := 0.55
-## Opacity of the dotted lines drawn between rallies that unlock one another on the map
-## table. 0 hides them entirely.
-@export_range(0.0, 1.0, 0.01) var map_link_alpha := 0.85
-## Colour of those lines (RGB only — map_link_alpha supplies the opacity).
-@export var map_link_color := Color(1.0, 0.96, 0.86)
-## Dash and gap length (metres, on the map plane) of those lines.
-@export_range(0.005, 0.2, 0.005) var map_link_dash_m := 0.035
-@export_range(0.005, 0.2, 0.005) var map_link_gap_m := 0.030
-## WIDTH of the dashes, in metres on the map plane. This is the knob that actually governs
-## whether the graph is readable: the links used to be drawn as PRIMITIVE_LINES, which are
-## one PIXEL wide no matter the camera distance, so on a 400-px-tall render target they were
-## a shimmering hairline. They are triangle strips now and have a real world width.
-@export_range(0.002, 0.06, 0.001) var map_link_width_m := 0.011
-## A darker line drawn UNDER each dash, slightly wider, purely for contrast. The map plane
-## is a full-colour world texture at full brightness where explored, so a light line has
-## nothing to separate it from pale terrain; the outline gives it an edge everywhere. Set
-## the width to 0 to drop the outline pass entirely.
-@export_range(0.0, 0.08, 0.001) var map_link_outline_width_m := 0.020
-## Colour AND opacity of that outline (alpha is used here, unlike map_link_color).
-@export var map_link_outline_color := Color(0.03, 0.02, 0.0, 0.55)
-## How bright the UNEXPLORED map reads, as a fraction of its lit colour (0 = black,
-## 1 = no fog at all). The terrain stays legible through it on purpose: the world should
-## look like somewhere you have not been yet, not a hole in the table — the player is meant
-## to be able to make out the coastline they are heading for.
-@export_range(0.0, 1.0, 0.01) var map_fog_unlit_brightness := 0.4
-## Width of the falloff at a lit circle's edge, in normalised map units. Softens the rim so
-## the frontier reads as fog thinning out rather than a cut line.
-@export_range(0.0, 0.5, 0.005) var map_fog_edge_softness := 0.05
-## Map exploration (features/map-exploration.md): how far a lit source reaches, in
-## NORMALISED map units (the same 0..1 space as a rally's map_pos), so the radius is
-## independent of the plane's metre size. Every rally the player has completed lights a
-## circle of this radius around its OWN map_pos — as does their opening rally, completed or
-## not — and a rally is revealed when it falls inside any lit circle. HQ itself lights
-## NOTHING (see map_hq_reveal_radius). A rally may author its own `reveal_radius` to open a
-## wider frontier than this default. Bigger = the world opens faster and in bigger jumps.
-@export_range(0.01, 1.0, 0.005) var map_reveal_radius := 0.16
-## The radius HQ itself lights, independently of any rally. SHIPPED AT 0.0 — HQ lights
-## NOTHING, and is not drawn on the map at all.
-##
-## It used to be 0.16, which opened the handful of pins nearest the middle on a fresh
-## profile. That existed because the player had to start somewhere; they now start inside
-## their own OPENING RALLY (todo/opening-rally.md), which is a starting point they drove to
-## rather than one the map granted, so the pins beside HQ unlock the ordinary way like
-## every other.
-##
-## Kept as a tunable rather than deleted: "how much does home light" is a real design
-## question that may be worth revisiting, and the map tests use it to light a whole
-## synthetic roster without having to complete anything. Any value above 0 puts the circle
-## back — and would also want an HQ landmark on the table again: `scripts/map_house.gd`
-## builds one and is kept for exactly that, currently unreferenced.
-## Radius of the circle HQ itself lights, in normalised map units. 0 = HQ lights nothing.
-##
-## SHIPS SMALL AND NON-ZERO, which is a change from the 0.0 this had while the HQ table was the
-## only hub. It went to 0 because the player used to begin INSIDE their opening rally, so the
-## middle of the map was ordinary fogged ground and lighting it opened the nearest pins for
-## nothing. The OVERWORLD changed that premise: the player now starts standing at the garage and
-## picks their first car there, so the middle is "somewhere they already are" — the same
-## justification RallyLibrary.lit_sources gives for lighting the opening rally. Left at 0 the
-## fog veil darkens the screen and the frontier push shoves the car while the player is choosing.
-##
-## It is kept DELIBERATELY SMALL: big enough to cover the garage pad
-## (overworld_pad_garage_radius_m) and no bigger, so no rally pin falls inside it and nothing is
-## unlocked unearned. test_rally_library.gd pins that relationship — raise this and it fails.
-@export_range(0.0, 1.0, 0.005) var map_hq_reveal_radius := 0.03
 ## Tuning lift: centre position + overall footprint (posts span this width; also
 ## the pickable click volume).
 @export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
@@ -1582,7 +1588,7 @@ func has_nitrous() -> bool:
 @export_range(0.05, 4.0) var road_tile_per_meter := 0.5
 
 ## Flat overcast grey used as background_color / fog_light_color / horizon on a
-## wet stage (weather == RallyLibrary.WEATHER_RAIN). Applied by the weather look
+## wet stage (weather == StageFields.WEATHER_RAIN). Applied by the weather look
 ## override, layered after the region look so rain wins. See features/weather.md.
 @export var rain_background_color := Color(0.55, 0.55, 0.58)
 ## Dimmer, cooler ambient sky colour (upward-facing surfaces) on a wet stage.
@@ -1601,7 +1607,7 @@ func has_nitrous() -> bool:
 @export_range(0, 2000) var rain_particle_count := 300
 
 ## Flat dusty-tan background/fog colour on a sandstorm stage (weather ==
-## RallyLibrary.WEATHER_SANDSTORM, authored only onto region == "greece" events).
+## StageFields.WEATHER_SANDSTORM, authored only onto region == "greece" events).
 ## Applied by the same weather look override as rain, layered after the region
 ## look. See features/weather.md.
 @export var sand_background_color := Color(0.72, 0.6, 0.42)
@@ -1636,8 +1642,12 @@ func has_nitrous() -> bool:
 ## blows toward. A single fixed direction, not per-event, so "one wind direction"
 ## reads consistently for the whole stage regardless of which way the car is facing.
 @export_range(0.0, 360.0) var sand_wind_dir_deg := 45.0
+## Tree wind-sway strength on a sandstorm stage — a stormy sky, so authored above
+## foliage_wind_strength (below storm's, since sand carries no rain). See
+## scripts/wind_sway.gd; purely cosmetic.
+@export_range(0.0, 0.5) var sand_foliage_wind_strength := 0.08
 
-# --- Fog (weather == RallyLibrary.WEATHER_FOG) --------------------------------
+# --- Fog (weather == StageFields.WEATHER_FOG) --------------------------------
 # Prefixed `mist_` rather than `fog_` purely to avoid colliding with the BASE
 # environment knobs `fog_density` / `fog_sky_affect` above, which every stage uses.
 # Fog is a VISIBILITY condition only: it authors NO grip multiplier (so μ is exactly
@@ -1657,7 +1667,7 @@ func has_nitrous() -> bool:
 ## washes out into a featureless white dome instead of punching through the murk).
 @export_range(0.0, 1.0) var mist_fog_sky_affect := 0.95
 
-# --- Storm (weather == RallyLibrary.WEATHER_STORM) ----------------------------
+# --- Storm (weather == StageFields.WEATHER_STORM) ----------------------------
 # Rain's look and rain's particle kind, authored heavier, plus a crosswind and an
 # occasional lightning flash. See features/weather.md.
 ## Global tyre μ multiplier on a storm stage — a storm is wetter than plain rain, so
@@ -1690,6 +1700,10 @@ func has_nitrous() -> bool:
 ## TOWARD. Shared by the crosswind force and the rain particles' wind direction, so
 ## the drops visibly stream the same way the car is being pushed.
 @export_range(0.0, 360.0) var storm_wind_dir_deg := 200.0
+## Tree wind-sway strength on a storm stage — a stormy sky, not just a stormy road,
+## so this is authored well above foliage_wind_strength. See scripts/wind_sway.gd;
+## purely cosmetic, so it is not part of the wind body-force block above.
+@export_range(0.0, 0.5) var storm_foliage_wind_strength := 0.11
 ## Peak brightness multiplier of a lightning flash, applied to the storm fog/sky
 ## colour for storm_lightning_duration_s. Purely cosmetic (no light node exists —
 ## see features/rendering.md). Keep it modest: a flash that blanks the screen
@@ -1743,7 +1757,7 @@ func has_nitrous() -> bool:
 ## Fixed world-space heading the snow drifts toward (0 = +X, 90 = +Z).
 @export_range(0.0, 360.0) var snowfall_wind_dir_deg := 200.0
 
-# --- Night (weather == RallyLibrary.WEATHER_NIGHT) ----------------------------
+# --- Night (weather == StageFields.WEATHER_NIGHT) ----------------------------
 # A DARK stage re-lit only by a fake headlight cone in front of the player's car
 # (todo/night-weather-and-headlights.md). Two halves:
 #   1. The LOOK block below — the same five environment knobs every other condition
@@ -1961,6 +1975,15 @@ func has_nitrous() -> bool:
 ## 0 = flat (unlit), 1 = full shading. Strength on billboard trees. Independent
 ## of terrain_light_amount but conventionally kept equal so trees match the ground.
 @export_range(0.0, 1.0) var foliage_light_amount := 1.0
+## Base wind sway at a tree's tip, as a fraction of its height — every weather
+## condition unless it names its own "foliage_wind" field in WeatherLibrary (storm,
+## sandstorm). See scripts/wind_sway.gd.
+@export_range(0.0, 0.5) var foliage_wind_strength := 0.035
+## Sway oscillations per second (radians/s scale). Shared by every condition.
+@export_range(0.0, 6.0) var foliage_wind_speed := 1.1
+## Heading (degrees, 0 = world +X, 90 = world +Z) trees lean toward when the live
+## condition names no wind heading of its own (see WeatherLibrary's "wind_dir" key).
+@export_range(0.0, 360.0) var foliage_wind_dir_deg := 35.0
 ## World-space direction TO the sun (need not be normalised; normalised on use).
 ## ALIGNED TO THE SKYBOX: panoramas are pre-rolled (tools/align_sky_sun.py) so the
 ## sun sits at the image centre, which is +Z in Godot's panorama mapping (verified
@@ -1990,7 +2013,7 @@ func has_nitrous() -> bool:
 ## Bias toward straighter, easier turns during track generation, in [0, 1]. 0 = no
 ## bias (corners chosen freely, the default for free-roam); higher favours gentler
 ## corners and longer connecting straights, yielding a less twisty stage. Set per
-## rally event by RallyLibrary.event_straightness — earlier-game events run higher
+## rally event by StageFields.event_straightness — earlier-game events run higher
 ## so their stages are easier. Changes the generated SHAPE, so opponent target times
 ## are derived with the same value (RallySession._compute_event_data).
 @export_range(0.0, 1.0) var track_straightness := 0.0
@@ -2001,10 +2024,22 @@ func has_nitrous() -> bool:
 ## and 100% progress stay at the END of the generated track, NOT the end of this
 ## runoff. 0 disables it.
 @export var track_runoff_m := 20.0
+## Height (m) of the JUMP crest — the vertical bump TrackProfile adds on top of the
+## terrain height along a "Jump" piece's road (features/track.md). Together with
+## jump_span_m this sets the ONE number that matters: the speed above which a car
+## actually leaves the ground, TrackProfile.launch_speed() =
+## (span / PI) * sqrt(g / (2 * height)). Tune the pair to that threshold, not to how
+## tall the bump looks. 0 flattens every jump (the crest becomes a no-op).
+@export var jump_height_m := 2.0
+## Arc length (m) the JUMP crest is spread over, centred in its piece and clamped to
+## TrackProfile.PIECE_LENGTH_M so the crest's zero-slope ends stay inside the jump and
+## never disturb the neighbouring corners. Counter-intuitively a LONGER span is a
+## HARDER launch to trigger at the same height — see TrackProfile.launch_speed().
+@export var jump_span_m := 60.0
 ## How forested this track is, in [0, 1] — the fraction of area covered by trees.
 ## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
 ## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by
-## RallyLibrary.event_forestiness; the default (1.0) keeps free-roam fully wooded.
+## StageFields.event_forestiness; the default (1.0) keeps free-roam fully wooded.
 ## Bushes ignore this (they scatter everywhere).
 @export_range(0.0, 1.0) var track_forestiness := 1.0
 ## Wavelength, in metres, of the Perlin noise that breaks the trees into forest
@@ -2017,7 +2052,7 @@ func has_nitrous() -> bool:
 ## track switches surface exactly ONCE along its length (gravel→tarmac or
 ## tarmac→gravel, picked deterministically from track_seed), so this also fixes
 ## where the switch sits. 0 = all gravel, 1 = all tarmac. Set per rally event by
-## RallyLibrary.event_tarmac_fraction; the default (0) keeps free-roam all gravel.
+## StageFields.event_tarmac_fraction; the default (0) keeps free-roam all gravel.
 @export_range(0.0, 1.0) var track_tarmac_fraction := 0.0
 ## Length, in metres ALONG the track, of the smooth feather where the surface
 ## switches between gravel and tarmac — the lengthwise analogue of the
@@ -2122,7 +2157,7 @@ func has_nitrous() -> bool:
 @export var cliff_enabled := true
 ## Along-track period, in metres, of the 1-D camber noise that drives the cliffs —
 ## how quickly a cliff swaps sides. GLOBAL (same for every event); only the height
-## is scaled per event (cliff_amount / RallyLibrary.event_cliffiness).
+## is scaled per event (cliff_amount / StageFields.event_cliffiness).
 @export_range(5.0, 500.0) var cliff_wavelength_m := 100.0
 ## Scales the raw camber noise before the [-1, 1] clamp. Higher ⇒ the signal spends
 ## more time saturated at ±1 (frequent full-height cliffs); lower ⇒ mostly gentle.
@@ -3288,7 +3323,7 @@ static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
 	return tire_surface_mult_for({
 		"tire_snow_grip_mult": snow_mult,
 		"tire_tarmac_grip_mult": tarmac_mult,
-	}, fill_tire_context({}, tarmac_weight, snowy, RallyLibrary.WEATHER_DRY))
+	}, fill_tire_context({}, tarmac_weight, snowy, StageFields.WEATHER_DRY))
 
 
 func apply_car_light(mat: ShaderMaterial) -> void:
@@ -3436,8 +3471,8 @@ func barrier_render_params() -> Dictionary:
 func coin_layout_params() -> Dictionary:
 	return {
 		"count": coins_per_stage,
-		"offset_m": coin_offset_m,
-		"offset_jitter_m": coin_offset_jitter_m,
+		"lane_inner_frac": coin_lane_inner_frac,
+		"lane_spread_frac": coin_lane_spread_frac,
 		"start_margin_m": coin_start_margin_m,
 		"end_margin_m": coin_end_margin_m,
 	}
@@ -3445,7 +3480,7 @@ func coin_layout_params() -> Dictionary:
 
 # Everything CoinField.build needs to render + sound a stage's coins. Deliberately
 # does NOT include coin_pickup_radius_m — CoinField reads that live, every tick, so
-# the later coin_magnet perk pass has one number to widen (see that field's comment).
+# the later coin_magnet skill pass has one number to widen (see that field's comment).
 func coin_render_params() -> Dictionary:
 	return {
 		"radius_m": coin_visual_radius_m,
@@ -3456,6 +3491,9 @@ func coin_render_params() -> Dictionary:
 		"pickup_sfx_duration_sec": coin_pickup_sfx_duration_sec,
 		"render_distance_m": tree_render_distance_m,
 		"render_fade_m": tree_render_fade_m,
+		"spin_deg_per_sec": coin_spin_deg_per_sec,
+		"bob_speed": coin_bob_speed,
+		"bob_amplitude_m": coin_bob_amplitude_m,
 	}
 
 
@@ -3826,6 +3864,11 @@ func spectator_params() -> Dictionary:
 ## Screen margin (pixels) around the minimap panel and inside the full-screen map.
 @export_range(0.0, 120.0) var overworld_map_margin_px := 24.0
 
+## Screen margin (pixels) around the build-version label in the hub's bottom corner
+## (hub_shell.gd's MAIN page — features/hub-shell.md). Passive chrome only, not a
+## MenuNav widget.
+@export_range(0.0, 60.0) var hub_version_label_margin_px := 8.0
+
 ## Foliage density in the overworld, as a MULTIPLIER on the stage scatter counts
 ## (`trees_per_turn` / the rock groups). Well below 1 on purpose.
 ##
@@ -3942,13 +3985,13 @@ func spectator_params() -> Dictionary:
 # car, not a mid-tier one.
 ## Pace multiplier on stage 1 of the first region — the loosest clock in the game.
 ## 1.0 = the point-mass optimum exactly; higher = more slack.
-@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.6
+@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.85
 ## How much tighter the clock gets per stage WITHIN a run. Over an 8-stage run the last
 ## stage is 7x this below the first, which is the run's own escalation curve.
-@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.03
+@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.07
 ## How much tighter the clock gets per REGION in the unlock order (decision 22). This is
 ## the whole of region difficulty — there are no re-authored per-region bands.
-@export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.05
+@export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.075
 ## The floor no combination of the two steps may take the pace below. Stops a deep region's
 ## late stages from demanding a time under the optimum, which nothing could clear.
 @export_range(0.5, 2.0, 0.01) var run_target_pace_min := 1.05
@@ -3966,10 +4009,19 @@ func spectator_params() -> Dictionary:
 ## The MOST a fast clear can add on top, paid in proportion to the fraction of the target
 ## saved — the reason to drive well rather than merely clear the clock. 0 removes the bonus.
 @export_range(0.0, 5000.0, 5.0) var run_fast_bonus_money := 150.0
-## How much richer each REGION in the unlock order is, as a fraction added per index
-## (decision 31). This is what stops "farm region 1 forever": the same effort pays more
-## deeper in, so progressing beats grinding without taking the repeatable-region valve away.
-@export_range(0.0, 2.0, 0.05) var run_money_region_step := 0.35
+## How much richer each REGION in the unlock order is, as a MULTIPLIER compounded per
+## index — region N's payout is this raised to the Nth power (decision 31). 2.0 means
+## every region pays double the one before it: clearing a region's own reward is only
+## the next region unlocking, and that next region is what actually pays more. This is
+## what stops "farm region 1 forever": the same effort pays more deeper in, so
+## progressing beats grinding without taking the repeatable-region valve away.
+@export_range(1.0, 4.0, 0.05) var run_money_region_multiplier := 2.0
+## Paid once, on top of the ordinary stage-clear reward, for beating the run's own
+## FINAL stage (stage 8) — the region-clear bonus (RegionRunMode.stage_money). Scaled
+## by run_money_region_multiplier exactly like every other term in stage_money, so
+## clearing a deep region's stage 8 pays proportionally more than clearing an early
+## one's. 0 removes the bonus.
+@export_range(0.0, 20000.0, 25.0) var run_region_clear_money_base := 1000.0
 ## The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays
 ## (ChallengeRunMode.try_grant_completion_reward). Flat rather than curved: a challenge has
 ## no target time to be fast against, and its whole reward is the placement.
@@ -3991,48 +4043,64 @@ func spectator_params() -> Dictionary:
 # _build_coins — a REGION-RUN mechanic only (RunSession.mode_id() == RunMode.REGION);
 # a challenge run never spawns them. See features/collectables.md.
 #
-# OFF THE RACING LINE, ON PURPOSE (decision 35): coin_offset_m is a FLOOR beyond the
-# visible road edge, not a look-and-feel knob — 0 would let a coin sit reachable
-# without leaving the road, defeating the whole mechanic.
+# ON THE CARRIAGEWAY, ON PURPOSE (decision 35 REVERSED by explicit user request,
+# 2026-09 — see todo/roguelike-pivot.md decision 35's note and features/collectables.md).
+# Coins used to sit beyond the road edge as a gamble; they now sit WITHIN the road so
+# they're visually obvious and collectable without leaving the racing surface.
+# coin_lane_spread_frac controls how far from the centerline they can land, as a
+# fraction of the half-width.
 #
 # NO SIGNPOSTING (decision 50, amending 35): there is deliberately no "warning
 # distance" field here, and none should be added — a coin is met by driving into it,
 # never flagged ahead on the pacenote strip or anywhere else.
 ## Master switch, mirroring signs_enabled/rocks_enabled. Off places no coins at all.
 @export var coins_enabled := true
-## How many coins CoinLayout places on one stage, before any future perk multiplier.
-## PerkLibrary's "lucky_coins" ("more coins spawn per stage") is NOT wired yet
-## (decision 51 wires perk effects after this stage) — nothing reads this through a
-## perk today.
+## How many coins CoinLayout places on one stage, before any future skill multiplier.
+## SkillLibrary's "lucky_coins" ("more coins spawn per stage") is NOT wired yet
+## (decision 51 wires skill effects after this stage) — nothing reads this through a
+## skill today.
 @export_range(0, 12) var coins_per_stage := 4
-## Minimum lateral distance (m) a coin's centre sits BEYOND the visible road edge
-## (track_width / 2). This is the gamble decision 35 wants: a coin is never
-## reachable without actually leaving the road.
-@export_range(0.0, 8.0) var coin_offset_m := 2.0
-## Extra random spread (m) added on top of coin_offset_m, so coins land anywhere in
-## [edge + coin_offset_m, edge + coin_offset_m + this] rather than all on one fixed
-## line parallel to the road.
-@export_range(0.0, 8.0) var coin_offset_jitter_m := 2.5
+## How far a coin's centre can land from the road centerline, as a fraction of the
+## half-width (track_width / 2). 0 pins every coin to the centerline; 1.0 allows a
+## coin right at the visible road edge. Coins are ALWAYS within the carriageway
+## (abs(lateral) <= half_width * this) — never beyond it.
+@export_range(0.0, 1.0) var coin_lane_spread_frac := 0.92
+## Minimum lateral offset from the centerline, same units as coin_lane_spread_frac.
+## Together they form the band a coin lands in: this pushes coins out toward the road
+## EDGE (so taking one is a small line-widening detour) while the max above keeps them
+## on the carriageway rather than off in the trees.
+@export_range(0.0, 1.0) var coin_lane_inner_frac := 0.7
 ## Arc-length (m) kept clear of the start line — no coin in the opening straight.
 @export_range(0.0, 200.0) var coin_start_margin_m := 40.0
 ## Arc-length (m) kept clear of the finish — no coin in the closing straight.
 @export_range(0.0, 200.0) var coin_end_margin_m := 40.0
 ## Pickup trigger radius (m). Read LIVE by CoinField every physics tick, never
 ## cached — see that script's header. THE SINGLE FINDABLE VALUE the later
-## "coin_magnet" perk pass (decision 51, "wider coin pickup radius") widens.
+## "coin_magnet" skill pass (decision 51, "wider coin pickup radius") widens.
 @export_range(0.1, 5.0) var coin_pickup_radius_m := 1.4
-## Money paid per coin collected, banked at STAGE CLEAR alongside the rest of that
-## stage's payout (decision 36) — see RegionRunMode.stage_money. A missed stage's
-## coins pay nothing, same as the rest of that stage's money.
-@export_range(0.0, 500.0) var coin_money := 40.0
-## Visual radius (m) of the coin disc mesh.
-@export_range(0.05, 1.5) var coin_visual_radius_m := 0.32
+## Money paid per coin collected, before the region scale, banked at STAGE CLEAR
+## alongside the rest of that stage's payout (decision 36) — see
+## RegionRunMode.stage_money. A missed stage's coins pay nothing, same as the rest of
+## that stage's money. Scaled by run_money_region_multiplier like every other term in
+## stage_money (2026-09 — was flat everywhere), so this is the region-0 rate; a coin
+## on a deeper region is worth this times that region's own multiplier.
+@export_range(0.0, 500.0) var coin_money := 150.0
+## Visual radius (m) of the coin disc mesh. Bumped up from the original off-track
+## coin's size so a floating, spinning coin reads clearly at speed.
+@export_range(0.05, 1.5) var coin_visual_radius_m := 0.5
 ## Visual thickness (m) of the coin disc mesh.
 @export_range(0.01, 0.5) var coin_visual_thickness_m := 0.08
-## Height (m) a coin hovers above the road-adjacent ground it's placed on.
-@export_range(0.0, 2.0) var coin_hover_m := 0.5
+## Height (m) a coin hovers above the road-adjacent ground it's placed on. Roughly
+## windscreen height so it reads clearly from the driver's seat while approaching.
+@export_range(0.0, 2.5) var coin_hover_m := 1.2
 ## Coin disc colour.
 @export var coin_color := Color(0.97, 0.80, 0.13)
+## Spin rate (deg/sec) of a floating coin about its vertical axis.
+@export_range(0.0, 720.0) var coin_spin_deg_per_sec := 180.0
+## Angular speed (rad/sec) of a coin's gentle vertical bob (sine wave).
+@export_range(0.0, 10.0) var coin_bob_speed := 2.0
+## Amplitude (m) of a coin's vertical bob, added on top of coin_hover_m.
+@export_range(0.0, 0.5) var coin_bob_amplitude_m := 0.12
 ## Pitch (Hz) of the pickup chime. Deliberately set apart from sfx_beep_frequency_hz
 ## (the standard cue default) so a coin reads as its own distinct, brighter sound.
 @export var coin_pickup_sfx_freq_hz := 1600.0
@@ -4048,9 +4116,10 @@ func spectator_params() -> Dictionary:
 # are the UNLEVELED base magnitudes — BoostLibrary.magnitude_for(id, level) scales them by
 # `boost_level_magnitude_step` below (@export_group("Roguelike Meta Shop")) before a pick is
 # drawn, so a level-0 boost (nothing purchased) still rolls exactly the number authored here.
-## How many DISTINCT boosts are drawn for one between-stage pick, on top of the always-offered
-## repair. Clamped to the catalogue's own size (BoostLibrary.draw) if this exceeds it.
-@export_range(1, 6) var run_boost_choices := 3
+## Health fraction (of max_hp) the run's car must be AT OR ABOVE to earn the
+## undamaged-arrival reward: NO repair row on the pick screen, so every roll lands on a
+## real upgrade instead of the usual repair-or-upgrade choice.
+@export_range(0.5, 1.0, 0.01) var run_boost_healthy_threshold := 0.95
 ## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost).
 @export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.93
 ## "Sticky tyres" — tire_grip_mult (above 1.0 = more grip).
@@ -4063,6 +4132,41 @@ func spectator_params() -> Dictionary:
 @export_range(1.0, 1.5, 0.01) var run_boost_brake_mult := 1.12
 ## "Streamlined body" — drag_coefficient multiplier (below 1.0 = less drag).
 @export_range(0.5, 1.0, 0.01) var run_boost_drag_mult := 0.92
+# NOTE: there is deliberately no run_boost_engine_power_mult any more — the Engine Swap
+# is a genuine EngineLibrary swap now (RunSession._pool_engine_swap_ids), not a flat
+# peak_torque multiplier. See features/engine-swap.md.
+#
+# "Turbocharger" / "Supercharger" — the SAME install_turbo/install_supercharger EFFECTS
+# rows the permanent-part model used (features/forced-induction.md), now authored as
+# in-run boosts. Only the *_boost_gain field SCALES with a purchased level (it's the
+# part's actual strength); the rest are the part's fixed "personality" (spool character/
+# drag) and never scale — see BoostLibrary.CATALOGUE's "turbo"/"supercharger" entries and
+# magnitude_for's dict-shaped effect_fields handling.
+## Torque multiplier at full boost — the turbo boost's scaled field.
+@export_range(0.05, 1.5, 0.01) var run_boost_turbo_boost_gain := 0.45
+## Shaft speed (rad/s) boost saturates at — fixed, does not scale with level.
+@export_range(2000.0, 20000.0, 100.0) var run_boost_turbo_omega_ref := 10000.0
+## Turbo shaft rotational inertia (kg·m²) — fixed, does not scale with level.
+@export_range(0.001, 0.05, 0.001) var run_boost_turbo_inertia := 0.008
+## Always-on crank friction (N·m) the fitted turbo adds — fixed, does not scale with level.
+@export_range(0.0, 40.0, 0.5) var run_boost_turbo_parasitic_friction := 8.0
+## Torque multiplier at full belt boost — the supercharger boost's scaled field.
+@export_range(0.05, 1.5, 0.01) var run_boost_supercharger_boost_gain := 0.4
+## Engine rpm belt boost saturates at — fixed, does not scale with level.
+@export_range(1000.0, 12000.0, 100.0) var run_boost_supercharger_rpm_ref := 5000.0
+## Belt drag on the crank (N·m per 1000 rpm) — fixed, does not scale with level.
+@export_range(0.0, 40.0, 0.5) var run_boost_supercharger_parasitic_coef := 6.0
+## Spool-whistle audio gain for the turbo boost — fixed, does not scale with level. Without
+## this the boost fitted turbo_enabled/boost physics but left the audio gain fields at
+## whatever the car's own (usually NA, zero-gain) engine authored, so a mid-run turbo pickup
+## ran silent.
+@export_range(-1.0, 1.0, 0.001) var run_boost_turbo_whistle_gain := 0.015
+## Blow-off valve audio gain for the turbo boost — fixed, does not scale with level.
+@export_range(-1.0, 1.0, 0.001) var run_boost_turbo_bov_gain := 0.005
+## Anti-lag bang audio gain for the turbo boost — fixed, does not scale with level.
+@export_range(-1.0, 1.0, 0.001) var run_boost_turbo_antilag_bang_gain := 0.0
+## Belt-whine audio gain for the supercharger boost — fixed, does not scale with level.
+@export_range(-1.0, 1.0, 0.001) var run_boost_supercharger_whine_gain := 0.02
 
 
 @export_group("Roguelike Meta Shop")
@@ -4090,45 +4194,85 @@ func spectator_params() -> Dictionary:
 @export_range(0.0, 0.3, 0.01) var boost_level_magnitude_step := 0.08
 ## Price of the one-time Engine Swap unlock (todo/roguelike-pivot.md decision 17 — re-gated as
 ## a meta shop purchase, replacing the old rally-completion gate). Read by
-## Save.engine_swap_unlock_price / buy_engine_swap_unlock.
-@export_range(0.0, 50000.0, 100.0) var engine_swap_unlock_price := 6000.0
+## (engine_swap_unlock_price is deleted — the Engine Swap is a mid-run boost now,
+## priced by the boost ladder like every other BoostLibrary entry.)
 
 
-@export_group("Roguelike Perks")
-# THE PERK CAP (todo/roguelike-pivot.md "Perks — a straight lift from RR", stage 7 of
-# todo/roguelike-pivot-plan.md). Owning a perk (Save.KEY_BOUGHT_PERKS) and EQUIPPING it
-# (Save.KEY_EQUIPPED_PERKS) are separate — this is the ceiling on the second list, read
-# by Save.equip_perk. RR's own constant is PERK_MAX_EQUIPPED = 3; a shipped default here
+@export_group("Roguelike Skills")
+# THE PERK CAP (todo/roguelike-pivot.md "Skills — a straight lift from RR", stage 7 of
+# todo/roguelike-pivot-plan.md). Owning a skill (Save.KEY_BOUGHT_SKILLS) and EQUIPPING it
+# (Save.KEY_EQUIPPED_SKILLS) are separate — this is the ceiling on the second list, read
+# by Save.equip_skill. RR's own constant is PERK_MAX_EQUIPPED = 3; a shipped default here
 # matching it is a starting point, not a pinned value — no test may assert this exact
-# number (CLAUDE.md), only that equip_perk refuses past whatever it is currently set to.
-## The most perks that may be equipped at once, whatever how many are owned.
-@export_range(1, 10) var perk_max_equipped := 3
+# number (CLAUDE.md), only that equip_skill refuses past whatever it is currently set to.
+## The most skills that may be equipped at once, whatever how many are owned.
+@export_range(1, 10) var skill_max_equipped := 3
 
-# --- Perk MAGNITUDES (decision 51: perks are wired through UpgradeLibrary.EFFECTS) ---
+# --- Skill MAGNITUDES (decision 51: skills are wired through UpgradeLibrary.EFFECTS) ---
 #
-# One field per perk, exactly the way @export_group("Roguelike Run Boosts") does it for
-# BoostLibrary: PerkLibrary's catalogue entries name the FIELD, never the number, and
-# PerkLibrary.effect_for re-reads Config.data live, so an inspector retune lands on the
+# One field per skill, exactly the way @export_group("Roguelike Run Boosts") does it for
+# BoostLibrary: SkillLibrary's catalogue entries name the FIELD, never the number, and
+# SkillLibrary.effect_for re-reads Config.data live, so an inspector retune lands on the
 # next stage boot with no code change. Nothing in tests/headless/ may pin one of these
-# (CLAUDE.md) — only "the perk reads this field" is testable.
+# (CLAUDE.md) — only "the skill reads this field" is testable.
 #
-# Every one of them is a GLOBAL tunable, not a per-car stat, which is why each perk's
+# Every one of them is a GLOBAL tunable, not a per-car stat, which is why each skill's
 # EFFECTS row carries `reseed` — see that table's header for why that flag exists and
 # what goes wrong without it.
-## "Coin Magnet" — multiplier on coin_pickup_radius_m while the perk is equipped.
-@export_range(1.0, 8.0, 0.1) var perk_coin_radius_mult := 3.0
+## "Coin Magnet" — multiplier on coin_pickup_radius_m while the skill is equipped.
+@export_range(1.0, 8.0, 0.1) var skill_coin_radius_mult := 3.0
 ## "Self Healing" — the HP/second trickle written onto damage_regen_hp_per_s.
-@export_range(0.0, 50.0, 0.5) var perk_heal_hp_per_s := 6.0
+@export_range(0.0, 50.0, 0.5) var skill_heal_hp_per_s := 6.0
 ## "Rubber Body" — multiplier on impact_ref_hp_loss (below 1.0 = softer hits).
-@export_range(0.1, 1.0, 0.05) var perk_damage_mult := 0.6
+@export_range(0.1, 1.0, 0.05) var skill_damage_mult := 0.6
 ## "Trail Blazer" — multiplier on run_fast_bonus_money (the time-saved payout).
-@export_range(1.0, 5.0, 0.1) var perk_fast_bonus_mult := 2.5
+@export_range(1.0, 5.0, 0.1) var skill_fast_bonus_mult := 2.5
 ## "Lucky Coins" — multiplier on coins_per_stage. Truncated to a whole coin count by the
 ## int field it writes, so a fractional multiplier rounds DOWN.
-@export_range(1.0, 5.0, 0.5) var perk_coin_count_mult := 3.0
+@export_range(1.0, 5.0, 0.5) var skill_coin_count_mult := 3.0
 ## "Iron Will" — added to run_target_pace_base, so EVERY stage target in the run is that
 ## much more generous against the reference-car optimum (see RegionRunMode.target_pace).
-@export_range(0.0, 1.0, 0.01) var perk_target_pace_add := 0.15
+@export_range(0.0, 1.0, 0.01) var skill_target_pace_add := 0.15
 ## "Road Scholar" — added to run_stage_money_base, i.e. to the stage-clear payout BEFORE
 ## the run's growth exponent and the region scale compound it.
-@export_range(0.0, 2000.0, 10.0) var perk_stage_money_add := 60.0
+@export_range(0.0, 2000.0, 10.0) var skill_stage_money_add := 60.0
+
+@export_group("Card Carousel")
+## Height/width — a playing card is taller than it is wide (~3.5:2.5).
+@export_range(1.0, 2.0, 0.01) var card_carousel_aspect := 1.4
+@export_range(50.0, 600.0, 10.0) var card_carousel_card_width := 220.0
+## modulate.a applied to every card except the centred/selected one.
+@export_range(0.0, 1.0, 0.01) var card_carousel_unselected_alpha := 0.5
+@export_range(0.05, 1.0, 0.01) var card_carousel_snap_duration_s := 0.22
+## Fraction of a card's width a drag must cross before it counts as one step,
+## rather than snapping back to where it started.
+@export_range(0.05, 0.9, 0.01) var card_carousel_drag_step_fraction := 0.35
+@export_range(0.0, 720.0, 1.0) var card_carousel_car_spin_deg_per_s := 24.0
+## The CAR page's 3D preview camera's field of view. Narrow (telephoto-ish) on purpose —
+## camera distance is derived FROM this (car_card_preview.gd) to keep the car's apparent
+## size roughly constant as this changes, so a smaller value reads as "less perspective
+## distortion, camera further back", not "the car got smaller".
+@export_range(4.0, 60.0, 1.0) var card_carousel_car_preview_fov_deg := 12.0
+## Headroom around the LARGEST roster car in the card previews (car_card_preview.gd):
+## 1.0 frames its bounding sphere exactly to the viewport edge, larger values pull the
+## camera back for more clearance. Every car scales TOGETHER with this, preserving which
+## cars read bigger than which; camera distance is derived from it (and the fov above),
+## so it is the single knob for "the preview cars feel too big / too small".
+@export_range(1.0, 3.0, 0.05) var card_carousel_car_preview_frame_margin := 1.2
+## How many card-widths wide the carousel's own viewport is, as a multiple of
+## card_carousel_card_width — this is what makes the strip actually show the selected
+## card next to a peek of its neighbours, rather than the surrounding MenuPage body box
+## (which hugs its content's minimum width) squeezing the carousel down to near nothing.
+@export_range(1.2, 5.0, 0.1) var card_carousel_visible_width_factor := 2.6
+## Gap between adjacent cards, in the same logical units as card_carousel_card_width.
+@export_range(0.0, 200.0, 2.0) var card_carousel_gap := 36.0
+## How long each card takes to fade in from transparent when the carousel is first shown.
+@export_range(0.05, 1.0, 0.01) var card_carousel_entrance_duration_s := 0.2
+## Delay between one card's fade-in starting and the next card's, so the whole strip fades
+## in left to right rather than all at once — 0 disables the stagger (still fades, together).
+@export_range(0.0, 0.3, 0.01) var card_carousel_entrance_stagger_s := 0.3
+## How long a card flashes for after it's confirmed (tapped/ui_accept'd while already
+## selected), before `confirmed` fires and the caller acts on the pick.
+@export_range(0.1, 2.0, 0.05) var card_carousel_confirm_flash_duration_s := 0.5
+## How many times the card flashes within card_carousel_confirm_flash_duration_s.
+@export_range(1, 6, 1) var card_carousel_confirm_flash_count := 2

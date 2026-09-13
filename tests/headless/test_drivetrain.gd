@@ -87,9 +87,9 @@ func test_surface_tire_params_rain_reduces_mu() -> void:
 
 	# No-terrain fallback branch.
 	dt.terrain = null
-	cfg.weather = RallyLibrary.WEATHER_DRY
+	cfg.weather = StageFields.WEATHER_DRY
 	var dry_flat: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
-	cfg.weather = RallyLibrary.WEATHER_RAIN
+	cfg.weather = StageFields.WEATHER_RAIN
 	var wet_flat: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
 	assert_lt(wet_flat, dry_flat, "wet mu_mult < dry mu_mult with no terrain")
 
@@ -97,13 +97,13 @@ func test_surface_tire_params_rain_reduces_mu() -> void:
 	var stub := _StubTerrain.new()
 	dt.terrain = stub
 	stub.s = Vector2(0.5, 0.5)
-	cfg.weather = RallyLibrary.WEATHER_DRY
+	cfg.weather = StageFields.WEATHER_DRY
 	var dry_terrain: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
-	cfg.weather = RallyLibrary.WEATHER_RAIN
+	cfg.weather = StageFields.WEATHER_RAIN
 	var wet_terrain: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
 	assert_lt(wet_terrain, dry_terrain, "wet mu_mult < dry mu_mult with terrain")
 
-	cfg.weather = RallyLibrary.WEATHER_DRY
+	cfg.weather = StageFields.WEATHER_DRY
 	dt.terrain = null
 
 

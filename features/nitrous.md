@@ -56,7 +56,7 @@ The slot behaves like every other one: it gets an ordinary tile on the upgrades 
 (the deleted upgrades grid), the part
 installs **disabled** and the player enables it, and the single authored entry is gated
 on winning its special via `unlocked_by_rally` (see
-[upgrade-catalogue.md](upgrade-catalogue.md) and [rally-roster.md](rally-roster.md)).
+[upgrade-catalogue.md](upgrade-catalogue.md) and [region-stage-library.md](region-stage-library.md)).
 The exact id, gate and magnitudes are authored in `UpgradeLibrary.UPGRADES`; read the
 table rather than trusting a number quoted here.
 

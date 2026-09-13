@@ -119,7 +119,7 @@ tarmac), so the same reading means the same thing on any surface.
 drives grip-servo steering (`Drivetrain.front_axle_state()` →
 [car-physics.md](car-physics.md) → Steering), and the choice of a **slip** basis over a force
 basis is what makes that servo stable. If you change `grip_fraction`, you change how the car
-steers — see [todo/grip-servo-steering.md](../todo/grip-servo-steering.md).
+steers — see `tests/headless/test_grip_servo_steering.gd`.
 
 Unlike the other H-gated readouts, this one does **not** keep
 refreshing while hidden — `Drivetrain.readouts` is only populated while
@@ -128,15 +128,21 @@ refreshing while hidden — `Drivetrain.readouts` is only populated while
 
 ## Skip to finish (event cheat)
 
-**Key: F** (`skip_to_finish` input action), handled in `world.gd._unhandled_input`.
-Instantly completes the current rally event: teleports the car onto the finish
-line and force-completes the stage, so the real completion → reward → progression
-flow fires exactly as it would on a genuine finish (nothing is faked downstream).
+**Two triggers:** the **F** key (`skip_to_finish` input action, handled in
+`world.gd._unhandled_input`) and the pause menu's Settings → Dev → **Complete
+stage** button (offered only while a run is live — see
+[settings.md](settings.md) → "Developer-only pages"). Both funnel into the one
+`world.gd::_dev_complete_stage` body, which instantly completes the current
+stage: teleports the car onto the finish line and force-completes it, so the real
+completion → reward → progression flow fires exactly as it would on a genuine
+finish (nothing is faked downstream).
 
 Gated the same way as the H arrows — `SettingsMenu.dev_tools_enabled()`, on by
-default in every build including release/web. It also does nothing unless a rally event is
-active (`RunSession.is_active()`) with a live `StageManager` that hasn't already
-finished. Mechanism:
+default in every build including release/web. It also does nothing unless a run is
+active (`DrivingContext.session_active()`) with a live `StageManager` that hasn't
+already finished; the guard lives INSIDE `_dev_complete_stage`, so the F branch
+and the button's signal path (SettingsMenu → PauseMenu relay → world.gd) share it
+and a stale signal can't fire. Mechanism:
 
 - `TrackProgress.jump_to_finish()` pins progress to 100% (the local-window search
   can't discover a far teleport on its own) and returns the finish pose.

@@ -24,7 +24,7 @@ func test_theme_uses_the_house_font() -> void:
 
 
 func test_primary_font_loads() -> void:
-	assert_not_null(UITheme.font(), "the UI font (Syne Mono) loads")
+	assert_not_null(UITheme.font(), "the UI font (Jersey 10) loads")
 
 
 func test_label_helper_applies_role_colour() -> void:
@@ -75,17 +75,45 @@ func test_enforce_applies_rules_across_a_menu_tree() -> void:
 	root.free()
 
 
+func test_title_and_card_title_use_the_bigger_size() -> void:
+	var t := UITheme.title("Choose a name")
+	assert_eq(t.get_theme_font_size("font_size"), UITheme.TITLE_FONT_SIZE, "title() uses TITLE_FONT_SIZE")
+	var ct := UITheme.card_title("MX-5")
+	assert_eq(ct.get_theme_font_size("font_size"), UITheme.TITLE_FONT_SIZE, "card_title() uses TITLE_FONT_SIZE")
+	t.free()
+	ct.free()
+
+
+func test_enforce_leaves_a_title_labels_size_alone() -> void:
+	# Rule 2's one exception: a title/card_title label keeps its bigger size across
+	# enforce() (a view change, a focus refresh) instead of being reset to FONT_SIZE
+	# like every other label — enforce() must still uppercase it (rule 1 stands).
+	var root := VBoxContainer.new()
+	var t := UITheme.title("standings")
+	root.add_child(t)
+	add_child(root)
+
+	UITheme.enforce(root)
+	assert_eq(t.text, "STANDINGS", "rule 1 still applies to a title label")
+	assert_eq(t.get_theme_font_size("font_size"), UITheme.TITLE_FONT_SIZE, "rule 2's size reset skips it")
+	root.free()
+
+
 func test_mark_selected_underlines_green_when_selected() -> void:
 	var b := Button.new()
 	UITheme.mark_selected(b, true)
-	var box := b.get_theme_stylebox("normal") as StyleBoxFlat
-	assert_not_null(box, "a stylebox is applied")
+	# mark_selected wraps the box with the theme-wide hard shadow (UITheme.shadowed) —
+	# unwrap it to reach the StyleBoxFlat-specific border properties.
+	var wrapper := b.get_theme_stylebox("normal") as UIHardShadowBox
+	assert_not_null(wrapper, "a shadow-wrapped stylebox is applied")
+	var box := wrapper.inner as StyleBoxFlat
+	assert_not_null(box, "the wrapped stylebox is a StyleBoxFlat")
 	assert_eq(box.border_width_bottom, 3, "selected row has a bottom underline")
 	assert_eq(box.border_color, UITheme.GREEN, "underline is green")
 	assert_eq(b.get_theme_color("font_color"), UITheme.GREEN, "selected text is green")
 	# Unselected: no underline.
 	UITheme.mark_selected(b, false)
-	var off := b.get_theme_stylebox("normal") as StyleBoxFlat
+	var off := (b.get_theme_stylebox("normal") as UIHardShadowBox).inner as StyleBoxFlat
 	assert_eq(off.border_width_bottom, 0, "unselected row has no underline")
 	b.free()
 
@@ -116,7 +144,7 @@ func test_panel_box_is_black_and_sharp_cornered() -> void:
 
 func test_px_scales_authored_sizes_consistently() -> void:
 	# The design constants and px() must agree — whatever UI_SCALE is tuned to.
-	assert_eq(UITheme.FONT_SIZE, UITheme.px(16), "FONT_SIZE is the scaled authored 16")
+	assert_eq(UITheme.FONT_SIZE, UITheme.px(13), "FONT_SIZE is the scaled authored 13")
 	assert_eq(UITheme.MENU_ROW_H, UITheme.px(30), "MENU_ROW_H is the scaled authored 30")
 	assert_eq(UITheme.px(0), 0, "px(0) stays 0")
 
@@ -125,3 +153,42 @@ func test_ui_scale_is_a_sane_factor() -> void:
 	# Sanity only (never pin the chosen value): positive and monotonic.
 	assert_gt(UITheme.UI_SCALE, 0.0, "UI_SCALE is positive")
 	assert_true(UITheme.px(20) > UITheme.px(10), "px is monotonic")
+
+
+# An invisible surface casts no shadow. UIHardShadowBox's shadow rect is normally hidden
+# under the widget's own opaque face (only the down-right sliver shows); behind a
+# zero-alpha fill there is nothing to hide it, so the whole offset rect used to show at
+# full strength and read as a big dark translucent panel — the "dark container around all
+# the cards" on a carousel page, whose MenuPage body is deliberately transparent.
+func test_a_transparent_wrapped_box_casts_no_shadow() -> void:
+	var opaque := UITheme.shadowed(UITheme.panel_box(1.0)) as UIHardShadowBox
+	assert_not_null(opaque, "shadowed() returns the wrapper")
+	assert_true(opaque.casts_shadow(), "a box with a real fill still casts")
+
+	var clear := UITheme.shadowed(UITheme.panel_box(0.0)) as UIHardShadowBox
+	assert_false(clear.casts_shadow(), "a fully transparent box casts nothing")
+
+	var empty := UITheme.shadowed(StyleBoxEmpty.new()) as UIHardShadowBox
+	assert_false(empty.casts_shadow(), "a StyleBoxEmpty casts nothing")
+
+	# The wrapper must still forward the wrapped box's padding either way, or a
+	# transparent panel's children would reflow when the shadow is skipped.
+	assert_eq(clear.get_margin(SIDE_LEFT), UITheme.panel_box(0.0).get_margin(SIDE_LEFT),
+		"content margins are forwarded regardless of whether the shadow draws")
+
+
+# A transparent MenuPage body (what the carousel pages ask for) must come out
+# non-casting end to end, not just at the UITheme helper level.
+func test_a_transparent_menu_page_body_casts_no_shadow() -> void:
+	var page := MenuPage.new({"alpha": 0.0})
+	add_child(page)
+	var box := page.panel().get_theme_stylebox("panel") as UIHardShadowBox
+	assert_not_null(box, "the body box is shadow-wrapped as before")
+	assert_false(box.casts_shadow(), "a transparent body paints no shadow rect")
+	page.free()
+
+	var solid := MenuPage.new({})
+	add_child(solid)
+	var solid_box := solid.panel().get_theme_stylebox("panel") as UIHardShadowBox
+	assert_true(solid_box.casts_shadow(), "an ordinary opaque page still casts")
+	solid.free()

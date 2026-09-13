@@ -38,7 +38,7 @@ func _ready() -> void:
 
 	var sl := StartLine.new()
 	add_child(sl)
-	var rally := RallyLibrary.by_id("rwd_masters")
+	var rally := {"name": "The Beast"}
 	var leaders := [
 		{"name": "Rival 3", "car_name": "Porker 930 Turbo", "time_ms": 75430},
 		{"name": "Rival 1", "car_name": "Swerve Serpent RT/10", "time_ms": 78120},
