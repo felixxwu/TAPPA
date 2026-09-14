@@ -728,6 +728,44 @@ func test_front_axle_state_cornering_share_shrinks_as_the_drive_spends_grip() ->
 	assert_gt(flat_out, 0.0, "the share is reduced, never zeroed")
 
 
+# --- Two steering rates: winding lock on vs counter-steering it off ------------
+
+func test_counter_steering_unwinds_faster_than_winding_further_on() -> void:
+	# Build up a PARTIAL lock (not settled) so the servo target still has real distance to
+	# cover in both the "keep winding the same way" and "flip the other way" cases — if the
+	# build-up phase ran to convergence, continuing the same direction would already be at (or
+	# very near) target and the comparison would prove nothing.
+	Input.action_press("steer_left")
+	await _wait_physics(5)
+	Input.action_release("steer_left")
+	var partial := _car.steering
+	assert_gt(partial, 0.01, "precondition: some lock was wound on")
+
+	# From here, winding further left one more tick.
+	Input.action_press("steer_left")
+	await _wait_physics(1)
+	Input.action_release("steer_left")
+	var winding_delta := absf(_car.steering - partial)
+
+	# Replay the same build-up, then flip to steer_right instead — counter-steering, since
+	# the target moves back toward/through centre from the current angle.
+	_car._reset()
+	await _wait_physics(120)
+	Input.action_press("steer_left")
+	await _wait_physics(5)
+	Input.action_release("steer_left")
+	assert_almost_eq(_car.steering, partial, partial * 0.5,
+		"precondition: the replayed build-up reaches roughly the same partial lock")
+	Input.action_press("steer_right")
+	await _wait_physics(1)
+	Input.action_release("steer_right")
+	var counter_delta := absf(_car.steering - partial)
+
+	assert_gt(counter_delta, winding_delta,
+		"counter-steering off a partial lock moves the wheel faster than winding further on (%.5f vs %.5f)"
+			% [counter_delta, winding_delta])
+
+
 func test_front_axle_state_reports_no_contact_when_airborne() -> void:
 	# The caller needs to know to fall back rather than servo on zeros.
 	var dt: Drivetrain = _car.drivetrain

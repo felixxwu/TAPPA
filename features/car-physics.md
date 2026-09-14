@@ -120,11 +120,15 @@ for each).
      (the same floor at which the tire model stops treating slip as meaningful), so parked
      wheels centre themselves. Confined to the zero-input branch: pinning the null while a
      demand is held would stop it walking out to full lock at a standstill.
-   - **`steer_limit`** is the mechanical stop and the only hard bound; **`steer_speed`** is the
-     rate limit and the ONLY rate in the system — the model of how fast a hand can turn the
-     wheel, and also the input smoothing (there is no separate easing stage). Because the servo
-     only has to cover the tire's slip angle (~8.6° on tarmac) rather than most of full lock,
-     it is the dominant feel parameter and is tuned well below a lock-to-lock rate.
+   - **`steer_limit`** is the mechanical stop and the only hard bound. There are two rate
+     limits — the model of how fast a hand can turn the wheel, and also the input smoothing
+     (there is no separate easing stage): **`steer_speed`** applies when the target angle winds
+     MORE lock on (further from center, same direction as the current angle, or starting from
+     center); **`counter_steer_speed`** applies when it winds lock back off toward center or
+     across to the opposite lock — real countersteering/slide-catching happens faster than
+     winding lock on, so it is tuned higher. Because the servo only has to cover the tire's
+     slip angle (~8.6° on tarmac) rather than most of full lock, `steer_speed` is the dominant
+     feel parameter and both are tuned well below a lock-to-lock rate.
    - **Damage toe rides inside the loop.** `_apply_wheel_toe` bends each wheel on top of the
      servo's angle and the drivetrain measures in that toed frame, so the servo corrects the
      symmetric front component exactly as a real driver holds a correction on a car with bent
