@@ -32,8 +32,11 @@ Each row is `{id, label, unit, decimals, direction}`. `direction` — `BETTER` (
 (-1), or `NEUTRAL` (0) — is the single source of truth for "which way is an improvement",
 because that answer is NOT guessable from the number alone: bigger power is good, bigger
 mass is bad, and a UI that assumes "bigger = better" gets half the sheet's colours backwards.
-`mass` is the one `WORSE` row; `drive` (the drivetrain) is `NEUTRAL` — AWD is not an upgrade
-over RWD, just a different car, so it never carries a colour even when it changes.
+`mass` is the one `WORSE` row; `drive` (the drivetrain) is `NEUTRAL` in its ROWS entry — RWD
+vs. FWD is just a different car, not an upgrade either way. **AWD is the one exception**:
+`change()` special-cases it as an unconditional upgrade over either two-wheel-drive layout
+(more grip off every corner), so a conversion into or out of AWD colours despite the row's
+own `direction` reading NEUTRAL — see `change()`'s own comment below.
 
 Order is deliberate, not alphabetical: power and weight lead (what a player actually
 chooses between), power-to-weight follows as the figure that combines them, and the
@@ -103,6 +106,20 @@ rounding is invisible to the player, and colouring an apparently-identical pair 
 would read as a display bug. This is why Grip carries 2 decimals against every other row's
 0 — a small but real grip gain must still clear the rounding bar that decides whether to
 show a colour at all.
+
+## `change()` special-cases AWD despite `drive`'s NEUTRAL direction
+
+`direction("drive")` still reads `NEUTRAL` — no single figure ordering makes sense across
+RWD/AWD/FWD as a scale, so nothing about `CarStats.ROWS` claims one. `change()` carves out
+one exception on top of that: converting INTO `CarLibrary.AWD` from either other layout is
+`BETTER`, and converting OUT of it is `WORSE`; a conversion between RWD and FWD (neither end
+AWD) stays `0`, same as before. This is deliberately NOT expressed by bumping the row's
+`direction` — direction is a per-ROW constant read the same way for every value pair, and
+"AWD beats everything else" is a claim about one specific VALUE, not an ordering over the
+whole row — so `change()` reads `CarLibrary.AWD` directly instead. See
+`test_car_stats_sheet.gd` → `test_change_is_better_converting_into_awd` /
+`test_change_is_worse_converting_out_of_awd` / `test_car_stats_panel.gd` →
+`test_converting_into_awd_is_green_even_though_the_row_is_neutral`.
 
 ## `CarStatsPanel` — plain vs. comparison off one builder
 

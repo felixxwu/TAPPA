@@ -203,7 +203,24 @@ static func direction(id: String) -> int:
 # survive rounding is not visible to the player, and colouring an apparently identical
 # pair red would read as a bug. This is why grip carries two decimals — so a real but
 # small grip gain still shows up here rather than being rounded into "no change".
+#
+# `drive` IS coloured, despite its ROWS entry reading NEUTRAL — the row's `direction` says
+# "don't guess an order from the raw number" (RWD/AWD/FWD are not a scale), but AWD is a
+# genuine, unconditional upgrade over either two-wheel-drive layout (more grip off every
+# corner, never less), so a conversion INTO or OUT OF it is not neutral to the player even
+# though RWD <-> FWD has no such claim. This is the one row `change` special-cases rather
+# than reading straight off `direction`.
 static func change(id: String, before: float, after: float) -> int:
+	if id == "drive":
+		var b := int(round(before))
+		var a := int(round(after))
+		if a == b:
+			return 0
+		if a == CarLibrary.AWD:
+			return BETTER
+		if b == CarLibrary.AWD:
+			return WORSE
+		return 0
 	var dir := direction(id)
 	if dir == NEUTRAL:
 		return 0
