@@ -5,8 +5,8 @@
 [resource]
 script = ExtResource("1")
 render_height = 540
-steer_speed = 1.5
-counter_steer_speed = 5.0
+steer_speed = 1.0
+counter_steer_speed = 7.0
 steer_deadzone = 0.02
 turbo_boost_response = 3.0
 engine_mix_rate_web_touch = 11025.0
