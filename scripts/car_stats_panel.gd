@@ -77,10 +77,11 @@ static func _row(id: String, before: float, after: float) -> Control:
 		return row
 
 	# The change's direction decides which SIDE is green: the improved figure is green
-	# and the one given up is red, whichever way round the stat runs. A NEUTRAL stat
-	# (CarStats.change answers 0 for it) still reaches here when its value moved — the
-	# drivetrain going RWD -> AWD is a real change with no better or worse — so it draws
-	# both sides plain.
+	# and the one given up is red, whichever way round the stat runs. A row whose `change`
+	# answers 0 still reaches here when its value moved, so it draws both sides plain —
+	# the drivetrain going RWD -> FWD is a real change with no better-or-worse claim. AWD
+	# is the one exception on this row: `CarStats.change` colours a conversion into or out
+	# of it even though the row's own `direction` is NEUTRAL (see that function's comment).
 	var change := CarStats.change(id, before, after)
 	var before_role := "ink"
 	var after_role := "ink"

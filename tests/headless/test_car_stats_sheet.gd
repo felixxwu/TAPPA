@@ -57,8 +57,31 @@ func test_change_is_sign_correct_for_a_better_stat() -> void:
 
 
 func test_change_is_zero_for_a_neutral_stat_even_when_the_value_moved() -> void:
-	assert_eq(CarStats.change("drive", 0.0, 1.0), 0,
-		"drivetrain moved (RWD -> AWD) but has no better/worse sense")
+	assert_eq(CarStats.change("drive", CarLibrary.RWD, CarLibrary.FWD), 0,
+		"RWD -> FWD moved but neither is AWD, so it has no better/worse sense")
+
+
+# AWD is the one drivetrain value `change` treats as an unconditional upgrade — see
+# `change`'s own comment for why this row is a special case despite its `direction`
+# reading NEUTRAL.
+
+func test_change_is_better_converting_into_awd() -> void:
+	assert_eq(CarStats.change("drive", CarLibrary.RWD, CarLibrary.AWD), CarStats.BETTER,
+		"RWD -> AWD is an upgrade")
+	assert_eq(CarStats.change("drive", CarLibrary.FWD, CarLibrary.AWD), CarStats.BETTER,
+		"FWD -> AWD is an upgrade")
+
+
+func test_change_is_worse_converting_out_of_awd() -> void:
+	assert_eq(CarStats.change("drive", CarLibrary.AWD, CarLibrary.RWD), CarStats.WORSE,
+		"AWD -> RWD is a downgrade")
+	assert_eq(CarStats.change("drive", CarLibrary.AWD, CarLibrary.FWD), CarStats.WORSE,
+		"AWD -> FWD is a downgrade")
+
+
+func test_change_is_zero_when_awd_stays_awd() -> void:
+	assert_eq(CarStats.change("drive", CarLibrary.AWD, CarLibrary.AWD), 0,
+		"no conversion, no colour")
 
 
 func test_change_is_zero_when_the_figures_round_to_the_same_text() -> void:

@@ -65,6 +65,25 @@ func test_the_improved_side_flips_for_a_worse_direction_stat() -> void:
 	assert_eq(labels[3].get_theme_color("font_color"), UITheme.RED, "the heavier (after) figure is red")
 
 
+func test_converting_into_awd_is_green_even_though_the_row_is_neutral() -> void:
+	# `drive`'s own ROWS entry is NEUTRAL, but CarStats.change special-cases AWD as an
+	# unconditional upgrade — the panel must still colour it despite direction() saying
+	# "don't guess" for this row in general.
+	var grid := CarStatsPanel.build({"drive": float(CarLibrary.RWD)}, {"drive": float(CarLibrary.AWD)})
+	var labels := _labels(grid)
+	assert_eq(labels.size(), 4, "setup: one comparison row draws key/before/arrow/after")
+	assert_eq(labels[1].get_theme_color("font_color"), UITheme.RED, "RWD given up reads red")
+	assert_eq(labels[3].get_theme_color("font_color"), UITheme.GREEN, "AWD gained reads green")
+
+
+func test_converting_between_rwd_and_fwd_stays_uncoloured() -> void:
+	var grid := CarStatsPanel.build({"drive": float(CarLibrary.RWD)}, {"drive": float(CarLibrary.FWD)})
+	var labels := _labels(grid)
+	assert_eq(labels.size(), 4, "setup: the row still draws with an arrow (a real change)")
+	assert_eq(labels[1].get_theme_color("font_color"), UITheme.INK, "no better/worse claim between RWD and FWD")
+	assert_eq(labels[3].get_theme_color("font_color"), UITheme.INK, "no better/worse claim between RWD and FWD")
+
+
 func test_a_stat_missing_from_before_yields_no_row() -> void:
 	var grid := CarStatsPanel.build({"power": 400.0})
 	var texts := ""
