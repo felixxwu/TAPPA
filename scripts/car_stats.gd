@@ -30,13 +30,14 @@ extends RefCounted
 # `brake_force_mult` (Big brakes) and `drag_mult` (Streamlined body) — and there is no row
 # here for brake force or drag, so taking either of those moves NOTHING on this sheet. The
 # Shift time row reads `shift_time` off the fitted engine (seeded onto the meta by
-# `effective_meta`, same as peak_torque/redline), so it shows the car's stock gearbox
-# figure but does NOT move for `shift_time_set` (Quick-shift gearbox), since that boost
-# never touches the meta. That is not a bug to fix by widening
-# `effective_meta`, whose narrow contract is a deliberate safeguard (its own header
-# explains it); it is a limit a caller has to cover. `world.gd::_confirm_pick` therefore
-# prints the boost's own `BoostLibrary.current_effect_text_for` figure alongside the sheet,
-# so a confirmation is never a wall of unchanged numbers.
+# `effective_meta`, same as peak_torque/redline), then applies any active
+# `shift_time_set` effect (Quick-shift gearbox) directly — see `_shift_time_override`.
+# That effect is deliberately NOT folded into `effective_meta` itself (feeds_pw is
+# false: it is not a power-to-weight input), so this file reads it straight off
+# `UpgradeLibrary.active_effects` rather than widening that function's narrow contract
+# (its own header explains why). `world.gd::_confirm_pick` also prints the boost's own
+# `BoostLibrary.current_effect_text_for` figure alongside the sheet, so a confirmation
+# is never a wall of unchanged numbers even for an effect this sheet can't show.
 #
 # WHY grip_meta AND NOT effective_meta, which is the more obvious call: `effective_meta`
 # deliberately folds in only the effects that feed power-to-weight, and its header says
@@ -88,7 +89,7 @@ static func values(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 	var cfg: GameConfig = Config.data
 	return {
 		"power": CarLibrary.horsepower(eff),
-		"shift_time": float(eff.get("shift_time", 0.0)),
+		"shift_time": _shift_time_override(owned_car, float(eff.get("shift_time", 0.0))),
 		"mass": float(eff.get("mass", 0.0)),
 		"pw": CarLibrary.power_to_weight_hp_tonne(eff),
 		# Rated WITH downforce at the shared reference speed, which is why `label_for`
@@ -100,6 +101,21 @@ static func values(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 		"durability": float(eff.get("max_hp", 0.0)),
 		"drive": float(int(eff.get("drive_mode", -1))),
 	}
+
+
+# The stock/effective shift time, replaced by an active `shift_time_set` effect
+# (Quick-shift gearbox) if one is fitted — that effect's `op` is "set" (an ABSOLUTE
+# figure, not a scale of the car's own — see `UpgradeLibrary.EFFECTS`), so the LAST
+# matching boost in `owned_car`'s list wins, same as `UpgradeLibrary.apply` would leave
+# on the live config. Falls back to `base` (the fitted engine's own figure) when no
+# such effect is active.
+static func _shift_time_override(owned_car: Dictionary, base: float) -> float:
+	var shift_time := base
+	for entry in UpgradeLibrary.active_effects(owned_car):
+		var effect: Dictionary = (entry as Dictionary).get("effect", {})
+		if effect.has("shift_time_set"):
+			shift_time = float(effect["shift_time_set"])
+	return shift_time
 
 
 # The sheet the car WOULD have if `pick` were taken, for the confirmation popup's "after"

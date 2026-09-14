@@ -58,6 +58,26 @@ The Grip row's own label carries the reference speed it was rated at
 (`label_for("grip")`, live off `Config.data.grip_reference_kmh`) — grip grows with v², so a
 bare number with no speed attached reads as a promise the car only keeps at one velocity.
 
+## The Shift time row reads `active_effects` directly, not `grip_meta`
+
+`shift_time_set` (Quick-shift gearbox) feeds neither power-to-weight nor grip — it's
+`feeds_pw: false` with no `feeds_grip` key in `UpgradeLibrary.EFFECTS` — so it reaches
+NEITHER `effective_meta` NOR `grip_meta`, and widening either to cover it is deliberately
+off the table (their headers explain why: a narrow, provably-correct contract beats one
+more special case each caller has to remember). Instead `values()` seeds `shift_time` off
+the fitted engine (via `grip_meta`, same as every other row) and then runs
+`_shift_time_override`, which scans `UpgradeLibrary.active_effects(owned_car)` itself for a
+`shift_time_set` entry and, if found, replaces the figure outright (mirroring the effect's
+own `"set"` op — an absolute replacement, not a scale). This is the fix for a bug where
+picking the Quick-shift gearbox boost left the Shift time row static in the upgrade
+confirmation sheet (no before → after colour) even though the boost was genuinely fitted.
+See `test_car_stats_sheet.gd` → `test_values_a_shift_time_set_boost_moves_the_shift_time_row`
+/ `test_preview_of_a_shift_time_set_pick_moves_the_shift_time_row`.
+
+`world.gd::_confirm_pick` separately prints `BoostLibrary.current_effect_text_for` above the
+sheet for every non-drivetrain/non-swap pick — that stays, since two boosts (Big brakes,
+Streamlined body) target fields this sheet has no row for at all and still need it.
+
 ## `preview()` deep-duplicates before probing
 
 `preview(owned_car, meta, pick)` answers "what would the sheet look like if `pick` were
