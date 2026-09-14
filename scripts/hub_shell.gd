@@ -385,8 +385,8 @@ func _build_title() -> void:
 	_page.body().add_child(logo)
 
 	# Added straight to `_page`, NOT to _page's centred title/body/actions column (see
-	# _build_money_label / _build_version_label for the same float-free-of-the-column
-	# pattern) — the splash wants TAPPA anchored dead centre and Start/Quit pinned to the
+	# _build_version_label for the same float-free-of-the-column pattern) — the splash
+	# wants TAPPA anchored dead centre and Start/Quit pinned to the
 	# bottom of the SCREEN, not just below the logo in a column that centres itself as one
 	# block. A CenterContainer spanning the page's full width is what centres the button
 	# stack HORIZONTALLY without knowing its width up front — a plain anchors_preset only
@@ -441,6 +441,11 @@ func _enter_game() -> void:
 # --- MAIN --------------------------------------------------------------------
 
 func _build_main() -> void:
+	# MAIN alone has no title (_title_for's deliberate "front door" decision) — reserve the
+	# same title-row height every OTHER carousel page gets from MenuPage's own title label,
+	# or MAIN's cards sit higher on screen than theirs.
+	_page.body().add_child(CardUI.title_gap_spacer())
+	CardUI.header_slot(_page)  # empty — reserves the same height as CAR/SHOP's header line(s)
 	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
 	# Parallel to actions: each card's title text, so the selection restored below (and
@@ -512,24 +517,7 @@ func _build_main() -> void:
 	# passed through it. Replaces the old direct-Quit action on this page (TITLE's own Quit
 	# already covers "leave the app"; a second one here served no different purpose).
 	_action("Back", func() -> void: _show(View.TITLE))
-	_build_money_label()
 	_build_version_label()
-
-
-# MAIN's money readout, top-left corner. Added straight to `_page`, NOT to body() —
-# like _build_version_label, it must float free of the body box/carousel layout so
-# that the carousel's cards stay pinned at the exact vertical middle of the screen
-# regardless of what's shown above or below them (the card box centres on its own
-# content, so anything sharing that VBox with the carousel would pull it off-centre).
-func _build_money_label() -> void:
-	var l := UITheme.label("Money: %d" % Save.money())
-	l.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	l.grow_horizontal = Control.GROW_DIRECTION_END
-	l.grow_vertical = Control.GROW_DIRECTION_END
-	var m := Config.data.hub_version_label_margin_px
-	l.position += Vector2(m, m)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_page.add_child(l)
 
 
 # Passive build-version readout, bottom-right corner of the MAIN page, so a Play
@@ -609,6 +597,7 @@ func _resume_run() -> void:
 # cannot land on a dead row.
 func _build_region() -> void:
 	_pending_challenge = ""
+	CardUI.header_slot(_page)  # empty — reserves the same height as CAR/SHOP's header line(s)
 	var carousel := CardUI.build_carousel(_page)
 	var ids: Array[String] = []
 	var cleared: Array = Save.profile.get(Save.KEY_REGIONS_CLEARED, [])
@@ -647,7 +636,8 @@ func _build_region() -> void:
 # rather than at MAIN. A fresh profile owns nothing but decision 28 seeds it with money
 # (GameConfig.run_starting_money), so "Buy new cars" is never a dead end even then.
 func _build_car() -> void:
-	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	var header := CardUI.header_slot(_page)
+	header.add_child(CardUI.centered_label("Money: %d" % Save.money()))
 	# A CHALLENGE pick judges every owned car against the period's rating ceiling
 	# (ChallengeRunMode.classify_cars — the ONE implementation of that rule; this page
 	# does not re-derive it). An over-ceiling car is SHOWN and unfocusable rather than
@@ -659,7 +649,7 @@ func _build_car() -> void:
 		var classified := ChallengeRunMode.classify_cars(_pending_challenge, Save.profile, now)
 		for car in (classified["eligible"] as Array):
 			eligible_ids[int((car as Dictionary).get("instance_id", -1))] = true
-		_page.body().add_child(UITheme.label(
+		header.add_child(CardUI.centered_label(
 			"Rating cap: %d" % int(classified["ceiling"])))
 
 	var carousel := CardUI.build_carousel(_page)
@@ -766,7 +756,7 @@ func _build_car() -> void:
 # pressable because there is nothing left to do with a car you already have), unowned
 # ones as the same "Buy — cost" card CAR used to show. Back returns to _cars_return_view.
 func _build_cars() -> void:
-	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	CardUI.header_slot(_page).add_child(CardUI.centered_label("Money: %d" % Save.money()))
 	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: a model id String to buy, or null (owned, or too
 	# expensive to afford right now) — see the CAR page's own comment on this convention.
@@ -1015,6 +1005,7 @@ func _build_freeplay_car() -> void:
 	_fp_region = ""
 	_fp_boosts = []
 	_fp_engine_id = ""
+	CardUI.header_slot(_page)  # empty — reserves the same height as CAR/SHOP's header line(s)
 	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: the CarLibrary INDEX each card represents — the
 	# same shape _build_car's car_refs uses, so _sync_car_previews (built for that page)
@@ -1048,6 +1039,7 @@ func _build_freeplay_car() -> void:
 
 
 func _build_freeplay_region() -> void:
+	CardUI.header_slot(_page)  # empty — reserves the same height as CAR/SHOP's header line(s)
 	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: the region id each card represents. EVERY
 	# region is selectable — the unlock gate is a progression rule for runs, and free
@@ -1073,6 +1065,7 @@ const _FP_ENGINE_ID_PREFIX := "engine:"
 
 
 func _build_freeplay_setup() -> void:
+	CardUI.header_slot(_page)  # empty — reserves the same height as CAR/SHOP's header line(s)
 	var carousel := CardUI.build_carousel(_page)
 	# Parallel to the carousel's cards: a boost id (toggled — any combination) or an
 	# "engine:<id>" pseudo-id (selected — at most one). Confirming either rebuilds the
@@ -1203,7 +1196,7 @@ func _announce_run_outcome(result: Dictionary, done: int, total: int) -> void:
 # (shown, dimmed — CardCarousel's own disabled convention, same as a locked region card),
 # so the cursor's confirm can never land on a dead purchase.
 func _build_shop() -> void:
-	_page.body().add_child(UITheme.label("Money: %d" % Save.money()))
+	CardUI.header_slot(_page).add_child(CardUI.centered_label("Money: %d" % Save.money()))
 	var max_level := int(Config.data.boost_level_max)
 	var carousel := CardUI.build_carousel(_page)
 	var actions: Array[Callable] = []
@@ -1248,13 +1241,14 @@ func _buy_boost_level(id: String) -> void:
 
 func _build_skills() -> void:
 	# The equipped count and the money readout share the SAME header line rather than
-	# stacking as two rows: the header must occupy the same height on every visit so the
-	# carousel below doesn't jump, and a player deciding whether to equip or unequip a
-	# skill (which doesn't cost anything) still benefits from seeing what they have to
-	# spend on the ones they don't own yet.
+	# stacking as two rows — a player deciding whether to equip or unequip a skill (which
+	# doesn't cost anything) still benefits from seeing what they have to spend on the ones
+	# they don't own yet. (The header ROW height itself no longer needs to be kept constant
+	# by hand for the carousel's sake — CardUI.header_slot reserves the same height across
+	# every carousel page in this family regardless of line count.)
 	var equipped := Save.equipped_skills()
 	var cap := int(Config.data.skill_max_equipped)
-	_page.body().add_child(UITheme.label(
+	CardUI.header_slot(_page).add_child(CardUI.centered_label(
 		"Equipped: %d/%d   Money: %d" % [equipped.size(), cap, Save.money()]))
 
 	var carousel := CardUI.build_carousel(_page)

@@ -621,6 +621,55 @@ widget: no card chooses anything, but the carousel is still focusable and naviga
 can't move through doesn't read as a card list. Use it as the pattern if another
 informational screen wants the card look.
 
+## The header above the cards is a fixed-height slot, so the cards don't jump per page
+
+`MenuPage` hugs its own content and vertically CENTRES the whole panel in the viewport
+(`menu_page.gd`, `col.alignment = ALIGNMENT_CENTER`) — it does not reserve a fixed area
+for a title/header. Left alone, that means a carousel page with a taller header (CAR's
+"Money" line, plus a second "Rating cap" line only when a challenge pick is pending) sits
+its cards at a DIFFERENT screen height than a page with a shorter or empty header
+(MAIN/REGION, no line at all). Reported as "the cards should be perfectly aligned in the
+middle of the screen... that way the position of the cards doesn't change from menu to
+menu."
+
+`CardUI.header_slot(page) -> VBoxContainer` fixes this: it reserves
+`CardUI.CAROUSEL_HEADER_LINES` (2 — CAR's worst case) lines of height above the carousel
+on EVERY hub_shell carousel page, whether that page has 0, 1 or 2 lines to say, with the
+label(s) bottom-aligned so they sit flush against the carousel regardless of how much
+blank space is above them. Every `hub_shell.gd` `_build_*` carousel builder calls it
+before `CardUI.build_carousel` — even MAIN/REGION/the FREEPLAY steps, which add nothing
+to the returned container, purely to reserve the same height as CAR/SHOP/CARS/SKILLS.
+Add a NEW carousel page to hub_shell's family the same way: call `header_slot` first
+(empty, or with your label(s) added to the returned container) rather than
+`page.body().add_child(...)` directly, or its cards will sit at a different height than
+every other page. `run_pick_panel.gd`/`skill_progress_panel.gd` don't need this — neither
+ever puts a line above its carousel, so their header height is already constant.
+
+Use `CardUI.centered_label(text, role)` rather than a plain `UITheme.label` for anything
+put INTO `header_slot`'s container: an ordinary label stays left-aligned and only as wide
+as its own text, which reads visibly off-centre once the body box spans the full width of
+the carousel below it (edge-to-edge, `CAROUSEL_PAGE_MARGIN` 0.0) — the CAR/SHOP/CARS/
+SKILLS "Money"/"Rating cap"/"Equipped" readouts all want it.
+
+The title row above `header_slot` needs the same treatment. `MenuPage`'s title label
+lives OUTSIDE `page.body()` (in `_inner`, a sibling of the scroll/body), so it isn't
+covered by `header_slot` at all — but it still adds to the chrome above the carousel, and
+`hub_shell.gd::_title_for` gives every carousel page a title EXCEPT MAIN (deliberately —
+the "front door" comment there). `CardUI.title_gap_spacer()` is a blank `Control` sized to
+match MenuPage's title-label-plus-GAP height; MAIN's `_build_main` adds one to
+`page.body()` before its `header_slot()` call so its cards land at the same height as
+every titled carousel page. Any FUTURE carousel page built with no title needs the same
+spacer, first in its body, for the same reason.
+
+MAIN's money readout used to float free of `page.body()` entirely — anchored to the
+page's top-left corner by hand — specifically so the (then content-hugging) body box
+wouldn't shift the carousel off-centre. `header_slot`/`title_gap_spacer` made that
+workaround unnecessary (the body's height above the carousel is now FIXED regardless of
+what's in it), but MAIN's design doesn't want a money readout at all (front door page,
+no purchases happen here) — so MAIN's `header_slot()` call is left empty, purely to
+reserve the same height as CAR/SHOP/CARS/SKILLS' header line(s); `_build_money_label` was
+deleted rather than repurposed.
+
 ## Known open decisions (unilateral — flag for design review)
 
 - **Card width / aspect / dim alpha / snap duration** are all authored defaults in

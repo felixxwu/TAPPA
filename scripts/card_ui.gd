@@ -97,6 +97,59 @@ static func fill_card(card: CardCarousel.Card, title: String, subtitle: String,
 const CAROUSEL_PAGE_MARGIN := 0.0
 const CAROUSEL_PAGE_PADDING := 0.0
 
+# The tallest header hub_shell's carousel pages ever show above the cards — CAR's
+# "Money" + conditional "Rating cap" line, when a challenge pick is pending. Every
+# carousel page in that family reserves this same height via header_slot() below,
+# whether or not it actually has that much to say, so the carousel — and therefore
+# the cards — land at the SAME screen position on every page. Bump this if a future
+# page needs a taller header than CAR's two lines.
+const CAROUSEL_HEADER_LINES := 2
+
+# A fixed-height slot for the plain info line(s) a carousel page puts above its
+# cards (a "Money: N" readout, CAR's extra "Rating cap: N" line, or nothing at
+# all). MenuPage hugs and vertically CENTRES its whole panel, so a page whose
+# header is one line one time and two lines (or zero) another time moves its own
+# carousel up/down between visits — the reported bug this exists to fix. Reserving
+# the SAME height regardless of content, with the content bottom-aligned against
+# the carousel below, keeps the cards' vertical position fixed across every page in
+# the family. Every caller must add its label(s) (if any) to the returned
+# container INSTEAD OF page.body(), and must call this before build_carousel().
+static func header_slot(page: MenuPage) -> VBoxContainer:
+	var slot := VBoxContainer.new()
+	slot.alignment = BoxContainer.ALIGNMENT_END
+	slot.add_theme_constant_override("separation", 0)
+	var line_height := UITheme.font().get_height(UITheme.FONT_SIZE)
+	slot.custom_minimum_size.y = line_height * CAROUSEL_HEADER_LINES
+	slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page.body().add_child(slot)
+	return slot
+
+
+# A UITheme.label(), pre-centred and widened to fill its container — for a line added to
+# header_slot()'s container: an ordinary UITheme.label() stays left-aligned and only as
+# wide as its text, which reads off-centre against the carousel below it once the body box
+# spans the row of cards (CAR/SHOP/SKILLS' "Money"/"Rating cap"/"Equipped" readouts).
+static func centered_label(text: String, role: String = "ink") -> Label:
+	var l := UITheme.label(text, role)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return l
+
+
+# A blank spacer the height of MenuPage's own title row (the title label at
+# TITLE_FONT_SIZE, plus the GAP separation before the body — see menu_page.gd's
+# `_inner`). MAIN is the one carousel page hub_shell.gd builds with NO title (a
+# deliberate "front door" decision — see hub_shell.gd::_title_for), so without this
+# its body has that much less chrome above the carousel than every titled carousel
+# page (REGION/CAR/SHOP/SKILLS/CARS/the FREEPLAY steps), and its cards land higher
+# on screen than theirs. Add this to page.body() before header_slot() on any
+# carousel page built with an empty title, to keep it in the same family.
+static func title_gap_spacer() -> Control:
+	var spacer := Control.new()
+	var line_height := UITheme.font().get_height(UITheme.TITLE_FONT_SIZE)
+	spacer.custom_minimum_size.y = line_height + UITheme.GAP
+	return spacer
+
 # Build a carousel and mount it as `page`'s whole selectable body (any plain,
 # non-choosable labels the caller wants above it — e.g. a "Money: N" readout — should be
 # added to page.body() BEFORE calling this). `page_margin`/`body_padding` must match
