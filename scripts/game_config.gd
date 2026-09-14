@@ -114,12 +114,19 @@ var peak_torque_rpm := 4500.0
 ## by MEASURING the front tires rather than predicting a cap, so there is no longer a
 ## slip-derived limit or a low-speed blend to configure.
 @export_range(0.0, 1.2) var steer_limit := 1.0
-## How fast the front wheels can turn (rad/s) — the model of how fast a hand can turn the
-## wheel, and the ONLY rate in the steering system (it is also the input smoothing; there is
-## no separate easing stage). The grip servo needs to cover only the tire's slip angle
-## (~8.6° on tarmac) rather than most of full lock, so this is the dominant feel parameter
-## and is tuned much lower than a lock-to-lock rate would be.
+## How fast the front wheels can turn (rad/s) when winding MORE lock on — i.e. the target
+## angle is further from center, in the same direction the wheel is already turned (or the
+## wheel is starting from center). The model of how fast a hand can turn the wheel, and it is
+## also the input smoothing; there is no separate easing stage. The grip servo needs to cover
+## only the tire's slip angle (~8.6° on tarmac) rather than most of full lock, so this is the
+## dominant feel parameter and is tuned much lower than a lock-to-lock rate would be.
 @export var steer_speed := 5.0
+## How fast the front wheels can turn (rad/s) when COUNTER-steering — the target angle is
+## back toward center or across to the opposite lock from where the wheel currently sits.
+## Real countersteering (winding the wheel the other way to catch a slide, or simply
+## unwinding lock) happens faster than winding new lock on, so this is tuned higher than
+## steer_speed.
+@export var counter_steer_speed := 3.5
 ## Steering demand below which the wheels servo to their zero-lateral-slip angle (pointing
 ## along their own travel — automatic countersteer). A deadzone rather than an exact-zero
 ## test because analogue sticks and the touch slider never return exactly 0.

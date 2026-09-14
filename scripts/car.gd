@@ -1017,10 +1017,12 @@ func _chassis_slip_angle() -> float:
 #
 # THE STEP is grip_servo_step(error) — see there for why it carries no gain.
 #
-# cfg.steer_speed appears exactly once, as the rate limit — the model of how fast
-# a hand can turn the wheel, and the only rate in the system. Because it now only has to
-# cover the slip angle (~8.6° on tarmac) rather than most of full lock, it is the dominant
-# feel parameter; expect to retune it DOWNWARD in config/game_config.tres.
+# cfg.steer_speed is the rate limit for winding lock ON — the model of how fast a hand
+# can turn the wheel. cfg.counter_steer_speed is the (faster) rate for winding it back
+# off toward center or across to the opposite lock, matching how a real countersteer or
+# slide-catch happens quicker than winding new lock on. Because the servo now only has to
+# cover the slip angle (~8.6° on tarmac) rather than most of full lock, steer_speed is the
+# dominant feel parameter; expect both rates to be tuned well below a lock-to-lock rate.
 func _update_steering(delta: float, steer_input: float, steer_demand: float) -> void:
 	var cfg: GameConfig = config
 	var front := drivetrain.front_axle_state(cfg)
@@ -1069,8 +1071,15 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 			# commanded side, and a jump across the null when it is not (a flick from full right
 			# to full left goes the right way immediately instead of crawling).
 			target = null_angle + signf(steer_input) * (absf(slip_angle) + step)
+	# Counter-steering (winding the wheel BACK toward center or across to the opposite lock)
+	# moves faster than winding new lock on: target lands on the opposite side of the current
+	# angle, or the same side but closer to center. Anything else — including starting from
+	# center — is ordinary steering.
+	var counter_steering: bool = steering != 0.0 and \
+		(signf(target) != signf(steering) or absf(target) < absf(steering))
+	var rate: float = cfg.counter_steer_speed if counter_steering else cfg.steer_speed
 	steering = clampf(
-		move_toward(steering, target, cfg.steer_speed * delta),
+		move_toward(steering, target, rate * delta),
 		-cfg.steer_limit, cfg.steer_limit)
 	# Damage wheel misalignment: bend each wheel physically by its persisted toe on
 	# TOP of the base steer. The pull/crab of a damaged car then comes from the
