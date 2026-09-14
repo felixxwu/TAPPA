@@ -123,12 +123,18 @@ for each).
    - **`steer_limit`** is the mechanical stop and the only hard bound. There are two rate
      limits — the model of how fast a hand can turn the wheel, and also the input smoothing
      (there is no separate easing stage): **`steer_speed`** applies when the target angle winds
-     MORE lock on (further from center, same direction as the current angle, or starting from
-     center); **`counter_steer_speed`** applies when it winds lock back off toward center or
-     across to the opposite lock — real countersteering/slide-catching happens faster than
-     winding lock on, so it is tuned higher. Because the servo only has to cover the tire's
-     slip angle (~8.6° on tarmac) rather than most of full lock, `steer_speed` is the dominant
-     feel parameter and both are tuned well below a lock-to-lock rate.
+     MORE lock on; **`counter_steer_speed`** applies when it winds lock back off, or flicks to
+     the opposite side — real countersteering/slide-catching happens faster than winding lock
+     on, so it is tuned higher. Both are measured **relative to `null_angle`, not center** —
+     during a slide the null itself sits off zero, so a single continuous correction toward it
+     can cross center, and a center-relative test would wrongly slow down exactly at that
+     crossing. `car.gd _update_steering` computes `counter_steering` from `signf(target -
+     null_angle) != signf(steering - null_angle)` (crossed to the far side of the null) or a
+     smaller `absf(target - null_angle)` than `absf(steering - null_angle)` (still approaching
+     it). The airborne fallback has no null to servo on, so it defaults `null_angle` to 0.0 and
+     the split degrades to a plain center-relative read there. Because the servo only has to
+     cover the tire's slip angle (~8.6° on tarmac) rather than most of full lock, `steer_speed`
+     is the dominant feel parameter and both are tuned well below a lock-to-lock rate.
    - **Damage toe rides inside the loop.** `_apply_wheel_toe` bends each wheel on top of the
      servo's angle and the drivetrain measures in that toed frame, so the servo corrects the
      symmetric front component exactly as a real driver holds a correction on a car with bent

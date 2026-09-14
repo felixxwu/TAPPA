@@ -766,6 +766,39 @@ func test_counter_steering_unwinds_faster_than_winding_further_on() -> void:
 			% [counter_delta, winding_delta])
 
 
+func test_a_slide_correction_crossing_centre_stays_on_the_fast_rate() -> void:
+	# The null-relative fix's regression test. During a slide the null (the zero-lateral-slip
+	# angle) can sit well off centre, so a wheel converging on it can be on the SAME side of
+	# centre as the null and further from centre than it started — which reads as "winding more
+	# lock on" if judged against centre alone, even though it is genuinely correcting toward the
+	# null (this codebase's own definition of automatic countersteer — see the comment above
+	# `steer_deadzone` in game_config.gd). A centre-relative test misses this case entirely; the
+	# null-relative one must not.
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	var fronts: Array = dt.front_wheels
+	var c: Drivetrain.WheelContact = dt._contact_pool[fronts[0]]
+	c.wheel = fronts[0]
+	c.n_force = 3000.0
+	c.slip_peak = 0.15
+	c.slip_lat_norm = 0.0
+	c.slip_long_norm = 0.0
+	c.v_long = 100.0  # well above tire_norm_floor, so the centring branch's travel factor is 1
+	c.slip_angle = 0.3  # null sits at steering + 0.3, well past the wheel's current angle
+	dt._contacts.clear()
+	dt._contacts.append(c)
+
+	_car.steering = 0.05  # same side of centre as the null, but far short of it
+	assert_ne(cfg.counter_steer_speed, cfg.steer_speed,
+		"precondition: this config actually distinguishes the two rates")
+	_car._update_steering(1.0 / 60.0, 0.0, 0.0)  # released input: deadzone branch, target = null
+	var moved := absf(_car.steering - 0.05)
+	var counter_step := cfg.counter_steer_speed / 60.0
+	assert_almost_eq(moved, counter_step, counter_step * 0.05,
+		"converging on an off-centre null moves at counter_steer_speed, not steer_speed (%.5f vs expected %.5f)"
+			% [moved, counter_step])
+
+
 func test_front_axle_state_reports_no_contact_when_airborne() -> void:
 	# The caller needs to know to fall back rather than servo on zeros.
 	var dt: Drivetrain = _car.drivetrain

@@ -1027,6 +1027,10 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 	var cfg: GameConfig = config
 	var front := drivetrain.front_axle_state(cfg)
 	var target := 0.0
+	# Zero-lateral-slip reference the counter-steering test below measures against. Airborne
+	# (nothing to servo on) has no such reference, so it falls back to plain center — the
+	# steer/counter-steer split then degrades to the old center-relative read for that branch.
+	var null_angle := 0.0
 	if not bool(front["in_contact"]) or float(front["slip_peak"]) <= 0.0:
 		# Nothing to servo on: no front wheel is on the ground. Fall back to mapping the
 		# input straight onto the wheel angle — holding the last angle instead would freeze
@@ -1036,7 +1040,7 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 		var slip_peak: float = front["slip_peak"]
 		var slip_angle: float = front["slip_angle"]
 		# The null: point the wheels along their own travel and lateral slip goes to zero.
-		var null_angle: float = steering + slip_angle
+		null_angle = steering + slip_angle
 		if steer_demand <= cfg.steer_deadzone:
 			# NOT "minimise usage" — that has no unique solution, since a driven front axle
 			# under power never reaches zero COMBINED usage. The null is defined by LATERAL
@@ -1071,12 +1075,15 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 			# commanded side, and a jump across the null when it is not (a flick from full right
 			# to full left goes the right way immediately instead of crawling).
 			target = null_angle + signf(steer_input) * (absf(slip_angle) + step)
-	# Counter-steering (winding the wheel BACK toward center or across to the opposite lock)
-	# moves faster than winding new lock on: target lands on the opposite side of the current
-	# angle, or the same side but closer to center. Anything else — including starting from
-	# center — is ordinary steering.
-	var counter_steering: bool = steering != 0.0 and \
-		(signf(target) != signf(steering) or absf(target) < absf(steering))
+	# Counter-steering (winding the wheel BACK toward the null or across to the opposite side of
+	# it) moves faster than winding new lock on. Measured against null_angle, NOT center: every
+	# target in this model is commanded out from the null (see the comment above), so during a
+	# slide the null itself can sit well off zero, and a single continuous correction toward it
+	# can cross center. Testing against center would split that one motion across both rates —
+	# slow again the instant it crosses zero — right where the fast rate matters most.
+	var counter_steering: bool = steering != null_angle and \
+		(signf(target - null_angle) != signf(steering - null_angle)
+			or absf(target - null_angle) < absf(steering - null_angle))
 	var rate: float = cfg.counter_steer_speed if counter_steering else cfg.steer_speed
 	steering = clampf(
 		move_toward(steering, target, rate * delta),
