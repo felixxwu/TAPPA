@@ -129,6 +129,18 @@ func test_values_a_grip_feeding_boost_moves_the_grip_row() -> void:
 		"a grip-feeding boost must move CarStats' grip row (grip_meta, not effective_meta)")
 
 
+func test_values_a_shift_time_set_boost_moves_the_shift_time_row() -> void:
+	# Regression test: shift_time_set (Quick-shift gearbox) never feeds power-to-weight
+	# or grip, so it never reaches effective_meta/grip_meta — without CarStats reading
+	# it straight off active_effects, the Shift time row silently ignored this boost.
+	var meta := _synthetic_meta({"shift_time": 0.3})
+	var plain := CarStats.values({}, meta)
+	var boosted := CarStats.values({"boosts": [{"id": "gearbox", "effect": {"shift_time_set": 0.12}}]}, meta)
+	assert_almost_eq(boosted["shift_time"], 0.12, 0.0001,
+		"a shift_time_set boost must move CarStats' shift time row")
+	assert_lt(boosted["shift_time"], plain["shift_time"], "the boost quickens the shift")
+
+
 # --- preview -----------------------------------------------------------------------
 
 func test_preview_does_not_mutate_the_passed_in_owned_dict() -> void:
@@ -146,6 +158,14 @@ func test_preview_of_a_boost_pick_moves_the_stat_it_targets() -> void:
 	var before := CarStats.values({}, meta)
 	var after := CarStats.preview({}, meta, {"id": "fx", "effect": {"engine_power_mult": 1.5}})
 	assert_gt(after["power"], before["power"], "the previewed boost's stat moved")
+
+
+func test_preview_of_a_shift_time_set_pick_moves_the_shift_time_row() -> void:
+	var meta := _synthetic_meta({"shift_time": 0.3})
+	var before := CarStats.values({}, meta)
+	var after := CarStats.preview({}, meta, {"id": "gearbox", "effect": {"shift_time_set": 0.12}})
+	assert_lt(after["shift_time"], before["shift_time"],
+		"the upgrade confirmation sheet must show the gearbox pick moving shift time")
 
 
 func test_preview_of_a_drivetrain_pick_moves_the_drive_row() -> void:
