@@ -57,7 +57,7 @@ Replace the current between-stage pick (`RunPickPanel.open`, `scripts/run_pick_p
 | Category | Ids |
 | --- | --- |
 | **More Power** | `gearbox` (quick-shift), `engine_swap:<id>` (the real engine swap) |
-| **Better Handling** | `lightweight`, `grip`, `aero`, `brakes`, `streamline`, `drivetrain:<mode>` (the AWD conversion) |
+| **Better Handling** | `lightweight`, `grip`, `aero`, `brakes`, `drivetrain:<mode>` (the AWD conversion) |
 
 Stored as a new `"category"` field (`"power"` / `"handling"`) on each
 `BoostLibrary.CATALOGUE` entry, plus a `BoostLibrary.category_of(id)` helper that also

@@ -402,43 +402,57 @@ already did.
 
 ### The catalogue and its pool
 
-`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — eight entries, each an
+`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — seven entries, each an
 `effect` dict keyed by an **existing** `UpgradeLibrary.EFFECTS` row (no second
-effects system): `mass_mult`, `tire_grip_mult`, `shift_time_set`,
-`downforce_front`/`_rear`, `brake_force_mult` (`GameConfig.brake_torque`),
-`drag_mult` (`GameConfig.drag_coefficient`), and the two forced-induction entries
+effects system): `mass_mult_floor`, `tire_grip_mult`, `shift_time_set`,
+`downforce_front`/`_rear`, `brake_torque_set` (`GameConfig.brake_torque`, a FIXED
+absolute figure — see below), and the two forced-induction entries
 `install_turbo`/`install_supercharger` (the SAME permanent-part EFFECTS rows
 [forced-induction.md](forced-induction.md) documents, now also reachable as an
 in-run boost — see *Turbo and supercharger as boosts* below). The catalogue's other
 POWER pick — the Engine Swap — is **not** in this table; see *The engine swap* below
 and [engine-swap.md](engine-swap.md) for why it's a genuine `EngineLibrary` swap, not
-an EFFECTS multiplier.
+an EFFECTS multiplier. There is deliberately no "Streamlined body" / `drag_mult` entry
+any more — it multiplied `drag_coefficient`, which 7 of the 9 roster cars ship as
+`0.0`, making it a near-total no-op for most cars; deleted rather than fixed.
+
+`mass_mult_floor` ("Lightweight parts") is the `"mult_floor"` op — same shape as `"mult"`
+(a percentage cut) but clamped: `apply()`/`effective_meta()` never push `mass` below
+`GameConfig.min_lightweight_mass`, and `RunSession._lightweight_available()` drops the
+`"lightweight"` id from the pool entirely for a car whose EFFECTIVE mass (stock, or
+post-engine-swap — see `UpgradeLibrary.effective_meta`) is already at or under that floor,
+rather than offering a pick that clamps straight back to where the car started.
 
 **Each entry carries a `category`** — `"power"` or `"handling"` — read by
 `BoostLibrary.category_of(id)`, which also classifies the two pseudo-id families
 (`"drivetrain:"` → handling, `"engine_swap:"` → power). Power: `gearbox`, `turbo`,
 `supercharger`, the engine swap. Handling: `lightweight`, `grip`, `aero`, `brakes`,
-`streamline`, the AWD conversion. This is what the pick screen (below) pre-rolls one
-candidate from, per category, as its "Better Handling" / "More Power" card.
+the AWD conversion. This is what the pick screen (below) pre-rolls one candidate
+from, per category, as its "Better Handling" / "More Power" card.
 
 Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
 Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
-`_brake_mult`, `_drag_mult`, `_turbo_boost_gain`/`_omega_ref`/`_inertia`/
+`_brake_torque_n`, `_turbo_boost_gain`/`_omega_ref`/`_inertia`/
 `_parasitic_friction`, `_supercharger_boost_gain`/`_rpm_ref`/`_parasitic_coef`, plus
 `run_boost_healthy_threshold` for the undamaged-arrival reward's health cutoff, see
 above) — `BoostLibrary.effect_for` re-reads them live, never bakes a value in, and no
-test may pin the shipped numbers (CLAUDE.md).
+test may pin the shipped numbers (CLAUDE.md). `run_boost_mass_mult`'s floor,
+`GameConfig.min_lightweight_mass`, lives in the same export group but is its own
+un-leveled field — it's a clamp, not a magnitude a level purchase scales.
 
 **A non-stacking id already picked this run is excluded from later pools.**
 `RunSession._resolve_pick_pool()` drops any id already in `_boosts` for which
-`BoostLibrary.stacks(id)` is false — an entry whose EFFECTS row `op` is `"set"` or
-`"install_induction"` overwrites the exact same value every time it's applied, so a
-repeat is a dead roll, not a stronger one (`"gearbox"`, `"turbo"`, `"supercharger"`).
-A `"mult"`/`"add"` entry (`"grip"`, `"lightweight"`, `"aero"`, `"brakes"`,
-`"streamline"`) genuinely compounds — `apply()` walks the whole `boosts` list onto the
-same freshly-reseeded baseline every stage — so those stay in the pool and can be
-picked repeatedly. Drivetrain/engine-swap pseudo-ids need no such filtering: their own
-availability check already drops them once a repeat would be redundant (already AWD;
+`BoostLibrary.stacks(id)` is false — an entry whose EFFECTS row `op` is `"set"`,
+`"install_induction"`, or `"mult_floor"` overwrites the exact same value (or clamps
+straight back to the same floor) every time it's applied, so a repeat is a dead roll, not
+a stronger one (`"gearbox"`, `"brakes"`, `"lightweight"`, `"turbo"`, `"supercharger"`). A
+`"mult"`/`"add"` entry (`"grip"`, `"aero"`) genuinely compounds — `apply()` walks the
+whole `boosts` list onto the same freshly-reseeded baseline every stage — so those stay
+in the pool and can be picked repeatedly. `"lightweight"` additionally never appears at
+all (not even once) for a car already at/under `min_lightweight_mass` — see
+`RunSession._lightweight_available` above, which is a SEPARATE first-pick gate that
+`stacks()` alone doesn't cover. Drivetrain/engine-swap pseudo-ids need no such filtering:
+their own availability check already drops them once a repeat would be redundant (already AWD;
 already running the next engine up).
 
 **There is no draw or seed any more.** `RunMode.boost_pool_ids(stage_index, extra_ids)`
@@ -687,7 +701,7 @@ reads `Save.boost_level(id)`), via three new `GameConfig` fields under
 - `boost_level_magnitude_step` — how far ONE level pushes a magnitude away from its
   unleveled (level 0) baseline, as a fraction. Each `BoostLibrary.CATALOGUE` entry
   carries its own `level_direction` (+1 or -1) saying which way "more boost" moves that
-  field (e.g. `grip`'s `tire_grip_mult` goes UP, `lightweight`'s `mass_mult` goes DOWN)
+  field (e.g. `grip`'s `tire_grip_mult` goes UP, `lightweight`'s `mass_mult_floor` goes DOWN)
   — `BoostLibrary.level_scale(level, direction)` is `1.0 + direction * level * step`,
   floored well above zero so no combination of step/level can flip a magnitude's sign.
   **Level 0 is always an exact no-op**, which is what keeps every stage-5 boost-pick

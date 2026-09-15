@@ -691,6 +691,35 @@ func test_a_stacking_boost_is_still_offered_after_being_picked() -> void:
 	assert_true(ids.has("grip"), "a stacking boost genuinely does more the second time, so it stays offered")
 
 
+# "lightweight" (mult_floor) is offered for a car whose STOCK mass is above
+# min_lightweight_mass — the ordinary case, and the mirror of the excluded case below.
+# Sets the floor explicitly (well below the fixture's own mass) rather than relying on
+# the shipped GameConfig default clearing it by whatever margin happens to ship today —
+# CLAUDE.md: a designer retuning min_lightweight_mass must not break this.
+func test_lightweight_is_offered_for_a_car_above_the_floor() -> void:
+	Config.data.min_lightweight_mass = float(CarLibrary.by_id("fx_light_rwd")["mass"]) * 0.5
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var ids: Array = []
+	for entry in RunSession.pending_pick():
+		ids.append(String((entry as Dictionary).get("id", "")))
+	assert_true(ids.has("lightweight"), "a car above the floor is offered Lightweight parts")
+
+
+# _lightweight_available (run_session.gd) excludes "lightweight" entirely — never a dead
+# pick — for a car whose stock mass is already at or under min_lightweight_mass, unlike
+# the non-stacking check above (which only ever excludes a REPEAT pick after the first).
+func test_lightweight_is_never_offered_for_a_car_at_or_under_the_floor() -> void:
+	Config.data.min_lightweight_mass = float(CarLibrary.by_id("fx_light_rwd")["mass"])
+	_start()
+	RunSession.report_event_result(maxi(1, RunSession.stage_target_ms() - 1))
+	var ids: Array = []
+	for entry in RunSession.pending_pick():
+		ids.append(String((entry as Dictionary).get("id", "")))
+	assert_false(ids.has("lightweight"),
+		"a car already at the floor never sees a Lightweight parts pick, not even once")
+
+
 func test_a_boost_pick_never_reaches_the_persisted_car() -> void:
 	var car := _start()
 	var iid := int(car["instance_id"])

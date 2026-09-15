@@ -2298,8 +2298,8 @@ func _confirm_pick(choice: String) -> void:
 		pick = BoostLibrary.boost_for(choice)
 		title = BoostLibrary.label_for(choice)
 	var page := _swap_interstitial(title)
-	# THE BOOST'S OWN FIGURE, ABOVE THE SHEET. Not decoration: three of the seven boosts
-	# (Quick-shift gearbox, Big brakes, Streamlined body) drive effects that `EFFECTS` marks
+	# THE BOOST'S OWN FIGURE, ABOVE THE SHEET. Not decoration: two of the boosts
+	# (Quick-shift gearbox, Big brakes) drive effects that `EFFECTS` marks
 	# neither feeds_pw nor feeds_grip, so they never reach the car's meta and move NO row on
 	# the sheet below — see CarStats' header. Without this line their confirmation would be a
 	# wall of unchanged numbers under a "Next" button. A drivetrain conversion or an engine

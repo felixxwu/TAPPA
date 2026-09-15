@@ -65,6 +65,14 @@ func test_every_effect_target_names_a_real_config_property() -> void:
 		for cleared in (desc.get("clears", {}) as Dictionary):
 			assert_true(cleared in cfg,
 				"EFFECTS['%s'].clears names GameConfig.%s, which does not exist" % [key, cleared])
+		# A "mult_floor" row's floor_field is a THIRD live-config spelling alongside
+		# field/cfg_fields and enable — _floor_value degrades to "no clamp" rather than
+		# crashing on a bad name, so nothing else catches a typo here.
+		if String(desc.get("op", "")) == "mult_floor":
+			var floor_field := String(desc.get("floor_field", ""))
+			assert_ne(floor_field, "", "EFFECTS['%s'] is mult_floor with no floor_field" % key)
+			assert_true(floor_field in cfg,
+				"EFFECTS['%s'].floor_field names GameConfig.%s, which does not exist" % [key, floor_field])
 
 
 # Every effect key the fixtures author must have an EFFECTS row. A key with no row is the
@@ -124,6 +132,27 @@ func test_the_add_op_accumulates_over_the_baseline() -> void:
 	var base: int = cfg.downforce_front
 	UpgradeLibrary.apply(_car(["fx_aero"]), cfg)
 	assert_gt(cfg.downforce_front, base, "an 'add' effect stacks on top of the baseline")
+
+
+func test_the_mult_floor_op_clamps_at_the_floor_field() -> void:
+	var cfg := GameConfig.new()
+	# Floor set explicitly, ABOVE what fx_lightweight_floor's 0.5x would otherwise land
+	# on, rather than relying on the shipped GameConfig defaults happening to line up —
+	# a plain "mult" would land below it, so a correct clamp must land EXACTLY on the
+	# floor, not below it.
+	cfg.min_lightweight_mass = cfg.mass * 0.9
+	UpgradeLibrary.apply(_car(["fx_lightweight_floor"]), cfg)
+	assert_almost_eq(cfg.mass, cfg.min_lightweight_mass, 0.001,
+		"a mult_floor effect that would undercut the floor clamps to it exactly")
+
+
+func test_the_mult_floor_op_behaves_like_a_plain_mult_when_well_above_the_floor() -> void:
+	var cfg := GameConfig.new()
+	cfg.mass = cfg.min_lightweight_mass * 4.0  # far enough above the floor to never clamp
+	var expected := cfg.mass * float(UpgradeFixtures.EFFECTS["fx_lightweight_floor"]["mass_mult_floor"])
+	UpgradeLibrary.apply(_car(["fx_lightweight_floor"]), cfg)
+	assert_almost_eq(cfg.mass, expected, 0.001,
+		"a mult_floor effect that stays above the floor scales exactly like a plain mult")
 
 
 func test_two_boosts_of_the_same_op_compound() -> void:
@@ -190,6 +219,19 @@ func test_effective_meta_mirrors_a_feeds_pw_effect() -> void:
 	assert_lt(float(boosted["mass"]), float(meta["mass"]),
 		"a feeds_pw effect reaches the derived meta, not just the live config")
 	assert_eq(meta["mass"], 1200.0, "and the caller's dict is not mutated")
+
+
+# effective_meta's mult_floor arm must clamp exactly like apply()'s — the stats sheet
+# must never show a lighter mass than the physics actually fields (see
+# UpgradeLibrary._floor_value's own comment on why the two read from different sources).
+func test_effective_meta_mirrors_the_mult_floor_clamp() -> void:
+	# Floor set explicitly, well ABOVE what 0.5x would otherwise land on (600), rather
+	# than relying on the shipped GameConfig default happening to clear it.
+	Config.data.min_lightweight_mass = 900.0
+	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
+	var boosted := UpgradeLibrary.effective_meta(_car(["fx_lightweight_floor"]), meta)
+	assert_almost_eq(float(boosted["mass"]), Config.data.min_lightweight_mass, 0.001,
+		"the power-to-weight display clamps at the same floor the live config does")
 
 
 # Turbo and supercharger stack in effective_meta too, MULTIPLICATIVELY — mirroring

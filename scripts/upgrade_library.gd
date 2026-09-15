@@ -46,6 +46,8 @@ extends RefCounted
 #   field    — the target GameConfig / meta field ("" for induction)
 #   op       — "mult" (field *= val), "add" (field += val), "set" (field = val — an
 #              ABSOLUTE figure that replaces the baseline rather than scaling it),
+#              "mult_floor" (field = max(field * val, floor_field) — a proportional
+#              reduction that can't push the field past a floor; see `floor_field` below),
 #              "install_induction" (special: enable one flag, clear the rival's, splat the
 #              sub-dict), or "write_fields" (splat a sub-dict, no flag)
 #   feeds_pw — whether it changes a power-to-weight input (mass / torque), so
@@ -99,6 +101,15 @@ const EFFECTS := {
 	# read as a permanent power level anywhere a build is compared or displayed.
 	"install_nitrous": {"field": "", "op": "write_fields", "feeds_pw": false},
 	"mass_mult":           {"field": "mass", "op": "mult", "feeds_pw": true},
+	# Lightweight parts (BoostLibrary "lightweight"): a proportional weight cut that can't
+	# push a car below min_lightweight_mass — so it's a real upgrade on a heavy car and a
+	# genuine no-op (excluded from the pick pool — see RunSession) on one already at/under
+	# the floor, rather than a % that keeps scaling a car that's already light. `floor_field`
+	# names the GameConfig field _cfg_set/mult_floor reads the floor from — a LIVE CONFIG
+	# spelling like `enable`/`cfg_fields`, not a meta one.
+	"mass_mult_floor": {
+		"field": "mass", "op": "mult_floor", "feeds_pw": true, "floor_field": "min_lightweight_mass",
+	},
 	# Race tyres. `field` names the META spelling (a car's rubber is ONE `tire_compound`
 	# coefficient) while `cfg_fields` names the live-config spelling (a PER-AXLE pair, seeded
 	# from that same compound by car.gd::_apply_physics_spec and then shifted apart by the
@@ -148,7 +159,6 @@ const EFFECTS := {
 	# more powerful build it now is. NOT global_torque_scale: that field is a hidden
 	# uniform de-rate (see BoostLibrary's header), never a per-car effect target.
 	"engine_power_mult": {"field": "peak_torque", "op": "mult", "feeds_pw": true},
-	"drag_mult":         {"field": "drag_coefficient", "op": "mult", "feeds_pw": false},
 	# --- THE PERK ROWS (todo/roguelike-pivot.md decision 51) ----------------------
 	# Skills reach gameplay through THIS table and a car's `boosts` list, exactly as the
 	# decision requires ("do not build a parallel modifier path") — SkillLibrary authors
@@ -249,6 +259,20 @@ static func _cfg_set(cfg: GameConfig, field: String, value: Variant) -> void:
 	cfg.set(field, value)
 
 
+# A "mult_floor" row's clamp floor, read off whichever config source the caller has
+# (apply() has a live `cfg`; effective_meta() has none and reads the Config autoload
+# instead — see that arm's own comment). A missing/typo'd `floor_field`, or one naming a
+# GameConfig property that doesn't exist, degrades to NO clamp (mass_mult behaves like a
+# plain "mult") rather than a silent 0.0 floor or a crash — same "effect reads as active,
+# nothing enforces it" failure shape _cfg_set guards against for a write, just for a read.
+static func _floor_value(source: Object, desc: Dictionary) -> float:
+	var floor_field := String(desc.get("floor_field", ""))
+	if floor_field.is_empty() or not (floor_field in source):
+		push_error("UpgradeLibrary: mult_floor row names floor_field '%s', which does not exist on GameConfig — clamp disabled" % floor_field)
+		return -INF
+	return float(source.get(floor_field))
+
+
 # --- The reseed pre-pass -----------------------------------------------------
 #
 # WHY IT EXISTS. Every effect row this table had before decision 51 targets a PER-CAR
@@ -322,6 +346,14 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 				"mult":
 					for f in _cfg_fields(desc):
 						_cfg_set(cfg, f, float(cfg.get(f)) * float(val))
+				"mult_floor":
+					# Same as "mult", but never pushes the field past floor_field. A car
+					# already at/under the floor (RunSession excludes "lightweight" from the
+					# pick pool before that can happen — see _lightweight_available) would
+					# just clamp straight back to where it started.
+					var floor_val := _floor_value(cfg, desc)
+					for f in _cfg_fields(desc):
+						_cfg_set(cfg, f, maxf(float(cfg.get(f)) * float(val), floor_val))
 				"add":
 					for f in _cfg_fields(desc):
 						_cfg_set(cfg, f, float(cfg.get(f)) + float(val))
@@ -400,6 +432,14 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 				"mult":
 					var f: String = desc["field"]
 					out[f] = float(out.get(f, 0.0)) * float(effect[key])
+				"mult_floor":
+					# Mirrors apply()'s clamp exactly (off the same Config.data floor field,
+					# since this function has no live `cfg` instance of its own to read one
+					# off) — the power-to-weight display must never show a lighter mass than
+					# the physics actually fields.
+					var f: String = desc["field"]
+					var floor_val := _floor_value(Config.data, desc)
+					out[f] = maxf(float(out.get(f, 0.0)) * float(effect[key]), floor_val)
 				"install_induction":
 					# Which axis this fitted part's gain overrides comes from its OWN
 					# `enable` field name, so this arm never needs to know "turbo" vs

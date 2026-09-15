@@ -66,11 +66,12 @@ The single source of truth for what each effect key does, so `apply` (live confi
 | --- | --- |
 | `field` | The CAR-META spelling of the quantity (a key on the car dict) |
 | `cfg_fields` | The LIVE-CONFIG spelling(s), when the two vocabularies diverge |
-| `op` | `mult` / `add` / `set` / `install_induction` / `write_fields` |
+| `op` | `mult` / `add` / `set` / `mult_floor` / `install_induction` / `write_fields` |
 | `feeds_pw` | Whether `effective_meta` mirrors it onto power-to-weight |
 | `feeds_grip` | Whether `grip_meta` folds it in |
 | `reseed` | Whether the row's config fields are restored from the authored baseline first |
 | `enable` / `clears` / `gain_key` | Induction-only: the flag to switch on, the rival's state to reset, the sub-key `effective_meta` rates at peak boost |
+| `floor_field` | `mult_floor`-only: the GameConfig field the clamp floor is read from (`UpgradeLibrary._floor_value`) |
 
 **A `mult`/`add` row may target more than one config field, under a different name.**
 `field` is the meta spelling; `cfg_fields` overrides for a row whose two vocabularies

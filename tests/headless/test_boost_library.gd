@@ -78,7 +78,7 @@ func test_boost_for_is_empty_for_an_unknown_id() -> void:
 func test_effect_for_reads_its_magnitude_live_off_config() -> void:
 	Config.data.run_boost_mass_mult = 0.42
 	var effect: Dictionary = BoostLibrary.effect_for("lightweight")
-	assert_eq(float(effect["mass_mult"]), 0.42,
+	assert_eq(float(effect["mass_mult_floor"]), 0.42,
 		"the boost's magnitude is whatever GameConfig currently says, not a baked constant")
 
 
@@ -201,16 +201,19 @@ func test_current_effect_text_at_level_zero_still_reports_a_real_effect() -> voi
 		assert_ne(text, "+0%", "'%s' at level 0 does not claim to do nothing" % id)
 
 
-# A "mult" boost's base magnitude must push the SAME WAY its level ladder does: a
-# lightweight kit whose mass_mult sat above 1.0 would make the car heavier while its
-# levels made it lighter. A relationship, not a pinned number — any sane tuning satisfies
-# it, and a magnitude of exactly 1.0 (a boost that does nothing) is genuinely broken.
+# A "mult" (or "mult_floor" — same ratio semantics before any clamp; magnitude_for never
+# applies the floor, only apply()/effective_meta() do) boost's base magnitude must push
+# the SAME WAY its level ladder does: a lightweight kit whose mass_mult_floor sat above
+# 1.0 would make the car heavier while its levels made it lighter. A relationship, not a
+# pinned number — any sane tuning satisfies it, and a magnitude of exactly 1.0 (a boost
+# that does nothing) is genuinely broken.
 func test_a_multiplier_boosts_base_magnitude_pushes_the_way_its_levels_do() -> void:
 	for id in BoostLibrary.CATALOGUE:
 		var direction := int((BoostLibrary.CATALOGUE[id] as Dictionary).get("level_direction", 1))
 		for effect_key in BoostLibrary.magnitude_for(id, 0):
 			var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
-			if String(desc.get("op", "mult")) != "mult":
+			var op := String(desc.get("op", "mult"))
+			if op != "mult" and op != "mult_floor":
 				continue
 			var magnitude := float(BoostLibrary.magnitude_for(id, 0)[effect_key])
 			assert_ne(magnitude, 1.0, "'%s' actually changes %s" % [id, effect_key])
@@ -226,7 +229,7 @@ func test_a_multiplier_boosts_base_magnitude_pushes_the_way_its_levels_do() -> v
 # (which the test above pins to the magnitude's own side of 1.0).
 func test_a_multiplier_boost_reads_as_a_signed_percentage() -> void:
 	for id in BoostLibrary.CATALOGUE:
-		if not _is_pure_mult(id):
+		if not _is_percentage_display(id):
 			continue
 		var direction := int((BoostLibrary.CATALOGUE[id] as Dictionary).get("level_direction", 1))
 		var text := BoostLibrary.current_effect_text(id, 0)
@@ -245,7 +248,7 @@ func test_a_multiplier_boost_reads_as_a_signed_percentage() -> void:
 func test_an_additive_or_set_boost_reads_as_an_absolute_figure_with_its_unit() -> void:
 	var checked := 0
 	for id in BoostLibrary.CATALOGUE:
-		if _is_pure_mult(id) or _is_induction(id):
+		if _is_percentage_display(id) or _is_induction(id):
 			continue
 		var unit := String((BoostLibrary.CATALOGUE[id] as Dictionary).get("unit", ""))
 		assert_ne(unit, "", "'%s' authors a display unit for its non-mult effect" % id)
@@ -301,12 +304,31 @@ func test_current_effect_text_for_falls_back_to_level_zero_when_never_purchased(
 
 
 # True when every effect key a catalogue entry drives is a "mult" row — the entries whose
-# figure is a percentage. Read off UpgradeLibrary.EFFECTS rather than hardcoded here, so a
-# retyped or newly added row is classified correctly without editing this file.
+# figure is a percentage AND which genuinely compound on repeat (stacks() is true). Read
+# off UpgradeLibrary.EFFECTS rather than hardcoded here, so a retyped or newly added row
+# is classified correctly without editing this file. Deliberately does NOT include
+# "mult_floor" (Lightweight parts) — see _is_percentage_display below for why that's a
+# separate grouping.
 func _is_pure_mult(id: String) -> bool:
 	for effect_key in BoostLibrary.magnitude_for(id, 0):
 		var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
 		if String(desc.get("op", "mult")) != "mult":
+			return false
+	return true
+
+
+# True when every effect key a catalogue entry drives renders as a PERCENTAGE
+# (current_effect_text's default arm) — "mult" and "mult_floor" both. Wider than
+# _is_pure_mult on purpose: "mult_floor" (Lightweight parts) is still fundamentally a
+# percentage-off-baseline for display, just clamped so it can't push past a floor, and
+# that clamp is a simulation detail current_effect_text has no reason to surface as a
+# separate absolute figure — but it is NOT a "mult" for stacking purposes (it does NOT
+# compound; see BoostLibrary.stacks), so the stacking tests use _is_pure_mult, not this.
+func _is_percentage_display(id: String) -> bool:
+	for effect_key in BoostLibrary.magnitude_for(id, 0):
+		var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
+		var op := String(desc.get("op", "mult"))
+		if op != "mult" and op != "mult_floor":
 			return false
 	return true
 
@@ -477,15 +499,16 @@ func test_resolve_id_is_empty_for_an_unknown_id() -> void:
 
 # --- stacks() — the mid-run repeat guard's seam -----------------------------------
 
-# A "set" or "install_induction" entry overwrites the same value on every pick, so a
-# second pick of it does nothing more than the first.
+# A "set" or "install_induction" entry overwrites the same value on every pick, and a
+# "mult_floor" entry clamps straight back to the same floor — so a second pick does
+# nothing more than the first, in all three cases.
 func test_stacks_is_false_for_a_set_or_induction_entry() -> void:
 	for id in BoostLibrary.CATALOGUE:
 		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
 		var has_non_stacking_op := false
 		for effect_key in (entry["effect_fields"] as Dictionary):
 			var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
-			if op == "set" or op == "install_induction":
+			if op == "set" or op == "install_induction" or op == "mult_floor":
 				has_non_stacking_op = true
 		if has_non_stacking_op:
 			assert_false(BoostLibrary.stacks(id), "'%s' does not stack" % id)

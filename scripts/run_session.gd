@@ -357,6 +357,39 @@ func _pool_engine_swap_ids() -> Array:
 	return ["engine_swap:%s" % best_id] if not best_id.is_empty() else []
 
 
+# Whether "Lightweight parts" (BoostLibrary "lightweight", the "mult_floor" op) has
+# anything left to do for this run's car — false once the car's EFFECTIVE mass is already
+# at or under GameConfig.min_lightweight_mass, so a car that starts there (or below)
+# never even sees the pick, mirroring _pool_drivetrain_ids' "drop the option once it has
+# nothing left to offer" shape.
+#
+# Routed through UpgradeLibrary.effective_meta rather than a bare CarLibrary stock-mass
+# read: a car's mass isn't fixed at its CarLibrary entry — an engine swap moves it
+# (EngineSwap.recompute_mass, mirrored inside effective_meta), and a car already carrying
+# other feeds_pw effects could too. Reading raw stock mass would offer "lightweight" to a
+# car a lighter-engine swap already pushed under the floor — the exact dead-pick this
+# function exists to prevent. This also makes it naturally redundant with (not a
+# replacement for) BoostLibrary.stacks()'s "mult_floor" exclusion once "lightweight"
+# itself has been picked — belt and braces, not a bug; see that function's own comment.
+#
+# `owned` is Save's PERSISTED car, which never carries a run's own engine swap or boosts
+# (world.gd::_owned_with_run_effects merges those onto a DUPLICATED dict, deliberately
+# never written back to Save — see test_a_boost_pick_never_reaches_the_persisted_car). So
+# THIS run's swap/boosts are stamped on here, mirroring _current_engine_id's own
+# "_engine_swap_id first, persisted stock otherwise" precedent — without this, a
+# same-run swap that pushes the car under the floor would still see "lightweight" offered.
+func _lightweight_available() -> bool:
+	var owned: Dictionary = Save.get_car(_car_instance_id)
+	if owned.is_empty():
+		return false
+	owned = owned.duplicate(true)
+	owned["boosts"] = _boosts
+	if not _engine_swap_id.is_empty():
+		owned["swapped_engine"] = _engine_swap_id
+	var meta := UpgradeLibrary.effective_meta(owned, CarLibrary.for_owned(owned))
+	return float(meta.get("mass", 0.0)) > Config.data.min_lightweight_mass
+
+
 # The WHOLE pick pool, resolved: every id `_mode.boost_pool_ids` currently offers
 # (the full BoostLibrary catalogue plus whatever drivetrain/engine-swap pseudo-ids are
 # available right now), minus any id this run has ALREADY picked that wouldn't do
@@ -371,7 +404,10 @@ func _pool_engine_swap_ids() -> Array:
 # Drivetrain/engine-swap pseudo-ids need no filtering here: their own availability
 # check (_pool_drivetrain_ids/_pool_engine_swap_ids) already drops them from `ids` once
 # a repeat would be redundant (already AWD; already running the next engine up), so
-# `stacks()` is never even asked about them.
+# `stacks()` is never even asked about them. "lightweight" gets the SAME treatment for
+# its own reason — a car already at/under min_lightweight_mass — via
+# _lightweight_available; see that function's own comment for why the ordinary
+# already_picked/stacks() check alone isn't enough (it only catches a REPEAT pick).
 func _resolve_pick_pool() -> Array:
 	var ids := _mode.boost_pool_ids(_stage_index, _pool_drivetrain_ids() + _pool_engine_swap_ids())
 	var already_picked := {}
@@ -380,6 +416,8 @@ func _resolve_pick_pool() -> Array:
 	var out: Array = []
 	for id in ids:
 		var id_str := String(id)
+		if id_str == "lightweight" and not _lightweight_available():
+			continue
 		if already_picked.has(id_str) and not BoostLibrary.stacks(id_str):
 			continue
 		out.append(BoostLibrary.resolve_id(id_str))

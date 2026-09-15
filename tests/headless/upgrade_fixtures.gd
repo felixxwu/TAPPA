@@ -15,7 +15,8 @@ extends RefCounted
 # The entries cover every EFFECT SHAPE the funnel reads, which is the whole point of owning
 # them here rather than borrowing whatever the game currently ships: install_turbo,
 # install_supercharger, install_nitrous (write_fields), mass_mult (both a reduction < 1 and
-# an increase > 1), downforce_* (the "add" op, feeds_grip), shift_time_set (the "set" op —
+# an increase > 1), mass_mult_floor (the "mult_floor" op — a mult() clamped at a floor
+# field), downforce_* (the "add" op, feeds_grip), shift_time_set (the "set" op —
 # an absolute value, not a scaling), tire_grip_mult (the one row whose meta field and live-
 # config fields differ — see UpgradeLibrary._cfg_fields) and tire_snow_grip_mult /
 # tire_tarmac_grip_mult (the surface-dependent compound, whose meta and config names agree).
@@ -61,6 +62,13 @@ const EFFECTS := {
 	# mass_mult in both directions: feeds_pw, so effective_meta must mirror it.
 	"fx_lightweight": {"mass_mult": 0.80},
 	"fx_ballast": {"mass_mult": 1.3},
+	# The "mult_floor" shape (Lightweight parts): a proportional cut clamped at
+	# GameConfig.min_lightweight_mass. Tests set the floor explicitly relative to
+	# whatever cfg.mass they're using (never relying on the shipped defaults happening
+	# to line up) to exercise both sides: the RESULT landing below the floor (clamps)
+	# and well above it (behaves like a plain mult) — see test_upgrade_library.gd's
+	# mult_floor tests.
+	"fx_lightweight_floor": {"mass_mult_floor": 0.5},
 	# The "write_fields" shape: a straight splat with no enable flag.
 	"fx_nitrous": {"install_nitrous": {"nitrous_boost_gain": 0.3, "nitrous_tank_seconds": 2.0}},
 }

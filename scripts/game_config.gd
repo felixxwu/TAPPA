@@ -4150,8 +4150,14 @@ func spectator_params() -> Dictionary:
 ## undamaged-arrival reward: NO repair row on the pick screen, so every roll lands on a
 ## real upgrade instead of the usual repair-or-upgrade choice.
 @export_range(0.5, 1.0, 0.01) var run_boost_healthy_threshold := 0.95
-## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost).
-@export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.93
+## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost),
+## clamped at min_lightweight_mass below (the "mult_floor" op) so it can't push a car
+## below that floor — see UpgradeLibrary.EFFECTS["mass_mult_floor"].
+@export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.8
+## The floor "Lightweight parts" can't push a car's mass below (kg). One-time (see
+## BoostLibrary.stacks — "mult_floor" is non-stacking) and excluded from the pick pool
+## entirely for a car already at or under this (RunSession._lightweight_available).
+@export var min_lightweight_mass := 1000.0
 ## "Sticky tyres" — tire_grip_mult (above 1.0 = more grip).
 @export_range(1.0, 1.5, 0.01) var run_boost_grip_mult := 1.08
 ## "Quick-shift gearbox" — an ABSOLUTE shift time (the "set" op), not a scaling.
@@ -4164,8 +4170,6 @@ func spectator_params() -> Dictionary:
 ## enough to reliably trigger ABS (features/drivetrain-and-tires.md) even on the
 ## heaviest car in the roster.
 @export var run_boost_brake_torque_n := 2500.0
-## "Streamlined body" — drag_coefficient multiplier (below 1.0 = less drag).
-@export_range(0.5, 1.0, 0.01) var run_boost_drag_mult := 0.92
 # NOTE: there is deliberately no run_boost_engine_power_mult any more — the Engine Swap
 # is a genuine EngineLibrary swap now (RunSession._pool_engine_swap_ids), not a flat
 # peak_torque multiplier. See features/engine-swap.md.

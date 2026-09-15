@@ -12,10 +12,11 @@ extends RefCounted
 # Every boost's `effect` dict uses an EXISTING `UpgradeLibrary.EFFECTS` key: this file
 # invents no second effects system, it only AUTHORS entries that walk through the one
 # funnel UpgradeLibrary already owns (apply() / effective_meta() / grip_meta()). Two of
-# the six below (`brake_torque_set`, `drag_mult`) needed a new EFFECTS row each — added
-# in upgrade_library.gd alongside the GameConfig fields they already existed as
-# (`brake_torque`, `drag_coefficient`) — everything else reuses a row the old parts
-# model already had (mass_mult, tire_grip_mult, shift_time_set, downforce_front/rear).
+# the entries below needed a new EFFECTS row: `brake_torque_set` (Big brakes, alongside
+# the GameConfig field it already existed as, `brake_torque`) and `mass_mult_floor`
+# (Lightweight parts, the "mult_floor" op — a plain mult clamped at a floor field, see
+# upgrade_library.gd) — everything else reuses a row the old parts model already had
+# (tire_grip_mult, shift_time_set, downforce_front/rear).
 #
 # RR's own set is the guide (engineForce, frictionMax, brakeForce, mass, shiftTime,
 # downforce, dragCoefficient) but is not reproduced 1:1: `engineForce` maps onto
@@ -58,8 +59,13 @@ extends RefCounted
 const CATALOGUE := {
 	"lightweight": {
 		"label": "Lightweight parts",
-		"effect_fields": {"mass_mult": "run_boost_mass_mult"},
-		"level_direction": -1,  # lower mass_mult = lighter = more boost
+		# "mult_floor", not "mult": a proportional weight cut clamped at
+		# GameConfig.min_lightweight_mass, so it's one-time (see BoostLibrary.stacks) and
+		# excluded from the pick pool once a car is already at/under the floor
+		# (RunSession._lightweight_available) rather than a repeatable % that keeps
+		# scaling a car that's already light.
+		"effect_fields": {"mass_mult_floor": "run_boost_mass_mult"},
+		"level_direction": -1,  # lower mass_mult_floor = lighter = more boost
 		"category": "handling",
 	},
 	"grip": {
@@ -98,12 +104,10 @@ const CATALOGUE := {
 		# (see run_boost_brake_torque_n and features/drivetrain-and-tires.md).
 		"effect_fields": {"brake_torque_set": "run_boost_brake_torque_n"},
 		"level_direction": 1,  # higher brake_torque_set = more boost
-		"category": "handling",
-	},
-	"streamline": {
-		"label": "Streamlined body",
-		"effect_fields": {"drag_mult": "run_boost_drag_mult"},
-		"level_direction": -1,  # lower drag_mult = less drag = more boost
+		# A "set" op replaces the car's own brake_torque outright, so the shop shows the
+		# absolute N·m it sets rather than a percentage of a baseline that does not
+		# exist — see current_effect_text (mirrors "gearbox"'s comment above).
+		"unit": "N·m", "decimals": 0,
 		"category": "handling",
 	},
 	"turbo": {
@@ -268,7 +272,10 @@ static func current_effect_text(id: String, level: int) -> String:
 				# "mult", and the safe default for a row this file has not seen: a ratio
 				# to no-boost reads as a percentage swing.
 				text = "%+.0f%%" % ((value - 1.0) * 100.0)
-		if not unit.is_empty() and op != "mult":
+		# "mult"/"mult_floor" both fall to the percentage default arm above — no unit
+		# suffix belongs on a percentage swing, same reason _is_percentage_display groups
+		# them for the display tests (test_boost_library.gd).
+		if not unit.is_empty() and op != "mult" and op != "mult_floor":
 			text = "%s %s" % [text, unit]
 		if not parts.has(text):
 			parts.append(text)
@@ -320,10 +327,12 @@ static func resolve_id(id: String) -> Dictionary:
 
 # Whether a SECOND pick of `id` in the same run would do anything MORE than the first —
 # false for an entry whose op OVERWRITES the same value every time it's applied ("set",
-# "install_induction": a repeat pick lands on the identical number, a dead roll rather
-# than a stronger one) as opposed to one that COMPOUNDS ("mult"/"add" — two "Sticky
-# tyres" picks really do grip harder than one, since apply() walks the whole `boosts`
-# list and multiplies/adds each entry in turn onto the same freshly-reseeded baseline).
+# "install_induction") or converges on a FLOOR/CEILING it can't be pushed past
+# ("mult_floor" — Lightweight parts: a repeat pick still clamps at the same floor, a
+# dead roll rather than a lighter car) as opposed to one that COMPOUNDS ("mult"/"add" —
+# two "Sticky tyres" picks really do grip harder than one, since apply() walks the whole
+# `boosts` list and multiplies/adds each entry in turn onto the same freshly-reseeded
+# baseline).
 # Read off UpgradeLibrary.EFFECTS rather than hardcoded here, so a retyped or newly added
 # op is classified correctly with no catalogue edit — same "derive, don't duplicate"
 # convention as category_of. `true` (assume it stacks) for an unknown id: callers only
@@ -339,7 +348,7 @@ static func stacks(id: String) -> bool:
 		return true
 	for effect_key in (entry.get("effect_fields", {}) as Dictionary):
 		var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
-		if op == "set" or op == "install_induction":
+		if op == "set" or op == "install_induction" or op == "mult_floor":
 			return false
 	return true
 

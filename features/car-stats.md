@@ -78,8 +78,8 @@ See `test_car_stats_sheet.gd` → `test_values_a_shift_time_set_boost_moves_the_
 / `test_preview_of_a_shift_time_set_pick_moves_the_shift_time_row`.
 
 `world.gd::_confirm_pick` separately prints `BoostLibrary.current_effect_text_for` above the
-sheet for every non-drivetrain/non-swap pick — that stays, since two boosts (Big brakes,
-Streamlined body) target fields this sheet has no row for at all and still need it.
+sheet for every non-drivetrain/non-swap pick — that stays, since Big brakes targets a
+field this sheet has no row for at all and still needs it.
 
 ## `preview()` deep-duplicates before probing
 

@@ -204,7 +204,7 @@ physically simulated car (see the deleted career rally session):
 ```
 
 `_apply_engine_swap(owned)` runs immediately after the `CarLibrary` baseline
-and **before** upgrades, so a weight-reduction kit's `mass_mult` scales the
+and **before** upgrades, so a weight-reduction kit's `mass_mult_floor` scales the
 post-swap total, and before the end-of-function suspension re-sync, so the
 spring split re-derives from the post-swap `weight_front`. It is a no-op for a
 car running its own stock engine (`EngineSwap.current_engine_id(owned, stock) == stock`).
