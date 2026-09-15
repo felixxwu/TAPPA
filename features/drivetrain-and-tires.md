@@ -365,6 +365,46 @@ open like neutral. The engine revs freely against the throttle (handbrake-rev /
 flat-shift launch feel) and delivers **no** drive torque to the wheels while the
 handbrake locks the driven axle.
 
+## Anti-lock braking (ABS)
+
+`step` splits the foot brake into `rear_brake_foot` / `front_brake` and the
+handbrake into `rear_brake_hb`, then — each of the 8 spin substeps, right after
+`_tire_force` refreshes `c.slip_long_norm` — calls `_update_abs_active(cfg, c)`
+per wheel. That's a hysteresis latch on `c.abs_active` (pooled on the
+`WheelContact`, so it survives across substeps): engages when the wheel's
+BRAKING-side slip (`slip_long_norm < 0`) passes `1.0 + abs_slip_margin` on
+`grip_fraction`, releases below `1.0 - abs_slip_margin`, holds in between —
+without the gap the substeps (several hundred Hz) would flip the latch every
+one of them and read as mush instead of a pulse. Below `abs_min_speed` (so ABS
+doesn't fight the standstill `brake_hold` in [car-physics.md](car-physics.md))
+or with `abs_enabled = false`, the latch is forced off — `abs_min_speed` exists
+specifically so ABS doesn't fight `car.gd`'s standstill `brake_hold` (parking /
+finish-line auto-stop, which asks for full lock torque at rest on purpose).
+
+`_abs_release_scale(cfg, contacts, group)` turns latched wheels into a brake
+torque multiplier (`1.0 - abs_release_ratio` if ANY wheel in the group is
+latched, else `1.0`) for a group — `ABS_GROUP_REAR`, `ABS_GROUP_FRONT`, or
+`ABS_GROUP_ALL`. **Only ever scales the FOOT-brake share** (`rear_brake_foot`,
+`front_brake`/`front_spool_brake`) — `rear_brake_hb` (the handbrake) is always
+added back in unscaled, since handbrake lockup is the intended drift/turn
+mechanic, not something ABS should undo.
+
+Granularity follows whatever the spin state already is per drive mode:
+- **RWD fronts** are genuinely per-wheel (`front_omega` is per-wheel), so ABS
+  reads `c.abs_active` directly per wheel there instead of the shared scale.
+- **FWD/AWD front spool** and **rear** are each one locked axle (one omega),
+  so ABS there is axle-level: `ABS_GROUP_FRONT` / `ABS_GROUP_REAR`.
+- **AWD without handbrake** locks front+rear into ONE combined driveline (one
+  inertia, one `move_toward`) — ABS can only release that whole pair together
+  (`ABS_GROUP_ALL`, `combined_abs_scale`), not the axles independently,
+  without opening the centre diff (a separate, larger change).
+- **AWD with handbrake** already opens the centre diff for the pull (see
+  above); ABS there scales the rear's foot-brake share and the front spool's
+  brake independently, same as RWD/FWD.
+
+See [game_config.gd](../scripts/game_config.gd) → `abs_enabled`,
+`abs_release_ratio`, `abs_slip_margin`, `abs_min_speed`.
+
 ## Gearing, top speed & the engine's hidden rolling resistance
 
 Gearing (`gear_ratios` + `final_drive` + `shift_time`) lives on the **engine**
@@ -425,7 +465,8 @@ config by `apply_car`).
 
 `wheel_friction_slip_front/rear`, `grass_grip`, `gravel_grip`, `tarmac_grip`,
 `wheel_roll_influence`, `drive_mode`, `suspension_*`, `brake_torque`,
-`handbrake_torque`, `gear_ratios`, `final_drive`, `drag_coefficient`.
+`handbrake_torque`, `abs_enabled`, `abs_release_ratio`, `abs_slip_margin`,
+`abs_min_speed`, `gear_ratios`, `final_drive`, `drag_coefficient`.
 
 
 ## Region grip overrides and ice

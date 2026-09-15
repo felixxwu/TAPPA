@@ -1670,6 +1670,12 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	# after); at neutral the car keeps this default. Omit to inherit the
 	# GameConfig.brake_bias default.
 	cfg.brake_bias = spec.get("brake_bias", cfg.brake_bias)
+	# Per-car foot-brake strength (N·m/axle from the S key). Authored so each car's
+	# WORST braking axle sits at roughly the same ABS margin (~1.5x its static grip
+	# budget) rather than every car sharing one global brake_torque regardless of
+	# mass/weight distribution — see todo/abs-brakes.md and
+	# features/drivetrain-and-tires.md. Omit to inherit the GameConfig default.
+	cfg.brake_torque = spec.get("brake_torque", cfg.brake_torque)
 	# Per-car suspension: overall spring rate + per-axle travel. The front/rear
 	# spring RATES are not authored — they're derived from weight_front by
 	# GameConfig.axle_stiffness so the heavier axle gets a stiffer spring and the car

@@ -25,6 +25,10 @@ extends RefCounted
 
 const SPIN_SUBSTEPS := 8
 
+# ABS release-scale groupings (see _abs_release_scale): which wheels' abs_active
+# latches count when deciding whether to release a given brake-torque figure.
+enum { ABS_GROUP_REAR, ABS_GROUP_FRONT, ABS_GROUP_ALL }
+
 enum DriveMode { RWD, AWD, FWD }
 
 var car: VehicleBody3D
@@ -103,6 +107,11 @@ class WheelContact extends RefCounted:
 	# wheel for the life of the drivetrain), so an airborne wheel would otherwise keep
 	# serving last tick's numbers to the per-wheel accessors below.
 	var live: bool
+	# ABS hysteresis latch for this wheel's FOOT brake share (see _update_abs_active).
+	# Deliberately NOT reset per-tick like slip_use/slip_long_norm: it needs to survive
+	# across the SPIN_SUBSTEPS of a tick (and briefly across ticks) or engage/release
+	# would flip-flop every substep instead of holding a clean pulse.
+	var abs_active := false
 
 var _contact_pool: Dictionary = {}  # wheel -> reusable WheelContact
 var _contacts: Array = []           # the in-contact subset this tick (reused)
@@ -271,8 +280,9 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 	# knob, features/tuning.md). The * 2.0 normalises so brake_bias = 0.5 reproduces the
 	# old equal split exactly (front = rear = brake * brake_torque).
 	var total_brake := brake * cfg.brake_torque * 2.0
-	var front_brake := total_brake * cfg.brake_bias  # per front wheel
-	var rear_brake := total_brake * (1.0 - cfg.brake_bias) + (cfg.handbrake_torque if handbrake else 0.0)
+	var front_brake := total_brake * cfg.brake_bias  # per front wheel, FOOT brake only
+	var rear_brake_foot := total_brake * (1.0 - cfg.brake_bias)
+	var rear_brake_hb := cfg.handbrake_torque if handbrake else 0.0
 	var front_inertia := cfg.axle_inertia * 0.5  # per front wheel
 	# A driven axle is a locked spool. front_spool_inertia/brake fold the two
 	# front wheels into one unit for FWD/AWD.
@@ -292,11 +302,25 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 			var f := _tire_force(cfg, c, _omega_of(c.wheel) * r, h)
 			c.impulse_long += f.x * h
 			c.impulse_lat += f.y * h
+			_update_abs_active(cfg, c)
 			if c.wheel.use_as_traction:
 				rear_reaction += f.x * r
 			else:
 				front_reaction += f.x * r
 				front_reaction_each[c.wheel] = f.x * r
+
+		# ABS release scale, one per axle grouping (see _abs_release_scale): a group
+		# releases if ANY wheel in it is latched, matching how a locked axle/spool
+		# already shares one omega (one locking wheel already drags the whole group).
+		# Only the RWD front branch below uses genuinely per-wheel spin state, so
+		# only it reads abs_active per-wheel directly instead of this shared scale.
+		var rear_abs_scale := _abs_release_scale(cfg, _contacts, ABS_GROUP_REAR)
+		var front_abs_scale := _abs_release_scale(cfg, _contacts, ABS_GROUP_FRONT)
+		# AWD without handbrake locks front+rear into one driveline (one inertia, one
+		# move_toward below) — ABS can only act on that combined pair, not the axles
+		# independently, without opening the centre diff (out of scope; see
+		# todo/abs-brakes.md). Uses the worst-latched wheel across BOTH axles.
+		var combined_abs_scale := _abs_release_scale(cfg, _contacts, ABS_GROUP_ALL)
 
 		# The engine is geared to the driven axle(s); its total wheel torque
 		# (drive, engine braking and shift cuts all live in EngineSim — including the
@@ -313,12 +337,14 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 					# steerable.
 					rear_omega += -rear_reaction / cfg.axle_inertia * h
 					rear_omega = move_toward(
-						rear_omega, 0.0, rear_brake / cfg.axle_inertia * h
+						rear_omega, 0.0,
+						(rear_brake_foot * rear_abs_scale + rear_brake_hb) / cfg.axle_inertia * h
 					)
 					var spool := _front_avg_omega()
 					spool += -front_reaction / front_spool_inertia * h
 					spool = move_toward(
-						spool, 0.0, front_spool_brake / front_spool_inertia * h
+						spool, 0.0,
+						front_spool_brake * front_abs_scale / front_spool_inertia * h
 					)
 					for wheel in front_wheels:
 						front_omega[wheel] = spool
@@ -329,26 +355,37 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 						(drive_torque - rear_reaction - front_reaction) / inertia * h
 					)
 					rear_omega = move_toward(
-						rear_omega, 0.0, (rear_brake + front_spool_brake) / inertia * h
+						rear_omega, 0.0,
+						(rear_brake_foot + front_spool_brake) * combined_abs_scale / inertia * h
 					)
 					for wheel in front_wheels:
 						front_omega[wheel] = rear_omega
 			DriveMode.FWD:
 				# Front driven spool; rear axle free-rolls (reaction + brake only).
 				rear_omega += -rear_reaction / cfg.axle_inertia * h
-				rear_omega = move_toward(rear_omega, 0.0, rear_brake / cfg.axle_inertia * h)
+				rear_omega = move_toward(
+					rear_omega, 0.0,
+					(rear_brake_foot * rear_abs_scale + rear_brake_hb) / cfg.axle_inertia * h
+				)
 				var spool := _front_avg_omega()
 				spool += (drive_torque - front_reaction) / front_spool_inertia * h
-				spool = move_toward(spool, 0.0, front_spool_brake / front_spool_inertia * h)
+				spool = move_toward(
+					spool, 0.0, front_spool_brake * front_abs_scale / front_spool_inertia * h
+				)
 				for wheel in front_wheels:
 					front_omega[wheel] = spool
 			_:  # RWD: rear driven spool; fronts free-roll independently (open).
 				rear_omega += (drive_torque - rear_reaction) / cfg.axle_inertia * h
-				rear_omega = move_toward(rear_omega, 0.0, rear_brake / cfg.axle_inertia * h)
+				rear_omega = move_toward(
+					rear_omega, 0.0,
+					(rear_brake_foot * rear_abs_scale + rear_brake_hb) / cfg.axle_inertia * h
+				)
 				for wheel in front_wheels:
 					var omega: float = front_omega[wheel]
 					omega += -front_reaction_each.get(wheel, 0.0) / front_inertia * h
-					omega = move_toward(omega, 0.0, front_brake / front_inertia * h)
+					var c: WheelContact = _contact_pool[wheel]
+					var wheel_abs_scale := 1.0 - cfg.abs_release_ratio if c.abs_active else 1.0
+					omega = move_toward(omega, 0.0, front_brake * wheel_abs_scale / front_inertia * h)
 					front_omega[wheel] = omega
 
 	# Apply the time-averaged tire force to the chassis and publish readouts.
@@ -493,6 +530,47 @@ static func grip_fraction(slip: float, slip_peak: float) -> float:
 	if slip_peak <= 0.0:
 		return 0.0
 	return slip / slip_peak
+
+
+# ABS engage/release latch for one wheel's FOOT brake, using the fresh
+# c.slip_long_norm this substep's _tire_force call just set. Only ever reads the
+# BRAKING side (slip_long_norm < 0, wheel surface slower than ground): a wheel
+# breaking loose under drive torque (wheelspin) is not what ABS exists to catch.
+#
+# Hysteresis, not a single threshold: engage above 1.0 + abs_slip_margin, release
+# below 1.0 - abs_slip_margin, hold the latch in between. Without the gap, a wheel
+# sitting right at slip_peak would flip the latch every one of the SPIN_SUBSTEPS
+# substeps within a single tick (several hundred Hz), which reads as mush rather
+# than a clean pulse. c.abs_active is on the pooled WheelContact specifically so
+# it survives across substeps (and briefly across ticks) rather than resetting
+# every tick like the other per-tick slip readings.
+func _update_abs_active(cfg: GameConfig, c: WheelContact) -> void:
+	if not cfg.abs_enabled or c.v_ref < cfg.abs_min_speed or c.slip_long_norm >= 0.0:
+		c.abs_active = false
+		return
+	var usage := grip_fraction(-c.slip_long_norm, c.slip_peak)
+	if usage > 1.0 + cfg.abs_slip_margin:
+		c.abs_active = true
+	elif usage < 1.0 - cfg.abs_slip_margin:
+		c.abs_active = false
+	# else: inside the hysteresis band — keep whatever the latch already was.
+
+
+# The brake-torque release scale (1.0 = full torque, lower = ABS pulling back) for
+# one axle grouping: REAR wheels, FRONT wheels, or ALL wheels combined (the AWD
+# no-handbrake case, whose single combined driveline can't be modulated per-axle —
+# see the combined_abs_scale call site). Releases the WHOLE group the moment any
+# one wheel in it is latched, which matches how the spin state itself is shared
+# (a locked axle/spool is one omega, so one locking wheel already drags the rest).
+func _abs_release_scale(cfg: GameConfig, contacts: Array, group: int) -> float:
+	for c in contacts:
+		var in_group: bool = (
+			group == ABS_GROUP_ALL
+			or (group == ABS_GROUP_REAR) == c.wheel.use_as_traction
+		)
+		if in_group and c.abs_active:
+			return 1.0 - cfg.abs_release_ratio
+	return 1.0
 
 
 # --- Live per-wheel tire state -----------------------------------------------

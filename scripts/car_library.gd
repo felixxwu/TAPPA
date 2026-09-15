@@ -117,6 +117,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
 		"tire_compound": 0.9,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"brake_bias": 0.4,  # front share of foot-brake torque (50/50 RWD roadster)
+		"brake_torque": 518.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
@@ -139,6 +140,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse NA I4, nose-heavy FWD
 		"tire_compound": 0.88,  # economy / touring all-season tyres
 		"brake_bias": 0.4,  # front share of foot-brake torque (nose-heavy FWD)
+		"brake_torque": 458.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
@@ -162,6 +164,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 950.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
 		"tire_compound": 0.85,  # hard economy tyres, skinny
 		"brake_bias": 0.4,  # front share of foot-brake torque (nose-heavy FWD)
+		"brake_torque": 330.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
@@ -184,6 +187,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
 		"tire_compound": 0.8,  # hard commercial tyres, skinny
 		"brake_bias": 0.4,  # front share of foot-brake torque (mid-engine, tail-heavy)
+		"brake_torque": 310.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
@@ -207,6 +211,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95,  # touring tyres
 		"brake_bias": 0.45,  # front share of foot-brake torque (nose-heavy RWD muscle)
+		"brake_torque": 943.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
@@ -230,6 +235,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
 		"brake_bias": 0.4,  # front share of foot-brake torque (rear-engine, tail-heavy)
+		"brake_torque": 489.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
@@ -252,6 +258,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
 		"tire_compound": 0.9,  # sticky performance tyres (period bias-belted rubber)
 		"brake_bias": 0.4,  # front share of foot-brake torque (~49/51 front-mid RWD)
+		"brake_torque": 827.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
@@ -274,6 +281,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75,  # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95,  # period touring / GT tyres
 		"brake_bias": 0.4,  # front share of foot-brake torque (nose-heavy RWD GT)
+		"brake_torque": 889.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
@@ -296,6 +304,7 @@ const CARS: Array[Dictionary] = [
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.05,  # period touring tyres
 		"brake_bias": 0.3,  # front share of foot-brake torque (nose-heavy RWD)
+		"brake_torque": 862.0,  # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0,  # long, brick-like body → real aero drag
 		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.

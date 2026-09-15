@@ -132,7 +132,10 @@ func test_launch_wheelspin() -> void:
 
 func test_brake_lockup() -> void:
 	# Hard braking at speed locks the wheels (omega -> 0) while the car is
-	# still moving — the slip curve then governs the sliding grip.
+	# still moving — the slip curve then governs the sliding grip. ABS is
+	# disabled here: this test is about the raw brake-torque-to-omega
+	# mechanics, not ABS (see test_abs_*, below, for that).
+	Config.data.abs_enabled = false
 	var fwd := -_car.global_transform.basis.z
 	var r: float = Config.data.wheel_radius
 	_car.linear_velocity = fwd * 15.0
@@ -152,6 +155,7 @@ func test_brake_lockup() -> void:
 # the old equal split — guarded by test_brake_lockup above, which runs at the
 # default 0.5.)
 func test_brake_bias_forward_locks_the_front_not_the_rear() -> void:
+	Config.data.abs_enabled = false  # testing the bias split, not ABS
 	Config.data.brake_bias = 1.0
 	var r: float = Config.data.wheel_radius
 	var fwd := -_car.global_transform.basis.z
@@ -170,6 +174,7 @@ func test_brake_bias_forward_locks_the_front_not_the_rear() -> void:
 # The mirror: brake_bias = 0.0 sends all of it to the rear — the rear locks while
 # the (free-rolling RWD) front keeps turning.
 func test_brake_bias_rearward_locks_the_rear_not_the_front() -> void:
+	Config.data.abs_enabled = false  # testing the bias split, not ABS
 	Config.data.brake_bias = 0.0
 	var r: float = Config.data.wheel_radius
 	var fwd := -_car.global_transform.basis.z
@@ -235,7 +240,9 @@ func test_awd_handbrake_locks_rear_only() -> void:
 func test_awd_no_handbrake_locks_all_four() -> void:
 	# Sanity guard on the exception: WITHOUT the handbrake, AWD is still one
 	# rigid locked driveline, so a foot-brake lockup takes all four wheels down
-	# together (fronts stay coupled to the rear).
+	# together (fronts stay coupled to the rear). ABS off: this is about the
+	# rigid-driveline coupling, not ABS's combined-pair release.
+	Config.data.abs_enabled = false
 	_car.drivetrain.drive_mode = Drivetrain.DriveMode.AWD
 	var fwd := -_car.global_transform.basis.z
 	var r: float = Config.data.wheel_radius
@@ -257,6 +264,78 @@ func test_parking_brake_holds_longitudinally() -> void:
 	_car.linear_velocity = -_car.global_transform.basis.z * 0.5
 	await _wait_physics(60)
 	assert_lt(_car.linear_velocity.length(), 0.2, "parking brake stops slow creep")
+
+
+# --- ABS ----------------------------------------------------------------------
+
+func test_abs_keeps_the_rear_axle_spinning_under_hard_braking_that_would_lock_it() -> void:
+	# Same hard-braking-at-speed scenario as test_brake_lockup, but with ABS on
+	# (the default): where ABS-off fully locks the rear (omega*r < 1.0, asserted
+	# there), ABS must release the foot brake often enough to keep the axle
+	# turning — the entire point of ABS. Not a specific speed retained, just
+	# "meaningfully still spinning" vs "locked".
+	assert_true(Config.data.abs_enabled, "ABS is on by default for this test")
+	var fwd := -_car.global_transform.basis.z
+	var r: float = Config.data.wheel_radius
+	_car.linear_velocity = fwd * 15.0
+	_car.drivetrain.rear_omega = 15.0 / r
+	for w in _car.drivetrain.front_omega:
+		_car.drivetrain.front_omega[w] = 15.0 / r
+	Input.action_press("brake_reverse")
+	await _wait_physics(30)
+	Input.action_release("brake_reverse")
+	assert_gt(absf(_car.drivetrain.rear_omega) * r, 2.0,
+		"ABS keeps the rear axle spinning instead of locking it solid")
+
+
+func test_abs_disabled_still_locks_like_before_abs_existed() -> void:
+	# The abs_enabled config flag is a real off switch: with it false, hard
+	# braking behaves exactly like the pre-ABS lockup in test_brake_lockup.
+	Config.data.abs_enabled = false
+	var fwd := -_car.global_transform.basis.z
+	var r: float = Config.data.wheel_radius
+	_car.linear_velocity = fwd * 15.0
+	_car.drivetrain.rear_omega = 15.0 / r
+	for w in _car.drivetrain.front_omega:
+		_car.drivetrain.front_omega[w] = 15.0 / r
+	Input.action_press("brake_reverse")
+	await _wait_physics(30)
+	Input.action_release("brake_reverse")
+	assert_lt(absf(_car.drivetrain.rear_omega) * r, 1.0, "abs_enabled = false locks the rear axle")
+
+
+func test_abs_never_releases_handbrake_torque() -> void:
+	# ABS only ever scales the FOOT-brake share of rear torque — handbrake
+	# lockup is the intended drift/turn mechanic and must be unaffected by
+	# ABS being on. Rear must still lock exactly as in
+	# test_handbrake_locks_rear_only_and_breaks_grip, with ABS left enabled.
+	assert_true(Config.data.abs_enabled, "ABS is on by default for this test")
+	var fwd := -_car.global_transform.basis.z
+	var r: float = Config.data.wheel_radius
+	_car.linear_velocity = fwd * 15.0
+	_car.drivetrain.rear_omega = 15.0 / r
+	for w in _car.drivetrain.front_omega:
+		_car.drivetrain.front_omega[w] = 15.0 / r
+	Input.action_press("handbrake")
+	await _wait_physics(60)
+	Input.action_release("handbrake")
+	assert_lt(absf(_car.drivetrain.rear_omega) * r, 1.0,
+		"ABS does not stop the handbrake from locking the rear axle")
+
+
+func test_abs_is_inert_below_the_min_speed_so_it_does_not_fight_the_parking_hold() -> void:
+	# Below abs_min_speed, ABS must not engage at all — otherwise it would
+	# release the standstill parking-brake hold and let the car creep, which
+	# test_parking_brake_holds_longitudinally guards against without touching
+	# ABS. Confirm directly that no wheel's ABS latch engages at this speed.
+	assert_true(Config.data.abs_enabled, "ABS is on by default for this test")
+	assert_lt(0.5, Config.data.abs_min_speed, "fixture speed is below abs_min_speed")
+	_car.linear_velocity = -_car.global_transform.basis.z * 0.5
+	await _wait_physics(30)
+	for w in _car.drivetrain.hardpoints:
+		var c = _car.drivetrain._contact_pool.get(w)
+		if c != null:
+			assert_false(c.abs_active, "no wheel's ABS latch engages below abs_min_speed")
 
 
 # Slip angle of peak lateral force, swept via _tire_force with a synthetic

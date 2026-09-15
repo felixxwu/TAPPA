@@ -12,7 +12,7 @@ extends RefCounted
 # Every boost's `effect` dict uses an EXISTING `UpgradeLibrary.EFFECTS` key: this file
 # invents no second effects system, it only AUTHORS entries that walk through the one
 # funnel UpgradeLibrary already owns (apply() / effective_meta() / grip_meta()). Two of
-# the six below (`brake_force_mult`, `drag_mult`) needed a new EFFECTS row each — added
+# the six below (`brake_torque_set`, `drag_mult`) needed a new EFFECTS row each — added
 # in upgrade_library.gd alongside the GameConfig fields they already existed as
 # (`brake_torque`, `drag_coefficient`) — everything else reuses a row the old parts
 # model already had (mass_mult, tire_grip_mult, shift_time_set, downforce_front/rear).
@@ -93,8 +93,11 @@ const CATALOGUE := {
 	},
 	"brakes": {
 		"label": "Big brakes",
-		"effect_fields": {"brake_force_mult": "run_boost_brake_mult"},
-		"level_direction": 1,  # higher brake_force_mult = more boost
+		# Fixed absolute brake_torque ("set", not a multiplier) — strong enough to push
+		# ABS into play on every car in the roster, including the heaviest
+		# (see run_boost_brake_torque_n and features/drivetrain-and-tires.md).
+		"effect_fields": {"brake_torque_set": "run_boost_brake_torque_n"},
+		"level_direction": 1,  # higher brake_torque_set = more boost
 		"category": "handling",
 	},
 	"streamline": {

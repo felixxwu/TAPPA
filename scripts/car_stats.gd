@@ -27,7 +27,7 @@ extends RefCounted
 # reaches a car's META if `UpgradeLibrary.EFFECTS` marks it `feeds_pw` or `feeds_grip`;
 # everything else is applied straight onto the car's LIVE GameConfig by `apply()` and never
 # touches the meta at all. Two of the seven boosts are in that second group —
-# `brake_force_mult` (Big brakes) and `drag_mult` (Streamlined body) — and there is no row
+# `brake_torque_set` (Big brakes) and `drag_mult` (Streamlined body) — and there is no row
 # here for brake force or drag, so taking either of those moves NOTHING on this sheet. The
 # Shift time row reads `shift_time` off the fitted engine (seeded onto the meta by
 # `effective_meta`, same as peak_torque/redline), then applies any active

@@ -44,6 +44,25 @@ var peak_torque_rpm := 4500.0
 # axle, ~150 N·m at μ 0.7) or the wheels can't lock against grippy ground.
 @export var brake_torque := 1500.0  # N·m per axle from the foot brake (S)
 @export var handbrake_torque := 5000.0  # N·m on the rear axle (Space)
+## Anti-lock braking: when a wheel's foot-brake-induced longitudinal slip goes past
+## its grip-curve peak (locking), Drivetrain releases a share of the FOOT brake torque
+## on that wheel/axle until slip falls back under the peak. Never touches
+## handbrake_torque — handbrake lockup is the intended drift/turn mechanic.
+@export var abs_enabled := true
+## Fraction of foot-brake torque released while ABS is active on a wheel/axle (0 = no
+## release/no effect, 1 = fully release). Real ABS pulses rather than fully releasing;
+## see also abs_slip_margin for the hysteresis band that turns per-substep engagement
+## into a pulse instead of chatter.
+@export_range(0.0, 1.0, 0.01) var abs_release_ratio := 0.7
+## Hysteresis half-width around slip_peak (in grip_fraction units, where 1.0 = at
+## peak): ABS engages above 1.0 + this and releases below 1.0 - this. Without a gap,
+## engagement flip-flops every substep (SPIN_SUBSTEPS run at several hundred Hz) and
+## reads as mush instead of a clean pulse.
+@export_range(0.0, 0.5, 0.01) var abs_slip_margin := 0.15
+## Ground speed (m/s) below which ABS is inert, so it doesn't fight the standstill
+## parking/finish-line brake hold (car.gd brake_hold, which asks for full lock torque
+## at rest — that is not the lockup ABS exists to prevent).
+@export var abs_min_speed := 2.0
 ## FALLBACK ONLY — CHANGING THIS NUMBER DOES NOTHING ONCE A CAR IS FIELDED.
 ## EngineLibrary.apply overwrites engine_friction_base per-engine from the authored
 ## ENGINES table (scaled ~cylinder count), so this default only covers the baseline car
@@ -4139,8 +4158,12 @@ func spectator_params() -> Dictionary:
 @export_range(0.02, 0.3, 0.01) var run_boost_shift_time_s := 0.12
 ## "Aero kit" — added downforce (N), the SAME figure on both front and rear.
 @export_range(0.0, 15.0, 0.5) var run_boost_downforce_n := 3.0
-## "Big brakes" — brake_torque multiplier.
-@export_range(1.0, 1.5, 0.01) var run_boost_brake_mult := 1.12
+## "Big brakes" — an ABSOLUTE brake_torque (N·m/axle), like run_boost_shift_time_s's
+## "set" op: this replaces the car's own brake_torque outright rather than scaling it,
+## so it lands at the same strength regardless of what the fielded car shipped with —
+## enough to reliably trigger ABS (features/drivetrain-and-tires.md) even on the
+## heaviest car in the roster.
+@export var run_boost_brake_torque_n := 2500.0
 ## "Streamlined body" — drag_coefficient multiplier (below 1.0 = less drag).
 @export_range(0.5, 1.0, 0.01) var run_boost_drag_mult := 0.92
 # NOTE: there is deliberately no run_boost_engine_power_mult any more — the Engine Swap
