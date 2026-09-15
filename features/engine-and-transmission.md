@@ -105,10 +105,14 @@ for overall pace, not a per-car spec. `1.0` disables it. The frozen test fixture
 drive-mode launch tests stay calibrated to full torque and don't drift when the
 shipped de-rate is retuned.
 
-Off throttle (and during fuel-cut/shifts) the gross term is zero, so `crank`
-is just `−friction` — that is the **engine braking**, and because friction
-rises with revs the braking is stronger at high RPM (and bounces the revs off
-the limiter). The no-stall idle clamp still holds the bottom.
+Off throttle (and during fuel-cut/shifts) the gross term ramps DOWN to zero over
+`EngineSim.TORQUE_RAMP_TIME` (100ms) rather than cutting instantly — a `_torque_ramp`
+multiplier (0..1) tracks `combusting` and decays via `move_toward` when it goes
+false, so `crank` settles to just `−friction`, which is the **engine braking**; because
+friction rises with revs the braking is stronger at high RPM (and bounces the revs off
+the limiter once the ramp has settled). When `combusting` goes true again the ramp
+snaps straight back to 1 — only the CUT is smoothed, not throttle response coming back
+on. The no-stall idle clamp still holds the bottom.
 
 ### Coasting vs. fuel cut vs. mid-shift — three states, one drag term
 
@@ -125,6 +129,12 @@ here (`engine.gd` → `is_lifting_off`, the `lifting_off` / `combusting` locals)
 (`shift_timer > 0`) and under a fuel cut. Work on lift-off/coasting feel must gate
 on `is_lifting_off`, never on `not combusting`, or it silently retunes gearchanges
 and the rev limiter as well.
+
+`combusting` itself is still a plain boolean, but the crank-torque term no longer
+steps with it directly — it follows a `_torque_ramp` multiplier that ramps to 0 over
+`TORQUE_RAMP_TIME` (100ms) when `combusting` goes false, and snaps back to 1 the instant
+it goes true. So lift-off, a fuel cut and a mid-shift all produce a short torque
+ramp-down rather than an instant cut, while getting back on the throttle is unaffected.
 
 The `friction` term above has **two customers**: it is both the coasting engine
 braking and the only thing that pulls the revs back down through the limiter's

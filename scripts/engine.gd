@@ -24,6 +24,11 @@ var gear := 1  # -1 = reverse, 0 = neutral, 1..N forward
 var auto := false  # automatic gearbox (picks the gear from the airspeed)
 var shift_timer := 0.0  # seconds of clutch-open throttle cut left in a shift
 var throttle := 0.0  # last drive request seen by step(), for the audio synth
+# Crank-torque delivery fraction (0..1): snaps to 1 the instant combustion resumes, but
+# ramps DOWN to 0 over TORQUE_RAMP_TIME when it stops (lift-off, rev-limiter/misfire fuel
+# cut, mid-shift), so only the cut is a short ramp, not an instant drop — see step().
+var _torque_ramp := 1.0
+const TORQUE_RAMP_TIME := 0.1  # seconds for the ramp above to fully fall
 # Smallest usable rev range under a damage rev cap: the capped redline never falls below this
 # multiple of idle, so a 0 HP car can still rev, pull away and change gear.
 const MIN_REDLINE_IDLE_RATIO := 1.5
@@ -323,6 +328,7 @@ func reset() -> void:
 	shift_timer = 0.0
 	limiting = false
 	fuel_cut = false
+	_torque_ramp = 0.0
 	_misfire_timer = 0.0
 	omega_turbo = 0.0
 	boost = 0.0
@@ -415,7 +421,12 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	# drain the tank. Skipped outright on a car with no nitrous fitted, so it pays one bool
 	# check rather than a call and two property reads per substep (as with `blown` above).
 	var nitrous_on := _step_nitrous(h, combusting) if _has_nitrous else false
-	if combusting:
+	# Ramp delivery DOWN toward none when combustion stops, but snap straight back UP
+	# to full the instant it resumes — only the cut (lift-off, rev-limiter/misfire fuel
+	# cut, mid-shift) is a short ramp; throttle response back on is untouched. Nitrous
+	# stays gated on `combusting` directly (see _step_nitrous), not part of this ramp.
+	_torque_ramp = 1.0 if combusting else move_toward(_torque_ramp, 0.0, h / TORQUE_RAMP_TIME)
+	if _torque_ramp > 0.0:
 		# global_torque_scale is a hidden global de-rate: it scales the torque the
 		# engine actually delivers without altering cfg.peak_torque, so the stats
 		# panel still shows the full published figure while every car is dialled back.
@@ -427,7 +438,7 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 		# Nitrous multiplies on top of both induction paths — it is a separate system
 		# (a chemical charge, not compressed air), so it stacks rather than sharing a slot.
 		crank += (
-			throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(r)
+			_torque_ramp * throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(r)
 			* boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response)
 			* (1.0 + sc_boost * cfg.supercharger_boost_gain)
 			* ((1.0 + cfg.nitrous_boost_gain) if nitrous_on else 1.0)

@@ -149,9 +149,12 @@ func test_misfire_kills_crank_torque() -> void:
 	var before_fire := _engine.omega
 	_engine.step(0.01, 1.0, 0.0)
 	assert_gt(_engine.omega, before_fire, "firing on full throttle spins the flywheel up")
-	# Now force a misfire: the same input must not add crank torque.
+	# Now force a misfire: the same input must not add crank torque, once the short
+	# torque-delivery ramp (see EngineSim.TORQUE_RAMP_TIME) has settled to zero — this
+	# test protects the SUSTAINED cut, not the brief ramp-down transient.
 	_engine.misfire_level = 1.0
 	_engine._misfire_timer = 1.0  # a cut is in progress
+	_engine._torque_ramp = 0.0
 	var before_cut := _engine.omega
 	_engine.step(0.01, 1.0, 0.0)
 	assert_true(_engine.fuel_cut, "the forced misfire reports a fuel cut (for the audio)")
@@ -345,7 +348,10 @@ func test_limiter_bounce_depends_on_fuel_cut_friction() -> void:
 		_engine.step(h, 1.0, 0.0)
 	assert_true(_engine.limiting, "precondition: full throttle in neutral latches the cut")
 
-	# While the cut is latched the revs must FALL, at full throttle, every substep.
+	# While the cut is latched the revs must FALL, at full throttle, every substep — once
+	# the short torque-delivery ramp (EngineSim.TORQUE_RAMP_TIME) has settled to zero. This
+	# guards the SUSTAINED cut, not the brief ramp-down transient right at onset.
+	_engine._torque_ramp = 0.0
 	var before := _engine.omega
 	_engine.step(h, 1.0, 0.0)
 	assert_true(_engine.limiting, "precondition: the cut is still latched over this substep")
@@ -387,10 +393,13 @@ func test_a_fuel_cut_drags_the_revs_down_on_its_own_terms() -> void:
 	_engine.step(h, 0.0, 0.0)
 	var coast_drop := start - _engine.omega
 
-	# Throttle wide open but combustion suppressed by a cut (limiter/misfire).
+	# Throttle wide open but combustion suppressed by a cut (limiter/misfire). Settle the
+	# short torque-delivery ramp to zero first (EngineSim.TORQUE_RAMP_TIME) — this test
+	# protects the SUSTAINED cut, not the brief ramp-down transient right at onset.
 	_engine.omega = start
 	_engine.misfire_level = 1.0
 	_engine._misfire_timer = h * 10.0  # hold a damage cut open across this substep
+	_engine._torque_ramp = 0.0
 	_engine.step(h, 1.0, 0.0)
 	var cut_drop := start - _engine.omega
 
