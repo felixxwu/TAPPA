@@ -402,14 +402,18 @@ already did.
 
 ### The catalogue and its pool
 
-`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — seven entries, each an
+`BoostLibrary.CATALOGUE` (`scripts/boost_library.gd`) — eight entries, each an
 `effect` dict keyed by an **existing** `UpgradeLibrary.EFFECTS` row (no second
 effects system): `mass_mult_floor`, `tire_grip_mult`, `shift_time_set`,
 `downforce_front`/`_rear`, `brake_torque_set` (`GameConfig.brake_torque`, a FIXED
-absolute figure — see below), and the two forced-induction entries
+absolute figure — see below), the two forced-induction entries
 `install_turbo`/`install_supercharger` (the SAME permanent-part EFFECTS rows
 [forced-induction.md](forced-induction.md) documents, now also reachable as an
-in-run boost — see *Turbo and supercharger as boosts* below). The catalogue's other
+in-run boost — see *Turbo and supercharger as boosts* below), and `install_nitrous`
+(the SAME `write_fields` EFFECTS row [nitrous.md](nitrous.md) documents — a mid-run
+"Nitrous" pick that writes `nitrous_boost_gain`/`nitrous_tank_seconds` the same way
+the pre-pivot catalogue part did, with `nitrous_boost_gain` the leveled figure and
+the tank a fixed characteristic, mirroring the turbo's own dict-shaped entry). The catalogue's other
 POWER pick — the Engine Swap — is **not** in this table; see *The engine swap* below
 and [engine-swap.md](engine-swap.md) for why it's a genuine `EngineLibrary` swap, not
 an EFFECTS multiplier. There is deliberately no "Streamlined body" / `drag_mult` entry
@@ -426,14 +430,15 @@ rather than offering a pick that clamps straight back to where the car started.
 **Each entry carries a `category`** — `"power"` or `"handling"` — read by
 `BoostLibrary.category_of(id)`, which also classifies the two pseudo-id families
 (`"drivetrain:"` → handling, `"engine_swap:"` → power). Power: `gearbox`, `turbo`,
-`supercharger`, the engine swap. Handling: `lightweight`, `grip`, `aero`, `brakes`,
-the AWD conversion. This is what the pick screen (below) pre-rolls one candidate
-from, per category, as its "Better Handling" / "More Power" card.
+`supercharger`, `nitrous`, the engine swap. Handling: `lightweight`, `grip`, `aero`,
+`brakes`, the AWD conversion. This is what the pick screen (below) pre-rolls one
+candidate from, per category, as its "Better Handling" / "More Power" card.
 
 Every magnitude is a `GameConfig` field under `@export_group("Roguelike Run
 Boosts")` (`run_boost_mass_mult`, `_grip_mult`, `_shift_time_s`, `_downforce_n`,
 `_brake_torque_n`, `_turbo_boost_gain`/`_omega_ref`/`_inertia`/
-`_parasitic_friction`, `_supercharger_boost_gain`/`_rpm_ref`/`_parasitic_coef`, plus
+`_parasitic_friction`, `_supercharger_boost_gain`/`_rpm_ref`/`_parasitic_coef`,
+`_nitrous_boost_gain`/`_nitrous_tank_seconds`, plus
 `run_boost_healthy_threshold` for the undamaged-arrival reward's health cutoff, see
 above) — `BoostLibrary.effect_for` re-reads them live, never bakes a value in, and no
 test may pin the shipped numbers (CLAUDE.md). `run_boost_mass_mult`'s floor,
@@ -445,7 +450,8 @@ un-leveled field — it's a clamp, not a magnitude a level purchase scales.
 `BoostLibrary.stacks(id)` is false — an entry whose EFFECTS row `op` is `"set"`,
 `"install_induction"`, or `"mult_floor"` overwrites the exact same value (or clamps
 straight back to the same floor) every time it's applied, so a repeat is a dead roll, not
-a stronger one (`"gearbox"`, `"brakes"`, `"lightweight"`, `"turbo"`, `"supercharger"`). A
+a stronger one (`"gearbox"`, `"brakes"`, `"lightweight"`, `"turbo"`, `"supercharger"`,
+`"nitrous"`). A
 `"mult"`/`"add"` entry (`"grip"`, `"aero"`) genuinely compounds — `apply()` walks the
 whole `boosts` list onto the same freshly-reseeded baseline every stage — so those stay
 in the pool and can be picked repeatedly. `"lightweight"` additionally never appears at

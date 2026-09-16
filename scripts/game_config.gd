@@ -4206,6 +4206,14 @@ func spectator_params() -> Dictionary:
 ## Belt-whine audio gain for the supercharger boost — fixed, does not scale with level.
 ## Matches the pre-pivot persistent supercharger part's authored gain (0.06).
 @export_range(-1.0, 1.0, 0.001) var run_boost_supercharger_whine_gain := 0.06
+# "Nitrous" — the same install_nitrous EFFECTS row features/nitrous.md documents (a plain
+# write_fields splat, no enable flag), now authored as an in-run boost like the two induction
+# parts above. Only *_boost_gain SCALES with a purchased level (the part's real strength);
+# the tank is fixed personality, same convention as the turbo's omega_ref/inertia.
+## Extra torque fraction while nitrous is held — the nitrous boost's scaled field.
+@export_range(0.05, 1.0, 0.01) var run_boost_nitrous_boost_gain := 0.25
+## Seconds a full tank holds — fixed, does not scale with level.
+@export_range(1.0, 20.0, 0.5) var run_boost_nitrous_tank_seconds := 6.0
 
 
 @export_group("Roguelike Meta Shop")

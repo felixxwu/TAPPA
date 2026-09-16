@@ -43,6 +43,19 @@ Three properties define it, and every design decision below falls out of them:
    menu row for it.
 
 
+## As a mid-run boost
+
+`BoostLibrary.CATALOGUE["nitrous"]` (`scripts/boost_library.gd`, see
+[region-runs.md](region-runs.md)) offers the same `install_nitrous` EFFECTS row as a
+POWER-category pick between stages — the run-scoped counterpart to the pre-pivot
+persistent part below, mechanically identical (`write_fields`, `feeds_pw: false`) but
+picked from the between-stage upgrade menu instead of unlocked by a special event.
+`run_boost_nitrous_boost_gain` is the leveled figure (like the turbo's
+`turbo_boost_gain`); `run_boost_nitrous_tank_seconds` is a fixed characteristic that
+does not scale with a purchased boost level. Like the turbo/supercharger boosts, a
+second "Nitrous" pick in the same run is a dead roll (`write_fields` overwrites the
+same values), so `BoostLibrary.stacks` excludes it from the pool once picked.
+
 ## The catalogue side — its own slot
 
 `UpgradeLibrary.SLOTS` gained a `"nitrous"` entry (a fifth at the time; the list has since

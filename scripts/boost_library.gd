@@ -147,6 +147,23 @@ const CATALOGUE := {
 		"level_direction": 1,  # higher supercharger_boost_gain = more boost
 		"category": "power",
 	},
+	"nitrous": {
+		"label": "Nitrous",
+		# The SAME install_nitrous EFFECTS row features/nitrous.md documents (write_fields,
+		# no enable flag) — a mid-run boost fitting it the same way a turbo/supercharger
+		# boost fits induction. feeds_pw is FALSE on that row (a per-stage resource must
+		# never move power-to-weight/rally eligibility), which is why nitrous is safe as a
+		# run boost at all.
+		"effect_fields": {"install_nitrous": {
+			"nitrous_boost_gain": "run_boost_nitrous_boost_gain",
+			"nitrous_tank_seconds": "run_boost_nitrous_tank_seconds",
+		}},
+		"scaled_subfields": ["nitrous_boost_gain"],
+		"display_subfield": "nitrous_boost_gain",
+		"display_suffix": "torque while held",
+		"level_direction": 1,  # higher nitrous_boost_gain = more boost
+		"category": "power",
+	},
 	# NOTE: the Engine Swap is NOT a CATALOGUE entry — it is a GENUINE engine swap now
 	# (RunSession._pool_engine_swap_ids' "engine_swap:<EngineLibrary id>" pseudo-id,
 	# folded into the SAME pool as this catalogue by RegionRunMode.boost_pool_ids,
@@ -348,7 +365,7 @@ static func stacks(id: String) -> bool:
 		return true
 	for effect_key in (entry.get("effect_fields", {}) as Dictionary):
 		var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
-		if op == "set" or op == "install_induction" or op == "mult_floor":
+		if op == "set" or op == "install_induction" or op == "mult_floor" or op == "write_fields":
 			return false
 	return true
 
