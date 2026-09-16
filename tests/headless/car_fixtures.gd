@@ -30,6 +30,9 @@ static func engines() -> Array[Dictionary]:
 			"redline_rpm": 6500.0, "peak_torque": 500.0, "peak_torque_rpm": 4000.0, "engine_inertia": 0.35,
 			"low_octave_mix": 0.6, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 			"gear_ratios": [3.0, 1.8, 1.3, 1.0, 0.75], "final_drive": 3.5, "shift_time": 0.25,
+			# The only fixture flagged as a mid-run swap target (RunSession._pool_engine_swap_ids
+			# only offers "swap_tier": true entries — see engine_library.gd).
+			"swap_tier": true,
 		},
 	]
 	return _deep_copy(list)
