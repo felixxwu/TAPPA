@@ -11,19 +11,29 @@ math/lookup module) and the `_apply_engine_swap` fielding step in
 legacy owned-car read path, which still resolves cars in existing saves that
 carry a `swapped_engine`.
 
-**The Engine Swap is a genuine, deterministic MID-RUN engine swap.** It is
-offered in the SAME between-stage pick as the other boosts and the AWD
-drivetrain conversion, run-scoped (dies with the run, never touches `Save`'s
-persisted car), but it is NOT a `BoostLibrary` catalogue entry and carries no
-purchasable level: `RunSession._pool_engine_swap_ids()` offers exactly **the
-next most powerful `EngineLibrary` engine relative to the car's current one**
-(ranked by `CarLibrary.peak_power_kw`) that gains at least `MIN_SWAP_HP_GAIN`
-(30hp) over the current engine — a smaller increment is skipped in favour of
-the next rung that clears the bar — never a random pick, and `[]` once no
-remaining engine clears that bar (including once the car already runs the
-catalogue's most powerful engine) — see
-[region-runs.md](region-runs.md) → "The engine swap" for the full pick-pool
-mechanics. This supersedes an earlier flat `engine_power_mult` multiplier on
+**The Engine Swap is a genuine, deterministic MID-RUN engine swap, restricted to
+four fixed universal tiers.** It is offered in the SAME between-stage pick as
+the other boosts and the AWD drivetrain conversion, run-scoped (dies with the
+run, never touches `Save`'s persisted car), but it is NOT a `BoostLibrary`
+catalogue entry and carries no purchasable level: `RunSession.
+_pool_engine_swap_ids()` only ever considers the four `EngineLibrary` entries
+flagged `"swap_tier": true` — `i6_300` / `v8_400` / `v10_500` / `v12_600`, an
+I6, V8, V10 and V12 nominally rated 300/400/500/600 hp (see
+`scripts/engine_library.gd`'s bottom four entries) — REGARDLESS of the car's
+own stock engine, so every car in the roster walks the SAME four rungs rather
+than picking from the whole 11(+)-entry catalogue. Among those four it offers
+**the next most powerful one relative to the car's current engine** (ranked by
+`CarLibrary.peak_power_kw`) that gains at least `MIN_SWAP_HP_GAIN` (30hp) over
+the current engine — a smaller increment is skipped in favour of the next rung
+that clears the bar — never a random pick, and `[]` once no remaining tier
+clears that bar (including once the car already runs `v12_600`, the most
+powerful tier) — see [region-runs.md](region-runs.md) → "The engine swap" for
+the full pick-pool mechanics. Because the pool is re-resolved every
+between-stage pick from `_current_engine_id()` (which returns this run's own
+`_engine_swap_id` once one is set), a car that swapped into `v8_400` this run
+is offered `v10_500` next, then `v12_600` after that — the run's OWN swap
+feeds the next tier check, not just the car's stock engine. This supersedes an
+earlier flat `engine_power_mult` multiplier on
 `cfg.peak_torque` — the `BoostLibrary.CATALOGUE["engine_swap"]` entry and its
 magnitude field `GameConfig.run_boost_engine_power_mult` are both deleted,
 since nothing else read either — which itself had superseded the original

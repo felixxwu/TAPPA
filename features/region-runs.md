@@ -648,17 +648,22 @@ A power-category option alongside repair, the boost catalogue and the AWD conver
 REAL engine dropped into the run's car via the already-built `EngineSwap` module +
 `car.gd::_apply_engine_swap` pipeline (see [engine-swap.md](engine-swap.md) for that
 pipeline in full). It is deliberately NOT random — `RunSession._pool_engine_swap_ids()`
-offers exactly **the next most powerful `EngineLibrary` engine relative to the car's
-current one** (`RunSession._current_engine_id()`, which prefers this run's own swap over
-the persisted car's `swapped_engine`/stock engine, exactly like `EngineSwap.
-current_engine_id`), ranked by `CarLibrary.peak_power_kw({"peak_torque", "redline"})` —
-among every engine strictly more powerful than the current one, the smallest such power,
-i.e. the immediate next rung up. `[]` once the car is already running the catalogue's
-most powerful engine, the same "drop the option once it has nothing left to offer" shape
-`_pool_drivetrain_ids()` uses for AWD. Folded into the SAME pool as the boosts and the
-drivetrain conversion (`RunSession._pool_drivetrain_ids() + _pool_engine_swap_ids()` as
-`extra_ids`), so it's just another entry in the "More Power" category rather than a
-guaranteed extra card.
+only ever considers the four `EngineLibrary` entries flagged `"swap_tier": true`
+(`i6_300`/`v8_400`/`v10_500`/`v12_600`, ~300/400/500/600 hp, the SAME four tiers for
+every car regardless of its own stock engine — see [engine-swap.md](engine-swap.md)) and
+offers exactly **the next most powerful one relative to the car's current engine**
+(`RunSession._current_engine_id()`, which prefers this run's own swap over the persisted
+car's `swapped_engine`/stock engine, exactly like `EngineSwap.current_engine_id`), ranked
+by `CarLibrary.peak_power_kw({"peak_torque", "redline"})` — among every flagged tier
+strictly more powerful than the current one, the smallest such power, i.e. the immediate
+next rung up. `[]` once the car is already running `v12_600`, the top tier, the same
+"drop the option once it has nothing left to offer" shape `_pool_drivetrain_ids()` uses
+for AWD. Because `_current_engine_id()` reads back this run's own `_engine_swap_id`, a
+car that already swapped into `v8_400` is offered `v10_500` next pick, then `v12_600`
+after that — swapping never dead-ends the option, it just walks it up one rung at a time.
+Folded into the SAME pool as the boosts and the drivetrain conversion
+(`RunSession._pool_drivetrain_ids() + _pool_engine_swap_ids()` as `extra_ids`), so it's
+just another entry in the "More Power" category rather than a guaranteed extra card.
 
 `RunSession._with_engine_swap_display(pick)` — called at BOTH pick-building call sites
 (`report_event_result`, `resume`, via `_resolve_pick_pool`) so a live pool and a resumed

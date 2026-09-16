@@ -318,11 +318,13 @@ func _current_engine_id() -> String:
 
 # The engine-swap pseudo-id ("engine_swap:<EngineLibrary id>") to fold into the SAME draw
 # pool as the boost catalogue and the drivetrain conversion — the NEXT MOST POWERFUL
-# EngineLibrary engine relative to the car's current one (_current_engine_id), i.e. among
-# every engine STRICTLY more powerful, the one with the SMALLEST power (the immediate next
-# rung up). [] once the car is already running the catalogue's most powerful engine, or if
-# its current engine can't be resolved — mirrors _pool_drivetrain_ids' "drop the option
-# once it has nothing left to offer" shape (the AWD-conversion precedent).
+# swap-tier engine (EngineLibrary entry flagged "swap_tier": true — the four fixed rungs,
+# see engine_library.gd) relative to the car's current one (_current_engine_id), i.e. among
+# every FLAGGED engine STRICTLY more powerful, the one with the SMALLEST power (the
+# immediate next rung up). Every car, whatever its own stock engine, walks the SAME four
+# rungs. [] once the car is already running the most powerful swap tier, or if its current
+# engine can't be resolved — mirrors _pool_drivetrain_ids' "drop the option once it has
+# nothing left to offer" shape (the AWD-conversion precedent).
 #
 # Power is CarLibrary.peak_power_kw({"peak_torque", "redline"}) — that function's own doc
 # says entry keys override the referenced engine, so a synthetic dict of just those two
@@ -330,10 +332,12 @@ func _current_engine_id() -> String:
 # order (deterministic, never random, never dependent on dictionary iteration order that
 # could vary) — the first engine encountered at the smallest strictly-greater power wins.
 #
-# Engines whose gain over the current one is under MIN_SWAP_HP_GAIN (30hp) are excluded
+# Swap tiers whose gain over the current one is under MIN_SWAP_HP_GAIN (30hp) are excluded
 # entirely — a swap that's barely an upgrade isn't worth offering, so this steps over
 # those rungs to the next one that actually clears the bar, same as _pool_drivetrain_ids
-# dropping an option once it has nothing meaningful left to offer.
+# dropping an option once it has nothing meaningful left to offer. In practice the four
+# tiers are ~100hp apart so this never skips one of them — it exists for a car whose
+# CURRENT engine (its own stock one, not a swap tier) is already close to the next rung.
 const MIN_SWAP_HP_GAIN := 30.0
 func _pool_engine_swap_ids() -> Array:
 	var current_id := _current_engine_id()
@@ -349,6 +353,8 @@ func _pool_engine_swap_ids() -> Array:
 	var best_power := 0.0
 	for eng in EngineLibrary.all():
 		var eng_dict := eng as Dictionary
+		if not bool(eng_dict.get("swap_tier", false)):
+			continue  # only the four dedicated swap-tier engines are ever offered mid-run
 		var power := CarLibrary.peak_power_kw(
 			{"peak_torque": eng_dict.get("peak_torque", 0.0), "redline": eng_dict.get("redline_rpm", 0.0)})
 		if power - current_power >= min_gain_kw and (best_id.is_empty() or power < best_power):

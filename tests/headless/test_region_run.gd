@@ -1062,6 +1062,7 @@ func test_the_pool_skips_an_engine_swap_under_the_minimum_hp_gain() -> void:
 		"redline_rpm": 7000.0, "peak_torque": 230.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [3.5, 2.0, 1.4, 1.0, 0.8], "final_drive": 4.0, "shift_time": 0.30,
+		"swap_tier": true,  # a real but too-small-a-gain swap tier, not the current engine
 	})
 	EngineLibrary.override_for_test(engines)
 
