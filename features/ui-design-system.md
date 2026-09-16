@@ -76,7 +76,11 @@ Menu builders call `UITheme.enforce(root)` once after building; screens with
 dynamic text re-run it whenever that text changes (HQ on every view change /
 focus / lift refresh, the podium after each reveal) so the rules keep holding.
 The HUD, mobile controls and other in-world overlays are **not** menus and are
-left alone (e.g. the big 3·2·1 countdown stays large).
+left alone by `enforce()` (e.g. the big 3·2·1 countdown stays large) — but
+[mobile-controls.md](mobile-controls.md)'s touch buttons still hand-pick the
+house black-face + hard-shadow look (`UITheme.BLACK`/`SURFACE_HOVER`,
+`UITheme.CARD_SHADOW_COLOR` + `card_shadow_offset()`) for their own reasons of
+consistency, they just do it directly rather than via `enforce`.
 
 ## How it's applied (two layers)
 

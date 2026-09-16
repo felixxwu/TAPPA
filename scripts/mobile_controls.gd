@@ -64,10 +64,18 @@ const SCHEMES := [
 		"desc": "Tilt the phone to steer; tap Gas and Brake."},
 ]
 
-const _IDLE_COLOR := Color(1, 1, 1, 0.12)
-const _PRESSED_COLOR := Color(1, 1, 1, 0.35)
+# House look (features/ui-design-system.md): pure-black face, hard down-right
+# shadow. Pressed state lifts to the same SURFACE_HOVER the rest of the game's
+# buttons use, so a held control reads exactly like a pressed menu button.
+const _IDLE_COLOR := UITheme.BLACK
+const _PRESSED_COLOR := UITheme.SURFACE_HOVER
 const _TRACK_COLOR := Color(1, 1, 1, 0.10)
 const _THUMB_COLOR := Color(1, 1, 1, 0.30)
+
+# How much smaller the drawn button is than its touch region, as a fraction of
+# the region's shorter side. The touch region itself is NOT shrunk by this —
+# see "Big hit box, small button" below.
+const _BUTTON_SHRINK := 0.16
 
 # Region screen label (digital buttons). ASCII arrows for steering — the bundled
 # font lacks ◄/► glyphs (same reason the menus use < / >).
@@ -110,6 +118,10 @@ var _thumb_w := 40.0
 
 # Visual nodes, rebuilt per scheme: region name -> ColorRect, plus the slider.
 var _panels := {}
+# The hard drop-shadow quad drawn behind each button panel (same sibling-quad
+# trick CardCarousel uses): region name -> ColorRect, added to the tree just
+# before its panel so the panel draws on top of it.
+var _panel_shadows := {}
 # Last held state pushed to each panel's tint, so _update_visuals only touches a
 # ColorRect's colour on a transition. region name -> bool.
 var _panel_held := {}
@@ -234,6 +246,9 @@ func _build() -> void:
 		p.queue_free()
 	_panels.clear()
 	_panel_held.clear()
+	for s in _panel_shadows.values():
+		s.queue_free()
+	_panel_shadows.clear()
 	if _slider_track != null:
 		_slider_track.queue_free()
 		_slider_track = null
@@ -246,17 +261,17 @@ func _build() -> void:
 
 	# Digital button panels for every region this scheme uses.
 	if _has_gas_button():
-		_panels["gas"] = _make_button(_REGION_LABEL["gas"])
+		_make_button("gas")
 	if _has_brake_button():
-		_panels["brake"] = _make_button(_REGION_LABEL["brake"])
+		_make_button("brake")
 	if _has_nitrous_button():
-		_panels["nitrous"] = _make_button(_REGION_LABEL["nitrous"])
+		_make_button("nitrous")
 	if _has_steer_buttons():
-		_panels["steer_left"] = _make_button(_REGION_LABEL["steer_left"])
-		_panels["steer_right"] = _make_button(_REGION_LABEL["steer_right"])
+		_make_button("steer_left")
+		_make_button("steer_right")
 	if _is_simple():
-		_panels["simple_left"] = _make_button(_REGION_LABEL["simple_left"])
-		_panels["simple_right"] = _make_button(_REGION_LABEL["simple_right"])
+		_make_button("simple_left")
+		_make_button("simple_right")
 	if _is_tilt():
 		# Only now do we need a sensor feed, and on the web that means a listener on
 		# a 60 Hz browser event — so the other five schemes never install it.
@@ -276,19 +291,31 @@ func _build() -> void:
 	_layout()
 
 
-func _make_button(text: String) -> ColorRect:
+# Builds one button's visuals for `region` — a hard, zero-blur shadow quad (the
+# same sibling-quad trick CardCarousel uses for its absolute-positioned cards)
+# plus the black button face on top of it — and registers both in _panels /
+# _panel_shadows. The face is drawn SMALLER than the region's actual touch
+# rect (see "Big hit box, small button" at _visual_rect); the shadow tracks
+# whatever size _layout gives the face.
+func _make_button(region: String) -> void:
+	var shadow := ColorRect.new()
+	shadow.color = UITheme.CARD_SHADOW_COLOR
+	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(shadow)
+	_panel_shadows[region] = shadow
+
 	var panel := ColorRect.new()
 	panel.color = _IDLE_COLOR
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE  # we read raw touch ourselves
 	var label := Label.new()
-	label.text = text
+	label.text = _REGION_LABEL[region]
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	label.add_theme_font_size_override("font_size", UITheme.px(16))
 	panel.add_child(label)
 	add_child(panel)
-	return panel
+	_panels[region] = panel
 
 
 # A tiny top-left readout of the entire touch path, off unless
@@ -339,11 +366,20 @@ func _update_debug_label() -> void:
 func _layout() -> void:
 	var size := get_viewport().get_visible_rect().size
 	_compute_rects(size)
+	var off := UITheme.card_shadow_offset()
 	for region in _panels:
 		var panel: ColorRect = _panels[region]
-		var r: Rect2 = _rects.get(region, Rect2())
-		panel.position = r.position
-		panel.size = r.size
+		var hit: Rect2 = _rects.get(region, Rect2())
+		# NOS is already a tightly-capped small button (see _compute_rects), so its
+		# face fills its own hit box; every other region's hit box has been bled
+		# out to the screen edges / its neighbours, so its face is a shrunk inset.
+		var vis := hit if region == "nitrous" else _visual_rect(hit)
+		panel.position = vis.position
+		panel.size = vis.size
+		var shadow: ColorRect = _panel_shadows.get(region)
+		if shadow != null:
+			shadow.position = vis.position + Vector2(off, off)
+			shadow.size = vis.size
 	if _slider_track != null:
 		_slider_track.position = _slider_rect.position
 		_slider_track.size = _slider_rect.size
@@ -351,36 +387,44 @@ func _layout() -> void:
 		_position_thumb()
 
 
-# Fill _rects (and _slider_rect/_thumb_w for slider schemes) for the given viewport.
+# Big hit box, small button. Digital touch REGIONS (_rects) tile edge-to-edge
+# with NO gap between neighbours and bleed all the way to the outer screen
+# edges, for maximum touch tolerance right up to the bezel; the drawn button
+# is a smaller inset of its own region (_visual_rect, applied in _layout),
+# which is what supplies the visible gap between buttons instead of a gap in
+# the touch geometry. NOS is the one exception — see its own comment below.
 func _compute_rects(size: Vector2) -> void:
 	_rects.clear()
-	var m := size.x * 0.03
-	var gap := size.y * 0.02
-	var hgap := size.x * 0.02
-
-	# Right-hand pedal stack: BRAKE at the bottom, GAS above it (when present).
+	var band_h := size.y * 0.20
 	var btn_w := clampf(size.x * 0.26, 60.0, 260.0)
-	var btn_h := size.y * 0.16
-	var bx := size.x - m - btn_w
-	if _has_brake_button():
-		var brake_y := size.y - m - btn_h
-		_rects["brake"] = Rect2(bx, brake_y, btn_w, btn_h)
-		if _has_gas_button():
-			_rects["gas"] = Rect2(bx, brake_y - gap - btn_h, btn_w, btn_h)
+	var bx := size.x - btn_w
+
+	# Right-hand pedal column, bled to the right + bottom edges. BRAKE and GAS
+	# (when both present) split the column's height evenly with no gap between
+	# them, so the two touch side-by-side (well, top-to-bottom).
+	if _has_brake_button() and _has_gas_button():
+		var half := band_h * 0.5
+		_rects["brake"] = Rect2(bx, size.y - half, btn_w, half)
+		_rects["gas"] = Rect2(bx, size.y - band_h, btn_w, half)
+	elif _has_brake_button():
+		_rects["brake"] = Rect2(bx, size.y - band_h, btn_w, band_h)
 	elif _has_gas_button():
-		_rects["gas"] = Rect2(bx, size.y - m - btn_h, btn_w, btn_h)
+		_rects["gas"] = Rect2(bx, size.y - band_h, btn_w, band_h)
 
 	# Left side: a slider, two steer buttons, or full-height left/right halves.
 	if _has_slider():
 		var sl_w := size.x * 0.42
-		var sl_h := size.y * 0.12
-		_slider_rect = Rect2(m, size.y - m - sl_h, sl_w, sl_h)
-		_thumb_w = sl_h
+		var sl_h := size.y * 0.16
+		_slider_rect = Rect2(0.0, size.y - sl_h, sl_w, sl_h)
+		_thumb_w = sl_h * 0.6
 	elif _has_steer_buttons():
-		var sbw := clampf(size.x * 0.18, 50.0, 180.0)
-		var ly := size.y - m - btn_h
-		_rects["steer_left"] = Rect2(m, ly, sbw, btn_h)
-		_rects["steer_right"] = Rect2(m + sbw + hgap, ly, sbw, btn_h)
+		# Bled to the left edge, and split evenly with no gap between the two —
+		# they are the touch-tolerance case the "side by side, no gap" ask is
+		# most about.
+		var steer_w := clampf(size.x * 0.36, 100.0, 360.0)
+		var half := steer_w * 0.5
+		_rects["steer_left"] = Rect2(0.0, size.y - band_h, half, band_h)
+		_rects["steer_right"] = Rect2(half, size.y - band_h, half, band_h)
 	elif _is_simple():
 		# The whole lower screen split down the middle, so a tap anywhere on a side
 		# steers that way (both sides at once = brake). A top band is left free.
@@ -393,7 +437,9 @@ func _compute_rects(size: Vector2) -> void:
 	# when nitrous is fitted. Anchored to the GAS pedal where there is one; the auto-gas
 	# schemes (2/3) have none, so it anchors to BRAKE instead, and the simple scheme (4)
 	# has neither pedal, so it uses the slot a bottom pedal WOULD occupy — that keeps the
-	# button in the same corner of the screen in every scheme.
+	# button in the same corner of the screen in every scheme. Unlike every other region
+	# above, its hit box is deliberately kept as small as its own drawn face rather than
+	# bled outward: it must never eat steering, so it stays exactly as big as it looks.
 	#
 	# In scheme 4 the left/right steering halves cover the whole lower screen, so the NOS
 	# rect necessarily sits inside one of them; _button_region tests "nitrous" FIRST, so
@@ -407,17 +453,28 @@ func _compute_rects(size: Vector2) -> void:
 		elif _rects.has("brake"):
 			anchor = _rects["brake"]
 		else:
-			anchor = Rect2(bx, size.y - m - btn_h, btn_w, btn_h)
+			anchor = Rect2(bx, size.y - band_h, btn_w, band_h)
 		var left_limit := 0.0
 		if _has_slider():
 			left_limit = _slider_rect.end.x
 		elif _has_steer_buttons():
 			left_limit = (_rects["steer_right"] as Rect2).end.x
+		var hgap := size.x * 0.02
 		var avail := anchor.position.x - hgap - (left_limit + hgap)
 		var nw := minf(btn_w * 0.45, avail)
 		if nw >= _MIN_NITROUS_W:
 			var nh := anchor.size.y * 0.5
 			_rects["nitrous"] = Rect2(anchor.position.x - hgap - nw, anchor.position.y, nw, nh)
+
+
+# Shrinks a touch region toward its centre for the drawn button — the small,
+# black, hard-shadowed face that sits inside the big (edge-to-edge, gap-free)
+# hit box. The inset is a fraction of the region's SHORTER side, so a wide,
+# short region (a pedal) and a narrow, tall one shrink proportionally rather
+# than one axis vanishing before the other.
+func _visual_rect(hit: Rect2) -> Rect2:
+	var inset := minf(hit.size.x, hit.size.y) * _BUTTON_SHRINK
+	return hit.grow(-inset)
 
 
 # Which digital region a screen position falls in, or "" (the slider is captured

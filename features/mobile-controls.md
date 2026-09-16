@@ -60,6 +60,20 @@ title-screen Settings page has no live controls, so there it just saves.)
   stack (BRAKE at the bottom, GAS above when present), and on the left either the
   steering **slider**, two **steer buttons**, or full-height **left/right halves**
   (simple scheme). `_build` creates only the panels the scheme uses.
+- **Big hit box, small button.** The digital touch regions in `_rects` (gas/brake,
+  steer_left/steer_right, the simple halves) tile **edge-to-edge with no gap
+  between neighbours** and bleed all the way to the screen's outer edges — maximum
+  touch tolerance, right up to the bezel. The drawn button is a smaller inset of
+  its own region (`_visual_rect`, applied in `_layout`), which is what supplies
+  the *visible* gap between buttons instead of a gap in the actual touch geometry.
+  The NOS button is the one exception: it stays tightly capped to its own drawn
+  size (see its own comment in `_compute_rects`) since a bled-out hit box would
+  eat into the steering cluster or the pedal column. Each button's face is pure
+  black with the house hard, zero-blur drop shadow (`UITheme.CARD_SHADOW_COLOR` /
+  `card_shadow_offset()`, drawn as a sibling `ColorRect` behind the face — the
+  same trick `CardCarousel` uses for its absolute-positioned cards, since these
+  panels aren't laid out by a Container either) — see
+  [ui-design-system.md](ui-design-system.md).
 - **Steering slider** (schemes 0/2). Touching inside it **captures** that pointer
   (`_slider_owner`); the thumb X sets analog steer via `_steer_from_x`
   ([-1 .. +1], centre = straight). Lifting the finger clears the owner so steering
