@@ -142,13 +142,8 @@ func _ready() -> void:
 # load-bearing and commented at each step; nothing in it awaits.
 func _apply_scene_config(cfg: GameConfig) -> void:
 	var env: Environment = $WorldEnvironment.environment
-	env.fog_density = cfg.fog_density
-	env.background_color = cfg.background_color
-	env.fog_light_color = cfg.background_color
-	# How much the (now reduced) fog tints the sky. Low so the skybox reads clearly
-	# above the distant haze; the panorama's own horizon + the fog colour (matched
-	# to the sky horizon, see background_color) blend the terrain edge into the sky.
-	env.fog_sky_affect = cfg.fog_sky_affect
+	# Fog, backdrop and glow — shared with the menu showcase (GameConfig.apply_environment).
+	cfg.apply_environment(env)
 	_apply_region_look()
 
 	# Setting this property triggers a full terrain regeneration; skip when equal.
@@ -634,14 +629,18 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# the start-LINE pose from params (absolute, idempotent — never accumulates across
 	# re-generation on a reused car) and seat the car + start_pos there. For a staged
 	# run the start line sits one lead-in ahead behind the generation origin.
-	var relocate := params.origin - params.base_origin
-	if relocate != Vector2.ZERO:
-		var start_line := params.origin
-		if staged:
-			start_line = params.origin - params.heading.normalized() * cfg.start_lead_in_ahead_m
+	# Free play generates staged params (for_event stages whenever start_line_enabled,
+	# keeping lockfile keys) but never stages the world — no lead-in road — so its
+	# origin sits start_lead_in_ahead_m ahead of the nominal spawn. Seat the car on
+	# the road's actual start whenever the two disagree, not only on a relocation.
+	var start_line := params.origin
+	if staged:
+		start_line = params.origin - params.heading.normalized() * cfg.start_lead_in_ahead_m
+	if start_line != start_pos:
 		start_pos = start_line
-		var car := $Car as Node3D
-		car.global_position = Vector3(start_line.x, car.global_position.y, start_line.y)
+		# A bare global_position write is discarded by the physics server outside the
+		# physics step; move_spawn_to queues it properly and updates the R-reset pose.
+		$Car.move_spawn_to(start_line)
 	# Paint the waterline into the preview BEFORE generation — it's a pure function
 	# of (seed, water_level), so it can show first and the road animates over it. This
 	# early pass covers a rough box around the origin (the track extent isn't known

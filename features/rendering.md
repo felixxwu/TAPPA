@@ -424,6 +424,15 @@ this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
 
 ## Environment
 
+- **Shared environment base**: `GameConfig.apply_environment(env)` sets fog,
+  backdrop colour and glow from config. Both `world.gd` → `_apply_scene_config`
+  and `menu_showcase.gd` (the menu's scrolling background) call it, so the stage
+  and menu look the same; weather/region looks layer on top. The garage builds
+  its own env and does not use it.
+- **Glow (bloom)**: Godot's built-in `Environment` glow, from the `glow_*`
+  exports in `GameConfig` ("World" group). It is a mip-chain downsample/upsample blur. Materials are unshaded LDR, so
+  `glow_hdr_threshold` sits below 1.0 so the brightest pixels still bleed. Toggle with
+  `glow_enabled`.
 - No light nodes and no engine lighting pass — the materials stay `unshaded`.
   Car meshes get cheap fake per-vertex (Gouraud) lighting from the car-only
   `ps1_models_lit.gdshader` (computed live, since the car rotates). The terrain

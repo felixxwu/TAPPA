@@ -144,6 +144,29 @@ func test_a_free_play_stage_wears_its_picked_regions_look() -> void:
 		"a free-play drive resolves the PICKED region, not the home default")
 
 
+func test_a_free_play_car_spawns_on_the_road() -> void:
+	# for_event stages the generation origin whenever start_line_enabled, but free play
+	# never stages the world (no lead-in road) — the car used to spawn a lead-in's
+	# length behind where the road began, off the track.
+	Config.data.start_line_enabled = true
+	var region := String(RegionLibrary.ordered()[0]["id"])
+	FreePlay.begin(0, RegionStageLibrary.all_stages_in(region)[0], [], "", region)
+	_scene = load("res://main.tscn").instantiate()
+	add_child_autofree(_scene)
+	await get_tree().process_frame
+	# Let physics steps run: a bare transform write outside the step used to be
+	# overwritten here, snapping the car back to its nominal spawn.
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	FreePlay.clear()
+	var car := _scene.get_node("Car") as Node3D
+	var xz := Vector2(car.global_position.x, car.global_position.z)
+	var road: Curve2D = _scene._road_centerline
+	var road_start := road.get_point_position(0)
+	assert_lt(xz.distance_to(road_start), Config.data.track_width,
+		"the free-play car starts at the road's start line")
+
+
 func test_a_stage_with_no_region_falls_back_to_the_home_look() -> void:
 	# The fallback arm of the same branch. Driven with NO SESSION rather than with a
 	# CHALLENGE run, deliberately: both take the identical `region_id` path (a challenge

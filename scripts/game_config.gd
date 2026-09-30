@@ -1590,6 +1590,14 @@ func has_nitrous() -> bool:
 # config/game_config.tres in the same change.
 
 @export_group("World")
+## Built-in Environment glow (bloom). A mip-chain downsample/upsample blur, cheap on
+## the Compatibility renderer. Materials are unshaded LDR, so the threshold sits
+## below 1.0 — only the brightest pixels (sky, lights, flames) bleed.
+@export var glow_enabled := true
+@export_range(0.0, 8.0) var glow_intensity := 0.8
+@export_range(0.0, 2.0) var glow_strength := 1.0
+@export_range(0.0, 1.0) var glow_bloom := 0.0
+@export_range(0.0, 4.0) var glow_hdr_threshold := 0.85
 ## Exponential distance fog. Demoted from "opaque wall hiding the ~75 m terrain
 ## edge" to thin aerial haze now that DistantTerrain provides a far horizon — low
 ## enough to see the distant hills + skybox. See todo/distant-terrain-and-sky.md.
@@ -2995,6 +3003,21 @@ func has_nitrous() -> bool:
 # Resource.duplicate() resets them to their declared defaults instead of preserving the
 # fielded values. Both functions below walk the SCRIPT property list, so every field is
 # captured and restored regardless of whether it is exported.
+
+# The config-driven base of every 3D scene's Environment (stage world + menu
+# showcase), so the two can't drift: fog, backdrop and glow. Weather/region looks
+# layer on top of this afterwards.
+func apply_environment(env: Environment) -> void:
+	env.fog_density = fog_density
+	env.background_color = background_color
+	env.fog_light_color = background_color
+	env.fog_sky_affect = fog_sky_affect
+	env.glow_enabled = glow_enabled
+	env.glow_intensity = glow_intensity
+	env.glow_strength = glow_strength
+	env.glow_bloom = glow_bloom
+	env.glow_hdr_threshold = glow_hdr_threshold
+
 
 ## Every script variable on this config as a { property_name: value } map. Arrays and
 ## dictionaries are deep-copied, so the snapshot never shares mutable state with the live

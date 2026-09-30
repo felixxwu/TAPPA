@@ -1449,6 +1449,13 @@ func apply_soft_drag(strength: float) -> void:
 	apply_central_impulse(-v_h * clampf(strength, 0.0, 1.0) * mass)
 
 
+# Move the spawn to `xz` (keeping heading and height): teleports there via reset_to, and makes it
+# the pose manual resets restore. World uses this to seat the car on the start line.
+func move_spawn_to(xz: Vector2) -> void:
+	_start_transform.origin = Vector3(xz.x, global_position.y, xz.y)
+	reset_to(_start_transform)
+
+
 func reset_to(xform: Transform3D) -> void:
 	# Queue the teleport for _integrate_forces (see _pending_reset) rather than trusting a
 	# bare global_transform write, which the physics server discards unless it happens

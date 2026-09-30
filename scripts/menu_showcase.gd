@@ -214,6 +214,8 @@ func _build(force_live: bool = false, capture: MenuShowcaseCache = null) -> void
 
 	var cfg: GameConfig = Config.data
 	var env: Environment = _world_environment.environment
+	# Same config-driven fog/backdrop/glow as the stage world (world.gd).
+	cfg.apply_environment(env)
 	_baseline_env = {
 		"background_color": env.background_color,
 		"fog_light_color": env.fog_light_color,
