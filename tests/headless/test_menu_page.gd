@@ -286,6 +286,18 @@ func test_open_modal_draws_below_a_confirm_popup() -> void:
 	confirm.trigger_back()
 
 
+func test_open_modal_draws_below_a_loading_screen() -> void:
+	# A tie let creation order decide, and the hub's title page painted over the
+	# menu-background load. Compared against LoadingScreen's own level, not a number.
+	var host := Node.new()
+	add_child_autofree(host)
+	var page := MenuPage.open_modal(host)
+	var loading := LoadingScreen.new()
+	host.add_child(loading)
+	assert_lt((page.get_parent() as CanvasLayer).layer, loading.layer,
+		"a loading screen always covers modal pages")
+
+
 func test_open_modal_claims_the_screen_while_visible() -> void:
 	var host := Node.new()
 	add_child_autofree(host)

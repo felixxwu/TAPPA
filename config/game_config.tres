@@ -12,6 +12,7 @@ turbo_boost_response = 3.0
 engine_mix_rate_web_touch = 11025.0
 distant_terrain_enabled = false
 fog_density = 0.01
+outlines_enabled = false
 glow_intensity = 1.6
 glow_strength = 1.2
 glow_bloom = 0.1

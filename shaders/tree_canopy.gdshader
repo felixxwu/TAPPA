@@ -29,6 +29,7 @@ uniform float near_fade_end = 3.0;
 // reference point to the bush's vertical span — see the cam_dist note in vertex().
 uniform float canopy_height = 1.5;
 
+#include "res://shaders/spike_id.gdshaderinc"
 #include "res://shaders/headlight_cone.gdshaderinc"
 
 // Scalar cone strength, carried as a FLOAT rather than a vec3: this shader had no
@@ -37,6 +38,9 @@ uniform float canopy_height = 1.5;
 varying float v_headlight;
 
 void vertex() {
+	if (id_pass) {  // keep the hash out of the normal colour pass
+		v_spike_id = spike_id_color(object_id, INSTANCE_ID);
+	}
 	// Per-instance world origin (base, column 3 of the model matrix). Near-fade
 	// distance is measured to the TRUNK AXIS, not the base point: the camera is
 	// projected onto the vertical axis and clamped to the [base, base+canopy_height]
@@ -59,4 +63,7 @@ void fragment() {
 	// authored bush tint — together the LIGHT term, which the headlight ADDS to. The
 	// texture is the surface term and stays outside the brackets.
 	ALBEDO = texture(albedo, UV).rgb * (COLOR.rgb * tint.rgb + hl_color * v_headlight);
+	if (id_pass) {
+		ALBEDO = spike_pack(v_spike_id.rg, false, length(VERTEX));
+	}
 }

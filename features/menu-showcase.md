@@ -22,15 +22,16 @@ closer than a fixed margin to a segment boundary, and each segment independently
 cycles through weather conditions eligible for its own region. No car, no run, no
 player input — pure scenery.
 
-## Hosting: no `SubViewport` needed
+## Hosting
 
 `hub.tscn`'s root (`HubShell`) is a `Control`. `MenuShowcase` is added as a plain
-child of it in `hub_shell.gd::_ready` (`_showcase = load("res://menu_showcase.tscn").instantiate();
-add_child(_showcase)`), NOT via the `SubViewport`/`Sprite3D` compositing trick
-`WorldPanel` uses ([world-panel.md](world-panel.md)) — that mechanism is for
-embedding 2D UI *into* a 3D scene at an angle, the opposite problem. `Node3D` and
-`CanvasItem` content coexist natively in one `Viewport`, with 2D always compositing
-over 3D, so the hub's existing pages need no changes at all to draw on top of it.
+child of it in `hub_shell.gd::_ready`, NOT via the `SubViewport`/`Sprite3D` trick
+`WorldPanel` uses ([world-panel.md](world-panel.md)) — 2D always composites over 3D
+in one `Viewport`, so the pages need no changes to draw on top of it. Alongside it,
+`_ready` adds a `post_process.tscn` instance as the hub's FIRST child, so the
+showcase renders through the same PS1 post-process pipeline (dither, grade) as the
+stage — see [rendering.md](rendering.md). That instance disables the root
+viewport's own 3D pass while it's in the tree.
 
 **Skipped under headless** (`Platform.is_headless()` gate in `hub_shell.gd`): it
 costs a real (if small) multi-segment track generation, which every hub test would

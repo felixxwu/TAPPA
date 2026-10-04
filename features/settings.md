@@ -38,7 +38,9 @@ things and nothing else:
 
 `scripts/fps_setting.gd` (`FpsSetting`) is the **exemplar** — read it first when
 adding a setting; `scripts/speed_lines_setting.gd` (`SpeedLinesSetting`, the speed
-blur overlay) is the same shape with a live re-apply, `CameraManager` and
+blur overlay) and `scripts/outline_setting.gd` (`OutlineSetting`, the Display page's
+**Outlines** On/Off row — stops the object-ID outline pass, its extra draw pass included)
+are the same shape with a live re-apply, `CameraManager` and
 `MobileControls` are the signal-shaped variants. `SettingsMenu` then only *calls*
 the module.
 

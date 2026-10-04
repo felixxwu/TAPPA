@@ -3,7 +3,6 @@
 [ext_resource type="Shader" uid="uid://ddlrcp8opyqg" path="res://shaders/ps1_models.gdshader" id="1_models"]
 [ext_resource type="Shader" uid="uid://is4tnog0yjlb" path="res://shaders/speed_lines.gdshader" id="2_lines"]
 [ext_resource type="Script" uid="uid://ccn420jim2dya" path="res://scripts/speed_lines.gd" id="2_lines_s"]
-[ext_resource type="Shader" uid="uid://cnmlit3nvwmc1" path="res://shaders/ps1_post_process.gdshader" id="2_post"]
 [ext_resource type="Script" uid="uid://bp1qxl2gv47a8" path="res://scripts/terrain_layer.gd" id="3_5vw27"]
 [ext_resource type="Texture2D" uid="uid://buvotoc4e4cy7" path="res://textures/grass.jpg" id="3_grass"]
 [ext_resource type="PackedScene" path="res://car.tscn" id="4_car"]
@@ -17,7 +16,7 @@
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
 [ext_resource type="Texture2D" uid="uid://bcx6lhspkcwhl" path="res://textures/sky_field.png" id="12_sky"]
 [ext_resource type="Script" uid="uid://detelg2t5mcwj" path="res://scripts/pause_menu.gd" id="13_pause"]
-[ext_resource type="Script" path="res://scripts/post_process_view.gd" id="14_ppview"]
+[ext_resource type="PackedScene" path="res://post_process.tscn" id="14_ppview"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("12_sky")
@@ -57,10 +56,6 @@ shader_parameter/blend_road = true
 shader_parameter/road_uv_scale = 1.0
 shader_parameter/tarmac_color = Color(0.32, 0.32, 0.34, 1)
 
-[sub_resource type="ShaderMaterial" id="mat_post"]
-shader = ExtResource("2_post")
-shader_parameter/virtual_resolution = Vector2(480, 360)
-
 [sub_resource type="ShaderMaterial" id="mat_lines"]
 shader = ExtResource("2_lines")
 shader_parameter/intensity = 0.0
@@ -99,20 +94,7 @@ script = ExtResource("10_cammgr")
 chase_camera = NodePath("../ChaseCamera")
 bonnet_camera = NodePath("../Car/BonnetCamera")
 
-[node name="PostProcess" type="SubViewportContainer" parent="." unique_id=1572474653]
-texture_filter = 1
-material = SubResource("mat_post")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-stretch = true
-script = ExtResource("14_ppview")
-
-[node name="View" type="SubViewport" parent="PostProcess" unique_id=679846541]
-handle_input_locally = false
-
-[node name="ViewCamera" type="Camera3D" parent="PostProcess/View" unique_id=679846542]
+[node name="PostProcess" parent="." instance=ExtResource("14_ppview")]
 
 [node name="SpeedLines" type="CanvasLayer" parent="." unique_id=289473973 node_paths=PackedStringArray("car")]
 script = ExtResource("2_lines_s")

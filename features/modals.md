@@ -189,8 +189,9 @@ wrong, each with a silent failure mode:
    which `game_config.tres` **ships on**. A page added to `_car_layer` was built, gated and
    nav-wired but rendered NOWHERE: "Change Upgrades" on the car park's "Too powerful" prompt
    looked like it dropped the player straight back to car-select.
-2. **`MenuPage.MODAL_LAYER` (100) — above the station overlays, strictly below
-   `ConfirmPopup`'s 101.** A modal page HOSTS confirms rather than being one. On a tie the confirm can be drawn *under* the page's
+2. **`MenuPage.MODAL_LAYER` (99) — above the station overlays, strictly below
+   `LoadingScreen`'s 100 (a tie let the hub's title page draw over the background load)
+   and `ConfirmPopup`'s 101.** A modal page HOSTS confirms rather than being one. On a tie the confirm can be drawn *under* the page's
    opaque panel while its full-screen `MOUSE_FILTER_STOP` dim goes on swallowing clicks — an
    invisible confirm behind a menu that has gone dead.
 3. **A screen claim via `MenuNav.SCREEN_CLAIMER_GROUP`.** `WorldPanel._input` projects clicks

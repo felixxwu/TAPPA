@@ -80,7 +80,9 @@ var _fixed_body_height := 0.0
 # row, and the reward / detune prompts open over these pages. On a tie the confirm can be
 # drawn UNDER the page's opaque panel while its own full-screen MOUSE_FILTER_STOP dim goes
 # on swallowing every click — an invisible confirm behind a menu that has gone dead.
-const MODAL_LAYER := 100
+# Also STRICTLY BELOW LoadingScreen._LAYER (100): on a tie, creation order decided which
+# drew on top, and the hub's title page once painted over the menu-background load.
+const MODAL_LAYER := LoadingScreen._LAYER - 1
 
 
 # A MODAL MenuPage, hosted correctly. The one way to put a full-screen page on screen.

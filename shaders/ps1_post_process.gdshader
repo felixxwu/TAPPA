@@ -32,6 +32,19 @@ uniform float grade_vignette_strength : hint_range(0.0, 1.0) = 0.25;
 uniform float grade_vignette_radius : hint_range(0.0, 1.5) = 0.75;
 
 const vec3 LUMA_709 = vec3(0.2126, 0.7152, 0.0722);
+
+// SPIKE (throwaway): object-ID outline (scripts/spike_id_pass.gd).
+uniform sampler2D id_texture : filter_nearest;
+uniform bool use_id_outline = false;
+uniform float outline_strength : hint_range(0.0, 1.0) = 0.4;
+uniform float outline_width : hint_range(0.5, 4.0) = 0.5;
+// Terrain pixels carry a normal (blue = TERRAIN_MARK); two terrain pixels edge only
+// where their normals differ by more than this angle.
+uniform float crease_angle_deg : hint_range(1.0, 90.0) = 30.0;
+// Live Environment fog density (pushed per frame by spike_id_pass.gd); edges fade by
+// the fog at the nearer of their two pixels, times this.
+uniform float scene_fog_density = 0.0;
+uniform float outline_fog_fade : hint_range(0.0, 2.0) = 1.0;
 // Centre-to-corner distance on the same scale as the vignette's `dist` below
 // (1.0 = edge midpoint), i.e. sqrt(2). The vignette reaches full strength here.
 const float CORNER_DIST = 1.4142136;
@@ -59,8 +72,62 @@ const mat4 DITHER = mat4(
 	vec4(1.0, -1.0, 0.0, -2.0)
 );
 
+// SPIKE: decode of spike_id.gdshaderinc's packing — keep the two in step.
+const float SPIKE_DIST_SCALE = 150.0;
+
+bool is_sky(vec3 c) {
+	return c.b < 0.002 && c.r < 0.002 && c.g < 0.002;
+}
+
+bool is_terrain(vec3 c) {
+	return c.b >= 0.5;
+}
+
+vec3 terrain_normal(vec3 c) {
+	vec2 xz = c.rg * 2.0 - 1.0;
+	return vec3(xz.x, sqrt(max(1.0 - dot(xz, xz), 0.0)), xz.y);
+}
+
+// Godot's exponential depth fog at this pixel (sky counts as fully fogged).
+float id_fog(vec3 c) {
+	if (is_sky(c)) {
+		return 1.0;
+	}
+	float enc = (c.b - (is_terrain(c) ? 0.5 : 0.0)) / 0.49;
+	float dist = -SPIKE_DIST_SCALE * log(max(1.0 - enc, 1e-4));
+	return 1.0 - exp(-scene_fog_density * dist);
+}
+
+// Edge strength between c and neighbour q: 1 at a new object / sky boundary or a
+// terrain crease sharper than crease_cos, faded by the fog at the nearer pixel.
+float id_edge(vec3 c, vec3 q, float crease_cos) {
+	float e;
+	if (is_terrain(c) && is_terrain(q)) {
+		e = step(dot(terrain_normal(c), terrain_normal(q)), crease_cos);
+	} else {
+		e = float(is_terrain(c) != is_terrain(q) || is_sky(c) != is_sky(q)
+			|| distance(c.rg, q.rg) > 0.01);
+	}
+	if (e == 0.0) {
+		return 0.0;  // fog only matters on edge pixels
+	}
+	return e * clamp(1.0 - min(id_fog(c), id_fog(q)) * outline_fog_fade, 0.0, 1.0);
+}
+
 void fragment() {
 	vec3 original = texture(TEXTURE, UV).rgb;
+
+	// SPIKE: darken where the object ID changes between neighbours.
+	if (use_id_outline) {
+		vec2 px = TEXTURE_PIXEL_SIZE * outline_width;
+		vec3 c = texture(id_texture, UV).rgb;
+		float crease_cos = cos(radians(crease_angle_deg));
+		float edge = max(max(id_edge(c, texture(id_texture, UV + vec2(px.x, 0.0)).rgb, crease_cos),
+				id_edge(c, texture(id_texture, UV - vec2(px.x, 0.0)).rgb, crease_cos)),
+			max(id_edge(c, texture(id_texture, UV + vec2(0.0, px.y)).rgb, crease_cos),
+				id_edge(c, texture(id_texture, UV - vec2(0.0, px.y)).rgb, crease_cos)));
+		original *= 1.0 - edge * outline_strength;
+	}
 
 	// Luma is taken ONCE from the untouched sample and reused for both the
 	// desaturation lerp and the split-tone crossfade. Deliberately not

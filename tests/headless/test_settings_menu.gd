@@ -121,6 +121,30 @@ func test_fps_row_press_persists_the_cap() -> void:
 	assert_eq(FpsSetting.resolve(), 30, "resolve() follows the latest pick")
 
 
+# Outlines row: unset follows the authored default; pressing flips + persists the
+# choice and reaches every live outline pass through OutlineSetting.GROUP.
+class _FakeOutlinePass extends Node:
+	var last: Variant = null
+	func set_effect_enabled(on: bool) -> void:
+		last = on
+
+
+func test_outline_row_toggles_persists_and_applies() -> void:
+	var menu := _make_menu()
+	assert_not_null(menu.outline_button, "the Display page has an Outlines row")
+	assert_null(_save.get_setting(OutlineSetting.SETTING_KEY, null), "nothing saved until pressed")
+	assert_eq(OutlineSetting.resolve(), OutlineSetting.default_enabled(), "unset -> authored default")
+	var fake := _FakeOutlinePass.new()
+	fake.add_to_group(OutlineSetting.GROUP)
+	add_child_autofree(fake)
+	var before := OutlineSetting.resolve()
+	menu.outline_button.pressed.emit()
+	assert_eq(OutlineSetting.resolve(), not before, "pressing flips the saved choice")
+	assert_eq(fake.last, not before, "and applies it to live outline passes")
+	menu.outline_button.pressed.emit()
+	assert_eq(OutlineSetting.resolve(), before, "pressing again flips it back")
+
+
 # Is there a focusable button anywhere on the category list whose label mentions `text`?
 func _list_has_button(menu: SettingsMenu, text: String) -> bool:
 	for node in menu._list_page.find_children("*", "Button", true, false):

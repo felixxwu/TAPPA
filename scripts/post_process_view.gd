@@ -1,5 +1,8 @@
+class_name PostProcessView
 extends SubViewportContainer
-# PS1 post-process host (see features/rendering.md). The 3D world stays in the
+# PS1 post-process host (see features/rendering.md). Packaged as
+# post_process.tscn and instanced by every 3D scene (main.tscn's stage and the
+# hub's MenuShowcase), so both render through the exact same pipeline. The 3D world stays in the
 # main scene tree (so every node path, physics body, and camera is untouched),
 # but it's RENDERED through the child SubViewport: the viewport shares the main
 # World3D (own_world_3d = false) and carries a mirror camera synced every frame
@@ -16,6 +19,15 @@ extends SubViewportContainer
 
 @onready var _view_camera: Camera3D = $View/ViewCamera
 
+func _ready() -> void:
+	# The single writer of the dither grid + colour grade, so no two hosts can
+	# grade the game differently.
+	Config.data.apply_post_process(material as ShaderMaterial)
+	# SPIKE (throwaway): object-ID outline pass.
+	var spike := preload("res://scripts/spike_id_pass.gd").new()
+	add_child(spike)
+	spike.setup.call_deferred(self, $View, _view_camera)
+
 func _enter_tree() -> void:
 	get_viewport().disable_3d = true
 
@@ -23,10 +35,14 @@ func _exit_tree() -> void:
 	get_viewport().disable_3d = false
 
 func _process(_delta: float) -> void:
-	var src := get_viewport().get_camera_3d()
+	mirror_camera(_view_camera, get_viewport().get_camera_3d())
+
+# Copy what a mirror camera needs from the active gameplay camera (shared with the
+# outline pass's ID camera so the two can't drift).
+static func mirror_camera(dst: Camera3D, src: Camera3D) -> void:
 	if src == null:
 		return
-	_view_camera.global_transform = src.global_transform
-	_view_camera.fov = src.fov
-	_view_camera.near = src.near
-	_view_camera.far = src.far
+	dst.global_transform = src.global_transform
+	dst.fov = src.fov
+	dst.near = src.near
+	dst.far = src.far

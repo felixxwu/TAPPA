@@ -211,11 +211,6 @@ func _apply_scene_config(cfg: GameConfig) -> void:
 	# The MX-5 body model is lit in car.gd's _apply_model_material when built.
 	for car_mesh in [$Car/Chassis, $Car/Cabin, $Car/WheelFL/Visual/Tire]:
 		cfg.apply_car_light(_mat(car_mesh))
-	# PS1 dither/quantise grid + the colour grade, both pushed by apply_post_process
-	# (shared with hq.gd, the other host of this pass, so the two can't grade the
-	# game differently). Every target renders at the same authored resolution, so
-	# the grid is pushed raw.
-	cfg.apply_post_process($PostProcess.material as ShaderMaterial)
 
 
 # _ready phase: hold the car still for the boot and field the right car for this mode

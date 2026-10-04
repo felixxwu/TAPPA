@@ -51,10 +51,14 @@ uniform float light_amount = 0.0;
 
 varying vec3 v_tint;
 
+#include "res://shaders/spike_id.gdshaderinc"
 #include "res://shaders/headlight_cone.gdshaderinc"
 #include "res://shaders/wind_sway.gdshaderinc"
 
 void vertex() {
+	if (id_pass) {  // keep the hash out of the normal colour pass
+		v_spike_id = spike_id_color(object_id, INSTANCE_ID);
+	}
 	// Per-instance world origin (base, column 3 of the model matrix) and its scaled
 	// height (column 1 length — the authored size baked into the instance basis).
 	vec3 origin = MODEL_MATRIX[3].xyz;
@@ -135,4 +139,7 @@ void vertex() {
 
 void fragment() {
 	ALBEDO = texture(albedo, UV, lod_bias).rgb * v_tint;
+	if (id_pass) {
+		ALBEDO = spike_pack(v_spike_id.rg, false, length(VERTEX));
+	}
 }

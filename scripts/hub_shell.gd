@@ -126,6 +126,9 @@ var _warm_behind_loading_screen := not Platform.is_headless()
 
 func _ready() -> void:
 	if not Platform.is_headless():
+		# Same PS1 post-process pipeline as the stage; added first so every page
+		# draws over it.
+		add_child(load("res://post_process.tscn").instantiate())
 		_showcase = load("res://menu_showcase.tscn").instantiate()
 		add_child(_showcase)
 	# A run that ended hands control back here (world.gd -> Scenes.hub_path()). Show its

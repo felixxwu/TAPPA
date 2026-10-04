@@ -163,10 +163,20 @@ new interpolator and no fragment cost.
 Used by: car chassis/cabin/wheels, and the authored body models (MX-5, Focus, Twingo)
 (see below).
 
+### Outlines (SPIKE — `scripts/spike_id_pass.gd`)
+Object-ID edge outlines, still a throwaway spike. Every mesh gets an ID-coloured twin
+on render layer 20, drawn by a second mirror-camera SubViewport; `ps1_post_process.gdshader`
+edge-detects that buffer (object/sky boundaries, terrain creases past `crease_angle_deg`,
+faded by fog via the packed distance). Player toggle: **Settings → Display → Outlines**
+(`OutlineSetting`, default `GameConfig.outlines_enabled`); off stops the ID viewport and
+the twin sync. Packing contract: `shaders/spike_id.gdshaderinc` ↔ the post shader's decode.
+
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
 Applied as the material of a `PostProcess` **SubViewportContainer**
-(`scripts/post_process_view.gd`), hosted by **both `main.tscn` (the driving
-stage)** — it used to cover `hq.tscn` too, and the flat hub needs no 3D pass — so the PS1 treatment covers the game's 3D
+(`scripts/post_process_view.gd`), packaged as **`post_process.tscn`** and instanced by
+**every 3D scene: `main.tscn` (the driving stage, as `PostProcess`) and the hub
+(`hub_shell.gd::_ready` adds one as the hub's first child, behind every page, next to
+`MenuShowcase`)** — so the PS1 treatment covers the game's 3D
 rather than stopping at the garage door. The 3D world stays in the main tree but
 is rendered through `PostProcess/View`, a `SubViewport` that shares the host's
 `World3D` (`own_world_3d = false`) and carries a `ViewCamera` mirror camera
@@ -179,8 +189,8 @@ would force a full-screen backbuffer copy (render-pass break + mid-frame GPU
 submit) every frame on the Compatibility backend.
 
 Every uniform — the `virtual_resolution` dither grid plus the whole colour grade
-— is pushed by **`GameConfig.apply_post_process`**, called from `world.gd`'s
-`_ready` (and, before it was deleted, `hq.gd`'s `_apply_post_process`). That single helper is deliberately
+— is pushed by **`GameConfig.apply_post_process`**, called from
+`post_process_view.gd`'s `_ready`, so every host gets it without its own call. That single helper is deliberately
 the only writer: two hosts each setting their own uniforms would eventually drift
 into grading the stage and the hub differently. Read the config for the current
 values; the grid is authored to match the design height, so don't restate the
@@ -199,7 +209,7 @@ warm-brown crushed blacks against yellowed highlights — so shadows and
 highlights are tinted separately, crossfaded by luma. Knobs live in the **PS1
 Look** group of `game_config.tres` (`grade_amount`, `grade_saturation`,
 `grade_contrast`, `grade_shadow_tint`, `grade_highlight_tint`,
-`grade_vignette_strength`, `grade_vignette_radius`), pushed by `world.gd`'s
+`grade_vignette_strength`, `grade_vignette_radius`), pushed by `post_process_view.gd`'s
 `_ready` alongside `virtual_resolution`. `grade_amount = 0` is an exact
 passthrough. Read the config for the values; don't restate them here.
 

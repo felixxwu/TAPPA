@@ -320,6 +320,8 @@ func test_post_process_present() -> void:
 	assert_false(view.own_world_3d, "subviewport renders the main World3D, not its own")
 	assert_not_null(view.get_node("ViewCamera") as Camera3D, "mirror camera present")
 	assert_eq(container.mouse_filter, Control.MOUSE_FILTER_IGNORE, "post-process container ignores input")
+	assert_eq(container.scene_file_path, "res://post_process.tscn",
+		"the stage uses the shared post-process scene (same pipeline as the hub)")
 
 
 func test_hud_speed_label_present() -> void:
