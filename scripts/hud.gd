@@ -57,15 +57,6 @@ const _GRIP_LIMIT_FRAC := 1.0
 # Last centisecond shown on the run timer, so show_elapsed only re-formats and
 # re-assigns the label when the DISPLAYED value moves (-1 = nothing shown yet).
 var _last_elapsed_cs := -1
-# Live "player vs rival pace" readout (features/rival-ghost.md), built in code (no
-# scene node) directly under the run timer — StageManager's show_delta/hide_delta,
-# driven every RUNNING frame off RivalGhost.time_at_distance. Positive = behind the
-# rival's pace at the player's own live distance; negative = ahead.
-var _delta_label: Label
-# Last displayed centisecond (SIGNED, unlike _last_elapsed_cs — a delta can be
-# negative), so show_delta only re-formats/re-colours on an actual change. A
-# sentinel well outside any real delta's range so the first call always shows.
-var _last_delta_cs := -999999
 @onready var _stage_complete_panel: Control = $StageCompletePanel
 @onready var _stage_complete_label: Label = $StageCompletePanel/Box/StageCompleteLabel
 # Finish-panel NEXT button (built in code, added to the panel's Box). Pressing it
@@ -88,16 +79,6 @@ var _off_road_label: Label
 # Last countdown TENTH shown, so show_off_road only re-formats when the displayed
 # value moves (-1 = nothing shown yet), matching the run timer's discipline.
 var _last_off_road_tenths := -1
-# Rally pacenote strip (features/hud.md): a row of turn boards along the top — the
-# current turn (arrow + grade, full opacity) with the upcoming turns queued, dimmer,
-# to its right. Reads left-to-right and slides left as corners are passed. Built in
-# code from the note list world.gd hands us (set_pacenotes); the StageManager pulses
-# the current index (show_pacenotes) as TrackProgress advances. Each note reuses the
-# roadside-sign arrow art (Pacenotes.arrow_key → GameConfig.sign_textures).
-var _pace_rects: Array[TextureRect] = []
-var _pace_tex_cache: Dictionary = {}
-var _pace_current := 0      # target index (# corners passed), set by show_pacenotes
-var _pace_scroll := 0.0     # animated scroll position, eased toward _pace_current
 # The three bottom-centre gauges (features/hud.md). Each is a HudGauge: a radial fill
 # clipped to a square, with its icon in the middle instead of a text caption. HEALTH sits
 # in the CENTRE with boost and NOS flanking it, so hiding a flanker on a car that lacks
@@ -260,7 +241,6 @@ func _ready() -> void:
 	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_build_cut_flash_label()
 	_build_off_road_label()
-	_build_delta_label()
 	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
 	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
 	# onto it whenever the panel is shown (features/menus.md → "Menu navigation").
@@ -546,7 +526,6 @@ func _timed_process(_delta: float) -> void:
 	_update_damage(_delta)
 	# Hide each transient popup once its on-screen time elapses.
 	_cut_flash_left = _tick_fade(_cut_flash_left, _delta, _cut_flash_label)
-	_tick_pacenotes(_delta)
 
 
 # The shared tint for both bottom gauges — see _GAUGE_SAT / _GAUGE_VAL. Static so the
@@ -662,50 +641,6 @@ func show_countdown(seconds_left: float) -> void:
 	_countdown_label.text = str(ceili(seconds_left)) if seconds_left > 0.0 else "GO"
 
 
-# Live "player vs rival pace" delta (features/rival-ghost.md): sits directly under
-# the run timer, top-left, so it reads as "the timer, and how it compares" rather
-# than competing with the top-centre pacenote strip / cut-flash tag. Starts hidden;
-# StageManager reveals it once a staged region run
-# actually wires a target profile (show_delta) and hides it again for a challenge
-# stage / degenerate track (hide_delta).
-func _build_delta_label() -> void:
-	_delta_label = Label.new()
-	_delta_label.name = "DeltaLabel"
-	_delta_label.offset_left = 8.0
-	_delta_label.offset_top = 34.0
-	_delta_label.offset_right = 108.0
-	_delta_label.offset_bottom = 54.0
-	_delta_label.add_theme_font_size_override("font_size", UITheme.px(16))
-	_delta_label.visible = false
-	add_child(_delta_label)
-
-
-# Format + colour a delta reading. Pure (no label writes) so it's unit-testable:
-# always signed ("+1.23" / "-0.40"), red when the player is BEHIND the rival's pace
-# (delta >= 0) and green when AHEAD (delta < 0) — the same red/green sense the health
-# gauge and stage-complete label use elsewhere in this file.
-static func delta_text(delta_seconds: float) -> String:
-	return "%+.2f" % delta_seconds
-
-
-# Show/update the delta readout, revealing it on first call. Change-gated on the
-# displayed CENTISECOND (signed), matching show_elapsed's discipline — StageManager
-# calls this every RUNNING frame.
-func show_delta(delta_seconds: float) -> void:
-	_delta_label.visible = true
-	var cs := roundi(delta_seconds * 100.0)
-	if cs == _last_delta_cs:
-		return
-	_last_delta_cs = cs
-	_delta_label.text = delta_text(cs / 100.0)
-	_delta_label.add_theme_color_override("font_color", UITheme.RED if cs >= 0 else UITheme.GREEN)
-
-
-func hide_delta() -> void:
-	_delta_label.visible = false
-	_last_delta_cs = -999999
-
-
 func hide_countdown() -> void:
 	_countdown_label.visible = false
 
@@ -754,89 +689,3 @@ func show_cut_flash(_incident_s: float, total_s: float) -> void:
 	_cut_flash_left = Config.data.hud_popup_show_seconds
 
 
-# --- Pacenote strip (features/hud.md) ----------------------------------------
-
-# Rebuild the pacenote strip from a fresh note list (world.gd on track generation /
-# car swap). Each note is a TextureRect showing the corner's arrow board; layout +
-# opacity are driven per frame by _tick_pacenotes off _pace_scroll. A no-op body when
-# pacenotes are disabled (rects stay cleared, so the strip never appears).
-func set_pacenotes(notes: Array) -> void:
-	# Detach immediately (not just queue_free) so a rebuild in the same frame can't
-	# collide on the "Pacenote<i>" names with boards still awaiting deferred free.
-	for board in _pace_rects:
-		remove_child(board)
-		board.queue_free()
-	_pace_rects.clear()
-	_pace_current = 0
-	_pace_scroll = 0.0
-	if not Config.data.hud_pacenotes_enabled:
-		return
-	for n in notes:
-		var board := TextureRect.new()
-		board.name = "Pacenote%d" % _pace_rects.size()
-		board.texture = _pace_texture(Pacenotes.arrow_key(String(n["corner"]), bool(n["flip"])))
-		board.anchor_left = 0.5
-		board.anchor_right = 0.5
-		board.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		board.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		board.visible = false
-		add_child(board)
-		_pace_rects.append(board)
-	_layout_pacenotes()
-
-
-# Set the current-turn index (how many corners the car has passed). The strip eases
-# toward it in _tick_pacenotes, so a jump of 1 reads as a smooth left-slide.
-func show_pacenotes(current: int) -> void:
-	if not Config.data.hud_pacenotes_enabled:
-		return
-	_pace_current = current
-
-
-# Ease the scroll toward the current index (fps-independent exponential smoothing)
-# and re-lay the strip. Cheap no-op when there are no notes.
-func _tick_pacenotes(delta: float) -> void:
-	if _pace_rects.is_empty():
-		return
-	var t := 1.0 - exp(-delta * _PACE_SCROLL_SPEED)
-	_pace_scroll = lerpf(_pace_scroll, float(_pace_current), t)
-	_layout_pacenotes()
-
-
-# Position + fade every note board from its distance to the current slot. d = 0 is
-# the current turn (centred, full opacity); d > 0 are upcoming turns queued to the
-# right, one _PACE_SLOT_W apart and dimming by _PACE_DIM_STEP; d < 0 are passed turns
-# sliding off to the left as they fade. Off-strip boards are hidden.
-func _layout_pacenotes() -> void:
-	for i in _pace_rects.size():
-		var board := _pace_rects[i]
-		var d := float(i) - _pace_scroll
-		if d < -1.0 or d > float(_PACE_UPCOMING) + 0.5:
-			board.visible = false
-			continue
-		var a := clampf(1.0 + d, 0.0, 1.0) if d < 0.0 \
-			else maxf(_PACE_DIM_FLOOR, 1.0 - _PACE_DIM_STEP * d)
-		if a <= 0.01:
-			board.visible = false
-			continue
-		var xc := d * _PACE_SLOT_W
-		board.offset_left = xc - _PACE_ICON * 0.5
-		board.offset_right = xc + _PACE_ICON * 0.5
-		board.offset_top = _PACE_TOP
-		board.offset_bottom = _PACE_TOP + _PACE_ICON
-		board.modulate.a = a
-		board.visible = true
-
-
-# Load + cache the arrow texture for an atlas key (GameConfig.sign_textures). Returns
-# null for an unknown/missing key (the board then renders empty rather than erroring).
-func _pace_texture(key: String) -> Texture2D:
-	if _pace_tex_cache.has(key):
-		return _pace_tex_cache[key]
-	var tex: Texture2D = null
-	var path := String(Config.data.sign_textures.get(key, ""))
-	if path != "" and ResourceLoader.exists(path):
-		tex = load(path) as Texture2D
-	_pace_tex_cache[key] = tex
-	return tex

@@ -31,10 +31,6 @@ var rest: Node = null
 var auth: AuthService = null
 var sync: CloudSync = null
 var google: GoogleSignIn = null
-# The Rally Challenge world board (challenge_runs/{period_key}/entries).
-# Entirely passive — it makes no request until the UI asks, so a player who
-# never finishes a challenge stage never touches it.
-var challenge_leaderboard: ChallengeLeaderboard = null
 
 # True from boot until the FIRST automatic pull settles. Only ever set when a
 # stored credential was found, so a player who has never signed in — or who
@@ -62,12 +58,6 @@ func _ready() -> void:
 	sync.conflict_detected.connect(func(summary: Dictionary) -> void: conflict_detected.emit(summary))
 	sync.profile_replaced.connect(func() -> void: profile_replaced.emit())
 	add_child(sync)
-
-	challenge_leaderboard = ChallengeLeaderboard.new()
-	challenge_leaderboard.name = "ChallengeLeaderboard"
-	challenge_leaderboard.rest = rest
-	challenge_leaderboard.auth = auth
-	add_child(challenge_leaderboard)
 
 	google = GoogleSignIn.new()
 	google.name = "GoogleSignIn"

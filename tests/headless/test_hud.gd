@@ -25,6 +25,7 @@ func after_all() -> void:
 	Config.reset()
 
 
+
 func before_each() -> void:
 	# Reset the shared scene to a clean baseline: the HUD reads the car (speed / gear /
 	# rpm / HP) and several config flags every frame, and individual tests inject
@@ -33,7 +34,6 @@ func before_each() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.hud_enabled = true
 	cfg.hud_elapsed_enabled = true
-	cfg.hud_pacenotes_enabled = true
 	cfg.hud_hp_enabled = true
 	var car: VehicleBody3D = _scene.get_node("Car")
 	car.linear_velocity = Vector3.ZERO
@@ -242,55 +242,6 @@ func test_off_road_warning_shows_and_hides() -> void:
 
 # --- Rival ghost delta (features/rival-ghost.md) -----------------------------
 
-func test_delta_starts_hidden_and_shows_on_first_call() -> void:
-	# A challenge stage / degenerate track never calls show_delta at all (StageManager
-	# only wires a target profile for a staged, solvable region run), so the readout
-	# must default to hidden.
-	var hud = _scene.get_node("HUD")
-	var label := hud.get_node("DeltaLabel") as Label
-	assert_false(label.visible, "the delta readout starts hidden")
-	hud.show_delta(1.23)
-	assert_true(label.visible, "the first call reveals it")
-
-
-func test_delta_text_is_always_signed() -> void:
-	const Hud = preload("res://scripts/hud.gd")
-	assert_eq(Hud.delta_text(1.5), "+1.50", "a positive delta shows its sign")
-	assert_eq(Hud.delta_text(-0.4), "-0.40", "a negative delta shows its sign too")
-	assert_eq(Hud.delta_text(0.0), "+0.00", "exactly level reads as +0.00")
-
-
-func test_delta_colours_behind_red_ahead_green() -> void:
-	var hud = _scene.get_node("HUD")
-	var label := hud.get_node("DeltaLabel") as Label
-	hud.show_delta(2.0)   # behind the rival's pace
-	assert_eq(label.text, "+2.00", "positive delta formats with its sign")
-	assert_eq(label.get_theme_color("font_color"), UITheme.RED, "behind reads red")
-	hud.show_delta(-2.0)  # ahead of the rival's pace
-	assert_eq(label.text, "-2.00", "negative delta formats with its sign")
-	assert_eq(label.get_theme_color("font_color"), UITheme.GREEN, "ahead reads green")
-
-
-func test_delta_change_gated_on_the_displayed_centisecond() -> void:
-	var hud = _scene.get_node("HUD")
-	var label := hud.get_node("DeltaLabel") as Label
-	hud.show_delta(1.001)
-	var first_text := label.text
-	hud.show_delta(1.004)  # rounds to the same displayed centisecond
-	assert_eq(label.text, first_text, "no re-format when the displayed value hasn't moved")
-	hud.show_delta(1.5)
-	assert_ne(label.text, first_text, "a real change re-formats")
-
-
-func test_hide_delta_takes_it_down() -> void:
-	var hud = _scene.get_node("HUD")
-	var label := hud.get_node("DeltaLabel") as Label
-	hud.show_delta(0.5)
-	assert_true(label.visible, "setup: shown first")
-	hud.hide_delta()
-	assert_false(label.visible, "hide_delta takes it down")
-
-
 func test_grip_text_formatting() -> void:
 	# Pure formatter for one grip cell: the corner name plus how far up its grip curve the
 	# tire is, as a percentage, and a dash when there's no reading.
@@ -398,18 +349,6 @@ func test_hud_has_no_version_label() -> void:
 		"driving HUD no longer shows the build version")
 
 
-func test_elapsed_timer_anchored_top_left() -> void:
-	# The run timer sits in the top-left corner now — the top centre is given over to
-	# the pacenote strip (features/hud.md), which frees the vertical space the centred
-	# timer used to take.
-	var label := _scene.get_node("HUD/ElapsedLabel") as Label
-	assert_not_null(label, "HUD has the run timer")
-	assert_almost_eq(label.anchor_left, 0.0, 0.001, "timer anchored to the left edge")
-	assert_almost_eq(label.anchor_right, 0.0, 0.001, "timer anchored to the left edge")
-	assert_eq(label.horizontal_alignment, HORIZONTAL_ALIGNMENT_LEFT,
-		"timer text is left-aligned")
-
-
 # --- Stage flow widgets (todo/stage-start-and-end.md) ------------------------
 # These call the HUD methods directly (synchronously, so the scene's StageManager
 # doesn't tick and overwrite the state) and assert the labels/panel.
@@ -461,50 +400,6 @@ func test_stage_complete_panel_shows_final_time() -> void:
 func _pace_notes() -> Array:
 	# Two synthetic notes — the HUD only reads corner + flip to pick the arrow art.
 	return [{"corner": "3", "flip": false}, {"corner": "Hairpin", "flip": true}]
-
-
-func test_set_pacenotes_builds_a_board_per_note() -> void:
-	var hud := _scene.get_node("HUD")
-	hud.set_pacenotes(_pace_notes())
-	await get_tree().process_frame
-	var rects := 0
-	for child in hud.get_children():
-		if child is TextureRect and String(child.name).begins_with("Pacenote"):
-			rects += 1
-	assert_eq(rects, 2, "one TextureRect built per pacenote")
-	# The current turn (index 0) is shown at full opacity once the strip settles.
-	var first := hud.get_node_or_null("Pacenote0") as TextureRect
-	assert_not_null(first, "the current-turn board exists")
-	assert_true(first.visible, "the current turn is on screen")
-
-
-func test_set_pacenotes_builds_nothing_when_disabled() -> void:
-	var hud := _scene.get_node("HUD")
-	Config.data.hud_pacenotes_enabled = false
-	hud.set_pacenotes(_pace_notes())
-	await get_tree().process_frame
-	for child in hud.get_children():
-		assert_false(child is TextureRect and String(child.name).begins_with("Pacenote"),
-			"no pacenote boards built when the strip is disabled")
-	Config.data.hud_pacenotes_enabled = true
-
-
-func test_show_pacenotes_advances_the_current_turn() -> void:
-	# Advancing the current index eventually slides the passed board off the left
-	# (it fades out) while a later board takes the opaque current slot.
-	var hud := _scene.get_node("HUD")
-	hud.set_pacenotes([{"corner": "1", "flip": false}, {"corner": "2", "flip": false},
-		{"corner": "3", "flip": false}])
-	await get_tree().process_frame
-	var first := hud.get_node("Pacenote0") as TextureRect
-	assert_true(first.visible, "first board visible as the current turn")
-	hud.show_pacenotes(2)  # jump the current turn to the third note
-	# Let the eased slide settle over several frames.
-	for _i in range(40):
-		await get_tree().process_frame
-	assert_false(first.visible, "a passed board slides off the strip")
-	var third := hud.get_node("Pacenote2") as TextureRect
-	assert_true(third.visible, "the new current turn is on screen")
 
 
 # --- Health gauge (features/damage.md) ----------------------------------

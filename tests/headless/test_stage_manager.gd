@@ -335,62 +335,7 @@ func _make_rival_profile() -> Dictionary:
 	return {"s": s, "t": t}
 
 
-func test_setup_target_profile_shows_delta_behind_and_ahead() -> void:
-	var sm := _make()
-	_to_running(sm)
-	sm.setup_target_profile(_make_rival_profile())
-	# Player at 50% progress (50 m into the 100 m stage StubProgress models) after
-	# 1 s of RUNNING: the rival reaches 50 m at 5 s (10 m/s), so the player is 4 s
-	# AHEAD of the rival's pace at that distance -> a negative delta.
-	_progress.pct = 0.5
-	sm._process(1.0)
-	assert_almost_eq(sm.elapsed(), 1.0, 0.0001, "sanity: one RUNNING second accrued")
-	assert_true(_hud.delta_shown, "show_delta called once a profile is wired")
-	assert_almost_eq(_hud.last_delta, -4.0, 0.01,
-		"delta = player's elapsed - rival's time at the player's own distance")
-
-
-func test_setup_target_profile_empty_hides_delta() -> void:
-	var sm := _make()
-	_to_running(sm)
-	sm.setup_target_profile(_make_rival_profile())
-	_progress.pct = 0.5
-	sm._process(1.0)
-	assert_true(_hud.delta_shown, "shown while a profile is wired")
-	sm.setup_target_profile({})  # a fresh arm with no target (e.g. a challenge stage)
-	sm._process(1.0)
-	assert_true(_hud.delta_hidden, "an empty profile hides the delta again")
-
-
 # --- Pacenote strip (features/hud.md) ----------------------------------------
-
-func test_pacenote_strip_seeds_then_advances_with_progress() -> void:
-	var sm := _make()
-	# Three corner entries at 30% / 60% / 90% progress along the stage.
-	sm.setup_pacenotes([0.3, 0.6, 0.9])
-	assert_eq(_hud.pacenote_indices, [0], "strip seeded on the first turn when wired")
-	_to_running(sm)
-	# Past the first corner, short of the second: current turn advances to index 1.
-	_progress.pct = 0.35
-	sm._process(1.0)
-	assert_eq(int(_hud.pacenote_indices[-1]), 1, "passing the first corner advances to the second")
-	# Past every corner: the current index runs off the end (3 = nothing left to call).
-	_progress.pct = 0.95
-	sm._process(1.0)
-	assert_eq(int(_hud.pacenote_indices[-1]), 3, "passing every corner empties the strip")
-
-
-func test_pacenotes_only_pulse_when_the_current_turn_changes() -> void:
-	var sm := _make()
-	sm.setup_pacenotes([0.5])
-	_to_running(sm)
-	_progress.pct = 0.2  # short of the only corner
-	var before := _hud.pacenote_indices.size()
-	sm._process(1.0)
-	sm._process(1.0)
-	assert_eq(_hud.pacenote_indices.size(), before,
-		"no HUD pulse while the current turn is unchanged")
-
 
 func test_no_pacenotes_without_wiring() -> void:
 	var sm := _make()

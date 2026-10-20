@@ -135,27 +135,6 @@ func test_event_picker_remembers_focus() -> void:
 	assert_eq(_menu.get_viewport().gui_get_focus_owner(), remembered,
 		"reopening lands on the last-focused row")
 
-# The whole point: after loading a real event, the lab generates a track with the
-# SAME cache key the career pipeline produces — i.e. the identical track, not a
-# look-alike. Compares two derivations of one event; pins no tunable value.
-func test_loaded_event_matches_career_cache_key() -> void:
-	_menu.show_seedlab()
-	await get_tree().process_frame
-	var event: Dictionary = RegionStageLibrary.all_stages()[0]
-	_menu._load_event(event)
-	await get_tree().process_frame
-	# Career derivation.
-	var career_cfg: GameConfig = StageConfig.canonical_event_config(event)
-	var career_key: String = TrackCache.key_for(
-		TrackGenParams.for_event(event, career_cfg), career_cfg)
-	# Lab derivation (from the spinboxes it copied the event into).
-	var lab_ev: Dictionary = _menu._seedlab_event()
-	var lab_cfg: GameConfig = StageConfig.canonical_event_config(lab_ev)
-	var lab_key: String = TrackCache.key_for(
-		TrackGenParams.for_event(lab_ev, lab_cfg), lab_cfg)
-	assert_eq(lab_key, career_key,
-		"the lab generates the identical track the career pipeline caches")
-
 func test_terrain_editor_opens_and_is_navigable() -> void:
 	_menu.show_seedlab()
 	await get_tree().process_frame

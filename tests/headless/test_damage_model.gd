@@ -390,18 +390,6 @@ func test_a_zero_hp_car_is_maximally_weakened_but_still_drivable() -> void:
 
 # --- Persistence handoff -----------------------------------------------------
 
-func test_event_boundary_writeback_round_trips() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var max_hp := float(_save.get_car(id)["hp"])  # granted at full HP
-	# Working HP depleted over a run is written back at the event boundary.
-	_save.apply_damage(id, 250.0)
-	_save.save_now()
-	_save.load_or_new()
-	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp - 250.0, 1e-6,
-		"depleted HP persists and reloads unchanged")
-
-
 # --- The self-heal trickle (features/damage.md -> "The self-heal trickle") ----------
 #
 # regen() reads GameConfig.damage_regen_hp_per_s, which is 0.0 on the authored baseline

@@ -331,36 +331,6 @@ static func ordered() -> Array[Dictionary]:
 	return out
 
 
-# Whether `id` is open to the player. Region 0 always is — a new profile has to be able
-# to start somewhere. Every other region is gated on the region immediately before it in
-# `order` being in the profile's cleared ledger.
-#
-# Gated on the PREVIOUS region only, not on all of them: that keeps the rule "clear a
-# region, the next one opens" true even if the ledger is missing an older entry (a save
-# edited by hand, a region added between the two).
-static func is_unlocked(id: String, profile: Dictionary) -> bool:
-	var pos := order_of(id)
-	if pos <= 0:
-		return pos == 0
-	var cleared: Array = profile.get(Save.KEY_REGIONS_CLEARED, [])
-	for region in all():
-		if int(region.get("order", -1)) == pos - 1:
-			return cleared.has(String(region.get("id", "")))
-	return false
-
-
-# The region that must be cleared to open `id`, or "" when it is already open (or unknown).
-# The region page shows this next to a locked entry, so the gate is legible rather than a
-# row the player cannot press for reasons nobody explains.
-static func gate_for(id: String) -> String:
-	var pos := order_of(id)
-	if pos <= 0:
-		return ""
-	for region in all():
-		if int(region.get("order", -1)) == pos - 1:
-			return String(region.get("name", region.get("id", "")))
-	return ""
-
 # The region's authored waterline in metres, or 0.0 when it authors none — ALWAYS
 # pair a call with has_water_level(), because callers resolve
 # `event override → region → GameConfig baseline` and a region that authors nothing

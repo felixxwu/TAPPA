@@ -200,13 +200,8 @@ func test_percentile_nearest_rank() -> void:
 
 # --- Run-scene wiring ------------------------------------------------------------
 
-# Boot main.tscn in benchmark mode (trimmed to the cheapest 1-turn track, like
-# SceneTestHelpers.minimal_world, so this stays inside the runtime budget) and
-# check the world honours the mode: gates applied, stage flow skipped, the
-# runner armed — and actually driving the car down the road.
 func test_benchmark_scene_boots_gated_and_drives() -> void:
 	Benchmark.set_option("vegetation", false)
-	Benchmark.set_option("signs", false)
 	Benchmark.set_option("spectators", false)
 	Benchmark.apply_overrides(Config.data)
 	Config.data.track_turn_count = 1  # keep the build cheap; the toggles are the point
@@ -226,7 +221,6 @@ func test_benchmark_scene_boots_gated_and_drives() -> void:
 		"the stage flow (countdown/lock) is skipped — the runner drives instead")
 	for child in scene.get_children():
 		assert_false(child is TreeMeshField, "vegetation off: no foliage fields built")
-		assert_false(child is SignField, "signs off: no sign field built")
 
 	# The runner is really driving: the car is AI-controlled and, after a few
 	# seconds of sim, is moving forward along the road with progress accruing.
@@ -253,6 +247,8 @@ func test_benchmark_scene_boots_gated_and_drives() -> void:
 		if child is BenchmarkResults:
 			results_panel = child
 	assert_not_null(results_panel, "the results breakdown is shown at the finish")
+
+
 
 
 # --- Runner driving math (BenchmarkRunner statics) -------------------------------

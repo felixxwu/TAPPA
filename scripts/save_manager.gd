@@ -75,27 +75,6 @@ const SCHEMA_VERSION := 8
 # with any more — see that const's own comment).
 const KEY_CARS := "cars"
 
-# --- Roguelike run-meta keys (todo/roguelike-pivot.md) -------------------------
-# Everything a failed run must NOT touch. Soft permadeath destroys the run -- stage
-# progress, the boosts picked during it, the car's accrued damage -- and nothing here.
-# That asymmetry is the whole progression design, so these live on the PROFILE and are
-# written outside the run, never inside it.
-const KEY_MONEY := "money"                    # the single currency (decision 21)
-# THE ONE RUN SLOT (decision 27). Holds an in-progress run of EITHER kind — the
-# roguelike region run or the Daily/Weekly/Monthly challenge — so starting one
-# discards a paused run of the other. Was `challenge_run` before RunSession was
-# generalised; renamed with the SCHEMA_VERSION 7 reset, which costs nothing because
-# every pre-pivot profile is refused rather than migrated.
-const KEY_RUN := "run"
-const KEY_REGIONS_CLEARED := "regions_cleared" # ids of regions whose 8 stages are done
-const KEY_BOOST_LEVELS := "boost_levels"      # boost id -> purchased level (meta tier)
-# Persisted key STRINGS keep their historical "perks" names on purpose: they are what
-# existing saves carry on disk, and this save format refuses (rather than migrates) any
-# profile whose schema_version doesn't match exactly — renaming them would brick every
-# current save for a cosmetic code rename. The constants say "skills"; the disk says
-# "perks". A future SCHEMA_VERSION reset is the moment to align them.
-const KEY_BOUGHT_SKILLS := "bought_perks"      # skill ids owned
-const KEY_EQUIPPED_SKILLS := "equipped_perks"  # skill ids currently slotted (capped)
 const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
 # The free-roam world (WorldSession owns its shape and is its only writer).
 const KEY_WORLD := "world"
@@ -539,20 +518,6 @@ func _default_profile() -> Dictionary:
 		"starter_model_id": "",
 		"next_instance_id": 1,
 		KEY_CARS: [],
-		# The run-meta block. Declared here because the ratchet test below requires every
-		# persisted key to be DECLARED rather than conjured at the write site.
-		#
-		# MONEY IS SEEDED FROM GameConfig.run_starting_money, NOT 0 (todo/roguelike-pivot.md
-		# decision 28 — "a new player starts with money and buys from the shop", replacing the
-		# old three-car starter picker outright). Config is the autoload loaded immediately
-		# before this one (project.godot), so its data is ready by the time any profile —
-		# fresh or migrated — is built. A profile with money but zero cars must still be able
-		# to reach the shop; see HubShell's CAR page.
-		KEY_MONEY: int(Config.data.run_starting_money),
-		KEY_REGIONS_CLEARED: [],
-		KEY_BOOST_LEVELS: {},
-		KEY_BOUGHT_SKILLS: [],
-		KEY_EQUIPPED_SKILLS: [],
 		KEY_LIFETIME: {},
 		# The one persistent free-roam world, {} until New World (WorldSession).
 		KEY_WORLD: {},
@@ -582,23 +547,6 @@ func _default_profile() -> Dictionary:
 		# unsynced above, so no SCHEMA_VERSION bump — and it rides the existing
 		# cloud-save sync to the player's other devices for free.
 		"username": "",
-		# THE ONE RUN SLOT (decision 27) — the in-progress run, of either kind, or {}
-		# when none is active. Always: {mode, car_instance_id, stage_index,
-		# stage_times_ms: [...], dnf, money_earned}, plus the mode's own half —
-		# {period_key, kind} for a challenge (features/rally-challenge.md),
-		# {region_id, run_seed, stage_count} for a region run
-		# (features/region-runs.md). RunSession._persist is its only writer.
-		KEY_RUN: {},
-		# Terminal outcomes per challenge period, keyed by period_key:
-		# {kind, dnf: bool, cumulative_ms: int}. A period present here is FINISHED —
-		# completed or DNF'd — and cannot be started again for the rest of that
-		# period (a challenge is one attempt; abandoning ends the run with no retry).
-		# Separate from the run slot rather than folded into it because
-		# RunSession.resumable_run keys on that slot being non-empty, so a
-		# terminal record stored there would make the game try to RESUME a finished
-		# run. Pruned to live periods on every write, so it can't grow without bound.
-		# Backfilled by _migrate's key backfill, so no SCHEMA_VERSION bump.
-		"challenge_results": {},
 	}
 
 
@@ -621,7 +569,6 @@ func _migrate(p: Dictionary) -> Dictionary:
 		if not p.has(k):
 			p[k] = base[k]
 	return p
-
 
 
 # --- Owned-car mutators ------------------------------------------------------
@@ -670,68 +617,6 @@ func get_car(instance_id: int) -> Dictionary:
 	return {}
 
 
-# Apply impact damage. HP bottoms out at 0 and STAYS there — a car at 0 HP is still an
-# ownable, drivable car, just a badly weakened one (features/damage.md). There is no
-# write-off, no wreck record and no state a repair can't undo.
-func apply_damage(instance_id: int, amount: float) -> void:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	car["hp"] = maxf(0.0, float(car["hp"]) - amount)
-	save()
-
-
-# The inverse of apply_damage: give `amount` HP back, capped at the car's authored
-# max_hp. Used by RunSession.report_event_result when a stage ends with a NET heal (the
-# "self_healing" skill, todo/roguelike-pivot.md decision 51) — without it the trickle
-# would be silently discarded at every stage boundary.
-#
-# Deliberately NOT a repair: it moves HP only, leaving `wheel_toe` bent. Straightening
-# wheels stays field_repair's job (the between-stage pick), so a self-healing car still
-# has a reason to take the repair.
-func heal_car(instance_id: int, amount: float) -> void:
-	if amount <= 0.0:
-		return
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-	var max_hp := float(entry.get("max_hp", car["hp"])) if not entry.is_empty() else float(car["hp"])
-	car["hp"] = minf(max_hp, float(car["hp"]) + amount)
-	save()
-
-
-# Full restore to max_hp — the ONLY writer besides grant_car (a brand-new car) that
-# sets hp to full. Used by RunSession.begin() so a new run always starts at 100%
-# health regardless of what a previous run left the car at (repairs should only ever
-# happen via a repair pick or a fresh run — never silently). No-op if the car can't be
-# found. Resolves max_hp the same way heal_car / apply_field_repair_to do.
-func restore_car_to_full(instance_id: int) -> void:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-	var max_hp := float(entry.get("max_hp", car["hp"])) if not entry.is_empty() else float(car["hp"])
-	car["hp"] = max_hp
-	save()
-
-
-# Fraction of max_hp the car currently has (1.0 = full, 0.0 = empty). Used by
-# RunSession.report_event_result to decide whether the run's car qualifies for the
-# undamaged-arrival reward (no repair row on the pick screen). Resolves max_hp the
-# same way heal_car / apply_field_repair_to do. Returns 1.0 (treated as full/healthy)
-# if the car can't be found — nothing to underperform against.
-func car_health_fraction(instance_id: int) -> float:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return 1.0
-	var entry := CarLibrary.by_id(String(car.get("model_id", "")))
-	var max_hp := float(entry.get("max_hp", car["hp"])) if not entry.is_empty() else float(car["hp"])
-	if max_hp <= 0.0:
-		return 1.0
-	return clampf(float(car["hp"]) / max_hp, 0.0, 1.0)
-
-
 # Persist a car's per-wheel damage misalignment (radians, ordered like
 # DamageModel.WHEEL_NAMES). Written at each event boundary alongside apply_damage so
 # a car carries its bent wheels between events (features/damage.md).
@@ -770,49 +655,6 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 # (CarLibrary.apply_owned) so cars in existing profiles still resolve their engines.
 
 
-# --- Run car lock -------------------------------------------------------------
-# Whether the active run (of EITHER kind) is COMMITTED to `instance_id`. The STORAGE-LEVEL
-# predicate; UI asks it through DrivingContext.is_car_locked.
-#
-# Scope is deliberately narrow: a challenge locks the RUN to a car, it does NOT
-# reserve the car. The car stays fully usable in career rallies, free roam, the
-# garage, engine swaps and upgrades while the run is in progress. An earlier
-# design did use this to exclude the car from the rally picker, the garage/lift
-# picker and the engine-swap partner list; all were REMOVED — they made an owned
-# car unusable across the whole game, which was never the intent. The free
-# between-event field repair applying mid-run is an accepted consequence (a
-# challenge is a time competition, not a survival one).
-#
-# It has never disabled the detune slider either — the challenge's performance ceiling
-# is enforced by the close-button gate (UpgradesGrid.over_rating_limit).
-# See features/rally-challenge.md → "Car lock".
-func is_challenge_locked(instance_id: int) -> bool:
-	var run: Dictionary = profile.get(KEY_RUN, {})
-	return not run.is_empty() and int(run.get("car_instance_id", -1)) == instance_id
-
-
-# Persist `run` into the ONE run slot (RunSession._persist / pause_run), replacing
-# whatever was there — including a paused run of the other kind (decision 27). The
-# one writer of this key's shape; RunSession never reaches into profile[KEY_RUN].
-func set_run(run: Dictionary) -> void:
-	profile[KEY_RUN] = run
-	save()
-
-
-# Clear the stored run (RunSession.discard_run / _clear_persisted on finish) —
-# no run stored, nothing to resume.
-func clear_run() -> void:
-	profile[KEY_RUN] = {}
-	save()
-
-
-# Replace the challenge_results map (ChallengeRunMode.record_outcome, already
-# pruned to the live period keys by the caller).
-func set_challenge_results(results: Dictionary) -> void:
-	profile["challenge_results"] = results
-	save()
-
-
 # Set a car's engine to engine_id, clearing the swap field when it matches stock.
 # --- Player settings (device/UI preferences, not progress) -------------------
 # A flat key->value bag under profile["settings"] for preferences like the chosen
@@ -831,7 +673,6 @@ func set_setting(key: String, value: Variant) -> void:
 	save()
 
 
-
 # THE PERSISTENT PARTS MODEL IS DELETED (todo/roguelike-pivot.md -> "What gets deleted").
 # `install_upgrade` / `set_upgrade_enabled` and their `_enable_exclusive` / `_disable`
 # helpers lived here, alongside `installed_upgrades` / `disabled_upgrades` on each OwnedCar.
@@ -842,83 +683,10 @@ func set_setting(key: String, value: Variant) -> void:
 # the ONE place stage 5 has to fill in.
 
 
-
 # In-run HP is one-way: nothing here restores it mid-run. It climbs back only between
 # runs — the free between-event patch-up below. The paid repair at the lift is retired
 # (todo/roguelike-pivot.md decision 21 — see the "Spending stars: DELETED" note above).
 # See features/damage.md.
-
-
-# A partial, between-event pit repair (RallySession._enter_event): restore
-# `hp_fraction` of the HP LOST so far and bend each wheel `toe_fraction` back toward
-# straight. This is the ONLY way HP ever climbs back, and it is free and
-# incremental — the engineers patch the car up a bit before each event after the
-# first. Returns a summary the repair popup renders:
-#   {repaired:bool, hp_before, hp_after, max_hp, hp_gained}
-# `repaired` is false (and nothing is written) when the car is already pristine
-# (full HP and straight wheels) so a spotless car shows no popup.
-func field_repair(instance_id: int, hp_fraction: float, toe_fraction: float) -> Dictionary:
-	var none := {"repaired": false}
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return none
-	var entry := CarLibrary.by_id(car["model_id"])
-	var hp_before := float(car["hp"])
-	var max_hp: float = entry.get("max_hp", hp_before) if not entry.is_empty() else hp_before
-	var lost := maxf(0.0, max_hp - hp_before)
-	var hp_after := minf(max_hp, hp_before + lost * hp_fraction)
-	var toe: Array = car.get("wheel_toe", [0.0, 0.0, 0.0, 0.0])
-	var new_toe: Array = []
-	var toe_changed := false
-	for v in toe:
-		var straightened := float(v) * (1.0 - toe_fraction)
-		if not is_equal_approx(straightened, float(v)):
-			toe_changed = true
-		new_toe.append(straightened)
-	if hp_after <= hp_before and not toe_changed:
-		return none
-	car["hp"] = hp_after
-	car["wheel_toe"] = new_toe
-	save()
-	return {
-		"repaired": true,
-		"hp_before": hp_before,
-		"hp_after": hp_after,
-		"max_hp": max_hp,
-		"hp_gained": hp_after - hp_before,
-	}
-
-
-# field_repair with THE fractions — the ones every stage-to-stage transition uses
-# (GameConfig's field_repair_hp_fraction / field_repair_toe_fraction). Every
-# between-stage and final-stage repair in the game goes through this one entry
-# point, so no caller can drift on which fractions it applies; the raw
-# field_repair above stays available for a caller that genuinely needs its own.
-#
-# Folded here from RallySession, whose four lines already did nothing but read
-# those two config fields and delegate. Callers: RallySession._apply_field_repair
-# (stage-to-stage + the silent final-event repair) and
-# RunSession.report_event_result (the same two beats for every kind of run).
-# `instance_id` < 0 (nothing fielded) is a no-op, not an error.
-func apply_field_repair_to(instance_id: int) -> Dictionary:
-	if instance_id < 0:
-		return {"repaired": false}
-	var cfg := Config.data
-	return field_repair(instance_id,
-		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
-
-
-# A FULL field repair: 100% of the HP lost so far and every wheel straightened
-# completely (fractions of 1.0). This is what RunSession.choose_repair() applies when
-# the player explicitly picks "Repair the car" over an upgrade at the between-stage
-# pick (todo/mid-run-upgrade-menu.md) — choosing repair is meant to fully undo the
-# damage taken so far, not the smaller automatic patch-up every other stage
-# transition gets via apply_field_repair_to. `instance_id` < 0 (nothing fielded) is a
-# no-op, not an error.
-func apply_full_field_repair_to(instance_id: int) -> Dictionary:
-	if instance_id < 0:
-		return {"repaired": false}
-	return field_repair(instance_id, 1.0, 1.0)
 
 
 # --- Money (todo/roguelike-pivot.md decision 21) ------------------------------
@@ -927,42 +695,6 @@ func apply_full_field_repair_to(instance_id: int) -> Dictionary:
 # banked at the clear, never at run end, so a failed run keeps everything it made)
 # plus the challenge's placement lump sum, and spent in the meta shop. A failed run
 # never takes any of it back (decision 14), which is why there is no `lose_money`.
-
-func money() -> int:
-	return int(profile.get(KEY_MONEY, 0))
-
-
-# Bank `amount` (clamped at 0 — this only ever adds). Returns the new balance.
-#
-# THE ONE FUNNEL every money source goes through, which is why LifetimeStats.MONEY_EARNED
-# is written HERE rather than at each payout site: a stage clear, a fast-completion
-# bonus and a future challenge reward all land here, so the lifetime counter can never
-# miss one without a second call site to keep in sync.
-func add_money(amount: int) -> int:
-	if amount <= 0:
-		return money()
-	profile[KEY_MONEY] = money() + amount
-	add_lifetime_stat(LifetimeStats.MONEY_EARNED, amount)
-	save()
-	return money()
-
-
-# Deduct `amount` if the player can afford it, else leave the balance untouched.
-# Returns whether the purchase went through, so a caller can never half-spend.
-#
-# THE ONE FUNNEL every purchase goes through (buy_car, buy_boost_level,
-# buy_skill) — LifetimeStats.MONEY_SPENT is written HERE so it
-# covers every sink automatically, the same reasoning as add_money's own comment.
-# Never called on a refused purchase (every buy_* checks its own precondition first),
-# so a rejected buy never inflates this counter.
-func spend_money(amount: int) -> bool:
-	if amount <= 0 or money() < amount:
-		return amount <= 0
-	profile[KEY_MONEY] = money() - amount
-	add_lifetime_stat(LifetimeStats.MONEY_SPENT, amount)
-	save()
-	return true
-
 
 # --- The meta shop (todo/roguelike-pivot.md "Upgrades — RR's two-tier model" +
 # "Car acquisition — RR's shop", stage 6 of todo/roguelike-pivot-plan.md) -------------
@@ -973,55 +705,6 @@ func spend_money(amount: int) -> bool:
 # BYTE-IDENTICAL. `spend_money` already refuses without mutating; every function below
 # checks its OWN precondition (ownership / cap / already-unlocked) BEFORE calling it, so a
 # caller never spends into a purchase that was going to be rejected anyway.
-
-# Buy an unowned car outright (decision 28). Refuses (no mutation) if `model_id` is not a
-# real CarLibrary entry, is already owned, or the player cannot afford its `cost`.
-func buy_car(model_id: String) -> bool:
-	if owns_model(model_id):
-		return false
-	var entry := CarLibrary.by_id(model_id)
-	if entry.is_empty():
-		return false
-	if not spend_money(int(entry.get("cost", 0))):
-		return false
-	grant_car(model_id)
-	return true
-
-
-# The purchased level of one BoostLibrary boost id (0 if never bought). This is what
-# BoostLibrary.effect_for reads to scale a future in-run pick's magnitude — see that
-# file's own header for the scaling relationship.
-func boost_level(id: String) -> int:
-	return int((profile.get(KEY_BOOST_LEVELS, {}) as Dictionary).get(id, 0))
-
-
-# The cost of this boost's NEXT level, given the level already owned — RR's
-# `basePrice * priceMultiplierPerLevel ** currentLevel`, both GameConfig tunables
-# (@export_group("Roguelike Meta Shop")).
-func boost_level_price(id: String) -> int:
-	var cfg: GameConfig = Config.data
-	return int(round(cfg.boost_level_price_base
-		* pow(cfg.boost_level_price_growth, float(boost_level(id)))))
-
-
-# Buy the next level of boost `id`. Refuses (no mutation) for an id BoostLibrary does not
-# catalogue, a level already at GameConfig.boost_level_max, or an unaffordable price.
-func buy_boost_level(id: String) -> bool:
-	if not BoostLibrary.CATALOGUE.has(id):
-		return false
-	var level := boost_level(id)
-	if level >= int(Config.data.boost_level_max):
-		return false
-	if not spend_money(boost_level_price(id)):
-		return false
-	var levels: Dictionary = profile.get(KEY_BOOST_LEVELS, {})
-	levels[id] = level + 1
-	profile[KEY_BOOST_LEVELS] = levels
-	save()
-	return true
-
-
-
 
 # --- Lifetime stats (todo/roguelike-pivot.md "Lifetime global stats") -----------
 #
@@ -1078,86 +761,6 @@ func raise_lifetime_stat(id: String, value: int) -> void:
 # UpgradeLibrary.EFFECTS + car `boosts` seam a run's boosts do (decision 51), merged by
 # world.gd::_owned_with_run_effects. So do not read "nothing here applies a skill" as
 # "skills do nothing".
-
-func owns_skill(id: String) -> bool:
-	return (profile.get(KEY_BOUGHT_SKILLS, []) as Array).has(id)
-
-
-func equipped_skills() -> Array:
-	return (profile.get(KEY_EQUIPPED_SKILLS, []) as Array).duplicate()
-
-
-func skill_equipped(id: String) -> bool:
-	return equipped_skills().has(id)
-
-
-# Buy `id` outright. Refuses (no mutation) for an id SkillLibrary does not catalogue,
-# one already owned, one not yet PURCHASABLE (its unlock stat hasn't crossed its
-# threshold — SkillLibrary.is_purchasable), or one the player cannot afford. Same
-# "byte-identical on refusal" rule as buy_car / buy_boost_level: every precondition
-# is checked BEFORE spend_money, so a caller never half-spends into a purchase that
-# was going to be rejected anyway.
-func buy_skill(id: String) -> bool:
-	if owns_skill(id):
-		return false
-	if not SkillLibrary.is_purchasable(id, profile):
-		return false
-	if not spend_money(SkillLibrary.price_of(id)):
-		return false
-	var bought: Array = profile.get(KEY_BOUGHT_SKILLS, [])
-	bought.append(id)
-	profile[KEY_BOUGHT_SKILLS] = bought
-	save()
-	return true
-
-
-# Equip an OWNED skill. Refuses (no mutation) if not owned, already equipped, or the
-# cap (GameConfig.skill_max_equipped) is already full.
-func equip_skill(id: String) -> bool:
-	if not owns_skill(id) or skill_equipped(id):
-		return false
-	var equipped: Array = profile.get(KEY_EQUIPPED_SKILLS, [])
-	if equipped.size() >= int(Config.data.skill_max_equipped):
-		return false
-	equipped.append(id)
-	profile[KEY_EQUIPPED_SKILLS] = equipped
-	save()
-	return true
-
-
-# Unequip a skill. Refuses (no mutation) if it wasn't equipped — still owned either
-# way, this only ever changes which SLOTTED skills are in force.
-func unequip_skill(id: String) -> bool:
-	var equipped: Array = profile.get(KEY_EQUIPPED_SKILLS, [])
-	if not equipped.has(id):
-		return false
-	equipped.erase(id)
-	profile[KEY_EQUIPPED_SKILLS] = equipped
-	save()
-	return true
-
-
-# Dev cheat (Settings → Dev → "Unlock all skills"): grant OWNERSHIP of every
-# SkillLibrary catalogue entry at once, bypassing the unlock thresholds and prices
-# buy_skill enforces, so the Skills page can equip any of them. Returns how many
-# ids were newly granted; a call that grants nothing writes nothing. Deliberately
-# touches NOTHING else — no money moves (that's "Add money"'s job) and the
-# EQUIPPED list is left alone: owning a skill is not slotting it, and equipping
-# stays the Skills page's own capped step (equip_skill).
-func dev_grant_all_skills() -> int:
-	var bought: Array = profile.get(KEY_BOUGHT_SKILLS, [])
-	var granted := 0
-	for entry in SkillLibrary.all():
-		var id := String(entry["id"])
-		if bought.has(id):
-			continue
-		bought.append(id)
-		granted += 1
-	if granted > 0:
-		profile[KEY_BOUGHT_SKILLS] = bought
-		save()
-	return granted
-
 
 # --- Rally economy: DELETED with the star ledger (todo/roguelike-pivot.md decision 21) --
 #

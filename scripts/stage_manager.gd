@@ -46,22 +46,6 @@ var _progress: Node     # a TrackProgress — progress_percent() drives the end 
 var _armed := false     # true once setup() has wired the refs and locked the car
 var _results_emitted := false  # true once proceed_to_results() has fired stage_completed
 
-# The rival's pace-scaled distance/time profile (features/rival-ghost.md), wired by
-# setup_target_profile() for a staged RegionRunMode run; {} for a plain dev boot, a
-# challenge stage, or a degenerate track (RegionRunMode.stage_target_ms's own "no
-# target" case — nothing here can fail either). `_ghost`, wired the same call, is the
-# RivalGhost world.gd built for the start-line reveal — kept posing here through
-# RUNNING (off this stage's own elapsed clock) so it stays a visible rival, not just
-# the HUD delta number below.
-var _target_profile: Dictionary = {}
-var _ghost: RivalGhost = null
-var _rival_finished := false  # true once the ghost has reached the finish and been hidden
-# Rally pacenote strip (features/hud.md), wired by setup_pacenotes() from world.gd on
-# every run (no P1 rival needed — pacenotes are just track reading). _pace_fracs[i] is
-# the progress fraction (0..1) of turn i's corner entry, ascending. _pace_cursor is the
-# number of corners passed = the current-turn index the HUD strip reads from.
-var _pace_fracs: Array = []
-var _pace_cursor := 0
 
 signal stage_started                            # countdown finished, timer running
 signal finish_reached                           # car crossed the finish (phase -> COMPLETE, before the NEXT button)
@@ -86,8 +70,7 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	_hud_can.clear()
 	for m in ["show_countdown", "hide_countdown", "show_elapsed",
 			"show_stage_complete", "show_cut_flash",
-			"show_pacenotes", "show_off_road", "hide_off_road",
-			"show_delta", "hide_delta"]:
+			"show_off_road", "hide_off_road"]:
 		_hud_can[m] = _hud != null and _hud.has_method(m)
 	# Clear any warning left up by the previous arm (a car swap / new event) — the
 	# fresh car is on the line, so its off-road clock starts at zero.
@@ -101,15 +84,6 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	# Clear any finish-stop braking from a previous arm (car swap / new event).
 	if car != null and "finish_stop" in car:
 		car.finish_stop = false
-	# Clear any rival profile/ghost from a previous arm (a car swap / new event); a
-	# staged region run re-wires it via setup_target_profile() after this.
-	_target_profile = {}
-	_ghost = null
-	_rival_finished = false
-	_hide_delta()
-	# Clear pacenotes from a previous arm; world.gd re-wires them via setup_pacenotes().
-	_pace_fracs = []
-	_pace_cursor = 0
 	if staged:
 		# Wait at the start line, fully held; the countdown only arms once StartLine launches.
 		if _car != null:
@@ -149,29 +123,6 @@ func begin_countdown() -> void:
 	_mark_progress_start()
 	if _hud_can["show_countdown"]:
 		_hud.show_countdown(_countdown_left)
-
-
-# Wire the rival's pace-scaled profile (RegionRunMode.stage_target_profile, via
-# RunSession.stage_target_profile) and the RivalGhost world.gd built to visualise it.
-# Called by world.gd only for a staged region run whose track actually solved; a
-# challenge stage, a dev boot, or a degenerate track never calls this, and
-# `_tick_running` treats an empty profile as "nothing to show" either way.
-# `ghost` may be null (profile-only — the HUD delta still works with no visible car).
-func setup_target_profile(profile: Dictionary, ghost: RivalGhost = null) -> void:
-	_target_profile = profile
-	_ghost = ghost
-	_rival_finished = false
-
-
-# Wire the HUD pacenote strip: the per-corner progress fractions (0..1) of each turn
-# entry, ascending (from Pacenotes.build + Pacenotes.notes_to_fracs in world.gd). Unlike
-# the pace popup this needs no P1 rival — it's called on every run so the strip shows
-# from the start line. Seeds the strip at the first turn; RUNNING advances it.
-func setup_pacenotes(fracs: Array) -> void:
-	_pace_fracs = fracs
-	_pace_cursor = 0
-	if _hud_can["show_pacenotes"]:
-		_hud.show_pacenotes(0)
 
 
 # Re-anchor track progress to 0% at the car's current (on-the-line) position, so
@@ -215,45 +166,6 @@ func _update_off_road_warning() -> void:
 func _hide_off_road_warning() -> void:
 	if _hud_can.get("hide_off_road", false):
 		_hud.hide_off_road()
-
-
-# The rival ghost + HUD delta (features/rival-ghost.md), ticked once per RUNNING
-# frame. Keeps posing `_ghost` off THIS stage's own elapsed clock until its target
-# time is up, then drives it the rest of the way to the ACTUAL finish (the track's
-# own span, which can sit a hair past the profile's own last sample) and hides it —
-# the rival crosses the line and disappears rather than parking short of it and
-# hanging around on the track for the remainder of the run — and computes
-# "player elapsed - rival's time at the PLAYER'S live distance" for the HUD. A
-# positive delta is the player BEHIND the rival's pace (red); negative is AHEAD
-# (green) — see hud.gd's show_delta.
-func _update_rival() -> void:
-	var span := 0.0
-	var have_span := _progress != null \
-			and _progress.has_method("origin_offset") and _progress.has_method("finish_offset")
-	if have_span:
-		span = _progress.finish_offset() - _progress.origin_offset()
-	if is_instance_valid(_ghost) and not _rival_finished:
-		var duration := RivalGhost.profile_duration(_target_profile)
-		if duration > 0.0 and _elapsed >= duration:
-			_rival_finished = true
-			_ghost.finish_and_hide(span if have_span and span > 0.0 else -1.0)
-		else:
-			_ghost.pose_at(_elapsed)
-	if _target_profile.is_empty() or not have_span:
-		_hide_delta()
-		return
-	if span <= 0.0:
-		_hide_delta()
-		return
-	var player_s: float = _progress.progress_percent() * span
-	var rival_t := RivalGhost.time_at_distance(_target_profile, player_s)
-	if _hud_can.get("show_delta", false):
-		_hud.show_delta(_elapsed - rival_t)
-
-
-func _hide_delta() -> void:
-	if _hud_can.get("hide_delta", false):
-		_hud.hide_delta()
 
 
 func _process(delta: float) -> void:
@@ -337,9 +249,7 @@ func _tick_running(delta: float) -> void:
 	_elapsed += delta
 	if _hud_can["show_elapsed"]:
 		_hud.show_elapsed(_elapsed)
-	_maybe_advance_pacenotes()
 	_update_off_road_warning()
-	_update_rival()
 	# Hold the "GO" flash a moment, then clear it.
 	if _go_flash_left > 0.0:
 		_go_flash_left -= delta
@@ -405,24 +315,6 @@ func force_complete() -> void:
 	if not _armed or _phase == Phase.COMPLETE:
 		return
 	_complete()
-
-
-# Advance the pacenote strip: count how many corner entries the car's progress has now
-# passed (monotonic, so each is crossed once) and, when that count changes, tell the
-# HUD the new current-turn index so the strip slides left. The current turn is the
-# first not-yet-passed corner.
-func _maybe_advance_pacenotes() -> void:
-	if _pace_fracs.is_empty() or not _hud_can["show_pacenotes"]:
-		return
-	var frac := 0.0
-	if _progress != null and _progress.has_method("progress_percent"):
-		frac = _progress.progress_percent()
-	var cursor := _pace_cursor
-	while cursor < _pace_fracs.size() and frac >= float(_pace_fracs[cursor]):
-		cursor += 1
-	if cursor != _pace_cursor:
-		_pace_cursor = cursor
-		_hud.show_pacenotes(_pace_cursor)
 
 
 # --- Readouts (for tests / a future rally layer) -----------------------------

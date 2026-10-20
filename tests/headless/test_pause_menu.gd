@@ -61,9 +61,6 @@ func after_each() -> void:
 	CarFixtures.restore()
 	# Never leak a paused tree / open overlay / live session into the next test (or file).
 	_pause.resume()
-	if RunSession.is_active():
-		RunSession.pause_run()
-	RunSession.auto_load_scenes = true
 
 
 # The menu is default-inert (fail-closed) until the world is generated: a fresh,
@@ -229,21 +226,6 @@ func test_settings_opens_on_the_category_list_and_drills_in() -> void:
 	assert_true(_pause.settings_menu.at_root(), "Back returns to the category list")
 	_pause._on_settings_back()
 	assert_false(_pause._settings_panel.visible, "Back from the list closes Settings")
-
-
-func test_quit_to_hq_ends_the_run_and_unfreezes() -> void:
-	# The pause menu offers a "Quit to HQ" button that ends the active run. Career
-	# rallies are gone with RallySession (decision 5), so the live session here is a
-	# challenge — the same exit path, which pauses the run rather than DNFing it.
-	assert_not_null(_pause._quit_button, "the pause menu has a Quit to HQ button")
-	RunSession.auto_load_scenes = false
-	var owned: Dictionary = _save.grant_car("fx_light_rwd")
-	assert_true(RunSession.start(ChallengeLibrary.DAILY, owned,
-		int(Time.get_unix_time_from_system())), "a run is running")
-	_pause.open()
-	_pause.quit_to_hq()
-	assert_false(RunSession.is_active(), "Quit to HQ ends the run")
-	assert_false(get_tree().paused, "Quit to HQ unfreezes the game")
 
 
 func test_picking_a_camera_in_settings_applies_live() -> void:

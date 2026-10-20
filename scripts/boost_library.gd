@@ -219,13 +219,6 @@ static func magnitude_for(id: String, level: int) -> Dictionary:
 	return out
 
 
-# The effect a catalogue entry resolves to RIGHT NOW, at whatever level the player has
-# actually purchased (Save.boost_level) — what `draw`/`boost_for` hand to a live pick. {}
-# for an unknown id, same as `magnitude_for`.
-static func effect_for(id: String) -> Dictionary:
-	return magnitude_for(id, Save.boost_level(id))
-
-
 # Shop display text: WHAT THIS BOOST DOES TO THE CAR at `level` — the figure the shop
 # card puts under the level, so "Lv 1" is never shown without what level 1 actually buys.
 #
@@ -299,49 +292,6 @@ static func current_effect_text(id: String, level: int) -> String:
 	return " / ".join(parts)
 
 
-# `current_effect_text` at whatever level the player has actually purchased
-# (Save.boost_level) — what the shop card shows for a boost's current increase. "" for an
-# unknown id, same as `current_effect_text`.
-static func current_effect_text_for(id: String) -> String:
-	return current_effect_text(id, Save.boost_level(id))
-
-
-# One boost entry, in the exact shape UpgradeLibrary.active_effects reads:
-# {"id": String, "effect": Dictionary}. {} for an unknown id.
-static func boost_for(id: String) -> Dictionary:
-	var effect := effect_for(id)
-	if effect.is_empty():
-		return {}
-	return {"id": id, "effect": effect}
-
-
-# "power" or "handling" for a catalogue id, OR either pseudo-id family the between-stage
-# pick pool also carries — "drivetrain:<mode>" (the AWD conversion) reads as "handling",
-# "engine_swap:<id>" (a genuine engine swap) reads as "power". "" for an unknown id. The
-# ONE place a caller resolves a category — run_pick_panel.gd's category-choice screen and
-# random roll both filter through this rather than re-deriving the prefix checks.
-static func category_of(id: String) -> String:
-	if id.begins_with("drivetrain:"):
-		return "handling"
-	if id.begins_with("engine_swap:"):
-		return "power"
-	return String(CATALOGUE.get(id, {}).get("category", ""))
-
-
-# One pick-pool id, resolved to the shape RunPickPanel/UpgradeLibrary read — {"id",
-# "effect"} for a catalogue id, {"id", "drivetrain_mode"} for "drivetrain:<mode>", {"id",
-# "engine_id"} for "engine_swap:<id>". {} for an unknown id (mirrors boost_for's own
-# contract). The ONE place a caller resolves a pool id into its display/apply shape —
-# RunSession and the (now-retired) per-mode draw used to each carry their own copy of
-# this mapping; this is the single version both funnel through.
-static func resolve_id(id: String) -> Dictionary:
-	if id.begins_with("drivetrain:"):
-		return {"id": id, "drivetrain_mode": int(id.substr("drivetrain:".length()))}
-	if id.begins_with("engine_swap:"):
-		return {"id": id, "engine_id": id.substr("engine_swap:".length())}
-	return boost_for(id)
-
-
 # Whether a SECOND pick of `id` in the same run would do anything MORE than the first —
 # false for an entry whose op OVERWRITES the same value every time it's applied ("set",
 # "install_induction") or converges on a FLOOR/CEILING it can't be pushed past
@@ -375,47 +325,3 @@ static func stacks(id: String) -> bool:
 static func label_for(id: String) -> String:
 	return String(CATALOGUE.get(id, {}).get("label", id))
 
-
-# `count` distinct boosts, deterministic in `seed_value` — RunSession seeds it from the
-# run itself (RegionRunMode._boost_seed: run_seed + stage_index, the same "big prime
-# stride" convention world.gd already uses to bump a challenge stage's retry seed), so a
-# resumed run re-offers the identical pick it offered before. No sort step (unlike
-# RegionStagePool.draw), so there is no sort-stability tie-break to worry about: the
-# order picked IS the deterministic order, nothing reorders it afterward.
-#
-# Draws WITHOUT replacement — the same boost never appears twice in one pick — capped at
-# the catalogue's own size rather than repeating to fill `count`, since (unlike a
-# region's stage pool) there is no "must fill exactly N" requirement here.
-#
-# Thin wrapper over `draw_from_ids`, the generic primitive: this just supplies the
-# catalogue's own id list and maps the picked ids through `boost_for`.
-static func draw(seed_value: int, count: int) -> Array:
-	var picked_ids := draw_from_ids(seed_value, count, CATALOGUE.keys())
-	var out: Array = []
-	for id in picked_ids:
-		out.append(boost_for(id))
-	return out
-
-
-# THE GENERIC PRIMITIVE `draw` sits on top of: `count` distinct ids drawn WITHOUT
-# replacement from an ARBITRARY `ids` list (not necessarily CATALOGUE.keys()),
-# deterministic in `seed_value`, capped at `ids`' own size. Returns the picked ids
-# themselves — not boost dicts — so a caller can mix ids from more than one source
-# into one pool before resolving them. region_run_mode.gd uses this directly to fold
-# drivetrain pseudo-ids ("drivetrain:<DriveMode int>") into the SAME draw pool as the
-# boost catalogue, so the between-stage pick offers one pool of N options rather than
-# boosts plus a separately-appended drivetrain list. [] for an empty pool or
-# count <= 0.
-static func draw_from_ids(seed_value: int, count: int, ids: Array) -> Array:
-	if ids.is_empty() or count <= 0:
-		return []
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	var bag := ids.duplicate()
-	var picked_ids: Array = []
-	var n := mini(count, ids.size())
-	while picked_ids.size() < n:
-		var i := rng.randi_range(0, bag.size() - 1)
-		picked_ids.append(bag[i])
-		bag.remove_at(i)
-	return picked_ids

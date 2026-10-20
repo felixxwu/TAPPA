@@ -54,50 +54,10 @@ func test_round_trip_survives_save_and_reload() -> void:
 	assert_almost_eq(float(_save.profile["cars"][0]["tuning"]["brake_bias"]), 0.55, 0.001, "tuning reloaded")
 
 
-func test_set_run_persists_and_survives_reload() -> void:
-	# The three challenge-run methods (RunSession's only writers of these
-	# keys) go through the same save/reload path as every other domain.
-	var run := {"period_key": "2026-W1", "kind": "weekly", "car_instance_id": 7,
-		"stage_index": 1, "stage_times_ms": [1000], "dnf": false}
-	_save.set_run(run)
-	_save.save_now()
-	_save.profile = {}
-	_save.load_or_new()
-	# Field-by-field with casts rather than a verbatim dict compare: the profile round-trips
-	# through JSON, which has no integer type, so every int comes back as a float (7 -> 7.0).
-	var back: Dictionary = _save.profile[Save.KEY_RUN]
-	assert_eq(String(back["period_key"]), "2026-W1", "period key reloaded")
-	assert_eq(String(back["kind"]), "weekly", "kind reloaded")
-	assert_eq(int(back["car_instance_id"]), 7, "car instance id reloaded")
-	assert_eq(int(back["stage_index"]), 1, "stage index reloaded")
-	assert_eq(int((back["stage_times_ms"] as Array)[0]), 1000, "stage times reloaded")
-	assert_false(bool(back["dnf"]), "dnf flag reloaded")
-
-
-func test_clear_run_empties_the_key() -> void:
-	_save.set_run({"period_key": "x", "kind": "daily"})
-	_save.clear_run()
-	assert_eq(_save.profile[Save.KEY_RUN], {}, "cleared back to empty")
-
-
 # --- Money (todo/roguelike-pivot.md decision 21) -------------------------------
 #
 # No amounts are asserted — every payout in the game is a GameConfig tunable. What is
 # pinned is the LEDGER's behaviour, which must hold whatever those numbers are.
-
-func test_money_accumulates_and_survives_a_reload() -> void:
-	# A known baseline, set explicitly rather than assumed: a fresh profile is no longer
-	# broke (decision 28 — it starts with GameConfig.run_starting_money so the shop is
-	# reachable), so "starts at 0" is a setup step here, not an assertion about defaults.
-	_save.profile[_save.KEY_MONEY] = 0
-	assert_eq(_save.add_money(120), 120, "banking returns the new balance")
-	@warning_ignore("return_value_discarded")
-	_save.add_money(30)
-	_save.save_now()
-	_save.profile = {}
-	_save.load_or_new()
-	assert_eq(_save.money(), 150, "the balance round-trips through the save file")
-
 
 func test_debounce_timer_keeps_running_while_tree_paused() -> void:
 	# pause_menu.gd holds get_tree().paused = true for as long as the pause
@@ -108,41 +68,6 @@ func test_debounce_timer_keeps_running_while_tree_paused() -> void:
 	# must therefore always process regardless of tree pause.
 	assert_eq(_save._debounce.process_mode, Node.PROCESS_MODE_ALWAYS,
 		"debounced save must still tick down while the game is paused")
-
-
-func test_banking_a_non_positive_amount_never_moves_the_balance() -> void:
-	var before: int = _save.money()
-	@warning_ignore("return_value_discarded")
-	_save.add_money(50)
-	var after_deposit: int = _save.money()
-	assert_eq(after_deposit, before + 50, "setup: a positive deposit lands")
-	@warning_ignore("return_value_discarded")
-	_save.add_money(0)
-	@warning_ignore("return_value_discarded")
-	_save.add_money(-999)
-	assert_eq(_save.money(), after_deposit, "add_money only ever adds — there is no lose_money")
-
-
-func test_an_unaffordable_purchase_is_refused_rather_than_going_negative() -> void:
-	# A known baseline (decision 28 means a fresh profile is no longer broke by default).
-	_save.profile[_save.KEY_MONEY] = 100
-	assert_false(_save.spend_money(101), "the purchase is refused")
-	assert_eq(_save.money(), 100, "and nothing is half-spent")
-	assert_true(_save.spend_money(100), "an affordable purchase goes through")
-	assert_eq(_save.money(), 0, "…debiting exactly its price")
-
-
-func test_set_challenge_results_replaces_the_whole_map() -> void:
-	_save.set_challenge_results({"2026-D1": {"kind": "daily", "dnf": false, "cumulative_ms": 500}})
-	_save.save_now()
-	_save.profile = {}
-	_save.load_or_new()
-	assert_eq(_save.profile["challenge_results"].keys(), ["2026-D1"], "the map round-trips")
-	# A later call REPLACES rather than merges — this is how RunSession's
-	# own pruning (dropping rolled-over periods) actually takes effect.
-	_save.set_challenge_results({"2026-D2": {"kind": "daily", "dnf": true, "cumulative_ms": 0}})
-	assert_false(_save.profile["challenge_results"].has("2026-D1"), "the old entry is gone")
-	assert_true(_save.profile["challenge_results"].has("2026-D2"), "replaced by the new map")
 
 
 func test_instance_ids_are_unique_per_grant() -> void:
@@ -160,179 +85,12 @@ func test_grant_car_seeds_hp_from_library_max() -> void:
 
 # --- The meta shop: buying a car (todo/roguelike-pivot.md decision 28) -----------
 
-func test_buy_car_spends_its_listed_cost_and_grants_it() -> void:
-	var cost := int(CarLibrary.by_id("fx_awd")["cost"])
-	_save.profile[_save.KEY_MONEY] = cost
-	assert_false(_save.owns_model("fx_awd"), "setup: not owned yet")
-	assert_true(_save.buy_car("fx_awd"), "an affordable purchase goes through")
-	assert_true(_save.owns_model("fx_awd"), "the car is now owned")
-	assert_eq(_save.money(), 0, "exactly its listed cost was spent — no more, no less")
-
-
-func test_buy_car_refuses_when_unaffordable_and_changes_nothing() -> void:
-	var cost := int(CarLibrary.by_id("fx_awd")["cost"])
-	_save.profile[_save.KEY_MONEY] = cost - 1
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_car("fx_awd"), "one short of the price is refused")
-	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
-
-
-func test_buy_car_refuses_a_model_already_owned() -> void:
-	_save.grant_car("fx_awd")
-	_save.profile[_save.KEY_MONEY] = int(CarLibrary.by_id("fx_awd")["cost"]) * 10
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_car("fx_awd"), "buying a car already owned is refused")
-	assert_eq(_save.profile, before, "nothing changes — no duplicate grant, no money spent")
-
-
-func test_buy_car_refuses_an_unknown_model() -> void:
-	_save.profile[_save.KEY_MONEY] = 999999
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_car("not_a_real_car"), "an unknown model id is refused")
-	assert_eq(_save.profile, before, "nothing changes")
-
-
 # --- The meta shop: boost levels (todo/roguelike-pivot.md decision 42) -----------
-
-func test_buy_boost_level_spends_the_listed_price_and_raises_the_level() -> void:
-	_save.profile[_save.KEY_MONEY] = _save.boost_level_price("grip")
-	assert_eq(_save.boost_level("grip"), 0, "setup: level 0")
-	assert_true(_save.buy_boost_level("grip"), "an affordable purchase goes through")
-	assert_eq(_save.boost_level("grip"), 1, "the level increments by exactly one")
-	assert_eq(_save.money(), 0, "exactly the listed price was spent")
-
-
-func test_boost_level_price_rises_with_level() -> void:
-	# The relationship only (CLAUDE.md forbids pinning the growth curve's numbers): buying
-	# a level must never make the NEXT one cheaper or free.
-	var price_at_0: int = _save.boost_level_price("grip")
-	_save.profile[_save.KEY_MONEY] = price_at_0
-	assert_true(_save.buy_boost_level("grip"), "setup: level 1 bought")
-	var price_at_1: int = _save.boost_level_price("grip")
-	assert_gte(price_at_1, price_at_0, "the ladder never gets cheaper going up")
-
-
-func test_buy_boost_level_refuses_when_unaffordable_and_changes_nothing() -> void:
-	_save.profile[_save.KEY_MONEY] = _save.boost_level_price("grip") - 1
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_boost_level("grip"), "one short of the price is refused")
-	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
-
-
-func test_buy_boost_level_refuses_an_unknown_id() -> void:
-	_save.profile[_save.KEY_MONEY] = 999999
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_boost_level("not_a_real_boost"), "an unknown boost id is refused")
-	assert_eq(_save.profile, before, "nothing changes")
-
-
-func test_buy_boost_level_refuses_once_the_level_is_at_the_cap() -> void:
-	var max_level := int(Config.data.boost_level_max)
-	_save.profile[_save.KEY_BOOST_LEVELS] = {"grip": max_level}
-	_save.profile[_save.KEY_MONEY] = 999999999
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_boost_level("grip"), "a level already at the cap cannot be bought again")
-	assert_eq(_save.profile, before, "nothing changes — money included")
-
 
 # --- Rally completion records: DELETED with the HQ map (nothing writes or reads a
 # rally record any more — region runs keep their own KEY_REGIONS_CLEARED ledger, and
 # the dev 3-star cheat is gone with the map it lit). The idempotent-best-time, DNF-guard
 # and best-placement tests went with the record.
-
-
-func test_damage_past_zero_keeps_the_car_and_its_bent_wheels() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	_save.set_wheel_toe(id, [0.05, -0.03, 0.0, 0.0])
-
-	_save.apply_damage(id, 999999.0)  # far past zero
-	# 0 HP is a STATE, not an event: nothing is removed, reset, or handed back at part
-	# health. The car sits at exactly 0 and stays fully owned.
-	assert_eq(_save.profile["cars"].size(), 1, "the car is kept")
-	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "HP clamps at exactly zero, never negative")
-	# car_needs_repair() was asserted here too; it is deleted with the paid garage repair
-	# (todo/roguelike-pivot.md decision 21) — see the "Star sinks" block comment further down.
-	assert_eq(_save.get_car(id)["wheel_toe"], [0.05, -0.03, 0.0, 0.0],
-		"and its stored wheel_toe is untouched — no hidden restore")
-
-
-# heal_car — the OTHER way HP climbs back (RunSession.report_event_result routes a stage
-# that ended with a net heal here; the "self_healing" skill, todo/roguelike-pivot.md
-# decision 51). Caps at the car's authored max_hp and refuses a non-positive amount.
-func test_heal_car_gives_hp_back_and_caps_at_max() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var max_hp := float(_save.get_car(id)["hp"])  # a fresh car is fielded at full HP
-	_save.apply_damage(id, 500.0)
-	var damaged := float(_save.get_car(id)["hp"])
-	_save.heal_car(id, 200.0)
-	assert_almost_eq(float(_save.get_car(id)["hp"]), damaged + 200.0, 0.001)
-	_save.heal_car(id, 999999.0)
-	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
-		"healing never pushes a car past its authored max_hp")
-
-
-func test_heal_car_ignores_a_non_positive_amount() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	_save.apply_damage(id, 500.0)
-	var damaged := float(_save.get_car(id)["hp"])
-	_save.heal_car(id, 0.0)
-	_save.heal_car(id, -100.0)
-	assert_eq(float(_save.get_car(id)["hp"]), damaged,
-		"heal_car is not a back door into apply_damage")
-
-
-# restore_car_to_full — the ONLY other writer besides grant_car that sets hp to max_hp.
-# Used by RunSession.begin() so a new run always starts at 100% health.
-func test_restore_car_to_full_heals_a_damaged_car_to_max_hp() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var max_hp := float(_save.get_car(id)["hp"])
-	_save.apply_damage(id, 500.0)
-	assert_lt(float(_save.get_car(id)["hp"]), max_hp, "setup: the car is damaged")
-
-	_save.restore_car_to_full(id)
-
-	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
-		"a full restore brings a damaged car back to its authored max_hp")
-
-
-func test_restore_car_to_full_changes_nothing_on_an_already_full_car() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var max_hp := float(_save.get_car(id)["hp"])
-
-	_save.restore_car_to_full(id)
-
-	assert_almost_eq(float(_save.get_car(id)["hp"]), max_hp, 0.001,
-		"restoring an already-full car is a no-op on its HP")
-
-
-func test_car_health_fraction_reflects_current_over_max_hp() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	assert_almost_eq(_save.car_health_fraction(id), 1.0, 0.001,
-		"a freshly granted car is at full health")
-	var max_hp := float(_save.get_car(id)["hp"])
-	_save.apply_damage(id, max_hp * 0.5)
-	assert_almost_eq(_save.car_health_fraction(id), 0.5, 0.01)
-
-
-func test_damage_is_one_way_apart_from_the_field_repair() -> void:
-	# There is no full restore any more (repair kits are gone), so HP only ever climbs
-	# back through the free between-event field repair — and never past max.
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	var max_hp := float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"])
-	_save.apply_damage(id, 500.0)
-	var damaged := float(_save.get_car(id)["hp"])
-	assert_lt(damaged, max_hp, "the car took damage")
-	_save.field_repair(id, 0.5, 1.0)
-	var patched := float(_save.get_car(id)["hp"])
-	assert_gt(patched, damaged, "the field repair claws some HP back")
-	assert_lt(patched, max_hp, "but a partial repair never reaches full health")
 
 
 func test_wheel_toe_persists_and_survives_reload() -> void:
@@ -346,42 +104,6 @@ func test_wheel_toe_persists_and_survives_reload() -> void:
 	assert_eq(_save.get_car(id)["wheel_toe"], [0.01, -0.02, 0.03, -0.04], "bent wheels reloaded from disk")
 
 
-func test_field_repair_straightens_wheels_fully_at_full_fraction() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id: int = car["instance_id"]
-	_save.apply_damage(id, 100.0)  # the field repair only acts on a car that needs it
-	_save.set_wheel_toe(id, [0.05, -0.05, 0.05, -0.05])
-	_save.field_repair(id, 0.5, 1.0)  # toe_fraction 1.0 = bend all the way back
-	assert_eq(_save.get_car(id)["wheel_toe"], [0.0, 0.0, 0.0, 0.0],
-		"a full-fraction repair straightens the wheels")
-
-
-func test_field_repair_restores_the_given_fraction_of_lost_hp() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id: int = car["instance_id"]
-	var max_hp := float(CarLibrary.by_id("fx_rwd_coupe")["max_hp"])
-	_save.apply_damage(id, 400.0)  # lost 400
-	var before := float(_save.get_car(id)["hp"])
-	var summary: Dictionary = _save.field_repair(id, 0.5, 0.5)
-	assert_true(summary.get("repaired", false), "a damaged car is repaired")
-	# Restores hp_fraction (0.5) of the 400 lost -> +200, for ANY reasonable fraction.
-	assert_almost_eq(float(_save.get_car(id)["hp"]), before + 200.0, 0.001, "half the lost hp came back")
-	assert_almost_eq(float(summary["hp_gained"]), 200.0, 0.001, "summary reports the hp gained")
-	assert_lt(float(_save.get_car(id)["hp"]), max_hp, "a partial repair does not reach full health")
-
-
-func test_field_repair_bends_each_wheel_back_toward_straight() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id: int = car["instance_id"]
-	_save.apply_damage(id, 100.0)  # some hp lost so the repair runs
-	_save.set_wheel_toe(id, [0.08, -0.06, 0.04, -0.02])
-	_save.field_repair(id, 0.2, 0.5)  # bend each wheel 50% back toward zero
-	var toe: Array = _save.get_car(id)["wheel_toe"]
-	# Each wheel moves toward straight by toe_fraction, keeping its sign — for ANY fraction.
-	for i in 4:
-		assert_almost_eq(float(toe[i]), [0.08, -0.06, 0.04, -0.02][i] * 0.5, 0.0001, "wheel %d bent halfway back" % i)
-
-
 # --- apply_field_repair_to: the ONE fraction pairing ---------------------------
 #
 # Every between-stage and final-stage repair in the game goes through this wrapper
@@ -389,70 +111,7 @@ func test_field_repair_bends_each_wheel_back_toward_straight() -> void:
 # is pinned is the AGREEMENT with a hand-made field_repair at the config's own
 # fractions — not the fractions themselves, which are tunables.
 
-func test_apply_field_repair_to_uses_the_configs_own_fractions() -> void:
-	var cfg: GameConfig = Config.data
-	var driven := int(_save.grant_car("fx_rwd_coupe")["instance_id"])
-	var control := int(_save.grant_car("fx_rwd_coupe")["instance_id"])
-	_save.apply_damage(driven, 400.0)
-	_save.apply_damage(control, 400.0)
-	_save.set_wheel_toe(driven, [0.08, -0.06, 0.04, -0.02])
-	_save.set_wheel_toe(control, [0.08, -0.06, 0.04, -0.02])
-
-	var wrapped: Dictionary = _save.apply_field_repair_to(driven)
-	var by_hand: Dictionary = _save.field_repair(control,
-		cfg.field_repair_hp_fraction, cfg.field_repair_toe_fraction)
-
-	assert_eq(bool(wrapped.get("repaired", false)), bool(by_hand.get("repaired", false)),
-		"the wrapper repairs exactly when the raw call does")
-	assert_almost_eq(float(_save.get_car(driven)["hp"]), float(_save.get_car(control)["hp"]),
-		0.001, "the wrapper's HP result is field_repair at the config fractions")
-	assert_eq(_save.get_car(driven)["wheel_toe"], _save.get_car(control)["wheel_toe"],
-		"and its wheel result too")
-
-
-func test_apply_field_repair_to_no_ops_when_nothing_is_fielded() -> void:
-	# -1 is "no car fielded" (a session between runs), not an error.
-	var summary: Dictionary = _save.apply_field_repair_to(-1)
-	assert_false(summary.get("repaired", false), "no fielded car -> nothing repaired")
-
-
 # --- apply_full_field_repair_to: the player-chosen full repair -----------------
-
-func test_apply_full_field_repair_to_fully_restores_hp_and_straightens_wheels() -> void:
-	var id := int(_save.grant_car("fx_rwd_coupe")["instance_id"])
-	_save.apply_damage(id, 400.0)
-	_save.set_wheel_toe(id, [0.08, -0.06, 0.04, -0.02])
-
-	var summary: Dictionary = _save.apply_full_field_repair_to(id)
-
-	assert_true(bool(summary.get("repaired", false)), "a damaged car is repaired")
-	assert_almost_eq(float(summary["hp_after"]), float(summary["max_hp"]), 0.001,
-		"the full repair restores HP to max, not a fraction of what was lost")
-	for v in _save.get_car(id)["wheel_toe"]:
-		assert_almost_eq(float(v), 0.0, 0.0001, "every wheel is fully straightened")
-
-
-func test_apply_full_field_repair_to_no_ops_when_nothing_is_fielded() -> void:
-	var summary: Dictionary = _save.apply_full_field_repair_to(-1)
-	assert_false(summary.get("repaired", false), "no fielded car -> nothing repaired")
-
-
-func test_field_repair_skips_a_pristine_car() -> void:
-	var car: Dictionary = _save.grant_car("fx_light_rwd")  # full hp, straight wheels
-	var summary: Dictionary = _save.field_repair(car["instance_id"], 0.2, 0.5)
-	assert_false(summary.get("repaired", false), "nothing to repair on a spotless car")
-
-
-func test_field_repair_works_on_a_zero_hp_car() -> void:
-	# A 0-HP car is an ordinary damaged car, so the free between-event pit repair
-	# treats it like any other — nothing gates on the bottomed-out state.
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id: int = car["instance_id"]
-	_save.apply_damage(id, 999999.0)
-	var summary: Dictionary = _save.field_repair(id, 0.2, 0.5)
-	assert_true(summary.get("repaired", false), "a 0-HP car can still be pit-repaired")
-	assert_gt(float(_save.get_car(id)["hp"]), 0.0, "and it gains health off the floor")
-
 
 func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 	# A pre-feature owned car has no wheel_toe key; load must backfill it straight.
@@ -462,36 +121,6 @@ func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 	}]
 	_save.profile = _save._sanitise(_save.profile)
 	assert_eq(_save.profile["cars"][0]["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "backfilled straight")
-
-
-func test_the_starter_bottoms_out_and_recovers_like_any_car() -> void:
-	# The starter is not invulnerable and not special-cased: heavy damage floors it, and
-	# it stays owned exactly as any other car does.
-	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	var id := int(car["instance_id"])
-	_save.apply_damage(id, 999999.0)
-	assert_eq(_save.profile["cars"].size(), 1, "still owned")
-	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "sitting on the floor, not written off")
-
-
-func test_flooring_every_car_leaves_the_player_able_to_drive() -> void:
-	# THE reason terminal wrecking went: no sequence of crashes can strand a player, so
-	# nothing needs to rescue them. This is also what makes the map's reachability
-	# guarantee sound — a car an authored route depends on can never be lost.
-	var a: Dictionary = _save.grant_car("fx_light_rwd")
-	var b: Dictionary = _save.grant_car("fx_rwd_coupe")
-	_save.apply_damage(int(a["instance_id"]), 999999.0)
-	_save.apply_damage(int(b["instance_id"]), 999999.0)
-	assert_eq(_save.profile["cars"].size(), 2, "both cars are still owned and fieldable")
-
-
-func test_apply_damage_clamps_at_zero_rather_than_going_negative() -> void:
-	var car: Dictionary = _save.grant_car("fx_rwd_coupe")
-	var id := int(car["instance_id"])
-	_save.apply_damage(id, 999999.0)
-	_save.apply_damage(id, 999999.0)  # and again — 0 is a stable floor, not a trigger
-	assert_eq(_save.profile["cars"].size(), 1, "the car is kept in the garage")
-	assert_eq(float(_save.get_car(id)["hp"]), 0.0, "HP rests at exactly 0, never negative")
 
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
@@ -537,7 +166,6 @@ func test_a_refused_pre_pivot_profile_can_still_save_new_progress() -> void:
 # untouched -- it exercises _sanitise(), a separate, version-independent tolerant pass.
 
 
-
 # test_sanitise_drops_the_retired_repair_kit_from_an_existing_profile: DELETED — the
 # whole inventory subsystem is gone, so there is no live consumable to protect and the
 # retired-id strip went with it.
@@ -547,7 +175,7 @@ func test_migration_backfills_missing_keys() -> void:
 	# A correctly-versioned but partial dict gets missing keys filled from default.
 	var partial := {"schema_version": _save.SCHEMA_VERSION, "cars": []}
 	var migrated: Dictionary = _save._migrate(partial)
-	assert_true(migrated.has("boost_levels"), "missing boost ladder backfilled")
+	assert_true(migrated.has(_save.KEY_WORLD), "missing world block backfilled")
 	assert_true(migrated.has("settings"), "missing settings bag backfilled (old profiles)")
 
 
@@ -756,39 +384,6 @@ func test_adopting_a_profile_keeps_this_devices_settings() -> void:
 # acknowledge; the seeding tests went with _seed_reveals_if_needed).
 
 
-func test_a_fresh_profile_declares_the_run_meta_block() -> void:
-	var p: Dictionary = _save._default_profile()
-	# Shapes, not values: a designer may change the starting purse freely.
-	assert_true(p.has(_save.KEY_MONEY), "money is declared")
-	assert_typeof(p[_save.KEY_REGIONS_CLEARED], TYPE_ARRAY, "regions_cleared is a list of ids")
-	assert_typeof(p[_save.KEY_BOOST_LEVELS], TYPE_DICTIONARY, "boost_levels maps id -> level")
-	assert_typeof(p[_save.KEY_BOUGHT_SKILLS], TYPE_ARRAY, "bought_skills is a list of ids")
-	assert_typeof(p[_save.KEY_EQUIPPED_SKILLS], TYPE_ARRAY, "equipped_skills is a list of ids")
-	assert_typeof(p[_save.KEY_LIFETIME], TYPE_DICTIONARY, "lifetime maps stat -> total")
-
-
-func test_the_run_meta_block_round_trips_through_a_save_and_load() -> void:
-	# The point of the block is that it OUTLIVES things. A value that does not survive a
-	# save/load cannot survive a failed run either.
-	_save.profile[_save.KEY_MONEY] = 1234
-	_save.profile[_save.KEY_REGIONS_CLEARED] = ["home"]
-	_save.profile[_save.KEY_BOOST_LEVELS] = {"engine": 2}
-	_save.profile[_save.KEY_BOUGHT_SKILLS] = ["fx_skill"]
-	_save.profile[_save.KEY_EQUIPPED_SKILLS] = ["fx_skill"]
-	_save.profile[_save.KEY_LIFETIME] = {"stages_cleared": 7}
-	_save.save_now()
-	_save.load_or_new()
-
-	assert_eq(int(_save.profile[_save.KEY_MONEY]), 1234, "money survives")
-	assert_eq(_save.profile[_save.KEY_REGIONS_CLEARED], ["home"], "cleared regions survive")
-	assert_eq(int((_save.profile[_save.KEY_BOOST_LEVELS] as Dictionary)["engine"]), 2,
-		"purchased boost levels survive")
-	assert_eq(_save.profile[_save.KEY_BOUGHT_SKILLS], ["fx_skill"], "bought skills survive")
-	assert_eq(_save.profile[_save.KEY_EQUIPPED_SKILLS], ["fx_skill"], "equipped skills survive")
-	assert_eq(int((_save.profile[_save.KEY_LIFETIME] as Dictionary)["stages_cleared"]), 7,
-		"lifetime stats survive")
-
-
 # --- Skills (todo/roguelike-pivot.md "Skills — a straight lift from RR") ----------
 # Save-level purchase/equip mutators. The state-machine contract (locked/purchasable/
 # owned, the equip cap) belongs to test_skill_library.gd; this file only pins the
@@ -802,64 +397,6 @@ const _FX_SKILLS: Array[Dictionary] = [
 		"unlock": {"stat": "fx_stat", "threshold": 3},
 	},
 ]
-
-
-func test_buy_skill_refuses_while_locked_and_changes_nothing() -> void:
-	SkillLibrary.override_for_test(_FX_SKILLS)
-	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 0}
-	_save.profile[_save.KEY_MONEY] = 999999
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.buy_skill(_FX_PERK_ID), "below its threshold — refused")
-	assert_eq(_save.profile, before, "a refused purchase leaves the profile untouched")
-	SkillLibrary.reset()
-
-
-func test_buy_skill_succeeds_once_unlocked_and_affordable() -> void:
-	SkillLibrary.override_for_test(_FX_SKILLS)
-	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 3}
-	_save.profile[_save.KEY_MONEY] = 500
-	assert_true(_save.buy_skill(_FX_PERK_ID), "unlocked and affordable")
-	assert_true(_save.owns_skill(_FX_PERK_ID))
-	assert_eq(_save.money(), 0, "the price is fully spent")
-	SkillLibrary.reset()
-
-
-func test_equip_skill_refuses_past_the_config_cap_and_changes_nothing() -> void:
-	var cap := int(Config.data.skill_max_equipped)
-	var extra: Array[Dictionary] = []
-	for i in cap + 1:
-		extra.append({"id": "fx_cap_%d" % i, "label": "Fixture %d" % i, "price": 0,
-			"unlock": {"stat": "fx_stat", "threshold": 0}})
-	SkillLibrary.override_for_test(extra)
-	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 1}
-	for i in cap:
-		_save.buy_skill("fx_cap_%d" % i)
-		assert_true(_save.equip_skill("fx_cap_%d" % i), "setup: filling the cap")
-	_save.buy_skill("fx_cap_%d" % cap)
-	var before: Dictionary = _save.profile.duplicate(true)
-	assert_false(_save.equip_skill("fx_cap_%d" % cap), "the cap refuses one more")
-	assert_eq(_save.profile, before, "a refused equip leaves the profile untouched")
-	SkillLibrary.reset()
-
-
-# The dev cheat behind Settings → Dev → "Unlock all skills": ownership of every
-# catalogue entry at once, bypassing the unlock threshold — and IDEMPOTENT, so a
-# second press grants (and writes) nothing.
-func test_dev_grant_all_skills_is_idempotent() -> void:
-	SkillLibrary.override_for_test(_FX_SKILLS)
-	# Below its unlock threshold on purpose: the cheat must not care.
-	_save.profile[_save.KEY_LIFETIME] = {"fx_stat": 0}
-	_save.profile[_save.KEY_MONEY] = 700
-	assert_eq(_save.dev_grant_all_skills(), _FX_SKILLS.size(),
-		"every catalogue entry is granted")
-	assert_true(_save.owns_skill(_FX_PERK_ID), "ownership lands despite the lock")
-	assert_eq(_save.money(), 700, "the grant moves no money")
-	assert_eq((_save.profile[_save.KEY_EQUIPPED_SKILLS] as Array).size(), 0,
-		"equipping stays the Skills page's own step")
-	var settled: Dictionary = _save.profile.duplicate(true)
-	assert_eq(_save.dev_grant_all_skills(), 0, "a second call grants nothing")
-	assert_eq(_save.profile, settled, "and writes nothing doing it")
-	SkillLibrary.reset()
 
 
 # --- Every persisted key is DECLARED, not conjured (ratchet) --------------------

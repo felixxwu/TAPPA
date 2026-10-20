@@ -1,7 +1,7 @@
 name: Release
 
 # Single release pipeline triggered on every push to main. One shared
-# verify-caches gate, then all export/publish targets run in parallel:
+# compile-check gate, then all export/publish targets run in parallel:
 #   - export-web      -> itch.io (html5)
 #   - export-android  -> itch.io (sideloadable .apk)
 #   - export-windows  -> itch.io (.exe)
@@ -46,8 +46,8 @@ env:
   TRACK: alpha
 
 jobs:
-  verify-caches:
-    name: Verify track + opponent lockfiles are fresh
+  compile-check:
+    name: Every script and scene compiles
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -66,13 +66,13 @@ jobs:
       - name: Import project (build resource cache)
         run: godot --headless --import --quit || true
 
-      - name: Verify track lockfile is fresh (hash check, no regeneration)
-        run: godot --headless --path . res://tools/verify_track_cache.tscn
+      - name: Load every script and scene with the autoloads present
+        run: godot --headless --path . res://tools/compile_check.tscn
 
   export-web:
     name: Export & deploy web build
     runs-on: ubuntu-latest
-    needs: verify-caches
+    needs: compile-check
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -120,7 +120,7 @@ jobs:
   export-android:
     name: Export & deploy Android APK
     runs-on: ubuntu-latest
-    needs: verify-caches
+    needs: compile-check
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -214,7 +214,7 @@ jobs:
   export-windows:
     name: Export & deploy Windows .exe
     runs-on: ubuntu-latest
-    needs: verify-caches
+    needs: compile-check
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -260,7 +260,7 @@ jobs:
   publish-play:
     name: Build AAB & upload to Play
     runs-on: ubuntu-latest
-    needs: verify-caches
+    needs: compile-check
     steps:
       - name: Checkout
         uses: actions/checkout@v5

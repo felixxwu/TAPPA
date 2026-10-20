@@ -8,14 +8,6 @@ func after_each() -> void:
 	RegionStageLibrary.reset()
 
 
-func test_every_region_has_exactly_eight_slots() -> void:
-	for region_id in RegionStageLibrary.region_ids():
-		var slots := RegionStageLibrary.slots_in(String(region_id))
-		assert_eq(slots.size(), RegionRunMode.STAGE_COUNT,
-			"region '%s' has %d slots, expected %d (RegionRunMode.STAGE_COUNT)" % [
-				region_id, slots.size(), RegionRunMode.STAGE_COUNT])
-
-
 func test_every_slot_has_exactly_three_candidates() -> void:
 	for region_id in RegionStageLibrary.region_ids():
 		var slots := RegionStageLibrary.slots_in(String(region_id))
@@ -47,17 +39,6 @@ func test_seeds_are_unique_across_the_whole_catalogue() -> void:
 		assert_false(seen.has(seed_value),
 			"seed %d is authored more than once" % seed_value)
 		seen[seed_value] = true
-
-
-func test_all_stages_in_stamps_region_slot_and_candidate() -> void:
-	for region_id in RegionStageLibrary.region_ids():
-		var stages := RegionStageLibrary.all_stages_in(String(region_id))
-		assert_eq(stages.size(), RegionRunMode.STAGE_COUNT * 3,
-			"region '%s' yields slots x candidates stamped stages" % region_id)
-		for stage in stages:
-			assert_eq(String(stage["region"]), String(region_id))
-			assert_true(int(stage["slot"]) >= 0 and int(stage["slot"]) < RegionRunMode.STAGE_COUNT)
-			assert_true(int(stage["candidate"]) >= 0 and int(stage["candidate"]) < 3)
 
 
 func test_all_stages_covers_every_region() -> void:

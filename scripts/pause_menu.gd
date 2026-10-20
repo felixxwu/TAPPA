@@ -25,12 +25,6 @@ signal reset_to_track_requested
 # the frozen shot is unobstructed. The tree stays PAUSED throughout — leaving photo
 # mode comes back to this menu, still frozen, via return_from_photo_mode().
 signal photo_mode_requested
-# Relay for the shared SettingsMenu's dev-page "Complete stage" action (offered only
-# while a run is live — see SettingsMenu._build_dev_page). world.gd connects this and
-# runs the same skip-to-finish the F dev key triggers (_dev_complete_stage); the
-# menu then resumes so the finish panel answers. Same delegate-upward shape as
-# reset_to_track_requested: neither host owns the car / stage.
-signal dev_complete_stage_requested
 
 @export var camera_manager: CameraManager
 # The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
@@ -168,15 +162,6 @@ func return_from_photo_mode() -> void:
 	UITheme.focus_grab.bind(_photo_button).call_deferred()
 
 
-# Settings → Dev → "Complete stage": hand the skip to the host (world.gd owns the
-# car and the StageManager), then unfreeze and close — the F-key path runs
-# unpaused, and the completion panel the skip raises would sit frozen behind this
-# overlay otherwise.
-func _on_dev_complete_stage_requested() -> void:
-	dev_complete_stage_requested.emit()
-	resume()
-
-
 # Pop the quit confirm; quit_to_hq() runs only if the player accepts. A run of EITHER
 # kind is only PAUSED — the run slot stays persisted and the entry screen offers
 # Resume — so the wording must not claim the run is lost; a session-less dev boot gets
@@ -186,9 +171,6 @@ func _on_dev_complete_stage_requested() -> void:
 # on benchmark/run/plain, and neither belongs in two places.
 func confirm_quit_to_hq() -> void:
 	var body := "Abandon this rally and return to HQ?\nYour progress in this run is lost."
-	if RunSession.is_active():
-		body = "Pause this run and return to HQ?\n" \
-			+ "Your run is saved — resume it any time.\nThe current stage starts over."
 	if quit_body_override != "":
 		body = quit_body_override
 	var quit_text := quit_label if quit_label != "" else "Quit to HQ"
@@ -214,9 +196,6 @@ func quit_to_hq() -> void:
 		return
 	if Benchmark.active:
 		Benchmark.exit_to_hq()
-	elif RunSession.is_active():
-		RunSession.pause_run()
-		Scenes.change_to(get_tree(), Scenes.hub_path())
 	else:
 		# The career-rally abandon that used to sit here (RallySession.abandon()) is
 		# deleted along with RallySession (todo/roguelike-pivot.md decision 5); only a
@@ -385,7 +364,6 @@ func _build_settings_panel() -> Control:
 	settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_menu.camera_changed.connect(_on_camera_changed)
 	settings_menu.scheme_changed.connect(_on_scheme_changed)
-	settings_menu.dev_complete_stage_requested.connect(_on_dev_complete_stage_requested)
 	scroll.add_child(settings_menu)
 
 	# Single bottom button: on a sub-page it backs out to the category list; on the

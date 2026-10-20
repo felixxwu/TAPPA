@@ -48,11 +48,6 @@ signal camera_changed(mode: int)
 # Emitted when the touch-control scheme is picked, so a live MobileControls (the
 # run's, via the pause menu) can switch the on-screen controls immediately.
 signal scheme_changed(id: int)
-# Emitted when the dev page's "Complete stage" action is pressed, so the live run
-# scene (world.gd, via the pause menu's relay — it owns the car / track / stage
-# manager this menu has no reference to) can skip to the finish exactly as the F
-# dev key does. No payload: the stage to complete is the one being driven.
-signal dev_complete_stage_requested
 # Emitted on every page switch; is_root == the category list is showing.
 signal page_changed(is_root: bool)
 # Fixed width for the key-binding buttons (and their column captions), wide enough
@@ -66,9 +61,6 @@ const RESET_WARNING := "Start a brand new game. Every car, star, upgrade and " \
 	+ "rally result is erased — on this device and, while you are signed in, in " \
 	+ "the cloud. This cannot be undone."
 
-# The dev page's "Add money" grant. A dev amount, not a tunable — it exists to
-# make the shop reachable while poking at the game, so it is not a GameConfig field.
-const DEV_MONEY_GRANT := 10000
 
 # Test override for dev_tools_enabled(): -1 = use the real default, 0 = force
 # off, 1 = force on. Lets a test assert the off case even though the shipped
@@ -336,14 +328,7 @@ func _build_dev_page() -> void:
 	_dev_page.add_child(_make_heading("Dev"))
 	_dev_status = _make_sub("Developer actions.")
 	_dev_page.add_child(_dev_status)
-	_dev_page.add_child(_make_action_button("Add money", _add_money))
-	_dev_page.add_child(_make_action_button("Unlock all skills", _unlock_all_skills))
-	# "Complete stage" is offered ONLY while a run is live: the hub builds this menu
-	# with no session (nothing to complete), the pause menu mid-run with one. The
-	# gate is at BUILD time, so a hub-built page simply has no button; world.gd
-	# re-checks on the signal anyway, so a press from a stale menu can't fire it.
-	if DrivingContext.session_active():
-		_dev_page.add_child(_make_action_button("Complete stage", _complete_stage))
+	_dev_page.add_child(_make_action_button("Reveal all biomes", _reveal_all_biomes))
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -798,33 +783,19 @@ func _reload_after_wipe() -> void:
 
 # --- Dev actions -------------------------------------------------------------
 #
-# The dev page's three actions. None of them is a setting, so nothing here persists
-# a player choice — they mutate the profile (Save) or the live run (via the signal)
-# and report through _dev_status.
+# The dev page's action. Not a setting, so nothing here persists a player choice; it edits the
+# world session and reports through _dev_status.
 
-# Bank the fixed dev grant and report the new balance (Save.add_money returns it).
-func _add_money() -> void:
-	_dev_status.text = "Added %d. Balance: %d." % [DEV_MONEY_GRANT,
-		Save.add_money(DEV_MONEY_GRANT)]
-
-
-# Grant OWNERSHIP of every SkillLibrary entry at once (Save.dev_grant_all_skills —
-# thresholds and prices bypassed), so the Skills page can equip any of them. Money
-# and equipped slots are the mutator's own no-go list, not this button's business.
-func _unlock_all_skills() -> void:
-	var granted := Save.dev_grant_all_skills()
-	if granted > 0:
-		_dev_status.text = "Granted %d skills." % granted
-	else:
-		_dev_status.text = "All skills already owned."
-
-
-# "Complete stage" only relays — world.gd owns the car, the track and the stage
-# manager, and performs the same skip-to-finish the F dev key triggers (the pause
-# menu forwards this signal to it; the hub never connects it, matching the button's
-# own mid-run-only offering above).
-func _complete_stage() -> void:
-	dev_complete_stage_requested.emit()
+# Mark every biome ring revealed, as if every rumour had been found (the journal lists them all).
+func _reveal_all_biomes() -> void:
+	if not WorldSession.has_world():
+		_dev_status.text = "No world yet."
+		return
+	var rings: Array = []
+	for r in FreeRoamSettings.new().ring_count:
+		rings.append(r)
+	WorldSession.set_list("revealed", rings)
+	_dev_status.text = "Revealed %d biomes." % rings.size()
 
 
 # --- Row builders ------------------------------------------------------------

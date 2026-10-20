@@ -63,21 +63,10 @@ func test_no_game_scene_is_parked_under_root() -> void:
 	var leaked := _leaked_scene_names()
 	assert_eq(leaked, [],
 		"an earlier test left a whole game scene under /root — almost certainly a "
-		+ "change_scene_to_file that escaped, e.g. RunSession.start() with "
-		+ "auto_load_scenes left true. Turn the seam off in that file's "
-		+ "before_all/before_each; do NOT relax this guard.")
+		+ "change_scene_to_file that escaped Scenes.change_to's run-scoped block. "
+		+ "Route the transition through Scenes.change_to; do NOT relax this guard.")
 
 
-# The guard above can only fire if the thing it looks for is actually reachable, so
-# pin the seam that makes a scene change escapable in the first place. If it
-# defaults to something else, the guard's premise (and half the suite's isolation)
-# has moved and this should be revisited rather than silently trusted.
-#
-# There used to be two seams here; RallySession's went with it (decision 5). When
-# stage 3 lands RunSession, add its seam back alongside RunSession's.
-func test_the_scene_change_seams_still_exist() -> void:
-	assert_true("auto_load_scenes" in RunSession,
-		"RunSession still exposes the auto_load_scenes seam tests switch off")
 
 
 # The run-scoped suppression is what makes the guard above pass by CONSTRUCTION rather
