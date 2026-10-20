@@ -64,7 +64,8 @@ func _a_rest_stop() -> int:
 
 func _park_on(site: int) -> void:
 	_rest.move_car_to(site)
-	_rest._offered = -1  # a fresh arrival, as if driven in
+	_rest._offered = -1  # a fresh arrival, as if driven in (move_car_to marks the stop as
+	_rest._on_site = -1  # already reached, which is right for travel and respawn, not for this)
 	_car.linear_velocity = Vector3.ZERO
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -84,6 +85,37 @@ func test_driving_onto_a_rest_stop_lights_it_and_makes_it_the_respawn_point() ->
 	assert_true(_rest.is_lit(site))
 	assert_eq(_rest.last_site, site)
 	assert_signal_emitted_with_parameters(_rest, "lit", [site])
+
+
+# Driving straight past a rest stop, on the far lane of its road and at speed, still counts: it
+# lights, becomes the respawn point and heals the car fully — without stopping, and without the
+# page (that's for stopping).
+func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> void:
+	var site := _a_rest_stop()
+	_rest.lit_sites.erase(site)
+	_rest.set_physics_process(false)
+	_rest._on_site = -1
+	var sites := _streamer.sites
+	var away := (sites.pos[site] - sites.anchor[site]).normalized()  # the pad's side of the road
+	var far_lane := sites.anchor[site] - away * _streamer.settings.road_half_width_m * 0.6
+	var d := sites.dir[site]
+	var dmg: DamageModel = _car.damage
+	dmg.hp = dmg.max_hp * 0.3
+	dmg.cooling_broken = true
+	watch_signals(_rest)
+	# One physics step's travel at ~200 km/h straight past it, so a per-frame point check would miss.
+	_rest._last_p = far_lane - d * 15.0
+	var to := far_lane + d * 15.0
+	_car.global_position = Vector3(to.x, _streamer.height_at(to.x, to.y) + 1.0, to.y)
+	_car.linear_velocity = Vector3(d.x, 0.0, d.y) * 55.0
+	_rest.step(1.0 / 60.0)
+	assert_true(_rest.is_lit(site), "lit by driving past")
+	assert_eq(_rest.last_site, site, "and the respawn point")
+	assert_eq(dmg.hp, dmg.max_hp, "fully healed")
+	assert_false(dmg.cooling_broken, "cooling mended too")
+	assert_signal_emitted_with_parameters(_rest, "healed", [site])
+	assert_signal_not_emitted(_rest, "opened", "no page without stopping")
+	_rest.set_physics_process(true)
 
 
 func test_stopping_on_a_rest_stop_offers_the_page_once_per_visit() -> void:

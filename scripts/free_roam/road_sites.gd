@@ -208,6 +208,29 @@ func outside(i: int, x: float, y: float) -> float:
 	return Vector2(x, y).distance_to(pos[i]) - radius[i]
 
 
+# The nearest site the car's path from `a` to `b` (this frame's travel) came within reach of — its
+# pad radius plus `margin` from its centre — among those `want(i)` accepts; -1 if none. Swept, so a
+# fast car can't skip over a site between two frames. A pad sits beside its road, so a margin of
+# the road's full width means driving past on either lane counts.
+func reached(a: Vector2, b: Vector2, margin: float, want: Callable) -> int:
+	var lo := Vector2(minf(a.x, b.x), minf(a.y, b.y)) - Vector2.ONE * (margin + 50.0)
+	var hi := Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + Vector2.ONE * (margin + 50.0)
+	var best := -1
+	var best_d := INF
+	for i in in_box(lo.x, lo.y, hi.x, hi.y):
+		var d := pos[i].distance_to(Geometry2D.get_closest_point_to_segment(pos[i], a, b))
+		if d <= radius[i] + margin and d < best_d and want.call(i):
+			best = i
+			best_d = d
+	return best
+
+
+# How far either side of a pad's centre the whole road beside it reaches past the pad's edge: the
+# reach margin for drive-past pickups and rest stops (see reached).
+static func road_margin(s: FreeRoamSettings) -> float:
+	return s.road_half_width_m * 2.0 + s.road_shoulder_m
+
+
 func blend_m() -> float:
 	return _blend
 

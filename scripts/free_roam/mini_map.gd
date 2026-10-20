@@ -94,9 +94,9 @@ func _ready() -> void:
 	_mat.shader = SHADER
 	_mat.set_shader_parameter("map_tex", _vp.get_texture())
 	_mat.set_shader_parameter("near_frac", near_frac)
-	# No backdrop: the roads float over the world, framed only by a faint rim.
+	# No backdrop, rim or shadow: the roads float over the world, fading out at every edge.
 	_mat.set_shader_parameter("bg_color", Color(0.0, 0.0, 0.0, 0.0))
-	_mat.set_shader_parameter("rim_color", Color(UITheme.INK, 0.45))
+	_mat.set_shader_parameter("rim_color", Color(UITheme.INK, 0.0))
 	_mat.set_shader_parameter("shadow_color", Color(0.0, 0.0, 0.0, 0.0))
 	_ground.material = _mat
 	add_child(_ground)
@@ -343,7 +343,6 @@ class RoadLayer:
 			return
 		var k := float(map._vp.size.x) / map.view_m
 		var radius := map.draw_radius()
-		var c := map._draw_centre
 		var roads := map.gather_roads(radius)
 		var driven: PackedVector2Array = roads[0]
 		var faint: PackedVector2Array = roads[1]

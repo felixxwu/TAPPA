@@ -16,8 +16,8 @@ A navigation-software style map at the top centre of the screen while driving.
   low in the frame (`minimap_car_depth`), so most of the view is road ahead.
 - **Tilted like the ground.** The flat map is shown as a plane tilted away from the viewer:
   the far edge (top) is narrower and compressed, the near edge (bottom) full size, with a soft
-  fade at the far and side edges and a faint ink rim — no dark backdrop, the roads float over
-  the world (the shader's `bg_color` / `shadow_color` are transparent). `minimap_tilt` is how
+  fade at every edge (far, near and sides) — no backdrop, rim or shadow; the roads float over
+  the world (the shader's `bg_color`, `rim_color` and `shadow_color` are transparent). `minimap_tilt` is how
   much wider the ground at the far edge is than at the near edge.
 - **Roads you've driven** (`WorldSession.has_driven` on the segment's midpoint cell, the same
   rule as the full map), in ink with a dark casing.

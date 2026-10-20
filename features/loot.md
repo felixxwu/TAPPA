@@ -62,7 +62,8 @@ left and sites showing something per ring at boot.
 - **From far away:** `SiteBeacons` keeps one beam per site for the whole world — every rest stop
   (grey, orange once lit; `GameConfig.beacon_rest_height_m`) and every piece of loot (its colour;
   `beacon_loot_height_m`), within `beacon_range_m`. Beams ignore fog and are widened with distance
-  (`beacon_width_per_m`) so they stay a few pixels wide, and fade from `beacon_alpha_near` up close
+  (`beacon_width_per_m`) so they stay a few pixels wide, fade out as they reach into the sky
+  (`shaders/beacon_beam.gdshader`), and fade from `beacon_alpha_near` up close
   to `beacon_alpha_far` at the edge of their range. Only once the car is close
   (`beacon_label_range_m`, 60 m) does a floating name over the loot say what it is
   (`LootLibrary.ground_label`: "New car", "New upgrade", "New engine", "Drivetrain kit", "Rumour"); it
@@ -70,9 +71,11 @@ left and sites showing something per ring at boot.
 
 ## The loop (`LootDirector`)
 
-- **Collect:** driving within `PICKUP_REACH_M` of a loot pad takes the item into `carried`, which
-  isn't yours yet (decision 10). The pool is re-assigned (it's gone from every site) and the HUD
-  toasts what was found.
+- **Collect:** driving past a piece of loot — at any speed, anywhere on the road beside its pad
+  (`RoadSites.reached`, swept over the step's travel; a jump of 100 m or more in one step, a
+  teleport, doesn't count) — takes the item into `carried`, which isn't yours yet (decision 10).
+  The site is spent, the pool is re-assigned (it's gone from every site) and the HUD toasts what
+  was found.
 - **Bank:** opening the rest-stop page calls `bank()`. Parts go to the shared `stash`; car titles
   become owned cars.
 - **Drop:** when the car gives up, `carried` is left at the wreck (`dropped`, marked by a red

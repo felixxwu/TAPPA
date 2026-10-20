@@ -7,10 +7,11 @@ extends Node3D
 # "New upgrade", …), so they can be found from far away and told apart up close. The ground
 # markers (crates, rest-stop posts and crowds) are TerrainStreamer's and only exist around the car;
 # these live for the whole world, one beam per site, and stay a few pixels wide however far off
-# they are (`_tick` widens them with distance). Beams ignore fog, so a beacon reads through the
-# weather. Created by LootDirector, which rebuilds the loot beams when the pool changes.
+# they are (`_tick` widens them with distance) and fading out as they reach into the sky. Beams
+# ignore fog, so a beacon reads through the weather. Created by LootDirector, which rebuilds the loot beams when the pool changes.
 
 const TICK_S := 0.2
+const BEAM_SHADER := preload("res://shaders/beacon_beam.gdshader")
 
 var streamer: TerrainStreamer
 var loot: LootDirector
@@ -76,8 +77,7 @@ func update_from(eye: Vector3) -> void:
 		var beam: Node3D = _rest_beams[i]
 		_fit(beam, eye, cfg)
 		var col := TerrainStreamer.BEACON_LIT if lit.is_valid() and lit.call(i) else TerrainStreamer.BEACON_UNLIT
-		var mat := _mat(beam)
-		mat.albedo_color = Color(col.r, col.g, col.b, mat.albedo_color.a)
+		set_beam_color(beam, Color(col.r, col.g, col.b, beam_color(beam).a))
 	for site: int in _loot_nodes:
 		var root: Node3D = _loot_nodes[site]
 		_fit(root.get_node("Beam") as Node3D, eye, cfg)
@@ -93,9 +93,9 @@ func _fit(beam: Node3D, eye: Vector3, cfg: GameConfig) -> void:
 	beam.visible = d <= cfg.beacon_range_m
 	var w := maxf(1.0, d * cfg.beacon_width_per_m)
 	beam.scale = Vector3(w, 1.0, w)
-	var mat := _mat(beam)
-	var a := lerpf(cfg.beacon_alpha_near, cfg.beacon_alpha_far, clampf(d / maxf(cfg.beacon_range_m, 1.0), 0.0, 1.0))
-	mat.albedo_color = Color(mat.albedo_color.r, mat.albedo_color.g, mat.albedo_color.b, a)
+	var c := beam_color(beam)
+	c.a = lerpf(cfg.beacon_alpha_near, cfg.beacon_alpha_far, clampf(d / maxf(cfg.beacon_range_m, 1.0), 0.0, 1.0))
+	set_beam_color(beam, c)
 
 
 func _ground(site: int) -> Vector3:
@@ -103,21 +103,22 @@ func _ground(site: int) -> Vector3:
 	return Vector3(c.x, streamer.sites.pad_h[site], c.y)
 
 
-# A thin, see-through column of light standing on the ground: a pivot at its foot (scaled wider
-# with distance by _fit) holding the cylinder, lifted by half its height.
+# A thin, see-through column of light standing on the ground, fading out towards its top
+# (shaders/beacon_beam.gdshader): a pivot at its foot (scaled wider with distance by _fit) holding
+# the cylinder, lifted by half its height.
 static func _beam(height: float, col: Color) -> Node3D:
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = 0.6
 	cyl.bottom_radius = 0.6
 	cyl.height = height
 	cyl.radial_segments = 8
-	cyl.rings = 1
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(col.r, col.g, col.b, 0.6)
-	mat.disable_fog = true
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	cyl.rings = 4
+	cyl.cap_top = false
+	cyl.cap_bottom = false
+	var mat := ShaderMaterial.new()
+	mat.shader = BEAM_SHADER
+	mat.set_shader_parameter("height", height)
+	mat.set_shader_parameter("color", Color(col.r, col.g, col.b, Config.data.beacon_alpha_near))
 	cyl.material = mat
 	var mi := MeshInstance3D.new()
 	mi.name = "Mesh"
@@ -129,8 +130,17 @@ static func _beam(height: float, col: Color) -> Node3D:
 	return pivot
 
 
-static func _mat(beam: Node3D) -> StandardMaterial3D:
-	return ((beam.get_node("Mesh") as MeshInstance3D).mesh as CylinderMesh).material as StandardMaterial3D
+static func _mat(beam: Node3D) -> ShaderMaterial:
+	return ((beam.get_node("Mesh") as MeshInstance3D).mesh as CylinderMesh).material as ShaderMaterial
+
+
+# A beam's colour (its alpha is the opacity at its foot), and setting it.
+static func beam_color(beam: Node3D) -> Color:
+	return _mat(beam).get_shader_parameter("color")
+
+
+static func set_beam_color(beam: Node3D, col: Color) -> void:
+	_mat(beam).set_shader_parameter("color", col)
 
 
 # The floating name over a piece of loot: always faces the camera, keeps its size on screen, and

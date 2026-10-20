@@ -199,9 +199,13 @@ cooling fails at half health, the engine then only heats up, overheating drains 
 the car gives up. The HUD shows a temperature gauge and a cooling warning (`features/hud.md`).
 
 `RestStops` makes the REST sites into Dark Souls bonfires:
-- **Lighting:** driving onto a rest stop's pad lights it (its beacon post turns from grey to
-  orange) and makes it the respawn point (`last_site`). Spawn is lit from the start.
-- **Stopping:** below `rest_stop_speed_kmh` for `rest_stop_hold_s` on the pad opens the rest-stop
+- **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
+  (`rest_reached` → `RoadSites.reached`, swept over the step's travel with
+  `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its beacon
+  turns from grey to orange), makes it the respawn point (`last_site`) and fully heals the car
+  (`DamageModel.repair`, cooling included; `healed`). Spawn is lit from the start. A move there by
+  travel or respawn (`move_car_to`) counts as already arrived.
+- **Stopping:** below `rest_stop_speed_kmh` for `rest_stop_hold_s` there opens the rest-stop
   page (`features/menus.md`), once per visit.
 - **Respawn:** on `gave_up` the car is moved to the last lit rest stop (`move_car_to`: stream the
   destination in with `TerrainStreamer.prefill_at`, then put the car on its road beside the pad)

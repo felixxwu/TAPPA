@@ -306,6 +306,40 @@ func test_driving_to_loot_carries_it_and_a_rest_stop_banks_it() -> void:
 	page.close()
 
 
+# Loot is picked up by driving past it at speed, anywhere on the road beside its pad: the check
+# sweeps the step's whole travel, so even a fast car on the far lane can't skip over it.
+func test_driving_past_loot_on_the_far_lane_at_speed_picks_it_up() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	loot.set_physics_process(false)
+	var sites := (scene.get_node("Terrain") as TerrainStreamer).sites
+	var s := (scene.get_node("Terrain") as TerrainStreamer).settings
+	var site := _site_with(loot, func(i: Dictionary) -> bool: return i["kind"] == "part")
+	var away := (sites.pos[site] - sites.anchor[site]).normalized()
+	var far_lane := sites.anchor[site] - away * s.road_half_width_m * 0.6
+	var d := sites.dir[site]
+	loot._last_p = far_lane - d * 15.0
+	var to := far_lane + d * 15.0
+	(scene.get_node("Car") as Node3D).global_position = Vector3(to.x, 0.0, to.y)
+	loot.step()
+	assert_true(loot.is_collected(site), "picked up in passing")
+	assert_eq(WorldSession.list("carried").size(), 1)
+
+
+func test_a_teleport_past_loot_does_not_pick_it_up() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	loot.set_physics_process(false)
+	var sites := (scene.get_node("Terrain") as TerrainStreamer).sites
+	var site := _site_with(loot, func(i: Dictionary) -> bool: return i["kind"] == "part")
+	var d := sites.dir[site]
+	loot._last_p = sites.anchor[site] - d * 400.0
+	var to := sites.anchor[site] + d * 400.0
+	(scene.get_node("Car") as Node3D).global_position = Vector3(to.x, 0.0, to.y)
+	loot.step()
+	assert_false(loot.is_collected(site), "a jump across the map isn't driving past")
+
+
 func test_a_car_the_player_owns_never_shows_on_the_ground() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
@@ -322,12 +356,12 @@ func test_loot_on_the_ground_has_a_beam_and_a_name_and_they_go_when_it_is_taken(
 	assert_not_null(marker, "a beam over the loot")
 	# Far off: a faint beam and no name. Close: a stronger beam, and the name shows.
 	var cfg: GameConfig = Config.data
-	var mat := SiteBeacons._mat(marker.get_node("Beam") as Node3D)
+	var beam := marker.get_node("Beam") as Node3D
 	var p := marker.global_position
-	loot.beacons._fit(marker.get_node("Beam") as Node3D, p + Vector3(cfg.beacon_range_m * 0.9, 0, 0), cfg)
-	var far_a := mat.albedo_color.a
-	loot.beacons._fit(marker.get_node("Beam") as Node3D, p + Vector3(5, 0, 0), cfg)
-	assert_gt(mat.albedo_color.a, far_a, "the beam is fainter the further off it is")
+	loot.beacons._fit(beam, p + Vector3(cfg.beacon_range_m * 0.9, 0, 0), cfg)
+	var far_a := SiteBeacons.beam_color(beam).a
+	loot.beacons._fit(beam, p + Vector3(5, 0, 0), cfg)
+	assert_gt(SiteBeacons.beam_color(beam).a, far_a, "the beam is fainter the further off it is")
 	var label := marker.get_node("Label") as Label3D
 	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m + 50.0, 0, 0))
 	assert_false(label.visible, "far off, the beam doesn't say what it is")

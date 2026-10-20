@@ -755,3 +755,7 @@ Numbering continues from decision 32.
   the simple touch scheme's steering zones (top 20% of the screen) — a bigger minimap means moving
   those; loot shows as a blue diamond; the full map still shows the whole island, so a short drive
   is small on it.
+- **D83. No stopping needed** (user ask): driving past loot or a rest stop, at any speed and on
+  either lane, picks the loot up / lights the stop and fully heals the car (swept check,
+  `RoadSites.reached`). Stopping at a rest stop is only for its page. Beams fade out towards their
+  tops; the minimap has no rim or edge line.

@@ -19,6 +19,8 @@ uniform float corner = 0.06;
 uniform float rim_w = 0.01;
 uniform float far_fade = 0.35;
 uniform float side_fade = 0.08;
+// The near (bottom) edge fades out too, so the map has no hard line along its bottom.
+uniform float near_fade = 0.12;
 
 // Screen (the ground frame's UV, y down) to ground (the map texture's UV).
 vec2 ground(vec2 uv) {
@@ -33,7 +35,8 @@ float box_sd(vec2 g) {
 }
 
 float edge_fade(vec2 g) {
-	return smoothstep(0.0, far_fade, g.y) * smoothstep(0.0, side_fade, g.x) * smoothstep(0.0, side_fade, 1.0 - g.x);
+	return smoothstep(0.0, far_fade, g.y) * smoothstep(0.0, near_fade, 1.0 - g.y)
+		* smoothstep(0.0, side_fade, g.x) * smoothstep(0.0, side_fade, 1.0 - g.x);
 }
 
 void fragment() {

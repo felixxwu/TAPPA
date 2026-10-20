@@ -20,13 +20,13 @@ signal recovered(items: Array)
 # What the sites show may have changed (something was picked up, dropped or lost).
 signal pool_changed
 
-const PICKUP_REACH_M := 3.0
 const DROPPED_REACH_M := 6.0
 
 @export var streamer: TerrainStreamer
 @export var car: Node3D
 
 var placement := {}  # site -> item, as the sites show it now
+var _last_p := Vector2(INF, INF)  # the car's position last step, for the swept pickup check
 var beacons: SiteBeacons
 var _dropped_node: Node3D
 var _toast: Label
@@ -131,11 +131,15 @@ func _physics_process(delta: float) -> void:
 			_toast.visible = false
 
 
+# Pick up what the car drives past — no need to stop, or even to leave the road: anywhere on the
+# road beside a loot pad counts (RoadSites.reached, swept over this step's travel).
 func step() -> void:
 	var p := Vector2(car.global_position.x, car.global_position.z)
-	var i := streamer.sites.pad_at(p.x, p.y)
-	if i >= 0 and placement.has(i) \
-			and p.distance_to(streamer.sites.pos[i]) <= streamer.sites.radius[i] + PICKUP_REACH_M:
+	var from := _last_p if _last_p.distance_to(p) < 100.0 else p  # a teleport isn't a drive past
+	_last_p = p
+	var i := streamer.sites.reached(from, p, RoadSites.road_margin(streamer.settings),
+		func(site: int) -> bool: return placement.has(site))
+	if i >= 0:
 		collect(i)
 	var d := WorldSession.dropped()
 	if not d.is_empty():
