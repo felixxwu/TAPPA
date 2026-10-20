@@ -1064,8 +1064,11 @@ func has_nitrous() -> bool:
 @export_range(100.0, 10000.0, 10.0) var beacon_range_m := 2500.0
 ## A beam is widened by this many metres per metre of distance, so it stays a few pixels wide.
 @export_range(0.0, 0.05, 0.0005) var beacon_width_per_m := 0.004
-## The floating name over a piece of loot ("New car") shows within this distance.
-@export_range(20.0, 3000.0, 10.0) var beacon_label_range_m := 400.0
+## The floating name over a piece of loot ("New car") shows only within this distance.
+@export_range(10.0, 3000.0, 5.0) var beacon_label_range_m := 60.0
+## A beam's opacity right next to it, fading to beacon_alpha_far at beacon_range_m.
+@export_range(0.0, 1.0, 0.01) var beacon_alpha_near := 0.6
+@export_range(0.0, 1.0, 0.01) var beacon_alpha_far := 0.1
 
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).

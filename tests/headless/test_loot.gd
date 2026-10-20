@@ -165,14 +165,56 @@ func test_a_ring_with_no_loot_sites_folds_into_the_nearest_ring_that_has_some() 
 	assert_eq(LootLibrary.pool_rings(PackedInt32Array([0, 0])), [[], []], "no sites anywhere: nothing shows")
 
 
-func test_an_emptied_site_stays_empty_and_the_latest_one_never_refills() -> void:
+func test_a_site_picked_from_is_spent_for_good() -> void:
 	var s := _settings()
 	var sites := _sites(s)
 	var placed := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
-	var site: int = placed.keys()[0]
-	var taken := {LootLibrary.item_key(placed[site]): true}
-	var after := LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, [site])
-	assert_false(after.has(site), "the site just emptied shows nothing, however big the pool")
+	# Spend every site but one, taking nothing: the pool is now far bigger than the free sites,
+	# and still no spent site shows anything.
+	var spent: Array = placed.keys()
+	var keep: int = spent.pop_back()
+	var after := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, spent)
+	for site: int in spent:
+		assert_false(after.has(site), "spent site %d stays empty" % site)
+	assert_true(after.has(keep), "the one free site still shows something")
+
+
+func test_a_ring_short_of_sites_moves_its_lesser_items_to_a_ring_with_spare() -> void:
+	var s := _settings()
+	var sites := _sites(s)
+	var by_ring := _loot_sites_by_ring(sites, s.ring_count)
+	var with_sites: Array = []
+	for r in s.ring_count:
+		if not (by_ring[r] as Array).is_empty():
+			with_sites.append(r)
+	if with_sites.size() < 2:
+		pass_test("this island has loot sites in only one ring")
+		return
+	var short: int = with_sites[0]
+	var spare: int = with_sites[1]
+	# Take everything except one item of each ring's own table, so the other ring has room,
+	# then spend all but one of the short ring's sites while it still holds two items.
+	var tables := LootLibrary.ring_tables(s.ring_count)
+	var taken := {}
+	for r in s.ring_count:
+		for k in (tables[r] as Array).size():
+			taken[LootLibrary.item_key(tables[r][k])] = true
+	var stay: Dictionary = tables[short][0]
+	var moved: Dictionary = tables[short][1]
+	taken.erase(LootLibrary.item_key(stay))
+	taken.erase(LootLibrary.item_key(moved))
+	var spent: Array = (by_ring[short] as Array).slice(1)
+	var placed := LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, spent)
+	var shown_in := {}
+	for site: int in placed:
+		shown_in[LootLibrary.item_key(placed[site])] = sites.ring[site]
+	assert_eq(shown_in.size(), 2, "both items still show somewhere")
+	var short_keys := []
+	for key: String in shown_in:
+		if shown_in[key] == short:
+			short_keys.append(key)
+	assert_eq(short_keys.size(), 1, "the short ring's one free site shows one item")
+	assert_true(spare in shown_in.values(), "the other went to the ring with sites to spare")
 
 
 func test_dead_ends_show_the_best_of_their_ring() -> void:
@@ -276,8 +318,21 @@ func test_loot_on_the_ground_has_a_beam_and_a_name_and_they_go_when_it_is_taken(
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
 	var site: int = loot.placement.keys()[0]
-	var marker := loot.beacons.get_node_or_null("Loot%d" % site)
+	var marker := loot.beacons.get_node_or_null("Loot%d" % site) as Node3D
 	assert_not_null(marker, "a beam over the loot")
+	# Far off: a faint beam and no name. Close: a stronger beam, and the name shows.
+	var cfg: GameConfig = Config.data
+	var mat := SiteBeacons._mat(marker.get_node("Beam") as Node3D)
+	var p := marker.global_position
+	loot.beacons._fit(marker.get_node("Beam") as Node3D, p + Vector3(cfg.beacon_range_m * 0.9, 0, 0), cfg)
+	var far_a := mat.albedo_color.a
+	loot.beacons._fit(marker.get_node("Beam") as Node3D, p + Vector3(5, 0, 0), cfg)
+	assert_gt(mat.albedo_color.a, far_a, "the beam is fainter the further off it is")
+	var label := marker.get_node("Label") as Label3D
+	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m + 50.0, 0, 0))
+	assert_false(label.visible, "far off, the beam doesn't say what it is")
+	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m * 0.5, 0, 0))
+	assert_true(label.visible, "close up, it does")
 	assert_eq((marker.get_node("Label") as Label3D).text, LootLibrary.ground_label(loot.placement[site]).to_upper())
 	loot.collect(site)
 	await get_tree().process_frame

@@ -730,9 +730,9 @@ Numbering continues from decision 32.
   once owned or picked up, and a biome's pull-ins empty once its things are found
   (features/loot.md → "The pool"). Calls I made: **(a)** with more sites than items an item shows at
   several sites at once (every one empties when it's taken) rather than leaving sites blank;
-  **(b)** an emptied site stays empty unless its ring's pool outgrows its free sites, then the
-  oldest refill; **(c)** a lost drop's items go back into the pool rather than vanishing; **(d)**
-  loot pull-ins every 150 m of road (was 400). **REVIEW (b) and (a).**
+  **(b)** a site you pick something up from is spent for good (user ask, 2026-10-20); a ring with
+  more items than free sites moves its lesser items to the nearest ring with sites to spare; **(c)** a lost drop's items go back into the pool rather than vanishing; **(d)**
+  loot pull-ins every 150 m of road (was 400). **REVIEW (a).**
 - **D78. REVIEW — the road network's size varies a lot by world seed.** The default island reaches
   all four rings, but e.g. seed 7 grows only 22 nodes / 5 km of road and never leaves rings 0–1.
   A ring with no loot sites folds its loot into the nearest ring that has some (D77), so nothing is
@@ -740,8 +740,8 @@ Numbering continues from decision 32.
   minimum-size rule in `RoadNetwork._grow` (re-seed or keep growing until the network reaches the
   outer ring) — not done, it changes world generation.
 - **D79. Beacons.** Every rest stop and piece of loot has a tall beam visible from far away
-  (`SiteBeacons`, `GameConfig.beacon_*`), and loot has a floating name ("New car", "New upgrade",
-  …) at a fixed screen size that shows through hills.
+  (`SiteBeacons`, `GameConfig.beacon_*`), fainter the further off it is; loot has a floating name
+  ("New car", "New upgrade", …) that only shows within 60 m, at a fixed screen size, through hills.
 - **D80. No menu paints an opaque backdrop.** `UITheme.MODAL_DIM` is 0.7 alpha (was 0.96), and the
   plain pages (Tune car, Settings, Map) have see-through body boxes. **REVIEW — the title screen
   still has a solid background:** there is no world behind it yet. Options: render the island

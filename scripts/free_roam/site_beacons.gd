@@ -2,8 +2,9 @@ class_name SiteBeacons
 extends Node3D
 # Docs: features/loot.md, features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
-# The tall beams of light over every rest stop and every piece of loot, and the floating name over
-# each piece of loot ("New car", "New upgrade", …), so they can be found from far away. The ground
+# The tall beams of light over every rest stop and every piece of loot, fainter the further off
+# they are, and — once the car is close — the floating name over each piece of loot ("New car",
+# "New upgrade", …), so they can be found from far away and told apart up close. The ground
 # markers (crates, rest-stop posts and crowds) are TerrainStreamer's and only exist around the car;
 # these live for the whole world, one beam per site, and stay a few pixels wide however far off
 # they are (`_tick` widens them with distance). Beams ignore fog, so a beacon reads through the
@@ -64,7 +65,11 @@ func _process(delta: float) -> void:
 # Show what's in range, colour lit rest stops, and keep every beam a few pixels wide.
 func _tick() -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
-	var eye := cam.global_position if cam != null else Vector3.ZERO
+	update_from(cam.global_position if cam != null else Vector3.ZERO)
+
+
+# Everything _tick does, seen from `eye` (public so a test can stand the viewer anywhere).
+func update_from(eye: Vector3) -> void:
 	var cfg: GameConfig = Config.data
 	var lit: Callable = streamer.rest_lit_query if streamer != null else Callable()
 	for i: int in _rest_beams:
@@ -80,13 +85,17 @@ func _tick() -> void:
 		label.visible = Vector2(eye.x, eye.z).distance_to(streamer.sites.pos[site]) <= cfg.beacon_label_range_m
 
 
-# Hide a beam past beacon_range_m, and widen it with distance so it stays visible.
+# Hide a beam past beacon_range_m, widen it with distance so it stays visible, and fade it from
+# beacon_alpha_near up close to beacon_alpha_far at the edge of its range.
 func _fit(beam: Node3D, eye: Vector3, cfg: GameConfig) -> void:
 	var p := beam.global_position if beam.is_inside_tree() else beam.position
 	var d := Vector2(eye.x, eye.z).distance_to(Vector2(p.x, p.z))
 	beam.visible = d <= cfg.beacon_range_m
 	var w := maxf(1.0, d * cfg.beacon_width_per_m)
 	beam.scale = Vector3(w, 1.0, w)
+	var mat := _mat(beam)
+	var a := lerpf(cfg.beacon_alpha_near, cfg.beacon_alpha_far, clampf(d / maxf(cfg.beacon_range_m, 1.0), 0.0, 1.0))
+	mat.albedo_color = Color(mat.albedo_color.r, mat.albedo_color.g, mat.albedo_color.b, a)
 
 
 func _ground(site: int) -> Vector3:

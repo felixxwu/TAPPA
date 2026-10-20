@@ -41,10 +41,11 @@ what the player holds changes (a pickup, a drop, a lost drop), emitting `pool_ch
 - **Sites show the pool in order.** Dead ends first, with the best items (cars, engines, rumours,
   kits, parts — decision 30), then loot slots, each group in a seeded order; site k shows pool item
   k mod pool size. So with more sites than items each item shows at more than one site (all of them
-  empty out together when it's taken), and with more items than sites the rest wait their turn.
-- **Emptied sites** (`collected`, oldest first) stay empty — unless the ring's pool is bigger than
-  its free sites, when the oldest emptied sites fill again. The latest one never does (the car is
-  still on it).
+  empty out together when it's taken).
+- **A site you pick something up from is spent** (`collected`): nothing ever shows there again.
+- **A ring with more items than free sites** keeps its best and moves the rest to the nearest ring
+  with sites to spare (inward first). If no ring has any to spare, those items show nowhere — so
+  sites are kept plentiful.
 - **A ring with no loot sites** (the road network never reached it) folds its table into the
   nearest ring that has some (`pool_rings`).
 - **A lost drop** (giving up again before fetching the first) puts its items back in the pool.
@@ -61,9 +62,11 @@ left and sites showing something per ring at boot.
 - **From far away:** `SiteBeacons` keeps one beam per site for the whole world — every rest stop
   (grey, orange once lit; `GameConfig.beacon_rest_height_m`) and every piece of loot (its colour;
   `beacon_loot_height_m`), within `beacon_range_m`. Beams ignore fog and are widened with distance
-  (`beacon_width_per_m`) so they stay a few pixels wide. Over each piece of loot a floating name
-  (`LootLibrary.ground_label`: "New car", "New upgrade", "New engine", "Drivetrain kit", "Rumour")
-  faces the camera at a fixed screen size and shows through hills, within `beacon_label_range_m`.
+  (`beacon_width_per_m`) so they stay a few pixels wide, and fade from `beacon_alpha_near` up close
+  to `beacon_alpha_far` at the edge of their range. Only once the car is close
+  (`beacon_label_range_m`, 60 m) does a floating name over the loot say what it is
+  (`LootLibrary.ground_label`: "New car", "New upgrade", "New engine", "Drivetrain kit", "Rumour"); it
+  faces the camera at a fixed screen size and shows through hills.
 
 ## The loop (`LootDirector`)
 

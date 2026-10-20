@@ -93,10 +93,12 @@ static func _rank(item: Dictionary) -> int:
 # (owned, fitted, in the stash, carried, or lying in the dropped pile) — then it is gone from every
 # site at once. A ring's sites show its remaining pool: dead ends first with the best items, then
 # loot slots, in a seeded order; with more sites than items each item shows at several sites (all
-# of them empty out together when it's taken), and with more items than sites the rest wait their
-# turn. A site the player has emptied stays empty — unless the ring's pool is bigger than its free
-# sites, when the oldest emptied sites (never the latest) fill again. A ring with no loot sites at
-# all (the road network never reached it) folds its table into the nearest ring that has some.
+# of them empty out together when it's taken). A site the player has emptied is SPENT: nothing
+# ever shows there again. A ring with more items than free sites keeps its best and moves the rest
+# to the nearest ring with sites to spare (if no ring has any, those items show nowhere — the world
+# has more things left than free sites; loot_slot_spacing_m keeps sites plentiful),
+# and a ring with no loot sites at all (the road network never reached it) folds its table into
+# the nearest ring that has some.
 
 # For each ring, the rings whose tables its sites carry. `site_counts[r]` = loot sites in ring r.
 static func pool_rings(site_counts: PackedInt32Array) -> Array:
@@ -129,7 +131,7 @@ static func remaining(table: Array, taken: Dictionary) -> Array:
 	return ranked
 
 
-# What every loot site shows now: {site: item}. `used` is the emptied sites, oldest first.
+# What every loot site shows now: {site: item}. `used` is the spent (emptied) sites.
 static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Dictionary, used: Array) -> Dictionary:
 	var tables := ring_tables(ring_count)
 	var order: Array = []  # per ring: its loot sites, dead ends first, each group seeded
@@ -152,30 +154,41 @@ static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Di
 	for u in used:
 		used_ids.append(int(u))
 	var hosts := pool_rings(counts)
-	var out := {}
+	# Each ring's free sites (never emptied) and its remaining pool, best first.
+	var free: Array = []
+	var pools: Array = []
 	for r in ring_count:
+		var f: Array = []
+		for site: int in order[r]:
+			if not used_ids.has(site):
+				f.append(site)
+		free.append(f)
 		var table: Array = []
 		for t: int in hosts[r]:
 			table.append_array(tables[t])
-		var pool := remaining(table, taken)
+		pools.append(remaining(table, taken))
+	# A ring with more items than free sites keeps its best ones and moves the rest to the nearest
+	# ring with sites to spare (inward first), so nothing is ever stuck with nowhere to show.
+	var overflow: Array = []  # [item, from ring]
+	for r in ring_count:
+		var pool: Array = pools[r]
+		while pool.size() > (free[r] as Array).size():
+			overflow.append([pool.pop_back(), r])
+	for o: Array in overflow:
+		var host := -1
+		for d in range(1, ring_count):
+			for c in [int(o[1]) - d, int(o[1]) + d]:
+				if host < 0 and c >= 0 and c < ring_count and (free[c] as Array).size() > (pools[c] as Array).size():
+					host = c
+		if host >= 0:
+			(pools[host] as Array).append(o[0])
+	var out := {}
+	for r in ring_count:
+		var pool: Array = pools[r]
 		if pool.is_empty():
 			continue
-		var ring_sites: Array = order[r]
-		var emptied: Array = []  # this ring's emptied sites, oldest first
-		for u: int in used_ids:
-			if ring_sites.has(u) and not emptied.has(u):
-				emptied.append(u)
-		var refill := {}
-		var free_count := ring_sites.size() - emptied.size()
-		for k in maxi(emptied.size() - 1, 0):  # never the latest: the car is still on it
-			if free_count >= pool.size():
-				break
-			refill[emptied[k]] = true
-			free_count += 1
 		var j := 0
-		for site: int in ring_sites:
-			if emptied.has(site) and not refill.has(site):
-				continue
+		for site: int in free[r]:
 			out[site] = pool[j % pool.size()]
 			j += 1
 	return out
