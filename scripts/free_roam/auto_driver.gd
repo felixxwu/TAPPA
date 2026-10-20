@@ -92,6 +92,10 @@ func report() -> Dictionary:
 		"frames": streamer.stat_frames - _frames_at_start,
 		"overruns": streamer.stat_overruns - _overruns_at_start,
 		"worst_ms": streamer.stat_worst_us / 1000.0,
+		"overrun_by": streamer.stat_overrun_by,
+		"overshoot_ms": streamer.stat_overshoot_us / 1000.0,
+		"spikes": streamer.stat_spikes,
+		"spike_by": streamer.stat_spike_by,
 	}
 
 

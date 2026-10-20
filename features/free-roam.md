@@ -67,6 +67,13 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 | `ATTACH` | create and add the `MeshInstance3D` | atomic, measured |
 | `COLLIDE` | `HeightMapShape3D` + `StaticBody3D` | atomic, measured |
 
+- **Sample-at-a-time stages** (heights, arrays, plant) time every unit and keep a decaying peak
+  of its cost (`_peak_us`). They stop before a unit the peak says won't fit, and **a stage that
+  stops short ends the frame** (`_step` returns false). Before 2026-10-20 it returned "carry
+  on", and the queue spun on the same job until the deadline. That burned the whole budget and
+  put most frames a microsecond over it.
+- **Spawns are estimated per species and size** (`_spawn_kind`: `spawn_tree_32` etc.), not as
+  one average, so a big tree field no longer overruns on a small field's estimate.
 - **Atomic units** keep a moving average of their own cost (`_est`), and `_atomic` refuses to
   start one that would not fit in what is left of the frame. The first unit of a frame always
   runs, so a unit dearer than the whole budget still progresses and shows up as an overrun on
@@ -87,6 +94,11 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   priority order: collision, then near meshes, then far meshes, nearest first. Chunks beyond
   the horizon are dropped.
 - **Boot:** `prefill()` builds the planned set with no budget before the car is released.
+  `warm_up_materials` then draws a speck of every ring's ground material in front of the camera
+  for a few frames, so each shader is compiled behind the boot rather than when a new biome's
+  first chunk appears.
+- **Stats** (debug readout and the auto driver's report): overruns, the total overshoot, and
+  **spikes** (frames over 1.5× budget), each broken down by the kind of unit that ran last.
 - **Height queries** (`height_at`, used by the chase camera) are answered from the loaded
   chunk under the point, interpolated across the same two triangles per cell as the mesh,
   so they are cheap and match the drawn surface. Only unloaded ground falls back to the full
@@ -236,8 +248,9 @@ and still brake to every bend's limit, `sqrt(LATERAL_ACCEL / curvature)`, within
 
 Run it from the command line to drive 3 km of the real island and print the report:
 `godot --headless --path . --fixed-fps 60 -- --auto-drive`. On the default island
-(2026-10-20, container CPU) it finished the 3 km with 0 holes at about 50 km/h, with about
-36% of frames over the 1 ms budget (worst 3 ms). That's stage 2 work.
+(2026-10-20, container CPU, after the stage 2 fixes) it finished the 3 km with 0 holes at about
+50 km/h, with 2.2% of frames over the 1 ms budget (40 ms of overshoot in total) and 12 spikes
+over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames were over.
 
 ## Not in the prototype yet
 

@@ -31,6 +31,7 @@ func _ready() -> void:
 	_car.reset_to(spawn)
 	_water.position.y = _streamer.settings.water_level_m
 	_pause.set_input_enabled(true)
+	_streamer.warm_up_materials($ChaseCamera)
 	if "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
 
@@ -67,7 +68,7 @@ func _update_stats() -> void:
 	var s := _streamer
 	_stats.text = "%d km/h\n" % roundi(_car.linear_velocity.length() * 3.6) \
 		+ "terrain  %.2f ms this frame (budget %.2f)\n" % [s.stat_used_us / 1000.0, s.settings.budget_us / 1000.0] \
-		+ "worst    %.2f ms   over budget %d / %d frames\n" % [s.stat_worst_us / 1000.0, s.stat_overruns, s.stat_frames] \
+		+ "worst    %.2f ms   over budget %d / %d frames   spikes %d\n" % [s.stat_worst_us / 1000.0, s.stat_overruns, s.stat_frames, s.stat_spikes] \
 		+ "queue    %d jobs\n" % s.queued() \
 		+ "chunks   %d near  %d far  %d collision\n" % [counts.x, counts.y, counts.z] \
 		+ "sample   %.1f µs\n" % s.stat_us_per_sample \

@@ -123,3 +123,25 @@ func test_a_chunk_is_drawn_with_its_rings_ground_material() -> void:
 	var mat := cs.near_mesh.material_override as ShaderMaterial
 	assert_eq(st.terrain.ring_index(32.0, 32.0), 0)
 	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path, ICY["grass_texture"])
+
+
+func test_every_ring_material_is_drawn_once_at_boot_and_cleaned_up() -> void:
+	var s := _settings()
+	var st := TerrainStreamer.new()
+	st.settings = s
+	var scene: Node = load("res://free_roam.tscn").instantiate()
+	st.material = scene.get_node("Terrain").material
+	scene.free()
+	add_child_autofree(st)
+	var cam := Camera3D.new()
+	add_child_autofree(cam)
+	st.warm_up_materials(cam, 2)
+	var drawn := []
+	for c in cam.get_children():
+		drawn.append((c as MeshInstance3D).material_override)
+	assert_eq(drawn.size(), s.ring_count)
+	for m in st.ring_materials():
+		assert_true(m in drawn)
+	for i in 4:
+		await get_tree().process_frame
+	assert_eq(cam.get_child_count(), 0, "the specks are gone after the warm-up")

@@ -438,8 +438,9 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    - a list of dead-end nodes, for the payoffs (decision 30);
    - loot site pull-in slots along roads, so stage 7 has somewhere to put things.
    Road character, camber, crests and edges are settled as "no change" (decisions 28–29).
-2. **Background chunk building — REPLACED by the budget scheduler.** It is now **performance
-   hardening**: measure on a real mid-range Android phone and on a web export
+2. **Background chunk building — REPLACED by the budget scheduler. Headless hardening DONE
+   2026-10-20** (spin bug, peak-based stops, spawn estimates, shader warm-up). **Still owed: a
+   real phone and a web export.** It is now **performance hardening**: measure on a real mid-range Android phone and on a web export
    (`todo/mobile-web-performance.md`), warm up shaders at boot, and move the height
    maths to GDExtension or threads only if those measurements say so. It can run
    alongside stages 3–4 rather than strictly between them.
@@ -626,3 +627,11 @@ Numbering continues from decision 32.
   the albedo tint only); re-lighting foliage that was already spawned when the weather changes.
 - **D48. The stage 4 "Opus planning pass" was done inline.** This session already runs on Opus,
   so a planning subagent would have been the same model re-reading the same context.
+- **D49. Found and fixed a streaming bug:** a stage that ran out of frame told the queue to
+  carry on, so the queue spun until the deadline. Fixing it, plus peak-based stop rules and
+  per-size spawn estimates, took over-budget frames on the 3 km auto drive from 36% to 2.2%.
+  The rest are mostly a single sample's worth of overshoot.
+- **D50. REVIEW — no device measurements.** I couldn't run on a phone or a web export here.
+  Headless desktop numbers: about 29 µs per height sample and a 1.1 s boot prefill. GDExtension
+  or threads stay unneeded until a device says otherwise (`todo/mobile-web-performance.md`).
+  Boot shader warm-up covers the ring ground materials only, not foliage or weather particles.

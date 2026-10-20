@@ -485,3 +485,14 @@ func test_a_chunk_with_bushes_can_be_brushed_by_the_car() -> void:
 			assert_eq(cs.foliage.get_node("BushInteraction")._car, st.focus, "the bush field watches the car")
 			return
 	pending("no near chunk on this island grew bushes")
+
+
+# A sample-at-a-time stage that can't fit its next sample ends the frame there. It used to report
+# "carry on", and the queue spun on it until the deadline, burning the whole budget for nothing.
+func test_a_stage_that_runs_out_of_frame_ends_the_frame_instead_of_spinning() -> void:
+	var st := _streamer(_settings())
+	st._plan()
+	st._peak_us["heights"] = 1.0e9  # no sample will ever look as if it fits
+	var start := Time.get_ticks_usec()
+	st._run_queue(start + 200_000)
+	assert_lt(Time.get_ticks_usec() - start, 100_000, "returned long before the 200 ms deadline")

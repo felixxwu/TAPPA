@@ -39,6 +39,18 @@ var stat_overruns := 0
 var stat_frames := 0
 var stat_us_per_sample := 0.0
 var stat_build_ms := 0.0
+# Over-budget frames by the kind of unit that ran last in them, and the total overshoot (µs).
+var stat_overrun_by := {}
+var stat_overshoot_us := 0
+# Frames more than half as long again as the budget: real hitches rather than a sample's worth of
+# overshoot, by the kind of unit that ran last.
+var stat_spikes := 0
+var stat_spike_by := {}
+var _last_kind := ""
+# A decaying peak of the cost of one unit in the sample-at-a-time stages (heights, arrays,
+# plant), so the stop rule allows for the dear ones rather than the average.
+var _peak_us := {"heights": 40.0, "arrays": 10.0, "plant": 40.0}
+const PEAK_DECAY := 0.995
 
 var _chunks := {}  # Vector2i -> ChunkState
 var _queue: Array[ChunkJob] = []
@@ -97,6 +109,7 @@ class ChunkJob:
 	var plant_kind := PackedInt32Array()
 	var kept := [PackedVector2Array(), PackedVector2Array(), PackedVector2Array()]  # by Plant
 	var spawns: Array[Callable] = []
+	var spawn_kinds := PackedStringArray()  # each spawn's cost-estimate key (see _spawn_kind)
 
 
 func _ready() -> void:
@@ -225,6 +238,11 @@ func _process(delta: float) -> void:
 	stat_worst_us = maxi(stat_worst_us, used)
 	if used > settings.budget_us:
 		stat_overruns += 1
+		stat_overshoot_us += used - settings.budget_us
+		stat_overrun_by[_last_kind] = int(stat_overrun_by.get(_last_kind, 0)) + 1
+		if used > settings.budget_us * 3 / 2:
+			stat_spikes += 1
+			stat_spike_by[_last_kind] = int(stat_spike_by.get(_last_kind, 0)) + 1
 
 
 # Build everything the planner wants with no budget: used once at boot, behind the spawn.
@@ -232,6 +250,29 @@ func prefill() -> void:
 	_plan()
 	var start := Time.get_ticks_usec()
 	_run_queue(start + 60_000_000)
+
+
+# Draw a speck of every ring's ground material in front of `camera` for a few frames, so each
+# one's shader pipeline is compiled behind the boot load rather than in the first frame a new
+# biome's chunk appears (a GPU stall the frame budget can't see).
+func warm_up_materials(camera: Camera3D, frames := 3) -> void:
+	if camera == null:
+		return
+	var specks: Array[MeshInstance3D] = []
+	for m in _ring_materials:
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.01, 0.01)
+		var mi := MeshInstance3D.new()
+		mi.mesh = quad
+		mi.material_override = m
+		camera.add_child(mi)
+		mi.position = Vector3(0.0, 0.0, -0.5)
+		specks.append(mi)
+	for i in frames:
+		await get_tree().process_frame
+	for mi in specks:
+		if is_instance_valid(mi):
+			mi.queue_free()
 
 
 func queued() -> int:
@@ -275,12 +316,14 @@ func _step(job: ChunkJob, deadline: int) -> bool:
 			Stage.PREP:
 				if not _atomic("prep", deadline, _prep.bind(job)):
 					return false
+			# A sample-at-a-time stage that stops short has run out of frame: report it, so the
+			# queue stops too (returning true here spun the queue until the deadline).
 			Stage.HEIGHTS:
 				if not _heights(job, deadline):
-					return true
+					return false
 			Stage.ARRAYS:
 				if not _arrays(job, deadline):
-					return true
+					return false
 			Stage.UPLOAD:
 				if not _atomic("upload_%d" % job.n, deadline, _upload.bind(job)):
 					return false
@@ -292,9 +335,10 @@ func _step(job: ChunkJob, deadline: int) -> bool:
 					return false
 			Stage.PLANT:
 				if not _plant(job, deadline):
-					return true
+					return false
 			Stage.SPAWN:
-				if not _atomic("spawn", deadline, _spawn_next.bind(job)):
+				var sk := job.spawn_kinds[job.cursor] if job.cursor < job.spawn_kinds.size() else "spawn"
+				if not _atomic(sk, deadline, _spawn_next.bind(job)):
 					return false
 	return true
 
@@ -307,6 +351,7 @@ func _atomic(kind: String, deadline: int, work: Callable) -> bool:
 	var est: float = _est.get(kind, 300.0)
 	if _ran_this_frame and now + est > deadline:
 		return false
+	_last_kind = kind
 	work.call()
 	_est[kind] = lerpf(est, float(Time.get_ticks_usec() - now), 0.25)
 	_ran_this_frame = true
@@ -349,9 +394,12 @@ func _heights(job: ChunkJob, deadline: int) -> bool:
 	var oy := job.coord.y * settings.chunk_m
 	var t0 := Time.get_ticks_usec()
 	var done := 0
+	_last_kind = "heights"
+	var peak: float = _peak_us["heights"]
+	var t_prev := t0
 	while job.cursor < total:
-		# Never start a sample that would not fit, judged by the measured cost per sample.
-		if (_ran_this_frame or done > 0) and Time.get_ticks_usec() + stat_us_per_sample * 1.5 >= deadline:
+		# Never start a sample that would not fit, judged by the dearest recent sample.
+		if (_ran_this_frame or done > 0) and t_prev + peak >= deadline:
 			break
 		var gx := job.cursor % m - job.halo
 		@warning_ignore("integer_division")
@@ -361,6 +409,10 @@ func _heights(job: ChunkJob, deadline: int) -> bool:
 			job.road_d[gz * job.n + gx] = minf(terrain.last_road_d, 1.0e4)  # finite, so it interpolates
 		job.cursor += 1
 		done += 1
+		var t_now := Time.get_ticks_usec()
+		peak = maxf(float(t_now - t_prev), peak * PEAK_DECAY)
+		t_prev = t_now
+	_peak_us["heights"] = peak
 	_ran_this_frame = _ran_this_frame or done > 0
 	if done > 0:
 		stat_us_per_sample = lerpf(stat_us_per_sample, float(Time.get_ticks_usec() - t0) / done, 0.1)
@@ -389,9 +441,17 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 	var ox := job.coord.x * settings.chunk_m
 	var oy := job.coord.y * settings.chunk_m
 	var done := 0
+	_last_kind = "arrays"
+	var peak: float = _peak_us["arrays"]
+	var t_prev := Time.get_ticks_usec()
 	while job.cursor < n * n:
-		if (_ran_this_frame or done > 0) and done % CHECK_EVERY == 0 and Time.get_ticks_usec() + 20 >= deadline:
-			break
+		if done % CHECK_EVERY == 0:
+			var t_now := Time.get_ticks_usec()
+			if done > 0:
+				peak = maxf(float(t_now - t_prev), peak * PEAK_DECAY)
+			t_prev = t_now
+			if (_ran_this_frame or done > 0) and t_now + peak >= deadline:
+				break
 		var i := job.cursor
 		var gx := i % n
 		@warning_ignore("integer_division")
@@ -416,6 +476,7 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		job.uvs[i] = Vector2(px, pz) * UV_PER_M
 		job.cursor += 1
 		done += 1
+	_peak_us["arrays"] = peak
 	_ran_this_frame = _ran_this_frame or done > 0
 	if job.cursor < n * n:
 		return false
@@ -538,8 +599,11 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 	var road := settings.road_half_width_m + settings.road_shoulder_m + cfg.tree_road_margin_m
 	var radius := [0.5, TreeMeshField.xz_radius(Foliage.bush_mesh(), cfg.bush_height_m), _widest_rock()]
 	var done := 0
+	_last_kind = "plant"
+	var peak: float = _peak_us["plant"]
+	var t_prev := Time.get_ticks_usec()
 	while job.cursor < job.plant_pts.size():
-		if (_ran_this_frame or done > 0) and done % CHECK_EVERY == 0 and Time.get_ticks_usec() + 60 >= deadline:
+		if (_ran_this_frame or done > 0) and t_prev + peak >= deadline:
 			break
 		var p := job.plant_pts[job.cursor]
 		var kind := job.plant_kind[job.cursor]
@@ -549,6 +613,10 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 			var kept: PackedVector2Array = job.kept[kind]  # a copy: packed arrays are values
 			kept.append(p)
 			job.kept[kind] = kept
+		var t_now := Time.get_ticks_usec()
+		peak = maxf(float(t_now - t_prev), peak * PEAK_DECAY)
+		t_prev = t_now
+	_peak_us["plant"] = peak
 	_ran_this_frame = _ran_this_frame or done > 0
 	if job.cursor < job.plant_pts.size():
 		return false
@@ -609,12 +677,12 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 			var pts: PackedVector2Array = groups[i]
 			var entry: Dictionary = mix[i]
 			if not pts.is_empty():
-				job.spawns.append(func(parent: Node3D) -> void:
+				_add_spawn(job, _spawn_kind("tree", pts.size()), func(parent: Node3D) -> void:
 					Foliage.spawn_trees(parent, pts, self, true, dist, fade, load(entry["texture"]),
 						String(entry.get("profile", "home")) == "region", entry.get("size_scale", Vector2.ONE)))
 	var bushes: PackedVector2Array = job.kept[Plant.BUSH]
 	if not bushes.is_empty():
-		job.spawns.append(func(parent: Node3D) -> void:
+		_add_spawn(job, _spawn_kind("bush", bushes.size()), func(parent: Node3D) -> void:
 			Foliage.spawn_bushes(parent, bushes, self, dist, fade)
 			# Bushes have no collider: a proximity field makes brushing one cost HP and drag,
 			# exactly as on the stage (world.gd._build_foliage).
@@ -638,7 +706,7 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 		for i in Foliage.ROCK_SCENES.size():
 			var pts: PackedVector2Array = groups[i]
 			if not pts.is_empty():
-				job.spawns.append(func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, self, i, true, dist, fade))
+				_add_spawn(job, _spawn_kind("rock", pts.size()), func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, self, i, true, dist, fade))
 	_queue_site_markers(job)
 	_queue_barriers(job)
 
@@ -654,7 +722,7 @@ func _queue_barriers(job: ChunkJob) -> void:
 	var layout := barriers.in_chunk(job.coord)
 	if layout.is_empty():
 		return
-	job.spawns.append(func(parent: Node3D) -> void:
+	_add_spawn(job, _spawn_kind("barrier", layout.size()), func(parent: Node3D) -> void:
 		var field := BarrierField.new()
 		field.name = "Barriers"
 		parent.add_child(field)
@@ -674,7 +742,7 @@ func _queue_site_markers(job: ChunkJob) -> void:
 			mine.append(i)
 	if mine.is_empty():
 		return
-	job.spawns.append(func(parent: Node3D) -> void:
+	_add_spawn(job, "spawn_markers", func(parent: Node3D) -> void:
 		for i in mine:
 			parent.add_child(_site_marker(i)))
 
@@ -697,6 +765,17 @@ func _site_marker(i: int) -> MeshInstance3D:
 	var c := sites.pos[i]
 	mi.position = Vector3(c.x, sites.pad_h[i] + look[1] * 0.5, c.y)
 	return mi
+
+
+func _add_spawn(job: ChunkJob, kind: String, work: Callable) -> void:
+	job.spawns.append(work)
+	job.spawn_kinds.append(kind)
+
+
+# Spawns are measured per species and per size: a field of 40 trees costs far more than one of 4,
+# and a single shared estimate is how big fields used to overrun the frame.
+static func _spawn_kind(species: String, count: int) -> String:
+	return "spawn_%s_%d" % [species, nearest_po2(maxi(count, 1))]
 
 
 func _spawn_next(job: ChunkJob) -> void:
