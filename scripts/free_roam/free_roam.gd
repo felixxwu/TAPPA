@@ -47,7 +47,8 @@ func _ready() -> void:
 		var idx := maxi(0, CarLibrary.index_of(_streamer.settings.car_id))
 		WorldSession.new_world(_streamer.settings.world_seed, String(CarLibrary.all()[idx]["id"]))
 	owned = WorldSession.active_car()
-	_car.apply_owned(owned)
+	# Fitted parts reach the car only through the fielding funnel's own keys (LootLibrary.fielded).
+	_car.apply_owned(LootLibrary.fielded(owned))
 	# The free-roam damage chain: cooling failure, overheating, and giving up at 0 HP.
 	_car.damage.thermal = true
 	_car.damage.repair(Config.data)
@@ -57,8 +58,10 @@ func _ready() -> void:
 	_streamer.rest_lit_query = _rest_stops.is_lit
 	_rest_stops.lit.connect(WorldSession.light)
 	_rest_stops.respawn_point_changed.connect(WorldSession.set_last_site)
-	_rest_stops.respawned.connect(func(_site: int, _wreck: Vector3) -> void:
+	_rest_stops.respawned.connect(func(_site: int, wreck: Vector3) -> void:
+		$LootDirector.drop_at(wreck)
 		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP))
+	_rest_page.car_changed.connect(_reload_car)
 	_rest_page.owned = owned
 	_rest_stops.opened.connect(_rest_page.open)
 	$BiomeDirector.drive_time = WorldSession.drive_time()
@@ -89,6 +92,14 @@ func _ready() -> void:
 	_streamer.warm_up_materials($ChaseCamera)
 	if "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
+
+
+# Parts or the active car changed at a rest stop: save and reload the scene, so the car is fielded
+# afresh through the full pipeline (re-staging a live body is what Car.apply_owned must never do).
+# The reload is the rest stop's one acceptable load.
+func _reload_car() -> void:
+	save_world()
+	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
 
 
 # The pause menu's Map / Stats rows: the page covers the frozen game and hands back on Back.

@@ -476,7 +476,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    title → world (replacing the direct `run/main_scene` boot), the map page. The map is
    cheap now because the whole network is known at boot: draw it and mask it to driven
    roads.
-7. **Loot — unchanged.** Pickups, carried / stash / garage, the dropped stash, part
+7. **Loot — DONE 2026-10-20** (`features/loot.md`). Pickups, carried / stash / garage, the dropped stash, part
    fitting, car titles, starter choice, rumours and the journal, and **biome loot tables
    with the catalogue-to-biome pacing pass**. That pass then fixes the island and ring
    sizes. A bigger island loops back to stage 1 (build cost) and to the floating-origin
@@ -667,3 +667,20 @@ Numbering continues from decision 32.
   to use with a gamepad), plus a Map button.
 - **D61. Stats in free roam:** distance driven, rest stops lit and times the car gave up. Two new
   `LifetimeStats` ids; the run-era ones go in stage 8.
+- **D62. Parts are the former boosts, found at level = ring**, plus the four swap-tier engines and
+  the three drivetrain kits. A car takes one of each part id, one engine and one kit (a new one
+  swaps with the fitted one), and no kit for its own layout. Parts reach the car only through
+  the funnel keys (`LootLibrary.fielded`).
+- **D63. A rumour is read on pickup**, not carried and banked, because knowledge can't be dropped
+  at a wreck. Ring 0's loot is known from the start.
+- **D64. Changing parts or car reloads the scene at the rest stop** (about 1–2 s), so the car is
+  fielded through the full `apply_owned` path rather than re-staged live, which `car.gd` warns
+  against.
+- **D65. A car title for a model you already own still grants a second car.** Harmless, and
+  simpler than a special case.
+- **D66. REVIEW — the pacing pass.** The island stays at 5 km radius with 4 rings. That gives 12–14
+  finds per ring; ring 0's 12 sites are exactly full, and the outer rings have about twice as many
+  sites as items, so many slots are empty. Levers: `loot_slot_spacing_m`, or more items (e.g. two
+  levels of each part per ring).
+- **D67. Loot looks like a coloured crate under a light beam, by kind.** A dead end with no item
+  left is a "lookout" with nothing on it (decision 30's third option). The HUD toasts each find.

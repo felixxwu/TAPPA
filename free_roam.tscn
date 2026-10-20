@@ -21,6 +21,7 @@
 [ext_resource type="Script" path="res://scripts/free_roam/rest_stops.gd" id="30_rest"]
 [ext_resource type="Script" path="res://scripts/free_roam/rest_stop_page.gd" id="31_restpage"]
 [ext_resource type="Script" path="res://scripts/free_roam/world_pages.gd" id="32_pages"]
+[ext_resource type="Script" path="res://scripts/free_roam/loot_director.gd" id="33_loot"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("8_sky")
@@ -290,8 +291,14 @@ streamer = NodePath("../Terrain")
 car = NodePath("../Car")
 pause_menu = NodePath("../PauseMenu")
 
-[node name="RestStopPage" type="CanvasLayer" parent="." node_paths=PackedStringArray("rest_stops", "car", "pause_menu")]
+[node name="LootDirector" type="Node" parent="." node_paths=PackedStringArray("streamer", "car")]
+script = ExtResource("33_loot")
+streamer = NodePath("../Terrain")
+car = NodePath("../Car")
+
+[node name="RestStopPage" type="CanvasLayer" parent="." node_paths=PackedStringArray("rest_stops", "car", "pause_menu", "loot")]
 script = ExtResource("31_restpage")
+loot = NodePath("../LootDirector")
 rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
 pause_menu = NodePath("../PauseMenu")

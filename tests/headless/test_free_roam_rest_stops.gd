@@ -148,19 +148,19 @@ func test_the_rest_stop_page_is_keyboard_and_gamepad_navigable() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var vp := _page.get_viewport()
-	var buttons := _page.main_buttons()
-	assert_eq(vp.gui_get_focus_owner(), buttons[0], "Continue has the cursor")
+	var rows := _page.rows()
+	assert_eq(vp.gui_get_focus_owner(), _page.row("continue"), "Continue has the cursor")
 	var nav := MenuNav.of(_page._page)
-	nav._unhandled_input(_press("menu_right"))
-	assert_eq(vp.gui_get_focus_owner(), buttons[1], "right walks to Tune car")
-	nav._unhandled_input(_press("menu_right"))
-	assert_eq(vp.gui_get_focus_owner(), buttons[2], "and on to Travel")
-	buttons[2].pressed.emit()
+	nav._unhandled_input(_press("menu_down"))
+	assert_eq(vp.gui_get_focus_owner(), rows[1], "down walks the rows")
+	nav._unhandled_input(_press("menu_down"))
+	assert_eq(vp.gui_get_focus_owner(), rows[2])
+	_page.row("travel").pressed.emit()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_eq(_page.view, RestStopPage.View.TRAVEL)
-	assert_false(_page.travel_buttons().is_empty(), "the lit rest stop is offered")
-	assert_eq(vp.gui_get_focus_owner(), _page.travel_buttons()[0])
+	assert_gt(_page.rows().size(), 1, "the lit rest stop is offered, above Back")
+	assert_eq(vp.gui_get_focus_owner(), _page.rows()[0])
 	MenuNav.of(_page._page)._unhandled_input(_press("ui_cancel"))
 	await get_tree().process_frame
 	assert_eq(_page.view, RestStopPage.View.MAIN, "back steps out to the main page")
@@ -177,7 +177,7 @@ func test_picking_a_travel_target_goes_there() -> void:
 	_page._show(RestStopPage.View.TRAVEL)
 	var idx := Array(_rest.travel_targets(0)).find(site)
 	assert_true(idx >= 0)
-	_page.travel_buttons()[idx].pressed.emit()
+	_page.rows()[idx].pressed.emit()
 	assert_false(_page.is_open())
 	assert_eq(_rest.last_site, site)
 

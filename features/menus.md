@@ -188,15 +188,17 @@ host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host 
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)
 
 Free roam's `RestStopPage` (a `CanvasLayer` at layer 6, `PROCESS_MODE_ALWAYS`) opens when the car
-stops on a rest stop (`RestStops.opened`). Opening it repairs the car for free, freezes the
-game and disarms the pause menu. It has three flat `MenuPage`s, each with `MenuNav.attach`:
-- **MAIN:** the stop's name, "Car repaired", and Continue / Tune car / Travel / Map. Travel is
-  disabled while no other rest stop is lit. Map opens the map as the travel picker.
-- **TUNE:** the shared `TuningPanel` on the fielded car's owned dict, `car.retune` on each edit.
+stops on a rest stop (`RestStops.opened`). Opening it banks carried loot, repairs the car for
+free, freezes the game and disarms the pause menu. Every page is a flat `MenuPage` whose rows are
+one vertical column in the body (narrow screens), with `MenuNav.attach`:
+- **MAIN:** the stop's name, "Car repaired", what was banked, then Continue / Tune car / Parts /
+  Garage / Travel / Map / Journal. Travel is disabled while no other rest stop is lit.
+- **TUNE:** the shared `TuningPanel` (`car.retune` on the funnel view of the car).
+- **PARTS / GARAGE / JOURNAL:** see [loot.md](loot.md).
 - **TRAVEL:** every other lit rest stop, nearest first, with its distance.
 
-Back (Esc / gamepad B, or the Back buttons) steps TUNE / TRAVEL → MAIN → closed. Covered by
-`tests/headless/test_free_roam_rest_stops.gd`.
+Back (Esc / gamepad B, or the Back rows) steps a sub-page → MAIN → closed. Covered by
+`test_free_roam_rest_stops.gd` and `test_loot.gd`.
 
 ## Pause menu (`pause_menu.gd`)
 

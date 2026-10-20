@@ -50,6 +50,8 @@ var _last_kind := ""
 var _plan_override: Variant = null  # a Vector2 to plan around instead of the focus (prefill_at)
 # Whether rest stop `site` is lit (RestStops.is_lit), for its marker's colour. Unset: none are.
 var rest_lit_query := Callable()
+# The loot still lying at a site (LootDirector.loot_at → item dict or {}). Unset: no loot.
+var loot_query := Callable()
 # A decaying peak of the cost of one unit in the sample-at-a-time stages (heights, arrays,
 # plant), so the stop rule allows for the dear ones rather than the average.
 var _peak_us := {"heights": 40.0, "arrays": 10.0, "plant": 40.0}
@@ -762,8 +764,12 @@ func _queue_site_markers(job: ChunkJob) -> void:
 				if crowd != null:
 					parent.add_child(crowd)
 				parent.add_child(_site_marker(i))
-			elif settings.site_markers:
-				parent.add_child(_site_marker(i)))
+			else:
+				var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
+				if not item.is_empty():
+					parent.add_child(_loot_marker(i, item))
+				elif settings.site_markers:
+					parent.add_child(_site_marker(i)))
 
 
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)
@@ -790,6 +796,61 @@ func _site_marker(i: int) -> MeshInstance3D:
 	var c := sites.pos[i]
 	mi.position = Vector3(c.x, sites.pad_h[i] + look[1] * 0.5, c.y)
 	return mi
+
+
+# A piece of loot lying at a site: a crate under a tall beam of light, coloured by kind (gold for
+# a car title, orange an engine, green a drivetrain kit, cyan a part, white a rumour), so it can
+# be spotted from the road.
+func _loot_marker(i: int, item: Dictionary) -> Node3D:
+	var col := Color(0.3, 0.85, 1.0)
+	match String(item.get("kind", "")):
+		"car":
+			col = Color(1.0, 0.8, 0.2)
+		"rumour":
+			col = Color(0.95, 0.95, 0.95)
+		_:
+			if LootLibrary.is_engine(item):
+				col = Color(1.0, 0.45, 0.15)
+			elif LootLibrary.is_drivetrain(item):
+				col = Color(0.4, 1.0, 0.45)
+	var root := Node3D.new()
+	root.name = "Loot%d" % i
+	var c := sites.pos[i]
+	root.position = Vector3(c.x, sites.pad_h[i], c.y)
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = col
+	var crate := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(1.2, 1.2, 1.2)
+	box.material = mat
+	crate.mesh = box
+	crate.position.y = 0.9
+	crate.rotation.y = ScatterMath.hash01(i, 0, settings.world_seed, 91) * TAU
+	root.add_child(crate)
+	var beam := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.12
+	cyl.bottom_radius = 0.12
+	cyl.height = 14.0
+	var beam_mat := mat.duplicate() as StandardMaterial3D
+	beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	beam_mat.albedo_color = Color(col.r, col.g, col.b, 0.45)
+	cyl.material = beam_mat
+	beam.mesh = cyl
+	beam.position.y = 8.0
+	root.add_child(beam)
+	return root
+
+
+# Take a loaded site's loot marker away (the loot was collected).
+func refresh_loot_marker(i: int) -> void:
+	var st: ChunkState = _chunks.get(_chunk_of(sites.pos[i]))
+	if st == null or st.foliage == null:
+		return
+	var node := st.foliage.get_node_or_null("Loot%d" % i)
+	if node != null:
+		node.queue_free()
 
 
 # Re-colour a loaded rest stop's beacon (it was just lit).
