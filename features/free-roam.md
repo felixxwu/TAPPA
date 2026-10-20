@@ -204,7 +204,9 @@ the car gives up. The HUD shows a temperature gauge and a cooling warning (`feat
   `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its beacon
   turns from grey to orange), makes it the respawn point (`last_site`) and fully heals the car
   (`DamageModel.repair`, cooling included; `healed`). Spawn is lit from the start. A move there by
-  travel or respawn (`move_car_to`) counts as already arrived.
+  travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
+  stop (a new game, Continue, the reload after a parts or car change): the first `step` only notes
+  where the car is (`_primed`), so the page doesn't open until it drives away and comes back.
 - **Stopping:** below `rest_stop_speed_kmh` for `rest_stop_hold_s` there opens the rest-stop
   page (`features/menus.md`), once per visit.
 - **Respawn:** on `gave_up` the car is moved to the last lit rest stop (`move_car_to`: stream the

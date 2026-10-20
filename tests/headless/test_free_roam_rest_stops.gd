@@ -118,6 +118,33 @@ func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> voi
 	_rest.set_physics_process(true)
 
 
+# A car SPAWNED at a rest stop (a new game, Continue, the reload after a parts change) has already
+# arrived there: sitting still doesn't open the page. Driving away and back does.
+func test_a_car_spawned_at_a_rest_stop_is_not_offered_the_page() -> void:
+	var site := _a_rest_stop()
+	_rest.set_physics_process(false)
+	var pose := _rest.pose_at(site)
+	_streamer.prefill_at(Vector2(pose.origin.x, pose.origin.z))
+	_car.reset_to(_rest.pose_at(site))
+	await get_tree().physics_frame
+	_rest._primed = false  # as on a fresh scene load
+	_rest._on_site = -1
+	_rest._offered = -1
+	watch_signals(_rest)
+	for i in 10:
+		_car.linear_velocity = Vector3.ZERO
+		_rest.step(Config.data.rest_stop_hold_s * 0.5)
+	assert_signal_not_emitted(_rest, "opened", "spawning there isn't stopping there")
+	_rest._on_site = -1  # drive away...
+	_rest._offered = -1
+	for i in 10:
+		_car.linear_velocity = Vector3.ZERO
+		_rest.step(Config.data.rest_stop_hold_s * 0.5)
+	assert_signal_emit_count(_rest, "opened", 1, "...and back, then stop: the page")
+	_page.close()
+	_rest.set_physics_process(true)
+
+
 func test_stopping_on_a_rest_stop_offers_the_page_once_per_visit() -> void:
 	var site := _a_rest_stop()
 	await _park_on(site)

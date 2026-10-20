@@ -36,6 +36,7 @@ var last_site := 0:
 
 var _on_site := -1
 var _last_p := Vector2(INF, INF)  # the car's position last step, for the swept check
+var _primed := false  # false until the first step has noted where the car was spawned
 var _slow_t := 0.0
 var _offered := -1  # the site whose page was already offered this visit
 
@@ -80,6 +81,15 @@ func _physics_process(delta: float) -> void:
 # the respawn point and fully heals the car. Stopping there opens the rest-stop page.
 func step(delta: float) -> void:
 	var p := Vector2(car.global_position.x, car.global_position.z)
+	if not _primed:
+		# The first step after the scene loads (a new game, Continue, or the reload after a parts or
+		# car change) finds the car wherever it was spawned. If that's at a rest stop it has already
+		# ARRIVED there: no page until it drives away and comes back.
+		_primed = true
+		_last_p = p
+		_on_site = rest_at(p)
+		_offered = _on_site
+		return
 	var from := _last_p if _last_p.distance_to(p) < 100.0 else p  # a teleport isn't a drive past
 	_last_p = p
 	var i := rest_reached(from, p)
