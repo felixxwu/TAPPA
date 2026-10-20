@@ -104,3 +104,6 @@ extends Resource
 @export var near_radius := 2
 @export var far_radius := 6
 @export var collision_radius := 1
+## The safety net: if the chunk the car will be over in this many seconds has no collision yet,
+## it is built at once, over the frame budget (a hitch rather than a fall through the world).
+@export var collision_rush_s := 0.5

@@ -496,3 +496,74 @@ func test_a_stage_that_runs_out_of_frame_ends_the_frame_instead_of_spinning() ->
 	var start := Time.get_ticks_usec()
 	st._run_queue(start + 200_000)
 	assert_lt(Time.get_ticks_usec() - start, 100_000, "returned long before the 200 ms deadline")
+
+
+# --- collision always under the car --------------------------------------------------------------
+
+# A near build stops once its collision is in and goes back in the queue to plant. Running straight
+# on into its trees kept the next chunk's collision waiting, and a fast car outran its collision
+# and fell through the world.
+func test_no_chunk_plants_foliage_before_every_planned_collision_is_built() -> void:
+	var st := _streamer(_settings())
+	st._plan()
+	var want_col: Array[Vector2i] = []
+	for coord: Vector2i in st._chunks:
+		var cs: TerrainStreamer.ChunkState = st._chunks[coord]
+		if cs.near_job != null and cs.near_job.with_collision:
+			want_col.append(coord)
+	assert_gt(want_col.size(), 1, "several chunks want collision around the car")
+	var planted := false
+	for frame in 20000:
+		if st.queued() == 0:
+			break
+		st._run_queue(Time.get_ticks_usec() + 1000)
+		for coord: Vector2i in st._chunks:
+			if (st._chunks[coord] as TerrainStreamer.ChunkState).foliage == null:
+				continue
+			planted = true
+			for c in want_col:
+				assert_not_null((st._chunks[c] as TerrainStreamer.ChunkState).body,
+					"chunk %s planted while %s still had no collision" % [coord, c])
+				if (st._chunks[c] as TerrainStreamer.ChunkState).body == null:
+					return
+	if not planted:
+		pending("no near chunk on this island planted anything")
+
+
+# The safety net: the car over a chunk with no collision yet gets it built at once, over budget.
+func test_a_car_over_ground_with_no_collision_gets_it_built_at_once() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	st.focus.position = Vector3(s.chunk_m * 5.5, 0.0, s.chunk_m * -3.5)
+	assert_false(st.has_collision_at(st.focus.position.x, st.focus.position.z))
+	st._guard_collision()
+	assert_true(st.has_collision_at(st.focus.position.x, st.focus.position.z))
+	assert_eq(st.stat_rushes, 1)
+	st._guard_collision()
+	assert_eq(st.stat_rushes, 1, "nothing to rush once the collision is there")
+
+
+func test_cancelled_jobs_leave_the_queue_at_the_next_plan() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	st._plan()
+	st.focus.position = Vector3(s.chunk_m * (s.far_radius + 10), 0.0, 0.0)
+	st._plan()
+	for job in st._queue:
+		assert_false(job.cancelled, "a dropped chunk's job is still queued")
+
+
+# A car that has fallen through the ground is put back however fast it is falling.
+func test_a_car_far_below_the_ground_counts_as_fallen_out_of_the_world() -> void:
+	var st := _streamer(_settings())
+	var body := VehicleBody3D.new()
+	add_child_autofree(body)
+	var rec := RoadRecovery.new()
+	autofree(rec)
+	rec.car = body
+	rec.streamer = st
+	var ground := st.height_at(10.0, 10.0)
+	body.global_position = Vector3(10.0, ground + 1.0, 10.0)
+	assert_false(rec.fell_out_of_world())
+	body.global_position = Vector3(10.0, ground - Config.data.recovery_void_depth_m - 1.0, 10.0)
+	assert_true(rec.fell_out_of_world())

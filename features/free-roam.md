@@ -89,11 +89,31 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   sampled once per chunk.
 - **Collision** comes only from near chunks, within `collision_radius`. `HeightMapShape3D` has
   unit cells, so the shape is scaled to the stride.
+- **Planting waits behind collision.** A near build stops once its mesh and collision are in
+  (`_run_queue` runs it only up to `Stage.PLANT`), and goes back in the queue at
+  `PLANT_PRIORITY` (after every chunk's collision and near mesh, before far meshes) to plant
+  its trees, bushes and rocks (`ChunkState.plant_job`, cancelled with the near mesh). Until
+  2026-10-20 a build ran straight on into its foliage, a few ms of spawns per chunk, while the
+  next chunk's collision waited. At road speed the car outran its collision and **fell through
+  the world** about 0.3–1.5 km out (the "drive out a bit" bug).
+- **The safety net (`_guard_collision`, every frame before the queue):** if the chunk under the
+  car, or the one it will be over in `collision_rush_s` (0.5 s), has no collision, it is built at
+  once with no budget, only as far as the collision (`_rush_collision`; its foliage is left to
+  the queue). Each one is a hitch of a few tens of ms instead of a fall, counted in
+  `stat_rushes` (HUD readout and the auto driver's report). The 1 ms budget can't build a
+  3-chunk-wide collision band at much over 100 km/h in a straight line (a near chunk's heights
+  alone are about 45 ms of work), so very fast driving leans on this net: probe on the default
+  island, straight line at 144 km/h, one rush every 200–400 m; the auto driver on the roads
+  (up to about 80 km/h) needed none in 4 km.
+- **Fallen out of the world anyway:** `RoadRecovery.fell_out_of_world` puts the car back on the
+  road as soon as it is `GameConfig.recovery_void_depth_m` below the ground, moving or not
+  (the stuck rule waits for the car to stop, and a falling car never does).
 - **Skirts** hang below every chunk edge, so mixed-detail neighbours never show a crack.
 - **Planning (`_plan`)** runs when the car changes chunk, and every 0.25 s otherwise. It
   measures distance from both the car and where it will be in 1.5 s, and queues missing work in
-  priority order: collision, then near meshes, then far meshes, nearest first. Chunks beyond
-  the horizon are dropped.
+  priority order: collision, then near meshes, then planting, then far meshes, nearest first.
+  Chunks beyond the horizon are dropped, and cancelled or finished jobs are purged from the
+  queue at each plan (a queue that never drains used to carry them for ever).
 - **Boot:** `prefill()` builds the planned set with no budget before the car is released.
   `warm_up_materials` then draws a speck of every ring's ground material in front of the camera
   for a few frames, so each shader is compiled behind the boot rather than when a new biome's
@@ -256,6 +276,7 @@ it and going nowhere, or below the ground) for `recovery_timeout_s`.
 - **holes:** physics ticks where the car is over a chunk with no collision yet. This must stay
   0, and `test_the_auto_driver_never_reaches_ground_without_collision` checks it on a short
   drive across a small synthetic island;
+- **rushes:** times the safety net had to build collision over budget (see *Streaming*);
 - **overruns:** frames over the terrain budget;
 - **resets:** times it got stuck and was put back on the route.
 

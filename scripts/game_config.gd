@@ -1048,6 +1048,11 @@ func has_nitrous() -> bool:
 ## The car's up-vector · world-up below which it counts as flipped (rolled onto its
 ## side/roof). 0.3 ≈ tipped more than ~70° from upright.
 @export_range(0.0, 1.0) var recovery_upright_dot := 0.3
+## Metres below the ground that mean the car has fallen out of the world (through a gap
+## in the collision). Free roam's RoadRecovery puts it straight back on the road, moving
+## or not — a falling car is never "stationary", so the stuck rule alone would let it
+## fall for ever.
+@export_range(5.0, 200.0) var recovery_void_depth_m := 25.0
 
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).

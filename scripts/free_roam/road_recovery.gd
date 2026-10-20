@@ -6,8 +6,9 @@ extends Node
 # and by itself when the car is stuck. It's the free-roam stand-in for TrackProgress' recovery,
 # which assumes a single stage centreline. "Stuck" uses the same GameConfig rule and fields
 # (recovery_*): stationary AND unable to get out by itself (flipped, flooring it and going
-# nowhere, or fallen below the ground) for recovery_timeout_s. A recovery is free: Car.reset_to
-# suppresses impact damage.
+# nowhere, or fallen below the ground) for recovery_timeout_s. A car far below the ground
+# (recovery_void_depth_m: it fell through a gap in the streamed collision) goes back at once,
+# moving or not. A recovery is free: Car.reset_to suppresses impact damage.
 
 @export var car: VehicleBody3D
 @export var streamer: TerrainStreamer
@@ -18,8 +19,19 @@ var _stuck_time := 0.0
 func _physics_process(delta: float) -> void:
 	if car == null or streamer == null:
 		return
-	if is_stuck_step(delta):
+	if is_stuck_step(delta) or fell_out_of_world():
 		reset_now()
+
+
+# The last-ditch net under the streamed world: the car is far below the ground, which only
+# happens by falling through a gap in the collision. Unlike the stuck rule, it doesn't wait for
+# the car to stop, because a falling car never does.
+func fell_out_of_world() -> bool:
+	var cfg: GameConfig = Config.data
+	if not cfg.recovery_enabled:
+		return false
+	var pos := car.global_position
+	return pos.y < streamer.height_at(pos.x, pos.z) - cfg.recovery_void_depth_m
 
 
 # Advance the stuck timer by `delta`; true when it has run out (and it starts again).

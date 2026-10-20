@@ -96,6 +96,7 @@ func report() -> Dictionary:
 		"overshoot_ms": streamer.stat_overshoot_us / 1000.0,
 		"spikes": streamer.stat_spikes,
 		"spike_by": streamer.stat_spike_by,
+		"rushes": streamer.stat_rushes,
 	}
 
 

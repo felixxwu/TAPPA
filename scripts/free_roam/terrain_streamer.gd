@@ -46,6 +46,9 @@ var stat_overshoot_us := 0
 # overshoot, by the kind of unit that ran last.
 var stat_spikes := 0
 var stat_spike_by := {}
+# Times collision under (or just ahead of) the car was missing and was built at once, over the
+# budget (_rush_collision). Rare when streaming keeps up; each one is a hitch instead of a fall.
+var stat_rushes := 0
 var _last_kind := ""
 var _plan_override: Variant = null  # a Vector2 to plan around instead of the focus (prefill_at)
 # Whether rest stop `site` is lit (RestStops.is_lit), for its marker's colour. Unset: none are.
@@ -86,6 +89,7 @@ class ChunkState:
 	var far_job: ChunkJob
 	var near_job: ChunkJob
 	var col_job: ChunkJob
+	var plant_job: ChunkJob  # a near build back in the queue to plant, after its collision
 
 
 class ChunkJob:
@@ -97,6 +101,7 @@ class ChunkJob:
 	var stage := Stage.PREP
 	var cursor := 0
 	var priority := 0.0
+	var dist := 0.0  # distance from the car, in chunks, at the last plan
 	var cancelled := false
 	var cands := PackedInt32Array()
 	# Near chunks sample a one-sample border so edge normals match their neighbours; far chunks
@@ -236,6 +241,7 @@ func _process(delta: float) -> void:
 	if cc != _plan_coord or _plan_timer <= 0.0:
 		_plan()
 	var start := Time.get_ticks_usec()
+	_guard_collision()
 	_run_queue(start + settings.budget_us)
 	var used := Time.get_ticks_usec() - start
 	stat_used_us = used
@@ -315,18 +321,91 @@ func _run_queue(deadline: int) -> void:
 		if job.cancelled or job.stage == Stage.DONE:
 			_queue.pop_front()
 			continue
-		if not _step(job, deadline):
+		# A near build stops once its mesh and collision are in: its trees, bushes and rocks go
+		# back in the queue behind every other chunk's collision and mesh. Running straight on
+		# into the planting kept the next chunk's collision waiting behind this chunk's
+		# foliage, which is how a fast car outran its collision and fell through the world.
+		var planting := job.stage > Stage.COLLIDE
+		if not _step(job, deadline, Stage.DONE if planting else Stage.PLANT):
 			return
 		if job.stage == Stage.DONE:
 			_queue.pop_front()
+		elif not planting and job.stage > Stage.COLLIDE:
+			_queue.pop_front()
+			_to_planting(job)
+			_enqueue_sorted(job)
 		if Time.get_ticks_usec() >= deadline:
 			return
 
 
-# Advance a job by as many units as fit before `deadline`. Returns false when the next unit
-# could not be started this frame.
-func _step(job: ChunkJob, deadline: int) -> bool:
-	while job.stage != Stage.DONE:
+# Foliage is planted after every chunk's collision and near mesh, and before far meshes.
+const PLANT_PRIORITY := -50.0
+
+
+func _to_planting(job: ChunkJob) -> void:
+	job.priority = job.dist + PLANT_PRIORITY
+	var st: ChunkState = _chunks.get(job.coord)
+	if st != null:
+		st.plant_job = job
+
+
+func _enqueue_sorted(job: ChunkJob) -> void:
+	var i := _queue.bsearch_custom(job, func(a: ChunkJob, b: ChunkJob) -> bool: return a.priority < b.priority, false)
+	_queue.insert(i, job)
+
+
+# The safety net under the car: if the chunk under it, or the one it will be over in
+# `collision_rush_s`, has no collision yet, build that collision now, whatever the budget. The
+# planner and the queue order are meant to keep this from ever firing; when the car outruns
+# them anyway (a very fast car, a teleport, a stall), a one-off hitch beats a fall through the
+# world.
+func _guard_collision() -> void:
+	if focus == null or _plan_override != null:
+		return
+	var here := _focus_xz()
+	_rush_collision(_chunk_of(here))
+	if focus is RigidBody3D:
+		var v := (focus as RigidBody3D).linear_velocity
+		_rush_collision(_chunk_of(here + Vector2(v.x, v.z) * settings.collision_rush_s))
+
+
+# Build `coord`'s collision at once, with no budget, and only as far as the collision: its
+# foliage is left to the queue. Returns true when it had to.
+func _rush_collision(coord: Vector2i) -> bool:
+	var st: ChunkState = _chunks.get(coord)
+	if st == null:
+		st = ChunkState.new()
+		_chunks[coord] = st
+	if st.body != null:
+		return false
+	var job: ChunkJob
+	if st.near_mesh != null:
+		if st.col_job == null:
+			st.col_job = _new_job(coord, true, true)
+			st.col_job.stage = Stage.COLLIDE
+			st.col_job.plants = false
+		job = st.col_job
+	else:
+		if st.near_job == null:
+			st.near_job = _new_job(coord, true, true)
+		job = st.near_job
+		job.with_collision = true
+	job.priority = -3000.0
+	stat_rushes += 1
+	var saved := _ran_this_frame
+	_ran_this_frame = false
+	_step(job, Time.get_ticks_usec() + 60_000_000, Stage.PLANT)
+	_ran_this_frame = saved
+	if job.stage > Stage.COLLIDE and job.stage != Stage.DONE:
+		_to_planting(job)
+	_queue.sort_custom(func(a: ChunkJob, b: ChunkJob) -> bool: return a.priority < b.priority)
+	return true
+
+
+# Advance a job by as many units as fit before `deadline`, stopping at stage `stop_at`. Returns
+# false when the next unit could not be started this frame.
+func _step(job: ChunkJob, deadline: int, stop_at := Stage.DONE) -> bool:
+	while job.stage != Stage.DONE and job.stage < stop_at:
 		match job.stage:
 			Stage.PREP:
 				if not _atomic("prep", deadline, _prep.bind(job)):
@@ -972,23 +1051,35 @@ func _plan() -> void:
 				st.far_job = _new_job(coord, false, false)
 			if st.far_job != null:
 				st.far_job.priority = d
+				st.far_job.dist = d
 			if want_near:
 				if st.near_mesh == null and st.near_job == null:
 					st.near_job = _new_job(coord, true, want_col)
 				if st.near_job != null:
 					st.near_job.with_collision = st.near_job.with_collision or want_col
 					st.near_job.priority = d - (1000.0 if want_col else 100.0)
+					st.near_job.dist = d
 			elif d > settings.near_radius + 1.5:
 				_drop_near(st)
 			if want_col and st.body == null and st.near_mesh != null and st.col_job == null:
 				st.col_job = _new_job(coord, true, true)
 				st.col_job.stage = Stage.COLLIDE
 				st.col_job.plants = false
+			if st.plant_job != null and st.plant_job.stage != Stage.DONE:
+				st.plant_job.dist = d
+				st.plant_job.priority = d + PLANT_PRIORITY
 			if st.col_job != null:
 				st.col_job.priority = d - 2000.0
 			if d > settings.collision_radius + 1.5 and st.body != null:
 				st.body.queue_free()
 				st.body = null
+	# Cancelled and finished jobs leave now rather than when they reach the head: a queue that
+	# never drains (a car outdriving the far ring) would otherwise carry them for ever.
+	var live: Array[ChunkJob] = []
+	for job in _queue:
+		if not job.cancelled and job.stage != Stage.DONE:
+			live.append(job)
+	_queue = live
 	_queue.sort_custom(func(a: ChunkJob, b: ChunkJob) -> bool: return a.priority < b.priority)
 
 
@@ -1005,9 +1096,11 @@ func _new_job(coord: Vector2i, near: bool, with_collision: bool) -> ChunkJob:
 
 
 func _drop_near(st: ChunkState) -> void:
-	if st.near_job != null:
-		st.near_job.cancelled = true
-		st.near_job = null
+	for job in [st.near_job, st.plant_job]:
+		if job != null:
+			(job as ChunkJob).cancelled = true
+	st.near_job = null
+	st.plant_job = null
 	if st.near_mesh != null:
 		st.near_mesh.queue_free()
 		st.near_mesh = null

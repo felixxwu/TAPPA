@@ -43,9 +43,9 @@ func _ready() -> void:
 
 
 # Seed from a saved world (WorldSession): which stops are lit and where to respawn.
-func restore(lit: Array, last: int) -> void:
+func restore(lit_list: Array, last: int) -> void:
 	lit_sites = {0: true}
-	for site in lit:
+	for site in lit_list:
 		lit_sites[int(site)] = true
 	last_site = last if lit_sites.has(last) else 0
 

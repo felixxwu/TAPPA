@@ -174,7 +174,7 @@ func _update_stats() -> void:
 	var s := _streamer
 	_stats.text = "%d km/h\n" % roundi(_car.linear_velocity.length() * 3.6) \
 		+ "terrain  %.2f ms this frame (budget %.2f)\n" % [s.stat_used_us / 1000.0, s.settings.budget_us / 1000.0] \
-		+ "worst    %.2f ms   over budget %d / %d frames   spikes %d\n" % [s.stat_worst_us / 1000.0, s.stat_overruns, s.stat_frames, s.stat_spikes] \
+		+ "worst    %.2f ms   over budget %d / %d frames   spikes %d   rushes %d\n" % [s.stat_worst_us / 1000.0, s.stat_overruns, s.stat_frames, s.stat_spikes, s.stat_rushes] \
 		+ "queue    %d jobs\n" % s.queued() \
 		+ "chunks   %d near  %d far  %d collision\n" % [counts.x, counts.y, counts.z] \
 		+ "sample   %.1f µs\n" % s.stat_us_per_sample \
