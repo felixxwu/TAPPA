@@ -22,7 +22,9 @@ junctions and identical heights at 175 inland points. Two details keep it exact:
 - point counts use `ceil(x - 1e-9)`, so a length that divides exactly can't flip on
   last-digit rounding differences between the browser's `cos`/`sin` and Godot's.
 
-Change the maths in one place and you must change it in the other.
+This parity is **no longer a requirement**. From 2026-10-20 the game is the reference and
+may diverge from the lab (decision 32 in `todo/2026-10-19-free-roam-pivot.md`). Until
+something breaks it, the two still match.
 
 ## The three layers
 

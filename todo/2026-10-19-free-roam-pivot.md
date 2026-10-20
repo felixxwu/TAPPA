@@ -48,12 +48,14 @@ one, with your unbanked loot left at the wreck for you to go back for.
      about the same time as the regions**, so the late game is fresh in both. The ring
      sizes come out of how the car and part catalogue is split across biomes; that
      split is a design task in itself (stage 7).
-4. **Forks from day one.** The road is a branching network streamed ahead of the car,
-   not a single road. **How it is generated, including what a branch does at the coast
-   or when it runs out of room, is a separate spec to be discussed with the user**
-   (see *Dependencies*).
+4. **Forks from day one.** The road is a branching network, not a single road.
+   **Resolved 2026-10-20:** the network is laid out whole at boot rather than streamed
+   ahead of the car, and dead ends are allowed, each with a payoff (*Road network
+   decisions*, 27–32).
 5. **Hard roads.** They should take real skill to drive fast. Difficulty rises per
-   biome.
+   biome. **Amended 2026-10-20:** the first version uses the **same road settings
+   everywhere**. Rising difficulty per biome is deferred until after playtesting (see
+   *Road network decisions*).
 6. **Biome rings, chosen by distance from spawn.** Each region keeps its look and
    surfaces (as `RegionLibrary` does today) and gains a **loot table** of cars and
    parts. Rarer regions sit further out.
@@ -131,30 +133,42 @@ one, with your unbanked loot left at the wreck for you to go back for.
 26. **Save profiles are wiped.** The schema version is bumped and old profiles are
     refused under the existing no-migration rule (decisions 20/34).
 
-## Dependencies
+## Road network decisions (resolved with the user, 2026-10-20)
 
-- **`todo/road-network-generation.md` (NOT YET WRITTEN — must be brainstormed with the
-  user first).** The original scope assumed a network streamed ahead of the car. The
-  prototype instead **builds the whole island's layout once at boot** (`RoadNetwork._grow`
-  / `_densify`, radial growth ported from `tools/road_network_lab.html`). That removes the
-  hardest original questions: overlap checks without a whole-network view, generating
-  ahead of the load radius on every branch, and determinism per branch. Seed-level
-  determinism comes for free. What the spec still has to settle:
-  - **road character:** whether noise-wiggled polylines (`road_twist`, `bend_length_m`)
-    are "hard roads" enough (decision 5), or whether `CornerLibrary` pieces (hairpins,
-    square corners) get mixed in;
-  - **per-biome difficulty knobs:** today every growth and wiggle setting is global on
-    `FreeRoamSettings`;
-  - **dead ends:** what a branch does at the coast, and whether dead ends are allowed;
-  - **rest stop and loot site placement:** the lab places a rest stop every 300 m of road,
-    but `RoadNetwork` doesn't port it yet. With the whole graph known at boot, these can be
-    planned globally, as exact distances along roads, and spawned per chunk;
-  - **build cost at scale:** check that the boot build stays cheap if pacing (stage 7)
-    makes the island bigger than its current 5 km radius;
-  - **lab parity:** `LabNoise` and `RoadNetwork` match the lab bit for bit. Decide when the
-    game is allowed to diverge (per-biome settings, corner pieces) and the lab stops being
-    the reference.
-  Stage 1's remaining work depends on this spec.
+These replace the planned `todo/road-network-generation.md`, which won't be written.
+Building the whole layout at boot (`RoadNetwork._grow` / `_densify`) removed the questions
+that spec was for: overlap checks without a whole-network view, generating ahead of the
+load radius, and determinism per branch.
+
+27. **The method is the prototype's.** The whole network is laid out at boot by radial
+    growth, terrain is built from the roads, and it streams under the per-frame budget
+    (see *Status*).
+28. **Same road settings everywhere, for now.** The wiggled roads (`road_twist`,
+    `bend_length_m`) and every growth setting stay global on `FreeRoamSettings`. Harder
+    roads per biome (tighter wiggle, `CornerLibrary` hairpins) are **deferred** until a
+    playtest says the roads are too easy. Don't build per-biome road knobs speculatively.
+29. **No stage road features come back.** No camber, jump crests, sheer cliff drops or
+    separate road edge mesh. Roads stay level across and roll with the bumps, and the
+    road reads from the ground texture or tint by distance to the road, as in the
+    prototype.
+30. **Dead ends are allowed, and every one has a payoff.** A dead end is a node with
+    only one road (other than spawn). `_grow` already makes them when a branch hits water
+    or road it doesn't join. Each one gets something worth the drive: a loot site, a
+    rumour or a lookout. Stage 7 decides which.
+31. **Rest stops are placed by distance along the road, with spacing set per biome.**
+    They're planned at boot from the whole graph, every N metres of road, and spawned
+    when their chunk builds. N is a **per-biome setting that starts at the same value in
+    every ring** (300 m, from the lab), so tuning it later is a data change. **Loot sites**
+    sit on short pull-ins along roads, plus the dead-end payoffs. Their density per biome
+    comes from the stage 7 pacing pass.
+32. **The game diverges from the lab from now on.** The game is the reference. Rest stops,
+    loot sites and payoffs are built in GDScript only, and `tools/road_network_lab.html`
+    becomes a stale sketch tool. The bit-exact lab test
+    (`test_the_random_stream_and_hash_match_the_lab_javascript`) may go once a change
+    breaks parity. Keep same-seed determinism tests.
+
+Still to check, not to decide: whether the boot build stays cheap if the stage 7 pacing
+makes the island bigger than its current 5 km radius.
 
 ## The core technical problem: today's world is a finite stage, rebuilt every stage
 
@@ -207,11 +221,11 @@ them for deletion in stage 8, along with the corridor pipeline.
 
 > **(largely superseded 2026-10-20.)** `RoadNetwork` exists, but it builds the whole
 > network at boot, so "grows ahead of the car", "committed road is never rewritten" and
-> "generate-ahead distance" no longer apply. It doesn't reuse corner pieces yet (an open
-> question in the road spec). The carve isn't ported either: `RoadTerrain` makes height a
+> "generate-ahead distance" no longer apply. It doesn't reuse corner pieces, and that's deferred
+> (decision 28). The carve isn't ported either: `RoadTerrain` makes height a
 > pure function of distance to the nearest road, so roads are level across, junctions come
-> for free and there's no corridor bake. What's still missing compared with the stages is
-> **cliffs, camber and jump crests**. Decide whether they come back (stage 1). Water
+> for free and there's no corridor bake. Cliffs, camber and jump crests from the stages
+> don't come back (decision 29). Water
 > avoidance (`_seg_hits_water` against the base field) and seed determinism are done. The
 > text below is the original sketch.
 
@@ -310,7 +324,7 @@ per-frame build budget (`overworld_chunk_build_budget` already exists).
 
 ### F. Rest stops
 
-- **What they are.** Roadside pull-ins placed by `RoadNetwork` (spec), drawn with a
+- **What they are.** Roadside pull-ins placed by `RoadNetwork` by distance along the road (decision 31), drawn with a
   spectator crowd.
 - **Driving through lights one** and saves it as the respawn point. **Stopping inside**
   (speed under a threshold) opens the rest-stop page.
@@ -418,15 +432,12 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    the island at top speed, reports budget overruns and any chunk reached without
    collision, and backs a cheap headless regression test. The original exit criterion,
    "5+ km with no hitch", has only been checked while parked.
-1. **The road network — layout and terrain DONE. Road character and placement are blocked
-   on the road spec.** Remaining:
-   - the road spec itself (see *Dependencies*);
-   - road difficulty and character (corner pieces or not);
-   - whether cliffs, camber and jump crests come back on road-first terrain;
-   - a visible road edge or surface (today the road is only a texture or tint from
-     distance to the road);
-   - rest stop and loot site placement points on the graph, so stages 5 and 7 have
-     somewhere to put things.
+1. **The road network — layout and terrain DONE. Unblocked** (*Road network decisions*).
+   Remaining:
+   - rest stop positions, every N m of road with N per biome (decision 31);
+   - a list of dead-end nodes, for the payoffs (decision 30);
+   - loot site pull-in slots along roads, so stage 7 has somewhere to put things.
+   Road character, camber, crests and edges are settled as "no change" (decisions 28–29).
 2. **Background chunk building — REPLACED by the budget scheduler.** It is now **performance
    hardening**: measure on a real mid-range Android phone and on a web export
    (`todo/mobile-web-performance.md`), warm up shaders at boot, and move the height
@@ -442,8 +453,8 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    - per-ring `surface_grip` and surfaces, since `surface_at` is only road / off-road
      today;
    - per-ring water level;
-   - per-biome difficulty, which depends on the road spec's per-ring knobs;
    - noise on the ring borders.
+   Per-biome road difficulty is deferred (decision 28).
    §B still says "region state has to become position-based" — that holds.
 4½. **NEW — a playable shell, before the playtest gate.** Stages 0–4 are meant to be
    playtested as a pure drive, and mobile is a target, so the prototype needs:
@@ -494,11 +505,8 @@ Stages 0–4½ can be played as a pure drive, and should be playtested before 5�
 
 - **Island and ring sizes:** they follow from the catalogue-to-biome pacing pass in
   stage 7.
-- **Everything in `todo/road-network-generation.md`:** to be brainstormed with the user.
-  The scope is now smaller (see *Dependencies*).
-- **Road-first terrain vs. the stage features:** do cliffs, camber and jump crests come
-  back, and do roads get a visible edge? (stage 1)
-- **When the game stops matching the lab exactly.**
+- **What each dead-end payoff is** (loot site, rumour or lookout): stage 7.
+- **Harder roads per biome:** deferred until after a playtest (decision 28).
 
 ## Road-network lab — the liked preset (2026-10-20, revised)
 
