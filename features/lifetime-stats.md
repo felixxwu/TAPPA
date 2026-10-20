@@ -85,3 +85,10 @@ broken counter rather than an unfinished feature.
 - These counters are read ONLY by the unlock gates. A skill's actual effect comes from
   its `effect_fields` (`features/skills.md` → "What each skill actually does"), never
   from a lifetime stat, so a counter that stops moving weakens no equipped skill.
+
+## Free-roam stats
+
+`REST_STOPS_LIT` (written by `WorldSession.light`) and `TIMES_GAVE_UP` (written by free roam on
+a respawn) are free roam's own. `DISTANCE_DRIVEN_M` is fed by free roam's odometer too. The map
+page's Stats view shows these three (`WorldPages.STATS_SHOWN`). Nothing is gated on them any
+more (decision 22).

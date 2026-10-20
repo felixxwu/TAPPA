@@ -472,7 +472,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    overheat drain, 0-HP respawn, lighting, free repair, travel, spectators at rest stops.
    The rest-stop page at this stage: repair, tune, travel. Needs rest stop positions from
    stage 1. Rest stops can also seed `prefill` for the fade on travel.
-6. **The world session and save — unchanged.** `WorldSession`, schema bump (profile wipe),
+6. **The world session and save — DONE 2026-10-20** (`features/world-session.md`). `WorldSession`, schema bump (profile wipe),
    title → world (replacing the direct `run/main_scene` boot), the map page. The map is
    cheap now because the whole network is known at boot: draw it and mask it to driven
    roads.
@@ -652,3 +652,18 @@ Numbering continues from decision 32.
   for that long.
 - **D55. Rest stops look like a beacon post** (grey, orange once lit) plus a static crowd of 14
   onlookers. There's no building model; that's an art task.
+- **D56. REVIEW — every new world gets a random seed** (1 to 999,999). The lab's liked preset was
+  seed 1, and seeds vary in quality, so a bad one is possible. There's no seed curation or
+  "reroll". Easy to change in `TitleScreen._start`.
+- **D57. A new world also wipes the owned cars.** A world is the whole save (decision 2), and cars
+  are found in the world (decision 16).
+- **D58. The starter choice is the 3 cheapest cars by `cost`.** It's a rule, not a list, so it
+  survives roster changes. **REVIEW** whether those three are the right starters.
+- **D59. A new title scene (`title.tscn`) is the main scene**, rather than cutting `HubShell` down.
+  The hub is now unreachable, and stage 8 deletes it. The world saves pose and condition every
+  5 s, map cells every 0.25 s (through `Save`'s 1 s debounce), and on quitting.
+- **D60. The map** draws ring borders as their average circles, and roads by 40 m driven cells.
+  At a rest stop it is the travel picker. The rest-stop page keeps its Travel list too (cheaper
+  to use with a gamepad), plus a Map button.
+- **D61. Stats in free roam:** distance driven, rest stops lit and times the car gave up. Two new
+  `LifetimeStats` ids; the run-era ones go in stage 8.

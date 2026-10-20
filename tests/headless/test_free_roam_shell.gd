@@ -87,7 +87,7 @@ func test_the_pause_menu_skips_the_hidden_photo_row() -> void:
 	nav._unhandled_input(_press("menu_down"))
 	assert_eq(vp.gui_get_focus_owner(), _pause._reset_button)
 	nav._unhandled_input(_press("menu_down"))
-	assert_eq(vp.gui_get_focus_owner(), _pause._settings_button, "Photo Mode is skipped")
+	assert_eq(vp.gui_get_focus_owner(), _pause._extra_buttons[0], "Photo Mode is skipped, on to Map")
 	nav._unhandled_input(_press("menu_up"))
 	assert_eq(vp.gui_get_focus_owner(), _pause._reset_button)
 

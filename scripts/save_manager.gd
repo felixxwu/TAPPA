@@ -62,7 +62,9 @@ signal flushed()
 #   - `_migrate()` still backfills any KEY MISSING off a correctly-versioned (current
 #     SCHEMA_VERSION) profile from `_default_profile()` — that half is unrelated to
 #     migration and stays exactly as it works for `cloud_revision` / `username` today.
-const SCHEMA_VERSION := 7
+# 8: the free-roam pivot (todo/2026-10-19-free-roam-pivot.md decision 26) — one persistent
+# world per save (KEY_WORLD). Every v7 profile is refused and the player starts a new world.
+const SCHEMA_VERSION := 8
 
 # The two profile keys the REST of the codebase reads (the owned-car array and the
 # per-rally record map) — named here because SaveManager owns the save schema, and a
@@ -95,6 +97,8 @@ const KEY_BOOST_LEVELS := "boost_levels"      # boost id -> purchased level (met
 const KEY_BOUGHT_SKILLS := "bought_perks"      # skill ids owned
 const KEY_EQUIPPED_SKILLS := "equipped_perks"  # skill ids currently slotted (capped)
 const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
+# The free-roam world (WorldSession owns its shape and is its only writer).
+const KEY_WORLD := "world"
 
 # Default profile location. Kept as a settable property (not a hard const) so
 # named save slots can be layered on later without reworking the API, and so
@@ -550,6 +554,8 @@ func _default_profile() -> Dictionary:
 		KEY_BOUGHT_SKILLS: [],
 		KEY_EQUIPPED_SKILLS: [],
 		KEY_LIFETIME: {},
+		# The one persistent free-roam world, {} until New World (WorldSession).
+		KEY_WORLD: {},
 		"settings": {},
 		# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) ---
 		# `stars_earned` / `stars_spent` are gone outright, not migrated: the pivot replaced

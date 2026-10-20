@@ -31,6 +31,9 @@ per-player mutable progress. `Save` stores tuning *numbers* but never touches
 The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 / migration as pure dict transforms with no engine-class coupling):
 
+- `world` — the persistent free-roam world (`Save.KEY_WORLD`), owned by `WorldSession`; see
+  [world-session.md](world-session.md). `SCHEMA_VERSION` 8 introduced it and refuses every v7
+  profile.
 - `schema_version` — bumped on breaking shape changes; older files migrate
   forward on load, newer files are refused (not truncated).
 - `starter_picked` / `starter_model_id` — first-run starter state. The starter is

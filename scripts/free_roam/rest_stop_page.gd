@@ -11,6 +11,8 @@ extends CanvasLayer
 # Back (Esc / gamepad B, or the Back buttons) steps TUNE/TRAVEL → MAIN → closed.
 
 signal closed
+# The Map button: the host opens the map as the travel picker, over this page.
+signal map_requested(site: int)
 
 enum View { MAIN, TUNE, TRAVEL }
 
@@ -29,6 +31,7 @@ var _tune_button: Button
 var _travel_button: Button
 var _tune_panel: TuningPanel
 var _travel_buttons: Array[Button] = []
+var _map_button: Button
 
 
 func _init() -> void:
@@ -92,6 +95,7 @@ func _build_main() -> void:
 	_tune_button = _page.add_action(UITheme.row_button("Tune car", _show.bind(View.TUNE)))
 	_travel_button = _page.add_action(UITheme.row_button("Travel", _show.bind(View.TRAVEL)))
 	_travel_button.disabled = rest_stops == null or rest_stops.travel_targets(site).is_empty()
+	_map_button = _page.add_action(UITheme.row_button("Map", _open_map))
 	MenuNav.attach(_page, {first = _continue_button, on_back = close})
 
 
@@ -131,6 +135,20 @@ func _build_travel() -> void:
 		on_back = _show.bind(View.MAIN)})
 
 
+func _open_map() -> void:
+	_clear()
+	map_requested.emit(site)
+
+
+# The map closed (Back, or a travel, which closes it first): come back to the main page, unless a
+# travel already moved the car, in which case close for good.
+func return_from_map() -> void:
+	if rest_stops != null and rest_stops.last_site != site:
+		close()
+		return
+	_show(View.MAIN)
+
+
 func _travel(target: int) -> void:
 	close()
 	rest_stops.travel_to(target)
@@ -142,4 +160,4 @@ func travel_buttons() -> Array[Button]:
 
 
 func main_buttons() -> Array[Button]:
-	return [_continue_button, _tune_button, _travel_button]
+	return [_continue_button, _tune_button, _travel_button, _map_button]

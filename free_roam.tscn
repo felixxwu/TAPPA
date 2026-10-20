@@ -20,6 +20,7 @@
 [ext_resource type="Script" path="res://scripts/free_roam/biome_director.gd" id="29_biome"]
 [ext_resource type="Script" path="res://scripts/free_roam/rest_stops.gd" id="30_rest"]
 [ext_resource type="Script" path="res://scripts/free_roam/rest_stop_page.gd" id="31_restpage"]
+[ext_resource type="Script" path="res://scripts/free_roam/world_pages.gd" id="32_pages"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("8_sky")
@@ -266,7 +267,10 @@ camera_manager = NodePath("../CameraManager")
 mobile_controls = NodePath("../MobileControls")
 offer_photo_mode = false
 reset_label = "Reset to road"
-quit_body_override = "Leave the island and return to the title screen?"
+quit_body_override = "Leave the island and return to the title screen? Your world is saved."
+quit_label = "Quit to title"
+quit_scene = "res://title.tscn"
+extra_rows = PackedStringArray("Map", "Stats")
 
 [node name="RoadRecovery" type="Node" parent="." node_paths=PackedStringArray("car", "streamer")]
 script = ExtResource("28_recovery")
@@ -291,3 +295,9 @@ script = ExtResource("31_restpage")
 rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
 pause_menu = NodePath("../PauseMenu")
+
+[node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car")]
+script = ExtResource("32_pages")
+streamer = NodePath("../Terrain")
+rest_stops = NodePath("../RestStops")
+car = NodePath("../Car")

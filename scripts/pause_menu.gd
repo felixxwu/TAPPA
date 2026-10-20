@@ -43,6 +43,17 @@ signal dev_complete_stage_requested
 @export var reset_label := "Reset to track"
 # When set, replaces the quit confirm's body text (free roam has no run to pause or abandon).
 @export_multiline var quit_body_override := ""
+# Quit's label and destination. Empty: the stage's "Quit to HQ" to the hub.
+@export var quit_label := ""
+@export_file("*.tscn") var quit_scene := ""
+# Extra rows the host handles itself (free roam: "Map", "Stats"), placed above Settings. Pressing
+# one emits extra_requested with its label; the menu stays open, still paused, for the host's page
+# to cover. The host calls return_from_extra() when its page closes.
+@export var extra_rows := PackedStringArray()
+
+signal extra_requested(label: String)
+signal quitting
+var _extra_buttons: Array[Button] = []
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
@@ -121,6 +132,27 @@ func _on_reset_to_track_pressed() -> void:
 # Photo Mode: hide this overlay and DISARM the menu (so Esc / the Pause button belong
 # to the photo camera, and can't stack an overlay over the shot), but do NOT unpause —
 # the frozen world is the whole feature. The host answers on photo_mode_requested.
+# An extra row: hide the overlay but stay paused and armed-off while the host's page is up.
+func _on_extra_pressed(label: String, button: Button) -> void:
+	_extra_return_focus = button
+	set_input_enabled(false)
+	_set_open(false)
+	extra_requested.emit(label)
+
+
+var _extra_return_focus: Button
+
+
+# The host's extra page closed: show this menu again, cursor back on the row that opened it.
+func return_from_extra() -> void:
+	set_input_enabled(true)
+	get_tree().paused = true
+	_set_open(true)
+	_show_settings(false)
+	if is_instance_valid(_extra_return_focus):
+		UITheme.focus_grab.bind(_extra_return_focus).call_deferred()
+
+
 func _on_photo_mode_pressed() -> void:
 	set_input_enabled(false)
 	_set_open(false)
@@ -159,9 +191,10 @@ func confirm_quit_to_hq() -> void:
 			+ "Your run is saved — resume it any time.\nThe current stage starts over."
 	if quit_body_override != "":
 		body = quit_body_override
-	ConfirmPopup.open(self, "Quit to HQ?", body,
+	var quit_text := quit_label if quit_label != "" else "Quit to HQ"
+	ConfirmPopup.open(self, quit_text + "?", body,
 		[ {"label": "Cancel", "callback": Callable()},
-		  {"label": "Quit to HQ", "callback": quit_to_hq} ],
+		  {"label": quit_text, "callback": quit_to_hq} ],
 		1, 0)  # focus stays on Quit as before; Back/Esc = Cancel (index 0)
 
 
@@ -175,6 +208,10 @@ func confirm_quit_to_hq() -> void:
 # leave, so load HQ direct.
 func quit_to_hq() -> void:
 	get_tree().paused = false
+	quitting.emit()
+	if quit_scene != "":
+		Scenes.change_to(get_tree(), quit_scene)
+		return
 	if Benchmark.active:
 		Benchmark.exit_to_hq()
 	elif RunSession.is_active():
@@ -307,13 +344,19 @@ func _build_menu_panel() -> Control:
 	col.add_child(_photo_button)
 	_photo_button.visible = offer_photo_mode
 
+	for label in extra_rows:
+		var extra := _make_menu_button(label)
+		extra.pressed.connect(_on_extra_pressed.bind(label, extra))
+		col.add_child(extra)
+		_extra_buttons.append(extra)
+
 	_settings_button = _make_menu_button("Settings")
 	_settings_button.pressed.connect(_show_settings.bind(true))
 	col.add_child(_settings_button)
 
 	# Quit to HQ — abandons the rally (after a confirm). No retry penalty: a non-top-3
 	# rally is simply re-entered later from the map.
-	_quit_button = _make_menu_button("Quit to HQ")
+	_quit_button = _make_menu_button(quit_label if quit_label != "" else "Quit to HQ")
 	_quit_button.pressed.connect(confirm_quit_to_hq)
 	col.add_child(_quit_button)
 	return center

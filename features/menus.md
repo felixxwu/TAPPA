@@ -177,13 +177,21 @@ listens for a car reaching 0 HP, because nothing is signalled when it does. With
 session (a plain dev boot of `main.tscn`) the default car is fielded and none of this
 runs — `main.tscn` stays independently runnable.
 
+## Title screen and world pages
+
+The game boots into `title.tscn` (`TitleScreen`), and free roam's pause menu and rest-stop page open
+the map and stats pages (`WorldPages`). Both are described in [world-session.md](world-session.md),
+and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The pause menu gained
+host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
+`return_from_extra()` when its page closes) and a configurable quit (`quit_label`, `quit_scene`).
+
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)
 
 Free roam's `RestStopPage` (a `CanvasLayer` at layer 6, `PROCESS_MODE_ALWAYS`) opens when the car
 stops on a rest stop (`RestStops.opened`). Opening it repairs the car for free, freezes the
 game and disarms the pause menu. It has three flat `MenuPage`s, each with `MenuNav.attach`:
-- **MAIN:** the stop's name, "Car repaired", and Continue / Tune car / Travel. Travel is disabled
-  while no other rest stop is lit.
+- **MAIN:** the stop's name, "Car repaired", and Continue / Tune car / Travel / Map. Travel is
+  disabled while no other rest stop is lit. Map opens the map as the travel picker.
 - **TUNE:** the shared `TuningPanel` on the fielded car's owned dict, `car.retune` on each edit.
 - **TRAVEL:** every other lit rest stop, nearest first, with its distance.
 

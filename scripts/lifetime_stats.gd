@@ -38,6 +38,8 @@ const MONEY_SPENT := "money_spent"
 const DISTANCE_DRIVEN_M := "distance_driven_m"
 const BEST_REGION_ORDER := "best_region_order"
 const COINS_COLLECTED := "coins_collected"
+const REST_STOPS_LIT := "rest_stops_lit"
+const TIMES_GAVE_UP := "times_gave_up"
 
 const STATS := {
 	STAGES_CLEARED: {
@@ -125,6 +127,17 @@ const STATS := {
 			"an earlier region must not count as progress. Written by " +
 			"RegionRunMode.record_outcome().",
 	},
+	REST_STOPS_LIT: {
+		"label": "Rest stops lit",
+		"goal": "light %d rest stops",
+		"description": "Free-roam rest stops lit for the first time. Written by WorldSession.light().",
+	},
+	TIMES_GAVE_UP: {
+		"label": "Times the car gave up",
+		"goal": "give up %d times",
+		"description": "Free-roam respawns: the car hit 0 HP (a crash or an overheat). " +
+			"Written by free_roam.gd on RestStops.respawned.",
+	},
 	COINS_COLLECTED: {
 		"label": "Coins collected",
 		# IMPERATIVE unlock phrasing for the skills page — "take 300 damage",
@@ -141,7 +154,7 @@ const STATS := {
 const IDS: Array = [
 	STAGES_CLEARED, RUNS_STARTED, RUNS_FAILED, REGIONS_CLEARED_TOTAL,
 	DAMAGE_TAKEN, MONEY_EARNED, MONEY_SPENT, DISTANCE_DRIVEN_M, BEST_REGION_ORDER,
-	COINS_COLLECTED,
+	COINS_COLLECTED, REST_STOPS_LIT, TIMES_GAVE_UP,
 ]
 
 

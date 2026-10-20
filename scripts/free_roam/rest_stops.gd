@@ -17,6 +17,7 @@ signal lit(site: int)
 signal opened(site: int)
 signal respawned(site: int, wreck_pos: Vector3)
 signal travelled(site: int)
+signal respawn_point_changed(site: int)
 
 @export var streamer: TerrainStreamer
 @export var car: VehicleBody3D
@@ -24,7 +25,11 @@ signal travelled(site: int)
 @export var pause_menu: PauseMenu
 
 var lit_sites := {}  # site -> true
-var last_site := 0
+var last_site := 0:
+	set(v):
+		if v != last_site:
+			last_site = v
+			respawn_point_changed.emit(v)
 
 var _on_site := -1
 var _slow_t := 0.0
@@ -35,6 +40,14 @@ func _ready() -> void:
 	lit_sites[0] = true
 	if car != null and car.get("damage") != null:
 		(car.damage as DamageModel).gave_up.connect(_on_gave_up)
+
+
+# Seed from a saved world (WorldSession): which stops are lit and where to respawn.
+func restore(lit: Array, last: int) -> void:
+	lit_sites = {0: true}
+	for site in lit:
+		lit_sites[int(site)] = true
+	last_site = last if lit_sites.has(last) else 0
 
 
 func is_lit(site: int) -> bool:

@@ -363,7 +363,7 @@ func test_the_main_scene_is_a_known_boot_scene_and_it_loads() -> void:
 	# name either the hub (`Scenes.hub_path()`) or, while the free-roam pivot is being
 	# prototyped, the free-roam scene (features/free-roam.md) — and it must actually load.
 	var main_scene := String(ProjectSettings.get_setting("application/run/main_scene", ""))
-	assert_true(main_scene in [Scenes.hub_path(), "res://free_roam.tscn"],
+	assert_true(main_scene in [Scenes.hub_path(), Scenes.TITLE, Scenes.FREE_ROAM],
 		"project.godot's run/main_scene names an unknown scene: %s" % main_scene)
 	assert_not_null(load(main_scene) as PackedScene, "%s loads as a scene" % main_scene)
 

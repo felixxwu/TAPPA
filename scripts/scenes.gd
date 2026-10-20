@@ -25,6 +25,9 @@ extends RefCounted
 # of the pivot replaces the file, not this constant.
 const HUB := "res://hub.tscn"
 const MAIN := "res://main.tscn"
+# The title screen (the game's main scene) and the free-roam world it leads into.
+const TITLE := "res://title.tscn"
+const FREE_ROAM := "res://free_roam.tscn"
 # PODIUM and STANDINGS are DELETED, not renamed: podium.tscn (decision 19) and
 # standings.tscn (decision 30) no longer exist, so the constants were paths to nothing —
 # a load() away from a crash for anyone who trusted them. The run summary is a HubShell

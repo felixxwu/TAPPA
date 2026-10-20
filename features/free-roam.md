@@ -7,9 +7,10 @@
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
 
-The prototype of the free-roam pivot (`todo/2026-10-19-free-roam-pivot.md`). **The game boots
-straight into it** (`project.godot` → `run/main_scene = res://free_roam.tscn`); the hub and the
-region run are unreachable while this is the main scene. Drive with the usual controls; **R**
+The free-roam game (`todo/2026-10-19-free-roam-pivot.md`), entered from the title screen
+(`title.tscn`). It's driven from the persistent world in the profile, which covers the seed, car,
+pose, lit rest stops and map; see [world-session.md](world-session.md). The old hub and region
+run are unreachable from the game. Drive with the usual controls; **R**
 puts the car back on the nearest road. A label in the top-left shows the streaming stats.
 
 **The game builds the same island as `tools/road_network_lab.html` for the same seed.**
