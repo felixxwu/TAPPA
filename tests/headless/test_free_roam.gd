@@ -416,3 +416,72 @@ func test_a_pad_is_flat_at_its_roads_height_and_reads_as_road() -> void:
 		assert_almost_eq(terrain.height(c.x, c.y, PackedInt32Array(), false), sites.pad_h[i], 0.001, "pad %d is flat" % i)
 		assert_eq(terrain.road_weight(terrain.last_road_d), 1.0, "pad %d reads as road" % i)
 		assert_false(sites.is_clear(c, 0.0), "nothing is planted on pad %d" % i)
+
+
+# --- barriers ------------------------------------------------------------------------------------
+
+# Barrier params with the falling-land rule switched off, so every sharp bend gets its run and the
+# structural rules can be checked on a small island whatever its terrain.
+func _all_bends_params(s: FreeRoamSettings) -> Dictionary:
+	var params := Config.data.barrier_render_params()
+	params["track_width"] = s.road_half_width_m * 2.0
+	params["drop_min_m"] = -1.0e6
+	params["hill_tolerance_m"] = 1.0e6
+	return params
+
+
+func test_straight_roads_get_no_barriers() -> void:
+	var s := _settings()
+	s.road_twist = 0.0
+	var terrain := _sited(s)
+	var rb := RoadBarriers.new()
+	rb.plan(s, terrain.net, terrain, terrain.sites, _all_bends_params(s))
+	assert_eq(rb.modules.size(), 0)
+
+
+func test_barriers_sit_on_the_outside_of_bends_in_whole_runs_clear_of_pads() -> void:
+	var s := _settings()
+	var terrain := _sited(s)
+	var params := _all_bends_params(s)
+	var rb := RoadBarriers.new()
+	rb.plan(s, terrain.net, terrain, terrain.sites, params)
+	assert_gt(rb.modules.size(), 0)
+	var per_run := {}
+	var half_w: float = params["track_width"] * 0.5
+	for m: Dictionary in rb.modules:
+		per_run[m["run"]] = per_run.get(m["run"], 0) + 1
+		var tg: Vector2 = m["tangent"]
+		var edge: Vector2 = m["pos"] + Vector2(-tg.y, tg.x) * float(m["side"]) * (half_w + float(params["road_gap_m"]))
+		assert_true(terrain.sites.is_clear(edge, RoadBarriers.PAD_CLEAR_M - 0.01), "barrier clear of every pad")
+	for run in per_run.keys():
+		assert_true(per_run[run] >= int(params["min_run_modules"]), "run %d is long enough" % run)
+
+
+func test_a_chunk_builds_its_barrier_modules_with_collision() -> void:
+	var s := _settings()
+	var st := TerrainStreamer.new()
+	st.settings = s
+	var focus := Node3D.new()
+	add_child_autofree(focus)
+	st.focus = focus
+	add_child_autofree(st)
+	st.barriers.plan(s, st.network, st.terrain, st.sites, _all_bends_params(s))
+	var m: Dictionary = st.barriers.modules[0]
+	var p: Vector2 = m["pos"]
+	focus.position = Vector3(p.x, 0.0, p.y)
+	st.prefill()
+	var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of(p)]
+	var field: BarrierField = cs.foliage.get_node("Barriers")
+	assert_eq(field.barrier_count, st.barriers.in_chunk(st._chunk_of(p)).size())
+	assert_true(field.find_children("*", "StaticBody3D", true, false).size() > 0, "barriers are solid")
+
+
+func test_a_chunk_with_bushes_can_be_brushed_by_the_car() -> void:
+	var s := _settings()
+	var st := _prefilled(s)
+	for c in st._chunks.values():
+		var cs: TerrainStreamer.ChunkState = c
+		if cs.foliage != null and cs.foliage.has_node("BushInteraction"):
+			assert_eq(cs.foliage.get_node("BushInteraction")._car, st.focus, "the bush field watches the car")
+			return
+	pending("no near chunk on this island grew bushes")

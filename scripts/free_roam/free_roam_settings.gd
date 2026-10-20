@@ -62,6 +62,11 @@ extends Resource
 ## Draw a placeholder post at every site (until rest stops and loot get real models).
 @export var site_markers := true
 
+@export_group("Barriers")
+## A road vertex that turns by more than this is a sharp bend and gets a barrier on its outside
+## where the land falls away. The module and drop rules are GameConfig's barrier_* fields.
+@export var barrier_turn_min_deg := 28.0
+
 @export_group("Foliage")
 ## One candidate spot per cell of this size; trees are then thinned by the forest noise.
 @export var tree_cell_m := 9.0

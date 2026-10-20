@@ -29,6 +29,7 @@ const ROCK_SALT := 303
 var network := RoadNetwork.new()
 var terrain := RoadTerrain.new()
 var sites := RoadSites.new()
+var barriers := RoadBarriers.new()
 var focus: Node3D
 
 # Read by the HUD.
@@ -105,6 +106,8 @@ func _ready() -> void:
 	network.build(settings, terrain)
 	sites.build(settings, network, terrain)
 	terrain.sites = sites
+	if Config.data.barriers_enabled:
+		barriers.plan(settings, network, terrain, sites, barrier_params())
 	stat_build_ms = Time.get_ticks_msec() - t0
 	_forest = TreeScatter.make_forest_noise(settings.world_seed, Config.data.forest_wavelength_m)
 	# Biome ring i wears region i of the progression (wrapping if there are more rings).
@@ -115,6 +118,7 @@ func _ready() -> void:
 		network.node_x.size(), network.edges.size(), network.total_length_m / 1000.0,
 		sites.of_kind(RoadSites.Kind.REST).size(), sites.of_kind(RoadSites.Kind.LOOT).size(),
 		sites.of_kind(RoadSites.Kind.DEAD_END).size(), stat_build_ms])
+	print("free roam: %d barrier modules" % barriers.modules.size())
 
 
 # --- what the car asks of its terrain ------------------------------------------------------
@@ -569,7 +573,16 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 						String(entry.get("profile", "home")) == "region", entry.get("size_scale", Vector2.ONE)))
 	var bushes: PackedVector2Array = job.kept[Plant.BUSH]
 	if not bushes.is_empty():
-		job.spawns.append(func(parent: Node3D) -> void: Foliage.spawn_bushes(parent, bushes, self, dist, fade))
+		job.spawns.append(func(parent: Node3D) -> void:
+			Foliage.spawn_bushes(parent, bushes, self, dist, fade)
+			# Bushes have no collider: a proximity field makes brushing one cost HP and drag,
+			# exactly as on the stage (world.gd._build_foliage).
+			if focus != null:
+				var touch := BushField.new()
+				touch.name = "BushInteraction"
+				parent.add_child(touch)
+				touch.setup(bushes, focus, TreeMeshField.xz_radius(Foliage.bush_mesh(), cfg.bush_height_m) * cfg.bush_hit_radius_frac,
+					cfg.bush_drag_strength, cfg.bush_drag_torque, cfg.bush_min_speed_kmh / DamageModel.MPS_TO_KMH))
 	var anchors: PackedVector2Array = job.kept[Plant.ROCK]
 	if not anchors.is_empty():
 		# Each anchor fans out into an outcrop; the companions are checked like any other spot.
@@ -586,6 +599,25 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 			if not pts.is_empty():
 				job.spawns.append(func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, self, i, true, dist, fade))
 	_queue_site_markers(job)
+	_queue_barriers(job)
+
+
+# The stage's barrier modules and collision, fed the free-roam layout and this road's width.
+func barrier_params() -> Dictionary:
+	var params := Config.data.barrier_render_params()
+	params["track_width"] = settings.road_half_width_m * 2.0
+	return params
+
+
+func _queue_barriers(job: ChunkJob) -> void:
+	var layout := barriers.in_chunk(job.coord)
+	if layout.is_empty():
+		return
+	job.spawns.append(func(parent: Node3D) -> void:
+		var field := BarrierField.new()
+		field.name = "Barriers"
+		parent.add_child(field)
+		field.build(layout, barrier_params(), func(p: Vector2) -> float: return height_at(p.x, p.y)))
 
 
 # Placeholder posts at the chunk's sites, until rest stops and loot get real models: tall

@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`
@@ -121,6 +121,25 @@ planted on it (`is_clear`).
 
 On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
 
+## Barriers
+
+`RoadBarriers` plans crash barriers once at boot, and each near chunk builds its share with the
+stage's `BarrierField` (modules, MultiMesh batching, solid collision in the damage obstacle
+group), under the foliage node. The rules match the stage's corner barriers
+(`features/barriers.md`):
+- **Sharp bends only:** a polyline vertex that turns by more than
+  `FreeRoamSettings.barrier_turn_min_deg`. The run covers the outside of the chord before
+  it, the arc the road edge makes about the vertex, and the chord after it, reaching
+  `barrier_lead_m + BEND_REACH_M` each way.
+- **Only where the land falls away:** `BarrierLayout._land_falls_away`, with the stage's
+  `GameConfig` `barrier_*` drop and bank settings. It's judged once per three modules to keep
+  boot cheap, about 0.3 s on the default island.
+- **Open where it should be:** none within 20 m of a junction or 4 m of a pad, and none
+  shorter than `barrier_min_run_modules`.
+
+Roads are built into valleys, so the land rarely falls away beside them. The default island has
+only about 190 modules.
+
 ## Trees, bushes and rocks
 
 Near chunks are planted after their mesh (and collision) is attached, through the same
@@ -142,7 +161,9 @@ chunk.
   one foliage field per species as its own unit of work.
 - **Lifetime:** the foliage lives on `ChunkState.foliage` and is freed with the near mesh.
   It is only planted within the near ring, which matches `tree_render_distance_m` (120 m).
-- **Not yet:** bush brushing (the stages' `BushField` hit-and-drag) and knocking trees over.
+- **Bush brushing:** each chunk's bushes get a `BushField` watching the car, so brushing one
+  costs HP and drag as on the stage. **Knocking trees over** needs nothing extra: it lives in
+  `car.gd` and works on any colliding `TreeMeshField`.
 
 ## The shell
 
@@ -187,7 +208,7 @@ Run it from the command line to drive 3 km of the real island and print the repo
 
 ## Not in the prototype yet
 
-Barriers, rest stop and loot models (sites only have placeholder posts), pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
+Rest stop and loot models (sites only have placeholder posts), pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
 and threading. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.

@@ -443,7 +443,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    (`todo/mobile-web-performance.md`), warm up shaders at boot, and move the height
    maths to GDExtension or threads only if those measurements say so. It can run
    alongside stages 3–4 rather than strictly between them.
-3. **Per-chunk props — foliage and rocks DONE.** Remaining: barriers. `BarrierLayout`
+3. **Per-chunk props — DONE 2026-10-20** (barriers, bush brushing; trees already fell). Foliage and rocks DONE. Remaining: barriers. `BarrierLayout`
    plans from a single centreline, so it needs to work per road and per chunk, and it
    needs a rule at junctions. Also remaining: bush brushing (`BushField` hit-and-drag)
    and knocking trees over.
@@ -601,3 +601,9 @@ Numbering continues from decision 32.
   along the road.
 - **D41. Placeholder coloured posts mark sites** until real rest-stop and loot models exist
   (`site_markers`).
+- **D42. Barriers are planned at boot and built per chunk**, rather than planned per chunk. The
+  whole graph is known, so a bend's run never splits across a planning boundary. A sharp bend
+  is a vertex turning more than 28°. Falling land is judged once per three modules, which cut
+  planning from 0.65 s to 0.3 s. **REVIEW:** with roads in valleys, the stage's "land falls
+  away" rule leaves very few barriers (about 190 modules on 48 km). Lowering
+  `barrier_drop_min_m` or the turn threshold adds more.
