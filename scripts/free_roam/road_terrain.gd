@@ -18,6 +18,9 @@ const RING_TINTS: Array[Color] = [
 ]
 
 var net: RoadNetwork
+# The rest stop / loot / dead-end pads (RoadSites), once planned: the ground under each is
+# flattened to its road's height and reads as road. Null while the sites are being planned.
+var sites: RoadSites
 # Distance to the nearest road found by the last height() call; INF when none was looked up.
 var last_road_d := INF
 
@@ -72,6 +75,19 @@ func is_water(x: float, y: float) -> bool:
 # Terrain height. `cands` is a chunk's pre-gathered road candidates (RoadNetwork.candidates_for);
 # pass use_cands = false for a one-off query anywhere.
 func height(x: float, y: float, cands: PackedInt32Array, use_cands: bool) -> float:
+	var h := _natural_height(x, y, cands, use_cands)
+	if sites == null:
+		return h
+	var i := sites.pad_at(x, y)
+	if i < 0:
+		return h
+	var o := sites.outside(i, x, y)
+	# a pad reads as road: full surface inside it, fading over the shoulder outside
+	last_road_d = minf(last_road_d, maxf(0.0, _s.road_half_width_m + o))
+	return lerpf(sites.pad_h[i], h, LabNoise.smooth(0.0, sites.blend_m(), o))
+
+
+func _natural_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool) -> float:
 	last_road_d = INF
 	var r := LabNoise.hyp(x, y)
 	if r < min_coast_r() - 400.0:

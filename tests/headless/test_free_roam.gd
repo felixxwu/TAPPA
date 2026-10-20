@@ -202,9 +202,10 @@ func test_the_road_surface_read_from_a_loaded_chunk_agrees_with_the_road() -> vo
 			net.nearest(p.x, p.y, 50.0)
 			var off := p + Vector2(-net.hit_dir.y, net.hit_dir.x) * (s.road_half_width_m + s.road_shoulder_m + 6.0)
 			net.nearest(off.x, off.y, 50.0)
-			if net.hit_d > s.road_half_width_m + s.road_shoulder_m + 3.0:
+			# (a rest stop or loot pad reads as road too, so the off-road point must miss them)
+			if net.hit_d > s.road_half_width_m + s.road_shoulder_m + 3.0 and st.sites.is_clear(off, s.road_shoulder_m + 1.0):
 				assert_almost_eq(st.surface_at(off.x, off.y).x, 0.0, 0.001, "off the road")
-			return
+				return
 	fail_test("no road ran through a loaded near chunk")
 
 
@@ -223,7 +224,8 @@ func _foliage_positions(st: TerrainStreamer) -> PackedVector3Array:
 		if cs.foliage == null:
 			continue
 		for field in cs.foliage.get_children():
-			out.append_array(field.get("instance_positions"))
+			if field.get("instance_positions") != null:  # site markers share the node
+				out.append_array(field.get("instance_positions"))
 	return out
 
 
@@ -336,3 +338,81 @@ func test_the_auto_driver_never_reaches_ground_without_collision() -> void:
 	var r := driver.report()
 	assert_eq(r["holes"], 0, "the car was over a chunk with no collision")
 	assert_gt(r["progress_m"], 150.0, "the car made real progress along the route")
+
+
+# --- sites: rest stops, loot slots, dead ends -----------------------------------------------------
+
+func _sited(s: FreeRoamSettings) -> RoadTerrain:
+	var terrain := _world(s)
+	var sites := RoadSites.new()
+	sites.build(s, terrain.net, terrain)
+	terrain.sites = sites
+	return terrain
+
+
+func test_spawn_is_the_first_rest_stop() -> void:
+	var sites := _sited(_settings()).sites
+	assert_eq(sites.kind[0], RoadSites.Kind.REST)
+	assert_eq(sites.pos[0], Vector2.ZERO)
+
+
+func test_every_dead_end_and_only_dead_ends_get_a_dead_end_site() -> void:
+	var terrain := _sited(_settings())
+	var net := terrain.net
+	var degree := {}
+	for e in net.edges:
+		degree[e.x] = degree.get(e.x, 0) + 1
+		degree[e.y] = degree.get(e.y, 0) + 1
+	var expected := {}
+	for n: int in degree.keys():
+		if n != 0 and degree[n] == 1:
+			expected[n] = true
+	var found := {}
+	for i in terrain.sites.of_kind(RoadSites.Kind.DEAD_END):
+		found[terrain.sites.node[i]] = true
+	assert_eq(found.keys().size(), expected.keys().size())
+	for n in expected.keys():
+		assert_true(found.has(n), "dead end at node %d has its site" % n)
+
+
+func test_roadside_pads_are_dry_hang_off_their_own_road_and_never_overlap() -> void:
+	var terrain := _sited(_settings())
+	var sites := terrain.sites
+	var net := terrain.net
+	assert_gt(sites.of_kind(RoadSites.Kind.REST).size(), 1)
+	assert_gt(sites.of_kind(RoadSites.Kind.LOOT).size(), 0)
+	for i in sites.count():
+		var c := sites.pos[i]
+		if sites.kind[i] != RoadSites.Kind.DEAD_END and i > 0:
+			assert_false(terrain.is_water(c.x, c.y), "site %d is on dry land" % i)
+			assert_true(net.nearest(c.x, c.y, 1000.0) and net.hit_edge == sites.edge[i], "site %d is nearest its own road" % i)
+		for j in range(i + 1, sites.count()):
+			assert_gt(c.distance_to(sites.pos[j]), sites.radius[i] + sites.radius[j] - 0.01, "sites %d and %d overlap" % [i, j])
+
+
+func test_wider_rest_stop_spacing_places_fewer_rest_stops() -> void:
+	var dense := _settings()
+	dense.rest_stop_spacing_m = PackedFloat32Array([200.0])
+	var sparse := _settings()
+	sparse.rest_stop_spacing_m = PackedFloat32Array([600.0])
+	assert_gt(_sited(dense).sites.of_kind(RoadSites.Kind.REST).size(), _sited(sparse).sites.of_kind(RoadSites.Kind.REST).size())
+
+
+func test_rest_stop_spacing_is_read_per_ring_and_the_last_entry_covers_outer_rings() -> void:
+	var s := _settings()
+	s.ring_count = 3
+	s.rest_stop_spacing_m = PackedFloat32Array([111.0, 222.0])
+	var terrain := _world(s)
+	for p in [Vector2(10, 10), Vector2(s.island_radius_m * 0.5, 0), Vector2(s.island_radius_m * 0.78, 0)]:
+		var ring := terrain.ring_index(p.x, p.y)
+		assert_eq(RoadSites.rest_spacing_at(s, terrain, p), [111.0, 222.0, 222.0][ring])
+
+
+func test_a_pad_is_flat_at_its_roads_height_and_reads_as_road() -> void:
+	var terrain := _sited(_settings())
+	var sites := terrain.sites
+	for i in sites.count():
+		var c := sites.pos[i]
+		assert_almost_eq(terrain.height(c.x, c.y, PackedInt32Array(), false), sites.pad_h[i], 0.001, "pad %d is flat" % i)
+		assert_eq(terrain.road_weight(terrain.last_road_d), 1.0, "pad %d reads as road" % i)
+		assert_false(sites.is_clear(c, 0.0), "nothing is planted on pad %d" % i)

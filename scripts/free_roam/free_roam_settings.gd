@@ -48,6 +48,20 @@ extends Resource
 @export var bump_height_m := 5.0
 @export var bump_scale_m := 50.0
 
+@export_group("Sites")
+## Road between rest stops, per biome ring counting outward (the last entry covers any ring
+## beyond the list). Decision 31: one value per ring, all equal to start with.
+@export var rest_stop_spacing_m := PackedFloat32Array([300.0, 300.0, 300.0])
+## Road between loot pull-ins (slots; stage 7 decides which hold loot).
+@export var loot_slot_spacing_m := 400.0
+@export var rest_stop_radius_m := 16.0
+@export var loot_pad_radius_m := 7.0
+@export var dead_end_radius_m := 14.0
+## How far a pad's flat ground blends back into the natural terrain.
+@export var pad_blend_m := 12.0
+## Draw a placeholder post at every site (until rest stops and loot get real models).
+@export var site_markers := true
+
 @export_group("Foliage")
 ## One candidate spot per cell of this size; trees are then thinned by the forest noise.
 @export var tree_cell_m := 9.0

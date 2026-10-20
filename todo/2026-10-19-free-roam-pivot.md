@@ -432,7 +432,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    the island at top speed, reports budget overruns and any chunk reached without
    collision, and backs a cheap headless regression test. The original exit criterion,
    "5+ km with no hitch", has only been checked while parked.
-1. **The road network — layout and terrain DONE. Unblocked** (*Road network decisions*).
+1. **The road network — DONE 2026-10-20** (`RoadSites`, `features/free-roam.md` → *Sites*). Layout and terrain DONE.
    Remaining:
    - rest stop positions, every N m of road with N per biome (decision 31);
    - a list of dead-end nodes, for the payoffs (decision 30);
@@ -590,3 +590,14 @@ Numbering continues from decision 32.
   visible, so the very first open put the cursor on Settings instead of Resume. It now starts
   hidden. Also fixed an existing ternary type warning in `spike_id_pass.gd`, which GUT reports
   as an error once a test loads the post-process scene.
+- **D38. REVIEW — rest stops are dense at the decided 300 m.** On the default island that's
+  147 rest stops on 48 km, one every 20 s or so at speed. A cooling failure is then barely a
+  threat. I kept 300 m because it's what we agreed (decision 31); it's one number per ring in
+  `FreeRoamSettings.rest_stop_spacing_m`. My guess is 800–1500 m once the damage chain is in.
+- **D39. Loot slots every 400 m of road**, kept 40 m clear of rest-stop pads, which gives 78 on the
+  default island. They're slots: stage 7 decides which hold loot.
+- **D40. Sites are flat pads that read as road** (gravel texture, road grip, no foliage). The
+  spawn rest stop is centred on the spawn junction. Each site sits at least 45 m from a junction
+  along the road.
+- **D41. Placeholder coloured posts mark sites** until real rest-stop and loot models exist
+  (`site_markers`).

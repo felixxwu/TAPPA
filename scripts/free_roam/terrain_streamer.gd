@@ -28,6 +28,7 @@ const ROCK_SALT := 303
 
 var network := RoadNetwork.new()
 var terrain := RoadTerrain.new()
+var sites := RoadSites.new()
 var focus: Node3D
 
 # Read by the HUD.
@@ -102,14 +103,18 @@ func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 	terrain.setup(settings, network)
 	network.build(settings, terrain)
+	sites.build(settings, network, terrain)
+	terrain.sites = sites
 	stat_build_ms = Time.get_ticks_msec() - t0
 	_forest = TreeScatter.make_forest_noise(settings.world_seed, Config.data.forest_wavelength_m)
 	# Biome ring i wears region i of the progression (wrapping if there are more rings).
 	var regions := RegionLibrary.ordered()
 	for i in settings.ring_count:
 		_ring_looks.append(RegionLibrary.look_of(String(regions[i % regions.size()]["id"])))
-	print("free roam: network %d nodes, %d links, %.0f km of road, built in %d ms" % [
-		network.node_x.size(), network.edges.size(), network.total_length_m / 1000.0, stat_build_ms])
+	print("free roam: network %d nodes, %d links, %.0f km of road, %d rest stops, %d loot slots, %d dead ends, built in %d ms" % [
+		network.node_x.size(), network.edges.size(), network.total_length_m / 1000.0,
+		sites.of_kind(RoadSites.Kind.REST).size(), sites.of_kind(RoadSites.Kind.LOOT).size(),
+		sites.of_kind(RoadSites.Kind.DEAD_END).size(), stat_build_ms])
 
 
 # --- what the car asks of its terrain ------------------------------------------------------
@@ -154,9 +159,8 @@ func surface_at(x: float, z: float) -> Vector2:
 	var st: ChunkState = _chunks.get(coord)
 	if st != null and not st.near_road_d.is_empty():
 		return Vector2(terrain.road_weight(_mesh_height(st.near_road_d, settings.near_stride_m, 0, coord, x, z)), 0.0)
-	if not network.nearest(x, z, settings.road_half_width_m + settings.road_shoulder_m + 1.0):
-		return Vector2.ZERO
-	return Vector2(terrain.road_weight(network.hit_d), 0.0)
+	terrain.height(x, z, PackedInt32Array(), false)
+	return Vector2(terrain.road_weight(terrain.last_road_d), 0.0)
 
 
 # --- scheduling ----------------------------------------------------------------------------
@@ -513,7 +517,7 @@ func _spot_is_clear(st: ChunkState, p: Vector2, water: float, clearance: float) 
 	if height_at(p.x, p.y) < water + 0.3 or terrain.is_lake(p.x, p.y):
 		return false
 	var near_road := network.nearest_in(p.x, p.y, st.cands, clearance) if st.has_cands else network.nearest(p.x, p.y, clearance)
-	return not near_road
+	return not near_road and sites.is_clear(p, 2.0)
 
 
 func _plant_candidates(job: ChunkJob) -> void:
@@ -581,6 +585,45 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 			var pts: PackedVector2Array = groups[i]
 			if not pts.is_empty():
 				job.spawns.append(func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, self, i, true, dist, fade))
+	_queue_site_markers(job)
+
+
+# Placeholder posts at the chunk's sites, until rest stops and loot get real models: tall
+# orange for a rest stop, short blue for a loot slot, purple for a dead end.
+func _queue_site_markers(job: ChunkJob) -> void:
+	if not settings.site_markers:
+		return
+	var cm := settings.chunk_m
+	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
+	var mine := PackedInt32Array()
+	for i in ids:
+		if _chunk_of(sites.pos[i]) == job.coord:  # each marker belongs to the chunk holding its centre
+			mine.append(i)
+	if mine.is_empty():
+		return
+	job.spawns.append(func(parent: Node3D) -> void:
+		for i in mine:
+			parent.add_child(_site_marker(i)))
+
+
+func _site_marker(i: int) -> MeshInstance3D:
+	var looks := {RoadSites.Kind.REST: [Color(1.0, 0.55, 0.1), 5.0], RoadSites.Kind.LOOT: [Color(0.2, 0.55, 1.0), 1.6],
+		RoadSites.Kind.DEAD_END: [Color(0.65, 0.3, 0.9), 3.0]}
+	var look: Array = looks[sites.kind[i]]
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.25
+	mesh.bottom_radius = 0.25
+	mesh.height = look[1]
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = look[0]
+	mesh.material = mat
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.name = "Site%d" % i
+	var c := sites.pos[i]
+	mi.position = Vector3(c.x, sites.pad_h[i] + look[1] * 0.5, c.y)
+	return mi
 
 
 func _spawn_next(job: ChunkJob) -> void:

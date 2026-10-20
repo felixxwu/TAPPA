@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`
@@ -96,6 +96,31 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 - **Road candidates** are gathered once per chunk (`ChunkState.cands`), with a margin wide
   enough for both strides, and shared by its far and near builds.
 
+## Sites: rest stops, loot slots and dead ends
+
+`RoadSites` plans every place that hangs off the network, once at boot from the whole graph
+(decisions 30–31 in `todo/2026-10-19-free-roam-pivot.md`). Each site is a flat round pad.
+`RoadTerrain.height` flattens the ground under it to its road's height (`pad_h`, blending back
+over `pad_blend_m`) and reports it as road, so it draws as gravel, grips as road and nothing is
+planted on it (`is_clear`).
+
+- **Rest stops (`REST`):** spawn is the first, centred on the spawn junction. The rest are
+  placed breadth-first from spawn, carrying "road since the last rest stop" into each junction
+  (the least over the ways in). A stop goes down each time that reaches the spacing for its
+  ring (`rest_stop_spacing_m`, one entry per ring, the last covering any ring beyond).
+- **Loot slots (`LOOT`):** placed the same way at `loot_slot_spacing_m`, kept clear of rest
+  stops. They are slots; stage 7 decides which hold loot.
+- **Dead ends (`DEAD_END`):** a clearing at every junction with only one road (spawn aside).
+- **Roadside placement** (`_place_along`, `_try_roadside`): never within `JUNCTION_CLEAR_M` of
+  a junction. The pad sits beside the road on a seeded side, or the other side if that one is
+  water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
+  further on.
+- **Placeholder markers:** until rest stops and loot get real models, a coloured post marks each
+  site in near chunks (`_site_marker`): tall orange for a rest stop, short blue for loot,
+  purple for a dead end. `FreeRoamSettings.site_markers` turns them off.
+
+On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
+
 ## Trees, bushes and rocks
 
 Near chunks are planted after their mesh (and collision) is attached, through the same
@@ -162,8 +187,7 @@ Run it from the command line to drive 3 km of the real island and print the repo
 
 ## Not in the prototype yet
 
-Barriers, rest stops (the lab places one every 300 m; `RoadNetwork` doesn't port that yet),
-pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
+Barriers, rest stop and loot models (sites only have placeholder posts), pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
 and threading. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.
