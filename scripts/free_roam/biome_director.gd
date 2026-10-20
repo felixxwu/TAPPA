@@ -15,6 +15,8 @@ extends Node
 #     and background colours, fog density and sky affect blend to the new target over
 #     `look_crossfade_s`. The panorama can't blend, so it swaps at the middle of the fade,
 #     when the fog is thickest.
+#   * Ring side effects: the wheel debris's off-road particle colour and shape (grass blades,
+#     the snow ring's powder clods), from the region look.
 #   * Weather side effects: particles on the chase camera, the road tint on every ring's ground
 #     material, wind sway, the car's sun dimming and the night headlight cone.
 #
@@ -29,6 +31,10 @@ const SWAP_FOG_SWELL := 2.5
 @export var car: VehicleBody3D
 @export var environment: WorldEnvironment
 @export var camera: Camera3D
+
+# The car's wheel debris (free_roam.gd creates it). A new ring re-seats its off-road particle
+# colour and shape from the ring's region look, the way world.gd does once per stage.
+var wheel_particles: WheelParticles = null
 
 var ring := -1
 var weather := ""
@@ -77,10 +83,18 @@ func update_now() -> void:
 	if ring_changed:
 		apply_handling(Config.data, region_of(streamer.settings, ring))
 		_wire_water()
+		_seat_particle_look()
 	if w != weather:
 		weather = w
 		_apply_weather(Config.data)
 	_start_fade(target_look(Config.data, region_of(streamer.settings, ring), weather, _base_env))
+
+
+# The wheel debris's off-road particle (colour, blade or clod) for the ring's region; the default
+# blade where the region authors none.
+func _seat_particle_look() -> void:
+	if wheel_particles != null:
+		wheel_particles.apply_region_look(RegionLibrary.look_of(region_of(streamer.settings, ring)))
 
 
 # The region a ring wears: ring_regions[i], wrapping; the authored progression if the list is empty.

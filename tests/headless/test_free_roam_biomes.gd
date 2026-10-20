@@ -5,6 +5,7 @@ extends GutTest
 
 const ICY := {"id": "icy", "order": 0, "name": "Icy",
 	"grass_texture": "res://textures/gravel.jpg",
+	"grass_particle_color": Color(0.9, 0.9, 1.0), "grass_particle_square": true,
 	"background_color": Color(0.2, 0.4, 0.6),
 	"surface_grip": {"gravel": "snow_gravel_grip", "grass": "snow_grass_grip", "tarmac": "snow_tarmac_grip"},
 	"frozen_water": {"grip": "ice_grip"}}
@@ -145,3 +146,27 @@ func test_every_ring_material_is_drawn_once_at_boot_and_cleaned_up() -> void:
 	for i in 4:
 		await get_tree().process_frame
 	assert_eq(cam.get_child_count(), 0, "the specks are gone after the warm-up")
+
+
+func test_each_ring_seats_its_regions_off_road_particle() -> void:
+	var s := _settings()
+	var st := TerrainStreamer.new()
+	st.settings = s
+	var d := BiomeDirector.new()
+	d.streamer = st
+	var wp := WheelParticles.new()
+	add_child_autofree(wp)
+	d.wheel_particles = wp
+	var cfg: GameConfig = Config.data
+	d.ring = 0  # icy
+	d._seat_particle_look()
+	var look: WheelParticles.Look = wp._grass_look(cfg)
+	assert_eq(look.color, ICY["grass_particle_color"], "the icy ring throws its own colour")
+	assert_eq(look.half_w, look.half_h, "...as clods")
+	d.ring = 1  # plain authors none
+	d._seat_particle_look()
+	look = wp._grass_look(cfg)
+	assert_eq(look.color, cfg.wheel_particle_grass_color, "a ring with no override throws the default")
+	assert_ne(look.half_w, look.half_h, "...blades")
+	d.free()
+	st.free()

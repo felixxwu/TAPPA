@@ -207,11 +207,11 @@ func hit_test(pos: Vector2) -> String:
 static func stick_output_for(touch_pos: Vector2, base_center: Vector2, radius: float) -> Dictionary:
 	if radius <= 0.0:
 		return {"knob_offset": Vector2.ZERO, "output": Vector2.ZERO}
-	var offset := touch_pos - base_center
-	if offset.length() > radius:
-		offset = offset.normalized() * radius
-	var output := Vector2(offset.x / radius, -offset.y / radius)  # screen-up = forward
-	return {"knob_offset": offset, "output": output}
+	var knob := touch_pos - base_center
+	if knob.length() > radius:
+		knob = knob.normalized() * radius
+	var output := Vector2(knob.x / radius, -knob.y / radius)  # screen-up = forward
+	return {"knob_offset": knob, "output": output}
 
 
 # Current thumbstick output as a Vector2 (x = strafe right, y = forward), zero when
@@ -420,11 +420,11 @@ func _update_visuals() -> void:
 # Hide or show every widget. While hidden, hit_test refuses "stick" (nothing left to
 # capture) and a plain tap anywhere restores the UI (_release). HELD input (stick,
 # up/down) is force-released on hide so nothing keeps flying with the controls gone.
-func set_hidden(hide: bool) -> void:
-	if _hidden == hide:
+func set_hidden(hidden: bool) -> void:
+	if _hidden == hidden:
 		return
-	_hidden = hide
-	if hide:
+	_hidden = hidden
+	if hidden:
 		_pointers.clear()
 		_stick_owner = null
 		_stick_knob_pos = Vector2.ZERO

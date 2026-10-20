@@ -11,7 +11,6 @@ extends Node3D
 # units and carry on next frame. The car sees this node as its terrain (height_at /
 # surface_at), the same way it sees the stage Floor.
 
-const SUN := Vector3(-0.45, 0.8, -0.4)
 const UV_PER_M := 0.125
 # How many vertices the array stage packs between clock checks (each is a few µs).
 const CHECK_EVERY := 4
@@ -68,7 +67,14 @@ var _zero_uv2 := {}  # verts per side -> PackedVector2Array
 var _plan_coord := Vector2i(1 << 30, 0)
 var _plan_timer := 0.0
 var _ran_this_frame := false
-var _sun := SUN.normalized()
+# The stage's fake sun and hemisphere ambient (GameConfig's Lighting group, the same values
+# TerrainManager bakes into a stage's vertex colours via apply_terrain_light), read once when the
+# streamer is made so every chunk of a session is baked under the same light.
+var _sun: Vector3 = Config.data.sun_direction.normalized()
+var _sun_color: Color = Config.data.sun_color
+var _sky_color: Color = Config.data.sky_color
+var _ground_color: Color = Config.data.ground_color
+var _light_amount: float = Config.data.terrain_light_amount
 var _forest: FastNoiseLite
 var _ring_looks: Array[Dictionary] = []
 var _ring_materials: Array[Material] = []
@@ -275,7 +281,7 @@ func _process(delta: float) -> void:
 		stat_overruns += 1
 		stat_overshoot_us += used - settings.budget_us
 		stat_overrun_by[_last_kind] = int(stat_overrun_by.get(_last_kind, 0)) + 1
-		if used > settings.budget_us * 3 / 2:
+		if used > settings.budget_us * 1.5:
 			stat_spikes += 1
 			stat_spike_by[_last_kind] = int(stat_spike_by.get(_last_kind, 0)) + 1
 
@@ -609,10 +615,9 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		var dhx := (job.heights[row + xr + hl] - job.heights[row + xl + hl]) / ((xr - xl) * s)
 		var dhz := (job.heights[(zu + hl) * m + gx + hl] - job.heights[(zd + hl) * m + gx + hl]) / ((zu - zd) * s)
 		var normal := Vector3(-dhx, 1.0, -dhz).normalized()
-		var light := 0.55 + 0.5 * maxf(0.0, normal.dot(_sun))
 		var px := ox + gx * s
 		var pz := oy + gz * s
-		var col := job.tint * light
+		var col := job.tint * ground_light(normal)
 		col.a = terrain.road_weight(job.road_d[i])
 		job.verts[i] = Vector3(gx * s, h, gz * s)
 		job.colors[i] = col
@@ -713,15 +718,25 @@ func _collide(job: ChunkJob) -> void:
 	st.col_job = null
 
 
+# The baked light on ground with unit normal `n`: the stage terrain's fake shading (hemisphere
+# ambient + one low sun aligned with the skybox, TerrainManager.light_for_normal) under the
+# GameConfig light. Baked into every chunk vertex during the ARRAYS stage, so it costs nothing
+# per frame; slopes facing the sun read bright and slopes facing away dark, as on a stage.
+func ground_light(n: Vector3) -> Color:
+	if _light_amount <= 0.0:
+		return Color.WHITE
+	return TerrainManager.light_for_normal(n, _sun, _sun_color, _sky_color, _ground_color, _light_amount)
+
+
 # Baked ground light for foliage that wants to match the ground it stands on (the bushes):
-# the same tint-times-sun shading the chunk vertices get.
+# the same tint-times-light shading the chunk vertices get.
 func light_at(x: float, z: float) -> Color:
 	return _light_with(height_at, x, z)
 
 
 func _light_with(h: Callable, x: float, z: float) -> Color:
 	var n := Vector3(h.call(x - 1.0, z) - h.call(x + 1.0, z), 2.0, h.call(x, z - 1.0) - h.call(x, z + 1.0)).normalized()
-	var c := ring_tint_at(Vector2(x, z)) * (0.55 + 0.5 * maxf(0.0, n.dot(_sun)))
+	var c := ring_tint_at(Vector2(x, z)) * ground_light(n)
 	c.a = 1.0
 	return c
 

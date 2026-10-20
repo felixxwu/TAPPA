@@ -6,7 +6,9 @@ they spin faster than the ground — a standing burnout, a wheelspin launch, or 
 spinning slide. **One pool serves every surface**, with each particle carrying its
 own colour, dimensions and roll picked at emit time: grey-brown clods on gravel,
 slim green blades on grass, nothing on tarmac (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
-across event regenerations), exactly like `TireMarks`.
+across event regenerations), exactly like `TireMarks`, and in free roam by `free_roam.gd._ready`,
+where `TerrainStreamer.surface_at` answers the surface query (see [free-roam.md](free-roam.md) →
+"The shell").
 
 **Tests:** `tests/headless/test_wheel_particles.gd`, `tests/headless/test_cpu_particle_pool.gd`
 
@@ -49,11 +51,13 @@ The grass blade colour is per-region: `_grass_look` uses `wheel_particle_grass_c
 (`game_config.gd`, tuned to the home world's `textures/grass.jpg`) unless
 `world.gd` has set `WheelParticles._grass_color_override` from the driven rally's
 `RegionLibrary.look_of()["grass_particle_color"]` (e.g. Greece's dry olive/tan,
-tuned to `textures/grass-greece.jpg`, instead of the home green). `world.gd` sets
-the override once via `set_grass_color_override()` right after `_wheel_particles.setup()`,
-since the region is fixed for the world's lifetime. A region that authors no
-override falls back to the GameConfig default (alpha-0 `Color()` is the "unset"
-sentinel).
+tuned to `textures/grass-greece.jpg`, instead of the home green). Both region
+overrides (this colour and the shape below) are seated together by
+`apply_region_look(look)`: `world.gd` calls it once right after `_wheel_particles.setup()`,
+since a stage's region is fixed for the world's lifetime, and free roam's `BiomeDirector`
+calls it on every ring change (`_seat_particle_look`), since there the region follows the
+car. A region that authors no override falls back to the GameConfig default (alpha-0
+`Color()` is the "unset" sentinel).
 
 A region may also override the off-road particle's SHAPE, via
 `RegionLibrary.look_of()["grass_particle_square"]` and the matching
@@ -223,6 +227,12 @@ without a real vehicle or rendering: dirt flies from a driven, spinning, on-grav
 wheel; none from an undriven wheel, a wheel rolling no faster than the ground, or a
 wheel on tarmac; a wheel on grass throws grass; a spinning *and* sliding wheel
 still emits and throws backward + sideways; and the ring buffer caps the live count.
+
+`apply_region_look` seats both overrides and an empty look clears them. Free-roam coverage
+lives with free roam: `test_free_roam.gd` (the streamer's `surface_at` picks gravel on the road and
+grass off it), `test_free_roam_shell.gd` (the scene makes the pool, wires it to the car, and the
+car's terrain is the streamer) and `test_free_roam_biomes.gd` (each ring seats its region's
+particle).
 
 The per-particle look has its own cases: gravel and grass share one pool/cap,
 `_write_slot`'s basis encodes the half-extents as column lengths and the roll as

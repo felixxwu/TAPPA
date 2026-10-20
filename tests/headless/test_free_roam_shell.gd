@@ -73,6 +73,17 @@ func test_the_shell_wires_the_hud_controls_and_pause_menu() -> void:
 	assert_true(_pause._input_enabled, "the pause menu is armed once the island has loaded")
 
 
+# The wheel debris is made for free roam just as world.gd makes it for a stage, and reads the
+# same terrain the tyres do (the streamer), so grass and gravel spray where the grip changes.
+func test_the_wheel_debris_follows_the_car_and_reads_the_streamers_surface() -> void:
+	var wp := _scene.get_node_or_null("WheelParticles") as WheelParticles
+	assert_not_null(wp, "free roam has wheel particles")
+	assert_eq(wp._car, _car, "wired to the car")
+	assert_gt(wp.max_particles(), 0, "its pool is built")
+	assert_eq(_car.drivetrain.terrain, _streamer, "the surface it reads is the streamer's")
+	assert_eq(_scene.get_node("BiomeDirector").wheel_particles, wp, "the biome director re-seats its look per ring")
+
+
 # Free roam has no free-fly photo camera host, so the Photo Mode card is left out, and the
 # keyboard/gamepad cursor walks straight from Reset to road to Map.
 func test_the_pause_menu_leaves_out_the_photo_card() -> void:
@@ -126,3 +137,10 @@ func test_a_moving_car_is_never_stuck() -> void:
 	_recovery._stuck_time = 0.0
 	_car.linear_velocity = Vector3(0, 0, -(cfg.recovery_speed_mps + 5.0))
 	assert_false(_recovery.is_stuck_step(cfg.recovery_timeout_s * 2.0))
+
+
+func test_the_engine_smoke_and_exhaust_flames_follow_the_car() -> void:
+	var smoke := _scene.get_node_or_null("EngineSmoke")
+	var flames := _scene.get_node_or_null("ExhaustFlames")
+	assert_true(smoke is EngineSmoke, "smoke from a misfiring (overheating) engine")
+	assert_true(flames is ExhaustFlames, "backfire flames from the exhausts")

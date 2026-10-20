@@ -358,3 +358,19 @@ func test_the_square_override_still_honours_the_region_colour() -> void:
 	var look: WheelParticles.Look = wp._grass_look(cfg)
 	assert_eq(look.color, tint, "the region colour survives the shape override")
 	assert_eq(look.half_w, look.half_h, "and the shape is still square")
+
+
+func test_a_region_look_seats_both_overrides_and_an_empty_look_clears_them() -> void:
+	# apply_region_look is how world.gd (once per stage) and free roam's BiomeDirector (per
+	# ring) hand the region's particle look over. Synthetic look values, nothing authored.
+	var wp := _make()
+	var cfg: GameConfig = Config.data
+	var tint := Color(0.3, 0.6, 0.9)
+	wp.apply_region_look({"grass_particle_color": tint, "grass_particle_square": true})
+	var look: WheelParticles.Look = wp._grass_look(cfg)
+	assert_eq(look.color, tint, "the region's colour")
+	assert_eq(look.half_w, look.half_h, "the region's square clod")
+	wp.apply_region_look({})
+	look = wp._grass_look(cfg)
+	assert_eq(look.color, cfg.wheel_particle_grass_color, "no override: back to the default colour")
+	assert_ne(look.half_w, look.half_h, "...and the default blade")

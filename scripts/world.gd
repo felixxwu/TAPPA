@@ -115,8 +115,8 @@ func _ready() -> void:
 	_on_load_finished()
 
 	# Phase: post-generation wiring — session signals, the pre-event start line, and the
-	# between-event pit-repair popup. The only phase that still awaits.
-	await _wire_session_and_stage(loading)
+	# between-event pit-repair popup.
+	_wire_session_and_stage(loading)
 
 	# Phase: the diagnostic overlay, the pause menu arm, and benchmark mode.
 	_build_overlays_and_benchmark()
@@ -1042,7 +1042,7 @@ func _build_barriers(cfg: GameConfig, result: Dictionary) -> void:
 # Create-or-reuse the persistent per-stage managers and wire the stage splits. Each
 # node is reused across regenerations (entering a new event) via _ensure_child, so
 # managers don't accumulate or collide on name.
-func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
+func _build_persistent_managers(cfg: GameConfig, _result: Dictionary,
 		road_centerline: Curve2D, finish_len: float) -> void:
 	# Retain the centerline in a TrackProgress manager: tracks how far the car has
 	# driven and snaps it back onto the road if it strays too far (the Curve2D is
@@ -1078,10 +1078,9 @@ func _build_persistent_managers(cfg: GameConfig, result: Dictionary,
 		func() -> Node: return WheelParticles.new()) as WheelParticles
 	_wheel_particles.setup($Car)
 	# Region grass-blade colour override (e.g. Greece's dry olive vs. home's
-	# green) — falls back to GameConfig when the region authors none.
-	_wheel_particles.set_grass_color_override(region_look.get("grass_particle_color", Color(0, 0, 0, 0)))
-	# ...and its shape: snow throws square clods of powder, not slim grass blades.
-	_wheel_particles.set_grass_square_override(bool(region_look.get("grass_particle_square", false)))
+	# green) and shape (snow throws square clods of powder, not slim grass blades) —
+	# falls back to GameConfig when the region authors none.
+	_wheel_particles.apply_region_look(region_look)
 
 	# Grey smoke puffed from the bonnet each time a damaged engine misfires. Its own
 	# small MultiMesh pool; reads the car's engine misfire counter live. See

@@ -23,6 +23,11 @@ extends Node3D
 # so tuning edits persist on it.
 var owned: Dictionary = {}
 
+# Debris flung from spinning driven wheels: grass blades off the road, gravel clods on it. The
+# surface under each wheel comes from the streamer's surface_at, the same query the tyres' grip
+# reads. Made here exactly as world.gd makes the stage's (features/wheel-dust.md).
+var wheel_particles: WheelParticles
+
 # How often the car's pose and condition are written to the world session, in seconds.
 const SAVE_EVERY_S := 5.0
 const MAP_EVERY_S := 0.25
@@ -57,6 +62,21 @@ func _ready() -> void:
 	_car.damage.repair(Config.data)
 	WorldSession.restore_car_state(_car.damage)
 	_streamer.focus = _car
+	wheel_particles = WheelParticles.new()
+	wheel_particles.name = "WheelParticles"
+	add_child(wheel_particles)
+	wheel_particles.setup(_car)
+	$BiomeDirector.wheel_particles = wheel_particles  # re-seats the region's blade per ring
+	# Smoke from the bonnet when a damaged (overheating) engine misfires, and backfire flames
+	# from the exhausts on a limiter bang or under nitrous — the stage's own effects, as in world.gd.
+	var smoke := EngineSmoke.new()
+	smoke.name = "EngineSmoke"
+	add_child(smoke)
+	smoke.setup(_car)
+	var flames := ExhaustFlames.new()
+	flames.name = "ExhaustFlames"
+	add_child(flames)
+	flames.setup(_car)
 	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site())
 	_streamer.rest_lit_query = _rest_stops.is_lit
 	_rest_stops.lit.connect(WorldSession.light)
@@ -100,8 +120,19 @@ func _ready() -> void:
 	_water.position.y = _streamer.settings.water_level_m
 	_pause.set_input_enabled(true)
 	_streamer.warm_up_materials($ChaseCamera)
+	_warm_up_particles($ChaseCamera)
 	if "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
+
+
+# Draw one debris particle in front of the camera for a few frames, so its shader compiles behind
+# the boot rather than on the first wheelspin (CpuParticlePool.warm_up; world.gd does the same).
+func _warm_up_particles(camera: Camera3D, frames := 3) -> void:
+	wheel_particles.warm_up(WorldRuntime.warm_up_point(camera, _car.global_position))
+	for i in frames:
+		await get_tree().process_frame
+	if is_instance_valid(wheel_particles):
+		wheel_particles.clear_warm_up()
 
 
 # Parts or the active car changed at a rest stop: save and reload the scene, so the car is fielded

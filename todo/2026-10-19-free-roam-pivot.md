@@ -774,3 +774,8 @@ Numbering continues from decision 32.
   auto-driver test allows ≤ 3 safety-net rushes (it varies 0–2 with machine load).
 - **D86. Tuning asks (user):** health gauge is a heart; `GameConfig.global_grip_mult` = 0.8
   scales all grip; roads narrower (`road_half_width_m` 2.75, was 3.5); forest cover 0.8 (was 0.6).
+- **D87. Missing stage effects restored in free roam (user ask):** wheel debris (grass blades
+  off-road, gravel clods on the road, the region's own look per ring), the stage's baked terrain
+  light (one formula, `TerrainManager.light_for_normal`, shared by both), engine smoke on misfires
+  and exhaust flames. Tyre marks are still stage-only (they need a single centreline). Also: game
+  scripts are warning-free again, with `tools/warning_check.tscn` to keep them so.

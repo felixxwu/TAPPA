@@ -64,8 +64,8 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 			var arc_r := half_w + road_gap
 			var steps := ceili(absf(turn) * arc_r / pitch)
 			for k in steps:
-				var tan := t0.rotated(turn * (k + 0.5) / steps)
-				stretch.append({"pos": pts[v], "tangent": tan, "side": side, "style": BarrierSection.Style.ARMCO})
+				var tangent := t0.rotated(turn * (k + 0.5) / steps)
+				stretch.append({"pos": pts[v], "tangent": tangent, "side": side, "style": BarrierSection.Style.ARMCO})
 			# After the vertex, along the outgoing chord.
 			var b := cum[v] + pitch * 0.5
 			var s1 := minf(cum[v] + reach, length - JUNCTION_CLEAR_M)
@@ -82,7 +82,7 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 			var falls := PackedByteArray()
 			falls.resize(stretch.size())
 			for g in range(0, stretch.size(), FALLS_SAMPLE_EVERY):
-				var mid: Dictionary = stretch[mini(g + FALLS_SAMPLE_EVERY / 2, stretch.size() - 1)]
+				var mid: Dictionary = stretch[mini(g + floori(FALLS_SAMPLE_EVERY / 2.0), stretch.size() - 1)]
 				var f := BarrierLayout._land_falls_away(mid["pos"], mid["tangent"], side, ground, half_w, probe, drop_min, hill_tol)
 				for k in range(g, mini(g + FALLS_SAMPLE_EVERY, stretch.size())):
 					falls[k] = 1 if f else 0

@@ -20,8 +20,10 @@ extends CpuParticlePool
 # wheel_particle_max no matter which surface the car is on, and it stays a single
 # draw call.
 #
-# Created + wired by world.gd._generate_track (reused across event regenerations,
-# re-targeted on a car swap, exactly like TireMarks). See features/wheel-dust.md.
+# Created + wired by world.gd._generate_track on a stage (reused across event
+# regenerations, re-targeted on a car swap, exactly like TireMarks), and by
+# free_roam.gd._ready in free roam, where TerrainStreamer answers surface_at.
+# See features/wheel-dust.md.
 
 # Screen-aligned billboard with a per-instance roll/size/colour. BaseMaterial3D's
 # BILLBOARD_ENABLED discards the instance basis (keeping only the origin), so a
@@ -77,6 +79,15 @@ func set_grass_color_override(c: Color) -> void:
 # particle a square clod instead of a grass blade (see _grass_square_override).
 func set_grass_square_override(square: bool) -> void:
 	_grass_square_override = square
+
+
+# Seat both region overrides (blade colour + shape) from a RegionLibrary look in one
+# call. world.gd calls it once per stage; free roam's BiomeDirector calls it on every
+# ring change, since there the region follows the car. A look that authors neither key
+# falls back to the GameConfig default blade.
+func apply_region_look(look: Dictionary) -> void:
+	set_grass_color_override(look.get("grass_particle_color", Color(0, 0, 0, 0)))
+	set_grass_square_override(bool(look.get("grass_particle_square", false)))
 
 
 # Wire to the current car. The wheel/surface state is read live off the car's

@@ -1563,7 +1563,8 @@ func _bake_light(noises: Array, amplitudes: PackedFloat32Array, wx: float, wz: f
 func _light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color:
 	if light_amount <= 0.0:
 		return Color(1, 1, 1)
-	return _light_profile(hl, hr, hd, hu, sun_dir, sun_color, sky_color, ground_color, light_amount)
+	return light_for_normal(Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized(),
+		sun_dir, sun_color, sky_color, ground_color, light_amount)
 
 
 # Night sibling of _light_from_neighbours: same neighbour heights (so it needs no extra
@@ -1573,18 +1574,19 @@ func _light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color
 func _night_light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color:
 	if night_light_amount <= 0.0:
 		return Color(1, 1, 1)
-	return _light_profile(hl, hr, hd, hu, night_sun_dir, night_sun_color, night_sky_color,
-		night_ground_color, night_light_amount)
+	return light_for_normal(Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized(),
+		night_sun_dir, night_sun_color, night_sky_color, night_ground_color, night_light_amount)
 
 
-# The lighting math itself, parameterised over a light profile (sun direction/colour, sky/
-# ground ambient, overall amount) rather than reading the live fields directly — shared by
-# the day bake and the night bake so the two can never drift apart. Mirrors
-# shaders/ps1_models_lit.gdshader (hemisphere ambient + one directional sun). Callers already
-# checked their own profile's `amount > 0.0` gate.
-func _light_profile(hl: float, hr: float, hd: float, hu: float, dir: Vector3, sun: Color,
-		sky: Color, ground: Color, amount: float) -> Color:
-	var n := Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized()
+# The lighting math itself: hemisphere ambient + one directional sun on a unit normal, blended
+# from white by `amount`. Parameterised over a light profile (sun direction/colour, sky/ground
+# ambient, amount) rather than reading the live fields, so the day bake, the night bake and free
+# roam's TerrainStreamer (whose normals come from its own height grid) all share this one
+# formula and can never drift apart — the island is shaded exactly like a stage. Mirrors
+# shaders/ps1_models_lit.gdshader. Static and allocation-free: it is per-vertex work in every
+# bake. Callers already checked their own profile's `amount > 0.0` gate.
+static func light_for_normal(n: Vector3, dir: Vector3, sun: Color, sky: Color, ground: Color,
+		amount: float) -> Color:
 	var hemi := n.y * 0.5 + 0.5
 	var ambient := ground.lerp(sky, hemi)
 	var ndl: float = maxf(n.dot(dir), 0.0)

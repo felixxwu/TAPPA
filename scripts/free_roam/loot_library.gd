@@ -49,7 +49,7 @@ static func ring_tables(ring_count: int) -> Array:
 	var cars: Array = CarLibrary.all().duplicate()
 	cars.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("cost", 0)) < int(b.get("cost", 0)))
 	for i in cars.size():
-		tables[mini(i * ring_count / maxi(cars.size(), 1), ring_count - 1)].append({"kind": "car", "id": String(cars[i]["id"])})
+		tables[mini(floori(float(i * ring_count) / maxi(cars.size(), 1)), ring_count - 1)].append({"kind": "car", "id": String(cars[i]["id"])})
 	for r in ring_count:
 		for id in BoostLibrary.CATALOGUE.keys():
 			tables[r].append({"kind": "part", "id": String(id), "level": r})
@@ -62,11 +62,11 @@ static func ring_tables(ring_count: int) -> Array:
 		return float(a.get("peak_torque", 0.0)) * float(a.get("redline_rpm", 0.0)) \
 			< float(b.get("peak_torque", 0.0)) * float(b.get("redline_rpm", 0.0)))
 	for i in engines.size():
-		var r: int = mini(1 + i * outer / maxi(engines.size(), 1), ring_count - 1) if ring_count > 1 else 0
+		var r: int = mini(1 + floori(float(i * outer) / maxi(engines.size(), 1)), ring_count - 1) if ring_count > 1 else 0
 		tables[r].append({"kind": "part", "id": "engine_swap:%s" % String(engines[i]["id"])})
 	var modes: Array = Drivetrain.DriveMode.values()
 	for i in modes.size():
-		var r: int = mini(1 + i * outer / maxi(modes.size(), 1), ring_count - 1) if ring_count > 1 else 0
+		var r: int = mini(1 + floori(float(i * outer) / maxi(modes.size(), 1)), ring_count - 1) if ring_count > 1 else 0
 		tables[r].append({"kind": "part", "id": "drivetrain:%d" % int(modes[i])})
 	for r in ring_count - 1:
 		tables[r].append({"kind": "rumour", "ring": r + 1})

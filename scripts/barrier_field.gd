@@ -147,7 +147,7 @@ func _ground(ground_at: Callable, p: Vector2) -> float:
 
 # One style's geometry, built once: a prototype BarrierSection is created off-tree,
 # its parts and AABB harvested, and the node freed. Nothing of it stays in the scene.
-func _prototype(style: int, pitch: float, params: Dictionary) -> Dictionary:
+func _prototype(style: int, pitch: float, _params: Dictionary) -> Dictionary:
 	if _protos.has(style):
 		return _protos[style]
 	var proto := BarrierSection.new()

@@ -142,7 +142,8 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   chunk under the point, interpolated across the same two triangles per cell as the mesh,
   so they are cheap and match the drawn surface. Only unloaded ground falls back to the full
   terrain maths.
-- **Road surface queries** (`surface_at`, four per physics tick from the car's wheels) read
+- **Road surface queries** (`surface_at`, four per physics tick from the car's wheels, plus one
+  per spinning driven wheel from the wheel particles; ~1.5 µs each) read
   the distance to the road stored at every near-chunk vertex (`near_road_d`) the same way.
 - **Road candidates** are gathered once per chunk (`ChunkState.cands`), with a margin wide
   enough for both strides, and shared by its far and near builds.
@@ -159,12 +160,28 @@ the material of the ring at its centre, so a border switches at chunk edges. The
 tint is the region's `terrain_tint` (white when unset), and trees, bushes and rocks follow the
 region's `tree_mix`, bush switch and rock density.
 
+**Terrain shading (the stage's fake light):** each chunk vertex's colour is its ring tint times
+`TerrainStreamer.ground_light(normal)`, which is `TerrainManager.light_for_normal` (hemisphere
+ambient plus one low sun aligned with the skybox, the same formula a stage bakes) under the
+GameConfig Lighting group: `sun_direction`, `sun_color`, `sky_color`, `ground_color` and
+`terrain_light_amount` (0 = flat). The values are read once when the streamer is made, so every
+chunk in a session shares the same light. The normal comes from central differences on the
+chunk's own height grid (one-sided at a far chunk's edge), so it is baked during the budgeted
+`ARRAYS` stage and costs nothing per frame; the shared call adds about 0.3 µs per vertex
+(~0.3 ms per 33×33 near chunk, spread across frames by the stage's clock checks). The bushes'
+`light_at` uses the same function, so they sit in the ground's light. Until 2026-10-20 the
+streamer used its own light (`0.55 + 0.5·max(0, n·sun)` with a high sun that did not match the
+skybox), which left the island much brighter and flatter-looking than a stage.
+
 **Following the car (`BiomeDirector`, a node in `free_roam.tscn`):** every 0.25 s it reads the
 car's ring and the weather.
 - **Handling:** a new ring writes its region's surface grip, deep snow and frozen lakes onto the
   live config, from the authored values (`apply_handling`, the twin of
   `StageConfig.apply_event_config`'s handling block). It also re-wires the car's lake drag,
   which is off where lakes are frozen.
+- **Wheel debris look:** a new ring also re-seats the wheel particles' off-road particle from
+  the region look (`_seat_particle_look` → `WheelParticles.apply_region_look`: Greece's dry
+  blades, the snow ring's white powder clods), as `world.gd` does once per stage.
 - **Weather drift:** driving time is cut into slots of `weather_hold_s`. Each (ring, slot) draws
   from the ring's weighted pool in `ring_weather` (`"dry:5,rain:1"`, seeded by the world seed,
   `weather_for`). A new condition sets `cfg.weather`, wind sway, the road tint on every ring
@@ -316,6 +333,15 @@ node for node:
   `title.tscn` with free roam's own confirm text (both set on the node in `free_roam.tscn`).
 - `MiniMapLayer/MiniMap` (layer 2, with the HUD): the heading-up, perspective-tilted minimap,
   top-centre. Tap it (or M / gamepad Back) for the full map. See [minimap.md](minimap.md).
+- `WheelParticles` (made in `free_roam.gd._ready`, as `world.gd` makes the stage's): gravel
+  clods on the road and grass blades off it from spinning or locked driven wheels. It reads
+  `TerrainStreamer.surface_at`, the same query the tyres' grip uses (the car finds the streamer
+  as its terrain), and its shader is warmed behind the boot (`_warm_up_particles`). Until
+  2026-10-20 free roam never created it, so nothing was thrown. See
+  [wheel-dust.md](wheel-dust.md). `free_roam.gd._ready` also creates the stage's `EngineSmoke`
+  (bonnet smoke on each misfire — the visible sign of an overheating engine in the damage chain)
+  and `ExhaustFlames` (limiter backfires, nitrous). Not yet in free roam: tyre marks (they need a
+  single centreline).
 - The streaming readout moved to its own `DebugStats` layer. It shows in debug builds only and
   **H** toggles it.
 

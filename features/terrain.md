@@ -476,6 +476,8 @@ cache keeps* above; `track_weights` / `track_surface` are resident for the whole
   `sun_color`, `sky_color`, `ground_color`) are pushed from `GameConfig` by
   `world.gd` (`apply_terrain_light`) before the initial build. Valid because the
   terrain and sun never move; the car can't bake (it rotates) and lights in its shader.
+  The formula itself is the static `light_for_normal`, which free roam's streamer bakes
+  with too (see [free-roam.md](free-roam.md) → "Terrain shading").
 - `set_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
   surface_feather_m, should_yield=false)` — `await`
   `bake_track` (forwarding `should_yield`), and **rebuild any currently-loaded chunks** (full `setup()`, since
@@ -834,11 +836,12 @@ segment currently wants.
   together with a second light profile — `night_sun_dir` / `night_sun_color` /
   `night_sky_color` / `night_ground_color` / `night_light_amount` — mirroring the day
   fields (`sun_dir`/`sun_color`/`sky_color`/`ground_color`/`light_amount`) one-for-one.
-  `TerrainManager._light_profile(hl, hr, hd, hu, dir, sun, sky, ground, amount)` is the
-  lighting math itself, shared by `_light_from_neighbours` (day) and
-  `_night_light_from_neighbours` (night) so the two can never drift apart — the SAME
-  hemisphere-ambient-plus-sun math shaders/ps1_models_lit.gdshader mirrors, just fed a
-  different profile.
+  `TerrainManager.light_for_normal(n, dir, sun, sky, ground, amount)` (static) is the
+  lighting math itself, shared by `_light_from_neighbours` (day),
+  `_night_light_from_neighbours` (night) and free roam's `TerrainStreamer.ground_light` so
+  none of them can drift apart — the SAME hemisphere-ambient-plus-sun math
+  shaders/ps1_models_lit.gdshader mirrors, just fed a different profile (the two
+  neighbour-height callers build the normal from their ±1-cell heights first).
 - **`TerrainChunkBuilder`** bakes the second array alongside the first when
   `_m.bake_night_colors` — the night light is a second arithmetic evaluation on the SAME
   neighbour heights already sampled for the day bake (the halo for full-res chunks, the

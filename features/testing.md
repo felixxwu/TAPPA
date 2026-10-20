@@ -624,3 +624,17 @@ then run *uncapped*, which is exactly how the long hangs happened. There is now 
 **One subtlety if you touch `run_pass`:** the Godot run must stay in the FOREGROUND so
 `PIPESTATUS[0]` is its exit status. Backgrounding the pipeline and `wait`-ing returns *tee's* status
 (always 0), which would report a failing run as passing.
+
+## Script warnings fail whichever test loads the script first
+
+The runner launches Godot with `-d`, and GUT records engine warnings as test errors. A GDScript
+warning (a shadowed name, an unused parameter, a redundant `await`, a narrowing conversion…) in a
+game script therefore fails **whichever test happens to compile that script first** — often an
+unrelated one, and only in some run orders (a `--fast` selection, say), so a full run can be green
+while a targeted run fails. `tools/warning_check.tscn` lists them all up front:
+
+    godot --headless -d --path . res://tools/warning_check.tscn [-- --all]
+
+It exits non-zero on any warning in `scripts/` (the `-d` flag matters: without it the compiler
+raises none). Warnings in test and tool files don't fail tests; `--all` lists those too. Keep
+`scripts/` at zero.

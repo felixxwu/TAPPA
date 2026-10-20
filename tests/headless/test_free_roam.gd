@@ -149,6 +149,80 @@ func test_the_car_reads_road_on_the_road_and_none_far_from_it() -> void:
 	assert_eq(st.surface_at(p.x + 5000.0, p.y + 5000.0), Vector2.ZERO)
 
 
+# The wheel debris picks its look from the same surface_at the tyres read: gravel clods on the
+# road, grass blades off it (free roam's roads are all loose, so nothing reads as tarmac).
+func test_wheel_debris_reads_gravel_on_the_road_and_grass_off_it() -> void:
+	var st := _streamer(_settings())
+	var p := _road_midpoint(st.network)
+	var wp := WheelParticles.new()
+	add_child_autofree(wp)
+	var cfg: GameConfig = Config.data
+	var on_road: WheelParticles.Look = wp._look_for_surface(cfg, st.surface_at(p.x, p.y))
+	var off_road: WheelParticles.Look = wp._look_for_surface(cfg, st.surface_at(p.x + 5000.0, p.y + 5000.0))
+	assert_not_null(on_road, "the road throws debris")
+	assert_eq(on_road.color, WheelParticles._gravel_look(cfg).color, "gravel on the road")
+	assert_not_null(off_road, "the open ground throws debris")
+	assert_eq(off_road.color, wp._grass_look(cfg).color, "grass off it")
+
+
+# Build one chunk's mesh arrays (no attach) and return its grid colours, skirts left off.
+func _baked_colors(st: TerrainStreamer, coord: Vector2i, near: bool) -> PackedColorArray:
+	var job := st._new_job(coord, near, false)
+	st._queue.erase(job)
+	st._step(job, Time.get_ticks_usec() + 60_000_000, TerrainStreamer.Stage.UPLOAD)
+	return job.colors.slice(0, job.n * job.n)
+
+
+func _with_light(amount: float) -> void:
+	var cfg: GameConfig = Config.data
+	cfg.sun_direction = Vector3(0.0, 0.5, 1.0)
+	cfg.sun_color = Color(0.5, 0.5, 0.5)
+	cfg.sky_color = Color(0.5, 0.5, 0.5)
+	cfg.ground_color = Color(0.3, 0.3, 0.3)
+	cfg.terrain_light_amount = amount
+
+
+# The island is shaded with the stage's fake light (TerrainManager.light_for_normal under the
+# GameConfig sun and ambient), so a slope facing the sun is brighter than one facing away. The
+# light values here are synthetic.
+func test_the_ground_light_is_the_stage_terrains_light() -> void:
+	_with_light(1.0)
+	var st := TerrainStreamer.new()
+	var cfg: GameConfig = Config.data
+	var toward := Vector3(0.0, 1.0, 0.6).normalized()
+	var away := Vector3(0.0, 1.0, -0.6).normalized()
+	assert_eq(st.ground_light(toward), TerrainManager.light_for_normal(toward,
+		cfg.sun_direction.normalized(), cfg.sun_color, cfg.sky_color, cfg.ground_color, 1.0))
+	assert_gt(st.ground_light(toward).r, st.ground_light(away).r, "sunward slopes are lit brighter")
+	st.free()
+	Config.reset()
+
+
+# The light is baked into every chunk's vertex colours, so it varies with the slope; with the
+# terrain light off every vertex is just its ring's tint.
+func test_chunk_vertex_colours_carry_the_shading_and_are_flat_with_it_off() -> void:
+	var coords: Array[Vector2i] = [Vector2i(10, 0), Vector2i(0, 10), Vector2i(-10, 0), Vector2i(0, -10), Vector2i(7, 7), Vector2i(-7, -7)]
+	_with_light(1.0)
+	var lit := _streamer(_settings())
+	var lo := INF
+	var hi := -INF
+	for c in coords:
+		for col in _baked_colors(lit, c, false):
+			lo = minf(lo, col.r)
+			hi = maxf(hi, col.r)
+	assert_gt(hi - lo, 0.05, "the baked shading varies across the hills")
+	_with_light(0.0)
+	var flat := _streamer(_settings())
+	var cm := flat.settings.chunk_m
+	for c in coords:
+		var tint := flat.ring_tint_at(Vector2((c.x + 0.5) * cm, (c.y + 0.5) * cm))
+		for col in _baked_colors(flat, c, false):
+			assert_almost_eq(col.r, tint.r, 1e-5)
+			assert_almost_eq(col.g, tint.g, 1e-5)
+			assert_almost_eq(col.b, tint.b, 1e-5)
+	Config.reset()
+
+
 func test_a_frame_with_no_budget_left_advances_a_job_by_one_unit_only() -> void:
 	var st := _streamer(_settings())
 	st._plan()
