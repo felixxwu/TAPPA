@@ -426,7 +426,7 @@ Landed in `aa7ee9d` ("Add free-roam prototype"). Source is `scripts/free_roam/` 
 
 Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what changed.
 
-0. **Streaming spike — mostly DONE.** It went further than planned: it runs on the real
+0. **Streaming spike — DONE (auto driver landed 2026-10-20).** It went further than planned: it runs on the real
    lab network rather than a stand-in road, with a new streamer instead of the
    `TerrainManager` seam. **Remaining:** the auto driver. It drives a fixed route across
    the island at top speed, reports budget overruns and any chunk reached without
@@ -568,3 +568,16 @@ it (`features/free-roam.md`). First headless measurement on desktop: 15.6 µs pe
 in GDScript, 843 ms boot prefill, and 5 of 600 frames slightly over 1 ms (worst 1.04 ms) with
 the car parked, before tightening the per-sample stop. Next: an auto driver that drives a
 fixed route at top speed and reports overruns and "reached a chunk without collision".
+
+
+## Decision log (autonomous run, 2026-10-20 onward)
+
+While the user was away, the remaining stages were implemented autonomously. Each call made
+without the user is logged here for review. **REVIEW** marks the ones most worth a look.
+Numbering continues from decision 32.
+
+- **D33. The auto driver's route avoids dead ends and stops at one.** Pure pursuit can't
+  turn round at a dead end, so a route ends there instead. Cheap to change (`plan_route`).
+- **D34. Budget overruns are reported, not asserted.** The headless test asserts only "no
+  holes" and real progress. Overrun counts depend on the machine and its load, so a
+  threshold would make the test flaky. Overruns are followed up in stage 2.

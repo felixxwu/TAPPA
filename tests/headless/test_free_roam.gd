@@ -285,3 +285,54 @@ func test_the_free_roam_scene_wires_the_streamer_and_the_car() -> void:
 	assert_true(root.get_node("Car") is VehicleBody3D)
 	assert_eq((root.get_node("ChaseCamera") as Node).get("target"), root.get_node("Car"))
 	root.free()
+
+
+# --- the auto driver ----------------------------------------------------------------------------
+
+func test_a_planned_route_follows_the_roads() -> void:
+	var s := _settings()
+	var terrain := _world(s)
+	var net := terrain.net
+	var route := AutoDriver.plan_route(net, 0, 1500.0, 1)
+	assert_gt(route.size(), 2)
+	for i in range(0, route.size() - 1):
+		var mid := route[i].lerp(route[i + 1], 0.5)
+		assert_true(net.nearest(mid.x, mid.y, 0.5), "route point %d lies on a road" % i)
+
+
+func test_the_route_tracker_never_goes_backwards() -> void:
+	var pts := PackedVector2Array([Vector2(0, 0), Vector2(10, 0), Vector2(20, 0), Vector2(30, 0)])
+	assert_eq(AutoDriver.advance(pts, 0, Vector2(15, 1)), 1)
+	assert_eq(AutoDriver.advance(pts, 2, Vector2(1, 0)), 2, "a car behind its segment keeps the segment")
+
+
+func test_bends_ahead_lower_the_safe_speed() -> void:
+	var straight := PackedVector2Array()
+	var bend := PackedVector2Array()
+	for i in 20:
+		straight.append(Vector2(i * 10.0, 0.0))
+		bend.append(Vector2(i * 10.0, 0.0) if i < 10 else Vector2(90.0, (i - 9) * 10.0))
+	var fast := AutoDriver.safe_speed(straight, AutoDriver.cumulative(straight), 0, 200.0, 6.0, 5.0)
+	var slow := AutoDriver.safe_speed(bend, AutoDriver.cumulative(bend), 0, 200.0, 6.0, 5.0)
+	assert_eq(fast, INF, "a straight road sets no limit")
+	assert_lt(slow, 100.0)
+	var closer := AutoDriver.safe_speed(bend, AutoDriver.cumulative(bend), 6, 200.0, 6.0, 5.0)
+	assert_lt(closer, slow, "nearer the bend there is less room to brake")
+
+
+# The streaming promise end to end: the car drives itself along the roads and is never over
+# ground that has no collision yet.
+func test_the_auto_driver_never_reaches_ground_without_collision() -> void:
+	var root: Node3D = load("res://free_roam.tscn").instantiate()
+	(root.get_node("Terrain") as TerrainStreamer).settings = _settings()
+	add_child_autofree(root)
+	var driver: AutoDriver = root.start_auto_drive()
+	driver.route_length_m = 400.0
+	driver.start(root.get_node("Car"), root.get_node("Terrain"))
+	for i in 60 * 40:
+		if not driver.running:
+			break
+		await get_tree().physics_frame
+	var r := driver.report()
+	assert_eq(r["holes"], 0, "the car was over a chunk with no collision")
+	assert_gt(r["progress_m"], 150.0, "the car made real progress along the route")

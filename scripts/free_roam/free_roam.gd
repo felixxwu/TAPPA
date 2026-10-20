@@ -4,6 +4,10 @@ extends Node3D
 # Free-roam prototype: boots straight onto the streamed road-first island with the first
 # library car. Press R to put the car back on the nearest road.
 # See todo/2026-10-19-free-roam-pivot.md.
+#
+# `-- --auto-drive` on the command line hands the car to an AutoDriver, which drives a route
+# across the island, prints its streaming report and quits:
+#   godot --headless --path . -- --auto-drive
 
 @onready var _streamer: TerrainStreamer = $Terrain
 @onready var _car: VehicleBody3D = $Car
@@ -21,6 +25,22 @@ func _ready() -> void:
 	print("free roam: prefill %d ms" % (Time.get_ticks_msec() - t0))
 	_car.reset_to(spawn)
 	_water.position.y = _streamer.settings.water_level_m
+	if "--auto-drive" in OS.get_cmdline_user_args():
+		start_auto_drive()
+
+
+func start_auto_drive() -> AutoDriver:
+	var driver := AutoDriver.new()
+	driver.name = "AutoDriver"
+	if "--auto-drive" in OS.get_cmdline_user_args():
+		driver.log_every_ticks = 300
+	add_child(driver)
+	driver.start(_car, _streamer)
+	driver.finished.connect(func(r: Dictionary) -> void:
+		print("auto drive: ", r)
+		if "--auto-drive" in OS.get_cmdline_user_args():
+			get_tree().quit())
+	return driver
 
 
 func _process(_delta: float) -> void:

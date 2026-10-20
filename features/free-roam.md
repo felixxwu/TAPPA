@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`
@@ -119,11 +119,33 @@ chunk.
   It is only planted within the near ring, which matches `tree_render_distance_m` (120 m).
 - **Not yet:** bush brushing (the stages' `BushField` hit-and-drag) and knocking trees over.
 
+## The auto driver
+
+`AutoDriver` drives the car by itself and keeps score of the streaming:
+- **holes:** physics ticks where the car is over a chunk with no collision yet. This must stay
+  0, and `test_the_auto_driver_never_reaches_ground_without_collision` checks it on a short
+  drive across a small synthetic island;
+- **overruns:** frames over the terrain budget;
+- **resets:** times it got stuck and was put back on the route.
+
+**Route** (`plan_route`): from the nearest junction it walks link to link, preferring links it
+hasn't driven that lead away from spawn, and avoiding dead ends. It stops at a dead end rather
+than turning round. **Steering** is pure pursuit (`BenchmarkRunner.steer_toward`) towards a
+point ahead on the route (`point_ahead`). The tracker (`advance`) only takes the nearest
+segment a few ahead, never one behind. **Speed** (`safe_speed`) is the fastest the car can go
+and still brake to every bend's limit, `sqrt(LATERAL_ACCEL / curvature)`, within the next
+250 m.
+
+Run it from the command line to drive 3 km of the real island and print the report:
+`godot --headless --path . --fixed-fps 60 -- --auto-drive`. On the default island
+(2026-10-20, container CPU) it finished the 3 km with 0 holes at about 50 km/h, with about
+36% of frames over the 1 ms budget (worst 3 ms). That's stage 2 work.
+
 ## Not in the prototype yet
 
 Barriers, rest stops (the lab places one every 300 m; `RoadNetwork` doesn't port that yet),
 pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
 stuck or flipped recovery (only the manual **R**), the game HUD, mobile touch controls, a
-pause or settings page, threading, and the self-testing auto driver. The remaining work is
+pause or settings page, and threading. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.
