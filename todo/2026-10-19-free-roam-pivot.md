@@ -1,6 +1,10 @@
 # Free-roam pivot — island road network, biome rings, rest stops (2026-10-19)
 
-**Status: AGREED DESIGN, prototype in progress (updated 2026-10-20).** Design questions were
+**Status: AGREED DESIGN, prototype ACCEPTED (2026-10-20).** The user declared the prototype a
+success. **The road and terrain method is settled:** the whole network is laid out at boot
+by radial growth (`RoadNetwork`), the terrain is built from the roads (`RoadTerrain`), and it
+streams under the strict per-frame budget (`TerrainStreamer`). Do not revisit corridor
+carving, streaming the network ahead of the car, or the `TerrainManager` seam. Design questions were
 resolved with the user on 2026-10-19 (see *Decisions*). A free-roam prototype now exists
 and the game boots into it (`features/free-roam.md`). It covers stage 0 and parts of
 stages 1, 3 and 4 (see *Progress* and *Staging*). The prototype took a different technical
