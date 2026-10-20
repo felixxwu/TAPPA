@@ -29,6 +29,10 @@ extends RefCounted
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
 # (todo/audio.md). Emitted only for hits that actually cost HP.
 signal damaged(hp_loss: float, contact_point: Vector3)
+# The car has given up: HP reached 0 with the thermal chain on (free roam,
+# todo/2026-10-19-free-roam-pivot.md decision 8). Emitted ONCE per fall to 0; repair() re-arms
+# it. Never emitted with `thermal` off, so the stage keeps "damage never wrecks".
+signal gave_up
 # Scene group every damage-dealing obstacle (tree/bush/sign collision body) joins,
 # so the car can tell a real obstacle contact from the ground/road in
 # _integrate_forces. BillboardField tags its collision body with this.
@@ -73,6 +77,15 @@ var wheel_toe: Dictionary = _zero_toe()
 ## Gates both entry points — `register_deceleration` (impacts) and `apply_loss` (anything that
 ## drains HP directly) — so nothing can route around it.
 var enabled := true
+
+## The free-roam damage chain: below cooling_failure_hp_fraction the cooling breaks and stays
+## broken until repair(); while broken, engine_temp only rises (faster under load and revs);
+## above overheat_temp_threshold_c it drains HP; at 0 HP the car gives up (`gave_up`). Off by
+## default, so the stage is untouched.
+var thermal := false
+var cooling_broken := false
+var engine_temp := 90.0
+var _gave_up := false
 
 
 func field(p_max_hp: float, p_hp: float, p_instance_id := -1, p_toe: Array = []) -> void:
@@ -141,6 +154,19 @@ func damage_fraction() -> float:
 # (misfire and rev cap), so they all begin at the same moment and reach their worst
 # together. Pure — no config side effects.
 func damage_ramp(cfg: GameConfig) -> float:
+	return maxf(_health_ramp(cfg), overheat_ramp(cfg))
+
+
+# How far an overheating engine is past its threshold toward its maximum, ∈ [0,1]; 0 with the
+# thermal chain off. Feeds the same misfire / rev-cap ramp as damage, so overheating sounds sick.
+func overheat_ramp(cfg: GameConfig) -> float:
+	if not thermal:
+		return 0.0
+	var span := maxf(cfg.engine_temp_max_c - cfg.overheat_temp_threshold_c, 0.001)
+	return clampf((engine_temp - cfg.overheat_temp_threshold_c) / span, 0.0, 1.0)
+
+
+func _health_ramp(cfg: GameConfig) -> float:
 	if max_hp <= 0.0:
 		return 0.0
 	var threshold := cfg.damage_misfire_health_threshold
@@ -220,6 +246,50 @@ func apply_loss(amount: float) -> void:
 	if not enabled:
 		return
 	hp = maxf(0.0, hp - amount)
+	if thermal and hp <= 0.0 and not _gave_up:
+		_gave_up = true
+		gave_up.emit()
+
+
+# One physics tick of the thermal chain. `load` and `rpm_frac` are the engine's throttle and
+# rpm / redline, both 0..1. Returns the HP the overheat drained this tick.
+func thermal_step(dt: float, load: float, rpm_frac: float, cfg: GameConfig) -> float:
+	if not thermal or not enabled or dt <= 0.0:
+		return 0.0
+	if not cooling_broken and max_hp > 0.0 and hp <= max_hp * cfg.cooling_failure_hp_fraction:
+		cooling_broken = true
+	if cooling_broken:
+		var rate := cfg.overheat_rise_floor_c_per_s + cfg.overheat_rise_load_c_per_s * clampf(load, 0.0, 1.0) \
+			+ cfg.overheat_rise_rpm_c_per_s * clampf(rpm_frac, 0.0, 1.0)
+		engine_temp = minf(engine_temp + maxf(rate, 0.0) * dt, cfg.engine_temp_max_c)
+	else:
+		engine_temp = move_toward(engine_temp, cfg.engine_temp_normal_c, cfg.cooling_settle_c_per_s * dt)
+	if engine_temp <= cfg.overheat_temp_threshold_c:
+		return 0.0
+	var before := hp
+	apply_loss(cfg.overheat_hp_drain_per_s * dt)
+	return before - hp
+
+
+# How hot the engine is on the gauge, ∈ [0,1]: 0 at normal running, 1 at the overheat threshold
+# (where HP starts draining); past it the gauge stays full.
+func temp_fraction(cfg: GameConfig) -> float:
+	var span := maxf(cfg.overheat_temp_threshold_c - cfg.engine_temp_normal_c, 0.001)
+	return clampf((engine_temp - cfg.engine_temp_normal_c) / span, 0.0, 1.0)
+
+
+func is_overheating(cfg: GameConfig) -> bool:
+	return thermal and engine_temp > cfg.overheat_temp_threshold_c
+
+
+# The rest-stop repair: full HP, cooling fixed, engine back to normal temperature, wheels
+# straight, and `gave_up` re-armed.
+func repair(cfg: GameConfig) -> void:
+	hp = max_hp
+	cooling_broken = false
+	engine_temp = cfg.engine_temp_normal_c
+	_gave_up = false
+	reset_wheel_toe()
 
 
 # The SELF-HEAL tick (SkillLibrary "self_healing", todo/roguelike-pivot.md decision 51).

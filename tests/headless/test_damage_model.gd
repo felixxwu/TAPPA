@@ -460,3 +460,106 @@ func test_regen_does_not_straighten_wheels() -> void:
 	@warning_ignore("return_value_discarded")
 	dm.regen(1.0, cfg)
 	assert_eq(dm.toe_array(), bent)
+
+
+# --- the free-roam thermal chain (DamageModel.thermal) ---------------------------------------------
+# A synthetic config, so the chain's LOGIC is checked whatever the authored rates are.
+
+func _thermal_cfg() -> GameConfig:
+	var cfg := GameConfig.new()
+	cfg.cooling_failure_hp_fraction = 0.5
+	cfg.engine_temp_normal_c = 90.0
+	cfg.overheat_temp_threshold_c = 120.0
+	cfg.engine_temp_max_c = 140.0
+	cfg.overheat_rise_floor_c_per_s = 0.5
+	cfg.overheat_rise_load_c_per_s = 1.0
+	cfg.overheat_rise_rpm_c_per_s = 1.0
+	cfg.cooling_settle_c_per_s = 2.0
+	cfg.overheat_hp_drain_per_s = 50.0
+	return cfg
+
+
+func _thermal_model(cfg: GameConfig) -> DamageModel:
+	var d := DamageModel.new()
+	d.field(1000.0, 1000.0)
+	d.thermal = true
+	d.repair(cfg)
+	return d
+
+
+func test_cooling_breaks_once_health_falls_to_the_failure_fraction() -> void:
+	var cfg := _thermal_cfg()
+	var d := _thermal_model(cfg)
+	d.hp = 501.0
+	d.thermal_step(0.1, 1.0, 1.0, cfg)
+	assert_false(d.cooling_broken)
+	d.hp = 500.0
+	d.thermal_step(0.1, 0.0, 0.0, cfg)
+	assert_true(d.cooling_broken)
+	d.hp = 900.0
+	d.thermal_step(0.1, 0.0, 0.0, cfg)
+	assert_true(d.cooling_broken, "it stays broken until a repair, whatever the HP does")
+
+
+func test_broken_cooling_heats_the_engine_at_any_throttle_and_faster_under_load() -> void:
+	var cfg := _thermal_cfg()
+	var idle := _thermal_model(cfg)
+	var flat_out := _thermal_model(cfg)
+	for d in [idle, flat_out]:
+		d.cooling_broken = true
+	idle.thermal_step(1.0, 0.0, 0.0, cfg)
+	flat_out.thermal_step(1.0, 1.0, 1.0, cfg)
+	assert_gt(idle.engine_temp, cfg.engine_temp_normal_c, "it rises even off the throttle")
+	assert_gt(flat_out.engine_temp, idle.engine_temp)
+
+
+func test_working_cooling_settles_back_to_normal() -> void:
+	var cfg := _thermal_cfg()
+	var d := _thermal_model(cfg)
+	d.engine_temp = cfg.engine_temp_normal_c + 10.0
+	for i in 100:
+		d.thermal_step(0.1, 1.0, 1.0, cfg)
+	assert_eq(d.engine_temp, cfg.engine_temp_normal_c)
+
+
+func test_only_an_overheating_engine_drains_hp() -> void:
+	var cfg := _thermal_cfg()
+	var d := _thermal_model(cfg)
+	d.cooling_broken = true
+	d.hp = 400.0
+	d.engine_temp = cfg.overheat_temp_threshold_c - 5.0
+	assert_eq(d.thermal_step(0.01, 0.0, 0.0, cfg), 0.0)
+	d.engine_temp = cfg.overheat_temp_threshold_c + 1.0
+	assert_gt(d.thermal_step(0.1, 0.0, 0.0, cfg), 0.0)
+	assert_lt(d.hp, 400.0)
+	assert_gt(d.misfire_level(Config.data), 0.0, "an overheating engine misfires")
+
+
+func test_reaching_zero_hp_gives_up_once_and_a_repair_resets_the_chain() -> void:
+	var cfg := _thermal_cfg()
+	var d := _thermal_model(cfg)
+	watch_signals(d)
+	d.apply_loss(2000.0)
+	d.apply_loss(10.0)
+	assert_signal_emit_count(d, "gave_up", 1)
+	d.cooling_broken = true
+	d.engine_temp = 135.0
+	d.wheel_toe["WheelFL"] = 0.05
+	d.repair(cfg)
+	assert_eq(d.hp, d.max_hp)
+	assert_false(d.cooling_broken)
+	assert_eq(d.engine_temp, cfg.engine_temp_normal_c)
+	assert_eq(d.wheel_toe["WheelFL"], 0.0)
+	d.apply_loss(2000.0)
+	assert_signal_emit_count(d, "gave_up", 2, "a repair re-arms it")
+
+
+func test_with_the_chain_off_damage_still_never_wrecks() -> void:
+	var cfg := _thermal_cfg()
+	var d := DamageModel.new()
+	d.field(1000.0, 1000.0)
+	watch_signals(d)
+	d.apply_loss(5000.0)
+	assert_signal_not_emitted(d, "gave_up")
+	d.cooling_broken = true
+	assert_eq(d.thermal_step(1.0, 1.0, 1.0, cfg), 0.0)

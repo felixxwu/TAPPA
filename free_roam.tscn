@@ -18,6 +18,8 @@
 [ext_resource type="Shader" path="res://shaders/speed_lines.gdshader" id="27_lines"]
 [ext_resource type="Script" path="res://scripts/free_roam/road_recovery.gd" id="28_recovery"]
 [ext_resource type="Script" path="res://scripts/free_roam/biome_director.gd" id="29_biome"]
+[ext_resource type="Script" path="res://scripts/free_roam/rest_stops.gd" id="30_rest"]
+[ext_resource type="Script" path="res://scripts/free_roam/rest_stop_page.gd" id="31_restpage"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("8_sky")
@@ -229,6 +231,22 @@ mouse_filter = 2
 script = ExtResource("21_gauge")
 icon = 2
 
+[node name="TempGauge" type="Control" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = 78.0
+offset_top = -51.0
+offset_right = 116.0
+offset_bottom = -13.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("21_gauge")
+icon = 3
+
 [node name="ImpactFlash" type="ColorRect" parent="HUD"]
 anchors_preset = 15
 anchor_right = 1.0
@@ -261,3 +279,15 @@ streamer = NodePath("../Terrain")
 car = NodePath("../Car")
 environment = NodePath("../WorldEnvironment")
 camera = NodePath("../ChaseCamera")
+
+[node name="RestStops" type="Node" parent="." node_paths=PackedStringArray("streamer", "car", "pause_menu")]
+script = ExtResource("30_rest")
+streamer = NodePath("../Terrain")
+car = NodePath("../Car")
+pause_menu = NodePath("../PauseMenu")
+
+[node name="RestStopPage" type="CanvasLayer" parent="." node_paths=PackedStringArray("rest_stops", "car", "pause_menu")]
+script = ExtResource("31_restpage")
+rest_stops = NodePath("../RestStops")
+car = NodePath("../Car")
+pause_menu = NodePath("../PauseMenu")

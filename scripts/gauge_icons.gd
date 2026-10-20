@@ -16,7 +16,7 @@ extends RefCounted
 # the third is a disc with a slot cut out of it. So each glyph is triangulated ONCE and
 # cached in unit space, then scaled at draw time — see `draw_into`.
 
-enum Kind { HEALTH, BOOST, NOS }
+enum Kind { HEALTH, BOOST, NOS, TEMP }
 
 # The authoring grid. Geometry below is in these units; `draw_into` scales it.
 const GRID := 24.0
@@ -85,6 +85,15 @@ static func _outlines(kind: Kind) -> Array:
 				Vector2(18, 8), Vector2(18, 24), Vector2(6, 24), Vector2(6, 8),
 				Vector2(8, 4), Vector2(10, 4),
 			])]
+		Kind.TEMP:
+			# A thermometer: a 1-module-wide stem standing on a round bulb, merged into one
+			# silhouette so it reads at gauge size without an interior detail.
+			var bulb := PackedVector2Array()
+			for i in _DISC_SEGMENTS:
+				var a := TAU * float(i) / float(_DISC_SEGMENTS)
+				bulb.push_back(Vector2(12, 18) + Vector2(cos(a), sin(a)) * 6.0)
+			var stem := PackedVector2Array([Vector2(9, 0), Vector2(15, 0), Vector2(15, 16), Vector2(9, 16)])
+			return Geometry2D.merge_polygons(stem, bulb)
 		_:
 			# Boost: a dial with the needle cut OUT as a 1-module slot swept to the upper
 			# right, where a boost gauge sits under load. Round on purpose — every pressure

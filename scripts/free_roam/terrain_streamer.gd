@@ -47,6 +47,9 @@ var stat_overshoot_us := 0
 var stat_spikes := 0
 var stat_spike_by := {}
 var _last_kind := ""
+var _plan_override: Variant = null  # a Vector2 to plan around instead of the focus (prefill_at)
+# Whether rest stop `site` is lit (RestStops.is_lit), for its marker's colour. Unset: none are.
+var rest_lit_query := Callable()
 # A decaying peak of the cost of one unit in the sample-at-a-time stages (heights, arrays,
 # plant), so the stop rule allows for the dear ones rather than the average.
 var _peak_us := {"heights": 40.0, "arrays": 10.0, "plant": 40.0}
@@ -250,6 +253,16 @@ func prefill() -> void:
 	_plan()
 	var start := Time.get_ticks_usec()
 	_run_queue(start + 60_000_000)
+
+
+# Prefill around a point the car is about to be moved to (a respawn or a rest-stop travel), so it
+# lands on built ground with collision. The plan is made as if the car were already there and
+# standing still.
+func prefill_at(p: Vector2) -> void:
+	_plan_override = p
+	_plan()
+	_run_queue(Time.get_ticks_usec() + 60_000_000)
+	_plan_override = null
 
 
 # Draw a speck of every ring's ground material in front of `camera` for a few frames, so each
@@ -729,26 +742,36 @@ func _queue_barriers(job: ChunkJob) -> void:
 		field.build(layout, barrier_params(), func(p: Vector2) -> float: return height_at(p.x, p.y)))
 
 
-# Placeholder posts at the chunk's sites, until rest stops and loot get real models: tall
-# orange for a rest stop, short blue for a loot slot, purple for a dead end.
+# The chunk's site dressing. A rest stop gets a crowd of onlookers along the back of its pad
+# (decision 9: spectators gather at rest stops) and a beacon post, grey until lit and orange after.
+# Loot slots and dead ends keep placeholder posts until stage 7 gives them models: short blue for
+# loot, purple for a dead end.
 func _queue_site_markers(job: ChunkJob) -> void:
-	if not settings.site_markers:
-		return
 	var cm := settings.chunk_m
 	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
 	var mine := PackedInt32Array()
 	for i in ids:
-		if _chunk_of(sites.pos[i]) == job.coord:  # each marker belongs to the chunk holding its centre
+		if _chunk_of(sites.pos[i]) == job.coord:  # each site belongs to the chunk holding its centre
 			mine.append(i)
 	if mine.is_empty():
 		return
 	_add_spawn(job, "spawn_markers", func(parent: Node3D) -> void:
 		for i in mine:
-			parent.add_child(_site_marker(i)))
+			if sites.kind[i] == RoadSites.Kind.REST:
+				var crowd := _rest_crowd(i)
+				if crowd != null:
+					parent.add_child(crowd)
+				parent.add_child(_site_marker(i))
+			elif settings.site_markers:
+				parent.add_child(_site_marker(i)))
+
+
+const BEACON_UNLIT := Color(0.45, 0.45, 0.45)
+const BEACON_LIT := Color(1.0, 0.55, 0.1)
 
 
 func _site_marker(i: int) -> MeshInstance3D:
-	var looks := {RoadSites.Kind.REST: [Color(1.0, 0.55, 0.1), 5.0], RoadSites.Kind.LOOT: [Color(0.2, 0.55, 1.0), 1.6],
+	var looks := {RoadSites.Kind.REST: [BEACON_UNLIT, 5.0], RoadSites.Kind.LOOT: [Color(0.2, 0.55, 1.0), 1.6],
 		RoadSites.Kind.DEAD_END: [Color(0.65, 0.3, 0.9), 3.0]}
 	var look: Array = looks[sites.kind[i]]
 	var mesh := CylinderMesh.new()
@@ -758,6 +781,8 @@ func _site_marker(i: int) -> MeshInstance3D:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_color = look[0]
+	if sites.kind[i] == RoadSites.Kind.REST and rest_lit_query.is_valid() and rest_lit_query.call(i):
+		mat.albedo_color = BEACON_LIT
 	mesh.material = mat
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -765,6 +790,40 @@ func _site_marker(i: int) -> MeshInstance3D:
 	var c := sites.pos[i]
 	mi.position = Vector3(c.x, sites.pad_h[i] + look[1] * 0.5, c.y)
 	return mi
+
+
+# Re-colour a loaded rest stop's beacon (it was just lit).
+func refresh_site_marker(i: int) -> void:
+	var st: ChunkState = _chunks.get(_chunk_of(sites.pos[i]))
+	if st == null or st.foliage == null:
+		return
+	var mi := st.foliage.get_node_or_null("Site%d" % i) as MeshInstance3D
+	if mi == null:
+		return
+	var lit: bool = rest_lit_query.is_valid() and rest_lit_query.call(i)
+	((mi.mesh as CylinderMesh).material as StandardMaterial3D).albedo_color = BEACON_LIT if lit else BEACON_UNLIT
+
+
+# Onlookers in an arc along the back of a rest stop's pad (the side away from its road), facing
+# the pad. A static crowd (Crowd), like the stage's wreck onlookers: rest stops are for stopping.
+func _rest_crowd(i: int) -> MultiMeshInstance3D:
+	var cfg: GameConfig = Config.data
+	var n := cfg.rest_stop_crowd_size
+	if n <= 0:
+		return null
+	var c := sites.pos[i]
+	var away := (c - sites.anchor[i]).normalized() if sites.anchor[i] != c else Vector2.UP
+	var r := sites.radius[i] - 1.5
+	var pts := PackedVector2Array()
+	var yaws := PackedFloat32Array()
+	for k in n:
+		var t := (float(k) + 0.5) / n
+		var ang := away.angle() + lerpf(-1.1, 1.1, t) + (ScatterMath.hash01(i, k, settings.world_seed, 61) - 0.5) * 0.15
+		var p := c + Vector2.from_angle(ang) * (r - ScatterMath.hash01(i, k, settings.world_seed, 62) * 1.5)
+		pts.append(p)
+		var to_c := c - p
+		yaws.append(atan2(-to_c.x, -to_c.y))
+	return Crowd.multimesh_instance("Crowd%d" % i, pts, yaws, func(x: float, z: float) -> float: return height_at(x, z), cfg)
 
 
 func _add_spawn(job: ChunkJob, kind: String, work: Callable) -> void:
@@ -809,6 +868,8 @@ func _widest_rock() -> float:
 # --- planning ------------------------------------------------------------------------------
 
 func _focus_xz() -> Vector2:
+	if _plan_override != null:
+		return _plan_override
 	return Vector2(focus.global_position.x, focus.global_position.z)
 
 
@@ -823,7 +884,7 @@ func _plan() -> void:
 	_plan_timer = 0.25
 	var here := _focus_xz()
 	var ahead := here
-	if focus is RigidBody3D:
+	if focus is RigidBody3D and _plan_override == null:
 		var v := (focus as RigidBody3D).linear_velocity
 		ahead += Vector2(v.x, v.z) * 1.5
 	_plan_coord = _chunk_of(here)

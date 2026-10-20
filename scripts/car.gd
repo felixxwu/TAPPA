@@ -1291,6 +1291,12 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if damage != null:
 		@warning_ignore("return_value_discarded")
 		damage.regen(state.step, cfg)
+		# The free-roam overheat chain (a no-op unless damage.thermal is on).
+		if damage.thermal and drivetrain != null and drivetrain.engine != null:
+			var eng = drivetrain.engine
+			var red: float = maxf(float(cfg.redline_rpm), 1.0)
+			@warning_ignore("return_value_discarded")
+			damage.thermal_step(state.step, absf(float(eng.throttle)), float(eng.rpm()) / red, cfg)
 
 
 # True when at least one wheel is not touching the ground — the trigger for the

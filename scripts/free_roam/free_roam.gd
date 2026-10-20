@@ -15,11 +15,25 @@ extends Node3D
 @onready var _water: MeshInstance3D = $Water
 @onready var _recovery: RoadRecovery = $RoadRecovery
 @onready var _pause: PauseMenu = $PauseMenu
+@onready var _rest_stops: RestStops = $RestStops
+@onready var _rest_page: RestStopPage = $RestStopPage
+
+# The car as an owned-car dict (the fielding pipeline's input), so tuning has something to edit.
+# Transient until the world session keeps a garage (stage 6).
+var owned: Dictionary = {}
 
 
 func _ready() -> void:
-	_car.apply_car(maxi(0, CarLibrary.index_of(_streamer.settings.car_id)))
+	var idx := maxi(0, CarLibrary.index_of(_streamer.settings.car_id))
+	owned = {"model_id": String(CarLibrary.all()[idx]["id"]), "instance_id": -1, "tuning": {}}
+	_car.apply_owned(owned)
+	# The free-roam damage chain: cooling failure, overheating, and giving up at 0 HP.
+	_car.damage.thermal = true
+	_car.damage.repair(Config.data)
 	_streamer.focus = _car
+	_streamer.rest_lit_query = _rest_stops.is_lit
+	_rest_page.owned = owned
+	_rest_stops.opened.connect(_rest_page.open)
 	# The streaming readout is a dev diagnostic: shown in debug builds, toggled with H.
 	$DebugStats.visible = OS.is_debug_build()
 	_pause.reset_to_track_requested.connect(_recovery.reset_now)

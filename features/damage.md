@@ -324,6 +324,29 @@ engine.rev_limit_scale = damage.rev_limit_fraction(cfg) # lerp 1 → damage_rev_
   (see *Wheel misalignment* above). It persists between events and is eased back only
   by the between-event field repair, independent of HP.
 
+## The free-roam damage chain (`DamageModel.thermal`)
+
+Free roam turns on a fixed chain (decision 8 in `todo/2026-10-19-free-roam-pivot.md`). It
+reverses "damage never wrecks" **for free roam only**: `thermal` is false by default, so the
+stage behaves exactly as described below.
+
+1. **Cooling failure:** the first time HP falls to `cooling_failure_hp_fraction` of max,
+   `cooling_broken` is set. It stays broken until `repair()`, whatever the HP does.
+2. **Overheating:** while it's broken, `thermal_step` (called by `car.gd` each physics tick
+   with the engine's throttle and rpm / redline) only raises `engine_temp`, at
+   `overheat_rise_floor_c_per_s` plus the load and rpm terms. Easing off slows it; nothing
+   stops it. With working cooling it settles to `engine_temp_normal_c`.
+3. **Drain:** above `overheat_temp_threshold_c` HP drains at `overheat_hp_drain_per_s`, and
+   `overheat_ramp` feeds the same misfire / rev-cap ramp as damage (`damage_ramp` takes the
+   larger), so an overheating engine sounds sick.
+4. **Giving up:** at 0 HP, `gave_up` fires once. `RestStops` respawns the car at the last lit rest
+   stop.
+5. **`repair()`** (a rest stop, a respawn or a travel) restores full HP, fixes the cooling,
+   returns the temperature to normal, straightens the wheels and re-arms `gave_up`.
+
+The HUD's temperature gauge and cooling warning read `temp_fraction` / `cooling_broken`
+(`hud.md`).
+
 ## 0 HP is a STATE, not an event
 
 `apply_loss()` is the whole of it:

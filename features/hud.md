@@ -100,6 +100,15 @@ frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for every car 
 starter takes damage like any other — no car can be wrecked, and an empty bar
 means a stumbling, rev-capped engine, not a dead run).
 
+## Temperature gauge (free roam only)
+
+`TempGauge` is an optional `HudGauge` with the thermometer icon (`GaugeIcons.Kind.TEMP`). Only
+`free_roam.tscn` has one, beside the nitrous gauge. Its fill is `DamageModel.temp_fraction`:
+empty at normal running, full at the overheat threshold. It runs blue to red and pulses while
+the engine overheats. A code-built `CoolingLabel` above the gauges reads "COOLING FAILED" once
+the cooling breaks, and "OVERHEATING — REACH A REST STOP" past the threshold. The stage scene
+has no `TempGauge`, so none of this runs there (`hud.gd → _update_temp`).
+
 ## Boost gauge
 
 `BoostGauge` is built the same way: `_update_boost_gauge(fitted, live_boost)`

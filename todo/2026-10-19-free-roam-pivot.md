@@ -468,7 +468,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    The hub stays unreachable until stage 6 rewires title → world. Moving
    `FreeRoamSettings` onto `GameConfig` / `game_config.tres` (CLAUDE.md: tunables live
    there) can happen here or in stage 6, once the knobs have settled.
-5. **Damage chain and rest stops — unchanged, still valid.** Temperature, cooling failure,
+5. **Damage chain and rest stops — DONE 2026-10-20** (`features/free-roam.md` → *Damage and rest stops*). Temperature, cooling failure,
    overheat drain, 0-HP respawn, lighting, free repair, travel, spectators at rest stops.
    The rest-stop page at this stage: repair, tune, travel. Needs rest stop positions from
    stage 1. Rest stops can also seed `prefill` for the fade on travel.
@@ -635,3 +635,20 @@ Numbering continues from decision 32.
   Headless desktop numbers: about 29 µs per height sample and a 1.1 s boot prefill. GDExtension
   or threads stay unneeded until a device says otherwise (`todo/mobile-web-performance.md`).
   Boot shader warm-up covers the ring ground materials only, not foliage or weather particles.
+- **D51. The thermal chain is opt-in per car (`DamageModel.thermal`)**, on in free roam and off on
+  the stage, so the stage keeps "damage never wrecks" until stage 8 deletes it. **REVIEW the
+  starting rates:** flat out, a broken cooling system reaches the overheat threshold in about
+  27 s; with a light foot, up to about 2 minutes. HP then drains at 25 HP/s, so a car that's just
+  below half health has about 20 s more after that. All of it is in `GameConfig`.
+- **D52. REVIEW — impacts were not retuned.** Decision 8 says "retuned to hurt more", but a
+  60 km/h hit already costs 560 HP (capped at 640) on a pool of about 1000. I left it for the
+  playtest rather than guess.
+- **D53. Arriving at a rest stop repairs for free, the moment the page opens**, and the game is
+  frozen while the page is up. Travel also repairs (you arrive at a rest stop). Travel is only
+  offered from the rest-stop page, not the pause menu. Stage 6's map page will become the travel
+  picker (decision 21).
+- **D54. REVIEW — a respawn or travel is an instant teleport behind a synchronous prefill**
+  (about 1 s headless). There's no fade overlay yet, so the screen holds on the last frame
+  for that long.
+- **D55. Rest stops look like a beacon post** (grey, orange once lit) plus a static crowd of 14
+  onlookers. There's no building model; that's an art task.

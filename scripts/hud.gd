@@ -117,6 +117,13 @@ var _pace_scroll := 0.0     # animated scroll position, eased toward _pace_curre
 # (EngineSim.nitrous_fraction()). A turbocharged car with nitrous shows BOTH flankers at
 # once, hence the distinct violet hue. See features/nitrous.md.
 @onready var _nitrous_gauge: HudGauge = $NitrousGauge
+# Free roam's engine temperature gauge (DamageModel.thermal): optional, so the stage scene
+# simply has none. Fill = DamageModel.temp_fraction (full at the overheat threshold), blue to
+# red, pulsing while the engine overheats; a label under the gauges warns when the cooling
+# has failed.
+@onready var _temp_gauge: HudGauge = get_node_or_null("TempGauge")
+var _cooling_label: Label
+var _temp_pulse_t := 0.0
 @onready var _impact_flash: ColorRect = $ImpactFlash
 
 # Low-HP warning pulse speed (rad/s) and the impact-flash response curve: each
@@ -230,6 +237,19 @@ func _ready() -> void:
 	# fixed violet from the same family so it can sit alongside boost unconfused.
 	_nitrous_gauge.visible = false
 	_nitrous_gauge.fill_color = _gauge_color(_NITROUS_HUE)
+	if _temp_gauge != null:
+		_temp_gauge.visible = false
+		_cooling_label = Label.new()
+		_cooling_label.name = "CoolingLabel"
+		_cooling_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_cooling_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+		_cooling_label.offset_left = -160
+		_cooling_label.offset_right = 160
+		_cooling_label.offset_top = -84
+		_cooling_label.offset_bottom = -62
+		_cooling_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
+		_cooling_label.visible = false
+		add_child(_cooling_label)
 	# Stage widgets start hidden; StageManager reveals them at the right moments.
 	_countdown_label.visible = false
 	_elapsed_label.visible = false
@@ -591,6 +611,38 @@ func _update_damage(delta: float) -> void:
 	# Fade the flash back out regardless of gauge visibility.
 	if _impact_flash.color.a > 0.0:
 		_impact_flash.color.a = maxf(0.0, _impact_flash.color.a - delta * _IMPACT_FLASH_DECAY)
+	_update_temp(dmg, delta)
+
+
+func _update_temp(dmg: DamageModel, delta: float) -> void:
+	if _temp_gauge == null:
+		return
+	var thermal := dmg != null and dmg.thermal
+	_temp_gauge.visible = thermal
+	_cooling_label.visible = thermal and dmg.cooling_broken
+	if not thermal:
+		return
+	var cfg: GameConfig = Config.data
+	var frac := dmg.temp_fraction(cfg)
+	_temp_gauge.value = frac
+	var col := Color.from_hsv(lerpf(0.58, 0.0, frac), _GAUGE_SAT, _GAUGE_VAL)
+	if dmg.is_overheating(cfg):
+		_temp_pulse_t += delta * _HP_PULSE_SPEED * 1.5
+		col.a = lerpf(0.35, 1.0, 0.5 + 0.5 * sin(_temp_pulse_t))
+	else:
+		_temp_pulse_t = 0.0
+	_temp_gauge.fill_color = col
+	if dmg.cooling_broken:
+		_cooling_label.text = "OVERHEATING — REACH A REST STOP" if dmg.is_overheating(cfg) else "COOLING FAILED"
+
+
+# Readouts for tests.
+func temp_gauge_visible() -> bool:
+	return _temp_gauge != null and _temp_gauge.visible
+
+
+func cooling_warning() -> String:
+	return _cooling_label.text if _cooling_label != null and _cooling_label.visible else ""
 
 
 func _gear_text(gear: int) -> String:

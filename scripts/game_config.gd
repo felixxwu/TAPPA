@@ -919,6 +919,32 @@ func has_nitrous() -> bool:
 ## self-limits; a real multi-bounce tumble racks up several capped hits, so a long fall
 ## down a drop can still empty it.
 @export_range(0.0, 2000.0) var impact_max_loss := 450.0
+## --- Free-roam damage chain (DamageModel.thermal; todo/2026-10-19-free-roam-pivot.md
+## decision 8). Below this health fraction the cooling system breaks, and stays broken until a
+## rest-stop repair.
+@export_range(0.0, 1.0) var cooling_failure_hp_fraction := 0.5
+## Engine temperature (°C) while the cooling works, and where a repair puts it back.
+@export_range(0.0, 200.0) var engine_temp_normal_c := 90.0
+## Above this temperature (°C) an overheating engine loses HP continuously.
+@export_range(0.0, 250.0) var overheat_temp_threshold_c := 120.0
+## The hottest the engine gets (°C); also where its misfire and rev cap reach their worst.
+@export_range(0.0, 300.0) var engine_temp_max_c := 140.0
+## With the cooling broken, how fast the temperature climbs (°C/s): never less than the floor,
+## plus up to the load term at full throttle and the rpm term at the redline. Easing off slows
+## it; nothing stops it.
+@export_range(0.0, 10.0) var overheat_rise_floor_c_per_s := 0.25
+@export_range(0.0, 10.0) var overheat_rise_load_c_per_s := 0.5
+@export_range(0.0, 10.0) var overheat_rise_rpm_c_per_s := 0.35
+## How fast a working cooling system pulls the temperature back to normal (°C/s).
+@export_range(0.0, 50.0) var cooling_settle_c_per_s := 2.0
+## HP lost per second above the overheat threshold.
+@export_range(0.0, 500.0) var overheat_hp_drain_per_s := 25.0
+## Free-roam rest stops: below this speed (km/h) for rest_stop_hold_s on a rest stop's pad,
+## the rest-stop page opens (RestStops).
+@export_range(0.0, 60.0) var rest_stop_speed_kmh := 8.0
+@export_range(0.0, 5.0) var rest_stop_hold_s := 0.6
+## Onlookers gathered at each rest stop (a static crowd along the back of its pad).
+@export_range(0, 60) var rest_stop_crowd_size := 14
 ## HP regained per second while driving. A LIVE field, not an authoring knob: it is 0.0 on
 ## the authored baseline (nothing heals by default) and the effects funnel writes it — the
 ## "Self Healing" skill's EFFECTS row sets it from skill_heal_hp_per_s, and UpgradeLibrary's

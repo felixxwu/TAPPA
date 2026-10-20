@@ -161,6 +161,13 @@ rejected, the crowd lines **both verges** over that stretch. All deterministic p
 (`SpectatorStart` / `SpectatorMid` / `SpectatorEnd`) so an in-place regeneration
 replaces rather than stacks them (mirrors `_place_arch`).
 
+## Rest-stop crowds (free roam)
+
+Each free-roam rest stop gets a static onlooker crowd, built per near chunk by
+`TerrainStreamer._rest_crowd` through `Crowd.multimesh_instance`. There are
+`rest_stop_crowd_size` figures in an arc along the back of the pad (the side away from its
+road), facing the pad. Being static, they have no steering and no ragdolls.
+
 ## Collision layers
 
 - Upright crowd: no physics bodies at all (pure data + MultiMesh).

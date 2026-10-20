@@ -2,10 +2,10 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
-**Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`
+**Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
 
 The prototype of the free-roam pivot (`todo/2026-10-19-free-roam-pivot.md`). **The game boots
 straight into it** (`project.godot` → `run/main_scene = res://free_roam.tscn`); the hub and the
@@ -165,6 +165,26 @@ planted on it (`is_clear`).
   purple for a dead end. `FreeRoamSettings.site_markers` turns them off.
 
 On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
+
+## Damage and rest stops
+
+The car runs the **thermal damage chain** (`DamageModel.thermal`, `features/damage.md`):
+cooling fails at half health, the engine then only heats up, overheating drains HP, and at 0 HP
+the car gives up. The HUD shows a temperature gauge and a cooling warning (`features/hud.md`).
+
+`RestStops` makes the REST sites into Dark Souls bonfires:
+- **Lighting:** driving onto a rest stop's pad lights it (its beacon post turns from grey to
+  orange) and makes it the respawn point (`last_site`). Spawn is lit from the start.
+- **Stopping:** below `rest_stop_speed_kmh` for `rest_stop_hold_s` on the pad opens the rest-stop
+  page (`features/menus.md`), once per visit.
+- **Respawn:** on `gave_up` the car is moved to the last lit rest stop (`move_car_to`: stream the
+  destination in with `TerrainStreamer.prefill_at`, then put the car on its road beside the pad)
+  and repaired. `respawned` carries the wreck position, for dropped loot in stage 7.
+- **Travel:** goes to any lit rest stop, with the same move plus a repair.
+- **Crowds:** each rest stop has a static crowd along the back of its pad (`features/spectators.md`).
+
+The car is fielded through `apply_owned` with a transient owned-car dict (`free_roam.gd →
+owned`), so the rest-stop page's tuning works on the shared `TuningPanel` / `car.retune` path.
 
 ## Barriers
 
