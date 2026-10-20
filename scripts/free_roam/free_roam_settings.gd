@@ -43,7 +43,7 @@ extends Resource
 @export var road_twist := 1.0
 ## Roughly how far the road runs between changes of direction.
 @export var bend_length_m := 200.0
-@export var road_half_width_m := 3.5
+@export var road_half_width_m := 2.75
 @export var road_shoulder_m := 2.0
 
 @export_group("Base height and lakes")
@@ -88,7 +88,7 @@ extends Resource
 ## One candidate spot per cell of this size; trees are then thinned by the forest noise.
 @export var tree_cell_m := 9.0
 ## Share of the land that is forest (0 = no trees, 1 = everywhere).
-@export var forestiness := 0.6
+@export var forestiness := 0.8
 @export var bush_cell_m := 12.0
 ## One rock-group candidate per cell, before the region's rock density thins it.
 @export var rock_cell_m := 45.0

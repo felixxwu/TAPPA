@@ -284,7 +284,8 @@ provides both.
     Cost (default island, container CPU): about 13% of spots fall outside their chunk, at ~33 µs
     each for the exact height against ~1 µs for a mesh read, paid in the budgeted `PLANT` stage
     (a bush's light samples are warmed there too); the spawns reuse the cache.
-  - Trees are thinned by the stages' forest noise (`forestiness`).
+  - Trees are thinned by the stages' forest noise (`forestiness`, the share of land that is
+    forest: 0.8).
   - Rock groups are thinned by `rock_group_chance` × the region's rock density, then fanned
     into outcrops with `TreeScatter.cluster`.
   - Each spot is rejected if it is in water or within the road's width plus

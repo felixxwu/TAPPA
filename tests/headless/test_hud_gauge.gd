@@ -70,16 +70,16 @@ func test_the_glyphs_are_three_different_shapes() -> void:
 	assert_ne(health, nos, "health and NOS are distinct glyphs")
 
 
-func test_the_health_glyph_is_actually_a_cross() -> void:
-	# A cross reaches the middle of all four edges but leaves the corners empty. That is
-	# what makes it read as a cross at any size, so assert the shape rather than an area.
+func test_the_health_glyph_is_actually_a_heart() -> void:
+	# Two lobes up top with a notch between them, one point at the bottom. Assert the shape
+	# rather than an area: that silhouette is what reads as a heart at any size.
 	var c := GaugeIcons.GRID * 0.5
 	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(c, c)), "filled at the centre")
-	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(c, 1.0)), "reaches the top edge")
-	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(c, GaugeIcons.GRID - 1.0)), "reaches the bottom")
-	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(1.0, c)), "reaches the left edge")
-	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(GaugeIcons.GRID - 1.0, c)), "reaches the right")
-	for corner: Vector2 in [Vector2(1, 1), Vector2(23, 1), Vector2(1, 23), Vector2(23, 23)]:
+	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(6.5, 3.0)), "the left lobe")
+	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(17.5, 3.0)), "the right lobe")
+	assert_false(_covers(GaugeIcons.Kind.HEALTH, Vector2(c, 1.0)), "the notch between the lobes")
+	assert_true(_covers(GaugeIcons.Kind.HEALTH, Vector2(c, GaugeIcons.GRID - 1.5)), "the point at the bottom")
+	for corner: Vector2 in [Vector2(1, 23), Vector2(23, 23), Vector2(1, 1), Vector2(23, 1)]:
 		assert_false(_covers(GaugeIcons.Kind.HEALTH, corner), "corner %s stays empty" % corner)
 
 

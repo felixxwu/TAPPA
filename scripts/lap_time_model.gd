@@ -461,4 +461,5 @@ static func _surface_grip(car_meta: Dictionary, event: Dictionary, skill_grip_mu
 	# 1.0, so there is no per-condition branch here and a new condition needs no edit.
 	# skill_grip_mult is the ghost's driver-skill term (1.0 = no-op); it multiplies the
 	# same mu the weather/surface model scales, which is why it needed no new concept.
-	return mu * WeatherLibrary.grip_mult(cfg, StageFields.event_weather(event)) * maxf(skill_grip_mult, 0.0)
+	return mu * WeatherLibrary.grip_mult(cfg, StageFields.event_weather(event)) * cfg.global_grip_mult \
+		* maxf(skill_grip_mult, 0.0)

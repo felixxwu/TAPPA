@@ -405,6 +405,10 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 # dimmed stage doesn't leave a full-brightness car floating in it. Read only by
 # apply_car_light. Defaults to 1.0 so a session-less boot is unaffected.
 var weather_sun_mult := 1.0
+## GLOBAL GRIP: one multiplier on every tyre's μ, for every car, on every surface and in every
+## weather (Drivetrain's per-contact resolver, alongside the weather multiplier). 1.0 is the
+## authored grip; below 1.0 everything slides more. The one knob for "the cars are too grippy".
+@export_range(0.1, 2.0, 0.01) var global_grip_mult := 1.0
 ## Global tyre μ multiplier applied on top of the surface grip when weather ==
 ## WEATHER_RAIN (Drivetrain.surface_tire_params). A single multiplier regardless of
 ## surface — see features/weather.md for the per-surface trade-off this defers.

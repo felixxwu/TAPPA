@@ -772,3 +772,5 @@ Numbering continues from decision 32.
   change always unpauses (the Wipe soft-lock); the HUD hides under paused pages; the preview cache
   re-parents stale previews and drops a previous world's cars; a Stats page nav test. The
   auto-driver test allows ≤ 3 safety-net rushes (it varies 0–2 with machine load).
+- **D86. Tuning asks (user):** health gauge is a heart; `GameConfig.global_grip_mult` = 0.8
+  scales all grip; roads narrower (`road_half_width_m` 2.75, was 3.5); forest cover 0.8 (was 0.6).

@@ -12,7 +12,7 @@ extends RefCounted
 # unrelated pictures — so if you add a fourth gauge, author it to the same grid.
 #
 # Consumers get triangles, not outlines. `draw_colored_polygon` only renders CONVEX
-# polygons correctly, and two of these glyphs are concave (the cross, the bottle) while
+# polygons correctly, and two of these glyphs are concave (the heart, the bottle) while
 # the third is a disc with a slot cut out of it. So each glyph is triangulated ONCE and
 # cached in unit space, then scaled at draw time — see `draw_into`.
 
@@ -68,14 +68,14 @@ static func draw_into(ci: CanvasItem, kind: Kind, centre: Vector2, px: float, co
 static func _outlines(kind: Kind) -> Array:
 	match kind:
 		Kind.HEALTH:
-			# A cross bleeding to all four edges: arms 2 modules thick on 2-module stubs.
-			# Deliberately the only glyph with no interior gap — at the smallest HUD size
-			# a solid cross is the shape most likely to survive.
-			return [PackedVector2Array([
-				Vector2(8, 0), Vector2(16, 0), Vector2(16, 8), Vector2(24, 8),
-				Vector2(24, 16), Vector2(16, 16), Vector2(16, 24), Vector2(8, 24),
-				Vector2(8, 16), Vector2(0, 16), Vector2(0, 8), Vector2(8, 8),
-			])]
+			# A heart — the standard health glyph: two round lobes merged with a downward point,
+			# one solid silhouette with no interior gap, so it survives the smallest HUD size.
+			var lobes := Geometry2D.merge_polygons(_circle(Vector2(6.5, 8.0), 6.5), _circle(Vector2(17.5, 8.0), 6.5))
+			var point := PackedVector2Array([Vector2(0.4, 10.0), Vector2(23.6, 10.0), Vector2(12, 23.5)])
+			var heart: Array = []
+			for lobe: PackedVector2Array in lobes:
+				heart.append_array(Geometry2D.merge_polygons(lobe, point))
+			return heart
 		Kind.NOS:
 			# A pressure bottle: 1-module valve, 1-module shoulder chamfer, 3-module body.
 			# Left as one unbroken silhouette — a label band across the body was the first
@@ -97,8 +97,17 @@ static func _outlines(kind: Kind) -> Array:
 		_:
 			# Boost: a dial with the needle cut OUT as a 1-module slot swept to the upper
 			# right, where a boost gauge sits under load. Round on purpose — every pressure
-			# instrument in a car is — which also keeps it from colliding with the cross.
+			# instrument in a car is.
 			return Geometry2D.clip_polygons(_disc(), _needle())
+
+
+# A closed circle of `r` around `c`, in GRID units.
+static func _circle(c: Vector2, r: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in _DISC_SEGMENTS:
+		var a := TAU * float(i) / float(_DISC_SEGMENTS)
+		pts.push_back(c + Vector2(cos(a), sin(a)) * r)
+	return pts
 
 
 # The dial rim, as a closed polygon.

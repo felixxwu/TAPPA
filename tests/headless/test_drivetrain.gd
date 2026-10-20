@@ -107,6 +107,29 @@ func test_surface_tire_params_rain_reduces_mu() -> void:
 	dt.terrain = null
 
 
+# GameConfig.global_grip_mult scales every contact's μ by exactly its own factor — on and off
+# terrain, dry and wet — so one knob moves all grip for all cars alike. Relative, so any value
+# a designer picks keeps this green.
+func test_global_grip_scales_every_contact_alike() -> void:
+	var cfg: GameConfig = Config.data
+	var dt: Drivetrain = _car.drivetrain
+	var authored := cfg.global_grip_mult
+	var stub := _StubTerrain.new()
+	stub.s = Vector2(0.5, 0.5)
+	for terrain in [null, stub]:
+		dt.terrain = terrain
+		for weather in [StageFields.WEATHER_DRY, StageFields.WEATHER_RAIN]:
+			cfg.weather = weather
+			cfg.global_grip_mult = 1.0
+			var base: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+			cfg.global_grip_mult = 0.5
+			var half: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
+			assert_almost_eq(half, base * 0.5, 1e-5, "%s, terrain %s: halving the global grip halves μ" % [weather, terrain != null])
+	cfg.global_grip_mult = authored
+	cfg.weather = StageFields.WEATHER_DRY
+	dt.terrain = null
+
+
 func test_launch_wheelspin() -> void:
 	# Full throttle from rest in 1st: the driven axle must genuinely spin —
 	# slip well past the grip curve's peak — while the car still accelerates.

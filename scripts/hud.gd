@@ -591,7 +591,7 @@ func _update_damage(delta: float) -> void:
 	if show_gauge:
 		var frac := clampf(dmg.hp / dmg.max_hp, 0.0, 1.0) if dmg.max_hp > 0.0 else 0.0
 		_hp_gauge.value = frac
-		# The cross icon sits in the middle of the dial — the fill itself IS the reading,
+		# The heart icon sits in the middle of the dial — the fill itself IS the reading,
 		# so the absolute HP number was redundant noise.
 		# Green (full) → amber → red (empty) via hue; flash by fading the fill's alpha
 		# when below the low-HP warning fraction so the danger is unmissable. The tint

@@ -172,6 +172,7 @@ var _front_scratch := {
 var _weather_mu := 1.0
 var _weather_mu_id := ""
 var _weather_mu_cfg: GameConfig = null
+var _weather_mu_global := 1.0
 
 
 func _init(p_car: VehicleBody3D) -> void:
@@ -817,10 +818,13 @@ func surface_tire_params(cfg: GameConfig, cp: Vector3) -> Dictionary:
 	# so the hot path stays allocation-free: the Dictionary lookup happens once
 	# per condition change, not once per wheel per tick, and the steady-state cost
 	# is the same single string compare plus multiply it was before.
-	if cfg.weather != _weather_mu_id or cfg != _weather_mu_cfg:
+	# The global grip multiplier (GameConfig.global_grip_mult) rides in the same memo: every
+	# car, surface and weather goes through this one product, so it scales all grip alike.
+	if cfg.weather != _weather_mu_id or cfg != _weather_mu_cfg or cfg.global_grip_mult != _weather_mu_global:
 		_weather_mu_id = cfg.weather
 		_weather_mu_cfg = cfg
-		_weather_mu = WeatherLibrary.grip_mult(cfg, _weather_mu_id)
+		_weather_mu_global = cfg.global_grip_mult
+		_weather_mu = WeatherLibrary.grip_mult(cfg, _weather_mu_id) * cfg.global_grip_mult
 	# The fitted tyre's SURFACE-DEPENDENT term (features/drivetrain-and-tires.md). Folded
 	# in here for the same reason weather is: this is the single per-contact resolver
 	# every wheel goes through, so a flat fixture with no terrain still gets the snow

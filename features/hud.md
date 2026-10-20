@@ -82,8 +82,8 @@ readout, never a tap target.
 The icon glyphs (`GaugeIcons.Kind.HEALTH` / `BOOST` / `NOS`) are authored on a shared
 24-unit grid with a 4-unit module — every edge on a module multiple, every negative
 gap exactly one module, square corners, one flat fill, no outline — so the three read
-as one family: a cross (health, the one glyph with no interior gap, chosen so it
-survives being shrunk to gauge size), a dial with the needle cut out as a slot swept
+as one family: a heart (health — the standard health glyph: two round lobes and a point,
+one solid silhouette with no interior gap, so it survives being shrunk to gauge size), a dial with the needle cut out as a slot swept
 to the upper right (boost — the one round glyph, because every pressure instrument in
 a real car is), and a pressure bottle (NOS, left as one unbroken silhouette). Two are
 concave and the dial is a disc with a slot cut out of it, so `draw_colored_polygon`
