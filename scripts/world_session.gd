@@ -16,6 +16,7 @@ extends Node
 #   driven         — map cells the car has driven through ("x,y" keys of DRIVEN_CELL_M cells)
 #   max_ring       — the furthest biome ring reached (the map shows the borders crossed)
 #   drive_time     — seconds driven (the weather timeline runs on it)
+#   seen           — site ids (rest stops, loot slots, dead ends) the car has come near, for the minimap / map
 #   carried / stash / dropped / collected / revealed — the loot keys (stage 7)
 #
 # No world yet (a fresh profile) means has_world() is false; the title screen offers New World.
@@ -55,6 +56,7 @@ func new_world(world_seed: int, starter_model_id: String) -> void:
 		"driven": {},
 		"max_ring": 0,
 		"drive_time": 0.0,
+		"seen": [0],
 		"carried": [],
 		"stash": [],
 		"dropped": {},
@@ -197,6 +199,33 @@ func drive_time() -> float:
 func set_drive_time(t: float) -> void:
 	if has_world():
 		_world()["drive_time"] = t
+
+
+# --- sites seen (the minimap and the map show rest stops and loot once you've come across them) ---
+
+# As ints, like lit_sites (JSON floats). An older save with no "seen" key reads as only spawn.
+func seen_sites() -> Array:
+	var out: Array = []
+	for v in _world().get("seen", [0]):
+		out.append(int(v))
+	return out
+
+
+func is_seen(site: int) -> bool:
+	return seen_sites().has(site)
+
+
+# Record that the car has come across `site`. Returns true when it is newly seen.
+func see(site: int) -> bool:
+	if not has_world():
+		return false
+	var seen := seen_sites()
+	if seen.has(site):
+		return false
+	seen.append(site)
+	_world()["seen"] = seen
+	_touch()
+	return true
 
 
 # --- loot (stage 7 reads and writes these) ---------------------------------------------------------

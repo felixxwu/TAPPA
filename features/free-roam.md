@@ -266,6 +266,8 @@ node for node:
 - `PauseMenu`, armed once `prefill` is done. It has no Photo Mode row (`offer_photo_mode =
   false`), "Reset to road" calls `RoadRecovery.reset_now`, and "Quit to HQ" goes to the
   hub with free roam's own confirm text.
+- `MiniMapLayer/MiniMap` (layer 2, with the HUD): the heading-up, perspective-tilted minimap,
+  top-centre. Tap it (or M / gamepad Back) for the full map. See [minimap.md](minimap.md).
 - The streaming readout moved to its own `DebugStats` layer. It shows in debug builds only and
   **H** toggles it.
 

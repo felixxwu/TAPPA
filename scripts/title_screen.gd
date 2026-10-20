@@ -48,6 +48,7 @@ static func starter_choices() -> PackedStringArray:
 
 func _show(v: View) -> void:
 	if _page != null:
+		CardUI.park_previews(_page)
 		_page.queue_free()
 	_cards = null
 	view = v
@@ -68,7 +69,7 @@ func _show(v: View) -> void:
 			for id in starter_choices():
 				var car := CarLibrary.by_id(id)
 				entries.append({"title": String(car.get("name", id)), "subtitle": CardUI.car_subtitle(car),
-					"icon": "car", "action": _start.bind(id)})
+					"car": CarLibrary.index_of(id), "action": _start.bind(id)})
 			_cards = CardUI.card_list(_page, entries)
 			_page.add_action(UITheme.row_button("< Back", _show.bind(View.MAIN)))
 			MenuNav.attach(_page, {first = _cards, on_back = _show.bind(View.MAIN)})

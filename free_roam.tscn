@@ -22,6 +22,7 @@
 [ext_resource type="Script" path="res://scripts/free_roam/rest_stop_page.gd" id="31_restpage"]
 [ext_resource type="Script" path="res://scripts/free_roam/world_pages.gd" id="32_pages"]
 [ext_resource type="Script" path="res://scripts/free_roam/loot_director.gd" id="33_loot"]
+[ext_resource type="Script" path="res://scripts/free_roam/mini_map.gd" id="34_minimap"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("8_sky")
@@ -303,8 +304,20 @@ rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
 pause_menu = NodePath("../PauseMenu")
 
-[node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car")]
+[node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car", "loot")]
 script = ExtResource("32_pages")
 streamer = NodePath("../Terrain")
 rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
+loot = NodePath("../LootDirector")
+
+[node name="MiniMapLayer" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="MiniMap" type="Control" parent="MiniMapLayer" node_paths=PackedStringArray("streamer", "car", "rest_stops", "loot")]
+layout_mode = 3
+script = ExtResource("34_minimap")
+streamer = NodePath("../../Terrain")
+car = NodePath("../../Car")
+rest_stops = NodePath("../../RestStops")
+loot = NodePath("../../LootDirector")

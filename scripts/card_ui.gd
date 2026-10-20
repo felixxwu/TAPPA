@@ -204,6 +204,9 @@ static func card_page(host: Node, opts: Dictionary = {}) -> MenuPage:
 #   "subtitle" (String)   a dim second line (optional)
 #   "extra"    (String)   a third line, e.g. a state (optional), coloured by "extra_variant"
 #   "icon"     (String)   an icons/cards/ name (optional — generic.svg otherwise)
+#   "car"      (Dictionary or int) show this car spinning in 3D instead of the icon: an owned-car
+#                         dict, or a CarLibrary index (CarPreviewCache; park_previews before
+#                         freeing the page so the next visit reuses it)
 #   "disabled" (bool)     shown dimmed, never confirmable (optional)
 #   "action"   (Callable) run when the card is confirmed (optional — a read-only card)
 # `header` is the plain lines shown above the cards, in the fixed-height header slot.
@@ -221,6 +224,12 @@ static func card_list(page: MenuPage, entries: Array, header: Array = [], select
 		text_card(carousel, String(e.get("title", "")), String(e.get("subtitle", "")),
 			bool(e.get("disabled", false)), String(e.get("icon", "generic")),
 			String(e.get("extra", "")), String(e.get("extra_variant", "")))
+		if e.has("car"):
+			var visual := carousel.get_card(carousel.card_count() - 1).visual
+			for child in visual.get_children():
+				visual.remove_child(child)
+				child.queue_free()
+			visual.add_child(CarPreviewCache.get_or_build(e["car"]))
 	carousel.set_meta("entries", entries)
 	carousel.confirmed.connect(func(i: int) -> void:
 		var action: Variant = entries[i].get("action")
@@ -236,7 +245,16 @@ static func car_subtitle(entry: Dictionary) -> String:
 	return "%d hp · %s" % [roundi(CarLibrary.horsepower(entry)), CarLibrary.drive_text(int(entry.get("drive_mode", -1)))]
 
 
-# The titles of a card list's cards, in order — a readout for tests and hosts.
+# Hand every car preview on `page` back to CarPreviewCache before the page is freed, so the
+# next page that shows the same car reuses it instead of building it again.
+static func park_previews(page: Node) -> void:
+	if not is_instance_valid(page):
+		return
+	for p in page.find_children("*", "CarCardPreview", true, false):
+		CarPreviewCache.park(p as CarCardPreview)
+
+
+# The titles of a card list's cards — a readout for tests and hosts.
 static func titles(carousel: CardCarousel) -> PackedStringArray:
 	var out := PackedStringArray()
 	for e: Dictionary in carousel.get_meta("entries", []):

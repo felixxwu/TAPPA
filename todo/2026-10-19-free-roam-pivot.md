@@ -723,7 +723,8 @@ Numbering continues from decision 32.
 - **D76. Menus are card lists again** (user ask: "reuse the card list"). `CardCarousel` / `CardUI`
   are back from before the demolition; every menu that is a list of choices is a card list
   (features/card-carousel.md). Settings, Tune car and the map stay plain pages because they are not
-  lists. The hub's 3D car previews were not restored (cars show an icon).
+  lists. The hub's spinning 3D car previews are back too (user ask) on the starter choice and the
+  Garage; the Journal keeps icons, because building a dozen car props at once is a visible hitch.
 - **D77. The pool replaces fixed placement (supersedes decision 17's "placed once" and D65).**
   User ask: every car and part fully unique, plenty of places it can spawn, gone from all of them
   once owned or picked up, and a biome's pull-ins empty once its things are found
@@ -747,3 +748,10 @@ Numbering continues from decision 32.
   behind the title, or a static backdrop.
 - **D81. Mobile pedals:** the GAS / BRAKE column is `GameConfig.mobile_pedal_band_frac` (0.36) of
   the screen height, up from a fixed 0.20. Steer buttons are unchanged.
+- **D82. The minimap** (features/minimap.md): heading-up, tilted like a nav app, top-centre; driven
+  roads plus faint undriven road just ahead; rest stops and loot once seen (`WorldSession` "seen",
+  within 150 m). Tap it, or press M / gamepad Back (the existing `toggle_map` action), for the full
+  map; closing that goes straight back to driving. **REVIEW:** its size is capped so it stays above
+  the simple touch scheme's steering zones (top 20% of the screen) — a bigger minimap means moving
+  those; loot shows as a blue diamond; the full map still shows the whole island, so a short drive
+  is small on it.

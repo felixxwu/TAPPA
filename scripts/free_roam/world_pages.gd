@@ -5,7 +5,9 @@ extends CanvasLayer
 # Free roam's world pages (todo/2026-10-19-free-roam-pivot.md decisions 21–22), opened over a
 # frozen game from the pause menu or the rest-stop page:
 #   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven,
-#           your lit rest stops and the car. Opened from a rest stop it doubles as the travel
+#           the rest stops you've come across (orange lit, grey not), loot you've seen that's
+#           still lying there (MiniMap.site_markers, shared with the minimap) and the car. It is
+#           also the minimap's "whole map" (tap the minimap, or M / gamepad Back, which closes it too). Opened from a rest stop it doubles as the travel
 #           picker: Prev / Next step through the lit stops, Travel goes there.
 #   STATS — the lifetime counters that matter in free roam, one read-only card each
 #           (CardUI.card_page / card_list).
@@ -17,6 +19,7 @@ const STATS_SHOWN: Array = [LifetimeStats.DISTANCE_DRIVEN_M, LifetimeStats.REST_
 @export var streamer: TerrainStreamer
 @export var rest_stops: RestStops
 @export var car: Node3D
+@export var loot: Node  # LootDirector, for the loot still lying at seen sites
 
 var _page: MenuPage
 var _cards: CardCarousel
@@ -47,7 +50,8 @@ func show_map(on_close: Callable, from_site := -1) -> void:
 	_open(on_close)
 	_travel_mode = from_site >= 0
 	_here = from_site
-	_page = MenuPage.new({"title": "Map", "dim": true})
+	# Transparent body: only the drawn map itself is opaque, over the dim.
+	_page = MenuPage.new({"title": "Map", "dim": true, "alpha": 0.0})
 	add_child(_page)
 	_canvas = MapCanvas.new()
 	_canvas.pages = self
@@ -117,6 +121,13 @@ func _clear() -> void:
 		_page = null
 	_canvas = null
 	_cards = null
+
+
+# M / gamepad Back (`toggle_map`, the key that opens the full map from driving) closes the map too.
+func _unhandled_input(event: InputEvent) -> void:
+	if _canvas != null and event.is_action_pressed("toggle_map") and not event.is_echo():
+		get_viewport().set_input_as_handled()
+		close()
 
 
 func _step(dir: int) -> void:
@@ -196,12 +207,18 @@ class MapCanvas:
 			if WorldSession.has_driven(mx, my):
 				draw_line(to_px.call(Vector2(net.seg_ax[si], net.seg_ay[si])), to_px.call(Vector2(net.seg_bx[si], net.seg_by[si])),
 					Color(0.95, 0.9, 0.75), 2.0)
-		# Lit rest stops, the travel target ringed.
+		# The sites come across: rest stops (orange lit, grey not) and loot still lying there; the
+		# travel target ringed.
 		var target := pages.selected_target()
-		for site: int in pages.rest_stops.lit_sites.keys():
-			var p: Vector2 = to_px.call(st.sites.pos[site])
-			draw_circle(p, 4.0, Color(1.0, 0.55, 0.1))
-			if site == target:
+		for mk: Array in MiniMap.site_markers(st.sites, pages.rest_stops.lit_sites, pages.loot, Vector2.ZERO, INF):
+			var p: Vector2 = to_px.call(mk[0])
+			var col := MiniMap.marker_color(mk[1])
+			if mk[1] == MiniMap.Marker.LOOT:
+				draw_colored_polygon(PackedVector2Array([p + Vector2(0, -4.5), p + Vector2(4.5, 0), p + Vector2(0, 4.5), p + Vector2(-4.5, 0)]), col)
+			else:
+				draw_circle(p, 5.0, Color.BLACK)
+				draw_circle(p, 4.0, col)
+			if mk[2] == target:
 				draw_arc(p, 8.0, 0.0, TAU, 24, Color.WHITE, 2.0)
 		# The car.
 		if pages.car != null:

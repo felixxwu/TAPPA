@@ -74,6 +74,7 @@ func close() -> void:
 
 func _clear() -> void:
 	if _page != null:
+		CardUI.park_previews(_page)
 		_page.queue_free()
 		_page = null
 	_cards = null
@@ -220,7 +221,7 @@ func _build_garage() -> void:
 		var model := CarLibrary.by_id(String(c.get("model_id", "")))
 		if id == active:
 			selected = entries.size()
-		entries.append({"title": _car_name(c), "subtitle": CardUI.car_subtitle(model), "icon": "car",
+		entries.append({"title": _car_name(c), "subtitle": CardUI.car_subtitle(model), "car": c,
 			"extra": "Driving" if id == active else "", "action": Callable() if id == active else _drive.bind(id)})
 	_card_page("Garage", entries, [], selected)
 

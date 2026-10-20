@@ -24,11 +24,12 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 | `driven` | map cells (`DRIVEN_CELL_M` = 40 m) the car has driven through, for the map |
 | `max_ring` | the furthest biome ring reached, a high-water mark |
 | `drive_time` | seconds driven: the weather timeline (`BiomeDirector`) runs on it |
+| `seen` | site ids (rest stops, loot slots, dead ends) the car has come within `GameConfig.minimap_seen_radius_m` of (`see`, `seen_sites`, `is_seen`; spawn 0 from the start). The minimap and the map show only these ([minimap.md](minimap.md)). A save without the key reads as `[0]` |
 | `carried`, `stash`, `dropped`, `collected`, `revealed` | loot (stage 7) |
 
 - **New world** (`new_world`): a fresh seed and a starter car. It replaces the old world **and the
   old owned cars**, because a world is the whole save.
-- **JSON returns numbers as floats**, so readers normalise (`lit_sites` returns ints).
+- **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints).
 - **Schema:** `Save.SCHEMA_VERSION` is 8. Every v7 (roguelike) profile is refused, not migrated,
   and the player starts fresh (decision 26).
 - **Headless runs** can't write the real profile (Save's test sandbox), so a headless
@@ -41,7 +42,7 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
   session's active car through `apply_owned` (so tuning persists through `Save.set_tuning`),
   restores its damage, seeds `RestStops` from `lit` / `last_site`, and puts the car at its saved
   pose, re-seated on the built ground.
-- While driving: driven cells and the ring reached every 0.25 s; pose, condition, drive time
+- While driving: driven cells, the ring reached and the sites seen (`MiniMap.mark_seen_near`) every 0.25 s; pose, condition, drive time
   and the distance odometer (`LifetimeStats.DISTANCE_DRIVEN_M`) every 5 s, and on Quit or scene
   exit (`tree_exiting`, while the car is still readable). `RestStops.lit` / `respawn_point_changed`
   write straight through; a respawn bumps `TIMES_GAVE_UP`.
@@ -63,9 +64,14 @@ Free roam's pause menu quits to the title (`PauseMenu.quit_scene`), saving first
 ## World pages (`WorldPages`, decisions 21–22)
 
 A `CanvasLayer` (layer 7, always processing) over the frozen game:
-- **Map** (pause menu → Map, or rest-stop page → Map): the coast, the ring borders crossed (drawn
+- **Map** (pause menu → Map, rest-stop page → Map, or the minimap: tap it, or **M** / gamepad
+  Back — `toggle_map`, which also closes it): the coast, the ring borders crossed (drawn
   as average circles; the real border is noisy), the roads driven (segments whose midpoint
-  cell is driven), lit rest stops and the car. **From a rest stop it is the travel picker**:
+  cell is driven), the rest stops come across (orange lit, grey not), loot come across that
+  is still lying there (`MiniMap.site_markers`, shared with the minimap) and the car. Opened
+  from the minimap it pauses the game itself and closing it goes straight back to driving
+  (`free_roam.gd → open_full_map`). The page body is transparent (`"alpha": 0.0`): only the
+  drawn map is opaque, over the dim. **From a rest stop it is the travel picker**:
   `<` / `>` step through the other lit rest stops, and Travel goes to the ringed one.
   The map is drawn as large as the frame allows (a plain `MenuPage` — a picture, not a list).
 - **Stats:** a read-only card each for distance driven, rest stops lit, times the car gave up,

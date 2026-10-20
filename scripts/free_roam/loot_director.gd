@@ -52,7 +52,10 @@ func _ready() -> void:
 	_toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_toast.offset_left = -200
 	_toast.offset_right = 200
-	_toast.offset_top = 56
+	# Below the minimap (top-centre, minimap_top_px + minimap_height_frac of the screen).
+	_toast.anchor_top = Config.data.minimap_height_frac + 0.03
+	_toast.anchor_bottom = _toast.anchor_top
+	_toast.offset_top = Config.data.minimap_top_px
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_toast.visible = false
 	layer.add_child(_toast)

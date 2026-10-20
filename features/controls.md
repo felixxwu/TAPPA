@@ -17,7 +17,7 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `nitrous` | Left Shift | — | X / Square (West) | Held: spray nitrous while on throttle (see [nitrous.md](nitrous.md)) |
 | `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
-| `toggle_map` | M | — | Back | Opened the overworld's full map; **the overworld is deleted, so this action is unbound to anything**. Kept in `project.godot`, out of `InputRemap.ACTIONS` (that list is the driving controls) |
+| `toggle_map` | M | — | Back | Free roam: opens the full map while driving (`MiniMap._unhandled_input` → `free_roam.gd → open_full_map`) and closes it again (`WorldPages._unhandled_input`). Out of `InputRemap.ACTIONS` (that list is the driving controls) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
 | `skip_to_finish` | F | — | — | Dev: instantly complete the current event |

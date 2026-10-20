@@ -1,6 +1,7 @@
 # Card carousel — every menu is a card list
 
-**Source:** `scripts/card_carousel.gd` (`CardCarousel`, the widget), `scripts/card_ui.gd`
+**Source:** `scripts/card_carousel.gd` (`CardCarousel`, the widget), `scripts/car_card_preview.gd` /
+`scripts/car_prop.gd` / `scripts/car_preview_cache.gd` (the car cards' 3D preview), `scripts/card_ui.gd`
 (`CardUI` — the card-building API every menu uses: `card_page`, `card_list`, `text_card`,
 `header_slot`, and the `titles` / `index_of` / `pick` readouts). Card icons are the white-outline
 SVGs in `icons/cards/`.
@@ -18,11 +19,11 @@ menu that is a list of choices is a card list:**
 | Menu | Cards |
 |---|---|
 | Title MAIN (`title_screen.gd`) | Continue (only with a world), New world, Settings |
-| Title STARTER | one per starter car (name, "hp · drive layout") |
+| Title STARTER | one per starter car (a spinning 3D preview, name, "hp · drive layout") |
 | Pause menu (`pause_menu.gd`) | Resume, Reset, Photo Mode (only where the host offers it), the host's extra rows (free roam: Map, Stats), Settings, Quit |
 | Rest stop MAIN (`rest_stop_page.gd`) | Continue, Tune car, Parts, Garage, Travel, Map, Journal; the stop's name, "Car repaired" and the banked loot sit above the cards |
 | Rest stop PARTS | one per fitted part (pick → take off), then one per stash part (pick → fit, or swap with the part in that slot; "Can't fit" cards are disabled) |
-| Rest stop GARAGE | one per owned car; the cursor starts on the car being driven |
+| Rest stop GARAGE | one per owned car (a spinning 3D preview); the cursor starts on the car being driven |
 | Rest stop TRAVEL | one per other lit rest stop, with its distance |
 | Rest stop JOURNAL | one per item in each revealed biome, "Found" / "Not found yet" (read-only) |
 | Stats (`world_pages.gd`) | one per lifetime stat, and the biome rings reached (read-only) |
@@ -44,8 +45,14 @@ that wraps to three lines pushes the subtitle off the card: loot uses `LootLibra
 Tests drive a card list through `CardUI.pick(carousel, title)` (select + confirm, no flash) or
 `select(i)` + `_confirm_selected()` + `skip_confirm_flash()`.
 
-**Not restored:** the hub's spinning 3D car previews (`CarCardPreview` / `CarPreviewCache`). Car
-cards show the `car` icon; the 3D preview can come back from git history (`1db5c01^`) if wanted.
+**Car cards spin the car in 3D.** An entry with `"car"` (an owned-car dict, or a `CarLibrary` index)
+shows a `CarCardPreview` (`scripts/car_card_preview.gd`: a frozen `CarProp` —
+`scripts/car_prop.gd` — on a turntable in a small SubViewport) instead of an icon. Previews come from
+the `CarPreviewCache` autoload (`scripts/car_preview_cache.gd`), one per car for the session; a page
+calls `CardUI.park_previews(page)` before freeing itself so the next visit reuses them. Used by the
+title's starter choice and the rest stop's Garage. The Journal keeps icons: it can list a dozen cars,
+and building that many props at once is a visible hitch. Tests: `test_car_card_preview.gd`,
+`test_car_preview_cache.gd`.
 
 > **History note.** The sections below are the widget's design record, written while the
 > roguelike hub (`hub_shell.gd`, deleted) was its only caller. The widget behaviour they describe
@@ -478,6 +485,135 @@ body box itself paints nothing: the space between and around the cards shows the
 behind the pause menu and the rest-stop page (dimmed by the page's `"dim"` option), or the title
 screen's background. Cards stay opaque — their stylebox (`_card_stylebox`) is independent of the
 page they sit on.
+
+## The car cards' spinning 3D preview
+
+`CarCardPreview` (a `SubViewportContainer`) gives each car card ONE lightweight
+`SubViewport` — 160×160, its own `World3D`, one `DirectionalLight3D`, one `Camera3D` — and
+turntable-rotates a **frozen `CarProp`** (`car_prop.gd`, the same "display/frozen car"
+recipe the old parked-lineup and podium showroom used) around a `Node3D` pivot each
+`_process` frame. This is the cheap-by-construction shape the task asked for: one
+`SubViewport` per card, not a full scene reinstantiation per frame — only the pivot's
+Y-rotation changes after setup. `CarProp.spawn` is called with `stop_physics: true` and
+`disable_process: true`, so the underlying `car.gd` instance does no physics or process
+work at all; the only per-frame cost is the pivot's `rotate_y` and the SubViewport's own
+render.
+
+`CarCardPreview.new(car_ref)` takes either an **owned-car Dictionary** (a car the player
+already has — shows its actual paint/wheels via `CarProp`'s `owned` opt) or a
+**`CarLibrary` index** (an unowned catalogue car in the Buy list, via the `index` opt).
+
+## The car is centred on its OWN geometry, not a guessed camera offset
+
+Cars in `car.tscn` are authored around whatever origin convention each source model
+happened to use — not necessarily its own visual centre. Aiming the camera at a single
+fixed point (a first-draft `Vector3(0, 0.6, 0)` guess) landed fine for some cars and
+"not quite centred" for others, since that guess only matched one car's actual geometry.
+`CarCardPreview._center_on_pivot` fixes this per-car instead of per-guess: right after
+`CarProp.spawn` returns, it measures the union of every VISIBLE `MeshInstance3D`'s AABB
+under the spawned car (`_visible_mesh_aabb` — pruning already dropped every OTHER
+embedded car body, so this only ever measures the one model actually showing) and shifts
+the CAR (not the camera, not the pivot) so that AABB's centre lands exactly on `_pivot`'s
+own local origin. The camera then simply targets `Vector3.ZERO` — correct for every car
+uniformly — and since `_pivot` is what `_process` spins, the turntable rotation orbits
+around the car's true visual middle instead of wobbling around wherever its unshifted
+scene origin happened to sit. Runs on every spawn, including `show_car` swaps, so a
+different car mid-session gets recentred on ITS OWN geometry too, not the previous car's.
+
+## A narrow FOV needs the camera moved back to keep the car's apparent size
+
+`card_carousel_car_preview_fov_deg` (default 12°, `GameConfig`) is deliberately narrow —
+a telephoto-ish lens flattens perspective distortion, which reads as more "product shot",
+less "fisheye". A narrow FOV alone, camera left in place, makes the subject look SMALLER
+(the lens is more zoomed-out per degree, not less) — so `CarCardPreview._init` derives the
+camera's DISTANCE from the FOV rather than hardcoding both independently. Apparent size
+for a fixed subject scales with `distance * tan(fov / 2)`; holding that product equal to
+the bounding-sphere radius of the roster's largest car — half the diagonal of
+`CarLibrary.max_car_bounds()`, the same source the car park sizes its reveal box from —
+times `card_carousel_car_preview_frame_margin` (default 1.2, `GameConfig`) makes the
+derivation SIZE the frame as well: that sphere is what contains a car at ANY turntable
+heading, so framing it (with margin) is what keeps the longest/widest roster car inside
+the square viewport instead of clipping out of the card. The original fixed reference
+composition (`_REFERENCE_FOV_DEG = 40`, `_REFERENCE_EYE = Vector3(3.2, 1.8, 3.6)` — an
+eye-tuned close-up) DID clip the longest cars, and any hand-retuned replacement would
+silently stop fitting the day a longer car joins, which is why the frame now follows the
+roster instead. Retune the fov or the margin freely — the distance follows them
+automatically; don't reintroduce a second, independently-picked distance constant, or the
+two will drift apart the next time either changes.
+
+## A preview is CACHED per car, not rebuilt per screen slot
+
+A `CarCardPreview` costs two separate things: the `SubViewport`/camera/light setup, and
+`CarProp.spawn`'s `car.tscn` instantiation (every embedded car glb body, before
+`car_prop.gd`'s pruning) — the SECOND one is genuinely per-car expensive, not just
+per-viewport. Four shapes were tried before landing on the one that holds:
+
+1. **Every car, up front** — `HubShell._build_car` built one for EVERY car (every owned
+   car plus the whole unowned catalogue). Blocked the main thread long enough on a real
+   roster to read as the game freezing the moment a region was picked.
+2. **A window of cards, rebuilt per move** — narrower, but every card in the window still
+   got torn down and rebuilt from scratch on every `selection_changed`, which surfaced as
+   the carousel visibly freezing the moment a player tried to MOVE the selection.
+3. **Exactly one, reused** — fixed the freeze, but only the selected card ever spun; every
+   other visible card sat there with a static placeholder, which read as broken once
+   several cards are visible at once.
+4. **A pool of N reused instances, one per SCREEN SLOT, scoped to the page** — every
+   visible card finally got its own spinning preview, but a pool slot is tied to a
+   POSITION on screen, not to a car: sliding the window still called `CarProp.spawn`
+   again for whichever car newly occupied a slot, even a car the player had scrolled past
+   and back to moments earlier. Reported as considerable lag on every selection move.
+
+The shape that actually holds ties the expensive half — the spawned `CarProp` — to the
+CAR, not the slot, AND makes the cache outlive the page: `CarPreviewCache`
+(`car_preview_cache.gd`) is an AUTOLOAD, not a `HubShell`-owned `Dictionary` — `HubShell`
+itself is torn down and rebuilt from scratch on every hub visit (a run always ends by
+returning to it fresh via `Scenes.change_to`), so anything page-scoped forgets every car
+each time, which a session-lifetime cache exists specifically to avoid. Every car card
+still gets the cheap car-outline placeholder (`_card_icon("car")`) up front; `HubShell.
+_sync_car_previews` asks `CarPreviewCache.get_or_build(car_ref)` for a preview whenever a
+card enters the visible window (`CardCarousel.visible_card_count()`, centred on the
+selection) and gets back either an ALREADY-BUILT instance (a cache hit — this car was
+warmed or seen earlier) or a freshly spawned one (cached from here on). A card that
+scrolls OUT of the window calls `CarPreviewCache.park(preview)` instead of freeing it —
+parked previews sit in the cache's own hidden `graveyard` Control (a child of the
+autoload, so it survives exactly as long as the game session does); `visible = false` on
+an ancestor stops a `SubViewport` costing render time while parked, the same way it stops
+any other `CanvasItem`. A card that STAYS in the window across a move is left untouched
+entirely.
+
+**Warmed behind the hub's loading screen, not built on demand.** `HubShell._ready()`
+fires `CarPreviewCache.warm_all()` every time the hub loads, which walks every owned +
+unowned-catalogue car and builds (then parks) whichever aren't cached yet, yielding a
+frame every `_WARM_PER_FRAME` cars rather than doing it all in one synchronous burst —
+building every car's preview synchronously in one call is the ORIGINAL freeze bug (shape
+1 above), just moved to hub-load instead of removed, so the spread-out yielding is the
+part that actually matters. On an INTERACTIVE load HubShell AWAITS the call while holding
+its own `LoadingScreen` over the pages (MenuShowcase's build shows its own for the
+background-track half of hub startup — same overlay pattern, second owner), so the
+per-car build chunks land behind a loading screen the player reads as startup rather
+than as a menu stuttering through its first seconds, and the CAR page afterwards opens on
+pure cache hits. The original fire-and-forget form is retained for HEADLESS loads only
+(tests/tools: no screen to hold, and suites must not block on warming). Awaiting
+`warm_all()` means waiting for the whole cache even when a pass is already running — a
+second call WAITS for the in-flight pass instead of returning "done" early, which is the
+guarantee HubShell's loading screen relies on. Idempotent and cheap on every later hub
+visit: a car already cached is skipped instantly, so only a genuinely new one (just
+bought, say) costs anything — a post-run return to the hub holds its overlay for barely a
+frame.
+
+`CardCarousel.get_card(index)` is the accessor `_sync_car_previews` needs (reach back
+into a card's `visual` slot after `add_card` returned it). Don't revert to a page-scoped
+cache or to rebuilding a car's `CarProp` on every re-entry into view — both are exactly
+the regressions this section documents. `CarCardPreview.show_car` still exists for a
+caller that genuinely wants "this same viewport, a different car" (an existing, tested
+capability of the class), but `CarPreviewCache` doesn't use it — a cache hit needs no
+respawn at all.
+
+**Known caveat, not yet handled:** the cache is keyed by car ref, not re-validated against
+the car's current cosmetic state — an owned car's cached preview could go stale if its
+paint/wheels/engine change via another menu (wheel customisation, engine swap) mid-session
+without anything invalidating that cache entry. Not addressed here; flagged for whoever
+next touches those flows.
 
 ## `CardUI` — the reusable card API
 

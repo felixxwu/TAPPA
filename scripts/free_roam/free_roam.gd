@@ -17,6 +17,7 @@ extends Node3D
 @onready var _pause: PauseMenu = $PauseMenu
 @onready var _rest_stops: RestStops = $RestStops
 @onready var _rest_page: RestStopPage = $RestStopPage
+@onready var _minimap: MiniMap = $MiniMapLayer/MiniMap
 
 # The active car's owned-car dict (WorldSession → Save.KEY_CARS), the fielding pipeline's input,
 # so tuning edits persist on it.
@@ -73,6 +74,7 @@ func _ready() -> void:
 	tree_exiting.connect(save_world)  # before the children leave, so the car is still readable
 	_rest_page.map_requested.connect(func(site: int) -> void:
 		$WorldPages.show_map(_rest_page.return_from_map, site))
+	_minimap.open_requested.connect(open_full_map)
 	var spawn: Transform3D = RoadRecovery.road_pose(_streamer, Vector2.ZERO, Vector3.FORWARD)
 	var saved: Variant = WorldSession.pose_transform()
 	if saved != null:
@@ -113,6 +115,21 @@ func _on_pause_extra(label: String) -> void:
 			_pause.return_from_extra()
 
 
+# The minimap was tapped (or M / gamepad Back): the whole map over the frozen game, and closing it
+# goes straight back to driving rather than to the pause menu.
+func open_full_map() -> void:
+	if get_tree().paused or $WorldPages.is_open():
+		return
+	get_tree().paused = true
+	_pause.set_input_enabled(false)  # Esc / B belong to the map page while it's up
+	$WorldPages.show_map(_close_full_map)
+
+
+func _close_full_map() -> void:
+	get_tree().paused = false
+	_pause.set_input_enabled(true)
+
+
 # Write the car's place, condition and the drive clock to the world session.
 func save_world() -> void:
 	if not _car.is_inside_tree() or not WorldSession.has_world():
@@ -136,6 +153,8 @@ func _physics_process(delta: float) -> void:
 		_map_t = MAP_EVERY_S
 		WorldSession.mark_driven(p.x, p.y)
 		WorldSession.reach_ring(_streamer.terrain.ring_index(p.x, p.y))
+		if MiniMap.mark_seen_near(_streamer.sites, p, Config.data.minimap_seen_radius_m) > 0:
+			_minimap.refresh_markers()
 	_save_t -= delta
 	if _save_t <= 0.0:
 		_save_t = SAVE_EVERY_S
