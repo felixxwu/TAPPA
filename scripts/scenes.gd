@@ -4,26 +4,11 @@ extends RefCounted
 # Tests: tests/headless/test_world_isolation.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Scenes' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # The canonical scene paths, and the ONE place that decides which scene is "the hub".
 #
-# WHY THIS SEAM EXISTS. The hub scene is both the project's main scene and the
-# "back to the hub" destination, and that path used to be hardcoded at SEVEN
-# transition sites (podium finish, two pause-menu quits, the benchmark end, and
-# three in world.gd: free-roam/no-session finish, abandoned rally, challenge run
-# end). Routing them all through `hub_path()` means a new hub shell is swapped in
-# at ONE line, and gives tests one helper to compare against instead of a literal.
-# That is exactly what the roguelike pivot needed: `hq.tscn` and `overworld.tscn`
-# were both deleted in stage 2b (todo/roguelike-pivot-plan.md) and only this file
-# had to learn the replacement.
-#
-# `is_hub_scene()` exists for the non-transition coupling: MusicDirector picks
-# hub-vs-rally music from the LIVE SCENE PATH (see music_library.gd
-# `is_hq_scene`), so the predicate has to agree with `hub_path()` or the hub would
-# silently play a rally song as its theme. There is one hub again today, so the
-# two collapse to the same constant — keep them as separate functions anyway:
-# the pivot may reintroduce a second shell, and the callers are already routed.
+# "The hub" is now the TITLE screen (todo/2026-10-19-free-roam-pivot.md decision 20): every "back to
+# the hub" transition (pause-menu quits, a dev stage's finish, the benchmark end) lands on the
+# game's front door through hub_path(), and is_hub_scene() is what MusicDirector keys the menu
+# theme on. The roguelike's HubShell (hub.tscn) is deleted.
 
-# The hub shell. A PLACEHOLDER today (hub.tscn is a Control and a label) — stage 3
-# of the pivot replaces the file, not this constant.
-const HUB := "res://hub.tscn"
 const MAIN := "res://main.tscn"
 # The title screen (the game's main scene) and the free-roam world it leads into.
 const TITLE := "res://title.tscn"
@@ -36,7 +21,7 @@ const FREE_ROAM := "res://free_roam.tscn"
 # display prop (HQ/podium/wreck), or a dev-tool subject (exhaust_lab.gd,
 # bake_car_silhouettes.gd). Used to be "res://car.tscn" hardcoded at seven sites
 # under three different local names (CAR_SCENE / CAR_SCENE_PATH / WRECK_CAR_SCENE);
-# this is now the one definition, same as HUB/MAIN above.
+# this is now the one definition, same as TITLE/MAIN above.
 const CAR := "res://car.tscn"
 
 # Cached PackedScene for CAR, loaded on first use. `preload()` needs a literal
@@ -58,13 +43,13 @@ static func car_scene() -> PackedScene:
 # The scene to load for "return to the hub". One shell today; the indirection is
 # what let the hub be swapped out without touching the six transition sites.
 static func hub_path() -> String:
-	return HUB
+	return TITLE
 
 
 # True for the hub shell. Kept as a predicate rather than an `==` at every call site
 # so a second shell (or a versioned path) stays a one-line change here.
 static func is_hub_scene(path: String) -> bool:
-	return path == HUB
+	return path == TITLE
 
 
 # ==========================================================================================

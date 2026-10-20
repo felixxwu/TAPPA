@@ -111,3 +111,23 @@ func test_the_title_screen_is_keyboard_and_gamepad_navigable() -> void:
 	MenuNav.of(t._page)._unhandled_input(_press("ui_cancel"))
 	await get_tree().process_frame
 	assert_eq(t.view, TitleScreen.View.MAIN, "back from the starter choice returns to the title")
+
+
+func test_the_update_prompt_records_its_dismissal() -> void:
+	var t := await _open()
+	t.show_update_prompt(100, 120)
+	var popup := ConfirmPopup.any_open(get_tree())
+	assert_not_null(popup, "the prompt appears over the title")
+	popup._actions[0]["callback"].call()  # Not now
+	assert_eq(int(_save.get_setting(UpdateCheck.DISMISSED_SETTING, 0)), 120)
+	popup.queue_free()
+	await get_tree().process_frame
+
+
+func test_the_build_version_label_is_never_in_the_nav_order() -> void:
+	var t := await _open()
+	var label := t._page.get_node_or_null("VersionLabel")
+	if label == null:
+		pass_test("an unstamped build shows no version label")
+		return
+	assert_eq((label as Control).focus_mode, Control.FOCUS_NONE)

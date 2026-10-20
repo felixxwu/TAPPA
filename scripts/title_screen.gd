@@ -34,6 +34,7 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 	_show(View.MAIN)
+	_check_for_update()
 
 
 # The starter cars on offer: the STARTER_COUNT cheapest in the catalogue (by "cost"), so the
@@ -64,6 +65,7 @@ func _show(v: View) -> void:
 			for b in [_continue_button, _new_button, _settings_button]:
 				_page.body().add_child(b)
 			MenuNav.attach(_page, {first = _continue_button if _continue_button.visible else _new_button})
+			_build_version_label()
 		View.STARTER:
 			_page = MenuPage.new({"title": "Choose your car"})
 			add_child(_page)
@@ -84,6 +86,49 @@ func _show(v: View) -> void:
 			MenuNav.attach(_page, {first = back, on_back = _settings_back})
 			_settings_menu.show_list.call_deferred()
 	UITheme.enforce(_page)
+
+
+# Passive build-version readout in the MAIN page's bottom-right corner (features/update-check.md),
+# so a tester can read off which build they're on. Added to the page itself, outside the body and
+# never focusable; hidden for an unstamped build (editor, local run).
+func _build_version_label() -> void:
+	var text := UpdateCheck.display_version(str(ProjectSettings.get_setting("application/config/version", "")))
+	if text.is_empty():
+		return
+	var l := UITheme.label(text, "dim")
+	l.name = "VersionLabel"
+	l.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	l.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	l.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var m := Config.data.hub_version_label_margin_px
+	l.position -= Vector2(m, m)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_page.add_child(l)
+
+
+# The native builds' update check (features/update-check.md): one GET off the boot path, and a
+# dismissible prompt on the title's MAIN page if a newer build has shipped. A silent no-op on web,
+# headless and unstamped builds (UpdateCheck.applicable).
+func _check_for_update() -> void:
+	if not UpdateCheck.applicable():
+		return
+	var latest: int = await UpdateCheck.fetch_latest_build(Cloud.rest)
+	if not is_inside_tree() or view != View.MAIN:
+		return
+	var current := UpdateCheck.current_build()
+	var dismissed := int(Save.get_setting(UpdateCheck.DISMISSED_SETTING, 0))
+	if UpdateCheck.should_prompt(current, latest, dismissed):
+		show_update_prompt(current, latest)
+
+
+func show_update_prompt(current: int, latest: int) -> void:
+	var remember := func() -> void:
+		Save.set_setting(UpdateCheck.DISMISSED_SETTING, latest)
+	ConfirmPopup.open(self, "Update available", UpdateCheck.prompt_body(current, latest),
+		[{"label": "Not now", "callback": remember},
+		 {"label": UpdateCheck.store_label(), "callback": func() -> void:
+			remember.call()
+			OS.shell_open(UpdateCheck.store_url())}], 1)
 
 
 func _settings_back() -> void:
