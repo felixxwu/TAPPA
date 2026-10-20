@@ -280,6 +280,14 @@ func _timed_physics_process(_delta: float) -> void:
 			_last_pos[i] = wxz
 
 
+# The car was teleported (free roam's travel, respawn or road reset): break every ribbon so the
+# next mark doesn't bridge from where the car was to where it is now. `_p` is the new position,
+# unused — it matches the teleport signals' shape so they can connect straight here.
+func break_ribbons(_p: Variant = null) -> void:
+	for i in _last_pos.size():
+		_last_pos[i] = null
+
+
 # How dark a GRAVEL rut this wheel is digging, 0..1 — linear in the FORCE (newtons)
 # the tire is putting through the surface, full at tire_mark_gravel_full_force_n.
 #

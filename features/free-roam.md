@@ -340,8 +340,10 @@ node for node:
   2026-10-20 free roam never created it, so nothing was thrown. See
   [wheel-dust.md](wheel-dust.md). `free_roam.gd._ready` also creates the stage's `EngineSmoke`
   (bonnet smoke on each misfire — the visible sign of an overheating engine in the damage chain)
-  and `ExhaustFlames` (limiter backfires, nitrous). Not yet in free roam: tyre marks (they need a
-  single centreline).
+  and `ExhaustFlames` (limiter backfires, nitrous), and `TireMarks` in its UNGATED mode
+  (`setup(null, …)`: no centreline, so the streamer's `surface_at` road weight alone decides —
+  ruts on the gravel roads, nothing on grass). A teleport (`RestStops.car_teleported_to`,
+  `RoadRecovery.reset_done`) calls `TireMarks.break_ribbons`, so a mark never bridges the jump.
 - The streaming readout moved to its own `DebugStats` layer. It shows in debug builds only and
   **H** toggles it.
 

@@ -73,6 +73,12 @@ func _ready() -> void:
 	smoke.name = "EngineSmoke"
 	add_child(smoke)
 	smoke.setup(_car)
+	# Gravel ruts behind the wheels on the road. Free roam has no single centreline, so the marks
+	# run UNGATED: the streamer's surface answer (road weight) alone decides where they're laid.
+	var marks := TireMarks.new()
+	marks.name = "TireMarks"
+	add_child(marks)
+	marks.setup(null, _car, _streamer, _streamer.settings.road_half_width_m)
 	var flames := ExhaustFlames.new()
 	flames.name = "ExhaustFlames"
 	add_child(flames)
@@ -87,6 +93,8 @@ func _ready() -> void:
 	_rest_stops.car_teleported_to.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect(_rest_stops.car_teleported)
+	_rest_stops.car_teleported_to.connect($TireMarks.break_ribbons)
+	_recovery.reset_done.connect($TireMarks.break_ribbons)
 	_rest_page.car_changed.connect(_reload_car)
 	_rest_page.owned = owned
 	_rest_stops.opened.connect(_rest_page.open)

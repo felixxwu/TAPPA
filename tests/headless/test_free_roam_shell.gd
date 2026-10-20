@@ -144,3 +144,18 @@ func test_the_engine_smoke_and_exhaust_flames_follow_the_car() -> void:
 	var flames := _scene.get_node_or_null("ExhaustFlames")
 	assert_true(smoke is EngineSmoke, "smoke from a misfiring (overheating) engine")
 	assert_true(flames is ExhaustFlames, "backfire flames from the exhausts")
+
+
+# Gravel ruts behind the wheels: free roam has no centreline, so the marks run ungated off the
+# streamer's own surface answer; and a teleport (travel / respawn / reset) breaks every ribbon
+# rather than bridging it from the old spot to the new one.
+func test_tyre_marks_run_off_the_streamer_and_a_teleport_breaks_them() -> void:
+	var marks := _scene.get_node_or_null("TireMarks") as TireMarks
+	assert_not_null(marks, "free roam lays tyre marks")
+	assert_true(marks._ungated, "with no centreline, the surface alone decides")
+	assert_eq(marks._terrain, _scene.get_node("Terrain"), "the streamer is the surface it reads")
+	for i in marks._last_pos.size():
+		marks._last_pos[i] = Vector2(1.0, 2.0)
+	(_scene.get_node("RoadRecovery") as RoadRecovery).reset_done.emit(Vector2.ZERO)
+	for i in marks._last_pos.size():
+		assert_null(marks._last_pos[i], "wheel %d's ribbon is broken by the reset" % i)

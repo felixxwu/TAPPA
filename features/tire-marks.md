@@ -104,18 +104,21 @@ over itself in a spin. Writing depth makes those crossings fight in the buffer, 
 blending them twice darkens every overlap into a blob so the marks stop reading as
 separate lines. `engine_smoke.gd` makes the same call for stacked puffs.
 
-## Ungated mode (the overworld)
+## Ungated mode (free roam)
 
 `setup(centerline, …)` accepts a **null** centerline, which switches the node into
-*ungated* mode (`_ungated`). The overworld hub has no single `Curve2D` — it has a road
-NETWORK (the deleted `overworld.gd::_road_polylines`) — so there is no corridor to test against.
+*ungated* mode (`_ungated`). Free roam (`free_roam.gd._ready`) uses it: the island has no single
+`Curve2D` — it has a road NETWORK — so there is no corridor to test against. (The mode was first
+written for the old overworld hub, since deleted.) The surface comes from
+`TerrainStreamer.surface_at`, whose road weight is 1 on the road and 0 off it; free roam's roads
+are all gravel. A teleport (travel, respawn, road reset) calls `break_ribbons()` so no mark
+bridges the jump.
 In ungated mode:
 
 - the car-offset cache and both windowed nearest-point searches are skipped entirely
   (`_pts` stays empty, `_baked_length` 0);
-- whether a wheel may mark is decided by `TerrainManager.surface_at()` alone: its road
-  weight (`.x`) must exceed `UNGATED_ROAD_WEIGHT_MIN`, since the hub's roads are carved
-  into the terrain's surface weights. Open ground reads as grass and breaks the ribbon,
+- whether a wheel may mark is decided by the terrain's `surface_at()` alone: its road
+  weight (`.x`) must exceed `UNGATED_ROAD_WEIGHT_MIN`. Open ground reads as grass and breaks the ribbon,
   the same outcome the stage's half-width gate produces;
 - the last-resort across-direction (see *Width and direction* below) falls back to the CAR's
   right axis rather than a curve tangent.
