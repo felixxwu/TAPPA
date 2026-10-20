@@ -36,6 +36,13 @@ signal dev_complete_stage_requested
 # The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
 # on-screen controls immediately (rather than only taking effect on the next run).
 @export var mobile_controls: MobileControls
+# Photo Mode needs a host that owns a free-fly camera (world.gd). A scene without one turns
+# the row off rather than offering a button that would leave the game frozen.
+@export var offer_photo_mode := true
+# The reset row's label: the stage says "Reset to track", free roam "Reset to road".
+@export var reset_label := "Reset to track"
+# When set, replaces the quit confirm's body text (free roam has no run to pause or abandon).
+@export_multiline var quit_body_override := ""
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
@@ -150,6 +157,8 @@ func confirm_quit_to_hq() -> void:
 	if RunSession.is_active():
 		body = "Pause this run and return to HQ?\n" \
 			+ "Your run is saved — resume it any time.\nThe current stage starts over."
+	if quit_body_override != "":
+		body = quit_body_override
 	ConfirmPopup.open(self, "Quit to HQ?", body,
 		[ {"label": "Cancel", "callback": Callable()},
 		  {"label": "Quit to HQ", "callback": quit_to_hq} ],
@@ -254,6 +263,9 @@ func _build() -> void:
 	_overlay.add_child(_menu_panel)
 	_settings_panel = _build_settings_panel()
 	_overlay.add_child(_settings_panel)
+	# Start on the menu page. Left visible, the first open() read as "returning from
+	# Settings" and put the cursor on the Settings row instead of Resume.
+	_settings_panel.visible = false
 
 	# Framework: focus + WASD/arrow/gamepad nav across whichever page is showing
 	# (Resume/Settings/Quit, or the SettingsMenu rows). No on_back — this menu's
@@ -284,7 +296,7 @@ func _build_menu_panel() -> Control:
 
 	# Reset to track — snap the car back onto the road at its current progress
 	# (recovery pose), then unpause. world.gd owns the car and performs the reset.
-	_reset_button = _make_menu_button("Reset to track")
+	_reset_button = _make_menu_button(reset_label)
 	_reset_button.pressed.connect(_on_reset_to_track_pressed)
 	col.add_child(_reset_button)
 
@@ -293,6 +305,7 @@ func _build_menu_panel() -> Control:
 	_photo_button = _make_menu_button("Photo Mode")
 	_photo_button.pressed.connect(_on_photo_mode_pressed)
 	col.add_child(_photo_button)
+	_photo_button.visible = offer_photo_mode
 
 	_settings_button = _make_menu_button("Settings")
 	_settings_button.pressed.connect(_show_settings.bind(true))

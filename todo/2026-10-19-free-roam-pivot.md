@@ -456,7 +456,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    - noise on the ring borders.
    Per-biome road difficulty is deferred (decision 28).
    §B still says "region state has to become position-based" — that holds.
-4½. **NEW — a playable shell, before the playtest gate.** Stages 0–4 are meant to be
+4½. **NEW — a playable shell, before the playtest gate. DONE 2026-10-20** (`features/free-roam.md` → *The shell*). Stages 0–4 are meant to be
    playtested as a pure drive, and mobile is a target, so the prototype needs:
    - the game HUD (speed, Health gauge, later the temperature gauge);
    - mobile touch controls;
@@ -581,3 +581,12 @@ Numbering continues from decision 32.
 - **D34. Budget overruns are reported, not asserted.** The headless test asserts only "no
   holes" and real progress. Overrun counts depend on the machine and its load, so a
   threshold would make the test flaky. Overruns are followed up in stage 2.
+- **D35. The streaming readout shows in debug builds only, toggled with H**, the same key as
+  the other dev overlays. Release builds never show it.
+- **D36. Free roam's pause menu has no Photo Mode, and "Quit to HQ" goes to the old hub**
+  until stage 6 rewires title → world. Photo mode needs `world.gd`'s free-fly camera host; it can
+  be ported later if wanted.
+- **D37. Fixed a `PauseMenu` bug that also affected the stage.** The settings panel started
+  visible, so the very first open put the cursor on Settings instead of Resume. It now starts
+  hidden. Also fixed an existing ternary type warning in `spike_id_pass.gd`, which GUT reports
+  as an error once a test loads the post-process scene.

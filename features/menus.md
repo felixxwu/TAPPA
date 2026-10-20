@@ -179,6 +179,13 @@ runs — `main.tscn` stays independently runnable.
 
 ## Pause menu (`pause_menu.gd`)
 
+**Per-host options** (exports, set in the hosting scene): `offer_photo_mode` (default on; a
+host with no free-fly photo camera, such as `free_roam.tscn`, turns the row off), `reset_label`
+(the stage's "Reset to track", free roam's "Reset to road"), and `quit_body_override` (replaces
+the quit confirm's body text). The settings page starts hidden, so the first `open()` lands the
+cursor on Resume. Before this, it read as a return from Settings and focused the Settings row.
+
+
 A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
 `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is frozen. It owns a
 **top-right Pause button** (always visible during gameplay; the HUD's version/timer

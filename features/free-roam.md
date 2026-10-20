@@ -2,10 +2,10 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
-**Tests:** `tests/headless/test_free_roam.gd`
+**Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`
 
 The prototype of the free-roam pivot (`todo/2026-10-19-free-roam-pivot.md`). **The game boots
 straight into it** (`project.godot` → `run/main_scene = res://free_roam.tscn`); the hub and the
@@ -119,6 +119,25 @@ chunk.
   It is only planted within the near ring, which matches `tree_render_distance_m` (120 m).
 - **Not yet:** bush brushing (the stages' `BushField` hit-and-drag) and knocking trees over.
 
+## The shell
+
+`free_roam.tscn` carries the same player-facing layers as the stage scene (`main.tscn`), copied
+node for node:
+- `HUD` (`hud.gd`): speed, gear and the Health / boost / nitrous gauges. The stage-only labels
+  (timer, countdown, stage complete) stay hidden because nothing calls them.
+- `MobileControls`, `CameraManager` with the bonnet camera, `PostProcess` and `SpeedLines`.
+- `PauseMenu`, armed once `prefill` is done. It has no Photo Mode row (`offer_photo_mode =
+  false`), "Reset to road" calls `RoadRecovery.reset_now`, and "Quit to HQ" goes to the
+  hub with free roam's own confirm text.
+- The streaming readout moved to its own `DebugStats` layer. It shows in debug builds only and
+  **H** toggles it.
+
+**Road recovery** (`RoadRecovery`) replaces `TrackProgress`' recovery, which needs a single
+centreline. On request (**R**, or the pause menu) it puts the car on the nearest road, facing
+along it the way the car was pointing (`road_pose`). By itself it uses the stage's stuck rule and
+`GameConfig` fields (`recovery_*`): the car is stationary and can't get out (flipped, flooring
+it and going nowhere, or below the ground) for `recovery_timeout_s`.
+
 ## The auto driver
 
 `AutoDriver` drives the car by itself and keeps score of the streaming:
@@ -145,7 +164,6 @@ Run it from the command line to drive 3 km of the real island and print the repo
 
 Barriers, rest stops (the lab places one every 300 m; `RoadNetwork` doesn't port that yet),
 pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
-stuck or flipped recovery (only the manual **R**), the game HUD, mobile touch controls, a
-pause or settings page, and threading. The remaining work is
+and threading. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.

@@ -160,7 +160,7 @@ static func _nearest_node(net: RoadNetwork, p: Vector2) -> int:
 # preferring the one that ends furthest from spawn (ties broken by the seed) and avoiding dead
 # ends; when every link there has been driven, take any. The drive stops at a dead end. Returns the concatenated polyline, at least `length_m` long
 # unless the walk runs out of road.
-static func plan_route(net: RoadNetwork, start_node: int, length_m: float, seed: int) -> PackedVector2Array:
+static func plan_route(net: RoadNetwork, start_node: int, length_m: float, rng_seed: int) -> PackedVector2Array:
 	var adj := {}  # node -> Array of edge ids
 	for ei in net.edges.size():
 		var e := net.edges[ei]
@@ -169,7 +169,7 @@ static func plan_route(net: RoadNetwork, start_node: int, length_m: float, seed:
 		adj[e.x].append(ei)
 		adj[e.y].append(ei)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = seed
+	rng.seed = rng_seed
 	var used := {}
 	var out := PackedVector2Array()
 	var at := start_node
@@ -202,8 +202,8 @@ static func plan_route(net: RoadNetwork, start_node: int, length_m: float, seed:
 				if not out.is_empty():
 					total += out[out.size() - 1].distance_to(pts[k])
 				out.append(pts[k])
-		var e := net.edges[best]
-		at = e.y if e.x == at else e.x
+		var link := net.edges[best]
+		at = link.y if link.x == at else link.x
 		prev_edge = best
 	return out
 

@@ -11,20 +11,26 @@ extends Node3D
 
 @onready var _streamer: TerrainStreamer = $Terrain
 @onready var _car: VehicleBody3D = $Car
-@onready var _stats: Label = $HUD/Stats
+@onready var _stats: Label = $DebugStats/Stats
 @onready var _water: MeshInstance3D = $Water
+@onready var _recovery: RoadRecovery = $RoadRecovery
+@onready var _pause: PauseMenu = $PauseMenu
 
 
 func _ready() -> void:
 	_car.apply_car(maxi(0, CarLibrary.index_of(_streamer.settings.car_id)))
 	_streamer.focus = _car
-	var spawn := _road_pose(Vector2.ZERO, Vector3.FORWARD)
+	# The streaming readout is a dev diagnostic: shown in debug builds, toggled with H.
+	$DebugStats.visible = OS.is_debug_build()
+	_pause.reset_to_track_requested.connect(_recovery.reset_now)
+	var spawn := RoadRecovery.road_pose(_streamer, Vector2.ZERO, Vector3.FORWARD)
 	_car.global_transform = spawn
 	var t0 := Time.get_ticks_msec()
 	_streamer.prefill()
 	print("free roam: prefill %d ms" % (Time.get_ticks_msec() - t0))
 	_car.reset_to(spawn)
 	_water.position.y = _streamer.settings.water_level_m
+	_pause.set_input_enabled(true)
 	if "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
 
@@ -44,8 +50,19 @@ func start_auto_drive() -> AutoDriver:
 
 
 func _process(_delta: float) -> void:
+	if not $DebugStats.visible:
+		_place_water()
+		return
+	_place_water()
+	_update_stats()
+
+
+func _place_water() -> void:
 	_water.position.x = snappedf(_car.global_position.x, 64.0)
 	_water.position.z = snappedf(_car.global_position.z, 64.0)
+
+
+func _update_stats() -> void:
 	var counts := _streamer.chunk_counts()
 	var s := _streamer
 	_stats.text = "%d km/h\n" % roundi(_car.linear_velocity.length() * 3.6) \
@@ -61,21 +78,9 @@ func _process(_delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
-		var p := Vector2(_car.global_position.x, _car.global_position.z)
-		_car.reset_to(_road_pose(p, -_car.global_transform.basis.z))
-
-
-# A pose on the nearest road to `p`, facing along the road in the direction closest to `facing`.
-func _road_pose(p: Vector2, facing: Vector3) -> Transform3D:
-	var net := _streamer.network
-	if not net.nearest(p.x, p.y, 100000.0):
-		return Transform3D(Basis.IDENTITY, Vector3(p.x, _streamer.height_at(p.x, p.y) + 2.0, p.y))
-	var q := net.hit_q
-	var dir := Vector3(net.hit_dir.x, 0.0, net.hit_dir.y)
-	if dir.dot(facing) < 0.0:
-		dir = -dir
-	var pos := Vector3(q.x, _streamer.height_at(q.x, q.y) + 1.0, q.y)
-	return Transform3D(Basis.looking_at(dir, Vector3.UP), pos)
+		_recovery.reset_now()
+	elif OS.is_debug_build() and event.is_action_pressed("toggle_debug_arrows"):
+		$DebugStats.visible = not $DebugStats.visible
 
 
 func _exit_tree() -> void:
