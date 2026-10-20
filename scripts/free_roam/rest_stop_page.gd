@@ -4,16 +4,16 @@ extends CanvasLayer
 # Tests: tests/headless/test_free_roam_rest_stops.gd, tests/headless/test_loot.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # The rest-stop page (todo/2026-10-19-free-roam-pivot.md decision 9): opened when the car stops at
 # a rest stop. Opening it banks the carried loot (LootDirector.bank) and repairs the car for free,
-# and the game is frozen while it's up. Flat MenuPages driven by MenuNav, one column of rows:
-#   MAIN    — the stop, what was banked, and Continue / Tune car / Parts / Garage / Travel / Map /
-#             Journal.
-#   TUNE    — the shared TuningPanel on the active car.
-#   PARTS   — the active car's fitted parts (press to take one off) and the stash (press to fit;
+# and the game is frozen while it's up. Card pages (CardUI.card_page / card_list) driven by MenuNav:
+#   MAIN    — the stop and what was banked above the cards Continue / Tune car / Parts / Garage /
+#             Travel / Map / Journal.
+#   TUNE    — the shared TuningPanel on the active car (sliders, so a plain page, not cards).
+#   PARTS   — a card per fitted part (pick to take it off), then one per stash part (pick to fit;
 #             a part for a taken slot swaps with what's there).
-#   GARAGE  — every owned car; press one to drive it.
-#   TRAVEL  — every other lit rest stop, nearest first.
-#   JOURNAL — each revealed biome's loot, found or not.
-# Back (Esc / gamepad B, or the Back rows) steps a sub-page → MAIN → closed. A change of parts or car
+#   GARAGE  — a card per owned car; pick one to drive it.
+#   TRAVEL  — a card per other lit rest stop, nearest first.
+#   JOURNAL — a card per item in each revealed biome, found or not (read-only).
+# Back (Esc / gamepad B, or the Back button) steps a sub-page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
 signal closed
@@ -36,7 +36,7 @@ var site := -1
 var banked: Array = []
 var dirty := false
 var _page: MenuPage
-var _rows: Array[Button] = []
+var _cards: CardCarousel
 var _tune_panel: TuningPanel
 
 
@@ -76,7 +76,7 @@ func _clear() -> void:
 	if _page != null:
 		_page.queue_free()
 		_page = null
-	_rows.clear()
+	_cards = null
 
 
 func _show(v: View) -> void:
@@ -98,63 +98,40 @@ func _show(v: View) -> void:
 	UITheme.enforce(_page)
 
 
-func _new_page(title: String) -> void:
-	_page = MenuPage.new({"title": title, "dim": true})
-	add_child(_page)
-
-
-func _label(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_page.body().add_child(l)
-	return l
-
-
-func _row(text: String, on_press: Callable) -> Button:
-	var b := UITheme.row_button(text, on_press)
-	_page.body().add_child(b)
-	_rows.append(b)
-	return b
-
-
-func _attach(back_to: Callable) -> void:
-	MenuNav.attach(_page, {first = _first_enabled(), on_back = back_to})
-
-
-func _first_enabled() -> Control:
-	for b in _rows:
-		if not b.disabled:
-			return b
-	return _rows[0] if not _rows.is_empty() else null
-
-
-func _back_row() -> void:
-	_row("< Back", _show.bind(View.MAIN))
+# A card page: `entries` as cards (see CardUI.card_list), `header` lines above them, and a Back
+# button below unless this is MAIN (whose back is closing the page — Continue, or Esc).
+func _card_page(title: String, entries: Array, header: Array = [], selected := 0) -> void:
+	_page = CardUI.card_page(self, {"title": title, "dim": true})
+	_cards = CardUI.card_list(_page, entries, header, selected)
+	var to_main := _show.bind(View.MAIN)
+	if view != View.MAIN:
+		_page.add_action(UITheme.row_button("< Back", to_main))
+	MenuNav.attach(_page, {first = _cards, on_back = close if view == View.MAIN else to_main})
 
 
 func _build_main() -> void:
-	_new_page("Rest stop")
-	_label(rest_stops.name_of(site) if rest_stops != null else "")
-	_label("Car repaired")
+	var header: Array = [rest_stops.name_of(site) if rest_stops != null else "", "Car repaired"]
 	if not banked.is_empty():
 		var names: Array[String] = []
 		for item: Dictionary in banked:
 			names.append(LootLibrary.label(item))
-		_label("Banked: " + ", ".join(names))
-	_row("Continue", close)
-	_row("Tune car", _show.bind(View.TUNE))
-	_row("Parts", _show.bind(View.PARTS))
-	_row("Garage", _show.bind(View.GARAGE))
-	var travel := _row("Travel", _show.bind(View.TRAVEL))
-	travel.disabled = rest_stops == null or rest_stops.travel_targets(site).is_empty()
-	_row("Map", _open_map)
-	_row("Journal", _show.bind(View.JOURNAL))
-	_attach(close)
+		header.append("Banked: " + ", ".join(names))
+	var no_travel := rest_stops == null or rest_stops.travel_targets(site).is_empty()
+	_card_page("Rest stop", [
+		{"title": "Continue", "icon": "resume_run", "action": close},
+		{"title": "Tune car", "icon": "tune", "action": _show.bind(View.TUNE)},
+		{"title": "Parts", "icon": "parts", "action": _show.bind(View.PARTS)},
+		{"title": "Garage", "icon": "car", "action": _show.bind(View.GARAGE)},
+		{"title": "Travel", "icon": "travel", "action": _show.bind(View.TRAVEL), "disabled": no_travel,
+			"subtitle": "No other stop lit" if no_travel else ""},
+		{"title": "Map", "icon": "map", "action": _open_map},
+		{"title": "Journal", "icon": "journal", "action": _show.bind(View.JOURNAL)},
+	], header)
 
 
 func _build_tune() -> void:
-	_new_page("Tune car")
+	_page = MenuPage.new({"title": "Tune car", "dim": true, "width": UITheme.px(560)})
+	add_child(_page)
 	_tune_panel = TuningPanel.new()
 	_page.body().add_child(_tune_panel)
 	_tune_panel.setup(owned, _on_tuned)
@@ -174,20 +151,26 @@ func _on_tuned() -> void:
 
 
 func _build_parts() -> void:
-	_new_page("Parts")
+	var entries: Array = []
 	var fitted: Array = owned.get("parts", [])
-	_label("Fitted to this car" if not fitted.is_empty() else "Nothing fitted")
 	for i in fitted.size():
-		_row("- " + LootLibrary.label(fitted[i]), _unfit.bind(i))
+		var text := LootLibrary.card_text(fitted[i])
+		entries.append({"title": text[0], "subtitle": text[1] + " · fitted",
+			"extra": "Take off", "icon": LootLibrary.icon(fitted[i]), "action": _unfit.bind(i)})
 	var stash := WorldSession.list("stash")
-	_label("Stash" if not stash.is_empty() else "The stash is empty")
 	for i in stash.size():
 		var part: Dictionary = stash[i]
-		var b := _row("+ " + LootLibrary.label(part), _fit.bind(i))
-		var slot_ok := LootLibrary.can_fit(owned, part) or not LootLibrary.occupant(owned, part).is_empty()
-		b.disabled = not slot_ok or _same_id_fitted(part)
-	_back_row()
-	_attach(_show.bind(View.MAIN))
+		var taken := LootLibrary.occupant(owned, part)
+		var ok := (LootLibrary.can_fit(owned, part) or not taken.is_empty()) and not _same_id_fitted(part)
+		var extra := "Can't fit"
+		if ok:
+			extra = "Swap for " + LootLibrary.card_text(taken)[0] if not taken.is_empty() else "Fit"
+		var text := LootLibrary.card_text(part)
+		entries.append({"title": text[0], "subtitle": text[1] + " · stash", "extra": extra,
+			"icon": LootLibrary.icon(part), "disabled": not ok, "action": _fit.bind(i)})
+	if entries.is_empty():
+		entries.append({"title": "No parts yet", "subtitle": "Find parts out on the island", "icon": "stash"})
+	_card_page("Parts", entries, [_car_name(owned)])
 
 
 func _same_id_fitted(part: Dictionary) -> bool:
@@ -229,15 +212,22 @@ func _set_parts(parts: Array) -> void:
 
 
 func _build_garage() -> void:
-	_new_page("Garage")
 	var active := int(owned.get("instance_id", -1))
+	var entries: Array = []
+	var selected := 0
 	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
-		var model := String(c.get("model_id", ""))
 		var id := int(c.get("instance_id", -1))
-		var b := _row(String(CarLibrary.by_id(model).get("name", model)) + ("  (driving)" if id == active else ""), _drive.bind(id))
-		b.disabled = id == active
-	_back_row()
-	_attach(_show.bind(View.MAIN))
+		var model := CarLibrary.by_id(String(c.get("model_id", "")))
+		if id == active:
+			selected = entries.size()
+		entries.append({"title": _car_name(c), "subtitle": CardUI.car_subtitle(model), "icon": "car",
+			"extra": "Driving" if id == active else "", "action": Callable() if id == active else _drive.bind(id)})
+	_card_page("Garage", entries, [], selected)
+
+
+func _car_name(c: Dictionary) -> String:
+	var model := String(c.get("model_id", ""))
+	return String(CarLibrary.by_id(model).get("name", model))
 
 
 func _drive(instance_id: int) -> void:
@@ -248,27 +238,27 @@ func _drive(instance_id: int) -> void:
 
 
 func _build_travel() -> void:
-	_new_page("Travel")
 	var here := rest_stops.streamer.sites.pos[site]
+	var entries: Array = []
 	for t in rest_stops.travel_targets(site):
 		var km := rest_stops.streamer.sites.pos[t].distance_to(here) / 1000.0
-		_row("%s  ·  %.1f km" % [rest_stops.name_of(t), km], _travel.bind(t))
-	_back_row()
-	_attach(_show.bind(View.MAIN))
+		entries.append({"title": rest_stops.name_of(t), "subtitle": "%.1f km away" % km, "icon": "rest_stop",
+			"action": _travel.bind(t)})
+	_card_page("Travel", entries)
 
 
 func _build_journal() -> void:
-	_new_page("Journal")
-	var rings: Array = loot.journal() if loot != null else []
-	for r: Dictionary in rings:
-		_label(String(r["name"]).to_upper())
+	var entries: Array = []
+	for r: Dictionary in loot.journal() if loot != null else []:
 		for entry: Dictionary in r["items"]:
-			_label(("[x] " if bool(entry["found"]) else "[ ] ") + String(entry["label"]))
-	if rings.is_empty():
-		_label("Nothing known yet")
-	_label("Find rumours to learn what lies further out.")
-	_back_row()
-	_attach(_show.bind(View.MAIN))
+			var found := bool(entry["found"])
+			var text := LootLibrary.card_text(entry["item"])
+			entries.append({"title": text[0], "subtitle": "%s · %s" % [text[1], String(r["name"])],
+				"extra": "Found" if found else "Not found yet", "extra_variant": "" if found else "dim",
+				"icon": LootLibrary.icon(entry["item"])})
+	if entries.is_empty():
+		entries.append({"title": "Nothing known yet", "icon": "journal"})
+	_card_page("Journal", entries, ["Find rumours to learn what lies further out."])
 
 
 func _open_map() -> void:
@@ -289,13 +279,11 @@ func _travel(target: int) -> void:
 	rest_stops.travel_to(target)
 
 
-# Readouts for tests: the page's rows, top to bottom, and one by its leading text.
-func rows() -> Array[Button]:
-	return _rows
+# Readout for tests: the current page's card list (null on TUNE).
+func cards() -> CardCarousel:
+	return _cards
 
 
-func row(text: String) -> Button:
-	for b in _rows:
-		if b.text.to_lower().begins_with(text.to_lower()):
-			return b
-	return null
+# Pick the card whose title starts with `text`, as a player would. False if absent or disabled.
+func pick(text: String) -> bool:
+	return _cards != null and CardUI.pick(_cards, text)

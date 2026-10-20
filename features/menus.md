@@ -1,6 +1,6 @@
 # Menus & game-loop shell
 
-> **Free-roam pivot (2026-10):** the game boots into the **title screen** (`title.tscn`, [world-session.md](world-session.md)). `HubShell` and its pages are deleted, along with the start line, the between-stage pick and the run summary. The live menus are the title, the pause menu (with free roam's Map / Stats rows), the rest-stop page and the world pages, all described below.
+> **Free-roam pivot (2026-10):** the game boots into the **title screen** (`title.tscn`, [world-session.md](world-session.md)). `HubShell` and its pages are deleted, along with the start line, the between-stage pick and the run summary. The live menus are the title, the pause menu (with free roam's Map / Stats cards), the rest-stop page and the world pages, all described below. **Every menu that is a list of choices is a card list** (`CardCarousel` built through `CardUI.card_page` / `card_list`) — see [card-carousel.md](card-carousel.md) for the table of which menus are cards and which stay plain pages.
 
 **Sources:** the hub-scene routing seam in `scripts/scenes.gd` (`class_name Scenes` —
 `hub_path()` / `is_hub_scene()`, the path consts `HUB`/`MAIN`/`CAR`, and the
@@ -191,15 +191,18 @@ host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host 
 
 Free roam's `RestStopPage` (a `CanvasLayer` at layer 6, `PROCESS_MODE_ALWAYS`) opens when the car
 stops on a rest stop (`RestStops.opened`). Opening it banks carried loot, repairs the car for
-free, freezes the game and disarms the pause menu. Every page is a flat `MenuPage` whose rows are
-one vertical column in the body (narrow screens), with `MenuNav.attach`:
-- **MAIN:** the stop's name, "Car repaired", what was banked, then Continue / Tune car / Parts /
-  Garage / Travel / Map / Journal. Travel is disabled while no other rest stop is lit.
-- **TUNE:** the shared `TuningPanel` (`car.retune` on the funnel view of the car).
+free, freezes the game and disarms the pause menu. Every page but TUNE is a card list
+(`_card_page` → `CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)), with
+`MenuNav.attach`:
+- **MAIN:** the stop's name, "Car repaired" and what was banked above the cards Continue / Tune
+  car / Parts / Garage / Travel / Map / Journal. Travel is disabled while no other rest stop is lit.
+- **TUNE:** the shared `TuningPanel` (`car.retune` on the funnel view of the car) on a plain,
+  widened `MenuPage` — sliders, not a list.
 - **PARTS / GARAGE / JOURNAL:** see [loot.md](loot.md).
-- **TRAVEL:** every other lit rest stop, nearest first, with its distance.
+- **TRAVEL:** a card per other lit rest stop, nearest first, with its distance.
 
-Back (Esc / gamepad B, or the Back rows) steps a sub-page → MAIN → closed. Covered by
+Back (Esc / gamepad B, or the `< Back` button under a sub-page's cards) steps a sub-page → MAIN →
+closed. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
 `test_free_roam_rest_stops.gd` and `test_loot.gd`.
 
 ## Pause menu (`pause_menu.gd`)
@@ -208,7 +211,7 @@ Back (Esc / gamepad B, or the Back rows) steps a sub-page → MAIN → closed. C
 host with no free-fly photo camera, such as `free_roam.tscn`, turns the row off), `reset_label`
 (the stage's "Reset to track", free roam's "Reset to road"), and `quit_body_override` (replaces
 the quit confirm's body text). The settings page starts hidden, so the first `open()` lands the
-cursor on Resume. Before this, it read as a return from Settings and focused the Settings row.
+cursor on Resume. Before this, it read as a return from Settings and focused the Settings card.
 
 
 A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
@@ -217,8 +220,11 @@ A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
 labels were shifted left to clear it) — a square button bearing a **proper drawn
 pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars,
 since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
-game** (`get_tree().paused = true`) and shows an overlay with **Resume**, **Reset to
-track**, **Photo Mode**, **Settings** and **Quit to HQ**.
+game** (`get_tree().paused = true`) and shows an overlay with **PAUSED** over a card list
+(`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**, **Reset to
+track**, **Photo Mode**, the host's extra rows, **Settings** and **Quit to HQ**. A card the host
+leaves out (`offer_photo_mode = false`) is simply not in the list. Coming back from Settings,
+photo mode or an extra page puts the cursor back on the card that left (`_focus_card`).
 Resume unfreezes and closes. **Reset to track** snaps the car **onto the centerline
 beside its current position** — "the middle of the road, regardless of where the car
 is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query). This is

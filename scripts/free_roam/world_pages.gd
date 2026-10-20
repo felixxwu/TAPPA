@@ -7,9 +7,10 @@ extends CanvasLayer
 #   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven,
 #           your lit rest stops and the car. Opened from a rest stop it doubles as the travel
 #           picker: Prev / Next step through the lit stops, Travel goes there.
-#   STATS — the lifetime counters that matter in free roam.
-# Each is a flat MenuPage with MenuNav; Back (Esc / gamepad B, or the Back button) closes it and
-# calls the `on_close` it was opened with.
+#   STATS — the lifetime counters that matter in free roam, one read-only card each
+#           (CardUI.card_page / card_list).
+# The map is a plain MenuPage (it is a picture, not a list); both use MenuNav, and Back (Esc /
+# gamepad B, or the Back button) closes the page and calls the `on_close` it was opened with.
 
 const STATS_SHOWN: Array = [LifetimeStats.DISTANCE_DRIVEN_M, LifetimeStats.REST_STOPS_LIT, LifetimeStats.TIMES_GAVE_UP]
 
@@ -18,6 +19,7 @@ const STATS_SHOWN: Array = [LifetimeStats.DISTANCE_DRIVEN_M, LifetimeStats.REST_
 @export var car: Node3D
 
 var _page: MenuPage
+var _cards: CardCarousel
 var _on_close := Callable()
 var _canvas: MapCanvas
 var _targets := PackedInt32Array()
@@ -49,7 +51,10 @@ func show_map(on_close: Callable, from_site := -1) -> void:
 	add_child(_page)
 	_canvas = MapCanvas.new()
 	_canvas.pages = self
-	_canvas.custom_minimum_size = Vector2(UITheme.px(300), UITheme.px(300))
+	# As big as the frame allows, leaving room for the title, the target line and the actions.
+	var frame := WorldPanel.layout_frame_size(self, Vector2(480.0, 360.0))
+	var side := maxf(minf(frame.x * 0.9, frame.y - UITheme.px(170)), UITheme.px(200))
+	_canvas.custom_minimum_size = Vector2(side, side)
 	_page.body().add_child(_canvas)
 	_target_label = Label.new()
 	_page.body().add_child(_target_label)
@@ -69,18 +74,24 @@ func show_map(on_close: Callable, from_site := -1) -> void:
 
 func show_stats(on_close: Callable) -> void:
 	_open(on_close)
-	_page = MenuPage.new({"title": "Stats", "dim": true})
-	add_child(_page)
+	_page = CardUI.card_page(self, {"title": "Stats", "dim": true})
+	var entries: Array = []
 	for id in STATS_SHOWN:
-		var row := Label.new()
-		row.text = "%s: %s" % [LifetimeStats.label_for(id), stat_text(id, Save.lifetime_stat(id))]
-		_page.body().add_child(row)
-	var rings := Label.new()
-	rings.text = "Biome rings reached: %d of %d" % [WorldSession.max_ring() + 1, streamer.settings.ring_count]
-	_page.body().add_child(rings)
+		entries.append({"title": stat_text(id, Save.lifetime_stat(id)), "subtitle": LifetimeStats.label_for(id),
+			"icon": STAT_ICONS.get(id, "stats")})
+	entries.append({"title": "%d of %d" % [WorldSession.max_ring() + 1, streamer.settings.ring_count],
+		"subtitle": "Biome rings reached", "icon": "region"})
+	_cards = CardUI.card_list(_page, entries)
 	_back_button = _page.add_action(UITheme.row_button("< Back", close))
 	UITheme.enforce(_page)
-	MenuNav.attach(_page, {first = _back_button, on_back = close})
+	MenuNav.attach(_page, {first = _cards, on_back = close})
+
+
+const STAT_ICONS := {
+	LifetimeStats.DISTANCE_DRIVEN_M: "travel",
+	LifetimeStats.REST_STOPS_LIT: "rest_stop",
+	LifetimeStats.TIMES_GAVE_UP: "reset_road",
+}
 
 
 static func stat_text(id: String, value: int) -> String:
@@ -105,6 +116,7 @@ func _clear() -> void:
 		_page.queue_free()
 		_page = null
 	_canvas = null
+	_cards = null
 
 
 func _step(dir: int) -> void:
@@ -142,6 +154,10 @@ func _travel() -> void:
 
 
 # Readouts for tests.
+func cards() -> CardCarousel:
+	return _cards
+
+
 func action_buttons() -> Array[Button]:
 	var out: Array[Button] = [_back_button]
 	if _travel_mode:

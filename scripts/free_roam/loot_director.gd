@@ -227,6 +227,6 @@ func journal() -> Array:
 		for item: Dictionary in tables[r]:
 			if String(item["kind"]) == "rumour":
 				continue
-			rows.append({"label": LootLibrary.label(item), "found": found.has(LootLibrary.item_key(item))})
+			rows.append({"label": LootLibrary.label(item), "item": item, "found": found.has(LootLibrary.item_key(item))})
 		rings.append({"ring": r, "name": _ring_name(r), "items": rows})
 	return rings

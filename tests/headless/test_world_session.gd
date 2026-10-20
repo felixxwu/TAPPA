@@ -184,7 +184,7 @@ func test_the_pause_menu_opens_the_map_and_stats_and_comes_back() -> void:
 	var pause: PauseMenu = scene.get_node("PauseMenu")
 	var pages: WorldPages = scene.get_node("WorldPages")
 	pause.open()
-	pause._extra_buttons[0].pressed.emit()  # Map
+	assert_true(CardUI.pick(pause.cards(), "Map"))
 	assert_true(pages.is_open())
 	assert_false(pause.is_open(), "the map covers the pause menu")
 	assert_true(get_tree().paused)
@@ -194,8 +194,9 @@ func test_the_pause_menu_opens_the_map_and_stats_and_comes_back() -> void:
 	MenuNav.of(pages._page)._unhandled_input(e)
 	assert_false(pages.is_open())
 	assert_true(pause.is_open(), "back returns to the pause menu")
-	pause._extra_buttons[1].pressed.emit()  # Stats
+	assert_eq(CardUI.titles(pause.cards())[pause.cards().selected_index()], "Map", "the cursor is back on Map")
+	assert_true(CardUI.pick(pause.cards(), "Stats"))
 	assert_true(pages.is_open())
-	assert_gt(pages._page.body().get_child_count(), 0)
+	assert_eq(pages.cards().card_count(), WorldPages.STATS_SHOWN.size() + 1, "a card per stat, and the rings reached")
 	pages.close()
 	pause.resume()

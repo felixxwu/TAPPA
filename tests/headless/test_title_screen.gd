@@ -46,12 +46,12 @@ func _press(action: String) -> InputEventAction:
 
 func test_continue_is_only_offered_with_a_world() -> void:
 	var t := await _open()
-	assert_false(t.main_buttons()[0].visible)
+	assert_eq(CardUI.index_of(t.cards(), "Continue"), -1)
 	t.free()
 	WorldSession.new_world(3, String(CarLibrary.all()[0]["id"]))
 	t = await _open()
-	assert_true(t.main_buttons()[0].visible)
-	t.main_buttons()[0].pressed.emit()
+	assert_eq(CardUI.index_of(t.cards(), "Continue"), 0, "Continue leads the list")
+	assert_true(CardUI.pick(t.cards(), "Continue"))
 	assert_eq(_entered[0], 1, "Continue drives into the world")
 
 
@@ -66,11 +66,14 @@ func test_the_starter_choice_is_the_cheapest_few_cars() -> void:
 
 func test_new_world_picks_a_starter_and_drives_in() -> void:
 	var t := await _open()
-	t.main_buttons()[1].pressed.emit()
+	assert_true(CardUI.pick(t.cards(), "New world"))
 	await get_tree().process_frame
 	assert_eq(t.view, TitleScreen.View.STARTER)
+	assert_eq(t.cards().card_count(), TitleScreen.starter_choices().size(), "a card per starter car")
 	var choice := TitleScreen.starter_choices()[1]
-	t.starter_buttons()[1].pressed.emit()
+	t.cards().select(1, false)
+	t.cards()._confirm_selected()
+	t.cards().skip_confirm_flash()
 	assert_true(WorldSession.has_world())
 	assert_eq(String(WorldSession.active_car()["model_id"]), choice)
 	assert_eq(_entered[0], 1)
@@ -79,7 +82,7 @@ func test_new_world_picks_a_starter_and_drives_in() -> void:
 func test_new_world_over_an_existing_world_asks_first() -> void:
 	WorldSession.new_world(3, String(CarLibrary.all()[0]["id"]))
 	var t := await _open()
-	t.main_buttons()[1].pressed.emit()
+	assert_true(CardUI.pick(t.cards(), "New world"))
 	assert_not_null(ConfirmPopup.any_open(get_tree()), "a confirm guards the old world")
 	assert_eq(t.view, TitleScreen.View.MAIN)
 	ConfirmPopup.any_open(get_tree()).queue_free()
@@ -90,14 +93,16 @@ func test_the_title_screen_is_keyboard_and_gamepad_navigable() -> void:
 	WorldSession.new_world(3, String(CarLibrary.all()[0]["id"]))
 	var t := await _open()
 	var vp := t.get_viewport()
-	var b := t.main_buttons()
-	assert_eq(vp.gui_get_focus_owner(), b[0], "Continue has the cursor")
+	var cards := t.cards()
+	assert_eq(vp.gui_get_focus_owner(), cards, "the card list has the cursor")
+	assert_eq(cards.selected_index(), 0, "on Continue")
 	var nav := MenuNav.of(t._page)
-	nav._unhandled_input(_press("menu_down"))
-	assert_eq(vp.gui_get_focus_owner(), b[1])
-	nav._unhandled_input(_press("menu_down"))
-	assert_eq(vp.gui_get_focus_owner(), b[2])
-	b[2].pressed.emit()
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(cards.selected_index(), 1, "right moves to New world")
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(cards.selected_index(), 2, "and on to Settings")
+	cards._confirm_selected()
+	cards.skip_confirm_flash()
 	await get_tree().process_frame
 	assert_eq(t.view, TitleScreen.View.SETTINGS)
 	await get_tree().process_frame
@@ -107,7 +112,7 @@ func test_the_title_screen_is_keyboard_and_gamepad_navigable() -> void:
 	t._show(TitleScreen.View.STARTER)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	assert_eq(vp.gui_get_focus_owner(), t.starter_buttons()[0])
+	assert_eq(vp.gui_get_focus_owner(), t.cards())
 	MenuNav.of(t._page)._unhandled_input(_press("ui_cancel"))
 	await get_tree().process_frame
 	assert_eq(t.view, TitleScreen.View.MAIN, "back from the starter choice returns to the title")

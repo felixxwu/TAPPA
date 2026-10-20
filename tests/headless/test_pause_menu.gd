@@ -133,12 +133,23 @@ func test_pause_menu_is_keyboard_navigable() -> void:
 	nav.forget()  # make "nothing selected yet" TRUE, not merely true-so-far
 	_pause.open()
 	await get_tree().process_frame  # let the deferred grab_focus run
-	assert_eq(_pause._resume_button.focus_mode, Control.FOCUS_ALL, "menu buttons are focusable")
-	assert_eq(_pause._quit_button.focus_mode, Control.FOCUS_ALL, "Quit is focusable too")
-	assert_eq(_pause._reset_button.focus_mode, Control.FOCUS_ALL, "Reset to track is focusable too")
-	assert_eq(_pause.get_viewport().gui_get_focus_owner(), _pause._resume_button,
-		"with nothing remembered, opening the menu focuses Resume (`first`)")
+	var cards := _pause.cards()
+	assert_eq(cards.focus_mode, Control.FOCUS_ALL, "the card list is focusable")
+	assert_eq(_pause.get_viewport().gui_get_focus_owner(), cards,
+		"with nothing remembered, opening the menu focuses the card list (`first`)")
+	assert_eq(CardUI.titles(cards)[cards.selected_index()], "Resume", "on Resume")
+	nav._unhandled_input(_press_action("menu_right"))
+	assert_eq(cards.selected_index(), 1, "right walks to the next card")
+	assert_eq(CardUI.titles(cards)[cards.card_count() - 1].begins_with("Quit"), true,
+		"Quit is the last card")
 	_pause.resume()
+
+
+func _press_action(action: String) -> InputEventAction:
+	var e := InputEventAction.new()
+	e.action = action
+	e.pressed = true
+	return e
 
 
 # Order-safety guard for the assertion above: whatever the menu remembers, opening it
@@ -158,7 +169,7 @@ func test_opening_the_menu_always_lands_the_cursor_inside_it() -> void:
 # "Reset to track" delegates the reset upward (the menu owns no car) via a signal,
 # then unfreezes and closes the overlay so the player drops back into the run.
 func test_reset_to_track_emits_and_resumes() -> void:
-	assert_not_null(_pause._reset_button, "the pause menu has a Reset to track button")
+	assert_true(CardUI.index_of(_pause.cards(), "Reset") >= 0, "the pause menu has a Reset to track card")
 	watch_signals(_pause)
 	_pause.open()
 	_pause._on_reset_to_track_pressed()

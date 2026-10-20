@@ -246,10 +246,12 @@ func test_the_parts_page_fits_and_removes_parts_and_reloads_the_car_on_close() -
 	page.open(0)
 	watch_signals(page)
 	page._show(RestStopPage.View.PARTS)
-	page.row("+").pressed.emit()
+	assert_eq(page.cards().card_count(), 1, "a card for the stash part")
+	_confirm(page.cards(), 0)
 	assert_eq(WorldSession.list("stash").size(), 0)
 	assert_eq((WorldSession.active_car().get("parts", []) as Array).size(), 1, "fitted, and saved on the car")
-	page.row("-").pressed.emit()
+	assert_eq(page.cards().card_count(), 1, "now a card for the fitted part")
+	_confirm(page.cards(), 0)
 	assert_eq(WorldSession.list("stash").size(), 1, "and back in the stash")
 	page.close()
 	assert_signal_emitted(page, "car_changed")
@@ -261,10 +263,13 @@ func test_the_garage_switches_the_active_car() -> void:
 	var second: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
 	page.open(0)
 	page._show(RestStopPage.View.GARAGE)
-	var rows := page.rows()
-	assert_true(rows[0].disabled, "the car being driven")
-	rows[1].pressed.emit()
+	assert_eq(page.cards().card_count(), 2, "a card per owned car")
+	assert_eq(page.cards().selected_index(), 0, "the cursor starts on the car being driven")
+	_confirm(page.cards(), 0)
+	assert_ne(int(WorldSession.active_car()["instance_id"]), int(second["instance_id"]), "picking the car being driven changes nothing")
+	_confirm(page.cards(), 1)
 	assert_eq(int(WorldSession.active_car()["instance_id"]), int(second["instance_id"]))
+	assert_eq(page.cards().selected_index(), 1, "the rebuilt garage sits on the car now driven")
 	page.close()
 
 
@@ -272,11 +277,12 @@ func test_the_journal_and_parts_pages_are_navigable() -> void:
 	var scene := await _boot()
 	var page: RestStopPage = scene.get_node("RestStopPage")
 	page.open(0)
-	page.row("journal").pressed.emit()
+	assert_true(page.pick("journal"))
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_eq(page.view, RestStopPage.View.JOURNAL)
-	assert_eq(page.get_viewport().gui_get_focus_owner(), page.row("< back"))
+	assert_gt(page.cards().card_count(), 0, "the revealed biome's loot is listed")
+	assert_eq(page.get_viewport().gui_get_focus_owner(), page.cards())
 	var e := InputEventAction.new()
 	e.action = "ui_cancel"
 	e.pressed = true
@@ -284,3 +290,9 @@ func test_the_journal_and_parts_pages_are_navigable() -> void:
 	await get_tree().process_frame
 	assert_eq(page.view, RestStopPage.View.MAIN)
 	page.close()
+
+
+func _confirm(cards: CardCarousel, index: int) -> void:
+	cards.select(index, false)
+	cards._confirm_selected()
+	cards.skip_confirm_flash()

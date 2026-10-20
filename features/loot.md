@@ -63,8 +63,12 @@ one swaps with the fitted one); no kit for the car's own layout.
 
 ## Rest-stop pages
 
-**Parts:** fitted parts (press to take off) and the stash (press to fit). **Garage:** owned
-cars (press to drive one). **Journal:** revealed rings. A change of parts or car re-fields the car
+All card lists ([card-carousel.md](card-carousel.md)); item cards use `LootLibrary.card_text`
+(a short name, then what it is — "Level 2", "Engine", "Car") and `LootLibrary.icon`.
+**Parts:** a card per fitted part (pick to take off), then one per stash part (pick to fit; it
+says "Fit", "Swap for X", or — disabled — "Can't fit"). **Garage:** a card per owned car (pick
+to drive one; the cursor starts on the car being driven). **Journal:** a read-only card per item
+in each revealed ring, "Found" or "Not found yet". A change of parts or car re-fields the car
 when the page closes: `car_changed` makes free roam save and reload the scene at the rest stop,
 because a live body is never re-staged.
 

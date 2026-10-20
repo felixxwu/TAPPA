@@ -48,14 +48,14 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 
 ## Title screen (`TitleScreen`, decision 20)
 
-The main scene (`project.godot → run/main_scene = res://title.tscn`). Flat `MenuPage`s with
-`MenuNav`:
+The main scene (`project.godot → run/main_scene = res://title.tscn`). Card lists
+(`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
 - **MAIN:** Continue (only with a world), New World, Settings.
 - **STARTER:** New World first asks for a starter car. The choices are the `STARTER_COUNT`
   cheapest cars by `cost` (`starter_choices`), so the rule works whatever the roster becomes.
   Picking one makes the world (a random seed) and drives in. Over an existing world, a
   `ConfirmPopup` asks first.
-- **SETTINGS:** the shared `SettingsMenu`.
+- **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
 
 Free roam's pause menu quits to the title (`PauseMenu.quit_scene`), saving first. The old
 `HubShell` is unreachable from the game.
@@ -67,7 +67,9 @@ A `CanvasLayer` (layer 7, always processing) over the frozen game:
   as average circles; the real border is noisy), the roads driven (segments whose midpoint
   cell is driven), lit rest stops and the car. **From a rest stop it is the travel picker**:
   `<` / `>` step through the other lit rest stops, and Travel goes to the ringed one.
-- **Stats:** distance driven, rest stops lit, times the car gave up, and rings reached.
+  The map is drawn as large as the frame allows (a plain `MenuPage` — a picture, not a list).
+- **Stats:** a read-only card each for distance driven, rest stops lit, times the car gave up,
+  and rings reached.
 
-The pause menu hosts them through its generic extra rows (`PauseMenu.extra_rows`,
+The pause menu hosts them through its generic extra cards (`PauseMenu.extra_rows`,
 `extra_requested`, `return_from_extra`).

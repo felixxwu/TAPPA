@@ -47,17 +47,12 @@ signal photo_mode_requested
 
 signal extra_requested(label: String)
 signal quitting
-var _extra_buttons: Array[Button] = []
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
-var _menu_panel: Control       # PAUSED + Resume + Settings + Quit to HQ
+var _menu_panel: MenuPage      # PAUSED over a card list: Resume, Reset, Photo Mode, extras, Settings, Quit
 var _settings_panel: Control   # the shared SettingsMenu + Back
-var _resume_button: Button     # default keyboard/gamepad focus when the menu opens
-var _reset_button: Button      # "Reset to track" — snaps the car back onto the road
-var _settings_button: Button   # focus returns here when backing out of Settings
-var _photo_button: Button      # "Photo Mode" — focus returns here when photo mode ends
-var _quit_button: Button       # "Quit to HQ" — abandons the rally
+var _cards: CardCarousel       # the menu's cards; MenuNav's opening focus (Resume is card 0)
 
 var settings_menu: SettingsMenu
 
@@ -127,24 +122,23 @@ func _on_reset_to_track_pressed() -> void:
 # to the photo camera, and can't stack an overlay over the shot), but do NOT unpause —
 # the frozen world is the whole feature. The host answers on photo_mode_requested.
 # An extra row: hide the overlay but stay paused and armed-off while the host's page is up.
-func _on_extra_pressed(label: String, button: Button) -> void:
-	_extra_return_focus = button
+func _on_extra_pressed(label: String) -> void:
+	_extra_return_card = label
 	set_input_enabled(false)
 	_set_open(false)
 	extra_requested.emit(label)
 
 
-var _extra_return_focus: Button
+var _extra_return_card := ""
 
 
-# The host's extra page closed: show this menu again, cursor back on the row that opened it.
+# The host's extra page closed: show this menu again, cursor back on the card that opened it.
 func return_from_extra() -> void:
 	set_input_enabled(true)
 	get_tree().paused = true
 	_set_open(true)
 	_show_settings(false)
-	if is_instance_valid(_extra_return_focus):
-		UITheme.focus_grab.bind(_extra_return_focus).call_deferred()
+	_focus_card(_extra_return_card)
 
 
 func _on_photo_mode_pressed() -> void:
@@ -159,7 +153,7 @@ func _on_photo_mode_pressed() -> void:
 func return_from_photo_mode() -> void:
 	set_input_enabled(true)
 	open()
-	UITheme.focus_grab.bind(_photo_button).call_deferred()
+	_focus_card("Photo Mode")
 
 
 # Pop the quit confirm; quit_to_hq() runs only if the player accepts. A run of EITHER
@@ -275,8 +269,7 @@ func _build() -> void:
 	backdrop.color = UITheme.PANEL_DIM
 	_overlay.add_child(backdrop)
 
-	_menu_panel = _build_menu_panel()
-	_overlay.add_child(_menu_panel)
+	_build_menu_panel()
 	_settings_panel = _build_settings_panel()
 	_overlay.add_child(_settings_panel)
 	# Start on the menu page. Left visible, the first open() read as "returning from
@@ -284,61 +277,48 @@ func _build() -> void:
 	_settings_panel.visible = false
 
 	# Framework: focus + WASD/arrow/gamepad nav across whichever page is showing
-	# (Resume/Settings/Quit, or the SettingsMenu rows). No on_back — this menu's
+	# (the card list, or the SettingsMenu rows). No on_back — this menu's
 	# own _unhandled_input owns ui_cancel because it also OPENS the menu when
 	# closed and steps sub-page → list → menu, which a plain back callback can't.
-	MenuNav.attach(_overlay, {first = _resume_button})
+	MenuNav.attach(_overlay, {first = _cards})
 
 
-# PAUSED + Resume + Settings, centred.
-func _build_menu_panel() -> Control:
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 16)
-	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	center.add_child(col)
-
-	# PAUSED on a solid black title plate (the house style), centred over the menu.
-	var title_plate := UITheme.panel(0.9, 14)
-	var title := UITheme.title("PAUSED")
-	title.custom_minimum_size = Vector2(UITheme.BUTTON_MIN_W, 0)
-	title_plate.add_child(title)
-	col.add_child(title_plate)
-
-	_resume_button = _make_menu_button("Resume")
-	_resume_button.pressed.connect(resume)
-	col.add_child(_resume_button)
-
-	# Reset to track — snap the car back onto the road at its current progress
-	# (recovery pose), then unpause. world.gd owns the car and performs the reset.
-	_reset_button = _make_menu_button(reset_label)
-	_reset_button.pressed.connect(_on_reset_to_track_pressed)
-	col.add_child(_reset_button)
-
-	# Photo Mode — hand the screen to world.gd's free-fly camera with the tree still
-	# frozen. Esc there comes back to this menu (return_from_photo_mode).
-	_photo_button = _make_menu_button("Photo Mode")
-	_photo_button.pressed.connect(_on_photo_mode_pressed)
-	col.add_child(_photo_button)
-	_photo_button.visible = offer_photo_mode
-
+# PAUSED over the card list (CardUI.card_page / card_list). Built once: the rows it offers are
+# exports the host sets in its scene.
+func _build_menu_panel() -> MenuPage:
+	_menu_panel = CardUI.card_page(_overlay, {"title": "Paused"})
+	var entries: Array = [
+		{"title": "Resume", "icon": "resume_run", "action": resume},
+		# Snap the car back onto the road at its current progress, then unpause. The host owns
+		# the car and performs the reset.
+		{"title": reset_label, "icon": "reset_road", "action": _on_reset_to_track_pressed},
+	]
+	# Hand the screen to the host's free-fly camera with the tree still frozen. Esc there comes
+	# back to this menu (return_from_photo_mode).
+	if offer_photo_mode:
+		entries.append({"title": "Photo Mode", "icon": "photo", "action": _on_photo_mode_pressed})
 	for label in extra_rows:
-		var extra := _make_menu_button(label)
-		extra.pressed.connect(_on_extra_pressed.bind(label, extra))
-		col.add_child(extra)
-		_extra_buttons.append(extra)
+		entries.append({"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)})
+	entries.append({"title": "Settings", "icon": "settings", "action": _show_settings.bind(true)})
+	entries.append({"title": quit_label if quit_label != "" else "Quit to HQ", "icon": "quit", "action": confirm_quit_to_hq})
+	_cards = CardUI.card_list(_menu_panel, entries)
+	return _menu_panel
 
-	_settings_button = _make_menu_button("Settings")
-	_settings_button.pressed.connect(_show_settings.bind(true))
-	col.add_child(_settings_button)
 
-	# Quit to HQ — abandons the rally (after a confirm). No retry penalty: a non-top-3
-	# rally is simply re-entered later from the map.
-	_quit_button = _make_menu_button(quit_label if quit_label != "" else "Quit to HQ")
-	_quit_button.pressed.connect(confirm_quit_to_hq)
-	col.add_child(_quit_button)
-	return center
+const EXTRA_ICONS := {"Map": "map", "Stats": "stats"}
+
+
+# Put the cursor on the card titled `title` (the one the player left the menu from).
+func _focus_card(title: String) -> void:
+	var i := CardUI.index_of(_cards, title)
+	if i >= 0:
+		_cards.select(i, false)
+	UITheme.focus_grab.bind(_cards).call_deferred()
+
+
+# Readout for tests and hosts: the menu's card list.
+func cards() -> CardCarousel:
+	return _cards
 
 
 # The shared SettingsMenu in a scroll, with a Back button. Hidden until Settings.
@@ -368,7 +348,7 @@ func _build_settings_panel() -> Control:
 
 	# Single bottom button: on a sub-page it backs out to the category list; on the
 	# list it backs out to the Resume/Settings menu.
-	var back := _make_menu_button("< Back")
+	var back := UITheme.row_button("< Back", Callable())
 	back.pressed.connect(_on_settings_back)
 	col.add_child(back)
 	return margin
@@ -380,17 +360,6 @@ func _build_settings_panel() -> Control:
 func _on_settings_back() -> void:
 	if not settings_menu.go_back():
 		_show_settings(false)
-
-
-func _make_menu_button(text: String) -> Button:
-	var button := Button.new()
-	button.text = text
-	# Focusable so the pause menu is fully keyboard / gamepad navigable (ui_up/ui_down
-	# walk Resume/Settings/Quit, ui_accept fires the focused one).
-	button.focus_mode = Control.FOCUS_ALL
-	button.custom_minimum_size = Vector2(UITheme.px(220), UITheme.px(44))
-	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	return button
 
 
 # --- State -------------------------------------------------------------------
@@ -419,8 +388,8 @@ func _show_settings(on: bool) -> void:
 	_settings_panel.visible = on
 	_menu_panel.visible = not on
 	if was_showing_settings and not on:
-		# Returning to the Resume/Settings menu — put the cursor back on Settings.
-		UITheme.focus_grab.bind(_settings_button).call_deferred()
+		# Returning to the card list — put the cursor back on Settings.
+		_focus_card("Settings")
 
 
 func _on_camera_changed(mode: int) -> void:

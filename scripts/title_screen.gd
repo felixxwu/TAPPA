@@ -3,7 +3,7 @@ extends Control
 # Docs: features/world-session.md, features/menus.md — update in the same change as this file.
 # Tests: tests/headless/test_title_screen.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # The title screen (todo/2026-10-19-free-roam-pivot.md decision 20): the game's front door, leading
-# straight into the one world. Flat MenuPages driven by MenuNav:
+# straight into the one world. Card pages (CardUI.card_page / card_list) driven by MenuNav:
 #   MAIN     — Continue (only with a world), New World, Settings.
 #   STARTER  — a new world starts by choosing one of a few starter cars (decision 19); picking one
 #              creates the world and drives into it.
@@ -17,10 +17,7 @@ enum View { MAIN, STARTER, SETTINGS }
 
 var view := View.MAIN
 var _page: MenuPage
-var _continue_button: Button
-var _new_button: Button
-var _settings_button: Button
-var _starter_buttons: Array[Button] = []
+var _cards: CardCarousel
 var _settings_menu: SettingsMenu
 # Where play goes. A test swaps it for a capture, so no real scene change happens.
 var enter_world := func() -> void: Scenes.change_to(get_tree(), FREE_ROAM)
@@ -52,32 +49,31 @@ static func starter_choices() -> PackedStringArray:
 func _show(v: View) -> void:
 	if _page != null:
 		_page.queue_free()
-	_starter_buttons.clear()
+	_cards = null
 	view = v
 	match v:
 		View.MAIN:
-			_page = MenuPage.new({"title": "TAPPA"})
-			add_child(_page)
-			_continue_button = UITheme.row_button("Continue", enter_world)
-			_continue_button.visible = WorldSession.has_world()
-			_new_button = UITheme.row_button("New world", _on_new_world)
-			_settings_button = UITheme.row_button("Settings", _show.bind(View.SETTINGS))
-			for b in [_continue_button, _new_button, _settings_button]:
-				_page.body().add_child(b)
-			MenuNav.attach(_page, {first = _continue_button if _continue_button.visible else _new_button})
+			_page = CardUI.card_page(self, {"title": "TAPPA"})
+			var entries: Array = []
+			if WorldSession.has_world():
+				entries.append({"title": "Continue", "icon": "resume_run", "action": enter_world})
+			entries.append({"title": "New world", "icon": "new_run", "action": _on_new_world})
+			entries.append({"title": "Settings", "icon": "settings", "action": _show.bind(View.SETTINGS)})
+			_cards = CardUI.card_list(_page, entries)
+			MenuNav.attach(_page, {first = _cards})
 			_build_version_label()
 		View.STARTER:
-			_page = MenuPage.new({"title": "Choose your car"})
-			add_child(_page)
+			_page = CardUI.card_page(self, {"title": "Choose your car"})
+			var entries: Array = []
 			for id in starter_choices():
-				var b := UITheme.row_button(String(CarLibrary.by_id(id).get("name", id)), _start.bind(id))
-				_page.body().add_child(b)
-				_starter_buttons.append(b)
-			var back := _page.add_action(UITheme.row_button("< Back", _show.bind(View.MAIN)))
-			MenuNav.attach(_page, {first = _starter_buttons[0] if not _starter_buttons.is_empty() else back,
-				on_back = _show.bind(View.MAIN)})
+				var car := CarLibrary.by_id(id)
+				entries.append({"title": String(car.get("name", id)), "subtitle": CardUI.car_subtitle(car),
+					"icon": "car", "action": _start.bind(id)})
+			_cards = CardUI.card_list(_page, entries)
+			_page.add_action(UITheme.row_button("< Back", _show.bind(View.MAIN)))
+			MenuNav.attach(_page, {first = _cards, on_back = _show.bind(View.MAIN)})
 		View.SETTINGS:
-			_page = MenuPage.new({"title": "Settings", "width": 420.0})
+			_page = MenuPage.new({"title": "Settings", "width": UITheme.px(560)})
 			add_child(_page)
 			_settings_menu = SettingsMenu.new()
 			_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -151,10 +147,6 @@ func _start(model_id: String) -> void:
 	enter_world.call()
 
 
-# Readouts for tests.
-func main_buttons() -> Array[Button]:
-	return [_continue_button, _new_button, _settings_button]
-
-
-func starter_buttons() -> Array[Button]:
-	return _starter_buttons
+# Readout for tests and hosts: the current page's card list (null on SETTINGS).
+func cards() -> CardCarousel:
+	return _cards

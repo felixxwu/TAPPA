@@ -51,8 +51,9 @@ forget) the per-widget setup.
    case: if `focused.has_method("menu_nav_handles_side")`, `MenuNav` calls it and stops —
    the method returns `true` when it consumed the press, `false` to fall through to
    normal focus-neighbour movement (so up/down can still leave the widget).
-   `CardCarousel` (card-carousel.md (deleted with the free-roam pivot)) is the first user: left/right
-   there move the selected card instead of moving focus to a sibling widget. Named
+   `CardCarousel` ([card-carousel.md](card-carousel.md)) is the user: every card-list menu is
+   one focusable carousel, where left/right move the selected card instead of moving focus to
+   a sibling widget, and up/down leave it for the `< Back` button under the cards. Named
    generically rather than special-casing `CardCarousel` here, so the next such widget
    needs no framework change either.
 4. **Back** — routes **both** `ui_cancel` **and** `menu_back` to `on_back` (omit it and
@@ -115,7 +116,7 @@ focus next frame.
 
 **Live `MenuNav.attach` callers today:** the shared `SettingsMenu` (rows + bottom action
 button — backs both the title-screen Settings page and the pause menu's), the **pause**
-menu (Resume / Reset to track / Settings / Quit to HQ), `ConfirmPopup` and `UsernamePopup`
+menu (its card list, and the Settings page), `ConfirmPopup` and `UsernamePopup`
 (the modal layer — see [modals.md](modals.md)), the HUD's **stage-complete panel**'s single
 `NEXT` button (`hud.gd`, [hud.md](hud.md)), `AccountMenu` ([cloud-save.md](cloud-save.md)),
 the pre-stage **start line**'s MENU row and its **Tune Car** overlay
@@ -125,7 +126,9 @@ the pre-stage **start line**'s MENU row and its **Tune Car** overlay
 attaches `MenuNav` too, but has **no live caller left** since the persistent parts model
 that hosted it was deleted (`todo/roguelike-pivot.md` — the upgrades grid it used to pop out
 of, `upgrades_grid.gd`, is gone) — it's orphaned code, not a reachable menu, until something
-(the shop, most likely) re-hosts it or it's deleted outright.
+(the shop, most likely) re-hosts it or it's deleted outright. Free roam's menus attach it too:
+the title screen, the rest-stop page and the world pages (map, stats) — each card page with
+`{first = <its CardCarousel>}`.
 
 > **When you add or change a menu, wire its navigation in the same piece of work.** Call
 > **`MenuNav.attach(root, {first = <button>, on_back = <Callable>})`** once after building

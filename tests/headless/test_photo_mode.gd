@@ -224,41 +224,29 @@ func test_exit_emits_once() -> void:
 
 # --- The pause-menu entry point ----------------------------------------------
 
-# Photo Mode is offered on the pause menu, as a real focusable row (so it is reachable
-# on keyboard and gamepad, not just by pointer — see features/menu-navigation.md).
+# Photo Mode is offered on the pause menu, as a card the keyboard/gamepad cursor reaches (not
+# just by pointer — see features/menu-navigation.md).
 func test_pause_menu_offers_photo_mode() -> void:
-	assert_not_null(_pause._photo_button, "the pause menu has a Photo Mode row")
-	assert_eq(_pause._photo_button.focus_mode, Control.FOCUS_ALL,
-		"the Photo Mode row is keyboard/gamepad focusable")
-	# And it is genuinely REACHABLE without a pointer: walk down from the top row with
-	# menu_down (the WASD / D-pad family) until the cursor lands on it.
+	var cards := _pause.cards()
+	var photo := CardUI.index_of(cards, "Photo Mode")
+	assert_true(photo >= 0, "the pause menu has a Photo Mode card")
 	var nav := MenuNav.of(_pause._overlay)
 	assert_not_null(nav, "the pause overlay is wired to the MenuNav framework")
 	await get_tree().process_frame
 	nav.forget()
 	_pause.open()
-	# TWO frames: one for the deferred opening focus grab, one for the container sort
-	# that gives the rows real rects — focus-neighbour search is geometric, so a menu
-	# that has never been laid out has nowhere to walk to.
 	await get_tree().process_frame
-	await get_tree().process_frame
-	_pause._reset_button.grab_focus()  # the row above Photo Mode
-	var reached := false
-	var walked: Array[String] = []
-	for _i in range(8):
-		var owner_now := _pause._overlay.get_viewport().gui_get_focus_owner()
-		walked.append("null" if owner_now == null else str(owner_now))
-		if owner_now == _pause._photo_button:
-			reached = true
-			break
-		nav._unhandled_input(_nav_press("menu_down"))
-	assert_true(reached,
-		"menu_down walks the cursor onto the Photo Mode row (walked: %s)" % str(walked))
-	# Gamepad/keyboard confirm on that row asks for photo mode, same as a tap.
+	assert_eq(_pause.get_viewport().gui_get_focus_owner(), cards, "the card list has the cursor")
+	cards.select(0, false)
+	for _i in photo:
+		nav._unhandled_input(_nav_press("menu_right"))
+	assert_eq(cards.selected_index(), photo, "menu_right walks the cursor onto Photo Mode")
+	# Gamepad/keyboard confirm on that card asks for photo mode, same as a tap.
 	watch_signals(_pause)
-	_pause._photo_button.emit_signal("pressed")
+	cards._confirm_selected()
+	cards.skip_confirm_flash()
 	assert_signal_emitted(_pause, "photo_mode_requested",
-		"confirming the focused row opens photo mode")
+		"confirming the selected card opens photo mode")
 
 
 func _nav_press(action: String) -> InputEventAction:

@@ -73,23 +73,26 @@ func test_the_shell_wires_the_hud_controls_and_pause_menu() -> void:
 	assert_true(_pause._input_enabled, "the pause menu is armed once the island has loaded")
 
 
-# Free roam has no free-fly photo camera host, so the Photo Mode row is hidden, and the
-# keyboard/gamepad cursor walks straight past it.
-func test_the_pause_menu_skips_the_hidden_photo_row() -> void:
-	assert_false(_pause._photo_button.visible)
+# Free roam has no free-fly photo camera host, so the Photo Mode card is left out, and the
+# keyboard/gamepad cursor walks straight from Reset to road to Map.
+func test_the_pause_menu_leaves_out_the_photo_card() -> void:
+	var cards := _pause.cards()
+	assert_eq(CardUI.index_of(cards, "Photo Mode"), -1)
 	var nav := MenuNav.of(_pause._overlay)
 	await get_tree().process_frame
 	nav.forget()
 	_pause.open()
 	await get_tree().process_frame
-	var vp := _pause.get_viewport()
-	assert_eq(vp.gui_get_focus_owner(), _pause._resume_button)
-	nav._unhandled_input(_press("menu_down"))
-	assert_eq(vp.gui_get_focus_owner(), _pause._reset_button)
-	nav._unhandled_input(_press("menu_down"))
-	assert_eq(vp.gui_get_focus_owner(), _pause._extra_buttons[0], "Photo Mode is skipped, on to Map")
-	nav._unhandled_input(_press("menu_up"))
-	assert_eq(vp.gui_get_focus_owner(), _pause._reset_button)
+	assert_eq(_pause.get_viewport().gui_get_focus_owner(), cards)
+	var titles := CardUI.titles(cards)
+	cards.select(0, false)
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(titles[cards.selected_index()], "Reset to road")
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(titles[cards.selected_index()], "Map", "Photo Mode is not offered, on to Map")
+	nav._unhandled_input(_press("menu_left"))
+	assert_eq(titles[cards.selected_index()], "Reset to road")
+	_pause.resume()
 
 
 func test_reset_to_road_puts_the_car_on_the_nearest_road() -> void:
