@@ -1,11 +1,15 @@
 # Free-roam pivot — island road network, biome rings, rest stops (2026-10-19)
 
-**Status: AGREED DESIGN, nothing implemented.** Design questions were resolved with the
-user on 2026-10-19 (see *Decisions*). One piece is deliberately left open: the **road
-network generation algorithm** is its own spec, still to be written and discussed with
-the user (see *Dependencies*). Once staging starts, this file is the decision record
-for the pivot. It supersedes `todo/roguelike-pivot.md` wherever they disagree, and
-`gameplay.md` gets rewritten to match.
+**Status: AGREED DESIGN, prototype in progress (updated 2026-10-20).** Design questions were
+resolved with the user on 2026-10-19 (see *Decisions*). A free-roam prototype now exists
+and the game boots into it (`features/free-roam.md`). It covers stage 0 and parts of
+stages 1, 3 and 4 (see *Progress* and *Staging*). The prototype took a different technical
+route from the one first sketched below: the whole road network is built at boot, a new
+`TerrainStreamer` replaces the `TerrainManager` streaming seam, and terrain is built around
+the roads instead of being carved into them. Sections that route makes stale are marked
+**(superseded)** where they stand. This file is the decision record for the pivot. It
+supersedes `todo/roguelike-pivot.md` wherever they disagree, and `gameplay.md` gets
+rewritten to match.
 
 ## The pitch
 
@@ -126,15 +130,27 @@ one, with your unbanked loot left at the wreck for you to go back for.
 ## Dependencies
 
 - **`todo/road-network-generation.md` (NOT YET WRITTEN — must be brainstormed with the
-  user first).** It covers the forking, streamed-ahead road algorithm on a bounded
-  island:
-  - how branches are spawned and spaced;
-  - what a branch does at the coast or when it runs out of room;
-  - overlap checks without a whole-network view;
-  - the per-biome difficulty knobs;
-  - how rest stops and loot sites hang off the network;
-  - determinism from (world seed, branch, segment).
-  Stage 0 below can run on a stand-in single road. Stage 1 onward depends on this spec.
+  user first).** The original scope assumed a network streamed ahead of the car. The
+  prototype instead **builds the whole island's layout once at boot** (`RoadNetwork._grow`
+  / `_densify`, radial growth ported from `tools/road_network_lab.html`). That removes the
+  hardest original questions: overlap checks without a whole-network view, generating
+  ahead of the load radius on every branch, and determinism per branch. Seed-level
+  determinism comes for free. What the spec still has to settle:
+  - **road character:** whether noise-wiggled polylines (`road_twist`, `bend_length_m`)
+    are "hard roads" enough (decision 5), or whether `CornerLibrary` pieces (hairpins,
+    square corners) get mixed in;
+  - **per-biome difficulty knobs:** today every growth and wiggle setting is global on
+    `FreeRoamSettings`;
+  - **dead ends:** what a branch does at the coast, and whether dead ends are allowed;
+  - **rest stop and loot site placement:** the lab places a rest stop every 300 m of road,
+    but `RoadNetwork` doesn't port it yet. With the whole graph known at boot, these can be
+    planned globally, as exact distances along roads, and spawned per chunk;
+  - **build cost at scale:** check that the boot build stays cheap if pacing (stage 7)
+    makes the island bigger than its current 5 km radius;
+  - **lab parity:** `LabNoise` and `RoadNetwork` match the lab bit for bit. Decide when the
+    game is allowed to diverge (per-biome settings, corner pieces) and the lab stops being
+    the reference.
+  Stage 1's remaining work depends on this spec.
 
 ## The core technical problem: today's world is a finite stage, rebuilt every stage
 
@@ -173,9 +189,27 @@ feeds it:
 The plan is to **write the producers this seam was built for**, not to make
 `TrackGenerator` incremental inside the stage pipeline.
 
+**(superseded 2026-10-20.)** The prototype doesn't use this seam. Instead it adds
+`TerrainStreamer` (`scripts/free_roam/terrain_streamer.gd`), which has its own chunk size
+(64 m vs `CHUNK_M` 50 m), two detail levels, a strict per-frame time budget and per-chunk
+foliage (see *Streaming method* below). It still holds that `TrackGenerator` isn't made
+incremental. Once the prototype is the game, the `TerrainManager` streaming mode
+(`stream_on_miss`, `set_road_source`, …) and the overworld budget field have no user. Audit
+them for deletion in stage 8, along with the corridor pipeline.
+
 ## Architecture
 
 ### A. `RoadNetwork`, the streaming road producer
+
+> **(largely superseded 2026-10-20.)** `RoadNetwork` exists, but it builds the whole
+> network at boot, so "grows ahead of the car", "committed road is never rewritten" and
+> "generate-ahead distance" no longer apply. It doesn't reuse corner pieces yet (an open
+> question in the road spec). The carve isn't ported either: `RoadTerrain` makes height a
+> pure function of distance to the nearest road, so roads are level across, junctions come
+> for free and there's no corridor bake. What's still missing compared with the stages is
+> **cliffs, camber and jump crests**. Decide whether they come back (stage 1). Water
+> avoidance (`_seg_hits_water` against the base field) and seed determinism are done. The
+> text below is the original sketch.
 
 It implements `road_source` and grows the network ahead of the car. The algorithm is
 the separate spec. The constraints that spec must meet:
@@ -222,6 +256,11 @@ that chunk's road segments, seeded by the chunk coordinate. `TreeScatter` and
 built and freed along with chunks.
 
 ### D. Background threading
+
+> **(superseded 2026-10-20)** by the strict 1 ms per-frame budget with a cooperative
+> scheduler (*Streaming method* below). It's built, and it's the baseline everywhere because
+> web exports have no threads. Threads become a later optimisation for desktop and
+> Android, using the same job design.
 
 Chunk building now happens during play, so the plan is `WorkerThreadPool` for the
 pure-data half (heights, carve, region blend), with only node and mesh creation on the
@@ -336,31 +375,103 @@ per-frame build budget (`overworld_chunk_build_budget` already exists).
 Check each before deleting, using the `PIVOT-CHANGES.md` approach: read the callers,
 not just the file. `MenuShowcase` (the hub's 3D background) probably goes with the hub.
 
+## Progress (2026-10-20)
+
+Landed in `aa7ee9d` ("Add free-roam prototype"). Source is `scripts/free_roam/` and
+`free_roam.tscn`; tests are `tests/headless/test_free_roam.gd` (20 tests); docs are
+`features/free-roam.md`.
+
+- `project.godot` boots `free_roam.tscn`. **The hub and the region run can't be reached in
+  the shipped game** until something links back to them.
+- **Layout:** `RoadNetwork` builds the island's whole network at boot, matching the lab
+  preset exactly (5 km radius, 3 rings). It answers allocation-free `nearest` and
+  per-chunk `candidates_for` queries.
+- **Terrain:** `RoadTerrain` builds road-first height (base field, lakes, mountains away
+  from roads, ribbon banks, coast, Perlin bumps), all pure functions of position.
+- **Streaming:** `TerrainStreamer` streams under a strict 1 ms budget with measured
+  atomic units, two detail levels, collision near the car, skirts, priority by predicted
+  position and a boot `prefill`.
+- **Foliage:** trees, bushes and rocks are planted per near chunk through `Foliage`, with
+  per-ring `tree_mix` and rock density, and freed along with the chunk.
+- **Rings:** `RoadTerrain.ring_index` / `ring_tint`. Ring i wears region i's look, but
+  only as a vertex tint and foliage mix.
+- **Driving:** the car spawns on the road, `surface_at` reads road / off-road per wheel,
+  and **R** puts the car back on the nearest road. A debug label shows streaming stats.
+- **Measured** (headless, car parked): 15.6 µs per sample, 843 ms prefill, worst frame
+  1.04 ms. It hasn't been measured with the car driving at speed.
+- **Not in the prototype:** the game HUD (speed, health), mobile touch controls, a pause
+  or settings page, audio checks, stuck or flipped recovery, barriers, rest stops,
+  pickups, damage consequences, and saving. Settings live on `FreeRoamSettings`, not
+  `GameConfig`.
+
 ## Staging (each stage depends on the ones before it)
 
-0. **Spike: streaming on a stand-in single road, in a dev scene. No gameplay.** A
-   minimal road source + `stream_on_miss` + `set_bounds`, driving across a 5+ km island
-   with no hitch. This proves the streaming before the road spec lands. **Opus
-   planning pass first** (CLAUDE.md model posture).
-1. **The road network (blocked on the road spec)**, plus per-chunk carve with cliffs,
-   camber, jumps and junctions.
-2. **Background chunk building** (threading spike, web check, budget fallback).
-3. **Per-chunk props:** foliage, rocks, barriers.
-4. **Biome rings:** `BiomeRings`, position-based sky, fog and water, drifting weather,
-   per-biome difficulty.
-5. **Damage chain and rest stops:** temperature, cooling failure, overheat drain,
-   0-HP respawn, lighting, free repair, travel, spectators at rest stops. The
-   rest-stop page at this stage: repair, tune, travel.
-6. **The world session and save:** `WorldSession`, schema bump (profile wipe), title →
-   world, the map page.
-7. **Loot:** pickups, carried / stash / garage, the dropped stash, part fitting,
-   car titles, starter choice, rumours + the journal, **biome loot tables and the
-   catalogue-to-biome pacing pass** (which then fixes island and ring sizes).
-8. **Demolition and docs:** delete the stage loop, economy and challenge. Rewrite
-   `gameplay.md`, `PIVOT-CHANGES.md` and the affected `features/` docs. Then a full
-   test run.
+Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what changed.
 
-Stages 0–4 can be played as a pure drive, and should be playtested before 5–7.
+0. **Streaming spike — mostly DONE.** It went further than planned: it runs on the real
+   lab network rather than a stand-in road, with a new streamer instead of the
+   `TerrainManager` seam. **Remaining:** the auto driver. It drives a fixed route across
+   the island at top speed, reports budget overruns and any chunk reached without
+   collision, and backs a cheap headless regression test. The original exit criterion,
+   "5+ km with no hitch", has only been checked while parked.
+1. **The road network — layout and terrain DONE. Road character and placement are blocked
+   on the road spec.** Remaining:
+   - the road spec itself (see *Dependencies*);
+   - road difficulty and character (corner pieces or not);
+   - whether cliffs, camber and jump crests come back on road-first terrain;
+   - a visible road edge or surface (today the road is only a texture or tint from
+     distance to the road);
+   - rest stop and loot site placement points on the graph, so stages 5 and 7 have
+     somewhere to put things.
+2. **Background chunk building — REPLACED by the budget scheduler.** It is now **performance
+   hardening**: measure on a real mid-range Android phone and on a web export
+   (`todo/mobile-web-performance.md`), warm up shaders at boot, and move the height
+   maths to GDExtension or threads only if those measurements say so. It can run
+   alongside stages 3–4 rather than strictly between them.
+3. **Per-chunk props — foliage and rocks DONE.** Remaining: barriers. `BarrierLayout`
+   plans from a single centreline, so it needs to work per road and per chunk, and it
+   needs a rule at junctions. Also remaining: bush brushing (`BushField` hit-and-drag)
+   and knocking trees over.
+4. **Biome rings — ring index, tint and foliage DONE.** Remaining:
+   - position-based sky, fog and weather that cross-fade at borders (the `GameConfig`
+     global-write audit in §B);
+   - per-ring `surface_grip` and surfaces, since `surface_at` is only road / off-road
+     today;
+   - per-ring water level;
+   - per-biome difficulty, which depends on the road spec's per-ring knobs;
+   - noise on the ring borders.
+   §B still says "region state has to become position-based" — that holds.
+4½. **NEW — a playable shell, before the playtest gate.** Stages 0–4 are meant to be
+   playtested as a pure drive, and mobile is a target, so the prototype needs:
+   - the game HUD (speed, Health gauge, later the temperature gauge);
+   - mobile touch controls;
+   - a pause page (`MenuPage` + `MenuNav.attach` + nav test) with Settings and a way to
+     reset the car;
+   - stuck or flipped auto-recovery made network-aware. `TrackProgress` assumes one
+     centreline, so recovery should reuse `free_roam.gd._road_pose`.
+   The hub stays unreachable until stage 6 rewires title → world. Moving
+   `FreeRoamSettings` onto `GameConfig` / `game_config.tres` (CLAUDE.md: tunables live
+   there) can happen here or in stage 6, once the knobs have settled.
+5. **Damage chain and rest stops — unchanged, still valid.** Temperature, cooling failure,
+   overheat drain, 0-HP respawn, lighting, free repair, travel, spectators at rest stops.
+   The rest-stop page at this stage: repair, tune, travel. Needs rest stop positions from
+   stage 1. Rest stops can also seed `prefill` for the fade on travel.
+6. **The world session and save — unchanged.** `WorldSession`, schema bump (profile wipe),
+   title → world (replacing the direct `run/main_scene` boot), the map page. The map is
+   cheap now because the whole network is known at boot: draw it and mask it to driven
+   roads.
+7. **Loot — unchanged.** Pickups, carried / stash / garage, the dropped stash, part
+   fitting, car titles, starter choice, rumours and the journal, and **biome loot tables
+   with the catalogue-to-biome pacing pass**. That pass then fixes the island and ring
+   sizes. A bigger island loops back to stage 1 (build cost) and to the floating-origin
+   check: today's 5 km radius is already about 10 km across, right at the threshold in
+   *The core technical problem*.
+8. **Demolition and docs — unchanged, plus:** the `TerrainManager` streaming mode, the
+   corridor pipeline (`bake_track`, `TrackGenerator`, `TrackCache`), and possibly
+   `MenuShowcase` and most of `HubShell`. Rewrite `gameplay.md`, `PIVOT-CHANGES.md` and the
+   affected `features/` docs. Then a full test run.
+
+Stages 0–4½ can be played as a pure drive, and should be playtested before 5–7.
 
 ## Hazards
 
@@ -380,6 +491,10 @@ Stages 0–4 can be played as a pure drive, and should be playtested before 5–
 - **Island and ring sizes:** they follow from the catalogue-to-biome pacing pass in
   stage 7.
 - **Everything in `todo/road-network-generation.md`:** to be brainstormed with the user.
+  The scope is now smaller (see *Dependencies*).
+- **Road-first terrain vs. the stage features:** do cliffs, camber and jump crests come
+  back, and do roads get a visible edge? (stage 1)
+- **When the game stops matching the lab exactly.**
 
 ## Road-network lab — the liked preset (2026-10-20, revised)
 

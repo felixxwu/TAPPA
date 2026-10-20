@@ -119,6 +119,9 @@ chunk.
 
 ## Not in the prototype yet
 
-Barriers, rest stops, pickups, the per-region look (rings are a vertex tint
-only), damage and checkpoint logic, threading, and the self-testing auto driver. The settings
+Barriers, rest stops (the lab places one every 300 m; `RoadNetwork` doesn't port that yet),
+pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
+stuck or flipped recovery (only the manual **R**), the game HUD, mobile touch controls, a
+pause or settings page, threading, and the self-testing auto driver. The remaining work is
+staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.
