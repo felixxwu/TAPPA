@@ -10,7 +10,7 @@ extends Control
 #
 # How it draws, cheaply:
 #   1. RoadLayer, a Node2D in a small SubViewport, draws the flat map WORLD-ALIGNED around a draw
-#      centre (grid, driven roads, nearby faint roads). That command list is only rebuilt when the
+#      centre (driven roads, nearby faint roads). That command list is only rebuilt when the
 #      car has moved `minimap_redraw_move_m` or entered a new driven cell, at most
 #      `minimap_redraw_hz` times a second.
 #   2. Every frame only the Node2D's transform changes (rotate heading-up, slide under the car),
@@ -32,7 +32,6 @@ const BEACON_LIT := Color(1.0, 0.55, 0.1)      # TerrainStreamer.BEACON_LIT
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)  # TerrainStreamer.BEACON_UNLIT
 const LOOT_COLOR := Color(0.2, 0.55, 1.0)      # the loot post's colour (TerrainStreamer._site_marker)
 const CELL_M := 40.0  # road lookup cells match the driven cells (WorldSession.DRIVEN_CELL_M)
-const GRID_LINE_M := 100.0
 const MARKER_REFRESH_S := 1.0
 const SHADOW_PX := 3.0
 
@@ -95,9 +94,10 @@ func _ready() -> void:
 	_mat.shader = SHADER
 	_mat.set_shader_parameter("map_tex", _vp.get_texture())
 	_mat.set_shader_parameter("near_frac", near_frac)
-	_mat.set_shader_parameter("bg_color", Color(0.0, 0.0, 0.0, 0.55))
+	# No backdrop: the roads float over the world, framed only by a faint rim.
+	_mat.set_shader_parameter("bg_color", Color(0.0, 0.0, 0.0, 0.0))
 	_mat.set_shader_parameter("rim_color", Color(UITheme.INK, 0.45))
-	_mat.set_shader_parameter("shadow_color", Color(0.0, 0.0, 0.0, 0.35))
+	_mat.set_shader_parameter("shadow_color", Color(0.0, 0.0, 0.0, 0.0))
 	_ground.material = _mat
 	add_child(_ground)
 	_overlay = MarkerLayer.new()
@@ -168,16 +168,6 @@ func set_view(xz: Vector2, fwd: Vector2) -> void:
 	car_xz = xz
 	if fwd.length_squared() > 1e-6:
 		theta = -PI * 0.5 - fwd.angle()
-
-
-# Only the ground frame (the tilted map) takes a tap, not the transparent corners beside it.
-func _has_point(point: Vector2) -> bool:
-	var f := (point - _inner.position) / _inner.size
-	if f.y < 0.0 or f.y > 1.0:
-		return false
-	var den := near_frac + (1.0 - near_frac) * f.y
-	var gx := 0.5 + (f.x - 0.5) / den
-	return gx >= 0.0 and gx <= 1.0
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -354,22 +344,6 @@ class RoadLayer:
 		var k := float(map._vp.size.x) / map.view_m
 		var radius := map.draw_radius()
 		var c := map._draw_centre
-		# A faint world grid: it is what makes the tilt and the motion read on empty ground.
-		var grid := PackedVector2Array()
-		var g0x := floorf((c.x - radius) / GRID_LINE_M) * GRID_LINE_M
-		var g0y := floorf((c.y - radius) / GRID_LINE_M) * GRID_LINE_M
-		var x := g0x
-		while x <= c.x + radius:
-			grid.append(Vector2(x - c.x, -radius) * k)
-			grid.append(Vector2(x - c.x, radius) * k)
-			x += GRID_LINE_M
-		var y := g0y
-		while y <= c.y + radius:
-			grid.append(Vector2(-radius, y - c.y) * k)
-			grid.append(Vector2(radius, y - c.y) * k)
-			y += GRID_LINE_M
-		if not grid.is_empty():
-			draw_multiline(grid, Color(UITheme.INK, 0.12), 1.0)
 		var roads := map.gather_roads(radius)
 		var driven: PackedVector2Array = roads[0]
 		var faint: PackedVector2Array = roads[1]

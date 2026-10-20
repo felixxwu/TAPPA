@@ -155,9 +155,21 @@ func _tap(mm: MiniMap) -> void:
 func test_a_tap_on_the_map_asks_for_the_full_map() -> void:
 	var mm := _map()
 	watch_signals(mm)
-	assert_true(mm._has_point(mm.screen_of(Vector2(0.5, 0.5))))
 	_tap(mm)
 	assert_signal_emitted(mm, "open_requested")
+
+
+# The whole minimap box takes a press, not just the tilted map inside it: its top corners (outside
+# the trapezoid) open the full map too.
+func test_a_press_anywhere_on_the_minimap_box_counts() -> void:
+	# Godot routes a press to a Control when its _has_point accepts it; the default is the whole
+	# rect. The minimap used to narrow that to the tilted map shape, so a press on the box's
+	# corners did nothing — it must not override _has_point again.
+	var names: Array = []
+	for m: Dictionary in (load("res://scripts/free_roam/mini_map.gd") as Script).get_script_method_list():
+		names.append(String(m["name"]))
+	assert_false("_has_point" in names, "the whole minimap box takes a press")
+	assert_eq(_map().mouse_filter, Control.MOUSE_FILTER_STOP, "and it does take presses")
 
 
 func test_toggle_map_asks_for_the_full_map() -> void:

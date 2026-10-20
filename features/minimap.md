@@ -16,14 +16,13 @@ A navigation-software style map at the top centre of the screen while driving.
   low in the frame (`minimap_car_depth`), so most of the view is road ahead.
 - **Tilted like the ground.** The flat map is shown as a plane tilted away from the viewer:
   the far edge (top) is narrower and compressed, the near edge (bottom) full size, with a soft
-  fade at the far and side edges, an ink rim and a hard drop shadow. `minimap_tilt` is how
+  fade at the far and side edges and a faint ink rim — no dark backdrop, the roads float over
+  the world (the shader's `bg_color` / `shadow_color` are transparent). `minimap_tilt` is how
   much wider the ground at the far edge is than at the near edge.
 - **Roads you've driven** (`WorldSession.has_driven` on the segment's midpoint cell, the same
   rule as the full map), in ink with a dark casing.
 - **A little road ahead:** undriven road within `minimap_nearby_road_m` of a point a little
   ahead of the car, drawn faint, so the road you're on and the next junction show.
-- **A faint 100 m world grid**, which is what makes the tilt and the motion read on empty
-  ground.
 - **Sites you've come across** (`WorldSession.seen_sites`): rest stops as dots (orange lit,
   grey unlit: `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`), loot as a blue diamond (the loot
   post's colour) only while something lies there (`LootDirector.loot_at(site)` non-empty).
@@ -39,7 +38,7 @@ which adds any site within the radius to the world's `seen` list (`WorldSession.
 
 ## Opening the whole map
 
-Tap or click the minimap (only the tilted frame takes the tap, `_has_point`), or press
+Tap or click anywhere on the minimap's box (not only the tilted map inside it), or press
 **M** / gamepad **Back** (`toggle_map`). It emits `open_requested`; `free_roam.gd →
 open_full_map` pauses the game, disarms the pause menu and shows `WorldPages.show_map`.
 Closing the map (Back, Esc / B, or M again) unpauses and goes straight back to driving. The
