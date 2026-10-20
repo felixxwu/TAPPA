@@ -182,8 +182,13 @@ planted on it (`is_clear`).
   water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
   further on.
 - **Placeholder markers:** until rest stops and loot get real models, a coloured post marks each
-  site in near chunks (`_site_marker`): tall orange for a rest stop, short blue for loot,
-  purple for a dead end. `FreeRoamSettings.site_markers` turns them off.
+  site in near chunks (`_site_marker`): tall orange for a rest stop, short blue for an empty loot
+  slot, purple for a dead end; a loot site showing an item gets a coloured crate instead
+  (`_loot_marker`, rebuilt by `refresh_loot_markers` when the pool changes).
+  `FreeRoamSettings.site_markers` turns the posts off.
+- **Beacons:** every rest stop and every piece of loot also has a tall beam of light visible from far
+  beyond the near chunks, and loot a floating name — `SiteBeacons`, see [loot.md](loot.md) →
+  "Seeing it".
 
 On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
 

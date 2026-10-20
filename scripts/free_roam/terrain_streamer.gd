@@ -877,21 +877,11 @@ func _site_marker(i: int) -> MeshInstance3D:
 	return mi
 
 
-# A piece of loot lying at a site: a crate under a tall beam of light, coloured by kind (gold for
-# a car title, orange an engine, green a drivetrain kit, cyan a part, white a rumour), so it can
-# be spotted from the road.
+# A piece of loot lying at a site: a crate coloured by kind (LootLibrary.colour: gold for a car
+# title, orange an engine, green a drivetrain kit, cyan a part, white a rumour). Its tall beam and
+# floating name are SiteBeacons', which shows them from much further than near chunks reach.
 func _loot_marker(i: int, item: Dictionary) -> Node3D:
-	var col := Color(0.3, 0.85, 1.0)
-	match String(item.get("kind", "")):
-		"car":
-			col = Color(1.0, 0.8, 0.2)
-		"rumour":
-			col = Color(0.95, 0.95, 0.95)
-		_:
-			if LootLibrary.is_engine(item):
-				col = Color(1.0, 0.45, 0.15)
-			elif LootLibrary.is_drivetrain(item):
-				col = Color(0.4, 1.0, 0.45)
+	var col := LootLibrary.colour(item)
 	var root := Node3D.new()
 	root.name = "Loot%d" % i
 	var c := sites.pos[i]
@@ -907,29 +897,30 @@ func _loot_marker(i: int, item: Dictionary) -> Node3D:
 	crate.position.y = 0.9
 	crate.rotation.y = ScatterMath.hash01(i, 0, settings.world_seed, 91) * TAU
 	root.add_child(crate)
-	var beam := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.12
-	cyl.bottom_radius = 0.12
-	cyl.height = 14.0
-	var beam_mat := mat.duplicate() as StandardMaterial3D
-	beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	beam_mat.albedo_color = Color(col.r, col.g, col.b, 0.45)
-	cyl.material = beam_mat
-	beam.mesh = cyl
-	beam.position.y = 8.0
-	root.add_child(beam)
 	return root
 
 
-# Take a loaded site's loot marker away (the loot was collected).
-func refresh_loot_marker(i: int) -> void:
-	var st: ChunkState = _chunks.get(_chunk_of(sites.pos[i]))
-	if st == null or st.foliage == null:
-		return
-	var node := st.foliage.get_node_or_null("Loot%d" % i)
-	if node != null:
-		node.queue_free()
+# Redraw every loaded loot site's marker from loot_query (what the sites show changed: something
+# was picked up, dropped or lost, so items appear, move or go).
+func refresh_loot_markers() -> void:
+	for coord: Vector2i in _chunks:
+		var st: ChunkState = _chunks[coord]
+		if st.foliage == null:
+			continue
+		var cm := settings.chunk_m
+		for i in sites.in_box(coord.x * cm, coord.y * cm, (coord.x + 1) * cm, (coord.y + 1) * cm):
+			if sites.kind[i] == RoadSites.Kind.REST or _chunk_of(sites.pos[i]) != coord:
+				continue
+			for n in ["Loot%d" % i, "Site%d" % i]:
+				var old := st.foliage.get_node_or_null(n)
+				if old != null:
+					st.foliage.remove_child(old)
+					old.queue_free()
+			var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
+			if not item.is_empty():
+				st.foliage.add_child(_loot_marker(i, item))
+			elif settings.site_markers:
+				st.foliage.add_child(_site_marker(i))
 
 
 # Re-colour a loaded rest stop's beacon (it was just lit).

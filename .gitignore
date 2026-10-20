@@ -68,3 +68,8 @@ tools/.cache/
 # Python bytecode cache from running tools/*.py
 __pycache__/
 *.pyc
+# Free-roam beacon and minimap screenshots (tools/beacon_capture.tscn, tools/minimap_capture.tscn)
+/tools/beacon_capture_*.png
+/tools/beacon_capture_*.png.import
+/tools/minimap_capture*.png
+/tools/minimap_capture*.png.import

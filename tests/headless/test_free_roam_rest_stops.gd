@@ -206,3 +206,18 @@ func test_the_hud_shows_engine_temperature_and_warns_when_the_cooling_fails() ->
 	await get_tree().process_frame
 	assert_ne(hud.cooling_warning(), "")
 	dmg.repair(Config.data)
+
+
+# No menu blocks out the world behind it with a solid colour: every full-screen dim is
+# see-through, and the page's own body box is too, on the card pages and on Tune car.
+func test_no_rest_stop_page_paints_an_opaque_backdrop() -> void:
+	_page.open(0)
+	for v in [RestStopPage.View.MAIN, RestStopPage.View.TUNE, RestStopPage.View.PARTS]:
+		_page._show(v)
+		for rect in _page._page.find_children("*", "ColorRect", true, false):
+			var cr := rect as ColorRect
+			if cr.anchor_right == 1.0 and cr.anchor_bottom == 1.0:
+				assert_lt(cr.color.a, 1.0, "view %d: a full-screen backdrop lets the world through" % v)
+		var box := (_page._page._panel.get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
+		assert_eq(box.bg_color.a, 0.0, "view %d: the body box is see-through" % v)
+	_page.close()

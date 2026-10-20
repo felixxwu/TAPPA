@@ -130,7 +130,7 @@ func _build_main() -> void:
 
 
 func _build_tune() -> void:
-	_page = MenuPage.new({"title": "Tune car", "dim": true, "width": UITheme.px(560)})
+	_page = MenuPage.new({"title": "Tune car", "dim": true, "alpha": 0.0, "width": UITheme.px(560)})
 	add_child(_page)
 	_tune_panel = TuningPanel.new()
 	_page.body().add_child(_tune_panel)

@@ -1,8 +1,10 @@
 # Loot (free roam)
 
-**Source:** `scripts/free_roam/loot_library.gd` (`LootLibrary`: pure tables, placement, fitting),
-`scripts/free_roam/loot_director.gd` (`LootDirector`: the loot loop in the world), the Parts / Garage /
-Journal pages of `scripts/free_roam/rest_stop_page.gd`, and the loot markers in `TerrainStreamer`.
+**Source:** `scripts/free_roam/loot_library.gd` (`LootLibrary`: pure tables, the pool, fitting, names
+and colours), `scripts/free_roam/loot_director.gd` (`LootDirector`: the loot loop in the world),
+`scripts/free_roam/site_beacons.gd` (`SiteBeacons`: the tall beams over rest stops and loot, and the
+floating names over loot), the Parts / Garage / Journal pages of
+`scripts/free_roam/rest_stop_page.gd`, and the ground crates in `TerrainStreamer`.
 
 **Tests:** `tests/headless/test_loot.gd`
 
@@ -26,27 +28,55 @@ Everything is found, nothing is bought (decisions 10–18 in `todo/2026-10-19-fr
 - the swap-tier engines and the drivetrain kits, spread from ring 1 outward;
 - a rumour of ring r + 1.
 
-`LootLibrary.place(sites, ring_count, seed)` puts each ring's items on its loot slots and dead ends,
-seeded:
-- **Dead ends take the best items first** (cars, engines, rumours, kits, parts), so every dead end
-  has a payoff while its ring has items (decision 30). A dead end with nothing is a lookout.
-- Leftover items spill into the next ring out.
-- Each item exists once (decision 17).
+## The pool: every car and part exists once
 
-On the default island the four rings have 12, 31, 27 and 35 loot sites for 12, 14, 13 and 12 items.
-`LootDirector.pacing_report()` prints this at boot.
+Nothing is pinned to a site. `LootLibrary.assign(sites, ring_count, seed, taken, used)` decides what
+every loot slot and dead end shows **right now**, and `LootDirector._reassign` re-runs it whenever
+what the player holds changes (a pickup, a drop, a lost drop), emitting `pool_changed`:
+- **The pool.** A ring's pool is its table minus everything the player has
+  (`LootDirector.taken_keys()`, by `item_key`): owned cars, every car's fitted parts, the stash,
+  `carried`, the dropped pile, and the rumours of rings already revealed. The moment the player has
+  an item it is gone from **every** site at once; once a ring's things are all found, its sites
+  show nothing. Owning a car (the starter included) means its title never shows on the ground.
+- **Sites show the pool in order.** Dead ends first, with the best items (cars, engines, rumours,
+  kits, parts — decision 30), then loot slots, each group in a seeded order; site k shows pool item
+  k mod pool size. So with more sites than items each item shows at more than one site (all of them
+  empty out together when it's taken), and with more items than sites the rest wait their turn.
+- **Emptied sites** (`collected`, oldest first) stay empty — unless the ring's pool is bigger than
+  its free sites, when the oldest emptied sites fill again. The latest one never does (the car is
+  still on it).
+- **A ring with no loot sites** (the road network never reached it) folds its table into the
+  nearest ring that has some (`pool_rings`).
+- **A lost drop** (giving up again before fetching the first) puts its items back in the pool.
+
+There are plenty of sites: `FreeRoamSettings.loot_slot_spacing_m` is 150 m of road. The road
+network varies a lot by world seed; `LootDirector.pacing_report()` prints sites, table size, items
+left and sites showing something per ring at boot.
+
+## Seeing it
+
+- **On the ground:** a crate coloured by kind (`LootLibrary.colour`: gold car, orange engine,
+  green kit, cyan part, white rumour), built with the near chunk (`TerrainStreamer._loot_marker`;
+  `refresh_loot_markers` rebuilds every loaded one when the pool changes).
+- **From far away:** `SiteBeacons` keeps one beam per site for the whole world — every rest stop
+  (grey, orange once lit; `GameConfig.beacon_rest_height_m`) and every piece of loot (its colour;
+  `beacon_loot_height_m`), within `beacon_range_m`. Beams ignore fog and are widened with distance
+  (`beacon_width_per_m`) so they stay a few pixels wide. Over each piece of loot a floating name
+  (`LootLibrary.ground_label`: "New car", "New upgrade", "New engine", "Drivetrain kit", "Rumour")
+  faces the camera at a fixed screen size and shows through hills, within `beacon_label_range_m`.
 
 ## The loop (`LootDirector`)
 
 - **Collect:** driving within `PICKUP_REACH_M` of a loot pad takes the item into `carried`, which
-  isn't yours yet (decision 10). Its marker goes and the HUD toasts what was found.
+  isn't yours yet (decision 10). The pool is re-assigned (it's gone from every site) and the HUD
+  toasts what was found.
 - **Bank:** opening the rest-stop page calls `bank()`. Parts go to the shared `stash`; car titles
   become owned cars.
 - **Drop:** when the car gives up, `carried` is left at the wreck (`dropped`, marked by a red
   beacon). Driving back within `DROPPED_REACH_M` recovers it. Giving up again first replaces the
-  drop, so the old one is lost for good (decision 11).
+  drop: the old one is lost, and its items go back into the pool to be found again (decision 11).
 - **Rumours** are read on pickup: their ring is added to `revealed` (ring 0 starts revealed).
-  The journal (`journal()`) lists each revealed ring's items, found or not.
+  The journal (`journal()`) lists each revealed ring's items; "found" means the player has it.
 
 All of it lives in the world block (`WorldSession`: carried, stash, dropped, collected, revealed);
 see [world-session.md](world-session.md).

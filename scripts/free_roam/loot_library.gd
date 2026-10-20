@@ -87,44 +87,97 @@ static func _rank(item: Dictionary) -> int:
 	return 4
 
 
-# Place every ring's table on its sites. Returns {site id: item}. Dead ends take the best items
-# first, then loot slots take the rest in a seeded order. A ring with more items than sites
-# spills the leftovers into the next ring out (and the last ring into earlier ones); sites left
-# over stay empty (a dead end with nothing is a lookout).
-static func place(sites: RoadSites, ring_count: int, world_seed: int) -> Dictionary:
+# --- the pool: which site shows what, right now ----------------------------------------------------
+#
+# Every car and part exists ONCE (decision 17, tightened): it is in the pool until the player has it
+# (owned, fitted, in the stash, carried, or lying in the dropped pile) — then it is gone from every
+# site at once. A ring's sites show its remaining pool: dead ends first with the best items, then
+# loot slots, in a seeded order; with more sites than items each item shows at several sites (all
+# of them empty out together when it's taken), and with more items than sites the rest wait their
+# turn. A site the player has emptied stays empty — unless the ring's pool is bigger than its free
+# sites, when the oldest emptied sites (never the latest) fill again. A ring with no loot sites at
+# all (the road network never reached it) folds its table into the nearest ring that has some.
+
+# For each ring, the rings whose tables its sites carry. `site_counts[r]` = loot sites in ring r.
+static func pool_rings(site_counts: PackedInt32Array) -> Array:
+	var n := site_counts.size()
+	var out: Array = []
+	for r in n:
+		out.append([])
+	for r in n:
+		var host := -1
+		for d in n:
+			for c in [r - d, r + d]:
+				if host < 0 and c >= 0 and c < n and site_counts[c] > 0:
+					host = c
+		if host >= 0:
+			(out[host] as Array).append(r)
+	return out
+
+
+# The remaining pool of `table`: the items whose item_key is not in `taken`, best first.
+static func remaining(table: Array, taken: Dictionary) -> Array:
+	var out: Array = []
+	for item: Dictionary in table:
+		if not taken.has(item_key(item)):
+			out.append(item)
+	var ranked := out.duplicate()
+	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ra := _rank(a)
+		var rb := _rank(b)
+		return ra < rb or (ra == rb and out.find(a) < out.find(b)))
+	return ranked
+
+
+# What every loot site shows now: {site: item}. `used` is the emptied sites, oldest first.
+static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Dictionary, used: Array) -> Dictionary:
 	var tables := ring_tables(ring_count)
-	var by_ring: Array = []
+	var order: Array = []  # per ring: its loot sites, dead ends first, each group seeded
+	var counts := PackedInt32Array()
+	counts.resize(ring_count)
+	var dead: Array = []
+	var slots: Array = []
 	for r in ring_count:
-		by_ring.append({"dead": [], "slots": []})
+		dead.append([])
+		slots.append([])
 	for i in sites.count():
-		var k := sites.kind[i]
-		if k == RoadSites.Kind.REST:
+		if sites.kind[i] == RoadSites.Kind.REST:
 			continue
 		var r := clampi(sites.ring[i], 0, ring_count - 1)
-		by_ring[r]["dead" if k == RoadSites.Kind.DEAD_END else "slots"].append(i)
+		(dead[r] if sites.kind[i] == RoadSites.Kind.DEAD_END else slots[r]).append(i)
+		counts[r] += 1
+	for r in ring_count:
+		order.append(_shuffled(dead[r], world_seed, r * 2 + 1) + _shuffled(slots[r], world_seed, r * 2 + 2))
+	var used_ids: Array = []
+	for u in used:
+		used_ids.append(int(u))
+	var hosts := pool_rings(counts)
 	var out := {}
-	var spill: Array = []
-	var order := range(ring_count)
-	for r in order:
-		var items: Array = (tables[r] as Array) + spill
-		spill = []
-		items.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _rank(a) < _rank(b))
-		var dead: Array = _shuffled(by_ring[r]["dead"], world_seed, r * 2 + 1)
-		var slots: Array = _shuffled(by_ring[r]["slots"], world_seed, r * 2 + 2)
-		var free: Array = dead + slots
-		for j in items.size():
-			if j < free.size():
-				out[free[j]] = items[j]
-			else:
-				spill.append(items[j])
-	# Leftovers past the last ring go back inward to any empty site.
-	if not spill.is_empty():
-		for r in range(ring_count - 1, -1, -1):
-			for i in (by_ring[r]["dead"] as Array) + (by_ring[r]["slots"] as Array):
-				if spill.is_empty():
-					break
-				if not out.has(i):
-					out[i] = spill.pop_front()
+	for r in ring_count:
+		var table: Array = []
+		for t: int in hosts[r]:
+			table.append_array(tables[t])
+		var pool := remaining(table, taken)
+		if pool.is_empty():
+			continue
+		var ring_sites: Array = order[r]
+		var emptied: Array = []  # this ring's emptied sites, oldest first
+		for u: int in used_ids:
+			if ring_sites.has(u) and not emptied.has(u):
+				emptied.append(u)
+		var refill := {}
+		var free_count := ring_sites.size() - emptied.size()
+		for k in maxi(emptied.size() - 1, 0):  # never the latest: the car is still on it
+			if free_count >= pool.size():
+				break
+			refill[emptied[k]] = true
+			free_count += 1
+		var j := 0
+		for site: int in ring_sites:
+			if emptied.has(site) and not refill.has(site):
+				continue
+			out[site] = pool[j % pool.size()]
+			j += 1
 	return out
 
 
@@ -231,3 +284,32 @@ static func card_text(item: Dictionary) -> PackedStringArray:
 		var mode := int(id.substr("drivetrain:".length()))
 		return PackedStringArray([CarLibrary.drive_text(mode) + " kit", "Drivetrain conversion"])
 	return PackedStringArray([BoostLibrary.label_for(id), "Level %d" % (int(item.get("level", 0)) + 1)])
+
+
+# An item's colour on the ground, its beam and the minimap: gold a car title, orange an engine,
+# green a drivetrain kit, cyan a part, white a rumour.
+static func colour(item: Dictionary) -> Color:
+	match String(item.get("kind", "")):
+		"car":
+			return Color(1.0, 0.8, 0.2)
+		"rumour":
+			return Color(0.95, 0.95, 0.95)
+	if is_engine(item):
+		return Color(1.0, 0.45, 0.15)
+	if is_drivetrain(item):
+		return Color(0.4, 1.0, 0.45)
+	return Color(0.3, 0.85, 1.0)
+
+
+# The floating name over an item on the ground: what it is, not which one.
+static func ground_label(item: Dictionary) -> String:
+	match String(item.get("kind", "")):
+		"car":
+			return "New car"
+		"rumour":
+			return "Rumour"
+	if is_engine(item):
+		return "New engine"
+	if is_drivetrain(item):
+		return "Drivetrain kit"
+	return "New upgrade"

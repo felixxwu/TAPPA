@@ -68,8 +68,9 @@ extends Resource
 ## Road between rest stops, per biome ring counting outward (the last entry covers any ring
 ## beyond the list). Decision 31: one value per ring, all equal to start with.
 @export var rest_stop_spacing_m := PackedFloat32Array([300.0, 300.0, 300.0])
-## Road between loot pull-ins (slots; stage 7 decides which hold loot).
-@export var loot_slot_spacing_m := 400.0
+## Road between loot pull-ins. Plenty of them: each shows something from its ring's remaining
+## pool (LootLibrary.assign), so there should be more pull-ins than things to find.
+@export var loot_slot_spacing_m := 150.0
 @export var rest_stop_radius_m := 16.0
 @export var loot_pad_radius_m := 7.0
 @export var dead_end_radius_m := 14.0

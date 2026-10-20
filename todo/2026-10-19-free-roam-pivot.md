@@ -678,8 +678,8 @@ Numbering continues from decision 32.
 - **D64. Changing parts or car reloads the scene at the rest stop** (about 1–2 s), so the car is
   fielded through the full `apply_owned` path rather than re-staged live, which `car.gd` warns
   against.
-- **D65. A car title for a model you already own still grants a second car.** Harmless, and
-  simpler than a special case.
+- **D65. ~~A car title for a model you already own still grants a second car.~~** Superseded by
+  D77: a car you own is no longer in the pool, so its title never shows.
 - **D66. REVIEW — the pacing pass.** The island stays at 5 km radius with 4 rings. That gives 12–14
   finds per ring; ring 0's 12 sites are exactly full, and the outer rings have about twice as many
   sites as items, so many slots are empty. Levers: `loot_slot_spacing_m`, or more items (e.g. two
@@ -717,3 +717,33 @@ Numbering continues from decision 32.
   earlier "Ramp crank torque down over 100ms on cut" change: a stronger engine reaches the limiter
   sooner within the test's 150-tick climb and spends time in the cut. I didn't change engine
   physics or loosen the tests; the call is yours.
+
+### After the build (2026-10-20, user feedback)
+
+- **D76. Menus are card lists again** (user ask: "reuse the card list"). `CardCarousel` / `CardUI`
+  are back from before the demolition; every menu that is a list of choices is a card list
+  (features/card-carousel.md). Settings, Tune car and the map stay plain pages because they are not
+  lists. The hub's 3D car previews were not restored (cars show an icon).
+- **D77. The pool replaces fixed placement (supersedes decision 17's "placed once" and D65).**
+  User ask: every car and part fully unique, plenty of places it can spawn, gone from all of them
+  once owned or picked up, and a biome's pull-ins empty once its things are found
+  (features/loot.md → "The pool"). Calls I made: **(a)** with more sites than items an item shows at
+  several sites at once (every one empties when it's taken) rather than leaving sites blank;
+  **(b)** an emptied site stays empty unless its ring's pool outgrows its free sites, then the
+  oldest refill; **(c)** a lost drop's items go back into the pool rather than vanishing; **(d)**
+  loot pull-ins every 150 m of road (was 400). **REVIEW (b) and (a).**
+- **D78. REVIEW — the road network's size varies a lot by world seed.** The default island reaches
+  all four rings, but e.g. seed 7 grows only 22 nodes / 5 km of road and never leaves rings 0–1.
+  A ring with no loot sites folds its loot into the nearest ring that has some (D77), so nothing is
+  unreachable, but such a world has only two biomes. New worlds take a random seed. Worth a
+  minimum-size rule in `RoadNetwork._grow` (re-seed or keep growing until the network reaches the
+  outer ring) — not done, it changes world generation.
+- **D79. Beacons.** Every rest stop and piece of loot has a tall beam visible from far away
+  (`SiteBeacons`, `GameConfig.beacon_*`), and loot has a floating name ("New car", "New upgrade",
+  …) at a fixed screen size that shows through hills.
+- **D80. No menu paints an opaque backdrop.** `UITheme.MODAL_DIM` is 0.7 alpha (was 0.96), and the
+  plain pages (Tune car, Settings, Map) have see-through body boxes. **REVIEW — the title screen
+  still has a solid background:** there is no world behind it yet. Options: render the island
+  behind the title, or a static backdrop.
+- **D81. Mobile pedals:** the GAS / BRAKE column is `GameConfig.mobile_pedal_band_frac` (0.36) of
+  the screen height, up from a fixed 0.20. Steer buttons are unchanged.

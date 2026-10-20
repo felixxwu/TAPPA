@@ -70,10 +70,11 @@ const FONT_PATH := "res://fonts/Jersey10.ttf"
 const BLACK := Color(0.0, 0.0, 0.0, 1.0)            # solid panel / fully opaque surface
 const PANEL := Color(0.0, 0.0, 0.0, 0.9)            # panel over the 3D world
 const PANEL_DIM := Color(0.0, 0.0, 0.0, 0.6)        # dim backdrop behind a menu
-const MODAL_DIM := Color(0.0, 0.0, 0.0, 0.96)       # backdrop behind a blocking modal
-                                                    # (confirm popup / car-park prompts):
-                                                    # heavier than PANEL_DIM so the world
-                                                    # behind reads as fully interrupted
+const MODAL_DIM := Color(0.0, 0.0, 0.0, 0.7)        # backdrop behind a blocking modal
+                                                    # (confirm popup, rest-stop page):
+                                                    # a little heavier than PANEL_DIM, but
+                                                    # never opaque — a menu always lets the
+                                                    # world behind it show through
 const SURFACE := Color(0.0028, 0.0132, 0.0071, 1.0)      # raised surface (button face) — authored Color(0.05, 0.06, 0.05)
 const SURFACE_HOVER := Color(0.0807, 0.0989, 0.0642, 1.0) # button hover/pressed lift — authored Color(0.11, 0.14, 0.11)
 

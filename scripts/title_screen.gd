@@ -73,7 +73,7 @@ func _show(v: View) -> void:
 			_page.add_action(UITheme.row_button("< Back", _show.bind(View.MAIN)))
 			MenuNav.attach(_page, {first = _cards, on_back = _show.bind(View.MAIN)})
 		View.SETTINGS:
-			_page = MenuPage.new({"title": "Settings", "width": UITheme.px(560)})
+			_page = MenuPage.new({"title": "Settings", "alpha": 0.0, "width": UITheme.px(560)})
 			add_child(_page)
 			_settings_menu = SettingsMenu.new()
 			_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL

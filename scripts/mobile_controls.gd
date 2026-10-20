@@ -398,18 +398,19 @@ func _compute_rects(size: Vector2) -> void:
 	var band_h := size.y * 0.20
 	var btn_w := clampf(size.x * 0.26, 60.0, 260.0)
 	var bx := size.x - btn_w
+	var pedal_h := size.y * Config.data.mobile_pedal_band_frac
 
 	# Right-hand pedal column, bled to the right + bottom edges. BRAKE and GAS
 	# (when both present) split the column's height evenly with no gap between
 	# them, so the two touch side-by-side (well, top-to-bottom).
 	if _has_brake_button() and _has_gas_button():
-		var half := band_h * 0.5
+		var half := pedal_h * 0.5
 		_rects["brake"] = Rect2(bx, size.y - half, btn_w, half)
-		_rects["gas"] = Rect2(bx, size.y - band_h, btn_w, half)
+		_rects["gas"] = Rect2(bx, size.y - pedal_h, btn_w, half)
 	elif _has_brake_button():
-		_rects["brake"] = Rect2(bx, size.y - band_h, btn_w, band_h)
+		_rects["brake"] = Rect2(bx, size.y - pedal_h, btn_w, pedal_h)
 	elif _has_gas_button():
-		_rects["gas"] = Rect2(bx, size.y - band_h, btn_w, band_h)
+		_rects["gas"] = Rect2(bx, size.y - pedal_h, btn_w, pedal_h)
 
 	# Left side: a slider, two steer buttons, or full-height left/right halves.
 	if _has_slider():

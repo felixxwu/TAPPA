@@ -438,6 +438,21 @@ func test_nitrous_is_smaller_than_a_pedal() -> void:
 	assert_lt(nos.get_area(), gas.get_area(), "the NOS button is smaller than the GAS pedal")
 
 
+func test_the_pedal_column_is_its_configured_share_of_the_screen() -> void:
+	var size := Vector2(1280, 720)
+	var authored := Config.data.mobile_pedal_band_frac
+	for frac in [0.25, 0.5]:
+		Config.data.mobile_pedal_band_frac = frac
+		_controls.set_scheme(MobileControls.SCHEME_SLIDER_GAS_BRAKE)
+		_controls._compute_rects(size)
+		var gas: Rect2 = _controls._rects["gas"]
+		var brake: Rect2 = _controls._rects["brake"]
+		assert_almost_eq(gas.size.y + brake.size.y, size.y * frac, 0.01, "GAS + BRAKE fill the column")
+		assert_almost_eq(brake.end.y, size.y, 0.01, "BRAKE sits on the bottom edge")
+		assert_almost_eq(gas.end.y, brake.position.y, 0.01, "GAS sits right on top of it")
+	Config.data.mobile_pedal_band_frac = authored
+
+
 func test_nitrous_wins_over_the_simple_steering_halves() -> void:
 	# THE trap: in SIMPLE_LR_AUTO the steering halves cover the whole lower screen, so a
 	# press on the NOS button lands inside a half too. It must be hit-tested FIRST, or

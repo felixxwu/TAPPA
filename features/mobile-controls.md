@@ -57,7 +57,9 @@ title-screen Settings page has no live controls, so there it just saves.)
   awareness. See [controls.md](controls.md).
 - **Per-scheme layout.** `_compute_rects` lays the active scheme's hit regions out
   as fractions of the viewport (re-laid-out on `size_changed`): a right-hand pedal
-  stack (BRAKE at the bottom, GAS above when present), and on the left either the
+  stack (BRAKE at the bottom, GAS above when present; the column is
+  `GameConfig.mobile_pedal_band_frac` of the screen height, split between the two),
+  and on the left either the
   steering **slider**, two **steer buttons**, or full-height **left/right halves**
   (simple scheme). `_build` creates only the panels the scheme uses.
 - **Big hit box, small button.** The digital touch regions in `_rects` (gas/brake,

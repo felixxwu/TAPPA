@@ -1054,6 +1054,19 @@ func has_nitrous() -> bool:
 ## fall for ever.
 @export_range(5.0, 200.0) var recovery_void_depth_m := 25.0
 
+@export_group("Beacons")
+# Free roam's beams of light over rest stops and loot (SiteBeacons, features/loot.md).
+## Height of the beam over every rest stop, metres.
+@export_range(5.0, 400.0, 1.0) var beacon_rest_height_m := 120.0
+## Height of the beam over a piece of loot, metres.
+@export_range(5.0, 400.0, 1.0) var beacon_loot_height_m := 70.0
+## Beams further than this from the camera are hidden.
+@export_range(100.0, 10000.0, 10.0) var beacon_range_m := 2500.0
+## A beam is widened by this many metres per metre of distance, so it stays a few pixels wide.
+@export_range(0.0, 0.05, 0.0005) var beacon_width_per_m := 0.004
+## The floating name over a piece of loot ("New car") shows within this distance.
+@export_range(20.0, 3000.0, 10.0) var beacon_label_range_m := 400.0
+
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).
 # Shown automatically on touch devices (DisplayServer.is_touchscreen_available()).
@@ -1066,6 +1079,9 @@ func has_nitrous() -> bool:
 ## holding) in the top-left corner. For diagnosing stuck on-screen buttons on a real
 ## phone, where nothing else is observable — see features/mobile-controls.md.
 @export var mobile_controls_debug := false
+## Height of the right-hand GAS / BRAKE pedal column, as a fraction of the screen height
+## (split between the two when both are shown). The steer buttons keep their own band.
+@export_range(0.1, 0.8, 0.01) var mobile_pedal_band_frac := 0.36
 ## Tilt-steering sensitivity (TILT scheme): multiplier on the device roll. 1.0 maps
 ## a full 90° tilt to full lock; higher reaches full lock at a gentler tilt.
 @export_range(0.5, 5.0) var tilt_sensitivity := 2.0
@@ -4382,3 +4398,34 @@ func spectator_params() -> Dictionary:
 @export_range(0.1, 2.0, 0.05) var card_carousel_confirm_flash_duration_s := 0.5
 ## How many times the card flashes within card_carousel_confirm_flash_duration_s.
 @export_range(1, 6, 1) var card_carousel_confirm_flash_count := 2
+
+@export_group("Minimap")
+## Free roam's heading-up minimap, top-centre (scripts/free_roam/mini_map.gd, features/minimap.md).
+@export var minimap_enabled := true
+## Height of the minimap as a fraction of the screen height. Keep top + height under 0.2 of the
+## screen: below that, the simple touch scheme's steering halves begin (mobile_controls.gd).
+@export_range(0.08, 0.19, 0.005) var minimap_height_frac := 0.175
+## Width / height of the minimap's frame (it narrows on a screen too thin to fit it between the
+## HUD readouts and the pause button).
+@export_range(1.0, 4.0, 0.05) var minimap_aspect := 2.4
+## Gap above the minimap, in logical pixels.
+@export_range(0.0, 40.0, 1.0) var minimap_top_px := 6.0
+## Side of the square of ground the minimap shows, in metres.
+@export_range(100.0, 2000.0, 10.0) var minimap_view_m := 460.0
+## Where the car sits in that square, front (0) to back (1): high values show mostly road ahead.
+@export_range(0.5, 0.95, 0.01) var minimap_car_depth := 0.8
+## The perspective tilt: the far edge shows (1 + tilt) times the ground width of the near edge.
+@export_range(0.0, 4.0, 0.05) var minimap_tilt := 1.7
+## A rest stop or loot slot counts as seen (and shows on the minimap and map) once the car has
+## come within this distance of it.
+@export_range(10.0, 1000.0, 5.0) var minimap_seen_radius_m := 150.0
+## Road not yet driven still shows (fainter) within this distance of a point a little ahead of
+## the car, so the road you're on and the junction coming up are on the map.
+@export_range(0.0, 500.0, 5.0) var minimap_nearby_road_m := 120.0
+## Most road redraws per second (the map only redraws when the car has moved
+## minimap_redraw_move_m or a new stretch of road has been driven; turning is free).
+@export_range(1.0, 60.0, 1.0) var minimap_redraw_hz := 15.0
+## How far the car moves before the road layer is redrawn around it, in metres.
+@export_range(1.0, 100.0, 1.0) var minimap_redraw_move_m := 12.0
+## Resolution of the flat map texture the tilt is applied to, in pixels per side.
+@export_range(128, 1024, 32) var minimap_texture_px := 384

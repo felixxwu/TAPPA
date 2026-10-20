@@ -77,36 +77,116 @@ func test_every_ring_has_each_part_at_its_own_level_and_a_rumour_of_the_next() -
 		assert_eq(rumours, [r + 1] if r < 3 else [], "ring %d's rumour" % r)
 
 
-func test_placement_is_seeded_and_puts_each_item_on_one_site() -> void:
+func _shown_keys(placed: Dictionary) -> Dictionary:
+	var out := {}
+	for site: int in placed:
+		out[LootLibrary.item_key(placed[site])] = true
+	return out
+
+
+func _loot_sites_by_ring(sites: RoadSites, ring_count: int) -> Array:
+	var out: Array = []
+	for r in ring_count:
+		out.append([])
+	for i in sites.count():
+		if sites.kind[i] != RoadSites.Kind.REST:
+			(out[clampi(sites.ring[i], 0, ring_count - 1)] as Array).append(i)
+	return out
+
+
+func test_the_pool_is_seeded_and_only_loot_sites_show_items_from_the_tables() -> void:
 	var s := _settings()
 	var sites := _sites(s)
-	var a := LootLibrary.place(sites, s.ring_count, s.world_seed)
-	var b := LootLibrary.place(sites, s.ring_count, s.world_seed)
-	assert_eq(a, b, "the same world places the same loot")
+	var a := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var b := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
+	assert_eq(a, b, "the same world shows the same loot")
 	assert_gt(a.size(), 0)
-	var keys := {}
-	for site: int in a.keys():
+	var table_keys := {}
+	for t: Array in LootLibrary.ring_tables(s.ring_count):
+		for item: Dictionary in t:
+			table_keys[LootLibrary.item_key(item)] = true
+	for site: int in a:
 		assert_ne(sites.kind[site], RoadSites.Kind.REST, "no loot at rest stops")
-		var k := LootLibrary.item_key(a[site])
-		assert_false(keys.has(k), "%s is placed once" % k)
-		keys[k] = true
+		assert_true(table_keys.has(LootLibrary.item_key(a[site])), "a real table item")
 
 
-func test_dead_ends_are_filled_first_with_the_best_items() -> void:
+func test_an_item_the_player_has_is_gone_from_every_site() -> void:
 	var s := _settings()
 	var sites := _sites(s)
-	var placed := LootLibrary.place(sites, s.ring_count, s.world_seed)
+	var before := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var key := LootLibrary.item_key(before.values()[0])
+	var after := LootLibrary.assign(sites, s.ring_count, s.world_seed, {key: true}, [])
+	assert_false(_shown_keys(after).has(key), "taken: no site shows it any more")
+	var all_taken := {}
+	for t: Array in LootLibrary.ring_tables(s.ring_count):
+		for item: Dictionary in t:
+			all_taken[LootLibrary.item_key(item)] = true
+	assert_eq(LootLibrary.assign(sites, s.ring_count, s.world_seed, all_taken, []), {},
+		"with everything found, nothing is left to show")
+
+
+func test_with_enough_sites_every_remaining_item_shows_somewhere() -> void:
+	var s := _settings()
+	var sites := _sites(s)
+	var by_ring := _loot_sites_by_ring(sites, s.ring_count)
+	var counts := PackedInt32Array()
+	for r in s.ring_count:
+		counts.append((by_ring[r] as Array).size())
+	var hosts := LootLibrary.pool_rings(counts)
+	var tables := LootLibrary.ring_tables(s.ring_count)
+	# Take items until every ring's pool fits its sites, then everything left must show.
+	var taken := {}
+	var left: Array = []
+	for r in s.ring_count:
+		var pool: Array = []
+		for t: int in hosts[r]:
+			pool.append_array(tables[t])
+		for k in pool.size():
+			if k < counts[r]:
+				left.append(pool[k])
+			else:
+				taken[LootLibrary.item_key(pool[k])] = true
+	assert_gt(left.size(), 0)
+	var shown := _shown_keys(LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, []))
+	for item: Dictionary in left:
+		assert_true(shown.has(LootLibrary.item_key(item)), "%s shows somewhere" % LootLibrary.item_key(item))
+
+
+func test_a_ring_with_no_loot_sites_folds_into_the_nearest_ring_that_has_some() -> void:
+	var hosts := LootLibrary.pool_rings(PackedInt32Array([3, 0, 2, 0]))
+	var all: Array = []
+	for r in 4:
+		all.append_array(hosts[r])
+	all.sort()
+	assert_eq(all, [0, 1, 2, 3], "every ring's table is carried somewhere, once")
+	assert_eq(hosts[1], [], "a ring with no sites hosts nothing")
+	assert_eq(hosts[3], [], "a ring with no sites hosts nothing")
+	assert_true(3 in hosts[2], "the outer empty ring folds inward to its nearest neighbour")
+	assert_eq(LootLibrary.pool_rings(PackedInt32Array([0, 0])), [[], []], "no sites anywhere: nothing shows")
+
+
+func test_an_emptied_site_stays_empty_and_the_latest_one_never_refills() -> void:
+	var s := _settings()
+	var sites := _sites(s)
+	var placed := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var site: int = placed.keys()[0]
+	var taken := {LootLibrary.item_key(placed[site]): true}
+	var after := LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, [site])
+	assert_false(after.has(site), "the site just emptied shows nothing, however big the pool")
+
+
+func test_dead_ends_show_the_best_of_their_ring() -> void:
+	var s := _settings()
+	var sites := _sites(s)
+	var placed := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
 	var dead_ends := sites.of_kind(RoadSites.Kind.DEAD_END)
 	assert_gt(dead_ends.size(), 0)
-	for i in dead_ends:
-		assert_true(placed.has(i), "dead end %d has a payoff" % i)
-	for site: int in placed.keys():
-		if placed[site]["kind"] == "car" and sites.kind[site] == RoadSites.Kind.LOOT:
-			# a car on a roadside slot means its ring had more cars than dead ends
-			var ring := sites.ring[site]
-			for d in dead_ends:
-				if sites.ring[d] == ring:
-					assert_eq(placed[d]["kind"], "car", "a dead end in ring %d took a car first" % ring)
+	for d in dead_ends:
+		assert_true(placed.has(d), "dead end %d has a payoff" % d)
+		for site: int in placed:
+			if sites.kind[site] == RoadSites.Kind.LOOT and sites.ring[site] == sites.ring[d] \
+					and placed[site]["kind"] == "car":
+				assert_eq(placed[d]["kind"], "car", "a roadside car means every dead end in ring %d took one" % sites.ring[d])
 
 
 # --- parts on a car ---------------------------------------------------------------------------------
@@ -170,16 +250,42 @@ func test_driving_to_loot_carries_it_and_a_rest_stop_banks_it() -> void:
 	var st: TerrainStreamer = scene.get_node("Terrain")
 	var part_site := _site_with(loot, func(i: Dictionary) -> bool: return i["kind"] == "part")
 	await _drive_to(scene, st.sites.pos[part_site])
+	var key := LootLibrary.item_key(loot.loot_at(part_site))
 	loot.step()
 	assert_true(loot.is_collected(part_site))
 	assert_eq(WorldSession.list("carried").size(), 1, "carried, not yet yours")
-	assert_true(loot.loot_at(part_site).is_empty(), "it's gone from the world")
+	assert_true(loot.loot_at(part_site).is_empty(), "the site is emptied")
+	assert_false(_shown_keys(loot.placement).has(key), "and the item is gone from every other site too")
 	var page: RestStopPage = scene.get_node("RestStopPage")
 	page.open(0)
 	assert_eq(page.banked.size(), 1)
 	assert_eq(WorldSession.list("carried").size(), 0)
 	assert_eq(WorldSession.list("stash").size(), 1, "banked into the stash")
 	page.close()
+
+
+func test_a_car_the_player_owns_never_shows_on_the_ground() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	var starter := String(WorldSession.active_car()["model_id"])
+	assert_false(_shown_keys(loot.placement).has(LootLibrary.item_key({"kind": "car", "id": starter})),
+		"the starter car is already yours")
+
+
+func test_loot_on_the_ground_has_a_beam_and_a_name_and_they_go_when_it_is_taken() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	var site: int = loot.placement.keys()[0]
+	var marker := loot.beacons.get_node_or_null("Loot%d" % site)
+	assert_not_null(marker, "a beam over the loot")
+	assert_eq((marker.get_node("Label") as Label3D).text, LootLibrary.ground_label(loot.placement[site]).to_upper())
+	loot.collect(site)
+	await get_tree().process_frame
+	assert_false(loot.placement.has(site))
+	var gone := loot.beacons.get_node_or_null("Loot%d" % site)
+	assert_true(gone == null or gone.is_queued_for_deletion(), "the emptied site's beam goes")
+	var rest := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)[0]
+	assert_not_null(loot.beacons.get_node_or_null("Rest%d" % rest), "every rest stop has a beam")
 
 
 func test_a_banked_car_title_joins_the_garage() -> void:
@@ -226,17 +332,19 @@ func test_giving_up_drops_the_loot_at_the_wreck_and_driving_back_recovers_it() -
 func test_a_second_drop_replaces_the_first() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
-	var parts: Array = []
-	for site: int in loot.placement.keys():
-		if loot.placement[site]["kind"] == "part":
-			parts.append(site)
-	loot.collect(parts[0])
+	var is_part := func(i: Dictionary) -> bool: return i["kind"] == "part"
+	var first := _site_with(loot, is_part)
+	var lost_key := LootLibrary.item_key(loot.placement[first])
+	loot.collect(first)
 	loot.drop_at(Vector3(10, 0, 10))
-	loot.collect(parts[1])
+	assert_true(loot.taken_keys().has(lost_key), "lying in the drop, it's still yours to fetch")
+	var second := _site_with(loot, is_part)
+	loot.collect(second)
 	loot.drop_at(Vector3(-20, 0, 15))
 	var d := WorldSession.dropped()
 	assert_eq((d["items"] as Array).size(), 1)
-	assert_eq(int(d["items"][0]["site"]), parts[1], "the first drop is lost for good")
+	assert_eq(int(d["items"][0]["site"]), second, "the first drop is lost")
+	assert_false(loot.taken_keys().has(lost_key), "and what it held is back in the pool to be found again")
 
 
 func test_the_parts_page_fits_and_removes_parts_and_reloads_the_car_on_close() -> void:
