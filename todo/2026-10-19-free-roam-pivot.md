@@ -759,3 +759,7 @@ Numbering continues from decision 32.
   either lane, picks the loot up / lights the stop and fully heals the car (swept check,
   `RoadSites.reached`). Stopping at a rest stop is only for its page. Beams fade out towards their
   tops; the minimap has no rim or edge line.
+- **D84. Quick travel from the map, anywhere** (user ask), and the map frames what's been explored.
+  **REVIEW:** travelling repairs the car (as at a rest stop), so a player whose cooling has failed
+  can open the map and travel to safety instead of racing the gauge — it weakens the damage chain's
+  tension. Options: no travel while the cooling is broken, or travel without the repair.

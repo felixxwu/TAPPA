@@ -200,3 +200,79 @@ func test_the_pause_menu_opens_the_map_and_stats_and_comes_back() -> void:
 	assert_eq(pages.cards().card_count(), WorldPages.STATS_SHOWN.size() + 1, "a card per stat, and the rings reached")
 	pages.close()
 	pause.resume()
+
+
+# The map frames what has been explored, not the whole island: nothing known yet shows the
+# island; a small explored patch is shown at least map_min_view_m across; a spread-out one
+# with a margin around it; and never more than the island.
+func test_the_map_frames_what_has_been_explored() -> void:
+	var whole := WorldPages.fit_view(PackedVector2Array(), 500.0, 3000.0)
+	assert_eq(whole.size, Vector2(6000, 6000), "nothing known: the whole island")
+	var small := WorldPages.fit_view(PackedVector2Array([Vector2(10, 10), Vector2(30, 20)]), 500.0, 3000.0)
+	assert_eq(small.size, Vector2(500, 500), "a small patch: the minimum view")
+	assert_true(small.has_point(Vector2(10, 10)) and small.has_point(Vector2(30, 20)))
+	var spread := WorldPages.fit_view(PackedVector2Array([Vector2(-800, 0), Vector2(800, 100)]), 500.0, 3000.0)
+	assert_gt(spread.size.x, 1600.0, "a margin around what's explored")
+	assert_true(spread.has_point(Vector2(-800, 0)) and spread.has_point(Vector2(800, 100)))
+	var huge := WorldPages.fit_view(PackedVector2Array([Vector2(-5000, 0), Vector2(5000, 0)]), 500.0, 3000.0)
+	assert_eq(huge.size.x, 6000.0, "never more than the island")
+
+
+# Quick travel works from the map wherever it is opened — here from the minimap, out on the road:
+# it offers every lit stop, a tap on one picks it, Travel goes there and play resumes.
+func test_quick_travel_from_the_map_opened_from_the_minimap() -> void:
+	WorldSession.new_world(7, _any_car())
+	var scene := await _boot_free_roam()
+	var rest: RestStops = scene.get_node("RestStops")
+	var pages: WorldPages = scene.get_node("WorldPages")
+	var pause: PauseMenu = scene.get_node("PauseMenu")
+	var rests := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)
+	rest.lit_sites[rests[2]] = true
+	(scene.get_node("MiniMapLayer/MiniMap") as MiniMap).open_requested.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(pages.is_open())
+	assert_true(get_tree().paused, "the map freezes the game")
+	assert_false(pause._input_enabled, "and the pause menu stands down while it's up")
+	assert_true(Array(pages._targets).has(rests[2]), "every lit stop is a travel target")
+	assert_true(pages.tap_map_at(pages._canvas.to_canvas(rest.streamer.sites.pos[rests[2]])), "a tap on a lit stop picks it")
+	assert_eq(pages.selected_target(), rests[2])
+	pages._travel()
+	assert_false(pages.is_open())
+	assert_eq(rest.last_site, rests[2], "travelled there")
+	assert_false(get_tree().paused, "and straight back to driving")
+	assert_true(pause._input_enabled)
+
+
+func test_the_minimap_map_closes_back_to_driving() -> void:
+	WorldSession.new_world(7, _any_car())
+	var scene := await _boot_free_roam()
+	var pages: WorldPages = scene.get_node("WorldPages")
+	var pause: PauseMenu = scene.get_node("PauseMenu")
+	(scene.get_node("MiniMapLayer/MiniMap") as MiniMap).open_requested.emit()
+	await get_tree().process_frame
+	var e := InputEventAction.new()
+	e.action = "toggle_map"
+	e.pressed = true
+	pages._unhandled_input(e)
+	assert_false(pages.is_open(), "M / gamepad Back closes it")
+	assert_false(get_tree().paused)
+	assert_true(pause._input_enabled)
+	assert_false(pause.is_open(), "not into the pause menu")
+
+
+func test_quick_travel_from_the_pause_menu_map_goes_back_to_driving() -> void:
+	WorldSession.new_world(7, _any_car())
+	var scene := await _boot_free_roam()
+	var rest: RestStops = scene.get_node("RestStops")
+	var pages: WorldPages = scene.get_node("WorldPages")
+	var pause: PauseMenu = scene.get_node("PauseMenu")
+	var rests := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)
+	rest.lit_sites[rests[2]] = true
+	pause.open()
+	assert_true(CardUI.pick(pause.cards(), "Map"))
+	pages._selected = Array(pages._targets).find(rests[2])
+	pages._travel()
+	assert_eq(rest.last_site, rests[2])
+	assert_false(pause.is_open(), "a travel doesn't drop you back in the pause menu")
+	assert_false(get_tree().paused)

@@ -4403,6 +4403,9 @@ func spectator_params() -> Dictionary:
 @export_range(1, 6, 1) var card_carousel_confirm_flash_count := 2
 
 @export_group("Minimap")
+## The full map frames what has been explored (plus a margin); this is the smallest stretch of
+## ground across it shows, in metres, so the start isn't zoomed in to nothing.
+@export_range(100.0, 10000.0, 50.0) var map_min_view_m := 900.0
 ## Free roam's heading-up minimap, top-centre (scripts/free_roam/mini_map.gd, features/minimap.md).
 @export var minimap_enabled := true
 ## Height of the minimap as a fraction of the screen height. Keep top + height under 0.2 of the

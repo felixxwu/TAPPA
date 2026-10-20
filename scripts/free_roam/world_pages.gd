@@ -7,8 +7,10 @@ extends CanvasLayer
 #   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven,
 #           the rest stops you've come across (orange lit, grey not), loot you've seen that's
 #           still lying there (MiniMap.site_markers, shared with the minimap) and the car. It is
-#           also the minimap's "whole map" (tap the minimap, or M / gamepad Back, which closes it too). Opened from a rest stop it doubles as the travel
-#           picker: Prev / Next step through the lit stops, Travel goes there.
+#           also the minimap's "whole map" (tap the minimap, or M / gamepad Back, which closes it too).
+#           It frames what has been explored (explored_view), not the whole island. Wherever it's
+#           opened it is also the QUICK-TRAVEL picker: Prev / Next (or a tap on a lit rest stop)
+#           pick a lit stop, Travel goes there.
 #   STATS — the lifetime counters that matter in free roam, one read-only card each
 #           (CardUI.card_page / card_list).
 # The map is a plain MenuPage (it is a picture, not a list); both use MenuNav, and Back (Esc /
@@ -29,6 +31,7 @@ var _targets := PackedInt32Array()
 var _selected := 0
 var _travel_mode := false
 var _here := -1
+var travelled := false  # whether the map's last visit ended in a quick travel
 var _target_label: Label
 var _travel_button: Button
 var _prev_button: Button
@@ -45,10 +48,12 @@ func is_open() -> bool:
 	return _page != null
 
 
-# The map. `from_site` >= 0 opens it as the travel picker at that rest stop.
+# The map, which is also the quick-travel picker. `from_site` >= 0: opened at that rest stop (it is
+# left out of the targets); otherwise the targets are every lit stop, nearest the car first.
 func show_map(on_close: Callable, from_site := -1) -> void:
 	_open(on_close)
-	_travel_mode = from_site >= 0
+	travelled = false
+	_travel_mode = rest_stops != null
 	_here = from_site
 	# Transparent body: only the drawn map itself is opaque, over the dim.
 	_page = MenuPage.new({"title": "Map", "dim": true, "alpha": 0.0})
@@ -159,9 +164,60 @@ func _travel() -> void:
 	if t < 0:
 		return
 	_clear()
+	travelled = true
 	rest_stops.travel_to(t)  # first, so the host sees the car has moved when it takes back over
 	if _on_close.is_valid():
 		_on_close.call()
+
+
+# A tap on the map at `local` (in the canvas): select the lit rest stop drawn nearest it, if one is
+# within reach of the tap. Returns whether one was picked.
+func tap_map_at(local: Vector2) -> bool:
+	if _canvas == null or _targets.is_empty():
+		return false
+	var best := -1
+	var best_d := UITheme.px(24)
+	for k in _targets.size():
+		var d: float = _canvas.to_canvas(streamer.sites.pos[_targets[k]]).distance_to(local)
+		if d < best_d:
+			best_d = d
+			best = k
+	if best < 0:
+		return false
+	_selected = best
+	_refresh_target()
+	return true
+
+
+# The part of the island the map shows: everything explored (roads driven, sites come across, the
+# car), with a margin, never smaller than map_min_view_m across, and never past the island.
+func explored_view() -> Rect2:
+	var pts := PackedVector2Array()
+	if car != null:
+		pts.append(Vector2(car.global_position.x, car.global_position.z))
+	var net := streamer.network
+	for si in net.seg_ax.size():
+		if WorldSession.has_driven((net.seg_ax[si] + net.seg_bx[si]) * 0.5, (net.seg_ay[si] + net.seg_by[si]) * 0.5):
+			pts.append(Vector2(net.seg_ax[si], net.seg_ay[si]))
+			pts.append(Vector2(net.seg_bx[si], net.seg_by[si]))
+	for mk: Array in MiniMap.site_markers(streamer.sites, rest_stops.lit_sites if rest_stops != null else {}, loot, Vector2.ZERO, INF):
+		pts.append(mk[0])
+	return fit_view(pts, Config.data.map_min_view_m, streamer.settings.island_radius_m * 1.05)
+
+
+# The square view around `pts`: their bounds plus a margin, at least `min_side` across, and at most
+# the island (`max_half` either side of the centre).
+static func fit_view(pts: PackedVector2Array, min_side: float, max_half: float) -> Rect2:
+	if pts.is_empty():
+		return Rect2(-Vector2.ONE * max_half, Vector2.ONE * max_half * 2.0)
+	var lo := pts[0]
+	var hi := pts[0]
+	for p in pts:
+		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.y))
+		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
+	var side := minf(maxf(maxf(hi.x - lo.x, hi.y - lo.y) * 1.25, min_side), max_half * 2.0)
+	var mid := (lo + hi) * 0.5
+	return Rect2(mid - Vector2.ONE * side * 0.5, Vector2.ONE * side)
 
 
 # Readouts for tests.
@@ -181,13 +237,34 @@ class MapCanvas:
 	extends Control
 	var pages: WorldPages
 
+	var _k := 1.0
+	var _mid := Vector2.ZERO
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		clip_contents = true
+
+	# World xz to this canvas, as last drawn.
+	func to_canvas(p: Vector2) -> Vector2:
+		return size * 0.5 + (p - _mid) * _k
+
+	func _gui_input(event: InputEvent) -> void:
+		var tap: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
+			or (event is InputEventScreenTouch and event.pressed)
+		if tap and pages.tap_map_at(event.position):
+			accept_event()
+
 	func _draw() -> void:
 		var st := pages.streamer
 		var s := st.settings
-		var r_world := s.island_radius_m * 1.05
+		# Frame what has been explored, not the whole island, so the start isn't a speck.
+		var view := pages.explored_view()
+		var k := minf(size.x / view.size.x, size.y / view.size.y)
 		var c := size * 0.5
-		var k := minf(size.x, size.y) * 0.5 / r_world
-		var to_px := func(p: Vector2) -> Vector2: return c + p * k
+		var mid := view.get_center()
+		_k = k
+		_mid = mid
+		var to_px := func(p: Vector2) -> Vector2: return c + (p - mid) * k
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.11, 0.2, 0.28))
 		# The coast.
 		var coast := PackedVector2Array()
@@ -198,7 +275,7 @@ class MapCanvas:
 		# The biome-ring borders crossed (the noisy border, drawn as its average circle).
 		var inner := s.island_radius_m * 0.82
 		for ring in range(1, WorldSession.max_ring() + 1):
-			draw_arc(c, inner * ring / s.ring_count * k, 0.0, TAU, 64, Color(1, 1, 1, 0.35), 1.0)
+			draw_arc(to_px.call(Vector2.ZERO), inner * ring / s.ring_count * k, 0.0, TAU, 96, Color(1, 1, 1, 0.35), 1.0)
 		# The roads driven.
 		var net := st.network
 		for si in net.seg_ax.size():

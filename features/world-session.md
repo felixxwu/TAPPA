@@ -71,8 +71,14 @@ A `CanvasLayer` (layer 7, always processing) over the frozen game:
   is still lying there (`MiniMap.site_markers`, shared with the minimap) and the car. Opened
   from the minimap it pauses the game itself and closing it goes straight back to driving
   (`free_roam.gd → open_full_map`). The page body is transparent (`"alpha": 0.0`): only the
-  drawn map is opaque, over the dim. **From a rest stop it is the travel picker**:
-  `<` / `>` step through the other lit rest stops, and Travel goes to the ringed one.
+  drawn map is opaque, over the dim. It **frames what has been explored** (`explored_view` →
+  `fit_view`: the driven roads, sites come across and the car, plus a margin, at least
+  `GameConfig.map_min_view_m` across, never more than the island), so the start isn't a speck.
+  **Wherever it's opened it is the quick-travel picker**: `<` / `>` (or a tap on a lit rest stop,
+  `tap_map_at`) pick a lit stop — every lit stop when opened on the road, the others when opened at
+  one — and Travel goes to the ringed one (`RestStops.travel_to`, which also repairs the car).
+  After a travel the host goes straight back to driving: the minimap's map unpauses, and the pause
+  menu's Map resumes instead of returning to the menu (`travelled`).
   The map is drawn as large as the frame allows (a plain `MenuPage` — a picture, not a list).
 - **Stats:** a read-only card each for distance driven, rest stops lit, times the car gave up,
   and rings reached.

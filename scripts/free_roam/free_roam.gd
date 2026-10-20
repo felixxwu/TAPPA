@@ -108,7 +108,12 @@ func _reload_car() -> void:
 func _on_pause_extra(label: String) -> void:
 	match label:
 		"Map":
-			$WorldPages.show_map(_pause.return_from_extra)
+			$WorldPages.show_map(func() -> void:
+				if $WorldPages.travelled:  # quick-travelled: straight back to driving, not the menu
+					_pause.set_input_enabled(true)
+					_pause.resume()
+				else:
+					_pause.return_from_extra())
 		"Stats":
 			$WorldPages.show_stats(_pause.return_from_extra)
 		_:
