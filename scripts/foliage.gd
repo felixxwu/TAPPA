@@ -105,7 +105,7 @@ static var _rock_mesh_cache: Dictionary = {}
 # profile (tree_size_m etc.). The two are decoupled so a region's mix can carry the
 # home tree.png at HOME sizing alongside its own tree at region sizing (see
 # RegionLibrary.tree_mix / features/regions.md).
-static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: TerrainManager,
+static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: Object,
 		with_collision: bool, render_distance: float, render_fade: float,
 		billboard_texture: Texture2D = null, use_region_profile: bool = false,
 		size_scale: Vector2 = Vector2.ONE) -> Node:
@@ -161,7 +161,7 @@ static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: 
 # stage) and per-instance baked terrain light so they match the ground. Scaled to
 # cfg.bush_height_m — the SAME target height the stage uses, so a bush is the same
 # size wherever it grows. Returns the created field node.
-static func spawn_bushes(parent: Node3D, positions: PackedVector2Array, terrain: TerrainManager,
+static func spawn_bushes(parent: Node3D, positions: PackedVector2Array, terrain: Object,
 		render_distance: float, render_fade: float) -> TreeMeshField:
 	var cfg: GameConfig = Config.data
 	var field := TreeMeshField.new()
@@ -288,7 +288,7 @@ static func rock_mesh(index: int) -> Mesh:
 # their hitbox and the two can never drift apart. The box is full rock height, so a
 # low slab does not present a boulder-height wall.
 static func spawn_rocks(parent: Node3D, positions: PackedVector2Array,
-		terrain: TerrainManager, index: int, with_collision: bool,
+		terrain: Object, index: int, with_collision: bool,
 		render_distance: float, render_fade: float) -> TreeMeshField:
 	var cfg: GameConfig = Config.data
 	var mesh := rock_mesh(index)

@@ -381,22 +381,63 @@ Stages 0–4 can be played as a pure drive, and should be playtested before 5–
   stage 7.
 - **Everything in `todo/road-network-generation.md`:** to be brainstormed with the user.
 
-## Road-network lab — the liked preset (2026-10-20)
+## Road-network lab — the liked preset (2026-10-20, revised)
 
 `tools/road_network_lab.html` is a throwaway browser spike for comparing network layouts and
-road-first terrain. The user liked the terrain these values produce; they are now the lab's
-defaults. They are a starting point for the road-network spec, not tuned game values.
+road-first terrain. The user's current favourite settings are below. They are the lab's
+defaults, and also the `FreeRoamSettings` defaults the game boots with. They are a starting
+point for the road-network spec, not tuned game values. The revision replaced an earlier
+12 km preset with a much smaller, denser island.
 
-- **Layout: radial growth.** Island radius 12000 m, 5 biome rings, node min spacing 150 m,
-  rest stop every 1500 m of road. Growth sliders: segment 250 m, fork chance 0.18, fork angle
-  90°, heading jitter 60°, outward pull 0.35, join-on-collide 1.0, 3 roads leaving spawn.
-  Road wiggle preview on.
-- **Base field and lakes:** base height scale 1100 m, base height variation 150 m, water level
-  −70 m, lake depth factor 1.5, shore band 15 m.
-- **Road-first terrain:** mountain height 1000 m, flat band beside road 6 m, distance to full
-  mountain 1950 m, ribbon bank/drop 100 m, ribbon width 400 m.
-- **View only (no effect on the terrain):** contour interval 100 m, 3D area 8000 m, 3D
-  resolution 240, exaggeration 1.5.
-- **Several of these sat at the slider maximum** (radius, fork angle, jitter, join chance,
-  mountain height, bank, ribbon width). The ranges have since been widened, so the preference
-  may lie beyond them.
+- **Layout: radial growth, seed 1.** Island radius 5000 m, 3 biome rings, node min spacing
+  75 m, rest stop every 300 m of road. Growth: segment 175 m, fork chance 0.37, fork angle 150°,
+  heading jitter 120°, outward pull 0.44, join-on-collide 1.0, 3 roads leaving spawn. Road
+  wiggle on, road twistiness 1.0, bend length 200 m.
+- **Base field and lakes:** base height scale 500 m, base height variation 15 m, water level
+  −5 m, lake depth factor 1.6, shore band 1 m.
+- **Road-first terrain:** mountain height 300 m, flat band beside road 2 m, distance to full
+  mountain 400 m, ribbon bank/drop 47 m, ribbon width 320 m. Bumps (Perlin):
+  height 5 m, size 50 m.
+- **View only:** contour interval 135 m, 3D area 8000 m, 3D resolution 800, exaggeration 1.0.
+- **Fork angle and heading jitter** sat at the slider maximum, and segment length and
+  rest-stop spacing at the minimum. Those ranges have been widened.
+- **The game's network won't match the lab exactly** for the same seed: the GDScript port
+  uses Godot's random number generator and `FastNoiseLite` rather than the lab's own noise.
+
+## Streaming method — a strict per-frame terrain budget (agreed 2026-10-20)
+
+**The rule:** terrain work gets at most **1 ms per frame** (`FreeRoamSettings.budget_us`), and
+nothing that would overrun it may start. The car drives while the world fills in around it.
+The old streaming seam budgeted by count (`overworld_chunk_build_budget = 2` chunks per frame),
+which is how it produced 13–34 ms spikes (`features/terrain-streaming.md`).
+
+- **The arithmetic:** at 60 fps, 1 ms per frame is 60 ms of compute per second of driving. At
+  about 55 m/s with a 350 m load radius either side, that is about 38,500 m² of new ground per
+  second, which leaves roughly 1.5 µs per 1 m² sample, all-in. So:
+  - full detail only near the car, with far chunks sampled every 4–8 m;
+  - generation ahead along the known road network rather than in a ring around the car;
+  - unlimited prefill at boot, and later at rest stops;
+  - native code (GDExtension) for the per-sample maths if GDScript can't keep up.
+- **A cooperative, measured scheduler.** Each chunk is a resumable job, with plain state and
+  no coroutines. Every atomic unit kind keeps a moving average of its cost on the running
+  device. A unit never starts if its estimate exceeds what is left of the frame; the first
+  unit of a frame always runs, so it can't starve. Overruns are counted and shown on screen.
+- **Atomic units:** gather road candidates → heights one sample at a time → pack mesh arrays →
+  upload the mesh → attach → collision. Engine calls that can't be split (mesh upload, heightmap
+  collision, MultiMesh upload) must have inputs sized to fit a unit, which makes **chunk size,
+  sub-mesh size and foliage bin size budget-driven settings**.
+- **Priority by time to arrival.** Collision under and ahead of the car first, then a coarse
+  mesh ahead (never a hole), then full detail near the car, then foliage, far detail and
+  eviction. Falling behind degrades detail, never the budget.
+- **What the timer won't see:** physics work that adding a shape pushes into the next physics
+  step, shader compilation (warm it up at boot), and allocation churn. Total frame time is the
+  real measure.
+- **Threads later, same design.** Web exports have `thread_support=false`, so main-thread
+  time-slicing is the baseline. On desktop and Android the pure-data stages can move to
+  `WorkerThreadPool` later, leaving only the engine calls on the main thread.
+
+**Prototype status (2026-10-20):** implemented in `scripts/free_roam/`, and the game boots into
+it (`features/free-roam.md`). First headless measurement on desktop: 15.6 µs per height sample
+in GDScript, 843 ms boot prefill, and 5 of 600 frames slightly over 1 ms (worst 1.04 ms) with
+the car parked, before tightening the per-sample stop. Next: an auto driver that drives a
+fixed route at top speed and reports overruns and "reached a chunk without collision".

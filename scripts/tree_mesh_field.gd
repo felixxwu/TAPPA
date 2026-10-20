@@ -62,7 +62,7 @@ var bin_count: int = 0
 var instance_scale: float = 1.0
 
 
-func build(positions: PackedVector2Array, terrain: TerrainManager, mesh: Mesh,
+func build(positions: PackedVector2Array, terrain: Object, mesh: Mesh,
 		target_height: float, collision_radius: float, collision_height: float,
 		render_distance: float, render_fade: float, bin_size: float,
 		with_collision: bool = true, bake_terrain_light: bool = false,

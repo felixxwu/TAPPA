@@ -65,16 +65,10 @@ var _travel_dir := Vector3.FORWARD
 # use so the per-frame ground query doesn't re-scan the sibling list.
 var _terrain: Node = null
 
-# Lake water surface height — the ground the camera seats above is never taken below
-# this, so over a submerged basin the camera stays above the water instead of dunking
-# under it (matches the roadside replay cam).
-#
-# Deliberately NOT cached in _ready(): this camera is a child of main.tscn's root, so
-# its _ready runs BEFORE world.gd._ready, which is where the event's/stage's track
-# params (including track_water_level_m) reach the live config via
-# DrivingContext.apply_stage_config. Caching here would pin the PREVIOUS run's
-# waterline and float the camera above the car over any basin whose real water sits
-# lower. Read live in _ground_height_at instead — it's one property read per frame.
+# The ground height the camera currently seats on, eased toward the terrain under it so
+# small bumps become a gentle float rather than a jolt. NAN until the first placement.
+var _seated_ground := NAN
+var _height_smoothing: float
 
 
 func _ready() -> void:
@@ -83,6 +77,7 @@ func _ready() -> void:
 	_distance = cfg.follow_distance
 	_height = cfg.follow_distance * cfg.follow_height_ratio
 	_smoothing = cfg.smoothing
+	_height_smoothing = cfg.chase_height_smoothing
 	_base_fov = cfg.chase_fov
 	_fov_speed_boost = cfg.chase_fov_speed_boost
 	_fov_speed = cfg.chase_fov_speed
@@ -189,7 +184,7 @@ func _timed_physics_process(delta: float) -> void:
 		# Solve sqrt(horizontal^2 + dy^2) = distance for the horizontal reach.
 		horizontal = sqrt(max(0.0, distance * distance - dy * dy))
 	var final_pos := origin - _travel_dir * horizontal
-	final_pos.y = _ground_height_at(final_pos.x, final_pos.z) + _height
+	final_pos.y = _eased_ground(_ground_height_at(final_pos.x, final_pos.z), delta) + _height
 	global_position = final_pos
 
 	# Point at the car's nose rather than its centre (un-smoothed). The aim point
@@ -340,11 +335,22 @@ func _update_shake(delta: float, accel_g: float) -> void:
 	rotate_object_local(Vector3.FORWARD, amplitude * sin(w * 0.83 + 3.1))
 
 
+# Ease the seated ground toward `ground`. A jump bigger than SNAP_M (a reset, a teleport, the
+# first frame) snaps instead, so the camera never drifts in from far away.
+const SNAP_M := 30.0
+func _eased_ground(ground: float, delta: float) -> float:
+	if is_nan(_seated_ground) or absf(ground - _seated_ground) > SNAP_M:
+		_seated_ground = ground
+	else:
+		_seated_ground = lerpf(_seated_ground, ground, 1.0 - exp(-_height_smoothing * delta))
+	return _seated_ground
+
+
 # Terrain surface height at a world (x, z), used to seat the camera a fixed
 # distance above the ground below it. Looks for a sibling that exposes height_at
 # (the hilly Floor in the main scene); on flat test fixtures there is none, so it
-# falls back to 0. Clamped up to the water surface so the camera never seats below a
-# lake (it would otherwise dunk under the water plane over a submerged basin).
+# falls back to 0. The water level is deliberately ignored: a waterline that did not match
+# the world lifted the camera far above the car.
 func _ground_height_at(x: float, z: float) -> float:
 	if not is_instance_valid(_terrain):
 		_terrain = null
@@ -354,5 +360,4 @@ func _ground_height_at(x: float, z: float) -> float:
 				if sibling != self and sibling.has_method("height_at"):
 					_terrain = sibling
 					break
-	var ground: float = _terrain.height_at(x, z) if _terrain != null else 0.0
-	return maxf(ground, Config.data.track_water_level_m)
+	return _terrain.height_at(x, z) if _terrain != null else 0.0

@@ -1,0 +1,70 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="Script" path="res://scripts/free_roam/free_roam.gd" id="1_root"]
+[ext_resource type="Script" path="res://scripts/free_roam/terrain_streamer.gd" id="2_stream"]
+[ext_resource type="PackedScene" path="res://car.tscn" id="3_car"]
+[ext_resource type="Script" path="res://scripts/chase_camera.gd" id="4_cam"]
+[ext_resource type="Shader" path="res://shaders/ps1_models.gdshader" id="5_shader"]
+[ext_resource type="Texture2D" path="res://textures/grass.jpg" id="6_grass"]
+[ext_resource type="Texture2D" path="res://textures/gravel.jpg" id="7_gravel"]
+[ext_resource type="Texture2D" path="res://textures/sky_field.png" id="8_sky"]
+
+[sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
+panorama = ExtResource("8_sky")
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+fog_enabled = true
+fog_light_color = Color(0.482, 0.498, 0.403, 1)
+fog_density = 0.004
+fog_sky_affect = 0.15
+
+[sub_resource type="ShaderMaterial" id="mat_ground"]
+render_priority = 0
+shader = ExtResource("5_shader")
+shader_parameter/albedo_texture = ExtResource("6_grass")
+shader_parameter/road_texture = ExtResource("7_gravel")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+shader_parameter/blend_road = true
+shader_parameter/road_uv_scale = 1.0
+shader_parameter/tarmac_color = Color(0.32, 0.32, 0.34, 1)
+
+[sub_resource type="PlaneMesh" id="water_mesh"]
+size = Vector2(6000, 6000)
+
+[sub_resource type="StandardMaterial3D" id="water_mat"]
+transparency = 1
+shading_mode = 0
+albedo_color = Color(0.16, 0.42, 0.58, 0.8)
+
+[node name="FreeRoam" type="Node3D"]
+script = ExtResource("1_root")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("2_stream")
+material = SubResource("mat_ground")
+
+[node name="Car" parent="." instance=ExtResource("3_car")]
+
+[node name="ChaseCamera" type="Camera3D" parent="." node_paths=PackedStringArray("target")]
+fov = 100.0
+script = ExtResource("4_cam")
+target = NodePath("../Car")
+
+[node name="Water" type="MeshInstance3D" parent="."]
+mesh = SubResource("water_mesh")
+material_override = SubResource("water_mat")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Stats" type="Label" parent="HUD"]
+offset_left = 12.0
+offset_top = 12.0

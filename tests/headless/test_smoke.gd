@@ -356,20 +356,15 @@ func test_floor_is_terrain_manager() -> void:
 	assert_gt(floor_node.loaded_coords().size(), 0, "chunks loaded around the car at boot")
 
 
-func test_the_main_scene_is_the_hub_and_it_loads() -> void:
+func test_the_main_scene_is_a_known_boot_scene_and_it_loads() -> void:
 	# The one thing that broke when the diegetic hub was deleted: project.godot still
 	# named `res://hq.tscn`, so the GAME would not boot at all while every test stayed
-	# green (nothing instantiates the main scene by its project setting). This closes
-	# that hole from both ends — the setting must name whatever `Scenes.hub_path()`
-	# routes "back to the hub" to, and that scene must actually load.
-	#
-	# Deliberately no assertion about the hub's CONTENTS: it is a placeholder Control
-	# until stage 3 of the roguelike pivot builds the flat shell, and pinning the
-	# placeholder's widgets would just have to be deleted again.
+	# green (nothing instantiates the main scene by its project setting). The setting must
+	# name either the hub (`Scenes.hub_path()`) or, while the free-roam pivot is being
+	# prototyped, the free-roam scene (features/free-roam.md) — and it must actually load.
 	var main_scene := String(ProjectSettings.get_setting("application/run/main_scene", ""))
-	assert_eq(main_scene, Scenes.hub_path(),
-		"project.godot's run/main_scene must be the same scene every 'back to the hub' "
-		+ "transition routes to — two spellings of the hub is how the boot broke")
+	assert_true(main_scene in [Scenes.hub_path(), "res://free_roam.tscn"],
+		"project.godot's run/main_scene names an unknown scene: %s" % main_scene)
 	assert_not_null(load(main_scene) as PackedScene, "%s loads as a scene" % main_scene)
 
 

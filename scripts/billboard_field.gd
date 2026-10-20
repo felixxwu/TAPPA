@@ -81,7 +81,7 @@ var instance_positions: PackedVector3Array
 var instance_scale: Vector3 = Vector3.ONE
 
 
-func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2,
+func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 		texture: Texture2D, collision_radius: float, collision_height: float,
 		with_collision: bool, render_distance: float, render_fade: float,
 		y_offset: float, mesh: Mesh,
@@ -134,7 +134,7 @@ func build(positions: PackedVector2Array, terrain: TerrainManager, size: Vector2
 		var p := positions[i]
 		# y_offset sinks the sprite into the ground (negative) to hide a gap at
 		# the bottom of its texture, or lifts it (positive).
-		var y := terrain.height_at(p.x, p.y) + y_offset
+		var y: float = terrain.height_at(p.x, p.y) + y_offset
 		instance_positions[i] = Vector3(p.x, y, p.y)
 
 	# Bin instances into one MultiMesh per grid cell (Vector2i -> global indices).

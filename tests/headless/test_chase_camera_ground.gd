@@ -1,13 +1,7 @@
 extends GutTest
-# Chase camera ground seating (chase_camera.gd -> _ground_height_at). The camera
-# never seats below the lake surface, and — the regression this file exists for —
-# it reads that waterline LIVE rather than caching it in _ready().
-#
-# Why live matters: ChaseCamera is a child of main.tscn's root, so its _ready runs
-# BEFORE world.gd._ready, which is where the event's/stage's track params reach the
-# live config (DrivingContext.apply_stage_config). A cached copy would be the
-# PREVIOUS run's waterline, and the camera would float above the car over any basin
-# whose real water sits lower.
+# Chase camera ground seating (chase_camera.gd -> _ground_height_at / _eased_ground). The
+# camera seats on the terrain below it and nothing else (the water level used to clamp the
+# seat upward and floated the camera above the car), and eases toward changes in it.
 
 var _cam: Camera3D
 var _target: Node3D
@@ -20,7 +14,7 @@ func before_each() -> void:
 	add_child(_target)
 	_cam = load("res://scripts/chase_camera.gd").new()
 	_cam.target = _target
-	add_child(_cam)  # _ready() caches config into the _* fields
+	add_child(_cam)
 	_cam.set_physics_process(false)
 
 
@@ -30,26 +24,26 @@ func after_each() -> void:
 	_target.free()
 
 
-# No terrain sibling here, so _ground_height_at's terrain term is 0 and the result
-# is purely the waterline clamp — which is exactly what's under test.
-func test_ground_never_seats_below_the_water_surface() -> void:
-	Config.data.track_water_level_m = 6.0
-	assert_almost_eq(_cam._ground_height_at(0.0, 0.0), 6.0, 0.001,
-		"water above the ground raises the seat to the water surface")
+func test_a_water_level_above_the_ground_does_not_lift_the_seat() -> void:
+	# No terrain sibling here, so the ground reads 0.
+	Config.data.track_water_level_m = 50.0
+	assert_almost_eq(_cam._ground_height_at(0.0, 0.0), 0.0, 0.001)
 
 
-func test_water_below_the_ground_does_not_lower_the_seat() -> void:
-	Config.data.track_water_level_m = -10.0
-	assert_almost_eq(_cam._ground_height_at(0.0, 0.0), 0.0, 0.001,
-		"a waterline below the ground leaves the ground as the seat")
+func test_the_first_seat_snaps_to_the_ground() -> void:
+	assert_almost_eq(_cam._eased_ground(12.0, 1.0 / 60.0), 12.0, 0.001)
 
 
-func test_waterline_written_after_ready_is_honoured() -> void:
-	# The bug: the config is seated by world.gd._ready, which runs AFTER this
-	# camera's _ready. Writing the waterline post-add must still be picked up.
-	Config.data.track_water_level_m = 8.0
-	var high: float = _cam._ground_height_at(0.0, 0.0)
-	Config.data.track_water_level_m = 3.0
-	var low: float = _cam._ground_height_at(0.0, 0.0)
-	assert_almost_eq(high, 8.0, 0.001, "picks up a waterline set after _ready")
-	assert_almost_eq(low, 3.0, 0.001, "and keeps tracking it when it changes again")
+func test_a_small_rise_is_eased_toward_not_jumped_to() -> void:
+	_cam._eased_ground(0.0, 1.0 / 60.0)
+	var seated: float = _cam._eased_ground(4.0, 1.0 / 60.0)
+	assert_gt(seated, 0.0, "it moves toward the new ground")
+	assert_lt(seated, 4.0, "but does not jump straight to it")
+	for i in 600:
+		seated = _cam._eased_ground(4.0, 1.0 / 60.0)
+	assert_almost_eq(seated, 4.0, 0.01, "and settles on it")
+
+
+func test_a_huge_jump_snaps_instead_of_drifting() -> void:
+	_cam._eased_ground(0.0, 1.0 / 60.0)
+	assert_almost_eq(_cam._eased_ground(_cam.SNAP_M * 2.0, 1.0 / 60.0), _cam.SNAP_M * 2.0, 0.001)

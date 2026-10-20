@@ -52,19 +52,13 @@ follow_height_ratio` above that (height is a multiple of the follow distance, no
 an independent value). So the camera keeps a constant clearance over the ground it is flying
 over, rather than rising and falling as the car climbs and descends hills. On
 flat test fixtures (no `height_at` sibling) the ground height falls back to 0. The
-sampled ground is **clamped up to the lake water surface** (`maxf(ground,
-track_water_level_m)` in `_ground_height_at`), so over a submerged basin the camera
-stays above the water instead of dunking under the lake plane (the roadside replay cam
-does the same).
-
-> The waterline is read **live from the config on every frame**, deliberately not
-> cached in `_ready()`. `ChaseCamera` is a child of `main.tscn`'s root, so its
-> `_ready` runs *before* `world.gd::_ready`, which is where the event's/stage's
-> track params reach the live config (`DrivingContext.apply_stage_config`) — and
-> where the generated waterline is reconciled back onto it (see
-> [lakes.md](lakes.md) → "Dry start"). A cached copy is the *previous* run's
-> waterline, which floats the camera above the car over any basin whose real water
-> sits lower. Guarded by `test_chase_camera_ground`.
+water level is **not** consulted: the camera used to clamp the ground up to
+`track_water_level_m`, but a waterline that did not match the world (the free-roam
+island has its own) lifted the camera far above the car, so the clamp was removed.
+The seated ground is **eased**, not read raw: `_eased_ground` moves it toward the terrain
+under the camera at `chase_height_smoothing` (the usual `1 - exp(-rate·dt)` easing), so small
+bumps become a gentle float. A change of more than `SNAP_M` (30 m), such as a reset, snaps
+instead. Guarded by `test_chase_camera_ground`.
 
 ### Behavior (`_physics_process`)
 

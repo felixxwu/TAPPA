@@ -46,6 +46,7 @@
   <label><input type="checkbox" id="water" checked> Lakes (block nodes + roads)</label>
   <label><input type="checkbox" id="terrain" checked> Road-first terrain (heightmap)</label>
   <button id="open3d">3D view of the square at map centre</button>
+  <button id="copy">Copy settings to clipboard</button> <span id="copied" class="hint"></span>
 
   <div id="stats"></div>
   <div class="hint">Drag to pan, scroll to zoom, double-click to reset view.<br>
@@ -62,13 +63,15 @@ const $ = id => document.getElementById(id);
 
 const PARAMS = {
   common: [
-    ["radius", "Island radius (m)", 1000, 20000, 12000, 250],
-    ["ringCount", "Biome rings", 2, 8, 5, 1],
-    ["spacing", "Node min spacing (m)", 50, 1500, 150, 25],
-    ["restSpacing", "Rest stop every (m of road)", 300, 5000, 1500, 100],
-    ["baseScale", "Base height scale (m)", 500, 8000, 1100, 100],
-    ["roadRelief", "Base height variation (m)", 0, 400, 150, 5],
-    ["waterLevel", "Water level (m)", -400, 400, -70, 5],
+    ["radius", "Island radius (m)", 1000, 20000, 5000, 250],
+    ["ringCount", "Biome rings", 2, 8, 3, 1],
+    ["spacing", "Node min spacing (m)", 50, 1500, 75, 25],
+    ["restSpacing", "Rest stop every (m of road)", 50, 5000, 300, 100],
+    ["baseScale", "Base height scale (m)", 500, 8000, 500, 100],
+    ["roadRelief", "Base height variation (m)", 0, 400, 15, 5],
+    ["waterLevel", "Water level (m)", -400, 400, -5, 5],
+    ["roadTwist", "Road twistiness (bend size)", 0, 1.5, 1, 0.01],
+    ["bendLen", "Bend length (m)", 30, 800, 200, 10],
   ],
   ports: [
     ["cell", "Cell size (m)", 200, 1500, 500, 25],
@@ -92,11 +95,11 @@ const PARAMS = {
     ["maxLen", "Max road length (km)", 1, 20, 8, 0.5],
   ],
   growth: [
-    ["step", "Segment length (m)", 100, 1200, 250, 25],
-    ["fork", "Fork chance per step", 0, 0.8, 0.18, 0.01],
-    ["forkAngle", "Fork angle (deg)", 15, 150, 90, 1],
-    ["jitter", "Heading jitter (deg)", 0, 120, 60, 1],
-    ["outward", "Outward pull", 0, 1, 0.35, 0.01],
+    ["step", "Segment length (m)", 25, 1200, 175, 25],
+    ["fork", "Fork chance per step", 0, 0.8, 0.37, 0.01],
+    ["forkAngle", "Fork angle (deg)", 15, 180, 150, 1],
+    ["jitter", "Heading jitter (deg)", 0, 180, 120, 1],
+    ["outward", "Outward pull", 0, 1, 0.44, 0.01],
     ["loopChance", "Join-on-collide chance", 0, 1, 1, 0.01],
     ["starts", "Roads leaving spawn", 1, 6, 3, 1],
   ],
@@ -104,17 +107,19 @@ const PARAMS = {
   detour: [["detour", "Prune if 2-hop ≤ ratio ×", 1.0, 3, 1.6, 0.05]],
   mst: [], rng: [], gabriel: [],
   terrain: [
-    ["lakeDepth", "Lake depth factor", 0.2, 4, 1.5, 0.1],
-    ["shoreBand", "Shore band (m above water)", 1, 100, 15, 1],
-    ["mountain", "Mountain height (m)", 0, 2500, 1000, 10],
-    ["flatW", "Flat band beside road (m)", 2, 200, 6, 2],
-    ["mountainDist", "Distance to full mountain (m)", 100, 4000, 1950, 25],
-    ["bank", "Ribbon bank / drop (m)", 0, 300, 100, 1],
-    ["ribbonW", "Ribbon width (m)", 20, 1000, 400, 5],
-    ["contour", "Contour interval (m)", 5, 250, 100, 5],
+    ["lakeDepth", "Lake depth factor", 0.2, 4, 1.6, 0.1],
+    ["shoreBand", "Shore band (m above water)", 1, 100, 1, 1],
+    ["mountain", "Mountain height (m)", 0, 2500, 300, 10],
+    ["flatW", "Flat band beside road (m)", 2, 200, 2, 2],
+    ["mountainDist", "Distance to full mountain (m)", 100, 4000, 400, 25],
+    ["bank", "Ribbon bank / drop (m)", 0, 300, 47, 1],
+    ["ribbonW", "Ribbon width (m)", 20, 1000, 320, 5],
+    ["bumpHeight", "Bump height (m)", 0, 30, 5, 0.5],
+    ["bumpSize", "Bump size (m)", 10, 400, 50, 5],
+    ["contour", "Contour interval (m)", 5, 250, 135, 5],
     ["area3d", "3D area size (m)", 500, 20000, 8000, 100],
-    ["res3d", "3D grid resolution", 64, 400, 240, 8],
-    ["exag", "3D height exaggeration", 0.5, 4, 1.5, 0.1],
+    ["res3d", "3D grid resolution", 64, 1200, 800, 8],
+    ["exag", "3D height exaggeration", 0.5, 4, 1, 0.1],
   ],
 };
 const state = {};
@@ -149,28 +154,41 @@ function vnoise(x, y, s) {
   const a = hash2(xi, yi, s), b = hash2(xi + 1, yi, s), c = hash2(xi, yi + 1, s), d = hash2(xi + 1, yi + 1, s);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
+// Classic 2D gradient (Perlin) noise: a hashed gradient at each lattice corner, quintic fade.
+const GRADS = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7071067811865476, 0.7071067811865476],
+  [-0.7071067811865476, 0.7071067811865476], [0.7071067811865476, -0.7071067811865476], [-0.7071067811865476, -0.7071067811865476]];
+function perlin(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const g = (ix, iy, dx, dy) => { const k = GRADS[Math.floor(hash2(ix, iy, s) * 8)]; return k[0] * dx + k[1] * dy; };
+  const n00 = g(xi, yi, xf, yf), n10 = g(xi + 1, yi, xf - 1, yf), n01 = g(xi, yi + 1, xf, yf - 1), n11 = g(xi + 1, yi + 1, xf - 1, yf - 1);
+  const u = xf * xf * xf * (xf * (xf * 6 - 15) + 10), v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+  const nx0 = n00 + (n10 - n00) * u, nx1 = n01 + (n11 - n01) * u;
+  return nx0 + (nx1 - nx0) * v;
+}
 function fbm(x, y, s) { return vnoise(x, y, s) * 0.6 + vnoise(x * 2.1, y * 2.1, s + 7) * 0.3 + vnoise(x * 4.3, y * 4.3, s + 13) * 0.1; }
 
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// Plain sqrt rather than Math.hypot, which rounds differently: the game mirrors this maths exactly.
+const hyp = (x, y) => Math.sqrt(x * x + y * y);
+const dist = (a, b) => hyp(a.x - b.x, a.y - b.y);
 
 // --- the island --------------------------------------------------------------------------
 function coastR(ang, seed, R) { return R * (0.82 + 0.18 * fbm(Math.cos(ang) * 2 + 5, Math.sin(ang) * 2 + 5, seed)); }
-function onLand(p, seed, R) { return Math.hypot(p.x, p.y) < coastR(Math.atan2(p.y, p.x), seed, R) - 150; }
+function onLand(p, seed, R) { return hyp(p.x, p.y) < coastR(Math.atan2(p.y, p.x), seed, R) - 150; }
 // The base height: low-frequency noise that depends on nothing else, so lakes can be decided
 // before the roads and the roads can then avoid them. Lifted near spawn so spawn is always dry.
 function baseH(p, seed) {
   const raw = state.roadRelief * (fbm(p.x / state.baseScale + 3, p.y / state.baseScale + 3, seed + 41) - 0.5) * 2;
-  return raw + (1 - smooth(300, 900, Math.hypot(p.x, p.y))) * Math.max(0, state.waterLevel + 10 - raw);
+  return raw + (1 - smooth(300, 900, hyp(p.x, p.y))) * Math.max(0, state.waterLevel + 10 - raw);
 }
 // A lake is wherever the base height sits below the water level.
 const isLake = (p, seed) => $("water").checked && baseH(p, seed) < state.waterLevel;
 function isWater(p, seed, R) { return !onLand(p, seed, R) || isLake(p, seed); }
 function ringOf(p, seed, R, n) {
   const wob = (fbm(p.x / 1500 + 9, p.y / 1500 + 9, seed + 3) - 0.5) * 0.25;
-  return Math.max(0, Math.min(n - 1, Math.floor((Math.hypot(p.x, p.y) / (R * 0.82) + wob) * n)));
+  return Math.max(0, Math.min(n - 1, Math.floor((hyp(p.x, p.y) / (R * 0.82) + wob) * n)));
 }
 function segHitsWater(a, b, seed, R) {
-  const n = Math.ceil(dist(a, b) / 60);
+  const n = Math.ceil(dist(a, b) / 60 - 1e-9);
   for (let i = 1; i < n; i++) if (isWater({ x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }, seed, R)) return true;
   return false;
 }
@@ -394,7 +412,7 @@ function colonize(rand, seed, R) {
     });
     let grew = false;
     for (const [j, v] of pulls) {
-      const L = Math.hypot(v.x, v.y);
+      const L = hyp(v.x, v.y);
       if (L < 1e-6) continue;
       const np = { x: nodes[j].x + v.x / L * state.cstep, y: nodes[j].y + v.y / L * state.cstep };
       if (isWater(np, seed, R) || segHitsWater(nodes[j], np, seed, R)) continue;
@@ -444,7 +462,7 @@ function tensor(rand, seed, R) {
       if (lj === skip || lines[lj].fam !== fam) continue;
       const P = lines[lj].pts, a = P[sj], b = P[sj + 1], abx = b.x - a.x, aby = b.y - a.y;
       const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby || 1)));
-      if (Math.hypot(p.x - a.x - abx * t, p.y - a.y - aby * t) < d) return true;
+      if (hyp(p.x - a.x - abx * t, p.y - a.y - aby * t) < d) return true;
     }
     return false;
   };
@@ -534,6 +552,14 @@ function draw() {
   const net = custom ? custom(rand, seed, R) : graphAlgo(algo, rand, seed, R);
   last = { net, seed, R, ms: performance.now() - t0 };
   render();
+  if (view3d) schedule3D();
+}
+
+// Value changes rebuild an open 3D view, but only once the sliders have been still for a moment.
+let rebuild3dTimer = 0;
+function schedule3D() {
+  clearTimeout(rebuild3dTimer);
+  rebuild3dTimer = setTimeout(() => { if (view3d) open3D().catch(() => {}); }, 400);
 }
 
 function render() {
@@ -614,6 +640,8 @@ function render() {
     ctx.setLineDash([]);
   }
 
+  drawScale(W, H, sc, roadPts);
+
   // stats
   const reach = sp.d.filter(d => d < Infinity);
   const len = edges.reduce((s, e) => s + e[2], 0);
@@ -669,14 +697,22 @@ function nearestRoad(rg, p, maxD) {
       for (const si of grid.get((gx + dx) * 100003 + gy + dy) || []) {
         const sg = segs[si], abx = sg.b.x - sg.a.x, aby = sg.b.y - sg.a.y;
         const t = Math.max(0, Math.min(1, ((p.x - sg.a.x) * abx + (p.y - sg.a.y) * aby) / (abx * abx + aby * aby || 1)));
-        const qx = sg.a.x + abx * t, qy = sg.a.y + aby * t, d = Math.hypot(p.x - qx, p.y - qy);
-        if (!best || d < best.d)
-          best = { d, q: { x: qx, y: qy }, s: sg.cum + sg.len * t, ei: sg.ei, side: Math.sign(abx * (p.y - sg.a.y) - aby * (p.x - sg.a.x)) };
+        const qx = sg.a.x + abx * t, qy = sg.a.y + aby * t, d = hyp(p.x - qx, p.y - qy);
+        // near-ties (where two roads share a junction point) go to the lower segment, so rounding never decides
+        if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && si < best.si))
+          best = { si, d, q: { x: qx, y: qy }, s: sg.cum + sg.len * t, ei: sg.ei, side: Math.sign(abx * (p.y - sg.a.y) - aby * (p.x - sg.a.x)),
+                   dir: { x: abx / (sg.len || 1), y: aby / (sg.len || 1) } };
       }
     }
     if (best && best.d < r * G) break;
   }
   return best && best.d <= maxD ? best : null;
+}
+
+// Small hills laid over everything, two octaves of Perlin noise.
+function bumpAt(x, y, seed) {
+  const sc = state.bumpSize;
+  return (perlin(x / sc, y / sc, seed + 71) + perlin(x / sc * 2.03, y / sc * 2.03, seed + 73) * 0.5) * state.bumpHeight;
 }
 
 function heightAt(rg, p, seed) {
@@ -687,12 +723,15 @@ function heightAt(rg, p, seed) {
   const ridged = 1 - Math.abs(2 * fbm(p.x / 1200 + 11, p.y / 1200 + 11, seed + 43) - 1);
   const mtn = state.mountain * ridged * ridged * shore;
   const hit = nearestRoad(rg, p, state.mountainDist); // beyond this the mountain is at full height anyway
-  if (!hit) return bp + mtn;
+  if (!hit) return bp + mtn + bumpAt(p.x, p.y, seed) * shore;
   const far = smooth(state.flatW, state.mountainDist, hit.d);
   const hq = Math.max(baseH(hit.q, seed), L + 3), base = hq + (bp - hq) * far;
   const k = (fbm(hit.s / 400 + hit.ei * 13.7, hit.side * 5 + 100, seed + 57) - 0.5) * 2 * state.bank;
   const rib = k * smooth(state.flatW * 0.5, state.ribbonW * 0.5, hit.d) * (1 - smooth(state.ribbonW * 0.5, state.ribbonW, hit.d));
-  return base + mtn * far + rib * shore;
+  // the road takes the bumps at its own centre, so it rolls along its length but stays level across
+  const bq = bumpAt(hit.q.x, hit.q.y, seed);
+  const bump = bq + (bumpAt(p.x, p.y, seed) * shore - bq) * smooth(state.flatW * 0.5, state.flatW * 0.5 + 30, hit.d);
+  return base + mtn * far + rib * shore + bump;
 }
 
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16, n >> 8 & 255, n & 255]; }
@@ -732,6 +771,42 @@ function drawTerrain(roadPts, seed, R, W, H, sc, cell) {
          `height range ${lo.toFixed(0)}..${hi.toFixed(0)} m`;
 }
 
+// --- scale: a scale bar plus the game's car drawn to size on the road nearest the centre ----
+const CAR = { length: 4.0, width: 1.8, height: 1.3 }; // about an MX-5
+
+// The car sits on the road nearest the map centre, pointing along it.
+function carPose(roadPts, cx, cy) {
+  const hit = nearestRoad(roadGrid(roadPts), { x: cx, y: cy }, 20000);
+  return hit ? { x: hit.q.x, y: hit.q.y, dir: hit.dir } : { x: cx, y: cy, dir: { x: 1, y: 0 } };
+}
+
+function drawScale(W, H, sc, roadPts) {
+  // scale bar: the largest 1/2/5 × 10^k metres that fits in ~160 px
+  let len = 1;
+  for (const m of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]) if (m * sc <= 160) len = m;
+  const x0 = 16, y0 = H - 20;
+  ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(x0 - 6, y0 - 18, len * sc + 70, 28);
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 5); ctx.lineTo(x0, y0); ctx.lineTo(x0 + len * sc, y0); ctx.lineTo(x0 + len * sc, y0 - 5); ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.font = "12px ui-monospace, monospace";
+  ctx.fillText(len >= 1000 ? `${len / 1000} km` : `${len} m`, x0 + len * sc + 8, y0);
+
+  const car = carPose(roadPts, -view.panX / sc, -view.panY / sc);
+  const X = W / 2 + view.panX + car.x * sc, Y = H / 2 + view.panY + car.y * sc;
+  const l = CAR.length * sc, w = CAR.width * sc;
+  ctx.save();
+  ctx.translate(X, Y);
+  ctx.rotate(Math.atan2(car.dir.y, car.dir.x));
+  ctx.fillStyle = "#e0302a";
+  ctx.fillRect(-l / 2, -w / 2, Math.max(l, 1), Math.max(w, 1));
+  ctx.restore();
+  if (l < 12) { // too small to see: ring it and say what it is
+    ctx.strokeStyle = "#e0302a"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(X, Y, 10, 0, 7); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.fillText(`car ${CAR.length} m`, X + 13, Y + 4);
+  }
+}
+
 // --- 3D preview of the terrain square at the map centre (three.js, flat-shaded, low-res) ----
 let view3d = null;
 function loadScript(src) {
@@ -743,6 +818,7 @@ async function open3D() {
     await loadScript("https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js");
     await loadScript("https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js");
   }
+  const keep = view3d ? { pos: view3d.camera.position.clone(), target: view3d.controls.target.clone() } : null;
   close3D();
   const { seed, R } = last, size = state.area3d, N = Math.round(state.res3d), ex = state.exag;
   const cx = -view.panX / last.sc, cy = -view.panY / last.sc;
@@ -797,6 +873,18 @@ async function open3D() {
     flush();
   }
 
+  // the car, to scale, on the road nearest the centre, with a tall pole so it can be found
+  const car = carPose(last.roadPts, cx, cy);
+  const carY = heightAt(rg, car, seed) * ex;
+  const carMesh = new THREE.Mesh(new THREE.BoxGeometry(CAR.length, CAR.height, CAR.width),
+    new THREE.MeshLambertMaterial({ color: 0xe0302a }));
+  carMesh.position.set(car.x - cx, carY + CAR.height / 2, car.y - cy);
+  carMesh.rotation.y = -Math.atan2(car.dir.y, car.dir.x);
+  scene.add(carMesh);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 60, 6), new THREE.MeshBasicMaterial({ color: 0xff5040 }));
+  pole.position.set(car.x - cx, carY + 30, car.y - cy);
+  scene.add(pole);
+
   const box = $("view3d");
   box.style.display = "block";
   const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -805,9 +893,12 @@ async function open3D() {
   box.append(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(55, box.clientWidth / box.clientHeight, 1, size * 10);
   camera.position.set(0, size * 0.35, size * 0.6);
+  camera.near = 0.2; camera.updateProjectionMatrix();
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  $("info3d").textContent = `${size} m square, ${(N + 1) ** 2} vertices, built in ${ms.toFixed(0)} ms`;
-  view3d = { renderer, controls, run: true };
+  $("info3d").textContent = `${size} m square, ${(N + 1) ** 2} vertices, built in ${ms.toFixed(0)} ms` +
+    ` · red box = the car (${CAR.length} × ${CAR.width} m), press C to fly to it`;
+  if (keep) { camera.position.copy(keep.pos); controls.target.copy(keep.target); }
+  view3d = { renderer, controls, run: true, carAt: carMesh.position.clone(), camera };
   const loop = () => { if (!view3d || !view3d.run) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); };
   loop();
 }
@@ -823,12 +914,15 @@ function close3D() {
 // A cheap stand-in for layer 2: the edge as a seeded noise-displaced curve that stays inside
 // a band around the straight line and lands exactly on both ends.
 function wiggle(a, b, seed) {
-  const d = dist(a, b), n = Math.max(2, Math.ceil(d / 40)), nx = -(b.y - a.y) / d, ny = (b.x - a.x) / d;
+  const step = Math.min(40, state.bendLen / 6);
+  // the small epsilon keeps a length that divides exactly from flipping on last-digit rounding
+  const d = dist(a, b), n = Math.max(2, Math.ceil(d / step - 1e-9)), nx = -(b.y - a.y) / d, ny = (b.x - a.x) / d;
   const s = Math.floor(hash2(Math.round(a.x + b.x), Math.round(a.y + b.y), seed) * 1e6);
   const out = [];
   for (let i = 0; i <= n; i++) {
     const t = i / n, env = Math.sin(t * Math.PI);
-    const off = (fbm(t * d / 300, 0, s) - 0.5) * 2 * Math.min(d * 0.18, 220) * env;
+    // twistiness sets how far the road may swing from the straight line, bend length how often it turns
+    const off = (fbm(t * d / state.bendLen, 0, s) - 0.5) * 2 * Math.min(d * state.roadTwist, 1200 * state.roadTwist) * env;
     out.push({ x: a.x + (b.x - a.x) * t + nx * off, y: a.y + (b.y - a.y) * t + ny * off });
   }
   return out;
@@ -836,7 +930,7 @@ function wiggle(a, b, seed) {
 
 function pick(mx, my) {
   let best = -1, bd = 12;
-  last.net.nodes.forEach((p, i) => { const d = Math.hypot(last.X(p.x) - mx, last.Y(p.y) - my); if (d < bd) { bd = d; best = i; } });
+  last.net.nodes.forEach((p, i) => { const d = hyp(last.X(p.x) - mx, last.Y(p.y) - my); if (d < bd) { bd = d; best = i; } });
   picked = best; render();
 }
 
@@ -871,12 +965,34 @@ $("seed").oninput = () => { picked = -1; draw(); };
 $("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 99999); picked = -1; draw(); };
 $("algo").onchange = () => { picked = -1; buildParams(); draw(); };
 for (const id of ["wiggle", "rings", "water"]) $(id).onchange = draw;
-$("terrain").onchange = () => { buildParams(); render(); };
+$("terrain").onchange = () => { buildParams(); render(); if (view3d) schedule3D(); };
 $("open3d").onclick = () => {
   if (!$("terrain").checked) { $("terrain").checked = true; buildParams(); render(); }
   open3D().catch(err => { $("stats").textContent += "\n3D failed: " + err; });
 };
 $("close3d").onclick = close3D;
+// Every value currently on screen, as text to paste into a chat.
+$("copy").onclick = async () => {
+  const algo = $("algo").value;
+  const shown = [...PARAMS.common, ...PARAMS[algo], ...($("terrain").checked ? PARAMS.terrain : [])];
+  const lines = [`seed: ${$("seed").value}`, `algorithm: ${$("algo").selectedOptions[0].text}`];
+  for (const [key, name] of shown) lines.push(`${name}: ${state[key]}`);
+  for (const id of ["wiggle", "rings", "water", "terrain"]) lines.push(`${id}: ${$(id).checked ? "on" : "off"}`);
+  const text = lines.join("\n");
+  try { await navigator.clipboard.writeText(text); }
+  catch { // file:// pages may not get the async clipboard; fall back to a selected textarea
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove();
+  }
+  $("copied").textContent = "copied";
+  setTimeout(() => { $("copied").textContent = ""; }, 1500);
+};
+addEventListener("keydown", ev => {
+  if (!view3d || ev.key.toLowerCase() !== "c") return;
+  const t = view3d.carAt;
+  view3d.controls.target.copy(t);
+  view3d.camera.position.set(t.x - 14, t.y + 6, t.z + 10);
+});
 onresize = render;
 buildParams(); draw();
 </script>
