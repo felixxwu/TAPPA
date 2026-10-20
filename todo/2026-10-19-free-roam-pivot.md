@@ -447,7 +447,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    plans from a single centreline, so it needs to work per road and per chunk, and it
    needs a rule at junctions. Also remaining: bush brushing (`BushField` hit-and-drag)
    and knocking trees over.
-4. **Biome rings — ring index, tint and foliage DONE.** Remaining:
+4. **Biome rings — DONE 2026-10-20** (`BiomeDirector`, `features/free-roam.md` → *Biomes*). Ring index, tint and foliage DONE. Remaining:
    - position-based sky, fog and weather that cross-fade at borders (the `GameConfig`
      global-write audit in §B);
    - per-ring `surface_grip` and surfaces, since `surface_at` is only road / off-road
@@ -607,3 +607,22 @@ Numbering continues from decision 32.
   planning from 0.65 s to 0.3 s. **REVIEW:** with roads in valleys, the stage's "land falls
   away" rule leaves very few barriers (about 190 modules on 48 km). Lowering
   `barrier_drop_min_m` or the turn threshold adds more.
+- **D43. REVIEW — four rings: home, greece, taiga, snow** (`FreeRoamSettings.ring_regions`).
+  `home_coast` is left out because its only identity is a raised stage waterline, which free
+  roam doesn't have (D44). Snow is in, because it's the region with its own handling. The
+  island's ring layout changes from the lab's 3 rings to 4.
+- **D44. REVIEW — one water level for the whole island.** The plan asked for water level per
+  biome, but lakes, the coast and road water-avoidance all come from one sea level in
+  `RoadTerrain`. A per-ring level would need ring-aware lake maths and a water mesh per ring. I
+  judged it not worth it for v1.
+- **D45. Weather drifts in 3-minute slots** of driving time. Each (ring, slot) is a seeded
+  weighted draw from the ring's pool (`ring_weather`). Driving back and forth across a border
+  can flip the weather, but the cross-fade softens it.
+- **D46. Biome borders switch per chunk** (64 m) for ground textures. The sky, fog and colour
+  cross-fade over 4 s, and the panorama swaps at the midpoint behind a fog swell. The prototype's
+  strong debug ring tints are gone: each ring's tint is now its region's `terrain_tint` (white
+  default), as on the stage.
+- **D47. Not ported:** storm lightning; night's terrain re-bake (night darkens the ground with
+  the albedo tint only); re-lighting foliage that was already spawned when the weather changes.
+- **D48. The stage 4 "Opus planning pass" was done inline.** This session already runs on Opus,
+  so a planning subagent would have been the same model re-reading the same context.

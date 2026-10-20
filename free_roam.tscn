@@ -17,6 +17,7 @@
 [ext_resource type="Script" path="res://scripts/speed_lines.gd" id="26_lines_s"]
 [ext_resource type="Shader" path="res://shaders/speed_lines.gdshader" id="27_lines"]
 [ext_resource type="Script" path="res://scripts/free_roam/road_recovery.gd" id="28_recovery"]
+[ext_resource type="Script" path="res://scripts/free_roam/biome_director.gd" id="29_biome"]
 
 [sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
 panorama = ExtResource("8_sky")
@@ -253,3 +254,10 @@ quit_body_override = "Leave the island and return to the title screen?"
 script = ExtResource("28_recovery")
 car = NodePath("../Car")
 streamer = NodePath("../Terrain")
+
+[node name="BiomeDirector" type="Node" parent="." node_paths=PackedStringArray("streamer", "car", "environment", "camera")]
+script = ExtResource("29_biome")
+streamer = NodePath("../Terrain")
+car = NodePath("../Car")
+environment = NodePath("../WorldEnvironment")
+camera = NodePath("../ChaseCamera")

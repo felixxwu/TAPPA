@@ -11,7 +11,23 @@ extends Resource
 ## The car the game starts in, by CarLibrary id (the first car if it is missing).
 @export var car_id := "porsche911"
 @export var island_radius_m := 5000.0
-@export var ring_count := 3
+@export var ring_count := 4
+
+@export_group("Biomes")
+## The region each biome ring wears, counting outward from spawn (RegionLibrary ids; wraps if
+## there are more rings). Its look, trees, rocks and handling come from RegionLibrary.
+@export var ring_regions := PackedStringArray(["home", "greece", "taiga", "snow"])
+## Each ring's weather pool, "id:weight,id:weight" (WeatherLibrary ids).
+@export var ring_weather := PackedStringArray([
+	"dry:5,rain:1,fog:1,night:1",
+	"dry:5,sandstorm:1,night:1",
+	"dry:3,rain:1,fog:1,storm:1,night:1",
+	"dry:3,snow:2,fog:1,night:1",
+])
+## How long the weather holds before it may change, in seconds of driving.
+@export var weather_hold_s := 180.0
+## How long the sky, fog and background take to blend to a new biome or weather.
+@export var look_crossfade_s := 4.0
 
 @export_group("Road network (radial growth)")
 @export var node_spacing_m := 75.0

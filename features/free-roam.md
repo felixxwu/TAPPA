@@ -2,10 +2,10 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
-**Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`
+**Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`
 
 The prototype of the free-roam pivot (`todo/2026-10-19-free-roam-pivot.md`). **The game boots
 straight into it** (`project.godot` → `run/main_scene = res://free_roam.tscn`); the hub and the
@@ -96,6 +96,39 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 - **Road candidates** are gathered once per chunk (`ChunkState.cands`), with a margin wide
   enough for both strides, and shared by its far and near builds.
 
+## Biomes
+
+`RoadTerrain.ring_index` puts every point in a ring, counting outward from spawn with a noisy
+border. Ring i wears region `FreeRoamSettings.ring_regions[i]` (`BiomeDirector.region_of`,
+wrapping). By default that's home, greece, taiga, snow.
+
+**Per chunk (`TerrainStreamer`):** each ring has its own copy of the ground material, carrying
+the region's `grass_texture`, `gravel_texture` and `tarmac_color` (`_material_for`). A chunk uses
+the material of the ring at its centre, so a border switches at chunk edges. The baked vertex
+tint is the region's `terrain_tint` (white when unset), and trees, bushes and rocks follow the
+region's `tree_mix`, bush switch and rock density.
+
+**Following the car (`BiomeDirector`, a node in `free_roam.tscn`):** every 0.25 s it reads the
+car's ring and the weather.
+- **Handling:** a new ring writes its region's surface grip, deep snow and frozen lakes onto the
+  live config, from the authored values (`apply_handling`, the twin of
+  `StageConfig.apply_event_config`'s handling block). It also re-wires the car's lake drag,
+  which is off where lakes are frozen.
+- **Weather drift:** driving time is cut into slots of `weather_hold_s`. Each (ring, slot) draws
+  from the ring's weighted pool in `ring_weather` (`"dry:5,rain:1"`, seeded by the world seed,
+  `weather_for`). A new condition sets `cfg.weather`, wind sway, the road tint on every ring
+  material (from the authored colours, so it never compounds), the particle field on the chase
+  camera, and the night headlight cone (pushed every frame while lit).
+- **Cross-fade:** a new target (`target_look`: the region's background colour, then the
+  weather's overcast look and panorama) blends the fog and background colours, fog density and
+  sky affect over `look_crossfade_s`. The panorama can't blend, so it swaps halfway, under a
+  fog swell.
+- **Exit:** `_exit_tree` puts back the weather, grip, sun dimming, wind and headlight globals.
+
+**Not ported from the stage:** storm lightning, and night's terrain re-bake. Night darkens the
+ground through the albedo tint only. Foliage spawned before a weather change keeps the light it
+was spawned with. There is **one water level** for the whole island (no per-ring waterline).
+
 ## Sites: rest stops, loot slots and dead ends
 
 `RoadSites` plans every place that hangs off the network, once at boot from the whole graph
@@ -155,8 +188,8 @@ chunk.
     into outcrops with `TreeScatter.cluster`.
   - Each spot is rejected if it is in water or within the road's width plus
     `tree_road_margin_m` plus the plant's own radius.
-- **Biomes:** ring i wears region i of `RegionLibrary.ordered()` (wrapping), so each ring
-  uses that region's `tree_mix`, its bush switch (`spawns_bush_mesh`) and its rock density.
+- **Biomes:** each ring uses its region's `tree_mix`, bush switch (`spawns_bush_mesh`) and
+  rock density (see *Biomes*).
 - **Under the budget:** the `PLANT` stage checks a few spots at a time, and `SPAWN` builds
   one foliage field per species as its own unit of work.
 - **Lifetime:** the foliage lives on `ChunkState.foliage` and is freed with the near mesh.
@@ -208,7 +241,7 @@ Run it from the command line to drive 3 km of the real island and print the repo
 
 ## Not in the prototype yet
 
-Rest stop and loot models (sites only have placeholder posts), pickups, the per-region look (rings are a vertex tint only), damage and checkpoint logic,
+Rest stop and loot models (sites only have placeholder posts), pickups, damage and checkpoint logic,
 and threading. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.

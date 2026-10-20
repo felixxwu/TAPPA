@@ -12,11 +12,6 @@ extends RefCounted
 # same mountains in both. The one addition is a fade to sea floor near the coast, which the
 # lab never draws.
 
-const RING_TINTS: Array[Color] = [
-	Color("#8fbf78"), Color("#d8c48a"), Color("#77a888"), Color("#8fbcc0"), Color("#e6eef2"),
-	Color("#b88a8a"), Color("#a898c8"), Color("#c8b888"),
-]
-
 var net: RoadNetwork
 # The rest stop / loot / dead-end pads (RoadSites), once planned: the ground under each is
 # flattened to its road's height and reads as road. Null while the sites are being planned.
@@ -133,7 +128,3 @@ func road_weight(d: float) -> float:
 func ring_index(x: float, y: float) -> int:
 	var wob := (LabNoise.fbm(x / 1500.0 + 9.0, y / 1500.0 + 9.0, _s.world_seed + 3) - 0.5) * 0.25
 	return clampi(floori((LabNoise.hyp(x, y) / (_s.island_radius_m * 0.82) + wob) * _s.ring_count), 0, _s.ring_count - 1)
-
-
-func ring_tint(x: float, y: float) -> Color:
-	return RING_TINTS[ring_index(x, y) % RING_TINTS.size()]

@@ -51,6 +51,7 @@ var _ran_this_frame := false
 var _sun := SUN.normalized()
 var _forest: FastNoiseLite
 var _ring_looks: Array[Dictionary] = []
+var _ring_materials: Array[Material] = []
 
 
 class ChunkState:
@@ -110,15 +111,55 @@ func _ready() -> void:
 		barriers.plan(settings, network, terrain, sites, barrier_params())
 	stat_build_ms = Time.get_ticks_msec() - t0
 	_forest = TreeScatter.make_forest_noise(settings.world_seed, Config.data.forest_wavelength_m)
-	# Biome ring i wears region i of the progression (wrapping if there are more rings).
-	var regions := RegionLibrary.ordered()
+	# Biome ring i wears region ring_regions[i]: its trees and rocks, and a ground material
+	# carrying its grass / gravel textures and tarmac colour.
 	for i in settings.ring_count:
-		_ring_looks.append(RegionLibrary.look_of(String(regions[i % regions.size()]["id"])))
+		var look := RegionLibrary.look_of(BiomeDirector.region_of(settings, i))
+		_ring_looks.append(look)
+		_ring_materials.append(_material_for(look))
 	print("free roam: network %d nodes, %d links, %.0f km of road, %d rest stops, %d loot slots, %d dead ends, built in %d ms" % [
 		network.node_x.size(), network.edges.size(), network.total_length_m / 1000.0,
 		sites.of_kind(RoadSites.Kind.REST).size(), sites.of_kind(RoadSites.Kind.LOOT).size(),
 		sites.of_kind(RoadSites.Kind.DEAD_END).size(), stat_build_ms])
 	print("free roam: %d barrier modules" % barriers.modules.size())
+
+
+func _material_for(look: Dictionary) -> Material:
+	var sm := material as ShaderMaterial
+	if sm == null:
+		return material
+	var m := sm.duplicate() as ShaderMaterial
+	if look.has("grass_texture"):
+		m.set_shader_parameter("albedo_texture", load(look["grass_texture"]))
+	if look.has("gravel_texture"):
+		m.set_shader_parameter("road_texture", load(look["gravel_texture"]))
+	if look.has("tarmac_color"):
+		m.set_shader_parameter("tarmac_color", look["tarmac_color"])
+	return m
+
+
+# Every ring's ground material (the BiomeDirector tints them for the weather).
+func ring_materials() -> Array[ShaderMaterial]:
+	var out: Array[ShaderMaterial] = []
+	for m in _ring_materials:
+		if m is ShaderMaterial:
+			out.append(m)
+	return out
+
+
+# The vertex tint baked under a point: its ring's region `terrain_tint`, white when it has none
+# (the stage's default), so the region's own textures show true.
+func ring_tint_at(p: Vector2) -> Color:
+	if _ring_looks.is_empty():
+		return Color.WHITE
+	return _ring_looks[terrain.ring_index(p.x, p.y)].get("terrain_tint", Color.WHITE)
+
+
+func ring_material_at(coord: Vector2i) -> Material:
+	if _ring_materials.is_empty():
+		return material
+	var cm := settings.chunk_m
+	return _ring_materials[terrain.ring_index((coord.x + 0.5) * cm, (coord.y + 0.5) * cm)]
 
 
 # --- what the car asks of its terrain ------------------------------------------------------
@@ -280,7 +321,7 @@ func _prep(job: ChunkJob) -> void:
 	job.road_d.resize(job.n * job.n)
 	job.cursor = 0
 	job.stage = Stage.HEIGHTS
-	job.tint = terrain.ring_tint((job.coord.x + 0.5) * cm, (job.coord.y + 0.5) * cm)
+	job.tint = ring_tint_at(Vector2((job.coord.x + 0.5) * cm, (job.coord.y + 0.5) * cm))
 	# A chunk wholly beyond the furthest possible coastline is open sea: no sampling needed.
 	var nx := clampf(0.0, job.coord.x * cm - job.stride, (job.coord.x + 1) * cm + job.stride)
 	var ny := clampf(0.0, job.coord.y * cm - job.stride, (job.coord.y + 1) * cm + job.stride)
@@ -411,7 +452,7 @@ func _attach(job: ChunkJob) -> void:
 		return
 	var mi := MeshInstance3D.new()
 	mi.mesh = job.mesh
-	mi.material_override = material
+	mi.material_override = ring_material_at(job.coord)
 	mi.position = Vector3(job.coord.x * settings.chunk_m, 0.0, job.coord.y * settings.chunk_m)
 	add_child(mi)
 	if job.near:
@@ -472,7 +513,7 @@ func _collide(job: ChunkJob) -> void:
 # the same tint-times-sun shading the chunk vertices get.
 func light_at(x: float, z: float) -> Color:
 	var n := Vector3(height_at(x - 1.0, z) - height_at(x + 1.0, z), 2.0, height_at(x, z - 1.0) - height_at(x, z + 1.0)).normalized()
-	var c := terrain.ring_tint(x, z) * (0.55 + 0.5 * maxf(0.0, n.dot(_sun)))
+	var c := ring_tint_at(Vector2(x, z)) * (0.55 + 0.5 * maxf(0.0, n.dot(_sun)))
 	c.a = 1.0
 	return c
 
