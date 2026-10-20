@@ -31,6 +31,7 @@ func before_each() -> void:
 	# rpm / HP) and several config flags every frame, and individual tests inject
 	# velocity / engine state / damage, toggle the debug readout, and flip HUD config
 	# flags — undo all of that so no test leaks state into the next.
+	get_tree().paused = false
 	var cfg: GameConfig = Config.data
 	cfg.hud_enabled = true
 	cfg.hud_elapsed_enabled = true
@@ -68,6 +69,26 @@ func before_each() -> void:
 func test_hud_visible_when_enabled() -> void:
 	assert_true(Config.data.hud_enabled, "default config keeps the HUD on")
 	assert_true(_scene.get_node("HUD").visible, "HUD visible when hud_enabled")
+
+
+# A paused page (pause menu, rest stop, map, stats) covers the HUD: its gauges go transparent
+# (alpha, not `visible`, so photo mode / hud_enabled stay in charge of visibility) and return
+# when the tree resumes.
+func test_hud_content_hides_while_the_tree_is_paused() -> void:
+	var hud: CanvasLayer = _scene.get_node("HUD")
+	var controls: Array = hud.get_children().filter(func(c): return c is Control)
+	assert_false(controls.is_empty(), "setup: the HUD has Control children")
+	get_tree().paused = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for c in controls:
+		assert_eq((c as Control).modulate.a, 0.0, "%s is transparent while paused" % c.name)
+	assert_true(hud.visible, "the layer's own visibility is untouched")
+	get_tree().paused = false
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for c in controls:
+		assert_eq((c as Control).modulate.a, 1.0, "%s is back after resume" % c.name)
 
 
 func test_hud_hidden_when_disabled() -> void:

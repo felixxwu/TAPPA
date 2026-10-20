@@ -217,6 +217,50 @@ func test_a_ring_short_of_sites_moves_its_lesser_items_to_a_ring_with_spare() ->
 	assert_true(spare in shown_in.values(), "the other went to the ring with sites to spare")
 
 
+func test_scarce_spare_sites_show_the_best_of_what_overflowed() -> void:
+	var s := _settings()
+	var sites := _sites(s)
+	var by_ring := _loot_sites_by_ring(sites, s.ring_count)
+	var with_sites: Array = []
+	for r in s.ring_count:
+		if not (by_ring[r] as Array).is_empty():
+			with_sites.append(r)
+	if with_sites.size() < 2:
+		pass_test("this island has loot sites in only one ring")
+		return
+	var short: int = with_sites[0]
+	var spare: int = with_sites[1]
+	var tables := LootLibrary.ring_tables(s.ring_count)
+	# Three items of the short ring with distinct worth.
+	var by_rank := {}
+	for item: Dictionary in tables[short]:
+		if not by_rank.has(LootLibrary._rank(item)):
+			by_rank[LootLibrary._rank(item)] = item
+	if by_rank.size() < 3:
+		pass_test("the ring has fewer than three distinct kinds of item")
+		return
+	var ranks := by_rank.keys()
+	ranks.sort()
+	var best: Dictionary = by_rank[ranks[0]]
+	var mid: Dictionary = by_rank[ranks[1]]
+	var worst: Dictionary = by_rank[ranks[2]]
+	var taken := {}
+	for r in s.ring_count:
+		for item: Dictionary in tables[r]:
+			taken[LootLibrary.item_key(item)] = true
+	for item in [best, mid, worst]:
+		taken.erase(LootLibrary.item_key(item))
+	# Two free sites in all: one in the short ring, one in the spare ring.
+	var spent: Array = []
+	for r in s.ring_count:
+		var keep := 1 if (r == short or r == spare) else 0
+		spent.append_array((by_ring[r] as Array).slice(keep))
+	var shown := _shown_keys(LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, spent))
+	assert_true(shown.has(LootLibrary.item_key(best)), "the best stays")
+	assert_true(shown.has(LootLibrary.item_key(mid)), "the next best takes the one spare site")
+	assert_false(shown.has(LootLibrary.item_key(worst)), "the worst is the one left with nowhere to show")
+
+
 func test_dead_ends_show_the_best_of_their_ring() -> void:
 	var s := _settings()
 	var sites := _sites(s)
@@ -259,6 +303,18 @@ func test_one_of_each_part_one_engine_and_no_kit_for_the_cars_own_layout() -> vo
 	var own_mode := int(car.get("drive_mode", CarLibrary.RWD))
 	assert_false(LootLibrary.can_fit(owned, {"kind": "part", "id": "drivetrain:%d" % own_mode}))
 	assert_false(LootLibrary.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
+
+
+func test_a_kit_for_the_cars_own_layout_is_never_fittable_even_beside_another_kit() -> void:
+	var own := CarLibrary.RWD
+	var other := CarLibrary.FWD
+	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": []}
+	own = UpgradeLibrary.stock_drive_mode(owned)
+	other = CarLibrary.FWD if own != CarLibrary.FWD else CarLibrary.AWD
+	owned["parts"] = [{"kind": "part", "id": "drivetrain:%d" % other}]
+	var own_kit := {"kind": "part", "id": "drivetrain:%d" % own}
+	assert_false(LootLibrary.can_fit(owned, own_kit), "no kit for the stock layout, swap or not")
+	assert_false(LootLibrary.occupant(owned, own_kit).is_empty(), "though another kit does occupy the slot")
 
 
 # --- in the world ----------------------------------------------------------------------------------
@@ -338,6 +394,23 @@ func test_a_teleport_past_loot_does_not_pick_it_up() -> void:
 	(scene.get_node("Car") as Node3D).global_position = Vector3(to.x, 0.0, to.y)
 	loot.step()
 	assert_false(loot.is_collected(site), "a jump across the map isn't driving past")
+
+
+# A short hop (well under the 100 m guard) over a loot pad is a teleport, not a drive past.
+func test_a_short_teleport_over_loot_does_not_pick_it_up() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	loot.set_physics_process(false)
+	var sites := (scene.get_node("Terrain") as TerrainStreamer).sites
+	var site := _site_with(loot, func(i: Dictionary) -> bool: return i["kind"] == "part")
+	var d := sites.dir[site]
+	var from := sites.anchor[site] - d * 40.0
+	var to := sites.anchor[site] + d * 40.0
+	loot._last_p = from
+	(scene.get_node("Car") as Node3D).global_position = Vector3(to.x, 0.0, to.y)
+	loot.car_teleported(to)
+	loot.step()
+	assert_false(loot.is_collected(site), "a teleport over the pad isn't driving past")
 
 
 func test_a_car_the_player_owns_never_shows_on_the_ground() -> void:
@@ -452,6 +525,23 @@ func test_the_parts_page_fits_and_removes_parts_and_reloads_the_car_on_close() -
 	assert_eq(WorldSession.list("stash").size(), 1, "and back in the stash")
 	page.close()
 	assert_signal_emitted(page, "car_changed")
+
+
+func test_the_parts_page_never_offers_the_own_layout_kit_even_with_another_kit_fitted() -> void:
+	var scene := await _boot()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	var own := UpgradeLibrary.stock_drive_mode(WorldSession.active_car())
+	var other := CarLibrary.FWD if own != CarLibrary.FWD else CarLibrary.AWD
+	var owned := WorldSession.active_car()
+	owned["parts"] = [{"kind": "part", "id": "drivetrain:%d" % other}]
+	page.owned = owned
+	WorldSession.set_list("stash", [{"kind": "part", "id": "drivetrain:%d" % own}])
+	page.open(0)
+	page._show(RestStopPage.View.PARTS)
+	assert_eq(page.cards().card_count(), 2, "the fitted kit, then the stash kit")
+	assert_true(page.cards()._cards[1].disabled, "the own-layout kit can't be fitted or swapped in")
+	page.dirty = false
+	page.close()
 
 
 func test_the_garage_switches_the_active_car() -> void:

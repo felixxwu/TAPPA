@@ -763,3 +763,12 @@ Numbering continues from decision 32.
   **REVIEW:** travelling repairs the car (as at a rest stop), so a player whose cooling has failed
   can open the map and travel to safety instead of racing the gauge — it weakens the damage chain's
   tension. Options: no travel while the cooling is broken, or travel without the repair.
+- **D85. Post-pivot code review (three reviewers) — all findings fixed.** Streaming: old chunks
+  shed detail/collision after a teleport; planting heights are exact, not the neighbour's loaded
+  LOD; no duplicate loot crates; far-mesh gaps interleave with planting (`far_lead_chunks`);
+  vegetation off keeps barriers and site dressing. Gameplay: travel after a parts change lands at
+  the target; the pose is cached each tick so every exit path saves it; no own-layout kit swap;
+  teleports and resets reset the drive-past sweep; overflow keeps the best items. UI: a scene
+  change always unpauses (the Wipe soft-lock); the HUD hides under paused pages; the preview cache
+  re-parents stale previews and drops a previous world's cars; a Stats page nav test. The
+  auto-driver test allows ≤ 3 safety-net rushes (it varies 0–2 with machine load).

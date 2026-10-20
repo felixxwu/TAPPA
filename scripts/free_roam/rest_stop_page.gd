@@ -162,7 +162,9 @@ func _build_parts() -> void:
 	for i in stash.size():
 		var part: Dictionary = stash[i]
 		var taken := LootLibrary.occupant(owned, part)
-		var ok := (LootLibrary.can_fit(owned, part) or not taken.is_empty()) and not _same_id_fitted(part)
+		# can_fit already covers a swap (one of a kind, so an occupant never blocks it), and never
+		# offers a kit for the car's own layout, whatever is fitted.
+		var ok := LootLibrary.can_fit(owned, part)
 		var extra := "Can't fit"
 		if ok:
 			extra = "Swap for " + LootLibrary.card_text(taken)[0] if not taken.is_empty() else "Fit"
@@ -275,9 +277,11 @@ func return_from_map() -> void:
 	_show(View.MAIN)
 
 
+# Travel first, then close: after a parts / car change close() asks the host to save and reload the
+# scene, and that save must see the car at the destination (and the respawn point there).
 func _travel(target: int) -> void:
-	close()
 	rest_stops.travel_to(target)
+	close()
 
 
 # Readout for tests: the current page's card list (null on TUNE).

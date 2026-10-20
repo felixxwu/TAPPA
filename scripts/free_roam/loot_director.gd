@@ -148,6 +148,12 @@ func step() -> void:
 			recover_dropped()
 
 
+# The car was teleported (respawn, travel, R reset) to `p`: the next step must not sweep from where
+# it was, or the straight line through the terrain would count as a drive past.
+func car_teleported(p: Vector2) -> void:
+	_last_p = p
+
+
 func collect(site: int) -> void:
 	var item: Dictionary = placement[site]
 	var col := WorldSession.list("collected")

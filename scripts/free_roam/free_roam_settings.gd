@@ -108,3 +108,8 @@ extends Resource
 ## The safety net: if the chunk the car will be over in this many seconds has no collision yet,
 ## it is built at once, over the frame budget (a hitch rather than a fall through the world).
 @export var collision_rush_s := 0.5
+## Queue order between planting and far meshes: planting a near chunk d chunks away waits for any
+## far mesh that would fill a gap in the horizon closer than d + this many chunks (0 = planting
+## and far gaps at the same distance tie; larger favours the horizon over foliage). Never puts
+## either ahead of a collision or near-mesh build.
+@export_range(0.0, 40.0) var far_lead_chunks := 3.0

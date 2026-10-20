@@ -226,6 +226,19 @@ func test_confirming_the_modal_wipes_the_save() -> void:
 		"the page reports what happened")
 
 
+# The pause menu's Settings is reached with the tree PAUSED; the wipe reloads the title, whose
+# carousel tween and MenuNav only run on an unpaused tree — arriving paused was a soft-lock.
+func test_wipe_from_a_paused_tree_unpauses_on_the_way_to_the_title() -> void:
+	var menu := _make_menu()
+	get_tree().paused = true
+	Scenes.last_blocked_path = ""
+	menu._wipe_progress()
+	await get_tree().process_frame
+	assert_false(get_tree().paused, "the scene change leaves the tree unpaused")
+	if Scenes.block_real_changes:
+		assert_eq(Scenes.last_blocked_path, Scenes.hub_path(), "heading for the title")
+
+
 # --- Dev tooling is not offered to players -------------------------------------------
 #
 # SALVAGED from the deleted test_menu_flow.gd, where these lived because Settings was

@@ -13,6 +13,14 @@ text input in `scripts/text_field.gd`, the cloud-save form in `scripts/account_m
 the rally-detail panel in `scripts/rally_detail.gd`, and the session-aware fielding in
 `scripts/world.gd`.
 
+**Scene changes unpause.** `Scenes.change_to` sets `tree.paused = false` for every caller (before
+the test kill switch): pages that paused the tree (Settings' Wipe all progress from the pause menu
+-> title) must not arrive at a scene whose carousel tweens and `MenuNav` need an unpaused tree.
+**The HUD hides under paused pages.** `hud.gd` runs `PROCESS_MODE_ALWAYS` and makes its Control
+children transparent (`modulate.a`, not `visible`, so photo mode / `hud_enabled` keep control)
+while `get_tree().paused`, so rest-stop / map / stats pages don't overlap the health gauge.
+Tests: `test_settings_menu.gd` (wipe unpauses), `test_hud.gd`, `test_world_pages.gd` (Stats page nav).
+
 **Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`,
 `tests/headless/test_pause_menu.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_settings_menu.gd`,
 `tests/headless/test_text_field.gd`, `tests/headless/test_hub_shell.gd`

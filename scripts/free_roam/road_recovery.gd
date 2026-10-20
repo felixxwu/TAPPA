@@ -13,6 +13,9 @@ extends Node
 @export var car: VehicleBody3D
 @export var streamer: TerrainStreamer
 
+# A reset moved the car to this XZ (hosts reset their swept pickup / rest-stop checks).
+signal reset_done(p: Vector2)
+
 var _stuck_time := 0.0
 
 
@@ -60,7 +63,9 @@ func is_stuck_step(delta: float) -> bool:
 func reset_now() -> void:
 	_stuck_time = 0.0
 	var p := Vector2(car.global_position.x, car.global_position.z)
-	car.reset_to(road_pose(streamer, p, -car.global_transform.basis.z))
+	var pose := road_pose(streamer, p, -car.global_transform.basis.z)
+	car.reset_to(pose)
+	reset_done.emit(Vector2(pose.origin.x, pose.origin.z))
 
 
 # A pose on the nearest road to `p`, facing along the road in the direction closest to `facing`.

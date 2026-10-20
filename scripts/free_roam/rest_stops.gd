@@ -19,6 +19,8 @@ signal opened(site: int)
 signal respawned(site: int, wreck_pos: Vector3)
 signal travelled(site: int)
 signal respawn_point_changed(site: int)
+# The car was moved by a travel or a respawn, to this XZ (listeners reset their swept checks).
+signal car_teleported_to(p: Vector2)
 # The car drove past rest stop `site` and was fully healed.
 signal healed(site: int)
 
@@ -69,6 +71,12 @@ func rest_reached(a: Vector2, b: Vector2) -> int:
 	var sites := streamer.sites
 	return sites.reached(a, b, RoadSites.road_margin(streamer.settings),
 		func(i: int) -> bool: return sites.kind[i] == RoadSites.Kind.REST)
+
+
+# The car was moved to `p` by something other than driving (a respawn, travel, R reset): the next
+# step must not sweep from where it was. (Car.reset_to is queued, so the position is passed in.)
+func car_teleported(p: Vector2) -> void:
+	_last_p = p
 
 
 func _physics_process(delta: float) -> void:
@@ -141,6 +149,8 @@ func move_car_to(site: int) -> void:
 	streamer.prefill_at(Vector2(pose.origin.x, pose.origin.z))
 	pose = pose_at(site)  # the ground is loaded now, so the height is the drawn one
 	car.reset_to(pose)
+	_last_p = Vector2(pose.origin.x, pose.origin.z)
+	car_teleported_to.emit(_last_p)  # the loot director's sweep too
 	last_site = site
 	_on_site = site
 	_offered = site  # arriving isn't a fresh stop: no page until you leave and come back

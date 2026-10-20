@@ -44,7 +44,10 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
   pose, re-seated on the built ground.
 - While driving: driven cells, the ring reached and the sites seen (`MiniMap.mark_seen_near`) every 0.25 s; pose, condition, drive time
   and the distance odometer (`LifetimeStats.DISTANCE_DRIVEN_M`) every 5 s, and on Quit or scene
-  exit (`tree_exiting`, while the car is still readable). `RestStops.lit` / `respawn_point_changed`
+  exit (`tree_exiting`, window close request). The children leave the tree before the scene root's
+  `tree_exiting` fires, so `save_world` can't read the car then: it uses the pose cached on every
+  physics tick (damage and drive time stay readable). The rest-stop page's Travel moves the car
+  first and closes after, so the reload's save holds the destination. `RestStops.lit` / `respawn_point_changed`
   write straight through; a respawn bumps `TIMES_GAVE_UP`.
 
 ## Title screen (`TitleScreen`, decision 20)

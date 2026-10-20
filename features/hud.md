@@ -10,6 +10,12 @@ claims a documented label is/isn't H-gated in a way that disagrees with it)
 
 On-screen readout plus two interactive mode buttons.
 
+## Pause behaviour
+
+The HUD is `PROCESS_MODE_ALWAYS` and, while `get_tree().paused`, sets every direct Control
+child's `modulate.a` to 0 (restored on resume) and skips its refresh. Alpha rather than `visible`
+so `hud_enabled`, world.gd's photo-mode chrome and the gauges' fitted logic keep owning `visible`.
+
 ## Elements
 
 | Node | Shows | Source |

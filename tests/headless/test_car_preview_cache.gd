@@ -119,3 +119,38 @@ func test_warm_all_awaits_an_inflight_pass() -> void:
 		"the in-flight pass must have completed, not been abandoned")
 
 	Save.profile[Save.KEY_CARS] = []
+
+
+# A page queue_free()d WITHOUT parking its previews leaves the preview parented under that
+# (still-alive-until-end-of-frame) page; the caller's add_child would fail on it.
+func test_get_or_build_unparents_a_preview_left_inside_a_dying_page() -> void:
+	_track(2)
+	var preview := CarPreviewCache.get_or_build(2)
+	var page := Control.new()
+	add_child_autofree(page)
+	page.add_child(preview)
+	page.queue_free()
+	var again := CarPreviewCache.get_or_build(2)
+	assert_eq(again, preview, "the still-valid preview is reused")
+	assert_null(again.get_parent(), "and handed back unparented so the caller can add_child it")
+
+
+# A new world replaces every owned car, so the old world's owned previews are dropped;
+# catalogue previews survive.
+func test_world_changed_drops_owned_previews_only() -> void:
+	var owned := {"instance_id": 4242, "model_id": "zzz_world_drop"}
+	_track(owned)
+	_track(3)
+	var owned_preview := CarPreviewCache.get_or_build(owned)
+	var catalogue_preview := CarPreviewCache.get_or_build(3)
+	CarPreviewCache.park(owned_preview)
+	CarPreviewCache.park(catalogue_preview)
+
+	WorldSession.world_changed.emit()
+
+	assert_false(CarPreviewCache._cache.has(CarPreviewCache.key_for(owned)),
+		"the old world's owned preview leaves the cache")
+	assert_false(is_instance_valid(owned_preview), "and is freed")
+	assert_true(CarPreviewCache._cache.has(CarPreviewCache.key_for(3)),
+		"catalogue previews are kept")
+	assert_true(is_instance_valid(catalogue_preview))

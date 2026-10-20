@@ -89,7 +89,13 @@ static var last_blocked_path := ""
 # Every production scene transition goes through here. Routing them all through one function
 # is what makes the kill switch above total: a new transition added anywhere inherits the
 # protection instead of quietly reintroducing the leak.
+#
+# It also UNPAUSES the tree, for every caller: a pause page (settings Wipe, a rest-stop / map
+# page, the pause menu) paused the tree to open, and the next scene's CardCarousel tweens and
+# MenuNav run on the tree's pause state — arriving paused is a soft-lock. No caller wants to
+# stay paused across a change. Done before the test kill switch so tests can assert it.
 static func change_to(tree: SceneTree, path: String) -> void:
+	tree.paused = false
 	if block_real_changes:
 		last_blocked_path = path
 		return

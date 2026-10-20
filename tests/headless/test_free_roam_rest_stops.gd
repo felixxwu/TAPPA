@@ -244,6 +244,41 @@ func test_picking_a_travel_target_goes_there() -> void:
 	assert_eq(_rest.last_site, site)
 
 
+# Travel after a parts change: the car moves first, so the save the reload makes holds the
+# destination (not the old stop), and the respawn point is the destination.
+func test_travel_after_a_parts_change_saves_the_destination() -> void:
+	var site := _a_rest_stop()
+	_rest.lit_sites[site] = true
+	var reload := Callable(_scene, "_reload_car")
+	_page.car_changed.disconnect(reload)
+	var saved := []
+	var rec := func() -> void:
+		_scene.save_world()
+		saved.append(WorldSession.pose_transform())
+	_page.car_changed.connect(rec)
+	_page.open(0)
+	_page.dirty = true
+	_page._travel(site)
+	_page.car_changed.disconnect(rec)
+	_page.car_changed.connect(reload)
+	assert_eq(saved.size(), 1, "the changed car is reloaded")
+	var dest := _rest.pose_at(site).origin
+	var at: Vector3 = (saved[0] as Transform3D).origin
+	assert_lt(Vector2(at.x, at.z).distance_to(Vector2(dest.x, dest.z)), 2.0, "saved at the destination")
+	assert_eq(_rest.last_site, site)
+
+
+# A travel / respawn hop that lands within 100 m of the old spot still isn't swept as driving.
+func test_moving_the_car_is_not_a_pass_through_the_stops_in_between() -> void:
+	var site := _a_rest_stop()
+	_rest.lit_sites[site] = true
+	var before := Vector2(_car.global_position.x, _car.global_position.z)
+	_rest._last_p = before
+	_rest.move_car_to(site)
+	var pose := _rest.pose_at(site)
+	assert_eq(_rest._last_p, Vector2(pose.origin.x, pose.origin.z), "the sweep restarts at the destination")
+
+
 func test_the_tune_page_edits_the_fielded_car() -> void:
 	_page.open(0)
 	_page._show(RestStopPage.View.TUNE)

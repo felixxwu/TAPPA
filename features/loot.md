@@ -44,11 +44,12 @@ what the player holds changes (a pickup, a drop, a lost drop), emitting `pool_ch
   empty out together when it's taken).
 - **A site you pick something up from is spent** (`collected`): nothing ever shows there again.
 - **A ring with more items than free sites** keeps its best and moves the rest to the nearest ring
-  with sites to spare (inward first). If no ring has any to spare, those items show nowhere — so
+  with sites to spare (inward first); the overflow is hosted best-first across rings, so scarce
+  spare sites show the best of what overflowed. If no ring has any to spare, those items show nowhere — so
   sites are kept plentiful.
 - **A ring with no loot sites** (the road network never reached it) folds its table into the
   nearest ring that has some (`pool_rings`).
-- **A lost drop** (giving up again before fetching the first) puts its items back in the pool.
+- **A lost drop** (giving up again while carrying something, before fetching the first) puts its items back in the pool.
 
 There are plenty of sites: `FreeRoamSettings.loot_slot_spacing_m` is 150 m of road. The road
 network varies a lot by world seed; `LootDirector.pacing_report()` prints sites, table size, items
@@ -79,8 +80,8 @@ left and sites showing something per ring at boot.
 - **Bank:** opening the rest-stop page calls `bank()`. Parts go to the shared `stash`; car titles
   become owned cars.
 - **Drop:** when the car gives up, `carried` is left at the wreck (`dropped`, marked by a red
-  beacon). Driving back within `DROPPED_REACH_M` recovers it. Giving up again first replaces the
-  drop: the old one is lost, and its items go back into the pool to be found again (decision 11).
+  beacon). Driving back within `DROPPED_REACH_M` recovers it. Giving up again while carrying
+  something replaces the drop (an empty-handed give-up keeps the earlier pile): the old one is lost, and its items go back into the pool to be found again (decision 11).
 - **Rumours** are read on pickup: their ring is added to `revealed` (ring 0 starts revealed).
   The journal (`journal()`) lists each revealed ring's items; "found" means the player has it.
 

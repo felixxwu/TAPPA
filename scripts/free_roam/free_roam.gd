@@ -30,6 +30,8 @@ var _save_t := SAVE_EVERY_S
 var _map_t := 0.0
 var _odometer_m := 0.0
 var _last_xz := Vector2.ZERO
+var _last_pose := Transform3D.IDENTITY  # the car's pose as of the last physics tick (see save_world)
+var _has_pose := false
 
 
 # The island's seed comes from the saved world, and must be set before the streamer builds its
@@ -62,6 +64,9 @@ func _ready() -> void:
 	_rest_stops.respawned.connect(func(_site: int, wreck: Vector3) -> void:
 		$LootDirector.drop_at(wreck)
 		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP))
+	_rest_stops.car_teleported_to.connect($LootDirector.car_teleported)
+	_recovery.reset_done.connect($LootDirector.car_teleported)
+	_recovery.reset_done.connect(_rest_stops.car_teleported)
 	_rest_page.car_changed.connect(_reload_car)
 	_rest_page.owned = owned
 	_rest_stops.opened.connect(_rest_page.open)
@@ -71,7 +76,10 @@ func _ready() -> void:
 	_pause.reset_to_track_requested.connect(_recovery.reset_now)
 	_pause.extra_requested.connect(_on_pause_extra)
 	_pause.quitting.connect(save_world)
-	tree_exiting.connect(save_world)  # before the children leave, so the car is still readable
+	# Every other exit (a scene change, the window closing). The children leave the tree before this
+	# node's tree_exiting fires, so the car's transform is unreadable by then: save_world falls back
+	# on the pose cached each physics tick.
+	tree_exiting.connect(save_world)
 	_rest_page.map_requested.connect(func(site: int) -> void:
 		$WorldPages.show_map(_rest_page.return_from_map, site))
 	_minimap.open_requested.connect(open_full_map)
@@ -136,10 +144,15 @@ func _close_full_map() -> void:
 
 
 # Write the car's place, condition and the drive clock to the world session.
+# The pose is read live while the car is in the tree, else from the per-tick cache (on exit paths).
 func save_world() -> void:
-	if not _car.is_inside_tree() or not WorldSession.has_world():
+	if not WorldSession.has_world():
 		return
-	WorldSession.save_pose(_car.global_transform)
+	if _car.is_inside_tree():
+		_last_pose = _car.global_transform
+		_has_pose = true
+	if _has_pose:
+		WorldSession.save_pose(_last_pose)
 	WorldSession.save_car_state(_car.damage)
 	WorldSession.set_drive_time($BiomeDirector.drive_time)
 	if _odometer_m >= 1.0:
@@ -147,7 +160,14 @@ func save_world() -> void:
 		_odometer_m -= floorf(_odometer_m)
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		save_world()
+
+
 func _physics_process(delta: float) -> void:
+	_last_pose = _car.global_transform
+	_has_pose = true
 	var p := Vector2(_car.global_position.x, _car.global_position.z)
 	var step := p.distance_to(_last_xz)
 	if step < 30.0:  # a teleport is not driving

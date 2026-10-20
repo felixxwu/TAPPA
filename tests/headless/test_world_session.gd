@@ -148,6 +148,23 @@ func test_free_roam_resumes_the_saved_world() -> void:
 	assert_lt(Vector2(car.global_position.x, car.global_position.z).distance_to(Vector2(40, 25)), 2.0, "the car is where it was left")
 
 
+# Leaving the scene (a scene change, the window closing) still saves the car's place: the car has
+# left the tree by the time the root's tree_exiting fires, so the pose comes from the tick cache.
+func test_leaving_the_scene_saves_the_pose() -> void:
+	WorldSession.new_world(7, _any_car())
+	var scene := await _boot_free_roam()
+	var car: Node3D = scene.get_node("Car")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var where := car.global_position
+	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(900, 0, 900)))  # stale
+	remove_child(scene)
+	var saved: Transform3D = WorldSession.pose_transform()
+	assert_lt(Vector2(saved.origin.x, saved.origin.z).distance_to(Vector2(where.x, where.z)), 2.0,
+		"the exit path wrote the car's pose")
+	scene.queue_free()
+
+
 func test_the_map_is_the_travel_picker_at_a_rest_stop() -> void:
 	WorldSession.new_world(7, _any_car())
 	var scene := await _boot_free_roam()

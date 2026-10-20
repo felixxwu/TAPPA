@@ -201,6 +201,9 @@ func debug_readout_elements() -> Array[CanvasItem]:
 
 func _ready() -> void:
 	visible = Config.data.hud_enabled
+	# Always-processing so _process can notice the tree pausing/unpausing (see
+	# _sync_paused_look). A pausable HUD would never run its own un-hide.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_boost_label()
 	_build_seed_label()
 	_build_grip_grid()
@@ -469,7 +472,27 @@ func _process(delta: float) -> void:
 	PerfLog.track(&"hud", Time.get_ticks_usec() - __t)
 
 
+# While the tree is paused (a pause/rest-stop/map/stats page is up) the HUD's Control children
+# are made fully transparent: the gauges would otherwise sit behind the page and its Back/action
+# row would overlap the health gauge. Done with `modulate.a`, NOT `visible`, so it can never
+# fight the writers of `visible` (hud_enabled, world.gd's photo-mode chrome, the gauges' own
+# fitted-or-not logic). Only touches the children on a pause TRANSITION.
+var _paused_look := false
+
+
+func _sync_paused_look() -> bool:
+	var paused := get_tree().paused
+	if paused != _paused_look:
+		_paused_look = paused
+		for child in get_children():
+			if child is Control:
+				(child as Control).modulate.a = 0.0 if paused else 1.0
+	return paused
+
+
 func _timed_process(_delta: float) -> void:
+	if _sync_paused_look():
+		return  # frozen world: nothing to refresh, and the car readouts would only repeat
 	# Toggle the debug readout (DEBUG_READOUT_NODES) with H, gated on
 	# SettingsMenu.dev_tools_enabled() like the force arrows. Text below still refreshes while hidden, so it's correct the
 	# instant it's shown.

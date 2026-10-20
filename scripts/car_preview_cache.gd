@@ -32,6 +32,10 @@ func _ready() -> void:
 	_graveyard = Control.new()
 	_graveyard.visible = false
 	add_child(_graveyard)
+	# A new world replaces every owned car (WorldSession.new_world), so the old world's
+	# owned:<instance_id> previews can never be asked for again — free them rather than
+	# keep a SubViewport + full car each in the graveyard forever.
+	WorldSession.world_changed.connect(drop_owned)
 
 
 # A stable cache key for a car ref — an owned-car Dictionary or a CarLibrary catalogue
@@ -74,9 +78,28 @@ func get_or_build(car_ref) -> CarCardPreview:
 		preview = CarCardPreview.new(car_ref)
 		_cache[key] = preview
 		return preview
-	if preview.get_parent() == _graveyard:
-		_graveyard.remove_child(preview)
+	# Hand it back unparented wherever it was resting: the graveyard, or a page that was
+	# queue_free()d without parking its previews (the page is still its parent until the
+	# deferred free runs, so a plain add_child by the caller would fail).
+	var parent := preview.get_parent()
+	if parent != null:
+		parent.remove_child(preview)
 	return preview
+
+
+# Free every owned-car preview (keys "owned:*"). Catalogue previews stay — those cars exist
+# in every world. Connected to WorldSession.world_changed in _ready.
+func drop_owned() -> void:
+	for key in _cache.keys():
+		if not String(key).begins_with("owned:"):
+			continue
+		var preview = _cache[key]
+		_cache.erase(key)
+		if is_instance_valid(preview):
+			var node := preview as Node
+			if node.get_parent() != null:
+				node.get_parent().remove_child(node)
+			node.free()
 
 
 # Park a preview the caller is done showing FOR NOW, without freeing it — a later

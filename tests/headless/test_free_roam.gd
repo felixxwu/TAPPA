@@ -337,6 +337,12 @@ func test_the_auto_driver_never_reaches_ground_without_collision() -> void:
 		await get_tree().physics_frame
 	var r := driver.report()
 	assert_eq(r["holes"], 0, "the car was over a chunk with no collision")
+	# The safety net (_guard_collision) makes holes 0 whatever the queue order, so it alone can't
+	# catch a planner or queue regression: at auto-driver speeds the queue must keep up by itself.
+	# Not exactly 0: on a loaded CI machine the 1 ms budget buys less, and an odd rush (a one-off
+	# hitch) is the net doing its job. A queue that has stopped keeping collision ahead of the car
+	# rushes on nearly every chunk — dozens on this route — which this still catches.
+	assert_lte(int(r["rushes"]), 3, "the planner and queue kept collision ahead of the car, the safety net only an odd backstop")
 	assert_gt(r["progress_m"], 150.0, "the car made real progress along the route")
 
 
@@ -567,3 +573,148 @@ func test_a_car_far_below_the_ground_counts_as_fallen_out_of_the_world() -> void
 	assert_false(rec.fell_out_of_world())
 	body.global_position = Vector3(10.0, ground - Config.data.recovery_void_depth_m - 1.0, 10.0)
 	assert_true(rec.fell_out_of_world())
+
+
+# --- review fixes: jumps, planting ground, markers, queue order ----------------------------------
+
+func _chunk_d(st: TerrainStreamer, coord: Vector2i, p: Vector2) -> float:
+	var cm := st.settings.chunk_m
+	return ((Vector2(coord) + Vector2(0.5, 0.5)) * cm).distance_to(p) / cm
+
+
+# A medium jump (a respawn or a rest-stop travel) leaves the old chunks past the horizon but still
+# inside the square that is dropped whole. They must still shed their near mesh, foliage and
+# collision, and their queued near / plant / collision jobs must be cancelled rather than run by
+# the prefill at their old priorities.
+func test_a_jump_past_the_horizon_sheds_full_detail_and_collision_behind_it() -> void:
+	var s := _settings()
+	s.forestiness = 1.0
+	var st := _streamer(s)
+	st.prefill()
+	assert_not_null((st._chunks[Vector2i.ZERO] as TerrainStreamer.ChunkState).body)
+	# One chunk loses its full detail and the planner queues it again: a live near job.
+	var redo: TerrainStreamer.ChunkState = st._chunks[Vector2i(0, 1)]
+	st._drop_near(redo)
+	st._drop_collision(redo)
+	st._plan()
+	var stale: TerrainStreamer.ChunkJob = redo.near_job
+	assert_not_null(stale, "the planner queued the chunk's near build again")
+	var dest := Vector2(s.chunk_m * (s.far_radius + 1.5), 0.0)
+	st.prefill_at(dest)
+	assert_true(st._chunks.has(Vector2i.ZERO), "the spawn chunk is past the horizon but not yet dropped whole")
+	for coord: Vector2i in st._chunks:
+		var cs: TerrainStreamer.ChunkState = st._chunks[coord]
+		var d := _chunk_d(st, coord, dest)
+		if d > s.near_radius + 1.5:
+			assert_null(cs.near_mesh, "chunk %s (%.1f chunks away) kept its near mesh" % [coord, d])
+			assert_null(cs.foliage, "chunk %s kept its foliage" % coord)
+		if d > s.collision_radius + 1.5:
+			assert_null(cs.body, "chunk %s (%.1f chunks away) kept its collision" % [coord, d])
+	if stale != null:
+		assert_true(stale.cancelled, "the stale near job was cancelled, not run by the prefill")
+		assert_eq(stale.stage, TerrainStreamer.Stage.PREP, "and never ran")
+
+
+# Planting reads the exact terrain height outside its own chunk, never whatever mesh the neighbour
+# happens to have loaded, and its own chunk's drawn surface inside it.
+func test_planting_heights_do_not_depend_on_the_neighbours_load_state() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	st.prefill()
+	var cs: TerrainStreamer.ChunkState = st._chunks[Vector2i.ZERO]
+	var spill := Vector2(s.chunk_m + 5.3, s.chunk_m * 0.5 + 0.7)  # in the +x neighbour
+	var inside := Vector2(17.3, 40.1)
+	var exact := st.terrain.height(spill.x, spill.y, PackedInt32Array(), false)
+	var g := st._ground_for(Vector2i.ZERO, cs)
+	assert_almost_eq(g.height_at(spill.x, spill.y), exact, 0.001, "with the neighbour at full detail")
+	assert_almost_eq(g.height_at(inside.x, inside.y), st.height_at(inside.x, inside.y), 0.0001, "inside: the drawn surface")
+	var nb: TerrainStreamer.ChunkState = st._chunks[Vector2i(1, 0)]
+	st._drop_near(nb)  # the neighbour back to its 16 m far mesh
+	assert_almost_eq(st._ground_for(Vector2i.ZERO, cs).height_at(spill.x, spill.y), exact, 0.001, "with the neighbour at far detail")
+	st._chunks.erase(Vector2i(1, 0))  # and with nothing loaded there at all
+	assert_almost_eq(st._ground_for(Vector2i.ZERO, cs).height_at(spill.x, spill.y), exact, 0.001, "with nothing loaded next door")
+	if nb.far_mesh != null:
+		nb.far_mesh.queue_free()
+
+
+func _any_item(_i: int) -> Dictionary:
+	return {"kind": "rumour", "id": "test"}
+
+
+# A refresh that reaches a chunk before its queued marker spawn has run, then the spawn itself,
+# must leave exactly one marker. A second "Loot%d" was renamed "@Loot%d@N" and never removed.
+func test_a_loot_refresh_during_planting_leaves_exactly_one_marker() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	var loots := st.sites.of_kind(RoadSites.Kind.LOOT)
+	assert_gt(loots.size(), 0)
+	var i: int = loots[0]
+	var p := st.sites.pos[i]
+	st.focus.position = Vector3(p.x, 0.0, p.y)
+	st.loot_query = _any_item
+	st.prefill()
+	var coord := st._chunk_of(p)
+	var cs: TerrainStreamer.ChunkState = st._chunks[coord]
+	assert_not_null(cs.foliage.get_node_or_null("Loot%d" % i), "the crate is there")
+	# The chunk's marker spawn, queued again as a planting job would have it...
+	var job := TerrainStreamer.ChunkJob.new()
+	job.coord = coord
+	st._queue_site_markers(job, st._ground_for(coord, cs))
+	# ...with a refresh landing before it runs.
+	st.refresh_loot_markers()
+	for k in job.spawns.size():
+		if job.spawn_kinds[k] == "spawn_markers":
+			job.spawns[k].call(cs.foliage)
+	assert_eq(_crates(cs.foliage, i), 1, "exactly one crate for the site")
+	# and a pickup clears it
+	st.loot_query = Callable()
+	st.refresh_loot_markers()
+	assert_eq(_crates(cs.foliage, i), 0, "no crate after the pickup")
+
+
+# Live crates for loot site `i`, counting any Godot renamed to dodge a clash ("@Loot7@2").
+func _crates(parent: Node, i: int) -> int:
+	var count := 0
+	for child in parent.get_children():
+		var n := String(child.name)
+		if not child.is_queued_for_deletion() and (n == "Loot%d" % i or n.begins_with("@Loot%d@" % i)):
+			count += 1
+	return count
+
+
+# Vegetation off thins out trees, bushes and rocks only: the planting stage still dresses the chunk
+# with its site markers (and barriers, crowds and loot, which spawn from the same stage).
+func test_vegetation_off_still_spawns_the_site_dressing() -> void:
+	var was := Config.data.vegetation_enabled
+	Config.data.vegetation_enabled = false
+	var s := _settings()
+	s.site_markers = true
+	s.forestiness = 1.0
+	var st := _prefilled(s)
+	Config.data.vegetation_enabled = was
+	var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of(st.sites.pos[0])]
+	assert_not_null(cs.foliage, "the spawn chunk was dressed")
+	if cs.foliage != null:
+		assert_not_null(cs.foliage.get_node_or_null("Site0"), "the spawn rest stop has its post")
+	assert_eq(_foliage_positions(st).size(), 0, "no trees, bushes or rocks")
+
+
+# Planting never beats a collision or near-mesh build, and a far mesh filling a gap in the horizon
+# interleaves with planting by distance (far_lead_chunks) instead of waiting behind all of it.
+func test_far_gaps_interleave_with_planting_but_never_beat_near_work() -> void:
+	var s := _settings()
+	s.far_lead_chunks = 2.0
+	var st := TerrainStreamer.new()
+	st.settings = s
+	autofree(st)
+	var hole := TerrainStreamer.ChunkState.new()
+	var plant_d := 1.0
+	var plant := plant_d + TerrainStreamer.PLANT_PRIORITY
+	assert_lt(st._far_priority(hole, plant_d + s.far_lead_chunks - 0.1), plant, "a nearer horizon gap goes first")
+	assert_gt(st._far_priority(hole, plant_d + s.far_lead_chunks + 0.1), plant, "a further one waits")
+	var near_tier_worst := s.near_radius + 0.75 - 100.0
+	assert_gt(st._far_priority(hole, 0.0), near_tier_worst, "never ahead of a near mesh or collision")
+	hole.near_mesh = MeshInstance3D.new()
+	assert_gt(st._far_priority(hole, 0.0), s.far_radius + 0.5 + TerrainStreamer.PLANT_PRIORITY,
+		"a far mesh hidden under a near one waits behind all planting")
+	hole.near_mesh.free()

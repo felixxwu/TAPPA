@@ -169,11 +169,19 @@ static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Di
 		pools.append(remaining(table, taken))
 	# A ring with more items than free sites keeps its best ones and moves the rest to the nearest
 	# ring with sites to spare (inward first), so nothing is ever stuck with nowhere to show.
-	var overflow: Array = []  # [item, from ring]
+	var overflow: Array = []  # [item, from ring, order]
 	for r in ring_count:
 		var pool: Array = pools[r]
+		var spill: Array = []
 		while pool.size() > (free[r] as Array).size():
-			overflow.append([pool.pop_back(), r])
+			spill.push_front(pool.pop_back())  # best first within the ring
+		for item: Dictionary in spill:
+			overflow.append([item, r, overflow.size()])
+	# Host the overflow best-first across rings, so scarce spare sites show the best of what spilled.
+	overflow.sort_custom(func(a: Array, b: Array) -> bool:
+		var ra := _rank(a[0])
+		var rb := _rank(b[0])
+		return ra < rb or (ra == rb and int(a[2]) < int(b[2])))
 	for o: Array in overflow:
 		var host := -1
 		for d in range(1, ring_count):

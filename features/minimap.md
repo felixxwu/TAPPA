@@ -71,4 +71,5 @@ children ignore it.
   rebuild about 2 µs; the site-marker refresh (1 Hz, or on `LootDirector.pool_changed`, or
   when a site is newly seen) about 45 µs.
 - The tilt is a canvas_item shader (`ground` in the shader, `screen_of` / `ground_of` its
-  GDScript twins used for the icons and the tap test).
+  GDScript twins used for the icons only: a tap anywhere on the minimap box opens the map, so there
+  is no per-point hit test).

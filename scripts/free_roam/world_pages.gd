@@ -1,7 +1,7 @@
 class_name WorldPages
 extends CanvasLayer
 # Docs: features/world-session.md, features/menus.md — update in the same change as this file.
-# Tests: tests/headless/test_world_session.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
+# Tests: tests/headless/test_world_session.gd, tests/headless/test_world_pages.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # Free roam's world pages (todo/2026-10-19-free-roam-pivot.md decisions 21–22), opened over a
 # frozen game from the pause menu or the rest-stop page:
 #   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven,
@@ -176,7 +176,7 @@ func tap_map_at(local: Vector2) -> bool:
 	if _canvas == null or _targets.is_empty():
 		return false
 	var best := -1
-	var best_d := UITheme.px(24)
+	var best_d := float(UITheme.px(24))
 	for k in _targets.size():
 		var d: float = _canvas.to_canvas(streamer.sites.pos[_targets[k]]).distance_to(local)
 		if d < best_d:

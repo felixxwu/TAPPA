@@ -54,6 +54,12 @@ title's starter choice and the rest stop's Garage. The Journal keeps icons: it c
 and building that many props at once is a visible hitch. Tests: `test_car_card_preview.gd`,
 `test_car_preview_cache.gd`.
 
+Cache hygiene: `get_or_build` always hands back an UNPARENTED preview — it pulls the node out of
+whatever still holds it (the graveyard, or a page that was `queue_free()`d without
+`park_previews`, which would otherwise make the caller's `add_child` fail). `drop_owned()` frees
+every `owned:*` entry and runs on `WorldSession.world_changed` (New World replaces all owned cars,
+so the old instance ids are never asked for again); catalogue previews are kept.
+
 > **History note.** The sections below are the widget's design record, written while the
 > roguelike hub (`hub_shell.gd`, deleted) was its only caller. The widget behaviour they describe
 > is current; where they name `hub_shell.gd`, `HubShell._show` or its pages, read "the

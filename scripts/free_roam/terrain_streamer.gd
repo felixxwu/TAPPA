@@ -120,6 +120,30 @@ class ChunkJob:
 	var kept := [PackedVector2Array(), PackedVector2Array(), PackedVector2Array()]  # by Plant
 	var spawns: Array[Callable] = []
 	var spawn_kinds := PackedStringArray()  # each spawn's cost-estimate key (see _spawn_kind)
+	var ground: PlantGround  # what the planting stands on (made when PLANT starts)
+
+
+# The ground a chunk's planting stands on, handed to Foliage / BarrierField / Crowd in place of
+# the streamer. Inside its own chunk it reads the chunk's own near grid (exactly the drawn
+# surface). Outside it (spots near the +x/+z edge spill into the neighbour, rock outcrops and rest
+# crowds spill either way) it uses the exact terrain height, never the neighbour's loaded mesh:
+# that is whatever LOD happens to be there (often the 16 m far mesh, or nothing), so foliage
+# floated or sank when the near mesh arrived (metres; tens of metres on a mountainside), and the
+# water check depended on load order.
+# Exact heights are cached per spot, so the PLANT stage's checks pay for them and the spawns reuse
+# them.
+class PlantGround:
+	extends RefCounted
+	var streamer: TerrainStreamer
+	var coord: Vector2i
+	var heights := PackedFloat32Array()  # the planting chunk's near grid (with its halo)
+	var exact := {}  # Vector2 -> exact height, for points outside the chunk
+
+	func height_at(x: float, z: float) -> float:
+		return streamer.plant_height(self, x, z)
+
+	func light_at(x: float, z: float) -> Color:
+		return streamer._light_with(height_at, x, z)
 
 
 func _ready() -> void:
@@ -338,8 +362,25 @@ func _run_queue(deadline: int) -> void:
 			return
 
 
-# Foliage is planted after every chunk's collision and near mesh, and before far meshes.
+# Queue order, lowest first (d = distance from the car in chunks, at most far_radius + 0.5):
+#   collision        d - 2000   (d - 3000 when rushed)
+#   near + collision d - 1000
+#   near mesh        d - 100
+#   planting         d - 50                           (PLANT_PRIORITY)
+#   far mesh, hole   d - 50 - far_lead_chunks         (no near mesh or near build: a gap in the horizon)
+#   far mesh, hidden d                                (under a near mesh, or one on its way)
+# So foliage never runs ahead of a collision or near-mesh build, but a far mesh that would fill a
+# visible gap is interleaved with planting by distance: planting a chunk d away waits for horizon
+# holes nearer than d + far_lead_chunks. Before, planting (d - 50) always beat far meshes (d), so
+# at speed far jobs never ran and the horizon had gaps. A hole is never nearer than the near ring's
+# edge, so with far_lead_chunks under 50 it stays behind every near-mesh build.
 const PLANT_PRIORITY := -50.0
+
+
+func _far_priority(st: ChunkState, d: float) -> float:
+	if st.near_mesh != null or st.near_job != null:
+		return d
+	return d + PLANT_PRIORITY - settings.far_lead_chunks
 
 
 func _to_planting(job: ChunkJob) -> void:
@@ -469,16 +510,24 @@ func _prep(job: ChunkJob) -> void:
 		job.road_d.fill(INF)
 		_start_arrays(job)
 		return
-	var st: ChunkState = _chunks.get(job.coord)
+	job.cands = _cands_of(job.coord)
+
+
+# The road segments that can be nearest anywhere in chunk `coord`, gathered once and kept on its
+# state when it has one. The margin covers the wider of the two strides, so one list serves both
+# builds. Depends on nothing but the coord, so a query that uses it answers the same whatever is
+# loaded.
+func _cands_of(coord: Vector2i) -> PackedInt32Array:
+	var st: ChunkState = _chunks.get(coord)
 	if st != null and st.has_cands:
-		job.cands = st.cands
-		return
-	# The margin covers the wider of the two strides, so one list serves both builds.
+		return st.cands
+	var cm := settings.chunk_m
 	var half := cm * 0.5 + maxf(settings.near_stride_m, settings.far_stride_m)
-	job.cands = network.candidates_for((job.coord.x + 0.5) * cm, (job.coord.y + 0.5) * cm, half * sqrt(2.0), settings.mountain_dist_m)
+	var cands := network.candidates_for((coord.x + 0.5) * cm, (coord.y + 0.5) * cm, half * sqrt(2.0), settings.mountain_dist_m)
 	if st != null:
-		st.cands = job.cands
+		st.cands = cands
 		st.has_cands = true
+	return cands
 
 
 func _heights(job: ChunkJob, deadline: int) -> bool:
@@ -667,10 +716,39 @@ func _collide(job: ChunkJob) -> void:
 # Baked ground light for foliage that wants to match the ground it stands on (the bushes):
 # the same tint-times-sun shading the chunk vertices get.
 func light_at(x: float, z: float) -> Color:
-	var n := Vector3(height_at(x - 1.0, z) - height_at(x + 1.0, z), 2.0, height_at(x, z - 1.0) - height_at(x, z + 1.0)).normalized()
+	return _light_with(height_at, x, z)
+
+
+func _light_with(h: Callable, x: float, z: float) -> Color:
+	var n := Vector3(h.call(x - 1.0, z) - h.call(x + 1.0, z), 2.0, h.call(x, z - 1.0) - h.call(x, z + 1.0)).normalized()
 	var c := ring_tint_at(Vector2(x, z)) * (0.55 + 0.5 * maxf(0.0, n.dot(_sun)))
 	c.a = 1.0
 	return c
+
+
+# The height planting uses at a point (PlantGround): the planting chunk's own near grid inside it,
+# the exact terrain height (cached) outside it. Never depends on what else is loaded, so a chunk
+# plants the same spots at the same heights whatever order its neighbours streamed in.
+func plant_height(g: PlantGround, x: float, z: float) -> float:
+	var cm := settings.chunk_m
+	var lx := x - g.coord.x * cm
+	var lz := z - g.coord.y * cm
+	if lx >= 0.0 and lz >= 0.0 and lx <= cm and lz <= cm and not g.heights.is_empty():
+		return _mesh_height(g.heights, settings.near_stride_m, 1, g.coord, x, z)
+	var key := Vector2(x, z)
+	var h: Variant = g.exact.get(key)
+	if h == null:
+		h = terrain.height(x, z, _cands_of(_chunk_of(key)), true)
+		g.exact[key] = h
+	return h
+
+
+func _ground_for(coord: Vector2i, st: ChunkState) -> PlantGround:
+	var g := PlantGround.new()
+	g.streamer = self
+	g.coord = coord
+	g.heights = st.near_heights
+	return g
 
 
 # --- planting: trees, bushes and rocks for a near chunk ---------------------------------------
@@ -686,6 +764,7 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 		job.stage = Stage.DONE
 		return true
 	if job.cursor < 0:
+		job.ground = _ground_for(job.coord, st)
 		_plant_candidates(job)
 		job.cursor = 0
 	var cfg: GameConfig = Config.data
@@ -703,10 +782,14 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 		var kind := job.plant_kind[job.cursor]
 		job.cursor += 1
 		done += 1
-		if _spot_is_clear(st, p, water, road + radius[kind]):
+		if _spot_is_clear(job.ground, p, water, road + radius[kind]):
 			var kept: PackedVector2Array = job.kept[kind]  # a copy: packed arrays are values
 			kept.append(p)
 			job.kept[kind] = kept
+			if kind == Plant.BUSH:
+				# A bush's baked light samples the ground a metre round it: pay for any exact
+				# heights that needs here, a spot at a time, not inside the atomic bush spawn.
+				job.ground.light_at(p.x, p.y)
 		var t_now := Time.get_ticks_usec()
 		peak = maxf(float(t_now - t_prev), peak * PEAK_DECAY)
 		t_prev = t_now
@@ -714,21 +797,25 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 	_ran_this_frame = _ran_this_frame or done > 0
 	if job.cursor < job.plant_pts.size():
 		return false
-	_queue_spawns(job, st, water, road + radius[Plant.ROCK])
+	_queue_spawns(job, water, road + radius[Plant.ROCK])
 	job.cursor = 0
 	job.stage = Stage.SPAWN
 	return true
 
 
-func _spot_is_clear(st: ChunkState, p: Vector2, water: float, clearance: float) -> bool:
-	if height_at(p.x, p.y) < water + 0.3 or terrain.is_lake(p.x, p.y):
+# Water and road are judged from the spot's own chunk (its height via the planting ground, its
+# road candidates via _cands_of), so a spot spilling into a neighbour is judged exactly as one inside.
+func _spot_is_clear(g: PlantGround, p: Vector2, water: float, clearance: float) -> bool:
+	if g.height_at(p.x, p.y) < water + 0.3 or terrain.is_lake(p.x, p.y):
 		return false
-	var near_road := network.nearest_in(p.x, p.y, st.cands, clearance) if st.has_cands else network.nearest(p.x, p.y, clearance)
+	var near_road := network.nearest_in(p.x, p.y, _cands_of(_chunk_of(p)), clearance)
 	return not near_road and sites.is_clear(p, 2.0)
 
 
 func _plant_candidates(job: ChunkJob) -> void:
 	var cfg: GameConfig = Config.data
+	if not cfg.vegetation_enabled:
+		return
 	var look := _look_at_chunk(job.coord)
 	var sd := settings.world_seed
 	var cm := settings.chunk_m
@@ -754,8 +841,9 @@ func _plant_candidates(job: ChunkJob) -> void:
 				job.plant_kind.append(kind)
 
 
-func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: float) -> void:
+func _queue_spawns(job: ChunkJob, water: float, rock_clearance: float) -> void:
 	var cfg: GameConfig = Config.data
+	var g := job.ground
 	var look := _look_at_chunk(job.coord)
 	var dist := cfg.tree_render_distance_m
 	var fade := cfg.tree_render_fade_m
@@ -772,12 +860,12 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 			var entry: Dictionary = mix[i]
 			if not pts.is_empty():
 				_add_spawn(job, _spawn_kind("tree", pts.size()), func(parent: Node3D) -> void:
-					Foliage.spawn_trees(parent, pts, self, true, dist, fade, load(entry["texture"]),
+					Foliage.spawn_trees(parent, pts, g, true, dist, fade, load(entry["texture"]),
 						String(entry.get("profile", "home")) == "region", entry.get("size_scale", Vector2.ONE)))
 	var bushes: PackedVector2Array = job.kept[Plant.BUSH]
 	if not bushes.is_empty():
 		_add_spawn(job, _spawn_kind("bush", bushes.size()), func(parent: Node3D) -> void:
-			Foliage.spawn_bushes(parent, bushes, self, dist, fade)
+			Foliage.spawn_bushes(parent, bushes, g, dist, fade)
 			# Bushes have no collider: a proximity field makes brushing one cost HP and drag,
 			# exactly as on the stage (world.gd._build_foliage).
 			if focus != null:
@@ -791,7 +879,7 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 		# Each anchor fans out into an outcrop; the companions are checked like any other spot.
 		var rocks := PackedVector2Array()
 		for p in TreeScatter.cluster(anchors, cfg.rock_group_min, cfg.rock_group_max, cfg.rock_group_radius_m, sd + ROCK_SALT):
-			if _spot_is_clear(st, p, water, rock_clearance):
+			if _spot_is_clear(g, p, water, rock_clearance):
 				rocks.append(p)
 		var weights: Array = []
 		weights.resize(Foliage.ROCK_SCENES.size())
@@ -800,9 +888,9 @@ func _queue_spawns(job: ChunkJob, st: ChunkState, water: float, rock_clearance: 
 		for i in Foliage.ROCK_SCENES.size():
 			var pts: PackedVector2Array = groups[i]
 			if not pts.is_empty():
-				_add_spawn(job, _spawn_kind("rock", pts.size()), func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, self, i, true, dist, fade))
-	_queue_site_markers(job)
-	_queue_barriers(job)
+				_add_spawn(job, _spawn_kind("rock", pts.size()), func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, g, i, true, dist, fade))
+	_queue_site_markers(job, g)
+	_queue_barriers(job, g)
 
 
 # The stage's barrier modules and collision, fed the free-roam layout and this road's width.
@@ -812,7 +900,7 @@ func barrier_params() -> Dictionary:
 	return params
 
 
-func _queue_barriers(job: ChunkJob) -> void:
+func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 	var layout := barriers.in_chunk(job.coord)
 	if layout.is_empty():
 		return
@@ -820,14 +908,14 @@ func _queue_barriers(job: ChunkJob) -> void:
 		var field := BarrierField.new()
 		field.name = "Barriers"
 		parent.add_child(field)
-		field.build(layout, barrier_params(), func(p: Vector2) -> float: return height_at(p.x, p.y)))
+		field.build(layout, barrier_params(), func(p: Vector2) -> float: return g.height_at(p.x, p.y)))
 
 
 # The chunk's site dressing. A rest stop gets a crowd of onlookers along the back of its pad
 # (decision 9: spectators gather at rest stops) and a beacon post, grey until lit and orange after.
 # Loot slots and dead ends keep placeholder posts until stage 7 gives them models: short blue for
 # loot, purple for a dead end.
-func _queue_site_markers(job: ChunkJob) -> void:
+func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 	var cm := settings.chunk_m
 	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
 	var mine := PackedInt32Array()
@@ -839,16 +927,13 @@ func _queue_site_markers(job: ChunkJob) -> void:
 	_add_spawn(job, "spawn_markers", func(parent: Node3D) -> void:
 		for i in mine:
 			if sites.kind[i] == RoadSites.Kind.REST:
-				var crowd := _rest_crowd(i)
+				var crowd := _rest_crowd(i, g)
 				if crowd != null:
 					parent.add_child(crowd)
+				_remove_site_markers(parent, i)
 				parent.add_child(_site_marker(i))
 			else:
-				var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
-				if not item.is_empty():
-					parent.add_child(_loot_marker(i, item))
-				elif settings.site_markers:
-					parent.add_child(_site_marker(i)))
+				_place_loot_site_marker(parent, i))
 
 
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)
@@ -911,16 +996,29 @@ func refresh_loot_markers() -> void:
 		for i in sites.in_box(coord.x * cm, coord.y * cm, (coord.x + 1) * cm, (coord.y + 1) * cm):
 			if sites.kind[i] == RoadSites.Kind.REST or _chunk_of(sites.pos[i]) != coord:
 				continue
-			for n in ["Loot%d" % i, "Site%d" % i]:
-				var old := st.foliage.get_node_or_null(n)
-				if old != null:
-					st.foliage.remove_child(old)
-					old.queue_free()
-			var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
-			if not item.is_empty():
-				st.foliage.add_child(_loot_marker(i, item))
-			elif settings.site_markers:
-				st.foliage.add_child(_site_marker(i))
+			_place_loot_site_marker(st.foliage, i)
+
+
+# Put loot site `i`'s marker under `parent` as loot_query has it now: a crate for the item lying
+# there, else the empty-slot post. Whatever marker it had goes first, so the queued planting
+# spawn and a refresh_loot_markers that both reach a chunk (it has foliage, but its marker spawn
+# is still queued) leave exactly one: adding a second "Loot%d" had Godot rename it "@Loot%d@N",
+# which no later refresh removed, so a crate stayed after its pickup.
+func _place_loot_site_marker(parent: Node3D, i: int) -> void:
+	_remove_site_markers(parent, i)
+	var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
+	if not item.is_empty():
+		parent.add_child(_loot_marker(i, item))
+	elif settings.site_markers:
+		parent.add_child(_site_marker(i))
+
+
+func _remove_site_markers(parent: Node3D, i: int) -> void:
+	for n in ["Loot%d" % i, "Site%d" % i]:
+		var old := parent.get_node_or_null(n)
+		if old != null:
+			parent.remove_child(old)
+			old.queue_free()
 
 
 # Re-colour a loaded rest stop's beacon (it was just lit).
@@ -937,7 +1035,7 @@ func refresh_site_marker(i: int) -> void:
 
 # Onlookers in an arc along the back of a rest stop's pad (the side away from its road), facing
 # the pad. A static crowd (Crowd), like the stage's wreck onlookers: rest stops are for stopping.
-func _rest_crowd(i: int) -> MultiMeshInstance3D:
+func _rest_crowd(i: int, g: PlantGround) -> MultiMeshInstance3D:
 	var cfg: GameConfig = Config.data
 	var n := cfg.rest_stop_crowd_size
 	if n <= 0:
@@ -954,7 +1052,7 @@ func _rest_crowd(i: int) -> MultiMeshInstance3D:
 		pts.append(p)
 		var to_c := c - p
 		yaws.append(atan2(-to_c.x, -to_c.y))
-	return Crowd.multimesh_instance("Crowd%d" % i, pts, yaws, func(x: float, z: float) -> float: return height_at(x, z), cfg)
+	return Crowd.multimesh_instance("Crowd%d" % i, pts, yaws, func(x: float, z: float) -> float: return g.height_at(x, z), cfg)
 
 
 func _add_spawn(job: ChunkJob, kind: String, work: Callable) -> void:
@@ -1031,7 +1129,24 @@ func _plan() -> void:
 			var center := (Vector2(coord) + Vector2(0.5, 0.5)) * cm
 			var d := minf(center.distance_to(here), center.distance_to(ahead)) / cm
 			var st: ChunkState = _chunks.get(coord)
+			# Shed full detail and collision first, before the horizon test below: a chunk can be
+			# past the horizon yet still inside the drop square (a jump of a few hundred metres:
+			# a respawn or a rest-stop travel), and it must not keep its near mesh, foliage,
+			# collision or queued near / plant / collision jobs at their old priorities (which a
+			# prefill_at would then run, lengthening the travel hitch).
+			if st != null:
+				if d > settings.near_radius + 1.5:
+					_drop_near(st)
+				if d > settings.collision_radius + 1.5:
+					_drop_collision(st)
 			if d > far_r + 0.5:
+				if st != null and st.far_job != null:
+					if d > far_r + 1.5:
+						st.far_job.cancelled = true
+						st.far_job = null
+					else:
+						st.far_job.priority = d
+						st.far_job.dist = d
 				continue
 			if st == null:
 				st = ChunkState.new()
@@ -1040,9 +1155,6 @@ func _plan() -> void:
 			var want_col := d <= settings.collision_radius + 0.75
 			if st.far_mesh == null and st.far_job == null:
 				st.far_job = _new_job(coord, false, false)
-			if st.far_job != null:
-				st.far_job.priority = d
-				st.far_job.dist = d
 			if want_near:
 				if st.near_mesh == null and st.near_job == null:
 					st.near_job = _new_job(coord, true, want_col)
@@ -1050,8 +1162,14 @@ func _plan() -> void:
 					st.near_job.with_collision = st.near_job.with_collision or want_col
 					st.near_job.priority = d - (1000.0 if want_col else 100.0)
 					st.near_job.dist = d
-			elif d > settings.near_radius + 1.5:
-				_drop_near(st)
+			elif st.near_job != null:
+				# In the hysteresis band (no longer wanted, not yet dropped): an unfinished near
+				# build drops to the near-mesh tier rather than keeping a collision-tier priority.
+				st.near_job.priority = d - 100.0
+				st.near_job.dist = d
+			if st.far_job != null:
+				st.far_job.priority = _far_priority(st, d)
+				st.far_job.dist = d
 			if want_col and st.body == null and st.near_mesh != null and st.col_job == null:
 				st.col_job = _new_job(coord, true, true)
 				st.col_job.stage = Stage.COLLIDE
@@ -1061,9 +1179,6 @@ func _plan() -> void:
 				st.plant_job.priority = d + PLANT_PRIORITY
 			if st.col_job != null:
 				st.col_job.priority = d - 2000.0
-			if d > settings.collision_radius + 1.5 and st.body != null:
-				st.body.queue_free()
-				st.body = null
 	# Cancelled and finished jobs leave now rather than when they reach the head: a queue that
 	# never drains (a car outdriving the far ring) would otherwise carry them for ever.
 	var live: Array[ChunkJob] = []
@@ -1081,7 +1196,10 @@ func _new_job(coord: Vector2i, near: bool, with_collision: bool) -> ChunkJob:
 	job.with_collision = with_collision
 	job.stride = settings.near_stride_m if near else settings.far_stride_m
 	job.n = int(settings.chunk_m / job.stride) + 1
-	job.plants = near and Config.data.vegetation_enabled
+	# Every near build runs the planting stages: they also spawn the chunk's barriers (with
+	# collision), rest-stop crowds, site posts and loot crates. vegetation_enabled only thins the
+	# trees, bushes and rocks out of it (_plant_candidates).
+	job.plants = near
 	_queue.append(job)
 	return job
 
@@ -1104,14 +1222,25 @@ func _drop_near(st: ChunkState) -> void:
 			st.far_mesh.visible = true
 
 
+# The chunk's collision and any queued collision build go (it left the collision ring).
+func _drop_collision(st: ChunkState) -> void:
+	if st.col_job != null:
+		st.col_job.cancelled = true
+		st.col_job = null
+	if st.near_job != null:
+		st.near_job.with_collision = false
+	if st.body != null:
+		st.body.queue_free()
+		st.body = null
+
+
 func _drop_chunk(coord: Vector2i, st: ChunkState) -> void:
 	_drop_near(st)
-	for job in [st.far_job, st.col_job]:
-		if job != null:
-			(job as ChunkJob).cancelled = true
-	for node in [st.far_mesh, st.body]:
-		if node != null:
-			(node as Node).queue_free()
+	_drop_collision(st)
+	if st.far_job != null:
+		st.far_job.cancelled = true
+	if st.far_mesh != null:
+		st.far_mesh.queue_free()
 	_chunks.erase(coord)
 
 

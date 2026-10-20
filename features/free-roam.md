@@ -62,11 +62,13 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 | Stage | Unit | How it stays inside the budget |
 |---|---|---|
 | `PREP` | gather road candidates | atomic, measured |
-| `HEIGHTS` | one sample | stops before a sample that would not fit, judged by the running µs-per-sample average |
+| `HEIGHTS` | one sample | stops before a sample that would not fit, judged by the decaying peak sample cost (`_peak_us`) |
 | `ARRAYS` | vertex packing | clock checked every few vertices |
 | `UPLOAD` | `ArrayMesh.add_surface_from_arrays` | atomic, measured per mesh size |
 | `ATTACH` | create and add the `MeshInstance3D` | atomic, measured |
 | `COLLIDE` | `HeightMapShape3D` + `StaticBody3D` | atomic, measured |
+| `PLANT` | one candidate spot (water / road check) | decaying peak, like `HEIGHTS` |
+| `SPAWN` | one foliage field, barrier run or site-marker batch | atomic, measured per species and size |
 
 - **Sample-at-a-time stages** (heights, arrays, plant) time every unit and keep a decaying peak
   of its cost (`_peak_us`). They stop before a unit the peak says won't fit, and **a stage that
@@ -111,9 +113,25 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 - **Skirts** hang below every chunk edge, so mixed-detail neighbours never show a crack.
 - **Planning (`_plan`)** runs when the car changes chunk, and every 0.25 s otherwise. It
   measures distance from both the car and where it will be in 1.5 s, and queues missing work in
-  priority order: collision, then near meshes, then planting, then far meshes, nearest first.
-  Chunks beyond the horizon are dropped, and cancelled or finished jobs are purged from the
-  queue at each plan (a queue that never drains used to carry them for ever).
+  priority order (the table above `PLANT_PRIORITY`): collision (`d − 2000`), near meshes that
+  need collision (`d − 1000`), other near meshes (`d − 100`), then planting (`d − 50`) and far
+  meshes. A far mesh that would fill a **gap in the horizon** (its chunk has no near mesh or
+  near build) sits at `d − 50 − far_lead_chunks` (`_far_priority`), so it interleaves with
+  planting by distance: planting a chunk `d` away waits for horizon gaps nearer than
+  `d + far_lead_chunks` (`FreeRoamSettings.far_lead_chunks`, default 3). A far mesh hidden under
+  a near one stays at `d`, behind everything. Before 2026-10-20 planting always beat far meshes,
+  so at speed far jobs never ran and the horizon had gaps. Nothing in the plant / far tier can
+  overtake a collision or near-mesh build.
+- **Dropping:** a chunk sheds its near mesh, foliage and near / plant jobs past
+  `near_radius + 1.5`, and its collision and collision job past `collision_radius + 1.5`
+  (`_drop_near`, `_drop_collision`), whatever its distance; a far job past `far_radius + 1.5` is
+  cancelled; a chunk past `far_radius + 2` (Chebyshev) goes whole (`_drop_chunk`). Until
+  2026-10-20 the near / collision drops sat behind the horizon test, so after a medium jump (a
+  respawn or travel of ~300–500 m, `prefill_at`) the old chunks just past the horizon kept their
+  near mesh, foliage, collision and queued jobs at stale priorities, and `prefill_at` then built
+  that stale work too, lengthening the travel hitch. Near jobs in the hysteresis band (no longer
+  wanted, not yet dropped) fall to the near-mesh tier. Cancelled or finished jobs are purged from
+  the queue at each plan (a queue that never drains used to carry them for ever).
 - **Boot:** `prefill()` builds the planned set with no budget before the car is released.
   `warm_up_materials` then draws a speck of every ring's ground material in front of the camera
   for a few frames, so each shader is compiled behind the boot rather than when a new biome's
@@ -184,7 +202,11 @@ planted on it (`is_clear`).
 - **Placeholder markers:** until rest stops and loot get real models, a coloured post marks each
   site in near chunks (`_site_marker`): tall orange for a rest stop, short blue for an empty loot
   slot, purple for a dead end; a loot site showing an item gets a coloured crate instead
-  (`_loot_marker`, rebuilt by `refresh_loot_markers` when the pool changes).
+  (`_loot_marker`, rebuilt by `refresh_loot_markers` when the pool changes). Both the queued
+  marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
+  `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
+  its marker spawn running still leaves one marker (a duplicate used to be renamed `@Loot%d@N`,
+  which no refresh removed, so a crate stayed after its pickup).
   `FreeRoamSettings.site_markers` turns the posts off.
 - **Beacons:** every rest stop and every piece of loot also has a tall beam of light visible from far
   beyond the near chunks, and loot a floating name — `SiteBeacons`, see [loot.md](loot.md) →
@@ -207,6 +229,9 @@ the car gives up. The HUD shows a temperature gauge and a cooling warning (`feat
   travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
   stop (a new game, Continue, the reload after a parts or car change): the first `step` only notes
   where the car is (`_primed`), so the page doesn't open until it drives away and comes back.
+  Teleports (travel, respawn, the R reset) are not swept as drives: `RestStops.move_car_to`,
+  `RoadRecovery.reset_done` → `car_teleported` on `RestStops` and `LootDirector` reset the swept
+  start (the 100 m jump guard stays as a backstop).
 - **Stopping:** below `rest_stop_speed_kmh` for `rest_stop_hold_s` there opens the rest-stop
   page (`features/menus.md`), once per visit.
 - **Respawn:** on `gave_up` the car is moved to the last lit rest stop (`move_car_to`: stream the
@@ -242,11 +267,23 @@ only about 190 modules.
 Near chunks are planted after their mesh (and collision) is attached, through the same
 `Foliage.spawn_trees` / `spawn_bushes` / `spawn_rocks` the stages used, so a tree looks and
 collides exactly as before. `Foliage` and its fields take any terrain with `height_at` (and
-`light_at` for the bushes' baked light); the streamer provides both, read from the loaded
-chunk.
+`light_at` for the bushes' baked light); the streamer hands them a `PlantGround` (below) that
+provides both.
 
 - **Spots** come from jittered grids in world space (`tree_cell_m`, `bush_cell_m`,
   `rock_cell_m`), so a chunk always plants the same things in the same places.
+  - **The ground they stand on** (`PlantGround`, `plant_height`): inside the planting chunk its
+    own near grid (the drawn surface); outside it (cells near the +x/+z edge spill up to 0.85 of
+    a cell into the neighbour, rock outcrops and rest-stop crowds spill either way) the exact
+    terrain height, using that point's own chunk's road candidates (`_cands_of`), cached per
+    spot. Foliage, barriers and crowds are all given this ground rather than the streamer's
+    `height_at`. Until 2026-10-20 they read the neighbour's loaded mesh, whatever LOD it had
+    (often the 16 m far mesh, or none), so spilled plants floated or sank once the near mesh
+    arrived (by up to 28 m on the default island's mountainsides), and the water check depended
+    on load order. The road check uses the spot's own chunk's candidates for the same reason.
+    Cost (default island, container CPU): about 13% of spots fall outside their chunk, at ~33 µs
+    each for the exact height against ~1 µs for a mesh read, paid in the budgeted `PLANT` stage
+    (a bush's light samples are warmed there too); the spawns reuse the cache.
   - Trees are thinned by the stages' forest noise (`forestiness`).
   - Rock groups are thinned by `rock_group_chance` × the region's rock density, then fanned
     into outcrops with `TreeScatter.cluster`.
@@ -256,6 +293,10 @@ chunk.
   rock density (see *Biomes*).
 - **Under the budget:** the `PLANT` stage checks a few spots at a time, and `SPAWN` builds
   one foliage field per species as its own unit of work.
+- **`GameConfig.vegetation_enabled = false`** leaves out the trees, bushes and rocks only
+  (`_plant_candidates`). Every near build still runs `PLANT` / `SPAWN`, because the barriers
+  (with their collision), rest-stop crowds, site posts and loot crates spawn from it too; until
+  2026-10-20 turning vegetation off removed those as well.
 - **Lifetime:** the foliage lives on `ChunkState.foliage` and is freed with the near mesh.
   It is only planted within the near ring, which matches `tree_render_distance_m` (120 m).
 - **Bush brushing:** each chunk's bushes get a `BushField` watching the car, so brushing one
@@ -270,8 +311,8 @@ node for node:
   (timer, countdown, stage complete) stay hidden because nothing calls them.
 - `MobileControls`, `CameraManager` with the bonnet camera, `PostProcess` and `SpeedLines`.
 - `PauseMenu`, armed once `prefill` is done. It has no Photo Mode row (`offer_photo_mode =
-  false`), "Reset to road" calls `RoadRecovery.reset_now`, and "Quit to HQ" goes to the
-  hub with free roam's own confirm text.
+  false`), "Reset to road" calls `RoadRecovery.reset_now`, and "Quit to title" goes to
+  `title.tscn` with free roam's own confirm text (both set on the node in `free_roam.tscn`).
 - `MiniMapLayer/MiniMap` (layer 2, with the HUD): the heading-up, perspective-tilted minimap,
   top-centre. Tap it (or M / gamepad Back) for the full map. See [minimap.md](minimap.md).
 - The streaming readout moved to its own `DebugStats` layer. It shows in debug builds only and
@@ -289,7 +330,11 @@ it and going nowhere, or below the ground) for `recovery_timeout_s`.
 - **holes:** physics ticks where the car is over a chunk with no collision yet. This must stay
   0, and `test_the_auto_driver_never_reaches_ground_without_collision` checks it on a short
   drive across a small synthetic island;
-- **rushes:** times the safety net had to build collision over budget (see *Streaming*);
+- **rushes:** times the safety net had to build collision over budget (see *Streaming*). The
+  same test also asserts at most 3 rushes, since the safety net alone keeps holes at 0 whatever
+  the queue order: a planner or queue regression (a rush on nearly every chunk) shows up here
+  first. On the container CPU (2026-10-20) that drive needed 0–2 at the 1 ms budget (it varies
+  with machine load) and 4 at half the budget;
 - **overruns:** frames over the terrain budget;
 - **resets:** times it got stuck and was put back on the route.
 
@@ -309,7 +354,8 @@ over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames wer
 
 ## Not in the prototype yet
 
-Rest stop and loot models (sites only have placeholder posts), pickups, damage and checkpoint logic,
-and threading. The remaining work is
+Real rest-stop and loot models (sites still have placeholder posts and loot coloured crates) and
+threading. Pickups ([loot.md](loot.md)), the damage chain and rest stops as checkpoints (*Damage
+and rest stops* above) are in. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.
