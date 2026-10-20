@@ -1,6 +1,7 @@
 # Free-roam pivot — island road network, biome rings, rest stops (2026-10-19)
 
-**Status: AGREED DESIGN, prototype ACCEPTED (2026-10-20).** The user declared the prototype a
+**Status: IMPLEMENTED (autonomous build, 2026-10-20) — stages 0–8 landed; see *Decision log*
+for the calls made without the user, REVIEW items first.** Prototype ACCEPTED (2026-10-20). The user declared the prototype a
 success. **The road and terrain method is settled:** the whole network is laid out at boot
 by radial growth (`RoadNetwork`), the terrain is built from the roads (`RoadTerrain`), and it
 streams under the strict per-frame budget (`TerrainStreamer`). Do not revisit corridor
@@ -482,7 +483,8 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    sizes. A bigger island loops back to stage 1 (build cost) and to the floating-origin
    check: today's 5 km radius is already about 10 km across, right at the threshold in
    *The core technical problem*.
-8. **Demolition and docs — unchanged, plus:** the `TerrainManager` streaming mode, the
+8. **Demolition and docs — DONE 2026-10-20** (`PIVOT-CHANGES.md` → *The free-roam pivot*), with
+   the stage scene kept as a dev stage and test harness (D68). Originally: the `TerrainManager` streaming mode, the
    corridor pipeline (`bake_track`, `TrackGenerator`, `TrackCache`), and possibly
    `MenuShowcase` and most of `HubShell`. Rewrite `gameplay.md`, `PIVOT-CHANGES.md` and the
    affected `features/` docs. Then a full test run.
@@ -684,3 +686,26 @@ Numbering continues from decision 32.
   levels of each part per ring).
 - **D67. Loot looks like a coloured crate under a light beam, by kind.** A dead end with no item
   left is a "lookout" with nothing on it (decision 30's third option). The HUD toasts each find.
+- **D68. REVIEW — the stage scene (`main.tscn` / `world.gd`) survives as a dev stage and the
+  physics test harness**, not deleted. About 40 test files (car physics, damage, collisions, the
+  benchmark, seed lab) build their world on it, and re-homing them onto free-roam terrain is its
+  own project. So `TrackGenerator`, `TerrainManager`'s corridor bake and streaming mode,
+  `StageManager` (countdown, clock, corner-cut penalty), `TrackProgress`, `RegionStageLibrary`,
+  `StageFields` and `StageConfig` stay. Nothing in the game reaches them. `world.gd` went from
+  2,816 to about 1,750 lines. Suggested follow-up spec: "port the physics tests to a free-roam
+  or flat harness, then delete the corridor pipeline".
+- **D69. `BoostLibrary` is kept as the parts catalogue.** Decision 13 said "BoostLibrary
+  deleted", but parts *are* the boosts, so its catalogue and level scaling stay. The run draw,
+  categories, purchased levels and shop helpers are gone.
+- **D70. The settings Dev page** lost Add money / Unlock all skills / Complete stage and gained
+  "Reveal all biomes" (fills the journal). F (skip to finish) still works on the dev stage.
+- **D71. CI:** the `verify-caches` gate (track lockfile) is replaced by a `compile-check` gate
+  (`tools/compile_check.tscn`: every script and scene loads with the autoloads present).
+- **D72. REVIEW — dead `GameConfig` fields were left in place** (signs, coins, arches,
+  pacenotes, start line, rival pace, run economy, skills). Removing them means editing
+  `game_config.tres` and the config tests in one sweep; worth a `/housekeeping` pass.
+- **D73. `todo/` specs for deleted systems were NOT deleted** (`region-stage-slots-redesign.md`,
+  `mid-run-upgrade-menu.md`, parts of `backlog.md` and `roguelike-pivot.md`). `CLAUDE.md` says to
+  ask before removing todo items. Please decide.
+- **D74. Two dev tools that were already broken were deleted** (`map_pin_capture`,
+  `start_line_capture`), along with the sign tools and the menu-showcase cache generator.

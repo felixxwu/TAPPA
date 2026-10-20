@@ -206,7 +206,7 @@ the road around lakes.
   returns `{ centerline: Curve2D, cells: Dictionary, pieces: Array, complete: bool, runoff: Dictionary }`. Each
   piece dict records `corner`, `flip`, `straight`, `cells`, and its `entry_pos` /
   `entry_heading` (the pose at the start of its connecting straight — used by
-  roadside-sign placement, see [signs.md](signs.md)). `generate` is **always a
+  roadside-sign placement, see signs.md (deleted with the free-roam pivot)). `generate` is **always a
   coroutine** (call it with `await`). The trailing `on_progress` is optional: when
   supplied, the search yields a frame periodically and calls
   `on_progress.call(points: PackedVector2Array)` with the partial centerline so a
@@ -226,7 +226,7 @@ the road around lakes.
 - **Reserved start corridor:** `reserve_behind_m` pre-occupies a straight corridor
   directly *behind* the start (at the collision width), so the search can't loop the
   track back across the start-line lead-in stub the run scene prepends there
-  ([start-line.md](start-line.md)). Cells within the join buffer of the start may
+  (start-line.md (deleted with the free-roam pivot)). Cells within the join buffer of the start may
   still overlap (the track emerges from there); only loop-backs further out are
   rejected. It's defined relative to the start frame, so the generated SHAPE depends
   only on `(seed, turn_count, width, reserve)` — the same value is passed when
@@ -241,7 +241,7 @@ the road around lakes.
   track didn't complete). `world.gd._with_finish_runoff` appends one dead-straight
   point at `end_pos` to the RENDERED centerline, so the terrain bake + road markings
   render the runoff as real road — but the finish arch and 100% progress stay at the
-  generated end ([finish-arch.md](finish-arch.md), [progress.md](progress.md)). Like
+  generated end (finish-arch.md (deleted with the free-roam pivot), [progress.md](progress.md)). Like
   the other shape inputs, the same `runoff_m` is passed when deriving opponent
   target times (it can change which final corner is chosen).
 

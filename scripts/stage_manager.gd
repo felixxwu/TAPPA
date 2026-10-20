@@ -1,7 +1,7 @@
 class_name StageManager
 extends Node
 # Docs: features/stage.md, features/sfx.md, todo/audio.md — update in the same change as this file. (Audio cues in this file go through the `Audio` autoload — never a hand-rolled AudioStreamGenerator; see the AUDIO RULES block at the GO transition.)
-# Tests: tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd, tests/headless/test_start_line.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageManager' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
+# Tests: tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageManager' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Owns the per-stage start/end flow on top of the always-live world:
 #   0. STAGING   — (optional) the car is locked while the pre-event start-line
 #      scene (briefing + presence cars, scripts/start_line.gd) holds, until the

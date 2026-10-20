@@ -52,7 +52,7 @@ The other `LoadingScreen` users cover HUB startup rather than a stage: `menu_sho
 build holds one while the background track visual loads (committed-cache hit or live
 generate), and `hub_shell.gd` holds one while `CarPreviewCache.warm_all()` builds every
 car-selection preview — on a cold boot the two overlap and present as one continuous
-"Loading…" stage (features/card-carousel.md → the warming section). Neither claims the
+"Loading…" stage (card-carousel.md (deleted) → the warming section). Neither claims the
 step line, so their tips keep cycling; only world.gd's generation stages stopped
 forwarding to the label. `set_step()` **locks** the step line (`_step_locked`) so the
 7-second tip cycle never overwrites a caller's own status text.

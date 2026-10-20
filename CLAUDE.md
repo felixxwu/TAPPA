@@ -1,9 +1,10 @@
 # rally — project rules for Claude
 
 **`PIVOT-CHANGES.md` is the orientation file — read it first.** This game was a
-rally career and is now a run-based roguelike; roughly half the old codebase was
-deleted in September 2026. That file is the two-minute map of what changed, which
-seams not to work around, and where the decision record lives.
+rally career, then a run-based roguelike (September 2026), and is now a free-roam
+game on one persistent procedural island (October 2026). That file is the two-minute
+map of what changed, which seams not to work around, and where the decision record
+(`todo/2026-10-19-free-roam-pivot.md`) lives.
 
 ## Feature documentation
 
@@ -32,13 +33,12 @@ seams not to work around, and where the decision record lives.
   framework for flat widget lists). The diegetic 3D HQ and its
   `hq.gd._unhandled_input` spatial pattern are DELETED — every menu is a flat
   page now. Don't ship a menu reachable only by pointer.
-- `gameplay.md` is the high-level gameplay design / vision doc ("Eight stages,
-  one clock" — a rally roguelike) — the north star the `todo/` specs ladder up
-  to. Read it for intent on the run loop, the timer as sole fail state, soft
-  permadeath, regions, boosts, perks, repair and the money economy. It's
-  design-level, not an implementation spec; keep it aligned when gameplay
-  direction changes. `todo/roguelike-pivot.md` is the settled decision record
-  and wins over `gameplay.md` on any disagreement.
+- `gameplay.md` is the high-level gameplay design / vision doc ("One island, no
+  clock" — free roam) — the north star the `todo/` specs ladder up to. Read it for
+  intent on the world, biome rings, the damage / temperature chain, rest stops and
+  loot. It's design-level, not an implementation spec; keep it aligned when gameplay
+  direction changes. `todo/2026-10-19-free-roam-pivot.md` is the settled decision
+  record and wins over `gameplay.md` on any disagreement.
 
 ## Todo / specs folder
 

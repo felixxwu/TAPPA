@@ -1,5 +1,7 @@
 # Music
 
+> **Free-roam pivot (2026-10):** "the hub" is now the title screen (`Scenes.hub_path()` returns `title.tscn`).
+
 Interactive, looping background music. A single track loops into itself
 seamlessly; the system is built so context tracks (HQ / event) can later swap on
 an exact bar boundary. Ported from the `wufo3` project's double-buffered Tone.js

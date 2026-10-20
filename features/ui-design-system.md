@@ -52,7 +52,7 @@ bakes in 2–4 as the defaults:
 4. **Menu backgrounds are pure black** — buttons and panels alike. **One documented
    exception, the ACCENT READOUT:** a floating 3D readout that must jump out of a map of
    otherwise-identical black panels is inverted (light-brown face, black ink — the same
-   board stock as the pacenote signs, [signs.md](signs.md)). Every surface that took it was
+   board stock as the pacenote signs, signs.md (deleted with the free-roam pivot)). Every surface that took it was
    on the deleted HQ map table, so nothing renders one today; the rule is kept because it
    is the one sanctioned way to break the black, and the next 3D readout should take this
    treatment rather than inventing a colour. The podium's `SPECIAL_UNLOCK` card used to
@@ -101,7 +101,7 @@ consistency, they just do it directly rather than via `enforce`.
 ## The card carousel
 
 Five hub pages (MAIN/REGION/CAR/SHOP/SKILLS) present their choices as a
-[`CardCarousel`](card-carousel.md) rather than a vertical row list — a horizontal,
+`CardCarousel` (deleted with the free-roam pivot) rather than a vertical row list — a horizontal,
 side-scrolling strip of playing-card-proportioned panels, the centred card opaque and the
 rest dimmed. It reuses the same house panel box (`UITheme.panel_box`) and label styling
 as every other menu — it's a different LAYOUT, not a different visual language — so rules
@@ -121,7 +121,7 @@ the shared colour constant.
 Two different mechanisms draw the SAME look, for two different reasons:
 
 - **`CardCarousel`** draws it as a separate quad (`card.shadow`, a sibling `Panel`) — see
-  [card-carousel.md](card-carousel.md) → *Cards cast a sharp drop shadow* for why (its
+  card-carousel.md (deleted with the free-roam pivot) → *Cards cast a sharp drop shadow* for why (its
   cards are absolute-positioned outside normal layout, and `card.root` clips its own
   contents), and → *A shared CanvasGroup, not independent alpha* for why root and shadow
   are grouped under one `CanvasGroup` rather than dimmed independently.
@@ -141,7 +141,7 @@ widget's own opaque face, with only the down-right sliver poking out; with a tra
 fill there is nothing to hide it, so the whole offset rect shows at its full 20% black and
 reads as a large dark translucent panel the size of the widget. That was the carousel-page
 bug: `menu_page.gd` wraps its body box in `shadowed()`, and a carousel page's body is
-deliberately `panel_box(0.0)` (see [card-carousel.md](card-carousel.md) → *The gaps show
+deliberately `panel_box(0.0)` (see card-carousel.md (deleted with the free-roam pivot) → *The gaps show
 the live 3D showcase*), so the "transparent" body painted a dark grey box around the whole
 carousel. Buttons, cards and opaque panels have a real fill and still cast as before. If
 you add a new surface that must stay invisible, it gets this for free — don't reach for a
@@ -439,7 +439,7 @@ is documentation only. The tint half is still live and still guarded, by
 the fill without dragging the icon's ink with it.
 ## Card icons
 
-Every card's visual slot (`CardCarousel` cards — `features/card-carousel.md`) draws one
+Every card's visual slot (`CardCarousel` cards — `card-carousel.md (deleted)`) draws one
 SVG from `icons/cards/`, named by what the card is: a boost/skill's catalogue id
 (`grip.svg`, `coin_magnet.svg`, …) or a fixed name (`car`, `region`, `region_locked`,
 `engine_swap`, `shop`, `skills`, `stats`, `settings`, `new_run`, `resume_run`,

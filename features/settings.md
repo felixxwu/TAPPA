@@ -138,7 +138,7 @@ through the page's `_dev_status` line:
   [menus.md](menus.md) → "Pause menu".
 
 The per-car "Unlock …" button list this page used to carry is gone — cars are a
-shop purchase now ([region-runs.md](region-runs.md)); `Save.grant_car` remains the
+shop purchase now (region-runs.md (deleted with the free-roam pivot)); `Save.grant_car` remains the
 plain mutator tests use to seed a fixture car.
 
 **Confirming the wipe reloads the hub scene** (`SettingsMenu._wipe_progress` →

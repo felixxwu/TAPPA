@@ -1,5 +1,7 @@
 # Menus & game-loop shell
 
+> **Free-roam pivot (2026-10):** the game boots into the **title screen** (`title.tscn`, [world-session.md](world-session.md)). `HubShell` and its pages are deleted, along with the start line, the between-stage pick and the run summary. The live menus are the title, the pause menu (with free roam's Map / Stats rows), the rest-stop page and the world pages, all described below.
+
 **Sources:** the hub-scene routing seam in `scripts/scenes.gd` (`class_name Scenes` —
 `hub_path()` / `is_hub_scene()`, the path consts `HUB`/`MAIN`/`CAR`, and the
 `car_scene()` cached-load accessor, the ONE place `"res://car.tscn"` is spelled in
@@ -16,7 +18,7 @@ the rally-detail panel in `scripts/rally_detail.gd`, and the session-aware field
 `tests/headless/test_text_field.gd`, `tests/headless/test_hub_shell.gd`
 
 **This file is the SHELL — the routing, the house rules and the screens that are not
-part of the hub.** The hub's own pages are [hub-shell.md](hub-shell.md); the navigation
+part of the hub.** The hub's own pages are hub-shell.md (deleted with the free-roam pivot); the navigation
 framework is [menu-navigation.md](menu-navigation.md); modals are
 [modals.md](modals.md). This file does not duplicate them.
 
@@ -53,7 +55,7 @@ hub.tscn (HubShell)
 There is **no branch out of the run for damage**: HP bottoms out at 0 and the car keeps
 driving under a capped misfire and rev limit, so every stage the player enters reaches
 its own end ([damage.md](damage.md)). Missing the target time is the only fail state
-([region-runs.md](region-runs.md)).
+(region-runs.md (deleted with the free-roam pivot)).
 
 ## Button order — leaving is left, proceeding is right
 
@@ -105,7 +107,7 @@ half SURVIVES: `Save._seed_reveals_if_needed` and the per-rally `revealed` flag 
 still written (see [save-persistence.md](save-persistence.md)), because a flat
 "here is what just opened up" beat may still want them — but nothing reads them for a
 reveal today, and the roguelike's regions unlock linearly on a rule the region page
-simply prints ([hub-shell.md](hub-shell.md)).
+simply prints (hub-shell.md (deleted with the free-roam pivot)).
 
 ## Text input (`text_field.gd`)
 
@@ -158,7 +160,7 @@ scrolled-body/pinned-exit modal page shape, and `MenuPage.open_modal`.
 
 ## The hub
 
-**See [hub-shell.md](hub-shell.md).** `HubShell` (`hub.tscn` + `scripts/hub_shell.gd`)
+**See hub-shell.md (deleted with the free-roam pivot).** `HubShell` (`hub.tscn` + `scripts/hub_shell.gd`)
 is the flat replacement for the diegetic HQ: eleven stacked `MenuPage` screens on one
 script, smaller in total than any single one of the nine hub scripts it replaced. There
 is no `features/hq.md` — the doc this section used to point at went with the code.
@@ -170,7 +172,7 @@ With a `RunSession` active, `world._ready` fields the player's OwnedCar through
 picked boosts and the player's equipped skills, then tuning, then the damage bound from
 the saved HP) instead of the default `apply_car(0)`, and wires this stage's
 `StageManager.stage_completed` into `RunSession.report_event_result`. See
-[region-runs.md](region-runs.md) and [skills.md](skills.md).
+region-runs.md (deleted with the free-roam pivot) and skills.md (deleted with the free-roam pivot).
 
 There is **no second exit** from the run: `world.gd` has no wreck screen and nothing
 listens for a car reaching 0 HP, because nothing is signalled when it does. With no
@@ -247,7 +249,7 @@ altitude buttons, back/hide) since there's no Esc key on a phone — see
 
 **Settings** shows the **shared `SettingsMenu`** (camera
 angle + mobile controls, identical to the hub's own Settings page — see
-[hub-shell.md](hub-shell.md)), with a **◄ Back** to
+hub-shell.md (deleted with the free-roam pivot)), with a **◄ Back** to
 the Resume/Settings menu. **Quit to HQ** pops a confirm and, on accept (`quit_to_hq`), unfreezes and
 **PAUSES** the run (`RunSession.pause_run()`), then loads `Scenes.hub_path()` itself.
 Nothing is abandoned and nothing DNFs: the run slot stays persisted and the hub offers
@@ -289,28 +291,28 @@ half-built world. Covered by `tests/headless/test_pause_menu.gd`.
 page) are gone — decisions 19 and 30. Rivals went with them (decision 5), so there is no
 field left to rank. `HubShell`'s `SUMMARY` page replaces both: stages cleared, money
 earned, per-stage times, for a run that ended either way
-([hub-shell.md](hub-shell.md)).
+(hub-shell.md (deleted with the free-roam pivot)).
 
 The event-replay overlay MECHANISM survives (`ReplayRecorder` / `ReplayCamera` /
 `car.gd`'s `replay_playback`) — only the flat page it used to render behind is deleted.
-See [event-replay.md](event-replay.md).
+See event-replay.md (deleted with the free-roam pivot).
 
 ## Start line (location 2)
 
 The pre-event **start-line scene** — the diegetic **briefing** panel (rally, event
 N/3, restriction, fielded car + HP bar) and the **pre-launch presence** cars — is
 built inside the run scene before the countdown; the player launches it into the
-`StageManager` countdown. See [start-line.md](start-line.md). Its Exit button raises the
+`StageManager` countdown. See start-line.md (deleted with the free-roam pivot). Its Exit button raises the
 same confirm the pause menu's Quit does (`PauseMenu.confirm_quit_to_hq` is public for
 exactly that reason — the wording branches on run-vs-no-run and the quit branches on
 benchmark/run/plain, and neither belongs in two places). The between-stage beat it used
 to hand off to is the run pick now, not a standings page — see
-[region-runs.md](region-runs.md).
+region-runs.md (deleted with the free-roam pivot).
 
 ## Tests
 
 - `tests/headless/test_hub_shell.gd` — the hub's screen graph and the keyboard/gamepad
-  contract on every one of its pages ([hub-shell.md](hub-shell.md)).
+  contract on every one of its pages (hub-shell.md (deleted with the free-roam pivot)).
 - `tests/headless/test_pause_menu.gd` — the Pause button freezes the game and opens the
   menu; Resume unfreezes; Settings exposes the shared `SettingsMenu` (camera + control
   rows); Quit to HQ leaves the run and unfreezes; picking a camera applies live to the

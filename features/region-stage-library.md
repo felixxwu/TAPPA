@@ -1,7 +1,9 @@
 # Region stage library
 
-**Source:** `scripts/region_stage_library.gd` (`RegionStageLibrary`), `scripts/region_stage_pool.gd` (`RegionStagePool`), `scripts/stage_fields.gd` (`StageFields`)
-**Tests:** `tests/headless/test_region_stage_library.gd`, `tests/headless/test_region_stage_pool.gd`, `tests/headless/test_stage_fields.gd` (fixture: `tests/headless/region_stage_fixtures.gd`)
+> **Free-roam pivot (2026-10):** nothing in the game draws stages any more. `RegionStageLibrary` survives only for the dev stage, the benchmark and the seed lab; `RegionStagePool` (the run's draw) is deleted.
+
+**Source:** `scripts/region_stage_library.gd` (`RegionStageLibrary`), `scripts/stage_fields.gd`, `scripts/stage_config.gd`
+**Tests:** `tests/headless/test_region_stage_library.gd`, `tests/headless/test_stage_fields.gd` (fixture: `tests/headless/region_stage_fixtures.gd`)
 
 **Design record:** `todo/region-stage-slots-redesign.md` — supersedes decisions 3, 7
 and 32 of `todo/roguelike-pivot.md`. Replaces the old `RallyLibrary.RALLIES`
@@ -33,7 +35,7 @@ to re-verify one after an edit.
 
 `RegionStagePool.draw(region_id, stage_count, run_seed)` picks **one candidate per
 slot, uniformly at random off the run seed, in slot order**. There is no pool, no
-difficulty sort, and no "region too thin" fallback — see `features/region-runs.md`
+difficulty sort, and no "region too thin" fallback — see `region-runs.md (deleted)`
 → *The stage draw* for the exact code shape and the rules this replaces.
 
 ## Field accessors
@@ -74,4 +76,4 @@ unreachable from any live screen before this redesign — see
 Also deleted with it: `StageConfig.stage_scale` and the whole per-stage-index
 hilliness/curviness interpolation (`GameConfig.stage_hilliness_scale_min/_max`,
 `stage_curviness_scale_min/_max`) — escalation is authored directly per slot now,
-not computed at runtime. See `features/region-runs.md` → *The stage draw*.
+not computed at runtime. See `region-runs.md (deleted)` → *The stage draw*.

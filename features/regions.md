@@ -1,12 +1,14 @@
 # Regions
 
+> **Free-roam pivot (2026-10):** regions are now worn by the **biome rings** of the free-roam island (`FreeRoamSettings.ring_regions`, `BiomeDirector`; see [free-roam.md](free-roam.md) → *Biomes*). Region unlock gating, the region page and region runs are deleted; a region is its look, its handling and the loot/weather of the ring that wears it.
+
 **Source:** `scripts/region_library.gd` (`RegionLibrary`), `scripts/region_stage_library.gd`
 (`RegionStageLibrary` — the region's authored 8×3 stage grid, replacing the deleted
 `RallyLibrary.RALLIES`/`region` tag), `world.gd._apply_region_look` (and
 `_current_region_look`), `scripts/region_stage_pool.gd` (the run's stage draw) and
 `HubShell`'s REGION page.
 
-**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_stage_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_hub_shell.gd`
+**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_stage_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`
 
 **Adding a region takes TWO edits.** An entry in `RegionLibrary.REGIONS` is inert on
 its own — the only thing that ever selects a region is a matching key in
@@ -491,7 +493,7 @@ pins, the reveal parade and the map image's consumers all went with the diegetic
 
 What replaced it is a flat list: `HubShell`'s REGION page, showing every region in
 AUTHORED order (`RegionLibrary.ordered()`), each marked cleared or named with its gate
-([hub-shell.md](hub-shell.md)). **Regions unlock linearly now** (decision 12's
+(hub-shell.md (deleted with the free-roam pivot)). **Regions unlock linearly now** (decision 12's
 progression), which is a different rule from the map's geometry entirely — see below.
 
 `map_pos` survives on every rally and is still authored, because the pin-fitting tool

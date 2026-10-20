@@ -1,5 +1,7 @@
 # Damage Model
 
+> **Free-roam pivot (2026-10):** in free roam the car runs the **thermal chain** (cooling failure → overheating → giving up at 0 HP → respawn), described under *The free-roam damage chain* below. "Damage never wrecks" still holds on the dev stage, where `DamageModel.thermal` is off. The between-stage pit repair and the self-heal skill are deleted; a rest stop repairs instead.
+
 **Source:** `scripts/damage_model.gd` (`DamageModel`, a `RefCounted` helper owned
 by `car.gd` like `Drivetrain`). Design intent in `gameplay.md` › *Damage model*.
 
@@ -15,7 +17,7 @@ gutless car for the rest of the run — a misfiring, rev-limited engine and bent
 a clock that is now much harder to beat, which is the whole of the cost (decision 6:
 damage never wrecks; it makes the timer harder). HP climbs back two ways: the
 **between-stage pit repair**, which the player must CHOOSE over a boost
-([region-runs.md](region-runs.md)), and the **self-heal trickle** an equipped skill buys
+(region-runs.md (deleted with the free-roam pivot)), and the **self-heal trickle** an equipped skill buys
 (below). The paid star repair at the tuning lift is deleted with the star economy and the
 lift (decision 21).
 
@@ -217,7 +219,7 @@ on the `VehicleWheel3D` nodes themselves.
 The solid props that arrest the car and so cost HP through the rule above are the
 trees ([trees.md](trees.md)) and the **corner barriers** ([barriers.md](barriers.md)),
 both tagged `OBSTACLE_GROUP` via `ObstacleBody`. Roadside signs are deliberately not
-among them ([signs.md](signs.md)).
+among them (signs.md (deleted with the free-roam pivot)).
 
 ## Soft contacts — bushes & spectators (`apply_soft_drag`)
 
@@ -392,8 +394,8 @@ all retired.
 ### Nothing DNFs the player any more
 
 Both sessions' `report_wreck()` / `_end_as_dnf()` are gone, so **the player cannot DNF
-through damage** — see [region-runs.md](region-runs.md) and
-[rally-challenge.md](rally-challenge.md). `RunSession._dnf` survives as the challenge's
+through damage** — see region-runs.md (deleted with the free-roam pivot) and
+rally-challenge.md (deleted with the free-roam pivot). `RunSession._dnf` survives as the challenge's
 legacy field (a persisted run from an older build can still read one back) and is distinct
 from `_failed`, the region run's one real fail state: missing the stage target. The
 `"WRECKED"` labels the old UI showed keyed off `hp == 0` and still render correctly
@@ -412,7 +414,7 @@ every car unless something writes it. The only writer is the effects funnel: the
 "Self Healing" skill's `EFFECTS` row (`damage_regen_set`) sets it from
 `skill_heal_hp_per_s`, and `UpgradeLibrary._reseed_globals` puts it back to 0.0 the
 moment the skill comes off. `DamageModel` itself knows nothing about skills — it reads a
-config knob like every other rule here. See [skills.md](skills.md).
+config knob like every other rule here. See skills.md (deleted with the free-roam pivot).
 
 It heals HP **only**. `wheel_toe` stays bent (only `field_repair` straightens wheels),
 so a self-healing car still has a reason to take the between-stage repair. A stage that
@@ -423,7 +425,7 @@ that case.
 ## Between-event pit repairs (`Save.field_repair`)
 
 A run is eight stages driven back to back on one fielded car
-([region-runs.md](region-runs.md)). Between stages the engineers patch the car up a
+(region-runs.md (deleted with the free-roam pivot)). Between stages the engineers patch the car up a
 bit — a partial repair the player **chooses over a boost**, rather than the automatic
 freebie this used to be (decision 8: repair has to compete, or it is not a decision):
 

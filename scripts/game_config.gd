@@ -1,6 +1,6 @@
 class_name GameConfig
 extends Resource
-# Docs: features/car-performance.md, features/configuration.md, features/forced-induction.md, features/signs.md, features/tuning.md, features/world-panel.md — update in the same change as this file.
+# Docs: features/car-performance.md, features/configuration.md, features/forced-induction.md, features/tuning.md, features/world-panel.md — update in the same change as this file.
 # Tests: tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd, tests/headless/test_car_performance.gd — extend in the same change. (Nearly every headless test reads this file; those three are the ones that cover it AS config. For a specific knob, the owning area's doc above names its own tests.)
 # Central tuning knobs for the whole game. Edit config/game_config.tres
 # (Inspector or text), not the per-node values in main.tscn — runtime

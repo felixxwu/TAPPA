@@ -49,7 +49,7 @@ from the same hull points. Geometry is covered by `test_chassis_hull_*` in
 chassis **collision shape** as `[sub_resource]`s. Godot shares one copy of a
 sub-resource across **every instance** of the scene, and `apply_car()` reshapes these
 in place per car (`_apply_body_meshes` / `_relocate_wheels`). So without isolation, a
-second live car — the [start-line](start-line.md) queue leader/trailer, spawned and
+second live car — the start-line (deleted with the free-roam pivot) queue leader/trailer, spawned and
 `apply_car`'d **after** the player is already sized — reshapes the shared resource and
 the change bleeds back onto the player: wrong wheel visuals, or (the subtler one) the
 player's **hitbox** taking the last-applied car's body size while the meshes still look
@@ -494,7 +494,7 @@ enables contact monitoring and reads obstacle-contact impulses in
   the finish) while the rest of the sim (suspension, drag, camera) keeps running.
 - **Scripted** (`ai_controlled`) — the car ignores `Input` and drives from
   `ai_throttle` / `ai_steer` / `ai_handbrake` (same axes/sign as the player inputs).
-  Used for the [start-line](start-line.md) queue cars, which run full physics (real
+  Used for the start-line (deleted with the free-roam pivot) queue cars, which run full physics (real
   suspension load) under script while axis-locked to a straight line. Discrete actions
   (shift / mode / reset) are ignored when locked or scripted.
 
@@ -563,7 +563,7 @@ would otherwise win and the car would dribble downhill. The hold behaves like re
 stiction: it pins the car on any sane grade (a centimetre or so of slack) but a
 wall-steep slope still slides, and — unlike the old `freeze` hack — the car stays a
 **live rigid body** (no snap on release, still collidable). This keeps a settling
-[start-line](start-line.md) queue car from creeping into the car ahead and holds the
+start-line (deleted with the free-roam pivot) queue car from creeping into the car ahead and holds the
 player put during the countdown (`handbrake_locked` forces the handbrake).
 
 > **Why a spring and not a velocity cancel** (the countdown-vibration fix — don't

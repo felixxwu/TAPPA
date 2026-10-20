@@ -341,7 +341,7 @@ a scene reload.
 The overlay is **driving-only**: `world.gd::_hide_driving_ui` switches the `SpeedLines`
 layer off alongside the HUD and the touch controls when a run hands over to the
 cinematic replay, so the streaks never play over a replay the player is only watching.
-See [event-replay.md](event-replay.md).
+See event-replay.md (deleted with the free-roam pivot).
 
 ## Authored body models (MX-5, Focus, Twingo, Acty, Charger, The Beast)
 
@@ -411,8 +411,8 @@ a dim lake transparent rather than dark).
 Route any new fake-lit material through it. The existing users:
 `apply_car_light` (`ps1_models_lit.gdshader` — cars, rocks (`Foliage.rock_mesh`),
 barrier modules (`BarrierSection._mat`, see [barriers.md](barriers.md)), coins
-(`CoinField._material`, see [collectables.md](collectables.md)), and the finish
-arch (`FinishArch._make_material`, see [finish-arch.md](finish-arch.md))),
+(`CoinField._material`, see collectables.md (deleted with the free-roam pivot)), and the finish
+arch (`FinishArch._make_material`, see finish-arch.md (deleted with the free-roam pivot))),
 `apply_foliage_light` (`billboard_opaque.gdshader`, mirroring the car helper so
 trees and car can't drift apart), `LakeField.build` (`water.gdshader` colours +
 the sun-glint sparkle) and `SignField._material_for` (`albedo_color`). Terrain
@@ -927,7 +927,7 @@ cull dithers rather than pops):
   [spectators.md](spectators.md).
 - **Signs** set it on each resting-sign `MultiMeshInstance3D` (`sign_field.gd`).
 - **Start / finish arches** apply it to the whole arch subtree (structure, banners,
-  ropes) after build — see [finish-arch.md](finish-arch.md).
+  ropes) after build — see finish-arch.md (deleted with the free-roam pivot).
 
 Non-foliage props go through `MeshUtil.apply_visibility_range(root, end_m, fade_m)`,
 which walks a subtree and sets the fields on every `GeometryInstance3D`

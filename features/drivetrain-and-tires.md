@@ -329,7 +329,7 @@ property of the conditions the benchmark freezes.)
 | **AWD** | front+rear locked (no center diff) | — | most grip, least drama |
 
 Each car ships with an authored stock `drive_mode`. A layout switch is now a **run-scoped
-mid-run upgrade** — see [region-runs.md](region-runs.md) → *Drivetrain conversion* — picked
+mid-run upgrade** — see region-runs.md (deleted with the free-roam pivot) → *Drivetrain conversion* — picked
 in the between-stage repair-or-boost pick alongside the drawn boosts, free, and gone the
 moment the run ends. `RunSession.choose_drivetrain(mode)` records it on `_drivetrain_override`
 (`-1` = the fielded car's own stock/current layout); `world.gd::_field_car` writes it onto

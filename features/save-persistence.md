@@ -1,5 +1,7 @@
 # Save / Persistence
 
+> **Free-roam pivot (2026-10):** `SCHEMA_VERSION` is 8. The profile is `cars`, `lifetime`, `world` (the persistent free-roam world, [world-session.md](world-session.md)), `settings` and the cloud fields. The money, run slot, regions-cleared, boost-level, skill and challenge keys are deleted, and every v7 profile is refused.
+
 The **`Save` autoload** (`scripts/save_manager.gd`, registered in
 `project.godot [autoload]` alongside `Config`) is the single source of truth for
 everything the meta-game mutates: owned cars (each with its own HP and tuning),
@@ -58,7 +60,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   stored here** — a run's picked boosts, its picked drivetrain conversion, and the
   player's equipped skills are all merged onto a
   DUPLICATE at fielding time and must never reach the profile
-  ([skills.md](skills.md), [region-runs.md](region-runs.md) → *Drivetrain conversion*).
+  (skills.md (deleted with the free-roam pivot), region-runs.md (deleted with the free-roam pivot) → *Drivetrain conversion*).
   `installed_upgrades` / `disabled_upgrades` went with the parts
   model, and `drivetrain_modes_bought` / the persisted `drivetrain_override` went with
   the permanent-purchase drivetrain model decision 52 superseded. Two further fields
@@ -144,7 +146,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
   unaffordable purchase rather than going negative. There is deliberately **no
   `lose_money`**: a failed run keeps every penny it earned (decision 14), and money is
   banked at each stage CLEAR rather than at run end (decision 36). Sources and sinks
-  are in [region-runs.md](region-runs.md). **A fresh profile is not broke** (decision
+  are in region-runs.md (deleted with the free-roam pivot). **A fresh profile is not broke** (decision
   28): `_default_profile()` seeds `KEY_MONEY` from `GameConfig.run_starting_money`
   rather than `0`, sized so the shop (`HubShell`'s CAR page) is reachable and has
   something affordable in it from the very first boot — the old three-car starter
@@ -152,7 +154,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `boost_levels` (`Save.KEY_BOOST_LEVELS`, id -> level) — purchased **meta** boost
   levels (`todo/roguelike-pivot.md` "Upgrades — RR's two-tier model", stage 6). A level
   never touches the live car; it scales the magnitude `BoostLibrary.magnitude_for`
-  hands to a FUTURE in-run pick — see [region-runs.md](region-runs.md) → *The meta
+  hands to a FUTURE in-run pick — see region-runs.md (deleted with the free-roam pivot) → *The meta
   tier*. `Save.boost_level(id)` / `boost_level_price(id)` / `buy_boost_level(id)`.
 - (DELETED) `engine_swap_unlocked` — the Engine Swap is a mid-run boost now; the
   flag, its reader and its buyer went together (see [engine-swap.md](engine-swap.md)).
@@ -160,7 +162,7 @@ The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
 - `run` (`Save.KEY_RUN`) — **the one run slot**, holding an in-progress run of either
   kind (a region run or a Daily/Weekly/Monthly challenge). `set_run` / `clear_run` are
   its only writers, `is_challenge_locked(instance_id)` is the car lock over it, and
-  `RunSession` owns its shape. See [region-runs.md](region-runs.md).
+  `RunSession` owns its shape. See region-runs.md (deleted with the free-roam pivot).
 - `reward_history` — model/item ids ever revealed (for the discovery framing).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
   `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old

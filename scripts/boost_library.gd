@@ -1,6 +1,6 @@
 class_name BoostLibrary
 extends RefCounted
-# Docs: features/region-runs.md — update in the same change as this file.
+# Docs: features/loot.md, features/upgrade-catalogue.md — update in the same change as this file.
 # Tests: tests/headless/test_boost_library.gd — extend in the same change.
 #
 # THE IN-RUN BOOST CATALOGUE (todo/roguelike-pivot.md -> "Upgrades — RR's two-tier

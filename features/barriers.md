@@ -2,7 +2,7 @@
 
 Solid crash barriers along the **outside of the stage's sharp corners** — run wide
 and you hit something. Built from 2 m modules stitched end to end, procedurally
-like [finish-arch.md](finish-arch.md) / [signs.md](signs.md), in the PS1
+like finish-arch.md (deleted with the free-roam pivot) / signs.md (deleted with the free-roam pivot), in the PS1
 flat-shaded look. Three rules decide what a corner gets:
 
 **Tests:** `tests/headless/test_barrier_field.gd`, `tests/headless/test_barrier_layout.gd`, `tests/headless/test_barrier_section.gd`
@@ -236,7 +236,7 @@ the same trap `SignField` documents. Cull distance is the shared world-prop rang
 dressing — see [rendering.md](rendering.md) → "Shared render distance".
 
 **Collision: solid, and it costs HP.** Unlike the signs — cosmetic clutter the car
-ploughs straight through ([signs.md](signs.md)) — a barrier stops you. Each
+ploughs straight through (signs.md (deleted with the free-roam pivot)) — a barrier stops you. Each
 (run, style) group gets one `StaticBody3D` carrying a box per module, all sharing a
 single `BoxShape3D` via the physics server (`ObstacleBody.build_oriented`), in the
 damage `OBSTACLE_GROUP` so clipping one costs HP like a tree

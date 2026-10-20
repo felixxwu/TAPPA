@@ -1,4 +1,6 @@
 extends Node
+# Docs: features/rendering.md — update in the same change as this file.
+# Tests: tests/headless/test_settings_menu.gd — extend in the same change.
 # SPIKE (throwaway): object-ID outline pass. Renders an ID-coloured twin of every
 # mesh into a second SubViewport (layer 20 only); ps1_post_process.gdshader
 # edge-detects that texture. Terrain/lakes encode their normal (silhouettes + creases).

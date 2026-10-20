@@ -5,19 +5,19 @@ documents one feature area: what it does, where it lives, how the pieces fit
 together, and which config knobs control it. Read this folder first to get
 oriented before diving into source.
 
-`rally` is a small PS1-aesthetic **rally roguelike** built in **Godot 4.6**
-(GL Compatibility renderer). You pick a region and drive eight stages back to back
-on one car; the per-stage target time is the only fail state. Money banked from
-stages you clear buys cars, permanent skills and boost levels between runs, and a
-failed run keeps none of its in-run boosts — only the lifetime counters that gate
-the skills.
+`rally` (TAPPA) is a small PS1-aesthetic **free-roam rally game** built in **Godot 4.6**
+(GL Compatibility renderer). One persistent procedural island per save: you drive outward from
+the spawn rest stop on a road network that streams in around you, through biome rings that get
+rarer further out, finding cars and parts. Damage is unforgiving: once the cooling fails you
+race the temperature gauge to the next rest stop, where you repair, bank loot, fit parts and
+fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
+[world-session.md](world-session.md).
 
-> **New to this codebase, or last saw it before September 2026?** Read
-> [`../PIVOT-CHANGES.md`](../PIVOT-CHANGES.md) first. The game was a rally *career*
-> and is now a **run-based roguelike**; roughly half the old codebase (the diegetic
-> 3D HQ, the overworld, the rival field, the star economy, the persistent parts
-> model) was deleted. That file is the two-minute map of what changed and which
-> seams not to work around.
+> **New to this codebase?** Read [`../PIVOT-CHANGES.md`](../PIVOT-CHANGES.md) first. The game
+> has pivoted twice: a rally *career* became a run-based roguelike (September 2026), and the
+> roguelike became free roam (October 2026, `todo/2026-10-19-free-roam-pivot.md`). That file is
+> the two-minute map of what changed and which seams not to work around. The stage scene
+> (`main.tscn` / `world.gd`) survives only as a dev stage and the physics test harness.
 
 ## How to use this folder
 
@@ -69,11 +69,6 @@ the skills.
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
 | [engine-swap.md](engine-swap.md) | The Engine Swap as a genuine, deterministic MID-RUN engine swap (`RunSession._pool_engine_swap_ids`' next-most-powerful `EngineLibrary` engine, fielded via the existing `EngineSwap` + `car.gd::_apply_engine_swap` pipeline), plus the legacy owned-car `swapped_engine` read path and the engine-detune power knob |
-| [rally-challenge.md](rally-challenge.md) | Daily/Weekly/Monthly seeded Rally Challenge — `ChallengeLibrary` (period/seed/ceiling), `ChallengeRunMode` (the challenge half of `RunSession`: eligibility, period outcome, placement reward), the entry-point screen |
-| [region-runs.md](region-runs.md) | The roguelike region run — `RunSession` + `RunMode`, `RegionStagePool`, `BoostLibrary` and the repair-vs-boost between-stage pick, the fixed reference-car timer, run-over on a missed target, money banked per stage clear |
-| [collectables.md](collectables.md) | Stage coins — `CoinLayout` (off-the-racing-line, seeded placement), `CoinField` (the disc mesh + pickup proximity query), the HUD counter, the pickup chime, and how coin money banks with the stage payout at stage clear |
-| [event-replay.md](event-replay.md) | `ReplayRecorder`/`ReplayCamera` — cinematic transform-playback replay of the just-driven event behind the standings overlay |
-| [rival-ghost.md](rival-ghost.md) | `RivalGhost` — a posed (not simulated) second car driving `RegionRunMode`'s pace-scaled clock, shown at the start line and kept posing through the run for a live "player vs rival pace" HUD delta |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, capped misfire + rev cap at 0 HP (never a wreck) |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
@@ -85,6 +80,7 @@ the skills.
 | [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — the hidden fifth upgrade slot (auto-fitted, excluded from power-to-weight), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
 | [loot.md](loot.md) | **Free-roam loot** — `LootLibrary` (ring tables, seeded placement, parts through the owned-car funnel), `LootDirector` (collect, carry, bank, drop at the wreck, rumours), the rest-stop Parts / Garage / Journal pages |
 | [world-session.md](world-session.md) | **The persistent free-roam world** — `WorldSession` (the world block in the profile: seed, car, pose, lit rest stops, map), the title screen the game boots into, and the map / stats pages |
+| [hud.md](hud.md) | `hud.gd` — speed / gear / rpm readouts, the Health / boost / nitrous / temperature gauges, the stage timer and finish panel, and the debug readouts (H) |
 | [free-roam.md](free-roam.md) | **The free-roam game, entered from the title screen** — `RoadNetwork` (radial-growth road layout), `RoadTerrain` (height built from the roads, base-field lakes), `TerrainStreamer` (resumable chunk jobs under a strict per-frame time budget, two LODs, skirts, collision ring) |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
@@ -94,25 +90,18 @@ the skills.
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
 | [corner-cutting.md](corner-cutting.md) | Corner-cutting time penalty — arc-gained-vs-driven cut detection in `TrackProgress`, snapshot at the finish, live HUD flash + finish-panel breakdown |
 | [stage.md](stage.md) | `StageManager` — per-stage countdown → run timer → completion + the car control lock |
-| [start-line.md](start-line.md) | `StartLine` — the pre-event start-line MENU (briefing + Tune Car) and fade before the countdown; loops the rival ghost ([rival-ghost.md](rival-ghost.md)) down the road during the idle |
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |
-| [signs.md](signs.md) | Roadside A-frame signs — sector boards, turn arrows, start/finish gates (planner + builder; light knockable bodies, no damage) |
 | [barriers.md](barriers.md) | Solid crash barriers on the outside of sharp corners — 2 m modules stitched into a run; armco guardrail on gravel, concrete jersey rail on tarmac (`BarrierSection` / `BarrierLayout` / `BarrierField`) |
 | [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles |
-| [finish-arch.md](finish-arch.md) | `FinishArch` — procedural inflatable rally start/finish gates (Dakar-style portal + banners); finish sits at 100% progress so crossing it ends the stage |
 | [tire-marks.md](tire-marks.md) | `TireMarks` — gravel ruts laid behind the wheels (per-wheel ribbon mesh, gated to the road, capped) |
 | [wheel-dust.md](wheel-dust.md) | `WheelParticles` — cheap surface debris flung from the driven wheels under wheelspin (one CPU pool + MultiMesh, ring-buffered; per-particle colour/size/roll picks gravel clods, grass blades, or nothing on tarmac) |
 | [engine-smoke.md](engine-smoke.md) | `EngineSmoke` — grey smoke puffed from the bonnet on each damage misfire (own small CPU pool + MultiMesh, grows & fades) |
 | [exhaust-flames.md](exhaust-flames.md) | `ExhaustFlames` — backfire flame from each exhaust pipe on a rev-limiter bang and while nitrous delivers; plus the exhaust lab dev scene for positioning the pipes |
 | [camera.md](camera.md) | Camera modes: chase follow, bonnet hood, replay cinematic, and photo mode free-fly |
-| [hud.md](hud.md) | On-screen speed/gear/rpm readout, mode buttons, and the live "player vs rival pace" delta ([rival-ghost.md](rival-ghost.md)); the old permanent live-standings readout (`LiveStandings`) is deleted |
 | [menus.md](menus.md) | Game-loop shell — HQ hub, podium, run-scene fielding, the pause menu, modals (vertical slice; full diegetic UI deferred) |
 | [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row, the diegetic-HQ spatial regime. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
-| [card-carousel.md](card-carousel.md) | **`CardCarousel`** — the horizontal, side-scrolling card widget that replaced the vertical row list on the hub's MAIN/REGION/CAR/SHOP/SKILLS pages. Cards, drag/snap, tap-to-select-vs-confirm, and the `menu_nav_handles_side` seam into `MenuNav` |
 | [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure; the ledger skill unlock gates read |
-| [car-stats.md](car-stats.md) | `CarStats`/`CarStatsPanel` — the plain/comparison car spec sheet (absolute figures, not `StatBar`'s roster-relative bar), why it reads `grip_meta` not `effective_meta`, `preview`'s no-mutation guarantee; `SkillProgressPanel` — the between-stage skill-gate read-out sitting right after it |
-| [skills.md](skills.md) | The skill catalogue (`SkillLibrary`) and its locked → purchasable → owned → equipped state machine — money-bought, gated on lifetime stats, capped by `GameConfig.skill_max_equipped`; effects ride the `UpgradeLibrary.EFFECTS` funnel via the fielded car's `boosts` list |
 | [settings.md](settings.md) | **Adding or changing a persisted setting** — the one-module-per-setting apply-owner pattern (`*_setting.gd`), boot re-application, the shared `SettingsMenu` used by both the title screen and the pause menu, and the developer-only pages |
 | [modals.md](modals.md) | **Modals and confirms** — `ConfirmPopup`, the one-modal-at-a-time `MODAL_GROUP`, the scrolled-body / pinned-exit modal page shape, `MenuPage.open_modal`, and `MenuNav.input_blocked` |
 | [world-panel.md](world-panel.md) | `WorldPanel` — menus hosted in the 3D world, welded off-square to an anchor (4 HQ screens; shipped ON) |

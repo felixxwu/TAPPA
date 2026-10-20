@@ -58,7 +58,7 @@ power / power-to-weight knob, not a handling axis), it lived in the `UpgradesGri
 `TuningLibrary.apply`'s clamp are both live, and it still feeds
 `UpgradeLibrary.effective_meta`, so a detuned car reads as less powerful everywhere — which
 matters for the Rally Challenge's rating ceiling, the one place a car can still be too
-powerful to enter ([rally-challenge.md](rally-challenge.md)). A future screen that wants to
+powerful to enter (rally-challenge.md (deleted with the free-roam pivot)). A future screen that wants to
 let a player duck under that ceiling has the whole mechanism waiting; nothing today writes
 it.
 The over-ceiling UX today is the hub CAR page: an over-cap car for a challenge
@@ -205,7 +205,7 @@ selector that swapped the car on the lift in place. All of it went with the hub 
 rebuilt the lift car after a dev fit.
 
 **The start line is the only place tuning is offered now.** Nothing in the flat hub tunes a
-car — see [hub-shell.md](hub-shell.md) for what its pages do offer. `Save.selected_car` /
+car — see hub-shell.md (deleted with the free-roam pivot) for what its pages do offer. `Save.selected_car` /
 `set_selected_car` (the "car on the lift" pointer) still exist and are still persisted; see
 [save-persistence.md](save-persistence.md).
 

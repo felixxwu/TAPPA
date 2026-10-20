@@ -1,6 +1,93 @@
-# What changed: the roguelike pivot
+# What changed: two pivots
 
-**Read this before working in this repo if your mental model predates September 2026.**
+**Read this before working in this repo.** TAPPA has pivoted twice:
+
+1. **September 2026 — rally career → run-based roguelike.** Recorded below as history (*The
+   roguelike pivot*); much of what it added has since been deleted again.
+2. **October 2026 — roguelike → free roam.** The current game. It's the section right after this.
+
+| If you want… | Read |
+| --- | --- |
+| The gist (you are here) | this file |
+| Why any given thing is the way it is | `todo/2026-10-19-free-roam-pivot.md`: decisions 1–32 agreed with the user, D33 onward logged during the autonomous build for review |
+| The design north star | `gameplay.md` |
+| How any one system works today | `features/` (indexed in `features/README.md`); start with `free-roam.md`, `world-session.md`, `loot.md` |
+
+---
+
+# The free-roam pivot (October 2026)
+
+## The shape of the game, before and after
+
+| | Roguelike (before) | Free roam (now) |
+| --- | --- | --- |
+| World | 8 finite stages per run, a scene reload each | **One persistent procedural island per save**, streamed in during play (`TerrainStreamer`) |
+| Roads | One DFS centreline per stage, carved into terrain | **A whole road network laid out at boot** (`RoadNetwork`); terrain built *around* the roads (`RoadTerrain`) |
+| Fail state | The stage clock | **None.** At 0 HP the car gives up and you respawn at the last lit rest stop |
+| Damage | Never wrecks | **Cooling fails at half health; the engine overheats and drains HP** (`DamageModel.thermal`) |
+| Progress | Money, shop, skills, boost levels | **Found loot**: car titles, parts (the old boosts, by level), engines, drivetrain kits, rumours |
+| Between stages | Repair or a boost | **Rest stops**: bank loot, free repair, parts, tune, garage, travel, map, journal |
+| Regions | Picked per run | **Biome rings** by distance from spawn, with drifting weather (`BiomeDirector`) |
+| Front end | `HubShell` (11 pages) | **Title screen** (`title.tscn`): Continue / New World / Settings |
+| Save | Run slot + economy keys, schema 7 | **`world` block** (`WorldSession`), schema 8; v7 profiles are refused |
+
+## Added
+
+| File | Role |
+| --- | --- |
+| `free_roam.tscn`, `scripts/free_roam/free_roam.gd` | The game scene and its glue to the world session |
+| `scripts/free_roam/road_network.gd`, `road_terrain.gd`, `lab_noise.gd` | The road layout and the road-first terrain (bit-exact with `tools/road_network_lab.html` until something diverges — decision 32) |
+| `scripts/free_roam/terrain_streamer.gd` | Chunk streaming under a strict 1 ms/frame budget, with foliage, sites, barriers, loot markers and per-ring materials |
+| `scripts/free_roam/road_sites.gd`, `road_barriers.gd` | Rest stops, loot slots and dead ends; barriers on sharp bends |
+| `scripts/free_roam/biome_director.gd` | Ring → region look, handling and weather, following the car |
+| `scripts/free_roam/rest_stops.gd`, `rest_stop_page.gd`, `world_pages.gd` | Bonfires, the rest-stop page, the map and stats pages |
+| `scripts/free_roam/loot_library.gd`, `loot_director.gd` | Loot tables, placement, collect / carry / bank / drop |
+| `scripts/free_roam/road_recovery.gd`, `auto_driver.gd` | Reset to road; the self-driving streaming test |
+| `scripts/world_session.gd` (**autoload**) | The persistent world in the profile |
+| `scripts/title_screen.gd`, `title.tscn` | The front door (the main scene) |
+| `tools/compile_check.tscn` | Loads every script and scene with the autoloads present; the CI gate |
+
+## Deleted
+
+Do not go looking for these: `RunSession` / `RunMode` / `RegionRunMode` / `ChallengeRunMode` /
+`ChallengeLibrary` / `RegionStagePool` / `RunPickPanel` / `FreePlay` / `DrivingContext`, the
+challenge cloud board, `HubShell` and `MenuShowcase`, `StartLine`, `RivalGhost`, pacenotes, signs,
+arches, coins, `SkillLibrary`, the money and boost-level economy, the track lockfile
+(`TrackCache`, `data/track_cache.json`, the cache scripts and the pre-commit hook), and the
+hub-only widgets (car cards, stat bars, the car list).
+
+## Kept, and why
+
+- **`main.tscn` / `world.gd` — the stage scene — survives as a dev stage and the physics test
+  harness.** About 40 test files (car physics, damage, collisions, the benchmark) build their
+  world on it. Porting them onto free-roam terrain is its own project; until then the stage
+  pipeline (`TrackGenerator`, `TerrainManager`'s corridor bake, `StageManager`, `TrackProgress`)
+  stays, and nothing in the game reaches it. `RegionStageLibrary` / `StageFields` / `StageConfig`
+  stay with it (the benchmark and seed lab read them).
+- **`BoostLibrary`** is the parts catalogue now (`features/loot.md`).
+- **`UpgradeLibrary.EFFECTS`** is still the only way anything modifies a car (seam 1 below).
+
+## The seams you must not work around
+
+1. **The effects funnel** (unchanged): `UpgradeLibrary.EFFECTS` + a car's `boosts` list. A car's
+   fitted parts reach it only through `LootLibrary.fielded(owned)`, which writes `boosts`,
+   `swapped_engine` and `drivetrain_override`.
+2. **The reseed pre-pass** (unchanged): global config fields an effect writes carry `reseed`.
+   The same hazard applies to `BiomeDirector.apply_handling`, which re-seeds grip from the
+   authored values on every ring change.
+3. **The frame budget.** Terrain work in `TerrainStreamer` must stay inside units its scheduler
+   can measure and stop between. A stage that runs out of frame returns `false` from `_step`.
+4. **`WorldSession` is the only writer of the world block.** JSON hands numbers back as floats;
+   readers normalise.
+5. **Every menu is a flat `MenuPage` + `MenuNav.attach`** (unchanged), with a nav test.
+
+---
+
+# The roguelike pivot (September 2026) — history
+
+Most of what this section describes has been deleted again by the free-roam pivot above. It's
+kept because decision numbers from `todo/roguelike-pivot.md` are still cited in older comments.
+
 TAPPA was a Gran-Turismo-style rally *career*; it is now a **run-based roguelike**. The
 pivot touched 439 files (+21.7k / −73.7k lines) across 40 commits, `bb959a1..bff6d4d`,
 all on `main` now. Roughly half the old codebase is gone.
@@ -117,7 +204,7 @@ rule — *an invalid or unaffordable purchase leaves the profile byte-identical*
 `buy_car`, `buy_boost_level`, `buy_engine_swap_unlock`, `buy_perk`. Drivetrain
 conversion (decision 52) was briefly a fifth sink, `buy_drive_mode`; decision 55
 supersedes it — a conversion is now a free, run-scoped mid-run upgrade offered in the
-between-stage pick, not a purchase (`features/region-runs.md` → *Drivetrain
+between-stage pick, not a purchase (`region-runs.md (deleted)` → *Drivetrain
 conversion*). The spec's sixth sink, cosmetic wheels
 (decision 25), is still free and has no host screen.
 
@@ -134,7 +221,7 @@ survives only to backfill a key missing from a correctly-versioned profile.
 ## Known gaps — deliberate, documented, not bugs
 
 - The challenge's entry screen is minimal: no cloud board, standing or reward explainer
-  (decision 53, `features/rally-challenge.md`).
+  (decision 53, `rally-challenge.md (deleted)`).
 - **The cloud boot-pull gate has no consumer.** `HubShell` does not await the initial
   sync, so a returning player can act on a profile that is about to be replaced
   (`features/cloud-save.md` leads with this).

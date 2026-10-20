@@ -211,7 +211,7 @@ and advanced by `show_pacenotes(current)`.
   flips the 2D track's left/right on screen — the same inversion the roadside boards
   bake in — so the HUD reads correctly with the signs' convention, not the opposite of
   it. The `arrow_5`/`arrow_6` boards are baked by
-  `tools/bake_sign_arrows.gd` (see [signs.md](signs.md)).
+  `tools/bake_sign_arrows.gd` (see signs.md (deleted with the free-roam pivot)).
   `hud.gd::_pace_texture` looks lazy (`load()` on a cache miss), but it is **not** a
   mid-drive cost: `set_pacenotes` — called from `world.gd::_setup_pacenotes` during track
   generation, behind the loading screen — resolves a texture for *every* note in the
@@ -260,7 +260,7 @@ by `setup_target_profile` below.
 ## Rival delta — the fixed-clock target, made visible (`DeltaLabel`)
 
 A staged region run's one fail state — `RegionRunMode.stage_target_ms`'s fixed
-clock — has a live HUD readout as of [rival-ghost.md](rival-ghost.md): the
+clock — has a live HUD readout as of rival-ghost.md (deleted with the free-roam pivot): the
 **`DeltaLabel`**, built in code directly under the run timer (top-left, so it
 reads as "the timer, and how it compares" rather than competing with the
 top-right coin counter or the top-centre pacenote strip / cut-flash tag).

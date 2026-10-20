@@ -13,7 +13,7 @@ upgrades, `effective_meta`), `scripts/engine_audio_synth.gd` /
 **A third acquisition route:** `BoostLibrary.CATALOGUE`'s `"turbo"`/`"supercharger"`
 entries (`scripts/boost_library.gd`) offer these same two parts as an in-run,
 run-scoped upgrade in the mid-run pick's "More Power" category
-(`todo/mid-run-upgrade-menu.md`, [region-runs.md](region-runs.md) → "Turbo and
+(`todo/mid-run-upgrade-menu.md`, region-runs.md (deleted with the free-roam pivot) → "Turbo and
 supercharger as boosts") — the SAME `install_turbo`/`install_supercharger` EFFECTS
 rows below, walked through `UpgradeLibrary.active_effects`/`apply()` exactly like
 any other boost. Only the boost's `*_boost_gain` scales with a purchased meta-shop

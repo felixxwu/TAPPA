@@ -6,7 +6,7 @@
 > `todo/roguelike-pivot.md`). `scripts/world_panel.gd`, `scripts/world_panel_host.gd`,
 > their `GameConfig` block and `tests/headless/test_world_panel.gd` all survive and still
 > pass, but **no production code constructs a `WorldPanel` any more** — grep and see. The
-> flat shell ([hub-shell.md](hub-shell.md)) is `CanvasLayer` pages throughout.
+> flat shell (hub-shell.md (deleted with the free-roam pivot)) is `CanvasLayer` pages throughout.
 >
 > Read this file as the manual for re-hosting the mechanism, not as a description of what
 > is on screen today. Everything below about the panel's own behaviour (the `_frame`

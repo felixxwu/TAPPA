@@ -94,7 +94,7 @@ pose-independent). Rules that keep opponent times correct:
    road drives into a long, many-meters-deep flood the avoidance never saw. This is
    exactly the bug free play had (fixed by giving `apply_stage_config` a
    session-less branch for `FreePlay.event()` — see
-   [hub-shell.md](hub-shell.md)): every new session-less/sandbox entry point must
+   hub-shell.md (deleted with the free-roam pivot)): every new session-less/sandbox entry point must
    route its stage dict through `StageConfig.apply_event_config` before
    generation, not just hand `TrackGenParams.for_event` the event directly.
 

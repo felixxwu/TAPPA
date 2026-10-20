@@ -47,7 +47,7 @@ and the save layer read `Config.data`. That shared identity is the wiring — it
 mid-stage refit on the car is seen by the HUD at all. So **code that saves and restores the
 config around a mutation must copy VALUES back into the same object**, never
 `Config.data = <a duplicate>`; reassigning splits the car from everything that reads it
-(the boost-gauge bug in [start-line.md](start-line.md) → *grid spawn*).
+(the boost-gauge bug in start-line.md (deleted with the free-roam pivot) → *grid spawn*).
 
 `GameConfig.snapshot_values()` / `restore_values()` are that pair:
 
@@ -80,7 +80,7 @@ funnel is re-seeded by `car.gd::apply_car` on the next fielding, but the skill r
 rate, a stage-target pace — that nothing re-seeds, on a `Config.data` that outlives every
 scene. Without a pristine copy to read there is no way back to the authored number, so a
 multiplier would compound stage after stage and un-equipping the skill would never undo it.
-See [skills.md](skills.md) → *Why every skill row carries `reseed`*.
+See skills.md (deleted with the free-roam pivot) → *Why every skill row carries `reseed`*.
 
 Note the difference from `snapshot_values()` above: that captures the LIVE config at a
 moment (including engine fields written at fielding time); this is the authored file, and
@@ -166,7 +166,7 @@ servo measures the grip limit instead of predicting it. See
 | `follow_height_ratio` | 1.0 | Chase camera height as a multiple of `follow_distance` |
 | `smoothing` | 5.0 | Camera follow smoothing rate |
 | `replay_fov` | 75.0 | Replay camera FOV for the fixed-offset shots (ORBIT / FLYBY / WHEEL) |
-| `replay_frame_subject_size` | 4.2 | Constant-size framing (replay ROADSIDE / HIGH_WIDE): nominal subject size (m) the zoom fits — see [event-replay.md](event-replay.md) |
+| `replay_frame_subject_size` | 4.2 | Constant-size framing (replay ROADSIDE / HIGH_WIDE): nominal subject size (m) the zoom fits — see event-replay.md (deleted with the free-roam pivot) |
 | `replay_frame_screen_fraction` | 0.32 | …and the share of viewport height it should span. Higher = tighter framing |
 | `replay_frame_fov_min` / `_max` | 14.0 / 75.0 | Long / wide ends of that framed zoom (degrees) |
 | `replay_fov_smoothing` | 5.0 | Easing rate for replay FOV changes (cuts always snap) |
@@ -357,8 +357,8 @@ The frame cap held for the duration of world generation only, via
 ### Roguelike Run
 The region run's two levers — the TARGET TIME a stage must be beaten in, and the MONEY
 a cleared stage pays. Read by `RegionRunMode` (`scripts/region_run_mode.gd`); see
-[region-runs.md](region-runs.md) for the formulas and
-[rally-challenge.md](rally-challenge.md) for the challenge's own payout.
+region-runs.md (deleted with the free-roam pivot) for the formulas and
+rally-challenge.md (deleted with the free-roam pivot) for the challenge's own payout.
 
 | Property | Purpose |
 |----------|---------|

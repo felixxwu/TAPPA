@@ -1,5 +1,5 @@
 extends Node
-# Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md, features/skills.md — update in the same change as this file.
+# Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md — update in the same change as this file.
 # Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'save_manager' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # Autoload "Save": the single source of truth for everything the meta-game
 # mutates — owned cars (each with its own HP / car-bound installed upgrades /

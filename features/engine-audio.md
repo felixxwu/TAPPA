@@ -36,7 +36,7 @@ RPM/throttle/shift state.
 - **`scripts/engine_audio_synth.gd`** (`class_name EngineAudioSynth`) — pure DSP,
   no nodes.
 
-**Tests:** `tests/headless/test_engine_audio.gd`, `tests/headless/test_start_line.gd`, `tests/headless/test_world_engine_mute.gd`, `tests/headless/test_car_preview_audio.gd`
+**Tests:** `tests/headless/test_engine_audio.gd`
 
 ## Synthesis model (`EngineAudioSynth`)
 
@@ -279,7 +279,7 @@ The start-line intro's departing cars are silenced (`silence_engine_audio()`)
 the frame before `queue_free()` in `_prune_departed()`, so a still-audible
 distant idle isn't hard-cut; otherwise every intro car simply idles, attenuated
 by its distance from the reveal camera (the old bespoke fade + queued-car mute
-are gone — see [start-line.md](start-line.md)).
+are gone — see start-line.md (deleted with the free-roam pivot)).
 
 ## Muted during the loading screen
 

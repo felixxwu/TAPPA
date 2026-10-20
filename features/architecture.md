@@ -1,6 +1,6 @@
 # Architecture & Project Layout
 
-**Tests:** `tests/headless/test_smoke.gd`, `tests/headless/test_world_isolation.gd`, `tests/headless/test_stale_guard.gd`
+**Tests:** `tests/headless/test_smoke.gd`, `tests/headless/test_world_isolation.gd`
 
 ## Directory layout
 
@@ -107,7 +107,7 @@ Declared in `project.godot` `[autoload]`:
   idle until a run starts, then survives the per-stage scene reloads while it sequences
   stages, the timer, money and the between-stage pick. Which KIND of run is live is a
   `RunMode` question (a region run or the Daily/Weekly/Monthly challenge), not a second
-  autoload. See [region-runs.md](region-runs.md). It replaced `RallySession`, deleted with
+  autoload. See region-runs.md (deleted with the free-roam pivot). It replaced `RallySession`, deleted with
   the career loop (decision 5).
 - **`InputRemap`**, **`Benchmark`**, **`DisplayStretch`**, **`WebFullscreen`**,
   **`PerfLog`** — the remaining autoloads; see [controls.md](controls.md),

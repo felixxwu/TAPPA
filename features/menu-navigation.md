@@ -5,7 +5,7 @@
 `input_blocked`, `screen_claimer`) and `scripts/ui_theme.gd` (`focus_grab`,
 `focus_grab_first`, `first_focusable`, the focus stylebox that paints the cursor).
 
-**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`, `tests/headless/test_hub_shell.gd`, `tests/headless/test_card_carousel.gd` (the `menu_nav_handles_side` seam)
+**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`
 
 Every menu in the game is navigable with **up / down / left / right / enter / back**, on
 keyboard *and* controller, alongside mouse / touch. This doc is the framework; the screens
@@ -51,7 +51,7 @@ forget) the per-widget setup.
    case: if `focused.has_method("menu_nav_handles_side")`, `MenuNav` calls it and stops —
    the method returns `true` when it consumed the press, `false` to fall through to
    normal focus-neighbour movement (so up/down can still leave the widget).
-   `CardCarousel` ([card-carousel.md](card-carousel.md)) is the first user: left/right
+   `CardCarousel` (card-carousel.md (deleted with the free-roam pivot)) is the first user: left/right
    there move the selected card instead of moving focus to a sibling widget. Named
    generically rather than special-casing `CardCarousel` here, so the next such widget
    needs no framework change either.
@@ -119,7 +119,7 @@ menu (Resume / Reset to track / Settings / Quit to HQ), `ConfirmPopup` and `User
 (the modal layer — see [modals.md](modals.md)), the HUD's **stage-complete panel**'s single
 `NEXT` button (`hud.gd`, [hud.md](hud.md)), `AccountMenu` ([cloud-save.md](cloud-save.md)),
 the pre-stage **start line**'s MENU row and its **Tune Car** overlay
-(`start_line.gd` — see [start-line.md](start-line.md)), the between-stage **repair popup**
+(`start_line.gd` — see start-line.md (deleted with the free-roam pivot)), the between-stage **repair popup**
 (`repair_reveal.gd`), and `BenchmarkResults` ([benchmark.md](benchmark.md)).
 `scripts/upgrade_slot_popup.gd` (`UpgradeSlotPopup`, the shared detune-slider modal) still
 attaches `MenuNav` too, but has **no live caller left** since the persistent parts model

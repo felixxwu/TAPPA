@@ -46,7 +46,7 @@ Three properties define it, and every design decision below falls out of them:
 ## As a mid-run boost
 
 `BoostLibrary.CATALOGUE["nitrous"]` (`scripts/boost_library.gd`, see
-[region-runs.md](region-runs.md)) offers the same `install_nitrous` EFFECTS row as a
+region-runs.md (deleted with the free-roam pivot)) offers the same `install_nitrous` EFFECTS row as a
 POWER-category pick between stages — the run-scoped counterpart to the pre-pivot
 persistent part below, mechanically identical (`write_fields`, `feeds_pw: false`) but
 picked from the between-stage upgrade menu instead of unlocked by a special event.

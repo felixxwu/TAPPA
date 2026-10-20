@@ -1,12 +1,12 @@
 # Lifetime stats
 
-**Source:** `scripts/lifetime_stats.gd` (`LifetimeStats` — the registry), `scripts/save_manager.gd` (`Save.lifetime_stat` / `add_lifetime_stat` / `raise_lifetime_stat` — the persistence), `scripts/hub_shell.gd` (`HubShell._build_stats` — the read-out page).
+**Source:** `scripts/lifetime_stats.gd` (`LifetimeStats`), `Save.add_lifetime_stat` / `raise_lifetime_stat` (`scripts/save_manager.gd`), and the free-roam writers (`WorldSession.light`, `free_roam.gd`); the stats page is `WorldPages.show_stats`.
 
-**Tests:** `tests/headless/test_lifetime_stats.gd`, `tests/headless/test_hub_shell.gd` (the STATS page + its nav)
+**Tests:** `tests/headless/test_lifetime_stats.gd`
 
 Persistent counters that track a player's career across every run, region and
 challenge — never reset by a failed run (`todo/roguelike-pivot.md`, "Lifetime global
-stats"). They are what `features/skills.md`'s unlock gates read: a skill stays
+stats"). They are what `skills.md (deleted)`'s unlock gates read: a skill stays
 locked until one of these counters crosses an authored threshold.
 
 Each entry carries a `goal` — the IMPERATIVE phrase a skill's unlock gate renders as
@@ -83,7 +83,7 @@ broken counter rather than an unfinished feature.
 ## Notes
 
 - These counters are read ONLY by the unlock gates. A skill's actual effect comes from
-  its `effect_fields` (`features/skills.md` → "What each skill actually does"), never
+  its `effect_fields` (`skills.md (deleted)` → "What each skill actually does"), never
   from a lifetime stat, so a counter that stops moving weakens no equipped skill.
 
 ## Free-roam stats

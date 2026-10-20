@@ -1,5 +1,7 @@
 # The effects funnel (`UpgradeLibrary`)
 
+> **Free-roam pivot (2026-10):** `BoostLibrary` is the **parts catalogue** for free-roam loot — a part is a boost id found at a level (see [loot.md](loot.md)). The run-pick draw, the purchased boost levels and the shop are deleted.
+
 **Source:** `scripts/upgrade_library.gd` (`class_name UpgradeLibrary`)
 
 **Tests:** `tests/headless/test_upgrade_library.gd`, `tests/headless/test_car_stat_bounds.gd`
@@ -10,8 +12,8 @@ auto-build solver, an upgrades grid, a reveal animation and the install/buy path
 `Save` that fed them. All of that is deleted by the roguelike pivot
 (`todo/roguelike-pivot.md` → "What gets deleted" → the persistent parts model). Parts are
 replaced by RR-style **boosts**: temporary, run-scoped, picked between stages
-([region-runs.md](region-runs.md)) — and by **skills**: permanent, bought with money
-([skills.md](skills.md)).
+(region-runs.md (deleted with the free-roam pivot)) — and by **skills**: permanent, bought with money
+(skills.md (deleted with the free-roam pivot)).
 
 What survives is the MECHANISM those parts drove, kept deliberately so the replacement
 had somewhere to land:
@@ -149,9 +151,9 @@ a turbocharged car reads as more powerful.
 
 What it feeds today: every displayed power figure, and — through
 `CarPerformance.merged_meta` — the performance rating a Rally Challenge ceiling judges
-(`ChallengeRunMode.classify_cars`, [rally-challenge.md](rally-challenge.md)). Region-run
+(`ChallengeRunMode.classify_cars`, rally-challenge.md (deleted with the free-roam pivot)). Region-run
 entry is not gated on it at all: a region run takes any owned car
-([region-runs.md](region-runs.md)).
+(region-runs.md (deleted with the free-roam pivot)).
 
 ### `grip_meta` — the same copy, plus the grip-feeding fields
 
@@ -204,7 +206,7 @@ forever); that is superseded. A conversion is picked in the between-stage repair
 pick alongside the drawn boosts (`RunSession.choose_drivetrain`), free, and wiped the
 moment the run ends — the same lifetime as a boost. `world.gd::_field_car` writes
 `RunSession.drivetrain_override()` onto the duplicated owned-car dict a car is fielded
-with, never `Save`'s persisted car. See [region-runs.md](region-runs.md) → *Drivetrain
+with, never `Save`'s persisted car. See region-runs.md (deleted with the free-roam pivot) → *Drivetrain
 conversion*. `Save.buy_drive_mode` / `drive_mode_price` / `drive_mode_available` /
 `set_drivetrain_override` and `HubShell`'s `DRIVETRAIN` / `DRIVETRAIN_CAR` pages are
 deleted along with the purchase path.

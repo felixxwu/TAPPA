@@ -27,7 +27,7 @@ than picking from the whole 11(+)-entry catalogue. Among those four it offers
 the current engine — a smaller increment is skipped in favour of the next rung
 that clears the bar — never a random pick, and `[]` once no remaining tier
 clears that bar (including once the car already runs `v12_600`, the most
-powerful tier) — see [region-runs.md](region-runs.md) → "The engine swap" for
+powerful tier) — see region-runs.md (deleted with the free-roam pivot) → "The engine swap" for
 the full pick-pool mechanics. Because the pool is re-resolved every
 between-stage pick from `_current_engine_id()` (which returns this run's own
 `_engine_swap_id` once one is set), a car that swapped into `v8_400` this run
@@ -54,7 +54,7 @@ detune slider's host gone it is read-path-only too.
 engine as a single-select card (plus a "Stock engine" card to clear it) —
 unlike the mid-run pick above, it is not limited to the next rung up, since
 free play has no progression to protect (see
-[hub-shell.md](hub-shell.md) → "Free play — the session-less sandbox"). The
+hub-shell.md (deleted with the free-roam pivot) → "Free play — the session-less sandbox"). The
 choice rides `scripts/free_play.gd` (`FreePlay.begin`'s `engine_id` param,
 `FreePlay.engine_swap_id()`) and `scripts/world.gd`
 (`_field_free_play_car` writing `owned["swapped_engine"]`) — the exact same
@@ -299,7 +299,7 @@ produced. See [tuning.md](tuning.md) for the full axis table.
 ## The UI is gone; here is what a rebuild owes
 
 Nothing in the flat shell swaps an engine. The shop sells the *unlock*
-([hub-shell.md](hub-shell.md)); no screen spends it. These are the rules the deleted UI
+(hub-shell.md (deleted with the free-roam pivot)); no screen spends it. These are the rules the deleted UI
 enforced, kept because a rebuild has to re-establish them and they are not obvious:
 
 - **A swap needs a partner car**, so the screen that lists engines cannot perform the

@@ -176,7 +176,7 @@ The two hand-rolled builders this section used to describe — `hq.gd::_make_mod
 (returning `[layer, body, footer, root]`) and `hq_carpark.gd::_make_carpark_modal` — had
 already become thin wrappers over `MenuPage` before the hub was deleted, and went with it.
 Every page in the game is a `MenuPage` now, `HubShell`'s included
-([hub-shell.md](hub-shell.md)).
+(hub-shell.md (deleted with the free-roam pivot)).
 
 ### Hosting a modal (`MenuPage.open_modal`) — not optional either
 
