@@ -709,3 +709,11 @@ Numbering continues from decision 32.
   ask before removing todo items. Please decide.
 - **D74. Two dev tools that were already broken were deleted** (`map_pin_capture`,
   `start_line_capture`), along with the sign tools and the menu-showcase cache generator.
+- **D75. Final full test run (2026-10-20): 2,264 of 2,266 pass, in 254 s** (under the ~5 min
+  budget again; the deleted seed-3002 full-library guard was about 140 s of it). **REVIEW — the 2
+  failures were already failing before this work:** `test_nitrous.gd` →
+  `test_holding_nitrous_makes_more_torque` and `test_a_bigger_gain_makes_more_torque` fail with
+  identical numbers on `aa7ee9d`, the commit this session started from. The likely cause is the
+  earlier "Ramp crank torque down over 100ms on cut" change: a stronger engine reaches the limiter
+  sooner within the test's 150-tick climb and spends time in the cut. I didn't change engine
+  physics or loosen the tests; the call is yours.
