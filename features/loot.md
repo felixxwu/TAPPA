@@ -1,6 +1,6 @@
 # Loot (free roam)
 
-**Source:** `scripts/free_roam/loot_library.gd` (`LootLibrary`: pure tables, the pool, fitting, names
+**Source:** `scripts/free_roam/loot_rules.gd` (`LootRules`: pure tables, the pool, fitting, names
 and colours), `scripts/free_roam/loot_director.gd` (`LootDirector`: the loot loop in the world),
 `scripts/free_roam/site_beacons.gd` (`SiteBeacons`: the tall beams over rest stops and loot, and the
 floating names over loot), the Parts / Garage / Journal pages of
@@ -22,15 +22,19 @@ Everything is found, nothing is bought (decisions 10–18 in `todo/2026-10-19-fr
 
 ## Where it is (the pacing split, decision 3)
 
-`LootLibrary.ring_tables(ring_count)`. Ring r holds:
-- the catalogue's cars sorted by `cost`, cut into even runs, cheapest innermost;
-- every boost part at level r, so the same part is better further out;
-- the swap-tier engines and the drivetrain kits, spread from ring 1 outward;
+Each car (`CarLibrary.CARS`), swap-tier engine (`EngineLibrary`) and boost part
+(`BoostLibrary.CATALOGUE`) names its own biome `ring` in its entry; drivetrain kits have no entry, so
+theirs live in `LootRules.KIT_RINGS`. `ring_tables(ring_count)` collects them. Ring r holds:
+- the cars, engines, kits and boost parts that name ring r — a boost part exists once, at level r;
 - a rumour of ring r + 1.
+
+Ring 0's cars are also the starter choice (`starter_cars`). A ring past `ring_count` folds into the
+last ring. `test_loot.gd` → `test_shipped_cars_engines_and_parts_each_name_a_ring_on_the_island`
+guards that every shipped entry names a ring on the island.
 
 ## The pool: every car and part exists once
 
-Nothing is pinned to a site. `LootLibrary.assign(sites, ring_count, seed, taken, used)` decides what
+Nothing is pinned to a site. `LootRules.assign(sites, ring_count, seed, taken, used)` decides what
 every loot slot and dead end shows **right now**, and `LootDirector._reassign` re-runs it whenever
 what the player holds changes (a pickup, a drop, a lost drop), emitting `pool_changed`:
 - **The pool.** A ring's pool is its table minus everything the player has
@@ -57,7 +61,7 @@ left and sites showing something per ring at boot.
 
 ## Seeing it
 
-- **On the ground:** a crate coloured by kind (`LootLibrary.colour`: gold car, orange engine,
+- **On the ground:** a crate coloured by kind (`LootRules.colour`: gold car, orange engine,
   green kit, cyan part, white rumour), built with the near chunk (`TerrainStreamer._loot_marker`;
   `refresh_loot_markers` rebuilds every loaded one when the pool changes).
 - **From far away:** `SiteBeacons` keeps one beam per site for the whole world — every rest stop
@@ -67,7 +71,7 @@ left and sites showing something per ring at boot.
   (`shaders/beacon_beam.gdshader`), and fade from `beacon_alpha_near` up close
   to `beacon_alpha_far` at the edge of their range. Only once the car is close
   (`beacon_label_range_m`, 60 m) does a floating name over the loot say what it is
-  (`LootLibrary.ground_label`: "New car", "New upgrade", "New engine", "Drivetrain kit", "Rumour"); it
+  (`LootRules.ground_label`: "New car", "New upgrade", "New engine", "Drivetrain kit", "Rumour"); it
   faces the camera at a fixed screen size and shows through hills.
 
 ## The loop (`LootDirector`)
@@ -91,7 +95,7 @@ see [world-session.md](world-session.md).
 ## Parts on cars (the effects funnel, decision 51)
 
 A car's fitted parts are saved on its owned-car record (`parts`, `Save.set_car_parts`). At fielding,
-`LootLibrary.fielded(owned)` writes them onto the funnel's own keys: `boosts` (`{id, effect}` from
+`LootRules.fielded(owned)` writes them onto the funnel's own keys: `boosts` (`{id, effect}` from
 `BoostLibrary.magnitude_for(id, level)`), `swapped_engine` and `drivetrain_override`.
 `Car.apply_owned` and `UpgradeLibrary.apply` do the rest. There's no other modifier path.
 
@@ -100,10 +104,13 @@ one swaps with the fitted one); no kit for the car's own layout.
 
 ## Rest-stop pages
 
-All card lists ([card-carousel.md](card-carousel.md)); item cards use `LootLibrary.card_text`
-(a short name, then what it is — "Level 2", "Engine", "Car") and `LootLibrary.icon`.
+All card lists ([card-carousel.md](card-carousel.md)); item cards use `LootRules.card_text`
+(a short name, then what it is — "Level 2", "Engine", "Car") and `LootRules.icon`.
 **Parts:** a card per fitted part (pick to take off), then one per stash part (pick to fit; it
-says "Fit", "Swap for X", or — disabled — "Can't fit"). **Garage:** a card per owned car (pick
+says "Fit", "Swap for X", or — disabled — "Can't fit"), then one per part fitted to another owned
+car ("on <car>"; "Move here" / "Swap for X" / "Can't fit"). Picking one of those asks first in a
+`ConfirmPopup` ("It will be removed from the <car>") and then moves it over (`_take`); a part it
+displaces goes to the stash. **Garage:** a card per owned car (pick
 to drive one; the cursor starts on the car being driven). **Journal:** a read-only card per item
 in each revealed ring, "Found" or "Not found yet". A change of parts or car re-fields the car
 when the page closes: `car_changed` makes free roam save and reload the scene at the rest stop,

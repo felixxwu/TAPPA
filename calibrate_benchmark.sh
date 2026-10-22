@@ -16,6 +16,7 @@ set -euo pipefail
 if [[ -z "${GODOT:-}" ]]; then
   for candidate in \
     /Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot \
+    /Applications/Godot.app/Contents/MacOS/Godot \
     /usr/local/bin/godot \
     /home/deck/tools/godot/Godot_v4.6-stable_linux.x86_64; do
     if [[ -x "$candidate" ]]; then GODOT="$candidate"; break; fi

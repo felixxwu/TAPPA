@@ -744,6 +744,8 @@ func test_a_loot_refresh_during_planting_leaves_exactly_one_marker() -> void:
 	st.loot_query = Callable()
 	st.refresh_loot_markers()
 	assert_eq(_crates(cs.foliage, i), 0, "no crate after the pickup")
+	var post := cs.foliage.get_node_or_null("Site%d" % i)
+	assert_true(post == null or post.is_queued_for_deletion(), "and nothing left standing in its place")
 
 
 # Live crates for loot site `i`, counting any Godot renamed to dodge a clash ("@Loot7@2").
@@ -762,7 +764,6 @@ func test_vegetation_off_still_spawns_the_site_dressing() -> void:
 	var was := Config.data.vegetation_enabled
 	Config.data.vegetation_enabled = false
 	var s := _settings()
-	s.site_markers = true
 	s.forestiness = 1.0
 	var st := _prefilled(s)
 	Config.data.vegetation_enabled = was

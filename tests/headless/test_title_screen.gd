@@ -7,6 +7,7 @@ const TEST_PATH := "user://test_title_profile.json"
 var _save: Node
 var _title: TitleScreen
 var _entered := [0]
+var _closed := [0]
 
 
 func before_each() -> void:
@@ -16,12 +17,14 @@ func before_each() -> void:
 	_save.profile = _save._default_profile()
 	CarFixtures.install()
 	_entered[0] = 0
+	_closed[0] = 0
 
 
 func after_each() -> void:
 	if is_instance_valid(_title):
 		_title.free()
 	CarFixtures.restore()
+	WorldSession.fresh = false
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -31,6 +34,7 @@ func after_each() -> void:
 func _open() -> TitleScreen:
 	_title = TitleScreen.new()
 	_title.enter_world = func() -> void: _entered[0] += 1
+	_title.close = func() -> void: _closed[0] += 1
 	add_child(_title)
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -52,16 +56,49 @@ func test_continue_is_only_offered_with_a_world() -> void:
 	t = await _open()
 	assert_eq(CardUI.index_of(t.cards(), "Continue"), 0, "Continue leads the list")
 	assert_true(CardUI.pick(t.cards(), "Continue"))
-	assert_eq(_entered[0], 1, "Continue drives into the world")
+	assert_eq(_closed[0], 1, "Continue closes the menu over the world")
+	assert_eq(_entered[0], 0, "and doesn't reload it")
 
 
-func test_the_starter_choice_is_the_cheapest_few_cars() -> void:
-	var by_cost: Array = CarLibrary.all().duplicate()
-	by_cost.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("cost", 0)) < int(b.get("cost", 0)))
-	var choices := TitleScreen.starter_choices()
-	assert_eq(choices.size(), mini(TitleScreen.STARTER_COUNT, by_cost.size()))
-	for i in choices.size():
-		assert_eq(int(CarLibrary.by_id(choices[i]).get("cost", 0)), int(by_cost[i].get("cost", 0)))
+func _pick_starter(t: TitleScreen, i: int) -> void:
+	t.cards().select(i, false)
+	t.cards()._confirm_selected()
+	t.cards().skip_confirm_flash()
+
+
+func test_a_first_time_world_is_kept_when_its_car_is_picked() -> void:
+	var first := TitleScreen.starter_choices()[0]
+	WorldSession.new_world(3, first)
+	WorldSession.fresh = true
+	var t := await _open()
+	assert_eq(CardUI.index_of(t.cards(), "Continue"), -1, "nothing to continue on a first boot")
+	assert_true(CardUI.pick(t.cards(), "New world"))
+	await get_tree().process_frame
+	assert_null(ConfirmPopup.any_open(get_tree()), "no confirm: there's nothing to lose")
+	assert_eq(t.view, TitleScreen.View.STARTER)
+	_pick_starter(t, 0)
+	assert_eq(_closed[0], 1, "the world behind the menu is the new world")
+	assert_eq(_entered[0], 0)
+	assert_false(WorldSession.fresh)
+
+
+func test_a_first_time_world_keeps_its_island_for_another_car() -> void:
+	if TitleScreen.starter_choices().size() < 2:
+		pass_test("only one starter car")
+		return
+	WorldSession.new_world(3, TitleScreen.starter_choices()[0])
+	WorldSession.fresh = true
+	var t := await _open()
+	assert_true(CardUI.pick(t.cards(), "New world"))
+	await get_tree().process_frame
+	_pick_starter(t, 1)
+	assert_eq(String(WorldSession.active_car()["model_id"]), TitleScreen.starter_choices()[1])
+	assert_eq(WorldSession.world_seed(), 3, "the island already built is kept")
+	assert_eq(_entered[0], 1, "the scene reloads to field the chosen car")
+
+
+func test_the_starter_choice_is_the_innermost_rings_cars() -> void:
+	assert_eq(TitleScreen.starter_choices(), LootRules.starter_cars())
 
 
 func test_new_world_picks_a_starter_and_drives_in() -> void:
@@ -71,9 +108,7 @@ func test_new_world_picks_a_starter_and_drives_in() -> void:
 	assert_eq(t.view, TitleScreen.View.STARTER)
 	assert_eq(t.cards().card_count(), TitleScreen.starter_choices().size(), "a card per starter car")
 	var choice := TitleScreen.starter_choices()[1]
-	t.cards().select(1, false)
-	t.cards()._confirm_selected()
-	t.cards().skip_confirm_flash()
+	_pick_starter(t, 1)
 	assert_true(WorldSession.has_world())
 	assert_eq(String(WorldSession.active_car()["model_id"]), choice)
 	assert_eq(_entered[0], 1)

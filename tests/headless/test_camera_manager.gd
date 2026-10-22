@@ -1,5 +1,5 @@
 extends GutTest
-# Camera cycling: C advances chase -> bonnet -> chase, exactly one camera active.
+# Camera cycling: C advances bonnet -> chase -> bonnet, exactly one camera active.
 
 const TEST_PATH := "user://test_camera_profile.json"
 
@@ -10,12 +10,12 @@ var _save: Node
 
 # minimal_world() trims main.tscn's expensive terrain/track/foliage generation
 # (see scene_helpers.gd), and we build the scene ONCE for the whole script. The
-# camera-cycle test wraps back to chase (net-neutral), so a single shared
+# camera-cycle test wraps back to bonnet (net-neutral), so a single shared
 # instance is safe.
 #
 # The manager now persists the chosen mode to the save profile, so redirect Save to
-# a throwaway file (a fresh profile has no camera_mode → defaults to chase) — both so
-# the "starts on chase" assertion is deterministic and so the test doesn't touch the
+# a throwaway file (a fresh profile has no camera_mode → defaults to bonnet) — both so
+# the "starts on bonnet" assertion is deterministic and so the test doesn't touch the
 # real profile.
 func before_all() -> void:
 	# Cameras/CameraManager need the wired world, but not its track shape
@@ -49,33 +49,33 @@ func _current_count() -> int:
 	return n
 
 
-func test_starts_on_chase_camera() -> void:
-	assert_eq(_mgr.active_index(), 0, "starts on chase (index 0)")
-	assert_true((_scene.get_node("ChaseCamera") as Camera3D).current, "chase is current at start")
+func test_starts_on_bonnet_camera() -> void:
+	assert_eq(_mgr.active_index(), 0, "starts on bonnet (index 0)")
+	assert_true((_scene.get_node("Car/BonnetCamera") as Camera3D).current, "bonnet is current at start")
 	assert_eq(_current_count(), 1, "exactly one camera current")
 
 
-func test_cycle_switches_to_bonnet_then_back() -> void:
+func test_cycle_switches_to_chase_then_back() -> void:
 	_mgr.cycle()
-	assert_eq(_mgr.active_index(), 1, "after one cycle, on bonnet (index 1)")
-	assert_true((_scene.get_node("Car/BonnetCamera") as Camera3D).current, "bonnet current after cycle")
+	assert_eq(_mgr.active_index(), 1, "after one cycle, on chase (index 1)")
+	assert_true((_scene.get_node("ChaseCamera") as Camera3D).current, "chase current after cycle")
 	assert_eq(_current_count(), 1, "still exactly one camera current")
 	_mgr.cycle()
-	assert_eq(_mgr.active_index(), 0, "second cycle wraps back to chase")
-	assert_true((_scene.get_node("ChaseCamera") as Camera3D).current, "chase current after wrap")
+	assert_eq(_mgr.active_index(), 0, "second cycle wraps back to bonnet")
+	assert_true((_scene.get_node("Car/BonnetCamera") as Camera3D).current, "bonnet current after wrap")
 	assert_eq(_current_count(), 1, "still exactly one camera current")
 
 
 func test_set_mode_selects_and_persists() -> void:
 	# The settings page jumps straight to a mode and persists it to the save profile.
-	_mgr.set_mode(CameraManager.Mode.BONNET)
-	assert_eq(_mgr.active_index(), 1, "set_mode(BONNET) switches to the bonnet camera")
-	assert_true((_scene.get_node("Car/BonnetCamera") as Camera3D).current, "bonnet current after set_mode")
-	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)),
-		CameraManager.Mode.BONNET, "the chosen camera mode is saved")
-	# Restore chase so later tests start from the default (net-neutral).
 	_mgr.set_mode(CameraManager.Mode.CHASE)
-	assert_eq(_mgr.active_index(), 0, "set_mode(CHASE) restores chase")
+	assert_eq(_mgr.active_index(), 1, "set_mode(CHASE) switches to the chase camera")
+	assert_true((_scene.get_node("ChaseCamera") as Camera3D).current, "chase current after set_mode")
+	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)),
+		CameraManager.Mode.CHASE, "the chosen camera mode is saved")
+	# Restore bonnet so later tests start from the default (net-neutral).
+	_mgr.set_mode(CameraManager.Mode.BONNET)
+	assert_eq(_mgr.active_index(), 0, "set_mode(BONNET) restores bonnet")
 
 
 func test_bonnet_uses_configured_offset_and_fov() -> void:

@@ -41,7 +41,7 @@
 | `scripts/free_roam/road_sites.gd`, `road_barriers.gd` | Rest stops, loot slots and dead ends; barriers on sharp bends |
 | `scripts/free_roam/biome_director.gd` | Ring → region look, handling and weather, following the car |
 | `scripts/free_roam/rest_stops.gd`, `rest_stop_page.gd`, `world_pages.gd` | Bonfires, the rest-stop page, the map and stats pages |
-| `scripts/free_roam/loot_library.gd`, `loot_director.gd` | Loot tables, placement, collect / carry / bank / drop |
+| `scripts/free_roam/loot_rules.gd`, `loot_director.gd` | Loot tables, placement, collect / carry / bank / drop |
 | `scripts/free_roam/road_recovery.gd`, `auto_driver.gd` | Reset to road; the self-driving streaming test |
 | `scripts/world_session.gd` (**autoload**) | The persistent world in the profile |
 | `scripts/title_screen.gd`, `title.tscn` | The front door (the main scene) |
@@ -70,7 +70,7 @@ hub-only widgets (car cards, stat bars, the car list).
 ## The seams you must not work around
 
 1. **The effects funnel** (unchanged): `UpgradeLibrary.EFFECTS` + a car's `boosts` list. A car's
-   fitted parts reach it only through `LootLibrary.fielded(owned)`, which writes `boosts`,
+   fitted parts reach it only through `LootRules.fielded(owned)`, which writes `boosts`,
    `swapped_engine` and `drivetrain_override`.
 2. **The reseed pre-pass** (unchanged): global config fields an effect writes carry `reseed`.
    The same hazard applies to `BiomeDirector.apply_handling`, which re-seeds grip from the

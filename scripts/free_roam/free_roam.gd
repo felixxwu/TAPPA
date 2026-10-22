@@ -55,8 +55,8 @@ func _ready() -> void:
 		var idx := maxi(0, CarLibrary.index_of(_streamer.settings.car_id))
 		WorldSession.new_world(_streamer.settings.world_seed, String(CarLibrary.all()[idx]["id"]))
 	owned = WorldSession.active_car()
-	# Fitted parts reach the car only through the fielding funnel's own keys (LootLibrary.fielded).
-	_car.apply_owned(LootLibrary.fielded(owned))
+	# Fitted parts reach the car only through the fielding funnel's own keys (LootRules.fielded).
+	_car.apply_owned(LootRules.fielded(owned))
 	# The free-roam damage chain: cooling failure, overheating, and giving up at 0 HP.
 	_car.damage.thermal = true
 	_car.damage.repair(Config.data)
@@ -99,8 +99,8 @@ func _ready() -> void:
 	_rest_page.owned = owned
 	_rest_stops.opened.connect(_rest_page.open)
 	$BiomeDirector.drive_time = WorldSession.drive_time()
-	# The streaming readout is a dev diagnostic: shown in debug builds, toggled with H.
-	$DebugStats.visible = OS.is_debug_build()
+	# The streaming readout is a dev diagnostic: hidden until P toggles it, in debug builds only.
+	$DebugStats.visible = false
 	_pause.reset_to_track_requested.connect(_recovery.reset_now)
 	_pause.extra_requested.connect(_on_pause_extra)
 	_pause.quitting.connect(save_world)
@@ -131,6 +131,55 @@ func _ready() -> void:
 	_warm_up_particles($ChaseCamera)
 	if "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
+	elif WorldSession.title_pending:
+		WorldSession.title_pending = false
+		show_title()
+
+
+# The title menu over the paused world, as the game boots, with a camera circling the car. Continue
+# just closes it; a new world reloads the scene, so this world's car must not be saved into it on
+# the way out.
+func show_title() -> TitleScreen:
+	get_tree().paused = true
+	_pause.set_input_enabled(false)
+	var orbit := _start_title_orbit()
+	var layer := CanvasLayer.new()
+	layer.name = "TitleLayer"
+	layer.layer = 10
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	var title := TitleScreen.new()
+	title.close = func() -> void:
+		layer.queue_free()
+		orbit.queue_free()
+		$CameraManager.activate_current()
+		get_tree().paused = false
+		_pause.set_input_enabled(true)
+	var reload: Callable = title.enter_world
+	title.enter_world = func() -> void:
+		tree_exiting.disconnect(save_world)
+		reload.call()
+	layer.add_child(title)
+	add_child(layer)
+	return title
+
+
+# A camera circling the car at the start line's orbit radius and height, kept above the ground
+# all the way round. Its tween runs while the tree is paused behind the menu.
+func _start_title_orbit() -> Camera3D:
+	var cfg: GameConfig = Config.data
+	var cam := Camera3D.new()
+	cam.name = "TitleOrbitCamera"
+	add_child(cam)
+	cam.make_current()
+	var centre := _car.global_position
+	var place := func(angle: float) -> void:
+		var p := centre + Vector3(cos(angle), 0.0, sin(angle)) * cfg.start_orbit_radius
+		p.y = maxf(centre.y, _streamer.height_at(p.x, p.z)) + cfg.start_orbit_height
+		cam.look_at_from_position(p, centre)
+	place.call(0.0)
+	var tween := cam.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_loops()
+	tween.tween_method(place, 0.0, TAU, TAU / maxf(cfg.start_orbit_speed, 0.01))
+	return cam
 
 
 # Draw one debris particle in front of the camera for a few frames, so its shader compiles behind
@@ -269,7 +318,7 @@ func _update_stats() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 		_recovery.reset_now()
-	elif OS.is_debug_build() and event.is_action_pressed("toggle_debug_arrows"):
+	elif OS.is_debug_build() and event.is_action_pressed("toggle_perf_overlay"):
 		$DebugStats.visible = not $DebugStats.visible
 
 

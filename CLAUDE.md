@@ -322,7 +322,8 @@ map of what changed, which seams not to work around, and where the decision reco
 
 ## Environment
 
-- Godot binary: `/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot`
+- Godot binary: `/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot` or
+  `/Applications/Godot.app/Contents/MacOS/Godot`
   (override with `$GODOT`). Tests use GUT, vendored in `addons/gut/`.
 - Do NOT work in a separate git worktree. Make changes directly in this
   checkout so the user sees them in the project they actually run. Never create

@@ -1,4 +1,4 @@
-class_name LootLibrary
+class_name LootRules
 extends RefCounted
 # Docs: features/loot.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
@@ -12,12 +12,10 @@ extends RefCounted
 #   {"kind": "part",   "id": "drivetrain:<Drivetrain.DriveMode int>"}  — a drivetrain kit
 #   {"kind": "rumour", "ring": <int>}                                  — reveals that ring's loot
 #
-# THE PACING SPLIT (decision 3: cars and parts should run out with the biomes). Ring r's table:
-#   * cars: the catalogue sorted by cost, cut into ring_count even runs, cheapest innermost;
-#   * parts: every BoostLibrary part at level r, so the same part is better further out;
-#   * engines: the swap-tier engines sorted by power, cut the same way from ring 1 outward;
-#   * drivetrain kits: one per drive mode, from ring 1 outward;
-#   * a rumour of ring r + 1 (none in the last ring).
+# THE PACING SPLIT (decision 3: cars and parts should run out with the biomes): every car, swap-tier
+# engine and boost part names its own biome `ring` in its library entry, and drivetrain kits in
+# KIT_RINGS. Ring r holds those, boost parts at level r, and a rumour of ring r + 1 (none in the
+# last ring). Ring 0's cars are the starter choice.
 # Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
 # swapped_engine and drivetrain_override, which UpgradeLibrary / Car.apply_owned already read
 # (decision 51 — no parallel modifier path).
@@ -39,36 +37,36 @@ static func is_drivetrain(item: Dictionary) -> bool:
 	return String(item.get("id", "")).begins_with("drivetrain:")
 
 
-# The loot table for every ring, index = ring.
+const KIT_RINGS := {Drivetrain.DriveMode.RWD: 1, Drivetrain.DriveMode.AWD: 2, Drivetrain.DriveMode.FWD: 3}
+
+
+static func starter_cars() -> PackedStringArray:
+	var out := PackedStringArray()
+	for car: Dictionary in CarLibrary.all():
+		if int(car.get("ring", 0)) == 0:
+			out.append(String(car["id"]))
+	return out
+
+
+# The loot table for every ring, index = ring. A ring past ring_count folds into the last.
 static func ring_tables(ring_count: int) -> Array:
 	var tables: Array = []
 	for r in ring_count:
 		tables.append([])
 	if ring_count <= 0:
 		return tables
-	var cars: Array = CarLibrary.all().duplicate()
-	cars.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("cost", 0)) < int(b.get("cost", 0)))
-	for i in cars.size():
-		tables[mini(floori(float(i * ring_count) / maxi(cars.size(), 1)), ring_count - 1)].append({"kind": "car", "id": String(cars[i]["id"])})
-	for r in ring_count:
-		for id in BoostLibrary.CATALOGUE.keys():
-			tables[r].append({"kind": "part", "id": String(id), "level": r})
-	var outer := maxi(ring_count - 1, 1)
-	var engines: Array = []
-	for e in EngineLibrary.all():
-		if bool((e as Dictionary).get("swap_tier", false)):
-			engines.append(e)
-	engines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return float(a.get("peak_torque", 0.0)) * float(a.get("redline_rpm", 0.0)) \
-			< float(b.get("peak_torque", 0.0)) * float(b.get("redline_rpm", 0.0)))
-	for i in engines.size():
-		var r: int = mini(1 + floori(float(i * outer) / maxi(engines.size(), 1)), ring_count - 1) if ring_count > 1 else 0
-		tables[r].append({"kind": "part", "id": "engine_swap:%s" % String(engines[i]["id"])})
-	var modes: Array = Drivetrain.DriveMode.values()
-	for i in modes.size():
-		var r: int = mini(1 + floori(float(i * outer) / maxi(modes.size(), 1)), ring_count - 1) if ring_count > 1 else 0
-		tables[r].append({"kind": "part", "id": "drivetrain:%d" % int(modes[i])})
-	for r in ring_count - 1:
+	var last := ring_count - 1
+	for car: Dictionary in CarLibrary.all():
+		tables[mini(int(car.get("ring", 0)), last)].append({"kind": "car", "id": String(car["id"])})
+	for id in BoostLibrary.CATALOGUE.keys():
+		var r := mini(int(BoostLibrary.CATALOGUE[id].get("ring", 0)), last)
+		tables[r].append({"kind": "part", "id": String(id), "level": r})
+	for e: Dictionary in EngineLibrary.all():
+		if bool(e.get("swap_tier", false)):
+			tables[mini(int(e.get("ring", 0)), last)].append({"kind": "part", "id": "engine_swap:%s" % String(e["id"])})
+	for mode in KIT_RINGS:
+		tables[mini(int(KIT_RINGS[mode]), last)].append({"kind": "part", "id": "drivetrain:%d" % int(mode)})
+	for r in last:
 		tables[r].append({"kind": "rumour", "ring": r + 1})
 	return tables
 

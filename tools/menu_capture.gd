@@ -41,7 +41,7 @@ func _ready() -> void:
 	pause.resume()
 	var stash := WorldSession.list("stash")
 	if stash.is_empty():
-		for item: Dictionary in LootLibrary.ring_tables(4)[1]:
+		for item: Dictionary in LootRules.ring_tables(4)[1]:
 			if String(item["kind"]) == "part" and stash.size() < 6:
 				stash.append(item)
 		WorldSession.set_list("stash", stash)

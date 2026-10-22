@@ -56,8 +56,10 @@ extends RefCounted
 # (the part's real strength — boost gain); every other key is a FIXED characteristic of
 # the part (spool inertia, saturation point, parasitic drag) that never scales with
 # level. See magnitude_for and current_effect_text for where this shape is read.
+# `ring` is the free-roam biome ring the part is found in, at level = ring (LootRules.ring_tables).
 const CATALOGUE := {
 	"lightweight": {
+		"ring": 0,
 		"label": "Lightweight parts",
 		# "mult_floor", not "mult": a proportional weight cut clamped at
 		# GameConfig.min_lightweight_mass, so it's one-time (see BoostLibrary.stacks) and
@@ -65,52 +67,11 @@ const CATALOGUE := {
 		# (RunSession._lightweight_available) rather than a repeatable % that keeps
 		# scaling a car that's already light.
 		"effect_fields": {"mass_mult_floor": "run_boost_mass_mult"},
-		"level_direction": -1,  # lower mass_mult_floor = lighter = more boost
-		"category": "handling",
-	},
-	"grip": {
-		"label": "Sticky tyres",
-		"effect_fields": {"tire_grip_mult": "run_boost_grip_mult"},
-		"level_direction": 1,  # higher tire_grip_mult = more boost
-		"category": "handling",
-	},
-	"gearbox": {
-		"label": "Quick-shift gearbox",
-		"effect_fields": {"shift_time_set": "run_boost_shift_time_s"},
-		"level_direction": -1,  # lower shift time = faster = more boost
-		# A "set" op replaces the car's shift time outright, so the shop shows the
-		# absolute seconds it sets rather than a percentage of a baseline that does not
-		# exist — see current_effect_text.
-		"unit": "s", "decimals": 2,
-		"category": "power",
-	},
-	"aero": {
-		"label": "Aero kit",
-		"effect_fields": {
-			"downforce_front": "run_boost_downforce_n",
-			"downforce_rear": "run_boost_downforce_n",
-		},
-		"level_direction": 1,  # more downforce = more boost
-		# An "add" op stacks on the car's own downforce, so likewise no percentage — the
-		# authored unit is N per (m/s)², which is what the shop prints. Both axles take
-		# the same number and current_effect_text de-duplicates them into one figure.
-		"unit": "N", "decimals": 1,
-		"category": "handling",
-	},
-	"brakes": {
-		"label": "Big brakes",
-		# Fixed absolute brake_torque ("set", not a multiplier) — strong enough to push
-		# ABS into play on every car in the roster, including the heaviest
-		# (see run_boost_brake_torque_n and features/drivetrain-and-tires.md).
-		"effect_fields": {"brake_torque_set": "run_boost_brake_torque_n"},
-		"level_direction": 1,  # higher brake_torque_set = more boost
-		# A "set" op replaces the car's own brake_torque outright, so the shop shows the
-		# absolute N·m it sets rather than a percentage of a baseline that does not
-		# exist — see current_effect_text (mirrors "gearbox"'s comment above).
-		"unit": "N·m", "decimals": 0,
+		"level_direction": - 1, # lower mass_mult_floor = lighter = more boost
 		"category": "handling",
 	},
 	"turbo": {
+		"ring": 0,
 		"label": "Turbocharger",
 		"effect_fields": {"install_turbo": {
 			"turbo_boost_gain": "run_boost_turbo_boost_gain",
@@ -127,27 +88,29 @@ const CATALOGUE := {
 		"scaled_subfields": ["turbo_boost_gain"],
 		"display_subfield": "turbo_boost_gain",
 		"display_suffix": "torque at full boost",
-		"level_direction": 1,  # higher turbo_boost_gain = more boost
+		"level_direction": 1, # higher turbo_boost_gain = more boost
 		"category": "power",
 	},
-	"supercharger": {
-		"label": "Supercharger",
-		"effect_fields": {"install_supercharger": {
-			"supercharger_boost_gain": "run_boost_supercharger_boost_gain",
-			"supercharger_rpm_ref": "run_boost_supercharger_rpm_ref",
-			"supercharger_parasitic_coef": "run_boost_supercharger_parasitic_coef",
-			# Audio gain — fixed personality, not scaled by level. Without this the boost
-			# turned on the belt physics but left the whine layer silent, since a stock NA
-			# engine authors zero gain for it.
-			"engine_supercharger_whine_gain": "run_boost_supercharger_whine_gain",
-		}},
-		"scaled_subfields": ["supercharger_boost_gain"],
-		"display_subfield": "supercharger_boost_gain",
-		"display_suffix": "torque at full boost",
-		"level_direction": 1,  # higher supercharger_boost_gain = more boost
+	# "grip": {
+	# 	"ring": 0,
+	# 	"label": "Sticky tyres",
+	# 	"effect_fields": {"tire_grip_mult": "run_boost_grip_mult"},
+	# 	"level_direction": 1,  # higher tire_grip_mult = more boost
+	# 	"category": "handling",
+	# },
+	"gearbox": {
+		"ring": 1,
+		"label": "Quick-shift gearbox",
+		"effect_fields": {"shift_time_set": "run_boost_shift_time_s"},
+		"level_direction": - 1, # lower shift time = faster = more boost
+		# A "set" op replaces the car's shift time outright, so the shop shows the
+		# absolute seconds it sets rather than a percentage of a baseline that does not
+		# exist — see current_effect_text.
+		"unit": "s", "decimals": 2,
 		"category": "power",
 	},
 	"nitrous": {
+		"ring": 1,
 		"label": "Nitrous",
 		# The SAME install_nitrous EFFECTS row features/nitrous.md documents (write_fields,
 		# no enable flag) — a mid-run boost fitting it the same way a turbo/supercharger
@@ -161,7 +124,53 @@ const CATALOGUE := {
 		"scaled_subfields": ["nitrous_boost_gain"],
 		"display_subfield": "nitrous_boost_gain",
 		"display_suffix": "torque while held",
-		"level_direction": 1,  # higher nitrous_boost_gain = more boost
+		"level_direction": 1, # higher nitrous_boost_gain = more boost
+		"category": "power",
+	},
+	"aero": {
+		"ring": 2,
+		"label": "Aero kit",
+		"effect_fields": {
+			"downforce_front": "run_boost_downforce_n",
+			"downforce_rear": "run_boost_downforce_n",
+		},
+		"level_direction": 1, # more downforce = more boost
+		# An "add" op stacks on the car's own downforce, so likewise no percentage — the
+		# authored unit is N per (m/s)², which is what the shop prints. Both axles take
+		# the same number and current_effect_text de-duplicates them into one figure.
+		"unit": "N", "decimals": 1,
+		"category": "handling",
+	},
+	"brakes": {
+		"ring": 2,
+		"label": "Big brakes",
+		# Fixed absolute brake_torque ("set", not a multiplier) — strong enough to push
+		# ABS into play on every car in the roster, including the heaviest
+		# (see run_boost_brake_torque_n and features/drivetrain-and-tires.md).
+		"effect_fields": {"brake_torque_set": "run_boost_brake_torque_n"},
+		"level_direction": 1, # higher brake_torque_set = more boost
+		# A "set" op replaces the car's own brake_torque outright, so the shop shows the
+		# absolute N·m it sets rather than a percentage of a baseline that does not
+		# exist — see current_effect_text (mirrors "gearbox"'s comment above).
+		"unit": "N·m", "decimals": 0,
+		"category": "handling",
+	},
+	"supercharger": {
+		"ring": 2,
+		"label": "Supercharger",
+		"effect_fields": {"install_supercharger": {
+			"supercharger_boost_gain": "run_boost_supercharger_boost_gain",
+			"supercharger_rpm_ref": "run_boost_supercharger_rpm_ref",
+			"supercharger_parasitic_coef": "run_boost_supercharger_parasitic_coef",
+			# Audio gain — fixed personality, not scaled by level. Without this the boost
+			# turned on the belt physics but left the whine layer silent, since a stock NA
+			# engine authors zero gain for it.
+			"engine_supercharger_whine_gain": "run_boost_supercharger_whine_gain",
+		}},
+		"scaled_subfields": ["supercharger_boost_gain"],
+		"display_subfield": "supercharger_boost_gain",
+		"display_suffix": "torque at full boost",
+		"level_direction": 1, # higher supercharger_boost_gain = more boost
 		"category": "power",
 	},
 	# NOTE: the Engine Swap is NOT a CATALOGUE entry — it is a GENUINE engine swap now
@@ -324,4 +333,3 @@ static func stacks(id: String) -> bool:
 # visible rather than blank.
 static func label_for(id: String) -> String:
 	return String(CATALOGUE.get(id, {}).get("label", id))
-

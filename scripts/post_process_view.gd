@@ -20,6 +20,9 @@ extends SubViewportContainer
 @onready var _view_camera: Camera3D = $View/ViewCamera
 
 func _ready() -> void:
+	# Keep following the active camera while the game is paused, or a camera moving behind a menu
+	# (the title's orbit) is never seen.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	# The single writer of the dither grid + colour grade, so no two hosts can
 	# grade the game differently.
 	Config.data.apply_post_process(material as ShaderMaterial)

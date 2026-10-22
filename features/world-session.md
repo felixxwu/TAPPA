@@ -1,10 +1,10 @@
 # World session, title screen and world pages
 
-**Source:** `scripts/world_session.gd` (the `WorldSession` autoload), `scripts/title_screen.gd`
-(`TitleScreen`, `title.tscn`, the game's main scene), `scripts/free_roam/world_pages.gd`
+**Source:** `scripts/world_session.gd` (the `WorldSession` autoload), `scripts/title_boot.gd`
+(`title.tscn`, the game's main scene), `scripts/title_screen.gd` (`TitleScreen`, the menu over the world), `scripts/free_roam/world_pages.gd`
 (`WorldPages`: the map and stats pages), and the session glue in `scripts/free_roam/free_roam.gd`.
 
-**Tests:** `tests/headless/test_world_session.gd`, `tests/headless/test_title_screen.gd`
+**Tests:** `tests/headless/test_world_session.gd`, `tests/headless/test_title_screen.gd`, `tests/headless/test_free_roam_shell.gd`
 
 The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 `todo/2026-10-19-free-roam-pivot.md`): **one persistent world per save** that never resets.
@@ -52,16 +52,28 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 
 ## Title screen (`TitleScreen`, decision 20)
 
-The main scene (`project.godot → run/main_scene = res://title.tscn`). Card lists
-(`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
-- **MAIN:** Continue (only with a world), New World, Settings.
-- **STARTER:** New World first asks for a starter car. The choices are the `STARTER_COUNT`
-  cheapest cars by `cost` (`starter_choices`), so the rule works whatever the roster becomes.
-  Picking one makes the world (a random seed) and drives in. Over an existing world, a
-  `ConfirmPopup` asks first.
+The game boots straight into the world with the title menu over it. The main scene
+(`project.godot → run/main_scene = res://title.tscn`) is just `title_boot.gd`: it sets
+`WorldSession.title_pending` and loads free roam, whose `_ready` then calls `show_title()` — a
+`TitleScreen` on a `CanvasLayer` (layer 10) over the paused world, with a light dim behind it. Behind the menu a `TitleOrbitCamera` circles
+the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_speed`, kept above the
+ground, its tween running while paused); closing hands back to the chosen camera
+(`CameraManager.activate_current`).
+A first-time player (no world) gets one built at boot with the first starter car and a random seed,
+marked `WorldSession.fresh` (in memory only), so it's already there behind the menu.
+Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
+- **MAIN:** Continue (only with a world that isn't `fresh`) just closes the menu (`close`) and
+  unpauses; New World; Settings.
+- **STARTER:** New World first asks for a starter car. The choices are the cars in
+  `CarLibrary` with `"ring": 0` (`starter_choices` → `LootRules.starter_cars`).
+  Picking one makes the world (a random seed) and reloads free roam (`enter_world`; the host
+  disconnects its exit save first, so the old car's pose isn't written into the new world). Over an
+  existing world, a `ConfirmPopup` asks first. On a `fresh` world there's no confirm: picking the car
+  already fielded just closes the menu, and another car keeps the same seed and reloads to field it.
 - **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
 
-Free roam's pause menu quits to the title (`PauseMenu.quit_scene`), saving first. The old
+Free roam's pause menu quits to the title (`PauseMenu.quit_scene`), saving first — which reloads
+the world with the menu over it. A rest-stop reload or `--auto-drive` boot shows no menu. The old
 `HubShell` is unreachable from the game.
 
 ## World pages (`WorldPages`, decisions 21–22)

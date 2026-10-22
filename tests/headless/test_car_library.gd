@@ -118,7 +118,7 @@ func test_apply_owned_weight_reduction_relightens_the_rigidbody() -> void:
 
 func test_apply_owned_applies_drivetrain_override() -> void:
 	CarFixtures.install()
-	# A fitted drivetrain kit reaches the car as this override (LootLibrary.fielded,
+	# A fitted drivetrain kit reaches the car as this override (LootRules.fielded,
 	# features/loot.md); resolve_drive_override just range checks it.
 	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": [],
 		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD})

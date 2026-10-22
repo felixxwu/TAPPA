@@ -216,15 +216,13 @@ planted on it (`is_clear`).
   a junction. The pad sits beside the road on a seeded side, or the other side if that one is
   water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
   further on.
-- **Placeholder markers:** until rest stops and loot get real models, a coloured post marks each
-  site in near chunks (`_site_marker`): tall orange for a rest stop, short blue for an empty loot
-  slot, purple for a dead end; a loot site showing an item gets a coloured crate instead
-  (`_loot_marker`, rebuilt by `refresh_loot_markers` when the pool changes). Both the queued
+- **Placeholder markers:** until rest stops and loot get real models, a tall post marks each rest
+  stop in near chunks (`_site_marker`, orange once lit, grey before); a loot site or dead end
+  showing an item gets a coloured crate (`_loot_marker`, rebuilt by `refresh_loot_markers` when the pool changes). Both the queued
   marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
   `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
   its marker spawn running still leaves one marker (a duplicate used to be renamed `@Loot%d@N`,
-  which no refresh removed, so a crate stayed after its pickup).
-  `FreeRoamSettings.site_markers` turns the posts off.
+  which no refresh removed, so a crate stayed after its pickup). A site with nothing left shows nothing.
 - **Beacons:** every rest stop and every piece of loot also has a tall beam of light visible from far
   beyond the near chunks, and loot a floating name — `SiteBeacons`, see [loot.md](loot.md) →
   "Seeing it".
@@ -344,8 +342,8 @@ node for node:
   (`setup(null, …)`: no centreline, so the streamer's `surface_at` road weight alone decides —
   ruts on the gravel roads, nothing on grass). A teleport (`RestStops.car_teleported_to`,
   `RoadRecovery.reset_done`) calls `TireMarks.break_ribbons`, so a mark never bridges the jump.
-- The streaming readout moved to its own `DebugStats` layer. It shows in debug builds only and
-  **H** toggles it.
+- The streaming readout moved to its own `DebugStats` layer. It starts hidden; in debug builds
+  **P** (`toggle_perf_overlay`) toggles it.
 
 **Road recovery** (`RoadRecovery`) replaces `TrackProgress`' recovery, which needs a single
 centreline. On request (**R**, or the pause menu) it puts the car on the nearest road, facing

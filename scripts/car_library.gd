@@ -101,29 +101,24 @@ const FWD := 2
 # from it (critically damped, see GameConfig.suspension_damping_*), not specified
 # per car. Soft & tall roadster/muscle (MX-5, Charger) vs stiff & low supercars
 # (911, Viper, XJS).
-#
-# cost — the money price the car shop (HubShell's CAR page, Save.buy_car) charges for an
-# unowned car (todo/roguelike-pivot.md decision 28, "Car acquisition — RR's shop"). AUTHORED
-# DATA like reward_tier, not a GameConfig tunable — CLAUDE.md's testing rules apply the same
-# way: no test may assert a car's exact cost, only that every entry has one (test_car_stats.gd
-# ->  test_each_spec_is_sane). Loosely follows reward_tier (a pricier tier costs more) but is
-# its own field: reward_tier used to gate the old star-economy reward draw, which is deleted.
+# ring — the free-roam biome ring the car is found in (LootRules.ring_tables); ring 0 cars
+# are the starter choice.
 const CARS: Array[Dictionary] = [
 	{
-		"name": "Miot Roadster",  # parody of the Mazda MX-5. ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
+		"name": "Miot Roadster", # parody of the Mazda MX-5. ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		# Durability ~8/10: bulletproof Skyactiv reliability + trivially cheap/easy to fix,
 		# but a ~1058 kg flyweight roadster with little crash mass — reliable, not a tank.
-		"id": "mx5", "country": "JP", "car_type": "roadster", "doors": 2, "max_hp": 1050.0, "reward_tier": 2, "cost": 4000,
-		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85,  # ND: famous 50/50
-		"tire_compound": 0.9,  # sport touring tyres (transmission lives on the engine — EngineLibrary)
-		"brake_bias": 0.4,  # front share of foot-brake torque (50/50 RWD roadster)
-		"brake_torque": 518.0,  # authored so the worst axle sits ~1.5x its static grip budget
+		"id": "mx5", "ring": 0, "country": "JP", "car_type": "roadster", "doors": 2, "max_hp": 1050.0, "reward_tier": 2,
+		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85, # ND: famous 50/50
+		"tire_compound": 0.9, # sport touring tyres (transmission lives on the engine — EngineLibrary)
+		"brake_bias": 0.4, # front share of foot-brake torque (50/50 RWD roadster)
+		"brake_torque": 518.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3(0, 0, 0),  # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0, 0, 0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.45,
-		"wheel_radius": 0.30, "wheel_width_front": 0.205, "wheel_width_rear": 0.205,  # 195/50R16 square
-		"suspension_travel": 0.32, "suspension_stiffness": 15.0,  # compliant roadster baseline
+		"wheel_radius": 0.30, "wheel_width_front": 0.205, "wheel_width_rear": 0.205, # 195/50R16 square
+		"suspension_travel": 0.32, "suspension_stiffness": 15.0, # compliant roadster baseline
 		# Renders the authored blender/mx5/mx5.glb body (Car/Mx5Body) instead of the
 		# procedural chassis+cabin boxes; see car.gd apply_car(). Wheels stay
 		# procedural. Only this car carries the flag.
@@ -133,22 +128,22 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/mx5/wheel.png",
 	},
 	{
-		"name": "Fjord Focal",  # parody of the Ford Focus. 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
+		"name": "Fjord Focal", # parody of the Ford Focus. 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
 		# Durability ~8/10: unstressed NA Duratec, dead-simple/cheap to repair, parts
 		# everywhere, sturdy modern compact unibody — the durable everyday workhorse.
-		"id": "focus", "country": "US", "car_type": "hatch", "doors": 5, "max_hp": 1200.0, "reward_tier": 1, "cost": 2600,
-		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse NA I4, nose-heavy FWD
-		"tire_compound": 0.88,  # economy / touring all-season tyres
-		"brake_bias": 0.4,  # front share of foot-brake torque (nose-heavy FWD)
-		"brake_torque": 458.0,  # authored so the worst axle sits ~1.5x its static grip budget
+		"id": "focus", "ring": 0, "country": "US", "car_type": "hatch", "doors": 5, "max_hp": 1200.0, "reward_tier": 1,
+		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85, # transverse NA I4, nose-heavy FWD
+		"tire_compound": 0.88, # economy / touring all-season tyres
+		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
+		"brake_torque": 458.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3(0.0, 0.2, 0),  # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, 0.2, 0), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.7,
-		"wheel_radius": 0.31, "wheel_width_front": 0.205, "wheel_width_rear": 0.205,  # 205/55R16 square, FWD
-		"suspension_travel": 0.35, "suspension_stiffness": 14.0,  # compliant compact hatch
+		"wheel_radius": 0.31, "wheel_width_front": 0.205, "wheel_width_rear": 0.205, # 205/55R16 square, FWD
+		"suspension_travel": 0.35, "suspension_stiffness": 14.0, # compliant compact hatch
 		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Focus's own wheel.png.
 		"use_model": true,
@@ -157,137 +152,21 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/focus/wheel.png",
 	},
 	{
-		"name": "Rondel Twist",  # parody of the Renault Twingo (Renault's emblem is a rondel/diamond). Mk1 (C06) 1.2 16V: ~950 kg, 75 PS, light FWD city car
-		# Durability ~5/10: mechanically OK but French electrical gremlins, cheap flimsy
-		# build and a tiny lightly-built shell that flexes/deforms easily — cheap-and-cheerful.
-		"id": "twingo", "country": "FR", "car_type": "hatch", "doors": 3, "max_hp": 900.0, "reward_tier": 1, "cost": 2200,
-		"mass": 950.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85,  # transverse FWD city car, nose-heavy
-		"tire_compound": 0.85,  # hard economy tyres, skinny
-		"brake_bias": 0.4,  # front share of foot-brake torque (nose-heavy FWD)
-		"brake_torque": 330.0,  # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3(0, 0, -0.1),  # local-space nudge for the hood cam; tweak per body
-		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
-		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
-		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
-		"wheel_radius": 0.28, "wheel_width_front": 0.165, "wheel_width_rear": 0.165,  # 165/65R14 skinny
-		"suspension_travel": 0.3, "suspension_stiffness": 14.0,  # soft, tall city car
-		# Renders blender/twingo/twingo.glb (Car/TwingoBody) with its baked texture; see
-		# car.gd apply_car(). Wheels use the Twingo's own wheel.png.
-		"use_model": true,
-		"model_node": "TwingoBody",
-		"model_texture": "res://blender/twingo/twingo_texture.png",
-		"wheel_texture": "res://blender/twingo/wheel.png",
-	},
-	{
-		"name": "Honcho Actus",  # parody of the Honda Acty. HA4 kei truck: ~780 kg, 656cc mid-engine triple
-		# Durability ~7/10: hardy simple Honda kei drivetrain, easy to maintain, but a
-		# ~780 kg rust-prone cab-over with no crash mass — reliable little truck, frail body.
-		"id": "acty", "country": "JP", "car_type": "kei", "doors": 2, "max_hp": 950.0, "reward_tier": 1, "cost": 1800,
-		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35,  # mid-engine cab-over kei, tail-heavy
-		"tire_compound": 0.8,  # hard commercial tyres, skinny
-		"brake_bias": 0.4,  # front share of foot-brake torque (mid-engine, tail-heavy)
-		"brake_torque": 310.0,  # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
-		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
-		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),
-		"cabin_z": -0.95, "track": 1.21, "wheelbase": 1.90,
-		"wheel_radius": 0.27, "wheel_width_front": 0.145, "wheel_width_rear": 0.145,  # 145R12 kei, very skinny
-		"suspension_travel": 0.30, "suspension_stiffness": 13.0,  # soft, tall little truck
-		# Renders blender/acty/acty.glb (Car/ActyBody) with the texture extracted from
-		# the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
-		"use_model": true,
-		"model_node": "ActyBody",
-		"model_texture": "res://blender/acty/acty_texture.png",
-		"wheel_texture": "res://blender/acty/wheel.png",
-	},
-	{
-		"name": "Surger R/T",  # parody of the '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
-		# Durability ~9/10: famously stout low-stressed 440 big-block, brutally simple to
-		# fix, huge aftermarket, and a ~1670 kg heavy-steel body that shrugs off abuse — a tank.
-		"id": "charger", "country": "US", "car_type": "muscle", "doors": 2, "max_hp": 1300.0, "reward_tier": 3, "cost": 15000,
-		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85,  # big-block V8 up front, nose-heavy
-		"tire_compound": 0.95,  # touring tyres
-		"brake_bias": 0.45,  # front share of foot-brake torque (nose-heavy RWD muscle)
-		"brake_torque": 943.0,  # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
-		# 5.28 m x 1.95 m). Long, low, heavy coupe.
-		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
-		"cabin_z": 0.35, "track": 1.6, "wheelbase": 3,
-		"wheel_radius": 0.36, "wheel_width_front": 0.245, "wheel_width_rear": 0.275,  # mild muscle stagger
-		"suspension_travel": 0.38, "suspension_stiffness": 12.0,  # soft, heavy muscle car
-		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
-		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
-		"use_model": true,
-		"model_node": "ChargerBody",
-		"model_texture": "res://blender/charger/charger_texture.png",
-		"wheel_texture": "res://blender/charger/wheel.png",
-	},
-	{
-		"name": "Porker Turbo",  # parody of the Porsche 911 Turbo. 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
-		# Durability ~4/10: rigid well-built shell, but a high-strung turbo flat-6 needing
-		# scheduled valve/turbo rebuilds and pricey specialist-only work — high-maintenance.
-		"id": "porsche911", "country": "DE", "car_type": "coupe", "doors": 2, "max_hp": 750.0, "reward_tier": 3, "cost": 14000,
-		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10,  # rear-engine flat-6, tail-heavy ~41/59
-		"tire_compound": 0.92,
-		"brake_bias": 0.4,  # front share of foot-brake torque (rear-engine, tail-heavy)
-		"brake_torque": 489.0,  # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
-		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
-		"wheel_radius": 0.32, "wheel_width_front": 0.185, "wheel_width_rear": 0.215,  # 185/215 the "wide" 930 stagger
-		"suspension_travel": 0.35, "suspension_stiffness": 15.0,  # taut sports car, lower ride
-		# Renders blender/911/911.glb (Car/Porsche911Body) with its baked texture; see
-		# car.gd apply_car(). Wheels use its own wheel.png.
-		"use_model": true,
-		"model_node": "Porsche911Body",
-		"model_texture": "res://blender/911/texture.png",
-		"wheel_texture": "res://blender/911/wheel.png",
-	},
-	{
-		"name": "Serpent RT/10",  # parody of the Dodge Viper RT/10. 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
-		# Durability ~6/10: deliberately simple low-revving V10 that's hard to kill and
-		# cheap to service, rigid tube frame + ~1520 kg mass, but crude build and composite
-		# panels that crack — a reliable brute held back by rawness.
-		"id": "viper", "country": "US", "car_type": "roadster", "doors": 2, "max_hp": 800.0, "reward_tier": 4, "cost": 24000,
-		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60,  # front-mid V10, ~49/51
-		"tire_compound": 0.9,  # sticky performance tyres (period bias-belted rubber)
-		"brake_bias": 0.4,  # front share of foot-brake torque (~49/51 front-mid RWD)
-		"brake_torque": 827.0,  # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
-		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45),  # low open roadster
-		"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.6,
-		"wheel_radius": 0.34, "wheel_width_front": 0.275, "wheel_width_rear": 0.335,  # 275/335 stagger
-		"suspension_travel": 0.35, "suspension_stiffness": 11.0,  # firm but a touch softer than the later GTS
-		# Renders blender/viper/viper.glb (Car/ViperBody) with its baked body atlas
-		# (texture.png); see car.gd apply_car(). Wheels use its own three-spoke wheel.jpg.
-		"use_model": true,
-		"model_node": "ViperBody",
-		"model_texture": "res://blender/viper/texture.png",
-		"wheel_texture": "res://blender/viper/wheel.jpg",
-	},
-	{
-		"name": "Panthera XJS",  # parody of the Jaguar XJS. 5.3 V12 HE: ~1755 kg, ~295 hp, front V12, RWD GT
+		"name": "Panthera XJS", # parody of the Jaguar XJS. 5.3 V12 HE: ~1755 kg, ~295 hp, front V12, RWD GT
 		# Durability ~3/10: heavy solid GT shell, but a notorious money-pit — the V12 cooks
 		# head gaskets, the wiring bakes and fails, and everything is complex, cramped and
 		# costly to fix. Reliability/repairability drag it down despite the mass.
-		"id": "xjs", "country": "GB", "car_type": "coupe", "doors": 2, "max_hp": 600.0, "reward_tier": 2, "cost": 7000,
-		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75,  # front V12, nose-heavy ~53/47
-		"tire_compound": 0.95,  # period touring / GT tyres
-		"brake_bias": 0.4,  # front share of foot-brake torque (nose-heavy RWD GT)
-		"brake_torque": 889.0,  # authored so the worst axle sits ~1.5x its static grip budget
+		"id": "xjs", "ring": 0, "country": "GB", "car_type": "coupe", "doors": 2, "max_hp": 600.0, "reward_tier": 2,
+		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75, # front V12, nose-heavy ~53/47
+		"tire_compound": 0.95, # period touring / GT tyres
+		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD GT)
+		"brake_torque": 889.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
-		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235,  # 215/235 mild stagger
-		"suspension_travel": 0.35, "suspension_stiffness": 14.0,  # soft long-legged GT
+		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235, # 215/235 mild stagger
+		"suspension_travel": 0.35, "suspension_stiffness": 14.0, # soft long-legged GT
 		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
@@ -296,22 +175,138 @@ const CARS: Array[Dictionary] = [
 		"wheel_texture": "res://blender/xjs/wheel.png",
 	},
 	{
-		"name": "The Beast",  # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
+		"name": "Honcho Actus", # parody of the Honda Acty. HA4 kei truck: ~780 kg, 656cc mid-engine triple
+		# Durability ~7/10: hardy simple Honda kei drivetrain, easy to maintain, but a
+		# ~780 kg rust-prone cab-over with no crash mass — reliable little truck, frail body.
+		"id": "acty", "ring": 1, "country": "JP", "car_type": "kei", "doors": 2, "max_hp": 950.0, "reward_tier": 1,
+		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35, # mid-engine cab-over kei, tail-heavy
+		"tire_compound": 0.8, # hard commercial tyres, skinny
+		"brake_bias": 0.4, # front share of foot-brake torque (mid-engine, tail-heavy)
+		"brake_torque": 310.0, # authored so the worst axle sits ~1.5x its static grip budget
+		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
+		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
+		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),
+		"cabin_z": - 0.95, "track": 1.21, "wheelbase": 1.90,
+		"wheel_radius": 0.27, "wheel_width_front": 0.145, "wheel_width_rear": 0.145, # 145R12 kei, very skinny
+		"suspension_travel": 0.30, "suspension_stiffness": 13.0, # soft, tall little truck
+		# Renders blender/acty/acty.glb (Car/ActyBody) with the texture extracted from
+		# the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
+		"use_model": true,
+		"model_node": "ActyBody",
+		"model_texture": "res://blender/acty/acty_texture.png",
+		"wheel_texture": "res://blender/acty/wheel.png",
+	},
+	{
+		"name": "Surger R/T", # parody of the '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
+		# Durability ~9/10: famously stout low-stressed 440 big-block, brutally simple to
+		# fix, huge aftermarket, and a ~1670 kg heavy-steel body that shrugs off abuse — a tank.
+		"id": "charger", "ring": 1, "country": "US", "car_type": "muscle", "doors": 2, "max_hp": 1300.0, "reward_tier": 3,
+		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85, # big-block V8 up front, nose-heavy
+		"tire_compound": 0.95, # touring tyres
+		"brake_bias": 0.45, # front share of foot-brake torque (nose-heavy RWD muscle)
+		"brake_torque": 943.0, # authored so the worst axle sits ~1.5x its static grip budget
+		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
+		# 5.28 m x 1.95 m). Long, low, heavy coupe.
+		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
+		"cabin_z": 0.35, "track": 1.6, "wheelbase": 3,
+		"wheel_radius": 0.36, "wheel_width_front": 0.245, "wheel_width_rear": 0.275, # mild muscle stagger
+		"suspension_travel": 0.38, "suspension_stiffness": 12.0, # soft, heavy muscle car
+		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
+		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
+		"use_model": true,
+		"model_node": "ChargerBody",
+		"model_texture": "res://blender/charger/charger_texture.png",
+		"wheel_texture": "res://blender/charger/wheel.png",
+	},
+	{
+		"name": "Rondel Twist", # parody of the Renault Twingo (Renault's emblem is a rondel/diamond). Mk1 (C06) 1.2 16V: ~950 kg, 75 PS, light FWD city car
+		# Durability ~5/10: mechanically OK but French electrical gremlins, cheap flimsy
+		# build and a tiny lightly-built shell that flexes/deforms easily — cheap-and-cheerful.
+		"id": "twingo", "ring": 2, "country": "FR", "car_type": "hatch", "doors": 3, "max_hp": 900.0, "reward_tier": 1,
+		"mass": 950.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85, # transverse FWD city car, nose-heavy
+		"tire_compound": 0.85, # hard economy tyres, skinny
+		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
+		"brake_torque": 330.0, # authored so the worst axle sits ~1.5x its static grip budget
+		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3(0, 0, -0.1), # local-space nudge for the hood cam; tweak per body
+		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
+		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
+		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
+		"wheel_radius": 0.28, "wheel_width_front": 0.165, "wheel_width_rear": 0.165, # 165/65R14 skinny
+		"suspension_travel": 0.3, "suspension_stiffness": 14.0, # soft, tall city car
+		# Renders blender/twingo/twingo.glb (Car/TwingoBody) with its baked texture; see
+		# car.gd apply_car(). Wheels use the Twingo's own wheel.png.
+		"use_model": true,
+		"model_node": "TwingoBody",
+		"model_texture": "res://blender/twingo/twingo_texture.png",
+		"wheel_texture": "res://blender/twingo/wheel.png",
+	},
+	{
+		"name": "Porker Turbo", # parody of the Porsche 911 Turbo. 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
+		# Durability ~4/10: rigid well-built shell, but a high-strung turbo flat-6 needing
+		# scheduled valve/turbo rebuilds and pricey specialist-only work — high-maintenance.
+		"id": "porsche911", "ring": 2, "country": "DE", "car_type": "coupe", "doors": 2, "max_hp": 750.0, "reward_tier": 3,
+		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10, # rear-engine flat-6, tail-heavy ~41/59
+		"tire_compound": 0.92,
+		"brake_bias": 0.4, # front share of foot-brake torque (rear-engine, tail-heavy)
+		"brake_torque": 489.0, # authored so the worst axle sits ~1.5x its static grip budget
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
+		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
+		"wheel_radius": 0.32, "wheel_width_front": 0.185, "wheel_width_rear": 0.215, # 185/215 the "wide" 930 stagger
+		"suspension_travel": 0.35, "suspension_stiffness": 15.0, # taut sports car, lower ride
+		# Renders blender/911/911.glb (Car/Porsche911Body) with its baked texture; see
+		# car.gd apply_car(). Wheels use its own wheel.png.
+		"use_model": true,
+		"model_node": "Porsche911Body",
+		"model_texture": "res://blender/911/texture.png",
+		"wheel_texture": "res://blender/911/wheel.png",
+	},
+	{
+		"name": "Serpent RT/10", # parody of the Dodge Viper RT/10. 1st-gen RT/10: ~1520 kg, 400 hp, 8.0 V10, front-mid RWD roadster
+		# Durability ~6/10: deliberately simple low-revving V10 that's hard to kill and
+		# cheap to service, rigid tube frame + ~1520 kg mass, but crude build and composite
+		# panels that crack — a reliable brute held back by rawness.
+		"id": "viper", "ring": 3, "country": "US", "car_type": "roadster", "doors": 2, "max_hp": 800.0, "reward_tier": 4,
+		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60, # front-mid V10, ~49/51
+		"tire_compound": 0.9, # sticky performance tyres (period bias-belted rubber)
+		"brake_bias": 0.4, # front share of foot-brake torque (~49/51 front-mid RWD)
+		"brake_torque": 827.0, # authored so the worst axle sits ~1.5x its static grip budget
+		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45), # low open roadster
+		"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.6,
+		"wheel_radius": 0.34, "wheel_width_front": 0.275, "wheel_width_rear": 0.335, # 275/335 stagger
+		"suspension_travel": 0.35, "suspension_stiffness": 11.0, # firm but a touch softer than the later GTS
+		# Renders blender/viper/viper.glb (Car/ViperBody) with its baked body atlas
+		# (texture.png); see car.gd apply_car(). Wheels use its own three-spoke wheel.jpg.
+		"use_model": true,
+		"model_node": "ViperBody",
+		"model_texture": "res://blender/viper/texture.png",
+		"wheel_texture": "res://blender/viper/wheel.jpg",
+	},
+	{
+		"name": "The Beast", # 1972 John Dodd: ~5.9 m one-off, 27 L Rolls-Royce Merlin V12, RWD
 		# Durability ~2/10: monstrously overbuilt mass (~1900 kg, 27 L aero V12) but
 		# effectively unmaintainable — a bespoke one-off with no parts shelf, no manual,
 		# every repair one-off fabrication. A glass-cannon showpiece: huge but unkeepable.
-		"id": "beast", "country": "GB", "car_type": "muscle", "doors": 2, "max_hp": 750.0, "reward_tier": 4, "cost": 32000,
-		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85,  # vast V12 slung out front, nose-heavy
-		"tire_compound": 1.05,  # period touring tyres
-		"brake_bias": 0.3,  # front share of foot-brake torque (nose-heavy RWD)
-		"brake_torque": 862.0,  # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0,  # long, brick-like body → real aero drag
-		"bonnet_cam_offset": Vector3.ZERO,  # local-space nudge for the hood cam; tweak per body
+		"id": "beast", "ring": 3, "country": "GB", "car_type": "muscle", "doors": 2, "max_hp": 750.0, "reward_tier": 4,
+		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85, # vast V12 slung out front, nose-heavy
+		"tire_compound": 1.05, # period touring tyres
+		"brake_bias": 0.3, # front share of foot-brake torque (nose-heavy RWD)
+		"brake_torque": 862.0, # authored so the worst axle sits ~1.5x its static grip budget
+		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, # long, brick-like body → real aero drag
+		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
 		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.45,
-		"wheel_radius": 0.36, "wheel_width_front": 0.215, "wheel_width_rear": 0.275,  # mild stagger
-		"suspension_travel": 0.37, "suspension_stiffness": 11.0,  # heavy long GT, softer ride
+		"wheel_radius": 0.36, "wheel_width_front": 0.215, "wheel_width_rear": 0.275, # mild stagger
+		"suspension_travel": 0.37, "suspension_stiffness": 11.0, # heavy long GT, softer ride
 		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().
 		"use_model": true,
 		"model_node": "TheBeastBody",
@@ -336,7 +331,7 @@ static func all() -> Array[Dictionary]:
 
 static func override_for_test(cars: Array[Dictionary]) -> void:
 	_seam.override_for_test(cars)
-	CarStatBounds.invalidate()  # the roster-wide stat scale is derived from this roster
+	CarStatBounds.invalidate() # the roster-wide stat scale is derived from this roster
 
 static func reset() -> void:
 	_seam.reset()
@@ -350,18 +345,6 @@ static func index_of(id: String) -> int:
 
 
 # The CarLibrary entry for a stable id, or an empty Dictionary if unknown.
-# The models the first-run starter picker offers, and the pool sim_career draws its
-# starting car from. Catalogue CONTENT, so it lives here beside the cars rather than in
-# the HQ screen that happens to draw them — it used to be duplicated as a const in both
-# hq.gd and tools/sim_career.gd, which is two places for one fact.
-#
-# The set is load-bearing for playability, not just flavour: the rallies lit on a fresh
-# profile are class-restricted, so every id here needs something it can enter from the
-# start (test_every_starter_car_can_enter_something_on_a_fresh_profile). Adding a starter
-# of a new class means checking the opening rallies still cover it.
-const STARTER_MODEL_IDS := ["mx5", "focus", "twingo"]
-
-
 static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
 

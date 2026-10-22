@@ -2,16 +2,16 @@ class_name TitleScreen
 extends Control
 # Docs: features/world-session.md, features/menus.md — update in the same change as this file.
 # Tests: tests/headless/test_title_screen.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
-# The title screen (todo/2026-10-19-free-roam-pivot.md decision 20): the game's front door, leading
-# straight into the one world. Card pages (CardUI.card_page / card_list) driven by MenuNav:
-#   MAIN     — Continue (only with a world), New World, Settings.
+# The title screen (todo/2026-10-19-free-roam-pivot.md decision 20): the game's front door, shown
+# over the live, paused world (free_roam.gd → _show_title). Card pages (CardUI.card_page / card_list)
+# driven by MenuNav:
+#   MAIN     — Continue (closes the menu; only with a world the player has driven), New World, Settings.
 #   STARTER  — a new world starts by choosing one of a few starter cars (decision 19); picking one
 #              creates the world and drives into it.
 #   SETTINGS — the shared SettingsMenu.
 # New World over an existing world asks first: the old world, its cars and its loot are lost.
-
-const FREE_ROAM := "res://free_roam.tscn"
-const STARTER_COUNT := 3
+# A first-time player's world was already built at boot (WorldSession.fresh), so New World just
+# picks the car for it.
 
 enum View { MAIN, STARTER, SETTINGS }
 
@@ -19,14 +19,16 @@ var view := View.MAIN
 var _page: MenuPage
 var _cards: CardCarousel
 var _settings_menu: SettingsMenu
-# Where play goes. A test swaps it for a capture, so no real scene change happens.
-var enter_world := func() -> void: Scenes.change_to(get_tree(), FREE_ROAM)
+# Continue: the host hides the menu over the world it's already showing.
+var close := func() -> void: pass
+# A new world (or a new car on the fresh one) loads the scene afresh. A test swaps it for a capture.
+var enter_world := func() -> void: Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
 
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.07, 0.08)
+	bg.color = Color(0.0, 0.0, 0.0, 0.4)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
@@ -34,16 +36,8 @@ func _ready() -> void:
 	_check_for_update()
 
 
-# The starter cars on offer: the STARTER_COUNT cheapest in the catalogue (by "cost"), so the
-# choice is always a few modest cars whatever the roster becomes.
 static func starter_choices() -> PackedStringArray:
-	var cars: Array = CarLibrary.all().duplicate()
-	cars.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return int(a.get("cost", 0)) < int(b.get("cost", 0)))
-	var out := PackedStringArray()
-	for c: Dictionary in cars.slice(0, STARTER_COUNT):
-		out.append(String(c["id"]))
-	return out
+	return LootRules.starter_cars()
 
 
 func _show(v: View) -> void:
@@ -56,8 +50,8 @@ func _show(v: View) -> void:
 		View.MAIN:
 			_page = CardUI.card_page(self, {"title": "TAPPA"})
 			var entries: Array = []
-			if WorldSession.has_world():
-				entries.append({"title": "Continue", "icon": "resume_run", "action": enter_world})
+			if WorldSession.has_world() and not WorldSession.fresh:
+				entries.append({"title": "Continue", "icon": "resume_run", "action": close})
 			entries.append({"title": "New world", "icon": "new_run", "action": _on_new_world})
 			entries.append({"title": "Settings", "icon": "settings", "action": _show.bind(View.SETTINGS)})
 			_cards = CardUI.card_list(_page, entries)
@@ -135,7 +129,7 @@ func _settings_back() -> void:
 
 
 func _on_new_world() -> void:
-	if not WorldSession.has_world():
+	if not WorldSession.has_world() or WorldSession.fresh:
 		_show(View.STARTER)
 		return
 	ConfirmPopup.open(self, "New world?", "Your current world, its cars and everything you've found are lost.",
@@ -144,7 +138,12 @@ func _on_new_world() -> void:
 
 
 func _start(model_id: String) -> void:
-	WorldSession.new_world(randi_range(1, 999_999), model_id)
+	var was_fresh := WorldSession.fresh
+	WorldSession.fresh = false
+	if was_fresh and String(WorldSession.active_car()["model_id"]) == model_id:
+		close.call()
+		return
+	WorldSession.new_world(WorldSession.world_seed() if was_fresh else randi_range(1, 999_999), model_id)
 	enter_world.call()
 
 

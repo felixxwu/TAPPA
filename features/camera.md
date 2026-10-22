@@ -4,7 +4,7 @@ The game has two camera modes, cycled with the **C / R keys** or the gamepad
 **Y / Triangle (North)** button (`cycle_camera` action) or picked directly on the **settings page** (title-screen Settings or the
 in-run pause menu — see [menus.md](menus.md)). A `CameraManager` node
 (`scripts/camera_manager.gd`, `class_name CameraManager`) in `main.tscn` owns the
-ordered cycle list `[CHASE, BONNET]` and makes exactly one camera `current` at a
+ordered cycle list `[BONNET, CHASE]` (the first entry is the default for a fresh profile) and makes exactly one camera `current` at a
 time. Appending another `Camera3D` + `Mode` entry to its `ORDER` list extends the
 cycle.
 
@@ -21,7 +21,7 @@ whether by cycling with C or picking it in settings — is restored on the next 
 to a mode (used by the pause-menu settings, which switch the live camera the instant
 you pick it via the `SettingsMenu.camera_changed` signal); `current_mode()` reports
 the active mode. With no `Save` autoload (a bare-logic harness) it falls back to
-chase.
+bonnet.
 
 `activate_current()` re-asserts the player's chosen camera as the active one. It's
 used when another system temporarily took over the viewport with its own `Camera3D` —

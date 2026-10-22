@@ -672,7 +672,7 @@ Numbering continues from decision 32.
 - **D62. Parts are the former boosts, found at level = ring**, plus the four swap-tier engines and
   the three drivetrain kits. A car takes one of each part id, one engine and one kit (a new one
   swaps with the fitted one), and no kit for its own layout. Parts reach the car only through
-  the funnel keys (`LootLibrary.fielded`).
+  the funnel keys (`LootRules.fielded`).
 - **D63. A rumour is read on pickup**, not carried and banked, because knowledge can't be dropped
   at a wreck. Ring 0's loot is known from the start.
 - **D64. Changing parts or car reloads the scene at the rest stop** (about 1–2 s), so the car is

@@ -46,10 +46,10 @@ func refresh_loot() -> void:
 		var item: Dictionary = loot.placement[site]
 		var root := Node3D.new()
 		root.name = "Loot%d" % site
-		var beam := _beam(Config.data.beacon_loot_height_m, LootLibrary.colour(item))
+		var beam := _beam(Config.data.beacon_loot_height_m, LootRules.colour(item))
 		beam.name = "Beam"
 		root.add_child(beam)
-		root.add_child(_label(LootLibrary.ground_label(item), LootLibrary.colour(item)))
+		root.add_child(_label(LootRules.ground_label(item), LootRules.colour(item)))
 		add_child(root)
 		root.position = _ground(site)
 		_loot_nodes[site] = root

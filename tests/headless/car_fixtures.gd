@@ -32,7 +32,7 @@ static func engines() -> Array[Dictionary]:
 			"gear_ratios": [3.0, 1.8, 1.3, 1.0, 0.75], "final_drive": 3.5, "shift_time": 0.25,
 			# The only fixture flagged as a mid-run swap target (RunSession._pool_engine_swap_ids
 			# only offers "swap_tier": true entries — see engine_library.gd).
-			"swap_tier": true,
+			"swap_tier": true, "ring": 1,
 		},
 	]
 	return _deep_copy(list)
@@ -41,8 +41,8 @@ static func engines() -> Array[Dictionary]:
 static func cars() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
-			"name": "Fixture Roadster", "id": "fx_light_rwd", "country": "JP", "car_type": "roadster", "doors": 2,
-			"max_hp": 800.0, "reward_tier": 1, "cost": 1000, "mass": 1050.0, "engine": "fx_i4",
+			"name": "Fixture Roadster", "id": "fx_light_rwd", "ring": 0, "country": "JP", "car_type": "roadster", "doors": 2,
+			"max_hp": 800.0, "reward_tier": 1, "mass": 1050.0, "engine": "fx_i4",
 			"weight_front": 0.50, "engine_pos": 0.85, "tire_compound": 1.0,
 			"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
 			"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
@@ -51,8 +51,8 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.42, "suspension_stiffness": 10.0,
 		},
 		{
-			"name": "Fixture Hatch", "id": "fx_fwd_hatch", "country": "US", "car_type": "hatch", "doors": 5,
-			"max_hp": 950.0, "reward_tier": 1, "cost": 1200, "mass": 900.0, "engine": "fx_i4",
+			"name": "Fixture Hatch", "id": "fx_fwd_hatch", "ring": 0, "country": "US", "car_type": "hatch", "doors": 5,
+			"max_hp": 950.0, "reward_tier": 1, "mass": 900.0, "engine": "fx_i4",
 			"weight_front": 0.62, "engine_pos": 0.85, "tire_compound": 1.05,
 			"brake_bias": 0.62,  # the only fixture car that authors a default brake bias
 			"drive_mode": FWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
@@ -62,8 +62,8 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.40, "suspension_stiffness": 11.0,
 		},
 		{
-			"name": "Fixture Coupe", "id": "fx_rwd_coupe", "country": "GB", "car_type": "coupe", "doors": 2,
-			"max_hp": 1100.0, "reward_tier": 3, "cost": 5000, "mass": 1600.0, "engine": "fx_v8",
+			"name": "Fixture Coupe", "id": "fx_rwd_coupe", "ring": 1, "country": "GB", "car_type": "coupe", "doors": 2,
+			"max_hp": 1100.0, "reward_tier": 3, "mass": 1600.0, "engine": "fx_v8",
 			"weight_front": 0.45, "engine_pos": 0.40, "tire_compound": 1.20,
 			"drive_mode": RWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
 			"body": Vector3(1.90, 0.46, 4.50), "cabin": Vector3(1.45, 0.44, 1.50),
@@ -72,8 +72,8 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.38, "suspension_stiffness": 16.0,
 		},
 		{
-			"name": "Fixture AWD", "id": "fx_awd", "country": "IT", "car_type": "coupe", "doors": 2,
-			"max_hp": 1000.0, "reward_tier": 2, "cost": 3000, "mass": 1500.0, "engine": "fx_v8",
+			"name": "Fixture AWD", "id": "fx_awd", "ring": 2, "country": "IT", "car_type": "coupe", "doors": 2,
+			"max_hp": 1000.0, "reward_tier": 2, "mass": 1500.0, "engine": "fx_v8",
 			"weight_front": 0.55, "engine_pos": 0.60, "tire_compound": 1.15,
 			"drive_mode": AWD, "drag": 0, "downforce_rear": 0, "bonnet_cam_offset": Vector3.ZERO,
 			"body": Vector3(1.85, 0.50, 4.40), "cabin": Vector3(1.45, 0.46, 1.55),
@@ -85,12 +85,9 @@ static func cars() -> Array[Dictionary]:
 	return _deep_copy(list)
 
 
-# The synthetic roster's OWN starter set — the fixture answer to
-# `CarLibrary.STARTER_MODEL_IDS`, which lists SHIPPED ids (`mx5`, `focus`, …) that no fixture
-# roster resolves. A test exercising a starter pick injects this (e.g.
+# The synthetic roster's OWN starter set, for a test that injects starter ids (e.g.
 # `OverworldPicker.setup({"starter_ids": CarFixtures.starter_ids()})`) instead of depending on
-# which cars the real catalogue happens to ship, which is exactly the coupling the fixtures exist
-# to remove.
+# which cars the real catalogue happens to ship.
 #
 # DERIVED from `cars()` rather than hand-listed, so it can never name a fixture that was renamed
 # or removed — the failure mode this helper exists to prevent in the first place. The first two are

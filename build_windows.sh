@@ -17,6 +17,7 @@
 set -euo pipefail
 
 GODOT="${GODOT:-/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot}"
+[[ -x "$GODOT" ]] || GODOT=/Applications/Godot.app/Contents/MacOS/Godot
 if [[ ! -x "$GODOT" ]]; then
   echo "error: Godot binary not found at $GODOT (set \$GODOT to override)" >&2
   exit 2

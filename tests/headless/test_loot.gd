@@ -47,40 +47,76 @@ func _sites(s: FreeRoamSettings) -> RoadSites:
 
 # --- tables and placement -------------------------------------------------------------------------
 
-func test_every_car_is_in_exactly_one_ring_cheapest_innermost() -> void:
-	var tables := LootLibrary.ring_tables(4)
-	var ring_of := {}
+func _ring_of(tables: Array) -> Dictionary:
+	var out := {}
 	for r in tables.size():
 		for item: Dictionary in tables[r]:
-			if item["kind"] == "car":
-				assert_false(ring_of.has(item["id"]), "%s appears once" % item["id"])
-				ring_of[item["id"]] = r
-	assert_eq(ring_of.size(), CarLibrary.all().size())
-	for a: Dictionary in CarLibrary.all():
-		for b: Dictionary in CarLibrary.all():
-			if int(a.get("cost", 0)) < int(b.get("cost", 0)):
-				assert_true(ring_of[a["id"]] <= ring_of[b["id"]], "a cheaper car is never further out")
+			var key := LootRules.item_key(item)
+			assert_false(out.has(key), "%s appears once" % key)
+			out[key] = r
+	return out
 
 
-func test_every_ring_has_each_part_at_its_own_level_and_a_rumour_of_the_next() -> void:
-	var tables := LootLibrary.ring_tables(4)
+func test_every_car_engine_kit_and_part_lands_once_in_its_own_ring() -> void:
+	var ring_of := _ring_of(LootRules.ring_tables(4))
+	for car: Dictionary in CarLibrary.all():
+		assert_eq(ring_of.get("car:" + String(car["id"]), -1), int(car["ring"]), "%s in its ring" % car["id"])
+	for e: Dictionary in EngineLibrary.all():
+		if bool(e.get("swap_tier", false)):
+			assert_eq(ring_of.get("part:engine_swap:%s:0" % e["id"], -1), int(e["ring"]), "%s in its ring" % e["id"])
+	for mode in LootRules.KIT_RINGS:
+		assert_eq(ring_of.get("part:drivetrain:%d:0" % mode, -1), int(LootRules.KIT_RINGS[mode]), "kit %d in its ring" % mode)
+	for id in BoostLibrary.CATALOGUE.keys():
+		var r := int(BoostLibrary.CATALOGUE[id]["ring"])
+		assert_eq(ring_of.get("part:%s:%d" % [id, r], -1), r, "%s in its ring at level = ring" % id)
+
+
+func test_rings_past_the_ring_count_fold_into_the_last() -> void:
+	var tables := LootRules.ring_tables(2)
+	for car: Dictionary in CarLibrary.all():
+		var want := mini(int(car["ring"]), 1)
+		assert_true(tables[want].any(func(i: Dictionary) -> bool: return i["kind"] == "car" and i["id"] == car["id"]),
+			"%s folds into ring %d" % [car["id"], want])
+
+
+func test_every_ring_but_the_last_has_a_rumour_of_the_next() -> void:
+	var tables := LootRules.ring_tables(4)
 	for r in 4:
-		var parts := {}
 		var rumours := []
 		for item: Dictionary in tables[r]:
-			if item["kind"] == "part" and not LootLibrary.is_engine(item) and not LootLibrary.is_drivetrain(item):
-				parts[item["id"]] = int(item["level"])
 			if item["kind"] == "rumour":
 				rumours.append(int(item["ring"]))
-		for id in BoostLibrary.CATALOGUE.keys():
-			assert_eq(parts.get(id, -1), r, "%s at level %d in ring %d" % [id, r, r])
 		assert_eq(rumours, [r + 1] if r < 3 else [], "ring %d's rumour" % r)
+
+
+func test_starter_cars_are_the_ring_0_cars() -> void:
+	for car: Dictionary in CarLibrary.all():
+		assert_eq(LootRules.starter_cars().has(String(car["id"])), int(car["ring"]) == 0, String(car["id"]))
+
+
+# Catalogue contract on the SHIPPED data: an entry without a ring on the island could never be found.
+func test_shipped_cars_engines_and_parts_each_name_a_ring_on_the_island() -> void:
+	CarFixtures.restore()
+	var rings := FreeRoamSettings.new().ring_count
+	var check := func(who: String, entry: Dictionary) -> void:
+		assert_true(entry.get("ring") is int and int(entry["ring"]) >= 0 and int(entry["ring"]) < rings,
+			"%s has a ring in 0..%d" % [who, rings - 1])
+	for car: Dictionary in CarLibrary.all():
+		check.call(String(car["id"]), car)
+	for e: Dictionary in EngineLibrary.all():
+		if bool(e.get("swap_tier", false)):
+			check.call(String(e["id"]), e)
+	for id in BoostLibrary.CATALOGUE.keys():
+		check.call(String(id), BoostLibrary.CATALOGUE[id])
+	for mode in Drivetrain.DriveMode.values():
+		assert_true(LootRules.KIT_RINGS.has(mode), "kit %d has a ring" % mode)
+	assert_false(LootRules.starter_cars().is_empty(), "ring 0 has a starter car")
 
 
 func _shown_keys(placed: Dictionary) -> Dictionary:
 	var out := {}
 	for site: int in placed:
-		out[LootLibrary.item_key(placed[site])] = true
+		out[LootRules.item_key(placed[site])] = true
 	return out
 
 
@@ -97,31 +133,31 @@ func _loot_sites_by_ring(sites: RoadSites, ring_count: int) -> Array:
 func test_the_pool_is_seeded_and_only_loot_sites_show_items_from_the_tables() -> void:
 	var s := _settings()
 	var sites := _sites(s)
-	var a := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
-	var b := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var a := LootRules.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var b := LootRules.assign(sites, s.ring_count, s.world_seed, {}, [])
 	assert_eq(a, b, "the same world shows the same loot")
 	assert_gt(a.size(), 0)
 	var table_keys := {}
-	for t: Array in LootLibrary.ring_tables(s.ring_count):
+	for t: Array in LootRules.ring_tables(s.ring_count):
 		for item: Dictionary in t:
-			table_keys[LootLibrary.item_key(item)] = true
+			table_keys[LootRules.item_key(item)] = true
 	for site: int in a:
 		assert_ne(sites.kind[site], RoadSites.Kind.REST, "no loot at rest stops")
-		assert_true(table_keys.has(LootLibrary.item_key(a[site])), "a real table item")
+		assert_true(table_keys.has(LootRules.item_key(a[site])), "a real table item")
 
 
 func test_an_item_the_player_has_is_gone_from_every_site() -> void:
 	var s := _settings()
 	var sites := _sites(s)
-	var before := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
-	var key := LootLibrary.item_key(before.values()[0])
-	var after := LootLibrary.assign(sites, s.ring_count, s.world_seed, {key: true}, [])
+	var before := LootRules.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var key := LootRules.item_key(before.values()[0])
+	var after := LootRules.assign(sites, s.ring_count, s.world_seed, {key: true}, [])
 	assert_false(_shown_keys(after).has(key), "taken: no site shows it any more")
 	var all_taken := {}
-	for t: Array in LootLibrary.ring_tables(s.ring_count):
+	for t: Array in LootRules.ring_tables(s.ring_count):
 		for item: Dictionary in t:
-			all_taken[LootLibrary.item_key(item)] = true
-	assert_eq(LootLibrary.assign(sites, s.ring_count, s.world_seed, all_taken, []), {},
+			all_taken[LootRules.item_key(item)] = true
+	assert_eq(LootRules.assign(sites, s.ring_count, s.world_seed, all_taken, []), {},
 		"with everything found, nothing is left to show")
 
 
@@ -132,8 +168,8 @@ func test_with_enough_sites_every_remaining_item_shows_somewhere() -> void:
 	var counts := PackedInt32Array()
 	for r in s.ring_count:
 		counts.append((by_ring[r] as Array).size())
-	var hosts := LootLibrary.pool_rings(counts)
-	var tables := LootLibrary.ring_tables(s.ring_count)
+	var hosts := LootRules.pool_rings(counts)
+	var tables := LootRules.ring_tables(s.ring_count)
 	# Take items until every ring's pool fits its sites, then everything left must show.
 	var taken := {}
 	var left: Array = []
@@ -145,15 +181,15 @@ func test_with_enough_sites_every_remaining_item_shows_somewhere() -> void:
 			if k < counts[r]:
 				left.append(pool[k])
 			else:
-				taken[LootLibrary.item_key(pool[k])] = true
+				taken[LootRules.item_key(pool[k])] = true
 	assert_gt(left.size(), 0)
-	var shown := _shown_keys(LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, []))
+	var shown := _shown_keys(LootRules.assign(sites, s.ring_count, s.world_seed, taken, []))
 	for item: Dictionary in left:
-		assert_true(shown.has(LootLibrary.item_key(item)), "%s shows somewhere" % LootLibrary.item_key(item))
+		assert_true(shown.has(LootRules.item_key(item)), "%s shows somewhere" % LootRules.item_key(item))
 
 
 func test_a_ring_with_no_loot_sites_folds_into_the_nearest_ring_that_has_some() -> void:
-	var hosts := LootLibrary.pool_rings(PackedInt32Array([3, 0, 2, 0]))
+	var hosts := LootRules.pool_rings(PackedInt32Array([3, 0, 2, 0]))
 	var all: Array = []
 	for r in 4:
 		all.append_array(hosts[r])
@@ -162,18 +198,18 @@ func test_a_ring_with_no_loot_sites_folds_into_the_nearest_ring_that_has_some() 
 	assert_eq(hosts[1], [], "a ring with no sites hosts nothing")
 	assert_eq(hosts[3], [], "a ring with no sites hosts nothing")
 	assert_true(3 in hosts[2], "the outer empty ring folds inward to its nearest neighbour")
-	assert_eq(LootLibrary.pool_rings(PackedInt32Array([0, 0])), [[], []], "no sites anywhere: nothing shows")
+	assert_eq(LootRules.pool_rings(PackedInt32Array([0, 0])), [[], []], "no sites anywhere: nothing shows")
 
 
 func test_a_site_picked_from_is_spent_for_good() -> void:
 	var s := _settings()
 	var sites := _sites(s)
-	var placed := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var placed := LootRules.assign(sites, s.ring_count, s.world_seed, {}, [])
 	# Spend every site but one, taking nothing: the pool is now far bigger than the free sites,
 	# and still no spent site shows anything.
 	var spent: Array = placed.keys()
 	var keep: int = spent.pop_back()
-	var after := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, spent)
+	var after := LootRules.assign(sites, s.ring_count, s.world_seed, {}, spent)
 	for site: int in spent:
 		assert_false(after.has(site), "spent site %d stays empty" % site)
 	assert_true(after.has(keep), "the one free site still shows something")
@@ -194,20 +230,20 @@ func test_a_ring_short_of_sites_moves_its_lesser_items_to_a_ring_with_spare() ->
 	var spare: int = with_sites[1]
 	# Take everything except one item of each ring's own table, so the other ring has room,
 	# then spend all but one of the short ring's sites while it still holds two items.
-	var tables := LootLibrary.ring_tables(s.ring_count)
+	var tables := LootRules.ring_tables(s.ring_count)
 	var taken := {}
 	for r in s.ring_count:
 		for k in (tables[r] as Array).size():
-			taken[LootLibrary.item_key(tables[r][k])] = true
+			taken[LootRules.item_key(tables[r][k])] = true
 	var stay: Dictionary = tables[short][0]
 	var moved: Dictionary = tables[short][1]
-	taken.erase(LootLibrary.item_key(stay))
-	taken.erase(LootLibrary.item_key(moved))
+	taken.erase(LootRules.item_key(stay))
+	taken.erase(LootRules.item_key(moved))
 	var spent: Array = (by_ring[short] as Array).slice(1)
-	var placed := LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, spent)
+	var placed := LootRules.assign(sites, s.ring_count, s.world_seed, taken, spent)
 	var shown_in := {}
 	for site: int in placed:
-		shown_in[LootLibrary.item_key(placed[site])] = sites.ring[site]
+		shown_in[LootRules.item_key(placed[site])] = sites.ring[site]
 	assert_eq(shown_in.size(), 2, "both items still show somewhere")
 	var short_keys := []
 	for key: String in shown_in:
@@ -230,12 +266,12 @@ func test_scarce_spare_sites_show_the_best_of_what_overflowed() -> void:
 		return
 	var short: int = with_sites[0]
 	var spare: int = with_sites[1]
-	var tables := LootLibrary.ring_tables(s.ring_count)
+	var tables := LootRules.ring_tables(s.ring_count)
 	# Three items of the short ring with distinct worth.
 	var by_rank := {}
 	for item: Dictionary in tables[short]:
-		if not by_rank.has(LootLibrary._rank(item)):
-			by_rank[LootLibrary._rank(item)] = item
+		if not by_rank.has(LootRules._rank(item)):
+			by_rank[LootRules._rank(item)] = item
 	if by_rank.size() < 3:
 		pass_test("the ring has fewer than three distinct kinds of item")
 		return
@@ -247,32 +283,39 @@ func test_scarce_spare_sites_show_the_best_of_what_overflowed() -> void:
 	var taken := {}
 	for r in s.ring_count:
 		for item: Dictionary in tables[r]:
-			taken[LootLibrary.item_key(item)] = true
+			taken[LootRules.item_key(item)] = true
 	for item in [best, mid, worst]:
-		taken.erase(LootLibrary.item_key(item))
+		taken.erase(LootRules.item_key(item))
 	# Two free sites in all: one in the short ring, one in the spare ring.
 	var spent: Array = []
 	for r in s.ring_count:
 		var keep := 1 if (r == short or r == spare) else 0
 		spent.append_array((by_ring[r] as Array).slice(keep))
-	var shown := _shown_keys(LootLibrary.assign(sites, s.ring_count, s.world_seed, taken, spent))
-	assert_true(shown.has(LootLibrary.item_key(best)), "the best stays")
-	assert_true(shown.has(LootLibrary.item_key(mid)), "the next best takes the one spare site")
-	assert_false(shown.has(LootLibrary.item_key(worst)), "the worst is the one left with nowhere to show")
+	var shown := _shown_keys(LootRules.assign(sites, s.ring_count, s.world_seed, taken, spent))
+	assert_true(shown.has(LootRules.item_key(best)), "the best stays")
+	assert_true(shown.has(LootRules.item_key(mid)), "the next best takes the one spare site")
+	assert_false(shown.has(LootRules.item_key(worst)), "the worst is the one left with nowhere to show")
 
 
 func test_dead_ends_show_the_best_of_their_ring() -> void:
 	var s := _settings()
 	var sites := _sites(s)
-	var placed := LootLibrary.assign(sites, s.ring_count, s.world_seed, {}, [])
+	var placed := LootRules.assign(sites, s.ring_count, s.world_seed, {}, [])
 	var dead_ends := sites.of_kind(RoadSites.Kind.DEAD_END)
 	assert_gt(dead_ends.size(), 0)
+	var at_dead_end := {}
 	for d in dead_ends:
 		assert_true(placed.has(d), "dead end %d has a payoff" % d)
+		at_dead_end[LootRules.item_key(placed[d])] = true
+	# With more sites than items the pool repeats, so a dead end's item can show by the road too;
+	# what must hold is that nothing shown ONLY by the road outranks a dead end in its ring.
+	for d in dead_ends:
 		for site: int in placed:
+			var item: Dictionary = placed[site]
 			if sites.kind[site] == RoadSites.Kind.LOOT and sites.ring[site] == sites.ring[d] \
-					and placed[site]["kind"] == "car":
-				assert_eq(placed[d]["kind"], "car", "a roadside car means every dead end in ring %d took one" % sites.ring[d])
+					and not at_dead_end.has(LootRules.item_key(item)):
+				assert_true(LootRules._rank(item) >= LootRules._rank(placed[d]),
+					"%s by the road never outranks dead end %d's %s" % [LootRules.item_key(item), d, LootRules.item_key(placed[d])])
 
 
 # --- parts on a car ---------------------------------------------------------------------------------
@@ -282,14 +325,14 @@ func test_fitted_parts_reach_the_car_only_through_the_funnel_keys() -> void:
 		"parts": [{"kind": "part", "id": String(BoostLibrary.CATALOGUE.keys()[0]), "level": 2},
 			{"kind": "part", "id": "engine_swap:some_engine"},
 			{"kind": "part", "id": "drivetrain:%d" % Drivetrain.DriveMode.AWD}]}
-	var f := LootLibrary.fielded(owned)
+	var f := LootRules.fielded(owned)
 	assert_eq((f["boosts"] as Array).size(), 1)
 	assert_eq(f["boosts"][0]["id"], BoostLibrary.CATALOGUE.keys()[0])
 	assert_eq(f["boosts"][0]["effect"], BoostLibrary.magnitude_for(String(BoostLibrary.CATALOGUE.keys()[0]), 2))
 	assert_eq(f["swapped_engine"], "some_engine")
 	assert_eq(f["drivetrain_override"], Drivetrain.DriveMode.AWD)
 	assert_false(owned.has("boosts"), "the saved car is untouched")
-	var bare := LootLibrary.fielded({"model_id": "x", "parts": []})
+	var bare := LootRules.fielded({"model_id": "x", "parts": []})
 	assert_eq(bare["boosts"], [])
 	assert_false(bare.has("swapped_engine") or bare.has("drivetrain_override"))
 
@@ -298,11 +341,11 @@ func test_one_of_each_part_one_engine_and_no_kit_for_the_cars_own_layout() -> vo
 	var car: Dictionary = CarLibrary.all()[0]
 	var owned := {"model_id": String(car["id"]), "parts": [{"kind": "part", "id": "grip", "level": 0},
 		{"kind": "part", "id": "engine_swap:a"}]}
-	assert_false(LootLibrary.can_fit(owned, {"kind": "part", "id": "grip", "level": 3}), "one of each")
-	assert_eq(LootLibrary.occupant(owned, {"kind": "part", "id": "engine_swap:b"})["id"], "engine_swap:a", "the engine slot is taken")
+	assert_false(LootRules.can_fit(owned, {"kind": "part", "id": "grip", "level": 3}), "one of each")
+	assert_eq(LootRules.occupant(owned, {"kind": "part", "id": "engine_swap:b"})["id"], "engine_swap:a", "the engine slot is taken")
 	var own_mode := int(car.get("drive_mode", CarLibrary.RWD))
-	assert_false(LootLibrary.can_fit(owned, {"kind": "part", "id": "drivetrain:%d" % own_mode}))
-	assert_false(LootLibrary.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
+	assert_false(LootRules.can_fit(owned, {"kind": "part", "id": "drivetrain:%d" % own_mode}))
+	assert_false(LootRules.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
 
 
 func test_a_kit_for_the_cars_own_layout_is_never_fittable_even_beside_another_kit() -> void:
@@ -313,8 +356,8 @@ func test_a_kit_for_the_cars_own_layout_is_never_fittable_even_beside_another_ki
 	other = CarLibrary.FWD if own != CarLibrary.FWD else CarLibrary.AWD
 	owned["parts"] = [{"kind": "part", "id": "drivetrain:%d" % other}]
 	var own_kit := {"kind": "part", "id": "drivetrain:%d" % own}
-	assert_false(LootLibrary.can_fit(owned, own_kit), "no kit for the stock layout, swap or not")
-	assert_false(LootLibrary.occupant(owned, own_kit).is_empty(), "though another kit does occupy the slot")
+	assert_false(LootRules.can_fit(owned, own_kit), "no kit for the stock layout, swap or not")
+	assert_false(LootRules.occupant(owned, own_kit).is_empty(), "though another kit does occupy the slot")
 
 
 # --- in the world ----------------------------------------------------------------------------------
@@ -348,7 +391,7 @@ func test_driving_to_loot_carries_it_and_a_rest_stop_banks_it() -> void:
 	var st: TerrainStreamer = scene.get_node("Terrain")
 	var part_site := _site_with(loot, func(i: Dictionary) -> bool: return i["kind"] == "part")
 	await _drive_to(scene, st.sites.pos[part_site])
-	var key := LootLibrary.item_key(loot.loot_at(part_site))
+	var key := LootRules.item_key(loot.loot_at(part_site))
 	loot.step()
 	assert_true(loot.is_collected(part_site))
 	assert_eq(WorldSession.list("carried").size(), 1, "carried, not yet yours")
@@ -417,7 +460,7 @@ func test_a_car_the_player_owns_never_shows_on_the_ground() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
 	var starter := String(WorldSession.active_car()["model_id"])
-	assert_false(_shown_keys(loot.placement).has(LootLibrary.item_key({"kind": "car", "id": starter})),
+	assert_false(_shown_keys(loot.placement).has(LootRules.item_key({"kind": "car", "id": starter})),
 		"the starter car is already yours")
 
 
@@ -440,7 +483,7 @@ func test_loot_on_the_ground_has_a_beam_and_a_name_and_they_go_when_it_is_taken(
 	assert_false(label.visible, "far off, the beam doesn't say what it is")
 	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m * 0.5, 0, 0))
 	assert_true(label.visible, "close up, it does")
-	assert_eq((marker.get_node("Label") as Label3D).text, LootLibrary.ground_label(loot.placement[site]).to_upper())
+	assert_eq((marker.get_node("Label") as Label3D).text, LootRules.ground_label(loot.placement[site]).to_upper())
 	loot.collect(site)
 	await get_tree().process_frame
 	assert_false(loot.placement.has(site))
@@ -496,7 +539,7 @@ func test_a_second_drop_replaces_the_first() -> void:
 	var loot: LootDirector = scene.get_node("LootDirector")
 	var is_part := func(i: Dictionary) -> bool: return i["kind"] == "part"
 	var first := _site_with(loot, is_part)
-	var lost_key := LootLibrary.item_key(loot.placement[first])
+	var lost_key := LootRules.item_key(loot.placement[first])
 	loot.collect(first)
 	loot.drop_at(Vector3(10, 0, 10))
 	assert_true(loot.taken_keys().has(lost_key), "lying in the drop, it's still yours to fetch")
@@ -525,6 +568,30 @@ func test_the_parts_page_fits_and_removes_parts_and_reloads_the_car_on_close() -
 	assert_eq(WorldSession.list("stash").size(), 1, "and back in the stash")
 	page.close()
 	assert_signal_emitted(page, "car_changed")
+
+
+func test_the_parts_page_moves_a_part_off_another_car_only_after_confirming() -> void:
+	var scene := await _boot()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	var other: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
+	var other_id := int(other["instance_id"])
+	var part := {"kind": "part", "id": "grip", "level": 1}
+	_save.set_car_parts(other_id, [part])
+	page.open(0)
+	page._show(RestStopPage.View.PARTS)
+	assert_eq(page.cards().card_count(), 1, "a card for the part on the other car")
+	_confirm(page.cards(), 0)
+	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(popup, "taking it asks first")
+	popup._on_action(popup._back_index)
+	assert_eq((_save.get_car(other_id).get("parts", []) as Array).size(), 1, "back keeps it on the other car")
+	_confirm(page.cards(), 0)
+	popup = ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	popup._on_action(1)
+	assert_eq(_save.get_car(other_id).get("parts", []), [], "removed from the other car")
+	assert_eq(WorldSession.active_car().get("parts", []), [part], "and fitted to this one")
+	page.dirty = false
+	page.close()
 
 
 func test_the_parts_page_never_offers_the_own_layout_kit_even_with_another_kit_fitted() -> void:

@@ -928,8 +928,7 @@ func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 
 # The chunk's site dressing. A rest stop gets a crowd of onlookers along the back of its pad
 # (decision 9: spectators gather at rest stops) and a beacon post, grey until lit and orange after.
-# Loot slots and dead ends keep placeholder posts until stage 7 gives them models: short blue for
-# loot, purple for a dead end.
+# Loot slots and dead ends show a crate only while something lies there.
 func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 	var cm := settings.chunk_m
 	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
@@ -956,32 +955,30 @@ const BEACON_LIT := Color(1.0, 0.55, 0.1)
 
 
 func _site_marker(i: int) -> MeshInstance3D:
-	var looks := {RoadSites.Kind.REST: [BEACON_UNLIT, 5.0], RoadSites.Kind.LOOT: [Color(0.2, 0.55, 1.0), 1.6],
-		RoadSites.Kind.DEAD_END: [Color(0.65, 0.3, 0.9), 3.0]}
-	var look: Array = looks[sites.kind[i]]
+	var height := 5.0
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = 0.25
 	mesh.bottom_radius = 0.25
-	mesh.height = look[1]
+	mesh.height = height
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = look[0]
-	if sites.kind[i] == RoadSites.Kind.REST and rest_lit_query.is_valid() and rest_lit_query.call(i):
+	mat.albedo_color = BEACON_UNLIT
+	if rest_lit_query.is_valid() and rest_lit_query.call(i):
 		mat.albedo_color = BEACON_LIT
 	mesh.material = mat
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.name = "Site%d" % i
 	var c := sites.pos[i]
-	mi.position = Vector3(c.x, sites.pad_h[i] + look[1] * 0.5, c.y)
+	mi.position = Vector3(c.x, sites.pad_h[i] + height * 0.5, c.y)
 	return mi
 
 
-# A piece of loot lying at a site: a crate coloured by kind (LootLibrary.colour: gold for a car
+# A piece of loot lying at a site: a crate coloured by kind (LootRules.colour: gold for a car
 # title, orange an engine, green a drivetrain kit, cyan a part, white a rumour). Its tall beam and
 # floating name are SiteBeacons', which shows them from much further than near chunks reach.
 func _loot_marker(i: int, item: Dictionary) -> Node3D:
-	var col := LootLibrary.colour(item)
+	var col := LootRules.colour(item)
 	var root := Node3D.new()
 	root.name = "Loot%d" % i
 	var c := sites.pos[i]
@@ -1015,7 +1012,7 @@ func refresh_loot_markers() -> void:
 
 
 # Put loot site `i`'s marker under `parent` as loot_query has it now: a crate for the item lying
-# there, else the empty-slot post. Whatever marker it had goes first, so the queued planting
+# there, else nothing. Whatever marker it had goes first, so the queued planting
 # spawn and a refresh_loot_markers that both reach a chunk (it has foliage, but its marker spawn
 # is still queued) leave exactly one: adding a second "Loot%d" had Godot rename it "@Loot%d@N",
 # which no later refresh removed, so a crate stayed after its pickup.
@@ -1024,8 +1021,6 @@ func _place_loot_site_marker(parent: Node3D, i: int) -> void:
 	var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
 	if not item.is_empty():
 		parent.add_child(_loot_marker(i, item))
-	elif settings.site_markers:
-		parent.add_child(_site_marker(i))
 
 
 func _remove_site_markers(parent: Node3D, i: int) -> void:

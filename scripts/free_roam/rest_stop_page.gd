@@ -9,7 +9,8 @@ extends CanvasLayer
 #             Travel / Map / Journal.
 #   TUNE    — the shared TuningPanel on the active car (sliders, so a plain page, not cards).
 #   PARTS   — a card per fitted part (pick to take it off), then one per stash part (pick to fit;
-#             a part for a taken slot swaps with what's there).
+#             a part for a taken slot swaps with what's there), then one per part on another owned
+#             car (pick, confirm, and it moves over).
 #   GARAGE  — a card per owned car; pick one to drive it.
 #   TRAVEL  — a card per other lit rest stop, nearest first.
 #   JOURNAL — a card per item in each revealed biome, found or not (read-only).
@@ -115,7 +116,7 @@ func _build_main() -> void:
 	if not banked.is_empty():
 		var names: Array[String] = []
 		for item: Dictionary in banked:
-			names.append(LootLibrary.label(item))
+			names.append(LootRules.label(item))
 		header.append("Banked: " + ", ".join(names))
 	var no_travel := rest_stops == null or rest_stops.travel_targets(site).is_empty()
 	_card_page("Rest stop", [
@@ -148,29 +149,45 @@ func _build_tune() -> void:
 
 func _on_tuned() -> void:
 	if car != null and car.has_method("retune"):
-		car.retune(LootLibrary.fielded(owned))
+		car.retune(LootRules.fielded(owned))
 
 
 func _build_parts() -> void:
 	var entries: Array = []
 	var fitted: Array = owned.get("parts", [])
 	for i in fitted.size():
-		var text := LootLibrary.card_text(fitted[i])
+		var text := LootRules.card_text(fitted[i])
 		entries.append({"title": text[0], "subtitle": text[1] + " · fitted",
-			"extra": "Take off", "icon": LootLibrary.icon(fitted[i]), "action": _unfit.bind(i)})
+			"extra": "Take off", "icon": LootRules.icon(fitted[i]), "action": _unfit.bind(i)})
 	var stash := WorldSession.list("stash")
 	for i in stash.size():
 		var part: Dictionary = stash[i]
-		var taken := LootLibrary.occupant(owned, part)
+		var taken := LootRules.occupant(owned, part)
 		# can_fit already covers a swap (one of a kind, so an occupant never blocks it), and never
 		# offers a kit for the car's own layout, whatever is fitted.
-		var ok := LootLibrary.can_fit(owned, part)
+		var ok := LootRules.can_fit(owned, part)
 		var extra := "Can't fit"
 		if ok:
-			extra = "Swap for " + LootLibrary.card_text(taken)[0] if not taken.is_empty() else "Fit"
-		var text := LootLibrary.card_text(part)
+			extra = "Swap for " + LootRules.card_text(taken)[0] if not taken.is_empty() else "Fit"
+		var text := LootRules.card_text(part)
 		entries.append({"title": text[0], "subtitle": text[1] + " · stash", "extra": extra,
-			"icon": LootLibrary.icon(part), "disabled": not ok, "action": _fit.bind(i)})
+			"icon": LootRules.icon(part), "disabled": not ok, "action": _fit.bind(i)})
+	var active := int(owned.get("instance_id", -1))
+	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
+		var id := int(c.get("instance_id", -1))
+		if id == active:
+			continue
+		var on: Array = c.get("parts", [])
+		for i in on.size():
+			var part: Dictionary = on[i]
+			var taken := LootRules.occupant(owned, part)
+			var ok := LootRules.can_fit(owned, part)
+			var extra := "Can't fit"
+			if ok:
+				extra = "Swap for " + LootRules.card_text(taken)[0] if not taken.is_empty() else "Move here"
+			var text := LootRules.card_text(part)
+			entries.append({"title": text[0], "subtitle": text[1] + " · on " + _car_name(c), "extra": extra,
+				"icon": LootRules.icon(part), "disabled": not ok, "action": _confirm_take.bind(id, i)})
 	if entries.is_empty():
 		entries.append({"title": "No parts yet", "subtitle": "Find parts out on the island", "icon": "stash"})
 	_card_page("Parts", entries, [_car_name(owned)])
@@ -186,15 +203,39 @@ func _same_id_fitted(part: Dictionary) -> bool:
 func _fit(stash_index: int) -> void:
 	var stash := WorldSession.list("stash")
 	var part: Dictionary = stash[stash_index]
-	var parts: Array = owned.get("parts", []).duplicate()
-	var taken := LootLibrary.occupant(owned, part)
 	stash.remove_at(stash_index)
+	WorldSession.set_list("stash", stash)
+	_fit_part(part)
+
+
+func _confirm_take(instance_id: int, index: int) -> void:
+	var from := Save.get_car(instance_id)
+	var part: Dictionary = (from.get("parts", []) as Array)[index]
+	ConfirmPopup.open(self, "Move %s?" % LootRules.card_text(part)[0],
+		"It will be removed from the %s." % _car_name(from),
+		[{"label": "Cancel", "callback": Callable()}, {"label": "Move", "callback": _take.bind(instance_id, index)}],
+		1, 0)
+
+
+func _take(instance_id: int, index: int) -> void:
+	var from_parts: Array = Save.get_car(instance_id).get("parts", []).duplicate()
+	var part: Dictionary = from_parts[index]
+	from_parts.remove_at(index)
+	Save.set_car_parts(instance_id, from_parts)
+	_fit_part(part)
+
+
+# Fits `part` on the active car; whatever it displaces goes to the stash.
+func _fit_part(part: Dictionary) -> void:
+	var parts: Array = owned.get("parts", []).duplicate()
+	var taken := LootRules.occupant(owned, part)
 	if not taken.is_empty():
 		parts.erase(taken)
+		var stash := WorldSession.list("stash")
 		stash.append(taken)
+		WorldSession.set_list("stash", stash)
 	parts.append(part)
 	_set_parts(parts)
-	WorldSession.set_list("stash", stash)
 	_show(View.PARTS)
 
 
@@ -255,10 +296,10 @@ func _build_journal() -> void:
 	for r: Dictionary in loot.journal() if loot != null else []:
 		for entry: Dictionary in r["items"]:
 			var found := bool(entry["found"])
-			var text := LootLibrary.card_text(entry["item"])
+			var text := LootRules.card_text(entry["item"])
 			entries.append({"title": text[0], "subtitle": "%s · %s" % [text[1], String(r["name"])],
 				"extra": "Found" if found else "Not found yet", "extra_variant": "" if found else "dim",
-				"icon": LootLibrary.icon(entry["item"])})
+				"icon": LootRules.icon(entry["item"])})
 	if entries.is_empty():
 		entries.append({"title": "Nothing known yet", "icon": "journal"})
 	_card_page("Journal", entries, ["Find rumours to learn what lies further out."])

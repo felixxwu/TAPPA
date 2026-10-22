@@ -704,7 +704,7 @@ func test_a_card_page_has_a_see_through_body_box() -> void:
 # Every loot item a card list can show names an authored card icon (not the generic fallback),
 # across the whole loot table — a missing shipped icon must be loud, not silently generic.
 func test_every_loot_item_icon_exists() -> void:
-	for table: Array in LootLibrary.ring_tables(3):
+	for table: Array in LootRules.ring_tables(3):
 		for item: Dictionary in table:
-			var path := "res://icons/cards/%s.svg" % LootLibrary.icon(item)
-			assert_true(ResourceLoader.exists(path), "%s has an icon (%s)" % [LootLibrary.item_key(item), path])
+			var path := "res://icons/cards/%s.svg" % LootRules.icon(item)
+			assert_true(ResourceLoader.exists(path), "%s has an icon (%s)" % [LootRules.item_key(item), path])

@@ -3,7 +3,7 @@ extends Node
 # Docs: features/loot.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
 # Loot as gameplay (todo/2026-10-19-free-roam-pivot.md decisions 10–18). What each loot slot and
-# dead end shows comes from the POOL (LootLibrary.assign): every car and part exists once, and is
+# dead end shows comes from the POOL (LootRules.assign): every car and part exists once, and is
 # gone from every site the moment the player has it. `placement` is the current {site: item},
 # recomputed whenever what the player holds changes (`pool_changed`). This node:
 #   * COLLECTS what the car drives near: it joins `carried`, which is not yours yet (decision 10).
@@ -65,7 +65,7 @@ func _ready() -> void:
 # Per ring: how many loot sites it has, how many items its table holds, how many are still to
 # find, and how many sites show something now — the numbers the pacing pass (decision 3) balances.
 func pacing_report() -> Array:
-	var tables := LootLibrary.ring_tables(streamer.settings.ring_count)
+	var tables := LootRules.ring_tables(streamer.settings.ring_count)
 	var taken := taken_keys()
 	var out: Array = []
 	for r in streamer.settings.ring_count:
@@ -76,7 +76,7 @@ func pacing_report() -> Array:
 				site_count += 1
 				showing += int(placement.has(i))
 		out.append({"ring": r, "sites": site_count, "items": (tables[r] as Array).size(),
-			"left": LootLibrary.remaining(tables[r], taken).size(), "showing": showing})
+			"left": LootRules.remaining(tables[r], taken).size(), "showing": showing})
 	return out
 
 
@@ -85,7 +85,7 @@ func loot_at(site: int) -> Dictionary:
 	return placement.get(site, {})
 
 
-# Whether the player emptied `site` (it may still fill again — see LootLibrary.assign).
+# Whether the player emptied `site` (it may still fill again — see LootRules.assign).
 func is_collected(site: int) -> bool:
 	for s in WorldSession.list("collected"):
 		if int(s) == site:
@@ -99,21 +99,21 @@ func is_collected(site: int) -> bool:
 func taken_keys() -> Dictionary:
 	var out := {}
 	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
-		out[LootLibrary.item_key({"kind": "car", "id": String(c.get("model_id", ""))})] = true
+		out[LootRules.item_key({"kind": "car", "id": String(c.get("model_id", ""))})] = true
 		for p: Dictionary in c.get("parts", []):
-			out[LootLibrary.item_key(p)] = true
+			out[LootRules.item_key(p)] = true
 	var held: Array = WorldSession.list("stash") + WorldSession.list("carried")
 	held.append_array(WorldSession.dropped().get("items", []))
 	for item: Dictionary in held:
-		out[LootLibrary.item_key(item)] = true
+		out[LootRules.item_key(item)] = true
 	for r in WorldSession.list("revealed"):
-		out[LootLibrary.item_key({"kind": "rumour", "ring": int(r)})] = true
+		out[LootRules.item_key({"kind": "rumour", "ring": int(r)})] = true
 	return out
 
 
 # Recompute what every site shows, and tell whoever draws them.
 func _reassign() -> void:
-	placement = LootLibrary.assign(streamer.sites, streamer.settings.ring_count, streamer.settings.world_seed,
+	placement = LootRules.assign(streamer.sites, streamer.settings.ring_count, streamer.settings.world_seed,
 		taken_keys(), WorldSession.list("collected"))
 	streamer.refresh_loot_markers()
 	if beacons != null and beacons.streamer != null:
@@ -170,7 +170,7 @@ func collect(site: int) -> void:
 		held["site"] = site
 		carried.append(held)
 		WorldSession.set_list("carried", carried)
-		_say("Found %s. Bank it at a rest stop" % LootLibrary.label(item))
+		_say("Found %s. Bank it at a rest stop" % LootRules.label(item))
 	_reassign()
 	collected.emit(item)
 
@@ -270,7 +270,7 @@ func _ring_name(ring: int) -> String:
 # The journal: for every revealed ring, its loot and whether each piece was found (the player has it).
 func journal() -> Array:
 	var rings: Array = []
-	var tables := LootLibrary.ring_tables(streamer.settings.ring_count)
+	var tables := LootRules.ring_tables(streamer.settings.ring_count)
 	var found := taken_keys()
 	for r in streamer.settings.ring_count:
 		if not is_revealed(r):
@@ -279,6 +279,6 @@ func journal() -> Array:
 		for item: Dictionary in tables[r]:
 			if String(item["kind"]) == "rumour":
 				continue
-			rows.append({"label": LootLibrary.label(item), "item": item, "found": found.has(LootLibrary.item_key(item))})
+			rows.append({"label": LootRules.label(item), "item": item, "found": found.has(LootRules.item_key(item))})
 		rings.append({"ring": r, "name": _ring_name(r), "items": rows})
 	return rings

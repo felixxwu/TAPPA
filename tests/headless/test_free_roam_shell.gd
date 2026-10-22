@@ -73,6 +73,16 @@ func test_the_shell_wires_the_hud_controls_and_pause_menu() -> void:
 	assert_true(_pause._input_enabled, "the pause menu is armed once the island has loaded")
 
 
+func test_the_debug_readout_starts_hidden_and_p_toggles_it() -> void:
+	var stats: CanvasLayer = _scene.get_node("DebugStats")
+	assert_false(stats.visible, "hidden by default")
+	var press := InputEventAction.new()
+	press.action = "toggle_perf_overlay"
+	press.pressed = true
+	_scene._unhandled_input(press)
+	assert_eq(stats.visible, OS.is_debug_build(), "P shows it in debug builds")
+
+
 # The wheel debris is made for free roam just as world.gd makes it for a stage, and reads the
 # same terrain the tyres do (the streamer), so grass and gravel spray where the grip changes.
 func test_the_wheel_debris_follows_the_car_and_reads_the_streamers_surface() -> void:
@@ -86,6 +96,23 @@ func test_the_wheel_debris_follows_the_car_and_reads_the_streamers_surface() -> 
 
 # Free roam has no free-fly photo camera host, so the Photo Mode card is left out, and the
 # keyboard/gamepad cursor walks straight from Reset to road to Map.
+func test_the_title_menu_covers_the_paused_world_and_continue_closes_it() -> void:
+	WorldSession.fresh = false
+	var title: TitleScreen = _scene.show_title()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(get_tree().paused, "the world waits behind the title")
+	var orbit: Camera3D = _scene.get_node("TitleOrbitCamera")
+	assert_true(orbit.current, "a camera circles the car behind the title")
+	var p := orbit.global_position
+	assert_gt(p.y, _streamer.height_at(p.x, p.z), "the orbit camera is above the ground")
+	assert_true(CardUI.pick(title.cards(), "Continue"))
+	await get_tree().process_frame
+	assert_false(get_tree().paused, "Continue drops straight into driving")
+	assert_null(_scene.get_node_or_null("TitleLayer"), "the menu is gone")
+	assert_null(_scene.get_node_or_null("TitleOrbitCamera"), "and its camera")
+
+
 func test_the_pause_menu_leaves_out_the_photo_card() -> void:
 	var cards := _pause.cards()
 	assert_eq(CardUI.index_of(cards, "Photo Mode"), -1)
