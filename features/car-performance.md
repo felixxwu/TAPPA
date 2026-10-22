@@ -7,8 +7,11 @@
 (`optimum_profile`'s `mu_override`, `_load_factor`, `_geared_top_speed_sq`,
 `_grip_long`, `_traction_factor`, `V_CAP_MAX_MS`), `scripts/game_config.gd` (the `benchmark_*`,
 `traction_factor_*` and `tire_load_*` exports), `tests/headless/test_car_performance.gd`,
-`tests/headless/test_lap_time_model.gd`. Design:
-`docs/superpowers/specs/2026-08-15-car-performance-rating-design.md`.
+`tests/headless/test_lap_time_model.gd`.
+
+> **No screen shows the rating today.** Its consumers (the rival field, the challenge ceiling,
+> the upgrades grid's `PERFORMANCE` readout) are deleted; `CarStatBounds` still sweeps a
+> `"rating"` range for normalising one onto 0..1. The model below is intact.
 
 **Tests:** `tests/headless/test_car_performance.gd`, `tests/headless/test_lap_time_model.gd`
 
@@ -56,20 +59,14 @@ It is folded into `_config_key`, so retuning it invalidates every memoised ratin
 changes the number without changing the lap, and a cache keyed only on the benchmark
 geometry would serve stale figures for the rest of the session.
 
-**Knock-on:** rating-space values elsewhere are now measured against a wider field.
-`opponent_rating_match_spread` (the AI matching window, in rating units) and any authored
-rating ceiling mean proportionally *less* than they did, so revisit them alongside this.
+**Knock-on:** any rating-space value (a future ceiling or matching window) is measured
+against this wider field, so revisit it alongside a change here.
 
 Because the score comes out of the solver, it can never drift out of agreement
 with a hand-written weighting: whatever `LapTimeModel` models, the rating
 accounts for. Whatever it doesn't model is invisible to the rating — see
 [What it measures](#what-it-measures-and-what-it-does-not), which is the section
 to read before you assume anything about this number.
-
-**Status:** the rating is currently a self-contained read-only subsystem. Nothing
-in the game consumes it yet — no menu readout, no eligibility check, no opponent
-matchmaking. The design spec's later phases (rating-based entry, matched rival
-fields, deleting the p/w ceiling machinery) have not landed.
 
 ## The benchmark track
 
@@ -288,7 +285,7 @@ takes `effective_meta` and copies `tire_compound`, `downforce_front` and
 Before this work `LapTimeModel` read only mass, drag, power-to-weight,
 `tire_compound` and the event's surface/weather — so a benchmark on it would have
 been a restatement of power-to-weight and the corner sections would have been
-decorative. Two terms were added. Both are also live fixes: rival and ghost times
+decorative. Two terms were added. Both are also fixes: the model
 previously ignored whether a car was AWD or carried an aero kit.
 
 ### Downforce — a speed-dependent friction circle, in ALL THREE passes
@@ -397,93 +394,12 @@ moved the times of the cars it binds on (see above). Its own no-op guarantee is
 narrower and is the zero case: a meta that doesn't describe a gearbox is left
 exactly as it was, which is what keeps every point-mass caller unchanged. Keep
 `test_defaults_are_an_exact_no_op` green — keep it green, because it is the only thing standing between a solver
-tweak and a silent, game-wide shift in every rival time.
-
-This mattered a great deal during the rework and matters less now: the opponent
-cache it protected has been **deleted**. The field is matched to the player's
-rating, which is not a property of the rally, so it could not be expressed in a
-per-rally lockfile at all — `data/opponent_cache.json`, `OpponentCache`,
-`cache_opponents.sh` and `tools/verify_opponent_cache.gd` are all gone, and
-fields are generated live at stage load. (The **track** cache is unaffected and
-still bakes normally via `cache_tracks.sh`.) See
-the deleted career rally session.
-
-So moving a traction factor off `1.0`, or authoring downforce onto a catalogue
-car, no longer risks serving stale baked times — there are none. It DOES still
-move every AI, rival and ghost time in the game, so treat it as a balance change
-across the whole roster rather than a local tweak, and expect the invariance
-test to fail (correctly) when you do it.
-
-## The rating is also a DIFFICULTY lever
-
-Matching the field to the player's rating is what
-the deleted adaptive difficulty steers: it hands
-`generate_opponent_field` a rating deliberately above or below the player's, and rivals
-turn up in better or worse machinery accordingly. Two consequences for this file:
-
-- Rival builds now include **build levels** as well as an engine swap
-  ([region-stage-library.md](region-stage-library.md)), so a combo's rating is computed from
-  `CarPerformance.merged_meta` — tyres and downforce included, as the rating requires.
-- Anything the rating cannot see becomes a way for a rival to be quicker than the number
-  it was matched on. That is exactly why **nitrous is barred from every build level**: it
-  is excluded from the rating on purpose.
-
-**A rating never gates entry.** Rally eligibility is purely categorical
-(`RallyLibrary.ineligibility_reason` — drivetrain, era, class and the like), so a
-solver change that moves every rating cannot lock a player out of a rally they
-could enter yesterday. It changes who turns up to race them. Keep that
-distinction in mind when weighing how risky a change to this model is: the blast
-radius is the opponent field, not progression.
-
-## The grid is re-drawn if you change your build on the start line
-
-The rival field is matched to the player's rating, and the start line lets the player
-edit upgrades while standing on the grid — after the field has already been drawn. So
-The deleted `start_line.gd::_close_upgrades` called the session's `refield_opponents()`, which
-re-draws the grid against the build actually about to race. Without it, fitting a part
-on the grid would leave you racing a field picked for the car you arrived in, and the
-matching would stop meaning anything at exactly the moment the player engages with it.
-
-It is cheap enough to run on a menu close — **~17 ms** — because the tracks are already
-generated and held on the deleted career session; only the point-mass times are
-re-solved. No loading screen: a sub-frame hitch is less disruptive than a screen.
-
-**Only before the first stage.** `refield_opponents` refuses when `_event_index != 0` or
-any event time has been recorded, and returns `false`. A rally's standings accumulate
-across its events, so re-drawing at stage 2 would rewrite times the rivals had already
-set and silently move the leaderboard the player has been racing. Mid-rally the grid is
-locked — which is also the honest reading of a rally: you enter it with a car.
-
-It also returns `false` when the rating is unchanged, so an upgrades page opened and
-closed without an edit costs nothing.
-
-## Reading the match: the console log
-
-Every draw prints the grid, sorted fastest-first, against the player's own rating
-(the deleted session's `_log_opponent_field`, called from all three draw sites — rally start, the
-test path, and a start-line re-draw). Each rival carries its `rating` on the field entry
-so the match can be inspected after the fact rather than being a number that only existed
-inside the draw:
-
-```
-[opponent field] grand_tour — drawn at rally start | player rating 497 | 9 rivals
-   536  (  +39)  V8 The Beast                 Colin Brennan
-   503  (   +6)  V10 Swerve Surger R/T        Katya Orlova
-   497  (   +0)  Swerve Surger R/T            Sami Korhonen
-   486  (  -11)  Panthera XJS                 Andre Dubois
-```
-
-The deltas are the diagnostic. A grid clustered near 0 is a well-matched field; a long
-tail means the rally's categorical restriction left the pool thin at the player's pace and
-the draw had to reach — matching is a BIAS, not a filter, so it will always field a full
-grid even when the catalogue cannot supply a close one. If the tail is consistently long
-for a given rally, that rally's restriction is the thing to look at, not the spread.
+tweak and a silent, game-wide shift in every rating.
 
 ## Calibration tooling
 
-Two committed offline tools, both reports rather than pass/fail gates (same
-posture as `report_eligibility.sh`). Neither is part of the test suite — they
-generate real tracks and take minutes.
+One committed offline tool, a report rather than a pass/fail gate. It is not part of the
+test suite — it generates real tracks and takes minutes.
 
 **C1 — benchmark fidelity: `./calibrate_benchmark.sh`**
 (`tools/calibrate_benchmark.gd` + `.tscn`). Asks the only question that matters
@@ -500,8 +416,7 @@ The stage sample spans archetypes (`ARCHETYPES` in the script: `straightness`,
 `turn_count`, `forestiness`, `surface_mix`, gravel through tarmac) and each
 archetype's own correlation is printed, so a benchmark that ranks open stages
 well and twisty ones backwards cannot hide behind the pooled figure. Stages are
-synthetic seeds put through `TrackGenerator.generate` — never the authored
-rally list or `data/track_cache.json`, so no cache can mask a generator change.
+synthetic seeds put through `TrackGenerator.generate` — never an authored stage list.
 
 Knob sweeping goes through `BenchmarkTrack.build_from`, never the live config:
 `-- --straight=350,500,750 --sweeper=70,90,120` sweeps the cartesian product and
@@ -510,39 +425,7 @@ entire cost), `--seed=N` (`--stock-only` is accepted and ignored — there is on
 per car now that parts are gone). Anything it recommends is a
 `GameConfig` value — apply it in `config/game_config.tres`.
 
-**C2 — pace floor: `./calibrate_pace_floor.sh`**
-(`tools/calibrate_pace_floor.gd` + `.tscn`). `RallyLibrary.PACE_MIN_FLOOR` (1.10)
-claims a human can get within 10% of the QSS optimum; nothing in the repo
-establishes that. The tool inventories every time-like source and states plainly
-what each can and cannot support: the save profile's `best_combined_ms` (no car
-recorded, rally-combined only, n=1 player), rival/ghost times (**circular** —
-they are derived from `optimum_ms` and clamped at `PACE_MIN_FLOOR` itself, and
-`tools/audit_ghost_pace.gd` is solver-vs-solver), challenge records (per-stage
-times exist only for an in-progress run), and the global leaderboards (per-stage
-human times that never reach this repo — the cheapest place to source a real
-corpus). It then prints one clearly-labelled *indicative* band and a "what would
-need collecting" section. **It deliberately outputs no human-performance
-number**, because there is no corpus to derive one from; the design's phase-5
-gate is therefore still unanswered.
-
-## Where the player sees it
-
-The rating surfaces in the **upgrade screen**, which is where it changes:
-
-- **One persistent readout, and only one.** The deleted `UpgradesGrid`
-  puts a single `PERFORMANCE  <n>` line under its heading row — `current_rating()` is the
-  figure, built through `merged_meta` so fitting tyres or an aero kit visibly moves the
-  number, which is the main thing power-to-weight could never show. There is deliberately
-  no second, differently-scaled view of the same fact: the page is a grid of parts, and one
-  headline number the player can watch tick as they buy is what the grid is measured
-  against.
-- **The ceiling.** A Rally Challenge ceiling (`DrivingContext.rating_limit()`) is shown
-  on the same line as `512 / 480`, red when over, and gates the close button
-  (`over_rating_limit`). Over the ceiling the car is simply **ineligible** — there is no
-  detune escape — so the readout is what tells the player before they reach the start line.
-- It is a plain **`Label`**, never a focusable control, so the rating adds no
-  keyboard/gamepad navigation of its own and the grid tiles below it keep the whole cursor
-  path.
+## `CarStatBounds`
 
 **`CarStatBounds` carries a `"rating"` range** for normalising a rating onto 0..1. Its sweep
 is a benchmark solve per roster car, so the bounds cache is now invalidated by the same
@@ -580,10 +463,8 @@ again.
 
 ## Related
 
-- [region-stage-library.md](region-stage-library.md) — `LapTimeModel`'s day job: PAR times,
-  rival times and the opponent field.
-- the deleted rival ghost — the other seam into `optimum_profile`
-  (`grip_mult` / `power_mult`), also no-op at its defaults.
+- [region-stage-library.md](region-stage-library.md) — `LapTimeModel`'s other job: the dev
+  stage's PAR times.
 - [upgrade-catalogue.md](upgrade-catalogue.md) — the `feeds_pw` / `feeds_grip`
   split behind `merged_meta`.
 - [configuration.md](configuration.md) — where the knobs live.

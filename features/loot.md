@@ -4,7 +4,7 @@
 and colours), `scripts/free_roam/loot_director.gd` (`LootDirector`: the loot loop in the world),
 `scripts/free_roam/site_beacons.gd` (`SiteBeacons`: the tall beams over rest stops and loot, and the
 floating names over loot), the Parts / Garage / Journal pages of
-`scripts/free_roam/rest_stop_page.gd`, and the ground crates in `TerrainStreamer`.
+`scripts/free_roam/rest_stop_page.gd`, and the loot crystals in `TerrainStreamer`.
 
 **Tests:** `tests/headless/test_loot.gd`
 
@@ -45,7 +45,9 @@ what the player holds changes (a pickup, a drop, a lost drop), emitting `pool_ch
 - **Sites show the pool in order.** Dead ends first, with the best items (cars, engines, rumours,
   kits, parts — decision 30), then loot slots, each group in a seeded order; site k shows pool item
   k mod pool size. So with more sites than items each item shows at more than one site (all of them
-  empty out together when it's taken).
+  empty out together when it's taken). Past the first round, spare sites skip cars:
+  `FreeRoamSettings.loot_item_weight` (3) makes every other item show at about that many times as
+  many sites as a car.
 - **A site you pick something up from is spent** (`collected`): nothing ever shows there again.
 - **A ring with more items than free sites** keeps its best and moves the rest to the nearest ring
   with sites to spare (inward first); the overflow is hosted best-first across rings, so scarce
@@ -61,12 +63,12 @@ left and sites showing something per ring at boot.
 
 ## Seeing it
 
-- **On the ground:** a crate coloured by kind (`LootRules.colour`: gold car, orange engine,
+- **On the ground:** a thin crystal, pointed top and bottom, bobbing over the road (`shaders/loot_crystal.gdshader`), coloured by kind (`LootRules.colour`: gold car, orange engine,
   green kit, cyan part, white rumour), built with the near chunk (`TerrainStreamer._loot_marker`;
   `refresh_loot_markers` rebuilds every loaded one when the pool changes).
-- **From far away:** `SiteBeacons` keeps one beam per site for the whole world — every rest stop
-  (grey, orange once lit; `GameConfig.beacon_rest_height_m`) and every piece of loot (its colour;
-  `beacon_loot_height_m`), within `beacon_range_m`. Beams ignore fog and are widened with distance
+- **From far away:** `SiteBeacons` keeps one beam per rest stop for the whole world (grey, orange
+  once lit; `GameConfig.beacon_rest_height_m`), within `beacon_range_m`. Loot has no beam: the
+  crystal is the marker. Beams ignore fog and are widened with distance
   (`beacon_width_per_m`) so they stay a few pixels wide, fade out as they reach into the sky
   (`shaders/beacon_beam.gdshader`), and fade from `beacon_alpha_near` up close
   to `beacon_alpha_far` at the edge of their range. Only once the car is close
@@ -76,13 +78,14 @@ left and sites showing something per ring at boot.
 
 ## The loop (`LootDirector`)
 
-- **Collect:** driving past a piece of loot — at any speed, anywhere on the road beside its pad
+- **Collect:** driving past a piece of loot — at any speed, anywhere on the road around it
   (`RoadSites.reached`, swept over the step's travel; a jump of 100 m or more in one step, a
   teleport, doesn't count) — takes the item into `carried`, which isn't yours yet (decision 10).
   The site is spent, the pool is re-assigned (it's gone from every site) and the HUD toasts what
   was found.
-- **Bank:** opening the rest-stop page calls `bank()`. Parts go to the shared `stash`; car titles
-  become owned cars.
+- **Bank:** reaching a checkpoint (`RestStops.healed` → `bank_at_checkpoint`) banks everything
+  carried at once and toasts it; no need to open the page. Parts go to the shared `stash`; car
+  titles become owned cars.
 - **Drop:** when the car gives up, `carried` is left at the wreck (`dropped`, marked by a red
   beacon). Driving back within `DROPPED_REACH_M` recovers it. Giving up again while carrying
   something replaces the drop (an empty-handed give-up keeps the earlier pile): the old one is lost, and its items go back into the pool to be found again (decision 11).
@@ -111,13 +114,14 @@ says "Fit", "Swap for X", or — disabled — "Can't fit"), then one per part fi
 car ("on <car>"; "Move here" / "Swap for X" / "Can't fit"). Picking one of those asks first in a
 `ConfirmPopup` ("It will be removed from the <car>") and then moves it over (`_take`); a part it
 displaces goes to the stash. **Garage:** a card per owned car (pick
-to drive one; the cursor starts on the car being driven). **Journal:** a read-only card per item
-in each revealed ring, "Found" or "Not found yet". A change of parts or car re-fields the car
+to drive one; the cursor starts on the car being driven). **Journal:** a card per revealed region
+("n of m found"); picking one opens that region's page (`View.REGION`, `journal_ring`), a read-only
+card per item and car there, "Found" or "Not found yet". Back steps region → region list → main. A change of parts or car re-fields the car
 when the page closes: `car_changed` makes free roam save and reload the scene at the rest stop,
 because a live body is never re-staged.
 
 ## In the world
 
-`TerrainStreamer._loot_marker`: a crate under a tall light beam, coloured by kind (gold car,
+`TerrainStreamer._loot_marker`: a crystal under a tall light beam, coloured by kind (gold car,
 orange engine, green kit, cyan part, white rumour), built per near chunk while the item is
 still there (`loot_query`), and removed on pickup (`refresh_loot_marker`).

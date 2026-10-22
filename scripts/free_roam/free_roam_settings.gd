@@ -10,7 +10,7 @@ extends Resource
 @export var world_seed := 1
 ## The car the game starts in, by CarLibrary id (the first car if it is missing).
 @export var car_id := "porsche911"
-@export var island_radius_m := 5000.0
+@export var island_radius_m := 10000.0
 @export var ring_count := 4
 
 @export_group("Biomes")
@@ -28,28 +28,34 @@ extends Resource
 @export var weather_hold_s := 180.0
 ## How long the sky, fog and background take to blend to a new biome or weather.
 @export var look_crossfade_s := 4.0
+## How wide the blend between two rings' road surfaces (gravel / tarmac) is, in metres.
+@export var road_surface_blend_m := 150.0
 
 @export_group("Road network (radial growth)")
-@export var node_spacing_m := 75.0
-@export var segment_m := 175.0
-@export var fork_chance := 0.37
-@export var fork_angle_deg := 150.0
-@export var heading_jitter_deg := 120.0
-@export var outward_pull := 0.44
+@export var node_spacing_m := 225.0
+@export var segment_m := 225.0
+@export var fork_chance := 0.17
+@export var fork_angle_deg := 127.0
+@export var heading_jitter_deg := 106.0
+@export var outward_pull := 0.57
 @export var join_chance := 1.0
 @export var roads_from_spawn := 3
 ## How far a road may swing from the straight line between its junctions, as a fraction of
 ## its length; 0 is dead straight.
-@export var road_twist := 1.0
+@export var road_twist := 0.73
 ## Roughly how far the road runs between changes of direction.
-@export var bend_length_m := 200.0
-@export var road_half_width_m := 2.75
-@export var road_shoulder_m := 2.0
+@export var bend_length_m := 150.0
+@export var road_half_width_m := 1.9
+@export var road_shoulder_m := 1.0
+## How wide the drawn grass-to-gravel fade is, centred on the shoulder (looks only; the road's grip
+## edge stays the shoulder). Much under 1.5 near_stride_m and the fade falls inside one mesh
+## triangle and its edge turns jagged.
+@export var road_paint_fade_m := 3.0
 
 @export_group("Base height and lakes")
 @export var base_scale_m := 500.0
 @export var base_relief_m := 15.0
-@export var water_level_m := -5.0
+@export var water_level_m := -10.0
 @export var lake_depth_factor := 1.6
 @export var shore_band_m := 1.0
 
@@ -65,17 +71,22 @@ extends Resource
 @export var bump_scale_m := 50.0
 
 @export_group("Sites")
-## Road between rest stops, per biome ring counting outward (the last entry covers any ring
-## beyond the list). Decision 31: one value per ring, all equal to start with.
-@export var rest_stop_spacing_m := PackedFloat32Array([300.0, 300.0, 300.0])
-## Road between loot pull-ins. Plenty of them: each shows something from its ring's remaining
-## pool (LootRules.assign), so there should be more pull-ins than things to find.
-@export var loot_slot_spacing_m := 150.0
+## Road between rest stops in a ring whose region doesn't set its own `rest_stop_spacing_m`
+## (RegionLibrary).
+@export var rest_stop_spacing_m := 1050.0
+## Road between loot spots. Plenty of them: each shows something from its ring's remaining
+## pool (LootRules.assign), so there should be more spots than things to find.
+@export var loot_slot_spacing_m := 250.0
+## How many times more road spots show each part, engine, kit or rumour than each car.
+@export var loot_item_weight := 3
 @export var rest_stop_radius_m := 16.0
-@export var loot_pad_radius_m := 7.0
 @export var dead_end_radius_m := 14.0
-## How far a pad's flat ground blends back into the natural terrain.
+## How far a pad's flat ground blends back into the natural terrain, at least. The blend widens
+## where the pad sits far above or below the land around it, so its slope stays under
+## pad_blend_max_slope (rise over run), up to pad_blend_max_m.
 @export var pad_blend_m := 12.0
+@export var pad_blend_max_m := 40.0
+@export var pad_blend_max_slope := 0.25
 
 @export_group("Barriers")
 ## A road vertex that turns by more than this is a sharp bend and gets a barrier on its outside
@@ -84,10 +95,16 @@ extends Resource
 
 @export_group("Foliage")
 ## One candidate spot per cell of this size; trees are then thinned by the forest noise.
-@export var tree_cell_m := 9.0
+@export var tree_cell_m := 6.0
 ## Share of the land that is forest (0 = no trees, 1 = everywhere).
 @export var forestiness := 0.8
-@export var bush_cell_m := 12.0
+@export var bush_cell_m := 7.0
+## Trees and bushes crowd the road and thin out away from it: right at the road every spot grows
+## (and the forest noise leaves no gaps), easing over this distance to the far densities below.
+@export var roadside_falloff_m := 50.0
+## Share of tree / bush spots kept far from the road.
+@export_range(0.0, 1.0) var far_tree_density := 0.35
+@export_range(0.0, 1.0) var far_bush_density := 0.3
 ## One rock-group candidate per cell, before the region's rock density thins it.
 @export var rock_cell_m := 45.0
 @export var rock_group_chance := 0.35

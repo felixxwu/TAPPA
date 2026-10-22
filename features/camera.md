@@ -235,11 +235,18 @@ an individual body can nudge its hood cam to the right spot. `car.gd`'s
 `bonnet_cam_offset()` returns the active car's value (zero for the untouched
 baseline), and `CameraManager.refresh_bonnet_offset()` sets the bonnet camera's
 origin to `bonnet_offset + bonnet_cam_offset`. Because the bonnet camera is a
-scene child of `$Car` (not re-parented at boot), `world.gd` calls
-`refresh_bonnet_offset()` right after fielding the car (`apply_car` /
+scene child of `$Car` (not re-parented at boot), `free_roam.gd` (and the dev stage's
+`world.gd`) calls `refresh_bonnet_offset()` right after fielding the car (`apply_car` /
 `apply_owned`) — otherwise the per-car offset would only take effect on a later
 car swap. `retarget()` (car swap) re-parents the camera and then calls
 `refresh_bonnet_offset()` itself.
+
+To set a car's offset by numbers, run `tools/bonnet_clearance.gd`
+(`Godot --headless --path . -s tools/bonnet_clearance.gd`). For every car with a body
+model it drops rays onto the body as `car.tscn` seats it and prints the gap from the
+camera down to the body, the highest body point in view ahead, roughly where the bonnet
+starts, and the `bonnet_cam_offset.y` that leaves `CLEARANCE_M` (0.1 m) of space. Every
+shipped car's y is set from it.
 
 The `CameraManager` applies these on `_ready()` and via `retarget(fresh)`,
 which re-parents the bonnet camera onto a fresh car and re-points the chase

@@ -20,11 +20,17 @@ var sites: RoadSites
 var last_road_d := INF
 
 var _s: FreeRoamSettings
+var _tarmac := PackedFloat32Array()  # per ring: 1 when its region's roads are tarmac
+var _any_tarmac := false
 
 
 func setup(settings: FreeRoamSettings, network: RoadNetwork) -> void:
 	_s = settings
 	net = network
+	_tarmac.resize(settings.ring_count)
+	for i in settings.ring_count:
+		_tarmac[i] = 1.0 if RegionLibrary.has_tarmac_roads(BiomeDirector.region_of(settings, i)) else 0.0
+		_any_tarmac = _any_tarmac or _tarmac[i] > 0.0
 
 
 # Low-frequency height that ignores the roads, lifted near spawn so spawn is always dry.
@@ -79,7 +85,7 @@ func height(x: float, y: float, cands: PackedInt32Array, use_cands: bool) -> flo
 	var o := sites.outside(i, x, y)
 	# a pad reads as road: full surface inside it, fading over the shoulder outside
 	last_road_d = minf(last_road_d, maxf(0.0, _s.road_half_width_m + o))
-	return lerpf(sites.pad_h[i], h, LabNoise.smooth(0.0, sites.blend_m(), o))
+	return lerpf(sites.pad_h[i], h, LabNoise.smooth(0.0, sites.blend_m(sites.pad_h[i] - h), o))
 
 
 func _natural_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool) -> float:
@@ -124,7 +130,37 @@ func road_weight(d: float) -> float:
 	return 1.0 - smoothstep(_s.road_half_width_m, _s.road_half_width_m + _s.road_shoulder_m, d)
 
 
+# The road weight the ground is painted with: the same edge as road_weight, faded over at least
+# road_paint_fade_m so the blend spans several mesh vertices.
+func paint_weight(d: float) -> float:
+	var mid := _s.road_half_width_m + _s.road_shoulder_m * 0.5
+	var half := maxf(_s.road_shoulder_m, _s.road_paint_fade_m) * 0.5
+	return 1.0 - smoothstep(mid - half, mid + half, d)
+
+
 # Which biome ring a point is in, counting outward from spawn.
 func ring_index(x: float, y: float) -> int:
+	return clampi(floori(_ring_coord(x, y)), 0, _s.ring_count - 1)
+
+
+# How far out a point is in rings: ring i covers [i, i + 1), with a wobbly border.
+func _ring_coord(x: float, y: float) -> float:
 	var wob := (LabNoise.fbm(x / 1500.0 + 9.0, y / 1500.0 + 9.0, _s.world_seed + 3) - 0.5) * 0.25
-	return clampi(floori((LabNoise.hyp(x, y) / (_s.island_radius_m * 0.82) + wob) * _s.ring_count), 0, _s.ring_count - 1)
+	return (LabNoise.hyp(x, y) / (_s.island_radius_m * 0.82) + wob) * _s.ring_count
+
+
+# How much the road at a point is tarmac (0 gravel, 1 tarmac), from its ring's region, blended
+# over road_surface_blend_m where two rings meet.
+func tarmac_weight(x: float, y: float) -> float:
+	if not _any_tarmac:
+		return 0.0
+	var n := _s.ring_count
+	var v := _ring_coord(x, y)
+	var i := clampi(floori(v), 0, n - 1)
+	var f := v - i
+	var half := _s.road_surface_blend_m / (_s.island_radius_m * 0.82) * n * 0.5
+	if f < half and i > 0:
+		return lerpf(_tarmac[i - 1], _tarmac[i], smoothstep(-half, half, f))
+	if f > 1.0 - half and i < n - 1:
+		return lerpf(_tarmac[i], _tarmac[i + 1], smoothstep(-half, half, f - 1.0))
+	return _tarmac[i]

@@ -78,8 +78,9 @@ const REGIONS: Array[Dictionary] = [
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
 		"id": "home", "order": 0, "name": "The Green",
+		"rest_stop_spacing_m": 500.0, # metres of road between free-roam checkpoints
 		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
-		"water_level": -12.0,
+		"water_level": - 12.0,
 		# size_scale 1.25 uniform — the home forest 25% bigger than the profile's
 		# authored card (7.5 -> 9.375 m). Done HERE, on the species, rather than by
 		# raising GameConfig.tree_size_m, because that profile is shared: Greece's 30%
@@ -95,9 +96,46 @@ const REGIONS: Array[Dictionary] = [
 		# the one asked for here, so it is deliberately left alone.
 		"tree_mix": [
 			{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0,
-			 "size_scale": Vector2(1.25, 1.25)},   # 9.375 x 9.375 m
+			 "size_scale": Vector2(1.25, 1.25)}, # 9.375 x 9.375 m
 		],
 		"spawn_bush_mesh": true,
+	},
+	# "The Dunes" — the Greek-INSPIRED arid region. It is the one region whose
+	# old working name named a real-world country outright; every sibling is a
+	# geographic feature ("The Lakes", "The Taiga", "The Alps"), so this one now is
+	# too. The id ("greece") and the -greece texture filenames stay: ids key saved
+	# progress and renaming assets buys nothing. Ships the three swapped textures
+	# + sky, plus a Greek tree
+	# split: 70% the star-shaped Greek billboard (tree-greece.webp, a large low, dry
+	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
+	# (the smaller "home" profile), so the arid stands read as mostly-olive with a few
+	# ordinary trees mixed in. spawn_bush_mesh = false drops the green 3D ground-cover
+	# bushes entirely (the arid map has no lush undergrowth). Terrain tints inherit home
+	# for now; the tarmac is a dark warm asphalt, and its lane paint is yellow rather than
+	# home's off-white.
+	# grass_particle_color overrides GameConfig's home-green wheel-dust blade with
+	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
+	# the home green read as a mismatch flung off wheels on this arid ground).
+	{
+		"id": "greece", "order": 1, "name": "The Dunes",
+		"rest_stop_spacing_m": 1000.0, # metres of road between free-roam checkpoints
+		"water_level": - 12.0,
+		"road_surface": "tarmac",
+		"sky_panorama": "res://textures/sky-greece.jpg",
+		"grass_texture": "res://textures/grass-greece.jpg",
+		"tree_mix": [
+			{"texture": "res://textures/tree-greece.webp", "profile": "region", "weight": 0.7},
+			{"texture": "res://textures/tree.png", "profile": "home", "weight": 0.3},
+		],
+		"spawn_bush_mesh": false,
+		# The stoniest region in the catalogue. It is the one place that authors NO 3D
+		# ground cover (spawn_bush_mesh false above), so the verge here is bare in a way
+		# no other region's is — rocks are what fills it, and the arid look wants them.
+		"rock_density": 2.5,
+		"gravel_texture": "res://textures/gravel-greece.jpg",
+		"tarmac_color": Color(0.26, 0.25, 0.23),
+		"road_marking_color": Color(0.85, 0.70, 0.16),
+		"grass_particle_color": Color(0.52, 0.49, 0.38),
 	},
 	# The taiga — the NW corner. Deliberately the THINNEST region in the catalogue:
 	# `look_from: "home"` takes home's sky, gravel, tarmac, lane paint, terrain tints
@@ -125,47 +163,13 @@ const REGIONS: Array[Dictionary] = [
 	# both drop ground cover.
 	{
 		"id": "taiga", "order": 2, "name": "The Taiga",
+		"rest_stop_spacing_m": 2000.0, # metres of road between free-roam checkpoints
 		"look_from": "home",
-		"water_level": -12.0,
+		"water_level": - 12.0,
 		"tree_mix": [
 			{"texture": "res://textures/tree-taiga.webp", "profile": "home", "weight": 1.0,
-			 "size_scale": Vector2(0.90, 3.0)},   # 6.75 x 22.5 m, ratio 0.30
+			 "size_scale": Vector2(0.90, 3.0)}, # 6.75 x 22.5 m, ratio 0.30
 		],
-	},
-	# "The Dunes" — the Greek-INSPIRED arid region. It is the one region whose
-	# old working name named a real-world country outright; every sibling is a
-	# geographic feature ("The Lakes", "The Taiga", "The Alps"), so this one now is
-	# too. The id ("greece") and the -greece texture filenames stay: ids key saved
-	# progress and renaming assets buys nothing. Ships the three swapped textures
-	# + sky, plus a Greek tree
-	# split: 70% the star-shaped Greek billboard (tree-greece.webp, a large low, dry
-	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
-	# (the smaller "home" profile), so the arid stands read as mostly-olive with a few
-	# ordinary trees mixed in. spawn_bush_mesh = false drops the green 3D ground-cover
-	# bushes entirely (the arid map has no lush undergrowth). Terrain tints inherit home
-	# for now, but the tarmac runs quite a bit brighter than home's (sun-bleached
-	# Mediterranean asphalt) and its lane paint is yellow rather than home's off-white.
-	# grass_particle_color overrides GameConfig's home-green wheel-dust blade with
-	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
-	# the home green read as a mismatch flung off wheels on this arid ground).
-	{
-		"id": "greece", "order": 1, "name": "The Dunes",
-		"water_level": -12.0,
-		"sky_panorama": "res://textures/sky-greece.jpg",
-		"grass_texture": "res://textures/grass-greece.jpg",
-		"tree_mix": [
-			{"texture": "res://textures/tree-greece.webp", "profile": "region", "weight": 0.7},
-			{"texture": "res://textures/tree.png", "profile": "home", "weight": 0.3},
-		],
-		"spawn_bush_mesh": false,
-		# The stoniest region in the catalogue. It is the one place that authors NO 3D
-		# ground cover (spawn_bush_mesh false above), so the verge here is bare in a way
-		# no other region's is — rocks are what fills it, and the arid look wants them.
-		"rock_density": 2.5,
-		"gravel_texture": "res://textures/gravel-greece.jpg",
-		"tarmac_color": Color(0.52, 0.50, 0.46),
-		"road_marking_color": Color(0.85, 0.70, 0.16),
-		"grass_particle_color": Color(0.52, 0.49, 0.38),
 	},
 	# The same forest look with the sea raised — a lakeland / forested shore.
 	# `water_level` is set MUCH higher than every other region's (all -12.0) so the
@@ -189,7 +193,8 @@ const REGIONS: Array[Dictionary] = [
 	# grass blades flung off a snowfield.
 	{
 		"id": "snow", "order": 4, "name": "The Alps",
-		"water_level": -12.0,
+		"rest_stop_spacing_m": 2000.0, # metres of road between free-roam checkpoints
+		"water_level": - 12.0,
 		"sky_panorama": "res://textures/sky-snow.jpg",
 		"grass_texture": "res://textures/snow-ground.jpg",
 		"gravel_texture": "res://textures/snow-road.jpg",
@@ -217,9 +222,9 @@ const REGIONS: Array[Dictionary] = [
 		# comments are the invariant to check against.
 		"tree_mix": [
 			{"texture": "res://textures/tree-snow.webp", "profile": "home", "weight": 0.6,
-			 "size_scale": Vector2(0.825, 1.725)},   # 6.2 x 12.9 m, ratio 0.48
+			 "size_scale": Vector2(0.825, 1.725)}, # 6.2 x 12.9 m, ratio 0.48
 			{"texture": "res://textures/tree-snow-laden.webp", "profile": "home", "weight": 0.4,
-			 "size_scale": Vector2(1.02, 1.65)},     # 7.7 x 12.4 m, ratio 0.62
+			 "size_scale": Vector2(1.02, 1.65)}, # 7.7 x 12.4 m, ratio 0.62
 		],
 		# No undergrowth, same as Greece: under real snow cover there is nothing
 		# growing through. A snowed version of the ground-cover clump was tried and
@@ -264,9 +269,9 @@ const REGIONS: Array[Dictionary] = [
 		# They name GameConfig fields rather than authoring numbers (the WeatherLibrary
 		# pattern), so every tunable stays in config/game_config.tres.
 		"surface_grip": {
-			"grass": "snow_grass_grip",     # deep snow at the roadside
-			"gravel": "snow_gravel_grip",   # packed snow road
-			"tarmac": "snow_tarmac_grip",   # a dusting over asphalt
+			"grass": "snow_grass_grip", # deep snow at the roadside
+			"gravel": "snow_gravel_grip", # packed snow road
+			"tarmac": "snow_tarmac_grip", # a dusting over asphalt
 		},
 		"deep_snow": {
 			"depth": "snow_visual_depth_m",
@@ -329,6 +334,18 @@ static func water_level_of(region_id: String) -> float:
 # unknown id.
 static func has_water_level(region_id: String) -> bool:
 	return by_id(region_id).has("water_level")
+
+
+# Metres of free-roam road between checkpoints in this region's ring, or `fallback`
+# (FreeRoamSettings.rest_stop_spacing_m) when it sets none. Not inherited through `look_from`.
+static func rest_stop_spacing_of(region_id: String, fallback: float) -> float:
+	return float(by_id(region_id).get("rest_stop_spacing_m", fallback))
+
+
+# Whether this region's free-roam roads are tarmac rather than the default gravel. Like
+# water_level, not inherited through `look_from`.
+static func has_tarmac_roads(region_id: String) -> bool:
+	return String(by_id(region_id).get("road_surface", "gravel")) == "tarmac"
 
 
 # --- Handling overrides (features/snow-region.md) -----------------------------

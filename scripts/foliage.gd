@@ -188,14 +188,11 @@ static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
 
 
 # The ground-cover bush mesh: the low-poly GLB mesh, its imported (tone-matched)
-# foliage texture kept but the surface rebuilt as the shared foliage near-fade
-# ShaderMaterial (TREE_CANOPY_SHADER). It multiplies the texture by the per-instance
-# MultiMesh COLOR (the baked terrain light TreeMeshField writes, matching the ground
-# tint everywhere) AND by cfg.bush_tint, is double-sided (the shader is cull_disabled,
-# so the single-sided cards don't vanish from behind), and — the point of the swap —
-# dithers out near the camera just like the trees, so a bush right in front of the
-# camera (chase cam brushing one, or a planted replay cam sitting among them) turns
-# see-through instead of filling the frame. Duplicated so the cached scene resource is
+# foliage texture kept but the surface rebuilt as a ShaderMaterial (TREE_CANOPY_SHADER).
+# It multiplies the texture by the per-instance MultiMesh COLOR (the baked terrain light
+# TreeMeshField writes, matching the ground tint everywhere) AND by cfg.bush_tint, and is
+# double-sided (the shader is cull_disabled, so the single-sided cards don't vanish from
+# behind). Duplicated so the cached scene resource is
 # not mutated; NOT cached (the material carries cfg.bush_tint, cheap to rebuild).
 static func bush_mesh() -> Mesh:
 	var cfg: GameConfig = Config.data
@@ -206,12 +203,6 @@ static func bush_mesh() -> Mesh:
 	mat.shader = TREE_CANOPY_SHADER
 	mat.set_shader_parameter("albedo", albedo)
 	mat.set_shader_parameter("tint", cfg.bush_tint)
-	mat.set_shader_parameter("near_fade_start", cfg.tree_near_fade_start_m)
-	mat.set_shader_parameter("near_fade_end", cfg.tree_near_fade_end_m)
-	# Bushes scale uniformly to bush_height_m, so the shader can't read the world
-	# height off the instance basis (unlike the normalized tree mesh) — pass it so the
-	# near-fade clamps its reference point to the bush's vertical span.
-	mat.set_shader_parameter("canopy_height", cfg.bush_height_m)
 	mesh.surface_set_material(0, mat)
 	return mesh
 

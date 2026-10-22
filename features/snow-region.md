@@ -1,19 +1,19 @@
 # The snow region (The Alps)
 
-The map's NE corner, filled in after being reserved from the start. It is the one
-region that does more than look different: it is the first to influence **handling**.
+The one region that does more than look different: it influences **handling**. In free roam it
+is the outermost biome ring; on the dev stage it is a region's stage grid.
 
 **Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`, `tests/headless/test_lake_field.gd`
 
 - **Region entry:** `scripts/region_library.gd` → `REGIONS` id `"snow"`
-- **Handling seat:** `StageConfig.apply_event_config`
+- **Handling seat:** `BiomeDirector.apply_handling` (free roam), `StageConfig.apply_event_config` (dev stage)
 - **Grip:** `Drivetrain.surface_tire_params`, `LapTimeModel._surface_grip`
 - **Deep snow:** `shaders/ps1_terrain_snow.gdshader`, `WorldRuntime.apply_deep_snow`
-  (via `world.gd._apply_deep_snow_ground`; the deleted `overworld.gd` had the same wrapper),
+  (via `world.gd._apply_deep_snow_ground`),
   `car.gd._apply_deep_snow_drag`
 - **Frozen lakes:** `LakeField.build` / `_add_ice_collider`
 - **Snowfall:** `WeatherLibrary` id `"snow"`, `WeatherField.spawn_snow`
-- **Rallies:** the six `region: "snow"` entries in `RallyLibrary.RALLIES`
+- **Dev-stage grid:** `RegionStageLibrary.STAGES["snow"]`
 - **Art:** `tools/gen_snow_textures.py` (ground/sky), `tools/gen_snow_trees.py` (conifers)
 - **Design:** `docs/superpowers/specs/2026-08-16-snow-region-design.md`
 
@@ -80,18 +80,12 @@ Free roam (deleted) drew its random region **before** calling the funnel and sea
 it on the event, so a free-roam Alps stage drives like snow instead of looking like snow
 and driving like a summer forest.
 
-### The AI field scales with it — snow is variety, not difficulty
+### Lap times scale with it
 
-`LapTimeModel._surface_grip` reads the same live `gravel_grip` / `tarmac_grip`, so once
-the funnel has seated them **the rival field scales for free, with no change to the
-lap-time model**. A snow stage is no harder to podium; it changes how the car must be
-driven. Consistent with rain and sandstorm, deliberately unlike fog. The deleted `ghost_car.gd`
-computes μ the same way, so the windscreen ghost stays consistent too.
-
-**`CarPerformance` is unaffected by construction** — it benchmarks at a frozen
-`BENCHMARK_SURFACE_GRIP`, so car ratings, the rating-matched field and adaptive difficulty
-cannot drift. Worth stating, because a grip change that *did* reach the rating would
-silently re-pitch every field in the game.
+`LapTimeModel._surface_grip` reads the same live `gravel_grip` / `tarmac_grip`, so the dev
+stage's PAR time scales with snow for free. **`CarPerformance` is unaffected by
+construction** — it benchmarks at a frozen `BENCHMARK_SURFACE_GRIP`, so car ratings cannot
+drift with a region's grip.
 
 ### The region override is no longer the only snow lever
 
@@ -103,8 +97,8 @@ fitting winter rubber before an Alps event, and taking it off again for an aspha
 is a genuine per-rally decision rather than a one-way upgrade. The snow side of the rule is
 keyed off `GameConfig.ground_is_snow()`, which is simply `deep_snow_depth_m > 0.0` — i.e.
 "this region seated a deep-snow block", so there is no second snow flag to keep in sync.
-The AI field tracks it: `LapTimeModel._surface_grip` runs the same
-`GameConfig.tire_surface_mult_for`, off the rival's own meta.
+`LapTimeModel._surface_grip` runs the same `GameConfig.tire_surface_mult_for`, off the car's
+own meta.
 
 ## Relief: deliberately gentle
 
@@ -135,14 +129,11 @@ ice back, because a high sea over low relief floods the track — the pairing co
 The Alps also feel the lap-time model's **road gradient** term more than anywhere else
 (see [region-stage-library.md](region-stage-library.md) -> the QSS model). `G*sin(theta)` is a fixed
 subtraction from a drive budget that low grip has already shrunk, so 14 of the region's
-18 stages get slower once hills are modelled, up to about +2%. That term exists precisely
-so the rival field pays for a climb the player is paying for; before it, a 2WD car
-scrabbling up an icy opening straight watched a ghost that had no weight walk away.
+18 stages get slower once hills are modelled, up to about +2%. That term exists so a PAR
+time pays for a climb the player is paying for.
 
-Residual: the deep-snow drag is **player-only** (no drag term exists in the lap-time
-model, and a rival never leaves the road), so the corner is slightly harder in practice
-than a matched field implies — the same asymmetry storm's crosswind has. Mild, named, and
-a fraction of fog's, since the dominant effect *is* scaled.
+Residual: the deep-snow drag has no term in the lap-time model, so a snow stage is slightly
+harder in practice than its PAR implies — the same asymmetry storm's crosswind has.
 
 Off-road wheel spray is square here, not blade-shaped: the region authors
 `grass_particle_square` (see [wheel-dust.md](wheel-dust.md)). Colouring the grass blade
@@ -179,7 +170,7 @@ It is also not done in `terrain_chunk_builder`: chunk data is cached with a preb
 cache and agree across every LOD subsample.
 
 ⚠️ `world.gd._apply_deep_snow_ground` → `WorldRuntime.apply_deep_snow`
-(`scripts/world_runtime.gd`, which had a second caller in the deleted `overworld.gd`) runs **unconditionally every stage boot**, including
+(`scripts/world_runtime.gd`) runs **unconditionally every stage boot**, including
 the else-branch that restores the base shader. The floor material is a shared
 sub-resource of `main.tscn` with no `resource_local_to_scene`, so it survives every scene
 instantiation in the process — the same trap that once left the ground at
@@ -253,7 +244,7 @@ collider physics has.
   stages that reads as landing on ice.
 
 The track still routes around water, so the frozen lake is an off-road hazard (or
-shortcut), and rival times are unaffected.
+shortcut), and PAR times are unaffected.
 
 ## Snowfall
 
@@ -306,48 +297,3 @@ load-bearing in non-obvious ways:
    shadow between the needles clips to near-black — 4% and 17% of opaque pixels. Against
    snow those render as black dots hanging in the air. Fixed by `_lift_shadows`; both
    trees now sit at 0.00% near-black, matching `tree.png`'s 0.01%.
-
-## Rallies and the moved unlocks
-
-Six rallies tagged `region: "snow"`, pinned in the NE massif, difficulty 1–4, weather
-mixed dry/snow. They form a **chain** rather than a cluster: `sn_glacier_run` is the only
-pin reachable from outside (from `sp_woodland_trial`, "Upgrade: Snow Tires"), and the two
-specials are the deepest pins.
-
-Two part unlocks moved north so the corner is worth working toward:
-
-| part | was | now |
-| --- | --- | --- |
-| Race Tires | `gr_showdown` | `sn_showdown` |
-| Sequential Gearbox | `hc_showdown` | `sp_summit_trial` |
-
-The grip part belongs to the grip corner. Both source rallies were named after their
-prize and were renamed; their `id`s stay put because they key saved progress.
-
-**Snow Tires at the gateway.** The `tires` slot has since gained a second part —
-`snow_tires`, awarded by `sp_woodland_trial`, the ONLY pin that lights the way in here.
-So the player arrives in the frozen corner with winter rubber rather than earning it
-afterwards, and Race Tires still waits at the far end of the chain. That
-rally used to gate the engine-swap capability, which moved to `front_runners` beside HQ
-to make room; see [engine-swap.md](engine-swap.md).
-
-**Save migration v4 → v5.** A player who already won the old rally keeps the part, via
-`Save.KEY_LEGACY_PART_UNLOCKS` — an early-out in `UpgradeLibrary.rally_gate_met`.
-Marking the new rally completed would have been wrong: it would also light its map-reveal
-circle and pay its placement stars. `Save.MOVED_PART_UNLOCKS` is the data the migration
-reads, so a future move is a row plus an arm.
-
-**Save migration v5 → v6.** The follow-up move of the engine-swap capability off
-`sp_woodland_trial` (so it could carry Snow Tires) used the same pattern for the same
-reason (a completed rally granted the capability via `Save.KEY_LEGACY_ENGINE_SWAP`).
-That whole gate is deleted now — the Engine Swap is a mid-run boost.
-
-Verified with `./report_eligibility.sh` (2/2/2/3 eligible cars on the four restricted
-rallies) and `./sim_career.sh`.
-
-> **`sim_career` note.** It reports ~3% of careers hitting a frontier with no enterable
-> rally. That is **pre-existing and not caused by the Alps**: at 1500 runs the pre-Alps
-> roster strands 52 times and this one 40 — adding rallies slightly *reduced* it. The
-> signature is always the same three rallies (`hc_v12_promenade`, `gr_mountain_pass`,
-> `gc_island_gp`) and a player who never won the GB / high-cylinder prize cars. Worth
-> fixing separately; do not attribute it to this region.

@@ -4,7 +4,7 @@ extends Control
 # Tests: tests/headless/test_mini_map.gd — extend in the same change.
 # Free roam's minimap, top-centre: heading-up, drawn as a ground plane tilted away from the viewer
 # like the roads on navigation software. It shows the roads you've driven (WorldSession.has_driven),
-# a little undriven road around and just ahead of the car, and the rest stops and loot you've come
+# a little undriven road around and just ahead of the car, and the rest stops you've come
 # across (WorldSession.seen_sites). Tapping or clicking it — or M / gamepad Back (`toggle_map`) —
 # asks the host for the full map (`open_requested`).
 #
@@ -25,17 +25,15 @@ signal open_requested
 @export var streamer: TerrainStreamer
 @export var car: Node3D
 @export var rest_stops: RestStops
-@export var loot: Node  # LootDirector: loot_at(site) -> {} once taken; pool_changed when it may change
 
 const SHADER := preload("res://shaders/mini_map.gdshader")
 const BEACON_LIT := Color(1.0, 0.55, 0.1)      # TerrainStreamer.BEACON_LIT
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)  # TerrainStreamer.BEACON_UNLIT
-const LOOT_COLOR := Color(0.2, 0.55, 1.0)      # the loot post's colour (TerrainStreamer._site_marker)
 const CELL_M := 40.0  # road lookup cells match the driven cells (WorldSession.DRIVEN_CELL_M)
 const MARKER_REFRESH_S := 1.0
 const SHADOW_PX := 3.0
 
-enum Marker { REST_UNLIT, REST_LIT, LOOT }
+enum Marker { REST_UNLIT, REST_LIT }
 
 var view_m := 460.0
 var car_depth := 0.8
@@ -52,6 +50,7 @@ var _vp: SubViewport
 var _roads: RoadLayer
 var _ground: TextureRect
 var _overlay: MarkerLayer
+var carried_label: Label
 var _mat: ShaderMaterial
 var _inner := Rect2(0, 0, 1, 1)
 var _cells := {}  # Vector2i (CELL_M cell of the midpoint) -> PackedInt32Array of segment ids
@@ -105,8 +104,10 @@ func _ready() -> void:
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_overlay)
-	if loot != null and loot.has_signal("pool_changed"):
-		loot.connect("pool_changed", refresh_markers)
+	carried_label = UITheme.label("")
+	carried_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	carried_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(carried_label)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
 	if streamer != null:
@@ -133,6 +134,9 @@ func set_frame_size(s: Vector2) -> void:
 	if _mat != null:
 		_mat.set_shader_parameter("inner", Vector4(0.0, 0.0, _inner.size.x / s.x, _inner.size.y / s.y))
 		_mat.set_shader_parameter("shadow_uv", Vector2(SHADOW_PX / s.x, SHADOW_PX / s.y))
+	if carried_label != null:
+		carried_label.position = Vector2(0.0, s.y)
+		carried_label.size = Vector2(s.x, 0.0)
 
 
 # --- the projection (the GDScript twin of mini_map.gdshader's `ground`) -------------------------
@@ -270,10 +274,9 @@ static func mark_seen_near(sites: RoadSites, p: Vector2, radius: float) -> int:
 	return fresh
 
 
-# Which sites a map shows, and how: a rest stop once seen (or lit), lit or not; a loot slot or dead
-# end (loot lies at both) once seen and only while something lies there. `lit` is RestStops.lit_sites (site -> true); `loot` the
-# LootDirector as `director` (null shows no loot).
-static func site_markers(sites: RoadSites, lit: Dictionary, director: Node, centre: Vector2, radius: float) -> Array:
+# Which sites a map shows: the rest stops seen (or lit), lit or not. `lit` is RestStops.lit_sites
+# (site -> true).
+static func site_markers(sites: RoadSites, lit: Dictionary, centre: Vector2, radius: float) -> Array:
 	var out: Array = []
 	var seen := {}
 	for s: int in WorldSession.seen_sites():
@@ -281,15 +284,12 @@ static func site_markers(sites: RoadSites, lit: Dictionary, director: Node, cent
 	var r2 := radius * radius
 	for i in sites.count():
 		var k := sites.kind[i]
-		if sites.pos[i].distance_squared_to(centre) > r2:
+		if k != RoadSites.Kind.REST or sites.pos[i].distance_squared_to(centre) > r2:
 			continue
 		var is_lit := k == RoadSites.Kind.REST and lit.has(i)
 		if not (seen.has(i) or is_lit):
 			continue
-		if k == RoadSites.Kind.REST:
-			out.append([sites.pos[i], Marker.REST_LIT if is_lit else Marker.REST_UNLIT, i])
-		elif director != null and not (director.call("loot_at", i) as Dictionary).is_empty():
-			out.append([sites.pos[i], Marker.LOOT, i])
+		out.append([sites.pos[i], Marker.REST_LIT if is_lit else Marker.REST_UNLIT, i])
 	return out
 
 
@@ -297,8 +297,6 @@ static func marker_color(m: int) -> Color:
 	match m:
 		Marker.REST_LIT:
 			return BEACON_LIT
-		Marker.LOOT:
-			return LOOT_COLOR
 	return BEACON_UNLIT
 
 
@@ -308,6 +306,7 @@ func _process(delta: float) -> void:
 	visible = is_live()
 	if not visible or car == null:
 		return
+	update_carried_label()
 	var f := -car.global_transform.basis.z
 	set_view(Vector2(car.global_position.x, car.global_position.z), Vector2(f.x, f.z))
 	_since_draw += delta
@@ -319,7 +318,7 @@ func _process(delta: float) -> void:
 		_markers_dirty = false
 		_since_markers = 0.0
 		if streamer != null:
-			_markers = site_markers(streamer.sites, rest_stops.lit_sites if rest_stops != null else {}, loot,
+			_markers = site_markers(streamer.sites, rest_stops.lit_sites if rest_stops != null else {},
 				car_xz, view_m)
 	# Slide and turn the flat map under the car: screen = anchor + R(θ)·(p − car).
 	var k := float(_vp.size.x) / view_m
@@ -327,6 +326,26 @@ func _process(delta: float) -> void:
 	_roads.rotation = theta
 	_roads.position = anchor + ((_draw_centre - car_xz) * k).rotated(theta)
 	_overlay.queue_redraw()
+
+
+# The line under the frame: the action you can take here, then what you're carrying.
+func update_carried_label() -> void:
+	var lines: PackedStringArray = []
+	if rest_stops != null and rest_stops.prompt_site() >= 0:
+		lines.append("Enter / A: open rest stop")
+	var n := WorldSession.list("carried").size()
+	if n > 0:
+		lines.append("Carrying %d item%s" % [n, "" if n == 1 else "s"])
+	carried_label.visible = not lines.is_empty()
+	carried_label.text = UITheme.caps("\n".join(lines))
+
+
+# Which way the outer rings lie on screen: from the car, straight away from spawn (the world
+# origin), as a unit vector in this control. Zero right at spawn, where every way is out.
+func outward_dir() -> Vector2:
+	if car_xz.length() < 1.0:
+		return Vector2.ZERO
+	return (world_to_local(car_xz + car_xz.normalized() * 50.0) - world_to_local(car_xz)).normalized()
 
 
 func draw_radius() -> float:
@@ -373,21 +392,10 @@ class MarkerLayer:
 			var col := MiniMap.marker_color(mk[1])
 			col.a *= fade
 			var ink := Color(0.0, 0.0, 0.0, 0.9 * fade)
-			if mk[1] == MiniMap.Marker.LOOT:
-				var r := 4.5 * s
-				var dia := PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)])
-				var sh := PackedVector2Array()
-				for q in dia:
-					sh.append(q + Vector2(1.5, 1.5))
-				draw_colored_polygon(sh, ink)
-				draw_colored_polygon(dia, col)
-				dia.append(dia[0])
-				draw_polyline(dia, ink, 1.0)
-			else:
-				var r := 3.8 * s
-				draw_circle(p + Vector2(1.5, 1.5), r + 1.0, ink)
-				draw_circle(p, r + 1.0, ink)
-				draw_circle(p, r, col)
+			var r := 3.8 * s
+			draw_circle(p + Vector2(1.5, 1.5), r + 1.0, ink)
+			draw_circle(p, r + 1.0, ink)
+			draw_circle(p, r, col)
 		# The car: a chevron pointing up (where the car points), near the bottom middle.
 		var cp := map.screen_of(Vector2(0.5, map.car_depth))
 		var a := 6.0 * UITheme.UI_SCALE
@@ -400,3 +408,14 @@ class MarkerLayer:
 		draw_colored_polygon(arrow, UITheme.GREEN)
 		arrow.append(arrow[0])
 		draw_polyline(arrow, Color.BLACK, 1.0)
+		# A small arrow circling the car, pointing out toward the outer rings.
+		var d := map.outward_dir()
+		if d != Vector2.ZERO:
+			var tip := cp + d * a * 3.2
+			var side := d.orthogonal() * a * 0.55
+			var out := PackedVector2Array([tip, tip - d * a + side, tip - d * a - side])
+			var out_shadow := PackedVector2Array()
+			for q in out:
+				out_shadow.append(q + Vector2(2, 2))
+			draw_colored_polygon(out_shadow, Color(0, 0, 0, 0.9))
+			draw_colored_polygon(out, BEACON_LIT)

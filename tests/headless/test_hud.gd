@@ -491,8 +491,8 @@ func test_health_grading_recolours_the_fill_only() -> void:
 
 
 # --- Boost gauge (features/forced-induction.md) --------------------------------
-# Same shape as the health gauge: a dial whose fill IS the reading, with its icon in the
-# middle. Shown only on a car with forced induction fitted.
+# Same shape as the health gauge: a strip whose fill IS the reading, with its icon under
+# it. Shown only on a car with forced induction fitted.
 
 func test_boost_gauge_hidden_on_a_naturally_aspirated_car() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
@@ -505,7 +505,7 @@ func test_boost_gauge_hidden_on_a_naturally_aspirated_car() -> void:
 func test_boost_gauge_is_labelled_by_its_own_icon() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
 	var gauge := hud.get_node("BoostGauge") as HudGauge
-	assert_eq(gauge.icon, GaugeIcons.Kind.BOOST, "the boost dial draws the boost glyph")
+	assert_eq(gauge.icon, GaugeIcons.Kind.BOOST, "the boost gauge draws the boost glyph")
 	for child in gauge.get_children():
 		assert_false(child is Label, "the gauge carries no text caption")
 
@@ -534,7 +534,7 @@ func test_boost_gauge_tracks_turbo_and_blower_boost() -> void:
 
 
 # --- Nitrous gauge (features/nitrous.md) ---------------------------------------
-# The boost dial's twin: fill = tank fraction left, own icon, hidden when unfitted.
+# The boost gauge's twin: fill = tank fraction left, own icon, hidden when unfitted.
 
 func test_nitrous_gauge_hidden_when_no_nitrous_is_fitted() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
@@ -569,7 +569,7 @@ func test_nitrous_gauge_tracks_the_tank_fraction() -> void:
 func test_nitrous_gauge_is_labelled_by_its_own_icon() -> void:
 	var hud: CanvasLayer = _scene.get_node("HUD")
 	var gauge := hud.get_node("NitrousGauge") as HudGauge
-	assert_eq(gauge.icon, GaugeIcons.Kind.NOS, "the nitrous dial draws the NOS glyph")
+	assert_eq(gauge.icon, GaugeIcons.Kind.NOS, "the nitrous gauge draws the NOS glyph")
 	for child in gauge.get_children():
 		assert_false(child is Label, "the gauge carries no text caption")
 
@@ -593,18 +593,27 @@ func test_nitrous_and_boost_gauges_are_visually_distinct() -> void:
 	assert_ne(nitrous.icon, boost.icon, "and they carry different glyphs")
 
 
-# Health sits BETWEEN the two flankers, so hiding one on a car that lacks the part
-# leaves health where the eye already expects it. Ordering, not pinned coordinates.
-func test_health_gauge_sits_between_its_two_flankers() -> void:
+# The gauges sit in one row, health first, and a part that isn't fitted closes up
+# instead of leaving a hole. Ordering and adjacency, not pinned coordinates.
+func test_gauges_form_a_gapless_row_with_health_first() -> void:
+	var car: VehicleBody3D = _scene.get_node("Car")
 	var hud: CanvasLayer = _scene.get_node("HUD")
 	var boost := hud.get_node("BoostGauge") as HudGauge
 	var health := hud.get_node("HPGauge") as HudGauge
 	var nitrous := hud.get_node("NitrousGauge") as HudGauge
-	var bx: float = boost.position.x + boost.size.x * 0.5
-	var hx: float = health.position.x + health.size.x * 0.5
-	var nx: float = nitrous.position.x + nitrous.size.x * 0.5
-	assert_lt(bx, hx, "boost sits to the left of health")
-	assert_lt(hx, nx, "nitrous sits to the right of health")
+	var engine: EngineSim = car.drivetrain.engine
+	Config.data.turbo_enabled = true
+	Config.data.nitrous_boost_gain = 0.3
+	Config.data.nitrous_tank_seconds = 4.0
+	engine.nitrous_charge = 4.0
+	await get_tree().process_frame
+	assert_almost_eq(health.position.x + health.size.x, boost.position.x, 0.01, "boost follows health")
+	assert_almost_eq(boost.position.x + boost.size.x, nitrous.position.x, 0.01, "nitrous follows boost")
+	Config.data.turbo_enabled = false
+	await get_tree().process_frame
+	assert_false(boost.visible, "no turbo, no boost gauge")
+	assert_almost_eq(health.position.x + health.size.x, nitrous.position.x, 0.01,
+		"nitrous closes up against health when boost is gone")
 
 
 func test_has_forced_induction_covers_both_parts() -> void:

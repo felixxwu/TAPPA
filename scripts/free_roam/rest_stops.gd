@@ -5,10 +5,10 @@ extends Node
 # The rest stops as gameplay: Dark Souls bonfires (todo/2026-10-19-free-roam-pivot.md decision 9).
 #   * Driving past a rest stop — onto its pad or just along the road beside it, at any speed —
 #     LIGHTS it, makes it the respawn point and fully HEALS the car (`healed`).
-#   * Stopping there (below rest_stop_speed_kmh for rest_stop_hold_s) opens the rest-stop page
-#     (`opened`), once per visit: drive away and come back to be offered it again.
-#   * When the car gives up (DamageModel.gave_up: 0 HP), it respawns at the last lit rest stop,
-#     fully repaired (`respawned`, carrying where the wreck was, for the dropped loot later).
+#   * Pressing menu_select (Enter / gamepad A) there below rest_stop_speed_kmh opens the rest-stop
+#     page (`opened`); the minimap shows the prompt (`prompt_site`).
+#   * When the car gives up (DamageModel.gave_up: 0 HP), `wrecked` opens the wreck page while the car
+#     rolls on with no controls; its Respawn puts the car back at the last lit rest stop, fully repaired (`respawned`, carrying where the wreck was, for the dropped loot later).
 #   * Travel teleports to any lit rest stop. Both moves stream the destination in first
 #     (TerrainStreamer.prefill_at): the one acceptable "load".
 # Rest stop i is site i of TerrainStreamer.sites (RoadSites, kind REST); spawn is site 0, lit
@@ -16,6 +16,8 @@ extends Node
 
 signal lit(site: int)
 signal opened(site: int)
+# The car gave up (0 HP): the host shows the wreck page, whose Continue calls respawn().
+signal wrecked
 signal respawned(site: int, wreck_pos: Vector3)
 signal travelled(site: int)
 signal respawn_point_changed(site: int)
@@ -39,8 +41,8 @@ var last_site := 0:
 var _on_site := -1
 var _last_p := Vector2(INF, INF)  # the car's position last step, for the swept check
 var _primed := false  # false until the first step has noted where the car was spawned
-var _slow_t := 0.0
-var _offered := -1  # the site whose page was already offered this visit
+# Between giving up and the respawn: the car coasts on with no controls and rest stops ignore it.
+var is_wrecked := false
 
 
 func _ready() -> void:
@@ -86,39 +88,41 @@ func _physics_process(delta: float) -> void:
 
 
 # Driving past a rest stop (on its pad or the road beside it, at any speed) lights it, makes it
-# the respawn point and fully heals the car. Stopping there opens the rest-stop page.
-func step(delta: float) -> void:
+# the respawn point and fully heals the car.
+func step(_delta: float) -> void:
+	if is_wrecked:
+		return
 	var p := Vector2(car.global_position.x, car.global_position.z)
 	if not _primed:
 		# The first step after the scene loads (a new game, Continue, or the reload after a parts or
-		# car change) finds the car wherever it was spawned. If that's at a rest stop it has already
-		# ARRIVED there: no page until it drives away and comes back.
+		# car change) finds the car wherever it was spawned: it has already arrived there, not passed.
 		_primed = true
 		_last_p = p
 		_on_site = rest_at(p)
-		_offered = _on_site
 		return
 	var from := _last_p if _last_p.distance_to(p) < 100.0 else p  # a teleport isn't a drive past
 	_last_p = p
 	var i := rest_reached(from, p)
 	if i != _on_site:
 		_on_site = i
-		_slow_t = 0.0
-		if i < 0:
-			_offered = -1
-		else:
+		if i >= 0:
 			_pass(i)
-	if i < 0:
-		return
-	last_site = i
-	var cfg: GameConfig = Config.data
-	if car.linear_velocity.length() * 3.6 < cfg.rest_stop_speed_kmh:
-		_slow_t += delta
-		if _slow_t >= cfg.rest_stop_hold_s and _offered != i:
-			_offered = i
-			opened.emit(i)
-	else:
-		_slow_t = 0.0
+	if i >= 0:
+		last_site = i
+
+
+# The rest stop whose page menu_select would open now, or -1. The speed gate keeps a handbrake
+# (also gamepad A) while sliding past from opening it.
+func prompt_site() -> int:
+	if is_wrecked or _on_site < 0 or car == null:
+		return -1
+	return _on_site if car.linear_velocity.length() * 3.6 < Config.data.rest_stop_speed_kmh else -1
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("menu_select") and prompt_site() >= 0:
+		get_viewport().set_input_as_handled()
+		opened.emit(_on_site)
 
 
 # The car reached rest stop `i`: light it (the first time) and heal the car fully.
@@ -153,7 +157,6 @@ func move_car_to(site: int) -> void:
 	car_teleported_to.emit(_last_p)  # the loot director's sweep too
 	last_site = site
 	_on_site = site
-	_offered = site  # arriving isn't a fresh stop: no page until you leave and come back
 
 
 func travel_to(site: int) -> bool:
@@ -166,10 +169,23 @@ func travel_to(site: int) -> bool:
 
 
 func _on_gave_up() -> void:
-	respawn.call_deferred()
+	is_wrecked = true
+	_set_driverless(true)
+	wrecked.emit.call_deferred()
+
+
+# Scripted control with every input at zero: the car rolls on where it was heading.
+func _set_driverless(on: bool) -> void:
+	car.set("ai_throttle", 0.0)
+	car.set("ai_steer", 0.0)
+	car.set("ai_handbrake", false)
+	car.set("ai_controlled", on)
 
 
 func respawn() -> void:
+	if is_wrecked:
+		is_wrecked = false
+		_set_driverless(false)
 	var wreck := car.global_position
 	move_car_to(last_site)
 	(car.damage as DamageModel).repair(Config.data)
@@ -194,4 +210,4 @@ func name_of(site: int) -> String:
 	if site == 0:
 		return "Home"
 	var region := RegionLibrary.by_id(BiomeDirector.region_of(streamer.settings, streamer.sites.ring[site]))
-	return "Rest stop %d · %s" % [site, String(region.get("name", ""))]
+	return "Checkpoint %d · %s" % [site, String(region.get("name", ""))]

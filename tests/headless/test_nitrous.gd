@@ -27,7 +27,9 @@ func _engine(cfg: GameConfig) -> EngineSim:
 
 
 # Free-rev the engine for `steps` substeps at full throttle, nitrous held or not, and
-# return the omega reached. Neutral (gear 0) keeps the driveline out of it.
+# return the omega reached. Neutral (gear 0) keeps the driveline out of it. Keep `steps`
+# short: once both engines reach the rev limiter, the omega compared is just limiter bounce.
+const CLIMB_STEPS := 30
 func _climb(e: EngineSim, steps: int, nitrous: bool) -> float:
 	e.gear = 0
 	for _i in steps:
@@ -94,15 +96,15 @@ func test_the_gauge_fraction_tracks_the_tank_and_stays_bounded() -> void:
 
 func test_holding_nitrous_makes_more_torque() -> void:
 	var cfg := _cfg()
-	var plain := _climb(_engine(cfg), 150, false)
-	var boosted := _climb(_engine(cfg), 150, true)
+	var plain := _climb(_engine(cfg), CLIMB_STEPS, false)
+	var boosted := _climb(_engine(cfg), CLIMB_STEPS, true)
 	assert_gt(boosted, plain, "nitrous held accelerates the engine harder")
 
 
 func test_a_bigger_gain_makes_more_torque() -> void:
 	# The gain is the "harder" lever of the upgrade ladder.
-	var small := _climb(_engine(_cfg(0.2)), 150, true)
-	var big := _climb(_engine(_cfg(0.9)), 150, true)
+	var small := _climb(_engine(_cfg(0.2)), CLIMB_STEPS, true)
+	var big := _climb(_engine(_cfg(0.9)), CLIMB_STEPS, true)
 	assert_gt(big, small, "a larger boost gain delivers more")
 
 
@@ -221,8 +223,8 @@ func test_refresh_fitment_revives_nitrous_installed_after_the_engine_was_built()
 	cfg.nitrous_tank_seconds = 2.0
 	e.refresh_fitment()
 	assert_eq(e.nitrous_fraction(), 1.0, "a newly fitted tank shows up, and starts full")
-	var plain := _climb(_engine(_cfg(0.0, 0.0)), 150, true)
-	assert_gt(_climb(e, 150, true), plain, "and it actually delivers torque")
+	var plain := _climb(_engine(_cfg(0.0, 0.0)), CLIMB_STEPS, true)
+	assert_gt(_climb(e, CLIMB_STEPS, true), plain, "and it actually delivers torque")
 
 
 func test_refresh_fitment_clears_nitrous_that_has_been_removed() -> void:

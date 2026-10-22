@@ -139,16 +139,8 @@ Distance
 fade is a vertex **shrink-out** over `tree_render_fade_m` before
 `tree_render_distance_m` (opaque, replacing the old screen-door dither, which
 needed `discard`): the shader scales the whole normalized vertex toward the
-bottom-centre pivot. The **near-camera dissolve** is now ALSO a vertex
-shrink-out (not a dither): within `tree_near_fade_end_m` the card scales back
-toward its base, so a tree the camera pushes inside (the chase cam, or a planted
-replay cam) shrinks away instead of dithering out. The near-fade distance is
-measured to the **trunk axis** (the camera projected onto the vertical trunk line,
-clamped to the tree's `[base, base+height]` span), NOT the ground-level base —
-otherwise the chase cam's ~2.5 m elevation (`follow_distance × follow_height_ratio`)
-keeps every base-point distance above `tree_near_fade_end_m` and the collapse never
-fires. Axis distance makes it the horizontal proximity while the camera is inside
-the tree's vertical extent. Both fades multiply into one
+bottom-centre pivot. Trees (and bushes) have **no near-camera shrink**: they keep their full size however
+close the camera gets. The fade multiplies into one
 `scale` in `vertex()`, so `billboard_opaque.gdshader` has **no `discard` at all** —
 the mesh-baked cutout keeps it fully opaque, which keeps early-Z / hidden-surface
 removal ON for the draw (the old per-fragment near dither forced HSR off on
@@ -216,7 +208,7 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
   See `TreeScatter.forest_density`.
 
   It's **per rally event**
-  (`RallyLibrary.event_forestiness` → `cfg.track_forestiness`, written by
+  (`StageFields.event_forestiness` → `cfg.track_forestiness`, written by
   the drawn stage's event dict); a stage that authors none defaults to 1.0 (fully wooded). **Bushes pass the default
   1.0**, so undergrowth covers the whole stage regardless of the forest pattern.
 
@@ -385,21 +377,13 @@ edge. `world.gd` rasterizes this wider footprint into a bush-specific
 
 `Foliage.bush_mesh()` builds the render mesh: it takes the GLB's mesh, keeps the
 imported (tone-matched) foliage texture, and rebuilds the surface as the **shared
-foliage near-fade `ShaderMaterial`** (`shaders/tree_canopy.gdshader`). It's unshaded
+foliage `ShaderMaterial`** (`shaders/tree_canopy.gdshader`). It's unshaded
 and **double-sided** (`cull_disabled`, so the single-sided foliage cards don't vanish
 from behind — `cull_back` is NOT safe here), multiplies the texture by the
 per-instance MultiMesh `COLOR` (the baked-light instance tint) and by a `tint` uniform
 set to `bush_tint` (lifted a touch above the model's authored green so the ground cover
-reads against the grass), and — the reason for the swap — **shrinks out near the
-camera** (`tree_near_fade_start_m` / `tree_near_fade_end_m`): a vertex-stage collapse
-toward the instance origin, so a bush right in front of the camera (the chase cam
-brushing one, or a planted replay cam sitting among them) shrinks away instead of
-filling the frame. Like the trees, the near-fade distance is measured to the trunk
-axis clamped to the bush's `[base, base+canopy_height]` span (the `canopy_height`
-uniform, set from `bush_height_m` in `Foliage.bush_mesh` — bushes scale uniformly, so
-the shader can't read world height off the instance basis), not the ground-level base,
-so the elevated chase cam doesn't keep the collapse from ever firing. This replaced a per-fragment Bayer `discard`; with no `discard`
-the shader keeps early-Z / HSR on for the draw (a mobile-GPU win). `world.gd` builds
+reads against the grass). Like the trees, bushes keep their full size however close
+the camera gets. With no `discard` the shader keeps early-Z / HSR on for the draw (a mobile-GPU win). `world.gd` builds
 the tree field and the bush field back to back.
 
 ## Configuration
@@ -420,16 +404,14 @@ draw calls),
 the tree and removes its hitbox — 0 disables felling), `tree_fell_duration_s`
 (seconds a felled tree takes to tilt flat), `tree_render_distance_m` (cull
 distance), `tree_render_fade_m`
-(shrink-out band), `tree_near_fade_start_m` / `tree_near_fade_end_m` (the
-near-camera shrink range — the instance is fully collapsed within `start` of the
-camera, full size again by `end`), `bush_height_m` (height the ground-cover bush mesh is scaled to),
+(shrink-out band), `bush_height_m` (height the ground-cover bush mesh is scaled to),
 `bush_tint` (albedo tint lifting the bush colour a touch against the grass).
 `GameConfig.tree_params()` packs the scalar scatter knobs for
 `TreeScatter.scatter`; the collision knobs are passed straight to
 `TreeMeshField.build`.
 
 The **forest-patch** knobs live in the `Track` group instead, since they're per-stage:
-`track_forestiness` (0–1, set per rally event by `RallyLibrary.event_forestiness`) and
+`track_forestiness` (0–1, set per rally event by `StageFields.event_forestiness`) and
 `forest_wavelength_m` (Perlin wavelength, default 300). `world.gd` passes them to the
 tree scatter; the bush scatter omits them (forestiness 1.0).
 

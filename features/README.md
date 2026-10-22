@@ -143,7 +143,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Roadside signs | `scripts/sign_layout.gd` (`SignLayout` planner), `scripts/sign_field.gd` (`SignField` builder) |
 | Finish arch | `scripts/finish_arch.gd` (`FinishArch`), `tools/render_model.gd` |
 | Corner barriers | `scripts/barrier_layout.gd` (`BarrierLayout` planner), `scripts/barrier_field.gd` (`BarrierField` builder), `scripts/barrier_section.gd` (`BarrierSection` module), `tools/render_barriers.gd`/`.sh` |
-| Camera | `scripts/chase_camera.gd`, `scripts/camera_manager.gd` (`CameraManager` — modes, cycle, persistence) |
+| Camera | `scripts/chase_camera.gd`, `scripts/camera_manager.gd` (`CameraManager` — modes, cycle, persistence), `tools/bonnet_clearance.gd` (per-car bonnet cam height) |
 | HUD | `scripts/hud.gd` |
 | Pacenote strip | `scripts/pacenotes.gd` (`Pacenotes` — note list, arrow keys, progress fractions), `scripts/hud.gd` (the strip), `scripts/stage_manager.gd` (advance) |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |

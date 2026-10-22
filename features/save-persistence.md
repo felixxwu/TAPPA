@@ -1,332 +1,85 @@
 # Save / Persistence
 
-> **Free-roam pivot (2026-10):** `SCHEMA_VERSION` is 8. The profile is `cars`, `lifetime`, `world` (the persistent free-roam world, [world-session.md](world-session.md)), `settings` and the cloud fields. The money, run slot, regions-cleared, boost-level, skill and challenge keys are deleted, and every v7 profile is refused.
+**Source:** `scripts/save_manager.gd` (`Save` autoload).
 
-The **`Save` autoload** (`scripts/save_manager.gd`, registered in
-`project.godot [autoload]` alongside `Config`) is the single source of truth for
-everything the meta-game mutates: owned cars (each with its own HP and tuning),
-money, the in-progress run, and lifetime/progression state. It persists as JSON
-at `user://profile.json` so progress survives a restart on both desktop and the
-web build.
+**Tests:** `tests/headless/test_save_manager.gd`, `tests/headless/test_save_web_lifecycle.gd`
 
-> **This file describes the save shape mid-pivot** (`todo/roguelike-pivot.md`).
-> The persistent parts model, the star ledger and their migration ladder are
-> gone outright — see "What's gone" below. The rally-reveal / map-pin state
-> (`KEY_RALLIES`'s `revealed` field, `RallyLibrary.rally_revealed`) is
-> **still live in code today** even though decision 1 retires the world map:
-> it is a deliberate stopgap kept until `todo/roguelike-pivot-plan.md` stage 4
-> lands region select and `regions_cleared` becomes the real unlock ledger — see
-> "Region unlock: transitional" below. Don't be surprised to find both a dead
-> ledger and a live-but-doomed one in the same schema; that's the state of the
-> pivot as of this writing.
-
-**Tests:** `tests/headless/test_save_manager.gd`, `tests/headless/test_save_web_lifecycle.gd`, `tests/headless/test_save_sandbox.gd`, `tests/headless/test_cloud_sync.gd`
-
-It is deliberately **separate from `Config`**: `Config` holds the authored
-car/world tuning baseline (a duplicate of `game_config.tres`); the profile is
-per-player mutable progress. `Save` stores tuning *numbers* but never touches
-`GameConfig` — the car-fielding code reads stored tuning and writes the live
-`Config.data` (mirroring how `car.gd`'s `apply_car` reshapes it).
+The **`Save` autoload** (registered in `project.godot [autoload]` alongside `Config`) is the
+single source of truth for everything the player's progress mutates: owned cars (each with
+its own HP, tuning and fitted parts), lifetime stats, the persistent free-roam world and
+settings. It persists as JSON at `user://profile.json` so progress survives a restart on both
+desktop and the web build.
 
 ## Data model
 
-The profile is a plain `Dictionary` mirroring the JSON shape (keeps load / save
-/ migration as pure dict transforms with no engine-class coupling):
+The profile is a plain `Dictionary` mirroring the JSON shape (`_default_profile()` is the
+whole schema):
 
-- `world` — the persistent free-roam world (`Save.KEY_WORLD`), owned by `WorldSession`; see
-  [world-session.md](world-session.md). `SCHEMA_VERSION` 8 introduced it and refuses every v7
-  profile.
-- `schema_version` — bumped on breaking shape changes; older files migrate
-  forward on load, newer files are refused (not truncated).
-- `starter_picked` / `starter_model_id` — first-run starter state. The starter is
-  **chosen by the player**, not auto-granted: on a first run (no `starter_picked`)
-  the HQ title's Start opens the car park's starter picker (MX-5, Focus or Twingo, the three
-  authored-body cars); picking one calls `grant_car(model_id)`, sets
-  these fields + the selection, and enters the garage. See `features/menus.md`.
+- `schema_version` — currently **8**. Anything else, older or newer, is refused (see
+  *Durability* below).
+- `starter_picked` / `starter_model_id` — first-run starter state.
 - `next_instance_id` — monotonic counter minting unique owned-car ids.
-- **The two most widely-read keys are NAMED on `SaveManager`:** `Save.KEY_CARS`
-  (`"cars"`) and `Save.KEY_RALLIES` (`"rallies"`), used by every consumer
-  (`rally_library.gd`, `region_stage_pool.gd`, `hub_shell.gd`, `cloud/cloud_sync.gd`, …)
-  instead of the bare literal — the cloud-sync copy is
-  why a missed rename would be a cross-device DATA bug rather than a crash. Their
-  VALUES are on-disk key strings: frozen unless a `SCHEMA_VERSION` bump and a
-  `_migrate_step` come with the change. `car_library.gd` still spells `"cars"`
-  literally in `wheel_catalogue`, deliberately: it is the one profile reader with
-  no `Save` dependency at all, and naming the key is not worth adding one.
-- `cars` — array of **instance-based** owned cars. Each is a unique instance
-  (`instance_id`) referencing a `CarLibrary` model id (`model_id`), carrying its
-  own `hp`, `wheel_toe`, `tuning` deltas and `wheels` (cosmetic).
-  Two cars of the same model can diverge. **`boosts` and `drivetrain_override` are NOT
-  stored here** — a run's picked boosts, its picked drivetrain conversion, and the
-  player's equipped skills are all merged onto a
-  DUPLICATE at fielding time and must never reach the profile
-  (skills.md (deleted with the free-roam pivot), region-runs.md (deleted with the free-roam pivot) → *Drivetrain conversion*).
-  `installed_upgrades` / `disabled_upgrades` went with the parts
-  model, and `drivetrain_modes_bought` / the persisted `drivetrain_override` went with
-  the permanent-purchase drivetrain model decision 52 superseded. Two further fields
-  support [engine-swap.md](engine-swap.md), both
-  defaulted on read so no `SCHEMA_VERSION` bump was needed for either:
-  - **`swapped_engine`** (string, default `""`) — a non-stock `EngineLibrary` id
-    currently fitted, written/cleared by `Save.swap_engines`; absent/empty means
-    the car runs its own `CarLibrary` stock engine.
-  - **`tuning.engine_detune`** (float, default `1.0`) — a `[0, 1]` torque scale
-    living in the existing `tuning` bag, written by `Save.set_engine_detune`.
-  - **`wheel_toe`** (`Array` of 4 floats, default `[0.0, 0.0, 0.0, 0.0]`,
-    ordered like `DamageModel.WHEEL_NAMES`) — per-wheel damage misalignment in
-    radians, written by `Save.set_wheel_toe` and defaulted on read for old
-    saves; see `features/damage.md`.
-  - **`wheels`** (string, default absent — absence means "stock wheels") — a
-    non-stock wheel cosmetic id fitted to the car, written/erased by
-    `Save.set_wheels`; purely visual, see `features/wheel-customization.md`.
-- `selected_instance_id` — the owned car the player has **selected** (the one raised
-  on the garage tuning lift; see `features/tuning.md`). Resolved lazily by
-  `Save.selected_car()`, which self-heals to the first owned car when the stored id
-  is unset (`-1`) or no longer owned (damage never removes a car — this covers a
-  hand-edited or migrated profile). Selecting a car also
-  **promotes it to the front of `cars`** (`set_selected_car` moves the matching
-  entry to index 0, shifting the rest down) — so the car park shows the
-  most-recently-selected car first, and that order persists across relaunches
-  (car park lineups iterate `cars`).
-- `inventory` — `{ item_id -> count }`: the **unlocked pool** of not-yet-applied
-  upgrades (won but kept for later). Nothing shipped is a consumable any more, but
-  the key is deliberately generic — `Save.add_item` / `Save.consume_item` work on
-  any id — so it stays as the home for anything counted rather than slotted.
-  Adding one is just a new key: no `SCHEMA_VERSION` bump, and an absent key reads
-  as count 0.
-- `rallies` — `{ rally_id -> { completed, best_combined_ms, best_placed, revealed } }`.
-  Completion count is the single progression metric; `best_placed` is the best (lowest)
-  finishing position ever achieved there (drives the world-map star rating).
-  `revealed` is the **new-rally reveal acknowledgement** — whether the map-table reveal
-  sequence has shown the player that this rally opened up (`Save.rally_revealed_seen` /
-  `Save.mark_rally_revealed`; see [menus.md](menus.md) → "New-rally reveal"). It lives
-  in the same per-rally record as `completed` so everything known about a rally is in one
-  place and a rally id that stops existing takes its flag with it instead of orphaning an
-  entry in a parallel list. Only the ACKNOWLEDGEMENT is stored, never the unlock — which
-  rallies are open stays derived, exactly as the special-event gate is (below).
-  A missing key reads `false` through the normal `.get` default, so no `SCHEMA_VERSION`
-  bump was needed.
-  **The backfill:** `false` is the wrong default for an EXISTING save — a career with a
-  dozen open rallies would be met by a dozen-pin parade on next launch.
-  `Save.needs_reveal_seeding()` reports "has career progress, yet not one rally carries a
-  `revealed` flag" (a pre-feature save, or one just pulled down by a cloud restore).
-  The seeding itself is `Save._seed_reveals_if_needed()`, called by `Save` ITSELF at the
-  two points a profile actually becomes live — the tail of `load_or_new()` and the tail
-  of `adopt_profile()` (the cloud-restore path) — rather than left as a call site a scene
-  has to remember to make. (An earlier version had the map screen call it from two of its
-  own entry points; that shape meant a THIRD future path replacing the profile could
-  silently forget it, so it moved into `Save` where it seats itself automatically. The
-  lesson outlived the screen.) It marks everything already open
-  (via `RallyLibrary.rally_revealed`) plus everything already completed — so the "no
-  flags at all" state can't survive the pass — as seen, silently, with NO eligible-car
-  check: seeding's job is "anything already open already reads as seen", not "anything
-  the player can currently enter", and skipping that clause kept `Save` independent of the
-  eligibility query. The reveal PARADE that consumed these flags is deleted with the map
-  table, so nothing reads them today — the flags are still written, and a flat "here is
-  what just opened" beat could use them.
-- **Region unlock is not stored here at all** — `RegionLibrary` no longer gates
-  anything (it's look + waterline only, see [regions.md](regions.md)). (An
-  earlier `showdown_unlocked`/`showdown_completed` pair of persisted, never-read
-  flags was removed — see `todo/one-map-four-corners.md`, "Resolved: the last
-  six decisions" item 7.)
-- **The reveal gate rides entirely on the existing per-rally `completed`
-  flag and each rally's authored `map_pos` — no new save state.**
-  `RallyLibrary.rally_revealed` is a live, geometric comparison of a rally's
-  `map_pos` against the lit circles of every completed rally in the profile
-  (`lit_sources`) — nothing is precomputed or persisted for it, and it treats
-  `special: true` rallies no differently from ordinary ones. Winning a
-  gated upgrade part (`UpgradeDef.unlocked_by_rally`) reads the same
-  `completed` flag on the naming special's rally record — again nothing new.
-  See [region-stage-library.md](region-stage-library.md) for the ladder and
-  the deleted reward system for where the gate is applied to the
-  draw pool.
-- `money` (`Save.KEY_MONEY`) — the **single currency**, and the whole economy's
-  persisted state (`todo/roguelike-pivot.md` decision 21; it replaced the deleted
-  `stars_earned` / `stars_spent` star ledger outright, with no migration).
-  `Save.money()` reads it, `add_money()` banks, `spend_money()` debits and refuses an
-  unaffordable purchase rather than going negative. There is deliberately **no
-  `lose_money`**: a failed run keeps every penny it earned (decision 14), and money is
-  banked at each stage CLEAR rather than at run end (decision 36). Sources and sinks
-  are in region-runs.md (deleted with the free-roam pivot). **A fresh profile is not broke** (decision
-  28): `_default_profile()` seeds `KEY_MONEY` from `GameConfig.run_starting_money`
-  rather than `0`, sized so the shop (`HubShell`'s CAR page) is reachable and has
-  something affordable in it from the very first boot — the old three-car starter
-  picker is gone; the shop is how a new player gets a car at all.
-- `boost_levels` (`Save.KEY_BOOST_LEVELS`, id -> level) — purchased **meta** boost
-  levels (`todo/roguelike-pivot.md` "Upgrades — RR's two-tier model", stage 6). A level
-  never touches the live car; it scales the magnitude `BoostLibrary.magnitude_for`
-  hands to a FUTURE in-run pick — see region-runs.md (deleted with the free-roam pivot) → *The meta
-  tier*. `Save.boost_level(id)` / `boost_level_price(id)` / `buy_boost_level(id)`.
-- (DELETED) `engine_swap_unlocked` — the Engine Swap is a mid-run boost now; the
-  flag, its reader and its buyer went together (see [engine-swap.md](engine-swap.md)).
-  Old profiles keep the key on disk, unread and undeclared.
-- `run` (`Save.KEY_RUN`) — **the one run slot**, holding an in-progress run of either
-  kind (a region run or a Daily/Weekly/Monthly challenge). `set_run` / `clear_run` are
-  its only writers, `is_challenge_locked(instance_id)` is the car lock over it, and
-  `RunSession` owns its shape. See region-runs.md (deleted with the free-roam pivot).
-- `reward_history` — model/item ids ever revealed (for the discovery framing).
-- `settings` — a flat `{ key -> value }` bag of player/device preferences (e.g.
-  `mobile_control_scheme`); read/written via `get_setting`/`set_setting`. Old
-  profiles missing it are backfilled on load.
-- `cloud_revision` (int, default 0) / `unsynced` (bool, default false) — the
-  optional cloud-save bookkeeping, described in [cloud-save.md](cloud-save.md).
-  Both arrive via `_migrate`'s key backfill, so neither needed a
-  `SCHEMA_VERSION` bump. `unsynced` is PERSISTED deliberately: progress made
-  offline must still read as unsynced after a relaunch.
+- `cars` (`Save.KEY_CARS`) — array of **instance-based** owned cars. Each references a
+  `CarLibrary` model id (`model_id`) and carries its own `hp`, `tuning`, `wheel_toe`
+  (per-wheel damage misalignment, ordered like `DamageModel.WHEEL_NAMES`) and `parts`
+  (free-roam parts, [loot.md](loot.md)). Two cars of the same model can diverge. A car's
+  `boosts` / `swapped_engine` / `drivetrain_override` are written onto a DUPLICATE at
+  fielding time by `LootRules.fielded` and never reach the profile.
+- `lifetime` (`Save.KEY_LIFETIME`) — `{stat_id: int}`, only ever grows
+  ([lifetime-stats.md](lifetime-stats.md)).
+- `world` (`Save.KEY_WORLD`) — the persistent free-roam world, `{}` until New World. Its only
+  writer is `WorldSession` ([world-session.md](world-session.md)).
+- `settings` — a flat `{ key -> value }` bag of player/device preferences, read/written via
+  `get_setting` / `set_setting`.
+- `cloud_revision` / `cloud_uid` / `unsynced` / `username` — the optional cloud-save
+  bookkeeping ([cloud-save.md](cloud-save.md)). `unsynced` is PERSISTED deliberately:
+  progress made offline must still read as unsynced after a relaunch.
 
-**Credentials are NOT stored here.** `settings` lives inside the blob uploaded
-to Firestore, so auth tokens would be published to the database if they were
-kept in the profile. They live in a separate, never-synced `user://auth.json`
-(see [cloud-save.md](cloud-save.md) › "Credential storage").
+**The named keys are on-disk strings.** Use `Save.KEY_CARS` / `KEY_LIFETIME` / `KEY_WORLD`
+rather than the literal; the cloud-sync copy is why a missed rename would be a cross-device
+DATA bug rather than a crash. **Declare every key you write in `_default_profile()`** — the
+key backfill only knows that dict, and `Save` pushes an error naming any undeclared key it
+sees written (`test_every_persisted_key_written_is_declared_in_the_default_profile`).
 
-`Save` also exposes, for that layer only: the `profile_changed` / `flushed`
-signals, `has_unsynced()` / `mark_synced()`, `adopt_profile()` (runs a
-downloaded profile through the same migrate + sanitise path as a file on disk)
-and `write_conflict_backup()` (a `.conflict.bak` that outlives the rolling
-`.bak`). The dependency runs one way — `Cloud` knows about `Save`, never the
-reverse.
+**Credentials are NOT stored here.** The profile is uploaded to Firestore, so auth tokens
+live in a separate, never-synced `user://auth.json` (see [cloud-save.md](cloud-save.md) ›
+"Credential storage").
 
-Max-HP is **CarLibrary metadata, not stored**; `OwnedCar.hp` is seeded from and
-clamps to it. Opponent times, track geometry, etc. are derived from seeds, not
-saved.
-
-## CarLibrary metadata (prerequisite)
-
-`scripts/car_library.gd` gained additive per-entry metadata that ownership keys
-on: a stable string **`id`** (`mx5`, `focus`, `porsche911`, `viper`, `charger`,
-`xjs` — never reordered/reused, replaces array-index identity for
-persistence), plus `country`, `car_type`, `max_hp`, and `reward_tier`. Helpers:
-`CarLibrary.index_of(id)` / `by_id(id)` resolve a stored id to the current array
-position, and `power_to_weight(entry)` is a derived (not stored) ranking
-heuristic. **`CarLibrary.for_owned(owned)`** is the one spelling of "the
-catalogue entry this OWNED car row resolves to" (`by_id(String(owned.get(
-"model_id", "")))`, previously repeated at ~30 call sites); it returns the same
-empty Dictionary `by_id` does when the row's `model_id` is missing or names a
-model the catalogue no longer carries, so callers keep using `is_empty()` as the
-"this car is gone" test.
+Max-HP is **CarLibrary metadata, not stored**; `OwnedCar.hp` is seeded from it by
+`grant_car`. The world's terrain, roads and sites are derived from its seed, not saved.
 
 ## API
 
-`Save.profile` (the loaded dict), `load_or_new()`, `save()` (debounced ~1s —
-the debounce `Timer` runs with `process_mode = PROCESS_MODE_ALWAYS` so it still
-fires while `get_tree().paused` is true; `pause_menu.gd` holds the tree paused
-for as long as the pause overlay is open, and a pausable timer would strand a
-dirty-but-unwritten mutation for that whole window instead of ~1s — a
-force-quit/crash during that window would then lose it),
-`save_now()` (immediate atomic write), `reset_new_game()`, `has_save()`. Mutators
-that mutate + autosave: `grant_car(model_id)`, `get_car(instance_id)`,
-`apply_damage(instance_id, amount)` (subtracts the lost HP, **clamped at 0** —
-there is no write-off and no wreck record, so the worst a car can persist is a 0-HP
-one that still drives and can still be repaired; see [damage.md](damage.md)),
-`car_needs_repair(instance_id)` / `repair_price(instance_id)` / `repair_car(instance_id)`
-(the star-priced repair sink — "is this car less than pristine", which is ANY lost health
-or bent alignment), `car_handles_badly(instance_id)` (the narrower question the car park's
-red warning asks: is the damage below `damage_misfire_health_threshold`, i.e. actually
-costing engine power),
-`can_buy_part(instance_id, item_id)` / `part_price(item_id)` / `buy_part(instance_id, item_id)`
-(buying a discovered upgrade for a car — see the deleted star economy),
-`owns_model(model_id)`,
-`rally_revealed_seen(rally_id)` / `mark_rally_revealed(rally_id)` (the map's
-new-rally reveal acknowledgement — only the ACKNOWLEDGEMENT is persisted, never the
-unlock, which stays derived; see the deleted map exploration),
-`set_tuning(instance_id, tuning)`,
-`swap_engines(id_a, id_b)` (exchanges two owned cars' CURRENT engines; free,
-unlimited, reversible, gated on both sitting at 100% HP via `EngineSwap.can_swap`
-— see [engine-swap.md](engine-swap.md)),
-`set_engine_detune(instance_id, frac)` (clamped `[0,1]` torque-scale tuning value),
-`selected_car()` / `selected_instance_id()` /
-`set_selected_car(instance_id)` (the lift's selected car, self-healing),
-`get_setting(key, default)` / `set_setting(key, value)` (the preferences bag),
-`add_item` / `consume_item`,
-`install_upgrade` (consumes the part from the unlocked pool and fits it to the
-car **for good** — applied parts accumulate on the car; at most one is ENABLED
-per slot, so applying one disables a same-slot incumbent rather than scrapping
-it, a duplicate of a part already on the car is rejected, and damage never costs a
-car its parts — a 0-HP car keeps everything fitted; see `features/upgrade-catalogue.md`),
-`set_upgrade_enabled(instance_id, item_id, enabled)` (the upgrades-menu toggle —
-free and reversible; enabling a part switches off its same-slot siblings),
-`apply_build_plan(instance_id, plan)` (writes an `UpgradeLibrary.auto_build_plan`
-plan to a car in one go — buys + enables, enables, strips, an optional drivetrain
-override, then the plan's absolute detune; a no-op returning `false` for a plan whose
-`changed` is false or a car that isn't in the save),
-`record_podium_rally(rally_id, combined_ms,
-placed)` (idempotent; keeps the best time **and** best placement; grants no car — cars
-are bought, see the deleted star economy). It **returns the stars it credited
-for THIS finish** — every finish pays what its placement is worth, so a rally can be
-re-driven for stars. (It used to credit only the improvement over the rally's previous
-best, an anti-grind guard that was deliberately removed; the consequence is that star
-income is farmable by replaying an easy rally, and repair/part prices are what hold the
-economy up.) `award_stars` / `spend_stars` / `stars_available` are the non-rally ledger
-API. `rally_podiumed(id)` /
-`podium_rally_count()` / `best_placement(id)` query progress.
-
-**`podium_rally_count()` counts PODIUMS, not finishes — and so does every other field of
-a rally's record.** The gate is on the WRITE, not on any one field: `record_podium_rally` has
-exactly one caller — which was on the deleted career session, inside `_award_podium_rewards`
-and gated on `podium_or_opening` — so a 5th-place finish wrote **nothing** into the rally's
-record.
-`completed`, `best_placed` and `best_combined_ms` are therefore all podium-gated, and
-**there is no untainted sibling field to escape through** — counting `best_placed > 0`
-returns the same podium number under a more honest-sounding name. There is **no
-finished-in-any-position counter in the save schema at all**; a feature that needs one
-must add persistence for it — declared in `_default_profile()` so `_migrate`'s key
-backfill seeds existing saves — rather than deriving it from this record, and no UI
-should read "rallies finished" off it. The per-rally predicate is named
-`rally_podiumed(id)` (it was `rally_completed(id)` until round 015, a name that lied);
-`completed_rally_count()` / `RallyLibrary.completed_count()` survive as deprecated
-one-line wrappers over `podium_rally_count()` / `RallyLibrary.podium_count()`; the
-persisted `completed` KEY is unchanged (renaming it would need a save migration).
+- Load / save: `load_or_new()`, `save()` (debounced), `save_now()`, `flush_and_sync()`,
+  `has_save()`, `reset_new_game()`.
+- Cars: `grant_car(model_id)`, `owns_model(model_id)`, `get_car(instance_id)`,
+  `set_tuning`, `set_wheel_toe`, `set_car_parts`.
+- Lifetime stats: `lifetime_stat(id)`, `add_lifetime_stat(id, amount := 1)`.
+- Settings: `get_setting(key, default)`, `set_setting(key, value)`.
+- For the cloud layer only: the `profile_changed` / `flushed` signals, `has_unsynced()` /
+  `mark_synced()`, `adopt_profile()` (runs a downloaded profile through the same migrate +
+  sanitise path as a file on disk) and `write_conflict_backup()` (a `.conflict.bak` that
+  outlives the rolling `.bak`). The dependency runs one way — `Cloud` knows about `Save`,
+  never the reverse.
 
 ## Durability & integrity
 
 - **Atomic writes:** write to `profile.json.tmp`, then rename over the real file;
   the prior file is kept as `profile.json.bak` for one generation.
+- **Debounced:** `save()` arms a ~1 s one-shot timer (`SAVE_DEBOUNCE_SEC`) that keeps running
+  while the tree is paused, so a burst of mutations is one write.
 - **Load fallback chain:** primary → `.bak` → fresh default. A corrupt/garbage
   file is never silently overwritten (parsed via the `JSON` instance API so
   malformed input returns an error code rather than crashing).
-- **Unknown `model_id`** (a car dropped from `CarLibrary`) is pruned on load with
-  a warning, keeping old saves loadable as the roster evolves. The same pass
-  (`_prune_unknown_upgrades`) dropped part ids that no longer resolved against the
-  upgrade catalogue; that catalogue is deleted, so the pass has nothing left to prune.
-- **Migration: THERE IS NONE ANY MORE.** `_migrate` refuses any profile whose
-  `schema_version` is not exactly `SCHEMA_VERSION` (currently **7**) — it returns `{}`, and
-  the loader runs on a fresh in-memory profile instead of guessing how to interpret it.
-  What survives of the old chain is one step: a **key backfill** from `_default_profile()`,
-  so a new key added without a version bump appears on an existing profile.
-
-  This is deliberate and it is a ONE-WAY door. The roguelike pivot deleted the career loop,
-  the star ledger and the parts model wholesale, so there is no sensible mapping from a
-  pre-pivot profile: a v6 save's stars, installed upgrades, rally podiums and reward
-  history describe systems that no longer exist. Guessing would hand the player a career
-  reconstructed from nothing. Starting fresh instead is the honest failure.
-
-  **The fresh profile is NOT `save_disabled`.** An earlier version of this refusal path set
-  `save_disabled = true` on the theory of "leave the untrusted file alone" — but that flag
-  blocks *every* future `save()`/`save_now()`, not just one avoided overwrite. Since every
-  pre-pivot save sits at a stale `schema_version`, this branch runs on literally every
-  returning player's first post-pivot launch — so the bug was total and silent: buy a car,
-  finish a run, a whole session of progress, and none of it ever reached disk, because the
-  fresh profile could never save. The same stale file would refuse again next launch, so it
-  never even self-healed. That was the real cause of a "runs and cars bought are not saved"
-  report after the pivot shipped — see `test_a_refused_pre_pivot_profile_can_still_save_new_progress`
-  in `test_save_manager.gd`. The fresh profile now saves exactly like a brand-new one: the
-  player's first legitimate write is what actually supersedes the file the loader couldn't
-  read as current, which is what the "one-way door" was supposed to mean all along.
-
-  > The five authored steps that used to live here (1→2 unbinding the shared inventory
-  > pool, 2→3 clearing a detune with nothing left to duck under, 3→4 seeding adaptive
-  > difficulty's counters, 4→5 and 5→6 grandfathering two re-sited unlocks through
-  > `KEY_LEGACY_PART_UNLOCKS` / `KEY_LEGACY_ENGINE_SWAP`) are all gone with their
-  > subsystems. The PATTERN in 4→5 and 5→6 is the part worth remembering: when content
-  > moves, grandfather the EARNED THING directly, never by marking the new rally completed
-  > — that would also have lit its map-reveal circle and paid its placement stars, handing
-  > over progress and currency never earned.
-
-  **Retired items are NOT a migration.** `_sanitise` erases every id in `RETIRED_ITEM_IDS`
-  (the repair kit, the mystery box, the engine-swap token) from `inventory` on load, with
-  no version bump. The reasoning holds for anything deleted: a stale key is already inert
-  once nothing reads it, whereas a version bump makes older builds refuse the profile
-  outright — a real cost when cloud save moves one profile between devices running
-  different builds. Deleting an item is a one-row change to that list.
+- **Unknown `model_id`** (a car dropped from `CarLibrary`) is pruned on load by `_sanitise`
+  with a warning, keeping old saves loadable as the roster evolves.
+- **No migration.** `_migrate` refuses any profile whose `schema_version` is not exactly
+  `SCHEMA_VERSION` and the loader runs on a fresh profile instead of guessing. What survives
+  is a **key backfill** from `_default_profile()`, so a key added without a version bump
+  appears on an existing profile. **The fresh profile is NOT `save_disabled`:** every
+  returning player hits the refusal on their first launch after a bump, and blocking saves
+  there once meant a whole session's progress never reached disk
+  (`test_a_refused_pre_pivot_profile_can_still_save_new_progress`).
 - **Web build:** on the HTML5 export `user://` is IndexedDB (Emscripten IDBFS) —
   `FileAccess` writes land in an in-memory FS that is pushed to IndexedDB
   *asynchronously*, so a write that hasn't synced when the page goes away is
@@ -357,32 +110,14 @@ persisted `completed` KEY is unchanged (renaming it would need a save migration)
 - **Blocked storage** (private browsing / read-only fs): writes degrade to an
   in-memory-only profile (`save_disabled`) instead of crashing.
 
-## Not yet wired
-
-The special-event gate and the per-rally reveal gate are the one predicate, derived
-LIVE from the profile's completion records and every rally's authored `map_pos` by
-`RallyLibrary` (`rally_revealed()` over `lit_sources()`, see `map-exploration.md`),
-rather than being precomputed and stored on the save — `save_manager.gd` recomputes no
-unlock state on `record_podium_rally`; the only thing it writes beyond the rally record
-itself is the star delta onto `stars_earned` (see the ledger above).
-`item_id`s come from the upgrade catalogue
-(`upgrade-catalogue.md`); `Save` only consumes them as opaque strings.
-
 ## Tests
 
-`tests/headless/test_save_manager.gd` — round-trip, default profile, instance-id
-uniqueness, HP seeding, idempotent rally completion, `apply_damage` clamping at 0 HP
-(the car stays owned, keeps its parts, and is still repairable), the repair sink (price / spend / restore) and the
-narrower `car_handles_badly` warning predicate, inventory counts,
-migration refuse/backfill, corrupt-JSON
-and `.bak` fallback, unknown-model + retired-part pruning, the legacy-NOS revival
-(a nitrous part left parked by the retired ladder comes back ENABLED), new-game reset.
-`tests/headless/test_save_web_lifecycle.gd` — the web lifecycle seam: the shared
-`flush_and_sync()` entry point writes immediately (bypassing the debounce) and
-round-trips, the desktop close notification reaches that same entry point, a
-disabled store stays in-memory, and `install_web_lifecycle()`/`request_web_sync()`
-are inert off web (a browser event can't be fired headlessly, so the tests assert
-either side of it). Both run against a
-throwaway `user://test_profile.json`. CarLibrary metadata + id helpers are
-covered in `test_car_library.gd`; the autoload-registered smoke check is in
-`test_smoke.gd`.
+`tests/headless/test_save_manager.gd` — round-trip, default profile, the paused-tree debounce,
+instance-id uniqueness, HP seeding, `wheel_toe` persistence and backfill, migration
+refuse/backfill (and that a refused profile can still save), settings round-trip, corrupt-JSON
+and `.bak` fallback, unknown-model pruning, new-game reset, the cloud bookkeeping fields, and
+the undeclared-key check. `tests/headless/test_save_web_lifecycle.gd` — the web lifecycle seam:
+the shared `flush_and_sync()` entry point writes immediately (bypassing the debounce) and
+round-trips, the desktop close notification reaches that same entry point, a disabled store
+stays in-memory, and `install_web_lifecycle()` / `request_web_sync()` are inert off web. Both
+run against a throwaway `user://test_profile.json`.

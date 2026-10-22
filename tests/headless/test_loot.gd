@@ -215,6 +215,19 @@ func test_a_site_picked_from_is_spent_for_good() -> void:
 	assert_true(after.has(keep), "the one free site still shows something")
 
 
+func test_spare_sites_favour_everything_but_cars_by_the_item_weight() -> void:
+	var car := {"kind": "car", "id": "a"}
+	var part := {"kind": "part", "id": "b", "level": 0}
+	var rumour := {"kind": "rumour", "ring": 1}
+	var pool := [car, part, rumour]
+	assert_eq(LootRules.weighted_cycle(pool, 1), pool, "weight 1: everything once")
+	var cycle := LootRules.weighted_cycle(pool, 3)
+	assert_eq(cycle.slice(0, pool.size()), pool, "every item shows once before any repeats")
+	assert_eq(cycle.count(car), 1)
+	assert_eq(cycle.count(part), 3)
+	assert_eq(cycle.count(rumour), 3)
+
+
 func test_a_ring_short_of_sites_moves_its_lesser_items_to_a_ring_with_spare() -> void:
 	var s := _settings()
 	var sites := _sites(s)
@@ -385,7 +398,7 @@ func _drive_to(scene: Node3D, p: Vector2) -> void:
 	await get_tree().physics_frame
 
 
-func test_driving_to_loot_carries_it_and_a_rest_stop_banks_it() -> void:
+func test_driving_to_loot_carries_it_and_reaching_a_checkpoint_banks_it() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
 	var st: TerrainStreamer = scene.get_node("Terrain")
@@ -397,12 +410,9 @@ func test_driving_to_loot_carries_it_and_a_rest_stop_banks_it() -> void:
 	assert_eq(WorldSession.list("carried").size(), 1, "carried, not yet yours")
 	assert_true(loot.loot_at(part_site).is_empty(), "the site is emptied")
 	assert_false(_shown_keys(loot.placement).has(key), "and the item is gone from every other site too")
-	var page: RestStopPage = scene.get_node("RestStopPage")
-	page.open(0)
-	assert_eq(page.banked.size(), 1)
-	assert_eq(WorldSession.list("carried").size(), 0)
+	(scene.get_node("RestStops") as RestStops).healed.emit(0)
+	assert_eq(WorldSession.list("carried").size(), 0, "banked on arrival, no page needed")
 	assert_eq(WorldSession.list("stash").size(), 1, "banked into the stash")
-	page.close()
 
 
 # Loot is picked up by driving past it at speed, anywhere on the road beside its pad: the check
@@ -464,23 +474,18 @@ func test_a_car_the_player_owns_never_shows_on_the_ground() -> void:
 		"the starter car is already yours")
 
 
-func test_loot_on_the_ground_has_a_beam_and_a_name_and_they_go_when_it_is_taken() -> void:
+func test_loot_on_the_ground_has_a_name_and_it_goes_when_the_loot_is_taken() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
 	var site: int = loot.placement.keys()[0]
 	var marker := loot.beacons.get_node_or_null("Loot%d" % site) as Node3D
-	assert_not_null(marker, "a beam over the loot")
-	# Far off: a faint beam and no name. Close: a stronger beam, and the name shows.
+	assert_not_null(marker, "a name over the loot")
+	assert_null(marker.get_node_or_null("Beam"), "loot has no beam: the crystal marks it")
 	var cfg: GameConfig = Config.data
-	var beam := marker.get_node("Beam") as Node3D
 	var p := marker.global_position
-	loot.beacons._fit(beam, p + Vector3(cfg.beacon_range_m * 0.9, 0, 0), cfg)
-	var far_a := SiteBeacons.beam_color(beam).a
-	loot.beacons._fit(beam, p + Vector3(5, 0, 0), cfg)
-	assert_gt(SiteBeacons.beam_color(beam).a, far_a, "the beam is fainter the further off it is")
 	var label := marker.get_node("Label") as Label3D
 	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m + 50.0, 0, 0))
-	assert_false(label.visible, "far off, the beam doesn't say what it is")
+	assert_false(label.visible, "far off, no name")
 	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m * 0.5, 0, 0))
 	assert_true(label.visible, "close up, it does")
 	assert_eq((marker.get_node("Label") as Label3D).text, LootRules.ground_label(loot.placement[site]).to_upper())
@@ -488,7 +493,12 @@ func test_loot_on_the_ground_has_a_beam_and_a_name_and_they_go_when_it_is_taken(
 	await get_tree().process_frame
 	assert_false(loot.placement.has(site))
 	var gone := loot.beacons.get_node_or_null("Loot%d" % site)
-	assert_true(gone == null or gone.is_queued_for_deletion(), "the emptied site's beam goes")
+	assert_true(gone == null or gone.is_queued_for_deletion(), "the emptied site's name goes")
+	var rest_beam := loot.beacons.get_node("Rest%d" % (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)[0]) as Node3D
+	loot.beacons._fit(rest_beam, rest_beam.global_position + Vector3(cfg.beacon_range_m * 0.9, 0, 0), cfg)
+	var far_a := SiteBeacons.beam_color(rest_beam).a
+	loot.beacons._fit(rest_beam, rest_beam.global_position + Vector3(5, 0, 0), cfg)
+	assert_gt(SiteBeacons.beam_color(rest_beam).a, far_a, "a beam is fainter the further off it is")
 	var rest := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)[0]
 	assert_not_null(loot.beacons.get_node_or_null("Rest%d" % rest), "every rest stop has a beam")
 
@@ -635,11 +645,26 @@ func test_the_journal_and_parts_pages_are_navigable() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_eq(page.view, RestStopPage.View.JOURNAL)
-	assert_gt(page.cards().card_count(), 0, "the revealed biome's loot is listed")
+	var regions: int = page.loot.journal().size()
+	assert_gt(regions, 0)
+	assert_eq(page.cards().card_count(), regions, "a card per revealed region")
+	assert_eq(page.get_viewport().gui_get_focus_owner(), page.cards())
+	var ring := int(page.loot.journal()[0]["ring"])
+	page.cards()._confirm_selected()
+	page.cards().skip_confirm_flash()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(page.view, RestStopPage.View.REGION)
+	assert_eq(page.journal_ring, ring)
+	assert_eq(page.cards().card_count(), (page.loot.journal()[0]["items"] as Array).size(),
+		"a card per item in that region")
 	assert_eq(page.get_viewport().gui_get_focus_owner(), page.cards())
 	var e := InputEventAction.new()
 	e.action = "ui_cancel"
 	e.pressed = true
+	MenuNav.of(page._page)._unhandled_input(e)
+	await get_tree().process_frame
+	assert_eq(page.view, RestStopPage.View.JOURNAL, "back from a region returns to the region list")
 	MenuNav.of(page._page)._unhandled_input(e)
 	await get_tree().process_frame
 	assert_eq(page.view, RestStopPage.View.MAIN)

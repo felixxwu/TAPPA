@@ -160,6 +160,18 @@ func test_on_back_fires_for_ui_cancel_and_menu_back() -> void:
 	assert_eq(hits[0], 2, "on_back fired for both ui_cancel and menu_back")
 
 
+# A Back that changes the scene takes the menu out of the tree mid-press; the press must still be
+# consumed without touching the (now missing) viewport.
+func test_a_back_that_removes_the_menu_from_the_tree_still_handles_the_press() -> void:
+	var menu := _make_flat_menu(2)
+	add_child_autofree(menu)
+	var nav := MenuNav.attach(menu, {on_back = func() -> void: remove_child(menu)})
+	await get_tree().process_frame
+	nav._unhandled_input(_press("ui_cancel"))
+	assert_false(menu.is_inside_tree(), "the Back ran")
+	add_child(menu)
+
+
 # The framework goes inert while its menu is hidden, so a hidden overlay can't eat
 # input meant for whatever is actually on screen.
 func test_hidden_menu_does_not_consume_back() -> void:

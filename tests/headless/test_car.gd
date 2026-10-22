@@ -761,8 +761,8 @@ func test_held_car_stays_put_under_steady_disturbance() -> void:
 # (and their steer axle re-captured on re-parent), the car would track straight.
 func test_bent_front_wheels_veer_the_car_via_physics() -> void:
 	CarFixtures.install()
-	var cfg: GameConfig = Config.data
-	var t := cfg.damage_wheel_toe_max
+	# A fixed, clearly-bent toe: the tunable damage_wheel_toe_max would tie the result to its tune.
+	var t := 0.1
 	# Both front wheels toed the same way about the car-up axis = a physical steer.
 	_car.apply_owned({"model_id": "fx_light_rwd", "wheel_toe": [t, t, 0.0, 0.0]})
 	await _wait_physics(4)

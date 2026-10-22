@@ -3,16 +3,14 @@
 **Sources:** `scripts/tuning_library.gd` (`TuningLibrary`), the brake-bias split in
 `scripts/drivetrain.gd`, the `Tuning` group in `scripts/game_config.gd`, the
 fielding hook in `scripts/car.gd` (`apply_owned`), the reusable slider UI in
-`scripts/tuning_panel.gd` (`TuningPanel`), and its one remaining host — the pre-event
-start line (`scripts/start_line.gd`). The garage tuning lift, its other host, is deleted
-with the diegetic hub.
+`scripts/tuning_panel.gd` (`TuningPanel`), and its one host — the rest-stop page's TUNE
+sub-page (`scripts/free_roam/rest_stop_page.gd`).
 Player state lives on each `OwnedCar` (`Save`,
 [save-persistence.md](save-persistence.md)).
 
 **Tests:** `tests/headless/test_tuning_library.gd`, `tests/headless/test_tuning_panel.gd`, `tests/headless/test_drivetrain.gd`
 
-**Tuning** is the **free, reversible** per-car handling nudge, made at the start line
-before a stage. It used to be the free half of *Tuning & upgrades*, opposite the
+**Tuning** is the **free, reversible** per-car handling nudge, made at a rest stop. It used to be the free half of *Tuning & upgrades*, opposite the
 persistent parts model — that model is deleted, and what
 [upgrade-catalogue.md](upgrade-catalogue.md) documents now is the effects funnel run
 boosts and skills share. Tuning is **ungated on every axis** (decision 24); the "needs X
@@ -54,22 +52,9 @@ and it has **no slider at all right now**: it was never in the tuning panel (det
 power / power-to-weight knob, not a handling axis), it lived in the `UpgradesGrid`'s
 `tune` tile, and that grid is deleted with the parts model.
 
-**So the field is stored, read and applied, but unreachable.** `Save.set_engine_detune` and
-`TuningLibrary.apply`'s clamp are both live, and it still feeds
-`UpgradeLibrary.effective_meta`, so a detuned car reads as less powerful everywhere — which
-matters for the Rally Challenge's rating ceiling, the one place a car can still be too
-powerful to enter (rally-challenge.md (deleted with the free-roam pivot)). A future screen that wants to
-let a player duck under that ceiling has the whole mechanism waiting; nothing today writes
-it.
-The over-ceiling UX today is the hub CAR page: an over-cap car for a challenge
-period is SHOWN but unconfirmable ("Over the rating cap" on its card,
-`hub_shell.gd::_build_car`), with the period ceiling from
-`ChallengeRunMode.displayed_ceiling`. Shedding power means detuning — the one
-deliberate power-to-weight reduction lever left post-pivot (ballast and
-part-stripping are retired with the parts model; see
-[engine-swap.md](engine-swap.md)). The old car-park "Too powerful" prompt, the
-upgrades-grid detune tile (`UpgradesGrid._detune_label_text`) and its gated close
-button are deleted with their hosts.
+**So the field is stored, read and applied, but unreachable.** `TuningLibrary.apply`'s clamp
+is live and it still feeds `UpgradeLibrary.effective_meta`, so a detuned car reads as less
+powerful everywhere; nothing today writes it.
 
 ## Application (`TuningLibrary.apply`)
 
@@ -99,9 +84,9 @@ or invert a value:
   (`apply_car`, no `OwnedCar`) uses the car's default directly. A car that omits the
   field falls back to the `GameConfig.brake_bias` default.
 
-Tuning is resolved **once at fielding**, like `apply_car` — not re-applied mid-run.
+Tuning is resolved **once at fielding**, like `apply_car`, and re-derived by `Car.retune` when it changes.
 
-**Live re-derive baseline (start line).** `Car.retune` (tune change) and
+**Live re-derive baseline.** `Car.retune` (tune change) and
 `Car.refit_upgrades` (upgrade change) re-derive the live config without re-fielding.
 Both go through one shared `Car._rederive_live_config`: restore a **single full baseline**
 (`_live_baseline`, a `{property: value}` snapshot of every `GameConfig` script variable,
@@ -144,12 +129,10 @@ state, not an ending (see [damage.md](damage.md) "state, not event").
 ## The tuning UI (`TuningPanel`)
 
 The three handling-axis sliders live in one reusable control, `TuningPanel`
-(`scripts/tuning_panel.gd`, a `VBoxContainer`), shared by both places tuning is
-offered. Each labeled slider row (name + value column, slider, extremity labels,
+(`scripts/tuning_panel.gd`, a `VBoxContainer`), hosted by the rest-stop page. Each labeled slider row (name + value column, slider, extremity labels,
 and the focus highlight) is built by the shared `SliderRow.build` helper
-(`scripts/slider_row.gd`), which the upgrades grid's detune slider popup uses too
-(`UpgradeSlotPopup.open_slider`) — so a slider looks and behaves the same wherever the
-game offers one. It owns the slider rows, the **Reset to neutral** action, and the
+(`scripts/slider_row.gd`), so a slider looks and behaves the same wherever the game offers
+one. It owns the slider rows, the **Reset to neutral** action, and the
 immediate `Save.set_tuning`
 persistence; a host binds it with `setup(owned_car, on_change, on_wheels := Callable())`
 and calls `refresh()`, and is notified via `on_change` after each edit so it can re-field
@@ -162,52 +145,26 @@ the car. There are no locked axes to grey out any more: tuning is ungated on eve
 `TuningPanel` **builds** its two action buttons — **Reset to neutral** (`_reset_button`) and
 **Wheels** (`_wheels_button`) — but deliberately does **not** parent them. It exposes them via
 `action_buttons() -> Array[Button]` (in left-to-right order) and the HOST places them in the
-page's single centred bottom action row, beside that page's own `< Back`: `start_line.gd` →
-`_build_menu_overlay` picks them up generically via
-`component.has_method("action_buttons")`, which is the pattern for any future host (the
-deleted lift overlay did the same by name). They used to be full-width rows
+page's single centred bottom action row, beside that page's own `< Back` (the rest-stop
+page loops over `action_buttons()`). They used to be full-width rows
 stacked inside the panel's own body, which made the page read as a different kind of screen —
 see [ui-design-system.md](ui-design-system.md) → *A page's actions go in ONE bottom row*. A host
 that never adds them shows them nowhere and never frees them.
 
 The **Wheels** button (native `FOCUS_ALL` like the sliders and Reset) fires `on_wheels()`.
 `on_wheels` defaults to an invalid `Callable`, and `TuningPanel` **hides** the button
-whenever the host did not wire one (`_wheels_button.visible = _on_wheels.is_valid()`) — the
-start line has nowhere sensible to send a mid-run wheel swap, so it leaves `on_wheels`
-unset and the button is hidden. **That makes the button unreachable today**: its only host
-was the HQ lift, which wired it to the car park's solo wheel view. See
+whenever the host did not wire one (`_wheels_button.visible = _on_wheels.is_valid()`). The
+rest-stop page leaves it unset, so **the button is unreachable today**. See
 [wheel-customization.md](wheel-customization.md).
 
-`TuningPanel`'s sibling for the upgrades half, `UpgradesGrid` (`scripts/upgrades_grid.gd`),
-is deleted with the parts model — and with it the **engine detune** slider it owned. Only
-the handling axes are tunable now.
-
-- **Pre-event start line** (`start_line.gd`) — a **Tune Car** button under
-  **Start** opens a centered overlay hosting the panel, bound to the car
-  about to race (`Save.get_car(RunSession.car_instance_id())`). Its `on_change`
-  calls **`Car.retune`** (NOT `apply_owned`): tuning only shifts config fields
-  read live each physics step, so `retune` restores the pre-tuning baseline (a
-  snapshot taken in `apply_owned` before `TuningLibrary.apply`) and re-applies the
-  new tuning — no wheel relocation, pose reset, or engine rebuild. Re-fielding a
-  live, staged `VehicleBody3D` via `apply_owned` would relocate its wheels
-  (detach/re-attach) and reset its pose, corrupting the body (wheels drop through
-  the floor — see the `Car.respawn` note). Handling tuning only: the start line's
-  **Upgrades** overlay, which used to host the engine detune and enforce a rating
-  ceiling on closing, is deleted with the parts model. Car swaps are not offered.
-
-## The tuning lift is DELETED
-
-Tuning's other home was the garage **tuning lift** — a diegetic 3D bay in `hq.tscn` where
-the selected car rose on a platform beam and the camera flew to a front three-quarter
-shot, with a hub page offering Tune / Upgrades / Test Drive and a `[ < ] [ CAR ] [ > ]`
-selector that swapped the car on the lift in place. All of it went with the hub (decision
-9), along with the `UpgradesGrid` page beside it and the `SettingsMenu` dev-page hook that
-rebuilt the lift car after a dev fit.
-
-**The start line is the only place tuning is offered now.** Nothing in the flat hub tunes a
-car — see hub-shell.md (deleted with the free-roam pivot) for what its pages do offer. `Save.selected_car` /
-`set_selected_car` (the "car on the lift" pointer) still exist and are still persisted; see
-[save-persistence.md](save-persistence.md).
+- **Rest-stop TUNE page** (`free_roam/rest_stop_page.gd`) — the panel bound to the active
+  car. Its `on_change` calls **`Car.retune(LootRules.fielded(owned))`** (NOT `apply_owned`):
+  tuning only shifts config fields read live each physics step, so `retune` restores the
+  pre-tuning baseline (a snapshot taken in `apply_owned` before `TuningLibrary.apply`) and
+  re-applies the new tuning — no wheel relocation, pose reset, or engine rebuild.
+  Re-fielding a live `VehicleBody3D` via `apply_owned` would relocate its wheels
+  (detach/re-attach) and reset its pose, corrupting the body (wheels drop through the
+  floor — see the `Car.respawn` note).
 
 ## Tests
 
@@ -218,12 +175,8 @@ car — see hub-shell.md (deleted with the free-roam pivot) for what its pages d
   the chosen axle (`brake_bias` 1.0 locks the front, 0.0 the rear); `0.5` regression.
 - `tests/headless/test_tuning_panel.gd` — the shared `TuningPanel` in isolation: a
   slider per axis, editing writes the axis + fires `on_change`, Reset clears the deltas,
-  and a tune bakes into the config via `TuningLibrary.apply`. (The lift-hosted cases that
-  lived in `test_menu_flow.gd` went with the lift; its slider-alignment case was salvaged
-  into this file.)
-- `tests/headless/test_start_line.gd` — the pre-event overlay offers a focusable
-  **Tune Car** button; opening it shows the tuning overlay (hiding Start) and Back
-  returns.
+  and a tune bakes into the config via `TuningLibrary.apply`.
+- `tests/headless/test_free_roam_rest_stops.gd` — the rest-stop TUNE page and its nav.
 - `tests/headless/test_retune.gd` — `Car.retune` applies a changed tuning to the
   live config, is idempotent (no compounding), and does NOT reshape/reset the body
-  (the start-line drop-through-floor regression).
+  (the drop-through-floor regression).

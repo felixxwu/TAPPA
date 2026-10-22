@@ -299,36 +299,12 @@ correctly.
 
 ### Refreshing live UI after a download
 
-A pull that REPLACES the local profile (first sign-in on a new device, or "Use
-cloud" on a conflict) changes the career out from under a running HQ. `CloudSync`
-emits **`profile_replaced`**, re-emitted by `Cloud`. The deleted `hq.gd` rebuilt on it
-(`_on_cloud_profile_replaced`): clearing its car cache, rebuilding the lineup or the lift
-car depending on the view, and refreshing the map pins.
-
-**`HubShell` connects to it for `MAIN` only** (`_on_profile_replaced` → re-`_show(MAIN)`).
-MAIN is the page whose contents are decided the instant it is shown and cannot wait: the
-**Resume run** card is offered from `RunSession.resumable_run(Save.profile, …)`, so a run
-that arrived with the boot pull was invisible on first load until the player navigated away
-and back. Every other view is left alone — the player is mid-interaction on it, and
-`_show()` frees and rebuilds each page on entry, so a page opened after the download is
-correct anyway. The residual gap is cosmetic: a non-MAIN page already on screen when the
-download lands keeps a stale money figure or car list until the player leaves it.
-
-**The handler no-ops until the HQ exists (`_hq_built`).** `_ready` connects
-`profile_replaced` *before* it awaits the boot pull — it has to, since that pull is
-what emits the signal — so on a signed-in boot the handler fires while `_pins_root`,
-`_overlays` and the lineup are all still null. Rebuilding them there crashed
-(*"Cannot call method 'get_children' on a null value"*, intermittent: only when the
-cloud copy actually replaced the local profile at boot). There is nothing to do in
-that window anyway — `_build_hq()` runs straight after the await and constructs every
-one of those views from the profile the signal just settled. Pinned by
-`test_cloud_boot_gate.gd` →
-`test_a_download_landing_during_the_boot_wait_does_not_touch_an_unbuilt_hq`.
-
-Without it the player signs in, their cars are restored *on disk*, and the car
-park still shows the empty lot they started with until they relaunch — the save
-worked but nothing on screen said so. Distinct from `state_changed`, which is
-only about sync status.
+A pull that REPLACES the local profile (first sign-in on a new device, or "Use cloud" on a
+conflict) changes the save out from under the running game. `CloudSync` emits
+**`profile_replaced`**, re-emitted by `Cloud`. **Nothing subscribes to it today** — the deleted
+hubs rebuilt on it. A free-roam world already running keeps driving on the in-memory world it
+loaded; a consumer that wants to react should no-op until its own views exist, since the
+boot pull can land before they are built.
 
 ## Error handling
 
@@ -351,12 +327,7 @@ already works:
   `show_account`, an entry in `_pages` and in the category grid). This is the
   canonical route, reachable from the title screen's Settings button before any
   career is started — which is the reinstall / new-device case.
-There were two other hosts, both deleted: the standings page's inline sign-in prompt
-(`global_standings.gd`), which mounted the same widget so a player could sign in without
-leaving the leaderboard, and — before that — a dedicated Account button on the title row
-with its own modal layer. The second was removed deliberately: the Settings page already
-covered the same need from the same screen, and two routes into one optional-cloud-save
-form is one more than a title screen needs.
+It is the only host: two routes into one optional form is one more than the game needs.
 
 Signed out: Google (hidden when unconfigured) / sign in with email / create an
 account. There is deliberately no "continue without an account" button — that is
@@ -390,18 +361,11 @@ again by signing back in.
 
 ## Boot-time race: the gate, and its MISSING CONSUMER
 
-> **READ THIS FIRST: nothing waits for the boot pull any more.** Every consumer described
-> below was on `hq.gd`, and the diegetic hub is deleted (decision 9). `HubShell._ready`
-> awaits nothing — it builds its MAIN page immediately. The `Cloud` half of the mechanism
-> is intact, live and tested (`test_cloud_boot_gate.gd`); what is gone is the caller.
->
-> **The hazard is therefore real again**, in a new shape: the starter picker that made it
-> concrete is deleted too (decision 28 hands a fresh profile money and sends it to the car
-> shop), but the hub lets a returning player **buy a car or start a run** the instant it
-> opens, and either writes the profile and marks it `unsynced` — which is exactly what
-> turns an arriving download into a conflict prompt over a career they never lost.
-> Re-wiring it is a small change with a UI question attached (what does the player look at
-> while it waits?), which is why stage 9 flagged it rather than inventing an answer.
+> **READ THIS FIRST: nothing waits for the boot pull.** `title_boot.gd` hands straight over to
+> free roam, and free roam writes the world block as soon as it drives. The `Cloud` half of
+> the mechanism is intact, live and tested (`test_cloud_boot_gate.gd`); what is missing is a
+> caller. Re-wiring it is a small change with a UI question attached (what does the player
+> look at while it waits?).
 
 **The race.** `Cloud._ready` calls `auth.restore()` then defers `_kick_off_initial_pull` —
 a network round trip. The game reaches an interactive screen in about a second, well before
@@ -413,18 +377,14 @@ the one thing they just did, and either answer loses data.
 
 **Waiting for the pull is not sufficient on its own.** The pull can settle as a CONFLICT
 (both sides moved on), in which case the download was NOT applied and a real career may be
-sitting in the cloud right now. The old gate released anyway and offered the starter pick —
-and picking one WRITES to the profile, so "keep this device" stopped meaning "keep what I
-had" and started meaning "keep the fresh save I was just handed". A player hit exactly
-this: signed in, progress apparently lost, happily allowed to pick a starter, conflict
-popup never shown. **So a consumer must check `ConflictPrompt.is_blocked()` after the
-wait**, not just the wait itself.
+sitting in the cloud right now. Any write after that makes "keep this device" mean "keep the
+fresh save I was just handed" — a player once hit exactly this with the old starter pick.
+**So a consumer must check `ConflictPrompt.is_blocked()` after the wait**, not just the wait
+itself.
 
-**Gating the BUILD costs an offline player nothing**, which is the non-obvious part and
-the reason the old hub gated its title too: `initial_pull_pending` is *already* false for
-anyone without a stored credential, so the narrow gate is free. Without it the screen was
-built from the LOCAL profile and then visibly rebuilt a second or two later, and the player
-watched their garage pop in.
+**Gating the BUILD costs an offline player nothing**, which is the non-obvious part:
+`initial_pull_pending` is *already* false for anyone without a stored credential, so the
+narrow gate is free.
 
 ### The surviving mechanism (`cloud_manager.gd`)
 
@@ -449,19 +409,18 @@ here. Worth remembering elsewhere in this codebase: **a lambda closing over a pl
 to receive a signal's result is the shape to be suspicious of** — a member field or a
 one-element array/dict survives value capture, a bare local does not.
 
-### What a consumer owed, when there was one
+### What a consumer owes
 
-The deleted `hq.gd` did four things, and a re-wiring owes the same four:
+The deleted HQ did four things, and a re-wiring owes the same four:
 
-1. **Await before building**, so the screen is built once from the settled profile
-   (`_await_boot_pull` → `_build_hq()`), re-labelling the loading screen already on screen
-   rather than stacking a second cover.
+1. **Await before building**, so the screen is built once from the settled profile,
+   re-labelling the loading screen already on screen rather than stacking a second cover.
 2. **Await again before any profile-writing action**, and **re-check the state
    afterwards** — the pull may have delivered a real career while it waited.
 3. **Check `ConflictPrompt.is_blocked()`** and block on an unsettled conflict: "decide
    later" means no new career begins, "use cloud" restores the real one.
-4. **React to a download that lands anyway** (`_on_cloud_profile_replaced`) by backing out
-   of whatever would double-write.
+4. **React to a download that lands anyway** (`profile_replaced`) by backing out of
+   whatever would double-write.
 
 Two invariants it must not break, both still pinned in `test_cloud_boot_gate.gd`: a pull
 that never lands still reveals the screen (the cap is the backstop), and a pull that
@@ -529,10 +488,9 @@ nothing, and `cloud_sync` then refused every later push with "Resolve the sync c
 first." Cloud saving silently stopped, with the only thing that could clear it hidden
 behind a page the player had no reason to visit.
 
-Three hosts used to raise the same prompt: `account_menu.gd`, `hq.gd` (always in the tree,
-so a conflict reached the player wherever they were) and the boot gate. **Only the account
-page is left** — the other two were on the deleted hub — so a conflict now reaches the
-player only if they happen to open Settings → Account. That is the same gap the boot gate
+**Only the account page raises it today** (the always-in-tree hub and the boot gate that
+also did are deleted), so a conflict reaches the player only if they happen to open
+Settings → Account. That is the same gap the boot gate
 above describes, from the other end. The account page's private copy of the resolution
 handlers was DELETED rather than kept in parallel; keeping it is what let the behaviour
 drift in the first place.

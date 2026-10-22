@@ -4,14 +4,15 @@ extends RefCounted
 # Tests: tests/headless/test_free_roam.gd — extend in the same change.
 # The places that hang off the road network, planned once at boot from the whole graph
 # (todo/2026-10-19-free-roam-pivot.md, decisions 30–31):
-#   REST     — rest stops, one every `rest_stop_spacing_m` of road (a per-ring setting), counted
+#   REST     — rest stops, one every `rest_stop_spacing_m` of road (set per region), counted
 #              along the roads outward from spawn. Spawn itself is the first one.
-#   LOOT     — loot pull-ins along the roads, every `loot_slot_spacing_m`. These are SLOTS: stage 7
-#              decides which hold something.
+#   LOOT     — loot spots in the middle of the road, every `loot_slot_spacing_m`, picked up by
+#              driving over them. These are SLOTS: stage 7 decides which hold something.
 #   DEAD_END — the clearing at the end of every road that stops (a node with one road, not spawn).
 #              Each gets a payoff later.
-# Each site is a flat round pad beside (or at the end of) its road. RoadTerrain flattens the ground
-# under it to the road's height and reads it as road surface, so the car can pull in.
+# Rest stops and dead ends are flat round pads beside (or at the end of) their road. RoadTerrain
+# flattens the ground under one to the road's height and reads it as road surface, so the car can
+# pull in. A loot spot has no pad (radius 0) and leaves the ground alone.
 
 enum Kind { REST, LOOT, DEAD_END }
 
@@ -31,7 +32,9 @@ var ring := PackedInt32Array()
 var edge := PackedInt32Array()       # the road link it hangs off (-1 for spawn)
 var node := PackedInt32Array()       # the junction for spawn and dead ends, else -1
 var _grid := {}  # Vector2i -> PackedInt32Array
-var _blend := 12.0
+var _blend := 12.0  # the widest a pad's blend can reach
+var _blend_min := 12.0
+var _max_slope := 0.25
 var _max_r := 0.0
 
 
@@ -50,7 +53,9 @@ func of_kind(k: Kind) -> PackedInt32Array:
 # Plan every site. `terrain` is used for land checks and pad heights, and must not have these
 # sites attached yet (its heights would read the pads being planned).
 func build(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain) -> void:
-	_blend = s.pad_blend_m
+	_blend = s.pad_blend_max_m
+	_blend_min = s.pad_blend_m
+	_max_slope = s.pad_blend_max_slope
 	var adj := {}
 	for ei in net.edges.size():
 		var e := net.edges[ei]
@@ -60,7 +65,7 @@ func build(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain) -> void:
 		adj[e.y].append(ei)
 	# Spawn: the first rest stop, centred on the spawn junction.
 	_add(Kind.REST, Vector2.ZERO, Vector2.ZERO, Vector2.RIGHT, s.rest_stop_radius_m, terrain, -1, 0)
-	# Rest stops and loot pull-ins: breadth-first from spawn, carrying "road since the last one"
+	# Rest stops and loot spots: breadth-first from spawn, carrying "road since the last one"
 	# into each junction (the least over the ways in), so the gap along any drive is about the
 	# spacing. Rest stops go first over the whole network, so loot can keep clear of them.
 	for k in [Kind.REST, Kind.LOOT]:
@@ -110,7 +115,6 @@ func _place_along(k: Kind, s: FreeRoamSettings, net: RoadNetwork, terrain: RoadT
 	for i in pts.size() - 1:
 		cum.append(cum[i] + pts[i].distance_to(pts[i + 1]))
 	var length := cum[cum.size() - 1]
-	var r := s.rest_stop_radius_m if k == Kind.REST else s.loot_pad_radius_m
 	var last := -since
 	var guard := 0
 	while guard < 1000:
@@ -123,8 +127,11 @@ func _place_along(k: Kind, s: FreeRoamSettings, net: RoadNetwork, terrain: RoadT
 		var p := _at(pts, cum, at_s)
 		var d := (_at(pts, cum, minf(at_s + 1.0, length)) - _at(pts, cum, maxf(at_s - 1.0, 0.0))).normalized()
 		var ok := false
-		if k == Kind.REST or not _near_site(p, s.rest_stop_radius_m + 40.0):
-			ok = _try_roadside(k, s, net, terrain, ei, p, d, r)
+		if k == Kind.REST:
+			ok = _try_roadside(k, s, net, terrain, ei, p, d, s.rest_stop_radius_m)
+		elif not _near_site(p, s.rest_stop_radius_m + 40.0) and not terrain.is_water(p.x, p.y):
+			_add(k, p, p, d, 0.0, terrain, ei, -1)
+			ok = true
 		# no room here (water, another road, a rest stop): try again a little further on
 		last = at_s if ok else at_s - spacing + RETRY_STEP_M
 	return length - last
@@ -166,6 +173,8 @@ func _add(k: Kind, c: Vector2, a: Vector2, d: Vector2, r: float, terrain: RoadTe
 	edge.append(ei)
 	node.append(n)
 	_max_r = maxf(_max_r, r)
+	if r <= 0.0:
+		return  # no pad, so nothing for the terrain or planting to look up
 	var reach := r + _blend
 	for gx in range(floori((c.x - reach) / GRID_M), floori((c.x + reach) / GRID_M) + 1):
 		for gy in range(floori((c.y - reach) / GRID_M), floori((c.y + reach) / GRID_M) + 1):
@@ -176,11 +185,8 @@ func _add(k: Kind, c: Vector2, a: Vector2, d: Vector2, r: float, terrain: RoadTe
 
 
 static func rest_spacing_at(s: FreeRoamSettings, terrain: RoadTerrain, p: Vector2) -> float:
-	var r := terrain.ring_index(p.x, p.y)
-	var table := s.rest_stop_spacing_m
-	if table.is_empty():
-		return 300.0
-	return maxf(50.0, table[mini(r, table.size() - 1)])
+	var region := BiomeDirector.region_of(s, terrain.ring_index(p.x, p.y))
+	return maxf(50.0, RegionLibrary.rest_stop_spacing_of(region, s.rest_stop_spacing_m))
 
 
 func _near_site(p: Vector2, d: float) -> bool:
@@ -210,8 +216,8 @@ func outside(i: int, x: float, y: float) -> float:
 
 # The nearest site the car's path from `a` to `b` (this frame's travel) came within reach of — its
 # pad radius plus `margin` from its centre — among those `want(i)` accepts; -1 if none. Swept, so a
-# fast car can't skip over a site between two frames. A pad sits beside its road, so a margin of
-# the road's full width means driving past on either lane counts.
+# fast car can't skip over a site between two frames. A rest stop's pad sits beside its road, so a
+# margin of the road's full width means driving past on either lane counts.
 func reached(a: Vector2, b: Vector2, margin: float, want: Callable) -> int:
 	var lo := Vector2(minf(a.x, b.x), minf(a.y, b.y)) - Vector2.ONE * (margin + 50.0)
 	var hi := Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + Vector2.ONE * (margin + 50.0)
@@ -231,8 +237,9 @@ static func road_margin(s: FreeRoamSettings) -> float:
 	return s.road_half_width_m * 2.0 + s.road_shoulder_m
 
 
-func blend_m() -> float:
-	return _blend
+# How wide a pad's blend back to the land is, given the height gap `dh` it has to cover there.
+func blend_m(dh: float) -> float:
+	return clampf(absf(dh) / maxf(_max_slope, 0.001), _blend_min, _blend)
 
 
 # Every site whose pad touches the axis-aligned box.

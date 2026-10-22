@@ -1,26 +1,19 @@
 # Regions
 
-> **Free-roam pivot (2026-10):** regions are now worn by the **biome rings** of the free-roam island (`FreeRoamSettings.ring_regions`, `BiomeDirector`; see [free-roam.md](free-roam.md) → *Biomes*). Region unlock gating, the region page and region runs are deleted; a region is its look, its handling and the loot/weather of the ring that wears it.
+**Source:** `scripts/region_library.gd` (`RegionLibrary`), worn in free roam by the biome rings
+(`FreeRoamSettings.ring_regions`, `scripts/free_roam/biome_director.gd`, `TerrainStreamer`'s
+per-ring materials and foliage) and on the dev stage by `world.gd._apply_region_look`.
 
-**Source:** `scripts/region_library.gd` (`RegionLibrary`), `scripts/region_stage_library.gd`
-(`RegionStageLibrary` — the region's authored 8×3 stage grid, replacing the deleted
-`RallyLibrary.RALLIES`/`region` tag), `world.gd._apply_region_look` (and
-`_current_region_look`), `scripts/region_stage_pool.gd` (the run's stage draw) and
-`HubShell`'s REGION page.
+**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_assets.gd`, `tests/headless/test_free_roam_biomes.gd`
 
-**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_stage_library.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_menu_nav.gd`
+In free roam each **biome ring** of the island wears a region: its look, its handling and the
+loot / weather of that ring ([free-roam.md](free-roam.md) → *Biomes*). Region unlock gating,
+region pages and region runs are deleted.
 
-**Adding a region takes TWO edits.** An entry in `RegionLibrary.REGIONS` is inert on
-its own — the only thing that ever selects a region is a matching key in
-`RegionStageLibrary.STAGES`. Add the region AND **an 8×3 stage grid keyed with its
-id** (`scripts/region_stage_library.gd`), or you have shipped a region that renders
-nowhere while every region test still passes. `tests/headless/test_region_assets.gd` →
-`test_every_region_has_authored_stages` guards this. Do both edits in the same change —
-"ready for stages to be authored later" is a shipped half-feature.
-
-The old `map_pos`/`suggest_map_pos`/`MIN_PIN_SEPARATION` per-rally pin-fitting
-machinery is deleted (`todo/region-stage-slots-redesign.md`) along with the world map
-it placed pins on — a region no longer needs a map position at all.
+**Adding a region:** an entry in `RegionLibrary.REGIONS`, a place in `ring_regions` for free
+roam to wear it, and — because the dev stage and its tests still draw from it — an 8×3 stage
+grid keyed with its id in `scripts/region_stage_library.gd`
+(`test_region_assets.gd` → `test_every_region_has_authored_stages` guards that).
 
 **A region that is a variant of another inherits, it does not clone.** Author
 `look_from` plus only the keys that differ — see
@@ -33,61 +26,25 @@ pick from it; the `-greece`/`-snow` naming convention makes fabricated names loo
 plausible, and a dangling path ships as an untextured world. Guarded by
 `test_region_assets.gd` → `test_every_authored_region_resource_path_resolves`.
 
-A **region is a LOOK plus a WATERLINE** — sky, ground textures, foliage, sea
-height — applied to whichever rallies are tagged with it. It is **not a corner
-of the map**, even though it started life that way. The game ships five, in
-their authored progression `order` (see *Progression* below): `home` ("The
-Green", the original green forest/plain world), `greece` ("The Dunes",
-arid), `taiga` ("The Taiga", the NW boreal corner: home's look with one much
-taller tree), `home_coast` ("The Lakes", that same forest look with the sea
-raised — its `water_level` is set MUCH higher than every other region's, so
-the lakes read as unmistakably flooded) and `snow` ("The Alps", the alpine NE
-massif — see [snow-region.md](snow-region.md)).
+A **region is a LOOK plus a WATERLINE**, plus optional HANDLING. The game ships five (`RegionLibrary.ordered()` lists them in authored `order`; free roam's
+rings wear the ones named in `FreeRoamSettings.ring_regions`, spawn outward): `home` ("The
+Green", the original green forest/plain world), `greece` ("The Dunes", arid), `taiga` ("The
+Taiga", home's look with one much taller tree), `home_coast` ("The Lakes", the same forest
+look with the sea raised MUCH higher than every other region, so the lakes read as unmistakably
+flooded) and `snow` ("The Alps" — see [snow-region.md](snow-region.md)).
 
-**`greece_coast` ("The Coast") was removed (2026-09).** It was the arid
-shoreline look — `look_from: "greece"` plus a raised `water_level` — worn by
-five rallies (`gc_island_gp`, `gc_harbour_run`, `gc_cliff_road`,
-`gc_olive_terraces`, `gc_lighthouse_climb`). Rather than deleting that content,
-every one of those rallies was retagged to `region: "greece"` and its events'
-per-event `water_level` repointed from the old coastal `-4.0` to greece's own
-baseline `-12.0` — see `scripts/rally_library.gd`. `home_coast` ("The Lakes")
-remains the game's one lake/coastal-water look.
-
-**A region is no longer look-only.** `snow` also carries HANDLING: per-surface grip
-overrides, a deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS`
-(exactly as `water_level` does) because they are consumed by
-`StageConfig.apply_event_config` at stage setup, not by `world.gd`'s look pass after
-generation. Each is a `has_*` / `*_of` pair for the same value-vs-absent reason
-`water_level_of` documents, and none is inherited through `look_from`.
-Every rally is pinned on the one world map (`textures/map_world.jpg`, 848x848)
-at once, and **regions do not unlock in sequence**: there is no "next region"
-gate, and **no region-level gate of any kind** —
-a region's only job is its LOOK and its `water_level`
-(`RegionLibrary.REGIONS`'s header comment states this explicitly). Progression
-gating is the LINEAR REGION UNLOCK (decision 12) — see *Progression* below.
-`RegionLibrary.is_unlocked` reads `Save.KEY_REGIONS_CLEARED`, and a rally is simply part
-of whichever region's pool it is tagged into.
-
-The geometric rule this replaced is worth one line so nobody looks for it: a rally became
-enterable once the player's lit map reached its `map_pos` (`rally_revealed` /
-`lit_sources`), which was itself a replacement for a roster-wide star total and then a
-completed-rally counter. All three are deleted with the map. The
-credits/win beat fires once **every** special event is completed
-(`RallyLibrary.all_specials_completed`), not tied to any region — see
-[region-stage-library.md](region-stage-library.md).
-
-The map's NW corner is the `taiga` region ("The Taiga") and carries five rallies,
-all re-tagged out of `home` — which is what pulls `home` in to the map's centre.
-
-The map's NE snow massif is now the `snow` region ("The Alps") and carries six
-rallies. See [snow-region.md](snow-region.md).
+**A region is not look-only.** `snow` also carries HANDLING: per-surface grip overrides, a
+deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS` (exactly as
+`water_level` does) because they are consumed as handling — by `BiomeDirector.apply_handling`
+in free roam and `StageConfig.apply_event_config` on the dev stage — not by the look pass.
+Each is a `has_*` / `*_of` pair for the same value-vs-absent reason `water_level_of`
+documents, and none is inherited through `look_from`.
 
 ## `RegionLibrary` (`scripts/region_library.gd`)
 
-An authored catalogue, parallel to `RallyLibrary`/`CarLibrary`: `const REGIONS:
-Array[Dictionary]`. **Array order carries no meaning** — regions don't unlock
-in sequence and there's no "final" region, so nothing may depend on a region's
-position in the array. Each entry has an `id` + `name`, an optional `water_level`,
+An authored catalogue, parallel to `CarLibrary`: `const REGIONS:
+Array[Dictionary]`. **Array order carries no meaning** — each entry's `order` field is what
+`ordered()` sorts by. Each entry has an `id` + `name`, an optional `water_level`,
 optional look-override keys (a missing key inherits the scene/`GameConfig`
 baseline), and an optional `look_from` (see below). Ships today:
 
@@ -116,8 +73,8 @@ baseline), and an optional `look_from` (see below). Ships today:
   undergrowth). Being the one region with no ground cover at all, it is also the
   **stoniest**: it carries the catalogue's highest `rock_density`, and rocks are
   what fill a verge that would otherwise read as bare ([rocks.md](rocks.md)).
-  It also overrides `tarmac_color` (a quite-a-bit-brighter,
-  sun-bleached asphalt vs. home's darker grey), `road_marking_color` (yellow
+  It also overrides `tarmac_color` (a dark, warm asphalt — its roads are
+  tarmac in free roam), `road_marking_color` (yellow
   lane paint instead of home's off-white) and `grass_particle_color` (a dry
   olive/tan wheel-dust blade, since home's green particle would read as a
   mismatch on this arid ground). Terrain tints are still **not** overridden —
@@ -186,17 +143,11 @@ still gets rocks. Greece is stoniest, the Alps sparsest, everything else the mid
 rock models, colours and hitboxes are shared across all regions, so density is the only
 thing that varies. See [rocks.md](rocks.md).
 
-**Where the look is applied depends on the world.** On a STAGE there is exactly one region, so
-`world.gd::_apply_region_look` pushes it wholesale (see "How a look is applied" below). In the
-**overworld** the player drives across all of them at once, so `Overworld._apply_region_look`
-splits the look three ways: the sky cross-fades over TIME, the ground blends SPATIALLY at the
-fixed boundary from a rank baked into the terrain, and the foliage/rock keys are read per chunk
-as it is scattered. Two of the keys here therefore reach the ground shader twice over: every
-region's `terrain_tint` and `tarmac_color` are uploaded together as a rank→look LUT
-(`Overworld.region_look_lut`, `_push_region_lut`) so distant ground of ANY region paints in its
-own colours, while `grass_texture` still cross-fades between only the two regions nearest the car
-(a texture sampler cannot live in a uniform array). Both belong to the deleted overworld;
-the split is recorded here because the LUT idea is the reusable half.
+**Where the look is applied depends on the world.** On the dev stage there is exactly one
+region, so `world.gd::_apply_region_look` pushes it wholesale (see "Theming the dev stage"
+below). In free roam the player crosses rings, so `TerrainStreamer` builds per-ring ground
+materials and reads the foliage/rock keys per chunk as it scatters, and `BiomeDirector` fades the
+sky and applies the handling of the ring the car is in ([free-roam.md](free-roam.md)).
 
 Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
 are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
@@ -218,6 +169,18 @@ for two different reasons:
   step too late in the pipeline. This is also why `look_from` inheritance
   explicitly does NOT extend to `water_level` (see below) — the whole point of
   `home_coast` is "same look, own (much higher) waterline."
+
+### Checkpoint spacing (`rest_stop_spacing_of`)
+
+`"rest_stop_spacing_m"` is the metres of free-roam road between checkpoints in the ring
+wearing this region (`RoadSites.rest_spacing_at`). A region without it uses
+`FreeRoamSettings.rest_stop_spacing_m`. Not inherited through `look_from`.
+
+### Road surface (`has_tarmac_roads`)
+
+`"road_surface": "tarmac"` makes a region's free-roam roads paved (default `"gravel"`). Like
+`water_level`, it is not inherited through `look_from`. Free roam reads it per ring
+(`RoadTerrain.tarmac_weight`, see [free-roam.md](free-roam.md) → "Biomes").
 
 ### Region waterline (`water_level_of` / `has_water_level`)
 
@@ -292,7 +255,7 @@ roam / unknown id); `RegionLibrary.spawns_bush_mesh(look)` returns the
 tree its species, and multiple `BillboardField`s replay-reset fine (`world.gd`
 walks every foliage child for `reset_fallen`).
 
-Like `RallyLibrary`/`CarLibrary`, `RegionLibrary` sits behind a `Registry.Seam`
+Like `CarLibrary`, `RegionLibrary` sits behind a `Registry.Seam`
 (`static var _seam := Registry.Seam.new(REGIONS)`) so tests can
 `override_for_test(regions)` a synthetic catalogue and `reset()` after —
 **never** pin the shipped `REGIONS` values or Greek asset paths in a test (see
@@ -300,12 +263,7 @@ CLAUDE.md's catalogue-testing rule).
 
 ### Helper API (all static, catalogue-driven)
 
-- `all()` / `by_id(id)` / `index_of(id)` / `count()` — lookups.
-- `region_for_rally(rally_id)` — looks the rally up in `RallyLibrary.all()`,
-  returns the owning region dict (`.get("id")` for the id string; `{}` if the
-  rally or its region tag is unknown).
-- `rallies_in(region_id)` — the `RallyLibrary` entries tagged to this region,
-  in author order.
+- `all()` / `by_id(id)` / `index_of(id)` / `count()` / `ordered()` — lookups.
 - `look_of(region_id)` — returns **only the keys the region (and, via
   `look_from`, its parent) actually overrides** (filtered through
   `LOOK_KEYS`), not a fully-merged dict against the `GameConfig`/scene
@@ -320,7 +278,7 @@ CLAUDE.md's catalogue-testing rule).
 `resolve_look(region_id)` that *merges* each field with an explicit
 `GameConfig` baseline. The shipped code is `look_of`, which returns
 override-only keys — because the grass/gravel/sky **baselines live in
-`main.tscn`** (the floor's `chunk_material` shader params, the
+the scene** (the floor's `chunk_material` shader params, the
 `WorldEnvironment`'s sky), not in `GameConfig` fields. Merging against a
 `GameConfig` baseline that doesn't hold those values wasn't possible; instead
 `world.gd` applies overrides selectively, so home's un-overridden scene values
@@ -332,81 +290,14 @@ because leaving the sky at "whatever the shared scene material currently holds"
 leaked the previous stage's sky — see "The sky no longer leaks between stages"
 below. Grass and gravel still follow the override-only rule.
 
-## Rallies tagged by region
-
-Every `RallyLibrary.RALLIES` entry carries `"region": "<region_id>"`. See
-[region-stage-library.md](region-stage-library.md) for the roster itself and per-rally
-`map_pos` / `special` geometric-reveal semantics.
-
-**Regions are not quadrants, and membership is lopsided.** Pins are positioned by
-`tools/fit_map_pins.py`, which optimises the PROGRESSION GRAPH, not the scenery — so
-every re-fit slides pins across terrain zones and the geography under them has to be
-re-read afterwards (the 2026-08 pass did exactly that: names, `region` tags and
-per-event terrain were all re-authored to match the pixels, while the save-key `id`s
-stayed put). A region tag says only "this stage wears this look at this waterline",
-and the tags follow the terrain — the five `taiga` rallies are the NW cluster,
-re-tagged out of `home` when that corner was split off (their `id`s still carry
-older prefixes, so read `region`, never the id). **`greece_coast` was removed
-(2026-09)**: its five rallies were retagged to `region: "greece"` rather than
-deleted (see the note in "Ships today" above), so `greece`'s count grew and
-there is no longer a `greece_coast` count at all. The coastal look is worn only
-by `home_coast`'s rallies, the handful of pins genuinely standing on water.
-Nothing may assume a region owns a contiguous patch of map, holds a minimum
-number of rallies, or holds any at all.
-
-**The old per-region invariant is retired.** Before globally-gated special
-events, the rule was "at most one showdown per region, and exactly one wherever
-a region holds rallies" (`RegionLibrary.showdown_of` picked that one rally out).
-Specials are now gated by the same geometric reveal rule as every other rally
-(`RallyLibrary.rally_revealed`), so they have no relationship to a region's
-contents: **a region may hold any number of specials, including none.** Today
-they are bunched — four sit in `home` and one in `greece`, with `home_coast`
-holding none — precisely because nothing in the code cares; it's map
-composition, not a gating rule. A region holding zero specials still resolves
-its look/waterline normally.
-
-`RallyLibrary.incomplete_rallies_enterable_by` (the anti-soft-lock query used
-by the reward system) is no longer region-aware at all: a special is offered as
-enterable once `RallyLibrary.rally_revealed` says so — and `rally_revealed` no
-longer branches on `is_special` at all: EVERY rally reveals by the SAME
-geometric test, its `map_pos` falling inside a lit circle, with no separate
-completion count for specials at all. A pure position comparison, with no
-region lookup in the path.
-
-Non-special rallies reveal the same geometric way, and it is deliberately
-**cross-region**: `RallyLibrary.rally_revealed` compares a rally's `map_pos`
-against the lit circles of every completed rally on the WHOLE roster
-(`lit_sources`), not just its own region's — the one world map pinned every region's
-rallies at once, so "complete a rally in one corner to reveal one in another corner" was
-the intended drip-feed, and a reveal scoped to one region would have cut that off at each
-corner's border. **All of it is deleted** with the map; the roguelike unlocks whole
-regions in a line instead (below).
-
-## Theming the driven world (`world.gd._apply_region_look`)
+## Theming the dev stage (`world.gd._apply_region_look`)
 
 Called from `_ready` immediately after `env.fog_sky_affect = cfg.fog_sky_affect`
 (so it runs after the base environment is built, before the level otherwise
 settles):
 
-1. Resolve the driven stage's region — `RunSession.region_id()` when a REGION RUN is
-   active, else `FreePlay.region_id()` when a free-play plan is set, else `"home"`. A
-   challenge stage is rolled from the period hash and authors no region, so it wears the
-   plain home look; so does a dev boot of `main.tscn` with no session. Cached per world
-   (`_region_look_cache`), since it cannot change mid-stage.
-
-   > This hardcoded `"home"` from the stage-2 demolition until stage 9 — its comment said
-   > the region-select system would give it a real answer, and stage 4 built that system
-   > without coming back here — so **every region run was driven under the home palette,
-   > sky and tree mix**. The HANDLING overrides were never affected: `StageConfig` reads
-   > `event["region"]` off the drawn stage dict, which was always correct. Guarded now by
-   > `test_world_fielding.gd`.
-   >
-   > **Free play had the same bug, separately**: `FreePlay` (`scripts/free_play.gd`)
-   > stored no region id at all, so `RunSession.is_active()` was false during a free-play
-   > drive and `_current_region_look()` always fell through to `"home"` regardless of
-   > which region the player picked on the Free Play region page — fixed by threading
-   > `hub_shell.gd`'s `_fp_region` into `FreePlay.begin(..., region_id)` /
-   > `FreePlay.region_id()` and adding the `elif FreePlay.has_plan()` branch above.
+1. Resolve the driven stage's region. The dev stage always wears `"home"` (cached per world in
+   `_region_look_cache`); the free-roam ring look is `BiomeDirector`'s job.
 2. `var look := RegionLibrary.look_of(region_id)`; if empty (home, or an
    unrecognised id), return — no-op, leaving `main.tscn`'s baseline untouched.
 3. Apply only the keys present:
@@ -479,83 +370,14 @@ scratch on every stage. See [weather.md](weather.md) → "Look" and
    at `_ready` scene-theming time — see `TrackGenParams.resolve_water_level`
    under "Region waterline" above, not this list.
 
-This is the single place the region look reaches the run scene; the rally
-already carries its `region`, so no extra plumbing was needed into
-`Config.data` or the scene tree.
-
-## The world map is DELETED
-
-There was a single world map texture (`textures/map_world.jpg`,
-`RegionLibrary.DEFAULT_MAP_IMAGE`) on the HQ's 3D table, with every rally on the roster
-pinned at its own `map_pos` and lit or greyed by a geometric reveal rule. The table, the
-pins, the reveal parade and the map image's consumers all went with the diegetic hub
-(decision 9).
-
-What replaced it is a flat list: `HubShell`'s REGION page, showing every region in
-AUTHORED order (`RegionLibrary.ordered()`), each marked cleared or named with its gate
-(hub-shell.md (deleted with the free-roam pivot)). **Regions unlock linearly now** (decision 12's
-progression), which is a different rule from the map's geometry entirely — see below.
-
-`map_pos` survives on every rally and is still authored, because the pin-fitting tool
-(`tools/fit_map_pins.py`) and its solved positions are expensive to reproduce and a future
-map screen would want them. Nothing reads it today.
-
-## The snow corner (filled in)
-
-The NE alpine corner was deliberately deferred when the four-corner map shipped — the map
-asset was generated with all four visual corners baked in up front so terrain variety read
-from the first minute, while the snow corner's content waited. It is now authored as the
-`snow` region, and nothing in `RegionLibrary`, `RallyLibrary` or the HQ table had to
-change to accept it: a new `REGIONS` entry with rallies simply started appearing as pins,
-under the same geometric reveal rule as every other rally.
-
-The one thing it DID add is the handling axis described above — the first time a region
-influenced how a stage drives rather than only how it looks. See
-[snow-region.md](snow-region.md).
-
-## Progression: linear region unlock
-
-The shipped `order`: `home` ("The Green", 0) → `greece` ("The Dunes", 1)
-→ `taiga` ("The Taiga", 2) → `home_coast` ("The Lakes", 3) → `snow` ("The Alps", 4).
-
-- **Regions unlock in AUTHORED order.** Each `REGIONS` entry carries an `order` field;
-  order 0 is always open and every other region is gated on the one before it appearing in
-  `Save.KEY_REGIONS_CLEARED`. `RegionLibrary.order_of` / `ordered` / `is_unlocked` /
-  `gate_for` are the whole API, and the REGION page prints the gate on a locked row rather
-  than hiding it.
-- **Array position carries no meaning** — that table's header says so explicitly. Read the
-  `order` field; never the index.
-- **A cleared region stays open and repeatable** (decision 12's grind valve), which is why
-  `KEY_REGIONS_CLEARED` is a de-duplicated set of ids while
-  `LifetimeStats.REGIONS_CLEARED_TOTAL` counts every completed run including repeats.
-  Money scales with the region's order (decision 31), so grinding an early region pays
-  worse per unit time than progressing — that is what stops "farm region 1 forever"
-  without taking the valve away.
-
-**What this replaced, all deleted:** the geometric reveal rule (`rally_revealed`,
-`lit_sources`, comparing a rally's `map_pos` against the lit circles of every completed
-rally), `all_specials_completed` and the global-completion credits beat, the per-region
-showdown gates (`showdown_unlocked`, `all_showdowns_completed`, `showdown_of`,
-`rally_showdown_gate_open`), and the star-total gates before them (`total_stars`,
-`special_gate_open`, `stars_required`) plus the completion-count ladder that briefly
-replaced those. `RegionLibrary` has no gating API left beyond the linear unlock above; its
-other job is the LOOK (`look_of` / `water_level_of` / `surface_grip_of` / `deep_snow_of` /
-`frozen_water_of` / `tree_mix` / `rock_density`).
+This is the single place the region look reaches the dev stage.
 
 ## Tests
 
-`tests/headless/test_region_library.gd` — grouping/derivation logic against a
-**synthetic** region/rally set installed via `RegionLibrary.override_for_test`
-(never the shipped Greek roster or textures): `region_for_rally`/`rallies_in`
-round-trip, `look_of`'s override-vs-omit and
-`look_from` inheritance behaviour, and `has_water_level`/`water_level_of`
-with synthetic values, plus one shipped-roster contract test —
-`test_lakes_region_has_a_higher_water_level_than_every_other_region` — that
-reads the REAL `RegionLibrary.REGIONS` and asserts the RELATIONSHIP `home_coast`
-("The Lakes") is designed around (its `water_level` strictly above every other
-region's), never pinning the actual numbers. The `region` tag on every rally is asserted in
-`tests/headless/test_rally_library.gd`. The linear unlock and its display (every region
-listed in authored order, a locked row shown with its gate and unfocusable) are covered in
-`tests/headless/test_hub_shell.gd`; the region-run draw that reads the tag is in
-`tests/headless/test_region_stage_pool.gd`. That a driven stage wears its own region's
-look is `tests/headless/test_world_fielding.gd`.
+`tests/headless/test_region_library.gd` — `look_of`'s override-vs-omit and `look_from`
+inheritance against a **synthetic** region set installed via `RegionLibrary.override_for_test`,
+`has_water_level` / `water_level_of`, the `tree_mix` / `spawns_bush_mesh` defaults, plus one
+shipped-roster contract test — `test_lakes_region_has_a_higher_water_level_than_every_other_region`
+— that asserts the RELATIONSHIP `home_coast` is designed around, never the numbers.
+`tests/headless/test_region_assets.gd` — every authored `res://` path resolves.
+`tests/headless/test_free_roam_biomes.gd` — rings wearing regions in free roam.

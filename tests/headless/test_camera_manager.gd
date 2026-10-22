@@ -81,7 +81,8 @@ func test_set_mode_selects_and_persists() -> void:
 func test_bonnet_uses_configured_offset_and_fov() -> void:
 	var cfg: GameConfig = Config.data
 	var bonnet := _scene.get_node("Car/BonnetCamera") as Camera3D
-	assert_almost_eq(bonnet.transform.origin, cfg.bonnet_offset, Vector3(0.001, 0.001, 0.001), "bonnet at configured offset")
+	var per_car: Vector3 = _scene.get_node("Car").bonnet_cam_offset()
+	assert_almost_eq(bonnet.transform.origin, cfg.bonnet_offset + per_car, Vector3(0.001, 0.001, 0.001), "bonnet at configured offset")
 	assert_almost_eq(bonnet.fov, cfg.bonnet_fov, 0.001, "bonnet at configured fov")
 
 
@@ -97,3 +98,26 @@ func test_bonnet_offset_composes_base_plus_per_car() -> void:
 	_mgr.retarget(car)
 	assert_almost_eq(bonnet.transform.origin, cfg.bonnet_offset + per_car,
 		Vector3(0.001, 0.001, 0.001), "bonnet origin = base offset + per-car offset")
+
+
+# Free roam fields its car itself (free_roam.gd), so it must apply the car's own bonnet offset too.
+func test_free_roam_places_the_bonnet_camera_by_the_cars_own_offset() -> void:
+	var cars := CarFixtures.cars()
+	cars[0]["bonnet_cam_offset"] = Vector3(0.0, 0.37, 0.11)
+	EngineLibrary.override_for_test(CarFixtures.engines())
+	CarLibrary.override_for_test(cars)
+	var s := FreeRoamSettings.new()
+	s.world_seed = 7
+	s.island_radius_m = 3000.0
+	s.near_radius = 1
+	s.far_radius = 3
+	s.car_id = String(cars[0]["id"])
+	WorldSession.new_world(s.world_seed, s.car_id)
+	var scene: Node3D = load("res://free_roam.tscn").instantiate()
+	(scene.get_node("Terrain") as TerrainStreamer).settings = s
+	add_child(scene)
+	await get_tree().physics_frame
+	var cam := scene.get_node("Car/BonnetCamera") as Camera3D
+	assert_eq(cam.transform.origin, Config.data.bonnet_offset + Vector3(0.0, 0.37, 0.11))
+	scene.free()
+	CarFixtures.restore()

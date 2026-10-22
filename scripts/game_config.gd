@@ -23,12 +23,12 @@ extends Resource
 # (scripts/engine_library.gd) writes them from the fielded car's referenced
 # engine. Their initializers below are only the neutral default for an unfielded
 # GameConfig. Tests and gameplay read them as ordinary properties.
-var engine_cylinders := 4  # firings per cycle = cylinders (4-stroke)
+var engine_cylinders := 4 # firings per cycle = cylinders (4-stroke)
 # Crank angles (degrees over the 720° four-stroke cycle) at which cylinders fire.
 # Even spacing → smooth; uneven → burble.
 var engine_firing_angles: Array[float] = [0.0, 180.0, 360.0, 540.0]
-var redline_rpm := 8000.0  # rev limiter; top speed is redline in top gear
-var peak_torque := 211.6  # peak crank torque (N·m), reached at peak_torque_rpm
+var redline_rpm := 8000.0 # rev limiter; top speed is redline in top gear
+var peak_torque := 211.6 # peak crank torque (N·m), reached at peak_torque_rpm
 var peak_torque_rpm := 4500.0
 
 @export_group("Car")
@@ -42,8 +42,8 @@ var peak_torque_rpm := 4500.0
 @export var mass := 1058.0
 # Must comfortably exceed the sliding tires' reaction torque (≈ μ·N·r per
 # axle, ~150 N·m at μ 0.7) or the wheels can't lock against grippy ground.
-@export var brake_torque := 1500.0  # N·m per axle from the foot brake (S)
-@export var handbrake_torque := 5000.0  # N·m on the rear axle (Space)
+@export var brake_torque := 1500.0 # N·m per axle from the foot brake (S)
+@export var handbrake_torque := 5000.0 # N·m on the rear axle (Space)
 ## Anti-lock braking: when a wheel's foot-brake-induced longitudinal slip goes past
 ## its grip-curve peak (locking), Drivetrain releases a share of the FOOT brake torque
 ## on that wheel/axle until slip falls back under the peak. Never touches
@@ -68,12 +68,12 @@ var peak_torque_rpm := 4500.0
 ## ENGINES table (scaled ~cylinder count), so this default only covers the baseline car
 ## before any engine is seated. To make engine braking stronger across the board, move
 ## engine_friction_slope below (which nothing overwrites) or retune the ENGINES table.
-@export var engine_friction_base := 20.0  # N·m always-on crank friction at 0 rpm (FMEP constant term)
+@export var engine_friction_base := 20.0 # N·m always-on crank friction at 0 rpm (FMEP constant term)
 ## The other half of the FMEP model, and the one that IS globally live. Engine braking on
 ## a lift-off is friction = engine_friction_base + engine_friction_slope * rpm/1000, so at
 ## a typical 4000 rpm the slope contributes 4x its value against a base of 20-60 N·m —
 ## a change worth feeling is a multiple, not a few percent.
-@export var engine_friction_slope := 1.0  # N·m of extra crank friction per 1000 rpm (FMEP linear term)
+@export var engine_friction_slope := 1.0 # N·m of extra crank friction per 1000 rpm (FMEP linear term)
 ## ADDING OR RETUNING AN ENGINE-BRAKING KNOB IS A THREE-PART CHANGE. Part 3 is the one every
 ## attempt so far has skipped, so it carries its own paste-able skeleton below.
 ##   1. the knob — an `@export` here (never a literal in engine.gd/car.gd). Read
@@ -105,8 +105,8 @@ var peak_torque_rpm := 4500.0
 ##
 ##      Then run it: `./run_tests.sh --fast test_car test_drivetrain` — test_drivetrain is
 ##      what catches the braking side effect part 1 warns about.
-@export var axle_inertia := 2.645  # kg·m² rear axle spin inertia; fronts use half each
-@export var drag_coefficient := 3.527  # quadratic aero drag on the chassis
+@export var axle_inertia := 2.645 # kg·m² rear axle spin inertia; fronts use half each
+@export var drag_coefficient := 3.527 # quadratic aero drag on the chassis
 ## Fraction of the chassis WIDTH cut off each of the four vertical corners of the
 ## collision hull, chamfering the box into an elongated octagon (top-down). The
 ## cut is applied as an equal ABSOLUTE inset on both the width (X) and length (Z)
@@ -473,7 +473,7 @@ var weather_sun_mult := 1.0
 ## has effectively halted at the finish (car.gd _resolve_drive_inputs). Above it the
 ## brake stays pinned to bring the car to rest.
 @export var finish_stop_speed := 0.8
-@export var suspension_travel := 0.5  # also used as the wheel rest length (ray length)
+@export var suspension_travel := 0.5 # also used as the wheel rest length (ray length)
 ## Per-axle spring travel / rest length (m) OVERRIDES. 0 = inherit suspension_travel
 ## (the common case); a positive value lets a body run a longer front or rear stroke
 ## (rake / wheel-well fit). apply_car() sets them per car; axle_travel() resolves the
@@ -530,20 +530,20 @@ var weather_sun_mult := 1.0
 ## panel and power-to-weight still report the full, pre-scaling figure. Use it to
 ## globally dial back pace without re-balancing every car. 1.0 = no scaling.
 @export_range(0.1, 1.0) var global_torque_scale := 1.0
-@export var idle_rpm := 900.0  # the no-stall floor: omega never drops below this
+@export var idle_rpm := 900.0 # the no-stall floor: omega never drops below this
 ## Bouncing rev limiter width (rpm): fuel cuts at redline and only restores once
 ## the revs fall this far below it, so they oscillate across the band — an
 ## audible bounce off the limiter rather than a silent pin.
 @export_range(10.0, 1500.0) var rev_limiter_band := 300.0
-@export var engine_inertia := 0.0882  # kg·m² flywheel; small = fast revving
+@export var engine_inertia := 0.0882 # kg·m² flywheel; small = fast revving
 @export var gear_ratios: Array[float] = [6.0, 4.0, 2.9, 2.2, 1.2]
 @export var reverse_ratio := 6.0
 @export var final_drive := 4.0
-@export var clutch_max_torque := 2204.0  # N·m the clutch can hold before slipping
+@export var clutch_max_torque := 2204.0 # N·m the clutch can hold before slipping
 # Below this wheel surface speed (m/s) the auto-clutch opens when coasting,
 # so the engine idling never creeps the car.
 @export var clutch_engage_speed := 4.0
-@export var shift_time := 0.25  # seconds of open clutch + throttle cut per shift
+@export var shift_time := 0.25 # seconds of open clutch + throttle cut per shift
 ## Default transmission mode: true = automatic. The transmission is always
 ## automatic now (SettingsMenu.gearbox_auto() always returns true); this field
 ## is unused pending a broader cleanup of the manual-shift engine code.
@@ -736,12 +736,12 @@ func has_nitrous() -> bool:
 ## with no tonal component, and it only sounds while nitrous is actually being delivered —
 ## see features/nitrous.md. Negative values invert the layer's phase (subtractive mix).
 @export_range(-1.0, 1.0) var engine_nitrous_hiss_gain := 0.7
-@export_enum("RWD", "AWD", "FWD") var drive_mode := 0  # initial layout (cycle in-game with Y)
+@export_enum("RWD", "AWD", "FWD") var drive_mode := 0 # initial layout (cycle in-game with Y)
 # AWD uses a fully locked centre diff (front + rear share one driveline speed),
 # so there is no torque-split knob.
 
 @export_group("HUD")
-@export var hud_enabled := true  # on-screen speed readout
+@export var hud_enabled := true # on-screen speed readout
 
 @export_group("Music")
 ## Wall-clock gap (s) between processed frames above which we assume the main
@@ -832,42 +832,37 @@ func has_nitrous() -> bool:
 ## impact_ref_hp_loss. HP loss grows with the SQUARE of the shed velocity (kinetic
 ## energy) up to here. For a full solid arrest the shed velocity ≈ the approach speed,
 ## so this maps to a real-world crash speed.
-@export_range(1.0, 200.0) var impact_ref_speed_kmh := 60.0
+@export_range(1.0, 200.0) var impact_ref_speed_kmh := 20.0
 ## HP a reference-speed (impact_ref_speed_kmh) hit costs. With per-car max HP of
 ## ~800-1100, ~200 means most cars survive 4-5 such moderate hits; the square law
 ## then makes a 20 km/h hit cost only a small fraction of this (barely any damage).
-@export_range(0.0, 2000.0) var impact_ref_hp_loss := 300.0
+@export_range(0.0, 2000.0) var impact_ref_hp_loss := 5000.0
 ## Cap on the HP a SINGLE tick's deceleration can cost, as an absolute HP amount — so no
 ## one crash strips the whole pool (it survives a good few). Being a flat amount (not a
 ## fraction of max HP), a car's max_hp genuinely matters: a fragile car is gutted by
 ## fewer capped hits than a tough one. A pinned car sheds ~0 velocity/tick so grinding
 ## self-limits; a real multi-bounce tumble racks up several capped hits, so a long fall
 ## down a drop can still empty it.
-@export_range(0.0, 2000.0) var impact_max_loss := 450.0
+@export_range(0.0, 2000.0) var impact_max_loss := 800.0
 ## --- Free-roam damage chain (DamageModel.thermal; todo/2026-10-19-free-roam-pivot.md
 ## decision 8). Below this health fraction the cooling system breaks, and stays broken until a
 ## rest-stop repair.
 @export_range(0.0, 1.0) var cooling_failure_hp_fraction := 0.5
-## Engine temperature (°C) while the cooling works, and where a repair puts it back.
-@export_range(0.0, 200.0) var engine_temp_normal_c := 90.0
 ## Above this temperature (°C) an overheating engine loses HP continuously.
 @export_range(0.0, 250.0) var overheat_temp_threshold_c := 120.0
 ## The hottest the engine gets (°C); also where its misfire and rev cap reach their worst.
 @export_range(0.0, 300.0) var engine_temp_max_c := 140.0
-## With the cooling broken, how fast the temperature climbs (°C/s): never less than the floor,
-## plus up to the load term at full throttle and the rpm term at the redline. Easing off slows
-## it; nothing stops it.
-@export_range(0.0, 10.0) var overheat_rise_floor_c_per_s := 0.25
-@export_range(0.0, 10.0) var overheat_rise_load_c_per_s := 0.5
-@export_range(0.0, 10.0) var overheat_rise_rpm_c_per_s := 0.35
-## How fast a working cooling system pulls the temperature back to normal (°C/s).
-@export_range(0.0, 50.0) var cooling_settle_c_per_s := 2.0
+## Heat the engine gains per second at the redline (°C/s); scales linearly with rpm.
+@export_range(0.0, 20.0) var engine_heat_c_per_s := 4
+## Fraction of its temperature working cooling keeps per second (applied per tick as
+## retain^dt), so a hotter engine loses more. Running temperature settles where heat in matches
+## heat out: about engine_heat_c_per_s × rpm/redline ÷ -ln(retain). Broken cooling skips it.
+@export_range(0.9, 1.0, 0.0001) var engine_cooling_retain_per_s := 0.95
 ## HP lost per second above the overheat threshold.
 @export_range(0.0, 500.0) var overheat_hp_drain_per_s := 25.0
-## Free-roam rest stops: below this speed (km/h) for rest_stop_hold_s on a rest stop's pad,
-## the rest-stop page opens (RestStops).
+## Free-roam rest stops: below this speed (km/h) at a rest stop, Enter / gamepad A opens the
+## rest-stop page (RestStops.prompt_site).
 @export_range(0.0, 60.0) var rest_stop_speed_kmh := 8.0
-@export_range(0.0, 5.0) var rest_stop_hold_s := 0.6
 ## Onlookers gathered at each rest stop (a static crowd along the back of its pad).
 @export_range(0, 60) var rest_stop_crowd_size := 14
 ## HP regained per second while driving; 0.0 means nothing heals. Applied by
@@ -968,11 +963,9 @@ func has_nitrous() -> bool:
 @export_range(5.0, 200.0) var recovery_void_depth_m := 25.0
 
 @export_group("Beacons")
-# Free roam's beams of light over rest stops and loot (SiteBeacons, features/loot.md).
+# Free roam's beams of light over rest stops, and loot's floating names (SiteBeacons, features/loot.md).
 ## Height of the beam over every rest stop, metres.
 @export_range(5.0, 400.0, 1.0) var beacon_rest_height_m := 120.0
-## Height of the beam over a piece of loot, metres.
-@export_range(5.0, 400.0, 1.0) var beacon_loot_height_m := 70.0
 ## Beams further than this from the camera are hidden.
 @export_range(100.0, 10000.0, 10.0) var beacon_range_m := 2500.0
 ## A beam is widened by this many metres per metre of distance, so it stays a few pixels wide.
@@ -1011,7 +1004,7 @@ func has_nitrous() -> bool:
 @export var tilt_invert := false
 
 @export_group("Debug")
-@export var debug_wheel_forces := false  # per-wheel arrows (toggle with H): green = suspension, red = friction, blue = aero downforce
+@export var debug_wheel_forces := false # per-wheel arrows (toggle with H): green = suspension, red = friction, blue = aero downforce
 ## Length of the debug force arrows, in metres drawn per newton of force.
 @export_range(0.00001, 0.01) var debug_force_arrow_scale := 0.00025
 ## Length of the combined steer-assist debug arrow (yellow, above the car,
@@ -1161,7 +1154,7 @@ func has_nitrous() -> bool:
 ## through. No holes are cut in the backdrop (it underlaps the detail ring
 ## entirely); at distance the slight step at the ring edge is imperceptible.
 @export_range(0.0, 5.0) var distant_terrain_sink_m := 1.5
-@export var terrain_tile_per_meter := 0.125  # ground texture tiles per metre, baked into terrain UVs
+@export var terrain_tile_per_meter := 0.125 # ground texture tiles per metre, baked into terrain UVs
 ## Gravel/road texture tiles per metre. Independent of the ground tiling so the
 ## road can be finer or coarser than the surrounding grass.
 @export_range(0.05, 4.0) var road_tile_per_meter := 0.5
@@ -1471,7 +1464,7 @@ func has_nitrous() -> bool:
 ## constant equal to render_height / 400 when retuning this (see
 ## scripts/ui_theme.gd → "UI scale", then re-run tools/build_ui_theme.gd).
 @export var render_height := 0
-@export var virtual_resolution := Vector2(480, 360)  # independent LOOK value (PS1 dither grid), deliberately decoupled from the window/viewport height (DisplayStretch.DESIGN_HEIGHT reads display/window/size/viewport_height) — do not "fix" this to match it
+@export var virtual_resolution := Vector2(480, 360) # independent LOOK value (PS1 dither grid), deliberately decoupled from the window/viewport height (DisplayStretch.DESIGN_HEIGHT reads display/window/size/viewport_height) — do not "fix" this to match it
 ## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
 ## and UI alike. 1.0 = off; 1.2 draws everything 20% wider than reality. Applied
 ## globally by the DisplayStretch autoload (scripts/display_stretch.gd).
@@ -1489,7 +1482,7 @@ func has_nitrous() -> bool:
 # (unlike virtual_resolution) — a grade is resolution-independent.
 ## Master strength of the whole grade. 0 = off (exact passthrough, vignette
 ## included), 1 = full. Retuning any value below needs a stage restart.
-@export_range(0.0, 1.0) var grade_amount := 0.5
+@export_range(0.0, 1.0) var grade_amount := 0.6
 ## Default for the player's Outlines setting (OutlineSetting) when they haven't chosen.
 @export var outlines_enabled := true
 ## 1 = colours untouched, 0 = fully greyscale.
@@ -1497,7 +1490,7 @@ func has_nitrous() -> bool:
 ## Contrast around mid-grey. 1 = untouched. Pushing this hard makes the 5-bit
 ## banding visible in the sky gradient and on flat terrain (the dither only
 ## masks so much).
-@export_range(0.5, 2.0) var grade_contrast := 1.15
+@export_range(0.5, 2.0) var grade_contrast := 1.6
 ## Tint pushed into the dark end of the image — a desaturated brown gives GRID's
 ## muddy warm blacks. Only the HUE matters: the shader divides out the tint's own
 ## luminance so it can't change overall brightness.
@@ -1505,10 +1498,10 @@ func has_nitrous() -> bool:
 ## Tint pushed into the bright end — a warm cream for GRID's yellowed highlights.
 @export var grade_highlight_tint := Color(1.0, 0.94, 0.78)
 ## Corner darkening strength. 0 = no vignette.
-@export_range(0.0, 1.0) var grade_vignette_strength := 0.25
+@export_range(0.0, 1.0) var grade_vignette_strength := 0.6
 ## Normalised radius (1.0 = the edge midpoints) at which the corner darkening
 ## starts to ramp in; it reaches full strength in the corners.
-@export_range(0.0, 1.5) var grade_vignette_radius := 0.75
+@export_range(0.0, 1.5) var grade_vignette_radius := 0.6
 
 @export_group("Speed Lines")
 # Anime "edge speed lines" overlay (features/rendering.md): black streaks
@@ -2098,13 +2091,6 @@ func has_nitrous() -> bool:
 @export_range(10.0, 500.0) var tree_render_distance_web_touch_m := 60.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export_range(0.0, 100.0) var tree_render_fade_m := 15.0
-## Near-camera dissolve: canopy fragments closer than this (m) to the camera are
-## fully dithered away, so a tree the camera pushes inside stops blocking the view
-## (the canopy is double-sided for render robustness, so culling can't do this).
-@export_range(0.0, 10.0) var tree_near_fade_start_m := 0.5
-## Distance (m) by which the near-camera canopy dissolve is fully solid again.
-## Must be >= tree_near_fade_start_m; the gap is the dither band.
-@export_range(0.1, 20.0) var tree_near_fade_end_m := 3.0
 ## Grid cell size (m) trees are binned into for rendering. Each bin is its own
 ## MultiMesh, so the engine can drop far bins to the mesh's importer LODs and
 ## cull them past tree_render_distance_m. Smaller = finer LOD/cull granularity

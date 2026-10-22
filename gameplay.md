@@ -63,7 +63,7 @@ title (Continue · New World · Settings)
 - **At 0 HP the car gives up.** You respawn at the last lit rest stop, repaired. What you were
   carrying stays at the wreck; drive back to get it, but give up again first and it's gone.
 - **Rest stops are bonfires.** Driving past one — no need to stop — lights it and fully heals the
-  car. Stopping in one opens the rest-stop page: carried loot is banked, and you can fit parts, tune,
+  car. Pulling in and pressing Enter / A opens the rest-stop page: carried loot is banked, and you can fit parts, tune,
   swap cars, read the journal, and travel to any rest stop you've lit. A crowd gathers at each.
 - **Rest-stop spacing is the main balance lever**, because it decides how survivable a cooling
   failure is. It is set per ring.

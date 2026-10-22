@@ -57,6 +57,7 @@ func _ready() -> void:
 	owned = WorldSession.active_car()
 	# Fitted parts reach the car only through the fielding funnel's own keys (LootRules.fielded).
 	_car.apply_owned(LootRules.fielded(owned))
+	($CameraManager as CameraManager).refresh_bonnet_offset()
 	# The free-roam damage chain: cooling failure, overheating, and giving up at 0 HP.
 	_car.damage.thermal = true
 	_car.damage.repair(Config.data)
@@ -91,6 +92,7 @@ func _ready() -> void:
 		$LootDirector.drop_at(wreck)
 		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP))
 	_rest_stops.car_teleported_to.connect($LootDirector.car_teleported)
+	_rest_stops.healed.connect($LootDirector.bank_at_checkpoint)
 	_recovery.reset_done.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect(_rest_stops.car_teleported)
 	_rest_stops.car_teleported_to.connect($TireMarks.break_ribbons)
@@ -98,6 +100,7 @@ func _ready() -> void:
 	_rest_page.car_changed.connect(_reload_car)
 	_rest_page.owned = owned
 	_rest_stops.opened.connect(_rest_page.open)
+	_rest_stops.wrecked.connect(_rest_page.open_wrecked)
 	$BiomeDirector.drive_time = WorldSession.drive_time()
 	# The streaming readout is a dev diagnostic: hidden until P toggles it, in debug builds only.
 	$DebugStats.visible = false
@@ -126,9 +129,60 @@ func _ready() -> void:
 	_car.reset_to(spawn)
 	_last_xz = Vector2(spawn.origin.x, spawn.origin.z)
 	_water.position.y = _streamer.settings.water_level_m
+	if Platform.is_headless():
+		_hand_over()  # nothing renders, so there is nothing to compile
+	else:
+		_warm_up()
+
+
+# Compile every first-use shader before the player gets control, as the stage's load did
+# (world.gd._warm_shaders_behind_cover): the effects, the ground of every ring, one of every plant,
+# rock and marker, and a look round the loaded ground, all behind a loading cover with the car held.
+func _warm_up() -> void:
+	_car.controls_locked = true
+	var cover := LoadingScreen.new()
+	add_child(cover)
+	cover.set_title("Warming shaders…")
+	var cam := get_viewport().get_camera_3d()
+	# Every node with the warm_up()/clear_warm_up() pair (debris, tyre marks, flames, crowds, …).
+	var warmers := find_children("*", "Node", true, false).filter(
+		func(n: Node) -> bool: return n.has_method("warm_up") and n.has_method("clear_warm_up"))
+	for n in warmers:
+		n.warm_up(WorldRuntime.warm_up_point(cam, _car.global_position))
+	await _streamer.warm_up_materials(cam)
+	for n in warmers:
+		if is_instance_valid(n):
+			n.clear_warm_up()
+	await _streamer.warm_up_spawns(cam)
+	await _look_around()
+	cover.finish()
+	_car.controls_locked = false
+	_hand_over()
+
+
+# A throwaway camera turns full circle above the car, then looks down from high up, so everything
+# loaded around the spawn (trees, water, barriers, beacons, crowds) draws once.
+func _look_around() -> void:
+	var cam := Camera3D.new()
+	cam.far = 400.0
+	add_child(cam)
+	cam.make_current()
+	var c := _car.global_position
+	for k in 9:
+		var eye := c + Vector3(0.0, 3.0, 0.0)
+		var dir := Vector3(sin(k * TAU / 8.0), -0.1, cos(k * TAU / 8.0)) if k < 8 else Vector3(0.0, -1.0, 0.01)
+		if k == 8:
+			eye = c + Vector3(0.0, 120.0, 0.0)
+		cam.look_at_from_position(eye, eye + dir, Vector3.UP)
+		await get_tree().process_frame
+		await get_tree().process_frame
+	cam.queue_free()
+	$CameraManager.activate_current()
+
+
+# Boot is done: the pause menu, then the auto-driver or the title menu if either is due.
+func _hand_over() -> void:
 	_pause.set_input_enabled(true)
-	_streamer.warm_up_materials($ChaseCamera)
-	_warm_up_particles($ChaseCamera)
 	if "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
 	elif WorldSession.title_pending:
@@ -180,16 +234,6 @@ func _start_title_orbit() -> Camera3D:
 	var tween := cam.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_loops()
 	tween.tween_method(place, 0.0, TAU, TAU / maxf(cfg.start_orbit_speed, 0.01))
 	return cam
-
-
-# Draw one debris particle in front of the camera for a few frames, so its shader compiles behind
-# the boot rather than on the first wheelspin (CpuParticlePool.warm_up; world.gd does the same).
-func _warm_up_particles(camera: Camera3D, frames := 3) -> void:
-	wheel_particles.warm_up(WorldRuntime.warm_up_point(camera, _car.global_position))
-	for i in frames:
-		await get_tree().process_frame
-	if is_instance_valid(wheel_particles):
-		wheel_particles.clear_warm_up()
 
 
 # Parts or the active car changed at a rest stop: save and reload the scene, so the car is fielded

@@ -21,6 +21,7 @@ enum Plant { TREE, BUSH, ROCK }
 const TREE_SALT := 101
 const BUSH_SALT := 202
 const ROCK_SALT := 303
+const ROADSIDE_SALT := 404
 
 @export var settings: FreeRoamSettings
 @export var material: Material
@@ -63,7 +64,6 @@ var _chunks := {}  # Vector2i -> ChunkState
 var _queue: Array[ChunkJob] = []
 var _est := {}  # atomic stage -> moving average of its cost, µs
 var _indices := {}  # verts per side -> PackedInt32Array, grid plus skirts
-var _zero_uv2 := {}  # verts per side -> PackedVector2Array
 var _plan_coord := Vector2i(1 << 30, 0)
 var _plan_timer := 0.0
 var _ran_this_frame := false
@@ -119,6 +119,7 @@ class ChunkJob:
 	var verts := PackedVector3Array()
 	var colors := PackedColorArray()
 	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()  # x = tarmac weight (the ground shader's UV2.x)
 	var mesh: ArrayMesh
 	var plants := false  # a near build also plants the chunk's trees, bushes and rocks
 	var plant_pts := PackedVector2Array()
@@ -255,10 +256,13 @@ func _mesh_height(heights: PackedFloat32Array, stride: float, halo: int, coord: 
 func surface_at(x: float, z: float) -> Vector2:
 	var coord := _chunk_of(Vector2(x, z))
 	var st: ChunkState = _chunks.get(coord)
+	var road: float
 	if st != null and not st.near_road_d.is_empty():
-		return Vector2(terrain.road_weight(_mesh_height(st.near_road_d, settings.near_stride_m, 0, coord, x, z)), 0.0)
-	terrain.height(x, z, PackedInt32Array(), false)
-	return Vector2(terrain.road_weight(terrain.last_road_d), 0.0)
+		road = terrain.road_weight(_mesh_height(st.near_road_d, settings.near_stride_m, 0, coord, x, z))
+	else:
+		terrain.height(x, z, PackedInt32Array(), false)
+		road = terrain.road_weight(terrain.last_road_d)
+	return Vector2(road, terrain.tarmac_weight(x, z) if road > 0.0 else 0.0)
 
 
 # --- scheduling ----------------------------------------------------------------------------
@@ -324,6 +328,55 @@ func warm_up_materials(camera: Camera3D, frames := 3) -> void:
 	for mi in specks:
 		if is_instance_valid(mi):
 			mi.queue_free()
+
+
+# Draw one of every plant, rock, site marker and loot name any ring can show, a few metres in front of
+# `camera`, for a few frames: their shaders compile and textures upload now, behind the boot,
+# rather than on the first chunk that holds one.
+func warm_up_spawns(camera: Camera3D, frames := 3) -> void:
+	if camera == null:
+		return
+	var cfg: GameConfig = Config.data
+	var dist := cfg.tree_render_distance_m
+	var fade := cfg.tree_render_fade_m
+	var root := Node3D.new()
+	root.name = "SpawnWarmUp"
+	add_child(root)
+	var ahead := camera.global_transform * Vector3(0.0, -1.5, -8.0)
+	var g := FlatGround.new()
+	g.y = ahead.y
+	var at := PackedVector2Array([Vector2(ahead.x, ahead.z)])
+	for look in _ring_looks:
+		for entry in RegionLibrary.tree_mix(look):
+			Foliage.spawn_trees(root, at, g, false, dist, fade, load(entry["texture"]),
+				String(entry.get("profile", "home")) == "region", entry.get("size_scale", Vector2.ONE))
+	Foliage.spawn_bushes(root, at, g, dist, fade)
+	for i in Foliage.ROCK_SCENES.size():
+		Foliage.spawn_rocks(root, at, g, i, false, dist, fade)
+	for marker: Node3D in [_loot_marker(0, {"kind": "car"}), _site_marker(0)]:
+		root.add_child(marker)
+		marker.global_position = ahead
+	# The floating names over loot (SiteBeacons), one per kind, so the font's glyphs are drawn once.
+	for item: Dictionary in [{"kind": "car"}, {"kind": "part", "id": ""}, {"kind": "part", "id": "engine_swap:"},
+			{"kind": "part", "id": "drivetrain:0"}, {"kind": "rumour"}]:
+		var label := SiteBeacons._label(LootRules.ground_label(item), LootRules.colour(item))
+		root.add_child(label)
+		label.global_position = ahead
+	for i in frames:
+		await get_tree().process_frame
+	root.queue_free()
+
+
+# Level ground for warm_up_spawns: the spawners only ask for a height and a light.
+class FlatGround:
+	extends RefCounted
+	var y := 0.0
+
+	func height_at(_x: float, _z: float) -> float:
+		return y
+
+	func light_at(_x: float, _z: float) -> Color:
+		return Color.WHITE
 
 
 func queued() -> int:
@@ -577,6 +630,8 @@ func _start_arrays(job: ChunkJob) -> void:
 	job.verts.resize(count)
 	job.colors.resize(count)
 	job.uvs.resize(count)
+	job.uv2s = PackedVector2Array()
+	job.uv2s.resize(count)
 	job.stage = Stage.ARRAYS
 
 
@@ -618,7 +673,9 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		var px := ox + gx * s
 		var pz := oy + gz * s
 		var col := job.tint * ground_light(normal)
-		col.a = terrain.road_weight(job.road_d[i])
+		col.a = terrain.paint_weight(job.road_d[i])
+		if col.a > 0.0:
+			job.uv2s[i] = Vector2(terrain.tarmac_weight(px, pz), 0.0)
 		job.verts[i] = Vector3(gx * s, h, gz * s)
 		job.colors[i] = col
 		job.uvs[i] = Vector2(px, pz) * UV_PER_M
@@ -637,6 +694,7 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		job.verts[n * n + k] = job.verts[src] - Vector3(0.0, drop, 0.0)
 		job.colors[n * n + k] = job.colors[src]
 		job.uvs[n * n + k] = job.uvs[src]
+		job.uv2s[n * n + k] = job.uv2s[src]
 	job.stage = Stage.UPLOAD
 	return true
 
@@ -647,7 +705,7 @@ func _upload(job: ChunkJob) -> void:
 	arrays[Mesh.ARRAY_VERTEX] = job.verts
 	arrays[Mesh.ARRAY_COLOR] = job.colors
 	arrays[Mesh.ARRAY_TEX_UV] = job.uvs
-	arrays[Mesh.ARRAY_TEX_UV2] = _uv2_for(job.n)
+	arrays[Mesh.ARRAY_TEX_UV2] = job.uv2s
 	arrays[Mesh.ARRAY_INDEX] = _indices_for(job.n)
 	job.mesh = ArrayMesh.new()
 	job.mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -677,6 +735,7 @@ func _attach(job: ChunkJob) -> void:
 		st.far_job = null
 		mi.visible = st.near_mesh == null
 	job.verts = PackedVector3Array(); job.colors = PackedColorArray(); job.uvs = PackedVector2Array()
+	job.uv2s = PackedVector2Array()
 	job.stage = Stage.COLLIDE if job.with_collision else _after_collide(job)
 
 
@@ -784,7 +843,7 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 		job.cursor = 0
 	var cfg: GameConfig = Config.data
 	var water := settings.water_level_m
-	var road := settings.road_half_width_m + settings.road_shoulder_m + cfg.tree_road_margin_m
+	var road := settings.road_half_width_m + cfg.tree_road_margin_m
 	var radius := [0.5, TreeMeshField.xz_radius(Foliage.bush_mesh(), cfg.bush_height_m), _widest_rock()]
 	var done := 0
 	_last_kind = "plant"
@@ -797,7 +856,7 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 		var kind := job.plant_kind[job.cursor]
 		job.cursor += 1
 		done += 1
-		if _spot_is_clear(job.ground, p, water, road + radius[kind]):
+		if _spot_is_clear(job.ground, p, water, road + radius[kind]) and _roadside_keep(p, kind, road + radius[kind]):
 			var kept: PackedVector2Array = job.kept[kind]  # a copy: packed arrays are values
 			kept.append(p)
 			job.kept[kind] = kept
@@ -827,6 +886,19 @@ func _spot_is_clear(g: PlantGround, p: Vector2, water: float, clearance: float) 
 	return not near_road and sites.is_clear(p, 2.0)
 
 
+# Whether a clear spot grows: everything right by the road, thinning to the far density over
+# roadside_falloff_m (trees also need the forest noise, which only gaps the forest away from the
+# road). Reads the road distance that _spot_is_clear just left in network.hit_d.
+func _roadside_keep(p: Vector2, kind: int, tree_line: float) -> bool:
+	if kind == Plant.ROCK:
+		return true
+	var near := 1.0 - smoothstep(0.0, settings.roadside_falloff_m, network.hit_d - tree_line)
+	var far := settings.far_tree_density if kind == Plant.TREE else settings.far_bush_density
+	if ScatterMath.hash01(int(p.x * 8.0), int(p.y * 8.0), settings.world_seed, ROADSIDE_SALT + kind) >= lerpf(far, 1.0, near):
+		return false
+	return kind != Plant.TREE or TreeScatter.forest_density(_forest, p) > (1.0 - settings.forestiness) * (1.0 - near)
+
+
 func _plant_candidates(job: ChunkJob) -> void:
 	var cfg: GameConfig = Config.data
 	if not cfg.vegetation_enabled:
@@ -850,8 +922,6 @@ func _plant_candidates(job: ChunkJob) -> void:
 					continue
 				var p := Vector2((gx + 0.15 + 0.7 * ScatterMath.hash01(gx, gz, sd, salt)) * cell,
 					(gz + 0.15 + 0.7 * ScatterMath.hash01(gx, gz, sd, salt + 1)) * cell)
-				if kind == Plant.TREE and TreeScatter.forest_density(_forest, p) <= 1.0 - settings.forestiness:
-					continue
 				job.plant_pts.append(p)
 				job.plant_kind.append(kind)
 
@@ -928,7 +998,7 @@ func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 
 # The chunk's site dressing. A rest stop gets a crowd of onlookers along the back of its pad
 # (decision 9: spectators gather at rest stops) and a beacon post, grey until lit and orange after.
-# Loot slots and dead ends show a crate only while something lies there.
+# Loot slots and dead ends show a crystal only while something lies there.
 func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 	var cm := settings.chunk_m
 	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
@@ -952,6 +1022,7 @@ func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)
 const BEACON_LIT := Color(1.0, 0.55, 0.1)
+const LOOT_CRYSTAL := preload("res://shaders/loot_crystal.gdshader")
 
 
 func _site_marker(i: int) -> MeshInstance3D:
@@ -974,26 +1045,36 @@ func _site_marker(i: int) -> MeshInstance3D:
 	return mi
 
 
-# A piece of loot lying at a site: a crate coloured by kind (LootRules.colour: gold for a car
-# title, orange an engine, green a drivetrain kit, cyan a part, white a rumour). Its tall beam and
-# floating name are SiteBeacons', which shows them from much further than near chunks reach.
+# A piece of loot floating over its spot on the road: a thin crystal, pointed top and bottom,
+# coloured by kind (LootRules.colour: gold for a car title, orange an engine, green a drivetrain
+# kit, cyan a part, white a rumour); loot_crystal.gdshader bobs it. Its tall beam and floating
+# name are SiteBeacons', which shows them from much further than near chunks reach.
 func _loot_marker(i: int, item: Dictionary) -> Node3D:
 	var col := LootRules.colour(item)
 	var root := Node3D.new()
 	root.name = "Loot%d" % i
 	var c := sites.pos[i]
 	root.position = Vector3(c.x, sites.pad_h[i], c.y)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = col
-	var crate := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(1.2, 1.2, 1.2)
-	box.material = mat
-	crate.mesh = box
-	crate.position.y = 0.9
-	crate.rotation.y = ScatterMath.hash01(i, 0, settings.world_seed, 91) * TAU
-	root.add_child(crate)
+	var mat := ShaderMaterial.new()
+	mat.shader = LOOT_CRYSTAL
+	mat.set_shader_parameter("color", col)
+	mat.set_shader_parameter("phase", ScatterMath.hash01(i, 1, settings.world_seed, 91) * 10.0)
+	var spin := ScatterMath.hash01(i, 0, settings.world_seed, 91) * TAU
+	for up in [1.0, -1.0]:
+		var half := CylinderMesh.new()  # a 4-sided cone: one half of the crystal
+		half.top_radius = 0.0 if up > 0.0 else 0.3
+		half.bottom_radius = 0.3 if up > 0.0 else 0.0
+		half.height = 0.9 if up > 0.0 else 0.6
+		half.radial_segments = 4
+		half.rings = 1
+		half.cap_top = false
+		half.cap_bottom = false
+		half.material = mat
+		var mi := MeshInstance3D.new()
+		mi.mesh = half
+		mi.position.y = 1.4 + up * half.height * 0.5
+		mi.rotation.y = spin
+		root.add_child(mi)
 	return root
 
 
@@ -1011,11 +1092,11 @@ func refresh_loot_markers() -> void:
 			_place_loot_site_marker(st.foliage, i)
 
 
-# Put loot site `i`'s marker under `parent` as loot_query has it now: a crate for the item lying
+# Put loot site `i`'s marker under `parent` as loot_query has it now: a crystal for the item lying
 # there, else nothing. Whatever marker it had goes first, so the queued planting
 # spawn and a refresh_loot_markers that both reach a chunk (it has foliage, but its marker spawn
 # is still queued) leave exactly one: adding a second "Loot%d" had Godot rename it "@Loot%d@N",
-# which no later refresh removed, so a crate stayed after its pickup.
+# which no later refresh removed, so a crystal stayed after its pickup.
 func _place_loot_site_marker(parent: Node3D, i: int) -> void:
 	_remove_site_markers(parent, i)
 	var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
@@ -1207,7 +1288,7 @@ func _new_job(coord: Vector2i, near: bool, with_collision: bool) -> ChunkJob:
 	job.stride = settings.near_stride_m if near else settings.far_stride_m
 	job.n = int(settings.chunk_m / job.stride) + 1
 	# Every near build runs the planting stages: they also spawn the chunk's barriers (with
-	# collision), rest-stop crowds, site posts and loot crates. vegetation_enabled only thins the
+	# collision), rest-stop crowds, site posts and loot crystals. vegetation_enabled only thins the
 	# trees, bushes and rocks out of it (_plant_candidates).
 	job.plants = near
 	_queue.append(job)
@@ -1283,11 +1364,3 @@ func _indices_for(n: int) -> PackedInt32Array:
 		idx.append_array([t0, t1, s0, t1, s1, s0, t0, s0, t1, t1, s0, s1])  # both faces
 	_indices[n] = idx
 	return idx
-
-
-func _uv2_for(n: int) -> PackedVector2Array:
-	if not _zero_uv2.has(n):
-		var a := PackedVector2Array()
-		a.resize(n * n + 4 * (n - 1))
-		_zero_uv2[n] = a
-	return _zero_uv2[n]

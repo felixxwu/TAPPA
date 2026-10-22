@@ -105,10 +105,6 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 	mat.set_shader_parameter("fade_band", render_fade)
 	# Bias distant foliage to cheaper mips (mobile texture-bandwidth win).
 	mat.set_shader_parameter("lod_bias", Config.data.texture_lod_bias)
-	# The opaque tree cutout dissolves near the camera (same dither as the 3D canopy)
-	# so a tree the camera pushes inside stops blocking the view.
-	mat.set_shader_parameter("near_fade_start", Config.data.tree_near_fade_start_m)
-	mat.set_shader_parameter("near_fade_end", Config.data.tree_near_fade_end_m)
 	# Trees take the terrain's hemisphere-ambient + directional-sun model so they
 	# match the lit ground (billboard_opaque.gdshader). Pushed through
 	# apply_foliage_light rather than set here, so the sun/ambient dim with the

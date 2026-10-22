@@ -1,7 +1,7 @@
 extends GutTest
 # Free-roam biomes (features/free-roam.md → "Biomes"): which region a ring wears, the drifting
 # per-ring weather, region handling written as the car crosses rings, the environment cross-fade,
-# and each ring's ground material. Synthetic regions throughout, never the shipped catalogue.
+# each ring's ground material, and its road surface (gravel / tarmac). Synthetic regions throughout, never the shipped catalogue.
 
 const ICY := {"id": "icy", "order": 0, "name": "Icy",
 	"grass_texture": "res://textures/gravel.jpg",
@@ -170,3 +170,52 @@ func test_each_ring_seats_its_regions_off_road_particle() -> void:
 	assert_ne(look.half_w, look.half_h, "...blades")
 	d.free()
 	st.free()
+
+
+func _terrain(s: FreeRoamSettings) -> RoadTerrain:
+	var t := RoadTerrain.new()
+	t.setup(s, RoadNetwork.new())
+	return t
+
+
+func test_roads_are_gravel_where_no_region_asks_for_tarmac() -> void:
+	var t := _terrain(_settings())
+	for r in [0.0, 1200.0, 2400.0]:
+		assert_eq(t.tarmac_weight(r, 0.0), 0.0)
+
+
+func test_a_tarmac_ring_blends_in_smoothly_across_its_border() -> void:
+	var paved := PLAIN.duplicate()
+	paved["road_surface"] = "tarmac"
+	var regions: Array[Dictionary] = [ICY, paved]
+	RegionLibrary.override_for_test(regions)
+	var s := _settings()
+	var t := _terrain(s)
+	var prev := t.tarmac_weight(0.0, 0.0)
+	assert_eq(prev, 0.0, "the gravel ring's roads are gravel")
+	var saw_mid := false
+	for i in range(1, 600):
+		var x := i * 5.0
+		var w := t.tarmac_weight(x, 0.0)
+		assert_lt(absf(w - prev), 0.2, "no hard step at %.0f m" % x)
+		saw_mid = saw_mid or (w > 0.1 and w < 0.9)
+		prev = w
+	assert_eq(prev, 1.0, "the tarmac ring's roads are tarmac")
+	assert_true(saw_mid, "the border blends rather than switching")
+
+
+func test_one_of_every_plant_rock_and_marker_is_drawn_at_boot_and_cleaned_up() -> void:
+	var st := TerrainStreamer.new()
+	st.settings = _settings()
+	add_child_autofree(st)
+	var cam := Camera3D.new()
+	add_child_autofree(cam)
+	st.warm_up_spawns(cam, 2)
+	var root := st.get_node_or_null("SpawnWarmUp") as Node3D
+	assert_not_null(root, "the warm-up set is out")
+	var meshes := root.find_children("*", "GeometryInstance3D", true, false)
+	assert_gt(meshes.size(), Foliage.ROCK_SCENES.size(), "trees, a bush, every rock and the markers")
+	assert_gt(root.find_children("*", "Label3D", true, false).size(), 0, "and the loot names")
+	for i in 4:
+		await get_tree().process_frame
+	assert_false(is_instance_valid(root) and root.is_inside_tree(), "and it is gone after the warm-up")

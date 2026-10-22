@@ -1,84 +1,20 @@
 # Engine Swap & Detune
 
-**Sources:** the mid-run swap — `scripts/run_session.gd` (`RunSession.
-_pool_engine_swap_ids`, `_current_engine_id`, `_with_engine_swap_display`,
-`choose_engine_swap`, `engine_swap_id`), `scripts/boost_library.gd`
-(`BoostLibrary.resolve_id`'s `"engine_swap:"` id branch) and
-`scripts/world.gd` (`_owned_with_run_effects` writing `owned["swapped_engine"]`)
-— through the pre-existing `scripts/engine_swap.gd` (`EngineSwap`, pure
-math/lookup module) and the `_apply_engine_swap` fielding step in
-`scripts/car.gd`, which this feature REUSES rather than reimplements; plus the
-legacy owned-car read path, which still resolves cars in existing saves that
-carry a `swapped_engine`.
+**Sources:** `scripts/free_roam/loot_rules.gd` (`LootRules` — an engine is a found part with id
+`"engine_swap:<EngineLibrary id>"`; `fielded` writes it as the car's `swapped_engine`),
+`scripts/engine_swap.gd` (`EngineSwap`, pure math/lookup module) and the
+`_apply_engine_swap` fielding step in `scripts/car.gd`.
 
-**The Engine Swap is a genuine, deterministic MID-RUN engine swap, restricted to
-four fixed universal tiers.** It is offered in the SAME between-stage pick as
-the other boosts and the AWD drivetrain conversion, run-scoped (dies with the
-run, never touches `Save`'s persisted car), but it is NOT a `BoostLibrary`
-catalogue entry and carries no purchasable level: `RunSession.
-_pool_engine_swap_ids()` only ever considers the four `EngineLibrary` entries
-flagged `"swap_tier": true` — `i6_300` / `v8_400` / `v10_500` / `v12_600`, an
-I6, V8, V10 and V12 nominally rated 300/400/500/600 hp (see
-`scripts/engine_library.gd`'s bottom four entries) — REGARDLESS of the car's
-own stock engine, so every car in the roster walks the SAME four rungs rather
-than picking from the whole 11(+)-entry catalogue. Among those four it offers
-**the next most powerful one relative to the car's current engine** (ranked by
-`CarLibrary.peak_power_kw`) that gains at least `MIN_SWAP_HP_GAIN` (30hp) over
-the current engine — a smaller increment is skipped in favour of the next rung
-that clears the bar — never a random pick, and `[]` once no remaining tier
-clears that bar (including once the car already runs `v12_600`, the most
-powerful tier) — see region-runs.md (deleted with the free-roam pivot) → "The engine swap" for
-the full pick-pool mechanics. Because the pool is re-resolved every
-between-stage pick from `_current_engine_id()` (which returns this run's own
-`_engine_swap_id` once one is set), a car that swapped into `v8_400` this run
-is offered `v10_500` next, then `v12_600` after that — the run's OWN swap
-feeds the next tier check, not just the car's stock engine. This supersedes an
-earlier flat `engine_power_mult` multiplier on
-`cfg.peak_torque` — the `BoostLibrary.CATALOGUE["engine_swap"]` entry and its
-magnitude field `GameConfig.run_boost_engine_power_mult` are both deleted,
-since nothing else read either — which itself had superseded the original
-decision-17 one-time meta unlock (`Save.buy_engine_swap_unlock`,
-`KEY_ENGINE_SWAP_UNLOCKED`, both long deleted). The old garage "move any engine
-into any other car" mutators (`Save.swap_engines` / `set_engine_detune`) are
-deleted with the HQ lift that hosted them; their per-car keys survive as READ
-paths for old saves only.
+**Tests:** `tests/headless/test_engine_swap.gd`, `tests/headless/test_loot.gd`, `tests/headless/test_car.gd`
 
-**Engine detune** is a per-car value (0-100%) that scales the fitted engine's
-torque, and remains the only DELIBERATE power-to-weight *reduction* lever for a
-challenge's rating ceiling (the weight slot's free ballast parts are retired --
-see [upgrade-catalogue.md](upgrade-catalogue.md) -> the `weight` slot). With the
-detune slider's host gone it is read-path-only too.
+**In free roam an engine is loot.** Each `EngineLibrary` entry names the biome `ring` it is
+found in ([loot.md](loot.md)); fitting one at a rest stop's Garage puts it in the car's
+`parts`, and `LootRules.fielded(owned)` turns it into `swapped_engine` on the duplicate that
+fields the car. A car holds one engine part at a time (`LootRules` swaps the old one out).
+The persisted car never carries `swapped_engine` itself.
 
-**Free play** offers a THIRD, unrestricted way to pick an engine swap:
-`scripts/hub_shell.gd`'s `FREEPLAY_SETUP` page lists every `EngineLibrary`
-engine as a single-select card (plus a "Stock engine" card to clear it) —
-unlike the mid-run pick above, it is not limited to the next rung up, since
-free play has no progression to protect (see
-hub-shell.md (deleted with the free-roam pivot) → "Free play — the session-less sandbox"). The
-choice rides `scripts/free_play.gd` (`FreePlay.begin`'s `engine_id` param,
-`FreePlay.engine_swap_id()`) and `scripts/world.gd`
-(`_field_free_play_car` writing `owned["swapped_engine"]`) — the exact same
-`swapped_engine` field and `apply_owned` → `_apply_engine_swap` fielding path
-a real run's swap rides, just fed from a session-less plan instead of
-`RunSession`.
-
-**Tests:** `tests/headless/test_engine_swap.gd` (the pure module),
-`tests/headless/test_region_run.gd` (the "between-stage pick: an engine swap"
-section — `_pool_engine_swap_ids`' next-most-powerful selection, `choose_engine_swap`,
-no-reach-Save, wipe-on-finish, resume), `tests/headless/test_run_pick_panel.gd` (the
-`"engine_swap:"` pick-entry card render/report)
-
-Both of the old gate's consumers — `UpgradeOptions.engine_swap_blocked_reason`
-and `hq._show_swap_confirm` — were deleted with the parts model and the
-diegetic hub (`hq.gd`); the gate itself followed them.
-
-Distinguish from [upgrade-catalogue.md](upgrade-catalogue.md): slottable
-upgrades permanently change a car's baseline. The engine swap changes nothing
-permanently either — it dies with the run, exactly like every other
-between-stage pick, and changes only which engine this run's car currently
-runs, gone the moment the run ends (win or lose). Detune is ordinary
-[tuning.md](tuning.md): free, reversible, stored per-car, never written to the
-authored `.tres`.
+**Engine detune** is a per-car value (0-100%) in the `tuning` bag that scales the fitted
+engine's torque. No screen sets it today; it is read-path-only (see [tuning.md](tuning.md)).
 
 ## Data model
 
@@ -94,10 +30,11 @@ authored `.tres`.
   **defaults to the car's own `weight_front`** (an engine assumed to sit at the
   car's own balance point), so a swap on such a car degrades to a mass-only
   change.
-- `OwnedCar` (in `Save.profile.cars`) gained two fields, both defaulted so no
-  `SCHEMA_VERSION` bump was needed (see [save-persistence.md](save-persistence.md)):
+- The car dict `apply_owned` reads carries two engine fields (see
+  [save-persistence.md](save-persistence.md)):
   - **`swapped_engine`** (string, default `""`) — the id of a non-stock engine
-    currently fitted, or absent/empty when running the car's own stock engine.
+    currently fitted, or absent/empty when running the car's own stock engine. Written
+    onto the fielding duplicate by `LootRules.fielded`, never persisted.
   - **`tuning.engine_detune`** (float, default `1.0`) — the 0–1 torque scale,
     stored in the existing per-car `tuning` bag alongside `grip_balance` /
     `brake_bias` / `aero_balance`.
@@ -126,8 +63,7 @@ result.
   `layout` run through `layout_label_from`; `""` if unknown.
 - **`display_name(entry, owned) -> String`** — the car's name, prefixed with
   the swapped-in engine's layout when non-stock (e.g. `"V8 Rondel Twist"`); the plain
-  name otherwise. Used everywhere an owned car's name is shown — today the hub CAR
-  page's cards and the run summary.
+  name otherwise. Only tests call it today.
 - **`recompute_mass(m_total, m_stock_engine, m_new_engine) -> float`** — total
   mass with the engine component swapped out:
 
@@ -149,23 +85,6 @@ result.
   be non-positive (defensive; never hit with authored data).
 - **`can_swap(car_a, car_b) -> bool`** — structural validity only: true when
   both cars exist (neither dict is empty). Health is not a factor.
-
-## `Save` mutators
-
-- **`Save.swap_engines(id_a, id_b) -> bool`** — exchanges the CURRENT engines
-  (via `EngineSwap.current_engine_id`, so swapping a car that's already
-  running a third car's engine still works correctly) of two owned cars.
-  Refuses (returns `false`, no change) if the ids match, `EngineSwap.can_swap`
-  fails, or **the two cars already run the same current engine** (a no-op swap).
-  It consumes nothing — those structural guards are the whole of its contract.
-  Each car's
-  `swapped_engine` is set to the OTHER's current engine, then cleared back to
-  `""` when the result equals that car's OWN stock engine — so "stock" is always
-  canonical and a car's display name reverts the moment it's running its own
-  engine again, even via a chain of swaps.
-- **`Save.set_engine_detune(instance_id, frac)`** — clamps `frac` to `[0, 1]`
-  and stores it at `tuning.engine_detune`. `1.0` (full power) is the default
-  everywhere a car doesn't have this key yet.
 
 ## Fielding pipeline (`car.gd`)
 
@@ -203,7 +122,7 @@ it never fires today; it exists to catch the third caller.
 ### `apply_owned`
 
 `apply_owned` is the pipeline that turns a saved `OwnedCar` into a live,
-physically simulated car (see the deleted career rally session):
+physically simulated car:
 
 ```
 1. CarLibrary baseline    apply_car(index)            -> Config.data
@@ -263,8 +182,8 @@ ratios. (Design decision: engine + gearbox are one swappable unit.)
 ## Eligibility feed-through (`effective_meta`)
 
 `UpgradeLibrary.effective_meta(owned_car, meta)` is the single place that
-derives a car's power-to-weight figure for display and for
-`RallyLibrary.is_eligible` (see [upgrade-catalogue.md](upgrade-catalogue.md)).
+derives a car's power-to-weight figure for display (see
+[upgrade-catalogue.md](upgrade-catalogue.md)).
 It resolves the CURRENT engine the same way `car.gd` does:
 
 1. Resolves `current_id := EngineSwap.current_engine_id(owned_car, stock_id)`,
@@ -273,56 +192,18 @@ It resolves the CURRENT engine the same way `car.gd` does:
    synthetic test fixtures with explicit values are untouched).
 2. If swapped (`current_id != stock_id`), recomputes `mass` via
    `EngineSwap.recompute_mass` using the stock and swapped-in engine masses —
-   so a swap changes the displayed/eligibility mass exactly like it changes
+   so a swap changes the displayed mass exactly like it changes
    the live physics mass.
 3. Applies enabled upgrade multipliers (engine kits, weight reduction) on top
    of the swapped baseline.
-3b. Because step 1 re-points `meta["engine"]` at the fitted engine, every
-   **engine-derived rally restriction** follows the swap too:
-   `RallyLibrary.ineligibility_reason` resolves `engine_min_l`/`engine_max_l`
-   (from the engine's `displacement_l`) and `cylinders_min`/`cylinders_max`
-   (from `EngineLibrary.cylinders`, derived from `layout`) through that id. So
-   dropping a V8 into a small car can both qualify it for a big-bore class and
-   disqualify it from a small-displacement one. The car's own `doors` is a body
-   property and is unaffected by a swap, by design.
 4. **Applies `engine_detune` last**, scaling the resulting `peak_torque` by
    the clamped `[0, 1]` fraction from `owned_car.tuning.engine_detune` (default
-   `1.0`) — so a detuned car's reduced torque feeds `power_to_weight` and can
-   push it over (or back under) a rally's `pw_max` ceiling, same as an
-   engine swap or upgrade would.
+   `1.0`) — so a detuned car's reduced torque feeds `power_to_weight`.
 
 `TuningLibrary.apply` applies the matching effect to the LIVE `cfg` at
 fielding time (step 3, after upgrades): `cfg.peak_torque *= clampf(detune, 0, 1)`,
 run last so it scales whatever torque the swapped engine + upgrade kits
 produced. See [tuning.md](tuning.md) for the full axis table.
-
-## The UI is gone; here is what a rebuild owes
-
-Nothing in the flat shell swaps an engine. The shop sells the *unlock*
-(hub-shell.md (deleted with the free-roam pivot)); no screen spends it. These are the rules the deleted UI
-enforced, kept because a rebuild has to re-establish them and they are not obvious:
-
-- **A swap needs a partner car**, so the screen that lists engines cannot perform the
-  swap on its own — the old `engine` tile called back to its host for exactly that reason.
-  List every OTHER owned car (no self-swap); filter none of them on health.
-- **Show both sides.** A swap EXCHANGES engines, so the preview showed a row for the
-  player's car AND for the donor, each with its resulting hp/tonne delta. The pure math is
-  still there: `EngineSwap.pw_after_swap(owned, entry, donor_engine_id)` returns kW/kg;
-  scale by `CarLibrary.KW_KG_TO_HP_TONNE` to display.
-- **Re-check the gate from the screen**, not from a stored flag on the car:
-  `RallyLibrary.engine_swaps_unlocked(Save.profile)`. `Save.swap_engines` is deliberately a
-  pure mutator that does NOT check it, so the entry point owns that.
-- **Locked means locked, not priced.** Every unavailable row in the old UI read `Locked`
-  rather than quoting a cost, so "the cursor skips this" and "here is what it costs" stayed
-  visually distinct.
-
-### Navigation, when it is rebuilt
-
-CLAUDE.md requires every menu to be keyboard + gamepad navigable and to ship with a nav
-test in the same change. The old swap flow got that for free by reusing the car park's own
-input handlers with a mode flag — it added no new input surface. A flat rebuild gets it the
-same way, from `MenuNav.attach` on a `MenuPage` of ordinary focusable rows; see
-[menu-navigation.md](menu-navigation.md) and `HubShell`'s pages for the pattern.
 
 ## Tests
 
@@ -335,26 +216,10 @@ the layout only when swapped; `recompute_mass` swaps the engine component;
 `recompute_weight_front` moves the CoG by the injected engine position (with
 injected numbers, not authored values — see the project's testing rules);
 `can_swap` accepts two real cars regardless of health and rejects an empty one.
-`test_save_manager.gd` covers `swap_engines` succeeding between damaged cars (HP
-untouched), `set_engine_detune` persistence, and the stock-reversion clearing
-behaviour. `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
+`test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
 covers `TuningLibrary.apply`'s `engine_detune` torque scaling.
 
-**The mid-run swap** — `test_region_run.gd`'s "between-stage pick: an engine swap"
-section: `_pool_engine_swap_ids()` offers the next strictly-more-powerful catalogue
-engine and no engine sits strictly between it and the current one; the pool empties
-once the car already runs the most powerful engine; the pool competes in the SAME
-draw as the boosts and AWD without changing the pick's total size;
-`choose_engine_swap` records the id, resolves the pick, and takes no repair; a later
-swap replaces rather than stacks; the swap never reaches `Save`'s persisted car; it
-is wiped on run end (win or lose) and survives a pause/resume. `test_run_pick_panel.gd`
-covers an `"engine_swap:"` pick entry rendering its card and reporting its id, and
-that no card is drawn when the pick carries none.
-
-**The UI tests are gone with the UI** (`test_upgrades_grid.gd` for the two tiles,
-the deleted `test_menu_flow.gd` for car-park swap mode and its confirm). There is no detune-to-enter
-gate left to test either: entry to a region run is ungated, and a Rally Challenge's rating
-ceiling is judged by `ChallengeRunMode.classify_cars`, which
-`tests/headless/test_challenge_session.gd` covers.
+`test_loot.gd` covers an engine part fielding as `swapped_engine` and a second engine replacing
+the first.

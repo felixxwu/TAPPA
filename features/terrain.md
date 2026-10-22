@@ -553,7 +553,7 @@ and needs no hand-authoring.
   `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`, `cliff_run_m`,
   `cliff_fade_m`, `cliff_open_radius_m` (thin-wall open radius), `cliff_amount`
   (runtime per-event scale, written by `StageConfig.apply_event_config` from
-  `RallyLibrary.event_cliffiness`),
+  `StageFields.event_cliffiness`),
   `cliff_seed` (`= track_seed`). See the `Cliffs` group in
   [configuration.md](configuration.md).
 - Tests: `tests/headless/test_terrain_cliffs.gd` (zero-when-off/level, flat road +

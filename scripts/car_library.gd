@@ -114,7 +114,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (50/50 RWD roadster)
 		"brake_torque": 518.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3(0, 0, 0), # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0, -0.22, 0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.45,
 		"wheel_radius": 0.30, "wheel_width_front": 0.205, "wheel_width_rear": 0.205, # 195/50R16 square
@@ -137,7 +137,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
 		"brake_torque": 458.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3(0.0, 0.2, 0), # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, 0.18, 0), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
@@ -162,7 +162,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD GT)
 		"brake_torque": 889.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, -0.18, 0.0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
 		"wheel_radius": 0.33, "wheel_width_front": 0.215, "wheel_width_rear": 0.235, # 215/235 mild stagger
@@ -184,7 +184,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (mid-engine, tail-heavy)
 		"brake_torque": 310.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, 0.64, 0.0), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
 		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
 		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),
@@ -208,7 +208,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.45, # front share of foot-brake torque (nose-heavy RWD muscle)
 		"brake_torque": 943.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, -0.03, 0.0), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
 		# 5.28 m x 1.95 m). Long, low, heavy coupe.
 		"body": Vector3(1.90, 0.55, 5.28), "cabin": Vector3(1.55, 0.50, 1.80),
@@ -232,7 +232,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
 		"brake_torque": 330.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3(0, 0, -0.1), # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0, 0.17, -0.1), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
 		"cabin_z": 0.10, "track": 1.5, "wheelbase": 2.345,
@@ -255,7 +255,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (rear-engine, tail-heavy)
 		"brake_torque": 489.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, -0.22, 0.0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
 		"wheel_radius": 0.32, "wheel_width_front": 0.185, "wheel_width_rear": 0.215, # 185/215 the "wide" 930 stagger
@@ -278,7 +278,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (~49/51 front-mid RWD)
 		"brake_torque": 827.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, -0.19, 0.0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45), # low open roadster
 		"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.6,
 		"wheel_radius": 0.34, "wheel_width_front": 0.275, "wheel_width_rear": 0.335, # 275/335 stagger
@@ -301,7 +301,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.3, # front share of foot-brake torque (nose-heavy RWD)
 		"brake_torque": 862.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, # long, brick-like body → real aero drag
-		"bonnet_cam_offset": Vector3.ZERO, # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, -0.02, 0.0), # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
 		"cabin_z": 1.40, "track": 1.7, "wheelbase": 3.45,

@@ -412,14 +412,11 @@ before assuming a "sharp" import alone is enough.
 
 ## Gauge captions — the one drop-shadow exception
 
-The three in-run HUD gauges (`HPGauge` / `BoostGauge` / `NitrousGauge`, a `HudGauge`
-radial ring each — see [hud.md](hud.md)) no longer use text captions at all: each
-draws a `GaugeIcons` glyph (cross / dial / bottle) in flat ink, in the hole of the
-ring, never on top of the coloured fill — sidestepping the legibility problem this
-section used to describe for the old bars' captions-on-fill (a hard black drop
-shadow thickening and muddying glyph edges against a saturated fill). The
-`GaugeIcons` glyphs are drawn with no outline and no shadow by construction, not via
-an override on a `Label`.
+The in-run HUD gauges (`HudGauge` vertical strips — see [hud.md](hud.md)) draw their
+`GaugeIcons` glyph in flat ink below the bar, and their name runs up the bar itself in
+FAINT ink with **no shadow** — a hard black drop shadow is exactly what muddied the old
+bars' captions against a saturated fill. Both are drawn directly by the gauge, not via a
+`Label`, so the theme's shadow never reaches them.
 
 This section is kept for history and because the underlying trap is still real: if
 you add another caption-on-fill widget, know that —

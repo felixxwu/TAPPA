@@ -293,3 +293,19 @@ func test_quick_travel_from_the_pause_menu_map_goes_back_to_driving() -> void:
 	assert_eq(rest.last_site, rests[2])
 	assert_false(pause.is_open(), "a travel doesn't drop you back in the pause menu")
 	assert_false(get_tree().paused)
+
+
+# The full map draws driven road, plus in grey only the undriven road within reach of it.
+func test_the_map_greys_in_undriven_road_near_driven_road_only() -> void:
+	WorldSession.new_world(42, _any_car())
+	var cell := WorldSession.DRIVEN_CELL_M
+	var net := RoadNetwork.new()
+	for x: float in [0.0, cell * 2.0, cell * 50.0]:  # driven, nearby, far
+		net.seg_ax.append(x + 1.0)
+		net.seg_ay.append(1.0)
+		net.seg_bx.append(x + 3.0)
+		net.seg_by.append(1.0)
+	WorldSession.mark_driven(2.0, 1.0)
+	var roads := WorldPages.map_roads(net, cell * 3.0)
+	assert_eq(roads[1], PackedInt32Array([0]), "the driven segment")
+	assert_eq(roads[0], PackedInt32Array([1]), "the nearby undriven one, not the far one")

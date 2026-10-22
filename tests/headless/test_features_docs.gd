@@ -150,6 +150,9 @@ func test_no_area_doc_grows_into_an_unnavigable_monolith() -> void:
 
 
 func test_the_oversized_doc_baseline_only_shrinks() -> void:
+	if OVERSIZED_BASELINE.is_empty():
+		pass_test("every oversized doc has been split")
+		return
 	for name in OVERSIZED_BASELINE:
 		assert_true(FileAccess.file_exists("%s/%s" % [FEATURES_DIR, name]),
 			"features/%s is on OVERSIZED_BASELINE but does not exist — remove the entry" % name)

@@ -8,15 +8,6 @@ const TEST_PATH := "user://test_mini_map_profile.json"
 var _save: Node
 
 
-# A stand-in LootDirector: something lies at the sites in `full`.
-class FakeLoot:
-	extends Node
-	var full := {}
-
-	func loot_at(site: int) -> Dictionary:
-		return {"id": "thing"} if full.has(site) else {}
-
-
 func before_each() -> void:
 	_save = get_node("/root/Save")
 	_save.profile_path = TEST_PATH
@@ -81,36 +72,20 @@ func test_seen_sites_are_ints_and_an_old_save_without_the_key_reads_as_spawn_onl
 
 # --- what a map shows ----------------------------------------------------------------------------
 
-func test_only_seen_sites_show_and_a_lit_rest_stop_always_shows_lit() -> void:
+func test_only_seen_rest_stops_show_and_a_lit_one_always_shows_lit() -> void:
 	var s := _sites()
-	var loot := FakeLoot.new()
-	autofree(loot)
-	loot.full = {2: true, 3: true}
-	var shown := _kinds(MiniMap.site_markers(s, {0: true}, loot, Vector2.ZERO, INF))
+	var shown := _kinds(MiniMap.site_markers(s, {0: true}, Vector2.ZERO, INF))
 	assert_eq(shown, {0: MiniMap.Marker.REST_LIT}, "nothing else seen yet")
 	for i in [1, 2, 3]:
 		WorldSession.see(i)
-	shown = _kinds(MiniMap.site_markers(s, {0: true}, loot, Vector2.ZERO, INF))
-	assert_eq(shown.get(1), MiniMap.Marker.REST_UNLIT)
-	assert_eq(shown.get(2), MiniMap.Marker.LOOT)
-	assert_eq(shown.get(3), MiniMap.Marker.LOOT, "loot at a dead end shows too")
-
-
-func test_seen_loot_shows_only_while_something_lies_there() -> void:
-	var s := _sites()
-	var loot := FakeLoot.new()
-	autofree(loot)
-	WorldSession.see(2)
-	loot.full = {2: true}
-	assert_true(_kinds(MiniMap.site_markers(s, {}, loot, Vector2.ZERO, INF)).has(2))
-	loot.full = {}
-	assert_false(_kinds(MiniMap.site_markers(s, {}, loot, Vector2.ZERO, INF)).has(2))
+	shown = _kinds(MiniMap.site_markers(s, {0: true}, Vector2.ZERO, INF))
+	assert_eq(shown, {0: MiniMap.Marker.REST_LIT, 1: MiniMap.Marker.REST_UNLIT}, "loot slots and dead ends never show")
 
 
 func test_markers_are_limited_to_the_radius() -> void:
 	var s := _sites()
 	WorldSession.see(1)
-	var shown := _kinds(MiniMap.site_markers(s, {}, null, Vector2.ZERO, 500.0))
+	var shown := _kinds(MiniMap.site_markers(s, {}, Vector2.ZERO, 500.0))
 	assert_false(shown.has(1))
 
 
@@ -128,6 +103,18 @@ func test_ahead_is_up_and_right_is_right_whatever_the_heading() -> void:
 		assert_lt(ahead.y, c.y, "a point ahead is above the car for %s" % fwd)
 		assert_almost_eq(ahead.x, c.x, 0.01, "straight ahead stays centred for %s" % fwd)
 		assert_gt(side.x, c.x, "a point to the right is to the right for %s" % fwd)
+
+
+func test_the_way_out_arrow_points_away_from_spawn_whatever_the_heading() -> void:
+	var mm := _map()
+	mm.set_view(Vector2.ZERO, Vector2(0, -1))
+	assert_eq(mm.outward_dir(), Vector2.ZERO, "no arrow at spawn")
+	for fwd: Vector2 in [Vector2(0, -1), Vector2(1, 0), Vector2(-0.6, 0.8)]:
+		var car := Vector2(500, -200)
+		mm.set_view(car, fwd)
+		var away := mm.world_to_local(car * 1.1) - mm.world_to_local(car)
+		assert_almost_eq(mm.outward_dir().angle_to(away), 0.0, 0.01, "points away from spawn for %s" % fwd)
+		assert_almost_eq(mm.outward_dir().length(), 1.0, 0.001)
 
 
 func test_the_ground_is_tilted_away_far_is_narrower_and_compressed() -> void:
@@ -193,3 +180,33 @@ func test_while_paused_it_hides_and_ignores_taps() -> void:
 	get_tree().paused = false
 	mm._process(0.0)
 	assert_true(mm.visible)
+
+
+func test_the_carried_line_shows_only_while_carrying() -> void:
+	var mm := _map()
+	mm.update_carried_label()
+	assert_false(mm.carried_label.visible)
+	WorldSession.set_list("carried", ["a", "b"])
+	mm.update_carried_label()
+	assert_true(mm.carried_label.visible)
+	assert_string_contains(mm.carried_label.text, "2")
+
+
+class FakeRestStops:
+	extends RestStops
+	var site := -1
+	func prompt_site() -> int:
+		return site
+
+
+func test_the_line_prompts_at_a_rest_stop() -> void:
+	var mm := _map()
+	var rs := FakeRestStops.new()
+	autofree(rs)
+	mm.rest_stops = rs
+	mm.update_carried_label()
+	assert_false(mm.carried_label.visible)
+	rs.site = 3
+	mm.update_carried_label()
+	assert_true(mm.carried_label.visible)
+	assert_string_contains(mm.carried_label.text, "REST STOP")

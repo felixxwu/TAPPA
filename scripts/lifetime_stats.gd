@@ -28,8 +28,8 @@ const STATS := {
 			"free_roam.gd's odometer every few seconds.",
 	},
 	REST_STOPS_LIT: {
-		"label": "Rest stops lit",
-		"description": "Free-roam rest stops lit for the first time. Written by WorldSession.light().",
+		"label": "Checkpoints reached",
+		"description": "Free-roam checkpoints reached for the first time. Written by WorldSession.light().",
 	},
 	TIMES_GAVE_UP: {
 		"label": "Times the car gave up",

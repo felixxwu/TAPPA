@@ -2,13 +2,13 @@ class_name SiteBeacons
 extends Node3D
 # Docs: features/loot.md, features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
-# The tall beams of light over every rest stop and every piece of loot, fainter the further off
-# they are, and — once the car is close — the floating name over each piece of loot ("New car",
-# "New upgrade", …), so they can be found from far away and told apart up close. The ground
-# markers (crates, rest-stop posts and crowds) are TerrainStreamer's and only exist around the car;
-# these live for the whole world, one beam per site, and stay a few pixels wide however far off
-# they are (`_tick` widens them with distance) and fading out as they reach into the sky. Beams
-# ignore fog, so a beacon reads through the weather. Created by LootDirector, which rebuilds the loot beams when the pool changes.
+# The tall beams of light over every rest stop, fainter the further off they are, and — once the
+# car is close — the floating name over each piece of loot ("New car", "New upgrade", …). The
+# ground markers (loot crystals, rest-stop posts and crowds) are TerrainStreamer's and only exist
+# around the car; these live for the whole world, and beams stay a few pixels wide however far off
+# they are (`_tick` widens them with distance) and fade out as they reach into the sky. Beams
+# ignore fog, so a beacon reads through the weather. Created by LootDirector, which rebuilds the
+# loot names when the pool changes.
 
 const TICK_S := 0.2
 const BEAM_SHADER := preload("res://shaders/beacon_beam.gdshader")
@@ -17,7 +17,7 @@ var streamer: TerrainStreamer
 var loot: LootDirector
 
 var _rest_beams := {}   # site -> Node3D (a beam)
-var _loot_nodes := {}   # site -> Node3D (beam + label)
+var _loot_nodes := {}   # site -> Node3D (label)
 var _t := 0.0
 
 
@@ -35,7 +35,7 @@ func setup(p_streamer: TerrainStreamer, p_loot: LootDirector) -> void:
 	_tick()
 
 
-# Rebuild the loot beams and labels from what the sites show now.
+# Rebuild the loot labels from what the sites show now.
 func refresh_loot() -> void:
 	for n: Node in _loot_nodes.values():
 		n.queue_free()
@@ -46,9 +46,6 @@ func refresh_loot() -> void:
 		var item: Dictionary = loot.placement[site]
 		var root := Node3D.new()
 		root.name = "Loot%d" % site
-		var beam := _beam(Config.data.beacon_loot_height_m, LootRules.colour(item))
-		beam.name = "Beam"
-		root.add_child(beam)
 		root.add_child(_label(LootRules.ground_label(item), LootRules.colour(item)))
 		add_child(root)
 		root.position = _ground(site)
@@ -80,7 +77,6 @@ func update_from(eye: Vector3) -> void:
 		set_beam_color(beam, Color(col.r, col.g, col.b, beam_color(beam).a))
 	for site: int in _loot_nodes:
 		var root: Node3D = _loot_nodes[site]
-		_fit(root.get_node("Beam") as Node3D, eye, cfg)
 		var label := root.get_node("Label") as Label3D
 		label.visible = Vector2(eye.x, eye.z).distance_to(streamer.sites.pos[site]) <= cfg.beacon_label_range_m
 

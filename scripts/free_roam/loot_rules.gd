@@ -121,16 +121,24 @@ static func remaining(table: Array, taken: Dictionary) -> Array:
 	for item: Dictionary in table:
 		if not taken.has(item_key(item)):
 			out.append(item)
-	var ranked := out.duplicate()
+	return _best_first(out)
+
+
+# `items` ordered by _rank, keeping their order within a rank.
+static func _best_first(items: Array) -> Array:
+	var ranked := items.duplicate()
 	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var ra := _rank(a)
 		var rb := _rank(b)
-		return ra < rb or (ra == rb and out.find(a) < out.find(b)))
+		return ra < rb or (ra == rb and items.find(a) < items.find(b)))
 	return ranked
 
 
-# What every loot site shows now: {site: item}. `used` is the spent (emptied) sites.
-static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Dictionary, used: Array) -> Dictionary:
+# What every loot site shows now: {site: item}. `used` is the spent (emptied) sites. Once every item
+# shows somewhere, the spare sites go to anything but a car, so each of those shows at about
+# `item_weight` times as many sites as a car.
+static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Dictionary, used: Array,
+		item_weight := 1) -> Dictionary:
 	var tables := ring_tables(ring_count)
 	var order: Array = []  # per ring: its loot sites, dead ends first, each group seeded
 	var counts := PackedInt32Array()
@@ -188,16 +196,30 @@ static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Di
 					host = c
 		if host >= 0:
 			(pools[host] as Array).append(o[0])
+	# Hosted items join the end of their host's pool; re-rank so dead ends still show the best.
+	for r in ring_count:
+		pools[r] = _best_first(pools[r])
 	var out := {}
 	for r in ring_count:
 		var pool: Array = pools[r]
 		if pool.is_empty():
 			continue
+		var cycle := weighted_cycle(pool, item_weight)
 		var j := 0
 		for site: int in free[r]:
-			out[site] = pool[j % pool.size()]
+			out[site] = cycle[j % cycle.size()]
 			j += 1
 	return out
+
+
+# The order a ring's free sites take items from `pool` in, repeating: every item once, then
+# `item_weight - 1` more rounds of everything but the cars.
+static func weighted_cycle(pool: Array, item_weight: int) -> Array:
+	var cycle := pool.duplicate()
+	var not_cars := pool.filter(func(item: Dictionary) -> bool: return String(item["kind"]) != "car")
+	for w in item_weight - 1:
+		cycle.append_array(not_cars)
+	return cycle
 
 
 static func _shuffled(ids: Array, world_seed: int, salt: int) -> Array:

@@ -176,9 +176,9 @@ zero when not fitted) and clears the three flags — property 1 above.
 
 ## The gauge (`hud.gd`)
 
-A **violet** radial ring gauge (`NitrousGauge`, a `HudGauge` — see [hud.md](hud.md))
+A **violet** vertical strip gauge (`NitrousGauge`, a `HudGauge` — see [hud.md](hud.md))
 in the same family as the health and boost gauges: a pressure-bottle icon
-(`GaugeIcons.Kind.NOS`) in the ring's hole rather than a text caption, `fill_color`
+(`GaugeIcons.Kind.NOS`) under the bar, `fill_color`
 tinted via the shared `_gauge_color`, and visible **only** when nitrous is fitted
 rather than sitting at zero.
 

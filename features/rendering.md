@@ -174,10 +174,7 @@ the twin sync. Packing contract: `shaders/spike_id.gdshaderinc` ↔ the post sha
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
 Applied as the material of a `PostProcess` **SubViewportContainer**
 (`scripts/post_process_view.gd`), packaged as **`post_process.tscn`** and instanced by
-**every 3D scene: `main.tscn` (the driving stage, as `PostProcess`) and the hub
-(`hub_shell.gd::_ready` adds one as the hub's first child, behind every page, next to
-`MenuShowcase`)** — so the PS1 treatment covers the game's 3D
-rather than stopping at the garage door. The 3D world stays in the main tree but
+**every 3D scene: `free_roam.tscn` and the dev stage `main.tscn`** (as `PostProcess`). The 3D world stays in the main tree but
 is rendered through `PostProcess/View`, a `SubViewport` that shares the host's
 `World3D` (`own_world_3d = false`) and carries a `ViewCamera` mirror camera
 synced every frame to the active camera; the root viewport's own 3D pass is
@@ -410,34 +407,26 @@ a dim lake transparent rather than dark).
 
 Route any new fake-lit material through it. The existing users:
 `apply_car_light` (`ps1_models_lit.gdshader` — cars, rocks (`Foliage.rock_mesh`),
-barrier modules (`BarrierSection._mat`, see [barriers.md](barriers.md)), coins
-(`CoinField._material`, see collectables.md (deleted with the free-roam pivot)), and the finish
-arch (`FinishArch._make_material`, see finish-arch.md (deleted with the free-roam pivot))),
+barrier modules (`BarrierSection._mat`, see [barriers.md](barriers.md))),
 `apply_foliage_light` (`billboard_opaque.gdshader`, mirroring the car helper so
 trees and car can't drift apart), `LakeField.build` (`water.gdshader` colours +
-the sun-glint sparkle) and `SignField._material_for` (`albedo_color`). Terrain
+the sun-glint sparkle). Terrain
 is the exception — it takes the same dimming through the vertex-colour bake
 instead. Full write-up in [weather.md](weather.md) → "Unshaded means nothing
 dims for free".
 
 **Every new fake-lit material must route through here — a hardcoded literal is
-a bug, not a style choice.** `BarrierSection._mat()`, `CoinField._material()`
-and `FinishArch._make_material()` all shipped with an identical copy-pasted
-block hardcoding `sun_color`/`sky_color`/`ground_color`/`light_dir` as literal
-`Color`/`Vector3` values instead of calling `apply_car_light` — so barriers
-(crash barriers on the outside of corners), coins, and the finish arch never
-dimmed on a night or storm stage while every other prop around them did. All
-three now route through `apply_car_light` like rocks do; each also dropped a
-dead, never-fed `sun_direction` export/const (`BarrierField`/`world.gd` never
-actually wired one in). Before adding another hand-built `ShaderMaterial` on
+a bug, not a style choice.** Barrier modules once shipped with a copy-pasted block
+hardcoding `sun_color`/`sky_color`/`ground_color`/`light_dir` as literals instead of calling
+`apply_car_light`, so they never dimmed on a night or storm stage while every other prop
+around them did. Before adding another hand-built `ShaderMaterial` on
 this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
 
 ## Environment
 
 - **Shared environment base**: `GameConfig.apply_environment(env)` sets fog,
-  backdrop colour and glow from config. Both `world.gd` → `_apply_scene_config`
-  and `menu_showcase.gd` (the menu's scrolling background) call it, so the stage
-  and menu look the same; weather/region looks layer on top. The garage builds
+  backdrop colour and glow from config. `world.gd` → `_apply_scene_config` calls it;
+  weather/region looks layer on top. The garage builds
   its own env and does not use it.
 - **Glow (bloom)**: Godot's built-in `Environment` glow, from the `glow_*`
   exports in `GameConfig` ("World" group). It is a mip-chain downsample/upsample blur. Materials are unshaded LDR, so
@@ -457,7 +446,6 @@ this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
   with a CC0 photographic open-field sky equirect (`textures/sky_field.png`, a tonemapped
   LDR downscale of a Poly Haven HDRI). The full-screen post-process quantizes it
   to the same 5-bit + dither look, so it reads as native PS1, not a pasted photo.
-  The deleted `hq.gd` built the same sky in code so the hub matched.
   **The panorama is re-seeded every stage boot, not conditionally overridden.**
   `world.gd._apply_region_look` assigns it unconditionally, falling back to
   `GameConfig.default_sky_panorama` when the region names none, then
@@ -580,8 +568,7 @@ condition could whiten the ground with no code change at all. A fixed world dire
 correctly under world-space simulation — under the old `local_coords = true` scheme
 the "wind" would have rotated with the camera, which is exactly backwards. Covered
 by `test_render_smoke.gd::test_sandstorm_field_is_a_single_cheap_draw_with_wind_direction`.
-Sandstorm is authored only onto `region == "greece"` events — see
-`RallyLibrary.WEATHER_SANDSTORM` and `test_menu_showcase_geometry.gd::test_sandstorm_is_eligible_only_in_the_desert_regions`.
+Sandstorm is authored only onto `region == "greece"` stages and pools.
 
 **Fog** is the cheapest condition in the table and the purest use of this section's
 "look is made of fog" mechanism: it is *only* a look block. `mist_fog_density_mult`
@@ -800,7 +787,8 @@ the **first time each material renders**, which on web stalls that frame — con
 via the benchmark's cold-vs-warm two-pass (a fresh WebGL context spikes to ~80 ms on
 first-use draws; a warm second pass of the same stage drops to ~30 ms — see
 [benchmark.md](benchmark.md)). Two load-time warm passes pay those compiles behind
-the loading cover instead of mid-drive:
+the loading cover instead of mid-drive. Free roam runs the same passes at its boot
+(`free_roam.gd._warm_up`, see [free-roam.md](free-roam.md) → "Boot"):
 
 - **Contract walk** (`world.gd` warm block, ~line 517): after the world is built,
   `find_children()` discovers **every** node implementing the
@@ -925,9 +913,6 @@ cull dithers rather than pops):
 - **Spectators** set it on the group `MultiMeshInstance3D` (anchored at the crowd
   centroid so the single test measures camera→crowd distance) — see
   [spectators.md](spectators.md).
-- **Signs** set it on each resting-sign `MultiMeshInstance3D` (`sign_field.gd`).
-- **Start / finish arches** apply it to the whole arch subtree (structure, banners,
-  ropes) after build — see finish-arch.md (deleted with the free-roam pivot).
 
 Non-foliage props go through `MeshUtil.apply_visibility_range(root, end_m, fade_m)`,
 which walks a subtree and sets the fields on every `GeometryInstance3D`
@@ -967,8 +952,7 @@ sets** — `ps1_terrain_snow` `#include`s `headlight_cone.gdshaderinc` and appli
 the cone exactly as `ps1_models` does, because the swap below relies on
 `ShaderMaterial` keeping its by-name parameter map across a shader change. A
 uniform added to one and not the other silently drops its value on a snow stage.
-`WorldRuntime.apply_deep_snow` (called from `world.gd._apply_deep_snow_ground` and the
-identical wrapper in the deleted `overworld.gd`)
+`WorldRuntime.apply_deep_snow` (called from `world.gd._apply_deep_snow_ground`)
 swaps the floor material between them every stage boot, including restoring the base
 shader, because that material is a shared `main.tscn` sub-resource that survives scene
 instantiation. See [snow-region.md](snow-region.md).

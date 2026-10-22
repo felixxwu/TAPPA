@@ -10,6 +10,7 @@ var _car: VehicleBody3D
 var _streamer: TerrainStreamer
 var _rest: RestStops
 var _page: RestStopPage
+var _banner: CheckpointBanner
 var _save: Node
 
 
@@ -31,6 +32,7 @@ func before_all() -> void:
 	_streamer = _scene.get_node("Terrain")
 	_rest = _scene.get_node("RestStops")
 	_page = _scene.get_node("RestStopPage")
+	_banner = _scene.get_node("CheckpointBanner")
 
 
 func after_all() -> void:
@@ -45,6 +47,11 @@ func after_all() -> void:
 func after_each() -> void:
 	if _page.is_open():
 		_page.close()
+	if _banner._band != null:
+		_banner._band.free()
+		_banner._band = null
+	_banner._pending_site = -1
+	_banner.close()
 	get_tree().paused = false
 
 
@@ -64,8 +71,7 @@ func _a_rest_stop() -> int:
 
 func _park_on(site: int) -> void:
 	_rest.move_car_to(site)
-	_rest._offered = -1  # a fresh arrival, as if driven in (move_car_to marks the stop as
-	_rest._on_site = -1  # already reached, which is right for travel and respawn, not for this)
+	_rest._on_site = -1  # a fresh arrival, as if driven in (move_car_to marks the stop as reached)
 	_car.linear_velocity = Vector3.ZERO
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -118,43 +124,33 @@ func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> voi
 	_rest.set_physics_process(true)
 
 
-# A car SPAWNED at a rest stop (a new game, Continue, the reload after a parts change) has already
-# arrived there: sitting still doesn't open the page. Driving away and back does.
-func test_a_car_spawned_at_a_rest_stop_is_not_offered_the_page() -> void:
+# Stopping alone doesn't open the page: menu_select (Enter / gamepad A) does, and only when slow.
+func test_menu_select_while_stopped_at_a_rest_stop_opens_the_page() -> void:
 	var site := _a_rest_stop()
+	await _park_on(site)
 	_rest.set_physics_process(false)
-	var pose := _rest.pose_at(site)
-	_streamer.prefill_at(Vector2(pose.origin.x, pose.origin.z))
-	_car.reset_to(_rest.pose_at(site))
-	await get_tree().physics_frame
-	_rest._primed = false  # as on a fresh scene load
-	_rest._on_site = -1
-	_rest._offered = -1
 	watch_signals(_rest)
 	for i in 10:
 		_car.linear_velocity = Vector3.ZERO
-		_rest.step(Config.data.rest_stop_hold_s * 0.5)
-	assert_signal_not_emitted(_rest, "opened", "spawning there isn't stopping there")
-	_rest._on_site = -1  # drive away...
-	_rest._offered = -1
-	for i in 10:
-		_car.linear_velocity = Vector3.ZERO
-		_rest.step(Config.data.rest_stop_hold_s * 0.5)
-	assert_signal_emit_count(_rest, "opened", 1, "...and back, then stop: the page")
-	_page.close()
+		_rest.step(0.5)
+	assert_signal_not_emitted(_rest, "opened", "stopping alone doesn't open it")
+	assert_eq(_rest.prompt_site(), site)
+	_rest._unhandled_input(_press("menu_select"))
+	assert_signal_emitted_with_parameters(_rest, "opened", [site])
 	_rest.set_physics_process(true)
 
 
-func test_stopping_on_a_rest_stop_offers_the_page_once_per_visit() -> void:
+func test_menu_select_while_moving_through_a_rest_stop_does_nothing() -> void:
 	var site := _a_rest_stop()
 	await _park_on(site)
+	_rest.set_physics_process(false)
+	_rest.step(0.01)
+	_car.linear_velocity = -_car.global_transform.basis.z * 30.0
 	watch_signals(_rest)
-	_rest._on_site = -1
-	for i in 10:
-		_car.linear_velocity = Vector3.ZERO
-		_rest.step(Config.data.rest_stop_hold_s * 0.5)
-	assert_signal_emit_count(_rest, "opened", 1)
-	_page.close()
+	assert_eq(_rest.prompt_site(), -1)
+	_rest._unhandled_input(_press("menu_select"))
+	assert_signal_not_emitted(_rest, "opened")
+	_rest.set_physics_process(true)
 
 
 func test_giving_up_respawns_repaired_at_the_last_lit_rest_stop() -> void:
@@ -171,7 +167,17 @@ func test_giving_up_respawns_repaired_at_the_last_lit_rest_stop() -> void:
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	await get_tree().physics_frame
+	assert_signal_emitted(_rest, "wrecked")
+	assert_signal_not_emitted(_rest, "respawned", "the wreck page comes first")
+	assert_true(_page.is_open())
+	assert_eq(_page.view, RestStopPage.View.WRECKED)
+	assert_false(get_tree().paused, "the wreck page leaves the game running")
+	assert_true(_car.ai_controlled, "the wreck rolls on with no player controls")
+	assert_eq(_car.ai_throttle, 0.0)
+	assert_true(_page.pick("Respawn"))
 	assert_signal_emitted(_rest, "respawned")
+	assert_false(_page.is_open())
+	assert_false(_car.ai_controlled, "the controls come back with the respawn")
 	assert_eq(dmg.hp, dmg.max_hp)
 	var pose := _rest.pose_at(site)
 	assert_lt(Vector2(_car.global_position.x, _car.global_position.z).distance_to(Vector2(pose.origin.x, pose.origin.z)), 3.0)
@@ -315,3 +321,34 @@ func test_no_rest_stop_page_paints_an_opaque_backdrop() -> void:
 		var box := (_page._page._panel.get_theme_stylebox("panel") as UIHardShadowBox).inner as StyleBoxFlat
 		assert_eq(box.bg_color.a, 0.0, "view %d: the body box is see-through" % v)
 	_page.close()
+
+
+# Lighting a checkpoint shows the "Checkpoint reached" band; once it has faded, a page of what is
+# still to be found in that biome comes up, walkable by keyboard / gamepad, and Back closes it.
+func test_lighting_a_checkpoint_shows_the_banner_then_a_navigable_items_page() -> void:
+	var site := _a_rest_stop()
+	_rest.lit_sites.erase(site)
+	await _park_on(site)
+	_rest.step(0.01)
+	assert_true(_banner.is_showing_banner())
+	assert_false(_banner.is_open(), "no page while the banner is up")
+	_banner._banner_done(site)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if _banner.items_for(site).is_empty():
+		assert_false(_banner.is_open(), "nothing left to find: no page")
+		return
+	assert_true(_banner.is_open())
+	assert_true(get_tree().paused)
+	await get_tree().process_frame
+	var cards := _banner.cards()
+	assert_eq(cards.card_count(), _banner.items_for(site).size() + 1, "Continue, then one card per item")
+	assert_eq(_banner.get_viewport().gui_get_focus_owner(), cards, "the card list has the cursor")
+	var nav := MenuNav.of(_banner._page)
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(cards.selected_index(), 1, "right walks the cards")
+	nav._unhandled_input(_press("ui_cancel"))
+	await get_tree().process_frame
+	assert_false(_banner.is_open(), "back closes it")
+	assert_false(get_tree().paused)
+

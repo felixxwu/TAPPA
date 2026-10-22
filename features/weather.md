@@ -3,22 +3,16 @@
 The per-stage config funnel this file leans on lives in `scripts/stage_config.gd`
 (`class_name StageConfig`) — see *One funnel into the live config* below.
 
-Design doc: `docs/superpowers/specs/2026-08-02-weather-design.md` (anticipated a
-string enum specifically so later conditions — "fog / snow / night" — would have
-an obvious home; sandstorm is exactly that case). The feature is fully implemented:
-authoring, config, the funnel into the live config, tyre grip, rival-time scaling,
-cache keying, the overcast/dust look and the loading-screen tell. This file is the
-hub; each half is documented in depth in its own feature file, linked below.
+In **free roam** weather drifts: `BiomeDirector` cuts drive time into `weather_hold_s` slots and
+each (ring, slot) draws a condition from the ring's weighted pool (`ring_weather`), seeded from
+the world seed, then cross-fades the environment into it. On the dev stage a stage dict authors
+its `"weather"`. Both reach the live config through the same table and funnel below. This file
+is the hub; each half is documented in depth in its own feature file, linked below.
 
 **Tests:** `tests/headless/test_weather_library.gd`, `tests/headless/test_crosswind.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_loading_screen.gd`
 
-Rain and sandstorm are each a **variety** lever, not a **difficulty** one — see
-"Rival times". Sandstorm is authored only onto `region == "greece"` events — the arid
-desert pins in the map's SW/S, which is where the look belongs; rain has no such
-restriction.
-Fog and storm (`docs/superpowers/specs/2026-08-02-fog-and-storm-weather-design.md`)
-are the two later conditions; **fog is deliberately NOT variety-only** — see
-"Rival times" for why that asymmetry is intended rather than a bug.
+Rain and sandstorm change how the car must be driven; fog, night and storm also cost
+visibility, which no model of the drive accounts for.
 **Night** (`todo/night-weather-and-headlights.md`) is the seventh entry and the
 odd one out: it re-lights the world instead of only recolouring it — see "Night"
 below. Five stages author it, one per region, so every region's palette can be
@@ -29,7 +23,7 @@ switches the lights on as well, at a much lower strength, via the same authored
 ## The weather table (`WeatherLibrary`) — the single source of truth
 
 `scripts/weather_library.gd` (`class_name WeatherLibrary`) is the authored catalogue
-of conditions, in the style of `CarLibrary.CARS` / `RallyLibrary.RALLIES` /
+of conditions, in the style of `CarLibrary.CARS` /
 `RegionLibrary.REGIONS` (same `Registry.Seam` all/`override_for_test`/reset seam).
 **Every consumer reads this table; none of them tests `== WEATHER_x`.** Before it,
 the same "which condition is this?" rule was reimplemented as a parallel `if` chain
@@ -42,7 +36,7 @@ omitted key means "this condition does not have that feature":
 
 | key | meaning |
 | --- | --- |
-| `id` | stable id; matches the authored event string, `RallyLibrary.WEATHER_*` and `GameConfig.weather` |
+| `id` | stable id; matches the authored event string, `StageFields.WEATHER_*` and `GameConfig.weather` |
 | `grip_mult` | GameConfig field holding the global tyre μ multiplier. Omitted ⇒ **exactly 1.0** |
 | `particles` | `WeatherField` particle kind (`"rain"` / `"sand"`). Omitted ⇒ no particle field is constructed |
 | `particle_count` | GameConfig field for the quad count |
@@ -55,7 +49,7 @@ omitted key means "this condition does not have that feature":
 | `sky_panorama` | GameConfig field holding a **sky texture path** the condition swaps in, overriding whatever the region chose. Omitted ⇒ the region's sky is left alone. Only `night` names one |
 | `headlights` | GameConfig field holding the **strength** (0..1) of the fake headlight cone this condition switches on. Omitted ⇒ the car's lights stay off and every cone uniform is a bit-for-bit no-op. Read by `HeadlightCone`; cosmetic, so it is **not** in `physics_fields` |
 | `foliage_wind` | GameConfig field holding the tree wind-sway **strength** for this condition. Omitted ⇒ the shared base `foliage_wind_strength` — deliberately the case for every condition but `storm`/`sandstorm`, since wind reads the same everywhere except in a storm. Read by `WindSway`; cosmetic, so it is **not** in `physics_fields` — see [trees.md](trees.md) → "Wind sway" |
-| `terrain_relight` | A plain `true`/omitted flag (not a field name — there is no per-condition tuning here). Marks a condition whose ground darkening is worth pre-baking a second terrain vertex-colour array for, rather than only a `road_tint` uniform. Read ONLY by `menu_showcase.gd` (see [terrain.md](terrain.md) → "Dual day/night bake") — no real stage reads it, since a stage just re-bakes its one terrain instance directly. Omitted ⇒ `false`. Not in `config_fields`/`physics_fields` (it names no GameConfig field and cannot affect a lap time) |
+| `terrain_relight` | A plain `true`/omitted flag. Marked a condition worth pre-baking a second terrain vertex-colour array for; its only reader (the deleted menu showcase) is gone, so **nothing reads it today**. |
 
 **`sky_panorama` is deliberately NOT a sixth `LOOK_KEYS` entry.** `LOOK_KEYS` is
 all-or-nothing — an entry with a `look` block must name every one of the five
@@ -89,7 +83,7 @@ Public API (a contract — other conditions are added against it):
 
 - `WeatherLibrary.all()` / `override_for_test(...)` / `reset()` — the standard seam.
 - `by_id(id) -> Dictionary` — **an unknown id returns the DRY entry**, mirroring
-  `RallyLibrary.event_weather`'s tolerance of a typo, so consumers read it unguarded.
+  `StageFields.event_weather`'s tolerance of a typo, so consumers read it unguarded.
 - `grip_mult(cfg, id) -> float` — the μ multiplier from the named config field;
   dry (and therefore any unknown id) is exactly **1.0**.
 - `config_fields(entry) -> Array` — every GameConfig field name the entry references.
@@ -117,7 +111,7 @@ So there is a name for it:
 | --- | --- |
 | `WeatherLibrary.is_wet(id) -> bool` | the predicate — the only sanctioned way |
 | `WeatherLibrary.wet_ids() -> Array` | the set form, derived from the same table |
-| `RallyLibrary.event_is_wet(event) -> bool` | the same question at the event layer |
+| `StageFields.event_is_wet(event) -> bool` | the same question at the event layer |
 
 Both are derived from **one declared table**, `WeatherLibrary.WETNESS` — an id → bool
 dict, *not* a per-entry key and *not* a hand-written boolean chain. It is separate from
@@ -139,114 +133,38 @@ than a crash — the same tolerance every other query here has.
 
 1. Add its tuning fields to `scripts/game_config.gd` + `config/game_config.tres`.
 2. Add one entry to `WeatherLibrary.CONDITIONS` naming those fields (and, if it wants
-   a name in code, a `WEATHER_*` const in `rally_library.gd`).
+   a name in code, a `WEATHER_*` const in `stage_fields.gd`).
 3. Add its `WETNESS` row — `"<id>": true/false`. Not optional: the guard test above
    fails without it.
-4. Author `"weather": "<id>"` on the events that should run it.
+4. Add it to the `ring_weather` pools of the rings that should draw it (free roam), and/or
+   author `"weather": "<id>"` on the dev-stage dicts that should run it.
 
 No consumer changes. If the condition needs a genuinely new *kind* of feature (a wind
 force, a lightning flash) add a new entry key plus the one consumer that reads it, and
 list it in `config_fields` — then, **only if it can change a lap time**, in
-`physics_fields` too, so it re-keys the opponent cache.
+`physics_fields` too.
 
-## Authored field
+## Authored field (dev stage)
 
-An EventDef (`RallyLibrary.RALLIES`, `ChallengeLibrary`, `BenchmarkMode`, free roam
-via the deleted free-roam draw) may carry an optional `"weather"` string, e.g.:
+A dev-stage dict (`RegionStageLibrary`, the benchmark, a seed-lab preview) may carry an
+optional `"weather"` string, e.g.:
 
 ```gdscript
 {"seed": 31001, "turn_count": 22, "forestiness": 0.7, "surface_mix": 0.6,
  "straightness": 0.8, "weather": "rain"},
 ```
 
-Weather is **authored, never random** — a wet stage is wet on every attempt, so
-its leaderboard (`RallyLibrary.stage_key`) compares like with like.
-
-`RallyLibrary.event_weather(event) -> String` (`scripts/rally_library.gd`) resolves
+`StageFields.event_weather(event) -> String` (`scripts/stage_fields.gd`) resolves
 it **through the table** — `WeatherLibrary.by_id(...)["id"]` — so any condition in
 the table is authorable immediately, and an omitted key or any unrecognised string
-(a typo) resolves to `RallyLibrary.WEATHER_DRY` via `by_id`'s dry fallback.
+(a typo) resolves to `StageFields.WEATHER_DRY` via `by_id`'s dry fallback.
 Mirrors the style of the sibling accessors `event_forestiness` / `event_tarmac_fraction`
 / `event_straightness` / `event_cliffiness` in the same file.
-
-A string enum (not a `0..1` float) so `"fog"` / `"snow"` / `"night"` have an
-obvious home later — each new condition brings its own config block, and the
-funnel below does not change.
-
-**Weather is now spread near-evenly across the whole roster.** As of 2026-08 there
-are **108 authored events**, and only about 30 of them are dry — every other
-condition sits in the 12-14 range. Weather reads as a property of the individual
-stage rather than of a region or a difficulty band. One string field per event, so a
-condition is never ambiguous.
-
-The numbers below are a SNAPSHOT of authoring, not a contract: a designer moving,
-adding or removing an event changes them, and no test asserts any of it (see "Tests"
-below for why placement deliberately lives here rather than in a test). What IS
-durable is the two region locks and the reasons behind each condition's placement.
-
-| Condition | Events | Where it sits |
-|---|---|---|
-| dry | ~30 | everywhere |
-| night | ~14 | every region |
-| rain / fog / storm | ~13 each | the temperate pins (`home`, `home_coast`, a few `greece`) |
-| sandstorm | ~13 | the desert only (`region == "greece"`) |
-| snowfall | ~12 | the alpine NE only (`region == "snow"`) |
-
-The 2026-08 geography pass (see [region-stage-library.md](region-stage-library.md)) re-tagged most of
-the roster, so the guidance below is stated in terms of the TERRAIN A PIN SITS ON, not
-a region name — most rallies now carry `region: "home"` regardless of what their id
-says, and "the coastal regions" is no longer a useful way to pick out coastal stages.
-
-**Two of these bullets used to name the specific events that carried each condition,
-and every one of those lists had rotted.** Don't reintroduce them: an event list in a
-doc is stale the first time someone retunes the roster. State the CONVENTION here and
-read the current placement out of `RallyLibrary.RALLIES` (grep `"weather"`).
-
-- **Fog** — suits the damp forest and foothill pins (`home` / `home_coast`) and a
-  couple of the greener Greek ones. It is the roster's only pure difficulty lever
-  (see "Rival times"), so it wants to stay a minority of the roster.
-- **Storm** — the crosswind originally read as belonging to **exposed water**, and
-  storm was authored only on a genuine sea pin. **The current roster does not follow
-  that**: most storms now sit on inland `home` pins, so treat the old "sea only" rule
-  as history rather than as the convention. A storm also switches the **headlights**
-  on (see "Headlights on more than night"), which is why it is the only daytime
-  condition carrying a `headlights` key.
-- **Snowfall** — a REGION LOCK, and the one placement rule that has held: authored
-  only onto `region == "snow"` events (the alpine NE), mixed with dry stages there.
-  Unlike every other precipitation condition it authors **no `grip_mult`**: the snow
-  REGION already owns grip for that whole corner, dry stages included, so weather must
-  not stack a second lever on the same variable. It therefore names nothing in
-  `physics_fields` and never re-keys the opponent cache. See
-  [snow-region.md](snow-region.md).
-- **Sandstorm** — the other REGION LOCK, also intact: desert-only, i.e. the arid
-  `greece` palette and a pin in the SW/S sand. A sandstorm on a green
-  forest stage would look wrong. Note the `RALLIES` header comment calls this
-  "test-enforced" — **it is not**: no test in `tests/headless/` asserts it, so it is a
-  placement convention like the rest.
-- **Night** — no terrain or region restriction: night is a time of day, so any pin can
-  run it, and it is authored across every region. It was once deliberately ONE PER
-  REGION on a rally's first event, so each region's palette could be compared after
-  dark without playing a whole championship; the roster has long since outgrown that,
-  and the old five-row table it was documented with is gone. If you want that
-  comparison now, pick one night event per region out of `RALLIES`. Note the snow ones
-  are worth keeping: they are the only night stages running `ps1_terrain_snow`, so
-  they exercise the terrain shader variant's copy of the headlight cone rather than
-  only the base shader's.
-
-**The visibility conditions are no longer kept off difficulty-1 rallies, and that is
-worth a deliberate decision rather than drift.** Fog, night and storm all slow the
-PLAYER without touching the rival field (see "Rival times" — the lap-time model has no
-eyes, and no wind term either), so each of them silently raises the bar on the stage
-it sits on. The old guidance was to keep all three off the easiest rallies so a new
-player never met one first. Today `shitbox_cup` (difficulty 1) opens on a NIGHT stage
-and carries fog on its second, and two difficulty-1 rallies carry a storm. Either the
-roster wants re-authoring or the guidance wants dropping — but the two should not
-disagree.
 
 ## Config (`GameConfig`, `scripts/game_config.gd`)
 
 - `weather: String` — the LIVE condition for the stage currently being played
-  (`RallyLibrary.WEATHER_DRY` / `WEATHER_RAIN` / `WEATHER_SANDSTORM`). Seated only
+  (`StageFields.WEATHER_DRY` / `WEATHER_RAIN` / `WEATHER_SANDSTORM`). Seated only
   by `StageConfig.apply_event_config` (see below) — never assigned anywhere else.
 - The authored rain block, near `gravel_grip`/`tarmac_grip` and the fog/sky
   exports:
@@ -409,7 +327,7 @@ there — keep it that way.
 ## One funnel into the live config
 
 `StageConfig.apply_event_config(cfg: GameConfig, event: Dictionary)`
-(`scripts/stage_config.gd`) seats `cfg.weather = RallyLibrary.event_weather(event)`
+(`scripts/stage_config.gd`) seats `cfg.weather = StageFields.event_weather(event)`
 alongside `track_seed` / `track_turn_count` / `track_tarmac_fraction` / etc. This
 function is the ONE place a stage's parameters reach the live config, pulled at
 consume time by `world.gd._ready` via `DrivingContext.apply_stage_config` — so a
@@ -461,7 +379,7 @@ The seventh condition, and **purely a look** — deliberately. Its entry authors
 nothing else: no `grip_mult` (μ is exactly 1.0, identical to dry), no `wind`, no
 `particles`, no `lightning`. It therefore
 names nothing in `physics_fields()`, so it changes no lap time, needs no
-rebalancing and never re-keys the opponent cache. Design rationale and the four
+needs no rebalancing. Design rationale and the four
 other settled decisions are in `todo/night-weather-and-headlights.md`.
 
 **The darkening is not done in a shader.** It comes for free from the existing
@@ -472,8 +390,8 @@ any shader runs, the world is already dark.
 
 **That path assumes ONE terrain instance re-baked per stage — the menu showcase's six
 never-rebuilt segments can't use it directly**, so night is also the one condition
-carrying `"terrain_relight": true` in its entry (see the table above), which tells
-`menu_showcase.gd` to pre-bake a SECOND vertex-colour array per chunk up front and swap
+carrying `"terrain_relight": true` in its entry (see the table above), which told
+the deleted menu showcase to pre-bake a SECOND vertex-colour array per chunk up front and swap
 a segment onto it instead of re-baking live. See [terrain.md](terrain.md) → "Dual
 day/night bake" for the mechanism; nothing here or in `WeatherLibrary` changes for a
 real stage, which still just re-bakes.
@@ -490,7 +408,7 @@ knobs into a name→value dictionary, `push()` is pure
 transport onto `RenderingServer.global_shader_parameter_set`, and `reset()`
 zeroes it. `world.gd::_process` pushes once per frame and early-outs on a
 condition that authors no cone; `world.gd::_exit_tree` calls `reset()` because
-shader globals persist across scene changes and the podium and HQ draw with the
+shader globals persist across scene changes and the next scene draws with the
 same shaders. The shader half — why additive, why fragment on terrain and vertex
 elsewhere — is in [rendering.md](rendering.md) → "The fake headlight cone".
 
@@ -519,7 +437,7 @@ Consequences worth knowing:
   fragment-side cone on terrain was already compiled into the shader on every
   stage) — but a storm stage is no longer bit-for-bit identical to a dry one.
 - **It changes no lap time.** `headlights` is cosmetic, so it stays out of
-  `physics_fields()` and re-keys nothing; storm's rival field is unchanged.
+  `physics_fields()`.
 
 ### Unshaded means nothing dims for free — `weather_lit` is the rule
 
@@ -555,7 +473,6 @@ defaults to 1.0 so a session-less boot is unaffected.
 | Car (chassis, cabin, wheels, swapped-in body models) | `GameConfig.apply_car_light` → `weather_lit(sun_color)` / `weather_lit(sky_color)` |
 | Foliage billboards (trees) | `GameConfig.apply_foliage_light` → same two colours, `billboard_opaque.gdshader` |
 | Water / ice (`scripts/lake_field.gd` → `build`) | `weather_lit` on the water + shore colours, and `sparkle_strength` scaled by `weather_sun_mult` (the sparkle is a sun glint) |
-| Roadside signs (`scripts/sign_field.gd` → `_material_for`) | `weather_lit` on `albedo_color` |
 
 **The other way out of this bug class: don't author a colour at all.** Tire marks hit
 exactly the same problem — a constant grey rut stayed as bright at night and on snow as
@@ -585,8 +502,8 @@ construction rather than by three copies staying in sync.
 **The reset**: `world.gd::_exit_tree` sets `Config.data.weather_sun_mult = 1.0`
 alongside the existing `HeadlightCone.reset()`. `weather_sun_mult` is a runtime
 value on the **shared** `Config.data` and nothing anywhere calls
-`Config.reset()`, so without this a night stage would leave the HQ and the podium
-dimmed — both spawn trees through `Foliage.spawn_trees`, which now reads it via
+`Config.reset()`, so without this a night stage would leave the next scene
+dimmed — it spawns trees through `Foliage.spawn_trees`, which now reads it via
 `apply_foliage_light`. `_exit_tree` covers every exit path regardless of
 destination, and runs before the incoming scene's `_ready`.
 
@@ -594,63 +511,14 @@ destination, and runs before the incoming scene's `_ready`.
 their cars, trees, lakes and signs are now dimmer than before, matching the
 ground they sit on.
 
-## Rival times — why rain/sandstorm are variety, not difficulty (and fog is not)
+## Lap times
 
-`LapTimeModel._surface_grip` applies the same `WeatherLibrary.grip_mult`, also
-unconditionally.
-Every rival's time is a multiple of that car's physics optimum
-(`RallyLibrary.PACE_FAST_BASE` 1.10× down to a tier-dependent slow end), so scaling
-the optimum scales the **entire AI field**.
-
-A wet or sandstorm stage is therefore no harder to podium than a dry one — it
-changes *how the car must be driven*, not *how hard the stage is to win*. That is
-a deliberate design decision, not a side effect. To make either condition
-genuinely raise the bar, hold rival pace fixed while the player loses grip: a
-one-line change here, but a real change in what the feature means.
-
-### Fog is the exception — a DIFFICULTY lever, on purpose
-
-**This asymmetry is intended. It is not a bug, and it must not be "fixed" by adding
-a rival penalty without a deliberate design decision.**
-
-Fog attacks **visibility**, and visibility is not in the lap-time model — nor can it
-ever be. Every rival time is synthesised from that car's physics optimum; the AI has
-no eyes and never drives the stage. Fog therefore slows only the **player** while the
-podium cut stays exactly where it was on a dry run, which makes it the first and only
-condition in the table that raises the bar rather than changing the flavour.
-
-The spec (`docs/superpowers/specs/2026-08-02-fog-and-storm-weather-design.md`) offered
-three options — accept it, compensate with a rival pace penalty, or reserve fog for
-step-up stages. **Option 1 was chosen: accept it.** A compensating penalty would be a
-pure guess (there is no principled way to say how much a given fog density costs a
-good player) and would erase the one difficulty texture the roster has that pure grip
-changes cannot produce. What it costs instead is authoring discipline: fog is on
-**few** events, none of them in a difficulty-1 rally, so the roster's early stages
-are unaffected — see "Authored field" above.
-
-Storm inherits a milder version of the same thing: its rain component *does* scale
-the rival field through `storm_grip_mult`, but its **crosswind is a player-only
-load** on top (no wind term exists in the lap-time model either). Storm is therefore
-mostly variety with a small difficulty edge, and is likewise weighted toward the
-higher-difficulty rallies pinned on open water.
-
-## Caches and leaderboards
-
-- **Track cache: unaffected.** Weather is not a shape determinant and never reaches
-  `TrackGenParams`, so no track entry is invalidated by a wet event.
-- **Opponent field: nothing to invalidate.** The rival grid is generated live in
-  the deleted career session's rally start (it was matched to the player's car rating, so it was
-  never cacheable per rally), and a weather retune therefore lands on the next start
-  with no bake step. `WeatherLibrary.fingerprint(cfg)` survives as the structural
-  guard on the rule above — one hash of the whole weather table plus every
-  **time-affecting** config value it names (`physics_fields`: `grip_mult` + `wind`),
-  rather than a hand-written list of grip fields, so adding a condition or a key can
-  never silently slip a lap-time change past review.
-- **Global leaderboards:** `RallyLibrary.stage_key` hashes the whole authored event
-  dict, so **authoring a condition onto an event gives that event a new board** and
-  leaves every other stage's alone. That is per-event and automatic, not a one-off:
-  each later weather pass re-boarded whatever it re-authored. No
-  `TrackCache.BOARD_EPOCH` bump is needed — this is not a global engine change.
+`LapTimeModel._surface_grip` applies the same `WeatherLibrary.grip_mult`, so a wet dev
+stage's PAR time scales with it. Visibility (fog, night) and the storm's crosswind have no
+term in the lap-time model, so those conditions make a stage harder in practice than its
+PAR implies. `WeatherLibrary.fingerprint(cfg)` hashes the whole table plus every
+**time-affecting** config value it names (`physics_fields`: `grip_mult` + `wind`), so adding
+a condition or a key can never silently slip a lap-time change past review.
 
 ## Look
 
@@ -688,7 +556,7 @@ instantiation in the process. `world.gd._ready` therefore RE-SEEDS both paramete
 touches from the authored baseline before `_apply_weather_look` runs — `tarmac_color`
 from the config/region look, and `albedo_color` from `GameConfig.terrain_tint` (a
 region may override it with a `terrain_tint` look key). Without that re-seed a
-three-event rally with two wet stages left the ground at `rain_road_darken²`, and
+sequence of two wet stages left the ground at `rain_road_darken²`, and
 every later DRY stage stayed darkened; sandstorm was worse, converging toward solid
 tan. Guarded by `test_render_smoke.gd` →
 `test_stage_boot_re_seeds_the_ground_albedo_from_the_authored_baseline` and
@@ -784,16 +652,13 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   `night_sky_panorama`); an empty default would silently reintroduce the
   cross-stage sky leak, since the region look falls back to it. Neither test names
   a texture path.
-- `tests/headless/test_rally_library.gd` → `test_event_weather_defaults_to_dry` —
+- `tests/headless/test_stage_fields.gd` → `test_event_weather_defaults_and_tolerates_unknown_strings` —
   dry for an omitted key, dry for an unrecognised string, and every other condition
   in `WeatherLibrary.all()` (opaque, no id named) resolves to itself. Region/count
   placement for fog, storm and sandstorm is intentionally NOT asserted — it's
   authoring policy a designer can retune freely (moving a fog event, adding a
   fifth one), so pinning it as a test would fail on a legitimate content change
   with no bug present; see "Authored field" above for the guidance instead.
-- The deleted `tests/headless/test_rally_session.gd` →
-  `test_apply_event_config_carries_weather_and_defaults_to_dry` — an event's
-  weather lands on the config; an event with no weather key leaves it dry.
 - `tests/headless/test_drivetrain.gd` — a wet contact yields strictly less μ than
   the identical dry one, in both branches.
 - `tests/headless/test_lap_time_model.gd` — a wet event's optimum is strictly

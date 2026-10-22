@@ -4,38 +4,28 @@
 `supercharger_boost_fraction` / `supercharger_parasitic`),
 `scripts/game_config.gd` (`turbo_*` / `supercharger_*` fields),
 `scripts/engine_library.gd` (`EngineLibrary.apply` — stock wiring),
-`scripts/upgrade_library.gd` (`turbo_small` / `turbo_large` / `supercharger`
-upgrades, `effective_meta`), `scripts/engine_audio_synth.gd` /
+`scripts/boost_library.gd` (the `turbo` / `supercharger` parts),
+`scripts/upgrade_library.gd` (the `install_turbo` / `install_supercharger` effect rows,
+`effective_meta`), `scripts/engine_audio_synth.gd` /
 `scripts/engine_audio.gd` (whistle / BOV / anti-lag / whine audio).
 
 **Tests:** `tests/headless/test_turbo.gd`, `tests/headless/test_engine.gd`, `tests/headless/test_engine_audio.gd`, `tests/headless/test_engine_library.gd`, `tests/headless/test_upgrade_library.gd`
 
-**A third acquisition route:** `BoostLibrary.CATALOGUE`'s `"turbo"`/`"supercharger"`
-entries (`scripts/boost_library.gd`) offer these same two parts as an in-run,
-run-scoped upgrade in the mid-run pick's "More Power" category
-(`todo/mid-run-upgrade-menu.md`, region-runs.md (deleted with the free-roam pivot) → "Turbo and
-supercharger as boosts") — the SAME `install_turbo`/`install_supercharger` EFFECTS
-rows below, walked through `UpgradeLibrary.active_effects`/`apply()` exactly like
-any other boost. Only the boost's `*_boost_gain` scales with a purchased meta-shop
-level; the rest of each part's authored character is fixed.
-
 Turbo and supercharger are both properties of the **engine**, not the car —
 same pattern as the torque curve and gearbox (see
 [engine-and-transmission.md](engine-and-transmission.md)). Either can arrive
+two ways: baked into a stock `EngineLibrary` entry, or fitted as a found free-roam **part**
+— `BoostLibrary.CATALOGUE`'s `"turbo"` / `"supercharger"` entries, found by level in the biome
+ring each names ([loot.md](loot.md)). A part reaches the car through `LootRules.fielded` →
+the `boosts` list → the `install_turbo` / `install_supercharger` `EFFECTS` rows. Only the
+part's `*_boost_gain` scales with its level; the rest of its character is fixed.
+
 Note: [nitrous](nitrous.md) is a **third**, non-exclusive power layer — its own
 `"nitrous"` slot (`UpgradeLibrary.SLOTS`), so a car can carry turbo-or-blower
 AND nitrous at once. It's a torque multiplier in the live sim only
 (`install_nitrous`, `EFFECTS["install_nitrous"].feeds_pw == false`), so unlike
 `install_turbo`/`install_supercharger` (`feeds_pw: true`) it never changes a
-car's displayed power-to-weight or rally eligibility — it makes a stage
-easier to drive, it isn't a stat.
-
-Turbo and supercharger are both properties of the **engine**, not the car —
-same pattern as the torque curve and gearbox (see
-[engine-and-transmission.md](engine-and-transmission.md)). Either can arrive
-two ways: baked into a stock `EngineLibrary` entry, or bolted on later via the
-`turbo_small` / `turbo_large` / `supercharger` upgrade items, which all share
-one `"turbo"` slot so **at most one is ever live**.
+car's displayed power-to-weight — it makes the car quicker to drive, it isn't a stat.
 
 ## Config fields (`game_config.gd`, `@export_group("Engine & Transmission")`)
 
@@ -165,58 +155,10 @@ fuel-cost, wear, or reliability consequence modelled.
 the dump valve. It's a pure edge-trigger flag read once by the audio bridge
 (below); it has no effect on the physics.
 
-## The turbo/supercharger items (`UpgradeLibrary`, `scripts/upgrade_library.gd`)
+## The induction effect rows (`UpgradeLibrary`, `scripts/upgrade_library.gd`)
 
-Three non-consumable `"turbo"`-slot items replace the old flat `engine_stage1`
-/ `engine_stage2` power upgrades — `turbo_small`, `turbo_large`, and
-`supercharger` (see [Supercharger](#supercharger-belt-drive)). Each also
-carries a `menu_label` (the turbo tile's option popup shows "Small" / "Big" /
-"Supercharger" rather than the full name) and a `turbo_parasitic_friction`
-term (the always-on backpressure N·m). `UpgradeLibrary.UPGRADES` no longer
-authors a `tier` field at all — that field is gone from the table entirely;
-see "Gating" below for what replaced it. There is no random pool weighting
-either: `RewardSystem.draw_upgrade` and the per-event upgrade draw it fed are
-**deleted** (see the deleted reward system), so nothing enumerates a
-pool of parts — every route to a part names it directly.
-
-(The exact `install_turbo`/`install_supercharger` numeric fields on each entry
-are authored balance placeholders — see [configuration.md](configuration.md)'s
-tuning philosophy; do not pin them in tests. Read them straight from
-`UpgradeLibrary.UPGRADES` rather than quoting a copy here, since they're
-exactly the kind of tunable value that drifts.)
-
-### Gating
-
-Each of the three carries up to two independent gates, both of which must pass
-before the part can be TAKEN. There is no reward draw to be admitted to any
-more (the reward system's `draw_upgrade` / `_eligible_parts` are deleted); the gates
-are read by the **garage's star shop** — `UpgradeOptions._lock_reason`, called
-from `_part_options` for every row in a slot's option list:
-
-- **Prerequisite (per-car).** `turbo_large` requires `turbo_small` already
-  fitted to THAT car; `supercharger` requires `turbo_large`. This is the old
-  "tier" ladder's real job — `UpgradeLibrary.requires_upgrade_id` /
-  `prerequisite_met` — and is unchanged by the tier removal.
-- **Event gate (garage-wide).** `UpgradeLibrary.unlocked_by_rally(id)` /
-  `rally_gate_met(item_id, profile)`: an item cannot be bought until a
-  particular special event has been WON (top-3 finish).
-  In the shipped table, `turbo_large` ("Big Turbo") is gated on
-  `sp_dust_trial` and `supercharger` on `sp_archipelago_trial` — see
-  `todo/star-gated-special-events.md` (the spec's filename only; the special's
-  OWN gate is geometric now, like any other rally — `RallyLibrary.rally_revealed`
-  — not a completion count or a star total, see
-  the deleted star economy). This gates ACQUIRING only:
-  `UpgradeLibrary.apply` walks the car's `boosts` list and never consults the
-  gate, so a part already fitted keeps working even if the gate that unlocked
-  it were somehow revisited.
-
-Both gates are evaluated together, so `turbo_large` cannot be taken by a car
-until it already carries `turbo_small` AND the `sp_dust_trial` special has
-been won — whichever comes later in a given playthrough. A gated part is still
-**LISTED** on its slot's tile, greyed with `locked_reason` ("Locked" for the
-event gate, "Needs <part>" for an unmet prerequisite) rather than hidden, so
-the slot shows its whole ladder — see [upgrade-catalogue.md](upgrade-catalogue.md)
-→ "Locked options are LISTED, GREYED".
+(The exact numbers a part stamps are authored balance placeholders in `BoostLibrary` /
+`GameConfig`'s `run_boost_*` fields — do not pin them in tests.)
 
 `UpgradeLibrary.apply()` handles **both** induction effect keys through ONE
 `"install_induction"` op, with everything that differs between them living in the
@@ -237,15 +179,14 @@ is a table row rather than another `match` arm.
 **Turbo and supercharger STACK (a real twincharger) — this used to be mutually
 exclusive, and no longer is.** A `clears` key here once zeroed the rival's enable flag
 and gain, back when both shared one `UpgradeLibrary.SLOTS` PURCHASE slot (a permanent-
-part mechanism the roguelike pivot deleted). That's gone now: `BoostLibrary`'s mid-run
-boosts have no such slot, `apply()` no longer clears anything, and `EngineSim.step()`
+part mechanism the roguelike pivot deleted). That's gone now: `BoostLibrary`'s parts have
+no such slot, `apply()` no longer clears anything, and `EngineSim.step()`
 already multiplied the turbo factor and the supercharger factor together
 UNCONDITIONALLY (see the crank formula in *Supercharger* below) — the physics never
-actually assumed exclusivity, only the old purchase UI did. This was made explicit on
-purpose (`todo/mid-run-upgrade-menu.md`): a player who already rolled a turbo mid-run
-must never have a later supercharger roll take that progress away.
+actually assumed exclusivity, only the old purchase UI did. Fitting a supercharger must never
+take away a turbo the player already found.
 
-**The mid-run boost's `effect_fields` dict carries its own audio gains, not just
+**The part's `effect_fields` dict carries its own audio gains, not just
 physics.** `BoostLibrary.CATALOGUE`'s `"turbo"`/`"supercharger"` entries author
 `engine_turbo_whistle_gain` / `engine_turbo_bov_gain` / `engine_turbo_antilag_bang_gain`
 (turbo) and `engine_supercharger_whine_gain` (supercharger) inside their
@@ -253,10 +194,10 @@ physics.** `BoostLibrary.CATALOGUE`'s `"turbo"`/`"supercharger"` entries author
 level-scaled — absent from `scaled_subfields`) `GameConfig` fields
 `run_boost_turbo_whistle_gain` / `run_boost_turbo_bov_gain` /
 `run_boost_turbo_antilag_bang_gain` / `run_boost_supercharger_whine_gain`. Without
-these, picking the part mid-run switched on real physics (`turbo_enabled` +
+these, fitting the part switched on real physics (`turbo_enabled` +
 a non-zero `*_boost_gain`) but left the audio gain fields at whatever the car's OWN
 engine authored — zero, for every catalogue engine that isn't already
-stock-turbocharged/supercharged — so a mid-run pickup on an ordinary NA car ran
+stock-turbocharged/supercharged — so a part on an ordinary NA car ran
 completely silent despite doing real work. The stock route (`EngineLibrary.apply()`
 copying an engine's own authored gains) is unaffected; this only closes the gap for
 the boost-catalogue route. Regression test:
@@ -265,8 +206,7 @@ the boost-catalogue route. Regression test:
 ### Rated at peak boost (`effective_meta`)
 
 `UpgradeLibrary.effective_meta(owned_car, meta)` computes the car's displayed
-stats (HP / power-to-weight, used for both the garage screen and
-`RallyLibrary.is_eligible` banding). Since the two axes can both be live at once, it
+stats (HP / power-to-weight, used by the garage and car cards). Since the two axes can both be live at once, it
 tracks each SEPARATELY — starting from the current engine's own stock
 `turbo_boost_gain`/`supercharger_boost_gain`, each overridden independently by a
 fitted `install_turbo`/`install_supercharger` boost on that axis — then combines them
@@ -277,23 +217,10 @@ one:
 out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + turbo_gain) * (1.0 + supercharger_gain)
 ```
 
-i.e. the displayed/eligibility torque is rated **at full (peak) boost on every fitted
+i.e. the displayed torque is rated **at full (peak) boost on every fitted
 axis**, the same multiplier the sim itself applies at `boost == 1.0` /
 `sc_boost == 1.0`. This runs before the engine-detune scaling, so a boosted-but-detuned
 car's rating reflects both.
-
-**Rival pace floors go through the same path.**
-`RallyLibrary.generate_opponent_field` boosts each rival's raw `CarLibrary`
-entry via `effective_meta({}, car)` (empty owned-car → no boosts, no detune,
-just the engine's own stock gains) before feeding it to
-`LapTimeModel.optimum_ms`. Without this the floor would fall back to the
-engine's unboosted `peak_torque`, so a turbo car's rival would run
-artificially slow — out of step with the player's boosted stats and the car's
-real on-track physics. There is no longer a separate "fastest possible car"
-bound to keep in step with it: `RallyLibrary._best_eligible_car` is gone, and
-every rival's time is now derived from THEIR OWN drawn car's boosted
-`optimum_ms` times a pace-band factor, with the grid matched to the player's
-`CarPerformance.rating` rather than clamped against a single reference car.
 
 ## Supercharger (belt drive)
 
@@ -353,15 +280,13 @@ what it hands you at the bottom, where the big turbo is still spooling.
 
 `sc_boost` is reset in `EngineSim.reset()`. Consumers do **not** combine the two
 readings themselves — `EngineSim.boost_reading()` is the single 0..1 forced-induction
-reading (`maxf(boost, sc_boost)`; only one can be live, so the max is whichever it is),
+reading (`maxf(boost, sc_boost)` — on a twincharged car, whichever is higher),
 and the HUD's boost gauge plus its debug readout both go through it together with
 `GameConfig.has_forced_induction()`.
 
-**The audio bridges deliberately do NOT.** `engine_audio.gd` and `car_preview_audio.gd`
-pass the raw `boost` field into the synth, because that argument drives the turbo
-**whistle** and **blow-off valve** — layers a blown car does not have (`install_turbo`'s
-mirror image clears `turbo_enabled`, so neither can fire). Feeding belt boost in would
-make a supercharged car whistle and vent like a turbo; its own whine is rpm-pitched.
+**The audio bridge deliberately does NOT.** `engine_audio.gd` passes the raw `boost` field into the synth, because that argument drives the turbo
+**whistle** and **blow-off valve** — layers only a turbo has. Feeding belt boost in would make a supercharged car whistle and
+vent like a turbo; its own whine is rpm-pitched.
 
 ## Audio (`scripts/engine_audio_synth.gd`, bridged by `scripts/engine_audio.gd`)
 
@@ -407,17 +332,6 @@ soft clipper, DC blocker) these layers ride on.
 BOV gains in `EngineLibrary.ENGINES`, so the feature is reachable on a stock
 car without any upgrade — see `scripts/engine_library.gd`.
 
-## Save-compat note
-
-Old save profiles' `OwnedCar.installed_upgrades` (a key the schema no longer carries) may still list the removed
-`engine_stage1` / `engine_stage2` ids from before the turbo tiers replaced
-them. `UpgradeLibrary.by_id()` returns `{}` for an unknown id, and every
-reader (`enabled_upgrades`, `UpgradeLibrary.apply`, `effective_meta`) treats
-a missing `"effect"` key as `{}` and iterates zero entries — so a save
-carrying a stale id becomes silently inert (no crash, no effect) rather than
-erroring or granting a phantom stat. It stays listed in the save but never
-does anything; there's no migration step.
-
 ## Tests
 
 `tests/headless/test_turbo.gd` (pure shaft maths — `boost_fraction`,
@@ -431,10 +345,9 @@ config behaves exactly as before), `tests/headless/test_engine_audio.gd`
 supercharger whine only when enabled), `tests/headless/test_engine_library.gd`
 / `tests/headless/test_upgrade_library.gd` (catalog entries load, `apply()`
 writes the fields, `install_turbo` sets `turbo_enabled` + stamps the effect
-dict, `install_supercharger` sets the blower + CLEARS the turbo, `effective_meta`
-rates at peak boost for both), and
-`tests/headless/test_car_preview_audio.gd` (the HQ lineup rev hears a fitted
-turbo / blower, and a stock-engine audition doesn't inherit the fielded car's).
+dict, `install_supercharger` sets the blower without clearing the turbo, `effective_meta`
+rates at peak boost for both), and `tests/headless/test_boost_library.gd` (both parts fitted
+together stay audible).
 The blower's own physics live in `test_turbo.gd`'s supercharger block: boost
 linear in rpm and saturating, drag affine in rpm, full boost on the FIRST
 substep (no spool), boost tracking the revs both ways, inert without an
@@ -449,6 +362,6 @@ authored gain, and `reset()` clearing it.
 `engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`,
 `run_boost_turbo_whistle_gain`, `run_boost_turbo_bov_gain`,
 `run_boost_turbo_antilag_bang_gain`, `run_boost_supercharger_whine_gain` (the
-mid-run boost's own fixed audio-gain personality — see above). See
+parts' own fixed audio-gain personality — see above). See
 [configuration.md](configuration.md), [engine-and-transmission.md](engine-and-transmission.md),
 [engine-audio.md](engine-audio.md), and [upgrade-catalogue.md](upgrade-catalogue.md).

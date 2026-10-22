@@ -133,9 +133,14 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   wanted, not yet dropped) fall to the near-mesh tier. Cancelled or finished jobs are purged from
   the queue at each plan (a queue that never drains used to carry them for ever).
 - **Boot:** `prefill()` builds the planned set with no budget before the car is released.
-  `warm_up_materials` then draws a speck of every ring's ground material in front of the camera
-  for a few frames, so each shader is compiled behind the boot rather than when a new biome's
-  first chunk appears.
+  Then `free_roam.gd._warm_up` compiles every first-use shader behind a `LoadingScreen` with the
+  car's controls locked, the same passes as the stage's load (`world.gd._warm_shaders_behind_cover`):
+  every `warm_up()`/`clear_warm_up()` node (debris, tyre marks, smoke, flames, crowds), a speck of
+  every ring's ground material (`warm_up_materials`), one of every ring's trees plus a bush, every
+  rock, a loot crystal, a rest-stop post and every loot name's floating label (`warm_up_spawns`, on flat stand-in ground), and a
+  throwaway camera turning full circle above the car and then looking down from high up
+  (`_look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
+  the auto-driver or the title menu take over (`_hand_over`). Headless skips the warm-up.
 - **Stats** (debug readout and the auto driver's report): overruns, the total overshoot, and
   **spikes** (frames over 1.5× budget), each broken down by the kind of unit that ran last.
 - **Height queries** (`height_at`, used by the chase camera) are answered from the loaded
@@ -158,7 +163,19 @@ wrapping). By default that's home, greece, taiga, snow.
 the region's `grass_texture`, `gravel_texture` and `tarmac_color` (`_material_for`). A chunk uses
 the material of the ring at its centre, so a border switches at chunk edges. The baked vertex
 tint is the region's `terrain_tint` (white when unset), and trees, bushes and rocks follow the
-region's `tree_mix`, bush switch and rock density.
+region's `tree_mix`, bush switch and rock density. The vertex alpha (the shader's grass-to-gravel
+blend) is `RoadTerrain.paint_weight`: the road's own edge, but faded over `road_paint_fade_m`
+rather than the narrower `road_shoulder_m`, because a fade much under ~1.5 vertex spacings
+(`near_stride_m`) falls inside one triangle and shows the mesh as a jagged edge. Grip still
+reads the shoulder (`road_weight`, `surface_at`).
+
+**Road surface (gravel / tarmac):** a region with `"road_surface": "tarmac"` paves its ring's
+roads (Greece, ring 1, by default; every other ring is gravel). `RoadTerrain.tarmac_weight` is
+0–1 per point: its ring's surface, blended over `road_surface_blend_m` where two rings meet (it
+uses the same wobbly ring border as `ring_index`). It is the `.y` of `surface_at`, so grip, tyre
+marks and wheel debris switch to tarmac through their existing tarmac paths, and it is baked
+into each chunk vertex's UV2.x (only where the road is painted), which the ground shader uses to
+mix the gravel texture toward the ring's `tarmac_color`.
 
 **Terrain shading (the stage's fake light):** each chunk vertex's colour is its ring tint times
 `TerrainStreamer.ground_light(normal)`, which is `TerrainManager.light_for_normal` (hemisphere
@@ -200,31 +217,35 @@ was spawned with. There is **one water level** for the whole island (no per-ring
 ## Sites: rest stops, loot slots and dead ends
 
 `RoadSites` plans every place that hangs off the network, once at boot from the whole graph
-(decisions 30–31 in `todo/2026-10-19-free-roam-pivot.md`). Each site is a flat round pad.
+(decisions 30–31 in `todo/2026-10-19-free-roam-pivot.md`). Rest stops and dead ends are flat round pads.
 `RoadTerrain.height` flattens the ground under it to its road's height (`pad_h`, blending back
-over `pad_blend_m`) and reports it as road, so it draws as gravel, grips as road and nothing is
+over `pad_blend_m`, widened where the pad sits far above or below the land so the fade's slope stays
+under `pad_blend_max_slope`, up to `pad_blend_max_m` — `RoadSites.blend_m`) and reports it as road, so it draws as gravel, grips as road and nothing is
 planted on it (`is_clear`).
 
 - **Rest stops (`REST`):** spawn is the first, centred on the spawn junction. The rest are
   placed breadth-first from spawn, carrying "road since the last rest stop" into each junction
   (the least over the ways in). A stop goes down each time that reaches the spacing for its
-  ring (`rest_stop_spacing_m`, one entry per ring, the last covering any ring beyond).
+  ring: its region's `rest_stop_spacing_m` (RegionLibrary, `rest_stop_spacing_of`), or
+  `FreeRoamSettings.rest_stop_spacing_m` for a region that sets none.
 - **Loot slots (`LOOT`):** placed the same way at `loot_slot_spacing_m`, kept clear of rest
-  stops. They are slots; stage 7 decides which hold loot.
+  stops and water. They sit on the road's centreline with radius 0 and no pad: the ground isn't
+  flattened and they stay out of `pad_at` / `is_clear`, so the crystal floats over the road and is
+  collected by driving over or past it. They are slots; stage 7 decides which hold loot.
 - **Dead ends (`DEAD_END`):** a clearing at every junction with only one road (spawn aside).
-- **Roadside placement** (`_place_along`, `_try_roadside`): never within `JUNCTION_CLEAR_M` of
+- **Roadside placement** (`_place_along`, `_try_roadside`, rest stops only): never within `JUNCTION_CLEAR_M` of
   a junction. The pad sits beside the road on a seeded side, or the other side if that one is
   water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
   further on.
 - **Placeholder markers:** until rest stops and loot get real models, a tall post marks each rest
   stop in near chunks (`_site_marker`, orange once lit, grey before); a loot site or dead end
-  showing an item gets a coloured crate (`_loot_marker`, rebuilt by `refresh_loot_markers` when the pool changes). Both the queued
+  showing an item gets a coloured crystal bobbing over the road (`_loot_marker`, `shaders/loot_crystal.gdshader`, rebuilt by `refresh_loot_markers` when the pool changes). Both the queued
   marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
   `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
   its marker spawn running still leaves one marker (a duplicate used to be renamed `@Loot%d@N`,
-  which no refresh removed, so a crate stayed after its pickup). A site with nothing left shows nothing.
-- **Beacons:** every rest stop and every piece of loot also has a tall beam of light visible from far
-  beyond the near chunks, and loot a floating name — `SiteBeacons`, see [loot.md](loot.md) →
+  which no refresh removed, so a crystal stayed after its pickup). A site with nothing left shows nothing.
+- **Beacons:** every rest stop also has a tall beam of light visible from far beyond the near
+  chunks, and loot a floating name up close — `SiteBeacons`, see [loot.md](loot.md) →
   "Seeing it".
 
 On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
@@ -234,6 +255,16 @@ On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends o
 The car runs the **thermal damage chain** (`DamageModel.thermal`, `features/damage.md`):
 cooling fails at half health, the engine then only heats up, overheating drains HP, and at 0 HP
 the car gives up. The HUD shows a temperature gauge and a cooling warning (`features/hud.md`).
+
+Players see rest stops as **checkpoints**: every player-facing string says "Checkpoint", while the
+code (`RestStops`, `RestStopPage`, `RoadSites.Kind.REST`, the save's `lit_sites`) keeps the old name.
+
+`CheckpointBanner` (`scripts/free_roam/checkpoint_banner.gd`, on `RestStops.lit`): the first time a
+checkpoint is lit, a full-width "Checkpoint reached" band fades in, holds `HOLD_S` (3 s) and fades
+out while the car drives on (the tween runs through pauses). Then, once nothing else has the game
+frozen, it opens a card page ("Now in reach") of the items still to be found in that checkpoint's
+biome ring (`items_for`: the ring's `LootRules` table minus `LootDirector.taken_keys()`, no
+rumours); nothing left → no page. Continue / Back closes it.
 
 `RestStops` makes the REST sites into Dark Souls bonfires:
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
@@ -247,11 +278,15 @@ the car gives up. The HUD shows a temperature gauge and a cooling warning (`feat
   Teleports (travel, respawn, the R reset) are not swept as drives: `RestStops.move_car_to`,
   `RoadRecovery.reset_done` → `car_teleported` on `RestStops` and `LootDirector` reset the swept
   start (the 100 m jump guard stays as a backstop).
-- **Stopping:** below `rest_stop_speed_kmh` for `rest_stop_hold_s` there opens the rest-stop
-  page (`features/menus.md`), once per visit.
-- **Respawn:** on `gave_up` the car is moved to the last lit rest stop (`move_car_to`: stream the
-  destination in with `TerrainStreamer.prefill_at`, then put the car on its road beside the pad)
-  and repaired. `respawned` carries the wreck position, for dropped loot in stage 7.
+- **Opening the page:** at a rest stop below `rest_stop_speed_kmh`, `menu_select` (Enter /
+  gamepad A) opens the rest-stop page (`features/menus.md`); `RestStops.prompt_site` says when, and
+  the minimap's line shows the prompt. Coming to a halt alone does nothing.
+- **Respawn:** on `gave_up` `RestStops.wrecked` opens the wreck page (`RestStopPage.open_wrecked`,
+  View.WRECKED: it lists the carried loot that is left at the wreck). The game keeps running: the
+  car rolls on driverless (`RestStops.is_wrecked`, all `ai_*` inputs zero) and rest stops ignore it. Its
+  Respawn card (or Back) calls `respawn()`: the car is moved to the last lit rest stop (`move_car_to`:
+  stream the destination in with `TerrainStreamer.prefill_at`, then put the car on its road beside
+  the pad) and repaired. `respawned` carries the wreck position, for dropped loot in stage 7.
 - **Travel:** goes to any lit rest stop, with the same move plus a repair.
 - **Crowds:** each rest stop has a static crowd along the back of its pad (`features/spectators.md`).
 
@@ -299,19 +334,24 @@ provides both.
     Cost (default island, container CPU): about 13% of spots fall outside their chunk, at ~33 µs
     each for the exact height against ~1 µs for a mesh read, paid in the budgeted `PLANT` stage
     (a bush's light samples are warmed there too); the spawns reuse the cache.
-  - Trees are thinned by the stages' forest noise (`forestiness`, the share of land that is
-    forest: 0.8).
+  - **Roadside density** (`_roadside_keep`, every region): trees and bushes crowd the road and
+    thin out away from it. Right at the tree line every clear spot grows and the forest noise
+    leaves no gaps; over `roadside_falloff_m` the kept share eases down to `far_tree_density` /
+    `far_bush_density`, and trees there also need the forest noise (`forestiness`, the share of
+    land that is forest). It reads the road distance `_spot_is_clear` just left in
+    `network.hit_d`, so the noise test runs in the budgeted `PLANT` stage, not on the candidates.
   - Rock groups are thinned by `rock_group_chance` × the region's rock density, then fanned
     into outcrops with `TreeScatter.cluster`.
-  - Each spot is rejected if it is in water or within the road's width plus
-    `tree_road_margin_m` plus the plant's own radius.
+  - Each spot is rejected if it is in water or within the road's half width plus
+    `tree_road_margin_m` plus the plant's own radius (not the shoulder, so trees stand right by
+    the tarmac).
 - **Biomes:** each ring uses its region's `tree_mix`, bush switch (`spawns_bush_mesh`) and
   rock density (see *Biomes*).
 - **Under the budget:** the `PLANT` stage checks a few spots at a time, and `SPAWN` builds
   one foliage field per species as its own unit of work.
 - **`GameConfig.vegetation_enabled = false`** leaves out the trees, bushes and rocks only
   (`_plant_candidates`). Every near build still runs `PLANT` / `SPAWN`, because the barriers
-  (with their collision), rest-stop crowds, site posts and loot crates spawn from it too; until
+  (with their collision), rest-stop crowds, site posts and loot crystals spawn from it too; until
   2026-10-20 turning vegetation off removed those as well.
 - **Lifetime:** the foliage lives on `ChunkState.foliage` and is freed with the near mesh.
   It is only planted within the near ring, which matches `tree_render_distance_m` (120 m).
@@ -334,7 +374,7 @@ node for node:
 - `WheelParticles` (made in `free_roam.gd._ready`, as `world.gd` makes the stage's): gravel
   clods on the road and grass blades off it from spinning or locked driven wheels. It reads
   `TerrainStreamer.surface_at`, the same query the tyres' grip uses (the car finds the streamer
-  as its terrain), and its shader is warmed behind the boot (`_warm_up_particles`). Until
+  as its terrain), and its shader is warmed behind the boot (`_warm_up`). Until
   2026-10-20 free roam never created it, so nothing was thrown. See
   [wheel-dust.md](wheel-dust.md). `free_roam.gd._ready` also creates the stage's `EngineSmoke`
   (bonnet smoke on each misfire — the visible sign of an overheating engine in the damage chain)
@@ -381,7 +421,7 @@ over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames wer
 
 ## Not in the prototype yet
 
-Real rest-stop and loot models (sites still have placeholder posts and loot coloured crates) and
+Real rest-stop and loot models (sites still have placeholder posts and loot coloured crystals) and
 threading. Pickups ([loot.md](loot.md)), the damage chain and rest stops as checkpoints (*Damage
 and rest stops* above) are in. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings

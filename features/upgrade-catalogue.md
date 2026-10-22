@@ -1,22 +1,16 @@
 # The effects funnel (`UpgradeLibrary`)
 
-> **Free-roam pivot (2026-10):** `BoostLibrary` is the **parts catalogue** for free-roam loot — a part is a boost id found at a level (see [loot.md](loot.md)). The run-pick draw, the purchased boost levels and the shop are deleted.
-
 **Source:** `scripts/upgrade_library.gd` (`class_name UpgradeLibrary`)
 
 **Tests:** `tests/headless/test_upgrade_library.gd`, `tests/headless/test_car_stat_bounds.gd`
 
-`UpgradeLibrary` **is not a catalogue any more.** It used to own the persistent parts
-model — an authored `UPGRADES` table, seven slots, star gates, prerequisite chains, an
-auto-build solver, an upgrades grid, a reveal animation and the install/buy paths in
-`Save` that fed them. All of that is deleted by the roguelike pivot
-(`todo/roguelike-pivot.md` → "What gets deleted" → the persistent parts model). Parts are
-replaced by RR-style **boosts**: temporary, run-scoped, picked between stages
-(region-runs.md (deleted with the free-roam pivot)) — and by **skills**: permanent, bought with money
-(skills.md (deleted with the free-roam pivot)).
+`UpgradeLibrary` **is not a catalogue.** It is the MECHANISM that turns a car's fitted parts
+into config. The parts themselves are `BoostLibrary.CATALOGUE` entries found as free-roam loot
+at a level ([loot.md](loot.md)); `LootRules.fielded(owned)` writes a car's parts into its
+`boosts` list (plus `swapped_engine` / `drivetrain_override` for engines and drivetrain kits)
+on the duplicate that fields it.
 
-What survives is the MECHANISM those parts drove, kept deliberately so the replacement
-had somewhere to land:
+What it owns:
 
 | Piece | What it owns |
 | --- | --- |
@@ -41,20 +35,11 @@ static func active_effects(owned_car: Dictionary) -> Array:
 Entries are `{"id": String, "effect": Dictionary}` — the same `effect` sub-dict shape the
 authored parts used, which is why every consumer below was unchanged by the swap.
 
-**Two writers fill it, both in `world.gd::_field_car`, both onto a DUPLICATED owned-car
-dict** so neither reaches the saved profile:
+**One writer fills it:** `LootRules.fielded(owned)`, from the car's fitted `parts`, onto a
+DUPLICATED owned-car dict so it never reaches the saved profile. The seam is
+`UpgradeLibrary.EFFECTS` + a car's `boosts` list; do not build a parallel modifier path.
 
-- `RunSession.boosts()` — the run's picked boosts. Run-scoped: wiped when the run ends,
-  win or lose (soft permadeath).
-- `SkillLibrary.equipped_effects(Save.profile)` — the player's equipped skills. Permanent
-  purchases, so they are re-derived from the profile on every stage boot rather than
-  carried on the run object.
-
-They differ in **lifetime, not mechanism** — decision 51 requires exactly that ("the seam
-is `UpgradeLibrary.EFFECTS` + a car's `boosts` list; do not build a parallel modifier
-path"), and it is why adding skills touched none of the loops in this file.
-
-**Why a plain key on the car dict** rather than a query into a run object: it keeps the
+**Why a plain key on the car dict** rather than a query into another object: it keeps the
 funnel pure and testable with no session standing up, it is where `tuning` and
 `swapped_engine` already live, and it means a new source of effects WRITES the key rather
 than re-plumbing five call sites.
@@ -92,8 +77,7 @@ no gameplay test fails. Two guards catch it instead:
   of the same failure, and the one `_cfg_set` cannot catch because the value never reaches
   it. Found by the small-model-readiness loop (round 041), where a wet-weather tyre shipped
   with the `@export`, the registry row and the blend arm all correct and no rain grip at
-  all. `test_boost_library.gd` and `test_skill_library.gd` each assert their own catalogue
-  against the table for the same reason.
+  all. `test_boost_library.gd` asserts its catalogue against the table for the same reason.
 
 ## Effect-application pipeline
 
@@ -110,8 +94,8 @@ predictably:
 
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored `.tres`.
 `mult` keys multiply the baseline, `add` keys add, `set` keys **replace** it outright with
-an absolute figure, `install_turbo` / `install_supercharger` switch the induction flag on
-and clear their slot rival both ways, and `install_nitrous` (`write_fields`) straight-splats
+an absolute figure, `install_turbo` / `install_supercharger` switch their induction flag on
+(they stack — [forced-induction.md](forced-induction.md)), and `install_nitrous` (`write_fields`) straight-splats
 its fields with no enable flag — `has_nitrous()` reads the values themselves, so a zero
 gain/tank already reads as "not fitted" ([nitrous.md](nitrous.md)).
 
@@ -127,9 +111,9 @@ baseline before `apply` runs, so a `mult` always lands on a fresh baseline. A ro
 writes a GLOBAL tunable on the long-lived `Config.data` gets no such re-seed: it must carry
 `reseed: true`, and `_reseed_globals` restores its field from the authored baseline
 (`Config.authored_value` — see [configuration.md](configuration.md)) before anything is
-applied. No row needs it today (the skill rows that did are deleted with the skills).
+applied. No row needs it today.
 
-## Effective stats (display + eligibility)
+## Effective stats (display)
 
 `effective_meta(owned_car, meta)` returns a copy of a car's CarLibrary entry with the
 power-to-weight inputs (`peak_torque`, `mass`) adjusted by its active effects. Pure — it
@@ -137,11 +121,7 @@ never touches the authored `CARS` entry. A turbo is **rated at peak boost**: `pe
 is multiplied by `(1 + turbo_boost_gain)` (the stock engine's gain, or a fitted kit's), so
 a turbocharged car reads as more powerful.
 
-What it feeds today: every displayed power figure, and — through
-`CarPerformance.merged_meta` — the performance rating a Rally Challenge ceiling judges
-(`ChallengeRunMode.classify_cars`, rally-challenge.md (deleted with the free-roam pivot)). Region-run
-entry is not gated on it at all: a region run takes any owned car
-(region-runs.md (deleted with the free-roam pivot)).
+What it feeds today: every displayed power figure, and `CarPerformance.merged_meta`.
 
 ### `grip_meta` — the same copy, plus the grip-feeding fields
 
@@ -188,52 +168,26 @@ catalogue.
   "use stock". A bare range check against `Drivetrain.DriveMode.values()`, no purchase
   gate. The single resolver used by physics (`car.gd`) and display (`effective_meta`).
 
-**It is now a RUN-SCOPED MID-RUN UPGRADE, not a purchase.** Decision 52 sold it as the
-sixth money sink (`Save.drive_mode_price()` / `buy_drive_mode()`, per-car and kept
-forever); that is superseded. A conversion is picked in the between-stage repair-or-boost
-pick alongside the drawn boosts (`RunSession.choose_drivetrain`), free, and wiped the
-moment the run ends — the same lifetime as a boost. `world.gd::_field_car` writes
-`RunSession.drivetrain_override()` onto the duplicated owned-car dict a car is fielded
-with, never `Save`'s persisted car. See region-runs.md (deleted with the free-roam pivot) → *Drivetrain
-conversion*. `Save.buy_drive_mode` / `drive_mode_price` / `drive_mode_available` /
-`set_drivetrain_override` and `HubShell`'s `DRIVETRAIN` / `DRIVETRAIN_CAR` pages are
-deleted along with the purchase path.
-
-The old slot model's gating was gone even before decision 52: the global
-`drivetrain_swap_unlocked` capability, the `unlocks_drivetrain_swap` flag effect that
-opened it, and the star price per conversion. So is the car park's silent free
-auto-switch of a wrong-drivetrain car — it handed the player exactly what the garage
-charged for, and the car park itself is deleted.
+**In free roam a conversion is a found drivetrain kit.** `LootRules.fielded` writes the kit's
+layout as `drivetrain_override` on the duplicate a car is fielded with, never on the persisted
+car; removing the kit returns the car to `stock_drive_mode`.
 
 ## What is gone, so you stop looking for it
 
-`UPGRADES`, `SLOTS`, `options_for`, `slot_description`, `auto_build_plan`,
-`max_potential_meta`, `rally_gate_met`, `unlocked_by_rally`, `requires_upgrade_id`, the
-`free`/`consumable`/`weight` fields, `Save.buy_part` / `can_buy_part` / `part_price` /
-`apply_build_plan` / `drive_mode_price`'s star ancestor, `upgrade_options.gd`,
-`upgrades_grid.gd`, `upgrade_reveal.gd`, `upgrade_icons.gd`, and the `flag` op (both its
-rows, `unlocks_aero_tuning` and `unlocks_drivetrain_swap`, are deleted — tuning is ungated
-and there are no parts to fit, so the op has no rows; `apply`'s `_:` arm still absorbs an
-unknown op).
-
-`OwnedCar.installed_upgrades` / `disabled_upgrades` are gone from the profile too — see
-[save-persistence.md](save-persistence.md) for what the schema carries now.
-
-The **legacy part-unlock sets** (`Save.KEY_LEGACY_PART_UNLOCKS`,
-`Save.MOVED_PART_UNLOCKS`), which grandfathered players past a re-sited `unlocked_by_rally`
-gate, went with the gates. The engine-swap capability itself is now the mid-run
-`BoostLibrary` "engine_swap" pick — see [engine-swap.md](engine-swap.md).
+`UPGRADES`, `SLOTS`, `options_for`, `auto_build_plan`, `max_potential_meta`, the rally /
+prerequisite gates, the `Save` buy/install paths, the upgrades grid and reveal, and the
+`flag` op (`apply`'s `_:` arm still absorbs an unknown op). `OwnedCar.installed_upgrades` /
+`disabled_upgrades` are gone from the profile too — see
+[save-persistence.md](save-persistence.md).
 
 ## Tests
 
 `tests/headless/test_upgrade_library.gd` covers the table's contract (every target name is
 a real `GameConfig` property; every fixture-authored effect key has a row), each `op` arm
 against a synthetic effect set, the `effective_meta` / `grip_meta` split (a grip effect
-must NOT move power-to-weight), and the drive-mode resolver's paid-for gate.
-`test_skill_library.gd` owns the reseed contracts (applying twice does not compound;
-un-equipping restores the authored value) because the rows that need them are skills'.
+must NOT move power-to-weight), and the drive-mode resolver.
 `test_car_stat_bounds.gd` covers the roster scale.
 
 Per CLAUDE.md, none of them pin a magnitude: the fixtures author their own effect values
 (`tests/headless/upgrade_fixtures.gd`), and the shipped `GameConfig` numbers the real
-boosts and skills read are tunables no test may assert.
+parts read are tunables no test may assert.

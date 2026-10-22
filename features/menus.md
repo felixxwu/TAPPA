@@ -1,17 +1,26 @@
-# Menus & game-loop shell
+# Menus
 
-> **Free-roam pivot (2026-10):** the game boots into the **title screen** (`title.tscn`, [world-session.md](world-session.md)). `HubShell` and its pages are deleted, along with the start line, the between-stage pick and the run summary. The live menus are the title, the pause menu (with free roam's Map / Stats cards), the rest-stop page and the world pages, all described below. **Every menu that is a list of choices is a card list** (`CardCarousel` built through `CardUI.card_page` / `card_list`) — see [card-carousel.md](card-carousel.md) for the table of which menus are cards and which stay plain pages.
+The game boots through `title.tscn` (`title_boot.gd`) straight into the free-roam world, with the
+title menu drawn over it ([world-session.md](world-session.md)). The live menus are the title, the pause menu (with free roam's Map / Stats cards), the rest-stop
+page and the world pages. **Every menu that is a list of choices is a card list**
+(`CardCarousel` built through `CardUI.card_page` / `card_list`) — see
+[card-carousel.md](card-carousel.md) for which menus are cards and which stay plain pages.
 
-**Sources:** the hub-scene routing seam in `scripts/scenes.gd` (`class_name Scenes` —
-`hub_path()` / `is_hub_scene()`, the path consts `HUB`/`MAIN`/`CAR`, and the
-`car_scene()` cached-load accessor, the ONE place `"res://car.tscn"` is spelled in
+**Sources:** the scene-routing seam in `scripts/scenes.gd` (`class_name Scenes` —
+`hub_path()` / `is_hub_scene()`, the path consts `TITLE` / `FREE_ROAM` / `MAIN` / `CAR`, and
+the `car_scene()` cached-load accessor, the ONE place `"res://car.tscn"` is spelled in
 production code; `preload(Scenes.CAR)` does not compile in GDScript 4.6, which is why
-callers use `Scenes.car_scene()`), the flat shell in `scripts/hub_shell.gd`
-(`class_name HubShell`), the in-run pause overlay in `scripts/pause_menu.gd`
+callers use `Scenes.car_scene()`), the pause overlay in `scripts/pause_menu.gd`
 (`class_name PauseMenu`), the shared settings page in `scripts/settings_menu.gd`, the
 text input in `scripts/text_field.gd`, the cloud-save form in `scripts/account_menu.gd`,
-the rally-detail panel in `scripts/rally_detail.gd`, and the session-aware fielding in
-`scripts/world.gd`.
+and the rest-stop page in `scripts/free_roam/rest_stop_page.gd`.
+
+**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`,
+`tests/headless/test_pause_menu.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_settings_menu.gd`,
+`tests/headless/test_text_field.gd`
+
+The navigation framework is [menu-navigation.md](menu-navigation.md); modals are
+[modals.md](modals.md). This file does not duplicate them.
 
 **Scene changes unpause.** `Scenes.change_to` sets `tree.paused = false` for every caller (before
 the test kill switch): pages that paused the tree (Settings' Wipe all progress from the pause menu
@@ -21,50 +30,6 @@ children transparent (`modulate.a`, not `visible`, so photo mode / `hud_enabled`
 while `get_tree().paused`, so rest-stop / map / stats pages don't overlap the health gauge.
 Tests: `test_settings_menu.gd` (wipe unpauses), `test_hud.gd`, `test_world_pages.gd` (Stats page nav).
 
-**Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`,
-`tests/headless/test_pause_menu.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_settings_menu.gd`,
-`tests/headless/test_text_field.gd`, `tests/headless/test_hub_shell.gd`
-
-**This file is the SHELL — the routing, the house rules and the screens that are not
-part of the hub.** The hub's own pages are hub-shell.md (deleted with the free-roam pivot); the navigation
-framework is [menu-navigation.md](menu-navigation.md); modals are
-[modals.md](modals.md). This file does not duplicate them.
-
-## What this file used to be
-
-Everything here described the **diegetic 3D hub**: `hq.tscn` + `hq.gd`
-(`HqController`, ~4,700 lines) and its eight collaborator scripts (`hq_overlays.gd`,
-`hq_challenge.gd`, `hq_table.gd`, `hq_map_table.gd`, `hq_carpark.gd`,
-`hq_tuning_lift.gd`, `hq_present_reveal.gd`, `hq_environment.gd`), the overworld, the
-3D map table with its new-rally reveal parade, the car park, `podium.tscn` and
-`standings.tscn`. **All of it is deleted** — decision 9 chose a flat 2D UI outright, and
-stage 2b of the (since deleted) pivot plan removed the scenes and their 29 collaborator
-scripts; decisions 19 and 30 took the podium and the standings interstitial.
-
-Do not go looking for a "hub station", a `CarparkMode`, a camera pose, or an
-`hq.gd::_unhandled_input` spatial input branch. Every menu is a flat `MenuPage` now.
-
-## The loop
-
-```
-hub.tscn (HubShell)
-  ├─ New run ─▶ region select ─▶ car select ─▶ RunSession.start_region
-  ├─ Rally challenge ─▶ period ─▶ car select ─▶ RunSession.start
-  ├─ Shop / Skills / Lifetime stats            (all flat pages on the same script)
-  └─ Resume run ─▶ RunSession.resume
-       └─ main.tscn (one stage) ─ start line ─▶ countdown ─▶ RUN
-            ├─ StageManager.stage_completed ─▶ RunSession.report_event_result
-            │     ├─ cleared, more stages ─▶ between-stage pick ─▶ next stage
-            │     └─ cleared the last / missed the target ─▶ run over
-            └─ pause menu ─ Quit to HQ ─▶ the run is PAUSED, back to hub.tscn
-       └─ (on run end) hub.tscn opens on its SUMMARY page
-```
-
-There is **no branch out of the run for damage**: HP bottoms out at 0 and the car keeps
-driving under a capped misfire and rev limit, so every stage the player enters reaches
-its own end ([damage.md](damage.md)). Missing the target time is the only fail state
-(region-runs.md (deleted with the free-roam pivot)).
-
 ## Button order — leaving is left, proceeding is right
 
 **In any row of buttons: the action that LEAVES (Back / Exit / Cancel / Quit / Decide
@@ -72,60 +37,30 @@ later) is leftmost, and the action that PROCEEDS (Start / Enter / Confirm / Driv
 rightmost.** Everything else sits between them. This is a house rule, not a per-screen
 choice — apply it to every new row without asking.
 
-Reference rows: `start_line.gd::_build_overlay`, `pause_menu.gd`'s Resume / Settings /
-Quit column, and every `HubShell` page (its body rows are the choices; `Back` is an
-`_action`, and actions render after the body).
-
 **Two traps when reordering an existing row:**
 
 1. **`ConfirmPopup.open`'s `default_index` and `back_index` are POSITIONAL.** Reversing
    the `actions` array without updating them silently changes which button is focused
-   and which one Esc / gamepad-B fires. `back_index` now defaults to the **first**
-   action (it used to be the last, correct only while dismiss sat on the right) — get
-   this wrong and Escape abandons a rally or overwrites a career. Single-action popups
-   are unaffected: first and last are the same button.
-2. **Cursor seat indices are not constants.** `ButtonCursor` rows seat the cursor by
-   index, and a row can have CONDITIONAL members — "Exit Game" is skipped on web, and
-   `HubShell`'s MAIN page shows "Resume run" only when a run is paused — so "the
-   proceeding action is last" can be a different index per platform and per profile
-   state. Compute it rather than hardcoding, and have tests assert by button IDENTITY
-   rather than by literal index (`test_hub_shell.gd` presses by TEXT for the same
-   reason). The two `hq.gd` helpers this rule used to cite as the worked example
-   (`_title_start_index`, `_garage_career_index`) are deleted; the rule outlived them.
+   and which one Esc / gamepad-B fires. `back_index` defaults to the **first** action.
+   Single-action popups are unaffected: first and last are the same button.
+2. **Seat indices are not constants.** A row can have CONDITIONAL members ("Exit Game" is
+   skipped on web), so "the proceeding action is last" can be a different index per
+   platform. Compute it rather than hardcoding, and have tests assert by button IDENTITY
+   (e.g. press by text) rather than by literal index.
 
 **Vertical columns are a separate convention and are deliberately NOT changed by this
-rule:** they put the exit at the BOTTOM (last) — see `pause_menu.gd::_build_menu_panel`
-(`Resume / Reset to track / Settings / Quit to HQ`), `account_menu.gd::_build_email_form`
-and the `< Back` at the foot of every scrolled modal page. That is consistent across the
-game; treat any change to it as its own decision.
-
-## Menu navigation (keyboard / gamepad)
-
-**Moved to [menu-navigation.md](menu-navigation.md).** The `MenuNav` framework — focus,
-WASD/arrow/gamepad movement, back routing, remembering the selected row — is a framework
-rather than a screen, so it has its own area doc. Every menu in the game is navigable by
-keyboard and gamepad (CLAUDE.md requires it); how that works lives there. The
-diegetic-HQ input regime that doc used to carry a second half for is deleted.
-
-## The new-rally reveal is DELETED
-
-The map-table reveal parade (`hq_table.gd::_run_reveal_sequence` — pan to each newly
-enterable rally, flip its pin, banner it) went with the 3D map table. Its persistence
-half SURVIVES: `Save._seed_reveals_if_needed` and the per-rally `revealed` flag are
-still written (see [save-persistence.md](save-persistence.md)), because a flat
-"here is what just opened up" beat may still want them — but nothing reads them for a
-reveal today, and the roguelike's regions unlock linearly on a rule the region page
-simply prints (hub-shell.md (deleted with the free-roam pivot)).
+rule:** they put the exit at the BOTTOM (last) — the pause menu's card list, 
+`account_menu.gd::_build_email_form` and the `< Back` at the foot of every scrolled modal
+page. Treat any change to it as its own decision.
 
 ## Text input (`text_field.gd`)
 
-`TextField` is the project's **only** text input (there was none at all before
-the account form — see [cloud-save.md](cloud-save.md)). A labelled `LineEdit`,
-built in code like every other menu widget. Making typing coexist with a menu
-driven by bare letter keys took four things:
+`TextField` is the project's **only** text input (see [cloud-save.md](cloud-save.md)). A
+labelled `LineEdit`, built in code like every other menu widget. Making typing coexist with
+a menu driven by bare letter keys took four things:
 
-- **`MenuNav._make_focusable` now walks `LineEdit` too**, not just `BaseButton`
-  and `Slider` — otherwise a form is unreachable without a mouse.
+- **`MenuNav._make_focusable` walks `LineEdit` too**, not just `BaseButton` and `Slider` —
+  otherwise a form is unreachable without a mouse.
 - **Up/down leave the field, left/right stay caret movement.**
   `TextField.wire_column([...])` chains a form's controls explicitly (top and
   bottom do not wrap — wrapping reads as the cursor teleporting) rather than
@@ -134,10 +69,7 @@ driven by bare letter keys took four things:
   in the GUI phase, before `_unhandled_input`. **Esc is not**, so
   `MenuNav._unhandled_input` turns Back-while-typing into "release the field"
   instead of "leave the page", and any host with its own `_unhandled_input` stands down
-  via the shared **`MenuNav.is_text_editing()`** static. One predicate, so those guards
-  cannot drift apart. (The host that motivated it was `hq.gd`'s spatial input branch,
-  now deleted — no flat page has an `_unhandled_input` of its own — but the static is
-  the contract for the next one that does.)
+  via the shared **`MenuNav.is_text_editing()`** static.
 - **Enter submits** (`submitted` signal) — on a phone the on-screen keyboard can
   cover the button, so this is sometimes the only way to submit at all.
   `virtual_keyboard_enabled` is on for Android/web.
@@ -150,48 +82,16 @@ Covered by `tests/headless/test_text_field.gd`.
 
 ## Account page (`account_menu.gd`)
 
-`AccountMenu` is the optional cloud-save UI — one builder with **two hosts**: a
-category page inside Settings (`show_account`, the canonical route) and an inline
-overlay raised by a host that needs a sign-in there and then. It has had two other hosts
-in the past, both gone: a dedicated title-row Account button (removed as a duplicate of
-the Settings page) and the standings page's sign-in prompt (deleted with
-`global_standings.gd`). See [cloud-save.md](cloud-save.md).
-It exposes `at_root()` / `go_back()` so its
-hosts treat its sub-forms exactly like Settings sub-pages —
-`SettingsMenu.go_back()` gives it first refusal before backing out of the page.
-See [cloud-save.md](cloud-save.md).
-
-## Modals and confirms
-
-**Moved to [modals.md](modals.md).** `ConfirmPopup`, the one-modal-at-a-time group, the
-scrolled-body/pinned-exit modal page shape, and `MenuPage.open_modal`.
-
-## The hub
-
-**See hub-shell.md (deleted with the free-roam pivot).** `HubShell` (`hub.tscn` + `scripts/hub_shell.gd`)
-is the flat replacement for the diegetic HQ: eleven stacked `MenuPage` screens on one
-script, smaller in total than any single one of the nine hub scripts it replaced. There
-is no `features/hq.md` — the doc this section used to point at went with the code.
-
-## Run-scene fielding (`world.gd`)
-
-With a `RunSession` active, `world._ready` fields the player's OwnedCar through
-`Car.apply_owned` (the CarLibrary baseline, then the effects funnel carrying the run's
-picked boosts and the player's equipped skills, then tuning, then the damage bound from
-the saved HP) instead of the default `apply_car(0)`, and wires this stage's
-`StageManager.stage_completed` into `RunSession.report_event_result`. See
-region-runs.md (deleted with the free-roam pivot) and skills.md (deleted with the free-roam pivot).
-
-There is **no second exit** from the run: `world.gd` has no wreck screen and nothing
-listens for a car reaching 0 HP, because nothing is signalled when it does. With no
-session (a plain dev boot of `main.tscn`) the default car is fielded and none of this
-runs — `main.tscn` stays independently runnable.
+`AccountMenu` is the optional cloud-save UI — a category page inside Settings
+(`show_account`). It exposes `at_root()` / `go_back()` so Settings treats its sub-forms
+exactly like its own sub-pages — `SettingsMenu.go_back()` gives it first refusal before
+backing out of the page. See [cloud-save.md](cloud-save.md).
 
 ## Title screen and world pages
 
-The game boots into `title.tscn` (`TitleScreen`), and free roam's pause menu and rest-stop page open
+The title menu (`TitleScreen`) opens over the world at boot, and free roam's pause menu and rest-stop page open
 the map and stats pages (`WorldPages`). Both are described in [world-session.md](world-session.md),
-and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The pause menu gained
+and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The pause menu has
 host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
 `return_from_extra()` when its page closes) and a configurable quit (`quit_label`, `quit_scene`).
 
@@ -210,134 +110,61 @@ free, freezes the game and disarms the pause menu. Every page but TUNE is a card
 - **TRAVEL:** a card per other lit rest stop, nearest first, with its distance.
 
 Back (Esc / gamepad B, or the `< Back` button under a sub-page's cards) steps a sub-page → MAIN →
-closed. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
+closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`): when the car gives up it lists the carried loot left at the wreck, and its single Respawn card (or Back) respawns at the last lit stop. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
 `test_free_roam_rest_stops.gd` and `test_loot.gd`.
 
 ## Pause menu (`pause_menu.gd`)
 
-**Per-host options** (exports, set in the hosting scene): `offer_photo_mode` (default on; a
-host with no free-fly photo camera, such as `free_roam.tscn`, turns the row off), `reset_label`
-(the stage's "Reset to track", free roam's "Reset to road"), and `quit_body_override` (replaces
-the quit confirm's body text). The settings page starts hidden, so the first `open()` lands the
-cursor on Resume. Before this, it read as a return from Settings and focused the Settings card.
+A `PauseMenu` `CanvasLayer`, `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is
+frozen, in both `free_roam.tscn` and the dev stage `main.tscn`. It owns a **top-right Pause
+button** bearing a drawn pause glyph (`PauseIcon`, `scripts/pause_icon.gd`, since the font has
+no ⏸ glyph) that **freezes the game** (`get_tree().paused = true`) and shows **PAUSED** over a
+card list (`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**, **Reset**,
+**Photo Mode**, the host's extra rows, **Settings** and **Quit**. Coming back from Settings,
+photo mode or an extra page puts the cursor back on the card that left (`_focus_card`). The
+settings page starts hidden, so the first `open()` lands the cursor on Resume.
 
+**Per-host options** (exports, set in the hosting scene): `offer_photo_mode` (free roam turns it
+off — it has no free-fly photo camera), `reset_label` ("Reset to road" in free roam),
+`quit_label` / `quit_scene` / `quit_body_override` (free roam quits to the title, saying the
+world is saved).
 
-A `PauseMenu` `CanvasLayer` (`scripts/pause_menu.gd`) in `main.tscn`, set to
-`PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is frozen. It owns a
-**top-right Pause button** (always visible during gameplay; the HUD's version/timer
-labels were shifted left to clear it) — a square button bearing a **proper drawn
-pause glyph** (`PauseIcon`, `scripts/pause_icon.gd`: two sharp-cornered ink bars,
-since the font has no ⏸ glyph) rather than a cramped `| |` string — that **freezes the
-game** (`get_tree().paused = true`) and shows an overlay with **PAUSED** over a card list
-(`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**, **Reset to
-track**, **Photo Mode**, the host's extra rows, **Settings** and **Quit to HQ**. A card the host
-leaves out (`offer_photo_mode = false`) is simply not in the list. Coming back from Settings,
-photo mode or an extra page puts the cursor back on the card that left (`_focus_card`).
-Resume unfreezes and closes. **Reset to track** snaps the car **onto the centerline
-beside its current position** — "the middle of the road, regardless of where the car
-is right now" (`TrackProgress.manual_reset_pose()`, a fresh nearest-point query). This is
-deliberately **not** `recovery_pose()` (which the off-track reset / stuck watchdog use):
-that pose is pinned to the *furthest* offset reached and freezes the moment the car stops
-banking progress, so a strayed car would reset to a stale point that's no longer beside
-it — feeling like the button does nothing. It's also **not** the full start-line reset
-(`Car._reset()` / `reset_to(_start_transform)`). This "Reset to track" menu item is now
-the **only** player-facing way to reset — there is no direct reset input any more (see
-[controls.md](controls.md)). The menu owns no car reference, so it emits
-`reset_to_track_requested`; `world.gd` connects that in `_ready` and performs the reset
-(`$Car.reset_to(_track_progress.manual_reset_pose())`, which zeroes motion and suppresses
-the teleport's impact damage — free), then the menu `resume()`s so the player drops straight
-back in. `reset_to()` does **not** trust a bare `global_transform` write — that only sticks
-when done inside the physics step, so a reset fired from a menu signal (outside the physics
-frame) or on a stuck, **sleeping** body was silently reverted by the physics server next
-frame (the car looked like it never moved, while the `R` reset, which runs inside
-`_physics_process`, always worked). Instead it wakes the body and **queues** the pose;
-`car.gd::_integrate_forces` applies it via `state.transform` — the authoritative
-physics-write point — so it lands regardless of when the reset was fired.
+**Reset** emits `reset_to_track_requested`; the menu owns no car reference, so the host performs
+it — free roam's `RoadRecovery.reset_now`, the dev stage's `world.gd` via
+`TrackProgress.manual_reset_pose()` (a fresh nearest point on the centreline, not the
+furthest-progress `recovery_pose()`). It is the **only** player-facing reset — there is no
+direct reset input (see [controls.md](controls.md)). `Car.reset_to()` does not trust a bare
+`global_transform` write, which only sticks inside the physics step: it wakes the body and
+**queues** the pose, and `car.gd::_integrate_forces` applies it via `state.transform`, so a reset
+fired from a menu signal or on a sleeping body still lands. The teleport's impact damage is
+suppressed.
 
-**Photo Mode** enters a free-fly frozen-world camera (see [camera.md](camera.md)); the
-tree stays **paused** throughout and the menu is **disarmed** while photo mode is active,
-so Esc and the Pause button belong to the camera. Exiting photo mode re-opens the pause
-menu (still frozen). Touch players get their own on-screen control set for it (thumbstick,
-altitude buttons, back/hide) since there's no Esc key on a phone — see
-[camera.md](camera.md) › *On-screen touch controls*.
+**Photo Mode** enters a free-fly frozen-world camera (see [camera.md](camera.md)); the tree stays
+**paused** and the menu is **disarmed** while it is active, so Esc and the Pause button belong to
+the camera. Exiting re-opens the pause menu.
 
-**Settings** shows the **shared `SettingsMenu`** (camera
-angle + mobile controls, identical to the hub's own Settings page — see
-hub-shell.md (deleted with the free-roam pivot)), with a **◄ Back** to
-the Resume/Settings menu. **Quit to HQ** pops a confirm and, on accept (`quit_to_hq`), unfreezes and
-**PAUSES** the run (`RunSession.pause_run()`), then loads `Scenes.hub_path()` itself.
-Nothing is abandoned and nothing DNFs: the run slot stays persisted and the hub offers
-**Resume run**, so the confirm's wording says the run is saved and the current stage
-starts over rather than claiming it is lost. Quitting a CHALLENGE must not spend its
-period either, which is the same rule. `pause_run()` deliberately emits no
-`run_finished` — `world.gd`'s handler would post a DNF to the cloud board on it — which
-is why this function owns the transition itself. A benchmark run exits through
-`Benchmark.exit_to_hq` so its config overrides are restored; with no session (a plain dev
-boot of `main.tscn`) it just loads the hub. The `RallySession.abandon()` this used to
-call is deleted with `RallySession` (decision 5). `ui_cancel` (Esc / gamepad B)
-toggles the menu and backs out of Settings first; the gamepad **Start** button
-(`pause` action) also opens it (open-only — it does not double as a menu "back"). A camera pick applies
-**immediately** to the live `CameraManager` (wired via the `SettingsMenu.camera_changed`
-signal → `CameraManager.set_mode`), so the angle changes the moment you choose it.
-A **mobile-control** pick applies just as immediately to the live `MobileControls`
-(the `SettingsMenu.scheme_changed` signal → `MobileControls.set_scheme`), so the
-on-screen touch layout rebuilds the instant you choose it rather than only on the next
-run.
-The dev page's **Complete stage** action — offered by this host only, because the
-menu is built mid-run here and session-less in the hub — relays upward the same
-delegate-to-world way as "Reset to track": `SettingsMenu.dev_complete_stage_requested`
-→ the pause menu's own `dev_complete_stage_requested` signal, which `world.gd`
-connects to `_dev_complete_stage` (the body shared with the F skip-to-finish cheat,
-re-gated inside so a stale signal can't fire); the menu then `resume()`s so the
-finish panel the skip raises answers. See [settings.md](settings.md) → "Developer-only
-pages" and [debug-tools.md](debug-tools.md) → "Skip to finish".
-The menu is **default-inert** (`_input_enabled` starts `false`, mirroring
-`StageManager`'s `_armed` gate): the Pause button and `ui_cancel` do nothing until
-`world.gd` calls `set_input_enabled(true)` **after world generation completes**. This
-stops the player pausing *during* the awaited generation window (loading overlay up) —
-opening the menu then would freeze the tree mid-build and allow quit/resume into a
-half-built world. Covered by `tests/headless/test_pause_menu.gd`.
+**Settings** shows the shared `SettingsMenu` with a **◄ Back**. A camera pick applies
+immediately to the live `CameraManager` (`SettingsMenu.camera_changed` → `CameraManager.set_mode`)
+and a mobile-control pick to the live `MobileControls` (`scheme_changed` → `set_scheme`). The dev
+page's **Complete stage** relays to `world.gd`'s `_dev_complete_stage` through
+`dev_complete_stage_requested` (see [settings.md](settings.md) → "Developer-only pages").
 
-## The podium and the standings interstitial are DELETED
+**Quit** pops a confirm (`confirm_quit_to_hq`) and on accept (`quit_to_hq`) unfreezes and goes to
+`quit_scene`; a benchmark run exits through `Benchmark.exit_to_hq` so its config overrides are
+restored; otherwise it loads `Scenes.hub_path()` (the title). `ui_cancel` (Esc / gamepad B)
+toggles the menu and backs out of Settings first; the gamepad **Start** button (`pause` action)
+opens it.
 
-`podium.tscn` / `scripts/podium.gd` (the 3D reward sequence) and `standings.tscn` /
-`scripts/standings.gd` / `scripts/global_standings.gd` (the between-event two-leaderboard
-page) are gone — decisions 19 and 30. Rivals went with them (decision 5), so there is no
-field left to rank. `HubShell`'s `SUMMARY` page replaces both: stages cleared, money
-earned, per-stage times, for a run that ended either way
-(hub-shell.md (deleted with the free-roam pivot)).
-
-The event-replay overlay MECHANISM survives (`ReplayRecorder` / `ReplayCamera` /
-`car.gd`'s `replay_playback`) — only the flat page it used to render behind is deleted.
-See event-replay.md (deleted with the free-roam pivot).
-
-## Start line (location 2)
-
-The pre-event **start-line scene** — the diegetic **briefing** panel (rally, event
-N/3, restriction, fielded car + HP bar) and the **pre-launch presence** cars — is
-built inside the run scene before the countdown; the player launches it into the
-`StageManager` countdown. See start-line.md (deleted with the free-roam pivot). Its Exit button raises the
-same confirm the pause menu's Quit does (`PauseMenu.confirm_quit_to_hq` is public for
-exactly that reason — the wording branches on run-vs-no-run and the quit branches on
-benchmark/run/plain, and neither belongs in two places). The between-stage beat it used
-to hand off to is the run pick now, not a standings page — see
-region-runs.md (deleted with the free-roam pivot).
+The menu is **default-inert** (`_input_enabled` starts `false`): the Pause button and `ui_cancel`
+do nothing until the host calls `set_input_enabled(true)` after the world is built, so the player
+can't freeze the tree mid-build. Covered by `tests/headless/test_pause_menu.gd`.
 
 ## Tests
 
-- `tests/headless/test_hub_shell.gd` — the hub's screen graph and the keyboard/gamepad
-  contract on every one of its pages (hub-shell.md (deleted with the free-roam pivot)).
 - `tests/headless/test_pause_menu.gd` — the Pause button freezes the game and opens the
-  menu; Resume unfreezes; Settings exposes the shared `SettingsMenu` (camera + control
-  rows); Quit to HQ leaves the run and unfreezes; picking a camera applies live to the
-  `CameraManager` and persists.
+  menu; Resume unfreezes; Settings exposes the shared `SettingsMenu`; Quit leaves and
+  unfreezes; picking a camera applies live to the `CameraManager` and persists.
 - `tests/headless/test_menu_nav.gd` / `test_menu_page.gd` — the navigation framework and
   the page shape ([menu-navigation.md](menu-navigation.md), [modals.md](modals.md)).
 - `tests/headless/test_text_field.gd` — the text input rules above.
 - `tests/headless/test_settings_menu.gd` — the shared settings page.
-
-`tests/headless/test_menu_flow.gd` was this file's biggest test — 5,880 lines, 207 tests
-— and is **deleted**. It drove `hq.gd`, `hq_carpark.gd`, `GlobalStandings` and
-`RallySession`, none of which exist, so it had stopped parsing entirely. Its host-free
-cases were salvaged first; see [testing.md](testing.md) → *The `test_menu_flow.gd`
-salvage* for what moved where and what was lost.

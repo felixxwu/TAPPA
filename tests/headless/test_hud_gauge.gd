@@ -1,46 +1,29 @@
 extends GutTest
-# The square radial gauge widget (HudGauge) and its glyph geometry (GaugeIcons), which
-# together replaced the three linear HUD bars — see features/hud.md. Pure geometry, so
-# this file builds NO scene: the behaviour that needs a live HUD (what each gauge reads,
-# when it hides) is exercised against main.tscn in test_hud.gd.
-#
-# Nothing here pins a chosen SIZE or COLOUR. What's asserted is the property that has to
-# hold for any sizing: the fill lands exactly on a square perimeter, and each glyph is
-# the shape its name claims.
+# The vertical-strip gauge widget (HudGauge) and its glyph geometry (GaugeIcons) — see
+# features/hud.md. Pure logic, so this file builds NO scene: what each gauge reads and
+# when it hides is exercised against main.tscn in test_hud.gd.
 
 
-# --- Square projection ---------------------------------------------------------
-# The whole design rests on this: a point at some sweep angle must land on the perimeter
-# of a SQUARE, which means its larger axis offset equals the half-extent exactly. Get
-# this wrong and the fill bulges or clips instead of hugging the box.
+# --- Strip geometry --------------------------------------------------------------
 
-func test_every_sweep_angle_lands_on_the_square_perimeter() -> void:
-	var centre := Vector2(40.0, 25.0)
-	var half := 17.0
-	for i in 180:
-		var angle := TAU * float(i) / 180.0
-		var p: Vector2 = HudGauge._perimeter(centre, half, angle)
-		var d := p - centre
-		assert_almost_eq(maxf(absf(d.x), absf(d.y)), half, 0.0001,
-			"angle %d lands on the square, not inside or outside it" % i)
+func test_the_needle_sits_at_the_bottom_when_empty_and_the_top_when_full() -> void:
+	assert_almost_eq(HudGauge.level_y(0.0, 10.0, 40.0), 50.0, 0.0001, "empty = bar bottom")
+	assert_almost_eq(HudGauge.level_y(1.0, 10.0, 40.0), 10.0, 0.0001, "full = bar top")
+	assert_almost_eq(HudGauge.level_y(0.5, 10.0, 40.0), 30.0, 0.0001, "half = halfway up")
 
 
-func test_projection_keeps_the_direction_it_was_given() -> void:
-	# Landing on the perimeter is only half the contract — the point must stay on the
-	# original ray, or the fill would sweep at a different rate than the value implies.
-	var centre := Vector2.ZERO
-	for i in 60:
-		var angle := TAU * float(i) / 60.0
-		var dir := Vector2(cos(angle), sin(angle))
-		var p: Vector2 = HudGauge._perimeter(centre, 9.0, angle)
-		assert_almost_eq(dir.angle_to(p - centre), 0.0, 0.0001,
-			"the projected point stays on its own ray")
+func test_the_needle_never_leaves_the_bar() -> void:
+	assert_almost_eq(HudGauge.level_y(-0.5, 10.0, 40.0), 50.0, 0.0001, "below empty clamps")
+	assert_almost_eq(HudGauge.level_y(1.7, 10.0, 40.0), 10.0, 0.0001, "above full clamps")
 
 
-func test_a_degenerate_gauge_does_not_blow_up() -> void:
-	# A zero-size control is briefly real during layout; projection must not divide by it.
-	var p: Vector2 = HudGauge._perimeter(Vector2(3.0, 4.0), 0.0, 1.0)
-	assert_eq(p, Vector2(3.0, 4.0), "a zero half-extent collapses to the centre")
+func test_every_gauge_kind_has_its_own_name() -> void:
+	var seen := {}
+	for kind: int in GaugeIcons.Kind.values():
+		var gauge_name: String = HudGauge.NAMES.get(kind, "")
+		assert_ne(gauge_name, "", "kind %d has a name to run up its bar" % kind)
+		assert_false(seen.has(gauge_name), "kind %d's name is unique" % kind)
+		seen[gauge_name] = true
 
 
 # --- Glyph geometry ------------------------------------------------------------

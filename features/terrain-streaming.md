@@ -10,28 +10,15 @@
 
 
 **This whole file documents a producer-less consumer.** `TerrainManager` carries a
-**bounded, streamed** world mode — built for the drivable overworld hub that the
-roguelike pivot deleted (`todo/roguelike-pivot.md`: "The overworld hub goes too" —
-`overworld.tscn`, `scripts/overworld_region.gd`, `scripts/overworld_picker.gd`,
-`scripts/overworld_roads.gd`, `scripts/overworld_pads.gd`, `scripts/overworld_cache.gd`,
-`scripts/overworld_garage.gd` and `tools/analyse_road_grades.gd` are all gone, along with
-the design spec that motivated them). **`TerrainManager`'s side of the seam survives** —
-every field, method and pass below is still live code in `scripts/terrain_manager.gd` — but
-nothing in production feeds it any more: `apply_overworld_bounds`'s only caller was the
-deleted overworld, `set_road_source`/`set_pad_source`/`set_region_source` are never called
-outside tests, and the duck-typed producer classes they used to be fed by
-(`OverworldRoads`, `OverworldPads`, an `OverworldRegion`) no longer exist in the codebase.
+**bounded, streamed** world mode, built for the drivable overworld hub the roguelike pivot
+deleted. Every field, method and pass below is still live code in `scripts/terrain_manager.gd`,
+but nothing in production feeds it: free roam streams through its own `TerrainStreamer`
+([free-roam.md](free-roam.md)), and only tests call `apply_overworld_bounds` or assign
+`road_source` / `pad_source` / `region_source` / `chunk_source`. The duck-typed contracts below
+are what a new producer would implement; the old producer classes (`OverworldRoads`,
+`OverworldPads`, `OverworldCache`) are gone, so don't go looking for them. Whether to keep this
+mode at all is an open decision for the user.
 
-**Why this is documented rather than deleted:** it is real, working, headless-tested
-infrastructure — not dead code left behind by an incomplete cleanup. `apply_overworld_bounds`
-and `GameConfig.overworld_load_radius` / `overworld_chunk_build_budget` /
-`overworld_edge_taper_m` / `overworld_edge_depth_m` are all still read (see [configuration.md](configuration.md)). If a future feature needs a bounded,
-streamed terrain again — a second hub, a free-roam area, anything larger than the fixed
-stage corridor — this is where it plugs in, and the duck-typed contracts below (`road_source`,
-`pad_source`, `region_source`, `chunk_source`) are what a new producer would implement; they
-are not resurrected class names to go find. **Two names in the codebase are misleading survivors,
-not orphans — do not delete them on sight:** `TerrainManager.apply_overworld_bounds` (this
-whole mode's entry point) and `RallyLibrary`'s `map_reveal_radius` / `overworld_size_m` reads.
 This is a set of **additive, off-by-default opt-ins**: leave every field below alone and
 behaviour is bit-identical to a stage. Nothing here is used by `main.tscn`.
 
@@ -50,7 +37,7 @@ behaviour is bit-identical to a stage. Nothing here is used by `main.tscn`.
 | `clear_bounds()` / `has_bounds()` | — | Back to stage mode / the predicate. |
 | `apply_overworld_bounds(cfg, rect)` | — | Seats all of the above from a `GameConfig` in one place. |
 | `set_chunk_source(source)` | — | Attaches the store (and arms `capture_encoded_light`). |
-| `set_road_source(source)` | — | Attaches (or clears) the road network. Must be seated **before** any chunk is built or cached. |
+| `road_source` (assigned directly) | `null` | The road network. Must be seated **before** any chunk is built or cached. |
 | `taper_height(h, x, z)` | — | The falloff itself; a no-op outside bounded mode. |
 
 Params are **passed in**, not read off `Config`, so this `@tool` script stays editor-safe
@@ -108,15 +95,13 @@ Two accepted consequences, both commented at the code:
 - The **coarse** (`stride > 1`) builder path is untapered, and is unreachable in bounded
   mode because `chunk_class` returns `full_res` for every chunk there.
 
-Pin safety: no authored `map_pos` may sit inside the taper band, or its zone drowns. That is
-a shipped-content guard on `tools/fit_map_pins.py`, not something this file enforces.
 
 ## The road carve (per chunk, not a global bake)
 
 **No producer ships.** This section describes the contract a `road_source` object had to meet
 when one existed (`OverworldRoads`, `scripts/overworld_roads.gd`, deleted with the overworld
 hub) — a deterministic network over the rally pins plus the garage, queried per point by
-`road_at`. `TerrainManager` consumes it through the duck-typed `road_source` (`set_road_source`),
+`road_at`. `TerrainManager` consumes it through the duck-typed `road_source` (assigned directly),
 never by class, so this file keeps no dependency on it and `null` (every stage, and every
 production build today) is byte-identical to before.
 
@@ -219,9 +204,9 @@ profile.
 pad-wins precedence `_apply_pad_flatten` bakes into the mesh (see "Flat pads" below) — this is
 what keeps `wheel_particles.gd` and `Drivetrain.surface_tire_params` agreeing with what the pad
 *looks* like. Both go through this one function, so the fix lives here rather than being
-duplicated in each consumer. `set_pad_source` invalidates the one-entry memo for the same reason
-`set_road_source` already does: a query made before the pad was attached (or before a pad swap)
-must not answer stale afterwards.
+duplicated in each consumer. Its one-entry memo (`_road_surf_valid`) is NOT reset by assigning
+`road_source` / `pad_source` directly — the setters that did that were deleted unused — so a
+producer seated after the first query must clear it, or a stale answer survives the swap.
 
 ## Flat pads
 
@@ -229,7 +214,7 @@ must not answer stale afterwards.
 a `pad_source` had to meet when one existed: a **level circle of ground** under every rally zone
 and under the garage, so the things standing there sit flat. The pad set was `OverworldPads`
 (`scripts/overworld_pads.gd`, deleted with the overworld hub); `TerrainManager` consumes it
-duck-typed through `pad_source` / `set_pad_source`, never by class, so `null` — **every stage,
+duck-typed through `pad_source`, never by class, so `null` — **every stage,
 and every production build today** — is byte-identical to before pads existed.
 
 Two entry points for the HEIGHT flatten, both driven by `pad_at(x, z)` (`.x` = feathered weight,
@@ -304,56 +289,6 @@ function of position, so no combination of tunables can reintroduce a *step*. Tw
   and the ground just outside it. With a FIXED band that grade is whatever the site hands you, and
   on a rough site it exceeded the ~22% FWD / ~33% RWD a car climbs at snow grip — a lip the player
   could not drive out over, on the very road that led them in.
-
-**Each pad sized its own feather** (`OverworldPads._feather_for`, called once per pad at
-build time, in the now-deleted producer). It sampled a ring of the terrain's *own generated*
-height at the candidate band's outer edge, took the worst `|level − h|`, and demanded
-`1.5 × Δh / overworld_pad_max_grade` of run for it — re-sampling a couple of times, since
-widening moves the ring outward onto possibly rougher ground. The width only ever grew from the
-authored `overworld_pad_feather_m` (the *minimum*) and was capped at `overworld_pad_max_feather_m`,
-so a pad on a cliff edge accepted a steeper lip rather than flattening the neighbourhood. It stayed
-pure and deterministic, and the per-pad width was folded into `stamp()` so the chunk cache
-re-warmed when it changed.
-
-**Three constraints resolved the width, and they were derived by MEASUREMENT** — via
-`tools/analyse_road_grades.gd` (deleted with the overworld hub), which walked every road on the
-real map and reported the grade the car meets:
-
-1. **The grade-driven widening** above asks for `1.5 × Δh / overworld_pad_max_grade`.
-2. **The neighbour cap** (`_neighbour_cap`) refuses more than *half the clear gap* to the nearest
-   other pad, floored at the authored feather. Without it, the widening ran every band to the
-   60 m ceiling on a map whose pads sit ~150 m apart, so every band overlapped its neighbours and
-   the ground between two pads was a blend of two pad levels the whole way across — the entire
-   height difference had to be paid in the narrow strip where the blend handed over. Roads that
-   ran at worst 0.28 over open ground hit **0.67** with pads on. The widening was manufacturing
-   the defect it exists to prevent.
-3. **The radius shrink** (`_shrink_to_fit`) was the lever left when the cap refused the width: a
-   smaller disc has less to give back (`Δh` ≈ terrain slope × radius). Bounded by
-   `_MIN_RADIUS_SHARE`, and the **garage pad was exempt** — `overworld_garage.gd` (also deleted)
-   clamped the building against the *configured* radius, so shrinking the pad would have left the
-   building off the flattened ground.
-
-The pad's **level** is the mean of the terrain over its own footprint (two rings plus the centre),
-not the height at the single centre point: a pin on a local bump used to take its level from that
-bump and pay the whole offset back across the feather.
-
-**Overlapping pads blend their target.** The flatten *weight* is still the strongest pad's (a
-pad's own footprint must read as fully flat), but the target height is
-`Σ (w/(1−w))·level / Σ (w/(1−w))`, not the strongest pad's level taken outright. Outright, the
-target jumps by `w·(levelA − levelB)` where two influences cross — metres tall on rough ground,
-the very cliff the feather exists to prevent. That used to be rare (two pads had to sit within one
-14 m band); with bands that widen it is common. `w/(1−w)` diverges as `w → 1`, so a sample inside
-a pad outvotes every neighbour and the interior stays flat — this is not the honest average, which
-would tilt both pads. (It replaced a `w⁸` weighting that did keep interiors flat but swung the
-target almost entirely from one level to the other across the locus where two weights are equal.)
-
-Consequences elsewhere: `influence_m()` reports the **widest built** feather (a caller inflating by
-the authored width would miss a widened pad's outer skirt), `pads_in_rect` and `pad_at` use each
-pad's own width, and `feather_m()` now means the authored minimum — ask `pad_feather(i)` for what
-pad *i* actually uses.
-
-No *extra* widening is done where a road enters, and none is needed: the road already arrives at
-the pad's level, so there is no height difference for the two feathers' differing rates to expose.
 
 ## `stream_on_miss` — a correctness fallback, not the supply mechanism
 

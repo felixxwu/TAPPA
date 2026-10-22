@@ -1,7 +1,7 @@
 # HUD
 
 **Source:** `scripts/hud.gd` (extends `CanvasLayer`). Node `HUD` (layer 2) in
-`main.tscn`, with `car` wired to the `Car`.
+`free_roam.tscn` and the dev stage `main.tscn`, with `car` wired to the `Car`.
 
 **Tests:** `tests/headless/test_hud.gd`, `tests/headless/test_hud_gauge.gd`,
 `tests/headless/test_hud_docs.gd` (a mechanical guard: parses `HUD.DEBUG_READOUT_NODES`
@@ -58,26 +58,20 @@ that does **not** refresh while hidden, because its source
 
 ## Gauge widget (`HudGauge` / `GaugeIcons`)
 
-The three readouts below share one widget, `HudGauge` (`scripts/hud_gauge.gd`, a
-`Control`): a radial fill clipped to a **square**, drawn as a **ring** with an icon
-(`scripts/gauge_icons.gd`) sitting in the hole rather than as a solid pie. It sweeps
-clockwise from 12 o'clock like a pie chart, but every point on the sweep is projected
-onto the perimeter of a square (`HudGauge._perimeter`), so the fill hugs the box and
-turns hard corners instead of describing a circle — keeping it in the same
-orthogonal, no-rounded-corners language as the rest of the design system
-(see [ui-design-system.md](ui-design-system.md)) while still reading as a dial. The
-projection is exact, not tessellated: the perimeter is a straight line between two
-square corners, so `_draw_ring` emits one convex quad per corner-to-corner span
-(`draw_colored_polygon` only renders convex polygons correctly).
-
-It's a ring, not a solid pie, on purpose: on a solid pie the wedge sweeps *under* the
-icon, so the icon's contrast against its background changes continuously with the
-value while driving. Putting the icon in the hole means it always sits on the
-(constant) track colour and always reads the same. The owner sets `HudGauge.value`
-(0..1, clamped on draw) and `HudGauge.fill_color`; both setters change-gate their own
-`queue_redraw()`, so writing an unchanged value each frame costs nothing. The gauge
-node itself is `mouse_filter = IGNORE` / `focus_mode = FOCUS_NONE` — it's a pure
-readout, never a tap target.
+The gauges below share one widget, `HudGauge` (`scripts/hud_gauge.gd`, a `Control`): a
+**vertical strip** on a black column. The bar fills from the bottom in `fill_color`, the
+gauge's name (`HudGauge.NAMES` — HEALTH / BOOST / NITROUS / TEMP) runs bottom-to-top up
+the bar in faint ink, an ink **needle** rides over the bar and the name at the current
+level (`HudGauge.level_y`), quarter ticks sit to its right and the icon
+(`scripts/gauge_icons.gd`) sits underneath. Warnings pulse the fill's alpha only, so the
+needle, name and icon stay readable. The owner sets `HudGauge.value` (0..1, clamped on
+draw) and `HudGauge.fill_color`; both setters change-gate their own `queue_redraw()`, so
+writing an unchanged value each frame costs nothing. The name is drawn at
+`UITheme.FONT_SIZE` (Jersey 10 blurs off 18 px and its multiples), so the strips are
+sized tall enough for NITROUS at that size, and all strip geometry is in whole pixels.
+The gauge node itself is
+`mouse_filter = IGNORE` / `focus_mode = FOCUS_NONE` — it's a pure readout, never a tap
+target.
 
 The icon glyphs (`GaugeIcons.Kind.HEALTH` / `BOOST` / `NOS`) are authored on a shared
 24-unit grid with a 4-unit module — every edge on a module multiple, every negative
@@ -98,9 +92,8 @@ triangles. Adding a fourth gauge means authoring its glyph to the same grid.
 car's `DamageModel` (see [damage.md](damage.md)): `value` tracks `hp / max_hp` and
 `fill_color` is hue-graded from green (full) to red (empty) via `_gauge_color`.
 Below `hud_low_hp_warn_frac` the low-health warning pulse rides on the fill's
-**alpha** (`HudGauge.fill_color.a`) rather than on `self_modulate`/`modulate` the way
-the old text-captioned bar worked — the icon is drawn separately in ink by
-`GaugeIcons`, so it never pulses with the fill. Any HP drop since the previous frame
+**alpha** (`HudGauge.fill_color.a`) rather than on `modulate`, so the needle, name and
+icon never pulse with the fill. Any HP drop since the previous frame
 bumps the red `ImpactFlash` overlay (sized to the loss), which fades back out each
 frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for every car (the
 starter takes damage like any other — no car can be wrecked, and an empty bar
@@ -109,9 +102,9 @@ means a stumbling, rev-capped engine, not a dead run).
 ## Temperature gauge (free roam only)
 
 `TempGauge` is an optional `HudGauge` with the thermometer icon (`GaugeIcons.Kind.TEMP`). Only
-`free_roam.tscn` has one, beside the nitrous gauge. Its fill is `DamageModel.temp_fraction`:
-empty at normal running, full at the overheat threshold. It runs blue to red and pulses while
-the engine overheats. A code-built `CoolingLabel` above the gauges reads "COOLING FAILED" once
+`free_roam.tscn` has one, last in the row. Its fill is `DamageModel.temp_fraction`:
+the temperature in °C over the overheat threshold, so empty at 0 °C and full at the threshold. It runs blue to red and pulses while
+the engine overheats. A code-built `CoolingLabel` above the gauge row reads "RADIATOR DAMAGED" once
 the cooling breaks, and "OVERHEATING — REACH A REST STOP" past the threshold. The stage scene
 has no `TempGauge`, so none of this runs there (`hud.gd → _update_temp`).
 
@@ -128,7 +121,7 @@ summon an empty gauge). Its `fill_color` is a **fixed blue** at the same
 saturation/value as the health gauge's grade (`_BOOST_HUE` / `_BOOST_SAT` /
 `_BOOST_VAL`), so the two gauges read as one family and only the hue tells them
 apart — fixed rather than graded because boost has no "danger" end. Its icon is
-`GaugeIcons.Kind.BOOST` (the dial).
+`GaugeIcons.Kind.BOOST` (the dial glyph).
 
 The `H` debug overlay's separate textual `Boost NN%` readout still exists alongside
 it (`boost_text`, see [debug-tools.md](debug-tools.md)) for exact numbers.
@@ -171,12 +164,10 @@ The **`CutFlashLabel`** is a live corner-cutting flash (see
 pulsed by `StageManager` every time `TrackProgress` bills a cut incident while
 RUNNING. It shows the running event total (`CUT +total_s`), not the incident
 delta, so consecutive incidents read as one growing tag rather than flickering
-resets — built in code, anchored top-centre just below the pacenote strip
-(`_POPUP_TOP`), and fading out after `hud_popup_show_seconds` (a countdown ticked
-in `_process`). Gated by `cut_penalty_enabled`. It used to share its row with a
-permanent live-standings readout (the player's position in the rival field);
-that readout is gone with the rival field (`todo/roguelike-pivot.md` decision 5),
-so the flash now has the row to itself.
+resets — built in code, anchored top-centre at `_POPUP_TOP`, and fading out after
+`hud_popup_show_seconds` (a countdown ticked in `_process`). Gated by
+`cut_penalty_enabled`. (`_POPUP_TOP` is still derived from the deleted pacenote strip's
+`_PACE_TOP` + `_PACE_ICON` constants in `hud.gd`.)
 
 ## Off-track warning
 
@@ -195,100 +186,6 @@ frame and holding the label back until `off_road_warning_after_s` has elapsed.
 re-formats the string ten times a second. `Hud.off_road_text(seconds_left)` is the
 pure formatter (clamps a negative countdown to `0.0`).
 
-## Pacenote strip
-
-The **rally pacenote strip** runs along the top-centre of the HUD: the **current
-turn** (arrow board + grade number, full opacity) with the **upcoming turns queued
-to its right**, progressively dimmer. It reads **left-to-right** and **slides left**
-as each corner is passed. It's built in code (no scene node) by `set_pacenotes(notes)`
-and advanced by `show_pacenotes(current)`.
-
-- **Data source.** `world.gd._setup_pacenotes` builds the note list once per stage
-  from the generated track's `pieces` via `Pacenotes.build` (`scripts/pacenotes.gd`) —
-  one note per non-`Straight` corner, at the corner-entry arc offset (the same offset
-  `SignLayout.plan` plants a board at). Each note is `{corner, flip, offset_m}`. The
-  strip covers **every** corner including gentle 5s/6s (unlike the roadside signs,
-  which skip them).
-- **Art (reused).** Each board is a `TextureRect` of the roadside-sign arrow art
-  (`textures/signs/arrow_*.png`, keyed through `GameConfig.sign_textures`). The key
-  comes from `Pacenotes.arrow_key(corner, flip)`, which uses the **same** direction
-  mapping as `SignLayout._arrow_key` (a left-hand corner, `flip=true`, takes the
-  `"right"`-keyed art). The chase camera looks along the track's forward axis, which
-  flips the 2D track's left/right on screen — the same inversion the roadside boards
-  bake in — so the HUD reads correctly with the signs' convention, not the opposite of
-  it. The `arrow_5`/`arrow_6` boards are baked by
-  `tools/bake_sign_arrows.gd` (see signs.md (deleted with the free-roam pivot)).
-  `hud.gd::_pace_texture` looks lazy (`load()` on a cache miss), but it is **not** a
-  mid-drive cost: `set_pacenotes` — called from `world.gd::_setup_pacenotes` during track
-  generation, behind the loading screen — resolves a texture for *every* note in the
-  list, so all distinct arrow textures are already loaded and cached before the drive
-  starts. Nothing to pre-warm here.
-- **Advance.** `world.gd` also hands the per-corner progress **fractions**
-  (`Pacenotes.notes_to_fracs`, same start-line span as the pace splits) to
-  `StageManager.setup_pacenotes`. Each RUNNING tick `_maybe_advance_pacenotes` counts
-  how many corner entries the car's `progress_percent()` has passed and, when that
-  count changes, pulses `hud.show_pacenotes(current)`. It needs **no P1 rival** — the
-  strip shows on every run, session or dev boot.
-- **Motion / look.** `hud.gd._tick_pacenotes` eases an animated `_pace_scroll` toward
-  the current index (fps-independent exponential smoothing) so a one-step advance
-  reads as a smooth left-slide; `_layout_pacenotes` positions/fades each board from
-  its distance to the current slot (`_PACE_*` consts: slot width, upcoming count,
-  dim step/floor). Gated by `hud_pacenotes_enabled` — off builds no boards.
-  The cut flash sits on the row directly below the strip: its top edge is
-  `_POPUP_TOP = _PACE_TOP + _PACE_ICON + _POPUP_GAP`, so bumping the pacenote
-  icon size pushes it down with it rather than overlapping.
-
-The `StageCompletePanel` holds a `Box` (VBoxContainer) with the label and a
-code-built **`NextButton`**. Pressing NEXT emits the HUD's **`finish_next_pressed`**
-signal, which `world.gd` connects to `StageManager.proceed_to_results` — that's what
-starts the leaderboard/podium flow ([stage.md](stage.md)). The button is
-keyboard/gamepad navigable via `MenuNav.attach` (attached in `_ready`, so it's
-`FOCUS_ALL` and re-grabs focus whenever the panel is shown — `ui_accept` triggers
-it); see [menus.md](menus.md).
-
-## Live standings readout — DELETED
-
-There used to be a permanent `PositionLabel` / `PositionGapLabel` pair here,
-showing the player's live position in the rival field (`P3/12`) and the gap to
-the position that mattered. It was deleted along with the rival field
-(`todo/roguelike-pivot.md` decision 5): a run races the clock, not a grid, so
-there is no field to report a position in. `hud.gd` no longer has
-`show_position` / `hide_position` or either label — this is a real deletion,
-not a hidden/dormant pair.
-
-**`scripts/live_standings.gd` (`LiveStandings`) is also gone outright**,
-`StageManager.setup_live_standings` with it — this corrects an earlier version
-of this section, which claimed both were "left in place, unreached"; that was
-wrong the moment the file was actually deleted. **`StageManager.setup_splits`
-is gone too now** — it never got a production caller either, and is superseded
-by `setup_target_profile` below.
-
-## Rival delta — the fixed-clock target, made visible (`DeltaLabel`)
-
-A staged region run's one fail state — `RegionRunMode.stage_target_ms`'s fixed
-clock — has a live HUD readout as of rival-ghost.md (deleted with the free-roam pivot): the
-**`DeltaLabel`**, built in code directly under the run timer (top-left, so it
-reads as "the timer, and how it compares" rather than competing with the
-top-right coin counter or the top-centre pacenote strip / cut-flash tag).
-
-`StageManager.setup_target_profile(profile, ghost)` wires the pace-scaled
-profile `RunSession.stage_target_profile()` seats alongside `stage_target_ms`,
-plus (optionally) the `RivalGhost` `world.gd` built for the start-line reveal.
-Every RUNNING tick, `StageManager._update_rival` reads the player's live
-distance (`TrackProgress.progress_percent() * (finish_offset - origin_offset)`),
-looks up the rival's time at that SAME distance
-(`RivalGhost.time_at_distance`), and calls `hud.show_delta(player_elapsed -
-rival_time)`. A challenge stage or a degenerate track never wires a profile at
-all, so `hide_delta()` (called from `StageManager.setup`'s reset, matching
-every other per-arm readout) leaves the label hidden for the whole event.
-
-`show_delta` change-gates on the displayed **signed centisecond** (matching
-`show_elapsed`'s discipline) and formats via the pure `Hud.delta_text` —
-always signed (`"+1.23"` / `"-0.40"`). **Positive = behind** the rival's pace at
-the player's own distance (red, `UITheme.RED`); **negative = ahead** (green,
-`UITheme.GREEN`) — the same red/green sense the health gauge and the
-stage-complete label use elsewhere in this file.
-
 ## Behavior
 
 - `_ready()` — sets visibility from `cfg.hud_enabled`.
@@ -304,22 +201,20 @@ small (font 14 for labels) — the HUD is rendered at 1/2 scale.
 The `ElapsedLabel` run timer is anchored to the **top centre**
 (`anchor_left/right = 0.5`, `grow_horizontal = 2`, `horizontal_alignment = 1`) so
 it sits in the middle of the screen regardless of viewport width, with the
-`CutFlashLabel` popup stacked below it on the same centred column, under the
-pacenote strip from `_POPUP_TOP`. The **top-right corner is left
+`CutFlashLabel` popup stacked below it on the same centred column, from `_POPUP_TOP`. The **top-right corner is left
 clear for the Pause button**, which lives on the separate `PauseMenu` CanvasLayer
-(see [menus.md](menus.md)), not the HUD. The three gauges are anchored to the
-**bottom centre** of the viewport (`anchor_top/bottom = 1.0`, `anchor_left/right =
-0.5`, `grow_horizontal = 2`) as a row rather than the old vertical stack: `HPGauge`
-sits in the **centre** at 48x48, with `BoostGauge` to its **left** and
-`NitrousGauge` to its **right**, both 38x38. Health-in-the-middle is deliberate —
-either flanker is hidden outright when its part isn't fitted, and hiding a flanker
-leaves health exactly where the eye expects it, rather than shuffling the row.
+(see [menus.md](menus.md)), not the HUD. The gauges are anchored to the
+**bottom centre** of the viewport as one row, in the order health, boost, nitrous,
+temperature. `hud.gd → _layout_gauges` places the **visible** ones edge to edge, centred,
+so their black columns read as one panel and a part that isn't fitted closes up rather
+than leaving a hole. It re-lays the row only when the set of visible gauges changes. Each
+strip's size comes from its node in the scene (`free_roam.tscn` / `main.tscn`); the scene
+offsets are only the starting positions.
 
 ## Build version
 
-The build version is shown on the **title screen only** (the HQ exterior title
-overlay, the deleted `hq.gd` → `_build_title_overlay()`, bottom-right corner) — not on
-the in-run HUD. It is derived automatically as `0.<git commit count>` with the
+The build version is shown on the **title screen only** (`title_screen.gd`, via
+`UpdateCheck.display_version`) — not on the in-run HUD. It is derived automatically as `0.<git commit count>` with the
 short SHA appended (e.g. `v0.61 (b154d5c)`). `build_web.sh` computes this from git
 and stamps it into `application/config/version` in `project.godot` for the
 duration of the export (reverting the file afterwards), so it is baked into the

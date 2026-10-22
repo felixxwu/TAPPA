@@ -1292,7 +1292,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			var eng = drivetrain.engine
 			var red: float = maxf(float(cfg.redline_rpm), 1.0)
 			@warning_ignore("return_value_discarded")
-			damage.thermal_step(state.step, absf(float(eng.throttle)), float(eng.rpm()) / red, cfg)
+			damage.thermal_step(state.step, float(eng.rpm()) / red, cfg)
 
 
 # True when at least one wheel is not touching the ground — the trigger for the

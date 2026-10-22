@@ -4,9 +4,10 @@ extends CanvasLayer
 # Tests: tests/headless/test_world_session.gd, tests/headless/test_world_pages.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # Free roam's world pages (todo/2026-10-19-free-roam-pivot.md decisions 21–22), opened over a
 # frozen game from the pause menu or the rest-stop page:
-#   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven,
-#           the rest stops you've come across (orange lit, grey not), loot you've seen that's
-#           still lying there (MiniMap.site_markers, shared with the minimap) and the car. It is
+#   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven
+#           (and in grey the undriven road near them, `map_roads`),
+#           the rest stops you've come across (orange lit, grey not; MiniMap.site_markers, shared
+#           with the minimap) and the car. It is
 #           also the minimap's "whole map" (tap the minimap, or M / gamepad Back, which closes it too).
 #           It frames what has been explored (explored_view), not the whole island. Wherever it's
 #           opened it is also the QUICK-TRAVEL picker: Prev / Next (or a tap on a lit rest stop)
@@ -21,7 +22,6 @@ const STATS_SHOWN: Array = [LifetimeStats.DISTANCE_DRIVEN_M, LifetimeStats.REST_
 @export var streamer: TerrainStreamer
 @export var rest_stops: RestStops
 @export var car: Node3D
-@export var loot: Node  # LootDirector, for the loot still lying at seen sites
 
 var _page: MenuPage
 var _cards: CardCarousel
@@ -150,9 +150,9 @@ func _refresh_target() -> void:
 	if _target_label == null:
 		return
 	if not _travel_mode:
-		_target_label.text = "%d rest stops lit" % rest_stops.lit_sites.size()
+		_target_label.text = "%d checkpoints reached" % rest_stops.lit_sites.size()
 	elif _targets.is_empty():
-		_target_label.text = "No other rest stop is lit yet"
+		_target_label.text = "No other checkpoint reached yet"
 	else:
 		_target_label.text = rest_stops.name_of(selected_target())
 	if _canvas != null:
@@ -200,7 +200,7 @@ func explored_view() -> Rect2:
 		if WorldSession.has_driven((net.seg_ax[si] + net.seg_bx[si]) * 0.5, (net.seg_ay[si] + net.seg_by[si]) * 0.5):
 			pts.append(Vector2(net.seg_ax[si], net.seg_ay[si]))
 			pts.append(Vector2(net.seg_bx[si], net.seg_by[si]))
-	for mk: Array in MiniMap.site_markers(streamer.sites, rest_stops.lit_sites if rest_stops != null else {}, loot, Vector2.ZERO, INF):
+	for mk: Array in MiniMap.site_markers(streamer.sites, rest_stops.lit_sites if rest_stops != null else {}, Vector2.ZERO, INF):
 		pts.append(mk[0])
 	return fit_view(pts, Config.data.map_min_view_m, streamer.settings.island_radius_m * 1.05)
 
@@ -233,6 +233,37 @@ func action_buttons() -> Array[Button]:
 
 
 # The drawn map. Fits the island into its rect, sea outside the coast.
+# The road segments the map draws: [nearby undriven, driven], as segment indices. A segment is
+# nearby when its midpoint's cell lies within `near_m` of a driven cell, so the map shows the
+# turnings you passed, not just the line you drove.
+static func map_roads(net: RoadNetwork, near_m: float) -> Array:
+	var cell := WorldSession.DRIVEN_CELL_M
+	var driven := PackedInt32Array()
+	var rest := PackedInt32Array()
+	var near := {}
+	var r := ceili(near_m / cell)
+	for si in net.seg_ax.size():
+		var mx := (net.seg_ax[si] + net.seg_bx[si]) * 0.5
+		var my := (net.seg_ay[si] + net.seg_by[si]) * 0.5
+		if not WorldSession.has_driven(mx, my):
+			rest.append(si)
+			continue
+		driven.append(si)
+		var c := Vector2i(floori(mx / cell), floori(my / cell))
+		if near.has(c):
+			continue
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if dx * dx + dy * dy <= r * r:
+					near[c + Vector2i(dx, dy)] = true
+	var nearby := PackedInt32Array()
+	for si in rest:
+		var c := Vector2i(floori((net.seg_ax[si] + net.seg_bx[si]) * 0.5 / cell), floori((net.seg_ay[si] + net.seg_by[si]) * 0.5 / cell))
+		if near.has(c):
+			nearby.append(si)
+	return [nearby, driven]
+
+
 class MapCanvas:
 	extends Control
 	var pages: WorldPages
@@ -265,36 +296,32 @@ class MapCanvas:
 		_k = k
 		_mid = mid
 		var to_px := func(p: Vector2) -> Vector2: return c + (p - mid) * k
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.11, 0.2, 0.28))
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.04, 0.07, 0.1))
 		# The coast.
 		var coast := PackedVector2Array()
 		for i in 96:
 			var a := TAU * i / 96.0
 			coast.append(to_px.call(Vector2(cos(a), sin(a)) * st.terrain.coast_r(cos(a) * 1000.0, sin(a) * 1000.0)))
-		draw_colored_polygon(coast, Color(0.32, 0.38, 0.27))
+		draw_colored_polygon(coast, Color(0.11, 0.13, 0.09))
 		# The biome-ring borders crossed (the noisy border, drawn as its average circle).
 		var inner := s.island_radius_m * 0.82
 		for ring in range(1, WorldSession.max_ring() + 1):
 			draw_arc(to_px.call(Vector2.ZERO), inner * ring / s.ring_count * k, 0.0, TAU, 96, Color(1, 1, 1, 0.35), 1.0)
-		# The roads driven.
+		# The roads driven, over the undriven road near them in grey.
 		var net := st.network
-		for si in net.seg_ax.size():
-			var mx := (net.seg_ax[si] + net.seg_bx[si]) * 0.5
-			var my := (net.seg_ay[si] + net.seg_by[si]) * 0.5
-			if WorldSession.has_driven(mx, my):
+		var roads := WorldPages.map_roads(net, Config.data.minimap_nearby_road_m)
+		for pass_i in 2:
+			var col := Color(0.6, 0.6, 0.6, 0.8) if pass_i == 0 else Color(0.95, 0.9, 0.75)
+			for si: int in roads[pass_i]:
 				draw_line(to_px.call(Vector2(net.seg_ax[si], net.seg_ay[si])), to_px.call(Vector2(net.seg_bx[si], net.seg_by[si])),
-					Color(0.95, 0.9, 0.75), 2.0)
-		# The sites come across: rest stops (orange lit, grey not) and loot still lying there; the
-		# travel target ringed.
+					col, 2.0)
+		# The rest stops come across (orange lit, grey not); the travel target ringed.
 		var target := pages.selected_target()
-		for mk: Array in MiniMap.site_markers(st.sites, pages.rest_stops.lit_sites, pages.loot, Vector2.ZERO, INF):
+		for mk: Array in MiniMap.site_markers(st.sites, pages.rest_stops.lit_sites, Vector2.ZERO, INF):
 			var p: Vector2 = to_px.call(mk[0])
 			var col := MiniMap.marker_color(mk[1])
-			if mk[1] == MiniMap.Marker.LOOT:
-				draw_colored_polygon(PackedVector2Array([p + Vector2(0, -4.5), p + Vector2(4.5, 0), p + Vector2(0, 4.5), p + Vector2(-4.5, 0)]), col)
-			else:
-				draw_circle(p, 5.0, Color.BLACK)
-				draw_circle(p, 4.0, col)
+			draw_circle(p, 5.0, Color.BLACK)
+			draw_circle(p, 4.0, col)
 			if mk[2] == target:
 				draw_arc(p, 8.0, 0.0, TAU, 24, Color.WHITE, 2.0)
 		# The car.

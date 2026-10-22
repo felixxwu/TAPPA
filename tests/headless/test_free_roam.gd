@@ -149,6 +149,19 @@ func test_the_car_reads_road_on_the_road_and_none_far_from_it() -> void:
 	assert_eq(st.surface_at(p.x + 5000.0, p.y + 5000.0), Vector2.ZERO)
 
 
+# The painted road edge sits where the grip edge does, but fades over at least road_paint_fade_m so
+# the blend spans several mesh vertices.
+func test_the_painted_road_edge_matches_the_grip_edge_but_fades_wider() -> void:
+	var s := _settings()
+	var terrain := _world(s)
+	var mid := s.road_half_width_m + s.road_shoulder_m * 0.5
+	assert_almost_eq(terrain.paint_weight(mid), terrain.road_weight(mid), 0.001, "same edge")
+	assert_eq(terrain.paint_weight(0.0), 1.0)
+	var half := maxf(s.road_shoulder_m, s.road_paint_fade_m) * 0.5
+	assert_gt(terrain.paint_weight(mid + half - 0.01), 0.0, "still fading out to half the paint fade")
+	assert_eq(terrain.paint_weight(mid + half), 0.0)
+
+
 # The wheel debris picks its look from the same surface_at the tyres read: gravel clods on the
 # road, grass blades off it (free roam's roads are all loose, so nothing reads as tarmac).
 func test_wheel_debris_reads_gravel_on_the_road_and_grass_off_it() -> void:
@@ -276,7 +289,7 @@ func test_the_road_surface_read_from_a_loaded_chunk_agrees_with_the_road() -> vo
 			net.nearest(p.x, p.y, 50.0)
 			var off := p + Vector2(-net.hit_dir.y, net.hit_dir.x) * (s.road_half_width_m + s.road_shoulder_m + 6.0)
 			net.nearest(off.x, off.y, 50.0)
-			# (a rest stop or loot pad reads as road too, so the off-road point must miss them)
+			# (a rest stop's pad reads as road too, so the off-road point must miss them)
 			if net.hit_d > s.road_half_width_m + s.road_shoulder_m + 3.0 and st.sites.is_clear(off, s.road_shoulder_m + 1.0):
 				assert_almost_eq(st.surface_at(off.x, off.y).x, 0.0, 0.001, "off the road")
 				return
@@ -314,6 +327,25 @@ func test_near_chunks_are_planted_with_foliage_off_the_road_and_out_of_the_water
 		st.network.nearest(p.x, p.z, 50.0)
 		assert_gt(st.network.hit_d, s.road_half_width_m, "nothing grows on the road")
 		assert_false(st.terrain.is_lake(p.x, p.z), "nothing grows in a lake")
+
+
+func test_foliage_crowds_the_road_and_thins_away_from_it() -> void:
+	var s := _settings()
+	s.far_tree_density = 0.2
+	s.far_bush_density = 0.2
+	var st := _prefilled(s)
+	var n := 1000
+	for kind in [TerrainStreamer.Plant.TREE, TerrainStreamer.Plant.BUSH]:
+		var near := 0
+		var far := 0
+		for i in n:
+			var p := Vector2(i * 3.7, i * 1.3)
+			st.network.hit_d = 5.0
+			near += int(st._roadside_keep(p, kind, 5.0))
+			st.network.hit_d = 5.0 + s.roadside_falloff_m * 4.0
+			far += int(st._roadside_keep(p, kind, 5.0))
+		assert_eq(near, n, "every clear spot right by the road grows")
+		assert_lt(far, n / 2, "far from the road most spots are thinned out")
 
 
 func test_foliage_goes_when_its_chunk_leaves_full_detail() -> void:
@@ -470,32 +502,93 @@ func test_roadside_pads_are_dry_hang_off_their_own_road_and_never_overlap() -> v
 			assert_gt(c.distance_to(sites.pos[j]), sites.radius[i] + sites.radius[j] - 0.01, "sites %d and %d overlap" % [i, j])
 
 
+func _region(id: String, spacing := -1.0) -> Dictionary:
+	var r := {"id": id, "order": 0, "name": id}
+	if spacing > 0.0:
+		r["rest_stop_spacing_m"] = spacing
+	return r
+
+
 func test_wider_rest_stop_spacing_places_fewer_rest_stops() -> void:
-	var dense := _settings()
-	dense.rest_stop_spacing_m = PackedFloat32Array([200.0])
-	var sparse := _settings()
-	sparse.rest_stop_spacing_m = PackedFloat32Array([600.0])
-	assert_gt(_sited(dense).sites.of_kind(RoadSites.Kind.REST).size(), _sited(sparse).sites.of_kind(RoadSites.Kind.REST).size())
+	var s := _settings()
+	s.ring_regions = PackedStringArray(["a"])
+	var dense: Array[Dictionary] = [_region("a", 200.0)]
+	RegionLibrary.override_for_test(dense)
+	var n_dense := _sited(s).sites.of_kind(RoadSites.Kind.REST).size()
+	var sparse: Array[Dictionary] = [_region("a", 600.0)]
+	RegionLibrary.override_for_test(sparse)
+	var n_sparse := _sited(s).sites.of_kind(RoadSites.Kind.REST).size()
+	RegionLibrary.reset()
+	assert_gt(n_dense, n_sparse)
 
 
-func test_rest_stop_spacing_is_read_per_ring_and_the_last_entry_covers_outer_rings() -> void:
+func test_rest_stop_spacing_comes_from_the_rings_region_or_the_fallback() -> void:
 	var s := _settings()
 	s.ring_count = 3
-	s.rest_stop_spacing_m = PackedFloat32Array([111.0, 222.0])
+	s.ring_regions = PackedStringArray(["a", "b"])
+	s.rest_stop_spacing_m = 333.0
+	var regions: Array[Dictionary] = [_region("a", 111.0), _region("b")]
+	RegionLibrary.override_for_test(regions)
 	var terrain := _world(s)
 	for p in [Vector2(10, 10), Vector2(s.island_radius_m * 0.5, 0), Vector2(s.island_radius_m * 0.78, 0)]:
 		var ring := terrain.ring_index(p.x, p.y)
-		assert_eq(RoadSites.rest_spacing_at(s, terrain, p), [111.0, 222.0, 222.0][ring])
+		assert_eq(RoadSites.rest_spacing_at(s, terrain, p), [111.0, 333.0, 111.0][ring], "ring %d" % ring)
+	RegionLibrary.reset()
 
 
 func test_a_pad_is_flat_at_its_roads_height_and_reads_as_road() -> void:
 	var terrain := _sited(_settings())
 	var sites := terrain.sites
 	for i in sites.count():
+		if sites.kind[i] == RoadSites.Kind.LOOT:
+			continue
 		var c := sites.pos[i]
 		assert_almost_eq(terrain.height(c.x, c.y, PackedInt32Array(), false), sites.pad_h[i], 0.001, "pad %d is flat" % i)
 		assert_eq(terrain.road_weight(terrain.last_road_d), 1.0, "pad %d reads as road" % i)
 		assert_false(sites.is_clear(c, 0.0), "nothing is planted on pad %d" % i)
+
+
+func test_loot_sits_on_its_road_and_leaves_the_ground_alone() -> void:
+	var terrain := _sited(_settings())
+	var sites := terrain.sites
+	var loots := sites.of_kind(RoadSites.Kind.LOOT)
+	assert_gt(loots.size(), 0)
+	for i in loots:
+		var c := sites.pos[i]
+		assert_true(terrain.net.nearest(c.x, c.y, 1000.0) and terrain.net.hit_d < 0.5, "loot %d is on the road" % i)
+		for off in [Vector2.ZERO, Vector2(6, 0), Vector2(0, -9)]:
+			var p: Vector2 = c + off
+			if sites.pad_at(p.x, p.y) >= 0:
+				continue  # inside a rest stop's or dead end's blend
+			var with_sites := terrain.height(p.x, p.y, PackedInt32Array(), false)
+			terrain.sites = null
+			var bare := terrain.height(p.x, p.y, PackedInt32Array(), false)
+			terrain.sites = sites
+			assert_almost_eq(with_sites, bare, 0.001, "loot %d doesn't reshape the ground" % i)
+
+
+func test_a_pads_blend_widens_to_keep_its_slope_gentle_within_bounds() -> void:
+	var s := _settings()
+	var sites := _sited(s).sites
+	assert_eq(sites.blend_m(0.0), s.pad_blend_m, "flat land: the narrowest blend")
+	var dh := s.pad_blend_max_slope * (s.pad_blend_m + s.pad_blend_max_m) * 0.5
+	assert_almost_eq(sites.blend_m(-dh), dh / s.pad_blend_max_slope, 0.001, "a big gap either way widens it")
+	assert_eq(sites.blend_m(1.0e6), s.pad_blend_max_m, "never wider than the max")
+
+
+func test_the_ground_meets_the_land_with_no_step_where_a_pads_blend_ends() -> void:
+	var terrain := _sited(_settings())
+	var sites := terrain.sites
+	for i in sites.count():
+		var c := sites.pos[i]
+		var p := c + Vector2.RIGHT * (sites.radius[i] + _settings().pad_blend_max_m + 0.01)
+		if sites.pad_at(p.x, p.y) >= 0:
+			continue  # inside a neighbouring pad's blend
+		var with_pads := terrain.height(p.x, p.y, PackedInt32Array(), false)
+		terrain.sites = null
+		var bare := terrain.height(p.x, p.y, PackedInt32Array(), false)
+		terrain.sites = sites
+		assert_almost_eq(with_pads, bare, 0.001, "pad %d's blend has faded out fully by its reach" % i)
 
 
 # --- barriers ------------------------------------------------------------------------------------

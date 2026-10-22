@@ -9,7 +9,7 @@
 writer every generation site resolves its params through).
 
 **Tests:** `tests/headless/test_corner_library.gd`, `tests/headless/test_track_generator.gd`,
-`tests/headless/test_track_profile.gd`, `tests/headless/test_track_gen_params.gd`, `tests/headless/test_track_gen_water.gd`, `tests/headless/test_track_cache.gd`
+`tests/headless/test_track_profile.gd`, `tests/headless/test_track_gen_params.gd`, `tests/headless/test_track_gen_water.gd`
 
 Defines the **shape vocabulary** for rally corners and chains them into a
 generated stage that is painted onto the terrain at startup.
@@ -96,7 +96,7 @@ the road around lakes.
   with the connecting-straight length. `0` (the default) means no straightness bias —
   **not** an even draw, since the per-corner weights below still apply. It changes the
   generated SHAPE, so the same value is passed wherever a track's target time is
-  derived. Set per rally event by `RallyLibrary.event_straightness` — earlier-game
+  derived. Set per stage by `StageFields.event_straightness` — earlier-game
   events run higher (easier).
 - **Per-corner rarity (`CORNER_WEIGHTS`):** a multiplier per authored corner, keyed by
   `CornerLibrary` corner NAME, that scales its sampling weight on **every** track
@@ -327,77 +327,6 @@ state, an unmodelled jump quietly tightens every stage that draws one. The cap i
 use), applied across the whole span, and there is deliberately **no landing-scrub term** —
 that would need suspension/attitude data this point-mass model does not have.
 
-### Pacenote
-
-`Pacenotes` skips only the plain `Straight`, so the `Jump` piece gets its own note for
-free — "jump", with the next note ("3 left") following it, which is the intended read.
-Its board is direction-less (`arrow_jump`, no `_left`/`_right` pair): a jump has no
-handedness, and `mirror_points` is a no-op on its straight curve anyway. `SignLayout`
-deliberately does **not** plant a roadside board for it — the art is HUD-strip only.
-
-## Turn cache (`TrackCache`)
-
-The DFS search is deterministic per `TrackGenParams`, so every shipped rally
-event's turn layout is **precomputed once** and committed as a lockfile —
-`data/track_cache.json` — instead of being searched at runtime. This removes the
-search cost (and its restart/backtrack variability) from both generation sites
-(`world.gd._generate_track` and the 3×-per-rally opponent-time derivation in
-the deleted career session's track pre-solve). Design:
-`docs/superpowers/specs/2026-07-21-track-turn-cache-design.md`.
-
-- **What's stored:** per entry, the ordered `pieces` (`corner`, `flip`, `straight`,
-  `entry_pos`, `entry_heading`) — NOT `cells` (rebuilt on load to keep the file
-  small). Keyed by `TrackGenParams.cache_key`, a string over the authored shape
-  determinants (seed, turn_count, width, straightness, water, …) plus a terrain-layer
-  fingerprint and `TrackCache.CACHE_VERSION`. `origin` (derived, platform-float
-  sensitive) is deliberately excluded from the key.
-- **Rebuild (no search):** `TrackGenerator.rebuild_from_pieces` replays
-  `_build_candidate` + `_collide_and_cells` per piece against an accumulating
-  `occupied` dict — reproducing the identical `centerline`, per-piece `cells`
-  (which `TreeScatter.turn_anchor` consumes), `cells` union, and `runoff`. Faithful
-  because `_build_candidate` is pure geometry; guarded by `test_track_cache.gd`.
-- **Boundary:** `TrackGenerator.generate_cached(params, cfg, …)` → `TrackCache.lookup`.
-  Hit returns the rebuilt track synchronously; miss warns (editor) or errors
-  (exported build) and falls back to live `generate` — never crashes, since the CI
-  check is the real coverage guarantee. Only the rally `for_event` path is cached;
-  free-roam (`for_config`) always generates live.
-- **Regenerate:** `./cache_tracks.sh` runs the generator scene
-  (`tools/generate_track_cache.tscn` → `tools/generate_track_cache.gd`), ~55 s for
-  ~40 events. The key's version segment (`TrackCache._version_tag`) auto-folds a
-  fingerprint of `CornerLibrary.CORNERS` and of the generator's shape/search constants
-  (`TrackGenerator.constants_fingerprint`), so a corner or constant edit invalidates the
-  cache automatically — just regenerate. Only a genuine algorithm/control-flow change
-  the constants don't capture needs a manual `TrackCache.CACHE_VERSION` bump.
-  **`TrackCache.BOARD_EPOCH` is GONE** — it and `RallyLibrary.stage_key()` existed only
-  to re-key the global stage leaderboards when a stage's shape changed, and the
-  leaderboards were deleted in the roguelike pivot (see `../PIVOT-CHANGES.md`). A shape
-  edit today therefore needs **no epoch bump at all**: regenerate the cache and you are
-  done. Nothing else keys off track shape — a region run's target time is derived from
-  the current shape every time, so there is no stale-board case left to guard against.
-  (This paragraph previously described the bump as mandatory; it was stale, and cost an
-  agent a hunt for a constant that no longer exists.)
-- **Diagnosing a bake failure:** the baker prints
-  `track cache: rally X seed N did not complete` when `generate` returns
-  `complete == false` for an event. `cache_tracks.sh` has no per-event mode, so use
-  `./probe_track.sh --rally=X --seed=N` (see
-  [debug-tools.md](debug-tools.md) → "Track-generation probe") to re-run just that
-  event and see the resolved params, the waterline around the start, and how many
-  corners the DFS placed — without rewriting the committed lockfile.
-- **Validation:** the lockfile stores a `source_hash` (SHA-256 of the sorted
-  event-key set). CI (`tools/verify_track_cache.tscn`, gating the export jobs) and
-  the local suite (`test_track_cache.gd`) recompute and compare it — a forgotten
-  regeneration fails fast, without generating any track.
-- **Local safety net (`.githooks/pre-commit`):** a pre-commit hook runs the same
-  generation-free verifiers on every commit; if either lockfile is stale it
-  regenerates (track first, then opponent — or opponent alone when only that one
-  is stale) and `git add`s the result so it lands in the commit, so you never
-  forget and hit the CI check red. Opt in once per clone with `./install_hooks.sh`
-  (sets `core.hooksPath` to `.githooks`). Requires Godot; without it the hook
-  warns and lets the commit through (CI stays the backstop). Note the verifiers
-  only fingerprint *inputs* (seeds/params/version), so cross-platform float
-  rounding can still yield byte differences in the computed times at the same
-  `source_hash` — regenerate on the platform you commit from.
-
 ## Rendering
 
 The track is drawn into the terrain, not as extra geometry: the terrain nodes
@@ -419,7 +348,7 @@ edge is never disturbed) and fading back to natural grade beyond an influence
 radius. One side rises by exactly what the other falls. The **inside crook of a
 hairpin** (or any pocket the road wraps around) is detected geometrically and
 flattened, so the crook stays clean while the *outside* of a bend can still carry a
-drop. Per-event height is set by `RallyLibrary.event_cliffiness`; the noise
+drop. Per-event height is set by `StageFields.event_cliffiness`; the noise
 wavelength is global.
 
 ## Surface split (gravel ↔ tarmac)
@@ -430,7 +359,7 @@ switches surface **exactly once** (each surface is one contiguous run): it eithe
 opens on gravel and switches to tarmac, or opens on tarmac and switches to gravel
 — `orientation_tarmac_first(seed)` picks which, deterministically from
 `track_seed`. The tarmac run covers `track_tarmac_fraction` of the length (set per
-rally event by `RallyLibrary.event_tarmac_fraction`), which also fixes where the
+rally event by `StageFields.event_tarmac_fraction`), which also fixes where the
 switch sits. `tarmac_weight(dist, total, fraction, tarmac_first, feather_m)`
 returns the tarmac-ness in `[0,1]` at a distance along the track, **feathered**
 with a smoothstep over `track_surface_transition_m` (default 6 m) so the
@@ -488,7 +417,7 @@ above, not to how tall the bump looks),
 group: `cliff_enabled`, `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`,
 `cliff_run_m`, `cliff_fade_m`, `cliff_open_radius_m`, `cliff_amount` (pushed onto
 the terrain by `GameConfig.apply_cliffs`; per-event scale via
-`RallyLibrary.event_cliffiness`).
+`StageFields.event_cliffiness`).
 
 ## Track progress & off-track reset
 
@@ -515,13 +444,6 @@ per seed, exact corner count, start at the spawn frame, no cell overlap between
 pieces, G1 continuity at joins, both L/R flips appearing across seeds, and the
 finish runoff (zero `runoff_m` reports no segment; a positive runoff's footprint
 never overlaps the placed track beyond the join buffer).
-
-`tests/headless/test_track_cache.gd` — the turn cache: `cache_key` is stable,
-input-sensitive, and origin-independent; `rebuild_from_pieces` reproduces a live
-`generate` byte-for-byte (centerline + per-piece/union cells); `TrackCache.lookup`
-misses to `{}` and hits rebuild; `generate_cached` falls back to live on a miss;
-`StageConfig.canonical_event_config` applies event overrides onto a fresh base; and the
-committed `data/track_cache.json` covers every event with a matching `source_hash`.
 
 `tests/headless/test_track_profile.gd` — the vertical channel: the crest is zero outside
 its span and peaks at its centre; it reaches zero in both VALUE and SLOPE at each end (the

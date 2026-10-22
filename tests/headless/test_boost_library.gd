@@ -311,14 +311,13 @@ func test_stacks_is_false_for_a_set_or_induction_entry() -> void:
 
 
 # A "mult" or "add" entry compounds with itself across repeats.
-func test_stacks_is_true_for_a_mult_or_add_entry() -> void:
-	var found := false
+func test_stacks_is_true_exactly_for_entries_whose_effects_all_mult_or_add() -> void:
 	for id in BoostLibrary.CATALOGUE:
-		if not _is_pure_mult(id):
-			continue
-		assert_true(BoostLibrary.stacks(id), "'%s' stacks" % id)
-		found = true
-	assert_true(found, "the catalogue still has a mult entry for this to cover")
+		var stacking := true
+		for effect_key in BoostLibrary.CATALOGUE[id]["effect_fields"]:
+			var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
+			stacking = stacking and (op == "mult" or op == "add")
+		assert_eq(BoostLibrary.stacks(id), stacking, "'%s' stacks only if every effect is mult/add" % id)
 
 
 func test_stacks_defaults_true_for_an_unknown_id() -> void:

@@ -51,43 +51,27 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 
 ### Keeping the suite fast
 
-**Re-measured 2026-09-04**, at the end of the roguelike pivot. The previous table
-(2026-08-18) is void: the demolition stage deleted roughly **40,000 lines** — the diegetic
-HQ, the rival field, the star economy, the persistent parts model, the overworld map, and
-every test that existed only to cover them — while region runs, `RunSession` and the flat
-shell brought new ones. Re-measure with `/optimise-test-suite` (or a full `./run_tests.sh`
-plus the JUnit XML) rather than reasoning from a stale table; that skill's §0 has the exact
-invocation.
+**Last full run (2026-10-22, after the free-roam pivot): 241 s** — 2380 tests, 177 scripts —
+inside the ~5 minute budget. Re-measure with `/optimise-test-suite` (or a full
+`./run_tests.sh` plus the JUnit XML) rather than reasoning from an old number; that skill's
+§0 has the exact invocation. Per-test JUnit times cover test bodies only, so `before_all`
+builds and script loading are invisible in them.
 
-| Cost (2026-09-04, POST-PIVOT — measured) | Measured | Reducible? |
-|---|---|---|
-| `test_track_generator.gd` → `test_every_rally_event_generates_a_complete_track_quickly` | **94 s** | **No** — see *The irreducible sweeps* below. It grew with the roster: stage 4 authored 20 more events, and this generates every one of them live |
-| `test_smoke.gd` | 32 s | Partly done. Its two challenge-stage world builds were merged into one (a challenge track is generated LIVE — the seed is rolled from the period hash, so no lockfile covers it and `minimal_world()` cannot trim it either, because `TrackGenParams.for_event` overrides the turn count). ~25 s recovered; the remaining build is load-bearing |
-| `test_terrain_memory.gd` | 24 s | **No cheap lever.** 21 tests, each baking a road into its own `TerrainManager` — and what they assert IS what the cache keeps and drops between builds, so sharing one manager would destroy the subject |
-| `test_world_fielding.gd` | 18 s | Partly done. Every test here boots `main.tscn` because the seam under test (`world.gd::_field_car`) is only reachable that way. Two tests were merged into one build, one was deleted as duplicate coverage of `test_skill_library.gd`, and its challenge-fallback case was re-pointed at a NO-SESSION boot — the identical `region_id` branch for ~5 s instead of ~25 s |
-| `test_car_types.gd` / `test_car_library.gd` / `test_retune.gd` / `test_car.gd` | 16 / 12 / 14 / 7 s | **No** — per-car physics sweeps over the whole roster, already on `SimTest`'s cached settle where applicable |
-| `test_terrain_precompute.gd` | 10 s | **No** — chunk prebake work it asserts on directly |
-| The flat tail — ~175 further files | ~90 s | **No cheap lever found** (2026-09-04) |
-| `before_all` builds + loading 189 test scripts | ~36 s | No — `minimal_world()` per file is already minimal. Note this is INVISIBLE in the JUnit XML: per-test times summed to 314 s against a 350 s wall-clock |
-
-**Full-suite baseline: 350 s** (2553 tests, 161164 asserts, 189 scripts), plus a ~6 s
-class-cache warmup that is not test cost. **That is over the ~5 minute budget by ~50 s**,
-and the gap is structural rather than wasteful — see the sweeps below.
+The known heavy files: `test_track_generator.gd` (the sweep below), `test_smoke.gd` (a live
+world build), `test_terrain_memory.gd` (each test bakes a road into its own `TerrainManager`,
+and what they assert IS what the cache keeps and drops, so sharing one would destroy the
+subject), the per-car physics sweeps (`test_car_types.gd`, `test_car_library.gd`,
+`test_retune.gd`, `test_car.gd`, already on `SimTest`'s cached settle) and
+`test_terrain_precompute.gd`.
 
 **The irreducible sweeps.** `test_every_rally_event_generates_a_complete_track_quickly`
 generates every authored rally event live (~0.7 s each). It is the regression guard
 for the seed-3002 blow-up, where one seed once took ~474 s. Sampling a subset
-defeats it (the original bug was a *single* seed), and it covers what
-`data/track_cache.json` cannot: a DFS **control-flow** regression that
-`constants_fingerprint()` does not capture, so a fresh lockfile does not imply live
-generation is still fast. **Do not weaken it to hit the budget.** If the ~5 min
-budget must be met, the structural options are to move these sweeps into a slow
-CI/pre-release lane (as `run_benchmark.sh` is to the suite), or to re-base the
-budget here and in `CLAUDE.md` with the measured floor. **Both are the user's call**, so
-neither has been taken: as of 2026-09-04 the suite runs 350 s and the sweeps alone are
-~140 s of it (94 s track generator + 28 s of `test_smoke`'s live challenge build + 7 s
-lakes + 5 s frame-consistency). Roughly 210 s of ordinary test cost sits under a 300 s
-budget; the sweeps are what put it over.
+defeats it (the original bug was a *single* seed). **Do not weaken it to hit the budget.** If the ~5 min
+budget is ever threatened, the structural options are to move these sweeps into a slow
+CI/pre-release lane (as `run_benchmark.sh` is to the suite), or to re-base the budget here
+and in `CLAUDE.md`. **Both are the user's call.**
+
 
 By default Godot's headless main loop is **paced to real time** at the tick
 rate, so each `await get_tree().physics_frame` costs ~1/60 s of wall-clock
@@ -197,10 +181,9 @@ levers, in order of payoff:
   cost at all. Reserve the physics fixture for behaviour that genuinely needs
   the car/driveline (idle under load, redline, shifting through the clutch).
 
-- **Audio does not PLAY under headless.** All three AudioStreamPlayers gate their
+- **Audio does not PLAY under headless.** Both AudioStreamPlayers gate their
   `play()` on `not Platform.is_headless()`: the `Music` autoload
-  (`music_director.gd`), the car's `EngineAudio` (`engine_audio.gd`), and the HQ
-  `CarPreviewAudio` (`car_preview_audio.gd`). Godot's headless `AudioDriverDummy`
+  (`music_director.gd`), and the car's `EngineAudio` (`engine_audio.gd`). Godot's headless `AudioDriverDummy`
   still runs a mix thread, and a *playing* stream freed underneath it at engine
   teardown (`-gexit`) SIGSEGV'd in `AudioStreamPlaybackResampled::mix` — the
   ~1-in-3 crash-and-retry flake the runner used to absorb. Not playing means not
@@ -213,29 +196,17 @@ levers, in order of payoff:
 - **A `Platform.is_headless()` gate must skip only the ANIMATION, never the
   final visible state — the audio gate above is the safe shape, and it is
   safe specifically because "not played" is genuinely the correct end state
-  in both paths.** The deleted global standings page (`GlobalStandings`) got this
-  wrong: it built
-  its body nodes hidden and relied on a `_reveal()` coroutine to un-hide them
-  one at a time, with the coroutine itself skipped headless — so headless saw
-  the nodes (never hidden in the first place) while a real player saw a
-  genuinely blank page whenever the reveal didn't run to completion. Headless
-  and the real game were rendering through different code, so a green suite
-  could not have caught it. The fix deleted the reveal outright rather than
-  patching the gate. When a gate like this is unavoidable, prefer asserting
-  `is_visible_in_tree()`, not mere node existence — existence is exactly what
-  passed here while the screen was blank. For the fix *shape* rather than the
-  failure shape, see `hq.gd`'s cloud boot gate ([cloud-save.md](cloud-save.md)
-  → "Boot-time race"): `_await_cloud_restore` now decides and waits
-  unconditionally, with only the visual (`_show_restore_cover`) gated headless
-  — and a `cloud_restore_wait_sec` seam lets a test set the budget instead of
-  spending real seconds — so `test_cloud_boot_gate.gd` can actually prove HQ
-  waits for a pending pull and proceeds once it settles, on the same code path
-  the player runs.
+  in both paths.** A deleted standings page got this wrong: it built its body
+  nodes hidden and relied on a reveal coroutine to un-hide them, with the coroutine skipped
+  headless — so headless saw the nodes while a real player saw a blank page whenever the
+  reveal didn't finish. When a gate like this is unavoidable, prefer asserting
+  `is_visible_in_tree()`, not mere node existence, and give the wait a seam a test can shorten
+  rather than gating the logic.
 
 ### Synthetic centerlines — `TrackFixtures`
 
 `tests/headless/track_fixtures.gd` (`class_name TrackFixtures`) supplies the
-`{"centerline", "pieces"}` dicts that `LapTimeModel` / `RivalPace` consume, so no test has
+`{"centerline", "pieces"}` dicts that `LapTimeModel` consumes, so no test has
 to reach into a generated track: `straight(length)`, `arc(radius, sweep)` (densely sampled
 POINTS, no handles), `handled_arc(radius, sweep, steps)` (few points with real Bezier
 handles) and `straight_then_arc(...)`.
@@ -318,24 +289,13 @@ So before driving anything that can change scene, switch the seam off or capture
   swallows every transition and records where it was headed
   (`Scenes.last_blocked_path`).
 
-Restore the seam (and end any run you started — `RunSession.pause_run()` /
-`Save.clear_run()`) in `after_all`. `tests/headless/test_world_isolation.gd` is the backstop: it fails if any
+Restore the seam in `after_all`. `tests/headless/test_world_isolation.gd` is the backstop: it fails if any
 game scene is parked under `/root`, and it is named `world_*` so it sorts late enough
 to see almost every polluter.
 
-`tests/headless/rally_fixtures.gd` (`class_name RallyFixtures`) and
-`tests/headless/upgrade_fixtures.gd` (`class_name UpgradeFixtures`) are the
-same pattern for the rally and upgrade catalogues:
+`tests/headless/upgrade_fixtures.gd` (`class_name UpgradeFixtures`) is the same pattern for
+the effects table:
 
-- **RallyFixtures:** `fx_open` (open restriction, 3 events — the "any rally with
-  events" workhorse), `fx_rwd_band` / `fx_fwd_band` (drive-mode + power-band
-  gates), `fx_country_us` (country gate), `fx_gated` (a MAP-REVEAL gate — its
-  `map_pos` sits outside HQ's lit circle, and `fx_open` authors a wide
-  `reveal_radius` that reaches it, so completing `fx_open` reveals `fx_gated`), and
-  `fx_showdown` — all in the real `home` region so reveal/region grouping
-  resolves. Events use a very low `water_level` so track generation never has to
-  route around lakes (fast, deterministic). Eligibility reads `CarLibrary`, so a
-  test checking eligibility should `CarFixtures.install()` its cars too.
 - **UpgradeFixtures:** now an **effect** table, not a catalogue — `UpgradeLibrary` stopped
   being a catalogue with the parts model (see
   [upgrade-catalogue.md](upgrade-catalogue.md)). One synthetic entry per effect shape the
@@ -361,10 +321,8 @@ them (adoption is deferred), but new tests should reach for them:
 - `SaveTestHelpers` (`tests/headless/save_test_helpers.gd`) — `redirect(path)`
   points the `Save` autoload at a throwaway `user://` profile (enables saving,
   loads a fresh default) and `cleanup(path)` deletes it plus its `.bak`/`.tmp`
-  siblings and restores `DEFAULT_PROFILE_PATH`. This is the same dance the nine
-  save-redirect files (`test_save_manager.gd`, `test_damage_model.gd`,
-  `test_start_line.gd`, `test_pause_menu.gd`, `test_camera_manager.gd`,
-  `test_menu_nav.gd`, `test_input_remap.gd`) currently spell out inline.
+  siblings and restores `DEFAULT_PROFILE_PATH`, instead of each file spelling the dance
+  out inline.
 
 #### The profile sandbox (why a forgotten redirect is no longer fatal)
 
@@ -405,49 +363,7 @@ can't read back pixels) and was chronically flaky and slow to regenerate.
 `test_render_smoke.gd` covers the meaningful half — rendering setup integrity —
 without pixels.
 
-## The `test_menu_flow.gd` salvage
-
-`tests/headless/test_menu_flow.gd` — 5,880 lines, 207 tests, the single biggest file in
-the suite — is **deleted**. It drove the diegetic hub end to end (`hq.gd`, `hq_carpark.gd`,
-`hq_table.gd`, `hq_challenge.gd`, `GlobalStandings`, `podium.gd`, `standings.gd`,
-`RallySession`), all of which the pivot removed, so it had stopped parsing at all: 146
-parse errors, and GUT skipped the file wholesale. A test file that cannot load is worse
-than no file — it reads as coverage and provides none.
-
-`todo/roguelike-pivot.md` decision 47 called for salvage rather than deletion, and that is
-what happened: **everything host-free was re-homed first**, and only then was the husk
-removed.
-
-| Salvaged into | What moved |
-| --- | --- |
-| `test_username_popup.gd` (new) | The `UsernamePopup` sanitiser rules and the name's profile round-trip — `UsernamePopup` is live and had no other coverage |
-| `test_settings_menu.gd` | The two dev-tooling visibility tests (`dev_tools_override` gating Benchmark / Dev / Seed lab out of the category list) |
-| `test_tuning_panel.gd` | The slider-alignment case (every handling-axis slider is the same width) |
-| `test_world_fielding.gd` (new) | "the run scene fields the bound session car", ported off `RallySession` onto `RunSession` — and extended to cover the skill/boost merge at the same seam |
-
-**What was lost, and it is worth knowing.** Roughly 190 tests went with their subjects and
-could not be ported, because the thing they asserted no longer exists: the HQ's station
-routing and camera framing, the 3D map table (panning, clamping, pin rebuilds, the
-new-rally reveal parade), the car park (lineup building, eligibility marking, swap mode,
-the wheel view), the tuning lift, the upgrades grid, the starter picker, the podium's
-reward beats, the standings page's two leaderboards, and the challenge entry screen's
-board queries. Several were regression guards for real reported bugs; where the reasoning
-outlives the screen, it has been written into the relevant `features/` doc rather than
-lost with the test — see [world-panel.md](world-panel.md),
-[ui-design-system.md](ui-design-system.md) and
-[wheel-customization.md](wheel-customization.md), each of which now says which behaviours
-a rebuild owes.
-
-**Two other files were quietly broken the same way** and are fixed rather than deleted,
-because most of each was still live:
-
-- `test_cloud_boot_gate.gd` — 15 of its 20 tests booted `hq.tscn` and errored at runtime
-  (it PARSED, so nothing caught it until stage 9). The 5 `Cloud`-level gate tests remain.
-  Its header now records that the gate has **no consumer**: `HubShell` does not await the
-  initial sync, so the hazard those 15 tests guarded is real and currently unguarded.
-- `test_wheel_customization.gd` — 17 HQ wheel-view tests, same failure mode. The 20
-  host-free tests (catalogue, eligibility, resolution, save round-trip, cosmetic-only
-  guarantee) remain and are the whole feature minus its UI.
+## A test that parses but errors at runtime
 
 The lesson worth keeping: **a test file that fails to PARSE is caught by the runner; one
 that parses and errors at runtime is not** — it just fails, and a suite nobody has run in
@@ -468,13 +384,7 @@ the second.
 
 Some questions are measurements, not assertions — "how steep is the ground the car actually drives
 on?" has no pass/fail, and a test that pinned a number would just be a tunable in disguise. Those
-live in `tools/` and run standalone:
-
-```bash
-$GODOT --headless --path . -s tools/analyse_road_grades.gd            # every overworld road's grade
-$GODOT --headless --path . -s tools/analyse_road_grades.gd ++nopads   # ...with the flat pads off
-$GODOT --headless --path . -s tools/analyse_road_grades.gd ++probe=-25,-17   # dump one spot's pipeline
-```
+live in `tools/` and run standalone (`$GODOT --headless --path . -s tools/<script>.gd`).
 
 Two traps worth knowing before writing another one:
 
@@ -484,10 +394,6 @@ Two traps worth knowing before writing another one:
   naming their types — naming `TerrainManager` at class scope drags the same problem back in.
 - **Always `quit()`.** A SceneTree that finishes its work and does not quit idles forever, and the
   run has to be killed by hand. Put the `quit()` outside the body that can fail.
-
-`analyse_road_grades.gd` in particular measures the **grid** pipeline (`compute_chunk_data`), not
-`height_at`: the road carve exists only in the grid pass, so sampling the scalar generator measures
-the raw ground along the road's path rather than the road. See its header.
 
 Performance benchmarking is **separate** from the test suite — it's an on-demand
 investigation tool, not a pass/fail gate. See `run_benchmark.sh` /
@@ -547,13 +453,9 @@ this at all — call `Audio.play_beep(...)` and inherit the guard (`features/sfx
 
 ## Trap: assert on what the feature reported, not on the whole inventory
 
-There is no longer a random per-event upgrade draw, so driving a rally no longer
-sprays RNG-chosen items into the profile — an exact inventory total after driving
-events is a fair assertion again. The habit the old draw forced is still the
-better one, though, and `test_rally_session.gd` keeps it: **assert on what the
-feature itself reported** (e.g. `special_unlock.granted` says what the unlock
-granted) rather than on a derived count that any future grant path could also
-move. It keeps the test pointed at the code under test instead of at the sum of
+**Assert on what the feature itself reported** (e.g. a grant result saying what it granted)
+rather than on a derived count — an inventory total, say — that any other grant path could
+also move. It keeps the test pointed at the code under test instead of at the sum of
 everything that ran.
 
 ## Trap: async work that outlives the node that started it

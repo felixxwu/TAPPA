@@ -20,6 +20,7 @@
 [ext_resource type="Script" path="res://scripts/free_roam/biome_director.gd" id="29_biome"]
 [ext_resource type="Script" path="res://scripts/free_roam/rest_stops.gd" id="30_rest"]
 [ext_resource type="Script" path="res://scripts/free_roam/rest_stop_page.gd" id="31_restpage"]
+[ext_resource type="Script" path="res://scripts/free_roam/checkpoint_banner.gd" id="31_cpbanner"]
 [ext_resource type="Script" path="res://scripts/free_roam/world_pages.gd" id="32_pages"]
 [ext_resource type="Script" path="res://scripts/free_roam/loot_director.gd" id="33_loot"]
 [ext_resource type="Script" path="res://scripts/free_roam/mini_map.gd" id="34_minimap"]
@@ -192,10 +193,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -70.0
-offset_top = -51.0
-offset_right = -32.0
-offset_bottom = -13.0
+offset_left = -32.0
+offset_top = -96.0
+offset_right = 0.0
+offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -208,9 +209,9 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -24.0
-offset_top = -56.0
-offset_right = 24.0
+offset_left = -64.0
+offset_top = -96.0
+offset_right = -32.0
 offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 0
@@ -224,10 +225,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = 32.0
-offset_top = -51.0
-offset_right = 70.0
-offset_bottom = -13.0
+offset_left = 0.0
+offset_top = -96.0
+offset_right = 32.0
+offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -240,10 +241,10 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = 78.0
-offset_top = -51.0
-offset_right = 116.0
-offset_bottom = -13.0
+offset_left = 32.0
+offset_top = -96.0
+offset_right = 64.0
+offset_bottom = -8.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -304,20 +305,24 @@ rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
 pause_menu = NodePath("../PauseMenu")
 
-[node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car", "loot")]
+[node name="CheckpointBanner" type="CanvasLayer" parent="." node_paths=PackedStringArray("rest_stops", "loot", "pause_menu")]
+script = ExtResource("31_cpbanner")
+rest_stops = NodePath("../RestStops")
+loot = NodePath("../LootDirector")
+pause_menu = NodePath("../PauseMenu")
+
+[node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car")]
 script = ExtResource("32_pages")
 streamer = NodePath("../Terrain")
 rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
-loot = NodePath("../LootDirector")
 
 [node name="MiniMapLayer" type="CanvasLayer" parent="."]
 layer = 2
 
-[node name="MiniMap" type="Control" parent="MiniMapLayer" node_paths=PackedStringArray("streamer", "car", "rest_stops", "loot")]
+[node name="MiniMap" type="Control" parent="MiniMapLayer" node_paths=PackedStringArray("streamer", "car", "rest_stops")]
 layout_mode = 3
 script = ExtResource("34_minimap")
 streamer = NodePath("../../Terrain")
 car = NodePath("../../Car")
 rest_stops = NodePath("../../RestStops")
-loot = NodePath("../../LootDirector")

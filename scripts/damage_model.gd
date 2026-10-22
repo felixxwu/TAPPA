@@ -79,12 +79,12 @@ var wheel_toe: Dictionary = _zero_toe()
 var enabled := true
 
 ## The free-roam damage chain: below cooling_failure_hp_fraction the cooling breaks and stays
-## broken until repair(); while broken, engine_temp only rises (faster under load and revs);
+## broken until repair(); while broken, engine_temp only rises (faster at higher revs);
 ## above overheat_temp_threshold_c it drains HP; at 0 HP the car gives up (`gave_up`). Off by
 ## default, so the stage is untouched.
 var thermal := false
 var cooling_broken := false
-var engine_temp := 90.0
+var engine_temp := 0.0
 var _gave_up := false
 
 
@@ -251,19 +251,18 @@ func apply_loss(amount: float) -> void:
 		gave_up.emit()
 
 
-# One physics tick of the thermal chain. `load` and `rpm_frac` are the engine's throttle and
-# rpm / redline, both 0..1. Returns the HP the overheat drained this tick.
-func thermal_step(dt: float, load: float, rpm_frac: float, cfg: GameConfig) -> float:
+# One physics tick of the thermal chain. `rpm_frac` is rpm / redline. The engine heats linearly with
+# rpm; working cooling multiplies the temperature by a factor just under 1, so a hotter engine sheds
+# more. Broken cooling simply skips that multiply. Returns the HP the overheat drained this tick.
+func thermal_step(dt: float, rpm_frac: float, cfg: GameConfig) -> float:
 	if not thermal or not enabled or dt <= 0.0:
 		return 0.0
 	if not cooling_broken and max_hp > 0.0 and hp <= max_hp * cfg.cooling_failure_hp_fraction:
 		cooling_broken = true
-	if cooling_broken:
-		var rate := cfg.overheat_rise_floor_c_per_s + cfg.overheat_rise_load_c_per_s * clampf(load, 0.0, 1.0) \
-			+ cfg.overheat_rise_rpm_c_per_s * clampf(rpm_frac, 0.0, 1.0)
-		engine_temp = minf(engine_temp + maxf(rate, 0.0) * dt, cfg.engine_temp_max_c)
-	else:
-		engine_temp = move_toward(engine_temp, cfg.engine_temp_normal_c, cfg.cooling_settle_c_per_s * dt)
+	engine_temp += cfg.engine_heat_c_per_s * maxf(rpm_frac, 0.0) * dt
+	if not cooling_broken:
+		engine_temp *= pow(cfg.engine_cooling_retain_per_s, dt)
+	engine_temp = minf(engine_temp, cfg.engine_temp_max_c)
 	if engine_temp <= cfg.overheat_temp_threshold_c:
 		return 0.0
 	var before := hp
@@ -271,23 +270,21 @@ func thermal_step(dt: float, load: float, rpm_frac: float, cfg: GameConfig) -> f
 	return before - hp
 
 
-# How hot the engine is on the gauge, ∈ [0,1]: 0 at normal running, 1 at the overheat threshold
-# (where HP starts draining); past it the gauge stays full.
+# How hot the engine is on the gauge, ∈ [0,1]: the temperature in °C over the overheat threshold
+# (where HP starts draining), so 0 °C is empty; past the threshold the gauge stays full.
 func temp_fraction(cfg: GameConfig) -> float:
-	var span := maxf(cfg.overheat_temp_threshold_c - cfg.engine_temp_normal_c, 0.001)
-	return clampf((engine_temp - cfg.engine_temp_normal_c) / span, 0.0, 1.0)
+	return clampf(engine_temp / maxf(cfg.overheat_temp_threshold_c, 0.001), 0.0, 1.0)
 
 
 func is_overheating(cfg: GameConfig) -> bool:
 	return thermal and engine_temp > cfg.overheat_temp_threshold_c
 
 
-# The rest-stop repair: full HP, cooling fixed, engine back to normal temperature, wheels
+# The rest-stop repair: full HP, cooling fixed (it brings the temperature down by itself), wheels
 # straight, and `gave_up` re-armed.
-func repair(cfg: GameConfig) -> void:
+func repair(_cfg: GameConfig) -> void:
 	hp = max_hp
 	cooling_broken = false
-	engine_temp = cfg.engine_temp_normal_c
 	_gave_up = false
 	reset_wheel_toe()
 

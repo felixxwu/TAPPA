@@ -331,8 +331,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Back first: Esc / gamepad B. Only if the host handed us an on_back.
 	if _on_back.is_valid() \
 			and (event.is_action_pressed("ui_cancel") or event.is_action_pressed("menu_back")):
+		# Fetched first: a Back can change the scene, which takes this node out of the tree.
+		var back_vp := get_viewport()
 		_on_back.call()
-		get_viewport().set_input_as_handled()
+		back_vp.set_input_as_handled()
 		return
 
 	# WASD directional nav. Native ui_* already moved focus for arrows / stick /

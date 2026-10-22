@@ -143,7 +143,7 @@ func _start(model_id: String) -> void:
 	if was_fresh and String(WorldSession.active_car()["model_id"]) == model_id:
 		close.call()
 		return
-	WorldSession.new_world(WorldSession.world_seed() if was_fresh else randi_range(1, 999_999), model_id)
+	WorldSession.new_world(WorldSession.world_seed() if was_fresh else FreeRoamSettings.new().world_seed, model_id)
 	enter_world.call()
 
 

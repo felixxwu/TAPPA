@@ -597,6 +597,7 @@ Numbering continues from decision 32.
   147 rest stops on 48 km, one every 20 s or so at speed. A cooling failure is then barely a
   threat. I kept 300 m because it's what we agreed (decision 31); it's one number per ring in
   `FreeRoamSettings.rest_stop_spacing_m`. My guess is 800–1500 m once the damage chain is in.
+  **2026-10-22:** raised to 600 m per ring at the user's request.
 - **D39. Loot slots every 400 m of road**, kept 40 m clear of rest-stop pads, which gives 78 on the
   default island. They're slots: stage 7 decides which hold loot.
 - **D40. Sites are flat pads that read as road** (gravel texture, road grip, no foliage). The

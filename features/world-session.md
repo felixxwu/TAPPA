@@ -59,14 +59,14 @@ The game boots straight into the world with the title menu over it. The main sce
 the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_speed`, kept above the
 ground, its tween running while paused); closing hands back to the chosen camera
 (`CameraManager.activate_current`).
-A first-time player (no world) gets one built at boot with the first starter car and a random seed,
+A first-time player (no world) gets one built at boot with the first starter car and `FreeRoamSettings.world_seed`,
 marked `WorldSession.fresh` (in memory only), so it's already there behind the menu.
 Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
 - **MAIN:** Continue (only with a world that isn't `fresh`) just closes the menu (`close`) and
   unpauses; New World; Settings.
 - **STARTER:** New World first asks for a starter car. The choices are the cars in
   `CarLibrary` with `"ring": 0` (`starter_choices` → `LootRules.starter_cars`).
-  Picking one makes the world (a random seed) and reloads free roam (`enter_world`; the host
+  Picking one makes the world (seed `FreeRoamSettings.world_seed`, so it matches tools/road_network_lab.html) and reloads free roam (`enter_world`; the host
   disconnects its exit save first, so the old car's pose isn't written into the new world). Over an
   existing world, a `ConfirmPopup` asks first. On a `fresh` world there's no confirm: picking the car
   already fielded just closes the menu, and another car keeps the same seed and reloads to field it.
@@ -82,8 +82,9 @@ A `CanvasLayer` (layer 7, always processing) over the frozen game:
 - **Map** (pause menu → Map, rest-stop page → Map, or the minimap: tap it, or **M** / gamepad
   Back — `toggle_map`, which also closes it): the coast, the ring borders crossed (drawn
   as average circles; the real border is noisy), the roads driven (segments whose midpoint
-  cell is driven), the rest stops come across (orange lit, grey not), loot come across that
-  is still lying there (`MiniMap.site_markers`, shared with the minimap) and the car. Opened
+  cell is driven) over, in grey, the undriven road within `GameConfig.minimap_nearby_road_m` of
+  a driven cell (`WorldPages.map_roads`), the rest stops come across (orange lit, grey not; `MiniMap.site_markers`, shared with the
+  minimap) and the car. Opened
   from the minimap it pauses the game itself and closing it goes straight back to driving
   (`free_roam.gd → open_full_map`). The page body is transparent (`"alpha": 0.0`): only the
   drawn map is opaque, over the dim. It **frames what has been explored** (`explored_view` →

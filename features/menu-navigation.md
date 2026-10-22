@@ -3,7 +3,7 @@
 **Sources:** `scripts/menu_nav.gd` (`class_name MenuNav` — the flat-menu framework:
 `attach`, `of`, `forget`, `remembered_target`, `is_on_screen`, `is_text_editing`,
 `input_blocked`, `screen_claimer`) and `scripts/ui_theme.gd` (`focus_grab`,
-`focus_grab_first`, `first_focusable`, the focus stylebox that paints the cursor).
+`first_focusable`, the focus stylebox that paints the cursor).
 
 **Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`
 
@@ -21,17 +21,9 @@ Every menu is a flat widget tree on a `CanvasLayer` and every one of them uses *
 native focus**, wired by the `MenuNav` framework so a menu author doesn't hand-roll (or
 forget) the per-widget setup.
 
-> **There used to be a second regime here: the diegetic 3D HQ's `hq.gd::_unhandled_input`**,
-> a set of bespoke per-station `menu_left`/`menu_right`/`menu_up`/`menu_down` branches for a
-> continuous 3D space where "left/right" meant *cycle the parked car* or *pan the map camera*
-> rather than *move focus to the neighbour widget*. That whole hub — `hq.tscn`, `hq.gd` and
-> its nine collaborator scripts — was deleted in the roguelike pivot (decision 9,
-> `todo/roguelike-pivot.md`; demolition in the pivot plan's stage 2b, spec since deleted). With no
-> spatial hub left to navigate, the second regime is gone with it, not merely undocumented:
-> **every menu in the game is a flat widget list now**, and `CLAUDE.md` has already been
-> corrected to point here rather than at `hq.gd`. If a future screen ever needs a
-> non-widget-grid navigation model again, it gets its own regime written up here — don't
-> revive the old section as a template, its call sites no longer exist.
+> There used to be a second, spatial regime for the deleted diegetic 3D HQ. **Every menu in
+> the game is a flat widget list now**; if a future screen needs a non-widget-grid navigation
+> model, write it up here as its own regime.
 
 **What `MenuNav.attach(root, {first = ..., on_back = ...})` does, once:**
 
@@ -107,7 +99,7 @@ B). Guarded by `test_menu_nav.gd` → `test_accept_and_cancel_have_a_gamepad_but
 stylebox**, which `tools/build_ui_theme.gd` defines to match the **hover** look — so a
 focus cursor and a mouse hover read identically (see [ui-design-system.md](ui-design-system.md)).
 `UITheme.focus_grab(ctrl)` is the guarded, call-deferred grab helper (grab a specific
-control); `UITheme.focus_grab_first(root)` / `UITheme.first_focusable(root)` seat the
+control); `UITheme.focus_grab(UITheme.first_focusable(root))` seats the
 cursor on the first focusable control under a root. `UITheme.first_focusable` skips any
 control in a **dying subtree** (an ancestor `queue_free`d this frame) — a rebuild that
 frees whole row containers leaves their descendant buttons not-yet-`is_queued_for_deletion()`
@@ -119,14 +111,7 @@ button — backs both the title-screen Settings page and the pause menu's), the 
 menu (its card list, and the Settings page), `ConfirmPopup` and `UsernamePopup`
 (the modal layer — see [modals.md](modals.md)), the HUD's **stage-complete panel**'s single
 `NEXT` button (`hud.gd`, [hud.md](hud.md)), `AccountMenu` ([cloud-save.md](cloud-save.md)),
-the pre-stage **start line**'s MENU row and its **Tune Car** overlay
-(`start_line.gd` — see start-line.md (deleted with the free-roam pivot)), the between-stage **repair popup**
-(`repair_reveal.gd`), and `BenchmarkResults` ([benchmark.md](benchmark.md)).
-`scripts/upgrade_slot_popup.gd` (`UpgradeSlotPopup`, the shared detune-slider modal) still
-attaches `MenuNav` too, but has **no live caller left** since the persistent parts model
-that hosted it was deleted (`todo/roguelike-pivot.md` — the upgrades grid it used to pop out
-of, `upgrades_grid.gd`, is gone) — it's orphaned code, not a reachable menu, until something
-(the shop, most likely) re-hosts it or it's deleted outright. Free roam's menus attach it too:
+and `BenchmarkResults` ([benchmark.md](benchmark.md)). Free roam's menus attach it too:
 the title screen, the rest-stop page and the world pages (map, stats) — each card page with
 `{first = <its CardCarousel>}`.
 
@@ -146,26 +131,14 @@ the title screen, the rest-stop page and the world pages (map, stats) — each c
 
 ## A third host, not a third regime: `WorldPanel`
 
-`scripts/world_panel.gd` (`WorldPanel`) / `scripts/world_panel_host.gd`
-(`WorldPanelHost`) let a menu tree be hosted in a `SubViewport` shown on a 3D
+`scripts/world_panel.gd` (`WorldPanel`) lets a menu tree be hosted in a `SubViewport` shown on a 3D
 `Sprite3D`, welded off-square to an anchor, instead of on a flat `CanvasLayer` — see
 [world-panel.md](world-panel.md). It does **not** add a second navigation model: a
 panel pumps *all* input, keyboard and gamepad included, across into its `SubViewport`
 (which receives no window events on its own), so `MenuNav` works identically inside one.
 
-**Today this is dead machinery with no live caller.** Every station that used to swap
-itself into a `WorldPanelHost` (`hq_overlays.gd`, `hq_challenge.gd`, `rally_detail.gd`'s
-old host, `upgrade_slot_popup.gd`'s old host) was hub-side and either deleted outright or
-had its `WorldPanelHost` usage removed with the hub (`todo/roguelike-pivot.md` decision 9).
-`config/game_config.tres` still ships `world_space_menus = true`, and `menu_page.gd` /
-`ui_theme.gd` / `rally_detail.gd` still reference the class for layout math
-(`WorldPanel.layout_frame_size`, used to size a body against the SubViewport frame rather
-than the main viewport — that part is a genuinely host-neutral helper, not 3D-hosting), but
-nothing currently constructs a `WorldPanelHost` and swaps a live menu tree into 3D space.
-The pivot spec's read is that `WorldPanel` retires outright once nothing is left to weld a
-panel to (`todo/roguelike-pivot.md` → "`WorldPanel` goes too") — that deletion hadn't
-landed as of this writing. Until it does, or a future screen deliberately revives the host
-swap, treat this section as describing dead code, not a live path players hit.
+**Today it has no live host** — see [world-panel.md](world-panel.md). Flat pages still call the
+static `WorldPanel.layout_frame_size` to size a body against the frame they are laid out in.
 
 ## `TextField` and the WASD/typing seam
 
@@ -195,13 +168,9 @@ because there is nothing to move a cursor between: the button stays `FOCUS_NONE`
 screen's own `_unhandled_input` fires the action on `menu_select` (plus a screen touch / left
 click).
 
-**There is no live instance today.** The canonical one was `scripts/wreck_screen.gd`, whose
-single *Return to HQ* button ended a wrecked run — deleted when damage stopped being able to
-end a run at all (see [damage.md](damage.md)). The pattern is kept written down because it
-is the right shape the next time a one-action screen appears (a plausible candidate: a
-future "run over — you missed the timer" beat, if that ever needs its own screen rather than
-folding into `HubShell`'s SUMMARY page, which serves both outcomes today), and because of two obligations that are
-easy to miss:
+**There is no live instance today** (the deleted wreck screen was the canonical one). The
+pattern is kept written down because it is the right shape the next time a one-action screen
+appears, and because of two obligations that are easy to miss:
 
 - **Gate on the phase.** The wreck screen only accepted the input once its orbit had begun,
   so a press during a lead-in animation couldn't skip past the screen entirely. Any

@@ -13,8 +13,9 @@ extends CanvasLayer
 #             car (pick, confirm, and it moves over).
 #   GARAGE  — a card per owned car; pick one to drive it.
 #   TRAVEL  — a card per other lit rest stop, nearest first.
-#   JOURNAL — a card per item in each revealed biome, found or not (read-only).
-# Back (Esc / gamepad B, or the Back button) steps a sub-page → MAIN → closed. A change of parts or car
+#   JOURNAL — a card per revealed biome; pick one for REGION.
+#   REGION  — a card per item and car in that biome, found or not (read-only).
+# Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
 signal closed
@@ -22,7 +23,7 @@ signal closed
 signal map_requested(site: int)
 signal car_changed
 
-enum View { MAIN, TUNE, PARTS, GARAGE, TRAVEL, JOURNAL }
+enum View { WRECKED, MAIN, TUNE, PARTS, GARAGE, TRAVEL, JOURNAL, REGION }
 
 @export var rest_stops: RestStops
 @export var car: VehicleBody3D
@@ -36,6 +37,7 @@ var view := View.MAIN
 var site := -1
 var banked: Array = []
 var dirty := false
+var journal_ring := -1
 var _page: MenuPage
 var _cards: CardCarousel
 var _tune_panel: TuningPanel
@@ -62,6 +64,14 @@ func open(p_site: int) -> void:
 	_show(View.MAIN)
 
 
+# The car gave up before reaching a rest stop: say what was carried (and is now left at the wreck),
+# and respawn at the last lit stop once the player continues. The game keeps running behind it.
+func open_wrecked() -> void:
+	if pause_menu != null:
+		pause_menu.set_input_enabled(false)
+	_show(View.WRECKED)
+
+
 func close() -> void:
 	_clear()
 	get_tree().paused = false
@@ -85,6 +95,8 @@ func _show(v: View) -> void:
 	_clear()
 	view = v
 	match v:
+		View.WRECKED:
+			_build_wrecked()
 		View.MAIN:
 			_build_main()
 		View.TUNE:
@@ -97,18 +109,40 @@ func _show(v: View) -> void:
 			_build_travel()
 		View.JOURNAL:
 			_build_journal()
+		View.REGION:
+			_build_region()
 	UITheme.enforce(_page)
 
 
 # A card page: `entries` as cards (see CardUI.card_list), `header` lines above them, and a Back
-# button below unless this is MAIN (whose back is closing the page — Continue, or Esc).
-func _card_page(title: String, entries: Array, header: Array = [], selected := 0) -> void:
+# button below (to `back`, MAIN by default) unless this is MAIN (whose back is closing the page —
+# Continue, or Esc).
+func _card_page(title: String, entries: Array, header: Array = [], selected := 0, back := View.MAIN) -> void:
 	_page = CardUI.card_page(self, {"title": title, "dim": true})
 	_cards = CardUI.card_list(_page, entries, header, selected)
-	var to_main := _show.bind(View.MAIN)
+	var go_back := _show.bind(back)
 	if view != View.MAIN:
-		_page.add_action(UITheme.row_button("< Back", to_main))
-	MenuNav.attach(_page, {first = _cards, on_back = close if view == View.MAIN else to_main})
+		_page.add_action(UITheme.row_button("< Back", go_back))
+	MenuNav.attach(_page, {first = _cards, on_back = close if view == View.MAIN else go_back})
+
+
+func _build_wrecked() -> void:
+	var header: Array = ["Your car wrecked before reaching a checkpoint."]
+	var lost := WorldSession.list("carried")
+	if lost.is_empty():
+		header.append("You weren't carrying anything.")
+	else:
+		header.append("Left at the wreck, drive back to recover:")
+		for item: Dictionary in lost:
+			header.append(LootRules.label(item))
+	_page = CardUI.card_page(self, {"title": "Wrecked", "dim": true})
+	_cards = CardUI.card_list(_page, [{"title": "Respawn", "icon": "resume_run", "action": _respawn}], header, 0)
+	MenuNav.attach(_page, {first = _cards, on_back = _respawn})
+
+
+func _respawn() -> void:
+	rest_stops.respawn()
+	close()
 
 
 func _build_main() -> void:
@@ -119,13 +153,13 @@ func _build_main() -> void:
 			names.append(LootRules.label(item))
 		header.append("Banked: " + ", ".join(names))
 	var no_travel := rest_stops == null or rest_stops.travel_targets(site).is_empty()
-	_card_page("Rest stop", [
+	_card_page("Checkpoint", [
 		{"title": "Continue", "icon": "resume_run", "action": close},
 		{"title": "Tune car", "icon": "tune", "action": _show.bind(View.TUNE)},
 		{"title": "Parts", "icon": "parts", "action": _show.bind(View.PARTS)},
 		{"title": "Garage", "icon": "car", "action": _show.bind(View.GARAGE)},
 		{"title": "Travel", "icon": "travel", "action": _show.bind(View.TRAVEL), "disabled": no_travel,
-			"subtitle": "No other stop lit" if no_travel else ""},
+			"subtitle": "No other checkpoint reached" if no_travel else ""},
 		{"title": "Map", "icon": "map", "action": _open_map},
 		{"title": "Journal", "icon": "journal", "action": _show.bind(View.JOURNAL)},
 	], header)
@@ -293,16 +327,41 @@ func _build_travel() -> void:
 
 func _build_journal() -> void:
 	var entries: Array = []
+	var selected := 0
 	for r: Dictionary in loot.journal() if loot != null else []:
+		var found := 0
+		for entry: Dictionary in r["items"]:
+			found += int(bool(entry["found"]))
+		if int(r["ring"]) == journal_ring:
+			selected = entries.size()
+		entries.append({"title": String(r["name"]), "subtitle": "%d of %d found" % [found, r["items"].size()],
+			"icon": "journal", "action": _open_region.bind(int(r["ring"]))})
+	if entries.is_empty():
+		entries.append({"title": "Nothing known yet", "icon": "journal"})
+	_card_page("Journal", entries, ["Find rumours to learn what lies further out."], selected)
+
+
+func _open_region(ring: int) -> void:
+	journal_ring = ring
+	_show(View.REGION)
+
+
+func _build_region() -> void:
+	var entries: Array = []
+	var title := "Journal"
+	for r: Dictionary in loot.journal() if loot != null else []:
+		if int(r["ring"]) != journal_ring:
+			continue
+		title = String(r["name"])
 		for entry: Dictionary in r["items"]:
 			var found := bool(entry["found"])
 			var text := LootRules.card_text(entry["item"])
-			entries.append({"title": text[0], "subtitle": "%s · %s" % [text[1], String(r["name"])],
+			entries.append({"title": text[0], "subtitle": text[1],
 				"extra": "Found" if found else "Not found yet", "extra_variant": "" if found else "dim",
 				"icon": LootRules.icon(entry["item"])})
 	if entries.is_empty():
-		entries.append({"title": "Nothing known yet", "icon": "journal"})
-	_card_page("Journal", entries, ["Find rumours to learn what lies further out."])
+		entries.append({"title": "Nothing here", "icon": "journal"})
+	_card_page(title, entries, [], 0, View.JOURNAL)
 
 
 func _open_map() -> void:

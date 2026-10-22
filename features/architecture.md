@@ -6,9 +6,10 @@
 
 ```
 .                          # repository root = Godot project root
-├── hub.tscn               # Boot scene — the flat shell (set in project.godot); see hub-shell.md
-├── main.tscn              # The run scene (one stage / dev free-roam)
-├── car.tscn               # VehicleBody3D car, instanced into main.tscn
+├── title.tscn             # Boot scene (set in project.godot): hands straight over to free_roam.tscn
+├── free_roam.tscn         # The game: one persistent island (see free-roam.md)
+├── main.tscn              # The dev stage and physics test harness (world.gd)
+├── car.tscn               # VehicleBody3D car, instanced into both world scenes
 ├── project.godot          # Engine config: autoloads, input map, rendering
 ├── run_tests.sh           # Test runner (headless + visual passes)
 ├── config/
@@ -26,12 +27,9 @@
 `scripts/scenes.gd` (`class_name Scenes`, a static-only `RefCounted`) is the single
 source of truth for scene paths and for **which scene is "the hub"**:
 
-- `Scenes.HUB` / `MAIN` / `CAR` — the canonical paths. (`PODIUM` and `STANDINGS` were
-  deleted with their scenes, decisions 19 and 30; the run summary is a `HubShell` page and
-  the between-stage beat is `RunPickPanel`, so neither is a scene any more.)
-- `Scenes.hub_path()` — the destination for every "return to the hub" transition. One
-  shell today; the indirection is what let the hub be swapped out (diegetic 3D HQ → flat
-  `hub.tscn`) without touching the transition sites.
+- `Scenes.TITLE` / `FREE_ROAM` / `MAIN` / `CAR` — the canonical paths.
+- `Scenes.hub_path()` — the destination for every "return to the front door" transition (the
+  title). One indirection, so the front door can change without touching the transition sites.
 - `Scenes.is_hub_scene(path)` — the hub predicate, used where the hub is detected from a
   live scene path rather than chosen (see [music.md](music.md) → "The hub-scene
   predicate").
@@ -40,14 +38,24 @@ source of truth for scene paths and for **which scene is "the hub"**:
   live scene under `/root` mid-run. It records the blocked destination, so a test can
   assert where a transition was headed without performing it.
 
-**Why the seam.** The boot scene is also the "back to the hub" destination, and that path
-was hardcoded at seven transition sites. All of them call `hub_path()` instead:
-`pause_menu.gd::quit_to_hq`, `benchmark_mode.gd::exit_to_hq`, and the `world.gd`
-transitions (through its `_change_scene` / `scene_change_hook` test seam). Tests should
-compare captured paths against `Scenes.hub_path()`, not a literal. The swap from `hq.tscn`
-to `hub.tscn` is what this seam bought.
+Tests should compare captured paths against `Scenes.hub_path()`, not a literal.
 
-## Main scene tree (`main.tscn`)
+## Free-roam scene tree (`free_roam.tscn`)
+
+```
+FreeRoam [Node3D]                   script: free_roam/free_roam.gd
+├── WorldEnvironment
+├── Terrain [Node3D]                TerrainStreamer — streamed chunks, foliage, sites
+├── Car                             instance of car.tscn (+ BonnetCamera)
+├── ChaseCamera / CameraManager
+├── PostProcess / SpeedLines / HUD / MobileControls / PauseMenu
+├── RoadRecovery / BiomeDirector / RestStops / LootDirector
+└── RestStopPage / WorldPages / MiniMapLayer
+```
+
+See [free-roam.md](free-roam.md) for how they fit together.
+
+## Dev stage scene tree (`main.tscn`)
 
 ```
 Main [Node3D]                       script: world.gd
@@ -85,15 +93,12 @@ Declared in `project.godot` `[autoload]`:
   ⚠️ It is a **single shared instance that `car.gd`'s `apply_car()`/`apply_owned()`
   MUTATE in place** to reshape the live car (gearbox, mass, grip, engine, …) —
   it is NOT read-only. Because it is global, the **last car applied wins**: if a
-  second car instance is fielded after the player (e.g. the start-line queue
-  props in `start_line.gd._spawn_queue`), its spec overwrites
-  the player's. A car whose shift table / drivetrain was already built then keeps
+  second car instance is fielded after the player, its spec overwrites the
+  player's. A car whose shift table / drivetrain was already built then keeps
   reading the clobbered values — snapshot + restore `Config.data` around any
-  secondary `apply_car()` (as `_spawn_queue` does). See [configuration.md](configuration.md).
-- **`Save`** → `scripts/save_manager.gd`. Loads the player profile (owned cars, HP, money,
-  boost levels, skills, lifetime stats, the paused-run slot) from `user://profile.json` at
-  boot and
-  autosaves on every meaningful change. Per-player *mutable progress*, kept
+  secondary `apply_car()`. See [configuration.md](configuration.md).
+- **`Save`** → `scripts/save_manager.gd`. Loads the player profile (owned cars, settings,
+  lifetime stats, the world block) from `user://profile.json` at boot and autosaves on every meaningful change. Per-player *mutable progress*, kept
   distinct from `Config`'s authored baseline. See
   [save-persistence.md](save-persistence.md).
 - **`Cloud`** → `scripts/cloud/cloud_manager.gd`. Optional Firebase account +
@@ -103,16 +108,13 @@ Declared in `project.godot` `[autoload]`:
   save unused. It owns the project's only `HTTPRequest`, behind `RestClient` —
   which is also the seam the headless tests fake. See
   [cloud-save.md](cloud-save.md).
-- **`RunSession`** → `scripts/run_session.gd`. The run-level stage-flow orchestrator —
-  idle until a run starts, then survives the per-stage scene reloads while it sequences
-  stages, the timer, money and the between-stage pick. Which KIND of run is live is a
-  `RunMode` question (a region run or the Daily/Weekly/Monthly challenge), not a second
-  autoload. See region-runs.md (deleted with the free-roam pivot). It replaced `RallySession`, deleted with
-  the career loop (decision 5).
+- **`WorldSession`** → `scripts/world_session.gd`. The persistent free-roam world in the
+  profile (seed, car, pose, lit rest stops, map) — the only writer of the world block. See
+  [world-session.md](world-session.md).
 - **`InputRemap`**, **`Benchmark`**, **`DisplayStretch`**, **`WebFullscreen`**,
-  **`PerfLog`** — the remaining autoloads; see [controls.md](controls.md),
-  [benchmark.md](benchmark.md), [mobile-controls.md](mobile-controls.md) and
-  [testing.md](testing.md) respectively.
+  **`PerfLog`**, **`CarPreviewCache`** — the remaining autoloads; see [controls.md](controls.md),
+  [benchmark.md](benchmark.md), [mobile-controls.md](mobile-controls.md),
+  [testing.md](testing.md) and [card-carousel.md](card-carousel.md) respectively.
 - **`Music`** → `scripts/music_director.gd`. The interactive music loop; also
   creates the **Music** and **Engine** mix buses at boot. See [music.md](music.md).
 - **`Audio`** → `scripts/audio.gd` (`class_name AudioManager`). One-shot sound
@@ -125,13 +127,13 @@ Declared in `project.godot` `[autoload]`:
 ## Data flow
 
 1. `Config` autoload loads `game_config.tres` before any scene runs.
-2. `world.gd._ready()` pushes config values into scene-owned resources
+2. In the dev stage, `world.gd._ready()` pushes config values into scene-owned resources
    (environment fog/color, terrain layers, material colors, post-process res —
    `_apply_scene_config`), fields the player's car (`_field_player_car`), then
    generates the world. `_ready` and `_generate_track` are both phase sequences
    over private per-phase coroutines; see [loading.md](loading.md). Behaviour the
    world host shares with any future one lives in `scripts/world_runtime.gd`
-   (`WorldRuntime`, all statics — it had a second caller, `overworld.gd`, now deleted). It first puts up a full-screen `LoadingScreen`
+   (`WorldRuntime`, all statics). It first puts up a full-screen `LoadingScreen`
    (`scripts/loading_screen.gd`, created in code) and advances its step label
    across generation stages (track → carve road into terrain → precompute
    terrain → trees → bushes), yielding a frame between each so the message paints
@@ -168,8 +170,7 @@ Declared in `project.godot` `[autoload]`:
 ### Principle: push heavy one-time work behind a loading screen
 
 There is one opaque loading cover in the game — the **stage / world-gen** one
-(`world.gd._ready`, above, via `scripts/loading_screen.gd`). The HQ had a second; it is
-deleted, and the flat shell needs none. **Anything expensive that can be done up front should be
+(`world.gd._ready`, above, via `scripts/loading_screen.gd`). **Anything expensive that can be done up front should be
 done behind whichever cover is already up, rather than lazily on a button press or the
 first frame it's needed** — especially work that would otherwise cause a visible lag spike
 or stutter mid-interaction. The player already expects to wait at a loading screen; a beat
@@ -184,41 +185,14 @@ into a session-lived cache. (The one caveat: don't blindly move UNBOUNDED work b
 cover — if the cost scales with, say, a 300-car collection, warm only what's imminently
 needed and keep the rest lazy, so the loading screen itself doesn't grow without limit.)
 
-## `StaleGuard` — the "is this async result still wanted?" idiom
+## Async results: key staleness off a counter, never off displayed text
 
-Several scripts run async work (an `await`, a per-frame progressive spawn, a
-generated search) whose result must be discarded if the underlying state was
-rebuilt while it was in flight — a stale coroutine writing into freed rows, or
-an old preview request clobbering a newer one. `scripts/stale_guard.gd`
-(`class_name StaleGuard`) names and generalises this: `bump()` a counter when
-the state is rebuilt, `token()` to capture the current generation before the
-async work starts, `is_current(t)` to check after the `await` returns before
-acting on the result.
-
-It generalised five hand-rolled instances, each invented under its own private name with
-no shared vocabulary — four of them (`hq.gd::_settle_generation`,
-`hq.gd::_challenge_refresh_generation`, `standings.gd::_reveal_gen`,
-`podium.gd::_reveal_gen`) are deleted with their hosts. The one that remains is
-`settings_menu.gd::_sl_gen` (the seed-lab preview, which also threads an `abort: Callable`
-closure into `TrackGenerator.generate`), and it has **not** been migrated onto `StaleGuard`
-either. So the class currently has no callers at all: it is the named home for the idiom,
-and adopting it is still open work. The reasoning below is why the idiom exists.
-
-**The rule that motivated it:** a Control's DISPLAYED TEXT is never a valid
-key for deciding whether an async result still applies. `UITheme.enforce`
-(`scripts/ui_theme.gd`) uppercases every Label's and Button's text after a
-page is built — a blanket styling pass that runs after the page's own code
-set that text. A bug traced to exactly this: an async handler guarded its
-write by comparing a Label's live text back to a literal like `"Top 50%"`,
-which `UITheme.enforce` had since rewritten to `"TOP 50%"`, so the comparison
-never matched and the answer was silently discarded every time. It reads as
-equivalent to a generation check — "compare something captured earlier to
-something read now" — but text is a presentation-layer value subject to
-later, unrelated rewrites (styling, localization, truncation) that a
-`StaleGuard` token is not: nothing else ever touches the token, so it stays a
-faithful stand-in for "was there a rebuild since I started". Use `StaleGuard`
-(or the existing per-file `_gen`/`_generation` counters) instead of ever
-keying a decision off a Control's text.
+Async work (an `await`, a progressive spawn, a generated search) whose result may no longer
+be wanted is guarded by a per-file generation counter (`settings_menu.gd::_sl_gen` is the
+live example): bump it when the state is rebuilt, capture it before the async work, and
+compare after. **Never key that decision off a Control's displayed text:** `UITheme.enforce`
+uppercases every Label and Button after a page is built, so a guard comparing a label to a
+literal like `"Top 50%"` silently never matches once it reads `"TOP 50%"`.
 
 ## Key conventions
 

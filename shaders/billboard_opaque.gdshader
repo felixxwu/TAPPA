@@ -13,14 +13,11 @@
 //    verbatim — the card is locked into the "+" cross and toppled, so a fallen tree
 //    reads as a solid 3D shape instead of a flat sheet lying on the ground.
 //
-// BOTH the distance fade AND the near-camera dissolve are geometry SHRINK-OUTs in
-// vertex() — no per-fragment `discard` anywhere. The cutout is baked into the mesh,
-// so the fragment is fully opaque: the driver keeps early-Z / hidden-surface removal
-// ON for the draw (any `discard` forces HSR off for the whole draw on tile-based
-// mobile GPUs), and overlapping trees occlude each other cheaply. A tree the camera
-// pushes inside (the chase cam, or a planted replay cam) shrinks toward its base and
-// stops rasterising — a clear pocket opens with no transparency sorting, no per-frame
-// CPU work, and no discard tax. NOTE: still cull_disabled — the billboarded card
+// The distance fade is a geometry SHRINK-OUT in vertex() — no per-fragment `discard`
+// anywhere. The cutout is baked into the mesh, so the fragment is fully opaque: the
+// driver keeps early-Z / hidden-surface removal ON for the draw (any `discard` forces
+// HSR off for the whole draw on tile-based mobile GPUs), and overlapping trees occlude
+// each other cheaply. A tree keeps its full size however close the camera gets. NOTE: still cull_disabled — the billboarded card
 // presents a consistent face to the camera, so flipping to cull_back would halve its
 // fill, but the traced-silhouette mesh winding can't be verified headless (a wrong
 // flip makes every tree vanish); flip + eyeball in-app as a separate change.
@@ -30,10 +27,6 @@ render_mode unshaded, cull_disabled, depth_draw_opaque;
 uniform sampler2D albedo : source_color, filter_nearest;
 uniform float render_distance = 80.0;
 uniform float fade_band = 15.0;
-// Within near_fade_start the tree is fully collapsed (invisible); beyond
-// near_fade_end it is at full size. Between, it scales in.
-uniform float near_fade_start = 0.5;
-uniform float near_fade_end = 3.0;
 // Bias distant sampling toward cheaper mips (mobile texture-bandwidth win).
 uniform float lod_bias = 0.0;
 // Fake hemisphere-ambient + one directional sun, matching the terrain
@@ -63,21 +56,13 @@ void vertex() {
 	// height (column 1 length — the authored size baked into the instance basis).
 	vec3 origin = MODEL_MATRIX[3].xyz;
 	float height = length(MODEL_MATRIX[1].xyz);
-	// Near-fade distance is measured to the TRUNK AXIS, not the ground-level base:
-	// the camera is projected onto the vertical trunk line and clamped to the tree's
-	// [base, base+height] span. That makes cam_dist the HORIZONTAL proximity whenever
-	// the camera sits inside the tree's vertical extent (the chase cam is ~2.5 m up,
-	// so a base-point distance never drops below its height and the collapse never
-	// fired). Only once the camera clears the top/bottom does the vertical gap re-enter.
+	// Distance is measured to the TRUNK AXIS (the camera projected onto the trunk line,
+	// clamped to the tree's [base, base+height] span), not the ground-level base.
 	vec3 cam = INV_VIEW_MATRIX[3].xyz;
 	float ref_y = clamp(cam.y, origin.y, origin.y + height);
 	float cam_dist = distance(cam, vec3(origin.x, ref_y, origin.z));
 	// Distance shrink-out: 1 up close, 0 at the far cutoff.
-	float fade = clamp((render_distance - cam_dist) / max(fade_band, 0.001), 0.0, 1.0);
-	// Near-camera shrink-in: 0 right on the camera, 1 beyond near_fade_end. Combined
-	// with the far fade so the card collapses at BOTH ends of the range.
-	float near_grow = clamp((cam_dist - near_fade_start) / max(near_fade_end - near_fade_start, 0.001), 0.0, 1.0);
-	float scale = fade * near_grow;
+	float scale = clamp((render_distance - cam_dist) / max(fade_band, 0.001), 0.0, 1.0);
 
 	// Fixed hemisphere ambient for a vertical card (hemi = 0.5).
 	vec3 ambient = mix(ground_color, sky_color, 0.5);
@@ -86,7 +71,7 @@ void vertex() {
 	vec3 world_pos;
 	if (felled) {
 		// Locked cross: the MODEL transform already carries the topple tilt + the
-		// authored size scale. Shrink toward the base pivot for both fades.
+		// authored size scale. Shrink toward the base pivot for the distance fade.
 		world_pos = (MODEL_MATRIX * vec4(VERTEX * scale, 1.0)).xyz;
 		// Ambient-only: felled trees lie flat and are a rare, transient minority,
 		// so skip the directional term rather than derive a per-plane normal.
@@ -115,7 +100,7 @@ void vertex() {
 		// VERTEX.y is already the mesh's normalized 0..1 height (confirmed by the
 		// `up * (VERTEX.y * height)` term just above), so it's passed straight
 		// through as height_frac. Deliberately UN-SCALED by `scale`: scale is the
-		// near/far shrink-out toward the trunk-axis pivot, and multiplying the sway
+		// distance shrink-out toward the trunk-axis pivot, and multiplying the sway
 		// by it would make a collapsing tree's canopy swing away from its own base
 		// as it shrinks, instead of shrinking straight down onto it.
 		world_pos += wind_sway_offset(origin, VERTEX.y, height);

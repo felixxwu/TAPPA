@@ -40,6 +40,15 @@ map of what changed, which seams not to work around, and where the decision reco
   direction changes. `todo/2026-10-19-free-roam-pivot.md` is the settled decision
   record and wins over `gameplay.md` on any disagreement.
 
+## UI text
+
+- **Jersey 10 (the game's font) is only ever drawn at 18 px or an exact multiple
+  of it (36, 54, …)** — use `UITheme.FONT_SIZE` / `UITheme.TITLE_FONT_SIZE` or a
+  multiple of `UITheme.FONT_SIZE`, never a hand-picked size like 11 or 14. Off
+  those sizes the pixel font renders blurry and uneven. If text doesn't fit, make
+  the widget bigger or the text shorter; never shrink the font. Also keep text
+  positions on whole pixels (no fractional offsets from centring maths).
+
 ## Todo / specs folder
 
 - The `todo/` folder holds planning specs for work to be implemented later

@@ -142,7 +142,7 @@ func _apply_scene_config(cfg: GameConfig) -> void:
 		road_uv_scale = cfg.road_tile_per_meter / cfg.terrain_tile_per_meter
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("road_uv_scale", road_uv_scale)
 	# Flat tarmac fill colour (TODO: a real tarmac texture — todo/tarmac-texture.md). A
-	# region may override it (Greece runs a brighter, sun-bleached tarmac); home / free
+	# region may override it (Greece runs a dark, warm asphalt); home / free
 	# roam fall back to the GameConfig value.
 	var tarmac_col: Color = _current_region_look().get("tarmac_color", cfg.tarmac_color)
 	($Floor.chunk_material as ShaderMaterial).set_shader_parameter("tarmac_color", tarmac_col)

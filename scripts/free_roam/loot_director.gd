@@ -8,8 +8,8 @@ extends Node
 # recomputed whenever what the player holds changes (`pool_changed`). This node:
 #   * COLLECTS what the car drives near: it joins `carried`, which is not yours yet (decision 10).
 #     A rumour is read on the spot: it reveals its ring's loot in the journal (decision 18).
-#   * BANKS carried loot at a rest stop (bank()): parts go to the shared stash, car titles join
-#     the garage (Save.grant_car).
+#   * BANKS carried loot the moment the car reaches a checkpoint (bank_at_checkpoint): parts go to
+#     the shared stash, car titles join the garage (Save.grant_car).
 #   * DROPS carried loot at the wreck when the car gives up (decision 11). Driving back picks it up;
 #     giving up again first loses it: the new drop replaces it, and what it held goes back into
 #     the pool to be found again.
@@ -114,7 +114,7 @@ func taken_keys() -> Dictionary:
 # Recompute what every site shows, and tell whoever draws them.
 func _reassign() -> void:
 	placement = LootRules.assign(streamer.sites, streamer.settings.ring_count, streamer.settings.world_seed,
-		taken_keys(), WorldSession.list("collected"))
+		taken_keys(), WorldSession.list("collected"), streamer.settings.loot_item_weight)
 	streamer.refresh_loot_markers()
 	if beacons != null and beacons.streamer != null:
 		beacons.refresh_loot()
@@ -132,7 +132,7 @@ func _physics_process(delta: float) -> void:
 
 
 # Pick up what the car drives past — no need to stop, or even to leave the road: anywhere on the
-# road beside a loot pad counts (RoadSites.reached, swept over this step's travel).
+# road around a loot spot counts (RoadSites.reached, swept over this step's travel).
 func step() -> void:
 	var p := Vector2(car.global_position.x, car.global_position.z)
 	var from := _last_p if _last_p.distance_to(p) < 100.0 else p  # a teleport isn't a drive past
@@ -170,7 +170,7 @@ func collect(site: int) -> void:
 		held["site"] = site
 		carried.append(held)
 		WorldSession.set_list("carried", carried)
-		_say("Found %s. Bank it at a rest stop" % LootRules.label(item))
+		_say("Found %s. Bank it at a checkpoint" % LootRules.label(item))
 	_reassign()
 	collected.emit(item)
 
@@ -205,6 +205,12 @@ func bank() -> Array:
 	WorldSession.set_list("stash", stash)
 	WorldSession.set_list("carried", [])
 	return carried
+
+
+func bank_at_checkpoint(_site: int) -> void:
+	var items := bank()
+	if not items.is_empty():
+		_say("Banked: " + ", ".join(items.map(LootRules.label)))
 
 
 # The car gave up at `wreck`: whatever it carried is left there, replacing any earlier drop.

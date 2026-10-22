@@ -14,6 +14,8 @@ A navigation-software style map at the top centre of the screen while driving.
 
 - **Heading-up.** The map turns so the car's facing is up. The car is a fixed green chevron
   low in the frame (`minimap_car_depth`), so most of the view is road ahead.
+- **Way out.** A small orange arrow circles the chevron, pointing straight away from spawn
+  (the world origin) toward the outer rings (`outward_dir`); hidden right at spawn.
 - **Tilted like the ground.** The flat map is shown as a plane tilted away from the viewer:
   the far edge (top) is narrower and compressed, the near edge (bottom) full size, with a soft
   fade at every edge (far, near and sides) — no backdrop, rim or shadow; the roads float over
@@ -23,12 +25,13 @@ A navigation-software style map at the top centre of the screen while driving.
   rule as the full map), in ink with a dark casing.
 - **A little road ahead:** undriven road within `minimap_nearby_road_m` of a point a little
   ahead of the car, drawn faint, so the road you're on and the next junction show.
-- **Sites you've come across** (`WorldSession.seen_sites`): rest stops as dots (orange lit,
-  grey unlit: `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`), loot as a blue diamond (the loot
-  post's colour) only while something lies there (`LootDirector.loot_at(site)` non-empty).
-  Loot slots and dead ends both count. Icons are drawn upright on top of the tilted ground,
-  smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the
+- **Rest stops you've come across** (`WorldSession.seen_sites`) as dots (orange lit, grey unlit:
+  `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`). Loot isn't shown on either map. Icons are drawn
+  upright on top of the tilted ground, smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the
   full map.
+- **A line under the frame** (`MiniMap.update_carried_label`, per frame): the action prompt
+  ("ENTER / A: OPEN REST STOP" while `RestStops.prompt_site` >= 0), then "CARRYING N ITEMS" while
+  `WorldSession.list("carried")` isn't empty. Hidden when both are empty.
 
 ## Seen sites
 
@@ -68,7 +71,7 @@ children ignore it.
   (`index_roads`), so a redraw makes one `has_driven` lookup per cell.
 - Measured on the default island (container CPU, 2026-10-20): a road rebuild's gathering
   about 150–300 µs, about 2 rebuilds a second at auto-driver speed (50 km/h); a frame without a
-  rebuild about 2 µs; the site-marker refresh (1 Hz, or on `LootDirector.pool_changed`, or
+  rebuild about 2 µs; the site-marker refresh (1 Hz, or
   when a site is newly seen) about 45 µs.
 - The tilt is a canvas_item shader (`ground` in the shader, `screen_of` / `ground_of` its
   GDScript twins used for the icons only: a tap anywhere on the minimap box opens the map, so there

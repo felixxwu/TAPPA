@@ -79,27 +79,25 @@ var _off_road_label: Label
 # Last countdown TENTH shown, so show_off_road only re-formats when the displayed
 # value moves (-1 = nothing shown yet), matching the run timer's discipline.
 var _last_off_road_tenths := -1
-# The three bottom-centre gauges (features/hud.md). Each is a HudGauge: a radial fill
-# clipped to a square, with its icon in the middle instead of a text caption. HEALTH sits
-# in the CENTRE with boost and NOS flanking it, so hiding a flanker on a car that lacks
-# the part leaves health where the eye already expects it.
+# The bottom-centre gauge row (features/hud.md): each is a HudGauge vertical strip, laid
+# out edge to edge by _layout_gauges with health first.
 #
 # In-run damage readout (features/damage.md): the health gauge grades green→red with
 # remaining HP and pulses when low, plus a red screen flash on each HP-losing impact.
-# The pulse rides on the FILL's alpha, not `modulate` — the icon is drawn separately in
-# ink, so it stays legible instead of pulsing red along with the fill.
+# The pulse rides on the FILL's alpha, not `modulate`, so the needle, name and icon stay
+# legible instead of pulsing red along with the fill.
 @onready var _hp_gauge: HudGauge = $HPGauge
-# Boost, to the left of health. Shown only on a car with forced induction fitted — turbo
+# Boost. Shown only on a car with forced induction fitted — turbo
 # OR supercharger — and its fill tracks the live boost fraction. See
 # features/forced-induction.md.
 @onready var _boost_gauge: HudGauge = $BoostGauge
-# Nitrous, to the right of health. Shown only when nitrous is fitted
+# Nitrous. Shown only when nitrous is fitted
 # (GameConfig.has_nitrous()); its fill is the tank fraction left this stage
 # (EngineSim.nitrous_fraction()). A turbocharged car with nitrous shows BOTH flankers at
 # once, hence the distinct violet hue. See features/nitrous.md.
 @onready var _nitrous_gauge: HudGauge = $NitrousGauge
 # Free roam's engine temperature gauge (DamageModel.thermal): optional, so the stage scene
-# simply has none. Fill = DamageModel.temp_fraction (full at the overheat threshold), blue to
+# simply has none. Fill = DamageModel.temp_fraction (0 °C empty, full at the overheat threshold), blue to
 # red, pulsing while the engine overheats; a label under the gauges warns when the cooling
 # has failed.
 @onready var _temp_gauge: HudGauge = get_node_or_null("TempGauge")
@@ -129,6 +127,8 @@ const _BOOST_HUE := 0.58
 # Violet, deliberately well away from the boost blue: nitrous and forced induction are
 # separate slots, so both bars can be on screen together and must not read as one gauge.
 const _NITROUS_HUE := 0.70
+# Gap between the gauge row and the bottom of the screen.
+const _GAUGE_BOTTOM_MARGIN := 8.0
 
 # Pacenote strip geometry / feel. The current turn sits centred at the top (x = 0,
 # directly above the pace/cut popup); each upcoming turn is one _PACE_SLOT_W to the
@@ -158,6 +158,8 @@ var _last_rpm := -1
 # reading yet / gauge hidden. _hp_pulse_t advances the low-HP warning oscillation.
 var _last_hp := -1.0
 var _hp_pulse_t := 0.0
+# Which gauges were visible at the last row layout, as a bitmask; -1 = never laid out.
+var _gauge_layout_mask := -1
 # The debug readout (membership: DEBUG_READOUT_NODES below — do not re-list it here,
 # a second copy is a second thing to rot) is a dev diagnostic, hidden by default and
 # toggled with H (`toggle_debug_arrows`) — the same gate as the debug force
@@ -207,7 +209,7 @@ func _ready() -> void:
 	for element in debug_readout_elements():
 		element.visible = false
 	# Boost gauge starts hidden — _update_boost_gauge reveals it once a car with forced
-	# induction is fielded (an NA car never shows an always-empty dial). Tinted a FIXED
+	# induction is fielded (an NA car never shows an always-empty gauge). Tinted a FIXED
 	# blue: unlike health there's no "danger" end to grade toward, and a distinct hue
 	# keeps it from reading as a second health gauge.
 	_boost_gauge.visible = false
@@ -224,8 +226,8 @@ func _ready() -> void:
 		_cooling_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 		_cooling_label.offset_left = -160
 		_cooling_label.offset_right = 160
-		_cooling_label.offset_top = -84
-		_cooling_label.offset_bottom = -62
+		_cooling_label.offset_top = -126
+		_cooling_label.offset_bottom = -104
 		_cooling_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
 		_cooling_label.visible = false
 		add_child(_cooling_label)
@@ -552,8 +554,8 @@ static func _gauge_color(hue: float) -> Color:
 	return Color.from_hsv(hue, _GAUGE_SAT, _GAUGE_VAL)
 
 
-# Drive the player-facing boost gauge: the dial's fill IS the boost reading (0..1), with
-# the boost icon in the middle. Hidden entirely on a naturally-aspirated car rather than
+# Drive the player-facing boost gauge: the bar IS the boost reading (0..1), with
+# the boost icon under it. Hidden entirely on a naturally-aspirated car rather than
 # sitting at zero. Turbo and blower share one gauge because they share one upgrade slot,
 # so at most one is ever live (features/forced-induction.md).
 #
@@ -566,8 +568,8 @@ func _update_boost_gauge(fitted: bool, live_boost: float) -> void:
 		_boost_gauge.value = live_boost
 
 
-# Drive the player-facing nitrous gauge, the boost dial's twin: the fill IS the tank
-# fraction left this stage, with the NOS bottle icon in the middle, hidden entirely
+# Drive the player-facing nitrous gauge, the boost gauge.s twin: the bar IS the tank
+# fraction left this stage, with the NOS bottle icon under it, hidden entirely
 # when no nitrous is fitted rather than sitting at zero. Both answers come from the
 # MODEL — GameConfig.has_nitrous() for "is it fitted", EngineSim.nitrous_fraction() for
 # "how much is left" — and the caller change-gates both writes on the rounded percent.
@@ -586,8 +588,6 @@ func _update_damage(delta: float) -> void:
 	if show_gauge:
 		var frac := clampf(dmg.hp / dmg.max_hp, 0.0, 1.0) if dmg.max_hp > 0.0 else 0.0
 		_hp_gauge.value = frac
-		# The heart icon sits in the middle of the dial — the fill itself IS the reading,
-		# so the absolute HP number was redundant noise.
 		# Green (full) → amber → red (empty) via hue; flash by fading the fill's alpha
 		# when below the low-HP warning fraction so the danger is unmissable. The tint
 		# rides on the FILL only, so the icon stays plain ink instead of pulsing with it.
@@ -609,6 +609,40 @@ func _update_damage(delta: float) -> void:
 	if _impact_flash.color.a > 0.0:
 		_impact_flash.color.a = maxf(0.0, _impact_flash.color.a - delta * _IMPACT_FLASH_DECAY)
 	_update_temp(dmg, delta)
+	_layout_gauges()
+
+
+# The gauges in left-to-right order. Visible ones sit edge to edge in a centred row along
+# the bottom, so a part that isn't fitted closes up instead of leaving a hole.
+func _gauge_row() -> Array[HudGauge]:
+	var row: Array[HudGauge] = [_hp_gauge, _boost_gauge, _nitrous_gauge]
+	if _temp_gauge != null:
+		row.append(_temp_gauge)
+	return row
+
+
+func _layout_gauges() -> void:
+	var row := _gauge_row()
+	var mask := 0
+	var width := 0.0
+	for i in row.size():
+		if row[i].visible:
+			mask |= 1 << i
+			width += row[i].size.x
+	if mask == _gauge_layout_mask:
+		return
+	_gauge_layout_mask = mask
+	var x := -width * 0.5
+	for gauge in row:
+		if not gauge.visible:
+			continue
+		var w := gauge.size.x
+		var h := gauge.size.y
+		gauge.offset_left = x
+		gauge.offset_right = x + w
+		gauge.offset_bottom = -_GAUGE_BOTTOM_MARGIN
+		gauge.offset_top = -_GAUGE_BOTTOM_MARGIN - h
+		x += w
 
 
 func _update_temp(dmg: DamageModel, delta: float) -> void:
@@ -630,7 +664,7 @@ func _update_temp(dmg: DamageModel, delta: float) -> void:
 		_temp_pulse_t = 0.0
 	_temp_gauge.fill_color = col
 	if dmg.cooling_broken:
-		_cooling_label.text = "OVERHEATING — REACH A REST STOP" if dmg.is_overheating(cfg) else "COOLING FAILED"
+		_cooling_label.text = "OVERHEATING — REACH A CHECKPOINT" if dmg.is_overheating(cfg) else "RADIATOR DAMAGED"
 
 
 # Readouts for tests.

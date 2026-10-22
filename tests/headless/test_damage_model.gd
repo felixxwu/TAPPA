@@ -456,13 +456,10 @@ func test_regen_does_not_straighten_wheels() -> void:
 func _thermal_cfg() -> GameConfig:
 	var cfg := GameConfig.new()
 	cfg.cooling_failure_hp_fraction = 0.5
-	cfg.engine_temp_normal_c = 90.0
 	cfg.overheat_temp_threshold_c = 120.0
 	cfg.engine_temp_max_c = 140.0
-	cfg.overheat_rise_floor_c_per_s = 0.5
-	cfg.overheat_rise_load_c_per_s = 1.0
-	cfg.overheat_rise_rpm_c_per_s = 1.0
-	cfg.cooling_settle_c_per_s = 2.0
+	cfg.engine_heat_c_per_s = 2.0
+	cfg.engine_cooling_retain_per_s = 0.98
 	cfg.overheat_hp_drain_per_s = 50.0
 	return cfg
 
@@ -479,35 +476,66 @@ func test_cooling_breaks_once_health_falls_to_the_failure_fraction() -> void:
 	var cfg := _thermal_cfg()
 	var d := _thermal_model(cfg)
 	d.hp = 501.0
-	d.thermal_step(0.1, 1.0, 1.0, cfg)
+	d.thermal_step(0.1, 1.0, cfg)
 	assert_false(d.cooling_broken)
 	d.hp = 500.0
-	d.thermal_step(0.1, 0.0, 0.0, cfg)
+	d.thermal_step(0.1, 0.0, cfg)
 	assert_true(d.cooling_broken)
 	d.hp = 900.0
-	d.thermal_step(0.1, 0.0, 0.0, cfg)
+	d.thermal_step(0.1, 0.0, cfg)
 	assert_true(d.cooling_broken, "it stays broken until a repair, whatever the HP does")
 
 
-func test_broken_cooling_heats_the_engine_at_any_throttle_and_faster_under_load() -> void:
+func test_the_engine_heats_faster_at_higher_revs() -> void:
 	var cfg := _thermal_cfg()
-	var idle := _thermal_model(cfg)
-	var flat_out := _thermal_model(cfg)
-	for d in [idle, flat_out]:
+	var low := _thermal_model(cfg)
+	var high := _thermal_model(cfg)
+	for d in [low, high]:
 		d.cooling_broken = true
-	idle.thermal_step(1.0, 0.0, 0.0, cfg)
-	flat_out.thermal_step(1.0, 1.0, 1.0, cfg)
-	assert_gt(idle.engine_temp, cfg.engine_temp_normal_c, "it rises even off the throttle")
-	assert_gt(flat_out.engine_temp, idle.engine_temp)
+	low.thermal_step(1.0, 0.2, cfg)
+	high.thermal_step(1.0, 1.0, cfg)
+	assert_gt(low.engine_temp, 0.0, "it rises even at low revs")
+	assert_gt(high.engine_temp, low.engine_temp)
 
 
-func test_working_cooling_settles_back_to_normal() -> void:
+func test_working_cooling_sheds_more_heat_from_a_hotter_engine() -> void:
+	var cfg := _thermal_cfg()
+	var cool := _thermal_model(cfg)
+	var hot := _thermal_model(cfg)
+	cool.engine_temp = 50.0
+	hot.engine_temp = 100.0
+	cool.thermal_step(1.0, 0.0, cfg)
+	hot.thermal_step(1.0, 0.0, cfg)
+	assert_gt(100.0 - hot.engine_temp, 50.0 - cool.engine_temp)
+
+
+func test_working_cooling_settles_where_heat_in_matches_heat_out() -> void:
 	var cfg := _thermal_cfg()
 	var d := _thermal_model(cfg)
-	d.engine_temp = cfg.engine_temp_normal_c + 10.0
-	for i in 100:
-		d.thermal_step(0.1, 1.0, 1.0, cfg)
-	assert_eq(d.engine_temp, cfg.engine_temp_normal_c)
+	for i in 6000:
+		d.thermal_step(0.1, 0.5, cfg)
+	var settled := cfg.engine_heat_c_per_s * 0.5 / -log(cfg.engine_cooling_retain_per_s)
+	assert_almost_eq(d.engine_temp, settled, settled * 0.05)
+
+
+func test_broken_cooling_skips_only_the_cooling() -> void:
+	var cfg := _thermal_cfg()
+	var d := _thermal_model(cfg)
+	d.cooling_broken = true
+	d.engine_temp = 100.0
+	d.thermal_step(1.0, 0.0, cfg)
+	assert_eq(d.engine_temp, 100.0, "no revs, no cooling: the temperature holds")
+	d.thermal_step(1.0, 0.5, cfg)
+	assert_almost_eq(d.engine_temp, 100.0 + cfg.engine_heat_c_per_s * 0.5, 0.001, "only the heating is left")
+
+
+func test_the_gauge_reads_the_temperature_over_the_overheat_threshold() -> void:
+	var cfg := _thermal_cfg()
+	var d := _thermal_model(cfg)
+	d.engine_temp = cfg.overheat_temp_threshold_c * 0.5
+	assert_almost_eq(d.temp_fraction(cfg), 0.5, 0.001)
+	d.engine_temp = cfg.engine_temp_max_c
+	assert_eq(d.temp_fraction(cfg), 1.0, "full past the threshold")
 
 
 func test_only_an_overheating_engine_drains_hp() -> void:
@@ -516,9 +544,9 @@ func test_only_an_overheating_engine_drains_hp() -> void:
 	d.cooling_broken = true
 	d.hp = 400.0
 	d.engine_temp = cfg.overheat_temp_threshold_c - 5.0
-	assert_eq(d.thermal_step(0.01, 0.0, 0.0, cfg), 0.0)
+	assert_eq(d.thermal_step(0.01, 0.0, cfg), 0.0)
 	d.engine_temp = cfg.overheat_temp_threshold_c + 1.0
-	assert_gt(d.thermal_step(0.1, 0.0, 0.0, cfg), 0.0)
+	assert_gt(d.thermal_step(0.1, 0.0, cfg), 0.0)
 	assert_lt(d.hp, 400.0)
 	assert_gt(d.misfire_level(Config.data), 0.0, "an overheating engine misfires")
 
@@ -536,7 +564,7 @@ func test_reaching_zero_hp_gives_up_once_and_a_repair_resets_the_chain() -> void
 	d.repair(cfg)
 	assert_eq(d.hp, d.max_hp)
 	assert_false(d.cooling_broken)
-	assert_eq(d.engine_temp, cfg.engine_temp_normal_c)
+	assert_eq(d.engine_temp, 135.0, "the fixed cooling brings it down, not the repair")
 	assert_eq(d.wheel_toe["WheelFL"], 0.0)
 	d.apply_loss(2000.0)
 	assert_signal_emit_count(d, "gave_up", 2, "a repair re-arms it")
@@ -550,4 +578,4 @@ func test_with_the_chain_off_damage_still_never_wrecks() -> void:
 	d.apply_loss(5000.0)
 	assert_signal_not_emitted(d, "gave_up")
 	d.cooling_broken = true
-	assert_eq(d.thermal_step(1.0, 1.0, 1.0, cfg), 0.0)
+	assert_eq(d.thermal_step(1.0, 1.0, cfg), 0.0)

@@ -241,45 +241,9 @@ tests that instantiate the intro are unaffected. Tunables:
 `engine_audio_max_attenuation_db` (floor), both on `GameConfig` /
 `game_config.tres`.
 
-**Tighter radius while queued at the start line.** `start_line.gd` queues cars
-`start_queue_gap` apart (7 m), smaller than the normal 8 m `engine_audio_ref_distance_m`
-— and because the falloff is logarithmic (−6 dB/doubling), a car well past the ref
-radius is still only a few dB down, so during the REVEAL phase every queued car sat
-at/near full volume at once (cluttered). `engine_audio.gd._timed_process` now swaps
-in a tighter `engine_audio_ref_distance_reveal_m` (3.5 m default) for any car that
-ISN'T the current reveal-focus car, so queued cars fall off faster while the reveal
-camera is anchored:
-
-```gdscript
-var ref_dist := cfg.engine_audio_ref_distance_m
-var sl := StartLine.active_instance
-if sl != null and _car != sl.reveal_focus_car() and sl.sequence_phase() == StartLine.Seq.REVEAL:
-    ref_dist = cfg.engine_audio_ref_distance_reveal_m
-```
-
-`StartLine.active_instance` is a static ref seated in `setup()` and cleared in
-`_exit_tree()` (null on a plain dev boot, which never builds a `StartLine`).
-`StartLine.reveal_focus_car()` returns `_grid[0]` (the car on the reveal card,
-front-first) only while `sequence_phase() == Seq.REVEAL`, else `null` — so the focus
-car keeps its normal radius (the anchored reveal camera sits ~7.3 m from it per
-`start_reveal_cam_front/side/height_m`, already near the edge of the normal 8 m
-radius, so shrinking its radius too would have made it sound muffled) while every
-car still waiting behind it in `_grid` gets the tighter one. A car that has actually
-launched is popped out of `_grid` by `next_car()` before it drives off, so its
-already-fine natural falloff (mechanism described above) is untouched. This only
-narrows the radius during the reveal queue — the general/racing-context radius
-(`engine_audio_ref_distance_m`) is unchanged everywhere else.
-
 **Suppressing the voice** is done by disabling the node's processing, never by
 fighting the per-frame `volume_db` writer: `car.gd`'s `silence_engine_audio()`
-(props / HQ lift / world wrecks) sets `process_mode = DISABLED`, and
-`world.gd._on_leaderboard_hidden_changed()` disables/enables processing for the
-replay standings overlay (muted under the leaderboard, audible in watch mode).
-The start-line intro's departing cars are silenced (`silence_engine_audio()`)
-the frame before `queue_free()` in `_prune_departed()`, so a still-audible
-distant idle isn't hard-cut; otherwise every intro car simply idles, attenuated
-by its distance from the reveal camera (the old bespoke fade + queued-car mute
-are gone — see start-line.md (deleted with the free-roam pivot)).
+(display props) sets `process_mode = DISABLED`.
 
 ## Muted during the loading screen
 
@@ -349,9 +313,7 @@ and the forced-induction layers (whistle energy rising with boost, a BOV event
 adding a transient burst, a supercharger whine appearing only when enabled), and
 the proximity `attenuation_db` curve (0 dB inside the reference radius, strictly
 decreasing beyond it, ≈−6 dB per doubling with synthetic args, clamped at the
-passed floor). `tests/headless/test_start_line.gd` checks intro cars aren't
-force-muted and are silenced before despawn; `tests/headless/test_world_engine_mute.gd`
-checks the replay-leaderboard mute disables `EngineAudio` processing.
+passed floor).
 `tests/headless/test_engine_library.gd` checks `EngineLibrary.apply()` writes
 volume/noise/low-octave/post-gain correctly for each catalog entry.
 `tests/headless/test_car_types.gd` checks each car's referenced engine ends up
@@ -459,9 +421,7 @@ it. It reads the shared noise table through its own rolling index `_ni_nitrous`
 
 `fill()` gained three more trailing params — `nitrous_on`, `nitrous_trigger`,
 `nitrous_empty`, all defaulted `false`. **`nitrous_on` is the DELIVERY state, never
-"nitrous is fitted"** — that gate is what keeps the HQ garage preview silent, since
-`car_preview_audio.gd` applies the highlighted car's fitted upgrades (so its config
-DOES have nitrous) and passes the three args hard-`false`.
+"nitrous is fitted"** — a fitted-but-idle tank is silent.
 
 `engine_audio.gd._timed_process` derives the edges itself: `EngineSim`'s
 `nitrous_event` / `nitrous_emptied` are per-**substep** flags cleared at the top of
@@ -532,38 +492,6 @@ the shipped `engine_harmonics` override). Because the fill is frame-coupled, a s
 main-thread frame (e.g. a terrain chunk-crossing build on web) can underrun the
 generator buffer — hence the `buffer_seconds()` headroom above and the terrain work
 to keep crossing frames short (see [terrain.md](terrain.md)).
-
-## HQ car-lineup rev preview
-
-`scripts/car_preview_audio.gd` (`class_name CarPreviewAudio`, an `AudioStreamPlayer`)
-plays a short engine rev for whichever car is highlighted in the HQ lineup, so the
-player heard each car as they flicked through the car-park. The deleted `hq.gd` lazily created one
-and calls `_preview_rev(engine_id, owned_car)` from `_focus_changed()` — the single choke-point
-every selection change (arrows, swipe-flick, tap, and the initial lineup show) passes
-through, so the rev fires on every flick *and* on the first car shown. It reads the
-car's *current* engine via `EngineSwap.current_engine_id(...)`, so a swapped-in engine
-previews correctly, and it passes the highlighted car's save dict so
-`UpgradeLibrary.apply` runs on top of the stock engine — a **fitted turbo or
-supercharger is heard here**, both its extra torque (the flywheel climbs harder) and
-its own audio layer (whistle / BOV / blower whine). A part toggled off in the garage
-goes inert here too, and `rev()`'s `owned_car` defaults to `{}` for a bare stock-engine
-audition. See [forced-induction.md](forced-induction.md).
-
-Unlike the in-car `engine_audio.gd`, the preview owns everything itself — its own
-`AudioStreamGenerator`, an isolated `GameConfig` copy (`Config.data.duplicate(true)` +
-`EngineLibrary.apply` + `UpgradeLibrary.apply`, mirroring the fielded-car pipeline
-order), an `EngineSim`, and an `EngineAudioSynth` — so it needs no live
-physics car. `rev(engine_id, owned_car)` rebuilds all of these from idle and flushes the generator
-(`stop()`/`play()`), so starting a new rev instantly cancels the one in flight. The
-`EngineSim` is stepped in **neutral** (`gear = 0`), i.e. free-revving against crank
-torque + engine friction with no wheels/load: the throttle is held full for
-`GameConfig.preview_rev_hold_seconds` (default 0.5) so the flywheel climbs, then released
-so engine braking pulls it back to idle naturally, at which point the preview ends. Sim
-stepping (`_advance`) is separated from buffer filling (`_fill_audio`) so it runs and is
-testable headless with no audio device — see `tests/headless/test_car_preview_audio.gd`,
-which asserts the *envelope behaviour* (throttle held then released, revs climb then fall
-to idle, a new rev cancels the old, fitted forced induction reaches the preview config)
-without pinning the hold seconds or any RPM number.
 
 On web this stacks with a second, engine-level buffer: because the export is
 single-threaded (`thread_support=false`), Godot mixes **all** audio (this synth
