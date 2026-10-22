@@ -16,10 +16,6 @@ var _save: Node
 func before_each() -> void:
 	get_viewport().gui_release_focus()
 	Config.reset()
-	# The HQ builds here never assert on scenery counts; trim the framing scatter so
-	# each build stays cheap.
-	Config.data.hq_tree_count = 8
-	Config.data.hq_bush_count = 8
 	CarFixtures.install()
 	_install_wheel_roster()
 	_save = get_node("/root/Save")

@@ -165,11 +165,6 @@ servo measures the grip limit instead of predicting it. See
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
 | `follow_height_ratio` | 1.0 | Chase camera height as a multiple of `follow_distance` |
 | `smoothing` | 5.0 | Camera follow smoothing rate |
-| `replay_fov` | 75.0 | Replay camera FOV for the fixed-offset shots (ORBIT / FLYBY / WHEEL) |
-| `replay_frame_subject_size` | 4.2 | Constant-size framing (replay ROADSIDE / HIGH_WIDE): nominal subject size (m) the zoom fits — see event-replay.md (deleted with the free-roam pivot) |
-| `replay_frame_screen_fraction` | 0.32 | …and the share of viewport height it should span. Higher = tighter framing |
-| `replay_frame_fov_min` / `_max` | 14.0 / 75.0 | Long / wide ends of that framed zoom (degrees) |
-| `replay_fov_smoothing` | 5.0 | Easing rate for replay FOV changes (cuts always snap) |
 | `photo_move_speed` | 25.0 | Photo mode free-fly camera lateral/vertical movement speed (m/s) |
 | `photo_look_sensitivity` | 0.003 | Photo mode mouse look sensitivity (multiplier on mouse delta per frame) |
 | `photo_touch_look_sensitivity` | 0.004 | Photo mode **touch** drag-to-look sensitivity (radians per pixel of drag) — kept separate from `photo_look_sensitivity` since a finger drag and a mouse delta cover different pixel ranges. See [camera.md](camera.md) › *On-screen touch controls* |
@@ -183,7 +178,6 @@ servo measures the grip limit instead of predicting it. See
 | `stage_countdown_seconds` | 3.0 | Countdown before controls unlock at the start of a stage |
 | `stage_complete_percent` | 99.0 | Track-progress % (0..100) that ends the stage |
 | `hud_elapsed_enabled` | true | Show the top-right run timer |
-| `hud_position_enabled` | true | Show the permanent in-run standings readout — live position + gap to the place above (needs a session P1 and a classified field) |
 | `hud_popup_show_seconds` | 3.0 | How long a transient in-run HUD tag (the corner-cut flash) stays before fading |
 
 See [stage.md](stage.md).
@@ -263,82 +257,6 @@ Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
 Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mirrors
 `apply_terrain_light`). `cliff_seed = track_seed`.
 
-### Menu / HQ
-The `Menu / HQ` group holds the diegetic HQ's camera stations, car-park layout and lift
-timings (see [menus.md](menus.md)). Not enumerated exhaustively here; the entries below
-are the ones a feature doc points at directly.
-| Property | Default | Purpose |
-|----------|---------|---------|
-| `menu_camera_offset` | (2.6, 1.5, 6.2) | Car-park camera position relative to the focused car — the front-3/4 hero shot |
-| `menu_camera_look_height` | 0.7 | Height (m) above the car's origin that camera looks at |
-| `hq_lift_cam_eye` / `hq_lift_cam_look` | see `game_config.gd` | Tuning-bay camera pose — a **front three-quarter** of the raised car (the lift car noses −Z, so the eye sits round at −Z, ~35° off the nose axis, on the −X side because +X is nearly against the garage wall). Nothing overrides these in `game_config.tres`; the export's doc comment carries the full framing reasoning ([tuning.md](tuning.md)) |
-| `hq_wheel_cam_offset` | (6.4, 0.9, 0.6) | Camera position for the **cosmetic wheel view** — low and side-on, so the settled car's flank and both wheels fill the frame ([wheel-customization.md](wheel-customization.md)) |
-| `hq_wheel_cam_look_height` | 0.45 | Look height for that view — wheel height, not window height |
-
-### Rival Ghost
-The kinematic P1 ghost shown while you drive — see
-the deleted rival ghost for what each knob does and how the solve uses it.
-
-| Property | Default | Purpose |
-|----------|---------|---------|
-| `rival_ghost_enabled` | `true` | Show the ghost. Off still leaves the "vs P1" popup working — the shared pace object is built either way. |
-| `rival_ghost_visible_m` | `400.0` | Cull distance; the pose stays valid at any range. |
-| `rival_ghost_opacity` | `0.55` | Body opacity at chasing range (a per-mesh translucent material override; the car's own shader is opaque). |
-| `rival_ghost_position_smoothing_s` | `0.45` | Filters LATERAL motion (heavy hand). Never along-track — that's the clock. |
-| `rival_ghost_rotation_smoothing_s` | `0.10` | Filters rotation (light hand). Not the only rotational filter — see `slip_lag_s`. |
-| `rival_ghost_nametag_enabled` / `_height_m` / `_size_m` | on / 2.2 / 0.55 | P1's name floating above the ghost. |
-| `rival_ghost_dust_enabled` | `true` | Give the ghost its own gravel spray (a SECOND WheelParticles system, so a real cost). |
-| `rival_ghost_fade_near_m` | `14.0` | Fades to fully transparent as the player closes in, so an overlapped ghost doesn't hide the road. |
-| `rival_ghost_grip_exponent` | `0.0` | How much of the deficit comes out of CORNERING. 0 = corners cost nothing (the ghost is a valid reference line). |
-| `rival_ghost_line_offset_m` | `1.2` | Peak lateral shift as it threads a line. |
-| `rival_ghost_slip_scale` | `1.0` | Artistic multiplier on slip. The ANGLE is `asin(*_slip_peak)` from the tyre model scaled by friction-circle usage, so surface differences come from `gravel_slip_peak` / `tarmac_slip_peak` — shared with the player's car. |
-| `rival_ghost_max_slip_deg` | `25.0` | Hard ceiling, so it never reads as a spin. |
-| `rival_ghost_slip_lag_s` | `0.25` | Smoothing, so yaw builds and unwinds. |
-| `rival_ghost_power_exponent` | `0.30` | How the skill factor splits: grip scales by `k`, power by `pow(k, this)`. |
-| `rival_ghost_skill_min` | `0.05` | Slow end of the solve bracket. Set from `tools/audit_ghost_pace.tscn`: the worst career stage needs 0.151. |
-| `rival_ghost_skill_max` | `1.15` | Fast end — above 1.0 deliberately, as a cached-vs-live divergence valve. |
-| `rival_ghost_skill_iterations` | `12` | Bisection steps. |
-| `rival_ghost_max_time_residual_ms` | `250` | Largest error the final micro-scale may absorb before warning. |
-
-### Rival Field & Pace
-The DIFFICULTY dials behind a rally's opponent field, read by `rally_library.gd`
-(`generate_opponent_field`, `_pace_band`, `swap_weight`). See
-[region-stage-library.md](region-stage-library.md), the deleted adaptive difficulty and
-the deleted opponent-wreck system for what each one does to a field.
-
-| Property | Old const | Purpose |
-|----------|-----------|---------|
-| `rival_wreck_chance` | `RallyLibrary.OPPONENT_WRECK_CHANCE` | Per-event probability that ONE not-yet-wrecked rival crashes out. The one-per-event cap is structural, not tunable. |
-| `rival_swap_pw_spread` | `OPPONENT_SWAP_PW_SPREAD` | hp/tonne scale of the `exp(-|Δpw| / this)` bias towards near-stock engine swaps. A bias, never a filter. |
-| `rival_pace_fast_base` | `PACE_FAST_BASE` | Pace of the fastest rival (skill 0), as a multiple of their own optimum. |
-| `rival_pace_slow_base` | `PACE_SLOW_BASE` | Pace of the slowest rival (skill 1) at tier 1. |
-| `rival_pace_fast_step` / `rival_pace_slow_step` | `PACE_FAST_STEP` / `PACE_SLOW_STEP` | How far each end of the band walks in per difficulty tier above 1. |
-| `rival_pace_event_noise` | `PACE_EVENT_NOISE` | ±jitter per event around a rival's persistent base pace. |
-| `rival_pace_min_floor` | `PACE_MIN_FLOOR` | Sanity guard only — far below anything the band produces. |
-| `rival_ghost_solvable_pace` | `GHOST_SOLVABLE_PACE` | Quickest time a rival may be given, bounded by what the windscreen ghost can represent. |
-
-### Overworld Fog Frontier
-The soft turn-back at the edge of the revealed overworld — see
-the deleted overworld, which cached all four at boot because
-`_update_fog_boundary` is a per-frame path.
-
-| Property | Old const | Purpose |
-|----------|-----------|---------|
-| `overworld_fog_push_accel` | `Overworld.FOG_PUSH_ACCEL` | Inward nudge (m/s²) while beyond the frontier. |
-| `overworld_fog_hard_margin_m` | `FOG_HARD_MARGIN_M` | How far past the last lit pose before the car is teleported back. Also sizes the precompute margin (`Overworld.reach_margin_map`). |
-| `overworld_fog_veil_alpha` | `FOG_VEIL_ALPHA` | How dark the screen veil goes at the hard margin. |
-| `overworld_fog_veil_fade` | `FOG_VEIL_FADE` | Veil alpha units per second, in and out. |
-
-### HQ Present Box
-The present-box car reveal (`hq_present_reveal.gd`) is deleted with the diegetic hub; these fields are unread.
-
-| Property | Old const | Purpose |
-|----------|-----------|---------|
-| `hq_present_clearance_m` | `HqPresentReveal.PRESENT_CLEARANCE_M` | Room added to `CarLibrary.max_car_bounds()` in all three axes when sizing the box. |
-| `hq_present_lid_rise` | `PRESENT_LID_RISE` | How far the lid travels up before it leaves frame. |
-| `hq_present_open_time` | `PRESENT_OPEN_TIME` | Seconds for the lid to clear; the walls start falling at 45% of it. |
-| `hq_present_wall_time` | `PRESENT_WALL_TIME` | Seconds for a wall to fall — deliberately slow, so walls read as heavy. |
-
 ### Loading
 The frame cap held for the duration of world generation only, via
 `WorldRuntime.loading_cap(touch)` — see [loading.md](loading.md).
@@ -353,29 +271,6 @@ The frame cap held for the duration of world generation only, via
 > serving as the `Config.get_float` fallback), and outside callers — tests,
 > `tools/calibrate_pace_floor.gd` — still name them. Retuning one changes NOTHING on its
 > own: the authored value in `game_config.tres` is what the game reads.
-
-### Roguelike Run
-The region run's two levers — the TARGET TIME a stage must be beaten in, and the MONEY
-a cleared stage pays. Read by `RegionRunMode` (`scripts/region_run_mode.gd`); see
-region-runs.md (deleted with the free-roam pivot) for the formulas and
-rally-challenge.md (deleted with the free-roam pivot) for the challenge's own payout.
-
-| Property | Purpose |
-|----------|---------|
-| `run_target_pace_base` | Pace multiplier on the reference-car optimum for stage 1 of the first region — the loosest clock in the game. 1.0 = the point-mass optimum exactly. |
-| `run_target_pace_stage_step` | How much tighter the clock gets per stage within a run. |
-| `run_target_pace_region_step` | How much tighter per region in the unlock order — the whole of region difficulty (decision 22). |
-| `run_target_pace_min` | Floor no combination of the two steps may take the pace below. |
-| `run_stage_money_base` | Payout for clearing the first stage of a run, before the growth curve and the region scale. |
-| `run_stage_money_growth` | Multiplied in once per stage already cleared, so surviving deep into a run is where the money is. |
-| `run_fast_bonus_money` | The most a fast clear can add on top, paid in proportion to the fraction of the target saved. |
-| `run_money_region_multiplier` | How much richer each region in the unlock order is, as a multiplier compounded per index — region N pays this raised to the Nth power (decision 31). 2.0 = every region pays double the one before it. |
-| `challenge_completion_money` | The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays. |
-
-> **Tune the pace knobs against real driving, not against the model.** `LapTimeModel`'s
-> optimum is a point-mass centreline reference, not a physical bound — a real driver
-> beats it by straightening corners. The shipped values are deliberately generous
-> placeholders.
 
 ## Engine data
 

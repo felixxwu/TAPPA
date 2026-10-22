@@ -47,7 +47,6 @@ already works on any body.
 | Applied to the car | `scripts/car.gd` → `_owned_wheel_texture`, `_wheel_texture_for`, `reskin_wheels` |
 | The wheel view | **DELETED** with the diegetic hub — it was `hq.gd` → `CarparkMode.WHEELS` (`_enter_wheel_swap`, `_cycle_wheel`, `_apply_wheel_preview`, `_revert_wheel_preview`, `_commit_wheels`). No screen fits wheels today |
 | Entry button | `scripts/tuning_panel.gd` → `TuningPanel._wheels_button` (inside the Tuning menu; wired via `setup(owned, on_change, on_wheels)`) |
-| Camera framing | Deleted with it; `hq_wheel_cam_offset` / `hq_wheel_cam_look_height` survive in `GameConfig`, unread |
 | Tests | `tests/headless/test_wheel_customization.gd` |
 
 ## Data model

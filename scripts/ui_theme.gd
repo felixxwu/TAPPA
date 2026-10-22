@@ -143,7 +143,6 @@ const PANEL_PAD := int(14 * UI_SCALE + 0.5)
 
 const GAP_TIGHT := int(6 * UI_SCALE + 0.5)
 const GAP := int(10 * UI_SCALE + 0.5)
-const GAP_WIDE := int(16 * UI_SCALE + 0.5)
 const MARGIN := int(24 * UI_SCALE + 0.5)
 const SHADOW_OFFSET := int(2 * UI_SCALE + 0.5)    # hard drop shadow, x == y
 
@@ -214,36 +213,6 @@ static func format_time(ms: int, negative_text: String = "--:--") -> String:
 	return "%d:%05.2f" % [minutes, seconds - minutes * 60.0]
 
 
-# "1 token" / "3 tokens" — a count with its noun, pluralised. Trivial, but it was being
-# hand-rolled at three call sites (the garage swap row's label and its locked hint, and the
-# car-park swap confirm popup), which is three chances to disagree about the wording.
-static func count_noun(n: int, noun: String, plural := "") -> String:
-	if n == 1:
-		return "1 %s" % noun
-	return "%d %s" % [n, plural if plural != "" else noun + "s"]
-
-
-# One leaderboard/standings row, identical between the standings overlay and the
-# podium's leaderboard: "> P3 — NAME (CAR) — 1:23.21", where the leading "> " and
-# a gold tint mark the player, place < 1 reads "DNF", and a wrecked entry shows
-# "WRECKED" instead of a time. Reads `placed`, `dnf`, `combined_ms`, `name`,
-# `car_name`, `is_player` from the entry dict.
-static func standings_row(entry: Dictionary) -> Label:
-	var l := Label.new()
-	var placed := int(entry.get("placed", -1))
-	var pos_text := "P%d" % placed if placed >= 1 else "DNF"
-	var time_text := "WRECKED" if entry.get("dnf", false) else format_time(int(entry.get("combined_ms", -1)))
-	var who := String(entry.get("name", "?"))
-	var car := String(entry.get("car_name", ""))
-	if car != "":
-		who += " (%s)" % car
-	var is_player: bool = entry.get("is_player", false)
-	l.text = "%s%s — %s — %s" % ["> " if is_player else "", pos_text, who, time_text]
-	if is_player:
-		l.add_theme_color_override("font_color", GOLD)
-	return l
-
-
 static func _role_color(role: String) -> Color:
 	match role:
 		"dim": return INK_DIM
@@ -284,25 +253,6 @@ static func panel_box(alpha: float = 1.0, pad: int = PANEL_PAD) -> StyleBoxFlat:
 		box.set("content_margin_" + side, float(pad))
 	# Sharp corners, no border — the defining trait of the look.
 	return box
-
-
-# The box a passive READOUT wears when it has to sit in a row of buttons and read as the
-# same kind of surface — the tuning lift's car nameplate and stats rows, which flank and
-# sit under the selector chevrons.
-#
-# Taken from the theme's own Button "normal" stylebox rather than rebuilt from
-# `panel_box`, because the two are NOT interchangeable: a panel is fully-padded (14px all
-# round) and may be translucent to float over the 3D world, while a button is pure black
-# with tight 4px vertical margins. Built by hand, a readout ends up visibly taller than
-# the buttons beside it and a slightly different shade — so it borrows the real thing and
-# cannot drift from it. Pair with `custom_minimum_size.y = MENU_ROW_H` to match their
-# height as well (see UITheme.enforce, which pins buttons to exactly that).
-static func readout_box() -> StyleBox:
-	var t := theme()
-	if t == null:
-		return panel_box()
-	var box := t.get_stylebox("normal", "Button")
-	return box if box != null else panel_box()
 
 
 # A PanelContainer wearing `panel_box`, cast with the theme-wide hard shadow (see
@@ -369,17 +319,6 @@ static func shadowed(box: StyleBox) -> StyleBox:
 	wrapper.content_margin_right = box.get_margin(SIDE_RIGHT)
 	wrapper.content_margin_bottom = box.get_margin(SIDE_BOTTOM)
 	return wrapper
-
-
-# A solid black, sharp-cornered reward-card stylebox with a green accent border (a
-# reward is a positive event — GREEN is the design system's "positive" colour).
-# Shared by the upgrade reveal and the podium car-reveal cards.
-static func reward_card_box() -> StyleBox:
-	var style := panel_box(0.92, 22)
-	style.border_color = GREEN
-	for side in ["left", "top", "right", "bottom"]:
-		style.set("border_width_" + side, 2)
-	return shadowed(style)
 
 
 # --- Scrolling body text -----------------------------------------------------
@@ -489,19 +428,6 @@ static func button(text: String) -> Button:
 	return b
 
 
-# A button for a HORIZONTAL action row: no width floor, so it hugs its own label.
-# `button()` above pins BUTTON_MIN_W, which is right for a stacked column but wrong
-# side by side — four of them need ~750 logical units against a canvas ~556 wide at
-# the design height (narrower still on a portrait/narrow phone aspect), so the row runs off both edges.
-# Height and uppercasing are left to `enforce()`, which every menu runs after building.
-# An invisible row that eats all the leftover vertical space, pushing whatever follows it to
-# the bottom of its container. Four hq_overlays screens hand-rolled this same three-liner.
-static func vspacer() -> Control:
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return spacer
-
 # A menu / diegetic-station action button: FOCUS_NONE (stations navigate by a manual
 # left/right cursor via MenuNav/ButtonCursor, not native focus), text set raw
 # (`enforce()` uppercases + sizes it on the next _normalize_menus), with `on_press`
@@ -538,31 +464,6 @@ static func mark_selected(btn: Button, selected: bool) -> void:
 	for state in ["normal", "hover", "pressed"]:
 		btn.add_theme_stylebox_override(state, wrapped)
 	btn.add_theme_color_override("font_color", GREEN if selected else INK)
-
-
-# Show/clear a keyboard/gamepad CURSOR highlight on a button whose focus is driven
-# MANUALLY rather than by Godot's focus system. The diegetic HQ stations keep
-# focus_mode = FOCUS_NONE so left/right can mean "cycle the 3D car / map pin"
-# instead of "move focus to the neighbour widget", so they track a cursor index by
-# hand and paint it here. Mirrors the theme's focus look — the same SURFACE_HOVER
-# lift + green underline a mouse hover (or a native-focus menu) shows — so a manual
-# cursor and a real focus ring read identically. Flat menus don't need this; their
-# highlight comes from the theme `focus` stylebox via grab_focus().
-static func mark_focused(btn: Button, focused: bool) -> void:
-	if focused:
-		var box := StyleBoxFlat.new()
-		box.bg_color = SURFACE_HOVER
-		box.border_width_bottom = 3
-		box.border_color = GREEN
-		box.content_margin_left = 14
-		box.content_margin_right = 14
-		box.content_margin_top = 4
-		box.content_margin_bottom = 4
-		btn.add_theme_stylebox_override("normal", shadowed(box))
-		btn.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-	else:
-		btn.remove_theme_stylebox_override("normal")
-		btn.remove_theme_color_override("font_color")
 
 
 # Show/clear the selection treatment on a billboarded MAP-PIN readout panel. The map
@@ -651,12 +552,6 @@ static func in_dying_subtree(node: Node) -> bool:
 			return true
 		n = n.get_parent()
 	return false
-
-
-# Grab focus on the first focusable control under `root` (see first_focusable).
-# Deferred-friendly: UITheme.focus_grab_first.bind(root).call_deferred().
-static func focus_grab_first(root: Node) -> void:
-	focus_grab(first_focusable(root))
 
 
 static func focus_grab(ctrl) -> void:

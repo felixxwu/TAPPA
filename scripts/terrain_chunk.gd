@@ -196,15 +196,6 @@ func apply_vertex_color_profile(profile: StringName) -> void:
 	_color_profile = profile
 
 
-# Whether this chunk carries night colour data for at least one level — false for a
-# chunk built before bake_night_colors was turned on.
-func has_night_colors() -> bool:
-	for arr in _night_colors_by_level:
-		if arr is PackedColorArray and not (arr as PackedColorArray).is_empty():
-			return true
-	return false
-
-
 # Whether the finest level currently has a built mesh (tests / debug).
 func has_finest_mesh() -> bool:
 	return not _mesh_instances.is_empty() and _mesh_instances[0].mesh != null

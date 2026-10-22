@@ -122,24 +122,12 @@ gain/tank already reads as "not fitted" ([nitrous.md](nitrous.md)).
 
 ### The reseed pre-pass, and why only some rows carry it
 
-Every row that predates decision 51 targets a **per-car** field (mass, tyre grip, shift
-time, brakes, drag), and step 1 re-seeds those from the CarLibrary baseline before `apply`
-runs. That re-seed is what makes a `mult` row safe: however many times a car is fielded,
-the multiplier lands on a fresh baseline.
-
-**The skill rows have no such re-seed.** `coin_pickup_radius_m`, `coins_per_stage`,
-`run_fast_bonus_money`, `run_target_pace_base`, `run_stage_money_base`,
-`impact_ref_hp_loss` and `damage_regen_hp_per_s` are GLOBAL tunables on the shared,
-long-lived `Config.data` (nothing calls `Config.reset()` between stages). Without help, a
-coin radius multiplied on stage 1 would be multiplied AGAIN on stage 2, and un-equipping
-the skill would never give the authored number back at all.
-
-So every skill row is flagged `reseed`, and `_reseed_globals` restores those fields from the
-PRISTINE authored baseline (`Config.authored_value` — see
-[configuration.md](configuration.md)) before anything is applied. **Unconditional**, because
-"nothing equipped" is precisely the case that has to hand the authored number back. The
-result is that `apply` is idempotent in the only sense that matters: run it N times with
-the same effect set and the config lands in the same place.
+Every row today targets a **per-car** field, and step 1 re-seeds those from the CarLibrary
+baseline before `apply` runs, so a `mult` always lands on a fresh baseline. A row that
+writes a GLOBAL tunable on the long-lived `Config.data` gets no such re-seed: it must carry
+`reseed: true`, and `_reseed_globals` restores its field from the authored baseline
+(`Config.authored_value` — see [configuration.md](configuration.md)) before anything is
+applied. No row needs it today (the skill rows that did are deleted with the skills).
 
 ## Effective stats (display + eligibility)
 

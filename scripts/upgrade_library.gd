@@ -159,40 +159,6 @@ const EFFECTS := {
 	# more powerful build it now is. NOT global_torque_scale: that field is a hidden
 	# uniform de-rate (see BoostLibrary's header), never a per-car effect target.
 	"engine_power_mult": {"field": "peak_torque", "op": "mult", "feeds_pw": true},
-	# --- THE PERK ROWS (todo/roguelike-pivot.md decision 51) ----------------------
-	# Skills reach gameplay through THIS table and a car's `boosts` list, exactly as the
-	# decision requires ("do not build a parallel modifier path") — SkillLibrary authors
-	# entries, world.gd merges them alongside the run's boosts, and everything below is
-	# already written.
-	#
-	# Every one of them carries `reseed` because every one targets a GLOBAL tunable
-	# rather than a per-car stat — see the reseed pre-pass in apply() for what that flag
-	# does and why these rows would otherwise compound stage after stage.
-	"coin_pickup_radius_mult": {
-		"field": "coin_pickup_radius_m", "op": "mult", "feeds_pw": false, "reseed": true,
-	},
-	"impact_damage_mult": {
-		"field": "impact_ref_hp_loss", "op": "mult", "feeds_pw": false, "reseed": true,
-	},
-	# "set", not "add": a heal rate is an absolute HP/second, and `set` is idempotent, so
-	# two writers (or a re-derive mid-stage) can never stack it into a runaway trickle.
-	"damage_regen_set": {
-		"field": "damage_regen_hp_per_s", "op": "set", "feeds_pw": false, "reseed": true,
-	},
-	"fast_bonus_money_mult": {
-		"field": "run_fast_bonus_money", "op": "mult", "feeds_pw": false, "reseed": true,
-	},
-	# Writes an INT config field (coins_per_stage), so the multiplied value truncates —
-	# a fractional multiplier rounds down rather than erroring.
-	"coin_count_mult": {
-		"field": "coins_per_stage", "op": "mult", "feeds_pw": false, "reseed": true,
-	},
-	"target_pace_add": {
-		"field": "run_target_pace_base", "op": "add", "feeds_pw": false, "reseed": true,
-	},
-	"stage_money_base_add": {
-		"field": "run_stage_money_base", "op": "add", "feeds_pw": false, "reseed": true,
-	},
 	# THE TWO `flag` ROWS ARE GONE. `unlocks_aero_tuning` and `unlocks_drivetrain_swap`
 	# existed so a fitted part could open a tuning slider; tuning is ungated on every axis
 	# now (todo/roguelike-pivot.md decision 24) and there are no parts to fit, so the "flag"
@@ -275,24 +241,12 @@ static func _floor_value(source: Object, desc: Dictionary) -> float:
 
 # --- The reseed pre-pass -----------------------------------------------------
 #
-# WHY IT EXISTS. Every effect row this table had before decision 51 targets a PER-CAR
-# field (mass, tyre grip, shift time, brakes, drag), and pipeline step 1 — car.gd's
-# apply_car / _apply_physics_spec — re-seeds those from the CarLibrary baseline before
-# apply() runs. That re-seed is what makes a "mult" row safe: however many times a car is
-# fielded, the multiplier lands on a fresh baseline.
-#
-# The SKILL rows have no such re-seed. `coin_pickup_radius_m`, `coins_per_stage`,
-# `run_fast_bonus_money` and friends are GLOBAL tunables on the shared, long-lived
-# Config.data (nothing calls Config.reset() between stages — see world.gd's _exit_tree,
-# which resets weather_sun_mult for the very same reason). Without this pre-pass a coin
-# radius multiplied on stage 1 would be multiplied AGAIN on stage 2, and un-equipping the
-# skill would never give the authored number back at all.
-#
-# So: before any effect is applied, every `reseed` row's config fields are restored from
-# the PRISTINE authored baseline (Config.authored_value). Unconditional — it must run even
-# when nothing is equipped, since "nothing equipped" is precisely the case that has to put
-# the authored number back. Ops on these fields are therefore idempotent in the only sense
-# that matters: apply() run N times with the same effect set leaves the same config.
+# Every row today targets a PER-CAR field, which car.gd's apply_car re-seeds from the
+# CarLibrary baseline before apply() runs, so a "mult" always lands on a fresh value.
+# A row that writes a GLOBAL tunable has no such re-seed — Config.data is long-lived — so
+# it must carry `reseed: true`, and this restores it from the authored .tres
+# (Config.authored_value) first. Without that, each fielding would compound the effect
+# and removing it would never give the authored number back.
 static func _reseed_globals(cfg: GameConfig) -> void:
 	for key in EFFECTS:
 		var desc: Dictionary = EFFECTS[key]

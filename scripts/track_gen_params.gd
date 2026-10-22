@@ -221,14 +221,3 @@ func recompute_origin() -> void:
 		water_enabled = false
 
 
-# Stable cache key over the AUTHORED shape determinants (never the derived
-# `origin` float — see docs/superpowers/specs/2026-07-21-track-turn-cache-design.md).
-# `terrain_fingerprint` folds in cfg.terrain_layers(); `version` bumps when the
-# generator/corner shapes change. %.6f is safe: every field here is an authored
-# input (identical across platforms), not a computed float.
-func cache_key(terrain_fingerprint: String, version: String) -> String:
-	return "v%s|%d|%d|%.6f|%.6f|%.6f|%.6f|%.6f|%s|%.6f|%.6f|%.6f|%.6f|%s" % [
-		version, seed, turn_count, width, clearance, reserve_behind,
-		straightness, runoff_m, str(key_water_enabled), key_water_level, shore_clearance,
-		heading.x, heading.y, terrain_fingerprint,
-	]

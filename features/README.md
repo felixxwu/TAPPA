@@ -163,7 +163,6 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Settings page | `scripts/settings_menu.gd` (`SettingsMenu` — shared camera-angle + key-binding + mobile-control picker) |
 | Key rebinding | `scripts/input_remap.gd` (`InputRemap` autoload — keyboard/controller rebind over the InputMap) |
 | Pause menu | `scripts/pause_menu.gd` (`PauseMenu` — top-right freeze button → Resume / Settings) |
-| Game-loop shell | `hub.tscn` + `scripts/hub_shell.gd` (`HubShell` — every flat page; `scripts/scenes.gd` `HUB` / `hub_path()` is the one place that names the scene), `scripts/world.gd` (session fielding) |
 | Garage model | `garage.tscn`/`scripts/garage.gd`, `tools/render_garage.gd`/`.sh` (multi-angle renders) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard_opaque.gdshader` |

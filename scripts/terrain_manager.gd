@@ -467,17 +467,6 @@ func set_chunk_source(source: Object) -> void:
 		capture_encoded_light = true
 
 
-# Attach (or clear, with null) the duck-typed road network (see `road_source`). Must be seated
-# BEFORE any chunk is built or cached: the carve rewrites `heights`, so a chunk generated
-# without a network and one generated with it are different terrain, and the chunk_source
-# invalidation key is the only thing that can tell them apart (OverworldRoads.network_hash is
-# what the overworld cache folds in for exactly this reason). Changing it later does NOT
-# retro-carve already-cached chunks.
-func set_road_source(source: Object) -> void:
-	road_source = source
-	_road_surf_valid = false
-
-
 # Attach (or clear, with null) the duck-typed region field (see `region_source`). Must be seated
 # BEFORE any chunk is built or cached, for exactly the reason set_road_source states: the baked
 # UV2.y changes the stored bytes, so a chunk generated with a region field and one generated
@@ -486,34 +475,6 @@ func set_road_source(source: Object) -> void:
 # later does NOT retro-bake already-cached chunks.
 func set_region_source(source: Object) -> void:
 	region_source = source
-
-
-# Attach (or clear, with null) the duck-typed flat-pad set (see `pad_source`).
-#
-# TWO RULES, both load-bearing:
-#
-#  1. Seat it BEFORE any chunk is built or cached, for exactly the reason set_road_source
-#     states: the flatten rewrites `heights`, so a chunk generated with pads and one without
-#     are different terrain and only the chunk_source invalidation key can tell them apart
-#     (Overworld._open_chunk_cache folds OverworldPads.stamp() in for that reason). Changing
-#     it later does NOT retro-flatten already-cached chunks.
-#  2. Seat it AFTER the pad set has resolved its own levels. Each pad's level is the terrain's
-#     PURE generated height at the pad centre, sampled through `_noise_height_at` — and
-#     `_noise_height_at` applies the pads (see `pad_height`). Attaching the source first and
-#     sampling second would feed the pads their own output.
-#
-# A source missing `pad_at` is REJECTED here (stored as null) rather than guarded on every
-# call: pad_height runs per vertex and per height query, and one has_method per vertex is a
-# cost the null check already avoids.
-func set_pad_source(source: Object) -> void:
-	if source != null and not source.has_method("pad_at"):
-		push_warning("terrain: pad source has no pad_at(x, z) — ignored")
-		pad_source = null
-		return
-	pad_source = source
-	# _road_surface_at reads pad_source too (a pad wins over the road, same as the mesh bake), so
-	# a stale memoed answer from before the pad was attached must not survive the swap.
-	_road_surf_valid = false
 
 
 # The coastline falloff (D9). `h` is the generated height at world (x, z); the return value
@@ -855,7 +816,6 @@ func _cached_light_at(x: float, z: float) -> Color:
 	var out := a.lerp(b, _bl_fx).lerp(c.lerp(d, _bl_fx), _bl_fz)
 	out.a = 1.0
 	return out
-
 
 
 # Pure CPU work for one chunk: heights + mesh arrays. Reads only the
@@ -1424,22 +1384,6 @@ func _vertex_color_row(coord: Vector2i, zi: int, lights: PackedColorArray,
 			default_cell_color.g * lgt.g,
 			default_cell_color.b * lgt.b,
 			w)
-
-
-# Per-vertex tarmac weight for one chunk's mesh, carried in UV2.x (the shader
-# mixes the gravel texture toward the flat tarmac colour by it). Like
-# vertex_colors' alpha, each vertex averages the (up to 4) surrounding cells'
-# track_surface values — but only over the cells that ARE road/band cells (present
-# in track_surface), so the gravel/tarmac split isn't dragged toward gravel by the
-# bare grass cells off the road edge. UV2.y is left 0 here and filled later, in the overworld
-# only, by _apply_region_blend (the region rank). Keyed by GLOBAL cell
-# coords, so a shared edge vertex averages the same cells from either chunk (seam-safe).
-func surface_uv2(coord: Vector2i) -> PackedVector2Array:
-	var uv2s := PackedVector2Array()
-	uv2s.resize(SAMPLES * SAMPLES)
-	for zi in SAMPLES:
-		_surface_uv2_row(coord, zi, uv2s)
-	return uv2s
 
 
 # One row of surface_uv2, written into `out` (shared so the incremental
@@ -3168,13 +3112,6 @@ func _spawn_chunk(coord: Vector2i, data: Dictionary) -> void:
 # features/terrain.md → "Dual day/night bake". A live stage never calls this — the field
 # stays "day" and _spawn_chunk's check above is then a no-op.
 var _vertex_color_profile: StringName = &"day"
-
-
-func set_vertex_color_profile(profile: StringName) -> void:
-	_vertex_color_profile = profile
-	for chunk in _chunks.values():
-		if is_instance_valid(chunk):
-			chunk.apply_vertex_color_profile(profile)
 
 
 func _rebuild_loaded() -> void:

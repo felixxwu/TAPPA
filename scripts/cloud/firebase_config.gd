@@ -18,7 +18,6 @@ extends RefCounted
 
 const PROJECT_ID := "tapparally"
 const API_KEY := "AIzaSyBbW4_34pecs85ffo7k5-gyo6KuwGyNVEs"
-const AUTH_DOMAIN := "tapparally.firebaseapp.com"
 
 # OAuth 2.0 client ids for Google sign-in. These are NOT the Firebase appId —
 # they come from the Google Cloud credentials console:

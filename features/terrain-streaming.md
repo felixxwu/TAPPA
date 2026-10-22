@@ -25,9 +25,7 @@ outside tests, and the duck-typed producer classes they used to be fed by
 **Why this is documented rather than deleted:** it is real, working, headless-tested
 infrastructure — not dead code left behind by an incomplete cleanup. `apply_overworld_bounds`
 and `GameConfig.overworld_load_radius` / `overworld_chunk_build_budget` /
-`overworld_edge_taper_m` / `overworld_edge_depth_m` / `overworld_size_m` /
-`overworld_pad_*_radius_m` are all still read (see [configuration.md](configuration.md));
-only `GameConfig.overworld_enabled` has no reader left. If a future feature needs a bounded,
+`overworld_edge_taper_m` / `overworld_edge_depth_m` are all still read (see [configuration.md](configuration.md)). If a future feature needs a bounded,
 streamed terrain again — a second hub, a free-roam area, anything larger than the fixed
 stage corridor — this is where it plugs in, and the duck-typed contracts below (`road_source`,
 `pad_source`, `region_source`, `chunk_source`) are what a new producer would implement; they

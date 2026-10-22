@@ -1,10 +1,9 @@
 extends GutTest
 # LifetimeStats (scripts/lifetime_stats.gd) — the lifetime-counter registry — plus the
-# Save-level persistence it sits on (lifetime_stat / add_lifetime_stat /
-# raise_lifetime_stat). Per CLAUDE.md this file asserts LOGIC, not values: nothing here
-# pins which stats exist or what any of them are currently worth — only the contract
-# every stat must obey (persisted, only ever grows, survives what a failed run wipes)
-# and the ratchet's own high-water-mark behaviour.
+# Save-level persistence it sits on (lifetime_stat / add_lifetime_stat). Per CLAUDE.md
+# this file asserts LOGIC, not values: nothing here pins which stats exist or what any of
+# them are currently worth — only the contract every stat must obey (persisted, only
+# ever grows).
 
 var _save: Node
 var _prev_lifetime: Dictionary = {}
@@ -82,41 +81,3 @@ func test_add_lifetime_stat_survives_a_save_and_load() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(_save.profile_path + suffix))
 	_save.profile_path = prev_path
 	_save.load_or_new()
-
-
-# --- The high-water-mark ratchet ----------------------------------------------------
-
-func test_raise_lifetime_stat_ratchets_up_to_the_max() -> void:
-	_save.raise_lifetime_stat("fx_best", 3)
-	_save.raise_lifetime_stat("fx_best", 7)
-	assert_eq(_save.lifetime_stat("fx_best"), 7, "raises to the higher value")
-
-
-func test_raise_lifetime_stat_never_lowers_the_stored_value() -> void:
-	_save.raise_lifetime_stat("fx_best", 7)
-	_save.raise_lifetime_stat("fx_best", 2)
-	assert_eq(_save.lifetime_stat("fx_best"), 7,
-		"a lower value never regresses a high-water mark — a repeat run must not read as new progress")
-
-
-func test_raise_lifetime_stat_from_zero() -> void:
-	_save.raise_lifetime_stat("fx_best", 0)
-	assert_eq(_save.lifetime_stat("fx_best"), 0)
-	_save.raise_lifetime_stat("fx_best", 1)
-	assert_eq(_save.lifetime_stat("fx_best"), 1)
-
-
-# --- progress_text ------------------------------------------------------------------
-
-func test_progress_text_renders_current_over_threshold() -> void:
-	assert_eq(LifetimeStats.progress_text(150, 800), "150/800")
-
-
-func test_progress_text_clamps_above_the_threshold() -> void:
-	# A lifetime counter keeps growing past a gate it already cleared; the display must
-	# not read as a broken progress bar ("1240/800").
-	assert_eq(LifetimeStats.progress_text(1240, 800), "800/800")
-
-
-func test_progress_text_floors_at_zero_for_a_negative_current() -> void:
-	assert_eq(LifetimeStats.progress_text(-5, 800), "0/800")

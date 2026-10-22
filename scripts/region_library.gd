@@ -9,9 +9,6 @@ extends RefCounted
 # Regions do NOT unlock in sequence; every corner is open from the start, and a region
 # gates nothing — it owns only its look and its waterline. See features/regions.md.
 
-# The one world map. Every region is a corner of this single satellite image, so a
-# region no longer owns a map image of its own — `map_image` is not a look key.
-const DEFAULT_MAP_IMAGE := "res://textures/map_world.jpg"
 
 # Whitelisted look-override keys (used by look_of + world.gd). Deliberately NOT here:
 # `map_image` (there is one world map now), `look_from` (the inherit-another-region's-look
@@ -305,20 +302,8 @@ static func by_id(id: String) -> Dictionary:
 static func index_of(id: String) -> int:
 	return Registry.index_of(all(), id)
 
-static func id_at(i: int) -> String:
-	return String(all()[i].get("id", ""))
-
 
 # --- Progression order (todo/roguelike-pivot.md) ------------------------------
-
-# How far through the game this region sits, from its AUTHORED `order` field. -1 for an
-# unknown id. Read this, never index_of(): array position is deliberately meaningless and
-# a reorder of the table above must not silently re-rank the game.
-static func order_of(id: String) -> int:
-	var region := by_id(id)
-	if region.is_empty():
-		return -1
-	return int(region.get("order", -1))
 
 
 # Every region sorted by `order`. The progression, in the order a player meets it.

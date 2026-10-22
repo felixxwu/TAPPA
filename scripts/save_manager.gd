@@ -655,7 +655,6 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 # (CarLibrary.apply_owned) so cars in existing profiles still resolve their engines.
 
 
-# Set a car's engine to engine_id, clearing the swap field when it matches stock.
 # --- Player settings (device/UI preferences, not progress) -------------------
 # A flat key->value bag under profile["settings"] for preferences like the chosen
 # mobile control scheme. Old profiles missing the key are backfilled on load
@@ -730,19 +729,6 @@ func add_lifetime_stat(id: String, amount: int = 1) -> void:
 		return
 	var stats: Dictionary = profile.get(KEY_LIFETIME, {})
 	stats[id] = int(stats.get(id, 0)) + amount
-	profile[KEY_LIFETIME] = stats
-	save()
-
-
-# Ratchet stat `id` up to max(current, value) — for a high-water-mark counter
-# (BEST_REGION_ORDER) rather than a running sum. A no-op when `value` would not
-# raise the stored value, so a repeat of an earlier achievement never regresses it
-# and never fires an unnecessary write.
-func raise_lifetime_stat(id: String, value: int) -> void:
-	var stats: Dictionary = profile.get(KEY_LIFETIME, {})
-	if value <= int(stats.get(id, 0)):
-		return
-	stats[id] = value
 	profile[KEY_LIFETIME] = stats
 	save()
 

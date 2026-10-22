@@ -935,8 +935,5 @@ are gone with it — there is no post-pivot reader left.
 ## Related config
 
 `terrain_layer{1,2,3}_{wavelength,amplitude}`, `terrain_tile_per_meter`. For the overworld:
-`overworld_edge_taper_m` / `overworld_edge_depth_m` (the coastline) and
-`overworld_pad_zone_radius_m` / `overworld_pad_garage_radius_m` / `overworld_pad_feather_m` /
-`overworld_pad_max_grade` / `overworld_pad_max_feather_m` (the flat pads — all five are baked, so
-retuning any of them re-warms the chunk cache). See
+`overworld_edge_taper_m` / `overworld_edge_depth_m` (the coastline). See
 [configuration.md](configuration.md).

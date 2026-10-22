@@ -649,9 +649,9 @@ which combines the lamps and scales by `headlight_amount`. Each has a
 normal-aware overload (`..., world_normal)`) that additionally multiplies in
 `smoothstep(-0.15, 0.4, dot(world_normal, to_light))`, floored rather than
 hard-clamped at zero so faceted low-poly bodywork doesn't step at facet edges
-near grazing angles. Car shaders (`ps1_models_lit`, `ps1_models_ghost`) use the
-normal-aware overload so a car's REAR panels — e.g. a rival ahead of the player,
-still geometrically inside the cone's angle/range — don't light up from behind;
+near grazing angles. The car shader (`ps1_models_lit`) uses the
+normal-aware overload so a car's REAR panels, still geometrically inside the
+cone's angle/range, don't light up from behind;
 every other includer uses the plain form. It is the ONE source of truth — the
 six shaders the headlights can fall on all `#include` it rather than restating
 the maths.
@@ -706,7 +706,7 @@ authored — a lower `headlights` value on that entry — never a shader change.
 | Shader | Stage | Why |
 |---|---|---|
 | `ps1_models` (terrain), `ps1_terrain_snow` | **fragment** | Terrain cells reach 25 m across at the coarsest LOD band, so a per-vertex cone would snap its soft edge to triangle boundaries. World position comes from `(INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz` — a mat4 multiply per fragment, accepted because `ps1_models` is banned from having a `vertex()` stage to hand one down. |
-| `ps1_models_lit` (cars, barriers, arch), `ps1_models_ghost` (faded rival) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. Both pass their world normal into the facing-aware overload, since the ghost duplicates the lit shader's vertex block verbatim and must reject backfaces identically or the rival's rear-panel glow would flicker as it crosses the alpha-1 threshold between the two shaders. |
+| `ps1_models_lit` (cars, barriers) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. Passes its world normal into the facing-aware overload so rear panels reject the cone. |
 | `billboard_opaque` (trees) | vertex | Folded into the existing `varying vec3 v_tint`, in **both** branches — the felled branch computes an ambient-only tint, so a knocked-over tree would otherwise sit unlit inside the pool. Cards are small, so per-vertex is visually identical. |
 | `tree_canopy` (bushes) | vertex + fragment | Had no lighting term at all, so it gets a new `varying float v_headlight`; `hl_color` is applied in the fragment so the varying stays scalar. |
 
@@ -942,46 +942,6 @@ shader sources) is covered by `test_render_smoke.gd` — see
 [testing.md](testing.md). There is no pixel-diff golden test: it only worked
 windowed and was chronically flaky, so the actual rendered look is not asserted
 pixel-for-pixel. Eyeball intentional look changes in the running app.
-
-### Flat ground planes (HQ apron / podium floor) — HISTORICAL
-
-`MeshUtil.feathered_ground_mesh(size, subdiv, pads, feather)` — a grass plane with
-rectangular tarmac `pads` cut into it, the tarmac weight written per vertex into
-`COLOR.a` and blended by the road-blend shader (`ps1_models.gdshader`,
-`blend_road = true`), the same treatment the generated track's verges get.
-
-The plane is **flat**, so the ONLY thing subdivision buys is resolution for the
-smoothstep feather band around the pad edges — a few metres of a 120–240 m plane.
-A uniform `(subdiv+1)²` grid therefore spends essentially all its vertices on
-nothing: the HQ ground alone used to be **58,081 verts / 115,200 tris**, drawn
-every frame on the 3D hub, the game's first screen at the time. With no lights, no shadows and
-a low virtual resolution, the game is vertex- and draw-call-bound, not
-fragment-bound, so that was the single largest vertex outlier in the project.
-
-The grid is now **non-uniform** (`MeshUtil._ground_grid_lines`). Per axis, the
-vertex lines are the union of
-
-- a **coarse** lattice of `subdiv` divisions across the whole plane, and
-- a **fine** lattice covering only the feather band either side of each pad edge
-  on that axis (step `feather/4`, spanning `feather*0.5` inside to `feather*1.25`
-  outside the edge), de-duplicated against the coarse lines.
-
-It stays a tensor-product grid (sorted x line-set × sorted z line-set), so the
-triangulation is unchanged and pad **corners** are covered too — a fine x line
-spans the full z extent. Net effect: the feather band is sampled *finer* than the
-old uniform grid managed, at ~3% of the vertices (HQ: 1,681 verts / 3,200 tris;
-podium floor: 2,337 / 4,480).
-
-`subdiv` is now only the coarse lattice, and both callers read it from
-`GameConfig.ground_subdiv_for(web, touch)` (`ground_subdiv` /
-`ground_subdiv_web_touch`) rather than hardcoding it. Both production callers
-(`HQEnvironment.build`, `podium.gd::_build_environment`) are deleted with the
-pivot, so the builder's live users are `tools/render_ground_feather.gd` and
-`test_mesh_util.gd` — kept because the non-uniform grid below is the pattern any
-future flat-ground host should reuse. Verification aid:
-`tools/render_ground_feather.gd` renders the apron and a podium pad with the old
-uniform grid and the new one (`docs/perf/ground_*.png`) so the band can be
-compared directly.
 
 > **The speed-lines rect is hidden below `VISIBLE_EPSILON`.** It used to stay `visible`
 > whenever `speed_lines_enabled`, so below `speed_lines_start_kmh` the shader still

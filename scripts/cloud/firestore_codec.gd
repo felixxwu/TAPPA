@@ -73,13 +73,6 @@ static func int_field(fields: Dictionary, key: String) -> int:
 	return String((wrapped as Dictionary).get("integerValue", "0")).to_int()
 
 
-static func bool_field(fields: Dictionary, key: String) -> bool:
-	var wrapped: Variant = fields.get(key, {})
-	if typeof(wrapped) != TYPE_DICTIONARY:
-		return false
-	return bool((wrapped as Dictionary).get("booleanValue", false))
-
-
 # Pull the "fields" dictionary out of a document response, or {} if absent.
 static func fields_of(doc: Variant) -> Dictionary:
 	if typeof(doc) != TYPE_DICTIONARY:

@@ -1,94 +1,34 @@
 # Lifetime stats
 
-**Source:** `scripts/lifetime_stats.gd` (`LifetimeStats`), `Save.add_lifetime_stat` / `raise_lifetime_stat` (`scripts/save_manager.gd`), and the free-roam writers (`WorldSession.light`, `free_roam.gd`); the stats page is `WorldPages.show_stats`.
+**Source:** `scripts/lifetime_stats.gd` (`LifetimeStats`), `Save.lifetime_stat` /
+`Save.add_lifetime_stat` (`scripts/save_manager.gd`), and the free-roam writers
+(`WorldSession.light`, `free_roam.gd`); the stats page is `WorldPages.show_stats`.
 
 **Tests:** `tests/headless/test_lifetime_stats.gd`
 
-Persistent counters that track a player's career across every run, region and
-challenge — never reset by a failed run (`todo/roguelike-pivot.md`, "Lifetime global
-stats"). They are what `skills.md (deleted)`'s unlock gates read: a skill stays
-locked until one of these counters crosses an authored threshold.
-
-Each entry carries a `goal` — the IMPERATIVE phrase a skill's unlock gate renders as
-(`LifetimeStats.goal_for(DAMAGE_TAKEN, 300)` → "take 300 damage"), distinct from the
-`label`, which is the STATS page's read-out name ("Damage taken"). A stat declared
-without a `goal` makes every skill gating on it fall back to the read-out form —
-`test_skill_library.gd -> test_every_unlock_stat_has_an_imperative_goal_phrase`
-catches that at the table level.
+Persistent counters that track a player's whole save. Nothing is gated on them
+(decision 22); they are a read-out on the map page's Stats view.
 
 ## The registry
 
-One authored dict, `LifetimeStats.STATS`, mirroring the RR original's
-`GLOBAL_STAT_DEFINITIONS` (`roguelike-rally/src/game/constants.ts`) and the "one
-registry, not parallel lists" rule that project's own `CLAUDE.md` states. Adding a
-stat is a one-place change: a new key in `STATS` (with a `const` id, a `label`, a
-`goal` and a `description`), added to `IDS`. Nothing else — the menu, the skill gates,
-and the save backfill all read this one table, never a duplicated id list.
+One authored dict, `LifetimeStats.STATS`. Adding a stat is a one-place change: a
+`const` id, a `STATS` entry (`label`, `description`) and an `IDS` entry.
 
-Every stat is persisted on `Save.profile[Save.KEY_LIFETIME]` (a `{stat_id: int}`
-dict), and **only ever grows**. Soft permadeath destroys a run — its stage progress,
-its picked boosts, the car's accrued damage — and never touches this ledger; that
-asymmetry is the whole point (mirrors the money/regions-cleared/boost-levels block
-`save_manager.gd`'s header comment already documents).
-
-## Two mutators, because not every stat is a running sum
-
-`Save` owns persistence (mirroring how `BoostLibrary` is content and `Save` owns
-`boost_level`/`buy_boost_level`):
+Every stat is persisted on `Save.profile[Save.KEY_LIFETIME]` (a `{stat_id: int}` dict)
+and **only ever grows**:
 
 - `Save.lifetime_stat(id) -> int` — read, defaulting to 0 for an unset id.
-- `Save.add_lifetime_stat(id, amount := 1)` — accumulate. A non-positive amount is a
-  no-op, the same guard `add_money` uses.
-- `Save.raise_lifetime_stat(id, value)` — ratchet a HIGH-WATER MARK up to
-  `max(current, value)`, never down. For a counter like "deepest region reached",
-  where a repeat visit must not read as new progress but the number must still obey
-  "only ever grows".
+- `Save.add_lifetime_stat(id, amount := 1)` — accumulate. A non-positive amount is a no-op.
 
 ## Which counters are wired, and where
 
-| Stat id | Wired? | Written at |
-| --- | --- | --- |
-| `stages_cleared` | yes | `RunSession.report_event_result`, on every stage that is not missed (region or challenge) |
-| `runs_started` | yes | `RunSession.begin()` — the one entry point both `RegionRunMode` and `ChallengeRunMode` pass through |
-| `runs_failed` | yes | `RunSession._finish_locally()`, when `_failed` is true — a challenge never sets this (its mode's `stage_failed` always returns false) |
-| `regions_cleared_total` | yes | `RegionRunMode.record_outcome()`, on every COMPLETED region run — repeats included (decision 12's grind valve), unlike the unique `Save.KEY_REGIONS_CLEARED` unlock ledger it sits beside |
-| `damage_taken` | yes | `RunSession.report_event_result`, alongside `Save.apply_damage`, rounded to the nearest whole HP |
-| `money_earned` | yes | `Save.add_money` — the ONE funnel every money source (stage payout, fast-completion bonus, a future challenge reward) already goes through |
-| `money_spent` | yes | `Save.spend_money` — the ONE funnel every purchase (car, boost level, engine-swap unlock, skill, drivetrain conversion) already goes through |
-| `best_region_order` | yes | `RegionRunMode.record_outcome()`, ratcheted via `raise_lifetime_stat` against `region_index()` |
-| `distance_driven_m` | yes | `RunSession.report_event_result`, from the offset `world.gd` snapshots at the finish crossing (`_event_distance_at_finish`). The odometer is `TrackProgress.progress_offset()` — a BEST-offset reading, so forward progress down the centreline counts and a reverse or a wander off it does not. Missed stages count too: the metres were driven either way |
+| Stat id | Written at |
+| --- | --- |
+| `distance_driven_m` | `free_roam.gd`'s odometer, every few seconds (teleports excluded) |
+| `rest_stops_lit` | `WorldSession.light()`, the first time a rest stop is lit |
+| `times_gave_up` | `free_roam.gd` on `RestStops.respawned` (the car hit 0 HP) |
 
-Writing at the shared funnel (`add_money`/`spend_money`) rather than at each payout
-or purchase site is deliberate: it means a future money source or shop sink is
-covered automatically, with nothing to remember to wire.
+`WorldPages.STATS_SHOWN` picks which of them the Stats view shows.
 
-## The menu
-
-`HubShell.View.STATS`, reached from `View.MAIN`'s "Lifetime stats" row. Pure
-read-out — `LifetimeStats.IDS` in table order, laid out TWO per row (a 2-wide `GridContainer`) so ten stats do not run the page too tall. **The
-menu-nav trap this page exists to avoid:** a page of nothing but read-only rows has
-nothing focusable at all if every row is a `Label` — `MenuNav` only walks focusable
-controls (`features/menu-navigation.md`). The page's Back action (a real `Button`,
-added via `HubShell._action`) is deliberately its only focusable control, so the page
-still satisfies CLAUDE.md's "every menu is keyboard + gamepad navigable" rule despite
-having nothing to choose.
-
-## Every id has a writer, and that is a rule
-
-There are no declared-but-unwritten stats left (`distance_driven_m` was the last, wired in
-stage 9 — decision 54). **If you add an id here, wire its writer in the same change:** an
-unwritten stat is a row on the Stats page pinned at zero forever, which a player reads as a
-broken counter rather than an unfinished feature.
-
-## Notes
-
-- These counters are read ONLY by the unlock gates. A skill's actual effect comes from
-  its `effect_fields` (`skills.md (deleted)` → "What each skill actually does"), never
-  from a lifetime stat, so a counter that stops moving weakens no equipped skill.
-
-## Free-roam stats
-
-`REST_STOPS_LIT` (written by `WorldSession.light`) and `TIMES_GAVE_UP` (written by free roam on
-a respawn) are free roam's own. `DISTANCE_DRIVEN_M` is fed by free roam's odometer too. The map
-page's Stats view shows these three (`WorldPages.STATS_SHOWN`). Nothing is gated on them any
-more (decision 22).
+**If you add an id, wire its writer in the same change:** an unwritten stat is a row
+pinned at zero forever, which a player reads as a broken counter.

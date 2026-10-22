@@ -136,12 +136,7 @@ const _NITROUS_HUE := 0.70
 # and fade out. _PACE_UPCOMING caps how many upcoming boards show; _PACE_SCROLL_SPEED
 # is the ease rate of the left-slide when a corner is passed.
 const _PACE_ICON := 54
-const _PACE_SLOT_W := 66
 const _PACE_TOP := 4.0
-const _PACE_UPCOMING := 3
-const _PACE_SCROLL_SPEED := 8.0
-const _PACE_DIM_STEP := 0.42
-const _PACE_DIM_FLOOR := 0.28
 
 # The top-centre pace/cut popups sit directly below the pacenote strip, so their top
 # edge is derived from the strip's bottom (_PACE_TOP + _PACE_ICON) plus a small gap —

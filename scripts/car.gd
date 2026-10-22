@@ -270,7 +270,6 @@ func end_replay() -> void:
 		drivetrain.replay_omega = {}
 
 
-
 func _ready() -> void:
 	# Default to the shared global config unless a spawner already handed this
 	# instance an isolated one (see `config` above / use_isolated_config).
@@ -360,8 +359,6 @@ func _ready() -> void:
 	exhaust_locals = cfg.exhaust_locals_for({})
 
 
-
-
 # First sibling exposing `method` (the Floor in the main scene; null on the flat
 # test fixtures). Shared by the terrain lookups below.
 func _sibling_with_method(method: String) -> Node:
@@ -435,7 +432,6 @@ func _apply_deep_snow_drag(cfg: GameConfig) -> void:
 			linear_velocity, angular_velocity, offset, c.road_weight, per_wheel)
 		if f != Vector3.ZERO:
 			apply_force(f, offset)
-
 
 
 # Axle midpoints for the downforce application points, classified the same way
@@ -1516,20 +1512,6 @@ static func _respawn_fresh(old_car: Node, spawn_xform: Transform3D) -> Node:
 static func respawn(old_car: Node, index: int, spawn_xform: Transform3D) -> Node:
 	var fresh := _respawn_fresh(old_car, spawn_xform)
 	fresh.apply_car(index)
-	return fresh
-
-
-# The `apply_owned` counterpart of `respawn` — same swap-by-re-instantiating
-# recipe, but fields the fresh body from a full OwnedCar dict (upgrades, tuning,
-# engine swap, HP) instead of a bare CarLibrary index. For a body that has
-# already simulated (driven, not fresh off the world-build `_field_car`), this
-# is the ONLY safe way to change which car it is — `apply_owned` in place on a
-# live body is exactly the "wheels relocated again and again" case the doc
-# comment above warns about (see `overworld_garage.gd`'s "Change Car" page,
-# which uses this rather than reshaping the driven car in place).
-static func respawn_owned(old_car: Node, owned: Dictionary, spawn_xform: Transform3D) -> Node:
-	var fresh := _respawn_fresh(old_car, spawn_xform)
-	fresh.apply_owned(owned)
 	return fresh
 
 

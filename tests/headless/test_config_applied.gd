@@ -232,10 +232,6 @@ func test_track_transition_cells_default() -> void:
 # minimal_world() deliberately zeroed part of it.
 
 const _PROMOTED_FIELDS := [
-	"overworld_fog_push_accel", "overworld_fog_hard_margin_m",
-	"overworld_fog_veil_alpha", "overworld_fog_veil_fade",
-	"hq_present_clearance_m", "hq_present_lid_rise",
-	"hq_present_open_time", "hq_present_wall_time",
 	"loading_max_fps", "loading_touch_max_fps",
 ]
 

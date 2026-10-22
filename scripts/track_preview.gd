@@ -34,15 +34,6 @@ func set_points(points: PackedVector2Array) -> void:
 	queue_redraw()
 
 
-# A road NETWORK: one entry per road, each a world-XZ polyline. Used by the overworld's
-# precompute screen, where the thing being built is a graph of roads between the rally pins
-# rather than a single stage centreline. Every road draws at full brightness — there is no
-# "carve progress" along a network, because the chunks (not the line) are what is progressing.
-func set_polylines(lines: Array[PackedVector2Array]) -> void:
-	_polylines = lines
-	queue_redraw()
-
-
 func set_carve_progress(fraction: float) -> void:
 	_carve_progress = clampf(fraction, 0.0, 1.0)
 	queue_redraw()

@@ -607,7 +607,6 @@ var weather_sun_mult := 1.0
 ## so the top end pays for the instant bottom-end response. 0 = no penalty.
 @export var supercharger_parasitic_coef := 0.0
 
-
 # Forced-induction predicates. These live HERE, next to the fields whose encoding they
 # interpret, because more than one layer needs the same answer: EngineSim gates the belt
 # sim on the first, and the HUD hides its boost bar on the second. The "a non-zero GAIN,
@@ -620,12 +619,10 @@ var weather_sun_mult := 1.0
 func has_supercharger_physics() -> bool:
 	return supercharger_boost_gain > 0.0
 
-
 ## Whether this engine makes boost at all, by either route — the question "is there a
 ## boost reading worth showing / simulating", not "which part is fitted".
 func has_forced_induction() -> bool:
 	return turbo_enabled or has_supercharger_physics()
-
 
 # --- Nitrous ------------------------------------------------------------------
 # A per-STAGE resource, not a permanent power level: the tank is refilled to full by
@@ -648,11 +645,6 @@ func has_forced_induction() -> bool:
 ## HUD gauge, the audio layer or the mobile button appear.
 func has_nitrous() -> bool:
 	return nitrous_boost_gain > 0.0 and nitrous_tank_seconds > 0.0
-## Seconds the HQ car-lineup preview holds the throttle when a car is highlighted:
-## a free-revving (neutral, no-load) EngineSim climbs for this long, then releases
-## and falls back to idle so the player hears each car's engine as they flick the
-## lineup. See scripts/car_preview_audio.gd + features/engine-audio.md.
-@export_range(0.0, 2.0) var preview_rev_hold_seconds := 0.5
 # --- Engine audio ---
 ## Master level of the engine voice, in decibels. Per-car, set from CarLibrary's
 ## volume_db; this value is the fallback default for cars that omit the key.
@@ -750,10 +742,6 @@ func has_nitrous() -> bool:
 
 @export_group("HUD")
 @export var hud_enabled := true  # on-screen speed readout
-## Show the in-run rally pacenote strip along the top of the screen: the current
-## turn (arrow + grade) with the upcoming turns queued, dimmer, to its right. Reads
-## left-to-right and slides left as each corner is passed. Mirrors hud_enabled.
-@export var hud_pacenotes_enabled := true
 
 @export_group("Music")
 ## Wall-clock gap (s) between processed frames above which we assume the main
@@ -815,79 +803,12 @@ func has_nitrous() -> bool:
 @export var start_orbit_radius := 7.0
 ## Orbit camera height (m) above the car it looks at.
 @export var start_orbit_height := 2.4
-## Seconds each half (out, then back) of the fade-to-black transition takes.
-@export var start_fade_seconds := 0.6
 ## Straight road (m) forced AHEAD of the start line on a staged run, so the car has
 ## road to drive off down.
 @export var start_lead_in_ahead_m := 22.0
 ## Straight road (m) extended BEHIND the start line on a staged run, so a staged
 ## player sits on paved road rather than the generated track's raw edge.
 @export var start_lead_in_behind_m := 30.0
-## Height (m) the start-line car is seated ABOVE the road at spawn, so it settles
-## onto its wheels instead of spawning clipped into the ground. Smaller than the
-## general drop-in spawn_clearance: at the line the road height is known, so a
-## gentle seat is enough.
-@export var start_spawn_clearance := 0.5
-## Field of view (degrees) of the start-line orbit camera during the reveal.
-@export_range(30.0, 120.0) var start_orbit_fov := 70.0
-## Grid gap (m) the rival ghost parks AHEAD of the player on the start line — one
-## car-plus slot down the lead-in, so the reveal camera frames it separately from
-## the player. (The pre-pivot grid queued its rivals BEHIND the line at this same
-## spacing; the one-rival revival parks ahead instead.)
-@export var start_queue_gap := 7.0
-## The DEPART roll-up (restored from the pre-pivot grid, which shuffled every
-## remaining car — player included — up a slot as each rival drove off): the player
-## is scripted from its staged slot onto the line while the rival departs, so the
-## pose at control-regain is the one the player just watched, not a hidden teleport.
-## These four shape the scripted roll: decel divisor for the v²/d brake-distance
-## model, brake margin (m) absorbs reaction lag, coast band (m) between full
-## throttle and the brake point, creep speed (m/s) below which the foot brake lifts
-## so the auto box does not grab reverse against the hold.
-@export var start_roll_decel_divisor := 28.0
-@export var start_roll_brake_margin_m := 0.25
-@export var start_roll_coast_band_m := 1.0
-@export var start_roll_creep_speed := 1.5
-## Safety bound (seconds) on the DEPART phase. The rival drives off the line under
-## REAL physics, so unlike the posed send-off it can spin, stall or hit something and
-## never reach start_lead_in_ahead_m; the phase ends anyway once this elapses, so a bad
-## launch can never strand the player on the start line with no countdown.
-@export var start_depart_timeout_seconds := 6.0
-## Seconds the fly from the orbit pose to the reveal shot takes.
-@export var start_reveal_fly_seconds := 1.2
-## The reveal shot: a low 3/4 in front of the rival on its grid slot — the eye sits
-## front (front_m), to its right (side_m) and above (height_m) in the rival's own
-## heading, looking back at it at look_height_m. Defaults carried over from the
-## deleted per-opponent reveal, whose shot this revives for the one ghost.
-@export var start_reveal_cam_front_m := 6.0
-@export var start_reveal_cam_side_m := 4.0
-@export var start_reveal_cam_height_m := 1.0
-@export var start_reveal_cam_look_height_m := 0.8
-## Field of view (degrees) the reveal shot settles on.
-@export_range(30.0, 120.0) var start_reveal_cam_fov := 55.0
-
-@export_group("Rival ghost")
-# The rival ghost's DISPLAY layer (features/rival-ghost.md) — the target-clock car
-# posed along the pace profile through the run. Restored with the pre-pivot
-# ghost_car.gd display stack; the pace itself is the profile, not config.
-## Base opacity of the rival ghost's translucent material overrides (0.1–1.0).
-@export_range(0.05, 1.0) var rival_ghost_opacity := 0.4
-## Distance (m) beyond which the ghost is culled entirely — a rendering budget, the
-## pose stays valid at any range.
-@export_range(50.0, 2000.0) var rival_ghost_visible_m := 400.0
-## Distance (m) at which the proximity fade reaches full opacity; inside it the
-## ghost fades toward invisible as the player closes in, so an overlapped ghost
-## can't fill the screen and hide the road. 0 disables the fade.
-@export_range(0.0, 60.0) var rival_ghost_fade_near_m := 14.0
-## Show the driver-name Label3D over the ghost.
-@export var rival_ghost_nametag_enabled := true
-## Height (m) of the nametag above the ghost's car.
-@export_range(0.5, 8.0) var rival_ghost_nametag_height_m := 2.2
-## Text size (m) of the nametag.
-@export_range(0.1, 3.0) var rival_ghost_nametag_size_m := 0.55
-## Multiplier on the curvature-derived slip yaw the ghost wears in corners.
-@export_range(0.0, 3.0) var rival_ghost_slip_scale := 1.0
-## Cap (degrees) on the ghost's slip yaw, so hairpins can't spin it sideways.
-@export_range(0.0, 90.0) var rival_ghost_max_slip_deg := 45.0
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
@@ -949,10 +870,7 @@ func has_nitrous() -> bool:
 @export_range(0.0, 5.0) var rest_stop_hold_s := 0.6
 ## Onlookers gathered at each rest stop (a static crowd along the back of its pad).
 @export_range(0, 60) var rest_stop_crowd_size := 14
-## HP regained per second while driving. A LIVE field, not an authoring knob: it is 0.0 on
-## the authored baseline (nothing heals by default) and the effects funnel writes it — the
-## "Self Healing" skill's EFFECTS row sets it from skill_heal_hp_per_s, and UpgradeLibrary's
-## reseed pre-pass puts it back to 0.0 the moment the skill is unequipped. Applied by
+## HP regained per second while driving; 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export_range(0.0, 50.0, 0.5) var damage_regen_hp_per_s := 0.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
@@ -995,15 +913,6 @@ func has_nitrous() -> bool:
 ## Per-wheel clamp on accumulated toe (radians) — a wheel can't bend past this no
 ## matter how many hits it takes, so a heavily-crashed car stays (barely) drivable.
 @export_range(0.0, 0.5) var damage_wheel_toe_max := 0.14
-## Between-event pit repairs (Save.field_repair): at the START of every rally event
-## after the first, the engineers patch the fielded car up a bit. This is the
-## fraction of the HP LOST so far that gets restored — 0.2 means a car at 50%
-## comes back to 60% (20% of the missing 50%). See features/damage.md.
-@export_range(0.0, 1.0) var field_repair_hp_fraction := 0.2
-## Between-event pit repairs: the fraction each wheel's misalignment is bent back
-## toward straight — 0.5 halves every wheel's toe (a wheel bent 4° comes back to 2°).
-## More generous than the HP patch so alignment recovers faster across a rally.
-@export_range(0.0, 1.0) var field_repair_toe_fraction := 0.5
 ## Soft contacts (bushes, spectators) are NOT solid-obstacle impacts: they stay
 ## pass-through (a per-tick proximity check, not a solid collider), but instead of a
 ## flat HP loss they now apply a small speed-scaled DRAG IMPULSE to the car — the
@@ -1203,41 +1112,6 @@ func has_nitrous() -> bool:
 ## NITROUS source: intensity added for as long as nitrous is DELIVERING, on top of the FOV punch
 ## (chase_fov_nitrous_boost). Flat, like that boost, and for the same reason.
 @export_range(0.0, 1.0) var shake_nitrous_gain := 0.25
-## Replay WHEEL shot: lateral clearance (m) kept OUTSIDE the target car's half-width
-## when mounting the onboard wheel-cam rig. The rig sits at (car half-width +
-## this margin) out from the body centreline, so it never lands inside — or right on
-## the surface of — a wide car's body mesh. See replay_camera.gd (Shot.WHEEL).
-@export_range(0.0, 1.0) var wheel_cam_lateral_clearance := 0.2
-## Replay WHEEL shot: fallback lateral offset (m) used only when the replay target
-## doesn't expose half_width() (e.g. a flat test fixture) — mirrors the old fixed rig
-## position so behaviour is unchanged for targets with no known body width.
-@export var wheel_cam_fallback_lateral := 0.95
-## Replay camera base FOV (degrees), used by the shots that sit at a FIXED offset from the
-## car (ORBIT / FLYBY / WHEEL) — their distance never changes, so they need no zoom
-## compensation. See replay_camera.gd (_target_fov).
-@export_range(30.0, 120.0) var replay_fov := 75.0
-## CONSTANT-SUBJECT-SIZE FRAMING — the replay ROADSIDE and HIGH_WIDE shots. Both watch the
-## car from a distance that changes a lot (the planted roadside cam sees it come from far
-## up the road, sweep past and shrink away; the high "helicopter" shot sits well back and
-## up), so instead of a fixed lens they pick their FOV from the current distance to keep the
-## car about the same size on screen — zoomed in when it's far, widening as it arrives.
-##
-## Nominal subject size (m) the framing aims to fit — roughly a car's length. Bigger =
-## every framed shot zooms in more (a bigger subject needs a longer lens to fit the same
-## share of the frame).
-@export_range(0.5, 20.0) var replay_frame_subject_size := 4.2
-## Share of the VIEWPORT HEIGHT that subject should span. Higher = tighter framing (the car
-## fills more of the screen); lower = looser.
-@export_range(0.02, 1.0) var replay_frame_screen_fraction := 0.32
-## Lens limits (degrees) for the framed shots: the long end (how far it may zoom in when the
-## car is distant) and the wide end (how wide it may open as the car sweeps past, where the
-## exact framing stops mattering because the car fills the frame regardless).
-@export_range(5.0, 120.0) var replay_frame_fov_min := 14.0
-@export_range(5.0, 120.0) var replay_frame_fov_max := 75.0
-## Easing rate for replay FOV changes (1 - exp(-rate*dt)); higher tracks the framing more
-## tightly, lower drifts behind it like a hand on a zoom rocker. A CUT (shot change or a
-## roadside re-plant) always snaps, never eases. 0 disables easing entirely (snap always).
-@export_range(0.0, 20.0) var replay_fov_smoothing := 5.0
 
 ## PHOTO MODE (features/camera.md) — the free-fly camera the pause menu opens with the
 ## world frozen. Fly speed in metres/second (WASD laterally, Ctrl/Shift for altitude);
@@ -1255,396 +1129,6 @@ func has_nitrous() -> bool:
 ## zooms IN (toward photo_fov_min), pinching together zooms out (toward photo_fov_max).
 @export_range(10.0, 90.0) var photo_fov_min := 20.0
 @export_range(10.0, 120.0) var photo_fov_max := 90.0
-
-@export_group("Menu / HQ")
-## Seconds the HQ menu camera takes to ease into framing the focused car
-## (todo/diegetic-hq.md). 0 snaps instantly.
-@export var menu_camera_move_time := 0.6
-## HQ menu camera position relative to the focused car (WORLD space — added to the
-## car's position). The parked cars face +Z (nose toward the courtyard / camera), so
-## a positive +Z offset sits the camera IN FRONT of the car looking back past it at
-## the garage (-Z), with a +X side-step + eye-height lift for a front-3/4 hero shot.
-@export var menu_camera_offset := Vector3(2.6, 1.5, 6.2)
-## Height (m) above the car's origin that the HQ menu camera looks at.
-@export var menu_camera_look_height := 0.7
-## Camera position (relative to the car, WORLD space) for the COSMETIC WHEEL view — the
-## solo car-park mode where the player tries wheels on (features/wheel-customization.md).
-## Replaces menu_camera_offset while that mode is open. Low and side-on (+X, small +Z) so
-## the settled car's flank and BOTH wheels fill the frame — wheels are judged by stance,
-## which is why this view uses the car park (car resting on its suspension) and not the
-## tuning lift (car raised off the ground).
-@export var hq_wheel_cam_offset := Vector3(6.4, 0.9, 0.6)
-## Height (m) above the car's origin the wheel-view camera looks at. Lower than
-## menu_camera_look_height so the shot sits at wheel height, not window height.
-@export var hq_wheel_cam_look_height := 0.45
-## Width (m) of one parking bay in the HQ car park — the spacing between parked cars
-## along the lot's X, and the period of the painted bay markings (_build_carpark).
-@export var menu_car_spacing := 3.4
-## Front-to-back depth (m) of a parking bay: the length of the painted bay surface
-## along Z, sized to comfortably hold a car parked nose-out toward the courtyard.
-@export var menu_carpark_bay_depth := 5.4
-## Number of painted parking bays in the car-park lot — i.e. how many cars show on
-## one PAGE of any car-park screen. The player's collection is unbounded; the car park
-## pages through it `carpark_page_size` at a time (see scripts/car_list.gd / hq.gd's
-## car park). NOT an ownership cap.
-@export var carpark_page_size := 10
-## Car-park lineup placement. The lot centre is shifted this far off the world centre
-## (m, along +X). The bays run as a centred row ALONG X at hq_carpark_origin, each car
-## parked nose-out toward the courtyard / camera (+Z) in its own painted bay, so the
-## front-3/4 menu camera frames the focused car with the garage behind it. The
-## exterior/title camera is shifted by the same offset so it stays centred on the row.
-@export var menu_car_park_offset := 0.0
-## Minimum horizontal pointer drag (px) in the car-park lineup for the
-## gesture to count as a SWIPE to the prev/next car (hq.gd _lineup_pointer_input).
-## Must also out-measure the vertical component so a sloppy vertical drag doesn't pan.
-@export var menu_swipe_min_px := 60.0
-## Maximum total pointer travel (px) between press and release for the gesture to
-## count as a TAP on a parked car (raycast pick + focus). Between this and
-## menu_swipe_min_px the gesture is neither and does nothing.
-@export var menu_tap_max_px := 14.0
-
-# --- Podium / reward-reveal sequence (podium.gd) ------------------------------
-## Height (m) of the 1st-place podium step; 2nd/3rd are scaled down from it.
-@export var podium_step_height := 0.9
-## Spacing (m) between the three podium steps (along X). The winner is centred.
-@export var podium_step_spacing := 3.6
-## Seconds the slot-machine reveal (car / upgrade) spins before locking onto the
-## won item. The Continue button is hidden until it finishes. 0 = instant.
-@export var podium_slot_spin_time := 2.2
-## Degrees/second the won car rotates on the showroom turntable in the reveal.
-@export var podium_showroom_spin_dps := 32.0
-## Half-size (m) of each square tarmac pad on the podium floor (one under the
-## podium, one under the showroom turntable). The rest of the floor is grass.
-@export var podium_tarmac_pad_half := 9.0
-## Width (m) of the grass↔tarmac feather band ramping each pad into the grass,
-## the same crossfade the generated road uses (shaders/ps1_models.gdshader).
-@export var podium_tarmac_feather_m := 3.0
-## Decorative trees scattered in a ring around the podium + showroom (visual
-## dressing only — no collision; skipped in headless test runs).
-@export var podium_scenery_tree_count := 40
-## Decorative bushes scattered on the grass around the podium + showroom.
-@export var podium_scenery_bush_count := 60
-## Roadside-style spectators standing in an arc facing the podium (+ a small
-## cluster at the showroom). Static dressing — no steering/ragdoll AI.
-@export var podium_spectator_count := 26
-## Seconds between each row appearing as the podium's ranked leaderboard fills in
-## top-to-bottom (Podium._reveal_standings / _reveal_stars — the star row uses the same
-## cadence). Deliberately its own field rather than sharing standings_reveal_step: the
-## podium reveals ONE list at a time, where the between-event standings screen stacks TWO
-## sections (stage + overall) and was given a shorter step so the whole reveal still lands
-## in about the same couple of seconds.
-@export var podium_reveal_step := 0.5
-## Seconds between each row appearing as the between-event standings screen's two stacked
-## leaderboards (stage result + overall) fill in (Standings._reveal_standings). See
-## podium_reveal_step for why the two screens keep separate fields.
-@export var standings_reveal_step := 0.3
-## Seconds between each earnings row appearing on the stage-complete screen
-## (world.gd._show_stage_reward) — the running "Total money" row updates by that row's
-## amount each time a new one is revealed.
-@export var stage_reward_reveal_step_s := 1.0
-## Inner / outer radius (m) of the tree+bush scatter ring around each focal area.
-@export var podium_scenery_ring_inner := 14.0
-@export var podium_scenery_ring_outer := 34.0
-
-# --- Diegetic HQ: one 3D space the camera flies through (todo/diegetic-hq.md).
-# Camera "stations" are an eye position + a look target (world space); the camera
-# tweens between them over menu_camera_move_time. The exterior is the boot/title
-# shot (block buildings + the car park); Start flies into the garage (the map table
-# + the tuning lift); tapping the table drops to a near-top-down view of the 3D map.
-## Exterior/title camera: eye, then look target, both given as OFFSETS from the first
-## (leftmost) parked car's ground position (see hq.gd _station_xform / _first_car_anchor).
-## A low, near-ground front-3/4 hero shot: sits just in front of (+Z) and beside the lead
-## car, ~45° off its front, looking diagonally down the line (+X) past it to reveal the
-## rest of the parked lineup. Anchoring to the first car keeps this framing as the centred
-## lineup grows and its leftmost car slides toward −X (more cars owned). Cars face +Z.
-@export var hq_exterior_cam_eye := Vector3(-4.5, 1, 4.5)
-@export var hq_exterior_cam_look := Vector3(3.0, 0, -1.0)
-## Garage interior camera (sees the map table + tuning lift).
-@export var hq_garage_cam_eye := Vector3(0.0, 4.6, 13.0)
-@export var hq_garage_cam_look := Vector3(0.0, 1.1, 0.0)
-## Map-table camera: a steep, near-top-down look down onto the table's 3D map, close
-## in so the map fills the screen; drag to pan across it (clamped to the map extents).
-## (Keep a small Z offset between eye and look so looking_at doesn't go degenerate at
-## a perfectly vertical angle.)
-@export var hq_table_cam_eye := Vector3(-3.0, 2.6, 0.4)
-@export var hq_table_cam_look := Vector3(-3.0, 0.95, -0.3)
-## Map-table drag gain. **1.0 means the map tracks the finger EXACTLY** — the drag delta is
-## measured by projecting the pointer onto the map plane (hq.gd `_map_drag_delta`), so there
-## is no metres-per-pixel constant to keep in step with the camera pose or the viewport size.
-## This is a deliberate multiplier on top of that, and anything other than 1.0 reintroduces
-## the bug it replaced: the map slides out from under the finger, so a pin you started the
-## drag beside is nowhere near it when you let go. Retune only with that in mind.
-@export_range(0.25, 4.0, 0.05) var hq_table_pan_gain := 1.0
-## Map-table keyboard/gamepad glide speed: world metres/second the camera slides while
-## a direction is held. Selection tracks whichever rally/arrow sits nearest the centre.
-@export var hq_table_pan_glide := 2.5
-## New-rally reveal (hq_table.gd `_run_reveal_sequence`): when rallies become enterable, the
-## map camera pans to each in turn and flips its pin from the locked to the unlocked look.
-## `pan_time` is the beat spent travelling/settling on a pin before it flips, `hold_time`
-## how long the revealed pin is held before moving on (a special gets a longer beat), and
-## `max_queue` caps how many pins one opening parades (the rest are banner'd as "+N more"
-## and marked seen anyway). Any input skips the whole queue. See features/menus.md.
-@export var hq_reveal_pan_time := 0.7
-@export var hq_reveal_hold_time := 1.1
-@export_range(1, 20) var hq_reveal_max_queue := 4
-## Where the car-park lineup sits (outside, in front of the garage). Cars row along X.
-@export var hq_carpark_origin := Vector3(0.0, 0.0, 26.0)
-# --- WORLD-SPACE MENUS -------------------------------------------------------
-# Everything tunable for the diegetic 3D menus lives in ONE run, in ONE inspector group, because
-# these values are tuned TOGETHER and against each other (a panel offset only makes sense next to
-# its station camera shift). See features/world-panel.md -> "Tuning it live" for the F8 loop, and
-# the framing harness that prints the exact corrections rather than making you guess.
-#
-# NOT MOVED HERE, on purpose: each station's BASE camera pose, because both the flat and the
-# world-space menus are framed by it, and filing it under "World-space menus" would misplace a value
-# that also controls the shipped game. They stay in "Menu / HQ" above/below:
-#   car park  menu_camera_offset / menu_camera_look_height
-#   lift      hq_lift_cam_eye / hq_lift_cam_look
-#   garage    hq_garage_cam_eye / hq_garage_cam_look        (also frames the challenge modal)
-#   table     hq_table_cam_eye / hq_table_cam_look          (also frames the rally detail)
-#   title     hq_exterior_cam_eye / hq_exterior_cam_look
-# The *_camera_look_shift / *_camera_eye_shift fields in THIS group are added to those poses and
-# apply only while world menus are on, which is why they belong here and the base poses do not.
-@export_group("World-space menus")
-## WORLD-SPACE MENUS (world_panel.gd, features/world-panel.md). While on, the car-park
-## overlay is hosted on a panel welded to the focused car's flank instead of on a flat
-## CanvasLayer over the frame. Off by default: this is the spike toggle, kept so the two
-## can be A/B'd in place. In a debug build it also flips live with the
-## `toggle_world_menus` action (F7) — same pattern as debug_wheel_forces / H.
-@export var world_space_menus := false
-## Where the car-park panel sits relative to the focused car, in the car MARKER's local
-## space. MIND THE SIGNS: lineup markers are built with `rotation.y = PI` so the car parks
-## nose-out toward the camera (hq_carpark.gd::_render_lineup_page), which flips X and Z
-## against the world — in this space **−Z is the car's nose** and **−X is the car's left**
-## (world +X, which is screen-right from the menu camera).
-##
-## The default puts the panel at the car's front-left corner, pushed forward and about one
-## `menu_car_spacing` to the left, so it stands IN FRONT OF the neighbouring car on that
-## side rather than on top of the focused one.
-@export var world_panel_car_offset := Vector3(-2.16, 2.1, -2.31)
-## Yaw about Y, in degrees, in that same marker space. 180 turns the panel to face the
-## camera side (world +Z), which makes its plane PERPENDICULAR TO THE CAR'S DIRECTION and
-## its width run ALONG THE ROW of parked cars. Note this is still read off-square: the menu
-## camera is a front-3/4 shot (menu_camera_offset), so the angle comes from the CAMERA's
-## pose, not from skewing the panel — which is the whole point of the design.
-@export_range(-180.0, 180.0) var world_panel_car_yaw_deg := 180.0
-## Panel height in metres; the width follows the 16:9 logical menu canvas. Pure look.
-@export_range(0.2, 8.0) var world_panel_height := 3.8
-## HOW BIG THE UI READS ON THE PANEL, independent of how big the panel is. The menu is
-## laid out on a canvas this many times SMALLER than the normal logical frame and then
-## scaled to fill the panel, so 2.0 makes every widget twice the size relative to the
-## panel. This — not world_panel_height — is the dial for "the menu is too small to read";
-## enlarging the panel scales the whole thing on screen, this scales the UI within it.
-## Trade-off: a smaller canvas FITS LESS, so pushed far enough a screen needs its content
-## trimmed or scrolled rather than just scaled up.
-@export_range(0.5, 4.0, 0.1) var world_panel_ui_scale := 1.8
-## Fallback (height_m, ui_scale) a WorldPanelHost builds its panel at when its station
-## supplies no `spec` Callable at all — every shipped station DOES supply one (reading its
-## own world_panel_*_height/*_ui_scale pair above), so this is a defensive default rather
-## than a live look value. WorldPanel's own constructor keeps separate DEFAULT_HEIGHT_M /
-## DEFAULT_UI_SCALE consts for its `_init` default parameters — GDScript default-argument
-## values must be compile-time constants, so they cannot read this config field directly —
-## but the runtime no-spec fallback path (WorldPanelHost._spec_now) reads THIS, not those,
-## so a designer retuning this field actually changes the one case it can affect.
-@export_range(0.2, 8.0) var world_panel_fallback_height := 2.2
-@export_range(0.5, 4.0, 0.1) var world_panel_fallback_ui_scale := 1.6
-## THE WHEEL-FITTING VIEW needs its own placement, because it is the one car-park mode that swaps the
-## CAMERA out from under the panel: CarparkMode.WHEELS uses a low SIDE-ON framing (hq_wheel_cam_offset)
-## so the settled car's flank and both wheels fill the frame, where every other mode uses the
-## front-3/4 menu_camera_offset. A panel welded for the front-3/4 shot is edge-on or off-frame in that
-## one, so the offset/yaw/height below replace the car-park values while it is open.
-##
-## Same marker space as world_panel_car_offset — signs are FLIPPED (−Z is the car's nose, −X its left).
-@export var world_panel_wheels_offset := Vector3(-2.2, 1.6, 0.4)
-@export_range(-180.0, 180.0) var world_panel_wheels_yaw_deg := 90.0
-@export_range(0.2, 8.0) var world_panel_wheels_height := 2.4
-## Added to the car park camera's LOOK TARGET while world-space menus are on, so the shot
-## pans over to fit the floating panel in frame. The camera's POSITION is deliberately left
-## alone (menu_camera_offset): moving the eye changes the whole composition and the
-## car's framing with it, where panning the aim just brings the panel into shot. +X aims
-## toward the panel's side (screen-right). Applied only in that mode, so the default flat
-## car-park framing is untouched by this feature.
-@export var world_panel_camera_look_shift := Vector3(2.1, 0.7, 0.0)
-## Added to the car park camera's EYE while world-space menus are on — the car-park counterpart of
-## world_panel_lift_camera_eye_shift. Prefer the LOOK shift above when it will do: panning the aim
-## brings the panel into frame from the same viewpoint, where moving the eye recomposes the whole shot
-## and moves the car within it. Reach for this when panning cannot solve it — most often because the
-## panel needs more DISTANCE (pull back on +Z) to stop overflowing the frame, or because something is
-## occluding it, which no aim change fixes.
-##
-## Applies to the standard lineup shot only, NOT the side-on wheel-fitting view (that mode swaps the
-## camera out entirely — see world_panel_wheels_offset).
-@export var world_panel_camera_eye_shift := Vector3(0.0, 0.0, 0.0)
-## THE TUNING LIFT's world panel (migration step 2). Its anchor is hq_lift_pos in WORLD
-## space — unlike the car park there is no per-car marker to hang off, so no axis flip
-## applies here: +X is world +X, and the lift car noses −Z. Yaw 180 keeps the car-park
-## convention (plane perpendicular to the car, width along the row).
-##
-## The garage is a MUCH tighter space than the open car park: the bay is enclosed and the
-## lift camera sits close, so this panel wants to be smaller and its shot nudged more than
-## the car park's. Expect to eyeball all four.
-## The z here is pulled back toward the garage rather than out toward the lift camera: the
-## bay camera sits only ~2.3 m off the bay, and at that range the panel's angular size is
-## most of the frame — a little more distance buys a lot of fit.
-##
-## X IS BOUNDED BY THE CAR. The car is centred on the lift at x=4 and is ~1.8 m wide, so the
-## panel's near edge must stay clear of x≈3.1 or it intersects the bodywork — the panel cannot
-## be centred on the lift, because the car is what's standing there. Shrinking
-## world_panel_lift_height is what buys room here: the aspect is fixed, so a shorter panel is
-## also narrower.
-##
-## THE SAME PLACEMENT AS THE CAR PARK — the car's FRONT-LEFT CORNER, just past the nose. The
-## lift car noses −Z and its left is −X (facing −Z with +Y up puts +X on its right), so that
-## corner is −Z and −X of the lift: this default sits ~0.5 m ahead of the nose and 2.2 m out to
-## the left, clear of the bodywork in both axes.
-##
-## Being ahead of the nose is what fixes the OCCLUSION, not just the framing: the car's nose
-## sits ~1.2 m from the bay camera, so the near car covers a wide wedge of screen and was
-## hiding a panel placed level with or behind it. Forward of the nose plus a pulled-back eye
-## (world_panel_lift_camera_eye_shift) is what separates the two.
-@export var world_panel_lift_offset := Vector3(-3.17, 1.39, -2.77)
-@export_range(-180.0, 180.0) var world_panel_lift_yaw_deg := 180.0
-## THE SIZE KNOB for this screen. A panel's on-screen size is its metre height over its distance from
-## the camera, and NOTHING else — ui_scale only changes how big the UI reads WITHIN the panel, and on
-## this screen it is already pinned at its ceiling (~1.77, set by the 401 px minimum width of the
-## Back / Upgrades / Tuning / Test Drive row, which cannot wrap). So if the lift menu looks small,
-## this is the value to raise; raising ui_scale does nothing.
-@export_range(0.2, 8.0) var world_panel_lift_height := 3.0
-## The lift gets its OWN ui_scale rather than sharing world_panel_ui_scale, because its
-## content is WIDER than the car park's: the selector row (‹ / name / › / Repair) and the hub
-## row (Back / Upgrades / Tuning / Test Drive) are HBoxes of buttons, and unlike a label an
-## HBox cannot wrap — so on too narrow a canvas the row simply runs off the panel's right edge
-## and "HEALTH 100%" / "TEST DRIVE" get cut in half. A lower scale = a WIDER canvas = the rows
-## fit. If this screen's rows grow again, this is the dial, not the panel size.
-@export_range(0.5, 4.0, 0.1) var world_panel_lift_ui_scale := 1.25
-## Pans the bay shot toward the panel, which stands off the lift car's −X side (as does the
-## map table, so one shift serves both). The eye is untouched — see _station_xform's LIFT
-## branch on why this pans rather than moves.
-##
-## THIS VALUE IS A BALANCE, not "as far as possible". The panel needs ~±27° of frame at this
-## range, against a horizontal half-FOV of roughly 54° (the 75° `fov` is VERTICAL; the
-## horizontal extent is much wider, which is why a panel that overhangs the frame vertically
-## can still fit across it). Aim much further −X and the panel centres up beautifully while
-## the CAR leaves the frame — on a screen whose entire job is tuning the car in front of you.
-##
-## Tuned WITH world_panel_lift_offset and the eye shift below, not independently. At the
-## current set the panel spans roughly −14°..+48° of frame and the car −17°..+3°, with the panel
-## much the nearer of the two — so it reads as standing in front of the car's front corner,
-## exactly as the car-park panel stands in front of its neighbour.
-@export var world_panel_lift_camera_look_shift := Vector3(-2.24, 0.2, -1.0)
-## Added to hq_lift_cam_eye while world menus are on — the ONE place a world panel moves the
-## camera's position rather than just its aim, and only because the bay is genuinely too tight
-## otherwise: the car's nose sits ~1.2 m from the eye, so it covers a wide wedge of screen and
-## no amount of panning stops it hiding a panel behind it. Pulling back shrinks the car's
-## angular size and buys room for both.
-##
-## −Z here moves AWAY from the garage (whose footprint starts at z=0, HQEnvironment._build_garage)
-## and out into the open, so pulling back does not push the camera through a wall. Going the
-## other way would.
-@export var world_panel_lift_camera_eye_shift := Vector3(0.0, 0.15, -1.4)
-
-## THE GARAGE AND TITLE PANELS.
-##
-## These four are anchored differently from the car park and lift, and the difference is
-## deliberate: rather than welding to a car and then panning the camera to find the panel
-## (which cost several tuning passes per station), each is placed relative to ITS STATION'S
-## EXISTING CAMERA LOOK TARGET, so it starts out already in shot and needs no camera shift at
-## all. `offset` is from that look target, in world axes.
-##
-## PITCH IS NEW HERE and is not decoration. The map-table camera sits ~1.8 m from the table
-## looking steeply DOWN at it (hq_table_cam_eye / _look), so an upright panel would be read
-## almost edge-on. A pitched panel lies back toward the camera — which also reads better: a
-## briefing sheet angled on the table rather than a screen standing on it.
-##
-## Each station gets its own HEIGHT because their camera distances differ enormously — the
-## garage shot is ~8 m out while the table camera is under 2 m, and the same panel size cannot
-## serve both. `ui_scale` stays the shared world_panel_ui_scale until a station proves it needs
-## its own (as the lift's unwrappable button rows did).
-@export var world_panel_garage_offset := Vector3(0.0, 2.29, 8.52)
-@export_range(-180.0, 180.0) var world_panel_garage_yaw_deg := 0.0
-@export_range(-90.0, 90.0) var world_panel_garage_pitch_deg := -15.0
-@export_range(0.2, 8.0) var world_panel_garage_height := 4.95
-## The garage gets its OWN ui_scale for the same reason the lift does: its content is a ROW OF
-## BUTTONS (Back / Career / Garage / Mystery Box / Online), and an HBox cannot wrap — so on too
-## narrow a canvas the row runs off the panel's right edge and the last button is cut in half
-## instead of reflowing. A LOWER scale gives a WIDER canvas and the row fits.
-##
-## Starts a little lower than the lift's 1.25 because this row is the longer of the two (up to five
-## buttons, since Mystery Box only appears when one is held — so the row's width CHANGES with save
-## state, and the value has to fit the widest case, not the one on screen when you tuned it).
-@export_range(0.5, 4.0, 0.1) var world_panel_garage_ui_scale := 1.15
-@export var world_panel_title_offset := Vector3(-5.9, 1.19, 4.32)
-@export_range(-180.0, 180.0) var world_panel_title_yaw_deg := -53.7
-@export_range(-90.0, 90.0) var world_panel_title_pitch_deg := -6.0
-@export_range(0.2, 8.0) var world_panel_title_height := 2.14
-## The title screen gets its own ui_scale for the same reason the lift and garage do: its content is
-## a ROW OF BUTTONS (Exit Game / Free Roam / Settings / Start) and an HBox cannot wrap, so on too
-## narrow a canvas the row runs off the panel's right edge — "START" was being cut in half. A LOWER
-## scale gives a WIDER canvas and the row fits. Note the row's width is PLATFORM-DEPENDENT: Exit Game
-## is skipped on web, so tune against the desktop (4-button) case, which is the wider one.
-## 1.0 gives a canvas the full 16:9 of the logical height — ~711 px wide against the real screen's
-## 618 (the anamorphic stretch narrows the screen, not this canvas), so the row has ~15% MORE room
-## here than it does flat. At 1.15 the canvas is exactly screen width, which left no headroom and
-## "START" was still being cut off.
-@export_range(0.5, 4.0, 0.1) var world_panel_title_ui_scale := 1.0
-
-@export_group("Menu / HQ")
-## Garage interior footprint (m): floor X/Z extent; walls + roof are built from it.
-@export var hq_garage_size := Vector2(14.0, 12.0)
-## Grey concrete apron under the garage + car park: centre (XZ) and size (X, Z). Laid
-## over the grass-textured ground so the lot reads as paved and the rest as field.
-@export var hq_concrete_center := Vector3(0.0, 0.0, 13.0)
-@export var hq_concrete_size := Vector2(48.0, 44.0)
-## Scenery scatter framing the HQ clearing (HQEnvironment._build_trees / _build_bushes):
-## how many billboard trees / bushes to seed in the annulus around the lot. Pure look —
-## bigger = a denser clearing (and more instances per HQ build). Tests trim these to keep
-## the many HQ scene builds cheap.
-@export_range(0, 1000) var hq_tree_count := 320
-@export_range(0, 1000) var hq_bush_count := 320
-## Map table: centre position and block size. (The 3D map plane that used to lie on its
-## top, the pin-selection radius, the reveal-link dashes, the fog mask and the
-## map_reveal_radius / map_hq_reveal_radius exploration radii are DELETED with the
-## diegetic HQ map and its reveal gate — RallyLibrary's "Map exploration: DELETED" note.)
-@export var hq_table_pos := Vector3(-3.0, 0.0, -0.2)
-@export var hq_table_size := Vector3(4.6, 0.9, 4.6)
-## Tuning lift: centre position + overall footprint (posts span this width; also
-## the pickable click volume).
-@export var hq_lift_pos := Vector3(4.0, 0.0, -1.0)
-@export var hq_lift_size := Vector3(3.0, 0.35, 3.0)
-## The raised beam the car actually rests on: spans the full lift width post to
-## post (X = hq_lift_size.x) but is short along the car's length (Z), so it tucks
-## into the gap between the front and rear wheels under the car.
-@export var hq_lift_platform_size := Vector3(3.0, 0.08, 1.2)
-## Height (m) the selected car is raised to on the lift (wheels hanging, as on a
-## real ramp). Above the platform top.
-@export var hq_lift_car_height := 1.3
-## Seconds the lift takes to raise/lower the car (the slow ramp animation). 0 snaps.
-@export var hq_lift_raise_time := 1.6
-## Tuning-lift camera: frames the raised car off to one side so the tuning menu
-## (anchored to the other side of the screen, hq.gd) doesn't cover the car. eye,
-## then look target — the look is offset toward +X of the car so it sits LEFT of
-## frame, leaving the right side clear for the menu panel.
-##
-## A FRONT THREE-QUARTER shot (it used to be the rear three-quarter). The lift car sits
-## at hq_lift_pos nosing −Z, so the eye moves round to −Z — in FRONT of the car — about
-## 35° off that nose axis, which shows the face and the near flank together. The front
-## is the readable end of a car: it carries the grille, lights and stance that say which
-## car this is, and the bay is where you choose one (the selector chevrons).
-##
-## It stays on the −X side because +X leaves only ~0.7 m to the garage's side wall, and
-## sits ~1.7 m clear of the back wall (garage is hq_garage_size, centred on origin). The
-## sight line passes OUTSIDE the front-left lift post (posts at
-## x = hq_lift_pos.x ± hq_lift_size.x/2, z = hq_lift_pos.z ± the same).
-@export var hq_lift_cam_eye := Vector3(1.75, 1.5, -4.3)
-@export var hq_lift_cam_look := Vector3(4.0, 1.0, -1.0)
-
-# The "Free Roam" export group (free_roam_straightness / free_roam_forestiness /
-# free_roam_tarmac_fraction / free_roam_water_level_min_m / free_roam_water_level_max_m /
-# free_roam_relief_min / free_roam_relief_max) is DELETED (todo/roguelike-pivot.md
-# decision 25 — "wheel customisation survives; free roam does not"). Its producer
-# (hq.gd::_prepare_free_roam) died with the diegetic hub in an earlier wave; these
-# fields were the last trace of it, orphaned since. Matching lines removed from
-# config/game_config.tres in the same change.
 
 @export_group("World")
 ## Built-in Environment glow (bloom). A mip-chain downsample/upsample blur, cheap on
@@ -2383,7 +1867,6 @@ func has_nitrous() -> bool:
 ## so skipping it is free frame time. Keep small — this is a cull threshold, not a look.
 @export_range(0.0, 0.5) var tire_mark_min_alpha := 0.03
 
-
 @export_group("Wheel Particles")
 ## Cheap debris flung from the driven wheels when they spin faster than the ground
 ## (features/wheel-dust.md). ONE MultiMesh of billboarded quads serves every
@@ -2438,7 +1921,6 @@ func has_nitrous() -> bool:
 ## cone (and grows with how hard the wheel is spinning).
 @export_range(0.0, 1.0) var wheel_particle_spread := 0.35
 
-
 @export_group("Engine Smoke")
 ## Grey smoke that puffs from the bonnet each time a damaged engine misfires
 ## (EngineSmoke, features/engine-smoke.md). Its own small MultiMesh pool, separate
@@ -2475,7 +1957,6 @@ func has_nitrous() -> bool:
 ## lightly-damaged car. A fully-healthy car never puffs.
 @export_range(0.05, 3.0) var engine_smoke_synthetic_interval_min := 0.35
 @export_range(0.1, 6.0) var engine_smoke_synthetic_interval_max := 1.4
-
 
 @export_group("Exhaust Flames")
 ## Master switch for the exhaust backfire flames (features/exhaust-flames.md). Off
@@ -2540,7 +2021,6 @@ func has_nitrous() -> bool:
 ## frame lerps between them along its length. Additive-blended, so these read as light.
 @export var exhaust_flame_color_hot := Color(1.0, 0.86, 0.45, 1.0)
 @export var exhaust_flame_color_cool := Color(1.0, 0.30, 0.06, 1.0)
-
 
 @export_group("Trees")
 ## Billboard tree sprites scattered around each track turn.
@@ -2661,7 +2141,6 @@ func has_nitrous() -> bool:
 ## billboard path has its own (`tree_billboard_aspect_jitter`).
 @export_range(0.0, 0.9) var region_tree_billboard_aspect_jitter := 0.15
 
-
 @export_group("Rocks")
 # Roadside boulders — low-poly Kenney meshes scattered like the bushes but WITH
 # collision. Density is per-region (RegionLibrary's `rock_density`), so only the
@@ -2723,7 +2202,6 @@ func has_nitrous() -> bool:
 ## rather than as a second object sitting on the stone.
 @export var rock_cap_color := Color(0.36, 0.40, 0.31)
 
-
 @export_group("Roadside Signs")
 # A-frame (wet-floor) roadside turn-arrow signs along the stage (todo/roadside-signs.md).
 # Few per stage (tens), so they are individual nodes, not a MultiMesh. Authored face
@@ -2732,45 +2210,10 @@ func has_nitrous() -> bool:
 ## Master switch for the roadside signs. The benchmark's signs toggle drives this
 ## (features/benchmark.md); normal play leaves it on.
 @export var signs_enabled := true
-## Number of equal arc-length sectors the stage is split into. No longer drives any
-## signs (sector boards were dropped); kept only as the stage timer's per-sector
-## split hook (SignLayout.sector_offsets, todo/stage-start-and-end.md §5).
-@export_range(1, 12) var sign_sector_count := 4
-## One A-frame panel's width (x) by height (y), in metres — thin near-square boards.
-@export var sign_panel_size_m := Vector2(1.2, 1.2)
-## Panel thickness, in metres.
-@export_range(0.005, 0.5) var sign_thickness_m := 0.05
-## Half-angle, in degrees, each panel tilts from vertical to form the A-frame splay.
-@export_range(0.0, 60.0) var sign_splay_deg := 20.0
-## How far inside the visible road edge the sign base sits, in metres — keeps the
-## footprint on the flat road surface rather than the sloped verge.
-@export_range(0.0, 3.0) var sign_edge_inset_m := 0.3
-## Collision/footprint depth along the road, in metres.
-@export_range(0.1, 3.0) var sign_base_depth_m := 0.8
-## Mass (kg) of a sign's knock-over body. Light so the car scatters it freely.
-## Signs deal no HP damage — they are cosmetic clutter, not obstacles.
-@export_range(0.1, 50.0) var sign_mass_kg := 3.0
-## Map of texture_key (e.g. "sector_2", "arrow_square_left") → res://textures/signs/*.png.
-## Empty leaves every sign on its per-kind colour fallback.
-@export var sign_textures: Dictionary = {}
 # Knock-over launch, mirroring the spectator ragdoll (todo/roadside-signs.md). On
 # contact the sign is masked off the car and flung along the car's travel direction
 # instead of colliding with it — a fake collision that lets it tumble on the terrain
 # without ever bogging the vehicle down.
-## Fraction of the car's speed imparted to a struck sign. The whole impulse scales
-## with car speed, so slowly nudging a sign barely moves it.
-@export_range(0.0, 3.0) var sign_knock_speed_factor := 1.0
-## Small lower clamp (m/s) on the launch speed, so a crawl still tips the sign rather
-## than nothing at all — kept low so slow contact stays gentle.
-@export_range(0.0, 20.0) var sign_knock_speed_min := 1.0
-## Upper clamp (m/s) on the launch speed, so a fast hit doesn't fling it absurdly far.
-@export_range(0.0, 60.0) var sign_knock_speed_max := 26.0
-## Upward lift as a FRACTION of the launch speed (not a fixed m/s), so the lift scales
-## with the car's speed: a slow hit stays low, a fast hit lofts the sign. ~0.35 ≈ 19° up.
-@export_range(0.0, 2.0) var sign_knock_lift_ratio := 0.35
-## Peak tumble spin (rad/s) at full launch speed; scaled down toward zero as the car
-## slows, so a gentle bump produces a gentle tumble.
-@export_range(0.0, 30.0) var sign_knock_spin := 11.0
 
 @export_group("Corner Barriers")
 # Solid crash barriers along the OUTSIDE of the stage's sharp corners
@@ -2819,20 +2262,6 @@ func has_nitrous() -> bool:
 ## on the verge rather than as a barrier, so stretches shorter than this are dropped.
 @export_range(1, 20) var barrier_min_run_modules := 3
 
-@export_group("Finish Arch")
-# The inflatable rally gates straddling the road (features/finish-arch.md): a
-# FINISH arch at the centerline end (100% progress, so crossing it ends the
-# stage) and a matching START arch at the car's start line. Placed by world.gd.
-## Whether to build the finish arch at the end of the stage.
-@export var finish_arch_enabled := true
-## Whether to build the start arch at the start line.
-@export var start_arch_enabled := true
-## Clear gap, in metres, between each road edge and the inside face of a leg.
-## An arch's opening = track_width + 2 x this, so the legs stand clear of the
-## road and the car drives through cleanly. Shared by both gates.
-@export_range(0.0, 6.0) var finish_arch_road_margin_m := 1.5
-
-
 @export_group("Spectators")
 # Crowds of low-poly people trackside that react to the car (todo/roadside-spectators.md):
 # one group at the start, one at the end, and one at a random mid-stage point. While
@@ -2851,9 +2280,6 @@ func has_nitrous() -> bool:
 ## Total width (m) of the crowd band across the track. It straddles the road centre,
 ## so the carriageway stays clear and spectators line BOTH verges.
 @export_range(2.0, 60.0) var spectator_area_width_m := 24.0
-## Extra gap (m) kept off the carriageway when placing — road footprint is inflated
-## by this before rejecting standing positions on it.
-@export_range(0.0, 10.0) var spectator_road_margin_m := 1.0
 ## Minimum comfortable spacing (m) between neighbours — initial placement and the
 ## separation steering both use it. ("Don't like being too close.")
 @export_range(0.1, 5.0) var spectator_separation_m := 0.5
@@ -2901,33 +2327,6 @@ func has_nitrous() -> bool:
 ## Distance (m) behind the car at which a settled ragdoll is freed.
 @export_range(10.0, 300.0) var spectator_despawn_behind_m := 70.0
 
-
-@export_group("Star Economy")
-## Stars: what a REPAIR costs (features/star-economy.md). Flat, whatever the damage —
-## one star returns a car to full health and straightens its wheels.
-##
-## Deliberately CHEAP. Repair is a ritual and a small tax, not an economic wall: the real
-## cost of wrecking is the lost rally result (a DNF, no podium, no progress), and pricing
-## the repair steeply would punish the same mistake twice. Flat rather than per-HP so the
-## player never has to arithmetic their way to "is it worth fixing".
-@export_range(0, 30) var star_cost_per_repair := 1
-## Stars: what a COPY of an already-discovered upgrade part costs, fitted to another car.
-##
-## Upgrades are car-bound, so this is the sink that spreads a part you won once across the
-## garage — and being per-car-per-part it is effectively bottomless, which is what stops a
-## late-game star balance becoming dead weight. The first copy is free: it is fitted to the
-## car that won the part-unlock rally (features/prize-rallies.md).
-@export_range(0, 30) var star_cost_per_part := 2
-## Stars: what converting ONE car to ONE non-stock drive layout costs (RWD/AWD/FWD).
-##
-## The conversion CAPABILITY is global — won once, on the rally gating `drivetrain_swap`,
-## and available to every car from then on. This is the per-car, per-layout bill, and it is
-## paid once: a layout a car has bought is free to switch back to thereafter, exactly as a
-## bought part is free to toggle. Returning to the car's own stock layout is always free and
-## never charged. See features/upgrade-catalogue.md.
-@export_range(0, 30) var star_cost_per_drive_mode := 2
-
-
 @export_group("Performance")
 ## Render frame cap (FPS) on desktop targets. 0 = uncapped. Physics runs
 ## independently at the project physics tick. Mobile uses target_fps_mobile and
@@ -2969,18 +2368,6 @@ func has_nitrous() -> bool:
 ## Changing this changes the generator buffer frame counts — re-check the
 ## benchmark's skip_count() after. See engine_audio.gd's MIX_RATE.
 @export_range(8000.0, 48000.0) var engine_mix_rate_web_touch := 22050.0
-
-## Ground-plane subdivision for the HQ apron and the podium floor. These are flat
-## planes whose only per-vertex variation is the tarmac feather weight, so the
-## subdivision buys nothing except feather-band resolution. The mesh is now a
-## non-uniform grid (coarse lattice + a fine ring around each pad edge), so this is
-## the COARSE lattice density only — the feather band is sampled finely regardless.
-## At the old uniform 240 the HQ ground alone was ~115k triangles, drawn continuously
-## on the game's first screen; at 24 it is ~3.2k with a finer feather band.
-@export_range(8, 512) var ground_subdiv := 24
-## Ground-plane subdivision on a web TOUCH device. Widen the tarmac feather
-## slightly if the band reads too hard at the lower resolution.
-@export_range(8, 512) var ground_subdiv_web_touch := 16
 
 ## Terrain LOD far-cutoff distances (metres), one per level boundary — the
 ## coarsest level draws to the ring edge with no cutoff, so this has (levels - 1)
@@ -3046,7 +2433,6 @@ func has_nitrous() -> bool:
 ## (prebake) the detail queue stays empty, so this is the escape-hatch path's knob.
 @export_range(1, 16) var terrain_detail_builds_per_frame := 1
 
-
 # --- Value snapshots (the live config's IDENTITY is load-bearing) -------------
 #
 # The active car — plus its Drivetrain and EngineSim — holds the live GameConfig BY
@@ -3077,7 +2463,6 @@ func apply_environment(env: Environment) -> void:
 	env.glow_bloom = glow_bloom
 	env.glow_hdr_threshold = glow_hdr_threshold
 
-
 ## Every script variable on this config as a { property_name: value } map. Arrays and
 ## dictionaries are deep-copied, so the snapshot never shares mutable state with the live
 ## object. Pair with restore_values().
@@ -3092,7 +2477,6 @@ func snapshot_values() -> Dictionary:
 		snap[prop["name"]] = value
 	return snap
 
-
 ## Copy a snapshot_values() map back onto THIS config, in place — never reassign the
 ## object the rest of the game is holding (see the note above). Arrays/dicts are
 ## duplicated again so the live config doesn't start sharing state with the snapshot.
@@ -3103,10 +2487,6 @@ func restore_values(snapshot: Dictionary) -> void:
 			value = value.duplicate(true)
 		set(prop_name, value)
 
-
-# Per-axle spring rate: the overall suspension_stiffness split front/rear by the
-# static weight fraction, so each axle's rate is proportional to the load it carries
-# and the car sits LEVEL at rest (compression = load / rate is then equal front and
 # Frame cap to apply for the current target: a web TOUCH device (phone/tablet
 # browser) gets its own ceiling (target_fps_web, kept lower but audio-bounded —
 # see the field); native mobile the thermal ceiling (target_fps_mobile); desktop
@@ -3119,7 +2499,6 @@ func target_fps_for(mobile_or_web: bool, web: bool = false, touch: bool = true) 
 		return target_fps_web if touch else target_fps
 	return target_fps_mobile if mobile_or_web else target_fps
 
-
 # Foliage/world-prop cull distance for the current target: a web TOUCH device
 # (phone/tablet browser — the same low-end target as target_fps_web) gets the
 # shorter tree_render_distance_web_touch_m; every other target (native mobile,
@@ -3128,13 +2507,11 @@ func target_fps_for(mobile_or_web: bool, web: bool = false, touch: bool = true) 
 func tree_render_distance_for(web: bool, touch: bool) -> float:
 	return tree_render_distance_web_touch_m if (web and touch) else tree_render_distance_m
 
-
 # Terrain LOD bands for the current target, split the same way as the render
 # distance above: web-touch gets the tighter terrain_lod_bands_web_touch_m, all
 # other targets the higher-quality terrain_lod_bands_m.
 func terrain_lod_bands_for(web: bool, touch: bool) -> PackedFloat32Array:
 	return terrain_lod_bands_web_touch_m if (web and touch) else terrain_lod_bands_m
-
 
 # Engine-synth mix rate for the current target, split the same way: a web TOUCH
 # device gets engine_mix_rate_web_touch, every other target the full rate. Pure
@@ -3142,39 +2519,22 @@ func terrain_lod_bands_for(web: bool, touch: bool) -> PackedFloat32Array:
 func engine_mix_rate_for(web: bool, touch: bool, full_rate: float) -> float:
 	return engine_mix_rate_web_touch if (web and touch) else full_rate
 
-
 # Tire-mark segment spacing for the current target, split the same way.
 func tire_mark_segment_step_for(web: bool, touch: bool) -> float:
 	return tire_mark_segment_step_m_web_touch if (web and touch) else tire_mark_segment_step_m
 
-
-# Flat-ground subdivision (HQ apron / podium floor) for the current target.
-func ground_subdiv_for(web: bool, touch: bool) -> int:
-	return ground_subdiv_web_touch if (web and touch) else ground_subdiv
-
-
-# Whether the on-disk overworld terrain cache may be used for the current target:
-# the authored overworld_cache_enabled AND not web. On web, user:// is IndexedDB
-# backed, shares its quota with profile.json, and there is no quota detection — a
-# ~83 MB terrain cache there risks taking the player's save down with it, so the
-# cache is off on EVERY browser (desktop included), hence `touch` is accepted for
-# signature parity with the other per-target accessors but never consulted.
-# Pure so the overworld resolves it once at entry and tests can pin either branch.
-func overworld_cache_active_for(web: bool, _touch: bool) -> bool:
-	return overworld_cache_enabled and not web
-
-
+# Per-axle spring rate: the overall suspension_stiffness split front/rear by the
+# static weight fraction, so each axle's rate is proportional to the load it carries
+# and the car sits LEVEL at rest (compression = load / rate is then equal front and
 # rear). The 2x keeps the fleet-average rate at suspension_stiffness — a 50/50 car
 # gets the base rate on both axles (unchanged), a nose-heavy car a stiffer front.
 func axle_stiffness(front: bool) -> float:
 	return suspension_stiffness * 2.0 * (weight_front if front else 1.0 - weight_front)
 
-
 # Per-axle spring travel / rest length; a 0 override inherits suspension_travel.
 func axle_travel(front: bool) -> float:
 	var t: float = suspension_travel_front if front else suspension_travel_rear
 	return t if t > 0.0 else suspension_travel
-
 
 # Tyre load-sensitivity multiplier on a tyre's compound μ. Real tyre grip is NOT the
 # textbook load-independent μN: the effective μ falls as the load pressed through the
@@ -3191,7 +2551,6 @@ func tire_load_factor(normal_force: float, width: float) -> float:
 	var pressure := normal_force / width
 	return pow(tire_ref_pressure / pressure, tire_load_sensitivity)
 
-
 # Critically damped for the spring rate. Godot scales each wheel's
 # mass-normalized spring/damper by the full chassis mass, so with 4 wheels the
 # bounce mode is x'' + 4c x' + 4k x = 0 and per-wheel critical damping is
@@ -3201,11 +2560,9 @@ func tire_load_factor(normal_force: float, width: float) -> float:
 func suspension_damping_compression(stiffness := -1.0) -> float:
 	return sqrt(stiffness if stiffness >= 0.0 else suspension_stiffness)
 
-
 # Rebound damper runs 1.5x the compression value for stability.
 func suspension_damping_relaxation(stiffness := -1.0) -> float:
 	return 1.5 * suspension_damping_compression(stiffness)
-
 
 # Firing angles normalized to the 0..1 crank cycle (720° four-stroke). When
 # engine_firing_angles is empty, derive even spacing from engine_cylinders so
@@ -3221,7 +2578,6 @@ func engine_firing_phases() -> Array[float]:
 		out.append(fposmod(angle / 720.0, 1.0))
 	return out
 
-
 # The terrain layers as (wavelength, amplitude) pairs, for terrain generation.
 func terrain_layers() -> Array[Vector2]:
 	return [
@@ -3229,18 +2585,6 @@ func terrain_layers() -> Array[Vector2]:
 		Vector2(terrain_layer2_wavelength, terrain_layer2_amplitude),
 		Vector2(terrain_layer3_wavelength, terrain_layer3_amplitude),
 	]
-
-
-# The OVERWORLD's height layers, same (wavelength, amplitude) shape as terrain_layers() so a
-# consumer can swap one for the other. Every hub height path must use this one; see the
-# "Overworld terrain NOISE" block for why the hub does not share the stage values.
-func overworld_terrain_layers() -> Array[Vector2]:
-	return [
-		Vector2(overworld_terrain_layer1_wavelength, overworld_terrain_layer1_amplitude),
-		Vector2(overworld_terrain_layer2_wavelength, overworld_terrain_layer2_amplitude),
-		Vector2(overworld_terrain_layer3_wavelength, overworld_terrain_layer3_amplitude),
-	]
-
 
 # Push every ps1_post_process.gdshader uniform onto a post-process material —
 # the dither grid plus the whole colour grade. Shared by BOTH hosts of that pass
@@ -3257,7 +2601,6 @@ func apply_post_process(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("grade_highlight_tint", grade_highlight_tint)
 	mat.set_shader_parameter("grade_vignette_strength", grade_vignette_strength)
 	mat.set_shader_parameter("grade_vignette_radius", grade_vignette_radius)
-
 
 # Push the fake car-lighting uniforms onto a ps1_models.gdshader material. Used
 # for every lit car mesh (chassis/cabin/wheels in world.gd, the MX-5 body in
@@ -3276,7 +2619,6 @@ func weather_lit(col: Color) -> Color:
 	return Color(col.r * weather_sun_mult, col.g * weather_sun_mult,
 		col.b * weather_sun_mult, col.a)
 
-
 # Whether the ground under this stage is SNOW rather than dirt with snow painted on.
 # Derived from the deep-snow block StageConfig.apply_event_config seats off the
 # region, which is 0.0 for every region that authors none — so this is exactly "the
@@ -3284,7 +2626,6 @@ func weather_lit(col: Color) -> Color:
 # `frozen_water_grip > 0.0` gate the drivetrain already uses for ice.
 func ground_is_snow() -> bool:
 	return deep_snow_depth_m > 0.0
-
 
 # Car-local exhaust pipe placements for a car spec (features/exhaust-flames.md) — one
 # entry per exit, so a single-exit car gets one and a quad-exit car four.
@@ -3328,7 +2669,6 @@ func exhaust_locals_for(spec: Dictionary) -> PackedVector4Array:
 		Vector4(-absf(exhaust_offset_fallback.x), exhaust_offset_fallback.y, z, 0.0),
 	])
 
-
 # THE ONE PLACE THAT KNOWS THE SURFACE-TYRE RULE, shared by the live physics
 # (Drivetrain.surface_tire_params) and the lap-time model (LapTimeModel._surface_grip)
 # so the AI field can never diverge from the car the player is actually driving.
@@ -3353,7 +2693,6 @@ static func tire_surface_mult_for(source, ctx: Dictionary) -> float:
 			continue
 		out *= lerpf(1.0, _tire_axis_value(source, String(axis["field"])), w)
 	return out
-
 
 # THE STAGE CONTEXT every channel rule reads from. Fills `ctx` IN PLACE and returns it, so
 # the per-wheel physics path can own one scratch Dictionary and allocate nothing per tick.
@@ -3382,7 +2721,6 @@ static func fill_tire_context(ctx: Dictionary, tarmac_weight: float, snowy: bool
 	ctx["is_wet"] = WeatherLibrary.is_wet(weather)
 	return ctx
 
-
 # How much of each channel this contact is on, read off the stage context. One arm per
 # registered channel; the exclusivity between them lives here, in one place.
 #
@@ -3409,7 +2747,6 @@ static func _channel_weight(channel: String, ctx: Dictionary) -> float:
 	push_error("GameConfig.TIRE_SURFACE_AXES uses channel '%s', which _channel_weight has no rule for." % channel)
 	return NAN
 
-
 # One axis's live multiplier. `source` is either a GameConfig (the player's car, after
 # the upgrade pipeline has written it) or a car_meta Dictionary (a rival's, which may not
 # be the player's car at all); absent reads as the 1.0 identity, which is what makes the
@@ -3425,7 +2762,6 @@ static func _tire_axis_value(source, field: String) -> float:
 		return 1.0
 	return float(v)
 
-
 # Two-axis compatibility shim over tire_surface_mult_for, kept because tests call this
 # arity directly. Production code goes through tire_surface_mult_for so that widening
 # TIRE_SURFACE_AXES needs no signature change anywhere — this shim deliberately sees
@@ -3437,7 +2773,6 @@ static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
 		"tire_tarmac_grip_mult": tarmac_mult,
 	}, fill_tire_context({}, tarmac_weight, snowy, StageFields.WEATHER_DRY))
 
-
 func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("light_amount", car_light_amount)
 	mat.set_shader_parameter("light_dir", sun_direction)
@@ -3446,7 +2781,6 @@ func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("sun_color", weather_lit(sun_color))
 	mat.set_shader_parameter("sky_color", weather_lit(sky_color))
 	mat.set_shader_parameter("ground_color", ground_color)
-
 
 # The same fake sun/ambient block for FOLIAGE billboards (billboard_opaque.gdshader).
 # Mirrors apply_car_light so trees sit in the same light as the ground and the car —
@@ -3459,7 +2793,6 @@ func apply_foliage_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("ground_color", ground_color)
 	mat.set_shader_parameter("light_amount", foliage_light_amount)
 
-
 # Push the shared sun/ambient values + the terrain amount onto a TerrainManager,
 # which bakes them into vertex colours when chunks generate. Call BEFORE the
 # initial terrain build so the shading is baked into the first chunks.
@@ -3469,7 +2802,6 @@ func apply_terrain_light(tm: TerrainManager) -> void:
 	tm.sun_color = sun_color
 	tm.sky_color = sky_color
 	tm.ground_color = ground_color
-
 
 # Push the terrain LOD tunables onto the manager BEFORE the corridor precompute
 # (the LOD meshes + skirt are prebaked in cache_chunk from lod_skirt_m) and the
@@ -3482,7 +2814,6 @@ func apply_terrain_lod(tm: TerrainManager) -> void:
 	tm.precompute_safety_slack_m = terrain_precompute_safety_slack_m
 	tm.lazy_finest_lod = terrain_lazy_finest_lod
 	tm.detail_builds_per_frame = terrain_detail_builds_per_frame
-
 
 # Push the Cliffs group onto the terrain manager before bake_track (mirrors
 # apply_terrain_light). cliff_seed derives the camber noise from the stage's
@@ -3498,7 +2829,6 @@ func apply_cliffs(tm: TerrainManager) -> void:
 	tm.cliff_amount = cliff_amount
 	tm.cliff_seed = track_seed
 
-
 # The scalar tree-scatter knobs packed into the Dictionary TreeScatter.scatter
 # expects. tree_size_m is rendering-only and passed separately to BillboardField.
 func tree_params() -> Dictionary:
@@ -3507,7 +2837,6 @@ func tree_params() -> Dictionary:
 		"spawn_radius_m": tree_spawn_radius_m,
 		"jitter": tree_jitter,
 	}
-
 
 # The same packing for the ROCK scatter. `density` is the region's rock_density
 # multiplier (RegionLibrary), applied to the base count here rather than in world.gd
@@ -3526,36 +2855,6 @@ func rock_params(density := 1.0) -> Dictionary:
 		"spawn_radius_m": rock_spawn_radius_m,
 		"jitter": rock_jitter,
 	}
-
-
-# Render/build inputs for SignField.build (§3): how each placed sign looks and
-# where it sits relative to the road edge.
-func sign_render_params() -> Dictionary:
-	return {
-		"panel_size_m": sign_panel_size_m,
-		"thickness_m": sign_thickness_m,
-		"splay_deg": sign_splay_deg,
-		"edge_inset_m": sign_edge_inset_m,
-		"base_depth_m": sign_base_depth_m,
-		"mass_kg": sign_mass_kg,
-		"textures": sign_textures,
-		"track_width": track_width,
-		"knock_speed_factor": sign_knock_speed_factor,
-		"knock_speed_min": sign_knock_speed_min,
-		"knock_speed_max": sign_knock_speed_max,
-		"knock_lift_ratio": sign_knock_lift_ratio,
-		"knock_spin": sign_knock_spin,
-		# Structural (mirrors the spectator ragdoll): the sign lives on its own layer,
-		# off the car's mask, and only masks the world layer (terrain + trees). The car
-		# shares the world layer, so SignField also adds an explicit exception on contact.
-		"knock_layer": 1 << 4,
-		"knock_mask": 1,
-		# Shared world-prop render distance (same field foliage uses) so resting signs
-		# cull at the same range as the trees/spectators. See MeshUtil.apply_visibility_range.
-		"render_distance_m": tree_render_distance_m,
-		"render_fade_m": tree_render_fade_m,
-	}
-
 
 # Everything BarrierLayout.plan + BarrierField.build need (features/barriers.md).
 # `track_width` and the shared world-prop render distance come along so the barrier
@@ -3576,39 +2875,6 @@ func barrier_render_params() -> Dictionary:
 		"render_fade_m": tree_render_fade_m,
 	}
 
-
-# The scalar knobs CoinLayout.plan expects (features/collectables.md). Kept apart
-# from coin_render_params below exactly like tree_params/rock_params vs
-# sign_render_params/barrier_render_params — placement inputs vs. build/look inputs.
-func coin_layout_params() -> Dictionary:
-	return {
-		"count": coins_per_stage,
-		"lane_inner_frac": coin_lane_inner_frac,
-		"lane_spread_frac": coin_lane_spread_frac,
-		"start_margin_m": coin_start_margin_m,
-		"end_margin_m": coin_end_margin_m,
-	}
-
-
-# Everything CoinField.build needs to render + sound a stage's coins. Deliberately
-# does NOT include coin_pickup_radius_m — CoinField reads that live, every tick, so
-# the later coin_magnet skill pass has one number to widen (see that field's comment).
-func coin_render_params() -> Dictionary:
-	return {
-		"radius_m": coin_visual_radius_m,
-		"thickness_m": coin_visual_thickness_m,
-		"hover_m": coin_hover_m,
-		"color": coin_color,
-		"pickup_sfx_freq_hz": coin_pickup_sfx_freq_hz,
-		"pickup_sfx_duration_sec": coin_pickup_sfx_duration_sec,
-		"render_distance_m": tree_render_distance_m,
-		"render_fade_m": tree_render_fade_m,
-		"spin_deg_per_sec": coin_spin_deg_per_sec,
-		"bob_speed": coin_bob_speed,
-		"bob_amplitude_m": coin_bob_amplitude_m,
-	}
-
-
 # Everything SpectatorGroup.setup needs (todo/roadside-spectators.md). The collision
 # bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
 # the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
@@ -3626,7 +2892,6 @@ func road_marking_params() -> Dictionary:
 		"tarmac_threshold": road_marking_tarmac_threshold,
 		"sample_step_m": road_marking_sample_step_m,
 	}
-
 
 func spectator_params() -> Dictionary:
 	return {
@@ -3665,7 +2930,6 @@ func spectator_params() -> Dictionary:
 		"render_fade_m": tree_render_fade_m,
 	}
 
-
 # --- Crosswind (storm) -------------------------------------------------------
 # Shape of the seeded gust profile applied as a lateral body force on a stage whose
 # weather entry carries a "wind" block (scripts/crosswind.gd). The wind STRENGTH,
@@ -3682,28 +2946,12 @@ func spectator_params() -> Dictionary:
 ## model (open ground vs. tree cover); see features/car-physics.md.
 @export_range(0.0, 1.0) var crosswind_nose_on_fraction := 0.35
 
-
 @export_group("Overworld")
 # The drivable overworld map — a single open landmass the player drives across to reach
 # rallies, dealerships and the workshop, standing in for the HQ's menu tables. See
 # docs/superpowers/specs/2026-08-17-overworld-hq-design.md and features/overworld.md.
 # The terrain is generated once per invalidation key and cached under user://overworld/,
 # then streamed in chunks around the car; zones are dwell-activated hotspots on it.
-## Master gate. Off (the default) = the shipped hq.tscn hub is the only hub and none of
-## the overworld's generation, cache or streaming cost is ever paid. Read at BOOT, before
-## any settings UI exists, which is why it lives here and not only on the dev page.
-@export var overworld_enabled := false
-## Width AND depth (metres) of the square map. Map positions are normalised 0..1, so this
-## is the only thing that converts them to world metres — changing it rescales every zone
-## placement, and it is part of the terrain cache's invalidation key, so a change forces a
-## full regeneration. It is also the main cost lever: generation time and cache size scale
-## with the SQUARE of it (~83 MB at 4 km, ~47 MB at 3 km).
-@export_range(500.0, 16000.0) var overworld_size_m := 4000.0
-## Persist generated overworld chunks to user://overworld/ so the (slow) first-entry
-## generation is paid once instead of every entry. Off = regenerate every session, which
-## is the dev escape hatch while the invalidation key is churning — correctness is
-## unaffected, only load time. See overworld_cache_active_for() for the platform side.
-@export var overworld_cache_enabled := true
 ## Radius, in chunks (Chebyshev), of the ring of loaded chunks kept around the car — a
 ## radius of 10 is a 21x21 window. Larger = more of the map visible with fewer stream-in
 ## pops, but more memory and more build work per boundary crossing.
@@ -3716,35 +2964,6 @@ func spectator_params() -> Dictionary:
 ## draining a couple per frame keeps them ahead of the car without a visible stall.
 ## Same provisional caveat as the load radius — size it from a measured build cost.
 @export_range(1, 16) var overworld_chunk_build_budget := 2
-## Radius (metres) of a zone's trigger area — how close the car must be parked to a
-## rally / dealership / workshop hotspot for it to be a candidate for activation.
-@export_range(2.0, 200.0) var overworld_zone_radius_m := 25.0
-## How long (seconds) the car must sit stopped inside a zone before it activates. ANY
-## movement resets the accumulator to zero, so this is a deliberate "park here" gesture
-## rather than something a fast drive-through can trip.
-@export_range(0.0, 15.0) var overworld_zone_dwell_s := 3.0
-## Speed (km/h) below which the car counts as stopped for the dwell timer above. Not
-## zero: idle creep and suspension settle never quite reach a true standstill.
-@export_range(0.0, 30.0) var overworld_zone_stop_kmh := 2.0
-## Height (metres) of the transparent light tube that stands on a zone — the landmark that
-## replaced the old ground ring. Tall enough to be spotted well before the marker itself
-## comes in at `overworld_marker_draw_distance_m`; it fades out towards the top, so this is
-## the height at which it has fully vanished, not a hard edge.
-@export_range(0.0, 400.0) var overworld_zone_tube_height_m := 60.0
-## Alpha of the tube AT ITS BASE while idle. The vertical fade to nothing is baked into the
-## mesh; this is the overall strength dial. Low enough to see the terrain and the car through
-## it, high enough to read against a bright sky.
-@export_range(0.0, 1.0, 0.01) var overworld_zone_tube_alpha := 0.28
-## Alpha the tube's lit portion (and its sweeping fill line) reaches at a completed dwell.
-## The jump from `overworld_zone_tube_alpha` to this IS the "it fired" punctuation, so keep
-## the gap wide.
-@export_range(0.0, 1.0, 0.01) var overworld_zone_tube_ready_alpha := 0.85
-## Scale applied to `overworld_zone_tube_alpha` for a rally ALREADY completed (podium finish,
-## a persisted save fact — not this visit's live dwell fraction): 0.2 keeps a fifth of the idle
-## alpha, i.e. 80% more transparent, so a completed zone reads as done-and-quiet against the
-## still-untouched ones. Only dims the resting column — parking there again to re-run the
-## rally still ramps the fill/band up to `overworld_zone_tube_ready_alpha` exactly as before.
-@export_range(0.0, 1.0, 0.01) var overworld_zone_tube_completed_alpha_scale := 0.2
 ## How far in (metres) from the map bounds the coastline taper begins. Inside this band
 ## the ground falls away to the perimeter depth, so the map ends in water rather than at a
 ## visible wall. Part of the cache invalidation key — changing it regenerates the terrain.
@@ -3753,313 +2972,15 @@ func spectator_params() -> Dictionary:
 ## that the taper reads as sea floor and no undrowned ground survives at the bounds.
 ## Also part of the cache invalidation key.
 @export_range(0.0, 500.0) var overworld_edge_depth_m := 40.0
-# --- Overworld terrain NOISE ------------------------------------------------------------
-#
-# The hub gets its OWN height noise, separate from the stages' terrain_layer* fields, because
-# the two worlds want opposite things from the same generator. A stage is a narrow corridor
-# a few hundred metres wide where big relief reads as drama; the hub is a 1 km square the
-# player crosses constantly, where the same relief becomes a wall between two rally zones.
-# The stage values (300 m / 30 m on layer 1) put only three or four features across the whole
-# hub and fought the flat pads hard enough to leave undrivable lips off them — see
-# tools/analyse_road_grades.gd.
-#
-# Same generator, same meaning as the stage fields: PERLIN, FRACTAL_NONE, one noise per layer
-# at `frequency = 1 / wavelength`, summed as `noise(x, z) * amplitude`. Amplitude is the peak
-# CONTRIBUTION in metres, so the layer sum bounds the total relief.
-#
-# ALL of these are in the chunk cache's invalidation key (OverworldCache.invalidation_key), so
-# retuning any one of them discards the precomputed map and rebuilds it on the next launch.
-# Anything that sets up hub terrain must read these — overworld.gd, the cache key, AND
-# tools/analyse_road_grades.gd — or it measures a world the player never drives.
-
-## Broad relief: the hills the roads wind between. Keep the wavelength a decent fraction of
-## overworld_size_m or the map reads as one slope; keep the amplitude modest or the pads
-## cannot feather back into it at a drivable grade.
-@export_range(1.0, 1000.0) var overworld_terrain_layer1_wavelength := 220.0
-@export_range(0.0, 100.0) var overworld_terrain_layer1_amplitude := 12.0
-## Mid detail: undulation along a road rather than hills to cross.
-@export_range(1.0, 200.0) var overworld_terrain_layer2_wavelength := 60.0
-@export_range(0.0, 10.0) var overworld_terrain_layer2_amplitude := 3.0
-## Fine texture: stops the ground reading as smooth shading at close range. Small enough not
-## to shake the car — the wheels average anything under a metre or so.
-@export_range(1.0, 200.0) var overworld_terrain_layer3_wavelength := 18.0
-@export_range(0.0, 10.0) var overworld_terrain_layer3_amplitude := 0.8
-## Seed for the hub's height noise only. Deliberately SEPARATE from track_seed, which still
-## places the hub's roads and scatter: reshaping the ground should not relocate every road and
-## tree, and re-rolling the road layout should not force a full terrain rebake.
-@export var overworld_terrain_seed := 2
-
-## THE FRONTIER WALL — the translucent curtain standing on the edge of the revealed region, so the
-## boundary is visible before the veil and the push-back explain it (features/overworld.md ->
-## "The frontier wall"). A WARNING, never a collider: the soft push is still the only thing that
-## moves the car.
-@export var overworld_fog_wall_enabled := true
-## How tall the curtain stands, metres. Tall enough to read across a valley, short enough not to
-## wall the sky off. Baked into the mesh, so a retune shows on the next rebuild (a rally completing,
-## or re-entering the hub) rather than instantly.
-## Seconds the showroom camera takes to fly back to the driving view when the car picker closes.
-## 0 disables the transition and cuts, which is also what a visuals-off picker does — so the
-## hand-back contract is identical either way and only the visible case gained a move.
-##
-## Kept SHORT: it plays after the player has committed (confirm) or backed out (cancel), so it is
-## time between an input and control returning. The car is parked, so there is nothing to miss.
-@export_range(0.0, 3.0, 0.05) var overworld_picker_fly_seconds := 0.45
-@export_range(0.0, 200.0) var overworld_fog_wall_height_m := 22.0
-## Its overall opacity at the base (the fade to nothing with height is the light tube's own curve).
-@export_range(0.0, 1.0, 0.01) var overworld_fog_wall_alpha := 0.40
-## Its tint. BLACK, so the edge of the world reads as the world running out rather than as a hazard
-## stripe: it darkens what is behind it, which is the same thing crossing it does to the whole screen
-## (`Overworld.FOG_VEIL_ALPHA`). It was red, which said "danger" about ground that is merely unknown.
-@export var overworld_fog_wall_color := Color(0.0, 0.0, 0.0)
-
-## THE DIEGETIC CAR PICKER's camera (features/overworld.md -> "Picking a car in place"), in the
-## CAR's own space: x = to its right, y = up from the ground it stands on, z = ahead of its nose.
-## A three-quarter view in front of the car the player parked — the car never moves to suit it.
-@export var overworld_picker_camera_offset := Vector3(2.6, 1.5, 5.2)
-## How far BELOW the car's middle that camera aims, metres. Pitches the shot DOWN, which pushes the
-## car UP the frame and clear of the bottom-anchored menu bar. Moving the aim rather than raising the
-## camera keeps the car the same distance and the same size on screen.
-@export_range(0.0, 6.0, 0.05) var overworld_picker_camera_aim_drop_m := 0.9
-## Field of view for that camera. Tighter than the chase camera's on purpose: this is a portrait
-## of one car, not a driving view.
-@export_range(20.0, 110.0) var overworld_picker_camera_fov := 45.0
-
-## Turntable rate (degrees/second) of the GHOST CARS parked at dealership zones. It no longer
-## turns the floating ICONS: those (and the star layer above them) FACE THE PLAYER, because a
-## rally's kind and your star count are information and should not have to be waited for
-## (features/overworld.md -> "Markers"). A parked prize car carries no such information, so it
-## keeps turning like a showroom turntable.
-@export_range(0.0, 360.0) var overworld_marker_spin_deg_s := 30.0
-## How high (metres) a zone's icon floats above the zone's ground position — high enough
-## to clear foliage and be spotted over a rise.
-@export_range(0.0, 40.0) var overworld_marker_height_m := 6.0
-## Beyond this distance (metres) from the car, a zone's marker is not built at all. With
-## 38 rallies plus the service zones on one map, drawing every marker everywhere is the
-## whole budget; this keeps only the ones the player can plausibly be heading for.
-@export_range(50.0, 4000.0) var overworld_marker_draw_distance_m := 600.0
-## Cap on how many ghost cars (the showroom cars posed at dealership zones) may be alive
-## at once. Each is a real car mesh, so this is a hard rendering budget, not a hint.
-@export_range(0, 12) var overworld_ghost_car_max := 3
-
-# --- The drive-in garage (scripts/overworld_garage.gd) --------------------------------------
-# The garage is a BUILDING on the overworld that the player drives into; the car is then seated
-# on a lift and the tune / upgrade pages open in place. See features/overworld.md → "The garage".
-## Clear width of one service bay, in metres. Two bays wide; wide enough to drive into without
-## clipping a pillar.
-@export_range(3.0, 14.0, 0.1) var overworld_garage_bay_width_m := 7.5
-## Front-to-back depth of the garage. Deep enough that a car is fully under the roof.
-@export_range(6.0, 24.0, 0.1) var overworld_garage_bay_depth_m := 12.0
-## Fastest the car may be moving, in km/h, for driving into the bay to seat it on the lift.
-## Arrive faster and nothing happens until you have stopped — the back wall is solid, so this
-## can only delay the entry, never block it.
-@export_range(0.0, 40.0, 0.5) var overworld_garage_enter_max_kmh := 12.0
-## How high the lift raises the car above the bay floor, in metres.
-@export_range(0.0, 3.0, 0.05) var overworld_garage_lift_height_m := 1.2
-## How long the lift takes to travel, in seconds (each way).
-@export_range(0.05, 6.0, 0.05) var overworld_garage_lift_time_s := 1.2
-## How far (metres) the garage stands OFF TO THE SIDE of the road, measured from the HQ pin to
-## the door plane. The building is offset perpendicular to the roads that meet the HQ node and
-## yawed to face back at them, so every approach road runs past its opening instead of into its
-## back wall (see features/overworld.md → "Standing off the road"). The value is a WISH: the
-## placement clamps it so the whole footprint stays inside `overworld_pad_garage_radius_m`, the
-## level circle the building has to stand on, so raising this past what the pad can hold does
-## nothing until the pad grows too.
-@export_range(0.0, 40.0, 0.5) var overworld_garage_road_offset_m := 8.0
-
-## The GARAGE CAMERA — the fixed three-quarter-front shot of the car once it is seated on the
-## lift, and the smooth fly the viewport takes to and from it (rather than a hard cut) when the
-## car drives in or out. Same offset convention as `overworld_picker_camera_offset`: x = to the
-## car's right, y = up from the ground it stands on, z = ahead of its nose (car.tscn faces -Z).
-## Shares `overworld_picker_camera_fov` rather than carrying its own — both are a menu camera
-## framing the player's own car, and a second dial here would just be an easy way for the two
-## to drift out of sync.
-@export var overworld_garage_camera_offset := Vector3(-2.6, 1.7, 3.4)
-## How far below the car's mid-body the camera aims, pushing the car up the frame clear of the
-## menu panel docked on the right — same purpose as `overworld_picker_camera_aim_drop_m`.
-@export_range(0.0, 6.0, 0.05) var overworld_garage_camera_aim_drop_m := 0.6
-## How long the viewport takes to fly between the driving camera (chase or bonnet) and the
-## garage camera, in seconds, each way. This is what keeps the cut from ever reading as a jump.
-@export_range(0.05, 3.0, 0.05) var overworld_garage_camera_move_time := 0.6
-
-## The STOP TUBE inside the garage — the translucent light column standing on the lift bay that
-## says "park here". Radius in metres; the column reads as the spot you have to be in, the same
-## way a rally zone's tube reads as its trigger radius (features/overworld.md → "The stop tube").
-## Zero hides it entirely.
-@export_range(0.0, 6.0, 0.1) var overworld_garage_tube_radius_m := 1.7
-## How tall the stop tube stands, in metres. It lives INSIDE a building, so unlike a zone tube
-## this wants to stay under the roof rather than reach for the sky.
-@export_range(0.0, 12.0, 0.1) var overworld_garage_tube_height_m := 4.2
-## Base opacity of the stop tube, and the opacity it jumps to once the car is in the bay and
-## slow enough to be taken. The jump IS the "you are in the right place" punctuation.
-@export_range(0.0, 1.0, 0.01) var overworld_garage_tube_alpha := 0.3
-@export_range(0.0, 1.0, 0.01) var overworld_garage_tube_ready_alpha := 0.85
-
-# --- Flat pads under the zones and the garage (scripts/overworld_pads.gd) -------------------
-# A level circle of ground is baked into the terrain under every rally zone and under the
-# garage, so a zone's light tube / marker / ghost car and the garage BUILDING sit on flat
-# ground rather than straddling a slope. Baked at generation time and part of the chunk
-# cache's invalidation key, so retuning any of these forces a one-time terrain re-warm.
-# See features/terrain.md → "Flat pads".
-
-## Radius (metres) of the level circle under a RALLY ZONE. Wants to cover the trigger radius
-## (`overworld_zone_radius_m`) plus the tube base, the marker's shadow and a parked ghost car.
-@export_range(0.0, 80.0, 0.5) var overworld_pad_zone_radius_m := 12.0
-## Radius (metres) of the level circle under the GARAGE — larger, because the building has a
-## real footprint (`overworld_garage_bay_width_m` × `overworld_garage_bay_depth_m`) that must
-## be level across ALL of it plus the approach the player drives in across. A circle
-## circumscribing that rectangle is only ~7.1 m; this is deliberately well beyond it. It must
-## also leave room for `overworld_garage_road_offset_m` — the building stands OFF the road, and
-## its placement clamps that wish so the back corners stay on the pad, so too small a radius here
-## silently cancels the offset and parks the garage back on the junction.
-@export_range(0.0, 120.0, 0.5) var overworld_pad_garage_radius_m := 21.0
-## Width (metres) of the feather band outside a pad, over which the flatten ramps away to the
-## surrounding terrain. This is a DRIVABILITY dial as much as a look one: the steepest grade
-## the feather can produce is about 1.5 × (height difference across the pad) ÷ this width, so
-## narrowing it on a steep site can build a lip the car cannot climb — at the very place the
-## player was driving to.
-@export_range(0.5, 120.0, 0.5) var overworld_pad_feather_m := 14.0
-## The steepest grade (rise ÷ run) a feather ramp may reach. A pad whose surroundings are rough
-## enough that `overworld_pad_feather_m` would exceed this WIDENS its own band until the ramp is
-## back under the cap, so the road leaving a pad is always drivable. Keep it under the grade a
-## FWD car can climb on the loosest surface (~0.22 on snow).
-@export_range(0.02, 1.0, 0.01) var overworld_pad_max_grade := 0.15
-## Hard ceiling (metres) on a band widened by `overworld_pad_max_grade`. A pad on a cliff edge
-## accepts a steeper lip rather than flattening half the neighbourhood.
-@export_range(1.0, 200.0, 1.0) var overworld_pad_max_feather_m := 60.0
-
 # --- The overworld map and minimap (scripts/overworld_map.gd) -------------------------------
 # The minimap is an always-on corner panel; the full map is the M / gamepad-Back overlay. Both
 # are drawn SCHEMATICALLY from the road network, the revealed pins and the fog mask — see the
 # header of overworld_map.gd for why the photographic `textures/map_world.jpg` must not be used.
 
-## Edge length (screen pixels) of the always-on minimap panel in the top-left corner. Square,
-## so this is both its width and its height.
-@export_range(80.0, 480.0) var overworld_minimap_size_px := 176.0
-## How much world the minimap shows, in METRES across the panel. Small enough that the road
-## you are on is legible; large enough to show the next junction.
-@export_range(50.0, 4000.0) var overworld_minimap_zoom_m := 400.0
-## Whether the minimap ROTATES so the car's facing is up (true), or stays north-up (false).
-## Heading-up is directly actionable — "the road bends left" reads as left — which is why it
-## ships on; a north indicator is drawn either way, so the panel can still be correlated with
-## the (always north-up) full map.
-@export var overworld_minimap_rotate_with_heading := true
-## Overall opacity of the minimap panel. Below 1 so the driving view is never fully occluded.
-@export_range(0.1, 1.0, 0.01) var overworld_minimap_alpha := 0.82
-## Line width (screen pixels) for roads, the coastline and the selection ring on both maps.
-@export_range(0.5, 8.0, 0.5) var overworld_map_line_width_px := 2.0
-## Width (screen pixels) of the SAT-NAV route line — the road path to the destination the player
-## picked on the full map, drawn on the minimap they follow while driving. Wider than a road, or
-## it reads as just another road; a dark casing is drawn under it at ~2x this.
-@export_range(1.0, 16.0, 0.5) var overworld_map_route_width_px := 4.0
-## Speed (screen pixels per second) of the full map's synthetic CURSOR — the pointer the analog
-## stick and the arrow keys glide, since a controller has none. Fast enough to cross the map without
-## boredom; slow enough that magnetism can catch a pin on the way past.
-@export_range(80.0, 3000.0, 10.0) var overworld_map_cursor_px_s := 520.0
-## Pick radius (screen pixels) around a full-map pin for mouse hover and click / touch tap.
-## Generous on purpose — it is also the finger target on a phone.
-@export_range(6.0, 96.0, 1.0) var overworld_map_pick_px := 28.0
-## Radius (screen pixels) of the player arrow — the unit it is scaled in.
-@export_range(1.0, 20.0, 0.5) var overworld_map_pin_px := 5.0
-## Half-extent (SCREEN pixels) of a destination pin's ICON on the MINIMAP. Pins are icons, not
-## dots — a pennant for a rally, a car, a trophy, a house for the garage, and the part's own
-## `UpgradeIcons` texture for a part unlock — so this is the half-width of that glyph's box.
-##
-## It is deliberately in screen pixels and does NOT scale with the map's zoom: one painter serves
-## both presentations, so a world-space size would make minimap pins vanish.
-@export_range(3.0, 24.0, 0.5) var overworld_map_icon_px := 7.0
-## The same, on the FULL-SCREEN map, where there is room and pin NAMES are drawn beside the icons.
-## Larger than the minimap's on purpose.
-@export_range(4.0, 40.0, 0.5) var overworld_map_icon_full_px := 11.0
-## How dark unexplored map goes, 0..1. The mask itself is the SHARED `MapFog` one, so the map
-## and the ground agree about where the frontier is; this is only how strongly it is painted.
-@export_range(0.0, 1.0, 0.01) var overworld_map_fog_alpha := 0.86
-## Screen margin (pixels) around the minimap panel and inside the full-screen map.
-@export_range(0.0, 120.0) var overworld_map_margin_px := 24.0
-
 ## Screen margin (pixels) around the build-version label in the hub's bottom corner
 ## (hub_shell.gd's MAIN page — features/hub-shell.md). Passive chrome only, not a
 ## MenuNav widget.
 @export_range(0.0, 60.0) var hub_version_label_margin_px := 8.0
-
-## Foliage density in the overworld, as a MULTIPLIER on the stage scatter counts
-## (`trees_per_turn` / the rock groups). Well below 1 on purpose.
-##
-## The stage counts are authored to decorate a ROAD CORRIDOR you drive past at speed: at the
-## shipped values the scatter lattice is ~6.3 m, i.e. one tree per ~39 m², which is genuine
-## forest. Applied to open country the player has to NAVIGATE, that is wall-to-wall woodland
-## with no clearings and no sight lines — the first play report was "spawned me in the middle
-## of the forest and I have no idea where the roads are".
-##
-## It is also the cheapest lever on the overworld's frame cost: every streamed chunk builds a
-## billboard field and a mesh field with colliders, so halving the instance count halves the
-## per-chunk spawn spike. Raise it for denser woods, lower it if chunks hitch.
-@export_range(0.0, 1.0, 0.05) var overworld_foliage_density := 0.35
-
-## How long a REGION CROSSING takes to cross-fade its colours, in seconds. 0 snaps.
-##
-## The ground tint, the tarmac colour and the fog/background colour are lerped over this; the
-## ground TEXTURES and the sky panorama still swap instantly, because blending those needs a
-## second sampler plus a per-vertex region weight. The tint carries most of a region's character,
-## so fading it carries most of the transition.
-@export_range(0.0, 8.0, 0.1) var overworld_region_fade_s := 1.5
-
-## Whether the overworld GROUND blends between regions SPATIALLY, at the fixed boundary between
-## two regions, instead of the whole world restyling the moment the car crosses the line. Only
-## the sky cross-fades over time (`overworld_region_fade_s` above); the ground is meant to arrive
-## ahead of you and leave the ground behind you alone.
-##
-## Part of the terrain cache's invalidation key: turning it on or off changes the per-vertex data
-## baked into every stored chunk (the region rank in UV2.y), so flipping it forces a ONE-TIME
-## re-warm of the overworld chunk cache the next time the map is entered.
-@export var overworld_region_blend_enabled := true
-
-## How wide the visible region cross-fade is, as a FRACTION of the span between the two blended
-## regions. Small = a crisp line on the ground; 1.0 = a gradient smeared across the whole span.
-##
-## Purely a shader remap of the baked rank, so changing it is free — it does NOT invalidate the
-## chunk cache and needs no re-bake.
-@export_range(0.02, 1.0, 0.01) var overworld_region_blend_width := 0.35
-
-
-@export_group("Overworld Fog Frontier")
-# The SOFT turn-back at the edge of the revealed overworld (features/overworld.md → the fog
-# frontier): drive past it and the screen darkens and the car is nudged back, rather than
-# hitting an invisible wall. Read by overworld.gd, which caches them at boot.
-## Inward nudge (m/s²) applied to the car while it is beyond the frontier, as a force through its
-## own mass. Gentle: it should feel like the car does not want to go there, not like a hand
-## grabbing the wheel. Too high and it fights the player; 0 removes the push entirely.
-@export_range(0.0, 40.0, 0.5) var overworld_fog_push_accel := 6.0
-## How far (metres) past the last LIT pose the car may get before it is teleported back to that
-## pose. The hard backstop behind the soft push. Also sizes the precompute's safety margin
-## (`Overworld.reach_margin_map`), so raising it makes the first-launch bake cover more ground.
-@export_range(10.0, 1000.0, 5.0) var overworld_fog_hard_margin_m := 120.0
-## How dark the screen veil goes (alpha 0..1) once the car is at the hard margin. High enough to
-## read as "you should not be here", low enough to still drive back by. 0 disables the veil.
-@export_range(0.0, 1.0, 0.01) var overworld_fog_veil_alpha := 0.55
-## Speed the veil fades in and out, in alpha units per second. Large = a snappy warning that
-## clears the instant you are back in lit ground; small = a slow, moody bleed either way.
-@export_range(0.1, 20.0, 0.1) var overworld_fog_veil_fade := 2.5
-
-
-@export_group("HQ Present Box")
-# The PRESENT-BOX car reveal HQ opens on after a rally that won the player a car
-# (features/hq.md → the present box): a giant wrapped box in an empty car park whose lid
-# lifts away and whose four walls fall outward. Read by hq_present_reveal.gd.
-## Extra room (metres) added to the LARGEST car on the roster in all three axes when sizing the
-## box, so one box fits every possible prize. Snug on purpose — the box should read as wrapped
-## around a car. Raise it for a roomier, more gift-like box; drop it towards 0 and the widest
-## car's mirrors sit flush with the walls.
-@export_range(0.0, 3.0, 0.05) var hq_present_clearance_m := 0.55
-## How far (metres) the lid travels UP before it is out of frame. Must clear the top of the
-## screen for the shipped camera framing; more just means it keeps going after you stop seeing it.
-@export_range(1.0, 30.0, 0.5) var hq_present_lid_rise := 9.0
-## Seconds for the lid to lift clear. The walls start falling at 45% of this, so it also paces
-## the whole cinematic's overlap. Short = an eager reveal; long = a drawn-out ta-da.
-@export_range(0.1, 5.0, 0.05) var hq_present_open_time := 0.7
-## Seconds for one wall to fall flat. Deliberately slow — the walls are meant to have WEIGHT
-## (they tip on a gravity curve), and speeding this up makes them read as paper.
-@export_range(0.1, 5.0, 0.05) var hq_present_wall_time := 1.1
-
 
 @export_group("Loading")
 # The frame cap held for the DURATION of world generation only (WorldRuntime.loading_cap, used
@@ -4074,152 +2995,6 @@ func spectator_params() -> Dictionary:
 ## avoid, and a throttled phone then plays worse. 0 = uncapped.
 @export_range(0, 240) var loading_touch_max_fps := 60
 
-
-@export_group("Roguelike Run")
-# The region run's two levers (todo/roguelike-pivot.md decisions 11, 22, 31, 36) — the
-# TARGET TIME a stage must be beaten in, and the MONEY a cleared stage pays. Read by
-# RegionRunMode (scripts/region_run_mode.gd); nothing else may derive either number.
-#
-# The target is `LapTimeModel.optimum_ms(track, CarPerformance.REFERENCE_CAR, event) *
-# target_pace`, so a stage's clock is a property of the STAGE, identical for every
-# player and every car — which is what makes buying a faster car matter instead of
-# raising the bar to match it. `target_pace` is the ONLY difficulty dial: it tightens
-# with the stage's index within the run and with the region's index in the unlock
-# order, so a later region simply demands a faster time on the same kind of stage.
-#
-# TUNE THESE AGAINST REAL DRIVING, NOT AGAINST THE MODEL. LapTimeModel's optimum is a
-# point-mass centreline REFERENCE, not a physical bound — RallyLibrary.GHOST_SOLVABLE_PACE
-# says in as many words that a real driver beats it by straightening corners — so values
-# at or below 1.0 are viable but must be felt, never reasoned about. The shipped numbers
-# below are deliberately GENEROUS placeholders: stage 1 of region 1 gives 60% over the
-# optimum, which the starter car should clear comfortably. Decision 11's floor rule is
-# that stage 1 must be clearable in the WORST car a player can own; tune against that
-# car, not a mid-tier one.
-## Pace multiplier on stage 1 of the first region — the loosest clock in the game.
-## 1.0 = the point-mass optimum exactly; higher = more slack.
-@export_range(0.5, 3.0, 0.01) var run_target_pace_base := 1.85
-## How much tighter the clock gets per stage WITHIN a run. Over an 8-stage run the last
-## stage is 7x this below the first, which is the run's own escalation curve.
-@export_range(0.0, 0.2, 0.005) var run_target_pace_stage_step := 0.07
-## How much tighter the clock gets per REGION in the unlock order (decision 22). This is
-## the whole of region difficulty — there are no re-authored per-region bands.
-@export_range(0.0, 0.3, 0.005) var run_target_pace_region_step := 0.075
-## The floor no combination of the two steps may take the pace below. Stops a deep region's
-## late stages from demanding a time under the optimum, which nothing could clear.
-@export_range(0.5, 2.0, 0.01) var run_target_pace_min := 1.05
-
-# MONEY. Banked at stage CLEAR (decision 36), so a run that dies on stage 6 keeps
-# everything stages 1-5 paid — soft permadeath destroys the run, never the wallet
-# (decision 14). Two of the three sources are here; coins (decision 13) arrive in the
-# collectables stage and bank through the same moment.
-## Payout for clearing the FIRST stage of a run, before the growth curve and the region
-## scale. The base unit the whole economy is priced against.
-@export_range(0.0, 5000.0, 5.0) var run_stage_money_base := 200.0
-## Multiplied in once per stage already cleared (RR's LEVEL_WINNINGS_MULTIPLIER), so
-## surviving deep into a run is where the money is. 1.0 = a flat payout per stage.
-@export_range(1.0, 2.0, 0.01) var run_stage_money_growth := 1.25
-## The MOST a fast clear can add on top, paid in proportion to the fraction of the target
-## saved — the reason to drive well rather than merely clear the clock. 0 removes the bonus.
-@export_range(0.0, 5000.0, 5.0) var run_fast_bonus_money := 150.0
-## How much richer each REGION in the unlock order is, as a MULTIPLIER compounded per
-## index — region N's payout is this raised to the Nth power (decision 31). 2.0 means
-## every region pays double the one before it: clearing a region's own reward is only
-## the next region unlocking, and that next region is what actually pays more. This is
-## what stops "farm region 1 forever": the same effort pays more deeper in, so
-## progressing beats grinding without taking the repeatable-region valve away.
-@export_range(1.0, 4.0, 0.05) var run_money_region_multiplier := 2.0
-## Paid once, on top of the ordinary stage-clear reward, for beating the run's own
-## FINAL stage (stage 8) — the region-clear bonus (RegionRunMode.stage_money). Scaled
-## by run_money_region_multiplier exactly like every other term in stage_money, so
-## clearing a deep region's stage 8 pays proportionally more than clearing an early
-## one's. 0 removes the bonus.
-@export_range(0.0, 20000.0, 25.0) var run_region_clear_money_base := 1000.0
-## The flat lump sum a PLACING Daily/Weekly/Monthly challenge run pays
-## (ChallengeRunMode.try_grant_completion_reward). Flat rather than curved: a challenge has
-## no target time to be fast against, and its whole reward is the placement.
-@export_range(0.0, 20000.0, 25.0) var challenge_completion_money := 500.0
-## THE STARTING PURSE (todo/roguelike-pivot.md decision 28 — "a new player starts with money
-## and buys from the shop", replacing the old three-car starter picker outright).
-## Save._default_profile() seeds `KEY_MONEY` from this rather than 0, so a fresh profile can
-## reach the car shop (HubShell's CAR page) and actually buy something — a profile with money
-## but no cars must never be a dead end. Tune against CarLibrary.CARS' own cheapest `cost`
-## entries: this is deliberately sized to afford the cheapest tier of starter-grade cars (see
-## that field's own comment), not a mid-tier one.
-@export_range(0.0, 20000.0, 100.0) var run_starting_money := 2600.0
-
-
-@export_group("Roguelike Collectables")
-# Coins — RR's collectables (decisions 13, 35, 36, 50, stage 8 of
-# todo/roguelike-pivot-plan.md). Placed by CoinLayout.plan (scripts/coin_layout.gd),
-# built + policed by CoinField (scripts/coin_field.gd), wired in world.gd's
-# _build_coins — a REGION-RUN mechanic only (RunSession.mode_id() == RunMode.REGION);
-# a challenge run never spawns them. See features/collectables.md.
-#
-# ON THE CARRIAGEWAY, ON PURPOSE (decision 35 REVERSED by explicit user request,
-# 2026-09 — see todo/roguelike-pivot.md decision 35's note and features/collectables.md).
-# Coins used to sit beyond the road edge as a gamble; they now sit WITHIN the road so
-# they're visually obvious and collectable without leaving the racing surface.
-# coin_lane_spread_frac controls how far from the centerline they can land, as a
-# fraction of the half-width.
-#
-# NO SIGNPOSTING (decision 50, amending 35): there is deliberately no "warning
-# distance" field here, and none should be added — a coin is met by driving into it,
-# never flagged ahead on the pacenote strip or anywhere else.
-## Master switch, mirroring signs_enabled/rocks_enabled. Off places no coins at all.
-@export var coins_enabled := true
-## How many coins CoinLayout places on one stage, before any future skill multiplier.
-## SkillLibrary's "lucky_coins" ("more coins spawn per stage") is NOT wired yet
-## (decision 51 wires skill effects after this stage) — nothing reads this through a
-## skill today.
-@export_range(0, 12) var coins_per_stage := 8
-## How far a coin's centre can land from the road centerline, as a fraction of the
-## half-width (track_width / 2). 0 pins every coin to the centerline; 1.0 allows a
-## coin right at the visible road edge. Coins are ALWAYS within the carriageway
-## (abs(lateral) <= half_width * this) — never beyond it.
-@export_range(0.0, 1.0) var coin_lane_spread_frac := 0.92
-## Minimum lateral offset from the centerline, same units as coin_lane_spread_frac.
-## Together they form the band a coin lands in: this pushes coins out toward the road
-## EDGE (so taking one is a small line-widening detour) while the max above keeps them
-## on the carriageway rather than off in the trees.
-@export_range(0.0, 1.0) var coin_lane_inner_frac := 0.7
-## Arc-length (m) kept clear of the start line — no coin in the opening straight.
-@export_range(0.0, 200.0) var coin_start_margin_m := 40.0
-## Arc-length (m) kept clear of the finish — no coin in the closing straight.
-@export_range(0.0, 200.0) var coin_end_margin_m := 40.0
-## Pickup trigger radius (m). Read LIVE by CoinField every physics tick, never
-## cached — see that script's header. THE SINGLE FINDABLE VALUE the later
-## "coin_magnet" skill pass (decision 51, "wider coin pickup radius") widens.
-@export_range(0.1, 5.0) var coin_pickup_radius_m := 1.4
-## Money paid per coin collected, before the region scale, banked at STAGE CLEAR
-## alongside the rest of that stage's payout (decision 36) — see
-## RegionRunMode.stage_money. A missed stage's coins pay nothing, same as the rest of
-## that stage's money. Scaled by run_money_region_multiplier like every other term in
-## stage_money (2026-09 — was flat everywhere), so this is the region-0 rate; a coin
-## on a deeper region is worth this times that region's own multiplier.
-@export_range(0.0, 500.0) var coin_money := 75.0
-## Visual radius (m) of the coin disc mesh. Bumped up from the original off-track
-## coin's size so a floating, spinning coin reads clearly at speed.
-@export_range(0.05, 1.5) var coin_visual_radius_m := 0.5
-## Visual thickness (m) of the coin disc mesh.
-@export_range(0.01, 0.5) var coin_visual_thickness_m := 0.08
-## Height (m) a coin hovers above the road-adjacent ground it's placed on. Roughly
-## windscreen height so it reads clearly from the driver's seat while approaching.
-@export_range(0.0, 2.5) var coin_hover_m := 1.2
-## Coin disc colour.
-@export var coin_color := Color(0.97, 0.80, 0.13)
-## Spin rate (deg/sec) of a floating coin about its vertical axis.
-@export_range(0.0, 720.0) var coin_spin_deg_per_sec := 180.0
-## Angular speed (rad/sec) of a coin's gentle vertical bob (sine wave).
-@export_range(0.0, 10.0) var coin_bob_speed := 2.0
-## Amplitude (m) of a coin's vertical bob, added on top of coin_hover_m.
-@export_range(0.0, 0.5) var coin_bob_amplitude_m := 0.12
-## Pitch (Hz) of the pickup chime. Deliberately set apart from sfx_beep_frequency_hz
-## (the standard cue default) so a coin reads as its own distinct, brighter sound.
-@export var coin_pickup_sfx_freq_hz := 1600.0
-## Length (s) of the pickup chime.
-@export_range(0.02, 1.0) var coin_pickup_sfx_duration_sec := 0.1
-
-
 @export_group("Roguelike Run Boosts")
 # The IN-RUN boost catalogue (BoostLibrary, scripts/boost_library.gd — todo/roguelike-pivot.md
 # -> "Upgrades — RR's two-tier model"). Every value here is a magnitude a designer retunes in
@@ -4228,10 +3003,6 @@ func spectator_params() -> Dictionary:
 # are the UNLEVELED base magnitudes — BoostLibrary.magnitude_for(id, level) scales them by
 # `boost_level_magnitude_step` below (@export_group("Roguelike Meta Shop")) before a pick is
 # drawn, so a level-0 boost (nothing purchased) still rolls exactly the number authored here.
-## Health fraction (of max_hp) the run's car must be AT OR ABOVE to earn the
-## undamaged-arrival reward: NO repair row on the pick screen, so every roll lands on a
-## real upgrade instead of the usual repair-or-upgrade choice.
-@export_range(0.5, 1.0, 0.01) var run_boost_healthy_threshold := 0.95
 ## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost),
 ## clamped at min_lightweight_mass below (the "mult_floor" op) so it can't push a car
 ## below that floor — see UpgradeLibrary.EFFECTS["mass_mult_floor"].
@@ -4240,8 +3011,6 @@ func spectator_params() -> Dictionary:
 ## BoostLibrary.stacks — "mult_floor" is non-stacking) and excluded from the pick pool
 ## entirely for a car already at or under this (RunSession._lightweight_available).
 @export var min_lightweight_mass := 1000.0
-## "Sticky tyres" — tire_grip_mult (above 1.0 = more grip).
-@export_range(1.0, 1.5, 0.01) var run_boost_grip_mult := 1.08
 ## "Quick-shift gearbox" — an ABSOLUTE shift time (the "set" op), not a scaling.
 @export_range(0.02, 0.3, 0.01) var run_boost_shift_time_s := 0.12
 ## "Aero kit" — added downforce (N), the SAME figure on both front and rear.
@@ -4297,7 +3066,6 @@ func spectator_params() -> Dictionary:
 ## Seconds a full tank holds — fixed, does not scale with level.
 @export_range(1.0, 20.0, 0.5) var run_boost_nitrous_tank_seconds := 6.0
 
-
 @export_group("Roguelike Meta Shop")
 # THE META TIER (todo/roguelike-pivot.md -> "Upgrades — RR's two-tier model", stage 6 of
 # todo/roguelike-pivot-plan.md). Boost LEVELS, purchased with money and persisted on the
@@ -4305,17 +3073,6 @@ func spectator_params() -> Dictionary:
 # touch the live car directly — it scales the MAGNITUDE `BoostLibrary.magnitude_for` hands to
 # the next in-run pick (see that file's own header). Same CLAUDE.md rule as the group above:
 # these are tunable numbers, no test may pin one.
-## The highest level any single boost id can reach. Shared across all six catalogue entries
-## rather than authored per-id (RR gives every BOOST_DEFINITIONS entry the same maxLevel too)
-## — one cap to retune, not six.
-@export_range(1, 10) var boost_level_max := 5
-## Price of a boost's FIRST level (level 0 -> 1). Every later level multiplies this by
-## `boost_level_price_growth` raised to the level being left, so the ladder gets steeper as it
-## climbs — Save.boost_level_price is the one place that math runs.
-@export_range(0.0, 50000.0, 100.0) var boost_level_price_base := 1500.0
-## Per-level price multiplier (RR's `priceMultiplierPerLevel`). 1.0 would make every level
-## cost the same; above 1.0 (the shipped default) each level costs more than the last.
-@export_range(1.0, 3.0, 0.05) var boost_level_price_growth := 1.7
 ## How far ONE level pushes a boost's magnitude away from its unleveled baseline, as a
 ## fraction (0.08 = 8%). `BoostLibrary.magnitude_for` multiplies this by the level and by the
 ## catalogue entry's own `level_direction` (+1 strengthens upward, -1 downward — e.g. lighter
@@ -4325,46 +3082,6 @@ func spectator_params() -> Dictionary:
 ## a meta shop purchase, replacing the old rally-completion gate). Read by
 ## (engine_swap_unlock_price is deleted — the Engine Swap is a mid-run boost now,
 ## priced by the boost ladder like every other BoostLibrary entry.)
-
-
-@export_group("Roguelike Skills")
-# THE PERK CAP (todo/roguelike-pivot.md "Skills — a straight lift from RR", stage 7 of
-# todo/roguelike-pivot-plan.md). Owning a skill (Save.KEY_BOUGHT_SKILLS) and EQUIPPING it
-# (Save.KEY_EQUIPPED_SKILLS) are separate — this is the ceiling on the second list, read
-# by Save.equip_skill. RR's own constant is PERK_MAX_EQUIPPED = 3; a shipped default here
-# matching it is a starting point, not a pinned value — no test may assert this exact
-# number (CLAUDE.md), only that equip_skill refuses past whatever it is currently set to.
-## The most skills that may be equipped at once, whatever how many are owned.
-@export_range(1, 10) var skill_max_equipped := 3
-
-# --- Skill MAGNITUDES (decision 51: skills are wired through UpgradeLibrary.EFFECTS) ---
-#
-# One field per skill, exactly the way @export_group("Roguelike Run Boosts") does it for
-# BoostLibrary: SkillLibrary's catalogue entries name the FIELD, never the number, and
-# SkillLibrary.effect_for re-reads Config.data live, so an inspector retune lands on the
-# next stage boot with no code change. Nothing in tests/headless/ may pin one of these
-# (CLAUDE.md) — only "the skill reads this field" is testable.
-#
-# Every one of them is a GLOBAL tunable, not a per-car stat, which is why each skill's
-# EFFECTS row carries `reseed` — see that table's header for why that flag exists and
-# what goes wrong without it.
-## "Coin Magnet" — multiplier on coin_pickup_radius_m while the skill is equipped.
-@export_range(1.0, 8.0, 0.1) var skill_coin_radius_mult := 3.0
-## "Self Healing" — the HP/second trickle written onto damage_regen_hp_per_s.
-@export_range(0.0, 50.0, 0.5) var skill_heal_hp_per_s := 6.0
-## "Rubber Body" — multiplier on impact_ref_hp_loss (below 1.0 = softer hits).
-@export_range(0.1, 1.0, 0.05) var skill_damage_mult := 0.6
-## "Trail Blazer" — multiplier on run_fast_bonus_money (the time-saved payout).
-@export_range(1.0, 5.0, 0.1) var skill_fast_bonus_mult := 2.5
-## "Lucky Coins" — multiplier on coins_per_stage. Truncated to a whole coin count by the
-## int field it writes, so a fractional multiplier rounds DOWN.
-@export_range(1.0, 5.0, 0.5) var skill_coin_count_mult := 3.0
-## "Iron Will" — added to run_target_pace_base, so EVERY stage target in the run is that
-## much more generous against the reference-car optimum (see RegionRunMode.target_pace).
-@export_range(0.0, 1.0, 0.01) var skill_target_pace_add := 0.15
-## "Road Scholar" — added to run_stage_money_base, i.e. to the stage-clear payout BEFORE
-## the run's growth exponent and the region scale compound it.
-@export_range(0.0, 2000.0, 10.0) var skill_stage_money_add := 60.0
 
 @export_group("Card Carousel")
 ## Height/width — a playing card is taller than it is wide (~3.5:2.5).

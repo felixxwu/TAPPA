@@ -58,10 +58,6 @@ func clear() -> void:
 	line.text = ""
 
 
-func set_editable(value: bool) -> void:
-	line.editable = value
-
-
 # Toggle a password field between hidden and visible.
 func set_secret(value: bool) -> void:
 	line.secret = value

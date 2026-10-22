@@ -11,12 +11,6 @@ extends RefCounted
 
 const CELL_M := 0.5                                  # global cell grid size
 const STRAIGHT_OPTIONS_M := [0.0, 5.0, 10.0, 20.0]   # connecting straight lengths
-# Legacy centerline sampling step. Both rasterizers (rasterize_cells and
-# _collide_and_cells) now scan each segment's bounding box with a point-to-segment
-# distance test instead of walking discrete samples, so NOTHING samples by this any
-# more. Retained only in constants_fingerprint() so removing it isn't a silent
-# cache-key change; delete it (with a CACHE_VERSION bump) if it stays unused.
-const RASTER_STEP_M := 0.25
 # Per-attempt placement+backtrack budget = STEPS_BASE + turn_count * STEPS_PER_TURN.
 # A healthy search places each corner first- or second-try, completing in roughly
 # `turn_count` steps; a seed that boxes itself in backtracks exponentially and blows

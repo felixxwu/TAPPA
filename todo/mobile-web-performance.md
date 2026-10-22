@@ -161,8 +161,7 @@ nothing to flip.
 - **Re-capture the web `load stage:` table** on a **non-benchmark** boot (career *and*
   free roam), tab foregrounded. This is the payoff for the frame-cap work and is still
   unmeasured post-change.
-- **A real phone.** Two remaining tier values (`ground_subdiv_web_touch`,
-  `engine_mix_rate_web_touch`) are conservative defaults chosen without one.
+- **A real phone.** `engine_mix_rate_web_touch` is a conservative default chosen without one.
 - **A replay pass** if `terrain_precompute_safety_slack_m` (now 25, was 40) is suspect —
   the failure mode is unbuilt terrain in a replay shot.
 

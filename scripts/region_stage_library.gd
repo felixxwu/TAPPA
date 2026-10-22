@@ -32,15 +32,8 @@ extends RefCounted
 # -12; greece runs arid/sandstorm, waterline -11; taiga runs deep boreal forest, waterline
 # -12; home_coast runs the flooded lakeland, waterline -7 inland / up to -4 near open
 # water; snow runs the Alps, the highest cliffiness on the map, waterline -12/-13, and is
-# the only region weather authors "snow" onto. terrain_layer1_amplitude no longer varies
-# by region — every region shares SLOT_AMPLITUDE's 10->40 linear escalation across the 8
-# slots (see below); region character now comes entirely from forestiness/cliffiness/
-# surface_mix/water_level/weather, not amplitude.
-# Slot-index -> terrain_layer1_amplitude, linear 10 (slot 0 / stage 1) to 40 (slot 7 /
-# stage 8), shared by every region. Candidates within a slot no longer vary shape/terrain
-# fields at all (todo/region-stage-slots-redesign.md follow-up) — only the seed differs,
-# so a slot is really one authored stage with 3 track-generation rolls.
-const SLOT_AMPLITUDE: Array[float] = [10.0, 14.3, 18.6, 22.9, 27.1, 31.4, 35.7, 40.0]
+# the only region weather authors "snow" onto. Region character comes from
+# forestiness/cliffiness/surface_mix/water_level/weather, not amplitude.
 
 const STAGES: Dictionary = {
 	"home": [

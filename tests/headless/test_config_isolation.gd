@@ -121,11 +121,11 @@ func test_reload_from_disk_swaps_in_a_fresh_config() -> void:
 	var before: GameConfig = Config.data
 	# A runtime mutation of the kind the game makes (car.gd's apply_car reshapes the live config).
 	# A real re-read must not preserve it — that is the difference between reloading and no-op.
-	before.hq_tree_count = 12345
+	before.trees_per_turn = 12345
 
 	assert_true(Config.reload_from_disk(), "the authored config re-reads from disk")
 	assert_ne(Config.data, before, "reload installs a NEW GameConfig, not the one already in use")
-	assert_ne(Config.data.hq_tree_count, 12345,
+	assert_ne(Config.data.trees_per_turn, 12345,
 		"a re-read drops runtime mutations — otherwise nothing was actually re-read")
 
 

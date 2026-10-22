@@ -1,6 +1,6 @@
 // Fake headlight cone — the ONE source of truth, included by every shader the
 // headlights can fall on (ps1_models, ps1_terrain_snow, ps1_models_lit,
-// ps1_models_ghost, billboard_opaque, tree_canopy). See
+// billboard_opaque, tree_canopy). See
 // todo/night-weather-and-headlights.md.
 //
 // WHY THIS EXISTS AT ALL: terrain shading is baked into vertex colours on the CPU
