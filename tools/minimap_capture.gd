@@ -50,7 +50,7 @@ func _ready() -> void:
 	print("minimap: _process (no redraw) avg %.1f us" % ((Time.get_ticks_usec() - t0) / 200.0))
 	t0 = Time.get_ticks_usec()
 	for _i in 50:
-		mm._markers = MiniMap.site_markers(mm.streamer.sites, mm.rest_stops.lit_sites, mm.loot, mm.car_xz, mm.view_m)
+		mm._markers = MiniMap.site_markers(mm.streamer.sites, mm.rest_stops.lit_sites, mm.car_xz, mm.view_m)
 	print("minimap: site_markers avg %.1f us, %d shown, %d seen" % [(Time.get_ticks_usec() - t0) / 50.0, mm._markers.size(), WorldSession.seen_sites().size()])
 	world.open_full_map()
 	for _i in 30:
