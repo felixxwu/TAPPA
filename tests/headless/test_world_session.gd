@@ -96,8 +96,9 @@ func test_the_map_remembers_driven_cells_and_the_furthest_ring() -> void:
 	assert_false(WorldSession.mark_driven(6.0, 6.0), "same cell")
 	assert_true(WorldSession.has_driven(1.0, 1.0))
 	assert_false(WorldSession.has_driven(500.0, 500.0))
-	WorldSession.reach_ring(2)
-	WorldSession.reach_ring(1)
+	assert_true(WorldSession.reach_ring(2), "a ring never reached is new")
+	assert_false(WorldSession.reach_ring(1), "an inner ring is not")
+	assert_false(WorldSession.reach_ring(2), "nor is the same ring again")
 	assert_eq(WorldSession.max_ring(), 2, "a high-water mark")
 
 

@@ -193,10 +193,13 @@ func max_ring() -> int:
 	return int(_world().get("max_ring", 0))
 
 
-func reach_ring(r: int) -> void:
+# True when `r` is a ring never reached before in this world (the region banner's cue).
+func reach_ring(r: int) -> bool:
 	if has_world() and r > max_ring():
 		_world()["max_ring"] = r
 		_touch()
+		return true
+	return false
 
 
 func drive_time() -> float:

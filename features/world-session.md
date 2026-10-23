@@ -22,7 +22,7 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 | `car_state` | `{hp, cooling_broken, engine_temp, toe}`, so a reload resumes the damage too |
 | `lit` / `last_site` | lit rest stops (site ids; spawn 0 always) and the respawn point |
 | `driven` | map cells (`DRIVEN_CELL_M` = 40 m) the car has driven through, for the map |
-| `max_ring` | the furthest biome ring reached, a high-water mark |
+| `max_ring` | the furthest biome ring reached, a high-water mark (`reach_ring` returns true on a new one, which cues the region-name banner) |
 | `drive_time` | seconds driven: the weather timeline (`BiomeDirector`) runs on it |
 | `seen` | site ids (rest stops, loot slots, dead ends) the car has come within `GameConfig.minimap_seen_radius_m` of (`see`, `seen_sites`, `is_seen`; spawn 0 from the start). The minimap and the map show only these ([minimap.md](minimap.md)). A save without the key reads as `[0]` |
 | `carried`, `stash`, `dropped`, `collected`, `revealed`, `revealed_items` | loot (stage 7) |

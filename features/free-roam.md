@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
@@ -264,7 +264,15 @@ checkpoint is lit, a full-width "Checkpoint reached" band fades in, holds `HOLD_
 out while the car drives on (the tween runs through pauses). Then, once nothing else has the game
 frozen, it opens a card page ("Now in reach") of the items still to be found in that checkpoint's
 biome ring (`items_for`: the ring's `LootRules` table minus `LootDirector.taken_keys()`, no
-rumours); nothing left → no page. Continue / Back closes it.
+rumours); nothing left → no page. Continue / Back closes it. The band itself is the static
+`CheckpointBanner.build_band(text)`, shared with the region banner.
+
+`RegionBanner` (`scripts/free_roam/region_banner.gd`, made in `free_roam.gd._ready`): the first time
+the car drives into a biome ring in this world, the same band shows the ring's region name
+(`name_for`: `RegionLibrary` `name` of `BiomeDirector.region_of`). "First time" is
+`WorldSession.reach_ring` returning true (the persisted `max_ring` high-water mark, checked every
+0.25 s in `_physics_process`), so it survives reloads and ring 0 (spawn) never shows. If the
+checkpoint band is up, the region band waits for it to finish rather than stacking.
 
 `RestStops` makes the REST sites into Dark Souls bonfires:
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed

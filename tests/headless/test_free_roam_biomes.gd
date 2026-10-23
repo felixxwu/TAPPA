@@ -219,3 +219,27 @@ func test_one_of_every_plant_rock_and_marker_is_drawn_at_boot_and_cleaned_up() -
 	for i in 4:
 		await get_tree().process_frame
 	assert_false(is_instance_valid(root) and root.is_inside_tree(), "and it is gone after the warm-up")
+
+
+func test_the_region_banner_names_the_rings_region() -> void:
+	var s := _settings()
+	assert_eq(RegionBanner.name_for(s, 0), "Icy")
+	assert_eq(RegionBanner.name_for(s, 1), "Plain")
+
+
+func test_the_region_banner_waits_for_the_checkpoint_band_then_shows() -> void:
+	var cp := CheckpointBanner.new()
+	add_child_autofree(cp)
+	var banner := RegionBanner.new()
+	banner.checkpoint_banner = cp
+	add_child_autofree(banner)
+	cp.show_reached(0)
+	banner.announce("Plain")
+	assert_false(banner.is_showing_banner(), "never stacked on the checkpoint band")
+	cp._banner_done(-1)
+	await wait_process_frames(1)
+	assert_true(banner.is_showing_banner(), "shows once the checkpoint band is gone")
+	var label := banner._band.get_child(0) as Label
+	assert_eq(label.text, UITheme.caps("Plain"))
+	banner._banner_done()
+	assert_false(banner.is_showing_banner())
