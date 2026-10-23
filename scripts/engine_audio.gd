@@ -212,7 +212,8 @@ func _timed_process(_delta: float) -> void:
 	# alive but distant — the start line, and the opponent wreck out on the stage.
 	# The buffer still has to be pushed (an unfed generator underruns), and the
 	# latched bov_event still has to be consumed so the sim re-arms.
-	if is_audio_inaudible(volume_db, cfg.engine_audio_max_attenuation_db):
+	# A killed engine (the car gave up) makes no sound at all.
+	if engine.killed or is_audio_inaudible(volume_db, cfg.engine_audio_max_attenuation_db):
 		_push_silence()
 		engine.bov_event = false
 		return

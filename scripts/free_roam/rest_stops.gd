@@ -7,8 +7,8 @@ extends Node
 #     LIGHTS it, makes it the respawn point and fully HEALS the car (`healed`).
 #   * Pressing menu_select (Enter / gamepad A) there below rest_stop_speed_kmh opens the rest-stop
 #     page (`opened`); the minimap shows the prompt (`prompt_site`).
-#   * When the car gives up (DamageModel.gave_up: 0 HP), `wrecked` opens the wreck page while the car
-#     rolls on with no controls; its Respawn puts the car back at the last lit rest stop, fully repaired (`respawned`, carrying where the wreck was, for the dropped loot later).
+#   * When the car gives up (DamageModel.gave_up: 0 HP), the engine cuts out (EngineSim.killed: silent,
+#     no drive) and the car rolls on with no controls; wreck_page_delay_s later `wrecked` opens the wreck page. its Respawn puts the car back at the last lit rest stop, fully repaired with a cold engine (`respawned`, carrying where the wreck was, for the dropped loot later).
 #   * Travel teleports to any lit rest stop. Both moves stream the destination in first
 #     (TerrainStreamer.prefill_at): the one acceptable "load".
 # Rest stop i is site i of TerrainStreamer.sites (RoadSites, kind REST); spawn is site 0, lit
@@ -43,6 +43,7 @@ var _last_p := Vector2(INF, INF)  # the car's position last step, for the swept 
 var _primed := false  # false until the first step has noted where the car was spawned
 # Between giving up and the respawn: the car coasts on with no controls and rest stops ignore it.
 var is_wrecked := false
+var _wreck_page_in := -1.0  # seconds until `wrecked` fires; < 0 once it has (or with no wreck)
 
 
 func _ready() -> void:
@@ -89,8 +90,13 @@ func _physics_process(delta: float) -> void:
 
 # Driving past a rest stop (on its pad or the road beside it, at any speed) lights it, makes it
 # the respawn point and fully heals the car.
-func step(_delta: float) -> void:
+func step(delta: float) -> void:
 	if is_wrecked:
+		if _wreck_page_in >= 0.0:
+			_wreck_page_in -= delta
+			if _wreck_page_in <= 0.0:
+				_wreck_page_in = -1.0
+				wrecked.emit()
 		return
 	var p := Vector2(car.global_position.x, car.global_position.z)
 	if not _primed:
@@ -171,7 +177,8 @@ func travel_to(site: int) -> bool:
 func _on_gave_up() -> void:
 	is_wrecked = true
 	_set_driverless(true)
-	wrecked.emit.call_deferred()
+	_set_engine_killed(true)
+	_wreck_page_in = Config.data.wreck_page_delay_s
 
 
 # Scripted control with every input at zero: the car rolls on where it was heading.
@@ -182,13 +189,25 @@ func _set_driverless(on: bool) -> void:
 	car.set("ai_controlled", on)
 
 
+# The engine cuts out completely: no drive, no sound (EngineSim.killed).
+func _set_engine_killed(on: bool) -> void:
+	var dt = car.get("drivetrain")
+	if dt != null and dt.engine != null:
+		dt.engine.killed = on
+
+
 func respawn() -> void:
 	if is_wrecked:
 		is_wrecked = false
+		_wreck_page_in = -1.0
 		_set_driverless(false)
+		_set_engine_killed(false)
 	var wreck := car.global_position
 	move_car_to(last_site)
-	(car.damage as DamageModel).repair(Config.data)
+	var dmg := car.damage as DamageModel
+	dmg.repair(Config.data)
+	# A respawn is a fresh car, so it starts cold; a rest-stop repair (_pass) keeps the heat.
+	dmg.engine_temp = 0.0
 	respawned.emit(last_site, wreck)
 
 

@@ -289,12 +289,14 @@ dev stage keeps HP as a pure degradation.
    by `engine_cooling_retain_per_s ^ dt`, so a hotter engine sheds more and it settles where heat
    in matches heat out. Broken cooling skips that multiply, so the temperature only climbs —
    faster at higher revs, not at all with the engine at 0 rpm. A newly spawned engine starts at
-   0 °C; a repair leaves the temperature alone and lets the fixed cooling bring it down.
+   0 °C; a repair leaves the temperature alone and lets the fixed cooling bring it down. Only the
+   wreck respawn (`RestStops.respawn`) zeroes it, since that is a fresh car, not a repair.
 3. **Drain:** above `overheat_temp_threshold_c` HP drains at `overheat_hp_drain_per_s`, and
    `overheat_ramp` feeds the same misfire / rev-cap ramp as damage (`damage_ramp` takes the
    larger), so an overheating engine sounds sick.
-4. **Giving up:** at 0 HP, `gave_up` fires once. `RestStops` respawns the car at the last lit rest
-   stop.
+4. **Giving up:** at 0 HP, `gave_up` fires once. `RestStops` kills the engine (silent, no drive)
+   and, after `wreck_page_delay_s`, shows the wreck page whose Respawn puts the car at the last
+   lit rest stop (see `free-roam.md`).
 5. **`repair()`** (a rest stop, a respawn or a travel) restores full HP, fixes the cooling,
    straightens the wheels and re-arms `gave_up`.
 
