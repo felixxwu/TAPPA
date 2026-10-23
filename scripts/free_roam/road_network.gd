@@ -25,6 +25,8 @@ var seg_len := PackedFloat64Array()
 var seg_cum := PackedFloat64Array()  # arc length along the edge at the segment's start
 var seg_edge := PackedInt32Array()
 var edge_first_seg := PackedInt32Array()  # each edge's segments are contiguous from here
+var edge_len := PackedFloat64Array()  # each edge's arc length
+var node_degree := PackedInt32Array()  # how many edges meet at each node
 var _grid := {}  # Vector2i -> PackedInt32Array of segment ids
 
 # The answer to the last nearest() query, kept in fields so a query allocates nothing.
@@ -59,6 +61,11 @@ func build(settings: FreeRoamSettings, terrain: RoadTerrain) -> void:
 	_terrain = terrain
 	_grow()
 	_densify()
+	node_degree.resize(node_x.size())
+	node_degree.fill(0)
+	for e in edges:
+		node_degree[e.x] += 1
+		node_degree[e.y] += 1
 
 
 func polyline(ei: int) -> PackedVector2Array:
@@ -130,7 +137,7 @@ func _grow() -> void:
 # line, landing exactly on both ends. Twistiness sets how far it swings, bend length how often.
 func _densify() -> void:
 	seg_ax.clear(); seg_ay.clear(); seg_bx.clear(); seg_by.clear()
-	seg_len.clear(); seg_cum.clear(); seg_edge.clear(); edge_first_seg.clear()
+	seg_len.clear(); seg_cum.clear(); seg_edge.clear(); edge_first_seg.clear(); edge_len.clear()
 	_grid.clear()
 	total_length_m = 0.0
 	var step := minf(40.0, _s.bend_length_m / 6.0)
@@ -164,7 +171,21 @@ func _densify() -> void:
 			cum += length
 			for c in _cells(px[i], py[i], px[i + 1], py[i + 1], GRID_M):
 				_append_to(_grid, c, si)
+		edge_len.append(cum)
 		total_length_m += cum
+
+
+# How far along edge `ei` the point at arc length `s` is from the nearer end that is a junction
+# (three or more roads meeting); INF when neither end is one. Road paint is kept out of junctions.
+func junction_gap(ei: int, s: float) -> float:
+	if ei < 0 or ei >= edges.size():
+		return INF
+	var gap := INF
+	if node_degree[edges[ei].x] >= 3:
+		gap = s
+	if node_degree[edges[ei].y] >= 3:
+		gap = minf(gap, edge_len[ei] - s)
+	return maxf(gap, 0.0)
 
 
 # Nearest road point within `max_d`, searching the segment grid ring by ring. Equal distances

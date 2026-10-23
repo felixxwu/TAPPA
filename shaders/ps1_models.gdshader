@@ -17,6 +17,30 @@ uniform float road_uv_scale = 1.0;
 // baked terrain lighting in COLOR.rgb. See todo/tarmac-texture.md.
 uniform vec4 tarmac_color : source_color = vec4(0.32, 0.32, 0.34, 1.0);
 
+// --- Per-pixel road paint (free roam; TerrainStreamer._arrays). Off by default, so a stage
+// keeps its per-vertex COLOR.a road weight. On, the road is painted per FRAGMENT from the
+// distance to the road the vertices carry, so its edge is a smooth line rather than following
+// the (2 m, or 16 m far away) mesh triangles. The vertex channels mean something else then:
+//   UV.x  signed distance to the road (side by sign), UV.y  unsigned distance less a per-mesh
+//   slack (the road distance is max(|UV.x|, UV.y)), UV2.x  tarmac weight, UV2.y  arc length
+//   along the road, COLOR.a  lane-marking weight. The ground texture is placed from the world
+//   position instead of UV (ground_uv_per_m).
+uniform bool paint_road_per_pixel = false;
+uniform float ground_uv_per_m = 0.125;
+// RoadTerrain.paint_weight, per pixel: 1 inside road_paint_mid_m - road_paint_half_m, 0 beyond
+// road_paint_mid_m + road_paint_half_m, smoothstep between.
+uniform float road_paint_mid_m = 2.4;
+uniform float road_paint_half_m = 0.5;
+// Lane paint on tarmac: two solid edge lines road_marking_edge_m out from the centre and a
+// dashed centre line, road_marking_width_m wide. Strength 0 turns them off (a region without
+// markings).
+uniform float road_marking_strength = 0.0;
+uniform vec4 road_marking_color : source_color = vec4(0.82, 0.82, 0.78, 1.0);
+uniform float road_marking_width_m = 0.12;
+uniform float road_marking_edge_m = 1.5;
+uniform float road_marking_dash_m = 1.5;
+uniform float road_marking_gap_m = 3.0;
+
 // --- Spatial REGION blending (overworld only; see features/overworld.md -> "Region blending").
 // Off by default, and a stage never writes UV2.y, so with blend_region false every mix below
 // takes its A term unchanged and a stage renders bit-for-bit as it did before this existed.
@@ -121,6 +145,23 @@ void fragment() {
 	// stays a plain ground tint × baked light (white by default).
 	float road_t = blend_road ? COLOR.a : 0.0;
 	float tarmac_t = blend_road ? UV2.x : 0.0;
+	vec2 ground_uv = UV;
+	float lines = 0.0;
+	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	if (blend_road && paint_road_per_pixel) {
+		ground_uv = world_pos.xz * ground_uv_per_m;
+		float d = max(abs(UV.x), UV.y);
+		road_t = 1.0 - smoothstep(road_paint_mid_m - road_paint_half_m, road_paint_mid_m + road_paint_half_m, d);
+		// A line's coverage, softened over one pixel's worth of distance so it doesn't crawl.
+		float aa = max(fwidth(d), 0.001);
+		float hw = road_marking_width_m * 0.5;
+		float edge = 1.0 - smoothstep(hw - aa, hw + aa, abs(d - road_marking_edge_m));
+		float centre = 1.0 - smoothstep(hw - aa, hw + aa, d);
+		float period = max(road_marking_dash_m + road_marking_gap_m, 0.01);
+		centre *= step(mod(UV2.y, period), road_marking_dash_m);
+		lines = max(edge, centre) * road_marking_strength * smoothstep(0.4, 0.6, COLOR.a)
+			* smoothstep(0.4, 0.6, tarmac_t);
+	}
 	// Region cross-fade, spatially. The ground TEXTURE slides from slot A to slot B (two samplers,
 	// the pair nearest the car); the ground TINT and the tarmac colour come from the all-regions
 	// LUT, so a chunk belonging to a third region still paints in its OWN colours. The GRAVEL
@@ -135,9 +176,9 @@ void fragment() {
 		tint = mix(albedo_color, albedo_color_b, region_t);
 		tarmac = mix(tarmac_color, tarmac_color_b, region_t);
 	}
-	vec3 ground = mix(texture(albedo_texture, UV * texture_tile).rgb,
-		texture(albedo_texture_b, UV * texture_tile).rgb, region_t);
-	vec3 gravel = texture(road_texture, UV * texture_tile * road_uv_scale).rgb;
+	vec3 ground = mix(texture(albedo_texture, ground_uv * texture_tile).rgb,
+		texture(albedo_texture_b, ground_uv * texture_tile).rgb, region_t);
+	vec3 gravel = texture(road_texture, ground_uv * texture_tile * road_uv_scale).rgb;
 	vec3 road = mix(gravel, tarmac.rgb, tarmac_t);
 	// Surface and light are kept separate so the headlight can ADD to the light
 	// term. It must not multiply: at night COLOR.rgb is baked near-black, and
@@ -146,7 +187,8 @@ void fragment() {
 	// space would be cheaper but the globals are camera-agnostic and the game has
 	// several cameras (BonnetCamera, ChaseCamera, replay cams).
 	vec3 surface = mix(ground, road, road_t) * tint.rgb;
-	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// lane paint keeps its own colour rather than taking the ground tint
+	surface = mix(surface, road_marking_color.rgb, lines * road_t);
 	// Fog-of-war darkening MULTIPLIES the finished light term, unlike the headlight which adds
 	// to it: unexplored ground is meant to go dark whatever is lighting it, headlights
 	// included, so a player cannot simply drive up to the frontier and light it up.

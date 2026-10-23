@@ -109,6 +109,9 @@ default white), `albedo_color`, `texture_tile`, `blend_road` (bool, default
 (the flat tarmac fill, set from `cfg.tarmac_color`). Fragment:
 `road = mix(road_texture, tarmac_color, UV2.x)` then
 `ALBEDO = mix(albedo_texture, road, blend_road ? COLOR.a : 0) × albedo_color × COLOR.rgb`.
+Free roam turns on `paint_road_per_pixel` instead, which works the road weight and the
+tarmac lane markings out per fragment from a road distance baked into `UV` (see
+[free-roam.md](free-roam.md), "Road paint is per pixel").
 When `blend_road` is on (the terrain material sets it), the per-vertex `COLOR.a`
 cross-fades the ground texture (grass) to the road where the terrain bakes road
 weight into vertex-colour alpha, and the road itself fades from the gravel

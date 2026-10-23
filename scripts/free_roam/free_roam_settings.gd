@@ -48,9 +48,12 @@ extends Resource
 @export var road_half_width_m := 1.9
 @export var road_shoulder_m := 1.0
 ## How wide the drawn grass-to-gravel fade is, centred on the shoulder (looks only; the road's grip
-## edge stays the shoulder). Much under 1.5 near_stride_m and the fade falls inside one mesh
-## triangle and its edge turns jagged.
+## edge stays the shoulder). The ground shader paints it per pixel from the distance to the road,
+## so it can be narrower than a mesh triangle without the edge turning jagged.
 @export var road_paint_fade_m := 1.0
+## Lane markings on tarmac stop this far short of a junction, so the lines of roads meeting there
+## don't cross each other; they fade back in over the next 4 m.
+@export var marking_junction_clear_m := 6.0
 
 @export_group("Base height and lakes")
 @export var base_scale_m := 500.0

@@ -18,6 +18,13 @@ var net: RoadNetwork
 var sites: RoadSites
 # Distance to the nearest road found by the last height() call; INF when none was looked up.
 var last_road_d := INF
+# More about that road, for the per-pixel road paint (TerrainStreamer bakes these per vertex):
+# the distance signed by which side of the road the point is on (so it interpolates straight
+# across the centreline), the arc length along the road (for dashes), and whether lane markings
+# belong here (0 on a rest-stop pad or in a junction, 1 along open road).
+var last_road_sd := INF
+var last_road_s := 0.0
+var last_road_mark := 0.0
 
 var _s: FreeRoamSettings
 var _tarmac := PackedFloat32Array()  # per ring: 1 when its region's roads are tarmac
@@ -84,12 +91,18 @@ func height(x: float, y: float, cands: PackedInt32Array, use_cands: bool) -> flo
 		return h
 	var o := sites.outside(i, x, y)
 	# a pad reads as road: full surface inside it, fading over the shoulder outside
-	last_road_d = minf(last_road_d, maxf(0.0, _s.road_half_width_m + o))
+	var pad_d := maxf(0.0, _s.road_half_width_m + o)
+	if pad_d < last_road_d:
+		last_road_d = pad_d
+		last_road_sd = pad_d
+		last_road_mark = 0.0
 	return lerpf(sites.pad_h[i], h, LabNoise.smooth(0.0, sites.blend_m(sites.pad_h[i] - h), o))
 
 
 func _natural_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool) -> float:
 	last_road_d = INF
+	last_road_sd = INF
+	last_road_mark = 0.0
 	var r := LabNoise.hyp(x, y)
 	if r < min_coast_r() - 400.0:
 		return _inland_height(x, y, cands, use_cands)
@@ -114,6 +127,9 @@ func _inland_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool
 	if not found:
 		return bp + mtn + bump(x, y) * shore
 	last_road_d = net.hit_d
+	last_road_sd = net.hit_d * (-1.0 if net.hit_side < 0.0 else 1.0)
+	last_road_s = net.hit_s
+	last_road_mark = LabNoise.smooth(_s.marking_junction_clear_m, _s.marking_junction_clear_m + 4.0, net.junction_gap(net.hit_edge, net.hit_s))
 	var far := LabNoise.smooth(_s.flat_band_m, _s.mountain_dist_m, net.hit_d)
 	var hq := maxf(base_h(net.hit_qx, net.hit_qy), water + 3.0)
 	var base := hq + (bp - hq) * far
@@ -130,12 +146,19 @@ func road_weight(d: float) -> float:
 	return 1.0 - smoothstep(_s.road_half_width_m, _s.road_half_width_m + _s.road_shoulder_m, d)
 
 
-# The road weight the ground is painted with: the same edge as road_weight, faded over at least
-# road_paint_fade_m so the blend spans several mesh vertices.
+# The road weight the ground is painted with: the same edge as road_weight, faded over
+# road_paint_fade_m (never narrower than the shoulder). The ground shader evaluates exactly this per
+# pixel from paint_mid_m / paint_half_m (TerrainStreamer._material_for); this is its reference.
 func paint_weight(d: float) -> float:
-	var mid := _s.road_half_width_m + _s.road_shoulder_m * 0.5
-	var half := maxf(_s.road_shoulder_m, _s.road_paint_fade_m) * 0.5
-	return 1.0 - smoothstep(mid - half, mid + half, d)
+	return 1.0 - smoothstep(paint_mid_m() - paint_half_m(), paint_mid_m() + paint_half_m(), d)
+
+
+func paint_mid_m() -> float:
+	return _s.road_half_width_m + _s.road_shoulder_m * 0.5
+
+
+func paint_half_m() -> float:
+	return maxf(_s.road_shoulder_m, _s.road_paint_fade_m) * 0.5
 
 
 # Which biome ring a point is in, counting outward from spawn.

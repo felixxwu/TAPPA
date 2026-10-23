@@ -162,6 +162,69 @@ func test_the_painted_road_edge_matches_the_grip_edge_but_fades_wider() -> void:
 	assert_eq(terrain.paint_weight(mid + half), 0.0)
 
 
+# The ground shader paints the road per pixel from max(|UV.x|, UV.y) (ps1_models.gdshader,
+# paint_road_per_pixel). At every vertex that must be the distance to the road, and UV.x must
+# change sign across the road, so it interpolates straight through the centreline.
+func test_chunk_vertices_carry_the_signed_road_distance_the_shader_paints_from() -> void:
+	var s := _settings()
+	var st := TerrainStreamer.new()
+	st.settings = s
+	var ground := ShaderMaterial.new()
+	ground.shader = load("res://shaders/ps1_models.gdshader")
+	st.material = ground
+	var focus := Node3D.new()
+	add_child_autofree(focus)
+	st.focus = focus
+	add_child_autofree(st)
+	var p := _road_midpoint(st.network)
+	var coord := st._chunk_of(p)
+	var job := st._new_job(coord, true, false)
+	st._queue.erase(job)
+	st._step(job, Time.get_ticks_usec() + 60_000_000, TerrainStreamer.Stage.UPLOAD)
+	var n := job.n * job.n
+	var sides := {}
+	var near_road := 0
+	for i in n:
+		var uv := job.uvs[i]
+		assert_almost_eq(maxf(absf(uv.x), uv.y), job.road_d[i], 0.01, "the shader's distance is the road distance at a vertex")
+		if job.road_d[i] < s.road_half_width_m * 2.0:
+			near_road += 1
+			sides[signf(uv.x)] = true
+	assert_gt(near_road, 0, "a road runs through the chunk")
+	assert_true(sides.has(1.0) and sides.has(-1.0), "vertices either side of the road carry opposite signs")
+	var mat := st.ring_material_at(coord) as ShaderMaterial
+	assert_true(mat.get_shader_parameter("paint_road_per_pixel"), "free roam paints the road per pixel")
+	assert_almost_eq(mat.get_shader_parameter("road_paint_mid_m"), st.terrain.paint_mid_m(), 1e-5)
+
+
+func test_signed_road_distance_matches_the_distance_and_flips_across_the_road() -> void:
+	var s := _settings()
+	var terrain := _world(s)
+	var net := terrain.net
+	var p := _road_midpoint(net)
+	net.nearest(p.x, p.y, 50.0)
+	var across := Vector2(-net.hit_dir.y, net.hit_dir.x) * 1.0
+	terrain.height(p.x + across.x, p.y + across.y, PackedInt32Array(), false)
+	var a := terrain.last_road_sd
+	assert_almost_eq(absf(a), terrain.last_road_d, 1e-4)
+	terrain.height(p.x - across.x, p.y - across.y, PackedInt32Array(), false)
+	var b := terrain.last_road_sd
+	assert_almost_eq(absf(b), terrain.last_road_d, 1e-4)
+	assert_lt(a * b, 0.0, "the two sides of the road have opposite signs")
+
+
+# Lane markings stop short of junctions so crossing roads don't paint over each other.
+func test_junction_gap_measures_to_the_nearer_junction_end_only() -> void:
+	var net := RoadNetwork.new()
+	net.edges = [Vector2i(0, 1), Vector2i(1, 2), Vector2i(1, 3), Vector2i(2, 4)]
+	net.node_degree = PackedInt32Array([1, 3, 2, 1, 1])
+	net.edge_len = PackedFloat64Array([100.0, 80.0, 60.0, 50.0])
+	assert_almost_eq(net.junction_gap(0, 30.0), 70.0, 1e-6, "edge 0 ends at the junction")
+	assert_almost_eq(net.junction_gap(1, 30.0), 30.0, 1e-6, "edge 1 starts at it")
+	assert_eq(net.junction_gap(3, 25.0), INF, "neither end of edge 3 is a junction")
+	assert_eq(net.junction_gap(-1, 0.0), INF, "no road")
+
+
 # The wheel debris picks its look from the same surface_at the tyres read: gravel clods on the
 # road, grass blades off it (free roam's roads are all loose, so nothing reads as tarmac).
 func test_wheel_debris_reads_gravel_on_the_road_and_grass_off_it() -> void:

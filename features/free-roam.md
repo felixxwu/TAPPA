@@ -163,18 +163,42 @@ wrapping). By default that's home, greece, taiga, snow.
 the region's `grass_texture`, `gravel_texture` and `tarmac_color` (`_material_for`). A chunk uses
 the material of the ring at its centre, so a border switches at chunk edges. The baked vertex
 tint is the region's `terrain_tint` (white when unset), and trees, bushes and rocks follow the
-region's `tree_mix`, bush switch and rock density. The vertex alpha (the shader's grass-to-gravel
-blend) is `RoadTerrain.paint_weight`: the road's own edge, but faded over `road_paint_fade_m`
-rather than the narrower `road_shoulder_m`, because a fade much under ~1.5 vertex spacings
-(`near_stride_m`) falls inside one triangle and shows the mesh as a jagged edge. Grip still
-reads the shoulder (`road_weight`, `surface_at`).
+region's `tree_mix`, bush switch and rock density.
+
+**Road paint is per pixel, not per vertex.** The near mesh is a 2 m grid (16 m far away), and the
+road is only 3.8 m wide, so a per-vertex road weight (what the stage did on its 0.5 m grid)
+draws the road's edge along the triangles: a zig-zag. Instead `TerrainStreamer._arrays` bakes
+the *distance* to the road into each vertex, and the ground shader (`ps1_models.gdshader`, the
+`paint_road_per_pixel` path that `_material_for` turns on) works out the weight per fragment:
+
+| Channel | Carries |
+| --- | --- |
+| `UV.x` | distance to the road, signed by side (`RoadTerrain.last_road_sd`). Linear across the centreline, so it interpolates exactly over a triangle that straddles the road |
+| `UV.y` | unsigned distance less a slack of 0.75 × the stride. The shader's distance is `max(abs(UV.x), UV.y)`: where the side flips between two roads (junctions, or midway between parallel roads) `UV.x` interpolates through a false zero and `UV.y` catches it; across a real centreline `UV.y` overshoots by less than the slack, so it never wins |
+| `UV2.x` | tarmac weight (baked for every vertex within one triangle of painted road) |
+| `UV2.y` | arc length along the road (`last_road_s`), for the dashes |
+| `COLOR.a` | lane-marking weight (`last_road_mark`): 0 on rest-stop pads and within `marking_junction_clear_m` of a junction (`RoadNetwork.junction_gap`), fading in over 4 m |
+
+With `UV` taken, the ground texture is placed from the world position (`ground_uv_per_m`,
+which is `UV_PER_M`). The weight itself is `RoadTerrain.paint_weight` (the shader's uniforms
+are `paint_mid_m` / `paint_half_m`): the road's own edge, faded over `road_paint_fade_m`. Grip
+still reads the shoulder (`road_weight`, `surface_at`). `tools/road_paint_capture.tscn` takes
+screenshots of a gravel road, a tarmac road and a junction to check it by eye.
+
+**Lane markings on tarmac** are drawn by the same shader pass: two solid edge lines
+`road_marking_edge_inset_m` inside the road's edge and a dashed centre line, sized by the
+GameConfig `Road Markings` group (`road_marking_width_m`, `road_marking_center_dash_m`,
+`road_marking_center_gap_m`, `road_markings_enabled`) and coloured by the region's
+`road_marking_color` (yellow in Greece) or `road_marking_color`'s default. They only appear
+where the tarmac weight is over half. This replaces the stage's `RoadMarkings` mesh, which was
+never wired into free roam.
 
 **Road surface (gravel / tarmac):** a region with `"road_surface": "tarmac"` paves its ring's
 roads (Greece, ring 1, by default; every other ring is gravel). `RoadTerrain.tarmac_weight` is
 0–1 per point: its ring's surface, blended over `road_surface_blend_m` where two rings meet (it
 uses the same wobbly ring border as `ring_index`). It is the `.y` of `surface_at`, so grip, tyre
 marks and wheel debris switch to tarmac through their existing tarmac paths, and it is baked
-into each chunk vertex's UV2.x (only where the road is painted), which the ground shader uses to
+into each chunk vertex's UV2.x (near painted road), which the ground shader uses to
 mix the gravel texture toward the ring's `tarmac_color`.
 
 **Terrain shading (the stage's fake light):** each chunk vertex's colour is its ring tint times
