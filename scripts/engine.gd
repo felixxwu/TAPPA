@@ -37,6 +37,10 @@ var limiting := false  # rev-limiter fuel cut latched on (see _update_limiter)
 # Combined fuel-cut state (rev limiter OR a damage misfire) for the audio synth:
 # while true, combustion has stopped this substep — the note ducks and crackles.
 var fuel_cut := false
+# Ignition off: the car gave up (free roam, RestStops). No combustion, the clutch stays open so
+# the car coasts with no drive or engine braking, the revs spin down to 0 (below the idle clamp)
+# and EngineAudio goes silent. Cleared by reset() (every respawn / teleport goes through it).
+var killed := false
 # Turbo shaft state (features/forced-induction.md). omega_turbo integrates against
 # turbo_inertia in step(); boost = (omega_turbo/omega_ref)^2 multiplies delivered
 # torque. Zero and inert on an NA engine (config.turbo_enabled false). The audio
@@ -328,6 +332,7 @@ func reset() -> void:
 	shift_timer = 0.0
 	limiting = false
 	fuel_cut = false
+	killed = false
 	_torque_ramp = 0.0
 	_misfire_timer = 0.0
 	omega_turbo = 0.0
@@ -353,8 +358,10 @@ func reset() -> void:
 # is the 0..1 drive request; reverse comes from the gear's sign. driveline_omega
 # is the driven axle(s)' spin (rear for RWD, front for FWD, mean for AWD).
 func step(h: float, throttle_in: float, driveline_omega: float, declutch := false) -> float:
-	throttle = throttle_in
 	var cfg: GameConfig = config
+	if killed:
+		return _step_killed(cfg, h)
+	throttle = throttle_in
 	shift_timer = maxf(shift_timer - h, 0.0)
 	# Combustion stops this substep if the rev limiter OR a damage misfire cuts fuel.
 	fuel_cut = _update_limiter(cfg) or _update_misfire(cfg, h)
@@ -473,6 +480,23 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	omega += (crank - clutch_torque) / cfg.engine_inertia * h
 	omega = clampf(omega, idle_omega(), redline_omega() * 1.02)
 	return clutch_torque * gr
+
+
+# A killed engine's substep: friction alone spins the flywheel down to a stop and nothing reaches
+# the wheels (the clutch is open, so no engine braking either).
+func _step_killed(cfg: GameConfig, h: float) -> float:
+	throttle = 0.0
+	fuel_cut = true
+	limiting = false
+	_torque_ramp = 0.0
+	boost = 0.0
+	sc_boost = 0.0
+	omega_turbo = 0.0
+	antilag_active = false
+	nitrous_delivering = false
+	var friction := cfg.engine_friction_base + cfg.engine_friction_slope * rpm() / 1000.0
+	omega = maxf(omega - maxf(friction, 0.0) / cfg.engine_inertia * h, 0.0)
+	return 0.0
 
 
 # Bouncing rev limiter with hysteresis: latch the fuel cut ON at redline and

@@ -16,6 +16,21 @@ func before_each() -> void:
 	_engine = EngineSim.new(Config.data)
 
 
+# The car gave up: a killed engine sends nothing to the wheels even flat out and against a
+# spinning driveline (no drive, no engine braking), spins down to a stop, and reset() revives it.
+func test_a_killed_engine_delivers_nothing_and_spins_down_until_reset() -> void:
+	_engine.gear = 1
+	_engine.omega = _engine.redline_omega() * 0.5
+	_engine.killed = true
+	for i in range(5000):
+		assert_eq(_engine.step(0.001, 1.0, 50.0), 0.0)
+	assert_eq(_engine.rpm(), 0.0, "spun down to a stop, below the idle clamp")
+	assert_eq(_engine.throttle, 0.0, "the synth sees no throttle")
+	_engine.reset()
+	assert_false(_engine.killed)
+	assert_gt(_engine.step(0.001, 1.0, 0.0), 0.0, "a reset engine drives again")
+
+
 func test_rev_limiter_bounces_within_a_band() -> void:
 	# A real limiter cuts fuel at redline and restores it once the revs fall
 	# back, so the engine bounces off the limit instead of pinning to it. In

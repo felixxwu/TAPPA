@@ -108,6 +108,7 @@ func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> voi
 	var dmg: DamageModel = _car.damage
 	dmg.hp = dmg.max_hp * 0.3
 	dmg.cooling_broken = true
+	dmg.engine_temp = 50.0
 	watch_signals(_rest)
 	# One physics step's travel at ~200 km/h straight past it, so a per-frame point check would miss.
 	_rest._last_p = far_lane - d * 15.0
@@ -119,6 +120,7 @@ func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> voi
 	assert_eq(_rest.last_site, site, "and the respawn point")
 	assert_eq(dmg.hp, dmg.max_hp, "fully healed")
 	assert_false(dmg.cooling_broken, "cooling mended too")
+	assert_eq(dmg.engine_temp, 50.0, "a repair is not a reset: the engine keeps its heat")
 	assert_signal_emitted_with_parameters(_rest, "healed", [site])
 	assert_signal_not_emitted(_rest, "opened", "no page without stopping")
 	_rest.set_physics_process(true)
@@ -153,35 +155,51 @@ func test_menu_select_while_moving_through_a_rest_stop_does_nothing() -> void:
 	_rest.set_physics_process(true)
 
 
-func test_giving_up_respawns_repaired_at_the_last_lit_rest_stop() -> void:
+func test_giving_up_cuts_the_engine_then_shows_the_wreck_page_then_respawns_cold() -> void:
 	var site := _a_rest_stop()
 	_rest.lit_sites[site] = true
 	# Parked on spawn's pad, the live step would (rightly) make spawn the respawn point again.
+	# With physics_process off the wreck-page delay is stepped by hand below.
 	_rest.set_physics_process(false)
 	_rest.move_car_to(0)
 	_rest.last_site = site
+	var saved_delay := Config.data.wreck_page_delay_s
+	Config.data.wreck_page_delay_s = 2.0
 	await get_tree().physics_frame
 	watch_signals(_rest)
 	var dmg: DamageModel = _car.damage
+	var engine: EngineSim = _car.drivetrain.engine
 	dmg.apply_loss(dmg.max_hp * 2.0)
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	assert_signal_emitted(_rest, "wrecked")
+	assert_true(engine.killed, "the engine cuts out the moment the car gives up")
+	assert_true(_car.ai_controlled, "the wreck rolls on with no player controls")
+	assert_eq(_car.ai_throttle, 0.0)
+	assert_signal_not_emitted(_rest, "wrecked", "the wreck page waits")
+	assert_false(_page.is_open())
+	_rest.step(1.0)
+	assert_signal_not_emitted(_rest, "wrecked", "still waiting partway through the delay")
+	_rest.step(1.1)
+	assert_signal_emit_count(_rest, "wrecked", 1)
+	_rest.step(5.0)
+	assert_signal_emit_count(_rest, "wrecked", 1, "the page is shown once")
 	assert_signal_not_emitted(_rest, "respawned", "the wreck page comes first")
 	assert_true(_page.is_open())
 	assert_eq(_page.view, RestStopPage.View.WRECKED)
 	assert_false(get_tree().paused, "the wreck page leaves the game running")
-	assert_true(_car.ai_controlled, "the wreck rolls on with no player controls")
-	assert_eq(_car.ai_throttle, 0.0)
+	dmg.engine_temp = 80.0
 	assert_true(_page.pick("Respawn"))
 	assert_signal_emitted(_rest, "respawned")
 	assert_false(_page.is_open())
 	assert_false(_car.ai_controlled, "the controls come back with the respawn")
+	assert_false(engine.killed, "and the engine runs again")
 	assert_eq(dmg.hp, dmg.max_hp)
+	assert_eq(dmg.engine_temp, 0.0, "a respawned car starts with a cold engine")
 	var pose := _rest.pose_at(site)
 	assert_lt(Vector2(_car.global_position.x, _car.global_position.z).distance_to(Vector2(pose.origin.x, pose.origin.z)), 3.0)
 	assert_true(_streamer.has_collision_at(pose.origin.x, pose.origin.z), "it lands on built ground")
+	Config.data.wreck_page_delay_s = saved_delay
 	_rest.set_physics_process(true)
 
 

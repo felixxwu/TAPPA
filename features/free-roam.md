@@ -281,12 +281,16 @@ rumours); nothing left → no page. Continue / Back closes it.
 - **Opening the page:** at a rest stop below `rest_stop_speed_kmh`, `menu_select` (Enter /
   gamepad A) opens the rest-stop page (`features/menus.md`); `RestStops.prompt_site` says when, and
   the minimap's line shows the prompt. Coming to a halt alone does nothing.
-- **Respawn:** on `gave_up` `RestStops.wrecked` opens the wreck page (`RestStopPage.open_wrecked`,
+- **Respawn:** on `gave_up` the engine cuts out completely (`EngineSim.killed`: no combustion,
+  clutch open so no drive or engine braking, revs spin down to 0, `EngineAudio` pushes silence;
+  `EngineSim.reset` clears it) and, `GameConfig.wreck_page_delay_s` later (counted down in
+  `RestStops.step`), `RestStops.wrecked` opens the wreck page (`RestStopPage.open_wrecked`,
   View.WRECKED: it lists the carried loot that is left at the wreck). The game keeps running: the
   car rolls on driverless (`RestStops.is_wrecked`, all `ai_*` inputs zero) and rest stops ignore it. Its
   Respawn card (or Back) calls `respawn()`: the car is moved to the last lit rest stop (`move_car_to`:
   stream the destination in with `TerrainStreamer.prefill_at`, then put the car on its road beside
-  the pad) and repaired. `respawned` carries the wreck position, for dropped loot in stage 7.
+  the pad), repaired, and its engine temperature reset to 0 (a respawn is a fresh car; a rest-stop
+  repair keeps the heat). `respawned` carries the wreck position, for dropped loot in stage 7.
 - **Travel:** goes to any lit rest stop, with the same move plus a repair.
 - **Crowds:** each rest stop has a static crowd along the back of its pad (`features/spectators.md`).
 
