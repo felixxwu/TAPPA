@@ -56,7 +56,7 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 
 ## Streaming under a strict frame budget
 
-`FreeRoamSettings.budget_us` (default 1000 µs) is the most terrain work any frame may do. A chunk
+`FreeRoamSettings.budget_us` (default 2000 µs) is the most terrain work any frame may do. A chunk
 (64 m) is built by a resumable `ChunkJob` moving through stages:
 
 | Stage | Unit | How it stays inside the budget |

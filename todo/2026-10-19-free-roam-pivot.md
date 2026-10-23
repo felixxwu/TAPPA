@@ -536,7 +536,7 @@ point for the road-network spec, not tuned game values. The revision replaced an
 
 ## Streaming method — a strict per-frame terrain budget (agreed 2026-10-20)
 
-**The rule:** terrain work gets at most **1 ms per frame** (`FreeRoamSettings.budget_us`), and
+**The rule:** terrain work gets at most **2 ms per frame** (raised from 1 ms on 2026-10-23) (`FreeRoamSettings.budget_us`), and
 nothing that would overrun it may start. The car drives while the world fills in around it.
 The old streaming seam budgeted by count (`overworld_chunk_build_budget = 2` chunks per frame),
 which is how it produced 13–34 ms spikes (`features/terrain-streaming.md`).

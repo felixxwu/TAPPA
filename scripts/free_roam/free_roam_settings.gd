@@ -113,7 +113,7 @@ extends Resource
 
 @export_group("Streaming")
 ## Strict per-frame terrain budget, microseconds.
-@export var budget_us := 1000
+@export var budget_us := 2000
 @export var chunk_m := 64.0
 ## Vertex spacing of the near (full-detail) and far meshes.
 @export var near_stride_m := 2.0
