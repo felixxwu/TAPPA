@@ -50,7 +50,7 @@ extends Resource
 ## How wide the drawn grass-to-gravel fade is, centred on the shoulder (looks only; the road's grip
 ## edge stays the shoulder). Much under 1.5 near_stride_m and the fade falls inside one mesh
 ## triangle and its edge turns jagged.
-@export var road_paint_fade_m := 3.0
+@export var road_paint_fade_m := 1.0
 
 @export_group("Base height and lakes")
 @export var base_scale_m := 500.0
