@@ -222,8 +222,8 @@ func _build_parts() -> void:
 		var taken := LootRules.occupant(owned, part)
 		# can_fit already covers a swap (one of a kind, so an occupant never blocks it), and never
 		# offers a kit for the car's own layout, whatever is fitted.
-		var ok := LootRules.can_fit(owned, part)
-		var extra := "Can't fit"
+		var extra := LootRules.fit_block_reason(owned, part)
+		var ok := extra.is_empty()
 		if ok:
 			extra = "Swap for " + LootRules.card_text(taken)[0] if not taken.is_empty() else "Fit"
 		var text := LootRules.card_text(part)
@@ -238,8 +238,8 @@ func _build_parts() -> void:
 		for i in on.size():
 			var part: Dictionary = on[i]
 			var taken := LootRules.occupant(owned, part)
-			var ok := LootRules.can_fit(owned, part)
-			var extra := "Can't fit"
+			var extra := LootRules.fit_block_reason(owned, part)
+			var ok := extra.is_empty()
 			if ok:
 				extra = "Swap for " + LootRules.card_text(taken)[0] if not taken.is_empty() else "Move here"
 			var text := LootRules.card_text(part)

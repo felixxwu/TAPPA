@@ -388,6 +388,15 @@ func test_a_kit_for_the_cars_own_layout_is_never_fittable_even_beside_another_ki
 	assert_false(LootRules.occupant(owned, own_kit).is_empty(), "though another kit does occupy the slot")
 
 
+func test_a_part_that_cant_fit_says_why() -> void:
+	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [{"kind": "part", "id": "grip", "level": 0}]}
+	var own := UpgradeLibrary.stock_drive_mode(owned)
+	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "drivetrain:%d" % own}),
+		"Already " + CarLibrary.drive_text(own), "a kit for the car's own layout names the layout")
+	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "grip", "level": 2}), "Already fitted")
+	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "brakes", "level": 0}), "", "a part that fits has no reason")
+
+
 # --- in the world ----------------------------------------------------------------------------------
 
 func _boot() -> Node3D:
