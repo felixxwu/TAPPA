@@ -116,6 +116,7 @@ class ChunkJob:
 	var tint := Color.WHITE
 	var heights := PackedFloat32Array()  # (n + 2·halo)²
 	var road_d := PackedFloat32Array()   # n²
+	var road_info := PackedFloat32Array()  # 3·n²: signed distance, arc length, marking weight
 	var verts := PackedVector3Array()
 	var colors := PackedColorArray()
 	var uvs := PackedVector2Array()
@@ -189,6 +190,21 @@ func _material_for(look: Dictionary) -> Material:
 		m.set_shader_parameter("road_texture", load(look["gravel_texture"]))
 	if look.has("tarmac_color"):
 		m.set_shader_parameter("tarmac_color", look["tarmac_color"])
+	# The road is painted per pixel from the distances _arrays bakes (see the comment there).
+	m.set_shader_parameter("paint_road_per_pixel", true)
+	m.set_shader_parameter("ground_uv_per_m", UV_PER_M)
+	m.set_shader_parameter("road_paint_mid_m", terrain.paint_mid_m())
+	m.set_shader_parameter("road_paint_half_m", terrain.paint_half_m())
+	# Lane paint on tarmac, sized like the stage's RoadMarkings. A region whose look omits
+	# road_marking_color still gets the default colour; its roads are gravel anyway, and the
+	# shader only paints lines where the road is tarmac.
+	var cfg := Config.data
+	m.set_shader_parameter("road_marking_strength", 1.0 if cfg.road_markings_enabled else 0.0)
+	m.set_shader_parameter("road_marking_color", look.get("road_marking_color", cfg.road_marking_color))
+	m.set_shader_parameter("road_marking_width_m", cfg.road_marking_width_m)
+	m.set_shader_parameter("road_marking_edge_m", settings.road_half_width_m - cfg.road_marking_edge_inset_m)
+	m.set_shader_parameter("road_marking_dash_m", cfg.road_marking_center_dash_m)
+	m.set_shader_parameter("road_marking_gap_m", cfg.road_marking_center_gap_m)
 	return m
 
 
@@ -554,6 +570,7 @@ func _prep(job: ChunkJob) -> void:
 	var m := job.n + 2 * job.halo
 	job.heights.resize(m * m)
 	job.road_d.resize(job.n * job.n)
+	job.road_info.resize(3 * job.n * job.n)
 	job.cursor = 0
 	job.stage = Stage.HEIGHTS
 	job.tint = ring_tint_at(Vector2((job.coord.x + 0.5) * cm, (job.coord.y + 0.5) * cm))
@@ -563,6 +580,9 @@ func _prep(job: ChunkJob) -> void:
 	if LabNoise.hyp(nx, ny) >= settings.island_radius_m:
 		job.heights.fill(terrain.sea_floor())
 		job.road_d.fill(INF)
+		job.road_info.fill(0.0)
+		for i in job.n * job.n:
+			job.road_info[3 * i] = 1.0e4
 		_start_arrays(job)
 		return
 	job.cands = _cands_of(job.coord)
@@ -604,7 +624,11 @@ func _heights(job: ChunkJob, deadline: int) -> bool:
 		var gz := job.cursor / m - job.halo
 		job.heights[job.cursor] = terrain.height(ox + gx * job.stride, oy + gz * job.stride, job.cands, true)
 		if gx >= 0 and gz >= 0 and gx < job.n and gz < job.n:
-			job.road_d[gz * job.n + gx] = minf(terrain.last_road_d, 1.0e4)  # finite, so it interpolates
+			var vi := gz * job.n + gx
+			job.road_d[vi] = minf(terrain.last_road_d, 1.0e4)  # finite, so it interpolates
+			job.road_info[3 * vi] = clampf(terrain.last_road_sd, -1.0e4, 1.0e4)
+			job.road_info[3 * vi + 1] = terrain.last_road_s
+			job.road_info[3 * vi + 2] = terrain.last_road_mark
 		job.cursor += 1
 		done += 1
 		var t_now := Time.get_ticks_usec()
@@ -641,6 +665,10 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 	var ox := job.coord.x * settings.chunk_m
 	var oy := job.coord.y * settings.chunk_m
 	var done := 0
+	# how far the interpolated unsigned distance can overshoot the true one across a centreline
+	var road_slack := 0.75 * s
+	# a vertex within one triangle of painted road carries the tarmac weight the pixels blend with
+	var paint_reach := terrain.paint_mid_m() + terrain.paint_half_m() + s
 	_last_kind = "arrays"
 	var peak: float = _peak_us["arrays"]
 	var t_prev := Time.get_ticks_usec()
@@ -669,12 +697,26 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		var px := ox + gx * s
 		var pz := oy + gz * s
 		var col := job.tint * ground_light(normal)
-		col.a = terrain.paint_weight(job.road_d[i])
-		if col.a > 0.0:
-			job.uv2s[i] = Vector2(terrain.tarmac_weight(px, pz), 0.0)
+		# The ground shader paints the road per pixel (ps1_models.gdshader, paint_road_per_pixel)
+		# from what the vertices carry here, never from a per-vertex weight, so the road's edge
+		# stays smooth however coarse the mesh. The ground texture is placed from the world
+		# position in that mode, which frees UV to carry the distances:
+		#   UV.x   distance to the road, signed by side. It is linear across the centreline, so it
+		#          interpolates exactly over a triangle that straddles the road;
+		#   UV.y   unsigned distance less road_slack. Where the side flips between two roads (in a
+		#          junction, or midway between parallel roads) UV.x interpolates through a false
+		#          zero and UV.y does not; the shader takes max(|UV.x|, UV.y). road_slack covers
+		#          how far UV.y overshoots across a real centreline, so there it never wins;
+		#   UV2    x tarmac weight, y arc length along the road (dashes);
+		#   COLOR.a  lane-marking weight (0 on rest-stop pads and in junctions).
+		col.a = job.road_info[3 * i + 2]
+		var tarmac := 0.0
+		if job.road_d[i] < paint_reach:
+			tarmac = terrain.tarmac_weight(px, pz)
+		job.uv2s[i] = Vector2(tarmac, job.road_info[3 * i + 1])
 		job.verts[i] = Vector3(gx * s, h, gz * s)
 		job.colors[i] = col
-		job.uvs[i] = Vector2(px, pz) * UV_PER_M
+		job.uvs[i] = Vector2(job.road_info[3 * i], job.road_d[i] - road_slack)
 		job.cursor += 1
 		done += 1
 	_peak_us["arrays"] = peak
