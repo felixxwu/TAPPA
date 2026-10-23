@@ -93,8 +93,18 @@ There is deliberately **no third mirror**: broth is the only source itch
 publishes, so any other URL would put an unverified third party in the release
 path.
 
-butler ends up on `PATH` (via `$GITHUB_PATH`), so the push steps call
-`butler push`, not `./butler`.
+butler ends up on `PATH` (via `$GITHUB_PATH`), so the push steps can call
+`butler` by name.
+
+## `butler_push.sh` — retry while itch is still processing
+
+The three push steps go through `.github/scripts/butler_push.sh` rather than
+calling `butler push` directly. itch keeps processing a channel's build for a
+while after butler returns, so when pushes to `main` land a few minutes apart
+the next run can reach the same channel first and get a 400 "channel X's latest
+build is still processing, try again later" (runs #743, #744, #747 and #749 on
+2026-10-23, all on the Windows `.exe`). The script retries on that error only,
+up to 10 times 30 s apart; any other butler failure still fails the job at once.
 
 ## Secrets
 

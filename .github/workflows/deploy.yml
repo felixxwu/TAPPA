@@ -115,7 +115,7 @@ jobs:
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          butler push "${EXPORT_DIR}" "${ITCH_USER}/${ITCH_GAME}:html5"
+          .github/scripts/butler_push.sh "${EXPORT_DIR}" "${ITCH_USER}/${ITCH_GAME}:html5"
 
   export-android:
     name: Export & deploy Android APK
@@ -209,7 +209,7 @@ jobs:
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          butler push build/android/tappa.apk "${ITCH_USER}/${ITCH_GAME}:android"
+          .github/scripts/butler_push.sh build/android/tappa.apk "${ITCH_USER}/${ITCH_GAME}:android"
 
   export-windows:
     name: Export & deploy Windows .exe
@@ -255,7 +255,7 @@ jobs:
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          butler push build/windows/tappa.exe "${ITCH_USER}/${ITCH_GAME}:windows"
+          .github/scripts/butler_push.sh build/windows/tappa.exe "${ITCH_USER}/${ITCH_GAME}:windows"
 
   publish-play:
     name: Build AAB & upload to Play
