@@ -27,6 +27,7 @@ var owned: Dictionary = {}
 # surface under each wheel comes from the streamer's surface_at, the same query the tyres' grip
 # reads. Made here exactly as world.gd makes the stage's (features/wheel-dust.md).
 var wheel_particles: WheelParticles
+var region_banner: RegionBanner
 
 # How often the car's pose and condition are written to the world session, in seconds.
 const SAVE_EVERY_S := 5.0
@@ -68,6 +69,11 @@ func _ready() -> void:
 	add_child(wheel_particles)
 	wheel_particles.setup(_car)
 	$BiomeDirector.wheel_particles = wheel_particles  # re-seats the region's blade per ring
+	# The region's name across the screen the first time the car drives into each biome ring.
+	region_banner = RegionBanner.new()
+	region_banner.name = "RegionBanner"
+	region_banner.checkpoint_banner = $CheckpointBanner
+	add_child(region_banner)
 	# Smoke from the bonnet when a damaged (overheating) engine misfires, and backfire flames
 	# from the exhausts on a limiter bang or under nitrous — the stage's own effects, as in world.gd.
 	var smoke := EngineSmoke.new()
@@ -311,7 +317,9 @@ func _physics_process(delta: float) -> void:
 	if _map_t <= 0.0:
 		_map_t = MAP_EVERY_S
 		WorldSession.mark_driven(p.x, p.y)
-		WorldSession.reach_ring(_streamer.terrain.ring_index(p.x, p.y))
+		var ring := _streamer.terrain.ring_index(p.x, p.y)
+		if WorldSession.reach_ring(ring):
+			region_banner.announce(RegionBanner.name_for(_streamer.settings, ring))
 		if MiniMap.mark_seen_near(_streamer.sites, p, Config.data.minimap_seen_radius_m) > 0:
 			_minimap.refresh_markers()
 	_save_t -= delta

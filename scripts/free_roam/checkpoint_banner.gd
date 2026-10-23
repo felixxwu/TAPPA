@@ -41,7 +41,7 @@ func is_open() -> bool:
 func show_reached(site: int) -> void:
 	if _band != null:
 		_band.queue_free()
-	_band = _build_band()
+	_band = build_band("Checkpoint reached")
 	add_child(_band)
 	_band.modulate.a = 0.0
 	var tween := _band.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
@@ -51,7 +51,8 @@ func show_reached(site: int) -> void:
 	tween.tween_callback(_banner_done.bind(site))
 
 
-func _build_band() -> Control:
+# The band across the middle of the screen, `text` in big gold capitals. RegionBanner wears it too.
+static func build_band(text: String) -> Control:
 	var band := ColorRect.new()
 	band.name = "Band"
 	band.color = UITheme.PANEL_DIM
@@ -60,7 +61,7 @@ func _build_band() -> Control:
 	var h := UITheme.px(110)
 	band.offset_top = -h / 2.0
 	band.offset_bottom = h / 2.0
-	var label := UITheme.title(UITheme.caps("Checkpoint reached"))
+	var label := UITheme.title(UITheme.caps(text))
 	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE * 4)
 	label.add_theme_color_override("font_color", UITheme.GOLD)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
