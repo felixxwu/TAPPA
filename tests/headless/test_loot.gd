@@ -376,7 +376,7 @@ func test_one_of_each_part_one_engine_and_no_kit_for_the_cars_own_layout() -> vo
 	assert_false(LootRules.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
 
 
-func test_a_kit_for_the_cars_own_layout_is_never_fittable_even_beside_another_kit() -> void:
+func test_a_kit_for_the_cars_own_layout_swaps_out_another_kit_to_change_the_car_back() -> void:
 	var own := CarLibrary.RWD
 	var other := CarLibrary.FWD
 	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": []}
@@ -384,8 +384,8 @@ func test_a_kit_for_the_cars_own_layout_is_never_fittable_even_beside_another_ki
 	other = CarLibrary.FWD if own != CarLibrary.FWD else CarLibrary.AWD
 	owned["parts"] = [{"kind": "part", "id": "drivetrain:%d" % other}]
 	var own_kit := {"kind": "part", "id": "drivetrain:%d" % own}
-	assert_false(LootRules.can_fit(owned, own_kit), "no kit for the stock layout, swap or not")
-	assert_false(LootRules.occupant(owned, own_kit).is_empty(), "though another kit does occupy the slot")
+	assert_true(LootRules.can_fit(owned, own_kit), "a converted car can take its own layout back")
+	assert_eq(LootRules.occupant(owned, own_kit)["id"], "drivetrain:%d" % other, "swapping out the other kit")
 
 
 func test_a_part_that_cant_fit_says_why() -> void:
@@ -659,7 +659,7 @@ func test_the_parts_page_moves_a_part_off_another_car_only_after_confirming() ->
 	page.close()
 
 
-func test_the_parts_page_never_offers_the_own_layout_kit_even_with_another_kit_fitted() -> void:
+func test_the_parts_page_swaps_the_own_layout_kit_in_to_change_a_converted_car_back() -> void:
 	var scene := await _boot()
 	var page: RestStopPage = scene.get_node("RestStopPage")
 	var own := UpgradeLibrary.stock_drive_mode(WorldSession.active_car())
@@ -671,7 +671,11 @@ func test_the_parts_page_never_offers_the_own_layout_kit_even_with_another_kit_f
 	page.open(0)
 	page._show(RestStopPage.View.PARTS)
 	assert_eq(page.cards().card_count(), 2, "the fitted kit, then the stash kit")
-	assert_true(page.cards()._cards[1].disabled, "the own-layout kit can't be fitted or swapped in")
+	assert_false(page.cards()._cards[1].disabled, "the own-layout kit can swap in for the other kit")
+	_confirm(page.cards(), 1)
+	var own_kit := {"kind": "part", "id": "drivetrain:%d" % own}
+	assert_eq(page.owned.get("parts", []), [own_kit], "the car is back on its own layout")
+	assert_eq(WorldSession.list("stash"), [{"kind": "part", "id": "drivetrain:%d" % other}], "the other kit goes to the stash")
 	page.dirty = false
 	page.close()
 

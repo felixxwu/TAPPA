@@ -220,8 +220,8 @@ func _build_parts() -> void:
 	for i in stash.size():
 		var part: Dictionary = stash[i]
 		var taken := LootRules.occupant(owned, part)
-		# can_fit already covers a swap (one of a kind, so an occupant never blocks it), and never
-		# offers a kit for the car's own layout, whatever is fitted.
+		# can_fit already covers a swap (one of a kind, so an occupant never blocks it), and only
+		# offers a kit for the car's own layout in place of another kit (changing the car back).
 		var extra := LootRules.fit_block_reason(owned, part)
 		var ok := extra.is_empty()
 		if ok:

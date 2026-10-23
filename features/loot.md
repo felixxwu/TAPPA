@@ -106,7 +106,8 @@ A car's fitted parts are saved on its owned-car record (`parts`, `Save.set_car_p
 `Car.apply_owned` and `UpgradeLibrary.apply` do the rest. There's no other modifier path.
 
 Fitting rules (`can_fit`, `occupant`): one of each part id; one engine and one drivetrain kit (a new
-one swaps with the fitted one); no kit for the car's own layout. `fit_block_reason` gives the
+one swaps with the fitted one); a kit for the car's own layout only fits in place of another kit
+(changing a converted car back). `fit_block_reason` gives the
 Parts card's label when a part can't go on ("Already RWD", "Already fitted"); `can_fit` is just
 "no reason".
 

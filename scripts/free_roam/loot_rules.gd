@@ -249,7 +249,8 @@ static func _shuffled(ids: Array, world_seed: int, salt: int) -> Array:
 # --- parts on a car -------------------------------------------------------------------------------
 
 # Whether `part` can go on `owned` alongside what it already has. One of each part id, one engine,
-# and one drivetrain kit (a kit for the car's own layout does nothing, so it isn't offered).
+# and one drivetrain kit. A kit for the car's own layout only fits in place of another kit, to
+# change a converted car back; on a car still in its stock layout it would do nothing.
 static func can_fit(owned: Dictionary, part: Dictionary) -> bool:
 	return fit_block_reason(owned, part).is_empty()
 
@@ -260,7 +261,7 @@ static func fit_block_reason(owned: Dictionary, part: Dictionary) -> String:
 		return "Can't fit"
 	if is_drivetrain(part):
 		var mode := int(String(part["id"]).substr("drivetrain:".length()))
-		if mode == UpgradeLibrary.stock_drive_mode(owned):
+		if mode == UpgradeLibrary.stock_drive_mode(owned) and occupant(owned, part).is_empty():
 			return "Already " + CarLibrary.drive_text(mode)
 	for p: Dictionary in owned.get("parts", []):
 		if String(p["id"]) == String(part["id"]):
