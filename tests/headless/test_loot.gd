@@ -525,6 +525,37 @@ func test_a_rumour_reveals_one_item_on_the_spot() -> void:
 	assert_eq(LootRules.item_key(rows[0]["item"]) if not rows.is_empty() else "", of)
 
 
+# A whole ring (ring 0 from the start) lists everything, but a piece nobody has told of or found is
+# a "?" until a rumour names it or the player picks it up.
+func test_the_journal_hides_undiscovered_items_until_told_of_or_found() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	var rows: Array = loot.journal()[0]["items"]
+	assert_true(loot.is_revealed(int(loot.journal()[0]["ring"])))
+	var unfound: Array = []
+	for i in rows.size():
+		assert_eq(bool(rows[i]["known"]), bool(rows[i]["found"]), "with no rumours read, only what the player has is named")
+		if not bool(rows[i]["found"]):
+			unfound.append(i)
+	assert_gt(unfound.size(), 1)
+	var told: int = unfound[0]
+	var picked: int = unfound[1]
+	loot.reveal_item(LootRules.item_key(rows[told]["item"]))
+	WorldSession.set_list("stash", [rows[picked]["item"]])
+	rows = loot.journal()[0]["items"]
+	assert_true(bool(rows[told]["known"]) and not bool(rows[told]["found"]), "a rumour names it")
+	assert_true(bool(rows[picked]["known"]) and bool(rows[picked]["found"]), "having it names it")
+	page.open(0)
+	page._open_region(int(loot.journal()[0]["ring"]))
+	assert_eq(page.cards().card_count(), rows.size(), "unknown pieces still get a card, so the count is whole")
+	var titles := CardUI.titles(page.cards())
+	for i in rows.size():
+		var shown := LootRules.card_text(rows[i]["item"])[0]
+		assert_eq(titles[i], shown if bool(rows[i]["known"]) else "?", "known pieces by name, the rest as ?")
+	page.close()
+
+
 func test_a_rumour_of_an_item_the_player_has_leaves_the_pool() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")

@@ -15,7 +15,8 @@ extends CanvasLayer
 #   TRAVEL  — a card per other lit rest stop, nearest first.
 #   JOURNAL — a card per revealed biome; pick one for REGION. Also opened on its own from the pause
 #             menu (open_journal): then Back leaves the page through the caller's on_close instead.
-#   REGION  — a card per item and car in that biome, found or not (read-only).
+#   REGION  — a card per item and car in that biome, found or not (read-only); one nobody has told
+#             of or found yet is a "?" card.
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
@@ -377,6 +378,10 @@ func _build_region() -> void:
 		title = String(r["name"])
 		for entry: Dictionary in r["items"]:
 			var found := bool(entry["found"])
+			if not bool(entry["known"]):
+				# Not told of by a rumour and not found: it's there, but what it is stays hidden.
+				entries.append({"title": "?", "subtitle": "Not discovered yet", "icon": "unknown"})
+				continue
 			var text := LootRules.card_text(entry["item"])
 			entries.append({"title": text[0], "subtitle": text[1],
 				"extra": "Found" if found else "Not found yet", "extra_variant": "" if found else "dim",

@@ -287,8 +287,10 @@ func _ring_name(ring: int) -> String:
 	return String(RegionLibrary.by_id(BiomeDirector.region_of(streamer.settings, ring)).get("name", "next biome"))
 
 
-# The journal: for every ring with anything known, the known loot (all of it in a revealed ring,
-# else the items rumours told of) and whether each piece was found (the player has it).
+# The journal: for every ring with anything known, a row per piece of loot it lists (all of it in a
+# revealed ring, else the items rumours told of or the player found), whether each was found (the
+# player has it) and whether it's known by name ("known": a rumour told of it, or it was found). A
+# revealed ring lists its unknown pieces too, so its count is whole; the page shows those as "?".
 func journal() -> Array:
 	var rings: Array = []
 	var tables := LootRules.ring_tables(streamer.settings.ring_count)
@@ -297,9 +299,12 @@ func journal() -> Array:
 		var whole := is_revealed(r)
 		var rows: Array = []
 		for item: Dictionary in tables[r]:
-			if String(item["kind"]) == "rumour" or not (whole or is_item_revealed(LootRules.item_key(item))):
+			var key := LootRules.item_key(item)
+			var has := found.has(key)
+			var known := has or is_item_revealed(key)
+			if String(item["kind"]) == "rumour" or not (whole or known):
 				continue
-			rows.append({"label": LootRules.label(item), "item": item, "found": found.has(LootRules.item_key(item))})
+			rows.append({"label": LootRules.label(item), "item": item, "found": has, "known": known})
 		if whole or not rows.is_empty():
 			rings.append({"ring": r, "name": _ring_name(r), "items": rows})
 	return rings
