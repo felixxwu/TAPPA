@@ -18,7 +18,7 @@ Everything is found, nothing is bought (decisions 10–18 in `todo/2026-10-19-fr
 | Part | `{"kind": "part", "id": <BoostLibrary id>, "level": n}` | a fittable part (the former boost, at level n) |
 | Engine | `{"kind": "part", "id": "engine_swap:<engine id>"}` | a fittable engine (the swap-tier engines) |
 | Drivetrain kit | `{"kind": "part", "id": "drivetrain:<mode>"}` | a fittable layout conversion |
-| Rumour | `{"kind": "rumour", "ring": r}` | reveals ring r's loot in the journal, on the spot |
+| Rumour | `{"kind": "rumour", "ring": r, "of": <item_key>}` | reveals that ONE item of ring r in the journal, on the spot |
 
 ## Where it is (the pacing split, decision 3)
 
@@ -26,7 +26,7 @@ Each car (`CarLibrary.CARS`), swap-tier engine (`EngineLibrary`) and boost part
 (`BoostLibrary.CATALOGUE`) names its own biome `ring` in its entry; drivetrain kits have no entry, so
 theirs live in `LootRules.KIT_RINGS`. `ring_tables(ring_count)` collects them. Ring r holds:
 - the cars, engines, kits and boost parts that name ring r — a boost part exists once, at level r;
-- a rumour of ring r + 1.
+- one rumour for each car / engine / kit / part of ring r + 1, each revealing just that item.
 
 Ring 0's cars are also the starter choice (`starter_cars`). A ring past `ring_count` folds into the
 last ring. `test_loot.gd` → `test_shipped_cars_engines_and_parts_each_name_a_ring_on_the_island`
@@ -39,15 +39,17 @@ every loot slot and dead end shows **right now**, and `LootDirector._reassign` r
 what the player holds changes (a pickup, a drop, a lost drop), emitting `pool_changed`:
 - **The pool.** A ring's pool is its table minus everything the player has
   (`LootDirector.taken_keys()`, by `item_key`): owned cars, every car's fitted parts, the stash,
-  `carried`, the dropped pile, and the rumours of rings already revealed. The moment the player has
+  `carried`, the dropped pile, and every rumour with nothing left to tell (its item is already
+  revealed or owned, or its whole ring is revealed). The moment the player has
   an item it is gone from **every** site at once; once a ring's things are all found, its sites
   show nothing. Owning a car (the starter included) means its title never shows on the ground.
-- **Sites show the pool in order.** Dead ends first, with the best items (cars, engines, rumours,
-  kits, parts — decision 30), then loot slots, each group in a seeded order; site k shows pool item
+- **Sites show the pool in order.** Dead ends first, with the best items (cars, engines, kits,
+  parts, then rumours — decision 30; rumours rank last because there's one per next-ring item), then loot slots, each group in a seeded order; site k shows pool item
   k mod pool size. So with more sites than items each item shows at more than one site (all of them
   empty out together when it's taken). Past the first round, spare sites skip cars:
   `FreeRoamSettings.loot_item_weight` (3) makes every other item show at about that many times as
-  many sites as a car.
+  many sites as a car, and `loot_rumour_weight` (2) makes each rumour show at that many times as
+  many sites as a part again, while any rumours are left (`LootRules.weighted_cycle`).
 - **A site you pick something up from is spent** (`collected`): nothing ever shows there again.
 - **A ring with more items than free sites** keeps its best and moves the rest to the nearest ring
   with sites to spare (inward first); the overflow is hosted best-first across rings, so scarce
@@ -89,10 +91,13 @@ left and sites showing something per ring at boot.
 - **Drop:** when the car gives up, `carried` is left at the wreck (`dropped`, marked by a red
   beacon). Driving back within `DROPPED_REACH_M` recovers it. Giving up again while carrying
   something replaces the drop (an empty-handed give-up keeps the earlier pile): the old one is lost, and its items go back into the pool to be found again (decision 11).
-- **Rumours** are read on pickup: their ring is added to `revealed` (ring 0 starts revealed).
-  The journal (`journal()`) lists each revealed ring's items; "found" means the player has it.
+- **Rumours** are read on pickup: the one item they tell of (`of`) is added to `revealed_items`
+  (`reveal_item`). Whole rings in `revealed` are fully known (ring 0 from the start, or every ring
+  via the dev action). The journal (`journal()`) lists each ring with anything known, with its
+  known items; "found" means the player has it.
 
-All of it lives in the world block (`WorldSession`: carried, stash, dropped, collected, revealed);
+All of it lives in the world block (`WorldSession`: carried, stash, dropped, collected, revealed,
+revealed_items);
 see [world-session.md](world-session.md).
 
 ## Parts on cars (the effects funnel, decision 51)

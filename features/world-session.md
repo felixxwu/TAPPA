@@ -25,7 +25,7 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 | `max_ring` | the furthest biome ring reached, a high-water mark |
 | `drive_time` | seconds driven: the weather timeline (`BiomeDirector`) runs on it |
 | `seen` | site ids (rest stops, loot slots, dead ends) the car has come within `GameConfig.minimap_seen_radius_m` of (`see`, `seen_sites`, `is_seen`; spawn 0 from the start). The minimap and the map show only these ([minimap.md](minimap.md)). A save without the key reads as `[0]` |
-| `carried`, `stash`, `dropped`, `collected`, `revealed` | loot (stage 7) |
+| `carried`, `stash`, `dropped`, `collected`, `revealed`, `revealed_items` | loot (stage 7) |
 
 - **New world** (`new_world`): a fresh seed and a starter car. It replaces the old world **and the
   old owned cars**, because a world is the whole save.

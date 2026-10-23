@@ -780,3 +780,7 @@ Numbering continues from decision 32.
   light (one formula, `TerrainManager.light_for_normal`, shared by both), engine smoke on misfires
   and exhaust flames. Tyre marks are still stage-only (they need a single centreline). Also: game
   scripts are warning-free again, with `tools/warning_check.tscn` to keep them so.
+- **D88. Rumours reveal one item each (user ask, supersedes decision 18's "full loot list"):**
+  ring r holds one rumour per item of ring r + 1, and each reveals just that item in the journal.
+  Spare sites show each rumour `loot_rumour_weight` (2) times as often as a part while any are left;
+  rumours rank last for dead ends so they don't crowd out the real loot.
