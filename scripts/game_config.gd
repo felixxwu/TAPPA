@@ -3127,6 +3127,14 @@ func spectator_params() -> Dictionary:
 ## Road not yet driven still shows (fainter) within this distance of a point a little ahead of
 ## the car, so the road you're on and the junction coming up are on the map.
 @export_range(0.0, 500.0, 5.0) var minimap_nearby_road_m := 120.0
+## Opacity of that not-yet-driven road (driven road is drawn fully opaque).
+@export_range(0.1, 1.0, 0.05) var minimap_undriven_road_alpha := 0.85
+## Width of the not-yet-driven road on the map texture, in texture pixels (driven road is 4.5).
+@export_range(1.0, 8.0, 0.25) var minimap_undriven_road_width := 3.5
+## Opacity of the dark outline under the not-yet-driven road, so it reads against bright ground.
+@export_range(0.0, 1.0, 0.05) var minimap_undriven_road_outline_alpha := 0.45
+## Half-height of the car's chevron on the minimap, in logical pixels (scaled by the UI scale).
+@export_range(2.0, 12.0, 0.5) var minimap_car_arrow_px := 4.0
 ## Most road redraws per second (the map only redraws when the car has moved
 ## minimap_redraw_move_m or a new stretch of road has been driven; turning is free).
 @export_range(1.0, 60.0, 1.0) var minimap_redraw_hz := 15.0

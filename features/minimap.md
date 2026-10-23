@@ -24,7 +24,9 @@ A navigation-software style map at the top centre of the screen while driving.
 - **Roads you've driven** (`WorldSession.has_driven` on the segment's midpoint cell, the same
   rule as the full map), in ink with a dark casing.
 - **A little road ahead:** undriven road within `minimap_nearby_road_m` of a point a little
-  ahead of the car, drawn faint, so the road you're on and the next junction show.
+  ahead of the car, drawn faint, so the road you're on and the next junction show. Its look is
+  `minimap_undriven_road_alpha` / `_width` / `_outline_alpha` (a thin dark outline so it reads
+  on bright ground); the chevron's size is `minimap_car_arrow_px`.
 - **Rest stops you've come across** (`WorldSession.seen_sites`) as dots (orange lit, grey unlit:
   `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`). Loot isn't shown on either map. Icons are drawn
   upright on top of the tilted ground, smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the

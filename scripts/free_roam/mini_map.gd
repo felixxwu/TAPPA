@@ -41,6 +41,10 @@ var near_frac := 1.0 / 2.7
 var nearby_m := 120.0
 var redraw_move_m := 12.0
 var redraw_interval_s := 1.0 / 15.0
+var undriven_alpha := 0.85
+var undriven_width := 3.5
+var undriven_outline_alpha := 0.45
+var car_arrow_px := 4.0
 
 # Heading-up view state: the car's position (world xz) and the rotation that turns its heading up.
 var car_xz := Vector2.ZERO
@@ -74,6 +78,10 @@ func _ready() -> void:
 	nearby_m = cfg.minimap_nearby_road_m
 	redraw_move_m = cfg.minimap_redraw_move_m
 	redraw_interval_s = 1.0 / maxf(cfg.minimap_redraw_hz, 1.0)
+	undriven_alpha = cfg.minimap_undriven_road_alpha
+	undriven_width = cfg.minimap_undriven_road_width
+	undriven_outline_alpha = cfg.minimap_undriven_road_outline_alpha
+	car_arrow_px = cfg.minimap_car_arrow_px
 	_vp = SubViewport.new()
 	_vp.size = Vector2i(cfg.minimap_texture_px, cfg.minimap_texture_px)
 	_vp.transparent_bg = true
@@ -370,7 +378,10 @@ class RoadLayer:
 		for i in faint.size():
 			faint[i] = faint[i] * k
 		if not faint.is_empty():
-			draw_multiline(faint, Color(UITheme.INK, 0.45), 3.5)
+			if map.undriven_outline_alpha > 0.0:
+				draw_multiline(faint, Color(0.0, 0.0, 0.0, map.undriven_outline_alpha),
+					map.undriven_width + 2.5)
+			draw_multiline(faint, Color(UITheme.INK, map.undriven_alpha), map.undriven_width)
 		if not driven.is_empty():
 			draw_multiline(driven, Color(0.0, 0.0, 0.0, 0.85), 8.0)
 			draw_multiline(driven, UITheme.INK, 4.5)
@@ -398,7 +409,7 @@ class MarkerLayer:
 			draw_circle(p, r, col)
 		# The car: a chevron pointing up (where the car points), near the bottom middle.
 		var cp := map.screen_of(Vector2(0.5, map.car_depth))
-		var a := 6.0 * UITheme.UI_SCALE
+		var a := map.car_arrow_px * UITheme.UI_SCALE
 		var arrow := PackedVector2Array([cp + Vector2(0, -a), cp + Vector2(a * 0.75, a * 0.7),
 			cp + Vector2(0, a * 0.3), cp + Vector2(-a * 0.75, a * 0.7)])
 		var shadow := PackedVector2Array()
