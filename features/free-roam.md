@@ -261,10 +261,9 @@ code (`RestStops`, `RestStopPage`, `RoadSites.Kind.REST`, the save's `lit_sites`
 
 `CheckpointBanner` (`scripts/free_roam/checkpoint_banner.gd`, on `RestStops.lit`): the first time a
 checkpoint is lit, a full-width "Checkpoint reached" band fades in, holds `HOLD_S` (3 s) and fades
-out while the car drives on (the tween runs through pauses). Then, once nothing else has the game
-frozen, it opens a card page ("Now in reach") of the items still to be found in that checkpoint's
-biome ring (`items_for`: the ring's `LootRules` table minus `LootDirector.taken_keys()`, no
-rumours); nothing left → no page. Continue / Back closes it.
+out while the car drives on (the tween runs through pauses). There is no page of what is left to
+find: lighting it reveals its whole biome ring in the journal (`_reveal_ring` →
+`LootDirector.reveal`), which lists every item there and whether it was found.
 
 `RestStops` makes the REST sites into Dark Souls bonfires:
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
