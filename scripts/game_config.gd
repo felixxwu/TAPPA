@@ -868,6 +868,9 @@ func has_nitrous() -> bool:
 @export_range(0.0, 10.0, 0.1) var wreck_page_delay_s := 3.0
 ## Onlookers gathered at each rest stop (a static crowd along the back of its pad).
 @export_range(0, 60) var rest_stop_crowd_size := 14
+## How far each rest stop's log cabin stands back from its pad's centre, away from the road
+## (TerrainStreamer._site_marker). Past about 6 m it reaches into the crowd.
+@export_range(0.0, 10.0, 0.5) var rest_stop_cabin_back_m := 6.0
 ## HP regained per second while driving; 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export_range(0.0, 50.0, 0.5) var damage_regen_hp_per_s := 0.0
