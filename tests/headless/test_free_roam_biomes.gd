@@ -215,7 +215,6 @@ func test_one_of_every_plant_rock_and_marker_is_drawn_at_boot_and_cleaned_up() -
 	assert_not_null(root, "the warm-up set is out")
 	var meshes := root.find_children("*", "GeometryInstance3D", true, false)
 	assert_gt(meshes.size(), Foliage.ROCK_SCENES.size(), "trees, a bush, every rock and the markers")
-	assert_gt(root.find_children("*", "Label3D", true, false).size(), 0, "and the loot names")
 	for i in 4:
 		await get_tree().process_frame
 	assert_false(is_instance_valid(root) and root.is_inside_tree(), "and it is gone after the warm-up")

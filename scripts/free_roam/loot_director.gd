@@ -116,8 +116,6 @@ func _reassign() -> void:
 	placement = LootRules.assign(streamer.sites, streamer.settings.ring_count, streamer.settings.world_seed,
 		taken_keys(), WorldSession.list("collected"), streamer.settings.loot_item_weight)
 	streamer.refresh_loot_markers()
-	if beacons != null and beacons.streamer != null:
-		beacons.refresh_loot()
 	pool_changed.emit()
 
 

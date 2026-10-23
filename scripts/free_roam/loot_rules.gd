@@ -341,16 +341,3 @@ static func colour(item: Dictionary) -> Color:
 		return Color(0.4, 1.0, 0.45)
 	return Color(0.3, 0.85, 1.0)
 
-
-# The floating name over an item on the ground: what it is, not which one.
-static func ground_label(item: Dictionary) -> String:
-	match String(item.get("kind", "")):
-		"car":
-			return "New car"
-		"rumour":
-			return "Rumour"
-	if is_engine(item):
-		return "New engine"
-	if is_drivetrain(item):
-		return "Drivetrain kit"
-	return "New upgrade"
