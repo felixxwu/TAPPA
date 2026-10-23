@@ -125,6 +125,8 @@ func test_the_pause_menu_leaves_out_the_photo_card() -> void:
 	var titles := CardUI.titles(cards)
 	cards.select(0, false)
 	nav._unhandled_input(_press("menu_right"))
+	assert_eq(titles[cards.selected_index()], "Journal", "Journal sits between Resume and Reset to road")
+	nav._unhandled_input(_press("menu_right"))
 	assert_eq(titles[cards.selected_index()], "Reset to road")
 	nav._unhandled_input(_press("menu_right"))
 	assert_eq(titles[cards.selected_index()], "Map", "Photo Mode is not offered, on to Map")

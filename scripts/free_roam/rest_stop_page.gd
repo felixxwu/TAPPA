@@ -13,7 +13,8 @@ extends CanvasLayer
 #             car (pick, confirm, and it moves over).
 #   GARAGE  — a card per owned car; pick one to drive it.
 #   TRAVEL  — a card per other lit rest stop, nearest first.
-#   JOURNAL — a card per revealed biome; pick one for REGION.
+#   JOURNAL — a card per revealed biome; pick one for REGION. Also opened on its own from the pause
+#             menu (open_journal): then Back leaves the page through the caller's on_close instead.
 #   REGION  — a card per item and car in that biome, found or not (read-only).
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
@@ -38,6 +39,9 @@ var site := -1
 var banked: Array = []
 var dirty := false
 var journal_ring := -1
+# Set while the journal was opened on its own (open_journal, from the pause menu): its Back hands
+# back to this rather than stepping to MAIN.
+var _on_journal_close := Callable()
 var _page: MenuPage
 var _cards: CardCarousel
 var _tune_panel: TuningPanel
@@ -52,9 +56,25 @@ func is_open() -> bool:
 	return _page != null
 
 
+# The journal on its own, over the already-frozen game (the pause menu's Journal row). It leaves the
+# pause state alone: Back clears the page and calls `on_close`, which hands back to the caller.
+func open_journal(on_close: Callable) -> void:
+	_on_journal_close = on_close
+	journal_ring = -1
+	_show(View.JOURNAL)
+
+
+func _close_journal() -> void:
+	_clear()
+	var on_close := _on_journal_close
+	_on_journal_close = Callable()
+	on_close.call()
+
+
 func open(p_site: int) -> void:
 	site = p_site
 	dirty = false
+	_on_journal_close = Callable()
 	banked = loot.bank() if loot != null else []
 	if car != null and car.get("damage") != null:
 		(car.damage as DamageModel).repair(Config.data)
@@ -121,6 +141,8 @@ func _card_page(title: String, entries: Array, header: Array = [], selected := 0
 	_page = CardUI.card_page(self, {"title": title, "dim": true})
 	_cards = CardUI.card_list(_page, entries, header, selected)
 	var go_back := _show.bind(back)
+	if view == View.JOURNAL and _on_journal_close.is_valid():
+		go_back = _close_journal
 	if view != View.MAIN:
 		_page.add_action(UITheme.row_button("< Back", go_back))
 	MenuNav.attach(_page, {first = _cards, on_back = close if view == View.MAIN else go_back})

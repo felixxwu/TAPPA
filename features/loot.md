@@ -116,7 +116,9 @@ car ("on <car>"; "Move here" / "Swap for X" / "Can't fit"). Picking one of those
 displaces goes to the stash. **Garage:** a card per owned car (pick
 to drive one; the cursor starts on the car being driven). **Journal:** a card per revealed region
 ("n of m found"); picking one opens that region's page (`View.REGION`, `journal_ring`), a read-only
-card per item and car there, "Found" or "Not found yet". Back steps region → region list → main. A change of parts or car re-fields the car
+card per item and car there, "Found" or "Not found yet". Back steps region → region list → main. The pause menu's Journal row
+opens the same pages on their own (`open_journal(on_close)`): there Back from the region list
+calls `on_close` (back to the pause menu) and the game stays frozen throughout. A change of parts or car re-fields the car
 when the page closes: `car_changed` makes free roam save and reload the scene at the rest stop,
 because a live body is never re-staged.
 
