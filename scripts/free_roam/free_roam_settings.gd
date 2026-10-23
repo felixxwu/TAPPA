@@ -79,6 +79,8 @@ extends Resource
 @export var loot_slot_spacing_m := 250.0
 ## How many times more road spots show each part, engine, kit or rumour than each car.
 @export var loot_item_weight := 3
+## How many times more road spots show each rumour than each part, engine or kit (while any are left).
+@export var loot_rumour_weight := 2
 @export var rest_stop_radius_m := 16.0
 @export var dead_end_radius_m := 14.0
 ## How far a pad's flat ground blends back into the natural terrain, at least. The blend widens

@@ -17,7 +17,7 @@ extends Node
 #   max_ring       — the furthest biome ring reached (the map shows the borders crossed)
 #   drive_time     — seconds driven (the weather timeline runs on it)
 #   seen           — site ids (rest stops, loot slots, dead ends) the car has come near, for the minimap / map
-#   carried / stash / dropped / collected / revealed — the loot keys (stage 7)
+#   carried / stash / dropped / collected / revealed / revealed_items — the loot keys (stage 7)
 #
 # No world yet (a fresh profile) means has_world() is false; the title screen offers New World.
 
@@ -68,6 +68,7 @@ func new_world(world_seed: int, starter_model_id: String) -> void:
 		"dropped": {},
 		"collected": [],
 		"revealed": [],
+		"revealed_items": [],
 	}
 	_touch()
 	world_changed.emit()

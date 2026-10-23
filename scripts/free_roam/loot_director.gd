@@ -7,13 +7,14 @@ extends Node
 # gone from every site the moment the player has it. `placement` is the current {site: item},
 # recomputed whenever what the player holds changes (`pool_changed`). This node:
 #   * COLLECTS what the car drives near: it joins `carried`, which is not yours yet (decision 10).
-#     A rumour is read on the spot: it reveals its ring's loot in the journal (decision 18).
+#     A rumour is read on the spot: it reveals ONE item of the next ring in the journal (decision 18).
 #   * BANKS carried loot the moment the car reaches a checkpoint (bank_at_checkpoint): parts go to
 #     the shared stash, car titles join the garage (Save.grant_car).
 #   * DROPS carried loot at the wreck when the car gives up (decision 11). Driving back picks it up;
 #     giving up again first loses it: the new drop replaces it, and what it held goes back into
 #     the pool to be found again.
-# All state lives in the world session (WorldSession: carried, stash, dropped, collected, revealed).
+# All state lives in the world session (WorldSession: carried, stash, dropped, collected, revealed,
+# revealed_items).
 
 signal collected(item: Dictionary)
 signal recovered(items: Array)
@@ -94,8 +95,9 @@ func is_collected(site: int) -> bool:
 
 
 # The item_key of everything the player has: owned cars, fitted parts, the stash, what's carried,
-# what's lying in the dropped pile, and the rumours of rings already revealed. None of it is in the
-# pool any more.
+# what's lying in the dropped pile, and every rumour with nothing left to tell (its item is already
+# revealed, its whole ring is, or the player already has the item). None of it is in the pool any
+# more.
 func taken_keys() -> Dictionary:
 	var out := {}
 	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
@@ -106,15 +108,21 @@ func taken_keys() -> Dictionary:
 	held.append_array(WorldSession.dropped().get("items", []))
 	for item: Dictionary in held:
 		out[LootRules.item_key(item)] = true
-	for r in WorldSession.list("revealed"):
-		out[LootRules.item_key({"kind": "rumour", "ring": int(r)})] = true
+	for table: Array in LootRules.ring_tables(streamer.settings.ring_count):
+		for item: Dictionary in table:
+			if String(item["kind"]) != "rumour":
+				continue
+			var of := String(item["of"])
+			if out.has(of) or is_item_revealed(of) or is_revealed(int(item["ring"])):
+				out[LootRules.item_key(item)] = true
 	return out
 
 
 # Recompute what every site shows, and tell whoever draws them.
 func _reassign() -> void:
 	placement = LootRules.assign(streamer.sites, streamer.settings.ring_count, streamer.settings.world_seed,
-		taken_keys(), WorldSession.list("collected"), streamer.settings.loot_item_weight)
+		taken_keys(), WorldSession.list("collected"), streamer.settings.loot_item_weight,
+		streamer.settings.loot_rumour_weight)
 	streamer.refresh_loot_markers()
 	if beacons != null and beacons.streamer != null:
 		beacons.refresh_loot()
@@ -162,8 +170,8 @@ func collect(site: int) -> void:
 	col.append(site)  # emptied sites stay in order, oldest first
 	WorldSession.set_list("collected", col)
 	if String(item["kind"]) == "rumour":
-		reveal(int(item["ring"]))
-		_say("Rumour: the %s's loot is in your journal" % _ring_name(int(item["ring"])))
+		reveal_item(String(item["of"]))
+		_say("Rumour: something in the %s. See your journal" % _ring_name(int(item["ring"])))
 	else:
 		var carried := WorldSession.list("carried")
 		var held := item.duplicate()
@@ -182,6 +190,19 @@ func reveal(ring: int) -> void:
 		WorldSession.set_list("revealed", revealed)
 
 
+# A rumour was read: the item with this item_key shows in the journal.
+func reveal_item(key: String) -> void:
+	var known := WorldSession.list("revealed_items")
+	if not known.has(key):
+		known.append(key)
+		WorldSession.set_list("revealed_items", known)
+
+
+func is_item_revealed(key: String) -> bool:
+	return WorldSession.list("revealed_items").has(key)
+
+
+# Whether a whole ring is known (ring 0 from the start; every ring with the dev action).
 func is_revealed(ring: int) -> bool:
 	for r in WorldSession.list("revealed"):
 		if int(r) == ring:
@@ -273,18 +294,19 @@ func _ring_name(ring: int) -> String:
 	return String(RegionLibrary.by_id(BiomeDirector.region_of(streamer.settings, ring)).get("name", "next biome"))
 
 
-# The journal: for every revealed ring, its loot and whether each piece was found (the player has it).
+# The journal: for every ring with anything known, the known loot (all of it in a revealed ring,
+# else the items rumours told of) and whether each piece was found (the player has it).
 func journal() -> Array:
 	var rings: Array = []
 	var tables := LootRules.ring_tables(streamer.settings.ring_count)
 	var found := taken_keys()
 	for r in streamer.settings.ring_count:
-		if not is_revealed(r):
-			continue
+		var whole := is_revealed(r)
 		var rows: Array = []
 		for item: Dictionary in tables[r]:
-			if String(item["kind"]) == "rumour":
+			if String(item["kind"]) == "rumour" or not (whole or is_item_revealed(LootRules.item_key(item))):
 				continue
 			rows.append({"label": LootRules.label(item), "item": item, "found": found.has(LootRules.item_key(item))})
-		rings.append({"ring": r, "name": _ring_name(r), "items": rows})
+		if whole or not rows.is_empty():
+			rings.append({"ring": r, "name": _ring_name(r), "items": rows})
 	return rings

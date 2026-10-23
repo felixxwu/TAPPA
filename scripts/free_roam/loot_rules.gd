@@ -10,12 +10,13 @@ extends RefCounted
 #   {"kind": "part",   "id": <BoostLibrary id>, "level": <int>}       — a part (a former boost)
 #   {"kind": "part",   "id": "engine_swap:<EngineLibrary id>"}         — an engine
 #   {"kind": "part",   "id": "drivetrain:<Drivetrain.DriveMode int>"}  — a drivetrain kit
-#   {"kind": "rumour", "ring": <int>}                                  — reveals that ring's loot
+#   {"kind": "rumour", "ring": <int>, "of": <item_key>}                — reveals ONE item of that ring
 #
 # THE PACING SPLIT (decision 3: cars and parts should run out with the biomes): every car, swap-tier
 # engine and boost part names its own biome `ring` in its library entry, and drivetrain kits in
-# KIT_RINGS. Ring r holds those, boost parts at level r, and a rumour of ring r + 1 (none in the
-# last ring). Ring 0's cars are the starter choice.
+# KIT_RINGS. Ring r holds those, boost parts at level r, and one rumour for each item of ring r + 1
+# (none in the last ring): each rumour reveals just that one item. Ring 0's cars are the starter
+# choice.
 # Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
 # swapped_engine and drivetrain_override, which UpgradeLibrary / Car.apply_owned already read
 # (decision 51 — no parallel modifier path).
@@ -23,7 +24,7 @@ extends RefCounted
 static func item_key(item: Dictionary) -> String:
 	match String(item.get("kind", "")):
 		"rumour":
-			return "rumour:%d" % int(item.get("ring", 0))
+			return "rumour:%d:%s" % [int(item.get("ring", 0)), String(item.get("of", ""))]
 		"part":
 			return "part:%s:%d" % [String(item["id"]), int(item.get("level", 0))]
 	return "%s:%s" % [String(item.get("kind", "")), String(item.get("id", ""))]
@@ -67,22 +68,26 @@ static func ring_tables(ring_count: int) -> Array:
 	for mode in KIT_RINGS:
 		tables[mini(int(KIT_RINGS[mode]), last)].append({"kind": "part", "id": "drivetrain:%d" % int(mode)})
 	for r in last:
-		tables[r].append({"kind": "rumour", "ring": r + 1})
+		for target: Dictionary in tables[r + 1]:
+			if String(target["kind"]) != "rumour":
+				tables[r].append({"kind": "rumour", "ring": r + 1, "of": item_key(target)})
 	return tables
 
 
-# How much an item is worth putting at the end of a dead end: cars, then engines, then rumours,
-# then drivetrain kits, then ordinary parts. Dead ends are offered the best first (decision 30).
+# How much an item is worth putting at the end of a dead end: cars, then engines, then drivetrain
+# kits, then ordinary parts, then rumours (there is one per item of the next ring, so they come last
+# or they'd crowd the real loot out of the dead ends). Dead ends are offered the best first
+# (decision 30).
 static func _rank(item: Dictionary) -> int:
 	if String(item["kind"]) == "car":
 		return 0
 	if is_engine(item):
 		return 1
-	if String(item["kind"]) == "rumour":
-		return 2
 	if is_drivetrain(item):
-		return 3
-	return 4
+		return 2
+	if String(item["kind"]) == "rumour":
+		return 4
+	return 3
 
 
 # --- the pool: which site shows what, right now ----------------------------------------------------
@@ -135,10 +140,10 @@ static func _best_first(items: Array) -> Array:
 
 
 # What every loot site shows now: {site: item}. `used` is the spent (emptied) sites. Once every item
-# shows somewhere, the spare sites go to anything but a car, so each of those shows at about
-# `item_weight` times as many sites as a car.
+# shows somewhere, the spare sites go to anything but a car, so each part shows at about
+# `item_weight` times as many sites as a car, and each rumour `rumour_weight` times as many again.
 static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Dictionary, used: Array,
-		item_weight := 1) -> Dictionary:
+		item_weight := 1, rumour_weight := 1) -> Dictionary:
 	var tables := ring_tables(ring_count)
 	var order: Array = []  # per ring: its loot sites, dead ends first, each group seeded
 	var counts := PackedInt32Array()
@@ -204,7 +209,7 @@ static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Di
 		var pool: Array = pools[r]
 		if pool.is_empty():
 			continue
-		var cycle := weighted_cycle(pool, item_weight)
+		var cycle := weighted_cycle(pool, item_weight, rumour_weight)
 		var j := 0
 		for site: int in free[r]:
 			out[site] = cycle[j % cycle.size()]
@@ -212,13 +217,20 @@ static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Di
 	return out
 
 
-# The order a ring's free sites take items from `pool` in, repeating: every item once, then
-# `item_weight - 1` more rounds of everything but the cars.
-static func weighted_cycle(pool: Array, item_weight: int) -> Array:
+# The order a ring's free sites take items from `pool` in, repeating: every item once, then more
+# rounds until each car has shown once, each part / engine / kit `item_weight` times and each rumour
+# `item_weight * rumour_weight` times. Rumours stop counting once they run out (they leave the pool).
+static func weighted_cycle(pool: Array, item_weight: int, rumour_weight := 1) -> Array:
+	var weight := func(item: Dictionary) -> int:
+		match String(item["kind"]):
+			"car":
+				return 1
+			"rumour":
+				return item_weight * rumour_weight
+		return item_weight
 	var cycle := pool.duplicate()
-	var not_cars := pool.filter(func(item: Dictionary) -> bool: return String(item["kind"]) != "car")
-	for w in item_weight - 1:
-		cycle.append_array(not_cars)
+	for w in range(1, item_weight * maxi(rumour_weight, 1)):
+		cycle.append_array(pool.filter(func(item: Dictionary) -> bool: return weight.call(item) > w))
 	return cycle
 
 
@@ -287,7 +299,7 @@ static func label(item: Dictionary) -> String:
 		"car":
 			return "Car: %s" % String(CarLibrary.by_id(String(item["id"])).get("name", item["id"]))
 		"rumour":
-			return "Rumour of the next biome"
+			return "Rumour of something in the next biome"
 	var id := String(item.get("id", ""))
 	if is_engine(item):
 		return "Engine: %s" % String(EngineLibrary.by_id(id.substr("engine_swap:".length())).get("name", id))

@@ -79,14 +79,22 @@ func test_rings_past_the_ring_count_fold_into_the_last() -> void:
 			"%s folds into ring %d" % [car["id"], want])
 
 
-func test_every_ring_but_the_last_has_a_rumour_of_the_next() -> void:
+func test_every_ring_but_the_last_has_one_rumour_per_item_of_the_next() -> void:
 	var tables := LootRules.ring_tables(4)
 	for r in 4:
-		var rumours := []
+		var told := []
 		for item: Dictionary in tables[r]:
 			if item["kind"] == "rumour":
-				rumours.append(int(item["ring"]))
-		assert_eq(rumours, [r + 1] if r < 3 else [], "ring %d's rumour" % r)
+				assert_eq(int(item["ring"]), r + 1, "ring %d's rumours tell of ring %d" % [r, r + 1])
+				told.append(String(item["of"]))
+		var want := []
+		if r < 3:
+			for item: Dictionary in tables[r + 1]:
+				if item["kind"] != "rumour":
+					want.append(LootRules.item_key(item))
+		told.sort()
+		want.sort()
+		assert_eq(told, want, "ring %d: a rumour for each item of the next ring, once" % r)
 
 
 func test_starter_cars_are_the_ring_0_cars() -> void:
@@ -218,7 +226,7 @@ func test_a_site_picked_from_is_spent_for_good() -> void:
 func test_spare_sites_favour_everything_but_cars_by_the_item_weight() -> void:
 	var car := {"kind": "car", "id": "a"}
 	var part := {"kind": "part", "id": "b", "level": 0}
-	var rumour := {"kind": "rumour", "ring": 1}
+	var rumour := {"kind": "rumour", "ring": 1, "of": "car:x"}
 	var pool := [car, part, rumour]
 	assert_eq(LootRules.weighted_cycle(pool, 1), pool, "weight 1: everything once")
 	var cycle := LootRules.weighted_cycle(pool, 3)
@@ -226,6 +234,13 @@ func test_spare_sites_favour_everything_but_cars_by_the_item_weight() -> void:
 	assert_eq(cycle.count(car), 1)
 	assert_eq(cycle.count(part), 3)
 	assert_eq(cycle.count(rumour), 3)
+	cycle = LootRules.weighted_cycle(pool, 3, 2)
+	assert_eq(cycle.slice(0, pool.size()), pool, "every item shows once before any repeats")
+	assert_eq(cycle.count(car), 1)
+	assert_eq(cycle.count(part), 3)
+	assert_eq(cycle.count(rumour), 6, "a rumour shows rumour_weight times as often as a part")
+	assert_eq(LootRules.weighted_cycle([car, part], 3, 2).count(part), 3,
+		"with no rumours left, parts keep their own weight")
 
 
 func test_a_ring_short_of_sites_moves_its_lesser_items_to_a_ring_with_spare() -> void:
@@ -513,19 +528,48 @@ func test_a_banked_car_title_joins_the_garage() -> void:
 	assert_eq((_save.profile[_save.KEY_CARS] as Array).size(), before + 1)
 
 
-func test_a_rumour_reveals_its_ring_on_the_spot() -> void:
+func test_a_rumour_reveals_one_item_on_the_spot() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
-	var site := _site_with(loot, func(i: Dictionary) -> bool: return i["kind"] == "rumour")
-	var ring := int(loot.placement[site]["ring"])
-	assert_false(loot.is_revealed(ring))
+	# The test world is short of sites, so rumours (ranked last) may show nowhere: put one on a site.
+	var site: int = loot.placement.keys()[0]
+	for item: Dictionary in LootRules.ring_tables(loot.streamer.settings.ring_count)[0]:
+		if item["kind"] == "rumour":
+			loot.placement[site] = item
+			break
+	var rumour: Dictionary = loot.placement[site]
+	var ring := int(rumour["ring"])
+	var of := String(rumour["of"])
+	assert_false(loot.is_item_revealed(of))
 	loot.collect(site)
-	assert_true(loot.is_revealed(ring))
+	assert_true(loot.is_item_revealed(of))
+	assert_false(loot.is_revealed(ring), "one rumour doesn't reveal the whole ring")
 	assert_eq(WorldSession.list("carried").size(), 0, "a rumour is read, not carried")
-	var names := []
+	assert_true(loot.taken_keys().has(LootRules.item_key(rumour)), "a read rumour leaves the pool")
+	var rows: Array = []
 	for r: Dictionary in loot.journal():
-		names.append(r["ring"])
-	assert_true(ring in names, "the journal lists the revealed ring")
+		if int(r["ring"]) == ring:
+			rows = r["items"]
+	assert_eq(rows.size(), 1, "the journal lists just the item the rumour told of")
+	assert_eq(LootRules.item_key(rows[0]["item"]) if not rows.is_empty() else "", of)
+
+
+func test_a_rumour_of_an_item_the_player_has_leaves_the_pool() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	var rumour := {}
+	for item: Dictionary in LootRules.ring_tables(loot.streamer.settings.ring_count)[0]:
+		if item["kind"] == "rumour":
+			rumour = item
+			break
+	assert_false(rumour.is_empty(), "ring 0 has a rumour")
+	assert_false(loot.taken_keys().has(LootRules.item_key(rumour)))
+	var target := {}
+	for item: Dictionary in LootRules.ring_tables(loot.streamer.settings.ring_count)[int(rumour["ring"])]:
+		if LootRules.item_key(item) == String(rumour["of"]):
+			target = item
+	WorldSession.set_list("stash", [target])
+	assert_true(loot.taken_keys().has(LootRules.item_key(rumour)), "nothing left to tell")
 
 
 func test_giving_up_drops_the_loot_at_the_wreck_and_driving_back_recovers_it() -> void:
