@@ -353,7 +353,9 @@ func warm_up_spawns(camera: Camera3D, frames := 3) -> void:
 	Foliage.spawn_bushes(root, at, g, dist, fade)
 	for i in Foliage.ROCK_SCENES.size():
 		Foliage.spawn_rocks(root, at, g, i, false, dist, fade)
-	for marker: Node3D in [_loot_marker(0, {"kind": "car"}), _site_marker(0)]:
+	var cabin := _site_marker(0)
+	cabin.get_node("Body").free()  # only its look needs warming, not a wall in front of the car
+	for marker: Node3D in [_loot_marker(0, {"kind": "car"}), cabin]:
 		root.add_child(marker)
 		marker.global_position = ahead
 	for i in frames:
@@ -991,7 +993,7 @@ func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 
 
 # The chunk's site dressing. A rest stop gets a crowd of onlookers along the back of its pad
-# (decision 9: spectators gather at rest stops) and a beacon post, grey until lit and orange after.
+# (decision 9: spectators gather at rest stops) and a log cabin, its doorway glowing once lit.
 # Loot slots and dead ends show a crystal only while something lies there.
 func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 	var cm := settings.chunk_m
@@ -1017,26 +1019,50 @@ func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)
 const BEACON_LIT := Color(1.0, 0.55, 0.1)
 const LOOT_CRYSTAL := preload("res://shaders/loot_crystal.gdshader")
+const LOG_CABIN := preload("res://models/cabin/log_cabin.glb")
+# The cabin's log walls in its own space (the roof and the porch logs overhang them), for its
+# collision box.
+const CABIN_WALLS := AABB(Vector3(-3.7, 0.0, -4.7), Vector3(7.4, 3.5, 7.5))
 
 
-func _site_marker(i: int) -> MeshInstance3D:
-	var height := 5.0
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.25
-	mesh.bottom_radius = 0.25
-	mesh.height = height
+# A rest stop's log cabin ("Lowpoly simple Log Cabin" by tamminen, CC-BY-4.0, see
+# models/cabin/README.md): set back from the pad's centre towards its far side by
+# rest_stop_cabin_back_m, door facing the road, inside the crowd's arc. Solid, and in the damage
+# obstacle group like a barrier. Lit, its doorway glows BEACON_LIT (refresh_site_marker).
+func _site_marker(i: int) -> Node3D:
+	var cabin: Node3D = LOG_CABIN.instantiate()
+	cabin.name = "Site%d" % i
+	var c := sites.pos[i]
+	var away := (c - sites.anchor[i]).normalized() if sites.anchor[i] != c else Vector2.UP
+	var at := c + away * Config.data.rest_stop_cabin_back_m
+	cabin.position = Vector3(at.x, sites.pad_h[i], at.y)
+	cabin.rotation.y = atan2(-away.x, -away.y)  # the model's door is on its +z side
+	var body := StaticBody3D.new()
+	body.name = "Body"
+	body.add_to_group(DamageModel.OBSTACLE_GROUP)
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = CABIN_WALLS.size
+	shape.shape = box
+	shape.position = CABIN_WALLS.get_center()
+	body.add_child(shape)
+	cabin.add_child(body)
+	_light_cabin(cabin, rest_lit_query.is_valid() and rest_lit_query.call(i))
+	return cabin
+
+
+# The cabin's dark interior floor, glowing through the doorway once its rest stop is lit.
+static func _light_cabin(cabin: Node3D, lit: bool) -> void:
+	var inside := cabin.find_child("Interior", true, false) as MeshInstance3D
+	if inside == null:
+		return
+	if not lit:
+		inside.material_override = null
+		return
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = BEACON_UNLIT
-	if rest_lit_query.is_valid() and rest_lit_query.call(i):
-		mat.albedo_color = BEACON_LIT
-	mesh.material = mat
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.name = "Site%d" % i
-	var c := sites.pos[i]
-	mi.position = Vector3(c.x, sites.pad_h[i] + height * 0.5, c.y)
-	return mi
+	mat.albedo_color = BEACON_LIT
+	inside.material_override = mat
 
 
 # A piece of loot floating over its spot on the road: a thin crystal, pointed top and bottom,
@@ -1105,16 +1131,15 @@ func _remove_site_markers(parent: Node3D, i: int) -> void:
 			old.queue_free()
 
 
-# Re-colour a loaded rest stop's beacon (it was just lit).
+# Light a loaded rest stop's cabin (it was just lit).
 func refresh_site_marker(i: int) -> void:
 	var st: ChunkState = _chunks.get(_chunk_of(sites.pos[i]))
 	if st == null or st.foliage == null:
 		return
-	var mi := st.foliage.get_node_or_null("Site%d" % i) as MeshInstance3D
-	if mi == null:
+	var cabin := st.foliage.get_node_or_null("Site%d" % i) as Node3D
+	if cabin == null:
 		return
-	var lit: bool = rest_lit_query.is_valid() and rest_lit_query.call(i)
-	((mi.mesh as CylinderMesh).material as StandardMaterial3D).albedo_color = BEACON_LIT if lit else BEACON_UNLIT
+	_light_cabin(cabin, rest_lit_query.is_valid() and rest_lit_query.call(i))
 
 
 # Onlookers in an arc along the back of a rest stop's pad (the side away from its road), facing

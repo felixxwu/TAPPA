@@ -137,7 +137,7 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   car's controls locked, the same passes as the stage's load (`world.gd._warm_shaders_behind_cover`):
   every `warm_up()`/`clear_warm_up()` node (debris, tyre marks, smoke, flames, crowds), a speck of
   every ring's ground material (`warm_up_materials`), one of every ring's trees plus a bush, every
-  rock, a loot crystal, a rest-stop post and every loot name's floating label (`warm_up_spawns`, on flat stand-in ground), and a
+  rock, a loot crystal, a rest-stop cabin (without its collision box) and every loot name's floating label (`warm_up_spawns`, on flat stand-in ground), and a
   throwaway camera turning full circle above the car and then looking down from high up
   (`_look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
   the auto-driver or the title menu take over (`_hand_over`). Headless skips the warm-up.
@@ -237,8 +237,12 @@ planted on it (`is_clear`).
   a junction. The pad sits beside the road on a seeded side, or the other side if that one is
   water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
   further on.
-- **Placeholder markers:** until rest stops and loot get real models, a tall post marks each rest
-  stop in near chunks (`_site_marker`, orange once lit, grey before); a loot site or dead end
+- **Site markers:** each rest stop in near chunks has a **log cabin** (`_site_marker`,
+  `models/cabin/log_cabin.glb`, CC-BY, credit in `models/cabin/README.md`), set back
+  `GameConfig.rest_stop_cabin_back_m` from the pad's centre away from the road, door facing the
+  road, inside the crowd's arc. It is solid (a box over its walls, `CABIN_WALLS`, in the damage
+  obstacle group), and once lit its doorway glows orange (`_light_cabin`, via
+  `refresh_site_marker`). Loot still has placeholder markers: a loot site or dead end
   showing an item gets a coloured crystal bobbing over the road (`_loot_marker`, `shaders/loot_crystal.gdshader`, rebuilt by `refresh_loot_markers` when the pool changes). Both the queued
   marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
   `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
@@ -277,7 +281,7 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
   (`rest_reached` → `RoadSites.reached`, swept over the step's travel with
   `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its beacon
-  turns from grey to orange), makes it the respawn point (`last_site`) and fully heals the car
+  turns from grey to orange and its cabin doorway glows), makes it the respawn point (`last_site`) and fully heals the car
   (`DamageModel.repair`, cooling included; `healed`). Spawn is lit from the start. A move there by
   travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
   stop (a new game, Continue, the reload after a parts or car change): the first `step` only notes
@@ -432,7 +436,7 @@ over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames wer
 
 ## Not in the prototype yet
 
-Real rest-stop and loot models (sites still have placeholder posts and loot coloured crystals) and
+Real loot models (rest stops have log cabins now; loot still shows coloured crystals) and
 threading. Pickups ([loot.md](loot.md)), the damage chain and rest stops as checkpoints (*Damage
 and rest stops* above) are in. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings

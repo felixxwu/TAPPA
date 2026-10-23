@@ -863,8 +863,49 @@ func test_vegetation_off_still_spawns_the_site_dressing() -> void:
 	var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of(st.sites.pos[0])]
 	assert_not_null(cs.foliage, "the spawn chunk was dressed")
 	if cs.foliage != null:
-		assert_not_null(cs.foliage.get_node_or_null("Site0"), "the spawn rest stop has its post")
+		assert_not_null(cs.foliage.get_node_or_null("Site0"), "the spawn rest stop has its cabin")
 	assert_eq(_foliage_positions(st).size(), 0, "no trees, bushes or rocks")
+
+
+# A rest stop's cabin stands back from the road on its pad, door towards the road, is solid, and
+# its doorway glows once the rest stop is lit.
+func test_a_rest_stops_cabin_faces_the_road_and_glows_once_lit() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	var i := -1
+	for r: int in st.sites.of_kind(RoadSites.Kind.REST):
+		if st.sites.anchor[r] != st.sites.pos[r]:
+			i = r
+			break
+	assert_gt(i, -1, "a rest stop beside its road")
+	if i < 0:
+		return
+	st.focus.position = Vector3(st.sites.pos[i].x, 0.0, st.sites.pos[i].y)
+	st.prefill()
+	var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of(st.sites.pos[i])]
+	var cabin := cs.foliage.get_node_or_null("Site%d" % i) as Node3D
+	assert_not_null(cabin, "the rest stop has its cabin")
+	if cabin == null:
+		return
+	var c := st.sites.pos[i]
+	var a := st.sites.anchor[i]
+	var at := Vector2(cabin.position.x, cabin.position.z)
+	assert_gte((at - c).dot(c - a), 0.0, "on the far side of the pad from the road")
+	assert_almost_eq(at.distance_to(c), Config.data.rest_stop_cabin_back_m, 0.01, "set back by the configured distance")
+	var door := cabin.basis.z
+	assert_gt(Vector2(door.x, door.z).dot(a - at), 0.0, "its door faces the road")
+	var body := cabin.get_node_or_null("Body") as StaticBody3D
+	assert_not_null(body, "it is solid")
+	if body != null:
+		assert_true(body.is_in_group(DamageModel.OBSTACLE_GROUP), "and hitting it costs HP")
+	var inside := cabin.find_child("Interior", true, false) as MeshInstance3D
+	assert_not_null(inside, "the model keeps its interior")
+	if inside == null:
+		return
+	assert_null(inside.material_override, "dark before it is lit")
+	st.rest_lit_query = func(_s: int) -> bool: return true
+	st.refresh_site_marker(i)
+	assert_not_null(inside.material_override, "glowing once lit")
 
 
 # Planting never beats a collision or near-mesh build, and a far mesh filling a gap in the horizon
