@@ -88,8 +88,11 @@ left and sites showing something per ring at boot.
   something replaces the drop (an empty-handed give-up keeps the earlier pile): the old one is lost, and its items go back into the pool to be found again (decision 11).
 - **Rumours** are read on pickup: the one item they tell of (`of`) is added to `revealed_items`
   (`reveal_item`). Whole rings in `revealed` are fully known (ring 0 from the start, or every ring
-  via the dev action). The journal (`journal()`) lists each ring with anything known, with its
-  known items; "found" means the player has it.
+  via the dev action, and a checkpoint's ring once it's lit). The journal (`journal()`) lists each
+  ring with anything known: every item of a whole ring, else just the items told of or found. Each
+  row says whether it's "found" (the player has it) and "known" (told of by a rumour, or found); an
+  item that isn't known shows on the region page as a "?" card (`unknown` icon) with its name
+  hidden, but still counts in the region's "n of m found".
 
 All of it lives in the world block (`WorldSession`: carried, stash, dropped, collected, revealed,
 revealed_items);
@@ -116,7 +119,7 @@ car ("on <car>"; "Move here" / "Swap for X" / "Can't fit"). Picking one of those
 displaces goes to the stash. **Garage:** a card per owned car (pick
 to drive one; the cursor starts on the car being driven). **Journal:** a card per revealed region
 ("n of m found"); picking one opens that region's page (`View.REGION`, `journal_ring`), a read-only
-card per item and car there, "Found" or "Not found yet". Back steps region → region list → main. The pause menu's Journal row
+card per item and car there, "Found" or "Not found yet" (or "?" while undiscovered). Back steps region → region list → main. The pause menu's Journal row
 opens the same pages on their own (`open_journal(on_close)`): there Back from the region list
 calls `on_close` (back to the pause menu) and the game stays frozen throughout. A change of parts or car re-fields the car
 when the page closes: `car_changed` makes free roam save and reload the scene at the rest stop,
