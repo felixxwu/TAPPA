@@ -908,6 +908,55 @@ func test_a_rest_stops_cabin_faces_the_road_and_glows_once_lit() -> void:
 	assert_not_null(inside.material_override, "glowing once lit")
 
 
+# A rest stop's crowd gathers between its cabin's door and the road, off the road, and is live:
+# with the car in among them they scatter from it.
+func test_a_rest_stops_crowd_gathers_at_the_cabin_door_and_scatters_from_the_car() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	var i := -1
+	for r: int in st.sites.of_kind(RoadSites.Kind.REST):
+		if st.sites.anchor[r] != st.sites.pos[r]:
+			i = r
+			break
+	assert_gt(i, -1, "a rest stop beside its road")
+	if i < 0:
+		return
+	var c := st.sites.pos[i]
+	st.focus.position = Vector3(c.x, 0.0, c.y)
+	st.prefill()
+	var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of(c)]
+	var crowd := cs.foliage.get_node_or_null("Crowd%d" % i) as SpectatorGroup
+	var cabin := cs.foliage.get_node_or_null("Site%d" % i) as Node3D
+	assert_not_null(crowd, "the rest stop has a live crowd")
+	if crowd == null or cabin == null:
+		return
+	var at := Vector2(cabin.position.x, cabin.position.z)
+	var door := Vector2(cabin.basis.z.x, cabin.basis.z.z)
+	var road := st._road_cells_near(at, 40.0)
+	var centre := Vector2.ZERO
+	for p: Vector2 in crowd._pos:
+		assert_gt((p - at).dot(door), TerrainStreamer.CABIN_WALLS.end.z, "in front of the cabin's door wall")
+		assert_false(ScatterMath.on_road(p, road), "off the road")
+		centre += p
+	centre /= crowd._pos.size()
+	var spread_before := _mean_distance(crowd, centre)
+	st.focus.position = Vector3(centre.x, 0.0, centre.y)  # the car pulls up among them
+	for _k in 90:
+		await get_tree().physics_frame
+	assert_gt(_mean_distance(crowd, centre), spread_before + 0.1, "they back away from the car")
+
+
+# Mean distance from `from` of the crowd's members still standing.
+func _mean_distance(crowd: SpectatorGroup, from: Vector2) -> float:
+	var sum := 0.0
+	var n := 0
+	for k in crowd._pos.size():
+		if crowd._upright[k] == 1:
+			sum += crowd._pos[k].distance_to(from)
+			n += 1
+	return sum / maxf(n, 1)
+
+
 # Planting never beats a collision or near-mesh build, and a far mesh filling a gap in the horizon
 # interleaves with planting by distance (far_lead_chunks) instead of waiting behind all of it.
 func test_far_gaps_interleave_with_planting_but_never_beat_near_work() -> void:

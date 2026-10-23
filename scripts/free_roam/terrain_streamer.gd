@@ -992,10 +992,10 @@ func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 		field.build(layout, barrier_params(), func(p: Vector2) -> float: return g.height_at(p.x, p.y)))
 
 
-# The chunk's site dressing. A rest stop gets a crowd of onlookers along the back of its pad
-# (decision 9: spectators gather at rest stops) and a log cabin, its doorway glowing once lit.
+# The chunk's site dressing. A rest stop gets a log cabin with a live crowd gathered at its door
+# (decision 9: spectators gather at rest stops); the doorway glows once the stop is lit.
 # Loot slots and dead ends show a crystal only while something lies there.
-func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
+func _queue_site_markers(job: ChunkJob, _g: PlantGround) -> void:
 	var cm := settings.chunk_m
 	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
 	var mine := PackedInt32Array()
@@ -1007,9 +1007,7 @@ func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 	_add_spawn(job, "spawn_markers", func(parent: Node3D) -> void:
 		for i in mine:
 			if sites.kind[i] == RoadSites.Kind.REST:
-				var crowd := _rest_crowd(i, g)
-				if crowd != null:
-					parent.add_child(crowd)
+				_rest_crowd(i, parent)
 				_remove_site_markers(parent, i)
 				parent.add_child(_site_marker(i))
 			else:
@@ -1141,26 +1139,84 @@ func refresh_site_marker(i: int) -> void:
 	_light_cabin(cabin, rest_lit_query.is_valid() and rest_lit_query.call(i))
 
 
-# Onlookers in an arc along the back of a rest stop's pad (the side away from its road), facing
-# the pad. A static crowd (Crowd), like the stage's wreck onlookers: rest stops are for stopping.
-func _rest_crowd(i: int, g: PlantGround) -> MultiMeshInstance3D:
+# A live crowd (SpectatorGroup, as on the old stages) added under `parent`, gathered in front of
+# rest stop `i`'s cabin between its door and the road: they keep apart, scatter from the car and drift back, keep off
+# the road and out of the cabin, and are knocked over if hit. The road is rasterised around the
+# crowd only, and the cabin's walls stand in for the "trees" the group steers around. Steering
+# only runs while the car is within spectator_active_radius_m; ragdolls are built on a knock, not
+# up front (no pool), so a crowd costs a streamed chunk next to nothing.
+func _rest_crowd(i: int, parent: Node3D) -> SpectatorGroup:
 	var cfg: GameConfig = Config.data
 	var n := cfg.rest_stop_crowd_size
-	if n <= 0:
+	if n <= 0 or not cfg.spectators_enabled:
 		return null
 	var c := sites.pos[i]
 	var away := (c - sites.anchor[i]).normalized() if sites.anchor[i] != c else Vector2.UP
-	var r := sites.radius[i] - 1.5
+	var along := Vector2(-away.y, away.x)
+	var cabin := c + away * cfg.rest_stop_cabin_back_m
+	var front := cabin - away * (CABIN_WALLS.end.z + REST_CROWD_HALF_DEPTH_M + 1.0)
+	var p := cfg.spectator_params()
+	p["seed"] = int(ScatterMath.hash01(i, 0, settings.world_seed, 63) * 1_000_000.0)
+	p["ragdoll_pool_size"] = 0
+	var road := _road_cells_near(front, REST_CROWD_HALF_LEN_M + p["road_probe_m"] + 2.0)
+	var walls := _cabin_wall_points(cabin, away)
+	var wall_grid := SpectatorScatter.build_point_grid(walls, p["tree_cell_m"])
+	var members := SpectatorScatter.members(front, along, REST_CROWD_HALF_LEN_M, REST_CROWD_HALF_DEPTH_M,
+		n, cfg.spectator_separation_m, road, wall_grid, p["tree_cell_m"], p["tree_avoid_m"], p["seed"])
+	if members.is_empty():
+		return null
+	var group := SpectatorGroup.new()
+	group.name = "Crowd%d" % i
+	parent.add_child(group)
+	group.setup(members, focus, self, road, wall_grid, p)
+	return group
+
+
+const REST_CROWD_HALF_LEN_M := 6.0    # along the road
+const REST_CROWD_HALF_DEPTH_M := 3.0  # towards the road and back
+
+
+# Road cells (ScatterMath's raster) within `reach` of `centre`: each nearby road segment is walked
+# a cell at a time and stamped across its width, clipped to the box, so only the patch a rest
+# stop's crowd can reach is rasterised.
+func _road_cells_near(centre: Vector2, reach: float) -> Dictionary:
+	var cells := {}
+	var half := settings.road_half_width_m + settings.road_shoulder_m
+	var step := ScatterMath.CELL_M
+	for si in network.candidates_for(centre.x, centre.y, reach, reach + half):
+		var a := Vector2(network.seg_ax[si], network.seg_ay[si])
+		var b := Vector2(network.seg_bx[si], network.seg_by[si])
+		var d := b - a
+		var l := d.length()
+		if l < 1e-4:
+			continue
+		var t := d / l
+		var nrm := Vector2(-t.y, t.x)
+		for k in int(l / step) + 1:
+			var on := a + t * (k * step)
+			if absf(on.x - centre.x) > reach + half or absf(on.y - centre.y) > reach + half:
+				continue
+			for w in range(-int(half / step), int(half / step) + 1):
+				cells[ScatterMath.cell_of(on + nrm * (w * step))] = true
+	return cells
+
+
+# Points every metre round the cabin's walls in world XZ (its door faces -away).
+func _cabin_wall_points(cabin: Vector2, away: Vector2) -> PackedVector2Array:
+	var x_axis := Vector2(-away.y, away.x)  # the cabin's local +x
+	var z_axis := -away                      # its local +z, the door side
+	var lo := CABIN_WALLS.position
+	var hi := CABIN_WALLS.end
 	var pts := PackedVector2Array()
-	var yaws := PackedFloat32Array()
-	for k in n:
-		var t := (float(k) + 0.5) / n
-		var ang := away.angle() + lerpf(-1.1, 1.1, t) + (ScatterMath.hash01(i, k, settings.world_seed, 61) - 0.5) * 0.15
-		var p := c + Vector2.from_angle(ang) * (r - ScatterMath.hash01(i, k, settings.world_seed, 62) * 1.5)
-		pts.append(p)
-		var to_c := c - p
-		yaws.append(atan2(-to_c.x, -to_c.y))
-	return Crowd.multimesh_instance("Crowd%d" % i, pts, yaws, func(x: float, z: float) -> float: return g.height_at(x, z), cfg)
+	for k in int(CABIN_WALLS.size.x) + 1:
+		var x := lo.x + k * CABIN_WALLS.size.x / ceilf(CABIN_WALLS.size.x)
+		for z in [lo.z, hi.z]:
+			pts.append(cabin + x_axis * x + z_axis * z)
+	for k in int(CABIN_WALLS.size.z) + 1:
+		var z := lo.z + k * CABIN_WALLS.size.z / ceilf(CABIN_WALLS.size.z)
+		for x in [lo.x, hi.x]:
+			pts.append(cabin + x_axis * x + z_axis * z)
+	return pts
 
 
 func _add_spawn(job: ChunkJob, kind: String, work: Callable) -> void:

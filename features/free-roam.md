@@ -302,7 +302,13 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
   the pad), repaired, and its engine temperature reset to 0 (a respawn is a fresh car; a rest-stop
   repair keeps the heat). `respawned` carries the wreck position, for dropped loot in stage 7.
 - **Travel:** goes to any lit rest stop, with the same move plus a repair.
-- **Crowds:** each rest stop has a static crowd along the back of its pad (`features/spectators.md`).
+- **Crowds:** each rest stop has a live crowd (`SpectatorGroup`, `TerrainStreamer._rest_crowd`) of
+  `rest_stop_crowd_size` gathered in a band in front of its cabin, between the door and the road.
+  As on the old stages they keep apart, back away from the car and drift home, steer off the road
+  (rasterised around the crowd only, `_road_cells_near`) and out of the cabin (its wall outline,
+  `_cabin_wall_points`, stands in for the trees they avoid), and get knocked over if hit. No
+  ragdoll pool: bodies are built on a knock, so streaming a crowd in stays cheap
+  (`features/spectators.md`).
 
 The car is fielded through `apply_owned` with a transient owned-car dict (`free_roam.gd →
 owned`), so the rest-stop page's tuning works on the shared `TuningPanel` / `car.retune` path.

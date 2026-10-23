@@ -28,7 +28,7 @@ func _ready() -> void:
 		# Back along the road from the pad's anchor, looking across at the cabin.
 		var side := (c - a).normalized()
 		var along := Vector2(-side.y, side.x)
-		var from := a - along * 25.0
+		var from := a - along * 18.0
 		streamer.prefill_at(from)
 		var y := streamer.height_at(from.x, from.y) + 1.0
 		var look := (c - from).normalized()
@@ -37,5 +37,6 @@ func _ready() -> void:
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("res://tools/cabin_capture_%d.png" % shot)
 		var found := streamer.find_children("Site%d" % site, "", true, false)
-		print("cabin-capture: shot ", shot, " site ", site, " cabin ", "found" if found.size() > 0 else "MISSING")
+		var crowd := streamer.find_children("Crowd%d" % site, "", true, false)
+		print("cabin-capture: shot ", shot, " site ", site, " cabin ", "found" if found.size() > 0 else "MISSING", " crowd ", "found" if crowd.size() > 0 else "MISSING")
 	get_tree().quit()
