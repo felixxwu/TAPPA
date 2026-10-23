@@ -372,7 +372,7 @@ func _update_stats() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 		_recovery.reset_now()
-	elif OS.is_debug_build() and event.is_action_pressed("toggle_perf_overlay"):
+	elif event.is_action_pressed("toggle_perf_overlay"):
 		$DebugStats.visible = not $DebugStats.visible
 
 

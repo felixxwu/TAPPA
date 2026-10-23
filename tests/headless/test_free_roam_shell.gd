@@ -80,7 +80,9 @@ func test_the_debug_readout_starts_hidden_and_p_toggles_it() -> void:
 	press.action = "toggle_perf_overlay"
 	press.pressed = true
 	_scene._unhandled_input(press)
-	assert_eq(stats.visible, OS.is_debug_build(), "P shows it in debug builds")
+	assert_true(stats.visible, "P shows it, in release builds too")
+	_scene._unhandled_input(press)
+	assert_false(stats.visible, "P again hides it")
 
 
 # The wheel debris is made for free roam just as world.gd makes it for a stage, and reads the

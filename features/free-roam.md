@@ -402,8 +402,8 @@ node for node:
   (`setup(null, …)`: no centreline, so the streamer's `surface_at` road weight alone decides —
   ruts on the gravel roads, nothing on grass). A teleport (`RestStops.car_teleported_to`,
   `RoadRecovery.reset_done`) calls `TireMarks.break_ribbons`, so a mark never bridges the jump.
-- The streaming readout moved to its own `DebugStats` layer. It starts hidden; in debug builds
-  **P** (`toggle_perf_overlay`) toggles it.
+- The streaming readout moved to its own `DebugStats` layer. It starts hidden; **P**
+  (`toggle_perf_overlay`) toggles it in every build, release/web exports included.
 
 **Road recovery** (`RoadRecovery`) replaces `TrackProgress`' recovery, which needs a single
 centreline. On request (**R**, or the pause menu) it puts the car on the nearest road, facing
