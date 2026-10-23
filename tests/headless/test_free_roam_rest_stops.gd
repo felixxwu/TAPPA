@@ -50,8 +50,6 @@ func after_each() -> void:
 	if _banner._band != null:
 		_banner._band.free()
 		_banner._band = null
-	_banner._pending_site = -1
-	_banner.close()
 	get_tree().paused = false
 
 
@@ -369,32 +367,23 @@ func test_no_rest_stop_page_paints_an_opaque_backdrop() -> void:
 	_page.close()
 
 
-# Lighting a checkpoint shows the "Checkpoint reached" band; once it has faded, a page of what is
-# still to be found in that biome comes up, walkable by keyboard / gamepad, and Back closes it.
-func test_lighting_a_checkpoint_shows_the_banner_then_a_navigable_items_page() -> void:
+# Lighting a checkpoint shows the "Checkpoint reached" band and opens no page: what is out there to
+# find goes in the journal instead, which now has the checkpoint's whole biome ring.
+func test_lighting_a_checkpoint_shows_the_banner_and_reveals_its_ring_in_the_journal() -> void:
 	var site := _a_rest_stop()
+	var ring := clampi(_streamer.sites.ring[site], 0, _streamer.settings.ring_count - 1)
 	_rest.lit_sites.erase(site)
+	var revealed := WorldSession.list("revealed")
+	WorldSession.set_list("revealed", revealed.filter(func(r: Variant) -> bool: return int(r) != ring))
+	assert_false(_banner.loot.is_revealed(ring))
 	await _park_on(site)
 	_rest.step(0.01)
 	assert_true(_banner.is_showing_banner())
-	assert_false(_banner.is_open(), "no page while the banner is up")
-	_banner._banner_done(site)
+	assert_true(_banner.loot.is_revealed(ring), "the ring is in the journal")
+	_banner._banner_done()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	if _banner.items_for(site).is_empty():
-		assert_false(_banner.is_open(), "nothing left to find: no page")
-		return
-	assert_true(_banner.is_open())
-	assert_true(get_tree().paused)
-	await get_tree().process_frame
-	var cards := _banner.cards()
-	assert_eq(cards.card_count(), _banner.items_for(site).size() + 1, "Continue, then one card per item")
-	assert_eq(_banner.get_viewport().gui_get_focus_owner(), cards, "the card list has the cursor")
-	var nav := MenuNav.of(_banner._page)
-	nav._unhandled_input(_press("menu_right"))
-	assert_eq(cards.selected_index(), 1, "right walks the cards")
-	nav._unhandled_input(_press("ui_cancel"))
-	await get_tree().process_frame
-	assert_false(_banner.is_open(), "back closes it")
-	assert_false(get_tree().paused)
+	assert_false(_banner.is_showing_banner())
+	assert_false(get_tree().paused, "no page freezes the game")
+	WorldSession.set_list("revealed", revealed)
 

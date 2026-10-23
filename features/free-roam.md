@@ -261,11 +261,10 @@ code (`RestStops`, `RestStopPage`, `RoadSites.Kind.REST`, the save's `lit_sites`
 
 `CheckpointBanner` (`scripts/free_roam/checkpoint_banner.gd`, on `RestStops.lit`): the first time a
 checkpoint is lit, a full-width "Checkpoint reached" band fades in, holds `HOLD_S` (3 s) and fades
-out while the car drives on (the tween runs through pauses). Then, once nothing else has the game
-frozen, it opens a card page ("Now in reach") of the items still to be found in that checkpoint's
-biome ring (`items_for`: the ring's `LootRules` table minus `LootDirector.taken_keys()`, no
-rumours); nothing left → no page. Continue / Back closes it. The band itself is the static
-`CheckpointBanner.build_band(text)`, shared with the region banner.
+out while the car drives on (the tween runs through pauses). There is no page of what is left to
+find: lighting it reveals its whole biome ring in the journal (`_reveal_ring` →
+`LootDirector.reveal`), which lists every item there and whether it was found. The band itself is
+the static `CheckpointBanner.build_band(text)`, shared with the region banner.
 
 `RegionBanner` (`scripts/free_roam/region_banner.gd`, made in `free_roam.gd._ready`): the first time
 the car drives into a biome ring in this world, the same band shows the ring's region name
