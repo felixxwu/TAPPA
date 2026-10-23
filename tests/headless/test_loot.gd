@@ -489,22 +489,6 @@ func test_a_car_the_player_owns_never_shows_on_the_ground() -> void:
 		"the starter car is already yours")
 
 
-func test_loot_on_the_ground_has_no_floating_name_and_rest_beams_fade() -> void:
-	var scene := await _boot()
-	var loot: LootDirector = scene.get_node("LootDirector")
-	var cfg: GameConfig = Config.data
-	for child in loot.beacons.get_children():
-		assert_false(child is Label3D or child.find_children("*", "Label3D").size() > 0,
-			"no floating name over loot: the pickup toast says what it was")
-	var rest_beam := loot.beacons.get_node("Rest%d" % (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)[0]) as Node3D
-	loot.beacons._fit(rest_beam, rest_beam.global_position + Vector3(cfg.beacon_range_m * 0.9, 0, 0), cfg)
-	var far_a := SiteBeacons.beam_color(rest_beam).a
-	loot.beacons._fit(rest_beam, rest_beam.global_position + Vector3(5, 0, 0), cfg)
-	assert_gt(SiteBeacons.beam_color(rest_beam).a, far_a, "a beam is fainter the further off it is")
-	var rest := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)[0]
-	assert_not_null(loot.beacons.get_node_or_null("Rest%d" % rest), "every rest stop has a beam")
-
-
 func test_a_banked_car_title_joins_the_garage() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")

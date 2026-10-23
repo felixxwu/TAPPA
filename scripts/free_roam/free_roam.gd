@@ -167,7 +167,7 @@ func _warm_up() -> void:
 
 
 # A throwaway camera turns full circle above the car, then looks down from high up, so everything
-# loaded around the spawn (trees, water, barriers, beacons, crowds) draws once.
+# loaded around the spawn (trees, water, barriers, cabins, crowds) draws once.
 func _look_around() -> void:
 	var cam := Camera3D.new()
 	cam.far = 400.0

@@ -1016,7 +1016,6 @@ func _queue_site_markers(job: ChunkJob, g: PlantGround) -> void:
 				_place_loot_site_marker(parent, i))
 
 
-const BEACON_UNLIT := Color(0.45, 0.45, 0.45)
 const BEACON_LIT := Color(1.0, 0.55, 0.1)
 const LOOT_CRYSTAL := preload("res://shaders/loot_crystal.gdshader")
 const LOG_CABIN := preload("res://models/cabin/log_cabin.glb")

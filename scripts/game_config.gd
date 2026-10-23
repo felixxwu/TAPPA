@@ -968,18 +968,6 @@ func has_nitrous() -> bool:
 ## fall for ever.
 @export_range(5.0, 200.0) var recovery_void_depth_m := 25.0
 
-@export_group("Beacons")
-# Free roam's beams of light over rest stops (SiteBeacons, features/loot.md).
-## Height of the beam over every rest stop, metres.
-@export_range(5.0, 400.0, 1.0) var beacon_rest_height_m := 120.0
-## Beams further than this from the camera are hidden.
-@export_range(100.0, 10000.0, 10.0) var beacon_range_m := 2500.0
-## A beam is widened by this many metres per metre of distance, so it stays a few pixels wide.
-@export_range(0.0, 0.05, 0.0005) var beacon_width_per_m := 0.004
-## A beam's opacity right next to it, fading to beacon_alpha_far at beacon_range_m.
-@export_range(0.0, 1.0, 0.01) var beacon_alpha_near := 0.6
-@export_range(0.0, 1.0, 0.01) var beacon_alpha_far := 0.1
-
 @export_group("Mobile")
 # On-screen touch controls (steer left / steer right / throttle / brake).
 # Shown automatically on touch devices (DisplayServer.is_touchscreen_available()).

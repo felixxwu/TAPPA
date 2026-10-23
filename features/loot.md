@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/loot_rules.gd` (`LootRules`: pure tables, the pool, fitting, names
 and colours), `scripts/free_roam/loot_director.gd` (`LootDirector`: the loot loop in the world),
-`scripts/free_roam/site_beacons.gd` (`SiteBeacons`: the tall beams over rest stops), the Parts / Garage / Journal pages of
+the Parts / Garage / Journal pages of
 `scripts/free_roam/rest_stop_page.gd`, and the loot crystals in `TerrainStreamer`.
 
 **Tests:** `tests/headless/test_loot.gd`
@@ -67,12 +67,9 @@ left and sites showing something per ring at boot.
 - **On the ground:** a thin crystal, pointed top and bottom, bobbing over the road (`shaders/loot_crystal.gdshader`), coloured by kind (`LootRules.colour`: gold car, orange engine,
   green kit, cyan part, white rumour), built with the near chunk (`TerrainStreamer._loot_marker`;
   `refresh_loot_markers` rebuilds every loaded one when the pool changes).
-- **From far away:** `SiteBeacons` keeps one beam per rest stop for the whole world (grey, orange
-  once lit; `GameConfig.beacon_rest_height_m`), within `beacon_range_m`. Loot has no beam: the
-  crystal is the marker. Beams ignore fog and are widened with distance
-  (`beacon_width_per_m`) so they stay a few pixels wide, fade out as they reach into the sky
-  (`shaders/beacon_beam.gdshader`), and fade from `beacon_alpha_near` up close
-  to `beacon_alpha_far` at the edge of their range.
+- **No beams** (removed 2026-10-23, Felix's call): nothing marks loot or rest stops from far
+  away. Rest stops show as log cabins in near chunks (`features/free-roam.md` → Site markers) and
+  on the minimap; loot shows only as its crystal.
 - **No floating name over loot** (removed 2026-10-23): the crystal's colour says roughly what kind
   it is, and the pickup toast (`LootDirector._toast`) says exactly what was taken.
 
@@ -127,6 +124,6 @@ because a live body is never re-staged.
 
 ## In the world
 
-`TerrainStreamer._loot_marker`: a crystal under a tall light beam, coloured by kind (gold car,
+`TerrainStreamer._loot_marker`: a crystal, coloured by kind (gold car,
 orange engine, green kit, cyan part, white rumour), built per near chunk while the item is
 still there (`loot_query`), and removed on pickup (`refresh_loot_marker`).

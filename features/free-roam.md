@@ -248,9 +248,8 @@ planted on it (`is_clear`).
   `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
   its marker spawn running still leaves one marker (a duplicate used to be renamed `@Loot%d@N`,
   which no refresh removed, so a crystal stayed after its pickup). A site with nothing left shows nothing.
-- **Beacons:** every rest stop also has a tall beam of light visible from far beyond the near
-  chunks — `SiteBeacons`, see [loot.md](loot.md) →
-  "Seeing it".
+- **No beacons:** the tall beams of light over rest stops (`SiteBeacons`) were removed on
+  2026-10-23 when the cabins arrived; from afar, rest stops show only on the minimap.
 
 On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
 
@@ -280,8 +279,8 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
 `RestStops` makes the REST sites into Dark Souls bonfires:
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
   (`rest_reached` → `RoadSites.reached`, swept over the step's travel with
-  `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its beacon
-  turns from grey to orange and its cabin doorway glows), makes it the respawn point (`last_site`) and fully heals the car
+  `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its cabin
+  doorway glows orange and its minimap mark turns orange), makes it the respawn point (`last_site`) and fully heals the car
   (`DamageModel.repair`, cooling included; `healed`). Spawn is lit from the start. A move there by
   travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
   stop (a new game, Continue, the reload after a parts or car change): the first `step` only notes

@@ -28,7 +28,6 @@ const DROPPED_REACH_M := 6.0
 
 var placement := {}  # site -> item, as the sites show it now
 var _last_p := Vector2(INF, INF)  # the car's position last step, for the swept pickup check
-var beacons: SiteBeacons
 var _dropped_node: Node3D
 var _toast: Label
 var _toast_t := 0.0
@@ -40,11 +39,7 @@ func _ready() -> void:
 	streamer.loot_query = loot_at
 	if WorldSession.list("revealed").is_empty():
 		WorldSession.set_list("revealed", [0])
-	beacons = SiteBeacons.new()
-	beacons.name = "SiteBeacons"
-	add_child(beacons)
 	_reassign()
-	beacons.setup(streamer, self)
 	print("free roam: loot ", pacing_report())
 	var layer := CanvasLayer.new()
 	layer.layer = 3
