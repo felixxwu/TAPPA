@@ -235,7 +235,7 @@ func test_the_region_banner_waits_for_the_checkpoint_band_then_shows() -> void:
 	cp.show_reached(0)
 	banner.announce("Plain")
 	assert_false(banner.is_showing_banner(), "never stacked on the checkpoint band")
-	cp._banner_done(-1)
+	cp._banner_done()
 	await wait_process_frames(1)
 	assert_true(banner.is_showing_banner(), "shows once the checkpoint band is gone")
 	var label := banner._band.get_child(0) as Label
