@@ -44,13 +44,15 @@ signal photo_mode_requested
 # one emits extra_requested with its label; the menu stays open, still paused, for the host's page
 # to cover. The host calls return_from_extra() when its page closes.
 @export var extra_rows := PackedStringArray()
+# Extra rows like extra_rows, but placed straight after Resume (free roam: "Journal").
+@export var lead_rows := PackedStringArray()
 
 signal extra_requested(label: String)
 signal quitting
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
-var _menu_panel: MenuPage      # PAUSED over a card list: Resume, Reset, Photo Mode, extras, Settings, Quit
+var _menu_panel: MenuPage      # PAUSED over a card list: Resume, lead rows, Reset, Photo Mode, extras, Settings, Quit
 var _settings_panel: Control   # the shared SettingsMenu + Back
 var _cards: CardCarousel       # the menu's cards; MenuNav's opening focus (Resume is card 0)
 
@@ -287,25 +289,31 @@ func _build() -> void:
 # exports the host sets in its scene.
 func _build_menu_panel() -> MenuPage:
 	_menu_panel = CardUI.card_page(_overlay, {"title": "Paused"})
-	var entries: Array = [
-		{"title": "Resume", "icon": "resume_run", "action": resume},
+	var entries: Array = [{"title": "Resume", "icon": "resume_run", "action": resume}]
+	for label in lead_rows:
+		entries.append(_extra_entry(label))
+	entries.append_array([
 		# Snap the car back onto the road at its current progress, then unpause. The host owns
 		# the car and performs the reset.
 		{"title": reset_label, "icon": "reset_road", "action": _on_reset_to_track_pressed},
-	]
+	])
 	# Hand the screen to the host's free-fly camera with the tree still frozen. Esc there comes
 	# back to this menu (return_from_photo_mode).
 	if offer_photo_mode:
 		entries.append({"title": "Photo Mode", "icon": "photo", "action": _on_photo_mode_pressed})
 	for label in extra_rows:
-		entries.append({"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)})
+		entries.append(_extra_entry(label))
 	entries.append({"title": "Settings", "icon": "settings", "action": _show_settings.bind(true)})
 	entries.append({"title": quit_label if quit_label != "" else "Quit to HQ", "icon": "quit", "action": confirm_quit_to_hq})
 	_cards = CardUI.card_list(_menu_panel, entries)
 	return _menu_panel
 
 
-const EXTRA_ICONS := {"Map": "map", "Stats": "stats"}
+const EXTRA_ICONS := {"Map": "map", "Stats": "stats", "Journal": "journal"}
+
+
+func _extra_entry(label: String) -> Dictionary:
+	return {"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)}
 
 
 # Put the cursor on the card titled `title` (the one the player left the menu from).

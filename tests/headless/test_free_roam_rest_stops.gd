@@ -236,6 +236,34 @@ func test_the_rest_stop_page_is_keyboard_and_gamepad_navigable() -> void:
 	assert_false(get_tree().paused)
 
 
+# The pause menu's Journal row (between Resume and Reset to road) opens the rest stop's journal over
+# the frozen game; Back hands straight back to the pause menu, still paused, cursor on Journal.
+func test_the_pause_menu_opens_the_journal_and_back_returns_to_it() -> void:
+	var pause: PauseMenu = _scene.get_node("PauseMenu")
+	pause.set_input_enabled(true)
+	pause.open()
+	var journal := CardUI.index_of(pause.cards(), "Journal")
+	assert_eq(journal, CardUI.index_of(pause.cards(), "Resume") + 1, "Journal sits right after Resume")
+	assert_eq(CardUI.index_of(pause.cards(), "Reset"), journal + 1, "and right before Reset to road")
+	assert_true(CardUI.pick(pause.cards(), "Journal"), "the Journal row is pickable")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(_page.is_open())
+	assert_eq(_page.view, RestStopPage.View.JOURNAL)
+	assert_false(pause.is_open(), "the pause menu steps aside for the journal")
+	assert_true(get_tree().paused, "the game stays frozen")
+	assert_eq(_page.get_viewport().gui_get_focus_owner(), _page.cards(), "the journal has the cursor")
+	MenuNav.of(_page._page)._unhandled_input(_press("ui_cancel"))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_false(_page.is_open(), "back closes the journal")
+	assert_true(pause.is_open(), "and returns to the pause menu")
+	assert_true(get_tree().paused, "still paused")
+	var cards := pause.cards()
+	assert_eq(CardUI.titles(cards)[cards.selected_index()], "Journal", "with the cursor back on Journal")
+	pause.resume()
+
+
 func test_picking_a_travel_target_goes_there() -> void:
 	var site := _a_rest_stop()
 	_rest.lit_sites[site] = true

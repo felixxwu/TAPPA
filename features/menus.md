@@ -93,7 +93,10 @@ The title menu (`TitleScreen`) opens over the world at boot, and free roam's pau
 the map and stats pages (`WorldPages`). Both are described in [world-session.md](world-session.md),
 and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The pause menu has
 host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
-`return_from_extra()` when its page closes) and a configurable quit (`quit_label`, `quit_scene`).
+`return_from_extra()` when its page closes; `lead_rows` work the same but sit straight after Resume)
+and a configurable quit (`quit_label`, `quit_scene`). Free roam's rows: Resume / Journal / Reset to
+road / Map / Stats / Settings / Quit to title. Journal opens the rest-stop page's journal on its own
+(`RestStopPage.open_journal(on_close)`), whose Back hands back to the pause menu instead of MAIN.
 
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)
 
