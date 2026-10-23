@@ -124,8 +124,6 @@ func _reassign() -> void:
 		taken_keys(), WorldSession.list("collected"), streamer.settings.loot_item_weight,
 		streamer.settings.loot_rumour_weight)
 	streamer.refresh_loot_markers()
-	if beacons != null and beacons.streamer != null:
-		beacons.refresh_loot()
 	pool_changed.emit()
 
 

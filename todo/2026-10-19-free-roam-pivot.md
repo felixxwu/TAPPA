@@ -741,8 +741,8 @@ Numbering continues from decision 32.
   minimum-size rule in `RoadNetwork._grow` (re-seed or keep growing until the network reaches the
   outer ring) — not done, it changes world generation.
 - **D79. Beacons.** Every rest stop and piece of loot has a tall beam visible from far away
-  (`SiteBeacons`, `GameConfig.beacon_*`), fainter the further off it is; loot has a floating name
-  ("New car", "New upgrade", …) that only shows within 60 m, at a fixed screen size, through hills.
+  (`SiteBeacons`, `GameConfig.beacon_*`), fainter the further off it is. Loot's floating name ("New car", …) was removed on 2026-10-23:
+  the pickup toast already says what was taken.
 - **D80. No menu paints an opaque backdrop.** `UITheme.MODAL_DIM` is 0.7 alpha (was 0.96), and the
   plain pages (Tune car, Settings, Map) have see-through body boxes. **REVIEW — the title screen
   still has a solid background:** there is no world behind it yet. Options: render the island

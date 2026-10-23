@@ -2,8 +2,7 @@
 
 **Source:** `scripts/free_roam/loot_rules.gd` (`LootRules`: pure tables, the pool, fitting, names
 and colours), `scripts/free_roam/loot_director.gd` (`LootDirector`: the loot loop in the world),
-`scripts/free_roam/site_beacons.gd` (`SiteBeacons`: the tall beams over rest stops and loot, and the
-floating names over loot), the Parts / Garage / Journal pages of
+`scripts/free_roam/site_beacons.gd` (`SiteBeacons`: the tall beams over rest stops), the Parts / Garage / Journal pages of
 `scripts/free_roam/rest_stop_page.gd`, and the loot crystals in `TerrainStreamer`.
 
 **Tests:** `tests/headless/test_loot.gd`
@@ -73,10 +72,9 @@ left and sites showing something per ring at boot.
   crystal is the marker. Beams ignore fog and are widened with distance
   (`beacon_width_per_m`) so they stay a few pixels wide, fade out as they reach into the sky
   (`shaders/beacon_beam.gdshader`), and fade from `beacon_alpha_near` up close
-  to `beacon_alpha_far` at the edge of their range. Only once the car is close
-  (`beacon_label_range_m`, 60 m) does a floating name over the loot say what it is
-  (`LootRules.ground_label`: "New car", "New upgrade", "New engine", "Drivetrain kit", "Rumour"); it
-  faces the camera at a fixed screen size and shows through hills.
+  to `beacon_alpha_far` at the edge of their range.
+- **No floating name over loot** (removed 2026-10-23): the crystal's colour says roughly what kind
+  it is, and the pickup toast (`LootDirector._toast`) says exactly what was taken.
 
 ## The loop (`LootDirector`)
 

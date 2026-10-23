@@ -77,8 +77,8 @@ title (Continue · New World · Settings)
   a shared stash and move freely between cars at rest stops.
 - **Every car and part exists once.** Pull-ins along the roads show what's still to be found in
   their biome; the moment you have something it's gone from all of them, and once a biome's things
-  are all found its pull-ins stand empty. Tall beams of light and floating names ("New car", "New
-  upgrade") mark loot and rest stops from far off. **Rumours** each reveal one item of the next
+  are all found its pull-ins stand empty. Tall beams of light mark rest stops from far off, and
+  coloured crystals on the road mark loot. **Rumours** each reveal one item of the next
   biome in the journal, so you learn piece by piece what's just out of reach.
 - **The pacing goal:** the cars and parts run out at about the same time as the biomes, so the late
   game is fresh in both.

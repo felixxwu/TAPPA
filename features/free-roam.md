@@ -245,7 +245,7 @@ planted on it (`is_clear`).
   its marker spawn running still leaves one marker (a duplicate used to be renamed `@Loot%d@N`,
   which no refresh removed, so a crystal stayed after its pickup). A site with nothing left shows nothing.
 - **Beacons:** every rest stop also has a tall beam of light visible from far beyond the near
-  chunks, and loot a floating name up close — `SiteBeacons`, see [loot.md](loot.md) →
+  chunks — `SiteBeacons`, see [loot.md](loot.md) →
   "Seeing it".
 
 On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.

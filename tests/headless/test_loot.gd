@@ -489,26 +489,13 @@ func test_a_car_the_player_owns_never_shows_on_the_ground() -> void:
 		"the starter car is already yours")
 
 
-func test_loot_on_the_ground_has_a_name_and_it_goes_when_the_loot_is_taken() -> void:
+func test_loot_on_the_ground_has_no_floating_name_and_rest_beams_fade() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
-	var site: int = loot.placement.keys()[0]
-	var marker := loot.beacons.get_node_or_null("Loot%d" % site) as Node3D
-	assert_not_null(marker, "a name over the loot")
-	assert_null(marker.get_node_or_null("Beam"), "loot has no beam: the crystal marks it")
 	var cfg: GameConfig = Config.data
-	var p := marker.global_position
-	var label := marker.get_node("Label") as Label3D
-	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m + 50.0, 0, 0))
-	assert_false(label.visible, "far off, no name")
-	loot.beacons.update_from(p + Vector3(cfg.beacon_label_range_m * 0.5, 0, 0))
-	assert_true(label.visible, "close up, it does")
-	assert_eq((marker.get_node("Label") as Label3D).text, LootRules.ground_label(loot.placement[site]).to_upper())
-	loot.collect(site)
-	await get_tree().process_frame
-	assert_false(loot.placement.has(site))
-	var gone := loot.beacons.get_node_or_null("Loot%d" % site)
-	assert_true(gone == null or gone.is_queued_for_deletion(), "the emptied site's name goes")
+	for child in loot.beacons.get_children():
+		assert_false(child is Label3D or child.find_children("*", "Label3D").size() > 0,
+			"no floating name over loot: the pickup toast says what it was")
 	var rest_beam := loot.beacons.get_node("Rest%d" % (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)[0]) as Node3D
 	loot.beacons._fit(rest_beam, rest_beam.global_position + Vector3(cfg.beacon_range_m * 0.9, 0, 0), cfg)
 	var far_a := SiteBeacons.beam_color(rest_beam).a

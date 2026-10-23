@@ -356,12 +356,6 @@ func warm_up_spawns(camera: Camera3D, frames := 3) -> void:
 	for marker: Node3D in [_loot_marker(0, {"kind": "car"}), _site_marker(0)]:
 		root.add_child(marker)
 		marker.global_position = ahead
-	# The floating names over loot (SiteBeacons), one per kind, so the font's glyphs are drawn once.
-	for item: Dictionary in [{"kind": "car"}, {"kind": "part", "id": ""}, {"kind": "part", "id": "engine_swap:"},
-			{"kind": "part", "id": "drivetrain:0"}, {"kind": "rumour"}]:
-		var label := SiteBeacons._label(LootRules.ground_label(item), LootRules.colour(item))
-		root.add_child(label)
-		label.global_position = ahead
 	for i in frames:
 		await get_tree().process_frame
 	root.queue_free()
@@ -1047,8 +1041,7 @@ func _site_marker(i: int) -> MeshInstance3D:
 
 # A piece of loot floating over its spot on the road: a thin crystal, pointed top and bottom,
 # coloured by kind (LootRules.colour: gold for a car title, orange an engine, green a drivetrain
-# kit, cyan a part, white a rumour); loot_crystal.gdshader bobs it. Its tall beam and floating
-# name are SiteBeacons', which shows them from much further than near chunks reach.
+# kit, cyan a part, white a rumour); loot_crystal.gdshader bobs it.
 func _loot_marker(i: int, item: Dictionary) -> Node3D:
 	var col := LootRules.colour(item)
 	var root := Node3D.new()

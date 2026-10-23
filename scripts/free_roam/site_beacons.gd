@@ -2,13 +2,12 @@ class_name SiteBeacons
 extends Node3D
 # Docs: features/loot.md, features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
-# The tall beams of light over every rest stop, fainter the further off they are, and — once the
-# car is close — the floating name over each piece of loot ("New car", "New upgrade", …). The
-# ground markers (loot crystals, rest-stop posts and crowds) are TerrainStreamer's and only exist
-# around the car; these live for the whole world, and beams stay a few pixels wide however far off
-# they are (`_tick` widens them with distance) and fade out as they reach into the sky. Beams
-# ignore fog, so a beacon reads through the weather. Created by LootDirector, which rebuilds the
-# loot names when the pool changes.
+# The tall beams of light over every rest stop, fainter the further off they are. The ground
+# markers (loot crystals, rest-stop posts and crowds) are TerrainStreamer's and only exist around
+# the car; these live for the whole world, and beams stay a few pixels wide however far off they
+# are (`_tick` widens them with distance) and fade out as they reach into the sky. Beams ignore
+# fog, so a beacon reads through the weather. Created by LootDirector. Loot has no floating name:
+# the crystal's colour marks its kind, and the pickup notice says what it was.
 
 const TICK_S := 0.2
 const BEAM_SHADER := preload("res://shaders/beacon_beam.gdshader")
@@ -17,7 +16,6 @@ var streamer: TerrainStreamer
 var loot: LootDirector
 
 var _rest_beams := {}   # site -> Node3D (a beam)
-var _loot_nodes := {}   # site -> Node3D (label)
 var _t := 0.0
 
 
@@ -31,25 +29,6 @@ func setup(p_streamer: TerrainStreamer, p_loot: LootDirector) -> void:
 			add_child(beam)
 			beam.position = _ground(i)
 			_rest_beams[i] = beam
-	refresh_loot()
-	_tick()
-
-
-# Rebuild the loot labels from what the sites show now.
-func refresh_loot() -> void:
-	for n: Node in _loot_nodes.values():
-		n.queue_free()
-	_loot_nodes.clear()
-	if loot == null:
-		return
-	for site: int in loot.placement:
-		var item: Dictionary = loot.placement[site]
-		var root := Node3D.new()
-		root.name = "Loot%d" % site
-		root.add_child(_label(LootRules.ground_label(item), LootRules.colour(item)))
-		add_child(root)
-		root.position = _ground(site)
-		_loot_nodes[site] = root
 	_tick()
 
 
@@ -60,7 +39,7 @@ func _process(delta: float) -> void:
 		_tick()
 
 
-# Show what's in range, colour lit rest stops, and keep every beam a few pixels wide.
+# Colour lit rest stops, and keep every beam a few pixels wide.
 func _tick() -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
 	update_from(cam.global_position if cam != null else Vector3.ZERO)
@@ -75,10 +54,6 @@ func update_from(eye: Vector3) -> void:
 		_fit(beam, eye, cfg)
 		var col := TerrainStreamer.BEACON_LIT if lit.is_valid() and lit.call(i) else TerrainStreamer.BEACON_UNLIT
 		set_beam_color(beam, Color(col.r, col.g, col.b, beam_color(beam).a))
-	for site: int in _loot_nodes:
-		var root: Node3D = _loot_nodes[site]
-		var label := root.get_node("Label") as Label3D
-		label.visible = Vector2(eye.x, eye.z).distance_to(streamer.sites.pos[site]) <= cfg.beacon_label_range_m
 
 
 # Hide a beam past beacon_range_m, widen it with distance so it stays visible, and fade it from
@@ -138,22 +113,3 @@ static func beam_color(beam: Node3D) -> Color:
 static func set_beam_color(beam: Node3D, col: Color) -> void:
 	_mat(beam).set_shader_parameter("color", col)
 
-
-# The floating name over a piece of loot: always faces the camera, keeps its size on screen, and
-# shows through hills and trees so it can be read from the road.
-static func _label(text: String, col: Color) -> Label3D:
-	var l := Label3D.new()
-	l.name = "Label"
-	l.text = text.to_upper()
-	l.font = UITheme.font()
-	l.font_size = 48
-	l.outline_size = 12
-	l.modulate = col
-	l.outline_modulate = Color(0, 0, 0, 0.85)
-	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	l.fixed_size = true
-	l.pixel_size = 0.0016
-	l.no_depth_test = true
-	l.render_priority = 10
-	l.position.y = 4.0
-	return l
