@@ -85,6 +85,14 @@ func test_the_debug_readout_starts_hidden_and_p_toggles_it() -> void:
 	assert_false(stats.visible, "P again hides it")
 
 
+func test_frame_headroom_is_the_share_of_the_budget_the_busier_side_leaves() -> void:
+	var fr := preload("res://scripts/free_roam/free_roam.gd")
+	assert_almost_eq(fr.frame_headroom(20.0, 5.0, 0.0), 0.75, 0.001, "cpu-bound")
+	assert_almost_eq(fr.frame_headroom(20.0, 5.0, 15.0), 0.25, 0.001, "the gpu, when busier, sets it")
+	assert_lt(fr.frame_headroom(10.0, 15.0, 0.0), 0.0, "over budget goes negative")
+	assert_true(_scene._headroom_line().begins_with("frame"), "the readout carries the line")
+
+
 # The wheel debris is made for free roam just as world.gd makes it for a stage, and reads the
 # same terrain the tyres do (the streamer), so grass and gravel spray where the grip changes.
 func test_the_wheel_debris_follows_the_car_and_reads_the_streamers_surface() -> void:

@@ -366,7 +366,44 @@ func _update_stats() -> void:
 		+ "sample   %.1f µs\n" % s.stat_us_per_sample \
 		+ "network  %d nodes  %d links  %.0f km (%d ms)\n" % [
 			s.network.nodes.size(), s.network.edges.size(), s.network.total_length_m / 1000.0, s.stat_build_ms] \
+		+ _headroom_line() + "\n" \
 		+ "R = back to road"
+
+
+# The frame's budget is the frame cap, else the display's refresh rate (what vsync paces to).
+func _frame_budget_ms() -> float:
+	var fps := float(Engine.max_fps)
+	if fps <= 0.0:
+		fps = DisplayServer.screen_get_refresh_rate()
+	return 1000.0 / (fps if fps > 0.0 else 60.0)
+
+
+# Rough share of the frame budget still free. The CPU side is script + physics + the render
+# thread's submit; the GPU works in parallel, so whichever side is busier sets the frame.
+static func frame_headroom(budget_ms: float, cpu_ms: float, gpu_ms: float) -> float:
+	return 1.0 - maxf(cpu_ms, gpu_ms) / budget_ms
+
+
+func _headroom_line() -> String:
+	var cpu := (Performance.get_monitor(Performance.TIME_PROCESS) \
+		+ Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
+	var gpu := 0.0
+	for vp in _measured_viewports():
+		cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp)
+		gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	var budget := _frame_budget_ms()
+	return "frame    %d%% free of %.1f ms   (cpu %.1f  gpu %.1f%s)" % [
+		roundi(frame_headroom(budget, cpu, gpu) * 100.0), budget, cpu, gpu,
+		"" if gpu > 0.0 else " n/a"]
+
+
+# The island renders in the post-process SubViewport; the root draws the HUD over it.
+func _measured_viewports() -> Array[RID]:
+	var out: Array[RID] = [get_viewport().get_viewport_rid()]
+	var view := get_node_or_null("PostProcess/View") as Viewport
+	if view != null:
+		out.append(view.get_viewport_rid())
+	return out
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -374,6 +411,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_recovery.reset_now()
 	elif event.is_action_pressed("toggle_perf_overlay"):
 		$DebugStats.visible = not $DebugStats.visible
+		# Per-viewport render timing has a small cost, so it only runs while the readout shows.
+		for vp in _measured_viewports():
+			RenderingServer.viewport_set_measure_render_time(vp, $DebugStats.visible)
 
 
 func _exit_tree() -> void:
