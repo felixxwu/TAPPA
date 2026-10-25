@@ -1134,7 +1134,7 @@ const CABIN_WALLS := AABB(Vector3(-3.7, 0.0, -4.7), Vector3(7.4, 3.5, 7.5))
 # A rest stop's log cabin ("Lowpoly simple Log Cabin" by tamminen, CC-BY-4.0, see
 # models/cabin/README.md): set back from the pad's centre towards its far side by
 # rest_stop_cabin_back_m, door facing the road, inside the crowd's arc. Solid, and in the damage
-# obstacle group like a barrier. Lit, its doorway glows BEACON_LIT (refresh_site_marker).
+# obstacle group like a barrier. Lit, a lamp inside glows BEACON_LIT through its doorway (refresh_site_marker).
 func _site_marker(i: int) -> Node3D:
 	var cabin: Node3D = LOG_CABIN.instantiate()
 	cabin.name = "Site%d" % i
@@ -1157,18 +1157,40 @@ func _site_marker(i: int) -> Node3D:
 	return cabin
 
 
-# The cabin's dark interior floor, glowing through the doorway once its rest stop is lit.
+# The cabin's interior floor (the model ships it as a flat black plane) is plain planks, and once
+# its rest stop is lit a warm lamp hangs inside, so the doorway glows BEACON_LIT. The floor itself
+# never glows: painted unshaded it read as a flat yellow square through the door.
+const CABIN_FLOOR_COLOR := Color(0.28, 0.18, 0.1)
+const CABIN_LAMP_AT := Vector3(0.0, 2.6, -1.0)  # under the roof, over the interior floor
+const CABIN_LAMP_RANGE_M := 6.0
+const CABIN_LAMP_ENERGY := 3.0
+static var _cabin_floor: StandardMaterial3D
+
+
 static func _light_cabin(cabin: Node3D, lit: bool) -> void:
 	var inside := cabin.find_child("Interior", true, false) as MeshInstance3D
 	if inside == null:
 		return
+	if _cabin_floor == null:
+		_cabin_floor = StandardMaterial3D.new()
+		_cabin_floor.albedo_color = CABIN_FLOOR_COLOR
+		_cabin_floor.roughness = 1.0
+	inside.material_override = _cabin_floor
+	var lamp := cabin.get_node_or_null("Lamp") as OmniLight3D
 	if not lit:
-		inside.material_override = null
+		if lamp != null:
+			lamp.free()
 		return
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = BEACON_LIT
-	inside.material_override = mat
+	if lamp != null:
+		return
+	lamp = OmniLight3D.new()
+	lamp.name = "Lamp"
+	lamp.position = CABIN_LAMP_AT
+	lamp.light_color = BEACON_LIT
+	lamp.light_energy = CABIN_LAMP_ENERGY
+	lamp.omni_range = CABIN_LAMP_RANGE_M
+	lamp.shadow_enabled = false
+	cabin.add_child(lamp)
 
 
 # A coin floating over its spot on the road, spinning (coin.gdshader).
