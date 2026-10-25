@@ -251,7 +251,7 @@ func _reload_car() -> void:
 	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
 
 
-# The pause menu's Map / Stats / Journal rows: the page covers the frozen game and hands back on Back.
+# The pause menu's Map / Stats rows: the page covers the frozen game and hands back on Back.
 func _on_pause_extra(label: String) -> void:
 	match label:
 		"Map":
@@ -263,8 +263,6 @@ func _on_pause_extra(label: String) -> void:
 					_pause.return_from_extra())
 		"Stats":
 			$WorldPages.show_stats(_pause.return_from_extra)
-		"Journal":
-			_rest_page.open_journal(_pause.return_from_extra)
 		_:
 			_pause.return_from_extra()
 

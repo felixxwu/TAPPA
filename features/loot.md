@@ -91,9 +91,9 @@ Parts / Garage / Map / Tune car (travel is on the map); its header says the mone
 says "Fit", "Swap for X", or — disabled — "Can't fit"; other cars keep theirs), then one per part on
 sale ("for sale"; picking one buys it and fits it straight away, `_buy_part`). **Garage:** a card per
 owned car (pick to drive one; the cursor starts on the car being driven), then one per car on sale
-(picking one buys it and switches to it, `_buy_car`). **Journal** (pause menu only): a card per unlocked region
+(picking one buys it and switches to it, `_buy_car`). **Journal** (no menu opens it right now — it left the pause menu on 2026-10-25): a card per unlocked region
 ("n of m owned"); picking one opens that region's page (`View.REGION`, `journal_ring`), a read-only
 card per thing it sells, "Owned" or its price. It opens over the frozen game
-(`open_journal(on_close)`); Back steps region → region list → `on_close` (back to the pause menu). A change
+(`open_journal(on_close)`); Back steps region → region list → `on_close`. A change
 of parts or car re-fields the car when the page closes: `car_changed` makes free roam save and
 reload the scene at the rest stop, because a live body is never re-staged.

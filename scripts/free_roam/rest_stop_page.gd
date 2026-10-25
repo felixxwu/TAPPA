@@ -13,8 +13,8 @@ extends CanvasLayer
 #             share one), then one per part on sale (pick to buy and fit it).
 #   GARAGE  — a card per owned car (pick one to drive it), then one per car on sale (pick to buy and
 #             drive it).
-#   JOURNAL — a card per biome whose stock is on sale; pick one for REGION. Opened only from the pause
-#             menu (open_journal): Back leaves the page through the caller's on_close.
+#   JOURNAL — a card per biome whose stock is on sale; pick one for REGION. Opened only through
+#             open_journal (no menu calls it right now): Back leaves the page through the caller's on_close.
 #   REGION  — a card per item and car that biome sells, owned or its price (read-only).
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
@@ -39,7 +39,7 @@ var site := -1
 var dirty := false
 var journal_ring := -1
 var _keep_at := 0
-# Set while the journal was opened on its own (open_journal, from the pause menu): its Back hands
+# Set while the journal was opened on its own (open_journal): its Back hands
 # back to this rather than stepping to MAIN.
 var _on_journal_close := Callable()
 var _page: MenuPage
@@ -56,7 +56,7 @@ func is_open() -> bool:
 	return _page != null
 
 
-# The journal on its own, over the already-frozen game (the pause menu's Journal row). It leaves the
+# The journal on its own, over the already-frozen game. It leaves the
 # pause state alone: Back clears the page and calls `on_close`, which hands back to the caller.
 func open_journal(on_close: Callable) -> void:
 	_on_journal_close = on_close

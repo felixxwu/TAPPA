@@ -274,7 +274,6 @@ quit_body_override = "Leave the island and return to the title screen? Your worl
 quit_label = "Quit to title"
 quit_scene = "res://title.tscn"
 extra_rows = PackedStringArray("Map", "Stats")
-lead_rows = PackedStringArray("Journal")
 
 [node name="RoadRecovery" type="Node" parent="." node_paths=PackedStringArray("car", "streamer")]
 script = ExtResource("28_recovery")
