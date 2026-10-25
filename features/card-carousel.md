@@ -24,7 +24,7 @@ menu that is a list of choices is a card list:**
 | Rest stop MAIN (`rest_stop_page.gd`) | Continue, Parts, Garage, Map, Tune car; the stop's name, "Car repaired" and the money held sit above the cards |
 | Rest stop PARTS | one per fitted part (pick → take off), then one per other part owned (pick → fit, or swap with the part in that slot; "Can't fit" cards are disabled), then one per part on sale (pick → buy and fit) |
 | Rest stop GARAGE | one per owned car (a spinning 3D preview; the cursor starts on the car being driven), then one per car on sale (pick → buy and drive it) |
-| Journal (pause menu) | one per item each unlocked biome sells, "Owned" or its price (read-only) |
+| Journal (`open_journal`; no menu opens it right now) | one per item each unlocked biome sells, "Owned" or its price (read-only) |
 | Stats (`world_pages.gd`) | one per lifetime stat, and the biome rings reached (read-only) |
 
 **Not card lists**, because they are not lists of choices: the **Settings** page (the shared
