@@ -121,7 +121,7 @@ func _ready() -> void:
 	_rest_page.map_requested.connect(func(site: int) -> void:
 		$WorldPages.show_map(_rest_page.return_from_map, site))
 	_minimap.open_requested.connect(open_full_map)
-	var spawn: Transform3D = RoadRecovery.road_pose(_streamer, Vector2.ZERO, Vector3.FORWARD)
+	var spawn: Transform3D = _rest_stops.pose_at(0)  # facing down the road, the cabin behind
 	var saved: Variant = WorldSession.pose_transform()
 	if saved != null:
 		spawn = saved

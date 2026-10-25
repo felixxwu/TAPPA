@@ -602,6 +602,17 @@ func test_spawn_is_the_first_rest_stop() -> void:
 	assert_eq(sites.pos[0], Vector2.ZERO)
 
 
+# Spawn's direction runs down a road leaving spawn, and its cabin stands the other way.
+func test_spawn_faces_down_the_road_out_with_its_cabin_behind() -> void:
+	var terrain := _sited(_settings())
+	var sites := terrain.sites
+	var d := sites.dir[0]
+	assert_almost_eq(d.length(), 1.0, 1e-4)
+	var probe := d * 10.0
+	assert_true(terrain.net.nearest(probe.x, probe.y, 1.0), "10 m along it is still on the road")
+	assert_almost_eq(sites.back(0).dot(d), -1.0, 1e-4, "the cabin side is back the other way")
+
+
 func test_every_dead_end_and_only_dead_ends_get_a_dead_end_site() -> void:
 	var terrain := _sited(_settings())
 	var net := terrain.net

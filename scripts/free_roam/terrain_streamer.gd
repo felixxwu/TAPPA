@@ -1139,7 +1139,7 @@ func _site_marker(i: int) -> Node3D:
 	var cabin: Node3D = LOG_CABIN.instantiate()
 	cabin.name = "Site%d" % i
 	var c := sites.pos[i]
-	var away := (c - sites.anchor[i]).normalized() if sites.anchor[i] != c else Vector2.UP
+	var away := sites.back(i)
 	var at := c + away * Config.data.rest_stop_cabin_back_m
 	cabin.position = Vector3(at.x, sites.pad_h[i], at.y)
 	cabin.rotation.y = atan2(-away.x, -away.y)  # the model's door is on its +z side
@@ -1248,7 +1248,7 @@ func _rest_crowd(i: int, parent: Node3D) -> SpectatorGroup:
 	if n <= 0 or not cfg.spectators_enabled:
 		return null
 	var c := sites.pos[i]
-	var away := (c - sites.anchor[i]).normalized() if sites.anchor[i] != c else Vector2.UP
+	var away := sites.back(i)
 	var along := Vector2(-away.y, away.x)
 	var cabin := c + away * cfg.rest_stop_cabin_back_m
 	var front := cabin - away * (CABIN_WALLS.end.z + REST_CROWD_HALF_DEPTH_M + 1.0)
