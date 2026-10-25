@@ -8,7 +8,7 @@ extends Node
 #   * Pressing menu_select (Enter / gamepad A) there below rest_stop_speed_kmh opens the rest-stop
 #     page (`opened`); the minimap shows the prompt (`prompt_site`).
 #   * When the car gives up (DamageModel.gave_up: 0 HP), the engine cuts out (EngineSim.killed: silent,
-#     no drive) and the car rolls on with no controls; wreck_page_delay_s later `wrecked` opens the wreck page. its Respawn puts the car back at the last lit rest stop, fully repaired with a cold engine (`respawned`, carrying where the wreck was, for the dropped loot later).
+#     no drive) and the car rolls on with no controls; wreck_page_delay_s later `wrecked` opens the wreck page. its Respawn puts the car back at the last lit rest stop, fully repaired with a cold engine (`respawned`, carrying where the wreck was).
 #   * Travel teleports to any lit rest stop. Both moves stream the destination in first
 #     (TerrainStreamer.prefill_at): the one acceptable "load".
 # Rest stop i is site i of TerrainStreamer.sites (RoadSites, kind REST); spawn is site 0, lit

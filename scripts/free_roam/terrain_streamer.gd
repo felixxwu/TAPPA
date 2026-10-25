@@ -31,9 +31,12 @@ var terrain := RoadTerrain.new()
 var sites := RoadSites.new()
 var barriers := RoadBarriers.new()
 var focus: Node3D
+# Frame time not taken by anything but terrain (µs), smoothed over recent frames; set by the HUD side.
+var spare_us := 2000.0
 
 # Read by the HUD.
 var stat_used_us := 0
+var stat_total_us := 0
 var stat_worst_us := 0
 var stat_overruns := 0
 var stat_frames := 0
@@ -53,7 +56,7 @@ var _last_kind := ""
 var _plan_override: Variant = null  # a Vector2 to plan around instead of the focus (prefill_at)
 # Whether rest stop `site` is lit (RestStops.is_lit), for its marker's colour. Unset: none are.
 var rest_lit_query := Callable()
-# The loot still lying at a site (LootDirector.loot_at → item dict or {}). Unset: no loot.
+# The coin still lying at a site (LootDirector.loot_at → {"kind": "coin", ...} or {}). Unset: none.
 var loot_query := Callable()
 # A decaying peak of the cost of one unit in the sample-at-a-time stages (heights, arrays,
 # plant), so the stop rule allows for the dear ones rather than the average.
@@ -78,6 +81,9 @@ var _light_amount: float = Config.data.terrain_light_amount
 var _forest: FastNoiseLite
 var _ring_looks: Array[Dictionary] = []
 var _ring_materials: Array[Material] = []
+# Entry k - 1 is the ground for chunks on the border between rings k - 1 and k, fading one into
+# the other per pixel.
+var _pair_materials: Array[Material] = []
 
 
 class ChunkState:
@@ -113,7 +119,8 @@ class ChunkJob:
 	# Near chunks sample a one-sample border so edge normals match their neighbours; far chunks
 	# skip it and take one-sided slopes at their edges, which fog hides.
 	var halo := 0
-	var tint := Color.WHITE
+	var ring_lo := INF  # the lowest and highest RoadTerrain.ring_coord over the chunk's vertices
+	var ring_hi := -INF
 	var heights := PackedFloat32Array()  # (n + 2·halo)²
 	var road_d := PackedFloat32Array()   # n²
 	var road_info := PackedFloat32Array()  # 3·n²: signed distance, arc length, marking weight
@@ -172,6 +179,10 @@ func _ready() -> void:
 		var look := RegionLibrary.look_of(BiomeDirector.region_of(settings, i))
 		_ring_looks.append(look)
 		_ring_materials.append(_material_for(look))
+	for k in range(1, settings.ring_count):
+		var pair := _pair_material(k)
+		if pair != null:
+			_pair_materials.append(pair)
 	print("free roam: network %d nodes, %d links, %.0f km of road, %d rest stops, %d loot slots, %d dead ends, built in %d ms" % [
 		network.node_x.size(), network.edges.size(), network.total_length_m / 1000.0,
 		sites.of_kind(RoadSites.Kind.REST).size(), sites.of_kind(RoadSites.Kind.LOOT).size(),
@@ -208,21 +219,67 @@ func _material_for(look: Dictionary) -> Material:
 	return m
 
 
-# Every ring's ground material (the BiomeDirector tints them for the weather).
+# Ring k - 1's ground with ring k's textures and colours in the shader's B slot.
+func _pair_material(k: int) -> ShaderMaterial:
+	var outer := _ring_materials[k] as ShaderMaterial
+	if outer == null:
+		return null
+	var m := _ring_materials[k - 1].duplicate() as ShaderMaterial
+	for p in ["albedo_texture", "road_texture", "tarmac_color", "road_marking_color"]:
+		m.set_shader_parameter(p + "_b", outer.get_shader_parameter(p))
+	m.set_shader_parameter("albedo_color_b", m.get_shader_parameter("albedo_color"))
+	m.set_shader_parameter("fade_rings", true)
+	m.set_shader_parameter("ring_border", float(k))
+	m.set_shader_parameter("ring_half", _fade_half())
+	m.set_shader_parameter("ring_scale_m", settings.island_radius_m * 0.82)
+	m.set_shader_parameter("ring_count", float(settings.ring_count))
+	m.set_shader_parameter("ring_seed", settings.world_seed + 3)
+	return m
+
+
+# Half the biome fade's width, in rings (RoadTerrain.ring_coord's units).
+func _fade_half() -> float:
+	return settings.biome_fade_m / (settings.island_radius_m * 0.82) * settings.ring_count * 0.5
+
+
+# Every ground material, single-ring and border (the BiomeDirector tints them for the weather).
 func ring_materials() -> Array[ShaderMaterial]:
 	var out: Array[ShaderMaterial] = []
-	for m in _ring_materials:
+	for m in _ring_materials + _pair_materials:
 		if m is ShaderMaterial:
 			out.append(m)
 	return out
 
 
 # The vertex tint baked under a point: its ring's region `terrain_tint`, white when it has none
-# (the stage's default), so the region's own textures show true.
+# (the stage's default), so the region's own textures show true. Faded like the textures at a border.
 func ring_tint_at(p: Vector2) -> Color:
+	return _tint_at_ring(terrain.ring_coord(p.x, p.y))
+
+
+func _tint_at_ring(v: float) -> Color:
 	if _ring_looks.is_empty():
 		return Color.WHITE
-	return _ring_looks[terrain.ring_index(p.x, p.y)].get("terrain_tint", Color.WHITE)
+	var n := _ring_looks.size()
+	var inside: Color = _ring_looks[clampi(floori(v), 0, n - 1)].get("terrain_tint", Color.WHITE)
+	var k := roundi(v)
+	var h := _fade_half()
+	if k < 1 or k > n - 1 or absf(v - k) >= h:
+		return inside
+	var a: Color = _ring_looks[k - 1].get("terrain_tint", Color.WHITE)
+	var b: Color = _ring_looks[k].get("terrain_tint", Color.WHITE)
+	return a.lerp(b, smoothstep(-h, h, v - k))
+
+
+# The ground a built chunk wears: the border material when the fade reaches into it, else its ring's.
+func _ground_material(job: ChunkJob) -> Material:
+	if _ring_materials.is_empty():
+		return material
+	var k := roundi((job.ring_lo + job.ring_hi) * 0.5)
+	var h := _fade_half()
+	if k >= 1 and k - 1 < _pair_materials.size() and job.ring_lo < k + h and job.ring_hi > k - h:
+		return _pair_materials[k - 1]
+	return _ring_materials[clampi(floori((job.ring_lo + job.ring_hi) * 0.5), 0, _ring_materials.size() - 1)]
 
 
 func ring_material_at(coord: Vector2i) -> Material:
@@ -283,6 +340,10 @@ func surface_at(x: float, z: float) -> Vector2:
 
 # --- scheduling ----------------------------------------------------------------------------
 
+func budget_us(frame_s: float) -> int:
+	return maxi(int(frame_s * 1e6 * settings.budget_min_fraction), int(spare_us * settings.budget_fraction))
+
+
 func _process(delta: float) -> void:
 	if focus == null:
 		return
@@ -290,18 +351,20 @@ func _process(delta: float) -> void:
 	var cc := _chunk_of(_focus_xz())
 	if cc != _plan_coord or _plan_timer <= 0.0:
 		_plan()
+	var budget := budget_us(delta)
 	var start := Time.get_ticks_usec()
 	_guard_collision()
-	_run_queue(start + settings.budget_us)
+	_run_queue(start + budget)
 	var used := Time.get_ticks_usec() - start
 	stat_used_us = used
+	stat_total_us += used
 	stat_frames += 1
 	stat_worst_us = maxi(stat_worst_us, used)
-	if used > settings.budget_us:
+	if used > budget:
 		stat_overruns += 1
-		stat_overshoot_us += used - settings.budget_us
+		stat_overshoot_us += used - budget
 		stat_overrun_by[_last_kind] = int(stat_overrun_by.get(_last_kind, 0)) + 1
-		if used > settings.budget_us * 1.5:
+		if used > budget * 1.5:
 			stat_spikes += 1
 			stat_spike_by[_last_kind] = int(stat_spike_by.get(_last_kind, 0)) + 1
 
@@ -330,7 +393,7 @@ func warm_up_materials(camera: Camera3D, frames := 3) -> void:
 	if camera == null:
 		return
 	var specks: Array[MeshInstance3D] = []
-	for m in _ring_materials:
+	for m in _ring_materials + _pair_materials:
 		var quad := QuadMesh.new()
 		quad.size = Vector2(0.01, 0.01)
 		var mi := MeshInstance3D.new()
@@ -346,7 +409,7 @@ func warm_up_materials(camera: Camera3D, frames := 3) -> void:
 			mi.queue_free()
 
 
-# Draw one of every plant, rock, site marker and loot name any ring can show, a few metres in front of
+# Draw one of every plant, rock, site marker and coin any ring can show, a few metres in front of
 # `camera`, for a few frames: their shaders compile and textures upload now, behind the boot,
 # rather than on the first chunk that holds one.
 func warm_up_spawns(camera: Camera3D, frames := 3) -> void:
@@ -371,7 +434,7 @@ func warm_up_spawns(camera: Camera3D, frames := 3) -> void:
 		Foliage.spawn_rocks(root, at, g, i, false, dist, fade)
 	var cabin := _site_marker(0)
 	cabin.get_node("Body").free()  # only its look needs warming, not a wall in front of the car
-	for marker: Node3D in [_loot_marker(0, {"kind": "car"}), cabin]:
+	for marker: Node3D in [_coin_marker(0), cabin]:
 		root.add_child(marker)
 		marker.global_position = ahead
 	for i in frames:
@@ -573,7 +636,8 @@ func _prep(job: ChunkJob) -> void:
 	job.road_info.resize(3 * job.n * job.n)
 	job.cursor = 0
 	job.stage = Stage.HEIGHTS
-	job.tint = ring_tint_at(Vector2((job.coord.x + 0.5) * cm, (job.coord.y + 0.5) * cm))
+	job.ring_lo = INF
+	job.ring_hi = -INF
 	# A chunk wholly beyond the furthest possible coastline is open sea: no sampling needed.
 	var nx := clampf(0.0, job.coord.x * cm - job.stride, (job.coord.x + 1) * cm + job.stride)
 	var ny := clampf(0.0, job.coord.y * cm - job.stride, (job.coord.y + 1) * cm + job.stride)
@@ -696,7 +760,10 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		var normal := Vector3(-dhx, 1.0, -dhz).normalized()
 		var px := ox + gx * s
 		var pz := oy + gz * s
-		var col := job.tint * ground_light(normal)
+		var ring := terrain.ring_coord(px, pz)
+		job.ring_lo = minf(job.ring_lo, ring)
+		job.ring_hi = maxf(job.ring_hi, ring)
+		var col := _tint_at_ring(ring) * ground_light(normal)
 		# The ground shader paints the road per pixel (ps1_models.gdshader, paint_road_per_pixel)
 		# from what the vertices carry here, never from a per-vertex weight, so the road's edge
 		# stays smooth however coarse the mesh. The ground texture is placed from the world
@@ -757,7 +824,7 @@ func _attach(job: ChunkJob) -> void:
 		return
 	var mi := MeshInstance3D.new()
 	mi.mesh = job.mesh
-	mi.material_override = ring_material_at(job.coord)
+	mi.material_override = _ground_material(job)
 	mi.position = Vector3(job.coord.x * settings.chunk_m, 0.0, job.coord.y * settings.chunk_m)
 	add_child(mi)
 	if job.near:
@@ -1036,7 +1103,7 @@ func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 
 # The chunk's site dressing. A rest stop gets a log cabin with a live crowd gathered at its door
 # (decision 9: spectators gather at rest stops); the doorway glows once the stop is lit.
-# Loot slots and dead ends show a crystal only while something lies there.
+# Loot slots and dead ends show a coin until it is picked up.
 func _queue_site_markers(job: ChunkJob, _g: PlantGround) -> void:
 	var cm := settings.chunk_m
 	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
@@ -1057,7 +1124,7 @@ func _queue_site_markers(job: ChunkJob, _g: PlantGround) -> void:
 
 
 const BEACON_LIT := Color(1.0, 0.55, 0.1)
-const LOOT_CRYSTAL := preload("res://shaders/loot_crystal.gdshader")
+const COIN := preload("res://shaders/coin.gdshader")
 const LOG_CABIN := preload("res://models/cabin/log_cabin.glb")
 # The cabin's log walls in its own space (the roof and the porch logs overhang them), for its
 # collision box.
@@ -1104,40 +1171,28 @@ static func _light_cabin(cabin: Node3D, lit: bool) -> void:
 	inside.material_override = mat
 
 
-# A piece of loot floating over its spot on the road: a thin crystal, pointed top and bottom,
-# coloured by kind (LootRules.colour: gold for a car title, orange an engine, green a drivetrain
-# kit, cyan a part, white a rumour); loot_crystal.gdshader bobs it.
-func _loot_marker(i: int, item: Dictionary) -> Node3D:
-	var col := LootRules.colour(item)
-	var root := Node3D.new()
-	root.name = "Loot%d" % i
-	var c := sites.pos[i]
-	root.position = Vector3(c.x, sites.pad_h[i], c.y)
+# A coin floating over its spot on the road, spinning (coin.gdshader).
+func _coin_marker(i: int) -> Node3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.45
+	mesh.bottom_radius = 0.45
+	mesh.height = 0.1
+	mesh.radial_segments = 14
+	mesh.rings = 1
 	var mat := ShaderMaterial.new()
-	mat.shader = LOOT_CRYSTAL
-	mat.set_shader_parameter("color", col)
+	mat.shader = COIN
 	mat.set_shader_parameter("phase", ScatterMath.hash01(i, 1, settings.world_seed, 91) * 10.0)
-	var spin := ScatterMath.hash01(i, 0, settings.world_seed, 91) * TAU
-	for up in [1.0, -1.0]:
-		var half := CylinderMesh.new()  # a 4-sided cone: one half of the crystal
-		half.top_radius = 0.0 if up > 0.0 else 0.3
-		half.bottom_radius = 0.3 if up > 0.0 else 0.0
-		half.height = 0.9 if up > 0.0 else 0.6
-		half.radial_segments = 4
-		half.rings = 1
-		half.cap_top = false
-		half.cap_bottom = false
-		half.material = mat
-		var mi := MeshInstance3D.new()
-		mi.mesh = half
-		mi.position.y = 1.4 + up * half.height * 0.5
-		mi.rotation.y = spin
-		root.add_child(mi)
-	return root
+	mesh.material = mat
+	var mi := MeshInstance3D.new()
+	mi.name = "Loot%d" % i
+	mi.mesh = mesh
+	mi.extra_cull_margin = 1.0  # the shader stands the flat disc up and bobs it
+	var c := sites.pos[i]
+	mi.position = Vector3(c.x, sites.pad_h[i] + 1.1, c.y)
+	return mi
 
 
-# Redraw every loaded loot site's marker from loot_query (what the sites show changed: something
-# was picked up, dropped or lost, so items appear, move or go).
+# Redraw every loaded loot site's marker from loot_query (a coin was picked up, or they all came back).
 func refresh_loot_markers() -> void:
 	for coord: Vector2i in _chunks:
 		var st: ChunkState = _chunks[coord]
@@ -1150,16 +1205,16 @@ func refresh_loot_markers() -> void:
 			_place_loot_site_marker(st.foliage, i)
 
 
-# Put loot site `i`'s marker under `parent` as loot_query has it now: a crystal for the item lying
-# there, else nothing. Whatever marker it had goes first, so the queued planting
+# Put loot site `i`'s marker under `parent` as loot_query has it now: a coin if one lies there,
+# else nothing. Whatever marker it had goes first, so the queued planting
 # spawn and a refresh_loot_markers that both reach a chunk (it has foliage, but its marker spawn
 # is still queued) leave exactly one: adding a second "Loot%d" had Godot rename it "@Loot%d@N",
-# which no later refresh removed, so a crystal stayed after its pickup.
+# which no later refresh removed, so a coin stayed after its pickup.
 func _place_loot_site_marker(parent: Node3D, i: int) -> void:
 	_remove_site_markers(parent, i)
 	var item: Dictionary = loot_query.call(i) if loot_query.is_valid() else {}
 	if not item.is_empty():
-		parent.add_child(_loot_marker(i, item))
+		parent.add_child(_coin_marker(i))
 
 
 func _remove_site_markers(parent: Node3D, i: int) -> void:
@@ -1403,7 +1458,7 @@ func _new_job(coord: Vector2i, near: bool, with_collision: bool) -> ChunkJob:
 	job.stride = settings.near_stride_m if near else settings.far_stride_m
 	job.n = int(settings.chunk_m / job.stride) + 1
 	# Every near build runs the planting stages: they also spawn the chunk's barriers (with
-	# collision), rest-stop crowds, site posts and loot crystals. vegetation_enabled only thins the
+	# collision), rest-stop crowds, site posts and coins. vegetation_enabled only thins the
 	# trees, bushes and rocks out of it (_plant_candidates).
 	job.plants = near
 	_queue.append(job)

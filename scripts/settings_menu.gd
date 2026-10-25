@@ -319,16 +319,16 @@ func _build_benchmark_page() -> void:
 
 
 func _build_dev_page() -> void:
-	# Dev sub-page — three actions: money for the shop, every skill owned, and
-	# (mid-run only) the skip-to-finish the F key already offers. Wiping the save is
-	# NOT here: it is a player setting, on its own Reset progress page (which dev
+	# Dev sub-page: money for the free-roam shop, and every biome's stock on sale. Wiping the save
+	# is NOT here: it is a player setting, on its own Reset progress page (which dev
 	# builds see too), so there is exactly one route to it.
 	_dev_page = _make_page()
 	add_child(_dev_page)
 	_dev_page.add_child(_make_heading("Dev"))
 	_dev_status = _make_sub("Developer actions.")
 	_dev_page.add_child(_dev_status)
-	_dev_page.add_child(_make_action_button("Reveal all biomes", _reveal_all_biomes))
+	_dev_page.add_child(_make_action_button("Add $%d" % DEV_MONEY_GRANT, _add_dev_money))
+	_dev_page.add_child(_make_action_button("Unlock all biomes", _reveal_all_biomes))
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -786,7 +786,18 @@ func _reload_after_wipe() -> void:
 # The dev page's action. Not a setting, so nothing here persists a player choice; it edits the
 # world session and reports through _dev_status.
 
-# Mark every biome ring revealed, as if every rumour had been found (the journal lists them all).
+const DEV_MONEY_GRANT := 10000
+
+
+func _add_dev_money() -> void:
+	if not WorldSession.has_world():
+		_dev_status.text = "No world yet."
+		return
+	WorldSession.set_money(WorldSession.money() + DEV_MONEY_GRANT)
+	_dev_status.text = "$%d." % WorldSession.money()
+
+
+# Put every biome ring's stock on sale, as if a checkpoint had been lit in each.
 func _reveal_all_biomes() -> void:
 	if not WorldSession.has_world():
 		_dev_status.text = "No world yet."
@@ -795,7 +806,7 @@ func _reveal_all_biomes() -> void:
 	for r in FreeRoamSettings.new().ring_count:
 		rings.append(r)
 	WorldSession.set_list("revealed", rings)
-	_dev_status.text = "Revealed %d biomes." % rings.size()
+	_dev_status.text = "Unlocked %d biomes." % rings.size()
 
 
 # --- Row builders ------------------------------------------------------------

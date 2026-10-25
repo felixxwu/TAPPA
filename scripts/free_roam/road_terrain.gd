@@ -9,8 +9,8 @@ extends RefCounted
 # chunk can be built alone and in any order.
 #
 # The maths mirrors heightAt() in tools/road_network_lab.html exactly, so a seed shows the
-# same mountains in both. The one addition is a fade to sea floor near the coast, which the
-# lab never draws.
+# same mountains in both. The one addition is a fade to sea floor near the coast (stopping short
+# of the roads), which the lab never draws.
 
 var net: RoadNetwork
 # The rest stop / loot / dead-end pads (RoadSites), once planned: the ground under each is
@@ -111,6 +111,9 @@ func _natural_height(x: float, y: float, cands: PackedInt32Array, use_cands: boo
 		return sea_floor()
 	var h := _inland_height(x, y, cands, use_cands)
 	var land := 1.0 - LabNoise.smooth(cr - 400.0, cr - 150.0, r)
+	# nor does the sea: the fade to the sea floor stops short of a road, like a lake's bank
+	var edge := _s.road_half_width_m + _s.road_shoulder_m
+	land = maxf(land, 1.0 - LabNoise.smooth(edge, edge + _s.lake_road_bank_m, last_road_d))
 	return h if land >= 1.0 else lerpf(sea_floor(), h, land)
 
 
@@ -118,7 +121,15 @@ func _inland_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool
 	var water := _s.water_level_m
 	var bp := base_h(x, y)
 	if bp < water:
-		return water - _s.lake_depth_factor * (water - bp)  # meets the shore at exactly the water level
+		var lake := water - _s.lake_depth_factor * (water - bp)  # meets the shore at exactly the water level
+		# A lake never cuts into a road: near one, its bed rises into a bank up to the road's level.
+		var edge := _s.road_half_width_m + _s.road_shoulder_m
+		var reach := edge + _s.lake_road_bank_m
+		if not (net.nearest_in(x, y, cands, reach) if use_cands else net.nearest(x, y, reach)):
+			return lake
+		_note_road()
+		var bq := bump(net.hit_qx, net.hit_qy)
+		return lerpf(_road_base(bq) + bq, lake, LabNoise.smooth(edge, reach, net.hit_d))
 	# mountains flatten out toward a shore, so lakes get banks rather than walls
 	var shore := LabNoise.smooth(0.0, _s.shore_band_m, bp - water)
 	var ridged := 1.0 - absf(2.0 * LabNoise.fbm(x / 1200.0 + 11.0, y / 1200.0 + 11.0, _s.world_seed + 43) - 1.0)
@@ -126,20 +137,31 @@ func _inland_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool
 	var found := net.nearest_in(x, y, cands, _s.mountain_dist_m) if use_cands else net.nearest(x, y, _s.mountain_dist_m)
 	if not found:
 		return bp + mtn + bump(x, y) * shore
-	last_road_d = net.hit_d
-	last_road_sd = net.hit_d * (-1.0 if net.hit_side < 0.0 else 1.0)
-	last_road_s = net.hit_s
-	last_road_mark = LabNoise.smooth(_s.marking_junction_clear_m, _s.marking_junction_clear_m + 4.0, net.junction_gap(net.hit_edge, net.hit_s))
+	_note_road()
 	var far := LabNoise.smooth(_s.flat_band_m, _s.mountain_dist_m, net.hit_d)
-	var hq := maxf(base_h(net.hit_qx, net.hit_qy), water + 3.0)
+	# the road takes the bumps at its own centre, so it rolls along its length but stays level across
+	var bq := bump(net.hit_qx, net.hit_qy)
+	var hq := _road_base(bq)
 	var base := hq + (bp - hq) * far
 	var k := (LabNoise.fbm(net.hit_s / 400.0 + net.hit_edge * 13.7, net.hit_side * 5.0 + 100.0, _s.world_seed + 57) - 0.5) * 2.0 * _s.ribbon_bank_m
 	var rw := _s.ribbon_width_m
 	var rib := k * LabNoise.smooth(_s.flat_band_m * 0.5, rw * 0.5, net.hit_d) * (1.0 - LabNoise.smooth(rw * 0.5, rw, net.hit_d))
-	# the road takes the bumps at its own centre, so it rolls along its length but stays level across
-	var bq := bump(net.hit_qx, net.hit_qy)
 	var bumps := bq + (bump(x, y) * shore - bq) * LabNoise.smooth(_s.flat_band_m * 0.5, _s.flat_band_m * 0.5 + 30.0, net.hit_d)
 	return base + mtn * far + rib * shore + bumps
+
+
+# The ground under the road last net.nearest found, before its bumps `bq`: kept high enough that the
+# road (base + bumps) stays 3 m above the water.
+func _road_base(bq: float) -> float:
+	return maxf(base_h(net.hit_qx, net.hit_qy), _s.water_level_m + 3.0 - bq)
+
+
+# Remember the road the last net.nearest found, for the road paint (see last_road_d).
+func _note_road() -> void:
+	last_road_d = net.hit_d
+	last_road_sd = net.hit_d * (-1.0 if net.hit_side < 0.0 else 1.0)
+	last_road_s = net.hit_s
+	last_road_mark = LabNoise.smooth(_s.marking_junction_clear_m, _s.marking_junction_clear_m + 4.0, net.junction_gap(net.hit_edge, net.hit_s))
 
 
 func road_weight(d: float) -> float:
@@ -163,11 +185,12 @@ func paint_half_m() -> float:
 
 # Which biome ring a point is in, counting outward from spawn.
 func ring_index(x: float, y: float) -> int:
-	return clampi(floori(_ring_coord(x, y)), 0, _s.ring_count - 1)
+	return clampi(floori(ring_coord(x, y)), 0, _s.ring_count - 1)
 
 
-# How far out a point is in rings: ring i covers [i, i + 1), with a wobbly border.
-func _ring_coord(x: float, y: float) -> float:
+# How far out a point is in rings: ring i covers [i, i + 1), with a wobbly border. The ground
+# shader repeats this maths per pixel (ps1_models.gdshader, ring_coord_at) to fade the textures.
+func ring_coord(x: float, y: float) -> float:
 	var wob := (LabNoise.fbm(x / 1500.0 + 9.0, y / 1500.0 + 9.0, _s.world_seed + 3) - 0.5) * 0.25
 	return (LabNoise.hyp(x, y) / (_s.island_radius_m * 0.82) + wob) * _s.ring_count
 
@@ -178,7 +201,7 @@ func tarmac_weight(x: float, y: float) -> float:
 	if not _any_tarmac:
 		return 0.0
 	var n := _s.ring_count
-	var v := _ring_coord(x, y)
+	var v := ring_coord(x, y)
 	var i := clampi(floori(v), 0, n - 1)
 	var f := v - i
 	var half := _s.road_surface_blend_m / (_s.island_radius_m * 0.82) * n * 0.5

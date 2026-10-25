@@ -536,7 +536,7 @@ point for the road-network spec, not tuned game values. The revision replaced an
 
 ## Streaming method — a strict per-frame terrain budget (agreed 2026-10-20)
 
-**The rule:** terrain work gets at most **2 ms per frame** (raised from 1 ms on 2026-10-23) (`FreeRoamSettings.budget_us`), and
+**The rule:** terrain work gets at most **2 ms per frame** (raised from 1 ms on 2026-10-23) (now a share of the spare frame time: `TerrainStreamer.budget_us()`, 2026-10-25), and
 nothing that would overrun it may start. The car drives while the world fills in around it.
 The old streaming seam budgeted by count (`overworld_chunk_build_budget = 2` chunks per frame),
 which is how it produced 13–34 ms spikes (`features/terrain-streaming.md`).
@@ -785,3 +785,19 @@ Numbering continues from decision 32.
   ring r holds one rumour per item of ring r + 1, and each reveals just that item in the journal.
   Spare sites show each rumour `loot_rumour_weight` (2) times as often as a part while any are left;
   rumours rank last for dead ends so they don't crowd out the real loot.
+- **D89. Coins and shops replace found loot (user ask, 2026-10-25; supersedes decisions 10, 11,
+  15–18 and D88).** Every loot slot and dead end holds a coin; coins are money, worth more per ring
+  out (`FreeRoamSettings.coin_value` / `coin_value_per_ring`). Cars and parts are bought at any
+  checkpoint, each at a `price` authored on its catalogue entry, once a checkpoint in their ring is
+  lit (ring 0 from the start). Giving up loses **all** the money and puts every coin back, so the
+  player is pushed to spend at each checkpoint. Gone: loot crystals, carried / banked / dropped
+  loot, rumours and the journal's "?" cards. The stash, fitting (decision 14) and the journal stay;
+  a small "$n" counter sits top-left while driving.
+  **Same day, follow-ups (user):** no separate shop page — parts on sale show on the Parts page
+  (buying fits it) and cars on sale on the Garage page (buying switches to it). A part owned fits
+  every car at once (nothing moves between cars). The rest-stop menu is Continue / Parts / Garage /
+  Map / Tune car: Travel (the map does it) and Journal (still in the pause menu) are gone from it.
+  **Later (user):** the money isn't simply lost on a wreck: it's dropped at the wreck under the old
+  loot crystal and recovered by driving back; giving up again first loses it for good. Coins still
+  all come back on a wreck. The minimap is off (`GameConfig.minimap_enabled = false`); the full map
+  is enough.

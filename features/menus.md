@@ -101,19 +101,18 @@ road / Map / Stats / Settings / Quit to title. Journal opens the rest-stop page'
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)
 
 Free roam's `RestStopPage` (a `CanvasLayer` at layer 6, `PROCESS_MODE_ALWAYS`) opens when the car
-stops on a rest stop (`RestStops.opened`). Opening it banks carried loot, repairs the car for
+stops on a rest stop (`RestStops.opened`). Opening it repairs the car for
 free, freezes the game and disarms the pause menu. Every page but TUNE is a card list
 (`_card_page` → `CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)), with
 `MenuNav.attach`:
-- **MAIN:** the stop's name, "Car repaired" and what was banked above the cards Continue / Tune
-  car / Parts / Garage / Travel / Map / Journal. Travel is disabled while no other rest stop is lit.
+- **MAIN:** the stop's name, "Car repaired" and the money held above the cards Continue / Parts /
+  Garage / Map / Tune car. Travel is on the map (the quick-travel picker).
 - **TUNE:** the shared `TuningPanel` (`car.retune` on the funnel view of the car) on a plain,
   widened `MenuPage` — sliders, not a list.
-- **PARTS / GARAGE / JOURNAL:** see [loot.md](loot.md).
-- **TRAVEL:** a card per other lit rest stop, nearest first, with its distance.
+- **PARTS / GARAGE** (with what's on sale at the end of each) **/ JOURNAL** (pause menu only): see [loot.md](loot.md).
 
 Back (Esc / gamepad B, or the `< Back` button under a sub-page's cards) steps a sub-page → MAIN →
-closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`): when the car gives up it lists the carried loot left at the wreck, and its single Respawn card (or Back) respawns at the last lit stop. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
+closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`): when the car gives up it says only "You dropped $n here" (`LootDirector.lost`; nothing when there was no money), and its single Respawn card (or Back) respawns at the last lit stop. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
 `test_free_roam_rest_stops.gd` and `test_loot.gd`.
 
 ## Pause menu (`pause_menu.gd`)

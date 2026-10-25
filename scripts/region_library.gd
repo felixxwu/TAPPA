@@ -78,7 +78,7 @@ const REGIONS: Array[Dictionary] = [
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
 		"id": "home", "order": 0, "name": "The Green",
-		"rest_stop_spacing_m": 500.0, # metres of road between free-roam checkpoints
+		"rest_stop_spacing_m": 750.0, # metres of road between free-roam checkpoints
 		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
 		"water_level": - 12.0,
 		# size_scale 1.25 uniform — the home forest 25% bigger than the profile's
@@ -118,7 +118,7 @@ const REGIONS: Array[Dictionary] = [
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
 		"id": "greece", "order": 1, "name": "The Dunes",
-		"rest_stop_spacing_m": 1000.0, # metres of road between free-roam checkpoints
+		"rest_stop_spacing_m": 1500.0, # metres of road between free-roam checkpoints
 		"water_level": - 12.0,
 		"road_surface": "tarmac",
 		"sky_panorama": "res://textures/sky-greece.jpg",
@@ -193,7 +193,7 @@ const REGIONS: Array[Dictionary] = [
 	# grass blades flung off a snowfield.
 	{
 		"id": "snow", "order": 4, "name": "The Alps",
-		"rest_stop_spacing_m": 2000.0, # metres of road between free-roam checkpoints
+		"rest_stop_spacing_m": 2500.0, # metres of road between free-roam checkpoints
 		"water_level": - 12.0,
 		"sky_panorama": "res://textures/sky-snow.jpg",
 		"grass_texture": "res://textures/snow-ground.jpg",

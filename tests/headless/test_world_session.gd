@@ -126,6 +126,10 @@ func _boot_free_roam() -> Node3D:
 	var scene: Node3D = load("res://free_roam.tscn").instantiate()
 	var s := FreeRoamSettings.new()
 	s.island_radius_m = 3000.0
+	# a dense layout of its own, so the map tests have several rest stops whatever the tuned preset
+	s.roads_from_spawn = 3
+	s.segment_m = 225.0
+	s.fork_chance = 0.5
 	s.near_radius = 1
 	s.far_radius = 3
 	(scene.get_node("Terrain") as TerrainStreamer).settings = s

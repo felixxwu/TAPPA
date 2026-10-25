@@ -496,6 +496,15 @@ cannot save you: a lambda whose captured owner has been freed reports
   Only change a test if the user explicitly asked for the asserted behavior to
   change — never weaken thresholds/assertions to go green.
 
+## One run at a time (`run_tests.sh`)
+
+The runner takes an exclusive `flock` on `.godot/run_tests.lock` (via `perl`, since macOS ships no
+`flock` command). A second invocation exits **3** with `error: another test run is already in
+progress (pid N)`. It's a kernel lock, not a flag file, so it can't go stale: the OS releases it
+when the script and every Godot child holding the inherited fd have exited — including on `kill -9`
+or a crash. A wedged orphan Godot therefore keeps the lock until it's killed, which is correct (it's
+still eating the CPU). The file's contents are just the holder's PID, for the message.
+
 ## Runner timeouts (`run_tests.sh`)
 
 Two independent caps, both of which exist because a wedged headless Godot otherwise sits there for

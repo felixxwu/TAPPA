@@ -47,7 +47,9 @@ var _to := {}
 var _fade_t := -1.0
 var _swapped := true
 var _particles: Node = null
-var _base_colors := {}  # ShaderMaterial -> [albedo_color, tarmac_color] as authored
+# The ground colours the weather tints; the _b pair is the outer ring's on a border chunk.
+const TINTED := ["albedo_color", "tarmac_color", "albedo_color_b", "tarmac_color_b"]
+var _base_colors := {}  # ShaderMaterial -> TINTED's colours as authored
 
 
 func _ready() -> void:
@@ -238,9 +240,9 @@ func _apply_weather(cfg: GameConfig) -> void:
 	var tint: Dictionary = entry.get("road_tint", {})
 	for mat in streamer.ring_materials():
 		if not _base_colors.has(mat):
-			_base_colors[mat] = [mat.get_shader_parameter("albedo_color"), mat.get_shader_parameter("tarmac_color")]
+			_base_colors[mat] = TINTED.map(func(p: String): return mat.get_shader_parameter(p))
 		var base: Array = _base_colors[mat]
-		for k in 2:
+		for k in TINTED.size():
 			var col: Color = base[k] if base[k] != null else Color.WHITE
 			if not tint.is_empty():
 				var amount := float(cfg.get(String(tint["amount"])))
@@ -250,7 +252,7 @@ func _apply_weather(cfg: GameConfig) -> void:
 					col = col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)
 				else:
 					col = Color(col.r * amount, col.g * amount, col.b * amount, col.a)
-			mat.set_shader_parameter("albedo_color" if k == 0 else "tarmac_color", col)
+			mat.set_shader_parameter(TINTED[k], col)
 	# particles on the chase camera
 	if is_instance_valid(_particles):
 		_particles.queue_free()

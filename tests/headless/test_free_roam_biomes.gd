@@ -126,6 +126,75 @@ func test_a_chunk_is_drawn_with_its_rings_ground_material() -> void:
 	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path, ICY["grass_texture"])
 
 
+func _ground_streamer(s: FreeRoamSettings) -> TerrainStreamer:
+	var st := TerrainStreamer.new()
+	st.settings = s
+	var scene: Node = load("res://free_roam.tscn").instantiate()
+	st.material = scene.get_node("Terrain").material
+	scene.free()
+	var focus := Node3D.new()
+	add_child_autofree(focus)
+	st.focus = focus
+	add_child_autofree(st)
+	return st
+
+
+func _built_chunk(st: TerrainStreamer, coord: Vector2i) -> TerrainStreamer.ChunkJob:
+	var job := st._new_job(coord, false, false)
+	st._queue.erase(job)
+	st._step(job, Time.get_ticks_usec() + 60_000_000, TerrainStreamer.Stage.UPLOAD)
+	return job
+
+
+# A chunk the border runs through fades from the inner ring's ground to the outer ring's per
+# pixel; a chunk clear of it keeps its own ring's plain material.
+func test_a_chunk_on_a_border_fades_into_the_outer_rings_ground() -> void:
+	var st := _ground_streamer(_settings())
+	var inner := st._ring_materials[0] as ShaderMaterial
+	var outer := st._ring_materials[1] as ShaderMaterial
+	var plain := st._ground_material(_built_chunk(st, Vector2i.ZERO))
+	assert_eq(plain, inner, "a chunk inside the first ring wears its plain material")
+	var border: ShaderMaterial = null
+	for cx in int(st.settings.island_radius_m / st.settings.chunk_m):
+		var job := _built_chunk(st, Vector2i(cx, 0))
+		if job.ring_lo < 1.0 and job.ring_hi > 1.0:
+			border = st._ground_material(job) as ShaderMaterial
+			break
+	assert_not_null(border, "the border crosses the +x axis")
+	assert_true(border.get_shader_parameter("fade_rings"))
+	assert_eq(border.get_shader_parameter("ring_border"), 1.0)
+	for p in ["albedo_texture", "road_texture", "tarmac_color", "road_marking_color"]:
+		assert_eq(border.get_shader_parameter(p), inner.get_shader_parameter(p), "slot A is the inner ring's " + p)
+		assert_eq(border.get_shader_parameter(p + "_b"), outer.get_shader_parameter(p), "slot B is the outer ring's " + p)
+	assert_true(border in st.ring_materials(), "the weather tints border materials too")
+
+
+# The vertex tint follows the same fade: each ring's own tint either side of the border, and no
+# hard step across it. The tints and the fade width are synthetic.
+func test_the_ground_tint_fades_across_a_border() -> void:
+	var red := ICY.duplicate()
+	red["terrain_tint"] = Color(1.0, 0.0, 0.0)
+	var blue := PLAIN.duplicate()
+	blue["terrain_tint"] = Color(0.0, 0.0, 1.0)
+	var regions: Array[Dictionary] = [red, blue]
+	RegionLibrary.override_for_test(regions)
+	var s := _settings()
+	s.biome_fade_m = 40.0
+	var st := _ground_streamer(s)
+	assert_eq(st.ring_tint_at(Vector2.ZERO), red["terrain_tint"])
+	var prev := st.ring_tint_at(Vector2.ZERO)
+	var saw_mid := false
+	var worst_step := 0.0
+	for i in range(1, 2400):
+		var tint := st.ring_tint_at(Vector2(i * 1.0, 0.0))
+		worst_step = maxf(worst_step, absf(tint.r - prev.r))
+		saw_mid = saw_mid or (tint.r > 0.1 and tint.r < 0.9)
+		prev = tint
+	assert_lt(worst_step, 0.2, "no hard step metre to metre")
+	assert_eq(prev, blue["terrain_tint"], "the outer ring wears its own tint")
+	assert_true(saw_mid, "the border fades rather than switching")
+
+
 func test_every_ring_material_is_drawn_once_at_boot_and_cleaned_up() -> void:
 	var s := _settings()
 	var st := TerrainStreamer.new()
@@ -140,7 +209,7 @@ func test_every_ring_material_is_drawn_once_at_boot_and_cleaned_up() -> void:
 	var drawn := []
 	for c in cam.get_children():
 		drawn.append((c as MeshInstance3D).material_override)
-	assert_eq(drawn.size(), s.ring_count)
+	assert_eq(drawn.size(), st.ring_materials().size(), "each ring's and each border's material")
 	for m in st.ring_materials():
 		assert_true(m in drawn)
 	for i in 4:

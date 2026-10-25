@@ -21,11 +21,10 @@ menu that is a list of choices is a card list:**
 | Title MAIN (`title_screen.gd`) | Continue (only with a world), New world, Settings |
 | Title STARTER | one per starter car (a spinning 3D preview, name, "hp · drive layout") |
 | Pause menu (`pause_menu.gd`) | Resume, Reset, Photo Mode (only where the host offers it), the host's extra rows (free roam: Map, Stats), Settings, Quit |
-| Rest stop MAIN (`rest_stop_page.gd`) | Continue, Tune car, Parts, Garage, Travel, Map, Journal; the stop's name, "Car repaired" and the banked loot sit above the cards |
-| Rest stop PARTS | one per fitted part (pick → take off), then one per stash part (pick → fit, or swap with the part in that slot; "Can't fit" cards are disabled) |
-| Rest stop GARAGE | one per owned car (a spinning 3D preview); the cursor starts on the car being driven |
-| Rest stop TRAVEL | one per other lit rest stop, with its distance |
-| Rest stop JOURNAL | one per item in each revealed biome, "Found" / "Not found yet" (read-only) |
+| Rest stop MAIN (`rest_stop_page.gd`) | Continue, Parts, Garage, Map, Tune car; the stop's name, "Car repaired" and the money held sit above the cards |
+| Rest stop PARTS | one per fitted part (pick → take off), then one per other part owned (pick → fit, or swap with the part in that slot; "Can't fit" cards are disabled), then one per part on sale (pick → buy and fit) |
+| Rest stop GARAGE | one per owned car (a spinning 3D preview; the cursor starts on the car being driven), then one per car on sale (pick → buy and drive it) |
+| Journal (pause menu) | one per item each unlocked biome sells, "Owned" or its price (read-only) |
 | Stats (`world_pages.gd`) | one per lifetime stat, and the biome rings reached (read-only) |
 
 **Not card lists**, because they are not lists of choices: the **Settings** page (the shared
@@ -632,11 +631,11 @@ a centred title, an optional dim subtitle and an optional third line into a card
 
 `MenuPage` hugs its content and vertically CENTRES the whole panel, so a page with a taller
 header would sit its cards lower than one with none. `CardUI.header_slot(page)` reserves
-`CardUI.CAROUSEL_HEADER_LINES` (3 — the rest stop's name, "Car repaired" and the banked line)
+`CardUI.CAROUSEL_HEADER_LINES` (3 — the rest stop's name, "Car repaired" and the money line)
 lines above the carousel on EVERY card page, bottom-aligned, and `card_list` always calls it, so
 the cards land at the same screen height on every page. A page built with no title gets
 `CardUI.title_gap_spacer()` first, for the same reason. A header line longer than the frame wraps
-(and then does push the cards down — the banked-loot line after a big haul).
+(and then does push the cards down).
 
 ## Known open decisions (unilateral — flag for design review)
 

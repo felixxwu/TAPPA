@@ -166,9 +166,17 @@ func test_gearbox_is_always_automatic_and_not_in_the_menu() -> void:
 
 # --- Dev page ----------------------------------------------------------------
 #
-# Three actions (features/settings.md → "Developer-only pages"): Add money, Unlock
-# all skills, and the mid-run-only Complete stage. Dev visibility itself is covered
-# by the players/dev-builds tests further down.
+# Two actions (features/settings.md → "Developer-only pages"): Add money and Unlock all
+# biomes. Dev visibility itself is covered by the players/dev-builds tests further down.
+
+func test_add_money_adds_to_the_world_money() -> void:
+	WorldSession.new_world(1, "fx_light_rwd")
+	WorldSession.set_money(5)
+	var menu := _make_menu()
+	for child in menu._dev_page.get_children():
+		if child is Button and String(child.text).to_lower().begins_with("add $"):
+			child.pressed.emit()
+	assert_eq(WorldSession.money(), 5 + SettingsMenu.DEV_MONEY_GRANT)
 
 # --- Reset progress ----------------------------------------------------------
 

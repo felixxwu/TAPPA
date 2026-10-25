@@ -25,8 +25,8 @@
 | Roads | One DFS centreline per stage, carved into terrain | **A whole road network laid out at boot** (`RoadNetwork`); terrain built *around* the roads (`RoadTerrain`) |
 | Fail state | The stage clock | **None.** At 0 HP the car gives up and you respawn at the last lit rest stop |
 | Damage | Never wrecks | **Cooling fails at half health; the engine overheats and drains HP** (`DamageModel.thermal`) |
-| Progress | Money, shop, skills, boost levels | **Found loot**: car titles, parts (the old boosts, by level), engines, drivetrain kits, rumours |
-| Between stages | Repair or a boost | **Rest stops**: bank loot, free repair, parts, tune, garage, travel, map, journal |
+| Progress | Money, shop, skills, boost levels | **Coins → bought at checkpoints** (D89): cars, parts (the old boosts, by level), engines, drivetrain kits; a wreck drops all the money, Souls-style |
+| Between stages | Repair or a boost | **Rest stops**: free repair, parts and garage (buying in both), map (travel), tune |
 | Regions | Picked per run | **Biome rings** by distance from spawn, with drifting weather (`BiomeDirector`) |
 | Front end | `HubShell` (11 pages) | **Title screen** (`title.tscn`): Continue / New World / Settings |
 | Save | Run slot + economy keys, schema 7 | **`world` block** (`WorldSession`), schema 8; v7 profiles are refused |
@@ -41,7 +41,7 @@
 | `scripts/free_roam/road_sites.gd`, `road_barriers.gd` | Rest stops, loot slots and dead ends; barriers on sharp bends |
 | `scripts/free_roam/biome_director.gd` | Ring → region look, handling and weather, following the car |
 | `scripts/free_roam/rest_stops.gd`, `rest_stop_page.gd`, `world_pages.gd` | Bonfires, the rest-stop page, the map and stats pages |
-| `scripts/free_roam/loot_rules.gd`, `loot_director.gd` | Loot tables, placement, collect / carry / bank / drop |
+| `scripts/free_roam/loot_rules.gd`, `loot_director.gd` | Shop stock and prices, coins, money, the wreck |
 | `scripts/free_roam/road_recovery.gd`, `auto_driver.gd` | Reset to road; the self-driving streaming test |
 | `scripts/world_session.gd` (**autoload**) | The persistent world in the profile |
 | `scripts/title_screen.gd`, `title.tscn` | The front door (the main scene) |
@@ -52,7 +52,7 @@
 Do not go looking for these: `RunSession` / `RunMode` / `RegionRunMode` / `ChallengeRunMode` /
 `ChallengeLibrary` / `RegionStagePool` / `RunPickPanel` / `FreePlay` / `DrivingContext`, the
 challenge cloud board, `HubShell` and `MenuShowcase`, `StartLine`, `RivalGhost`, pacenotes, signs,
-arches, coins, `SkillLibrary`, the money and boost-level economy, the track lockfile
+arches, the stage coins (`CoinLayout` / `CoinField` — free roam has its own coins since D89), `SkillLibrary`, the roguelike money and boost-level economy, the track lockfile
 (`TrackCache`, `data/track_cache.json`, the cache scripts and the pre-commit hook), and the
 hub-only widgets (car cards, stat bars, the car list).
 

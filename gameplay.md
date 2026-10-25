@@ -30,13 +30,13 @@ you are racing the temperature gauge to a rest stop.
 title (Continue · New World · Settings)
   └─ new world: choose a starter car (the cheapest few in the catalogue)
        └─ drive out from the spawn rest stop
-            ├─ drive near loot → it's CARRIED (not yours yet)
+            ├─ drive over coins → MONEY (dropped at the wreck if the car gives up)
             ├─ drive through a rest stop → it's LIT (your respawn point)
             ├─ crash → HP down; below half health the cooling FAILS
             │     └─ engine only heats up → over the limit it drains HP → 0 HP: the car gives up
-            │           └─ respawn at the last lit rest stop; carried loot is left at the wreck
-            └─ stop at a rest stop → BANK loot · free REPAIR · fit PARTS · TUNE · swap CAR
-                                       · TRAVEL to any lit rest stop · MAP · JOURNAL
+            │           └─ respawn at the last lit rest stop; the money lies at the wreck, every coin comes back
+            └─ stop at a rest stop → free REPAIR · buy & fit PARTS · buy & swap CAR · MAP
+                                       (TRAVEL to any lit rest stop) · TUNE
 ```
 
 ## The world
@@ -60,26 +60,27 @@ title (Continue · New World · Settings)
   temperature then only rises, faster under load and at high revs. Easing off buys time;
   nothing stops it.
 - **Over the limit, the engine loses HP continuously**, misfires and won't rev out.
-- **At 0 HP the car gives up.** You respawn at the last lit rest stop, repaired. What you were
-  carrying stays at the wreck; drive back to get it, but give up again first and it's gone.
+- **At 0 HP the car gives up.** You respawn at the last lit rest stop, repaired. All the money you
+  were carrying lies at the wreck under a crystal: drive back for it, but give up again first and
+  it's gone. Every coin is back on the road.
 - **Rest stops are bonfires.** Driving past one — no need to stop — lights it and fully heals the
-  car. Pulling in and pressing Enter / A opens the rest-stop page: carried loot is banked, and you can fit parts, tune,
+  car. Pulling in and pressing Enter / A opens the rest-stop page: you can buy cars and parts, fit parts, tune,
   swap cars, read the journal, and travel to any rest stop you've lit. A crowd gathers at each.
 - **Rest-stop spacing is the main balance lever**, because it decides how survivable a cooling
   failure is. It is set per ring.
 
 ## Loot
 
-- **Everything is found; nothing is bought.** There is no money.
-- **Car titles** join your garage once banked. **Parts** are the old boosts (turbo, supercharger,
-  nitrous, sticky tyres, quick-shift gearbox, aero, brakes, lightweight parts) found at a
+- **Coins on the road are money.** Every pull-in and dead end holds one, worth more further out.
+  Money is only safe once spent: the car giving up loses all of it, so buy what you can at each
+  checkpoint.
+- **Cars and parts are bought at checkpoints**, once a checkpoint in their biome is lit.
+- **Cars** join your garage once bought. **Parts** are the old boosts (turbo, supercharger,
+  nitrous, sticky tyres, quick-shift gearbox, aero, brakes, lightweight parts) sold at a
   level that rises with the ring. **Engines** and **drivetrain kits** are parts too. Parts go into
-  a shared stash and move freely between cars at rest stops.
-- **Every car and part exists once.** Pull-ins along the roads show what's still to be found in
-  their biome; the moment you have something it's gone from all of them, and once a biome's things
-  are all found its pull-ins stand empty. Log cabins mark rest stops, and
-  coloured crystals on the road mark loot. **Rumours** each reveal one item of the next
-  biome in the journal, so you learn piece by piece what's just out of reach.
+  a shared collection: a part owned fits every car at once.
+- **Every car and part exists once**: once bought it leaves the shop. Log cabins mark rest stops,
+  and the journal lists what each unlocked biome sells.
 - **The pacing goal:** the cars and parts run out at about the same time as the biomes, so the late
   game is fresh in both.
 

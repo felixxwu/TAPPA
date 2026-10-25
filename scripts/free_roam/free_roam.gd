@@ -51,6 +51,8 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
+	for vp in _measured_viewports():
+		RenderingServer.viewport_set_measure_render_time(vp, true)
 	# A dev boot straight into this scene with no world yet makes one, with the configured car.
 	if not WorldSession.has_world():
 		var idx := maxi(0, CarLibrary.index_of(_streamer.settings.car_id))
@@ -94,11 +96,10 @@ func _ready() -> void:
 	_streamer.rest_lit_query = _rest_stops.is_lit
 	_rest_stops.lit.connect(WorldSession.light)
 	_rest_stops.respawn_point_changed.connect(WorldSession.set_last_site)
-	_rest_stops.respawned.connect(func(_site: int, wreck: Vector3) -> void:
-		$LootDirector.drop_at(wreck)
+	_rest_stops.respawned.connect(func(_site: int, _wreck: Vector3) -> void:
 		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP))
 	_rest_stops.car_teleported_to.connect($LootDirector.car_teleported)
-	_rest_stops.healed.connect($LootDirector.bank_at_checkpoint)
+	_rest_stops.respawned.connect($LootDirector.respawned)
 	_recovery.reset_done.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect(_rest_stops.car_teleported)
 	_rest_stops.car_teleported_to.connect($TireMarks.break_ribbons)
@@ -343,11 +344,19 @@ func start_auto_drive() -> AutoDriver:
 
 
 func _process(_delta: float) -> void:
-	if not $DebugStats.visible:
-		_place_water()
-		return
+	_track_spare_time()
 	_place_water()
-	_update_stats()
+	if $DebugStats.visible:
+		_update_stats()
+
+
+# Last frame's cpu / gpu load, with terrain's own share taken out of the cpu side, gives the
+# time terrain could have had; smoothed so one odd frame doesn't swing the streaming budget.
+func _track_spare_time() -> void:
+	var load_ms := _frame_load_ms()
+	var cpu := maxf(0.0, load_ms.x - _streamer.stat_used_us / 1000.0)
+	var spare := maxf(0.0, _frame_budget_ms() - maxf(cpu, load_ms.y)) * 1000.0
+	_streamer.spare_us = lerpf(_streamer.spare_us, spare, 0.1)
 
 
 func _place_water() -> void:
@@ -359,7 +368,9 @@ func _update_stats() -> void:
 	var counts := _streamer.chunk_counts()
 	var s := _streamer
 	_stats.text = "%d km/h\n" % roundi(_car.linear_velocity.length() * 3.6) \
-		+ "terrain  %.2f ms this frame (budget %.2f)\n" % [s.stat_used_us / 1000.0, s.settings.budget_us / 1000.0] \
+		+ "terrain  %.2f ms this frame (budget %.2f)\n" % [s.stat_used_us / 1000.0, s.budget_us(get_process_delta_time()) / 1000.0] \
+		+ "         avg %.2f ms/frame (%d%% of the frame)   total %.1f s\n" % [
+			s.stat_total_us / 1000.0 / maxi(1, s.stat_frames), roundi(s.stat_total_us / 1000.0 / maxi(1, s.stat_frames) / _frame_budget_ms() * 100.0), s.stat_total_us / 1e6] \
 		+ "worst    %.2f ms   over budget %d / %d frames   spikes %d   rushes %d\n" % [s.stat_worst_us / 1000.0, s.stat_overruns, s.stat_frames, s.stat_spikes, s.stat_rushes] \
 		+ "queue    %d jobs\n" % s.queued() \
 		+ "chunks   %d near  %d far  %d collision\n" % [counts.x, counts.y, counts.z] \
@@ -384,13 +395,21 @@ static func frame_headroom(budget_ms: float, cpu_ms: float, gpu_ms: float) -> fl
 	return 1.0 - maxf(cpu_ms, gpu_ms) / budget_ms
 
 
-func _headroom_line() -> String:
+# (cpu, gpu) milliseconds of the last frame.
+func _frame_load_ms() -> Vector2:
 	var cpu := (Performance.get_monitor(Performance.TIME_PROCESS) \
 		+ Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0
 	var gpu := 0.0
 	for vp in _measured_viewports():
 		cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp)
 		gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	return Vector2(cpu, gpu)
+
+
+func _headroom_line() -> String:
+	var load_ms := _frame_load_ms()
+	var cpu := load_ms.x
+	var gpu := load_ms.y
 	var budget := _frame_budget_ms()
 	return "frame    %d%% free of %.1f ms   (cpu %.1f  gpu %.1f%s)" % [
 		roundi(frame_headroom(budget, cpu, gpu) * 100.0), budget, cpu, gpu,
@@ -411,9 +430,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_recovery.reset_now()
 	elif event.is_action_pressed("toggle_perf_overlay"):
 		$DebugStats.visible = not $DebugStats.visible
-		# Per-viewport render timing has a small cost, so it only runs while the readout shows.
-		for vp in _measured_viewports():
-			RenderingServer.viewport_set_measure_render_time(vp, $DebugStats.visible)
 
 
 func _exit_tree() -> void:

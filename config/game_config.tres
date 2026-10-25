@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 render_height = 540
+minimap_enabled = false
 steer_limit = 1
 steer_speed = 0.85
 counter_steer_speed = 2.7

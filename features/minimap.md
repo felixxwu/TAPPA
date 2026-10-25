@@ -31,9 +31,9 @@ A navigation-software style map at the top centre of the screen while driving.
   `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`). Loot isn't shown on either map. Icons are drawn
   upright on top of the tilted ground, smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the
   full map.
-- **A line under the frame** (`MiniMap.update_carried_label`, per frame): the action prompt
-  ("ENTER / A: OPEN REST STOP" while `RestStops.prompt_site` >= 0), then "CARRYING N ITEMS" while
-  `WorldSession.list("carried")` isn't empty. Hidden when both are empty.
+- **A line under the frame** (`MiniMap.update_prompt_label`, per frame): the action prompt
+  ("ENTER / A: OPEN REST STOP" while `RestStops.prompt_site` >= 0), hidden otherwise. The money
+  counter is top-left, not here (`LootDirector.money_label`, [loot.md](loot.md)).
 
 ## Seen sites
 
@@ -52,8 +52,10 @@ pause menu's Map row still opens the same page and returns to the pause menu.
 ## Hiding and input
 
 `MiniMap.is_live()`: hidden and deaf whenever the tree is paused (the pause menu, the rest-stop
-page and the world pages all pause), when `minimap_enabled` is off, or when the HUD is off
-(`hud_enabled`). It runs `PROCESS_MODE_ALWAYS` so it can hide itself while paused.
+page and the world pages all pause), or when the HUD is off (`hud_enabled`).
+**`GameConfig.minimap_enabled` is off by default (2026-10-25, the user's call: the full map is
+enough).** Off, the frame isn't drawn and taps pass through, but the prompt line under it still
+shows and M / gamepad Back still open the full map. It runs `PROCESS_MODE_ALWAYS` so it can hide itself while paused.
 
 Layout (`_layout`): `minimap_height_frac` of the screen height, `minimap_aspect` wide, narrowed
 on a thin screen to keep 140 px clear each side (the HUD speed/gear labels top-left, the pause

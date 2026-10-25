@@ -25,12 +25,17 @@ junctions and identical heights at 175 inland points. Two details keep it exact:
 
 This parity is **no longer a requirement**. From 2026-10-20 the game is the reference and
 may diverge from the lab (decision 32 in `todo/2026-10-19-free-roam-pivot.md`). Until
-something breaks it, the two still match.
+something breaks it, the two still match: the lab's defaults (its "Radial growth, dead ends
+pruned" algorithm) are `FreeRoamSettings`' defaults, checked on seed 5687 (same 49 nodes and
+50 edges). Heights still differ in the last 400 m before the coast and at site pads, which
+only the game has.
 
 ## The three layers
 
 1. **`RoadNetwork` — the layout, built once at boot.** Radial growth from spawn: branches step
-   outward, fork, and join existing road when they run into it (`_grow`). Each link then becomes
+   outward, fork, and join existing road when they run into it (`_grow`). Dead ends no longer than
+   `prune_dead_ends_m` (measured back to their junction) are then cut, repeatedly, so a fork
+   whose branches all die out goes too (`_prune_dead_ends`). Each link then becomes
    a wiggled polyline (`_densify`, a seeded noise offset inside a band around the straight line,
    landing exactly on both ends; `road_twist` sets how far it may swing and `bend_length_m` how
 often it turns). The polylines are flattened into segments in a 100 m grid, and
@@ -50,13 +55,18 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
    - **Bumps:** two octaves of Perlin noise (`LabNoise.perlin`, `bump_height_m` /
      `bump_scale_m`) over everything. The road takes the bump at its own centre line, so it
      rolls along its length but stays level across.
+   - **Water never cuts a road.** The road (its base plus its bump, `_road_base`) stays at least
+     3 m above the water. Lake ground near a road rises into a bank up to it, over
+     `FreeRoamSettings.lake_road_bank_m` past the road's edge, and the coast's fade to the sea
+     floor stops short of a road the same way. `test_free_roam.gd` →
+     `test_every_road_stays_above_the_water_edge_to_edge`.
 
    Every query is a pure function of position, so any chunk can be built alone, in any order.
 3. **`TerrainStreamer` — budgeted streaming.** See below.
 
 ## Streaming under a strict frame budget
 
-`FreeRoamSettings.budget_us` (default 2000 µs) is the most terrain work any frame may do. A chunk
+`TerrainStreamer.budget_us(frame_s)` is the most terrain work any frame may do: `budget_fraction` of the frame time left over (`spare_us`, a smoothed estimate from the last frames' cpu/gpu load, fed by `free_roam.gd` → `_track_spare_time`), never below `budget_min_fraction` of the actual frame time (so time per second stays constant as fps drops). A chunk
 (64 m) is built by a resumable `ChunkJob` moving through stages:
 
 | Stage | Unit | How it stays inside the budget |
@@ -137,7 +147,7 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   car's controls locked, the same passes as the stage's load (`world.gd._warm_shaders_behind_cover`):
   every `warm_up()`/`clear_warm_up()` node (debris, tyre marks, smoke, flames, crowds), a speck of
   every ring's ground material (`warm_up_materials`), one of every ring's trees plus a bush, every
-  rock, a loot crystal, a rest-stop cabin (without its collision box) and every loot name's floating label (`warm_up_spawns`, on flat stand-in ground), and a
+  rock, a coin, a rest-stop cabin (without its collision box) (`warm_up_spawns`, on flat stand-in ground), and a
   throwaway camera turning full circle above the car and then looking down from high up
   (`_look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
   the auto-driver or the title menu take over (`_hand_over`). Headless skips the warm-up.
@@ -160,10 +170,25 @@ border. Ring i wears region `FreeRoamSettings.ring_regions[i]` (`BiomeDirector.r
 wrapping). By default that's home, greece, taiga, snow.
 
 **Per chunk (`TerrainStreamer`):** each ring has its own copy of the ground material, carrying
-the region's `grass_texture`, `gravel_texture` and `tarmac_color` (`_material_for`). A chunk uses
-the material of the ring at its centre, so a border switches at chunk edges. The baked vertex
-tint is the region's `terrain_tint` (white when unset), and trees, bushes and rocks follow the
-region's `tree_mix`, bush switch and rock density.
+the region's `grass_texture`, `gravel_texture` and `tarmac_color` (`_material_for`). Trees,
+bushes and rocks follow the region at the chunk's centre (`tree_mix`, bush switch, rock
+density), so they still switch at chunk edges.
+
+**The ground fades across a border** over about `FreeRoamSettings.biome_fade_m` (the wobble
+in the border stretches or squeezes it in places):
+- Each border k (between rings k - 1 and k) has a pair material (`_pair_material`): ring
+  k - 1's ground with ring k's textures and colours in the shader's `_b` uniforms, and
+  `fade_rings` on. The shader (`ps1_models.gdshader`, `ring_coord_at`) works out every pixel's
+  `RoadTerrain.ring_coord` itself, using the same integer hash as `LabNoise.vnoise`, and fades grass,
+  gravel, tarmac colour and lane-paint colour across it. Change the two together.
+- `_arrays` records each chunk's lowest and highest ring coordinate (`ring_lo` / `ring_hi`), and
+  `_ground_material` gives the pair material only to chunks the fade reaches. Every other chunk
+  keeps its single-ring material and pays nothing for the fade.
+- The baked vertex tint (the region's `terrain_tint`, white when unset) fades over the same band
+  (`ring_tint_at` / `_tint_at_ring`), so the bushes' baked light matches.
+- `ring_materials()` includes the pair materials, so the weather tints both slots
+  (`BiomeDirector.TINTED`) and the boot warm-up compiles them.
+- `tools/biome_fade_capture.tscn` photographs a few borders from above, to check them by eye.
 
 **Road paint is per pixel, not per vertex.** The near mesh is a 2 m grid (16 m far away), and the
 road is only 3.8 m wide, so a per-vertex road weight (what the stage did on its 0.5 m grid)
@@ -254,8 +279,8 @@ planted on it (`is_clear`).
   `FreeRoamSettings.rest_stop_spacing_m` for a region that sets none.
 - **Loot slots (`LOOT`):** placed the same way at `loot_slot_spacing_m`, kept clear of rest
   stops and water. They sit on the road's centreline with radius 0 and no pad: the ground isn't
-  flattened and they stay out of `pad_at` / `is_clear`, so the crystal floats over the road and is
-  collected by driving over or past it. They are slots; stage 7 decides which hold loot.
+  flattened and they stay out of `pad_at` / `is_clear`, so the coin floats over the road and is
+  collected by driving over or past it. Each holds a coin ([loot.md](loot.md)).
 - **Dead ends (`DEAD_END`):** a clearing at every junction with only one road (spawn aside).
 - **Roadside placement** (`_place_along`, `_try_roadside`, rest stops only): never within `JUNCTION_CLEAR_M` of
   a junction. The pad sits beside the road on a seeded side, or the other side if that one is
@@ -266,12 +291,12 @@ planted on it (`is_clear`).
   `GameConfig.rest_stop_cabin_back_m` from the pad's centre away from the road, door facing the
   road, inside the crowd's arc. It is solid (a box over its walls, `CABIN_WALLS`, in the damage
   obstacle group), and once lit its doorway glows orange (`_light_cabin`, via
-  `refresh_site_marker`). Loot still has placeholder markers: a loot site or dead end
-  showing an item gets a coloured crystal bobbing over the road (`_loot_marker`, `shaders/loot_crystal.gdshader`, rebuilt by `refresh_loot_markers` when the pool changes). Both the queued
+  `refresh_site_marker`). A loot site or dead end
+  holding a coin shows a spinning gold disc over the road (`_coin_marker`, `shaders/coin.gdshader`, rebuilt by `refresh_loot_markers` when coins are taken or come back). Both the queued
   marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
   `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
   its marker spawn running still leaves one marker (a duplicate used to be renamed `@Loot%d@N`,
-  which no refresh removed, so a crystal stayed after its pickup). A site with nothing left shows nothing.
+  which no refresh removed, so a coin stayed after its pickup). A taken coin shows nothing.
 - **No beacons:** the tall beams of light over rest stops (`SiteBeacons`) were removed on
   2026-10-23 when the cabins arrived; from afar, rest stops show only on the minimap.
 
@@ -319,12 +344,12 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
   clutch open so no drive or engine braking, revs spin down to 0, `EngineAudio` pushes silence;
   `EngineSim.reset` clears it) and, `GameConfig.wreck_page_delay_s` later (counted down in
   `RestStops.step`), `RestStops.wrecked` opens the wreck page (`RestStopPage.open_wrecked`,
-  View.WRECKED: it lists the carried loot that is left at the wreck). The game keeps running: the
+  View.WRECKED: it says how much money was dropped — `LootDirector.wreck` leaves it at the wreck on `gave_up`). The game keeps running: the
   car rolls on driverless (`RestStops.is_wrecked`, all `ai_*` inputs zero) and rest stops ignore it. Its
   Respawn card (or Back) calls `respawn()`: the car is moved to the last lit rest stop (`move_car_to`:
   stream the destination in with `TerrainStreamer.prefill_at`, then put the car on its road beside
   the pad), repaired, and its engine temperature reset to 0 (a respawn is a fresh car; a rest-stop
-  repair keeps the heat). `respawned` carries the wreck position, for dropped loot in stage 7.
+  repair keeps the heat). `respawned` carries the wreck position.
 - **Travel:** goes to any lit rest stop, with the same move plus a repair.
 - **Crowds:** each rest stop has a live crowd (`SpectatorGroup`, `TerrainStreamer._rest_crowd`) of
   `rest_stop_crowd_size` gathered in a band in front of its cabin, between the door and the road.
@@ -395,7 +420,7 @@ provides both.
   one foliage field per species as its own unit of work.
 - **`GameConfig.vegetation_enabled = false`** leaves out the trees, bushes and rocks only
   (`_plant_candidates`). Every near build still runs `PLANT` / `SPAWN`, because the barriers
-  (with their collision), rest-stop crowds, site posts and loot crystals spawn from it too; until
+  (with their collision), rest-stop crowds, site posts and coins spawn from it too; until
   2026-10-20 turning vegetation off removed those as well.
 - **Lifetime:** the foliage lives on `ChunkState.foliage` and is freed with the near mesh.
   It is only planted within the near ring, which matches `tree_render_distance_m` (120 m).
@@ -469,8 +494,7 @@ over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames wer
 
 ## Not in the prototype yet
 
-Real loot models (rest stops have log cabins now; loot still shows coloured crystals) and
-threading. Pickups ([loot.md](loot.md)), the damage chain and rest stops as checkpoints (*Damage
+Threading. Pickups ([loot.md](loot.md)), the damage chain and rest stops as checkpoints (*Damage
 and rest stops* above) are in. The remaining work is
 staged in `todo/2026-10-19-free-roam-pivot.md` → *Staging*. The settings
 live on a `FreeRoamSettings` resource rather than `GameConfig` while the shape settles.

@@ -56,10 +56,11 @@ extends RefCounted
 # (the part's real strength — boost gain); every other key is a FIXED characteristic of
 # the part (spool inertia, saturation point, parasitic drag) that never scales with
 # level. See magnitude_for and current_effect_text for where this shape is read.
-# `ring` is the free-roam biome ring the part is found in, at level = ring (LootRules.ring_tables).
+# `ring` is the free-roam biome ring whose checkpoints sell the part, at level = ring, for `price`
+# (LootRules.ring_tables / price).
 const CATALOGUE := {
 	"lightweight": {
-		"ring": 0,
+		"ring": 0, "price": 1200,
 		"label": "Lightweight parts",
 		# "mult_floor", not "mult": a proportional weight cut clamped at
 		# GameConfig.min_lightweight_mass, so it's one-time (see BoostLibrary.stacks) and
@@ -71,7 +72,7 @@ const CATALOGUE := {
 		"category": "handling",
 	},
 	"turbo": {
-		"ring": 0,
+		"ring": 0, "price": 1800,
 		"label": "Turbocharger",
 		"effect_fields": {"install_turbo": {
 			"turbo_boost_gain": "run_boost_turbo_boost_gain",
@@ -99,7 +100,7 @@ const CATALOGUE := {
 	# 	"category": "handling",
 	# },
 	"gearbox": {
-		"ring": 1,
+		"ring": 1, "price": 2500,
 		"label": "Quick-shift gearbox",
 		"effect_fields": {"shift_time_set": "run_boost_shift_time_s"},
 		"level_direction": - 1, # lower shift time = faster = more boost
@@ -110,7 +111,7 @@ const CATALOGUE := {
 		"category": "power",
 	},
 	"nitrous": {
-		"ring": 1,
+		"ring": 1, "price": 3000,
 		"label": "Nitrous",
 		# The SAME install_nitrous EFFECTS row features/nitrous.md documents (write_fields,
 		# no enable flag) — a mid-run boost fitting it the same way a turbo/supercharger
@@ -128,7 +129,7 @@ const CATALOGUE := {
 		"category": "power",
 	},
 	"aero": {
-		"ring": 2,
+		"ring": 2, "price": 4000,
 		"label": "Aero kit",
 		"effect_fields": {
 			"downforce_front": "run_boost_downforce_n",
@@ -142,7 +143,7 @@ const CATALOGUE := {
 		"category": "handling",
 	},
 	"brakes": {
-		"ring": 2,
+		"ring": 2, "price": 3500,
 		"label": "Big brakes",
 		# Fixed absolute brake_torque ("set", not a multiplier) — strong enough to push
 		# ABS into play on every car in the roster, including the heaviest
@@ -156,7 +157,7 @@ const CATALOGUE := {
 		"category": "handling",
 	},
 	"supercharger": {
-		"ring": 2,
+		"ring": 2, "price": 5000,
 		"label": "Supercharger",
 		"effect_fields": {"install_supercharger": {
 			"supercharger_boost_gain": "run_boost_supercharger_boost_gain",

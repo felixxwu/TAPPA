@@ -6,6 +6,7 @@ extends GutTest
 const TEST_PATH := "user://test_mini_map_profile.json"
 
 var _save: Node
+var _was_enabled := true
 
 
 func before_each() -> void:
@@ -15,10 +16,13 @@ func before_each() -> void:
 	_save.profile = _save._default_profile()
 	CarFixtures.install()
 	WorldSession.new_world(1, String(CarLibrary.all()[0]["id"]))
+	_was_enabled = Config.data.minimap_enabled
+	Config.data.minimap_enabled = true  # the shipped game has it off; these tests are about the map
 
 
 func after_each() -> void:
 	get_tree().paused = false
+	Config.data.minimap_enabled = _was_enabled
 	CarFixtures.restore()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
@@ -146,6 +150,23 @@ func test_a_tap_on_the_map_asks_for_the_full_map() -> void:
 	assert_signal_emitted(mm, "open_requested")
 
 
+func test_with_the_minimap_off_only_the_prompt_shows_and_a_tap_passes_through() -> void:
+	Config.data.minimap_enabled = false
+	var mm := _map()
+	var rs := FakeRestStops.new()
+	autofree(rs)
+	rs.site = 3
+	mm.rest_stops = rs
+	mm.car = Node3D.new()
+	autofree(mm.car)
+	mm._process(0.0)
+	assert_false(mm._ground.visible, "no map drawn")
+	assert_true(mm.prompt_label.visible, "the rest-stop prompt still shows")
+	watch_signals(mm)
+	_tap(mm)
+	assert_signal_not_emitted(mm, "open_requested")
+
+
 # The whole minimap box takes a press, not just the tilted map inside it: its top corners (outside
 # the trapezoid) open the full map too.
 func test_a_press_anywhere_on_the_minimap_box_counts() -> void:
@@ -182,16 +203,6 @@ func test_while_paused_it_hides_and_ignores_taps() -> void:
 	assert_true(mm.visible)
 
 
-func test_the_carried_line_shows_only_while_carrying() -> void:
-	var mm := _map()
-	mm.update_carried_label()
-	assert_false(mm.carried_label.visible)
-	WorldSession.set_list("carried", ["a", "b"])
-	mm.update_carried_label()
-	assert_true(mm.carried_label.visible)
-	assert_string_contains(mm.carried_label.text, "2")
-
-
 class FakeRestStops:
 	extends RestStops
 	var site := -1
@@ -204,9 +215,9 @@ func test_the_line_prompts_at_a_rest_stop() -> void:
 	var rs := FakeRestStops.new()
 	autofree(rs)
 	mm.rest_stops = rs
-	mm.update_carried_label()
-	assert_false(mm.carried_label.visible)
+	mm.update_prompt_label()
+	assert_false(mm.prompt_label.visible)
 	rs.site = 3
-	mm.update_carried_label()
-	assert_true(mm.carried_label.visible)
-	assert_string_contains(mm.carried_label.text, "REST STOP")
+	mm.update_prompt_label()
+	assert_true(mm.prompt_label.visible)
+	assert_string_contains(mm.prompt_label.text, "REST STOP")

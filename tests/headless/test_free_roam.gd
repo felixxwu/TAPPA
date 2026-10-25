@@ -65,6 +65,44 @@ func test_every_road_lands_exactly_on_its_two_junctions() -> void:
 		assert_almost_eq(pts[pts.size() - 1], net.nodes[net.edges[ei].y], Vector2(0.01, 0.01))
 
 
+func test_pruning_leaves_only_dead_ends_longer_than_the_limit() -> void:
+	var s := _settings()
+	s.world_seed = 1  # seed 7 happens to grow no short dead ends
+	s.prune_dead_ends_m = 0.0
+	var full := _world(s).net
+	s.prune_dead_ends_m = 1000.0
+	var net := _world(s).net
+	assert_lt(net.edges.size(), full.edges.size(), "something must be pruned for this to test anything")
+	for i in range(1, net.node_x.size()):
+		assert_gt(net.node_degree[i], 0, "a pruned node must not be left behind")
+		if net.node_degree[i] != 1:
+			continue
+		var length := 0.0
+		var cur := i
+		var prev := -1
+		while cur == i or (cur != 0 and net.node_degree[cur] == 2):
+			for e in net.edges:
+				var nxt := e.y if e.x == cur else (e.x if e.y == cur else -1)
+				if nxt >= 0 and nxt != prev:
+					length += net.nodes[cur].distance_to(net.nodes[nxt])
+					prev = cur
+					cur = nxt
+					break
+		assert_gt(length, s.prune_dead_ends_m, "dead end at node %d should have been pruned" % i)
+
+
+# A seed can grow no road at all; the boot's search for the nearest road must then give up at
+# once rather than scan the whole search radius.
+func test_nearest_on_a_network_with_no_roads_gives_up_at_once() -> void:
+	var s := _settings()
+	s.roads_from_spawn = 0
+	var net := _world(s).net
+	assert_eq(net.edges.size(), 0)
+	var t := Time.get_ticks_msec()
+	assert_false(net.nearest(0.0, 0.0, 100000.0))
+	assert_lt(Time.get_ticks_msec() - t, 100)
+
+
 func test_nearest_finds_a_point_on_the_road() -> void:
 	var net := _world(_settings()).net
 	var p := _road_midpoint(net)
@@ -125,7 +163,8 @@ func test_a_lake_floor_lies_below_the_water() -> void:
 	var found := 0
 	for x in range(-2000, 2001, 50):
 		for y in range(-2000, 2001, 50):
-			if terrain.is_lake(x, y) and LabNoise.hyp(x, y) < terrain.coast_r(x, y) - 500.0:
+			var near_road := terrain.net.nearest(x, y, s.road_half_width_m + s.road_shoulder_m + s.lake_road_bank_m)
+			if terrain.is_lake(x, y) and not near_road and LabNoise.hyp(x, y) < terrain.coast_r(x, y) - 500.0:
 				assert_lt(terrain.height(x, y, PackedInt32Array(), false), s.water_level_m + 0.001)
 				found += 1
 	if found == 0:
@@ -139,6 +178,34 @@ func test_no_road_runs_through_water() -> void:
 		for i in range(0, pts.size(), 4):
 			assert_false(terrain.is_lake(pts[i].x, pts[i].y) and pts[i].length() > 900.0,
 				"road point %s sits in a lake" % pts[i])
+
+
+# Neither a lake nor the sea cuts into a road: across its whole width, every road stays above the
+# water, even where the water comes right up to it.
+func test_every_road_stays_above_the_water_edge_to_edge() -> void:
+	var s := _settings()
+	s.water_level_m = -1.0  # on this synthetic island, that brings lakes right up to some roads
+	var terrain := _world(s)
+	var edge := s.road_half_width_m + s.road_shoulder_m
+	var beside_lake := 0
+	for ei in terrain.net.edges.size():
+		var pts := terrain.net.polyline(ei)
+		for i in range(1, pts.size()):
+			var a: Vector2 = pts[i - 1]
+			var b: Vector2 = pts[i]
+			if a.is_equal_approx(b):
+				continue
+			var side := (b - a).normalized().orthogonal()
+			for t in [0.0, 0.5]:
+				for off in [-edge, 0.0, edge]:
+					var p: Vector2 = a.lerp(b, t) + side * off
+					if not terrain.on_land(p.x, p.y):
+						continue
+					beside_lake += int(terrain.is_lake(p.x, p.y))
+					assert_gt(terrain.height(p.x, p.y, PackedInt32Array(), false), s.water_level_m,
+						"road at %s is under the water" % p)
+	if beside_lake == 0:
+		pass_test("no lake reaches a road on this synthetic island; checked the roads stay dry anyway")
 
 
 func test_the_car_reads_road_on_the_road_and_none_far_from_it() -> void:
@@ -275,7 +342,7 @@ func test_the_ground_light_is_the_stage_terrains_light() -> void:
 
 
 # The light is baked into every chunk's vertex colours, so it varies with the slope; with the
-# terrain light off every vertex is just its ring's tint.
+# terrain light off every vertex is just its ring's tint (faded where two rings meet).
 func test_chunk_vertex_colours_carry_the_shading_and_are_flat_with_it_off() -> void:
 	var coords: Array[Vector2i] = [Vector2i(10, 0), Vector2i(0, 10), Vector2i(-10, 0), Vector2i(0, -10), Vector2i(7, 7), Vector2i(-7, -7)]
 	_with_light(1.0)
@@ -290,9 +357,13 @@ func test_chunk_vertex_colours_carry_the_shading_and_are_flat_with_it_off() -> v
 	_with_light(0.0)
 	var flat := _streamer(_settings())
 	var cm := flat.settings.chunk_m
+	var stride := flat.settings.far_stride_m
+	var n := int(cm / stride) + 1
 	for c in coords:
-		var tint := flat.ring_tint_at(Vector2((c.x + 0.5) * cm, (c.y + 0.5) * cm))
-		for col in _baked_colors(flat, c, false):
+		var cols := _baked_colors(flat, c, false)
+		for i in cols.size():
+			var col := cols[i]
+			var tint := flat.ring_tint_at(Vector2(c.x * cm + (i % n) * stride, c.y * cm + (i / n) * stride))
 			assert_almost_eq(col.r, tint.r, 1e-5)
 			assert_almost_eq(col.g, tint.g, 1e-5)
 			assert_almost_eq(col.b, tint.b, 1e-5)
@@ -868,7 +939,7 @@ func test_planting_heights_do_not_depend_on_the_neighbours_load_state() -> void:
 
 
 func _any_item(_i: int) -> Dictionary:
-	return {"kind": "rumour", "id": "test"}
+	return {"kind": "coin", "value": 1}
 
 
 # A refresh that reaches a chunk before its queued marker spawn has run, then the spawn itself,

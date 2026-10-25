@@ -54,7 +54,7 @@ var _vp: SubViewport
 var _roads: RoadLayer
 var _ground: TextureRect
 var _overlay: MarkerLayer
-var carried_label: Label
+var prompt_label: Label
 var _mat: ShaderMaterial
 var _inner := Rect2(0, 0, 1, 1)
 var _cells := {}  # Vector2i (CELL_M cell of the midpoint) -> PackedInt32Array of segment ids
@@ -112,10 +112,10 @@ func _ready() -> void:
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_overlay)
-	carried_label = UITheme.label("")
-	carried_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	carried_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(carried_label)
+	prompt_label = UITheme.label("")
+	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(prompt_label)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
 	if streamer != null:
@@ -142,9 +142,9 @@ func set_frame_size(s: Vector2) -> void:
 	if _mat != null:
 		_mat.set_shader_parameter("inner", Vector4(0.0, 0.0, _inner.size.x / s.x, _inner.size.y / s.y))
 		_mat.set_shader_parameter("shadow_uv", Vector2(SHADOW_PX / s.x, SHADOW_PX / s.y))
-	if carried_label != null:
-		carried_label.position = Vector2(0.0, s.y)
-		carried_label.size = Vector2(s.x, 0.0)
+	if prompt_label != null:
+		prompt_label.position = Vector2(0.0, s.y)
+		prompt_label.size = Vector2(s.x, 0.0)
 
 
 # --- the projection (the GDScript twin of mini_map.gdshader's `ground`) -------------------------
@@ -185,7 +185,7 @@ func set_view(xz: Vector2, fwd: Vector2) -> void:
 func _gui_input(event: InputEvent) -> void:
 	var tap: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
 		or (event is InputEventScreenTouch and event.pressed)
-	if tap and is_live():
+	if tap and is_live() and Config.data.minimap_enabled:
 		accept_event()
 		open_requested.emit()
 
@@ -199,7 +199,7 @@ func _unhandled_input(event: InputEvent) -> void:
 # Showing and taking input: never while the tree is paused (a menu, the rest-stop page, the
 # world pages — every free-roam overlay pauses), nor with the HUD switched off.
 func is_live() -> bool:
-	return Config.data.minimap_enabled and Config.data.hud_enabled and not get_tree().paused
+	return Config.data.hud_enabled and not get_tree().paused
 
 
 # --- roads -------------------------------------------------------------------------------------
@@ -314,7 +314,13 @@ func _process(delta: float) -> void:
 	visible = is_live()
 	if not visible or car == null:
 		return
-	update_carried_label()
+	update_prompt_label()
+	# With the minimap off only the prompt line shows; M / Back still open the full map.
+	_ground.visible = Config.data.minimap_enabled
+	_overlay.visible = Config.data.minimap_enabled
+	mouse_filter = Control.MOUSE_FILTER_STOP if Config.data.minimap_enabled else Control.MOUSE_FILTER_IGNORE
+	if not Config.data.minimap_enabled:
+		return
 	var f := -car.global_transform.basis.z
 	set_view(Vector2(car.global_position.x, car.global_position.z), Vector2(f.x, f.z))
 	_since_draw += delta
@@ -336,16 +342,11 @@ func _process(delta: float) -> void:
 	_overlay.queue_redraw()
 
 
-# The line under the frame: the action you can take here, then what you're carrying.
-func update_carried_label() -> void:
-	var lines: PackedStringArray = []
-	if rest_stops != null and rest_stops.prompt_site() >= 0:
-		lines.append("Enter / A: open rest stop")
-	var n := WorldSession.list("carried").size()
-	if n > 0:
-		lines.append("Carrying %d item%s" % [n, "" if n == 1 else "s"])
-	carried_label.visible = not lines.is_empty()
-	carried_label.text = UITheme.caps("\n".join(lines))
+# The line under the frame: the action you can take here.
+func update_prompt_label() -> void:
+	var at_stop := rest_stops != null and rest_stops.prompt_site() >= 0
+	prompt_label.visible = at_stop
+	prompt_label.text = UITheme.caps("Enter / A: open rest stop") if at_stop else ""
 
 
 # Which way the outer rings lie on screen: from the car, straight away from spawn (the world

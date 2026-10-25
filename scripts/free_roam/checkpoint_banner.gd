@@ -3,7 +3,7 @@ extends CanvasLayer
 # Docs: features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_free_roam_rest_stops.gd — extend in the same change.
 # Lighting a checkpoint for the first time: a Dark Souls style "Checkpoint reached" band across the
-# screen while the car drives on. Its biome's loot is revealed in the journal (no page of its own).
+# screen while the car drives on. Its biome's cars and parts go on sale at every checkpoint.
 
 const FADE_S := 0.6
 const HOLD_S := 3.0
@@ -68,10 +68,9 @@ func _banner_done() -> void:
 		_band = null
 
 
-# What there is to find out here goes in the journal, not a page: lighting a checkpoint reveals its
-# whole biome ring there.
+# Lighting a checkpoint puts its biome ring's stock on sale.
 func _reveal_ring(site: int) -> void:
 	if rest_stops == null or loot == null:
 		return
 	var ring := clampi(rest_stops.streamer.sites.ring[site], 0, rest_stops.streamer.settings.ring_count - 1)
-	loot.reveal(ring)
+	loot.unlock(ring)

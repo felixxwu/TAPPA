@@ -75,3 +75,5 @@ __pycache__/
 /tools/minimap_capture*.png.import
 /tools/cabin_capture_*.png
 /tools/cabin_capture_*.png.import
+/tools/biome_fade_capture_*.png
+/tools/biome_fade_capture_*.png.import

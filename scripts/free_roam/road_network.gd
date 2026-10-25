@@ -60,6 +60,7 @@ func build(settings: FreeRoamSettings, terrain: RoadTerrain) -> void:
 	_s = settings
 	_terrain = terrain
 	_grow()
+	_prune_dead_ends()
 	_densify()
 	node_degree.resize(node_x.size())
 	node_degree.fill(0)
@@ -133,6 +134,59 @@ func _grow() -> void:
 			heads_at.append(idx); heads_ang.append(ang)
 
 
+# The lab's growthPruned(): each dead end is followed back to its junction (or spawn) and the
+# whole spur cut if it is no longer than prune_dead_ends_m. Repeats until nothing is cut, so a
+# fork whose branches were all cut becomes a dead end itself.
+func _prune_dead_ends() -> void:
+	while true:
+		var adj: Array[PackedInt32Array] = []
+		adj.resize(node_x.size())
+		for k in edges.size():
+			adj[edges[k].x].append(k)
+			adj[edges[k].y].append(k)
+		var cut := {}
+		for i in range(1, node_x.size()):
+			if adj[i].size() != 1:
+				continue
+			var spur := PackedInt32Array()
+			var cur := i
+			var k := adj[i][0]
+			var length := 0.0
+			while true:
+				spur.append(k)
+				var nxt := edges[k].y if edges[k].x == cur else edges[k].x
+				length += LabNoise.hyp(node_x[nxt] - node_x[cur], node_y[nxt] - node_y[cur])
+				cur = nxt
+				if cur == 0 or adj[cur].size() != 2:
+					break
+				k = adj[cur][1] if adj[cur][0] == k else adj[cur][0]
+			if length <= _s.prune_dead_ends_m:
+				for j in spur:
+					cut[j] = true
+		if cut.is_empty():
+			return
+		var kept_edges: Array[Vector2i] = []
+		var used := {0: true}
+		for k in edges.size():
+			if not cut.has(k):
+				kept_edges.append(edges[k])
+				used[edges[k].x] = true
+				used[edges[k].y] = true
+		var new_index := {}
+		var xs := PackedFloat64Array()
+		var ys := PackedFloat64Array()
+		for i in node_x.size():
+			if used.has(i):
+				new_index[i] = xs.size()
+				xs.append(node_x[i])
+				ys.append(node_y[i])
+		node_x = xs
+		node_y = ys
+		edges.clear()
+		for e in kept_edges:
+			edges.append(Vector2i(new_index[e.x], new_index[e.y]))
+
+
 # The lab's wiggle(): each link as a seeded noise offset inside a band around its straight
 # line, landing exactly on both ends. Twistiness sets how far it swings, bend length how often.
 func _densify() -> void:
@@ -193,6 +247,8 @@ func junction_gap(ei: int, s: float) -> float:
 func nearest(x: float, y: float, max_d: float) -> bool:
 	hit_d = INF
 	_hit_si = -1
+	if _grid.is_empty():
+		return false
 	var gx := floori(x / GRID_M)
 	var gy := floori(y / GRID_M)
 	for r in ceili(max_d / GRID_M) + 1:

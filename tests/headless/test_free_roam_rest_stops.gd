@@ -237,11 +237,10 @@ func test_the_rest_stop_page_is_keyboard_and_gamepad_navigable() -> void:
 	assert_eq(cards.selected_index(), 1, "right walks the cards")
 	nav._unhandled_input(_press("menu_left"))
 	assert_eq(cards.selected_index(), 0, "and left walks back")
-	assert_true(_page.pick("travel"))
+	assert_true(_page.pick("garage"))
 	await get_tree().process_frame
 	await get_tree().process_frame
-	assert_eq(_page.view, RestStopPage.View.TRAVEL)
-	assert_gt(_page.cards().card_count(), 0, "the lit rest stop is offered")
+	assert_eq(_page.view, RestStopPage.View.GARAGE)
 	assert_eq(vp.gui_get_focus_owner(), _page.cards())
 	MenuNav.of(_page._page)._unhandled_input(_press("ui_cancel"))
 	await get_tree().process_frame
@@ -280,20 +279,6 @@ func test_the_pause_menu_opens_the_journal_and_back_returns_to_it() -> void:
 	pause.resume()
 
 
-func test_picking_a_travel_target_goes_there() -> void:
-	var site := _a_rest_stop()
-	_rest.lit_sites[site] = true
-	_page.open(0)
-	_page._show(RestStopPage.View.TRAVEL)
-	var idx := Array(_rest.travel_targets(0)).find(site)
-	assert_true(idx >= 0)
-	_page.cards().select(idx, false)
-	_page.cards()._confirm_selected()
-	_page.cards().skip_confirm_flash()
-	assert_false(_page.is_open())
-	assert_eq(_rest.last_site, site)
-
-
 # Travel after a parts change: the car moves first, so the save the reload makes holds the
 # destination (not the old stop), and the respawn point is the destination.
 func test_travel_after_a_parts_change_saves_the_destination() -> void:
@@ -308,7 +293,8 @@ func test_travel_after_a_parts_change_saves_the_destination() -> void:
 	_page.car_changed.connect(rec)
 	_page.open(0)
 	_page.dirty = true
-	_page._travel(site)
+	_rest.travel_to(site)  # what the map's Travel does, over the page
+	_page.return_from_map()
 	_page.car_changed.disconnect(rec)
 	_page.car_changed.connect(reload)
 	assert_eq(saved.size(), 1, "the changed car is reloaded")
@@ -367,19 +353,19 @@ func test_no_rest_stop_page_paints_an_opaque_backdrop() -> void:
 	_page.close()
 
 
-# Lighting a checkpoint shows the "Checkpoint reached" band and opens no page: what is out there to
-# find goes in the journal instead, which now has the checkpoint's whole biome ring.
-func test_lighting_a_checkpoint_shows_the_banner_and_reveals_its_ring_in_the_journal() -> void:
+# Lighting a checkpoint shows the "Checkpoint reached" band and opens no page, and puts its biome
+# ring's cars and parts on sale.
+func test_lighting_a_checkpoint_shows_the_banner_and_unlocks_its_ring_in_the_shop() -> void:
 	var site := _a_rest_stop()
 	var ring := clampi(_streamer.sites.ring[site], 0, _streamer.settings.ring_count - 1)
 	_rest.lit_sites.erase(site)
 	var revealed := WorldSession.list("revealed")
 	WorldSession.set_list("revealed", revealed.filter(func(r: Variant) -> bool: return int(r) != ring))
-	assert_false(_banner.loot.is_revealed(ring))
+	assert_false(_banner.loot.is_unlocked(ring))
 	await _park_on(site)
 	_rest.step(0.01)
 	assert_true(_banner.is_showing_banner())
-	assert_true(_banner.loot.is_revealed(ring), "the ring is in the journal")
+	assert_true(_banner.loot.is_unlocked(ring), "the ring's stock is on sale")
 	_banner._banner_done()
 	await get_tree().process_frame
 	await get_tree().process_frame

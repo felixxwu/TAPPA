@@ -24,11 +24,12 @@
 <body>
 <div id="side">
   <label>Seed</label>
-  <div class="row"><input id="seed" type="number" value="1"><button id="rnd">🎲</button></div>
+  <div class="row"><input id="seed" type="number" value="5687"><button id="rnd">🎲</button></div>
 
   <label>Algorithm</label>
   <select id="algo">
     <option value="growth">Radial growth (organic tree, forks)</option>
+    <option value="growthPruned" selected>Radial growth, dead ends pruned</option>
     <option value="ports">Chunk ports (local tiling)</option>
     <option value="colonize">Space colonisation (attractor-led)</option>
     <option value="tensor">Tensor field streamlines</option>
@@ -63,15 +64,15 @@ const $ = id => document.getElementById(id);
 
 const PARAMS = {
   common: [
-    ["radius", "Island radius (m)", 1000, 20000, 5000, 250],
-    ["ringCount", "Biome rings", 2, 8, 3, 1],
-    ["spacing", "Node min spacing (m)", 50, 1500, 75, 25],
-    ["restSpacing", "Rest stop every (m of road)", 50, 5000, 300, 100],
+    ["radius", "Island radius (m)", 1000, 20000, 10000, 250],
+    ["ringCount", "Biome rings", 2, 8, 4, 1],
+    ["spacing", "Node min spacing (m)", 50, 1500, 300, 25],
+    ["restSpacing", "Rest stop every (m of road)", 50, 5000, 1050, 100],
     ["baseScale", "Base height scale (m)", 500, 8000, 500, 100],
-    ["roadRelief", "Base height variation (m)", 0, 400, 15, 5],
-    ["waterLevel", "Water level (m)", -400, 400, -5, 5],
-    ["roadTwist", "Road twistiness (bend size)", 0, 1.5, 1, 0.01],
-    ["bendLen", "Bend length (m)", 30, 800, 200, 10],
+    ["roadRelief", "Base height variation (m)", 0, 400, 5, 5],
+    ["waterLevel", "Water level (m)", -20, 10, -2, 1],
+    ["roadTwist", "Road twistiness (bend size)", 0, 1.5, 0.24, 0.01],
+    ["bendLen", "Bend length (m)", 30, 800, 150, 10],
   ],
   ports: [
     ["cell", "Cell size (m)", 200, 1500, 500, 25],
@@ -95,20 +96,21 @@ const PARAMS = {
     ["maxLen", "Max road length (km)", 1, 20, 8, 0.5],
   ],
   growth: [
-    ["step", "Segment length (m)", 25, 1200, 175, 25],
-    ["fork", "Fork chance per step", 0, 0.8, 0.37, 0.01],
-    ["forkAngle", "Fork angle (deg)", 15, 180, 150, 1],
-    ["jitter", "Heading jitter (deg)", 0, 180, 120, 1],
-    ["outward", "Outward pull", 0, 1, 0.44, 0.01],
+    ["step", "Segment length (m)", 25, 1200, 750, 25],
+    ["fork", "Fork chance per step", 0, 0.8, 0.38, 0.01],
+    ["forkAngle", "Fork angle (deg)", 15, 180, 109, 1],
+    ["jitter", "Heading jitter (deg)", 0, 180, 39, 1],
+    ["outward", "Outward pull", 0, 1, 0.48, 0.01],
     ["loopChance", "Join-on-collide chance", 0, 1, 1, 0.01],
-    ["starts", "Roads leaving spawn", 1, 6, 3, 1],
+    ["starts", "Roads leaving spawn", 1, 6, 1, 1],
   ],
   mstloops: [["detour", "Add loop if detour ratio >", 1.1, 4, 2, 0.05]],
   detour: [["detour", "Prune if 2-hop ≤ ratio ×", 1.0, 3, 1.6, 0.05]],
   mst: [], rng: [], gabriel: [],
   terrain: [
     ["lakeDepth", "Lake depth factor", 0.2, 4, 1.6, 0.1],
-    ["shoreBand", "Shore band (m above water)", 1, 100, 1, 1],
+    ["shoreBand", "Shore band (m above water)", 1, 100, 5, 1],
+    ["lakeBank", "Bank from road to lake bed (m)", 0, 100, 12, 1],
     ["mountain", "Mountain height (m)", 0, 2500, 300, 10],
     ["flatW", "Flat band beside road (m)", 2, 200, 2, 2],
     ["mountainDist", "Distance to full mountain (m)", 100, 4000, 400, 25],
@@ -122,6 +124,7 @@ const PARAMS = {
     ["exag", "3D height exaggeration", 0.5, 4, 1, 0.1],
   ],
 };
+PARAMS.growthPruned = [...PARAMS.growth, ["pruneLen", "Prune dead ends up to (m)", 0, 5000, 1000, 25]];
 const state = {};
 
 function buildParams() {
@@ -318,6 +321,40 @@ function segInter(a, b, c, d) {
   if (Math.abs(den) < 1e-9) return null;
   const qx = c.x - a.x, qy = c.y - a.y, t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
   return t > 1e-6 && t <= 1 && u >= 0 && u <= 1 ? { t, u } : null;
+}
+
+// Radial growth, then dead-end spurs (a dead end back to its junction) no longer than pruneLen
+// are cut, repeatedly, so a fork whose branches all die out goes too.
+function growthPruned(rand, seed, R) {
+  let { nodes, edges } = growth(rand, seed, R);
+  for (;;) {
+    const adj = nodes.map(() => []);
+    edges.forEach((e, k) => { adj[e[0]].push(k); adj[e[1]].push(k); });
+    const cut = new Set();
+    for (let i = 1; i < nodes.length; i++) {
+      if (adj[i].length !== 1) continue;
+      const spur = [];
+      let cur = i, k = adj[i][0], len = 0;
+      for (;;) {
+        spur.push(k);
+        const nxt = edges[k][0] === cur ? edges[k][1] : edges[k][0];
+        len += dist(nodes[cur], nodes[nxt]);
+        cur = nxt;
+        if (cur === 0 || adj[cur].length !== 2) break;
+        k = adj[cur][0] === k ? adj[cur][1] : adj[cur][0];
+      }
+      if (len <= state.pruneLen) spur.forEach(j => cut.add(j));
+    }
+    if (!cut.size) break;
+    edges = edges.filter((_, k) => !cut.has(k));
+    const used = new Set([0]);
+    edges.forEach(e => { used.add(e[0]); used.add(e[1]); });
+    const remap = new Map(), kept = [];
+    nodes.forEach((p, i) => { if (used.has(i)) { remap.set(i, kept.length); kept.push(p); } });
+    nodes = kept;
+    edges = edges.map(e => [remap.get(e[0]), remap.get(e[1]), e[2]]);
+  }
+  return { nodes, edges };
 }
 
 // Merge runs of degree-2 nodes into single polyline edges, so step-by-step growth reads as roads.
@@ -548,7 +585,7 @@ function draw() {
   const seed = +$("seed").value, R = state.radius, algo = $("algo").value;
   const rand = mulberry32(seed * 7919 + 1);
   const t0 = performance.now();
-  const custom = { growth, ports, colonize, tensor }[algo];
+  const custom = { growth, growthPruned, ports, colonize, tensor }[algo];
   const net = custom ? custom(rand, seed, R) : graphAlgo(algo, rand, seed, R);
   last = { net, seed, R, ms: performance.now() - t0 };
   render();
@@ -715,9 +752,19 @@ function bumpAt(x, y, seed) {
   return (perlin(x / sc, y / sc, seed + 71) + perlin(x / sc * 2.03, y / sc * 2.03, seed + 73) * 0.5) * state.bumpHeight;
 }
 
+// The road's edge from its centreline: the game's road_half_width_m + road_shoulder_m.
+const ROAD_EDGE_M = 2.9;
+
 function heightAt(rg, p, seed) {
   const L = state.waterLevel, bp = baseH(p, seed);
-  if (isLake(p, seed)) return L - state.lakeDepth * (L - bp); // meets the shore at exactly L
+  if (isLake(p, seed)) {
+    const lake = L - state.lakeDepth * (L - bp); // meets the shore at exactly L
+    // a lake never cuts into a road: near one, its bed rises into a bank up to the road's level
+    const reach = ROAD_EDGE_M + state.lakeBank, near = nearestRoad(rg, p, reach);
+    if (!near) return lake;
+    const bq = bumpAt(near.q.x, near.q.y, seed), road = Math.max(baseH(near.q, seed), L + 3 - bq) + bq;
+    return road + (lake - road) * smooth(ROAD_EDGE_M, reach, near.d);
+  }
   // mountains flatten out toward a shore, so lakes get gentle banks rather than walls
   const shore = $("water").checked ? smooth(0, state.shoreBand, bp - L) : 1;
   const ridged = 1 - Math.abs(2 * fbm(p.x / 1200 + 11, p.y / 1200 + 11, seed + 43) - 1);
@@ -725,11 +772,12 @@ function heightAt(rg, p, seed) {
   const hit = nearestRoad(rg, p, state.mountainDist); // beyond this the mountain is at full height anyway
   if (!hit) return bp + mtn + bumpAt(p.x, p.y, seed) * shore;
   const far = smooth(state.flatW, state.mountainDist, hit.d);
-  const hq = Math.max(baseH(hit.q, seed), L + 3), base = hq + (bp - hq) * far;
+  // the road takes the bumps at its own centre, so it rolls along its length but stays level across;
+  // the ground under it is kept high enough that the road stays 3 m above the water
+  const bq = bumpAt(hit.q.x, hit.q.y, seed);
+  const hq = Math.max(baseH(hit.q, seed), L + 3 - bq), base = hq + (bp - hq) * far;
   const k = (fbm(hit.s / 400 + hit.ei * 13.7, hit.side * 5 + 100, seed + 57) - 0.5) * 2 * state.bank;
   const rib = k * smooth(state.flatW * 0.5, state.ribbonW * 0.5, hit.d) * (1 - smooth(state.ribbonW * 0.5, state.ribbonW, hit.d));
-  // the road takes the bumps at its own centre, so it rolls along its length but stays level across
-  const bq = bumpAt(hit.q.x, hit.q.y, seed);
   const bump = bq + (bumpAt(p.x, p.y, seed) * shore - bq) * smooth(state.flatW * 0.5, state.flatW * 0.5 + 30, hit.d);
   return base + mtn * far + rib * shore + bump;
 }

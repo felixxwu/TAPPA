@@ -17,7 +17,9 @@ extends Node
 #   max_ring       — the furthest biome ring reached (the map shows the borders crossed)
 #   drive_time     — seconds driven (the weather timeline runs on it)
 #   seen           — site ids (rest stops, loot slots, dead ends) the car has come near, for the minimap / map
-#   carried / stash / dropped / collected / revealed / revealed_items — the loot keys (stage 7)
+#   money          — coins picked up and not yet spent (all lost when the car gives up)
+#   dropped        — the money left at the last wreck and where, until driven back to (or lost)
+#   stash / collected / revealed — bought parts not fitted, coin spots taken, rings whose stock is on sale
 #
 # No world yet (a fresh profile) means has_world() is false; the title screen offers New World.
 
@@ -63,12 +65,11 @@ func new_world(world_seed: int, starter_model_id: String) -> void:
 		"max_ring": 0,
 		"drive_time": 0.0,
 		"seen": [0],
-		"carried": [],
-		"stash": [],
+		"money": 0,
 		"dropped": {},
+		"stash": [],
 		"collected": [],
 		"revealed": [],
-		"revealed_items": [],
 	}
 	_touch()
 	world_changed.emit()
@@ -238,7 +239,7 @@ func see(site: int) -> bool:
 	return true
 
 
-# --- loot (stage 7 reads and writes these) ---------------------------------------------------------
+# --- the coin economy (LootDirector reads and writes these) ----------------------------------------
 
 func list(key: String) -> Array:
 	return _world().get(key, [])
@@ -250,6 +251,7 @@ func set_list(key: String, value: Array) -> void:
 		_touch()
 
 
+# The money left at the last wreck, {"pos": [x, y, z], "money": n}, or {}.
 func dropped() -> Dictionary:
 	return _world().get("dropped", {})
 
@@ -257,4 +259,14 @@ func dropped() -> Dictionary:
 func set_dropped(d: Dictionary) -> void:
 	if has_world():
 		_world()["dropped"] = d
+		_touch()
+
+
+func money() -> int:
+	return int(_world().get("money", 0))
+
+
+func set_money(value: int) -> void:
+	if has_world():
+		_world()["money"] = value
 		_touch()

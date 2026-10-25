@@ -2,31 +2,26 @@ class_name LootRules
 extends RefCounted
 # Docs: features/loot.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
-# What can be found in the free-roam world, and where (todo/2026-10-19-free-roam-pivot.md,
-# decisions 13–18). Pure and seeded: the same world seed and catalogue always place the same loot.
+# What the free-roam shops sell, and what it costs (todo/2026-10-19-free-roam-pivot.md, decision 3
+# and the coin economy). Pure: the same catalogue always gives the same stock.
 #
 # An ITEM is a small dict:
-#   {"kind": "car",    "id": <CarLibrary id>}                         — a car title
+#   {"kind": "car",    "id": <CarLibrary id>}                         — a car
 #   {"kind": "part",   "id": <BoostLibrary id>, "level": <int>}       — a part (a former boost)
 #   {"kind": "part",   "id": "engine_swap:<EngineLibrary id>"}         — an engine
 #   {"kind": "part",   "id": "drivetrain:<Drivetrain.DriveMode int>"}  — a drivetrain kit
-#   {"kind": "rumour", "ring": <int>, "of": <item_key>}                — reveals ONE item of that ring
 #
 # THE PACING SPLIT (decision 3: cars and parts should run out with the biomes): every car, swap-tier
-# engine and boost part names its own biome `ring` in its library entry, and drivetrain kits in
-# KIT_RINGS. Ring r holds those, boost parts at level r, and one rumour for each item of ring r + 1
-# (none in the last ring): each rumour reveals just that one item. Ring 0's cars are the starter
-# choice.
+# engine and boost part names its own biome `ring` and `price` in its library entry, and drivetrain
+# kits in KITS. A ring's stock goes on sale once a checkpoint in it is lit. Ring 0's cars are the
+# starter choice.
 # Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
 # swapped_engine and drivetrain_override, which UpgradeLibrary / Car.apply_owned already read
 # (decision 51 — no parallel modifier path).
 
 static func item_key(item: Dictionary) -> String:
-	match String(item.get("kind", "")):
-		"rumour":
-			return "rumour:%d:%s" % [int(item.get("ring", 0)), String(item.get("of", ""))]
-		"part":
-			return "part:%s:%d" % [String(item["id"]), int(item.get("level", 0))]
+	if String(item.get("kind", "")) == "part":
+		return "part:%s:%d" % [String(item["id"]), int(item.get("level", 0))]
 	return "%s:%s" % [String(item.get("kind", "")), String(item.get("id", ""))]
 
 
@@ -38,7 +33,11 @@ static func is_drivetrain(item: Dictionary) -> bool:
 	return String(item.get("id", "")).begins_with("drivetrain:")
 
 
-const KIT_RINGS := {Drivetrain.DriveMode.RWD: 1, Drivetrain.DriveMode.AWD: 2, Drivetrain.DriveMode.FWD: 3}
+const KITS := {
+	Drivetrain.DriveMode.RWD: {"ring": 1, "price": 2500},
+	Drivetrain.DriveMode.AWD: {"ring": 2, "price": 5000},
+	Drivetrain.DriveMode.FWD: {"ring": 3, "price": 3000},
+}
 
 
 static func starter_cars() -> PackedStringArray:
@@ -49,7 +48,7 @@ static func starter_cars() -> PackedStringArray:
 	return out
 
 
-# The loot table for every ring, index = ring. A ring past ring_count folds into the last.
+# What every ring sells, index = ring. A ring past ring_count folds into the last.
 static func ring_tables(ring_count: int) -> Array:
 	var tables: Array = []
 	for r in ring_count:
@@ -65,45 +64,26 @@ static func ring_tables(ring_count: int) -> Array:
 	for e: Dictionary in EngineLibrary.all():
 		if bool(e.get("swap_tier", false)):
 			tables[mini(int(e.get("ring", 0)), last)].append({"kind": "part", "id": "engine_swap:%s" % String(e["id"])})
-	for mode in KIT_RINGS:
-		tables[mini(int(KIT_RINGS[mode]), last)].append({"kind": "part", "id": "drivetrain:%d" % int(mode)})
-	for r in last:
-		for target: Dictionary in tables[r + 1]:
-			if String(target["kind"]) != "rumour":
-				tables[r].append({"kind": "rumour", "ring": r + 1, "of": item_key(target)})
+	for mode in KITS:
+		tables[mini(int(KITS[mode]["ring"]), last)].append({"kind": "part", "id": "drivetrain:%d" % int(mode)})
 	return tables
 
 
-# How much an item is worth putting at the end of a dead end: cars, then engines, then drivetrain
-# kits, then ordinary parts, then rumours (there is one per item of the next ring, so they come last
-# or they'd crowd the real loot out of the dead ends). Dead ends are offered the best first
-# (decision 30).
-static func _rank(item: Dictionary) -> int:
-	if String(item["kind"]) == "car":
-		return 0
+# What `item` costs in a shop, from its catalogue entry.
+static func price(item: Dictionary) -> int:
+	var id := String(item.get("id", ""))
+	if String(item.get("kind", "")) == "car":
+		return int(CarLibrary.by_id(id).get("price", 0))
 	if is_engine(item):
-		return 1
+		return int(EngineLibrary.by_id(id.substr("engine_swap:".length())).get("price", 0))
 	if is_drivetrain(item):
-		return 2
-	if String(item["kind"]) == "rumour":
-		return 4
-	return 3
+		return int(KITS.get(int(id.substr("drivetrain:".length())), {}).get("price", 0))
+	return int(BoostLibrary.CATALOGUE.get(id, {}).get("price", 0))
 
 
-# --- the pool: which site shows what, right now ----------------------------------------------------
-#
-# Every car and part exists ONCE (decision 17, tightened): it is in the pool until the player has it
-# (owned, fitted, in the stash, carried, or lying in the dropped pile) — then it is gone from every
-# site at once. A ring's sites show its remaining pool: dead ends first with the best items, then
-# loot slots, in a seeded order; with more sites than items each item shows at several sites (all
-# of them empty out together when it's taken). A site the player has emptied is SPENT: nothing
-# ever shows there again. A ring with more items than free sites keeps its best and moves the rest
-# to the nearest ring with sites to spare (if no ring has any, those items show nowhere — the world
-# has more things left than free sites; loot_slot_spacing_m keeps sites plentiful),
-# and a ring with no loot sites at all (the road network never reached it) folds its table into
-# the nearest ring that has some.
-
-# For each ring, the rings whose tables its sites carry. `site_counts[r]` = loot sites in ring r.
+# For each ring, the rings whose stock its checkpoints sell. `site_counts[r]` = rest stops in ring r:
+# a ring the road network gave no rest stop folds into the nearest ring that has one, or its stock
+# could never go on sale.
 static func pool_rings(site_counts: PackedInt32Array) -> Array:
 	var n := site_counts.size()
 	var out: Array = []
@@ -120,130 +100,9 @@ static func pool_rings(site_counts: PackedInt32Array) -> Array:
 	return out
 
 
-# The remaining pool of `table`: the items whose item_key is not in `taken`, best first.
-static func remaining(table: Array, taken: Dictionary) -> Array:
-	var out: Array = []
-	for item: Dictionary in table:
-		if not taken.has(item_key(item)):
-			out.append(item)
-	return _best_first(out)
-
-
-# `items` ordered by _rank, keeping their order within a rank.
-static func _best_first(items: Array) -> Array:
-	var ranked := items.duplicate()
-	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		var ra := _rank(a)
-		var rb := _rank(b)
-		return ra < rb or (ra == rb and items.find(a) < items.find(b)))
-	return ranked
-
-
-# What every loot site shows now: {site: item}. `used` is the spent (emptied) sites. Once every item
-# shows somewhere, the spare sites go to anything but a car, so each part shows at about
-# `item_weight` times as many sites as a car, and each rumour `rumour_weight` times as many again.
-static func assign(sites: RoadSites, ring_count: int, world_seed: int, taken: Dictionary, used: Array,
-		item_weight := 1, rumour_weight := 1) -> Dictionary:
-	var tables := ring_tables(ring_count)
-	var order: Array = []  # per ring: its loot sites, dead ends first, each group seeded
-	var counts := PackedInt32Array()
-	counts.resize(ring_count)
-	var dead: Array = []
-	var slots: Array = []
-	for r in ring_count:
-		dead.append([])
-		slots.append([])
-	for i in sites.count():
-		if sites.kind[i] == RoadSites.Kind.REST:
-			continue
-		var r := clampi(sites.ring[i], 0, ring_count - 1)
-		(dead[r] if sites.kind[i] == RoadSites.Kind.DEAD_END else slots[r]).append(i)
-		counts[r] += 1
-	for r in ring_count:
-		order.append(_shuffled(dead[r], world_seed, r * 2 + 1) + _shuffled(slots[r], world_seed, r * 2 + 2))
-	var used_ids: Array = []
-	for u in used:
-		used_ids.append(int(u))
-	var hosts := pool_rings(counts)
-	# Each ring's free sites (never emptied) and its remaining pool, best first.
-	var free: Array = []
-	var pools: Array = []
-	for r in ring_count:
-		var f: Array = []
-		for site: int in order[r]:
-			if not used_ids.has(site):
-				f.append(site)
-		free.append(f)
-		var table: Array = []
-		for t: int in hosts[r]:
-			table.append_array(tables[t])
-		pools.append(remaining(table, taken))
-	# A ring with more items than free sites keeps its best ones and moves the rest to the nearest
-	# ring with sites to spare (inward first), so nothing is ever stuck with nowhere to show.
-	var overflow: Array = []  # [item, from ring, order]
-	for r in ring_count:
-		var pool: Array = pools[r]
-		var spill: Array = []
-		while pool.size() > (free[r] as Array).size():
-			spill.push_front(pool.pop_back())  # best first within the ring
-		for item: Dictionary in spill:
-			overflow.append([item, r, overflow.size()])
-	# Host the overflow best-first across rings, so scarce spare sites show the best of what spilled.
-	overflow.sort_custom(func(a: Array, b: Array) -> bool:
-		var ra := _rank(a[0])
-		var rb := _rank(b[0])
-		return ra < rb or (ra == rb and int(a[2]) < int(b[2])))
-	for o: Array in overflow:
-		var host := -1
-		for d in range(1, ring_count):
-			for c in [int(o[1]) - d, int(o[1]) + d]:
-				if host < 0 and c >= 0 and c < ring_count and (free[c] as Array).size() > (pools[c] as Array).size():
-					host = c
-		if host >= 0:
-			(pools[host] as Array).append(o[0])
-	# Hosted items join the end of their host's pool; re-rank so dead ends still show the best.
-	for r in ring_count:
-		pools[r] = _best_first(pools[r])
-	var out := {}
-	for r in ring_count:
-		var pool: Array = pools[r]
-		if pool.is_empty():
-			continue
-		var cycle := weighted_cycle(pool, item_weight, rumour_weight)
-		var j := 0
-		for site: int in free[r]:
-			out[site] = cycle[j % cycle.size()]
-			j += 1
-	return out
-
-
-# The order a ring's free sites take items from `pool` in, repeating: every item once, then more
-# rounds until each car has shown once, each part / engine / kit `item_weight` times and each rumour
-# `item_weight * rumour_weight` times. Rumours stop counting once they run out (they leave the pool).
-static func weighted_cycle(pool: Array, item_weight: int, rumour_weight := 1) -> Array:
-	var weight := func(item: Dictionary) -> int:
-		match String(item["kind"]):
-			"car":
-				return 1
-			"rumour":
-				return item_weight * rumour_weight
-		return item_weight
-	var cycle := pool.duplicate()
-	for w in range(1, item_weight * maxi(rumour_weight, 1)):
-		cycle.append_array(pool.filter(func(item: Dictionary) -> bool: return weight.call(item) > w))
-	return cycle
-
-
-static func _shuffled(ids: Array, world_seed: int, salt: int) -> Array:
-	var a := ids.duplicate()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(Vector2i(world_seed, salt))
-	for i in range(a.size() - 1, 0, -1):
-		var j := rng.randi_range(0, i)
-		var t = a[i]
-		a[i] = a[j]
-		a[j] = t
-	return a
+# The coins a coin spot in `ring` is worth.
+static func coin_value(settings: FreeRoamSettings, ring: int) -> int:
+	return settings.coin_value + settings.coin_value_per_ring * maxi(ring, 0)
 
 
 # --- parts on a car -------------------------------------------------------------------------------
@@ -304,8 +163,6 @@ static func label(item: Dictionary) -> String:
 	match String(item.get("kind", "")):
 		"car":
 			return "Car: %s" % String(CarLibrary.by_id(String(item["id"])).get("name", item["id"]))
-		"rumour":
-			return "Rumour of something in the next biome"
 	var id := String(item.get("id", ""))
 	if is_engine(item):
 		return "Engine: %s" % String(EngineLibrary.by_id(id.substr("engine_swap:".length())).get("name", id))
@@ -320,8 +177,6 @@ static func icon(item: Dictionary) -> String:
 	match String(item.get("kind", "")):
 		"car":
 			return "car"
-		"rumour":
-			return "rumour"
 	if is_engine(item):
 		return "engine_swap"
 	if is_drivetrain(item):
@@ -335,27 +190,9 @@ static func card_text(item: Dictionary) -> PackedStringArray:
 	match String(item.get("kind", "")):
 		"car":
 			return PackedStringArray([String(CarLibrary.by_id(id).get("name", id)), "Car"])
-		"rumour":
-			return PackedStringArray(["Rumour", "Of the next biome"])
 	if is_engine(item):
 		return PackedStringArray([String(EngineLibrary.by_id(id.substr("engine_swap:".length())).get("name", id)), "Engine"])
 	if is_drivetrain(item):
 		var mode := int(id.substr("drivetrain:".length()))
 		return PackedStringArray([CarLibrary.drive_text(mode) + " kit", "Drivetrain conversion"])
 	return PackedStringArray([BoostLibrary.label_for(id), "Level %d" % (int(item.get("level", 0)) + 1)])
-
-
-# An item's colour on the ground, its beam and the minimap: gold a car title, orange an engine,
-# green a drivetrain kit, cyan a part, white a rumour.
-static func colour(item: Dictionary) -> Color:
-	match String(item.get("kind", "")):
-		"car":
-			return Color(1.0, 0.8, 0.2)
-		"rumour":
-			return Color(0.95, 0.95, 0.95)
-	if is_engine(item):
-		return Color(1.0, 0.45, 0.15)
-	if is_drivetrain(item):
-		return Color(0.4, 1.0, 0.45)
-	return Color(0.3, 0.85, 1.0)
-

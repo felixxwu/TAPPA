@@ -2,34 +2,33 @@ class_name LootDirector
 extends Node
 # Docs: features/loot.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
-# Loot as gameplay (todo/2026-10-19-free-roam-pivot.md decisions 10–18). What each loot slot and
-# dead end shows comes from the POOL (LootRules.assign): every car and part exists once, and is
-# gone from every site the moment the player has it. `placement` is the current {site: item},
-# recomputed whenever what the player holds changes (`pool_changed`). This node:
-#   * COLLECTS what the car drives near: it joins `carried`, which is not yours yet (decision 10).
-#     A rumour is read on the spot: it reveals ONE item of the next ring in the journal (decision 18).
-#   * BANKS carried loot the moment the car reaches a checkpoint (bank_at_checkpoint): parts go to
-#     the shared stash, car titles join the garage (Save.grant_car).
-#   * DROPS carried loot at the wreck when the car gives up (decision 11). Driving back picks it up;
-#     giving up again first loses it: the new drop replaces it, and what it held goes back into
-#     the pool to be found again.
-# All state lives in the world session (WorldSession: carried, stash, dropped, collected, revealed,
-# revealed_items).
+# The coin economy in the world: every loot slot and dead end holds a coin until the car drives past
+# it, and coins are money to spend at checkpoints. Money is only safe once it's spent: when the car
+# gives up, all of it is dropped at the wreck (under a floating crystal) and every coin comes back.
+# Driving back to the wreck picks the money up again; giving up again first loses it for good.
+# A biome ring's stock goes on sale once one of its checkpoints is lit (`unlock`).
+# All state lives in the world session (WorldSession: money, collected, stash — the parts bought —
+# and revealed).
 
-signal collected(item: Dictionary)
-signal recovered(items: Array)
-# What the sites show may have changed (something was picked up, dropped or lost).
-signal pool_changed
+signal collected(site: int, value: int)
+signal recovered(value: int)
 
 const DROPPED_REACH_M := 6.0
+const DROP_CRYSTAL := preload("res://shaders/crystal.gdshader")
+# Which coins show may have changed (one was picked up, or they all came back).
+signal pool_changed
 
 @export var streamer: TerrainStreamer
 @export var car: Node3D
 
-var placement := {}  # site -> item, as the sites show it now
 var _last_p := Vector2(INF, INF)  # the car's position last step, for the swept pickup check
+var _spent := {}  # collected sites, as a set
+# What the last wreck dropped, for the wreck page.
+var lost := 0
 var _dropped_node: Node3D
+var _wrecked := false  # from giving up until the respawn
 var _toast: Label
+var money_label: Label  # the counter in the top-left corner while driving
 var _toast_t := 0.0
 
 
@@ -39,8 +38,9 @@ func _ready() -> void:
 	streamer.loot_query = loot_at
 	if WorldSession.list("revealed").is_empty():
 		WorldSession.set_list("revealed", [0])
-	_reassign()
-	print("free roam: loot ", pacing_report())
+	_sync_spent()
+	if car != null and car.get("damage") != null:
+		(car.damage as DamageModel).gave_up.connect(wreck)
 	var layer := CanvasLayer.new()
 	layer.layer = 3
 	add_child(layer)
@@ -56,68 +56,31 @@ func _ready() -> void:
 	_toast.visible = false
 	layer.add_child(_toast)
 	_sync_dropped_node()
+	money_label = UITheme.label("")
+	money_label.name = "MoneyLabel"
+	money_label.position = Vector2(UITheme.px(12), UITheme.px(8))
+	money_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# On the HUD's layer, so it hides under paused pages with the gauges (features/hud.md).
+	var hud := get_parent().get_node_or_null("HUD")
+	(hud if hud != null else layer).add_child(money_label)
 
 
-# Per ring: how many loot sites it has, how many items its table holds, how many are still to
-# find, and how many sites show something now — the numbers the pacing pass (decision 3) balances.
-func pacing_report() -> Array:
-	var tables := LootRules.ring_tables(streamer.settings.ring_count)
-	var taken := taken_keys()
-	var out: Array = []
-	for r in streamer.settings.ring_count:
-		var site_count := 0
-		var showing := 0
-		for i in streamer.sites.count():
-			if streamer.sites.kind[i] != RoadSites.Kind.REST and streamer.sites.ring[i] == r:
-				site_count += 1
-				showing += int(placement.has(i))
-		out.append({"ring": r, "sites": site_count, "items": (tables[r] as Array).size(),
-			"left": LootRules.remaining(tables[r], taken).size(), "showing": showing})
-	return out
-
-
-# The item lying at `site` now, or {} when it shows nothing.
+# The coin at `site` now ({"kind": "coin", "value": n}), or {} when it's been taken or isn't a coin spot.
 func loot_at(site: int) -> Dictionary:
-	return placement.get(site, {})
+	if site < 0 or site >= streamer.sites.count() or streamer.sites.kind[site] == RoadSites.Kind.REST \
+			or _spent.has(site):
+		return {}
+	return {"kind": "coin", "value": LootRules.coin_value(streamer.settings, streamer.sites.ring[site])}
 
 
-# Whether the player emptied `site` (it may still fill again — see LootRules.assign).
 func is_collected(site: int) -> bool:
+	return _spent.has(site)
+
+
+func _sync_spent() -> void:
+	_spent.clear()
 	for s in WorldSession.list("collected"):
-		if int(s) == site:
-			return true
-	return false
-
-
-# The item_key of everything the player has: owned cars, fitted parts, the stash, what's carried,
-# what's lying in the dropped pile, and every rumour with nothing left to tell (its item is already
-# revealed, its whole ring is, or the player already has the item). None of it is in the pool any
-# more.
-func taken_keys() -> Dictionary:
-	var out := {}
-	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
-		out[LootRules.item_key({"kind": "car", "id": String(c.get("model_id", ""))})] = true
-		for p: Dictionary in c.get("parts", []):
-			out[LootRules.item_key(p)] = true
-	var held: Array = WorldSession.list("stash") + WorldSession.list("carried")
-	held.append_array(WorldSession.dropped().get("items", []))
-	for item: Dictionary in held:
-		out[LootRules.item_key(item)] = true
-	for table: Array in LootRules.ring_tables(streamer.settings.ring_count):
-		for item: Dictionary in table:
-			if String(item["kind"]) != "rumour":
-				continue
-			var of := String(item["of"])
-			if out.has(of) or is_item_revealed(of) or is_revealed(int(item["ring"])):
-				out[LootRules.item_key(item)] = true
-	return out
-
-
-# Recompute what every site shows, and tell whoever draws them.
-func _reassign() -> void:
-	placement = LootRules.assign(streamer.sites, streamer.settings.ring_count, streamer.settings.world_seed,
-		taken_keys(), WorldSession.list("collected"), streamer.settings.loot_item_weight,
-		streamer.settings.loot_rumour_weight)
+		_spent[int(s)] = true
 	streamer.refresh_loot_markers()
 	pool_changed.emit()
 
@@ -126,27 +89,29 @@ func _physics_process(delta: float) -> void:
 	if car == null or streamer == null:
 		return
 	step()
+	money_label.text = "$%d" % WorldSession.money()
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		if _toast_t <= 0.0:
 			_toast.visible = false
 
 
-# Pick up what the car drives past — no need to stop, or even to leave the road: anywhere on the
-# road around a loot spot counts (RoadSites.reached, swept over this step's travel).
+# Pick up the coins the car drives past — anywhere on the road around one counts
+# (RoadSites.reached, swept over this step's travel). A wrecked car collects nothing.
 func step() -> void:
 	var p := Vector2(car.global_position.x, car.global_position.z)
 	var from := _last_p if _last_p.distance_to(p) < 100.0 else p  # a teleport isn't a drive past
 	_last_p = p
+	if _wrecked:
+		return
+	var d := WorldSession.dropped()
+	var at: Array = d.get("pos", [])
+	if at.size() >= 3 and int(d.get("money", 0)) > 0 and p.distance_to(Vector2(float(at[0]), float(at[2]))) <= DROPPED_REACH_M:
+		recover_dropped()
 	var i := streamer.sites.reached(from, p, RoadSites.road_margin(streamer.settings),
-		func(site: int) -> bool: return placement.has(site))
+		func(site: int) -> bool: return not loot_at(site).is_empty())
 	if i >= 0:
 		collect(i)
-	var d := WorldSession.dropped()
-	if not d.is_empty():
-		var at: Array = d.get("pos", [])
-		if at.size() >= 3 and p.distance_to(Vector2(float(at[0]), float(at[2]))) <= DROPPED_REACH_M:
-			recover_dropped()
 
 
 # The car was teleported (respawn, travel, R reset) to `p`: the next step must not sweep from where
@@ -155,124 +120,175 @@ func car_teleported(p: Vector2) -> void:
 	_last_p = p
 
 
+func respawned(_site: int, _wreck: Vector3) -> void:
+	_wrecked = false
+
+
 func collect(site: int) -> void:
-	var item: Dictionary = placement[site]
+	var value := int(loot_at(site).get("value", 0))
 	var col := WorldSession.list("collected")
-	col.erase(site)
-	col.erase(float(site))
-	col.append(site)  # emptied sites stay in order, oldest first
+	col.append(site)
 	WorldSession.set_list("collected", col)
-	if String(item["kind"]) == "rumour":
-		reveal_item(String(item["of"]))
-		_say("Rumour: something in the %s. See your journal" % _ring_name(int(item["ring"])))
-	else:
-		var carried := WorldSession.list("carried")
-		var held := item.duplicate()
-		held["site"] = site
-		carried.append(held)
-		WorldSession.set_list("carried", carried)
-		_say("Found %s. Bank it at a checkpoint" % LootRules.label(item))
-	_reassign()
-	collected.emit(item)
+	_spent[site] = true
+	WorldSession.set_money(WorldSession.money() + value)
+	streamer.refresh_loot_markers()
+	_say("+$%d" % value)
+	collected.emit(site, value)
 
 
-func reveal(ring: int) -> void:
+# The car gave up: its money is left at the wreck, replacing (and losing) any earlier drop, and every
+# coin comes back.
+func wreck() -> void:
+	_wrecked = true
+	lost = WorldSession.money()
+	var p := car.global_position
+	WorldSession.set_dropped({"pos": [p.x, p.y, p.z], "money": lost} if lost > 0 else {})
+	WorldSession.set_money(0)
+	WorldSession.set_list("collected", [])
+	_sync_spent()
+	_sync_dropped_node()
+
+
+func recover_dropped() -> void:
+	var value := int(WorldSession.dropped().get("money", 0))
+	WorldSession.set_dropped({})
+	WorldSession.set_money(WorldSession.money() + value)
+	_sync_dropped_node()
+	_say("Recovered $%d" % value)
+	recovered.emit(value)
+
+
+# The crystal floating over the dropped money, so it can be found again.
+func _sync_dropped_node() -> void:
+	if is_instance_valid(_dropped_node):
+		_dropped_node.queue_free()
+		_dropped_node = null
+	var at: Array = WorldSession.dropped().get("pos", [])
+	if at.size() < 3 or int(WorldSession.dropped().get("money", 0)) <= 0:
+		return
+	var mat := ShaderMaterial.new()
+	mat.shader = DROP_CRYSTAL
+	mat.set_shader_parameter("color", Color(1.0, 0.8, 0.2))
+	var root := Node3D.new()
+	root.name = "DroppedMoney"
+	for up in [1.0, -1.0]:
+		var half := CylinderMesh.new()  # a 4-sided cone: one half of the crystal
+		half.top_radius = 0.0 if up > 0.0 else 0.3
+		half.bottom_radius = 0.3 if up > 0.0 else 0.0
+		half.height = 0.9 if up > 0.0 else 0.6
+		half.radial_segments = 4
+		half.rings = 1
+		half.cap_top = false
+		half.cap_bottom = false
+		half.material = mat
+		var mi := MeshInstance3D.new()
+		mi.mesh = half
+		mi.position.y = 1.4 + up * half.height * 0.5
+		root.add_child(mi)
+	add_child(root)
+	root.global_position = Vector3(float(at[0]), float(at[1]), float(at[2]))
+	_dropped_node = root
+
+
+# Lighting a checkpoint in `ring` puts the ring's stock on sale.
+func unlock(ring: int) -> void:
 	var revealed := WorldSession.list("revealed")
 	if not revealed.has(ring) and not revealed.has(float(ring)):
 		revealed.append(ring)
 		WorldSession.set_list("revealed", revealed)
 
 
-# A rumour was read: the item with this item_key shows in the journal.
-func reveal_item(key: String) -> void:
-	var known := WorldSession.list("revealed_items")
-	if not known.has(key):
-		known.append(key)
-		WorldSession.set_list("revealed_items", known)
-
-
-func is_item_revealed(key: String) -> bool:
-	return WorldSession.list("revealed_items").has(key)
-
-
-# Whether a whole ring is known (ring 0 from the start; every ring with the dev action).
-func is_revealed(ring: int) -> bool:
+func is_unlocked(ring: int) -> bool:
 	for r in WorldSession.list("revealed"):
 		if int(r) == ring:
 			return true
 	return false
 
 
-# Move everything carried into the stash (parts) or the garage (car titles). Returns the items.
-func bank() -> Array:
-	var carried := WorldSession.list("carried")
-	if carried.is_empty():
-		return []
+# The item_key of everything the player has: owned cars, every car's fitted parts and the stash.
+func owned_keys() -> Dictionary:
+	var out := {}
+	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
+		out[LootRules.item_key({"kind": "car", "id": String(c.get("model_id", ""))})] = true
+		for p: Dictionary in c.get("parts", []):
+			out[LootRules.item_key(p)] = true
+	for item: Dictionary in WorldSession.list("stash"):
+		out[LootRules.item_key(item)] = true
+	return out
+
+
+# Every part the player owns, once each: bought parts (`stash`) and any fitted on a car. Owning a
+# part lets every car fit it.
+func owned_parts() -> Array:
+	var seen := {}
+	var out: Array = []
+	var all: Array = WorldSession.list("stash").duplicate()
+	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
+		all.append_array(c.get("parts", []))
+	for p: Dictionary in all:
+		var key := LootRules.item_key(p)
+		if not seen.has(key):
+			seen[key] = true
+			out.append(p)
+	return out
+
+
+# Make sure `part` stays owned once no car has it fitted (it was taken off the last one).
+func keep(part: Dictionary) -> void:
 	var stash := WorldSession.list("stash")
-	for item: Dictionary in carried:
-		if String(item["kind"]) == "car":
-			Save.grant_car(String(item["id"]))
-		else:
-			var part := item.duplicate()
-			part.erase("site")
-			stash.append(part)
+	for p: Dictionary in stash:
+		if LootRules.item_key(p) == LootRules.item_key(part):
+			return
+	stash.append(part)
 	WorldSession.set_list("stash", stash)
-	WorldSession.set_list("carried", [])
-	return carried
 
 
-func bank_at_checkpoint(_site: int) -> void:
-	var items := bank()
-	if not items.is_empty():
-		_say("Banked: " + ", ".join(items.map(LootRules.label)))
+# Per ring, what its checkpoints sell: its own stock, plus that of any ring the road network gave
+# no rest stop (LootRules.pool_rings).
+func ring_stock() -> Array:
+	var n := streamer.settings.ring_count
+	var tables := LootRules.ring_tables(n)
+	var rests := PackedInt32Array()
+	rests.resize(n)
+	for i in streamer.sites.count():
+		if streamer.sites.kind[i] == RoadSites.Kind.REST:
+			rests[clampi(streamer.sites.ring[i], 0, n - 1)] += 1
+	var out: Array = []
+	for hosted: Array in LootRules.pool_rings(rests):
+		var stock: Array = []
+		for r: int in hosted:
+			stock.append_array(tables[r])
+		out.append(stock)
+	return out
 
 
-# The car gave up at `wreck`: whatever it carried is left there, replacing any earlier drop.
-func drop_at(wreck: Vector3) -> void:
-	var carried := WorldSession.list("carried")
-	if carried.is_empty():
-		return
-	WorldSession.set_dropped({"pos": [wreck.x, wreck.y, wreck.z], "items": carried})
-	WorldSession.set_list("carried", [])
-	_sync_dropped_node()
-	_reassign()  # an earlier drop it replaced is lost: those items go back into the pool
+# What the shops sell now: everything from unlocked rings the player doesn't have yet.
+func for_sale() -> Array:
+	var have := owned_keys()
+	var out: Array = []
+	var stock := ring_stock()
+	for r in stock.size():
+		if not is_unlocked(r):
+			continue
+		for item: Dictionary in stock[r]:
+			if not have.has(LootRules.item_key(item)):
+				out.append(item)
+	return out
 
 
-func recover_dropped() -> void:
-	var d := WorldSession.dropped()
-	var items: Array = d.get("items", [])
-	var carried := WorldSession.list("carried")
-	carried.append_array(items)
-	WorldSession.set_list("carried", carried)
-	WorldSession.set_dropped({})
-	_sync_dropped_node()
-	_say("Recovered %d item%s" % [items.size(), "" if items.size() == 1 else "s"])
-	recovered.emit(items)
-
-
-# A tall red beacon where the dropped loot lies, so it can be found again.
-func _sync_dropped_node() -> void:
-	if is_instance_valid(_dropped_node):
-		_dropped_node.queue_free()
-		_dropped_node = null
-	var d := WorldSession.dropped()
-	var at: Array = d.get("pos", [])
-	if at.size() < 3:
-		return
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.35
-	mesh.bottom_radius = 0.35
-	mesh.height = 12.0
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(1.0, 0.2, 0.15)
-	mesh.material = mat
-	var mi := MeshInstance3D.new()
-	mi.name = "DroppedLoot"
-	mi.mesh = mesh
-	add_child(mi)
-	mi.global_position = Vector3(float(at[0]), float(at[1]) + 6.0, float(at[2]))
-	_dropped_node = mi
+# Spend money on `item`: a car joins the garage (returns the new owned car), a part joins the parts
+# owned (`stash`; returns the part). {} when it isn't for sale or the player can't afford it.
+func buy(item: Dictionary) -> Dictionary:
+	var cost := LootRules.price(item)
+	if cost > WorldSession.money() or not for_sale().any(func(i: Dictionary) -> bool: return LootRules.item_key(i) == LootRules.item_key(item)):
+		return {}
+	WorldSession.set_money(WorldSession.money() - cost)
+	if String(item["kind"]) == "car":
+		return Save.grant_car(String(item["id"]))
+	var stash := WorldSession.list("stash")
+	stash.append(item.duplicate())
+	WorldSession.set_list("stash", stash)
+	return item
 
 
 func _say(text: String) -> void:
@@ -287,24 +303,17 @@ func _ring_name(ring: int) -> String:
 	return String(RegionLibrary.by_id(BiomeDirector.region_of(streamer.settings, ring)).get("name", "next biome"))
 
 
-# The journal: for every ring with anything known, a row per piece of loot it lists (all of it in a
-# revealed ring, else the items rumours told of or the player found), whether each was found (the
-# player has it) and whether it's known by name ("known": a rumour told of it, or it was found). A
-# revealed ring lists its unknown pieces too, so its count is whole; the page shows those as "?".
+# The journal: for every unlocked ring, a row per thing its checkpoints sell, and whether the
+# player has it.
 func journal() -> Array:
 	var rings: Array = []
-	var tables := LootRules.ring_tables(streamer.settings.ring_count)
-	var found := taken_keys()
-	for r in streamer.settings.ring_count:
-		var whole := is_revealed(r)
+	var have := owned_keys()
+	var stock := ring_stock()
+	for r in stock.size():
+		if not is_unlocked(r):
+			continue
 		var rows: Array = []
-		for item: Dictionary in tables[r]:
-			var key := LootRules.item_key(item)
-			var has := found.has(key)
-			var known := has or is_item_revealed(key)
-			if String(item["kind"]) == "rumour" or not (whole or known):
-				continue
-			rows.append({"label": LootRules.label(item), "item": item, "found": has, "known": known})
-		if whole or not rows.is_empty():
-			rings.append({"ring": r, "name": _ring_name(r), "items": rows})
+		for item: Dictionary in stock[r]:
+			rows.append({"label": LootRules.label(item), "item": item, "found": have.has(LootRules.item_key(item))})
+		rings.append({"ring": r, "name": _ring_name(r), "items": rows})
 	return rings

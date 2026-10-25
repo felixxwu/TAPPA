@@ -41,6 +41,47 @@ uniform float road_marking_edge_m = 1.5;
 uniform float road_marking_dash_m = 1.5;
 uniform float road_marking_gap_m = 3.0;
 
+// --- Biome border fade (free roam; TerrainStreamer._pair_material). Only chunks that touch a
+// border turn this on. Slot A (the uniforms above) is the inner ring, slot B (the _b uniforms) the
+// outer one, and each pixel works out how far out it is in rings exactly as RoadTerrain.ring_coord
+// does, so the fade follows the true wobbly border and lines up across chunk edges.
+uniform bool fade_rings = false;
+uniform sampler2D road_texture_b : source_color, filter_nearest, hint_default_white;
+uniform vec4 road_marking_color_b : source_color = vec4(0.82, 0.82, 0.78, 1.0);
+uniform float ring_border = 1.0;
+uniform float ring_half = 0.01;
+uniform float ring_scale_m = 1000.0;
+uniform float ring_count = 1.0;
+uniform int ring_seed = 0;
+
+// LabNoise.vnoise in 32-bit unsigned maths, which wraps exactly like the CPU's masked ints.
+float ring_corner(int x, int y, uint hs) {
+	uint h = (uint(x) * 374761393u) ^ (uint(y) * 668265263u) ^ hs;
+	h = (h ^ (h >> 13u)) * 1274126177u;
+	return float(h ^ (h >> 16u)) / 4294967296.0;
+}
+
+float ring_vnoise(vec2 p, int s) {
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	int ix = int(i.x);
+	int iy = int(i.y);
+	uint hs = uint(s) * 2147483647u;
+	float a = ring_corner(ix, iy, hs);
+	float b = ring_corner(ix + 1, iy, hs);
+	float c = ring_corner(ix, iy + 1, hs);
+	float d = ring_corner(ix + 1, iy + 1, hs);
+	return a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y;
+}
+
+float ring_coord_at(vec2 p) {
+	vec2 q = p / 1500.0 + 9.0;
+	float fbm = ring_vnoise(q, ring_seed) * 0.6 + ring_vnoise(q * 2.1, ring_seed + 7) * 0.3
+		+ ring_vnoise(q * 4.3, ring_seed + 13) * 0.1;
+	return (length(p) / ring_scale_m + (fbm - 0.5) * 0.25) * ring_count;
+}
+
 // --- Spatial REGION blending (overworld only; see features/overworld.md -> "Region blending").
 // Off by default, and a stage never writes UV2.y, so with blend_region false every mix below
 // takes its A term unchanged and a stage renders bit-for-bit as it did before this existed.
@@ -170,15 +211,25 @@ void fragment() {
 	float region_t = region_blend_t(UV2.y);
 	vec4 tint = albedo_color;
 	vec4 tarmac = tarmac_color;
+	vec4 marking = road_marking_color;
 	if (blend_region && region_count > 1) {
 		region_lut_look(UV2.y, tint, tarmac);
 	} else if (blend_region) {
 		tint = mix(albedo_color, albedo_color_b, region_t);
 		tarmac = mix(tarmac_color, tarmac_color_b, region_t);
 	}
+	if (fade_rings) {
+		region_t = smoothstep(-ring_half, ring_half, ring_coord_at(world_pos.xz) - ring_border);
+		tint = mix(albedo_color, albedo_color_b, region_t);
+		tarmac = mix(tarmac_color, tarmac_color_b, region_t);
+		marking = mix(road_marking_color, road_marking_color_b, region_t);
+	}
 	vec3 ground = mix(texture(albedo_texture, ground_uv * texture_tile).rgb,
 		texture(albedo_texture_b, ground_uv * texture_tile).rgb, region_t);
 	vec3 gravel = texture(road_texture, ground_uv * texture_tile * road_uv_scale).rgb;
+	if (fade_rings) {
+		gravel = mix(gravel, texture(road_texture_b, ground_uv * texture_tile * road_uv_scale).rgb, region_t);
+	}
 	vec3 road = mix(gravel, tarmac.rgb, tarmac_t);
 	// Surface and light are kept separate so the headlight can ADD to the light
 	// term. It must not multiply: at night COLOR.rgb is baked near-black, and
@@ -188,7 +239,7 @@ void fragment() {
 	// several cameras (BonnetCamera, ChaseCamera, replay cams).
 	vec3 surface = mix(ground, road, road_t) * tint.rgb;
 	// lane paint keeps its own colour rather than taking the ground tint
-	surface = mix(surface, road_marking_color.rgb, lines * road_t);
+	surface = mix(surface, marking.rgb, lines * road_t);
 	// Fog-of-war darkening MULTIPLIES the finished light term, unlike the headlight which adds
 	// to it: unexplored ground is meant to go dark whatever is lighting it, headlights
 	// included, so a player cannot simply drive up to the frontier and light it up.

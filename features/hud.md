@@ -108,6 +108,11 @@ the engine overheats. A code-built `CoolingLabel` above the gauge row reads "RAD
 the cooling breaks, and "OVERHEATING — REACH A REST STOP" past the threshold. The stage scene
 has no `TempGauge`, so none of this runs there (`hud.gd → _update_temp`).
 
+## Money counter (free roam only)
+
+Not part of `hud.gd`: `LootDirector.money_label` draws "$n" (`WorldSession.money`) in the top-left
+corner, added to the HUD layer (so the pause fade above hides it too) ([loot.md](loot.md)).
+
 ## Boost gauge
 
 `BoostGauge` is built the same way: `_update_boost_gauge(fitted, live_boost)`

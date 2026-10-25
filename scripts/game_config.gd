@@ -3106,6 +3106,7 @@ func spectator_params() -> Dictionary:
 ## ground across it shows, in metres, so the start isn't zoomed in to nothing.
 @export_range(100.0, 10000.0, 50.0) var map_min_view_m := 900.0
 ## Free roam's heading-up minimap, top-centre (scripts/free_roam/mini_map.gd, features/minimap.md).
+## Off, only the rest-stop prompt under it shows; the full map still opens with M / Back.
 @export var minimap_enabled := true
 ## Height of the minimap as a fraction of the screen height. Keep top + height under 0.2 of the
 ## screen: below that, the simple touch scheme's steering halves begin (mobile_controls.gd).

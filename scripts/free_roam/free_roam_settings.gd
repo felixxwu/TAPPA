@@ -7,7 +7,7 @@ extends Resource
 # (todo/2026-10-19-free-roam-pivot.md).
 
 @export_group("Island")
-@export var world_seed := 1
+@export var world_seed := 5687
 ## The car the game starts in, by CarLibrary id (the first car if it is missing).
 @export var car_id := "porsche911"
 @export var island_radius_m := 10000.0
@@ -30,19 +30,25 @@ extends Resource
 @export var look_crossfade_s := 4.0
 ## How wide the blend between two rings' road surfaces (gravel / tarmac) is, in metres.
 @export var road_surface_blend_m := 150.0
+## How wide the fade between two rings' ground textures and tints is, in metres (roughly: the
+## wobble in the border stretches or squeezes it in places).
+@export var biome_fade_m := 10.0
 
 @export_group("Road network (radial growth)")
-@export var node_spacing_m := 225.0
-@export var segment_m := 225.0
-@export var fork_chance := 0.17
-@export var fork_angle_deg := 127.0
-@export var heading_jitter_deg := 106.0
-@export var outward_pull := 0.57
+@export var node_spacing_m := 300.0
+@export var segment_m := 750.0
+@export var fork_chance := 0.38
+@export var fork_angle_deg := 109.0
+@export var heading_jitter_deg := 39.0
+@export var outward_pull := 0.48
 @export var join_chance := 1.0
-@export var roads_from_spawn := 3
+@export var roads_from_spawn := 1
+## Dead ends no longer than this, measured back to their junction, are cut after growth,
+## repeatedly, so a fork whose branches all die out goes too; 0 keeps every dead end.
+@export var prune_dead_ends_m := 1000.0
 ## How far a road may swing from the straight line between its junctions, as a fraction of
 ## its length; 0 is dead straight.
-@export var road_twist := 0.73
+@export var road_twist := 0.24
 ## Roughly how far the road runs between changes of direction.
 @export var bend_length_m := 150.0
 @export var road_half_width_m := 1.9
@@ -57,10 +63,12 @@ extends Resource
 
 @export_group("Base height and lakes")
 @export var base_scale_m := 500.0
-@export var base_relief_m := 15.0
-@export var water_level_m := -10.0
+@export var base_relief_m := 5.0
+@export var water_level_m := -2.0
 @export var lake_depth_factor := 1.6
-@export var shore_band_m := 1.0
+@export var shore_band_m := 5.0
+## Where a road runs along or across a lake, the bank from the road's edge down to the lake bed.
+@export var lake_road_bank_m := 12.0
 
 @export_group("Road-first terrain")
 @export var mountain_m := 300.0
@@ -77,13 +85,12 @@ extends Resource
 ## Road between rest stops in a ring whose region doesn't set its own `rest_stop_spacing_m`
 ## (RegionLibrary).
 @export var rest_stop_spacing_m := 1050.0
-## Road between loot spots. Plenty of them: each shows something from its ring's remaining
-## pool (LootRules.assign), so there should be more spots than things to find.
+## Road between coins (loot spots; dead ends hold one too).
 @export var loot_slot_spacing_m := 250.0
-## How many times more road spots show each part, engine, kit or rumour than each car.
-@export var loot_item_weight := 3
-## How many times more road spots show each rumour than each part, engine or kit (while any are left).
-@export var loot_rumour_weight := 2
+## Money a coin in the spawn ring is worth.
+@export var coin_value := 500
+## Money a coin is worth on top of that, per ring further out.
+@export var coin_value_per_ring := 500
 @export var rest_stop_radius_m := 16.0
 @export var dead_end_radius_m := 14.0
 ## How far a pad's flat ground blends back into the natural terrain, at least. The blend widens
@@ -115,8 +122,11 @@ extends Resource
 @export var rock_group_chance := 0.35
 
 @export_group("Streaming")
-## Strict per-frame terrain budget, microseconds.
-@export var budget_us := 2000
+## Share of the frame's free time (from the last frames' cpu / gpu load) terrain work may use.
+@export_range(0.0, 1.0) var budget_fraction := 0.5
+## Floor under that budget, as a share of the actual frame time, so a slow frame gets a longer
+## floor and streaming gets the same time per second at any frame rate.
+@export_range(0.0, 1.0) var budget_min_fraction := 0.25
 @export var chunk_m := 64.0
 ## Vertex spacing of the near (full-detail) and far meshes.
 @export var near_stride_m := 2.0

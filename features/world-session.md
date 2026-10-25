@@ -25,7 +25,9 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 | `max_ring` | the furthest biome ring reached, a high-water mark (`reach_ring` returns true on a new one, which cues the region-name banner) |
 | `drive_time` | seconds driven: the weather timeline (`BiomeDirector`) runs on it |
 | `seen` | site ids (rest stops, loot slots, dead ends) the car has come within `GameConfig.minimap_seen_radius_m` of (`see`, `seen_sites`, `is_seen`; spawn 0 from the start). The minimap and the map show only these ([minimap.md](minimap.md)). A save without the key reads as `[0]` |
-| `carried`, `stash`, `dropped`, `collected`, `revealed`, `revealed_items` | loot (stage 7) |
+| `money` | coins picked up and not yet spent (`money` / `set_money`); dropped when the car gives up |
+| `dropped` | the money left at the last wreck, `{pos: [x, y, z], money: n}`, or `{}` (`dropped` / `set_dropped`) |
+| `stash`, `collected`, `revealed` | every part bought (any car can fit it), coin spots taken, rings whose stock is on sale ([loot.md](loot.md)) |
 
 - **New world** (`new_world`): a fresh seed and a starter car. It replaces the old world **and the
   old owned cars**, because a world is the whole save.
@@ -46,8 +48,8 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
   and the distance odometer (`LifetimeStats.DISTANCE_DRIVEN_M`) every 5 s, and on Quit or scene
   exit (`tree_exiting`, window close request). The children leave the tree before the scene root's
   `tree_exiting` fires, so `save_world` can't read the car then: it uses the pose cached on every
-  physics tick (damage and drive time stay readable). The rest-stop page's Travel moves the car
-  first and closes after, so the reload's save holds the destination. `RestStops.lit` / `respawn_point_changed`
+  physics tick (damage and drive time stay readable). A travel from the rest-stop page's Map moves the car
+  first and the page closes after, so the reload's save holds the destination. `RestStops.lit` / `respawn_point_changed`
   write straight through; a respawn bumps `TIMES_GAVE_UP`.
 
 ## Title screen (`TitleScreen`, decision 20)

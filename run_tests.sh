@@ -185,6 +185,18 @@ done
 cd "$(dirname "$0")"
 FAIL=0
 
+# One run at a time: concurrent runs interleave output and make every result untrustworthy.
+# This is a kernel lock (flock), not a flag file, so it can never get stuck: the OS releases it
+# the moment this script and every Godot it spawned have exited, however they died.
+# Perl does the locking because stock macOS has no flock command.
+mkdir -p .godot
+exec 9<>.godot/run_tests.lock
+if ! perl -MFcntl=:flock -e 'open(my $fh, "+<&=", 9) or die "$!"; flock($fh, LOCK_EX | LOCK_NB) or exit 1'; then
+  echo "error: another test run is already in progress (pid $(cat .godot/run_tests.lock)) — wait for it and use its result" >&2
+  exit 3
+fi
+echo $$ >.godot/run_tests.lock
+
 # The single source of truth for "GUT exited 0 but the output betrays a broken
 # script" — GUT's exit code only reflects assertion failures, so a script that
 # fails to parse/load logs one of these but still exits 0. Scanned in run_pass;
