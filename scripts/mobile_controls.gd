@@ -93,6 +93,7 @@ const _REGION_LABEL := {
 const _MIN_NITROUS_W := 8.0
 
 var _active := false
+var _root: Control
 var _scheme := DEFAULT_SCHEME
 
 # Digital regions: pointer index -> region name. Index -1 is the mouse, kept so the
@@ -180,8 +181,42 @@ func _ready() -> void:
 		return
 	_scheme = _scheme_from_save()
 	_build()
+	_sync_paused()
 	get_viewport().size_changed.connect(_layout)
 	_install_touch_watchdog()
+
+
+# Every menu in the game (title, pause, journal, rest stop, map, wrecked page…) pauses
+# the tree, and this layer is pausable, so a paused tree means a menu is up: the
+# controls hide under it and come back on resume. Done on an inner root rather than the
+# layer's own `visible`, which photo mode and the benchmark own (world.gd) — so the two
+# writers can never fight. Held input is dropped on the way in, since a finger lifted
+# while paused sends its release to a layer that isn't listening.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PAUSED or what == NOTIFICATION_UNPAUSED:
+		_sync_paused()
+
+
+func _sync_paused() -> void:
+	if not _active or not is_inside_tree():
+		return
+	var driving := can_process()
+	_overlay().visible = driving
+	if not driving:
+		_release_all()
+		_pointers.clear()
+		_seen_pointers.clear()
+		_slider_owner = null
+
+
+# The Control every overlay widget is parented to, so hiding it hides them all.
+func _overlay() -> Control:
+	if _root == null:
+		_root = Control.new()
+		_root.name = "Overlay"
+		_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_root)
+	return _root
 
 
 # The persisted scheme (clamped to a valid id), or the default when unset. Save is
@@ -281,11 +316,11 @@ func _build() -> void:
 		_slider_track = ColorRect.new()
 		_slider_track.color = _TRACK_COLOR
 		_slider_track.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(_slider_track)
+		_overlay().add_child(_slider_track)
 		_slider_thumb = ColorRect.new()
 		_slider_thumb.color = _THUMB_COLOR
 		_slider_thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(_slider_thumb)
+		_overlay().add_child(_slider_thumb)
 
 	_build_debug_label()
 	_layout()
@@ -301,7 +336,7 @@ func _make_button(region: String) -> void:
 	var shadow := ColorRect.new()
 	shadow.color = UITheme.CARD_SHADOW_COLOR
 	shadow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(shadow)
+	_overlay().add_child(shadow)
 	_panel_shadows[region] = shadow
 
 	var panel := ColorRect.new()
@@ -314,7 +349,7 @@ func _make_button(region: String) -> void:
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	label.add_theme_font_size_override("font_size", UITheme.px(16))
 	panel.add_child(label)
-	add_child(panel)
+	_overlay().add_child(panel)
 	_panels[region] = panel
 
 
@@ -334,7 +369,7 @@ func _build_debug_label() -> void:
 	_debug_label.add_theme_font_size_override("font_size", UITheme.px(8))
 	_debug_label.position = Vector2(4, 4)
 	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_debug_label)
+	_overlay().add_child(_debug_label)
 
 
 func _update_debug_label() -> void:

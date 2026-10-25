@@ -197,7 +197,16 @@ screenshot whether the phone is feeding anything at all and which source won.
 
 `_active = mobile_controls_force or DisplayServer.is_touchscreen_available()`.
 On non-touch devices the layer is hidden and its input/process are disabled, so
-desktop keyboard play is unchanged. On the web export `is_touchscreen_available()`
+desktop keyboard play is unchanged.
+
+**Hidden under menus.** Every menu (the title menu the game boots into, pause, journal,
+rest stop, map, stats, wrecked page) pauses the tree, so `_sync_paused` (run from
+`_notification` on `NOTIFICATION_PAUSED` / `UNPAUSED`, and once in `_ready`) hides the
+overlay while paused and shows it again on resume. It toggles an inner `Overlay` Control
+(`_overlay()`, which every widget is parented to) rather than the layer's own `visible`,
+because photo mode and the benchmark write that (`world.gd`), and the two must never
+fight. Going in, it also releases every held action and forgets the tracked pointers,
+since a finger lifted while paused sends its release to a layer that isn't listening. On the web export `is_touchscreen_available()`
 reflects the browser's touch support, so it is true on phones and false on ordinary
 desktops. (The game uses `stretch/mode="viewport"`, so the *internal* viewport's
 logical height is always the fixed `DisplayStretch.DESIGN_HEIGHT` regardless of device

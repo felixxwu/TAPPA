@@ -78,6 +78,23 @@ func test_visible_when_forced() -> void:
 	assert_true(_controls.visible, "controls shown when mobile_controls_force is set")
 
 
+# Every menu (title, pause, journal, rest stop…) pauses the tree, so the overlay must hide
+# while paused, drop whatever was held, and come back when driving resumes.
+func test_hidden_and_released_while_a_menu_pauses_the_tree() -> void:
+	var gas: Rect2 = _controls._rects["gas"]
+	_controls._press(0, gas.get_center())
+	_controls._apply_actions()
+	assert_true(Input.is_action_pressed("accelerate"), "gas held before the menu opens")
+	get_tree().paused = true
+	assert_false(_controls._overlay().is_visible_in_tree(), "controls hidden under a menu")
+	assert_false(Input.is_action_pressed("accelerate"), "held gas released when a menu opens")
+	get_tree().paused = false
+	assert_true(_controls._overlay().is_visible_in_tree(), "controls back once driving resumes")
+	_controls._apply_actions()
+	assert_false(Input.is_action_pressed("accelerate"),
+		"a finger held across the pause doesn't re-press the gas on resume")
+
+
 # The scheme the game starts on must be the one the Settings picker lists FIRST, so a
 # player who never opens the page is already on the layout sitting at the top of it (and
 # so the pre-rally gate's "highlighted default if untouched" is the top row). SCHEMES is
