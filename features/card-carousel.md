@@ -34,12 +34,12 @@ pick a destination), and **confirm popups** (`ConfirmPopup`). Those are plain `M
 
 **Build a new card menu** with `CardUI.card_page(host, {"title": …})` and
 `CardUI.card_list(page, entries, header_lines, selected)`, where each entry is a dict —
-`title`, `subtitle`, `extra` (+ `extra_variant`), `icon`, `disabled`, `action`. A card with no
+`title`, `desc` (one line), `subtitle`, `extra` (+ `extra_variant`), `icon`, `disabled`, `action`. A card with no
 `action` is read-only (the cursor can still land on it). Add a `< Back` with
 `page.add_action(UITheme.row_button(...))` on a sub-page, and `MenuNav.attach(page, {first =
 carousel, on_back = …})`. Item and car text should be SHORT — a card is a fixed size, and a title
 that wraps to three lines pushes the subtitle off the card: loot uses `LootRules.card_text(item)`
-(name, then what it is) and `LootRules.icon(item)`; cars use `CardUI.car_subtitle(entry)`.
+(name, then what it does) and `LootRules.icon(item)`; cars use `CardUI.car_subtitle(entry)`.
 Tests drive a card list through `CardUI.pick(carousel, title)` (select + confirm, no flash) or
 `select(i)` + `_confirm_selected()` + `skip_confirm_flash()`.
 

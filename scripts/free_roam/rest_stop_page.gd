@@ -169,7 +169,7 @@ func _build_parts() -> void:
 	var fitted: Array = owned.get("parts", [])
 	for i in fitted.size():
 		var text := LootRules.card_text(fitted[i])
-		entries.append({"title": text[0], "subtitle": text[1] + " · fitted",
+		entries.append({"title": text[0], "desc": text[1],
 			"extra": "Take off", "icon": LootRules.icon(fitted[i]), "action": _unfit.bind(i)})
 	var on_car := {}
 	for p: Dictionary in fitted:
@@ -185,7 +185,7 @@ func _build_parts() -> void:
 		if ok:
 			extra = "Swap for " + LootRules.card_text(taken)[0] if not taken.is_empty() else "Fit"
 		var text := LootRules.card_text(part)
-		entries.append({"title": text[0], "subtitle": text[1] + " · owned", "extra": extra,
+		entries.append({"title": text[0], "desc": text[1], "extra": extra,
 			"icon": LootRules.icon(part), "disabled": not ok, "action": _fit_part.bind(part)})
 	var money := WorldSession.money()
 	for part: Dictionary in loot.for_sale() if loot != null else []:
@@ -194,7 +194,7 @@ func _build_parts() -> void:
 		var cost := LootRules.price(part)
 		var block := LootRules.fit_block_reason(owned, part)
 		var text := LootRules.card_text(part)
-		entries.append({"title": text[0], "subtitle": text[1] + " · for sale",
+		entries.append({"title": text[0], "desc": text[1],
 			"extra": block if not block.is_empty() else "$%d" % cost, "icon": LootRules.icon(part),
 			"disabled": not block.is_empty() or cost > money, "action": _buy_part.bind(part)})
 	if entries.is_empty():

@@ -82,7 +82,8 @@ Parts card's label when a part can't go on ("Already RWD", "Already fitted"); `c
 ## Rest-stop pages
 
 All card lists ([card-carousel.md](card-carousel.md)); item cards use `LootRules.card_text`
-(a short name, then what it is — "Level 2", "Engine", "Car") and `LootRules.icon`.
+(a short name, then a one-line note on what it does, the card's `desc`; a boost's note is its `blurb` in `BoostLibrary.CATALOGUE`) and
+`LootRules.icon`. Names and notes must each fit on one line of the card.
 Rebuilding the page you're on (a part fitted, a car picked, something bought) keeps the cursor
 where it was (`RestStopPage._keep_at`). There's no separate shop: things on sale show at the end of the page they belong on, their price
 as the third line, dimmed when they cost more than the player has. The MAIN page is Continue /

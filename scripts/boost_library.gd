@@ -61,7 +61,7 @@ extends RefCounted
 const CATALOGUE := {
 	"lightweight": {
 		"ring": 0, "price": 1200,
-		"label": "Lightweight parts",
+		"label": "Lightweight", "blurb": "Sheds weight.",
 		# "mult_floor", not "mult": a proportional weight cut clamped at
 		# GameConfig.min_lightweight_mass, so it's one-time (see BoostLibrary.stacks) and
 		# excluded from the pick pool once a car is already at/under the floor
@@ -73,7 +73,7 @@ const CATALOGUE := {
 	},
 	"turbo": {
 		"ring": 0, "price": 1800,
-		"label": "Turbocharger",
+		"label": "Turbocharger", "blurb": "Torque once it spools.",
 		"effect_fields": {"install_turbo": {
 			"turbo_boost_gain": "run_boost_turbo_boost_gain",
 			"turbo_omega_ref": "run_boost_turbo_omega_ref",
@@ -101,7 +101,7 @@ const CATALOGUE := {
 	# },
 	"gearbox": {
 		"ring": 1, "price": 2500,
-		"label": "Quick-shift gearbox",
+		"label": "Quick shifter", "blurb": "Faster gear changes.",
 		"effect_fields": {"shift_time_set": "run_boost_shift_time_s"},
 		"level_direction": - 1, # lower shift time = faster = more boost
 		# A "set" op replaces the car's shift time outright, so the shop shows the
@@ -112,7 +112,7 @@ const CATALOGUE := {
 	},
 	"nitrous": {
 		"ring": 1, "price": 3000,
-		"label": "Nitrous",
+		"label": "Nitrous", "blurb": "Hold for extra power.",
 		# The SAME install_nitrous EFFECTS row features/nitrous.md documents (write_fields,
 		# no enable flag) — a mid-run boost fitting it the same way a turbo/supercharger
 		# boost fits induction. feeds_pw is FALSE on that row (a per-stage resource must
@@ -130,7 +130,7 @@ const CATALOGUE := {
 	},
 	"aero": {
 		"ring": 2, "price": 4000,
-		"label": "Aero kit",
+		"label": "Aero kit", "blurb": "Grip at high speed.",
 		"effect_fields": {
 			"downforce_front": "run_boost_downforce_n",
 			"downforce_rear": "run_boost_downforce_n",
@@ -144,7 +144,7 @@ const CATALOGUE := {
 	},
 	"brakes": {
 		"ring": 2, "price": 3500,
-		"label": "Big brakes",
+		"label": "Big brakes", "blurb": "Stronger braking.",
 		# Fixed absolute brake_torque ("set", not a multiplier) — strong enough to push
 		# ABS into play on every car in the roster, including the heaviest
 		# (see run_boost_brake_torque_n and features/drivetrain-and-tires.md).
@@ -158,7 +158,7 @@ const CATALOGUE := {
 	},
 	"supercharger": {
 		"ring": 2, "price": 5000,
-		"label": "Supercharger",
+		"label": "Supercharger", "blurb": "Boost with no lag.",
 		"effect_fields": {"install_supercharger": {
 			"supercharger_boost_gain": "run_boost_supercharger_boost_gain",
 			"supercharger_rpm_ref": "run_boost_supercharger_rpm_ref",
@@ -328,6 +328,11 @@ static func stacks(id: String) -> bool:
 		if op == "set" or op == "install_induction" or op == "mult_floor" or op == "write_fields":
 			return false
 	return true
+
+
+# A short line saying what the part does, for its card.
+static func blurb_for(id: String) -> String:
+	return String(CATALOGUE.get(id, {}).get("blurb", ""))
 
 
 # Display text for a pick row. `id` for an unknown entry, so a stale/miskeyed id is

@@ -859,7 +859,7 @@ func has_nitrous() -> bool:
 ## heat out: about engine_heat_c_per_s × rpm/redline ÷ -ln(retain). Broken cooling skips it.
 @export_range(0.9, 1.0, 0.0001) var engine_cooling_retain_per_s := 0.95
 ## HP lost per second above the overheat threshold.
-@export_range(0.0, 500.0) var overheat_hp_drain_per_s := 25.0
+@export_range(0.0, 500.0) var overheat_hp_drain_per_s := 15.0
 ## Free-roam rest stops: below this speed (km/h) at a rest stop, Enter / gamepad A opens the
 ## rest-stop page (RestStops.prompt_site).
 @export_range(0.0, 60.0) var rest_stop_speed_kmh := 8.0
@@ -2984,15 +2984,15 @@ func spectator_params() -> Dictionary:
 # are the UNLEVELED base magnitudes — BoostLibrary.magnitude_for(id, level) scales them by
 # `boost_level_magnitude_step` below (@export_group("Roguelike Meta Shop")) before a pick is
 # drawn, so a level-0 boost (nothing purchased) still rolls exactly the number authored here.
-## "Lightweight parts" — mass multiplier (below 1.0 = lighter, i.e. a real boost),
+## "Lightweight" — mass multiplier (below 1.0 = lighter, i.e. a real boost),
 ## clamped at min_lightweight_mass below (the "mult_floor" op) so it can't push a car
 ## below that floor — see UpgradeLibrary.EFFECTS["mass_mult_floor"].
 @export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.8
-## The floor "Lightweight parts" can't push a car's mass below (kg). One-time (see
+## The floor "Lightweight" can't push a car's mass below (kg). One-time (see
 ## BoostLibrary.stacks — "mult_floor" is non-stacking) and excluded from the pick pool
 ## entirely for a car already at or under this (RunSession._lightweight_available).
 @export var min_lightweight_mass := 1000.0
-## "Quick-shift gearbox" — an ABSOLUTE shift time (the "set" op), not a scaling.
+## "Quick shifter" — an ABSOLUTE shift time (the "set" op), not a scaling.
 @export_range(0.02, 0.3, 0.01) var run_boost_shift_time_s := 0.12
 ## "Aero kit" — added downforce (N), the SAME figure on both front and rear.
 @export_range(0.0, 15.0, 0.5) var run_boost_downforce_n := 3.0

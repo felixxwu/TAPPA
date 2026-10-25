@@ -289,6 +289,11 @@ func test_label_for_is_never_blank_for_a_real_id() -> void:
 			"boost '%s' has no display label" % id)
 
 
+func test_blurb_for_is_never_blank_for_a_real_id() -> void:
+	for id in BoostLibrary.CATALOGUE.keys():
+		assert_false(BoostLibrary.blurb_for(id).is_empty(), "%s has no blurb" % id)
+
+
 func test_label_for_falls_back_to_the_id_when_unknown() -> void:
 	assert_eq(BoostLibrary.label_for("ghost_boost"), "ghost_boost")
 

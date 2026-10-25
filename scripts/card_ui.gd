@@ -47,15 +47,15 @@ static func card_icon(icon: String) -> Control:
 # card stays on screen (shown, dimmed) but neither lands the cursor's confirm nor fires
 # `on_confirm` (CardCarousel.confirmed simply never emits for a disabled index).
 static func text_card(carousel: CardCarousel, title: String, subtitle: String,
-		disabled: bool, icon: String, extra := "", extra_variant := "") -> void:
+		disabled: bool, icon: String, extra := "", extra_variant := "", desc := "") -> void:
 	var card := carousel.add_card(disabled)
-	fill_card(card, title, subtitle, icon, extra, extra_variant)
+	fill_card(card, title, subtitle, icon, extra, extra_variant, desc)
 
 
 # Same content as text_card, but written into an ALREADY-ADDED card rather than creating
 # one, so a card can be rewritten in place and keep its position/focus in the carousel.
 static func fill_card(card: CardCarousel.Card, title: String, subtitle: String,
-		icon: String, extra := "", extra_variant := "") -> void:
+		icon: String, extra := "", extra_variant := "", desc := "") -> void:
 	for child in card.visual.get_children():
 		card.visual.remove_child(child)
 		child.queue_free()
@@ -66,6 +66,11 @@ static func fill_card(card: CardCarousel.Card, title: String, subtitle: String,
 	var title_label := UITheme.card_title(title)
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.info.add_child(title_label)
+	if desc != "":
+		var d := UITheme.label(desc, "dim")
+		d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		d.max_lines_visible = 1
+		card.info.add_child(d)
 	if subtitle != "":
 		var sub := UITheme.label(subtitle, "dim")
 		sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -201,7 +206,8 @@ static func card_page(host: Node, opts: Dictionary = {}) -> MenuPage:
 
 # Fill a card page with one card per entry and wire each card's confirm to its action. An entry:
 #   "title"    (String)   the card's name
-#   "subtitle" (String)   a dim second line (optional)
+#   "desc"     (String)   a dim one-line note under the title saying what the thing does (optional)
+#   "subtitle" (String)   a dim line under that (optional)
 #   "extra"    (String)   a third line, e.g. a state (optional), coloured by "extra_variant"
 #   "icon"     (String)   an icons/cards/ name (optional — generic.svg otherwise)
 #   "car"      (Dictionary or int) show this car spinning in 3D instead of the icon: an owned-car
@@ -223,7 +229,7 @@ static func card_list(page: MenuPage, entries: Array, header: Array = [], select
 	for e: Dictionary in entries:
 		text_card(carousel, String(e.get("title", "")), String(e.get("subtitle", "")),
 			bool(e.get("disabled", false)), String(e.get("icon", "generic")),
-			String(e.get("extra", "")), String(e.get("extra_variant", "")))
+			String(e.get("extra", "")), String(e.get("extra_variant", "")), String(e.get("desc", "")))
 		if e.has("car"):
 			var visual := carousel.get_card(carousel.card_count() - 1).visual
 			for child in visual.get_children():

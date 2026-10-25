@@ -184,15 +184,18 @@ static func icon(item: Dictionary) -> String:
 	return String(item.get("id", "generic"))
 
 
-# An item's card text, short enough for a card: [title, subtitle] — the name, then what it is.
+# An item's card text, short enough for a card: [title, desc] — the name, then what it does.
 static func card_text(item: Dictionary) -> PackedStringArray:
 	var id := String(item.get("id", ""))
 	match String(item.get("kind", "")):
 		"car":
-			return PackedStringArray([String(CarLibrary.by_id(id).get("name", id)), "Car"])
+			return PackedStringArray([String(CarLibrary.by_id(id).get("name", id)), ""])
 	if is_engine(item):
-		return PackedStringArray([String(EngineLibrary.by_id(id.substr("engine_swap:".length())).get("name", id)), "Engine"])
+		var engine_id := id.substr("engine_swap:".length())
+		var layout := String(EngineLibrary.by_id(engine_id).get("layout", "")).to_upper()
+		return PackedStringArray([layout + " engine",
+			"A %d hp engine swap." % roundi(CarLibrary.horsepower({"engine": engine_id}))])
 	if is_drivetrain(item):
 		var mode := int(id.substr("drivetrain:".length()))
-		return PackedStringArray([CarLibrary.drive_text(mode) + " kit", "Drivetrain conversion"])
-	return PackedStringArray([BoostLibrary.label_for(id), "Level %d" % (int(item.get("level", 0)) + 1)])
+		return PackedStringArray([CarLibrary.drive_text(mode) + " kit", "Changes driven wheels."])
+	return PackedStringArray([BoostLibrary.label_for(id), BoostLibrary.blurb_for(id)])
