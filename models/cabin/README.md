@@ -32,6 +32,7 @@ The Sketchfab glTF download was cleaned once into `log_cabin.glb` by `tools/prep
 1. dropped the model's 16 m textured ground plane (the game has its own ground);
 2. downsized the 2048² cabin texture to 1024² and embedded it;
 3. set both materials' roughness to 1 (Sketchfab exported 0, a glossy plastic look) and renamed
-   the black interior plane's node to `Interior`, which the lit glow finds by name.
+   the black interior plane's node to `Interior`. The game gives it a plank-brown floor material
+   (`TerrainStreamer._light_cabin` finds it by name).
 
 Node transforms and meshes are otherwise as shipped.

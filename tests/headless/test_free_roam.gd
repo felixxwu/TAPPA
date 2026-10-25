@@ -1036,10 +1036,17 @@ func test_a_rest_stops_cabin_faces_the_road_and_glows_once_lit() -> void:
 	assert_not_null(inside, "the model keeps its interior")
 	if inside == null:
 		return
-	assert_null(inside.material_override, "dark before it is lit")
+	var floor_mat := inside.material_override as BaseMaterial3D
+	assert_not_null(floor_mat, "its floor is given a material")
+	if floor_mat != null:
+		assert_ne(floor_mat.shading_mode, BaseMaterial3D.SHADING_MODE_UNSHADED, "a shaded floor, not a flat painted square")
+	assert_null(cabin.get_node_or_null("Lamp"), "no lamp before it is lit")
 	st.rest_lit_query = func(_s: int) -> bool: return true
 	st.refresh_site_marker(i)
-	assert_not_null(inside.material_override, "glowing once lit")
+	assert_not_null(cabin.get_node_or_null("Lamp") as OmniLight3D, "a lamp glows inside once lit")
+	assert_eq(inside.material_override, floor_mat, "lighting it leaves the floor alone")
+	st.refresh_site_marker(i)
+	assert_eq(cabin.find_children("Lamp*", "OmniLight3D", true, false).size(), 1, "refreshing a lit cabin keeps one lamp")
 
 
 # A rest stop's crowd gathers between its cabin's door and the road, off the road, and is live:

@@ -290,8 +290,11 @@ planted on it (`is_clear`).
   `models/cabin/log_cabin.glb`, CC-BY, credit in `models/cabin/README.md`), set back
   `GameConfig.rest_stop_cabin_back_m` from the pad's centre away from the road, door facing the
   road, inside the crowd's arc. It is solid (a box over its walls, `CABIN_WALLS`, in the damage
-  obstacle group), and once lit its doorway glows orange (`_light_cabin`, via
-  `refresh_site_marker`). A loot site or dead end
+  obstacle group). Its interior floor (the model's `Interior` plane, seen through the ajar
+  door and under the bottom log) is always a plain plank-brown material, and once lit a warm
+  `BEACON_LIT` lamp (`Lamp`, an `OmniLight3D`) hangs inside (`_light_cabin`, via
+  `refresh_site_marker`). The floor used to be painted unshaded `BEACON_LIT` when lit, which read
+  as a flat yellow square through the door. A loot site or dead end
   holding a coin shows a spinning gold disc over the road (`_coin_marker`, `shaders/coin.gdshader`, rebuilt by `refresh_loot_markers` when coins are taken or come back). Both the queued
   marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
   `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
