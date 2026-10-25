@@ -63,8 +63,8 @@ func build(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain) -> void:
 		if not adj.has(e.y): adj[e.y] = []
 		adj[e.x].append(ei)
 		adj[e.y].append(ei)
-	# Spawn: the first rest stop, centred on the spawn junction.
-	_add(Kind.REST, Vector2.ZERO, Vector2.ZERO, Vector2.RIGHT, s.rest_stop_radius_m, terrain, -1, 0)
+	# Spawn: the first rest stop, centred on the spawn junction, its direction the road out.
+	_add(Kind.REST, Vector2.ZERO, Vector2.ZERO, _road_out_of_spawn(net), s.rest_stop_radius_m, terrain, -1, 0)
 	# Rest stops and loot spots: breadth-first from spawn, carrying "road since the last one"
 	# into each junction (the least over the ways in), so the gap along any drive is about the
 	# spacing. Rest stops go first over the whole network, so loot can keep clear of them.
@@ -159,6 +159,30 @@ func _try_roadside(k: Kind, s: FreeRoamSettings, net: RoadNetwork, terrain: Road
 		_add(k, c, p, d, r, terrain, ei, -1)
 		return true
 	return false
+
+
+# The way the (first) road leaves spawn, so the car starts driving off along it with the cabin
+# behind it (back). Vector2.RIGHT when no road leaves spawn.
+static func _road_out_of_spawn(net: RoadNetwork) -> Vector2:
+	for ei in net.edges.size():
+		var e := net.edges[ei]
+		if e.x != 0 and e.y != 0:
+			continue
+		var pl := net.polyline(ei)
+		if pl.size() < 2:
+			continue
+		var out := pl[1] - pl[0] if e.x == 0 else pl[pl.size() - 2] - pl[pl.size() - 1]
+		if out != Vector2.ZERO:
+			return out.normalized()
+	return Vector2.RIGHT
+
+
+# The way from site `i`'s road to the back of its pad, where its cabin stands: away from the
+# road for a roadside pad, and back down the road out for spawn, whose pad sits on its junction.
+func back(i: int) -> Vector2:
+	if anchor[i] != pos[i]:
+		return (pos[i] - anchor[i]).normalized()
+	return -dir[i] if dir[i] != Vector2.ZERO else Vector2.UP
 
 
 func _add(k: Kind, c: Vector2, a: Vector2, d: Vector2, r: float, terrain: RoadTerrain, ei: int, n: int) -> void:

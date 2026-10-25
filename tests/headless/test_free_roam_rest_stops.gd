@@ -80,6 +80,26 @@ func test_spawn_is_lit_from_the_start() -> void:
 	assert_true(_rest.is_lit(0))
 
 
+# Spawn, a respawn there, and every other stop put the car on the road facing along it, with the
+# stop's cabin never in front of it (2026-10-25: spawn used to start pointed into its cabin).
+func test_the_car_never_starts_facing_a_rest_stop_cabin() -> void:
+	var sites := _streamer.sites
+	for site in sites.of_kind(RoadSites.Kind.REST):
+		var pose := _rest.pose_at(site)
+		var car := Vector2(pose.origin.x, pose.origin.z)
+		var fwd := Vector2(-pose.basis.z.x, -pose.basis.z.z).normalized()
+		var cabin := sites.pos[site] + sites.back(site) * Config.data.rest_stop_cabin_back_m
+		assert_lt(fwd.dot((cabin - car).normalized()), 0.5, "the cabin of stop %d is not ahead" % site)
+		assert_true(_streamer.network.nearest(car.x, car.y, _streamer.settings.road_half_width_m),
+			"stop %d's car is on the road" % site)
+		assert_gt(absf(fwd.dot(_streamer.network.hit_dir)), 0.9, "and faces along it")
+	# Spawn's cabin stands behind the car, back down the road out.
+	var p0 := _rest.pose_at(0)
+	var cabin0 := sites.pos[0] + sites.back(0) * Config.data.rest_stop_cabin_back_m
+	var to_cabin := cabin0 - Vector2(p0.origin.x, p0.origin.z)
+	assert_lt(Vector2(-p0.basis.z.x, -p0.basis.z.z).normalized().dot(to_cabin.normalized()), -0.5)
+
+
 func test_driving_onto_a_rest_stop_lights_it_and_makes_it_the_respawn_point() -> void:
 	var site := _a_rest_stop()
 	_rest.lit_sites.erase(site)

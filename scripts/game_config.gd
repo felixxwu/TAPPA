@@ -871,6 +871,9 @@ func has_nitrous() -> bool:
 ## How far each rest stop's log cabin stands back from its pad's centre, away from the road
 ## (TerrainStreamer._site_marker). Past about 6 m it reaches into the crowd.
 @export_range(0.0, 10.0, 0.5) var rest_stop_cabin_back_m := 6.0
+## How far down the road out of spawn the car starts (and respawns at the spawn rest stop), so
+## it sits clear of the cabin and its crowd, facing away from them (RestStops.pose_at).
+@export_range(0.0, 15.0, 0.5) var spawn_ahead_m := 8.0
 ## HP regained per second while driving; 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export_range(0.0, 50.0, 0.5) var damage_regen_hp_per_s := 0.0

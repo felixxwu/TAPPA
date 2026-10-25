@@ -272,7 +272,12 @@ over `pad_blend_m`, widened where the pad sits far above or below the land so th
 under `pad_blend_max_slope`, up to `pad_blend_max_m` — `RoadSites.blend_m`) and reports it as road, so it draws as gravel, grips as road and nothing is
 planted on it (`is_clear`).
 
-- **Rest stops (`REST`):** spawn is the first, centred on the spawn junction. The rest are
+- **Rest stops (`REST`):** spawn is the first, centred on the spawn junction, its `dir` the
+  way the road leaves spawn (`_road_out_of_spawn`), and its cabin back down that road
+  (`RoadSites.back`). The car starts, and respawns there, `GameConfig.spawn_ahead_m` down the
+  road out facing away from the cabin (`RestStops.pose_at(0)`, which `free_roam.gd` uses for a
+  fresh world too). Until 2026-10-25 spawn faced `Vector3.FORWARD`, which the one road out
+  (heading +x/+z) flipped round, so the car started pointed into the cabin. The rest are
   placed breadth-first from spawn, carrying "road since the last rest stop" into each junction
   (the least over the ways in). A stop goes down each time that reaches the spacing for its
   ring: its region's `rest_stop_spacing_m` (RegionLibrary, `rest_stop_spacing_of`), or
