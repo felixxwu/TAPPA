@@ -206,8 +206,12 @@ func test_while_paused_it_hides_and_ignores_taps() -> void:
 class FakeRestStops:
 	extends RestStops
 	var site := -1
+	var opens := 0
 	func prompt_site() -> int:
 		return site
+	func open_here() -> bool:
+		opens += 1
+		return site >= 0
 
 
 func test_the_line_prompts_at_a_rest_stop() -> void:
@@ -221,3 +225,18 @@ func test_the_line_prompts_at_a_rest_stop() -> void:
 	mm.update_prompt_label()
 	assert_true(mm.prompt_label.visible)
 	assert_string_contains(mm.prompt_label.text, "REST STOP")
+
+
+func test_a_tap_on_the_prompt_opens_the_rest_stop_not_the_map() -> void:
+	var mm := _map()
+	var rs := FakeRestStops.new()
+	autofree(rs)
+	mm.rest_stops = rs
+	rs.site = 3
+	mm.update_prompt_label()
+	watch_signals(mm)
+	var ev := InputEventScreenTouch.new()
+	ev.pressed = true
+	mm.prompt_label.gui_input.emit(ev)
+	assert_eq(rs.opens, 1)
+	assert_signal_not_emitted(mm, "open_requested")

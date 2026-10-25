@@ -114,7 +114,9 @@ func _ready() -> void:
 	add_child(_overlay)
 	prompt_label = UITheme.label("")
 	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	prompt_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	prompt_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	prompt_label.gui_input.connect(_on_prompt_input)
 	add_child(prompt_label)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
@@ -144,7 +146,7 @@ func set_frame_size(s: Vector2) -> void:
 		_mat.set_shader_parameter("shadow_uv", Vector2(SHADOW_PX / s.x, SHADOW_PX / s.y))
 	if prompt_label != null:
 		prompt_label.position = Vector2(0.0, s.y)
-		prompt_label.size = Vector2(s.x, 0.0)
+		prompt_label.size = Vector2(s.x, UITheme.FONT_SIZE * 3)  # a finger-sized hit box
 
 
 # --- the projection (the GDScript twin of mini_map.gdshader's `ground`) -------------------------
@@ -188,6 +190,13 @@ func _gui_input(event: InputEvent) -> void:
 	if tap and is_live() and Config.data.minimap_enabled:
 		accept_event()
 		open_requested.emit()
+
+
+func _on_prompt_input(event: InputEvent) -> void:
+	var tap: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
+		or (event is InputEventScreenTouch and event.pressed)
+	if tap and is_live() and prompt_label.visible and rest_stops != null and rest_stops.open_here():
+		prompt_label.accept_event()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -346,7 +355,8 @@ func _process(delta: float) -> void:
 func update_prompt_label() -> void:
 	var at_stop := rest_stops != null and rest_stops.prompt_site() >= 0
 	prompt_label.visible = at_stop
-	prompt_label.text = UITheme.caps("Enter / A: open rest stop") if at_stop else ""
+	var how := "Tap" if Platform.is_touch() else "Enter / A"
+	prompt_label.text = UITheme.caps(how + ": open rest stop") if at_stop else ""
 
 
 # Which way the outer rings lie on screen: from the car, straight away from spawn (the world

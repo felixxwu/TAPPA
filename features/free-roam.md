@@ -344,9 +344,10 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
   Teleports (travel, respawn, the R reset) are not swept as drives: `RestStops.move_car_to`,
   `RoadRecovery.reset_done` → `car_teleported` on `RestStops` and `LootDirector` reset the swept
   start (the 100 m jump guard stays as a backstop).
-- **Opening the page:** at a rest stop below `rest_stop_speed_kmh`, `menu_select` (Enter /
+- **Opening the page:** at a rest stop, at any speed, `menu_select` (Enter /
   gamepad A) opens the rest-stop page (`features/menus.md`); `RestStops.prompt_site` says when, and
-  the minimap's line shows the prompt. Coming to a halt alone does nothing.
+  the minimap's line shows the prompt. On touch the prompt reads "Tap" and tapping it calls
+  `RestStops.open_here` (`MiniMap._on_prompt_input`). Coming to a halt alone does nothing.
 - **Respawn:** on `gave_up` the engine cuts out completely (`EngineSim.killed`: no combustion,
   clutch open so no drive or engine braking, revs spin down to 0, `EngineAudio` pushes silence;
   `EngineSim.reset` clears it) and, `GameConfig.wreck_page_delay_s` later (counted down in

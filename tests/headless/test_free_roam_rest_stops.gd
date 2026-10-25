@@ -144,7 +144,7 @@ func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> voi
 	_rest.set_physics_process(true)
 
 
-# Stopping alone doesn't open the page: menu_select (Enter / gamepad A) does, and only when slow.
+# Stopping alone doesn't open the page: menu_select (Enter / gamepad A) does.
 func test_menu_select_while_stopped_at_a_rest_stop_opens_the_page() -> void:
 	var site := _a_rest_stop()
 	await _park_on(site)
@@ -160,16 +160,16 @@ func test_menu_select_while_stopped_at_a_rest_stop_opens_the_page() -> void:
 	_rest.set_physics_process(true)
 
 
-func test_menu_select_while_moving_through_a_rest_stop_does_nothing() -> void:
+func test_menu_select_while_moving_through_a_rest_stop_opens_the_page() -> void:
 	var site := _a_rest_stop()
 	await _park_on(site)
 	_rest.set_physics_process(false)
 	_rest.step(0.01)
 	_car.linear_velocity = -_car.global_transform.basis.z * 30.0
 	watch_signals(_rest)
-	assert_eq(_rest.prompt_site(), -1)
+	assert_eq(_rest.prompt_site(), site)
 	_rest._unhandled_input(_press("menu_select"))
-	assert_signal_not_emitted(_rest, "opened")
+	assert_signal_emitted_with_parameters(_rest, "opened", [site])
 	_rest.set_physics_process(true)
 
 

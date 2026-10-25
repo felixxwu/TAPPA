@@ -32,7 +32,7 @@ A navigation-software style map at the top centre of the screen while driving.
   upright on top of the tilted ground, smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the
   full map.
 - **A line under the frame** (`MiniMap.update_prompt_label`, per frame): the action prompt
-  ("ENTER / A: OPEN REST STOP" while `RestStops.prompt_site` >= 0), hidden otherwise. The money
+  ("ENTER / A: OPEN REST STOP", or "TAP: …" on touch, while `RestStops.prompt_site` >= 0), hidden otherwise; tapping it opens the rest stop (`_on_prompt_input` → `RestStops.open_here`). The money
   counter is top-left, not here (`LootDirector.money_label`, [loot.md](loot.md)).
 
 ## Seen sites

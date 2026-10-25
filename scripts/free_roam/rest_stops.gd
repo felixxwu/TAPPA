@@ -5,8 +5,8 @@ extends Node
 # The rest stops as gameplay: Dark Souls bonfires (todo/2026-10-19-free-roam-pivot.md decision 9).
 #   * Driving past a rest stop — onto its pad or just along the road beside it, at any speed —
 #     LIGHTS it, makes it the respawn point and fully HEALS the car (`healed`).
-#   * Pressing menu_select (Enter / gamepad A) there below rest_stop_speed_kmh opens the rest-stop
-#     page (`opened`); the minimap shows the prompt (`prompt_site`).
+#   * Pressing menu_select (Enter / gamepad A) there, at any speed, opens the rest-stop
+#     page (`opened`); the minimap shows the prompt (`prompt_site`), which a touch player taps.
 #   * When the car gives up (DamageModel.gave_up: 0 HP), the engine cuts out (EngineSim.killed: silent,
 #     no drive) and the car rolls on with no controls; wreck_page_delay_s later `wrecked` opens the wreck page. its Respawn puts the car back at the last lit rest stop, fully repaired with a cold engine (`respawned`, carrying where the wreck was).
 #   * Travel teleports to any lit rest stop. Both moves stream the destination in first
@@ -117,18 +117,24 @@ func step(delta: float) -> void:
 		last_site = i
 
 
-# The rest stop whose page menu_select would open now, or -1. The speed gate keeps a handbrake
-# (also gamepad A) while sliding past from opening it.
+# The rest stop whose page menu_select would open now, or -1.
 func prompt_site() -> int:
-	if is_wrecked or _on_site < 0 or car == null:
+	if is_wrecked or car == null:
 		return -1
-	return _on_site if car.linear_velocity.length() * 3.6 < Config.data.rest_stop_speed_kmh else -1
+	return _on_site
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("menu_select") and prompt_site() >= 0:
+	if event.is_action_pressed("menu_select") and open_here():
 		get_viewport().set_input_as_handled()
-		opened.emit(_on_site)
+
+
+# Opens the page of the rest stop the car is at (menu_select, or a tap on the minimap's prompt).
+func open_here() -> bool:
+	if prompt_site() < 0:
+		return false
+	opened.emit(_on_site)
+	return true
 
 
 # The car reached rest stop `i`: light it (the first time) and heal the car fully.

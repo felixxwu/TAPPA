@@ -860,9 +860,6 @@ func has_nitrous() -> bool:
 @export_range(0.9, 1.0, 0.0001) var engine_cooling_retain_per_s := 0.95
 ## HP lost per second above the overheat threshold.
 @export_range(0.0, 500.0) var overheat_hp_drain_per_s := 15.0
-## Free-roam rest stops: below this speed (km/h) at a rest stop, Enter / gamepad A opens the
-## rest-stop page (RestStops.prompt_site).
-@export_range(0.0, 60.0) var rest_stop_speed_kmh := 8.0
 ## Seconds between the car giving up (0 HP: the engine cuts out and it coasts) and the wreck
 ## page appearing (RestStops.step counts it down).
 @export_range(0.0, 10.0, 0.1) var wreck_page_delay_s := 3.0
