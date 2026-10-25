@@ -1,7 +1,7 @@
 extends GutTest
 # Free-roam coins and shops (features/loot.md): the ring tables and prices, fitting parts through
 # the owned-car funnel, and the economy in the world: picking up coins, dropping the money on a wreck,
-# buying at a checkpoint, and the rest-stop Parts / Garage / Journal pages. A synthetic car
+# buying at a checkpoint, and the rest-stop Parts / Garage pages. A synthetic car
 # roster throughout (CarFixtures); the boost catalogue is iterated whole, as opaque input.
 
 const TEST_PATH := "user://test_loot_profile.json"
@@ -589,39 +589,6 @@ func test_picking_a_car_keeps_the_cursor_on_it() -> void:
 	assert_almost_eq(page.cards()._offset, page.cards()._target_offset_for(2), 0.5, "and the strip is scrolled to it")
 	page.dirty = false
 	page.close()
-
-
-func test_the_journal_pages_are_navigable() -> void:
-	var scene := await _boot()
-	var page: RestStopPage = scene.get_node("RestStopPage")
-	var closed := [false]
-	page.open_journal(func() -> void: closed[0] = true)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_eq(page.view, RestStopPage.View.JOURNAL)
-	var regions: int = page.loot.journal().size()
-	assert_gt(regions, 0)
-	assert_eq(page.cards().card_count(), regions, "a card per unlocked region")
-	assert_eq(page.get_viewport().gui_get_focus_owner(), page.cards())
-	var ring := int(page.loot.journal()[0]["ring"])
-	page.cards()._confirm_selected()
-	page.cards().skip_confirm_flash()
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_eq(page.view, RestStopPage.View.REGION)
-	assert_eq(page.journal_ring, ring)
-	assert_eq(page.cards().card_count(), (page.loot.journal()[0]["items"] as Array).size(),
-		"a card per item in that region")
-	assert_eq(page.get_viewport().gui_get_focus_owner(), page.cards())
-	var e := InputEventAction.new()
-	e.action = "ui_cancel"
-	e.pressed = true
-	MenuNav.of(page._page)._unhandled_input(e)
-	await get_tree().process_frame
-	assert_eq(page.view, RestStopPage.View.JOURNAL, "back from a region returns to the region list")
-	MenuNav.of(page._page)._unhandled_input(e)
-	await get_tree().process_frame
-	assert_true(closed[0], "and back again hands back to the caller")
 
 
 func _confirm(cards: CardCarousel, index: int) -> void:

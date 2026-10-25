@@ -186,7 +186,7 @@ func _ready() -> void:
 	_install_touch_watchdog()
 
 
-# Every menu in the game (title, pause, journal, rest stop, map, wrecked page…) pauses
+# Every menu in the game (title, pause, rest stop, map, wrecked page…) pauses
 # the tree, and this layer is pausable, so a paused tree means a menu is up: the
 # controls hide under it and come back on resume. Done on an inner root rather than the
 # layer's own `visible`, which photo mode and the benchmark own (world.gd) — so the two

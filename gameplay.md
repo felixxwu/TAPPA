@@ -65,7 +65,7 @@ title (Continue · New World · Settings)
   it's gone. Every coin is back on the road.
 - **Rest stops are bonfires.** Driving past one — no need to stop — lights it and fully heals the
   car. Pulling in and pressing Enter / A opens the rest-stop page: you can buy cars and parts, fit parts, tune,
-  swap cars, read the journal, and travel to any rest stop you've lit. A crowd gathers at each.
+  swap cars, and travel to any rest stop you've lit. A crowd gathers at each.
 - **Rest-stop spacing is the main balance lever**, because it decides how survivable a cooling
   failure is. It is set per ring.
 
@@ -79,8 +79,7 @@ title (Continue · New World · Settings)
   nitrous, sticky tyres, quick-shift gearbox, aero, brakes, lightweight parts) sold at a
   level that rises with the ring. **Engines** and **drivetrain kits** are parts too. Parts go into
   a shared collection: a part owned fits every car at once.
-- **Every car and part exists once**: once bought it leaves the shop. Log cabins mark rest stops,
-  and the journal lists what each unlocked biome sells.
+- **Every car and part exists once**: once bought it leaves the shop. Log cabins mark rest stops.
 - **The pacing goal:** the cars and parts run out at about the same time as the biomes, so the late
   game is fresh in both.
 

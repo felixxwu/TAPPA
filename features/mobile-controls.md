@@ -199,7 +199,7 @@ screenshot whether the phone is feeding anything at all and which source won.
 On non-touch devices the layer is hidden and its input/process are disabled, so
 desktop keyboard play is unchanged.
 
-**Hidden under menus.** Every menu (the title menu the game boots into, pause, journal,
+**Hidden under menus.** Every menu (the title menu the game boots into, pause,
 rest stop, map, stats, wrecked page) pauses the tree, so `_sync_paused` (run from
 `_notification` on `NOTIFICATION_PAUSED` / `UNPAUSED`, and once in `_ready`) hides the
 overlay while paused and shows it again on resume. It toggles an inner `Overlay` Control

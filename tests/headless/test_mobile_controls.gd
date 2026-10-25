@@ -78,7 +78,7 @@ func test_visible_when_forced() -> void:
 	assert_true(_controls.visible, "controls shown when mobile_controls_force is set")
 
 
-# Every menu (title, pause, journal, rest stop…) pauses the tree, so the overlay must hide
+# Every menu (title, pause, rest stop…) pauses the tree, so the overlay must hide
 # while paused, drop whatever was held, and come back when driving resumes.
 func test_hidden_and_released_while_a_menu_pauses_the_tree() -> void:
 	var gas: Rect2 = _controls._rects["gas"]

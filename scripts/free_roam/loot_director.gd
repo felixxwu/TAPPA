@@ -297,23 +297,3 @@ func _say(text: String) -> void:
 	_toast.text = text
 	_toast.visible = true
 	_toast_t = 3.0
-
-
-func _ring_name(ring: int) -> String:
-	return String(RegionLibrary.by_id(BiomeDirector.region_of(streamer.settings, ring)).get("name", "next biome"))
-
-
-# The journal: for every unlocked ring, a row per thing its checkpoints sell, and whether the
-# player has it.
-func journal() -> Array:
-	var rings: Array = []
-	var have := owned_keys()
-	var stock := ring_stock()
-	for r in stock.size():
-		if not is_unlocked(r):
-			continue
-		var rows: Array = []
-		for item: Dictionary in stock[r]:
-			rows.append({"label": LootRules.label(item), "item": item, "found": have.has(LootRules.item_key(item))})
-		rings.append({"ring": r, "name": _ring_name(r), "items": rows})
-	return rings

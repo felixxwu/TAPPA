@@ -13,9 +13,6 @@ extends CanvasLayer
 #             share one), then one per part on sale (pick to buy and fit it).
 #   GARAGE  — a card per owned car (pick one to drive it), then one per car on sale (pick to buy and
 #             drive it).
-#   JOURNAL — a card per biome whose stock is on sale; pick one for REGION. Opened only through
-#             open_journal (no menu calls it right now): Back leaves the page through the caller's on_close.
-#   REGION  — a card per item and car that biome sells, owned or its price (read-only).
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
@@ -24,7 +21,7 @@ signal closed
 signal map_requested(site: int)
 signal car_changed
 
-enum View { WRECKED, MAIN, TUNE, PARTS, GARAGE, JOURNAL, REGION }
+enum View { WRECKED, MAIN, TUNE, PARTS, GARAGE }
 
 @export var rest_stops: RestStops
 @export var car: VehicleBody3D
@@ -37,11 +34,7 @@ var owned: Dictionary = {}
 var view := View.MAIN
 var site := -1
 var dirty := false
-var journal_ring := -1
 var _keep_at := 0
-# Set while the journal was opened on its own (open_journal): its Back hands
-# back to this rather than stepping to MAIN.
-var _on_journal_close := Callable()
 var _page: MenuPage
 var _cards: CardCarousel
 var _tune_panel: TuningPanel
@@ -56,25 +49,9 @@ func is_open() -> bool:
 	return _page != null
 
 
-# The journal on its own, over the already-frozen game. It leaves the
-# pause state alone: Back clears the page and calls `on_close`, which hands back to the caller.
-func open_journal(on_close: Callable) -> void:
-	_on_journal_close = on_close
-	journal_ring = -1
-	_show(View.JOURNAL)
-
-
-func _close_journal() -> void:
-	_clear()
-	var on_close := _on_journal_close
-	_on_journal_close = Callable()
-	on_close.call()
-
-
 func open(p_site: int) -> void:
 	site = p_site
 	dirty = false
-	_on_journal_close = Callable()
 	if car != null and car.get("damage") != null:
 		(car.damage as DamageModel).repair(Config.data)
 	get_tree().paused = true
@@ -125,10 +102,6 @@ func _show(v: View) -> void:
 			_build_parts()
 		View.GARAGE:
 			_build_garage()
-		View.JOURNAL:
-			_build_journal()
-		View.REGION:
-			_build_region()
 	UITheme.enforce(_page)
 
 
@@ -140,8 +113,6 @@ func _card_page(title: String, entries: Array, header: Array = [], selected := -
 	_page = CardUI.card_page(self, {"title": title, "dim": true})
 	_cards = CardUI.card_list(_page, entries, header, mini(_keep_at, entries.size() - 1) if selected < 0 else selected)
 	var go_back := _show.bind(back)
-	if view == View.JOURNAL and _on_journal_close.is_valid():
-		go_back = _close_journal
 	if view != View.MAIN:
 		_page.add_action(UITheme.row_button("< Back", go_back))
 	MenuNav.attach(_page, {first = _cards, on_back = close if view == View.MAIN else go_back})
@@ -304,45 +275,6 @@ func _drive(instance_id: int) -> void:
 	owned = WorldSession.active_car()
 	dirty = true
 	_show(View.GARAGE)
-
-
-func _build_journal() -> void:
-	var entries: Array = []
-	var selected := 0
-	for r: Dictionary in loot.journal() if loot != null else []:
-		var found := 0
-		for entry: Dictionary in r["items"]:
-			found += int(bool(entry["found"]))
-		if int(r["ring"]) == journal_ring:
-			selected = entries.size()
-		entries.append({"title": String(r["name"]), "subtitle": "%d of %d owned" % [found, r["items"].size()],
-			"icon": "journal", "action": _open_region.bind(int(r["ring"]))})
-	if entries.is_empty():
-		entries.append({"title": "Nothing known yet", "icon": "journal"})
-	_card_page("Journal", entries, ["Light a checkpoint to put its biome's stock on sale."], selected)
-
-
-func _open_region(ring: int) -> void:
-	journal_ring = ring
-	_show(View.REGION)
-
-
-func _build_region() -> void:
-	var entries: Array = []
-	var title := "Journal"
-	for r: Dictionary in loot.journal() if loot != null else []:
-		if int(r["ring"]) != journal_ring:
-			continue
-		title = String(r["name"])
-		for entry: Dictionary in r["items"]:
-			var found := bool(entry["found"])
-			var text := LootRules.card_text(entry["item"])
-			entries.append({"title": text[0], "subtitle": text[1],
-				"extra": "Owned" if found else "$%d" % LootRules.price(entry["item"]), "extra_variant": "" if found else "dim",
-				"icon": LootRules.icon(entry["item"])})
-	if entries.is_empty():
-		entries.append({"title": "Nothing here", "icon": "journal"})
-	_card_page(title, entries, [], 0, View.JOURNAL)
 
 
 func _open_map() -> void:

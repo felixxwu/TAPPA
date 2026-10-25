@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/loot_rules.gd` (`LootRules`: pure tables, prices, fitting, names),
 `scripts/free_roam/loot_director.gd` (`LootDirector`: coins, money, the wreck, the shop stock), the
-Parts / Garage / Journal pages of `scripts/free_roam/rest_stop_page.gd`, and the coins in
+Parts / Garage pages of `scripts/free_roam/rest_stop_page.gd`, and the coins in
 `TerrainStreamer` (`_coin_marker`, `shaders/coin.gdshader`).
 
 **Tests:** `tests/headless/test_loot.gd`
@@ -91,9 +91,7 @@ Parts / Garage / Map / Tune car (travel is on the map); its header says the mone
 says "Fit", "Swap for X", or — disabled — "Can't fit"; other cars keep theirs), then one per part on
 sale ("for sale"; picking one buys it and fits it straight away, `_buy_part`). **Garage:** a card per
 owned car (pick to drive one; the cursor starts on the car being driven), then one per car on sale
-(picking one buys it and switches to it, `_buy_car`). **Journal** (no menu opens it right now — it left the pause menu on 2026-10-25): a card per unlocked region
-("n of m owned"); picking one opens that region's page (`View.REGION`, `journal_ring`), a read-only
-card per thing it sells, "Owned" or its price. It opens over the frozen game
-(`open_journal(on_close)`); Back steps region → region list → `on_close`. A change
+(picking one buys it and switches to it, `_buy_car`). There is no journal (a read-only list of what
+each unlocked biome sells): it was deleted on 2026-10-25 at the user's ask. A change
 of parts or car re-fields the car when the page closes: `car_changed` makes free roam save and
 reload the scene at the rest stop, because a live body is never re-staged.

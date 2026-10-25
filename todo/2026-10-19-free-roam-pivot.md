@@ -798,7 +798,7 @@ Numbering continues from decision 32.
   every car at once (nothing moves between cars). The rest-stop menu is Continue / Parts / Garage /
   Map / Tune car: Travel (the map does it) and Journal (still in the pause menu) are gone from it.
   **2026-10-25 (user):** Journal is out of the pause menu too (back to Resume / Reset to road / …);
-  the journal pages stay in `RestStopPage` (`open_journal`) but no menu opens them for now.
+  the journal itself (its pages and `LootDirector.journal`) is deleted.
   **Later (user):** the money isn't simply lost on a wreck: it's dropped at the wreck under the old
   loot crystal and recovered by driving back; giving up again first loses it for good. Coins still
   all come back on a wreck. The minimap is off (`GameConfig.minimap_enabled = false`); the full map

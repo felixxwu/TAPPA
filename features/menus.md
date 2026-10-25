@@ -95,8 +95,8 @@ and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The 
 host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
 `return_from_extra()` when its page closes)
 and a configurable quit (`quit_label`, `quit_scene`). Free roam's rows: Resume / Reset to
-road / Map / Stats / Settings / Quit to title. (Journal was a pause row from 2026-10-23 to
-2026-10-25; it was taken out at the user's ask, so no menu opens the journal right now.)
+road / Map / Stats / Settings / Quit to title. (There was a Journal row from 2026-10-23 to
+2026-10-25; the user had it taken out and the journal deleted.)
 
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)
 
@@ -109,7 +109,7 @@ free, freezes the game and disarms the pause menu. Every page but TUNE is a card
   Garage / Map / Tune car. Travel is on the map (the quick-travel picker).
 - **TUNE:** the shared `TuningPanel` (`car.retune` on the funnel view of the car) on a plain,
   widened `MenuPage` — sliders, not a list.
-- **PARTS / GARAGE** (with what's on sale at the end of each) **/ JOURNAL** (no menu opens it right now; `open_journal`): see [loot.md](loot.md).
+- **PARTS / GARAGE** (with what's on sale at the end of each): see [loot.md](loot.md).
 
 Back (Esc / gamepad B, or the `< Back` button under a sub-page's cards) steps a sub-page → MAIN →
 closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`): when the car gives up it says only "You dropped $n here" (`LootDirector.lost`; nothing when there was no money), and its single Respawn card (or Back) respawns at the last lit stop. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
