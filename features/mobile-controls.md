@@ -51,6 +51,7 @@ title-screen Settings page has no live controls, so there it just saves.)
 
 ## Behavior
 
+- **Free-look touches.** `owns_point(pos)` says whether a touch lands on any control (the slider or a button region). The chase camera's free look takes only touches that land on none of them (see [camera.md](camera.md) › *Free look*), so in the `SIMPLE_LR_AUTO` scheme, whose halves cover the whole screen, there is no touch look.
 - **Drives existing input actions.** All schemes press the same actions as the
   keyboard via `Input.action_press/release` (`accelerate`, `brake_reverse`,
   `steer_left`, `steer_right`, plus `nitrous` — see below), so `car.gd` needs no touch

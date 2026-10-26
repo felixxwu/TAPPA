@@ -83,11 +83,12 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 [node name="BonnetCamera" type="Camera3D" parent="Car" unique_id=761299467]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, -0.6)
 
-[node name="ChaseCamera" type="Camera3D" parent="." unique_id=1157140773 node_paths=PackedStringArray("target")]
+[node name="ChaseCamera" type="Camera3D" parent="." unique_id=1157140773 node_paths=PackedStringArray("target", "mobile_controls")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4, 8)
 fov = 100.0
 script = ExtResource("5_cam")
 target = NodePath("../Car")
+mobile_controls = NodePath("../MobileControls")
 
 [node name="CameraManager" type="Node" parent="." unique_id=1239625326 node_paths=PackedStringArray("chase_camera", "bonnet_camera")]
 script = ExtResource("10_cammgr")

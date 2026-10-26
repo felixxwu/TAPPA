@@ -1,8 +1,10 @@
 extends Camera3D
 # Docs: features/camera.md — update in the same change as this file.
-# Tests: tests/headless/test_chase_camera_aim.gd, tests/headless/test_chase_camera_fov.gd, tests/headless/test_chase_camera_shake.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'chase_camera' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
+# Tests: tests/headless/test_chase_camera_aim.gd, tests/headless/test_chase_camera_fov.gd, tests/headless/test_chase_camera_shake.gd, tests/headless/test_chase_camera_look.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'chase_camera' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 
 @export var target: Node3D
+## The on-screen touch controls, if any: a touch that lands on one of them is driving, not looking.
+@export var mobile_controls: Node
 
 ## Minimum horizontal speed (m/s) before the direction of travel is trusted.
 ## Below this the car's facing direction is used instead, so the camera stays
@@ -66,6 +68,18 @@ var _travel_dir := Vector3.FORWARD
 var _seated_base := NAN
 var _height_smoothing: float
 
+# Free look: a yaw swivel (radians) added on top of the follow direction, driven by the mouse, a
+# touch drag off the on-screen controls, or the right stick, and eased back to 0 once look input
+# stops. See features/camera.md -> "Free look".
+var _look_yaw := 0.0
+var _look_idle := INF        # seconds since the last look input
+var _look_pointer = null     # the touch index driving the look, or null
+var _look_mouse_sens: float
+var _look_touch_sens: float
+var _look_stick_speed: float # radians per second
+var _look_hold: float
+var _look_return: float
+
 
 func _ready() -> void:
 	_gravity = Platform.gravity()
@@ -74,6 +88,11 @@ func _ready() -> void:
 	_height = cfg.follow_distance * cfg.follow_height_ratio
 	_smoothing = cfg.smoothing
 	_height_smoothing = cfg.chase_height_smoothing
+	_look_mouse_sens = cfg.chase_look_mouse_sensitivity
+	_look_touch_sens = cfg.chase_look_touch_sensitivity
+	_look_stick_speed = deg_to_rad(cfg.chase_look_stick_speed)
+	_look_hold = cfg.chase_look_hold_s
+	_look_return = cfg.chase_look_return_rate
 	_base_fov = cfg.chase_fov
 	_fov_speed_boost = cfg.chase_fov_speed_boost
 	_fov_speed = cfg.chase_fov_speed
@@ -127,6 +146,10 @@ func _timed_physics_process(delta: float) -> void:
 	# independent. The look-at itself is NOT smoothed (see below).
 	var weight := 1.0 - exp(-_smoothing * delta)
 	_travel_dir = _travel_dir.slerp(target_dir, weight).normalized()
+	_update_look(delta)
+	# The free-look swivel turns the orbit on top of the follow direction, so the camera keeps
+	# following the car while it looks at it from the side.
+	var orbit_dir := _travel_dir.rotated(Vector3.UP, _look_yaw)
 
 	# Widen the FOV with horizontal speed to sell a sense of speed. The target
 	# FOV ramps linearly from _base_fov (stationary) to _base_fov +
@@ -168,7 +191,7 @@ func _timed_physics_process(delta: float) -> void:
 	# of it after the height: sqrt(distance^2 - height^2).
 	var origin := target.global_position
 	var horizontal := sqrt(maxf(0.0, distance * distance - _height * _height))
-	var final_pos := origin - _travel_dir * horizontal
+	var final_pos := origin - orbit_dir * horizontal
 	final_pos.y = _eased_base(origin.y, delta) + _height
 	global_position = final_pos
 
@@ -187,6 +210,55 @@ func _timed_physics_process(delta: float) -> void:
 	# Shake goes LAST, on top of the aimed-and-leaned view: it is a disturbance of the shot the
 	# rest of this function composed, not an input to it.
 	_update_shake(delta, _apply_gforce_tilt(delta))
+
+
+# Free look input. Mouse motion and a touch drag that started off the on-screen controls swivel
+# the camera; every one turns the view the way the input moves (right turns the view right), as
+# photo mode's look does. Mouse events the engine synthesised from a touch are skipped, or a finger
+# would count twice. Only while this camera is the one in use.
+func _input(event: InputEvent) -> void:
+	if not current:
+		return
+	if event is InputEventMouseMotion:
+		if event.device != InputEvent.DEVICE_ID_EMULATION:
+			look_by(-event.relative.x * _look_mouse_sens)
+	elif event is InputEventScreenTouch:
+		if event.pressed:
+			if event.index == _look_pointer or (_look_pointer == null and not _on_controls(event.position)):
+				_look_pointer = event.index
+		elif event.index == _look_pointer:
+			_look_pointer = null
+	elif event is InputEventScreenDrag and event.index == _look_pointer:
+		look_by(-event.relative.x * _look_touch_sens)
+
+
+# Swivel the view by `yaw` radians and count it as look input (holds off the return to centre).
+func look_by(yaw: float) -> void:
+	_look_yaw = wrapf(_look_yaw + yaw, -PI, PI)
+	_look_idle = 0.0
+
+
+func _on_controls(pos: Vector2) -> bool:
+	return is_instance_valid(mobile_controls) and mobile_controls.has_method("owns_point") \
+			and mobile_controls.owns_point(pos)
+
+
+# The stick swivels at a rate; with no look input for _look_hold seconds (and no finger held on a
+# look drag) the swivel eases back to 0, so the view always returns to the default. Not in use
+# (bonnet cam): no swivel at all.
+func _update_look(delta: float) -> void:
+	if not current:
+		_look_yaw = 0.0
+		_look_pointer = null
+		_look_idle = INF
+		return
+	var stick := Input.get_axis(&"look_left", &"look_right")
+	if stick != 0.0:
+		look_by(-stick * _look_stick_speed * delta)
+	else:
+		_look_idle += delta
+	if _look_pointer == null and _look_idle > _look_hold:
+		_look_yaw = lerpf(_look_yaw, 0.0, 1.0 - exp(-_look_return * delta))
 
 
 # Whether the target car is actually delivering nitrous this tick. Reads EngineSim's

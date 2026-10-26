@@ -1064,6 +1064,19 @@ func has_nitrous() -> bool:
 ## How fast the chase camera's height follows the car's (the same 1-exp(-rate·dt) easing as the
 ## orbit). Lower floats more smoothly over bumps; higher holds the height above the car rigidly.
 @export_range(0.1, 30.0) var chase_height_smoothing := 4.0
+## CHASE FREE LOOK. The mouse, a touch drag off the on-screen controls, or the right stick swivels
+## the chase camera round the car, ON TOP of the follow angle (it still follows; it just looks from
+## the side). With no look input the swivel eases back to 0. Radians of swivel per pixel of mouse motion.
+@export_range(0.0, 0.05) var chase_look_mouse_sensitivity := 0.006
+## Radians of swivel per pixel of touch drag.
+@export_range(0.0, 0.05) var chase_look_touch_sensitivity := 0.008
+## Degrees per second of swivel with the right stick fully over.
+@export_range(0.0, 720.0) var chase_look_stick_speed := 180.0
+## Seconds after the last look input before the swivel starts easing back to 0 (a finger still
+## held on a look drag keeps it, however long).
+@export_range(0.0, 5.0) var chase_look_hold_s := 0.6
+## How fast the swivel eases back to 0 (1-exp(-rate·dt)); higher snaps back faster.
+@export_range(0.1, 30.0) var chase_look_return_rate := 4.0
 ## CAMERA SHAKE (chase only). One shared amplitude that every source below pushes into, applied
 ## as ROTATION after the camera has aimed — never as position, which would break the dolly-zoom
 ## framing. See features/camera.md → "Camera shake".

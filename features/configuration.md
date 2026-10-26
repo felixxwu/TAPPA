@@ -165,6 +165,11 @@ servo measures the grip limit instead of predicting it. See
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
 | `follow_height_ratio` | 1.0 | Chase camera height above the car, as a multiple of `follow_distance` |
 | `smoothing` | 5.0 | Camera follow smoothing rate |
+| `chase_look_mouse_sensitivity` | 0.006 | Chase free look: radians of swivel per pixel of mouse motion |
+| `chase_look_touch_sensitivity` | 0.008 | Chase free look: radians of swivel per pixel of touch drag |
+| `chase_look_stick_speed` | 180.0 | Chase free look: degrees per second of swivel with the right stick fully over |
+| `chase_look_hold_s` | 0.6 | Chase free look: seconds after the last look input before the swivel eases back to 0 |
+| `chase_look_return_rate` | 4.0 | Chase free look: how fast the swivel eases back to 0 |
 | `photo_move_speed` | 25.0 | Photo mode free-fly camera lateral/vertical movement speed (m/s) |
 | `photo_look_sensitivity` | 0.003 | Photo mode mouse look sensitivity (multiplier on mouse delta per frame) |
 | `photo_touch_look_sensitivity` | 0.004 | Photo mode **touch** drag-to-look sensitivity (radians per pixel of drag) — kept separate from `photo_look_sensitivity` since a finger drag and a mouse delta cover different pixel ranges. See [camera.md](camera.md) › *On-screen touch controls* |

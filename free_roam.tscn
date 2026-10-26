@@ -82,10 +82,11 @@ material = SubResource("mat_ground")
 [node name="BonnetCamera" type="Camera3D" parent="Car"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, -0.6)
 
-[node name="ChaseCamera" type="Camera3D" parent="." node_paths=PackedStringArray("target")]
+[node name="ChaseCamera" type="Camera3D" parent="." node_paths=PackedStringArray("target", "mobile_controls")]
 fov = 100.0
 script = ExtResource("4_cam")
 target = NodePath("../Car")
+mobile_controls = NodePath("../MobileControls")
 
 [node name="Water" type="MeshInstance3D" parent="."]
 mesh = SubResource("water_mesh")

@@ -8,7 +8,7 @@ ordered cycle list `[BONNET, CHASE]` (the first entry is the default for a fresh
 time. Appending another `Camera3D` + `Mode` entry to its `ORDER` list extends the
 cycle.
 
-**Tests:** `tests/headless/test_camera_manager.gd`, `tests/headless/test_chase_camera_aim.gd`, `tests/headless/test_chase_camera_fov.gd`, `tests/headless/test_chase_camera_ground.gd`, `tests/headless/test_chase_camera_shake.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_photo_mode_controls.gd`
+**Tests:** `tests/headless/test_camera_manager.gd`, `tests/headless/test_chase_camera_look.gd`, `tests/headless/test_chase_camera_aim.gd`, `tests/headless/test_chase_camera_fov.gd`, `tests/headless/test_chase_camera_ground.gd`, `tests/headless/test_chase_camera_shake.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_photo_mode_controls.gd`
 
 ## Persistence & the settings page
 
@@ -57,6 +57,26 @@ suspension jolts and small bumps become a gentle float. A change of more than `S
 such as a reset, snaps instead. Because nothing checks the ground, the camera can dip into a
 hillside or a prop that rises behind the car; there is no collision. Guarded by
 `test_chase_camera_ground`.
+
+### Free look
+
+`chase_camera.gd` → `_input`, `look_by`, `_update_look`. The player can swivel the chase camera
+round the car with **mouse motion** (no button needed; mouse events the engine synthesised from
+a touch are skipped), a **touch drag that starts off the on-screen controls**
+(`MobileControls.owns_point`; the ChaseCamera's `mobile_controls` export is wired to the scene's
+`MobileControls`), or the **right stick** (`look_left` / `look_right`, axis 2, rate-controlled at
+`chase_look_stick_speed`). Every source turns the view the way the input moves, as photo mode does.
+
+The swivel `_look_yaw` is **added to the follow direction**: the orbit direction is
+`_travel_dir.rotated(UP, _look_yaw)`, so while looking at the side of the car the camera keeps
+following the car's travel and stays on that side. Only yaw; no pitch.
+
+With no look input for `chase_look_hold_s` (and no finger held on a look drag) the swivel eases
+back to 0 at `chase_look_return_rate`, so the view always returns to the default. Chase only: while
+the chase camera isn't `current` (bonnet, photo mode, a takeover camera) its input is ignored and
+the swivel is held at 0. Known limitation: like `PhotoModeControls`, the look touch trusts the
+engine's touch events, so on a touch web build a dropped release keeps the swivel held until that
+finger index is pressed again. Guarded by `test_chase_camera_look`.
 
 ### Behavior (`_physics_process`)
 

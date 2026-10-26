@@ -523,6 +523,14 @@ func _button_region(pos: Vector2) -> String:
 	return ""
 
 
+# Whether a touch at `pos` lands on one of the on-screen controls (the slider or any button
+# region). The chase camera's free look only takes touches that land on none of them.
+func owns_point(pos: Vector2) -> bool:
+	if not _active:
+		return false
+	return (_has_slider() and _slider_rect.has_point(pos)) or _button_region(pos) != ""
+
+
 # Steer value [-1, +1] for a thumb at screen X. Centre of the track is straight; the
 # usable travel is the half-track minus half the thumb so the thumb stays on the rail.
 func _steer_from_x(x: float) -> float:
