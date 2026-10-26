@@ -163,7 +163,7 @@ servo measures the grip limit instead of predicting it. See
 | `tilt_deadzone` | 0.05 | TILT scheme: device roll (fraction of 1 g) ignored around level |
 | `tilt_invert` | false | TILT scheme: flip the steering direction — the escape hatch if a device reports its roll the other way round (see [mobile-controls.md](mobile-controls.md) › Tilt) |
 | `follow_distance` | 6.0 | Chase camera distance behind (m) |
-| `follow_height_ratio` | 1.0 | Chase camera height above the car, as a multiple of `follow_distance` |
+| `follow_height_ratio` | 0.7 | Chase camera height above the car, as a multiple of `follow_distance` |
 | `smoothing` | 5.0 | Camera follow smoothing rate |
 | `chase_look_mouse_sensitivity` | 0.006 | Chase free look: radians of swivel per pixel of mouse motion |
 | `chase_look_touch_sensitivity` | 0.008 | Chase free look: radians of swivel per pixel of touch drag |
