@@ -3,10 +3,12 @@ extends CanvasLayer
 # Docs: features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_free_roam_rest_stops.gd — extend in the same change.
 # Lighting a checkpoint for the first time: a Dark Souls style "Checkpoint reached" band across the
-# screen while the car drives on. Its biome's cars and parts go on sale at every checkpoint.
+# screen, with a small "Damage repaired" line under it (passing a checkpoint fully heals the car,
+# RestStops._pass), while the car drives on. Its biome's cars and parts go on sale at every checkpoint.
 
 const FADE_S := 0.6
 const HOLD_S := 3.0
+const SUBTITLE := "Damage repaired"
 
 @export var rest_stops: RestStops
 @export var loot: LootDirector
@@ -32,7 +34,7 @@ func show_reached(site: int) -> void:
 	_reveal_ring(site)
 	if _band != null:
 		_band.queue_free()
-	_band = build_band("Checkpoint reached")
+	_band = build_band("Checkpoint reached", SUBTITLE)
 	add_child(_band)
 	_band.modulate.a = 0.0
 	var tween := _band.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
@@ -42,8 +44,9 @@ func show_reached(site: int) -> void:
 	tween.tween_callback(_banner_done)
 
 
-# The band across the middle of the screen, `text` in big gold capitals. RegionBanner wears it too.
-static func build_band(text: String) -> Control:
+# The band across the middle of the screen, `text` in big gold capitals, and `subtitle` (if any)
+# under it at the house font size. RegionBanner wears it too.
+static func build_band(text: String, subtitle: String = "") -> Control:
 	var band := ColorRect.new()
 	band.name = "Band"
 	band.color = UITheme.PANEL_DIM
@@ -57,8 +60,22 @@ static func build_band(text: String) -> Control:
 	label.add_theme_color_override("font_color", UITheme.GOLD)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	band.add_child(label)
+	if subtitle.is_empty():
+		label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		band.add_child(label)
+		return band
+	var stack := VBoxContainer.new()
+	stack.name = "Stack"
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_theme_constant_override("separation", 0)
+	stack.set_anchors_preset(Control.PRESET_FULL_RECT)
+	stack.add_child(label)
+	var sub := UITheme.label(subtitle)
+	sub.name = "Subtitle"
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(sub)
+	band.add_child(stack)
 	return band
 
 

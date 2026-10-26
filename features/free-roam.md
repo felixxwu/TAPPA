@@ -320,10 +320,13 @@ Players see rest stops as **checkpoints**: every player-facing string says "Chec
 code (`RestStops`, `RestStopPage`, `RoadSites.Kind.REST`, the save's `lit_sites`) keeps the old name.
 
 `CheckpointBanner` (`scripts/free_roam/checkpoint_banner.gd`, on `RestStops.lit`): the first time a
-checkpoint is lit, a full-width "Checkpoint reached" band fades in, holds `HOLD_S` (3 s) and fades
+checkpoint is lit, a full-width "Checkpoint reached" band fades in, with a small "Damage
+repaired" subtitle under it (`SUBTITLE`, at `UITheme.FONT_SIZE`; lighting always goes through
+`RestStops._pass`, which fully repairs the car), holds `HOLD_S` (3 s) and fades
 out while the car drives on (the tween runs through pauses). Lighting it puts its whole biome
 ring's stock on sale at checkpoints (`_reveal_ring` → `LootDirector.unlock`). The band itself is
-the static `CheckpointBanner.build_band(text)`, shared with the region banner.
+the static `CheckpointBanner.build_band(text, subtitle = "")`, shared with the region banner
+(which passes no subtitle).
 
 `RegionBanner` (`scripts/free_roam/region_banner.gd`, made in `free_roam.gd._ready`): the first time
 the car drives into a biome ring in this world, the same band shows the ring's region name

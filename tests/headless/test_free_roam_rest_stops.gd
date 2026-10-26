@@ -357,6 +357,10 @@ func test_lighting_a_checkpoint_shows_the_banner_and_unlocks_its_ring_in_the_sho
 	await _park_on(site)
 	_rest.step(0.01)
 	assert_true(_banner.is_showing_banner())
+	var sub := _banner._band.find_child("Subtitle", true, false) as Label
+	assert_not_null(sub, "the band says the car was repaired")
+	assert_eq(sub.text, UITheme.caps(CheckpointBanner.SUBTITLE))
+	assert_lt(sub.get_theme_font_size("font_size"), (_banner._band.find_child("Stack", true, false).get_child(0) as Label).get_theme_font_size("font_size"), "the subtitle is smaller than the title")
 	assert_true(_banner.loot.is_unlocked(ring), "the ring's stock is on sale")
 	_banner._banner_done()
 	await get_tree().process_frame
