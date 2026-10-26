@@ -1010,7 +1010,7 @@ func has_nitrous() -> bool:
 
 @export_group("Camera")
 @export var follow_distance := 2.5
-## Chase camera height above the ground, expressed as a multiple of
+## Chase camera height above the car, expressed as a multiple of
 ## follow_distance (so a 1.0 ratio keeps height == distance). Scaling off the
 ## follow distance keeps the camera pitch stable when the distance changes.
 @export var follow_height_ratio := 0.7
@@ -1061,8 +1061,8 @@ func has_nitrous() -> bool:
 @export_range(-2.0, 2.0) var chase_tilt_pitch_gain := 0.0
 @export_range(0.0, 30.0) var chase_tilt_max_deg := 4.0
 @export_range(0.1, 20.0) var chase_tilt_smoothing := 6.0
-## How fast the chase camera's height follows the ground under it (the same 1-exp(-rate·dt)
-## easing as the orbit). Lower floats more smoothly over bumps; higher hugs the terrain.
+## How fast the chase camera's height follows the car's (the same 1-exp(-rate·dt) easing as the
+## orbit). Lower floats more smoothly over bumps; higher holds the height above the car rigidly.
 @export_range(0.1, 30.0) var chase_height_smoothing := 4.0
 ## CAMERA SHAKE (chase only). One shared amplitude that every source below pushes into, applied
 ## as ROTATION after the camera has aimed — never as position, which would break the dolly-zoom

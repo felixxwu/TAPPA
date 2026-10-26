@@ -45,20 +45,18 @@ when the car's heading changes suddenly. The camera always looks **directly at
 the car** (the look-at is not smoothed), so the target stays centred while the
 viewpoint swings around gently.
 
-The camera's **height is measured from the terrain directly below the camera**,
-not from the car: it samples the ground height at its own horizontal position
-(via a `height_at` sibling — the hilly `Floor`) and sits `follow_distance *
-follow_height_ratio` above that (height is a multiple of the follow distance, not
-an independent value). So the camera keeps a constant clearance over the ground it is flying
-over, rather than rising and falling as the car climbs and descends hills. On
-flat test fixtures (no `height_at` sibling) the ground height falls back to 0. The
-water level is **not** consulted: the camera used to clamp the ground up to
-`track_water_level_m`, but a waterline that did not match the world (the free-roam
-island has its own) lifted the camera far above the car, so the clamp was removed.
-The seated ground is **eased**, not read raw: `_eased_ground` moves it toward the terrain
-under the camera at `chase_height_smoothing` (the usual `1 - exp(-rate·dt)` easing), so small
-bumps become a gentle float. A change of more than `SNAP_M` (30 m), such as a reset, snaps
-instead. Guarded by `test_chase_camera_ground`.
+The camera's **height is a fixed height above the car**: it sits `follow_distance *
+follow_height_ratio` above the car's origin (height is a multiple of the follow distance,
+not an independent value), whatever the terrain under the camera is doing. The terrain is
+**not** consulted at all (it used to be: the camera seated a fixed clearance over the
+ground under *itself*, which raised and lowered the view relative to the car on every hill;
+Felix asked for a fixed height above the car on 2026-10-26). Nor is the water level.
+The car height it seats on is **eased**, not read raw: `_eased_base` moves it toward the car's
+`global_position.y` at `chase_height_smoothing` (the usual `1 - exp(-rate·dt)` easing), so
+suspension jolts and small bumps become a gentle float. A change of more than `SNAP_M` (30 m),
+such as a reset, snaps instead. Because nothing checks the ground, the camera can dip into a
+hillside or a prop that rises behind the car; there is no collision. Guarded by
+`test_chase_camera_ground`.
 
 ### Behavior (`_physics_process`)
 
@@ -66,14 +64,12 @@ instead. Guarded by `test_chase_camera_ground`.
 target_dir = horizontal(target.linear_velocity).normalized()   # direction of motion
 # below MIN_TRAVEL_SPEED (1 m/s), fall back to the car's facing direction
 travel_dir = slerp(travel_dir, target_dir, 1 - exp(-smoothing * delta))  # eased orbit
-# follow_distance is the EUCLIDEAN distance to the car. position.y is a fixed
-# clearance over the terrain UNDER the camera, so the vertical gap dy depends on
-# where the camera ends up — and the horizontal reach must shrink to compensate:
-# horizontal = sqrt(follow_distance^2 - dy^2). Since dy depends on the reach and
-# the reach depends on dy, it is solved with a couple of fixed-point iterations.
-horizontal = sqrt(follow_distance^2 - dy^2)
+# follow_distance is the EUCLIDEAN distance to the car and the height is fixed, so
+# the horizontal reach is what is left after the height.
+height     = follow_distance * follow_height_ratio
+horizontal = sqrt(follow_distance^2 - height^2)
 position   = target.position - travel_dir * horizontal       # behind the smoothed orbit
-position.y = ground_height_at(position.xz) + follow_distance * follow_height_ratio  # clearance over terrain
+position.y = eased(target.position.y) + height               # fixed height above the car
 aim = target.position + (-target.basis.z) * half_length * chase_look_ahead_ratio
 look_at(aim, UP)                             # exact — look-at is NOT smoothed
 ```
@@ -114,7 +110,7 @@ ratio is `lerp(1.0, tan(chase_fov/2)/tan(fov/2), chase_dolly_mix)`. At `0` the
 follow distance never changes (pure FOV zoom — the car grows with speed); at `1`
 it's the full dolly zoom (the car keeps its size); in between softens an
 over-eager pull-in. This effective distance (not the raw `follow_distance`) is
-what feeds the terrain clearance solve below.
+what the horizontal reach is solved from.
 
 **Per-car length.** Before the dolly ratio is applied, the target car's half
 length (`Car.half_length()` — half the spec's `body.z`) is added to
@@ -189,8 +185,9 @@ suspension), and the replay/cinematic cameras are deliberately steady.
 ### Exported / config
 
 - `target: Node3D` — the node to follow (set in the scene to `Car`).
-- `follow_distance` (m) and `follow_height_ratio` (height = `follow_distance *
-  follow_height_ratio`, default 1.0) — read from `Config.data`.
+- `follow_distance` (m) and `follow_height_ratio` (height above the car =
+  `follow_distance * follow_height_ratio`) — read from `Config.data`.
+- `chase_height_smoothing` — how fast the seated height follows the car's; higher is more rigid.
 - `smoothing` (5.0) — rate at which the camera's orbital position eases toward
   the travel direction; higher snaps faster, lower is more languid. The look-at
   is unaffected. See [configuration.md](configuration.md).

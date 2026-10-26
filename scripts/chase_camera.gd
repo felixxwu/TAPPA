@@ -61,13 +61,9 @@ var _tilt_vel_target: Node = null
 # Last known horizontal direction of travel (pointing the way the car moves).
 var _travel_dir := Vector3.FORWARD
 
-# Cached sibling that exposes height_at (the hilly Floor); resolved once on first
-# use so the per-frame ground query doesn't re-scan the sibling list.
-var _terrain: Node = null
-
-# The ground height the camera currently seats on, eased toward the terrain under it so
+# The car height the camera currently seats on, eased toward the car's so suspension jolts and
 # small bumps become a gentle float rather than a jolt. NAN until the first placement.
-var _seated_ground := NAN
+var _seated_base := NAN
 var _height_smoothing: float
 
 
@@ -166,25 +162,14 @@ func _timed_physics_process(delta: float) -> void:
 		base_distance += target.half_length()
 	var distance := base_distance * ratio
 
-	# Place the camera behind the (smoothed) orbital direction. The height is
-	# measured from the terrain directly below the camera (not from the car), so
-	# the camera keeps a constant clearance over the ground it is flying over.
-	# `distance` (the dolly-zoom-adjusted follow distance) is the EUCLIDEAN
-	# (straight-line) distance to the car, so we trade off horizontal reach against
-	# the vertical gap: the bigger the height difference, the closer in the camera
-	# sits horizontally to keep the same true distance. Because the camera height
-	# depends on the terrain under it (which depends on the horizontal offset), solve
-	# it with a couple of fixed-point iterations starting from the full distance.
+	# Place the camera behind the (smoothed) orbital direction, a fixed height above the car
+	# (eased, see _eased_base). `distance` (the dolly-zoom-adjusted follow distance) is the
+	# EUCLIDEAN (straight-line) distance to the car, so the horizontal reach is what is left
+	# of it after the height: sqrt(distance^2 - height^2).
 	var origin := target.global_position
-	var horizontal := distance
-	for _i in 2:
-		var pos := origin - _travel_dir * horizontal
-		pos.y = _ground_height_at(pos.x, pos.z) + _height
-		var dy := pos.y - origin.y
-		# Solve sqrt(horizontal^2 + dy^2) = distance for the horizontal reach.
-		horizontal = sqrt(max(0.0, distance * distance - dy * dy))
+	var horizontal := sqrt(maxf(0.0, distance * distance - _height * _height))
 	var final_pos := origin - _travel_dir * horizontal
-	final_pos.y = _eased_ground(_ground_height_at(final_pos.x, final_pos.z), delta) + _height
+	final_pos.y = _eased_base(origin.y, delta) + _height
 	global_position = final_pos
 
 	# Point at the car's nose rather than its centre (un-smoothed). The aim point
@@ -335,29 +320,12 @@ func _update_shake(delta: float, accel_g: float) -> void:
 	rotate_object_local(Vector3.FORWARD, amplitude * sin(w * 0.83 + 3.1))
 
 
-# Ease the seated ground toward `ground`. A jump bigger than SNAP_M (a reset, a teleport, the
+# Ease the seated car height toward `base`. A jump bigger than SNAP_M (a reset, a teleport, the
 # first frame) snaps instead, so the camera never drifts in from far away.
 const SNAP_M := 30.0
-func _eased_ground(ground: float, delta: float) -> float:
-	if is_nan(_seated_ground) or absf(ground - _seated_ground) > SNAP_M:
-		_seated_ground = ground
+func _eased_base(base: float, delta: float) -> float:
+	if is_nan(_seated_base) or absf(base - _seated_base) > SNAP_M:
+		_seated_base = base
 	else:
-		_seated_ground = lerpf(_seated_ground, ground, 1.0 - exp(-_height_smoothing * delta))
-	return _seated_ground
-
-
-# Terrain surface height at a world (x, z), used to seat the camera a fixed
-# distance above the ground below it. Looks for a sibling that exposes height_at
-# (the hilly Floor in the main scene); on flat test fixtures there is none, so it
-# falls back to 0. The water level is deliberately ignored: a waterline that did not match
-# the world lifted the camera far above the car.
-func _ground_height_at(x: float, z: float) -> float:
-	if not is_instance_valid(_terrain):
-		_terrain = null
-		var parent := get_parent()
-		if parent != null:
-			for sibling in parent.get_children():
-				if sibling != self and sibling.has_method("height_at"):
-					_terrain = sibling
-					break
-	return _terrain.height_at(x, z) if _terrain != null else 0.0
+		_seated_base = lerpf(_seated_base, base, 1.0 - exp(-_height_smoothing * delta))
+	return _seated_base
