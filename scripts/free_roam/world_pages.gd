@@ -11,7 +11,8 @@ extends CanvasLayer
 #           also the minimap's "whole map" (tap the minimap, or M / gamepad Back, which closes it too).
 #           It frames what has been explored (explored_view), not the whole island. Wherever it's
 #           opened it is also the QUICK-TRAVEL picker: Prev / Next (or a tap on a lit rest stop)
-#           pick a lit stop, Travel goes there.
+#           pick a lit stop, Travel goes there. Travelling from off a checkpoint leaves the money
+#           behind (LootDirector.drop_money), after a confirm.
 #   STATS — the lifetime counters that matter in free roam, one read-only card each
 #           (CardUI.card_page / card_list).
 # The map is a plain MenuPage (it is a picture, not a list); both use MenuNav, and Back (Esc /
@@ -22,6 +23,7 @@ const STATS_SHOWN: Array = [LifetimeStats.DISTANCE_DRIVEN_M, LifetimeStats.REST_
 @export var streamer: TerrainStreamer
 @export var rest_stops: RestStops
 @export var car: Node3D
+@export var loot: LootDirector
 
 var _page: MenuPage
 var _cards: CardCarousel
@@ -163,6 +165,21 @@ func _travel() -> void:
 	var t := selected_target()
 	if t < 0:
 		return
+	if travel_drops_money():
+		ConfirmPopup.open(self, "Leave your money?", "Travelling from the road drops your $%d here. Travel from a checkpoint to keep it." % WorldSession.money(),
+			[{"label": "Cancel", "callback": Callable()}, {"label": "Travel", "callback": _travel_to.bind(t, true)}], 0, 0)
+		return
+	_travel_to(t, false)
+
+
+# Off a checkpoint, a travel can't carry money: it's dropped where the car is.
+func travel_drops_money() -> bool:
+	return loot != null and _here < 0 and rest_stops.prompt_site() < 0 and WorldSession.money() > 0
+
+
+func _travel_to(t: int, drop: bool) -> void:
+	if drop:
+		loot.drop_money()
 	_clear()
 	travelled = true
 	rest_stops.travel_to(t)  # first, so the host sees the car has moved when it takes back over

@@ -316,6 +316,41 @@ func test_quick_travel_from_the_pause_menu_map_goes_back_to_driving() -> void:
 	assert_false(get_tree().paused)
 
 
+# Travel off a checkpoint leaves the money behind, after a confirm; from a checkpoint it keeps it.
+func test_travelling_from_the_road_asks_then_drops_the_money_there() -> void:
+	WorldSession.new_world(7, _any_car())
+	var scene := await _boot_free_roam()
+	var rest: RestStops = scene.get_node("RestStops")
+	var pages: WorldPages = scene.get_node("WorldPages")
+	var rests := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)
+	rest.lit_sites[rests[1]] = true
+	rest.lit_sites[rests[2]] = true
+	rest._on_site = -1
+	WorldSession.set_money(500)
+	(scene.get_node("MiniMapLayer/MiniMap") as MiniMap).open_requested.emit()
+	await get_tree().process_frame
+	pages._selected = Array(pages._targets).find(rests[2])
+	pages._travel()
+	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(popup, "a confirm first")
+	popup.trigger_back()
+	assert_true(pages.is_open(), "Cancel stays on the map")
+	assert_eq(WorldSession.money(), 500)
+	await get_tree().process_frame
+	pages._travel()
+	(ConfirmPopup.any_open(get_tree()) as ConfirmPopup)._on_action(1)
+	assert_eq(rest.last_site, rests[2], "Travel goes")
+	assert_eq(WorldSession.money(), 0, "without the money")
+	assert_eq(int(WorldSession.dropped().get("money", 0)), 500, "left where the car was")
+	WorldSession.set_money(300)
+	pages.show_map(func() -> void: pass, rests[2])
+	pages._selected = Array(pages._targets).find(rests[1])
+	pages._travel()
+	assert_null(ConfirmPopup.any_open(get_tree()), "no confirm at a checkpoint")
+	assert_eq(rest.last_site, rests[1])
+	assert_eq(WorldSession.money(), 300, "checkpoint to checkpoint keeps it")
+
+
 # The full map draws driven road, plus in grey only the undriven road within reach of it.
 func test_the_map_greys_in_undriven_road_near_driven_road_only() -> void:
 	WorldSession.new_world(42, _any_car())

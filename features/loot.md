@@ -65,6 +65,8 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   cleared, so every coin comes back. A gold crystal bobs over the drop (`_sync_dropped_node`,
   `shaders/crystal.gdshader`, the old loot crystal); driving within `DROPPED_REACH_M` of it
   recovers the money (`recover_dropped`). A wrecked car picks nothing up until it respawns (`RestStops.respawned`).
+- **Travelling from the road** drops the money the same way (`drop_money`, after a confirm on the map —
+  see world-session.md), so the map's free travel can't carry money to safety; checkpoint to checkpoint keeps it.
 - **The counter:** `LootDirector.money_label`, "$n" in the top-left corner while driving, parented to the HUD layer so it hides under paused pages like the gauges.
 - **On the ground:** a gold disc stood on its edge, spinning and bobbing in `coin.gdshader` (no
   per-coin scripts), built with the near chunk (`TerrainStreamer._coin_marker`, node `Loot<site>`).

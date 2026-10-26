@@ -142,13 +142,19 @@ func collect(site: int) -> void:
 # coin comes back.
 func wreck() -> void:
 	_wrecked = true
-	lost = WorldSession.money()
-	var p := car.global_position
-	WorldSession.set_dropped({"pos": [p.x, p.y, p.z], "money": lost} if lost > 0 else {})
-	WorldSession.set_money(0)
+	lost = drop_money()
 	WorldSession.set_list("collected", [])
 	_sync_spent()
+
+
+# Leave all the money where the car is (replacing, and so losing, any earlier drop). Returns how much.
+func drop_money() -> int:
+	var money := WorldSession.money()
+	var p := car.global_position
+	WorldSession.set_dropped({"pos": [p.x, p.y, p.z], "money": money} if money > 0 else {})
+	WorldSession.set_money(0)
 	_sync_dropped_node()
+	return money
 
 
 func recover_dropped() -> void:

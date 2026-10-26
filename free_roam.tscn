@@ -308,11 +308,12 @@ script = ExtResource("31_cpbanner")
 rest_stops = NodePath("../RestStops")
 loot = NodePath("../LootDirector")
 
-[node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car")]
+[node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car", "loot")]
 script = ExtResource("32_pages")
 streamer = NodePath("../Terrain")
 rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
+loot = NodePath("../LootDirector")
 
 [node name="MiniMapLayer" type="CanvasLayer" parent="."]
 layer = 2

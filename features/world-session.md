@@ -97,6 +97,9 @@ A `CanvasLayer` (layer 7, always processing) over the frozen game:
   one — and Travel goes to the ringed one (`RestStops.travel_to`, which also repairs the car).
   After a travel the host goes straight back to driving: the minimap's map unpauses, and the pause
   menu's Map resumes instead of returning to the menu (`travelled`).
+  Travelling while not at a checkpoint (map opened on the road, `travel_drops_money`) with money
+  in hand first asks to confirm, then leaves the money where the car was (`LootDirector.drop_money`);
+  checkpoint to checkpoint keeps it.
   The map is drawn as large as the frame allows (a plain `MenuPage` — a picture, not a list).
 - **Stats:** a read-only card each for distance driven, rest stops lit, times the car gave up,
   and rings reached.
