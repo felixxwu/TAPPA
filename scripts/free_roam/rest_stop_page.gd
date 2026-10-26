@@ -10,7 +10,7 @@ extends CanvasLayer
 #   TUNE    — the shared TuningPanel on the active car (sliders, so a plain page, not cards).
 #   PARTS   — a card per part unlocked for this car (pick to switch it on or off), then one per part
 #             on sale for it (pick to buy it, which switches it on).
-#   GARAGE  — a card per owned car (pick one to drive it), then one per car on sale (pick to buy and
+#   GARAGE  — a card per owned car with its "x / y upgrades" line (pick one to drive it), then one per car on sale (pick to buy and
 #             drive it).
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
@@ -225,7 +225,8 @@ func _build_garage() -> void:
 		var model := CarLibrary.by_id(String(c.get("model_id", "")))
 		if id == active:
 			selected = entries.size()
-		entries.append({"title": _car_name(c), "subtitle": CardUI.car_subtitle(model), "car": c,
+		entries.append({"title": _car_name(c), "subtitle": CardUI.car_subtitle(model),
+			"desc": LootRules.upgrades_text(c), "car": c,
 			"extra": "Driving" if id == active else "", "action": Callable() if id == active else _drive.bind(id)})
 	var money := WorldSession.money()
 	for item: Dictionary in loot.for_sale() if loot != null else []:
