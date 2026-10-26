@@ -155,6 +155,27 @@ func test_one_of_each_part_and_no_kit_for_the_cars_own_layout() -> void:
 	assert_false(LootRules.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
 
 
+func test_a_cars_upgrade_count_is_its_unlocked_parts_on_or_off_out_of_every_part_it_could_have() -> void:
+	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [
+		{"kind": "part", "id": "grip", "level": 0, "on": true}, {"kind": "part", "id": "turbo", "level": 0, "on": false}]}
+	var own := UpgradeLibrary.stock_drive_mode(owned)
+	var all := LootRules.parts_for(owned)
+	var keys := {}
+	for item: Dictionary in all:
+		assert_eq(String(item["kind"]), "part", "only parts count")
+		keys[LootRules.item_key(item)] = true
+	assert_false(keys.has(LootRules.item_key({"kind": "part", "id": "drivetrain:%d" % own})),
+		"the kit for the car's own layout can never be fitted, so it isn't counted")
+	var catalogue := 0
+	for table: Array in LootRules.ring_tables(1):
+		for item: Dictionary in table:
+			if String(item["kind"]) == "part":
+				catalogue += 1
+	assert_eq(all.size(), catalogue - 1, "every other part in the catalogue counts")
+	assert_eq(LootRules.upgrades_text(owned), "2 / %d upgrades" % all.size(), "switched-off parts still count as bought")
+	assert_eq(LootRules.upgrades_text({"model_id": owned["model_id"]}), "0 / %d upgrades" % all.size())
+
+
 func test_switching_an_engine_or_kit_on_switches_the_other_one_off() -> void:
 	var parts := [{"kind": "part", "id": "engine_swap:a", "on": true}, {"kind": "part", "id": "engine_swap:b", "on": false},
 		{"kind": "part", "id": "grip", "level": 0, "on": true}]
@@ -547,6 +568,30 @@ func test_the_garage_switches_the_active_car() -> void:
 	_confirm(page.cards(), 1)
 	assert_eq(int(WorldSession.active_car()["instance_id"]), int(second["instance_id"]))
 	assert_eq(page.cards().selected_index(), 1, "the rebuilt garage sits on the car now driven")
+	page.close()
+
+
+func test_each_owned_car_in_the_garage_says_how_many_upgrades_it_has() -> void:
+	var scene := await _boot()
+	_nothing_for_sale()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": "grip", "level": 0, "on": false}])
+	var second: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
+	page.owned = WorldSession.active_car()
+	page.open(0)
+	page._show(RestStopPage.View.GARAGE)
+	var cars: Array = [WorldSession.active_car(), second]
+	for i in 2:
+		var lines: Array = []
+		for l in page.cards().get_card(i).info.get_children():
+			if l is Label:
+				lines.append((l as Label).text.to_lower())
+		assert_has(lines, LootRules.upgrades_text(cars[i]).to_lower(), "card %d shows its car's upgrade count" % i)
+		var model := CarLibrary.by_id(String(cars[i]["model_id"]))
+		assert_gt(lines.find(LootRules.upgrades_text(cars[i]).to_lower()), lines.find(CardUI.car_subtitle(model).to_lower()),
+			"card %d has the upgrade count under the power line" % i)
+	assert_true(LootRules.upgrades_text(cars[0]).begins_with("1 / "), "a switched-off part still counts")
+	assert_true(LootRules.upgrades_text(cars[1]).begins_with("0 / "))
 	page.close()
 
 

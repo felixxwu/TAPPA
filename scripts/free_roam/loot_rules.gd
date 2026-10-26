@@ -134,6 +134,25 @@ static func fit_block_reason(owned: Dictionary, part: Dictionary) -> String:
 	return ""
 
 
+# Every part the shops can ever sell `owned`: the whole catalogue, less a drivetrain kit for its
+# own stock layout (which it can never fit). Includes the parts it has already unlocked.
+static func parts_for(owned: Dictionary) -> Array:
+	var out: Array = []
+	for item: Dictionary in ring_tables(1)[0]:
+		if String(item["kind"]) != "part":
+			continue
+		if is_drivetrain(item) and int(String(item["id"]).substr("drivetrain:".length())) == UpgradeLibrary.stock_drive_mode(owned):
+			continue
+		out.append(item)
+	return out
+
+
+# The garage card's "x / y upgrades" line: parts unlocked for `owned` (on or off) out of every
+# part it could have.
+static func upgrades_text(owned: Dictionary) -> String:
+	return "%d / %d upgrades" % [(owned.get("parts", []) as Array).size(), parts_for(owned).size()]
+
+
 # `parts` with the one at `index` switched on or off. Switching an engine or kit on switches off
 # whichever other one of its kind was on.
 static func toggled(parts: Array, index: int) -> Array:
