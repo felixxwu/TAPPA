@@ -98,6 +98,10 @@ func _ready() -> void:
 	flames.name = "ExhaustFlames"
 	add_child(flames)
 	flames.setup(_car)
+	var lamps := CarLamps.new()
+	lamps.name = "CarLamps"
+	add_child(lamps)
+	lamps.setup(_car)
 	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site())
 	_streamer.rest_lit_query = _rest_stops.is_lit
 	_rest_stops.lit.connect(WorldSession.light)

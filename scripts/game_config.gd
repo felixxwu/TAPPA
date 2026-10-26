@@ -1484,7 +1484,7 @@ func has_nitrous() -> bool:
 ## Contrast around mid-grey. 1 = untouched. Pushing this hard makes the 5-bit
 ## banding visible in the sky gradient and on flat terrain (the dither only
 ## masks so much).
-@export_range(0.5, 2.0) var grade_contrast := 1.6
+@export_range(0.5, 2.0) var grade_contrast := 1.3
 ## Tint pushed into the dark end of the image — a desaturated brown gives GRID's
 ## muddy warm blacks. Only the HUE matters: the shader divides out the tint's own
 ## luminance so it can't change overall brightness.
@@ -2008,6 +2008,30 @@ func has_nitrous() -> bool:
 ## frame lerps between them along its length. Additive-blended, so these read as light.
 @export var exhaust_flame_color_hot := Color(1.0, 0.86, 0.45, 1.0)
 @export var exhaust_flame_color_cool := Color(1.0, 0.30, 0.06, 1.0)
+
+@export_group("Car Lamps")
+## Glowing head and tail lamps (features/car-lamps.md), as { car_id: { "head": [Vector3, ...],
+## "tail": [Vector3, ...] } }. Each point is a lamp's centre on the body, car-LOCAL metres:
+## +Z REARWARD (forward is −Z), +Y up, +X right. Read off orthographic front/back renders of
+## the car's model. A car with no entry has no lamps.
+@export var lamp_offsets: Dictionary = {}
+## Size of each lamp's flare quad, in metres. The lit core is a small part of it; the rest
+## is room for the halo and the horizontal streak to fade out.
+@export var lamp_size_m := 0.5
+## Lamp light colours. Additive, so these read as light — the core is pushed toward white.
+@export var lamp_head_color := Color(1.0, 0.95, 0.82)
+@export var lamp_tail_color := Color(1.0, 0.08, 0.04)
+## How bright the tail lamps run with the headlights on but no brake pressed, as a fraction
+## of their braking brightness (real cars run dim tail lamps at night).
+@export_range(0.0, 1.0) var lamp_tail_running := 0.35
+## Flare look: core radius (fraction of the quad's half-size), halo strength, and the
+## strength of the thin horizontal lens streak. Kept subtle by default.
+@export_range(0.0, 1.0) var lamp_core_radius := 0.12
+@export_range(0.0, 2.0) var lamp_halo := 0.35
+@export_range(0.0, 2.0) var lamp_streak := 0.4
+## How far the flare is pulled toward the camera, in metres, so the car's own bodywork
+## around the lamp doesn't cut it in half while hills and other cars still hide it.
+@export var lamp_depth_bias_m := 0.3
 
 @export_group("Trees")
 ## Billboard tree sprites scattered around each track turn.
@@ -2617,6 +2641,20 @@ func ground_is_snow() -> bool:
 # wheelbase. That last part is the point of the fallback: a fixed Z would sit inside a
 # long car and short of a small one, whereas a wheelbase-derived one lands near the tail
 # of any car, which is all an un-dialled-in car needs.
+## A car's lamp centres, { "head": PackedVector3Array, "tail": PackedVector3Array }, from
+## lamp_offsets. A car with no entry gets empty lists — unlike the exhausts there is no
+## guessed fallback, since a lamp floating off the body looks worse than none.
+func lamp_locals_for(spec: Dictionary) -> Dictionary:
+	var authored: Variant = lamp_offsets.get(String(spec.get("id", "")), {})
+	var out := {"head": PackedVector3Array(), "tail": PackedVector3Array()}
+	if authored is Dictionary:
+		for kind in out:
+			for v in authored.get(kind, []):
+				if v is Vector3:
+					out[kind].append(v)
+	return out
+
+
 func exhaust_locals_for(spec: Dictionary) -> PackedVector4Array:
 	var authored: Variant = exhaust_offsets.get(String(spec.get("id", "")))
 	if authored is Array or authored is PackedVector3Array or authored is PackedVector4Array:

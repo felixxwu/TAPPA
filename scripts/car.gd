@@ -100,6 +100,12 @@ var engine_smoke_local := Vector3.ZERO
 # them; a car with no entry gets a wheelbase-derived mirrored pair. Recomputed per spec
 # in _apply_physics_spec. See GameConfig.exhaust_locals_for and features/exhaust-flames.md.
 var exhaust_locals: PackedVector4Array = PackedVector4Array()
+# Car-local lamp centres, { "head": PackedVector3Array, "tail": PackedVector3Array }, read by
+# CarLamps. Recomputed per spec from GameConfig.lamp_offsets; empty for a car without lamps.
+var lamp_locals := {}
+# How hard the brake lamps glow, 0..1: the driver's foot brake, but not the automatic hold
+# that parks a stopped car on a slope (nobody's foot is on the pedal then).
+var brake_lamp := 0.0
 var downforce_readouts: Array = []  # [global point, force vector] pairs for the debug overlay
 # Combined yaw-assist torque applied this tick (steer assist + spin protection),
 # as a signed scalar about the car's up axis (positive = turning the nose left).
@@ -567,6 +573,7 @@ func _resolve_drive_inputs(engine, speed: float, steer_demand: float) -> Diction
 	# Declutch normally follows the handbrake (a held handbrake opens the clutch so the
 	# engine can rev free — used for launches). The finish stop is the exception.
 	var declutch := handbrake
+	brake_lamp = 0.0 if brake_hold else brake_input
 	if finish_stop:
 		# Brake to a stop with the foot brake + the forced handbrake, but keep the
 		# clutch ENGAGED so the engine engine-brakes down with the wheels (the auto-clutch
@@ -575,6 +582,7 @@ func _resolve_drive_inputs(engine, speed: float, steer_demand: float) -> Diction
 		declutch = false
 		brake_input = 1.0 if speed > config.finish_stop_speed else 0.0
 		brake_hold = true
+		brake_lamp = brake_input
 	_inputs_scratch["handbrake"] = handbrake
 	# Longitudinal effort and cornering spend ONE friction budget on the front tires, and on a
 	# keyboard or a touch screen every input is 0% or 100% — so the player cannot express the
@@ -1512,6 +1520,7 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	_set_center_of_mass(spec["wheelbase"], front_frac)
 	_compute_engine_smoke_local(spec)
 	exhaust_locals = cfg.exhaust_locals_for(spec)
+	lamp_locals = cfg.lamp_locals_for(spec)
 
 
 # Resize the procedural chassis box mesh + cabin box to the spec's dimensions and

@@ -51,7 +51,7 @@ confirmed by dumping `mx5.glb`'s JSON chunk with `strings` — the embedded imag
 `bufferView.byteLength` matches the extracted PNG's file size exactly, byte for
 byte). Godot's glTF importer extracts that embedded image to a **separate PNG file
 on disk** next to the `.glb` (named after the glTF image's internal `name` field —
-that's why mx5's extracted file is `mx5_Untitled.png`, not `mx5_texture.png`), and
+that's why mx5's extracted file is `mx5_car_body_texture.png`, not `mx5_texture.png`), and
 the **compiled, imported scene's material references the extracted file by UID**.
 That extracted file is what `scene.instantiate()` (`car_prop.gd::spawn`) needs
 at the moment `car.tscn` (which embeds all nine cars' bodies, see below) is
@@ -74,7 +74,7 @@ needed at runtime, for different moments in the same car's construction.
 | focus | `blender/focus/focus_texture.png` | `blender/focus/texture.png` |
 | twingo | `blender/twingo/twingo_texture.png` | `blender/twingo/texture.png` |
 | thebeast | `blender/thebeast/mrbeast_texture.png` | `blender/thebeast/texture.png` |
-| mx5 | `blender/mx5/mx5_texture.png` | `blender/mx5/mx5_Untitled.png` |
+| mx5 | `blender/mx5/mx5_texture.png` | `blender/mx5/mx5_car_body_texture.png` |
 | charger | `blender/charger/charger_texture.png` | *(same file)* |
 | acty | `blender/acty/acty_texture.png` | *(same file)* |
 

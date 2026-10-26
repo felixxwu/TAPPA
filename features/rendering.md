@@ -347,7 +347,10 @@ to the boxes. Every car in the shipped roster now carries a model: the **MX-5**
 (`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`), the **911 Turbo**
 (`blender/911/911.glb`, node `Car/Porsche911Body`), the **Jaguar XJS**
 (`blender/xjs/xjs.glb`, node `Car/XjsBody`) and the **Viper RT/10**
-(`blender/viper/viper.glb`, node `Car/ViperBody`). All are
+(`blender/viper/viper.glb`, node `Car/ViperBody`). The MX-5 body is a
+photogrammetry scan decimated to ~500 tris, with its wheel arches cut where the
+scan's wheels were — so its spec `wheelbase` (2.25) must stay matched to the arches
+or the wheels clip the body. All are
 instanced in `car.tscn`, hidden by default. The procedural-box path still exists
 as the fallback for any spec that omits `use_model`.
 

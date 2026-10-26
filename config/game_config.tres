@@ -216,6 +216,12 @@ exhaust_flame_length_m = 0.4
 exhaust_flame_width_m = 0.16
 exhaust_flame_wobble = 0.2
 exhaust_flame_core_fraction = 0.45
+lamp_offsets = {
+"mx5": {
+"head": [Vector3(-0.5, 0.16, -1.62), Vector3(0.5, 0.16, -1.62)],
+"tail": [Vector3(-0.52, 0.22, 1.82), Vector3(0.52, 0.22, 1.82)]
+}
+}
 loading_max_fps = 0
 loading_touch_max_fps = 60
 run_boost_mass_mult = 0.8

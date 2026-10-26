@@ -1080,6 +1080,12 @@ func _build_persistent_managers(cfg: GameConfig, _result: Dictionary,
 		func() -> Node: return ExhaustFlames.new()) as ExhaustFlames
 	_exhaust_flames.setup($Car)
 
+	# Glowing head and tail lamps at the car's authored lamp centres: headlights with the
+	# night cone, tail lamps with it (dimmer) and under the foot brake. See features/car-lamps.md.
+	_car_lamps = _ensure_child("CarLamps",
+		func() -> Node: return CarLamps.new()) as CarLamps
+	_car_lamps.setup($Car)
+
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
 	# A benchmark run skips the whole stage flow — the manager is left un-armed
@@ -1179,6 +1185,7 @@ var _road_markings: RoadMarkings
 var _wheel_particles: WheelParticles
 var _engine_smoke: EngineSmoke
 var _exhaust_flames: ExhaustFlames
+var _car_lamps: CarLamps
 
 
 # Coarse far-terrain backdrop that gives the sky a horizon (distant_terrain.gd).
