@@ -61,7 +61,7 @@ func show_map(on_close: Callable, from_site := -1) -> void:
 	_canvas = MapCanvas.new()
 	_canvas.pages = self
 	# As big as the frame allows, leaving room for the title, the target line and the actions.
-	var frame := WorldPanel.layout_frame_size(self, Vector2(480.0, 360.0))
+	var frame := UITheme.layout_frame_size(self, Vector2(480.0, 360.0))
 	var side := maxf(minf(frame.x * 0.9, frame.y - UITheme.px(170)), UITheme.px(200))
 	_canvas.custom_minimum_size = Vector2(side, side)
 	_page.body().add_child(_canvas)
@@ -304,7 +304,7 @@ class MapCanvas:
 			coast.append(to_px.call(Vector2(cos(a), sin(a)) * st.terrain.coast_r(cos(a) * 1000.0, sin(a) * 1000.0)))
 		draw_colored_polygon(coast, Color(0.11, 0.13, 0.09))
 		# The biome-ring borders crossed (the noisy border, drawn as its average circle).
-		var inner := s.island_radius_m * 0.82
+		var inner := s.inner_radius_m()
 		for ring in range(1, WorldSession.max_ring() + 1):
 			draw_arc(to_px.call(Vector2.ZERO), inner * ring / s.ring_count * k, 0.0, TAU, 96, Color(1, 1, 1, 0.35), 1.0)
 		# The roads driven, over the undriven road near them in grey.

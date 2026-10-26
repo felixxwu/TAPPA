@@ -56,6 +56,7 @@ func _ready() -> void:
 	if environment == null or environment.environment == null:
 		return
 	var env := environment.environment
+	Config.data.apply_environment(env)  # the weather and region looks fade from this base
 	_base_env = {"bg": env.background_color, "fog": env.fog_light_color, "density": env.fog_density,
 		"sky_affect": env.fog_sky_affect, "panorama": _panorama()}
 

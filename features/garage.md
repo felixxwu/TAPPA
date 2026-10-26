@@ -19,7 +19,7 @@ own contents there. The model carries **no team branding**.
 >
 > `scripts/garage.gd` + `garage.tscn` + its textures + `tests/headless/test_garage.gd` are
 > all still here and still pass. Nothing in the game instantiates them; the render harness
-> below does. Like `WorldPanel` ([world-panel.md](world-panel.md)), this is a finished
+> below does. This is a finished
 > asset waiting for a screen rather than dead weight to clear out — but it IS currently
 > unreferenced, and that is the user's call, not an audit's.
 
@@ -113,9 +113,6 @@ every camera station (`hq_garage_cam_*`, `hq_table_cam_*`, `hq_lift_cam_*`) and
 the table/lift placement are unchanged. The HQ supplies the sky, sun, grass and
 concrete apron, so the model is added with `build_environment = false` and
 `build_ground = false`; it keeps its per-bay ceiling lights.
-
-`tools/render_hq_garage.gd` (+ `.sh`) is a verification aid: it boots the real
-HQ and captures the garage station to `docs/garage/hq_garage_view.png`.
 
 ## What a host has to supply (the overworld's, recorded)
 

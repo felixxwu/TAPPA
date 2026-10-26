@@ -200,10 +200,6 @@ func _timed_process(_delta: float) -> void:
 		_cam = cur  # check-and-update: only re-seat when the active camera actually changed
 	if _cam != null and _car != null:
 		var d2 := _cam.global_position.distance_squared_to(_car.global_position)
-		# The start-line REVEAL sequence used to tighten the radius here for cars
-		# waiting in the rival reveal queue. Deleted along with the rival field and
-		# the reveal itself (todo/roguelike-pivot.md decision 5) — StartLine no
-		# longer has a REVEAL phase or a reveal_focus_car() to ask.
 		volume_db = EngineAudioSynth.attenuation_db(
 			d2, cfg.engine_audio_ref_distance_m, cfg.engine_audio_max_attenuation_db)
 	# Far enough away that attenuation has pinned the level to its floor: the synth
@@ -233,8 +229,7 @@ func _timed_process(_delta: float) -> void:
 	# Nitrous audio state. `nitrous_on` is the sim's LATCHED delivery state (held AND charged
 	# AND combusting) — read, never re-derived, so the hiss can't sound while the engine is
 	# off-throttle or fuel-cut and no torque is actually being added. Never "nitrous is
-	# fitted": the hiss layer must only exist while gas is actually flowing (the same
-	# gate keeps the HQ garage preview silent — see car_preview_audio.gd).
+	# fitted": the hiss layer must only exist while gas is actually flowing.
 	# engine.nitrous_event / nitrous_emptied are per-SUBSTEP flags that the sim clears
 	# at the top of every _step_nitrous, so a frame's worth of substeps has usually
 	# wiped them before we get here. So the edges are derived HERE from the delivery

@@ -379,7 +379,7 @@ func _update_stats() -> void:
 		+ "chunks   %d near  %d far  %d collision\n" % [counts.x, counts.y, counts.z] \
 		+ "sample   %.1f µs\n" % s.stat_us_per_sample \
 		+ "network  %d nodes  %d links  %.0f km (%d ms)\n" % [
-			s.network.nodes.size(), s.network.edges.size(), s.network.total_length_m / 1000.0, s.stat_build_ms] \
+			s.network.node_x.size(), s.network.edges.size(), s.network.total_length_m / 1000.0, s.stat_build_ms] \
 		+ _headroom_line() + "\n" \
 		+ "R = back to road"
 

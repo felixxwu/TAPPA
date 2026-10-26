@@ -58,10 +58,9 @@ overlay instead of hitching on the first misfire — see
 
 ## Wiring (in-event)
 
-Created + wired by `world.gd` (reused across event regenerations, re-targeted on a
-car swap, exactly like `WheelParticles`/`TireMarks`). `setup(car)` / `retarget(car)`
-sync the last-seen misfire count to the (freshly rebuilt) engine's counter so a swap
-doesn't puff a spurious backlog.
+Created + wired by `world.gd` (reused across event regenerations). `setup(car)` syncs the
+last-seen misfire count to the engine's counter so a fresh engine doesn't puff a spurious
+backlog.
 
 ## Synthetic mode (HQ / static display cars)
 

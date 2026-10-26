@@ -367,7 +367,7 @@ row list, wrong for a carousel that is supposed to read as a strip of cards runn
 width of the screen. `HubShell._is_carousel_view` gives the five carousel pages
 (MAIN/REGION/CAR/SHOP/SKILLS) their own small `_CAROUSEL_PAGE_MARGIN` (8.0, vs. every other
 page's 24.0) instead of that wide margin, and `_build_carousel` sizes the carousel to the
-current logical frame width via `WorldPanel.layout_frame_size(_page, ...).x` (the same
+current logical frame width via `UITheme.layout_frame_size(_page, ...).x` (the same
 "how much room do I actually have" call `RallyDetail.body_width` uses), then feeds that
 through `_page.set_body_width(...)` — otherwise the box would still hug back down to
 whatever narrow width the carousel used to default to.
@@ -385,16 +385,6 @@ avoid it; that traded a legible "there's more" hint for wasted edge-to-edge spac
 reversed on request). `clip_contents` on the carousel is what makes a partial card read as
 "sliced by the screen edge" rather than as a layout glitch — it always cuts cleanly at the
 strip's own bounds, never mid-render.
-
-`visible_card_count()` — the estimate a host with an expensive per-card visual (a live 3D
-preview, say) uses to decide how many cards to keep built around the selection, see
-"CarCardPreview and the visible window" below — counts a partially-visible edge card as
-visible too: the RADIUS (in whole cards) from the centred card to the claimed width's edge
-is `floor((half_width + card_width/2) / unit)` — a card at that radius has its NEAR edge
-still inside `half_width`, even if its far edge is clipped off. Rounding the radius down
-(rather than up) is what keeps it exact: a card whose near edge has already crossed
-`half_width` isn't visible at all, not even a sliver of it, so counting it would ask the
-host to build a preview nothing will ever show.
 
 ### The fit has to be re-run on every window resize, not just once at open
 
@@ -574,7 +564,7 @@ returning to it fresh via `Scenes.change_to`), so anything page-scoped forgets e
 each time, which a session-lifetime cache exists specifically to avoid. Every car card
 still gets the cheap car-outline placeholder (`_card_icon("car")`) up front; `HubShell.
 _sync_car_previews` asks `CarPreviewCache.get_or_build(car_ref)` for a preview whenever a
-card enters the visible window (`CardCarousel.visible_card_count()`, centred on the
+card enters the visible window (a window centred on the
 selection) and gets back either an ALREADY-BUILT instance (a cache hit — this car was
 warmed or seen earlier) or a freshly spawned one (cached from here on). A card that
 scrolls OUT of the window calls `CarPreviewCache.park(preview)` instead of freeing it —

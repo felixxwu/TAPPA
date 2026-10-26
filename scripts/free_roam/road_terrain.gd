@@ -58,13 +58,13 @@ func is_lake(x: float, y: float) -> bool:
 
 func coast_r(x: float, y: float) -> float:
 	var ang := atan2(y, x)
-	return _s.island_radius_m * (0.82 + 0.18 * LabNoise.fbm(cos(ang) * 2.0 + 5.0, sin(ang) * 2.0 + 5.0, _s.world_seed))
+	return _s.island_radius_m * (0.82 + 0.18 * LabNoise.fbm(cos(ang) * 2.0 + 5.0, sin(ang) * 2.0 + 5.0, _s.world_seed))  # 0.82: inner_radius_m
 
 
 # The coastline never comes closer than this (its noise term is never negative), so points
 # inside it can skip the coast noise entirely.
 func min_coast_r() -> float:
-	return _s.island_radius_m * 0.82
+	return _s.inner_radius_m()
 
 
 func sea_floor() -> float:
@@ -192,7 +192,7 @@ func ring_index(x: float, y: float) -> int:
 # shader repeats this maths per pixel (ps1_models.gdshader, ring_coord_at) to fade the textures.
 func ring_coord(x: float, y: float) -> float:
 	var wob := (LabNoise.fbm(x / 1500.0 + 9.0, y / 1500.0 + 9.0, _s.world_seed + 3) - 0.5) * 0.25
-	return (LabNoise.hyp(x, y) / (_s.island_radius_m * 0.82) + wob) * _s.ring_count
+	return (LabNoise.hyp(x, y) / _s.inner_radius_m() + wob) * _s.ring_count
 
 
 # How much the road at a point is tarmac (0 gravel, 1 tarmac), from its ring's region, blended
@@ -204,7 +204,7 @@ func tarmac_weight(x: float, y: float) -> float:
 	var v := ring_coord(x, y)
 	var i := clampi(floori(v), 0, n - 1)
 	var f := v - i
-	var half := _s.road_surface_blend_m / (_s.island_radius_m * 0.82) * n * 0.5
+	var half := _s.road_surface_blend_m / _s.inner_radius_m() * n * 0.5
 	if f < half and i > 0:
 		return lerpf(_tarmac[i - 1], _tarmac[i], smoothstep(-half, half, f))
 	if f > 1.0 - half and i < n - 1:

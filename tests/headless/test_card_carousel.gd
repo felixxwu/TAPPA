@@ -56,23 +56,6 @@ func test_fit_to_available_width_never_returns_less_than_one_card() -> void:
 	assert_almost_eq(_carousel.custom_minimum_size.x, Config.data.card_carousel_card_width, 0.01)
 
 
-# visible_card_count is what a host with an expensive per-card visual (a live 3D preview,
-# say — see hub_shell.gd's _refresh_car_previews) uses to decide how many it can afford to
-# keep built at once. A partially-visible edge card still needs a real preview, so this
-# must count it as visible rather than only counting cards that fit whole.
-func test_visible_card_count_counts_a_partial_edge_card_as_visible() -> void:
-	var unit: float = Config.data.card_carousel_card_width + Config.data.card_carousel_gap
-	var card_width: float = Config.data.card_carousel_card_width
-	# Half-width reaches 1px past the near edge of the card TWO units out from centre (a
-	# sliver of it visible) but not as far as the near edge of the card three units out —
-	# so the true visible set is the centred card, one full card, and a sliver of a third
-	# on each side: 5 cards, not 3.
-	var half_width := 2.0 * unit - card_width * 0.5 + 1.0
-	_carousel.fit_to_available_width(half_width * 2.0)
-	assert_eq(_carousel.visible_card_count(), 5)
-	assert_eq(_carousel.visible_card_count() % 2, 1, "must stay odd: equal radius on both sides of the centred card")
-
-
 func test_get_card_returns_the_same_handle_add_card_returned() -> void:
 	var card := _carousel.add_card()
 	assert_eq(_carousel.get_card(_carousel.card_count() - 1), card)
@@ -547,7 +530,7 @@ func test_cards_fade_in_one_by_one_first_card_first() -> void:
 
 
 # Regression: a page that rebuilds with a REMEMBERED selection deep in a long list (e.g.
-# hub_shell.gd's CARS page restoring car 30 of 40 after a purchase) used to still stagger
+# a car list restoring car 30 of 40 after a purchase) used to still stagger
 # by raw index — the player's actual card wouldn't even start fading for seconds. The
 # stagger must fan out from whichever card is selected, so the card the player is actually
 # looking at appears first regardless of its position in the list.
@@ -578,7 +561,7 @@ func test_finish_entrance_animation_jumps_every_card_to_full_progress() -> void:
 			"card %d must be fully faded in after finish_entrance_animation" % i)
 
 
-# Restarting: a page that rebuilds its carousel from scratch (hub_shell.gd's _show, e.g.
+# Restarting: a page that rebuilds its carousel from scratch (e.g.
 # on Back from a sub-menu) must see the SAME fade-in again, not a carousel that's already
 # fully visible because it happened before.
 func test_a_new_carousel_restarts_the_entrance_fade_even_after_an_earlier_one_finished() -> void:

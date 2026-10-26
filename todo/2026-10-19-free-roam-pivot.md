@@ -202,7 +202,7 @@ feeds it:
 - `cache_cap_mb` + `evict_to_cap()` give an LRU memory cap.
 - `set_road_source(source)` takes a duck-typed road network that drives the per-chunk
   carve and `surface_at`.
-- `set_region_source(source)` with `region_rank_at(x, z)` feeds `_apply_region_blend`.
+- `set_region_source(source)` with `region_rank_at(x, z)` feeds the per-chunk region look blend (the original `_apply_region_blend` was removed).
 - `set_bounds` / `taper_height` make the coast (decision 3).
 
 The plan is to **write the producers this seam was built for**, not to make
@@ -256,7 +256,7 @@ the separate spec. The constraints that spec must meet:
 ### B. `BiomeRings`, regions chosen by distance
 
 - `region_rank_at(x, z)` returns a ring index from the distance to spawn, with noise on
-  the boundary. `_apply_region_blend` cross-fades looks across boundary chunks.
+  the boundary. The region look blend cross-fades looks across boundary chunks (the original `_apply_region_blend` was removed).
 - `RegionLibrary.REGIONS` keeps its look and `surface_grip` entries. Its authored
   `order` becomes the ring order. It gains new `ring_min_m`, a loot table and a weather
   pool. `gate_for` / `is_unlocked` / `regions_cleared` are deleted, because distance is

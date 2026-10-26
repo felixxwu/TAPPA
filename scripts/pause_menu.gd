@@ -5,14 +5,10 @@ extends CanvasLayer
 # In-run pause menu. A top-right Pause button freezes the game
 # (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
-# controls). Quit to HQ returns to the hub; a CHALLENGE run is only PAUSED
-# (RunSession.pause_run) — nothing DNFs a challenge. (The career-rally abandon
-# path this used to branch to is deleted with RallySession — todo/roguelike-pivot.md
-# decision 5.) The whole layer
+# controls). Quit to HQ returns to the hub. The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
-# scene's CameraManager (wired below); the dev page's mid-run-only "Complete stage" relays
-# to world.gd (dev_complete_stage_requested); ui_cancel (Esc / gamepad B) toggles the menu
+# scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu
 # too. See features/menus.md.
 
 # The scene's CameraManager, so a camera pick in Settings switches the live camera.
@@ -72,14 +68,10 @@ func _ready() -> void:
 
 
 # Arm (or disarm) the menu. world.gd enables it once the world is generated, so pause
-# can't fire while the loading overlay is still up, and disarms it again for the
-# pre-countdown start-line window (which owns the screen with its own menu, and offers
-# its own Exit).
+# can't fire while the loading overlay is still up; photo mode disarms it while it runs.
 #
-# DISARMING NEVER CLOSES AN OPEN MENU — that would strand get_tree().paused. Both
-# disable sites call this while the menu is closed (boot, and start-line build, which
-# happens during world generation), so nothing is stranded. A caller that ever needs to
-# disarm a menu that might be OPEN must resume() first.
+# DISARMING NEVER CLOSES AN OPEN MENU — that would strand get_tree().paused. A caller
+# that ever needs to disarm a menu that might be OPEN must resume() first.
 func set_input_enabled(on: bool) -> void:
 	_input_enabled = on
 	_refresh_pause_button()
@@ -156,13 +148,7 @@ func return_from_photo_mode() -> void:
 	_focus_card("Photo Mode")
 
 
-# Pop the quit confirm; quit_to_hq() runs only if the player accepts. A run of EITHER
-# kind is only PAUSED — the run slot stays persisted and the entry screen offers
-# Resume — so the wording must not claim the run is lost; a session-less dev boot gets
-# the plain "abandon" wording.
-# Ask to quit, then quit. PUBLIC because the pre-countdown start line's Exit button
-# raises the same prompt — the wording branches on run-vs-no-run and the quit branches
-# on benchmark/run/plain, and neither belongs in two places.
+# Pop the quit confirm; quit_to_hq() runs only if the player accepts.
 func confirm_quit_to_hq() -> void:
 	var body := "Abandon this rally and return to HQ?\nYour progress in this run is lost."
 	if quit_body_override != "":
@@ -174,14 +160,8 @@ func confirm_quit_to_hq() -> void:
 		1, 0)  # focus stays on Quit as before; Back/Esc = Cancel (index 0)
 
 
-# Leave the run for HQ: unfreeze, then leave the active run (if any). A run is only
-# PAUSED — nothing DNFs one, and quitting a challenge must not spend its period.
-# pause_run() deliberately emits no
-# run_finished (world.gd's handler would post a DNF to the board on it), so this
-# owns the transition itself, matching the garage-view landing of the other paths.
-# A benchmark run exits through Benchmark.exit_to_hq so its config overrides are
-# restored. With no session (a plain dev boot of main.tscn) there's nothing to
-# leave, so load HQ direct.
+# Leave for HQ: unfreeze, then change scene. A benchmark run exits through
+# Benchmark.exit_to_hq so its config overrides are restored.
 func quit_to_hq() -> void:
 	get_tree().paused = false
 	quitting.emit()
@@ -191,9 +171,6 @@ func quit_to_hq() -> void:
 	if Benchmark.active:
 		Benchmark.exit_to_hq()
 	else:
-		# The career-rally abandon that used to sit here (RallySession.abandon()) is
-		# deleted along with RallySession (todo/roguelike-pivot.md decision 5); only a
-		# session-less dev boot of main.tscn falls through to here now.
 		Scenes.change_to(get_tree(), Scenes.hub_path())
 
 
@@ -371,7 +348,7 @@ func _set_open(opened: bool) -> void:
 
 # The Pause button is offered only when the menu is BOTH armed and closed. One writer, so
 # the open-state and armed-state halves of that rule can't drift apart — a live-looking
-# button over a disarmed menu is what let a pause overlay stack on the start line's own.
+# button over a disarmed menu would let a pause overlay open while the menu is inert.
 func _refresh_pause_button() -> void:
 	if is_instance_valid(_pause_button):
 		_pause_button.visible = _input_enabled and not is_open()

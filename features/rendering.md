@@ -241,15 +241,6 @@ diegetic HQ shared this pass; it is deleted with the pivot — the flat hub need
 no 3D render at all.) The HUD and every menu overlay are CanvasLayers above the
 container and stay ungraded. `test_render_smoke.gd` pins the shared world.
 
-**The one exception, and it is deliberate: a `WorldPanel` IS graded.** A menu hosted
-in the 3D world (see [world-panel.md](world-panel.md)) is a `Sprite3D` *inside* the
-scene, not a `CanvasLayer` above the container — so the grade, fog and tonemap reach
-it exactly as they reach the car beside it. That cohesion is the point of putting a
-menu in the world, so its fog/exposure flags are **not** disabled. The standing risk
-is that the grade was tuned against terrain and car paint rather than UI text, so a
-grade retune can quietly hurt panel legibility — worth an eyeball when the grade
-changes. Shipped ON in `config/game_config.tres`.
-
 The HUD, menus **and the speed
 lines** are all on CanvasLayers above the container, so the shader never sees them.
 Speed lines being outside it is worth remembering: they're a *world* effect, and
@@ -428,8 +419,8 @@ this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
 ## Environment
 
 - **Shared environment base**: `GameConfig.apply_environment(env)` sets fog,
-  backdrop colour and glow from config. `world.gd` → `_apply_scene_config` calls it;
-  weather/region looks layer on top. The garage builds
+  backdrop colour and glow from config. `BiomeDirector._ready` (free roam) and
+  `world.gd` → `_apply_scene_config` (the stage) call it; weather/region looks layer on top. The garage builds
   its own env and does not use it.
 - **Glow (bloom)**: Godot's built-in `Environment` glow, from the `glow_*`
   exports in `GameConfig` ("World" group). It is a mip-chain downsample/upsample blur. Materials are unshaded LDR, so

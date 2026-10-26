@@ -66,14 +66,10 @@ static func is_hub_scene(path: String) -> bool:
 # SHARED physics space, and breaks car-settling assertions in unrelated files that run much
 # later (see tests/headless/test_world_isolation.gd).
 #
-# world.gd already had a per-instance `scene_change_hook` seam for this, but it was OPT-IN:
-# every test holding a live world had to remember to install it, and dozens don't. Worse, the
-# obvious-looking seam — RallySession.auto_load_scenes — does NOT cover this path at all: it
-# guards start_rally/advance, while RallySession.abandon() emits rally_finished unguarded and
-# world.gd turns THAT into a real transition. Two seams, neither complete, and a test author
-# had no way to know which one they needed.
+# world.gd has a per-instance `scene_change_hook` seam for this, but it is OPT-IN: every test
+# holding a live world has to remember to install it, and dozens don't.
 #
-# So the default is now safe: a test run arms this once and every transition below is inert,
+# So the default is safe: a test run arms this once and every transition below is inert,
 # whether or not the test knew a transition was reachable. Tests that assert on WHERE the
 # game wanted to go read `last_blocked_path` (or keep using world.gd's hook, which still
 # intercepts first). Production never arms it and behaves exactly as before.

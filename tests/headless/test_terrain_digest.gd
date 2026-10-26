@@ -124,9 +124,6 @@ func _digest_manager() -> TerrainManager:
 	m.sun_color = Color(0.5, 0.5, 0.5)
 	m.sky_color = Color(0.5, 0.5, 0.5)
 	m.ground_color = Color(0.35, 0.35, 0.35)
-	# Explicitly a STAGE: no road network, no lattice snap.
-	m.height_quantum = 0.0
-	m.road_source = null
 	# Cliffs off by default here; the cliff digest turns them on via _cliff_manager().
 	m.cliff_enabled = false
 	m.cliff_wavelength_m = 60.0

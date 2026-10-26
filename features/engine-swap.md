@@ -42,8 +42,7 @@ engine's torque. No screen sets it today; it is read-path-only (see [tuning.md](
 ## `EngineSwap` (pure module)
 
 `scripts/engine_swap.gd` holds all the swap math/lookups as static functions —
-no scene or Save coupling; `Save` owns the mutations and `car.gd` applies the
-result.
+no scene or Save coupling; `car.gd` applies the result.
 
 - **`current_engine_id(owned, stock_id) -> String`** — the engine a car is
   actually running: `owned.swapped_engine` if set, else the `stock_id`
@@ -61,9 +60,6 @@ result.
   simplification of the audio model, not something the label tries to correct.
 - **`layout_label(engine_id) -> String`** — the engine's `EngineLibrary`
   `layout` run through `layout_label_from`; `""` if unknown.
-- **`display_name(entry, owned) -> String`** — the car's name, prefixed with
-  the swapped-in engine's layout when non-stock (e.g. `"V8 Rondel Twist"`); the plain
-  name otherwise. Only tests call it today.
 - **`recompute_mass(m_total, m_stock_engine, m_new_engine) -> float`** — total
   mass with the engine component swapped out:
 
@@ -83,8 +79,6 @@ result.
   When `EF == WF` this reduces to `WF` unchanged (a pure mass-only swap, no
   distribution shift). Returns the untouched `wf` if the new total mass would
   be non-positive (defensive; never hit with authored data).
-- **`can_swap(car_a, car_b) -> bool`** — structural validity only: true when
-  both cars exist (neither dict is empty). Health is not a factor.
 
 ## Fielding pipeline (`car.gd`)
 
@@ -211,11 +205,9 @@ produced. See [tuning.md](tuning.md) for the full axis table.
 over stock; `layout_label_from` uppercases and strips the qualifier suffix on
 supplied layout strings, and every key in `EngineLibrary.FIRING` yields a
 non-empty label with no underscore and no lowercase; `layout_label` equals the
-formatter applied to each roster entry's own `layout`; `display_name` prefixes
-the layout only when swapped; `recompute_mass` swaps the engine component;
+formatter applied to each roster entry's own `layout`; `recompute_mass` swaps the engine component;
 `recompute_weight_front` moves the CoG by the injected engine position (with
 injected numbers, not authored values — see the project's testing rules);
-`can_swap` accepts two real cars regardless of health and rejects an empty one.
 `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
 drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
 the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`

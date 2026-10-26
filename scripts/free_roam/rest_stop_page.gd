@@ -133,7 +133,7 @@ func _respawn() -> void:
 
 func _build_main() -> void:
 	var header: Array = [rest_stops.name_of(site) if rest_stops != null else "", "Car repaired",
-		"$%d. Spend it: a wreck loses it all" % WorldSession.money()]
+		"$%d. Spend it: a wreck drops it all" % WorldSession.money()]
 	_card_page("Checkpoint", [
 		{"title": "Continue", "icon": "resume_run", "action": close},
 		{"title": "Parts", "icon": "parts", "action": _show.bind(View.PARTS)},

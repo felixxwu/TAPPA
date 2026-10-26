@@ -538,7 +538,7 @@ func test_cloud_busy_coerces_every_reply_shape() -> void:
 	assert_false(bool(CloudBusy.result_of({}).get("ok", true)),
 		"a dict with no ok field did not succeed")
 	assert_true(bool(CloudBusy.result_of(true).get("ok", false)),
-		"a bare bool (await_initial_sync) is an ok flag")
+		"a bare bool is an ok flag")
 	assert_true(bool(CloudBusy.result_of(null).get("ok", false)),
 		"a call that reports nothing is not a failure — inventing one is worse")
 	assert_eq(CloudBusy.failure_text(null), "", "so it has nothing to tell the player")
@@ -561,7 +561,7 @@ func test_cloud_busy_survives_a_host_rebuilding_its_children() -> void:
 
 # --- Only ONE conflict prompt, tree-wide -----------------------------------------
 
-# Three hosts raise this prompt (the account page, the HQ, and the boot gate) and each
+# Three hosts raise this prompt (the account page and the HQ) and each
 # used to keep its OWN "already open" latch, which could not see the others. A conflict
 # arriving while the account page was open therefore opened TWO identical popups;
 # dismissing the top one revealed the second with focus reset to its first button,

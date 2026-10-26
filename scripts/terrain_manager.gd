@@ -12,8 +12,7 @@ class_name TerrainManager
 #
 # OPEN-WORLD MODE (the overworld, features/terrain.md → "Open-world mode") is a set of
 # additive, off-by-default opt-ins on top of that: a settable `load_radius`, `stream_on_miss`
-# to build a miss instead of leaving a hole, `cache_cap_mb` LRU eviction,
-# and the `road_source` carve. With every default left alone the behaviour is bit-identical to a
+# to build a miss instead of leaving a hole, and `cache_cap_mb` LRU eviction. With every default left alone the behaviour is bit-identical to a
 # stage.
 
 const CHUNK_M := 50.0                        # chunk edge length in metres
@@ -133,9 +132,8 @@ var collision_ring: int = 1
 # precompute (every chunk full-res). Set from GameConfig.apply_terrain_lod.
 var precompute_prune_enabled: bool = true
 # Extra reach (m) added to a chunk's closest-possible camera distance when deciding
-# which LOD levels to keep. Must exceed the largest replay-camera offset from the car
-# (replay_camera.gd ROADSIDE/FLYBY shots ~40 m) so a replay shot never exposes a
-# pruned level. Errs toward keeping one extra finer level. Set from GameConfig.
+# which LOD levels to keep. Must exceed the farthest the camera can sit from the car
+# so it never exposes a pruned level. Errs toward keeping one extra finer level. Set from GameConfig.
 var precompute_safety_slack_m: float = 40.0
 # When true, the precompute does NOT prebake the FINEST (stride 1) LOD level for full-res
 # corridor chunks; each spawned chunk builds it on demand once it enters the detail ring
@@ -179,26 +177,10 @@ var stream_on_miss: bool = false
 # resident window is a moving sub-rectangle of a much larger map, sets a cap.
 var cache_cap_mb: float = 0.0
 
-# Duck-typed OVERWORLD ROAD NETWORK (an OverworldRoads, deliberately NOT referenced by class
-# so this file keeps no dependency on it). Used only via
-# has_method: `segments_in_rect(Rect2) -> Array`, `road_at(x, z) -> Dictionary`,
-# `influence_m() -> float`. null = no network, which is EVERY STAGE: with it null the road
-# carve in compute_chunk_data and the network branch of surface_at are both skipped, so stage
-# output is byte-for-byte what it was before the carve existed. Seat it with set_road_source().
-var road_source: Object = null
-
 # True once stream_on_miss has actually fired, so the "the cache was mis-sized" warning is
 # printed ONCE rather than per frame (a crossing re-visits the same coords every frame).
 var _miss_stream_logged := false
 var stream_on_miss_builds: int = 0
-# Height lattice step in metres for generated chunks, 0 = off (every stage). Set by the overworld
-# to the step a chunk store round-trips through. See _apply_height_quantum.
-var height_quantum: float = 0.0
-# Chunk SPAWNS permitted per frame beyond the collision band. 0 = off (spawn the whole ring row
-# in one call, today's stage behaviour, byte-for-byte).
-var spawn_budget: int = 0
-# Coords wanted but not spawned yet, nearest-first. Drained by _drain_spawn_queue.
-var _spawn_queue: Array[Vector2i] = []
 
 # PER-STAGE TIMING, off by default. When true, _timed_process records how long each of its three
 # stages took into the three fields below, for a host's frame-spike log to attribute.
@@ -215,8 +197,6 @@ var _spawn_queue: Array[Vector2i] = []
 var stage_timing := false
 ## Microseconds the last timed frame spent resolving the focus + reconciling the ring.
 var last_focus_us := 0
-## Microseconds the last timed frame spent draining deferred chunk spawns.
-var last_spawn_drain_us := 0
 ## Microseconds the last timed frame spent building finest-LOD levels.
 var last_detail_drain_us := 0
 # Debug chunk-border overlay (H toggle, debug builds). Lazily created on first use.
@@ -284,7 +264,7 @@ var on_demand_builds: int = 0
 # CORRECTED: this used to say the cache is "NOT shared with the worker threads" because
 # compute_chunk_data builds its own instances. There are no worker threads anywhere in the
 # terrain path (see _build_noises), so this pair is simply THE noise set, and the generation
-# passes should use it rather than minting their own — _apply_road_carve now does.
+# passes should use it rather than minting their own.
 var _cached_noises: Array[FastNoiseLite] = []
 var _cached_amplitudes: PackedFloat32Array = PackedFloat32Array()
 var _noise_cache_valid := false
@@ -608,264 +588,7 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 	var builder := TerrainChunkBuilder.new(self, coord)
 	builder.build()
 	var data := builder.data()
-	_apply_road_carve(data, true)
-	_apply_height_quantum(data)
 	return data
-
-
-# --- The shared preamble of the five _apply_* chunk modifiers -------------------------------
-#
-# Every one of them starts by unpacking the same arrays out of the chunk dict, early-outing on a
-# size mismatch, and (three of them) re-deriving the chunk's world rect from `center` and CHUNK_M.
-# `_chunk_view` is that preamble, ONCE. Each modifier still owns its own SOURCE guard (a null
-# `height_quantum <= 0.0`, …) at the call site — those are about whether the pass is
-# configured at all, not about whether the chunk is usable.
-#
-# WHICH ARRAYS/GUARDS a modifier wants is passed in as a `needs` bitmask, because the five are NOT
-# identical and flattening the differences would silently change which chunks get skipped:
-#
-#   * _apply_edge_taper and _apply_height_quantum have NO stride guard — a coarse (stride > 1)
-#     chunk still gets tapered and still gets quantised, and must keep doing so. Only the three
-#     passes with the "full-res grids only" LOD note pass VIEW_FULL_RES.
-#   * _apply_region_blend sizes itself against `uv2s`, not `heights` — it never reads a height, so
-#     it must run on a chunk whose `heights` are absent/short as long as uv2s and vertices agree.
-#     Hence VIEW_UV2S without VIEW_HEIGHTS makes uv2s the primary array.
-#   * only _apply_road_carve additionally requires `colors` and `uv2s` to match `heights`.
-#
-# ALLOCATION: the result lands in reused `_cvw_*` scratch fields and the function returns a plain
-# bool, so a per-chunk pass allocates nothing the old inline preambles did not (the Rect2/Vector3
-# are value types). This matters: on web these modifiers run per chunk through the frame-budgeted
-# main-thread build queue, and the project targets old phones — a Dictionary per chunk here would
-# be chunk-rate garbage. The packed arrays are handed out by reference-count exactly as a local
-# `var` did, so the caller's first write still triggers the same single copy-on-write; at most one
-# chunk's arrays stay pinned in the scratch until the next call overwrites them.
-const VIEW_HEIGHTS := 1
-const VIEW_COLORS := 2
-const VIEW_UV2S := 4
-const VIEW_FULL_RES := 8
-
-var _cvw_heights: PackedFloat32Array
-var _cvw_verts: PackedVector3Array
-var _cvw_colors: PackedColorArray
-var _cvw_uv2s: PackedVector2Array
-var _cvw_center: Vector3
-var _cvw_half: float
-var _cvw_rect: Rect2
-
-
-# Unpack one chunk dict into the _cvw_* scratch. Returns false — and leaves the scratch in an
-# unspecified state — when the chunk should be SKIPPED by the requested pass.
-func _chunk_view(data: Dictionary, needs: int) -> bool:
-	_cvw_verts = data.get("vertices", PackedVector3Array())
-	# The "primary" array whose length every other array is checked against: `heights` when the
-	# pass reads heights, otherwise `uv2s` (the region blend).
-	var n := 0
-	if (needs & VIEW_HEIGHTS) != 0:
-		_cvw_heights = data.get("heights", PackedFloat32Array())
-		if _cvw_heights.is_empty() or _cvw_verts.size() != _cvw_heights.size():
-			return false
-		n = _cvw_heights.size()
-	if (needs & VIEW_UV2S) != 0:
-		_cvw_uv2s = data.get("uv2s", PackedVector2Array())
-		if n > 0:
-			if _cvw_uv2s.size() != n:
-				return false
-		else:
-			if _cvw_uv2s.is_empty() or _cvw_verts.size() != _cvw_uv2s.size():
-				return false
-			n = _cvw_uv2s.size()
-	if (needs & VIEW_COLORS) != 0:
-		# Only ever requested together with VIEW_HEIGHTS (the road carve), so `n` is set.
-		_cvw_colors = data.get("colors", PackedColorArray())
-		if _cvw_colors.size() != n:
-			return false
-	if (needs & VIEW_FULL_RES) != 0 and int(data.get("stride", 1)) != 1:
-		return false
-	# vertices carry CHUNK-LOCAL x/z; `center` puts them back into the world space the builder
-	# sampled at — the conversion the carve, the taper, the pad pass and the region blend all do.
-	_cvw_center = data.get("center", Vector3.ZERO)
-	_cvw_half = CHUNK_M / 2.0
-	_cvw_rect = Rect2(_cvw_center.x - _cvw_half, _cvw_center.z - _cvw_half, CHUNK_M, CHUNK_M)
-	return true
-
-
-# Snap a freshly generated chunk's heights onto a fixed lattice, in lockstep across `heights`
-# and `vertices` exactly as the taper does.
-#
-# `height_quantum` is the step in metres (0 = off, which is every stage). The overworld sets it to
-# the step its chunk store round-trips through, so a stored record decodes to bit-identical
-# numbers and a cache round trip is EXACT rather than approximate. Idempotent by construction, so
-# a re-run (a rehydrated chunk passing through again) changes nothing.
-func _apply_height_quantum(data: Dictionary) -> void:
-	if height_quantum <= 0.0:
-		return
-	# No stride guard: a coarse chunk is quantised too (see _chunk_view's `needs` note).
-	if not _chunk_view(data, VIEW_HEIGHTS):
-		return
-	var heights := _cvw_heights
-	var verts := _cvw_verts
-	var inv := 1.0 / height_quantum
-	for i in heights.size():
-		var h: float = roundf(heights[i] * inv) / inv
-		heights[i] = h
-		var v := verts[i]
-		v.y = h
-		verts[i] = v
-	data["heights"] = heights
-	data["vertices"] = verts
-
-
-# Carve the OVERWORLD ROAD NETWORK into one freshly generated chunk (D-slice 4). The open-world
-# equivalent of bake_track — but PER CHUNK, local and deterministic, never a global bake:
-#
-#  - bake_track derives a corridor from one Curve2D and fills MAP-WIDE per-cell dictionaries
-#    (road_heights / road_blend / track_weights / track_surface). The overworld is a network
-#    over ~1,600 chunks, so those dictionaries would hold millions of cells;
-#  - free_load_only_data() deliberately drops road_heights / road_blend after load, so any
-#    chunk generated later in play (and in the overworld every chunk is) would silently lose
-#    its flatten.
-#
-# Writes, in ONE pass over the grid, the same four things bake_track expresses per cell:
-#   `heights` + `vertices`  — the roadbed flatten (lockstep, exactly as _apply_edge_taper does,
-#                             so the mesh, the HeightMapShape3D, height_at and the cached bytes
-#                             all derive from one number);
-#   colour ALPHA            — road weight (COLOR.a in ps1_models.gdshader, i.e. the channel
-#                             _vertex_color_row fills from track_weights);
-#   UV2.x                   — tarmac weight (the channel _surface_uv2_row fills from
-#                             track_surface; UV2.y is the region rank and is left to
-#                             _apply_region_blend).
-#
-# ORDERING — the two rules that make this correct:
-#
-#  1. It runs INSIDE generation: after builder.build(), before quantisation and before any
-#     cache write, so nothing has looked at the arrays yet. Same reason the coastline taper is
-#     a grid pass here rather than something applied to the mesh later.
-#  2. THE COASTLINE TAPER WINS. compute_chunk_data calls this BEFORE _apply_edge_taper, so a
-#     road running to the shore gets flattened onto the noise ground first and is then pulled
-#     down to the sea floor with everything else. The alternative (taper first, then clamp the
-#     flatten so it can never raise tapered ground) needs a second rule the flatten has to
-#     remember; "carve then taper" needs none, because the taper is a plain function of (h, x, z)
-#     that re-derives the shoreline from scratch. A road therefore disappears into the water at
-#     the map edge instead of standing on a causeway out to sea, which is the intended read.
-#
-# `carve_heights` false does the COLOURS ONLY — for a chunk whose `heights` came
-# out of a previous compute_chunk_data and are already carved (re-flattening them would compound
-# the lerp), but whose colour/uv2 rows are recomputed from the (empty, in a bounded world)
-# track_weights / track_surface dictionaries and so would otherwise come back road-less.
-#
-# No-op (one null check) without a road source, which is every stage.
-#
-# LOD note: only the full-res grid is carved. `chunk_class` returns full_res for EVERY chunk in
-# a bounded world, so the coarse (stride > 1) build is unreachable there and the guard below is
-# a statement of that, not a silent gap — same as the taper's known-limitation note.
-func _apply_road_carve(data: Dictionary, carve_heights: bool) -> void:
-	if road_source == null:
-		return
-	if not road_source.has_method("road_at") or not road_source.has_method("segments_in_rect"):
-		return
-	# The only pass that also needs `colors` and `uv2s` to match `heights`. VIEW_FULL_RES: coarse
-	# grids are skipped — unreachable in a bounded world (see the LOD note above).
-	if not _chunk_view(data, VIEW_HEIGHTS | VIEW_COLORS | VIEW_UV2S | VIEW_FULL_RES):
-		return
-	var heights := _cvw_heights
-	var verts := _cvw_verts
-	var colors := _cvw_colors
-	var uv2s := _cvw_uv2s
-	var center := _cvw_center
-	var rect := _cvw_rect
-	# One grid query buys the whole chunk: a road-free chunk (the vast majority of ~1,600) pays
-	# exactly this and nothing else. The query already inflates by influence_m().
-	#
-	# Only ever an is_empty() TEST, so prefer `has_segments_in_rect` when the source has it:
-	# `segments_in_rect` builds an Array of freshly allocated per-segment Dictionaries that this
-	# function then throws away, and it is the common path (nearly every chunk). Fall back to the
-	# list for a source that predates the predicate (the duck-typed fakes in the tests).
-	if road_source.has_method("has_segments_in_rect"):
-		if not bool(road_source.call("has_segments_in_rect", rect)):
-			return
-	else:
-		var segs: Array = road_source.call("segments_in_rect", rect)
-		if segs.is_empty():
-			return
-	# THE SHARED main-thread noise set, not a fresh one. This used to call `_build_noises()` per
-	# carved chunk — 3-4 brand-new FastNoiseLite objects each time — justified by a comment
-	# claiming compute_chunk_data runs on worker threads. IT DOES NOT: terrain generation is
-	# entirely single-threaded in this project (`WorkerThreadPool`, `Thread` and `Mutex` appear
-	# only in scripts/cloud/google_sign_in.gd), and the platforms that matter most for frame
-	# budget are single-threaded anyway (mobile web). `_ensure_noise_cache` builds the identical
-	# pair — same seeds, same frequencies, from the same `layers` — and the carve only READS it
-	# via get_noise_2d, so the sampled heights are unchanged; `_rebuild_loaded` invalidates the
-	# cache whenever the seed or the layers move.
-	var noises: Array = []
-	var amps := PackedFloat32Array()
-	if carve_heights:
-		_ensure_noise_cache()
-		noises = _cached_noises
-		amps = _cached_amplitudes
-	# THE PER-VERTEX QUERY, allocation-free where the source allows it. `road_at` returns a fresh
-	# 4-key Dictionary (plus a Vector2) per call and this loop runs SAMPLES² = 2,601 times per
-	# carved chunk, so those allocations dominated the cost of the pass. `road_at_into` writes into
-	# this ONE caller-owned scratch Array instead (see OverworldRoads.road_at_into for why an
-	# out-param rather than a scratch field on the source — it is about the caller's hazard, NOT
-	# about threads; nothing here is threaded). A source without the variant keeps the dictionary
-	# path, which is what the duck-typed fakes in the tests use.
-	#
-	# Slots, in the source's own PROBE_* order: 0 road_weight, 1 tarmac_weight, 2 distance_m,
-	# 3 foot.x, 4 foot.y. Indexed by literal rather than by `OverworldRoads.PROBE_*` on purpose —
-	# `road_source` is duck-typed here and this file must not name that class (overworld_roads.gd
-	# already calls into TerrainManager, so a back-reference would be a cycle).
-	var probe: Array = [0.0, 0.0, 0.0, 0.0, 0.0]
-	var lean := road_source.has_method("road_at_into")
-	for i in heights.size():
-		var v := verts[i]
-		var wx := center.x + v.x
-		var wz := center.z + v.z
-		var hit: Dictionary = {}
-		var w := 0.0
-		if lean:
-			road_source.call("road_at_into", wx, wz, probe)
-			w = float(probe[0])
-		else:
-			hit = road_source.call("road_at", wx, wz)
-			w = float(hit["road_weight"])
-		# The off-road EXIT, before anything else is read: on a carved chunk most vertices are
-		# still off the road, so nothing but the weight should be touched for them.
-		if w <= 0.0:
-			continue
-		var tarmac: float = float(probe[1]) if lean else float(hit["tarmac_weight"])
-		var foot: Vector2 = (Vector2(float(probe[3]), float(probe[4])) if lean
-			else Vector2(hit["foot"]))
-		if carve_heights:
-			# The roadbed: the terrain's own PURE height at the nearest point ON the centreline,
-			# so the road reads as a level ribbon following the ground rather than as noise.
-			# This is exactly the pairing bake_track stores as road_heights (the height at the
-			# perpendicular foot) + road_blend (the feathered weight).
-			#
-			# `w` doubles as the flatten weight instead of a second road_source.height_bias_at()
-			# call: the two are EQUAL today, and this is the hot loop (SAMPLES² vertices per
-			# chunk). OverworldRoads keeps height_bias_at separate so the flatten band and the
-			# colour band may diverge later — if that ever happens, this line must go back to
-			# calling it (guarded by has_method) or the flatten will silently follow the colour.
-			var road_h := _sample_height(noises, amps, foot.x, foot.y)
-			var h := lerpf(heights[i], road_h, w)
-			heights[i] = h
-			v.y = h
-			verts[i] = v
-		# COLOR.a = road weight, UV2.x = tarmac weight — the channels the `blend_road` branch of
-		# ps1_models.gdshader reads (road_t = COLOR.a, tarmac_t = UV2.x), and the same channels
-		# _vertex_color_row / _surface_uv2_row fill on the staged path. RGB (ground tint × baked
-		# light) and UV2.y are left exactly as the builder wrote them.
-		var c := colors[i]
-		c.a = w
-		colors[i] = c
-		var t := uv2s[i]
-		t.x = tarmac
-		uv2s[i] = t
-	if carve_heights:
-		data["heights"] = heights
-		data["vertices"] = verts
-	data["colors"] = colors
-	data["uv2s"] = uv2s
 
 
 # Per-vertex colours for one chunk's indexed mesh. RGB carries default_cell_color
@@ -1343,7 +1066,7 @@ func _chunk_bytes(data: Dictionary) -> int:
 #     focus chunk, the +1 being hysteresis so a coord the very next reconcile is about to spawn
 #     is not thrown away a frame early. This matters because eviction is not lossless: once a
 #     coord leaves the cache, height_at / light_at / surface_at fall back to pure noise, which
-#     for a bounded world means the taper-only height rather than the cached grid. Outside the
+#     for a bounded world means the raw noise height rather than the cached grid. Outside the
 #     window nothing is standing on it, so the disagreement is unobservable.
 #  3. Both heap-ish products are released explicitly: `lod_meshes` (the per-level ArrayMesh
 #     array, i.e. the VRAM) and any prebuilt `shape` (the HeightMapShape3D committed to the
@@ -2016,10 +1739,6 @@ func _timed_process(_delta: float) -> void:
 		var focus_untimed := _focus_node()
 		if focus_untimed != null:
 			update_focus(focus_untimed.global_position)
-		# Drain deferred chunk spawns BEFORE the detail queue: a missing chunk is a hole in the
-		# world, a missing finest LOD is only a blurrier one, so the chunk wins the frame's
-		# budget.
-		_drain_spawn_queue(spawn_budget)
 		_drain_detail_queue(detail_builds_per_frame)
 		return
 	# Same three stages, individually timed. See `stage_timing`.
@@ -2028,13 +1747,10 @@ func _timed_process(_delta: float) -> void:
 	if focus != null:
 		update_focus(focus.global_position)
 	var t1 := Time.get_ticks_usec()
-	_drain_spawn_queue(spawn_budget)
-	var t2 := Time.get_ticks_usec()
 	_drain_detail_queue(detail_builds_per_frame)
-	var t3 := Time.get_ticks_usec()
+	var t2 := Time.get_ticks_usec()
 	last_focus_us = t1 - t0
-	last_spawn_drain_us = t2 - t1
-	last_detail_drain_us = t3 - t2
+	last_detail_drain_us = t2 - t1
 
 
 # Build up to `limit` queued finest LOD levels (negative = all of them). Entries are
@@ -2105,19 +1821,6 @@ func _reconcile(center: Vector2i) -> void:
 		if maxi(absi(c.x - center.x), absi(c.y - center.y)) > load_radius:
 			_chunks[coord].queue_free()
 			_chunks.erase(coord)
-	# SPREAD THE SPAWNS when a budget is set. A crossing pulls in a whole ring ROW at once —
-	# 9 coords at load_radius 4, 21 at radius 10 — and spawning them all in this one call means
-	# that many mesh + HeightMapShape3D builds in a single frame. Measured at ~140 ms, i.e. the
-	# chunk-boundary hitch. Note `detail_builds_per_frame` governed only the finest-LOD queue
-	# (_drain_detail_queue) and never chunk spawning, so the configured build budget was not
-	# actually bounding this.
-	#
-	# Nearest-first, and only the FAR entries defer: `collision_ring` is 1 (a 3x3 band), so what
-	# the car can physically reach is always spawned this frame, and a deferred coord is a couple
-	# of hundred metres away — many frames of driving before it is needed.
-	if spawn_budget > 0:
-		_enqueue_spawns(wanted, center)
-		return
 	# ONE supply ladder, in `_spawn_one`. This loop used to carry its own near-duplicate copy of
 	# it, and the two had already diverged: different error text, and only one of them had the
 	# corridor arm. That is the same "two parallel implementations of one rule" shape that produced
@@ -2201,77 +1904,6 @@ func _stream_chunk(coord: Vector2i) -> void:
 	cache_chunk(coord)
 	if _chunk_cache.has(coord):
 		_spawn_chunk(coord, _chunk_cache[coord])
-
-
-# Queue the coords `wanted` needs that are not spawned yet, nearest to `center` first, and
-# spawn immediately only what is close enough to matter this frame. `_drain_spawn_queue` does
-# the rest over the following frames.
-func _enqueue_spawns(wanted: Array, center: Vector2i) -> void:
-	var pending: Array[Vector2i] = []
-	for coord in wanted:
-		if _chunks.has(coord):
-			continue
-		pending.append(coord)
-	if pending.is_empty():
-		_spawn_queue.clear()
-		return
-	pending.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
-		return (a - center).length_squared() < (b - center).length_squared())
-	# Anything inside the COLLISION BAND is spawned NOW regardless of budget — that is ground the
-	# car can touch, and a hole there is a fall-through, not a cosmetic gap. The project chose loud
-	# holes over generate-on-miss, so this set is the one place a hole is not an option.
-	#
-	# The bound is `collision_ring` EXACTLY, not `collision_ring + 1`. The forced set is what must
-	# exist before the queue gets another frame, and `collision_ring` is by definition the band that
-	# carries live collision (see the set_collision_enabled loop below) — a chunk one ring further
-	# out cannot be touched by the car until it has itself become part of the collision band, which
-	# takes a whole chunk of travel (50 m, i.e. well over a second at any speed the car reaches) and
-	# therefore many frames of budgeted draining. The extra ring was costing 5 immediate builds per
-	# crossing instead of 3 — a 3x3 crossing adds one ROW of 3 — and immediate builds are exactly
-	# the `update_focus` half of the measured chunk-boundary spike. Nothing about the no-hole
-	# guarantee weakens: the band the car can stand on is still complete before this call returns.
-	var forced := collision_ring
-	var deferred: Array[Vector2i] = []
-	for coord in pending:
-		if maxi(absi(coord.x - center.x), absi(coord.y - center.y)) <= forced:
-			_spawn_one(coord)
-		else:
-			deferred.append(coord)
-	# Partitioned in ONE pass rather than built-then-`erase`d: Array.erase is a linear scan plus a
-	# shift, so the old shape was quadratic in the size of the forced set.
-	_spawn_queue = deferred
-	_drain_spawn_queue(spawn_budget)
-
-
-# Spawn up to `limit` queued chunks (negative = all). Entries are re-validated on the way out:
-# the car can turn around between a coord being queued and being reached, and those are dropped
-# rather than spawned into a window that no longer wants them.
-func _drain_spawn_queue(limit: int) -> void:
-	if _spawn_queue.is_empty():
-		return
-	# The ring test below is PURE ARITHMETIC. This used to rebuild `target_coords` — a fresh
-	# 441-entry Array — EVERY FRAME the queue was non-empty, and then ask it `wanted.has(coord)`,
-	# a linear scan, once per drained coord. `target_coords` is exactly the Chebyshev ball of
-	# radius `load_radius`, so one maxi/absi answers the same question with no allocation at all.
-	var center := _last_focus_coord
-	var built := 0
-	# `limit <= 0` is UNLIMITED here, matching spawn_budget's documented "0 = off, spawn
-	# the whole row in one call". It used to read `limit < 0`, which meant a budget of 0
-	# drained exactly zero entries per frame and stranded anything already queued
-	# forever — a hole in the world that never fills. Inert in practice, because
-	# _reconcile only queues behind its `spawn_budget > 0` branch, but the two readings
-	# of the same field disagreed and only the queue-filling side knew it.
-	# NOTE the deliberate asymmetry with _drain_detail_queue, which keeps `limit < 0`:
-	# there 0 legitimately means "build no finest LODs this frame" (a blurrier chunk,
-	# not a missing one), so zero is a real setting rather than a disabled budget.
-	while not _spawn_queue.is_empty() and (limit <= 0 or built < limit):
-		var coord: Vector2i = _spawn_queue.pop_front()
-		if _chunks.has(coord):
-			continue
-		if maxi(absi(coord.x - center.x), absi(coord.y - center.y)) > load_radius:
-			continue
-		_spawn_one(coord)
-		built += 1
 
 
 # One chunk, from whichever supply the mode allows. Factored out of _reconcile so the immediate

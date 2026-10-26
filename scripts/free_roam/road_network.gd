@@ -48,12 +48,10 @@ var hit_q: Vector2:
 	get: return Vector2(hit_qx, hit_qy)
 var hit_dir: Vector2:
 	get: return Vector2(hit_dx, hit_dy)
-var nodes: PackedVector2Array:
-	get:
-		var out := PackedVector2Array()
-		for i in node_x.size():
-			out.append(Vector2(node_x[i], node_y[i]))
-		return out
+
+
+func node(i: int) -> Vector2:
+	return Vector2(node_x[i], node_y[i])
 
 
 func build(settings: FreeRoamSettings, terrain: RoadTerrain) -> void:

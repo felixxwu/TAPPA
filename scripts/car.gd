@@ -665,6 +665,8 @@ var _wind_dir := Vector3.ZERO   # unit world heading, trig done once at resolve 
 var _wind_id := "￿"        # sentinel: never a real weather id, so the first tick resolves
 var _wind_cfg: GameConfig = null
 var _progress: Node = null      # the sibling TrackProgress (distance along the stage)
+var _progress_retry := 0        # physics ticks until the next look for a TrackProgress
+var _wind_odometer := 0.0       # metres driven, keying the gust where there is no stage (free roam)
 
 
 # A lateral force in a FIXED WORLD direction, so the car is blown off line and has to
@@ -678,15 +680,19 @@ func _apply_crosswind(cfg: GameConfig) -> void:
 		_resolve_wind(cfg)
 	if not _wind_active:
 		return
-	# Distance comes from the existing TrackProgress odometer rather than a private one,
-	# so the wind is keyed to the same along-track metric the HUD and stage gate use.
-	# Not permanently cached when absent: TrackProgress is built after the car exists
-	# (world.gd._generate_track), and the flat test fixtures never have one.
+	# On a stage the gust is keyed to TrackProgress's along-track distance, the same metric
+	# the HUD uses; free roam has no stage, so it runs on the car's own odometer. The lookup
+	# retries about once a second, since TrackProgress is built after the car exists.
 	if _progress == null:
-		_progress = _sibling_with_method("progress_offset")
-		if _progress == null:
-			return
-	var distance: float = _progress.progress_offset()
+		_progress_retry -= 1
+		if _progress_retry <= 0:
+			_progress_retry = Engine.physics_ticks_per_second
+			_progress = _sibling_with_method("progress_offset")
+	var distance := _wind_odometer
+	if _progress != null:
+		distance = _progress.progress_offset()
+	else:
+		_wind_odometer += Vector2(linear_velocity.x, linear_velocity.z).length() * get_physics_process_delta_time()
 	var magnitude := Crosswind.magnitude_at(distance, cfg.track_seed,
 		_wind_strength, _wind_gust, cfg.crosswind_gust_wavelength_m)
 	# Exposure: a broadside car catches more wind than a nose-on one. Deliberately a
@@ -1303,7 +1309,7 @@ func reset_to(xform: Transform3D) -> void:
 
 # Detach `old_car` from the tree (retiring it) and return a bare, unfielded fresh
 # instance parented and named exactly where it was — the shared first half of
-# `respawn` / `respawn_owned` below.
+# `respawn` below.
 static func _respawn_fresh(old_car: Node, spawn_xform: Transform3D) -> Node:
 	var parent := old_car.get_parent()
 	old_car.name = "CarRetired"
@@ -1390,11 +1396,9 @@ func use_isolated_config() -> void:
 # last two are destructive to a LIVE, simulating VehicleBody3D — they corrupt its
 # suspension contact (wheels drop through the floor / render sunk into the body, and the
 # car can lose traction). So only field a FRESH/idle body (a just-instantiated instance,
-# e.g. Car.respawn / Car.respawn_owned), never re-field the live player car mid-stage —
-# this applies just as much to a body that has merely been DRIVEN AROUND (overworld_garage.gd's
-# "Change Car", overworld_picker.gd's starter grant) as to one mid-rally. To change a live
-# car's tuning use retune() (config-only, no reshape); to change its car re-instantiate via
-# respawn() / respawn_owned(). Re-running it purely to re-derive config
+# e.g. Car.respawn), never re-field the live player car — even one that has merely been
+# driven around. To change a live car's tuning use retune() (config-only, no reshape); to
+# change its car re-instantiate via respawn() (free roam reloads the scene instead). Re-running it purely to re-derive config
 # (with no reliance on the body's physics afterward) is fine — the test suite does this.
 func apply_car(index: int, rebuild_audio := true) -> String:
 	var spec: Dictionary = CarLibrary.all()[index]
@@ -1846,8 +1850,8 @@ func apply_owned(owned: Dictionary) -> String:
 	# config-derived fitment caches are stale — re-derive them now the config is final.
 	# (Rally staging would reset the engine anyway; free roam never does.)
 	drivetrain.engine.refresh_fitment()
-	# Step 4: working HP starts at the saved value; bind to the instance so the run's
-	# damage is persisted back to that car at each event boundary.
+	# Step 4: working HP and wheel toe start from the owned car's values (free roam then
+	# restores the world's saved car_state over them).
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
 	damage.field(max_hp, float(owned.get("hp", max_hp)), owned.get("wheel_toe", []))

@@ -148,20 +148,10 @@ func setup(centerline: Curve2D, car: Node, terrain: Node, half_width: float) -> 
 	_segment_step = Config.data.tire_mark_segment_step_for(
 		Platform.is_web(), Platform.is_touch())
 	_ensure_material()
-	_retarget_internal(car)
+	_bind_car(car)
 
 
-# Re-point at a DIFFERENT car node, re-collecting its wheels and dropping every ribbon —
-# for when the driven car itself has been replaced (`Car.respawn_owned`, see
-# `overworld_garage.gd`'s "Change Car" page), not merely reshaped in place. A reshaped car
-# keeps its own node and wheel nodes, so it never needs this; a respawned one is a fresh
-# node with fresh wheels, and `_wheels` holding the OLD (freed) ones would silently mark
-# nothing forever.
-func retarget(car: Node) -> void:
-	_retarget_internal(car)
-
-
-func _retarget_internal(car: Node) -> void:
+func _bind_car(car: Node) -> void:
 	_car = car
 	for r in _ribbons:
 		if is_instance_valid(r):

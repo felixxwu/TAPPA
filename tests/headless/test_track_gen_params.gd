@@ -29,11 +29,6 @@ func test_for_event_deterministic() -> void:
 	assert_almost_eq(a.water_sampler.call(5.0, 5.0), b.water_sampler.call(5.0, 5.0), 0.0001,
 		"same sampler output")
 
-func test_for_trial_requires_water_level() -> void:
-	var p := TrackGenParams.for_trial(3, -1.0, 10, 0.5, _cfg())
-	assert_almost_eq(p.water_level, -1.0, 0.0001, "trial water level honoured")
-	assert_true(p.water_enabled, "trial always enables water so the preview shows it")
-
 func test_dry_start_moves_off_water() -> void:
 	# Water covers a disc around nominal origin; the search must find dry ground.
 	var cfg := GameConfig.new()
@@ -41,7 +36,9 @@ func test_dry_start_moves_off_water() -> void:
 	cfg.water_enabled = true
 	cfg.track_water_level_m = 0.0
 	cfg.water_shore_clearance_m = 0.5
-	var p := TrackGenParams.for_trial(5, 0.0, 8, 0.0, cfg)
+	var p := TrackGenParams.for_config(cfg)
+	p.water_enabled = true
+	p.water_level = 0.0
 	# Override sampler: underwater within 20m of nominal origin, dry beyond.
 	p.water_sampler = func(x: float, z: float) -> float:
 		return -10.0 if Vector2(x, z).length() < 20.0 else 10.0

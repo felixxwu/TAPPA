@@ -2,7 +2,7 @@
 
 **Sources:** `scripts/confirm_popup.gd` (`class_name ConfirmPopup` — the shared confirm
 dialog and the tree-wide `MODAL_GROUP` that keeps one modal at a time), `scripts/menu_page.gd`
-(`class_name MenuPage` — `open_modal`, the scrolled-body / pinned-exit page shape).
+(`class_name MenuPage` — the scrolled-body / pinned-exit page shape).
 
 **Tests:** `tests/headless/test_menu_page.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_confirm_popup.gd`
 
@@ -169,41 +169,10 @@ full minimum size — which is what stops a tall body pushing the action row off
 `dim` option makes it a true modal.
 
 The two hand-rolled builders this section used to describe — `hq.gd::_make_modal_overlay`
-(returning `[layer, body, footer, root]`) and `hq_carpark.gd::_make_carpark_modal` — had
+(returning `[layer, body, footer, root]`) and the car park's equivalent — had
 already become thin wrappers over `MenuPage` before the hub was deleted, and went with it.
 Every page in the game is a `MenuPage` now, `HubShell`'s included
 (hub-shell.md (deleted with the free-roam pivot)).
-
-### Hosting a modal (`MenuPage.open_modal`) — not optional either
-
-**A modal page never goes on a station's `CanvasLayer`.** `MenuPage.open_modal(host, opts)`
-is the one way to put a full-screen page on screen; it owns three things callers kept getting
-wrong, each with a silent failure mode:
-
-1. **Its own `CanvasLayer`.** `WorldPanelHost.sync` migrates a station's UI tree into a 3D
-   `WorldPanel` and sets `flat_layer.visible = false` whenever `world_space_menus` is on —
-   which `game_config.tres` **ships on**. A page added to `_car_layer` was built, gated and
-   nav-wired but rendered NOWHERE: "Change Upgrades" on the car park's "Too powerful" prompt
-   looked like it dropped the player straight back to car-select.
-2. **`MenuPage.MODAL_LAYER` (99) — above the station overlays, strictly below
-   `LoadingScreen`'s 100 (a tie let the hub's title page draw over the background load)
-   and `ConfirmPopup`'s 101.** A modal page HOSTS confirms rather than being one. On a tie the confirm can be drawn *under* the page's
-   opaque panel while its full-screen `MOUSE_FILTER_STOP` dim goes on swallowing clicks — an
-   invisible confirm behind a menu that has gone dead.
-3. **A screen claim via `MenuNav.SCREEN_CLAIMER_GROUP`.** `WorldPanel._input` projects clicks
-   landing inside its 3D quad into the panel's `SubViewport` and marks them handled, standing
-   down only for `MenuNav.input_blocked`. A page outside that predicate renders on top while
-   the station underneath eats its clicks. It is deliberately NOT `ConfirmPopup.MODAL_GROUP`
-   (see "One modal at a time") — that group *refuses* a second modal, and these pages must be
-   allowed to open the confirms they host. Membership sits on the page, not its layer, so
-   hiding the page releases the claim (hosts keep these pages alive and toggle `visible`).
-
-Point 1's failure mode is worth keeping even though its example is deleted: a page added to
-a station's own layer was built, gated and nav-wired but rendered NOWHERE once
-`WorldPanelHost.sync` hid that layer. The class of bug — "the page exists, is navigable,
-and is invisible" — is what `open_modal` owning its own `CanvasLayer` prevents. Same for
-point 3's: two live `MenuNav`s fighting one keypress, because the thing that was supposed to
-stand down only ever addressed the flat host.
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
 fixed — `DisplayStretch.DESIGN_HEIGHT`, read from `project.godot`'s

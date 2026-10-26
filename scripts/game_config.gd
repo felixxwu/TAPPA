@@ -1,6 +1,6 @@
 class_name GameConfig
 extends Resource
-# Docs: features/car-performance.md, features/configuration.md, features/forced-induction.md, features/tuning.md, features/world-panel.md — update in the same change as this file.
+# Docs: features/car-performance.md, features/configuration.md, features/forced-induction.md, features/tuning.md — update in the same change as this file.
 # Tests: tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd, tests/headless/test_car_performance.gd — extend in the same change. (Nearly every headless test reads this file; those three are the ones that cover it AS config. For a specific knob, the owning area's doc above names its own tests.)
 # Central tuning knobs for the whole game. Edit config/game_config.tres
 # (Inspector or text), not the per-node values in main.tscn — runtime
@@ -780,16 +780,8 @@ func has_nitrous() -> bool:
 ## before it fades out.
 @export var hud_popup_show_seconds := 3.0
 @export_group("Start Line")
-## The pre-event start-line sequence (todo/menus.md, which named this "location 2", is
-## deleted — todo/roguelike-pivot.md decision 44): on track load an
-## orbit camera circles the car while a MENU offers Start / Upgrades / Tune Car;
-## on launch the screen fades to black and back to the chase camera + driving UI
-## as the countdown starts. Runs inside an active RunSession stage; a plain
-## dev boot of main.tscn skips straight to the countdown. Off restores that old
-## behaviour. The per-opponent reveal this sequence used to run between the MENU
-## and the fade — a rival queue rolling up, launching one at a time — died with the
-## rival field (todo/roguelike-pivot.md decision 5); what runs today is its
-## one-rival revival: the ghost parked on the grid, one automatic fly, then the card.
+## Stage the generated track: feeds TrackGenParams._apply_staging, which shifts the generation
+## origin ahead of the nominal spawn and reserves a lead-in corridor behind it.
 @export var start_line_enabled := true
 ## Orbit camera angular speed (rad/s) around the car during the start reveal.
 @export var start_orbit_speed := 0.5
@@ -2378,17 +2370,9 @@ func has_nitrous() -> bool:
 ## Off = full precompute (every chunk full-res) — useful to A/B the loading cost.
 @export var terrain_precompute_prune_enabled := true
 ## Extra reach (metres) added to a chunk's closest-possible camera distance when
-## deciding which LOD levels it can show. Must exceed the largest replay-camera offset
-## from the car (finish-replay roadside/flyby shots ~40 m) so a replay never exposes a
-## pruned level. Larger = more conservative (keeps finer levels farther out).
-## Was 40.0. Lowered to 25.0 (2026-07-29) after actually reading replay_camera.gd:
-## the 40 was assumed to protect the FLYBY shot, but FLYBY is c + (6, 2, 6) ~= 8.7 m.
-## The real maxima are HIGH_WIDE (0, 14, 16) ~= 21.3 m and ORBIT ~= 9.6 m. ROADSIDE's
-## 35/40 m constants are ALONG THE ROAD — the plant sits on the car's own travel line,
-## so it barely changes distance-to-centerline, which is what the chunk classification
-## measures. 25 keeps ~4 m over the true worst case, classifies fewer chunks full-res,
-## and drops detail_ring() from 3 to 2 on desktop.
-## If a replay shot ever shows unbuilt terrain, RAISE THIS FIRST.
+## deciding which LOD levels it can show. Must exceed the farthest the camera can sit
+## from the car so it never exposes a pruned level. Larger = more conservative (keeps finer
+## levels farther out). If the camera ever shows unbuilt terrain, RAISE THIS FIRST.
 @export_range(0.0, 200.0) var terrain_precompute_safety_slack_m := 25.0
 ## Defer each full-res chunk's FINEST LOD level instead of prebaking it for the whole
 ## corridor, rebuilding it on demand as chunks enter the detail ring.
@@ -2432,8 +2416,8 @@ func has_nitrous() -> bool:
 # fielded values. Both functions below walk the SCRIPT property list, so every field is
 # captured and restored regardless of whether it is exported.
 
-# The config-driven base of the stage world's Environment: fog, backdrop and glow.
-# Weather/region looks layer on top of this afterwards. Free roam doesn't call it yet.
+# The config-driven base of every 3D world's Environment (free roam and the stage): fog,
+# backdrop and glow. Weather/region looks layer on top of this afterwards.
 func apply_environment(env: Environment) -> void:
 	env.fog_density = fog_density
 	env.background_color = background_color
@@ -2928,20 +2912,14 @@ func spectator_params() -> Dictionary:
 ## model (open ground vs. tree cover); see features/car-physics.md.
 @export_range(0.0, 1.0) var crosswind_nose_on_fraction := 0.35
 
-@export_group("Overworld")
-# --- The overworld map and minimap (scripts/overworld_map.gd) -------------------------------
-# The minimap is an always-on corner panel; the full map is the M / gamepad-Back overlay. Both
-# are drawn SCHEMATICALLY from the road network, the revealed pins and the fog mask — see the
-# header of overworld_map.gd for why the photographic `textures/map_world.jpg` must not be used.
-
-## Screen margin (pixels) around the build-version label in the hub's bottom corner
-## (hub_shell.gd's MAIN page — features/hub-shell.md). Passive chrome only, not a
-## MenuNav widget.
+@export_group("Title")
+## Screen margin (pixels) around the build-version label in the title screen's corner.
+## Passive chrome only, not a MenuNav widget.
 @export_range(0.0, 60.0) var hub_version_label_margin_px := 8.0
 
 @export_group("Loading")
 # The frame cap held for the DURATION of world generation only (WorldRuntime.loading_cap, used
-# by world.gd and overworld.gd). Loading awaits hundreds of frames, and a LOW cap makes each of
+# by world.gd). Loading awaits hundreds of frames, and a LOW cap makes each of
 # those yields idle away most of its frame budget instead of generating — measured on the web
 # export at 33.4 ms per awaited frame at cap 30 vs 8.3 ms uncapped. See features/loading.md.
 ## Loading-window cap (FPS) on non-touch targets (desktop/native). 0 = uncapped, which is the
@@ -2952,21 +2930,15 @@ func spectator_params() -> Dictionary:
 ## avoid, and a throttled phone then plays worse. 0 = uncapped.
 @export_range(0, 240) var loading_touch_max_fps := 60
 
-@export_group("Roguelike Run Boosts")
-# The IN-RUN boost catalogue (BoostLibrary, scripts/boost_library.gd — todo/roguelike-pivot.md
-# -> "Upgrades — RR's two-tier model"). Every value here is a magnitude a designer retunes in
-# the inspector, so nothing in tests/headless/ may pin one (CLAUDE.md) — only the RELATIONSHIP
-# "the draw reads this field live" is fair game. THE META SEAM IS NOW WIRED (stage 6): these
-# are the UNLEVELED base magnitudes — BoostLibrary.magnitude_for(id, level) scales them by
-# `boost_level_magnitude_step` below (@export_group("Roguelike Meta Shop")) before a pick is
-# drawn, so a level-0 boost (nothing purchased) still rolls exactly the number authored here.
+@export_group("Loot Parts")
+# The base strengths of the loot parts (BoostLibrary, features/loot.md). A part's level is the
+# biome ring it was found in; BoostLibrary.magnitude_for scales these by
+# `boost_level_magnitude_step` below, so a level-0 part has exactly the value authored here.
 ## "Lightweight" — mass multiplier (below 1.0 = lighter, i.e. a real boost),
 ## clamped at min_lightweight_mass below (the "mult_floor" op) so it can't push a car
 ## below that floor — see UpgradeLibrary.EFFECTS["mass_mult_floor"].
 @export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.8
-## The floor "Lightweight" can't push a car's mass below (kg). One-time (see
-## BoostLibrary.stacks — "mult_floor" is non-stacking) and excluded from the pick pool
-## entirely for a car already at or under this (RunSession._lightweight_available).
+## The floor "Lightweight" can't push a car's mass below (kg).
 @export var min_lightweight_mass := 1000.0
 ## "Quick shifter" — an ABSOLUTE shift time (the "set" op), not a scaling.
 @export_range(0.02, 0.3, 0.01) var run_boost_shift_time_s := 0.12
@@ -2978,13 +2950,8 @@ func spectator_params() -> Dictionary:
 ## enough to reliably trigger ABS (features/drivetrain-and-tires.md) even on the
 ## heaviest car in the roster.
 @export var run_boost_brake_torque_n := 2500.0
-# NOTE: there is deliberately no run_boost_engine_power_mult any more — the Engine Swap
-# is a genuine EngineLibrary swap now (RunSession._pool_engine_swap_ids), not a flat
-# peak_torque multiplier. See features/engine-swap.md.
-#
-# "Turbocharger" / "Supercharger" — the SAME install_turbo/install_supercharger EFFECTS
-# rows the permanent-part model used (features/forced-induction.md), now authored as
-# in-run boosts. Only the *_boost_gain field SCALES with a purchased level (it's the
+# "Turbocharger" / "Supercharger" — the install_turbo/install_supercharger EFFECTS rows
+# (features/forced-induction.md). Only the *_boost_gain field SCALES with level (it's the
 # part's actual strength); the rest are the part's fixed "personality" (spool character/
 # drag) and never scale — see BoostLibrary.CATALOGUE's "turbo"/"supercharger" entries and
 # magnitude_for's dict-shaped effect_fields handling.
@@ -3004,41 +2971,29 @@ func spectator_params() -> Dictionary:
 @export_range(0.0, 40.0, 0.5) var run_boost_supercharger_parasitic_coef := 6.0
 ## Spool-whistle audio gain for the turbo boost — fixed, does not scale with level. Without
 ## this the boost fitted turbo_enabled/boost physics but left the audio gain fields at
-## whatever the car's own (usually NA, zero-gain) engine authored, so a mid-run turbo pickup
-## ran silent.
+## whatever the car's own (usually NA, zero-gain) engine authored, so a fitted turbo ran silent.
 @export_range(-1.0, 1.0, 0.001) var run_boost_turbo_whistle_gain := 0.015
 ## Blow-off valve audio gain for the turbo boost — fixed, does not scale with level.
 @export_range(-1.0, 1.0, 0.001) var run_boost_turbo_bov_gain := 0.005
 ## Anti-lag bang audio gain for the turbo boost — fixed, does not scale with level.
 @export_range(-1.0, 1.0, 0.001) var run_boost_turbo_antilag_bang_gain := 0.0
 ## Belt-whine audio gain for the supercharger boost — fixed, does not scale with level.
-## Matches the pre-pivot persistent supercharger part's authored gain (0.06).
 @export_range(-1.0, 1.0, 0.001) var run_boost_supercharger_whine_gain := 0.06
 # "Nitrous" — the same install_nitrous EFFECTS row features/nitrous.md documents (a plain
-# write_fields splat, no enable flag), now authored as an in-run boost like the two induction
-# parts above. Only *_boost_gain SCALES with a purchased level (the part's real strength);
+# write_fields splat, no enable flag), like the two induction parts above. Only *_boost_gain
+# SCALES with level (the part's real strength);
 # the tank is fixed personality, same convention as the turbo's omega_ref/inertia.
 ## Extra torque fraction while nitrous is held — the nitrous boost's scaled field.
 @export_range(0.05, 1.0, 0.01) var run_boost_nitrous_boost_gain := 0.25
 ## Seconds a full tank holds — fixed, does not scale with level.
 @export_range(1.0, 20.0, 0.5) var run_boost_nitrous_tank_seconds := 6.0
 
-@export_group("Roguelike Meta Shop")
-# THE META TIER (todo/roguelike-pivot.md -> "Upgrades — RR's two-tier model", stage 6 of
-# todo/roguelike-pivot-plan.md). Boost LEVELS, purchased with money and persisted on the
-# profile (Save.KEY_BOOST_LEVELS, id -> level), never wiped by a failed run. A level does not
-# touch the live car directly — it scales the MAGNITUDE `BoostLibrary.magnitude_for` hands to
-# the next in-run pick (see that file's own header). Same CLAUDE.md rule as the group above:
-# these are tunable numbers, no test may pin one.
+@export_group("Loot Part Levels")
 ## How far ONE level pushes a boost's magnitude away from its unleveled baseline, as a
 ## fraction (0.08 = 8%). `BoostLibrary.magnitude_for` multiplies this by the level and by the
 ## catalogue entry's own `level_direction` (+1 strengthens upward, -1 downward — e.g. lighter
 ## mass, faster shift), so level 0 is always an exact no-op on the base magnitude above.
 @export_range(0.0, 0.3, 0.01) var boost_level_magnitude_step := 0.08
-## Price of the one-time Engine Swap unlock (todo/roguelike-pivot.md decision 17 — re-gated as
-## a meta shop purchase, replacing the old rally-completion gate). Read by
-## (engine_swap_unlock_price is deleted — the Engine Swap is a mid-run boost now,
-## priced by the boost ladder like every other BoostLibrary entry.)
 
 @export_group("Card Carousel")
 ## Height/width — a playing card is taller than it is wide (~3.5:2.5).

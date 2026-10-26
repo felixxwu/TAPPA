@@ -29,7 +29,7 @@ extends RefCounted
 # field the same way.
 #
 # MAGNITUDES ARE TUNABLE DATA (CLAUDE.md) and live on GameConfig
-# (config/game_config.tres, "Roguelike Run Boosts") — never a const here, and no test
+# (config/game_config.tres, "Loot Parts") — never a const here, and no test
 # may pin the shipped number. This table only says WHICH GameConfig field(s) each
 # catalogue entry's effect draws its value from, so `effect_for` re-reads Config.data
 # live rather than baking a value in.
@@ -38,7 +38,7 @@ extends RefCounted
 # purchased level should push the magnitude UP (grip, brakes, downforce: bigger is more
 # boost) or -1 if it should push it DOWN (mass, shift time, drag: smaller is more boost).
 # `magnitude_for(id, level)` is the one place that applies it, via
-# `GameConfig.boost_level_magnitude_step` ("Roguelike Meta Shop") — level 0 is always an
+# `GameConfig.boost_level_magnitude_step` ("Loot Part Levels") — level 0 is always an
 # exact no-op, so a fresh id with no purchased level still rolls the bare GameConfig
 # number above unchanged.
 #

@@ -4,10 +4,8 @@ extends RefCounted
 # Tests: tests/headless/test_stage_config.gd, tests/headless/test_snow_region.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageConfig' tests/headless/` and read the assertions that pin what you are about to change.
 # The CANONICAL writer that turns a stage/event dict into a GameConfig — i.e. the
 # one place an authored (or rolled) stage's track parameters reach the config the
-# world is generated from. Extracted from RallySession, which owned it only by
-# accident of history: it is pure, scene-free and session-free, and every kind of
-# run (career rally, Rally Challenge, benchmark, the offline track-cache tools)
-# goes through it.
+# world is generated from. It is pure, scene-free and session-free, and every kind of
+# run (free roam, benchmark, the offline tools) goes through it.
 #
 # Static-only, no autoload (same shape as RallyLibrary / ChallengeLibrary /
 # DrivingContext) — so it can be reached by `class_name` from anywhere, including
@@ -54,8 +52,7 @@ static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 	cfg.weather = StageFields.event_weather(event)   # WEATHER_DRY / WEATHER_RAIN; see features/weather.md
 	cfg.cliff_amount = StageFields.event_cliffiness(event)   # [0,1], scales cliff_max_height_m
 	cfg.water_enabled = bool(event.get("water_enabled", base.water_enabled))
-	# event -> event's region (if the caller seated one, see RallySession.current_event() /
-	# _generate_event_tracks) -> the authored baseline. See TrackGenParams.resolve_water_level.
+	# event -> event's region (if the caller seated one) -> the authored baseline. See TrackGenParams.resolve_water_level.
 	cfg.track_water_level_m = TrackGenParams.resolve_water_level(event, base.track_water_level_m)
 	# Per-region HANDLING overrides (features/snow-region.md). The snow region drops
 	# every surface's grip and adds deep snow at the roadside; every other region
@@ -94,11 +91,8 @@ static func apply_event_config(cfg: GameConfig, event: Dictionary) -> void:
 # lockfile generator, target-time derivation, the run scene) must resolve params
 # from THIS so their cache keys match. Standalone (no shared Config.data mutation).
 #
-# STATIC — it was an instance method only while it lived on the RallySession
-# autoload, where a `func` was the ordinary way to be reachable as
-# `RallySession.canonical_event_config(...)`. StageConfig is never instantiated,
-# so there is nothing for an instance method to hang off; both entry points are
-# statics and both stay unit-testable with no scene.
+# STATIC — StageConfig is never instantiated; both entry points are statics and
+# unit-testable with no scene.
 static func canonical_event_config(event: Dictionary) -> GameConfig:
 	var cfg := (load(Config.CONFIG_PATH) as GameConfig).duplicate() as GameConfig
 	apply_event_config(cfg, event)

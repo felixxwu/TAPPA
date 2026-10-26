@@ -143,3 +143,8 @@ extends Resource
 ## and far gaps at the same distance tie; larger favours the horizon over foliage). Never puts
 ## either ahead of a collision or near-mesh build.
 @export_range(0.0, 40.0) var far_lead_chunks := 3.0
+
+
+# The closest the coast ever comes, which is also the radius the biome rings divide.
+func inner_radius_m() -> float:
+	return island_radius_m * 0.82

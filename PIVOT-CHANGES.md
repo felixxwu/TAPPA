@@ -222,10 +222,7 @@ survives only to backfill a key missing from a correctly-versioned profile.
 
 - The challenge's entry screen is minimal: no cloud board, standing or reward explainer
   (decision 53, `rally-challenge.md (deleted)`).
-- **The cloud boot-pull gate has no consumer.** `HubShell` does not await the initial
-  sync, so a returning player can act on a profile that is about to be replaced
-  (`features/cloud-save.md` leads with this).
-- Three finished systems have no host: `WorldPanel`, the garage model, the wheel-fitting
+- Two finished systems have no host: the garage model, the wheel-fitting
   view. Each file says what a rebuild owes.
 - `engine_detune` is stored, read and applied with no slider anywhere
   (`features/tuning.md`).

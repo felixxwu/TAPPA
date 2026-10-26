@@ -61,8 +61,8 @@ func test_every_road_lands_exactly_on_its_two_junctions() -> void:
 	var net := _world(_settings()).net
 	for ei in net.edges.size():
 		var pts := net.polyline(ei)
-		assert_almost_eq(pts[0], net.nodes[net.edges[ei].x], Vector2(0.01, 0.01))
-		assert_almost_eq(pts[pts.size() - 1], net.nodes[net.edges[ei].y], Vector2(0.01, 0.01))
+		assert_almost_eq(pts[0], net.node(net.edges[ei].x), Vector2(0.01, 0.01))
+		assert_almost_eq(pts[pts.size() - 1], net.node(net.edges[ei].y), Vector2(0.01, 0.01))
 
 
 func test_pruning_leaves_only_dead_ends_longer_than_the_limit() -> void:
@@ -84,7 +84,7 @@ func test_pruning_leaves_only_dead_ends_longer_than_the_limit() -> void:
 			for e in net.edges:
 				var nxt := e.y if e.x == cur else (e.x if e.y == cur else -1)
 				if nxt >= 0 and nxt != prev:
-					length += net.nodes[cur].distance_to(net.nodes[nxt])
+					length += net.node(cur).distance_to(net.node(nxt))
 					prev = cur
 					cur = nxt
 					break
@@ -151,8 +151,8 @@ func test_zero_twist_makes_every_road_a_straight_line() -> void:
 	s.road_twist = 0.0
 	var net := _world(s).net
 	for ei in net.edges.size():
-		var a := net.nodes[net.edges[ei].x]
-		var b := net.nodes[net.edges[ei].y]
+		var a := net.node(net.edges[ei].x)
+		var b := net.node(net.edges[ei].y)
 		for p in net.polyline(ei):
 			assert_almost_eq(Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p), 0.0, 0.01)
 

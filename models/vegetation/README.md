@@ -29,8 +29,7 @@ xvfb-run -a godot --path rally --rendering-driver opengl3 \
     --script tools/build_vegetation.gd
 ```
 
-(Headless GL via Mesa llvmpipe under `xvfb`, the same pattern as
-`tools/render_model.gd`.) Tune leaf count/size/spread in
+(Headless GL via Mesa llvmpipe under `xvfb`.) Tune leaf count/size/spread in
 `build_groundcover_opaque`, then re-run.
 
 ## Texture (online-sourced)

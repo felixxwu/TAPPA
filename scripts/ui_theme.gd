@@ -106,6 +106,15 @@ const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 # render_height changes, then re-run tools/build_ui_theme.gd.
 const UI_SCALE := 540.0 / 400.0
 
+# The size of the frame a node is laid out in: its viewport's visible rect, else `fallback`.
+static func layout_frame_size(node: Node, fallback := Vector2(480, 360)) -> Vector2:
+	if is_instance_valid(node) and node.is_inside_tree():
+		var vp := node.get_viewport()
+		if vp != null:
+			return vp.get_visible_rect().size
+	return fallback
+
+
 # An authored size (as designed on the 400 canvas) scaled to the shipped render
 # height. Use for literal UI pixel sizes outside this file — never for a font size
 # (fonts use FONT_SIZE or a multiple of it, see below).
@@ -367,12 +376,7 @@ static func _refit_body_scroll(scroll: ScrollContainer, body: Label, wrap_width:
 	# Cap against what the screen actually leaves once everything OUTSIDE the
 	# scroll (title, field, buttons, gaps, panel padding) has taken its share.
 	#
-	# THE FRAME, NOT `get_viewport()`: inside a WorldPanel the viewport is a SubViewport sized
-	# `logical * SUPERSAMPLE`, several times the canvas the tree is actually laid out on, so
-	# capping against it would let the body overflow the panel. layout_frame_size answers for
-	# either host (see its header); today's callers are all own-layer modals, so this changes
-	# nothing for them and stops being a trap for the next one.
-	var viewport_h: float = WorldPanel.layout_frame_size(scroll, Vector2(480, 360)).y
+	var viewport_h: float = layout_frame_size(scroll, Vector2(480, 360)).y
 	var box := _panel_ancestor(scroll)
 	var reserved_h: float = 0.0
 	if box != null:
@@ -619,7 +623,7 @@ static func enforce(root: Node) -> void:
 # global theme (theme/ui_theme.tres): that resource loads during early project boot,
 # before autoloads are guaranteed to exist, and embedding a custom-script StyleBox
 # (UIHardShadowBox) in it once corrupted identifier resolution for OTHER scripts that
-# reference an autoload (world_panel.gd's `DisplayStretch.DESIGN_HEIGHT`), crashing the
+# reference an autoload (a script referencing an autoload), crashing the
 # engine on every test run. `enforce()` always runs well after boot, so it's safe here.
 #
 # Skipped for a widget that already carries its OWN stylebox override — mark_selected,

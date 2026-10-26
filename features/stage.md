@@ -17,16 +17,9 @@ that advances to the leaderboard/podium flow.
 
 ## Flow (the state machine)
 
-`enum Phase { STAGING, COUNTDOWN, RUNNING, COMPLETE }`, advanced in `_process(delta)`:
+`enum Phase { COUNTDOWN, RUNNING, COMPLETE }`, advanced in `_process(delta)`:
 
-0. **STAGING** *(optional)* — when `setup(..., staged = true)`, the car is fully
-   locked (`controls_locked`) and the manager simply **waits** (no countdown ticking) while the pre-event
-   start-line sequence (start-line.md (deleted with the free-roam pivot)) plays its time-to-beat
-   reveal + orbit camera + launch animation. When it finishes (after the fade),
-   `StartLine` calls `begin_countdown()`, which moves to COUNTDOWN. A plain dev boot
-   (or a car swap) is set up un-staged and skips this straight to COUNTDOWN, exactly
-   as before the start-line scene existed.
-1. **COUNTDOWN** — `setup()` (un-staged) or `begin_countdown()` drops any full lock
+1. **COUNTDOWN** — `setup()` drops any full lock
    and forces only the handbrake (`controls_locked = false`, `handbrake_locked = true`),
    so the player can rev the engine and steer on the line but the car holds put. It arms
    `_countdown_left = stage_countdown_seconds`. It also calls
@@ -141,11 +134,8 @@ deceleration damage (the damage rule has **no** held-car exemption — see
 These are the hooks the run/menu layer attaches to. The **post-stage flow**
 (repair/boost pick, money payout, back to the hub) is out of scope here — this
 feature only provides the signals, the finish panel, and the NEXT →
-`proceed_to_results()` gate. `RallySession`, the career-rally orchestrator this
-doc used to point at, is deleted (`todo/roguelike-pivot.md`); `RunSession`
-(`scripts/run_session.gd`, generalised from the old `ChallengeSession` — see
-region-runs.md (deleted with the free-roam pivot)) is the one session caller now, for both a
-Daily/Weekly/Monthly challenge and a region run.
+`proceed_to_results()` gate. No session layer drives it any more: the stage scene is a
+dev stage and the physics test harness (PIVOT-CHANGES.md → "Kept, and why").
 
 ## Wiring & lifecycle
 

@@ -93,8 +93,9 @@ resume) — no new persisted state needed, and the roll itself uses a plain `ran
 
 ### `scripts/run_pick_panel.gd` — restructured into per-step builders
 Today's single `RunPickPanel.open(host, pick, on_choice, offer_repair)` becomes four
-entry points, each returning a `MenuPage` built the same way (`MenuPage.open_modal` +
-`CardUI.build_carousel`, `MenuNav.attach`) so every step reads as the same visual
+entry points, each returning a `MenuPage` built the same way (`MenuPage.open_modal` was removed; use a
+`MenuPage` plus `ConfirmPopup` for the modal shell, with `CardUI.build_carousel` and
+`MenuNav.attach`) so every step reads as the same visual
 system:
 
 - `RunPickPanel.open_continue(host, on_choice) -> MenuPage` — the existing bare-Continue

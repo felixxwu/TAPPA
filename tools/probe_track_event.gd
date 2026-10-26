@@ -1,17 +1,15 @@
 extends Node
 # Single-event track-generation probe — the "why did this stage's seed not complete?"
-# debugging tool for the message tools/generate_track_cache.gd emits
-# ("track cache: region %s slot %d candidate %d seed %d did not complete").
+# debugging tool.
 #
-# Generates ONE stage event (or an ad-hoc seed) exactly the way the cache baker
-# does — same TrackGenParams factory, same TrackGenerator.generate — and prints the
-# resolved params, the waterline picture around the start, and how many corners the
-# DFS actually placed. It writes NOTHING: data/track_cache.json is never touched, so
-# this is safe to run while the committed lockfile is in a known-good state.
+# Generates ONE stage event (or an ad-hoc seed) with the production TrackGenParams
+# factory and TrackGenerator.generate, and prints the resolved params, the waterline
+# picture around the start, and how many corners the DFS actually placed. It writes
+# nothing.
 #
 # It is a SCENE run (not --script): Config and the other autoloads only exist in
 # a scene run, and TrackGenerator._search calls Platform.is_headless(), which
-# needs them. Same reason generate_track_cache.gd is a scene.
+# needs them.
 #
 # Usage from the repo root (see ./probe_track.sh for a wrapper):
 #   $GODOT --headless --path . res://tools/probe_track_event.tscn -- \
@@ -82,15 +80,14 @@ func _events_for(args: Dictionary) -> Array:
 
 
 func _probe(event: Dictionary) -> bool:
-	# StageConfig.canonical_event_config + for_event is exactly the pair generate_track_cache.gd
-	# uses, so a probe here is the same generation the baker performs.
+	# StageConfig.canonical_event_config + for_event is the production generation pair.
 	var cfg := StageConfig.canonical_event_config(event)
 	var p := TrackGenParams.for_event(event, cfg)
 	print("--- stage %s seed %d ---" % [event.get("_stage", "?"), p.seed])
 	print("  turns=%d width=%.1f clearance=%.1f straightness=%.2f runoff=%.1f reserve_behind=%.1f"
 		% [p.turn_count, p.width, p.clearance, p.straightness, p.runoff_m, p.reserve_behind])
-	print("  water_enabled=%s water_level=%.2f (authored %.2f) shore_clearance=%.2f"
-		% [str(p.water_enabled), p.water_level, p.key_water_level, p.shore_clearance])
+	print("  water_enabled=%s water_level=%.2f shore_clearance=%.2f"
+		% [str(p.water_enabled), p.water_level, p.shore_clearance])
 	print("  origin=%s base_origin=%s relocated=%s"
 		% [str(p.origin), str(p.base_origin), str(p.origin != p.base_origin)])
 	if p.water_sampler.is_valid():

@@ -179,7 +179,7 @@ static func _refit_carousel(page: MenuPage, carousel: CardCarousel,
 	# fit_to_available_width claims that whole budget (a partial card can peek in at the
 	# clipped edge; see card_carousel.gd), and set_body_width feeds the same width to the
 	# (otherwise content-hugging) MenuPage box so it actually grows to it.
-	var avail := WorldPanel.layout_frame_size(page, Vector2(480.0, 360.0)).x
+	var avail := UITheme.layout_frame_size(page, Vector2(480.0, 360.0)).x
 	var chrome := page_margin * 2.0 + body_padding * 2.0
 	carousel.fit_to_available_width(avail - chrome)
 	page.set_body_width(carousel.custom_minimum_size.x)
@@ -190,15 +190,12 @@ static func _refit_carousel(page: MenuPage, carousel: CardCarousel,
 # Open a card page on `host`: a MenuPage set up edge to edge with a see-through body box, so
 # only the cards (and the title above them) sit over whatever is behind. `opts` passes through
 # to MenuPage (e.g. "title", "dim"); the margin, padding and alpha are the card page's own.
-# With "modal": true it is hosted through MenuPage.open_modal (its own CanvasLayer); otherwise
-# it is added straight to `host`, for a host that is already a CanvasLayer.
+# The page is added straight to `host`.
 static func card_page(host: Node, opts: Dictionary = {}) -> MenuPage:
 	var o := opts.duplicate()
 	o["margin"] = CAROUSEL_PAGE_MARGIN
 	o["padding"] = CAROUSEL_PAGE_PADDING
 	o["alpha"] = 0.0
-	if bool(o.get("modal", false)):
-		return MenuPage.open_modal(host, o)
 	var page := MenuPage.new(o)
 	host.add_child(page)
 	return page

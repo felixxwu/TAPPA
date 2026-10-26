@@ -2,7 +2,7 @@
 
 **Sources:** `scripts/menu_nav.gd` (`class_name MenuNav` — the flat-menu framework:
 `attach`, `of`, `forget`, `remembered_target`, `is_on_screen`, `is_text_editing`,
-`input_blocked`, `screen_claimer`) and `scripts/ui_theme.gd` (`focus_grab`,
+`input_blocked`) and `scripts/ui_theme.gd` (`focus_grab`,
 `first_focusable`, the focus stylebox that paints the cursor).
 
 **Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`
@@ -128,17 +128,6 @@ the title screen, the rest-stop page and the world pages (map, stats) — each c
 > rebuild) yanks the cursor to the first control every time. The fix is for the page to
 > **own** the thing that was being refreshed and re-apply it from its own `rebuild()`, so
 > `attach` runs once per build and nobody re-attaches from outside.
-
-## A third host, not a third regime: `WorldPanel`
-
-`scripts/world_panel.gd` (`WorldPanel`) lets a menu tree be hosted in a `SubViewport` shown on a 3D
-`Sprite3D`, welded off-square to an anchor, instead of on a flat `CanvasLayer` — see
-[world-panel.md](world-panel.md). It does **not** add a second navigation model: a
-panel pumps *all* input, keyboard and gamepad included, across into its `SubViewport`
-(which receives no window events on its own), so `MenuNav` works identically inside one.
-
-**Today it has no live host** — see [world-panel.md](world-panel.md). Flat pages still call the
-static `WorldPanel.layout_frame_size` to size a body against the frame they are laid out in.
 
 ## `TextField` and the WASD/typing seam
 

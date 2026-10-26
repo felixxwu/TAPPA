@@ -12,9 +12,8 @@ const BUSH_SEED_OFFSET := 1013
 const ROCK_SEED_OFFSET := 2027
 
 # The two terrain shaders the floor material swaps between per stage, and the loading-window
-# frame caps, both now shared with overworld.gd via WorldRuntime (scripts/world_runtime.gd) —
-# they were byte-for-byte duplicated in the two world hosts. The reasoning for each lives on
-# the consts there; WorldRuntime also carries the TODO about moving the caps into GameConfig.
+# frame caps, live in WorldRuntime (scripts/world_runtime.gd); the reasoning for each is on
+# the consts there.
 
 # Headless (test) runs build the world synchronously — see _yield_frame(). Cached
 # so the staged-loading awaits collapse to no-ops and tests see a fully-built
@@ -41,8 +40,7 @@ var applied_fps_caps: Array[int] = []
 
 
 # Apply a frame cap and record the intent. The Engine write is suppressed under
-# --headless (nothing to pace, and it would throttle the test runner). Shared with
-# overworld.gd — see WorldRuntime.apply_fps_cap.
+# --headless (nothing to pace, and it would throttle the test runner). See WorldRuntime.apply_fps_cap.
 # Platform.is_headless() rather than the cached `_headless`: this can be called from
 # _ready BEFORE that flag is seated.
 func _apply_fps_cap(cap: int) -> void:
@@ -206,15 +204,13 @@ func _field_player_car() -> void:
 	# tree and physics-processing, so without this lock the player could press W and
 	# drive off behind the loading screen. Set BEFORE the car is fielded so it's
 	# inert the instant it exists (no fielding→lock gap). Every spawn path resets
-	# controls_locked at the end of generation — StageManager.setup (locked for a
-	# staged start line, unlocked otherwise) and BenchmarkRunner.setup — so this only
+	# controls_locked at the end of generation — StageManager.setup and BenchmarkRunner.setup — so this only
 	# governs the loading window itself.
 	$Car.controls_locked = true
 
 	# Field the first library car. This scene is the dev stage and the physics test
 	# harness now (the run loop that fielded owned cars here
 	# is deleted with the free-roam pivot, todo/2026-10-19-free-roam-pivot.md stage 8).
-	_car_spawn = $Car.transform  # authored spawn, reused so swaps don't drift
 	$Car.apply_car(0)
 	# The bonnet camera is a scene child of $Car (not re-parented at boot), so
 	# apply the newly-fielded car's per-car bonnet offset now — retarget() only
@@ -222,10 +218,7 @@ func _field_player_car() -> void:
 	($CameraManager as CameraManager).refresh_bonnet_offset()
 
 
-# _ready phase, after generation: wire the stage/session signals, build the pre-event start
-# line (staged runs only) and show the between-event pit-repair popup. Awaits, so the caller
-# must await it — the frame it yields is the one that lets the fresh terrain render before the
-# start-line queue is laid out, exactly as when this ran inline.
+# _ready phase, after generation: wire the stage-complete signal.
 func _wire_session_and_stage(_loading: LoadingScreen) -> void:
 	# The stage finish returns to the hub (the title): this scene has no run to report to.
 	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
@@ -244,9 +237,8 @@ func _build_overlays_and_benchmark() -> void:
 	perf.engine_audio = $Car.get_node_or_null("EngineAudio")  # live audio-overrun readout
 	add_child(perf)
 
-	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref);
-	# Settings → Dev → "Complete stage" relays the same way (the menu owns the
-	# SettingsMenu instance, this scene owns the car / track / stage manager).
+	# Pause-menu "Reset to track" delegates the reset up here (it has no car ref;
+	# this scene owns the car / track / stage manager).
 	var pause_menu := _pause_menu()
 	if pause_menu != null:
 		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
@@ -260,15 +252,8 @@ func _build_overlays_and_benchmark() -> void:
 		# (fail-closed) so the Pause button / Esc can't open it during the awaited
 		# generation above, where pausing would freeze the tree mid-build and let the
 		# player quit/resume into a half-built world. This block runs after
-		# _generate_track in every mode (staged / free-roam / session; a regeneration
-		# re-runs _ready), so it's the single "world is ready" chokepoint for pause.
-		#
-		# EXCEPT while the pre-countdown start line owns the screen. It is built ABOVE
-		# (_build_start_line), so arming unconditionally here re-enabled the Pause button
-		# it had just switched off — which is how a pause overlay ended up stacked over
-		# the start line's own menu, the two fighting for the same taps. The start line's
-		# own Exit is the way out until StartLine.sequence_finished re-arms pause at the
-		# hand-off (_on_start_line_finished).
+		# _generate_track in every mode (a regeneration re-runs _ready), so it's the
+		# single "world is ready" chokepoint for pause.
 		pause_menu.set_input_enabled(true)
 
 	# Benchmark mode (features/benchmark.md): force the profiler on, hide the
@@ -289,7 +274,7 @@ func _build_overlays_and_benchmark() -> void:
 # otherwise spread world generation across frames and break tests that inspect
 # the world right after instantiating main.tscn — there the whole _ready chain
 # runs synchronously within add_child(), as it did before staged loading.
-# Shared with overworld.gd — see WorldRuntime.yield_frame.
+# See WorldRuntime.yield_frame.
 func _yield_frame() -> void:
 	await WorldRuntime.yield_frame(get_tree(), _headless)
 
@@ -410,9 +395,8 @@ func _replace_named_child(node_name: String) -> void:
 
 # A point roughly 2 m in front of the active camera — where a warm-up instance is
 # guaranteed to sit inside the frustum (so it actually draws and compiles its
-# shader). The camera part is shared with overworld.gd (WorldRuntime.warm_up_point);
-# the FALLBACK is deliberately kept here because the two hosts diverge — this scene
-# owns an authored $Car, the overworld looks its car up by name.
+# shader). The camera part lives in WorldRuntime.warm_up_point; the fallback
+# (the authored $Car) is supplied here.
 func _warm_up_point() -> Vector3:
 	var fallback := ($Car as Node3D).global_position if has_node("Car") else Vector3.ZERO
 	return WorldRuntime.warm_up_point(get_viewport().get_camera_3d(), fallback)
@@ -1105,7 +1089,7 @@ func _build_persistent_managers(cfg: GameConfig, _result: Dictionary,
 	if not Benchmark.active:
 		# Staged runs hold the car in the start-line sequence until the player launches;
 		# otherwise the countdown arms immediately, as before.
-		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress, false)
+		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress)
 		# Route the finish panel's NEXT button to advance the stage into the results flow
 		# (both nodes persist across regenerations, so guard the connection).
 		var hud_node := $HUD
@@ -1175,12 +1159,7 @@ func _spawn_spectator_group(node_name: String, anchor: Vector2, heading: Vector2
 	group.setup(members, $Car, terrain, road_cells, tree_grid, params)
 
 
-# The authored car spawn transform, captured at boot so each car swap spawns in
-# the same place rather than wherever the previous car drove to.
-var _car_spawn: Transform3D
-
-# Tracks track progress + off-track reset for the current car (re-targeted on a
-# car swap, since the fresh car respawns at the start).
+# Tracks track progress + off-track reset for the car.
 var _track_progress: TrackProgress
 
 # The rendered road/progress centerline from the latest generation (lead-in +
@@ -1192,12 +1171,11 @@ var _road_centerline: Curve2D
 # stage (recreated on each track regeneration).
 var _stage_manager: StageManager
 
-# Lays gravel tire-mark ribbons behind the wheels (re-targeted on a car swap).
+# Lays gravel tire-mark ribbons behind the wheels for the car.
 var _tire_marks: TireMarks
 var _road_markings: RoadMarkings
 
-# Flings cheap gravel dust off the driven wheels under wheelspin (re-targeted on
-# a car swap).
+# Flings cheap gravel dust off the driven wheels under wheelspin.
 var _wheel_particles: WheelParticles
 var _engine_smoke: EngineSmoke
 var _exhaust_flames: ExhaustFlames
@@ -1222,9 +1200,6 @@ var _photo_controls: PhotoModeControls
 # Teleports the car onto the finish line and force-completes the stage, so the
 # whole completion → reward → progression flow fires exactly as it would on a
 # real finish.
-#
-# Gated on DrivingContext.session_active(), not any one session's is_active(): a
-# check tied to a single session type silently excludes every other one.
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("skip_to_finish"):
 		return
@@ -1241,12 +1216,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	_dev_complete_stage()
 
 
-# The skip-to-finish body behind BOTH the F key (above) and the pause menu's
-# Settings → Dev "Complete stage" button (PauseMenu relays the SettingsMenu signal;
-# wired in _build_overlays_and_benchmark). Re-checks the whole gate rather than
-# trusting the caller: the button is offered per-build-time session state, so a
-# signal from a menu built mid-run can arrive when the run has since ended or the
-# stage has already completed — a stale press must do nothing.
+# The skip-to-finish body behind the F key (above); re-checks the whole gate.
 func _dev_complete_stage() -> void:
 	if not SettingsMenu.dev_tools_enabled():
 		return
@@ -1447,7 +1417,7 @@ func _exit_tree() -> void:
 	Config.data.weather_sun_mult = 1.0
 
 
-# The shader swap itself is shared with overworld.gd — see WorldRuntime.apply_deep_snow,
+# The shader swap itself lives in WorldRuntime.apply_deep_snow,
 # which carries the full reasoning (why a shader swap and not a uniform, and why calling
 # it unconditionally every boot is load-bearing). This host only supplies its material.
 func _apply_deep_snow_ground(cfg: GameConfig) -> void:

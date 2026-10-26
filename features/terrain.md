@@ -604,7 +604,7 @@ cache pull; the ring is finest-deferred like any later chunk), `test_car_terrain
 ## Bounded-world streaming
 
 `TerrainManager` also carries a few **streaming** opt-ins left from the deleted overworld
-hub — `load_radius`, `stream_on_miss`, `road_source`, cache eviction and budgeted spawning.
+hub — `load_radius`, `stream_on_miss` and cache eviction.
 The bounded-world mode (`set_bounds`, the coastline taper, `chunk_source`, pads, the region
 blend) is gone.
 It is a set of **additive, off-by-default opt-ins**: leave it alone and behaviour is

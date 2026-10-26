@@ -3,11 +3,6 @@ extends Node
 # Docs: features/stage.md, features/sfx.md, todo/audio.md — update in the same change as this file. (Audio cues in this file go through the `Audio` autoload — never a hand-rolled AudioStreamGenerator; see the AUDIO RULES block at the GO transition.)
 # Tests: tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageManager' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Owns the per-stage start/end flow on top of the always-live world:
-#   0. STAGING   — (optional) the car is locked while the pre-event start-line
-#      scene (briefing + presence cars, scripts/start_line.gd) holds, until the
-#      player launches and StartLine calls begin_countdown(). Skipped unless the
-#      manager is set up `staged` (a session run with start_line_enabled); a plain
-#      dev boot goes straight to COUNTDOWN exactly as before.
 #   1. COUNTDOWN — the handbrake is forced on but driver input stays live (so the
 #      player can rev up and launch on GO) while a big centered 3·2·1·GO counts
 #      down on the HUD.
@@ -23,7 +18,7 @@ extends Node
 #
 # Created and wired by world.gd once the car, HUD and TrackProgress exist.
 
-enum Phase { STAGING, COUNTDOWN, RUNNING, COMPLETE }
+enum Phase { COUNTDOWN, RUNNING, COMPLETE }
 
 # How long the "GO" stays on screen after controls unlock, before it's hidden.
 # A small flash; kept a const (not a config knob) to match the spec's three-knob
@@ -59,12 +54,7 @@ func _cfg() -> GameConfig:
 # Wire the manager to the live scene and arm the flow, locking the car from the
 # first frame so it can't be driven before GO. Initialisation lives here (not
 # _ready) because add_child runs _ready before world.gd hands over these refs.
-#
-# `staged` holds the car in STAGING (no countdown yet) so the pre-event start-line
-# scene can show its briefing first; StartLine calls begin_countdown() to proceed.
-# When false (the default — a plain dev boot, or a car swap) the countdown arms
-# immediately, exactly as before the start-line scene existed.
-func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
+func setup(car: Node, hud: Node, progress: Node) -> void:
 	_car = car
 	_hud = hud
 	_hud_can.clear()
@@ -84,45 +74,19 @@ func setup(car: Node, hud: Node, progress: Node, staged := false) -> void:
 	# Clear any finish-stop braking from a previous arm (car swap / new event).
 	if car != null and "finish_stop" in car:
 		car.finish_stop = false
-	if staged:
-		# Wait at the start line, fully held; the countdown only arms once StartLine launches.
-		if _car != null:
-			_car.controls_locked = true
-			_car.handbrake_locked = false
-		_phase = Phase.STAGING
-		_arm_countdown()
-	else:
-		# Countdown: hold only the handbrake so the player can rev up and launch on GO.
-		if _car != null:
-			_car.controls_locked = false
-			_car.handbrake_locked = true
-		_phase = Phase.COUNTDOWN
-		_arm_countdown()
-		_mark_progress_start()  # car is on the line now -> progress reads 0% from here
-		if _hud_can["show_countdown"]:
-			_hud.show_countdown(_countdown_left)
-	if _progress != null and _progress.has_signal("cut_billed") \
-			and not _progress.cut_billed.is_connected(_on_cut_billed):
-		_progress.cut_billed.connect(_on_cut_billed)
-	_armed = true
-
-
-# Leave STAGING and start the 3·2·1·GO countdown. Called by StartLine when the
-# player launches the event; the car stays locked through the countdown as usual.
-# No-op unless we're actually staging, so a double-launch can't restart the run.
-func begin_countdown() -> void:
-	if not _armed or _phase != Phase.STAGING:
-		return
-	# Drop the full hold to a handbrake-only hold so the player can rev and launch on GO.
+	# Countdown: hold only the handbrake so the player can rev up and launch on GO.
 	if _car != null:
 		_car.controls_locked = false
 		_car.handbrake_locked = true
 	_phase = Phase.COUNTDOWN
 	_arm_countdown()
-	# The start-line sequence has just snapped the car onto the line; anchor 0% here.
-	_mark_progress_start()
+	_mark_progress_start()  # car is on the line now -> progress reads 0% from here
 	if _hud_can["show_countdown"]:
 		_hud.show_countdown(_countdown_left)
+	if _progress != null and _progress.has_signal("cut_billed") \
+			and not _progress.cut_billed.is_connected(_on_cut_billed):
+		_progress.cut_billed.connect(_on_cut_billed)
+	_armed = true
 
 
 # Re-anchor track progress to 0% at the car's current (on-the-line) position, so
@@ -178,8 +142,6 @@ func _timed_process(delta: float) -> void:
 	if not _armed:
 		return
 	match _phase:
-		Phase.STAGING:
-			pass  # held at the start line until StartLine calls begin_countdown()
 		Phase.COUNTDOWN:
 			_tick_countdown(delta)
 		Phase.RUNNING:
@@ -188,12 +150,7 @@ func _timed_process(delta: float) -> void:
 			pass
 
 
-# THE ONE PLACE A COUNTDOWN IS ARMED. Three call sites reach here (STAGING setup, direct
-# COUNTDOWN setup, and begin_countdown), which is why this exists rather than three copies of
-# the assignment: **any per-countdown state belongs in here.** An attempt at the countdown beep
-# added a "last displayed count" tracker and reset it at two of the three sites, so re-arming
-# through the third within the first second silently swallowed the first cue. Put it here and
-# that cannot happen.
+# THE ONE PLACE A COUNTDOWN IS ARMED. Any per-countdown state belongs in here.
 func _arm_countdown() -> void:
 	_countdown_left = _cfg().stage_countdown_seconds
 

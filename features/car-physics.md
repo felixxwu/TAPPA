@@ -244,7 +244,8 @@ gust waits in the same place every attempt — which is fairer play, and every r
 the same stage meeting the identical gust keeps stage target times honest against
 the pace line they are computed from. Distance comes from the existing `TrackProgress.progress_offset()` odometer,
 not a private one, so wind is keyed to the same along-track metric the HUD and the
-stage gate use.
+stage gate use. Free roam has no `TrackProgress`, so there the gust runs on the car's own
+odometer (`car.gd` → `_wind_odometer`); the lookup retries about once a second.
 
 The gust profile is `strength + gust × (normalised sum of `OCTAVES` layered sines)`,
 so it is smooth (a gust builds and eases rather than snapping) and provably bounded to

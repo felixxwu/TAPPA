@@ -25,10 +25,7 @@ bonnet.
 
 `activate_current()` re-asserts the player's chosen camera as the active one. It's
 used when another system temporarily took over the viewport with its own `Camera3D` —
-the **start-line reveal**'s orbiting camera (`scripts/start_line.gd`), the diegetic
-car picker's showroom camera (`ShowroomCamera`) and the drive-in garage's lift-shot camera,
-both deleted with the overworld (see
-`features/overworld.md` → "The garage camera") — and must hand control back once
+the title screen's orbiting camera (`free_roam.gd` → `_start_title_orbit`) — and must hand control back once
 done. The hand-off goes through the manager (not a hard-coded chase camera), so a
 player who picked **bonnet** keeps it through any of these instead of being snapped
 back to chase.
@@ -269,36 +266,6 @@ shipped car's y is set from it.
 The `CameraManager` applies these on `_ready()` and via `retarget(fresh)`,
 which re-parents the bonnet camera onto a fresh car and re-points the chase
 camera's `target`.
-
-## Replay camera (cinematic director)
-
-**Source:** `scripts/replay_camera.gd` (`ReplayCamera`, extends `Camera3D`). Not part of
-the `CameraManager` cycle — it's a **standalone camera created on demand** by
-`world.gd` for the between-event standings overlay (see
-event-replay.md (deleted with the free-roam pivot)), not one of the player-selectable modes above.
-
-`world._present_standings_overlay` instantiates a fresh `ReplayCamera`, calls
-`setup(target, recorder, terrain, water_level)` (target = `$Car`, terrain = `$Floor`,
-`water_level` = `track_water_level_m` so the roadside plant stays above any lake), and
-sets `current = true`
-to take over the viewport for the duration of the standings screen. A deterministic,
-testable `_tick(delta)` (no RNG, no engine-clock reads) cycles through five shots
-(`enum Shot { ORBIT, FLYBY, WHEEL, HIGH_WIDE, ROADSIDE }`): an orbiting shot circling the
-car, a fixed offset flyby, an onboard **wheel cam** by the front wheel looking forward
-down the road (its lateral mount clears the target's actual body half-width plus a
-clearance margin — `GameConfig.wheel_cam_lateral_clearance` / `wheel_cam_fallback_lateral`
-— rather than a fixed offset, so it never clips a wide car's body; see
-event-replay.md (deleted with the free-roam pivot)), a high wide establishing shot, and a planted
-**roadside** "filming from the verge" shot. The four tracking shots dwell `SHOT_DWELL := 4.0` s each; ROADSIDE
-instead holds a fixed trackside spot and cuts only after the car passes and drives off.
-The two shots whose distance to the car varies (ROADSIDE, HIGH_WIDE) **zoom to hold the car
-at a constant share of the frame** — FOV solved from the distance
-(`GameConfig.replay_frame_subject_size` / `replay_frame_screen_fraction`, clamped to
-`replay_frame_fov_min`/`_max`, eased at `replay_fov_smoothing` and snapped across cuts);
-the fixed-offset shots just use `replay_fov`.
-See event-replay.md (deleted with the free-roam pivot) for the full shot list. It goes away with the
-overlay once the standings screen closes (the player's chosen `CameraManager` mode
-resumes on the next event / return to HQ).
 
 ## Photo Mode camera
 

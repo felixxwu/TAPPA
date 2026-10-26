@@ -153,9 +153,8 @@ static func run_ambient(host: Node, text: String, action: Callable,
 
 # --- Results ------------------------------------------------------------------
 
-# Cloud.* answers with {"ok": bool, "error": String}. Anything else — a bare bool
-# from await_initial_sync, a null, a malformed reply — is coerced here rather than
-# at five call sites. A non-dict is NOT treated as a failure: those calls simply do
+# Cloud.* answers with {"ok": bool, "error": String}. Anything else — a bare bool,
+# a null, a malformed reply — is coerced here rather than at five call sites. A non-dict is NOT treated as a failure: those calls simply do
 # not report one, and inventing an error the player then sees would be worse than
 # the silence this replaces.
 static func result_of(raw: Variant) -> Dictionary:

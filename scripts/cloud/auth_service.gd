@@ -45,11 +45,8 @@ var auth_path := AUTH_PATH
 ##
 ## Why this is not paranoia: `_write_credentials` writes this file and `sign_out()` DELETES it —
 ## and `refresh()` calls `sign_out()` itself on a non-network rejection. Five test files build an
-## AuthService (or mutate the live `Cloud.auth`) without redirecting, and the suite was already
-## visibly working around it: two leaderboard tests hand-roll sign-out as three field assignments
-## rather than call `sign_out()`, and test_cloud_boot_gate.gd says why in prose — "Deliberately
-## NOT Cloud.sign_out(): that reaches AuthService and deletes user://auth.json". Workarounds
-## scattered across call sites is the signal that the default was wrong.
+## AuthService (or mutate the live `Cloud.auth`) without redirecting, so the default path must be
+## safe rather than relying on every test to remember.
 ##
 ## An EXPLICIT redirect still wins: only the default path is remapped, exactly as Save behaves.
 static var test_sandbox_path := ""

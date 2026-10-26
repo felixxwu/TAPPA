@@ -1,6 +1,5 @@
 extends Node
 # Docs: features/cloud-save.md — update in the same change as this file.
-# Tests: tests/headless/test_cloud_boot_gate.gd — extend in the same change.
 # Autoload "Cloud": the facade the rest of the game talks to for optional cloud
 # save. Wires the four units in scripts/cloud/ together and owns their lifetime.
 #
@@ -16,27 +15,11 @@ signal profile_replaced()
 signal signed_in(uid: String)
 signal signed_out()
 signal auth_lost(reason: String)
-# The boot-time pull has finished — succeeded, failed, or been given up on.
-# Emitted exactly once per pending pull, so a caller can wait for the player's
-# real career to land before offering them a decision that assumes it has not.
-signal initial_sync_settled()
-
-# How long anything is allowed to wait on the boot pull. Deliberately shorter
-# than RestClient.TIMEOUT_SEC: this budget is "how long a player will stare at a
-# spinner", not "how long a request may take". Exceeding it does not cancel the
-# pull — it just stops waiting for it.
-const INITIAL_SYNC_WAIT_SEC := 8.0
 
 var rest: Node = null
 var auth: AuthService = null
 var sync: CloudSync = null
 var google: GoogleSignIn = null
-
-# True from boot until the FIRST automatic pull settles. Only ever set when a
-# stored credential was found, so a player who has never signed in — or who
-# signed out — sees this false for the whole session and is never made to wait
-# for anything. See await_initial_sync.
-var initial_pull_pending := false
 
 
 func _ready() -> void:
@@ -90,10 +73,6 @@ func _ready() -> void:
 	# happen lazily just after boot, and failing either leaves the player in their
 	# local career rather than stuck on a spinner.
 	if auth.restore():
-		# Set BEFORE the deferred call, not inside it: HQ can reach its first
-		# frame between here and the pull actually starting, and a gate that is
-		# not armed yet is no gate at all.
-		initial_pull_pending = true
 		_kick_off_initial_pull.call_deferred()
 
 
@@ -141,39 +120,6 @@ func sign_out() -> void:
 	# career they were just playing. Wiping it here would turn "sign out" into
 	# "delete my game", which is not what the words say.
 	auth.sign_out()
-	# Nothing is coming any more, so nobody should still be waiting for it.
-	_settle_initial_sync()
-
-
-# Wait for the boot-time pull to settle, so a caller can avoid acting on a
-# profile that is about to be replaced. Returns true if it settled, false if the
-# wait ran out.
-#
-# THIS ALWAYS RETURNS. Signing in is never required and every failure degrades to
-# "you keep playing locally", so this must not be able to strand anyone:
-#   * no stored credential (never signed in, or signed out) -> returns instantly;
-#   * pull finished already -> returns instantly;
-#   * offline / 5xx / hung socket -> the pull's own failure path settles it, and
-#     `timeout_sec` is a hard backstop underneath that.
-# The pull is NOT cancelled on timeout — it lands whenever it lands, and
-# profile_replaced still fires. This only bounds the waiting.
-func await_initial_sync(timeout_sec := INITIAL_SYNC_WAIT_SEC) -> bool:
-	if not initial_pull_pending:
-		return true
-	var tree := get_tree()
-	if tree == null:
-		return false
-	# POLL THE FLAG, do not close over a local. A `var settled := false` mutated
-	# by a signal-connected lambda cannot work: GDScript lambdas capture outer
-	# locals BY VALUE, so the callback would flip its own private copy and this
-	# loop would only ever exit on the deadline — every signed-in player sitting
-	# through the full timeout after a pull that finished in 200 ms. The flag
-	# `_settle_initial_sync` clears is the shared state; read that directly and
-	# there is no closure to get wrong.
-	var deadline := Time.get_ticks_msec() + int(maxf(timeout_sec, 0.0) * 1000.0)
-	while initial_pull_pending and Time.get_ticks_msec() < deadline:
-		await tree.process_frame
-	return not initial_pull_pending
 
 
 # Player-initiated "Sync now".
@@ -220,16 +166,6 @@ func _after_sign_in(result: Dictionary) -> Dictionary:
 
 func _kick_off_initial_pull() -> void:
 	await sync.pull()
-	_settle_initial_sync()
-
-
-# Release anyone waiting on the boot pull. Idempotent, because the resumed-from-
-# background path reuses _kick_off_initial_pull and must not re-arm the gate.
-func _settle_initial_sync() -> void:
-	if not initial_pull_pending:
-		return
-	initial_pull_pending = false
-	initial_sync_settled.emit()
 
 
 func _on_signed_in(uid: String) -> void:

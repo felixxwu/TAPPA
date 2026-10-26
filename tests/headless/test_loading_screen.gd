@@ -143,17 +143,6 @@ func test_dots_label_has_constant_minimum_width() -> void:
 		screen._process(LoadingScreen._DOT_STEP_SEC + 0.001)
 
 
-# set_stage produces "LOADING STAGE N OF M" on the base label (no ellipsis);
-# the animated dots follow it in the sibling label.
-func test_set_stage_strips_ellipsis_and_keeps_stage_number() -> void:
-	var screen := LoadingScreen.new()
-	add_child_autofree(screen)
-	screen.set_stage(1, 8)
-	assert_false(screen._title.text.ends_with("…"), "no static ellipsis on a staged headline")
-	assert_true(screen._title.text.contains("2"), "the stage number is present")
-	assert_true(screen._title.text.contains("8"), "and the total")
-
-
 # The tip survives an actual world generation: world.gd's stage progression (used to
 # forward each stage label — "Placing signs…", "Generating track…" — into this same
 # label) must not overwrite it any more. Checked mid-generation, since the overlay is
@@ -345,33 +334,3 @@ func test_loading_screen_joins_loading_screen_group() -> void:
 	var ls: LoadingScreen = autofree(LoadingScreen.new())
 	assert_true(ls.is_in_group("loading_screen"),
 		"LoadingScreen must be in the 'loading_screen' group so music resume can gate on it")
-
-
-# The headline counts stages now; the weather tell that used to own this line is gone.
-
-func test_a_multi_stage_rally_names_which_stage_is_loading() -> void:
-	var screen := LoadingScreen.new()
-	add_child_autofree(screen)
-	screen.set_stage(1, 3)  # 0-based index — the SECOND stage
-	assert_true(screen._title.text.contains("2"),
-		"the headline counts from 1, so index 1 reads as stage 2")
-	assert_true(screen._title.text.contains("3"), "and names the total")
-
-
-func test_a_one_stage_rally_leaves_the_default_headline() -> void:
-	# "Stage 1 of 1" is noise — it tells the player nothing and implies a series that is
-	# not there. The opening rallies are exactly this case (todo/opening-rally.md).
-	var screen := LoadingScreen.new()
-	add_child_autofree(screen)
-	var before := screen._title.text
-	screen.set_stage(0, 1)
-	assert_eq(screen._title.text, before, "a single-stage rally says nothing extra")
-
-
-func test_the_stage_number_never_exceeds_the_total() -> void:
-	# The index comes from live session state, which sits AT the total once the last stage
-	# is done — "stage 4 of 3" would be a visible bug at the worst moment.
-	var screen := LoadingScreen.new()
-	add_child_autofree(screen)
-	screen.set_stage(3, 3)
-	assert_false(screen._title.text.contains("4"), "the count is clamped to the total")

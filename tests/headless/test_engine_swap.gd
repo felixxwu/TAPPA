@@ -51,28 +51,6 @@ func test_layout_label_resolves_the_engine_then_formats() -> void:
 	assert_eq(EngineSwap.layout_label("does_not_exist"), "", "unknown -> empty")
 
 
-func test_display_name_prefixes_layout_only_when_swapped() -> void:
-	# display_name resolves the swapped engine's layout via EngineLibrary by id.
-	# Find two catalogue entries with DIFFERENT layouts by opaque iteration (not a
-	# hard-coded id) — any two distinct-layout engines exercise the same contract.
-	var engines: Array = EngineLibrary.all()
-	var stock: Dictionary = engines[0]
-	var other: Dictionary = {}
-	for engine: Dictionary in engines:
-		if String(engine.get("layout", "")) != String(stock.get("layout", "")):
-			other = engine
-			break
-	if other.is_empty():
-		pass_test("catalogue has only one layout; nothing to distinguish")
-		return
-	var entry := {"name": "Twingo", "engine": String(stock.get("id", ""))}
-	assert_eq(EngineSwap.display_name(entry, {}), "Twingo", "stock -> plain name")
-	var swapped := {"swapped_engine": String(other.get("id", ""))}
-	var expected_label := EngineSwap.layout_label_from(String(other.get("layout", "")))
-	assert_eq(EngineSwap.display_name(entry, swapped), "%s Twingo" % expected_label,
-		"swapped -> the swapped engine's own layout prefix")
-
-
 func test_recompute_mass_swaps_the_engine_component() -> void:
 	# M' = M - m0 + m1
 	assert_almost_eq(EngineSwap.recompute_mass(1000.0, 120.0, 220.0), 1100.0, 0.0001, "heavier engine adds mass")
@@ -91,38 +69,3 @@ func test_recompute_weight_front_moves_cog_by_engine_position() -> void:
 	# When the engine sits exactly at the car's weight_front, only mass changes.
 	var wf_neutral := EngineSwap.recompute_weight_front(1000.0, 0.40, 200.0, 100.0, 0.40)
 	assert_almost_eq(wf_neutral, 0.40, 0.0001, "engine_pos == weight_front -> distribution unchanged")
-
-
-func test_can_swap_requires_two_real_cars_regardless_of_health() -> void:
-	# Health is no longer a factor — swapping costs a token (Save spends it), so
-	# can_swap only checks that both cars actually exist. hp values are injected.
-	var full := {"model_id": "fx_light_rwd", "hp": 800.0}
-	var hurt := {"model_id": "fx_light_rwd", "hp": 1.0}
-	assert_true(EngineSwap.can_swap(full, hurt), "a damaged car no longer blocks a swap")
-	assert_true(EngineSwap.can_swap(full, full), "two real cars -> allowed")
-	assert_false(EngineSwap.can_swap(full, {}), "an empty car -> blocked")
-	assert_false(EngineSwap.can_swap({}, full), "an empty car -> blocked (either side)")
-
-
-func test_pw_after_swap_stronger_donor_raises_pw() -> void:
-	var entry := CarLibrary.by_id("fx_light_rwd")
-	var owned := {"model_id": "fx_light_rwd"}
-	var current := CarLibrary.power_to_weight(entry)          # running stock fx_i4
-	var swapped_v8 := EngineSwap.pw_after_swap(owned, entry, "fx_v8")
-	assert_gt(swapped_v8, current, "receiving the stronger V8 raises p/w")
-
-
-func test_pw_after_swap_weaker_donor_lowers_pw() -> void:
-	var entry := CarLibrary.by_id("fx_rwd_coupe")            # runs fx_v8 stock (heavy/strong)
-	var owned := {"model_id": "fx_rwd_coupe"}
-	var current := CarLibrary.power_to_weight(entry)
-	var swapped_i4 := EngineSwap.pw_after_swap(owned, entry, "fx_i4")
-	assert_lt(swapped_i4, current, "receiving the weaker i4 lowers p/w")
-
-
-func test_pw_after_swap_same_engine_is_noop() -> void:
-	var entry := CarLibrary.by_id("fx_light_rwd")            # stock fx_i4
-	var owned := {"model_id": "fx_light_rwd"}
-	var current := CarLibrary.power_to_weight(entry)
-	var same := EngineSwap.pw_after_swap(owned, entry, "fx_i4")
-	assert_almost_eq(same, current, 0.0001, "receiving your own engine leaves p/w unchanged")

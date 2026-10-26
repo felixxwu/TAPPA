@@ -33,18 +33,13 @@ extends Control
 # actually stops an over-wide row reaching the 3D scene is `clip_contents` on the box. So the
 # margin's real effect is vertical (via _sync_body_height's available-height budget) plus the
 # resting look. If a hard horizontal cap is ever needed, it needs a real mechanism — capping
-# the body's width at the call site (set_body_width + hq._modal_body_width is the existing
-# pattern) rather than relying on this opt.
+# the body's width at the call site (set_body_width) rather than relying on this opt.
 #
 # Usage — for a page that lives on a station's own overlay tree:
 #     var page := MenuPage.new({"title": "Upgrades", "width": 380.0})
 #     page.body().add_child(my_rows)
 #     page.add_action(UITheme.row_button("< Back", on_back))
 #     station_tree.add_child(page)
-#
-# For a MODAL page — one that covers the screen — use `open_modal` instead and let it own
-# the hosting. DO NOT hand-roll it by adding the page to a station's CanvasLayer: see
-# open_modal for the two bugs that costs.
 #
 # Hand `page` (or its owning layer) to MenuNav.attach / UITheme.enforce as usual: the
 # action row is a sibling of the body box, and MenuNav drives focus across container
@@ -60,64 +55,16 @@ var _title_label: Label
 var _scroll: TouchScrollContainer
 var _body: VBoxContainer
 var _actions: HBoxContainer
-# An EXACT height for the body (0 = hug the content instead). Set by a page whose content
-# changes while it stays open — see set_body_fixed_height.
-var _fixed_body_height := 0.0
 
 
 # opts:
 #   "title"  (String)  a heading inside the body box; omitted/"" builds no label at all
 #   "width"  (float)   a fixed column width for the body box; omitted hugs the content
-#   "fixed_height" (float) an exact body height; omitted lets it hug the content
 #   "alpha"  (float)   body-box background alpha (default opaque — see UITheme.panel_box)
 #   "margin" (float)   the gap to the screen edges (default UITheme.MARGIN)
 #   "padding" (float)  the body box's inner padding (default UITheme.panel_box's own)
 #   "dim"    (bool)    paint UITheme.MODAL_DIM over the WHOLE frame behind the page, for a
 #                      true modal that must read as blocking what's underneath
-# THE MODAL CANVAS LEVEL. Above the station overlays (which take CanvasLayer's default 1)
-# and STRICTLY BELOW ConfirmPopup's 101, because a modal page HOSTS confirms rather than
-# being one: the car park's Change-Upgrades page opens a ConfirmPopup from its Auto-Upgrade
-# row, and the reward / detune prompts open over these pages. On a tie the confirm can be
-# drawn UNDER the page's opaque panel while its own full-screen MOUSE_FILTER_STOP dim goes
-# on swallowing every click — an invisible confirm behind a menu that has gone dead.
-# Also STRICTLY BELOW LoadingScreen._LAYER (100): on a tie, creation order decided which
-# drew on top, and the hub's title page once painted over the menu-background load.
-const MODAL_LAYER := LoadingScreen._LAYER - 1
-
-
-# A MODAL MenuPage, hosted correctly. The one way to put a full-screen page on screen.
-#
-# It exists because hosting a modal was being re-derived per call site, and two of the three
-# derivations were wrong in ways nothing reported:
-#
-# 1. NEVER A STATION'S CanvasLayer. `WorldPanelHost.sync` migrates a station's UI tree into a
-#    3D WorldPanel and hides its flat layer outright (`flat_layer.visible = false`) whenever
-#    `world_space_menus` is on — the SHIPPED value. A page added to `_car_layer` was built,
-#    gated and nav-wired but rendered NOWHERE: pressing "Change Upgrades" on the car park's
-#    "Too powerful" prompt looked like it dropped the player back to car-select. Its own
-#    layer makes the page independent of where the station's tree currently lives.
-# 2. IT MUST CLAIM THE SCREEN, POINTER INCLUDED. `WorldPanel._input` projects clicks that
-#    land inside its 3D quad into the panel's SubViewport and marks them handled, standing
-#    down only for `MenuNav.input_blocked`. A page outside that predicate rendered on top
-#    while the station underneath quietly ate its clicks. Joining SCREEN_CLAIMER_GROUP —
-#    and NOT ConfirmPopup's MODAL_GROUP, which would make the page refuse the very confirms
-#    it hosts — is what makes the page's own buttons reachable.
-#
-# `opts` is passed through to _init verbatim, plus "layer" to override MODAL_LAYER. Returns
-# the page; its CanvasLayer is `page.get_parent()` (freeing that frees the page with it).
-static func open_modal(host: Node, opts: Dictionary = {}) -> MenuPage:
-	var page := MenuPage.new(opts)
-	var layer := CanvasLayer.new()
-	layer.layer = int(opts.get("layer", MODAL_LAYER))
-	host.add_child(layer)
-	layer.add_child(page)
-	# On the PAGE, not the layer, so that hiding the page releases the claim: hosts keep
-	# these pages alive and toggle `visible` (hq_carpark.gd _close_upgrades_popup), and a
-	# hidden page must not go on blocking the world behind it.
-	page.add_to_group(MenuNav.SCREEN_CLAIMER_GROUP)
-	return page
-
-
 func _init(opts: Dictionary = {}) -> void:
 	var margin: float = float(opts.get("margin", UITheme.MARGIN))
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -160,8 +107,8 @@ func _init(opts: Dictionary = {}) -> void:
 	_panel.add_theme_stylebox_override("panel", UITheme.shadowed(UITheme.panel_box(
 		float(opts.get("alpha", 1.0)), int(opts.get("padding", UITheme.PANEL_PAD)))))
 	# A row that wants more width than the box must never spill past the background into
-	# the 3D scene behind it. Content is also wrapped where it can be (the HFlowContainer
-	# tile grid in upgrades_grid.gd), so this is a safety net, not the mechanism.
+	# the 3D scene behind it. Content is also wrapped where it can be (for example a wrapping flow
+	# container), so this is a safety net, not the mechanism.
 	_panel.clip_contents = true
 	col.add_child(_panel)
 
@@ -193,8 +140,6 @@ func _init(opts: Dictionary = {}) -> void:
 
 	if opts.has("width"):
 		set_body_width(float(opts["width"]))
-	if opts.has("fixed_height"):
-		set_body_fixed_height(float(opts["fixed_height"]))
 
 	_actions = HBoxContainer.new()
 	_actions.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -222,15 +167,9 @@ func _ready() -> void:
 # is short (DESIGN_HEIGHT — see display_stretch.gd), so this is a real case, not a
 # theoretical one.
 func _sync_body_height() -> void:
-	# Every part is optional here because this can be called DURING construction: the
-	# "fixed_height" opt runs set_body_fixed_height before _actions exists, and _ready()
-	# re-runs the whole thing once everything is built anyway.
 	if _scroll == null or _body == null or _actions == null:
 		return
-	# A page that pinned its height gets exactly that, whatever its content currently is;
-	# everything else hugs. See set_body_fixed_height.
-	var wanted: float = _fixed_body_height if _fixed_body_height > 0.0 \
-		else _body.get_combined_minimum_size().y
+	var wanted: float = _body.get_combined_minimum_size().y
 	# Everything in the page that is NOT the scroll, and so cannot be given to it.
 	var chrome: float = _actions.get_combined_minimum_size().y + UITheme.GAP
 	if _title_label != null:
@@ -271,29 +210,6 @@ func add_action(button: Button) -> Button:
 # Fix the body box's column width. Callers that want a stable column (so the box doesn't
 # resize as its content changes) set this; the default is to hug the content. Pass a width
 # already clamped to what the CURRENT logical canvas can show, since the frame's width is
-# not a constant — see display_stretch.gd and hq.gd's _modal_body_width.
+# not a constant — see display_stretch.gd.
 func set_body_width(preferred: float) -> void:
 	_body.custom_minimum_size.x = preferred
-
-
-# Pin the body to an EXACT height, so the box stops tracking its content.
-#
-# Hugging the content is right for a page built once and then read, but WRONG for a page that
-# swaps its own content while it stays open — the challenge screen's Daily / Weekly / Monthly
-# tabs are the case that matters. Each kind has a different amount to say (a longer ceiling
-# subtitle, an extra "Needs tune:" line, a different number of leaderboard rows), so a box
-# that hugs re-fits on every tab press and the panel jumps around under the player, moving
-# the very tabs being clicked.
-#
-# Deliberately EXACT rather than a minimum. A floor cannot do this job: it only stops the box
-# getting SMALLER than the number, and content taller than it still grows the box, so the
-# jumping remains. (A floor appears to work on the short logical canvas — DESIGN_HEIGHT —
-# because the available-height cap pins it anyway; on a taller frame the jitter comes
-# straight back. That is a trap, not a fix.)
-#
-# Content taller than the pin scrolls inside the box, which is what the body's scroll is for.
-# Pair with set_body_width to pin the other axis — and note that a non-wrapping label can
-# still push the WIDTH past its floor, so wrap the page's headings too.
-func set_body_fixed_height(exact_height: float) -> void:
-	_fixed_body_height = exact_height
-	_sync_body_height()

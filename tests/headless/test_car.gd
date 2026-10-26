@@ -1002,3 +1002,25 @@ func test_heading_hold_survives_a_locked_yaw_axis() -> void:
 	assert_true(is_finite(_car.angular_velocity.length()),
 		"and finite angular velocity")
 	_car.axis_lock_angular_y = false
+
+
+# Free roam has no TrackProgress, so the storm gust runs on the car's own odometer: a car
+# with no stage around it must still be blown sideways.
+func test_a_storm_pushes_the_car_with_no_stage_to_measure_distance_along() -> void:
+	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "gale", "wind": {
+		"strength": "storm_wind_strength", "gust": "storm_wind_gust", "dir_deg": "storm_wind_dir_deg"}}])
+	var cfg: GameConfig = Config.data
+	var saved := [cfg.weather, cfg.storm_wind_strength, cfg.storm_wind_gust, cfg.storm_wind_dir_deg]
+	cfg.weather = "gale"
+	cfg.storm_wind_strength = 50.0 * _car.mass  # far past what the tyres can hold
+	cfg.storm_wind_gust = 0.0
+	cfg.storm_wind_dir_deg = 0.0
+	var start := _car.global_position
+	await _wait_physics(30)
+	var moved := (_car.global_position - start).dot(Crosswind.direction(0.0))
+	cfg.weather = saved[0]
+	cfg.storm_wind_strength = saved[1]
+	cfg.storm_wind_gust = saved[2]
+	cfg.storm_wind_dir_deg = saved[3]
+	WeatherLibrary.reset()
+	assert_gt(moved, 0.3, "the wind pushes the car along its heading")

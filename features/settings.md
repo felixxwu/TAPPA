@@ -97,7 +97,7 @@ the tuning pages in [tuning.md](tuning.md), and the one-bottom-action-row rule i
 
 **Benchmark, Dev and Seed lab are shown to everyone.** `_build_list_page` adds
 those three category buttons whenever `SettingsMenu.dev_tools_enabled()` — the
-single switch `car.gd` / `hud.gd` / `world.gd` / `world_panel_host.gd` /
+single switch `car.gd` / `hud.gd` / `world.gd` /
 `terrain_manager.gd` / `perf_log.gd` all key off for every other
 dev affordance (force arrows, grip grid, world-menu A/B, config hot-reload,
 skip-to-finish, chunk-border overlay, perf log). It defaults to **true** — dev

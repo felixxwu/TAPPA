@@ -10,7 +10,7 @@ const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 
 # Records the control-lock toggles StageManager does to the car: the full lock
-# (STAGING / COMPLETE) and the handbrake-only lock (COUNTDOWN, so the player can
+# (COMPLETE) and the handbrake-only lock (COUNTDOWN, so the player can
 # rev up and launch on GO).
 class StubCar:
 	extends Node3D
@@ -345,58 +345,9 @@ func test_no_pacenotes_without_wiring() -> void:
 	assert_eq(_hud.pacenote_indices.size(), 0, "a run with no pacenotes wired never pulses the strip")
 
 
-# --- Staged mode (the pre-event start-line scene holds before the countdown) --
-
-func _make_staged() -> StageManager:
-	var sm := StageManager.new()
-	add_child_autofree(sm)
-	sm.set_process(false)  # drive _process manually for deterministic timing
-	sm.setup(_car, _hud, _progress, true)
-	return sm
-
-
-func test_staged_setup_holds_in_staging() -> void:
-	var sm := _make_staged()
-	assert_eq(sm.phase(), StageManager.Phase.STAGING, "a staged run starts in STAGING")
-	assert_true(_car.controls_locked, "car is locked at the start line")
-	assert_eq(_hud.last_countdown, -999.0, "no countdown shown yet while staging")
-	# Time passing must not advance the countdown or the timer while staging.
-	sm._process(5.0)
-	assert_eq(sm.phase(), StageManager.Phase.STAGING, "still STAGING — time alone never launches")
-	assert_almost_eq(sm.elapsed(), 0.0, 0.0001, "timer doesn't run while staging")
-
-
-func test_begin_countdown_leaves_staging() -> void:
-	var sm := _make_staged()
-	sm.begin_countdown()
-	assert_eq(sm.phase(), StageManager.Phase.COUNTDOWN, "begin_countdown() arms the countdown")
-	assert_true(_car.handbrake_locked, "handbrake held through the countdown")
-	assert_false(_car.controls_locked, "full lock drops so the player can rev on the line")
-	assert_almost_eq(_hud.last_countdown, Config.data.stage_countdown_seconds, 0.0001,
-		"the full countdown shows when it arms")
-	# From here the normal flow runs.
-	_to_running(sm)
-	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "countdown then proceeds to RUNNING")
-	assert_false(_car.controls_locked, "controls unlock at GO")
-
-
-func test_begin_countdown_is_noop_outside_staging() -> void:
-	# A non-staged run is already counting down; a stray begin_countdown() mustn't
-	# restart it, and one after the run has started mustn't rewind it.
-	var sm := _make()  # staged=false -> COUNTDOWN
-	sm._process(1.0)
-	var left_before := sm._countdown_left
-	sm.begin_countdown()
-	assert_eq(sm.phase(), StageManager.Phase.COUNTDOWN, "still counting down")
-	assert_almost_eq(sm._countdown_left, left_before, 0.0001, "countdown not restarted")
-	_to_running(sm)
-	sm.begin_countdown()
-	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "a launch during the run is ignored")
-
-
 # Integration: booting main.tscn wires a StageManager that holds the real car on
 # the line from the first frame (the scene is built once in before_all). The boot
-# is a non-staged countdown, so the handbrake is forced while input stays live.
+# is a countdown, so the handbrake is forced while input stays live.
 func test_cut_flash_relayed_to_hud_only_while_running() -> void:
 	var sm := _make()
 	_progress.cut_billed.emit(1.4, 1.4)
@@ -463,7 +414,7 @@ func test_main_scene_holds_car_at_boot() -> void:
 	var car: VehicleBody3D = _boot_scene.get_node("Car")
 	assert_true(car.handbrake_locked, "car's handbrake is held during the boot countdown")
 	# world.gd locks the car for the loading window (controls_locked = true before
-	# generation), but a non-staged boot must END with input LIVE — StageManager.setup
+	# generation), but a boot must END with input LIVE — StageManager.setup
 	# clears the full lock, leaving only the handbrake hold. (Regression: the loading
 	# lock must not survive into the playable run and freeze the player out.)
-	assert_false(car.controls_locked, "non-staged boot leaves input live (loading lock is cleared)")
+	assert_false(car.controls_locked, "boot leaves input live (loading lock is cleared)")

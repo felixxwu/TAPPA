@@ -84,7 +84,6 @@ var _drag_start_offset := 0.0
 # release branch. True once this gesture's tap has already been acted on; cleared by the
 # next press (_begin_drag), which is what makes two genuine taps still count as two.
 var _gesture_tapped := false
-var _visible_count := 1
 # The index of the card currently playing its confirm flash, or -1 when none is. Sits
 # between "tapped/confirm-pressed" and the `confirmed` signal actually firing — see
 # _confirm_selected — so a confirm reads as a deliberate beat rather than an instant cut
@@ -124,32 +123,8 @@ func _init() -> void:
 # bug to hide. Falls back to one bare card's width if avail_width can't fit even that (so
 # the carousel is never narrower than a single card).
 func fit_to_available_width(avail_width: float) -> void:
-	var unit := _card_width() + Config.data.card_carousel_gap
 	custom_minimum_size.x = maxf(avail_width, _card_width())
-	# The RADIUS (in whole cards, INCLUDING a card only partially revealed) from the
-	# centred card out to the edge of the claimed width — used only by
-	# visible_card_count() below, not by this method's own sizing. A card at radius `r`
-	# sits `r * unit` from the centred card, so its near edge is `r * unit - card_width/2`
-	# from centre; it counts as visible as long as that near edge is still inside the
-	# half-width, i.e. `r < (half_width + card_width/2) / unit` — floor of the right-hand
-	# side is the largest such `r` (0 always counts: the centred card itself).
-	var half_width := custom_minimum_size.x * 0.5
-	var radius := int(floor((half_width + _card_width() * 0.5) / unit))
-	_visible_count = radius * 2 + 1
 	_layout()
-
-
-# An estimate of how many cards fit_to_available_width decided could be ON SCREEN at
-# once, INCLUDING a partially-visible card peeking in at each edge (always odd — see
-# fit_to_available_width). A host with an expensive per-card visual (a live 3D preview,
-# say) can use this to only keep that many live around the current selection instead of
-# building one for every card up front — see CarCardPreview's caller in hub_shell.gd for
-# why that matters. Deliberately generous (rounds partial cards UP to a full one) rather
-# than exact, since a card that's genuinely on screen — even sliced by clip_contents —
-# still needs a real preview, not a blank slot. 1 before fit_to_available_width has ever
-# run.
-func visible_card_count() -> int:
-	return _visible_count
 
 
 func _card_width() -> float:
@@ -260,7 +235,7 @@ func add_card(disabled: bool = false) -> Card:
 	card.root.gui_input.connect(_on_card_gui_input.bind(index))
 	_cards.append(card)
 	_layout()
-	# Deferred rather than immediate: a caller (hub_shell.gd's _build_car/_build_cars)
+	# Deferred rather than immediate: a caller
 	# restores a remembered selection with select() AFTER its add_card loop finishes, in
 	# the same synchronous call — so _selected isn't final yet at add_card time. Deferring
 	# lets that select() land first, so the stagger below fans out from the RIGHT card.
@@ -273,7 +248,7 @@ func add_card(disabled: bool = false) -> Card:
 # selection — see add_card's comment) would otherwise wait for cards 0-29 to finish
 # staggering in before their own card even starts. Every card added to a freshly built
 # CardCarousel gets its own animation, and since every page rebuilds a BRAND NEW
-# CardCarousel on each _show() (hub_shell.gd), this restarts automatically every time a
+# CardCarousel each time it is shown, this restarts automatically every time a
 # card list is shown — including navigating back from a sub-menu — with no extra "has this
 # been shown before" state to track.
 func _animate_entrance(card: Card, index: int) -> void:
@@ -331,8 +306,7 @@ func card_count() -> int:
 
 # The Card handle add_card returned for `index` — for a host that needs to reach back into
 # a card's visual/info slots after the fact (e.g. to rebuild an expensive visual lazily
-# around the current selection rather than for every card up front; see hub_shell.gd's
-# _refresh_car_previews).
+# around the current selection rather than for every card up front).
 func get_card(index: int) -> Card:
 	return _cards[index]
 

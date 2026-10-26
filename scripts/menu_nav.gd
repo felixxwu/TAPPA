@@ -1,7 +1,7 @@
 class_name MenuNav
 extends Node
 # Docs: features/menu-navigation.md — update in the same change as this file.
-# Tests: tests/headless/test_menu_nav.gd, tests/headless/test_world_panel.gd — extend in the same change.
+# Tests: tests/headless/test_menu_nav.gd — extend in the same change.
 # THE FLAT-MENU NAVIGATION FRAMEWORK. Attach one of these to a flat overlay / panel
 # menu and it handles ALL of the keyboard + gamepad interoperability so the menu
 # author doesn't have to remember (and can't forget) the per-widget wiring. See
@@ -185,15 +185,7 @@ func _enable_scroll_follow(root: Node) -> void:
 # Is `node` actually on screen? Control.is_visible_in_tree() only walks Control
 # ancestors, so it MISSES a CanvasLayer ancestor being hidden (how HQ toggles its
 # station overlays) — a panel inside a hidden overlay reports itself visible.
-# Check all three chains: the Control chain, any CanvasLayer ancestor, AND any
-# Node3D ancestor.
-#
-# THE Node3D CASE IS FOR WorldPanel (world_panel.gd): a menu hosted in a world-space
-# panel lives inside a SubViewport whose owning Sprite3D/Node3D chain is what gets
-# hidden. Nothing on the Control chain changes when a panel is hidden, and a
-# SubViewport is not a CanvasLayer, so without this a hidden world panel would keep
-# eating menu_* / ui_cancel — exactly the bug the CanvasLayer clause above exists to
-# prevent, one host later.
+# Check both chains: the Control chain and any CanvasLayer ancestor.
 #
 # Static because this is not only MenuNav's problem: anything that grabs focus
 # from a panel that might be parked inside a hidden overlay needs the same
@@ -207,8 +199,6 @@ static func is_on_screen(node: Node) -> bool:
 	var n: Node = node
 	while n != null:
 		if n is CanvasLayer and not (n as CanvasLayer).visible:
-			return false
-		if n is Node3D and not (n as Node3D).is_visible_in_tree():
 			return false
 		n = n.get_parent()
 	return true
@@ -258,48 +248,11 @@ static func input_blocked(node: Node) -> bool:
 	var tree := loop as SceneTree
 	if tree != null:
 		var modal := ConfirmPopup.any_open(tree)
-		if modal == null:
-			modal = screen_claimer(tree)
 		if modal != null:
 			if is_instance_valid(node) and (node == modal or modal.is_ancestor_of(node)):
 				return false  # the modal's own widgets keep their input
 			return true
 	return is_text_editing()
-
-
-# A FULL-SCREEN OVERLAY THAT IS NOT A ConfirmPopup, but owns the screen just the same.
-#
-# ConfirmPopup's MODAL_GROUP does double duty: it answers "does something own the screen?"
-# AND it enforces one-modal-at-a-time by REFUSING a second open (confirm_popup.gd
-# MODAL_GROUP). A modal that legitimately HOSTS confirms — the car park's Change-Upgrades
-# page, whose Auto-Upgrade row opens its own ConfirmPopup — cannot join that group without
-# refusing its own children, so it needs the first half of the answer without the second.
-# Hence a separate group, read here and nowhere else.
-#
-# WHY IT MATTERS BEYOND NAV: WorldPanel._input claims POINTER events for the panel quad
-# unless this predicate says otherwise (world_panel.gd _input). An overlay outside both
-# groups therefore rendered on top while the 3D panel underneath quietly ate every click
-# that landed inside the quad and marked it handled — the modal was on screen and visibly
-# focused, and clicking it did nothing.
-#
-# Membership is on the overlay's own Control (not its CanvasLayer) so that hiding the page
-# releases the claim: hosts keep these pages alive and toggle `visible` (see
-# hq_carpark.gd _close_upgrades_popup), and a hidden page must not go on blocking the world.
-const SCREEN_CLAIMER_GROUP := "screen_claimer"
-
-
-static func screen_claimer(tree: SceneTree) -> Node:
-	if tree == null:
-		return null
-	for n in tree.get_nodes_in_group(SCREEN_CLAIMER_GROUP):
-		var node := n as Node
-		if not is_instance_valid(node) or node.is_queued_for_deletion():
-			continue
-		var ci := node as CanvasItem
-		if ci != null and not ci.is_visible_in_tree():
-			continue
-		return node
-	return null
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -371,7 +324,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if (side == SIDE_LEFT or side == SIDE_RIGHT) and focused.has_method("menu_nav_handles_side"):
 		if focused.call("menu_nav_handles_side", side):
 			vp.set_input_as_handled()
-		return
+			return
 
 	# On a slider, left/right ADJUST the value rather than moving focus, so the cursor
 	# resting on a slider is enough to change it — no "select it first" step, and WASD

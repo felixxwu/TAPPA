@@ -20,7 +20,6 @@ extends CanvasLayer
 const SPIKE_MS := 28.0          # frame-time over budget => log a spike line
 const WINDOW := 90              # rolling window for avg / max (frames)
 const REFRESH_S := 0.2          # on-screen text refresh cadence
-const FONT_SIZE := 15           # readable at a glance (the old 8px was too small)
 
 var terrain: TerrainManager     # for the chunk-integration correlation (optional)
 var engine_audio: Node          # fielded car's EngineAudio, for live audio-overrun readout (optional)
@@ -49,7 +48,7 @@ func _ready() -> void:
 	visible = false
 	_label = Label.new()
 	_label.position = Vector2(4, 4)
-	_label.add_theme_font_size_override("font_size", FONT_SIZE)
+	_label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	_label.add_theme_color_override("font_color", UITheme.GREEN)
 	_label.add_theme_color_override("font_outline_color", UITheme.BLACK)
 	_label.add_theme_constant_override("outline_size", 3)

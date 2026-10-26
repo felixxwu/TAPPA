@@ -3,10 +3,8 @@ extends RefCounted
 # Docs: features/engine-swap.md — update in the same change as this file.
 # Tests: tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 # Pure engine-swap logic: resolve which engine a car is currently running, format
-# the swapped-in name, and the mass + weight-distribution math for treating the
-# engine as an independent point mass. No scene / save coupling — Save owns the
-# mutations (swap_engines / set_engine_detune) and car.gd applies the result.
-# See features/engine-swap.md.
+# an engine's layout label, and the mass + weight-distribution math for treating the
+# engine as an independent point mass. No scene / save coupling — car.gd applies the result.
 
 # The engine a car is currently running: its swapped-in engine if set, else the
 # CarLibrary stock engine id passed in.
@@ -29,19 +27,6 @@ static func layout_label(engine_id: String) -> String:
 	return layout_label_from(String(EngineLibrary.by_id(engine_id).get("layout", "")))
 
 
-# The car's display name, prefixed with the swapped-in engine's layout when the
-# car is running a non-stock engine ("V8 Twingo"); the plain name otherwise.
-static func display_name(entry: Dictionary, owned: Dictionary) -> String:
-	var name := String(entry.get("name", ""))
-	var stock := String(entry.get("engine", ""))
-	var current := current_engine_id(owned, stock)
-	if current != stock and not current.is_empty():
-		var label := layout_label(current)
-		if not label.is_empty():
-			return "%s %s" % [label, name]
-	return name
-
-
 # Total mass with the engine component swapped out: M' = M - m0 + m1.
 static func recompute_mass(m_total: float, m_stock_engine: float, m_new_engine: float) -> float:
 	return m_total - m_stock_engine + m_new_engine
@@ -58,22 +43,3 @@ static func recompute_weight_front(m_total: float, wf: float, m_stock_engine: fl
 		return wf
 	var chassis_front := wf * m_total - m_stock_engine * engine_pos
 	return (chassis_front + m_new_engine * engine_pos) / new_total
-
-
-# The power-to-weight (kW/kg) `entry`'s car would have after receiving
-# `donor_engine_id`'s engine. Previews an owned dict with swapped_engine = donor and
-# runs it through the existing effective_meta -> power_to_weight path, which already
-# resolves the swapped engine, recomputes mass for the engine-mass delta, and folds
-# in installed upgrades (upgrade_library.gd). Pure — no scene / save mutation.
-# Returns kW/kg; callers multiply by CarLibrary.KW_KG_TO_HP_TONNE to display hp/tonne.
-static func pw_after_swap(owned: Dictionary, entry: Dictionary, donor_engine_id: String) -> float:
-	var preview := owned.duplicate(true)
-	preview["swapped_engine"] = donor_engine_id
-	return CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(preview, entry))
-
-
-# Two owned cars may exchange engines whenever both actually exist. Health is no
-# longer a factor — swapping costs one engine swap token (Save.swap_engines spends
-# it); a damaged car keeps its current HP through the swap. See features/engine-swap.md.
-static func can_swap(car_a: Dictionary, car_b: Dictionary) -> bool:
-	return not car_a.is_empty() and not car_b.is_empty()

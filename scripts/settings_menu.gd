@@ -1236,8 +1236,7 @@ func _regen_seedlab() -> void:
 	var gen := _sl_gen
 	# Generate through the SAME path the career uses — for_event on the event resolved
 	# to its canonical config — so the preview matches the real stage exactly (start-
-	# line staging, lead-in reserve, width, water, terrain). for_trial skipped staging,
-	# which is why the lab's shapes disagreed with the cached career tracks.
+	# line staging, lead-in reserve, width, water, terrain).
 	var ev := _seedlab_event()
 	var cfg := StageConfig.canonical_event_config(ev)
 	var params := TrackGenParams.for_event(ev, cfg)

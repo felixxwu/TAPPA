@@ -53,7 +53,7 @@ func _build_label(theme: Theme) -> void:
 # project boot — before autoloads are guaranteed to exist. Embedding a custom-script
 # StyleBox (UIHardShadowBox) inside it made that boot-time load pull the script in early
 # enough to corrupt identifier resolution for OTHER scripts that reference an autoload
-# (world_panel.gd's `DisplayStretch.DESIGN_HEIGHT`), crashing the engine on ANY test run.
+# (a script referencing an autoload), crashing the engine on ANY test run.
 # UITheme.enforce() applies the same shadow at RUNTIME instead — well after boot, and
 # every menu already calls it — so the button styleboxes here stay plain.
 func _build_button(theme: Theme) -> void:

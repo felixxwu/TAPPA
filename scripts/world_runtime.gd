@@ -4,20 +4,13 @@ extends RefCounted
 # — update in the same change as this file.
 # Tests: tests/headless/test_world_runtime.gd, tests/headless/test_world_fps_cap.gd.
 #
-# The behaviour the two WORLD HOSTS share: world.gd (a rally stage) and overworld.gd (the
-# free-roam map). Both are Node3D scene roots that build terrain behind a loading cover,
-# cap the frame rate for the duration of that build, swap the floor shader for deep snow,
-# and pre-warm shaders in front of the camera. Those pieces were byte-for-byte duplicated
-# in both files and drifted (a line wrap here, `$Floor` vs a cached accessor there).
+# The world-host behaviour that world.gd needs: capping the frame rate while terrain builds
+# behind a loading cover, swapping the floor shader for deep snow, and pre-warming shaders in
+# front of the camera.
 #
-# WHY A STATIC HELPER MODULE AND NOT A COMMON BASE CLASS:
-# a base class is possible — both hosts are Node3D roots — but it would change the
-# scene↔script relationship for main.tscn and overworld.tscn (every `extends` swap risks a
-# scene-load regression, and the two hosts' _ready bodies are NOT a common sequence, only
-# these leaf helpers are). A static module has no such coupling: it is pure functions over
-# arguments the hosts already hold, it is unit-testable without instancing either scene, and
-# it leaves each host free to keep its own node lookups (`$Floor` vs `_floor()`), its own
-# headless caching, and its own divergent fallbacks. So: static helpers, called from thin
+# WHY A STATIC HELPER MODULE AND NOT A BASE CLASS: a static module is pure functions over
+# arguments the host already holds, unit-testable without instancing the scene, and leaves the
+# host free to keep its own node lookups and headless caching. So: static helpers, called from thin
 # host wrappers that keep their existing names (the docs and the call sites reference them).
 
 
@@ -40,8 +33,7 @@ const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
 # Authored in config/game_config.tres (group "Loading") as `loading_max_fps` /
 # `loading_touch_max_fps` and read through `loading_cap()` below, per CLAUDE.md. RETUNE IN THE
 # .tres. The consts stay as the documented shipped values and as the fallback when the field is
-# missing; both hosts already reach the value through `loading_cap`, so neither world.gd nor
-# overworld.gd needed changing.
+# missing; world.gd reaches the value through `loading_cap`.
 const LOADING_MAX_FPS := 0         # non-touch (desktop/native): no ceiling for the load
 const LOADING_TOUCH_MAX_FPS := 60  # touch/web: fast, but still a ceiling
 
@@ -118,8 +110,7 @@ static func yield_frame(tree: SceneTree, headless: bool) -> void:
 
 ## A point ~2 m in front of the active camera — where a warm-up instance is guaranteed to sit
 ## inside the frustum (so it actually draws and compiles its shader). `fallback` is what the
-## caller wants when no camera is up yet; the two hosts DIVERGE there (world.gd uses its
-## authored $Car, overworld.gd looks the car up by name and tolerates its absence), so the
+## caller wants when no camera is up yet (world.gd uses its authored $Car), so the
 ## fallback stays at the call site rather than being guessed here.
 static func warm_up_point(cam: Camera3D, fallback: Vector3) -> Vector3:
 	if cam != null:

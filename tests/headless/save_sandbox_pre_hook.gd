@@ -88,7 +88,7 @@ func _suppress_real_scene_changes() -> void:
 # Cloud.auth) with the real path armed. It had not fired only because those tests all seat an
 # expiry an hour out, so `ensure_fresh_token` returns before refreshing — a coincidence, not a
 # guard. Meanwhile the suite had already grown workarounds: two leaderboard tests hand-roll
-# sign-out as field assignments rather than call sign_out(), and test_cloud_boot_gate.gd explains
+# sign-out as field assignments rather than call sign_out(), and a since-deleted test explained
 # in prose that calling it would delete the real file. Scattered workarounds are the tell that the
 # default is wrong, so make the safe state the default here as with the profile and scene changes.
 func _sandbox_credentials() -> void:

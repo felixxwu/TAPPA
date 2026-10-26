@@ -231,7 +231,7 @@ func _pair_material(k: int) -> ShaderMaterial:
 	m.set_shader_parameter("fade_rings", true)
 	m.set_shader_parameter("ring_border", float(k))
 	m.set_shader_parameter("ring_half", _fade_half())
-	m.set_shader_parameter("ring_scale_m", settings.island_radius_m * 0.82)
+	m.set_shader_parameter("ring_scale_m", settings.inner_radius_m())
 	m.set_shader_parameter("ring_count", float(settings.ring_count))
 	m.set_shader_parameter("ring_seed", settings.world_seed + 3)
 	return m
@@ -239,7 +239,7 @@ func _pair_material(k: int) -> ShaderMaterial:
 
 # Half the biome fade's width, in rings (RoadTerrain.ring_coord's units).
 func _fade_half() -> float:
-	return settings.biome_fade_m / (settings.island_radius_m * 0.82) * settings.ring_count * 0.5
+	return settings.biome_fade_m / settings.inner_radius_m() * settings.ring_count * 0.5
 
 
 # Every ground material, single-ring and border (the BiomeDirector tints them for the weather).

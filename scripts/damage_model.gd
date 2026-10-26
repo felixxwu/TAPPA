@@ -44,13 +44,9 @@ var hp := 1000.0
 # Permanent per-wheel toe misalignment (radians), keyed by WHEEL_NAMES. Each solid
 # impact bends every wheel by a random amount/direction (nudge_wheels); car.gd feeds
 # these into the per-wheel VehicleWheel3D.steering so the car's pull/crab comes from
-# the physics alone. Persisted per car (Save), eased back only by the free between-
-# event field repair. See
-# features/damage.md.
+# the physics alone. Saved with the world's car_state; a full repair straightens it.
 var wheel_toe: Dictionary = _zero_toe()
 
-
-# Set the HP pool and load the car's persisted wheel misalignment; called by car.gd when a car is configured.
 
 ## The free-roam damage chain: below cooling_failure_hp_fraction the cooling breaks and stays
 ## broken until repair(); while broken, engine_temp only rises (faster at higher revs);
@@ -62,6 +58,7 @@ var engine_temp := 0.0
 var _gave_up := false
 
 
+# Set the HP pool and load the car's persisted wheel misalignment; called by car.gd when a car is configured.
 func field(p_max_hp: float, p_hp: float, p_toe: Array = []) -> void:
 	max_hp = maxf(1.0, p_max_hp)
 	hp = clampf(p_hp, 0.0, max_hp)

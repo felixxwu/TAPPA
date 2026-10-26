@@ -17,7 +17,7 @@ extends Node
 #   • the frame cap / vsync override (uncapped fps is what exposes headroom);
 #   • the last run's results, for anything that wants to read them back.
 #
-# Like RallySession it survives scene changes, which is what lets "Run again"
+# It survives scene changes, which is what lets "Run again"
 # simply reload main.tscn with the overrides still in place. The scene-side
 # work (skipping the stage flow, spawning the runner) keys off `active`.
 
@@ -100,9 +100,6 @@ func set_option(key: String, on: bool) -> void:
 # frame rate, and load the run scene. world.gd sees `active` and wires the rest.
 func start() -> void:
 	get_tree().paused = false  # reachable from the pause menu's Settings
-	# The career-rally abandon and free-roam handoff clear that used to sit here read
-	# RallySession, deleted along with the rival field it served
-	# (todo/roguelike-pivot.md decision 5).
 	# Capture the frame pacing only on first entry — a re-start from inside a
 	# running benchmark (pause menu → Settings → Start) must keep the ORIGINAL
 	# cap/vsync so exit_to_hq restores the pre-benchmark state, not our override.

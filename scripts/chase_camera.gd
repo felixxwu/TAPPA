@@ -1,6 +1,6 @@
 extends Camera3D
 # Docs: features/camera.md — update in the same change as this file.
-# Tests: tests/headless/test_chase_camera_aim.gd, tests/headless/test_chase_camera_fov.gd, tests/headless/test_chase_camera_shake.gd, tests/headless/test_chase_camera_look.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'chase_camera' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
+# Tests: tests/headless/test_chase_camera_aim.gd, tests/headless/test_chase_camera_fov.gd, tests/headless/test_chase_camera_look.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'chase_camera' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 
 @export var target: Node3D
 ## The on-screen touch controls, if any: a touch that lands on one of them is driving, not looking.

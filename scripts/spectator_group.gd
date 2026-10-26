@@ -623,7 +623,7 @@ func _release_ragdoll(body: RigidBody3D) -> void:
 # (clamped to [speed_min, speed_max]), tilted upward by `lift_ratio` of that launch.
 # Because the lift is a fraction of the (speed-driven) launch — a fixed angle, not a
 # constant m/s — the WHOLE impulse scales with car speed: a slow nudge stays low and
-# small, a fast hit lofts and flings. Shared launch recipe (also used by SignField).
+# small, a fast hit lofts and flings.
 static func knock_launch_velocity(dir: Vector3, speed: float, factor: float,
 		speed_min: float, speed_max: float, lift_ratio: float) -> Vector3:
 	var launch := clampf(speed * factor, speed_min, speed_max)

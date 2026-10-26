@@ -156,7 +156,7 @@ diagonal, zero-blur offset is unreachable through it.
 (`theme/ui_theme.tres`).** That resource loads during early project boot, before
 autoloads are guaranteed to exist — embedding a custom-script StyleBox in it once made
 that early load corrupt identifier resolution for OTHER scripts that reference an
-autoload (`world_panel.gd`'s `DisplayStretch.DESIGN_HEIGHT` failed to resolve, crashing
+autoload (a script referencing an autoload failed to resolve, crashing
 the engine with a SIGSEGV on every test run). `tools/build_ui_theme.gd` therefore keeps
 `_btn_box`/`_build_panels` UNWRAPPED — `UITheme.enforce()` applies the shadow at runtime
 instead, which is safe because it always runs well after boot. If you're tempted to bake
@@ -179,7 +179,7 @@ render height is retuned, then re-run `tools/build_ui_theme.gd` (its stylebox
 margins go through `px` too).
 
 **A box pinned in pixels must be scaled like the text inside it.** The trap is a
-container sized by a literal — `MenuPage.set_body_width` / `set_body_fixed_height`,
+container sized by a literal — `MenuPage.set_body_width`,
 a `custom_minimum_size`, a container `separation` — while the fonts within it go
 through `px`. The text then gets its genuinely larger point size and its container
 does not, so content clips into the body scroll and values wrap that used to fit on
@@ -205,9 +205,7 @@ alone can be passed by a bad answer. Both went with the screen.
 
 Diegetic (in-world) UI scales its MEDIUM by the same factor, never its apparent
 size — the world already got the resolution increase, so content scaled twice
-would read bigger in-world. `WorldPanel.logical_size()` grows by `UI_SCALE`
-(cancelling the widgets' inflation exactly; `SUPERSAMPLE` was turned 4 → 3 to
-keep the per-panel pixel bill flat). The deleted map-table pin readouts did the same by
+would read bigger in-world. The deleted map-table pin readouts did this by
 scaling their label pixel size and font size by `UI_SCALE` while dividing their
 `pixel_size` by it, so the box kept its exact world-metre size and only gained texture
 resolution — the pattern for any future in-world readout. Truly canvas-independent art
