@@ -28,7 +28,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page (and, as an inline overlay, by the standings page's sign-in prompt). |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()` shared by this document AND the leaderboard's, extracted out of this file (see the deleted global leaderboards). |
-| `firestore.rules` | Security rules, kept in git rather than only in the console, and deployed by CI. **One collection, `challenge_runs`, is world-readable** — a signed-out player has to be able to see the challenge board. `stage_times` (the per-stage global leaderboards) and the two `lobby_*` collections went with their features; the file grants them nothing now. Structurally guarded by `tests/headless/test_firestore_rules.gd` — see below. |
+| `firestore.rules` | Security rules, kept in git rather than only in the console, and deployed by CI. Only `users/{uid}` is reachable, owner-only. `stage_times`, `challenge_runs` and the two `lobby_*` collections went with their features; the file grants them nothing now. Structurally guarded by `tests/headless/test_firestore_rules.gd` — see below. |
 | `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project. |
 | `.github/workflows/deploy.yml` › `deploy-rules` | Deploys the rules on change (and on manual dispatch). |
 
@@ -142,14 +142,7 @@ with the schema forever.
 
 **Security posture:** `users/{uid}` is pinned to `request.auth.uid == uid` for
 both read and write — nobody, including another signed-in player, can read
-this document but its own owner. That stays true after global leaderboards
-landed. The ONE exception in the whole database is a *different* collection,
-`stage_times/{stage}/times/{uid}`, which is world-readable by design so a
-signed-out player can see a leaderboard — see
-the deleted global leaderboards for what that collection
-holds and why making it public is safe (short version: it never carries
-anything from this `users/{uid}` document — no email, no profile blob, just a
-chosen name/car/time).
+this document but its own owner. No other collection is reachable.
 
 Encoding lives in the pure statics `CloudSync.to_document` / `from_document`,
 which build the document SHAPE (which five fields, in what order) and delegate
@@ -185,27 +178,26 @@ immediately.
 | `revision <= cloud_revision` | clean | Nothing |
 | `revision <= cloud_revision` | unsynced | Push |
 | `revision > cloud_revision` | clean | Download and apply |
-| `revision > cloud_revision` | unsynced, **no cars** | **Auto-restore the cloud** (see below) |
+| `revision > cloud_revision` | unsynced, **world never driven** | **Auto-restore the cloud** (see below) |
 | `revision > cloud_revision` | unsynced | **Conflict → ask the player** |
 | `schema_version > SCHEMA_VERSION` | any | Refuse; do not push either |
 | blob unparseable | any | Report; never overwrite the remote copy |
 
 ### The one case that is resolved automatically: a wiped local save
 
-If both sides moved on but **this device has no cars at all**, there is no dilemma
-to put to the player — the local "progress" is a blank save (a reset, a clear, a
-reinstall), and the only thing taking the cloud can cost them is an empty garage.
+If both sides moved on but **this device's world has never been driven**, there is no
+dilemma to put to the player — the local "progress" is a blank save (a reset, a clear, a
+reinstall), and taking the cloud costs them nothing.
 Asking there is actively harmful: it presents a fresh blank profile as an equal
 alternative to a real career, and one mis-tap on "keep this device" uploads the
 blank straight over it. So `CloudSync.pull` takes the cloud copy itself
 (`_local_is_wiped() and _remote_has_progress(remote)` → `apply_remote(remote, true)`),
 still writing the `profile.json.conflict.bak` backup.
 
-**Keyed on CARS, not on `starter_picked`.** A car is the one thing a career cannot
-exist without — the starter pick grants one before anything else can happen — so an
-empty garage means the save is blank regardless of what other flags survived. It also
-covers the reported case exactly: signed in, progress gone, and the game happily
-offering a starter car while the real career sat in the cloud.
+**Keyed on map cells driven (`CloudSync.has_progress`), not cars or `drive_time`.**
+`title_boot.gd` builds a world and grants a starter car before the first pull can run, so a
+brand-new install always owns a car, and `drive_time` ticks even while the car sits parked.
+Every kind of real progress needs the car to have driven out of the cells around spawn.
 
 Both guards matter. A wiped local against a wiped **cloud** is a genuine
 nothing-to-choose-between and still prompts, and if `apply_remote` fails the code
@@ -229,7 +221,7 @@ so "will this take my cloud save with it?" has to be answered before the press, 
 after.
 
 The conflict prompt is a `ConfirmPopup` with legible summaries produced by
-`CloudSync.describe_profile` ("5 cars, 12 rallies completed") rather than raw
+`CloudSync.describe_profile` ("2 cars, 5 checkpoints, 40 min driven") rather than raw
 revision numbers:
 
 - **Keep this device** — push at `remote.revision + 1`, so the other device sees
@@ -332,7 +324,7 @@ It is the only host: two routes into one optional form is one more than the game
 Signed out: Google (hidden when unconfigured) / sign in with email / create an
 account. There is deliberately no "continue without an account" button — that is
 what closing the page does, and the Back button already says so. Signed in:
-identity, sync status, leaderboard name, Sync now, Sign out.
+identity, sync status, Sync now, Sign out.
 
 **Row budget.** A host that puts `AccountMenu` in a CENTRED `VBoxContainer` with its
 Back button BELOW the widget lets any content that overflows a small screen push Back
@@ -345,15 +337,9 @@ it adds has had to justify itself against it:
 - Sync status and "last synced" used to be two separate lines; they are now
   one row ("UP TO DATE · 12:34 UTC"), with graceful fallback to whichever half
   exists when the other is missing.
-- The leaderboard name used to be a `Label` row ("Online leaderboard name:
-  FELIX") sitting above the button that changes it — two rows saying the same
-  word twice. The name now rides directly on the button's own text
-  ("Leaderboard name: FELIX", or "Set a leaderboard name" when unset, with a
-  tooltip explaining what it does), collapsing the pair into one row.
 
 `tests/headless/test_account_menu.gd` asserts the signed-in view stays under a
-row-count bound for exactly this reason, and asserts the leaderboard name is
-reachable from a *button's* text rather than a label.
+row-count bound for exactly this reason.
 
 Signing out needs no confirm and **never touches the local profile**: nothing is
 destroyed, the career on the device carries on, and the cloud copy is reachable
@@ -437,15 +423,15 @@ Every `await Cloud.*` call site is bracketed by a shared busy state
 (`scripts/cloud/cloud_busy.gd`, `class_name CloudBusy`, static — no autoload). Before
 it existed each screen invented its own waiting UI or none: a player resolving a sync
 conflict tapped a button and got silence for the length of a full profile upload, and
-the completion-reward fetch at the end of a challenge run showed nothing at all.
+nothing at all showed while a call was in flight.
 
 Two shapes, chosen by what the call does:
 
 - **`CloudBusy.cover(host, title, step)`** — a blocking full-screen `LoadingScreen`,
-  for calls that rewrite the profile or gate progression: conflict resolution, the
-  boot restore, the challenge completion-reward fetch.
+  for calls that rewrite the profile or gate progression: conflict resolution and the
+  boot restore.
 - **`CloudBusy.ambient(host, text, container = null)`** — non-blocking, for reads
-  behind already-rendered UI (the account page's message row, the leaderboard fetches).
+  behind already-rendered UI (the account page's message row).
   With no `container` the host already draws its own waiting line and only the marker
   is added, so two lines never say the same thing.
 

@@ -291,9 +291,7 @@ func _complete() -> void:
 		_hud.show_stage_complete(_elapsed, _penalty_s)
 	# The timed run is over the instant the line is crossed; anything after this
 	# (the skid to a stop in the runoff, idling under the finish panel until NEXT)
-	# is NOT part of the driven run. Fire finish_reached so the replay recorder
-	# stops here rather than at stage_completed (the NEXT button), which would tack
-	# a stationary tail onto the recording. See features/event-replay.md.
+	# is NOT part of the driven run, hence a separate signal from stage_completed.
 	finish_reached.emit()
 
 

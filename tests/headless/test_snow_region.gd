@@ -270,16 +270,13 @@ func test_every_region_tree_texture_traces_to_a_solid_silhouette() -> void:
 func test_the_snowfall_condition_carries_no_grip_multiplier() -> void:
 	# The REGION owns grip in this corner, dry stages included. If snowfall also scaled
 	# mu, a snowy stage would be arbitrarily slipperier than a dry one on the same
-	# frozen ground — two levers over one variable. It must therefore also stay out of
-	# physics_fields, so it never re-keys the opponent cache for a change it cannot make.
+	# frozen ground — two levers over one variable.
 	var cfg: GameConfig = Config.data
 	assert_eq(WeatherLibrary.grip_mult(cfg, StageFields.WEATHER_SNOW), 1.0,
 		"snowfall does not touch grip")
 	var entry := WeatherLibrary.by_id(StageFields.WEATHER_SNOW)
 	assert_eq(String(entry.get("id", "")), StageFields.WEATHER_SNOW,
 		"setup: the snow condition is a real entry, not the dry fallback")
-	assert_eq(WeatherLibrary.physics_fields(entry), [],
-		"and names nothing that could change a lap time")
 
 
 # --- Per-species baseline proportions -------------------------------------------

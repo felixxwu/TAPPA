@@ -87,32 +87,6 @@ func test_grant_car_seeds_hp_from_library_max() -> void:
 
 # --- The meta shop: boost levels (todo/roguelike-pivot.md decision 42) -----------
 
-# --- Rally completion records: DELETED with the HQ map (nothing writes or reads a
-# rally record any more — region runs keep their own KEY_REGIONS_CLEARED ledger, and
-# the dev 3-star cheat is gone with the map it lit). The idempotent-best-time, DNF-guard
-# and best-placement tests went with the record.
-
-
-func test_wheel_toe_persists_and_survives_reload() -> void:
-	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	var id: int = car["instance_id"]
-	assert_eq(_save.get_car(id)["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "a fresh car has straight wheels")
-	_save.set_wheel_toe(id, [0.01, -0.02, 0.03, -0.04])
-	_save.save_now()
-	_save.profile = {}
-	_save.load_or_new()
-	assert_eq(_save.get_car(id)["wheel_toe"], [0.01, -0.02, 0.03, -0.04], "bent wheels reloaded from disk")
-
-
-# --- apply_field_repair_to: the ONE fraction pairing ---------------------------
-#
-# Every between-stage and final-stage repair in the game goes through this wrapper
-# so no caller picks its own fractions (it was folded here off RallySession). What
-# is pinned is the AGREEMENT with a hand-made field_repair at the config's own
-# fractions — not the fractions themselves, which are tunables.
-
-# --- apply_full_field_repair_to: the player-chosen full repair -----------------
-
 func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
 	# A pre-feature owned car has no wheel_toe key; load must backfill it straight.
 	_save.profile["cars"] = [{
@@ -177,25 +151,6 @@ func test_migration_backfills_missing_keys() -> void:
 	var migrated: Dictionary = _save._migrate(partial)
 	assert_true(migrated.has(_save.KEY_WORLD), "missing world block backfilled")
 	assert_true(migrated.has("settings"), "missing settings bag backfilled (old profiles)")
-
-
-func test_migration_backfills_username_on_an_older_profile() -> void:
-	# username (global leaderboards, features/global-leaderboards.md) rides the same
-	# key-backfill mechanism as cloud_revision/unsynced — no SCHEMA_VERSION bump, so
-	# an older, correctly-versioned profile that predates the field simply gets "".
-	var older := {"schema_version": _save.SCHEMA_VERSION, "cars": []}
-	assert_false(older.has("username"), "fixture predates the field")
-	var migrated: Dictionary = _save._migrate(older)
-	assert_true(migrated.has("username"), "username backfilled")
-	assert_eq(String(migrated["username"]), "", "backfilled default is empty")
-
-
-func test_username_survives_save_and_reload() -> void:
-	_save.profile["username"] = "KANGAROO"
-	_save.save_now()
-	_save.profile = {}
-	_save.load_or_new()
-	assert_eq(String(_save.profile["username"]), "KANGAROO", "username reloaded")
 
 
 func test_settings_get_set_round_trip() -> void:
@@ -443,7 +398,7 @@ func test_every_persisted_key_written_is_declared_in_the_default_profile() -> vo
 		+ "existing profiles from _default_profile() alone, so an undeclared key is missing "
 		+ "from every fresh and every migrated profile until something happens to write it. "
 		+ "A `.get(key, 0)` reader hides this completely and no test will catch it. "
-		+ "See the `cloud_revision` / `username` comments for the shape to copy.")
+		+ "See the `cloud_revision` comment for the shape to copy.")
 
 
 func test_a_retired_key_already_on_disk_is_not_reported() -> void:

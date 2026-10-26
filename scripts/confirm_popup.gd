@@ -10,8 +10,8 @@ extends CanvasLayer
 
 signal finished()
 
-# ONE MODAL AT A TIME, TREE-WIDE. Every modal in the game is either a ConfirmPopup
-# or a UsernamePopup (which joins this same group), and they all sit on layer 101 —
+# ONE MODAL AT A TIME, TREE-WIDE. Every modal in the game is a ConfirmPopup on
+# layer 101 —
 # so two of them on screen at once is never a design, always a bug: the top one
 # hides the other, dismissing it "does nothing" except reveal a twin with the focus
 # cursor reset.

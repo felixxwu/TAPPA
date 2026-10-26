@@ -29,7 +29,7 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 | `dropped` | the money left at the last wreck, `{pos: [x, y, z], money: n}`, or `{}` (`dropped` / `set_dropped`) |
 | `stash`, `collected`, `revealed` | every part bought (any car can fit it), coin spots taken, rings whose stock is on sale ([loot.md](loot.md)) |
 
-- **New world** (`new_world`): a fresh seed and a starter car. It replaces the old world **and the
+- **New world** (`new_world`): the fixed island seed (`FreeRoamSettings.world_seed`) and a starter car. It replaces the old world **and the
   old owned cars**, because a world is the whole save.
 - **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints).
 - **Schema:** `Save.SCHEMA_VERSION` is 8. Every v7 (roguelike) profile is refused, not migrated,

@@ -29,7 +29,7 @@ func _init(label_text: String, placeholder := "", secret := false) -> void:
 	add_theme_constant_override("separation", UITheme.GAP_TIGHT)
 
 	_label = UITheme.label(label_text, "dim")
-	_label.add_theme_font_size_override("font_size", UITheme.px(14))
+	_label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	add_child(_label)
 
 	line = LineEdit.new()

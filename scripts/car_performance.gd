@@ -129,8 +129,7 @@ static func merged_meta(owned_car: Dictionary, base_meta: Dictionary) -> Diction
 
 
 # The GameConfig fingerprint every memoised rating is keyed under. Public so other caches
-# built on the rating (CarStatBounds) can invalidate on exactly the same signal rather
-# than inventing a second, drifting one.
+# built on the rating can invalidate on exactly the same signal.
 static func config_key() -> String:
 	return _config_key()
 

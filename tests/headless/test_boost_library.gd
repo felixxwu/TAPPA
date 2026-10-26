@@ -1,7 +1,7 @@
 extends GutTest
 # BoostLibrary (scripts/boost_library.gd) — the parts catalogue free-roam loot is made of
 # (features/loot.md: a part is a boost id found at a level), and its level scaling
-# (magnitude_for / current_effect_text).
+# (magnitude_for).
 #
 # Per CLAUDE.md nothing here may pin a shipped magnitude (run_boost_mass_mult,
 # boost_level_magnitude_step and friends are GameConfig tunables a designer retunes
@@ -45,7 +45,7 @@ func test_every_catalogue_cfg_field_is_a_real_config_property() -> void:
 					"boost '%s' reads GameConfig.%s, which does not exist" % [id, cfg_field])
 
 
-# --- Level scaling: magnitude_for / current_effect_text ------------------------------
+# --- Level scaling: magnitude_for ------------------------------
 
 # A higher level pushes the magnitude further AWAY from baseline, in the direction the
 # catalogue entry's own `level_direction` names — never toward it and never past a sign
@@ -66,14 +66,14 @@ func test_a_higher_level_pushes_the_magnitude_further_in_its_authored_direction(
 
 
 # The one number a catalogue entry's level ladder actually moves: its first effect key's
-# value, or — for a dict-shaped entry (turbo/supercharger) — the sub-field named by
-# `display_subfield`, the one sub-field `scaled_subfields` marks as level-scaled.
+# value, or — for a dict-shaped entry (turbo/supercharger) — its first level-scaled
+# sub-field from `scaled_subfields`.
 func _leveled_scalar(id: String, level: int) -> float:
 	var entry: Dictionary = BoostLibrary.CATALOGUE[id]
 	var effect_key := String((entry["effect_fields"] as Dictionary).keys()[0])
 	var value: Variant = BoostLibrary.magnitude_for(id, level)[effect_key]
 	if value is Dictionary:
-		return float((value as Dictionary)[String(entry.get("display_subfield", ""))])
+		return float((value as Dictionary)[String((entry["scaled_subfields"] as Array)[0])])
 	return float(value)
 
 
@@ -125,19 +125,6 @@ func test_level_scale_never_crosses_zero_however_extreme_the_step() -> void:
 		"an extreme positive-direction climb still yields a positive scale")
 
 
-# WHAT THE SHOP CARD SAYS A BOOST DOES. The figure is the boost's effect ON THE CAR at a
-# given level, NOT how far that level pushed the magnitude — see current_effect_text's own
-# header for why the latter is wrong (it renders every un-upgraded boost as "+0%", i.e. as
-# doing nothing). So the contract at level 0 is the opposite of a no-op: the bare
-# GameConfig magnitude still has to read as a real effect.
-func test_current_effect_text_at_level_zero_still_reports_a_real_effect() -> void:
-	Config.data.boost_level_magnitude_step = 0.3  # a level step must not be what makes it non-zero
-	for id in BoostLibrary.CATALOGUE:
-		var text := BoostLibrary.current_effect_text(id, 0)
-		assert_ne(text, "", "'%s' at level 0 has something to say" % id)
-		assert_ne(text, "+0%", "'%s' at level 0 does not claim to do nothing" % id)
-
-
 # A "mult" (or "mult_floor" — same ratio semantics before any clamp; magnitude_for never
 # applies the floor, only apply()/effective_meta() do) boost's base magnitude must push
 # the SAME WAY its level ladder does: a lightweight kit whose mass_mult_floor sat above
@@ -162,119 +149,6 @@ func test_a_multiplier_boosts_base_magnitude_pushes_the_way_its_levels_do() -> v
 					"'%s' lowers %s, matching its -1 level_direction" % [id, effect_key])
 
 
-# A multiplier boost reads as a signed percentage, and the sign follows level_direction
-# (which the test above pins to the magnitude's own side of 1.0).
-func test_a_multiplier_boost_reads_as_a_signed_percentage() -> void:
-	for id in BoostLibrary.CATALOGUE:
-		if not _is_percentage_display(id):
-			continue
-		var direction := int((BoostLibrary.CATALOGUE[id] as Dictionary).get("level_direction", 1))
-		var text := BoostLibrary.current_effect_text(id, 0)
-		assert_true(text.ends_with("%"), "'%s' is expressed as a percentage" % id)
-		if direction > 0:
-			assert_true(text.begins_with("+"), "'%s' shows a '+' sign" % id)
-		else:
-			assert_true(text.begins_with("-"), "'%s' shows a '-' sign" % id)
-
-
-# An "add" or "set" boost has no baseline to be a percentage OF (downforce stacks on the
-# car's own; shift time replaces it), so it reports an absolute figure carrying the
-# catalogue entry's authored unit instead — never a fabricated percentage. Induction
-# entries (turbo/supercharger) are their OWN third shape — see the dedicated test below —
-# so they're excluded here rather than made to satisfy "has a unit, no percentage".
-func test_an_additive_or_set_boost_reads_as_an_absolute_figure_with_its_unit() -> void:
-	var checked := 0
-	for id in BoostLibrary.CATALOGUE:
-		if _is_percentage_display(id) or _is_induction(id):
-			continue
-		var unit := String((BoostLibrary.CATALOGUE[id] as Dictionary).get("unit", ""))
-		assert_ne(unit, "", "'%s' authors a display unit for its non-mult effect" % id)
-		var text := BoostLibrary.current_effect_text(id, 0)
-		assert_false(text.contains("%"),
-			"'%s' does not invent a percentage it has no baseline for" % id)
-		assert_true(text.ends_with(unit), "'%s' carries its unit (%s)" % [id, unit])
-		checked += 1
-	assert_gt(checked, 0, "the catalogue still has a non-mult entry for this to cover")
-
-
-# The aero kit drives BOTH axles off one GameConfig field, so the two effect keys resolve
-# to the same number — the card shows that figure once, not twice.
-func test_an_entry_driving_several_effect_keys_off_one_field_shows_one_figure() -> void:
-	for id in BoostLibrary.CATALOGUE:
-		var magnitude := BoostLibrary.magnitude_for(id, 0)
-		if magnitude.size() < 2:
-			continue
-		var distinct := {}
-		for effect_key in magnitude:
-			distinct[float(magnitude[effect_key])] = true
-		if distinct.size() > 1:
-			continue  # genuinely different numbers SHOULD both be shown
-		assert_false(BoostLibrary.current_effect_text(id, 0).contains("/"),
-			"'%s' de-duplicates its identical per-key figures" % id)
-
-
-func test_current_effect_text_is_blank_for_an_unknown_id() -> void:
-	assert_eq(BoostLibrary.current_effect_text("not_a_real_boost", 2), "")
-
-
-# True when every effect key a catalogue entry drives is a "mult" row — the entries whose
-# figure is a percentage AND which genuinely compound on repeat (stacks() is true). Read
-# off UpgradeLibrary.EFFECTS rather than hardcoded here, so a retyped or newly added row
-# is classified correctly without editing this file. Deliberately does NOT include
-# "mult_floor" (Lightweight parts) — see _is_percentage_display below for why that's a
-# separate grouping.
-func _is_pure_mult(id: String) -> bool:
-	for effect_key in BoostLibrary.magnitude_for(id, 0):
-		var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
-		if String(desc.get("op", "mult")) != "mult":
-			return false
-	return true
-
-
-# True when every effect key a catalogue entry drives renders as a PERCENTAGE
-# (current_effect_text's default arm) — "mult" and "mult_floor" both. Wider than
-# _is_pure_mult on purpose: "mult_floor" (Lightweight parts) is still fundamentally a
-# percentage-off-baseline for display, just clamped so it can't push past a floor, and
-# that clamp is a simulation detail current_effect_text has no reason to surface as a
-# separate absolute figure — but it is NOT a "mult" for stacking purposes (it does NOT
-# compound; see BoostLibrary.stacks), so the stacking tests use _is_pure_mult, not this.
-func _is_percentage_display(id: String) -> bool:
-	for effect_key in BoostLibrary.magnitude_for(id, 0):
-		var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
-		var op := String(desc.get("op", "mult"))
-		if op != "mult" and op != "mult_floor":
-			return false
-	return true
-
-
-# True for a dict-shaped entry (turbo/supercharger) — current_effect_text's third shape,
-# neither a plain mult/add/set figure.
-func _is_induction(id: String) -> bool:
-	for effect_key in BoostLibrary.magnitude_for(id, 0):
-		if BoostLibrary.magnitude_for(id, 0)[effect_key] is Dictionary:
-			return true
-	return false
-
-
-# An induction boost's text is a signed percentage (its one scaled sub-field, the boost
-# gain, as a swing) with its authored suffix — its own shape, distinct from both a mult
-# entry's baseline-relative percentage and an add/set entry's absolute-with-unit figure.
-func test_an_induction_boost_reads_as_a_signed_percentage_with_its_suffix() -> void:
-	var checked := 0
-	for id in BoostLibrary.CATALOGUE:
-		if not _is_induction(id):
-			continue
-		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
-		var suffix := String(entry.get("display_suffix", ""))
-		var text := BoostLibrary.current_effect_text(id, 0)
-		assert_true(text.begins_with("+"), "'%s' shows a '+' sign" % id)
-		assert_true(text.contains("%"), "'%s' is expressed as a percentage" % id)
-		if not suffix.is_empty():
-			assert_true(text.ends_with(suffix), "'%s' carries its display suffix" % id)
-		checked += 1
-	assert_gt(checked, 0, "the catalogue has an induction entry for this to cover")
-
-
 #
 # region_run_mode.gd feeds this arbitrary ids — the boost catalogue's own ids plus a
 # "drivetrain:<mode>" pseudo-id — so these tests deliberately use a synthetic pool
@@ -296,37 +170,6 @@ func test_blurb_for_is_never_blank_for_a_real_id() -> void:
 
 func test_label_for_falls_back_to_the_id_when_unknown() -> void:
 	assert_eq(BoostLibrary.label_for("ghost_boost"), "ghost_boost")
-
-
-# --- stacks() — the mid-run repeat guard's seam -----------------------------------
-
-# A "set" or "install_induction" entry overwrites the same value on every pick, and a
-# "mult_floor" entry clamps straight back to the same floor — so a second pick does
-# nothing more than the first, in all three cases.
-func test_stacks_is_false_for_a_set_or_induction_entry() -> void:
-	for id in BoostLibrary.CATALOGUE:
-		var entry: Dictionary = BoostLibrary.CATALOGUE[id]
-		var has_non_stacking_op := false
-		for effect_key in (entry["effect_fields"] as Dictionary):
-			var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
-			if op == "set" or op == "install_induction" or op == "mult_floor":
-				has_non_stacking_op = true
-		if has_non_stacking_op:
-			assert_false(BoostLibrary.stacks(id), "'%s' does not stack" % id)
-
-
-# A "mult" or "add" entry compounds with itself across repeats.
-func test_stacks_is_true_exactly_for_entries_whose_effects_all_mult_or_add() -> void:
-	for id in BoostLibrary.CATALOGUE:
-		var stacking := true
-		for effect_key in BoostLibrary.CATALOGUE[id]["effect_fields"]:
-			var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
-			stacking = stacking and (op == "mult" or op == "add")
-		assert_eq(BoostLibrary.stacks(id), stacking, "'%s' stacks only if every effect is mult/add" % id)
-
-
-func test_stacks_defaults_true_for_an_unknown_id() -> void:
-	assert_true(BoostLibrary.stacks("not_a_real_boost"))
 
 
 # Regression: picking the turbo/supercharger boost mid-run used to enable the physics

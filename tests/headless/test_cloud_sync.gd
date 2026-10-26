@@ -64,6 +64,9 @@ func _remote_profile(cars: int = 1) -> Dictionary:
 	var p: Dictionary = _save._default_profile()
 	p["starter_picked"] = true
 	p["cars"] = []
+	if cars > 0:
+		p[Save.KEY_WORLD] = {"seed": 1, "lit": [0, 4], "drive_time": 600.0,
+			"driven": {"0,0": true, "1,0": true, "2,0": true, "3,0": true}}
 	for i in cars:
 		# Synthetic fixture cars, never real catalogue entries: this test is about
 		# sync, and the shipped roster must stay free to change without breaking it.
@@ -98,21 +101,24 @@ func test_a_document_without_a_profile_field_is_unreadable() -> void:
 	assert_true(CloudSync.from_document("nonsense").is_empty())
 
 
-func test_profile_description_counts_cars() -> void:
-	# (The completed-rallies half is deleted with the rally record — a profile's
-	# summary no longer counts podiums nothing writes any more.)
-	var described := CloudSync.describe_profile({"cars": [{}, {}, {}]})
+func test_profile_description_counts_cars_checkpoints_and_drive_time() -> void:
+	var described := CloudSync.describe_profile({"cars": [{}, {}, {}],
+		Save.KEY_WORLD: {"lit": [0, 4], "drive_time": 600.0}})
 	assert_string_contains(described, "3 cars")
+	assert_string_contains(described, "2 checkpoints")
+	assert_string_contains(described, "10 min")
 
 
 # --- The conflict matrix ------------------------------------------------------
 
-# Give THIS device a car, so it reads as a real career rather than a wiped save.
-# Load-bearing for every conflict test below: a local profile with no cars is
+# Give THIS device a driven world, so it reads as a real career rather than a wiped save.
+# Load-bearing for every conflict test below: a local profile never driven is
 # auto-restored from the cloud without asking (see the wiped-local tests at the
 # bottom of this file), so a fixture that omits cars would never reach the prompt.
 func _seat_local_career() -> void:
-	_save.profile["cars"] = _remote_profile(1)["cars"]
+	var career := _remote_profile(1)
+	_save.profile["cars"] = career["cars"]
+	_save.profile[Save.KEY_WORLD] = career[Save.KEY_WORLD]
 
 func test_no_cloud_document_uploads_the_local_profile() -> void:
 	_rest.queue_error(404)
@@ -603,11 +609,24 @@ func test_no_prompt_is_raised_when_there_is_no_conflict() -> void:
 
 
 # --- The wiped-local auto-restore ------------------------------------------------
-# A conflict where this device has NO CARS is not a real dilemma: the local side is
-# a blank save, so the only thing "keep this device" could preserve is an empty
-# garage — and one mis-tap there uploads the blank over a real career. Reported by a
-# player: signed in, progress gone, offered a starter car while the career sat in
-# the cloud. Keyed on cars because a career cannot exist without one.
+# A conflict where this device's world was never driven is not a real dilemma: one
+# mis-tap on "keep this device" would upload the blank over a real career. Reported by
+# a player: signed in, progress gone, while the career sat in the cloud.
+
+func test_a_new_install_with_its_boot_built_world_takes_the_cloud() -> void:
+	# Boot builds a world and grants a starter car before the first pull can run.
+	_save.profile["cloud_revision"] = 1
+	_save.profile["cars"] = _remote_profile(1)["cars"]
+	# Idled a while at spawn: the clock ran, but the car never left the cells around it.
+	_save.profile[Save.KEY_WORLD] = {"seed": 1, "lit": [0], "drive_time": 90.0, "driven": {"0,0": true}}
+	_save.save()
+	watch_signals(_sync)
+	_rest.queue_ok(_remote_doc(9, _remote_profile(3)))
+
+	var result: Dictionary = await _sync.pull()
+
+	assert_eq(result.state, "applied", "a world never driven is not progress worth asking about")
+	assert_signal_not_emitted(_sync, "conflict_detected")
 
 func test_a_wiped_local_takes_the_cloud_without_asking() -> void:
 	_save.profile["cloud_revision"] = 1
@@ -657,7 +676,7 @@ func test_a_local_career_still_gets_the_prompt() -> void:
 	# The guard must not swallow ordinary conflicts — this is the case where the
 	# player genuinely has something to lose on both sides.
 	_save.profile["cloud_revision"] = 1
-	_save.profile["cars"] = _remote_profile(1)["cars"]
+	_seat_local_career()
 	_save.save()
 	watch_signals(_sync)
 	_rest.queue_ok(_remote_doc(9, _remote_profile(3)))
@@ -694,7 +713,7 @@ func test_publishing_a_wipe_discards_a_pending_conflict() -> void:
 	# The local side of that decision no longer exists, so keeping the prompt alive
 	# would offer a choice between the cloud and a save just deleted on purpose.
 	_save.profile["cloud_revision"] = 1
-	_save.profile["cars"] = _remote_profile(1)["cars"]
+	_seat_local_career()
 	_save.save()
 	_rest.queue_ok(_remote_doc(9, _remote_profile(3)))
 	await _sync.pull()

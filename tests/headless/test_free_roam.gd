@@ -602,6 +602,23 @@ func test_spawn_is_the_first_rest_stop() -> void:
 	assert_eq(sites.pos[0], Vector2.ZERO)
 
 
+# in_box reads a cell index rather than every site; it must find exactly what a full scan does.
+func test_in_box_finds_exactly_the_sites_a_full_scan_does() -> void:
+	var sites := _sited(_settings()).sites
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for n in 40:
+		var c := Vector2(rng.randf_range(-3000.0, 3000.0), rng.randf_range(-3000.0, 3000.0))
+		var half := rng.randf_range(10.0, 400.0)
+		var want := PackedInt32Array()
+		for i in sites.kind.size():
+			var p := sites.pos[i]
+			var r := sites.radius[i]
+			if p.x + r >= c.x - half and p.x - r <= c.x + half and p.y + r >= c.y - half and p.y - r <= c.y + half:
+				want.append(i)
+		assert_eq(sites.in_box(c.x - half, c.y - half, c.x + half, c.y + half), want)
+
+
 # Spawn's direction runs down a road leaving spawn, and its cabin stands the other way.
 func test_spawn_faces_down_the_road_out_with_its_cabin_behind() -> void:
 	var terrain := _sited(_settings())

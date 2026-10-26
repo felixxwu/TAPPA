@@ -4,8 +4,8 @@ extends VBoxContainer
 # Tests: tests/headless/test_drivetrain.gd, tests/headless/test_tuning_panel.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'TuningPanel' tests/headless/` and read the assertions that pin what you are about to change (4 test files touch this script).
 # Reusable per-car TUNING slider panel — the three handling axes (grip balance,
 # brake bias, aero balance). Owns its sliders and Save persistence; reports edits
-# via on_change so the host can re-field the car. Used by the start-line pre-event menu
-# (start_line.gd). Engine detune is a power (p/w) knob, so its slider lives wherever the
+# via on_change so the host can re-field the car. Hosted by the rest stop page
+# (rest_stop_page.gd). Engine detune is a power (p/w) knob, so its slider lives wherever the
 # host draws one, not here. See features/tuning.md.
 
 var _owned: Dictionary = {}
@@ -33,7 +33,7 @@ func setup(owned_car: Dictionary, on_change := Callable(), on_wheels := Callable
 		_build()
 		_built = true
 	# Wheels only makes sense where the host actually wired somewhere to send it; the
-	# start line passes no on_wheels, so hide it rather than show a button that does
+	# rest stop page passes no on_wheels, so hide it rather than show a button that does
 	# nothing.
 	_wheels_button.visible = _on_wheels.is_valid()
 

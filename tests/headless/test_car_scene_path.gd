@@ -11,9 +11,6 @@ extends GutTest
 # `Scenes.CAR` (or `Scenes.car_scene()` where a PackedScene is wanted — `preload()` cannot
 # take a const reference, so the three former preload sites use the cached accessor).
 #
-# tools/bake_car_silhouettes.gd deliberately keeps its own literal and is NOT scanned here:
-# it runs via `-s` and is compiled before the SceneTree and autoloads exist, so referencing
-# `Scenes` there fails to compile (scenes.gd transitively pulls in the Config autoload).
 
 const SCRIPTS_DIR := "res://scripts"
 const LITERAL := "res://car.tscn"

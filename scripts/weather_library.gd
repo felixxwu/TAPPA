@@ -3,8 +3,7 @@ extends RefCounted
 # The authored catalogue of WEATHER CONDITIONS — the single source of truth for what
 # each condition IS, in the style of CarLibrary.CARS / RallyLibrary.RALLIES /
 # RegionLibrary.REGIONS. Every consumer (tyre grip, the rival lap-time model, the
-# world look, the particle field, the loading-screen tell, the opponent-cache
-# fingerprint) reads THIS table; none of them may test `== WEATHER_x` any more.
+# world look, the particle field, the loading-screen tell) reads THIS table; none of them may test `== WEATHER_x` any more.
 #
 # Before this table the system was shaped for two states and had grown to three, with
 # a parallel `if weather == …` chain in five different files that all had to be kept
@@ -47,8 +46,7 @@ extends RefCounted
 #   "wind"           Dict    — a LATERAL CROSSWIND force on the car body, mapping
 #                              "strength"/"gust"/"dir_deg" to GameConfig fields (see
 #                              WIND_KEYS). Omitted => no wind force at all. Read by
-#                              the crosswind force in car.gd; folded into
-#                              physics_fields() because it changes how the car drives.
+#                              the crosswind force in car.gd.
 #   "headlights"     String  — GameConfig field holding the STRENGTH (0..1) of the fake
 #                              headlight cone this condition switches on. Omitted => the
 #                              car's lights are off and every cone uniform is a
@@ -57,28 +55,21 @@ extends RefCounted
 #                              the headlight_* config block, NOT here — only how hard it
 #                              burns is per-condition, because the cone is ADDED to a
 #                              light term whose brightness differs per condition. Read by
-#                              HeadlightCone; cosmetic, so it is not in physics_fields().
+#                              HeadlightCone; cosmetic.
 #   "foliage_wind"   String  — GameConfig field holding the tree-sway strength for
 #                              this condition. Omitted => the shared base
 #                              (foliage_wind_strength), which is deliberately the
 #                              case for every condition but the stormy ones: wind
 #                              reads the SAME everywhere except in a storm, where it
-#                              authors higher. Read by WindSway; purely cosmetic, so
-#                              it is not in physics_fields() — trees rustling harder
-#                              changes no lap time.
+#                              authors higher. Read by WindSway; purely cosmetic.
 #   "lightning"      Dict    — an occasional cosmetic flash, mapping "flash"/
 #                              "duration"/"interval_min"/"interval_max" to GameConfig
 #                              fields (see LIGHTNING_KEYS). Omitted => no flashes.
-#                              Read by world.gd._start_lightning. Cosmetic, so it is
-#                              NOT in physics_fields() and retuning it never forces a
-#                              cache rebake.
+#                              Read by world.gd._start_lightning. Cosmetic.
 #
 # ADDING A CONDITION: add its GameConfig fields to game_config.gd + game_config.tres,
 # add one entry here naming them, and author `"weather": "<id>"` on the events that
-# should run it. No consumer changes. Adding a condition (or any structural edit here)
-# re-keys the opponent cache automatically, as does retuning any value that can change
-# a LAP TIME — see physics_fields() for the rule on which values those are, and why
-# purely cosmetic ones deliberately do not force a rebake.
+# should run it. No consumer changes.
 
 # The environment knobs a "look" block may supply, each mapped to a GameConfig field
 # name. A look block authors ALL of these or none — world.gd._apply_weather_look
@@ -210,9 +201,7 @@ const CONDITIONS: Array[Dictionary] = [
 	# It deliberately authors NO grip_mult. The snow REGION already owns grip for every
 	# stage in that corner, dry or not, so a weather multiplier here would be a second,
 	# redundant lever over the same variable — and would make a snowfall stage
-	# arbitrarily slipperier than a dry stage on the same frozen ground. Consequence,
-	# and it is the correct one: snowfall names nothing in physics_fields, so it never
-	# re-keys the opponent cache, because it changes no lap time.
+	# arbitrarily slipperier than a dry stage on the same frozen ground.
 	#
 	# Like fog, this is a BRIGHT condition — a white-out, not a dusk. The common
 	# mistake is authoring it dark.
@@ -240,9 +229,7 @@ const CONDITIONS: Array[Dictionary] = [
 	#
 	# Note what is ABSENT, and that this is the point: no "grip_mult" (μ is exactly 1.0,
 	# as dry — night is a visibility condition, not a grip one), no "wind", no
-	# "particles" (no field is constructed at all), no "lightning". It therefore names
-	# nothing in physics_fields(), so it changes no lap time, needs no rebalancing and
-	# never invalidates the opponent cache.
+	# "particles" (no field is constructed at all), no "lightning". It therefore changes no lap time.
 	#
 	# The cone's SHAPE fields (headlight_*) are deliberately NOT named here: they are
 	# shared by every condition that switches the lights on and are driven per-frame as
@@ -271,16 +258,6 @@ const CONDITIONS: Array[Dictionary] = [
 		# happening UNDER the region's sky while night replaces it outright. Applied
 		# after the region look, so it overrides whatever the region chose.
 		"sky_panorama": "night_sky_panorama",
-		# Marks night as the one condition whose ground darkening is worth RE-BAKING
-		# terrain vertex colours for, rather than only a road_tint uniform -- see
-		# features/terrain.md -> "Dual day/night bake". A plain bool, not a field name
-		# (there is no per-condition tuning here, just an opt-in flag): night bakes
-		# near-black (night_sun_energy_mult sits at the bottom of its range), while every
-		# other dimmed-day condition (rain/storm/sand/mist) is carried well enough by its
-		# existing road_tint. OPTIONAL and unique to night -- no consumer of this table
-		# reads it besides menu_showcase.gd, and it names no GameConfig field, so it is
-		# NOT in config_fields()/physics_fields() and cannot re-key the opponent cache.
-		"terrain_relight": true,
 	},
 ]
 
@@ -348,13 +325,11 @@ static func wet_ids() -> Array:
 const ROAD_TINT_KEYS := ["amount", "color"]
 
 # Sub-keys of a "wind" block, in a stable order — the GameConfig fields the crosswind
-# body force reads. Part of physics_fields() because wind CHANGES HOW THE CAR DRIVES,
-# so retuning it must re-key the opponent cache like a grip change does.
+# body force reads.
 const WIND_KEYS := ["strength", "gust", "dir_deg"]
 
 # Sub-keys of a "lightning" block. Like the look/particle/road-tint keys it is
-# cosmetic, so it is listed by config_fields() but NOT by physics_fields() — see the
-# rule stated there.
+# cosmetic.
 const LIGHTNING_KEYS := ["flash", "duration", "interval_min", "interval_max"]
 
 static var _seam := Registry.Seam.new(CONDITIONS)
@@ -408,8 +383,7 @@ static func headlight_amount(cfg: GameConfig, id: String) -> float:
 
 
 # Every GameConfig field name this entry references, in a stable order — the entry's
-# full surface, used for validation and by tests. NOT what keys the opponent cache:
-# see physics_fields() for that, and the rule it states.
+# full surface, used for validation and by tests.
 static func config_fields(entry: Dictionary) -> Array:
 	var out: Array = []
 	for key in ["grip_mult", "particle_count", "wind_dir", "particle_speed", "headlights", "foliage_wind"]:
@@ -440,44 +414,3 @@ static func config_fields(entry: Dictionary) -> Array:
 		if not unique.has(field):
 			unique.append(field)
 	return unique
-
-
-# The GameConfig fields of this entry that can change a LAP TIME, in a stable order:
-# the grip multiplier and the wind block. THIS is what keys the opponent cache.
-#
-# THE RULE, stated once: a weather value belongs here if and only if it changes how
-# fast the stage can be driven. Grip scales every rival's target time directly; wind
-# is a real body force on the car. EVERYTHING ELSE IS LOOK — the particle count, every
-# colour and fog value in the "look" block, the road tint, the lightning flash — and
-# must stay out, because folding it in would mean a full multi-minute ./cache_all.sh
-# rebake of all 86 rallies' rival fields every time someone nudges a colour.
-#
-# The safety net for the case this could get wrong (a NEW condition, or a new key on
-# one, that does affect times) is fingerprint()'s `str(all())`: any edit to the table's
-# STRUCTURE re-keys the cache regardless of what this function returns.
-static func physics_fields(entry: Dictionary) -> Array:
-	var out: Array = []
-	var grip := String(entry.get("grip_mult", ""))
-	if grip != "":
-		out.append(grip)
-	var wind: Dictionary = entry.get("wind", {})
-	for key in WIND_KEYS:
-		if wind.has(key):
-			var field := String(wind[key])
-			if not out.has(field):
-				out.append(field)
-	return out
-
-
-# A hash of the WHOLE weather table plus every value it names that can change a lap
-# time (physics_fields — see the rule there). Deliberately not a list of
-# individual fields: adding a condition, adding a key to one, or retuning any
-# time-affecting value it points at all change this string automatically, so a new
-# condition can never silently change a stage's weather physics unnoticed. Costs one
-# hash on a memoised path, not per rally.
-static func fingerprint(cfg: GameConfig) -> String:
-	var parts := PackedStringArray([str(all())])
-	for entry in all():
-		for field in physics_fields(entry):
-			parts.append("%s=%s" % [field, cfg.get(field)])
-	return "|".join(parts).sha256_text().substr(0, 16)

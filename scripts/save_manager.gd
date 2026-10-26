@@ -61,7 +61,7 @@ signal flushed()
 #     schema bumps for one demolition and no single point where "old" became well-defined.
 #   - `_migrate()` still backfills any KEY MISSING off a correctly-versioned (current
 #     SCHEMA_VERSION) profile from `_default_profile()` — that half is unrelated to
-#     migration and stays exactly as it works for `cloud_revision` / `username` today.
+#     migration and stays exactly as it works for `cloud_revision` today.
 # 8: the free-roam pivot (todo/2026-10-19-free-roam-pivot.md decision 26) — one persistent
 # world per save (KEY_WORLD). Every v7 profile is refused and the player starts a new world.
 const SCHEMA_VERSION := 8
@@ -522,11 +522,6 @@ func _default_profile() -> Dictionary:
 		# The one persistent free-roam world, {} until New World (WorldSession).
 		KEY_WORLD: {},
 		"settings": {},
-		# --- Star ledger: DELETED (todo/roguelike-pivot.md decision 21) ---
-		# `stars_earned` / `stars_spent` are gone outright, not migrated: the pivot replaced
-		# stars wholesale with RR-style money (KEY_MONEY above -- per-stage payout, a
-		# fast-completion bonus and mid-stage coins; see the pivot doc's Economy section).
-		# Do NOT reintroduce a "stars_earned"/"stars_spent" pair.
 		# --- Optional cloud save (see features/cloud-save.md) ---
 		# The Firestore document revision this profile last agreed with. 0 means
 		# "never synced". Both fields are backfilled by _migrate's key backfill,
@@ -541,12 +536,6 @@ func _default_profile() -> Dictionary:
 		# after a restart, otherwise the next pull would see "cloud is ahead,
 		# local is clean" and quietly discard a whole offline session.
 		"unsynced": false,
-		# Display name posted with a global stage-leaderboard entry (see
-		# features/global-leaderboards.md). "" until the player names themselves on
-		# first post. Backfilled by _migrate's key backfill like cloud_revision/
-		# unsynced above, so no SCHEMA_VERSION bump — and it rides the existing
-		# cloud-save sync to the player's other devices for free.
-		"username": "",
 	}
 
 
@@ -559,7 +548,7 @@ func _default_profile() -> Dictionary:
 # `_migrate` now does exactly two things: refuse anything that is not EXACTLY the current
 # schema (older or newer — both are "not what this build understands"), and backfill any
 # key a correctly-versioned but partial file is missing, which is unrelated to migration
-# and works exactly as it always has for `cloud_revision` / `username` / any other key
+# and works exactly as it always has for `cloud_revision` / any other key
 # added without a version bump.
 func _migrate(p: Dictionary) -> Dictionary:
 	if int(p.get("schema_version", 0)) != SCHEMA_VERSION:
@@ -573,14 +562,7 @@ func _migrate(p: Dictionary) -> Dictionary:
 
 # --- Owned-car mutators ------------------------------------------------------
 
-# Grant a new owned-car instance referencing a CarLibrary model id. Returns the
-# new OwnedCar dict.
-# Does the garage already hold a car of this catalogue model? Used to keep a prize rally
-# from minting a duplicate (rally_session), and deliberately model-keyed rather than
-# instance-keyed: two of the same car is the thing worth preventing, not two instance ids.
-#
-# HEALTH IS IGNORED on purpose — a battered car is still a car the player owns, and under
-# the current damage model any car can be repaired back to full.
+# Does the garage already hold a car of this catalogue model (whatever its health)?
 func owns_model(model_id: String) -> bool:
 	for car in profile.get(KEY_CARS, []):
 		if String((car as Dictionary).get("model_id", "")) == model_id:
@@ -588,6 +570,8 @@ func owns_model(model_id: String) -> bool:
 	return false
 
 
+# Grant a new owned-car instance referencing a CarLibrary model id. Returns the
+# new OwnedCar dict.
 func grant_car(model_id: String) -> Dictionary:
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", 1000.0) if not entry.is_empty() else 1000.0
@@ -617,17 +601,6 @@ func get_car(instance_id: int) -> Dictionary:
 	return {}
 
 
-# Persist a car's per-wheel damage misalignment (radians, ordered like
-# DamageModel.WHEEL_NAMES). Written at each event boundary alongside apply_damage so
-# a car carries its bent wheels between events (features/damage.md).
-func set_wheel_toe(instance_id: int, toe: Array) -> void:
-	var car := get_car(instance_id)
-	if car.is_empty():
-		return
-	car["wheel_toe"] = toe.duplicate()
-	save()
-
-
 # The free-roam parts fitted to a car (LootRules items; see features/loot.md).
 func set_car_parts(instance_id: int, parts: Array) -> void:
 	var car := get_car(instance_id)
@@ -643,16 +616,6 @@ func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 		return
 	car["tuning"] = tuning.duplicate(true)
 	save()
-
-
-# set_wheels is DELETED (its TuningPanel host route is gone — no caller passes an
-# on_wheels callback, so the write path was unreachable). The per-car "wheels" key
-# READ path stays: car.gd still resolves a saved style for cars in existing profiles.
-
-# swap_engines / set_engine_detune are DELETED: the Engine Swap is a mid-run boost
-# (BoostLibrary "engine_swap") now, and the garage-lift UI that wrote these keys is gone
-# with the HQ. The per-car "swapped_engine" / "tuning.engine_detune" READ paths stay
-# (CarLibrary.apply_owned) so cars in existing profiles still resolve their engines.
 
 
 # --- Player settings (device/UI preferences, not progress) -------------------
@@ -672,51 +635,13 @@ func set_setting(key: String, value: Variant) -> void:
 	save()
 
 
-# THE PERSISTENT PARTS MODEL IS DELETED (todo/roguelike-pivot.md -> "What gets deleted").
-# `install_upgrade` / `set_upgrade_enabled` and their `_enable_exclusive` / `_disable`
-# helpers lived here, alongside `installed_upgrades` / `disabled_upgrades` on each OwnedCar.
-# Nothing is fitted to a car any more: upgrades are RR-style boosts, temporary and
-# run-scoped, picked between stages and wiped on run end (decision 8, and the pivot doc's
-# "Upgrades -- RR's two-tier model"). They reach the live config through the surviving
-# effects funnel, UpgradeLibrary.apply -- see that file's `active_effects` seam, which is
-# the ONE place stage 5 has to fill in.
-
-
-# In-run HP is one-way: nothing here restores it mid-run. It climbs back only between
-# runs — the free between-event patch-up below. The paid repair at the lift is retired
-# (todo/roguelike-pivot.md decision 21 — see the "Spending stars: DELETED" note above).
-# See features/damage.md.
-
-
-# --- Money (todo/roguelike-pivot.md decision 21) ------------------------------
-#
-# The single currency, and the whole of it: earned per stage CLEARED (decision 36 —
-# banked at the clear, never at run end, so a failed run keeps everything it made)
-# plus the challenge's placement lump sum, and spent in the meta shop. A failed run
-# never takes any of it back (decision 14), which is why there is no `lose_money`.
-
-# --- The meta shop (todo/roguelike-pivot.md "Upgrades — RR's two-tier model" +
-# "Car acquisition — RR's shop", stage 6 of todo/roguelike-pivot-plan.md) -------------
-#
-# Three sinks, each a thin wrapper over spend_money so every refusal path shares its one
-# rule: a purchase that cannot be afforded (or is otherwise invalid — an unknown id, a car
-# already owned, a boost already at its cap, the unlock already bought) leaves the profile
-# BYTE-IDENTICAL. `spend_money` already refuses without mutating; every function below
-# checks its OWN precondition (ownership / cap / already-unlocked) BEFORE calling it, so a
-# caller never spends into a purchase that was going to be rejected anyway.
-
 # --- Lifetime stats (todo/roguelike-pivot.md "Lifetime global stats") -----------
 #
 # The registry itself — which ids exist, their labels, which call site writes each —
 # lives in LifetimeStats (scripts/lifetime_stats.gd); this is only the persistence,
 # exactly the CarLibrary/Save split every other authored table already follows.
 #
-# ONLY EVER GROWS, and SURVIVES A FAILED RUN — soft permadeath destroys the run
-# (stage progress, this run's boosts, the car's accrued damage) and never touches
-# this ledger, the same asymmetry the run-meta block comment above states for money.
-# Two mutators because not every stat is a running sum: a plain counter (stages
-# cleared, money earned) adds; a high-water mark (the deepest region reached) must
-# ratchet up to a maximum without a repeat visit double-counting it.
+# Every stat only ever grows.
 
 func lifetime_stat(id: String) -> int:
 	return int((profile.get(KEY_LIFETIME, {}) as Dictionary).get(id, 0))
@@ -731,48 +656,3 @@ func add_lifetime_stat(id: String, amount: int = 1) -> void:
 	stats[id] = int(stats.get(id, 0)) + amount
 	profile[KEY_LIFETIME] = stats
 	save()
-
-
-# --- Skills (todo/roguelike-pivot.md "Skills — a straight lift from RR") -----------
-#
-# Three states, kept apart by SkillLibrary.is_unlocked / is_purchasable (both pure,
-# reading a profile dict) and owns_skill below: LOCKED (unlock stat below its
-# threshold), PURCHASABLE (threshold crossed, not yet bought), OWNED (bought).
-# Equipping is a SEPARATE step from owning — skill_equipped / equip_skill /
-# unequip_skill — capped at GameConfig.skill_max_equipped (RR's PERK_MAX_EQUIPPED = 3).
-#
-# THE MUTATORS ARE BOOKKEEPING ONLY: buy_skill/equip_skill just move an id between these
-# three lists. The gameplay effect is applied elsewhere, at fielding time —
-# SkillLibrary.equipped_effects reads KEY_EQUIPPED_SKILLS and rides the same
-# UpgradeLibrary.EFFECTS + car `boosts` seam a run's boosts do (decision 51), merged by
-# world.gd::_owned_with_run_effects. So do not read "nothing here applies a skill" as
-# "skills do nothing".
-
-# --- Rally economy: DELETED with the star ledger (todo/roguelike-pivot.md decision 21) --
-#
-# Save.stars_available / award_stars / spend_stars are gone outright -- the ledger they
-# read and write no longer exists (see the "Star ledger: DELETED" note on
-# _default_profile()).
-#
-# THE PAID GARAGE REPAIR IS RETIRED, NOT STUBBED. repair_car / repair_price and their
-# car_needs_repair / car_handles_badly predicates are deleted entirely -- a between-stage
-# repair PICK replaces it (see the pivot doc's Repair section).
-#
-# BUYING A PART IS GONE WITH THE PARTS MODEL. part_price / can_buy_part / buy_part and
-# apply_build_plan are deleted (their UI hosts went first).
-#
-# DRIVETRAIN CONVERSION IS NO LONGER A MONEY SINK. Decision 52's per-car purchase is
-# superseded: a conversion is a run-scoped mid-run upgrade (RunSession.choose_drivetrain),
-# so there is nothing left to buy here.
-#
-# record_podium_rally / rally_podiumed / best_placement / podium_rally_count / the reveal
-# seeding and the dev 3-star cheats that topped this ledger up are DELETED with the HQ
-# map: no live caller writes or reads a rally record any more (region runs track their
-# own KEY_REGIONS_CLEARED ledger). Old profiles keep their "rallies" dict on disk,
-# unread and undeclared. The dev page's one Save-side mutator now is
-# dev_grant_all_skills above (skills), plus plain add_money for its "Add money".
-#
-# record_stage_result (adaptive difficulty) used to live here too -- its only caller was
-# RallySession, deleted with the rival field it adapted (decision 5).
-
-

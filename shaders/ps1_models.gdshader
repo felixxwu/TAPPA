@@ -173,9 +173,6 @@ void region_lut_look(float baked_rank, out vec4 tint, out vec4 tarmac) {
 // vertex stage (test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage).
 // The include declares only global uniforms and one function, so that ban holds.
 #include "res://shaders/headlight_cone.gdshaderinc"
-// Overworld fog of war (features/overworld.md). Also fragment-side, also global-uniform
-// transport, and a bit-for-bit no-op in every scene that is not the overworld.
-#include "res://shaders/overworld_fog.gdshaderinc"
 
 void fragment() {
 	// Ground (e.g. grass) vs. road, cross-faded per-fragment by the road weight the
@@ -240,9 +237,5 @@ void fragment() {
 	vec3 surface = mix(ground, road, road_t) * tint.rgb;
 	// lane paint keeps its own colour rather than taking the ground tint
 	surface = mix(surface, marking.rgb, lines * road_t);
-	// Fog-of-war darkening MULTIPLIES the finished light term, unlike the headlight which adds
-	// to it: unexplored ground is meant to go dark whatever is lighting it, headlights
-	// included, so a player cannot simply drive up to the frontier and light it up.
-	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world_pos))
-		* overworld_fog_at(world_pos);
+	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world_pos));
 }

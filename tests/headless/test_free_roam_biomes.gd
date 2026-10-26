@@ -19,6 +19,7 @@ func before_each() -> void:
 
 func after_each() -> void:
 	RegionLibrary.reset()
+	WeatherLibrary.reset()
 	BiomeDirector.apply_handling(Config.data, "")
 	Config.data.weather = WeatherLibrary.DEFAULT_ID
 
@@ -79,10 +80,15 @@ func test_the_target_look_takes_the_regions_colour_and_the_weathers_overcast() -
 	var dry := BiomeDirector.target_look(cfg, "icy", "dry", base_env)
 	assert_eq(dry["bg"], ICY["background_color"])
 	assert_eq(BiomeDirector.target_look(cfg, "plain", "dry", base_env)["bg"], Color.BLACK, "no colour of its own keeps the scene's")
-	var rain_look: Dictionary = WeatherLibrary.by_id("rain")["look"]
-	var wet := BiomeDirector.target_look(cfg, "icy", "rain", base_env)
-	assert_eq(wet["bg"], cfg.get(String(rain_look["background_color"])))
-	assert_almost_eq(float(wet["density"]), 0.01 * float(cfg.get(String(rain_look["fog_density_mult"]))), 1e-6)
+	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "murk", "look": {
+		"background_color": "mist_background_color", "sky_color": "mist_sky_color",
+		"sun_energy_mult": "mist_sun_energy_mult",
+		"fog_density_mult": "mist_fog_density_mult",
+		"fog_sky_affect": "mist_fog_sky_affect"}}] as Array[Dictionary])
+	var murk_look: Dictionary = WeatherLibrary.by_id("murk")["look"]
+	var wet := BiomeDirector.target_look(cfg, "icy", "murk", base_env)
+	assert_eq(wet["bg"], cfg.get(String(murk_look["background_color"])))
+	assert_almost_eq(float(wet["density"]), 0.01 * float(cfg.get(String(murk_look["fog_density_mult"]))), 1e-6)
 
 
 func test_the_environment_blends_to_the_target_over_the_crossfade() -> void:

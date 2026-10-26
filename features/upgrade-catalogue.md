@@ -2,7 +2,7 @@
 
 **Source:** `scripts/upgrade_library.gd` (`class_name UpgradeLibrary`)
 
-**Tests:** `tests/headless/test_upgrade_library.gd`, `tests/headless/test_car_stat_bounds.gd`
+**Tests:** `tests/headless/test_upgrade_library.gd`
 
 `UpgradeLibrary` **is not a catalogue.** It is the MECHANISM that turns a car's fitted parts
 into config. The parts themselves are `BoostLibrary.CATALOGUE` entries found as free-roam loot
@@ -134,29 +134,6 @@ not move a car's class**. A grip READOUT passes `grip_meta`; every rating/eligib
 passes `effective_meta`. `feeds_grip` is a second flag rather than a re-use of `feeds_pw`
 for exactly that reason: the two sets must not merge.
 
-### `CarStatBounds` — the roster-wide scale for comparing cars
-
-`scripts/car_stat_bounds.gd` caches the **min/max each comparable stat reaches across the
-whole car roster** — `rating`, `pw` (hp/tonne), `grip` (max lateral G) and `mass` — as
-`{key: [lo, hi]}`, with `fraction(key, value)` mapping a car's figure onto 0..1 for any
-surface showing one car against the roster (`StatBar`). Grip is speed-dependent, so bounds
-are rated at `GameConfig.grip_reference_kmh` — one config field, so a bound cannot be
-computed at one speed and displayed at another.
-
-The scale spans the roster **as the cars ship** (each car's `effective_meta({}, entry)`).
-Stretching the top to a fully-upgraded ceiling was tried under the parts model and was
-worse: every early car collapsed into a single lit block. The **floor is padded `FLOOR_PAD`
-(10%) of the span below the worst car** so the slowest car still lights one block (an empty
-bar reads as broken, not as slow); the **top sits exactly on the best car**. A degenerate
-range (one car, or a synthetic roster of identical cars) returns `1.0` rather than dividing
-by zero.
-
-It is cached because the sweep walks every car through `effective_meta`, and
-`CarLibrary.override_for_test()`/`reset()` invalidate it — a test that installed synthetic
-cars while holding stale bounds would draw bars against a scale from a different game. It
-used to be invalidated by `UpgradeLibrary`'s seam as well, back when the bounds depended on
-a second authored roster; there is one roster now, and one invalidator.
-
 ## Drivetrain conversion
 
 The one piece of the old slot model that survives whole, because it never depended on the
@@ -186,7 +163,6 @@ prerequisite gates, the `Save` buy/install paths, the upgrades grid and reveal, 
 a real `GameConfig` property; every fixture-authored effect key has a row), each `op` arm
 against a synthetic effect set, the `effective_meta` / `grip_meta` split (a grip effect
 must NOT move power-to-weight), and the drive-mode resolver.
-`test_car_stat_bounds.gd` covers the roster scale.
 
 Per CLAUDE.md, none of them pin a magnitude: the fixtures author their own effect values
 (`tests/headless/upgrade_fixtures.gd`), and the shipped `GameConfig` numbers the real

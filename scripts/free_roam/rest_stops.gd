@@ -175,7 +175,7 @@ func move_car_to(site: int) -> void:
 
 
 func travel_to(site: int) -> bool:
-	if not lit_sites.has(site):
+	if is_wrecked or not lit_sites.has(site):
 		return false
 	move_car_to(site)
 	(car.damage as DamageModel).repair(Config.data)

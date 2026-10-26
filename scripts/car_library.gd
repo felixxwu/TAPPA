@@ -331,11 +331,9 @@ static func all() -> Array[Dictionary]:
 
 static func override_for_test(cars: Array[Dictionary]) -> void:
 	_seam.override_for_test(cars)
-	CarStatBounds.invalidate() # the roster-wide stat scale is derived from this roster
 
 static func reset() -> void:
 	_seam.reset()
-	CarStatBounds.invalidate()
 
 
 # Array position of the car with this stable id, or -1 if no such car exists
@@ -456,57 +454,8 @@ static func max_car_bounds() -> Vector3:
 		out.z = maxf(out.z, body.z)
 	return out
 
-# The player-facing hp/tonne figure, ROUNDED to the nearest whole number — the same
-# rounding every hp/tonne readout applies via "%.0f" (HUD, detail panel, detune slider).
-# Single source of truth for "what number does the player see" in hp/tonne. It no longer
-# gates anything: entry is categorical and the one surviving ceiling (Rally Challenge) is
-# judged in CarPerformance rating units (UpgradesGrid.over_rating_limit). This is now a
-# pure DISPLAY figure — the Speed bar and the detune slider label.
-static func power_to_weight_hp_tonne(entry: Dictionary) -> float:
-	return roundi(power_to_weight(entry) * KW_KG_TO_HP_TONNE)
-
 # The car's peak power in horsepower — shown on the car stats panel. Derived from
 # peak_power_kw via the same kW→hp factor baked into KW_KG_TO_HP_TONNE (÷1000 to
 # drop the per-tonne mass term), so it stays a single source of truth.
 static func horsepower(entry: Dictionary) -> float:
 	return peak_power_kw(entry) * KW_KG_TO_HP_TONNE / 1000.0
-
-
-# Peak lateral cornering grip, expressed in G. Effective μ = tyre compound × the
-# load-sensitivity factor (see GameConfig.tire_load_factor): a real tyre's μ falls as
-# the load pressed through its contact patch rises, and a wider tyre spreads that load
-# over more rubber. So the figure depends on BOTH width and mass — heavier drops it,
-# wider recovers it — unlike the textbook a = μ·g where mass would cancel.
-#
-# We take each axle's STATIC per-wheel load (mass · g · weight split / 2) through the
-# same factor the physics uses, with that axle's width, then average the two axles.
-# Using the SHARED GameConfig helper keeps the panel honest about what the car does.
-# The grip_balance tuning slider is deliberately ignored — this is a nominal spec-sheet
-# figure for car selection, not the currently-tuned car.
-# `speed_kmh` optionally rates the figure WITH aerodynamic downforce at that speed. At the
-# default 0 the result is exactly the static-load figure this has always returned (the
-# car-select panel's caller is unaffected); above 0 each axle's downforce — authored in N
-# per (m/s)², the same fields car.gd::_apply_aero applies as v²·downforce_axle — is added
-# to that axle's normal load before the load-sensitivity factor, and the result is the
-# load-weighted grip Σ(μ·load) / (mass·g).
-#
-# That extra argument is what makes the aero kit VISIBLE on a grip readout: without it,
-# fitting aero moves nothing on this figure, because downforce is purely a speed effect.
-# A caller quoting the speed-rated figure must show the speed alongside it — the effect
-# grows with v², so a number without its speed reads as a promise.
-static func max_lateral_g(entry: Dictionary, cfg: GameConfig, speed_kmh := 0.0) -> float:
-	var g := Platform.gravity()
-	var mass: float = float(entry.get("mass", 1.0))
-	var wf: float = clampf(float(entry.get("weight_front", 0.5)), 0.0, 1.0)
-	var compound := float(entry.get("tire_compound", 1.0))
-	var v2 := pow(maxf(speed_kmh, 0.0) / 3.6, 2.0)
-	var front_load := mass * g * wf * 0.5 + v2 * float(entry.get("downforce_front", 0.0)) * 0.5
-	var rear_load := mass * g * (1.0 - wf) * 0.5 + v2 * float(entry.get("downforce_rear", 0.0)) * 0.5
-	var mu_front := compound * cfg.tire_load_factor(front_load, float(entry.get("wheel_width_front", 0.225)))
-	var mu_rear := compound * cfg.tire_load_factor(rear_load, float(entry.get("wheel_width_rear", 0.225)))
-	if v2 <= 0.0 or mass * g <= 0.0:
-		return (mu_front + mu_rear) * 0.5
-	# With downforce in play the axles no longer carry equal shares of the total load, so
-	# the honest figure is load-weighted (total lateral force over weight) rather than a
-	# plain mean of the two μ.
-	return (mu_front * front_load + mu_rear * rear_load) * 2.0 / (mass * g)

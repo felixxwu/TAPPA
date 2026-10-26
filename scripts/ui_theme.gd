@@ -107,8 +107,8 @@ const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 const UI_SCALE := 540.0 / 400.0
 
 # An authored size (as designed on the 400 canvas) scaled to the shipped render
-# height. Use for any literal font/UI pixel size outside this file:
-#   lbl.add_theme_font_size_override("font_size", UITheme.px(14))
+# height. Use for literal UI pixel sizes outside this file — never for a font size
+# (fonts use FONT_SIZE or a multiple of it, see below).
 static func px(authored: float) -> int:
 	return int(round(authored * UI_SCALE))
 
@@ -328,8 +328,7 @@ static func shadowed(box: StyleBox) -> StyleBox:
 const BODY_SCROLL_MARGIN := 32.0 * UI_SCALE
 
 # SIZE A SCROLLED BODY LABEL TO ITS CONTENT. Shared by every modal that puts an
-# autowrapped body Label inside a (Touch)ScrollContainer — ConfirmPopup and
-# UsernamePopup today.
+# autowrapped body Label inside a (Touch)ScrollContainer — ConfirmPopup today.
 #
 # WHY THIS EXISTS. A ScrollContainer does not report its child's minimum size on
 # an axis it may scroll, so an untouched scroll collapses to ~0 tall inside a

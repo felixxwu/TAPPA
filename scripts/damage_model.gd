@@ -8,23 +8,9 @@ extends RefCounted
 # damage fraction (which drives the engine misfire and the rev cap) and the per-wheel
 # toe the car reads each tick. See features/damage.md.
 #
-# DAMAGE NEVER TAKES THE CAR OUT. HP bottoms out at 0 and the car keeps driving — a
-# fully damaged engine is stumbling and rev-capped, not dead. There is no wreck, no
-# DNF-by-damage and no 0-HP event of any kind; the punishment for crashing is a slow,
-# gutless car for the rest of the rally plus a repair bill.
-#
-# HP only ever goes DOWN in-run (no passive regen); the free between-event field
-# repair (Save) is the
-# only way it climbs back, and that lives between runs, not here.
-#
-# Binding: when a car is FIELDED from the meta-game (the rally/Start-line layer,
-# features/rally-session.md) it carries an OwnedCar instance_id so the run's HP is
-# persisted back at each event boundary. In free-roam / dev play the model is UNBOUND
-# (instance_id < 0): it still depletes and degrades, but never touches the save.
-#
-# There is no anti-soft-lock machinery because nothing can strand a player: a car at
-# 0 HP is still a drivable car, and HP climbs back via the free between-event field
-# repair and the paid repair at the lift (features/star-economy.md).
+# Hitting 0 HP never wrecks a stage car: it keeps driving, misfiring and rev-capped. In free
+# roam `thermal` is on: an overheating engine drains HP, and at 0 HP the car gives up (`gave_up`).
+# HP climbs back only via regen() (a tunable rate) or repair().
 
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
 # (todo/audio.md). Emitted only for hits that actually cost HP.
@@ -55,8 +41,6 @@ const WHEEL_NAMES: Array[String] = ["WheelFL", "WheelFR", "WheelRL", "WheelRR"]
 
 var max_hp := 1000.0
 var hp := 1000.0
-# OwnedCar binding; -1 = unbound (free-roam / dev play — never touches Save).
-var instance_id := -1
 # Permanent per-wheel toe misalignment (radians), keyed by WHEEL_NAMES. Each solid
 # impact bends every wheel by a random amount/direction (nudge_wheels); car.gd feeds
 # these into the per-wheel VehicleWheel3D.steering so the car's pull/crab comes from
@@ -66,17 +50,7 @@ var instance_id := -1
 var wheel_toe: Dictionary = _zero_toe()
 
 
-# Field the model for a run: bind it to an OwnedCar (or -1 for free-roam), set the
-# HP pool, and load the car's persisted wheel misalignment. Called by car.gd when a
-# car is configured (apply_car / apply_owned) and by the fielding layer.
-## Whether this car can take damage at all. True everywhere it matters (every stage, every
-## rally, free roam); false only in the OVERWORLD hub, where driving between rallies is
-## navigation rather than competition and clipping a tree on the way to an event should not
-## cost the player HP they then have to pay stars to repair.
-##
-## Gates both entry points — `register_deceleration` (impacts) and `apply_loss` (anything that
-## drains HP directly) — so nothing can route around it.
-var enabled := true
+# Set the HP pool and load the car's persisted wheel misalignment; called by car.gd when a car is configured.
 
 ## The free-roam damage chain: below cooling_failure_hp_fraction the cooling breaks and stays
 ## broken until repair(); while broken, engine_temp only rises (faster at higher revs);
@@ -88,10 +62,9 @@ var engine_temp := 0.0
 var _gave_up := false
 
 
-func field(p_max_hp: float, p_hp: float, p_instance_id := -1, p_toe: Array = []) -> void:
+func field(p_max_hp: float, p_hp: float, p_toe: Array = []) -> void:
 	max_hp = maxf(1.0, p_max_hp)
 	hp = clampf(p_hp, 0.0, max_hp)
-	instance_id = p_instance_id
 	set_toe_from_array(p_toe)
 
 
@@ -219,7 +192,7 @@ static func hp_loss_for_speed(speed_mps: float, cfg: GameConfig) -> float:
 # self-limits, while a real multi-bounce tumble racks up several capped hits. Returns
 # the HP lost.
 func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg: GameConfig) -> float:
-	if not enabled or dt <= 0.0:
+	if dt <= 0.0:
 		return 0.0
 	var floor_mps := cfg.impact_threshold_g * GRAVITY_MPS2 * dt
 	if dv_mps <= floor_mps:
@@ -236,15 +209,8 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 	return loss
 
 
-# Drain HP by `amount`, bottoming out at 0. A no-op while `enabled` is false.
-#
-# 0 HP is a STATE, not an event: nothing is signalled, no run ends, and the car keeps
-# driving under a maxed-out misfire and the lowest rev cap. Damage weakens; it never
-# removes. (This used to call _wreck() → Save.record_wreck() → a DNF and a "CAR WRECKED"
-# screen. All of it is gone — see features/damage.md.)
+# Drain HP by `amount`, bottoming out at 0. With `thermal` on, reaching 0 emits `gave_up` once.
 func apply_loss(amount: float) -> void:
-	if not enabled:
-		return
 	hp = maxf(0.0, hp - amount)
 	if thermal and hp <= 0.0 and not _gave_up:
 		_gave_up = true
@@ -255,7 +221,7 @@ func apply_loss(amount: float) -> void:
 # rpm; working cooling multiplies the temperature by a factor just under 1, so a hotter engine sheds
 # more. Broken cooling simply skips that multiply. Returns the HP the overheat drained this tick.
 func thermal_step(dt: float, rpm_frac: float, cfg: GameConfig) -> float:
-	if not thermal or not enabled or dt <= 0.0:
+	if not thermal or dt <= 0.0:
 		return 0.0
 	if not cooling_broken and max_hp > 0.0 and hp <= max_hp * cfg.cooling_failure_hp_fraction:
 		cooling_broken = true
@@ -289,21 +255,12 @@ func repair(_cfg: GameConfig) -> void:
 	reset_wheel_toe()
 
 
-# The SELF-HEAL tick (SkillLibrary "self_healing", todo/roguelike-pivot.md decision 51).
-# Trickle `cfg.damage_regen_hp_per_s` back into the pool, capped at max_hp, on the same
-# physics step the impact damage above is measured on.
-#
-# 0.0 ON THE AUTHORED BASELINE, so this is a no-op for every car that has not equipped the
-# skill — the field is written by the effects funnel (UpgradeLibrary.EFFECTS
-# "damage_regen_set") and reseeded back to 0.0 the moment the skill comes off. Nothing here
-# knows what a skill is; it just reads a config field, exactly like every other damage knob.
-#
-# HEALING DOES NOT STRAIGHTEN WHEELS. `wheel_toe` is bent by nudge_wheels and only a pit
-# repair (Save.field_repair) bends it back — a car that heals its HP mid-stage still
-# crabs, which keeps the between-stage repair worth picking (decision 8's choice).
-# Returns the HP actually regained (0.0 when disabled, already full, or the rate is 0).
+# The self-heal tick: trickle `cfg.damage_regen_hp_per_s` back into the pool, capped at
+# max_hp, on the same physics step the impact damage above is measured on.
+# Healing does not straighten wheels — only a full repair resets `wheel_toe`.
+# Returns the HP actually regained (0.0 when already full, or the rate is 0).
 func regen(dt: float, cfg: GameConfig) -> float:
-	if not enabled or dt <= 0.0 or cfg.damage_regen_hp_per_s <= 0.0:
+	if dt <= 0.0 or cfg.damage_regen_hp_per_s <= 0.0:
 		return 0.0
 	var before := hp
 	hp = minf(max_hp, hp + cfg.damage_regen_hp_per_s * dt)

@@ -56,9 +56,9 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 |------|--------|
 | [architecture.md](architecture.md) | Project layout, scene tree, autoloads, data flow |
 | [configuration.md](configuration.md) | `GameConfig` resource — every tunable, the `Config` autoload |
-| [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, rally completion) at `user://profile.json` |
+| [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, the world block) at `user://profile.json` |
 | [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
-| [region-stage-library.md](region-stage-library.md) | `RegionStageLibrary` — the authored 8-slots-×-3-candidates stage grid per region, `RegionStagePool`'s slot-pick draw, `StageFields`'s pure field getters (replaces the deleted `RallyLibrary`/rally-pool model) |
+| [region-stage-library.md](region-stage-library.md) | `RegionStageLibrary` — the authored 8-slots-×-3-candidates stage grid per region, `StageFields`'s pure field getters (replaces the deleted `RallyLibrary`/rally-pool model) |
 | [car-performance.md](car-performance.md) | `CarPerformance` — a car's speed as ONE number (Forza-style, higher = faster), derived from a simulated lap of the fixed `BenchmarkTrack` rather than a formula over stats; the `benchmark_*` knobs, the reference-car anchor, and the downforce / drive-mode solver enrichment behind it |
 | [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm / fog / storm / snowfall / night) — the `WeatherLibrary` table that is the single source of truth for every condition, `StageFields.event_weather`, the `GameConfig` blocks it names, the `StageConfig.apply_event_config` funnel that seats it, and the fake headlight cone night re-lights the world with (authored on five stages, one per region) |
 | [snow-region.md](snow-region.md) | The Alps — the map's NE corner. The first region to influence HANDLING as well as look: per-surface grip overrides, deep snow you sink into and bog down in, frozen lakes you drive on, snowfall, and the six rallies (two carrying re-sited part unlocks) |
@@ -68,8 +68,8 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) + the tuning-lift UI |
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
-| [engine-swap.md](engine-swap.md) | The Engine Swap as a genuine, deterministic MID-RUN engine swap (`RunSession._pool_engine_swap_ids`' next-most-powerful `EngineLibrary` engine, fielded via the existing `EngineSwap` + `car.gd::_apply_engine_swap` pipeline), plus the legacy owned-car `swapped_engine` read path and the engine-detune power knob |
-| [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, capped misfire + rev cap at 0 HP (never a wreck) |
+| [engine-swap.md](engine-swap.md) | `EngineSwap` + `car.gd::_apply_engine_swap`, plus the legacy owned-car `swapped_engine` read path and the engine-detune power knob |
+| [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, misfire + rev cap as HP falls; in free roam 0 HP gives up into the wreck page |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
 | [engine-and-transmission.md](engine-and-transmission.md) | Torque curve, gearbox, clutch, rev limiter, auto-shift; `EngineLibrary` (`scripts/engine_library.gd`) — the catalog of real engines cars reference by id |
@@ -85,7 +85,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [free-roam.md](free-roam.md) | **The free-roam game, entered from the title screen** — `RoadNetwork` (radial-growth road layout), `RoadTerrain` (height built from the roads, base-field lakes), `TerrainStreamer` (resumable chunk jobs under a strict per-frame time budget, two LODs, skirts, collision ring) |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
-| [terrain-streaming.md](terrain-streaming.md) | The bounded-world streaming seam on `TerrainManager` — load radius, generate-on-miss, the duck-typed chunk/road/pad/region sources, and the LRU cap. Misleadingly named `overworld_*` in places; it is LIVE infrastructure, not overworld leftovers |
+| [terrain-streaming.md](terrain-streaming.md) | `TerrainManager`'s streaming opt-ins for the stage harness — load radius, generate-on-miss, the LRU cap |
 | [terrain-chunk-modifiers.md](terrain-chunk-modifiers.md) | The five `compute_chunk_data` chunk-modifier passes, their shared `TerrainManager._chunk_view` preamble, and how `bake_track` splits its per-vertex work into `_bake_vertex_block`/`_emit_cliff_offsets` |
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract; dev seed-lab |
 | [track.md](track.md) | Rally corner shape library (Curve2D pacenotes) + catalog scene |
@@ -133,31 +133,23 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Exhaust flames | `scripts/exhaust_flames.gd`, `scripts/exhaust_lab.gd`, `exhaust_lab.tscn` |
 | Track generation | `scripts/track_generator.gd` |
 | Jumps / road vertical profile | `scripts/track_profile.gd` (`TrackProfile` — the crest offset keyed on arc distance, the launch-speed formula), the `Jump` entry in `scripts/corner_library.gd`, the `road_heights` seam in `scripts/terrain_manager.gd` — see [track.md](track.md) → *Jumps* |
-| Track turn cache | `scripts/track_cache.gd` (`TrackCache`), `data/track_cache.json`, `tools/generate_track_cache.gd`, `tools/verify_track_cache.gd`, `cache_tracks.sh` |
 | Benchmark fidelity calibration (C1 — does the rating rank cars like real stages?) | `tools/calibrate_benchmark.gd`/`.tscn`, `calibrate_benchmark.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
-| Pace-floor calibration (C2 — what `PACE_MIN_FLOOR` can and cannot be derived from) | `tools/calibrate_pace_floor.gd`/`.tscn`, `calibrate_pace_floor.sh` — see [car-performance.md](car-performance.md) → *Calibration tooling* |
 | Cache freshness hook | `.githooks/pre-commit` (regenerates + stages stale `data/*.json` lockfiles on commit), `install_hooks.sh` (one-time `core.hooksPath` setup) — see [track.md](track.md) → *Turn cache* |
 | Lakes / water | `scripts/lake_field.gd` (`LakeField`), `scripts/track_gen_params.gd` (`TrackGenParams`), `scripts/terrain_noise.gd` (`TerrainNoise`), `shaders/water.gdshader` |
 | Track shape params | `scripts/track_gen_params.gd` (`TrackGenParams` — the required shape contract for `TrackGenerator.generate`) |
 | Trees & bushes | `scripts/tree_scatter.gd`, `scripts/billboard_field.gd`, `shaders/billboard_opaque.gdshader` |
-| Roadside signs | `scripts/sign_layout.gd` (`SignLayout` planner), `scripts/sign_field.gd` (`SignField` builder) |
-| Finish arch | `scripts/finish_arch.gd` (`FinishArch`), `tools/render_model.gd` |
 | Corner barriers | `scripts/barrier_layout.gd` (`BarrierLayout` planner), `scripts/barrier_field.gd` (`BarrierField` builder), `scripts/barrier_section.gd` (`BarrierSection` module), `tools/render_barriers.gd`/`.sh` |
 | Camera | `scripts/chase_camera.gd`, `scripts/camera_manager.gd` (`CameraManager` — modes, cycle, persistence), `tools/bonnet_clearance.gd` (per-car bonnet cam height) |
 | HUD | `scripts/hud.gd` |
-| Pacenote strip | `scripts/pacenotes.gd` (`Pacenotes` — note list, arrow keys, progress fractions), `scripts/hud.gd` (the strip), `scripts/stage_manager.gd` (advance) |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
 | Region stage library | `scripts/region_stage_library.gd` (`RegionStageLibrary` — the authored 8×3 stage grid), `scripts/stage_fields.gd` (`StageFields` — field getters), `scripts/lap_time_model.gd` (`LapTimeModel` — QSS physics PAR) — see [region-stage-library.md](region-stage-library.md) |
 | Car performance rating | `scripts/car_performance.gd` (`CarPerformance` — rating, benchmark time, `merged_meta`), `scripts/benchmark_track.gd` (`BenchmarkTrack` — the fixed test track) |
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the linear unlock order) |
-| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`, `effective_meta`/`grip_meta`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts), `scripts/skill_library.gd` (`SkillLibrary` — the permanent skills) |
-| Roster-wide stat scale | `scripts/car_stat_bounds.gd` (`CarStatBounds` — cached roster-wide min/max), `scripts/stat_bar.gd` (`StatBar` — segmented bar widget drawn against it) |
-| Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the start line) |
+| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`, `effective_meta`/`grip_meta`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts) |
+| Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the rest stop page) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, mass/weight-front recompute, swap eligibility), `scripts/save_manager.gd` (`Save.swap_engines`/`set_engine_detune`), `scripts/car.gd` (`_apply_engine_swap`) |
-| Run session | `scripts/run_session.gd` (`RunSession` autoload — stage-flow orchestration), `scripts/run_mode.gd` + `region_run_mode.gd` / `challenge_run_mode.gd` (the strategy seam), `scripts/region_stage_pool.gd` (the stage draw) |
-| Event replay | `scripts/replay_recorder.gd` (`ReplayRecorder`), `scripts/replay_camera.gd` (`ReplayCamera`), `scripts/car.gd` (`replay_playback`) |
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
 | Settings page | `scripts/settings_menu.gd` (`SettingsMenu` — shared camera-angle + key-binding + mobile-control picker) |
@@ -168,7 +160,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Shaders | `shaders/ps1_models.gdshader`, `shaders/ps1_post_process.gdshader`, `shaders/billboard_opaque.gdshader` |
 | Headlight cone (night + storm) | `shaders/headlight_cone.gdshaderinc` (the shared `global uniform` block + `headlight_lit()`, included by the five lit shaders), `scripts/headlight_cone.gd` (`HeadlightCone` — `amount` / `has_headlights` / `params` / `push` / `reset`), the weather table's `headlights` key (`scripts/weather_library.gd` → `headlight_amount`), `project.godot` `[shader_globals]`, `scripts/world.gd` (`_process` / `_exit_tree`) — see [rendering.md](rendering.md), [weather.md](weather.md) |
 | Tree wind sway | `shaders/wind_sway.gdshaderinc` (the shared `global uniform` block + `wind_sway_offset()`, included by `billboard_opaque`), `scripts/wind_sway.gd` (`WindSway` — `strength` / `direction_deg` / `params` / `push` / `base` / `reset`), the weather table's `foliage_wind` key (`scripts/weather_library.gd`), `project.godot` `[shader_globals]`, `scripts/world.gd` (`_apply_weather_look` / `_exit_tree`), `scripts/foliage.gd` (`spawn_trees` seeds the base) — see [trees.md](trees.md), [weather.md](weather.md) |
-| Weather dimming of fake-lit materials | `scripts/game_config.gd` (`weather_lit` — the rule; `apply_car_light` / `apply_foliage_light`; the runtime `weather_sun_mult`), `scripts/world.gd` (`_apply_overcast_look` seeds it, `_apply_weather_look` re-seeds 1.0, `_exit_tree` resets it), and the callers `scripts/billboard_field.gd`, `scripts/lake_field.gd`, `scripts/sign_field.gd` — see [weather.md](weather.md), [rendering.md](rendering.md) |
+| Weather dimming of fake-lit materials | `scripts/game_config.gd` (`weather_lit` — the rule; `apply_car_light` / `apply_foliage_light`; the runtime `weather_sun_mult`), `scripts/world.gd` (`_apply_overcast_look` seeds it, `_apply_weather_look` re-seeds 1.0, `_exit_tree` resets it), and the callers `scripts/billboard_field.gd`, `scripts/lake_field.gd` — see [weather.md](weather.md), [rendering.md](rendering.md) |
 | Sky panorama | `scripts/world.gd` (`_apply_region_look` seeds it unconditionally from the region look or `GameConfig.default_sky_panorama`; `_apply_weather_look` lets a condition override it — only night does, via `night_sky_panorama` / `textures/sky-night.jpg`), `main.tscn` (`WorldEnvironment`'s shared `PanoramaSkyMaterial`) — see [regions.md](regions.md), [weather.md](weather.md) |
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/perf_overlay.gd` |
 | Perf benchmark | `benchmark/perf_benchmark.gd`, `run_benchmark.sh` |

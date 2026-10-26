@@ -59,7 +59,7 @@ func test_back_on_a_single_action_popup_fires_that_action() -> void:
 	assert_eq(flag[0], "ok", "the only action is both the default and the back action")
 
 # --- One modal at a time ------------------------------------------------------
-# Every modal in the game is a ConfirmPopup or a UsernamePopup, both on layer 101,
+# Every modal in the game is a ConfirmPopup on layer 101,
 # so two on screen at once is always a bug: the top one hides the other and
 # dismissing it "does nothing" except reveal a twin with the focus cursor reset.
 # That shipped once, from two subscribers to one broadcast each checking its own
@@ -109,18 +109,6 @@ func test_allow_stack_lets_a_failure_notice_through() -> void:
 		ConfirmPopup.open(_host, "Failure", "B", [{"label": "OK"}], 0, 0, true),
 		"allow_stack opts out of the exclusivity rule")
 
-func test_the_username_popup_shares_the_same_exclusivity() -> void:
-	# It is the same layer-101 furniture, so it has to mean the same thing to the
-	# group or the two kinds of modal stack over each other.
-	assert_not_null(ConfirmPopup.open(_host, "First", "B", _actions_with_flag([""])))
-	assert_null(UsernamePopup.open(_host),
-		"a name prompt cannot open over a confirm popup")
-
-func test_a_confirm_popup_cannot_open_over_a_username_popup() -> void:
-	assert_not_null(UsernamePopup.open(_host), "setup: the name prompt opens")
-	assert_null(ConfirmPopup.open(_host, "Second", "B", _actions_with_flag([""])),
-		"and the exclusivity holds in the other direction too")
-
 # --- open_committing: DELETED with its entry point (no caller reserves a modal
 # slot around a transaction any more) -----------------------------------------
 
@@ -154,15 +142,6 @@ func test_a_short_body_popup_is_not_made_needlessly_tall() -> void:
 	var viewport_h: float = popup.get_viewport().get_visible_rect().size.y
 	assert_true(panel.get_combined_minimum_size().y < viewport_h,
 		"a short body should hug its content, nowhere near the full viewport height")
-
-func test_username_popup_panel_does_not_exceed_the_viewport() -> void:
-	# Same shape as ConfirmPopup, fixed for consistency even though its body is
-	# an authored (not caller-supplied) string.
-	var popup := UsernamePopup.open(_host)
-	var panel := popup.find_children("*", "PanelContainer", true, false)[0] as PanelContainer
-	var viewport_h: float = popup.get_viewport().get_visible_rect().size.y
-	assert_true(panel.get_combined_minimum_size().y <= viewport_h,
-		"the username popup panel must also never exceed the screen")
 
 # REGRESSION. The scroll around the body was sized from
 # `Font.get_multiline_string_size`, which knows nothing about the Label's
@@ -207,13 +186,6 @@ func test_replacing_the_body_regrows_the_scroll_to_fit_it() -> void:
 	assert_gt(popup._body_label.get_line_count(), 1, "setup: the replacement body wraps")
 	_assert_body_fully_visible(popup._body_label, "replaced body")
 
-func test_the_username_popup_body_is_shown_in_full_too() -> void:
-	var popup := UsernamePopup.open(_host)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var label := popup.find_children("*", "Label", true, false)[1] as Label
-	_assert_body_fully_visible(label, "username popup body")
-
 func test_a_pathologically_long_body_stays_scrollable_rather_than_clipped() -> void:
 	# The cap is a fallback, not the normal case: a body too tall for the screen
 	# must remain reachable by scrolling, and must not push the panel off screen.
@@ -235,7 +207,6 @@ func test_an_unparented_host_cannot_raise_a_modal() -> void:
 	# to ask — raise nothing rather than a popup nobody can see or dismiss.
 	var orphan := Node.new()
 	assert_null(ConfirmPopup.open(orphan, "T", "B", _actions_with_flag([""])))
-	assert_null(UsernamePopup.open(orphan))
 	orphan.free()
 
 

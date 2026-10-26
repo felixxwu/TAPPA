@@ -496,12 +496,6 @@ var weather_sun_mult := 1.0
 ## its authored start position — keeps the wheels from clipping under the
 ## terrain when it drops in, especially on a slope or after resizing the car.
 @export var spawn_clearance := 2.5
-## Reference speed (km/h) grip readouts are rated at — downforce grows with v², so a
-## lateral-g figure means nothing without the speed it was measured at. THE SINGLE SOURCE:
-## CarStatBounds (the roster-wide bar scale) and any per-car grip readout both
-## read this rather than each carrying their own copy, so the bar and the figure it draws
-## can never be rated at different speeds.
-@export var grip_reference_kmh := 50.0
 
 @export_group("Tuning")
 # Free, reversible per-car tuning (features/tuning.md). Each OwnedCar stores three
@@ -1308,9 +1302,7 @@ func has_nitrous() -> bool:
 ## Deliberately authors NO grip multiplier. The snow region already owns grip in the
 ## corner these stages sit in; a weather multiplier on top would be a second, redundant
 ## lever over the same variable, and would make a snowfall stage arbitrarily slipperier
-## than a dry one in the same region. Consequence: snowfall contributes nothing to
-## WeatherLibrary.physics_fields, so it never re-keys the opponent cache — correct,
-## since it changes no lap time.
+## than a dry one in the same region.
 ##
 ## Flat, bright overcast: like fog, the common mistake is authoring snow dark enough to
 ## read as dusk. It is a WHITE-OUT, so these stay light.
@@ -2440,9 +2432,8 @@ func has_nitrous() -> bool:
 # fielded values. Both functions below walk the SCRIPT property list, so every field is
 # captured and restored regardless of whether it is exported.
 
-# The config-driven base of every 3D scene's Environment (stage world + menu
-# showcase), so the two can't drift: fog, backdrop and glow. Weather/region looks
-# layer on top of this afterwards.
+# The config-driven base of the stage world's Environment: fog, backdrop and glow.
+# Weather/region looks layer on top of this afterwards. Free roam doesn't call it yet.
 func apply_environment(env: Environment) -> void:
 	env.fog_density = fog_density
 	env.background_color = background_color
@@ -2938,31 +2929,6 @@ func spectator_params() -> Dictionary:
 @export_range(0.0, 1.0) var crosswind_nose_on_fraction := 0.35
 
 @export_group("Overworld")
-# The drivable overworld map — a single open landmass the player drives across to reach
-# rallies, dealerships and the workshop, standing in for the HQ's menu tables. See
-# docs/superpowers/specs/2026-08-17-overworld-hq-design.md and features/overworld.md.
-# The terrain is generated once per invalidation key and cached under user://overworld/,
-# then streamed in chunks around the car; zones are dwell-activated hotspots on it.
-## Radius, in chunks (Chebyshev), of the ring of loaded chunks kept around the car — a
-## radius of 10 is a 21x21 window. Larger = more of the map visible with fewer stream-in
-## pops, but more memory and more build work per boundary crossing.
-## PROVISIONAL: the design calls for this to be measured on a real device (the overworld's
-## streaming budget is genuinely new and has no precedent in the corridor-shaped rally
-## terrain), and the number retuned from that measurement. Treat it as a starting point.
-@export_range(1, 32) var overworld_load_radius := 10
-## Chunk builds allowed per rendered frame while the load ring catches up. A crossing
-## queues a whole row of chunks at once, so building them all in one frame hitches;
-## draining a couple per frame keeps them ahead of the car without a visible stall.
-## Same provisional caveat as the load radius — size it from a measured build cost.
-@export_range(1, 16) var overworld_chunk_build_budget := 2
-## How far in (metres) from the map bounds the coastline taper begins. Inside this band
-## the ground falls away to the perimeter depth, so the map ends in water rather than at a
-## visible wall. Part of the cache invalidation key — changing it regenerates the terrain.
-@export_range(0.0, 2000.0) var overworld_edge_taper_m := 300.0
-## How far BELOW the waterline the very perimeter of the map sits (metres). Deep enough
-## that the taper reads as sea floor and no undrowned ground survives at the bounds.
-## Also part of the cache invalidation key.
-@export_range(0.0, 500.0) var overworld_edge_depth_m := 40.0
 # --- The overworld map and minimap (scripts/overworld_map.gd) -------------------------------
 # The minimap is an always-on corner panel; the full map is the M / gamepad-Back overlay. Both
 # are drawn SCHEMATICALLY from the road network, the revealed pins and the fog mask — see the

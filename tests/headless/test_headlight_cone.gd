@@ -290,15 +290,11 @@ func test_night_authors_every_look_key() -> void:
 
 
 func test_night_is_purely_a_look_and_never_touches_physics() -> void:
-	# Decision 4 of the spec, pinned: night must contribute nothing to
-	# physics_fields, which keys the opponent cache. If it ever did, every night
-	# stage would silently invalidate cached opponent times and need rebalancing.
+	# Decision 4 of the spec, pinned: night must not change how the car drives.
 	var entry := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
 	assert_false(entry.has("grip_mult"), "night does not scale grip")
 	assert_false(entry.has("wind"), "night has no wind")
 	assert_false(entry.has("particles"), "night constructs no particle field")
-	assert_eq(WeatherLibrary.physics_fields(entry), [],
-		"night names no physics field, so it cannot churn the opponent cache")
 	var cfg := GameConfig.new()
 	assert_eq(WeatherLibrary.grip_mult(cfg, StageFields.WEATHER_NIGHT), 1.0,
 		"grip on a night stage is exactly dry")
@@ -314,15 +310,7 @@ func test_the_dark_conditions_switch_the_headlights_on() -> void:
 		assert_true(HeadlightCone.has_headlights(cfg), "'%s' switches the lights on" % id)
 
 
-func test_the_headlight_cone_never_touches_physics() -> void:
-	# The cone is a look, on every condition that has one: it re-lights a wedge and
-	# changes no grip and no force, so it must never reach physics_fields() and re-key
-	# the opponent cache. Nothing about switching the lights on rebalances a stage.
-	for entry in WeatherLibrary.all():
-		if not entry.has("headlights"):
-			continue
-		assert_false(WeatherLibrary.physics_fields(entry).has(String(entry["headlights"])),
-			"'%s' keeps its cone out of the physics fields" % String(entry.get("id", "")))
+
 
 
 # --- the night sky override ---------------------------------------------------
@@ -345,23 +333,7 @@ func test_night_names_a_sky_and_no_other_condition_does() -> void:
 			"'%s' leaves the region's sky alone" % String(entry.get("id", "")))
 
 
-func test_night_names_terrain_relight_and_no_other_condition_does() -> void:
-	# terrain_relight opts a condition into menu_showcase.gd's dual day/night terrain
-	# bake (see features/terrain.md -> "Dual day/night bake"). Night is the only
-	# condition whose ground darkening is worth pre-baking a second vertex-colour
-	# array for; every other dimmed-day condition is carried by its road_tint alone.
-	var night := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
-	assert_true(bool(night.get("terrain_relight", false)), "night opts into the relight")
-	for entry in WeatherLibrary.all():
-		if String(entry.get("id", "")) == StageFields.WEATHER_NIGHT:
-			continue
-		assert_false(entry.has("terrain_relight"),
-			"'%s' leaves the terrain bake alone" % String(entry.get("id", "")))
-	# A plain flag, not a per-condition field name — config_fields()/physics_fields()
-	# only ever collect FIELD NAMES they read out of an entry, and neither reads
-	# "terrain_relight" at all, so night's presence there changes neither.
-	assert_eq(WeatherLibrary.physics_fields(night).size(), 0,
-		"night's terrain_relight cannot affect a lap time")
+
 
 
 func test_there_is_a_default_sky_for_regions_that_name_none() -> void:

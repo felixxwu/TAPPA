@@ -20,12 +20,11 @@ stage `DamageModel.thermal` is off, and **damage never takes the car out**: HP b
 |-------|---------|
 | `max_hp` | the car's HP pool — CarLibrary metadata, set per car by **durability** (real-world mechanical reliability + build quality + structural rigidity + ease of repair), not purely by mass; see the per-car rationale comments in `car_library.gd` |
 | `hp` | working HP for the current run (starts at the OwnedCar's stored HP) |
-| `instance_id` | OwnedCar binding; **-1 = unbound** (free-roam / dev — never touches `Save`) |
 | `wheel_toe` | permanent per-wheel toe misalignment (rad), keyed by `WHEEL_NAMES` — see *Wheel misalignment* below |
 
-`field(max_hp, hp, instance_id, wheel_toe)` configures all of the above for a run.
-`car.gd` calls it (unbound, full HP, straight wheels) from `apply_car`; `apply_owned`
-re-fields it from the OwnedCar (stored HP + instance id + persisted `wheel_toe`) when a run
+`field(max_hp, hp, wheel_toe)` configures all of the above for a run.
+`car.gd` calls it (full HP, straight wheels) from `apply_car`; `apply_owned`
+re-fields it from the OwnedCar (stored HP + persisted `wheel_toe`) when a run
 takes the car to the line (`world.gd::_field_car`).
 
 ## Damage → HP loss (unified deceleration model)

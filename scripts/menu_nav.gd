@@ -251,7 +251,7 @@ static func is_text_editing() -> bool:
 # own subtree.
 #
 # Order matters: the carve-out is tested BEFORE text editing, so a text field inside a
-# modal (UsernamePopup) is left to the caller's own typing rules rather than being
+# modal is left to the caller's own typing rules rather than being
 # blanket-blocked here.
 static func input_blocked(node: Node) -> bool:
 	var loop := Engine.get_main_loop()

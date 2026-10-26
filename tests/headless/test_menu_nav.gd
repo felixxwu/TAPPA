@@ -382,64 +382,6 @@ func test_audio_page_slider_is_focusable_and_reflects_saved_volume() -> void:
 # hub) use in place of native focus. hq.gd owns the index; the cursor owns the shared
 # wrap / repaint / fire behaviour. These check that behaviour directly.
 
-# --- UsernamePopup -----------------------------------------------------------
-# A new modal, so it carries the whole contract: a seated cursor, an explicitly
-# wired up/down column (a LineEdit swallows left/right for the caret), and a Back
-# that both Esc and gamepad B reach. It must not ship pointer-only.
-
-func test_username_popup_is_keyboard_and_gamepad_navigable() -> void:
-	var host := Control.new()
-	add_child_autofree(host)
-	var popup := UsernamePopup.open(host)
-	await get_tree().process_frame  # deferred focus grab settles
-
-	assert_eq(popup._field.line.focus_mode, Control.FOCUS_ALL, "the field is focusable")
-	assert_eq(host.get_viewport().gui_get_focus_owner(), popup._field.line,
-		"the cursor starts in the field, so typing works with no pointer")
-	var buttons := popup.find_children("*", "Button", true, false)
-	assert_eq(buttons.size(), 2, "Save and Cancel")
-	for b in buttons:
-		assert_true((b as Button).is_visible_in_tree(),
-			"%s is on screen" % (b as Button).text)
-		assert_eq((b as Button).focus_mode, Control.FOCUS_ALL,
-			"%s is keyboard / gamepad focusable" % (b as Button).text)
-	# TextField.wire_column chains the field to Save explicitly, because the
-	# automatic neighbour search can't be trusted once a LineEdit is in the column.
-	# Found by LABEL, not by index: the row is ordered Cancel-then-Save now (leaving is
-	# leftmost — features/menus.md → "Button order"), and down out of the field must
-	# still reach the PRIMARY action rather than whatever happens to sit first.
-	var save_btn: Button = null
-	for b in buttons:
-		if String((b as Button).text).to_upper() == "SAVE":
-			save_btn = b
-	assert_not_null(save_btn, "the popup offers a Save button")
-	assert_eq(popup._field.line.focus_neighbor_bottom, save_btn.get_path(),
-		"down out of the field lands on Save, not on Cancel")
-
-
-# Back closes the popup having written nothing — it is deliberately dismissable
-# (the leaderboard page's prompt and the Account row are the two ways back).
-func test_username_popup_back_cancels_without_writing() -> void:
-	Save.profile["username"] = ""
-	var host := Control.new()
-	add_child_autofree(host)
-	var popup := UsernamePopup.open(host)
-	await get_tree().process_frame
-	var results: Array = []
-	popup.finished.connect(func(name: String) -> void: results.append(name))
-
-	# The nav is attached to the popup's centring container, not the CanvasLayer.
-	var center := popup.get_child(1) as CenterContainer
-	var nav := MenuNav.of(center as Control)
-	assert_not_null(nav, "the popup is wired to the MenuNav framework")
-	# Release the field first: while typing, Back means "stop typing"
-	# (MenuNav.is_text_editing), which is the behaviour a half-entered name wants.
-	popup._field.line.release_focus()
-	nav._unhandled_input(_press("menu_back"))
-	assert_eq(results, [""], "gamepad B cancels, reporting no name")
-	assert_eq(UsernamePopup.current(), "", "and writes nothing")
-
-
 # --- MenuNav `remember` --------------------------------------------------------
 # The framework can return the cursor to whichever row the player last had selected
 # instead of always re-opening on `first`. It lives here, once, rather than in each

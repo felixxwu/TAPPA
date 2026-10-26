@@ -98,6 +98,6 @@ func test_the_deny_all_catch_all_is_present() -> void:
 # crash — it is an open door onto data nothing writes any more.
 func test_no_rules_survive_for_deleted_collections() -> void:
 	var text := _rules_text()
-	for gone in ["stage_times", "lobby_rounds", "lobby_state"]:
+	for gone in ["stage_times", "lobby_rounds", "lobby_state", "challenge_runs"]:
 		assert_false(text.contains("match /%s" % gone),
 			"'%s' was deleted with its feature, so it must not still have a rule" % gone)

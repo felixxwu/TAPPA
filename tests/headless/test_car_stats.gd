@@ -6,7 +6,7 @@ extends GutTest
 #     spec structurally sane). These read authored data as OPAQUE input — structural
 #     contracts only, never a chosen value — so they are catalogue-contract tests and
 #     deliberately do NOT install CarFixtures.
-#   - Derived car stats (max_lateral_g, horsepower, tire_load_factor) driven by
+#   - Derived car stats (horsepower, tire_load_factor) driven by
 #     hand-built synthetic dicts + a bare GameConfig.new(), so no catalogue entry is
 #     needed at all.
 #
@@ -87,46 +87,6 @@ func test_car_ids_are_unique_and_stable_lookups_work() -> void:
 
 
 
-# A square-tyre, 50/50 car whose per-wheel load sits exactly at the reference pressure
-# reads back its compound as-is (load factor = 1.0). Verifies the stat is anchored on
-# the compound, not some hidden scale.
-func test_max_lateral_g_returns_compound_at_reference_load() -> void:
-	var cfg := GameConfig.new()
-	# Pick a mass so each of 4 wheels carries exactly ref_pressure × width.
-	var width := 0.225
-	var per_wheel := cfg.tire_ref_pressure * width          # load that gives factor 1.0
-	var mass := per_wheel * 4.0 / (Platform.gravity())      # 50/50 -> equal on all wheels
-	var entry := {"tire_compound": 1.0, "mass": mass, "weight_front": 0.5,
-		"wheel_width_front": width, "wheel_width_rear": width}
-	assert_almost_eq(CarLibrary.max_lateral_g(entry, cfg), 1.0, 0.0001,
-		"at reference pressure the G equals the compound")
-
-
-func test_max_lateral_g_scales_with_compound() -> void:
-	# The stat must be monotonic in the rubber compound, all else equal.
-	var cfg := GameConfig.new()
-	var base := {"mass": 1200.0, "weight_front": 0.5, "wheel_width_front": 0.225, "wheel_width_rear": 0.225}
-	var grippy := base.duplicate(); grippy["tire_compound"] = 1.3
-	var hard := base.duplicate(); hard["tire_compound"] = 0.85
-	assert_gt(CarLibrary.max_lateral_g(grippy, cfg), CarLibrary.max_lateral_g(hard, cfg),
-		"stickier compound -> higher lateral G")
-
-
-func test_max_lateral_g_drops_with_mass_and_recovers_with_width() -> void:
-	# Load sensitivity: adding mass on the same tyres lowers G; widening the tyres
-	# raises it back. This is the whole point of the accurate-deep model.
-	var cfg := GameConfig.new()
-	var light := {"tire_compound": 1.0, "mass": 900.0, "weight_front": 0.5,
-		"wheel_width_front": 0.225, "wheel_width_rear": 0.225}
-	var heavy := light.duplicate(); heavy["mass"] = 1800.0
-	var heavy_wide := heavy.duplicate()
-	heavy_wide["wheel_width_front"] = 0.315; heavy_wide["wheel_width_rear"] = 0.315
-	assert_lt(CarLibrary.max_lateral_g(heavy, cfg), CarLibrary.max_lateral_g(light, cfg),
-		"more mass on the same tyres -> less grip")
-	assert_gt(CarLibrary.max_lateral_g(heavy_wide, cfg), CarLibrary.max_lateral_g(heavy, cfg),
-		"wider tyres recover grip lost to mass")
-
-
 func test_horsepower_is_consistent_with_power_to_weight() -> void:
 	# horsepower and power_to_weight both come from peak_power_kw, so for any car
 	# the identity horsepower == p/w · mass · (kW→hp) must hold. Synthetic entry:
@@ -156,36 +116,3 @@ func test_tire_load_factor_is_neutral_when_sensitivity_is_zero() -> void:
 	# And a degenerate (zero/negative) load or width is safely neutral, never a divide blow-up.
 	assert_eq(cfg.tire_load_factor(0.0, 0.2), 1.0, "zero load -> neutral")
 	assert_eq(cfg.tire_load_factor(5000.0, 0.0), 1.0, "zero width -> neutral")
-
-
-# --- Aero-rated grip ----------------------------------------------------------
-# CarLibrary.max_lateral_g gained an optional reference SPEED so a Grip readout can show
-# what the aero kit bought (todo/simplified-upgrade-menu.md §5). The default must stay
-# exactly the static-load figure the car-select panel has always shown.
-
-func test_max_lateral_g_defaults_to_the_static_figure() -> void:
-	var cfg := GameConfig.new()
-	var entry := {"mass": 1200.0, "weight_front": 0.55, "tire_compound": 1.0,
-		"wheel_width_front": 0.225, "wheel_width_rear": 0.225,
-		"downforce_front": 3.0, "downforce_rear": 3.0}
-	assert_almost_eq(CarLibrary.max_lateral_g(entry, cfg, 0.0),
-		CarLibrary.max_lateral_g(entry, cfg), 0.0000001,
-		"an explicit zero speed matches the no-speed call")
-
-
-func test_downforce_raises_grip_only_above_zero_speed() -> void:
-	var cfg := GameConfig.new()
-	var base := {"mass": 1200.0, "weight_front": 0.5, "tire_compound": 1.0,
-		"wheel_width_front": 0.225, "wheel_width_rear": 0.225}
-	var winged := base.duplicate()
-	winged["downforce_front"] = 3.0
-	winged["downforce_rear"] = 3.0
-	assert_almost_eq(CarLibrary.max_lateral_g(winged, cfg, 0.0),
-		CarLibrary.max_lateral_g(base, cfg, 0.0), 0.0000001,
-		"downforce does nothing standing still")
-	assert_gt(CarLibrary.max_lateral_g(winged, cfg, 50.0),
-		CarLibrary.max_lateral_g(winged, cfg, 0.0),
-		"and adds grip once the car is moving")
-	assert_almost_eq(CarLibrary.max_lateral_g(base, cfg, 50.0),
-		CarLibrary.max_lateral_g(base, cfg, 0.0), 0.0000001,
-		"a car with no wing is unaffected by the reference speed")

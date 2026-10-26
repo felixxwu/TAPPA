@@ -230,6 +230,14 @@ func test_travel_goes_only_to_lit_rest_stops() -> void:
 	assert_eq(_rest.last_site, site)
 
 
+func test_a_wrecked_car_cannot_quick_travel() -> void:
+	var site := _a_rest_stop()
+	_rest.lit_sites[site] = true
+	_rest.is_wrecked = true
+	assert_false(_rest.travel_to(site), "a wreck goes back only through the wreck page's Respawn")
+	_rest.is_wrecked = false
+
+
 func test_opening_the_page_repairs_the_car_and_freezes_the_game() -> void:
 	var dmg: DamageModel = _car.damage
 	dmg.hp = dmg.max_hp * 0.3

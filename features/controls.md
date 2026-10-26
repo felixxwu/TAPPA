@@ -29,8 +29,6 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `menu_select` | Enter | — | A / Cross (South) | Menu navigation: activate focused widget |
 | `menu_back` | Esc | — | B / Circle (East) | Menu navigation: back out / cancel |
 | `reload_config` | F8 | — | — | Dev: re-read `config/game_config.tres` from disk and re-apply, no restart |
-| `toggle_world_menus` | F7 | — | — | Dev: toggle A/B world-space menus against the flat overlays (see [debug-tools.md](debug-tools.md)) |
-| `dev_complete_rally` | F12 | — | — | Dev: instantly complete the current rally |
 
 All actions use a 0.2 deadzone.
 
@@ -55,7 +53,7 @@ Only the driving/menu actions listed in `scripts/input_remap.gd`'s `ACTIONS` can
 `shift_down`, `handbrake`, `nitrous`, `cycle_camera` and `pause`. Everything else in the
 table above is **not** rebindable — the keyboard-only debug overlays
 (`toggle_debug_arrows`, `toggle_perf_overlay`), the dev-only actions (`skip_to_finish`,
-`reload_config`, `toggle_world_menus`, `dev_complete_rally`), `toggle_map` (see above),
+`reload_config`), `toggle_map` (see above),
 and the `ui_*`/`menu_*` navigation actions are all excluded — on
 the **Key bindings** page of the shared settings menu (`scripts/settings_menu.gd`) —
 reachable from the title-screen Settings and the in-run pause menu alike. Each action

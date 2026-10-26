@@ -220,11 +220,6 @@ func _physics_process(delta: float) -> void:
 func _timed_physics_process(delta: float) -> void:
 	if _centerline == null or _car == null:
 		return
-	# During a replay the car is a passive ghost driven along a recording; the loop-wrap
-	# jump (finish → start) would trip the off-track leash / stuck watchdog and teleport
-	# it mid-replay. Progress tracking is meaningless for the ghost, so skip entirely.
-	if _car.get("replay_playback"):
-		return
 	var p: Vector3 = _car.global_transform.origin
 	# Fallen into water/off the world entirely: just check the Y coordinate,
 	# independent of the lateral off-track leash below (a car can be perfectly

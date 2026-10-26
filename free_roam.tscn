@@ -127,7 +127,7 @@ offset_left = 8.0
 offset_top = 8.0
 offset_right = 108.0
 offset_bottom = 28.0
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "0 km/h"
 
 [node name="GearLabel" type="Label" parent="HUD"]
@@ -135,7 +135,7 @@ offset_left = 8.0
 offset_top = 28.0
 offset_right = 33.0
 offset_bottom = 48.0
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "1"
 
 [node name="RPMLabel" type="Label" parent="HUD"]
@@ -143,7 +143,7 @@ offset_left = 28.0
 offset_top = 28.0
 offset_right = 128.0
 offset_bottom = 48.0
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 text = "0 rpm"
 
 [node name="ElapsedLabel" type="Label" parent="HUD"]
@@ -151,7 +151,7 @@ offset_left = 8.0
 offset_top = 8.0
 offset_right = 108.0
 offset_bottom = 32.0
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 18
 text = "0:00.00"
 horizontal_alignment = 0
 
@@ -159,7 +159,7 @@ horizontal_alignment = 0
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 64
+theme_override_font_sizes/font_size = 54
 text = "3"
 horizontal_alignment = 1
 vertical_alignment = 1
@@ -183,7 +183,7 @@ theme_override_constants/separation = 12
 
 [node name="StageCompleteLabel" type="Label" parent="HUD/StageCompletePanel/Box"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 18
 text = "STAGE COMPLETE"
 horizontal_alignment = 1
 vertical_alignment = 1

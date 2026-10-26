@@ -65,6 +65,11 @@ func _ready() -> void:
 	_car.damage.thermal = true
 	_car.damage.repair(Config.data)
 	WorldSession.restore_car_state(_car.damage)
+	# Quit while wrecked: come back as the wreck page's Respawn would, at the last rest stop.
+	var respawn_now: bool = _car.damage.hp <= 0.0
+	if respawn_now:
+		_car.damage.repair(Config.data)
+		_car.damage.engine_temp = 0.0
 	_streamer.focus = _car
 	wheel_particles = WheelParticles.new()
 	wheel_particles.name = "WheelParticles"
@@ -121,8 +126,8 @@ func _ready() -> void:
 	_rest_page.map_requested.connect(func(site: int) -> void:
 		$WorldPages.show_map(_rest_page.return_from_map, site))
 	_minimap.open_requested.connect(open_full_map)
-	var spawn: Transform3D = _rest_stops.pose_at(0)  # facing down the road, the cabin behind
-	var saved: Variant = WorldSession.pose_transform()
+	var spawn: Transform3D = _rest_stops.pose_at(WorldSession.last_site() if respawn_now else 0)  # facing down the road, the cabin behind
+	var saved: Variant = null if respawn_now else WorldSession.pose_transform()
 	if saved != null:
 		spawn = saved
 	_car.global_transform = spawn
@@ -270,7 +275,7 @@ func _on_pause_extra(label: String) -> void:
 # The minimap was tapped (or M / gamepad Back): the whole map over the frozen game, and closing it
 # goes straight back to driving rather than to the pause menu.
 func open_full_map() -> void:
-	if get_tree().paused or $WorldPages.is_open():
+	if get_tree().paused or $WorldPages.is_open() or _rest_stops.is_wrecked:
 		return
 	get_tree().paused = true
 	_pause.set_input_enabled(false)  # Esc / B belong to the map page while it's up

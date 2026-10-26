@@ -18,8 +18,7 @@ const FREE_ROAM := "res://free_roam.tscn"
 # a load() away from a crash for anyone who trusted them. The run summary is a HubShell
 # page and the between-stage beat is RunPickPanel; neither is a scene.
 # The player's car scene — spawned as the live drivable car (car.gd), a frozen
-# display prop (HQ/podium/wreck), or a dev-tool subject (exhaust_lab.gd,
-# bake_car_silhouettes.gd). Used to be "res://car.tscn" hardcoded at seven sites
+# display prop (HQ/podium/wreck), or a dev-tool subject (exhaust_lab.gd). Used to be "res://car.tscn" hardcoded at seven sites
 # under three different local names (CAR_SCENE / CAR_SCENE_PATH / WRECK_CAR_SCENE);
 # this is now the one definition, same as TITLE/MAIN above.
 const CAR := "res://car.tscn"

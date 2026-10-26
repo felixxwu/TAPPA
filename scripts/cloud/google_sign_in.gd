@@ -335,7 +335,8 @@ func _close_server() -> void:
 # code: a code would have to be exchanged for tokens, and Google requires a
 # client_secret for Web clients, which a browser cannot hold. The implicit
 # response hands back a signed ID token directly, which is exactly what
-# AuthService needs, and `nonce` is what protects it from replay.
+# AuthService needs. The random `state` round-trip ties the reply to this request;
+# the `nonce` is sent (Google requires one) but not checked here.
 
 func _sign_in_web() -> Dictionary:
 	var window := JavaScriptBridge.get_interface("window")

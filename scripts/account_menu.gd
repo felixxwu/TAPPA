@@ -164,24 +164,6 @@ func _build_main() -> void:
 		add_child(_action("Resolve sync conflict",
 			func() -> void: _prompt_conflict(Cloud.sync.conflict_summary())))
 
-	# The leaderboard display name. Only shown signed in, because it is only ever
-	# used on a posted time and only a signed-in player can post one. Captured on
-	# first post (the global standings page); this is the edit-it-afterwards path.
-	#
-	# The value rides ON the button rather than sitting in a label above it. The pair
-	# was two full rows saying the same word twice ("Online leaderboard name: Felix" /
-	# "Change online leaderboard name"), which is the single biggest thing that pushed
-	# Back off a small screen.
-	var username := UsernamePopup.current()
-	# Parenthesised deliberately: `%` binds tighter than the conditional, so the
-	# unbracketed form means what it says here — but it reads as though the ternary
-	# picks the format string, which is a trap for the next person to touch it.
-	var name_button := _action(
-		("Leaderboard name: %s" % username) if username != "" else "Set a leaderboard name",
-		_on_username_pressed)
-	name_button.tooltip_text = "Change the name shown on the online leaderboards"
-	add_child(name_button)
-
 	add_child(_action("Sync now", _on_sync_now_pressed))
 	add_child(_action("Sign out", _on_sign_out_pressed))
 
@@ -250,10 +232,7 @@ func _on_google_pressed() -> void:
 	# complete. See GoogleSignIn.waiting_message.
 	if not _begin(GoogleSignIn.waiting_message()):
 		return
-	# Google is the path with no form of its own, so it is the one most easily
-	# left out of the post-sign-in hook. It goes through the same call as the rest.
-	if _finish(await Cloud.sign_in_google()):
-		_maybe_prompt_username()
+	_finish(await Cloud.sign_in_google())
 
 
 func _on_sign_in_pressed() -> void:
@@ -263,7 +242,6 @@ func _on_sign_in_pressed() -> void:
 		return
 	if _finish(await Cloud.sign_in_email(address, password)):
 		_show(View.MAIN)
-		_maybe_prompt_username()
 
 
 func _on_register_pressed() -> void:
@@ -275,7 +253,6 @@ func _on_register_pressed() -> void:
 		return
 	if _finish(await Cloud.register_email(address, password)):
 		_show(View.MAIN)
-		_maybe_prompt_username()
 
 
 func _on_reset_pressed() -> void:
@@ -291,48 +268,6 @@ func _on_sync_now_pressed() -> void:
 	if not _begin("Syncing…"):
 		return
 	_finish(await Cloud.sync_now())
-
-
-# --- Leaderboard name ---------------------------------------------------------
-
-# Ask for a leaderboard name the moment an account exists without one.
-#
-# WHY HERE, and not on the leaderboard page. A signed-in player with a blank
-# username posts NOTHING, silently — the cloud layer degrades a blank name to a
-# read-only fetch. Leaving that to a button on the post-stage page meant relying
-# on the player noticing and pressing it, on a screen they want to leave. Just
-# after a successful sign-in is the one moment they are already setting their
-# account up, and it happens once instead of after every stage.
-#
-# The global standings page KEEPS its own prompt as the fallback: players who
-# signed in before this existed have a blank username and no sign-in event coming.
-#
-# Called from all three sign-in paths (email, register, Google) rather than from
-# `_finish`, which is also the exit for Sync now / password reset / conflict
-# resolution — none of which should raise a name prompt.
-func _maybe_prompt_username() -> void:
-	if UsernamePopup.current() != "":
-		return
-	# Same guard the conflict modal uses: the popup is a layer-101 CanvasLayer that
-	# seizes focus, so it must never be raised from a page parked inside a hidden
-	# overlay. is_on_screen, NOT is_visible_in_tree — the latter ignores a hidden
-	# CanvasLayer ancestor.
-	if not MenuNav.is_on_screen(self):
-		return
-	# Unconditional: UsernamePopup.open refuses tree-wide if any modal is up (it
-	# shares ConfirmPopup.MODAL_GROUP), so there is nothing left for a per-instance
-	# latch to add — and this page can exist three times over, so it never could.
-	var popup := UsernamePopup.open(self)
-	if popup != null:
-		popup.finished.connect(func(_name: String) -> void: rebuild())
-
-
-func _on_username_pressed() -> void:
-	# Nothing to await and nothing to fail: the name lives in the profile and rides
-	# the ordinary cloud sync, so there is no busy state and no error path here.
-	var popup := UsernamePopup.open(self)
-	if popup != null:
-		popup.finished.connect(func(_name: String) -> void: rebuild())
 
 
 func _on_sign_out_pressed() -> void:
@@ -465,14 +400,14 @@ func _status_role() -> String:
 func _heading(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", UITheme.px(20))
+	l.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	return l
 
 
 func _sub(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", UITheme.px(14))
+	l.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return l

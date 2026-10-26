@@ -420,7 +420,7 @@ static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionar
 #
 # effective_meta deliberately mirrors only the power-to-weight-feeding effects; grip is a
 # different axis and is folded in HERE rather than by widening that function's contract,
-# because CarLibrary.max_lateral_g reads both downforce and `tire_compound` off the meta it
+# because a grip readout reads both downforce and `tire_compound` off the meta it
 # is handed while power-to-weight must not see either. Keeping the two calls apart is the
 # whole safeguard, and CarPerformance.merged_meta is the one caller that wants both.
 #
@@ -442,7 +442,7 @@ static func grip_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
 					out[f] = float(out.get(f, 0.0)) + float(effect[key])
 				"mult":
 					# 1.0 is the neutral identity a missing compound reads as — the same
-					# default CarLibrary.max_lateral_g falls back to.
+					# default a missing compound falls back to.
 					out[f] = float(out.get(f, 1.0)) * float(effect[key])
 	return out
 

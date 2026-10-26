@@ -131,12 +131,9 @@ The cache is the game's largest resident allocation, so most of what
 consumed (`todo/mobile-web-performance.md` 1.6 / 1.7 / 2.7):
 
 - **Dropped immediately, in `cache_chunk`** — `vertices`, `uvs`, `colors`,
-  `uv2s`, `indices`, and the raw full-res `night_colors` (`TerrainManager.
-  DEAD_AFTER_PREBAKE`). `TerrainLod.build_all` has already turned them into GPU
-  meshes (and `night_colors` into per-level `night_colors_by_level`), and nothing
-  reads any of them off the cache again. They are ~5/6 of a full-res chunk's bytes
-  (`night_colors` only exists at all when `bake_night_colors` is on — see "Dual
-  day/night bake" below).
+  `uv2s`, `indices` (`TerrainManager.DEAD_AFTER_PREBAKE`).
+  `TerrainLod.build_all` has already turned them into GPU meshes, and nothing
+  reads any of them off the cache again. They are ~5/6 of a full-res chunk's bytes.
   - **Hazard, handled:** `TerrainChunk.apply_data` has a fallback that rebuilds
     the LOD meshes from those arrays when `lod_meshes` is empty — correct for
     on-demand (editor/test) data straight out of `compute_chunk_data`, impossible
@@ -310,13 +307,6 @@ level 0 is left `null` and built per-chunk at runtime by `TerrainLod.build_fines
   light, kept as `l0_light` — the same values quantised to RGB8 (~1/5 the bytes, and
   invisible in an 8-bit framebuffer). `test_terrain_lod.gd` asserts the rebuilt level
   matches the prebaked one vertex for vertex.
-  **UV2.y is the trap here**: refilling UV2 from `track_surface` writes UV2.**x** only, so the
-  baked region rank came back as 0 and the rebuilt level 0 rendered as region slot A while the
-  chunk's prebaked coarser levels (decimated from the full-res arrays, rank intact) rendered
-  correctly — one chunk wearing two regions depending on camera distance. `build_finest`
-  therefore re-runs `TerrainManager._apply_region_blend` on the rebuilt grid, exactly as the
-  cache-rehydrate path does, and the rank is a pure function of position so the value is
-  reproduced not approximated (`test_the_lazily_rebuilt_finest_level_keeps_the_region_rank`).
 - **A detail ring, not the whole loaded ring.** `TerrainManager.detail_ring()` derives
   from the live tunables — a chunk at Chebyshev distance `d` is never closer than
   `(d−1)·CHUNK_M` to the focus, and the camera can be `precompute_safety_slack_m` from
@@ -613,11 +603,10 @@ cache pull; the ring is finest-deferred like any later chunk), `test_car_terrain
 
 ## Bounded-world streaming
 
-`TerrainManager` also carries a **bounded, streamed** world mode — built for the drivable
-overworld hub that the roguelike pivot deleted. The consumer (the hub) is gone, but
-`TerrainManager`'s side of the seam is real, live, headless-tested infrastructure that
-survives it — `load_radius`, `stream_on_miss`, `chunk_source`, `road_source`, `pad_source`,
-`region_source`, `set_bounds`/`apply_overworld_bounds`, cache eviction and budgeted spawning.
+`TerrainManager` also carries a few **streaming** opt-ins left from the deleted overworld
+hub — `load_radius`, `stream_on_miss`, `road_source`, cache eviction and budgeted spawning.
+The bounded-world mode (`set_bounds`, the coastline taper, `chunk_source`, pads, the region
+blend) is gone.
 It is a set of **additive, off-by-default opt-ins**: leave it alone and behaviour is
 bit-identical to a stage, and nothing in `main.tscn` touches it. See
 **[terrain-streaming.md](terrain-streaming.md)** for the full seam, why it is kept rather
@@ -819,84 +808,6 @@ cone is per-frame arithmetic from global uniforms, and weather never reaches
 `TrackGenParams`. See [rendering.md](rendering.md) → "The fake headlight cone"
 and [weather.md](weather.md) → "Night" (five stages author it, one per region).
 
-## Dual day/night bake (menu_showcase.gd only)
-
-A REAL stage handles night by re-lighting the fragment (the headlight cone above) plus
-scaling `TerrainManager.sun_color`/`sky_color` for its ONE bake — it only ever loads one
-condition at a time, so there's nothing to swap between. `scripts/menu_showcase.gd`'s six
-segments are different: each one cycles independently through its own weather, is built
-ONCE behind the loading screen, and never rebuilds — so when a segment rerolls to night,
-there is no live re-bake to lean on. Rather than accept a night segment whose ground stays
-lit as if it were day (the terrain bake is otherwise the only thing that changes for
-night — see above), the showcase pre-bakes BOTH a day and a night vertex-colour array
-for every chunk/level up front, and swaps a spawned chunk's mesh onto whichever one its
-segment currently wants.
-
-- **`TerrainManager.bake_night_colors`** (default `false`, every stage path) turns this on,
-  together with a second light profile — `night_sun_dir` / `night_sun_color` /
-  `night_sky_color` / `night_ground_color` / `night_light_amount` — mirroring the day
-  fields (`sun_dir`/`sun_color`/`sky_color`/`ground_color`/`light_amount`) one-for-one.
-  `TerrainManager.light_for_normal(n, dir, sun, sky, ground, amount)` (static) is the
-  lighting math itself, shared by `_light_from_neighbours` (day),
-  `_night_light_from_neighbours` (night) and free roam's `TerrainStreamer.ground_light` so
-  none of them can drift apart — the SAME hemisphere-ambient-plus-sun math
-  shaders/ps1_models_lit.gdshader mirrors, just fed a different profile (the two
-  neighbour-height callers build the normal from their ±1-cell heights first).
-- **`TerrainChunkBuilder`** bakes the second array alongside the first when
-  `_m.bake_night_colors` — the night light is a second arithmetic evaluation on the SAME
-  neighbour heights already sampled for the day bake (the halo for full-res chunks, the
-  four `_sampled_height` calls for coarse ones), not a second geometry pass. `data()`
-  carries it as `"night_colors"` (empty `PackedColorArray` when off).
-  `TerrainManager.compute_chunk_data`'s `_sync_night_alpha` re-syncs just the alpha channel
-  (the road blend weight) onto it afterward, since `_apply_road_carve`/`_apply_pad_flatten`
-  are the only passes that touch COLOR at all, and only alpha — RGB is untouched by every
-  modifier, so the night array only ever needs that one channel patched.
-- **`TerrainLod`** resamples the night array through the SAME subsample-and-skirt logic
-  as the day one, sharing `_perimeter_ring(n)` (extracted out of `_add_skirt`) so a night
-  colour array lines up index-for-index with the mesh's day colours — `build_level` /
-  `mesh_from_grid` take an optional `night_out: Array` (size-1 out-param) and
-  `build_all` / `build_levels_from` take an optional `night_colors_out: Array`, filled
-  per level. `build_levels_from`'s per-level `TerrainChunkBuilder` pass already produces
-  both arrays in one go — no second build.
-- **`TerrainManager.cache_chunk`** stores the result as `"night_colors_by_level"` on the
-  cached chunk dict (one `PackedColorArray` per LOD level, empty for a pruned level) —
-  for BOTH the coarse (`precompute_prune_enabled`) and full-res branches. This is a LIVE
-  need (a spawned chunk's mesh is swapped against it at runtime), so unlike the raw
-  full-res `"night_colors"` (dropped right after slicing — nothing reads it again) it is
-  never added to `DEAD_AFTER_PREBAKE` and never touched by `free_load_only_data`.
-- **`TerrainChunk.apply_vertex_color_profile(profile)`** does the actual swap: for each
-  LOD level's `MeshInstance3D`, read the surface's arrays back
-  (`ArrayMesh.surface_get_arrays`), replace ONLY `ARRAY_COLOR`, and resubmit
-  (`clear_surfaces` + `add_surface_from_arrays`) — positions/UVs/indices are identical
-  between profiles (weather never changes track/cliff geometry), so this is a data copy
-  of already-resident arrays, not a mesh rebuild. The day array is stashed on the first
-  swap to night, so switching back is an exact restore. `TerrainManager.
-  set_vertex_color_profile(profile)` is the driver over every currently-spawned chunk,
-  and remembers the profile so a later `_spawn_chunk` starts in it too.
-- **`menu_showcase.gd`** is the only caller. A segment whose eligible weather ids include
-  one with `WeatherLibrary`'s `"terrain_relight"` key (today only `"night"`) gets
-  `bake_night_colors = true` and its night profile seeded from `cfg.night_sun_energy_mult`
-  / `cfg.night_sky_color` / `cfg.ground_color`, mirroring `world.gd::_apply_overcast_look`'s
-  own night seating exactly (sun scaled, alpha preserved; sky replaced; ground untouched) —
-  so the showcase's bake agrees with what a real night stage bakes. The swap itself is
-  gated to camera CUTS (never mid-shot, for the same reason the sky/fog swap already was)
-  except for a segment the camera is not currently framing, which commits immediately —
-  see the class comment on `MenuShowcase` and `_reroll_segment_weather`/
-  `_commit_segment_weather`/`_process`.
-- **Cost**: turning `bake_night_colors` on doubles the per-vertex light evaluation (cheap —
-  arithmetic on already-sampled neighbours) and adds one `PackedColorArray` per chunk/level
-  to the cache — a few KB per chunk, not the full duplicate mesh a naive implementation
-  would cost (positions/UVs/indices are never duplicated). `MenuShowcaseCache` (the
-  committed CI-baked snapshot) does NOT store any of this: it deliberately caches only
-  track shape + the five bake dictionaries + foliage points, never per-chunk data (see that
-  file's own header for why chunk-data caching was tried and rejected) — the night arrays
-  are computed live in `_cache_segment_chunks` on every build, cache hit or not.
-- **Turning baked terrain lighting on for the showcase changes its DAYTIME look too** —
-  `apply_terrain_light` is now called for every segment (not just night-eligible ones), so
-  the menu ground gets real hemisphere+sun shading where it previously had none. That was
-  a deliberate, signed-off trade-off (see the PR/commit that introduced this), not a side
-  effect to "fix".
-
 ## Region look overrides
 
 A rally's `region` (see [regions.md](regions.md)) can override the ground
@@ -934,6 +845,5 @@ are gone with it — there is no post-pivot reader left.
 
 ## Related config
 
-`terrain_layer{1,2,3}_{wavelength,amplitude}`, `terrain_tile_per_meter`. For the overworld:
-`overworld_edge_taper_m` / `overworld_edge_depth_m` (the coastline). See
+`terrain_layer{1,2,3}_{wavelength,amplitude}`, `terrain_tile_per_meter`. See
 [configuration.md](configuration.md).

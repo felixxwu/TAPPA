@@ -17,7 +17,7 @@ extends SceneTree
 #   set y    the bonnet_cam_offset.y that leaves CLEARANCE_M between the camera and the body
 #
 # `-s` compiles this before the autoloads exist, so CarLibrary and the config are reached through
-# untyped load() after one frame (as tools/bake_car_silhouettes.gd does).
+# untyped load() after one frame.
 
 const CELL := 0.1
 const CLEARANCE_M := 0.1

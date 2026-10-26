@@ -55,7 +55,7 @@ extends RefCounted
 # entry, `scaled_subfields` names which of ITS keys the purchased level actually scales
 # (the part's real strength — boost gain); every other key is a FIXED characteristic of
 # the part (spool inertia, saturation point, parasitic drag) that never scales with
-# level. See magnitude_for and current_effect_text for where this shape is read.
+# level. See magnitude_for for where this shape is read.
 # `ring` is the free-roam biome ring whose checkpoints sell the part, at level = ring, for `price`
 # (LootRules.ring_tables / price).
 const CATALOGUE := {
@@ -63,7 +63,7 @@ const CATALOGUE := {
 		"ring": 0, "price": 1200,
 		"label": "Lightweight", "blurb": "Sheds weight.",
 		# "mult_floor", not "mult": a proportional weight cut clamped at
-		# GameConfig.min_lightweight_mass, so it's one-time (see BoostLibrary.stacks) and
+		# GameConfig.min_lightweight_mass, so it's one-time and
 		# excluded from the pick pool once a car is already at/under the floor
 		# (RunSession._lightweight_available) rather than a repeatable % that keeps
 		# scaling a car that's already light.
@@ -87,8 +87,6 @@ const CATALOGUE := {
 			"engine_turbo_antilag_bang_gain": "run_boost_turbo_antilag_bang_gain",
 		}},
 		"scaled_subfields": ["turbo_boost_gain"],
-		"display_subfield": "turbo_boost_gain",
-		"display_suffix": "torque at full boost",
 		"level_direction": 1, # higher turbo_boost_gain = more boost
 		"category": "power",
 	},
@@ -106,8 +104,7 @@ const CATALOGUE := {
 		"level_direction": - 1, # lower shift time = faster = more boost
 		# A "set" op replaces the car's shift time outright, so the shop shows the
 		# absolute seconds it sets rather than a percentage of a baseline that does not
-		# exist — see current_effect_text.
-		"unit": "s", "decimals": 2,
+		# exist.
 		"category": "power",
 	},
 	"nitrous": {
@@ -123,8 +120,6 @@ const CATALOGUE := {
 			"nitrous_tank_seconds": "run_boost_nitrous_tank_seconds",
 		}},
 		"scaled_subfields": ["nitrous_boost_gain"],
-		"display_subfield": "nitrous_boost_gain",
-		"display_suffix": "torque while held",
 		"level_direction": 1, # higher nitrous_boost_gain = more boost
 		"category": "power",
 	},
@@ -137,9 +132,8 @@ const CATALOGUE := {
 		},
 		"level_direction": 1, # more downforce = more boost
 		# An "add" op stacks on the car's own downforce, so likewise no percentage — the
-		# authored unit is N per (m/s)², which is what the shop prints. Both axles take
-		# the same number and current_effect_text de-duplicates them into one figure.
-		"unit": "N", "decimals": 1,
+		# authored unit is N per (m/s)². Both axles take
+		# the same number.
 		"category": "handling",
 	},
 	"brakes": {
@@ -152,8 +146,7 @@ const CATALOGUE := {
 		"level_direction": 1, # higher brake_torque_set = more boost
 		# A "set" op replaces the car's own brake_torque outright, so the shop shows the
 		# absolute N·m it sets rather than a percentage of a baseline that does not
-		# exist — see current_effect_text (mirrors "gearbox"'s comment above).
-		"unit": "N·m", "decimals": 0,
+		# exist.
 		"category": "handling",
 	},
 	"supercharger": {
@@ -169,8 +162,6 @@ const CATALOGUE := {
 			"engine_supercharger_whine_gain": "run_boost_supercharger_whine_gain",
 		}},
 		"scaled_subfields": ["supercharger_boost_gain"],
-		"display_subfield": "supercharger_boost_gain",
-		"display_suffix": "torque at full boost",
 		"level_direction": 1, # higher supercharger_boost_gain = more boost
 		"category": "power",
 	},
@@ -227,107 +218,6 @@ static func magnitude_for(id: String, level: int) -> Dictionary:
 		else:
 			out[effect_key] = float(cfg.get(String(spec))) * scale
 	return out
-
-
-# Shop display text: WHAT THIS BOOST DOES TO THE CAR at `level` — the figure the shop
-# card puts under the level, so "Lv 1" is never shown without what level 1 actually buys.
-#
-# READ THIS BEFORE CHANGING IT. The obvious implementation — `(level_scale(level,
-# direction) - 1.0) * 100.0`, i.e. how far the LEVEL has pushed the magnitude — is wrong,
-# and was shipped and reverted once. `level_scale` is exactly 1.0 at level 0 by design,
-# so that expression renders the un-upgraded boost (the one the shop shows most often,
-# and the one every fresh profile sees) as "+0%": a card reading "Lv 1, +0%" states that
-# the boost does nothing, which is the opposite of true. The player does not care how far
-# a level moved the number; they care what the boost gives them.
-#
-# So the figure is derived from the RESOLVED MAGNITUDE (`magnitude_for`, already
-# level-scaled and read live off Config.data) against no-boost at all, per effect op —
-# because "as a percentage" is only meaningful for one of the three ops:
-#   * "mult" — the magnitude IS a ratio to no-boost, so (m - 1) as a signed %. Five of
-#     the seven catalogue entries are this, including every entry the request's own
-#     example named ("an upgraded weight reduction is always -8% ... upgraded once
-#     it's -16%"): a mult compounds, so successive levels roughly double the swing.
-#   * "add"  — added ON TOP of whatever the car already has (downforce, authored in N per
-#     (m/s)²), so there is no baseline to be a percentage OF. Shown as the signed amount
-#     with the entry's `unit`.
-#   * "set"  — replaces the car's value outright (shift time, in seconds), so likewise no
-#     baseline. Shown as the absolute value it sets, with the entry's `unit`.
-# An entry with several effect keys (the aero kit drives both axles) formats each and
-# joins them, de-duplicated — both axles take the same number, so that reads as one
-# figure rather than the same figure twice.
-#
-# Pure in its two arguments (no Save read), mirroring the `magnitude_for` split so the
-# relationship stays testable without a profile. "" for an unknown id.
-static func current_effect_text(id: String, level: int) -> String:
-	var entry: Dictionary = CATALOGUE.get(id, {})
-	if entry.is_empty():
-		return ""
-	var magnitude := magnitude_for(id, level)
-	var unit := String(entry.get("unit", ""))
-	var decimals := int(entry.get("decimals", 2))
-	var parts: Array[String] = []
-	for effect_key in magnitude:
-		# A DICT-SHAPED entry (turbo/supercharger — install_induction's op, which is
-		# neither mult/add/set): show the ONE scaled sub-field (`display_subfield`) as a
-		# signed percentage — it IS the boost's own gain, not a ratio-to-baseline like a
-		# mult row, so it skips the (value - 1.0) shift the mult branch below applies.
-		if magnitude[effect_key] is Dictionary:
-			var sub: Dictionary = magnitude[effect_key]
-			var gain := float(sub.get(String(entry.get("display_subfield", "")), 0.0))
-			var suffix := String(entry.get("display_suffix", ""))
-			var dict_text := "+%.0f%% %s" % [gain * 100.0, suffix] if not suffix.is_empty() \
-				else "+%.0f%%" % (gain * 100.0)
-			if not parts.has(dict_text):
-				parts.append(dict_text)
-			continue
-		var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
-		var value := float(magnitude[effect_key])
-		var text := ""
-		match op:
-			"add":
-				text = "%+.*f" % [decimals, value]
-			"set":
-				text = "%.*f" % [decimals, value]
-			_:
-				# "mult", and the safe default for a row this file has not seen: a ratio
-				# to no-boost reads as a percentage swing.
-				text = "%+.0f%%" % ((value - 1.0) * 100.0)
-		# "mult"/"mult_floor" both fall to the percentage default arm above — no unit
-		# suffix belongs on a percentage swing, same reason _is_percentage_display groups
-		# them for the display tests (test_boost_library.gd).
-		if not unit.is_empty() and op != "mult" and op != "mult_floor":
-			text = "%s %s" % [text, unit]
-		if not parts.has(text):
-			parts.append(text)
-	return " / ".join(parts)
-
-
-# Whether a SECOND pick of `id` in the same run would do anything MORE than the first —
-# false for an entry whose op OVERWRITES the same value every time it's applied ("set",
-# "install_induction") or converges on a FLOOR/CEILING it can't be pushed past
-# ("mult_floor" — Lightweight parts: a repeat pick still clamps at the same floor, a
-# dead roll rather than a lighter car) as opposed to one that COMPOUNDS ("mult"/"add" —
-# two "Sticky tyres" picks really do grip harder than one, since apply() walks the whole
-# `boosts` list and multiplies/adds each entry in turn onto the same freshly-reseeded
-# baseline).
-# Read off UpgradeLibrary.EFFECTS rather than hardcoded here, so a retyped or newly added
-# op is classified correctly with no catalogue edit — same "derive, don't duplicate"
-# convention as category_of. `true` (assume it stacks) for an unknown id: callers only
-# consult this for an id already known to be in the catalogue, and stacking is the safe
-# default (it just means "don't bother filtering this one").
-#
-# Drivetrain/engine-swap pseudo-ids are NOT handled here — they never reach this
-# function, because their own availability check already drops them from the pool once
-# a repeat would be redundant (RunSession._pool_drivetrain_ids/_pool_engine_swap_ids).
-static func stacks(id: String) -> bool:
-	var entry: Dictionary = CATALOGUE.get(id, {})
-	if entry.is_empty():
-		return true
-	for effect_key in (entry.get("effect_fields", {}) as Dictionary):
-		var op := String((UpgradeLibrary.EFFECTS.get(effect_key, {}) as Dictionary).get("op", "mult"))
-		if op == "set" or op == "install_induction" or op == "mult_floor" or op == "write_fields":
-			return false
-	return true
 
 
 # A short line saying what the part does, for its card.

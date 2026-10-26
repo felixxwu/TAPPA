@@ -5,10 +5,9 @@
 | Key | Action | Does |
 |-----|--------|------|
 | **H** | `toggle_debug_arrows` | Per-wheel force arrows + the HUD dev readout (below) |
-| **F7** | `toggle_world_menus` | A/B world-space menus against the flat overlays ([world-panel.md](world-panel.md)) |
 | **F8** | `reload_config` | Re-read `config/game_config.tres` from disk and re-apply, no restart ([world-panel.md](world-panel.md) → "Tuning it live") |
 
-All three are gated on `SettingsMenu.dev_tools_enabled()`, which defaults to **true** — release
+Both are gated on `SettingsMenu.dev_tools_enabled()`, which defaults to **true** — release
 exports (including the web build) get them too, same as the editor and debug exports. A config
 value that starts a feature on still works in any build regardless of the switch.
 

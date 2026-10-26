@@ -153,6 +153,22 @@ func test_free_roam_resumes_the_saved_world() -> void:
 	assert_lt(Vector2(car.global_position.x, car.global_position.z).distance_to(Vector2(40, 25)), 2.0, "the car is where it was left")
 
 
+func test_a_car_saved_while_wrecked_comes_back_at_its_respawn_point_repaired() -> void:
+	WorldSession.new_world(7, _any_car())
+	WorldSession.light(1)
+	WorldSession.set_last_site(1)
+	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(40, 0, 25)))
+	(_save.profile[_save.KEY_WORLD] as Dictionary)["car_state"] = {"hp": 0.0}
+	var scene := await _boot_free_roam()
+	var rest: RestStops = scene.get_node("RestStops")
+	var car: Node3D = scene.get_node("Car")
+	var dmg: DamageModel = car.get("damage")
+	assert_eq(dmg.hp, dmg.max_hp, "the wreck was quit, not escaped: the car is repaired")
+	var pose := rest.pose_at(1)
+	assert_lt(Vector2(car.global_position.x, car.global_position.z).distance_to(Vector2(pose.origin.x, pose.origin.z)), 3.0,
+		"and starts at the last rest stop, not where it gave up")
+
+
 # Leaving the scene (a scene change, the window closing) still saves the car's place: the car has
 # left the tree by the time the root's tree_exiting fires, so the pose comes from the tick cache.
 func test_leaving_the_scene_saves_the_pose() -> void:

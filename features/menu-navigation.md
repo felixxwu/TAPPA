@@ -108,7 +108,7 @@ focus next frame.
 
 **Live `MenuNav.attach` callers today:** the shared `SettingsMenu` (rows + bottom action
 button — backs both the title-screen Settings page and the pause menu's), the **pause**
-menu (its card list, and the Settings page), `ConfirmPopup` and `UsernamePopup`
+menu (its card list, and the Settings page), `ConfirmPopup`
 (the modal layer — see [modals.md](modals.md)), the HUD's **stage-complete panel**'s single
 `NEXT` button (`hud.gd`, [hud.md](hud.md)), `AccountMenu` ([cloud-save.md](cloud-save.md)),
 and `BenchmarkResults` ([benchmark.md](benchmark.md)). Free roam's menus attach it too:

@@ -100,9 +100,6 @@ void region_lut_look(float baked_rank, out vec4 tint, out vec4 tarmac) {
 // regardless — but the fragment maths must still match or a snow stage would light
 // differently from a dry one.
 #include "res://shaders/headlight_cone.gdshaderinc"
-// Overworld fog of war (features/overworld.md). The Alps are a map corner, so the overworld
-// swaps to THIS shader there — it needs the same darkening or the frontier would vanish on snow.
-#include "res://shaders/overworld_fog.gdshaderinc"
 
 void vertex() {
 	// Raise off-road only. COLOR.a is the baked road weight the fragment stage blends
@@ -131,7 +128,5 @@ void fragment() {
 	vec3 road = mix(gravel, tarmac.rgb, tarmac_t);
 	vec3 surface = mix(ground, road, road_t) * tint.rgb;
 	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// Multiplies the finished light term — see the note in ps1_models.gdshader.
-	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world_pos))
-		* overworld_fog_at(world_pos);
+	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world_pos));
 }

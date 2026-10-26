@@ -84,9 +84,7 @@ func test_params_with_a_null_config_is_still() -> void:
 	assert_eq(vals[WindSway.G_STRENGTH], 0.0, "no config -> zero strength, not a crash")
 
 
-func test_config_fields_includes_foliage_wind_and_physics_fields_does_not() -> void:
+func test_config_fields_includes_foliage_wind() -> void:
 	var entry := {"id": "synthetic", "foliage_wind": "storm_foliage_wind_strength"}
 	assert_true(WeatherLibrary.config_fields(entry).has("storm_foliage_wind_strength"),
 		"foliage_wind is reported as a field the entry references")
-	assert_false(WeatherLibrary.physics_fields(entry).has("storm_foliage_wind_strength"),
-		"foliage_wind is purely cosmetic, so it must not re-key the opponent cache")

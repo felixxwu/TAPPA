@@ -322,8 +322,7 @@ since sub-pages navigate by native focus (`MenuNav`).
 ## Sizing a scrolled body (`UITheme.fit_body_scroll`)
 
 Modals put their autowrapped body `Label` inside a `TouchScrollContainer` so a long
-message can never push the action buttons off screen (`ConfirmPopup`,
-`UsernamePopup` — see `features/menus.md` → "Body scrolls, buttons stay pinned").
+message can never push the action buttons off screen (`ConfirmPopup` — see `features/menus.md` → "Body scrolls, buttons stay pinned").
 But a `ScrollContainer` deliberately reports **no minimum size on the axis it may
 scroll**, so inside a `CenterContainer`/`PanelContainer` (both of which size to
 their natural minimum) an untouched scroll collapses to ~0 tall. Its height must

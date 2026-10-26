@@ -262,7 +262,7 @@ func _make_debug_label(node_name: String, top: float, right: float) -> Label:
 	lbl.offset_top = top
 	lbl.offset_right = right
 	lbl.offset_bottom = top + 20.0
-	lbl.add_theme_font_size_override("font_size", UITheme.px(14))
+	lbl.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	lbl.visible = false
 	add_child(lbl)
 	return lbl
@@ -309,7 +309,7 @@ func _build_grip_grid() -> void:
 		var lbl := Label.new()
 		lbl.name = "Grip" + corner
 		lbl.custom_minimum_size.x = _GRIP_CELL_W
-		lbl.add_theme_font_size_override("font_size", UITheme.px(14))
+		lbl.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 		lbl.text = grip_text(corner, -1.0)
 		grid.add_child(lbl)
 		_grip_labels.append(lbl)
@@ -396,7 +396,7 @@ func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
 	lbl.offset_top = offsets.z
 	lbl.offset_bottom = offsets.w
 	lbl.horizontal_alignment = align as HorizontalAlignment
-	lbl.add_theme_font_size_override("font_size", UITheme.px(20))
+	lbl.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	lbl.visible = false
 	add_child(lbl)
 	return lbl
@@ -416,7 +416,7 @@ func _build_off_road_label() -> void:
 	_off_road_label.anchor_top = 0.5
 	_off_road_label.anchor_bottom = 0.5
 	_off_road_label.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_off_road_label.add_theme_font_size_override("font_size", UITheme.px(28))
+	_off_road_label.add_theme_font_size_override("font_size", UITheme.TITLE_FONT_SIZE)
 	_off_road_label.add_theme_color_override("font_color", UITheme.RED)
 
 

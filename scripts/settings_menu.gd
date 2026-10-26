@@ -2,8 +2,8 @@ class_name SettingsMenu
 extends VBoxContainer
 # Docs: features/settings.md (adding/changing a setting), features/menu-navigation.md (every row must be keyboard+gamepad navigable) — update in the same change as this file.
 # Tests: tests/headless/test_settings_menu.gd, tests/headless/test_menu_nav.gd, tests/headless/test_benchmark_ui.gd — extend in the same change. Others: grep -rl SettingsMenu tests/.
-# A reusable settings panel shared by the hub's SETTINGS page (scripts/hub_shell.gd) and
-# the in-run pause menu, so both present the SAME options. It opens on a LIST of
+# A reusable settings panel shared by the title screen's Settings page and
+# the pause menu, so both present the SAME options. It opens on a LIST of
 # categories; each
 # row drills into its own sub-page:
 #   • Audio — a Master volume slider (AudioServer bus 0, so it scales everything:
@@ -57,8 +57,8 @@ const _BIND_BUTTON_W := 168.0 * UITheme.UI_SCALE
 # Standing copy on the Reset progress page: the warning shown above the button, and
 # the body of the confirm modal (which appends the cloud line when signed in). One
 # string so the page and the prompt cannot describe the same destruction differently.
-const RESET_WARNING := "Start a brand new game. Every car, star, upgrade and " \
-	+ "rally result is erased — on this device and, while you are signed in, in " \
+const RESET_WARNING := "Start a brand new game. Your world, cars, parts, money and " \
+	+ "checkpoints are erased — on this device and, while you are signed in, in " \
 	+ "the cloud. This cannot be undone."
 
 
@@ -70,11 +70,10 @@ static var dev_tools_override := -1
 
 # Are the developer-only settings pages (Benchmark / Dev / Seed lab) reachable,
 # and — via this same switch, checked at every OTHER dev-affordance site in the
-# project (car.gd, hud.gd, world.gd, hq.gd, world_panel_host.gd,
-# terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
+# project (car.gd, hud.gd, world.gd, terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
 # switch, defaulting to true: dev features are exposed to every player, not just
 # debug builds, so the whole in-game toolkit (grip grid, force arrows, seed lab,
-# skip-to-finish, world-menu A/B, config hot-reload, perf overlay/log) is
+# skip-to-finish, config hot-reload, perf overlay/log) is
 # reachable in the shipped release/web export as well as the editor.
 static func dev_tools_enabled() -> bool:
 	if dev_tools_override >= 0:
@@ -712,9 +711,9 @@ func _toggle_benchmark(key: String) -> void:
 	_refresh_benchmark_rows()
 
 
-# Launch the benchmark. The Benchmark autoload owns the rest (unpause, abandon
-# any active rally, config overrides, the run-scene load), so this works the
-# same from the HQ title screen and the in-run pause menu.
+# Launch the benchmark. The Benchmark autoload owns the rest (unpause, config
+# overrides, the run-scene load), so this works the same from the title screen
+# and the pause menu.
 func _start_benchmark() -> void:
 	Benchmark.start()
 
@@ -747,13 +746,8 @@ func _prompt_wipe_progress() -> void:
 # Called by the confirm modal, and directly by tests — the confirmation is
 # _prompt_wipe_progress's job, so this stays the plain "do it" entry point.
 #
-# Ends by reloading the hub scene from scratch (see _reload_after_wipe). A wipe
-# clears the save's car/garage state out from under a scene that is still live —
-# the player was left with their old car still fielded in a hub that had never
-# re-run the "no starter car yet" setup a real new game boots into. Reloading is
-# the same fix a restart would give, without asking them to quit: it
-# re-instantiates the hub fresh against the just-wiped profile, so the
-# starter-car picker (etc.) runs exactly as it would for a brand new player.
+# Ends by rebooting through the title scene (see _reload_after_wipe), because the live
+# world still holds the old car and state the wipe just erased.
 func _wipe_progress() -> void:
 	Save.reset_new_game()
 	_refresh_camera_selection()
@@ -773,9 +767,7 @@ func _wipe_progress() -> void:
 	_reload_after_wipe()
 
 
-# Reload the hub scene fresh so the wiped profile is picked up exactly like a
-# new player's first boot (starter car picker included), instead of leaving
-# the current scene running against state it no longer matches. Routed through
+# Boot again as a brand-new player would. Routed through
 # Scenes.change_to so tests (which arm Scenes.block_real_changes) stay inert.
 func _reload_after_wipe() -> void:
 	Scenes.change_to(get_tree(), Scenes.hub_path())
@@ -866,7 +858,7 @@ func _make_controls_header() -> HBoxContainer:
 		label.text = caption
 		label.custom_minimum_size = Vector2(_BIND_BUTTON_W, 0)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", UITheme.px(13))
+		label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 		row.add_child(label)
 	return row
 
@@ -883,7 +875,7 @@ func _make_control_row(entry: Dictionary) -> HBoxContainer:
 	name_label.text = String(entry["name"])
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	name_label.add_theme_font_size_override("font_size", UITheme.px(16))
+	name_label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	row.add_child(name_label)
 
 	var keyboard_button := _make_binding_button(action, InputRemap.SLOT_KEYBOARD)
@@ -997,14 +989,14 @@ func _make_page() -> VBoxContainer:
 func _make_heading(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.add_theme_font_size_override("font_size", UITheme.px(20))
+	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	return label
 
 
 func _make_sub(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.add_theme_font_size_override("font_size", UITheme.px(14))
+	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	# Wrap long blurbs (e.g. the benchmark page's description) to the width the
 	# page's rows set, instead of forcing the whole settings panel wider.
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1318,12 +1310,12 @@ func _make_row_text(button: Button) -> VBoxContainer:
 func _add_row_labels(text: VBoxContainer, name_text: String, desc_text: String) -> void:
 	var name_label := Label.new()
 	name_label.text = name_text
-	name_label.add_theme_font_size_override("font_size", UITheme.px(18))
+	name_label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	text.add_child(name_label)
 	var desc_label := Label.new()
 	desc_label.text = desc_text
-	desc_label.add_theme_font_size_override("font_size", UITheme.px(13))
+	desc_label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	text.add_child(desc_label)

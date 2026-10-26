@@ -17,6 +17,8 @@ extends RefCounted
 enum Kind { REST, LOOT, DEAD_END }
 
 const GRID_M := 100.0
+# Every site by the cell its centre is in, so in_box (run every physics tick) skips the rest of the island.
+const BOX_CELL_M := 250.0
 # Keep sites this far from a junction along the road, so a pad never sits in a fork.
 const JUNCTION_CLEAR_M := 45.0
 # When a site doesn't fit where it's due, how much further along the road the next try is.
@@ -32,6 +34,7 @@ var ring := PackedInt32Array()
 var edge := PackedInt32Array()       # the road link it hangs off (-1 for spawn)
 var node := PackedInt32Array()       # the junction for spawn and dead ends, else -1
 var _grid := {}  # Vector2i -> PackedInt32Array
+var _box_cells := {}  # Vector2i -> PackedInt32Array, by BOX_CELL_M
 var _blend := 12.0  # the widest a pad's blend can reach
 var _blend_min := 12.0
 var _max_slope := 0.25
@@ -197,6 +200,10 @@ func _add(k: Kind, c: Vector2, a: Vector2, d: Vector2, r: float, terrain: RoadTe
 	edge.append(ei)
 	node.append(n)
 	_max_r = maxf(_max_r, r)
+	var cell := Vector2i(floori(c.x / BOX_CELL_M), floori(c.y / BOX_CELL_M))
+	var in_cell: PackedInt32Array = _box_cells.get(cell, PackedInt32Array())
+	in_cell.append(i)
+	_box_cells[cell] = in_cell
 	if r <= 0.0:
 		return  # no pad, so nothing for the terrain or planting to look up
 	var reach := r + _blend
@@ -269,11 +276,14 @@ func blend_m(dh: float) -> float:
 # Every site whose pad touches the axis-aligned box.
 func in_box(x0: float, y0: float, x1: float, y1: float) -> PackedInt32Array:
 	var out := PackedInt32Array()
-	for i in kind.size():
-		var c := pos[i]
-		var r := radius[i]
-		if c.x + r >= x0 and c.x - r <= x1 and c.y + r >= y0 and c.y - r <= y1:
-			out.append(i)
+	for cx in range(floori((x0 - _max_r) / BOX_CELL_M), floori((x1 + _max_r) / BOX_CELL_M) + 1):
+		for cy in range(floori((y0 - _max_r) / BOX_CELL_M), floori((y1 + _max_r) / BOX_CELL_M) + 1):
+			for i in _box_cells.get(Vector2i(cx, cy), PackedInt32Array()):
+				var c := pos[i]
+				var r := radius[i]
+				if c.x + r >= x0 and c.x - r <= x1 and c.y + r >= y0 and c.y - r <= y1:
+					out.append(i)
+	out.sort()
 	return out
 
 

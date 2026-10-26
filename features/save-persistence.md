@@ -31,7 +31,7 @@ whole schema):
   writer is `WorldSession` ([world-session.md](world-session.md)).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences, read/written via
   `get_setting` / `set_setting`.
-- `cloud_revision` / `cloud_uid` / `unsynced` / `username` — the optional cloud-save
+- `cloud_revision` / `cloud_uid` / `unsynced` — the optional cloud-save
   bookkeeping ([cloud-save.md](cloud-save.md)). `unsynced` is PERSISTED deliberately:
   progress made offline must still read as unsynced after a relaunch.
 

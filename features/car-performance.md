@@ -10,8 +10,7 @@
 `tests/headless/test_lap_time_model.gd`.
 
 > **No screen shows the rating today.** Its consumers (the rival field, the challenge ceiling,
-> the upgrades grid's `PERFORMANCE` readout) are deleted; `CarStatBounds` still sweeps a
-> `"rating"` range for normalising one onto 0..1. The model below is intact.
+> the upgrades grid's `PERFORMANCE` readout) are deleted; the model below is intact.
 
 **Tests:** `tests/headless/test_car_performance.gd`, `tests/headless/test_lap_time_model.gd`
 
@@ -424,17 +423,6 @@ flags the best-correlating setting. Other args: `--stages=N` (generation is the
 entire cost), `--seed=N` (`--stock-only` is accepted and ignored — there is one build
 per car now that parts are gone). Anything it recommends is a
 `GameConfig` value — apply it in `config/game_config.tres`.
-
-## `CarStatBounds`
-
-**`CarStatBounds` carries a `"rating"` range** for normalising a rating onto 0..1. Its sweep
-is a benchmark solve per roster car, so the bounds cache is now invalidated by the same
-`GameConfig` fingerprint as the rating cache (`CarPerformance.config_key()`, plus
-`grip_reference_kmh` for the grip row) rather than by the catalogue seams alone. Measured
-cost on the shipped-size roster (9 cars, desktop headless): **~7 ms cold**, ~0.005 ms warm,
-and ~0.5 ms to re-sweep when only the bounds cache is dropped (the per-car ratings are
-still memoised). Budget: one-off, under a frame at 60 Hz on desktop; assume several times
-that on wasm and treat >50 ms as a regression to investigate.
 
 ## Testing
 

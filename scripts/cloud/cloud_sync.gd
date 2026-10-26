@@ -150,10 +150,10 @@ func pull() -> Dictionary:
 		_set_status(Status.SYNCED, "Up to date")
 		return {"ok": true, "state": "applied", "error": ""}
 
-	# Both sides moved on — but ONE case is not a real dilemma. If this device has no
-	# cars at all, the local "progress" is a wiped save: something was reset, cleared
-	# or reinstalled, and the only thing that would be lost by taking the cloud is an
-	# empty garage. Asking there is worse than useless — it presents a fresh blank
+	# Both sides moved on — but ONE case is not a real dilemma. If this device's car
+	# has never driven anywhere, the local "progress" is a blank save (a reinstall, or the
+	# world boot builds before the first pull), and nothing would be lost by taking the
+	# cloud. Asking there is worse than useless — it presents a fresh blank
 	# profile as an equal alternative to the player's real career, and one mis-tap on
 	# "keep this device" uploads the blank over it. So take the cloud, provided the
 	# cloud actually HAS something (a wiped local against a wiped cloud is a genuine
@@ -255,15 +255,16 @@ func push_wipe() -> Dictionary:
 # --- Conflict resolution -----------------------------------------------------
 
 # A player-legible description of both sides, for the prompt.
-# "This device has nothing to lose." CARS, not any other counter: a car is the one
-# thing a career cannot exist without (the starter pick grants one before anything
-# else can happen), so an empty garage means the save is blank no matter what else
-# is set. Deliberately NOT keyed on `starter_picked` — a wiped profile that somehow
-# kept that flag would still be empty, and a player mid-starter-pick has no cars
-# either, which is exactly the case reported: signed in, progress gone, happily
-# offered a starter car while a real career sat in the cloud.
+# "This device has nothing to lose." Keyed on ground driven, not cars: boot builds a world
+# with a starter car before the first pull, so a brand-new install always owns a car.
 func _local_is_wiped() -> bool:
-	return Array(Save.profile.get(Save.KEY_CARS, [])).is_empty()
+	return not has_progress(Save.profile)
+
+
+# Every kind of progress needs the car to have driven out of the few map cells around spawn.
+# Not drive_time: that clock runs while the car sits parked.
+static func has_progress(p: Dictionary) -> bool:
+	return ((p.get(Save.KEY_WORLD, {}) as Dictionary).get("driven", {}) as Dictionary).size() > 2
 
 
 # The cloud copy has a career worth restoring. Guards the auto-take: replacing an
@@ -271,9 +272,7 @@ func _local_is_wiped() -> bool:
 # would hide a genuine "both sides are blank" state behind a fake success.
 func _remote_has_progress(remote: Dictionary) -> bool:
 	var parsed: Variant = _parse_profile(String(remote.get("profile", "")))
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return false
-	return not Array((parsed as Dictionary).get(Save.KEY_CARS, [])).is_empty()
+	return typeof(parsed) == TYPE_DICTIONARY and has_progress(parsed)
 
 
 func conflict_summary() -> Dictionary:
@@ -387,8 +386,11 @@ static func from_document(doc: Variant) -> Dictionary:
 # here rather than in the UI so the prompt cannot drift from what is compared.
 static func describe_profile(p: Dictionary) -> String:
 	var cars: int = (p.get(Save.KEY_CARS, []) as Array).size()
-	var car_word := "car" if cars == 1 else "cars"
-	return "%d %s" % [cars, car_word]
+	var world: Dictionary = p.get(Save.KEY_WORLD, {})
+	var stops: int = (world.get("lit", []) as Array).size()
+	var minutes := int(float(world.get("drive_time", 0.0)) / 60.0)
+	return "%d %s, %d %s, %d min driven" % [cars, "car" if cars == 1 else "cars",
+		stops, "checkpoint" if stops == 1 else "checkpoints", minutes]
 
 
 # --- Internals ---------------------------------------------------------------

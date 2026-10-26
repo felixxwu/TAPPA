@@ -1,100 +1,25 @@
-# Terrain — Bounded-World Streaming
+# Terrain — Streaming Opt-ins
 
-**Source:** `scripts/terrain_manager.gd` — the bounded/streamed-world seam
-(`load_radius`, `stream_on_miss`, `chunk_source`, `road_source`, `pad_source`,
-`region_source`, `set_bounds`/`apply_overworld_bounds`, `evict_to_cap`); see
+**Source:** `scripts/terrain_manager.gd` — the streamed-world seam (`load_radius`,
+`stream_on_miss`, `road_source`, `spawn_budget`, `evict_to_cap`); see
 [terrain.md](terrain.md) for the base chunked-terrain system this extends.
 
-**Tests:** `tests/headless/test_terrain_manager_bounds.gd`,
-`tests/headless/test_terrain_manager_streaming.gd`
+**Tests:** `tests/headless/test_terrain_manager_streaming.gd`
 
-
-**This whole file documents a producer-less consumer.** `TerrainManager` carries a
-**bounded, streamed** world mode, built for the drivable overworld hub the roguelike pivot
-deleted. Every field, method and pass below is still live code in `scripts/terrain_manager.gd`,
-but nothing in production feeds it: free roam streams through its own `TerrainStreamer`
-([free-roam.md](free-roam.md)), and only tests call `apply_overworld_bounds` or assign
-`road_source` / `pad_source` / `region_source` / `chunk_source`. The duck-typed contracts below
-are what a new producer would implement; the old producer classes (`OverworldRoads`,
-`OverworldPads`, `OverworldCache`) are gone, so don't go looking for them. Whether to keep this
-mode at all is an open decision for the user.
-
-This is a set of **additive, off-by-default opt-ins**: leave every field below alone and
-behaviour is bit-identical to a stage. Nothing here is used by `main.tscn`.
+**This file documents a producer-less consumer.** `TerrainManager` kept a few opt-ins from
+the deleted overworld hub. Nothing in production feeds them: free roam streams through its own
+`TerrainStreamer` ([free-roam.md](free-roam.md)), and only tests assign `road_source`. The
+bounded-world mode (`set_bounds`, the coastline taper, the `chunk_source` store, flat pads and
+the region blend) has been deleted. All opt-ins are off by default, so behaviour is
+bit-identical to a stage.
 
 | Field / method | Default | What it does |
 |---|---|---|
-| `load_radius: int` | `RADIUS` (3) | Live ring radius, above. |
+| `load_radius: int` | `RADIUS` (3) | Live ring radius. |
 | `stream_on_miss: bool` | `false` | A cache miss **builds** instead of leaving a hole. |
 | `cache_cap_mb: float` | `0.0` (off) | Cap on `cache_size_mb()`; over it, `evict_to_cap()` drops chunks. |
-| `chunk_source: Object` | `null` | Duck-typed chunk store (see below). |
-| `road_source: Object` | `null` | Duck-typed road network — the per-chunk road carve and `surface_at`'s network branch (see below). No producer ships; see the note above. |
-| `capture_encoded_light: bool` | `false` | Keep `l0_light` even when `lazy_finest_lod` is off. |
-| `world_bounds: Rect2` | empty | The bounded world; empty = a stage. |
-| `edge_taper_m` / `edge_depth_m` / `water_level_m` | `0` | The coastline taper. |
-| `bounds_surface: Vector2` | `(0, 0)` | What `surface_at` returns inside bounds. |
-| `set_bounds(rect, taper_m, depth_m, water_y)` | — | Declares the bounded world. |
-| `clear_bounds()` / `has_bounds()` | — | Back to stage mode / the predicate. |
-| `apply_overworld_bounds(cfg, rect)` | — | Seats all of the above from a `GameConfig` in one place. |
-| `set_chunk_source(source)` | — | Attaches the store (and arms `capture_encoded_light`). |
-| `road_source` (assigned directly) | `null` | The road network. Must be seated **before** any chunk is built or cached. |
-| `taper_height(h, x, z)` | — | The falloff itself; a no-op outside bounded mode. |
-
-Params are **passed in**, not read off `Config`, so this `@tool` script stays editor-safe
-and pure — the same convention as the `light_*` and `cliff_*` fields.
-`apply_overworld_bounds` is the one place that reads `GameConfig`
-(`overworld_load_radius`, `overworld_chunk_build_budget`, `overworld_edge_taper_m`,
-`overworld_edge_depth_m`, `track_water_level_m`).
-
-## Bounds replace the track corridor
-
-An open world has no `set_track`/`bake_track`, and five behaviours degrade without a
-corridor. `has_bounds()` is the switch that fixes each:
-
-| Behaviour | Without a corridor | With `set_bounds` |
-|---|---|---|
-| `chunk_class` | full-res `l_min` 0 for unknown coords, so pruning is dead | explicitly full-res **and** in the collision band — correct, because the car can reach anywhere, so no chunk is "far from the route" |
-| `corridor_complete()` | permanently false, so `free_load_only_data()` never fires | `true` — "no chunk can still be asked for the bake fields", which is true by construction (there are none) |
-| `corridor_bounds()` | empty `Rect2`, so `DistantTerrain.build_static` builds no horizon | returns `world_bounds` |
-| `surface_at` | reads the empty `track_weights`/`track_surface` and answers 0 by accident | asks `road_source` when one is attached (`_road_surface_at`), else returns `bounds_surface` by decision |
-| light queries | `lights` freed while `corridor_complete()` stays false → `_cached_light_at` `push_error`s per query | `free_load_only_data()` **keeps** the light and never latches the sentinel; `_cached_light_at` also falls through silently under bounds, so no spam |
-
-Keeping the light is not a leak — in an open world `light_at` is a repeated query and chunks
-are generated in *play*, so `lights` is a live input to every `chunk_source` write, not
-load-only data. (`compute_chunk_data`'s five post-passes, `_chunk_view`, and the `bake_track` split: [terrain-chunk-modifiers.md](terrain-chunk-modifiers.md).)
-
-## The coastline edge taper (D9)
-
-`taper_height(h, x, z)` drives the height toward `water_level_m - edge_depth_m` as a point
-approaches the perimeter of `world_bounds`, smoothstepped over `edge_taper_m`. So the world
-is an island and the sea is the border — no invisible wall, no turn-back logic, and it reuses
-the waterline `LakeField` already builds ([lakes.md](lakes.md)). Beyond the bounds the inward
-distance clamps at 0, so the sea floor is a flat shelf at full depth rather than falling
-forever.
-
-**Where it is applied is load-bearing.** It runs *inside height generation*, before any
-quantisation or caching, through exactly two call sites — both delegating to the one
-`taper_height`:
-
-1. `_noise_height_at` — the pure-noise fallback `height_at` uses for any uncached coord.
-2. `TerrainManager._apply_edge_taper`, called by `compute_chunk_data` immediately after
-   `TerrainChunkBuilder.build()`, which rewrites `heights` **and** `vertices` in lockstep.
-
-Both paths must agree or the coast disagrees with itself, which is why they share one
-function. `heights` is what the `HeightMapShape3D` collision, `height_at` and
-`TerrainLod.build_finest` read; `vertices` is what the displayed meshes are built from. It
-is done in the manager rather than in `TerrainChunkBuilder` because the builder's height path
-is the *static* `TerrainManager._sample_height`, which has no instance and so cannot see the
-bounds.
-
-Two accepted consequences, both commented at the code:
-
-- The per-vertex **baked light** is computed inside the builder from the untapered field, so
-  the taper slope shades as the inland noise would. Shading only — geometry, collision and
-  queries all agree.
-- The **coarse** (`stride > 1`) builder path is untapered, and is unreachable in bounded
-  mode because `chunk_class` returns `full_res` for every chunk there.
-
+| `spawn_budget: int` | `0` (off) | Chunk spawns allowed per frame beyond the collision band. |
+| `road_source: Object` | `null` | Duck-typed road network — the per-chunk road carve. Seat it **before** any chunk is built or cached. |
 
 ## The road carve (per chunk, not a global bake)
 
@@ -124,16 +49,6 @@ cell:
 | vertex colour **alpha** = `road_weight` | `track_weights` (via `_vertex_color_row`) | `ps1_models.gdshader` — `road_t = COLOR.a` under `blend_road` |
 | **`UV2.x`** = `tarmac_weight` | `track_surface` (via `_surface_uv2_row`) | the same shader — `tarmac_t = UV2.x` |
 
-**`UV2.y`** is filled by a separate bounded-world-only post-pass, `_apply_region_blend`: the
-**canonical region rank** the ground shaders decode into a spatial region cross-fade — through the
-all-regions colour LUT (`region_lut_look`) for tint/tarmac and through the two-slot pair
-(`region_blend_t`) for the ground texture. It runs after the carve and the coastline taper and before the height quantum,
-is repeated in `_rehydrate_chunk_data` (the row builders rebuild `uv2s` from scratch), and is a
-no-op without a `region_source` — so a stage never writes it and `blend_region` ships false. The
-rank was, when there was a producer, sampled at the chunk's **four corners** and bilinearly
-interpolated (`region_weights_at`), because the region field varies over kilometres while a chunk
-is 50 m. No `region_source` ships today — see the note at the top of this file.
-
 The roadbed height is the terrain's own **pure noise** at `hit.foot` (the nearest point on the
 centreline), blended in by `hit.road_weight` — exactly `bake_track`'s
 `road_heights`/`road_blend` pairing. `road_weight` doubles as the flatten weight rather than a
@@ -143,18 +58,9 @@ diverge later, and the carve carries a comment saying what to change if they eve
 instances are built locally (`_build_noises`), not taken from the main-thread cache, because
 `compute_chunk_data` runs on worker threads.
 
-**Two ordering rules make it correct:**
-
-1. It runs **inside generation** — after `builder.build()`, before quantisation and before any
-   cache write — so the mesh, the collision heightfield, `height_at` and the cached bytes all
-   derive from one number. Same reason the coastline taper is a grid pass here.
-2. **The coastline taper wins.** `compute_chunk_data` calls `_apply_road_carve` *first* and
-   `_apply_edge_taper` *second*, so a road running to the shore is flattened onto the noise
-   ground and then dragged down to the sea floor with everything around it. The alternative —
-   taper first, then clamp the flatten so it can never raise tapered ground — needs an extra
-   rule the flatten has to remember; carve-then-taper needs none, because `taper_height` is a
-   plain function of `(h, x, z)` that re-derives the shoreline from scratch. A road therefore
-   sinks into the water at the map edge instead of standing on a causeway out to sea.
+**Ordering:** it runs **inside generation** — after `builder.build()`, before quantisation and
+before any cache write — so the mesh, the collision heightfield, `height_at` and the cached
+bytes all derive from one number.
 
 Cost, and the three things that were paid for nothing before:
 
@@ -177,118 +83,7 @@ Cost, and the three things that were paid for nothing before:
   still calls `_build_noises()` per chunk on the same stale reasoning and is the obvious next win on
   the *generate* path.
 
-A chunk with no road still pays exactly one rect query and returns. Only the full-res grid is carved; the coarse
-(`stride > 1`) path is unreachable in bounded mode because `chunk_class` returns `full_res`
-there, and the guard says so explicitly rather than leaving it ambiguous.
-
-`_rehydrate_chunk_data` calls the carve with `carve_heights = false` — **colours only** — but only
-when the record carries no stored surface channels (see "The stored surface channels" above; with
-them, both passes are skipped outright). Its
-`heights` came out of a previous `compute_chunk_data` and are already carved (re-flattening
-would compound the lerp), but its colour/uv2 rows are rebuilt from `track_weights` /
-`track_surface`, which a bounded world never fills, so without this a cached chunk would come
-back road-*less* under the wheels' road.
-
-`surface_at` also answers from the network in bounded mode (`_road_surface_at`), returning the
-same `(road_weight, tarmac_weight)` pair the dictionary path does, and `bounds_surface` when
-fully off it. Without this the tyre model, grip, deep-snow drag and reset logic would all see
-one flat surface and a carved road would have no grip difference at all. It is called per wheel
-contact per tick and `road_at` returns a Dictionary, so `_road_surface_at` keeps a one-entry
-memo keyed on the contact point quantised to a quarter cell — several consumers ask about the
-same point in the same tick (`Drivetrain.surface_tire_params`, itself allocation-free via
-`_surf_scratch`, plus grip and the snow drag), so the repeats cost nothing. A lean scalar
-variant on `OverworldRoads` would remove the miss allocation too, if it ever shows up in a
-profile.
-
-`_road_surface_at` also consults `pad_source`, `maxf`'d over the road's own answer with the same
-pad-wins precedence `_apply_pad_flatten` bakes into the mesh (see "Flat pads" below) — this is
-what keeps `wheel_particles.gd` and `Drivetrain.surface_tire_params` agreeing with what the pad
-*looks* like. Both go through this one function, so the fix lives here rather than being
-duplicated in each consumer. Its one-entry memo (`_road_surf_valid`) is NOT reset by assigning
-`road_source` / `pad_source` directly — the setters that did that were deleted unused — so a
-producer seated after the first query must clear it, or a stale answer survives the swap.
-
-## Flat pads
-
-**No producer ships** (same caveat as the road carve above). This section describes the contract
-a `pad_source` had to meet when one existed: a **level circle of ground** under every rally zone
-and under the garage, so the things standing there sit flat. The pad set was `OverworldPads`
-(`scripts/overworld_pads.gd`, deleted with the overworld hub); `TerrainManager` consumes it
-duck-typed through `pad_source`, never by class, so `null` — **every stage,
-and every production build today** — is byte-identical to before pads existed.
-
-Two entry points for the HEIGHT flatten, both driven by `pad_at(x, z)` (`.x` = feathered weight,
-`.y` = target height) — `pad_height(h, x, z)` wraps it for callers that only want the height:
-
-- `_apply_pad_flatten(data)`, a grid post-pass in `compute_chunk_data`, rewriting `heights` and
-  `vertices` in lockstep exactly as `_apply_edge_taper` does. It exits on one `pads_in_rect`
-  query for the ~1,600 chunks that hold no pad.
-- `_noise_height_at`, the pure-noise generator. **This is the deliberate difference from the road
-  carve**, which is *not* in the generator (a known latent bug). Everything a pad exists for —
-  seating the garage building, a zone's tube and marker, a ghost car, the default spawn, the
-  foliage `dry` test — queries `height_at`, which falls back to `_noise_height_at` for any coord
-  the chunk cache has not built. Leaving the pad out of the generator would break the pad exactly
-  where it is used, so the pad follows the taper, not the carve.
-
-`_apply_pad_flatten` **also bakes tarmac** — `COLOR.a` (road weight) and `UV2.x` (tarmac weight),
-the same channels `_apply_road_carve` fills and `ps1_models.gdshader`'s `blend_road` branch reads
-— using the *same* `pad_at(x, z).x` weight that drives the height blend, `maxf`'d against whatever
-the carve already wrote there. So the whole pad disc (every rally zone **and the garage**) reads as
-forecourt rather than roads simply meeting on bare grass at the pin, and it fades to grass across
-exactly the same feather band the height flatten uses — one weight, no separate radius to keep in
-sync. A `flatten_heights := true` parameter lets `_rehydrate_chunk_data`'s no-stored-surface branch
-call it a second time for the tarmac alone (see below).
-
-**Ordering in `compute_chunk_data`, all three rules load-bearing:**
-
-1. **After `_apply_road_carve`.** A pad wins over a road inside it, on *both* channels: the
-   forecourt is level ground the road paints across, and its tarmac weight is `maxf`'d over the
-   carve's rather than left as the carve wrote it — a dirt/dead road running through a pad (its own
-   `tarmac_weight` might be `0`) must not leave a stripe of non-tarmac ground across the pad's own
-   surface.
-2. **Before `_apply_edge_taper` — the coastline still wins.** The taper re-derives the shoreline
-   from `(h, x, z)`, so a pad near the map edge is pulled to the sea floor rather than standing on
-   a plinth out of the water. Same rule, same order, as the carve.
-3. **`_apply_height_quantum` stays last.**
-
-**Rehydration.** `_rehydrate_chunk_data` splices a stored `surface` section straight back in when
-present — it already carries the pad's tarmac contribution bit-for-bit, since it was written from a
-`compute_chunk_data` that included this pass. When no `surface` is stored, colours/UV2 are rebuilt
-from scratch via `_apply_road_carve(out, false)`, which would otherwise wipe any pad tarmac back out
-even though the stored heights already carry the flatten; `_apply_pad_flatten(out, false)` runs
-right after it to restore just the two texture channels, mirroring the road carve's own
-`carve_heights` split.
-
-`_noise_height_at` applies pad-then-taper for the same reason, so the generator and the baked grid
-cannot disagree.
-
-### The junction: roads run *into* every pad
-
-`OverworldRoads` built its graph with the rally pins and the garage as its **nodes**, so a pad
-centre was literally a road endpoint with 3–5 edges typically converging there. The roadbed target
-(noise along the centreline) and the pad's level agree exactly at the pin and drift apart outward,
-so two independent passes would leave a step or a crease in a ring around the pad — at the most
-looked-at spot on the map.
-
-The fix is inside `_apply_road_carve`: the roadbed target is itself run through `pad_height`,
-evaluated **at the foot** (the nearest point on the centreline). The road therefore *arrives
-level*, ramping onto the pad's plane over its last stretch the way a real road eases into a yard.
-Inside the pad the road's target **is** the pad level, so the pad pass that follows changes nothing
-the carve did not already do and the two cannot fight; outside, both influences decay smoothly.
-
-**Is it genuinely continuous?** Yes by construction, not by tuning — every term is a continuous
-function of position, so no combination of tunables can reintroduce a *step*. Two honest caveats:
-
-- The foot point jumps across a road's medial axis (equidistant between two segments), so the
-  pad-adjusted target has a hairline discontinuity there. It is damped by the road weight and by
-  the fact that the two feet are near-equidistant from the pad centre, i.e. sub-millimetre in
-  practice — but it is not exactly zero. Several roads entering within a few degrees of each other
-  is the case that makes it largest.
-- **Gradient, not continuity, is what actually breaks.** The steepest grade a feather can produce
-  is about `1.5 × Δh / feather width`, where `Δh` is the height difference between the pad's level
-  and the ground just outside it. With a FIXED band that grade is whatever the site hands you, and
-  on a rough site it exceeded the ~22% FWD / ~33% RWD a car climbs at snow grip — a lip the player
-  could not drive out over, on the very road that led them in.
+A chunk with no road still pays exactly one rect query and returns. Only the full-res grid is carved.
 
 ## `stream_on_miss` — a correctness fallback, not the supply mechanism
 
@@ -310,74 +105,6 @@ It **logs once per session** (`terrain stream-on-miss:`, `stream_on_miss_builds`
 so an undersupplied window or a gap in the store is visible rather than silent — never per
 coord and never per frame, since a boundary crossing re-visits the same coords every frame
 until they are built.
-
-## `chunk_source` — the duck-typed chunk store
-
-**No producer ships** (same caveat as above — the producer was `OverworldCache`,
-`scripts/overworld_cache.gd`, deleted with the overworld hub; tests exercise this with duck-typed
-fakes). `chunk_source` is used **only** through `has_method`, never by class, exactly the way
-`drivetrain.terrain` is duck-typed. The contract is three methods:
-
-- `read(coord) -> Dictionary` — `{"heights": PackedFloat32Array, "l0_light": PackedByteArray,
-  "surface": PackedFloat32Array}` (`surface` optional)
-- `write(coord, heights, lights, surface := PackedFloat32Array()) -> bool`
-- `has(coord) -> bool`
-
-The store holds the two genuinely expensive **sampling** products (heights and baked light) plus
-the three **derived surface channels**. Everything else is arithmetic over a fixed grid, so
-`TerrainManager._rehydrate_chunk_data` reconstructs a full builder-shaped dict — mirroring
-`TerrainLod.build_finest`'s derivation and reusing `_vertex_color_row`, so a rehydrated chunk is
-the same surface a generated one produces.
-
-### The stored surface channels — why a READ is cheap
-
-Storing heights + light removed the height *generation* from a read and **nothing else**: the
-rehydrate still ran `_apply_road_carve(out, false)` and `_apply_region_blend(out)`, and the carve
-queries the road network **once per vertex** (`SAMPLES²` = 2,601 per chunk), each query allocating
-a Dictionary. Measured, that made every chunk-boundary crossing a 3–4 frame cluster of 13–34 ms
-spikes even with `overworld_chunk_build_budget` honoured and `stream_builds` at 0 — the cost was
-pure rehydration.
-
-So the three values those two passes produce are stored too, via
-`TerrainManager.surface_channels_from(data)` — interleaved per vertex as
-`(road_weight, tarmac_weight, region_rank)`, i.e. `(COLOR.a, UV2.x, UV2.y)`:
-
-| Channel | Produced by | Consumed by |
-|---|---|---|
-| `COLOR.a` road weight | `_apply_road_carve` (colours arm) | `ps1_models.gdshader` `road_t` |
-| `UV2.x` tarmac weight | `_apply_road_carve` (colours arm) | `ps1_models.gdshader` `tarmac_t` |
-| `UV2.y` region rank | `_apply_region_blend` | the ground shaders' A→B remap |
-
-When `_rehydrate_chunk_data` is given a correctly-sized `surface` it splices those values in and
-**skips both passes entirely**; `_surface_uv2_row` is skipped with them. `_vertex_color_row` still
-runs for the **RGB** (ground tint × baked light) — the light is stored, the tint is a runtime
-field, so nothing about that path changes.
-
-**Stored as raw f32, deliberately.** The cache's contract is an *exact* round trip, not an
-approximate one (`test_overworld_cache` asserts bit-identical heights, `test_terrain_digest` is a
-golden SHA-256 over generated terrain). Heights get away with int16 only because they are
-**snapped at generation** (`height_quantum` / `snap_heights`), so cached and generated numbers are
-literally equal. These three channels are snapped nowhere, so a quantised channel would make a
-rehydrated chunk differ from a generated one — a shading seam wherever the cache boundary happens
-to fall. f32 costs 12 bytes/vertex, ~31 KB raw per chunk before the record's zstd, which crushes
-it: the road channels are exactly `0.0` across nearly every vertex of the map and the rank is
-near-constant inside a region.
-
-**Optional in both directions**, so the fast path is never a correctness dependency: a record
-written without the section (no road/region source, or a record predating it), a mis-sized array,
-or a caller that only has heights all fall back to recomputing the two passes exactly as before.
-The deleted `OverworldCache.write` dropped a wrong-sized array with a warning rather than storing it — the same rule any future producer should follow.
-
-`chunk_data_for(coord)` is the single seam: read from the store, else generate and offer the
-result back. Stored heights are **already tapered** (they came out of `compute_chunk_data`),
-so a round trip is idempotent and the taper is never re-applied. A store is always a pure
-speed-up — no store, no record, or an unusable record all fall through to generation.
-
-`capture_encoded_light` extends the `l0_light` retention (previously only under
-`lazy_finest_lod`) to the open world, because `free_load_only_data()` erases the
-full-precision `lights` and a `write` after that would persist a light-less record the
-invalidation key could never discard. It stays **off** for stages: ~7.8 KB per chunk with no
-reader.
 
 ## Cache eviction (`evict_to_cap`)
 
@@ -443,7 +170,7 @@ one level, so the whole ring is finest.
 ## Spawning within the frame budget
 
 `_reconcile` does **not** spawn a crossing's whole new ring row in one call when
-`spawn_budget > 0` (the overworld sets it from `overworld_chunk_build_budget`): `_enqueue_spawns`
+`spawn_budget > 0`: `_enqueue_spawns`
 sorts the missing coords nearest-first and queues them, and `_drain_spawn_queue(spawn_budget)`
 builds at most the budget per frame thereafter.
 
@@ -470,7 +197,7 @@ entry from the queue, which is quadratic in the forced set's size — it now par
 ## Budget, not proven
 
 A 21×21 window is ~441 spawned chunks, on the order of 2,600 `MeshInstance3D` and 441
-heightfield shapes. That is a genuinely new budget — `overworld_load_radius` must be sized
+heightfield shapes. That is a genuinely new budget — `load_radius` must be sized
 from a **measurement on a real device**, not assumed. Note also that 7×7 is the *render*
 ring; the collision ring is `collision_ring` (1, i.e. 3×3), which is unchanged by any of
 this.

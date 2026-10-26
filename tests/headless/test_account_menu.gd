@@ -175,23 +175,8 @@ func _sign_in_fake() -> void:
 
 func test_signed_in_main_view_offers_every_action() -> void:
 	_sign_in_fake()
-	assert_true(_has_button_containing("leaderboard name"),
-		"a way to change the leaderboard name must survive the compaction")
 	assert_true(_has_button_containing("sync now"))
 	assert_true(_has_button_containing("sign out"))
-
-
-func test_leaderboard_name_rides_on_the_button_not_a_separate_label() -> void:
-	# The compaction: the old layout had a Label row saying "Online leaderboard
-	# name: X" ABOVE a button that changed it. The value now lives on the
-	# button's own text, so no label row is needed to see it.
-	var saved_name := String(Save.profile.get("username", ""))
-	Save.profile["username"] = "kangaroo"
-	_sign_in_fake()
-	assert_true(_has_button_containing("kangaroo"),
-		"the current leaderboard name must be reachable from a button, without a"
-		+ " label row above it")
-	Save.profile["username"] = saved_name
 
 
 func test_signed_in_main_view_row_count_is_bounded() -> void:

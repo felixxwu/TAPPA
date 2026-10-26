@@ -12,10 +12,9 @@ class_name TerrainManager
 #
 # OPEN-WORLD MODE (the overworld, features/terrain.md → "Open-world mode") is a set of
 # additive, off-by-default opt-ins on top of that: a settable `load_radius`, `stream_on_miss`
-# to build a miss instead of leaving a hole, `cache_cap_mb` LRU eviction, a duck-typed
-# `chunk_source` store, and `set_bounds()` — a rectangular world that REPLACES the track
-# corridor as the bounds source and switches on the coastline edge taper. With every default
-# left alone the behaviour is bit-identical to a stage.
+# to build a miss instead of leaving a hole, `cache_cap_mb` LRU eviction,
+# and the `road_source` carve. With every default left alone the behaviour is bit-identical to a
+# stage.
 
 const CHUNK_M := 50.0                        # chunk edge length in metres
 const CELL_M := 1.0                          # grid cell size (PS1 low-poly terrain)
@@ -37,12 +36,7 @@ const ChunkScript := preload("res://scripts/terrain_chunk.gd")
 # TerrainLod.build_all has turned them into GPU meshes. cache_chunk erases them from
 # the cached dict; TerrainChunk.apply_data must never fall back to rebuilding meshes
 # from a cached dict (it checks for `vertices` and errors loudly instead).
-const DEAD_AFTER_PREBAKE := ["vertices", "uvs", "colors", "uv2s", "indices",
-	# The raw full-res night_colors array (present only when bake_night_colors is on)
-	# is likewise dead the moment TerrainLod has sliced it into per-level
-	# night_colors_by_level -- unlike THAT array (a LIVE need menu_showcase swaps
-	# against at runtime), nothing reads the full-res copy again.
-	"night_colors"]
+const DEAD_AFTER_PREBAKE := ["vertices", "uvs", "colors", "uv2s", "indices"]
 
 @export var noise_seed: int = 1337:
 	set(value):
@@ -120,20 +114,6 @@ var sun_color: Color = Color(0.5, 0.5, 0.5)
 var sky_color: Color = Color(0.5, 0.5, 0.5)
 var ground_color: Color = Color(0.35, 0.35, 0.35)
 
-# Second, NIGHT vertex-colour bake — menu_showcase.gd only (see features/terrain.md →
-# "Dual day/night bake"). When bake_night_colors is true, TerrainChunkBuilder bakes a
-# SECOND per-vertex colour array alongside the normal one, using the night_* fields
-# below instead of the live day ones above. Off by default, so every stage path (which
-# never sets this) is byte-identical to before — the showcase is the only caller that
-# turns it on, so it can swap a segment's already-spawned chunks between the two bakes
-# without a live re-bake when its weather cycles to/from night.
-var bake_night_colors: bool = false
-var night_sun_dir: Vector3 = Vector3(0.4, 0.9, 0.35).normalized()
-var night_sun_color: Color = Color(0.5, 0.5, 0.5)
-var night_sky_color: Color = Color(0.5, 0.5, 0.5)
-var night_ground_color: Color = Color(0.35, 0.35, 0.35)
-var night_light_amount: float = 0.0
-
 # Terrain LOD (features/terrain.md). The display mesh is decimated by distance:
 # each loaded chunk carries one MeshInstance per TerrainLod.LOD_STRIDES level, and
 # the engine picks the level by real camera distance via visibility_range (a HARD
@@ -177,21 +157,19 @@ var precompute_safety_slack_m: float = 40.0
 var lazy_finest_lod: bool = false
 
 # --- Open-world / overworld support (features/terrain.md → "Open-world mode") ------------
-# Everything in this block defaults to today's stage behaviour: an unset `world_bounds`
-# means "no bounded world", `load_radius` starts at RADIUS, and every opt-in flag is off.
-# The overworld seats them through apply_overworld_bounds().
+# Everything in this block defaults to today's stage behaviour: `load_radius` starts at
+# RADIUS and every opt-in flag is off.
 
 # LIVE ring radius in chunks: (2*load_radius+1)^2 chunks are spawned around the focus.
 # Was a bare `const RADIUS` read directly by target_coords / _corridor_margin / detail_ring;
 # all three now read THIS, with RADIUS as the default so a stage is bit-identical. The
-# overworld raises it (GameConfig.overworld_load_radius).
+# overworld raised it.
 # (`_collision_band_chunks` was already live — it derives from `collision_ring`, not the
 # render radius. 7x7 is the RENDER ring; the collision ring is 3x3.)
 # NOTE the cost is quadratic: 3 -> 49 chunks, 10 -> 441 chunks and ~441 heightfield shapes.
 var load_radius: int = RADIUS
 
-# When true, a coord that is missing from the chunk cache is BUILT (or read from
-# `chunk_source`) instead of being left as a hole. Off for stages, where a hole plus a loud
+# When true, a coord that is missing from the chunk cache is BUILT instead of being left as a hole. Off for stages, where a hole plus a loud
 # error is deliberately preferred over a mid-drive build hitch (see _reconcile).
 var stream_on_miss: bool = false
 
@@ -201,72 +179,23 @@ var stream_on_miss: bool = false
 # resident window is a moving sub-rectangle of a much larger map, sets a cap.
 var cache_cap_mb: float = 0.0
 
-# Duck-typed chunk store (an OverworldCache, but deliberately NOT referenced by class so
-# this file has no dependency on it — the same shape as drivetrain.terrain). Used only via
-# has_method: `read(coord) -> Dictionary`, `write(coord, heights, lights) -> bool`,
-# `has(coord) -> bool`. null = no store, which is every stage.
-var chunk_source: Object = null
-
 # Duck-typed OVERWORLD ROAD NETWORK (an OverworldRoads, deliberately NOT referenced by class
-# so this file keeps no dependency on it — same convention as `chunk_source`). Used only via
+# so this file keeps no dependency on it). Used only via
 # has_method: `segments_in_rect(Rect2) -> Array`, `road_at(x, z) -> Dictionary`,
 # `influence_m() -> float`. null = no network, which is EVERY STAGE: with it null the road
 # carve in compute_chunk_data and the network branch of surface_at are both skipped, so stage
 # output is byte-for-byte what it was before the carve existed. Seat it with set_road_source().
 var road_source: Object = null
 
-# Duck-typed REGION FIELD (an Overworld.RegionBlendSource, deliberately NOT referenced by class
-# so this file keeps no dependency on OverworldRegion — same convention as `chunk_source` and
-# `road_source`). Used only via has_method: `region_rank_at(x, z) -> float`, which answers a
-# 0..1 CANONICAL REGION RANK at a world XZ (see _apply_region_blend for what the rank means).
-# null = no region field, which is EVERY STAGE: with it null the UV2.y channel is never written
-# and a stage chunk's bytes are exactly what they were before this existed. Seat it with
-# set_region_source().
-var region_source: Object = null
-
-# Duck-typed FLAT PAD SET (an OverworldPads, deliberately NOT referenced by class so this file
-# keeps no dependency on it — same convention as `chunk_source` / `road_source` /
-# `region_source`). Used only via has_method: `pad_at(x, z) -> Vector2` (.x = flatten weight,
-# .y = target height) and `pads_in_rect(Rect2) -> Array` (the per-chunk reject). null = no
-# pads, which is EVERY STAGE: with it null `pad_height` is one bool read and the grid pass is
-# one early return, so stage output is byte-for-byte what it was before pads existed. Seat it
-# with set_pad_source(). See features/terrain.md -> "Flat pads".
-var pad_source: Object = null
-
-# Keep the RGB8-encoded baked light (`l0_light`) in the cached dict even when
-# lazy_finest_lod is off. `free_load_only_data()` erases the full-precision `lights`, so a
-# chunk generated mid-drive would otherwise have no light left to persist. Auto-enabled by
-# apply_overworld_bounds / set_chunk_source; left FALSE for stages on purpose — it is ~7.8 KB
-# per chunk of cache the stage path has no use for.
-var capture_encoded_light: bool = false
-
-# The bounded world (world-XZ Rect2), or an empty rect for "unbounded" — a stage. When set
-# it REPLACES the track corridor as the answer to chunk_class / corridor_complete /
-# corridor_bounds, and switches on the coastline edge taper. See set_bounds().
-var world_bounds: Rect2 = Rect2()
-# Coastline taper (D9). `edge_taper_m` is how far in from `world_bounds` the falloff starts;
-# at the perimeter the height is driven to (water_level_m - edge_depth_m). 0 taper = off.
-var edge_taper_m: float = 0.0
-var edge_depth_m: float = 0.0
-var water_level_m: float = 0.0
-# Constant surface weights (road_weight, tarmac_weight) returned by surface_at inside a
-# bounded world, where there is no bake_track to fill track_weights / track_surface.
-# All-grass/gravel — slice 1 has no roads. Vector2(0, 0) is exactly what an unbaked stage
-# returns too, so this is only a hook for slice 4 to override.
-var bounds_surface: Vector2 = Vector2.ZERO
 # True once stream_on_miss has actually fired, so the "the cache was mis-sized" warning is
 # printed ONCE rather than per frame (a crossing re-visits the same coords every frame).
 var _miss_stream_logged := false
 var stream_on_miss_builds: int = 0
-# How many chunks were satisfied by READING the attached store (the on-disk precompute) during
-# reconcile. This is the healthy supply path in a bounded world — contrast
-# `stream_on_miss_builds`, which counts chunks GENERATED because nothing had them.
-var store_reads: int = 0
 # Height lattice step in metres for generated chunks, 0 = off (every stage). Set by the overworld
-# to the step its chunk store round-trips through. See _apply_height_quantum.
+# to the step a chunk store round-trips through. See _apply_height_quantum.
 var height_quantum: float = 0.0
 # Chunk SPAWNS permitted per frame beyond the collision band. 0 = off (spawn the whole ring row
-# in one call, today's stage behaviour, byte-for-byte). Set by apply_overworld_bounds.
+# in one call, today's stage behaviour, byte-for-byte).
 var spawn_budget: int = 0
 # Coords wanted but not spawned yet, nearest-first. Drained by _drain_spawn_queue.
 var _spawn_queue: Array[Vector2i] = []
@@ -393,141 +322,9 @@ var _logged_misses: Dictionary = {}
 # route". So every chunk is full-res and in the collision band — which is the same answer the
 # unknown-coord default already gives, stated explicitly so it is not read as an accident.
 func chunk_class(coord: Vector2i) -> Dictionary:
-	if has_bounds():
-		return {"l_min": 0, "full_res": true, "in_collision_band": true}
 	return _corridor_class.get(coord, {"l_min": 0, "full_res": true})
 
 
-# --- Bounded world (the overworld) --------------------------------------------------------
-
-# Declare a rectangular world in world-XZ metres. This REPLACES the track corridor as the
-# bounds source: chunk_class, corridor_complete() and corridor_bounds() all answer from it,
-# surface_at returns `bounds_surface`, and the coastline taper switches on. Pass an empty
-# Rect2 (or call clear_bounds) to go back to stage behaviour.
-#
-#  - `taper_m` / `depth_m` / `water_y` are GameConfig.overworld_edge_taper_m /
-#    overworld_edge_depth_m / track_water_level_m. 0 taper leaves the taper off.
-#
-# Passed in rather than read off Config so this @tool script stays editor-safe and pure,
-# the same convention as the light_* and cliff_* params.
-func set_bounds(rect: Rect2, taper_m: float = 0.0, depth_m: float = 0.0,
-		water_y: float = 0.0) -> void:
-	world_bounds = rect.abs()
-	edge_taper_m = maxf(0.0, taper_m)
-	edge_depth_m = maxf(0.0, depth_m)
-	water_level_m = water_y
-	# A bounded world has no bake, so `lights` is the ONLY light source the cache will ever
-	# carry — and its chunks are generated in play, not behind a one-shot loading screen.
-	# Both frees below are corridor-shaped ideas that do not apply, so lift them.
-	_lights_freed = false
-	_bake_fields_freed = false
-
-
-func clear_bounds() -> void:
-	world_bounds = Rect2()
-	edge_taper_m = 0.0
-	edge_depth_m = 0.0
-
-
-func has_bounds() -> bool:
-	return world_bounds.size.x > 0.0 and world_bounds.size.y > 0.0
-
-
-# Seat every overworld terrain knob from a GameConfig in ONE place, so the streaming
-# radius, the build budget and the coastline can't be wired up half-way. `rect` is the world
-# rectangle the caller derives from cfg.overworld_size_m (centred on the origin, matching the
-# spec's world_xz(map_pos) convention).
-func apply_overworld_bounds(cfg: GameConfig, rect: Rect2) -> void:
-	load_radius = maxi(1, cfg.overworld_load_radius)
-	detail_builds_per_frame = maxi(1, cfg.overworld_chunk_build_budget)
-	# The same budget bounds CHUNK spawns, which is what actually caused the boundary hitch —
-	# see the note in _reconcile. Stages leave this 0 and keep spawning a whole row per crossing.
-	spawn_budget = maxi(1, cfg.overworld_chunk_build_budget)
-	# NO GENERATE-ON-MISS. A miss leaves a visible HOLE and logs loudly instead.
-	#
-	# This was on, and it was the wrong call. The overworld precomputes its whole map, so a miss
-	# means something is genuinely broken (an under-sized precompute, a stale cache, a window
-	# reaching outside what was written) — and filling it silently converted a bug into a ~140 ms
-	# frame hitch per boundary crossing, which reads as "the game stutters" rather than "the
-	# cache is undersupplied". A hole is diagnosable at a glance; a hitch is not.
-	#
-	# Same reasoning the corridor path already uses for an in-corridor miss: prefer the hole.
-	stream_on_miss = false
-	capture_encoded_light = true
-	set_bounds(rect, cfg.overworld_edge_taper_m, cfg.overworld_edge_depth_m,
-		cfg.track_water_level_m)
-
-
-# Attach the duck-typed chunk store (see `chunk_source`). Also arms the encoded-light
-# capture, because a store that persists a light-less chunk would poison itself: the
-# invalidation key can never tell a light-less record from a good one.
-func set_chunk_source(source: Object) -> void:
-	chunk_source = source
-	if source != null:
-		capture_encoded_light = true
-
-
-# Attach (or clear, with null) the duck-typed region field (see `region_source`). Must be seated
-# BEFORE any chunk is built or cached, for exactly the reason set_road_source states: the baked
-# UV2.y changes the stored bytes, so a chunk generated with a region field and one generated
-# without it are different data and only the chunk_source invalidation key can tell them apart
-# (Overworld._open_chunk_cache folds RegionBlendSource.stamp() in for that reason). Changing it
-# later does NOT retro-bake already-cached chunks.
-func set_region_source(source: Object) -> void:
-	region_source = source
-
-
-# The coastline falloff (D9). `h` is the generated height at world (x, z); the return value
-# is that height driven toward (water_level_m - edge_depth_m) as the point approaches the
-# perimeter of `world_bounds`. No-op unless a bounded world with a positive taper is set, so
-# a stage never pays for it (one bool read).
-#
-# Applied INSIDE height generation — see _noise_height_at (the pure-noise fallback) and
-# compute_chunk_data (the generated grid). Both call THIS one function, so the cached grid,
-# the HeightMapShape3D built from it and the height_at query cannot disagree about where the
-# ground is at the coast.
-#
-# Beyond the bounds the inward distance clamps at 0, so the sea floor is a hard flat shelf at
-# full depth rather than continuing to fall — the "let the sea be the answer" option in the
-# spec's "Beyond the edge" note.
-func taper_height(h: float, x: float, z: float) -> float:
-	if edge_taper_m <= 0.0 or not has_bounds():
-		return h
-	var inward: float = minf(
-		minf(x - world_bounds.position.x, world_bounds.end.x - x),
-		minf(z - world_bounds.position.y, world_bounds.end.y - z))
-	var t := clampf(inward / edge_taper_m, 0.0, 1.0)
-	if t >= 1.0:
-		return h
-	# Smoothstep so the shoreline meets the inland noise with no crease.
-	return lerpf(water_level_m - edge_depth_m, h, t * t * (3.0 - 2.0 * t))
-
-
-# The FLAT PAD flatten. `h` is the generated height at world (x, z); the return value is that
-# height driven toward the level of whichever pad covers the point, feathered to nothing at
-# the pad's outer edge. No-op (one null check) without a pad source, which is every stage.
-#
-# Applied INSIDE height generation, in BOTH places, exactly as taper_height is — the grid pass
-# (_apply_pad_flatten) and the pure-noise fallback (_noise_height_at). That symmetry is the
-# whole point and is deliberate:
-#
-#   the taper is in _noise_height_at; the ROAD CARVE IS NOT (a known latent bug — a foliage or
-#   placement query near a road gets the uncarved height). A pad exists precisely so that
-#   things PLACED on it — the garage building, a zone's tube and marker, a parked ghost car,
-#   the default spawn, the foliage `dry` test — sit level. Every one of those goes through
-#   height_at, which falls back to _noise_height_at for any coord the chunk cache has not
-#   built yet. Leaving the pad out of the generator would therefore break the pad exactly
-#   where it is used, so the pad follows the taper, not the carve.
-#
-# Pure function of position, so the cached grid, the HeightMapShape3D, height_at and the
-# stored bytes cannot disagree about where the pad's ground is.
-func pad_height(h: float, x: float, z: float) -> float:
-	if pad_source == null:
-		return h
-	var hit: Vector2 = pad_source.call("pad_at", x, z)
-	if hit.x <= 0.0:
-		return h
-	return lerpf(h, hit.y, hit.x)
 # The coords the cache covers, kept so _rebuild_loaded can refill after a
 # terrain-param change (seed/layers) instead of serving stale arrays.
 var _corridor_coords: Array[Vector2i] = []
@@ -673,15 +470,7 @@ func _ensure_noise_cache() -> void:
 # this (the flattening is derived from it; cache-first there would be circular).
 func _noise_height_at(x: float, z: float) -> float:
 	_ensure_noise_cache()
-	# The coastline taper is part of GENERATION, not presentation, so it belongs here — this
-	# is the path height_at falls back to for any uncached coord, and it must produce the same
-	# number compute_chunk_data baked into the mesh and the collision heightfield. No-op
-	# outside a bounded world (see taper_height).
-	#
-	# PAD THEN TAPER, the same order compute_chunk_data applies them in, so the generator and
-	# the baked grid agree: a pad may not hold land up out of the sea at the map edge.
-	var h := _sample_height(_cached_noises, _cached_amplitudes, x, z)
-	return taper_height(pad_height(h, x, z), x, z)
+	return _sample_height(_cached_noises, _cached_amplitudes, x, z)
 
 
 # Public height query — CACHE-FIRST. The cached grid is the terrain the player
@@ -790,12 +579,6 @@ func light_at(x: float, z: float) -> Color:
 func _cached_light_at(x: float, z: float) -> Color:
 	if not _resolve_bilinear(x, z):
 		return Color(0, 0, 0, -1.0)
-	if _lights_freed and has_bounds():
-		# Belt-and-braces: free_load_only_data never latches the sentinel in a bounded world, so
-		# reaching here means something else set it (a stage that later declared bounds). Fall
-		# through to the live re-bake silently — in an open world light_at IS a repeated query,
-		# so the error below would be per-frame spam rather than a signal.
-		return Color(0, 0, 0, -1.0)
 	if _lights_freed:
 		# LOUD on purpose: the baked light is gone, so this call is about to fall back
 		# to a fresh live-noise bake — a plausible but subtly different colour, with no
@@ -825,49 +608,9 @@ func compute_chunk_data(coord: Vector2i) -> Dictionary:
 	var builder := TerrainChunkBuilder.new(self, coord)
 	builder.build()
 	var data := builder.data()
-	# ORDER IS LOAD-BEARING: carve the road FIRST, taper the coast SECOND, so the taper WINS.
-	# A road that runs down to the shore must not lift the beach back out of the sea — see
-	# _apply_road_carve.
 	_apply_road_carve(data, true)
-	# The FLAT PADS, between the carve and the taper. See _apply_pad_flatten for the full
-	# argument; in one line each: AFTER the carve, because a pad must win over a road inside
-	# it (the forecourt is level and the road merely paints across it) and because the carve's
-	# own roadbed target is already pulled toward the pad level so the two meet without a step;
-	# BEFORE the taper, because the taper must still win at the coast.
-	_apply_pad_flatten(data)
-	_apply_edge_taper(data)
-	# Region rank into UV2.y. Touches no height, so its position relative to the carve and the
-	# taper is free; it sits here — after both, before the quantum — so the "quantum is LAST"
-	# rule below stays the single ordering statement anyone has to remember.
-	_apply_region_blend(data)
-	# LAST, after the carve and the taper have both had their say: snap heights onto the lattice
-	# the chunk store round-trips through, so the resident grid and the stored record are the SAME
-	# numbers. Doing it here rather than in the host is what makes that true — the host used to
-	# snap a separate copy on its way to disk, leaving the resident grid (and therefore the mesh,
-	# the HeightMapShape3D and every height_at read) off-lattice, so the terrain you drove on one
-	# launch differed from the next by up to half a step.
 	_apply_height_quantum(data)
-	if bake_night_colors:
-		# Only _apply_road_carve and _apply_pad_flatten touch COLOR at all, and only its
-		# ALPHA (the road blend weight) — RGB is left exactly as the builder wrote it (see
-		# their own comments). night_colors was built with the SAME pre-carve alpha, so it
-		# only needs that one channel re-synced to the final day array, not a re-bake.
-		_sync_night_alpha(data)
 	return data
-
-
-# Copy the final day COLOR array's alpha (road blend weight, possibly touched by the road
-# carve / pad flatten above) onto night_colors — see compute_chunk_data's call site.
-func _sync_night_alpha(data: Dictionary) -> void:
-	var day: PackedColorArray = data.get("colors", PackedColorArray())
-	var night: PackedColorArray = data.get("night_colors", PackedColorArray())
-	if night.is_empty() or night.size() != day.size():
-		return
-	for i in night.size():
-		var c := night[i]
-		c.a = day[i].a
-		night[i] = c
-	data["night_colors"] = night
 
 
 # --- The shared preamble of the five _apply_* chunk modifiers -------------------------------
@@ -875,7 +618,7 @@ func _sync_night_alpha(data: Dictionary) -> void:
 # Every one of them starts by unpacking the same arrays out of the chunk dict, early-outing on a
 # size mismatch, and (three of them) re-deriving the chunk's world rect from `center` and CHUNK_M.
 # `_chunk_view` is that preamble, ONCE. Each modifier still owns its own SOURCE guard (a null
-# `pad_source`, `height_quantum <= 0.0`, …) at the call site — those are about whether the pass is
+# `height_quantum <= 0.0`, …) at the call site — those are about whether the pass is
 # configured at all, not about whether the chunk is usable.
 #
 # WHICH ARRAYS/GUARDS a modifier wants is passed in as a `needs` bitmask, because the five are NOT
@@ -946,131 +689,6 @@ func _chunk_view(data: Dictionary, needs: int) -> bool:
 	return true
 
 
-# Fold the coastline taper into a freshly generated chunk's grid, in lockstep across BOTH
-# height representations the dict carries:
-#
-#   `heights`  — what the HeightMapShape3D collision, height_at and TerrainLod.build_finest
-#                all read, and what the on-disk cache stores;
-#   `vertices` — what TerrainLod.build_all turns into the displayed meshes.
-#
-# Done here, in the manager, rather than inside TerrainChunkBuilder: the builder's height path
-# is the static TerrainManager._sample_height, which has no instance and so cannot see the
-# bounds. Doing it as a grid pass immediately after build() is still "inside generation,
-# before quantisation and before caching" — nothing has looked at the arrays yet — and it
-# guarantees the mesh, the collision, the cache and the query all derive from one number.
-#
-# Runs before the caller ever sees the dict, and is a no-op (one early return) unless a
-# bounded world with a positive taper is set, so a stage pays nothing.
-#
-# Known limitation, accepted: the per-vertex BAKED LIGHT is computed inside the builder from
-# the pure (untapered) height field, so the taper slope shades as the inland noise would. It
-# is a shading-only difference on the beach — geometry, collision and queries all agree — and
-# fixing it properly means giving the builder the bounds, which is out of this change's scope.
-func _apply_edge_taper(data: Dictionary) -> void:
-	if edge_taper_m <= 0.0 or not has_bounds():
-		return
-	# No stride guard: a coarse chunk is tapered too (see _chunk_view's `needs` note).
-	if not _chunk_view(data, VIEW_HEIGHTS):
-		return
-	var heights := _cvw_heights
-	var verts := _cvw_verts
-	var center := _cvw_center
-	for i in heights.size():
-		var v := verts[i]
-		var h := taper_height(heights[i], center.x + v.x, center.z + v.z)
-		heights[i] = h
-		v.y = h
-		verts[i] = v
-	data["heights"] = heights
-	data["vertices"] = verts
-
-
-# Bake the FLAT PADS into one freshly generated chunk's grid — a level circle of ground under
-# every rally zone and under the garage, so the zone's light tube, its floating marker, its
-# ghost car and (the case that actually broke) the GARAGE BUILDING stand on level ground
-# instead of straddling a slope. Also bakes the pad's TARMAC surface (COLOR.a / UV2.x, the
-# same channels the road carve fills), feathered by the identical weight as the height
-# flatten, so the whole disc reads as forecourt rather than roads meeting on bare grass. See
-# features/terrain.md -> "Flat pads".
-#
-# Rewrites `heights` and `vertices` in LOCKSTEP, exactly as _apply_edge_taper does, so the
-# mesh, the HeightMapShape3D, height_at and the cached bytes all derive from one number. The
-# per-point height maths mirrors `pad_height` (the SAME `pad_at` lookup _noise_height_at goes
-# through) — inlined here rather than called, since this loop also needs the raw weight that
-# `pad_height` does not return, and calling `pad_at` a second time per vertex would double the
-# cost of the hot loop.
-#
-# ORDERING — three rules, all load-bearing (compute_chunk_data is where they are enforced):
-#
-#  1. AFTER _apply_road_carve. A pad must WIN over a road inside it: the garage forecourt is
-#     level ground the road paints across, not a ribbon that re-tilts the yard. Both the height
-#     and the COLOR.a/UV2.x weight take `maxf` against whatever the carve already wrote, so a
-#     road ribbon crossing the pad is not weakened, and the two heights cannot fight at the join
-#     either, because the carve's own roadbed target is already pulled toward the pad level at
-#     the foot (see the JUNCTION note in _apply_road_carve).
-#  2. BEFORE _apply_edge_taper. THE COASTLINE STILL WINS. The taper is a plain function of
-#     (h, x, z) that re-derives the shoreline from scratch, so a pad placed near the map edge
-#     is pulled down to the sea floor with everything else rather than standing as an island
-#     on a plinth out of the water. Same argument, and the same order, as the road carve.
-#  3. BEFORE _apply_height_quantum, which stays LAST so the resident grid and the stored
-#     record are the same numbers.
-#
-# The per-chunk REJECT: `pads_in_rect` on the chunk rect. There are a few dozen pads on a
-# ~1,600-chunk map, so nearly every chunk exits on that one query and never runs the loop.
-#
-# No-op (one null check) without a pad source, which is EVERY STAGE.
-#
-# LOD note: full-res grids only, exactly as the carve and the region blend — chunk_class
-# returns full_res for every chunk in a bounded world, so the coarse branch is unreachable
-# there.
-#
-# `flatten_heights` false does the TARMAC ONLY — for `_rehydrate_chunk_data`'s no-stored-surface
-# branch, whose `heights` came out of `compute_chunk_data` and already carry the pad flatten,
-# but whose colour/uv2 rows were just rebuilt by `_apply_road_carve(out, false)` from scratch and
-# so would come back with no trace of the pad's tarmac. Mirrors `_apply_road_carve`'s
-# `carve_heights` parameter exactly, for the same reason.
-func _apply_pad_flatten(data: Dictionary, flatten_heights: bool = true) -> void:
-	if pad_source == null:
-		return
-	if not pad_source.has_method("pads_in_rect"):
-		return
-	# VIEW_FULL_RES: coarse grids are skipped — unreachable in a bounded world (see the LOD note).
-	# Needs COLORS/UV2S too, the same channels the road carve fills, for the tarmac bake below.
-	if not _chunk_view(data, VIEW_HEIGHTS | VIEW_COLORS | VIEW_UV2S | VIEW_FULL_RES):
-		return
-	var heights := _cvw_heights
-	var verts := _cvw_verts
-	var colors := _cvw_colors
-	var uv2s := _cvw_uv2s
-	var center := _cvw_center
-	var near: Array = pad_source.call("pads_in_rect", _cvw_rect)
-	if near.is_empty():
-		return
-	for i in heights.size():
-		var v := verts[i]
-		var wx := center.x + v.x
-		var wz := center.z + v.z
-		var hit: Vector2 = pad_source.call("pad_at", wx, wz)
-		if hit.x <= 0.0:
-			continue
-		if flatten_heights:
-			var h := lerpf(heights[i], hit.y, hit.x)
-			heights[i] = h
-			v.y = h
-			verts[i] = v
-		var c := colors[i]
-		c.a = maxf(c.a, hit.x)
-		colors[i] = c
-		var t := uv2s[i]
-		t.x = maxf(t.x, hit.x)
-		uv2s[i] = t
-	if flatten_heights:
-		data["heights"] = heights
-		data["vertices"] = verts
-	data["colors"] = colors
-	data["uv2s"] = uv2s
-
-
 # Snap a freshly generated chunk's heights onto a fixed lattice, in lockstep across `heights`
 # and `vertices` exactly as the taper does.
 #
@@ -1095,65 +713,6 @@ func _apply_height_quantum(data: Dictionary) -> void:
 		verts[i] = v
 	data["heights"] = heights
 	data["vertices"] = verts
-
-
-# Bake the REGION FIELD into one freshly generated chunk's UV2.y (features/overworld.md ->
-# "Region blending"). The ground's region look changes SPATIALLY, at the fixed boundary between
-# two regions, rather than repainting the whole world the moment the player crosses a line — so
-# the change has to arrive per-vertex, from data, and it caches exactly like the road carve
-# because the region is a pure function of position.
-#
-# WHY A RANK AND NOT A BLEND WEIGHT. The shader can only cross-fade between the TWO region
-# parameter sets that are actually uploaded (slot A and slot B), and which two those are is a
-# runtime decision that follows the car (Overworld._push_region_pair). A baked "weight from A to
-# B" would therefore be pair-dependent, and a pair-dependent value cannot be cached — the stored
-# bytes would mean something different the moment the player's pair changed. So what is baked is
-# pair-INDEPENDENT: a canonical 0..1 RANK, one fixed number per region id (RegionBlendSource
-# assigns them by sorting the roster's region ids), interpolated by the positional region weights
-# (OverworldRegion.region_weights_at). Deep inside a region the value is exactly that region's
-# rank; across a boundary it slides between the two ranks. The shader decodes it back into a
-# 0..1 A->B factor by inverse-lerping between the two uploaded ranks, which is a pure fragment-side
-# remap and needs no re-bake when the pair changes.
-#
-# CORNER SAMPLING, not per vertex: region_weights_at is linear in the rally roster and allocates a
-# Dictionary, and there are SAMPLES² (2,601) vertices per chunk. The region field varies over
-# KILOMETRES and a chunk is 50 m, so the rank is sampled at the chunk's four corners and bilinearly
-# interpolated across the grid — four queries per chunk instead of 2,601, for a difference no
-# fragment can show. Deep inside a region all four corners are equal and the interpolation is a
-# constant.
-#
-# No-op (one null check) without a region source, which is EVERY STAGE — a stage never writes
-# UV2.y, and `blend_region` on the ground shaders ships false, so stage rendering is bit-for-bit
-# unchanged.
-#
-# LOD note: full-res grids only, exactly as the carve — chunk_class returns full_res for every
-# chunk in a bounded world, so the coarse branch is unreachable there.
-func _apply_region_blend(data: Dictionary) -> void:
-	if region_source == null:
-		return
-	if not region_source.has_method("region_rank_at"):
-		return
-	# VIEW_UV2S WITHOUT VIEW_HEIGHTS: this pass never reads a height, so it sizes itself against
-	# `uv2s` and must not be gated on `heights` being present (see _chunk_view's `needs` note).
-	if not _chunk_view(data, VIEW_UV2S | VIEW_FULL_RES):
-		return
-	var uv2s := _cvw_uv2s
-	var verts := _cvw_verts
-	var center := _cvw_center
-	var half := _cvw_half
-	var r00: float = region_source.call("region_rank_at", center.x - half, center.z - half)
-	var r10: float = region_source.call("region_rank_at", center.x + half, center.z - half)
-	var r01: float = region_source.call("region_rank_at", center.x - half, center.z + half)
-	var r11: float = region_source.call("region_rank_at", center.x + half, center.z + half)
-	for i in uv2s.size():
-		var v := verts[i]
-		var fx := clampf((v.x + half) / CHUNK_M, 0.0, 1.0)
-		var fz := clampf((v.z + half) / CHUNK_M, 0.0, 1.0)
-		var rank := lerpf(lerpf(r00, r10, fx), lerpf(r01, r11, fx), fz)
-		var t := uv2s[i]
-		t.y = clampf(rank, 0.0, 1.0)
-		uv2s[i] = t
-	data["uv2s"] = uv2s
 
 
 # Carve the OVERWORLD ROAD NETWORK into one freshly generated chunk (D-slice 4). The open-world
@@ -1189,7 +748,7 @@ func _apply_region_blend(data: Dictionary) -> void:
 #     that re-derives the shoreline from scratch. A road therefore disappears into the water at
 #     the map edge instead of standing on a causeway out to sea, which is the intended read.
 #
-# `carve_heights` false does the COLOURS ONLY — for _rehydrate_chunk_data, whose `heights` came
+# `carve_heights` false does the COLOURS ONLY — for a chunk whose `heights` came
 # out of a previous compute_chunk_data and are already carved (re-flattening them would compound
 # the lerp), but whose colour/uv2 rows are recomputed from the (empty, in a bounded world)
 # track_weights / track_surface dictionaries and so would otherwise come back road-less.
@@ -1288,25 +847,6 @@ func _apply_road_carve(data: Dictionary, carve_heights: bool) -> void:
 			# colour band may diverge later — if that ever happens, this line must go back to
 			# calling it (guarded by has_method) or the flatten will silently follow the colour.
 			var road_h := _sample_height(noises, amps, foot.x, foot.y)
-			# THE JUNCTION. Every pad centre is a road NODE (OverworldRoads builds its graph
-			# from the rally pins and the garage), so 3-5 edges typically END at a pad centre.
-			# Left alone, the roadbed target (noise along the centreline) and the pad's level
-			# agree only exactly AT the pin and drift apart outward, leaving a step or a crease
-			# in a ring around the pad — the single most-looked-at spot on the map, the one the
-			# player drives in through and where the marker and ghost car stand.
-			#
-			# The fix is to make the ROAD ARRIVE LEVEL: the roadbed target is itself flattened
-			# by the pad, evaluated AT THE FOOT (the point on the centreline), so over the last
-			# stretch the road ramps onto the pad's plane the way a real road eases into a yard.
-			# Inside the pad the target IS the pad level, so the pad pass that follows changes
-			# nothing the carve did not already do and the two cannot fight; outside, both
-			# influences decay smoothly, so the meeting is continuous by construction rather
-			# than by luck.
-			#
-			# Read at the FOOT, not at the vertex — the pad's own pass handles the vertex.
-			# No-op without a pad source, so the stage path (and the golden terrain digest) is
-			# untouched.
-			road_h = pad_height(road_h, foot.x, foot.y)
 			var h := lerpf(heights[i], road_h, w)
 			heights[i] = h
 			v.y = h
@@ -1419,66 +959,8 @@ func _surface_uv2_row(coord: Vector2i, zi: int, out: PackedVector2Array,
 # @tool script stays editor-safe; the drivetrain turns it into a grip multiplier
 # (Drivetrain.surface_grip) using the configured per-surface μ scales.
 func surface_at(x: float, z: float) -> Vector2:
-	if has_bounds():
-		# A bounded world has no bake_track, so track_weights / track_surface are empty and
-		# the dictionary reads below would answer 0 by accident rather than by decision.
-		# With a road network OR a pad source attached, ASK — otherwise the tyre model, grip,
-		# deep-snow drag and reset logic would all see one flat surface, and a carved road or a
-		# pad's baked-tarmac forecourt would have no grip/particle difference at all. Without
-		# either, answer from the declared constant (all grass/gravel).
-		if road_source != null and road_source.has_method("road_at"):
-			return _road_surface_at(x, z)
-		if pad_source != null and pad_source.has_method("pad_at"):
-			return _road_surface_at(x, z)
-		return bounds_surface
 	var cell := Vector2i(floori(x / CELL_M), floori(z / CELL_M))
 	return Vector2(track_weights.get(cell, 0.0), track_surface.get(cell, 0.0))
-
-
-# One-entry memo for the road-network surface query. surface_at is called PER WHEEL CONTACT PER
-# TICK, and several consumers ask about the same contact point in the same tick (grip, the tyre
-# params in Drivetrain.surface_tire_params — which is itself written to allocate nothing via
-# _surf_scratch — and the deep-snow drag), so a repeat is the common case. OverworldRoads.road_at
-# returns a Dictionary, i.e. one allocation per MISS; the memo removes the repeats without a lean
-# scalar variant, which would mean editing overworld_roads.gd. Quantised to a quarter of a cell
-# so floating-point jitter in an otherwise identical contact point still hits.
-var _road_surf_key: Vector2i = Vector2i(2147483647, 2147483647)
-var _road_surf_val: Vector2 = Vector2.ZERO
-var _road_surf_valid := false
-
-
-func _road_surface_at(x: float, z: float) -> Vector2:
-	var quant := CELL_M * 0.25
-	var key := Vector2i(roundi(x / quant), roundi(z / quant))
-	if _road_surf_valid and key == _road_surf_key:
-		return _road_surf_val
-	# NO ROAD SOURCE is a real caller shape here — surface_at reaches this function for a
-	# pad-only manager too (a pad must read as tarmac even without a road network), so this
-	# cannot assume road_source is set the way every other line in this function used to.
-	var w := 0.0
-	var tarmac := 0.0
-	if road_source != null and road_source.has_method("road_at"):
-		var hit: Dictionary = road_source.call("road_at", x, z)
-		# The SAME pair the dictionary path returns: (road_weight, tarmac_weight). Off the
-		# network the answer is `bounds_surface`, not a hard zero, so declaring a base surface
-		# for the open ground still works — the road only overrides it where there IS road.
-		# On the network the pair is passed through UNSCALED — road_weight is already the
-		# feathered ramp, and tarmac_weight is the gravel/tarmac split of the road itself,
-		# exactly as the mesh carries them in COLOR.a / UV2.x. Only fully off it does the
-		# constant answer.
-		w = float(hit["road_weight"])
-		tarmac = float(hit["tarmac_weight"])
-	# PAD WINS, the same `maxf` precedence `_apply_pad_flatten` bakes into COLOR.a / UV2.x — a
-	# wheel standing on a rally-zone/garage forecourt must read exactly the tarmac the mesh shows
-	# it standing on, not fall back to grass/gravel just because the pad sits off the road graph.
-	if pad_source != null and pad_source.has_method("pad_at"):
-		var pad_hit: Vector2 = pad_source.call("pad_at", x, z)
-		w = maxf(w, pad_hit.x)
-		tarmac = maxf(tarmac, pad_hit.x)
-	_road_surf_val = bounds_surface if w <= 0.0 else Vector2(w, tarmac)
-	_road_surf_key = key
-	_road_surf_valid = true
-	return _road_surf_val
 
 
 # Bake the static terrain shading for one vertex into a light tint. Mirrors the
@@ -1509,17 +991,6 @@ func _light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color
 		return Color(1, 1, 1)
 	return light_for_normal(Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized(),
 		sun_dir, sun_color, sky_color, ground_color, light_amount)
-
-
-# Night sibling of _light_from_neighbours: same neighbour heights (so it needs no extra
-# sampling), the night_* fields instead of the live day ones. Only ever called when
-# bake_night_colors is true (TerrainChunkBuilder gates it). White (no-op) when
-# night_light_amount is 0.
-func _night_light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color:
-	if night_light_amount <= 0.0:
-		return Color(1, 1, 1)
-	return light_for_normal(Vector3(hl - hr, 2.0 * CELL_M, hd - hu).normalized(),
-		night_sun_dir, night_sun_color, night_sky_color, night_ground_color, night_light_amount)
 
 
 # The lighting math itself: hemisphere ambient + one directional sun on a unit normal, blended
@@ -1689,230 +1160,32 @@ func lod_band_ends() -> PackedFloat32Array:
 	return lod_band_ends_m
 
 
-# --- Chunk source (the duck-typed store; see `chunk_source`) ------------------------------
-
-# Chunk data for `coord`, preferring the attached store over generation. Falls straight
-# through to compute_chunk_data when there is no store, the store has no record, or the
-# record is unusable — so a store is always a pure speed-up and never a correctness
-# dependency.
-#
-# On a generate, the result is offered BACK to the store. Heights are already tapered
-# (compute_chunk_data), so a round trip is idempotent — the taper must never be re-applied to
-# a value read out of the store.
-func chunk_data_for(coord: Vector2i) -> Dictionary:
-	var stored := _read_chunk_source(coord)
-	if not stored.is_empty():
-		return stored
-	var data := compute_chunk_data(coord)
-	_write_chunk_source(coord, data)
-	return data
-
-
-# Ask the store for `coord` and rehydrate a full chunk-data dict from it. Everything except
-# the two expensive SAMPLING products (heights and baked light) is cheap arithmetic over a
-# fixed grid, so the store only has to hold those two. Empty dict = miss.
-func _read_chunk_source(coord: Vector2i) -> Dictionary:
-	if chunk_source == null or not chunk_source.has_method("read"):
-		return {}
-	var rec: Dictionary = chunk_source.call("read", coord)
-	if rec.is_empty():
-		return {}
-	var heights: PackedFloat32Array = rec.get("heights", PackedFloat32Array())
-	if heights.size() != SAMPLES * SAMPLES:
-		return {}
-	# The store holds light in the SAME RGB8 encoding TerrainLod already uses (`l0_light`),
-	# not as a PackedColorArray: three bytes a vertex rather than a full Color, which is the
-	# whole reason `encode_lights` exists. Decode it back to the builder's shape here, so
-	# `_rehydrate_chunk_data` sees exactly what a fresh build would have handed it.
-	var encoded: PackedByteArray = rec.get("l0_light", PackedByteArray())
-	var lights: PackedColorArray = TerrainLod.decode_lights(encoded)
-	# The DERIVED surface channels, when the record carries them — see
-	# `surface_channels_from`. Optional by design: an absent (or wrong-sized) section just means
-	# `_rehydrate_chunk_data` recomputes them, which is what it always did.
-	var surface: PackedFloat32Array = rec.get("surface", PackedFloat32Array())
-	return _rehydrate_chunk_data(coord, heights, lights, surface)
-
-
-# Offer a freshly generated chunk to the store. Duck-typed and best-effort: a store that
-# refuses (a write failure, an empty light) is not an error here — it just means the next
-# visit regenerates.
-func _write_chunk_source(coord: Vector2i, data: Dictionary) -> void:
-	if chunk_source == null or not chunk_source.has_method("write"):
-		return
-	var heights: PackedFloat32Array = data.get("heights", PackedFloat32Array())
-	if heights.size() != SAMPLES * SAMPLES:
-		return
-	# Hand over the RGB8 encoding, never the PackedColorArray — that is the store's contract
-	# and it is what lands on disk. `l0_light` is already encoded when capture is armed (which
-	# set_chunk_source does), so prefer it and only encode as a fallback; encoding twice would
-	# be ~2600 clamped divisions per chunk for nothing.
-	var encoded: PackedByteArray = data.get("l0_light", PackedByteArray())
-	if encoded.is_empty():
-		encoded = TerrainLod.encode_lights(data.get("lights", PackedColorArray()))
-	chunk_source.call("write", coord, heights, encoded, surface_channels_from(data))
-
-
-## The three DERIVED per-vertex surface channels of a generated chunk, interleaved as
-## (road_weight, tarmac_weight, region_rank) — i.e. (COLOR.a, UV2.x, UV2.y) — for a store to
-## keep alongside the heights and the light.
-##
-## WHY A STORE SHOULD KEEP THEM. Those three are the entire output of `_apply_road_carve`
-## (colours only) and `_apply_region_blend`, and re-deriving them on a READ costs ~10-15 ms a
-## chunk: the carve queries the road network once PER VERTEX (2,601 per chunk). Storing them
-## turns rehydration into pure array copies. They are handed over as raw f32 so the round trip is
-## EXACT — see OverworldCache._encode_payload for why an approximate channel is not acceptable
-## here.
-##
-## Empty when the dict has no full-res colour/uv2 arrays (a coarse grid, or a partial dict), so a
-## store simply records nothing extra rather than something wrong.
-static func surface_channels_from(data: Dictionary) -> PackedFloat32Array:
-	var colors: PackedColorArray = data.get("colors", PackedColorArray())
-	var uv2s: PackedVector2Array = data.get("uv2s", PackedVector2Array())
-	var count := colors.size()
-	if count == 0 or uv2s.size() != count:
-		return PackedFloat32Array()
-	var out := PackedFloat32Array()
-	out.resize(count * 3)
-	for i in count:
-		var t := uv2s[i]
-		var at := i * 3
-		out[at] = colors[i].a
-		out[at + 1] = t.x
-		out[at + 2] = t.y
-	return out
-
-
-# Whether the store already holds `coord` (used to decide whether a miss is cheap). Duck-typed
-# and optimistic: no store, or no `has`, means "no".
-func chunk_source_has(coord: Vector2i) -> bool:
-	if chunk_source == null or not chunk_source.has_method("has"):
-		return false
-	return bool(chunk_source.call("has", coord))
-
-
-# Rebuild a full-res chunk-data dict from just `heights` + `lights`, in exactly the shape
-# TerrainChunkBuilder.data() returns. Mirrors TerrainLod.build_finest's derivation (local
-# vertex positions from the height grid, UVs from world XZ x texture_tile_per_meter, indices
-# from arithmetic) and reuses the manager's own colour/uv2 row fillers, so a rehydrated chunk
-# is the same surface a generated one produces.
-#
-# `heights` must ALREADY carry the coastline taper (they came out of compute_chunk_data), so
-# no taper is applied here.
-#
-# `surface` is the OPTIONAL fast path (see `surface_channels_from`): SAMPLES² x 3 f32s carrying
-# the three DERIVED channels — COLOR.a (road weight), UV2.x (tarmac weight), UV2.y (region rank).
-# When it is the right size those values are spliced straight in and BOTH derivation passes are
-# skipped; the stored numbers are the generated ones bit-for-bit, so this is not an approximation
-# of the slow path, it IS the slow path's answer. Passing nothing (an older record, a store that
-# does not keep them, or a caller like a test that only has heights) recomputes exactly as before,
-# so the fast path can never be a correctness dependency.
-func _rehydrate_chunk_data(coord: Vector2i, heights: PackedFloat32Array,
-		lights: PackedColorArray,
-		surface: PackedFloat32Array = PackedFloat32Array()) -> Dictionary:
-	var n := SAMPLES
-	var count := n * n
-	var center := Vector3((coord.x + 0.5) * CHUNK_M, 0.0, (coord.y + 0.5) * CHUNK_M)
-	var half := CHUNK_M / 2.0
-	var verts := PackedVector3Array(); verts.resize(count)
-	var uvs := PackedVector2Array(); uvs.resize(count)
-	for zi in n:
-		var lz := -half + zi * CELL_M
-		var wz := center.z + lz
-		for xi in n:
-			var lx := -half + xi * CELL_M
-			var idx := zi * n + xi
-			verts[idx] = Vector3(lx, heights[idx], lz)
-			uvs[idx] = Vector2(center.x + lx, wz) * texture_tile_per_meter
-	var colors := PackedColorArray(); colors.resize(count)
-	var uv2s := PackedVector2Array(); uv2s.resize(count)
-	var stored := surface.size() == count * 3
-	for zi in n:
-		# RGB (ground tint x baked light) always comes from here — the light IS stored, and the
-		# tint is a runtime field, so nothing about the RGB path changes.
-		_vertex_color_row(coord, zi, lights, colors)
-		if not stored:
-			_surface_uv2_row(coord, zi, uv2s)
-	if stored:
-		for i in count:
-			var at := i * 3
-			var c := colors[i]
-			c.a = surface[at]
-			colors[i] = c
-			uv2s[i] = Vector2(surface[at + 1], surface[at + 2])
-	var out := {
-		"center": center,
-		"heights": heights,
-		"vertices": verts,
-		"uvs": uvs,
-		"colors": colors,
-		"uv2s": uv2s,
-		"indices": TerrainLod.build_grid_indices(n),
-		"lights": lights,
-		"grid_n": n,
-		"stride": 1,
-	}
-	if stored:
-		# BOTH passes skipped: their entire output is the three channels just spliced in, and those
-		# came off disk as the exact f32s a generate produced. This is the whole point of the
-		# stored section — the carve alone was ~2,601 road-network queries per chunk, which is what
-		# made every chunk-boundary crossing a multi-frame spike even though nothing was
-		# generating.
-		return out
-	# Colours ONLY: the stored heights already carry the road carve (they came out of
-	# compute_chunk_data), but the colour/uv2 rows above were rebuilt from track_weights /
-	# track_surface, which a bounded world never fills. No-op without a road source.
-	_apply_road_carve(out, false)
-	# Pad tarmac ONLY, same reasoning: the stored heights already carry the pad flatten, but the
-	# road carve above just rebuilt colour/uv2 from scratch, wiping any pad contribution to them.
-	# No-op without a pad source, which is every stage.
-	_apply_pad_flatten(out, false)
-	# UV2.y likewise: the row builders above rebuilt uv2s from scratch (UV2.y = 0), so a
-	# rehydrated chunk would come back region-less and render as slot A everywhere. The rank is a
-	# pure function of position, so re-deriving it here reproduces the generated value exactly.
-	_apply_region_blend(out)
-	return out
-
-
 func cache_chunk(coord: Vector2i) -> void:
 	var cls := chunk_class(coord)
 	if precompute_prune_enabled and not cls["full_res"]:
 		# Coarse: build only the LOD levels this chunk can ever display, each sampled
 		# directly at its own stride. No full-res grid, no collision, no cache-backed
 		# height/light queries (those fall through to noise for this coord).
-		var coarse_night: Array = []
-		if bake_night_colors:
-			coarse_night.resize(TerrainLod.LOD_STRIDES.size())
 		_chunk_cache[coord] = {
 			"center": Vector3((coord.x + 0.5) * CHUNK_M, 0.0, (coord.y + 0.5) * CHUNK_M),
-			"lod_meshes": TerrainLod.build_levels_from(self, coord, cls["l_min"], lod_skirt_m, coarse_night),
-			"night_colors_by_level": coarse_night,
+			"lod_meshes": TerrainLod.build_levels_from(self, coord, cls["l_min"], lod_skirt_m),
 			"coarse": true,
 		}
 		_log_precompute_vram()
 		return
-	var data := chunk_data_for(coord)
+	var data := compute_chunk_data(coord)
 	# Prebake the decimated LOD display meshes at load (behind the loading screen),
 	# so runtime chunk spawns are a cheap node build + mesh assign, not a mesh build.
 	# The FINEST level is skipped under lazy_finest_lod (see that field) and rebuilt on
 	# demand from `heights` + `l0_light` + the live track fields.
-	var full_res_night: Array = []
-	if bake_night_colors:
-		full_res_night.resize(TerrainLod.LOD_STRIDES.size())
-	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m, 1 if lazy_finest_lod else 0, full_res_night)
-	if bake_night_colors:
-		data["night_colors_by_level"] = full_res_night
+	data["lod_meshes"] = TerrainLod.build_all(data, lod_skirt_m, 1 if lazy_finest_lod else 0)
 	data["coarse"] = false
-	if lazy_finest_lod or capture_encoded_light:
+	if lazy_finest_lod:
 		# The one finest-level input that is NOT derivable from what the cache retains:
 		# the baked per-vertex light. Quantised to RGB8 (~1/5 the bytes of the
 		# PackedColorArray) and kept deliberately past free_load_only_data, which drops the
 		# full-precision `lights`. This is a LIVE need, not load-only — do not fold it into
 		# the frees there.
-		# `capture_encoded_light` extends the same retention to the open world, where chunks are
-		# generated in PLAY rather than behind a one-shot loading screen: free_load_only_data
-		# erases the full-precision `lights` and latches its sentinel, after which a chunk_source
-		# write would persist a light-less record the invalidation key could never discard.
-		# Stage default stays off — it is ~7.8 KB per chunk a stage has no reader for.
 		data["l0_light"] = TerrainLod.encode_lights(data.get("lights", PackedColorArray()))
 	# build_all has consumed the CPU-side mesh source arrays into GPU meshes, and
 	# nothing reads them again: apply_data only needs center/lod_meshes/heights/coarse,
@@ -1975,11 +1248,6 @@ func precompute_corridor(centerline: Curve2D, leash_m: float) -> void:
 # World-XZ AABB of the precomputed corridor (zero rect when no corridor is set).
 # world.gd dilates this by the backdrop margin for the static DistantTerrain.
 func corridor_bounds() -> Rect2:
-	# A declared bounded world IS the bounds — and it is the only answer available, since an
-	# open world has no corridor. Without this DistantTerrain.build_static gets an empty Rect2
-	# and builds no horizon at all, which is worst exactly where a coastline needs it most.
-	if has_bounds():
-		return world_bounds
 	if _corridor_coords.is_empty():
 		return Rect2()
 	var lo := _corridor_coords[0]
@@ -1996,14 +1264,6 @@ func corridor_bounds() -> Rect2:
 # are dead. False for the editor / on-demand test path (no corridor), which keeps
 # rebuilding chunks from those fields and must never have them freed.
 func corridor_complete() -> bool:
-	# A bounded world has no corridor and no bake, so "can a chunk still be asked to read the
-	# road/cliff bake fields?" is answered by construction: no, there are none. Reporting true
-	# is what lets free_load_only_data drop those (already empty) dictionaries instead of
-	# leaving the flag permanently false. It does NOT mean every map chunk is cached — the
-	# overworld's cache is a moving window over a larger map, so a per-coord test would be
-	# false forever, which is the degradation this replaces.
-	if has_bounds():
-		return true
 	if _corridor_coords.is_empty():
 		return false
 	for coord in _corridor_coords:
@@ -2023,22 +1283,7 @@ func corridor_complete() -> bool:
 #    the corridor is fully cached, so no chunk will ever be built again in play.
 #    track_weights / track_surface are KEPT — surface_at() drives per-tick grip.
 #
-# NOT touched here, on purpose: `night_colors_by_level` (menu_showcase.gd only, see
-# bake_night_colors). It is a LIVE need — TerrainChunk.apply_vertex_color_profile swaps a
-# chunk's mesh COLOR against it at runtime, not just at load — so it must never be folded
-# into a load-only free. In practice this function never runs against the showcase anyway
-# (its scene root has no `load_finished` signal), but the invariant is stated here where a
-# future caller might otherwise assume every load-only array is safe to sweep.
 func free_load_only_data() -> void:
-	# A bounded world keeps its baked light. Both premises of the free fail there: chunks are
-	# generated in PLAY (not once behind a loading screen), so `lights` is a live input to
-	# every future chunk_source write; and light_at is not a one-shot build any more, so
-	# latching the sentinel would make _cached_light_at push_error on every query — the exact
-	# per-frame spam the sentinel exists to catch. The bake fields are already empty (no
-	# bake_track), so there is nothing else here to free.
-	if has_bounds():
-		_bake_fields_freed = false
-		return
 	if not _lights_freed:
 		_lights_freed = true
 		for data in _chunk_cache.values():
@@ -2958,12 +2203,6 @@ func _stream_chunk(coord: Vector2i) -> void:
 		_spawn_chunk(coord, _chunk_cache[coord])
 
 
-# Try to satisfy `coord` from the attached chunk store (the on-disk precompute) and spawn it.
-# Returns true if it spawned. NOT a generate: on a store miss, or a record that fails its CRC,
-# this answers false and the caller leaves a loud hole.
-#
-# The rehydrated data is inserted into `_chunk_cache` so a boundary crossing that re-visits the
-# same coord does not re-read the file every time — the LRU is what bounds it again.
 # Queue the coords `wanted` needs that are not spawned yet, nearest to `center` first, and
 # spawn immediately only what is close enough to matter this frame. `_drain_spawn_queue` does
 # the rest over the following frames.
@@ -3038,25 +2277,15 @@ func _drain_spawn_queue(limit: int) -> void:
 # One chunk, from whichever supply the mode allows. Factored out of _reconcile so the immediate
 # path and the queued path cannot diverge.
 func _spawn_one(coord: Vector2i) -> void:
-	# ORDER IS LOAD-BEARING. The store read must come BEFORE the on-demand build, not after: the
-	# on-demand arm fires whenever `_chunk_cache` is empty, so with the store arm below it an
-	# attached store was unreachable in exactly the case it exists for — an empty resident cache —
-	# and every coord took the raw `compute_chunk_data` route instead. That route is the one dict
-	# shape with no prebaked `lod_meshes`, no `l0_light` and no prebuilt `shape`, i.e. precisely the
-	# divergence `_stream_chunk`'s docstring says must not be inherited.
 	if _chunk_cache.has(coord):
 		_spawn_chunk(coord, _chunk_cache[coord])
 	elif stream_on_miss:
 		_stream_chunk(coord)
-	elif _read_from_store(coord):
-		# The healthy path when a store is attached: one seek and one read off the precompute,
-		# then post-processed and made resident by cache_chunk. Not a generate.
-		pass
 	elif _chunk_cache.is_empty():
 		# Editor / tests with no store: silent on-demand build.
 		on_demand_builds += 1
 		_spawn_chunk(coord, compute_chunk_data(coord))
-	elif (has_bounds() or _corridor_class.has(coord)) and not _logged_misses.has(coord):
+	elif _corridor_class.has(coord) and not _logged_misses.has(coord):
 		# Prefer a HOLE over a mid-drive build hitch, and log once per coord.
 		#
 		# The `_corridor_class` half is load-bearing for STAGES and must not be dropped: since the
@@ -3064,54 +2293,17 @@ func _spawn_one(coord: Vector2i) -> void:
 		# enough launch can simply leave it. That is expected, not a bug, and an OUT-of-corridor
 		# miss must stay SILENT (test_terrain: "an excursion beyond the corridor logs nothing").
 		# Only an in-corridor miss breaks an invariant.
-		#
-		# In a BOUNDED world every in-bounds coord is precomputed and the enumeration is grown by
-		# the load radius, so there is no legitimate excursion — every miss is a bug.
 		_logged_misses[coord] = true
-		if has_bounds():
-			push_error(("terrain cache miss at %s in a BOUNDED world (leaving a hole) — the "
-				+ "precompute did not cover this coord, or the cache is stale/undersupplied. "
-				+ "Check the load radius against the precomputed margin.") % coord)
-		else:
-			push_error("terrain cache miss at %s — corridor region invariant broke (leaving a hole)"
-				% coord)
-
-
-func _read_from_store(coord: Vector2i) -> bool:
-	if chunk_source == null or not chunk_source_has(coord):
-		return false
-	# `cache_chunk` is the right vehicle rather than a hand-rolled read: it routes through
-	# `chunk_data_for` (which prefers the store), then does the post-processing a spawnable chunk
-	# needs — the prebaked LOD meshes, the encoded light, the collision shape for a banded chunk —
-	# so this path cannot drift from the precompute's.
-	#
-	# Caveat, stated rather than hidden: if the record is on disk but fails its CRC,
-	# `chunk_data_for` falls through and REGENERATES that one chunk. That is a corruption
-	# fallback, not the every-crossing generate this replaced, and `store_reads` vs
-	# `stream_on_miss_builds` is how you tell them apart.
-	cache_chunk(coord)
-	if not _chunk_cache.has(coord):
-		return false
-	store_reads += 1
-	_spawn_chunk(coord, _chunk_cache[coord])
-	return true
+		push_error("terrain cache miss at %s — corridor region invariant broke (leaving a hole)"
+			% coord)
 
 
 func _spawn_chunk(coord: Vector2i, data: Dictionary) -> void:
 	var chunk: TerrainChunk = ChunkScript.new()
 	add_child(chunk)
 	chunk.apply_data(self, coord, data)
-	if _vertex_color_profile != &"day":
-		chunk.apply_vertex_color_profile(_vertex_color_profile)
 	_chunks[coord] = chunk
 	integrations_total += 1
-
-
-# Menu-showcase-only: the vertex-colour profile ("day" / "night") every currently-spawned
-# and future chunk should wear. See TerrainChunk.apply_vertex_color_profile and
-# features/terrain.md → "Dual day/night bake". A live stage never calls this — the field
-# stays "day" and _spawn_chunk's check above is then a no-op.
-var _vertex_color_profile: StringName = &"day"
 
 
 func _rebuild_loaded() -> void:

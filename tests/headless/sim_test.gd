@@ -119,7 +119,7 @@ func setup_settled_car() -> void:
 # assumption that a car placed AT its own cached resting pose is already at rest and just
 # needs a few frames to stabilise. That assumption does not hold: measured across a full
 # suite run, most scripts warm-restored to y=0.7031 (the true rest height) but two —
-# test_grip_servo_steering.gd and test_kinematic_pose.gd — landed at y=0.813, a tenth of a
+# test_grip_servo_steering.gd — landed at y=0.813, a tenth of a
 # metre high and still moving, with the same mass, wheel radius, tyre mu and roster as
 # everyone else. Ten frames is simply not always enough to damp whatever the teleport leaves
 # in the suspension.

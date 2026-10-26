@@ -131,7 +131,7 @@ func _make_button(text: String) -> ColorRect:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	label.add_theme_font_size_override("font_size", UITheme.px(14))
+	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	panel.add_child(label)
 	add_child(panel)
 	return panel

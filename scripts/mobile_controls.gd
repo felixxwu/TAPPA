@@ -347,7 +347,7 @@ func _make_button(region: String) -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	label.add_theme_font_size_override("font_size", UITheme.px(16))
+	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	panel.add_child(label)
 	_overlay().add_child(panel)
 	_panels[region] = panel
@@ -366,7 +366,7 @@ func _build_debug_label() -> void:
 	if cfg == null or not cfg.mobile_controls_debug:
 		return
 	_debug_label = Label.new()
-	_debug_label.add_theme_font_size_override("font_size", UITheme.px(8))
+	_debug_label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
 	_debug_label.position = Vector2(4, 4)
 	_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_overlay().add_child(_debug_label)

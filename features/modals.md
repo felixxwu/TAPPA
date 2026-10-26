@@ -63,14 +63,10 @@ nothing scrolls**: these popups are fullscreen and their bodies are short, so th
 the text and all of it is visible. The panel width is likewise adaptive: `clampf(420.0,
 200.0, viewport_width - 32.0)` instead of a bare `420` — on a narrow/portrait device
 (`DisplayStretch`) the logical width can be well under 420.
-`scripts/username_popup.gd` shares this exact shape and calls the same
-`UITheme.fit_body_scroll` — keep the two in sync if this changes.
 
 ### One modal at a time (`ConfirmPopup.MODAL_GROUP`)
 
-Every modal in the game is a `ConfirmPopup` or a `UsernamePopup`, both on layer 101,
-and both join the scene-tree group **`"modal"`** when built. `ConfirmPopup.open` and
-`UsernamePopup.open` refuse (return `null`, with a `push_warning`) when
+Every modal in the game is a `ConfirmPopup` on layer 101, and each joins the scene-tree group **`"modal"`** when built. `ConfirmPopup.open` refuses (return `null`, with a `push_warning`) when
 `ConfirmPopup.any_open(tree)` reports one already on screen. `allow_stack := true`
 opts out — used only by `CloudBusy.report_failure`, because a silently dropped
 "couldn't sync" is how a failed resolution becomes invisible. There is deliberately
@@ -142,7 +138,7 @@ That host is deleted; the predicate is the rule for the next one.
 to keep answering Back and directional nav — block it and the player is trapped in a
 popup that no longer responds to anything. So the modal blocks everyone *except its own
 subtree* (`node == modal or modal.is_ancestor_of(node)`), and the carve-out is tested
-before the text-editing arm so a field inside a modal (`UsernamePopup`) keeps its own
+before the text-editing arm so a field inside a modal keeps its own
 typing rules.
 
 `MenuNav._unhandled_input` applies the guard itself, so every MenuNav-driven page

@@ -658,6 +658,7 @@ Numbering continues from decision 32.
 - **D56. REVIEW — every new world gets a random seed** (1 to 999,999). The lab's liked preset was
   seed 1, and seeds vary in quality, so a bad one is possible. There's no seed curation or
   "reroll". Easy to change in `TitleScreen._start`.
+  **Superseded:** every world now uses the fixed `FreeRoamSettings.world_seed` (commit 486c78d8).
 - **D57. A new world also wipes the owned cars.** A world is the whole save (decision 2), and cars
   are found in the world (decision 16).
 - **D58. The starter choice is the 3 cheapest cars by `cost`.** It's a rule, not a list, so it

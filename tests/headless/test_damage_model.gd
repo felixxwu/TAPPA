@@ -272,14 +272,14 @@ func test_rev_limit_fraction_respects_any_configured_floor() -> void:
 
 func test_field_loads_persisted_wheel_toe() -> void:
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, -1, [0.01, -0.02, 0.03, -0.04])
+	dm.field(1000.0, 1000.0, [0.01, -0.02, 0.03, -0.04])
 	# Loaded in WHEEL_NAMES order; round-trips back out unchanged.
 	assert_eq(dm.toe_array(), [0.01, -0.02, 0.03, -0.04], "toe loaded and returned in order")
 
 
 func test_field_missing_toe_fields_straight() -> void:
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, -1, [])  # older save with no wheel_toe
+	dm.field(1000.0, 1000.0, [])  # older save with no wheel_toe
 	assert_eq(dm.toe_array(), [0.0, 0.0, 0.0, 0.0], "an empty toe array fields straight wheels")
 
 
@@ -318,7 +318,7 @@ func test_nudge_always_clamped_over_many_hits() -> void:
 
 func test_reset_wheel_toe_straightens() -> void:
 	var dm := DamageModel.new()
-	dm.field(1000.0, 1000.0, -1, [0.05, -0.05, 0.05, -0.05])
+	dm.field(1000.0, 1000.0, [0.05, -0.05, 0.05, -0.05])
 	dm.reset_wheel_toe()
 	assert_eq(dm.toe_array(), [0.0, 0.0, 0.0, 0.0], "a repair straightens every wheel")
 
@@ -343,7 +343,7 @@ func test_apply_loss_past_zero_clamps_and_signals_nothing() -> void:
 	# apply_loss just drains: HP floors at 0, nothing is emitted, the save is untouched.
 	# (There is no wrecked signal any more — 0 HP is a state the car keeps driving in.)
 	var dm := DamageModel.new()
-	dm.field(800.0, 30.0, -1)  # unbound: free-roam / dev
+	dm.field(800.0, 30.0)
 	assert_false(dm.has_signal("wrecked"), "no wreck event exists on the damage model")
 	var emitted := {"damaged": 0}
 	dm.damaged.connect(func(_loss: float, _pt: Vector3) -> void: emitted["damaged"] += 1)
@@ -352,22 +352,6 @@ func test_apply_loss_past_zero_clamps_and_signals_nothing() -> void:
 	dm.apply_loss(500.0)
 	assert_eq(dm.hp, 0.0, "further losses on an empty pool stay clamped at 0")
 	assert_eq(emitted["damaged"], 0, "a bare apply_loss emits nothing")
-	assert_eq(_save.profile["cars"].size(), 0, "an unbound model never touches the save")
-
-
-func test_bound_model_at_zero_hp_keeps_the_car() -> void:
-	# Running a BOUND car's HP to 0 costs the run's pace, never the car: the instance is
-	# still in the save afterwards. (It used to assert fitted parts rode along too; there
-	# are no persistent parts any more -- todo/roguelike-pivot.md.)
-	var car: Dictionary = _save.grant_car("fx_light_rwd")
-	var id := int(car["instance_id"])
-
-	var dm := DamageModel.new()
-	dm.field(800.0, 40.0, id)
-	dm.apply_loss(40.0)  # -> 0 HP
-
-	assert_eq(dm.hp, 0.0, "the model reads empty")
-	assert_false(_save.get_car(id).is_empty(), "the instance is kept in the save")
 
 
 func test_a_zero_hp_car_is_maximally_weakened_but_still_drivable() -> void:
@@ -392,17 +376,14 @@ func test_a_zero_hp_car_is_maximally_weakened_but_still_drivable() -> void:
 
 # --- The self-heal trickle (features/damage.md -> "The self-heal trickle") ----------
 #
-# regen() reads GameConfig.damage_regen_hp_per_s, which is 0.0 on the authored baseline
-# and written only by the effects funnel (the "self_healing" skill, todo/roguelike-pivot.md
-# decision 51). The rate is a tunable, so nothing below pins one: every assertion sets its
-# OWN rate and checks the relationship regen() must hold for any of them.
+# regen() reads GameConfig.damage_regen_hp_per_s. The rate is a tunable, so nothing below
+# pins one: every assertion sets its OWN rate.
 
-func test_regen_is_a_no_op_at_the_authored_baseline() -> void:
+func test_regen_is_a_no_op_at_a_zero_rate() -> void:
 	var cfg: GameConfig = Config.data
+	cfg.damage_regen_hp_per_s = 0.0
 	var dm := DamageModel.new()
 	dm.field(1000.0, 400.0)
-	assert_eq(cfg.damage_regen_hp_per_s, 0.0,
-		"nothing should heal until an effect writes the rate")
 	assert_eq(dm.regen(1.0, cfg), 0.0)
 	assert_eq(dm.hp, 400.0)
 
@@ -426,18 +407,7 @@ func test_regen_never_exceeds_max_hp() -> void:
 	assert_eq(dm.regen(1.0, cfg), 0.0, "a full car regains nothing more")
 
 
-func test_regen_is_a_no_op_while_disabled() -> void:
-	var cfg: GameConfig = Config.data
-	cfg.damage_regen_hp_per_s = 10.0
-	var dm := DamageModel.new()
-	dm.field(1000.0, 400.0)
-	dm.enabled = false
-	assert_eq(dm.regen(1.0, cfg), 0.0)
-	assert_eq(dm.hp, 400.0, "a disabled damage model neither loses nor gains HP")
-
-
-# Healing is HP only: a bent wheel stays bent, which is what keeps the between-stage
-# repair (Save.field_repair) worth taking on a self-healing car.
+# Healing is HP only: a bent wheel stays bent.
 func test_regen_does_not_straighten_wheels() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.damage_regen_hp_per_s = 10.0
