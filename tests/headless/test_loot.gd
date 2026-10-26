@@ -120,7 +120,7 @@ func test_a_price_comes_from_the_items_own_entry() -> void:
 
 # --- parts on a car ---------------------------------------------------------------------------------
 
-func test_fitted_parts_reach_the_car_only_through_the_funnel_keys() -> void:
+func test_switched_on_parts_reach_the_car_only_through_the_funnel_keys() -> void:
 	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "instance_id": 1, "tuning": {},
 		"parts": [{"kind": "part", "id": String(BoostLibrary.CATALOGUE.keys()[0]), "level": 2},
 			{"kind": "part", "id": "engine_swap:some_engine"},
@@ -137,36 +137,33 @@ func test_fitted_parts_reach_the_car_only_through_the_funnel_keys() -> void:
 	assert_false(bare.has("swapped_engine") or bare.has("drivetrain_override"))
 
 
-func test_one_of_each_part_one_engine_and_no_kit_for_the_cars_own_layout() -> void:
-	var car: Dictionary = CarLibrary.all()[0]
-	var owned := {"model_id": String(car["id"]), "parts": [{"kind": "part", "id": "grip", "level": 0},
-		{"kind": "part", "id": "engine_swap:a"}]}
-	assert_false(LootRules.can_fit(owned, {"kind": "part", "id": "grip", "level": 3}), "one of each")
-	assert_eq(LootRules.occupant(owned, {"kind": "part", "id": "engine_swap:b"})["id"], "engine_swap:a", "the engine slot is taken")
-	var own_mode := int(car.get("drive_mode", CarLibrary.RWD))
-	assert_false(LootRules.can_fit(owned, {"kind": "part", "id": "drivetrain:%d" % own_mode}))
+func test_parts_switched_off_dont_reach_the_car() -> void:
+	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [
+		{"kind": "part", "id": "engine_swap:some_engine", "on": false},
+		{"kind": "part", "id": "drivetrain:%d" % Drivetrain.DriveMode.AWD, "on": false}]}
+	var f := LootRules.fielded(owned)
+	assert_false(f.has("swapped_engine") or f.has("drivetrain_override"))
+
+
+func test_one_of_each_part_and_no_kit_for_the_cars_own_layout() -> void:
+	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [{"kind": "part", "id": "grip", "level": 0}]}
+	var own := UpgradeLibrary.stock_drive_mode(owned)
+	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "grip", "level": 3}), "Already unlocked", "one of each")
+	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "drivetrain:%d" % own}),
+		"Already " + CarLibrary.drive_text(own), "a kit for the car's own layout would do nothing")
+	assert_true(LootRules.can_fit(owned, {"kind": "part", "id": "engine_swap:a"}))
 	assert_false(LootRules.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
 
 
-func test_a_kit_for_the_cars_own_layout_swaps_out_another_kit_to_change_the_car_back() -> void:
-	var own := CarLibrary.RWD
-	var other := CarLibrary.FWD
-	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": []}
-	own = UpgradeLibrary.stock_drive_mode(owned)
-	other = CarLibrary.FWD if own != CarLibrary.FWD else CarLibrary.AWD
-	owned["parts"] = [{"kind": "part", "id": "drivetrain:%d" % other}]
-	var own_kit := {"kind": "part", "id": "drivetrain:%d" % own}
-	assert_true(LootRules.can_fit(owned, own_kit), "a converted car can take its own layout back")
-	assert_eq(LootRules.occupant(owned, own_kit)["id"], "drivetrain:%d" % other, "swapping out the other kit")
-
-
-func test_a_part_that_cant_fit_says_why() -> void:
-	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [{"kind": "part", "id": "grip", "level": 0}]}
-	var own := UpgradeLibrary.stock_drive_mode(owned)
-	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "drivetrain:%d" % own}),
-		"Already " + CarLibrary.drive_text(own), "a kit for the car's own layout names the layout")
-	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "grip", "level": 2}), "Already fitted")
-	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "brakes", "level": 0}), "", "a part that fits has no reason")
+func test_switching_an_engine_or_kit_on_switches_the_other_one_off() -> void:
+	var parts := [{"kind": "part", "id": "engine_swap:a", "on": true}, {"kind": "part", "id": "engine_swap:b", "on": false},
+		{"kind": "part", "id": "grip", "level": 0, "on": true}]
+	var on_b := LootRules.toggled(parts, 1)
+	assert_eq(on_b.map(func(p: Dictionary) -> bool: return LootRules.is_on(p)), [false, true, true],
+		"one engine at a time; other parts are left alone")
+	assert_eq(LootRules.toggled(on_b, 1).map(func(p: Dictionary) -> bool: return LootRules.is_on(p)), [false, false, true],
+		"switching it off again leaves the stock engine")
+	assert_true(LootRules.is_on(parts[0]), "the input is untouched")
 
 
 # --- in the world ----------------------------------------------------------------------------------
@@ -309,22 +306,21 @@ func test_only_unlocked_rings_sell_and_only_what_the_player_lacks() -> void:
 	assert_true(keys.call(loot.for_sale()).has(LootRules.item_key(stock[ring][0])), "lighting a checkpoint there unlocks it")
 
 
-func test_buying_spends_the_money_and_a_car_joins_the_garage_and_a_part_the_stash() -> void:
+func test_buying_spends_the_money_and_a_car_joins_the_garage_and_a_part_is_handed_back_to_unlock() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
 	for r in 4:
 		loot.unlock(r)
 	var car: Dictionary = loot.for_sale().filter(func(i: Dictionary) -> bool: return i["kind"] == "car")[0]
-	var part: Dictionary = loot.for_sale().filter(func(i: Dictionary) -> bool: return i["kind"] == "part")[0]
+	var part: Dictionary = loot.for_sale().filter(func(i: Dictionary) -> bool:
+		return i["kind"] == "part" and LootRules.can_fit(WorldSession.active_car(), i))[0]
 	WorldSession.set_money(LootRules.price(car) + LootRules.price(part))
 	var cars := (_save.profile[_save.KEY_CARS] as Array).size()
 	assert_eq(String(loot.buy(car).get("model_id", "")), String(car["id"]), "returns the new owned car")
 	assert_eq((_save.profile[_save.KEY_CARS] as Array).size(), cars + 1, "the car is owned")
 	assert_eq(loot.buy(part), part)
-	assert_eq(WorldSession.list("stash"), [part], "the part is in the stash")
 	assert_eq(WorldSession.money(), 0)
 	assert_false(loot.for_sale().has(car), "bought things leave the shop")
-	assert_true(loot.buy(part).is_empty(), "and can't be bought twice")
 
 
 func test_the_player_cant_buy_what_they_cant_afford() -> void:
@@ -334,7 +330,6 @@ func test_the_player_cant_buy_what_they_cant_afford() -> void:
 	WorldSession.set_money(LootRules.price(item) - 1)
 	assert_true(loot.buy(item).is_empty())
 	assert_eq(WorldSession.money(), LootRules.price(item) - 1, "nothing is spent")
-	assert_true(WorldSession.list("stash").is_empty())
 
 
 # The parts and garage tests below count cards; with nothing on sale, only the player's own show.
@@ -342,7 +337,7 @@ func _nothing_for_sale() -> void:
 	WorldSession.set_list("revealed", [])
 
 
-func test_the_parts_page_sells_parts_and_buying_one_fits_it() -> void:
+func test_the_parts_page_sells_parts_and_buying_one_switches_it_on() -> void:
 	var scene := await _boot()
 	var page: RestStopPage = scene.get_node("RestStopPage")
 	var sale: Array = page.loot.for_sale().filter(func(i: Dictionary) -> bool:
@@ -357,8 +352,10 @@ func test_the_parts_page_sells_parts_and_buying_one_fits_it() -> void:
 	watch_signals(page)
 	_confirm(page.cards(), 0)
 	assert_eq(WorldSession.money(), 0, "bought")
-	assert_eq(WorldSession.active_car().get("parts", []), [part], "and fitted straight away")
-	assert_eq(page.loot.owned_parts(), [part], "and owned, for any car to fit")
+	var on := part.duplicate()
+	on["on"] = true
+	assert_eq(WorldSession.active_car().get("parts", []), [on], "unlocked for this car and switched on")
+	assert_false(page.loot.for_sale().has(part), "this car can't buy it twice")
 	page.close()
 	assert_signal_emitted(page, "car_changed", "the car is re-fielded with it")
 
@@ -471,65 +468,69 @@ func test_the_garage_with_cars_on_sale_is_navigable() -> void:
 	page.close()
 
 
-func test_the_parts_page_fits_and_removes_parts_and_reloads_the_car_on_close() -> void:
+func test_the_parts_page_switches_parts_on_and_off_and_reloads_the_car_on_close() -> void:
 	var scene := await _boot()
 	_nothing_for_sale()
 	var page: RestStopPage = scene.get_node("RestStopPage")
-	WorldSession.set_list("stash", [{"kind": "part", "id": "grip", "level": 1}])
+	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": "grip", "level": 1, "on": false}])
+	page.owned = WorldSession.active_car()
 	page.open(0)
 	watch_signals(page)
 	page._show(RestStopPage.View.PARTS)
-	assert_eq(page.cards().card_count(), 1, "a card for the stash part")
+	assert_eq(page.cards().card_count(), 1, "a card for the unlocked part")
 	_confirm(page.cards(), 0)
-	assert_eq((WorldSession.active_car().get("parts", []) as Array).size(), 1, "fitted, and saved on the car")
-	assert_eq(page.cards().card_count(), 1, "now a card for the fitted part")
+	assert_true(LootRules.is_on(WorldSession.active_car()["parts"][0]), "switched on, and saved on the car")
 	_confirm(page.cards(), 0)
-	assert_eq(WorldSession.active_car().get("parts", []), [], "taken off")
-	assert_eq(page.loot.owned_parts().size(), 1, "and still owned")
+	assert_false(LootRules.is_on(WorldSession.active_car()["parts"][0]), "switched off")
+	assert_eq((WorldSession.active_car()["parts"] as Array).size(), 1, "and still unlocked")
 	page.close()
 	assert_signal_emitted(page, "car_changed")
 
 
-# A part fitted to one car can go on another too, without coming off the first.
-func test_the_parts_page_fits_a_part_already_on_another_car_without_taking_it_off() -> void:
+# A part belongs to the car it was bought for: another car neither sees it nor counts as owning it.
+func test_a_part_on_one_car_is_not_available_to_another() -> void:
 	var scene := await _boot()
-	_nothing_for_sale()
 	var page: RestStopPage = scene.get_node("RestStopPage")
+	var loot: LootDirector = page.loot
+	for r in 4:
+		loot.unlock(r)
+	var part: Dictionary = loot.for_sale().filter(func(i: Dictionary) -> bool:
+		return i["kind"] == "part" and not LootRules.is_drivetrain(i))[0]
 	var other: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
-	var other_id := int(other["instance_id"])
-	var part := {"kind": "part", "id": "grip", "level": 1}
-	_save.set_car_parts(other_id, [part])
+	_save.set_car_parts(int(other["instance_id"]), [part])
+	assert_true(loot.for_sale().has(part), "the car being driven can still buy its own")
 	page.open(0)
 	page._show(RestStopPage.View.PARTS)
-	assert_eq(page.cards().card_count(), 1, "the part owned shows as fittable here")
-	_confirm(page.cards(), 0)
-	assert_null(ConfirmPopup.any_open(get_tree()), "no asking: nothing moves")
-	assert_eq(WorldSession.active_car().get("parts", []), [part], "fitted to this car")
-	assert_eq(_save.get_car(other_id).get("parts", []), [part], "and still on the other one")
-	page.dirty = false
+	var on_sale := loot.for_sale().filter(func(i: Dictionary) -> bool: return i["kind"] == "part").size()
+	assert_eq(page.cards().card_count(), on_sale, "only parts on sale: nothing of the other car's to switch on")
 	page.close()
 
 
-func test_the_parts_page_swaps_the_own_layout_kit_in_to_change_a_converted_car_back() -> void:
+# A part the car can't use is never sold to it.
+func test_a_part_the_car_cant_fit_cant_be_bought() -> void:
 	var scene := await _boot()
-	_nothing_for_sale()
-	var page: RestStopPage = scene.get_node("RestStopPage")
+	var loot: LootDirector = scene.get_node("LootDirector")
+	for r in 4:
+		loot.unlock(r)
 	var own := UpgradeLibrary.stock_drive_mode(WorldSession.active_car())
-	var other := CarLibrary.FWD if own != CarLibrary.FWD else CarLibrary.AWD
-	var owned := WorldSession.active_car()
-	owned["parts"] = [{"kind": "part", "id": "drivetrain:%d" % other}]
-	page.owned = owned
-	WorldSession.set_list("stash", [{"kind": "part", "id": "drivetrain:%d" % own}])
-	page.open(0)
-	page._show(RestStopPage.View.PARTS)
-	assert_eq(page.cards().card_count(), 2, "the fitted kit, then the stash kit")
-	assert_false(page.cards()._cards[1].disabled, "the own-layout kit can swap in for the other kit")
-	_confirm(page.cards(), 1)
-	var own_kit := {"kind": "part", "id": "drivetrain:%d" % own}
-	assert_eq(page.owned.get("parts", []), [own_kit], "the car is back on its own layout")
-	assert_true(page.loot.owned_parts().has({"kind": "part", "id": "drivetrain:%d" % other}), "the other kit is still owned")
-	page.dirty = false
-	page.close()
+	var kit := {"kind": "part", "id": "drivetrain:%d" % own}
+	if not loot.for_sale().has(kit):
+		pass_test("this island sells no kit for the car's own layout")
+		return
+	WorldSession.set_money(LootRules.price(kit))
+	assert_true(loot.buy(kit).is_empty(), "a kit for the layout the car already has is refused")
+	assert_eq(WorldSession.money(), LootRules.price(kit), "and nothing is spent")
+
+
+func test_an_old_shared_stash_moves_onto_the_car_being_driven() -> void:
+	await _boot()
+	var part := {"kind": "part", "id": "grip", "level": 1}
+	(_save.profile[_save.KEY_WORLD] as Dictionary)["stash"] = [part]
+	WorldSession.adopt_old_stash()
+	var off := part.duplicate()
+	off["on"] = false
+	assert_eq(WorldSession.active_car().get("parts", []), [off], "unlocked for that car, switched off")
+	assert_false((_save.profile[_save.KEY_WORLD] as Dictionary).has("stash"), "and the shared stash is gone")
 
 
 func test_the_garage_switches_the_active_car() -> void:
@@ -557,16 +558,17 @@ func _confirm_for_real(page: RestStopPage, index: int) -> void:
 	await get_tree().process_frame
 
 
-func test_fitting_a_part_keeps_the_cursor_where_it_was() -> void:
+func test_switching_a_part_keeps_the_cursor_where_it_was() -> void:
 	var scene := await _boot()
 	_nothing_for_sale()
 	var page: RestStopPage = scene.get_node("RestStopPage")
-	WorldSession.set_list("stash", [{"kind": "part", "id": "grip", "level": 1},
-		{"kind": "part", "id": "turbo", "level": 0}, {"kind": "part", "id": "aero", "level": 0}])
+	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": "grip", "level": 1, "on": false},
+		{"kind": "part", "id": "turbo", "level": 0, "on": false}, {"kind": "part", "id": "aero", "level": 0, "on": false}])
+	page.owned = WorldSession.active_car()
 	page.open(0)
 	page._show(RestStopPage.View.PARTS)
 	await _confirm_for_real(page, 2)
-	assert_eq((WorldSession.active_car().get("parts", []) as Array).size(), 1, "fitted")
+	assert_true(LootRules.is_on(WorldSession.active_car()["parts"][2]), "switched on")
 	assert_eq(page.cards().selected_index(), 2, "the cursor stays put")
 	await get_tree().process_frame
 	assert_almost_eq(page.cards()._offset, page.cards()._target_offset_for(2), 0.5, "and the strip is scrolled to it")

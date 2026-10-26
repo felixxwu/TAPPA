@@ -106,37 +106,50 @@ static func coin_value(settings: FreeRoamSettings, ring: int) -> int:
 
 
 # --- parts on a car -------------------------------------------------------------------------------
+# A car's `parts` are the parts unlocked for it, each switched on or off (`on`, true when missing).
+# A part belongs to the car it was unlocked for. Engines and drivetrain kits share a slot: only one
+# of each can be on, and switching one on switches the other off.
 
-# Whether `part` can go on `owned` alongside what it already has. One of each part id, one engine,
-# and one drivetrain kit. A kit for the car's own layout only fits in place of another kit, to
-# change a converted car back; on a car still in its stock layout it would do nothing.
+static func is_on(part: Dictionary) -> bool:
+	return bool(part.get("on", true))
+
+
+# Whether `part` can be unlocked for `owned`.
 static func can_fit(owned: Dictionary, part: Dictionary) -> bool:
 	return fit_block_reason(owned, part).is_empty()
 
 
-# Why `part` can't go on `owned`, as a short card label ("Already RWD"), or "" when it fits.
+# Why `part` can't be unlocked for `owned`, as a short card label ("Already RWD"), or "" when it can.
+# A kit for the car's own layout would do nothing: switching its other kit off changes it back.
 static func fit_block_reason(owned: Dictionary, part: Dictionary) -> String:
 	if String(part.get("kind", "")) != "part":
 		return "Can't fit"
 	if is_drivetrain(part):
 		var mode := int(String(part["id"]).substr("drivetrain:".length()))
-		if mode == UpgradeLibrary.stock_drive_mode(owned) and occupant(owned, part).is_empty():
+		if mode == UpgradeLibrary.stock_drive_mode(owned):
 			return "Already " + CarLibrary.drive_text(mode)
 	for p: Dictionary in owned.get("parts", []):
 		if String(p["id"]) == String(part["id"]):
-			return "Already fitted"
+			return "Already unlocked"
 	return ""
 
 
-# The part already in the slot `part` would take (an engine for an engine, a kit for a kit), or {}.
-static func occupant(owned: Dictionary, part: Dictionary) -> Dictionary:
-	for p: Dictionary in owned.get("parts", []):
-		if (is_engine(part) and is_engine(p)) or (is_drivetrain(part) and is_drivetrain(p)):
-			return p
-	return {}
+# `parts` with the one at `index` switched on or off. Switching an engine or kit on switches off
+# whichever other one of its kind was on.
+static func toggled(parts: Array, index: int) -> Array:
+	var out := parts.duplicate(true)
+	var part: Dictionary = out[index]
+	var on := not is_on(part)
+	part["on"] = on
+	if on:
+		for i in out.size():
+			var p: Dictionary = out[i]
+			if i != index and ((is_engine(part) and is_engine(p)) or (is_drivetrain(part) and is_drivetrain(p))):
+				p["on"] = false
+	return out
 
 
-# The owned-car dict the fielding pipeline should see: the car's fitted `parts` written onto the
+# The owned-car dict the fielding pipeline should see: the car's switched-on `parts` written onto the
 # funnel's own keys. Car.apply_owned does the rest.
 static func fielded(owned: Dictionary) -> Dictionary:
 	var out := owned.duplicate(true)
@@ -144,6 +157,8 @@ static func fielded(owned: Dictionary) -> Dictionary:
 	out.erase("swapped_engine")
 	out.erase("drivetrain_override")
 	for p: Dictionary in owned.get("parts", []):
+		if not is_on(p):
+			continue
 		var id := String(p["id"])
 		if is_engine(p):
 			out["swapped_engine"] = id.substr("engine_swap:".length())

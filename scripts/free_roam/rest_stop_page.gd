@@ -8,9 +8,8 @@ extends CanvasLayer
 #   MAIN    — the stop and the money held above the cards Continue / Parts / Garage / Map / Tune car.
 #             The map is also where to travel from.
 #   TUNE    — the shared TuningPanel on the active car (sliders, so a plain page, not cards).
-#   PARTS   — a card per fitted part (pick to take it off), then one per other part the player owns
-#             (pick to fit; a part for a taken slot swaps with what's there; any number of cars can
-#             share one), then one per part on sale (pick to buy and fit it).
+#   PARTS   — a card per part unlocked for this car (pick to switch it on or off), then one per part
+#             on sale for it (pick to buy it, which switches it on).
 #   GARAGE  — a card per owned car (pick one to drive it), then one per car on sale (pick to buy and
 #             drive it).
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
@@ -166,27 +165,12 @@ func _on_tuned() -> void:
 
 func _build_parts() -> void:
 	var entries: Array = []
-	var fitted: Array = owned.get("parts", [])
-	for i in fitted.size():
-		var text := LootRules.card_text(fitted[i])
-		entries.append({"title": text[0], "desc": text[1],
-			"extra": "Take off", "icon": LootRules.icon(fitted[i]), "action": _unfit.bind(i)})
-	var on_car := {}
-	for p: Dictionary in fitted:
-		on_car[LootRules.item_key(p)] = true
-	for part: Dictionary in loot.owned_parts() if loot != null else []:
-		if on_car.has(LootRules.item_key(part)):
-			continue
-		var taken := LootRules.occupant(owned, part)
-		# can_fit already covers a swap (one of a kind, so an occupant never blocks it), and only
-		# offers a kit for the car's own layout in place of another kit (changing the car back).
-		var extra := LootRules.fit_block_reason(owned, part)
-		var ok := extra.is_empty()
-		if ok:
-			extra = "Swap for " + LootRules.card_text(taken)[0] if not taken.is_empty() else "Fit"
-		var text := LootRules.card_text(part)
-		entries.append({"title": text[0], "desc": text[1], "extra": extra,
-			"icon": LootRules.icon(part), "disabled": not ok, "action": _fit_part.bind(part)})
+	var parts: Array = owned.get("parts", [])
+	for i in parts.size():
+		var text := LootRules.card_text(parts[i])
+		var on := LootRules.is_on(parts[i])
+		entries.append({"title": text[0], "desc": text[1], "extra": "On" if on else "Off",
+			"extra_variant": "" if on else "dim", "icon": LootRules.icon(parts[i]), "action": _toggle_part.bind(i)})
 	var money := WorldSession.money()
 	for part: Dictionary in loot.for_sale() if loot != null else []:
 		if String(part["kind"]) != "part":
@@ -202,10 +186,16 @@ func _build_parts() -> void:
 	_card_page("Parts", entries, [_car_name(owned), "$%d" % money])
 
 
-# Buy a part on sale and fit it on this car straight away.
+# Buy a part on sale: it's unlocked for this car and switched on straight away.
 func _buy_part(item: Dictionary) -> void:
-	if not loot.buy(item).is_empty():
-		_fit_part(item)
+	if loot.buy(item).is_empty():
+		return
+	var parts: Array = owned.get("parts", []).duplicate(true)
+	var part := item.duplicate()
+	part["on"] = false
+	parts.append(part)
+	_set_parts(LootRules.toggled(parts, parts.size() - 1))
+	_show(View.PARTS)
 
 
 # Buy a car on sale and switch to it.
@@ -215,24 +205,8 @@ func _buy_car(item: Dictionary) -> void:
 		_drive(int(bought["instance_id"]))
 
 
-# Fits `part` on the active car, in place of whatever held its slot. An owned part can go on every
-# car at once, so nothing is taken off any other car.
-func _fit_part(part: Dictionary) -> void:
-	var parts: Array = owned.get("parts", []).duplicate()
-	var taken := LootRules.occupant(owned, part)
-	if not taken.is_empty():
-		parts.erase(taken)
-		loot.keep(taken)
-	parts.append(part)
-	_set_parts(parts)
-	_show(View.PARTS)
-
-
-func _unfit(index: int) -> void:
-	var parts: Array = owned.get("parts", []).duplicate()
-	loot.keep(parts[index])
-	parts.remove_at(index)
-	_set_parts(parts)
+func _toggle_part(index: int) -> void:
+	_set_parts(LootRules.toggled(owned.get("parts", []), index))
 	_show(View.PARTS)
 
 

@@ -764,6 +764,11 @@ func has_nitrous() -> bool:
 ## Synthesis/mix rate (Hz) for procedural SFX. Matches engine_audio.gd's MIX_RATE;
 ## higher costs more CPU in the GDScript render loop for no audible gain on a blip.
 @export var sfx_mix_rate := 22050.0
+## Pitch (Hz) of the coin pickup chime, set apart from sfx_beep_frequency_hz so a coin reads
+## as its own brighter sound.
+@export var coin_pickup_sfx_freq_hz := 1600.0
+## Length (s) of the coin pickup chime.
+@export_range(0.02, 1.0) var coin_pickup_sfx_duration_sec := 0.1
 
 @export_group("Stage")
 ## Countdown length, in seconds, before the car's controls unlock at the start

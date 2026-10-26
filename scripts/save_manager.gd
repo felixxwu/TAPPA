@@ -601,7 +601,7 @@ func get_car(instance_id: int) -> Dictionary:
 	return {}
 
 
-# The free-roam parts fitted to a car (LootRules items; see features/loot.md).
+# The free-roam parts unlocked for a car, each on or off (LootRules items; see features/loot.md).
 func set_car_parts(instance_id: int, parts: Array) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():

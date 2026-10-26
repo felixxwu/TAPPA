@@ -19,7 +19,8 @@ extends Node
 #   seen           — site ids (rest stops, loot slots, dead ends) the car has come near, for the minimap / map
 #   money          — coins picked up and not yet spent (all lost when the car gives up)
 #   dropped        — the money left at the last wreck and where, until driven back to (or lost)
-#   stash / collected / revealed — bought parts not fitted, coin spots taken, rings whose stock is on sale
+#   collected / revealed — coin spots taken, rings whose stock is on sale
+# (A car's parts live on the owned car itself: `parts`, each switched on or off.)
 #
 # No world yet (a fresh profile) means has_world() is false; the title screen offers New World.
 
@@ -67,7 +68,6 @@ func new_world(world_seed: int, starter_model_id: String) -> void:
 		"seen": [0],
 		"money": 0,
 		"dropped": {},
-		"stash": [],
 		"collected": [],
 		"revealed": [],
 	}
@@ -240,6 +240,28 @@ func see(site: int) -> bool:
 
 
 # --- the coin economy (LootDirector reads and writes these) ----------------------------------------
+
+# Older saves kept bought parts in one shared world `stash`. Parts now belong to one car, so
+# those are unlocked for the car being driven, switched off, once.
+func adopt_old_stash() -> void:
+	if not has_world() or not _world().has("stash"):
+		return
+	var car := active_car()
+	if not car.is_empty():
+		var parts: Array = car.get("parts", []).duplicate(true)
+		var have := {}
+		for p: Dictionary in parts:
+			have[String(p["id"])] = true
+		for p: Dictionary in _world()["stash"]:
+			if not have.has(String(p["id"])):
+				have[String(p["id"])] = true
+				var off := p.duplicate()
+				off["on"] = false
+				parts.append(off)
+		Save.set_car_parts(int(car["instance_id"]), parts)
+	_world().erase("stash")
+	_touch()
+
 
 func list(key: String) -> Array:
 	return _world().get(key, [])

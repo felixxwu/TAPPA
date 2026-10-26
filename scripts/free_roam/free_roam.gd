@@ -57,6 +57,7 @@ func _ready() -> void:
 	if not WorldSession.has_world():
 		var idx := maxi(0, CarLibrary.index_of(_streamer.settings.car_id))
 		WorldSession.new_world(_streamer.settings.world_seed, String(CarLibrary.all()[idx]["id"]))
+	WorldSession.adopt_old_stash()
 	owned = WorldSession.active_car()
 	# Fitted parts reach the car only through the fielding funnel's own keys (LootRules.fielded).
 	_car.apply_owned(LootRules.fielded(owned))

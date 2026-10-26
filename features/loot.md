@@ -34,12 +34,18 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   list; ring 0 from the start). A ring the road network gave no rest stop would never unlock, so its
   stock is sold by the nearest ring that has one (`LootRules.pool_rings` over rest-stop counts,
   `LootDirector.ring_stock`).
-- **One of each.** `for_sale()` is the unlocked stock minus what the player has (`owned_keys`: owned
-  cars and `owned_parts`).
-- **Buying** (`buy`) checks it's on sale and affordable, takes the money, and grants the car or puts
-  the part in `stash` (every part bought). **A part owned fits every car at once** (`owned_parts`:
-  the stash plus anything fitted on a car; `keep` puts a part taken off back in the stash, so an
-  older save's fitted parts aren't lost).
+- **One of each, per car.** `for_sale()` is the unlocked stock minus what the player has
+  (`owned_keys(owned)`: every car in the garage, and the parts of the car being driven).
+- **A part is unlocked for one car, then switched on or off.** Each owned car's `parts` are the
+  parts unlocked for it, each with an `on` flag (`LootRules.is_on`; only switched-on parts reach the
+  car through `LootRules.fielded`). Another car has to unlock its own. Engines and drivetrain kits
+  share a slot: `LootRules.toggled` switches the other one off when one goes on, and switching a kit
+  off returns the car to its stock layout, so a kit for the car's own layout is never sold.
+  `WorldSession.adopt_old_stash` unlocks an older save's shared `stash` for the car being driven
+  (switched off), once.
+- **Buying** (`buy`) checks it's on sale, affordable and — for a part — usable on the car being
+  driven (`LootRules.can_fit`), takes the money, and grants the car or hands the part back for the
+  Parts page to unlock and switch on. A part the car can't use shows greyed out with the reason.
 - `test_loot.gd` → `test_shipped_cars_engines_and_parts_each_name_a_ring_on_the_island_and_a_price`
   guards that every shipped entry has a ring on the island and a price.
 
@@ -63,7 +69,7 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
 - **On the ground:** a gold disc stood on its edge, spinning and bobbing in `coin.gdshader` (no
   per-coin scripts), built with the near chunk (`TerrainStreamer._coin_marker`, node `Loot<site>`).
 
-All of it lives in the world block (`WorldSession`: money, collected, stash, revealed); see
+All of it lives in the world block (`WorldSession`: money, collected, revealed; parts live on each owned car); see
 [world-session.md](world-session.md).
 
 ## Parts on cars (the effects funnel, decision 51)

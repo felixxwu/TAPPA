@@ -104,8 +104,13 @@ only *playback* is not), so the bus-layout contract holds in tests.
 | `sfx_beep_volume_db` | Default cue level (per-call `volume_db` offsets this) |
 | `sfx_beep_decay` | Exponential tail decay rate; higher = more percussive |
 | `sfx_mix_rate` | Synthesis/mix rate for procedural SFX |
+| `coin_pickup_sfx_freq_hz` / `coin_pickup_sfx_duration_sec` | The coin pickup chime's pitch and length |
 
 These are tunables — tests must not pin their values (see `CLAUDE.md` → Testing).
+
+## Wired cues
+
+- **Coin pickup** — `LootDirector.collect` (free roam) plays a short, high chime.
 
 ## Not yet wired
 

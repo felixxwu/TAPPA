@@ -7,8 +7,9 @@ extends Node
 # gives up, all of it is dropped at the wreck (under a floating crystal) and every coin comes back.
 # Driving back to the wreck picks the money up again; giving up again first loses it for good.
 # A biome ring's stock goes on sale once one of its checkpoints is lit (`unlock`).
-# All state lives in the world session (WorldSession: money, collected, stash — the parts bought —
-# and revealed).
+# Money, coins taken and rings on sale live in the world session (WorldSession). Parts belong to the
+# one car they were unlocked for: the shop sells the car being driven what it hasn't unlocked and can
+# use, and another car has to unlock its own.
 
 signal collected(site: int, value: int)
 signal recovered(value: int)
@@ -132,6 +133,7 @@ func collect(site: int) -> void:
 	_spent[site] = true
 	WorldSession.set_money(WorldSession.money() + value)
 	streamer.refresh_loot_markers()
+	Audio.play_beep(Config.data.coin_pickup_sfx_freq_hz, Config.data.coin_pickup_sfx_duration_sec)
 	_say("+$%d" % value)
 	collected.emit(site, value)
 
@@ -205,42 +207,15 @@ func is_unlocked(ring: int) -> bool:
 	return false
 
 
-# The item_key of everything the player has: owned cars, every car's fitted parts and the stash.
-func owned_keys() -> Dictionary:
+# The item_key of everything the player has, as far as `owned` (a car) is concerned: every car in
+# the garage, and the parts unlocked for that car.
+func owned_keys(owned: Dictionary) -> Dictionary:
 	var out := {}
 	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
 		out[LootRules.item_key({"kind": "car", "id": String(c.get("model_id", ""))})] = true
-		for p: Dictionary in c.get("parts", []):
-			out[LootRules.item_key(p)] = true
-	for item: Dictionary in WorldSession.list("stash"):
-		out[LootRules.item_key(item)] = true
+	for p: Dictionary in owned.get("parts", []):
+		out[LootRules.item_key(p)] = true
 	return out
-
-
-# Every part the player owns, once each: bought parts (`stash`) and any fitted on a car. Owning a
-# part lets every car fit it.
-func owned_parts() -> Array:
-	var seen := {}
-	var out: Array = []
-	var all: Array = WorldSession.list("stash").duplicate()
-	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
-		all.append_array(c.get("parts", []))
-	for p: Dictionary in all:
-		var key := LootRules.item_key(p)
-		if not seen.has(key):
-			seen[key] = true
-			out.append(p)
-	return out
-
-
-# Make sure `part` stays owned once no car has it fitted (it was taken off the last one).
-func keep(part: Dictionary) -> void:
-	var stash := WorldSession.list("stash")
-	for p: Dictionary in stash:
-		if LootRules.item_key(p) == LootRules.item_key(part):
-			return
-	stash.append(part)
-	WorldSession.set_list("stash", stash)
 
 
 # Per ring, what its checkpoints sell: its own stock, plus that of any ring the road network gave
@@ -262,9 +237,10 @@ func ring_stock() -> Array:
 	return out
 
 
-# What the shops sell now: everything from unlocked rings the player doesn't have yet.
+# What the shops sell now: everything from unlocked rings the player doesn't have yet, with parts
+# for the car being driven.
 func for_sale() -> Array:
-	var have := owned_keys()
+	var have := owned_keys(WorldSession.active_car())
 	var out: Array = []
 	var stock := ring_stock()
 	for r in stock.size():
@@ -276,18 +252,19 @@ func for_sale() -> Array:
 	return out
 
 
-# Spend money on `item`: a car joins the garage (returns the new owned car), a part joins the parts
-# owned (`stash`; returns the part). {} when it isn't for sale or the player can't afford it.
+# Spend money on `item`: a car joins the garage (returns the new owned car); a part is paid for and
+# returned for the caller to unlock on the car being driven. {} when it isn't for sale, that car
+# can't use it, or the player can't afford it.
 func buy(item: Dictionary) -> Dictionary:
 	var cost := LootRules.price(item)
 	if cost > WorldSession.money() or not for_sale().any(func(i: Dictionary) -> bool: return LootRules.item_key(i) == LootRules.item_key(item)):
 		return {}
+	var is_car := String(item["kind"]) == "car"
+	if not is_car and not LootRules.can_fit(WorldSession.active_car(), item):
+		return {}
 	WorldSession.set_money(WorldSession.money() - cost)
-	if String(item["kind"]) == "car":
+	if is_car:
 		return Save.grant_car(String(item["id"]))
-	var stash := WorldSession.list("stash")
-	stash.append(item.duplicate())
-	WorldSession.set_list("stash", stash)
 	return item
 
 

@@ -27,7 +27,7 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 | `seen` | site ids (rest stops, loot slots, dead ends) the car has come within `GameConfig.minimap_seen_radius_m` of (`see`, `seen_sites`, `is_seen`; spawn 0 from the start). The minimap and the map show only these ([minimap.md](minimap.md)). A save without the key reads as `[0]` |
 | `money` | coins picked up and not yet spent (`money` / `set_money`); dropped when the car gives up |
 | `dropped` | the money left at the last wreck, `{pos: [x, y, z], money: n}`, or `{}` (`dropped` / `set_dropped`) |
-| `stash`, `collected`, `revealed` | every part bought (any car can fit it), coin spots taken, rings whose stock is on sale ([loot.md](loot.md)) |
+| `collected`, `revealed` | coin spots taken, rings whose stock is on sale ([loot.md](loot.md)). Parts live on each owned car (`parts`, each switched on or off), not here |
 
 - **New world** (`new_world`): the fixed island seed (`FreeRoamSettings.world_seed`) and a starter car. It replaces the old world **and the
   old owned cars**, because a world is the whole save.
