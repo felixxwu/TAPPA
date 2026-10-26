@@ -17,7 +17,7 @@ func before_each() -> void:
 	add_child(_cam)  # _ready() caches config into the _* fields
 	# Sane synthetic follow values (as in test_chase_camera_fov).
 	_cam._distance = 6.0
-	_cam._height = 2.0
+	_cam._height_ratio = 1.0 / 3.0
 	_cam._base_fov = 80.0
 	_cam._fov_speed_boost = 30.0
 	_cam._fov_speed = 50.0

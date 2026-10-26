@@ -33,7 +33,7 @@ func after_each() -> void:
 func test_the_camera_sits_its_height_above_the_car_not_the_ground() -> void:
 	_target.global_position = Vector3(0.0, 5.0, 0.0)
 	_cam._timed_physics_process(1.0 / 60.0)
-	assert_almost_eq(_cam.global_position.y, 5.0 + _cam._height, 0.001)
+	assert_almost_eq(_cam.global_position.y, 5.0 + _cam._distance * _cam._height_ratio, 0.001)
 
 
 func test_the_first_seat_snaps_to_the_car() -> void:

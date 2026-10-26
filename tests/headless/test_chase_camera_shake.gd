@@ -18,7 +18,7 @@ func before_each() -> void:
 	_cam.target = _target
 	add_child(_cam)  # _ready() caches config into the _* fields
 	_cam._distance = 6.0
-	_cam._height = 2.0
+	_cam._height_ratio = 1.0 / 3.0
 	_cam._base_fov = 80.0
 	_cam._fov_speed_boost = 0.0   # keep the FOV still; this file is about rotation
 	_cam._fov_speed = 50.0

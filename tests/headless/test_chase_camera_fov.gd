@@ -18,7 +18,7 @@ func before_each() -> void:
 	add_child(_cam)  # _ready() caches config into the _* fields
 	# Override with sane synthetic values so the test is independent of tuning.
 	_cam._distance = 6.0
-	_cam._height = 2.0
+	_cam._height_ratio = 1.0 / 3.0
 	_cam._base_fov = 80.0
 	_cam._fov_speed_boost = 30.0
 	_cam._fov_speed = 50.0
@@ -108,6 +108,25 @@ func test_half_length_pushes_camera_back() -> void:
 	# 6.0 base follow distance + 3.0 half length.
 	assert_almost_eq(dist, 9.0, 0.05, "half length is added to the follow distance")
 	long_car.free()
+
+
+func _settled_pitch(half: float) -> float:
+	_cam._dolly_mix = 0.0
+	var car := _LongCar.new()
+	car.gravity_scale = 0.0
+	car._half = half
+	add_child(car)
+	_cam.target = car
+	for _i in 240:
+		car.linear_velocity = Vector3.ZERO
+		_cam._physics_process(1.0 / 60.0)
+	var offset := _cam.global_position - car.global_position
+	car.free()
+	return atan2(offset.y, Vector2(offset.x, offset.z).length())
+
+
+func test_camera_looks_down_at_the_same_angle_on_short_and_long_cars() -> void:
+	assert_almost_eq(_settled_pitch(0.5), _settled_pitch(3.0), 0.01)
 
 
 # A target that looks enough like a car for the camera's nitrous probe: a `drivetrain`

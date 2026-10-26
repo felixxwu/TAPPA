@@ -27,7 +27,7 @@ func before_each() -> void:
 	add_child(_cam)
 	_cam.set_physics_process(false)
 	_cam.make_current()
-	_cam._height = 1.0  # below the follow distance, so the camera sits off to one side of the car
+	_cam._height_ratio = 0.2  # well under 1, so the camera sits off to one side of the car
 
 
 func after_each() -> void:

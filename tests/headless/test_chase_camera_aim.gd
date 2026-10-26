@@ -85,7 +85,7 @@ func test_look_at_points_the_camera_at_the_aim_not_the_origin() -> void:
 	# point, so a yawed car really does slide off frame centre.
 	_cam._look_ahead_ratio = 1.0
 	_cam._distance = 6.0
-	_cam._height = 2.0
+	_cam._height_ratio = 1.0 / 3.0
 	_cam._base_fov = 80.0
 	_cam._fov_speed_boost = 0.0
 	_cam._fov_speed = 50.0

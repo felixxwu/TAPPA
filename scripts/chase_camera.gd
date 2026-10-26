@@ -12,7 +12,7 @@ extends Camera3D
 const MIN_TRAVEL_SPEED := 1.0
 
 var _distance: float
-var _height: float
+var _height_ratio: float
 var _smoothing: float
 
 # FOV modulation: base FOV widens toward _base_fov + _fov_speed_boost as the car
@@ -85,7 +85,7 @@ func _ready() -> void:
 	_gravity = Platform.gravity()
 	var cfg: GameConfig = Config.data
 	_distance = cfg.follow_distance
-	_height = cfg.follow_distance * cfg.follow_height_ratio
+	_height_ratio = cfg.follow_height_ratio
 	_smoothing = cfg.smoothing
 	_height_smoothing = cfg.chase_height_smoothing
 	_look_mouse_sens = cfg.chase_look_mouse_sensitivity
@@ -186,13 +186,12 @@ func _timed_physics_process(delta: float) -> void:
 	var distance := base_distance * ratio
 
 	# Place the camera behind the (smoothed) orbital direction, a fixed height above the car
-	# (eased, see _eased_base). The height shrinks with the dolly zoom by the same ratio as the
-	# distance, so the camera's angle down onto the car holds as it pulls in rather than climbing
-	# overhead. `distance` (the dolly-zoom-adjusted follow distance) is the EUCLIDEAN
+	# (eased, see _eased_base). The height is a share of the same length-adjusted, dolly-zoomed
+	# distance, so the camera looks down at the same angle on every car and as it pulls in. `distance` (the dolly-zoom-adjusted follow distance) is the EUCLIDEAN
 	# (straight-line) distance to the car, so the horizontal reach is what is left of it after the
 	# height: sqrt(distance^2 - height^2).
 	var origin := target.global_position
-	var height := _height * ratio
+	var height := distance * _height_ratio
 	var horizontal := sqrt(maxf(0.0, distance * distance - height * height))
 	var final_pos := origin - orbit_dir * horizontal
 	final_pos.y = _eased_base(origin.y, delta) + height

@@ -42,10 +42,10 @@ when the car's heading changes suddenly. The camera always looks **directly at
 the car** (the look-at is not smoothed), so the target stays centred while the
 viewpoint swings around gently.
 
-The camera's **height is a fixed height above the car**: it sits `follow_distance *
-follow_height_ratio` above the car's origin (height is a multiple of the follow distance,
-not an independent value, and the dolly zoom below shrinks it by the same ratio as the distance,
-so the camera's angle down onto the car holds as it pulls in), whatever the terrain under the camera is doing. The terrain is
+The camera's **height is a fixed height above the car**: it sits `(follow_distance + half_length) *
+follow_height_ratio` above the car's origin (height is a share of the same length-adjusted,
+dolly-zoomed distance the camera is placed at, so the angle down onto the car is the same for
+every car length and holds as the dolly zoom pulls in), whatever the terrain under the camera is doing. The terrain is
 **not** consulted at all (it used to be: the camera seated a fixed clearance over the
 ground under *itself*, which raised and lowered the view relative to the car on every hill;
 Felix asked for a fixed height above the car on 2026-10-26). Nor is the water level.
@@ -84,8 +84,9 @@ target_dir = horizontal(target.linear_velocity).normalized()   # direction of mo
 travel_dir = slerp(travel_dir, target_dir, 1 - exp(-smoothing * delta))  # eased orbit
 # follow_distance is the EUCLIDEAN distance to the car and the height is fixed, so
 # the horizontal reach is what is left after the height.
-height     = follow_distance * follow_height_ratio * dolly_ratio   # shrinks with the zoom
-horizontal = sqrt(follow_distance^2 - height^2)
+distance   = (follow_distance + half_length) * dolly_ratio   # longer cars sit further back
+height     = distance * follow_height_ratio                  # same angle for every car
+horizontal = sqrt(distance^2 - height^2)
 position   = target.position - travel_dir * horizontal       # behind the smoothed orbit
 position.y = eased(target.position.y) + height               # fixed height above the car
 aim = target.position + (-target.basis.z) * half_length * chase_look_ahead_ratio
@@ -204,7 +205,7 @@ suspension), and the replay/cinematic cameras are deliberately steady.
 
 - `target: Node3D` — the node to follow (set in the scene to `Car`).
 - `follow_distance` (m) and `follow_height_ratio` (height above the car =
-  `follow_distance * follow_height_ratio`) — read from `Config.data`.
+  `(follow_distance + half_length) * follow_height_ratio`, scaled by the dolly zoom) — read from `Config.data`.
 - `chase_height_smoothing` — how fast the seated height follows the car's; higher is more rigid.
 - `smoothing` (5.0) — rate at which the camera's orbital position eases toward
   the travel direction; higher snaps faster, lower is more languid. The look-at
