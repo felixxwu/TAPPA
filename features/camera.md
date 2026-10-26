@@ -47,7 +47,8 @@ viewpoint swings around gently.
 
 The camera's **height is a fixed height above the car**: it sits `follow_distance *
 follow_height_ratio` above the car's origin (height is a multiple of the follow distance,
-not an independent value), whatever the terrain under the camera is doing. The terrain is
+not an independent value, and the dolly zoom below shrinks it by the same ratio as the distance,
+so the camera's angle down onto the car holds as it pulls in), whatever the terrain under the camera is doing. The terrain is
 **not** consulted at all (it used to be: the camera seated a fixed clearance over the
 ground under *itself*, which raised and lowered the view relative to the car on every hill;
 Felix asked for a fixed height above the car on 2026-10-26). Nor is the water level.
@@ -86,7 +87,7 @@ target_dir = horizontal(target.linear_velocity).normalized()   # direction of mo
 travel_dir = slerp(travel_dir, target_dir, 1 - exp(-smoothing * delta))  # eased orbit
 # follow_distance is the EUCLIDEAN distance to the car and the height is fixed, so
 # the horizontal reach is what is left after the height.
-height     = follow_distance * follow_height_ratio
+height     = follow_distance * follow_height_ratio * dolly_ratio   # shrinks with the zoom
 horizontal = sqrt(follow_distance^2 - height^2)
 position   = target.position - travel_dir * horizontal       # behind the smoothed orbit
 position.y = eased(target.position.y) + height               # fixed height above the car
@@ -130,7 +131,7 @@ ratio is `lerp(1.0, tan(chase_fov/2)/tan(fov/2), chase_dolly_mix)`. At `0` the
 follow distance never changes (pure FOV zoom — the car grows with speed); at `1`
 it's the full dolly zoom (the car keeps its size); in between softens an
 over-eager pull-in. This effective distance (not the raw `follow_distance`) is
-what the horizontal reach is solved from.
+what the horizontal reach is solved from, and the same ratio scales the height above the car.
 
 **Per-car length.** Before the dolly ratio is applied, the target car's half
 length (`Car.half_length()` — half the spec's `body.z`) is added to

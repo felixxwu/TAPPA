@@ -186,13 +186,16 @@ func _timed_physics_process(delta: float) -> void:
 	var distance := base_distance * ratio
 
 	# Place the camera behind the (smoothed) orbital direction, a fixed height above the car
-	# (eased, see _eased_base). `distance` (the dolly-zoom-adjusted follow distance) is the
-	# EUCLIDEAN (straight-line) distance to the car, so the horizontal reach is what is left
-	# of it after the height: sqrt(distance^2 - height^2).
+	# (eased, see _eased_base). The height shrinks with the dolly zoom by the same ratio as the
+	# distance, so the camera's angle down onto the car holds as it pulls in rather than climbing
+	# overhead. `distance` (the dolly-zoom-adjusted follow distance) is the EUCLIDEAN
+	# (straight-line) distance to the car, so the horizontal reach is what is left of it after the
+	# height: sqrt(distance^2 - height^2).
 	var origin := target.global_position
-	var horizontal := sqrt(maxf(0.0, distance * distance - _height * _height))
+	var height := _height * ratio
+	var horizontal := sqrt(maxf(0.0, distance * distance - height * height))
 	var final_pos := origin - orbit_dir * horizontal
-	final_pos.y = _eased_base(origin.y, delta) + _height
+	final_pos.y = _eased_base(origin.y, delta) + height
 	global_position = final_pos
 
 	# Point at the car's nose rather than its centre (un-smoothed). The aim point

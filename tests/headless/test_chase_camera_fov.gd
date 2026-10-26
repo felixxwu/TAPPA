@@ -192,3 +192,20 @@ func test_more_mix_pulls_camera_closer() -> void:
 	_settle(200.0)
 	var strong_dist := _cam.global_position.distance_to(_target.global_position)
 	assert_lt(strong_dist, weak_dist, "a higher dolly mix pulls the camera closer at speed")
+
+
+# The height above the car shrinks with the dolly zoom by the same ratio as the distance, so the
+# camera's angle down onto the car holds as it pulls in instead of climbing overhead.
+func _down_angle() -> float:
+	var to_cam := _cam.global_position - _target.global_position
+	return atan2(to_cam.y, Vector2(to_cam.x, to_cam.z).length())
+
+
+func test_the_dolly_zoom_holds_the_angle_down_onto_the_car() -> void:
+	_cam._dolly_mix = 1.0
+	_settle(0.0)
+	var slow := _down_angle()
+	_settle(200.0)
+	assert_lt(_cam.global_position.distance_to(_target.global_position), _cam._distance,
+		"the camera pulled in")
+	assert_almost_eq(_down_angle(), slow, 0.01, "at the same angle down onto the car")
