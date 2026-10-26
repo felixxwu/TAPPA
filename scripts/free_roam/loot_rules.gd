@@ -174,19 +174,6 @@ static func fielded(owned: Dictionary) -> Dictionary:
 
 # --- names ---------------------------------------------------------------------------------------
 
-static func label(item: Dictionary) -> String:
-	match String(item.get("kind", "")):
-		"car":
-			return "Car: %s" % String(CarLibrary.by_id(String(item["id"])).get("name", item["id"]))
-	var id := String(item.get("id", ""))
-	if is_engine(item):
-		return "Engine: %s" % String(EngineLibrary.by_id(id.substr("engine_swap:".length())).get("name", id))
-	if is_drivetrain(item):
-		var mode := int(id.substr("drivetrain:".length()))
-		return "%s conversion" % String(Drivetrain.DriveMode.keys()[mode] if mode < Drivetrain.DriveMode.size() else str(mode))
-	return "%s (level %d)" % [BoostLibrary.label_for(id), int(item.get("level", 0)) + 1]
-
-
 # The card icon (icons/cards/<name>.svg) an item shows on a card list.
 static func icon(item: Dictionary) -> String:
 	match String(item.get("kind", "")):

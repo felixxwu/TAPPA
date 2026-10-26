@@ -285,6 +285,30 @@ func test_a_failed_push_leaves_the_local_profile_alone_and_stays_pending() -> vo
 	assert_eq(_save.profile["starter_model_id"], "local_only")
 
 
+func test_a_change_made_while_uploading_stays_owed_to_the_cloud() -> void:
+	_save.save()
+	_sync.pending = true
+	_rest.queue_ok({})
+	_sync.push()  # runs to its first await: the upload is in flight
+	_save.save()
+	_sync.request_push()  # a purchase lands mid-upload
+	while _sync._busy:
+		await get_tree().process_frame
+	assert_true(_sync.pending, "the upload's copy predates the change")
+	assert_true(_save.has_unsynced())
+
+
+func test_a_stream_of_changes_does_not_postpone_the_upload() -> void:
+	_sync.request_push()
+	await wait_seconds(1.0)
+	_sync.request_push()
+	assert_lt(_sync._debounce.time_left, CloudSync.PUSH_DEBOUNCE_SEC - 0.5, "a later change must not restart the wait")
+
+
+func test_uploads_keep_their_timers_while_the_game_is_paused() -> void:
+	assert_eq(_sync.process_mode, Node.PROCESS_MODE_ALWAYS)
+
+
 func test_a_permission_failure_names_the_rules() -> void:
 	# 403 is a developer mistake, not a player one — the message should say so.
 	_sync.pending = true

@@ -57,7 +57,7 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   per ring out.
 - **Collect:** driving past — at any speed, anywhere on the road around it (`RoadSites.reached`,
   swept over the step's travel; a jump of 100 m or more in one step, a teleport, doesn't count).
-  The spot joins `collected`, the money is added, its coin is removed (`refresh_loot_markers`) and
+  The spot joins `collected`, the money is added, its coin is removed (`TerrainStreamer.refresh_loot_marker`, that one site only) and
   the HUD toasts "+$n".
 - **The wreck:** when the car gives up (`DamageModel.gave_up` → `LootDirector.wreck`), all the money
   is left at the wreck (`WorldSession.dropped`: `{pos, money}`; `lost` keeps the amount for the

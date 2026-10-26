@@ -132,7 +132,7 @@ func collect(site: int) -> void:
 	WorldSession.set_list("collected", col)
 	_spent[site] = true
 	WorldSession.set_money(WorldSession.money() + value)
-	streamer.refresh_loot_markers()
+	streamer.refresh_loot_marker(site)
 	Audio.play_beep(Config.data.coin_pickup_sfx_freq_hz, Config.data.coin_pickup_sfx_duration_sec)
 	_say("+$%d" % value)
 	collected.emit(site, value)

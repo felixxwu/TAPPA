@@ -1227,6 +1227,13 @@ func refresh_loot_markers() -> void:
 			_place_loot_site_marker(st.foliage, i)
 
 
+# Just loot site `i`'s marker (a coin was picked up there), without walking every loaded chunk.
+func refresh_loot_marker(i: int) -> void:
+	var st: ChunkState = _chunks.get(_chunk_of(sites.pos[i]))
+	if st != null and st.foliage != null:
+		_place_loot_site_marker(st.foliage, i)
+
+
 # Put loot site `i`'s marker under `parent` as loot_query has it now: a coin if one lies there,
 # else nothing. Whatever marker it had goes first, so the queued planting
 # spawn and a refresh_loot_markers that both reach a chunk (it has foliage, but its marker spawn

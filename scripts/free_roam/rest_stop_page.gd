@@ -19,6 +19,7 @@ signal closed
 # The Map row: the host opens the map as the travel picker, over this page.
 signal map_requested(site: int)
 signal car_changed
+signal tuned
 
 enum View { WRECKED, MAIN, TUNE, PARTS, GARAGE }
 
@@ -161,6 +162,7 @@ func _build_tune() -> void:
 func _on_tuned() -> void:
 	if car != null and car.has_method("retune"):
 		car.retune(LootRules.fielded(owned))
+	tuned.emit()
 
 
 func _build_parts() -> void:

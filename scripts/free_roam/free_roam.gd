@@ -111,6 +111,7 @@ func _ready() -> void:
 	_rest_stops.car_teleported_to.connect($TireMarks.break_ribbons)
 	_recovery.reset_done.connect($TireMarks.break_ribbons)
 	_rest_page.car_changed.connect(_reload_car)
+	_rest_page.tuned.connect($BiomeDirector.reapply)
 	_rest_page.owned = owned
 	_rest_stops.opened.connect(_rest_page.open)
 	_rest_stops.wrecked.connect(_rest_page.open_wrecked)
@@ -124,6 +125,8 @@ func _ready() -> void:
 	# node's tree_exiting fires, so the car's transform is unreadable by then: save_world falls back
 	# on the pose cached each physics tick.
 	tree_exiting.connect(save_world)
+	Save.flushing.connect(save_world)  # window close, app pause, browser tab hidden
+	Cloud.profile_replaced.connect(_on_profile_replaced)
 	_rest_page.map_requested.connect(func(site: int) -> void:
 		$WorldPages.show_map(_rest_page.return_from_map, site))
 	_minimap.open_requested.connect(open_full_map)
@@ -259,6 +262,15 @@ func _reload_car() -> void:
 	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
 
 
+# A cloud download replaced the save: boot again onto it, without saving this stale world over it.
+func _on_profile_replaced() -> void:
+	WorldSession.fresh = false
+	if tree_exiting.is_connected(save_world):
+		tree_exiting.disconnect(save_world)
+	Save.flushing.disconnect(save_world)
+	Scenes.change_to(get_tree(), Scenes.TITLE)
+
+
 # The pause menu's Map / Stats rows: the page covers the frozen game and hands back on Back.
 func _on_pause_extra(label: String) -> void:
 	match label:
@@ -300,16 +312,13 @@ func save_world() -> void:
 		_has_pose = true
 	if _has_pose:
 		WorldSession.save_pose(_last_pose)
-	WorldSession.save_car_state(_car.damage)
+	# After a swap at a rest stop this car is no longer the active one; its damage isn't the new car's.
+	if int(owned.get("instance_id", -1)) == int(WorldSession.active_car().get("instance_id", -2)):
+		WorldSession.save_car_state(_car.damage)
 	WorldSession.set_drive_time($BiomeDirector.drive_time)
 	if _odometer_m >= 1.0:
 		Save.add_lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M, int(_odometer_m))
 		_odometer_m -= floorf(_odometer_m)
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		save_world()
 
 
 func _physics_process(delta: float) -> void:
@@ -434,7 +443,7 @@ func _measured_viewports() -> Array[RID]:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 		_recovery.reset_now()
-	elif event.is_action_pressed("toggle_perf_overlay"):
+	elif event.is_action_pressed("toggle_perf_overlay") and OS.is_debug_build():
 		$DebugStats.visible = not $DebugStats.visible
 
 

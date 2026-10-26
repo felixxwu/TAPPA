@@ -55,10 +55,14 @@ var _debounce: Timer
 var _retry: Timer
 var _backoff := BACKOFF_START_SEC
 var _busy := false
+# Bumped on every local change, so a push can tell whether the profile moved on while it uploaded.
+var _changes := 0
 var _conflict: Dictionary = {}
 
 
 func _ready() -> void:
+	# The pause menu, rest stops and the title all pause the tree; uploads must keep their timers.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_debounce = Timer.new()
 	_debounce.one_shot = true
 	_debounce.wait_time = PUSH_DEBOUNCE_SEC
@@ -78,7 +82,9 @@ func request_push() -> void:
 	if not _can_sync():
 		return
 	pending = true
-	_debounce.start()
+	_changes += 1
+	if _debounce.is_stopped():
+		_debounce.start()
 
 
 # Push right now, skipping the debounce (app close, sign-in, "Sync now").
@@ -182,8 +188,8 @@ func push(force := false) -> Dictionary:
 	if blocked_by_conflict and not force:
 		return {"ok": false, "error": "Resolve the sync conflict first."}
 	if _busy:
-		# A push is already in flight; it will upload the current profile anyway
-		# (the payload is always the whole thing), so this one is redundant.
+		# A push is already in flight; if the profile changed since it took its copy, it re-arms
+		# the debounce when it lands.
 		return {"ok": true, "error": ""}
 	if not pending and not force:
 		return {"ok": true, "error": ""}
@@ -206,6 +212,7 @@ func _push_inner() -> Dictionary:
 	# describe THIS device's relationship with the cloud, and shipping them as-is
 	# would tell the next device that a freshly-downloaded profile already has
 	# unsynced work.
+	var changes_uploaded := _changes
 	var blob: Dictionary = Save.profile.duplicate(true)
 	blob["unsynced"] = false
 	blob["cloud_revision"] = revision
@@ -225,8 +232,11 @@ func _push_inner() -> Dictionary:
 	# Only now is the local profile allowed to claim it agrees with this revision.
 	Save.profile["cloud_revision"] = revision
 	Save.profile["cloud_uid"] = auth.uid
-	Save.mark_synced()
-	pending = false
+	if _changes == changes_uploaded:
+		Save.mark_synced()
+		pending = false
+	else:
+		_debounce.start()
 	last_sync_utc = stamp
 	_backoff = BACKOFF_START_SEC
 	_set_status(Status.SYNCED, "Up to date")

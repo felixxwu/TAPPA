@@ -240,7 +240,13 @@ than disk data.
 
 Push is debounced **~8 s** (distinct from Save's ~1 s local debounce: a disk
 write is free, a network round trip is not) and flushed immediately on
-`Save.flush_and_sync()`. That last point matters: the existing web
+`Save.flush_and_sync()`. Both debounces are max-waits: a stream of saves while
+driving doesn't restart the timer, and `CloudSync` runs with
+`PROCESS_MODE_ALWAYS` so its timers keep going under the pause menu, rest stops
+and the title. A change made while an upload is in flight (`_changes` moved on
+since the copy was taken) keeps `pending` and re-arms the debounce rather than
+being marked synced. A token refresh that gets a 429 or 5xx keeps the session,
+like a transport failure; only a 4xx rejection signs out. That last point matters: the existing web
 `visibilitychange`/`pagehide` listeners and the native close/pause notifications
 already funnel through that one entry point, so the cloud path inherits
 tab-close and app-pause handling on every platform **with no new lifecycle
@@ -293,10 +299,10 @@ correctly.
 
 A pull that REPLACES the local profile (first sign-in on a new device, or "Use cloud" on a
 conflict) changes the save out from under the running game. `CloudSync` emits
-**`profile_replaced`**, re-emitted by `Cloud`. **Nothing subscribes to it today** — the deleted
-hubs rebuilt on it. A free-roam world already running keeps driving on the in-memory world it
-loaded; a consumer that wants to react should no-op until its own views exist, since the
-boot pull can land before they are built.
+**`profile_replaced`**, re-emitted by `Cloud`. `free_roam.gd` → `_on_profile_replaced` reboots
+through `title.tscn` onto the downloaded world, first unhooking its exit save so the stale world
+in memory can't be written over the one just adopted, and clearing `WorldSession.fresh` so the
+title offers Continue and confirms New World.
 
 ## Error handling
 

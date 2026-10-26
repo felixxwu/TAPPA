@@ -30,6 +30,8 @@ signal profile_changed()
 # (desktop close / app pause / browser visibilitychange + pagehide). Cloud uses
 # it to attempt a last upload.
 signal flushed()
+# Emitted at the start of flush_and_sync(), so the running game can write its latest state first.
+signal flushing()
 
 # Bump on any breaking shape change to PlayerProfile. NO LONGER MIGRATED FORWARD
 # (todo/roguelike-pivot.md decision 20 / decision 34): the old `_migrate_step` ladder
@@ -229,6 +231,7 @@ func _notification(what: int) -> void:
 # the web lifecycle listeners: write immediately, then ask the browser FS to push
 # the result to IndexedDB (a no-op off the web build).
 func flush_and_sync() -> void:
+	flushing.emit()
 	save_now()
 	request_web_sync()
 	# Give the optional cloud layer its chance to upload too. It is fire-and-
@@ -367,6 +370,15 @@ func _sanitise(p: Dictionary) -> Dictionary:
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
 	p[KEY_CARS] = kept
+	# The world's active car may be one just dropped: drive another, or with none left start afresh.
+	var world: Dictionary = p.get(KEY_WORLD, {})
+	if not world.is_empty() and not kept.any(func(c: Dictionary) -> bool:
+			return int(c.get("instance_id", -1)) == int(world.get("car", -1))):
+		if kept.is_empty():
+			p[KEY_WORLD] = {}
+		else:
+			world["car"] = int(kept[0]["instance_id"])
+			world["car_state"] = {}
 	return p
 
 
@@ -376,9 +388,10 @@ func has_save() -> bool:
 
 # --- Save --------------------------------------------------------------------
 
-# Mark the profile dirty and (re)arm the debounce timer. Call this from mutators
-# / call sites after a change; the actual disk write happens once the burst
-# settles. No-op when storage is disabled.
+# Mark the profile dirty and arm the debounce timer. Call this from mutators
+# / call sites after a change; the disk write happens a second after the first
+# unsaved change, so a steady stream of changes can't keep pushing it back.
+# No-op when storage is disabled.
 func save() -> void:
 	# Mark unsynced + notify BEFORE the save_disabled bail-out: blocked local
 	# storage (private browsing, read-only fs) is exactly the situation where a
@@ -389,7 +402,8 @@ func save() -> void:
 	profile_changed.emit()
 	if save_disabled:
 		return
-	_debounce.start()
+	if _debounce.is_stopped():
+		_debounce.start()
 
 
 # Force an immediate atomic write (bypassing the debounce). Writes to a .tmp

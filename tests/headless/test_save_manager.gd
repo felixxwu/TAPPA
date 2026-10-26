@@ -203,6 +203,31 @@ func test_unknown_model_id_dropped_on_load() -> void:
 	assert_eq(_save.profile["cars"][0]["model_id"], "fx_light_rwd", "valid car kept")
 
 
+func test_pruning_the_active_car_repoints_the_world_to_a_kept_car() -> void:
+	_save.profile["cars"] = [
+		{"instance_id": 1, "model_id": "fx_light_rwd"},
+		{"instance_id": 2, "model_id": "ghost_car"},
+	]
+	_save.profile["world"] = {"seed": 5, "car": 2, "car_state": {"hp": 1.0}}
+	_save.profile = _save._sanitise(_save.profile)
+	assert_eq(_save.profile["world"]["car"], 1)
+	assert_eq(_save.profile["world"]["car_state"], {}, "the dropped car's damage isn't carried over")
+
+
+func test_pruning_every_car_drops_the_world() -> void:
+	_save.profile["cars"] = [{"instance_id": 2, "model_id": "ghost_car"}]
+	_save.profile["world"] = {"seed": 5, "car": 2}
+	_save.profile = _save._sanitise(_save.profile)
+	assert_eq(_save.profile["world"], {}, "no car left to drive: the title starts a new world")
+
+
+func test_a_stream_of_saves_does_not_postpone_the_write() -> void:
+	_save.save()
+	await wait_seconds(0.6)
+	_save.save()
+	assert_lt(_save._debounce.time_left, 0.5, "a later change must not restart the wait")
+
+
 func test_reset_new_game_overwrites_with_fresh_profile() -> void:
 	_save.grant_car("fx_light_rwd")
 	_save.reset_new_game()

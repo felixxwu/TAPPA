@@ -325,6 +325,41 @@ func test_the_tune_page_edits_the_fielded_car() -> void:
 	assert_true((_page.owned.get("tuning", {}) as Dictionary).size() > 0, "the edit lands on the car's tuning")
 
 
+# Retuning restores the car's config from when it was fielded; the ring's weather must survive it.
+func test_tuning_keeps_the_rings_weather() -> void:
+	var biome: BiomeDirector = _scene.get_node("BiomeDirector")
+	var was := [biome.ring, biome.weather, Config.data.weather]
+	var other := "fog" if String(_car._live_baseline["weather"]) != "fog" else "rain"
+	biome.ring = maxi(biome.ring, 0)
+	biome.weather = other
+	Config.data.weather = other
+	_page.open(0)
+	_page._show(RestStopPage.View.TUNE)
+	var slider := _page._tune_panel.first_slider() as HSlider
+	slider.value = slider.max_value
+	var after := Config.data.weather
+	biome.ring = was[0]
+	biome.weather = was[1]
+	Config.data.weather = was[2]
+	assert_eq(after, other)
+
+
+func test_a_car_swapped_out_does_not_save_its_damage_onto_the_new_car() -> void:
+	assert_true(WorldSession.has_world())
+	var fielded: Dictionary = _scene.owned
+	_scene.owned = {"instance_id": -99}
+	WorldSession._world()["car_state"] = {}
+	_scene.save_world()
+	_scene.owned = fielded
+	assert_eq(WorldSession._world()["car_state"], {})
+
+
+func test_closing_the_game_writes_the_cars_latest_place_first() -> void:
+	WorldSession.save_pose(Transform3D.IDENTITY)
+	Save.flush_and_sync()
+	assert_ne(WorldSession.pose_transform(), Transform3D.IDENTITY, "the live pose, not the last periodic save")
+
+
 func test_the_hud_shows_engine_temperature_and_warns_when_the_cooling_fails() -> void:
 	var hud := _scene.get_node("HUD")
 	var dmg: DamageModel = _car.damage

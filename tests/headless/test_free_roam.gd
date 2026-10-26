@@ -997,7 +997,7 @@ func test_a_loot_refresh_during_planting_leaves_exactly_one_marker() -> void:
 	assert_eq(_crates(cs.foliage, i), 1, "exactly one crate for the site")
 	# and a pickup clears it
 	st.loot_query = Callable()
-	st.refresh_loot_markers()
+	st.refresh_loot_marker(i)
 	assert_eq(_crates(cs.foliage, i), 0, "no crate after the pickup")
 	var post := cs.foliage.get_node_or_null("Site%d" % i)
 	assert_true(post == null or post.is_queued_for_deletion(), "and nothing left standing in its place")

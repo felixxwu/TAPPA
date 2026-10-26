@@ -50,6 +50,7 @@ Max-HP is **CarLibrary metadata, not stored**; `OwnedCar.hp` is seeded from it b
 
 ## API
 
+- `flush_and_sync()` emits `flushing` first (free roam writes the car's live pose and damage on it), then writes and emits `flushed` (the cloud's last upload).
 - Load / save: `load_or_new()`, `save()` (debounced), `save_now()`, `flush_and_sync()`,
   `has_save()`, `reset_new_game()`.
 - Cars: `grant_car(model_id)`, `owns_model(model_id)`, `get_car(instance_id)`,

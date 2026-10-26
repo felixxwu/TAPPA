@@ -150,9 +150,9 @@ func refresh() -> Dictionary:
 		expires_at = Time.get_unix_time_from_system() + float(String(data.get("expires_in", "3600")).to_int())
 		_write_credentials()
 		return {"ok": true, "error": ""}
-	if response.network:
-		# Offline. Keep the session; the caller retries. Signing out here would
-		# lose the player's account because their train went into a tunnel.
+	if response.network or int(response.status) == 429 or int(response.status) >= 500:
+		# Offline, rate-limited or a server outage. Keep the session; the caller retries.
+		# Signing out here would lose the player's account because their train went into a tunnel.
 		return {"ok": false, "error": "No connection.", "network": true}
 	# A real rejection: the refresh token is dead and cannot be revived.
 	var reason := _message_for(response)

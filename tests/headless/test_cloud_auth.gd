@@ -167,6 +167,17 @@ func test_a_rejected_refresh_signs_out_and_reports_it() -> void:
 	assert_signal_emitted(_auth, "auth_lost")
 
 
+func test_a_server_outage_during_refresh_does_not_sign_out() -> void:
+	_rest.queue_ok(_session())
+	await _auth.sign_in_email("player@example.com", "hunter2")
+	for status in [429, 503]:
+		_auth.expires_at = 0.0
+		_rest.queue_error(status)
+		var result: Dictionary = await _auth.ensure_fresh_token()
+		assert_false(result.ok)
+		assert_true(_auth.is_signed_in(), "a %d is the server's trouble, not a dead token" % status)
+
+
 # --- Credential persistence ---------------------------------------------------
 
 func test_the_session_survives_a_restart() -> void:

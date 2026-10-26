@@ -93,6 +93,17 @@ func update_now() -> void:
 	_start_fade(target_look(Config.data, region_of(streamer.settings, ring), weather, _base_env))
 
 
+# Write the current ring's handling and weather onto the config again, after a car retune put the
+# authored values back.
+func reapply() -> void:
+	if ring < 0:
+		return
+	var region := region_of(streamer.settings, ring)
+	apply_handling(Config.data, region)
+	Config.data.weather = weather
+	Config.data.weather_sun_mult = float(target_look(Config.data, region, weather, _base_env).get("sun_mult", 1.0))
+
+
 # The wheel debris's off-road particle (colour, blade or clod) for the ring's region; the default
 # blade where the region authors none.
 func _seat_particle_look() -> void:
