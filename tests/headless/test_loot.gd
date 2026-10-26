@@ -587,6 +587,9 @@ func test_each_owned_car_in_the_garage_says_how_many_upgrades_it_has() -> void:
 			if l is Label:
 				lines.append((l as Label).text.to_lower())
 		assert_has(lines, LootRules.upgrades_text(cars[i]).to_lower(), "card %d shows its car's upgrade count" % i)
+		var model := CarLibrary.by_id(String(cars[i]["model_id"]))
+		assert_gt(lines.find(LootRules.upgrades_text(cars[i]).to_lower()), lines.find(CardUI.car_subtitle(model).to_lower()),
+			"card %d has the upgrade count under the power line" % i)
 	assert_true(LootRules.upgrades_text(cars[0]).begins_with("1 / "), "a switched-off part still counts")
 	assert_true(LootRules.upgrades_text(cars[1]).begins_with("0 / "))
 	page.close()

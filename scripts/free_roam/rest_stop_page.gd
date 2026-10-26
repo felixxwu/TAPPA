@@ -225,8 +225,8 @@ func _build_garage() -> void:
 		var model := CarLibrary.by_id(String(c.get("model_id", "")))
 		if id == active:
 			selected = entries.size()
-		entries.append({"title": _car_name(c), "subtitle": CardUI.car_subtitle(model),
-			"desc": LootRules.upgrades_text(c), "car": c,
+		entries.append({"title": _car_name(c), "desc": CardUI.car_subtitle(model),
+			"subtitle": LootRules.upgrades_text(c), "car": c,
 			"extra": "Driving" if id == active else "", "action": Callable() if id == active else _drive.bind(id)})
 	var money := WorldSession.money()
 	for item: Dictionary in loot.for_sale() if loot != null else []:

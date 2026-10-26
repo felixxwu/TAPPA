@@ -98,7 +98,7 @@ Parts / Garage / Map / Tune car (travel is on the map); its header says the mone
 says "Fit", "Swap for X", or — disabled — "Can't fit"; other cars keep theirs), then one per part on
 sale ("for sale"; picking one buys it and fits it straight away, `_buy_part`). **Garage:** a card per
 owned car (pick to drive one; the cursor starts on the car being driven), each with an
-"x / y upgrades" line (`LootRules.upgrades_text`: parts unlocked for that car, on or off, out of
+"x / y upgrades" line under its power line (`LootRules.upgrades_text`: parts unlocked for that car, on or off, out of
 `LootRules.parts_for(owned)` — the whole part catalogue less the drivetrain kit for its own stock
 layout), then one per car on sale
 (picking one buys it and switches to it, `_buy_car`). There is no journal (a read-only list of what
