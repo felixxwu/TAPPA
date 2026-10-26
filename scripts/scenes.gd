@@ -94,4 +94,8 @@ static func change_to(tree: SceneTree, path: String) -> void:
 	if block_real_changes:
 		last_blocked_path = path
 		return
+	# The world builds for seconds before its first frame; without this cover (adopted and freed by
+	# free_roam.gd._warm_up) the screen sits blank grey meanwhile.
+	if path == FREE_ROAM and not Platform.is_headless():
+		tree.root.add_child(LoadingScreen.new())
 	tree.change_scene_to_file(path)

@@ -143,6 +143,10 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   wanted, not yet dropped) fall to the near-mesh tier. Cancelled or finished jobs are purged from
   the queue at each plan (a queue that never drains used to carry them for ever).
 - **Boot:** `prefill()` builds the planned set with no budget before the car is released.
+  Every change into the world (`Scenes.change_to(FREE_ROAM)` — boot, new world, a rest-stop car/part
+  change) first puts a `LoadingScreen` on the tree root, so the synchronous scene load and `_ready`'s
+  prefill show the cover instead of a blank grey frame; `_warm_up` adopts that cover rather than
+  making its own.
   Then `free_roam.gd._warm_up` compiles every first-use shader behind a `LoadingScreen` with the
   car's controls locked, the same passes as the stage's load (`world.gd._warm_shaders_behind_cover`):
   every `warm_up()`/`clear_warm_up()` node (debris, tyre marks, smoke, flames, crowds), a speck of

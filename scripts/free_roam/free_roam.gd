@@ -153,8 +153,10 @@ func _ready() -> void:
 # rock and marker, and a look round the loaded ground, all behind a loading cover with the car held.
 func _warm_up() -> void:
 	_car.controls_locked = true
-	var cover := LoadingScreen.new()
-	add_child(cover)
+	var cover := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
+	if cover == null:
+		cover = LoadingScreen.new()
+		add_child(cover)
 	cover.set_title("Warming shaders…")
 	var cam := get_viewport().get_camera_3d()
 	# Every node with the warm_up()/clear_warm_up() pair (debris, tyre marks, flames, crowds, …).
