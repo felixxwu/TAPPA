@@ -70,7 +70,7 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   see world-session.md), so the map's free travel can't carry money to safety; checkpoint to checkpoint keeps it.
 - **The counter:** `LootDirector.money_label`, "$n" in the top-left corner while driving, parented to the HUD layer so it hides under paused pages like the gauges.
 - **On the ground:** a gold disc stood on its edge, spinning and bobbing in `coin.gdshader` (no
-  per-coin scripts), built with the near chunk (`TerrainStreamer._coin_marker`, node `Loot<site>`).
+  per-coin scripts), lit by the fake headlight cone at night (`headlight_cone.gdshaderinc`, added to its glow), built with the near chunk (`TerrainStreamer._coin_marker`, node `Loot<site>`).
 
 All of it lives in the world block (`WorldSession`: money, collected, revealed; parts live on each owned car); see
 [world-session.md](world-session.md).
@@ -95,7 +95,7 @@ All card lists ([card-carousel.md](card-carousel.md)); item cards use `LootRules
 `LootRules.icon`. Names and notes must each fit on one line of the card.
 Rebuilding the page you're on (a part fitted, a car picked, something bought) keeps the cursor
 where it was (`RestStopPage._keep_at`). There's no separate shop: things on sale show at the end of the page they belong on, their price
-as the third line, dimmed when they cost more than the player has. The MAIN page is Continue /
+as the third line, green when the player can afford it and red when not (`RestStopPage.price_variant`). The MAIN page is Continue /
 Parts / Garage / Map / Tune car (travel is on the map); its header says the money held.
 **Parts:** a card per fitted part (pick to take off), then one per other part owned (pick to fit; it
 says "Fit", "Swap for X", or — disabled — "Can't fit"; other cars keep theirs), then one per part on

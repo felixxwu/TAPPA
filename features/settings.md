@@ -117,13 +117,18 @@ and so was invisible in release builds; it is now its own **player** category
 a second copy — one route to an irreversible action, guarded by a confirm modal
 rather than by hiding. Dev builds simply see both categories.
 
-**The Dev page is two actions** (`SettingsMenu._build_dev_page`), each reporting
+**The Dev page is three actions** (`SettingsMenu._build_dev_page`), each reporting
 through the page's `_dev_status` line, and both editing the free-roam world session:
 
 - **Add $10000** — adds `SettingsMenu.DEV_MONEY_GRANT` (a dev amount, not a tunable) to
   `WorldSession.money`, for trying the checkpoint shop ([loot.md](loot.md)).
-- **Unlock all biomes** — `_reveal_all_biomes`: every biome ring's stock goes on sale, as if a
-  checkpoint had been lit in each.
+- **Unlock entire map** — `_unlock_map`: every biome ring's stock goes on sale, and the live
+  free-roam scene's `unlock_map` lights every rest stop (`RestStops.light_all`, so Travel can
+  reach any of them), marks the outermost ring reached and every road driven, so the map shows
+  the whole island.
+- **Weather: Auto** — `_cycle_dev_weather`: each press steps the live `BiomeDirector.forced_weather`
+  through every `WeatherLibrary` condition and back to Auto (the rings' own draw), applied at once
+  via `update_now`. Not saved; a new scene starts on Auto.
 
 `Save.grant_car` remains the plain mutator tests use to seed a fixture car.
 

@@ -27,7 +27,7 @@ var enter_world := func() -> void: Scenes.change_to(get_tree(), Scenes.FREE_ROAM
 
 func _ready() -> void:
 	add_to_group(MusicLibrary.MENU_GROUP)
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.color = Color(0.0, 0.0, 0.0, 0.4)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)

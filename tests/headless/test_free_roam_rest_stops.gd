@@ -474,6 +474,27 @@ func test_tuning_after_a_car_swap_does_not_retune_the_fielded_body() -> void:
 	_page.owned = real_owned
 
 
+func test_unlocking_the_map_lights_every_rest_stop_for_travel() -> void:
+	var before: Dictionary = _rest.lit_sites.duplicate()
+	var lit_now: Array = []
+	var record := func(site: int) -> void: lit_now.append(site)
+	_rest.lit.connect(record)
+	_scene.unlock_map()
+	_rest.lit.disconnect(record)
+	var rests := _streamer.sites.of_kind(RoadSites.Kind.REST)
+	for site in rests:
+		assert_true(_rest.is_lit(site), "rest stop %d is lit" % site)
+	for site in lit_now:
+		assert_false(before.has(site), "only newly lit stops announce themselves")
+	assert_true(_rest.travel_to(rests[rests.size() - 1]), "travel reaches the furthest stop")
+	_rest.lit_sites = before
+
+
+func test_a_price_is_green_when_affordable_and_red_when_not() -> void:
+	assert_eq(RestStopPage.price_variant(100, 100), "green", "exactly enough money is affordable")
+	assert_eq(RestStopPage.price_variant(101, 100), "red")
+
+
 class RetuneCounter:
 	extends VehicleBody3D
 	var calls := 0

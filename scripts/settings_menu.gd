@@ -88,6 +88,7 @@ var outline_button: Button = null
 # Key-binding rows, exposed for tests / hosts:
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
+var _dev_weather_button: Button
 # Benchmark toggle rows, exposed for tests: [{key: String, button: Button}].
 var benchmark_rows: Array = []
 
@@ -176,7 +177,6 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
-	list_grid.add_child(_make_nav_button("Account", show_page.bind("account")))
 	# Reset progress is a PLAYER setting, not dev tooling: starting over is something
 	# anyone is allowed to do, so it is offered unconditionally (the destructive part
 	# is guarded by a confirm modal, not by hiding the button). It goes after the
@@ -274,7 +274,7 @@ func _build_benchmark_page() -> void:
 
 
 func _build_dev_page() -> void:
-	# Dev sub-page: money for the free-roam shop, and every biome's stock on sale. Wiping the save
+	# Dev sub-page: money for the free-roam shop, and the whole map unlocked for travel. Wiping the save
 	# is NOT here: it is a player setting, on its own Reset progress page (which dev
 	# builds see too), so there is exactly one route to it.
 	_dev_page = _make_page()
@@ -283,7 +283,10 @@ func _build_dev_page() -> void:
 	_dev_status = _make_sub("Developer actions.")
 	_dev_page.add_child(_dev_status)
 	_dev_page.add_child(_make_action_button("Add $%d" % DEV_MONEY_GRANT, _add_dev_money))
-	_dev_page.add_child(_make_action_button("Unlock all biomes", _reveal_all_biomes))
+	_dev_page.add_child(_make_action_button("Unlock entire map", _unlock_map))
+	_dev_weather_button = _make_action_button("", _cycle_dev_weather)
+	_dev_page.add_child(_dev_weather_button)
+	_refresh_dev_weather()
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -646,16 +649,44 @@ func _add_dev_money() -> void:
 	_dev_status.text = "$%d." % WorldSession.money()
 
 
-# Put every biome ring's stock on sale, as if a checkpoint had been lit in each.
-func _reveal_all_biomes() -> void:
-	if not WorldSession.has_world():
+# Put every biome ring's stock on sale and open the whole island for travel (the live free-roam scene does the rest).
+func _unlock_map() -> void:
+	var scene := get_tree().current_scene
+	if not WorldSession.has_world() or scene == null or not scene.has_method("unlock_map"):
 		_dev_status.text = "No world yet."
 		return
 	var rings: Array = []
 	for r in Config.data.free_roam.ring_count:
 		rings.append(r)
 	WorldSession.set_list("revealed", rings)
-	_dev_status.text = "Unlocked %d biomes." % rings.size()
+	scene.unlock_map()
+	_dev_status.text = "Map unlocked."
+
+
+# The live world's biome director, or null outside free roam.
+func _biome_director() -> BiomeDirector:
+	var scene := get_tree().current_scene
+	return scene.get_node_or_null("BiomeDirector") as BiomeDirector if scene != null else null
+
+
+# Step the forced weather through Auto (the rings' own draw) and every condition, applied at once.
+func _cycle_dev_weather() -> void:
+	var director := _biome_director()
+	if director == null:
+		_dev_status.text = "No world yet."
+		return
+	var ids: Array = [""]
+	for entry in WeatherLibrary.all():
+		ids.append(String(entry["id"]))
+	director.forced_weather = ids[(ids.find(director.forced_weather) + 1) % ids.size()]
+	director.update_now()
+	_refresh_dev_weather()
+
+
+func _refresh_dev_weather() -> void:
+	var director := _biome_director() if is_inside_tree() else null
+	var id := director.forced_weather if director != null else ""
+	_dev_weather_button.text = "Weather: %s" % (id.capitalize() if id != "" else "Auto")
 
 
 # --- Row builders ------------------------------------------------------------

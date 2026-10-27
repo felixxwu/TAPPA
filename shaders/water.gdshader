@@ -15,19 +15,21 @@ uniform float scroll_speed = 0.04;   // world-units/sec the texture drifts
 uniform float tex_scale = 0.06;      // world metres -> UV (texture tiling density)
 uniform float sparkle_strength = 0.25;
 
-varying vec3 world_pos;
+varying vec3 v_world_pos;
+
+#include "res://shaders/headlight_cone.gdshaderinc"
 
 void vertex() {
-	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
 	// Two layers scrolling in different directions/speeds = a convincing shimmer.
-	vec2 uv = world_pos.xz * tex_scale;
+	vec2 uv = v_world_pos.xz * tex_scale;
 	vec2 uv_a = uv + vec2(TIME * scroll_speed, TIME * scroll_speed * 0.5);
 	vec2 uv_b = uv * 1.7 + vec2(-TIME * scroll_speed * 0.6, TIME * scroll_speed * 0.9);
 	float t = 0.5 * (texture(water_tex, uv_a).r + texture(water_tex, uv_b).r);
 	vec3 col = mix(water_color.rgb, shore_color.rgb, t);
 	col += sparkle_strength * pow(t, 6.0);  // occasional bright glint on the crests
-	ALBEDO = col;
+	ALBEDO = col * (1.0 + hl_color * headlight_lit(v_world_pos));
 }

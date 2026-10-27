@@ -39,6 +39,8 @@ var wheel_particles: WheelParticles = null
 var ring := -1
 var weather := ""
 var drive_time := 0.0
+# A weather id that overrides the ring's draw (the Dev page's weather picker); "" follows the rings.
+var forced_weather := ""
 
 var _check_t := 0.0
 var _base_env := {}
@@ -78,7 +80,7 @@ func _process(delta: float) -> void:
 func update_now() -> void:
 	var p := car.global_position
 	var r := streamer.terrain.ring_index(p.x, p.z)
-	var w := weather_for(streamer.settings, r, drive_time)
+	var w := weather_at(r)
 	if r == ring and w == weather:
 		return
 	var ring_changed := r != ring
@@ -91,6 +93,11 @@ func update_now() -> void:
 		weather = w
 		_apply_weather(Config.data)
 	_start_fade(target_look(Config.data, region_of(streamer.settings, ring), weather, _base_env))
+
+
+# The weather ring `r` should show now: the forced one if set, else the ring's draw for this slot.
+func weather_at(r: int) -> String:
+	return forced_weather if forced_weather != "" else weather_for(streamer.settings, r, drive_time)
 
 
 # Write the current ring's handling and weather onto the config again, after a car retune put the

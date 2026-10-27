@@ -20,6 +20,8 @@ uniform vec3 ground_color : source_color = vec3(0.35);
 varying vec3 v_light;
 varying float v_local_normal_y;
 
+#include "res://shaders/headlight_cone.gdshaderinc"
+
 void vertex() {
 	// NORMAL in vertex = local (model) space. On a CylinderMesh the cap vertices
 	// always have local normal.y = ±1; tread vertices have normal.y ≈ 0. This is
@@ -32,6 +34,7 @@ void vertex() {
 	float ndl = max(dot(wn, normalize(light_dir)), 0.0);
 	vec3 lit = ambient + sun_color * ndl;
 	v_light = mix(vec3(1.0), lit, light_amount);
+	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn);
 }
 
 void fragment() {

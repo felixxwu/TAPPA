@@ -83,7 +83,7 @@ Covered by `tests/headless/test_text_field.gd`.
 ## Account page (`account_menu.gd`)
 
 `AccountMenu` is the optional cloud-save UI — a category page inside Settings
-(`show_account`). It exposes `at_root()` / `go_back()` so Settings treats its sub-forms
+(`show_account`), currently hidden from the category list (see cloud-save.md). It exposes `at_root()` / `go_back()` so Settings treats its sub-forms
 exactly like its own sub-pages — `SettingsMenu.go_back()` gives it first refusal before
 backing out of the page. See [cloud-save.md](cloud-save.md).
 

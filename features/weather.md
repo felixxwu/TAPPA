@@ -6,7 +6,7 @@ the world seed, then cross-fades the environment into it. On the dev stage a sta
 its `"weather"`. Both reach the live config through the same table and funnel below. This file
 is the hub; each half is documented in depth in its own feature file, linked below.
 
-**Tests:** `tests/headless/test_weather_library.gd`, `tests/headless/test_crosswind.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_loading_screen.gd`
+**Tests:** `tests/headless/test_weather_library.gd`, `tests/headless/test_crosswind.gd`, `tests/headless/test_headlight_cone.gd`, `tests/headless/test_lighting_coverage.gd`, `tests/headless/test_loading_screen.gd`
 
 Rain and sandstorm change how the car must be driven; fog, night and storm also cost
 visibility, which no model of the drive accounts for.
@@ -16,6 +16,12 @@ below. Five stages author it, one per region, so every region's palette can be
 seen after dark. The headlight cone it introduced is no longer night-only: storm
 switches the lights on as well, at a much lower strength, via the same authored
 `headlights` key — see "Headlights on more than night".
+
+**Everything drawn must take the cone:** `test_lighting_coverage.gd` fails on any
+3D shader that doesn't reach `headlight_cone.gdshaderinc`, any script building a plain
+material, and any `.tscn` / `.glb` with a mesh drawn by such a material (instanced without
+`_ready`, so no world is built; models re-shaded by code at runtime are exempt with a pointer), unless it's in that test's `EXEMPT` list (with a reason) or `KNOWN_GAPS` (unlit today,
+to be fixed).
 
 ## The weather table (`WeatherLibrary`) — the single source of truth
 

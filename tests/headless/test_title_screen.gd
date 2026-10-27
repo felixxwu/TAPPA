@@ -171,3 +171,31 @@ func test_the_build_version_label_is_never_in_the_nav_order() -> void:
 		pass_test("an unstamped build shows no version label")
 		return
 	assert_eq((label as Control).focus_mode, Control.FOCUS_NONE)
+
+
+func test_every_settings_page_keeps_its_back_button_on_screen() -> void:
+	# Hosted on a CanvasLayer like free_roam.show_title, so the page fills the screen.
+	var layer := CanvasLayer.new()
+	add_child_autofree(layer)
+	_title = TitleScreen.new()
+	layer.add_child(_title)
+	var t := _title
+	await get_tree().process_frame
+	t._show(TitleScreen.View.SETTINGS)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for id in t._settings_menu._pages:
+		t._settings_menu.show_page(id)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var bottom := t._page.actions().get_global_rect().end.y
+		assert_lte(bottom, t._page.get_global_rect().end.y + 1.0,
+			"the Back button is on screen on the '%s' page" % id)
+	t._settings_menu.show_benchmark()
+	await get_tree().process_frame
+	var start: Button = t._settings_menu._benchmark_page.get_child(-1)
+	start.grab_focus()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_lte(start.get_global_rect().end.y, t._page.panel().get_global_rect().end.y + 1.0,
+		"focusing the last benchmark row scrolls it into view")

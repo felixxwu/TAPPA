@@ -183,11 +183,17 @@ func _build_parts() -> void:
 		var block := LootRules.fit_block_reason(owned, part)
 		var text := LootRules.card_text(part)
 		entries.append({"title": text[0], "desc": text[1],
-			"extra": block if not block.is_empty() else "$%d" % cost, "icon": LootRules.icon(part),
+			"extra": block if not block.is_empty() else "$%d" % cost,
+			"extra_variant": "" if not block.is_empty() else price_variant(cost, money), "icon": LootRules.icon(part),
 			"disabled": not block.is_empty() or cost > money, "action": _buy_part.bind(part)})
 	if entries.is_empty():
 		entries.append({"title": "No parts yet", "subtitle": "Light checkpoints further out to buy some", "icon": "stash"})
 	_card_page("Parts", entries, [_car_name(owned), "$%d" % money])
+
+
+# A price reads green when the player can pay it and red when they can't.
+static func price_variant(cost: int, money: int) -> String:
+	return "green" if cost <= money else "red"
 
 
 # Buy a part on sale: it's unlocked for this car and switched on straight away.
@@ -239,7 +245,7 @@ func _build_garage() -> void:
 		var model := CarLibrary.by_id(String(item["id"]))
 		var cost := LootRules.price(item)
 		entries.append({"title": String(model.get("name", item["id"])), "subtitle": CardUI.car_subtitle(model),
-			"car": CarLibrary.index_of(String(item["id"])), "extra": "$%d" % cost, "extra_variant": "dim",
+			"car": CarLibrary.index_of(String(item["id"])), "extra": "$%d" % cost, "extra_variant": price_variant(cost, money),
 			"disabled": cost > money, "action": _buy_car.bind(item)})
 	_card_page("Garage", entries, ["$%d" % money], selected)
 

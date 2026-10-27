@@ -337,9 +337,10 @@ it was built on ([world-session.md](world-session.md)).
 already works:
 
 - **Settings → Account** (`settings_menu.gd`: `_build_account_page`,
-  `show_account`, an entry in `_pages` and in the category grid). This is the
-  canonical route, reachable from the title screen's Settings button before any
-  career is started — which is the reinstall / new-device case.
+  `show_account`, an entry in `_pages`). **Hidden for now (2026-10-27):** the page is
+  still built but has no entry in the category grid, so players can't reach it; cloud
+  sync itself still runs for an already-signed-in profile. Re-add the grid entry in
+  `_build_list_page` to bring it back.
 It is the only host: two routes into one optional form is one more than the game needs.
 
 Signed out: Google (hidden when unconfigured) / sign in with email / create an

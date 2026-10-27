@@ -87,8 +87,8 @@ func test_a_tall_body_is_capped_so_the_action_row_stays_on_screen() -> void:
 	await get_tree().process_frame
 	assert_lte(page.panel().size.y, page.size.y,
 		"the box never grows past the page it sits in")
-	var row_bottom: float = page.actions().position.y + page.actions().size.y
-	assert_lte(row_bottom, page.size.y + 1.0,
+	var row_bottom: float = page.actions().get_global_rect().end.y
+	assert_lte(row_bottom, page.get_global_rect().end.y + 1.0,
 		"the action row is still within the page, so the exit is reachable")
 
 

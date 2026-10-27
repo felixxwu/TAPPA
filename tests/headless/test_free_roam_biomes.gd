@@ -247,6 +247,21 @@ func test_each_ring_seats_its_regions_off_road_particle() -> void:
 	st.free()
 
 
+func test_a_forced_weather_overrides_every_rings_draw_until_cleared() -> void:
+	var st := TerrainStreamer.new()
+	st.settings = _settings()
+	var d := BiomeDirector.new()
+	d.streamer = st
+	d.forced_weather = "snow"
+	for r in 2:
+		assert_eq(d.weather_at(r), "snow")
+	d.forced_weather = ""
+	assert_eq(d.weather_at(1), BiomeDirector.weather_for(st.settings, 1, d.drive_time),
+		"Auto goes back to the ring's own draw")
+	d.free()
+	st.free()
+
+
 func _terrain(s: FreeRoamSettings) -> RoadTerrain:
 	var t := RoadTerrain.new()
 	t.setup(s, RoadNetwork.new())

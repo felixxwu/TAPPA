@@ -379,6 +379,15 @@ func save_world() -> void:
 	Save.save(false)
 
 
+# Dev shortcut: every rest stop lit, every biome reached and every road on the map, so travel can go anywhere.
+func unlock_map() -> void:
+	_rest_stops.light_all()
+	WorldSession.reach_ring(_streamer.settings.ring_count - 1)
+	var net := _streamer.network
+	for si in net.seg_ax.size():
+		WorldSession.mark_driven((net.seg_ax[si] + net.seg_bx[si]) * 0.5, (net.seg_ay[si] + net.seg_by[si]) * 0.5)
+
+
 func _on_car_teleported(p: Vector2) -> void:
 	_last_xz = p
 

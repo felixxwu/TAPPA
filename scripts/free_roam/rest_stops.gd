@@ -154,13 +154,24 @@ func open_here() -> bool:
 
 # The car reached rest stop `i`: light it (the first time) and heal the car fully.
 func _pass(i: int) -> void:
-	if not lit_sites.has(i):
-		lit_sites[i] = true
-		streamer.refresh_site_marker(i)
-		lit.emit(i)
+	light(i)
 	if car != null and car.get("damage") != null:
 		(car.damage as DamageModel).repair(Config.data)
 	healed.emit(i)
+
+
+func light(i: int) -> void:
+	if lit_sites.has(i):
+		return
+	lit_sites[i] = true
+	streamer.refresh_site_marker(i)
+	lit.emit(i)
+
+
+func light_all() -> void:
+	for i in streamer.sites.count():
+		if _is_rest(i):
+			light(i)
 
 
 # Where the car is put at rest stop `site`: on its road beside the pad, facing along the road.

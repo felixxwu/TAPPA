@@ -266,7 +266,7 @@ func test_players_do_not_see_the_developer_settings_pages() -> void:
 	assert_false(joined.contains("BENCHMARK"), "no Benchmark entry for players")
 	assert_false(joined.contains("DEV"), "no Dev entry for players")
 	assert_true(joined.contains("AUDIO"), "the real settings are still there")
-	assert_true(joined.contains("ACCOUNT"), "and so is the account page")
+	assert_false(joined.contains("ACCOUNT"), "the account page is hidden for now")
 	assert_true(joined.contains("RESET PROGRESS"),
 		"starting over is a player setting, not dev tooling")
 

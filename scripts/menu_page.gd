@@ -55,6 +55,7 @@ var _title_label: Label
 var _scroll: TouchScrollContainer
 var _body: VBoxContainer
 var _actions: HBoxContainer
+var _margin := 0.0
 
 
 # opts:
@@ -67,6 +68,7 @@ var _actions: HBoxContainer
 #                      true modal that must read as blocking what's underneath
 func _init(opts: Dictionary = {}) -> void:
 	var margin: float = float(opts.get("margin", UITheme.MARGIN))
+	_margin = margin
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	# Let anything not a control fall through to the 3D station behind the page.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -176,6 +178,7 @@ func _sync_body_height() -> void:
 		chrome += _title_label.get_combined_minimum_size().y + UITheme.GAP
 	# The body box's own padding, top and bottom (see UITheme.panel_box).
 	chrome += _panel.get_theme_stylebox("panel").get_minimum_size().y
+	chrome += 2.0 * _margin
 	var available: float = size.y - chrome
 	_scroll.custom_minimum_size.y = minf(wanted, available) if available > 0.0 else wanted
 
