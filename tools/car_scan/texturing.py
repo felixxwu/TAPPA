@@ -106,6 +106,31 @@ def paint_from_video(points, normals, scan_me, to_usd, poses_path, frames_dir):
         acc += w[:, None] * img[v, u]; wsum += w
     return acc / np.maximum(wsum, 1e-9)[:, None], wsum
 
+def colour_from_scan(points, scan, reach=0.05):
+    # Colours each point from the scan's own texture, at the nearest spot on its surface: for a scan made in the car's
+    # real paint, with no paint video. Points further than reach from the surface count as unseen.
+    from mathutils.bvhtree import BVHTree
+    me = scan.data; me.calc_loop_triangles()
+    co = np.empty(len(me.vertices) * 3, np.float32); me.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
+    tv = np.empty(len(me.loop_triangles) * 3, np.int32); me.loop_triangles.foreach_get('vertices', tv); tv = tv.reshape(-1, 3)
+    tl = np.empty(len(me.loop_triangles) * 3, np.int32); me.loop_triangles.foreach_get('loops', tl); tl = tl.reshape(-1, 3)
+    uv = np.empty(len(me.loops) * 2, np.float32); me.uv_layers.active.data.foreach_get('uv', uv); uv = uv.reshape(-1, 2)
+    tree = BVHTree.FromPolygons(co.tolist(), tv.tolist())
+    bsdf = next(n for n in me.materials[0].node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+    img = bsdf.inputs['Base Color'].links[0].from_node.image
+    w, h = img.size
+    px = np.empty(w * h * 4, np.float32); img.pixels.foreach_get(px); px = px.reshape(h, w, 4)
+    rgb, seen = np.zeros((len(points), 3)), np.zeros(len(points))
+    for i, p in enumerate(points):
+        hit, _, tri, dist = tree.find_nearest(Vector(p), reach)
+        if hit is None: continue
+        a, b, c = co[tv[tri]]
+        bary = np.linalg.lstsq(np.c_[a - c, b - c], np.array(hit) - c, rcond=None)[0]
+        t = uv[tl[tri]].T @ np.r_[bary, 1 - bary.sum()]
+        rgb[i] = px[int(np.clip(t[1], 0, 1) * (h - 1)), int(np.clip(t[0], 0, 1) * (w - 1)), :3]
+        seen[i] = 1
+    return rgb, seen
+
 def texture(low, high, out, wheels, wheel_radius, cut_radius, cut_inner, glass_min_z, plate_size=(0.34, 0.17), tex_size=1024,
             to_usd=None, paint_poses=None, paint_frames=None):
     me = high.data

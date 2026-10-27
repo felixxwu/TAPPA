@@ -95,7 +95,9 @@ $BLENDER -b <scan.blend> --python tools/car_scan/texture.py -- <outDir> --body <
 `<scan.blend>` holds the levelled scan (its custom properties link it back to the saved cameras:
 `usd_to_aligned`, `levelling`, `poses`, `masks`) and the hand-made body, which must sit over the scan
 exactly as saved. Modifiers (e.g. a Mirror) are applied, wheel arches are cut, with a tub left over each
-wheel where an arch would punch through a floor (a pickup's bed), and it is given fresh UVs. The baking,
+wheel where an arch would punch through a floor (a pickup's bed), and it is given fresh UVs. Pass
+`--no-cut` when the body already has its arches modelled (the MX-5 did). Without a paint video the colour
+is baked straight from the scan's own texture, as for the MX-5 (`--scan car_scan`). The baking,
 paint projection, glass and gap fills and plate blanking are `texturing.py`, shared with `process.py`.
 `open.py` parks the scan 3 m to the side for comparison.
 
@@ -104,8 +106,11 @@ paint projection, glass and gap fills and plate blanking are `texturing.py`, sha
 ```
 $BLENDER -b <scan.blend> --python tools/car_scan/wheels.py -- <outDir> --poses <work>/paint.poses.json \
     --frames <work>/paint_frames --values blender/<car>/wheel_scan.json
-$BLENDER -b <scan.blend> --python tools/car_scan/wheel_inspect.py -- <outDir>
+$BLENDER -b <scan.blend> --python tools/car_scan/wheel_inspect.py -- <outDir> [<scan object>]
 ```
+
+With no `--poses`/`--frames` the colour comes from the scan's own texture (`texturing.colour_from_scan`), for a scan
+made in the car's real paint; `--scan <object>` names the scan when it carries no camera link (the MX-5's didn't).
 
 Builds one game wheel from the scan's four (`wheel_math.py` holds the maths and runs a self-check on synthetic
 wheels: `python3 tools/car_scan/wheel_math.py`):
@@ -125,7 +130,8 @@ wheels: `python3 tools/car_scan/wheel_math.py`):
    sides, ~580 tris; texture = the face as a disc beside the tread strip. Writes `wheel.glb`,
    `wheel_texture.png` and `fits.json`, and prints `MEASURED wheel_radius … wheel_width …`.
 
-Claude's judgement calls go in `blender/<car>/wheel_scan.json` (`spokes`, `include`, per-wheel `nudges` of
+Claude's judgement calls go in `blender/<car>/wheel_scan.json` (`spokes`, `include`, `max_radius` — a cap on the fitted
+radius for a tight arch that otherwise outscores the tyre, as on the MX-5 — per-wheel `nudges` of
 `centre` [dy, dz] and `axle_deg` [yaw, pitch]), made from `wheel_inspect.py`'s renders: `check_<wheel>.png` (the
 wheel face-on, 500 px/m, 10 cm grid, fitted circle and centre in pink: the circle should sit on the tyre's edge)
 and `spin_<deg>.png` (the built wheel at four turns: a highlight that turns with it is light that didn't
@@ -156,7 +162,8 @@ in `CarLibrary` must match the scan's (the MX-5's 2.25 m) or the wheels clip the
 
 ## Into the game
 
-The F-150 (`blender/f150/`) went in this way: hand-modelled body textured with `texture.py`, then
+The MX-5 (`blender/mx5/`) went in the same way, its old hand-made body reshaped over the scan, with arches
+modelled (`texture.py --no-cut`), and its wheels coloured from the scan. The F-150 (`blender/f150/`) went in this way: hand-modelled body textured with `texture.py`, then
 `export.py`, a `CarLibrary` entry whose `track`/`wheelbase`/`wheel_radius` match the scan's WHEELS
 contacts and arch cut, and an `F150Body` node in `car.tscn` sitting at minus the car's settled ride
 height (`car.gd` → `settled_ride_height`), since the exported body's origin is on the ground.

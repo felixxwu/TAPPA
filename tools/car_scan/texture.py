@@ -1,4 +1,4 @@
-# Textures a body modelled by hand over the scan: cuts its wheel arches and paints it from the scan or the paint video.
+# Textures a body modelled by hand over the scan: cuts its wheel arches (unless --no-cut) and paints it from the scan or the paint video.
 # blender -b <scan.blend> --python texture.py -- <outDir> --body <object> [--scan <object>] [--paint-poses P --paint-frames F] [...]
 # The body must sit exactly over the scan as saved (levelled, origin midway between the axles); its modifiers are applied.
 import bpy, sys, os, argparse
@@ -15,6 +15,7 @@ ap.add_argument('--wheel-radius', type=float, default=0.31)
 ap.add_argument('--cut-radius', type=float, default=0.35)
 ap.add_argument('--wheel-values', help='fits.json from wheels.py: measured wheel positions and radius, overriding the two above')
 ap.add_argument('--cut-inner', type=float, default=0.55)
+ap.add_argument('--no-cut', action='store_true', help='the body already has its wheel arches modelled')
 ap.add_argument('--glass-min-z', type=float, default=0.8)
 ap.add_argument('--tex-size', type=int, default=1024)
 ap.add_argument('--paint-poses'); ap.add_argument('--paint-frames')
@@ -37,7 +38,7 @@ if args.wheel_values:
     wheels, args.wheel_radius = texturing.wheels_from_fits(args.wheel_values)
     args.cut_radius = args.wheel_radius + 0.05
 print('WHEELS', {k: tuple(round(x, 3) for x in v) for k, v in wheels.items()})
-texturing.cut_wheels(low, wheels, args.wheel_radius, args.cut_radius, args.cut_inner)
+if not args.no_cut: texturing.cut_wheels(low, wheels, args.wheel_radius, args.cut_radius, args.cut_inner)
 texturing.outward(low)
 print('LOW tris', texturing.tris(low))
 

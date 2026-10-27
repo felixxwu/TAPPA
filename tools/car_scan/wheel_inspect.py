@@ -2,12 +2,14 @@
 # the fitted circle and centre drawn over it (a circle that misses the tyre's edge means a nudge in wheel_scan.json),
 # and, once wheels.py has built the game wheel, that wheel at several turns under flat light (any highlight that turns
 # with it is baked light that wasn't averaged out).
-# blender -b <scan.blend> --python wheel_inspect.py -- <wheelsDir>
+# blender -b <scan.blend> --python wheel_inspect.py -- <wheelsDir> [<scan object>]
 import bpy, sys, os, json, math
 import numpy as np
 from mathutils import Vector
 
-out = sys.argv[sys.argv.index('--') + 1]
+argv = sys.argv[sys.argv.index('--') + 1:]
+out = argv[0]
+is_scan = (lambda o: o.name == argv[1]) if len(argv) > 1 else (lambda o: 'usd_to_aligned' in o)
 fits = json.load(open(os.path.join(out, 'fits.json')))
 PX_PER_M, SIZE = 500, 600
 sc = bpy.context.scene
@@ -16,7 +18,7 @@ sc.display.shading.color_type = 'TEXTURE'
 sc.display.shading.light = 'FLAT'
 sc.render.resolution_x = sc.render.resolution_y = SIZE
 for o in bpy.data.objects:
-    o.hide_render = 'usd_to_aligned' not in o   # only the scan
+    o.hide_render = not is_scan(o)
 cam = bpy.data.objects.new('inspect_cam', bpy.data.cameras.new('inspect_cam')); sc.collection.objects.link(cam); sc.camera = cam
 cam.data.type, cam.data.ortho_scale = 'ORTHO', SIZE / PX_PER_M
 

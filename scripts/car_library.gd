@@ -111,16 +111,17 @@ const CARS: Array[Dictionary] = [
 		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, -0.22, 0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
-		"cabin_z": 0.25, "track": 1.4, "wheelbase": 2.25, # matches the scanned body's wheel arches
-		"wheel_radius": 0.30, "wheel_width_front": 0.205, "wheel_width_rear": 0.205, # 195/50R16 square
-		"suspension_travel": 0.32, "suspension_stiffness": 15.0, # compliant roadster baseline
-		# Renders the authored blender/mx5/mx5.glb body (Car/Mx5Body) instead of the
-		# procedural chassis+cabin boxes; see car.gd apply_car(). Wheels stay
-		# procedural. Only this car carries the flag.
+		# Track, wheelbase and tyre size measured off the photogrammetry scan's wheels (tools/car_scan/wheels.py).
+		"cabin_z": 0.25, "track": 1.35, "wheelbase": 2.32,
+		"wheel_radius": 0.3, "wheel_width_front": 0.216, "wheel_width_rear": 0.216,
+		"suspension_travel": 0.34, "suspension_stiffness": 15.0, # compliant roadster baseline; travel must clear wheel_radius
+		# Renders the hand-modelled blender/mx5/mx5.glb body (Car/Mx5Body), textured from the
+		# photogrammetry scan, on its own scanned wheels (features/car-scanning.md).
 		"use_model": true,
 		"model_node": "Mx5Body",
 		"model_texture": "res://blender/mx5/mx5_texture.png",
 		"wheel_texture": "res://blender/mx5/wheel.png",
+		"wheel_model": "res://blender/mx5/wheel.glb",
 	},
 	{
 		"name": "Fjord Focal", # parody of the Ford Focus. 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
@@ -136,7 +137,7 @@ const CARS: Array[Dictionary] = [
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
 		"body": Vector3(1.84, 0.52, 4.30), "cabin": Vector3(1.55, 0.50, 1.60),
-		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.7,
+		"cabin_z": 0, "track": 1.6, "wheelbase": 2.7,
 		"wheel_radius": 0.31, "wheel_width_front": 0.205, "wheel_width_rear": 0.205, # 205/55R16 square, FWD
 		"suspension_travel": 0.35, "suspension_stiffness": 14.0, # compliant compact hatch
 		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see

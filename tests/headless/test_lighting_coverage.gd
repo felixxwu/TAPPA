@@ -30,6 +30,7 @@ const EXEMPT := {
 	"res://blender/xjs/xjs.glb": "car.gd puts car bodies on ps1_models_lit",
 	"res://blender/f150/f150.glb": "car.gd puts car bodies on ps1_models_lit",
 	"res://blender/f150/wheel.glb": "car.gd _apply_wheel_model puts wheel models on ps1_models_lit",
+	"res://blender/mx5/wheel.glb": "car.gd _apply_wheel_model puts wheel models on ps1_models_lit",
 }
 
 const KNOWN_GAPS := [

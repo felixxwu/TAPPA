@@ -1,6 +1,7 @@
 # Turns a car scan's four wheels into one game wheel: find and unwrap each wheel, colour it from the paint video,
 # average out the baked light, and rebuild it low-poly. The judgement calls live in a per-car values file.
-# blender -b <scan.blend> --python wheels.py -- <outDir> --poses <paint.poses.json> --frames <paintFramesDir> [--values <wheel_scan.json>]
+# blender -b <scan.blend> --python wheels.py -- <outDir> [--poses <paint.poses.json> --frames <paintFramesDir>] [--scan <object>] [--values <wheel_scan.json>]
+# Without a paint video the colour comes from the scan's own texture.
 import bpy, sys, os, json, argparse, subprocess
 import numpy as np
 from mathutils import Matrix
@@ -9,15 +10,17 @@ import texturing, wheel_math
 
 ap = argparse.ArgumentParser(prog='wheels.py')
 ap.add_argument('out')
-ap.add_argument('--poses', required=True); ap.add_argument('--frames', required=True)
+ap.add_argument('--poses'); ap.add_argument('--frames')
+ap.add_argument('--scan', help='the scan object (default: the one carrying the camera link)')
 ap.add_argument('--values', help='per-car judgement calls (blender/<car>/wheel_scan.json)')
 args = ap.parse_args(sys.argv[sys.argv.index('--') + 1:])
 os.makedirs(args.out, exist_ok=True)
 values = json.load(open(args.values)) if args.values and os.path.exists(args.values) else {}
 
-scan = next(o for o in bpy.data.objects if 'usd_to_aligned' in o)
+scan = bpy.data.objects[args.scan] if args.scan else next(o for o in bpy.data.objects if 'usd_to_aligned' in o)
 me = scan.data
-to_usd = np.array((Matrix(np.array(scan['levelling']).reshape(4, 4).tolist()) @ Matrix(np.array(scan['usd_to_aligned']).reshape(4, 4).tolist())).inverted())
+if args.poses:
+    to_usd = np.array((Matrix(np.array(scan['levelling']).reshape(4, 4).tolist()) @ Matrix(np.array(scan['usd_to_aligned']).reshape(4, 4).tolist())).inverted())
 NAMES = {(-1, 1): 'fl', (1, 1): 'fr', (-1, -1): 'rl', (1, -1): 'rr'}   # front is +y, the car's left is -x
 
 
@@ -52,7 +55,8 @@ fits, unwraps = {}, {}
 for (sx, sy), contact in texturing.wheel_contacts(me).items():
     name = NAMES[(sx, sy)]
     box = (np.abs(pts[:, 1] - contact.y) < 0.6) & (pts[:, 2] < 0.9) & (pts[:, 0] * sx > 0.4)
-    fit = wheel_math.fit_standing(pts[box], np.array(contact), sx)
+    # A tight arch can outscore the tyre it hugs; the values file can rule out circles that big.
+    fit = wheel_math.fit_standing(pts[box], np.array(contact), sx, values.get('max_radius', 0.6))
     p = pts - fit['centre']
     along = p @ fit['axle']
     radial = np.linalg.norm(p - np.outer(along, fit['axle']), axis=1)
@@ -63,7 +67,10 @@ for (sx, sy), contact in texturing.wheel_contacts(me).items():
     profile = wheel_math.face_profile(pts[on], fit)
     cells = wheel_math.cell_points(fit, profile)
     pts_all = np.r_[cells['face_points'], cells['tread_points']]
-    colour, weight = texturing.paint_from_video(pts_all, np.r_[cells['face_normals'], cells['tread_normals']], me, to_usd, args.poses, args.frames)
+    if args.poses:
+        colour, weight = texturing.paint_from_video(pts_all, np.r_[cells['face_normals'], cells['tread_normals']], me, to_usd, args.poses, args.frames)
+    else:
+        colour, weight = texturing.colour_from_scan(pts_all, scan)
     n_face = len(cells['face_points'])
     un = {'face_rgb': colour[:n_face].reshape(48, 192, 3), 'face_seen': (weight[:n_face] > 1e-3).reshape(48, 192),
           'face_depth': np.repeat(profile[:, None], 192, 1),

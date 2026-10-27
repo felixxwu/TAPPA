@@ -35,7 +35,7 @@ def fit_wheel(points, side, axle=None):
     return {'centre': centre, 'axle': axle, 'radius': float(radius), 'width': float(hi - lo)}
 
 
-def ground_radius(yz, contact_y):
+def ground_radius(yz, contact_y, max_radius=0.6):
     """Tyre radius, and how far the axle sits along the car from contact_y, for a wheel on the ground near there.
 
     Tries circles touching the ground near the contact and keeps the one with the most points on its lower half:
@@ -45,7 +45,7 @@ def ground_radius(yz, contact_y):
     best, best_score = (0.0, 0.0), -1.0
     for shift in np.arange(-0.06, 0.0601, 0.005):
         dy = dy0 - shift
-        for R in np.arange(0.20, 0.60, 0.0025):
+        for R in np.arange(0.20, max_radius, 0.0025):
             d = np.hypot(dy, z - R) - R
             low = z < R
             ring = ((np.abs(d) < 0.01) & low).sum()
@@ -56,10 +56,10 @@ def ground_radius(yz, contact_y):
     return best
 
 
-def fit_standing(points, contact, side):
+def fit_standing(points, contact, side, max_radius=0.6):
     """Fit a wheel standing on the ground at `contact` (x, y, z): its centre sits straight above the contact patch
     at height R, its axle along x. Points from the arch and sill around it are outvoted (see ground_radius)."""
-    R, shift = ground_radius(points[:, 1:], contact[1])
+    R, shift = ground_radius(points[:, 1:], contact[1], max_radius)
     y = contact[1] + shift
     r = np.hypot(points[:, 1] - y, points[:, 2] - R)
     tread = np.abs(r - R) < 0.02
