@@ -73,6 +73,30 @@ func test_the_shell_wires_the_hud_controls_and_pause_menu() -> void:
 	assert_true(_pause._input_enabled, "the pause menu is armed once the island has loaded")
 
 
+# A sync conflict found in the background (no account page open) is put to the player over the
+# frozen game, keyboard/gamepad navigable as every ConfirmPopup is; Decide later hands play back.
+func test_a_background_sync_conflict_is_put_to_the_player() -> void:
+	Cloud.sync._conflict = {"profile": "{}", "device": "test-device", "updated_utc": ""}
+	Cloud.sync.blocked_by_conflict = true
+	Cloud.conflict_detected.emit({})
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(popup, "the prompt is up")
+	assert_true(get_tree().paused, "over the frozen game")
+	assert_false(_pause.is_armed(), "the pause menu stands down under it")
+	if popup != null:
+		popup.trigger_back()  # Back / B = Decide later
+	assert_false(get_tree().paused)
+	assert_true(_pause.is_armed())
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_null(ConfirmPopup.any_open(get_tree()), "deciding later doesn't ask again straight away")
+	Cloud.sync._conflict = {}
+	Cloud.sync.blocked_by_conflict = false
+	Cloud.sync.status = CloudSync.Status.IDLE
+
+
 func test_the_debug_readout_starts_hidden_and_p_toggles_it() -> void:
 	var stats: CanvasLayer = _scene.get_node("DebugStats")
 	assert_false(stats.visible, "hidden by default")
@@ -196,3 +220,28 @@ func test_tyre_marks_run_off_the_streamer_and_a_teleport_breaks_them() -> void:
 	(_scene.get_node("RoadRecovery") as RoadRecovery).reset_done.emit(Vector2.ZERO)
 	for i in marks._last_pos.size():
 		assert_null(marks._last_pos[i], "wheel %d's ribbon is broken by the reset" % i)
+
+
+# A reset keeps the nitrous charge (only a respawn or travel refills it), and never revives a
+# wrecked car.
+func test_a_reset_keeps_the_nitrous_charge() -> void:
+	var engine = _car.drivetrain.engine
+	engine.nitrous_charge = 1.25
+	_recovery.reset_now()
+	assert_eq(engine.nitrous_charge, 1.25)
+
+
+func test_a_wrecked_car_is_not_reset() -> void:
+	var dmg: DamageModel = _car.damage
+	var was_thermal := dmg.thermal
+	dmg.thermal = true
+	dmg.hp = 0.0
+	_car.drivetrain.engine.killed = true
+	var before := _car.global_position
+	_recovery.reset_now()
+	assert_true(_car.drivetrain.engine.killed, "the engine stays dead")
+	assert_eq(_car.global_position, before, "the wreck stays where it is")
+	assert_true(_recovery.is_wrecked())
+	dmg.repair(Config.data)
+	dmg.thermal = was_thermal
+	_car.drivetrain.engine.killed = false

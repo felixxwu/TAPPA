@@ -4,7 +4,7 @@
 #
 # Godot needs a real GL context to capture viewport images, which the --headless
 # dummy renderer can't provide, so we run the OpenGL driver inside a virtual X
-# display (xvfb) — same recipe as tools/render_garage.sh.
+# display (xvfb) — a virtual-display recipe.
 #
 # Usage: tools/render_barriers.sh
 set -euo pipefail

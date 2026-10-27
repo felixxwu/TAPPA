@@ -128,7 +128,7 @@ levers, in order of payoff:
   one generated world, build it in `before_all` (plain `add_child`, freed in
   `after_all`) and restore per-test state in `before_each` rather than
   re-instantiating `main.tscn` each time. Many files do this — `test_hud.gd`,
-  `test_config_applied.gd`, `test_garage.gd`, `test_smoke.gd` among them. The
+  `test_config_applied.gd`, `test_smoke.gd` among them. The
   cached-resting-pose variant of the idea (cold-settle once, then restore the
   `Transform3D` and re-stabilise in a handful of frames) lives in
   `sim_test.gd` → `setup_settled_car`, described in the next bullet;
@@ -203,19 +203,16 @@ levers, in order of payoff:
   `is_visible_in_tree()`, not mere node existence, and give the wait a seam a test can shorten
   rather than gating the logic.
 
-### Synthetic centerlines — `TrackFixtures`
+### Free roam boots
 
-`tests/headless/track_fixtures.gd` (`class_name TrackFixtures`) supplies the
-`{"centerline", "pieces"}` dicts that `LapTimeModel` consumes, so no test has
-to reach into a generated track: `straight(length)`, `arc(radius, sweep)` (densely sampled
-POINTS, no handles), `handled_arc(radius, sweep, steps)` (few points with real Bezier
-handles) and `straight_then_arc(...)`.
-
-The distinction between `arc` and `handled_arc` matters and is easy to get wrong: `arc` is
-already a handle-free polyline, so resampling it is near-lossless by construction. Any test
-asserting that a **resample** preserves curvature must use `handled_arc`, or it will pass
-against a broken implementation. See the deleted rival ghost → *The timed-span
-curve*.
+Instantiating `free_roam.tscn` boots the whole streamed island: the `TerrainStreamer` plans and
+builds every chunk in range (`prefill()` when headless), then the road network, rest stops and
+car come up. That prefill is the cost, and it scales with the island and the ring radii.
+The lever is a shrunk `FreeRoamSettings` assigned to the `Terrain` node's `settings` before
+`add_child` (small `island_radius_m`, `mid_radius` / `far_radius`, as `_boot_free_roam` in
+`test_world_session.gd` does). Boot it once in `before_all` and share it across tests, as
+`test_free_roam_rest_stops.gd` and `test_free_roam_shell.gd` do; use a fresh boot per test
+only when the test mutates the world irreversibly.
 
 ### Test-catalogue seam — `CarFixtures`
 
@@ -227,12 +224,7 @@ tests don't have to reach into (and get broken by) the shipped catalogue:
   of the process.
 - `reset()` — drops the override and falls back to the shipped const.
 
-`RegionStageLibrary` follows the same override/reset/all shape but its catalogue is
-Dictionary-shaped (`{region_id: [8 slots of 3 candidates]}`), not a flat
-`Array[Dictionary]`, so it does NOT share the generic `Registry.Seam` helper the
-others use — see `features/region-stage-library.md`. `RallyLibrary`/`UpgradeLibrary`
-are both deleted (`todo/region-stage-slots-redesign.md`, `todo/roguelike-pivot.md`);
-`CarFixtures` (cars), `RegionStageFixtures` (stages) are the fixtures tests install.
+`CarFixtures` (cars and engines) is the fixture tests install.
 
 The seam is **inert in production**: an empty/unset override is treated as
 "no override" and every lookup falls straight back to the real shipped const,
@@ -280,16 +272,13 @@ attitude, asymmetric wheel loads, never at rest) and makes camera pick rays hit 
 first — silent, order-dependent failures that are green under `--fast <file>` and red in
 a full run.
 
-So before driving anything that can change scene, switch the seam off or capture it:
+`Scenes.change_to` is the one place scene changes go through, so anything that routes via it is already inert under test:
 
-- `RunSession.auto_load_scenes = false` — `begin()` and `continue_to_next_stage()` end in
-  `change_scene_to_file("res://main.tscn")`, and the seam **defaults to `true`**.
-- `world.gd` → `scene_change_hook` — capture the requested path instead of loading it.
-- `Scenes.block_real_changes` — the run-scoped backstop the pre-run hook arms, which
+- `Scenes.block_real_changes` — the backstop `save_sandbox_pre_hook.gd` arms for the whole run, which
   swallows every transition and records where it was headed
   (`Scenes.last_blocked_path`).
 
-Restore the seam in `after_all`. `tests/headless/test_world_isolation.gd` is the backstop: it fails if any
+`tests/headless/test_world_isolation.gd` is the backstop: it fails if any
 game scene is parked under `/root`, and it is named `world_*` so it sorts late enough
 to see almost every polluter.
 
@@ -299,7 +288,7 @@ the effects table:
 - **UpgradeFixtures:** now an **effect** table, not a catalogue — `UpgradeLibrary` stopped
   being a catalogue with the parts model (see
   [upgrade-catalogue.md](upgrade-catalogue.md)). One synthetic entry per effect shape the
-  `apply` / `effective_meta` pipeline reads: the induction pair
+  `apply` pipeline reads: the induction pair
   (`fx_turbo_small`/`fx_turbo_big`), `fx_supercharger`, `fx_gearbox` (the `set` op),
   `fx_aero` (`add`), `fx_tires` / `fx_snow_tires` (`mult`, one of them surface-dependent),
   `fx_lightweight` (`mass_mult < 1`) and `fx_ballast` (`mass_mult > 1`).
@@ -460,34 +449,18 @@ everything that ran.
 
 ## Trap: async work that outlives the node that started it
 
-`settings_menu.gd`'s seed lab starts an **async** `TrackGenerator.generate()` and hands
-it two lambdas — `on_prog` and `abort` — which capture the menu (they read `_sl_gen` /
-`_seedlab_preview`). The generator polls those callables *across its own `await`
-boundaries*, so if the menu is freed while a search is still in flight, the generator
-calls a lambda whose owner is half-destroyed:
+An async `TrackGenerator.generate()` polls the callables it was handed *across its own
+`await` boundaries*, so if their owner is freed while a search is still in flight, the
+generator calls a lambda whose owner is half-destroyed. The consequences are nastier than a
+failed assertion — the corrupted return value aborts the **whole run** with no `Totals`
+block, and since GUT's exit status is still 0 the run masquerades as a fast pass
+(`run_tests.sh` only catches it via `TEST_ERROR_PATTERN`). It is timing-dependent, so it
+reads as random CI death.
 
-```
-SCRIPT ERROR: Attempt to call function '<anonymous lambda>(self lambda) (Callable)'
-              on a null instance.   at: _search (res://scripts/track_generator.gd)
-SCRIPT ERROR: Invalid access to property or key 'complete' … at: generate (…)
-```
-
-`test_seedlab.gd` hit exactly this: it awaits only a frame or two after
-`show_seedlab()`, and GUT's `add_child_autofree` then frees the menu mid-search. The
-consequences are nastier than a failed assertion — the corrupted return value aborts
-the **whole run** with no `Totals` block, and since `GUT`'s exit status is still 0 the
-run masquerades as a fast pass (`run_tests.sh` only catches it via
-`TEST_ERROR_PATTERN`). It is timing-dependent and never reproduces under
-`--fast seedlab`, so it reads as random CI death.
-
-The fix, in `test_seedlab.gd`'s `after_each`: bump `_menu._sl_gen` so any in-flight
-search aborts **while the menu is still alive**, then await a few frames to let it
-unwind. Generalise it: **a test that kicks off async work must settle or cancel that
-work before its nodes are freed** — awaiting "a frame or two" is not the same as
-awaiting completion. Note also that a dangling-callable guard inside the generator
-cannot save you: a lambda whose captured owner has been freed reports
-`is_valid() == false` and `get_object_id() == 0`, indistinguishable from an unset
-`Callable()`, so the only reliable fix is not to leave the work in flight.
+**A test that kicks off async work must settle or cancel that work before its nodes are
+freed** — awaiting "a frame or two" is not the same as awaiting completion. A
+dangling-callable guard inside the generator cannot save you: a lambda whose captured owner
+has been freed reports `is_valid() == false`, indistinguishable from an unset `Callable()`.
 
 ## Rules of thumb (from CLAUDE.md)
 

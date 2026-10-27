@@ -1,11 +1,8 @@
 extends GutTest
-# StageManager: the per-stage COUNTDOWN -> RUNNING -> COMPLETE flow. Driven by
-# calling _process(dt) directly against stub car/HUD/progress, so the state
-# machine and timing are tested without driving the whole track (the completion
-# edge uses a fake progress source). See todo/stage-start-and-end.md.
+# StageManager: the dev stage's COUNTDOWN -> RUNNING -> COMPLETE flow. Driven by calling
+# _process(dt) directly against stub car/progress, so the state machine and timing are
+# tested without driving the whole track (the completion edge uses a fake progress source).
 
-# StageManager is referenced via its global class_name (registered by the class
-# cache); preloading it under the same name would shadow the global identifier.
 const SceneHelpers = preload("res://tests/headless/scene_helpers.gd")
 
 
@@ -19,86 +16,21 @@ class StubCar:
 	var finish_stop := false
 
 
-# Captures the HUD calls so they can be asserted without a real HUD scene.
-class StubHud:
-	extends Node
-	var last_countdown := -999.0
-	var hide_countdown_calls := 0
-	var elapsed_calls := 0
-	var last_elapsed := -1.0
-	var complete_time := -1.0
-	func show_countdown(seconds_left: float) -> void:
-		last_countdown = seconds_left
-	func hide_countdown() -> void:
-		hide_countdown_calls += 1
-	func show_elapsed(seconds: float) -> void:
-		elapsed_calls += 1
-		last_elapsed = seconds
-	var complete_penalty := -1.0
-	func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
-		complete_time = seconds
-		complete_penalty = penalty_s
-	var flash_args := []
-	func show_cut_flash(incident_s: float, total_s: float) -> void:
-		flash_args = [incident_s, total_s]
-	var pacenote_indices: Array = []
-	func show_pacenotes(current: int) -> void:
-		pacenote_indices.append(current)
-	var off_road_shown: Array = []      # seconds-left values passed to show_off_road
-	var hide_off_road_calls := 0
-	func show_off_road(seconds_left: float) -> void:
-		off_road_shown.append(seconds_left)
-	func hide_off_road() -> void:
-		hide_off_road_calls += 1
-	var delta_shown := false
-	var delta_hidden := false
-	var last_delta := 0.0
-	func show_delta(delta_seconds: float) -> void:
-		delta_shown = true
-		last_delta = delta_seconds
-	func hide_delta() -> void:
-		delta_hidden = true
-
-
 # Stand-in for TrackProgress: progress_percent() returns a settable 0..1 fraction.
 class StubProgress:
 	extends Node
 	var pct := 0.0
-	var penalty := 0.0
-	# The off-road clock the OFF TRACK warning mirrors: seconds spent off the road,
-	# and the seconds left before TrackProgress snaps the car back.
-	var off_road := 0.0
-	var off_road_left := -1.0
-	signal cut_billed(incident_s: float, total_s: float)
 	func progress_percent() -> float:
 		return pct
-	func cut_penalty_s() -> float:
-		return penalty
-	func off_road_time() -> float:
-		return off_road
-	func off_road_seconds_left() -> float:
-		return off_road_left
-	# Arc-length span the rival profile (features/rival-ghost.md) is measured
-	# against: origin 0, a 100 m stage — matches _RIVAL_PROFILE_LEN_M below, so
-	# `progress_percent() * (finish_offset - origin_offset)` reads as metres into
-	# the SAME synthetic profile the rival tests build.
-	func origin_offset() -> float:
-		return 0.0
-	func finish_offset() -> float:
-		return 100.0
 
 
 var _car: StubCar
-var _hud: StubHud
 var _progress: StubProgress
 var _boot_scene: Node3D
 
 
-# Build the real main.tscn ONCE here (not in a test body) for the boot
-# integration check below. Instantiating in before_all means the first compile
-# of the world's scripts — including a pre-existing shadowed-global warning in
-# track_generator.gd — is attributed to setup, not a test (the same convention
-# test_smoke.gd relies on). minimal_world keeps the track/foliage cheap.
+# Build the real main.tscn ONCE here (not in a test body) for the boot integration check
+# below. minimal_world keeps the track/foliage cheap.
 func before_all() -> void:
 	SceneHelpers.minimal_world()
 	_boot_scene = load("res://main.tscn").instantiate()
@@ -114,8 +46,6 @@ func before_each() -> void:
 	Config.reset()
 	_car = StubCar.new()
 	add_child_autofree(_car)
-	_hud = StubHud.new()
-	add_child_autofree(_hud)
 	_progress = StubProgress.new()
 	add_child_autofree(_progress)
 
@@ -128,7 +58,7 @@ func _make() -> StageManager:
 	var sm := StageManager.new()
 	add_child_autofree(sm)
 	sm.set_process(false)  # drive _process manually for deterministic timing
-	sm.setup(_car, _hud, _progress)
+	sm.setup(_car, _progress)
 	return sm
 
 
@@ -138,11 +68,10 @@ func _to_running(sm: StageManager) -> void:
 
 func test_car_handbrake_held_during_countdown() -> void:
 	var sm := _make()
-	# The handbrake is forced but input stays live, so the player can rev and launch on GO.
 	assert_true(_car.handbrake_locked, "handbrake forced from setup")
 	assert_false(_car.controls_locked, "input not fully locked during the countdown")
 	assert_eq(sm.phase(), StageManager.Phase.COUNTDOWN, "starts in COUNTDOWN")
-	sm._process(1.0)  # partial tick (default countdown is 3 s)
+	sm._process(Config.data.stage_countdown_seconds * 0.5)
 	assert_true(_car.handbrake_locked, "handbrake still held mid-countdown")
 	assert_false(_car.controls_locked, "still not fully locked mid-countdown")
 	assert_eq(sm.phase(), StageManager.Phase.COUNTDOWN, "still COUNTDOWN before the timer elapses")
@@ -157,7 +86,6 @@ func test_countdown_unlocks_and_starts_timer() -> void:
 	assert_false(_car.controls_locked, "controls unlock when the countdown ends")
 	assert_false(_car.handbrake_locked, "handbrake releases at GO so the car launches")
 	assert_true(started[0], "stage_started fired at GO")
-	assert_eq(_hud.last_countdown, 0.0, "HUD shown GO (0.0) at the transition")
 
 
 func test_timer_accrues_only_while_running() -> void:
@@ -167,254 +95,44 @@ func test_timer_accrues_only_while_running() -> void:
 	sm._process(0.5)
 	sm._process(0.5)
 	assert_almost_eq(sm.elapsed(), 1.0, 0.0001, "elapsed accrues in RUNNING")
-	assert_almost_eq(_hud.last_elapsed, 1.0, 0.0001, "HUD shows the running time")
 
 
-func test_go_flash_hides_after_a_moment() -> void:
+func test_completion_freezes_the_timer_and_relocks_the_car() -> void:
 	var sm := _make()
 	_to_running(sm)
-	assert_eq(_hud.hide_countdown_calls, 0, "GO still on screen right after the transition")
-	sm._process(StageManager.GO_FLASH_SECONDS)  # hold elapses
-	assert_eq(_hud.hide_countdown_calls, 1, "GO hidden once the flash time passes")
-
-
-func test_completion_freezes_relocks_and_defers_the_signal() -> void:
-	var sm := _make()
-	_to_running(sm)
-	sm._process(2.0)  # elapsed 2.0, progress still 0 -> running
+	sm._process(2.0)
 	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "running while short of the finish")
-	var completed := [-1.0]
-	sm.stage_completed.connect(func(t: float) -> void: completed[0] = t)
-	_progress.pct = 1.0  # 100% >= 99% default
-	sm._process(1.0)     # elapsed reaches 3.0 on the completing frame
+	_progress.pct = 1.0
+	sm._process(1.0)
 	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "reaching the finish completes the stage")
 	assert_almost_eq(sm.elapsed(), 3.0, 0.0001, "timer frozen at the completion time")
 	assert_true(_car.controls_locked, "the finished car is re-locked (handbrake skid)")
 	assert_true(_car.finish_stop, "the finished car brakes itself to a stop (foot + handbrake)")
-	assert_almost_eq(_hud.complete_time, 3.0, 0.0001, "the finish panel shows the final time")
-	assert_eq(completed[0], -1.0, "stage_completed is NOT emitted until the player proceeds")
-	# Further ticks must not advance the frozen timer.
 	sm._process(5.0)
 	assert_almost_eq(sm.elapsed(), 3.0, 0.0001, "no time accrues after completion")
-	# Pressing NEXT proceeds to the results flow with the final time.
-	sm.proceed_to_results()
-	assert_almost_eq(completed[0], 3.0, 0.0001, "proceed_to_results emits stage_completed with the final time")
-
-
-func test_reported_time_includes_the_cut_penalty() -> void:
-	var sm := _make()
-	_to_running(sm)
-	sm._process(2.0)
-	_progress.penalty = 4.0
-	_progress.pct = 1.0  # cross the finish
-	sm._process(1.0)     # elapsed reaches 3.0 on the completing frame
-	assert_almost_eq(_hud.complete_time, 3.0, 0.0001, "panel shows clean run time")
-	assert_almost_eq(_hud.complete_penalty, 4.0, 0.0001, "panel gets the penalty separately")
-	var reported := []
-	sm.stage_completed.connect(func(t: float) -> void: reported.append(t))
-	sm.proceed_to_results()
-	assert_eq(reported.size(), 1, "stage_completed fired once")
-	assert_almost_eq(reported[0], 7.0, 0.0001, "reported = clean elapsed + penalty")
-
-
-func test_no_penalty_reports_clean_elapsed() -> void:
-	var sm := _make()
-	_to_running(sm)
-	sm._process(2.0)
-	_progress.pct = 1.0  # cross the finish, penalty defaults to 0
-	sm._process(1.0)
-	var reported := []
-	sm.stage_completed.connect(func(t: float) -> void: reported.append(t))
-	sm.proceed_to_results()
-	assert_almost_eq(reported[0], 3.0, 0.0001, "clean run reports elapsed unchanged")
-
-
-func test_finish_reached_fires_on_crossing_before_stage_completed() -> void:
-	# The replay recorder stops on finish_reached, so it MUST fire the instant the
-	# line is crossed (phase -> COMPLETE) — not when NEXT is pressed. Otherwise the
-	# post-finish skid + idle gets recorded as a stationary tail on the replay.
-	var sm := _make()
-	_to_running(sm)
-	var finished := [0]
-	var completed := [0]
-	sm.finish_reached.connect(func() -> void: finished[0] += 1)
-	sm.stage_completed.connect(func(_t: float) -> void: completed[0] += 1)
-	_progress.pct = 1.0  # cross the finish
-	sm._process(0.5)
-	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "crossing the line completes the stage")
-	assert_eq(finished[0], 1, "finish_reached fires once on the crossing frame")
-	assert_eq(completed[0], 0, "stage_completed is still deferred to the NEXT button")
-	# Extra ticks under the finish panel must not re-fire finish_reached.
-	sm._process(3.0)
-	assert_eq(finished[0], 1, "finish_reached does not re-fire while idling on the panel")
-	sm.proceed_to_results()
-	assert_eq(completed[0], 1, "NEXT emits stage_completed, distinct from finish_reached")
-
-
-func test_force_complete_also_fires_finish_reached() -> void:
-	# The dev skip-to-finish cheat runs the same _complete() path, so the recorder
-	# stop must fire there too.
-	var sm := _make()
-	_to_running(sm)
-	var finished := [0]
-	sm.finish_reached.connect(func() -> void: finished[0] += 1)
-	sm.force_complete()
-	assert_eq(finished[0], 1, "force_complete fires finish_reached via _complete()")
-
-
-func test_force_complete_shows_panel_and_defers_the_signal() -> void:
-	# The dev skip-to-finish cheat: force_complete() runs the same completion path
-	# as crossing the line — lock + panel now, results only on NEXT.
-	var sm := _make()
-	_to_running(sm)
-	sm._process(1.5)  # elapsed 1.5, progress still 0 -> nowhere near the finish
-	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "still running before the cheat")
-	var completed := [-1.0]
-	sm.stage_completed.connect(func(t: float) -> void: completed[0] = t)
-	sm.force_complete()
-	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "force_complete finishes the stage")
-	assert_true(_car.controls_locked, "car re-locked on the forced finish")
-	assert_almost_eq(_hud.complete_time, 1.5, 0.0001, "finish panel shown")
-	assert_eq(completed[0], -1.0, "stage_completed deferred until NEXT")
-	sm.proceed_to_results()
-	assert_almost_eq(completed[0], 1.5, 0.0001, "proceed emits the elapsed time so far")
-
-
-func test_proceed_is_a_noop_before_completion_and_idempotent_after() -> void:
-	var sm := _make()
-	_to_running(sm)
-	var count := [0]
-	sm.stage_completed.connect(func(_t: float) -> void: count[0] += 1)
-	sm.proceed_to_results()  # not COMPLETE yet
-	assert_eq(count[0], 0, "proceed does nothing before the stage completes")
-	sm.force_complete()
-	sm.proceed_to_results()
-	sm.proceed_to_results()  # second press
-	assert_eq(count[0], 1, "proceed emits exactly once")
 
 
 func test_completion_uses_configured_percent() -> void:
 	Config.data.stage_complete_percent = 50.0
 	var sm := _make()
 	_to_running(sm)
-	_progress.pct = 0.4  # 40% < 50% -> not yet
+	_progress.pct = 0.4
 	sm._process(0.1)
 	assert_eq(sm.phase(), StageManager.Phase.RUNNING, "below the threshold stays RUNNING")
-	_progress.pct = 0.6  # 60% >= 50% -> complete
+	_progress.pct = 0.6
 	sm._process(0.1)
 	assert_eq(sm.phase(), StageManager.Phase.COMPLETE, "crossing the configured percent completes")
 
 
-# --- Live standings readout (features/hud.md) --------------------------------
-
-# NOTE: the live standings readout (position, gap-to-leader, LiveStandings) and its
-# five tests are DELETED, not weakened. It projected the player's finish time into a
-# RIVAL FIELD, and there are no rivals (decision 5) — `setup_live_standings` had no
-# production caller left and `_field_times` was permanently empty. The per-turn pace
-# table it read (`setup_splits`) is ALSO gone now — it never got a production caller
-# either (world.gd never called it) and is superseded by `setup_target_profile`'s
-# continuous rival profile (features/rival-ghost.md), tested below.
-
-
-# --- Rival ghost + HUD delta (features/rival-ghost.md) -----------------------
-
-# A synthetic pace-scaled profile: constant speed, so time and distance are exactly
-# proportional (t = s / SPEED) — no authored car/track involved, matching CLAUDE.md's
-# "don't pin a tunable" rule. 100 m at 10 m/s -> a flat 10 s target.
-const _RIVAL_PROFILE_LEN_M := 100.0
-const _RIVAL_PROFILE_SPEED := 10.0
-
-func _make_rival_profile() -> Dictionary:
-	var s := PackedFloat32Array()
-	var t := PackedFloat32Array()
-	var n := 11
-	for i in n:
-		var dist := _RIVAL_PROFILE_LEN_M * float(i) / float(n - 1)
-		s.append(dist)
-		t.append(dist / _RIVAL_PROFILE_SPEED)
-	return {"s": s, "t": t}
-
-
-# --- Pacenote strip (features/hud.md) ----------------------------------------
-
-func test_no_pacenotes_without_wiring() -> void:
-	var sm := _make()
-	_to_running(sm)
-	_progress.pct = 1.0
-	sm._process(5.0)
-	assert_eq(_hud.pacenote_indices.size(), 0, "a run with no pacenotes wired never pulses the strip")
-
-
-# Integration: booting main.tscn wires a StageManager that holds the real car on
-# the line from the first frame (the scene is built once in before_all). The boot
-# is a countdown, so the handbrake is forced while input stays live.
-func test_cut_flash_relayed_to_hud_only_while_running() -> void:
-	var sm := _make()
-	_progress.cut_billed.emit(1.4, 1.4)
-	assert_eq(_hud.flash_args.size(), 0, "no flash before the stage is running")
-	_to_running(sm)
-	_progress.cut_billed.emit(1.4, 1.4)
-	assert_eq(_hud.flash_args, [1.4, 1.4], "cut flash relayed while running")
-
-
-func test_off_road_warning_waits_out_the_grace_then_shows_the_countdown() -> void:
-	# The warning is held back by off_road_warning_after_s so everyday rally excursions
-	# (running wide, a jump landing on the verge) don't flash it every corner; past the
-	# grace it mirrors TrackProgress's countdown. Synthetic grace value, not the
-	# authored one — a designer retuning it must not break this.
-	Config.data.off_road_warning_after_s = 1.0
-	var sm := _make()
-	_to_running(sm)
-	_progress.off_road = Config.data.off_road_warning_after_s * 0.5
-	_progress.off_road_left = 4.0
-	sm._process(0.1)
-	assert_eq(_hud.off_road_shown.size(), 0, "a brief excursion stays under the grace and shows nothing")
-	_progress.off_road = Config.data.off_road_warning_after_s + 0.1
-	_progress.off_road_left = 3.0
-	sm._process(0.1)
-	assert_eq(_hud.off_road_shown, [3.0], "past the grace the warning shows the seconds left")
-
-
-func test_off_road_warning_hidden_once_back_on_the_road() -> void:
-	Config.data.off_road_warning_after_s = 1.0
-	var sm := _make()
-	_to_running(sm)
-	_progress.off_road = Config.data.off_road_warning_after_s + 0.1
-	_progress.off_road_left = 2.0
-	sm._process(0.1)
-	assert_eq(_hud.off_road_shown.size(), 1, "warning up while off the road")
-	# Back on the road: TrackProgress zeroes its clock, so the warning comes down.
-	_progress.off_road = 0.0
-	_progress.off_road_left = -1.0
-	var hides_before := _hud.hide_off_road_calls
-	sm._process(0.1)
-	assert_gt(_hud.hide_off_road_calls, hides_before, "returning to the road hides the warning")
-	assert_eq(_hud.off_road_shown.size(), 1, "and it isn't shown again")
-
-
-func test_off_road_warning_cleared_at_the_finish() -> void:
-	# Crossing the line off-road must not leave the warning stranded under the finish
-	# panel, where the player can't act on it. (TrackProgress keeps its clock running,
-	# so the car is still recovered — just silently.)
-	Config.data.off_road_warning_after_s = 1.0
-	var sm := _make()
-	_to_running(sm)
-	_progress.off_road = Config.data.off_road_warning_after_s + 0.1
-	_progress.off_road_left = 2.0
-	sm._process(0.1)
-	var hides_before := _hud.hide_off_road_calls
-	_progress.pct = 1.0  # cross the finish
-	sm._process(0.1)
-	assert_gt(_hud.hide_off_road_calls, hides_before, "the finish takes the warning down")
-
-
+# Integration: booting main.tscn wires a StageManager that holds the real car on the line
+# from the first frame. The boot is a countdown, so the handbrake is forced while input
+# stays live.
 func test_main_scene_holds_car_at_boot() -> void:
 	var sm := _boot_scene.get_node_or_null("StageManager")
 	assert_not_null(sm, "world.gd wires a StageManager into the scene")
 	var car: VehicleBody3D = _boot_scene.get_node("Car")
 	assert_true(car.handbrake_locked, "car's handbrake is held during the boot countdown")
 	# world.gd locks the car for the loading window (controls_locked = true before
-	# generation), but a boot must END with input LIVE — StageManager.setup
-	# clears the full lock, leaving only the handbrake hold. (Regression: the loading
-	# lock must not survive into the playable run and freeze the player out.)
+	# generation), but a boot must END with input LIVE — StageManager.setup clears the full
+	# lock, leaving only the handbrake hold.
 	assert_false(car.controls_locked, "boot leaves input live (loading lock is cleared)")

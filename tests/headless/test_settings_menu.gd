@@ -15,7 +15,6 @@ var _save: Node
 func before_each() -> void:
 	Config.reset()
 	CarFixtures.install()
-	RegionStageFixtures.install()
 	_save = get_node("/root/Save")
 	_clean()
 	_save.profile_path = TEST_PATH
@@ -29,7 +28,6 @@ func after_each() -> void:
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	Config.reset()
 	CarFixtures.restore()
-	RegionStageFixtures.restore()
 
 
 func _clean() -> void:
@@ -244,7 +242,7 @@ func test_wipe_from_a_paused_tree_unpauses_on_the_way_to_the_title() -> void:
 	await get_tree().process_frame
 	assert_false(get_tree().paused, "the scene change leaves the tree unpaused")
 	if Scenes.block_real_changes:
-		assert_eq(Scenes.last_blocked_path, Scenes.hub_path(), "heading for the title")
+		assert_eq(Scenes.last_blocked_path, Scenes.TITLE, "heading for the title")
 
 
 # --- Dev tooling is not offered to players -------------------------------------------
@@ -254,7 +252,7 @@ func test_wipe_from_a_paused_tree_unpauses_on_the_way_to_the_title() -> void:
 # category list, and `dev_tools_override` is the seam that decides what goes in it.
 
 func test_players_do_not_see_the_developer_settings_pages() -> void:
-	# Benchmark / Dev / Seed lab are dev tooling — a release build must not offer them.
+	# Benchmark / Dev are dev tooling — a release build must not offer them.
 	# The pages still exist (show_* still works); only the way in is gone.
 	SettingsMenu.dev_tools_override = 0
 	var menu := SettingsMenu.new()
@@ -267,7 +265,6 @@ func test_players_do_not_see_the_developer_settings_pages() -> void:
 
 	assert_false(joined.contains("BENCHMARK"), "no Benchmark entry for players")
 	assert_false(joined.contains("DEV"), "no Dev entry for players")
-	assert_false(joined.contains("SEED LAB"), "no Seed lab entry for players")
 	assert_true(joined.contains("AUDIO"), "the real settings are still there")
 	assert_true(joined.contains("ACCOUNT"), "and so is the account page")
 	assert_true(joined.contains("RESET PROGRESS"),
@@ -283,4 +280,3 @@ func test_developer_builds_still_reach_the_dev_pages() -> void:
 	SettingsMenu.dev_tools_override = -1
 
 	assert_true(joined.contains("BENCHMARK"))
-	assert_true(joined.contains("SEED LAB"))

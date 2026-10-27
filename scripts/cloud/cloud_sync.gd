@@ -103,7 +103,11 @@ func flush() -> void:
 #   "applied"      — cloud was ahead and local was clean; downloaded
 #   "conflict"     — both moved on; conflict_detected was emitted
 #   "newer_schema" — the cloud was written by a newer build; refused
+#   "obsolete"     — the cloud was written before the last schema change; overwritten with local
 func pull() -> Dictionary:
+	# Never compare against this device's own upload while it is still in flight.
+	while _busy:
+		await get_tree().process_frame
 	if not _can_sync():
 		return {"ok": false, "state": "offline", "error": "Not signed in."}
 	_set_status(Status.WORKING, "Checking…")
@@ -136,6 +140,15 @@ func pull() -> Dictionary:
 			"error": "Cloud save needs a newer version of the game."}
 
 	var remote_revision := int(remote.get("revision", 0))
+	if int(remote.get("schema_version", 0)) < Save.SCHEMA_VERSION:
+		# An old profile resets whatever its version (decision 34): there is nothing in it this
+		# build can load, so it is no side of a conflict. Replace it, above its revision.
+		Save.profile["cloud_revision"] = remote_revision
+		Save.profile["cloud_uid"] = auth.uid
+		pending = true
+		var replaced := await push(true)
+		return {"ok": replaced.ok, "state": "obsolete", "error": replaced.get("error", "")}
+
 	var agreed_revision := _agreed_revision()
 	var local_moved := Save.has_unsynced()
 
@@ -205,6 +218,8 @@ func _push_inner() -> Dictionary:
 	var fresh := await auth.ensure_fresh_token()
 	if not fresh.ok:
 		return _fail_from_auth(fresh)
+	if not _can_sync():  # the benchmark may have swapped its throwaway world in meanwhile
+		return {"ok": false, "error": "Not syncing now."}
 
 	var revision := _agreed_revision() + 1
 	var stamp := Time.get_datetime_string_from_system(true)
@@ -346,7 +361,7 @@ func apply_remote(remote: Dictionary, backup := false) -> Dictionary:
 		Save.write_conflict_backup()
 	var accepted := Save.adopt_profile(parsed)
 	if not accepted:
-		return {"ok": false, "error": "Cloud save needs a newer version of the game."}
+		return {"ok": false, "error": "Cloud save is from a different version of the game."}
 	Save.profile["cloud_revision"] = int(remote.get("revision", 0))
 	Save.profile["cloud_uid"] = auth.uid
 	pending = false
@@ -435,8 +450,9 @@ func _parse_profile(blob: String) -> Variant:
 	return json.data
 
 
+# Off during a benchmark: its throwaway world sits in Save.profile and must never upload.
 func _can_sync() -> bool:
-	return auth != null and rest != null and auth.is_signed_in()
+	return auth != null and rest != null and auth.is_signed_in() and not Benchmark.active
 
 
 func _on_debounce() -> void:

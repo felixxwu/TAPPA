@@ -68,7 +68,7 @@ func test_apply_overrides_turns_the_hud_off() -> void:
 func test_apply_overrides_with_everything_on_keeps_features_enabled() -> void:
 	var cfg: GameConfig = Config.data
 	Benchmark.apply_overrides(cfg)
-	for field in ["vegetation_enabled", "spectators_enabled", "signs_enabled",
+	for field in ["vegetation_enabled", "spectators_enabled",
 			"distant_terrain_enabled", "road_markings_enabled", "tire_marks_enabled",
 			"wheel_particles_enabled", "engine_smoke_enabled"]:
 		assert_true(bool(cfg.get(field)), "%s stays on with all toggles on" % field)
@@ -80,7 +80,7 @@ func test_toggles_off_disable_their_config_switches() -> void:
 	for t in Benchmark.TOGGLES:
 		Benchmark.set_option(String(t["key"]), false)
 	Benchmark.apply_overrides(cfg)
-	for field in ["vegetation_enabled", "spectators_enabled", "signs_enabled",
+	for field in ["vegetation_enabled", "spectators_enabled",
 			"distant_terrain_enabled", "road_markings_enabled", "tire_marks_enabled",
 			"wheel_particles_enabled", "engine_smoke_enabled"]:
 		assert_false(bool(cfg.get(field)), "%s is off when its toggle is off" % field)
@@ -220,6 +220,22 @@ func test_a_run_drives_a_throwaway_world_and_hands_back_the_players_profile() ->
 	Benchmark.end()
 	assert_eq(Save.profile, before, "the player's profile comes back untouched")
 	assert_false(Save.save_disabled, "saving is switched back on")
+
+
+# The pause menu's Quit during a run ends the benchmark (the real profile comes back) and goes to
+# the title; and the world the run scene held is marked replaced, so its exit save writes nothing.
+func test_quitting_a_run_from_the_pause_menu_ends_the_benchmark() -> void:
+	Save.save_disabled = false
+	var before := Save.profile.duplicate(true)
+	Benchmark.begin()
+	var g := WorldSession.generation
+	var pause: PauseMenu = autofree(PauseMenu.new())
+	add_child(pause)
+	pause.quit_to_title()
+	assert_false(Benchmark.active)
+	assert_eq(Save.profile, before)
+	assert_eq(Scenes.last_blocked_path, Scenes.TITLE)
+	assert_gt(WorldSession.generation, g)
 
 
 func test_a_sweep_config_switches_off_the_toggles_it_names_and_resets_the_rest() -> void:

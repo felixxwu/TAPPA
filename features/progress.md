@@ -3,10 +3,10 @@
 > **"Progress" here means DISTANCE ALONG ONE STAGE, not career progress.** This file owns
 > `TrackProgress` — how far the car has driven down the generated road, and the off-track
 > auto-reset. It owns **nothing** about the player's career.
-> Looking for how many rallies the player has finished or podiumed, stars, unlocks, or
+> Looking for what the player has finished, unlocks, or
 > anything persisted between sessions? That is
 > [save-persistence.md](save-persistence.md) (the profile and its API) and
-> the deleted star economy (the star ledger). There is no career "progress"
+> [world-session.md](world-session.md). There is no career "progress"
 > module; the profile IS the career state.
 
 `TrackProgress` (`scripts/track_progress.gd`, `class_name TrackProgress extends
@@ -44,9 +44,7 @@ Each `_physics_process` tick:
   best ever reached, advance `_best_offset` (the monotonic progress counter) and
   recompute the recovery pose. Driving backwards lowers the live offset but never
   `_best_offset`.
-- **Beyond** it: progress simply doesn't accrue, and any corner-cut incident in
-  flight is closed (`_close_cut_incident`) so it can't coalesce with the next one
-  across the excursion. Nothing is reset.
+- **Beyond** it: progress simply doesn't accrue. Nothing is reset.
 - Then `_update_off_road` runs the off-road clock (below), and if that fired a
   reset the stuck watchdog is skipped for the tick.
 
@@ -86,20 +84,6 @@ you get N seconds off the road, and how far out you went never enters into it.
 `_off_road_time` is zeroed on every path that puts the car back where it belongs:
 `setup()`, `mark_start()` (so time spent being staged onto a grid slot isn't the
 player's), the water / off-the-world reset, and the off-road reset itself.
-
-### HUD warning
-
-`off_road_time()` and `off_road_seconds_left()` (‑1.0 when nothing is pending) are
-the readouts. `StageManager._update_off_road_warning` polls them each frame while
-the stage is **RUNNING** and drives `Hud.show_off_road` / `hide_off_road` — a
-centre-screen red `OFF TRACK  n.n` counting down to the reset
-([hud.md](hud.md)). It's held back by `off_road_warning_after_s` so everyday rally
-excursions (running wide, landing a jump on the verge) don't flash a warning every
-corner. Polled rather than signal-driven because it mirrors a continuously
-changing value, not an event. Only while RUNNING: `TrackProgress` keeps its clock
-in every phase — a car that crosses the line off-road is still recovered — but a
-warning under the finish panel or during the countdown is noise the player can't
-act on, so `_complete()` and `setup()` take it down.
 
 ### Consequence: the play area is no longer hard-bounded
 
@@ -195,7 +179,6 @@ off-track recovery now share one code path.
 | `off_track_reset_enabled` | Master switch for the off-track auto-reset (progress tracking runs regardless). While off, the off-road clock doesn't run at all. |
 | `off_road_margin_m` | Metres past the road EDGE (`track_width * 0.5`) before the car counts as off the road. Keeps a wheel clipping the verge, or a tail-out slide, from starting the clock. |
 | `off_road_reset_timeout_s` | Seconds continuously off the road before the reset fires. **This is the off-track reset.** |
-| `off_road_warning_after_s` | Seconds off the road before the HUD shows `OFF TRACK` + the countdown. Must be below the timeout or the warning never appears. |
 
 Stuck-recovery knobs live in the **Recovery** group: `recovery_enabled`,
 `recovery_timeout_s`, `recovery_speed_mps`, `recovery_depth_m`,
@@ -229,38 +212,17 @@ issuing roughly **26,000 `sample_baked` engine calls per second** at 60 Hz over 
 that is static for the whole event. The table turns each into a `PackedVector2Array`
 index plus a `lerp`.
 
-> **The search WINDOW was deliberately left wide.** Narrowing it to a few metres around
-> the previous offset was considered and **rejected**: `_accrue_cut` detects a corner cut
-> by seeing the nearest-point offset leap tens of metres in a single tick when the car
-> crosses a hairpin's neck. A narrow window cannot see that jump, so corner-cutting
-> penalties would silently stop being billed. The same width is what lets the off-track
-> leash re-acquire after a big excursion. Optimise the per-probe cost, never the window.
-
-## Corner-cutting penalty
-
-`TrackProgress` also detects **corner cutting** off the same per-tick advance:
-it watches how far the car's nearest centerline offset jumps in a single tick,
-and bills the excess when that jump exceeds `cut_jump_threshold_m` — the
-signature of shortcutting a corner's neck, where the nearest point flips to the
-far leg and progress leaps tens of metres at once. Exposed via `cut_excess_m()`,
-`cut_penalty_s()`, and the
-`cut_billed(incident_s, total_s)` signal (fired once per coalesced run of cut
-ticks); progress itself is never nullified. Both accumulators reset in
-`setup()` alongside the rest of progress state. See
-[corner-cutting.md](corner-cutting.md).
-
 ## Readouts
 
-`progress_offset()`, `baked_length()`, `finish_offset()`, and `progress_percent()`
-(0..1) are exposed for the HUD and the stage-completion gate ([stage.md](stage.md),
+`progress_offset()`, `baked_length()`, `finish_offset()`, `off_road_time()` and `progress_percent()`
+(0..1) are exposed for the stage-completion gate ([stage.md](stage.md),
 which fires at 100% — coinciding with the finish arch). **100% is the finish
 offset, not the curve end.** The rendered road now continues past the finish for a
 short straight **runoff** ([track.md](track.md)) so the car has room to skid to a
 stop, so the centerline is longer than the timed track. `setup(centerline, car,
 terrain, finish_offset)` records that finish offset (defaults to the baked length
 when omitted / negative); `progress_percent()` measures the span
-`_origin_offset → _finish_offset`, and `jump_to_finish()` (the dev F cheat) pins to
-the finish offset. Driving into the runoff past the finish stays clamped at 1.0.
+`_origin_offset → _finish_offset`. Driving into the runoff past the finish stays clamped at 1.0.
 `progress_percent()` is measured **from the start line, not the curve origin**:
 the progress centerline has a straight lead-in *behind* the start (so the queue
 car sits on road), which would otherwise read several % before the off. It is
@@ -268,9 +230,7 @@ anchored at `_origin_offset` — seeded at the spawn in `setup()` and re-anchore
 the car's on-the-line position by `mark_start()`, which `StageManager` calls at the
 off — so the start reads exactly **0%**. The windowed search also samples its **far
 edge exactly**, so the very end of the curve is reachable and `progress_percent()`
-can hit 1.0 (a 1 m step would otherwise cap it ~1 m short). The `TrackProgress`
-node feeds the `StageManager` (pace deltas, stage completion); there is no
-longer an on-screen percentage readout on the HUD.
+can hit 1.0 (a 1 m step would otherwise cap it ~1 m short). The `TrackProgress` node feeds the `StageManager` (stage completion).
 
 ## Tests
 
@@ -289,10 +249,7 @@ road zeroes the clock, so two separate near-timeout excursions don't add up; the
 countdown readout falls while off the road and reads ‑1 on it; and the whole thing can
 be disabled. All of these set a **synthetic** timeout and derive the off-road X from
 the live `track_width` + `off_road_margin_m`, so retuning any of those keeps them
-valid. `test_stage_manager.gd` covers the HUD relay (grace period, hidden on returning
-to the road, cleared at the finish) and `test_hud.gd` the label itself
-(`off_road_text` formatting, show/hide, no self-fade).
-
+valid.
 The **stuck-recovery watchdog**: a stationary car
 that's flooring it / flipped / in a pit auto-recovers after the timeout (and not
 before), a parked upright car or a moving car never does, recovery can be disabled,

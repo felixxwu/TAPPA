@@ -11,7 +11,7 @@ there is no manual upload step in the normal loop.
 
 | Job | Name in the Actions tab | Ships to |
 |-----|-------------------------|----------|
-| `verify-caches` | Verify track + opponent lockfiles are fresh | nothing — it's the gate |
+| `compile-check` | Every script and scene compiles | nothing — it's the gate |
 | `export-web` | Export & deploy web build | itch.io channel `html5` |
 | `export-android` | Export & deploy Android APK | itch.io channel `android` (sideload) |
 | `export-windows` | Export & deploy Windows .exe | itch.io channel `windows` |
@@ -19,7 +19,7 @@ there is no manual upload step in the normal loop.
 | `deploy-pages` | Deploy /docs to GitHub Pages | GitHub Pages (a redirect page + `version.json`, *not* the game) |
 | `deploy-rules` | Deploy Firestore rules | Firebase, only when the rules changed |
 
-`verify-caches` gates the four export/publish jobs via `needs`; those four then
+`compile-check` gates the four export/publish jobs via `needs`; those four then
 run in parallel. `deploy-pages` waits on the three **itch** jobs — not because it
 ships anything, but because it publishes `docs/version.json`, the document the
 native builds' update check reads, and announcing a build whose itch upload failed
@@ -33,11 +33,7 @@ all, so a rules failure can't hold up a game release — see
 [cloud-save.md](cloud-save.md) → *Deploying the rules* for why `deploy-rules`
 lives here and how its change-detection works.
 
-The gate re-checks the committed track lockfile (`data/track_cache.json`) by
-**hash only** — it never regenerates it, so a stale lockfile fails the release rather
-than being silently papered over. (The opponent lockfile and its verifier job are gone:
-the rival field is drawn against the player's car rating, so it is generated live.) See
-[track.md](track.md) → *Turn cache*.
+The gate loads every script and scene with the autoloads present (`tools/compile_check.tscn`), so a parse error fails the release before anything is exported.
 
 Each export job builds through the same `build_*.sh` script you'd run locally
 (`build_web.sh`, `build_android.sh`, `build_windows.sh`, `build_android_play.sh`),

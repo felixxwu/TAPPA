@@ -34,17 +34,15 @@ func _clean() -> void:
 
 
 func test_default_profile_is_empty_and_valid() -> void:
-	assert_false(_save.has_save(), "no file on disk yet -> has_save() false")
 	assert_eq(_save.profile["schema_version"], _save.SCHEMA_VERSION, "default carries current schema")
 	assert_eq(_save.profile["cars"].size(), 0, "no owned cars")
-	assert_false(_save.profile["starter_picked"], "starter not yet picked")
 
 
 func test_round_trip_survives_save_and_reload() -> void:
 	var car: Dictionary = _save.grant_car("fx_light_rwd")
 	_save.set_tuning(car["instance_id"], {"brake_bias": 0.55})
 	_save.save_now()
-	assert_true(_save.has_save(), "file written to disk")
+	assert_true(FileAccess.file_exists(TEST_PATH), "file written to disk")
 
 	# Wipe in-memory state, reload from disk, assert it came back intact.
 	_save.profile = {}
@@ -77,25 +75,9 @@ func test_instance_ids_are_unique_per_grant() -> void:
 	assert_eq(_save.profile["cars"].size(), 2, "both instances owned")
 
 
-func test_grant_car_seeds_hp_from_library_max() -> void:
-	var car: Dictionary = _save.grant_car("fx_awd")
-	assert_almost_eq(float(car["hp"]), float(CarLibrary.by_id("fx_awd")["max_hp"]), 0.001,
-		"new car starts at the library max_hp")
-
-
 # --- The meta shop: buying a car (todo/roguelike-pivot.md decision 28) -----------
 
 # --- The meta shop: boost levels (todo/roguelike-pivot.md decision 42) -----------
-
-func test_sanitise_backfills_wheel_toe_on_old_saves() -> void:
-	# A pre-feature owned car has no wheel_toe key; load must backfill it straight.
-	_save.profile["cars"] = [{
-		"instance_id": 7, "model_id": "fx_light_rwd", "hp": 500.0,
-		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {},
-	}]
-	_save.profile = _save._sanitise(_save.profile)
-	assert_eq(_save.profile["cars"][0]["wheel_toe"], [0.0, 0.0, 0.0, 0.0], "backfilled straight")
-
 
 func _rng(seed_value: int) -> RandomNumberGenerator:
 	var r := RandomNumberGenerator.new()
@@ -192,9 +174,9 @@ func test_unknown_model_id_dropped_on_load() -> void:
 		"schema_version": _save.SCHEMA_VERSION,
 		"cars": [
 			{"instance_id": 1, "model_id": "fx_light_rwd", "hp": 800.0,
-				"installed_upgrades": [], "tuning": {}},
+				"tuning": {}},
 			{"instance_id": 2, "model_id": "ghost_car", "hp": 1.0,
-				"installed_upgrades": [], "tuning": {}},
+				"tuning": {}},
 		],
 	}))
 	f.close()
@@ -232,24 +214,40 @@ func test_reset_new_game_overwrites_with_fresh_profile() -> void:
 	_save.grant_car("fx_light_rwd")
 	_save.reset_new_game()
 	assert_eq(_save.profile["cars"].size(), 0, "new game clears owned cars")
-	assert_true(_save.has_save(), "new game written to disk immediately")
+	assert_true(FileAccess.file_exists(TEST_PATH), "new game written to disk immediately")
 
 
-# --- Drivetrain conversion: no longer a money sink ---------------------------------
-#
-# Decision 52 (a per-car purchase, Save.buy_drive_mode) is superseded: a conversion is now
-# a run-scoped mid-run upgrade picked between stages (RunSession.choose_drivetrain), so
-# there is nothing left to buy or persist on the profile — see
-# tests/headless/test_run_session.gd for the coverage that replaces this block.
-
-func test_drivetrain_override_defaults_for_legacy_car() -> void:
-	# A car dict without the key (an older save) reads as stock via .get default.
-	var legacy := {"instance_id": 1, "model_id": "x", "installed_upgrades": [], "disabled_upgrades": []}
-	assert_eq(int(legacy.get("drivetrain_override", -1)), -1, "missing key reads as stock")
+# The wipe is uploaded (CloudSync.push_wipe) at the next revision, so it must remember which one.
+func test_reset_new_game_keeps_the_cloud_bookkeeping() -> void:
+	_save.profile["cloud_revision"] = 12
+	_save.profile["cloud_uid"] = "someone"
+	watch_signals(_save)
+	_save.reset_new_game()
+	assert_eq(int(_save.profile["cloud_revision"]), 12)
+	assert_eq(_save.profile["cloud_uid"], "someone")
+	assert_signal_emitted(_save, "replaced", "anything holding the old world hears it is gone")
 
 
-# --- Selected car: DELETED with the garage lift (nothing selects a car any more —
-# the hub fields whichever car the player confirms; RunSession holds the run's own car).
+# A write whose last rename failed leaves the newest copy in .tmp; it beats the older .bak.
+func test_a_stranded_tmp_is_loaded_before_the_bak() -> void:
+	var tmp := FileAccess.open(TEST_PATH + ".tmp", FileAccess.WRITE)
+	tmp.store_string(JSON.stringify({"schema_version": _save.SCHEMA_VERSION, "created_utc": "tmp"}))
+	tmp.close()
+	var bak := FileAccess.open(TEST_PATH + ".bak", FileAccess.WRITE)
+	bak.store_string(JSON.stringify({"schema_version": _save.SCHEMA_VERSION, "created_utc": "bak"}))
+	bak.close()
+	_save.load_or_new()
+	assert_eq(_save.profile["created_utc"], "tmp")
+
+
+# Churn (the car's place, the map) is saved to disk but not announced to the cloud.
+func test_a_quiet_save_writes_without_marking_the_profile_unsynced() -> void:
+	_save.mark_synced()
+	watch_signals(_save)
+	_save.save(false)
+	assert_signal_not_emitted(_save, "profile_changed")
+	assert_false(_save.has_unsynced())
+	assert_false(_save._debounce.is_stopped(), "the disk write is still on its way")
 
 
 # --- Cloud-save bookkeeping ---------------------------------------------------
@@ -323,26 +321,28 @@ func test_adopting_a_profile_runs_it_through_the_shared_load_path() -> void:
 	# A downloaded profile gets the same pruning a local file does — one
 	# validation path, so cloud data can never be less checked than disk data.
 	var incoming: Dictionary = _save._default_profile()
-	incoming["starter_picked"] = true
-	incoming["cars"] = [{"instance_id": 1, "model_id": "a_model_that_does_not_exist", "hp": 50}]
+	incoming["created_utc"] = "from_cloud"
+	incoming["cars"] = [{"instance_id": 1, "model_id": "a_model_that_does_not_exist"}]
+	watch_signals(_save)
 	assert_true(_save.adopt_profile(incoming))
-	assert_true(_save.profile["starter_picked"])
+	assert_eq(_save.profile["created_utc"], "from_cloud")
+	assert_signal_emitted(_save, "replaced")
 	assert_eq((_save.profile["cars"] as Array).size(), 0, "unknown models are pruned as on load")
 
 
 func test_adopting_a_newer_profile_is_refused_and_changes_nothing() -> void:
-	_save.profile["starter_model_id"] = "keep_me"
+	_save.profile["created_utc"] = "keep_me"
 	var incoming: Dictionary = _save._default_profile()
 	incoming["schema_version"] = _save.SCHEMA_VERSION + 1
 	assert_false(_save.adopt_profile(incoming))
-	assert_eq(_save.profile["starter_model_id"], "keep_me",
+	assert_eq(_save.profile["created_utc"], "keep_me",
 		"a profile we cannot read must not replace one we can")
 
 
 func test_the_conflict_backup_is_separate_from_the_rolling_bak() -> void:
 	# The ordinary .bak is consumed by the very next write; a conflict backup has
 	# to outlive that to be worth anything.
-	_save.profile["starter_model_id"] = "replaced"
+	_save.profile["created_utc"] = "replaced"
 	_save.write_conflict_backup()
 	_save.save_now()
 	_save.save_now()

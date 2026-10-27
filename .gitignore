@@ -77,3 +77,11 @@ __pycache__/
 /tools/cabin_capture_*.png.import
 /tools/biome_fade_capture_*.png
 /tools/biome_fade_capture_*.png.import
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Capture-tool output
+/tools/*.png
+/tools/*.png.import

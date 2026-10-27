@@ -2,11 +2,8 @@ class_name UpgradeFixtures
 extends RefCounted
 # Synthetic BOOST entries for tests, mirroring CarFixtures' role for cars.
 #
-# This used to be a synthetic upgrade CATALOGUE, installed over UpgradeLibrary.UPGRADES
-# through the Registry seam. There is no catalogue any more: the persistent parts model is
-# deleted (todo/roguelike-pivot.md -> "What gets deleted") and what survives is the effects
-# FUNNEL — UpgradeLibrary.EFFECTS / _cfg_set / apply / effective_meta / grip_meta, driven by
-# `active_effects`, which reads a car's `boosts` list.
+# The effects FUNNEL (UpgradeLibrary.EFFECTS / _cfg_set / apply) is driven by `active_effects`,
+# which reads a car's `boosts` list.
 #
 # So there is nothing to install and nothing to restore: a test that wants an effect in
 # force puts one of these entries on the owned-car dict it hands to the code under test.
@@ -16,7 +13,7 @@ extends RefCounted
 # them here rather than borrowing whatever the game currently ships: install_turbo,
 # install_supercharger, install_nitrous (write_fields), mass_mult (both a reduction < 1 and
 # an increase > 1), mass_mult_floor (the "mult_floor" op — a mult() clamped at a floor
-# field), downforce_* (the "add" op, feeds_grip), shift_time_set (the "set" op —
+# field), downforce_* (the "add" op), shift_time_set (the "set" op —
 # an absolute value, not a scaling), tire_grip_mult (the one row whose meta field and live-
 # config fields differ — see UpgradeLibrary._cfg_fields) and tire_snow_grip_mult /
 # tire_tarmac_grip_mult (the surface-dependent compound, whose meta and config names agree).
@@ -42,14 +39,12 @@ const EFFECTS := {
 		"engine_supercharger_whine_gain": 0.06,
 	}},
 	# The "set" shape — an ABSOLUTE config value replacing the baseline rather than scaling
-	# it — on a field that feeds neither power-to-weight nor grip, so a test can tell
-	# "apply wrote it" from "effective_meta / grip_meta mirrored it".
+	# it.
 	"fx_gearbox": {"shift_time_set": 0.1},
-	# The "add" shape, feeds_grip: downforce at both axles.
+	# The "add" shape: downforce at both axles.
 	"fx_aero": {"downforce_front": 3, "downforce_rear": 3},
 	# The `cfg_fields` shape: ONE meta field (tire_compound) standing for TWO live-config
-	# fields (the per-axle wheel_friction_slip_*), and the only feeds_grip "mult" row — so
-	# grip_meta's multiply arm has something to walk.
+	# fields (the per-axle wheel_friction_slip_*).
 	"fx_tires": {"tire_grip_mult": 1.15},
 	# The SURFACE-DEPENDENT tyre shape, whose meta and config field names coincide.
 	# Deliberately trades in BOTH directions (a bonus above 1 and a penalty below it) — the
@@ -59,7 +54,7 @@ const EFFECTS := {
 		"tire_snow_grip_mult": 1.2,
 		"tire_tarmac_grip_mult": 0.8,
 	},
-	# mass_mult in both directions: feeds_pw, so effective_meta must mirror it.
+	# mass_mult in both directions.
 	"fx_lightweight": {"mass_mult": 0.80},
 	"fx_ballast": {"mass_mult": 1.3},
 	# The "mult_floor" shape (Lightweight parts): a proportional cut clamped at

@@ -10,10 +10,7 @@ In free roam each **biome ring** of the island wears a region: its look, its han
 loot / weather of that ring ([free-roam.md](free-roam.md) → *Biomes*). Region unlock gating,
 region pages and region runs are deleted.
 
-**Adding a region:** an entry in `RegionLibrary.REGIONS`, a place in `ring_regions` for free
-roam to wear it, and — because the dev stage and its tests still draw from it — an 8×3 stage
-grid keyed with its id in `scripts/region_stage_library.gd`
-(`test_region_assets.gd` → `test_every_region_has_authored_stages` guards that).
+**Adding a region:** an entry in `RegionLibrary.REGIONS` and a place in `ring_regions` for free roam to wear it.
 
 **A region that is a variant of another inherits, it does not clone.** Author
 `look_from` plus only the keys that differ — see
@@ -36,9 +33,9 @@ flooded) and `snow` ("The Alps" — see [snow-region.md](snow-region.md)).
 **A region is not look-only.** `snow` also carries HANDLING: per-surface grip overrides, a
 deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS` (exactly as
 `water_level` does) because they are consumed as handling — by `BiomeDirector.apply_handling`
-in free roam and `StageConfig.apply_event_config` on the dev stage — not by the look pass.
-Each is a `has_*` / `*_of` pair for the same value-vs-absent reason `water_level_of`
-documents, and none is inherited through `look_from`.
+in free roam — not by the look pass.
+Each is a `has_*` / `*_of` pair (GDScript has no null, so "authors nothing" must never be
+confused with a real value), and none is inherited through `look_from`.
 
 ## `RegionLibrary` (`scripts/region_library.gd`)
 
@@ -161,14 +158,9 @@ for two different reasons:
   longer owns a map texture of its own. (Before the four-corner map, `greece`
   authored its own `map_image` and the HQ table swapped textures per viewed
   region — that machinery is gone; see "One world map, no table swap" below.)
-- **`water_level`** — handled as its own field (`water_level_of` /
-  `has_water_level`, not `look_of`), because the look is applied to the
-  driven world *after* track generation, whereas the waterline is needed *by*
-  track generation (`TrackGenParams.resolve_water_level` runs before the world
-  exists to theme). Folding it into `look_of`'s override-dict would put it a
-  step too late in the pipeline. This is also why `look_from` inheritance
-  explicitly does NOT extend to `water_level` (see below) — the whole point of
-  `home_coast` is "same look, own (much higher) waterline."
+- **`water_level`** — authored per region as plain data, not a `LOOK_KEYS` entry and not
+  inherited through `look_from` (`home_coast` is "same look, own waterline"). Nothing in
+  production reads it today: the waterline the world uses is `cfg.track_water_level_m`.
 
 ### Checkpoint spacing (`rest_stop_spacing_of`)
 
@@ -181,29 +173,6 @@ wearing this region (`RoadSites.rest_spacing_at`). A region without it uses
 `"road_surface": "tarmac"` makes a region's free-roam roads paved (default `"gravel"`). Like
 `water_level`, it is not inherited through `look_from`. Free roam reads it per ring
 (`RoadTerrain.tarmac_weight`, see [free-roam.md](free-roam.md) → "Biomes").
-
-### Region waterline (`water_level_of` / `has_water_level`)
-
-Each region may author its own `water_level` in metres. Resolution order —
-implemented in `TrackGenParams.resolve_water_level(event, base)` — is: **the
-event's own `water_level` (if the caller seated one) → the event's region's
-`water_level_of` (if `has_water_level` is true) → the `base` GameConfig
-baseline** passed in by the caller.
-
-`water_level_of(region_id)` returns `0.0` for a region that authors no
-waterline (including an unknown id) — **`0.0` is not a sentinel meaning
-"unset,"** it is a real waterline that would be wrong to apply. Every caller
-MUST gate on `has_water_level(region_id)` before trusting the return value;
-never call `water_level_of` and treat a `0.0` result as "no override." This is
-the same trap a `null`-less language always has for "value vs. absent" — the
-API is split into two functions specifically so callers can't skip the check
-by accident.
-
-`look_from` inheritance (below) deliberately does **not** extend to
-`water_level` — `home_coast` authors its own `water_level` directly, rather
-than inheriting home's and needing a separate override to raise it. If
-`water_level` were folded into the inherited block, "same look, much higher
-water" would need an override on top of an inherited default, for no benefit.
 
 ### `look_from` — one-level look inheritance
 
@@ -366,9 +335,6 @@ scratch on every stage. See [weather.md](weather.md) → "Look" and
    `cfg.road_marking_params()` and, if `_current_region_look()` carries a
    `road_marking_color`, replaces the params' `"color"` with it — so Greece paints
    yellow lane lines while home keeps the config off-white.
-6. Waterline theming happens earlier still, at track *generation* rather than
-   at `_ready` scene-theming time — see `TrackGenParams.resolve_water_level`
-   under "Region waterline" above, not this list.
 
 This is the single place the region look reaches the dev stage.
 
@@ -376,8 +342,6 @@ This is the single place the region look reaches the dev stage.
 
 `tests/headless/test_region_library.gd` — `look_of`'s override-vs-omit and `look_from`
 inheritance against a **synthetic** region set installed via `RegionLibrary.override_for_test`,
-`has_water_level` / `water_level_of`, the `tree_mix` / `spawns_bush_mesh` defaults, plus one
-shipped-roster contract test — `test_lakes_region_has_a_higher_water_level_than_every_other_region`
-— that asserts the RELATIONSHIP `home_coast` is designed around, never the numbers.
+and the `tree_mix` / `spawns_bush_mesh` defaults.
 `tests/headless/test_region_assets.gd` — every authored `res://` path resolves.
 `tests/headless/test_free_roam_biomes.gd` — rings wearing regions in free roam.

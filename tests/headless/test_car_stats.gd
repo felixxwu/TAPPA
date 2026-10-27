@@ -64,10 +64,7 @@ func test_each_spec_is_sane() -> void:
 		assert_lte(spec["track"], spec["body"]["x"] + 0.1, who + " track within body width")
 		# Persistence + progression metadata (see save-persistence.md).
 		assert_true(spec["id"] is String and not spec["id"].is_empty(), who + " has a stable string id")
-		assert_true(spec["country"] is String and not spec["country"].is_empty(), who + " has a country tag")
-		assert_true(spec["car_type"] is String and not spec["car_type"].is_empty(), who + " has a car_type tag")
 		assert_gt(spec["max_hp"], 0.0, who + " has positive max_hp")
-		assert_gt(spec["reward_tier"], 0, who + " has a reward_tier")
 
 
 func test_car_ids_are_unique_and_stable_lookups_work() -> void:
@@ -85,19 +82,6 @@ func test_car_ids_are_unique_and_stable_lookups_work() -> void:
 	assert_true(CarLibrary.by_id("nope").is_empty(), "unknown id -> empty dict")
 
 
-
-
-func test_horsepower_is_consistent_with_power_to_weight() -> void:
-	# horsepower and power_to_weight both come from peak_power_kw, so for any car
-	# the identity horsepower == p/w · mass · (kW→hp) must hold. Synthetic entry:
-	# torque/redline supplied directly so no catalogue engine is needed.
-	var mass := 1200.0
-	var entry := {"peak_torque": 400.0, "redline": 6000.0, "mass": mass}
-	var expected := CarLibrary.power_to_weight(entry) * mass \
-		* CarLibrary.KW_KG_TO_HP_TONNE / 1000.0
-	assert_almost_eq(CarLibrary.horsepower(entry), expected, 0.001,
-		"horsepower is peak power scaled by the shared kW→hp factor")
-	assert_gt(CarLibrary.horsepower(entry), 0.0, "a real engine makes positive power")
 
 
 func test_horsepower_scales_with_torque() -> void:

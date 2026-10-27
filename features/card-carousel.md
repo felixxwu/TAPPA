@@ -54,13 +54,9 @@ title's starter choice and the rest stop's Garage. Tests: `test_car_card_preview
 Cache hygiene: `get_or_build` always hands back an UNPARENTED preview — it pulls the node out of
 whatever still holds it (the graveyard, or a page that was `queue_free()`d without
 `park_previews`, which would otherwise make the caller's `add_child` fail). `drop_owned()` frees
-every `owned:*` entry and runs on `WorldSession.world_changed` (New World replaces all owned cars,
-so the old instance ids are never asked for again); catalogue previews are kept.
-
-> **History note.** The sections below are the widget's design record, written while the
-> roguelike hub (`hub_shell.gd`, deleted) was its only caller. The widget behaviour they describe
-> is current; where they name `hub_shell.gd`, `HubShell._show` or its pages, read "the
-> `CardUI.card_page` / `card_list` callers in the table above".
+every `owned:*` entry and runs on `WorldSession.world_changed` (any replaced world — New World, a
+cloud download, a wipe, the benchmark ending — brings other owned cars, whose instance ids can
+repeat the old ones); catalogue previews are kept.
 
 ## Shape
 
@@ -251,11 +247,11 @@ in lockstep with their card with no separate bookkeeping.
 test/host that finishes the animation before the deferred call fires would see its card
 yanked back to invisible and re-faded a frame later.
 
-**This restarts on its own, with no "already shown" flag to track.** Every hub page
-rebuilds a BRAND NEW `CardCarousel` on each `HubShell._show()` call (`build_carousel`
-creates one via `CardCarousel.new()`, and every card is added fresh via `add_card`) — so
-pressing Back from a sub-menu back to a carousel page runs through `_show()` again, which
-means a genuinely new carousel with every `Card.entrance` starting at 0. The animation
+**This restarts on its own, with no "already shown" flag to track.** Every card
+page builds a BRAND NEW `CardCarousel` (`build_carousel` creates one via `CardCarousel.new()`,
+and every card is added fresh via `add_card`) — so pressing Back from a sub-menu to a card
+page rebuilds the page, which means a genuinely new carousel with every `Card.entrance`
+starting at 0. The animation
 living entirely on per-card state (not on the page or on some "has this carousel ever
 been shown" latch) is what makes restarting the default rather than something a caller
 has to opt into.
@@ -364,12 +360,9 @@ no compositing node of any kind required, so nothing renderer-specific to trip o
 `MenuPage`'s body box deliberately hugs its content and sits with a wide gap to the
 screen edge for every OTHER page (menu_page.gd rule 1) — right for a settings page or a
 row list, wrong for a carousel that is supposed to read as a strip of cards running the
-width of the screen. `HubShell._is_carousel_view` gives the five carousel pages
-(MAIN/REGION/CAR/SHOP/SKILLS) their own small `_CAROUSEL_PAGE_MARGIN` (8.0, vs. every other
-page's 24.0) instead of that wide margin, and `_build_carousel` sizes the carousel to the
-current logical frame width via `UITheme.layout_frame_size(_page, ...).x` (the same
-"how much room do I actually have" call `RallyDetail.body_width` uses), then feeds that
-through `_page.set_body_width(...)` — otherwise the box would still hug back down to
+width of the screen. `CardUI.build_carousel` gives a card page its own small `CAROUSEL_PAGE_MARGIN` instead of that wide margin, and sizes the carousel to the
+current logical frame width via `UITheme.layout_frame_size(page, ...).x`, then feeds that
+through `page.set_body_width(...)` — otherwise the box would still hug back down to
 whatever narrow width the carousel used to default to.
 
 `CardCarousel.fit_to_available_width(avail_width)` claims that WHOLE pixel budget —
@@ -427,7 +420,7 @@ hooked onto `card.visual.child_entered_tree` / `card.info.child_entered_tree` �
 actual fix, forcing `autowrap_mode = TextServer.AUTOWRAP_WORD_SMART` and clearing
 `custom_minimum_size.x` on every `Label` a caller adds, so text wraps to fit the card
 instead of forcing it wider. Because this is hooked at the carousel level rather than
-patched into `HubShell._text_card`, it covers every current AND future caller
+patched into one page builder, it covers every current AND future caller
 automatically — a new page that forgets to autowrap its own labels is covered anyway.
 
 ## Wrapping fixed the width overflow, and shifted it onto height
@@ -484,7 +477,7 @@ page they sit on.
 `CarCardPreview` (a `SubViewportContainer`) gives each car card ONE lightweight
 `SubViewport` — 160×160, its own `World3D`, one `DirectionalLight3D`, one `Camera3D` — and
 turntable-rotates a **frozen `CarProp`** (`car_prop.gd`, the same "display/frozen car"
-recipe the old parked-lineup and podium showroom used) around a `Node3D` pivot each
+recipe) around a `Node3D` pivot each
 `_process` frame. This is the cheap-by-construction shape the task asked for: one
 `SubViewport` per card, not a full scene reinstantiation per frame — only the pivot's
 Y-rotation changes after setup. `CarProp.spawn` is called with `stop_physics: true` and
@@ -539,74 +532,33 @@ two will drift apart the next time either changes.
 A `CarCardPreview` costs two separate things: the `SubViewport`/camera/light setup, and
 `CarProp.spawn`'s `car.tscn` instantiation (every embedded car glb body, before
 `car_prop.gd`'s pruning) — the SECOND one is genuinely per-car expensive, not just
-per-viewport. Four shapes were tried before landing on the one that holds:
+per-viewport. Building one for every car up front blocks the main thread; rebuilding a window
+of cards on every selection move freezes the carousel; a pool tied to screen slots re-spawns
+a car every time it scrolls back into view. What holds ties the expensive half — the spawned
+`CarProp` — to the CAR, and makes the cache outlive the page.
 
-1. **Every car, up front** — `HubShell._build_car` built one for EVERY car (every owned
-   car plus the whole unowned catalogue). Blocked the main thread long enough on a real
-   roster to read as the game freezing the moment a region was picked.
-2. **A window of cards, rebuilt per move** — narrower, but every card in the window still
-   got torn down and rebuilt from scratch on every `selection_changed`, which surfaced as
-   the carousel visibly freezing the moment a player tried to MOVE the selection.
-3. **Exactly one, reused** — fixed the freeze, but only the selected card ever spun; every
-   other visible card sat there with a static placeholder, which read as broken once
-   several cards are visible at once.
-4. **A pool of N reused instances, one per SCREEN SLOT, scoped to the page** — every
-   visible card finally got its own spinning preview, but a pool slot is tied to a
-   POSITION on screen, not to a car: sliding the window still called `CarProp.spawn`
-   again for whichever car newly occupied a slot, even a car the player had scrolled past
-   and back to moments earlier. Reported as considerable lag on every selection move.
+`CarPreviewCache` (`car_preview_cache.gd`) is an AUTOLOAD, so it survives the page being
+rebuilt. `CardUI` card entries with a `car` ref call `CarPreviewCache.get_or_build(car_ref)`,
+which returns either an ALREADY-BUILT instance (a cache hit) or a freshly spawned one (cached
+from here on). A page being torn down calls `CardUI.park_previews(page)`, which hands each
+preview to `CarPreviewCache.park(preview)` instead of freeing it — parked previews sit in the
+cache's own hidden `graveyard` Control (a child of the autoload); `visible = false` on an
+ancestor stops a `SubViewport` costing render time while parked.
 
-The shape that actually holds ties the expensive half — the spawned `CarProp` — to the
-CAR, not the slot, AND makes the cache outlive the page: `CarPreviewCache`
-(`car_preview_cache.gd`) is an AUTOLOAD, not a `HubShell`-owned `Dictionary` — `HubShell`
-itself is torn down and rebuilt from scratch on every hub visit (a run always ends by
-returning to it fresh via `Scenes.change_to`), so anything page-scoped forgets every car
-each time, which a session-lifetime cache exists specifically to avoid. Every car card
-still gets the cheap car-outline placeholder (`_card_icon("car")`) up front; `HubShell.
-_sync_car_previews` asks `CarPreviewCache.get_or_build(car_ref)` for a preview whenever a
-card enters the visible window (a window centred on the
-selection) and gets back either an ALREADY-BUILT instance (a cache hit — this car was
-warmed or seen earlier) or a freshly spawned one (cached from here on). A card that
-scrolls OUT of the window calls `CarPreviewCache.park(preview)` instead of freeing it —
-parked previews sit in the cache's own hidden `graveyard` Control (a child of the
-autoload, so it survives exactly as long as the game session does); `visible = false` on
-an ancestor stops a `SubViewport` costing render time while parked, the same way it stops
-any other `CanvasItem`. A card that STAYS in the window across a move is left untouched
-entirely.
+`CarPreviewCache.warm_all()` (no production caller today) walks every owned + catalogue car and builds (then parks)
+whichever aren't cached yet, yielding a frame every `_WARM_PER_FRAME` cars rather than
+doing it in one synchronous burst; a second call WAITS for the in-flight pass. Idempotent and
+cheap afterwards: a cached car is skipped instantly.
 
-**Warmed behind the hub's loading screen, not built on demand.** `HubShell._ready()`
-fires `CarPreviewCache.warm_all()` every time the hub loads, which walks every owned +
-unowned-catalogue car and builds (then parks) whichever aren't cached yet, yielding a
-frame every `_WARM_PER_FRAME` cars rather than doing it all in one synchronous burst —
-building every car's preview synchronously in one call is the ORIGINAL freeze bug (shape
-1 above), just moved to hub-load instead of removed, so the spread-out yielding is the
-part that actually matters. On an INTERACTIVE load HubShell AWAITS the call while holding
-its own `LoadingScreen` over the pages (MenuShowcase's build shows its own for the
-background-track half of hub startup — same overlay pattern, second owner), so the
-per-car build chunks land behind a loading screen the player reads as startup rather
-than as a menu stuttering through its first seconds, and the CAR page afterwards opens on
-pure cache hits. The original fire-and-forget form is retained for HEADLESS loads only
-(tests/tools: no screen to hold, and suites must not block on warming). Awaiting
-`warm_all()` means waiting for the whole cache even when a pass is already running — a
-second call WAITS for the in-flight pass instead of returning "done" early, which is the
-guarantee HubShell's loading screen relies on. Idempotent and cheap on every later hub
-visit: a car already cached is skipped instantly, so only a genuinely new one (just
-bought, say) costs anything — a post-run return to the hub holds its overlay for barely a
-frame.
-
-`CardCarousel.get_card(index)` is the accessor `_sync_car_previews` needs (reach back
-into a card's `visual` slot after `add_card` returned it). Don't revert to a page-scoped
-cache or to rebuilding a car's `CarProp` on every re-entry into view — both are exactly
-the regressions this section documents. `CarCardPreview.show_car` still exists for a
-caller that genuinely wants "this same viewport, a different car" (an existing, tested
-capability of the class), but `CarPreviewCache` doesn't use it — a cache hit needs no
-respawn at all.
+`CardCarousel.get_card(index)` reaches back into a card's `visual` slot after `add_card`
+returned it. Don't revert to a page-scoped cache or to rebuilding a car's `CarProp` on every
+re-entry into view. `CarCardPreview.show_car` still exists for a caller that wants "this same
+viewport, a different car", but `CarPreviewCache` doesn't use it.
 
 **Known caveat, not yet handled:** the cache is keyed by car ref, not re-validated against
 the car's current cosmetic state — an owned car's cached preview could go stale if its
-paint/wheels/engine change via another menu (wheel customisation, engine swap) mid-session
-without anything invalidating that cache entry. Not addressed here; flagged for whoever
-next touches those flows.
+paint/wheels/engine change via another menu mid-session without anything invalidating that
+cache entry.
 
 ## `CardUI` — the reusable card API
 

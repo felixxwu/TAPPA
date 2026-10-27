@@ -30,7 +30,6 @@ feature's frame cost can be isolated by running with it on and off:
 |--------|--------|
 | Trees & bushes | `cfg.vegetation_enabled` — skips the foliage scatter + fields (and the bush hit volume) entirely in `world._build_foliage` |
 | Spectators | `cfg.spectators_enabled` |
-| Roadside signs | `cfg.signs_enabled` — skips `world._build_signs` |
 | Corner barriers | `cfg.barriers_enabled` — skips `world._build_barriers` (the armco / jersey runs on the sharp corners) |
 | Distant terrain | `cfg.distant_terrain_enabled` (the far horizon backdrop) |
 | Road markings | `cfg.road_markings_enabled` |
@@ -38,10 +37,9 @@ feature's frame cost can be isolated by running with it on and off:
 | Full render distance | off = `cfg.tree_render_distance_m` and the phone value `tree_render_distance_web_touch_m` halved (foliage draw distance) |
 | Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 **and** `cfg.target_fps_web` = 0 (all three, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
 
-**Roadside signs** and **Distant terrain** do nothing in free roam (it has neither), so
-those two rows currently measure nothing. All default ON (the full game as shipped). Toggle states are session-scoped
+**Distant terrain** does nothing in free roam (it has none), so that row currently measures nothing. All default ON (the full game as shipped). Toggle states are session-scoped
 (not saved). The feature master switches added for this
-(`vegetation_enabled`, `signs_enabled`, `barriers_enabled` on `GameConfig`) default
+(`vegetation_enabled`, `barriers_enabled` on `GameConfig`) default
 true and are untouched by normal play.
 
 ## Lifecycle (the `Benchmark` autoload)
@@ -52,14 +50,16 @@ true and are untouched by normal play.
   (`seat_world`). The harness calls `begin()` and hosts the scene itself.
 - **The player's save is never touched.** `begin()` deep-copies `Save.profile` and turns
   `Save.save_disabled` on; `seat_world()` then makes the benchmark world in memory
-  (`WorldSession.new_world`). Cloud sync skips pushes while `Benchmark.active`
-  (`cloud_manager.gd`). `end()` puts the copied profile and the save switch back.
+  (`WorldSession.new_world`). Nothing syncs to the cloud while `Benchmark.active`
+  (`CloudSync._can_sync`). `end()` puts the copied profile and the save switch back and calls
+  `WorldSession.invalidate()`, so the run scene still on screen for its last frame writes
+  nothing into the real world.
   `seat_world()` runs again before every reload (Run again, the two-pass warm pass),
   because free roam writes the car's pose into the world as it drives.
 - `finish(stats)` — called by the runner when the run ends; keeps the summary in
   `Benchmark.results`.
-- `exit_to_hq()` = `end()` + back to the title. Also the pause menu's quit path while a
-  benchmark is active (`pause_menu.gd`).
+- `exit_to_title()` = `end()` + back to the title. Also the pause menu's quit path while a
+  benchmark is active (`pause_menu.gd` → `quit_to_title` checks `Benchmark.active` first).
 
 ## The run (`free_roam.gd` + `BenchmarkRunner`)
 
@@ -217,7 +217,7 @@ back → build/bench-results/*.json → analyse → edit → repeat
 - **Isolating a system.** Two attribution paths feed the same collector: a single
   run already separates CPU (per-script + physics ms) from GPU (draws/prims/render
   gpu); a **toggle sweep** (baseline, then one Settings→Benchmark toggle off at a
-  time — trees, distant terrain, signs, FX, render distance) posts one labelled
+  time — trees, distant terrain, FX, render distance) posts one labelled
   report each, and the frame-cost deltas pin terrain vs objects vs FX.
 
 ## Tests
@@ -231,19 +231,3 @@ driving math, and a scene-integration boot (1-turn track) checking the world
 gates + that the runner actually drives. `tests/headless/test_benchmark_ui.gd`
 — the Settings page rows (per-toggle, focusable, flip + repaint) and the results
 panel (lines carry the breakdown; nav contract per features/menus.md).
-
-
-## The rating cannot price a surface-specialised tyre
-
-`_simulate` laps the benchmark at a frozen `BENCHMARK_SURFACE_GRIP` via `mu_override`,
-which bypasses `LapTimeModel._surface_grip`. That is deliberate — it is what makes a
-rating comparable across regions and immune to a gravel/tarmac retune — but it means the
-surface-dependent tyre terms (`tire_snow_grip_mult` / `tire_tarmac_grip_mult`) are
-invisible here, and no amount of retuning will make them visible.
-
-That gap is closed elsewhere, by **matching rather than pricing**: the rival field runs
-the player's tyre, so the term cancels instead of needing a number. See
-[region-stage-library.md](region-stage-library.md) → "Tyre mirroring".
-
-`CarPerformance.merged_meta` does carry those two keys, but only so the RIVAL/ghost path
-can read them — they leave the rating byte-identical.

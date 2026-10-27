@@ -180,7 +180,16 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   that stale work too, lengthening the travel hitch. Mid jobs in the hysteresis band (no longer
   wanted, not yet dropped) fall to the mid-mesh tier. Cancelled or finished jobs are purged from
   the queue at each plan (a queue that never drains used to carry them for ever).
-- **Boot:** `prefill()` builds the planned set with no budget before the car is released.
+- **Settings:** the shipped `FreeRoamSettings` is `GameConfig.free_roam` (a sub-resource in
+  `game_config.tres`); production code reads `Config.data.free_roam`, and `free_roam.gd` hands the
+  streamer a `duplicate()` since it sets `world_seed` (and the benchmark `straight_road_m`). The
+  feedback timings (toast, banner, save / map cadence), dropped-money crystal, cabin lamp and rest
+  stop crowd size are in its *Feedback* group. `GameConfig.snapshot_values` / `restore_values`
+  deep-copy the resource.
+- **Boot:** `prefill()` builds the planned set with no budget before the car is released (headless
+  and tests). The game boots with `prefill_async()` instead: `_run_queue` slices of
+  `prefill_slice_ms` with a frame between, behind the loading cover, car frozen and locked, and the
+  hand-over / warm-up wait for it. Travel and respawn (`prefill_at`) are still synchronous.
   Every change into the world (`Scenes.change_to(FREE_ROAM)` — boot, new world, a rest-stop car/part
   change) first puts a `LoadingScreen` on the tree root, so the synchronous scene load and `_ready`'s
   prefill show the cover instead of a blank grey frame; `_warm_up` adopts that cover rather than
@@ -285,8 +294,7 @@ skybox), which left the island much brighter and flatter-looking than a stage.
 **Following the car (`BiomeDirector`, a node in `free_roam.tscn`):** every 0.25 s it reads the
 car's ring and the weather.
 - **Handling:** a new ring writes its region's surface grip, deep snow and frozen lakes onto the
-  live config, from the authored values (`apply_handling`, the twin of
-  `StageConfig.apply_event_config`'s handling block). It also re-wires the car's lake drag,
+  live config, from the authored values (`apply_handling`, the twin of the deleted stage-config handling block). It also re-wires the car's lake drag,
   which is off where lakes are frozen.
 - **Wheel debris look:** a new ring also re-seats the wheel particles' off-road particle from
   the region look (`_seat_particle_look` → `WheelParticles.apply_region_look`: Greece's dry
@@ -365,9 +373,8 @@ code (`RestStops`, `RestStopPage`, `RoadSites.Kind.REST`, the save's `lit_sites`
 `CheckpointBanner` (`scripts/free_roam/checkpoint_banner.gd`, on `RestStops.lit`): the first time a
 checkpoint is lit, a full-width "Checkpoint reached" band fades in, with a small "Damage
 repaired" subtitle under it (`SUBTITLE`, at `UITheme.FONT_SIZE`; lighting always goes through
-`RestStops._pass`, which fully repairs the car), holds `HOLD_S` (3 s) and fades
-out while the car drives on (the tween runs through pauses). Lighting it puts its whole biome
-ring's stock on sale at checkpoints (`_reveal_ring` → `LootDirector.unlock`). The band itself is
+`RestStops._pass`, which fully repairs the car), holds `banner_hold_s` (3 s) and fades
+out while the car drives on (the tween runs through pauses). The band is presentation only: the ring's stock goes on sale from `RestStops.lit` → `LootDirector.site_lit` (see loot.md). The band itself is
 the static `CheckpointBanner.build_band(text, subtitle = "")`, shared with the region banner
 (which passes no subtitle).
 
@@ -389,9 +396,9 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
   where the car is (`_primed`), so the page doesn't open until it drives away and comes back.
   Teleports (travel, respawn, the R reset) are not swept as drives: `RestStops.move_car_to`,
   `RoadRecovery.reset_done` → `car_teleported` on `RestStops` and `LootDirector` reset the swept
-  start (the 100 m jump guard stays as a backstop).
-- **Opening the page:** at a rest stop, at any speed, `menu_select` (Enter /
-  gamepad A) opens the rest-stop page (`features/menus.md`); `RestStops.prompt_site` says when, and
+  start, and `free_roam.gd` resets its odometer's start on the same two signals. The `RoadSites.TELEPORT_M` jump guard (shared by `RestStops`, `LootDirector` and the odometer) stays as the backstop for teleports with no signal (the boot placement, `AutoDriver.place_on_route`).
+- **Opening the page:** at a rest stop, nearly stopped (below `GameConfig.rest_stop_open_speed_mps`, because gamepad A is also the handbrake), `menu_select` (Enter /
+  gamepad A) opens the rest-stop page (`features/menus.md`); `RestStops.can_open` says when (it is also false until `free_roam._hand_over`, `RestStops.input_enabled`, so nothing opens under the boot warm-up), and
   the minimap's line shows the prompt. On touch the prompt reads "Tap" and tapping it calls
   `RestStops.open_here` (`MiniMap._on_prompt_input`). Coming to a halt alone does nothing.
 - **Respawn:** on `gave_up` the engine cuts out completely (`EngineSim.killed`: no combustion,
@@ -521,10 +528,10 @@ node for node:
   viewports only while the readout is shown.
 
 **Road recovery** (`RoadRecovery`) replaces `TrackProgress`' recovery, which needs a single
-centreline. On request (**R**, or the pause menu) it puts the car on the nearest road, facing
+centreline. On request (the `reset_to_road` action: **R** / right-stick click, or the pause menu) it puts the car on the nearest road, facing
 along it the way the car was pointing (`road_pose`). By itself it uses the stage's stuck rule and
 `GameConfig` fields (`recovery_*`): the car is stationary and can't get out (flipped, flooring
-it and going nowhere, or below the ground) for `recovery_timeout_s`.
+it and going nowhere, or below the ground) for `recovery_timeout_s`. A wrecked car (0 HP with the thermal chain on) is never reset, by request or by itself, so a reset can't revive the engine before the Respawn; a reset keeps the nitrous tank's charge (only a respawn or travel, which go through `Car.reset_to`, refill it). `RestStops._on_gave_up` disarms the pause menu, so neither pause nor the map can be opened (and a quick travel started) in the seconds before the wreck page.
 
 ## The auto driver
 

@@ -181,48 +181,46 @@ func test_slider_taper_is_monotonic_and_below_linear() -> void:
 		prev = amp
 
 
-func test_scene_state_seeds_hq_song_then_latches_rally_song() -> void:
+func test_context_seeds_menu_song_then_latches_rally_song() -> void:
 	var md: MusicDirector = autofree(MusicDirector.new())  # not in tree: no audio, no _ready
-	# Entering the HQ scene from idle seeds + starts an HQ-pool song immediately.
-	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_true(MusicLibrary.HQ_SONGS.has(md.current_song), "HQ scene -> an HQ-pool song, seeded now")
-	assert_eq(md.requested_song, md.current_song, "requested is the seeded HQ song")
-	var hq_song: String = md.current_song
-	# Moving to any non-HQ scene queues the current rally song WITHOUT swapping mid-loop.
-	md.update_for_scene("res://main.tscn")
+	md.update_for_context(true)
+	assert_true(MusicLibrary.MENU_SONGS.has(md.current_song), "menu open -> a menu-pool song, seeded now")
+	assert_eq(md.requested_song, md.current_song, "requested is the seeded menu song")
+	var menu_song: String = md.current_song
+	md.update_for_context(false)
 	assert_true(MusicLibrary.RALLY_SONGS.has(md.requested_song),
-		"non-HQ scene queues a rally-pool song")
-	assert_eq(md.current_song, hq_song, "swap is latched, not applied until the handoff")
-	# The rally scene plays exactly the song the director has locked in.
-	assert_eq(md.requested_song, md._current_rally_song, "rally scene queues the locked-in rally song")
-	# Returning to the HQ scene queues the locked-in HQ song again.
-	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_eq(md.requested_song, md._current_hq_song, "back in HQ -> the locked-in HQ song queued again")
+		"no menu -> a rally-pool song queued")
+	assert_eq(md.current_song, menu_song, "swap is latched, not applied until the handoff")
+	assert_eq(md.requested_song, md._current_rally_song, "queues the locked-in rally song")
+	md.update_for_context(true)
+	assert_eq(md.requested_song, md._current_menu_song, "menu again -> the locked-in menu song queued again")
 
 
-func test_scene_uses_the_locked_rally_song_across_frames() -> void:
-	# Once a rally song is picked, every non-HQ scene resolves to that same song
-	# until a new pick (loading edge) changes it — no re-roll per frame.
+func test_context_uses_the_locked_rally_song_across_frames() -> void:
 	var md: MusicDirector = autofree(MusicDirector.new())
 	md._current_rally_song = MusicLibrary.RALLY_SONGS[0]
-	md.update_for_scene("res://main.tscn")
+	md.update_for_context(false)
 	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "uses the locked rally song")
-	# Re-entering the SAME scene must not re-roll (this drove standings.tscn until that
-	# scene was deleted; the between-stage beat is an overlay on main.tscn now, so the
-	# director never sees a scene change there at all).
-	md.update_for_scene("res://main.tscn")
+	md.update_for_context(false)
 	assert_eq(md.requested_song, MusicLibrary.RALLY_SONGS[0], "still the same rally song, no re-roll")
 
 
-func test_scene_uses_the_locked_hq_song_across_frames() -> void:
-	# Once an HQ song is picked, the HQ scene resolves to that same song until a
-	# new pick (loading edge) changes it — no re-roll per frame.
+func test_context_uses_the_locked_menu_song_across_frames() -> void:
 	var md: MusicDirector = autofree(MusicDirector.new())
-	md._current_hq_song = MusicLibrary.HQ_SONGS[0]
-	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_eq(md.requested_song, MusicLibrary.HQ_SONGS[0], "uses the locked HQ song")
-	md.update_for_scene(MusicLibrary.HQ_SCENE)
-	assert_eq(md.requested_song, MusicLibrary.HQ_SONGS[0], "still the same HQ song, no re-roll")
+	md._current_menu_song = MusicLibrary.MENU_SONGS[0]
+	md.update_for_context(true)
+	assert_eq(md.requested_song, MusicLibrary.MENU_SONGS[0], "uses the locked menu song")
+	md.update_for_context(true)
+	assert_eq(md.requested_song, MusicLibrary.MENU_SONGS[0], "still the same menu song, no re-roll")
+
+
+func test_a_node_in_the_menu_group_makes_the_director_want_the_menu_song() -> void:
+	var md: MusicDirector = get_node("/root/Music")
+	assert_false(md._menu_open(), "no menu node -> not a menu context")
+	var menu := Node.new()
+	menu.add_to_group(MusicLibrary.MENU_GROUP)
+	add_child_autofree(menu)
+	assert_true(md._menu_open(), "a node in the menu group opens the menu context")
 
 
 func test_catch_up_after_a_stall_still_fires_aligned() -> void:

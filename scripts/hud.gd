@@ -49,36 +49,6 @@ var _grip_grid: GridContainer
 # limit is 1.0 because that IS peak grip, the point grip_fraction is measured against.
 const _GRIP_WARN_FRAC := 0.9
 const _GRIP_LIMIT_FRAC := 1.0
-# Stage flow widgets, driven by StageManager (todo/stage-start-and-end.md):
-# the big centered 3·2·1·GO, the small top-right run timer, and the placeholder
-# stage-complete panel. Hidden until the stage flow calls the methods below.
-@onready var _countdown_label: Label = $CountdownLabel
-@onready var _elapsed_label: Label = $ElapsedLabel
-# Last centisecond shown on the run timer, so show_elapsed only re-formats and
-# re-assigns the label when the DISPLAYED value moves (-1 = nothing shown yet).
-var _last_elapsed_cs := -1
-@onready var _stage_complete_panel: Control = $StageCompletePanel
-@onready var _stage_complete_label: Label = $StageCompletePanel/Box/StageCompleteLabel
-# Finish-panel NEXT button (built in code, added to the panel's Box). Pressing it
-# emits finish_next_pressed, which world.gd routes to StageManager.proceed_to_results
-# to start the post-stage flow (features/stage.md). Made keyboard/gamepad navigable
-# via MenuNav.attach (features/menus.md).
-signal finish_next_pressed
-var _next_button: Button
-# Live corner-cut billing flash (features/track.md): a small top-right tag the
-# StageManager pulses each time TrackProgress bills a cut incident, showing the
-# running event total so consecutive incidents read as one growing tag.
-var _cut_flash_label: Label
-var _cut_flash_left := 0.0
-# Off-track warning + reset countdown (features/progress.md): a centre-screen tag the
-# StageManager shows while TrackProgress's off-road clock is running past its warning
-# grace, counting down the seconds left before the car is snapped back onto the road.
-# Unlike the popups above it doesn't self-fade — it mirrors a live state, so it stays
-# up until the car is back on the road (or the reset fires).
-var _off_road_label: Label
-# Last countdown TENTH shown, so show_off_road only re-formats when the displayed
-# value moves (-1 = nothing shown yet), matching the run timer's discipline.
-var _last_off_road_tenths := -1
 # The bottom-centre gauge row (features/hud.md): each is a HudGauge vertical strip, laid
 # out edge to edge by _layout_gauges with health first.
 #
@@ -129,25 +99,6 @@ const _BOOST_HUE := 0.58
 const _NITROUS_HUE := 0.70
 # Gap between the gauge row and the bottom of the screen.
 const _GAUGE_BOTTOM_MARGIN := 8.0
-
-# Pacenote strip geometry / feel. The current turn sits centred at the top (x = 0,
-# directly above the pace/cut popup); each upcoming turn is one _PACE_SLOT_W to the
-# right and _PACE_DIM_STEP dimmer (down to _PACE_DIM_FLOOR). Passed turns slide left
-# and fade out. _PACE_UPCOMING caps how many upcoming boards show; _PACE_SCROLL_SPEED
-# is the ease rate of the left-slide when a corner is passed.
-const _PACE_ICON := 54
-const _PACE_TOP := 4.0
-
-# The top-centre pace/cut popups sit directly below the pacenote strip, so their top
-# edge is derived from the strip's bottom (_PACE_TOP + _PACE_ICON) plus a small gap —
-# this way they follow the pacenote size instead of overlapping when the icons grow.
-const _POPUP_GAP := 8.0
-const _POPUP_TOP := _PACE_TOP + _PACE_ICON + _POPUP_GAP
-const _POPUP_HEIGHT := 24.0
-
-# The off-track warning hangs this far BELOW the viewport centre (it anchors at 0.5,
-# unlike the top-anchored popups above), clearing the centred 3·2·1·GO countdown.
-const _OFF_ROAD_TOP := 70.0
 
 # Last displayed values, so _process only re-formats + re-assigns a label when
 # its value actually changes (avoids per-frame string allocation / GC churn).
@@ -231,25 +182,6 @@ func _ready() -> void:
 		_cooling_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
 		_cooling_label.visible = false
 		add_child(_cooling_label)
-	# Stage widgets start hidden; StageManager reveals them at the right moments.
-	_countdown_label.visible = false
-	_elapsed_label.visible = false
-	_stage_complete_panel.visible = false
-	# Design-system accents: the run timer reads white (neutral primary text), the
-	# stage-complete banner green (success) — matching the house palette. See features/ui-design-system.md.
-	_elapsed_label.add_theme_color_override("font_color", UITheme.INK)
-	_stage_complete_label.add_theme_color_override("font_color", UITheme.GREEN)
-	_build_cut_flash_label()
-	_build_off_road_label()
-	# Build the finish-panel NEXT button and make it keyboard/gamepad navigable. Attaching
-	# MenuNav to the (hidden) panel flips the button to FOCUS_ALL now and re-grabs focus
-	# onto it whenever the panel is shown (features/menus.md → "Menu navigation").
-	_next_button = UITheme.button("Next")
-	_next_button.name = "NextButton"
-	_next_button.pressed.connect(func() -> void: finish_next_pressed.emit())
-	$StageCompletePanel/Box.add_child(_next_button)
-	UITheme.enforce(_stage_complete_panel)  # the house-wide button shadow (rule 5)
-	MenuNav.attach(_stage_complete_panel, {"first": _next_button})
 
 
 # Build a debug readout label in code (no scene node), stacked top-left below the
@@ -381,88 +313,6 @@ func _update_grip_grid() -> void:
 		_grip_labels[i].add_theme_color_override("font_color", grip_color(fractions[i]))
 
 
-# A transient popup label built in code (no scene node): hidden until a show_*
-# call pulses it, then faded out by _tick_fade. `offsets` is (left, right, top,
-# bottom). Callers layer on colour / anchoring specifics after.
-func _make_popup_label(node_name: String, anchor: float, grow_dir: int,
-		offsets: Vector4, align: int) -> Label:
-	var lbl := Label.new()
-	lbl.name = node_name
-	lbl.anchor_left = anchor
-	lbl.anchor_right = anchor
-	lbl.grow_horizontal = grow_dir as Control.GrowDirection
-	lbl.offset_left = offsets.x
-	lbl.offset_right = offsets.y
-	lbl.offset_top = offsets.z
-	lbl.offset_bottom = offsets.w
-	lbl.horizontal_alignment = align as HorizontalAlignment
-	lbl.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
-	lbl.visible = false
-	add_child(lbl)
-	return lbl
-
-
-# Off-track warning + reset countdown (features/progress.md). Centre screen, just
-# BELOW the middle so it clears the big 3·2·1·GO countdown (which is centred on the
-# whole viewport) — the two can't be on screen together in practice, but the offset
-# keeps the warning out of the eye-line of the road ahead either way. Not a fading
-# popup: it is a live state readout, shown for exactly as long as the clock runs, so
-# it has no _tick_fade timer and StageManager drives both show and hide.
-func _build_off_road_label() -> void:
-	_off_road_label = _make_popup_label("OffRoadLabel", 0.5,
-		Control.GROW_DIRECTION_BOTH,
-		Vector4(-160.0, 160.0, _OFF_ROAD_TOP, _OFF_ROAD_TOP + _POPUP_HEIGHT),
-		HORIZONTAL_ALIGNMENT_CENTER)
-	_off_road_label.anchor_top = 0.5
-	_off_road_label.anchor_bottom = 0.5
-	_off_road_label.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_off_road_label.add_theme_font_size_override("font_size", UITheme.TITLE_FONT_SIZE)
-	_off_road_label.add_theme_color_override("font_color", UITheme.RED)
-
-
-# Off-track warning text. Pure so it's unit-testable without the HUD scene. The
-# countdown is shown to a tenth — coarse enough to read at speed, fine enough that
-# it's visibly running rather than a static warning.
-static func off_road_text(seconds_left: float) -> String:
-	return "OFF TRACK  %.1f" % maxf(seconds_left, 0.0)
-
-
-# Show the off-track warning with `seconds_left` on the clock. Change-gated on the
-# displayed TENTH so a per-frame call doesn't re-format a string every frame.
-func show_off_road(seconds_left: float) -> void:
-	var tenths := maxi(0, roundi(seconds_left * 10.0))
-	if tenths != _last_off_road_tenths:
-		_last_off_road_tenths = tenths
-		_off_road_label.text = off_road_text(tenths / 10.0)
-	_off_road_label.visible = true
-
-
-func hide_off_road() -> void:
-	_off_road_label.visible = false
-	_last_off_road_tenths = -1
-
-
-# Corner-cut flash: a small top-centre tag, on its own row under the pacenote strip
-# (nothing shares the spot now that the "vs P1" pace popup is gone).
-func _build_cut_flash_label() -> void:
-	_cut_flash_label = _make_popup_label("CutFlashLabel", 0.5,
-		Control.GROW_DIRECTION_BOTH,
-		Vector4(-80.0, 80.0, _POPUP_TOP, _POPUP_TOP + _POPUP_HEIGHT),
-		HORIZONTAL_ALIGNMENT_CENTER)
-	_cut_flash_label.add_theme_color_override("font_color", UITheme.RED)
-
-
-# Count a popup's remaining on-screen time down by delta; hide it when it lapses.
-# Returns the new remaining time (caller stores it back).
-func _tick_fade(left: float, delta: float, label: Label) -> float:
-	if left <= 0.0:
-		return left
-	left -= delta
-	if left <= 0.0:
-		label.visible = false
-	return left
-
-
 func _process(delta: float) -> void:
 	var __t := Time.get_ticks_usec()
 	_timed_process(delta)
@@ -544,8 +394,6 @@ func _timed_process(_delta: float) -> void:
 	if _grip_grid.visible:
 		_update_grip_grid()
 	_update_damage(_delta)
-	# Hide each transient popup once its on-screen time elapses.
-	_cut_flash_left = _tick_fade(_cut_flash_left, _delta, _cut_flash_label)
 
 
 # The shared tint for both bottom gauges — see _GAUGE_SAT / _GAUGE_VAL. Static so the
@@ -682,62 +530,3 @@ func _gear_text(gear: int) -> String:
 	if gear == 0:
 		return "N"
 	return str(gear)
-
-
-# --- Stage flow (driven by StageManager, todo/stage-start-and-end.md) ---------
-
-# Big centered countdown. ceili maps (2,3]→3, (1,2]→2, (0,1]→1; 0 (or below)
-# shows "GO".
-func show_countdown(seconds_left: float) -> void:
-	_countdown_label.visible = true
-	_countdown_label.text = str(ceili(seconds_left)) if seconds_left > 0.0 else "GO"
-
-
-func hide_countdown() -> void:
-	_countdown_label.visible = false
-
-
-# Small top-right run timer. Gated by hud_elapsed_enabled (mirrors hud_enabled);
-# one formatted string per frame is acceptable since the value changes every tick.
-func show_elapsed(seconds: float) -> void:
-	if not Config.data.hud_elapsed_enabled:
-		return
-	_elapsed_label.visible = true
-	# The readout only shows centiseconds, so quantise to one and skip the re-format
-	# + re-assign when it hasn't moved: writing Label.text re-runs TextServer shaping
-	# even for identical text. Formatting FROM the quantised value keeps the string a
-	# pure function of what we compare, so nothing can drift between the two.
-	var cs := roundi(seconds * 100.0)
-	if cs == _last_elapsed_cs:
-		return
-	_last_elapsed_cs = cs
-	_elapsed_label.text = UITheme.format_time(cs * 10)
-
-
-# Placeholder stage-complete panel — at minimum the final time. The menu's
-# buttons/actions are a separate todo (rally-event-flow.md / menus.md); this is
-# the stub the future flow attaches to.
-func show_stage_complete(seconds: float, penalty_s := 0.0) -> void:
-	# Showing the panel fires its visibility_changed, which MenuNav uses to grab focus
-	# onto the NEXT button (ui_accept then triggers it; the theme paints the cursor).
-	_stage_complete_panel.visible = true
-	if penalty_s > 0.0:
-		# Clean run + cut penalty = final. Only shown when a cut was billed.
-		var total := UITheme.format_time(roundi((seconds + penalty_s) * 1000.0))
-		_stage_complete_label.text = "FINISH\n%s\n+%.1fs cut\n= %s" % [
-			UITheme.format_time(roundi(seconds * 1000.0)), penalty_s, total]
-	else:
-		_stage_complete_label.text = "FINISH\n%s" % UITheme.format_time(roundi(seconds * 1000.0))
-
-
-# Live corner-cut flash, pulsed by StageManager each time TrackProgress bills
-# an incident. Shows the running event total (not the incident delta) so
-# consecutive incidents read as one growing tag rather than flickering resets.
-func show_cut_flash(_incident_s: float, total_s: float) -> void:
-	if not Config.data.cut_penalty_enabled:
-		return
-	_cut_flash_label.text = "CUT +%.1fs" % total_s
-	_cut_flash_label.visible = true
-	_cut_flash_left = Config.data.hud_popup_show_seconds
-
-

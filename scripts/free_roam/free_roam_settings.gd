@@ -132,6 +132,9 @@ extends Resource
 ## ...but no longer than it would be at this frame rate. On a device whose every frame is busy
 ## (a phone browser), a floor that grows with slow frames slows them further, and so on.
 @export var budget_floor_fps := 60.0
+## Boot and travel build the ground in slices of this many milliseconds, a frame apart, so the
+## loading screen keeps drawing.
+@export var prefill_slice_ms := 8.0
 @export var chunk_m := 64.0
 ## Vertex spacing of the three detail levels: near (the 2×2 chunks round the car), mid (which
 ## also carries the trees and everything else planted) and far (the horizon).
@@ -158,6 +161,30 @@ extends Resource
 ## and far gaps at the same distance tie; larger favours the horizon over foliage). Never puts
 ## either ahead of a collision or near-mesh build.
 @export_range(0.0, 40.0) var far_lead_chunks := 3.0
+
+@export_group("Feedback")
+## How long a loot / shop message stays up, in seconds.
+@export var toast_s := 3.0
+## The "Checkpoint reached" / region band: fade in and out time, and how long it holds.
+@export var banner_fade_s := 0.6
+@export var banner_hold_s := 3.0
+## How often the world is saved and the map's explored area updated, in seconds.
+@export var save_every_s := 5.0
+@export var map_every_s := 0.25
+## Dropped money: how close the car must come to pick it up, and the crystal that marks it
+## (radius, the heights of its upper and lower halves, and how high it floats).
+@export var dropped_reach_m := 6.0
+@export var drop_crystal_color := Color(1.0, 0.8, 0.2)
+@export var drop_crystal_radius_m := 0.3
+@export var drop_crystal_top_m := 0.9
+@export var drop_crystal_bottom_m := 0.6
+@export var drop_crystal_float_m := 1.4
+## The lamp inside a lit rest stop's cabin.
+@export var cabin_lamp_range_m := 6.0
+@export var cabin_lamp_energy := 3.0
+## The crowd by a rest stop: half its length along the road and half its depth.
+@export var rest_crowd_half_len_m := 6.0
+@export var rest_crowd_half_depth_m := 3.0
 
 
 # The closest the coast ever comes, which is also the radius the biome rings divide.

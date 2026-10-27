@@ -73,9 +73,9 @@ map of what changed, which seams not to work around, and where the decision reco
 
 - **Never test tunable/balance VALUES.** If a value can be changed in the
   inspector / a config resource / an authored data table (`GameConfig` /
-  `game_config.tres`, and the authored `CARS` / `ENGINES` / `RALLIES` /
-  `UPGRADES` tables in `CarLibrary` / `EngineLibrary` / `RallyLibrary` /
-  `UpgradeLibrary`), and changing that value to another reasonable setting would
+  `game_config.tres`, and the authored `CARS` / `ENGINES` / `REGIONS` /
+  `CONDITIONS` / `CATALOGUE` / `KITS` tables in `CarLibrary` / `EngineLibrary` /
+  `RegionLibrary` / `WeatherLibrary` / `BoostLibrary` / `LootRules`), and changing that value to another reasonable setting would
   make the test fail, DO NOT write that test — it pins a moving number and adds
   no value. This includes: asserting a specific stat (torque, redline, mass,
   grip, straightness, a reward tier, a power-to-weight band), asserting a
@@ -91,8 +91,8 @@ map of what changed, which seams not to work around, and where the decision reco
   fine; pinning the *chosen* value is not. When in doubt, ask: "would a designer
   retuning this in the inspector break my test?" If yes, delete the assertion.
 - **Never depend on a specific catalogue entry existing.** A logic/physics test
-  must not reach into `CarLibrary` / `EngineLibrary` / `RallyLibrary` /
-  `UpgradeLibrary` for a particular authored entry by id (`CarLibrary.by_id("mx5")`,
+  must not reach into `CarLibrary` / `EngineLibrary` / `RegionLibrary` /
+  `WeatherLibrary` / `BoostLibrary` / `LootRules` for a particular authored entry by id (`CarLibrary.by_id("mx5")`,
   `by_id("porsche911")`, etc.) and lean on that entry's identity or stats — the
   catalogue is always subject to change (entries get renamed, retuned, or
   removed), so such a test is brittle by construction. If a test exercises

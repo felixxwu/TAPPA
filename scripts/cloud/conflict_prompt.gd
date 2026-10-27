@@ -40,14 +40,8 @@ static func summary() -> Dictionary:
 # Returns the popup, or null when there is nothing to ask about OR when a modal is
 # already on screen. Callers must not assume a popup came back.
 #
-# EXCLUSIVITY IS NOT THIS FILE'S JOB ANY MORE. Three hosts raise this prompt (the
-# account page, the HQ, and the boot gate) and each used to keep a private "is mine
-# up?" bool; they could not see each other, so one conflict_detected broadcast opened
-# TWO identical popups and dismissing the top one just revealed the second with focus
-# reset — which read as "Use cloud did nothing and moved my focus". This file briefly
-# owned a `conflict_prompt` group to fix that, but the same hazard applies to every
-# modal in the game, so the rule now lives in ConfirmPopup.MODAL_GROUP and this just
-# inherits it: ConfirmPopup.open returns null rather than stacking.
+# Two hosts raise this prompt (the account page, and free roam for a conflict found in the
+# background). ConfirmPopup.MODAL_GROUP keeps them from stacking: open returns null instead.
 static func open(host: Node, on_finished := Callable()) -> Node:
 	var info := summary()
 	if info.is_empty():

@@ -2,8 +2,14 @@
 
 [ext_resource type="Script" uid="uid://d1smj8wwi8fwv" path="res://scripts/game_config.gd" id="1"]
 
+[ext_resource type="Script" uid="uid://b5018iedowmcv" path="res://scripts/free_roam/free_roam_settings.gd" id="2"]
+
+[sub_resource type="Resource" id="FreeRoam_1"]
+script = ExtResource("2")
+
 [resource]
 script = ExtResource("1")
+free_roam = SubResource("FreeRoam_1")
 render_height = 540
 minimap_enabled = false
 steer_limit = 1
@@ -161,8 +167,6 @@ jump_span_m = 30.0
 track_progress_max_dist_m = 15.0
 off_road_margin_m = 2.0
 off_road_reset_timeout_s = 6.0
-off_road_warning_after_s = 2.0
-cut_reference_speed_mps = 12.5
 cliff_amount = 0.7
 tire_mark_color = Color(0, 0, 0, 0.5)
 tire_mark_tarmac_color = Color(0, 0, 0, 0.6)
@@ -178,27 +182,8 @@ tree_cutout_mode = 2
 terrain_lod_bands_m = PackedFloat32Array(60, 100, 115, 120)
 terrain_lod_bands_web_touch_m = PackedFloat32Array(40, 70, 80, 90)
 bush_height_m = 1.5
-"arrow_1_left": "res://textures/signs/arrow_1_left.png",
-"arrow_1_right": "res://textures/signs/arrow_1_right.png",
-"arrow_2_left": "res://textures/signs/arrow_2_left.png",
-"arrow_2_right": "res://textures/signs/arrow_2_right.png",
-"arrow_3_left": "res://textures/signs/arrow_3_left.png",
-"arrow_3_right": "res://textures/signs/arrow_3_right.png",
-"arrow_4_left": "res://textures/signs/arrow_4_left.png",
-"arrow_4_right": "res://textures/signs/arrow_4_right.png",
-"arrow_5_left": "res://textures/signs/arrow_5_left.png",
-"arrow_5_right": "res://textures/signs/arrow_5_right.png",
-"arrow_6_left": "res://textures/signs/arrow_6_left.png",
-"arrow_6_right": "res://textures/signs/arrow_6_right.png",
-"arrow_square_left": "res://textures/signs/arrow_square_left.png",
-"arrow_square_right": "res://textures/signs/arrow_square_right.png",
-"arrow_uturn_left": "res://textures/signs/arrow_uturn_left.png",
-"arrow_uturn_right": "res://textures/signs/arrow_uturn_right.png",
-"arrow_jump": "res://textures/signs/arrow_jump.png"
-}
 crosswind_gust_wavelength_m = 400.0
 crosswind_nose_on_fraction = 0.35
-rating_spread = 3.0
 exhaust_offsets = {
 "acty": [Vector3(-0.3, -0.04, 1.5)],
 "beast": [Vector4(1, -0.28, 1.05, 30.0), Vector4(-1, -0.28, 1.05, -30.0)],

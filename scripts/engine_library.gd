@@ -21,8 +21,8 @@ extends RefCounted
 #                     real published crank torque (N·m); peak_torque_rpm is where the
 #                     preset curve peaks; redline is the real rev limit and MUST sit
 #                     above peak_torque_rpm or the torque curve inverts.
-#                     Displayed power / power-to-weight are DERIVED from these
-#                     (CarLibrary.power_to_weight: torque × redline speed × a global
+#                     Displayed power is DERIVED from these
+#                     (CarLibrary.horsepower: torque × redline speed × a global
 #                     falloff factor) — there is deliberately no separately-authored
 #                     power figure, so retuning torque moves the stats with it.
 #   * engine_inertia — crank+flywheel rotating inertia (kg·m²): small revs fast, large
@@ -190,9 +190,7 @@ const ENGINES: Array[Dictionary] = [
 		# LONG final drive for its class. The TH400's three widely-spaced ratios are stock, but
 		# the diff is geared for reach rather than launch: 27 litres at 1890 Nm has torque to
 		# spare from idle, so trading multiplication for top end costs it nothing it misses and
-		# stops a 750 hp car running out of revs at motorway speed. Now that the lap model caps
-		# a car at its geared top speed (LapTimeModel._geared_top_speed_sq), this is load-bearing
-		# rather than cosmetic — the short diff was pinning the Beast well below its own pace.
+		# stops a 750 hp car running out of revs at motorway speed.
 		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 2.0, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{

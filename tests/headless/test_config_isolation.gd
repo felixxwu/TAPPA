@@ -108,6 +108,17 @@ func test_restore_writes_in_place_and_shares_no_mutable_state() -> void:
 		"the restore undoes a container edit rather than sharing the array with the snapshot")
 
 
+func test_snapshot_does_not_share_the_free_roam_resource() -> void:
+	var cfg: GameConfig = Config.data
+	var snap := cfg.snapshot_values()
+	assert_not_same(snap["free_roam"], cfg.free_roam, "the snapshot holds its own copy of the resource")
+	var seed_before: int = cfg.free_roam.world_seed
+	cfg.free_roam.world_seed = seed_before + 1
+	cfg.restore_values(snap)
+	assert_eq(cfg.free_roam.world_seed, seed_before, "restore undoes an edit to the nested resource")
+	assert_not_same(snap["free_roam"], cfg.free_roam, "restoring does not hand the snapshot's copy to the live config")
+
+
 # HOT RELOAD (Config.reload_from_disk) — the tuning loop for world-space menu placement: retune a
 # value on game_config.tres in the inspector, press F8 in the running game, see it.
 #
@@ -155,11 +166,12 @@ func test_the_config_hot_reload_action_exists() -> void:
 
 
 # Every @export'd field of the live config, as a name -> value dictionary.
-func _fields(cfg: GameConfig) -> Dictionary:
+func _fields(cfg: Resource) -> Dictionary:
 	var out := {}
 	for p in cfg.get_property_list():
 		if int(p["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE and p["name"] != "script":
-			out[p["name"]] = cfg.get(p["name"])
+			var value: Variant = cfg.get(p["name"])
+			out[p["name"]] = _fields(value) if value is Resource else value
 	return out
 
 
@@ -171,8 +183,9 @@ func test_the_frozen_test_baseline_really_differs_from_the_authored_one() -> voi
 	SceneTestHelpers.use_test_config()
 	assert_ne(Config.data, null, "the frozen test baseline installs")
 	var differing := 0
+	var frozen := _fields(Config.data)
 	for name in authored:
-		if Config.data.get(name) != authored[name]:
+		if frozen[name] != authored[name]:
 			differing += 1
 	Config.reset()
 	assert_gt(differing, 0,
@@ -191,8 +204,9 @@ func test_reset_restores_the_authored_baseline_after_a_swap() -> void:
 	assert_not_null(authored, "the authored config loads")
 	var restored := _fields(Config.data)
 	var mismatched: Array[String] = []
-	for name in _fields(authored):
-		if restored.has(name) and restored[name] != authored.get(name):
+	var authored_fields := _fields(authored)
+	for name in authored_fields:
+		if restored.has(name) and restored[name] != authored_fields[name]:
 			mismatched.append(name)
 	assert_eq(mismatched, [] as Array[String],
 		"reset() restores every authored field — a leftover here is a cross-file config leak")

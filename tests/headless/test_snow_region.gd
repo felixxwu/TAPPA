@@ -40,15 +40,8 @@ func after_each() -> void:
 	Config.reset()
 
 
-func _seat(region_id: String) -> GameConfig:
-	var live: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate(true)
-	StageConfig.apply_event_config(live, {"seed": 1, "region": region_id})
-	return live
-
-
 # --- The has_*/​*_of pair -------------------------------------------------------
-# Split in two so a caller cannot confuse "authors nothing" with a real value, exactly
-# as water_level_of documents. An unknown id must behave like a region authoring none.
+# Split in two so a caller cannot confuse "authors nothing" with a real value. An unknown id must behave like a region authoring none.
 
 func test_a_region_authoring_no_handling_reports_and_resolves_nothing() -> void:
 	for rid in [PLAIN_REGION, "no_such_region", ""]:
@@ -92,112 +85,6 @@ func test_resolving_does_not_coerce_to_float() -> void:
 	] as Array[Dictionary])
 	var out := RegionLibrary.surface_grip_of(_cfg, "coloured")
 	assert_true(out.get("grass") is Color, "a Color field resolves as a Color")
-
-
-# --- Seating through the one funnel --------------------------------------------
-
-func test_a_snow_stage_takes_the_regions_grip_and_deep_snow() -> void:
-	var live := _seat(SNOW_REGION)
-	assert_eq(live.grass_grip, _cfg.snow_grass_grip)
-	assert_eq(live.gravel_grip, _cfg.snow_gravel_grip)
-	assert_eq(live.tarmac_grip, _cfg.snow_tarmac_grip)
-	assert_eq(live.deep_snow_drag, _cfg.snow_deep_drag)
-	assert_eq(live.deep_snow_depth_m, _cfg.snow_visual_depth_m)
-	assert_eq(live.frozen_water_grip, _cfg.ice_grip)
-
-
-func test_a_region_without_the_blocks_is_an_exact_no_op() -> void:
-	# The property the whole design leans on: every other region must be byte-identical
-	# to the authored baseline, so adding this feature changed no existing stage.
-	var base: GameConfig = load(Config.CONFIG_PATH)
-	var live := _seat(PLAIN_REGION)
-	assert_eq(live.grass_grip, base.grass_grip)
-	assert_eq(live.gravel_grip, base.gravel_grip)
-	assert_eq(live.tarmac_grip, base.tarmac_grip)
-	assert_eq(live.deep_snow_drag, 0.0, "no deep snow means exactly zero drag")
-	assert_eq(live.deep_snow_depth_m, 0.0, "…and exactly zero visual raise")
-	assert_eq(live.frozen_water_grip, 0.0, "…and liquid water")
-
-
-func test_an_eventless_region_tag_does_not_leak_into_the_next_stage() -> void:
-	# apply_event_config pins every omitted field to the AUTHORED baseline, not to the
-	# current session config. Without that, one slippery stage would leave the next one
-	# slippery too — the same trap track_water_level_m is protected from.
-	var base: GameConfig = load(Config.CONFIG_PATH)
-	var live: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate(true)
-	StageConfig.apply_event_config(live, {"seed": 1, "region": SNOW_REGION})
-	assert_ne(live.grass_grip, base.grass_grip, "setup: the snow stage overrode grip")
-	StageConfig.apply_event_config(live, {"seed": 2, "region": PLAIN_REGION})
-	assert_eq(live.grass_grip, base.grass_grip, "the next stage is back to baseline")
-	assert_eq(live.deep_snow_drag, 0.0, "…with no residual drag")
-	assert_eq(live.frozen_water_grip, 0.0, "…and no residual ice")
-
-
-func test_an_event_with_no_region_gets_the_baseline() -> void:
-	# Free roam / benchmark / dev boot pass events with no region tag.
-	var base: GameConfig = load(Config.CONFIG_PATH)
-	var live: GameConfig = (load(Config.CONFIG_PATH) as GameConfig).duplicate(true)
-	StageConfig.apply_event_config(live, {"seed": 3})
-	assert_eq(live.grass_grip, base.grass_grip)
-	assert_eq(live.deep_snow_drag, 0.0)
-	assert_eq(live.frozen_water_grip, 0.0)
-
-
-# --- The AI field scales with the player ---------------------------------------
-
-func test_region_grip_reaches_the_lap_time_model() -> void:
-	# Snow is a VARIETY lever, not a difficulty one: rival times must lengthen with the
-	# player's grip loss. LapTimeModel reads the same live fields, so this is really
-	# asserting that the funnel seats them where the solver looks.
-	var car := {
-		"mass": 1200.0, "peak_torque": 300.0, "redline": 6500.0,
-		"drive_mode": CarLibrary.AWD,
-	}
-	var event := {"seed": 7, "turn_count": 20, "surface_mix": 0.5}
-	# A corner is required for grip to matter at all: on a pure straight the lap is
-	# power-limited and mu never binds, so the two times would be identical and the test
-	# would pass for the wrong reason.
-	var track := TrackFixtures.straight_then_arc(80.0, 45.0, PI)
-	var base: GameConfig = load(Config.CONFIG_PATH)
-
-	var dry_cfg: GameConfig = base.duplicate(true)
-	StageConfig.apply_event_config(dry_cfg, event.duplicate())
-	Config.data = dry_cfg
-	var dry_ms := LapTimeModel.optimum_ms(track, car, event)
-
-	var snow_event: Dictionary = event.duplicate()
-	snow_event["region"] = SNOW_REGION
-	var snow_cfg: GameConfig = base.duplicate(true)
-	StageConfig.apply_event_config(snow_cfg, snow_event)
-	Config.data = snow_cfg
-	var snow_ms := LapTimeModel.optimum_ms(track, car, snow_event)
-
-	assert_gt(dry_ms, 0, "setup: the dry lap actually solved")
-
-	assert_gt(snow_ms, dry_ms,
-		"a slippery region lengthens the optimum, so the whole rival field scales")
-
-
-func test_the_car_rating_is_immune_to_a_slippery_region() -> void:
-	# CarPerformance benchmarks at a frozen surface grip. If a region could move a
-	# rating, it would silently re-pitch every matched opponent field in the game.
-	var car := {
-		"mass": 1200.0, "peak_torque": 300.0, "redline": 6500.0,
-		"drive_mode": CarLibrary.AWD,
-	}
-	var base: GameConfig = load(Config.CONFIG_PATH)
-	var dry_cfg: GameConfig = base.duplicate(true)
-	StageConfig.apply_event_config(dry_cfg, {"seed": 1})
-	Config.data = dry_cfg
-	CarPerformance.reset()
-	var dry_rating := CarPerformance.rating(car)
-
-	var snow_cfg: GameConfig = base.duplicate(true)
-	StageConfig.apply_event_config(snow_cfg, {"seed": 1, "region": SNOW_REGION})
-	Config.data = snow_cfg
-	CarPerformance.reset()
-	assert_eq(CarPerformance.rating(car), dry_rating,
-		"the rating is benchmarked at a frozen grip and cannot drift with the region")
 
 
 # --- Catalogue contract (the shipped Alps entry) --------------------------------
@@ -272,28 +159,8 @@ func test_the_snowfall_condition_carries_no_grip_multiplier() -> void:
 	# mu, a snowy stage would be arbitrarily slipperier than a dry one on the same
 	# frozen ground — two levers over one variable.
 	var cfg: GameConfig = Config.data
-	assert_eq(WeatherLibrary.grip_mult(cfg, StageFields.WEATHER_SNOW), 1.0,
+	assert_eq(WeatherLibrary.grip_mult(cfg, WeatherLibrary.WEATHER_SNOW), 1.0,
 		"snowfall does not touch grip")
-	var entry := WeatherLibrary.by_id(StageFields.WEATHER_SNOW)
-	assert_eq(String(entry.get("id", "")), StageFields.WEATHER_SNOW,
+	var entry := WeatherLibrary.by_id(WeatherLibrary.WEATHER_SNOW)
+	assert_eq(String(entry.get("id", "")), WeatherLibrary.WEATHER_SNOW,
 		"setup: the snow condition is a real entry, not the dry fallback")
-
-
-# --- Per-species baseline proportions -------------------------------------------
-
-func test_the_alps_conifers_are_taller_than_they_are_wide() -> void:
-	# Catalogue contract, stated as a RELATION so any reasonable retune survives: a
-	# conifer species must not be authored wider than it is tall. The bug this guards is
-	# forgetting size_scale entirely on a tall narrow cutout, which leaves it stretched
-	# onto the square card and drawn at up to twice its real width.
-	RegionLibrary.reset()
-	var cfg: GameConfig = Config.data
-	for species in RegionLibrary.tree_mix(RegionLibrary.look_of("snow")):
-		var entry: Dictionary = species
-		var scale: Vector2 = entry.get("size_scale", Vector2.ONE)
-		var base: Vector2 = cfg.region_tree_billboard_size_m \
-			if String(entry.get("profile", "home")) == "region" else cfg.tree_size_m
-		var w := base.x * scale.x
-		var h := base.y * scale.y
-		assert_lt(w, h, "%s is drawn taller than wide, as a conifer must be"
-			% String(entry.get("texture", "?")))

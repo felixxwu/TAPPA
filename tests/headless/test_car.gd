@@ -764,7 +764,8 @@ func test_bent_front_wheels_veer_the_car_via_physics() -> void:
 	# A fixed, clearly-bent toe: the tunable damage_wheel_toe_max would tie the result to its tune.
 	var t := 0.1
 	# Both front wheels toed the same way about the car-up axis = a physical steer.
-	_car.apply_owned({"model_id": "fx_light_rwd", "wheel_toe": [t, t, 0.0, 0.0]})
+	_car.apply_owned({"model_id": "fx_light_rwd"})
+	_car.damage.set_toe_from_array([t, t, 0.0, 0.0])  # as free roam restores a saved car_state
 	await _wait_physics(4)
 	# The toe rides on the per-wheel VehicleWheel3D.steering the drivetrain reads for
 	# the force direction (front wheels carry the base steer plus their toe).
@@ -773,6 +774,7 @@ func test_bent_front_wheels_veer_the_car_via_physics() -> void:
 	assert_almost_eq(fl.steering, _car.steering + t, 0.02, "front wheel carries base steer + toe")
 	assert_almost_eq(rl.steering, 0.0, 0.02, "an unbent rear wheel stays straight")
 	var start_yaw := _car.global_transform.basis.get_euler().y
+	seed(1)  # small bumps on the drive nudge the toe by a random amount, so the result depended on earlier files
 	Input.action_press("accelerate")
 	await _wait_physics(150)
 	Input.action_release("accelerate")
@@ -907,7 +909,7 @@ func test_engine_swap_reshapes_mass_and_torque() -> void:
 	CarFixtures.install()
 	var v8 := "fx_v8"
 	_car.apply_owned({"model_id": "fx_light_rwd", "swapped_engine": v8, "hp": 700.0,
-		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+		"tuning": {}, "wheel_toe": [0, 0, 0, 0]})
 	assert_almost_eq(_car.config.peak_torque, float(EngineLibrary.by_id(v8)["peak_torque"]), 0.5,
 		"live torque comes from the swapped engine")
 	var expected_mass := EngineSwap.recompute_mass(
@@ -924,7 +926,7 @@ func test_engine_swap_brings_its_transmission() -> void:
 	CarFixtures.install()
 	var v8 := "fx_v8"
 	_car.apply_owned({"model_id": "fx_light_rwd", "swapped_engine": v8, "hp": 700.0,
-		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+		"tuning": {}, "wheel_toe": [0, 0, 0, 0]})
 	var eng := EngineLibrary.by_id(v8)
 	assert_eq(_car.config.gear_ratios.size(), (eng["gear_ratios"] as Array).size(),
 		"swapped engine's gear count applied")
@@ -941,7 +943,7 @@ func test_apply_owned_rebuilds_the_voice_for_a_swapped_engine() -> void:
 	var stock := String(CarLibrary.by_id("fx_light_rwd").get("engine", ""))
 	var donor := "fx_v8" if stock != "fx_v8" else "fx_i4"
 	_car.apply_owned({"model_id": "fx_light_rwd", "swapped_engine": donor, "hp": 700.0,
-		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+		"tuning": {}, "wheel_toe": [0, 0, 0, 0]})
 	assert_ne(EngineLibrary.cylinders(EngineLibrary.by_id(donor)),
 		EngineLibrary.cylinders(EngineLibrary.by_id(stock)),
 		"precondition: the fixture engines differ in cylinder count, so a stale voice shows")
@@ -967,7 +969,7 @@ func test_fit_engine_builds_a_voice_even_with_no_swap() -> void:
 func test_stock_car_is_unaffected_by_the_swap_step() -> void:
 	CarFixtures.install()
 	_car.apply_owned({"model_id": "fx_light_rwd", "hp": 700.0,
-		"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}, "wheel_toe": [0, 0, 0, 0]})
+		"tuning": {}, "wheel_toe": [0, 0, 0, 0]})
 	assert_almost_eq(_car.config.mass, float(CarLibrary.by_id("fx_light_rwd")["mass"]), 0.5,
 		"no swap -> stock mass unchanged")
 

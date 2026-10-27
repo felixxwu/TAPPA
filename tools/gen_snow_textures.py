@@ -20,7 +20,7 @@ are photographs, and a hand-rolled gradient was visibly the odd one out.
 
 Run from the repo root:  python3 tools/gen_snow_textures.py
 
-Sibling of tools/gen_map_texture.py and tools/gen_garage_textures.py. Pure PIL —
+Sibling of tools/gen_map_texture.py. Pure PIL —
 this repo has no numpy, so the noise below is hand-rolled.
 
 THE ONE THING NOT TO "SIMPLIFY": the ground textures are deliberately NOT flat

@@ -85,19 +85,6 @@ func test_progress_advances_on_road_and_is_monotonic() -> void:
 	assert_almost_eq(tp.progress_offset(), 30.0, 0.5, "backward travel does not reduce progress")
 
 
-func test_jump_to_finish_pins_progress_to_100_percent() -> void:
-	# The dev skip-to-finish cheat: jump_to_finish() pins progress to the end of the
-	# curve (100%) and returns the finish pose, without needing the car to be there.
-	_put_car(0, 0)
-	var tp := _make_progress()
-	assert_almost_eq(tp.progress_percent(), 0.0, 0.001, "starts at 0%")
-	var pose := tp.jump_to_finish()
-	assert_almost_eq(tp.progress_percent(), 1.0, 0.001, "progress pinned to 100%")
-	assert_almost_eq(tp.progress_offset(), tp.baked_length(), 0.5, "offset at the finish")
-	# The returned pose sits on the road at the end of the curve (~z = 100).
-	assert_almost_eq(pose.origin.z, 100.0, 1.0, "finish pose is at the end of the road")
-
-
 func test_progress_reaches_100_percent_at_finish_offset_before_curve_end() -> void:
 	# Curve is 100 m long (before_each), but the finish is at 60 m: the last 40 m is
 	# runoff road the car rolls into after finishing.
@@ -111,16 +98,6 @@ func test_progress_reaches_100_percent_at_finish_offset_before_curve_end() -> vo
 	tp._physics_process(0.0)
 	assert_almost_eq(tp.progress_percent(), 1.0, 0.01,
 		"reaching the finish offset reads 100% though the curve extends further")
-
-
-func test_jump_to_finish_uses_the_finish_offset() -> void:
-	_put_car(0, 0)
-	var tp := TrackProgress.new()
-	add_child_autofree(tp)
-	tp.setup(_curve, _car, null, 60.0)
-	var pose := tp.jump_to_finish()
-	assert_almost_eq(tp.progress_percent(), 1.0, 0.001, "jump pins to 100% at the finish")
-	assert_almost_eq(pose.origin.z, 60.0, 1.0, "finish pose is at the finish offset, not the curve end")
 
 
 # The pause-menu "Reset to track" is a MANUAL reset: it snaps the car onto the
@@ -233,21 +210,6 @@ func test_returning_to_the_road_clears_the_off_road_clock() -> void:
 	_put_car(_off_road_x(), 30)
 	_tick_for(tp, almost)
 	assert_eq(_car.reset_calls.size(), 0, "two separate excursions don't accumulate into a reset")
-
-
-func test_off_road_seconds_left_counts_down_and_reads_idle_on_road() -> void:
-	_set_off_road_timeout(2.0)
-	_put_car(0, 0)
-	var tp := _make_progress()
-	tp._physics_process(_TICK)
-	assert_eq(tp.off_road_seconds_left(), -1.0, "on the road there is no pending reset")
-	_put_car(_off_road_x(), 20)
-	tp._physics_process(_TICK)
-	var first := tp.off_road_seconds_left()
-	assert_almost_eq(first, Config.data.off_road_reset_timeout_s - _TICK, 0.001,
-		"the countdown starts at the full timeout less the tick already spent")
-	_tick_for(tp, 4.0 * _TICK)
-	assert_lt(tp.off_road_seconds_left(), first, "the countdown keeps falling while off the road")
 
 
 func test_off_track_reset_can_be_disabled() -> void:
@@ -523,80 +485,11 @@ func test_offset_reacquires_after_a_teleport_via_retarget() -> void:
 	assert_almost_eq(tp.progress_offset(), 170.0, 1.5, "and tracking continues from there")
 
 
-func test_jump_to_finish_leaves_tracking_usable_at_the_finish() -> void:
-	# The dev teleport is the biggest discontinuity there is: progress is pinned at the
-	# finish and must stay there once the car actually arrives.
-	var curve := _winding_curve()
-	var p0 := curve.sample_baked(0.0)
-	_put_car(p0.x, p0.y)
-	var tp := _progress_on(curve)
-	var pose := tp.jump_to_finish()
-	_put_car(pose.origin.x, pose.origin.z)
-	tp._physics_process(0.0)
-	assert_almost_eq(tp.progress_percent(), 1.0, 0.001, "still 100% after landing at the finish")
-	assert_eq(_car.reset_calls.size(), 0, "landing at the finish is not treated as off-track")
-
-
-func _hairpin_curve() -> Curve2D:
-	# Out along +Z to z=50, a short neck across to x=6, then back down to z=0.
-	# Arc length ~= 50 + 6 + 50 = ~106 m; the two legs sit 6 m apart at the neck.
-	var c := Curve2D.new()
-	c.add_point(Vector2(0, 0))
-	c.add_point(Vector2(0, 50))
-	c.add_point(Vector2(6, 50))
-	c.add_point(Vector2(6, 0))
-	return c
-
-
 func _progress_on(curve: Curve2D) -> TrackProgress:
 	var tp := TrackProgress.new()
 	add_child_autofree(tp)
 	tp.setup(curve, _car, null)
 	return tp
-
-
-func test_clean_straight_drive_bills_no_cut() -> void:
-	# Realistic per-tick motion: the nearest-point offset advances only a little
-	# each tick, so no tick's jump reaches cut_jump_threshold_m — no cut.
-	_put_car(0, 0)
-	var tp := _make_progress()   # straight 100 m curve from before_each
-	var z := 0.0
-	while z < 90.0:
-		z += 0.5                 # small step, well under the jump threshold
-		_put_car(0, z)
-		tp._physics_process(0.0)
-	assert_almost_eq(tp.cut_excess_m(), 0.0, 0.001, "no excess on a clean straight")
-	assert_almost_eq(tp.cut_penalty_s(), 0.0, 0.001, "no penalty on a clean straight")
-
-
-func test_cutting_the_neck_bills_the_stolen_metres() -> void:
-	var curve := _hairpin_curve()
-	_put_car(0, 0)
-	var tp := _progress_on(curve)
-	# Drive a little up the entry leg (legit), then in ONE tick the nearest point
-	# flips across the neck to the exit leg — a huge single-tick progress jump.
-	_put_car(0, 5)
-	tp._physics_process(0.0)
-	var before := tp.cut_excess_m()
-	assert_almost_eq(before, 0.0, 0.001, "legit travel up the entry leg bills nothing")
-	_put_car(6, 3)   # nearest offset leaps from ~5 to ~103 in a single tick
-	tp._physics_process(0.0)
-	var stolen := tp.cut_excess_m()
-	assert_gt(stolen, 50.0, "cutting the neck bills a large chunk of stolen metres")
-	# Penalty is exactly the stolen metres over the (config) reference speed.
-	assert_almost_eq(tp.cut_penalty_s(),
-		stolen / Config.data.cut_reference_speed_mps, 0.001,
-		"penalty = stolen metres / reference speed")
-
-
-func test_cut_penalty_disabled_never_bills() -> void:
-	Config.data.cut_penalty_enabled = false
-	var curve := _hairpin_curve()
-	_put_car(0, 5)
-	var tp := _progress_on(curve)
-	_put_car(6, 3)
-	tp._physics_process(0.0)
-	assert_almost_eq(tp.cut_penalty_s(), 0.0, 0.001, "disabled -> no penalty")
 
 
 # --- Public accessors for the rival ghost (features/rival-ghost.md) ---------------
@@ -640,13 +533,3 @@ func test_sample_at_clamps_outside_the_curve() -> void:
 	assert_almost_eq(tp.sample_at(-50.0).y, start.y, 0.001, "clamps below 0")
 	assert_almost_eq(tp.sample_at(tp.baked_length() + 50.0).y, end.y, 0.001,
 			"clamps past the end")
-
-func test_setup_resets_accumulated_excess() -> void:
-	var curve := _hairpin_curve()
-	_put_car(0, 5)
-	var tp := _progress_on(curve)
-	_put_car(6, 3)
-	tp._physics_process(0.0)
-	assert_gt(tp.cut_excess_m(), 0.0, "excess accumulated")
-	tp.setup(curve, _car, null)   # re-arm for a new event
-	assert_almost_eq(tp.cut_excess_m(), 0.0, 0.001, "setup clears excess")

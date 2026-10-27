@@ -11,14 +11,19 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 
 ## The world block (`Save.KEY_WORLD`)
 
-`WorldSession` owns the block's shape and is its only writer. Every write goes through `Save.save()`
-(debounced), so the world is saved continuously.
+`WorldSession` owns the block's shape and is its only writer. Progress (money, lit stops, coins,
+parts, cars) goes through `Save.save()` as it happens, so it is saved and uploaded. Churn — `pose`,
+`car_state`, `driven`, `seen`, `max_ring`, `last_site`, `drive_time` — only changes the dict;
+free roam's `save_world` (every 5 s and on every exit) writes it to disk with `Save.save(false)`,
+which doesn't mark the profile unsynced or ask the cloud for an upload ([cloud-save.md](cloud-save.md)).
+`driven` grows by one `"x,z"` key per 40 m cell visited and isn't pruned (a packed-int key would
+need a migration, so it stays as is).
 
 | Key | What |
 |---|---|
 | `seed` | the island's world seed (`FreeRoamSettings.world_seed`) |
 | `car` | the active owned car's instance id (`Save.KEY_CARS`) |
-| `pose` | `[x, y, z, yaw]`, written every `SAVE_EVERY_S` (5 s) and when leaving the scene |
+| `pose` | `[x, y, z, yaw]`, written every `FreeRoamSettings.save_every_s` (5 s) and when leaving the scene |
 | `car_state` | `{hp, cooling_broken, engine_temp, toe}`, so a reload resumes the damage too |
 | `lit` / `last_site` | lit rest stops (site ids; spawn 0 always) and the respawn point |
 | `driven` | map cells (`DRIVEN_CELL_M` = 40 m) the car has driven through, for the map |
@@ -28,10 +33,28 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
 | `money` | coins picked up and not yet spent (`money` / `set_money`); dropped when the car gives up |
 | `dropped` | the money left at the last wreck, `{pos: [x, y, z], money: n}`, or `{}` (`dropped` / `set_dropped`) |
 | `collected`, `revealed` | coin spots taken, rings whose stock is on sale ([loot.md](loot.md)). Parts live on each owned car (`parts`, each switched on or off), not here |
+| `sites_hash` | a fingerprint of the generated site list the ids above index into (`sites_fingerprint`: the hash of every site's kind, so their count and order) |
+
+**Site ids are only good for the sites they were saved against.** The streamer rebuilds the site
+list from the seed every boot, so a retune of the road or site generation renumbers them. Free roam
+calls `check_sites` the moment the streamer has built its sites (on the Terrain's `ready`, before
+the rest stops and loot read anything): a world with no fingerprint yet is stamped; a different
+one resets `lit`, `last_site`, `seen`, `collected`, `revealed` and `pose` rather than misreading
+them. As a backstop, `RestStops.restore` drops any lit id that isn't a rest stop on this island,
+and the respawn pose uses the cleaned `RestStops.last_site`.
+
+**The world generation.** `WorldSession.generation` moves on (`invalidate()`, which also emits
+`world_changed`) whenever the profile's world is replaced: `new_world`, a whole-profile swap
+(`Save.replaced`: a cloud download, a wipe) and `Benchmark.end`. Free roam captures it in `_ready`;
+once it differs, `save_world` and the per-tick map/ring/seen writes do nothing, so a scene still on
+screen for a frame after the swap (the benchmark ending, the title's New World, Use cloud) can't
+write its car into the world that replaced it. `CarPreviewCache` drops its owned-car previews on
+the same signal.
 
 - **New world** (`new_world`): the fixed island seed (`FreeRoamSettings.world_seed`) and a starter car. It replaces the old world **and the
   old owned cars**, because a world is the whole save.
-- **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints).
+- **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints;
+  `is_seen` / `see` keep an int set, rebuilt only when the stored list is a different one).
 - **Schema:** `Save.SCHEMA_VERSION` is 8. Every v7 (roguelike) profile is refused, not migrated,
   and the player starts fresh (decision 26).
 - **Headless runs** can't write the real profile (Save's test sandbox), so a headless
@@ -50,7 +73,7 @@ The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
   `tree_exiting` fires, so `save_world` can't read the car then: it uses the pose cached on every
   physics tick (damage and drive time stay readable). A travel from the rest-stop page's Map moves the car
   first and the page closes after, so the reload's save holds the destination. `RestStops.lit` / `respawn_point_changed`
-  write straight through; a respawn bumps `TIMES_GAVE_UP`.
+  write straight through; a respawn bumps `TIMES_GAVE_UP`, and so does booting a world saved while wrecked (the Respawn that quitting skipped).
 
 ## Title screen (`TitleScreen`, decision 20)
 
@@ -68,15 +91,14 @@ Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.m
   unpauses; New World; Settings.
 - **STARTER:** New World first asks for a starter car. The choices are the cars in
   `CarLibrary` with `"ring": 0` (`starter_choices` → `LootRules.starter_cars`).
-  Picking one makes the world (seed `FreeRoamSettings.world_seed`, so it matches tools/road_network_lab.html) and reloads free roam (`enter_world`; the host
-  disconnects its exit save first, so the old car's pose isn't written into the new world). Over an
+  Picking one makes the world (seed `FreeRoamSettings.world_seed`, so it matches tools/road_network_lab.html) and reloads free roam (`enter_world`; the
+  new world moves the generation on, so the old scene's exit save doesn't write the old car's pose into it). Over an
   existing world, a `ConfirmPopup` asks first. On a `fresh` world there's no confirm: picking the car
   already fielded just closes the menu, and another car keeps the same seed and reloads to field it.
 - **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
 
-Free roam's pause menu quits to the title (`PauseMenu.quit_scene`), saving first — which reloads
-the world with the menu over it. A rest-stop reload or `--auto-drive` boot shows no menu. The old
-`HubShell` is unreachable from the game.
+Free roam's pause menu quits to the title (`PauseMenu.quit_to_title`), saving first — which reloads
+the world with the menu over it. A rest-stop reload or `--auto-drive` boot shows no menu.
 
 ## World pages (`WorldPages`, decisions 21–22)
 

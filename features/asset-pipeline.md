@@ -200,8 +200,7 @@ textures exist or what any of them chose.
 `meshes/create_shadow_meshes = false` on every `blender/*/*.glb` import. A shadow
 mesh is a merged-vertex *duplicate* built purely to speed up shadow passes — turning
 it off does not remove any shadow, it just renders the shadow from the normal mesh.
-The game has **no shadow-casting lights** (the only one in the repo is the unhosted garage
-model's sun, `garage.gd`), so this buys import time and memory at no visual cost.
+The game has **no shadow-casting lights**, so this buys import time and memory at no visual cost.
 
 ## `[rendering]` knobs that interact with assets
 

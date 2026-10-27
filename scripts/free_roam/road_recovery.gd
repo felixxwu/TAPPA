@@ -22,6 +22,9 @@ var _stuck_time := 0.0
 func _physics_process(delta: float) -> void:
 	if car == null or streamer == null:
 		return
+	if is_wrecked():
+		_stuck_time = 0.0
+		return
 	if is_stuck_step(delta) or fell_out_of_world():
 		reset_now()
 
@@ -58,13 +61,24 @@ func is_stuck_step(delta: float) -> bool:
 	return true
 
 
+# A car that has given up stays where it is until its Respawn: no reset may revive it.
+func is_wrecked() -> bool:
+	var dmg: DamageModel = car.get("damage")
+	return dmg != null and dmg.thermal and dmg.hp <= 0.0
+
+
 # Put the car on the nearest road, facing along it in the direction closest to where it was
-# pointing.
+# pointing. The nitrous tank keeps its charge: only a respawn or travel refills it.
 func reset_now() -> void:
 	_stuck_time = 0.0
+	if is_wrecked():
+		return
+	var engine = car.drivetrain.engine
+	var charge: float = engine.nitrous_charge
 	var p := Vector2(car.global_position.x, car.global_position.z)
 	var pose := road_pose(streamer, p, -car.global_transform.basis.z)
 	car.reset_to(pose)
+	engine.nitrous_charge = charge
 	reset_done.emit(Vector2(pose.origin.x, pose.origin.z))
 
 

@@ -24,25 +24,25 @@ func after_each() -> void:
 func test_flush_and_sync_writes_immediately() -> void:
 	# The entry point the web listeners call must hit disk without waiting for the
 	# debounce — that's the whole point of it existing.
-	_save.profile["starter_model_id"] = "web_flush_probe"
+	_save.profile["created_utc"] = "web_flush_probe"
 	_save.save()  # debounced: nothing on disk yet
 	assert_false(FileAccess.file_exists(TEST_PATH), "debounced save should not have written yet")
 	_save.flush_and_sync()
 	assert_true(FileAccess.file_exists(TEST_PATH), "flush_and_sync should write immediately")
 	_save.load_or_new()
-	assert_eq(_save.profile.get("starter_model_id", ""), "web_flush_probe",
+	assert_eq(_save.profile.get("created_utc", ""), "web_flush_probe",
 		"the flushed profile should round-trip from disk")
 
 
 func test_close_notification_reaches_the_same_flush() -> void:
 	# The desktop close path and the web path share one entry point, so whatever
 	# the browser listeners trigger is exactly what a desktop close does.
-	_save.profile["starter_model_id"] = "close_probe"
+	_save.profile["created_utc"] = "close_probe"
 	_save.save()
 	_save.notification(NOTIFICATION_WM_CLOSE_REQUEST)
 	assert_true(FileAccess.file_exists(TEST_PATH), "close notification should flush to disk")
 	_save.load_or_new()
-	assert_eq(_save.profile.get("starter_model_id", ""), "close_probe")
+	assert_eq(_save.profile.get("created_utc", ""), "close_probe")
 
 
 func test_flush_respects_disabled_storage() -> void:

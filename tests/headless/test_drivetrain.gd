@@ -87,9 +87,9 @@ func test_surface_tire_params_rain_reduces_mu() -> void:
 
 	# No-terrain fallback branch.
 	dt.terrain = null
-	cfg.weather = StageFields.WEATHER_DRY
+	cfg.weather = WeatherLibrary.WEATHER_DRY
 	var dry_flat: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
-	cfg.weather = StageFields.WEATHER_RAIN
+	cfg.weather = WeatherLibrary.WEATHER_RAIN
 	var wet_flat: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
 	assert_lt(wet_flat, dry_flat, "wet mu_mult < dry mu_mult with no terrain")
 
@@ -97,13 +97,13 @@ func test_surface_tire_params_rain_reduces_mu() -> void:
 	var stub := _StubTerrain.new()
 	dt.terrain = stub
 	stub.s = Vector2(0.5, 0.5)
-	cfg.weather = StageFields.WEATHER_DRY
+	cfg.weather = WeatherLibrary.WEATHER_DRY
 	var dry_terrain: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
-	cfg.weather = StageFields.WEATHER_RAIN
+	cfg.weather = WeatherLibrary.WEATHER_RAIN
 	var wet_terrain: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
 	assert_lt(wet_terrain, dry_terrain, "wet mu_mult < dry mu_mult with terrain")
 
-	cfg.weather = StageFields.WEATHER_DRY
+	cfg.weather = WeatherLibrary.WEATHER_DRY
 	dt.terrain = null
 
 
@@ -118,7 +118,7 @@ func test_global_grip_scales_every_contact_alike() -> void:
 	stub.s = Vector2(0.5, 0.5)
 	for terrain in [null, stub]:
 		dt.terrain = terrain
-		for weather in [StageFields.WEATHER_DRY, StageFields.WEATHER_RAIN]:
+		for weather in [WeatherLibrary.WEATHER_DRY, WeatherLibrary.WEATHER_RAIN]:
 			cfg.weather = weather
 			cfg.global_grip_mult = 1.0
 			var base: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
@@ -126,7 +126,7 @@ func test_global_grip_scales_every_contact_alike() -> void:
 			var half: float = dt.surface_tire_params(cfg, Vector3.ZERO).mu_mult
 			assert_almost_eq(half, base * 0.5, 1e-5, "%s, terrain %s: halving the global grip halves μ" % [weather, terrain != null])
 	cfg.global_grip_mult = authored
-	cfg.weather = StageFields.WEATHER_DRY
+	cfg.weather = WeatherLibrary.WEATHER_DRY
 	dt.terrain = null
 
 

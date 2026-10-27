@@ -112,10 +112,6 @@ func _ready() -> void:
 	# See todo/mobile-web-performance.md (shared "load finished" hook).
 	_on_load_finished()
 
-	# Phase: post-generation wiring — session signals, the pre-event start line, and the
-	# between-event pit-repair popup.
-	_wire_session_and_stage(loading)
-
 	# Phase: the diagnostic overlay, the pause menu arm, and benchmark mode.
 	_build_overlays_and_benchmark()
 
@@ -216,13 +212,6 @@ func _field_player_car() -> void:
 	# apply the newly-fielded car's per-car bonnet offset now — retarget() only
 	# runs on a later car swap.
 	($CameraManager as CameraManager).refresh_bonnet_offset()
-
-
-# _ready phase, after generation: wire the stage-complete signal.
-func _wire_session_and_stage(_loading: LoadingScreen) -> void:
-	# The stage finish returns to the hub (the title): this scene has no run to report to.
-	if _stage_manager != null and not _stage_manager.stage_completed.is_connected(_on_session_event_completed):
-		_stage_manager.stage_completed.connect(_on_session_event_completed)
 
 
 # _ready phase: the in-game diagnostic overlay, arming the pause menu now the world is ready,
@@ -390,20 +379,6 @@ func _warm_up_point() -> Vector3:
 	return WorldRuntime.warm_up_point(get_viewport().get_camera_3d(), fallback)
 
 
-# Paint the loading overlay's water preview for `bounds`, first expanding the rect to the
-# preview's aspect so the cells aren't distorted. Returns the EXPANDED rect, which the
-# caller must keep: the later refinement pass repaints into the same frame, and using a
-# different rect would make the water visibly jump. Shared by the rough origin-box pass
-# and the refined track-bounds pass, which were otherwise byte-identical.
-func _paint_water_preview(loading: LoadingScreen, params: TrackGenParams,
-		bounds: Rect2) -> Rect2:
-	var rect := LoadingScreen.expand_to_aspect(bounds,
-		LoadingScreen.aspect_of(loading.preview_size()))
-	var cells: Array = LakeField.preview_cells(params, rect)
-	loading.update_water(cells[0], cells[1], rect)
-	return rect
-
-
 # Is this an INTERACTIVE load — an overlay is up AND we're not headless? The one predicate
 # the whole generation sequence keys off, defined ONCE here (it used to be re-spelled at each
 # of eight sites, under three different local names) so the interactive and headless paths
@@ -438,9 +413,8 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 	var was_frozen := car_body.freeze
 	car_body.freeze = true
 
-	# Phase 1 — "Generating track…": the road shape, the start pose, and the loading
-	# screen's track/water preview.
-	var shape := await _generate_centerline(cfg, loading)
+	# Phase 1 — "Generating track…": the road shape and the start pose.
+	var shape := await _generate_centerline(cfg)
 	var result: Dictionary = shape["result"]
 	var road_centerline := shape["road_centerline"] as Curve2D
 	var finish_len: float = shape["finish_len"]
@@ -449,11 +423,11 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 	# Phase 2 — "Carving road into terrain…": the road bake (flatten + surface split +
 	# cliffs) and the final waterline pass it makes possible.
-	await _carve_road_into_terrain(cfg, loading, road_centerline, shape["water_bounds"], result.get("pieces", []))
+	await _carve_road_into_terrain(cfg, loading, road_centerline, result.get("pieces", []))
 
 	# Phase 3 — "Precomputing chunks…" / "Building terrain…": every chunk the play area
 	# realistically requests, then the initial ring built once from that cache.
-	await _build_terrain_ring(loading, road_centerline)
+	await _build_terrain_ring(road_centerline)
 
 	# Ground exists (carved, coloured, cache-built) — hand the car back to the physics
 	# engine. Everything after this point still runs behind the loading cover, so it has
@@ -479,24 +453,14 @@ func _generate_track(cfg: GameConfig, loading: LoadingScreen = null) -> void:
 
 # Phase 1 of _generate_track. Generates the road centerline from the car's spawn pose and
 # returns the shape contract the later phases read:
-#   result, road_centerline, finish_len, start_pos, start_heading, staged, water_bounds.
-func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary:
+#   result, road_centerline, finish_len, start_pos, start_heading.
+func _generate_centerline(cfg: GameConfig) -> Dictionary:
 	await _stage("Generating track…")
 	var xform: Transform3D = $Car.global_transform
 	var start_pos := Vector2(xform.origin.x, xform.origin.z)
 	# A Node3D's forward is -Z; project it onto the XZ plane.
 	var fwd := -xform.basis.z
 	var start_heading := Vector2(fwd.x, fwd.z).normalized()
-	# Live preview: only when an overlay is up and we're not headless. Headless keeps
-	# generation effectively synchronous (empty Callable -> the search never yields a
-	# frame) so tests still build the world within _ready and test runtime is unchanged.
-	# `interactive` is the one predicate the whole generation sequence keys off: an overlay
-	# is up AND we're not headless. Resolved through the single _interactive() definition so
-	# the interactive and headless paths cannot drift apart across the phases.
-	var interactive := _interactive(loading)
-	var on_progress := Callable()
-	if interactive:
-		on_progress = loading.update_track_preview
 	# The track comes from the live config (seed, turn count, width, water): this scene is the
 	# dev stage and the physics test harness, so whoever loads it writes the config first.
 	var params := TrackGenParams.for_config(cfg)
@@ -504,26 +468,14 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# the start-LINE pose from params (absolute, idempotent — never accumulates across
 	# re-generation on a reused car) and seat the car + start_pos there. For a staged
 	# run the start line sits one lead-in ahead behind the generation origin.
-	# Free play generates staged params (for_event stages whenever start_line_enabled,
-	# keeping lockfile keys) but never stages the world — no lead-in road — so its
-	# origin sits start_lead_in_ahead_m ahead of the nominal spawn. Seat the car on
-	# the road's actual start whenever the two disagree, not only on a relocation.
+	# Seat the car on the road's actual start whenever it disagrees with the spawn.
 	var start_line := params.origin
 	if start_line != start_pos:
 		start_pos = start_line
 		# A bare global_position write is discarded by the physics server outside the
 		# physics step; move_spawn_to queues it properly and updates the R-reset pose.
 		$Car.move_spawn_to(start_line)
-	# Paint the waterline into the preview BEFORE generation — it's a pure function
-	# of (seed, water_level), so it can show first and the road animates over it. This
-	# early pass covers a rough box around the origin (the track extent isn't known
-	# yet); it's refined to the true track bounds once generation completes (below).
-	if cfg.water_enabled and interactive:
-		var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
-		var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)
-		_paint_water_preview(loading, params, box)
-	# Live generation (the committed track lockfile is deleted with the authored stages).
-	var result: Dictionary = await TrackGenerator.generate(params, on_progress)
+	var result: Dictionary = await TrackGenerator.generate(params)
 	# The gradient profile of the terrain the player drives, attached to the result.
 	#
 	# Keyed off `cfg`, matching $Floor above (seeded from cfg.track_seed), so this is the
@@ -535,27 +487,15 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 	# within budget, and that adjustment never reaches cfg on its own. Everything
 	# downstream reads cfg — the rendered/collided lake (_build_lakes), the chase
 	# camera's ground seat, the submersion reset in track_progress.gd — so without this
-	# they'd all use a waterline the terrain doesn't have: the lake and the loading
-	# preview disagree, and the camera detaches from the chase view over a basin it
+	# they'd all use a waterline the terrain doesn't have: the lake disagrees with the
+	# terrain, and the camera detaches from the chase view over a basin it
 	# wrongly believes is flooded.
 	cfg.water_enabled = params.water_enabled
 	cfg.track_water_level_m = params.water_level
-	# Lock the finished shape so the held line is exact (not a mid-backtrack snapshot);
-	# it stays drawn through the remaining stages until finish().
-	if interactive:
-		loading.update_track_preview((result["centerline"] as Curve2D).tessellate())
 	# Road/progress centerline (with the lead-in for staged runs). The raw generated
 	# centerline still feeds the signs, so the start gate sits ahead of the launch
 	# point — the cars cross it as they pull away.
 	var road_centerline := result["centerline"] as Curve2D
-	# Refine the preview water to the ACTUAL track bounds now they're known, so it
-	# spans the whole stage instead of the rough origin box (no more box-edge clip).
-	# Held for the FINAL water pass after the bake (below) so it reuses the exact same
-	# frame — repainting into a different rect would make the water jump.
-	var water_bounds := Rect2()
-	if cfg.water_enabled and interactive:
-		var tb := LoadingScreen.bounds_of((result["centerline"] as Curve2D).tessellate()).grow(80.0)
-		water_bounds = _paint_water_preview(loading, params, tb)
 	# The FINISH is the END of the generated track (plus lead-in) — capture its arc
 	# length BEFORE appending the runoff, so the arch and 100% progress anchor here.
 	var finish_len := road_centerline.get_baked_length()
@@ -569,15 +509,13 @@ func _generate_centerline(cfg: GameConfig, loading: LoadingScreen) -> Dictionary
 		"finish_len": finish_len,
 		"start_pos": start_pos,
 		"start_heading": start_heading,
-		"water_bounds": water_bounds,
 	}
 
 
 # Phase 2 of _generate_track: bake the road into the terrain (flatten + surface split +
-# cliffs) — the heaviest single step — then repaint the loading preview's waterline now that
-# the bake makes a correct one possible.
+# cliffs) — the heaviest single step.
 func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
-		road_centerline: Curve2D, water_bounds: Rect2, pieces: Array) -> void:
+		road_centerline: Curve2D, pieces: Array) -> void:
 	var interactive := _interactive(loading)
 	# Road band + surface split, derived in the one place every baker shares
 	# (TerrainManager.bake_args) so the Seed Lab's preview bake can't drift from this
@@ -600,33 +538,9 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 	# single step; give it its own label and let it yield frames (interactive path only —
 	# should_yield stays false under headless) so the overlay keeps painting, not freezing.
 	await _stage("Carving road into terrain…")
-	# Interactive path: the grey track-preview line fills white as the bake walks the
-	# centerline (carve progress); headless passes empty callbacks and stays synchronous.
-	var carve_progress := loading.set_carve_progress if interactive else Callable()
 	await $Floor.set_track(road_centerline, bake_args[0], bake_args[1],
 		bake_args[2], bake_args[3], bake_args[4],
-		interactive, carve_progress, jumps)
-	if interactive:
-		loading.set_carve_progress(1.0)  # snap to fully-white once carving is done
-	# FINAL water pass — the only one that can be right, and it lands HERE, straight
-	# after the carve and before the long chunk precompute, so the true waterline is
-	# on screen for most of the load rather than flashing up at the end.
-	#
-	# The two passes above sample params.water_sampler (pure noise), because that is
-	# all that exists before set_track → bake_track: the road flatten and the CLIFF
-	# offsets are baked by it. Cliff offsets are signed, so a stage with real
-	# cliffiness drops far more ground below the waterline than the noise predicts
-	# (worst where a high coastal waterline meets high cliffiness — the Sh*tbox Cup
-	# shows it plainly), and the preview read far drier than the driven world.
-	#
-	# Samples baked_height_at, NOT height_at: the chunk cache is still empty at this
-	# point, so height_at would fall back to pure noise and repaint the same wrong
-	# picture. baked_height_at reads the bake fields directly and is the same height
-	# the real lake is built against in _build_lakes.
-	if cfg.water_enabled and interactive and water_bounds.has_area():
-		var baked: Array = LakeField.preview_cells_for(
-			_floor().baked_height_at, cfg.track_water_level_m, water_bounds)
-		loading.update_water(baked[0], baked[1], water_bounds)
+		interactive, Callable(), jumps)
 	# Retained for post-build consumers outside this call (the benchmark runner
 	# follows the same road the progress manager measures).
 	_road_centerline = road_centerline
@@ -634,9 +548,7 @@ func _carve_road_into_terrain(cfg: GameConfig, loading: LoadingScreen,
 
 # Phase 3 of _generate_track: precompute the corridor chunks, then build the initial terrain
 # ring once from that cache (so no chunk is ever rebuilt at startup).
-func _build_terrain_ring(loading: LoadingScreen,
-		road_centerline: Curve2D) -> void:
-	var interactive := _interactive(loading)
+func _build_terrain_ring(road_centerline: Curve2D) -> void:
 	# Precompute every chunk the play area realistically requests (the track-progress
 	# leash sizes it), so in-run chunk loads are instant cache pulls and
 	# height_at/light_at serve the flattened, collidable terrain. Batched with
@@ -645,24 +557,12 @@ func _build_terrain_ring(loading: LoadingScreen,
 	var floor_tm := _floor()
 	floor_tm.set_corridor(floor_tm.corridor_coords(
 		road_centerline, Config.data.track_progress_max_dist_m))
-	# Feed loaded chunks to the loading preview (interactive path only): each cached
-	# chunk becomes a dark square behind the track line, drawn in the same world-XZ
-	# frame (coord * CHUNK_M = its world min-corner). Batched on the existing yield.
-	if interactive:
-		loading.set_chunk_size(TerrainManager.CHUNK_M)
-	var chunk_corners := PackedVector2Array()
 	var precompute_done := 0
 	for coord in floor_tm.corridor():
 		floor_tm.cache_chunk(coord)
-		if interactive:
-			chunk_corners.append(Vector2(coord.x, coord.y) * TerrainManager.CHUNK_M)
 		precompute_done += 1
 		if precompute_done % 8 == 0:
-			if interactive:
-				loading.update_loaded_chunks(chunk_corners)
 			await _yield_frame()
-	if interactive:
-		loading.update_loaded_chunks(chunk_corners)  # final batch (loop count not a multiple of 8)
 	# PEAK, not resident: this prints while generation is still running, so it counts the
 	# baked `lights` array that TerrainManager.free_load_only_data() drops moments later on
 	# world's load_finished signal. The resident figure after that free is substantially
@@ -1083,12 +983,7 @@ func _build_persistent_managers(cfg: GameConfig, _result: Dictionary,
 	if not Benchmark.active:
 		# Staged runs hold the car in the start-line sequence until the player launches;
 		# otherwise the countdown arms immediately, as before.
-		_stage_manager.setup($Car, $HUD as CanvasLayer, _track_progress)
-		# Route the finish panel's NEXT button to advance the stage into the results flow
-		# (both nodes persist across regenerations, so guard the connection).
-		var hud_node := $HUD
-		if not hud_node.finish_next_pressed.is_connected(_stage_manager.proceed_to_results):
-			hud_node.finish_next_pressed.connect(_stage_manager.proceed_to_results)
+		_stage_manager.setup($Car, _track_progress)
 
 
 # Place the three spectator crowds: one at the start line, one at the finish, and
@@ -1185,42 +1080,6 @@ var _photo_camera: PhotoModeCamera
 # On-screen touch controls for photo mode, built alongside the camera ONLY on a touch
 # device (Platform.is_touch()) — see _on_photo_mode_requested/_on_photo_mode_finished.
 var _photo_controls: PhotoModeControls
-
-
-# --- Session run-scene integration ------------------------------------------
-
-# Dev cheat (F key, features/debug-tools.md): skip straight to the finish of the
-# current stage. Gated on SettingsMenu.dev_tools_enabled() (on in every build,
-# including release/web) and only inside an active run with a live StageManager.
-# Teleports the car onto the finish line and force-completes the stage, so the
-# whole completion → reward → progression flow fires exactly as it would on a
-# real finish.
-func _unhandled_input(event: InputEvent) -> void:
-	if not event.is_action_pressed("skip_to_finish"):
-		return
-	if not SettingsMenu.dev_tools_enabled():
-		return
-	if _stage_manager == null or _track_progress == null:
-		return
-	if _stage_manager.phase() == StageManager.Phase.COMPLETE:
-		return
-	# Mark handled BEFORE completing: force_complete() emits stage_completed, whose
-	# handler can transition the scene and detach this node, making a later
-	# get_viewport() call return null.
-	get_viewport().set_input_as_handled()
-	_dev_complete_stage()
-
-
-# The skip-to-finish body behind the F key (above); re-checks the whole gate.
-func _dev_complete_stage() -> void:
-	if not SettingsMenu.dev_tools_enabled():
-		return
-	if _stage_manager == null or _track_progress == null:
-		return
-	if _stage_manager.phase() == StageManager.Phase.COMPLETE:
-		return
-	$Car.reset_to(_track_progress.jump_to_finish())
-	_stage_manager.force_complete()
 
 
 # Pause-menu "Reset to track": snap the live car onto the centerline beside its
@@ -1334,52 +1193,13 @@ func _with_finish_runoff(gen: Curve2D, runoff: Dictionary) -> Curve2D:
 	c.add_point(runoff["end_pos"])  # dead-straight from the finish to the runoff end
 	return c
 
-# Test seam: headless tests can't survive a real change_scene_to_file (it would
-# replace the GUT runner scene), so they set this to capture the requested path
-# instead. Real play leaves it unset and gets the real scene change.
-var scene_change_hook: Callable = Callable()
-
-
-func _change_scene(path: String) -> void:
-	if scene_change_hook.is_valid():
-		scene_change_hook.call(path)
-		return
-	Scenes.change_to(get_tree(), path)
-
-
-func _on_session_event_completed(_elapsed_seconds: float) -> void:
-	_change_scene(Scenes.hub_path())
-
-
-# _on_session_rally_finished (RallySession.rally_finished -> the podium, or straight
-# to the hub on an abandon) used to live here. Its only wiring was in the
-# RallySession arm of _wire_session_signals, deleted with RallySession
-# (todo/roguelike-pivot.md decision 5), so nothing connects to it any more.
-
 func _mat(mesh_instance: MeshInstance3D) -> ShaderMaterial:
 	return mesh_instance.get_surface_override_material(0) as ShaderMaterial
 
 
-# The look overrides for the driven rally's region (empty for home / free-roam).
-# Shared by _apply_region_look (materials/sky/fog) and the foliage spawn (tree
-# billboard + bush suppression) so both read the same region. The region is fixed
-# for the world's lifetime, so the result is computed once and cached.
-var _region_look_cache: Dictionary = {}
-var _region_look_ready := false
+# The look overrides the stage wears: the plain home look.
 func _current_region_look() -> Dictionary:
-	if _region_look_ready:
-		return _region_look_cache
-	# THE REGION RUN'S OWN REGION (stage 4 of the pivot gave this a real answer;
-	# RunSession.region_id() returns "" for anything that is not a region run).
-	#
-	# A CHALLENGE stage is rolled from the period hash and authors no region, so it wears
-	# the plain home look — as does a dev boot of main.tscn with no session at all. The
-	# career-rally and free-roam arms that used to pick a region here are deleted with
-	# RallySession (decision 5).
-	var region_id := "home"
-	_region_look_cache = RegionLibrary.look_of(region_id)
-	_region_look_ready = true
-	return _region_look_cache
+	return RegionLibrary.look_of("home")
 
 
 # The headlight cone follows the car every frame on a stage whose weather switches the
@@ -1392,7 +1212,7 @@ func _process(_delta: float) -> void:
 	HeadlightCone.push(Config.data, $Car.global_transform, $Car.half_width() * 2.0)
 
 
-# Global shader parameters PERSIST ACROSS SCENE CHANGES, and the podium and HQ draw
+# Global shader parameters PERSIST ACROSS SCENE CHANGES, and the free-roam world draws
 # trees and ground with the same shaders — so a stage that lit its headlights must
 # clear up after itself or it leaves a stray cone burning there. _exit_tree covers
 # every exit path regardless of destination, which a per-destination reset would not.
@@ -1613,9 +1433,4 @@ func _tint_road(amount: float, toward: Color, blend: bool) -> void:
 	var tinted: PackedStringArray = ["albedo_color", "tarmac_color"]
 	for param in tinted:
 		var col: Color = floor_mat.get_shader_parameter(param)
-		var out: Color
-		if blend:
-			out = col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)
-		else:
-			out = Color(col.r * amount, col.g * amount, col.b * amount, col.a)
-		floor_mat.set_shader_parameter(param, out)
+		floor_mat.set_shader_parameter(param, WeatherLibrary.tinted(col, amount, toward, blend))

@@ -1,22 +1,17 @@
 extends Node
 # Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md — update in the same change as this file.
 # Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'save_manager' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
-# Autoload "Save": the single source of truth for everything the meta-game
-# mutates — owned cars (each with its own HP / car-bound installed upgrades /
-# tuning), the shared item inventory, and rally completion — JSON at
-# user://profile.json so progress survives a restart on both desktop and the
-# web build (see todo/save-persistence.md).
+# Autoload "Save": the single source of truth for everything the player's progress
+# mutates — owned cars (each with its own tuning and parts), lifetime stats, the persistent
+# free-roam world (WorldSession) and settings — JSON at user://profile.json, so progress
+# survives a restart on both desktop and the web build.
 #
 # It is deliberately SEPARATE from the `Config` autoload: `Config` holds the
 # authored car/world tuning baseline (a duplicate of game_config.tres), while
-# this profile is per-player mutable progress. Save stores tuning numbers but
-# never touches GameConfig — the car-fielding code reads the stored tuning and
-# writes the live Config.data (mirroring how car.gd's apply_car reshapes it).
+# this profile is per-player mutable progress.
 #
 # Ownership is INSTANCE-BASED: each owned car is a unique instance (instance_id)
-# that references a CarLibrary model id, so two cars of the same model can
-# diverge in HP / upgrades / tuning (the random-car reward can grant a model you
-# already own). Max-HP is CarLibrary metadata, derived not stored.
+# that references a CarLibrary model id, so two cars of the same model can diverge.
 
 # Emitted after any mutation marks the profile dirty. The optional cloud-save
 # layer (the `Cloud` autoload) subscribes to this to schedule an upload.
@@ -32,6 +27,9 @@ signal profile_changed()
 signal flushed()
 # Emitted at the start of flush_and_sync(), so the running game can write its latest state first.
 signal flushing()
+# Emitted when the whole profile was swapped for another (a cloud download, a wipe): anything
+# holding the old world must let go of it (WorldSession.invalidate).
+signal replaced()
 
 # Bump on any breaking shape change to PlayerProfile. NO LONGER MIGRATED FORWARD
 # (todo/roguelike-pivot.md decision 20 / decision 34): the old `_migrate_step` ladder
@@ -296,11 +294,13 @@ func request_web_sync() -> void:
 
 # --- Load --------------------------------------------------------------------
 
-# Populate `profile` from disk, falling back to .bak then to a fresh default.
+# Populate `profile` from disk, falling back to .tmp, then .bak, then a fresh default.
 # Never overwrites a file it could not read (the player may want to recover it).
 func load_or_new() -> void:
 	save_disabled = false
 	var loaded := _read_file(profile_path)
+	if loaded.is_empty():
+		loaded = _read_file(profile_path + ".tmp")  # a write whose final rename failed
 	if loaded.is_empty():
 		loaded = _read_file(profile_path + ".bak")
 	if loaded.is_empty():
@@ -363,9 +363,6 @@ func _sanitise(p: Dictionary) -> Dictionary:
 	var kept: Array = []
 	for car in p.get(KEY_CARS, []):
 		if CarLibrary.index_of(car.get("model_id", "")) >= 0:
-			# Backfill per-wheel damage misalignment on saves that predate it (straight).
-			if not car.has("wheel_toe"):
-				car["wheel_toe"] = [0.0, 0.0, 0.0, 0.0]
 			kept.append(car)
 		else:
 			push_warning("Save: dropping owned car with unknown model_id '%s'" % car.get("model_id", ""))
@@ -382,24 +379,23 @@ func _sanitise(p: Dictionary) -> Dictionary:
 	return p
 
 
-func has_save() -> bool:
-	return FileAccess.file_exists(profile_path)
-
-
 # --- Save --------------------------------------------------------------------
 
 # Mark the profile dirty and arm the debounce timer. Call this from mutators
 # / call sites after a change; the disk write happens a second after the first
 # unsaved change, so a steady stream of changes can't keep pushing it back.
+# `sync` false is for churn (where the car is, the map it has driven): written to disk but not
+# worth a cloud upload, so it rides along with the next real change instead.
 # No-op when storage is disabled.
-func save() -> void:
+func save(sync := true) -> void:
 	# Mark unsynced + notify BEFORE the save_disabled bail-out: blocked local
 	# storage (private browsing, read-only fs) is exactly the situation where a
 	# cloud copy is most valuable, so it must not also switch off cloud sync.
-	profile["updated_utc"] = Time.get_datetime_string_from_system(true)
-	profile["unsynced"] = true
 	_warn_undeclared_profile_keys()
-	profile_changed.emit()
+	if sync:
+		profile["updated_utc"] = Time.get_datetime_string_from_system(true)
+		profile["unsynced"] = true
+		profile_changed.emit()
 	if save_disabled:
 		return
 	if _debounce.is_stopped():
@@ -438,13 +434,16 @@ func save_now() -> void:
 		push_warning("Save: cannot open %s for writing — progress will not be saved" % tmp)
 		save_disabled = true
 		return
-	f.store_string(JSON.stringify(profile, "\t"))
+	f.store_string(JSON.stringify(profile))
 	f.close()
 	var dir := DirAccess.open(profile_path.get_base_dir())
-	if dir != null:
-		if FileAccess.file_exists(profile_path):
-			dir.rename(profile_path, profile_path + ".bak")
-		dir.rename(tmp, profile_path)
+	if dir == null:
+		push_warning("Save: cannot open %s — the newest progress is left in %s" % [profile_path.get_base_dir(), tmp])
+		return
+	if FileAccess.file_exists(profile_path) and dir.rename(profile_path, profile_path + ".bak") != OK:
+		push_warning("Save: could not keep %s as .bak" % profile_path)
+	if dir.rename(tmp, profile_path) != OK:
+		push_warning("Save: could not move %s into place — load_or_new reads it from there" % tmp)
 
 
 ## How many times the refusal above fired this process. Read by the post-run hook to tell an
@@ -464,12 +463,18 @@ func _caller_trace() -> String:
 
 
 # Overwrite the current profile with a fresh one (after a ConfirmModal in the
-# menus). Writes immediately so "New game" is durable at once.
+# menus). Writes immediately so "New game" is durable at once. The cloud bookkeeping is kept,
+# so the wipe's upload (CloudSync.push_wipe) lands above the old cloud copy instead of under it.
 func reset_new_game() -> void:
+	var revision: int = int(profile.get("cloud_revision", 0))
+	var uid := String(profile.get("cloud_uid", ""))
 	profile = _default_profile()
+	profile["cloud_revision"] = revision
+	profile["cloud_uid"] = uid
 	_note_known_profile_keys()
 	save_disabled = false
 	save_now()
+	replaced.emit()
 
 
 # --- Cloud-save support ------------------------------------------------------
@@ -508,6 +513,7 @@ func adopt_profile(incoming: Dictionary) -> bool:
 	profile = _sanitise(migrated)
 	_note_known_profile_keys()
 	profile["settings"] = device_settings
+	replaced.emit()
 	return true
 
 
@@ -519,7 +525,7 @@ func write_conflict_backup() -> void:
 	if f == null:
 		push_warning("Save: could not write a conflict backup before replacing the profile")
 		return
-	f.store_string(JSON.stringify(profile, "\t"))
+	f.store_string(JSON.stringify(profile))
 	f.close()
 
 
@@ -528,8 +534,6 @@ func _default_profile() -> Dictionary:
 		"schema_version": SCHEMA_VERSION,
 		"created_utc": "",
 		"updated_utc": "",
-		"starter_picked": false,
-		"starter_model_id": "",
 		"next_instance_id": 1,
 		KEY_CARS: [],
 		KEY_LIFETIME: {},
@@ -585,16 +589,12 @@ func owns_model(model_id: String) -> bool:
 
 
 # Grant a new owned-car instance referencing a CarLibrary model id. Returns the
-# new OwnedCar dict.
+# new OwnedCar dict. Its damage lives in the world (WorldSession car_state), not here.
 func grant_car(model_id: String) -> Dictionary:
-	var entry := CarLibrary.by_id(model_id)
-	var max_hp: float = entry.get("max_hp", 1000.0) if not entry.is_empty() else 1000.0
 	var car := {
 		"instance_id": int(profile["next_instance_id"]),
 		"model_id": model_id,
-		"hp": max_hp,
 		"tuning": {},
-		"wheel_toe": [0.0, 0.0, 0.0, 0.0],
 	}
 	profile["next_instance_id"] = int(profile["next_instance_id"]) + 1
 	profile[KEY_CARS].append(car)
@@ -662,11 +662,11 @@ func lifetime_stat(id: String) -> int:
 
 
 # Add `amount` (default 1) to stat `id`'s running total. A non-positive amount is a
-# no-op — this only ever adds, mirroring add_money's own guard.
-func add_lifetime_stat(id: String, amount: int = 1) -> void:
+# no-op — this only ever adds. `sync` as for save().
+func add_lifetime_stat(id: String, amount: int = 1, sync := true) -> void:
 	if amount <= 0:
 		return
 	var stats: Dictionary = profile.get(KEY_LIFETIME, {})
 	stats[id] = int(stats.get(id, 0)) + amount
 	profile[KEY_LIFETIME] = stats
-	save()
+	save(sync)

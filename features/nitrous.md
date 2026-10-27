@@ -1,98 +1,32 @@
 # Nitrous
 
-A held-button torque boost with a per-stage tank. The single genuinely new
-mechanic introduced by the special-event ladder
-(`todo/star-gated-special-events.md` — the spec's filename, but the ladder gates
-on the count of completed ordinary rallies now, not on a star total, see
-the deleted star economy): a special event unlocks it, so it is
-deliberately a reward that makes hard events easier rather than a stat that
-reshapes the car.
+A held-button torque boost with a per-stage tank. It is a deliberately small part: a reward that
+makes hard stretches easier rather than a stat that reshapes the car.
 
 **Tests:** `tests/headless/test_nitrous.gd`
 
-**It is ONE part.** It was a four-rung ladder (NOS stage 1-4), each rung replacing
-the last and each gated on its own showdown special. That is collapsed to a single
-part carrying the top rung's numbers: the intermediate steps were changes the player
-could not feel (0.22 to 0.24 boost between the first two) and each one consumed an
-entire special's prize slot to deliver. It is gated on the **first** showdown the map
-reaches, not the last — the endgame is completing every special, so a part gated on
-the final one would be a reward with no game left to spend it in.
+Two properties define it, and every design decision below falls out of them:
 
-Three properties define it, and every design decision below falls out of them:
-
-1. **It is a per-STAGE resource with no persistent spent state.** The tank is
-   refilled to full by `EngineSim.reset()`, which runs at every stage start *and*
-   at every in-stage reset-to-start. A stage therefore never begins with less
-   than a full tank — so there is nothing to carry between events and no
-   reset-to-refill exploit to defend against.
-2. **It is invisible to the performance model.** It never reaches
-   `UpgradeLibrary.effective_meta`, so fitting it cannot move a car's
-   power-to-weight, its rally eligibility or the rival
-   pace floor. Winning the last rung of the ladder can never lock you out of a
-   rally you could previously enter.
-3. **It has an ordinary garage row.** It did not: the slot was hidden and the part
-   auto-fitted enabled, on the reasoning that a ladder always installing its highest
-   rung left nothing to decide. With one part there IS something to decide — fit it
-   or don't — and without a row a won bottle could only ever be fitted by the award
-   path, never by the player. It is also still named, read-only, on the car-stats
-   readout: the deleted `hq.gd::_car_stats_text`
-   (shared by the tuning lift and the car-park lineup — see [tuning.md](tuning.md))
-   appends `UpgradeLibrary.fitted_nitrous_id(owned)`'s name after the health
-   segment, omitted entirely when the car has none, so the player can tell a
-   nitrous-fitted car apart from a bare one without opening the (nonexistent)
-   menu row for it.
+1. **It is refilled only by a fresh start.** `EngineSim.reset()` refills the tank, and
+   runs on every `Car.reset_to`. In free roam that means a respawn or a travel refills
+   it, but `RoadRecovery.reset_now` (R, the pause menu's Reset to road, the stuck reset)
+   puts the charge back after the reset, so a reset is not a free refill.
+2. **It is invisible to car stats.** It never feeds a car's power-to-weight.
 
 
-## As a mid-run boost
 
-`BoostLibrary.CATALOGUE["nitrous"]` (`scripts/boost_library.gd`, see
-region-runs.md (deleted with the free-roam pivot)) offers the same `install_nitrous` EFFECTS row as a
-POWER-category pick between stages — the run-scoped counterpart to the pre-pivot
-persistent part below, mechanically identical (`write_fields`, `feeds_pw: false`) but
-picked from the between-stage upgrade menu instead of unlocked by a special event.
-`run_boost_nitrous_boost_gain` is the leveled figure (like the turbo's
-`turbo_boost_gain`); `run_boost_nitrous_tank_seconds` is a fixed characteristic that
-does not scale with a purchased boost level. Like the turbo/supercharger boosts, a
-second "Nitrous" pick in the same run is a dead roll (`write_fields` overwrites the
-same values), so `BoostLibrary.stacks` excludes it from the pool once picked.
+## How it reaches a car
 
-## The catalogue side — its own slot
+`BoostLibrary.CATALOGUE["nitrous"]` (`scripts/boost_library.gd`) is a loot part with an
+`install_nitrous` effect. `LootRules.fielded` turns a car's switched-on parts into its `boosts`
+list on a duplicated owned-car dict, and `UpgradeLibrary.apply` walks them.
+`UpgradeLibrary.EFFECTS["install_nitrous"]` is `{"op": "write_fields"}`: a plain splat of the
+authored sub-dict onto the live `GameConfig`, with no enable flag and no rival to clear (unlike
+`install_induction`, shared by the turbo and supercharger), because `GameConfig.has_nitrous()`
+reads the *values themselves* — a zero gain or a zero tank simply IS "not fitted". The tank size
+is a fixed characteristic; the boost gain scales with the part's level.
 
-`UpgradeLibrary.SLOTS` gained a `"nitrous"` entry (a fifth at the time; the list has since
-grown `gearbox` and `tires` — see [upgrade-catalogue.md](upgrade-catalogue.md)). It could not join the
-`turbo` slot: one part per slot is *enabled* per car
-(`Save._enable_exclusive`), which would have made nitrous mutually exclusive
-with the turbo and the supercharger — exactly wrong, since nitrous is meant to
-stack on top of whatever induction the car carries.
-
-The slot behaves like every other one: it gets an ordinary tile on the upgrades grid
-(the deleted upgrades grid), the part
-installs **disabled** and the player enables it, and the single authored entry is gated
-on winning its special via `unlocked_by_rally` (see
-[upgrade-catalogue.md](upgrade-catalogue.md) and [region-stage-library.md](region-stage-library.md)).
-The exact id, gate and magnitudes are authored in `UpgradeLibrary.UPGRADES`; read the
-table rather than trusting a number quoted here.
-
-**`UpgradeLibrary.HIDDEN_SLOTS` is now EMPTY.** Nitrous was its only member. The rule it
-carries is real — a part in a slot with no garage row must install *enabled*, or it would
-be permanently dead — and the code path survives in `Save.install_upgrade`, dormant. Since
-no slot claims it, no test can exercise it end-to-end; `test_no_slot_is_hidden_so_every_part_installs_as_asked`
-asserts the dormancy so it is visible rather than silent.
-
-### The effect row
-
-`UpgradeLibrary.EFFECTS["install_nitrous"]` is `{"op": "write_fields",
-"feeds_pw": false}`. `write_fields` is a plain splat of the authored sub-dict
-onto the live `GameConfig` — no enable flag and no slot rival to clear, unlike
-the `install_induction` op the turbo and supercharger share, because
-`GameConfig.has_nitrous()` reads the *values themselves*, so a zero gain or a
-zero tank simply IS "not fitted".
-
-`feeds_pw: false` is the load-bearing half. It is what keeps nitrous out of
-`effective_meta`'s power-to-weight mirror — property 2 above — and it is
-enforced structurally by the shared descriptor table rather than by a special
-case in `effective_meta`.
-
+Nitrous's effect row writes config fields and nothing else — property 2 above.
 
 ## Config (`GameConfig`, `scripts/game_config.gd`)
 
@@ -140,7 +74,7 @@ power-to-weight; nitrous multiplies the delivered result for as long as the
 button is down and never leaves the live sim.
 
 `EngineSim.reset()` refills `nitrous_charge` to `cfg.nitrous_tank_seconds` (or
-zero when not fitted) and clears the three flags — property 1 above.
+zero when not fitted) and clears the three flags; `RoadRecovery.reset_now` restores the charge afterwards — property 1 above.
 
 
 ## Input
@@ -267,8 +201,7 @@ plays in.
 The **first-use hint** — a once-per-profile "press Shift" prompt at stage start,
 suppressed forever after the first press. It needs a persisted profile flag and a
 keyboard-vs-controller device distinction that `Platform` does not currently have
-(it only knows `is_touch` / `is_web` / `is_mobile_or_web` / `is_headless`). Still
-recorded as outstanding in `todo/star-gated-special-events.md`.
+(it only knows `is_touch` / `is_web` / `is_mobile_or_web` / `is_headless`).
 
 
 ## Tests
@@ -284,8 +217,8 @@ with no drivetrain is safe) and `test_chase_camera_shake.gd` (delivering shakes 
 the button alone does not).
 
 Per `CLAUDE.md`, do **not** pin the authored magnitudes — tank seconds, torque
-gains, which rung hangs off which special event, the hue value. Test the behaviour that
+gains, the hue value. Test the behaviour that
 must hold for any reasonable values: the tank starts full after `reset()`, the
 multiplier applies only while held with charge, an empty tank applies none,
-`effective_meta`'s power-to-weight is unmoved by fitting nitrous, and the part
+the part
 installs enabled so it works with no menu interaction.

@@ -143,48 +143,6 @@ offset_bottom = 48.0
 theme_override_font_sizes/font_size = 18
 text = "0 rpm"
 
-[node name="ElapsedLabel" type="Label" parent="HUD"]
-offset_left = 8.0
-offset_top = 8.0
-offset_right = 108.0
-offset_bottom = 32.0
-theme_override_font_sizes/font_size = 18
-text = "0:00.00"
-horizontal_alignment = 0
-
-[node name="CountdownLabel" type="Label" parent="HUD"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_font_sizes/font_size = 54
-text = "3"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="StageCompletePanel" type="PanelContainer" parent="HUD"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -110.0
-offset_top = -40.0
-offset_right = 110.0
-offset_bottom = 40.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="Box" type="VBoxContainer" parent="HUD/StageCompletePanel"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="StageCompleteLabel" type="Label" parent="HUD/StageCompletePanel/Box"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "STAGE COMPLETE"
-horizontal_alignment = 1
-vertical_alignment = 1
-
 [node name="BoostGauge" type="Control" parent="HUD"]
 anchors_preset = 7
 anchor_left = 0.5
@@ -267,10 +225,6 @@ script = ExtResource("24_pause")
 camera_manager = NodePath("../CameraManager")
 mobile_controls = NodePath("../MobileControls")
 offer_photo_mode = false
-reset_label = "Reset to road"
-quit_body_override = "Leave the island and return to the title screen? Your world is saved."
-quit_label = "Quit to title"
-quit_scene = "res://title.tscn"
 extra_rows = PackedStringArray("Map", "Stats")
 
 [node name="RoadRecovery" type="Node" parent="." node_paths=PackedStringArray("car", "streamer")]
@@ -303,10 +257,9 @@ rest_stops = NodePath("../RestStops")
 car = NodePath("../Car")
 pause_menu = NodePath("../PauseMenu")
 
-[node name="CheckpointBanner" type="CanvasLayer" parent="." node_paths=PackedStringArray("rest_stops", "loot")]
+[node name="CheckpointBanner" type="CanvasLayer" parent="." node_paths=PackedStringArray("rest_stops")]
 script = ExtResource("31_cpbanner")
 rest_stops = NodePath("../RestStops")
-loot = NodePath("../LootDirector")
 
 [node name="WorldPages" type="CanvasLayer" parent="." node_paths=PackedStringArray("streamer", "rest_stops", "car", "loot")]
 script = ExtResource("32_pages")

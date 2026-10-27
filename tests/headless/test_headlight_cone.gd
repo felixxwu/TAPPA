@@ -18,7 +18,7 @@ func after_each() -> void:
 
 func _night_cfg() -> GameConfig:
 	var cfg := GameConfig.new()
-	cfg.weather = StageFields.WEATHER_NIGHT
+	cfg.weather = WeatherLibrary.WEATHER_NIGHT
 	return cfg
 
 
@@ -282,8 +282,8 @@ func test_strength_is_clamped_to_unit_range() -> void:
 func test_night_authors_every_look_key() -> void:
 	# world.gd reads the five LOOK_KEYS as an unguarded set, so a partially authored
 	# look block would crash the stage boot rather than degrade.
-	var entry := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
-	assert_eq(String(entry.get("id", "")), StageFields.WEATHER_NIGHT, "the night entry exists")
+	var entry := WeatherLibrary.by_id(WeatherLibrary.WEATHER_NIGHT)
+	assert_eq(String(entry.get("id", "")), WeatherLibrary.WEATHER_NIGHT, "the night entry exists")
 	var look: Dictionary = entry.get("look", {})
 	for key in WeatherLibrary.LOOK_KEYS:
 		assert_true(look.has(key), "night authors the '%s' look key" % key)
@@ -291,12 +291,12 @@ func test_night_authors_every_look_key() -> void:
 
 func test_night_is_purely_a_look_and_never_touches_physics() -> void:
 	# Decision 4 of the spec, pinned: night must not change how the car drives.
-	var entry := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
+	var entry := WeatherLibrary.by_id(WeatherLibrary.WEATHER_NIGHT)
 	assert_false(entry.has("grip_mult"), "night does not scale grip")
 	assert_false(entry.has("wind"), "night has no wind")
 	assert_false(entry.has("particles"), "night constructs no particle field")
 	var cfg := GameConfig.new()
-	assert_eq(WeatherLibrary.grip_mult(cfg, StageFields.WEATHER_NIGHT), 1.0,
+	assert_eq(WeatherLibrary.grip_mult(cfg, WeatherLibrary.WEATHER_NIGHT), 1.0,
 		"grip on a night stage is exactly dry")
 
 
@@ -304,7 +304,7 @@ func test_the_dark_conditions_switch_the_headlights_on() -> void:
 	# The two conditions dark enough for a driver to reach for the lights. Structure
 	# only: that each arms the cone at all, never how brightly — the strengths differ
 	# (each condition's world is dark to a different degree) and are inspector tuning.
-	for id in [StageFields.WEATHER_NIGHT, StageFields.WEATHER_STORM]:
+	for id in [WeatherLibrary.WEATHER_NIGHT, WeatherLibrary.WEATHER_STORM]:
 		var cfg := GameConfig.new()
 		cfg.weather = id
 		assert_true(HeadlightCone.has_headlights(cfg), "'%s' switches the lights on" % id)
@@ -320,14 +320,14 @@ func test_night_names_a_sky_and_no_other_condition_does() -> void:
 	# happening under the region's sky, night is a different sky. The key is optional
 	# by design, so this pins that the mechanism stays opt-in rather than becoming a
 	# sixth mandatory look key every existing entry would have to author.
-	var night := WeatherLibrary.by_id(StageFields.WEATHER_NIGHT)
+	var night := WeatherLibrary.by_id(WeatherLibrary.WEATHER_NIGHT)
 	var field := String(night.get("sky_panorama", ""))
 	assert_ne(field, "", "night names a sky field")
 	var cfg := GameConfig.new()
 	assert_true(cfg.get(field) is String, "and it names a real GameConfig field")
 	assert_ne(String(cfg.get(field)), "", "which holds a path")
 	for entry in WeatherLibrary.all():
-		if String(entry.get("id", "")) == StageFields.WEATHER_NIGHT:
+		if String(entry.get("id", "")) == WeatherLibrary.WEATHER_NIGHT:
 			continue
 		assert_false(entry.has("sky_panorama"),
 			"'%s' leaves the region's sky alone" % String(entry.get("id", "")))
@@ -432,15 +432,22 @@ func test_every_night_lit_shader_includes_the_cone() -> void:
 		"res://shaders/ps1_models.gdshader",
 		"res://shaders/ps1_terrain_snow.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
-		"res://shaders/billboard_opaque.gdshader",
+		"res://shaders/billboard_tree.gdshaderinc",  # shared by every billboard tree variant
 		"res://shaders/tree_canopy.gdshader",
 	]
 	for path in lit_at_night:
-		var shader: Shader = load(path)
+		var shader: Resource = load(path)
 		assert_not_null(shader, "%s loads" % path)
-		assert_true(shader.code.contains("headlight_cone.gdshaderinc"),
+		var code: String = shader.get("code")
+		assert_true(code.contains("headlight_cone.gdshaderinc"),
 			"%s includes the shared cone" % path)
-		assert_true(shader.code.contains("headlight_lit("),
+	for variant in ["opaque", "alpha", "blend"]:
+		var path := "res://shaders/billboard_%s.gdshader" % variant
+		assert_true((load(path) as Shader).code.contains("billboard_tree.gdshaderinc"),
+			"%s gets the cone through the shared tree include" % path)
+	for path in lit_at_night:
+		var code: String = load(path).get("code")
+		assert_true(code.contains("headlight_lit("),
 			"%s actually calls the cone" % path)
 
 
@@ -452,11 +459,11 @@ func test_the_cone_is_added_to_the_light_term_never_multiplied() -> void:
 		"res://shaders/ps1_models.gdshader",
 		"res://shaders/ps1_terrain_snow.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
-		"res://shaders/billboard_opaque.gdshader",
+		"res://shaders/billboard_tree.gdshaderinc",  # shared by every billboard tree variant
 		"res://shaders/tree_canopy.gdshader",
 	]
 	for path in lit_at_night:
-		var code: String = (load(path) as Shader).code
+		var code: String = load(path).get("code")
 		# Two shapes are legitimate: applying headlight_lit() inline, or (tree_canopy)
 		# computing it in vertex() and applying hl_color to the carried varying in
 		# fragment(). Both must APPEND to the light term — what this rules out is a

@@ -53,3 +53,14 @@ func test_stats_ui_cancel_closes_and_calls_on_close() -> void:
 	_press("ui_cancel")
 	assert_false(_pages.is_open(), "cancel closes the page")
 	assert_eq(_closed[0], 1, "and hands control back via on_close")
+
+
+# A travel refused because the car is wrecked must not read as a travel (the host would resume
+# driving, or close the pause menu, under the wreck page).
+func test_a_travel_while_wrecked_does_nothing() -> void:
+	var rest: RestStops = autofree(RestStops.new())
+	rest.is_wrecked = true
+	_pages.rest_stops = rest
+	_pages.travelled = false
+	_pages._travel_to(0, false)
+	assert_false(_pages.travelled)

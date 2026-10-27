@@ -53,8 +53,7 @@ power / power-to-weight knob, not a handling axis), it lived in the `UpgradesGri
 `tune` tile, and that grid is deleted with the parts model.
 
 **So the field is stored, read and applied, but unreachable.** `TuningLibrary.apply`'s clamp
-is live and it still feeds `UpgradeLibrary.effective_meta`, so a detuned car reads as less
-powerful everywhere; nothing today writes it.
+is live; nothing today writes it.
 
 ## Application (`TuningLibrary.apply`)
 
@@ -86,14 +85,11 @@ or invert a value:
 
 Tuning is resolved **once at fielding**, like `apply_car`, and re-derived by `Car.retune` when it changes.
 
-**Live re-derive baseline.** `Car.retune` (tune change) and
-`Car.refit_upgrades` (upgrade change) re-derive the live config without re-fielding.
-Both go through one shared `Car._rederive_live_config`: restore a **single full baseline**
+**Live re-derive baseline.** `Car.retune` re-derives the live config without re-fielding.
+It goes through `Car._rederive_live_config`: restore a **single full baseline**
 (`_live_baseline`, a `{property: value}` snapshot of every `GameConfig` script variable,
 captured once at fielding after `apply_car` + engine swap, before upgrades/tuning), then
-re-apply the upgrade and tuning layers top-to-bottom. `refit_upgrades` additionally
-re-syncs mass / suspension / drivetrain / engine audio (a turbo or drivetrain change
-touches those). Because every re-derive starts from the *complete* baseline, no field can
+re-apply the upgrade and tuning layers top-to-bottom. Because every re-derive starts from the *complete* baseline, no field can
 carry stale state from a prior upgrade/tuning into the next re-derive — the class of bug
 where `refit` left an old detune baked into `peak_torque` (a "really slow" car that could
 never climb back to full power) is impossible by construction. There is deliberately no

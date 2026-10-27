@@ -7,6 +7,9 @@ without touching code or scenes.
 - **Script / class:** `scripts/game_config.gd` (`class_name GameConfig extends Resource`)
 - **Autoload accessor:** `scripts/config.gd` (`Config` singleton) → `Config.data`
 
+**Free roam:** `free_roam` holds the island's `FreeRoamSettings` (road network, terrain streaming,
+feedback timings; see `features/free-roam.md`), authored as a sub-resource in the `.tres`.
+
 **Tests:** `tests/headless/test_config_applied.gd`, `tests/headless/test_config_isolation.gd`
 
 ```gdscript
@@ -61,8 +64,8 @@ They walk the **script property list**, not just the `@export`ed fields, because
 engine fields (`peak_torque`, `redline_rpm`, `engine_cylinders`, `engine_firing_angles`) are
 plain `var`s that `EngineLibrary.apply()` writes at fielding time — `Resource.duplicate()`
 resets those to their declared defaults, so it isn't a value-complete snapshot either.
-Callers: `car.gd`'s `_live_baseline` (the pre-upgrade/pre-tune baseline `retune()` /
-`refit_upgrades()` re-derive from) and `start_line.gd`'s `_spawn_grid`. Only
+Callers: `car.gd`'s `_live_baseline` (the pre-upgrade/pre-tune baseline `retune()`
+re-derives from) and `start_line.gd`'s `_spawn_grid`. Only
 `Config.reset()` / `reload_from_disk()` legitimately install a new object, and both are
 boot/debug paths that re-field the car afterwards. Guarded by
 `tests/headless/test_config_isolation.gd`.
@@ -182,25 +185,15 @@ servo measures the grip limit instead of predicting it. See
 |----------|---------|---------|
 | `stage_countdown_seconds` | 3.0 | Countdown before controls unlock at the start of a stage |
 | `stage_complete_percent` | 99.0 | Track-progress % (0..100) that ends the stage |
-| `hud_elapsed_enabled` | true | Show the top-right run timer |
 | `hud_popup_show_seconds` | 3.0 | How long a transient in-run HUD tag (the corner-cut flash) stays before fading |
 
 See [stage.md](stage.md).
 
-### Lap-time model
+### Surface grip
 | Property | Default | Purpose |
 |----------|---------|---------|
-| `gravel_grip` | 1.0 | Surface grip multiplier for gravel in `LapTimeModel` (`scripts/lap_time_model.gd`); blended with `tarmac_grip` by the event's tarmac fraction to get the effective µ |
-| `tarmac_grip` | 1.3 | Surface grip multiplier for tarmac (higher → faster tarmac-heavy events) |
-| `traction_factor_rwd` | 1.0 | Corner-exit traction ceiling for RWD cars in `LapTimeModel`'s forward pass (`a = min(factor × grip_long, a_engine)`). **1.0 is an exact no-op** |
-| `traction_factor_awd` | 1.0 | Same, for AWD. Raising the AWD factor relative to the others is how AWD earns its traction advantage in generated times |
-| `traction_factor_fwd` | 1.0 | Same, for FWD |
-
-> **Moving any `traction_factor_*` off 1.0 changes every AI, rival and ghost time
-> in the game.** Rival fields are generated live, so the change lands immediately
-> — but it also re-scores every car's `CarPerformance` rating, which is what
-> challenge ceilings are authored against. The same applies to authoring
-> `downforce_front` / `downforce_rear` onto a catalogue car.
+| `gravel_grip` | 1.0 | Surface grip multiplier for gravel |
+| `tarmac_grip` | 1.3 | Surface grip multiplier for tarmac |
 
 ### Damage
 | Property | Default | Purpose |
@@ -257,7 +250,7 @@ Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
 | `cliff_run_m` | 6.0 | Horizontal run road-edge band → full height (small ⇒ steep) |
 | `cliff_fade_m` | 6.0 | Horizontal run full height → back to grade (bounds the influence radius R) |
 | `cliff_open_radius_m` | 4.0 | Radius of the post-bake morphological open that knocks down thin tall walls (narrower than ~2× this); 0 disables |
-| `cliff_amount` | 1.0 | Runtime per-stage scale on `cliff_max_height_m` (`[0,1]`); written by `StageConfig.apply_event_config` from the event's `cliffiness`, else the shipped fallback |
+| `cliff_amount` | 1.0 | Runtime per-stage scale on `cliff_max_height_m` (`[0,1]`) |
 
 Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mirrors
 `apply_terrain_light`). `cliff_seed = track_seed`.
@@ -273,8 +266,7 @@ The frame cap held for the duration of world generation only, via
 
 > **The old consts still exist, as FALLBACK DEFAULTS ONLY.** Each of the scripts above
 > keeps its `const` (documenting the shipped value beside the design rationale, and
-> serving as the `Config.get_float` fallback), and outside callers — tests,
-> `tools/calibrate_pace_floor.gd` — still name them. Retuning one changes NOTHING on its
+> serving as the `Config.get_float` fallback), and outside callers (tests) still name them. Retuning one changes NOTHING on its
 > own: the authored value in `game_config.tres` is what the game reads.
 
 ## Engine data

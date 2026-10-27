@@ -433,6 +433,19 @@ func test_driving_back_to_the_wreck_recovers_the_money() -> void:
 	assert_null(loot.get_node_or_null("DroppedMoney"), "the crystal goes")
 
 
+func test_boot_warm_up_shows_a_crystal_without_dropping_money() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	loot.warm_up(Vector3(1.0, 2.0, 3.0))
+	var warm := loot.get_node_or_null("CrystalWarmUp") as Node3D
+	assert_not_null(warm, "a crystal is drawn so its shader compiles")
+	assert_eq(warm.global_position, Vector3(1.0, 2.0, 3.0))
+	assert_true(WorldSession.dropped().is_empty(), "but nothing is dropped")
+	loot.clear_warm_up()
+	await get_tree().process_frame
+	assert_null(loot.get_node_or_null("CrystalWarmUp"), "and it goes once warmed")
+
+
 func test_wrecking_again_before_recovering_loses_the_drop_for_good() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")

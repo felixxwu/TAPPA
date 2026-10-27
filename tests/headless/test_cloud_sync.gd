@@ -62,7 +62,6 @@ func _remote_doc(revision: int, profile: Dictionary, schema := -1) -> Dictionary
 
 func _remote_profile(cars: int = 1) -> Dictionary:
 	var p: Dictionary = _save._default_profile()
-	p["starter_picked"] = true
 	p["cars"] = []
 	if cars > 0:
 		p[Save.KEY_WORLD] = {"seed": 1, "lit": [0, 4], "drive_time": 600.0,
@@ -71,7 +70,7 @@ func _remote_profile(cars: int = 1) -> Dictionary:
 		# Synthetic fixture cars, never real catalogue entries: this test is about
 		# sync, and the shipped roster must stay free to change without breaking it.
 		p["cars"].append({"instance_id": i + 1, "model_id": "fx_light_rwd", "hp": 100,
-			"installed_upgrades": [], "disabled_upgrades": [], "tuning": {}})
+			"tuning": {}})
 	return p
 
 
@@ -153,21 +152,21 @@ func test_local_changes_at_the_agreed_revision_are_pushed() -> void:
 
 func test_a_newer_cloud_over_a_clean_profile_is_downloaded() -> void:
 	_save.profile["cloud_revision"] = 1
-	_save.profile["starter_model_id"] = "local_only"
+	_save.profile["created_utc"] = "local_only"
 	_save.mark_synced()
 	var remote := _remote_profile()
-	remote["starter_model_id"] = "from_cloud"
+	remote["created_utc"] = "from_cloud"
 	_rest.queue_ok(_remote_doc(9, remote))
 	var result: Dictionary = await _sync.pull()
 	assert_eq(result.state, "applied")
-	assert_eq(_save.profile["starter_model_id"], "from_cloud")
+	assert_eq(_save.profile["created_utc"], "from_cloud")
 	assert_eq(int(_save.profile["cloud_revision"]), 9)
 
 
 func test_both_sides_moving_on_raises_a_conflict_instead_of_guessing() -> void:
 	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
-	_save.profile["starter_model_id"] = "local_only"
+	_save.profile["created_utc"] = "local_only"
 	_save.save()  # local moved on too
 	watch_signals(_sync)
 	_rest.queue_ok(_remote_doc(9, _remote_profile()))
@@ -175,7 +174,7 @@ func test_both_sides_moving_on_raises_a_conflict_instead_of_guessing() -> void:
 	assert_eq(result.state, "conflict")
 	assert_signal_emitted(_sync, "conflict_detected")
 	assert_true(_sync.blocked_by_conflict)
-	assert_eq(_save.profile["starter_model_id"], "local_only",
+	assert_eq(_save.profile["created_utc"], "local_only",
 		"an unresolved conflict must not touch the local profile")
 
 
@@ -201,6 +200,49 @@ func test_a_newer_schema_is_refused_rather_than_downgraded() -> void:
 	assert_eq(_rest.requests.size(), 1, "refusing means not pushing either")
 
 
+# A cloud copy from before the last schema change can't be loaded, so it is no side of a
+# conflict: it is replaced, at a revision above its own (decision 34: old profiles reset).
+func test_an_older_schema_is_overwritten_rather_than_asked_about() -> void:
+	_seat_local_career()
+	_save.profile["cloud_revision"] = 1
+	_save.save()
+	watch_signals(_sync)
+	_rest.queue_ok(_remote_doc(20, _remote_profile(), Save.SCHEMA_VERSION - 1))
+	_rest.queue_ok({})
+	var result: Dictionary = await _sync.pull()
+	assert_eq(result.state, "obsolete")
+	assert_signal_not_emitted(_sync, "conflict_detected")
+	assert_eq(_rest.requests[1]["method"], HTTPClient.METHOD_PATCH, "this device's profile went up")
+	assert_eq(int(_save.profile["cloud_revision"]), 21)
+	assert_false(_save.has_unsynced())
+
+
+# A pull while this device's own upload is in flight waits for it, rather than reading the cloud
+# from before the upload lands and calling the difference a conflict.
+func test_a_pull_waits_for_the_upload_in_flight() -> void:
+	_seat_local_career()
+	_save.save()
+	_sync.pending = true
+	_rest.queue_ok({})
+	_sync.push()  # in flight
+	_rest.queue_ok(_remote_doc(1, _remote_profile()))
+	var result: Dictionary = await _sync.pull()
+	assert_eq(_rest.requests[0]["method"], HTTPClient.METHOD_PATCH)
+	assert_eq(_rest.requests[1]["method"], HTTPClient.METHOD_GET, "the read came after the upload")
+	assert_eq(result.state, "up_to_date")
+
+
+# The benchmark's throwaway world sits in Save.profile while it runs, so nothing may sync.
+func test_nothing_syncs_during_a_benchmark() -> void:
+	Benchmark.active = true
+	_sync.request_push()
+	var result: Dictionary = await _sync.pull()
+	Benchmark.active = false
+	assert_false(_sync.pending)
+	assert_false(result.ok)
+	assert_eq(_rest.requests.size(), 0)
+
+
 func test_an_unreadable_cloud_blob_is_not_overwritten() -> void:
 	_save.profile["cloud_revision"] = 1
 	var doc := CloudSync.to_document("{not json", Save.SCHEMA_VERSION, 9, "", "web")
@@ -215,7 +257,7 @@ func test_an_unreadable_cloud_blob_is_not_overwritten() -> void:
 func test_keep_local_uploads_above_the_remote_revision() -> void:
 	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
-	_save.profile["starter_model_id"] = "local_only"
+	_save.profile["created_utc"] = "local_only"
 	_save.save()
 	_rest.queue_ok(_remote_doc(9, _remote_profile()))
 	await _sync.pull()
@@ -224,22 +266,22 @@ func test_keep_local_uploads_above_the_remote_revision() -> void:
 	assert_true(result.ok)
 	assert_eq(int(_save.profile["cloud_revision"]), 10,
 		"pushing above the remote revision is what makes the other device see us as ahead")
-	assert_eq(_save.profile["starter_model_id"], "local_only")
+	assert_eq(_save.profile["created_utc"], "local_only")
 	assert_false(_sync.blocked_by_conflict)
 
 
 func test_use_cloud_replaces_the_profile_and_backs_up_what_it_replaced() -> void:
 	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
-	_save.profile["starter_model_id"] = "local_only"
+	_save.profile["created_utc"] = "local_only"
 	_save.save()
 	var remote := _remote_profile()
-	remote["starter_model_id"] = "from_cloud"
+	remote["created_utc"] = "from_cloud"
 	_rest.queue_ok(_remote_doc(9, remote))
 	await _sync.pull()
 	var result: Dictionary = await _sync.resolve_use_cloud()
 	assert_true(result.ok)
-	assert_eq(_save.profile["starter_model_id"], "from_cloud")
+	assert_eq(_save.profile["created_utc"], "from_cloud")
 	assert_true(FileAccess.file_exists(TEST_PATH + ".conflict.bak"),
 		"a mis-tapped 'use cloud' must be recoverable")
 	assert_false(_sync.blocked_by_conflict)
@@ -248,13 +290,13 @@ func test_use_cloud_replaces_the_profile_and_backs_up_what_it_replaced() -> void
 func test_decide_later_keeps_sync_paused_and_picks_neither_side() -> void:
 	_seat_local_career()
 	_save.profile["cloud_revision"] = 1
-	_save.profile["starter_model_id"] = "local_only"
+	_save.profile["created_utc"] = "local_only"
 	_save.save()
 	_rest.queue_ok(_remote_doc(9, _remote_profile()))
 	await _sync.pull()
 	_sync.resolve_later()
 	assert_true(_sync.blocked_by_conflict)
-	assert_eq(_save.profile["starter_model_id"], "local_only")
+	assert_eq(_save.profile["created_utc"], "local_only")
 
 
 func test_the_conflict_summary_describes_both_sides() -> void:
@@ -272,7 +314,7 @@ func test_the_conflict_summary_describes_both_sides() -> void:
 # --- Failure handling ---------------------------------------------------------
 
 func test_a_failed_push_leaves_the_local_profile_alone_and_stays_pending() -> void:
-	_save.profile["starter_model_id"] = "local_only"
+	_save.profile["created_utc"] = "local_only"
 	_save.save()
 	_sync.pending = true
 	_rest.queue_offline()
@@ -282,7 +324,7 @@ func test_a_failed_push_leaves_the_local_profile_alone_and_stays_pending() -> vo
 	assert_true(_save.has_unsynced())
 	assert_eq(int(_save.profile["cloud_revision"]), 0,
 		"a revision is only claimed after the server accepts it")
-	assert_eq(_save.profile["starter_model_id"], "local_only")
+	assert_eq(_save.profile["created_utc"], "local_only")
 
 
 func test_a_change_made_while_uploading_stays_owed_to_the_cloud() -> void:
@@ -381,17 +423,17 @@ func test_switching_account_does_not_push_over_the_new_accounts_save() -> void:
 	# Local profile belongs to account A, well ahead of B's document.
 	_save.profile["cloud_uid"] = "uid_account_a"
 	_save.profile["cloud_revision"] = 7
-	_save.profile["starter_model_id"] = "account_a_career"
+	_save.profile["created_utc"] = "account_a_career"
 	_save.mark_synced()
 
 	var remote := _remote_profile()
-	remote["starter_model_id"] = "account_b_career"
+	remote["created_utc"] = "account_b_career"
 	_rest.queue_ok(_remote_doc(3, remote))
 	var result: Dictionary = await _sync.pull()
 
 	assert_eq(result.state, "applied",
 		"a different account's document is authoritative, not stale-looking")
-	assert_eq(_save.profile["starter_model_id"], "account_b_career")
+	assert_eq(_save.profile["created_utc"], "account_b_career")
 	assert_eq(_rest.requests.size(), 1, "nothing may be pushed over account B")
 
 
@@ -585,7 +627,7 @@ func test_cloud_busy_survives_a_host_rebuilding_its_children() -> void:
 
 # --- Only ONE conflict prompt, tree-wide -----------------------------------------
 
-# Three hosts raise this prompt (the account page and the HQ) and each
+# Two hosts raise this prompt (the account page and free roam) and each
 # used to keep its OWN "already open" latch, which could not see the others. A conflict
 # arriving while the account page was open therefore opened TWO identical popups;
 # dismissing the top one revealed the second with focus reset to its first button,

@@ -217,7 +217,7 @@ func _finish() -> void:
 
 	_results_screen = BenchmarkResults.new()
 	add_child(_results_screen)
-	_results_screen.setup(stats, _run_again, Benchmark.exit_to_hq)
+	_results_screen.setup(stats, _run_again, Benchmark.exit_to_title)
 
 
 # How the terrain streamer kept up over the run: the queue over time, its work per frame, and

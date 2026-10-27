@@ -3,112 +3,63 @@ extends RefCounted
 # Docs: features/engine-swap.md, features/forced-induction.md, features/upgrade-catalogue.md — update in the same change as this file.
 # Tests: tests/headless/test_engine.gd, tests/headless/test_turbo.gd, tests/headless/test_upgrade_library.gd — extend in the same change.
 #
-# THE EFFECTS FUNNEL. This file is no longer a catalogue.
-#
-# It used to own the persistent parts model: an authored `UPGRADES` table, seven
-# slots, star gates, prerequisite chains, an auto-build solver, and the
-# install/buy paths in Save that fed them. All of that is DELETED by the
-# roguelike pivot (todo/roguelike-pivot.md → "What gets deleted" → the persistent
-# parts model). Parts are replaced by RR-style boosts: temporary, run-scoped, and
-# picked between stages.
-#
-# What survives is the MECHANISM those parts drove, kept deliberately (see
-# todo/roguelike-pivot-plan.md 2a, "keep in place. The catalogue around them goes;
-# the funnel stays and becomes the in-run boost applier in stage 5"):
+# THE EFFECTS FUNNEL: the only way anything modifies a car's config.
 #
 #   EFFECTS      — the descriptor table saying what each effect key DOES
 #   _cfg_set     — the loud single writer onto a live GameConfig
-#   apply        — walks the active effects and writes them (pipeline step 2)
-#   effective_meta / grip_meta — the power-to-weight and grip mirrors of the same
-#                  table, so a display/rating figure cannot drift from physics
+#   apply        — walks the active effects and writes them
 #
-# `active_effects` is the SEAM where the input comes from: a car's `boosts` list.
-# TWO writers fill it, both in world.gd::_field_car, both on a DUPLICATED owned-car
-# dict so neither reaches the saved profile: the run's picked boosts
-# (RunSession.boosts, stage 5) and the player's equipped skills
-# (SkillLibrary.equipped_effects, decision 51). They differ in lifetime, not in
-# mechanism — see features/skills.md.
+# `active_effects` is the input: a car's `boosts` list, filled by LootRules.fielded on a
+# duplicated owned-car dict so it never reaches the saved profile.
 #
-# Also still here: `stock_drive_mode` / `resolve_drive_override`, the drive-mode
-# resolver car.gd and effective_meta read. It never depended on the catalogue — and,
-# since decision 52 was superseded, no longer depends on a purchase either: the override
-# is a run-scoped mid-run upgrade sourced from RunSession.drivetrain_override(), the same
-# lifetime as a boost (see world.gd::_field_car).
+# `stock_drive_mode` / `resolve_drive_override` are the drive-mode resolver car.gd reads.
 #
-# Distinguish from TUNING: tuning (features/tuning.md) is free, reversible per-car
-# config nudges, and is now UNGATED on every axis (decision 24) — the aero gate
-# that used to live here went with the aero part.
+# Distinguish from TUNING (features/tuning.md): free, reversible per-car config nudges.
 
 # --- Effect descriptor table -------------------------------------------------
-# The single source of truth for what each `effect` key DOES, so apply() (live cfg)
-# and effective_meta() (power-to-weight inputs) can't silently drift — adding an
-# effect means adding one row here. Each row:
+# The single source of truth for what each `effect` key DOES; adding an effect means
+# adding one row here. Each row:
 #   field    — the target GameConfig / meta field ("" for induction)
 #   op       — "mult" (field *= val), "add" (field += val), "set" (field = val — an
 #              ABSOLUTE figure that replaces the baseline rather than scaling it),
 #              "mult_floor" (field = max(field * val, floor_field) — a proportional
 #              reduction that can't push the field past a floor; see `floor_field` below),
-#              "install_induction" (special: enable one flag, clear the rival's, splat the
-#              sub-dict), or "write_fields" (splat a sub-dict, no flag)
-#   feeds_pw — whether it changes a power-to-weight input (mass / torque), so
-#              effective_meta must mirror it; the rest are cfg-only.
-#   feeds_grip — whether it changes a MAX-LATERAL-G input (tyre μ / downforce), so
-#              grip_meta must mirror it. Separate from feeds_pw because grip does NOT
-#              move a car's class: eligibility is judged on power-to-weight alone, and
-#              folding grip into effective_meta would let a set of tyres re-gate which
-#              rallies a car may enter (see grip_meta).
+#              "install_induction" (special: enable one flag and splat the sub-dict),
+#              or "write_fields" (splat a sub-dict, no flag)
 #
 # A "mult"/"add" row may also carry `cfg_fields` — see _cfg_fields — for the case where the
 # live config spells the same quantity differently from the meta.
 #
-# FORCED-INDUCTION rows carry two more keys so the two parts share ONE op rather than a
-# copied match arm each (a third induction type would then be a row, not more branches):
-#   enable    — the cfg flag this part switches ON
-#   gain_key  — the sub-dict key effective_meta reads to rate the car at peak boost.
-#
-# TURBO AND SUPERCHARGER STACK (a real twincharger) — there used to be a `clears` key
-# here that zeroed the rival's enable flag/gain, back when the two shared one
-# UpgradeLibrary.SLOTS purchase slot (a permanent-part mechanism the roguelike pivot
-# deleted). That's gone now: BoostLibrary's mid-run boosts have no such slot, and
-# EngineSim.step() already multiplies the turbo factor and the supercharger factor
-# together unconditionally (see forced-induction.md) — the physics never assumed
-# exclusivity, only the old purchase UI did. Rolling BOTH as separate boosts in one run
-# now genuinely combines them, on purpose: a player who already has a turbo should never
-# have a later supercharger roll take that progress away (todo/mid-run-upgrade-menu.md).
-# effective_meta mirrors this by tracking each axis's gain independently and combining
-# them multiplicatively — see its own comment below.
+# FORCED-INDUCTION rows carry `enable`, the cfg flag the part switches ON, so the two parts
+# share ONE op. Turbo and supercharger stack (a real twincharger): EngineSim.step()
+# multiplies both factors unconditionally.
 #
 #   Every name here must EXIST somewhere, and nothing enforces that at runtime:
-#   an effect naming something nobody declares applies silently and does nothing —
-#   the part reads as fitted and no gameplay test fails. Note the two namespaces:
-#   `field` is the CAR META spelling (a key on the car dict, e.g. `tire_compound`),
-#   while `cfg_fields`, `clears` and `enable` are LIVE CONFIG spellings and must be
-#   `@export`s on GameConfig (scripts/game_config.gd). If you add an effect here,
-#   add its target in the same change. `test_upgrade_library.gd` →
+#   an effect naming something nobody declares applies silently and does nothing.
+#   Note the two namespaces: `field` is the CAR META spelling (a key on the car dict,
+#   e.g. `tire_compound`), while `cfg_fields` and `enable` are LIVE CONFIG spellings and
+#   must be `@export`s on GameConfig. `test_upgrade_library.gd` →
 #   `test_every_effect_target_name_exists` is the guard.
 const EFFECTS := {
 	"install_turbo": {
-		"field": "", "op": "install_induction", "feeds_pw": true,
-		"enable": "turbo_enabled", "gain_key": "turbo_boost_gain",
+		"field": "", "op": "install_induction",
+		"enable": "turbo_enabled",
 	},
 	"install_supercharger": {
-		"field": "", "op": "install_induction", "feeds_pw": true,
-		"enable": "supercharger_enabled", "gain_key": "supercharger_boost_gain",
+		"field": "", "op": "install_induction",
+		"enable": "supercharger_enabled",
 	},
-	# Nitrous writes its config fields and NOTHING else. feeds_pw is deliberately FALSE:
-	# nitrous is a per-stage resource, not a permanent power level, so it must never reach
-	# effective_meta's power-to-weight — a bottle the player empties in one stage must not
-	# read as a permanent power level anywhere a build is compared or displayed.
-	"install_nitrous": {"field": "", "op": "write_fields", "feeds_pw": false},
-	"mass_mult":           {"field": "mass", "op": "mult", "feeds_pw": true},
+	# Nitrous writes its config fields and NOTHING else.
+	"install_nitrous": {"field": "", "op": "write_fields"},
+	"mass_mult":           {"field": "mass", "op": "mult"},
 	# Lightweight parts (BoostLibrary "lightweight"): a proportional weight cut that can't
 	# push a car below min_lightweight_mass — so it's a real upgrade on a heavy car and a
-	# genuine no-op (excluded from the pick pool — see RunSession) on one already at/under
+	# genuine no-op on one already at/under
 	# the floor, rather than a % that keeps scaling a car that's already light. `floor_field`
 	# names the GameConfig field _cfg_set/mult_floor reads the floor from — a LIVE CONFIG
 	# spelling like `enable`/`cfg_fields`, not a meta one.
 	"mass_mult_floor": {
-		"field": "mass", "op": "mult_floor", "feeds_pw": true, "floor_field": "min_lightweight_mass",
+		"field": "mass", "op": "mult_floor", "floor_field": "min_lightweight_mass",
 	},
 	# Race tyres. `field` names the META spelling (a car's rubber is ONE `tire_compound`
 	# coefficient) while `cfg_fields` names the live-config spelling (a PER-AXLE pair, seeded
@@ -116,7 +67,7 @@ const EFFECTS := {
 	# grip_balance tuning slider). Multiplying both axles here — before TuningLibrary runs —
 	# leaves the player's front/rear balance intact and just scales it.
 	"tire_grip_mult": {
-		"field": "tire_compound", "op": "mult", "feeds_pw": false, "feeds_grip": true,
+		"field": "tire_compound", "op": "mult",
 		"cfg_fields": ["wheel_friction_slip_front", "wheel_friction_slip_rear"],
 	},
 	# The SURFACE-DEPENDENT half of the tyre model, and the only pair of effects in this
@@ -128,41 +79,30 @@ const EFFECTS := {
 	# car with no such compound fitted needs no entry anywhere — the meta key is simply
 	# absent (readers default it to 1.0) and the config field is the 1.0 car.gd re-seeds.
 	#
-	# feeds_grip so grip_meta carries them to the lap-time model; feeds_pw stays FALSE for
-	# the same reason the flat compound's does — rubber must never move rally eligibility.
-	# Note this does NOT move the menu's GRIP row, which reads `tire_compound` alone: a
+	# These do NOT move the menu's GRIP row, which reads `tire_compound` alone: a
 	# single headline number cannot honestly state a figure that changes with the surface.
 	"tire_snow_grip_mult": {
-		"field": "tire_snow_grip_mult", "op": "mult", "feeds_pw": false, "feeds_grip": true,
+		"field": "tire_snow_grip_mult", "op": "mult",
 	},
 	"tire_tarmac_grip_mult": {
-		"field": "tire_tarmac_grip_mult", "op": "mult", "feeds_pw": false, "feeds_grip": true,
+		"field": "tire_tarmac_grip_mult", "op": "mult",
 	},
 	# Sequential gearbox: an ABSOLUTE shift time, not a scaling of the car's own. "set" is
 	# order-independent and idempotent, so unlike "mult" it needs no argument about
 	# re-fielding compounding it (shift_time is re-seeded from the fitted engine by
 	# EngineLibrary.apply in step 1 either way).
-	"shift_time_set":      {"field": "shift_time", "op": "set", "feeds_pw": false},
-	"downforce_front":     {"field": "downforce_front", "op": "add", "feeds_pw": false, "feeds_grip": true},
-	"downforce_rear":      {"field": "downforce_rear", "op": "add", "feeds_pw": false, "feeds_grip": true},
-	# Two rows added for the in-run BOOST catalogue (BoostLibrary, stage 5 of
-	# todo/roguelike-pivot-plan.md). Neither feeds power-to-weight or the max-lateral-G
-	# model — braking and drag are their own axes, not inputs either of those two care
-	# about — so both are cfg-only, exactly like tire_grip_mult's sibling rows above.
+	"shift_time_set":      {"field": "shift_time", "op": "set"},
+	"downforce_front":     {"field": "downforce_front", "op": "add"},
+	"downforce_rear":      {"field": "downforce_rear", "op": "add"},
 	# "set", not "mult": Big brakes replaces the car's own brake_torque with a fixed
 	# absolute figure (see run_boost_brake_torque_n) rather than scaling whatever it
 	# shipped with, so it lands at the same strength on every car.
-	"brake_torque_set": {"field": "brake_torque", "op": "set", "feeds_pw": false},
+	"brake_torque_set": {"field": "brake_torque", "op": "set"},
 	# The engine-swap boost's row. peak_torque is the PER-CAR published figure engine.gd
 	# builds its curve from (cfg.peak_torque, engine.gd::_torque_at) — a plain mult on it
-	# is "a stronger engine was fitted", and feeds_pw so the swapped car rates as the
-	# more powerful build it now is. NOT global_torque_scale: that field is a hidden
+	# is "a stronger engine was fitted". NOT global_torque_scale: that field is a hidden
 	# uniform de-rate (see BoostLibrary's header), never a per-car effect target.
-	"engine_power_mult": {"field": "peak_torque", "op": "mult", "feeds_pw": true},
-	# THE TWO `flag` ROWS ARE GONE. `unlocks_aero_tuning` and `unlocks_drivetrain_swap`
-	# existed so a fitted part could open a tuning slider; tuning is ungated on every axis
-	# now (todo/roguelike-pivot.md decision 24) and there are no parts to fit, so the "flag"
-	# op has no rows and no meaning. The `_:` arm in apply() still absorbs an unknown op.
+	"engine_power_mult": {"field": "peak_torque", "op": "mult"},
 }
 
 # The LIVE-CONFIG fields a "mult"/"add" row writes. Usually just `field`: the meta and the
@@ -174,24 +114,8 @@ static func _cfg_fields(desc: Dictionary) -> Array:
 	return desc.get("cfg_fields", [String(desc.get("field", ""))])
 
 # --- The active-effect seam ---------------------------------------------------
-#
-# The effects currently in force on `owned_car`: its `boosts` list, whose entries are
-# `{"id": String, "effect": Dictionary}` — the same `effect` sub-dict shape the authored
-# parts used, so every consumer below is unchanged.
-#
-# FILLED AT FIELDING TIME by world.gd::_field_car, from two sources with different
-# LIFETIMES but one mechanism: `RunSession.boosts()` (run-scoped picks, wiped when the run
-# ends) and `SkillLibrary.equipped_effects(Save.profile)` (permanent purchases, re-derived
-# on every stage boot). Outside a run the list is empty and `apply`, `effective_meta` and
-# `grip_meta` all run their loops zero times, which makes a car exactly its
-# CarLibrary/EngineLibrary baseline plus tuning plus damage.
-#
-# WHY A PLAIN KEY ON THE CAR DICT rather than a query into a run object: it keeps the funnel
-# pure and testable with no session standing up, it is the same place `tuning` and
-# `swapped_engine` already live, and it means a new source of effects WRITES the key (on the
-# owned dict handed to Car.apply_owned / Car.refit_upgrades) rather than re-plumbing five
-# call sites — which is exactly how skills were added without touching this file's loops. It is deliberately NOT persisted by Save: a run's boosts are wiped on run end
-# (todo/roguelike-pivot.md, "Soft permadeath"), so they must not survive in the profile.
+# The effects in force on `owned_car`: its `boosts` list of `{"id": String, "effect": Dictionary}`.
+# Empty means a car is exactly its CarLibrary/EngineLibrary baseline plus tuning plus damage.
 static func active_effects(owned_car: Dictionary) -> Array:
 	return owned_car.get("boosts", [])
 
@@ -226,8 +150,7 @@ static func _cfg_set(cfg: GameConfig, field: String, value: Variant) -> void:
 
 
 # A "mult_floor" row's clamp floor, read off whichever config source the caller has
-# (apply() has a live `cfg`; effective_meta() has none and reads the Config autoload
-# instead — see that arm's own comment). A missing/typo'd `floor_field`, or one naming a
+# (apply() has a live `cfg`). A missing/typo'd `floor_field`, or one naming a
 # GameConfig property that doesn't exist, degrades to NO clamp (mass_mult behaves like a
 # plain "mult") rather than a silent 0.0 floor or a crash — same "effect reads as active,
 # nothing enforces it" failure shape _cfg_set guards against for a write, just for a read.
@@ -301,10 +224,7 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 					for f in _cfg_fields(desc):
 						_cfg_set(cfg, f, float(cfg.get(f)) * float(val))
 				"mult_floor":
-					# Same as "mult", but never pushes the field past floor_field. A car
-					# already at/under the floor (RunSession excludes "lightweight" from the
-					# pick pool before that can happen — see _lightweight_available) would
-					# just clamp straight back to where it started.
+					# Same as "mult", but never pushes the field past floor_field.
 					var floor_val := _floor_value(cfg, desc)
 					for f in _cfg_fields(desc):
 						_cfg_set(cfg, f, maxf(float(cfg.get(f)) * float(val), floor_val))
@@ -317,134 +237,7 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 					for f in _cfg_fields(desc):
 						_cfg_set(cfg, f, float(val))
 				_:
-					pass  # "flag" (gates tuning sliders) + unknown ids: no cfg effect
-
-# --- Effective car stats (display + eligibility) -----------------------------
-
-# A copy of the CarLibrary entry `meta` with the stats that drive the power-to-
-# weight figure (peak_torque, mass) adjusted by the car's ACTIVE EFFECTS, so a
-# power or weight boost shifts the displayed hp/tonne.
-# Pure: returns a fresh dict, never touches the authored CARS entry. Only the
-# meta-level numeric stats are adjusted here; downforce doesn't feed
-# power-to-weight, so it is left to the live-config `apply` above.
-#
-# It does REAL work with no effects at all, which is why it survived the parts
-# deletion: it resolves the swapped engine (features/engine-swap.md), rates the
-# car at peak boost, and applies the detune slider and the drive-mode override.
-static func effective_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
-	if meta.is_empty():
-		return meta
-	var out := meta.duplicate()
-	# The CarLibrary entry no longer carries peak_torque/redline — they live in
-	# EngineLibrary. Seed the power-to-weight inputs from the referenced engine so
-	# the effect multipliers below compound on the real base (and power_to_weight
-	# reads the adjusted values off this dict). Only fill what's absent, so a meta
-	# that already carries explicit peak_torque/redline (e.g. a synthetic fixture)
-	# keeps its own values.
-	# Resolve the CURRENT engine (swapped or stock) so a swapped car's torque/redline
-	# drive its power-to-weight (features/engine-swap.md). Seed mass off the swap too.
-	var stock_id := String(out.get("engine", ""))
-	var current_id := EngineSwap.current_engine_id(owned_car, stock_id)
-	var eng := EngineLibrary.by_id(current_id)
-	if not eng.is_empty():
-		# Point the meta at the CURRENT engine so power_to_weight derives from the
-		# fitted engine (not the stock one) after a swap.
-		out["engine"] = current_id
-	if not out.has("peak_torque"):
-		out["peak_torque"] = eng.get("peak_torque", 0.0)
-	if not out.has("redline"):
-		out["redline"] = eng.get("redline_rpm", 0.0)
-	# shift_time never lived on the CarLibrary entry (car_library.gd's own header says
-	# so) — without this seed CarStats.values() always fell back to its 0.0 default,
-	# showing "0.00 s" on every car's spec sheet regardless of gearbox.
-	if not out.has("shift_time") and eng.has("shift_time"):
-		out["shift_time"] = eng["shift_time"]
-	if current_id != stock_id and out.has("mass"):
-		var stock_eng := EngineLibrary.by_id(stock_id)
-		out["mass"] = EngineSwap.recompute_mass(
-			float(out["mass"]), float(stock_eng.get("mass", 0.0)), float(eng.get("mass", 0.0)))
-	# Resolve the forced-induction boost gain PER AXIS — turbo and supercharger stack now
-	# (see EFFECTS' own header), so this can no longer track one "whichever is active"
-	# figure; it starts from the stock engine's own baked-in gain on EACH axis (almost
-	# always zero on one of them — no stock engine authors both), then a fitted boost of
-	# that type OVERRIDES its own axis only, leaving the other axis's gain untouched. The
-	# two axes then combine MULTIPLICATIVELY, mirroring EngineSim.step()'s crank formula
-	# exactly (`boost_torque_factor(...) * (1 + sc_boost * supercharger_boost_gain)`)
-	# rather than one replacing the other. Rated "at peak boost" — the displayed HP +
-	# power-to-weight eligibility reflect the full boosted torque (features/forced-induction.md).
-	var turbo_gain := float(eng.get("turbo_boost_gain", 0.0))
-	var supercharger_gain := float(eng.get("supercharger_boost_gain", 0.0))
-	# Mirror only the power-to-weight-feeding effects (EFFECTS[*].feeds_pw), from the
-	# same table apply() uses, so the two can't drift.
-	for entry in active_effects(owned_car):
-		var effect: Dictionary = (entry as Dictionary).get("effect", {})
-		for key in effect:
-			var desc: Dictionary = EFFECTS.get(key, {})
-			if not bool(desc.get("feeds_pw", false)):
-				continue
-			match desc["op"]:
-				"mult":
-					var f: String = desc["field"]
-					out[f] = float(out.get(f, 0.0)) * float(effect[key])
-				"mult_floor":
-					# Mirrors apply()'s clamp exactly (off the same Config.data floor field,
-					# since this function has no live `cfg` instance of its own to read one
-					# off) — the power-to-weight display must never show a lighter mass than
-					# the physics actually fields.
-					var f: String = desc["field"]
-					var floor_val := _floor_value(Config.data, desc)
-					out[f] = maxf(float(out.get(f, 0.0)) * float(effect[key]), floor_val)
-				"install_induction":
-					# Which axis this fitted part's gain overrides comes from its OWN
-					# `enable` field name, so this arm never needs to know "turbo" vs
-					# "supercharger" by name — a third induction axis would slot in the
-					# same way.
-					var gain := float((effect[key] as Dictionary).get(String(desc["gain_key"]), 0.0))
-					if String(desc["enable"]) == "turbo_enabled":
-						turbo_gain = gain
-					else:
-						supercharger_gain = gain
-	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + turbo_gain) * (1.0 + supercharger_gain)
-	# Detune scales the torque feeding power-to-weight, after the boost rating.
-	var detune := clampf(float(owned_car.get("tuning", {}).get("engine_detune", 1.0)), 0.0, 1.0)
-	out["peak_torque"] = float(out.get("peak_torque", 0.0)) * detune
-	# Report the player's chosen drivetrain (gated on it being paid for) so display and
-	# physics both see the swapped mode. -1 leaves stock in place.
-	var drive_override := resolve_drive_override(owned_car)
-	if drive_override >= 0:
-		out["drive_mode"] = drive_override
-	return out
-
-# `effective_meta` plus the GRIP-feeding fields (EFFECTS[*].feeds_grip) — downforce and
-# the tyre compound multiplier — for a max-lateral-G readout.
-#
-# effective_meta deliberately mirrors only the power-to-weight-feeding effects; grip is a
-# different axis and is folded in HERE rather than by widening that function's contract,
-# because a grip readout reads both downforce and `tire_compound` off the meta it
-# is handed while power-to-weight must not see either. Keeping the two calls apart is the
-# whole safeguard, and CarPerformance.merged_meta is the one caller that wants both.
-#
-# (Was `aero_meta`, when downforce was the only thing it folded in.)
-static func grip_meta(owned_car: Dictionary, meta: Dictionary) -> Dictionary:
-	var out := effective_meta(owned_car, meta)
-	if out.is_empty():
-		return out
-	out = out.duplicate()
-	for entry in active_effects(owned_car):
-		var effect: Dictionary = (entry as Dictionary).get("effect", {})
-		for key in effect:
-			var desc: Dictionary = EFFECTS.get(key, {})
-			if not bool(desc.get("feeds_grip", false)):
-				continue
-			var f: String = desc["field"]
-			match String(desc["op"]):
-				"add":
-					out[f] = float(out.get(f, 0.0)) + float(effect[key])
-				"mult":
-					# 1.0 is the neutral identity a missing compound reads as — the same
-					# default a missing compound falls back to.
-					out[f] = float(out.get(f, 1.0)) * float(effect[key])
-	return out
+					pass  # unknown ops: no cfg effect
 
 # The layout a car was BUILT with, which it can always return to for free.
 static func stock_drive_mode(owned_car: Dictionary) -> int:
@@ -452,13 +245,7 @@ static func stock_drive_mode(owned_car: Dictionary) -> int:
 
 
 # The drive mode the player chose for this car (0/1/2), or -1 meaning "use the car's
-# authored stock drive_mode". Unlike the pre-pivot money sink (decision 52, since
-# superseded), a conversion is no longer bought and persisted per car — it is a run-scoped
-# mid-run upgrade: world.gd::_field_car writes RunSession.drivetrain_override() onto the
-# DUPLICATED owned-car dict it fields the car with (never Save's persisted copy), so `owned`
-# here only ever carries a for-this-fielding override, never a stored one. The single
-# resolver used by physics (car.gd) and display (effective_meta) — just a range check, no
-# purchase gate.
+# authored stock drive_mode". Written onto the fielded owned-car dict by LootRules.fielded.
 static func resolve_drive_override(owned_car: Dictionary) -> int:
 	var mode := int(owned_car.get("drivetrain_override", -1))
 	if mode < 0:

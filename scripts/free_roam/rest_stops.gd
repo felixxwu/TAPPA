@@ -5,7 +5,7 @@ extends Node
 # The rest stops as gameplay: Dark Souls bonfires (todo/2026-10-19-free-roam-pivot.md decision 9).
 #   * Driving past a rest stop — onto its pad or just along the road beside it, at any speed —
 #     LIGHTS it, makes it the respawn point and fully HEALS the car (`healed`).
-#   * Pressing menu_select (Enter / gamepad A) there, at any speed, opens the rest-stop
+#   * Pressing menu_select (Enter / gamepad A) there, nearly stopped (A is also the handbrake), opens the rest-stop
 #     page (`opened`); the minimap shows the prompt (`prompt_site`), which a touch player taps.
 #   * When the car gives up (DamageModel.gave_up: 0 HP), the engine cuts out (EngineSim.killed: silent,
 #     no drive) and the car rolls on with no controls; wreck_page_delay_s later `wrecked` opens the wreck page. its Respawn puts the car back at the last lit rest stop, fully repaired with a cold engine (`respawned`, carrying where the wreck was).
@@ -38,6 +38,8 @@ var last_site := 0:
 			last_site = v
 			respawn_point_changed.emit(v)
 
+# False until the host has handed the world over (boot warm-up), so input under the cover does nothing.
+var input_enabled := true
 var _on_site := -1
 var _last_p := Vector2(INF, INF)  # the car's position last step, for the swept check
 var _primed := false  # false until the first step has noted where the car was spawned
@@ -52,12 +54,20 @@ func _ready() -> void:
 		(car.damage as DamageModel).gave_up.connect(_on_gave_up)
 
 
-# Seed from a saved world (WorldSession): which stops are lit and where to respawn.
+# Seed from a saved world (WorldSession): which stops are lit and where to respawn. An id that
+# isn't a rest stop on this island (a save from before a retune) is dropped.
 func restore(lit_list: Array, last: int) -> void:
 	lit_sites = {0: true}
 	for site in lit_list:
-		lit_sites[int(site)] = true
+		if _is_rest(int(site)):
+			lit_sites[int(site)] = true
 	last_site = last if lit_sites.has(last) else 0
+
+
+func _is_rest(i: int) -> bool:
+	if streamer == null:
+		return true
+	return i >= 0 and i < streamer.sites.count() and streamer.sites.kind[i] == RoadSites.Kind.REST
 
 
 func is_lit(site: int) -> bool:
@@ -106,7 +116,7 @@ func step(delta: float) -> void:
 		_last_p = p
 		_on_site = rest_at(p)
 		return
-	var from := _last_p if _last_p.distance_to(p) < 100.0 else p  # a teleport isn't a drive past
+	var from := _last_p if _last_p.distance_to(p) < RoadSites.TELEPORT_M else p  # a teleport isn't a drive past
 	_last_p = p
 	var i := rest_reached(from, p)
 	if i != _on_site:
@@ -117,11 +127,16 @@ func step(delta: float) -> void:
 		last_site = i
 
 
-# The rest stop whose page menu_select would open now, or -1.
+# The rest stop the car is at (and can act on), or -1.
 func prompt_site() -> int:
 	if is_wrecked or car == null:
 		return -1
 	return _on_site
+
+
+# Whether the rest-stop page can be opened now: at a stop, nearly stopped, and the world handed over.
+func can_open() -> bool:
+	return input_enabled and prompt_site() >= 0 and car.linear_velocity.length() < Config.data.rest_stop_open_speed_mps
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -131,7 +146,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # Opens the page of the rest stop the car is at (menu_select, or a tap on the minimap's prompt).
 func open_here() -> bool:
-	if prompt_site() < 0:
+	if not can_open():
 		return false
 	opened.emit(_on_site)
 	return true
@@ -185,6 +200,8 @@ func travel_to(site: int) -> bool:
 
 func _on_gave_up() -> void:
 	is_wrecked = true
+	if pause_menu != null:
+		pause_menu.set_input_enabled(false)
 	_set_driverless(true)
 	_set_engine_killed(true)
 	_wreck_page_in = Config.data.wreck_page_delay_s

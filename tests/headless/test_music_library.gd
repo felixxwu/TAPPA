@@ -82,28 +82,14 @@ func test_by_id_unknown_returns_empty() -> void:
 
 
 func test_context_songs_resolve_to_real_catalogue_entries() -> void:
-	# Every HQ-pool and rally-pool id must point at real songs (contract, not
+	# Every menu-pool and rally-pool id must point at real songs (contract, not
 	# pinning which song or its bpm).
-	for id in MusicLibrary.HQ_SONGS:
+	for id in MusicLibrary.MENU_SONGS:
 		assert_false(MusicLibrary.entry_of(id).is_empty(),
-			"HQ song '%s' is a real catalogue entry" % id)
+			"menu song '%s' is a real catalogue entry" % id)
 	for id in MusicLibrary.RALLY_SONGS:
 		assert_false(MusicLibrary.entry_of(id).is_empty(),
 			"rally song '%s' is a real catalogue entry" % id)
-
-
-func test_is_hq_scene_only_true_for_the_hub_scene() -> void:
-	# The predicate delegates to Scenes.is_hub_scene rather than comparing a literal, so
-	# swapping the hub shell (the roguelike pivot did exactly that) can never leave the hub
-	# falling through to the rally pool and playing a stage song as its theme.
-	assert_true(MusicLibrary.is_hq_scene(MusicLibrary.HQ_SCENE), "the hub scene is the hub")
-	assert_true(MusicLibrary.is_hq_scene(Scenes.hub_path()),
-		"whatever hub_path() selects is a hub for music too")
-	# main.tscn and car.tscn are the two non-hub scenes that still exist; the empty
-	# string stands in for "no scene yet". (This listed standings.tscn and podium.tscn
-	# until both were deleted — a predicate test should name real paths.)
-	for other in ["res://main.tscn", "res://car.tscn", ""]:
-		assert_false(MusicLibrary.is_hq_scene(other), "non-hub scene '%s' is not the hub" % other)
 
 
 func test_random_rally_song_is_always_a_pool_member() -> void:
@@ -120,15 +106,15 @@ func test_random_rally_song_avoids_the_excluded_id() -> void:
 			"random_rally_song must not return the excluded id")
 
 
-func test_random_hq_song_is_always_a_pool_member() -> void:
+func test_random_menu_song_is_always_a_pool_member() -> void:
 	for i in 50:
-		assert_true(MusicLibrary.HQ_SONGS.has(MusicLibrary.random_hq_song()),
-			"a random HQ song is a member of the pool")
+		assert_true(MusicLibrary.MENU_SONGS.has(MusicLibrary.random_menu_song()),
+			"a random menu song is a member of the pool")
 
 
-func test_random_hq_song_avoids_the_excluded_id() -> void:
+func test_random_menu_song_avoids_the_excluded_id() -> void:
 	# With a >1 pool, the excluded id (the song just played) never comes back.
-	var exclude: String = MusicLibrary.HQ_SONGS[0]
+	var exclude: String = MusicLibrary.MENU_SONGS[0]
 	for i in 50:
-		assert_ne(MusicLibrary.random_hq_song(exclude), exclude,
-			"random_hq_song must not return the excluded id")
+		assert_ne(MusicLibrary.random_menu_song(exclude), exclude,
+			"random_menu_song must not return the excluded id")

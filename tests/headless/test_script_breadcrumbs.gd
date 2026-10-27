@@ -140,7 +140,6 @@ const BREADCRUMB_BASELINE := [
 	"distant_terrain.gd",
 	"driving_context.gd",
 	"exhaust_lab.gd",
-	"garage.gd",
 	"gauge_icons.gd",
 	"headlight_cone.gd",
 	"hud_gauge.gd",
@@ -157,7 +156,6 @@ const BREADCRUMB_BASELINE := [
 	"perf_log.gd",
 	"perf_overlay.gd",
 	"platform.gd",
-	"polygon_icon.gd",
 	"post_process_view.gd",
 	"ps1_material.gd",
 	"rain_field.gd",
@@ -176,7 +174,6 @@ const BREADCRUMB_BASELINE := [
 	"tilt_input.gd",
 	"touch_scroll_container.gd",
 	"track_cache.gd",
-	"track_preview.gd",
 	"track_surface.gd",
 	"tree_fall.gd",
 	"tree_silhouette.gd",
@@ -302,84 +299,3 @@ func _gd_scripts_under(dir_path: String, out: Array[String]) -> void:
 			out.append(dir_path.path_join(f))
 	for sub in d.get_directories():
 		_gd_scripts_under(dir_path.path_join(sub), out)
-
-
-# --- Guard: StubHud must match the real HUD's arity, method for method ----------------------
-#
-# WHY (round 026). `stage_manager.gd` decides what it may call with `_hud_can[m] =
-# _hud.has_method(m)` — and `has_method()` says nothing about ARITY. So widening a HUD method
-# leaves the guard GREEN and breaks the call at runtime instead, against whichever HUD is
-# actually attached. In tests that HUD is `StubHud` above.
-#
-# That is not hypothetical: a probe added a second gap to `Hud.show_position`, correctly
-# updated `stage_manager.gd`'s call site AND `test_hud.gd`'s call sites, and missed this one
-# stub. The engine DOES name it once the call runs ("Invalid call ... Expected 4 argument(s)"),
-# but it surfaces as a debugger break attributed to whichever test was mid-flight, alongside an
-# out-of-bounds read on the empty recorder array — so what you SEE first is two unrelated-looking
-# stage-manager assertions failing. This guard names the drift directly instead.
-#
-# IT LIVES HERE, NOT IN test_stage_manager.gd, and that placement is load-bearing: the arity
-# break triggers a Godot debugger break mid-run, which halted GUT before it reached this test
-# when it was appended to that file. A guard must not be reachable only AFTER the failure it
-# diagnoses. This file instantiates nothing and scans source, so it always runs.
-#
-# Both lists are derived, so this needs no maintenance: the METHOD NAMES come from
-# `stage_manager.gd`'s own `_hud_can` block (the exact duck-typed boundary), and the arities
-# come from the two sources. Add a method to that block and it is covered automatically.
-#
-# Counts total parameters, defaults included. Every one of the ten methods matches on main, so
-# there are no exemptions and none should be added — fix the stub instead.
-func test_stub_hud_matches_the_real_hud_signature_for_every_duck_typed_method() -> void:
-	var sm := FileAccess.get_file_as_string("res://scripts/stage_manager.gd")
-	var hud_src := FileAccess.get_file_as_string("res://scripts/hud.gd")
-	var self_src := FileAccess.get_file_as_string("res://tests/headless/test_stage_manager.gd")
-	assert_ne(sm, "", "could not read stage_manager.gd")
-	assert_ne(hud_src, "", "could not read hud.gd")
-	assert_ne(self_src, "", "could not read this test file")
-
-	# The duck-typed boundary, read out of stage_manager's own list rather than restated here.
-	var list_re := RegEx.new()
-	list_re.compile('for m in \\[([^\\]]*)\\]:')
-	var list_m := list_re.search(sm)
-	assert_ne(list_m, null,
-		"could not find stage_manager.gd's `for m in [...]` HUD method list — if it was "
-		+ "restructured, update THIS guard; it is not a stage-manager failure")
-	var name_re := RegEx.new()
-	name_re.compile('"([a-z_]+)"')
-	var names: Array[String] = []
-	for hit in name_re.search_all(list_m.get_string(1)):
-		names.append(hit.get_string(1))
-	assert_gt(names.size(), 5, "expected the HUD method list to hold several names")
-
-	var mismatches: Array[String] = []
-	for n in names:
-		var real := _arity_of(hud_src, n)
-		var stub := _arity_of(self_src, n)
-		if real < 0:
-			mismatches.append("%s: not found in hud.gd" % n)
-		elif stub < 0:
-			mismatches.append("%s: StubHud does not implement it, but _hud_can will report it can" % n)
-		elif real != stub:
-			mismatches.append("%s: hud.gd takes %d arg(s), StubHud takes %d" % [n, real, stub])
-
-	assert_eq(mismatches, ([] as Array[String]),
-		"StubHud has drifted from the real HUD: %s. " % str(mismatches)
-		+ "stage_manager gates these calls on has_method() alone, which ignores arity, so the "
-		+ "call is only rejected once it actually runs: the engine raises \"Invalid call to "
-		+ "function ... Expected N argument(s)\" and takes a debugger break, which fails whatever "
-		+ "test was mid-flight and can halt the run before later tests execute. Fix StubHud in "
-		+ "tests/headless/test_stage_manager.gd to match hud.gd; do not add an exemption here.")
-
-
-# Total parameter count of `func <name>(...)` in `src`, or -1 if absent. Matches both a
-# top-level func and one indented inside an inner class (StubHud's are indented).
-func _arity_of(src: String, method_name: String) -> int:
-	var re := RegEx.new()
-	re.compile("(?m)^\\t?func %s\\(([^)]*)\\)" % method_name)
-	var m := re.search(src)
-	if m == null:
-		return -1
-	var args := m.get_string(1).strip_edges()
-	if args == "":
-		return 0
-	return args.split(",").size()

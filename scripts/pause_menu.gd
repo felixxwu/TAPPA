@@ -3,9 +3,9 @@ extends CanvasLayer
 # Docs: features/menus.md — update in the same change as this file.
 # Tests: tests/headless/test_pause_menu.gd, tests/headless/test_photo_mode.gd, tests/headless/test_menu_nav.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # In-run pause menu. A top-right Pause button freezes the game
-# (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to HQ;
+# (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to title;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
-# controls). Quit to HQ returns to the hub. The whole layer
+# controls). Quit to title saves and goes back to the title screen. The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu
@@ -29,13 +29,6 @@ signal photo_mode_requested
 # Photo Mode needs a host that owns a free-fly camera (world.gd). A scene without one turns
 # the row off rather than offering a button that would leave the game frozen.
 @export var offer_photo_mode := true
-# The reset row's label: the stage says "Reset to track", free roam "Reset to road".
-@export var reset_label := "Reset to track"
-# When set, replaces the quit confirm's body text (free roam has no run to pause or abandon).
-@export_multiline var quit_body_override := ""
-# Quit's label and destination. Empty: the stage's "Quit to HQ" to the hub.
-@export var quit_label := ""
-@export_file("*.tscn") var quit_scene := ""
 # Extra rows the host handles itself (free roam: "Map", "Stats"), placed above Settings. Pressing
 # one emits extra_requested with its label; the menu stays open, still paused, for the host's page
 # to cover. The host calls return_from_extra() when its page closes.
@@ -79,6 +72,10 @@ func set_input_enabled(on: bool) -> void:
 
 func is_open() -> bool:
 	return _overlay.visible
+
+
+func is_armed() -> bool:
+	return _input_enabled
 
 
 # Freeze the game and show the menu (the Resume/Settings page).
@@ -148,43 +145,40 @@ func return_from_photo_mode() -> void:
 	_focus_card("Photo Mode")
 
 
-# Pop the quit confirm; quit_to_hq() runs only if the player accepts.
-func confirm_quit_to_hq() -> void:
-	var body := "Abandon this rally and return to HQ?\nYour progress in this run is lost."
-	if quit_body_override != "":
-		body = quit_body_override
-	var quit_text := quit_label if quit_label != "" else "Quit to HQ"
-	ConfirmPopup.open(self, quit_text + "?", body,
+const QUIT_LABEL := "Quit to title"
+
+
+# Pop the quit confirm; quit_to_title() runs only if the player accepts.
+func confirm_quit_to_title() -> void:
+	ConfirmPopup.open(self, QUIT_LABEL + "?",
+		"Leave the island and return to the title screen? Your world is saved.",
 		[ {"label": "Cancel", "callback": Callable()},
-		  {"label": quit_text, "callback": quit_to_hq} ],
+		  {"label": QUIT_LABEL, "callback": quit_to_title} ],
 		1, 0)  # focus stays on Quit as before; Back/Esc = Cancel (index 0)
 
 
-# Leave for HQ: unfreeze, then change scene. A benchmark run exits through
-# Benchmark.exit_to_hq so its config overrides are restored.
-func quit_to_hq() -> void:
+# Unfreeze, then go to the title. A benchmark run exits through Benchmark.exit_to_title so its
+# config overrides and the real profile are restored.
+func quit_to_title() -> void:
 	get_tree().paused = false
 	quitting.emit()
-	if quit_scene != "":
-		Scenes.change_to(get_tree(), quit_scene)
-		return
 	if Benchmark.active:
-		Benchmark.exit_to_hq()
+		Benchmark.exit_to_title()
 	else:
-		Scenes.change_to(get_tree(), Scenes.hub_path())
+		Scenes.change_to(get_tree(), Scenes.TITLE)
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not _input_enabled:
 		return  # Esc / gamepad B do nothing while the world is loading
-	# A ConfirmPopup (the "Quit to HQ?" confirm) is MODAL and hosted on THIS node, as
+	# A ConfirmPopup (the "Quit to title?" confirm) is MODAL and hosted on THIS node, as
 	# its own CanvasLayer (layer 101) above the pause overlay (layer 5). Its own
 	# MenuNav consumes ui_cancel/menu_back and directional input, but NOT `pause` —
 	# so without this guard, pressing gamepad Start while the confirm is up fell
 	# through to the case below and called resume(): get_tree().paused = false and
 	# _set_open(false) hide the pause overlay, but the popup is a SEPARATE CanvasLayer
 	# and stays on screen — now floating over LIVE, unpaused gameplay with its "Quit to
-	# HQ" button still armed. Bailing here leaves the confirm exactly as it was
+	# title" button still armed. Bailing here leaves the confirm exactly as it was
 	# (Start does nothing) rather than silently resuming under an orphaned modal; the
 	# player still has ui_cancel/B (routed to the popup's own Cancel action) or a tap
 	# on one of the popup's own buttons to get out.
@@ -268,7 +262,7 @@ func _build_menu_panel() -> MenuPage:
 		{"title": "Resume", "icon": "resume_run", "action": resume},
 		# Snap the car back onto the road at its current progress, then unpause. The host owns
 		# the car and performs the reset.
-		{"title": reset_label, "icon": "reset_road", "action": _on_reset_to_track_pressed},
+		{"title": "Reset to road", "icon": "reset_road", "action": _on_reset_to_track_pressed},
 	]
 	# Hand the screen to the host's free-fly camera with the tree still frozen. Esc there comes
 	# back to this menu (return_from_photo_mode).
@@ -277,7 +271,7 @@ func _build_menu_panel() -> MenuPage:
 	for label in extra_rows:
 		entries.append({"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)})
 	entries.append({"title": "Settings", "icon": "settings", "action": _show_settings.bind(true)})
-	entries.append({"title": quit_label if quit_label != "" else "Quit to HQ", "icon": "quit", "action": confirm_quit_to_hq})
+	entries.append({"title": QUIT_LABEL, "icon": "quit", "action": confirm_quit_to_title})
 	_cards = CardUI.card_list(_menu_panel, entries)
 	return _menu_panel
 

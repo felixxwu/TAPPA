@@ -51,7 +51,7 @@ var current_segment := 0    # which segment of current_song is playing (0-based)
 var next_handoff := 0.0     # grid time (s) of the next segment's main-loop start
 
 var _current_rally_song := ""  # rally song locked in for the current event ("" = unpicked)
-var _current_hq_song := ""     # HQ song locked in for the current HQ visit ("" = unpicked)
+var _current_menu_song := ""   # menu song locked in for the current menu visit ("" = unpicked)
 var _loading_active := false   # true while a loading screen is up (edge-detects re-picks)
 
 var _bpm_override := {}              # test hook: {id: bpm}; bypasses MusicLibrary
@@ -172,9 +172,9 @@ func _ready() -> void:
 		_apply_volume()
 	_apply_master_volume()  # bus 0 always exists, headless included
 	_current_rally_song = MusicLibrary.random_rally_song()  # a song ready before the first loading screen
-	_current_hq_song = MusicLibrary.random_hq_song()  # a song ready before the first HQ visit
+	_current_menu_song = MusicLibrary.random_menu_song()  # a song ready before the first menu visit
 	# No hardcoded autostart — _process picks the song from the live scene state
-	# (see update_for_scene), so the first frame starts the right context track.
+	# (see update_for_context), so the first frame starts the right context track.
 
 
 func _process(_delta: float) -> void:
@@ -208,7 +208,7 @@ func _tick(now: float) -> void:
 	# early return, so off-tree tests can advance the grid; _launch self-guards too).
 	var scene_path := _current_scene_path()
 	if scene_path != "":
-		update_for_scene(scene_path)
+		update_for_context(_menu_open())
 	if current_song == "":
 		return
 	var fire := advance(now)
@@ -245,7 +245,7 @@ func _try_resume(now: float) -> void:
 	if not is_inside_tree() or not get_tree().get_nodes_in_group("loading_screen").is_empty():
 		return
 	_suspended = false
-	var want := _song_for_scene(_current_scene_path())
+	var want := _song_for_context(_menu_open())
 	if want != "":
 		seed_grid(now, want)
 		_launch(want, 0, 0.0)
@@ -262,31 +262,34 @@ func _current_scene_path() -> String:
 	return t.current_scene.scene_file_path
 
 
-# Queue the song the given scene wants (HQ song in the HQ scene, the current rally
-# song elsewhere). No-op when it already matches what's requested; seeds immediately
+# True while a front-door menu (the title screen) is up; it joins MusicLibrary.MENU_GROUP.
+func _menu_open() -> bool:
+	return is_inside_tree() and not get_tree().get_nodes_in_group(MusicLibrary.MENU_GROUP).is_empty()
+
+
+# Queue the song the current context wants (menu song while a menu is open, the current
+# rally song otherwise). No-op when it already matches what's requested; seeds immediately
 # if idle, otherwise latches a swap for the next 8-bar handoff.
-func update_for_scene(scene_path: String) -> void:
-	var want := _song_for_scene(scene_path)
+func update_for_context(menu_open: bool) -> void:
+	var want := _song_for_context(menu_open)
 	if want != "" and want != requested_song:
 		play_song(want)
 
 
-# The song a scene wants: the HQ song locked in for this HQ visit in the HQ
-# scene, else the rally song chosen for the current event. Lazily seeds a song
-# if none has been picked yet (e.g. a scene entered before any loading screen,
-# or in an off-tree test).
-func _song_for_scene(scene_path: String) -> String:
-	if MusicLibrary.is_hq_scene(scene_path):
-		if _current_hq_song == "":
-			_current_hq_song = MusicLibrary.random_hq_song()
-		return _current_hq_song
+# The song a context wants: the menu song locked in for this menu visit, else the rally
+# song chosen for the current event. Lazily seeds a song if none has been picked yet.
+func _song_for_context(menu_open: bool) -> String:
+	if menu_open:
+		if _current_menu_song == "":
+			_current_menu_song = MusicLibrary.random_menu_song()
+		return _current_menu_song
 	if _current_rally_song == "":
 		_current_rally_song = MusicLibrary.random_rally_song()
 	return _current_rally_song
 
 
-# Re-pick the rally song and the HQ song on the rising edge of the
-# loading_screen group (a new event / return-to-HQ / next-event is loading),
+# Re-pick the rally song and the menu song on the rising edge of the
+# loading_screen group (a new world is loading),
 # avoiding an immediate repeat of whichever one was actually just played.
 #
 # Also the single place that mutes/unmutes the "Engine" bus (see _ensure_engine_bus):
@@ -304,7 +307,7 @@ func _update_loading_edge() -> void:
 	var loading := not get_tree().get_nodes_in_group("loading_screen").is_empty()
 	if loading and not _loading_active:
 		_current_rally_song = MusicLibrary.random_rally_song(_current_rally_song)
-		_current_hq_song = MusicLibrary.random_hq_song(_current_hq_song)
+		_current_menu_song = MusicLibrary.random_menu_song(_current_menu_song)
 	_loading_active = loading
 	_apply_engine_mute(loading)
 
@@ -312,7 +315,7 @@ func _update_loading_edge() -> void:
 # Mute/unmute the whole "Engine" bus for the duration a loading screen is up. A
 # bus-level mute (rather than a flag threaded through every EngineAudio instance)
 # is one lever for however many cars have an EngineAudio child alive at once
-# (player + opponent wreck + HQ display cars). No-op if the bus was never created
+# (player + wreck + display cars). No-op if the bus was never created
 # (headless — see _ready — where EngineAudio never calls play() either).
 func _apply_engine_mute(loading: bool) -> void:
 	var idx := AudioServer.get_bus_index(AudioBuses.ENGINE)

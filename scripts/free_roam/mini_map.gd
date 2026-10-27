@@ -55,6 +55,8 @@ var _roads: RoadLayer
 var _ground: TextureRect
 var _overlay: MarkerLayer
 var prompt_label: Label
+var _prompt_how := ""
+var _prompt_text := ""
 var _mat: ShaderMaterial
 var _inner := Rect2(0, 0, 1, 1)
 var _cells := {}  # Vector2i (CELL_M cell of the midpoint) -> PackedInt32Array of segment ids
@@ -285,7 +287,7 @@ func gather_roads(radius: float) -> Array:
 static func mark_seen_near(sites: RoadSites, p: Vector2, radius: float) -> int:
 	var fresh := 0
 	var r2 := radius * radius
-	for i in sites.count():
+	for i in sites.in_box(p.x - radius, p.y - radius, p.x + radius, p.y + radius):
 		if sites.pos[i].distance_squared_to(p) <= r2 and WorldSession.see(i):
 			fresh += 1
 	return fresh
@@ -353,10 +355,13 @@ func _process(delta: float) -> void:
 
 # The line under the frame: the action you can take here.
 func update_prompt_label() -> void:
-	var at_stop := rest_stops != null and rest_stops.prompt_site() >= 0
+	var at_stop := rest_stops != null and rest_stops.can_open()
 	prompt_label.visible = at_stop
 	var how := "Tap" if Platform.is_touch() else "Enter / A"
-	prompt_label.text = UITheme.caps(how + ": open rest stop") if at_stop else ""
+	if how != _prompt_how:
+		_prompt_how = how
+		_prompt_text = UITheme.caps(how + ": open rest stop")
+	prompt_label.text = _prompt_text if at_stop else ""
 
 
 # Which way the outer rings lie on screen: from the car, straight away from spawn (the world

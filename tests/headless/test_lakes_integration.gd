@@ -35,13 +35,16 @@ func _cfg() -> GameConfig:
 
 # For each event: generate, log the outcome, and assert the road never sits below
 # the waterline and that some lakes form. Also confirm the run-scene params and the
-# target-derivation params (both for_event) yield the identical shape.
+# target-derivation params yield the identical shape.
 func test_events_generate_dry_roads_with_lakes() -> void:
 	var cfg := _cfg()
 	var completed := 0
 	var any_water := false
 	for event in EVENTS:
-		var params := TrackGenParams.for_event(event, cfg)
+		cfg.track_seed = int(event["seed"])
+		cfg.track_turn_count = int(event["turn_count"])
+		cfg.track_water_level_m = float(event["water_level"])
+		var params := TrackGenParams.for_config(cfg)
 		var res := await TrackGenerator.generate(params)
 		# Road stays LARGELY out of the water (tolerant reject allows shoreline skims,
 		# not lake crossings): count road cells actually submerged (below water_level).
@@ -55,10 +58,13 @@ func test_events_generate_dry_roads_with_lakes() -> void:
 		var wet_frac := (float(wet_road) / float(total)) if total > 0 else 0.0
 		# Some water actually forms near the stage (below the level within the bounds).
 		var poly := (res["centerline"] as Curve2D).tessellate()
-		var bounds := LoadingScreen.bounds_of(poly).grow(60.0)
+		var bounds := Rect2(poly[0], Vector2.ZERO)
+		for pt in poly:
+			bounds = bounds.expand(pt)
+		bounds = bounds.grow(60.0)
 		var water_cells := LakeField.submerged_cells(params.water_sampler, params.water_level, bounds, 2.0)
 		# NB: the run-scene / target-derivation frame-consistency check (identical shape
-		# from a rebuilt for_event params) lives in test_track_gen_frame_consistency.gd,
+		# from rebuilt params) lives in test_track_gen_frame_consistency.gd,
 		# so it isn't duplicated here — that saves a second full generate() per event.
 
 		gut.p("[lakes] seed=%d level=%.2f | complete=%s corners=%d | submerged_road=%.1f%% | water_cells=%d | dry_start=%s" % [

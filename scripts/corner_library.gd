@@ -68,9 +68,8 @@ const CORNERS: Array[Dictionary] = [
 		# occupies the same footprint and still turns a sharp ~90 deg). The old handles were
 		# nearly as long as the 14.6 m diagonal, which keeps the curve straight near both
 		# ends and dumps all the turning into the middle: minimum radius came out at 4.7 m,
-		# TIGHTER than the Hairpin (6.6 m) and 3.6x tighter than turn 1. LapTimeModel caps
-		# speed at sqrt(mu*g/kappa) off the tightest point, so that spike made every driver
-		# — the ghost included — brake to ~26 km/h for a 90 deg bend. Now ~8.4 m / ~34 km/h:
+		# TIGHTER than the Hairpin (6.6 m) and 3.6x tighter than turn 1. A cornering speed ceiling
+		# sqrt(mu*g/kappa) off the tightest point means that spike made every driver brake to ~26 km/h for a 90 deg bend. Now ~8.4 m / ~34 km/h:
 		# looser than the Hairpin, still the second-tightest corner in the set, and
 		# deliberately short of the 8.06 m handles that would make it a plain circular arc.
 		"points": [

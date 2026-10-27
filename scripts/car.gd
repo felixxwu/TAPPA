@@ -374,7 +374,7 @@ func _recompute_axles() -> void:
 	for wheel in find_children("*", "VehicleWheel3D", false):
 		# wheel_mount(), never the live wheel.position: the body repaints that with the
 		# settled suspension travel every step, so recomputing these midpoints on a car that
-		# has been standing still (refit_upgrades -> _rebuild_drivetrain) would drop the
+		# has been standing still would drop the
 		# downforce application points by ~one travel and quietly change its pitch lever.
 		# Same mechanism as the drivetrain hardpoint bug — see Car.wheel_mount().
 		(rears if wheel.use_as_traction else fronts).append(wheel_mount(wheel))
@@ -1710,8 +1710,7 @@ func _relocate_wheels(spec: Dictionary) -> void:
 
 
 # The driven-axle layout to run: the player's bought conversion when one is being fielded,
-# else the car's authored stock layout. One resolver so the rebuild and the live reconfigure
-# can never disagree about which mode a given fielding means.
+# else the car's authored stock layout. One resolver so every rebuild agrees about which mode a given fielding means.
 func _resolved_drive_mode(stock: Drivetrain.DriveMode) -> Drivetrain.DriveMode:
 	if _owned_drive_override >= 0:
 		return _owned_drive_override as Drivetrain.DriveMode
@@ -1724,10 +1723,9 @@ func _resolved_drive_mode(stock: Drivetrain.DriveMode) -> Drivetrain.DriveMode:
 #
 # FIELDING-TIME ONLY. Both callers (apply_car, _apply_engine_swap) run while the car is being
 # built or re-fielded; `_ready` builds its own (it interleaves other setup and keeps the
-# config-derived drive_mode). To change a LIVE car's driveline use
-# `Drivetrain.reconfigure()` instead (refit_upgrades does) — a rebuild on a running car
-# discards its whole simulation state, and used to re-capture drifted wheel geometry with it.
-# The tripwire below is what stops that regressing quietly.
+# config-derived drive_mode). A rebuild on a running car discards its whole simulation state
+# and used to re-capture drifted wheel geometry with it; the tripwire below stops that
+# regressing quietly.
 func _rebuild_drivetrain(drive_mode: Drivetrain.DriveMode) -> void:
 	var mode := _resolved_drive_mode(drive_mode)
 	_assert_wheel_geometry_is_fresh()
@@ -1756,8 +1754,8 @@ func _assert_wheel_geometry_is_fresh() -> void:
 	for wheel in _wheel_mounts:
 		if absf((wheel as Node3D).position.y - float(_wheel_mounts[wheel].y)) > 0.005:
 			push_error("car.gd: drivetrain rebuilt on a SIMULATING body whose wheel transforms "
-				+ "have drifted from their authored mounts (%s). Relocate the wheels first, or "
-				+ "use Drivetrain.reconfigure() for a live change — see Car.wheel_mount()."
+				+ "have drifted from their authored mounts (%s). Relocate the wheels first — "
+				+ "see Car.wheel_mount()."
 				% (wheel as Node3D).name)
 			return
 
@@ -1830,8 +1828,8 @@ func apply_owned(owned: Dictionary) -> String:
 	# weight_front). See features/engine-swap.md.
 	_apply_engine_swap(owned)
 	# Snapshot the full pre-upgrade, pre-tune baseline (a deep copy of the whole config
-	# after apply_car + engine swap) FIRST, so retune() / refit_upgrades() can re-derive
-	# a CHANGED upgrade/tuning set on the LIVE config at the start line — restore this
+	# after apply_car + engine swap) FIRST, so retune() can re-derive
+	# a CHANGED upgrade/tuning set on the LIVE config at a rest stop — restore this
 	# baseline, then re-apply upgrades + tuning top-to-bottom — without re-running this
 	# whole pipeline (which would relocate the wheels and reset the pose on a live body,
 	# corrupting it — see _rederive_live_config()/respawn()).
@@ -1859,11 +1857,11 @@ func apply_owned(owned: Dictionary) -> String:
 	# config-derived fitment caches are stale — re-derive them now the config is final.
 	# (Rally staging would reset the engine anyway; free roam never does.)
 	drivetrain.engine.refresh_fitment()
-	# Step 4: working HP and wheel toe start from the owned car's values (free roam then
-	# restores the world's saved car_state over them).
+	# Step 4: the car is fielded whole and straight; free roam then restores the world's saved
+	# car_state (its damage) over that.
 	var entry := CarLibrary.by_id(model_id)
 	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
-	damage.field(max_hp, float(owned.get("hp", max_hp)), owned.get("wheel_toe", []))
+	damage.field(max_hp, max_hp)
 	_owned_drive_override = -1
 	# Clear the per-fielding wheel override so a later BARE apply_car (free-roam /
 	# prop / opponent re-fielding of this same instance) falls back to stock wheels
@@ -1897,9 +1895,9 @@ func fit_engine(engine_id: String) -> void:
 
 # The FULL pre-upgrade, pre-tune config snapshot taken at fielding (after apply_car +
 # engine swap, before upgrades/tuning), as a { property_name: value } map of EVERY
-# GameConfig script variable. retune() and refit_upgrades() re-derive the live config
+# GameConfig script variable. retune() re-derives the live config
 # from this ONE baseline — restore it, then re-apply upgrades + tuning — so there is a
-# single re-derive ordering shared by both and no per-library field list to drift out of
+# single re-derive ordering and no per-library field list to drift out of
 # sync with apply(). Empty until fielded from an owned car (free-roam apply_car never
 # snapshots), which disables both re-derives.
 #
@@ -1926,7 +1924,7 @@ func _restore_live_baseline() -> void:
 # The single live re-derive: restore the full pre-upgrade/pre-tune baseline, then re-apply
 # the upgrade and tuning layers top-to-bottom. Because it always starts from the complete
 # baseline, no field can carry stale state from a prior upgrade/tuning into the next
-# re-derive (the bug this replaced: refit leaving old tuning baked into peak_torque). All
+# re-derive (the bug this replaced: a re-derive leaving old tuning baked into peak_torque). All
 # re-derived fields are read live each physics step, so this takes effect immediately —
 # no wheel relocate, no pose reset (unlike apply_owned, which must not run on a live staged
 # body; see respawn()). No-op until fielded from an owned car.
@@ -1938,58 +1936,15 @@ func _rederive_live_config(owned: Dictionary) -> void:
 	TuningLibrary.apply(owned, config)
 	_apply_aero_visibility(owned)  # keep the wing in sync when boosts are re-derived live
 	# Same reason as apply_owned: restoring the baseline zeroes the fitment fields and the
-	# upgrade layer re-writes them, so the engine's caches must be re-derived. refit_upgrades
-	# rebuilds the drivetrain after this anyway; retune does not, so it has to happen here.
+	# upgrade layer re-writes them, so the engine's caches must be re-derived.
 	drivetrain.engine.refresh_fitment()
-	# NOTE there used to be a `_gearbox_auto_seen = -1` here, to re-push the player's Gearbox
-	# setting because "a rebuilt drivetrain re-seeds engine.auto from the config default".
-	# Neither live re-derive replaces the engine any more (refit_upgrades reconfigures it in
-	# place), so engine.auto simply survives and there is nothing to re-push.
 
 
 # Re-apply a CHANGED tuning to the already-fielded live config, without reshaping the
-# body. Used by the start-line Tune Car menu. Tuning touches only config fields read live
+# body. Used by the rest-stop Tune Car page. Tuning touches only config fields read live
 # each physics step, so no engine/drivetrain rebuild is needed.
 func retune(owned: Dictionary) -> void:
 	_rederive_live_config(owned)
-
-
-# Re-apply a CHANGED effect set to the already-fielded live config WITHOUT reshaping the
-# body (no apply_car / wheel relocate / pose reset, which would corrupt a live staged
-# body — see respawn()). Re-derives from the full baseline, then re-syncs mass / suspension /
-# engine audio and RECONFIGURES the existing drivetrain (a drivetrain conversion changes the
-# driven axle; a turbo or gearbox effect changes the engine's derived caches).
-#
-# ITS CALLER MOVED. It was the start-line Upgrades menu, deleted with the parts model.
-# STAGE 5 (in-run boosts) turned out NOT to need this hook: a picked boost is written to
-# RunSession's own run-scoped list (RunSession.boosts()) and only reaches the car at
-# world.gd._field_car, which runs on the FULL scene reload continue_to_next_stage() already
-# does between every stage (a different track needs a fresh world regardless) — so the next
-# stage's apply_owned already carries the new boost with no live re-staging in between. Left
-# live for whatever future flow DOES want to reflect an effect change onto an
-# already-staged car without a reload (e.g. a mid-run repair/boost preview before the
-# scene changes) — write the boost onto the owned-car dict, then call this.
-#
-# It deliberately does NOT rebuild the drivetrain. A rebuild re-derives everything from the
-# live scene, which on a settled car meant re-capturing drifted wheel geometry (the ~60%
-# normal-force bug — see Car.wheel_mount) and throwing away the car's revs, gear, boost,
-# nitrous tank, wheel spin and mirrored gearbox mode. `Drivetrain.reconfigure()` changes the
-# two things an upgrade edit can actually move and leaves the rest of the running car alone.
-func refit_upgrades(owned: Dictionary) -> void:
-	if _live_baseline.is_empty():
-		return  # not fielded from an owned car — no baseline to restore, nothing to do
-	_owned_drive_override = UpgradeLibrary.resolve_drive_override(owned)
-	_rederive_live_config(owned)
-	_sync_suspension_to_wheels()
-	mass = config.mass
-	var spec: Dictionary = CarLibrary.all()[_car_index]
-	var mode := _resolved_drive_mode(spec["drive_mode"] as Drivetrain.DriveMode)
-	# The axle midpoints are NOT recomputed: they are derived from the wheel mounts, and
-	# mounts only move when the wheels are relocated, which this path never does.
-	config.drive_mode = mode
-	drivetrain.reconfigure(mode)
-	_reconfigure_engine_audio()
-	_owned_drive_override = -1
 
 
 # Re-field this owned car's engine when it differs from the CarLibrary stock: writes
@@ -2075,9 +2030,8 @@ func _apply_suspension(wheel: VehicleWheel3D) -> void:
 # connection point plus the current suspension travel, so a wheel that has settled reads
 # ~one travel LOWER than where it is mounted. Anything that needs the mount — above all the
 # drivetrain's compression math (Drivetrain.wheel_normal_force) — must read it from here.
-# A drivetrain rebuilt mid-stage (car.gd refit_upgrades, from the start-line Upgrades menu)
-# used to re-capture the drifted position instead, which inflated compression and therefore
-# every tyre's normal force by ~60% — the car silently gained grip on any upgrade edit.
+# A drivetrain rebuilt on a running car used to re-capture the drifted position instead, which inflated compression and therefore
+# every tyre's normal force by ~60% — the car silently gained grip.
 func wheel_mount(wheel: VehicleWheel3D) -> Vector3:
 	if not _wheel_mounts.has(wheel):
 		# No silent fallback to wheel.position: that value drifts with the suspension, so

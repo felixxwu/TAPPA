@@ -252,14 +252,6 @@ the device.
 
 ## First-run pick (pre-rally gate)
 
-On mobile, a player must choose a scheme before their first event. If no scheme is
-saved yet, HQ's Start button opens the Settings picker as a **gate**
-(the deleted `hq.gd._open_settings(true)`) instead of launching — jumping **straight to the
-Mobile controls page** (not the full category list), so the player only picks a
-touch layout. Confirming (the bottom **Start >** button) saves the chosen scheme
-(the highlighted default if untouched) and proceeds, so the gate never shows again.
-Pressing back cancels the gate to the car park. See [menus.md](menus.md) › Settings.
-
 ## Related config
 
 `mobile_controls_force` (force the controls on for testing on desktop/in the

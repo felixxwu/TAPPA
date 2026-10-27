@@ -468,7 +468,8 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
      centreline, so recovery should reuse `free_roam.gd._road_pose`.
    The hub stays unreachable until stage 6 rewires title → world. Moving
    `FreeRoamSettings` onto `GameConfig` / `game_config.tres` (CLAUDE.md: tunables live
-   there) can happen here or in stage 6, once the knobs have settled.
+   there) can happen here or in stage 6, once the knobs have settled. (Done 2026-10-27:
+   `GameConfig.free_roam`.)
 5. **Damage chain and rest stops — DONE 2026-10-20** (`features/free-roam.md` → *Damage and rest stops*). Temperature, cooling failure,
    overheat drain, 0-HP respawn, lighting, free repair, travel, spectators at rest stops.
    The rest-stop page at this stage: repair, tune, travel. Needs rest stop positions from

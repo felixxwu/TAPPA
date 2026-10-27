@@ -33,6 +33,7 @@ var owned: Dictionary = {}
 
 var view := View.MAIN
 var site := -1
+var _fielded_id := -1  # the car body in the world: after a Garage swap `owned` is another car
 var dirty := false
 var _keep_at := 0
 var _page: MenuPage
@@ -52,6 +53,7 @@ func is_open() -> bool:
 func open(p_site: int) -> void:
 	site = p_site
 	dirty = false
+	_fielded_id = int(owned.get("instance_id", -1))
 	if car != null and car.get("damage") != null:
 		(car.damage as DamageModel).repair(Config.data)
 	get_tree().paused = true
@@ -160,7 +162,7 @@ func _build_tune() -> void:
 
 
 func _on_tuned() -> void:
-	if car != null and car.has_method("retune"):
+	if car != null and car.has_method("retune") and int(owned.get("instance_id", -1)) == _fielded_id:
 		car.retune(LootRules.fielded(owned))
 	tuned.emit()
 

@@ -31,7 +31,6 @@ var _on_close := Callable()
 var _canvas: MapCanvas
 var _targets := PackedInt32Array()
 var _selected := 0
-var _travel_mode := false
 var _here := -1
 var travelled := false  # whether the map's last visit ended in a quick travel
 var _target_label: Label
@@ -55,7 +54,6 @@ func is_open() -> bool:
 func show_map(on_close: Callable, from_site := -1) -> void:
 	_open(on_close)
 	travelled = false
-	_travel_mode = rest_stops != null
 	_here = from_site
 	# Transparent body: only the drawn map itself is opaque, over the dim.
 	_page = MenuPage.new({"title": "Map", "dim": true, "alpha": 0.0})
@@ -70,17 +68,16 @@ func show_map(on_close: Callable, from_site := -1) -> void:
 	_target_label = Label.new()
 	_page.body().add_child(_target_label)
 	_back_button = _page.add_action(UITheme.row_button("< Back", close))
-	if _travel_mode:
-		_targets = rest_stops.travel_targets(from_site)
-		_prev_button = _page.add_action(UITheme.row_button("<", _step.bind(-1)))
-		_next_button = _page.add_action(UITheme.row_button(">", _step.bind(1)))
-		_travel_button = _page.add_action(UITheme.row_button("Travel", _travel))
-		for b in [_prev_button, _next_button, _travel_button]:
-			b.disabled = _targets.is_empty()
+	_targets = rest_stops.travel_targets(from_site)
+	_prev_button = _page.add_action(UITheme.row_button("<", _step.bind(-1)))
+	_next_button = _page.add_action(UITheme.row_button(">", _step.bind(1)))
+	_travel_button = _page.add_action(UITheme.row_button("Travel", _travel))
+	for b in [_prev_button, _next_button, _travel_button]:
+		b.disabled = _targets.is_empty()
 	_selected = 0
 	_refresh_target()
 	UITheme.enforce(_page)
-	MenuNav.attach(_page, {first = _travel_button if _travel_mode and not _targets.is_empty() else _back_button, on_back = close})
+	MenuNav.attach(_page, {first = _travel_button if not _targets.is_empty() else _back_button, on_back = close})
 
 
 func show_stats(on_close: Callable) -> void:
@@ -145,15 +142,13 @@ func _step(dir: int) -> void:
 
 
 func selected_target() -> int:
-	return _targets[_selected] if _travel_mode and not _targets.is_empty() else -1
+	return _targets[_selected] if not _targets.is_empty() else -1
 
 
 func _refresh_target() -> void:
 	if _target_label == null:
 		return
-	if not _travel_mode:
-		_target_label.text = "%d checkpoints reached" % rest_stops.lit_sites.size()
-	elif _targets.is_empty():
+	if _targets.is_empty():
 		_target_label.text = "No other checkpoint reached yet"
 	else:
 		_target_label.text = rest_stops.name_of(selected_target())
@@ -178,11 +173,14 @@ func travel_drops_money() -> bool:
 
 
 func _travel_to(t: int, drop: bool) -> void:
+	if rest_stops.is_wrecked:
+		return
 	if drop:
 		loot.drop_money()
+	if not rest_stops.travel_to(t):  # first, so the host sees the car has moved when it takes back over
+		return
 	_clear()
 	travelled = true
-	rest_stops.travel_to(t)  # first, so the host sees the car has moved when it takes back over
 	if _on_close.is_valid():
 		_on_close.call()
 
@@ -217,7 +215,7 @@ func explored_view() -> Rect2:
 		if WorldSession.has_driven((net.seg_ax[si] + net.seg_bx[si]) * 0.5, (net.seg_ay[si] + net.seg_by[si]) * 0.5):
 			pts.append(Vector2(net.seg_ax[si], net.seg_ay[si]))
 			pts.append(Vector2(net.seg_bx[si], net.seg_by[si]))
-	for mk: Array in MiniMap.site_markers(streamer.sites, rest_stops.lit_sites if rest_stops != null else {}, Vector2.ZERO, INF):
+	for mk: Array in MiniMap.site_markers(streamer.sites, rest_stops.lit_sites, Vector2.ZERO, INF):
 		pts.append(mk[0])
 	return fit_view(pts, Config.data.map_min_view_m, streamer.settings.island_radius_m * 1.05)
 
@@ -243,10 +241,7 @@ func cards() -> CardCarousel:
 
 
 func action_buttons() -> Array[Button]:
-	var out: Array[Button] = [_back_button]
-	if _travel_mode:
-		out.append_array([_prev_button, _next_button, _travel_button])
-	return out
+	return [_back_button, _prev_button, _next_button, _travel_button]
 
 
 # The drawn map. Fits the island into its rect, sea outside the coast.

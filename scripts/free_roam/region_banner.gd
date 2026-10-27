@@ -7,9 +7,6 @@ extends CanvasLayer
 # WorldSession's max_ring high-water mark, so it persists with the save. A region reached while the
 # checkpoint band is up waits for it, so the two never stack.
 
-const FADE_S := CheckpointBanner.FADE_S
-const HOLD_S := CheckpointBanner.HOLD_S
-
 var checkpoint_banner: CheckpointBanner
 
 var _band: Control
@@ -53,9 +50,9 @@ func _try_show() -> void:
 	add_child(_band)
 	_band.modulate.a = 0.0
 	var tween := _band.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tween.tween_property(_band, "modulate:a", 1.0, FADE_S)
-	tween.tween_interval(HOLD_S)
-	tween.tween_property(_band, "modulate:a", 0.0, FADE_S)
+	tween.tween_property(_band, "modulate:a", 1.0, Config.data.free_roam.banner_fade_s)
+	tween.tween_interval(Config.data.free_roam.banner_hold_s)
+	tween.tween_property(_band, "modulate:a", 0.0, Config.data.free_roam.banner_fade_s)
 	tween.tween_callback(_banner_done)
 
 

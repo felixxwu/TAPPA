@@ -68,12 +68,12 @@ const RESET_WARNING := "Start a brand new game. Your world, cars, parts, money a
 static var dev_tools_override := -1
 
 
-# Are the developer-only settings pages (Benchmark / Dev / Seed lab) reachable,
+# Are the developer-only settings pages (Benchmark / Dev) reachable,
 # and — via this same switch, checked at every OTHER dev-affordance site in the
 # project (car.gd, hud.gd, world.gd, terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
 # switch, defaulting to true: dev features are exposed to every player, not just
-# debug builds, so the whole in-game toolkit (grip grid, force arrows, seed lab,
-# skip-to-finish, config hot-reload, perf overlay/log) is
+# debug builds, so the whole in-game toolkit (grip grid, force arrows,
+# config hot-reload, perf overlay/log) is
 # reachable in the shipped release/web export as well as the editor.
 static func dev_tools_enabled() -> bool:
 	if dev_tools_override >= 0:
@@ -112,41 +112,8 @@ var _reset_status: Label  # warning line, replaced with the outcome after a wipe
 var _account_page: VBoxContainer
 var _account: AccountMenu  # optional cloud save; see features/cloud-save.md
 # The single source of truth for the swappable pages, id -> page. show_page(id)
-# swaps visibility over this; _page_on_show carries the rare per-page extra work
-# that used to live in a bespoke show_* override (only "seedlab" needs one).
+# swaps visibility over this.
 var _pages: Dictionary = {}
-var _page_on_show: Dictionary = {}
-
-# Seed-lab page: trial (seed, water level, …) combinations against a live
-# TrackPreview that animates the generation just like the loading screen
-# (features/lakes.md). Typeable SpinBox inputs.
-var _seedlab_page: Control          # full-screen overlay (top_level), not a VBox page
-var _seedlab_preview: TrackPreview
-var _seed_spin: SpinBox
-var _level_spin: SpinBox
-var _turns_spin: SpinBox
-var _straight_spin: SpinBox
-var _sl_gen := 0  # generation token — stale async runs stop updating the preview
-# Event picker: a popup over the seed lab that lists every rally + its events.
-# Selecting one COPIES the event's values into the four spinboxes and regenerates —
-# so the inputs are always the single source of truth and never drift from what the
-# 2D preview shows. `_syncing_spins` batches the four field sets into one regen
-# (each set would otherwise fire its own value_changed -> _regen_seedlab).
-var _seedlab_popup: Control
-var _event_focus: Control  # last-focused event row, restored when the picker reopens
-var _syncing_spins := false
-# Terrain editor: a second popup exposing the 6 terrain-noise params (3 layers ×
-# wavelength+amplitude). These shape the track too — the generator routes the road
-# around below-water cells and relocates the dry start — so without them the lab's
-# lakes disagree with the real career event. _seedlab_cfg folds them into the config
-# the preview generates against, matching StageConfig.apply_event_config.
-var _seedlab_terrain_popup: Control
-var _t1w: SpinBox  # layer 1 wavelength
-var _t1a: SpinBox  # layer 1 amplitude
-var _t2w: SpinBox
-var _t2a: SpinBox
-var _t3w: SpinBox
-var _t3a: SpinBox
 
 # While the player is reassigning a control, the pending capture:
 # {action: String, slot: String, button: Button}; empty when not listening.
@@ -158,11 +125,6 @@ func _ready() -> void:
 	_build()
 	UITheme.enforce(self)  # house rules: uppercase + one font size
 	show_list()
-	# Cancel any in-flight seed-lab generation when the menu is hidden (e.g. the
-	# pause menu closes without navigating back), so no search keeps running.
-	visibility_changed.connect(func() -> void:
-		if not visible:
-			_sl_gen += 1)
 
 
 func _build() -> void:
@@ -176,7 +138,6 @@ func _build() -> void:
 	_build_dev_page()
 	_build_account_page()
 	_build_reset_page()
-	_build_seedlab_page()
 
 	# Single source of truth for the swappable pages (list first — it's the
 	# default page). show_page / _show_page / focus_current_page fan out over
@@ -185,11 +146,8 @@ func _build() -> void:
 		"list": _list_page, "audio": _audio_page, "display": _display_page,
 		"camera": _camera_page, "controls": _controls_page,
 		"schemes": _scheme_page, "benchmark": _benchmark_page, "dev": _dev_page,
-		"account": _account_page, "reset": _reset_page, "seedlab": _seedlab_page,
+		"account": _account_page, "reset": _reset_page,
 	}
-	# Per-page extra work to run once the page is shown. Only the seed lab needs
-	# one (regenerate the preview); everything else is plain visibility swapping.
-	_page_on_show = {"seedlab": _regen_seedlab}
 
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
@@ -230,7 +188,6 @@ func _build_list_page() -> void:
 	if dev_tools_enabled():
 		list_grid.add_child(_make_nav_button("Benchmark", show_benchmark))
 		list_grid.add_child(_make_nav_button("Dev", show_dev))
-		list_grid.add_child(_make_nav_button("Seed lab", show_seedlab))
 
 
 func _build_audio_page() -> void:
@@ -351,95 +308,6 @@ func _build_account_page() -> void:
 	_account_page.add_child(_account)
 
 
-func _build_seedlab_page() -> void:
-	# Seed lab — a FULL-SCREEN overlay (like the loading screen), NOT a scrolling
-	# settings page: a black background over the whole screen, the animated track
-	# preview pinned to the top (always visible), and the typeable controls docked at
-	# the bottom. top_level escapes the settings VBox/ScrollContainer layout.
-	_seedlab_page = Control.new()
-	_seedlab_page.top_level = true
-	_seedlab_page.z_index = 100
-	_seedlab_page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_seedlab_page.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_seedlab_page)
-	var sl_bg := ColorRect.new()
-	sl_bg.color = UITheme.BLACK
-	sl_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	sl_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_seedlab_page.add_child(sl_bg)
-	# Track preview fills the top ~62%, always on screen.
-	_seedlab_preview = TrackPreview.new()
-	_seedlab_preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_seedlab_preview.anchor_bottom = 0.62
-	_seedlab_preview.offset_bottom = 0.0
-	_seedlab_page.add_child(_seedlab_preview)
-	# Controls docked along the bottom. A ScrollContainer guards against very short
-	# screens (nothing gets cut off) while a compact 2-column grid means everything
-	# fits without scrolling in the common case. Focus nav is contained by
-	# _wire_seedlab_nav so left/right never leaks between the grid and the button row.
-	var cfg0: GameConfig = Config.data
-	_seed_spin = _make_spin(0.0, 4_294_967_295.0, 1.0, float(cfg0.track_seed))
-	_level_spin = _make_spin(-40.0, 10.0, 0.5, cfg0.track_water_level_m)
-	_turns_spin = _make_spin(3.0, 40.0, 1.0, float(cfg0.track_turn_count))
-	_straight_spin = _make_spin(0.0, 1.0, 0.05, cfg0.track_straightness)
-	# Terrain-noise fields (edited in a separate popup). All authored terrain values
-	# are whole numbers, so an integer step is safe — SpinBox snaps value to step, and
-	# a coarser step would corrupt a fractional value (none exist here by design).
-	_t1w = _make_spin(1.0, 1000.0, 1.0, cfg0.terrain_layer1_wavelength)
-	_t1a = _make_spin(0.0, 100.0, 1.0, cfg0.terrain_layer1_amplitude)
-	_t2w = _make_spin(1.0, 200.0, 1.0, cfg0.terrain_layer2_wavelength)
-	_t2a = _make_spin(0.0, 10.0, 1.0, cfg0.terrain_layer2_amplitude)
-	_t3w = _make_spin(1.0, 200.0, 1.0, cfg0.terrain_layer3_wavelength)
-	_t3a = _make_spin(0.0, 10.0, 1.0, cfg0.terrain_layer3_amplitude)
-	var sl_scroll := ScrollContainer.new()
-	sl_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	sl_scroll.anchor_top = 0.63
-	sl_scroll.offset_left = 40.0
-	sl_scroll.offset_right = -40.0
-	sl_scroll.offset_top = 8.0
-	sl_scroll.offset_bottom = -16.0
-	sl_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_seedlab_page.add_child(sl_scroll)
-	var sl_panel := VBoxContainer.new()
-	sl_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_panel.add_theme_constant_override("separation", 8)
-	sl_scroll.add_child(sl_panel)
-	var sl_grid := GridContainer.new()
-	sl_grid.columns = 2
-	sl_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_grid.add_theme_constant_override("h_separation", 24)
-	sl_grid.add_theme_constant_override("v_separation", 8)
-	sl_panel.add_child(sl_grid)
-	sl_grid.add_child(_spin_row("Seed", _seed_spin))
-	sl_grid.add_child(_spin_row("Water level", _level_spin))
-	sl_grid.add_child(_spin_row("Turns", _turns_spin))
-	sl_grid.add_child(_spin_row("Straightness", _straight_spin))
-	var sl_actions := HBoxContainer.new()
-	sl_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_actions.add_theme_constant_override("separation", 24)
-	sl_panel.add_child(sl_actions)
-	# Back FIRST: leaving is leftmost (features/menus.md → "Button order"). The nav array
-	# below must stay in the same order as the children, or left/right desyncs from what
-	# is on screen.
-	var sl_back := _make_action_button("Back", go_back)
-	sl_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_actions.add_child(sl_back)
-	var sl_load := _make_action_button("Load stage…", _open_event_picker)
-	sl_load.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_actions.add_child(sl_load)
-	var sl_terrain := _make_action_button("Terrain…", _open_terrain_editor)
-	sl_terrain.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_actions.add_child(sl_terrain)
-	var sl_random := _make_action_button("Randomize seed", _randomize_seed)
-	sl_random.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sl_actions.add_child(sl_random)
-	_wire_seedlab_nav([[_seed_spin, _level_spin], [_turns_spin, _straight_spin]],
-		[sl_back, sl_load, sl_terrain, sl_random])
-	_build_event_picker()
-	_build_terrain_editor()
-	_seedlab_page.visible = false  # shown only via show_seedlab()
-
-
 # --- Navigation --------------------------------------------------------------
 
 # True while the category list is showing (vs a sub-page).
@@ -487,14 +355,11 @@ func _focus_first_in(page: Control) -> void:
 		UITheme.focus_grab(target)
 
 
-# Show the page registered under `id` in `_pages` and run its on-show extra work
-# (if any — see _page_on_show). The handful of show_* wrappers below exist only
+# Show the page registered under `id` in `_pages`. The handful of show_* wrappers below exist only
 # because other files (and tests) call them by name; anything reached only from
 # inside this file goes through show_page directly.
 func show_page(id: String) -> void:
 	_show_page(_pages[id])
-	if _page_on_show.has(id):
-		(_page_on_show[id] as Callable).call()
 
 
 func show_list() -> void:
@@ -525,15 +390,8 @@ func show_dev() -> void:
 	show_page("dev")
 
 
-func show_seedlab() -> void:
-	show_page("seedlab")
-
-
 func _show_page(page: Control) -> void:
 	cancel_listen()  # leaving a page abandons any pending key capture
-	# Cancel any in-flight seed-lab generation whenever the page changes (including
-	# leaving the seed lab) so its animated search stops doing per-frame work.
-	_sl_gen += 1
 	for p in _pages.values():
 		(p as Control).visible = page == p
 	page_changed.emit(at_root())
@@ -769,7 +627,7 @@ func _wipe_progress() -> void:
 # Boot again as a brand-new player would. Routed through
 # Scenes.change_to so tests (which arm Scenes.block_real_changes) stay inert.
 func _reload_after_wipe() -> void:
-	Scenes.change_to(get_tree(), Scenes.hub_path())
+	Scenes.change_to(get_tree(), Scenes.TITLE)
 
 
 # --- Dev actions -------------------------------------------------------------
@@ -794,7 +652,7 @@ func _reveal_all_biomes() -> void:
 		_dev_status.text = "No world yet."
 		return
 	var rings: Array = []
-	for r in FreeRoamSettings.new().ring_count:
+	for r in Config.data.free_roam.ring_count:
 		rings.append(r)
 	WorldSession.set_list("revealed", rings)
 	_dev_status.text = "Unlocked %d biomes." % rings.size()
@@ -922,7 +780,7 @@ func _make_scheme_row(id: int, entry: Dictionary, rows: Array, on_select: Callab
 
 	var diagram := ControlSchemeDiagram.new()
 	diagram.scheme = id
-	diagram.custom_minimum_size = Vector2(UITheme.px(132), UITheme.px(76))
+	diagram.custom_minimum_size = Vector2(UITheme.px(176), UITheme.px(100))
 	row.add_child(diagram)
 
 	var text := VBoxContainer.new()
@@ -1001,284 +859,6 @@ func _make_sub(text: String) -> Label:
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return label
-
-
-# --- Seed lab ----------------------------------------------------------------
-
-# A typeable numeric field, re-rendering the preview on every change.
-func _make_spin(mn: float, mx: float, stp: float, val: float) -> SpinBox:
-	var spin := SpinBox.new()
-	spin.min_value = mn
-	spin.max_value = mx
-	spin.step = stp
-	spin.value = val
-	spin.update_on_text_changed = true  # type a value, not just click arrows
-	spin.custom_minimum_size = Vector2(UITheme.px(130), 0)
-	spin.value_changed.connect(func(_v: float): _on_spin_changed())
-	return spin
-
-
-# Regenerate on a field change — unless we're mid-sync copying an event's values in
-# (then a single regen fires once the whole set lands).
-func _on_spin_changed() -> void:
-	if _syncing_spins:
-		return
-	_regen_seedlab()
-
-
-# A [title    <spin>] row.
-func _spin_row(title: String, spin: SpinBox) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_theme_constant_override("separation", 8)
-	var name_lbl := Label.new()
-	name_lbl.text = title
-	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(name_lbl)
-	row.add_child(spin)
-	return row
-
-
-func _randomize_seed() -> void:
-	_seed_spin.value = float(randi() % 1_000_000)  # fires value_changed -> _regen_seedlab
-
-
-# Contain left/right so it never leaks between the 2-column field grid and the
-# bottom button row. Within the grid, left/right just swaps columns on that row and
-# stops at the outer edges (edge cell's outward neighbour points at itself); up/down
-# still walks the rows (and off the last row down into the buttons) via Godot's
-# geometric default. On the button row, left/right chains between the buttons and
-# stops at the ends. `field_rows` is one [left, right] pair per grid row.
-func _wire_seedlab_nav(field_rows: Array, buttons: Array) -> void:
-	for row in field_rows:
-		var l := row[0] as Control
-		var r := row[1] as Control
-		l.focus_neighbor_left = l.get_path()   # leftmost column: no leftward move
-		l.focus_neighbor_right = r.get_path()
-		r.focus_neighbor_left = l.get_path()
-		r.focus_neighbor_right = r.get_path()  # rightmost column: no rightward move
-	for i in buttons.size():
-		var b := buttons[i] as Control
-		var left: Control = buttons[i - 1] if i > 0 else b
-		var right: Control = buttons[i + 1] if i < buttons.size() - 1 else b
-		b.focus_neighbor_left = left.get_path()
-		b.focus_neighbor_right = right.get_path()
-
-
-# --- Event picker ------------------------------------------------------------
-
-# A full-screen popup over the seed lab listing every rally and its events. Built
-# once (hidden); shown by _open_event_picker. Same top_level / high-z pattern as the
-# seed-lab page itself so it escapes the settings VBox layout.
-func _build_event_picker() -> void:
-	_seedlab_popup = Control.new()
-	_seedlab_popup.top_level = true
-	_seedlab_popup.z_index = 110  # above the seed-lab page (z 100)
-	_seedlab_popup.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_seedlab_popup.mouse_filter = Control.MOUSE_FILTER_STOP
-	_seedlab_page.add_child(_seedlab_popup)
-	var dim := ColorRect.new()
-	dim.color = UITheme.MODAL_DIM
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_seedlab_popup.add_child(dim)
-	var scroll := ScrollContainer.new()
-	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	scroll.offset_left = 40.0
-	scroll.offset_right = -40.0
-	scroll.offset_top = 40.0
-	scroll.offset_bottom = -40.0
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_seedlab_popup.add_child(scroll)  # MenuNav enables follow_focus on open
-	var list := VBoxContainer.new()
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 6)
-	scroll.add_child(list)
-	list.add_child(_make_heading("Preview stage"))
-	for region_id in RegionStageLibrary.region_ids():
-		list.add_child(_make_sub(String(region_id)))
-		for stage in RegionStageLibrary.all_stages_in(String(region_id)):
-			var label := "Slot %d cand %d — seed %d, %d turns" % [
-				int(stage.get("slot", 0)), int(stage.get("candidate", 0)),
-				int(stage.get("seed", 0)), int(stage.get("turn_count", 0))]
-			var btn := _make_action_button(label, _load_event.bind(stage))
-			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			btn.focus_entered.connect(_remember_event_focus.bind(btn))
-			list.add_child(btn)
-	list.add_child(_make_action_button("Close", _close_event_picker))
-	_seedlab_popup.visible = false
-
-
-func _remember_event_focus(btn: Control) -> void:
-	_event_focus = btn
-
-
-func _open_event_picker() -> void:
-	_seedlab_popup.visible = true
-	# Keyboard/gamepad: walk the rows, B / Esc closes (per the menu-nav rule). Reopen
-	# lands on the row the cursor last sat on (follow_focus scrolls it into view).
-	var first: Control = _event_focus if is_instance_valid(_event_focus) else null
-	MenuNav.attach(_seedlab_popup, {"first": first, "on_back": _close_event_picker})
-
-
-func _close_event_picker() -> void:
-	_seedlab_popup.visible = false
-	focus_current_page()  # cursor back onto the seed-lab controls
-
-
-# Load a real rally event: copy every field the lab can drive into its spinboxes
-# (the four core inputs + the six terrain-noise fields) so the inputs stay the single
-# source of truth AND the preview matches the real career stage. Terrain matters
-# because the generator routes the road around below-water cells and relocates the
-# dry start — omitting it made the lab's lakes disagree with the event. Omitted keys
-# fall back to the authored base config (exactly as StageConfig.apply_event_config).
-func _load_event(event: Dictionary) -> void:
-	var base: GameConfig = load(Config.CONFIG_PATH)
-	_syncing_spins = true
-	_seed_spin.value = float(int(event.get("seed", base.track_seed)))
-	_level_spin.value = float(event.get("water_level", base.track_water_level_m))
-	_turns_spin.value = float(int(event.get("turn_count", base.track_turn_count)))
-	_straight_spin.value = StageFields.event_straightness(event)
-	_t1w.value = float(event.get("terrain_layer1_wavelength", base.terrain_layer1_wavelength))
-	_t1a.value = float(event.get("terrain_layer1_amplitude", base.terrain_layer1_amplitude))
-	_t2w.value = float(event.get("terrain_layer2_wavelength", base.terrain_layer2_wavelength))
-	_t2a.value = float(event.get("terrain_layer2_amplitude", base.terrain_layer2_amplitude))
-	_t3w.value = float(event.get("terrain_layer3_wavelength", base.terrain_layer3_wavelength))
-	_t3a.value = float(event.get("terrain_layer3_amplitude", base.terrain_layer3_amplitude))
-	_syncing_spins = false
-	_close_event_picker()
-	_regen_seedlab()
-
-
-# The lab's inputs as an EventDef — the same dict shape RegionStageLibrary stages use.
-# The preview generates from THIS through the exact career path (see _regen_seedlab),
-# so what the lab shows matches what the stage actually generates.
-func _seedlab_event() -> Dictionary:
-	return {
-		"seed": int(_seed_spin.value),
-		"turn_count": int(_turns_spin.value),
-		"straightness": _straight_spin.value,
-		"water_level": _level_spin.value,
-		"terrain_layer1_wavelength": _t1w.value,
-		"terrain_layer1_amplitude": _t1a.value,
-		"terrain_layer2_wavelength": _t2w.value,
-		"terrain_layer2_amplitude": _t2a.value,
-		"terrain_layer3_wavelength": _t3w.value,
-		"terrain_layer3_amplitude": _t3a.value,
-	}
-
-
-# --- Terrain editor ----------------------------------------------------------
-
-# A popup exposing the six terrain-noise fields. Docked over the lower controls so
-# the track preview stays visible above it and updates live as values change.
-func _build_terrain_editor() -> void:
-	_seedlab_terrain_popup = Control.new()
-	_seedlab_terrain_popup.top_level = true
-	_seedlab_terrain_popup.z_index = 110
-	_seedlab_terrain_popup.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_seedlab_terrain_popup.mouse_filter = Control.MOUSE_FILTER_STOP
-	_seedlab_page.add_child(_seedlab_terrain_popup)
-	var panel := ColorRect.new()
-	panel.color = UITheme.MODAL_DIM
-	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	panel.anchor_top = 0.63  # leave the preview (top ~62%) visible for live feedback
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_seedlab_terrain_popup.add_child(panel)
-	var scroll := ScrollContainer.new()
-	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	scroll.anchor_top = 0.63
-	scroll.offset_left = 40.0
-	scroll.offset_right = -40.0
-	scroll.offset_top = 8.0
-	scroll.offset_bottom = -16.0
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_seedlab_terrain_popup.add_child(scroll)
-	var panel_box := VBoxContainer.new()
-	panel_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel_box.add_theme_constant_override("separation", 8)
-	scroll.add_child(panel_box)
-	panel_box.add_child(_make_heading("Terrain noise"))
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 24)
-	grid.add_theme_constant_override("v_separation", 8)
-	panel_box.add_child(grid)
-	grid.add_child(_spin_row("Hills wavelength", _t1w))
-	grid.add_child(_spin_row("Hills amplitude", _t1a))
-	grid.add_child(_spin_row("Mid wavelength", _t2w))
-	grid.add_child(_spin_row("Mid amplitude", _t2a))
-	grid.add_child(_spin_row("Fine wavelength", _t3w))
-	grid.add_child(_spin_row("Fine amplitude", _t3a))
-	panel_box.add_child(_make_action_button("Close", _close_terrain_editor))
-	_seedlab_terrain_popup.visible = false
-
-
-func _open_terrain_editor() -> void:
-	_seedlab_terrain_popup.visible = true
-	MenuNav.attach(_seedlab_terrain_popup, {"on_back": _close_terrain_editor})
-
-
-func _close_terrain_editor() -> void:
-	_seedlab_terrain_popup.visible = false
-	focus_current_page()
-
-
-# Generate the trial track and paint the preview, ANIMATING the DFS like the
-# loading screen (on_progress yields a frame per step). A generation token drops
-# stale runs so rapid edits don't fight over the preview.
-func _regen_seedlab() -> void:
-	if _seedlab_preview == null:
-		return
-	_sl_gen += 1
-	var gen := _sl_gen
-	# Generate through the SAME path the career uses — for_event on the event resolved
-	# to its canonical config — so the preview matches the real stage exactly (start-
-	# line staging, lead-in reserve, width, water, terrain).
-	var ev := _seedlab_event()
-	var cfg := StageConfig.canonical_event_config(ev)
-	var params := TrackGenParams.for_event(ev, cfg)
-	# Paint the waterline first (known up-front) over a rough box, then animate.
-	var reach := clampf(float(params.turn_count) * 12.0, 200.0, 600.0)
-	var box := Rect2(params.origin - Vector2(reach, reach), Vector2(reach, reach) * 2.0)
-	box = LoadingScreen.expand_to_aspect(box, LoadingScreen.aspect_of(_seedlab_preview.size))
-	var wp: Array = LakeField.preview_cells(params, box)
-	_seedlab_preview.set_water(wp[0], wp[1], box)
-	var on_prog := func(pts: PackedVector2Array) -> void:
-		if gen == _sl_gen:
-			_seedlab_preview.set_points(pts)
-	# should_abort stops the search the instant a newer request (or leaving the page)
-	# bumps the token — so stale generations don't keep running every frame.
-	var abort := func() -> bool: return gen != _sl_gen
-	var res: Dictionary = await TrackGenerator.generate(params, on_prog, abort)
-	if gen != _sl_gen:
-		return  # a newer request superseded this one
-	var poly := (res["centerline"] as Curve2D).tessellate()
-	_seedlab_preview.set_points(poly)
-	# Refine water to the actual track bounds — and sample it from the BAKED terrain,
-	# not the noise sampler. The lab is where water level and cliffiness get tuned
-	# against each other, so it has to show the flooding the stage really ships with:
-	# cliff offsets are signed and metres deep, and a noise-sampled preview reads far
-	# drier than the driven world (the loading screen had exactly this bug). The throwaway
-	# TerrainManager builds no chunks or meshes and is freed straight after — it exists
-	# only to answer baked_height_at. Same reason world.gd repaints its final water pass
-	# after the carve; see features/lakes.md -> "Three water passes".
-	var tb := LoadingScreen.bounds_of(poly).grow(60.0)
-	tb = LoadingScreen.expand_to_aspect(tb, LoadingScreen.aspect_of(_seedlab_preview.size))
-	# water_enabled is checked here because preview_cells_for takes a bare sampler and
-	# can't know; params (not cfg) is the authority on both fields, since the dry-start
-	# search may have clamped the level or switched water off entirely.
-	if not params.water_enabled:
-		_seedlab_preview.set_water(PackedVector2Array(), TerrainManager.CELL_M, tb)
-		return
-	var tm: TerrainManager = await TerrainManager.baked_preview(cfg, res["centerline"] as Curve2D)
-	if gen != _sl_gen:
-		tm.free()
-		return  # a newer request superseded this one during the bake
-	var wp2: Array = LakeField.preview_cells_for(tm.baked_height_at, params.water_level, tb)
-	_seedlab_preview.set_water(wp2[0], wp2[1], tb)
-	tm.free()
 
 
 func _make_row_button(min_height: float) -> Button:

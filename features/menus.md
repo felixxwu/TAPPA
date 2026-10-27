@@ -7,7 +7,7 @@ page and the world pages. **Every menu that is a list of choices is a card list*
 [card-carousel.md](card-carousel.md) for which menus are cards and which stay plain pages.
 
 **Sources:** the scene-routing seam in `scripts/scenes.gd` (`class_name Scenes` —
-`hub_path()` / `is_hub_scene()`, the path consts `TITLE` / `FREE_ROAM` / `MAIN` / `CAR`, and
+the path consts `TITLE` / `FREE_ROAM` / `MAIN` / `CAR`, and
 the `car_scene()` cached-load accessor, the ONE place `"res://car.tscn"` is spelled in
 production code; `preload(Scenes.CAR)` does not compile in GDScript 4.6, which is why
 callers use `Scenes.car_scene()`), the pause overlay in `scripts/pause_menu.gd`
@@ -93,8 +93,7 @@ The title menu (`TitleScreen`) opens over the world at boot, and free roam's pau
 the map and stats pages (`WorldPages`). Both are described in [world-session.md](world-session.md),
 and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The pause menu has
 host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
-`return_from_extra()` when its page closes)
-and a configurable quit (`quit_label`, `quit_scene`). Free roam's rows: Resume / Reset to
+`return_from_extra()` when its page closes). Free roam's rows: Resume / Reset to
 road / Map / Stats / Settings / Quit to title. (There was a Journal row from 2026-10-23 to
 2026-10-25; the user had it taken out and the journal deleted.)
 
@@ -127,9 +126,8 @@ photo mode or an extra page puts the cursor back on the card that left (`_focus_
 settings page starts hidden, so the first `open()` lands the cursor on Resume.
 
 **Per-host options** (exports, set in the hosting scene): `offer_photo_mode` (free roam turns it
-off — it has no free-fly photo camera), `reset_label` ("Reset to road" in free roam),
-`quit_label` / `quit_scene` / `quit_body_override` (free roam quits to the title, saying the
-world is saved).
+off — it has no free-fly photo camera) and `extra_rows`. The rows' text is free roam's ("Reset to
+road", "Quit to title") for every host.
 
 **Reset** emits `reset_to_track_requested`; the menu owns no car reference, so the host performs
 it — free roam's `RoadRecovery.reset_now`, the dev stage's `world.gd` via
@@ -151,9 +149,10 @@ and a mobile-control pick to the live `MobileControls` (`scheme_changed` → `se
 page's **Complete stage** relays to `world.gd`'s `_dev_complete_stage` through
 `dev_complete_stage_requested` (see [settings.md](settings.md) → "Developer-only pages").
 
-**Quit** pops a confirm (`confirm_quit_to_hq`) and on accept (`quit_to_hq`) unfreezes and goes to
-`quit_scene`; a benchmark run exits through `Benchmark.exit_to_hq` so its config overrides are
-restored; otherwise it loads `Scenes.hub_path()` (the title). `ui_cancel` (Esc / gamepad B)
+**Quit to title** pops a confirm (`confirm_quit_to_title`: "Your world is saved") and on accept
+(`quit_to_title`) unfreezes, emits `quitting` (free roam saves on it) and goes to `Scenes.TITLE`;
+during a benchmark it exits through `Benchmark.exit_to_title` instead, so the config overrides and
+the real profile come back. `ui_cancel` (Esc / gamepad B)
 toggles the menu and backs out of Settings first; the gamepad **Start** button (`pause` action)
 opens it.
 

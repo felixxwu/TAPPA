@@ -1,19 +1,12 @@
 extends GutTest
-# The EFFECTS FUNNEL (UpgradeLibrary), which is all that survives of the old upgrade
-# catalogue. The persistent parts model is deleted (todo/roguelike-pivot.md ->
-# "What gets deleted"); what stays is the pipeline that turns a car's ACTIVE EFFECTS
-# into live config and into the derived meta the UI compares builds with:
+# The EFFECTS FUNNEL (UpgradeLibrary): the pipeline that turns a car's ACTIVE EFFECTS into
+# live config.
 #
 #   active_effects(owned)  ->  reads owned["boosts"]
-#   apply(owned, cfg)      ->  writes the live GameConfig (pipeline step 2)
-#   effective_meta(...)    ->  the power-to-weight view (feeds_pw rows)
-#   grip_meta(...)         ->  the grip view (feeds_grip rows)
+#   apply(owned, cfg)      ->  writes the live GameConfig
 #
-# In the pivot this becomes the IN-RUN BOOST applier (spec -> "Upgrades — RR's two-tier
-# model"): stage 5 writes `boosts` onto the owned-car dict and every call site below is
-# already wired. Nothing writes it yet, so `apply` is a no-op on a real car today — which
-# is exactly why these tests build their own synthetic boosts through UpgradeFixtures
-# rather than reaching for authored data that no longer exists.
+# These tests build their own synthetic boosts through UpgradeFixtures rather than
+# reaching for authored data.
 #
 # Per CLAUDE.md these test the FUNNEL'S LOGIC, never a tuned magnitude: the fixtures'
 # numbers are arbitrary, and an assertion that pinned one would break the moment a
@@ -204,90 +197,6 @@ func test_a_cfg_fields_effect_writes_every_field_it_names() -> void:
 	UpgradeLibrary.apply(_car(["fx_tires"]), cfg)
 	assert_gt(cfg.wheel_friction_slip_front, front, "the front axle is scaled")
 	assert_gt(cfg.wheel_friction_slip_rear, rear, "and so is the rear")
-
-
-# --- effective_meta: the power-to-weight view --------------------------------
-
-func test_effective_meta_of_an_empty_meta_is_empty() -> void:
-	assert_eq(UpgradeLibrary.effective_meta(_car(), {}), {},
-		"no meta in, no meta out — callers pass {} for an unknown car")
-
-
-func test_effective_meta_mirrors_a_feeds_pw_effect() -> void:
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
-	var boosted := UpgradeLibrary.effective_meta(_car(["fx_lightweight"]), meta)
-	assert_lt(float(boosted["mass"]), float(meta["mass"]),
-		"a feeds_pw effect reaches the derived meta, not just the live config")
-	assert_eq(meta["mass"], 1200.0, "and the caller's dict is not mutated")
-
-
-# effective_meta's mult_floor arm must clamp exactly like apply()'s — the stats sheet
-# must never show a lighter mass than the physics actually fields (see
-# UpgradeLibrary._floor_value's own comment on why the two read from different sources).
-func test_effective_meta_mirrors_the_mult_floor_clamp() -> void:
-	# Floor set explicitly, well ABOVE what 0.5x would otherwise land on (600), rather
-	# than relying on the shipped GameConfig default happening to clear it.
-	Config.data.min_lightweight_mass = 900.0
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
-	var boosted := UpgradeLibrary.effective_meta(_car(["fx_lightweight_floor"]), meta)
-	assert_almost_eq(float(boosted["mass"]), Config.data.min_lightweight_mass, 0.001,
-		"the power-to-weight display clamps at the same floor the live config does")
-
-
-# Turbo and supercharger stack in effective_meta too, MULTIPLICATIVELY — mirroring
-# EngineSim.step()'s crank formula, which multiplies the two forced-induction factors
-# together rather than adding or picking one. Fitting both must rate STRICTLY higher
-# than fitting either alone.
-func test_effective_meta_combines_turbo_and_supercharger_multiplicatively() -> void:
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
-	var turbo_only := float(UpgradeLibrary.effective_meta(_car(["fx_turbo_big"]), meta)["peak_torque"])
-	var supercharger_only := float(
-		UpgradeLibrary.effective_meta(_car(["fx_supercharger"]), meta)["peak_torque"])
-	var both := float(
-		UpgradeLibrary.effective_meta(_car(["fx_turbo_big", "fx_supercharger"]), meta)["peak_torque"])
-	assert_gt(both, turbo_only, "having both rates higher than turbo alone")
-	assert_gt(both, supercharger_only, "having both rates higher than the supercharger alone")
-	# both == base * (1+turbo_gain) * (1+sc_gain), exactly — not base * (1+turbo_gain+sc_gain).
-	var turbo_factor := turbo_only / float(meta["peak_torque"])
-	var supercharger_factor := supercharger_only / float(meta["peak_torque"])
-	assert_almost_eq(both, float(meta["peak_torque"]) * turbo_factor * supercharger_factor, 0.01)
-
-
-# Nitrous is deliberately feeds_pw FALSE: it is a per-stage resource, not a permanent power
-# level, so a bottle the player empties in one stage must never read as a permanent gain
-# anywhere a build is compared or displayed.
-func test_a_non_feeds_pw_effect_stays_out_of_the_meta() -> void:
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0}
-	var boosted := UpgradeLibrary.effective_meta(_car(["fx_nitrous"]), meta)
-	assert_eq(boosted, meta, "nitrous changes the config but not the power-to-weight view")
-
-
-# --- grip_meta: the grip view ------------------------------------------------
-
-func test_grip_meta_mirrors_a_feeds_grip_effect() -> void:
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
-		"tire_compound": 1.0}
-	var boosted := UpgradeLibrary.grip_meta(_car(["fx_tires"]), meta)
-	assert_gt(float(boosted["tire_compound"]), float(meta["tire_compound"]),
-		"a feeds_grip effect reaches the grip view")
-
-
-# The surface-dependent compound trades in BOTH directions — better on snow, worse on
-# tarmac. A one-way assertion would let a sign error through.
-func test_a_surface_compound_trades_in_both_directions() -> void:
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
-		"tire_compound": 1.0, "tire_snow_grip_mult": 1.0, "tire_tarmac_grip_mult": 1.0}
-	var boosted := UpgradeLibrary.grip_meta(_car(["fx_snow_tires"]), meta)
-	assert_gt(float(boosted["tire_snow_grip_mult"]), 1.0, "snow grip goes up")
-	assert_lt(float(boosted["tire_tarmac_grip_mult"]), 1.0, "and tarmac grip pays for it")
-
-
-func test_a_non_feeds_grip_effect_stays_out_of_the_grip_view() -> void:
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
-		"tire_compound": 1.0}
-	var boosted := UpgradeLibrary.grip_meta(_car(["fx_gearbox"]), meta)
-	assert_eq(float(boosted["tire_compound"]), float(meta["tire_compound"]),
-		"a gearbox does not change the tyres")
 
 
 # --- Drive mode --------------------------------------------------------------

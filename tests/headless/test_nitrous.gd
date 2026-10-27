@@ -244,20 +244,3 @@ func test_refresh_fitment_clears_nitrous_that_has_been_removed() -> void:
 # garage part list, no slot model and no install path (todo/roguelike-pivot.md). Nitrous
 # survives as an EFFECT -- see test_upgrade_library.gd's write_fields coverage and the
 # per-stage physics below, which is what actually made it interesting.
-
-
-# --- Eligibility isolation ---------------------------------------------------
-
-func test_nitrous_never_reaches_power_to_weight() -> void:
-	# The load-bearing rule: nitrous is a per-stage resource, not a stat. If it fed
-	# effective_meta, a bottle the player empties in one stage would read as a permanent
-	# power level everywhere a build is compared or displayed.
-	var meta := {"mass": 1200.0, "peak_torque": 400.0, "redline": 6000.0,
-		"drive_mode": CarLibrary.RWD}
-	var bare := {"model_id": "x", "tuning": {}}
-	var nos := {"model_id": "x", "boosts": UpgradeFixtures.boosts(["fx_nitrous"]),
-		"tuning": {}}
-	assert_eq(
-		CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(nos, meta.duplicate())),
-		CarLibrary.power_to_weight(UpgradeLibrary.effective_meta(bare, meta.duplicate())),
-		"a fitted nitrous leaves power-to-weight untouched")

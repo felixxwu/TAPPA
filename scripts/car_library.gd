@@ -20,13 +20,6 @@ extends RefCounted
 # Dynamics values are in real SI units, matching GameConfig (mass in kg),
 # anchored to the Mazda MX-5:
 #   * mass     — the car's real kerb mass in kg.
-#   * doors    — the car's real door count, using the conventional BODY designation
-#                (a hatchback's tailgate counts, so a 3-door hatch is 3, a coupe /
-#                roadster / kei van is 2, a 5-door hatch is 5). It lives on the CAR
-#                because it's a body property no engine swap can change — unlike
-#                displacement / cylinder count, which live on the ENGINE
-#                (EngineLibrary). Rally restrictions read it via doors_min/doors_max
-#                (RallyLibrary.ineligibility_reason).
 #   * (gearbox) — gear_ratios / final_drive / shift_time NO LONGER live here; they
 #                moved onto the ENGINE (EngineLibrary), so a swapped engine brings its
 #                own transmission. See EngineLibrary's header for the tuning rationale
@@ -108,7 +101,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Miot Roadster", # parody of the Mazda MX-5. ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		# Durability ~8/10: bulletproof Skyactiv reliability + trivially cheap/easy to fix,
 		# but a ~1058 kg flyweight roadster with little crash mass — reliable, not a tank.
-		"id": "mx5", "ring": 0, "price": 3000, "country": "JP", "car_type": "roadster", "doors": 2, "max_hp": 1050.0, "reward_tier": 2,
+		"id": "mx5", "ring": 0, "price": 3000, "max_hp": 1050.0,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85, # ND: famous 50/50
 		"tire_compound": 0.9, # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"brake_bias": 0.4, # front share of foot-brake torque (50/50 RWD roadster)
@@ -131,7 +124,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Fjord Focal", # parody of the Ford Focus. 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
 		# Durability ~8/10: unstressed NA Duratec, dead-simple/cheap to repair, parts
 		# everywhere, sturdy modern compact unibody — the durable everyday workhorse.
-		"id": "focus", "ring": 0, "price": 2000, "country": "US", "car_type": "hatch", "doors": 5, "max_hp": 1200.0, "reward_tier": 1,
+		"id": "focus", "ring": 0, "price": 2000, "max_hp": 1200.0,
 		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85, # transverse NA I4, nose-heavy FWD
 		"tire_compound": 0.88, # economy / touring all-season tyres
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
@@ -156,7 +149,7 @@ const CARS: Array[Dictionary] = [
 		# Durability ~3/10: heavy solid GT shell, but a notorious money-pit — the V12 cooks
 		# head gaskets, the wiring bakes and fails, and everything is complex, cramped and
 		# costly to fix. Reliability/repairability drag it down despite the mass.
-		"id": "xjs", "ring": 0, "price": 3500, "country": "GB", "car_type": "coupe", "doors": 2, "max_hp": 600.0, "reward_tier": 2,
+		"id": "xjs", "ring": 0, "price": 3500, "max_hp": 600.0,
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75, # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95, # period touring / GT tyres
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD GT)
@@ -178,7 +171,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Honcho Actus", # parody of the Honda Acty. HA4 kei truck: ~780 kg, 656cc mid-engine triple
 		# Durability ~7/10: hardy simple Honda kei drivetrain, easy to maintain, but a
 		# ~780 kg rust-prone cab-over with no crash mass — reliable little truck, frail body.
-		"id": "acty", "ring": 1, "price": 4000, "country": "JP", "car_type": "kei", "doors": 2, "max_hp": 950.0, "reward_tier": 1,
+		"id": "acty", "ring": 1, "price": 4000, "max_hp": 950.0,
 		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35, # mid-engine cab-over kei, tail-heavy
 		"tire_compound": 0.8, # hard commercial tyres, skinny
 		"brake_bias": 0.4, # front share of foot-brake torque (mid-engine, tail-heavy)
@@ -202,7 +195,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Surger R/T", # parody of the '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
 		# Durability ~9/10: famously stout low-stressed 440 big-block, brutally simple to
 		# fix, huge aftermarket, and a ~1670 kg heavy-steel body that shrugs off abuse — a tank.
-		"id": "charger", "ring": 1, "price": 9000, "country": "US", "car_type": "muscle", "doors": 2, "max_hp": 1300.0, "reward_tier": 3,
+		"id": "charger", "ring": 1, "price": 9000, "max_hp": 1300.0,
 		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85, # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95, # touring tyres
 		"brake_bias": 0.45, # front share of foot-brake torque (nose-heavy RWD muscle)
@@ -226,7 +219,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Rondel Twist", # parody of the Renault Twingo (Renault's emblem is a rondel/diamond). Mk1 (C06) 1.2 16V: ~950 kg, 75 PS, light FWD city car
 		# Durability ~5/10: mechanically OK but French electrical gremlins, cheap flimsy
 		# build and a tiny lightly-built shell that flexes/deforms easily — cheap-and-cheerful.
-		"id": "twingo", "ring": 2, "price": 6000, "country": "FR", "car_type": "hatch", "doors": 3, "max_hp": 900.0, "reward_tier": 1,
+		"id": "twingo", "ring": 2, "price": 6000, "max_hp": 900.0,
 		"mass": 950.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85, # transverse FWD city car, nose-heavy
 		"tire_compound": 0.85, # hard economy tyres, skinny
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
@@ -249,7 +242,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Porker Turbo", # parody of the Porsche 911 Turbo. 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
 		# Durability ~4/10: rigid well-built shell, but a high-strung turbo flat-6 needing
 		# scheduled valve/turbo rebuilds and pricey specialist-only work — high-maintenance.
-		"id": "porsche911", "ring": 2, "price": 16000, "country": "DE", "car_type": "coupe", "doors": 2, "max_hp": 750.0, "reward_tier": 3,
+		"id": "porsche911", "ring": 2, "price": 16000, "max_hp": 750.0,
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10, # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
 		"brake_bias": 0.4, # front share of foot-brake torque (rear-engine, tail-heavy)
@@ -272,7 +265,7 @@ const CARS: Array[Dictionary] = [
 		# Durability ~6/10: deliberately simple low-revving V10 that's hard to kill and
 		# cheap to service, rigid tube frame + ~1520 kg mass, but crude build and composite
 		# panels that crack — a reliable brute held back by rawness.
-		"id": "viper", "ring": 3, "price": 25000, "country": "US", "car_type": "roadster", "doors": 2, "max_hp": 800.0, "reward_tier": 4,
+		"id": "viper", "ring": 3, "price": 25000, "max_hp": 800.0,
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60, # front-mid V10, ~49/51
 		"tire_compound": 0.9, # sticky performance tyres (period bias-belted rubber)
 		"brake_bias": 0.4, # front share of foot-brake torque (~49/51 front-mid RWD)
@@ -295,7 +288,7 @@ const CARS: Array[Dictionary] = [
 		# Durability ~2/10: monstrously overbuilt mass (~1900 kg, 27 L aero V12) but
 		# effectively unmaintainable — a bespoke one-off with no parts shelf, no manual,
 		# every repair one-off fabrication. A glass-cannon showpiece: huge but unkeepable.
-		"id": "beast", "ring": 3, "price": 35000, "country": "GB", "car_type": "muscle", "doors": 2, "max_hp": 750.0, "reward_tier": 4,
+		"id": "beast", "ring": 3, "price": 35000, "max_hp": 750.0,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85, # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.05, # period touring tyres
 		"brake_bias": 0.3, # front share of foot-brake torque (nose-heavy RWD)
@@ -401,36 +394,16 @@ static func drive_text(drive_mode: int) -> String:
 # moves its displayed power with it.
 const TORQUE_POWER_FALLOFF := 0.78
 
-# The car's power-to-weight figure (kW per kg) — NOT stored, recomputed on demand
-# for reward-tier defaults, the stats panel, and rally pw-band eligibility:
-# peak power ≈ peak_torque × redline angular speed × TORQUE_POWER_FALLOFF.
-#
-# torque/redline resolve from the referenced engine (EngineLibrary) UNLESS the
-# entry carries its own "peak_torque"/"redline" — which is how upgrade-adjusted
-# stats flow through: UpgradeLibrary.effective_meta() seeds those keys from the
-# engine (rating a turbo's torque at peak boost, so the boosted figure is the
-# displayed one) and multiplies them by the installed engine kits / detune, so an
-# upgraded meta ranks above the base car. A raw CarLibrary entry has neither key
-# and derives from its engine's published torque/redline.
-# Convert a power-to-weight figure from power_to_weight()'s kW/kg to the hp/tonne
-# the HUD / detail panel / detune slider display (1 kW = 1.34102 hp, 1 tonne = 1000 kg).
-# Single source of truth — hq.gd and RallyLibrary both multiply by this.
+# Peak power ≈ peak_torque × redline angular speed × TORQUE_POWER_FALLOFF, derived on demand (never stored).
+# kW per kg to hp per tonne (1 kW = 1.34102 hp, 1 tonne = 1000 kg); horsepower() divides the tonne back out.
 const KW_KG_TO_HP_TONNE := 1341.02
-# Peak power in kW — the shared torque×redline derivation behind both the
-# power-to-weight figure and the horsepower reading. torque/redline resolve the
-# same way as in power_to_weight() (entry keys override the referenced engine).
+# Peak power in kW — the torque×redline derivation behind the horsepower reading.
+# torque/redline come from the entry's own keys, else the referenced engine.
 static func peak_power_kw(entry: Dictionary) -> float:
 	var eng := EngineLibrary.by_id(entry.get("engine", ""))
 	var torque: float = float(entry.get("peak_torque", eng.get("peak_torque", 0.0)))
 	var redline: float = float(entry.get("redline", eng.get("redline_rpm", 0.0)))
 	return torque * redline * (TAU / 60.0) / 1000.0 * TORQUE_POWER_FALLOFF
-
-static func power_to_weight(entry: Dictionary) -> float:
-	var mass: float = entry.get("mass", 1.0)
-	if mass <= 0.0:
-		return 0.0
-	return peak_power_kw(entry) / mass
-
 
 # A bounding box (width, height, length in metres) that contains EVERY car on the roster —
 # the per-axis maximum across the catalogue, not any single car's size. Used to size the

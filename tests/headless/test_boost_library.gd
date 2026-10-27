@@ -126,7 +126,7 @@ func test_level_scale_never_crosses_zero_however_extreme_the_step() -> void:
 
 
 # A "mult" (or "mult_floor" — same ratio semantics before any clamp; magnitude_for never
-# applies the floor, only apply()/effective_meta() do) boost's base magnitude must push
+# applies the floor, only apply() does) boost's base magnitude must push
 # the SAME WAY its level ladder does: a lightweight kit whose mass_mult_floor sat above
 # 1.0 would make the car heavier while its levels made it lighter. A relationship, not a
 # pinned number — any sane tuning satisfies it, and a magnitude of exactly 1.0 (a boost
@@ -172,22 +172,17 @@ func test_label_for_falls_back_to_the_id_when_unknown() -> void:
 	assert_eq(BoostLibrary.label_for("ghost_boost"), "ghost_boost")
 
 
-# Regression: picking the turbo/supercharger boost mid-run used to enable the physics
-# (turbo_enabled/supercharger_enabled + a non-zero *_boost_gain) but leave the audio
-# gain fields untouched, so a car whose stock engine authors zero gain for them (i.e.
-# every non-turbo/non-blown catalogue engine) ran completely silent despite the part
-# being genuinely fitted and doing real work. install_turbo/install_supercharger's
-# effect dict must carry the audio gains too, and installing both — a real twincharger
-# (features/forced-induction.md → "Turbo and supercharger STACK") — must leave both
-# audible at once rather than one clobbering the other's gain.
-func test_installing_turbo_and_supercharger_boosts_together_leaves_both_audible() -> void:
+# Turbo and supercharger stack (a real twincharger, features/forced-induction.md): applying both
+# must leave both enabled with their own fields, neither clobbering the other. Synthetic effects,
+# so the test does not depend on the shipped catalogue's numbers.
+func test_applying_turbo_and_supercharger_effects_together_keeps_both() -> void:
 	var cfg := GameConfig.new()
-	var owned_car := {"boosts": [{"id": "turbo", "effect": BoostLibrary.magnitude_for("turbo", 0)},
-		{"id": "supercharger", "effect": BoostLibrary.magnitude_for("supercharger", 0)}]}
+	var owned_car := {"boosts": [
+		{"id": "a", "effect": {"install_turbo": {"turbo_boost_gain": 0.3, "engine_turbo_whistle_gain": 0.5}}},
+		{"id": "b", "effect": {"install_supercharger": {"supercharger_boost_gain": 0.2, "engine_supercharger_whine_gain": 0.4}}}]}
 	UpgradeLibrary.apply(owned_car, cfg)
 	assert_true(cfg.turbo_enabled)
 	assert_true(cfg.supercharger_enabled)
-	assert_gt(cfg.engine_turbo_whistle_gain, 0.0,
-		"a mid-run turbo boost must give the whistle layer a real gain, not the stock engine's zero")
-	assert_gt(cfg.engine_supercharger_whine_gain, 0.0,
-		"a mid-run supercharger boost must give the whine layer a real gain, not the stock engine's zero")
+	assert_almost_eq(cfg.engine_turbo_whistle_gain, 0.5, 0.0001, "the turbo's audio gain is written")
+	assert_almost_eq(cfg.engine_supercharger_whine_gain, 0.4, 0.0001, "the supercharger's audio gain is written")
+	assert_almost_eq(cfg.turbo_boost_gain, 0.3, 0.0001, "installing the second part leaves the first's fields alone")

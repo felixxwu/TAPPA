@@ -2,25 +2,14 @@ class_name Scenes
 extends RefCounted
 # Docs: features/menus.md — update in the same change as this file.
 # Tests: tests/headless/test_world_isolation.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Scenes' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
-# The canonical scene paths, and the ONE place that decides which scene is "the hub".
-#
-# "The hub" is now the TITLE screen (todo/2026-10-19-free-roam-pivot.md decision 20): every "back to
-# the hub" transition (pause-menu quits, a dev stage's finish, the benchmark end) lands on the
-# game's front door through hub_path(), and is_hub_scene() is what MusicDirector keys the menu
-# theme on. The roguelike's HubShell (hub.tscn) is deleted.
+# The canonical scene paths and the one scene-change point.
 
 const MAIN := "res://main.tscn"
 # The title screen (the game's main scene) and the free-roam world it leads into.
 const TITLE := "res://title.tscn"
 const FREE_ROAM := "res://free_roam.tscn"
-# PODIUM and STANDINGS are DELETED, not renamed: podium.tscn (decision 19) and
-# standings.tscn (decision 30) no longer exist, so the constants were paths to nothing —
-# a load() away from a crash for anyone who trusted them. The run summary is a HubShell
-# page and the between-stage beat is RunPickPanel; neither is a scene.
-# The player's car scene — spawned as the live drivable car (car.gd), a frozen
-# display prop (HQ/podium/wreck), or a dev-tool subject (exhaust_lab.gd). Used to be "res://car.tscn" hardcoded at seven sites
-# under three different local names (CAR_SCENE / CAR_SCENE_PATH / WRECK_CAR_SCENE);
-# this is now the one definition, same as TITLE/MAIN above.
+# The player's car scene — spawned as the live drivable car, a frozen display prop, or a
+# dev-tool subject (exhaust_lab.gd).
 const CAR := "res://car.tscn"
 
 # Cached PackedScene for CAR, loaded on first use. `preload()` needs a literal
@@ -39,18 +28,6 @@ static func car_scene() -> PackedScene:
 	return _car_scene
 
 
-# The scene to load for "return to the hub". One shell today; the indirection is
-# what let the hub be swapped out without touching the six transition sites.
-static func hub_path() -> String:
-	return TITLE
-
-
-# True for the hub shell. Kept as a predicate rather than an `==` at every call site
-# so a second shell (or a versioned path) stays a one-line change here.
-static func is_hub_scene(path: String) -> bool:
-	return path == TITLE
-
-
 # ==========================================================================================
 # The single enforced scene-change point
 # ==========================================================================================
@@ -66,13 +43,9 @@ static func is_hub_scene(path: String) -> bool:
 # SHARED physics space, and breaks car-settling assertions in unrelated files that run much
 # later (see tests/headless/test_world_isolation.gd).
 #
-# world.gd has a per-instance `scene_change_hook` seam for this, but it is OPT-IN: every test
-# holding a live world has to remember to install it, and dozens don't.
-#
 # So the default is safe: a test run arms this once and every transition below is inert,
 # whether or not the test knew a transition was reachable. Tests that assert on WHERE the
-# game wanted to go read `last_blocked_path` (or keep using world.gd's hook, which still
-# intercepts first). Production never arms it and behaves exactly as before.
+# game wanted to go read `last_blocked_path`. Production never arms it and behaves exactly as before.
 static var block_real_changes := false
 
 # The path most recently suppressed by the switch above. Purely diagnostic — it lets a test

@@ -120,15 +120,13 @@ func test_apply_owned_applies_drivetrain_override() -> void:
 	CarFixtures.install()
 	# A fitted drivetrain kit reaches the car as this override (LootRules.fielded,
 	# features/loot.md); resolve_drive_override just range checks it.
-	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": [],
-		"disabled_upgrades": [], "drivetrain_override": Drivetrain.DriveMode.AWD})
+	_car.apply_owned({"model_id": "fx_light_rwd", "drivetrain_override": Drivetrain.DriveMode.AWD})
 	assert_eq(_car.drivetrain.drive_mode, Drivetrain.DriveMode.AWD, "override fielded onto the drivetrain")
 
 
 func test_apply_owned_ignores_out_of_range_override() -> void:
 	CarFixtures.install()
-	_car.apply_owned({"model_id": "fx_light_rwd", "installed_upgrades": [],
-		"disabled_upgrades": [], "drivetrain_override": 99})
+	_car.apply_owned({"model_id": "fx_light_rwd", "drivetrain_override": 99})
 	assert_eq(_car.drivetrain.drive_mode, Drivetrain.DriveMode.RWD,
 		"an override outside the enum is inert, stays stock RWD")
 

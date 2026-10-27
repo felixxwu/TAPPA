@@ -20,10 +20,8 @@ is a thin wrapper over `SpatialGrid.of_points`.
 | `scripts/spectator_scatter.gd` | Pure, seeded placement — `mid_offset()` (where the mid group goes) + `members()` (off-road, tree-avoiding, separated standing positions). Headless, no scene. |
 | `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one LIVE crowd: steering, its own dynamic MultiMesh (rewritten each frame), LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). Not a `Crowd.multimesh_instance()` caller (dynamic, not static) but shares the figure via `Crowd.mesh()`/`Crowd.foot_offset()`. |
 | `scripts/free_roam/terrain_streamer.gd` | Free roam: `_rest_crowd()` builds one live group per rest stop in front of its cabin as its chunk streams in (road cells rasterised locally by `_road_cells_near`, cabin walls as the avoided "trees" via `_cabin_wall_points`, `ragdoll_pool_size` forced to 0). See `features/free-roam.md` → Crowds. |
-| `scripts/world.gd` | `_spawn_spectators()` / `_spawn_spectator_group()` build the three live groups in `_generate_track`; `_spawn_wreck_crowd()` builds a STATIC onlooker crescent at an opponent wreck via `Crowd.multimesh_instance()`. |
+| `scripts/world.gd` | `_spawn_spectators()` / `_spawn_spectator_group()` build the three live groups in `_generate_track`. |
 | `scripts/game_config.gd` | `@export_group("Spectators")` + `spectator_params()`. |
-| `scripts/hq_environment.gd` | **DELETED** — `_build_spectators()` spread STATIC scenery spectators around the HQ clearing via `Crowd.multimesh_instance()`, with no steering or ragdolls (no car in HQ). |
-| `scripts/podium.gd` | **DELETED** — `_spectator_layout()` built a STATIC crowd arc behind the podium plus a showroom fan, via `Crowd.multimesh_instance()`. |
 | `blender/spectator/spectator.glb` | The low-poly figure: 150 triangles, no armature (hence single-capsule ragdolls). Quadric-decimated for cheap crowds; one mesh used at all distances. |
 
 ## How it works

@@ -249,15 +249,6 @@ func _compute_shift_speeds() -> void:
 		shift_up_speeds[g - 1] = redline_v * cfg.upshift_redline_fraction
 
 
-# Re-derive the shift points after the GEARING or redline changed under a LIVE engine
-# (Car.refit_upgrades -> Drivetrain.reconfigure). Public counterpart to refresh_fitment():
-# together they are everything _init derives from the config that an upgrade edit can move,
-# which is what lets a live car be reconfigured instead of rebuilt. Simulation state (revs,
-# gear, boost, the nitrous tank) is deliberately untouched.
-func refresh_gearing() -> void:
-	_compute_shift_speeds()
-
-
 # Gear direction changes only happen near standstill. Returns whether the
 # requested direction is selected (drive torque must not flow otherwise).
 func select_reverse(rear_omega: float) -> bool:
@@ -298,7 +289,7 @@ func _step_nitrous(h: float, combusting: bool) -> bool:
 func nitrous_fraction() -> float:
 	# Reads the LIVE config, not the cached _has_nitrous. This runs per FRAME (the HUD gauge
 	# and the audio bridge), not per substep, so the two property reads are free — and using
-	# the cache here would show a stale gauge after any live refit that re-applies the config
+	# the cache here would show a stale gauge after any live re-derive that re-applies the config
 	# without a reset(), as well as risking a divide by a zero tank.
 	var tank := config.nitrous_tank_seconds
 	if tank <= 0.0 or config.nitrous_boost_gain <= 0.0:

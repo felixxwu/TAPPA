@@ -294,40 +294,6 @@ func test_straightness_generation_is_deterministic_and_complete() -> void:
 	assert_true(a["complete"], "a straightness-biased track still completes")
 
 
-func test_every_rally_event_generates_a_complete_track_quickly() -> void:
-	# Regression guard for the seed-3002 blow-up: rwd_masters event 2 once spent ~8
-	# minutes (~474s) generating, because a boxed-in DFS ground its whole step budget
-	# re-rasterizing every candidate's full footprint. After the fix (early-exit /
-	# capsule collision + a tight per-attempt budget that bails a thrashing seed to a
-	# fresh diverse restart), EVERY authored rally event must generate a COMPLETE track,
-	# and the whole set must finish fast.
-	#
-	# The bound was ~7s when every event's turn_count sat at its original authored value.
-	# Every rally-library event was later authored ~15% longer (more corners to place),
-	# and DFS cost is NOT linear in turn_count — the per-attempt step budget is
-	# STEPS_BASE + turn_count * STEPS_PER_TURN, and a seed closer to boxing itself in
-	# backtracks more per attempt too — so the honest new baseline is ~70-80s, not ~8s,
-	# with normal run-to-run variance of a few seconds either way. 180s keeps real
-	# headroom above that (over 2x) while still catching a genuine return of a
-	# multi-MINUTE blowup like the original. If this starts flaking near the bound
-	# again after a future turn_count change, re-measure and move it — don't just
-	# raise it blindly.
-	Config.reset()
-	var clearance: float = Config.data.track_clearance
-	var t0 := Time.get_ticks_msec()
-	for event in RegionStageLibrary.all_stages():
-		var r := await TrackGenerator.generate(_params(
-			Vector2.ZERO, Vector2(0.0, -1.0), int(event.get("seed", 0)),
-			int(event.get("turn_count", 10)), StageFields.event_width(event), clearance,
-			0.0, StageFields.event_straightness(event)))
-		assert_true(r["complete"],
-			"region %s slot %d candidate %d seed %d generates a complete track (no partial)" % [
-				event.get("region", "?"), int(event.get("slot", -1)),
-				int(event.get("candidate", -1)), int(event.get("seed", 0))])
-	assert_lt(Time.get_ticks_msec() - t0, 180000,
-		"all stage tracks generate well under the old blow-up's ~8 min (one seed used to take ~474s)")
-
-
 func test_zero_runoff_reports_no_segment() -> void:
 	var r := await TrackGenerator.generate(_params(START_POS, START_HEADING, 7, 8, 6.0))
 	assert_true(r.has("runoff"), "result always carries a runoff key")

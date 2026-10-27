@@ -5,8 +5,8 @@
 `scripts/game_config.gd` (`turbo_*` / `supercharger_*` fields),
 `scripts/engine_library.gd` (`EngineLibrary.apply` — stock wiring),
 `scripts/boost_library.gd` (the `turbo` / `supercharger` parts),
-`scripts/upgrade_library.gd` (the `install_turbo` / `install_supercharger` effect rows,
-`effective_meta`), `scripts/engine_audio_synth.gd` /
+`scripts/upgrade_library.gd` (the `install_turbo` / `install_supercharger` effect rows),
+`scripts/engine_audio_synth.gd` /
 `scripts/engine_audio.gd` (whistle / BOV / anti-lag / whine audio).
 
 **Tests:** `tests/headless/test_turbo.gd`, `tests/headless/test_engine.gd`, `tests/headless/test_engine_audio.gd`, `tests/headless/test_engine_library.gd`, `tests/headless/test_upgrade_library.gd`
@@ -163,7 +163,7 @@ the dump valve. It's a pure edge-trigger flag read once by the audio bridge
 `UpgradeLibrary.apply()` handles **both** induction effect keys through ONE
 `"install_induction"` op, with everything that differs between them living in the
 `EFFECTS` descriptor row rather than in a branch — `enable` (the flag this part
-switches on) and `gain_key` (the sub-key `effective_meta` rates power-to-weight from):
+switches on):
 
 ```gdscript
 "install_induction":
@@ -202,25 +202,6 @@ completely silent despite doing real work. The stock route (`EngineLibrary.apply
 copying an engine's own authored gains) is unaffected; this only closes the gap for
 the boost-catalogue route. Regression test:
 `test_boost_library.gd`'s `test_installing_turbo_and_supercharger_boosts_together_leaves_both_audible`.
-
-### Rated at peak boost (`effective_meta`)
-
-`UpgradeLibrary.effective_meta(owned_car, meta)` computes the car's displayed
-stats (HP / power-to-weight, used by the garage and car cards). Since the two axes can both be live at once, it
-tracks each SEPARATELY — starting from the current engine's own stock
-`turbo_boost_gain`/`supercharger_boost_gain`, each overridden independently by a
-fitted `install_turbo`/`install_supercharger` boost on that axis — then combines them
-MULTIPLICATIVELY, mirroring the sim's own crank formula rather than adding or picking
-one:
-
-```gdscript
-out["peak_torque"] = float(out.get("peak_torque", 0.0)) * (1.0 + turbo_gain) * (1.0 + supercharger_gain)
-```
-
-i.e. the displayed torque is rated **at full (peak) boost on every fitted
-axis**, the same multiplier the sim itself applies at `boost == 1.0` /
-`sc_boost == 1.0`. This runs before the engine-detune scaling, so a boosted-but-detuned
-car's rating reflects both.
 
 ## Supercharger (belt drive)
 
@@ -345,8 +326,7 @@ config behaves exactly as before), `tests/headless/test_engine_audio.gd`
 supercharger whine only when enabled), `tests/headless/test_engine_library.gd`
 / `tests/headless/test_upgrade_library.gd` (catalog entries load, `apply()`
 writes the fields, `install_turbo` sets `turbo_enabled` + stamps the effect
-dict, `install_supercharger` sets the blower without clearing the turbo, `effective_meta`
-rates at peak boost for both), and `tests/headless/test_boost_library.gd` (both parts fitted
+dict, `install_supercharger` sets the blower without clearing the turbo), and `tests/headless/test_boost_library.gd` (both parts fitted
 together stay audible).
 The blower's own physics live in `test_turbo.gd`'s supercharger block: boost
 linear in rpm and saturating, drag affine in rpm, full boost on the FIRST

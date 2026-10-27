@@ -16,6 +16,8 @@ extends RefCounted
 
 enum Kind { REST, LOOT, DEAD_END }
 
+# A car that moves further than this in one physics step was teleported, not driven.
+const TELEPORT_M := 100.0
 const GRID_M := 100.0
 # Every site by the cell its centre is in, so in_box (run every physics tick) skips the rest of the island.
 const BOX_CELL_M := 250.0

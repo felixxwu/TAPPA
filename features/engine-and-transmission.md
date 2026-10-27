@@ -98,8 +98,7 @@ rpm-linear belt drive.
 
 `global_torque_scale` (shipped at **0.5**) is a **hidden** global de-rate on the
 drive torque every car makes. It scales acceleration for the whole field at once
-without changing the published `peak_torque`, so the stats panel and
-`power_to_weight` still report the full, pre-scaling figure — it's a balance knob
+without changing the published `peak_torque`, so the stats panel still reports the full, pre-scaling figure — it's a balance knob
 for overall pace, not a per-car spec. `1.0` disables it. The frozen test fixture
 (`tests/fixtures/test_config.tres`) pins it to `1.0` on purpose, so the
 drive-mode launch tests stay calibrated to full torque and don't drift when the
@@ -167,8 +166,8 @@ of drag at its 4000-rpm peak (30 + 1.0 × 4).
 `EngineLibrary.apply()`. Each `EngineLibrary` entry also carries a **`mass`**
 (kg), used by [engine-swap.md](engine-swap.md) to treat the engine as an
 independent point mass when a player exchanges engines between cars. Displayed
-power / power-to-weight are **derived** from the same torque + redline
-(`CarLibrary.power_to_weight`: torque × redline speed ×
+power is **derived** from the same torque + redline
+(`CarLibrary.horsepower`: torque × redline speed ×
 `CarLibrary.TORQUE_POWER_FALLOFF`, a single global ~0.78 calibration for real
 torque falloff before redline) — there is no separately-authored power figure,
 so retuning an engine's torque moves its stats and its physics together, and
@@ -183,11 +182,10 @@ every car) — e.g. the Charger's `mopar_440_v8` peaks at 3000 rpm while its rea
 `v6`/`v8`/`v10`/`v12`) fixes both the cylinder count and the firing table
 (`EngineLibrary.FIRING`) together.
 
-### Displacement, cylinders and doors (rally-restriction metadata)
+### Displacement and cylinders
 
-Three catalogue fields exist purely so rally restrictions can theme a class by
-body/engine shape ([region-stage-library.md](region-stage-library.md)). Which catalogue owns each
-is decided by **what an engine swap must change**:
+Catalogue fields that describe an engine's shape. Which catalogue owns each is decided by
+**what an engine swap must change**:
 
 - **`displacement_l`** (float, litres) lives on the **engine** (`ENGINES`). It is an
   engine property, so a swap carries it — a car dict field would go stale the moment
@@ -195,19 +193,6 @@ is decided by **what an engine swap must change**:
 - **cylinder count is NOT authored at all.** `EngineLibrary.cylinders(engine)` derives
   it from `FIRING[layout].size()`, the same table that drives the audio, so the two
   can never disagree. Returns `0` for an unknown/absent layout.
-- **`doors`** (int) lives on the **car** (`CARS`) — a body property no engine can
-  change. It uses the conventional body designation (a hatchback's tailgate counts:
-  3-door hatch = 3, coupe/roadster/kei van = 2, 5-door hatch = 5).
-
-`RallyLibrary.ineligibility_reason` reads `doors` flat off the car meta but resolves
-the engine-derived pair through `EngineLibrary.by_id(car_meta["engine"])` — and
-`UpgradeLibrary.effective_meta` re-points that key at the **fitted** engine, so
-**swapping an engine changes which rallies a car can enter**. If a restriction names
-an engine-derived field and the engine id doesn't resolve (a synthetic dict in a test
-or tool), the car is **rejected** ("Unknown engine for this class") rather than waved
-through — the failure mode of the old dead `engine_displacement_l` key, which nothing
-ever wrote, so every `engine_min_l` gate rejected everything and every `engine_max_l`
-gate accepted everything.
 
 ## Transmission
 
@@ -219,21 +204,6 @@ gate accepted everything.
   **engine swap carries its gearbox** to the new car
   ([engine-swap.md](engine-swap.md)); a car's stock gearbox is just its stock
   engine's.
-- **The ratios now leave the live sim and reach the offline solver too.**
-  `LapTimeModel._geared_top_speed_sq` computes a car's geared top speed as
-  `omega_redline * wheel_radius / (top_ratio * final_drive)` — the same crank →
-  axle chain `Drivetrain` gears through — and `optimum_profile` folds it in as a
-  speed ceiling, so gearing now moves PAR times, rival times and the car
-  performance rating ([car-performance.md](car-performance.md)). It reads
-  `gear_ratios` / `final_drive` off the **ENGINE**, matching the "the transmission
-  lives on the engine" rule above, which is what makes an engine swap correctly
-  move a car's top speed; `wheel_radius` comes off the car. Top gear is taken as
-  the **smallest** ratio rather than the last entry, so a mis-authored list can't
-  hand a car a first-gear top speed. Keep the distinction sharp in the other
-  direction, though: only the top ratio is modelled. The intermediate ratios and
-  `shift_time` are still invisible to the solver — nothing charges a car for the
-  time lost to an upshift, so a close-ratio box gets no credit offline even
-  though it is a real advantage in the live sim.
 - Clutch limited to `clutch_max_torque`; auto-clutch opens when coasting below
   `clutch_engage_speed`.
 - Manual shifting: Q (down) / E (up). Auto mode toggled with T or HUD button.
@@ -271,17 +241,6 @@ gate accepted everything.
   See [drivetrain-and-tires.md](drivetrain-and-tires.md) for why the baseline
   rolling resistance forces `final_drive` this high. The `GameConfig`
   `gear_ratios`/`final_drive` are only the baseline before a car is selected.
-- **A LONG final drive is now a real design lever, not just a feel one.** Since the
-  lap model caps a car at its geared top speed
-  (`LapTimeModel._geared_top_speed_sq`), `final_drive` moves the car's PACE and its
-  performance rating, not only how it pulls. The Beast is the case that made this
-  visible: a 27-litre V12 redlining at ~3.2k through three widely-spaced ratios on a
-  short diff was geared so low it ran out of revs at motorway speed, and the rating
-  dutifully pinned it there. Its diff is now deliberately the longest on the roster —
-  it has torque to spare from idle, so trading multiplication for reach costs it
-  nothing it misses. Read `final_drive` as "how much of this engine's output is
-  spent on acceleration versus top end", and expect the rating to follow.
-
 ## Tests
 
 `tests/headless/test_engine.gd` (idle, redline, limiter bounce, shift, stall

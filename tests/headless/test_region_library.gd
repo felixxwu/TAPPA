@@ -72,19 +72,6 @@ func test_look_from_inherits_parent_block_and_own_keys_win() -> void:
 	# The plumbing key never leaks into the look dict world.gd consumes.
 	assert_false(child.has("look_from"), "look_from is not a look key")
 
-func test_water_level_is_per_region_and_optional() -> void:
-	# A region that authors a waterline reports it; one that doesn't is
-	# distinguishable, so callers can fall through to the GameConfig baseline.
-	assert_true(RegionLibrary.has_water_level(R_A))
-	assert_eq(RegionLibrary.water_level_of(R_A), -9.0,
-		"the authored waterline is surfaced")
-	assert_false(RegionLibrary.has_water_level(R_B),
-		"a region authoring no waterline is distinguishable")
-	assert_false(RegionLibrary.has_water_level("no_such_region"))
-	# water_level is deliberately NOT inherited through look_from.
-	assert_false(RegionLibrary.has_water_level(R_D),
-		"look_from does not inherit the waterline")
-
 func test_tree_mix_defaults_when_unauthored() -> void:
 	# A region with no tree_mix falls back to the single default home tree at 100%.
 	var mix := RegionLibrary.tree_mix(RegionLibrary.look_of(R_A))
@@ -105,28 +92,3 @@ func test_spawns_bush_mesh_defaults_true_and_honours_override() -> void:
 		"a region that authors nothing keeps the bushes")
 	assert_false(RegionLibrary.spawns_bush_mesh(RegionLibrary.look_of(R_C)),
 		"spawn_bush_mesh = false suppresses the bush pass")
-
-
-# --- The shipped roster's own contract ------------------------------------------
-#
-# Reads the REAL RegionLibrary (not the synthetic fixture above), so it drops the
-# override this file installs in before_each — the narrow exception CLAUDE.md allows
-# for iterating the whole table as opaque input. It does NOT pin any region's actual
-# `water_level` number (that would be a tunable-value test); it only asserts the
-# RELATIONSHIP the "lakes" region is designed around: its waterline must sit clearly
-# above every other region's, whatever those numbers happen to be tuned to.
-func test_lakes_region_has_a_higher_water_level_than_every_other_region() -> void:
-	RegionLibrary.reset()  # the SHIPPED roster is this test's subject
-	var lakes_level := RegionLibrary.water_level_of("home_coast")
-	assert_true(RegionLibrary.has_water_level("home_coast"), "the lakes region authors a waterline")
-	var found_another := false
-	for region in RegionLibrary.all():
-		var id := String(region.get("id", ""))
-		if id == "home_coast":
-			continue
-		if not RegionLibrary.has_water_level(id):
-			continue
-		found_another = true
-		assert_gt(lakes_level, RegionLibrary.water_level_of(id),
-			"lakes' water_level must sit clearly above %s's" % id)
-	assert_true(found_another, "the roster has at least one other region to compare against")

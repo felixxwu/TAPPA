@@ -1,105 +1,39 @@
 # Stage Start & End
 
-> **Free-roam pivot (2026-10):** the stage scene (`main.tscn` / `world.gd`) is no longer reachable from the game. It survives as a **dev stage and the physics test harness**: it builds a track from the live config, fields the first library car, and its finish returns to the title. The run loop, start line, rival ghost, pacenotes, signs, arches and coins described below are deleted; see `PIVOT-CHANGES.md`.
+> **Free-roam pivot (2026-10):** the stage scene (`main.tscn` / `world.gd`) is no longer reachable from the game. It survives as a **dev stage and the physics test harness**: it builds a track from the live config and fields the first library car. The run loop, start line, rival ghost, pacenotes, signs, arches, coins, the on-screen countdown / run timer / finish panel and the corner-cut penalty are deleted; see `PIVOT-CHANGES.md`.
 
 **Source:** `scripts/stage_manager.gd` (`class_name StageManager extends Node`),
-created and wired by `scripts/world.gd._generate_track()`. Drives the car's
-control lock (`scripts/car.gd`) and the HUD stage widgets
-(`scripts/hud.gd`, see [hud.md](hud.md)); reads the [`TrackProgress`](progress.md)
-manager for the finish condition.
+created and wired by `scripts/world.gd`. Drives the car's control lock
+(`scripts/car.gd`); reads the [`TrackProgress`](progress.md) manager for the finish
+condition. It shows nothing on screen.
 
-**Tests:** `tests/headless/test_stage_manager.gd`, `tests/headless/test_countdown_hold.gd`, `tests/headless/test_hud.gd`
+**Tests:** `tests/headless/test_stage_manager.gd`, `tests/headless/test_countdown_hold.gd`
 
-Turns the always-live track into a timed stage: a countdown holds the car, then
-a run timer ticks until the finish line, then the car is locked (skidding to a stop
-in the runoff past the finish) and a finish panel shows the time with a NEXT button
-that advances to the leaderboard/podium flow.
+Holds the car on the line through a countdown, times the run until the finish line, then
+locks the car (skidding to a stop in the runoff past the finish).
 
 ## Flow (the state machine)
 
 `enum Phase { COUNTDOWN, RUNNING, COMPLETE }`, advanced in `_process(delta)`:
 
-1. **COUNTDOWN** — `setup()` drops any full lock
-   and forces only the handbrake (`controls_locked = false`, `handbrake_locked = true`),
-   so the player can rev the engine and steer on the line but the car holds put. It arms
-   `_countdown_left = stage_countdown_seconds`. It also calls
-   `TrackProgress.mark_start()` so progress reads **0% from the line** — the car is
-   on the start line by now (the start-line sequence snapped it there), so the
-   lead-in behind the start and any roll-up settle don't count
-   ([progress.md](progress.md)). Each frame shows the big centered `3·2·1·GO` on
-   the HUD. When the timer elapses: release the handbrake (so a revved car launches),
-   flash `GO`, emit `stage_started`, switch to RUNNING.
-2. **RUNNING** — accrue `_elapsed` each frame and show it top-right (`m:ss.cc`).
-   The `GO` flash is held `GO_FLASH_SECONDS` (0.5 s, a const, not a config knob)
-   then hidden. When progress reaches the finish, switch to COMPLETE.
+1. **COUNTDOWN** — `setup(car, progress)` drops any full lock and forces only the handbrake
+   (`controls_locked = false`, `handbrake_locked = true`), so the player can rev the engine and
+   steer on the line but the car holds put. It arms `_countdown_left = stage_countdown_seconds`
+   and calls `TrackProgress.mark_start()` so progress reads **0% from the line**
+   ([progress.md](progress.md)). When the timer elapses: release the handbrake (so a revved car
+   launches), emit `stage_started`, switch to RUNNING.
+2. **RUNNING** — accrue `_elapsed` each frame. When progress reaches the finish, switch to COMPLETE.
 3. **COMPLETE** — freeze the timer and re-lock the car (`controls_locked = true` +
    `finish_stop = true`): the car **brakes itself to a stop** — full foot brake +
    handbrake while rolling, foot brake released once stopped, clutch kept engaged so
    the engine winds down to idle instead of free-revving ([car-physics.md](car-physics.md)) —
-   staying visible in the runoff road past the finish ([track.md](track.md)). It also
-   snapshots any [corner-cutting](corner-cutting.md) penalty here — `_penalty_s =
-   TrackProgress.cut_penalty_s()` — and folds it into the **reported** event time,
-   `_reported_seconds = _elapsed + _penalty_s`; the on-screen run timer (`_elapsed`)
-   itself stays clean throughout the run and is never touched by the penalty. Then
-   show the finish panel with the run time (+ cut breakdown, [hud.md](hud.md)). It **does** emit
-   `finish_reached` here — the "car crossed the line" moment, distinct from the deferred
-   `stage_completed`. Anything that should reflect the *driven run* rather than the
-   player's panel-dismiss must key off `finish_reached`: `world.gd` stops the replay
-   recorder (else the runoff idle tails the recording — event-replay.md (deleted with the free-roam pivot))
-   and snapshots the event's HP loss + persisted wheel-toe here (else damage taken during
-   the post-finish coast is wrongly charged). `stage_completed` is **not**
-   emitted here: it's **deferred** to `proceed_to_results()`, which the finish
-   panel's **NEXT** button fires (via the HUD's `finish_next_pressed` signal, wired
-   in `world.gd`). So the leaderboard/podium flow only starts once the player
-   dismisses the time. `proceed_to_results()` is guarded — it emits
-   `stage_completed(elapsed_seconds)` only while COMPLETE and only once (a
-   double-press can't re-enter the flow). `force_complete()` (the dev F cheat) takes
-   the same path: panel now, results on NEXT.
+   staying visible in the runoff road past the finish ([track.md](track.md)).
 
 The finish edge is `progress_percent() * 100.0 >= stage_complete_percent`.
 `TrackProgress.progress_percent()` returns a **0..1 fraction**, so it is scaled to
 the 0..100 config percentage. Progress is monotonic, so this is a one-way edge —
-once COMPLETE, the phase never leaves it. `stage_complete_percent` is **100**, so
-the stage ends exactly as the car crosses the finish arch (finish-arch.md (deleted with the free-roam pivot)),
-which `world.gd` places at the **finish offset** (the end of the timed track, before
-the runoff); `TrackProgress` reaches 100% at that offset ([progress.md](progress.md)).
-
-## In-stage live standings readout — DELETED (rivals deleted; a ghost took its place)
-
-The roguelike pivot dropped the rival field entirely (`todo/roguelike-pivot.md`
-decision 5), and the in-stage position/gap readout went with it: it projected the
-player's finishing time and slotted it into a field of rivals, which is not a
-question this game asks any more.
-
-Deleted outright, not left dormant: `hud.show_position` / `hide_position` /
-`PositionLabel` / `PositionGapLabel` ([hud.md](hud.md)),
-`StageManager.setup_live_standings`, `StageManager._update_live_standings`, its
-`_field_times`, the two HUD capabilities in `StageManager.setup`'s duck-type list,
-and `scripts/live_standings.gd` with its test file. `world.gd`'s
-`_setup_stage_splits`, `_solve_rival_pace` and `_wire_stage_splits` went with the
-rival ghost.
-
-**`StageManager.setup_splits` is now GONE too** (this corrects the previous
-version of this note, which found it merely unwired). Its per-turn pace table
-(`_turn_progress` / `_turn_time_frac` / `_p1_total_ms`) never got a production
-caller after the rival field was deleted, and `tests/headless
-/test_stage_manager.gd`'s own `_wire_even_splits` helper — the only thing that
-still called it — was itself dead (nothing called *that* either). Both were
-removed together rather than left as a plausible future feed for nothing.
-
-**What replaced it: `StageManager.setup_target_profile(profile, ghost)`**
-(rival-ghost.md (deleted with the free-roam pivot)) — a real production caller this time,
-`world.gd._setup_rival_ghost`. `profile` is `RunSession.stage_target_profile()`,
-the pace-scaled distance/time curve seated alongside `stage_target_ms` at
-`RunSession.set_stage_track` (both come from `RegionRunMode.stage_target_profile`,
-which `stage_target_ms` is now itself built on — see
-region-runs.md (deleted with the free-roam pivot)). `ghost` is the `RivalGhost` node `world.gd`
-built for the start-line reveal, kept posing through RUNNING. Every RUNNING
-tick, `StageManager._update_rival` reposes the ghost off this stage's own
-`_elapsed` and computes the live HUD delta — see [hud.md](hud.md) → "Rival
-delta". Unlike the old per-turn table this is continuous (any point along the
-track, not just turn boundaries) and it has an actual production caller from
-day one.
+once COMPLETE, the phase never leaves it. `TrackProgress` reaches 100% at the **finish
+offset** (the end of the timed track, before the runoff; [progress.md](progress.md)).
 
 ## Control lock (`Car.controls_locked`)
 
@@ -120,53 +54,27 @@ deceleration damage (the damage rule has **no** held-car exemption — see
 ## Signals
 
 - `stage_started` — countdown finished, timer running.
-- `finish_reached` — car crossed the finish (phase → COMPLETE), fired in `_complete()`
-  before the NEXT button; for run-end snapshots that must exclude the post-finish coast.
-- `stage_completed(elapsed_seconds: float)` — emitted by `proceed_to_results()`
-  when the player presses **NEXT** on the finish panel (NOT on the raw finish),
-  timer frozen. This deferral gives the car room to skid to a stop and lets the
-  player read the time before the leaderboard. The value carried is the
-  **reported** event time (`_reported_seconds`, `_elapsed` plus any
-  [corner-cutting](corner-cutting.md) penalty snapshot at `_complete()`), so the
-  session's total-time accumulation sees the penalized time without any change
-  on its end.
-
-These are the hooks the run/menu layer attaches to. The **post-stage flow**
-(repair/boost pick, money payout, back to the hub) is out of scope here — this
-feature only provides the signals, the finish panel, and the NEXT →
-`proceed_to_results()` gate. No session layer drives it any more: the stage scene is a
-dev stage and the physics test harness (PIVOT-CHANGES.md → "Kept, and why").
 
 ## Wiring & lifecycle
 
-`world.gd._generate_track()` creates the `StageManager` (named `StageManager`)
-right after the car, track and `TrackProgress` exist, then calls
-`setup(car, hud, progress)`. Initialisation lives in `setup()` (not `_ready()`)
-because `add_child` runs `_ready` before `world.gd` hands over the refs. On track
-regeneration (entering a new event) the prior manager is freed so only one ticks.
+`world.gd` creates the `StageManager` (named `StageManager`) right after the car, track and
+`TrackProgress` exist, then calls `setup(car, progress)`. A benchmark run leaves it un-armed.
+Initialisation lives in `setup()` (not `_ready()`) because `add_child` runs `_ready` before
+`world.gd` hands over the refs.
 
 ## Config knobs
 
-| Field | Default | Purpose |
-|-------|---------|---------|
-| `stage_countdown_seconds` | `3.0` | Countdown length before controls unlock. |
-| `stage_complete_percent` | `100.0` | Track-progress % (0..100) that ends the stage. 100 so it coincides with the finish arch at the finish offset (the timed-track end, before the runoff); `TrackProgress` reaches 100% there. |
-| `hud_elapsed_enabled` | `true` | Show the top-right run timer (mirrors `hud_enabled`). |
-| `hud_popup_show_seconds` | `3.0` | How long a transient in-run tag (the corner-cut flash) stays before fading. |
+| Field | Purpose |
+|-------|---------|
+| `stage_countdown_seconds` | Countdown length before controls unlock. |
+| `stage_complete_percent` | Track-progress % (0..100) that ends the stage. |
 
-See [configuration.md](configuration.md). No quality-tier branching — single
-shipped values, tunable for dev/debug.
+See [configuration.md](configuration.md).
 
 ## Tests
 
 - `tests/headless/test_stage_manager.gd` — the state machine driven against stub
-  car/HUD/progress (lock-at-start, countdown→run, timer accrual, GO flash,
-  completion freeze/relock/signal, configured percent), plus a `main.tscn`
-  integration check that the car boots locked. `setup_live_standings` and
-  `setup_splits` are both gone entirely (see above); `setup_target_profile`'s
-  HUD delta (behind/ahead sign, empty-profile hide) is covered here instead —
-  see rival-ghost.md (deleted with the free-roam pivot) for the ghost's own pose/profile tests.
-- `tests/headless/test_hud.gd` — the countdown/elapsed/complete widget formatting
-  and the `hud_elapsed_enabled` gate.
-- `tests/headless/test_smoke.gd` — structural check that the scene wires a
-  `StageManager` and the three HUD widgets.
+  car/progress (lock-at-start, countdown→run, timer accrual, completion freeze/relock, configured
+  percent), plus a `main.tscn` integration check that the car boots with the handbrake held.
+- `tests/headless/test_countdown_hold.gd` — a handbrake-held car sits still.
+- `tests/headless/test_smoke.gd` — structural check that the scene wires a `StageManager`.

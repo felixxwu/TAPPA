@@ -14,7 +14,6 @@ extends Node
 signal collected(site: int, value: int)
 signal recovered(value: int)
 
-const DROPPED_REACH_M := 6.0
 const DROP_CRYSTAL := preload("res://shaders/crystal.gdshader")
 # Which coins show may have changed (one was picked up, or they all came back).
 signal pool_changed
@@ -27,10 +26,12 @@ var _spent := {}  # collected sites, as a set
 # What the last wreck dropped, for the wreck page.
 var lost := 0
 var _dropped_node: Node3D
+var _warm_crystal: Node3D
 var _wrecked := false  # from giving up until the respawn
 var _toast: Label
 var money_label: Label  # the counter in the top-left corner while driving
 var _toast_t := 0.0
+var _money_shown := -1
 
 
 func _ready() -> void:
@@ -90,7 +91,10 @@ func _physics_process(delta: float) -> void:
 	if car == null or streamer == null:
 		return
 	step()
-	money_label.text = "$%d" % WorldSession.money()
+	var money := WorldSession.money()
+	if money != _money_shown:
+		_money_shown = money
+		money_label.text = "$%d" % money
 	if _toast_t > 0.0:
 		_toast_t -= delta
 		if _toast_t <= 0.0:
@@ -101,18 +105,21 @@ func _physics_process(delta: float) -> void:
 # (RoadSites.reached, swept over this step's travel). A wrecked car collects nothing.
 func step() -> void:
 	var p := Vector2(car.global_position.x, car.global_position.z)
-	var from := _last_p if _last_p.distance_to(p) < 100.0 else p  # a teleport isn't a drive past
+	var from := _last_p if _last_p.distance_to(p) < RoadSites.TELEPORT_M else p
 	_last_p = p
 	if _wrecked:
 		return
 	var d := WorldSession.dropped()
 	var at: Array = d.get("pos", [])
-	if at.size() >= 3 and int(d.get("money", 0)) > 0 and p.distance_to(Vector2(float(at[0]), float(at[2]))) <= DROPPED_REACH_M:
+	if at.size() >= 3 and int(d.get("money", 0)) > 0 and p.distance_to(Vector2(float(at[0]), float(at[2]))) <= streamer.settings.dropped_reach_m:
 		recover_dropped()
-	var i := streamer.sites.reached(from, p, RoadSites.road_margin(streamer.settings),
-		func(site: int) -> bool: return not loot_at(site).is_empty())
+	var i := streamer.sites.reached(from, p, RoadSites.road_margin(streamer.settings), _has_loot)
 	if i >= 0:
 		collect(i)
+
+
+func _has_loot(site: int) -> bool:
+	return not loot_at(site).is_empty()
 
 
 # The car was teleported (respawn, travel, R reset) to `p`: the next step must not sweep from where
@@ -174,16 +181,21 @@ func _sync_dropped_node() -> void:
 	var at: Array = WorldSession.dropped().get("pos", [])
 	if at.size() < 3 or int(WorldSession.dropped().get("money", 0)) <= 0:
 		return
+	_dropped_node = _crystal(Vector3(float(at[0]), float(at[1]), float(at[2])))
+
+
+func _crystal(pos: Vector3) -> Node3D:
 	var mat := ShaderMaterial.new()
+	var s := streamer.settings
 	mat.shader = DROP_CRYSTAL
-	mat.set_shader_parameter("color", Color(1.0, 0.8, 0.2))
+	mat.set_shader_parameter("color", s.drop_crystal_color)
 	var root := Node3D.new()
 	root.name = "DroppedMoney"
 	for up in [1.0, -1.0]:
 		var half := CylinderMesh.new()  # a 4-sided cone: one half of the crystal
-		half.top_radius = 0.0 if up > 0.0 else 0.3
-		half.bottom_radius = 0.3 if up > 0.0 else 0.0
-		half.height = 0.9 if up > 0.0 else 0.6
+		half.top_radius = 0.0 if up > 0.0 else s.drop_crystal_radius_m
+		half.bottom_radius = s.drop_crystal_radius_m if up > 0.0 else 0.0
+		half.height = s.drop_crystal_top_m if up > 0.0 else s.drop_crystal_bottom_m
 		half.radial_segments = 4
 		half.rings = 1
 		half.cap_top = false
@@ -191,11 +203,29 @@ func _sync_dropped_node() -> void:
 		half.material = mat
 		var mi := MeshInstance3D.new()
 		mi.mesh = half
-		mi.position.y = 1.4 + up * half.height * 0.5
+		mi.position.y = s.drop_crystal_float_m + up * half.height * 0.5
 		root.add_child(mi)
 	add_child(root)
-	root.global_position = Vector3(float(at[0]), float(at[1]), float(at[2]))
-	_dropped_node = root
+	root.global_position = pos
+	return root
+
+
+# Show a crystal at `pos` during the boot so its shader compiles then, not on the first wreck.
+func warm_up(pos: Vector3) -> void:
+	clear_warm_up()
+	_warm_crystal = _crystal(pos)
+	_warm_crystal.name = "CrystalWarmUp"
+
+
+func clear_warm_up() -> void:
+	if is_instance_valid(_warm_crystal):
+		_warm_crystal.queue_free()
+	_warm_crystal = null
+
+
+# Rest stop `site` is lit: its biome ring's stock goes on sale.
+func site_lit(site: int) -> void:
+	unlock(clampi(streamer.sites.ring[site], 0, streamer.settings.ring_count - 1))
 
 
 # Lighting a checkpoint in `ring` puts the ring's stock on sale.
@@ -279,4 +309,4 @@ func _say(text: String) -> void:
 		return
 	_toast.text = text
 	_toast.visible = true
-	_toast_t = 3.0
+	_toast_t = streamer.settings.toast_s

@@ -5,9 +5,8 @@ extends Node2D
 # and saves the frame to tools/corner_catalog.png.
 #
 # Also prints each corner's MINIMUM RADIUS and the cornering-speed ceiling that radius
-# implies, because that number — not the drawing — is what the lap-time model reacts to
-# (LapTimeModel pass 1 caps speed at sqrt(mu*g/kappa), so the tightest point of a corner
-# sets the braking). A corner can look fine and still spike.
+# implies, because the tightest point of a corner (speed ceiling sqrt(mu*g/kappa)) sets the
+# braking. A corner can look fine and still spike.
 #
 # Pure tooling; not shipped. Run windowed (headless renders nothing):
 #
@@ -68,8 +67,7 @@ func _print_radii() -> void:
 
 
 # Tightest radius anywhere along the curve, by sampling curvature off the baked
-# polyline. Mirrors what LapTimeModel._curvature_profile does, so the number printed here
-# is the one that actually drives the braking.
+# polyline.
 func _min_radius(curve: Curve2D) -> float:
 	curve.bake_interval = BAKE_INTERVAL_M
 	var length := curve.get_baked_length()

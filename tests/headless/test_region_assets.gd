@@ -80,31 +80,6 @@ func test_every_look_from_names_a_real_region_that_is_not_itself_derived() -> vo
 				% [rid, parent] + " one hop only, so a generation would be dropped")
 
 
-# Every RegionStageLibrary key must name a region that exists in RegionLibrary — a
-# stage tagged with a region that resolves to {} drives with no look overrides at all
-# rather than failing.
-func test_every_region_stage_library_key_resolves_to_a_look() -> void:
-	for rid in RegionStageLibrary.region_ids():
-		assert_ne(RegionLibrary.index_of(rid), -1,
-			"RegionStageLibrary region '%s' is not in the RegionLibrary catalogue" % rid)
-
-
-# The REVERSE direction: every authored region must actually have stages, or
-# RegionStagePool.draw silently returns nothing for it and the region is unplayable
-# despite existing. Unlike the old rally-tag model, RegionStageLibrary keys ARE the
-# reachability — this just confirms the two authored tables (REGIONS, STAGES) agree.
-func test_every_region_has_authored_stages() -> void:
-	var staged := {}
-	for rid in RegionStageLibrary.region_ids():
-		staged[rid] = true
-	for region in RegionLibrary.all():
-		var rid := String(region.get("id", ""))
-		assert_true(staged.has(rid),
-			("region '%s' is in REGIONS but has no entry in RegionStageLibrary.STAGES, " +
-				"so RegionStagePool.draw returns nothing for it — add an 8-slot x 3-candidate " +
-				"entry keyed '%s' to scripts/region_stage_library.gd.") % [rid, rid])
-
-
 # Every `res://` path authored ANYWHERE in a REGIONS entry must point at a real file.
 # Tree textures are traced more strongly by test_snow_region.gd, but a region's
 # sky_panorama / grass_texture / gravel_texture (and any path field added later — this

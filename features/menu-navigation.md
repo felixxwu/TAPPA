@@ -71,7 +71,7 @@ know which of its widgets count as rows, misses ones added later, and has to re-
 hidden-sub-panel rule; one flag here covers every `MenuNav` menu. Covered by
 `tests/headless/test_menu_nav.gd` (the `test_remember_*` group). **No shipped screen opts
 into it today** — it's exercised directly by that test group, not by a live caller — so the
-first `HubShell` page that wants "reopen where I left it" can turn it on with no framework
+first page that wants "reopen where I left it" can turn it on with no framework
 work of its own. (Every page passes `remember: false` today: each is rebuilt from scratch
 on entry, so the first action is always the right landing spot.)
 

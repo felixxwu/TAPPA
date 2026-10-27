@@ -25,20 +25,15 @@
 ## Scene routing (`Scenes`)
 
 `scripts/scenes.gd` (`class_name Scenes`, a static-only `RefCounted`) is the single
-source of truth for scene paths and for **which scene is "the hub"**:
+source of truth for scene paths and for **where the front door is**:
 
 - `Scenes.TITLE` / `FREE_ROAM` / `MAIN` / `CAR` — the canonical paths.
-- `Scenes.hub_path()` — the destination for every "return to the front door" transition (the
-  title). One indirection, so the front door can change without touching the transition sites.
-- `Scenes.is_hub_scene(path)` — the hub predicate, used where the hub is detected from a
-  live scene path rather than chosen (see [music.md](music.md) → "The hub-scene
-  predicate").
 - `Scenes.change_to(tree, path)` — **the single enforced scene-change point**, with a
   run-scoped kill switch the test pre-run hook arms so no production transition can park a
   live scene under `/root` mid-run. It records the blocked destination, so a test can
   assert where a transition was headed without performing it.
 
-Tests should compare captured paths against `Scenes.hub_path()`, not a literal.
+Tests should compare captured paths against `Scenes.TITLE`, not a literal.
 
 ## Free-roam scene tree (`free_roam.tscn`)
 
@@ -150,17 +145,6 @@ Declared in `project.godot` `[autoload]`:
    frames (the car is already in the tree and physics-processing); every
    end-of-generation spawn path resets `controls_locked` (`StageManager.setup`,
    `BenchmarkRunner.setup`), so the lock only governs the loading window.
-   During the track stage the overlay also shows a growing line of the track
-   above the loading text, driven by real generation progress via
-   `LoadingScreen.update_track_preview` (see [track.md](track.md)) and held once
-   generation completes. That line is drawn **grey**; during "Carving road into
-   terrain…" it fills **white** from the start as the bake walks the centerline
-   (`bake_track`'s `on_progress` → `LoadingScreen.set_carve_progress`), a spatial
-   progress indicator that ends fully white. During the "Precomputing chunks…" stage the preview
-   additionally draws each cached chunk as a dark square behind the track line
-   (`LoadingScreen.set_chunk_size` once, then `update_loaded_chunks` per yield
-   batch, fed from `world.gd`). The view stays framed on the track, so the outer
-   band of the corridor clips at the panel edge.
 3. Per-system scripts (`car.gd`, `drivetrain.gd`, `engine.gd`, `chase_camera.gd`,
    `terrain_manager.gd`, `hud.gd`, `engine_audio.gd`) read `Config.data` directly for
    their own tunables.

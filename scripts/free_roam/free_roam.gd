@@ -31,14 +31,16 @@ var wheel_particles: WheelParticles
 var region_banner: RegionBanner
 
 # How often the car's pose and condition are written to the world session, in seconds.
-const SAVE_EVERY_S := 5.0
-const MAP_EVERY_S := 0.25
-var _save_t := SAVE_EVERY_S
+var _save_t := 0.0
 var _map_t := 0.0
 var _odometer_m := 0.0
 var _last_xz := Vector2.ZERO
 var _last_pose := Transform3D.IDENTITY  # the car's pose as of the last physics tick (see save_world)
 var _has_pose := false
+# The world this scene was built on (WorldSession.generation). Once the profile's world is replaced
+# (a new world, a cloud download, the benchmark ending) this scene writes nothing more.
+var _generation := -1
+var _conflict_due := false  # a cloud sync conflict is waiting to be put to the player
 
 
 # The island's seed comes from the saved world, and must be set before the streamer builds its
@@ -49,11 +51,15 @@ func _enter_tree() -> void:
 	cfg.tree_render_distance_m = cfg.tree_render_distance_for(Platform.is_web(), Platform.is_touch())
 	var st: TerrainStreamer = get_node("Terrain")
 	if st.settings == null:
-		st.settings = FreeRoamSettings.new()
+		st.settings = cfg.free_roam.duplicate()
+	_save_t = st.settings.save_every_s
 	if WorldSession.has_world():
 		st.settings.world_seed = WorldSession.world_seed()
+	# Straight after the streamer builds its sites, before the rest stops and loot read their ids.
+	st.ready.connect(func() -> void: WorldSession.check_sites(WorldSession.sites_fingerprint(st.sites)),
+		CONNECT_ONE_SHOT)
 	if Benchmark.active:
-		st.settings = st.settings.duplicate()  # the scene's settings resource is shared with normal play
+		st.settings = st.settings.duplicate()
 		st.settings.straight_road_m = Benchmark.ROAD_M
 
 
@@ -64,6 +70,7 @@ func _ready() -> void:
 	if not WorldSession.has_world():
 		var idx := maxi(0, CarLibrary.index_of(_streamer.settings.car_id))
 		WorldSession.new_world(_streamer.settings.world_seed, String(CarLibrary.all()[idx]["id"]))
+	_generation = WorldSession.generation
 	WorldSession.adopt_old_stash()
 	owned = WorldSession.active_car()
 	# Fitted parts reach the car only through the fielding funnel's own keys (LootRules.fielded).
@@ -79,6 +86,7 @@ func _ready() -> void:
 	if respawn_now:
 		_car.damage.repair(Config.data)
 		_car.damage.engine_temp = 0.0
+		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP)  # the Respawn that quitting skipped
 	_streamer.focus = _car
 	wheel_particles = WheelParticles.new()
 	wheel_particles.name = "WheelParticles"
@@ -112,6 +120,9 @@ func _ready() -> void:
 	lamps.setup(_car)
 	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site())
 	_streamer.rest_lit_query = _rest_stops.is_lit
+	_rest_stops.lit.connect($LootDirector.site_lit)
+	for site: int in _rest_stops.lit_sites:
+		$LootDirector.site_lit(site)  # a saved world's stock follows what is lit
 	_rest_stops.lit.connect(WorldSession.light)
 	_rest_stops.respawn_point_changed.connect(WorldSession.set_last_site)
 	_rest_stops.respawned.connect(func(_site: int, _wreck: Vector3) -> void:
@@ -120,6 +131,8 @@ func _ready() -> void:
 	_rest_stops.respawned.connect($LootDirector.respawned)
 	_recovery.reset_done.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect(_rest_stops.car_teleported)
+	_recovery.reset_done.connect(_on_car_teleported)
+	_rest_stops.car_teleported_to.connect(_on_car_teleported)
 	_rest_stops.car_teleported_to.connect($TireMarks.break_ribbons)
 	_recovery.reset_done.connect($TireMarks.break_ribbons)
 	_rest_page.car_changed.connect(_reload_car)
@@ -139,16 +152,26 @@ func _ready() -> void:
 	tree_exiting.connect(save_world)
 	Save.flushing.connect(save_world)  # window close, app pause, browser tab hidden
 	Cloud.profile_replaced.connect(_on_profile_replaced)
+	Cloud.conflict_detected.connect(_on_conflict_detected)
 	_rest_page.map_requested.connect(func(site: int) -> void:
 		$WorldPages.show_map(_rest_page.return_from_map, site))
 	_minimap.open_requested.connect(open_full_map)
-	var spawn: Transform3D = _rest_stops.pose_at(WorldSession.last_site() if respawn_now else 0)  # facing down the road, the cabin behind
+	var spawn: Transform3D = _rest_stops.pose_at(_rest_stops.last_site if respawn_now else 0)  # facing down the road, the cabin behind
 	var saved: Variant = null if respawn_now else WorldSession.pose_transform()
 	if saved != null:
 		spawn = saved
 	_car.global_transform = spawn
 	var t0 := Time.get_ticks_msec()
-	_streamer.prefill()
+	if Platform.is_headless():
+		_streamer.prefill()
+	else:
+		var cover := _loading_cover()
+		cover.set_title("Building the island…")
+		_car.freeze = true
+		_car.controls_locked = true
+		_rest_stops.input_enabled = false
+		await _streamer.prefill_async()
+		_car.freeze = false
 	print("free roam: prefill %d ms" % (Time.get_ticks_msec() - t0))
 	if saved != null:
 		# Re-seat on the built ground, so a pose saved mid-air or on a since-retuned surface
@@ -168,10 +191,8 @@ func _ready() -> void:
 # rock and marker, and a look round the loaded ground, all behind a loading cover with the car held.
 func _warm_up() -> void:
 	_car.controls_locked = true
-	var cover := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
-	if cover == null:
-		cover = LoadingScreen.new()
-		add_child(cover)
+	_rest_stops.input_enabled = false
+	var cover := _loading_cover()
 	cover.set_title("Warming shaders…")
 	var cam := get_viewport().get_camera_3d()
 	# Every node with the warm_up()/clear_warm_up() pair (debris, tyre marks, flames, crowds, …).
@@ -188,6 +209,14 @@ func _warm_up() -> void:
 	cover.finish()
 	_car.controls_locked = false
 	_hand_over()
+
+
+func _loading_cover() -> LoadingScreen:
+	var cover := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
+	if cover == null:
+		cover = LoadingScreen.new()
+		add_child(cover)
+	return cover
 
 
 # A throwaway camera turns full circle above the car, then looks down from high up, so everything
@@ -212,6 +241,7 @@ func _look_around() -> void:
 
 # Boot is done: the pause menu, then the auto-driver or the title menu if either is due.
 func _hand_over() -> void:
+	_rest_stops.input_enabled = true
 	_pause.set_input_enabled(true)
 	if Benchmark.active:
 		start_benchmark()
@@ -223,8 +253,8 @@ func _hand_over() -> void:
 
 
 # The title menu over the paused world, as the game boots, with a camera circling the car. Continue
-# just closes it; a new world reloads the scene, so this world's car must not be saved into it on
-# the way out.
+# just closes it; a new world reloads the scene (and save_world, seeing the world replaced, writes
+# nothing into it on the way out).
 func show_title() -> TitleScreen:
 	get_tree().paused = true
 	_pause.set_input_enabled(false)
@@ -240,10 +270,6 @@ func show_title() -> TitleScreen:
 		$CameraManager.activate_current()
 		get_tree().paused = false
 		_pause.set_input_enabled(true)
-	var reload: Callable = title.enter_world
-	title.enter_world = func() -> void:
-		tree_exiting.disconnect(save_world)
-		reload.call()
 	layer.add_child(title)
 	add_child(layer)
 	return title
@@ -276,13 +302,29 @@ func _reload_car() -> void:
 	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
 
 
-# A cloud download replaced the save: boot again onto it, without saving this stale world over it.
+# A cloud download replaced the save: boot again onto it (save_world leaves the new world alone).
 func _on_profile_replaced() -> void:
 	WorldSession.fresh = false
-	if tree_exiting.is_connected(save_world):
-		tree_exiting.disconnect(save_world)
-	Save.flushing.disconnect(save_world)
 	Scenes.change_to(get_tree(), Scenes.TITLE)
+
+
+# A sync conflict found in the background (at boot, or on coming back to the app) is put to the
+# player as soon as nothing else is on screen: not under the title, a page or another modal.
+func _on_conflict_detected(_summary: Dictionary) -> void:
+	_conflict_due = true
+
+
+func _offer_conflict() -> void:
+	if get_tree().paused or not _pause.is_armed() or ConfirmPopup.any_open(get_tree()) != null:
+		return
+	_conflict_due = false
+	get_tree().paused = true
+	_pause.set_input_enabled(false)
+	var done := func() -> void:
+		get_tree().paused = false
+		_pause.set_input_enabled(true)
+	if ConflictPrompt.open(_pause, done) == null:
+		done.call()
 
 
 # The pause menu's Map / Stats rows: the page covers the frozen game and hands back on Back.
@@ -304,7 +346,7 @@ func _on_pause_extra(label: String) -> void:
 # The minimap was tapped (or M / gamepad Back): the whole map over the frozen game, and closing it
 # goes straight back to driving rather than to the pause menu.
 func open_full_map() -> void:
-	if get_tree().paused or $WorldPages.is_open() or _rest_stops.is_wrecked:
+	if get_tree().paused or $WorldPages.is_open() or _rest_stops.is_wrecked or not _pause.is_armed():
 		return
 	get_tree().paused = true
 	_pause.set_input_enabled(false)  # Esc / B belong to the map page while it's up
@@ -316,10 +358,11 @@ func _close_full_map() -> void:
 	_pause.set_input_enabled(true)
 
 
-# Write the car's place, condition and the drive clock to the world session.
-# The pose is read live while the car is in the tree, else from the per-tick cache (on exit paths).
+# Write the car's place, condition and the drive clock to the world session, and to disk (not the
+# cloud: none of it is progress). The pose is read live while the car is in the tree, else from the
+# per-tick cache (on exit paths).
 func save_world() -> void:
-	if not WorldSession.has_world():
+	if not WorldSession.has_world() or WorldSession.generation != _generation:
 		return
 	if _car.is_inside_tree():
 		_last_pose = _car.global_transform
@@ -331,21 +374,28 @@ func save_world() -> void:
 		WorldSession.save_car_state(_car.damage)
 	WorldSession.set_drive_time($BiomeDirector.drive_time)
 	if _odometer_m >= 1.0:
-		Save.add_lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M, int(_odometer_m))
+		Save.add_lifetime_stat(LifetimeStats.DISTANCE_DRIVEN_M, int(_odometer_m), false)
 		_odometer_m -= floorf(_odometer_m)
+	Save.save(false)
+
+
+func _on_car_teleported(p: Vector2) -> void:
+	_last_xz = p
 
 
 func _physics_process(delta: float) -> void:
+	if WorldSession.generation != _generation:
+		return
 	_last_pose = _car.global_transform
 	_has_pose = true
 	var p := Vector2(_car.global_position.x, _car.global_position.z)
 	var step := p.distance_to(_last_xz)
-	if step < 30.0:  # a teleport is not driving
+	if step < RoadSites.TELEPORT_M:
 		_odometer_m += step
 	_last_xz = p
 	_map_t -= delta
 	if _map_t <= 0.0:
-		_map_t = MAP_EVERY_S
+		_map_t = _streamer.settings.map_every_s
 		WorldSession.mark_driven(p.x, p.y)
 		var ring := _streamer.terrain.ring_index(p.x, p.y)
 		if WorldSession.reach_ring(ring):
@@ -354,7 +404,7 @@ func _physics_process(delta: float) -> void:
 			_minimap.refresh_markers()
 	_save_t -= delta
 	if _save_t <= 0.0:
-		_save_t = SAVE_EVERY_S
+		_save_t = _streamer.settings.save_every_s
 		save_world()
 
 
@@ -385,6 +435,8 @@ func start_benchmark() -> BenchmarkRunner:
 
 
 func _process(_delta: float) -> void:
+	if _conflict_due:
+		_offer_conflict()
 	_track_spare_time()
 	_place_water()
 	if $DebugStats.visible:
@@ -467,7 +519,7 @@ func _measured_viewports() -> Array[RID]:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
+	if event.is_action_pressed("reset_to_road") and not event.is_echo():
 		_recovery.reset_now()
 	elif event.is_action_pressed("toggle_perf_overlay") and OS.is_debug_build():
 		$DebugStats.visible = not $DebugStats.visible

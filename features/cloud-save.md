@@ -170,7 +170,11 @@ so **no `SCHEMA_VERSION` bump was needed**:
   local clean" and quietly discard a whole offline session.
 
 `Save.save()` sets `unsynced`; `Save.mark_synced()` clears it and writes
-immediately.
+immediately. `Save.save(false)` (the car's pose, the map driven, sites seen, the odometer —
+`free_roam.save_world` every 5 s) writes to disk WITHOUT setting `unsynced` or emitting
+`profile_changed`: none of it is progress, so it rides up with the next real change instead of
+costing an upload every few seconds of driving, and a device that only drove around can't raise
+a conflict against one that made progress.
 
 | Cloud | Local | Action |
 |---|---|---|
@@ -181,6 +185,7 @@ immediately.
 | `revision > cloud_revision` | unsynced, **world never driven** | **Auto-restore the cloud** (see below) |
 | `revision > cloud_revision` | unsynced | **Conflict → ask the player** |
 | `schema_version > SCHEMA_VERSION` | any | Refuse; do not push either |
+| `schema_version < SCHEMA_VERSION` | any | **Overwrite with local** at `revision + 1` (state `obsolete`): an old profile resets whatever its version (decision 34), so it is no side of a conflict |
 | blob unparseable | any | Report; never overwrite the remote copy |
 
 ### The one case that is resolved automatically: a wiped local save
@@ -206,7 +211,8 @@ falls through to the normal prompt rather than leaving sync silently blocked.
 ### The progress wipe must clear the cloud too
 
 `Settings -> Reset progress -> Wipe all progress` calls `Save.reset_new_game()`, which only
-clears THIS device. On its own that wipe silently undoes itself: the next pull sees
+clears THIS device (keeping `cloud_revision` / `cloud_uid`, so the wipe's push lands at the next
+revision above the old cloud copy rather than at revision 1 under it). On its own that wipe silently undoes itself: the next pull sees
 a clean local against an ahead cloud and downloads everything back — and with the
 wiped-local auto-restore above it does so without even asking. So `_wipe_progress`
 follows the local reset with `Cloud.publish_local_wipe()` →
@@ -252,7 +258,14 @@ already funnel through that one entry point, so the cloud path inherits
 tab-close and app-pause handling on every platform **with no new lifecycle
 plumbing**.
 
-Pull happens at sign-in and on `NOTIFICATION_APPLICATION_RESUMED`.
+Pull happens at sign-in and on `NOTIFICATION_APPLICATION_RESUMED`. A pull first waits out any
+upload still in flight (`_busy`), so it never compares against this device's own half-landed
+PATCH and calls the difference a conflict.
+
+**Nothing syncs during a benchmark.** `CloudSync._can_sync()` is false while `Benchmark.active`
+(its throwaway world sits in `Save.profile`), which covers every path at once — a debounced push,
+a retry, a resume pull, the exit flush — and `_push_inner` re-checks it after its token await,
+since it copies the profile only then.
 
 Failures back off exponentially (2 s → 60 s, jittered). The retry queue is a
 single "dirty" bit, not a list of operations — the payload is always the whole
@@ -300,9 +313,10 @@ correctly.
 A pull that REPLACES the local profile (first sign-in on a new device, or "Use cloud" on a
 conflict) changes the save out from under the running game. `CloudSync` emits
 **`profile_replaced`**, re-emitted by `Cloud`. `free_roam.gd` → `_on_profile_replaced` reboots
-through `title.tscn` onto the downloaded world, first unhooking its exit save so the stale world
-in memory can't be written over the one just adopted, and clearing `WorldSession.fresh` so the
-title offers Continue and confirms New World.
+through `title.tscn` onto the downloaded world, clearing `WorldSession.fresh` so the title offers
+Continue and confirms New World. Its exit save writes nothing: `Save.adopt_profile` emits
+`Save.replaced`, which moves `WorldSession.generation` on, and `save_world` only writes the world
+it was built on ([world-session.md](world-session.md)).
 
 ## Error handling
 
@@ -313,6 +327,7 @@ title offers Continue and confirms New World.
 | Refresh failed (network) | Retry; **do not** sign out |
 | 401 / 403 | Named plainly with the code — a rules misconfiguration, not a player error |
 | Cloud schema newer | Refuse to apply *or* overwrite; "update the game" |
+| Cloud schema older | Overwrite it with this device's profile |
 | Cloud blob unparseable | Report; leave the remote copy alone |
 | `Save.save_disabled` | Cloud sync still runs — blocked local storage is when it matters most |
 
@@ -416,9 +431,12 @@ nothing, and `cloud_sync` then refused every later push with "Resolve the sync c
 first." Cloud saving silently stopped, with the only thing that could clear it hidden
 behind a page the player had no reason to visit.
 
-**Only the account page raises it today** (the always-in-tree hub and the boot gate that
-also did are deleted), so a conflict reaches the player only if they happen to open
-Settings → Account. The account page's private copy of the resolution
+**Two hosts raise it.** The account page, while it is open; and free roam (`free_roam.gd` →
+`_offer_conflict`) for a conflict found in the background — at boot or on coming back to the
+app. Free roam latches `Cloud.conflict_detected` and opens the prompt on its pause menu as soon
+as nothing else is on screen (not under the title, a page, the pause menu or another modal),
+pausing the game and disarming the pause menu until it closes. "Decide later" clears the latch,
+so it is not asked again until the next conflict. The account page's private copy of the resolution
 handlers was DELETED rather than kept in parallel; keeping it is what let the behaviour
 drift in the first place.
 
@@ -522,7 +540,9 @@ data.
 - `tests/headless/test_cloud_sync.gd` — document encoding (incl. the
   integer-as-string trap), every row of the conflict matrix, all three
   resolutions, the `.conflict.bak`, failure classification, backoff growth and
-  cap, the update mask, and that the uploaded blob is not marked unsynced.
+  cap, the update mask, that the uploaded blob is not marked unsynced, an older-schema cloud copy
+  being overwritten, a pull waiting out an upload in flight, and nothing syncing during a benchmark.
+- `tests/headless/test_free_roam_shell.gd` → `test_a_background_sync_conflict_is_put_to_the_player`.
 - `tests/headless/test_text_field.gd` — the nav support (see [menus.md](menus.md)).
 - `tests/headless/test_save_manager.gd` — the two new profile fields, their
   backfill onto older profiles, `profile_changed` / `flushed`, `adopt_profile`

@@ -40,11 +40,8 @@ independent of the hosting scene. It's **MenuNav-wired** (keyboard + gamepad nav
 emits `finished`, and **`queue_free`s on dismiss** — the host doesn't track it. **New
 confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
 `ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause menu's
-quit-to-HQ confirm** (`PauseMenu.confirm_quit_to_hq`), the **hub's abandon-a-paused-run
-confirm** (`HubShell._start_run`, which owes the player the words "the attempt is used" —
-decision 48), and the **"Update available" prompt** on the native builds (see
-[update-check.md](update-check.md)). The HQ's engine-swap and detune-to-enter confirms
-were two more, and are deleted with it.
+quit-to-title confirm** (`PauseMenu.confirm_quit_to_title`) and the **"Update available"
+prompt** on the native builds (see [update-check.md](update-check.md)).
 
 **Body scrolls, buttons stay pinned.** A ConfirmPopup has no touch dismissal other than its
 own action buttons (`trigger_back` is reachable only from `ui_cancel`/`menu_back` — Escape
@@ -128,10 +125,9 @@ Every menu host needs to know whether to ignore menu input, for two reasons that
 to be asked separately (or not at all): the player is **typing**
 (`MenuNav.is_text_editing`), and **a modal owns the screen** (`ConfirmPopup.any_open`).
 `MenuNav.input_blocked(node)` folds both into one shared predicate, the same convention
-`is_text_editing` established. What forced it: `hq.gd`'s `_unhandled_input` had rolled its
-own version that allowlisted its two overlays but not `ConfirmPopup`, so station rows still
-fired behind an open popup — which is exactly what made the double-open above reachable.
-That host is deleted; the predicate is the rule for the next one.
+`is_text_editing` established. It exists because a host that
+allowlisted only its own overlays still fired rows behind an open popup — which is what made
+the double-open above reachable. The predicate is the rule for any new host.
 
 **The carve-out: a node inside the open modal is NOT blocked.** The popup builds a
 `MenuNav` of its own on its centring container (`ConfirmPopup._build`), and that nav has
@@ -168,11 +164,7 @@ that LEAVES the page (Back / Done / Close / Continue) goes in the action row.
 full minimum size — which is what stops a tall body pushing the action row off screen. The
 `dim` option makes it a true modal.
 
-The two hand-rolled builders this section used to describe — `hq.gd::_make_modal_overlay`
-(returning `[layer, body, footer, root]`) and the car park's equivalent — had
-already become thin wrappers over `MenuPage` before the hub was deleted, and went with it.
-Every page in the game is a `MenuPage` now, `HubShell`'s included
-(hub-shell.md (deleted with the free-roam pivot)).
+Every page in the game is a `MenuPage`.
 
 **Why it isn't optional.** Overlays are laid out against a logical canvas whose HEIGHT is
 fixed — `DisplayStretch.DESIGN_HEIGHT`, read from `project.godot`'s
@@ -200,14 +192,10 @@ a 3D picker, so nothing needs it. The rule it implies survives: **never wrap a
 tap-through overlay in the modal page shape.** The in-run HUD is the one live surface with
 that shape of concern ([hud.md](hud.md)).
 
-Pages on this shape today: every `HubShell` page, the pause menu's settings page, the
-account form, and the start line's overlay. `rally_detail.gd::RallyDetail.build` is still
-live and still built this way, though its old host (the map table) is deleted.
+Pages on this shape today: the title and rest-stop card pages, the pause menu's settings page and the account form.
 
 **Widths, not just heights.** A centred modal column asking for a fixed pixel width can
 also exceed the frame: a narrow/portrait phone aspect can leave well under 445 logical units wide.
-`RallyDetail.body_width(host, preferred, chrome)` clamps an authored desktop width to what
-the current canvas can actually show (`viewport width - chrome`, floored at 160). The
-`hq.gd::_modal_body_width` wrapper that most callers used is deleted; call `body_width`
-directly, or `MenuPage.set_body_width` with its result.
+`MenuPage.set_body_width(preferred)` takes a width the caller has already clamped to what
+the current canvas can actually show.
 

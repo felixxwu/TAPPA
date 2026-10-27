@@ -12,7 +12,7 @@ extends Node
 #     render distance, …) so individual features' cost can be isolated A/B-style;
 #   • the config override/restore lifecycle: start() snapshots the live
 #     GameConfig fields it touches, writes the benchmark stage + toggle values,
-#     and exit_to_hq() restores the snapshot — so a benchmark can never leak a
+#     and exit_to_title() restores the snapshot — so a benchmark can never leak a
 #     disabled feature (or its fixed seed) into normal play;
 #   • the frame cap / vsync override (uncapped fps is what exposes headroom);
 #   • the last run's results, for anything that wants to read them back.
@@ -37,7 +37,6 @@ const RNG_SEED := 90210
 const TOGGLES: Array[Dictionary] = [
 	{"key": "vegetation", "name": "Trees & bushes"},
 	{"key": "spectators", "name": "Spectators"},
-	{"key": "signs", "name": "Roadside signs"},
 	{"key": "barriers", "name": "Corner barriers"},
 	{"key": "distant_terrain", "name": "Distant terrain"},
 	{"key": "road_markings", "name": "Road markings"},
@@ -46,7 +45,7 @@ const TOGGLES: Array[Dictionary] = [
 	{"key": "uncap_fps", "name": "Uncap FPS (vsync off)"},
 ]
 
-# True from start() until exit_to_hq() — the run scene keys benchmark behaviour
+# True from start() until exit_to_title() — the run scene keys benchmark behaviour
 # (skip the stage flow, spawn the runner, force the perf overlay) off this.
 var active := false
 
@@ -117,7 +116,7 @@ func begin() -> void:
 	get_tree().paused = false  # reachable from the pause menu's Settings
 	# Capture the frame pacing only on first entry — a re-start from inside a
 	# running benchmark (pause menu → Settings → Start) must keep the ORIGINAL
-	# cap/vsync so exit_to_hq restores the pre-benchmark state, not our override.
+	# cap/vsync so exit_to_title restores the pre-benchmark state, not our override.
 	if not active:
 		_saved_max_fps = Engine.max_fps
 		if not Platform.is_headless():
@@ -146,7 +145,7 @@ func begin() -> void:
 # (re)load of the scene, because free roam writes the car's pose back into the world as it drives.
 func seat_world() -> void:
 	Save.save_disabled = true
-	var car_id := FreeRoamSettings.new().car_id
+	var car_id := Config.data.free_roam.car_id
 	var idx := maxi(0, CarLibrary.index_of(car_id))
 	WorldSession.new_world(WORLD_SEED, String(CarLibrary.all()[idx]["id"]))
 
@@ -187,17 +186,18 @@ func finish(stats: Dictionary) -> void:
 
 
 # Leave benchmark mode: restore the config snapshot + frame pacing and return to
-# HQ. Also the pause menu's quit path during a benchmark (pause_menu.gd).
-func exit_to_hq() -> void:
+# the title. Also the pause menu's quit path during a benchmark (pause_menu.gd).
+func exit_to_title() -> void:
 	end()
-	Scenes.change_to(get_tree(), Scenes.hub_path())
+	Scenes.change_to(get_tree(), Scenes.TITLE)
 
 
-# Everything exit_to_hq() does except the scene change.
+# Everything exit_to_title() does except the scene change.
 func end() -> void:
 	if active:
 		Save.profile = _saved_profile
 		Save.save_disabled = _saved_save_disabled
+		WorldSession.invalidate()  # the benchmark scene must not save its world into the real one
 	active = false
 	restore(Config.data)
 	Engine.max_fps = _saved_max_fps
@@ -211,7 +211,7 @@ func end() -> void:
 # covers every GameConfig field — see _snapshot_fields.
 const _OVERRIDDEN_FIELDS: Array[String] = [
 	"target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
-	"vegetation_enabled", "spectators_enabled", "signs_enabled", "barriers_enabled",
+	"vegetation_enabled", "spectators_enabled", "barriers_enabled",
 	"distant_terrain_enabled", "road_markings_enabled",
 	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled",
 	"tree_render_distance_m", "tree_render_distance_web_touch_m", "tree_cutout_mode",
@@ -231,7 +231,6 @@ func apply_overrides(cfg: GameConfig) -> void:
 
 	cfg.vegetation_enabled = get_option("vegetation")
 	cfg.spectators_enabled = get_option("spectators")
-	cfg.signs_enabled = get_option("signs")
 	cfg.barriers_enabled = get_option("barriers")
 	cfg.distant_terrain_enabled = get_option("distant_terrain")
 	cfg.road_markings_enabled = get_option("road_markings")

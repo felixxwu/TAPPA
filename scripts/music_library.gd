@@ -25,7 +25,7 @@ extends RefCounted
 const SONGS: Array[Dictionary] = [
 	{
 		"id": "echo_chamber",
-		"bpm": 168.0,  # authored (the HQ theme); every segment shares this tempo
+		"bpm": 168.0,  # authored (a menu theme); every segment shares this tempo
 		"segment_paths": [
 			"res://music/echochamber1.ogg",
 			"res://music/echochamber2.ogg",
@@ -85,21 +85,13 @@ const SONGS: Array[Dictionary] = [
 	},
 ]
 
-# Which song plays in which context. Driven by the live SCENE STATE (not by
-# transition hooks, which are fragile): the HQ scene gets a song from HQ_SONGS,
-# every other scene (loading, start line, driving, standings, podium …) gets a
-# RALLY song. Both the HQ song and the rally song are chosen at random by
-# MusicDirector at every loading screen (see MusicDirector._update_loading_edge)
-# and held for the whole HQ visit / event respectively. The swap latches at the
-# next 8-bar handoff, so it always lands beat-aligned.
-# The hub (title) scene path. Kept as an alias of the single source of truth (`Scenes.hub_path()`)
-# rather than a second literal. NOTE the context test is `is_hq_scene()`, which
-# delegates to `Scenes.is_hub_scene` — a hub shell must never be treated as a rally
-# context, or it would play a rally song as its hub theme.
-const HQ_SCENE := Scenes.TITLE
-# The pool the HQ context draws from. Any of these is a valid HQ song; the
-# director picks one per HQ visit. Order is not significant.
-const HQ_SONGS: Array[String] = ["echo_chamber", "skillz"]
+# Which song plays in which context. Driven by live state, not transition hooks: while a
+# node is in MENU_GROUP (the title screen) the menu pool plays, otherwise a RALLY song.
+# MusicDirector re-picks both at every loading screen and holds each for the whole
+# menu visit / drive; swaps latch at the next 8-bar handoff so they land beat-aligned.
+const MENU_GROUP := "menu_music"
+# Any of these is a valid menu song; the director picks one per menu visit.
+const MENU_SONGS: Array[String] = ["echo_chamber", "skillz"]
 # The pool the rally context draws from. Any of these is a valid rally song; the
 # director picks one per event. Order is not significant.
 const RALLY_SONGS: Array[String] = ["skillz", "deadlock", "nightandday", "threaded", "whoyouare"]
@@ -157,14 +149,6 @@ static func segment_count(id: String) -> int:
 	return (song["segment_paths"] as Array).size() if not song.is_empty() else 0
 
 
-# True when the given scene is a HUB (the one context with a fixed song). Every
-# other scene is a "rally" context that plays a randomly-chosen RALLY_SONGS entry.
-# Delegates to `Scenes.is_hub_scene` so the hub set is defined once, not once per
-# consumer.
-static func is_hq_scene(scene_path: String) -> bool:
-	return Scenes.is_hub_scene(scene_path)
-
-
 # A random rally song id, avoiding `exclude_id` when the pool has more than one
 # entry (so the same song never plays two events in a row). `exclude_id` may be
 # "" (nothing to avoid, e.g. the first pick).
@@ -172,11 +156,11 @@ static func random_rally_song(exclude_id := "") -> String:
 	return _random_from_pool(RALLY_SONGS, exclude_id)
 
 
-# A random HQ song id, avoiding `exclude_id` when the pool has more than one
-# entry (so the same song never plays two HQ visits in a row). `exclude_id` may
+# A random menu song id, avoiding `exclude_id` when the pool has more than one
+# entry (so the same song never plays two menu visits in a row). `exclude_id` may
 # be "" (nothing to avoid, e.g. the first pick).
-static func random_hq_song(exclude_id := "") -> String:
-	return _random_from_pool(HQ_SONGS, exclude_id)
+static func random_menu_song(exclude_id := "") -> String:
+	return _random_from_pool(MENU_SONGS, exclude_id)
 
 
 # Shared picker: a uniformly random entry of `pool`, avoiding `exclude_id` when

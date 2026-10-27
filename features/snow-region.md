@@ -6,14 +6,13 @@ is the outermost biome ring; on the dev stage it is a region's stage grid.
 **Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`, `tests/headless/test_lake_field.gd`
 
 - **Region entry:** `scripts/region_library.gd` → `REGIONS` id `"snow"`
-- **Handling seat:** `BiomeDirector.apply_handling` (free roam), `StageConfig.apply_event_config` (dev stage)
-- **Grip:** `Drivetrain.surface_tire_params`, `LapTimeModel._surface_grip`
+- **Handling seat:** `BiomeDirector.apply_handling`
+- **Grip:** `Drivetrain.surface_tire_params`
 - **Deep snow:** `shaders/ps1_terrain_snow.gdshader`, `WorldRuntime.apply_deep_snow`
   (via `world.gd._apply_deep_snow_ground`),
   `car.gd._apply_deep_snow_drag`
 - **Frozen lakes:** `LakeField.build` / `_add_ice_collider`
 - **Snowfall:** `WeatherLibrary` id `"snow"`, `WeatherField.spawn_snow`
-- **Dev-stage grid:** `RegionStageLibrary.STAGES["snow"]`
 - **Art:** `tools/gen_snow_textures.py` (ground/sky), `tools/gen_snow_trees.py` (conifers)
 - **Design:** `docs/superpowers/specs/2026-08-16-snow-region-design.md`
 
@@ -37,8 +36,7 @@ returns continuous weights (road 0..1, tarmac 0..1) and `Drivetrain._surface_ble
 resolves them over exactly three configured values. "Snow gravel" and "snow tarmac" are
 not new types, they are those same endpoints wanting **different μ**. Adding real types
 would have meant a third weight axis through `surface_at`, the blend, `tire_marks`,
-`wheel_particles`, `road_markings`, `barrier_layout`, `lap_time_model`, `ghost_car` and
-`car_performance` — and bought nothing, since snow-gravel and ordinary gravel never
+`wheel_particles`, `road_markings` and `barrier_layout` — and bought nothing, since snow-gravel and ordinary gravel never
 coexist on a stage.
 
 ### The config-block indirection
@@ -57,7 +55,7 @@ All three are **outside `LOOK_KEYS`**, for the reason `water_level` is: they are
 at stage setup, not by `world.gd`'s look pass after generation. `look_from` inheritance
 does not extend to them.
 
-API mirrors `has_water_level` / `water_level_of` — a `has_*` / `*_of` **pair**, so a
+API is a `has_*` / `*_of` **pair**, so a
 caller cannot mistake "authors nothing" for a real value in a language with no null:
 `has_surface_grip` / `surface_grip_of`, `has_deep_snow` / `deep_snow_of`,
 `has_frozen_water` / `frozen_water_of`.
@@ -69,23 +67,10 @@ have, instead of silently yielding 0.0 — which would read as "no grip at all".
 
 ### Seating it
 
-`StageConfig.apply_event_config` resolves the region off `event["region"]`, which
-`StageConfig.apply_event_config` already seats for `TrackGenParams.resolve_water_level`
-— so **no signature change was needed**. Because that function reloads the authored
-baseline and pins every omitted field to it, a session-less caller (free roam, benchmark,
-dev boot) and every non-snow rally get baseline grip and a zero deep-snow block
-automatically, and one stage's slippery override cannot leak into the next.
-
-Free roam (deleted) drew its random region **before** calling the funnel and seated
-it on the event, so a free-roam Alps stage drives like snow instead of looking like snow
-and driving like a summer forest.
-
-### Lap times scale with it
-
-`LapTimeModel._surface_grip` reads the same live `gravel_grip` / `tarmac_grip`, so the dev
-stage's PAR time scales with snow for free. **`CarPerformance` is unaffected by
-construction** — it benchmarks at a frozen `BENCHMARK_SURFACE_GRIP`, so car ratings cannot
-drift with a region's grip.
+`BiomeDirector.apply_handling` resolves the ring's region and re-seeds grip, deep snow and
+frozen water from the authored baseline on every ring change, so a non-snow ring gets
+baseline grip and a zero deep-snow block and one ring's slippery override cannot leak into
+the next.
 
 ### The region override is no longer the only snow lever
 
@@ -97,8 +82,6 @@ fitting winter rubber before an Alps event, and taking it off again for an aspha
 is a genuine per-rally decision rather than a one-way upgrade. The snow side of the rule is
 keyed off `GameConfig.ground_is_snow()`, which is simply `deep_snow_depth_m > 0.0` — i.e.
 "this region seated a deep-snow block", so there is no second snow flag to keep in sync.
-`LapTimeModel._surface_grip` runs the same `GameConfig.tire_surface_mult_for`, off the car's
-own meta.
 
 ## Relief: deliberately gentle
 
@@ -123,17 +106,7 @@ ever need more drama, reach for cliffiness, not amplitude.
 Consequence worth knowing: less relief means fewer deep hollows for the waterline to fill,
 so **frozen lakes are rarer here than they were**. The waterlines were left at -12/-13
 (the "up in the foothills" rung of the roster's ladder) rather than raised to chase the
-ice back, because a high sea over low relief floods the track — the pairing constraint in
-[region-stage-library.md](region-stage-library.md).
-
-The Alps also feel the lap-time model's **road gradient** term more than anywhere else
-(see [region-stage-library.md](region-stage-library.md) -> the QSS model). `G*sin(theta)` is a fixed
-subtraction from a drive budget that low grip has already shrunk, so 14 of the region's
-18 stages get slower once hills are modelled, up to about +2%. That term exists so a PAR
-time pays for a climb the player is paying for.
-
-Residual: the deep-snow drag has no term in the lap-time model, so a snow stage is slightly
-harder in practice than its PAR implies — the same asymmetry storm's crosswind has.
+ice back, because a high sea over low relief floods the track.
 
 Off-road wheel spray is square here, not blade-shaped: the region authors
 `grass_particle_square` (see [wheel-dust.md](wheel-dust.md)). Colouring the grass blade

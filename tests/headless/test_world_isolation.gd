@@ -14,7 +14,7 @@ extends GutTest
 #   * a settling car lands on the leaked scene's terrain/car colliders instead of
 #     the fixture's flat ground, so it rests at a crooked attitude with wildly
 #     asymmetric wheel loads and never truly comes to rest
-#     (test_live_refit_suspension's tyre-load comparison);
+#     (tyre-load comparisons);
 #   * a camera pick ray hits the leaked geometry before its intended target, so
 #     picking silently misses (hq.gd `_car_index_at`, exercised by
 #     the deleted test_menu_flow's HQ car-park tap).

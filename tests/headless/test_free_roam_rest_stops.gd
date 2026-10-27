@@ -76,6 +76,17 @@ func _park_on(site: int) -> void:
 	_car.linear_velocity = Vector3.ZERO
 
 
+# A saved id that isn't a rest stop on this island (a save from before a retune) is dropped.
+func test_restoring_drops_ids_that_are_not_rest_stops_here() -> void:
+	var st: TerrainStreamer = autofree(TerrainStreamer.new())
+	st.sites.kind = PackedInt32Array([RoadSites.Kind.REST, RoadSites.Kind.LOOT, RoadSites.Kind.REST])
+	var rs: RestStops = autofree(RestStops.new())
+	rs.streamer = st
+	rs.restore([0, 1, 2, 7], 7)
+	assert_eq(rs.lit_sites.keys(), [0, 2])
+	assert_eq(rs.last_site, 0, "a respawn point that isn't a lit rest stop falls back to spawn")
+
+
 func test_spawn_is_lit_from_the_start() -> void:
 	assert_true(_rest.is_lit(0))
 
@@ -160,7 +171,7 @@ func test_menu_select_while_stopped_at_a_rest_stop_opens_the_page() -> void:
 	_rest.set_physics_process(true)
 
 
-func test_menu_select_while_moving_through_a_rest_stop_opens_the_page() -> void:
+func test_menu_select_while_moving_through_a_rest_stop_does_not_open_the_page_until_slow() -> void:
 	var site := _a_rest_stop()
 	await _park_on(site)
 	_rest.set_physics_process(false)
@@ -168,6 +179,9 @@ func test_menu_select_while_moving_through_a_rest_stop_opens_the_page() -> void:
 	_car.linear_velocity = -_car.global_transform.basis.z * 30.0
 	watch_signals(_rest)
 	assert_eq(_rest.prompt_site(), site)
+	_rest._unhandled_input(_press("menu_select"))
+	assert_signal_not_emitted(_rest, "opened")
+	_car.linear_velocity = Vector3.ZERO
 	_rest._unhandled_input(_press("menu_select"))
 	assert_signal_emitted_with_parameters(_rest, "opened", [site])
 	_rest.set_physics_process(true)
@@ -390,13 +404,13 @@ func test_no_rest_stop_page_paints_an_opaque_backdrop() -> void:
 
 # Lighting a checkpoint shows the "Checkpoint reached" band and opens no page, and puts its biome
 # ring's cars and parts on sale.
-func test_lighting_a_checkpoint_shows_the_banner_and_unlocks_its_ring_in_the_shop() -> void:
+func test_lighting_a_checkpoint_shows_the_banner_and_the_director_unlocks_its_ring() -> void:
 	var site := _a_rest_stop()
 	var ring := clampi(_streamer.sites.ring[site], 0, _streamer.settings.ring_count - 1)
 	_rest.lit_sites.erase(site)
 	var revealed := WorldSession.list("revealed")
 	WorldSession.set_list("revealed", revealed.filter(func(r: Variant) -> bool: return int(r) != ring))
-	assert_false(_banner.loot.is_unlocked(ring))
+	assert_false((_scene.get_node("LootDirector") as LootDirector).is_unlocked(ring))
 	await _park_on(site)
 	_rest.step(0.01)
 	assert_true(_banner.is_showing_banner())
@@ -404,7 +418,7 @@ func test_lighting_a_checkpoint_shows_the_banner_and_unlocks_its_ring_in_the_sho
 	assert_not_null(sub, "the band says the car was repaired")
 	assert_eq(sub.text, UITheme.caps(CheckpointBanner.SUBTITLE))
 	assert_lt(sub.get_theme_font_size("font_size"), (_banner._band.find_child("Stack", true, false).get_child(0) as Label).get_theme_font_size("font_size"), "the subtitle is smaller than the title")
-	assert_true(_banner.loot.is_unlocked(ring), "the ring's stock is on sale")
+	assert_true((_scene.get_node("LootDirector") as LootDirector).is_unlocked(ring), "the ring's stock is on sale")
 	_banner._banner_done()
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -412,3 +426,57 @@ func test_lighting_a_checkpoint_shows_the_banner_and_unlocks_its_ring_in_the_sho
 	assert_false(get_tree().paused, "no page freezes the game")
 	WorldSession.set_list("revealed", revealed)
 
+
+
+# Enter / A is also the handbrake, so the page opens only when the car is nearly stopped at a stop,
+# and not at all before the host has handed the world over.
+func test_the_page_opens_only_when_nearly_stopped_and_after_hand_over() -> void:
+	await _park_on(_a_rest_stop())
+	_rest._on_site = _a_rest_stop()
+	assert_true(_rest.can_open(), "stopped at a stop")
+	_car.linear_velocity = Vector3(0.0, 0.0, -(Config.data.rest_stop_open_speed_mps + 5.0))
+	assert_false(_rest.can_open(), "a handbrake turn through a stop does not open it")
+	assert_false(_rest.open_here())
+	_car.linear_velocity = Vector3.ZERO
+	_rest.input_enabled = false
+	assert_false(_rest.open_here(), "nothing opens under the boot warm-up")
+	_rest.input_enabled = true
+	_rest._on_site = -1
+
+
+# The car giving up disarms pause, so the map's quick travel can't be started in the seconds
+# before the wreck page.
+func test_giving_up_disarms_the_pause_menu_until_the_respawn() -> void:
+	var pause := _scene.get_node("PauseMenu") as PauseMenu
+	pause.set_input_enabled(true)
+	_rest._on_gave_up()
+	assert_false(pause.is_armed())
+	_rest.respawn()
+	_rest.last_site = 0
+
+
+# After a Garage swap the page's `owned` is another car: tuning it must not retune the old body.
+func test_tuning_after_a_car_swap_does_not_retune_the_fielded_body() -> void:
+	var stub := RetuneCounter.new()
+	add_child_autofree(stub)
+	var real_car := _page.car
+	var real_owned := _page.owned
+	_page.car = stub
+	_page.owned = {"instance_id": 1}
+	_page.open(0)
+	_page._on_tuned()
+	assert_eq(stub.calls, 1, "the fielded car is retuned")
+	_page.owned = {"instance_id": 2}
+	_page._on_tuned()
+	assert_eq(stub.calls, 1, "another car's tuning leaves the fielded body alone")
+	_page.close()
+	_page.car = real_car
+	_page.owned = real_owned
+
+
+class RetuneCounter:
+	extends VehicleBody3D
+	var calls := 0
+
+	func retune(_owned: Dictionary) -> void:
+		calls += 1

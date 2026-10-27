@@ -30,9 +30,9 @@ func after_all() -> void:
 
 
 func before_each() -> void:
-	# Every test mutates only the live config via retune/refit; re-field the fixture car
+	# Every test mutates only the live config via retune; re-field the fixture car
 	# from a clean owned dict so each test starts from the same pre-tune baseline snapshot
-	# (retune/refit_upgrades re-derive from the baseline captured at fielding, so this is
+	# (retune re-derives from the baseline captured at fielding, so this is
 	# the reset point — without it, one test's tuning would leak into the next).
 	_car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {}, "upgrades": {}})
 
@@ -55,7 +55,7 @@ func test_retune_is_idempotent_and_does_not_compound() -> void:
 
 
 # Field the given owned state onto a FRESH car and return its live config — the ground
-# truth that any live re-derive (retune/refit_upgrades) of the same final state must
+# truth that any live re-derive (retune) of the same final state must
 # match. Comparing two independently-built configs keeps these tests value-agnostic (no
 # pinned tunable number), per the project testing rules.
 # NOTE: returns the LIVE config object, which for a main.tscn car is the shared
@@ -98,7 +98,7 @@ func test_refit_then_retune_matches_a_fresh_field_no_compounding() -> void:
 	# Field WITH a turbo AND a partial detune, then remove the turbo and tune back to
 	# full power — the exact start-line flow that surfaced the bug.
 	_car.apply_owned(_owned(["fx_turbo_big"], [], {"engine_detune": 0.7}))
-	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {"engine_detune": 0.7}))
+	_car.retune(_owned(["fx_turbo_big"], ["fx_turbo_big"], {"engine_detune": 0.7}))
 	var final_state := _owned(["fx_turbo_big"], ["fx_turbo_big"], {"engine_detune": 1.0})
 	_car.retune(final_state)
 	assert_almost_eq(_car.config.peak_torque,
@@ -110,7 +110,7 @@ func test_refit_then_retune_matches_a_fresh_field_no_compounding() -> void:
 # doesn't own): removing an upgrade then re-tuning grip must not compound.
 func test_refit_then_retune_grip_matches_a_fresh_field() -> void:
 	_car.apply_owned(_owned(["fx_turbo_big"], [], {"grip_balance": 0.6}))
-	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {"grip_balance": 0.6}))
+	_car.retune(_owned(["fx_turbo_big"], ["fx_turbo_big"], {"grip_balance": 0.6}))
 	var final_state := _owned(["fx_turbo_big"], ["fx_turbo_big"], {"grip_balance": -0.3})
 	_car.retune(final_state)
 	var fresh := _fresh_field_values(final_state)
@@ -127,7 +127,7 @@ func test_refit_then_retune_grip_matches_a_fresh_field() -> void:
 # aero, must land on a fresh field — the shared field is the ordering-sensitive one.
 func test_refit_then_retune_aero_downforce_matches_a_fresh_field() -> void:
 	_car.apply_owned(_owned(["fx_turbo_big", "fx_aero"], [], {"aero_balance": 0.8}))
-	_car.refit_upgrades(_owned(["fx_turbo_big", "fx_aero"], ["fx_turbo_big"], {"aero_balance": 0.8}))
+	_car.retune(_owned(["fx_turbo_big", "fx_aero"], ["fx_turbo_big"], {"aero_balance": 0.8}))
 	var final_state := _owned(["fx_turbo_big", "fx_aero"], ["fx_turbo_big"], {"aero_balance": -0.4})
 	_car.retune(final_state)
 	var fresh := _fresh_field_values(final_state)
@@ -142,7 +142,7 @@ func test_retune_then_refit_matches_a_fresh_field() -> void:
 	_car.apply_owned(_owned(["fx_turbo_big"], [], {"engine_detune": 1.0}))
 	_car.retune(_owned(["fx_turbo_big"], [], {"engine_detune": 0.5}))
 	var final_state := _owned(["fx_turbo_big"], ["fx_turbo_big"], {"engine_detune": 0.5})
-	_car.refit_upgrades(final_state)
+	_car.retune(final_state)
 	assert_almost_eq(_car.config.peak_torque,
 		float(_fresh_field_values(final_state)["peak_torque"]), 0.01,
 		"retune-then-refit lands on a fresh field's power (no stale baseline)")
@@ -152,11 +152,11 @@ func test_retune_then_refit_matches_a_fresh_field() -> void:
 # once at fielding and every re-derive starts from it.
 func test_repeated_refit_does_not_drift() -> void:
 	_car.apply_owned(_owned(["fx_turbo_big"], [], {}))
-	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {}))  # off
-	_car.refit_upgrades(_owned(["fx_turbo_big"], [], {}))               # on
-	_car.refit_upgrades(_owned(["fx_turbo_big"], ["fx_turbo_big"], {}))  # off
+	_car.retune(_owned(["fx_turbo_big"], ["fx_turbo_big"], {}))  # off
+	_car.retune(_owned(["fx_turbo_big"], [], {}))               # on
+	_car.retune(_owned(["fx_turbo_big"], ["fx_turbo_big"], {}))  # off
 	var final_state := _owned(["fx_turbo_big"], [], {})                 # on
-	_car.refit_upgrades(final_state)
+	_car.retune(final_state)
 	var fresh := _fresh_field_values(final_state)
 	assert_almost_eq(_car.config.peak_torque, float(fresh["peak_torque"]), 0.01,
 		"peak_torque matches a fresh field after cycling the turbo (no drift)")
@@ -208,7 +208,7 @@ func test_refitting_to_stock_tyres_matches_a_car_that_never_had_them() -> void:
 	_car.apply_owned(_owned(["fx_snow_tires"], [], {}))
 	assert_ne(_car.config.tire_snow_grip_mult, float(always_stock["tire_snow_grip_mult"]),
 		"setup: the fitted compound should move the surface term, or this proves nothing")
-	_car.refit_upgrades(stock_state)
+	_car.retune(stock_state)
 
 	for field in ["tire_snow_grip_mult", "tire_tarmac_grip_mult",
 			"wheel_friction_slip_front", "wheel_friction_slip_rear"]:
@@ -223,7 +223,7 @@ func test_refitting_onto_a_surface_tyre_matches_a_fresh_field() -> void:
 	var fresh := _fresh_field_values(snow_state)
 
 	_car.apply_owned(_owned([], [], {}))
-	_car.refit_upgrades(snow_state)
+	_car.retune(snow_state)
 
 	for field in ["tire_snow_grip_mult", "tire_tarmac_grip_mult",
 			"wheel_friction_slip_front", "wheel_friction_slip_rear"]:
@@ -238,7 +238,7 @@ func test_a_parked_tyre_is_inert() -> void:
 	var parked := _owned(["fx_snow_tires"], ["fx_snow_tires"], {})
 	var always_stock := _fresh_field_values(_owned([], [], {}))
 	_car.apply_owned(_owned(["fx_snow_tires"], [], {}))
-	_car.refit_upgrades(parked)
+	_car.retune(parked)
 	assert_almost_eq(_car.config.tire_snow_grip_mult,
 		float(always_stock["tire_snow_grip_mult"]), 0.0001,
 		"a disabled tyre must not keep applying its surface bonus")

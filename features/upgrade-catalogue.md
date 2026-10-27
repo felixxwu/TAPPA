@@ -18,7 +18,6 @@ What it owns:
 | `_reseed_globals` | Restores every `reseed` row's fields from the authored baseline, first thing |
 | `_cfg_set` | The one loud writer onto a live `GameConfig` |
 | `apply` | Walks the active effects and writes them (pipeline step 2) |
-| `effective_meta` / `grip_meta` | The power-to-weight and grip mirrors of the same table |
 | `stock_drive_mode` / `resolve_drive_override` | The drive-mode resolver, which never depended on the catalogue |
 
 **Distinguish from TUNING.** Tuning ([tuning.md](tuning.md)) is free, reversible per-car
@@ -46,18 +45,15 @@ than re-plumbing five call sites.
 
 ## The `EFFECTS` table
 
-The single source of truth for what each effect key does, so `apply` (live config) and
-`effective_meta` (power-to-weight inputs) cannot silently drift. Each row carries:
+The single source of truth for what each effect key does, so adding an effect means adding one row. Each row carries:
 
 | Field | Meaning |
 | --- | --- |
 | `field` | The CAR-META spelling of the quantity (a key on the car dict) |
 | `cfg_fields` | The LIVE-CONFIG spelling(s), when the two vocabularies diverge |
 | `op` | `mult` / `add` / `set` / `mult_floor` / `install_induction` / `write_fields` |
-| `feeds_pw` | Whether `effective_meta` mirrors it onto power-to-weight |
-| `feeds_grip` | Whether `grip_meta` folds it in |
 | `reseed` | Whether the row's config fields are restored from the authored baseline first |
-| `enable` / `clears` / `gain_key` | Induction-only: the flag to switch on, the rival's state to reset, the sub-key `effective_meta` rates at peak boost |
+| `enable` | Induction-only: the config flag to switch on |
 | `floor_field` | `mult_floor`-only: the GameConfig field the clamp floor is read from (`UpgradeLibrary._floor_value`) |
 
 **A `mult`/`add` row may target more than one config field, under a different name.**
@@ -113,27 +109,6 @@ writes a GLOBAL tunable on the long-lived `Config.data` gets no such re-seed: it
 (`Config.authored_value` — see [configuration.md](configuration.md)) before anything is
 applied. No row needs it today.
 
-## Effective stats (display)
-
-`effective_meta(owned_car, meta)` returns a copy of a car's CarLibrary entry with the
-power-to-weight inputs (`peak_torque`, `mass`) adjusted by its active effects. Pure — it
-never touches the authored `CARS` entry. A turbo is **rated at peak boost**: `peak_torque`
-is multiplied by `(1 + turbo_boost_gain)` (the stock engine's gain, or a fitted kit's), so
-a turbocharged car reads as more powerful.
-
-What it feeds today: every displayed power figure, and `CarPerformance.merged_meta`.
-
-### `grip_meta` — the same copy, plus the grip-feeding fields
-
-`grip_meta(owned_car, meta)` is `effective_meta` with every active effect's **`feeds_grip`**
-contribution folded in on top: downforce (the `add` arm) and the tyre-compound multipliers
-(the `mult` arm). It is a separate call rather than a widening of `effective_meta` because
-the two answer different questions — `effective_meta` mirrors only the
-power-to-weight-feeding effects, since p/w is what a rating is judged on and **grip must
-not move a car's class**. A grip READOUT passes `grip_meta`; every rating/eligibility path
-passes `effective_meta`. `feeds_grip` is a second flag rather than a re-use of `feeds_pw`
-for exactly that reason: the two sets must not merge.
-
 ## Drivetrain conversion
 
 The one piece of the old slot model that survives whole, because it never depended on the
@@ -143,7 +118,7 @@ catalogue.
   to.
 - `resolve_drive_override(owned_car)` — the player's chosen layout (0/1/2), or `-1` for
   "use stock". A bare range check against `Drivetrain.DriveMode.values()`, no purchase
-  gate. The single resolver used by physics (`car.gd`) and display (`effective_meta`).
+  gate. The single resolver used by physics (`car.gd`).
 
 **In free roam a conversion is a found drivetrain kit.** `LootRules.fielded` writes the kit's
 layout as `drivetrain_override` on the duplicate a car is fielded with, never on the persisted
@@ -161,8 +136,7 @@ prerequisite gates, the `Save` buy/install paths, the upgrades grid and reveal, 
 
 `tests/headless/test_upgrade_library.gd` covers the table's contract (every target name is
 a real `GameConfig` property; every fixture-authored effect key has a row), each `op` arm
-against a synthetic effect set, the `effective_meta` / `grip_meta` split (a grip effect
-must NOT move power-to-weight), and the drive-mode resolver.
+against a synthetic effect set, and the drive-mode resolver.
 
 Per CLAUDE.md, none of them pin a magnitude: the fixtures author their own effect values
 (`tests/headless/upgrade_fixtures.gd`), and the shipped `GameConfig` numbers the real

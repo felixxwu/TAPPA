@@ -4,14 +4,11 @@ extends CanvasLayer
 # Tests: tests/headless/test_free_roam_rest_stops.gd — extend in the same change.
 # Lighting a checkpoint for the first time: a Dark Souls style "Checkpoint reached" band across the
 # screen, with a small "Damage repaired" line under it (passing a checkpoint fully heals the car,
-# RestStops._pass), while the car drives on. Its biome's cars and parts go on sale at every checkpoint.
+# RestStops._pass), while the car drives on.
 
-const FADE_S := 0.6
-const HOLD_S := 3.0
 const SUBTITLE := "Damage repaired"
 
 @export var rest_stops: RestStops
-@export var loot: LootDirector
 
 var _band: Control
 
@@ -30,17 +27,17 @@ func is_showing_banner() -> bool:
 	return _band != null
 
 
-func show_reached(site: int) -> void:
-	_reveal_ring(site)
+func show_reached(_site: int) -> void:
 	if _band != null:
 		_band.queue_free()
 	_band = build_band("Checkpoint reached", SUBTITLE)
 	add_child(_band)
 	_band.modulate.a = 0.0
+	var fade := Config.data.free_roam.banner_fade_s
 	var tween := _band.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-	tween.tween_property(_band, "modulate:a", 1.0, FADE_S)
-	tween.tween_interval(HOLD_S)
-	tween.tween_property(_band, "modulate:a", 0.0, FADE_S)
+	tween.tween_property(_band, "modulate:a", 1.0, fade)
+	tween.tween_interval(Config.data.free_roam.banner_hold_s)
+	tween.tween_property(_band, "modulate:a", 0.0, fade)
 	tween.tween_callback(_banner_done)
 
 
@@ -83,11 +80,3 @@ func _banner_done() -> void:
 	if _band != null:
 		_band.queue_free()
 		_band = null
-
-
-# Lighting a checkpoint puts its biome ring's stock on sale.
-func _reveal_ring(site: int) -> void:
-	if rest_stops == null or loot == null:
-		return
-	var ring := clampi(rest_stops.streamer.sites.ring[site], 0, rest_stops.streamer.settings.ring_count - 1)
-	loot.unlock(ring)

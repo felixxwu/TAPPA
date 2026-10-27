@@ -15,13 +15,13 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `shift_down` | Q | — | Left bumper (LB/L1) | Manual downshift |
 | `handbrake` | Space | — | A / Cross (South) | Rear-axle handbrake (drift) |
 | `nitrous` | Left Shift | — | X / Square (West) | Held: spray nitrous while on throttle (see [nitrous.md](nitrous.md)) |
-| `cycle_camera` | C | R | Y / Triangle (North) | Cycle through cameras |
+| `cycle_camera` | C | — | Y / Triangle (North) | Cycle through cameras |
+| `reset_to_road` | R | — | Right stick click (R3) | Free roam: put the car back on the nearest road (`free_roam.gd._unhandled_input` → `RoadRecovery.reset_now`) |
 | `look_left` / `look_right` | — | — | Right stick ← / → | Chase cam only: swivel the camera round the car (free look; the mouse and a touch drag do the same, see [camera.md](camera.md) › *Free look*). Not rebindable |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
 | `toggle_map` | M | — | Back | Free roam: opens the full map while driving (`MiniMap._unhandled_input` → `free_roam.gd → open_full_map`) and closes it again (`WorldPages._unhandled_input`). Out of `InputRemap.ACTIONS` (that list is the driving controls) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
-| `skip_to_finish` | F | — | — | Dev: instantly complete the current event |
 | `menu_up` | W | ↑ | D-pad up | Menu navigation: move up |
 | `menu_down` | S | ↓ | D-pad down | Menu navigation: move down |
 | `menu_left` | A | ← | D-pad left | Menu navigation: move left |
@@ -43,17 +43,15 @@ is still present but unreachable from the settings UI.
 
 There is **no direct "reset car" input** — resetting the car onto the track is only
 available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →
-`_on_reset_to_track_pressed`, routed through `world.gd`). The R key and the gamepad
-North button (Y/Triangle) that used to reset now cycle the camera instead.
+`_on_reset_to_track_pressed`, routed through `world.gd`). In free roam R / R3 (`reset_to_road`) puts the car on the nearest road.
 
 ## Rebinding (settings → Key bindings)
 
 Only the driving/menu actions listed in `scripts/input_remap.gd`'s `ACTIONS` can be
 **rebound**: `accelerate`, `brake_reverse`, `steer_left`, `steer_right`, `shift_up`,
-`shift_down`, `handbrake`, `nitrous`, `cycle_camera` and `pause`. Everything else in the
+`shift_down`, `handbrake`, `nitrous`, `cycle_camera`, `reset_to_road` and `pause`. Everything else in the
 table above is **not** rebindable — the keyboard-only debug overlays
-(`toggle_debug_arrows`, `toggle_perf_overlay`), the dev-only actions (`skip_to_finish`,
-`reload_config`), `toggle_map` (see above),
+(`toggle_debug_arrows`, `toggle_perf_overlay`), the dev-only action (`reload_config`), `toggle_map` (see above),
 and the `ui_*`/`menu_*` navigation actions are all excluded — on
 the **Key bindings** page of the shared settings menu (`scripts/settings_menu.gd`) —
 reachable from the title-screen Settings and the in-run pause menu alike. Each action
@@ -106,12 +104,10 @@ Deck / PlayStation, button glyphs follow the SDL standard layout):
   gearbox option — the transmission is always automatic), face buttons cover the
   remaining toggles, and the D-pad cycles drive mode.
 
-The debug overlays (`toggle_debug_arrows`, `toggle_perf_overlay`) and the
-`skip_to_finish` event cheat are intentionally keyboard-only. `toggle_debug_arrows`
-(**H**) and `skip_to_finish` (**F**) are further gated on
-`SettingsMenu.dev_tools_enabled()`, which defaults to **true** — the keys work in
-release/web exports too, not just debug builds. See [debug-tools.md](debug-tools.md)
-for skip-to-finish.
+The debug overlays (`toggle_debug_arrows`, `toggle_perf_overlay`) are intentionally
+keyboard-only. `toggle_debug_arrows` (**H**) is further gated on
+`SettingsMenu.dev_tools_enabled()`, which defaults to **true** — the key works in
+release/web exports too, not just debug builds.
 
 ## Touch / mobile
 

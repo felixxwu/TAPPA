@@ -74,7 +74,7 @@ func _draw() -> void:
 func _box(rect: Rect2, fill: Color, label: String) -> void:
 	draw_rect(rect, fill, true)
 	draw_rect(rect, _BORDER, false, 1.0)
-	_glyph(rect.position + rect.size * 0.5, label, int(rect.size.y * 0.42), _TEXT)
+	_glyph(rect.position + rect.size * 0.5, label, _TEXT)
 
 
 # The bottom-left steering slider: a track with a centred thumb.
@@ -108,9 +108,9 @@ func _simple_halves(w: float, h: float) -> void:
 	draw_rect(left, _SHADE, true)
 	draw_rect(right, _SHADE, true)
 	draw_line(Vector2(w * 0.5, top), Vector2(w * 0.5, h - 2), _BORDER, 1.0)
-	_glyph(Vector2(w * 0.25, top + (h - top) * 0.5), "<", int(h * 0.3), _STEER)
-	_glyph(Vector2(w * 0.75, top + (h - top) * 0.5), ">", int(h * 0.3), _STEER)
-	_glyph(Vector2(w * 0.5, h * 0.12), "BOTH = BRAKE", int(h * 0.11), _BRAKE)
+	_glyph(Vector2(w * 0.25, top + (h - top) * 0.5), "<", _STEER, 2)
+	_glyph(Vector2(w * 0.75, top + (h - top) * 0.5), ">", _STEER, 2)
+	_glyph(Vector2(w * 0.5, h * 0.12), "BOTH = BRAKE", _BRAKE)
 
 
 # A tilted mini-phone with a rotation hint, on the left.
@@ -127,18 +127,19 @@ func _tilt_motif(w: float, h: float) -> void:
 	for i in pts.size():
 		draw_line(pts[i], pts[(i + 1) % pts.size()], _STEER, 1.5)
 	# A double-headed arrow above it = "rock left/right".
-	_glyph(Vector2(c.x, h * 0.2), "< >", int(h * 0.16), _STEER)
-	_glyph(Vector2(c.x, h * 0.9), "TILT", int(h * 0.13), _TEXT)
+	_glyph(Vector2(c.x, h * 0.2), "< >", _STEER)
+	_glyph(Vector2(c.x, h * 0.9), "TILT", _TEXT)
 
 
 # "AUTO GAS" caption (top-left) for the throttle-automatic schemes.
 func _auto_tag(_w: float, h: float) -> void:
-	_glyph(Vector2(h * 0.95, h * 0.12), "AUTO GAS", int(h * 0.11), _GAS)
+	_glyph(Vector2(h * 0.95, h * 0.12), "AUTO GAS", _GAS)
 
 
-# Draw `text` centred on `center` at the given font size.
-func _glyph(center: Vector2, text: String, fs: int, color: Color) -> void:
-	var font := ThemeDB.fallback_font
+# Draw `text` centred on `center` in the house font, at FONT_SIZE times `scale`, on whole pixels.
+func _glyph(center: Vector2, text: String, color: Color, scale := 1) -> void:
+	var font := UITheme.font()
+	var fs := UITheme.FONT_SIZE * scale
 	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	draw_string(font, Vector2(center.x - tw * 0.5, center.y + fs * 0.35),
+	draw_string(font, Vector2(roundf(center.x - tw * 0.5), roundf(center.y + fs * 0.35)),
 		text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)

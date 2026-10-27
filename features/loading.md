@@ -27,13 +27,12 @@ is the single definition of "an overlay is up AND we're not headless", shared by
 | stage label | what it does | where |
 |---|---|---|
 | Building terrain | `TerrainManager.build_initial()` — the 7x7 ring, pulled from the cache | `terrain_manager.gd` |
-| Generating track | DFS corner search — **skipped when a cached stage exists** | `track_generator.gd::generate` / `TrackCache` |
+| Generating track | DFS corner search, run live every load | `track_generator.gd::generate` |
 | Carving road into terrain | unified cliff/road distance-field pass, then the **final preview water repaint** — the first one sampled from the baked (cliff-dropped) terrain rather than pure noise, placed here so it shows through the precompute below (see [lakes.md](lakes.md) → "Three water passes") | `terrain_manager.gd::bake_track` |
 | Precomputing chunks | per-chunk grid + LOD prebake over the corridor | `terrain_manager.gd::cache_chunk` |
 | Scattering trees / bushes | foliage scatter + road-footprint rasterisation | `world.gd::_build_foliage` |
 | Filling lakes | basin flood + water texture bake | `world.gd::_build_lakes` |
-| Placing signs | roadside turn arrows (~16–22 per stage) | `world.gd::_build_signs` |
-| Placing props | spectators, arches, opponent wreck, persistent managers | `world.gd::_generate_track` |
+| Placing props | spectators, arches, persistent managers | `world.gd::_generate_track` |
 | Warming shaders | surface-FX warm-up + `_prewarm_corridor` | `world.gd::_prewarm_corridor` |
 
 **These stage labels are perf-log-only.** `_stage(label)` still `print()`s each one (with
@@ -42,7 +41,7 @@ longer reaches the player. `LoadingScreen`'s visible line is a random pick from
 `LoadingTips.TIPS` (`scripts/loading_tips.gd`), drawn once in `_init()` and then **cycled
 to a fresh draw every 7 seconds** (`LoadingScreen._TIP_CYCLE_SEC`) for as long as the
 overlay is up, so a long load doesn't sit on one sentence for its whole duration. Each tip
-is a short, standalone gameplay fact (aero balance, turbo lag, engine swaps, …) verified
+is a short, standalone gameplay fact (aero balance, turbo lag, checkpoints, what a wreck costs, …) verified
 against the mechanic it names — every entry must read correctly in ISOLATION, since the
 player only ever sees one at a time. `_build_lakes` / `_build_foliage` / `_build_signs`
 dropped their now-unused `loading: LoadingScreen` parameters when the forwarding call was
@@ -67,26 +66,6 @@ count means this holds even though the UI font (Jersey10) is **not** monospace �
 version relied on monospace character padding and visibly shifted the headline when the UI
 font changed away from the old (monospace) Syne Mono. `set_title()` strips a trailing "…"
 from the supplied text so the static character and the animated dots don't stack.
-
-## The stage counter
-
-`world.gd::_ready` calls `LoadingScreen.set_stage(index, total)` right after
-`DrivingContext.apply_stage_config` has seated the live stage, before any generation
-starts. That swaps the headline for `"Loading stage 2 of 3…"` (uppercased by
-`UITheme.caps` like every other loading line), so a multi-stage rally tells the player how
-far through it they are while they wait.
-
-`total` is the RUN'S OWN stage count (`RunSession.stage_count()`), **not** a constant:
-a region run is 8 stages, a challenge's count comes from its period. A total of 1 or less
-is a no-op and keeps the default headline — "stage 1 of 1" is noise, and implies a series
-that is not there. The index is clamped, because it comes from live session state that sits AT
-the total once the last stage is done.
-
-This line used to carry a **wet-stage tell** instead (`set_weather` → `"Loading stage…
-rain"`). The two cannot share the headline — with weather owning it, the stage number could
-only ever have shown on dry stages — so the tell and its `loading_tell` weather-table field
-were both removed. Weather still announces itself in the world; see `weather.md`, and
-`rendering.md` for the in-stage look.
 
 ## Measuring it
 
@@ -161,22 +140,16 @@ into `_saved_max_fps` and a transient value must never land there.
 > which yields every 2 search steps. Any per-stage timing captured under a cap is
 > distorted unevenly, not uniformly. See `todo/mobile-web-performance.md` item 1.1.
 
-## Cached vs live generation
+## Stage harness vs free roam
 
-A **run stage** (`RunSession.current_stage_params()` non-empty) resolves through
-`TrackCache` and **skips the DFS entirely**. The `for_config` path
-(`generate_optional_cached`) also hits the lockfile for the **benchmark stage** and the
-**default-config boot**, which are baked.
+The stage harness (`main.tscn` / `world.gd`, dev + physics tests only) runs the DFS and
+every stage above live on each load; nothing is cached on disk.
 
-> **Free roam was unbakeable and always paid the live DFS.** Its entry point randomised
-> `track_seed`, `track_water_level_m` *and* `terrain_layer1_amplitude` every time, and all
-> three feed the cache key — so it missed by construction. Free roam is deleted (decision
-> 25), so every load in the game is now a cached one; the lesson stays, because anything
-> that randomises a cache-key field re-introduces the same profile. **Always say which
-> kind of load you measured.**
-
-`data/track_cache.json` is the lockfile; `TrackCache.CACHE_VERSION` plus
-`TrackGenerator.constants_fingerprint()` invalidate it. Regenerate with `./cache_all.sh`.
+Free roam (`free_roam.tscn` / `free_roam.gd`) has no track and no DFS: it streams the island
+in chunks (`TerrainStreamer`). Boot calls `TerrainStreamer.prefill_async()` behind the
+"Building the island…" cover — the same queue as `prefill()`, run in `prefill_slice_ms`
+slices with a frame between so the cover keeps drawing; headless boots call the blocking
+`prefill()`. Always say which kind of load you measured.
 
 ## The `load_finished` hook
 

@@ -57,19 +57,12 @@ const DEFAULT_TREE_MIX: Array = [
 # `"look_from": "<other_region_id>"` and then only the keys that DIFFER — that is this
 # table's authoring idiom, not internal plumbing. Worked examples below: `taiga` is home
 # with its own trees, `home_coast` is home with its own (much higher) waterline. `water_level` is
-# never inherited — every corner authors its own (see water_level_of). Ids are
+# never inherited — every corner authors its own (a corner's `water_level` is its own). Ids are
 # load-bearing: "home" is hardcoded in world.gd._current_region_look(), so never rename it.
 #
-# ADDING A ROW HERE IS A THREE-PART CHANGE, and part 2 is the one that ships half-done: a
-# REGIONS entry is INERT alone — a matching key in RegionStageLibrary.STAGES is the only
-# thing that ever selects a region, so an unstaged one renders nowhere.
+# ADDING A ROW HERE:
 #   1. the row below (never invent a filename — `ls textures/`, see above);
-#   2. reachability: ADD AN 8-SLOT x 3-CANDIDATE STAGE GRID keyed with your new region's
-#      id to RegionStageLibrary.STAGES (scripts/region_stage_library.gd) — see that file's
-#      header for the exact shape and per-candidate field list, and
-#      todo/region-stage-slots-redesign.md for the design record. Guarded by
-#      test_region_assets.gd -> test_every_region_has_authored_stages.
-#   3. features/regions.md — the prose region list (test_region_docs.gd fails on this);
+#   2. features/regions.md — the prose region list (test_region_docs.gd fails on this);
 #      features/terrain.md too, if the row changes how terrain is built.
 const REGIONS: Array[Dictionary] = [
 	# The existing world. It authors its foliage split explicitly so the split is
@@ -174,7 +167,7 @@ const REGIONS: Array[Dictionary] = [
 	# The same forest look with the sea raised — a lakeland / forested shore.
 	# `water_level` is set MUCH higher than every other region's (all -12.0) so the
 	# lakes read as unmistakably flooded rather than merely "a bit wetter" — see
-	# water_level_of below and features/regions.md / features/lakes.md.
+	# features/regions.md / features/lakes.md.
 	{
 		"id": "home_coast", "order": 3, "name": "The Lakes",
 		"look_from": "home",
@@ -261,8 +254,7 @@ const REGIONS: Array[Dictionary] = [
 		# set to white, which would read as fresh paint on a snowy road.
 
 		# --- Handling. NOT LOOK_KEYS, and deliberately so: these are consumed by
-		# StageConfig.apply_event_config at stage setup, not by world.gd's look pass
-		# after generation, so folding them into look_of would deliver them too late
+		# BiomeDirector when the ring changes, not by the look pass, so folding them into look_of would deliver them too late
 		# AND leak non-look keys into the dict world.gd treats as look overrides. Same
 		# reasoning that keeps `water_level` out of the whitelist.
 		#
@@ -321,21 +313,6 @@ static func ordered() -> Array[Dictionary]:
 	return out
 
 
-# The region's authored waterline in metres, or 0.0 when it authors none — ALWAYS
-# pair a call with has_water_level(), because callers resolve
-# `event override → region → GameConfig baseline` and a region that authors nothing
-# must fall through to the GameConfig baseline rather than to any number here.
-# Deliberately NOT inherited through `look_from`: "home_coast is home, but the water
-# is higher" only works if each corner authors its own waterline.
-static func water_level_of(region_id: String) -> float:
-	return float(by_id(region_id).get("water_level", 0.0))
-
-# Whether this region authors a waterline at all (see water_level_of). False for an
-# unknown id.
-static func has_water_level(region_id: String) -> bool:
-	return by_id(region_id).has("water_level")
-
-
 # Metres of free-roam road between checkpoints in this region's ring, or `fallback`
 # (FreeRoamSettings.rest_stop_spacing_m) when it sets none. Not inherited through `look_from`.
 static func rest_stop_spacing_of(region_id: String, fallback: float) -> float:
@@ -350,14 +327,14 @@ static func has_tarmac_roads(region_id: String) -> bool:
 
 # --- Handling overrides (features/snow-region.md) -----------------------------
 # A region may override the per-surface grip scales and author a deep-snow block. Both
-# are read at stage setup by StageConfig.apply_event_config, NOT through look_of — see
+# are read by BiomeDirector, NOT through look_of — see
 # the comment on the snow entry for why they are not LOOK_KEYS.
 #
-# Like water_level, each is a has_*/­*_of PAIR rather than one function returning a
+# Each is a has_*/­*_of PAIR rather than one function returning a
 # sentinel: GDScript has no null, and "the region authors no override" must never be
 # confused with a real value. Callers gate on the has_* before trusting the resolver.
 #
-# Also like water_level, NEITHER is inherited through `look_from`. A snow-coast child
+# NEITHER is inherited through `look_from`. A snow-coast child
 # would author its own or have none — "same look, own handling" is the same split that
 # makes the coastal regions work.
 

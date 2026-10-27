@@ -62,8 +62,9 @@ hub-only widgets (car cards, stat bars, the car list).
   harness.** About 40 test files (car physics, damage, collisions, the benchmark) build their
   world on it. Porting them onto free-roam terrain is its own project; until then the stage
   pipeline (`TrackGenerator`, `TerrainManager`'s corridor bake, `StageManager`, `TrackProgress`)
-  stays, and nothing in the game reaches it. `RegionStageLibrary` / `StageFields` / `StageConfig`
-  stay with it (the benchmark and seed lab read them).
+  stays, and nothing in the game reaches it. The stage content tables (`RegionStageLibrary`,
+  `StageFields`, `StageConfig`), the seed lab, the car performance rating, the 3D garage and the
+  stage HUD (countdown, run timer, finish panel, cut flash) are deleted.
 - **`BoostLibrary`** is the parts catalogue now (`features/loot.md`).
 - **`UpgradeLibrary.EFFECTS`** is still the only way anything modifies a car (seam 1 below).
 
@@ -183,9 +184,8 @@ Do not go looking for these — they are gone, not moved:
    `stage_money()`, `offers_boost_pick()`, `to_record()`, `record_outcome()`). Anything
    shared lives in `RunSession`.
 
-4. **`StageConfig` is the one writer.** `apply_event_config` (mutates the live config) or
-   `canonical_event_config` (fresh, for cache keys). Do not hand-write a subset — the
-   config is a persistent working copy and a subset silently inherits the last stage.
+4. **The live config is a persistent working copy.** `BiomeDirector` re-seeds the grip and
+   handling fields from the authored values on every ring change; do not hand-write a subset.
 
 5. **Every menu is a flat `MenuPage` + `MenuNav.attach`.** Keyboard *and* gamepad
    navigation is a CLAUDE.md rule with a required nav test. The old `hq.gd`
@@ -234,8 +234,7 @@ After the roguelike pivot shipped, the authored-rally-pool model it introduced
 flat per-region pool + difficulty-sort draw for a fixed 8-slot × 3-candidate grid
 per region. The `RallyLibrary.RALLIES` wrapper (named rallies, `restriction`,
 `special`, `map_pos` — all pre-pivot residue `features/rally-roster.md` had been
-tracking as dead since stage 2b) is deleted along with it. See
-`features/region-stage-library.md` for how it works today, and decisions 3/7/32 in
+tracking as dead since stage 2b) is deleted along with it. See decisions 3/7/32 in
 `todo/roguelike-pivot.md` for what it superseded.
 
 ## Test suite

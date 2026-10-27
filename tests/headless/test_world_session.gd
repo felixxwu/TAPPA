@@ -113,6 +113,68 @@ func test_the_world_survives_a_save_and_reload() -> void:
 	assert_eq(WorldSession.lit_sites(), [0, 9])
 
 
+# Any replacement of the world, from inside (a new world) or out (a downloaded or wiped profile),
+# moves the generation on and is announced, so a scene or cache holding the old one lets go.
+func test_replacing_the_world_moves_the_generation_on() -> void:
+	WorldSession.new_world(1, _any_car())
+	var g := WorldSession.generation
+	watch_signals(WorldSession)
+	_save.adopt_profile(_save._default_profile())
+	assert_gt(WorldSession.generation, g, "a downloaded profile")
+	assert_signal_emitted(WorldSession, "world_changed")
+	g = WorldSession.generation
+	WorldSession.new_world(2, _any_car())
+	assert_gt(WorldSession.generation, g, "a new world")
+
+
+func test_sites_seen_belong_to_their_world() -> void:
+	WorldSession.new_world(1, _any_car())
+	assert_true(WorldSession.see(5))
+	assert_false(WorldSession.see(5), "already seen")
+	assert_true(WorldSession.is_seen(5))
+	assert_true(WorldSession.is_seen(0), "spawn from the start")
+	WorldSession.new_world(2, _any_car())
+	assert_false(WorldSession.is_seen(5), "a new world has seen nothing yet")
+	(_save.profile[_save.KEY_WORLD] as Dictionary)["seen"] = [0.0, 7.0]  # as JSON hands it back
+	assert_true(WorldSession.is_seen(7))
+
+
+# Where the car is and what it has passed is not worth a cloud upload; real progress is.
+func test_only_progress_is_announced_to_the_cloud() -> void:
+	WorldSession.new_world(1, _any_car())
+	_save.mark_synced()
+	watch_signals(_save)
+	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(10, 0, 10)))
+	WorldSession.mark_driven(300.0, 300.0)
+	WorldSession.see(3)
+	WorldSession.reach_ring(4)
+	WorldSession.set_last_site(2)
+	WorldSession.save_car_state(DamageModel.new())
+	assert_signal_not_emitted(_save, "profile_changed", "driving around")
+	assert_false(_save.has_unsynced())
+	WorldSession.set_money(5)
+	assert_signal_emitted(_save, "profile_changed", "picking up money")
+
+
+func test_a_world_saved_against_other_sites_drops_its_site_progress() -> void:
+	WorldSession.new_world(1, _any_car())
+	WorldSession.light(3)
+	WorldSession.set_last_site(3)
+	WorldSession.see(3)
+	WorldSession.set_list("collected", [9])
+	WorldSession.save_pose(Transform3D.IDENTITY)
+	WorldSession.check_sites(111)
+	assert_eq(WorldSession.lit_sites(), [0, 3], "a world with no fingerprint yet is stamped, not reset")
+	WorldSession.check_sites(111)
+	assert_eq(WorldSession.lit_sites(), [0, 3], "the same sites keep it")
+	WorldSession.check_sites(222)
+	assert_eq(WorldSession.lit_sites(), [0])
+	assert_eq(WorldSession.last_site(), 0)
+	assert_false(WorldSession.is_seen(3))
+	assert_eq(WorldSession.list("collected"), [])
+	assert_eq(WorldSession.pose(), [])
+
+
 func test_a_pre_free_roam_profile_is_refused() -> void:
 	var old: Dictionary = _save._default_profile()
 	old["schema_version"] = 7
@@ -164,9 +226,32 @@ func test_a_car_saved_while_wrecked_comes_back_at_its_respawn_point_repaired() -
 	var car: Node3D = scene.get_node("Car")
 	var dmg: DamageModel = car.get("damage")
 	assert_eq(dmg.hp, dmg.max_hp, "the wreck was quit, not escaped: the car is repaired")
+	assert_eq(_save.lifetime_stat(LifetimeStats.TIMES_GAVE_UP), 1, "and it counts as giving up")
 	var pose := rest.pose_at(1)
 	assert_lt(Vector2(car.global_position.x, car.global_position.z).distance_to(Vector2(pose.origin.x, pose.origin.z)), 3.0,
 		"and starts at the last rest stop, not where it gave up")
+
+
+# The free-roam boot checks the site fingerprint before the loot and rest stops read their ids; and
+# once the world is replaced under a running scene, the scene stops writing into it.
+func test_free_roam_drops_stale_site_progress_and_leaves_a_replaced_world_alone() -> void:
+	WorldSession.new_world(7, _any_car())
+	WorldSession.light(1)
+	WorldSession.set_last_site(1)
+	WorldSession.set_list("collected", range(400))
+	(_save.profile[_save.KEY_WORLD] as Dictionary)["sites_hash"] = -1
+	var scene := await _boot_free_roam()
+	var rest: RestStops = scene.get_node("RestStops")
+	var loot: LootDirector = scene.get_node("LootDirector")
+	assert_false(rest.is_lit(1), "the old ids meant other places")
+	assert_eq(rest.last_site, 0)
+	assert_false(range(400).any(func(i: int) -> bool: return loot.is_collected(i)), "every coin is back")
+	WorldSession.invalidate()
+	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(900, 0, 900)))
+	scene.save_world()
+	await get_tree().physics_frame
+	var kept: Transform3D = WorldSession.pose_transform()
+	assert_eq(kept.origin, Vector3(900, 0, 900), "the replaced world is not written over")
 
 
 # Leaving the scene (a scene change, the window closing) still saves the car's place: the car has

@@ -23,7 +23,6 @@ func before_all() -> void:
 	# The challenge tests below grant cars and start runs through the LIVE Save
 	# autoload, so point it at a throwaway profile before anything here can write.
 	SaveTestHelpers.redirect(TEST_PATH)
-	RegionStageFixtures.install()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	await get_tree().physics_frame  # let world._ready() generate + apply + build
@@ -31,7 +30,6 @@ func before_all() -> void:
 
 func after_all() -> void:
 	_scene.free()
-	RegionStageFixtures.restore()
 	SaveTestHelpers.cleanup(TEST_PATH)
 
 
@@ -65,10 +63,9 @@ func test_entering_a_rally_event_generates_its_track() -> void:
 	# Entering a stage = writing its (seed, turn_count, width) into Config.data,
 	# then generating — the same Config mutation pattern apply_car uses. Assert
 	# that flow builds a track without error.
-	var event: Dictionary = RegionStageFixtures.one_stage()
+	var event := {"seed": 7, "turn_count": 4}
 	Config.data.track_seed = int(event["seed"])
 	Config.data.track_turn_count = int(event["turn_count"])
-	Config.data.track_width = StageFields.event_width(event)
 	_scene._generate_track(Config.data)
 	# The flow completes and the scene is still valid (no crash building the
 	# rally's track from its seed).
@@ -198,16 +195,8 @@ func test_hud_speed_label_present() -> void:
 
 
 func test_stage_flow_wired() -> void:
-	# The per-stage flow (todo/stage-start-and-end.md): a StageManager node plus
-	# the HUD widgets it drives (countdown, run timer, complete panel).
 	assert_not_null(_scene.get_node_or_null("StageManager") as StageManager,
 		"world wires a StageManager into the scene")
-	assert_not_null(_scene.get_node_or_null("HUD/CountdownLabel") as Label,
-		"HUD has the big countdown label")
-	assert_not_null(_scene.get_node_or_null("HUD/ElapsedLabel") as Label,
-		"HUD has the run-timer label")
-	assert_not_null(_scene.get_node_or_null("HUD/StageCompletePanel") as Control,
-		"HUD has the stage-complete panel")
 
 
 func test_environment_has_fog_and_no_lights() -> void:
@@ -227,10 +216,9 @@ func test_the_main_scene_is_a_known_boot_scene_and_it_loads() -> void:
 	# The one thing that broke when the diegetic hub was deleted: project.godot still
 	# named `res://hq.tscn`, so the GAME would not boot at all while every test stayed
 	# green (nothing instantiates the main scene by its project setting). The setting must
-	# name either the hub (`Scenes.hub_path()`) or, while the free-roam pivot is being
-	# prototyped, the free-roam scene (features/free-roam.md) — and it must actually load.
+	# name the title or the free-roam scene — and it must actually load.
 	var main_scene := String(ProjectSettings.get_setting("application/run/main_scene", ""))
-	assert_true(main_scene in [Scenes.hub_path(), Scenes.TITLE, Scenes.FREE_ROAM],
+	assert_true(main_scene in [Scenes.TITLE, Scenes.FREE_ROAM],
 		"project.godot's run/main_scene names an unknown scene: %s" % main_scene)
 	assert_not_null(load(main_scene) as PackedScene, "%s loads as a scene" % main_scene)
 

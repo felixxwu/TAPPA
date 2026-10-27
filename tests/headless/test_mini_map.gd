@@ -35,6 +35,9 @@ func _sites() -> RoadSites:
 	var s := RoadSites.new()
 	s.kind = PackedInt32Array([RoadSites.Kind.REST, RoadSites.Kind.REST, RoadSites.Kind.LOOT, RoadSites.Kind.DEAD_END])
 	s.pos = PackedVector2Array([Vector2.ZERO, Vector2(1000, 0), Vector2(2000, 0), Vector2(3000, 0)])
+	s.radius = PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+	for i in s.pos.size():
+		s._box_cells[Vector2i(floori(s.pos[i].x / RoadSites.BOX_CELL_M), floori(s.pos[i].y / RoadSites.BOX_CELL_M))] = PackedInt32Array([i])
 	return s
 
 
@@ -209,6 +212,8 @@ class FakeRestStops:
 	var opens := 0
 	func prompt_site() -> int:
 		return site
+	func can_open() -> bool:
+		return site >= 0
 	func open_here() -> bool:
 		opens += 1
 		return site >= 0

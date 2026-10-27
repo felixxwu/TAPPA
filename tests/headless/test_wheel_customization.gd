@@ -23,8 +23,6 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	_save.profile["starter_picked"] = true
-	_save.profile["starter_model_id"] = "fx_light_rwd"
 	_save.grant_car("fx_light_rwd")
 	# A second owned car by default, so wheel_catalogue()'s ownership filter (only owned
 	# cars donate wheels) still offers more than the bare stock option to HQ tests below

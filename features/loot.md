@@ -30,8 +30,8 @@ at level = its ring; a ring past `ring_count` folds into the last), and `LootRul
 reads the price back. Ring 0's cars are also the starter choice (`starter_cars`).
 
 - **On sale once lit.** A ring's stock goes on sale at every checkpoint once one of its checkpoints
-  is lit (`CheckpointBanner._reveal_ring` → `LootDirector.unlock`, kept in the world's `revealed`
-  list; ring 0 from the start). A ring the road network gave no rest stop would never unlock, so its
+  is lit (`RestStops.lit` → `LootDirector.site_lit` → `unlock`, wired in `free_roam.gd`, kept in the world's `revealed`
+  list; ring 0 from the start; on load `free_roam.gd` re-runs `site_lit` for every lit stop so `revealed` follows `lit`). A ring the road network gave no rest stop would never unlock, so its
   stock is sold by the nearest ring that has one (`LootRules.pool_rings` over rest-stop counts,
   `LootDirector.ring_stock`).
 - **One of each, per car.** `for_sale()` is the unlocked stock minus what the player has
@@ -63,8 +63,9 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   is left at the wreck (`WorldSession.dropped`: `{pos, money}`; `lost` keeps the amount for the
   wreck page, "You dropped $n here"), replacing — and losing — any earlier drop, and `collected` is
   cleared, so every coin comes back. A gold crystal bobs over the drop (`_sync_dropped_node`,
-  `shaders/crystal.gdshader`, the old loot crystal); driving within `DROPPED_REACH_M` of it
-  recovers the money (`recover_dropped`). A wrecked car picks nothing up until it respawns (`RestStops.respawned`).
+  `shaders/crystal.gdshader`, the old loot crystal); driving within `FreeRoamSettings.dropped_reach_m` of it
+  recovers the money (`recover_dropped`). The boot's shader warm-up draws one too (`LootDirector.warm_up` /
+  `clear_warm_up`), so the first wreck doesn't hitch compiling it. A wrecked car picks nothing up until it respawns (`RestStops.respawned`).
 - **Travelling from the road** drops the money the same way (`drop_money`, after a confirm on the map —
   see world-session.md), so the map's free travel can't carry money to safety; checkpoint to checkpoint keeps it.
 - **The counter:** `LootDirector.money_label`, "$n" in the top-left corner while driving, parented to the HUD layer so it hides under paused pages like the gauges.

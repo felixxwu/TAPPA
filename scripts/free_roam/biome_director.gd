@@ -7,7 +7,7 @@ extends Node
 #
 #   * Ring → region. Ring i wears region FreeRoamSettings.ring_regions[i]. Crossing into a ring
 #     writes that region's HANDLING (surface grip, deep snow, frozen lakes) onto the live config,
-#     re-seeded from the authored values first, exactly as StageConfig.apply_event_config does.
+#     re-seeded from the authored values first, so leaving a ring puts its grip back.
 #   * Weather drifts. Drive time is cut into slots of `weather_hold_s`; each (ring, slot) draws a
 #     condition from the ring's weighted pool (`ring_weather`), seeded from the world seed, so the
 #     weather changes every few minutes and differs per biome.
@@ -151,8 +151,7 @@ static func parse_pool(text: String) -> Array:
 
 
 # Write a region's handling onto the live config, from the authored values (so leaving the snow
-# ring puts every other ring's grip back): the free-roam twin of StageConfig.apply_event_config's
-# handling block.
+# ring puts every other ring's grip back).
 static func apply_handling(cfg: GameConfig, region_id: String) -> void:
 	var base: GameConfig = load(Config.CONFIG_PATH)
 	var sgrip := RegionLibrary.surface_grip_of(base, region_id)
@@ -257,13 +256,9 @@ func _apply_weather(cfg: GameConfig) -> void:
 		for k in TINTED.size():
 			var col: Color = base[k] if base[k] != null else Color.WHITE
 			if not tint.is_empty():
-				var amount := float(cfg.get(String(tint["amount"])))
 				var color_field := String(tint.get("color", ""))
-				if color_field != "":
-					var toward: Color = cfg.get(color_field)
-					col = col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)
-				else:
-					col = Color(col.r * amount, col.g * amount, col.b * amount, col.a)
+				col = WeatherLibrary.tinted(col, float(cfg.get(String(tint["amount"]))),
+					cfg.get(color_field) if color_field != "" else Color.BLACK, color_field != "")
 			mat.set_shader_parameter(TINTED[k], col)
 	# particles on the chase camera
 	if is_instance_valid(_particles):

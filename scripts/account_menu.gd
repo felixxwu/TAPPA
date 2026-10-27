@@ -289,17 +289,10 @@ func _on_conflict_detected(summary: Dictionary) -> void:
 		_prompt_conflict(summary)
 
 
-# Delegates to the SHARED prompt (scripts/cloud/conflict_prompt.gd) rather than
-# building its own. This page is no longer the only place a conflict can be raised —
-# hq.gd listens too, and the boot-time starter-pick gate raises it blockingly — so the
-# copy, the three choices and the resolution calls must come from one place. The
-# `summary` argument is kept for the existing call sites; ConflictPrompt re-reads the
-# live summary itself.
-#
-# NO PRIVATE "already open" LATCH. This page can exist up to three times over (the
-# Settings host, the HQ title overlay and the standings page each build one), so a
-# per-instance bool could never answer "is a prompt up?" — ConfirmPopup.MODAL_GROUP
-# answers it for the tree, and open() refuses rather than stacking.
+# Delegates to the SHARED prompt (scripts/cloud/conflict_prompt.gd): free roam raises the
+# same prompt for a conflict found while this page is closed, so the copy, the choices and
+# the resolution calls come from one place. ConfirmPopup.MODAL_GROUP, not a private latch,
+# keeps two hosts from stacking it.
 func _prompt_conflict(_summary: Dictionary) -> void:
 	if not ConflictPrompt.is_blocked():
 		return

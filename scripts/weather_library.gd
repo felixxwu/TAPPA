@@ -19,7 +19,7 @@ extends RefCounted
 # but an id):
 #
 #   "id"             String  — stable id, matches the authored event `weather` string
-#                              and StageFields.WEATHER_* / GameConfig.weather.
+#                              and WeatherLibrary.WEATHER_* / GameConfig.weather.
 #   "grip_mult"      String  — GameConfig field holding the global tyre μ multiplier.
 #                              "" / omitted => exactly 1.0 (see grip_mult()).
 #   "particles"      String  — WeatherField particle kind ("rain" / "sand"). ""/omitted
@@ -80,8 +80,19 @@ const LOOK_KEYS := [
 ]
 
 # The id every unknown/absent condition resolves to. Load-bearing: by_id() returns
-# this entry for a typo'd string, mirroring StageFields.event_weather's tolerance.
+# this entry for a typo'd string.
 const DEFAULT_ID := "dry"
+
+# Condition ids. For authoring and for setting GameConfig.weather, NOT for branching:
+# do not write `weather == WEATHER_RAIN` to mean "wet" (storm is wetter) — ask is_wet(id),
+# and put anything else per-condition as a KEY on the entry.
+const WEATHER_DRY := "dry"
+const WEATHER_RAIN := "rain"
+const WEATHER_SANDSTORM := "sandstorm"
+const WEATHER_FOG := "fog"
+const WEATHER_STORM := "storm"
+const WEATHER_SNOW := "snow"
+const WEATHER_NIGHT := "night"
 
 const CONDITIONS: Array[Dictionary] = [
 	# Dry is the ABSENCE of every feature: no grip multiplier (so grip_mult() is
@@ -302,6 +313,15 @@ const WETNESS := {
 # Unknown ids resolve through by_id()'s dry fallback exactly like every other query here,
 # so a typo'd or removed condition is dry rather than a crash. A condition installed by
 # override_for_test() that WETNESS does not name is likewise dry.
+# A ground colour as a condition's road tint leaves it: lerped `amount` toward `toward` when
+# `blend` (dust caking on), else multiplied by `amount` (a wet road darkens). Shared by the
+# stage (world.gd) and free roam (BiomeDirector).
+static func tinted(col: Color, amount: float, toward: Color, blend: bool) -> Color:
+	if blend:
+		return col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)
+	return Color(col.r * amount, col.g * amount, col.b * amount, col.a)
+
+
 static func is_wet(id: String) -> bool:
 	return bool(WETNESS.get(String(by_id(id).get("id", DEFAULT_ID)), false))
 
@@ -360,8 +380,8 @@ static func by_id(id: String) -> Dictionary:
 
 # The global tyre μ multiplier for a condition, read out of `cfg`. Dry (and any
 # unknown id, which resolves to dry) is EXACTLY 1.0 — a structural identity, not a
-# tuning choice — which is what lets Drivetrain.surface_tire_params and
-# LapTimeModel._surface_grip multiply unconditionally with no per-condition branch.
+# tuning choice — which is what lets Drivetrain.surface_tire_params
+# multiply unconditionally with no per-condition branch.
 static func grip_mult(cfg: GameConfig, id: String) -> float:
 	var field := String(by_id(id).get("grip_mult", ""))
 	if field == "":

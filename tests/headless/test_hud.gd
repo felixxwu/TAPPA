@@ -34,7 +34,6 @@ func before_each() -> void:
 	get_tree().paused = false
 	var cfg: GameConfig = Config.data
 	cfg.hud_enabled = true
-	cfg.hud_elapsed_enabled = true
 	cfg.hud_hp_enabled = true
 	var car: VehicleBody3D = _scene.get_node("Car")
 	car.linear_velocity = Vector3.ZERO
@@ -54,15 +53,6 @@ func before_each() -> void:
 	engine.sc_boost = 0.0
 	engine.nitrous_charge = 0.0
 	car.damage.field(1000.0, 1000.0)  # a healthy, mortal car
-	# Force the diagnostic readout + stage widgets back to hidden (tests show them).
-	var hud = _scene.get_node("HUD")
-	hud.hide_countdown()
-	hud.hide_off_road()  # also clears its change-gate, so the next show_off_road re-formats
-	for w in ["StageCompletePanel", "CutFlashLabel"]:
-		var node := hud.get_node_or_null(w)
-		if node != null:
-			node.visible = false
-	hud._cut_flash_left = 0.0
 	await get_tree().process_frame
 
 
@@ -234,34 +224,7 @@ func test_seed_text_formatting() -> void:
 	assert_eq(Hud.seed_text(-7), "Seed -7", "negative seeds print verbatim")
 
 
-func test_off_road_text_formatting() -> void:
-	# Pure formatter for the off-track warning: the label plus the seconds left on the
-	# reset clock, to a tenth. Never shows a negative countdown — the clock can tick
-	# slightly past zero between the reset firing and the HUD's next frame.
-	const Hud = preload("res://scripts/hud.gd")
-	assert_eq(Hud.off_road_text(3.0), "OFF TRACK  3.0", "whole seconds keep their tenth")
-	assert_eq(Hud.off_road_text(1.25), "OFF TRACK  1.2", "the countdown reads to a tenth")
-	assert_eq(Hud.off_road_text(0.0), "OFF TRACK  0.0", "an expired clock reads zero")
-	assert_eq(Hud.off_road_text(-0.5), "OFF TRACK  0.0", "a negative countdown is clamped to zero")
-
-
-func test_off_road_warning_shows_and_hides() -> void:
-	# The warning is a live state readout, not a fading popup: show_off_road puts it up
-	# and it stays up until hide_off_road takes it down (StageManager owns that call).
-	var hud = _scene.get_node("HUD")
-	var label := hud.get_node("OffRoadLabel") as Label
-	assert_false(label.visible, "the warning starts hidden")
-	hud.show_off_road(2.5)
-	assert_true(label.visible, "show_off_road reveals the warning")
-	assert_eq(label.text, "OFF TRACK  2.5", "and prints the seconds left")
-	hud.show_off_road(1.5)
-	assert_eq(label.text, "OFF TRACK  1.5", "a later call updates the countdown in place")
-	assert_true(label.visible, "and it does not fade out on its own")
-	hud.hide_off_road()
-	assert_false(label.visible, "hide_off_road takes it down")
-
-
-# --- Rival ghost delta (features/rival-ghost.md) -----------------------------
+# --- Grip readout --------------------------------------------------------------
 
 func test_grip_text_formatting() -> void:
 	# Pure formatter for one grip cell: the corner name plus how far up its grip curve the
@@ -370,59 +333,6 @@ func test_hud_has_no_version_label() -> void:
 		"driving HUD no longer shows the build version")
 
 
-# --- Stage flow widgets (todo/stage-start-and-end.md) ------------------------
-# These call the HUD methods directly (synchronously, so the scene's StageManager
-# doesn't tick and overwrite the state) and assert the labels/panel.
-
-func test_countdown_label_formats_ticks_and_go() -> void:
-	var hud := _scene.get_node("HUD")
-	var label := _scene.get_node("HUD/CountdownLabel") as Label
-	hud.show_countdown(2.5)
-	assert_true(label.visible, "countdown label shown while counting")
-	assert_eq(label.text, "3", "ceili(2.5) shows 3 (the first second counts as 3)")
-	hud.show_countdown(1.6)
-	assert_eq(label.text, "2", "ceili(1.6) shows 2")
-	hud.show_countdown(0.6)
-	assert_eq(label.text, "1", "ceili(0.6) shows 1")
-	hud.show_countdown(0.0)
-	assert_eq(label.text, "GO", "zero shows GO")
-	hud.hide_countdown()
-	assert_false(label.visible, "hide_countdown hides the label")
-
-
-func test_elapsed_label_formats_and_respects_config() -> void:
-	var hud := _scene.get_node("HUD")
-	var label := _scene.get_node("HUD/ElapsedLabel") as Label
-	label.visible = false
-	Config.data.hud_elapsed_enabled = true
-	hud.show_elapsed(67.43)
-	assert_true(label.visible, "elapsed label shown when hud_elapsed_enabled")
-	assert_eq(label.text, "1:07.43", "elapsed formats as m:ss.cc")
-	# Disabled: the label is left untouched (stays hidden).
-	label.visible = false
-	Config.data.hud_elapsed_enabled = false
-	hud.show_elapsed(99.9)
-	assert_false(label.visible, "elapsed label suppressed when hud_elapsed_enabled is off")
-	Config.data.hud_elapsed_enabled = true
-
-
-func test_stage_complete_panel_shows_final_time() -> void:
-	var hud := _scene.get_node("HUD")
-	var panel := _scene.get_node("HUD/StageCompletePanel") as Control
-	var label := _scene.get_node("HUD/StageCompletePanel/Box/StageCompleteLabel") as Label
-	assert_false(panel.visible, "complete panel hidden until the stage ends")
-	hud.show_stage_complete(67.43)
-	assert_true(panel.visible, "complete panel shown on stage completion")
-	assert_string_contains(label.text, "1:07.43", "panel shows the final time")
-
-
-# --- Pacenote strip (features/hud.md) ----------------------------------------
-
-func _pace_notes() -> Array:
-	# Two synthetic notes — the HUD only reads corner + flip to pick the arrow art.
-	return [{"corner": "3", "flip": false}, {"corner": "Hairpin", "flip": true}]
-
-
 # --- Health gauge (features/damage.md) ----------------------------------
 # The HUD reads the car's DamageModel each frame; these set it directly and await
 # a frame, then assert the gauge (the same pattern as the speed/gear labels above).
@@ -447,21 +357,6 @@ func test_hp_gauge_hidden_when_disabled() -> void:
 	await get_tree().process_frame
 	assert_false(gauge.visible, "gauge suppressed when hud_hp_enabled is off")
 	Config.data.hud_hp_enabled = true
-
-
-func test_finish_panel_next_button_is_keyboard_navigable() -> void:
-	var hud: CanvasLayer = _scene.get_node("HUD")
-	var next_btn: Button = hud.get_node("StageCompletePanel/Box/NextButton")
-	assert_eq(next_btn.focus_mode, Control.FOCUS_ALL, "NEXT is focusable for keyboard/gamepad")
-	hud.show_stage_complete(12.3)
-	assert_true(hud.get_node("StageCompletePanel").visible, "finish panel is shown")
-	await get_tree().process_frame  # deferred focus_grab lands
-	assert_eq(hud.get_viewport().gui_get_focus_owner(), next_btn,
-		"showing the finish panel focuses NEXT")
-	var fired := [0]
-	hud.finish_next_pressed.connect(func() -> void: fired[0] += 1)
-	next_btn.emit_signal("pressed")
-	assert_eq(fired[0], 1, "pressing NEXT emits finish_next_pressed")
 
 
 # The gauge is labelled by an ICON, not text — the fill is the reading. Regression guard
@@ -632,19 +527,3 @@ func test_has_forced_induction_covers_both_parts() -> void:
 	assert_false(cfg.has_forced_induction(),
 		"an audio-only stock blower (no gain) does NOT — it makes no boost to show")
 	assert_false(cfg.has_supercharger_physics(), "nor does it run the belt sim")
-
-
-func test_elapsed_label_keeps_updating_as_the_clock_runs() -> void:
-	# show_elapsed skips the re-format when the DISPLAYED value hasn't moved, so
-	# check the skip can't latch: successive advancing times must each show.
-	var hud := _scene.get_node("HUD")
-	var label := _scene.get_node("HUD/ElapsedLabel") as Label
-	Config.data.hud_elapsed_enabled = true
-	hud.show_elapsed(1.0)
-	var first := label.text
-	hud.show_elapsed(1.0)
-	assert_eq(label.text, first, "an unchanged reading shows the same text")
-	hud.show_elapsed(2.0)
-	assert_ne(label.text, first, "the timer still advances on the next reading")
-	hud.show_elapsed(3.0)
-	assert_eq(label.text, UITheme.format_time(3000), "and matches the formatted time")

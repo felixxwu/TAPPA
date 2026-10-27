@@ -86,8 +86,7 @@ no scene or Save coupling; `car.gd` applies the result.
 
 There are **three** ways to put an engine on a car, and choosing wrong fails
 *silently*: the car simply runs the wrong engine, with no error. That is exactly how
-start-line rivals ended up on their cars' stock engines
-(see [region-stage-library.md](region-stage-library.md) → rival builds).
+start-line rivals ended up on their cars' stock engines.
 
 | Call | Applies | Use for |
 |---|---|---|
@@ -173,31 +172,11 @@ into a kei car gives it the V8's gearbox and fast shifts, not the kei's
 5-speed. The drivetrain rebuild in step 2 recomputes shift speeds for the new
 ratios. (Design decision: engine + gearbox are one swappable unit.)
 
-## Eligibility feed-through (`effective_meta`)
+## Detune
 
-`UpgradeLibrary.effective_meta(owned_car, meta)` is the single place that
-derives a car's power-to-weight figure for display (see
-[upgrade-catalogue.md](upgrade-catalogue.md)).
-It resolves the CURRENT engine the same way `car.gd` does:
-
-1. Resolves `current_id := EngineSwap.current_engine_id(owned_car, stock_id)`,
-   points the meta's `engine` at it, and seeds `peak_torque`/`redline` from
-   that engine (only filling values the `meta` doesn't already carry, so
-   synthetic test fixtures with explicit values are untouched).
-2. If swapped (`current_id != stock_id`), recomputes `mass` via
-   `EngineSwap.recompute_mass` using the stock and swapped-in engine masses —
-   so a swap changes the displayed mass exactly like it changes
-   the live physics mass.
-3. Applies enabled upgrade multipliers (engine kits, weight reduction) on top
-   of the swapped baseline.
-4. **Applies `engine_detune` last**, scaling the resulting `peak_torque` by
-   the clamped `[0, 1]` fraction from `owned_car.tuning.engine_detune` (default
-   `1.0`) — so a detuned car's reduced torque feeds `power_to_weight`.
-
-`TuningLibrary.apply` applies the matching effect to the LIVE `cfg` at
-fielding time (step 3, after upgrades): `cfg.peak_torque *= clampf(detune, 0, 1)`,
-run last so it scales whatever torque the swapped engine + upgrade kits
-produced. See [tuning.md](tuning.md) for the full axis table.
+`TuningLibrary.apply` applies `engine_detune` to the LIVE `cfg` at fielding time (after
+upgrades): `cfg.peak_torque *= clampf(detune, 0, 1)`, run last so it scales whatever torque
+the swapped engine + upgrade kits produced. See [tuning.md](tuning.md) for the full axis table.
 
 ## Tests
 
@@ -209,8 +188,7 @@ formatter applied to each roster entry's own `layout`; `recompute_mass` swaps th
 `recompute_weight_front` moves the CoG by the injected engine position (with
 injected numbers, not authored values — see the project's testing rules);
 `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/
-drivetrain rebuild. `test_upgrade_library.gd` covers `effective_meta` resolving
-the swapped engine and detune scaling power-to-weight. `test_tuning_library.gd`
+drivetrain rebuild. `test_tuning_library.gd`
 covers `TuningLibrary.apply`'s `engine_detune` torque scaling.
 
 `test_loot.gd` covers an engine part fielding as `swapped_engine` and a second engine replacing

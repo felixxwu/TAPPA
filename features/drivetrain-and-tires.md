@@ -57,16 +57,6 @@ and a jumping car would go on laying marks and throwing dirt in mid-air. All thr
 accessors return `0.0` for a wheel with no live contact — the value that reads as "no
 effect" at every call site.
 
-## Changing a live drivetrain: `reconfigure(mode)`
-
-`reconfigure` is the ONLY driveline change legal on a car that is already simulating. It sets
-`drive_mode` and refreshes the engine's two config-derived caches — `refresh_fitment()` (the
-nitrous gate) and `refresh_gearing()` (the shift points) — and touches nothing else, so revs,
-gear, boost, wheel spin and the mirrored gearbox mode all survive. `Car.refit_upgrades` (the
-start-line Upgrades menu) uses it; constructing a second `Drivetrain` mid-stage would
-re-derive wheel geometry from the live, drifted scene and reset the whole driveline. See
-[car-physics.md](car-physics.md) → *Rebuild vs reconfigure*.
-
 ## Main entry: `step(delta, throttle, brake, handbrake)`
 
 1. Build a contact context for each in-contact wheel: normal force, contact
@@ -147,19 +137,6 @@ comes from the widths + `weight_front` rather than a per-axle grip knob. Consequ
 **adding mass on the same tyres lowers grip; widening the tyres recovers it** — so both
 the lateral-G and the power-to-weight stats are genuinely driven by weight.
 
-**The point-mass solver shares this curve too.** `LapTimeModel._load_factor` calls the
-SAME `GameConfig.tire_load_factor` — not a parallel approximation of it — with a
-point-mass simplification: normal force is `mass · G / 4` (four equally-loaded corners)
-and width is the mean of `wheel_width_front` / `wheel_width_rear`. It is deliberately
-coarser than `Drivetrain.step`, which resolves the factor per wheel per tick against the
-live suspension force and so gets weight transfer for free; a point mass has no axles to
-transfer between. What matters is that the two agree in *direction and shape*, because
-the model is what paces the AI field and what scores a car's performance rating — and
-before this term existed, mass reached that model through `a_engine = P/(v·m)` alone, so
-the solver flatly denied the "adding mass lowers grip, widening the tyres recovers it"
-consequence stated above. See [car-performance.md](car-performance.md) → *Mass is no
-longer only power-to-weight* for why that mattered enough to fix.
-
 Note `wheel_width_*` is dual-purpose: it sizes
 the wheel meshes AND drives grip, so staggered cars both look and handle staggered.
 
@@ -193,8 +170,7 @@ alternative it defers).
 **Global grip.** `GameConfig.global_grip_mult` (0.8 in `game_config.tres`) rides in the same
 memoised product (`_weather_mu` = weather multiplier × global grip, re-resolved when either
 changes), so it scales every tyre's μ for every car, on every surface and in every weather,
-by the same factor — the one knob for "the cars are too grippy". `LapTimeModel._surface_grip`
-applies it too, so the lap-time model matches the physics. Tested by
+by the same factor — the one knob for "the cars are too grippy". Tested by
 `test_drivetrain.gd::test_global_grip_scales_every_contact_alike`.
 
 ## Surface-specialised compounds (the snow-tyre rule)
@@ -246,9 +222,8 @@ the stage context built by `GameConfig.fill_tire_context`, which carries the con
 tarmac weight, whether the region is snowy, and the stage weather. An axis keyed on any of
 those three is genuinely three edits in one file. An axis keyed on anything else — altitude,
 tyre temperature, time of day — also needs that value added to `fill_tire_context` and to
-its two fill sites in `drivetrain.gd` and `lap_time_model.gd`. Still no change to the
-resolver and no consumer *logic* change, but five edits across three files rather than
-three in one.
+its fill site in `drivetrain.gd`. Still no change to the resolver and no consumer *logic*
+change, but more edits across more files than three in one.
 
 This paragraph exists because the previous version of it said "Nothing else changes" and
 named **wet** as its first example — while the context at the time carried only surface
@@ -282,22 +257,12 @@ single per-contact resolver every wheel goes through:
 | frozen water / ice | 0, **snowy side** | a frozen lake is only ever authored by a snowy region, and winter rubber is exactly what should pay off when the car slides onto it |
 | normal blend | `s.x * s.y` | road weight × tarmac-within-road = how much tarmac this contact is really on |
 
-`LapTimeModel._surface_grip` applies the *same* function, sourcing the two multipliers from
-`car_meta` (absent → 1.0, an exact no-op) rather than the live config — it solves for a
-**rival's** car as often as the player's. That is what keeps the AI field moving with the
-player instead of diverging. `CarPerformance` is unaffected: its benchmark lap goes through
-`mu_override` and never reaches `_surface_grip`, so a surface-specialised compound cannot
-distort a car's rating. (Contrast the load-sensitivity factor, which is applied to `mu`
-*outside* `_surface_grip` on both branches precisely so that it DOES reach the rating —
-tyre width and mass are properties of the car, whereas which surface it is on is a
-property of the conditions the benchmark freezes.)
-
 ## Helper functions
 
 - `wheel_normal_force(wheel)` — suspension force measured against the wheel's
   `hardpoints` entry, which `_init` seeds from **`Car.wheel_mount(wheel)`** (the authored
   mount) and NOT from the live `wheel.position` — the body repaints that with the settled
-  travel each step, so a drivetrain rebuilt on a running car (`refit_upgrades`) would
+  travel each step, so a drivetrain rebuilt on a running car would
   otherwise over-report every wheel's load. See
   [car-physics.md](car-physics.md) → *The mount a compression is measured from*.
   Spring×compression −
@@ -318,28 +283,13 @@ property of the conditions the benchmark freezes.)
 | **FWD** | front spool | rear | understeer bias |
 | **AWD** | front+rear locked (no center diff) | — | most grip, least drama |
 
-Each car ships with an authored stock `drive_mode`. A layout switch is now a **run-scoped
-mid-run upgrade** — see region-runs.md (deleted with the free-roam pivot) → *Drivetrain conversion* — picked
-in the between-stage repair-or-boost pick alongside the drawn boosts, free, and gone the
-moment the run ends. `RunSession.choose_drivetrain(mode)` records it on `_drivetrain_override`
-(`-1` = the fielded car's own stock/current layout); `world.gd::_field_car` writes it onto
-the DUPLICATED owned-car dict a car is fielded with (never `Save`'s persisted car — the
-same seam boosts and equipped skills use), and `UpgradeLibrary.resolve_drive_override` reads
-it there with a bare range check against `Drivetrain.DriveMode.values()` — no purchase
-gate. `car.gd.apply_owned` threads it through the drivetrain rebuild (member
-`_owned_drive_override`, honoured by `_rebuild_drivetrain`) and
-`UpgradeLibrary.effective_meta` reports it for the stats panel.
-
-This supersedes an EARLIER permanent-purchase model (decision 52: `Save.buy_drive_mode`, a
-per-car conversion bought once and kept forever) and, before that, an even older
-gate-by-upgrade-slot model (a `drivetrain`-slot part unlocking a selector). Both are
-deleted along with their gates. A car in the wrong `drive_mode` for a restricted rally
-(the pre-run entry screen, `rally_detail.gd`) is simply ineligible — there is no
-conversion to offer outside an active run, so `RallyDetail.convertible_for` always
-returns false. The roster ships two stock **FWD** cars — the **Focus**
-(`id: "focus"`) and the **Renault Twingo** (`id: "twingo"`), both home entrants of the
-Front Runners rally (see `features/region-stage-library.md`); the MX-5/Viper/XJS are RWD; the
-Acty is AWD.
+Each car ships with an authored stock `drive_mode`. A layout switch is a **drivetrain
+part** a car carries (`drivetrain:<mode>` in its `parts`): `LootRules.fielded(owned)` writes
+the switched-on one onto the DUPLICATED owned-car dict as `drivetrain_override` (never the
+persisted car), `UpgradeLibrary.resolve_drive_override` reads it with a bare range check
+against `Drivetrain.DriveMode.values()` (`-1` = the car's own stock layout), and
+`car.gd.apply_owned` threads it through the drivetrain rebuild (member
+`_owned_drive_override`, honoured by `_rebuild_drivetrain`).
 
 **AWD handbrake exception:** AWD is normally one rigid locked driveline, so a
 foot-brake lockup takes all four wheels together. The handbrake is the one
@@ -465,21 +415,11 @@ Two ways the per-surface μ scales can be replaced for a stage, both introduced 
 Alps (see [snow-region.md](snow-region.md)):
 
 - **Per-surface overrides.** A region may override `grass_grip` / `gravel_grip` /
-  `tarmac_grip` for every stage tagged to it. `StageConfig.apply_event_config` seats the
+  `tarmac_grip` for every stage tagged to it. `BiomeDirector` seats the
   values, so `surface_tire_params` needs no change at all — it reads the same live config
-  fields it always did, and so does `LapTimeModel`, which is why the rival field scales
-  automatically.
+  fields it always did.
 - **Ice.** On a stage whose region freezes its water, a contact over a submerged cell
   **overrides** the surface blend with `cfg.frozen_water_grip` rather than scaling it —
   what is under the ice is irrelevant to a tyre resting on top of it. Gated on
   `frozen_water_grip > 0.0`, which is `0.0` everywhere else, so the added cost off a
   frozen stage is one float compare.
-
-
-## The rival field runs your tyres
-
-A surface-specialised compound is worth different amounts on different stages, so the
-performance rating — which benchmarks at a frozen grip — cannot price it. Rather than
-inventing a number for it, the opponent field is fitted with **whatever tyre the player
-is running**, so the advantage cancels out instead of going uncharged. See
-[region-stage-library.md](region-stage-library.md) → "Tyre mirroring".

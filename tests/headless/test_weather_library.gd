@@ -18,7 +18,7 @@ func after_each() -> void:
 func test_by_id_falls_back_to_the_dry_entry_for_an_unknown_id() -> void:
 	# A typo'd authored string, an id from an older build, or a condition removed
 	# from the table must degrade to a plain dry stage rather than an empty dict
-	# every consumer would then have to guard. Mirrors StageFields.event_weather.
+	# every consumer would then have to guard.
 	var dry := WeatherLibrary.by_id(WeatherLibrary.DEFAULT_ID)
 	assert_eq(String(dry.get("id", "")), WeatherLibrary.DEFAULT_ID, "the dry entry exists")
 	assert_eq(WeatherLibrary.by_id("no_such_condition"), dry, "unknown id -> the dry entry")
@@ -27,7 +27,7 @@ func test_by_id_falls_back_to_the_dry_entry_for_an_unknown_id() -> void:
 
 func test_dry_grip_multiplier_is_exactly_one() -> void:
 	# STRUCTURAL, not a tuning choice: dry being the identity is what lets
-	# Drivetrain.surface_tire_params and LapTimeModel._surface_grip multiply
+	# Drivetrain.surface_tire_params multiplies
 	# unconditionally, with no per-condition branch anywhere. If dry ever gained a
 	# multiplier those call sites would silently start scaling a dry stage.
 	var cfg := GameConfig.new()
@@ -110,8 +110,8 @@ func test_a_visibility_only_condition_has_no_grip_no_particles_and_no_road_tint(
 	# Fog's SHAPE, asserted against a synthetic table so no shipped colour or
 	# multiplier is pinned: a condition may author a look block ALONE. That single
 	# fact is what makes it a pure visibility condition —
-	#   * no "grip_mult"  => grip_mult() is exactly 1.0, identical to dry, so neither
-	#     the player's tyres nor LapTimeModel's rival field is touched;
+	#   * no "grip_mult"  => grip_mult() is exactly 1.0, identical to dry, so the
+	#     player's tyres are untouched;
 	#   * no "particles"  => world.gd builds no WeatherField at all (the case the
 	#     table was generalised for — it costs no new code);
 	#   * no "road_tint"  => the road albedo is left alone, unlike a precipitation

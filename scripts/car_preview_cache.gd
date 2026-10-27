@@ -32,9 +32,8 @@ func _ready() -> void:
 	_graveyard = Control.new()
 	_graveyard.visible = false
 	add_child(_graveyard)
-	# A new world replaces every owned car (WorldSession.new_world), so the old world's
-	# owned:<instance_id> previews can never be asked for again — free them rather than
-	# keep a SubViewport + full car each in the graveyard forever.
+	# A replaced world (a new world, a cloud download, a wipe, the benchmark ending) brings other
+	# owned cars, whose instance ids can repeat the old ones — so the old previews must go.
 	WorldSession.world_changed.connect(drop_owned)
 
 

@@ -32,17 +32,11 @@ card mesh is `Foliage._alpha_card_mesh` (same "+" layout and plane flags as the 
 > they collide, and they are lit live per-vertex instead of taking the ground's baked
 > light. See [rocks.md](rocks.md).
 
-**Centralised spawning (`Foliage`).** Every place that spawns foliage — the stage
-(`world.gd`) — and, before they were deleted, the HQ clearing and the podium's decorative
-dressing — goes through `Foliage.spawn_trees()` /
-`Foliage.spawn_bushes()`. So the shared meshes and the size normalization all
-live in exactly one file: a tree is the same kind of tree wherever it appears (an
-opaque billboard cutout), and a tree/bush is scaled to `cfg.tree_size_m` /
-`cfg.bush_height_m` everywhere — including the podium, which used to hardcode the
-tree mesh at its native GLB size. The podium supplies its own ring scatter
-(around the podium + showroom, off the tarmac pads) and a flat y = 0
-`TerrainManager` to seat the instances, but the representation and scale come from
-`Foliage` like everywhere else.
+**Centralised spawning (`Foliage`).** Every place that spawns foliage (the dev stage's
+`world.gd`) goes through `Foliage.spawn_trees()` / `Foliage.spawn_bushes()`. So the shared
+meshes and the size normalization all live in exactly one file: a tree is the same kind of
+tree wherever it appears (an opaque billboard cutout), and a tree/bush is scaled to
+`cfg.tree_size_m` / `cfg.bush_height_m` everywhere.
 
 Shared low-level helpers used across the scatter/field code: `ScatterMath`
 (`scripts/scatter_math.gd`) — seeded `hash01` + road-cell `cell_of`/`on_road`;
@@ -218,9 +212,7 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
   below roughly 0.35 means *none*, not *few*; author sparse-but-present around 0.38–0.48.
   See `TreeScatter.forest_density`.
 
-  It's **per rally event**
-  (`StageFields.event_forestiness` → `cfg.track_forestiness`, written by
-  the drawn stage's event dict); a stage that authors none defaults to 1.0 (fully wooded). **Bushes pass the default
+  It's `cfg.track_forestiness`, which defaults to 1.0 (fully wooded). **Bushes pass the default
   1.0**, so undergrowth covers the whole stage regardless of the forest pattern.
 
   **`road_cells` is the visible road footprint inflated by the margin**,
@@ -265,8 +257,7 @@ N transforms, so thousands of trees add negligible node/memory overhead. Each bo
 is `2*tree_collision_radius_m` wide (square footprint), `tree_collision_height_m`
 tall, and centred half its height above the ground so it rests on the surface.
 The body stays on `collision_layer = 1` like `TerrainChunk`, so the car collides
-with trees the same way it collides with the ground. Decorative fields (HQ,
-podium) pass `with_collision = false` and build no body.
+with trees the same way it collides with the ground. Decorative fields pass `with_collision = false` and build no body.
 
 ## Felling — crash a tree over at speed (`TreeFall` + `BillboardField`)
 
@@ -422,7 +413,7 @@ distance), `tree_render_fade_m`
 `TreeMeshField.build`.
 
 The **forest-patch** knobs live in the `Track` group instead, since they're per-stage:
-`track_forestiness` (0–1, set per rally event by `StageFields.event_forestiness`) and
+`track_forestiness` (0–1) and
 `forest_wavelength_m` (Perlin wavelength, default 300). `world.gd` passes them to the
 tree scatter; the bush scatter omits them (forestiness 1.0).
 
@@ -554,12 +545,10 @@ base — a stormy sky, not just a stormy road. This is pure authoring: no
 
 `world.gd._apply_weather_look` pushes the live condition's sway (it's a look, so
 that's its home); `_exit_tree` resets it — but, unlike the headlight cone, to the
-**base** wind, not zero: the podium and menu showcase render the same tree shader, and
-foliage outside a stage should still look alive rather than perfectly still.
+**base** wind, not zero: foliage outside a stage should still look alive rather than perfectly still.
 `Foliage.spawn_trees` also seeds the base wind at spawn (`WindSway.seed_base`), since
-it's the one call site for every tree field in the game (stage, podium, showcase) and
-the podium/showcase callers never run `_apply_weather_look` to push anything of their
-own. `seed_base` pushes ONLY when the global is still 0, and that guard is
+it's the one call site for every tree field in the game and callers
+outside a stage never run `_apply_weather_look` to push anything of their own. `seed_base` pushes ONLY when the global is still 0, and that guard is
 load-bearing: on a stage `_apply_weather_look` runs BEFORE `_generate_track` scatters
 the trees, so an unconditional seed here would land afterwards and flatten a storm
 back to calm.

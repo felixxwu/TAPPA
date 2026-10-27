@@ -21,7 +21,6 @@ func before_all() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	RegionStageFixtures.install()
 	SceneTestHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
@@ -29,18 +28,11 @@ func before_all() -> void:
 	_pause = _scene.get_node("PauseMenu")
 	_mgr = _scene.get_node("CameraManager")
 	_mobile = _scene.get_node("MobileControls")
-	# Capture world.gd's scene changes instead of performing them. REQUIRED here, not
-	# belt-and-braces: quitting with a run active ends the session, and world.gd's
-	# handler would really change_scene_to_file(Scenes.hub_path()), parking a live hub
-	# under /root for every later file — which is what test_world_isolation catches.
-	# after_each fires the same path, so this must be seated file-wide.
-	_scene.scene_change_hook = func(_path: String) -> void: pass
 
 
 func after_all() -> void:
 	get_tree().paused = false
 	_scene.free()
-	RegionStageFixtures.restore()
 	# minimal_world() trims the LIVE Config singleton (track_turn_count, trees_per_turn,
 	# rocks_enabled) and leaves restoring it to whoever runs next. Put it back here so a
 	# later file that reads ambient config doesn't silently inherit a stripped world —
@@ -257,7 +249,7 @@ func test_picking_a_camera_in_settings_applies_live() -> void:
 
 func test_quit_pressed_opens_confirm_popup() -> void:
 	_pause.open()
-	_pause.confirm_quit_to_hq()
+	_pause.confirm_quit_to_title()
 	await get_tree().process_frame
 	var popups := _pause.find_children("*", "ConfirmPopup", true, false)
 	assert_eq(popups.size(), 1, "quit shows a ConfirmPopup")
@@ -284,18 +276,18 @@ func test_picking_a_scheme_in_settings_applies_live() -> void:
 # Regression (gamepad-only bug): `pause` and `menu_back`/`ui_cancel` share Escape on
 # keyboard, but on a gamepad `pause` is Start and `menu_back`/`ui_cancel` is B —
 # separate buttons. The confirm popup's own MenuNav only consumes B/menu_back, never
-# `pause`, so pressing Start while "Quit to HQ?" is up used to fall through to
+# `pause`, so pressing Start while "Quit to title?" is up used to fall through to
 # PauseMenu._unhandled_input's `pause` case and call resume(): the pause OVERLAY
 # hides, but ConfirmPopup is its OWN CanvasLayer (layer 101) hosted on the pause menu
 # node, so it stayed on screen — floating over now-LIVE, unpaused gameplay with its
-# "Quit to HQ" button still armed. Reproduce by feeding a synthetic `pause`
+# "Quit to title" button still armed. Reproduce by feeding a synthetic `pause`
 # InputEventAction straight to _unhandled_input (as the engine would from a gamepad
 # Start press) while the confirm is up, and assert NONE of the three things the old
 # code silently broke happened: the popup is still there, the tree is still paused,
 # and the pause menu itself is still open.
 func test_pause_action_while_quit_confirm_is_open_does_not_resume() -> void:
 	_pause.open()
-	_pause.confirm_quit_to_hq()
+	_pause.confirm_quit_to_title()
 	await get_tree().process_frame
 	assert_true(get_tree().paused, "setup: opening the menu paused the tree")
 	assert_eq(_pause.find_children("*", "ConfirmPopup", true, false).size(), 1,
@@ -329,7 +321,7 @@ func test_pause_action_while_quit_confirm_is_open_does_not_resume() -> void:
 # checks the pause menu is left untouched underneath.
 func test_ui_cancel_while_quit_confirm_is_open_dismisses_the_confirm_not_the_game() -> void:
 	_pause.open()
-	_pause.confirm_quit_to_hq()
+	_pause.confirm_quit_to_title()
 	await get_tree().process_frame
 	var popup: ConfirmPopup = _pause.find_children("*", "ConfirmPopup", true, false)[0]
 

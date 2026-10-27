@@ -1,9 +1,6 @@
 class_name LoadingTips
 extends RefCounted
-# Flavor text for the loading screen (features/loading.md), shown in place of the
-# generation-stage name that used to sit there ("Placing signs…", "Generating track…").
-# world.gd::_stage still print()s the stage name for perf debugging — that is unchanged —
-# it just no longer forwards it to the visible label. A fresh tip is drawn every
+# Flavor text for the loading screen (features/loading.md). A fresh tip is drawn every
 # LoadingScreen._TIP_CYCLE_SEC for as long as the overlay is up (a long load no longer
 # sits on one sentence), and random() never repeats the previous draw.
 #
@@ -14,8 +11,7 @@ extends RefCounted
 # the same rule CLAUDE.md applies to code comments.
 
 const TIPS: Array[String] = [
-	# --- Tuning / parts (all still live post-pivot: tuning_library + start-line Tune Car,
-	#     engine swaps, detune sliders, drivetrain conversions) ---
+	# --- Tuning / parts (Tune car and Parts at a checkpoint) ---
 	"Aero balance helps tune understeer and oversteer at speed.",
 	"Grip balance helps tune oversteer against understeer.",
 	"Brake bias helps tune understeer and oversteer during braking.",
@@ -23,23 +19,26 @@ const TIPS: Array[String] = [
 	"Big turbos hit harder but take longer to spool up.",
 	"A fitted turbo drags on the engine even when it isn't boosting.",
 	"Superchargers deliver full power instantly, with no spool-up lag.",
-	"An engine swap brings its own gearbox and shift feel with it.",
 	"An engine swap shifts a car's front-to-rear weight balance.",
-	"Detuning an engine lowers its torque, and with it the car's performance rating.",
-	"Once engine swapping is unlocked, swapping is free and you can do it as often as you like.",
-	"Wheel styles are purely cosmetic and free to swap.",
-	# --- Damage / weather (damage_model, weather_library — all verified live) ---
+	"Nitrous boosts power for as long as its tank lasts.",
+	# --- Damage ---
 	"Damage depends on how hard you decelerate, not how fast you were going.",
 	"A hard impact can bend a wheel out of alignment until it's repaired.",
 	"Heavy damage makes an engine misfire long before the car gives up.",
-	"Rain lowers tire grip across the whole stage.",
-	"Cutting across a corner triggers an automatic time penalty.",
-	# --- The run loop (post-pivot: region runs, the per-stage clock, the meta tier) ---
-	"A region run is eight stages against the clock — miss one target time and the run is over.",
-	"Between stages you choose: a free field repair, or a boost for the road ahead. Not both.",
-	"Run boosts vanish when the run ends — permanent power lives in the shop.",
-	"Failing a run costs the run, never your garage: money, cars and skills are yours to keep.",
-	"Clearing a region unlocks the next one — and replaying a cleared region still pays.",
+	"An overheating engine slowly drains the car's health.",
+	# --- Free roam ---
+	"Driving past a checkpoint lights it and fully repairs your car.",
+	"Stop at a checkpoint and press Enter or A to open its page: parts, garage, map and tuning.",
+	"If your car gives up, you respawn at the last checkpoint you passed.",
+	"A wreck drops all your money where it happened. Drive back to the crystal to pick it up.",
+	"A second wreck loses the money the first one dropped, so spend what you carry.",
+	"Travelling from anywhere but a checkpoint leaves your money behind.",
+	"Open the map to travel to any checkpoint you have lit.",
+	"Light a checkpoint in a new biome to put that biome's cars and parts on sale.",
+	"Each biome has its own weather and its own grip.",
+	"Press R to put the car back on the nearest road.",
+	"A car that is stuck or flipped is put back on the road by itself.",
+	"Drive past the coins beside the road to collect them.",
 ]
 
 

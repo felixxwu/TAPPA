@@ -42,7 +42,7 @@ Owns all terrain state and the chunk lifecycle.
   **Per-event override:** an event may set any of the 6 flat keys
   `terrain_layer{1,2,3}_{wavelength,amplitude}` to reshape its hills; omitted
   keys fall back to the authored `GameConfig` global default (never to a prior
-  event's override — see `StageConfig.apply_event_config`, region-runs.md (deleted with the free-roam pivot)).
+  event's override).
 - `texture_tile_per_meter: float` — UV tiling for the ground texture (the road
   texture tiles independently via `road_tile_per_meter`, applied as the shader's
   `road_uv_scale`; see [rendering.md](rendering.md)).
@@ -542,8 +542,7 @@ and needs no hand-authoring.
   `world.gd` before `set_track` (mirrors `apply_terrain_light`): `cliff_enabled`,
   `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`, `cliff_run_m`,
   `cliff_fade_m`, `cliff_open_radius_m` (thin-wall open radius), `cliff_amount`
-  (runtime per-event scale, written by `StageConfig.apply_event_config` from
-  `StageFields.event_cliffiness`),
+  (runtime scale),
   `cliff_seed` (`= track_seed`). See the `Cliffs` group in
   [configuration.md](configuration.md).
 - Tests: `tests/headless/test_terrain_cliffs.gd` (zero-when-off/level, flat road +
@@ -803,7 +802,7 @@ Three constraints this had to respect, all still true:
   one must be added to the other** — both `#include`
   `shaders/headlight_cone.gdshaderinc` for exactly this reason.
 
-Nothing about the bake, the chunk cache or `data/track_cache.json` changes: the
+Nothing about the bake or the chunk cache changes: the
 cone is per-frame arithmetic from global uniforms, and weather never reaches
 `TrackGenParams`. See [rendering.md](rendering.md) → "The fake headlight cone"
 and [weather.md](weather.md) → "Night" (five stages author it, one per region).
@@ -827,21 +826,6 @@ so an only-if-authored assignment let one region's sky follow the player into
 later stages. [regions.md](regions.md) has always been right about this. See
 [rendering.md](rendering.md) for the shader/sky plumbing itself. Terrain tints/layers per region are a reserved, unused hook —
 no region ships them yet.
-
-## Stage-based hilliness and curviness — retired
-
-A region run drives 8 stages back to back, and later stages read as harder
-terrain: hillier and curvier than the first. This USED to be a runtime
-multiplier (`StageConfig.stage_scale`, keyed on `RunSession.events_completed()`)
-layered on top of a rally's authored event — **deleted 2026-09**
-(`todo/region-stage-slots-redesign.md`): each of a region's 8 stage SLOTS now
-authors its own fixed `terrain_layer*_amplitude`/`straightness` directly (no
-runtime scaling on top), so a slot's terrain is exactly what's written in
-`RegionStageLibrary.STAGES` for it. See `features/region-stage-library.md`.
-
-The `GameConfig.stage_hilliness_scale_{min,max}` /
-`stage_curviness_scale_{min,max}` fields and `StageConfig.stage_scale` itself
-are gone with it — there is no post-pivot reader left.
 
 ## Related config
 

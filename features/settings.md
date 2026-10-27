@@ -104,8 +104,8 @@ skip-to-finish, chunk-border overlay, perf log). It defaults to **true** — dev
 tools are exposed in the exported release/web build, not just the editor and
 debug exports.
 
-The pages are still **built** either way, and `show_benchmark()` / `show_dev()` /
-`show_seedlab()` still work regardless of the switch — only the way in is gated.
+The pages are still **built** either way, and `show_benchmark()` / `show_dev()`
+still work regardless of the switch — only the way in is gated.
 That keeps `_pages`, focus handling and the tests that drive those pages directly
 unchanged. `dev_tools_override` (static, `-1` = real default of `true`) exists so
 a test can still assert the **hidden** case, which the always-on default alone
@@ -134,7 +134,7 @@ save profile in memory — it does nothing to whatever scene is currently live,
 so without a reload the player kept driving their old car through a
 now-nonsensical (fully dark) overworld: nothing re-ran the "no starter car
 yet" setup a real new game boots into. The reload routes through
-`Scenes.change_to(get_tree(), Scenes.hub_path())`, the same seam every other
+`Scenes.change_to(get_tree(), Scenes.TITLE)`, the same seam every other
 hub transition uses, so it re-instantiates the hub fresh against the
 just-wiped profile (starter-car picker included) exactly like a brand-new
 player's first boot, and stays inert under `Scenes.block_real_changes` in

@@ -125,30 +125,6 @@ refreshing while hidden — `Drivetrain.readouts` is only populated while
 `publish_readouts` is on, which the car ties to the force-arrow overlay's visibility
 (the same H toggle), so there is nothing to read when it's down.
 
-## Skip to finish (event cheat)
-
-**Two triggers:** the **F** key (`skip_to_finish` input action, handled in
-`world.gd._unhandled_input`) and the pause menu's Settings → Dev → **Complete
-stage** button (offered only while a run is live — see
-[settings.md](settings.md) → "Developer-only pages"). Both funnel into the one
-`world.gd::_dev_complete_stage` body, which instantly completes the current
-stage: teleports the car onto the finish line and force-completes it, so the real
-completion → reward → progression flow fires exactly as it would on a genuine
-finish (nothing is faked downstream).
-
-Gated the same way as the H arrows — `SettingsMenu.dev_tools_enabled()`, on by
-default in every build including release/web. It also does nothing unless a run is
-active (`DrivingContext.session_active()`) with a live `StageManager` that hasn't
-already finished; the guard lives INSIDE `_dev_complete_stage`, so the F branch
-and the button's signal path (SettingsMenu → PauseMenu relay → world.gd) share it
-and a stale signal can't fire. Mechanism:
-
-- `TrackProgress.jump_to_finish()` pins progress to 100% (the local-window search
-  can't discover a far teleport on its own) and returns the finish pose.
-- `Car.reset_to(pose)` places the car on the finish line.
-- `StageManager.force_complete()` runs the shared `_complete()` path (freeze timer,
-  re-lock car, show panel, emit `stage_completed`) regardless of phase.
-
 ## Frame profiler overlay
 
 **Source:** `scripts/perf_overlay.gd` (`class_name PerfOverlay extends
@@ -214,45 +190,6 @@ note tests may call the public callback directly — keep its signature).
 breakdown from the representative *release* web build (the per-second logger
 above is off there). See [benchmark.md](benchmark.md) → "Feedback loop".
 
-## HQ boot cost logging
-
-The deleted `hq.gd` logged its own boot split on the non-headless path, in the same greppable style as
-`load stage:`:
-
-```
-hq boot stage: build                    352 ms
-hq boot total: 352 ms
-hq prewarm (deferred, off boot path): 9 props over 2009 ms wall-clock
-hq car cache: 18 props (9 preview, 9 owned-garage), 44 meshes, ~0.49 MB mesh data (est)
-```
-
-The last two lines arrive **after** the loading cover lifts — the free-roam prewarm no
-longer runs inside boot (see below), so its wall-clock is elapsed time *while HQ is
-already interactive*, not time the player waits. The car-cache line rides with it because
-the cache only reaches full size once the warm completes.
-
-> **That wall-clock is NOT a cost.** The prewarm only spawns while the player is still
-> (`hq._prewarm_should_wait`, see [menus.md](menus.md) → Free Roam), so the elapsed figure
-> includes however long it spent parked waiting for them to stop navigating — an interactive
-> boot can therefore report seconds while having done a few hundred ms of work. Read the prop
-> count with it, and if you need the true cost, measure a boot you don't touch.
-
-`_car_cache_mesh_cost()` walks the cache reading only ArrayMesh surface *header* counts
-(never `surface_get_arrays`), so it is cheap; non-ArrayMesh meshes are skipped, making it
-a deliberate under-estimate.
-
-What the numbers showed on a fast Mac: the **free-roam prewarm was ~3x the entire rest of
-the HQ build** (349 ms build + 1093 ms prewarm = 1442 ms boot), while duplicated mesh data
-is negligible (~26 KB per prop). So the resident-memory concern about per-car mesh copies
-is real but small, and the cost worth attacking was the prewarm's contribution to
-time-to-first-interaction — fixed at the time by deferring it (the deleted `hq_carpark.gd` →
-`_prewarm_free_roam_deferred`), taking HQ boot to ~352 ms. Note the mesh walk
-does not see nodes, physics bodies, materials or textures — for a true RAM figure measure
-`Performance.MEMORY_STATIC` / `RENDER_VIDEO_MEM_USED` deltas around the prewarm instead.
-
-The prewarm and the session-resident `_car_cache` are a **deliberate** trade documented in
-the deleted `hq.gd`: the cost was paid once, shortly after boot, to hide the first-entry lag spike.
-
 ## Standalone dev scenes
 
 Two scenes exist purely as dev rigs. Neither is the project's main scene and nothing in
@@ -296,37 +233,6 @@ report — then calls `Benchmark.end()` and quits. GPU timers
 need a real display (skipped/zero under `--headless`) and aren't supported on
 every backend (e.g. OpenGL/macOS may report 0) — then infer GPU cost from the
 frame interval minus render-cpu.
-
-## Track-generation probe (one rally event, no cache write)
-
-`./probe_track.sh` → `tools/probe_track_event.tscn` → `tools/probe_track_event.gd`.
-The debugging companion to `./cache_tracks.sh`, which can only rebake **every**
-event — there is no per-track bake. When the baker reports
-`track cache: rally X seed N did not complete`
-(`tools/generate_track_cache.gd` → `_ready`), this runs that ONE event through the
-same `StageConfig.canonical_event_config` + `TrackGenParams.for_event` +
-`TrackGenerator.generate` path and prints why, writing **nothing** (the committed
-`data/track_cache.json` is left untouched).
-
-```
-./probe_track.sh --rally=gc_island_gp             # every event of one rally
-./probe_track.sh --rally=gc_island_gp --seed=54103
-./probe_track.sh --seed=54103 --turns=31 --straightness=0.2 --water=-4.0  # ad-hoc
-```
-
-It prints the resolved params, whether `recompute_origin` had to **relocate** the
-start off a wet spot, the terrain height at the origin vs. the waterline ceiling, the
-**wet fraction** of a 400 m box around the start, and `placed=N/turn_count`. Exit
-code 1 if any probed event is incomplete.
-
-Reading it: `relocated=true` + a high wet fraction + `placed=0/N` is the signature of
-a start **marooned on a small dry patch** — every first corner's footprint trips
-`TrackGenerator._collide_and_cells`' `WATER_MAX_WET_FRACTION` rejection, so no
-restart can place even one corner. See [track.md](track.md) and [lakes.md](lakes.md).
-
-It must be a SCENE run (like the cache baker), not `--script`: `Config` and the
-other autoloads only exist in a scene run, and `TrackGenerator._search` calls
-`Platform.is_headless()`.
 
 ## Road-curve probe jitter
 

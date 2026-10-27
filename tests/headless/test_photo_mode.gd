@@ -20,19 +20,16 @@ func before_all() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.load_or_new()
-	RegionStageFixtures.install()
 	SceneTestHelpers.minimal_world()
 	_scene = load("res://main.tscn").instantiate()
 	add_child(_scene)
 	await get_tree().physics_frame  # let world._ready() build the scene
 	_pause = _scene.get_node("PauseMenu")
-	_scene.scene_change_hook = func(_path: String) -> void: pass
 
 
 func after_all() -> void:
 	get_tree().paused = false
 	_scene.free()
-	RegionStageFixtures.restore()
 	Config.reset()
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:

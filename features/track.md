@@ -4,9 +4,7 @@
 `scripts/corner_catalog.gd` (`class_name CornerCatalog`), `corner_catalog.tscn`,
 `scripts/track_generator.gd` (`class_name TrackGenerator`),
 `scripts/track_profile.gd` (`class_name TrackProfile` — the VERTICAL channel; see
-*Jumps* below),
-`scripts/stage_config.gd` (`class_name StageConfig` — the canonical event→config
-writer every generation site resolves its params through).
+*Jumps* below).
 
 **Tests:** `tests/headless/test_corner_library.gd`, `tests/headless/test_track_generator.gd`,
 `tests/headless/test_track_profile.gd`, `tests/headless/test_track_gen_params.gd`, `tests/headless/test_track_gen_water.gd`
@@ -16,7 +14,7 @@ generated stage that is painted onto the terrain at startup.
 
 ## Corner shapes (`CornerLibrary`)
 
-Each pacenote turn type is a 2D bezier curve (`Curve2D`), hand-authored as
+Each turn type is a 2D bezier curve (`Curve2D`), hand-authored as
 control points in **meters**, with the entry at the origin heading **+Y** and
 right-hand turns. The 2D curve is the source of truth; lifting it onto the 3D
 terrain surface is a separate, future step.
@@ -47,11 +45,11 @@ and a single corner ends up too small to judge:
 
 | Tool | What it gives |
 |---|---|
-| `tools/corner_capture.tscn` | photographs the whole catalogue to `tools/corner_catalog.png`, **and prints every corner's minimum radius plus the cornering-speed ceiling it implies**. Works headless for the numbers (no renderer needed); needs a window for the PNG. |
-| `tools/square_compare.tscn` | a zoomed before/after overlay of one corner's handle lengths, with the tightest point marked on each curve, to `tools/corner_square_compare.png` |
+| `tools/corner_capture.tscn` | photographs the whole catalogue to a PNG in `tools/`, **and prints every corner's minimum radius plus the cornering-speed ceiling it implies**. Works headless for the numbers (no renderer needed); needs a window for the PNG. |
+| `tools/square_compare.tscn` | a zoomed before/after overlay of one corner's handle lengths, with the tightest point marked on each curve, written as a PNG in `tools/` |
 
 **Minimum radius is the number that matters**, not how the curve looks:
-`LapTimeModel` pass 1 caps speed at `sqrt(mu*g/kappa)` off the *tightest* point, so one
+A cornering speed ceiling of `sqrt(mu*g/kappa)` off the *tightest* point means one
 localised curvature spike sets the braking for the whole corner. That is how `Square`
 came to be tighter than `Hairpin` (4.7 m vs 6.6 m) while looking like a reasonable 90
 degree bend — its control handles were nearly as long as its diagonal, which keeps the
@@ -96,8 +94,7 @@ the road around lakes.
   with the connecting-straight length. `0` (the default) means no straightness bias —
   **not** an even draw, since the per-corner weights below still apply. It changes the
   generated SHAPE, so the same value is passed wherever a track's target time is
-  derived. Set per stage by `StageFields.event_straightness` — earlier-game
-  events run higher (easier).
+  derived.
 - **Per-corner rarity (`CORNER_WEIGHTS`):** a multiplier per authored corner, keyed by
   `CornerLibrary` corner NAME, that scales its sampling weight on **every** track
   regardless of `straightness` (which is why there's no unbiased fast path any more).
@@ -212,12 +209,7 @@ the road around lakes.
   `on_progress.call(points: PackedVector2Array)` with the partial centerline so a
   live preview can paint it as the track is built; it never changes the returned
   result. When omitted (the default empty `Callable`), the search never yields a
-  frame and stays effectively synchronous. `world.gd._generate_track` wires
-  `on_progress` to `LoadingScreen.update_track_preview` on the non-headless staged
-  path only, then locks the finished shape by calling `update_track_preview` once
-  more with the final tessellated centerline right after `generate` returns (so the
-  held line is exact, not a mid-backtrack snapshot) — held drawn through the
-  remaining stages until the overlay is freed.
+  frame and stays effectively synchronous. `world.gd` passes none.
 - **Clearance:** the overlap test rasterizes the collision footprint at
   `width + 2*clearance`, not the visible `width`. So `track_clearance` (m) forces
   non-adjacent sections to keep that much extra gap — stopping the track from
@@ -256,8 +248,8 @@ unit-testable, and feeding BOTH the look and the feel from one function.
 It exists because the corner vocabulary is **strictly 2D**: a `Curve2D` in the XZ plane
 has nowhere to put a crest, and the road's height is not authored at all — `bake_track`
 reads it from the terrain. So "a turn type with a jump in it" cannot be a `CORNERS` entry
-alone. The `Jump` corner supplies the *piece* (and therefore the pacenote, the DFS
-placement and the cache entry); `TrackProfile` supplies the *crest*.
+alone. The `Jump` corner supplies the *piece* (and therefore the DFS
+placement); `TrackProfile` supplies the *crest*.
 
 - **Profile shape — a raised cosine**, `y = h/2 · (1 + cos(2π·x/L))` over
   `x ∈ [-L/2, L/2]`. Chosen because it is zero in **both value and slope** at each end,
@@ -265,8 +257,7 @@ placement and the cache entry); `TrackProfile` supplies the *crest*.
   Anything without that property (a ramp, a parabola) puts a visible kink — and a physics
   step — where the jump meets the ordinary terrain-following road.
 - **`plan(centerline, pieces, height_m, span_m)`** — one crest per `Jump` piece, as
-  `{ center_m, height_m, span_m }` in arc distance. Mirrors `Pacenotes.build` /
-  `SignLayout.plan`: the corner starts after the piece's connecting straight, and the arc
+  `{ center_m, height_m, span_m }` in arc distance. The corner starts after the piece's connecting straight, and the arc
   offset comes from `get_closest_offset`. The span is **clamped to `PIECE_LENGTH_M`**, so
   a mis-set config knob can never bleed the crest into the neighbouring corners.
   `PIECE_LENGTH_M` must equal the authored `Jump` curve's length — `test_track_profile.gd`
@@ -318,8 +309,7 @@ Both were weighed and deliberately left; neither is a bug to "discover" later.
 
 ### Time modelling
 
-`LapTimeModel` folds a crest ceiling into its pass-1 speed cap (`_jump_cap2`), alongside
-the cornering and geared-top-speed caps. This is not optional polish: a `Jump` piece is
+A lap-time model would need a crest ceiling in its speed cap alongside the cornering one. This is not optional polish: a `Jump` piece is
 dead straight in 2D, so curvature alone reads it as **free speed**, while the real car is
 airborne with no drive and no grip — and since the per-stage target time is the only fail
 state, an unmodelled jump quietly tightens every stage that draws one. The cap is exactly
@@ -348,8 +338,7 @@ edge is never disturbed) and fading back to natural grade beyond an influence
 radius. One side rises by exactly what the other falls. The **inside crook of a
 hairpin** (or any pocket the road wraps around) is detected geometrically and
 flattened, so the crook stays clean while the *outside* of a bend can still carry a
-drop. Per-event height is set by `StageFields.event_cliffiness`; the noise
-wavelength is global.
+drop. The noise wavelength is global.
 
 ## Surface split (gravel ↔ tarmac)
 
@@ -358,8 +347,7 @@ splits the road between **gravel** and **tarmac** along its length. A track
 switches surface **exactly once** (each surface is one contiguous run): it either
 opens on gravel and switches to tarmac, or opens on tarmac and switches to gravel
 — `orientation_tarmac_first(seed)` picks which, deterministically from
-`track_seed`. The tarmac run covers `track_tarmac_fraction` of the length (set per
-rally event by `StageFields.event_tarmac_fraction`), which also fixes where the
+`track_seed`. The tarmac run covers `track_tarmac_fraction` of the length, which also fixes where the
 switch sits. `tarmac_weight(dist, total, fraction, tarmac_first, feather_m)`
 returns the tarmac-ness in `[0,1]` at a distance along the track, **feathered**
 with a smoothstep over `track_surface_transition_m` (default 6 m) so the
@@ -416,8 +404,7 @@ above, not to how tall the bump looks),
 (via `GameConfig.road_marking_params()`). Track-side cliffs live in the `Cliffs`
 group: `cliff_enabled`, `cliff_wavelength_m`, `cliff_gain`, `cliff_max_height_m`,
 `cliff_run_m`, `cliff_fade_m`, `cliff_open_radius_m`, `cliff_amount` (pushed onto
-the terrain by `GameConfig.apply_cliffs`; per-event scale via
-`StageFields.event_cliffiness`).
+the terrain by `GameConfig.apply_cliffs`).
 
 ## Track progress & off-track reset
 

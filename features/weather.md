@@ -1,8 +1,5 @@
 # Weather (dry / rain / sandstorm / fog / storm / snow / night)
 
-The per-stage config funnel this file leans on lives in `scripts/stage_config.gd`
-(`class_name StageConfig`) — see *One funnel into the live config* below.
-
 In **free roam** weather drifts: `BiomeDirector` cuts drive time into `weather_hold_s` slots and
 each (ring, slot) draws a condition from the ring's weighted pool (`ring_weather`), seeded from
 the world seed, then cross-fades the environment into it. On the dev stage a stage dict authors
@@ -36,7 +33,7 @@ omitted key means "this condition does not have that feature":
 
 | key | meaning |
 | --- | --- |
-| `id` | stable id; matches the authored event string, `StageFields.WEATHER_*` and `GameConfig.weather` |
+| `id` | stable id; matches the authored event string, `WeatherLibrary.WEATHER_*` and `GameConfig.weather` |
 | `grip_mult` | GameConfig field holding the global tyre μ multiplier. Omitted ⇒ **exactly 1.0** |
 | `particles` | `WeatherField` particle kind (`"rain"` / `"sand"`). Omitted ⇒ no particle field is constructed |
 | `particle_count` | GameConfig field for the quad count |
@@ -82,8 +79,8 @@ de-duplicate — storm points both its particle `wind_dir` and its force's
 Public API (a contract — other conditions are added against it):
 
 - `WeatherLibrary.all()` / `override_for_test(...)` / `reset()` — the standard seam.
-- `by_id(id) -> Dictionary` — **an unknown id returns the DRY entry**, mirroring
-  `StageFields.event_weather`'s tolerance of a typo, so consumers read it unguarded.
+- `by_id(id) -> Dictionary` — **an unknown id returns the DRY entry**, so a typo'd id
+  reads unguarded.
 - `grip_mult(cfg, id) -> float` — the μ multiplier from the named config field;
   dry (and therefore any unknown id) is exactly **1.0**.
 - `config_fields(entry) -> Array` — every GameConfig field name the entry references.
@@ -111,7 +108,6 @@ So there is a name for it:
 | --- | --- |
 | `WeatherLibrary.is_wet(id) -> bool` | the predicate — the only sanctioned way |
 | `WeatherLibrary.wet_ids() -> Array` | the set form, derived from the same table |
-| `StageFields.event_is_wet(event) -> bool` | the same question at the event layer |
 
 Both are derived from **one declared table**, `WeatherLibrary.WETNESS` — an id → bool
 dict, *not* a per-entry key and *not* a hand-written boolean chain. It is separate from
@@ -144,28 +140,11 @@ force, a lightning flash) add a new entry key plus the one consumer that reads i
 list it in `config_fields` — then, **only if it can change a lap time**, in
 `physics_fields` too.
 
-## Authored field (dev stage)
-
-A dev-stage dict (`RegionStageLibrary`, the benchmark, a seed-lab preview) may carry an
-optional `"weather"` string, e.g.:
-
-```gdscript
-{"seed": 31001, "turn_count": 22, "forestiness": 0.7, "surface_mix": 0.6,
- "straightness": 0.8, "weather": "rain"},
-```
-
-`StageFields.event_weather(event) -> String` (`scripts/stage_fields.gd`) resolves
-it **through the table** — `WeatherLibrary.by_id(...)["id"]` — so any condition in
-the table is authorable immediately, and an omitted key or any unrecognised string
-(a typo) resolves to `StageFields.WEATHER_DRY` via `by_id`'s dry fallback.
-Mirrors the style of the sibling accessors `event_forestiness` / `event_tarmac_fraction`
-/ `event_straightness` / `event_cliffiness` in the same file.
-
 ## Config (`GameConfig`, `scripts/game_config.gd`)
 
 - `weather: String` — the LIVE condition for the stage currently being played
-  (`StageFields.WEATHER_DRY` / `WEATHER_RAIN` / `WEATHER_SANDSTORM`). Seated only
-  by `StageConfig.apply_event_config` (see below) — never assigned anywhere else.
+  (`WeatherLibrary.WEATHER_DRY` / `WEATHER_RAIN` / `WEATHER_SANDSTORM`). Seated only
+  by `BiomeDirector` — never assigned anywhere else.
 - The authored rain block, near `gravel_grip`/`tarmac_grip` and the fog/sky
   exports:
   - `rain_grip_mult` — global tyre μ multiplier applied when wet (a single
@@ -182,8 +161,7 @@ Mirrors the style of the sibling accessors `event_forestiness` / `event_tarmac_f
     particle system; only instantiated on a wet stage.
 - The parallel sandstorm block, same shape, tan/dust-toned:
   - `sand_grip_mult` — global tyre μ multiplier applied during a sandstorm, same
-    mechanism as `rain_grip_mult` (both branches of `Drivetrain.surface_tire_params`
-    plus `LapTimeModel._surface_grip`, so the AI field and the player agree).
+    mechanism as `rain_grip_mult` (both branches of `Drivetrain.surface_tire_params`).
   - `sand_background_color`, `sand_sky_color` — flat dusty-tan fog/horizon/sky and
     warm muted ambient.
   - `sand_sun_energy_mult`, `sand_fog_density_mult`, `sand_fog_sky_affect` — same
@@ -324,20 +302,10 @@ track-shape determinant; routing it into generation would invalidate all baked
 track-cache entries for no shape change. Nothing in this piece of work adds it
 there — keep it that way.
 
-## One funnel into the live config
+## Seating the live condition
 
-`StageConfig.apply_event_config(cfg: GameConfig, event: Dictionary)`
-(`scripts/stage_config.gd`) seats `cfg.weather = StageFields.event_weather(event)`
-alongside `track_seed` / `track_turn_count` / `track_tarmac_fraction` / etc. This
-function is the ONE place a stage's parameters reach the live config, pulled at
-consume time by `world.gd._ready` via `DrivingContext.apply_stage_config` — so a
-new scene-entry site cannot forget to seat a field. Weather has no side channel.
-
-Because `apply_event_config` reloads the authored baseline (`load(Config.CONFIG_PATH)`)
-and pins every omitted field to it rather than the current session config, a
-session-less caller (free roam, benchmark, dev boot) that passes an event with no
-`"weather"` key ends up dry automatically — same mechanism that already protects
-`track_water_level_m` etc. from leaking one event's override into the next.
+`BiomeDirector` seats `cfg.weather` as the car crosses rings (free roam); tests set it directly.
+The live field defaults to `WeatherLibrary.WEATHER_DRY`.
 
 ## Grip
 
@@ -511,12 +479,9 @@ destination, and runs before the incoming scene's `_ready`.
 their cars, trees, lakes and signs are now dimmer than before, matching the
 ground they sit on.
 
-## Lap times
+## Fingerprint
 
-`LapTimeModel._surface_grip` applies the same `WeatherLibrary.grip_mult`, so a wet dev
-stage's PAR time scales with it. Visibility (fog, night) and the storm's crosswind have no
-term in the lap-time model, so those conditions make a stage harder in practice than its
-PAR implies. `WeatherLibrary.fingerprint(cfg)` hashes the whole table plus every
+`WeatherLibrary.fingerprint(cfg)` hashes the whole table plus every
 **time-affecting** config value it names (`physics_fields`: `grip_mult` + `wind`), so adding
 a condition or a key can never silently slip a lap-time change past review.
 
@@ -652,17 +617,8 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   `night_sky_panorama`); an empty default would silently reintroduce the
   cross-stage sky leak, since the region look falls back to it. Neither test names
   a texture path.
-- `tests/headless/test_stage_fields.gd` → `test_event_weather_defaults_and_tolerates_unknown_strings` —
-  dry for an omitted key, dry for an unrecognised string, and every other condition
-  in `WeatherLibrary.all()` (opaque, no id named) resolves to itself. Region/count
-  placement for fog, storm and sandstorm is intentionally NOT asserted — it's
-  authoring policy a designer can retune freely (moving a fog event, adding a
-  fifth one), so pinning it as a test would fail on a legitimate content change
-  with no bug present; see "Authored field" above for the guidance instead.
 - `tests/headless/test_drivetrain.gd` — a wet contact yields strictly less μ than
   the identical dry one, in both branches.
-- `tests/headless/test_lap_time_model.gd` — a wet event's optimum is strictly
-  longer than the same event dry.
 - `tests/headless/test_render_smoke.gd` — no rain field exists on a dry stage.
 - `tests/headless/test_loading_screen.gd` — the wet tell changes the headline.
 

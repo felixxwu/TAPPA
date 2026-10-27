@@ -1,50 +1,25 @@
 class_name StageManager
 extends Node
-# Docs: features/stage.md, features/sfx.md, todo/audio.md — update in the same change as this file. (Audio cues in this file go through the `Audio` autoload — never a hand-rolled AudioStreamGenerator; see the AUDIO RULES block at the GO transition.)
-# Tests: tests/headless/test_hud.gd, tests/headless/test_stage_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'StageManager' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
-# Owns the per-stage start/end flow on top of the always-live world:
-#   1. COUNTDOWN — the handbrake is forced on but driver input stays live (so the
-#      player can rev up and launch on GO) while a big centered 3·2·1·GO counts
-#      down on the HUD.
-#   2. RUNNING   — controls unlock, an elapsed timer runs (small, top-right).
-#   3. COMPLETE  — when track progress reaches the finish, the timer freezes,
-#      the car re-locks, and a placeholder stage-complete panel shows.
+# Docs: features/stage.md — update in the same change as this file.
+# Tests: tests/headless/test_stage_manager.gd, tests/headless/test_countdown_hold.gd — extend in the same change.
+# The dev stage's start/end flow: holds the car on the line through a countdown, times the
+# run, and re-locks the car when track progress reaches the finish. It drives the car's
+# control lock only; it shows nothing.
 #
-# It drives the car's control lock and the HUD, and reads TrackProgress for the
-# end condition; it contains no gameplay physics or UI layout. The post-stage
-# flow (standings, podium, rewards, back to HQ) is OUT OF SCOPE here — this only
-# surfaces the `stage_completed(elapsed_seconds)` signal a future rally/menu
-# layer (features/rally-session.md) hangs off. See todo/stage-start-and-end.md.
-#
-# Created and wired by world.gd once the car, HUD and TrackProgress exist.
+# Created and wired by world.gd once the car and TrackProgress exist.
 
 enum Phase { COUNTDOWN, RUNNING, COMPLETE }
-
-# How long the "GO" stays on screen after controls unlock, before it's hidden.
-# A small flash; kept a const (not a config knob) to match the spec's three-knob
-# Stage config surface.
-const GO_FLASH_SECONDS := 0.5
 
 var _phase: int = Phase.COUNTDOWN
 var _countdown_left := 0.0   # seconds remaining in the countdown
 var _elapsed := 0.0          # stage time, accrues only while RUNNING
-var _go_flash_left := 0.0    # seconds the "GO" flash stays up into RUNNING
-var _penalty_s := 0.0        # corner-cut penalty for this event, snapshot at _complete()
-var _reported_seconds := 0.0 # _elapsed + _penalty_s, frozen at the finish crossing
 
 var _car: Node          # a Car (VehicleBody3D) — toggles controls_locked
-var _hud: Node          # the HUD CanvasLayer — countdown / timer / complete panel
-# HUD method availability, resolved once in setup() instead of has_method()-ing
-# every frame in the countdown/running tick. Keyed by method name.
-var _hud_can: Dictionary = {}
 var _progress: Node     # a TrackProgress — progress_percent() drives the end edge
 var _armed := false     # true once setup() has wired the refs and locked the car
-var _results_emitted := false  # true once proceed_to_results() has fired stage_completed
 
 
-signal stage_started                            # countdown finished, timer running
-signal finish_reached                           # car crossed the finish (phase -> COMPLETE, before the NEXT button)
-signal stage_completed(elapsed_seconds: float)  # NEXT pressed on the finish panel; post-stage flow begins
+signal stage_started   # countdown finished, timer running
 
 
 func _cfg() -> GameConfig:
@@ -54,24 +29,10 @@ func _cfg() -> GameConfig:
 # Wire the manager to the live scene and arm the flow, locking the car from the
 # first frame so it can't be driven before GO. Initialisation lives here (not
 # _ready) because add_child runs _ready before world.gd hands over these refs.
-func setup(car: Node, hud: Node, progress: Node) -> void:
+func setup(car: Node, progress: Node) -> void:
 	_car = car
-	_hud = hud
-	_hud_can.clear()
-	for m in ["show_countdown", "hide_countdown", "show_elapsed",
-			"show_stage_complete", "show_cut_flash",
-			"show_off_road", "hide_off_road"]:
-		_hud_can[m] = _hud != null and _hud.has_method(m)
-	# Clear any warning left up by the previous arm (a car swap / new event) — the
-	# fresh car is on the line, so its off-road clock starts at zero.
-	_hide_off_road_warning()
 	_progress = progress
 	_elapsed = 0.0
-	_go_flash_left = 0.0
-	_penalty_s = 0.0
-	_reported_seconds = 0.0
-	_results_emitted = false
-	# Clear any finish-stop braking from a previous arm (car swap / new event).
 	if car != null and "finish_stop" in car:
 		car.finish_stop = false
 	# Countdown: hold only the handbrake so the player can rev up and launch on GO.
@@ -79,13 +40,8 @@ func setup(car: Node, hud: Node, progress: Node) -> void:
 		_car.controls_locked = false
 		_car.handbrake_locked = true
 	_phase = Phase.COUNTDOWN
-	_arm_countdown()
+	_countdown_left = _cfg().stage_countdown_seconds
 	_mark_progress_start()  # car is on the line now -> progress reads 0% from here
-	if _hud_can["show_countdown"]:
-		_hud.show_countdown(_countdown_left)
-	if _progress != null and _progress.has_signal("cut_billed") \
-			and not _progress.cut_billed.is_connected(_on_cut_billed):
-		_progress.cut_billed.connect(_on_cut_billed)
 	_armed = true
 
 
@@ -95,41 +51,6 @@ func setup(car: Node, hud: Node, progress: Node) -> void:
 func _mark_progress_start() -> void:
 	if _progress != null and _progress.has_method("mark_start"):
 		_progress.mark_start()
-
-
-# Relay a billed corner-cut incident to the HUD as a live flash, but only while
-# the stage is actually RUNNING — post-finish coast or a pre-GO countdown cut
-# (if that's ever possible) shouldn't pop a flash the player can't act on.
-func _on_cut_billed(incident_s: float, total_s: float) -> void:
-	if _phase != Phase.RUNNING:
-		return
-	if _hud_can["show_cut_flash"]:
-		_hud.show_cut_flash(incident_s, total_s)
-
-
-# Mirror TrackProgress's off-road clock onto the HUD: an OFF TRACK warning with the
-# seconds left before the car is snapped back (features/progress.md). Held back by
-# off_road_warning_after_s so the everyday rally excursions — running wide, landing a
-# jump on the verge, a tail-out slide — pass without flashing a warning every corner;
-# by the time it appears the player really is off the road and needs to know a reset
-# is coming. Polled rather than signal-driven because it's a continuously-changing
-# readout, not an event. Only while RUNNING: TrackProgress keeps its own clock in every
-# phase (the reset still fires post-finish), but a warning the player can't act on
-# during a countdown or under the finish panel is just noise.
-func _update_off_road_warning() -> void:
-	if _progress == null or not _progress.has_method("off_road_time"):
-		return
-	var elapsed_off: float = _progress.off_road_time()
-	if elapsed_off < _cfg().off_road_warning_after_s or elapsed_off <= 0.0:
-		_hide_off_road_warning()
-		return
-	if _hud_can["show_off_road"]:
-		_hud.show_off_road(_progress.off_road_seconds_left())
-
-
-func _hide_off_road_warning() -> void:
-	if _hud_can.get("hide_off_road", false):
-		_hud.hide_off_road()
 
 
 func _process(delta: float) -> void:
@@ -146,93 +67,30 @@ func _timed_process(delta: float) -> void:
 			_tick_countdown(delta)
 		Phase.RUNNING:
 			_tick_running(delta)
-		Phase.COMPLETE:
-			pass
-
-
-# THE ONE PLACE A COUNTDOWN IS ARMED. Any per-countdown state belongs in here.
-func _arm_countdown() -> void:
-	_countdown_left = _cfg().stage_countdown_seconds
 
 
 func _tick_countdown(delta: float) -> void:
 	_countdown_left -= delta
 	if _countdown_left > 0.0:
-		if _hud_can["show_countdown"]:
-			_hud.show_countdown(_countdown_left)
 		return
-	# Countdown done: unlock, start the timer, flash "GO" briefly.
 	_phase = Phase.RUNNING
 	if _car != null:
 		_car.controls_locked = false
 		_car.handbrake_locked = false
-	if _hud_can["show_countdown"]:
-		_hud.show_countdown(0.0)  # "GO"
-	_go_flash_left = GO_FLASH_SECONDS
-	# AUDIO RULES FOR THIS FILE — these hold whether or not any cue is wired yet, so do
-	# NOT delete this block when you add one. It is not a TODO marker; a probe read it,
-	# implemented the countdown beep at this exact spot, and removed it, which took the
-	# prohibition below and the doc pointers with it while three cues were still unwired.
-	#
-	#   1. NEVER hand-roll an AudioStreamGenerator, AudioStreamPlayer or PCM loop in this
-	#      file. Call the `Audio` autoload: `Audio.play_beep()` for a tick,
-	#      `Audio.play_beep(<higher hz>)` for GO. "HIGHER" IS CHECKABLE, SO CHECK IT: the tick
-	#      uses GameConfig.sfx_beep_frequency_hz, which is 880.0 today, so a GO pitch must be
-	#      ABOVE that number — an attempt passed 800.0 and commented it as "higher", which makes
-	#      GO sound lower than the counts it is meant to punctuate. Re-read the export rather than
-	#      trusting this figure; it is an authored value. It owns the SFX bus, the headless guard
-	#      and the play()/get_stream_playback() order. An attempt that hand-rolled DSP here
-	#      took the whole stage-manager suite down.
-	#   2. KEY A PER-COUNT CUE OFF THE DISPLAYED INTEGER, not off crossing a float
-	#      threshold. `_countdown_left` is seconds remaining and the HUD shows
-	#      `ceil`-style counts, so "3" is already on screen before any threshold is
-	#      crossed. Detecting crossings gives you a **silent first count** and, at zero,
-	#      a tick and the GO cue **in the same frame**. Track the last displayed value and
-	#      fire when it CHANGES — an attempt using crossings shipped exactly those two bugs
-	#      and no test caught either.
-	#   3. WIRING A CUE MEANS UPDATING THESE, in the same change:
-	#        features/sfx.md      — has a "## Not yet wired" section listing this cue.
-	#                               Wiring it makes that section FALSE; move the cue out of it.
-	#        todo/audio.md        — tick the cue in the planned set.
-	#      Both are named here because nothing else at this call site names them, and two
-	#      separate probes wired a cue and left both stale.
-	#   4. Cues still unwired as of this comment: impact/wreck, UI clicks, the podium
-	#      sting. Rules 1-3 apply to each of them, which is why this block outlives any one
-	#      of them being finished.
 	stage_started.emit()
 
 
 func _tick_running(delta: float) -> void:
 	_elapsed += delta
-	if _hud_can["show_elapsed"]:
-		_hud.show_elapsed(_elapsed)
-	_update_off_road_warning()
-	# Hold the "GO" flash a moment, then clear it.
-	if _go_flash_left > 0.0:
-		_go_flash_left -= delta
-		if _go_flash_left <= 0.0 and _hud_can["hide_countdown"]:
-			_hud.hide_countdown()
-	# End condition: progress_percent() is a 0..1 fraction (TrackProgress), so
-	# scale to the 0..100 stage_complete_percent. Monotonic, so this is a one-way
-	# edge — once tripped the phase never leaves COMPLETE.
+	# progress_percent() is a 0..1 fraction (TrackProgress), so scale to the 0..100
+	# stage_complete_percent. Monotonic, so this is a one-way edge.
 	if _progress != null and _progress.progress_percent() * 100.0 >= _cfg().stage_complete_percent:
 		_complete()
 
 
-# Trip the finish: freeze the timer, re-lock the car and show the finish panel.
-# Reached either by crossing the finish (the gate above) or by the dev skip-to-finish
-# cheat (force_complete). stage_completed is DEFERRED to proceed_to_results() (the
-# panel's NEXT button), so the leaderboard/podium flow only starts once the player
-# dismisses the time — the car skids to a stop in the runoff behind the overlay.
+# Trip the finish: freeze the timer and re-lock the car so it skids to a stop in the runoff.
 func _complete() -> void:
 	_phase = Phase.COMPLETE
-	# The run is over; a lingering OFF TRACK warning would sit under the finish panel
-	# with nothing the player can do about it. (TrackProgress keeps its clock running,
-	# so a car that crossed the line off-road is still recovered — just silently.)
-	_hide_off_road_warning()
-	# Re-lock so the finished car skids to a stop under the panel (controls_locked
-	# forces the handbrake on) instead of driving on. It stays visible behind the
-	# overlay; the runoff road (features/track.md) gives it room to stop.
 	if _car != null:
 		_car.controls_locked = true
 		_car.handbrake_locked = false
@@ -241,38 +99,7 @@ func _complete() -> void:
 		# stopped. See Car.finish_stop.
 		if "finish_stop" in _car:
 			_car.finish_stop = true
-	if _progress != null and _progress.has_method("cut_penalty_s"):
-		_penalty_s = _progress.cut_penalty_s()
-	_reported_seconds = _elapsed + _penalty_s
-	if _hud_can["show_stage_complete"]:
-		_hud.show_stage_complete(_elapsed, _penalty_s)
-	# The timed run is over the instant the line is crossed; anything after this
-	# (the skid to a stop in the runoff, idling under the finish panel until NEXT)
-	# is NOT part of the driven run, hence a separate signal from stage_completed.
-	finish_reached.emit()
 
-
-# Advance from the finish panel into the post-stage flow (standings → podium): emit
-# stage_completed, which the session layer (world.gd) hangs the results flow off.
-# Fired by the HUD finish panel's NEXT button. Guarded so it only fires while
-# COMPLETE and only once, so a double-press can't re-enter the flow.
-func proceed_to_results() -> void:
-	if _phase != Phase.COMPLETE or _results_emitted:
-		return
-	_results_emitted = true
-	stage_completed.emit(_reported_seconds)
-
-
-# Dev cheat: complete the event immediately, no matter the current phase (unless
-# already finished). Runs the same completion path as crossing the finish line,
-# so the rally/reward/progression flow fires exactly as it would on a real run.
-func force_complete() -> void:
-	if not _armed or _phase == Phase.COMPLETE:
-		return
-	_complete()
-
-
-# --- Readouts (for tests / a future rally layer) -----------------------------
 
 func phase() -> int:
 	return _phase

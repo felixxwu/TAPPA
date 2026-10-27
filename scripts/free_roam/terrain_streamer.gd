@@ -188,7 +188,7 @@ class PlantGround:
 
 func _ready() -> void:
 	if settings == null:
-		settings = FreeRoamSettings.new()
+		settings = Config.data.free_roam
 	var t0 := Time.get_ticks_msec()
 	terrain.setup(settings, network)
 	network.build(settings, terrain)
@@ -410,6 +410,14 @@ func prefill() -> void:
 	_plan()
 	var start := Time.get_ticks_usec()
 	_run_queue(start + 60_000_000)
+
+
+# prefill() in slices of prefill_slice_ms with a frame between, so the loading screen keeps drawing.
+func prefill_async() -> void:
+	_plan()
+	while not _queue.is_empty():
+		_run_queue(Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0))
+		await get_tree().process_frame
 
 
 # Prefill around a point the car is about to be moved to (a respawn or a rest-stop travel), so it
@@ -1383,8 +1391,6 @@ func _site_marker(i: int) -> Node3D:
 # never glows: painted unshaded it read as a flat yellow square through the door.
 const CABIN_FLOOR_COLOR := Color(0.28, 0.18, 0.1)
 const CABIN_LAMP_AT := Vector3(0.0, 2.6, -1.0)  # under the roof, over the interior floor
-const CABIN_LAMP_RANGE_M := 6.0
-const CABIN_LAMP_ENERGY := 3.0
 static var _cabin_floor: StandardMaterial3D
 
 
@@ -1408,8 +1414,8 @@ static func _light_cabin(cabin: Node3D, lit: bool) -> void:
 	lamp.name = "Lamp"
 	lamp.position = CABIN_LAMP_AT
 	lamp.light_color = BEACON_LIT
-	lamp.light_energy = CABIN_LAMP_ENERGY
-	lamp.omni_range = CABIN_LAMP_RANGE_M
+	lamp.light_energy = Config.data.free_roam.cabin_lamp_energy
+	lamp.omni_range = Config.data.free_roam.cabin_lamp_range_m
 	lamp.shadow_enabled = false
 	cabin.add_child(lamp)
 
@@ -1501,14 +1507,14 @@ func _rest_crowd(i: int, parent: Node3D) -> SpectatorGroup:
 	var away := sites.back(i)
 	var along := Vector2(-away.y, away.x)
 	var cabin := c + away * cfg.rest_stop_cabin_back_m
-	var front := cabin - away * (CABIN_WALLS.end.z + REST_CROWD_HALF_DEPTH_M + 1.0)
+	var front := cabin - away * (CABIN_WALLS.end.z + settings.rest_crowd_half_depth_m + 1.0)
 	var p := cfg.spectator_params()
 	p["seed"] = int(ScatterMath.hash01(i, 0, settings.world_seed, 63) * 1_000_000.0)
 	p["ragdoll_pool_size"] = 0
-	var road := _road_cells_near(front, REST_CROWD_HALF_LEN_M + p["road_probe_m"] + 2.0)
+	var road := _road_cells_near(front, settings.rest_crowd_half_len_m + p["road_probe_m"] + 2.0)
 	var walls := _cabin_wall_points(cabin, away)
 	var wall_grid := SpectatorScatter.build_point_grid(walls, p["tree_cell_m"])
-	var members := SpectatorScatter.members(front, along, REST_CROWD_HALF_LEN_M, REST_CROWD_HALF_DEPTH_M,
+	var members := SpectatorScatter.members(front, along, settings.rest_crowd_half_len_m, settings.rest_crowd_half_depth_m,
 		n, cfg.spectator_separation_m, road, wall_grid, p["tree_cell_m"], p["tree_avoid_m"], p["seed"])
 	if members.is_empty():
 		return null
@@ -1517,10 +1523,6 @@ func _rest_crowd(i: int, parent: Node3D) -> SpectatorGroup:
 	parent.add_child(group)
 	group.setup(members, focus, self, road, wall_grid, p)
 	return group
-
-
-const REST_CROWD_HALF_LEN_M := 6.0    # along the road
-const REST_CROWD_HALF_DEPTH_M := 3.0  # towards the road and back
 
 
 # Road cells (ScatterMath's raster) within `reach` of `centre`: each nearby road segment is walked

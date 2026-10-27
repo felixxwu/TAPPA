@@ -43,7 +43,7 @@ title (Continue · New World · Settings)
 
 - **One persistent world per save.** A single seed makes the island; progress never resets. The
   only setback is a respawn.
-- **A bounded island.** The coast is the edge (about 5 km radius today; the loot pacing pass is
+- **A bounded island.** The coast is the edge (about 10 km radius today, the coast sitting at 0.82–1.0 of that; the loot pacing pass is
   what sizes it).
 - **A road network, laid out whole at world creation.** Roads grow out from spawn, fork, and
   join where they meet. Terrain is built *around* the roads, so they sit in valleys and the

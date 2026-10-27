@@ -1,6 +1,6 @@
 # Music
 
-> **Free-roam pivot (2026-10):** "the hub" is now the title screen (`Scenes.hub_path()` returns `title.tscn`).
+> **Free-roam pivot (2026-10):** the menu context is the title screen, detected by the `MENU_GROUP` node group.
 
 Interactive, looping background music. A single track loops into itself
 seamlessly; the system is built so context tracks (HQ / event) can later swap on
@@ -54,39 +54,24 @@ is only ever one song (~4 × 180 KB) at a time (`todo/mobile-web-performance.md`
 
 ## Context selection (scene state, not transitions)
 
-Which track plays is decided by the **live scene state**, not by transition hooks
-(which are fragile). Every frame `MusicDirector._process` reads
-`get_tree().current_scene.scene_file_path` and resolves it via
-`MusicDirector._song_for_scene`: a **hub scene** wants the **current HQ song** — one entry of
-`MusicLibrary.HQ_SONGS` (`echo_chamber`, `skillz`); **every other scene**
-(loading/start line/driving `main.tscn`, and the deleted `standings.tscn`/`podium.tscn`) wants
-the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS` (`skillz`,
-`deadlock`, `nightandday`, `threaded`, `whoyouare`). The result is re-queued via
-`play_song`, which is idempotent and **latches the swap for the next 8-bar
-handoff** — so leaving the HQ doesn't cut to the rally song immediately; the
-current HQ loop finishes and the rally song comes in beat-aligned (and vice-versa
-on return). The `MusicDirector` autoload persists across scene changes, so
-playback is continuous throughout.
+Which track plays is decided by live state, not by transition hooks (which are fragile). The
+title menu is drawn over `free_roam.tscn`, so the scene path says nothing about it: the
+`TitleScreen` joins the `MusicLibrary.MENU_GROUP` node group while it is open, and every frame
+`MusicDirector._process` asks `_menu_open()` and resolves `_song_for_context`: with a menu open
+it wants the **current menu song** — one entry of `MusicLibrary.MENU_SONGS` (`echo_chamber`,
+`skillz`); otherwise the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS`.
+The result is re-queued via `play_song`, which is idempotent and **latches the swap for the
+next 8-bar handoff**, so the change lands beat-aligned. The `MusicDirector` autoload persists
+across scene changes, so playback is continuous throughout.
 
-**The hub-scene predicate.** The hub test is `MusicLibrary.is_hq_scene`, which
-delegates to `Scenes.is_hub_scene` (`scripts/scenes.gd`) rather than comparing
-against a literal of its own. Selection is by LIVE SCENE PATH, so a hardcoded
-path here would silently make the hub a "rally" context — playing a stage song as
-the hub theme — the first time the hub shell was swapped. It was swapped: the
-roguelike pivot deleted `hq.tscn` and `overworld.tscn` and `Scenes.HUB` now names
-the replacement shell, with nothing in this file to change.
-`MusicLibrary.HQ_SCENE` remains as an alias of `Scenes.HUB` so there is one
-source of truth for the path. See
-[architecture.md](architecture.md) → "Scene routing (`Scenes`)".
+### Random menu song and rally song (per visit / per event)
 
-### Random HQ song and rally song (per visit / per event)
-
-Neither context plays a fixed song. `MusicDirector` holds `_current_hq_song` and
+Neither context plays a fixed song. `MusicDirector` holds `_current_menu_song` and
 `_current_rally_song`, and **re-picks both at every loading screen**: `_tick`
 calls `_update_loading_edge`, which watches the `loading_screen` group and, on its
 rising edge (empty → present), calls
 `MusicLibrary.random_rally_song(_current_rally_song)` and
-`MusicLibrary.random_hq_song(_current_hq_song)` — each a uniformly random pool
+`MusicLibrary.random_menu_song(_current_menu_song)` — each a uniformly random pool
 entry, **never the one just played** (no back-to-back repeat within that pool).
 So a fresh song is chosen for whichever context is entered next each time an event
 loads / you return to HQ / the next event begins, and it's held for that whole
@@ -94,7 +79,7 @@ visit (every HQ-scene frame resolves to the same locked-in HQ song, every non-HQ
 scene resolves to the same locked-in rally song, until the next loading edge).
 The edge check runs **before** the stall/suspend early-returns, so it still fires
 on the web build (where a load suspends the director) — the pick lands while the
-loading screen is up, so the following scene uses it. `_current_hq_song` and
+loading screen is up, so the following scene uses it. `_current_menu_song` and
 `_current_rally_song` are each seeded once in `_ready` (and lazily by
 `_song_for_scene`) so a scene entered before any loading screen still has a valid
 song. `skillz` is shared by both pools — it's an independent per-context pick, so
@@ -131,8 +116,8 @@ straight to that song's segment 1 at the next beat-aligned handoff.
   `catch_up`). No nodes/audio; fully unit-tested (`tests/headless/test_music_schedule.gd`).
 - **`scripts/music_library.gd`** (`MusicLibrary`) — the `SONGS` catalogue
   (`id → {bpm, segment_paths}`) + `by_id` / `entry_of` / `segment_count`, plus the
-  scene→song mapping (`HQ_SCENE`/`is_hq_scene`), the HQ pool
-  (`HQ_SONGS`/`random_hq_song`), and the rally pool
+  menu group (`MENU_GROUP`), the menu pool
+  (`MENU_SONGS`/`random_menu_song`), and the rally pool
   (`RALLY_SONGS`/`random_rally_song`) — both pool pickers share the private
   `_random_from_pool` helper. Same pattern as `EngineLibrary`, except the audio
   is **lazy-loaded** (below).
@@ -142,7 +127,7 @@ straight to that song's segment 1 at the next beat-aligned handoff.
   segment is a voice via `play_stream(stream, from_offset)` so overlapping tails
   share one mix timeline. `advance(now)` is the pure per-frame decision (segment
   sequencing + swap latch); `seed_grid(now, id)` is the first-play grid seed;
-  `_process` reads the scene state (`update_for_scene`) then applies `advance`.
+  `_process` reads the scene state (`update_for_context`) then applies `advance`.
   `PROCESS_MODE_ALWAYS` keeps music playing while paused. No hardcoded autostart —
   the first frame picks the song from the live scene.
 

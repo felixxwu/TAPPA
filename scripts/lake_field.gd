@@ -6,8 +6,7 @@ extends Node3D
 # Wherever terrain sits below the level the plane shows through; higher terrain
 # occludes it via the depth test — so there's no per-lake geometry and no
 # flood-fill. The "is this point in water?" query is a direct terrain-height check
-# (wired by world.gd), and the 2D previews sample below-water cells via
-# submerged_cells(); neither needs this node.
+# (wired by world.gd); submerged_cells() samples below-water cells without this node.
 
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 # Pre-baked seamless (tileable) Perlin tile scrolled as the water surface detail.
@@ -105,28 +104,3 @@ static func submerged_cells(sampler: Callable, water_level: float,
 			z += step
 		x += step
 	return cells
-
-
-# Below-water preview cells over `bounds` plus the step used, for the loading
-# screen (world.gd) and the dev seed lab (settings_menu). Caps the scan at ~grid^2
-# samples so big stages don't stall. Returns [cells: PackedVector2Array, step: float].
-static func preview_cells(params: TrackGenParams, bounds: Rect2) -> Array:
-	if not params.water_enabled:
-		return [PackedVector2Array(), TerrainManager.CELL_M]
-	return preview_cells_for(params.water_sampler, params.water_level, bounds)
-
-
-# preview_cells against an ARBITRARY height sampler. The params-based entry point
-# above samples pure noise, which is all that exists before the road is baked — but
-# the terrain the player actually gets is the BAKED one (road flatten + cliff
-# offsets, TerrainManager.height_at), and cliff drops are signed, so a stage with
-# real cliffiness ends up with substantially more ground under water than the noise
-# predicts. world.gd repaints the preview through this once the bake has run, so the
-# loading screen ends up showing the water that's really there. Same grid/step rule
-# as preview_cells, so the repaint lands on the identical lattice.
-static func preview_cells_for(sampler: Callable, water_level: float, bounds: Rect2) -> Array:
-	if not sampler.is_valid():
-		return [PackedVector2Array(), TerrainManager.CELL_M]
-	var grid := 220.0
-	var step: float = maxf(TerrainManager.CELL_M, maxf(bounds.size.x, bounds.size.y) / grid)
-	return [submerged_cells(sampler, water_level, bounds, step), step]

@@ -152,45 +152,6 @@ The gauge write is **change-gated** on the rounded integer percent
 drain is a continuous float, so writing `value` every frame would queue redraws for
 changes nobody can see.
 
-## Stage flow widgets
-
-The `CountdownLabel`, `ElapsedLabel` and `StageCompletePanel` are hidden at
-`_ready()` and driven by the `StageManager` (see [stage.md](stage.md)) through
-these methods: `show_countdown(seconds_left)` (big centered `3·2·1·GO`;
-`ceili` maps the remaining time to the digit, `0` → `GO`), `hide_countdown()`,
-`show_elapsed(seconds)` (top-centre `m:ss.cc`, gated by `hud_elapsed_enabled`),
-and `show_stage_complete(seconds, penalty_s)` (the finish panel — `FINISH` +
-the time, plus a `+X.Xs cut` / `= total` breakdown line when `penalty_s > 0.0`).
-`UITheme.format_time(ms)` is the shared `m:ss.cc` formatter (the seconds-based
-call sites convert to ms first).
-
-The **`CutFlashLabel`** is a live corner-cutting flash (see
-[corner-cutting.md](corner-cutting.md)): `show_cut_flash(incident_s, total_s)`,
-pulsed by `StageManager` every time `TrackProgress` bills a cut incident while
-RUNNING. It shows the running event total (`CUT +total_s`), not the incident
-delta, so consecutive incidents read as one growing tag rather than flickering
-resets — built in code, anchored top-centre at `_POPUP_TOP`, and fading out after
-`hud_popup_show_seconds` (a countdown ticked in `_process`). Gated by
-`cut_penalty_enabled`. (`_POPUP_TOP` is still derived from the deleted pacenote strip's
-`_PACE_TOP` + `_PACE_ICON` constants in `hud.gd`.)
-
-## Off-track warning
-
-The **`OffRoadLabel`** mirrors `TrackProgress`'s off-road clock (see
-[progress.md](progress.md)): a red `OFF TRACK  n.n` counting down the seconds left
-before the car is snapped back onto the road. Built in code, anchored at the
-**viewport centre** and hung `_OFF_ROAD_TOP` below it so it clears the centred
-3·2·1·GO countdown and stays out of the eye-line of the road ahead.
-
-Unlike the popups above it is **not a fading pulse** — it mirrors a live state, so it
-has no `_tick_fade` timer: `show_off_road(seconds_left)` puts it up and it stays up
-until `hide_off_road()`. `StageManager._update_off_road_warning` owns both calls,
-polling `TrackProgress.off_road_time()` / `off_road_seconds_left()` each RUNNING
-frame and holding the label back until `off_road_warning_after_s` has elapsed.
-`show_off_road` change-gates on the displayed **tenth**, so a per-frame call only
-re-formats the string ten times a second. `Hud.off_road_text(seconds_left)` is the
-pure formatter (clamps a negative countdown to `0.0`).
-
 ## Behavior
 
 - `_ready()` — sets visibility from `cfg.hud_enabled`.
@@ -228,6 +189,5 @@ web `.pck`. Editor and test runs fall back to the committed default
 
 ## Related config
 
-`hud_enabled`, `hud_elapsed_enabled`, `hud_hp_enabled`, `hud_low_hp_warn_frac`,
-`hud_popup_show_seconds`.
+`hud_enabled`, `hud_hp_enabled`, `hud_low_hp_warn_frac`.
 See [configuration.md](configuration.md) and [damage.md](damage.md).

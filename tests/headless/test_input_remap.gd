@@ -44,6 +44,21 @@ func test_actions_are_all_real_input_map_actions() -> void:
 			"rebindable action '%s' exists in the input map" % entry["action"])
 
 
+# One key must not drive two actions (R used to both reset and cycle the camera).
+func test_resetting_to_the_road_shares_no_key_with_another_rebindable_action() -> void:
+	var reset_keys := []
+	for e in InputMap.action_get_events("reset_to_road"):
+		if e is InputEventKey:
+			reset_keys.append(e.physical_keycode)
+	assert_gt(reset_keys.size(), 0, "reset_to_road has a key")
+	for entry in InputRemap.ACTIONS:
+		if entry["action"] == "reset_to_road":
+			continue
+		for e in InputMap.action_get_events(entry["action"]):
+			if e is InputEventKey:
+				assert_false(reset_keys.has(e.physical_keycode), "%s shares a key with reset_to_road" % entry["action"])
+
+
 func test_rebind_keyboard_replaces_only_the_keyboard_slot() -> void:
 	var key := InputEventKey.new()
 	key.physical_keycode = KEY_K

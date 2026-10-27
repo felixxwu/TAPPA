@@ -42,6 +42,7 @@ const ACTIONS := [
 	{"action": "handbrake", "name": "Handbrake"},
 	{"action": "nitrous", "name": "Nitrous"},
 	{"action": "cycle_camera", "name": "Cycle camera"},
+	{"action": "reset_to_road", "name": "Reset to road"},
 	{"action": "pause", "name": "Pause"},
 ]
 

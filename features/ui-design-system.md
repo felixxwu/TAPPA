@@ -49,22 +49,8 @@ bakes in 2–4 as the defaults:
 3. **Single-line menu buttons are a fixed, compact height** (`UITheme.MENU_ROW_H`).
    Multi-line rows (e.g. the settings option rows, which embed their own layout)
    are left to size themselves.
-4. **Menu backgrounds are pure black** — buttons and panels alike. **One documented
-   exception, the ACCENT READOUT:** a floating 3D readout that must jump out of a map of
-   otherwise-identical black panels is inverted (light-brown face, black ink — the same
-   board stock as the pacenote signs, signs.md (deleted with the free-roam pivot)). Every surface that took it was
-   on the deleted HQ map table, so nothing renders one today; the rule is kept because it
-   is the one sanctioned way to break the black, and the next 3D readout should take this
-   treatment rather than inventing a colour. The podium's `SPECIAL_UNLOCK` card used to
-   keep its own **white**
-   face on the argument that a full-screen celebration should sit at maximum contrast. It
-   no longer does: at panel size white was the only such surface in the game, so instead
-   of reading as the loudest of our own cards it read as another app's dialog dropped into
-   the frame. It now wears the ordinary `UITheme.reward_card_box`, like every other reveal
-   on that screen, and paints no ink of its own back on over the house rules. The lesson
-   generalises — the inversion earns its keep on a SMALL marker that has to win against
-   map paper, and stops paying at panel size. Any further exception should be argued
-   and listed here, not added quietly; the rule is what makes the look coherent.
+4. **Menu backgrounds are pure black** — buttons and panels alike. Any exception should be
+   argued and listed here, not added quietly; the rule is what makes the look coherent.
 
 5. **Every themed Button/Panel casts UITheme's hard down-right shadow** — see
    "Card drop shadow" below. Applied by `enforce()` at runtime rather than baked into
@@ -73,8 +59,7 @@ bakes in 2–4 as the defaults:
    is left alone.
 
 Menu builders call `UITheme.enforce(root)` once after building; screens with
-dynamic text re-run it whenever that text changes (HQ on every view change /
-focus / lift refresh, the podium after each reveal) so the rules keep holding.
+dynamic text re-run it whenever that text changes so the rules keep holding.
 The HUD, mobile controls and other in-world overlays are **not** menus and are
 left alone by `enforce()` (e.g. the big 3·2·1 countdown stays large) — but
 [mobile-controls.md](mobile-controls.md)'s touch buttons still hand-pick the
@@ -220,7 +205,7 @@ godot --headless --script tools/build_ui_theme.gd      # → theme/ui_theme.tres
 
 Don't scatter new colour/size literals through the UI scripts — add them to
 `UITheme` (and re-run the generator if they belong in the global theme). 3D world
-materials (concrete, tarmac, podium steps, garage) are **not** UI and keep their
+materials (concrete, tarmac) are **not** UI and keep their
 own colours.
 
 ### The palette is grade-baked
@@ -263,7 +248,7 @@ popup). There are exactly two:
 
 - `UITheme.PANEL_DIM` — a menu sits over the still-legible world (pause menu).
 - `UITheme.MODAL_DIM` — a blocking modal fully interrupts it (`confirm_popup.gd`,
-  the HQ car-park prompts, the seed-lab popups).
+  the HQ car-park prompts).
 
 Use one of those for any new dimmer rather than picking a fresh alpha.
 

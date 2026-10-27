@@ -1,7 +1,7 @@
 class_name GameConfig
 extends Resource
-# Docs: features/car-performance.md, features/configuration.md, features/forced-induction.md, features/tuning.md — update in the same change as this file.
-# Tests: tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd, tests/headless/test_car_performance.gd — extend in the same change. (Nearly every headless test reads this file; those three are the ones that cover it AS config. For a specific knob, the owning area's doc above names its own tests.)
+# Docs: features/configuration.md, features/forced-induction.md, features/tuning.md — update in the same change as this file.
+# Tests: tests/headless/test_config_applied.gd, tests/headless/test_config_isolation.gd — extend in the same change. (Nearly every headless test reads this file; those two are the ones that cover it AS config. For a specific knob, the owning area's doc above names its own tests.)
 # Central tuning knobs for the whole game. Edit config/game_config.tres
 # (Inspector or text), not the per-node values in main.tscn — runtime
 # config overrides those defaults at startup.
@@ -231,14 +231,9 @@ var peak_torque_rpm := 4500.0
 ## HANDLING rather than only look. The region names these fields (it never authors
 ## numbers), exactly as a WeatherLibrary condition does, so all tuning stays here.
 ##
-## RegionLibrary.surface_grip_of resolves them; StageConfig.apply_event_config seats
-## them onto grass_grip/gravel_grip/tarmac_grip for the stage. Every other region
+## RegionLibrary.surface_grip_of resolves them; BiomeDirector seats
+## them onto grass_grip/gravel_grip/tarmac_grip for the ring. Every other region
 ## leaves those at the authored baseline above, so this is an exact no-op elsewhere.
-##
-## LapTimeModel._surface_grip reads the same live fields, so the AI field scales with
-## the player automatically: snow is a VARIETY lever, not a difficulty one (like rain
-## and sandstorm, unlike fog). CarPerformance is unaffected — it benchmarks at a
-## frozen BENCHMARK_SURFACE_GRIP, so ratings and the matched field cannot drift.
 ##
 ## Keep the grass < gravel < tarmac ordering; snow drops all three well below home.
 @export_range(0.1, 2.0) var snow_grass_grip := 0.30
@@ -269,9 +264,8 @@ var peak_torque_rpm := 4500.0
 ## THE REGISTRY of surface-dependent tyre axes — the one place that knows which
 ## per-surface multipliers exist. Every consumer derives from this table rather than
 ## naming the fields: tire_surface_mult_for() below (the live physics via
-## Drivetrain._surface_at and the AI field via LapTimeModel._surface_grip),
-## car.gd::_apply_physics_spec's neutral re-seed, and
-## car_performance.gd::merged_meta's carry list. That is why adding an axis touches
+## Drivetrain._surface_at),
+## and car.gd::_apply_physics_spec's neutral re-seed. That is why adding an axis touches
 ## no file but this one.
 ##   field   — the GameConfig property holding the live multiplier
 ##   channel — which surface channel feathers it; the blend rule lives in
@@ -305,7 +299,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## Applied in ps1_models.gdshader's vertex stage against the baked road weight, so the
 ## road itself is never raised and the existing feather turns the step into a bank.
 @export_range(0.0, 2.0) var snow_visual_depth_m := 0.35
-## LIVE per-stage values, seated by StageConfig.apply_event_config from the driven
+## LIVE per-stage values, seated by BiomeDirector from the current
 ## region (0.0 for every region that authors no deep snow). Never author these — they
 ## are the deep-snow counterpart to `weather`, written by the funnel and read by
 ## car.gd (drag) and world.gd (the shader uniform).
@@ -324,80 +318,14 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 @export var ice_color := Color(0.80, 0.86, 0.90)
 @export var ice_shore_color := Color(0.88, 0.92, 0.95)
 ## LIVE per-stage: the ice μ, or 0.0 when this stage's water is liquid. Seated by
-## StageConfig.apply_event_config from the driven region. 0.0 is the "not frozen"
+## BiomeDirector from the current region. 0.0 is the "not frozen"
 ## sentinel and is what every non-Alps stage runs, so the lake stays a soft hazard
 ## everywhere it always was.
 @export var frozen_water_grip := 0.0
-## Geometry of the CarPerformance benchmark track (scripts/benchmark_track.gd) —
-## a straight, then a hairpin, then N sweepers, scored on the TOTAL time only.
-## See docs/superpowers/specs/2026-08-15-car-performance-rating-design.md.
-##
-## benchmark_straight_m is the PRIMARY balance lever: it shifts the rating between
-## rewarding power and rewarding cornering. Shorten it if the rating is found to
-## favour straight-line speed. benchmark_sweeper_radius_m is the secondary lever —
-## it trades low-speed grip against high-speed aero, since downforce only asserts
-## itself above a certain speed.
-##
-## Changing any of these RE-SCORES EVERY CAR. That is safe for career (nothing is
-## persisted) because CarPerformance normalises against a reference car, but see
-## features/car-performance.md before moving them.
-@export_range(50.0, 2000.0) var benchmark_straight_m := 500.0
-@export_range(5.0, 60.0) var benchmark_hairpin_radius_m := 15.0
-@export_range(30.0, 400.0) var benchmark_sweeper_radius_m := 90.0
-@export_range(1, 8) var benchmark_sweeper_count := 3
-## How far apart the performance ratings are SPREAD, without touching the benchmark track.
-##
-## The raw rating is proportional to average speed — `500 x reference_time / this_time` —
-## and lap time is a compressive measure of a car's capability: a hypercar is many times
-## the machine a kei van is, but only ~1.5x faster round a lap. So the honest numbers bunch
-## up, and the roster reads as flatter than it feels to drive.
-##
-## This is the exponent on that ratio: `500 x (reference_time / this_time) ^ spread`. 1.0 is
-## the raw, physically-proportional number. Above 1.0 stretches the field about the 500
-## anchor — a car exactly as fast as the reference still scores 500, a faster car gains more
-## and a slower car loses more.
-##
-## An EXPONENT rather than a linear stretch on purpose: it is multiplicative, so it can
-## never drive a slow car to zero or below the way `500 + (raw - 500) * gain` does, and it
-## keeps "twice the ratio" meaning the same thing everywhere on the scale.
-##
-## It cannot separate cars the benchmark finds genuinely equal — differences are amplified
-## proportionally, so two cars within 1% of each other stay within `spread`% of each other.
-## Widening the WHOLE field is what this does; discriminating between the fast cars is a
-## benchmark-geometry question (benchmark_straight_m, above).
-##
-## Changing this RE-SCORES EVERY CAR, and rating-space values elsewhere — notably
-## any authored rating ceiling (e.g. a challenge's ChallengeLibrary.ceiling_for) —
-## are then measured against a wider field, so revisit those together.
-@export_range(0.5, 4.0) var rating_spread := 1.0
-## Corner-exit traction ceiling per drive mode, used by LapTimeModel's forward
-## pass (a = min(factor * grip_long, a_engine)). The real Drivetrain couples the
-## driveline so AWD spreads drive torque across four contact patches — less slip
-## per patch, less wheelspin — while FWD asks the front tyres to steer and drive
-## at once. The QSS model has no wheels, so this scalar stands in for that.
-##
-## The values follow the CONTACT PATCHES. An AWD car drives through all four, so it is
-## the 1.0 reference; a 2WD car drives through two and can put down roughly half. The
-## 2WD split is asymmetric because acceleration transfers weight REARWARD, loading a
-## RWD car's driven axle and unloading a FWD car's — hence RWD 0.6, FWD 0.4.
-##
-## This ONLY binds where the car is grip-limited. The forward pass takes
-## min(factor * grip_long, a_engine), so a power-limited car — most of a long straight —
-## is unaffected whatever these are, and every drivetrain times identically there. That
-## is the intended shape: drivetrain buys traction, not power.
-##
-## Setting all three to 1.0 makes the whole term an exact no-op. Changing any of them
-## moves every AI, rival and ghost time in the game, so treat it as a roster-wide
-## balance change. Indexed by CarLibrary.RWD / AWD / FWD.
-@export_range(0.2, 1.0) var traction_factor_rwd := 0.6
-@export_range(0.2, 1.0) var traction_factor_awd := 1.0
-@export_range(0.2, 1.0) var traction_factor_fwd := 0.4
-## The LIVE weather condition for the stage currently being played (RallyLibrary.
-## WEATHER_DRY / WEATHER_RAIN). Seated by StageConfig.apply_event_config from the
-## event's authored `weather` field — the ONE funnel into the live config, so a new
-## scene-entry site can't route weather around it. Session-less callers (free roam,
+## The LIVE weather condition (WeatherLibrary.WEATHER_*), seated by whoever drives the
+## weather. Session-less callers (free roam,
 ## benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
-@export var weather := StageFields.WEATHER_DRY
+@export var weather := WeatherLibrary.WEATHER_DRY
 # The active condition's sun_energy_mult, seated by world.gd::_apply_overcast_look
 # each stage boot (and reset to 1.0 there when the condition has no look block).
 # NOT exported and NOT authored: it is a derived runtime value, mirroring onto the
@@ -779,11 +707,6 @@ func has_nitrous() -> bool:
 ## the centerline (100% progress). TrackProgress samples the curve's far edge
 ## exactly, so _best_offset can reach the baked length — see track_progress.gd.
 @export_range(0.0, 100.0) var stage_complete_percent := 100.0
-## Show the top-right elapsed-time readout during the run (mirrors hud_enabled).
-@export var hud_elapsed_enabled := true
-## How long (seconds) a transient in-run HUD tag (the corner-cut flash) stays on screen
-## before it fades out.
-@export var hud_popup_show_seconds := 3.0
 @export_group("Start Line")
 ## Stage the generated track: feeds TrackGenParams._apply_staging, which shifts the generation
 ## origin ahead of the nominal spawn and reserves a lead-in corridor behind it.
@@ -854,6 +777,9 @@ func has_nitrous() -> bool:
 ## Seconds between the car giving up (0 HP: the engine cuts out and it coasts) and the wreck
 ## page appearing (RestStops.step counts it down).
 @export_range(0.0, 10.0, 0.1) var wreck_page_delay_s := 3.0
+## Fastest the car may be going (m/s) for Enter / A to open a rest stop's page, so a handbrake
+## turn (A on a pad) through a checkpoint doesn't pop it open mid-drift.
+@export_range(0.0, 20.0, 0.5) var rest_stop_open_speed_mps := 3.0
 ## Onlookers gathered at each rest stop: a live crowd in front of its cabin (TerrainStreamer._rest_crowd).
 @export_range(0, 60) var rest_stop_crowd_size := 14
 ## How far each rest stop's log cabin stands back from its pad's centre, away from the road
@@ -1156,7 +1082,7 @@ func has_nitrous() -> bool:
 @export_range(0.05, 4.0) var road_tile_per_meter := 0.5
 
 ## Flat overcast grey used as background_color / fog_light_color / horizon on a
-## wet stage (weather == StageFields.WEATHER_RAIN). Applied by the weather look
+## wet stage (weather == WeatherLibrary.WEATHER_RAIN). Applied by the weather look
 ## override, layered after the region look so rain wins. See features/weather.md.
 @export var rain_background_color := Color(0.55, 0.55, 0.58)
 ## Dimmer, cooler ambient sky colour (upward-facing surfaces) on a wet stage.
@@ -1175,7 +1101,7 @@ func has_nitrous() -> bool:
 @export_range(0, 2000) var rain_particle_count := 300
 
 ## Flat dusty-tan background/fog colour on a sandstorm stage (weather ==
-## StageFields.WEATHER_SANDSTORM, authored only onto region == "greece" events).
+## WeatherLibrary.WEATHER_SANDSTORM, authored only onto region == "greece" events).
 ## Applied by the same weather look override as rain, layered after the region
 ## look. See features/weather.md.
 @export var sand_background_color := Color(0.72, 0.6, 0.42)
@@ -1197,8 +1123,7 @@ func has_nitrous() -> bool:
 ## literal in world.gd — a future condition tinting toward snow-white needs no code.
 @export var sand_road_tint_color := Color(0.62, 0.5, 0.32)
 ## Global tyre μ multiplier on a sandstorm stage (Drivetrain.surface_tire_params),
-## applied the same way as rain_grip_mult so the AI field and the player agree.
-## Changing this value moves every rival time (the field is generated live).
+## applied the same way as rain_grip_mult.
 @export_range(0.1, 1.0) var sand_grip_mult := 0.9
 ## Dust quads alive at once in the camera-parented particle system on a sandstorm
 ## stage. Only instantiated when sandstorm, so a non-sandstorm stage carries zero
@@ -1215,7 +1140,7 @@ func has_nitrous() -> bool:
 ## scripts/wind_sway.gd; purely cosmetic.
 @export_range(0.0, 0.5) var sand_foliage_wind_strength := 0.08
 
-# --- Fog (weather == StageFields.WEATHER_FOG) --------------------------------
+# --- Fog (weather == WeatherLibrary.WEATHER_FOG) --------------------------------
 # Prefixed `mist_` rather than `fog_` purely to avoid colliding with the BASE
 # environment knobs `fog_density` / `fog_sky_affect` above, which every stage uses.
 # Fog is a VISIBILITY condition only: it authors NO grip multiplier (so μ is exactly
@@ -1235,13 +1160,11 @@ func has_nitrous() -> bool:
 ## washes out into a featureless white dome instead of punching through the murk).
 @export_range(0.0, 1.0) var mist_fog_sky_affect := 0.95
 
-# --- Storm (weather == StageFields.WEATHER_STORM) ----------------------------
+# --- Storm (weather == WeatherLibrary.WEATHER_STORM) ----------------------------
 # Rain's look and rain's particle kind, authored heavier, plus a crosswind and an
 # occasional lightning flash. See features/weather.md.
 ## Global tyre μ multiplier on a storm stage — a storm is wetter than plain rain, so
-## this is normally the lower of the two. Applied exactly like rain_grip_mult, so the
-## AI field and the player agree. Changing it moves every rival time (the field is
-## generated live).
+## this is normally the lower of the two. Applied exactly like rain_grip_mult.
 @export_range(0.1, 1.0) var storm_grip_mult := 0.72
 ## Flat, dark storm-grey background/fog colour on a storm stage.
 @export var storm_background_color := Color(0.42, 0.43, 0.47)
@@ -1323,7 +1246,7 @@ func has_nitrous() -> bool:
 ## Fixed world-space heading the snow drifts toward (0 = +X, 90 = +Z).
 @export_range(0.0, 360.0) var snowfall_wind_dir_deg := 200.0
 
-# --- Night (weather == StageFields.WEATHER_NIGHT) ----------------------------
+# --- Night (weather == WeatherLibrary.WEATHER_NIGHT) ----------------------------
 # A DARK stage re-lit only by a fake headlight cone in front of the player's car
 # (todo/night-weather-and-headlights.md). Two halves:
 #   1. The LOOK block below — the same five environment knobs every other condition
@@ -1580,9 +1503,7 @@ func has_nitrous() -> bool:
 @export var track_turn_count := 15
 ## Bias toward straighter, easier turns during track generation, in [0, 1]. 0 = no
 ## bias (corners chosen freely, the default for free-roam); higher favours gentler
-## corners and longer connecting straights, yielding a less twisty stage. Set per
-## rally event by StageFields.event_straightness — earlier-game events run higher
-## so their stages are easier. Changes the generated SHAPE, so opponent target times
+## corners and longer connecting straights, yielding a less twisty stage.  Changes the generated SHAPE, so opponent target times
 ## are derived with the same value (RallySession._compute_event_data).
 @export_range(0.0, 1.0) var track_straightness := 0.0
 ## Length (m) of the straight runoff road appended AFTER the finish line, so the
@@ -1606,8 +1527,7 @@ func has_nitrous() -> bool:
 @export var jump_span_m := 60.0
 ## How forested this track is, in [0, 1] — the fraction of area covered by trees.
 ## Trees only spawn where the forest noise (forest_wavelength_m) exceeds
-## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. Set per rally event by
-## StageFields.event_forestiness; the default (1.0) keeps free-roam fully wooded.
+## (1 - track_forestiness): 0 = bare, 1 = trees everywhere. The default (1.0) keeps free-roam fully wooded.
 ## Bushes ignore this (they scatter everywhere).
 @export_range(0.0, 1.0) var track_forestiness := 1.0
 ## Wavelength, in metres, of the Perlin noise that breaks the trees into forest
@@ -1619,8 +1539,7 @@ func has_nitrous() -> bool:
 ## Fraction of this track surfaced as tarmac, in [0, 1]; the rest is gravel. The
 ## track switches surface exactly ONCE along its length (gravel→tarmac or
 ## tarmac→gravel, picked deterministically from track_seed), so this also fixes
-## where the switch sits. 0 = all gravel, 1 = all tarmac. Set per rally event by
-## StageFields.event_tarmac_fraction; the default (0) keeps free-roam all gravel.
+## where the switch sits. 0 = all gravel, 1 = all tarmac. The default (0) keeps free-roam all gravel.
 @export_range(0.0, 1.0) var track_tarmac_fraction := 0.0
 ## Length, in metres ALONG the track, of the smooth feather where the surface
 ## switches between gravel and tarmac — the lengthwise analogue of the
@@ -1661,11 +1580,6 @@ func has_nitrous() -> bool:
 ## enough out to trip a distance leash — always recovers. Returning to the road
 ## zeroes the clock, so a quick cut across the inside costs nothing.
 @export_range(1.0, 30.0) var off_road_reset_timeout_s := 6.0
-## Seconds off the road before the HUD shows the OFF TRACK warning + countdown.
-## A grace period: brief excursions (running wide, a jump landing on the verge)
-## are normal rally driving and shouldn't flash a warning every corner. Must be
-## below `off_road_reset_timeout_s` or the warning never appears before the reset.
-@export_range(0.0, 30.0) var off_road_warning_after_s := 2.0
 ## Absolute world Y below which the car is considered to have fallen off the
 ## world entirely (a void with no water plane) and is snapped back to the last
 ## on-road pose (TrackProgress._best_reset), regardless of lateral distance from
@@ -1674,20 +1588,6 @@ func has_nitrous() -> bool:
 ## since a track's flood height varies per rally event and can sit well above
 ## this fixed floor.
 @export var fell_off_world_y := -50.0
-## Master switch for the corner-cutting time penalty (features/corner-cutting.md).
-## When off, cuts are never billed and cut_penalty_s() is always 0.
-@export var cut_penalty_enabled := true
-## Metres of along-track progress in a SINGLE tick above which the tick counts as
-## a corner cut. The car's nearest point on the centerline can only advance about
-## as far as the car moved that tick (~1-2 m even flat out), so normal driving
-## never approaches this; cutting across the neck of a corner flips the nearest
-## point to the far leg and jumps the progress tens of metres in one tick. Sits
-## in the dead zone between the two. Metres beyond this are billed as stolen.
-@export_range(2.0, 50.0) var cut_jump_threshold_m := 5.0
-## Fixed reference speed (m/s) that converts stolen metres to seconds:
-## penalty_s = stolen_m / this. Fixed (not the car's live speed) so braking
-## mid-cut can't shrink the penalty.
-@export_range(1.0, 100.0) var cut_reference_speed_mps := 25.0
 
 @export_group("Water")
 ## Master on/off for roadside lakes (features/lakes.md). Off ⇒ no water is built
@@ -1725,7 +1625,7 @@ func has_nitrous() -> bool:
 @export var cliff_enabled := true
 ## Along-track period, in metres, of the 1-D camber noise that drives the cliffs —
 ## how quickly a cliff swaps sides. GLOBAL (same for every event); only the height
-## is scaled per event (cliff_amount / StageFields.event_cliffiness).
+## is scaled by cliff_amount.
 @export_range(5.0, 500.0) var cliff_wavelength_m := 100.0
 ## Scales the raw camber noise before the [-1, 1] clamp. Higher ⇒ the signal spends
 ## more time saturated at ±1 (frequent full-height cliffs); lower ⇒ mostly gentle.
@@ -2105,7 +2005,7 @@ func has_nitrous() -> bool:
 ## the loaded terrain extent (TerrainManager.RADIUS=3, CHUNK_M=50 -> ~175 m to the
 ## ring edge; this default sits inside that). world.gd resolves the
 ## effective value once at boot via tree_render_distance_for() and writes it back
-## here, so all downstream readers (foliage, signs, spectators, arches) see it.
+## here, so all downstream readers (foliage, spectators) see it.
 @export_range(10.0, 500.0) var tree_render_distance_m := 120.0
 ## Foliage/world-prop cull distance (m) on a web TOUCH device (phone/tablet browser
 ## — the same low-end target as the 30fps default target_fps_web). Kept shorter than
@@ -2211,25 +2111,12 @@ func has_nitrous() -> bool:
 ## rather than as a second object sitting on the stone.
 @export var rock_cap_color := Color(0.36, 0.40, 0.31)
 
-@export_group("Roadside Signs")
-# A-frame (wet-floor) roadside turn-arrow signs along the stage (todo/roadside-signs.md).
-# Few per stage (tens), so they are individual nodes, not a MultiMesh. Authored face
-# textures (the pacenote arrow boards) go in sign_textures. Start/finish are the
-# inflatable arches, not signs, and the stage is no longer split into signed sectors.
-## Master switch for the roadside signs. The benchmark's signs toggle drives this
-## (features/benchmark.md); normal play leaves it on.
-@export var signs_enabled := true
-# Knock-over launch, mirroring the spectator ragdoll (todo/roadside-signs.md). On
-# contact the sign is masked off the car and flung along the car's travel direction
-# instead of colliding with it — a fake collision that lets it tumble on the terrain
-# without ever bogging the vehicle down.
-
 @export_group("Corner Barriers")
 # Solid crash barriers along the OUTSIDE of the stage's sharp corners
 # (features/barriers.md). Planned by BarrierLayout, built by BarrierField from 2 m
 # BarrierSection modules stitched end to end. The look follows the road surface: the
 # steel armco guardrail on gravel, the precast concrete jersey rail on tarmac.
-# Unlike the roadside signs these are SOLID and in the damage obstacle group — hitting
+# Unlike the spectators these are SOLID and in the damage obstacle group — hitting
 # one costs HP.
 ## Master switch for the corner barriers. The benchmark's barriers toggle drives this
 ## (features/benchmark.md); normal play leaves it on.
@@ -2434,6 +2321,9 @@ func has_nitrous() -> bool:
 ## (prebake) the detail queue stays empty, so this is the escape-hatch path's knob.
 @export_range(1, 16) var terrain_detail_builds_per_frame := 1
 
+## The free-roam island, road network, terrain streaming and feedback timings.
+@export var free_roam: FreeRoamSettings = FreeRoamSettings.new()
+
 # --- Value snapshots (the live config's IDENTITY is load-bearing) -------------
 #
 # The active car — plus its Drivetrain and EngineSim — holds the live GameConfig BY
@@ -2472,7 +2362,7 @@ func snapshot_values() -> Dictionary:
 		if not (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE):
 			continue
 		var value: Variant = get(prop["name"])
-		if value is Array or value is Dictionary:
+		if value is Array or value is Dictionary or value is Resource:
 			value = value.duplicate(true)
 		snap[prop["name"]] = value
 	return snap
@@ -2483,7 +2373,7 @@ func snapshot_values() -> Dictionary:
 func restore_values(snapshot: Dictionary) -> void:
 	for prop_name in snapshot:
 		var value: Variant = snapshot[prop_name]
-		if value is Array or value is Dictionary:
+		if value is Array or value is Dictionary or value is Resource:
 			value = value.duplicate(true)
 		set(prop_name, value)
 
@@ -2620,7 +2510,7 @@ func weather_lit(col: Color) -> Color:
 		col.b * weather_sun_mult, col.a)
 
 # Whether the ground under this stage is SNOW rather than dirt with snow painted on.
-# Derived from the deep-snow block StageConfig.apply_event_config seats off the
+# Derived from the deep-snow block BiomeDirector seats off the
 # region, which is 0.0 for every region that authors none — so this is exactly "the
 # stage is in a snowy region" with no second flag to keep in sync. Same shape as the
 # `frozen_water_grip > 0.0` gate the drivetrain already uses for ice.
@@ -2684,13 +2574,10 @@ func exhaust_locals_for(spec: Dictionary) -> PackedVector4Array:
 	])
 
 # THE ONE PLACE THAT KNOWS THE SURFACE-TYRE RULE, shared by the live physics
-# (Drivetrain.surface_tire_params) and the lap-time model (LapTimeModel._surface_grip)
-# so the AI field can never diverge from the car the player is actually driving.
+# (Drivetrain.surface_tire_params) and anything that needs the same multiplier off a meta dict.
 #
 # Static, and takes its `source` as an ARGUMENT rather than reading its own fields,
-# because the two callers source them differently: physics passes the live config the
-# upgrade pipeline wrote, while the lap model passes a car_meta for a rival that may not
-# be the player's car at all. Both work — see _tire_axis_value.
+# so it works on either the live config or a car meta dict — see _tire_axis_value.
 #
 # Which axes exist, and how each blends, is TIRE_SURFACE_AXES plus _channel_weight —
 # not this function. Widening the set of axes must never need an edit here.
@@ -2785,7 +2672,7 @@ static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
 	return tire_surface_mult_for({
 		"tire_snow_grip_mult": snow_mult,
 		"tire_tarmac_grip_mult": tarmac_mult,
-	}, fill_tire_context({}, tarmac_weight, snowy, StageFields.WEATHER_DRY))
+	}, fill_tire_context({}, tarmac_weight, snowy, WeatherLibrary.WEATHER_DRY))
 
 func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("light_amount", car_light_amount)
