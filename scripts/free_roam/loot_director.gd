@@ -55,7 +55,6 @@ func _ready() -> void:
 	_toast.anchor_bottom = _toast.anchor_top
 	_toast.offset_top = Config.data.minimap_top_px
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(6)))
 	_toast.visible = false
 	layer.add_child(_toast)
 	_sync_dropped_node()

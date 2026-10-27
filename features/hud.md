@@ -104,7 +104,7 @@ has no `TempGauge`, so none of this runs there (`hud.gd → _update_temp`).
 ## Money counter (free roam only)
 
 Not part of `hud.gd`: `LootDirector.money_label` draws "$n" (`WorldSession.money`) in the top-left
-corner on a black box (as is the pickup toast under the minimap, so both read against a bright sky), added to the HUD layer (so the pause fade above hides it too) ([loot.md](loot.md)).
+corner on a black box (so it reads against a bright sky), added to the HUD layer (so the pause fade above hides it too) ([loot.md](loot.md)).
 
 ## Boost gauge
 
