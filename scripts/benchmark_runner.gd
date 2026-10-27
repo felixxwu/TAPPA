@@ -2,35 +2,30 @@ class_name BenchmarkRunner
 extends Node
 # Docs: features/benchmark.md — update in the same change as this file.
 # Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd — extend in the same change.
-# Drives the benchmark run (features/benchmark.md): auto-pilots the fielded car
-# down the whole generated stage at a steady moderate speed, records per-frame
-# timing/render samples the entire way, and shows the results breakdown
-# (BenchmarkResults) when the car crosses the finish.
+# Records the benchmark run (features/benchmark.md): per-frame timing/render samples
+# while free roam's AutoDriver drives a route across the island, then the results
+# breakdown (BenchmarkResults) when the time cap or the end of the route is reached.
 #
-# The car is driven through its real AI inputs (Car.ai_controlled — the same
-# hook the start-line presence cars use), NOT teleported: the run exercises the
-# actual per-frame workload (vehicle physics, the tire model, wheel dust, tire
-# marks, engine audio) so the numbers reflect real play. Steering is a simple
-# pure-pursuit follow of the road centerline; the off-track reset (TrackProgress)
-# is the safety net if a corner is fumbled — the car snaps back onto the road
-# and carries on. Created and wired by world.gd when Benchmark.active.
+# The car is driven through its real AI inputs (Car.ai_controlled), NOT teleported, so
+# the run exercises the actual per-frame workload (streaming, vehicle physics, tyres,
+# dust, marks, engine audio). Created and wired by free_roam.gd when Benchmark.active.
+# The two pure driving helpers below are shared with AutoDriver.
 
-const TARGET_SPEED_KMH := 50.0        # the requested moderate benchmark pace
-const TARGET_SPEED_MPS := TARGET_SPEED_KMH / 3.6
-const LOOKAHEAD_M := 12.0             # pure-pursuit aim point ahead on the road
 const STEER_GAIN := 2.5               # rad of heading error -> full steering lock
 const THROTTLE_GAIN := 0.5            # m/s of speed error -> full throttle/brake
-const WARMUP_FRAMES := 60             # settle/shader-compile frames left unsampled
-const MAX_RUN_SECONDS := 20.0         # hard cap on sampled driving — the stage is long
-                                      # (30 turns), so the run is time-boxed, not driven to the finish
+const WARMUP_FRAMES := 60
+# A steady, careful pace for the auto-driver: the run measures rendering, not lap times.
+const TOP_SPEED_MPS := 22.0
+const LATERAL_ACCEL := 3.5
+const BRAKE_DECEL := 4.0             # settle/shader-compile frames left unsampled
+const MAX_RUN_SECONDS := 30.0         # hard cap on sampled driving: the run is time-boxed
 
 var _car: Node                        # the fielded Car (VehicleBody3D)
-var _progress: TrackProgress          # progress + finish edge + off-track reset
-var _centerline: Curve2D              # the road, for the pursuit aim point
+var _driver: AutoDriver               # drives the route; its driven_m is the distance
 var _view_rid: RID                    # viewport whose render times we sample
 var _running := false
 var _warmup_left := WARMUP_FRAMES
-var _start_offset := 0.0              # progress offset when sampling began
+var _start_driven_m := 0.0            # driver.driven_m when sampling began
 var _samples := {}                    # stream name -> Array of per-frame values
 var _spike_frames: Array = []         # per-spike component breakdown (diagnostics)
 var _frame_no := 0                    # sampled-frame index (spike timeline)
@@ -43,6 +38,7 @@ var _spike_ms := BenchmarkStats.SPIKE_MS  # spike threshold, relative to the fps
 var _run_time := 0.0                  # sampled driving time; the run finishes at MAX_RUN_SECONDS
 var _results_screen: BenchmarkResults
 var _last_frame_usec := 0              # wall clock at the previous sampled frame
+var _queue_timeline: Array = []        # [run seconds, queued jobs, budget ms, jobs due now, due by kind], about once a second
 
 
 # The TRUE elapsed time since the previous sampled frame, in ms.
@@ -67,50 +63,33 @@ func _frame_interval_ms() -> float:
 	return float(elapsed) / 1000.0
 
 
-# Wire the runner to the live scene and start driving. `view` is the viewport
-# doing the 3D work (the PostProcess SubViewport in main.tscn); render times are
-# measured there, falling back to this node's own viewport.
-func setup(car: Node, progress: TrackProgress, centerline: Curve2D, view: Viewport = null,
-		terrain: Node = null) -> void:
+# Wire the runner to the live scene and start sampling. `view` is the viewport doing
+# the 3D work (the PostProcess SubViewport); render times are measured there, falling
+# back to this node's own viewport.
+func setup(car: Node, driver: AutoDriver, view: Viewport = null, terrain: Node = null) -> void:
 	_car = car
-	_progress = progress
-	_centerline = centerline
+	_driver = driver
+	driver.top_speed_mps = TOP_SPEED_MPS
+	driver.lateral_accel = LATERAL_ACCEL
+	driver.brake_decel = BRAKE_DECEL
+	if driver.running:
+		driver.place_on_route(0)  # the route starts at the nearest junction, which can be behind the car
 	_terrain = terrain
+	driver.finished.connect(func(_r: Dictionary) -> void: _finish())
 	_engine_audio = car.get_node_or_null("EngineAudio")
 	# Spike threshold relative to the frame cap (Engine.max_fps was set by
 	# world._ready): 0 = uncapped → 28 ms; a 30 fps cap → ~50 ms, so a 33 ms normal
 	# frame isn't miscounted as a spike (the fixed 28 ms flagged every 30 fps frame).
 	_spike_ms = BenchmarkStats.spike_threshold_ms(Engine.max_fps)
+	_samples.clear()
 	for stream in ["frame_ms", "draws", "objects", "prims", "render_cpu_ms",
 			"render_gpu_ms", "process_ms", "physics_ms"]:
 		_samples[stream] = []
 	var target := view if view != null else get_viewport()
 	_view_rid = target.get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(_view_rid, true)
-	# Hand the car to the AI: unlocked, auto box, driven via the ai_* inputs.
-	_car.controls_locked = false
-	_car.handbrake_locked = false
-	_car.ai_controlled = true
-	_car.ai_throttle = 0.0
-	_car.ai_steer = 0.0
-	_car.ai_handbrake = false
-	if "drivetrain" in _car and _car.drivetrain != null and _car.drivetrain.engine != null:
-		_car.drivetrain.engine.auto = true
 	_running = true
 
-
-# --- Driving (physics tick) ----------------------------------------------------
-
-func _physics_process(_delta: float) -> void:
-	if not _running or not is_instance_valid(_car):
-		return
-	var offset := _progress.progress_offset()
-	var aim := _centerline.sample_baked(minf(offset + LOOKAHEAD_M, _progress.baked_length()))
-	_car.ai_steer = steer_toward(_car.global_transform, aim)
-	var speed: float = (_car as RigidBody3D).linear_velocity.length() if _car is RigidBody3D else 0.0
-	_car.ai_throttle = throttle_for(speed, TARGET_SPEED_MPS)
-	if _progress.progress_percent() >= 1.0:
-		_finish()
 
 
 # Pure-pursuit steering: the ai_steer (-1..1, left positive) that turns the car
@@ -138,7 +117,7 @@ func _process(delta: float) -> void:
 		# compiles) pass unrecorded so they don't pollute the stats.
 		_warmup_left -= 1
 		if _warmup_left == 0:
-			_start_offset = _progress.progress_offset()
+			_start_driven_m = _driver.driven_m
 			# Open the per-script CPU capture window over the SAME frames we sample
 			# below, so the scripts breakdown lines up with the render stats.
 			PerfLog.begin_capture()
@@ -189,8 +168,9 @@ func _process(delta: float) -> void:
 			"chunk_integrations": integ, "audio_skips": skips,
 		})
 	_frame_no += 1
-	# Hard time cap: the stage is long (30 turns), so end the run after
-	# MAX_RUN_SECONDS of sampled driving rather than driving it to the finish.
+	if _terrain is TerrainStreamer and int(_run_time) >= _queue_timeline.size():
+		var st := _terrain as TerrainStreamer
+		_queue_timeline.append([snappedf(_run_time, 0.1), st.queued(), snappedf(st.budget_us(delta) / 1000.0, 0.01), st.queued_due(), st.due_by_kind()])
 	_run_time += delta
 	if _run_time >= MAX_RUN_SECONDS:
 		_finish()
@@ -202,14 +182,14 @@ func _finish() -> void:
 	if not _running:
 		return  # already finished (time cap + progress could both fire the same frame)
 	_running = false
-	# Park the car: throttle off, handbrake on — it skids to a stop in the runoff
-	# behind the results panel.
+	# Park the car behind the results panel.
+	_driver.running = false
 	_car.ai_throttle = 0.0
 	_car.ai_steer = 0.0
 	_car.ai_handbrake = true
 
 	var stats := BenchmarkStats.summarise(_samples, _spike_ms)
-	stats["distance_m"] = maxf(0.0, _progress.progress_offset() - _start_offset)
+	stats["distance_m"] = maxf(0.0, _driver.driven_m - _start_driven_m)
 	stats["disabled"] = _disabled_toggle_names()
 	# The worst spikes (by frame time), with their component breakdown, so the report
 	# can attribute the hitches. Sorted descending, capped so the payload stays small.
@@ -217,6 +197,8 @@ func _finish() -> void:
 	stats["spike_frames"] = _spike_frames.slice(0, 20)
 	stats["audio_skips"] = _audio_skips_total
 	stats["pass"] = Benchmark.pass_index
+	if _terrain is TerrainStreamer:
+		stats["terrain"] = terrain_stats(_terrain as TerrainStreamer, _queue_timeline)
 	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
 	Benchmark.finish(stats)
 	_report(stats, scripts)
@@ -229,12 +211,31 @@ func _finish() -> void:
 		# Let the POST flush, then scene-reload (NOT a page reload — the GL context
 		# and its compiled shaders must persist for the warm pass).
 		await get_tree().create_timer(1.0).timeout
+		Benchmark.seat_world()
 		get_tree().reload_current_scene()
 		return
 
 	_results_screen = BenchmarkResults.new()
 	add_child(_results_screen)
 	_results_screen.setup(stats, _run_again, Benchmark.exit_to_hq)
+
+
+# How the terrain streamer kept up over the run: the queue over time, its work per frame, and
+# what each kind of unit cost on this device.
+static func terrain_stats(st: TerrainStreamer, queue_timeline: Array) -> Dictionary:
+	var counts := st.chunk_counts()
+	return {
+		"queue_timeline": queue_timeline,
+		"queued_at_end": st.queued(),
+		"due_at_end": st.queued_due(),
+		"avg_ms_per_frame": st.stat_total_us / 1000.0 / maxi(1, st.stat_frames),
+		"worst_ms": st.stat_worst_us / 1000.0,
+		"overruns": st.stat_overruns,
+		"rushes": st.stat_rushes,
+		"chunks": {"mid": counts.x, "far": counts.y, "collision": counts.z},
+		"us_per_sample": st.stat_us_per_sample,
+		"unit_cost_us": st._est.duplicate(),
+	}
 
 
 # --- Result reporting (feedback loop) ------------------------------------------
@@ -253,6 +254,8 @@ func _report(stats: Dictionary, scripts: Dictionary) -> void:
 		Benchmark.render_height)
 	if Benchmark.two_pass:
 		label += "-warm" if int(stats.get("pass", 0)) == 1 else "-cold"
+	if Benchmark.tree_mode >= 0:
+		label += "_trees%d" % Benchmark.tree_mode
 	var stamp := Time.get_datetime_string_from_system(true)
 	var report := BenchmarkReport.build(stats, scripts, device, stamp, label)
 	var body := BenchmarkReport.to_json(report)
@@ -303,7 +306,8 @@ func _disabled_toggle_names() -> Array[String]:
 	return names
 
 
-# "Run again": reload the run scene. Benchmark.active stays true and the config
-# overrides are still in place, so the same stage regenerates and re-runs.
+# "Run again": reload the scene on a fresh benchmark world. Benchmark.active stays true
+# and the config overrides are still in place, so the same drive re-runs.
 func _run_again() -> void:
+	Benchmark.seat_world()
 	get_tree().reload_current_scene()

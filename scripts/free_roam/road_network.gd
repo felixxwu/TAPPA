@@ -24,6 +24,11 @@ var seg_by := PackedFloat64Array()
 var seg_len := PackedFloat64Array()
 var seg_cum := PackedFloat64Array()  # arc length along the edge at the segment's start
 var seg_edge := PackedInt32Array()
+# Each segment's midpoint and half-length: no point is nearer to it than its distance from the
+# midpoint less the half-length, which lets nearest_in skip most candidates cheaply.
+var seg_mx := PackedFloat64Array()
+var seg_my := PackedFloat64Array()
+var seg_half := PackedFloat64Array()
 var edge_first_seg := PackedInt32Array()  # each edge's segments are contiguous from here
 var edge_len := PackedFloat64Array()  # each edge's arc length
 var node_degree := PackedInt32Array()  # how many edges meet at each node
@@ -57,8 +62,13 @@ func node(i: int) -> Vector2:
 func build(settings: FreeRoamSettings, terrain: RoadTerrain) -> void:
 	_s = settings
 	_terrain = terrain
-	_grow()
-	_prune_dead_ends()
+	if _s.straight_road_m > 0.0:
+		node_x = PackedFloat64Array([0.0, _s.straight_road_m])
+		node_y = PackedFloat64Array([0.0, 0.0])
+		edges = [Vector2i(0, 1)]
+	else:
+		_grow()
+		_prune_dead_ends()
 	_densify()
 	node_degree.resize(node_x.size())
 	node_degree.fill(0)
@@ -190,6 +200,7 @@ func _prune_dead_ends() -> void:
 func _densify() -> void:
 	seg_ax.clear(); seg_ay.clear(); seg_bx.clear(); seg_by.clear()
 	seg_len.clear(); seg_cum.clear(); seg_edge.clear(); edge_first_seg.clear(); edge_len.clear()
+	seg_mx.clear(); seg_my.clear(); seg_half.clear()
 	_grid.clear()
 	total_length_m = 0.0
 	var step := minf(40.0, _s.bend_length_m / 6.0)
@@ -204,7 +215,8 @@ func _densify() -> void:
 		var nx := -(by - ay) / d
 		var ny := (bx - ax) / d
 		var s := floori(LabNoise.hash2(floori(ax + bx + 0.5), floori(ay + by + 0.5), _s.world_seed) * 1e6)
-		var amp := minf(d * _s.road_twist, 1200.0 * _s.road_twist)
+		var twist := 0.0 if _s.straight_road_m > 0.0 else _s.road_twist
+		var amp := minf(d * twist, 1200.0 * twist)
 		var px := PackedFloat64Array()
 		var py := PackedFloat64Array()
 		for i in n + 1:
@@ -220,6 +232,7 @@ func _densify() -> void:
 			var length := LabNoise.hyp(px[i] - px[i + 1], py[i] - py[i + 1])
 			seg_ax.append(px[i]); seg_ay.append(py[i]); seg_bx.append(px[i + 1]); seg_by.append(py[i + 1])
 			seg_len.append(length); seg_cum.append(cum); seg_edge.append(ei)
+			seg_mx.append((px[i] + px[i + 1]) * 0.5); seg_my.append((py[i] + py[i + 1]) * 0.5); seg_half.append(length * 0.5)
 			cum += length
 			for c in _cells(px[i], py[i], px[i + 1], py[i + 1], GRID_M):
 				_append_to(_grid, c, si)
@@ -268,6 +281,13 @@ func nearest_in(x: float, y: float, cands: PackedInt32Array, max_d: float) -> bo
 	hit_d = INF
 	_hit_si = -1
 	for si in cands:
+		# a segment whose nearest possible point is already further than the best found can't win
+		# (nor tie: the margin keeps near-ties in, so the answer is the full scan's)
+		var mx := x - seg_mx[si]
+		var my := y - seg_my[si]
+		var reach := hit_d + seg_half[si] + 1e-6
+		if mx * mx + my * my > reach * reach:
+			continue
 		_consider(si, x, y)
 	return hit_d <= max_d
 
@@ -291,7 +311,11 @@ func candidates_for(cx: float, cy: float, half_diag: float, max_d: float) -> Pac
 			seen[si] = true
 			if _seg_dist(si, cx, cy) <= reach:
 				out.append(si)
-	return out
+	# nearest the centre first, so a search through them finds a close road early and can skip
+	# the rest (nearest_in); the order never changes its answer
+	var by_d := Array(out)
+	by_d.sort_custom(func(a: int, b: int) -> bool: return _seg_dist(a, cx, cy) < _seg_dist(b, cx, cy))
+	return PackedInt32Array(by_d)
 
 
 func _seg_dist(si: int, x: float, y: float) -> float:

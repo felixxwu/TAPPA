@@ -132,5 +132,7 @@ with Server(("0.0.0.0", PORT), Handler) as httpd:
     if CERT:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(CERT)
-        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+        # Handshake in each connection's own thread, not in accept(): one client that stalls
+        # mid-handshake would otherwise block every other connection.
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True, do_handshake_on_connect=False)
     httpd.serve_forever()

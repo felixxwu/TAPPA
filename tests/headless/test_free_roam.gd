@@ -8,9 +8,8 @@ func _settings() -> FreeRoamSettings:
 	var s := FreeRoamSettings.new()
 	s.world_seed = 7
 	s.island_radius_m = 3000.0
-	s.near_radius = 1
+	s.mid_radius = 1
 	s.far_radius = 3
-	s.collision_radius = 1
 	return s
 
 
@@ -244,8 +243,8 @@ func test_chunk_vertices_carry_the_signed_road_distance_the_shader_paints_from()
 	st.focus = focus
 	add_child_autofree(st)
 	var p := _road_midpoint(st.network)
-	var coord := st._chunk_of(p)
-	var job := st._new_job(coord, true, false)
+	var coord := st._tile_of(p)
+	var job := st._new_job(coord, TerrainStreamer.Level.NEAR, false)
 	st._queue.erase(job)
 	st._step(job, Time.get_ticks_usec() + 60_000_000, TerrainStreamer.Stage.UPLOAD)
 	var n := job.n * job.n
@@ -259,7 +258,7 @@ func test_chunk_vertices_carry_the_signed_road_distance_the_shader_paints_from()
 			sides[signf(uv.x)] = true
 	assert_gt(near_road, 0, "a road runs through the chunk")
 	assert_true(sides.has(1.0) and sides.has(-1.0), "vertices either side of the road carry opposite signs")
-	var mat := st.ring_material_at(coord) as ShaderMaterial
+	var mat := st.ring_material_at(st._chunk_of_tile(coord)) as ShaderMaterial
 	assert_true(mat.get_shader_parameter("paint_road_per_pixel"), "free roam paints the road per pixel")
 	assert_almost_eq(mat.get_shader_parameter("road_paint_mid_m"), st.terrain.paint_mid_m(), 1e-5)
 
@@ -310,7 +309,7 @@ func test_wheel_debris_reads_gravel_on_the_road_and_grass_off_it() -> void:
 
 # Build one chunk's mesh arrays (no attach) and return its grid colours, skirts left off.
 func _baked_colors(st: TerrainStreamer, coord: Vector2i, near: bool) -> PackedColorArray:
-	var job := st._new_job(coord, near, false)
+	var job := st._new_job(coord, TerrainStreamer.Level.NEAR if near else TerrainStreamer.Level.FAR, false)
 	st._queue.erase(job)
 	st._step(job, Time.get_ticks_usec() + 60_000_000, TerrainStreamer.Stage.UPLOAD)
 	return job.colors.slice(0, job.n * job.n)
@@ -395,12 +394,12 @@ func test_height_queries_on_a_loaded_chunk_read_the_drawn_surface() -> void:
 	var s := _settings()
 	var st := _streamer(s)
 	st.prefill()
-	var cs: TerrainStreamer.ChunkState = st._chunks[Vector2i.ZERO]
-	assert_false(cs.near_heights.is_empty())
-	var m := int(s.chunk_m / s.near_stride_m) + 3
+	var ts: TerrainStreamer.TileState = st._tiles[Vector2i.ZERO]
+	assert_false(ts.near_heights.is_empty())
+	var m := int(s.near_tile_m / s.near_stride_m) + 3
 	# on a grid vertex the answer is exactly the vertex the mesh was built from
 	for g: Vector2i in [Vector2i(0, 0), Vector2i(5, 7), Vector2i(12, 3)]:
-		var expected := cs.near_heights[(g.y + 1) * m + g.x + 1]
+		var expected: float = ts.near_heights[(g.y + 1) * m + g.x + 1]
 		assert_almost_eq(st.height_at(g.x * s.near_stride_m, g.y * s.near_stride_m), expected, 0.0001)
 	# between vertices it stays close to the true terrain
 	var x := 13.3
@@ -416,8 +415,8 @@ func test_the_road_surface_read_from_a_loaded_chunk_agrees_with_the_road() -> vo
 	# a road point inside a loaded near chunk, and a point well off the road next to it
 	for ei in net.edges.size():
 		for p in net.polyline(ei):
-			var cs: TerrainStreamer.ChunkState = st._chunks.get(st._chunk_of(p))
-			if cs == null or cs.near_road_d.is_empty():
+			var ts: TerrainStreamer.TileState = st._tiles.get(st._tile_of(p))
+			if ts == null or ts.near_road_d.is_empty():
 				continue
 			assert_almost_eq(st.surface_at(p.x, p.y).x, 1.0, 0.001, "on the road")
 			net.nearest(p.x, p.y, 50.0)
@@ -435,7 +434,7 @@ func test_a_chunk_gathers_its_road_candidates_once_for_both_builds() -> void:
 	st.prefill()
 	var cs: TerrainStreamer.ChunkState = st._chunks[Vector2i.ZERO]
 	assert_true(cs.has_cands)
-	assert_false(cs.near_mesh == null or cs.far_mesh == null, "both builds ran for the spawn chunk")
+	assert_false(cs.mid_mesh == null or cs.far_mesh == null, "both builds ran for the spawn chunk")
 
 
 func _foliage_positions(st: TerrainStreamer) -> PackedVector3Array:
@@ -482,14 +481,132 @@ func test_foliage_crowds_the_road_and_thins_away_from_it() -> void:
 		assert_lt(far, n / 2, "far from the road most spots are thinned out")
 
 
-func test_foliage_goes_when_its_chunk_leaves_full_detail() -> void:
+func test_the_near_tiles_are_the_two_by_two_round_the_nearest_tile_corner() -> void:
+	var st := _streamer(_settings())
+	var tm := st.settings.near_tile_m
+	for p: Vector2 in [Vector2(0.3, 0.2), Vector2(0.7, 0.9), Vector2(-1.4, 2.6), Vector2(5.5, -3.49)]:
+		var block: Rect2i = st.near_tiles_of(p * tm)
+		assert_eq(block.size, Vector2i(2, 2))
+		var inside := Rect2(Vector2(block.position) * tm, Vector2(block.size) * tm).grow(-tm * 0.5)
+		assert_true(inside.has_point(p * tm), "the car is at least half a tile inside them")
+
+
+func test_near_detail_covers_only_its_tiles_and_the_coarse_mesh_leaves_a_hole_there() -> void:
+	var st := _streamer(_settings())
+	st.prefill()
+	var block: Rect2i = st.near_tiles_of(Vector2(st.focus.position.x, st.focus.position.z))
+	for t: Vector2i in st._tiles:
+		var ts: TerrainStreamer.TileState = st._tiles[t]
+		assert_eq(ts.near_mesh != null, block.has_point(t), "tile %s near mesh only in the block" % t)
+		if ts.near_mesh == null:
+			continue
+		var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of_tile(t)]
+		var tpc := st._tiles_per_chunk()
+		var local := t - st._chunk_of_tile(t) * tpc
+		assert_eq(cs.hole_mesh, cs.mid_mesh, "the chunk's drawn mesh is the mid one")
+		assert_true(cs.hole_mask & (1 << (local.y * tpc + local.x)) != 0, "with a hole where tile %s is" % t)
+
+
+func test_holes_leave_out_the_covered_cells_and_hang_skirts_round_them() -> void:
+	var st := _streamer(_settings())
+	st.prefill()
+	var cs: TerrainStreamer.ChunkState = st._chunks[Vector2i.ZERO]
+	var n := int(st.settings.chunk_m / st.settings.mid_stride_m) + 1
+	var whole := st._coarse_mesh(cs.mid_arrays, n, int(st.settings.near_tile_m / st.settings.mid_stride_m), 2, 0, 6.0)
+	var holed := st._coarse_mesh(cs.mid_arrays, n, int(st.settings.near_tile_m / st.settings.mid_stride_m), 2, 1, 6.0)
+	var whole_idx: PackedInt32Array = whole.surface_get_arrays(0)[Mesh.ARRAY_INDEX]
+	var holed_idx: PackedInt32Array = holed.surface_get_arrays(0)[Mesh.ARRAY_INDEX]
+	var cells := (n - 1) * (n - 1)
+	var quarter := cells / 4
+	var skirt_edges := 2 * ((n - 1) / 2)  # the hole's two inner sides
+	assert_eq(holed_idx.size(), whole_idx.size() - quarter * 6 + skirt_edges * 12)
+
+
+func test_collision_built_from_the_mid_grid_is_rebuilt_from_the_near_grid() -> void:
+	var st := _streamer(_settings())
+	st.prefill()
+	var t: Vector2i = st._tile_of(Vector2(st.focus.position.x, st.focus.position.z))
+	var ts: TerrainStreamer.TileState = st._tiles[t]
+	assert_eq(ts.body_level, TerrainStreamer.Level.NEAR, "under the car, collision is at full detail")
+	# Back to mid-grid collision, as a tile the car drives onto before its near mesh is in.
+	st._drop_near_tile(t, ts)
+	ts.body.free()
+	ts.body = null
+	st._collide_tile(t)
+	assert_eq(ts.body_level, TerrainStreamer.Level.MID)
+	var mid_body: StaticBody3D = ts.body
+	st._plan()
+	st._run_queue(Time.get_ticks_usec() + 60_000_000)
+	assert_eq(ts.body_level, TerrainStreamer.Level.NEAR, "the near build redoes it")
+	assert_ne(ts.body, mid_body)
+
+
+func test_planting_past_the_foliage_draw_distance_waits_behind_everything() -> void:
+	var st := _streamer(_settings())
+	st._plan()
+	var cm := st.settings.chunk_m
+	var reach: float = Config.data.tree_render_distance_m
+	var near_coord := st._chunk_of(Vector2(st.focus.position.x, st.focus.position.z))
+	var far_coord := st._chunk_of(Vector2(st.focus.position.x, st.focus.position.z) + Vector2(reach + cm * 2.0, 0.0))
+	assert_lt(st._plant_priority(near_coord, 0.5), 0.0, "planting in view runs ahead of the horizon")
+	assert_gt(st._plant_priority(far_coord, 3.0), st._far_priority(TerrainStreamer.ChunkState.new(), float(st.settings.far_radius) + 1.0),
+		"planting no one can see yet waits behind every far mesh")
+
+
+# A planting job whose next spawn won't fit in what's left of the frame is passed over for smaller
+# work behind it, but a collision build that won't fit still stops the frame.
+func test_a_blocked_planting_job_lets_smaller_work_behind_it_run_but_collision_does_not() -> void:
+	var st := _streamer(_settings())
+	var spawned := []
+	var make := func(priority: float, kind: String) -> TerrainStreamer.ChunkJob:
+		var job := TerrainStreamer.ChunkJob.new()
+		job.coord = Vector2i(99, 99)
+		job.priority = priority
+		job.stage = TerrainStreamer.Stage.SPAWN
+		job.spawns = [func(_p: Node3D) -> void: spawned.append(kind)]
+		job.spawn_kinds = PackedStringArray([kind])
+		return job
+	var cs := st._chunk(Vector2i(99, 99))
+	cs.mid_mesh = MeshInstance3D.new()
+	add_child_autofree(cs.mid_mesh)
+	st._est["small"] = 10.0
+	st._est["huge"] = 1.0e9
+	st._queue = [make.call(-60.0, "small"), make.call(-55.0, "huge"), make.call(-40.0, "small")]
+	st._run_queue(Time.get_ticks_usec() + 5000)
+	assert_eq(spawned, ["small", "small"], "the work behind the blocked spawn ran")
+	spawned.clear()
+	st._queue = [make.call(-2001.0, "small"), make.call(-2000.0, "huge"), make.call(-40.0, "small")]
+	st._run_queue(Time.get_ticks_usec() + 5000)
+	assert_eq(spawned, ["small"], "a blocked job ahead of the planting tier stops the frame: nothing jumps it")
+
+
+func test_a_slow_frame_never_raises_the_budget_floor_past_its_cap() -> void:
+	var st := _streamer(_settings())
+	st.spare_us = 0.0
+	var cap_s := 1.0 / st.settings.budget_floor_fps
+	assert_eq(st.budget_us(cap_s * 3.0), st.budget_us(cap_s), "a frame three times as long gets no more")
+	assert_lt(st.budget_us(cap_s * 0.5), st.budget_us(cap_s), "a quicker frame still gets its share")
+	st.spare_us = 1.0e6
+	assert_eq(st.budget_us(cap_s), int(st.spare_us * st.settings.budget_fraction), "real spare time still counts in full")
+
+
+func test_the_mid_band_narrows_to_the_sides_and_behind_as_the_car_speeds_up() -> void:
+	var st := _streamer(_settings())
+	var fast := Vector2(0.0, st.settings.mid_squash_speed_mps * 2.0)  # heading +z
+	assert_almost_eq(st.squashed_distance(Vector2(30.0, 40.0), Vector2.ZERO), 50.0, 1e-4, "a stopped car's band is round")
+	assert_almost_eq(st.squashed_distance(Vector2(0.0, 100.0), fast), 100.0, 1e-4, "it reaches as far ahead at speed")
+	assert_gt(st.squashed_distance(Vector2(100.0, 0.0), fast), 100.0, "but less far to the side")
+	assert_gt(st.squashed_distance(Vector2(0.0, -100.0), fast), 100.0, "and behind")
+
+
+func test_foliage_goes_when_its_chunk_leaves_the_mid_level() -> void:
 	var s := _settings()
 	s.forestiness = 1.0
 	var st := _streamer(s)
 	st.prefill()
 	var cs: TerrainStreamer.ChunkState = st._chunks[Vector2i.ZERO]
 	assert_not_null(cs.foliage)
-	st._drop_near(cs)
+	st._drop_mid(cs)
 	assert_null(cs.foliage)
 
 
@@ -835,7 +952,7 @@ func test_a_stage_that_runs_out_of_frame_ends_the_frame_instead_of_spinning() ->
 
 # --- collision always under the car --------------------------------------------------------------
 
-# A near build stops once its collision is in and goes back in the queue to plant. Running straight
+# A mid build stops once its collision is in and goes back in the queue to plant. Running straight
 # on into its trees kept the next chunk's collision waiting, and a fast car outran its collision
 # and fell through the world.
 func test_no_chunk_plants_foliage_before_every_planned_collision_is_built() -> void:
@@ -844,7 +961,7 @@ func test_no_chunk_plants_foliage_before_every_planned_collision_is_built() -> v
 	var want_col: Array[Vector2i] = []
 	for coord: Vector2i in st._chunks:
 		var cs: TerrainStreamer.ChunkState = st._chunks[coord]
-		if cs.near_job != null and cs.near_job.with_collision:
+		if cs.mid_job != null and cs.mid_job.with_collision:
 			want_col.append(coord)
 	assert_gt(want_col.size(), 1, "several chunks want collision around the car")
 	var planted := false
@@ -857,12 +974,19 @@ func test_no_chunk_plants_foliage_before_every_planned_collision_is_built() -> v
 				continue
 			planted = true
 			for c in want_col:
-				assert_not_null((st._chunks[c] as TerrainStreamer.ChunkState).body,
-					"chunk %s planted while %s still had no collision" % [coord, c])
-				if (st._chunks[c] as TerrainStreamer.ChunkState).body == null:
+				assert_true(_has_collision(st, c), "chunk %s planted while %s still had no collision" % [coord, c])
+				if not _has_collision(st, c):
 					return
 	if not planted:
-		pending("no near chunk on this island planted anything")
+		pending("no mid chunk on this island planted anything")
+
+
+func _has_collision(st: TerrainStreamer, c: Vector2i) -> bool:
+	for t in st._tiles_of_chunk(c):
+		var ts: TerrainStreamer.TileState = st._tiles.get(t)
+		if ts == null or ts.body == null:
+			return false
+	return true
 
 
 # The safety net: the car over a chunk with no collision yet gets it built at once, over budget.
@@ -912,40 +1036,47 @@ func _chunk_d(st: TerrainStreamer, coord: Vector2i, p: Vector2) -> float:
 
 
 # A medium jump (a respawn or a rest-stop travel) leaves the old chunks past the horizon but still
-# inside the square that is dropped whole. They must still shed their near mesh, foliage and
-# collision, and their queued near / plant / collision jobs must be cancelled rather than run by
+# inside the square that is dropped whole. They must still shed their near and mid meshes, foliage
+# and collision, and their queued mid / plant / collision jobs must be cancelled rather than run by
 # the prefill at their old priorities.
 func test_a_jump_past_the_horizon_sheds_full_detail_and_collision_behind_it() -> void:
 	var s := _settings()
 	s.forestiness = 1.0
 	var st := _streamer(s)
 	st.prefill()
-	assert_not_null((st._chunks[Vector2i.ZERO] as TerrainStreamer.ChunkState).body)
-	# One chunk loses its full detail and the planner queues it again: a live near job.
+	assert_true(_has_collision(st, Vector2i.ZERO))
+	# One chunk loses its mid level and the planner queues it again: a live mid job.
 	var redo: TerrainStreamer.ChunkState = st._chunks[Vector2i(0, 1)]
-	st._drop_near(redo)
+	st._drop_mid(redo)
 	st._drop_collision(redo)
 	st._plan()
-	var stale: TerrainStreamer.ChunkJob = redo.near_job
-	assert_not_null(stale, "the planner queued the chunk's near build again")
+	var stale: TerrainStreamer.ChunkJob = redo.mid_job
+	assert_not_null(stale, "the planner queued the chunk's mid build again")
 	var dest := Vector2(s.chunk_m * (s.far_radius + 1.5), 0.0)
 	st.prefill_at(dest)
 	assert_true(st._chunks.has(Vector2i.ZERO), "the spawn chunk is past the horizon but not yet dropped whole")
 	for coord: Vector2i in st._chunks:
 		var cs: TerrainStreamer.ChunkState = st._chunks[coord]
 		var d := _chunk_d(st, coord, dest)
-		if d > s.near_radius + 1.5:
-			assert_null(cs.near_mesh, "chunk %s (%.1f chunks away) kept its near mesh" % [coord, d])
+		if d > s.mid_radius + 1.5:
+			assert_null(cs.mid_mesh, "chunk %s (%.1f chunks away) kept its mid mesh" % [coord, d])
 			assert_null(cs.foliage, "chunk %s kept its foliage" % coord)
-		if d > s.collision_radius + 1.5:
-			assert_null(cs.body, "chunk %s (%.1f chunks away) kept its collision" % [coord, d])
+		for t in st._tiles_of_chunk(coord):
+			var ts: TerrainStreamer.TileState = st._tiles.get(t)
+			if ts == null:
+				continue
+			if d > TerrainStreamer.NEAR_KEEP_CHUNKS:
+				assert_null(ts.body, "chunk %s (%.1f chunks away) kept its collision" % [coord, d])
+			if d > s.mid_radius + 1.5:
+				assert_null(ts.near_mesh, "chunk %s kept a near tile" % coord)
 	if stale != null:
-		assert_true(stale.cancelled, "the stale near job was cancelled, not run by the prefill")
+		assert_true(stale.cancelled, "the stale mid job was cancelled, not run by the prefill")
 		assert_eq(stale.stage, TerrainStreamer.Stage.PREP, "and never ran")
 
 
 # Planting reads the exact terrain height outside its own chunk, never whatever mesh the neighbour
-# happens to have loaded, and its own chunk's drawn surface inside it.
+# happens to have loaded, and its own chunk's mid grid inside it, except at a kept spot, which
+# stands on the exact height so it sits right on the chunk at any level of detail.
 func test_planting_heights_do_not_depend_on_the_neighbours_load_state() -> void:
 	var s := _settings()
 	var st := _streamer(s)
@@ -956,9 +1087,16 @@ func test_planting_heights_do_not_depend_on_the_neighbours_load_state() -> void:
 	var exact := st.terrain.height(spill.x, spill.y, PackedInt32Array(), false)
 	var g := st._ground_for(Vector2i.ZERO, cs)
 	assert_almost_eq(g.height_at(spill.x, spill.y), exact, 0.001, "with the neighbour at full detail")
-	assert_almost_eq(g.height_at(inside.x, inside.y), st.height_at(inside.x, inside.y), 0.0001, "inside: the drawn surface")
+	assert_almost_eq(g.height_at(inside.x, inside.y),
+		st._mesh_height(cs.mid_heights, s.mid_stride_m, 1, Vector2.ZERO, s.chunk_m, inside.x, inside.y), 0.0001, "inside: the mid grid")
+	var seated := st.seat_exact(g, inside.x, inside.y)
+	assert_almost_eq(seated, st.terrain.height(inside.x, inside.y, PackedInt32Array(), false), 0.001, "a kept spot: the exact height")
+	assert_eq(g.height_at(inside.x, inside.y), seated, "and the spawns read that back")
 	var nb: TerrainStreamer.ChunkState = st._chunks[Vector2i(1, 0)]
-	st._drop_near(nb)  # the neighbour back to its 16 m far mesh
+	for t in st._tiles_of_chunk(Vector2i(1, 0)):
+		if st._tiles.has(t):
+			st._drop_near_tile(t, st._tiles[t])
+	st._drop_mid(nb)  # the neighbour back to its 16 m far mesh
 	assert_almost_eq(st._ground_for(Vector2i.ZERO, cs).height_at(spill.x, spill.y), exact, 0.001, "with the neighbour at far detail")
 	st._chunks.erase(Vector2i(1, 0))  # and with nothing loaded there at all
 	assert_almost_eq(st._ground_for(Vector2i.ZERO, cs).height_at(spill.x, spill.y), exact, 0.001, "with nothing loaded next door")
@@ -1139,9 +1277,9 @@ func test_far_gaps_interleave_with_planting_but_never_beat_near_work() -> void:
 	var plant := plant_d + TerrainStreamer.PLANT_PRIORITY
 	assert_lt(st._far_priority(hole, plant_d + s.far_lead_chunks - 0.1), plant, "a nearer horizon gap goes first")
 	assert_gt(st._far_priority(hole, plant_d + s.far_lead_chunks + 0.1), plant, "a further one waits")
-	var near_tier_worst := s.near_radius + 0.75 - 100.0
+	var near_tier_worst := s.mid_radius + 0.75 - 100.0
 	assert_gt(st._far_priority(hole, 0.0), near_tier_worst, "never ahead of a near mesh or collision")
-	hole.near_mesh = MeshInstance3D.new()
+	hole.mid_mesh = MeshInstance3D.new()
 	assert_gt(st._far_priority(hole, 0.0), s.far_radius + 0.5 + TerrainStreamer.PLANT_PRIORITY,
-		"a far mesh hidden under a near one waits behind all planting")
-	hole.near_mesh.free()
+		"a far mesh hidden under a finer one waits behind all planting")
+	hole.mid_mesh.free()

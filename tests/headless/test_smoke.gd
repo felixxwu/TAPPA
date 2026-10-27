@@ -341,6 +341,8 @@ func test_billboard_field_opaque_mesh_path_uses_silhouette_and_opaque_shader() -
 		st.add_vertex(Vector3(uv.x - 0.5, 1.0 - uv.y, 0.0))
 	var silhouette := st.commit()
 
+	var mode: int = Config.data.tree_cutout_mode
+	Config.data.tree_cutout_mode = 0  # the opaque path, whatever the game is set to draw
 	var field := BillboardField.new()
 	add_child_autofree(field)
 	var positions := PackedVector2Array([Vector2(10, 10), Vector2(20, 12)])
@@ -353,6 +355,7 @@ func test_billboard_field_opaque_mesh_path_uses_silhouette_and_opaque_shader() -
 	assert_not_null(smat, "silhouette surface has a ShaderMaterial")
 	assert_eq(smat.shader, load("res://shaders/billboard_opaque.gdshader"),
 		"opaque path uses the discard-free billboard shader")
+	Config.data.tree_cutout_mode = mode
 	assert_eq(smat.get_shader_parameter("render_distance"), 80.0, "render_distance wired")
 	# size is carried as instance scale so the shader reads it from MODEL_MATRIX.
 	# (MultiMesh.get_instance_transform is a no-op stub under --headless, so we

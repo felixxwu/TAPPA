@@ -50,3 +50,20 @@ func test_opaque_material_has_sun_uniforms() -> void:
 	assert_not_null(mat, "opaque field builds a ShaderMaterial")
 	for p in ["sun_dir", "sun_color", "sky_color", "ground_color", "light_amount"]:
 		assert_ne(mat.get_shader_parameter(p), null, "material sets uniform '%s'" % p)
+
+
+# Each tree cutout mode draws with its own shader; the alpha ones on a plain card, not the
+# traced silhouette.
+func test_each_tree_cutout_mode_picks_its_shader_and_mesh() -> void:
+	var shaders := [BillboardField.BILLBOARD_OPAQUE_SHADER, BillboardField.BILLBOARD_ALPHA_SHADER,
+		BillboardField.BILLBOARD_BLEND_SHADER]
+	var was: int = Config.data.tree_cutout_mode
+	Config.data.tree_cutout_mode = 0
+	var opaque_mesh := Foliage.tree_silhouette_mesh(TEX)
+	for mode in 3:
+		Config.data.tree_cutout_mode = mode
+		var field := _build_field(1.0)
+		var mat := field.render_mesh.surface_get_material(0) as ShaderMaterial
+		assert_eq(mat.shader, shaders[mode], "mode %d draws with its shader" % mode)
+		assert_eq(field.render_mesh == opaque_mesh, mode == 0, "mode %d: traced silhouette only when opaque" % mode)
+	Config.data.tree_cutout_mode = was

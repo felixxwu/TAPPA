@@ -42,7 +42,12 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
    everything downstream asks one question: `nearest(p, max_d)`, which leaves its answer in
    `hit_d` / `hit_q` / `hit_s` / `hit_edge` / `hit_side` / `hit_dir` so a query allocates nothing.
    `candidates_for` gathers, once per chunk, every segment that can be nearest for any point in
-   the chunk, so per-sample queries (`nearest_in`) scan a short list.
+   the chunk, sorted nearest the chunk centre first, so per-sample queries (`nearest_in`) scan a
+   short list. `nearest_in` skips a candidate without the full distance maths when even its
+   nearest possible point (its distance from the segment's midpoint `seg_mx`/`seg_my`, less its
+   half-length `seg_half`) is further than the best found so far; the margin keeps near-ties in, so
+   the answer is the full scan's. Measured 2026-10-26: 16.6 → 5.0 µs per query, a height sample
+   35 → 24 µs on a desktop (it was the biggest single cost of a sample).
 2. **`RoadTerrain` — height built from the roads.** Same model as the lab
    (`tools/road_network_lab.html`):
    - **Base field:** low-frequency noise that ignores roads (`base_h`). It sets the roads' own
@@ -66,7 +71,9 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 
 ## Streaming under a strict frame budget
 
-`TerrainStreamer.budget_us(frame_s)` is the most terrain work any frame may do: `budget_fraction` of the frame time left over (`spare_us`, a smoothed estimate from the last frames' cpu/gpu load, fed by `free_roam.gd` → `_track_spare_time`), never below `budget_min_fraction` of the actual frame time (so time per second stays constant as fps drops). A chunk
+> **Tried and undone (2026-10-26):** feeding the budget the main thread's measured idle time between frames (a phone browser reports no gpu time, so the budget sits at its floor there). On the phone it read high while loading, the bigger budget slowed the frames, and because the floor below is a share of the *actual* frame time the slow frames then kept the budget high: 22 fps instead of ~44. The phone is CPU-bound anyway, so there was little idle time to find.
+
+`TerrainStreamer.budget_us(frame_s)` is the most terrain work any frame may do: `budget_fraction` of the frame time left over (`spare_us`, a smoothed estimate from the last frames' cpu/gpu load, fed by `free_roam.gd` → `_track_spare_time`), never below `budget_min_fraction` of the actual frame time (so time per second stays constant as fps drops), but that floor is capped at what it would be at `budget_floor_fps` (60): on a phone browser every frame is CPU-bound, and an uncapped floor that grows with slow frames slowed them further (measured 2026-10-26: 30 fps with an 8–11 ms budget). A chunk
 (64 m) is built by a resumable `ChunkJob` moving through stages:
 
 | Stage | Unit | How it stays inside the budget |
@@ -91,20 +98,48 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   start one that would not fit in what is left of the frame. The first unit of a frame always
   runs, so a unit dearer than the whole budget still progresses and shows up as an overrun on
   the HUD rather than stalling the world.
-- **Two levels of detail:** near chunks at `near_stride_m` (2 m) within `near_radius`, far chunks
-  at `far_stride_m` (16 m) out to `far_radius` (6 chunks). Far chunks skip the one-sample
-  border and take one-sided slopes at their edges.
+- **Three levels of detail** (`TerrainStreamer.Level`), each chunk drawing only its finest built
+  mesh (`_show_finest`):
+  - **near**, `near_stride_m` (2 m), drawn in `near_tile_m` (32 m) **tiles** smaller than a chunk
+    (`TileState`, in `_tiles`): only the 2×2 tiles round the tile corner nearest the car
+    (`near_tiles_of`), so the car is always at least half a tile (16 m) inside them. Drawn and
+    driven on, nothing planted. A tile is kept until its centre is `NEAR_KEEP_TILES` (1.6 tiles)
+    from the car, so wavering on a tile's middle line doesn't rebuild it. Tiles halve the near
+    work per metre against 64 m near chunks (it is two new near squares per square driven, so it
+    scales with the square's side).
+  - **Holes, not overlap:** a chunk's drawn coarse mesh (mid, else far) is rebuilt without the
+    quarters its near tiles cover, with a skirt round each hole so no crack shows against the
+    tile (`_cut_holes` / `_coarse_mesh`, from the vertex arrays kept on `ChunkState`). The two
+    grids differ slightly in height, so drawing both in one place would flicker.
+  - **mid**, `mid_stride_m` (8 m) within `mid_radius` (1.5 chunks, so it ends about where the 120 m foliage draw distance does): carries all the planting.
+    It **narrows with speed** (`squashed_distance`): ahead it always reaches `mid_radius`, but to
+    the sides and behind it shrinks towards `mid_side_frac` / `mid_back_frac` (0.6) of that by
+    `mid_squash_speed_mps` (25 m/s), round again when stopped. What enters the band each second
+    is its width across the direction of travel times the speed, so a narrower band is less to
+    build, and a fast car can't turn into its sides in time.
+  - **far**, `far_stride_m` (16 m) out to `far_radius` (6 chunks). Far chunks skip the one-sample
+    border and take one-sided slopes at their edges.
+
+  Why (2026-10-26, measured on an Android phone's web build): one height sample cost ~150 µs
+  there (31 µs on a desktop), so a 2 m chunk was ~180 ms of noise maths, and with five of them
+  per 64 m driven the queue grew all run long. The 2×2 near block needs two new 2 m chunks per
+  64 m, and an 8 m mid chunk is 121 samples instead of 1,225.
 - **Cheap paths that keep the lab match exact:** the hash multiplies are masked directly (the
   constants are below 2³¹, so nothing overflows), the hash is written out inside `vnoise`,
   points inside the closest possible coastline skip the coast noise, chunks beyond the
   furthest possible coastline are filled with sea floor without sampling, and the ring tint is
   sampled once per chunk.
-- **Collision** comes only from near chunks, within `collision_radius`. `HeightMapShape3D` has
-  unit cells, so the shape is scaled to the stride.
-- **Planting waits behind collision.** A near build stops once its mesh and collision are in
+- **Collision** covers the 2×2 chunks round the chunk corner nearest the car
+  (`collision_block_of`; dropped past `NEAR_KEEP_CHUNKS`), so the car is always at least 32 m
+  inside it, more than the near tiles give. It is built **per tile** (`_collide_tile`, recorded in
+  `TileState.body_level`) from the finest grid there: the quarter of the chunk's mid grid first,
+  rebuilt from the tile's near grid when that attaches. So the car always drives on what is drawn
+  under it. The safety net (`_rush_collision`) works per tile too.
+  `HeightMapShape3D` has unit cells, so the shape is scaled to the stride.
+- **Planting waits behind collision.** A mid build stops once its mesh and collision are in
   (`_run_queue` runs it only up to `Stage.PLANT`), and goes back in the queue at
-  `PLANT_PRIORITY` (after every chunk's collision and near mesh, before far meshes) to plant
-  its trees, bushes and rocks (`ChunkState.plant_job`, cancelled with the near mesh). Until
+  `PLANT_PRIORITY` (after every chunk's collision and finer meshes, before far meshes) to plant
+  its trees, bushes and rocks (`ChunkState.plant_job`, cancelled with the mid mesh). Until
   2026-10-20 a build ran straight on into its foliage, a few ms of spawns per chunk, while the
   next chunk's collision waited. At road speed the car outran its collision and **fell through
   the world** about 0.3–1.5 km out (the "drive out a bit" bug).
@@ -113,8 +148,8 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   once with no budget, only as far as the collision (`_rush_collision`; its foliage is left to
   the queue). Each one is a hitch of a few tens of ms instead of a fall, counted in
   `stat_rushes` (HUD readout and the auto driver's report). The 1 ms budget can't build a
-  3-chunk-wide collision band at much over 100 km/h in a straight line (a near chunk's heights
-  alone are about 45 ms of work), so very fast driving leans on this net: probe on the default
+  3-chunk-wide collision band at much over 100 km/h in a straight line (a 2 m chunk's heights
+  alone were about 45 ms of work), so very fast driving leans on this net: probe on the default
   island, straight line at 144 km/h, one rush every 200–400 m; the auto driver on the roads
   (up to about 80 km/h) needed none in 4 km.
 - **Fallen out of the world anyway:** `RoadRecovery.fell_out_of_world` puts the car back on the
@@ -123,24 +158,27 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
 - **Skirts** hang below every chunk edge, so mixed-detail neighbours never show a crack.
 - **Planning (`_plan`)** runs when the car changes chunk, and every 0.25 s otherwise. It
   measures distance from both the car and where it will be in 1.5 s, and queues missing work in
-  priority order (the table above `PLANT_PRIORITY`): collision (`d − 2000`), near meshes that
-  need collision (`d − 1000`), other near meshes (`d − 100`), then planting (`d − 50`) and far
-  meshes. A far mesh that would fill a **gap in the horizon** (its chunk has no near mesh or
-  near build) sits at `d − 50 − far_lead_chunks` (`_far_priority`), so it interleaves with
+  priority order (the table above `PLANT_PRIORITY`): collision (`d − 2000`), mid meshes that
+  need collision (`d − 1000`), near meshes (`d − 200`), other mid meshes (`d − 100`), then
+  planting (`d − 50`) and far meshes. A far mesh that would fill a **gap in the horizon** (its
+  chunk has no finer mesh or mid build) sits at `d − 50 − far_lead_chunks` (`_far_priority`), so it interleaves with
   planting by distance: planting a chunk `d` away waits for horizon gaps nearer than
   `d + far_lead_chunks` (`FreeRoamSettings.far_lead_chunks`, default 3). A far mesh hidden under
-  a near one stays at `d`, behind everything. Before 2026-10-20 planting always beat far meshes,
+  a finer one stays at `d`. Planting a chunk wholly past the foliage draw distance
+  (`tree_render_distance_m`, from the car or where it will be) waits at `d + 1000`
+  (`UNSEEN_PLANT_PRIORITY`, `_plant_priority`) behind everything: on a phone the mid band reaches
+  past the 90 m foliage distance, and those trees were the dearest spawns in the queue. Before 2026-10-20 planting always beat far meshes,
   so at speed far jobs never ran and the horizon had gaps. Nothing in the plant / far tier can
-  overtake a collision or near-mesh build.
-- **Dropping:** a chunk sheds its near mesh, foliage and near / plant jobs past
-  `near_radius + 1.5`, and its collision and collision job past `collision_radius + 1.5`
-  (`_drop_near`, `_drop_collision`), whatever its distance; a far job past `far_radius + 1.5` is
+  overtake a collision or a finer mesh.
+- **Dropping:** a chunk sheds its near mesh past `NEAR_KEEP_CHUNKS` (`_drop_near`), its mid mesh,
+  foliage and mid / plant jobs past `mid_radius + 1.5` (`_drop_mid`), and its collision and
+  collision job with its near mesh (`_drop_collision`), whatever its distance; a far job past `far_radius + 1.5` is
   cancelled; a chunk past `far_radius + 2` (Chebyshev) goes whole (`_drop_chunk`). Until
   2026-10-20 the near / collision drops sat behind the horizon test, so after a medium jump (a
   respawn or travel of ~300–500 m, `prefill_at`) the old chunks just past the horizon kept their
   near mesh, foliage, collision and queued jobs at stale priorities, and `prefill_at` then built
-  that stale work too, lengthening the travel hitch. Near jobs in the hysteresis band (no longer
-  wanted, not yet dropped) fall to the near-mesh tier. Cancelled or finished jobs are purged from
+  that stale work too, lengthening the travel hitch. Mid jobs in the hysteresis band (no longer
+  wanted, not yet dropped) fall to the mid-mesh tier. Cancelled or finished jobs are purged from
   the queue at each plan (a queue that never drains used to carry them for ever).
 - **Boot:** `prefill()` builds the planned set with no budget before the car is released.
   Every change into the world (`Scenes.change_to(FREE_ROAM)` — boot, new world, a rest-stop car/part
@@ -163,9 +201,10 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   terrain maths.
 - **Road surface queries** (`surface_at`, four per physics tick from the car's wheels, plus one
   per spinning driven wheel from the wheel particles; ~1.5 µs each) read
-  the distance to the road stored at every near-chunk vertex (`near_road_d`) the same way.
+  the distance to the road stored at every vertex of the finest loaded grid (`near_road_d`, else
+  `mid_road_d`) the same way.
 - **Road candidates** are gathered once per chunk (`ChunkState.cands`), with a margin wide
-  enough for both strides, and shared by its far and near builds.
+  enough for every stride, and shared by its builds at every level.
 
 ## Biomes
 
@@ -398,7 +437,7 @@ only about 190 modules.
 
 ## Trees, bushes and rocks
 
-Near chunks are planted after their mesh (and collision) is attached, through the same
+Mid chunks are planted after their mesh (and collision) is attached, through the same
 `Foliage.spawn_trees` / `spawn_bushes` / `spawn_rocks` the stages used, so a tree looks and
 collides exactly as before. `Foliage` and its fields take any terrain with `height_at` (and
 `light_at` for the bushes' baked light); the streamer hands them a `PlantGround` (below) that
@@ -406,8 +445,11 @@ provides both.
 
 - **Spots** come from jittered grids in world space (`tree_cell_m`, `bush_cell_m`,
   `rock_cell_m`), so a chunk always plants the same things in the same places.
-  - **The ground they stand on** (`PlantGround`, `plant_height`): inside the planting chunk its
-    own near grid (the drawn surface); outside it (cells near the +x/+z edge spill up to 0.85 of
+  - **The ground they stand on** (`PlantGround`, `plant_height`): every kept spot stands on the
+    exact terrain height, worked out and cached in the budgeted `PLANT` stage (`seat_exact`),
+    because the chunk is drawn at 8 m and later at 2 m and a plant seated on either grid would
+    float over the other. Other points inside the planting chunk (the water check, a bush's
+    light samples) read its mid grid; outside it (cells near the +x/+z edge spill up to 0.85 of
     a cell into the neighbour, rock outcrops and rest-stop crowds spill either way) the exact
     terrain height, using that point's own chunk's road candidates (`_cands_of`), cached per
     spot. Foliage, barriers and crowds are all given this ground rather than the streamer's
@@ -432,13 +474,18 @@ provides both.
 - **Biomes:** each ring uses its region's `tree_mix`, bush switch (`spawns_bush_mesh`) and
   rock density (see *Biomes*).
 - **Under the budget:** the `PLANT` stage checks a few spots at a time, and `SPAWN` builds
-  one foliage field per species as its own unit of work.
+  one foliage field per species as its own unit of work. Splitting fields per foliage bin was
+  tried (2026-10-26) and undone: on a phone each field has ~0.9 ms of fixed setup whatever its
+  size, so splitting multiplied the work and added draw calls.
 - **`GameConfig.vegetation_enabled = false`** leaves out the trees, bushes and rocks only
-  (`_plant_candidates`). Every near build still runs `PLANT` / `SPAWN`, because the barriers
+  (`_plant_candidates`). Every mid build still runs `PLANT` / `SPAWN`, because the barriers
   (with their collision), rest-stop crowds, site posts and coins spawn from it too; until
   2026-10-20 turning vegetation off removed those as well.
-- **Lifetime:** the foliage lives on `ChunkState.foliage` and is freed with the near mesh.
-  It is only planted within the near ring, which matches `tree_render_distance_m` (120 m).
+- **Lifetime:** the foliage lives on `ChunkState.foliage` and is freed with the mid mesh.
+  It is only planted within the mid ring, which matches `tree_render_distance_m` (120 m). A phone
+  browser draws it to `tree_render_distance_web_touch_m` (90 m) instead: `free_roam.gd._enter_tree`
+  writes `GameConfig.tree_render_distance_for` onto the config before anything is planted, as the
+  old stage did in `world.gd`.
 - **Bush brushing:** each chunk's bushes get a `BushField` watching the car, so brushing one
   costs HP and drag as on the stage. **Knocking trees over** needs nothing extra: it lives in
   `car.gd` and works on any colliding `TreeMeshField`.
@@ -498,8 +545,14 @@ hasn't driven that lead away from spawn, and avoiding dead ends. It stops at a d
 than turning round. **Steering** is pure pursuit (`BenchmarkRunner.steer_toward`) towards a
 point ahead on the route (`point_ahead`). The tracker (`advance`) only takes the nearest
 segment a few ahead, never one behind. **Speed** (`safe_speed`) is the fastest the car can go
-and still brake to every bend's limit, `sqrt(LATERAL_ACCEL / curvature)`, within the next
-250 m.
+and still brake to every bend's limit, `sqrt(lateral_accel / curvature)`, within the next
+250 m. `top_speed_mps` / `lateral_accel` / `brake_decel` are per-driver vars, so the benchmark
+can drive calmer than the streaming test. `place_on_route(i)` puts the car on route point `i`
+(the unstick uses it, and the benchmark starts the car on the route's first point).
+
+**Straight-road island** (`FreeRoamSettings.straight_road_m` > 0): `RoadNetwork.build` skips
+growth and makes one dead-straight road of that length out from spawn; terrain, foliage, sites
+and rings build around it as usual. Only the benchmark uses it ([benchmark.md](benchmark.md)).
 
 Run it from the command line to drive 3 km of the real island and print the report:
 `godot --headless --path . --fixed-fps 60 -- --auto-drive`. On the default island

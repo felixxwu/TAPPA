@@ -16,6 +16,9 @@ const UV_PER_M := 0.125
 const CHECK_EVERY := 4
 
 enum Stage { PREP, HEIGHTS, ARRAYS, UPLOAD, ATTACH, COLLIDE, PLANT, SPAWN, DONE }
+# Detail levels, finest first. NEAR is the 2×2 chunks round the car, drawn and driven on only.
+# MID reaches further and carries everything planted (trees, barriers, sites). FAR is the horizon.
+enum Level { NEAR, MID, FAR }
 
 enum Plant { TREE, BUSH, ROCK }
 const TREE_SALT := 101
@@ -64,10 +67,13 @@ var _peak_us := {"heights": 40.0, "arrays": 10.0, "plant": 40.0}
 const PEAK_DECAY := 0.995
 
 var _chunks := {}  # Vector2i -> ChunkState
+var _tiles := {}  # Vector2i -> TileState, in near_tile_m squares
 var _queue: Array[ChunkJob] = []
 var _est := {}  # atomic stage -> moving average of its cost, µs
 var _indices := {}  # verts per side -> PackedInt32Array, grid plus skirts
 var _plan_coord := Vector2i(1 << 30, 0)
+var _plan_here := Vector2.ZERO  # the car and where it will be, as of the last plan
+var _plan_ahead := Vector2.ZERO
 var _plan_timer := 0.0
 var _ran_this_frame := false
 # The stage's fake sun and hemisphere ambient (GameConfig's Lighting group, the same values
@@ -87,26 +93,46 @@ var _pair_materials: Array[Material] = []
 
 
 class ChunkState:
+	var coord: Vector2i
 	var far_mesh: MeshInstance3D
-	var near_mesh: MeshInstance3D
-	var body: StaticBody3D
-	var foliage: Node3D  # trees, bushes and rocks, which live and die with the near mesh
-	var near_heights := PackedFloat32Array()  # halo grid kept for collision and height queries
+	var mid_mesh: MeshInstance3D
+	var foliage: Node3D  # trees, bushes and rocks, which live and die with the mid mesh
+	var mid_heights := PackedFloat32Array()  # halo grid kept for collision and height queries
 	var far_heights := PackedFloat32Array()
-	var near_road_d := PackedFloat32Array()  # distance to the road at each near vertex
+	var mid_road_d := PackedFloat32Array()  # distance to the road at each vertex
+	# The vertex arrays of the mid and far meshes, kept so the drawn one can be rebuilt with holes
+	# where near tiles cover it (_cut_holes), and which mesh and tiles the holes were last cut for.
+	var mid_arrays: Array = []
+	var far_arrays: Array = []
+	var hole_mesh: MeshInstance3D
+	var hole_mask := 0
 	# The road segments that can be nearest anywhere in the chunk, gathered once and shared by
-	# its far and near builds.
+	# its builds at every level.
 	var cands := PackedInt32Array()
 	var has_cands := false
 	var far_job: ChunkJob
+	var mid_job: ChunkJob
+	var plant_job: ChunkJob  # a mid build back in the queue to plant, after its collision
+
+
+# One near_tile_m square: its full-detail mesh, and its share of the collision, built from the
+# finest grid there (this tile's near grid, else the quarter of its chunk's mid grid under it).
+class TileState:
+	var near_mesh: MeshInstance3D
+	var near_heights := PackedFloat32Array()  # halo grid
+	var near_road_d := PackedFloat32Array()
 	var near_job: ChunkJob
+	var body: StaticBody3D
+	var body_level := Level.FAR
 	var col_job: ChunkJob
-	var plant_job: ChunkJob  # a near build back in the queue to plant, after its collision
 
 
 class ChunkJob:
-	var coord: Vector2i
-	var near := false
+	var coord: Vector2i  # a near tile's coord for a tile job, else a chunk's
+	var tile := false
+	var origin := Vector2.ZERO  # world position of the square's corner
+	var size_m := 64.0
+	var level := Level.FAR
 	var with_collision := false
 	var stride := 8.0
 	var n := 9  # vertices per side
@@ -116,7 +142,7 @@ class ChunkJob:
 	var dist := 0.0  # distance from the car, in chunks, at the last plan
 	var cancelled := false
 	var cands := PackedInt32Array()
-	# Near chunks sample a one-sample border so edge normals match their neighbours; far chunks
+	# Near and mid chunks sample a one-sample border so edge normals match their neighbours; far chunks
 	# skip it and take one-sided slopes at their edges, which fog hides.
 	var halo := 0
 	var ring_lo := INF  # the lowest and highest RoadTerrain.ring_coord over the chunk's vertices
@@ -129,7 +155,7 @@ class ChunkJob:
 	var uvs := PackedVector2Array()
 	var uv2s := PackedVector2Array()  # x = tarmac weight (the ground shader's UV2.x)
 	var mesh: ArrayMesh
-	var plants := false  # a near build also plants the chunk's trees, bushes and rocks
+	var plants := false  # a mid build also plants the chunk's trees, bushes and rocks
 	var plant_pts := PackedVector2Array()
 	var plant_kind := PackedInt32Array()
 	var kept := [PackedVector2Array(), PackedVector2Array(), PackedVector2Array()]  # by Plant
@@ -139,20 +165,19 @@ class ChunkJob:
 
 
 # The ground a chunk's planting stands on, handed to Foliage / BarrierField / Crowd in place of
-# the streamer. Inside its own chunk it reads the chunk's own near grid (exactly the drawn
-# surface). Outside it (spots near the +x/+z edge spill into the neighbour, rock outcrops and rest
-# crowds spill either way) it uses the exact terrain height, never the neighbour's loaded mesh:
-# that is whatever LOD happens to be there (often the 16 m far mesh, or nothing), so foliage
-# floated or sank when the near mesh arrived (metres; tens of metres on a mountainside), and the
-# water check depended on load order.
-# Exact heights are cached per spot, so the PLANT stage's checks pay for them and the spawns reuse
-# them.
+# the streamer. Kept spots stand on the exact terrain height, worked out during the PLANT stage
+# and cached, because the chunk is drawn at different levels over its life (its 8 m mid grid, then
+# the 2 m near grid when the car comes close) and a tree seated on one would float over the other.
+# Other points inside the chunk (the water check, a bush's light) read its mid grid. Outside it
+# (spots near the +x/+z edge spill into the neighbour, rock outcrops and rest crowds spill either
+# way) it uses the exact height too, never the neighbour's loaded mesh, so planting never depends
+# on load order.
 class PlantGround:
 	extends RefCounted
 	var streamer: TerrainStreamer
 	var coord: Vector2i
-	var heights := PackedFloat32Array()  # the planting chunk's near grid (with its halo)
-	var exact := {}  # Vector2 -> exact height, for points outside the chunk
+	var heights := PackedFloat32Array()  # the planting chunk's mid grid (with its halo)
+	var exact := {}  # Vector2 -> exact height
 
 	func height_at(x: float, z: float) -> float:
 		return streamer.plant_height(self, x, z)
@@ -294,22 +319,28 @@ func ring_material_at(coord: Vector2i) -> Material:
 # Answered from the loaded chunk under the point when there is one: cheap, and exactly the
 # surface that is drawn. Only falls back to the full terrain maths where nothing is loaded.
 func height_at(x: float, z: float) -> float:
+	var t := _tile_of(Vector2(x, z))
+	var ts: TileState = _tiles.get(t)
+	if ts != null and not ts.near_heights.is_empty():
+		return _mesh_height(ts.near_heights, settings.near_stride_m, 1, Vector2(t) * settings.near_tile_m, settings.near_tile_m, x, z)
 	var coord := _chunk_of(Vector2(x, z))
 	var st: ChunkState = _chunks.get(coord)
+	var o := Vector2(coord) * settings.chunk_m
 	if st != null:
-		if not st.near_heights.is_empty():
-			return _mesh_height(st.near_heights, settings.near_stride_m, 1, coord, x, z)
+		if not st.mid_heights.is_empty():
+			return _mesh_height(st.mid_heights, settings.mid_stride_m, 1, o, settings.chunk_m, x, z)
 		if not st.far_heights.is_empty():
-			return _mesh_height(st.far_heights, settings.far_stride_m, 0, coord, x, z)
+			return _mesh_height(st.far_heights, settings.far_stride_m, 0, o, settings.chunk_m, x, z)
 	return terrain.height(x, z, PackedInt32Array(), false)
 
 
-# Height on a chunk's grid, interpolated across the same two triangles per cell the mesh uses.
-func _mesh_height(heights: PackedFloat32Array, stride: float, halo: int, coord: Vector2i, x: float, z: float) -> float:
-	var n := int(settings.chunk_m / stride) + 1
+# Height on a square's grid (corner `origin`, side `size`), interpolated across the same two
+# triangles per cell the mesh uses.
+func _mesh_height(heights: PackedFloat32Array, stride: float, halo: int, origin: Vector2, size: float, x: float, z: float) -> float:
+	var n := int(size / stride) + 1
 	var m := n + 2 * halo
-	var lx := (x - coord.x * settings.chunk_m) / stride
-	var lz := (z - coord.y * settings.chunk_m) / stride
+	var lx := (x - origin.x) / stride
+	var lz := (z - origin.y) / stride
 	var gx := clampi(floori(lx), 0, n - 2)
 	var gz := clampi(floori(lz), 0, n - 2)
 	var u := clampf(lx - gx, 0.0, 1.0)
@@ -324,14 +355,18 @@ func _mesh_height(heights: PackedFloat32Array, stride: float, halo: int, coord: 
 	return hd + (hc - hd) * (1.0 - u) + (hb - hd) * (1.0 - v)
 
 
-# Like height_at, answered from the loaded near chunk when there is one: the distance to the road
+# Like height_at, answered from the finest loaded grid when there is one: the distance to the road
 # was already worked out at every vertex while building it.
 func surface_at(x: float, z: float) -> Vector2:
+	var t := _tile_of(Vector2(x, z))
+	var ts: TileState = _tiles.get(t)
 	var coord := _chunk_of(Vector2(x, z))
 	var st: ChunkState = _chunks.get(coord)
 	var road: float
-	if st != null and not st.near_road_d.is_empty():
-		road = terrain.road_weight(_mesh_height(st.near_road_d, settings.near_stride_m, 0, coord, x, z))
+	if ts != null and not ts.near_road_d.is_empty():
+		road = terrain.road_weight(_mesh_height(ts.near_road_d, settings.near_stride_m, 0, Vector2(t) * settings.near_tile_m, settings.near_tile_m, x, z))
+	elif st != null and not st.mid_road_d.is_empty():
+		road = terrain.road_weight(_mesh_height(st.mid_road_d, settings.mid_stride_m, 0, Vector2(coord) * settings.chunk_m, settings.chunk_m, x, z))
 	else:
 		terrain.height(x, z, PackedInt32Array(), false)
 		road = terrain.road_weight(terrain.last_road_d)
@@ -341,7 +376,8 @@ func surface_at(x: float, z: float) -> Vector2:
 # --- scheduling ----------------------------------------------------------------------------
 
 func budget_us(frame_s: float) -> int:
-	return maxi(int(frame_s * 1e6 * settings.budget_min_fraction), int(spare_us * settings.budget_fraction))
+	var floor_s := minf(frame_s, 1.0 / maxf(settings.budget_floor_fps, 1.0))
+	return maxi(int(floor_s * 1e6 * settings.budget_min_fraction), int(spare_us * settings.budget_fraction))
 
 
 func _process(delta: float) -> void:
@@ -458,67 +494,122 @@ func queued() -> int:
 	return _queue.size()
 
 
+# The jobs due now by what they build, for the benchmark report.
+func due_by_kind() -> Dictionary:
+	var out := {"collision": 0, "near": 0, "mid": 0, "plant": 0, "far": 0}
+	for job in _queue:
+		if job.cancelled or job.stage == Stage.DONE or job.priority >= UNSEEN_PLANT_PRIORITY * 0.5:
+			continue
+		var kind := "far"
+		if job.stage > Stage.COLLIDE:
+			kind = "plant"
+		elif job.tile and job.stage == Stage.COLLIDE:
+			kind = "collision"
+		elif job.level == Level.NEAR:
+			kind = "near"
+		elif job.level == Level.MID:
+			kind = "mid"
+		out[kind] += 1
+	return out
+
+
+# Queued jobs that are due now: everything but planting held back past the foliage draw distance.
+func queued_due() -> int:
+	var n := 0
+	for job in _queue:
+		if job.priority < UNSEEN_PLANT_PRIORITY * 0.5:
+			n += 1
+	return n
+
+
 func chunk_counts() -> Vector3i:
 	var c := Vector3i.ZERO
 	for st: ChunkState in _chunks.values():
-		c.x += int(st.near_mesh != null)
+		c.x += int(st.mid_mesh != null)
 		c.y += int(st.far_mesh != null)
-		c.z += int(st.body != null)
+	for ts: TileState in _tiles.values():
+		c.z += int(ts.body != null)
 	return c
 
 
 func has_collision_at(x: float, z: float) -> bool:
-	var st: ChunkState = _chunks.get(_chunk_of(Vector2(x, z)))
-	return st != null and st.body != null
+	var ts: TileState = _tiles.get(_tile_of(Vector2(x, z)))
+	return ts != null and ts.body != null
 
 
 func _run_queue(deadline: int) -> void:
 	_ran_this_frame = false
-	while not _queue.is_empty():
-		var job := _queue[0]
+	# Planting and horizon jobs whose next unit didn't fit in what's left of this frame. Smaller
+	# work behind them in that same tier may still fit, so it runs instead of the frame's budget
+	# going unused; anything ahead of that tier (collision, near and mid meshes) still stops the
+	# frame, so it is never overtaken.
+	var blocked := {}
+	var i := 0
+	while i < _queue.size():
+		var job := _queue[i]
 		if job.cancelled or job.stage == Stage.DONE:
-			_queue.pop_front()
+			_queue.remove_at(i)
 			continue
-		# A near build stops once its mesh and collision are in: its trees, bushes and rocks go
+		if blocked.has(job):
+			i += 1
+			continue
+		# A mid build stops once its mesh and collision are in: its trees, bushes and rocks go
 		# back in the queue behind every other chunk's collision and mesh. Running straight on
 		# into the planting kept the next chunk's collision waiting behind this chunk's
 		# foliage, which is how a fast car outran its collision and fell through the world.
 		var planting := job.stage > Stage.COLLIDE
 		if not _step(job, deadline, Stage.DONE if planting else Stage.PLANT):
-			return
+			if job.priority < SKIPPABLE_PRIORITY:
+				return
+			blocked[job] = true
+			i += 1
+			continue
 		if job.stage == Stage.DONE:
-			_queue.pop_front()
+			_queue.remove_at(i)
 		elif not planting and job.stage > Stage.COLLIDE:
-			_queue.pop_front()
+			_queue.remove_at(i)
 			_to_planting(job)
 			_enqueue_sorted(job)
+			i = 0  # it may have gone in ahead of jobs already passed over
 		if Time.get_ticks_usec() >= deadline:
 			return
 
 
 # Queue order, lowest first (d = distance from the car in chunks, at most far_radius + 0.5):
 #   collision        d - 2000   (d - 3000 when rushed)
-#   near + collision d - 1000
-#   near mesh        d - 100
+#   mid + collision  d - 1000
+#   near mesh        d - 200
+#   mid mesh         d - 100
 #   planting         d - 50                           (PLANT_PRIORITY)
-#   far mesh, hole   d - 50 - far_lead_chunks         (no near mesh or near build: a gap in the horizon)
-#   far mesh, hidden d                                (under a near mesh, or one on its way)
-# So foliage never runs ahead of a collision or near-mesh build, but a far mesh that would fill a
+#   far mesh, hole   d - 50 - far_lead_chunks         (no mid mesh or mid build: a gap in the horizon)
+#   far mesh, hidden d                                (under a finer mesh, or one on its way)
+#   unseen planting  d + 1000                         (UNSEEN_PLANT_PRIORITY: past the foliage draw distance)
+# So foliage never runs ahead of a collision or a finer mesh, but a far mesh that would fill a
 # visible gap is interleaved with planting by distance: planting a chunk d away waits for horizon
 # holes nearer than d + far_lead_chunks. Before, planting (d - 50) always beat far meshes (d), so
-# at speed far jobs never ran and the horizon had gaps. A hole is never nearer than the near ring's
-# edge, so with far_lead_chunks under 50 it stays behind every near-mesh build.
+# at speed far jobs never ran and the horizon had gaps. A hole is never nearer than the mid ring's
+# edge, so with far_lead_chunks under 50 it stays behind every mid-mesh build.
 const PLANT_PRIORITY := -50.0
+# Jobs from here on (planting and far meshes) may be passed over when blocked; see _run_queue.
+const SKIPPABLE_PRIORITY := PLANT_PRIORITY - 30.0
+# Planting a chunk wholly beyond the foliage draw distance waits behind everything else: its trees
+# would not be drawn yet, and spawning them is the dearest work there is.
+const UNSEEN_PLANT_PRIORITY := 1000.0
+# How far (chunk centre to car, in chunks) a chunk's collision is kept once it leaves the 2×2
+# collision block. A block chunk's centre is at most √2 chunks from the car.
+const NEAR_KEEP_CHUNKS := 1.6
+# The same for a near tile, in tiles.
+const NEAR_KEEP_TILES := 1.6
 
 
 func _far_priority(st: ChunkState, d: float) -> float:
-	if st.near_mesh != null or st.near_job != null:
+	if st.mid_mesh != null or st.mid_job != null:
 		return d
 	return d + PLANT_PRIORITY - settings.far_lead_chunks
 
 
 func _to_planting(job: ChunkJob) -> void:
-	job.priority = job.dist + PLANT_PRIORITY
+	job.priority = _plant_priority(job.coord, job.dist)
 	var st: ChunkState = _chunks.get(job.coord)
 	if st != null:
 		st.plant_job = job
@@ -529,7 +620,7 @@ func _enqueue_sorted(job: ChunkJob) -> void:
 	_queue.insert(i, job)
 
 
-# The safety net under the car: if the chunk under it, or the one it will be over in
+# The safety net under the car: if the tile under it, or the one it will be over in
 # `collision_rush_s`, has no collision yet, build that collision now, whatever the budget. The
 # planner and the queue order are meant to keep this from ever firing; when the car outruns
 # them anyway (a very fast car, a teleport, a stall), a one-off hitch beats a fall through the
@@ -538,35 +629,32 @@ func _guard_collision() -> void:
 	if focus == null or _plan_override != null:
 		return
 	var here := _focus_xz()
-	_rush_collision(_chunk_of(here))
+	_rush_collision(_tile_of(here))
 	if focus is RigidBody3D:
 		var v := (focus as RigidBody3D).linear_velocity
-		_rush_collision(_chunk_of(here + Vector2(v.x, v.z) * settings.collision_rush_s))
+		_rush_collision(_tile_of(here + Vector2(v.x, v.z) * settings.collision_rush_s))
 
 
-# Build `coord`'s collision at once, with no budget, and only as far as the collision: its
-# foliage is left to the queue. Returns true when it had to.
-func _rush_collision(coord: Vector2i) -> bool:
-	var st: ChunkState = _chunks.get(coord)
-	if st == null:
-		st = ChunkState.new()
-		_chunks[coord] = st
-	if st.body != null:
+# Build tile `t`'s collision at once, with no budget: straight from a grid already there, else by
+# running its chunk's mid build as far as the collision (its foliage is left to the queue).
+# Returns true when it had to.
+func _rush_collision(t: Vector2i) -> bool:
+	var ts := _tile(t)
+	if ts.body != null:
 		return false
-	var job: ChunkJob
-	if st.near_mesh != null:
-		if st.col_job == null:
-			st.col_job = _new_job(coord, true, true)
-			st.col_job.stage = Stage.COLLIDE
-			st.col_job.plants = false
-		job = st.col_job
-	else:
-		if st.near_job == null:
-			st.near_job = _new_job(coord, true, true)
-		job = st.near_job
-		job.with_collision = true
-	job.priority = -3000.0
 	stat_rushes += 1
+	var st := _chunk(_chunk_of_tile(t))
+	if not ts.near_heights.is_empty() or not st.mid_heights.is_empty():
+		_collide_tile(t)
+		if ts.col_job != null:
+			ts.col_job.cancelled = true
+			ts.col_job = null
+		return true
+	if st.mid_job == null:
+		st.mid_job = _new_job(st.coord, Level.MID, true)
+	var job := st.mid_job
+	job.with_collision = true
+	job.priority = -3000.0
 	var saved := _ran_this_frame
 	_ran_this_frame = false
 	_step(job, Time.get_ticks_usec() + 60_000_000, Stage.PLANT)
@@ -629,7 +717,7 @@ func _atomic(kind: String, deadline: int, work: Callable) -> bool:
 
 func _prep(job: ChunkJob) -> void:
 	var cm := settings.chunk_m
-	job.halo = 1 if job.near else 0
+	job.halo = 0 if job.level == Level.FAR else 1
 	var m := job.n + 2 * job.halo
 	job.heights.resize(m * m)
 	job.road_d.resize(job.n * job.n)
@@ -639,8 +727,8 @@ func _prep(job: ChunkJob) -> void:
 	job.ring_lo = INF
 	job.ring_hi = -INF
 	# A chunk wholly beyond the furthest possible coastline is open sea: no sampling needed.
-	var nx := clampf(0.0, job.coord.x * cm - job.stride, (job.coord.x + 1) * cm + job.stride)
-	var ny := clampf(0.0, job.coord.y * cm - job.stride, (job.coord.y + 1) * cm + job.stride)
+	var nx := clampf(0.0, job.origin.x - job.stride, job.origin.x + job.size_m + job.stride)
+	var ny := clampf(0.0, job.origin.y - job.stride, job.origin.y + job.size_m + job.stride)
 	if LabNoise.hyp(nx, ny) >= settings.island_radius_m:
 		job.heights.fill(terrain.sea_floor())
 		job.road_d.fill(INF)
@@ -649,7 +737,7 @@ func _prep(job: ChunkJob) -> void:
 			job.road_info[3 * i] = 1.0e4
 		_start_arrays(job)
 		return
-	job.cands = _cands_of(job.coord)
+	job.cands = _cands_of(_chunk_of_tile(job.coord) if job.tile else job.coord)
 
 
 # The road segments that can be nearest anywhere in chunk `coord`, gathered once and kept on its
@@ -661,7 +749,7 @@ func _cands_of(coord: Vector2i) -> PackedInt32Array:
 	if st != null and st.has_cands:
 		return st.cands
 	var cm := settings.chunk_m
-	var half := cm * 0.5 + maxf(settings.near_stride_m, settings.far_stride_m)
+	var half := cm * 0.5 + maxf(maxf(settings.near_stride_m, settings.mid_stride_m), settings.far_stride_m)
 	var cands := network.candidates_for((coord.x + 0.5) * cm, (coord.y + 0.5) * cm, half * sqrt(2.0), settings.mountain_dist_m)
 	if st != null:
 		st.cands = cands
@@ -672,8 +760,8 @@ func _cands_of(coord: Vector2i) -> PackedInt32Array:
 func _heights(job: ChunkJob, deadline: int) -> bool:
 	var m := job.n + 2 * job.halo
 	var total := m * m
-	var ox := job.coord.x * settings.chunk_m
-	var oy := job.coord.y * settings.chunk_m
+	var ox := job.origin.x
+	var oy := job.origin.y
 	var t0 := Time.get_ticks_usec()
 	var done := 0
 	_last_kind = "heights"
@@ -726,8 +814,8 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 	var lo := -hl
 	var top := n - 1 + hl
 	var s := job.stride
-	var ox := job.coord.x * settings.chunk_m
-	var oy := job.coord.y * settings.chunk_m
+	var ox := job.origin.x
+	var oy := job.origin.y
 	var done := 0
 	# how far the interpolated unsigned distance can overshoot the true one across a centreline
 	var road_slack := 0.75 * s
@@ -792,7 +880,7 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		return false
 	# Skirts: a strip hanging below the edge, so neighbouring chunks at different detail never
 	# show a crack between them.
-	var drop := 3.0 if job.near else 12.0
+	var drop: float = [3.0, 6.0, 12.0][job.level]
 	var perim := _perimeter(n)
 	for k in perim.size():
 		var src := perim[k]
@@ -818,30 +906,127 @@ func _upload(job: ChunkJob) -> void:
 
 
 func _attach(job: ChunkJob) -> void:
-	var st: ChunkState = _chunks.get(job.coord)
-	if st == null:
+	var st: ChunkState = null if job.tile else _chunks.get(job.coord)
+	var ts: TileState = _tiles.get(job.coord) if job.tile else null
+	if st == null and ts == null:
 		job.stage = Stage.DONE
 		return
 	var mi := MeshInstance3D.new()
 	mi.mesh = job.mesh
 	mi.material_override = _ground_material(job)
-	mi.position = Vector3(job.coord.x * settings.chunk_m, 0.0, job.coord.y * settings.chunk_m)
+	mi.position = Vector3(job.origin.x, 0.0, job.origin.y)
 	add_child(mi)
-	if job.near:
-		st.near_mesh = mi
-		st.near_heights = job.heights
-		st.near_road_d = job.road_d
-		st.near_job = null
-		if st.far_mesh != null:
-			st.far_mesh.visible = false
-	else:
-		st.far_mesh = mi
-		st.far_heights = job.heights
-		st.far_job = null
-		mi.visible = st.near_mesh == null
+	var arrays := [job.verts, job.colors, job.uvs, job.uv2s]
+	match job.level:
+		Level.NEAR:
+			ts.near_mesh = mi
+			ts.near_heights = job.heights
+			ts.near_road_d = job.road_d
+			ts.near_job = null
+			# collision built from the coarser mid grid is redone from this one
+			job.with_collision = ts.body != null and ts.body_level != Level.NEAR
+			_cut_holes(_chunk_of_tile(job.coord))
+		Level.MID:
+			st.mid_mesh = mi
+			st.mid_heights = job.heights
+			st.mid_road_d = job.road_d
+			st.mid_arrays = arrays
+			st.mid_job = null
+		Level.FAR:
+			st.far_mesh = mi
+			st.far_heights = job.heights
+			st.far_arrays = arrays
+			st.far_job = null
+	if st != null:
+		_show_finest(st)
+		_cut_holes(job.coord)
 	job.verts = PackedVector3Array(); job.colors = PackedColorArray(); job.uvs = PackedVector2Array()
 	job.uv2s = PackedVector2Array()
 	job.stage = Stage.COLLIDE if job.with_collision else _after_collide(job)
+
+
+# Only a chunk's finer built mesh is drawn (near tiles cut holes in it instead, see _cut_holes).
+func _show_finest(st: ChunkState) -> void:
+	if st.far_mesh != null:
+		st.far_mesh.visible = st.mid_mesh == null
+
+
+# Rebuild the drawn coarse mesh of chunk `coord` (mid, else far) leaving out the quarters its
+# near tiles cover, with a skirt round each hole so no crack shows against the tile. The two
+# grids differ slightly in height, so drawing both in one place would flicker.
+func _cut_holes(coord: Vector2i) -> void:
+	var st: ChunkState = _chunks.get(coord)
+	if st == null:
+		return
+	var mi := st.mid_mesh if st.mid_mesh != null else st.far_mesh
+	if mi == null:
+		return
+	var mask := 0
+	var tpc := _tiles_per_chunk()
+	for i in tpc * tpc:
+		@warning_ignore("integer_division")
+		var ts: TileState = _tiles.get(coord * tpc + Vector2i(i % tpc, i / tpc))
+		if ts != null and ts.near_mesh != null:
+			mask |= 1 << i
+	if mi == st.hole_mesh and mask == st.hole_mask:
+		return
+	st.hole_mesh = mi
+	st.hole_mask = mask
+	var mid := mi == st.mid_mesh
+	var stride := settings.mid_stride_m if mid else settings.far_stride_m
+	mi.mesh = _coarse_mesh(st.mid_arrays if mid else st.far_arrays, int(settings.chunk_m / stride) + 1,
+		int(settings.near_tile_m / stride), tpc, mask, 6.0 if mid else 12.0)
+
+
+# Whether grid cell (cx, cz) of a chunk lies in one of the tiles set in `mask`.
+@warning_ignore("integer_division")
+static func _covered(mask: int, cx: int, cz: int, cells_per_tile: int, tpc: int) -> bool:
+	return (mask >> ((cz / cells_per_tile) * tpc + cx / cells_per_tile)) & 1 == 1
+
+
+func _coarse_mesh(src: Array, n: int, cells_per_tile: int, tpc: int, mask: int, drop: float) -> ArrayMesh:
+	var verts: PackedVector3Array = src[0]
+	var colors: PackedColorArray = src[1]
+	var uvs: PackedVector2Array = src[2]
+	var uv2s: PackedVector2Array = src[3]
+	var idx := _indices_for(n)
+	if mask != 0:
+		var covered := func(cx: int, cz: int) -> bool: return _covered(mask, cx, cz, cells_per_tile, tpc)
+		idx = PackedInt32Array()
+		for zi in n - 1:
+			for xi in n - 1:
+				if covered.call(xi, zi):
+					continue
+				var a := zi * n + xi
+				idx.append_array([a, a + 1, a + n, a + 1, a + n + 1, a + n])
+				# an edge shared with a covered cell hangs a skirt into the hole
+				for e in [[xi + 1, zi, xi + 1, zi + 1, xi + 1 < n - 1 and covered.call(xi + 1, zi)],
+						[xi, zi, xi, zi + 1, xi > 0 and covered.call(xi - 1, zi)],
+						[xi, zi + 1, xi + 1, zi + 1, zi + 1 < n - 1 and covered.call(xi, zi + 1)],
+						[xi, zi, xi + 1, zi, zi > 0 and covered.call(xi, zi - 1)]]:
+					if not e[4]:
+						continue
+					var t0: int = e[1] * n + e[0]
+					var t1: int = e[3] * n + e[2]
+					var s0 := verts.size()
+					for v in [t0, t1]:
+						verts.append(verts[v] - Vector3(0.0, drop, 0.0))
+						colors.append(colors[v])
+						uvs.append(uvs[v])
+						uv2s.append(uv2s[v])
+					idx.append_array([t0, t1, s0, t1, s0 + 1, s0, t0, s0, t1, t1, s0, s0 + 1])
+		var full := _indices_for(n)
+		idx.append_array(full.slice(6 * (n - 1) * (n - 1)))  # the outer skirts, unchanged
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 func _after_collide(job: ChunkJob) -> Stage:
@@ -851,20 +1036,45 @@ func _after_collide(job: ChunkJob) -> Stage:
 	return Stage.PLANT
 
 
+# A tile job builds its own collision; a chunk's mid build builds its tiles'.
 func _collide(job: ChunkJob) -> void:
-	var st: ChunkState = _chunks.get(job.coord)
 	job.stage = _after_collide(job)
-	if st == null or st.body != null or st.near_heights.is_empty():
-		if st != null:
-			st.col_job = null
+	if job.tile:
+		var ts: TileState = _tiles.get(job.coord)
+		if ts != null:
+			ts.col_job = null
+		_collide_tile(job.coord)
+	else:
+		for t in _tiles_of_chunk(job.coord):
+			_collide_tile(t)
+
+
+# Tile `t`'s collision from the finest grid there, replacing collision built from a coarser one.
+func _collide_tile(t: Vector2i) -> void:
+	var ts := _tile(t)
+	var heights := ts.near_heights
+	var stride := settings.near_stride_m
+	var level := Level.NEAR
+	var grid_n := int(settings.near_tile_m / stride) + 1
+	var off := Vector2i.ZERO
+	if heights.is_empty():
+		var st: ChunkState = _chunks.get(_chunk_of_tile(t))
+		if st == null or st.mid_heights.is_empty():
+			return
+		heights = st.mid_heights
+		stride = settings.mid_stride_m
+		level = Level.MID
+		grid_n = int(settings.chunk_m / stride) + 1
+		off = (t - _chunk_of_tile(t) * _tiles_per_chunk()) * int(settings.near_tile_m / stride)
+	if ts.body != null and ts.body_level <= level:
 		return
-	var n := int(settings.chunk_m / settings.near_stride_m) + 1
-	var m := n + 2
+	var n := int(settings.near_tile_m / stride) + 1
+	var m := grid_n + 2
 	var data := PackedFloat32Array()
 	data.resize(n * n)
 	for gz in n:
 		for gx in n:
-			data[gz * n + gx] = st.near_heights[(gz + 1) * m + gx + 1]
+			data[gz * n + gx] = heights[(off.y + gz + 1) * m + off.x + gx + 1]
 	var shape := HeightMapShape3D.new()
 	shape.map_width = n
 	shape.map_depth = n
@@ -872,14 +1082,16 @@ func _collide(job: ChunkJob) -> void:
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	# HeightMapShape3D has unit cells, so the shape is scaled to the vertex spacing.
-	cs.scale = Vector3(settings.near_stride_m, 1.0, settings.near_stride_m)
+	cs.scale = Vector3(stride, 1.0, stride)
 	var body := StaticBody3D.new()
-	var half := settings.chunk_m * 0.5
-	body.position = Vector3(job.coord.x * settings.chunk_m + half, 0.0, job.coord.y * settings.chunk_m + half)
+	var half := settings.near_tile_m * 0.5
+	body.position = Vector3(t.x * settings.near_tile_m + half, 0.0, t.y * settings.near_tile_m + half)
 	body.add_child(cs)
 	add_child(body)
-	st.body = body
-	st.col_job = null
+	if ts.body != null:
+		ts.body.queue_free()
+	ts.body = body
+	ts.body_level = level
 
 
 # The baked light on ground with unit normal `n`: the stage terrain's fake shading (hemisphere
@@ -905,20 +1117,28 @@ func _light_with(h: Callable, x: float, z: float) -> Color:
 	return c
 
 
-# The height planting uses at a point (PlantGround): the planting chunk's own near grid inside it,
-# the exact terrain height (cached) outside it. Never depends on what else is loaded, so a chunk
-# plants the same spots at the same heights whatever order its neighbours streamed in.
+# The height planting uses at a point (PlantGround): the exact height where one was worked out
+# (every kept spot, see seat_exact), else the planting chunk's own mid grid inside it, else the
+# exact terrain height (cached). Never depends on what else is loaded, so a chunk plants the same
+# spots at the same heights whatever order its neighbours streamed in.
 func plant_height(g: PlantGround, x: float, z: float) -> float:
+	var key := Vector2(x, z)
+	var h: Variant = g.exact.get(key)
+	if h != null:
+		return h
 	var cm := settings.chunk_m
 	var lx := x - g.coord.x * cm
 	var lz := z - g.coord.y * cm
 	if lx >= 0.0 and lz >= 0.0 and lx <= cm and lz <= cm and not g.heights.is_empty():
-		return _mesh_height(g.heights, settings.near_stride_m, 1, g.coord, x, z)
+		return _mesh_height(g.heights, settings.mid_stride_m, 1, Vector2(g.coord) * cm, cm, x, z)
+	return seat_exact(g, x, z)
+
+
+# Work out and cache the exact terrain height at a point for this chunk's planting.
+func seat_exact(g: PlantGround, x: float, z: float) -> float:
 	var key := Vector2(x, z)
-	var h: Variant = g.exact.get(key)
-	if h == null:
-		h = terrain.height(x, z, _cands_of(_chunk_of(key)), true)
-		g.exact[key] = h
+	var h: float = terrain.height(x, z, _cands_of(_chunk_of(key)), true)
+	g.exact[key] = h
 	return h
 
 
@@ -926,11 +1146,11 @@ func _ground_for(coord: Vector2i, st: ChunkState) -> PlantGround:
 	var g := PlantGround.new()
 	g.streamer = self
 	g.coord = coord
-	g.heights = st.near_heights
+	g.heights = st.mid_heights
 	return g
 
 
-# --- planting: trees, bushes and rocks for a near chunk ---------------------------------------
+# --- planting: trees, bushes and rocks for a mid chunk ----------------------------------------
 #
 # Spots come from a jittered grid in WORLD space (each cell belongs to whichever chunk holds its
 # corner), so a chunk always plants the same things in the same places. The PLANT stage checks
@@ -965,6 +1185,7 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 			var kept: PackedVector2Array = job.kept[kind]  # a copy: packed arrays are values
 			kept.append(p)
 			job.kept[kind] = kept
+			seat_exact(job.ground, p.x, p.y)
 			if kind == Plant.BUSH:
 				# A bush's baked light samples the ground a metre round it: pay for any exact
 				# heights that needs here, a spot at a time, not inside the atomic bush spawn.
@@ -1358,7 +1579,7 @@ static func _spawn_kind(species: String, count: int) -> String:
 
 func _spawn_next(job: ChunkJob) -> void:
 	var st: ChunkState = _chunks.get(job.coord)
-	if st == null or st.near_mesh == null or job.cursor >= job.spawns.size():
+	if st == null or st.mid_mesh == null or job.cursor >= job.spawns.size():
 		job.stage = Stage.DONE
 		return
 	if st.foliage == null:
@@ -1396,6 +1617,45 @@ func _chunk_of(p: Vector2) -> Vector2i:
 	return Vector2i(floori(p.x / settings.chunk_m), floori(p.y / settings.chunk_m))
 
 
+func _tile_of(p: Vector2) -> Vector2i:
+	return Vector2i(floori(p.x / settings.near_tile_m), floori(p.y / settings.near_tile_m))
+
+
+func _tiles_per_chunk() -> int:
+	return roundi(settings.chunk_m / settings.near_tile_m)
+
+
+func _chunk_of_tile(t: Vector2i) -> Vector2i:
+	var tpc := _tiles_per_chunk()
+	return Vector2i(floori(float(t.x) / tpc), floori(float(t.y) / tpc))
+
+
+func _tiles_of_chunk(c: Vector2i) -> Array[Vector2i]:
+	var tpc := _tiles_per_chunk()
+	var out: Array[Vector2i] = []
+	for i in tpc * tpc:
+		@warning_ignore("integer_division")
+		out.append(c * tpc + Vector2i(i % tpc, i / tpc))
+	return out
+
+
+func _chunk(c: Vector2i) -> ChunkState:
+	var st: ChunkState = _chunks.get(c)
+	if st == null:
+		st = ChunkState.new()
+		st.coord = c
+		_chunks[c] = st
+	return st
+
+
+func _tile(t: Vector2i) -> TileState:
+	var ts: TileState = _tiles.get(t)
+	if ts == null:
+		ts = TileState.new()
+		_tiles[t] = ts
+	return ts
+
+
 # Decide what should exist around the car and queue jobs for what is missing, nearest first.
 # Distance is measured from both the car and where it will be in a second and a half, so the
 # road ahead fills before the road behind.
@@ -1403,12 +1663,17 @@ func _plan() -> void:
 	_plan_timer = 0.25
 	var here := _focus_xz()
 	var ahead := here
+	var vel := Vector2.ZERO
 	if focus is RigidBody3D and _plan_override == null:
 		var v := (focus as RigidBody3D).linear_velocity
-		ahead += Vector2(v.x, v.z) * 1.5
+		vel = Vector2(v.x, v.z)
+		ahead += vel * 1.5
 	_plan_coord = _chunk_of(here)
+	_plan_here = here
+	_plan_ahead = ahead
 	var cm := settings.chunk_m
 	var far_r := settings.far_radius
+	var col_block := collision_block_of(here)
 	for coord: Vector2i in _chunks.keys():
 		var off := coord - _plan_coord
 		if maxi(absi(off.x), absi(off.y)) > far_r + 2:
@@ -1418,6 +1683,7 @@ func _plan() -> void:
 			var coord := _plan_coord + Vector2i(dx, dz)
 			var center := (Vector2(coord) + Vector2(0.5, 0.5)) * cm
 			var d := minf(center.distance_to(here), center.distance_to(ahead)) / cm
+			var d_mid := minf(squashed_distance(center - here, vel), squashed_distance(center - ahead, vel)) / cm
 			var st: ChunkState = _chunks.get(coord)
 			# Shed full detail and collision first, before the horizon test below: a chunk can be
 			# past the horizon yet still inside the drop square (a jump of a few hundred metres:
@@ -1425,10 +1691,12 @@ func _plan() -> void:
 			# collision or queued near / plant / collision jobs at their old priorities (which a
 			# prefill_at would then run, lengthening the travel hitch).
 			if st != null:
-				if d > settings.near_radius + 1.5:
-					_drop_near(st)
-				if d > settings.collision_radius + 1.5:
+				# collision keeps a little past its block, so a car wavering on a chunk's middle
+				# line doesn't rebuild the same collision over and over
+				if center.distance_to(here) / cm > NEAR_KEEP_CHUNKS:
 					_drop_collision(st)
+				if d_mid > settings.mid_radius + 1.5:
+					_drop_mid(st)
 			if d > far_r + 0.5:
 				if st != null and st.far_job != null:
 					if d > far_r + 1.5:
@@ -1439,36 +1707,54 @@ func _plan() -> void:
 						st.far_job.dist = d
 				continue
 			if st == null:
-				st = ChunkState.new()
-				_chunks[coord] = st
-			var want_near := d <= settings.near_radius + 0.75
-			var want_col := d <= settings.collision_radius + 0.75
+				st = _chunk(coord)
+			var want_mid := d_mid <= settings.mid_radius + 0.75
+			var want_col := col_block.has_point(coord)
 			if st.far_mesh == null and st.far_job == null:
-				st.far_job = _new_job(coord, false, false)
-			if want_near:
-				if st.near_mesh == null and st.near_job == null:
-					st.near_job = _new_job(coord, true, want_col)
-				if st.near_job != null:
-					st.near_job.with_collision = st.near_job.with_collision or want_col
-					st.near_job.priority = d - (1000.0 if want_col else 100.0)
-					st.near_job.dist = d
-			elif st.near_job != null:
+				st.far_job = _new_job(coord, Level.FAR, false)
+			if want_mid:
+				if st.mid_mesh == null and st.mid_job == null:
+					st.mid_job = _new_job(coord, Level.MID, want_col)
+				if st.mid_job != null:
+					st.mid_job.with_collision = st.mid_job.with_collision or want_col
+					st.mid_job.priority = d - (1000.0 if want_col else 100.0)
+					st.mid_job.dist = d
+			elif st.mid_job != null:
 				# In the hysteresis band (no longer wanted, not yet dropped): an unfinished near
 				# build drops to the near-mesh tier rather than keeping a collision-tier priority.
-				st.near_job.priority = d - 100.0
-				st.near_job.dist = d
+				st.mid_job.priority = d - 100.0
+				st.mid_job.dist = d
 			if st.far_job != null:
 				st.far_job.priority = _far_priority(st, d)
 				st.far_job.dist = d
-			if want_col and st.body == null and st.near_mesh != null and st.col_job == null:
-				st.col_job = _new_job(coord, true, true)
-				st.col_job.stage = Stage.COLLIDE
-				st.col_job.plants = false
+			if want_col and st.mid_mesh != null:
+				for t in _tiles_of_chunk(coord):
+					var ts := _tile(t)
+					if ts.body == null and ts.col_job == null:
+						ts.col_job = _new_job(t, Level.NEAR, true)
+						ts.col_job.stage = Stage.COLLIDE
+					if ts.col_job != null:
+						ts.col_job.priority = d - 2000.0
 			if st.plant_job != null and st.plant_job.stage != Stage.DONE:
 				st.plant_job.dist = d
-				st.plant_job.priority = d + PLANT_PRIORITY
-			if st.col_job != null:
-				st.col_job.priority = d - 2000.0
+				st.plant_job.priority = _plant_priority(coord, d)
+	# Near tiles: the 2×2 round the tile corner nearest the car, kept a little past it.
+	var tm := settings.near_tile_m
+	for t: Vector2i in _tiles.keys():
+		var ts: TileState = _tiles[t]
+		if ((Vector2(t) + Vector2(0.5, 0.5)) * tm).distance_to(here) / tm > NEAR_KEEP_TILES:
+			_drop_near_tile(t, ts)
+		if ts.near_mesh == null and ts.near_job == null and ts.body == null and ts.col_job == null:
+			_tiles.erase(t)
+	var block := near_tiles_of(here)
+	for i in 4:
+		var t := block.position + Vector2i(i % 2, i >> 1)
+		var ts := _tile(t)
+		if ts.near_mesh == null and ts.near_job == null:
+			ts.near_job = _new_job(t, Level.NEAR, false)
+		if ts.near_job != null:
+			ts.near_job.dist = ((Vector2(t) + Vector2(0.5, 0.5)) * tm).distance_to(here) / cm
+			ts.near_job.priority = ts.near_job.dist - 200.0
 	# Cancelled and finished jobs leave now rather than when they reach the head: a queue that
 	# never drains (a car outdriving the far ring) would otherwise carry them for ever.
 	var live: Array[ChunkJob] = []
@@ -1479,54 +1765,127 @@ func _plan() -> void:
 	_queue.sort_custom(func(a: ChunkJob, b: ChunkJob) -> bool: return a.priority < b.priority)
 
 
-func _new_job(coord: Vector2i, near: bool, with_collision: bool) -> ChunkJob:
+# The 2×2 chunks that carry collision: the four round the chunk corner nearest `p`, so the car is
+# always at least half a chunk inside the block.
+func collision_block_of(p: Vector2) -> Rect2i:
+	var corner := Vector2i(roundi(p.x / settings.chunk_m), roundi(p.y / settings.chunk_m))
+	return Rect2i(corner - Vector2i.ONE, Vector2i(2, 2))
+
+
+# The 2×2 near tiles drawn at full detail: the four round the tile corner nearest `p`.
+func near_tiles_of(p: Vector2) -> Rect2i:
+	var corner := Vector2i(roundi(p.x / settings.near_tile_m), roundi(p.y / settings.near_tile_m))
+	return Rect2i(corner - Vector2i.ONE, Vector2i(2, 2))
+
+
+# Distance as the mid band measures it: true distance ahead of the car, but stretched to the sides
+# and behind as the car speeds up (by up to 1 / mid_side_frac and 1 / mid_back_frac at
+# mid_squash_speed_mps), so the band narrows into an egg pointing the way the car is going. What
+# enters the band each second is its width across the direction of travel times the speed, so the
+# narrower it is the less there is to build; a fast car can't turn into the sides in time anyway.
+func squashed_distance(off: Vector2, vel: Vector2) -> float:
+	var speed := vel.length()
+	var t := clampf(speed / maxf(settings.mid_squash_speed_mps, 0.01), 0.0, 1.0)
+	if t <= 0.0:
+		return off.length()
+	var fwd := vel / speed
+	var along := off.dot(fwd)
+	var side := off.dot(Vector2(-fwd.y, fwd.x))
+	if along < 0.0:
+		along /= lerpf(1.0, settings.mid_back_frac, t)
+	side /= lerpf(1.0, settings.mid_side_frac, t)
+	return Vector2(along, side).length()
+
+
+# How soon a chunk's planting runs: by distance, unless every point of the chunk is past the
+# foliage draw distance from both the car and where it will be (as of the last plan).
+func _plant_priority(coord: Vector2i, d: float) -> float:
+	var cm := settings.chunk_m
+	var rect := Rect2(Vector2(coord) * cm, Vector2(cm, cm))
+	var reach := minf(_dist_to_rect(_plan_here, rect), _dist_to_rect(_plan_ahead, rect))
+	if reach > Config.data.tree_render_distance_m:
+		return d + UNSEEN_PLANT_PRIORITY
+	return d + PLANT_PRIORITY
+
+
+static func _dist_to_rect(p: Vector2, r: Rect2) -> float:
+	return (p.clamp(r.position, r.end) - p).length()
+
+
+func _new_job(coord: Vector2i, level: Level, with_collision: bool) -> ChunkJob:
 	var job := ChunkJob.new()
 	job.coord = coord
-	job.near = near
+	job.level = level
 	job.with_collision = with_collision
-	job.stride = settings.near_stride_m if near else settings.far_stride_m
-	job.n = int(settings.chunk_m / job.stride) + 1
-	# Every near build runs the planting stages: they also spawn the chunk's barriers (with
+	job.stride = [settings.near_stride_m, settings.mid_stride_m, settings.far_stride_m][level]
+	job.tile = level == Level.NEAR
+	job.size_m = settings.near_tile_m if job.tile else settings.chunk_m
+	job.origin = Vector2(coord) * job.size_m
+	job.n = int(job.size_m / job.stride) + 1
+	# Every mid build runs the planting stages: they also spawn the chunk's barriers (with
 	# collision), rest-stop crowds, site posts and coins. vegetation_enabled only thins the
 	# trees, bushes and rocks out of it (_plant_candidates).
-	job.plants = near
+	job.plants = level == Level.MID
 	_queue.append(job)
 	return job
 
 
-func _drop_near(st: ChunkState) -> void:
-	for job in [st.near_job, st.plant_job]:
+func _drop_near_tile(t: Vector2i, ts: TileState) -> void:
+	if ts.near_job != null:
+		ts.near_job.cancelled = true
+		ts.near_job = null
+	if ts.near_mesh != null:
+		ts.near_mesh.queue_free()
+		ts.near_mesh = null
+		ts.near_heights = PackedFloat32Array()
+		ts.near_road_d = PackedFloat32Array()
+		_cut_holes(_chunk_of_tile(t))
+
+
+func _drop_mid(st: ChunkState) -> void:
+	for job in [st.mid_job, st.plant_job]:
 		if job != null:
 			(job as ChunkJob).cancelled = true
-	st.near_job = null
+	st.mid_job = null
 	st.plant_job = null
-	if st.near_mesh != null:
-		st.near_mesh.queue_free()
-		st.near_mesh = null
-		st.near_heights = PackedFloat32Array()
-		st.near_road_d = PackedFloat32Array()
+	if st.mid_mesh != null:
+		st.mid_mesh.queue_free()
+		st.mid_mesh = null
+		st.mid_heights = PackedFloat32Array()
+		st.mid_road_d = PackedFloat32Array()
 		if st.foliage != null:
 			st.foliage.queue_free()
 			st.foliage = null
-		if st.far_mesh != null:
-			st.far_mesh.visible = true
+		st.mid_arrays = []
+		_show_finest(st)
+		_cut_holes(st.coord)
 
 
-# The chunk's collision and any queued collision build go (it left the collision ring).
+# The chunk's collision and any queued collision build go (it left the collision block).
 func _drop_collision(st: ChunkState) -> void:
-	if st.col_job != null:
-		st.col_job.cancelled = true
-		st.col_job = null
-	if st.near_job != null:
-		st.near_job.with_collision = false
-	if st.body != null:
-		st.body.queue_free()
-		st.body = null
+	if st.mid_job != null:
+		st.mid_job.with_collision = false
+	for t in _tiles_of_chunk(st.coord):
+		var ts: TileState = _tiles.get(t)
+		if ts == null:
+			continue
+		if ts.col_job != null:
+			ts.col_job.cancelled = true
+			ts.col_job = null
+		if ts.body != null:
+			ts.body.queue_free()
+			ts.body = null
 
 
 func _drop_chunk(coord: Vector2i, st: ChunkState) -> void:
-	_drop_near(st)
+	for t in _tiles_of_chunk(coord):
+		var ts: TileState = _tiles.get(t)
+		if ts != null:
+			_drop_near_tile(t, ts)
+	_drop_mid(st)
 	_drop_collision(st)
+	for t in _tiles_of_chunk(coord):
+		_tiles.erase(t)
 	if st.far_job != null:
 		st.far_job.cancelled = true
 	if st.far_mesh != null:

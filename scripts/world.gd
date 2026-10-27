@@ -226,7 +226,7 @@ func _wire_session_and_stage(_loading: LoadingScreen) -> void:
 
 
 # _ready phase: the in-game diagnostic overlay, arming the pause menu now the world is ready,
-# and benchmark mode's takeover. Nothing here awaits.
+# Nothing here awaits.
 func _build_overlays_and_benchmark() -> void:
 	# Diagnostic frame-profiler overlay (toggle with P). Created in code like the
 	# wheel-force debug overlay; harmless and idle until toggled on. Render times
@@ -255,18 +255,6 @@ func _build_overlays_and_benchmark() -> void:
 		# _generate_track in every mode (a regeneration re-runs _ready), so it's the
 		# single "world is ready" chokepoint for pause.
 		pause_menu.set_input_enabled(true)
-
-	# Benchmark mode (features/benchmark.md): force the profiler on, hide the
-	# touch controls (the HUD is already off via cfg.hud_enabled), and hand the
-	# car to the auto-driving runner for the whole stage.
-	if Benchmark.active:
-		perf.activate()
-		($MobileControls as CanvasLayer).visible = false
-		var runner := BenchmarkRunner.new()
-		runner.name = "BenchmarkRunner"
-		add_child(runner)
-		runner.setup($Car, _track_progress, _road_centerline,
-			get_node_or_null("PostProcess/View") as Viewport, _floor())
 
 
 # Yield a frame so a freshly-set LoadingScreen step actually paints before the

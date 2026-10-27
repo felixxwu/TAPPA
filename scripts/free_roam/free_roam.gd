@@ -6,7 +6,8 @@ extends Node3D
 # See todo/2026-10-19-free-roam-pivot.md.
 #
 # `-- --auto-drive` on the command line hands the car to an AutoDriver, which drives a route
-# across the island, prints its streaming report and quits:
+# across the island, prints its streaming report and quits (Benchmark.active does the same
+# drive with the benchmark's sampling instead):
 #   godot --headless --path . -- --auto-drive
 
 @onready var _streamer: TerrainStreamer = $Terrain
@@ -43,11 +44,17 @@ var _has_pose := false
 # The island's seed comes from the saved world, and must be set before the streamer builds its
 # network in its own _ready (children are readied before this node).
 func _enter_tree() -> void:
+	# A phone browser draws foliage a shorter way out (the low-end target), set before any planting.
+	var cfg: GameConfig = Config.data
+	cfg.tree_render_distance_m = cfg.tree_render_distance_for(Platform.is_web(), Platform.is_touch())
 	var st: TerrainStreamer = get_node("Terrain")
 	if st.settings == null:
 		st.settings = FreeRoamSettings.new()
 	if WorldSession.has_world():
 		st.settings.world_seed = WorldSession.world_seed()
+	if Benchmark.active:
+		st.settings = st.settings.duplicate()  # the scene's settings resource is shared with normal play
+		st.settings.straight_road_m = Benchmark.ROAD_M
 
 
 func _ready() -> void:
@@ -64,6 +71,7 @@ func _ready() -> void:
 	($CameraManager as CameraManager).refresh_bonnet_offset()
 	# The free-roam damage chain: cooling failure, overheating, and giving up at 0 HP.
 	_car.damage.thermal = true
+	_car.damage.invulnerable = Benchmark.active
 	_car.damage.repair(Config.data)
 	WorldSession.restore_car_state(_car.damage)
 	# Quit while wrecked: come back as the wreck page's Respawn would, at the last rest stop.
@@ -205,7 +213,9 @@ func _look_around() -> void:
 # Boot is done: the pause menu, then the auto-driver or the title menu if either is due.
 func _hand_over() -> void:
 	_pause.set_input_enabled(true)
-	if "--auto-drive" in OS.get_cmdline_user_args():
+	if Benchmark.active:
+		start_benchmark()
+	elif "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
 	elif WorldSession.title_pending:
 		WorldSession.title_pending = false
@@ -362,6 +372,18 @@ func start_auto_drive() -> AutoDriver:
 	return driver
 
 
+# The benchmark (features/benchmark.md): the auto-driver drives, the runner samples every frame.
+func start_benchmark() -> BenchmarkRunner:
+	WorldSession.title_pending = false
+	$DebugStats.visible = true
+	$CameraManager.set_mode(CameraManager.Mode.CHASE)
+	var runner := BenchmarkRunner.new()
+	runner.name = "BenchmarkRunner"
+	add_child(runner)
+	runner.setup(_car, start_auto_drive(), get_node_or_null("PostProcess/View") as Viewport, _streamer)
+	return runner
+
+
 func _process(_delta: float) -> void:
 	_track_spare_time()
 	_place_water()
@@ -392,7 +414,7 @@ func _update_stats() -> void:
 			s.stat_total_us / 1000.0 / maxi(1, s.stat_frames), roundi(s.stat_total_us / 1000.0 / maxi(1, s.stat_frames) / _frame_budget_ms() * 100.0), s.stat_total_us / 1e6] \
 		+ "worst    %.2f ms   over budget %d / %d frames   spikes %d   rushes %d\n" % [s.stat_worst_us / 1000.0, s.stat_overruns, s.stat_frames, s.stat_spikes, s.stat_rushes] \
 		+ "queue    %d jobs\n" % s.queued() \
-		+ "chunks   %d near  %d far  %d collision\n" % [counts.x, counts.y, counts.z] \
+		+ "chunks   %d mid  %d far  %d collision tiles\n" % [counts.x, counts.y, counts.z] \
 		+ "sample   %.1f µs\n" % s.stat_us_per_sample \
 		+ "network  %d nodes  %d links  %.0f km (%d ms)\n" % [
 			s.network.node_x.size(), s.network.edges.size(), s.network.total_length_m / 1000.0, s.stat_build_ms] \

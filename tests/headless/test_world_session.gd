@@ -130,7 +130,7 @@ func _boot_free_roam() -> Node3D:
 	s.roads_from_spawn = 3
 	s.segment_m = 225.0
 	s.fork_chance = 0.5
-	s.near_radius = 1
+	s.mid_radius = 1
 	s.far_radius = 3
 	(scene.get_node("Terrain") as TerrainStreamer).settings = s
 	add_child_autofree(scene)

@@ -287,12 +287,12 @@ panel.
 ./run_benchmark.sh --headless  # CPU-only (no GPU timing), quick
 ```
 
-It loads the real `main.tscn` with the `Benchmark` autoload active, so `world.gd`
-spawns a `BenchmarkRunner` that auto-pilots the fielded car down the fixed seeded
-stage (`Benchmark.TRACK_SEED` / `TRACK_TURN_COUNT`) while recording per-frame
-samples. At the finish it prints the `BenchmarkStats.summarise` breakdown to
+It calls `Benchmark.begin()` and hosts `free_roam.tscn` as a child, so free roam
+runs the benchmark drive (straight road, `Benchmark.WORLD_SEED`) while
+`BenchmarkRunner` records per-frame samples. At the end it prints the `BenchmarkStats.summarise` breakdown to
 stdout — fps (avg + 1% low), frame ms (avg/p95/p99/max), process/physics ms,
-render cpu/gpu ms, draws/objects/prims, and spike count — then quits. GPU timers
+render cpu/gpu ms, draws/objects/prims, spike count and the `AutoDriver` streaming
+report — then calls `Benchmark.end()` and quits. GPU timers
 need a real display (skipped/zero under `--headless`) and aren't supported on
 every backend (e.g. OpenGL/macOS may report 0) — then infer GPU cost from the
 frame interval minus render-cpu.

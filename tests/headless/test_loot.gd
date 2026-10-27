@@ -30,7 +30,7 @@ func _settings() -> FreeRoamSettings:
 	var s := FreeRoamSettings.new()
 	s.world_seed = 7
 	s.island_radius_m = 3000.0
-	s.near_radius = 1
+	s.mid_radius = 1
 	s.far_radius = 3
 	return s
 

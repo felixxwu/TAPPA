@@ -14,10 +14,8 @@ extends Node
 
 const LOOKAHEAD_MIN_M := 8.0
 const LOOKAHEAD_PER_MPS := 0.45
-# Speed planning: the fastest the car may take a bend is sqrt(LATERAL_ACCEL / curvature), and it
-# must be able to brake down to every such limit ahead of it at BRAKE_DECEL.
-const LATERAL_ACCEL := 6.5
-const BRAKE_DECEL := 5.5
+# Speed planning: the fastest the car may take a bend is sqrt(lateral_accel / curvature), and it
+# must be able to brake down to every such limit ahead of it at brake_decel.
 const PLAN_WINDOW_M := 250.0
 const MIN_SPEED_MPS := 8.0
 # Stuck: below this speed, or making no progress along the route, for this long, the car is put
@@ -29,6 +27,8 @@ const NO_PROGRESS_SECONDS := 8.0
 signal finished(report: Dictionary)
 
 @export var top_speed_mps := 45.0
+@export var lateral_accel := 6.5
+@export var brake_decel := 5.5
 @export var route_length_m := 3000.0
 ## Print the report every this many physics ticks (0 = never).
 @export var log_every_ticks := 0
@@ -120,7 +120,7 @@ func _physics_process(delta: float) -> void:
 	var speed := car.linear_velocity.length()
 	var aim := point_ahead(route, route_cum, _idx, p, LOOKAHEAD_MIN_M + speed * LOOKAHEAD_PER_MPS)
 	car.ai_steer = BenchmarkRunner.steer_toward(car.global_transform, aim)
-	var target := clampf(safe_speed(route, route_cum, _idx, PLAN_WINDOW_M, LATERAL_ACCEL, BRAKE_DECEL), MIN_SPEED_MPS, top_speed_mps)
+	var target := clampf(safe_speed(route, route_cum, _idx, PLAN_WINDOW_M, lateral_accel, brake_decel), MIN_SPEED_MPS, top_speed_mps)
 	car.ai_throttle = BenchmarkRunner.throttle_for(speed, target)
 	_stuck_t = _stuck_t + delta if speed < STUCK_SPEED_MPS else 0.0
 	_no_progress_t = _no_progress_t + delta if _idx == was else 0.0
@@ -132,7 +132,11 @@ func _unstick() -> void:
 	_stuck_t = 0.0
 	_no_progress_t = 0.0
 	resets += 1
-	var i := mini(_idx + 2, route.size() - 2)
+	place_on_route(mini(_idx + 2, route.size() - 2))
+
+
+# Put the car on route point `i`, facing along the route.
+func place_on_route(i: int) -> void:
 	var a := route[i]
 	var dir := (route[i + 1] - a).normalized()
 	var pos := Vector3(a.x, streamer.height_at(a.x, a.y) + 1.0, a.y)
@@ -252,10 +256,10 @@ static func point_ahead(pts: PackedVector2Array, cum: PackedFloat64Array, idx: i
 
 
 # The fastest the car can be going now and still make every bend in the next `window_m`: each
-# route point's corner limit sqrt(lateral_accel / curvature), raised by what braking at
+# route point's corner limit sqrt(lat_accel / curvature), raised by what braking at
 # `decel` over the distance to it allows.
 static func safe_speed(pts: PackedVector2Array, cum: PackedFloat64Array, idx: int, window_m: float,
-		lateral_accel: float, decel: float) -> float:
+		lat_accel: float, decel: float) -> float:
 	var best := INF
 	var i := idx + 1
 	var end_s := cum[idx] + window_m
@@ -265,7 +269,7 @@ static func safe_speed(pts: PackedVector2Array, cum: PackedFloat64Array, idx: in
 		var turn := absf(d0.angle_to(d1))
 		var curvature := turn / maxf(0.5 * (d0.length() + d1.length()), 1.0)
 		if curvature > 1e-5:
-			var corner := sqrt(lateral_accel / curvature)
+			var corner := sqrt(lat_accel / curvature)
 			var dist := maxf(0.0, cum[i] - cum[idx] - 0.5 * d0.length())
 			best = minf(best, sqrt(corner * corner + 2.0 * decel * dist))
 		i += 1

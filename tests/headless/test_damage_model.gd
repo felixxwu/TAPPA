@@ -168,6 +168,19 @@ func test_soft_drag_deceleration_deals_small_damage() -> void:
 	assert_lt(loss, cfg.impact_ref_hp_loss * 0.25, "but far less than a real crash")
 
 
+func test_an_invulnerable_car_takes_no_damage_and_keeps_its_steering() -> void:
+	var cfg := _thermal_cfg()
+	var dm := _thermal_model(cfg)
+	dm.invulnerable = true
+	var hp := dm.hp
+	var toe := dm.toe_array()
+	dm.register_deceleration(1.0e6, DT, Vector3.ZERO, cfg)
+	for _i in 6000:
+		dm.thermal_step(DT, 1.0, cfg)
+	assert_eq(dm.hp, hp, "neither crashes nor overheating cost HP")
+	assert_eq(dm.toe_array(), toe, "a crash doesn't knock the wheels out of line")
+
+
 # --- Damage fraction (drives the engine misfire) -----------------------------
 
 func test_damage_fraction_tracks_hp() -> void:

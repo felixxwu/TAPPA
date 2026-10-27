@@ -109,7 +109,7 @@ func test_free_roam_places_the_bonnet_camera_by_the_cars_own_offset() -> void:
 	var s := FreeRoamSettings.new()
 	s.world_seed = 7
 	s.island_radius_m = 3000.0
-	s.near_radius = 1
+	s.mid_radius = 1
 	s.far_radius = 3
 	s.car_id = String(cars[0]["id"])
 	WorldSession.new_world(s.world_seed, s.car_id)

@@ -2039,6 +2039,11 @@ func has_nitrous() -> bool:
 ## benchmark's vegetation toggle drives this (features/benchmark.md); normal play
 ## leaves it on. Unlike trees_per_turn = 0 it skips the scatter work entirely.
 @export var vegetation_enabled := true
+## How trees are cut out of their texture: the opaque traced silhouette, or a plain card cut out
+## per pixel at half alpha (the old way), or a plain card blended by its alpha (soft edges). On a
+## phone (2026-10-27) blend and opaque cost the same and the half-alpha cutout ~3 fps more; the
+## benchmark can run any of them (features/benchmark.md).
+@export_enum("Opaque silhouette", "Alpha cutout", "Alpha blend") var tree_cutout_mode := 0
 ## Target tree count per turn — drives the scatter grid's density (the actual count is
 ## approximate, since foliage sits on a global jittered grid). 0 disables trees AND
 ## bushes (they share these params).

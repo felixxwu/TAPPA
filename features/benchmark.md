@@ -4,24 +4,22 @@
 `scripts/benchmark_runner.gd` (`BenchmarkRunner`), `scripts/benchmark_stats.gd`
 (`BenchmarkStats`), `scripts/benchmark_results.gd` (`BenchmarkResults`), plus the
 Settings page in `scripts/settings_menu.gd` and the run-scene wiring in
-`scripts/world.gd`.
+`scripts/free_roam/free_roam.gd` (`start_benchmark`).
 
 **Tests:** `tests/headless/test_benchmark_report.gd`, `tests/headless/test_benchmark_mode.gd`, `tests/headless/test_benchmark_ui.gd`
 
-A one-button performance benchmark launched from **Settings → Benchmark**
-(reachable from both the HQ title screen and the in-run pause menu, since both
-host the shared `SettingsMenu`). It generates a fixed **long stage** (seed
-`Benchmark.TRACK_SEED`, `TRACK_TURN_COUNT` = 10 turns — a short stage, quick to
-run), auto-drives the car down the whole track at a steady moderate pace
-(`BenchmarkRunner.TARGET_SPEED_KMH` = 50 km/h), records per-frame stats the
-entire way with the frame-profiler overlay forced on, and shows a results
-breakdown at the finish. The run is fully deterministic: the stage geometry
-(track, terrain, foliage, signs) is seeded off `Benchmark.TRACK_SEED`, and while
-`Benchmark.active` the per-car engine RNG is seeded from `Benchmark.RNG_SEED`
-(instead of `randomize()`) so damage misfires and their smoke FX also repeat
-identically run-to-run. Not to be confused with the *standalone* CPU/chunk
-benchmark (`benchmark/perf_benchmark.gd`, [debug-tools.md](debug-tools.md)) —
-this one measures the real, shipped game loop on the player's machine.
+A one-button performance benchmark launched from **Settings → Benchmark**. It boots
+**free roam** on a throwaway world (seed `Benchmark.WORLD_SEED`) whose island has just
+**one dead-straight road** `Benchmark.ROAD_M` long (`FreeRoamSettings.straight_road_m`,
+see [free-roam.md](free-roam.md)), so the auto-driver can't fumble a corner and every
+run drives the same scenery. Terrain, foliage, rest stops and biome rings still build
+around the road as in play. Free roam's `AutoDriver` drives it at a calm pace
+(`BenchmarkRunner.TOP_SPEED_MPS` / `LATERAL_ACCEL` / `BRAKE_DECEL`) in **chase cam**, the
+car takes **no damage** (`DamageModel.invulnerable`), and `BenchmarkRunner` samples every
+frame for `MAX_RUN_SECONDS` (30 s) after `WARMUP_FRAMES`, then shows the results. The
+per-car engine RNG is seeded from `Benchmark.RNG_SEED` while `Benchmark.active`. Not to
+be confused with the *standalone* harness (`benchmark/perf_benchmark.gd`,
+[debug-tools.md](debug-tools.md)), which runs this same drive from the command line.
 
 ## Pre-run toggles
 
@@ -37,58 +35,45 @@ feature's frame cost can be isolated by running with it on and off:
 | Distant terrain | `cfg.distant_terrain_enabled` (the far horizon backdrop) |
 | Road markings | `cfg.road_markings_enabled` |
 | Tire marks & dust FX | `cfg.tire_marks_enabled` + `cfg.wheel_particles_enabled` + `cfg.engine_smoke_enabled` |
-| Full render distance | off = `cfg.tree_render_distance_m` halved (foliage draw distance) |
+| Full render distance | off = `cfg.tree_render_distance_m` and the phone value `tree_render_distance_web_touch_m` halved (foliage draw distance) |
 | Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 **and** `cfg.target_fps_web` = 0 (all three, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
 
-All default ON (the full game as shipped). Toggle states are session-scoped
+**Roadside signs** and **Distant terrain** do nothing in free roam (it has neither), so
+those two rows currently measure nothing. All default ON (the full game as shipped). Toggle states are session-scoped
 (not saved). The feature master switches added for this
 (`vegetation_enabled`, `signs_enabled`, `barriers_enabled` on `GameConfig`) default
 true and are untouched by normal play.
 
 ## Lifecycle (the `Benchmark` autoload)
 
-- `start()` — unpauses (the pause menu can host Settings), abandons any active
-  rally, **snapshots** every `GameConfig` field it touches
-  (`_OVERRIDDEN_FIELDS`), writes the benchmark stage + toggle values
-  (`apply_overrides`), turns the HUD off (`cfg.hud_enabled` — the perf overlay
-  is the benchmark's UI), uncaps the frame rate, sets `active = true` and loads
-  `main.tscn`.
-- `finish(stats)` — called by the runner at the finish line; keeps the summary
-  in `Benchmark.results`.
-- `exit_to_hq()` — restores the config snapshot + frame cap/vsync and returns to
-  HQ. Also the pause menu's *Quit to HQ* path while a benchmark is active
-  (`pause_menu.gd`), so bailing out mid-run can't leak a disabled feature or the
-  fixed seed into normal play.
+- `start()` = `begin()` + load `free_roam.tscn`. `begin()` unpauses, **snapshots** every
+  `GameConfig` field and writes the toggle values (`apply_overrides`), turns the HUD off,
+  uncaps the frame rate, sets `active = true`, and seats the throwaway world
+  (`seat_world`). The harness calls `begin()` and hosts the scene itself.
+- **The player's save is never touched.** `begin()` deep-copies `Save.profile` and turns
+  `Save.save_disabled` on; `seat_world()` then makes the benchmark world in memory
+  (`WorldSession.new_world`). Cloud sync skips pushes while `Benchmark.active`
+  (`cloud_manager.gd`). `end()` puts the copied profile and the save switch back.
+  `seat_world()` runs again before every reload (Run again, the two-pass warm pass),
+  because free roam writes the car's pose into the world as it drives.
+- `finish(stats)` — called by the runner when the run ends; keeps the summary in
+  `Benchmark.results`.
+- `exit_to_hq()` = `end()` + back to the title. Also the pause menu's quit path while a
+  benchmark is active (`pause_menu.gd`).
 
-Like `RunSession` the autoload survives scene changes, which is what makes the
-results screen's **Run again** a plain `reload_current_scene()` — the overrides
-are still in place, so the identical stage regenerates and re-runs.
+## The run (`free_roam.gd` + `BenchmarkRunner`)
 
-## The run (`world.gd` + `BenchmarkRunner`)
+When `Benchmark.active`, `free_roam.gd` duplicates its `FreeRoamSettings` and sets
+`straight_road_m` (`_enter_tree`; the scene's settings resource is shared with normal
+play), makes the car invulnerable, and after the shader warm-up calls
+`start_benchmark()` instead of the title menu: chase camera, the streaming readout
+shown, an `AutoDriver`, and a `BenchmarkRunner` wired to it. The runner sets the
+driver's calm pace and puts the car on the route's first point (the route starts at the
+nearest junction, which can be behind the spawn pose). The run ends at the time cap or
+when the driver reaches the end of the road.
 
-When `Benchmark.active`, `world.gd`:
-
-- leaves the `StageManager` **un-armed** — no countdown, no control lock, no
-  finish panel;
-- hides the touch controls and (via config) the HUD;
-- forces the `PerfOverlay` on (`activate()`) and points its render-time
-  measurement at the `PostProcess/View` SubViewport (where the 3D pass actually
-  runs);
-- spawns a `BenchmarkRunner` wired to the car, the `TrackProgress` manager and
-  the road centerline.
-
-The runner drives the car through its real AI inputs (`Car.ai_controlled` —
-the same hook the start-line presence cars use), **not** by teleporting it, so
-the run exercises the genuine per-frame workload: vehicle physics, the tire
-model, wheel dust, tire marks, engine audio. Steering is a simple pure-pursuit
-follow of the centerline (`steer_toward`, look-ahead `LOOKAHEAD_M`) and speed is
-held proportionally (`throttle_for`). The off-track reset (TrackProgress) is the
-safety net if a corner is fumbled: the car snaps back onto the road and carries
-on. The first `WARMUP_FRAMES` (car settle + first-visible shader compiles) are
-left unsampled.
-
-Each rendered frame it records: frame interval, draw calls, objects, primitives,
-render CPU/GPU time (from the `PostProcess/View` viewport), and the process +
+Each rendered frame the runner records: frame interval, draw calls, objects,
+primitives, render CPU/GPU time (from the `PostProcess/View` viewport), and the process +
 physics-process times.
 
 **Two measurement traps to know about here** (both have already produced one
@@ -141,12 +126,15 @@ viewer). Normal play is untouched.
 
 ## Dev auto-profiling loop (iterate on the phone)
 
-For hands-off iteration on a real phone, load the web build with **`?bench=1`** in
-the URL. On boot the hub used to launch straight into
-a benchmark run — skipping the HQ it would discard — and the run POSTs its result
-back (below). Two pieces make it a loop with no taps:
+The boot hook is `title_boot.gd` → `Benchmark.autostart_requested()` /
+`fetch_sweep_config()` / `apply_sweep()`. The reload poller is injected into the served
+`index.html` by `serve_web.sh` (never into a shipped build).
 
-- **Reload listener.** The export's `head_include` (`export_presets.cfg`) polls
+For hands-off iteration on a real phone, load the web build with **`?bench=1`** in
+the URL. On boot the title scene launches straight into a benchmark run instead of
+the world, and the run POSTs its result back (below). Two pieces make it a loop with no taps:
+
+- **Reload listener.** The page polls
   `GET /reload-token` each second and reloads the page when the token changes. The
   collector's token embeds its start time, so a **rebuild** (which restarts
   `serve_web.sh`) flips it automatically; `POST /reload` bumps it to force a reload
@@ -162,13 +150,24 @@ back (below). Two pieces make it a loop with no taps:
   `{"render_height": 720}`: while the benchmark is active, `DisplayStretch`
   lays the frame out at that logical height instead of `DESIGN_HEIGHT`
   (`scripts/display_stretch.gd` → `logical_size`'s `design_height` parameter;
-  the knob lives on the autoload as `Benchmark.render_height`, applied by
-  the deleted `hq.gd` → `_apply_bench_sweep_config`). Sweeping several heights up to the
+  the knob lives on the autoload as `Benchmark.render_height`, set by
+  `Benchmark.apply_sweep`). Sweeping several heights up to the
   device's native landscape height measures how frame cost scales with render
   resolution. The run label gains an `h<height>` part
   (`BenchmarkReport.make_label`) so the results files are distinguishable;
   each report's `device.render_size` records the resolution actually used.
   0 / absent = authored default.
+
+- **Tree cutout sweep.** `{"tree_mode": 0|1|2}` sets `GameConfig.tree_cutout_mode` for the run
+  (`Benchmark.tree_mode`; absent keeps the game's setting, which is 2 since 2026-10-27): 0 the game's opaque traced silhouette (`billboard_opaque.gdshader`),
+  1 a plain card cut out per pixel at half alpha (`billboard_alpha.gdshader`, the old way),
+  2 a plain card blended by its alpha (`billboard_blend.gdshader`; it writes depth, since the
+  Compatibility renderer has no depth prepass and the trees otherwise drew in spawn order). The
+  three share `billboard_tree.gdshaderinc`; the run label gains `_trees<mode>`. Run alternately,
+  back to back, so the phone heating up affects every mode alike. Measured 2026-10-27 on an
+  Android phone, three rounds each: opaque 44.4 fps, half-alpha cutout 41.1 (slowest every
+  round), blend 46.0 (a tie with opaque within the ±3 fps spread). The phone is CPU-bound, so tree
+  fill moves it only a few percent; the game switched to blend for its soft edges.
 
 `?bench=1` gates the whole thing, so it can never ship on by default.
 

@@ -53,6 +53,8 @@ var wheel_toe: Dictionary = _zero_toe()
 ## above overheat_temp_threshold_c it drains HP; at 0 HP the car gives up (`gave_up`). Off by
 ## default, so the stage is untouched.
 var thermal := false
+# Takes no damage at all (the benchmark, so a crash can't wreck the run or bend the steering).
+var invulnerable := false
 var cooling_broken := false
 var engine_temp := 0.0
 var _gave_up := false
@@ -189,7 +191,7 @@ static func hp_loss_for_speed(speed_mps: float, cfg: GameConfig) -> float:
 # self-limits, while a real multi-bounce tumble racks up several capped hits. Returns
 # the HP lost.
 func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg: GameConfig) -> float:
-	if dt <= 0.0:
+	if dt <= 0.0 or invulnerable:
 		return 0.0
 	var floor_mps := cfg.impact_threshold_g * GRAVITY_MPS2 * dt
 	if dv_mps <= floor_mps:
@@ -208,6 +210,8 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 
 # Drain HP by `amount`, bottoming out at 0. With `thermal` on, reaching 0 emits `gave_up` once.
 func apply_loss(amount: float) -> void:
+	if invulnerable:
+		return
 	hp = maxf(0.0, hp - amount)
 	if thermal and hp <= 0.0 and not _gave_up:
 		_gave_up = true

@@ -12,9 +12,20 @@ cutout), `models/vegetation/groundcover_opaque.glb` (bush ground cover). Wired i
 **Tests:** `tests/headless/test_tree_scatter.gd`, `tests/headless/test_billboard_field.gd`,
 `tests/headless/test_wind_sway.gd`
 
-Trees are ALWAYS opaque billboard cutouts (`BillboardField`); bushes are ALWAYS
-low-poly 3D meshes (`TreeMeshField`). There is no longer any billboard-vs-mesh
-toggle — the mesh-tree rendering path was removed.
+Trees are ALWAYS billboards (`BillboardField`); bushes are ALWAYS low-poly 3D meshes
+(`TreeMeshField`). There is no longer any billboard-vs-mesh toggle — the mesh-tree
+rendering path was removed.
+
+**How a tree is cut out of its texture** is `GameConfig.tree_cutout_mode`: 0 the opaque
+traced silhouette (`TreeSilhouette`, `billboard_opaque.gdshader`), 1 a plain "+" card cut out
+per pixel at half alpha (`billboard_alpha.gdshader`), 2 a plain card **blended** by its alpha
+(`billboard_blend.gdshader`, soft edges). The game uses **2** since 2026-10-27: measured on a
+phone it costs the same as the opaque silhouette (the half-alpha cutout was ~3 fps slower), see
+[benchmark.md](benchmark.md) → "Tree cutout sweep". The blended card writes depth and drops
+pixels under 0.1 alpha, because the web's Compatibility renderer has no depth prepass and the
+trees of a field otherwise drew over each other in spawn order; the cost is a faint halo where a
+soft edge is drawn before a tree behind it. All three share `billboard_tree.gdshaderinc`, and the
+card mesh is `Foliage._alpha_card_mesh` (same "+" layout and plane flags as the silhouette).
 
 > **Rocks are not covered here.** The roadside boulders also live in `Foliage` and
 > also render through `TreeMeshField`, but they are meshes rather than billboards,
@@ -223,7 +234,7 @@ Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
 
 ## Rendering — trees (`BillboardField`)
 
-Trees render as opaque billboard cutouts through `BillboardField`
+Trees render as billboards through `BillboardField`
 (`scripts/billboard_field.gd`) — see the silhouette / "+"-cross / shader detail
 above. All instances share a single MultiMesh (one draw call), with a compact
 per-field AABB and a `visibility_range` cull past `tree_render_distance_m` over a

@@ -49,6 +49,8 @@ extends Resource
 ## How far a road may swing from the straight line between its junctions, as a fraction of
 ## its length; 0 is dead straight.
 @export var road_twist := 0.24
+## When above 0, the island has just one road: this long, straight out from spawn (the benchmark's).
+@export var straight_road_m := 0.0
 ## Roughly how far the road runs between changes of direction.
 @export var bend_length_m := 150.0
 @export var road_half_width_m := 1.9
@@ -125,16 +127,29 @@ extends Resource
 ## Share of the frame's free time (from the last frames' cpu / gpu load) terrain work may use.
 @export_range(0.0, 1.0) var budget_fraction := 0.5
 ## Floor under that budget, as a share of the actual frame time, so a slow frame gets a longer
-## floor and streaming gets the same time per second at any frame rate.
+## floor and streaming gets the same time per second at any frame rate...
 @export_range(0.0, 1.0) var budget_min_fraction := 0.25
+## ...but no longer than it would be at this frame rate. On a device whose every frame is busy
+## (a phone browser), a floor that grows with slow frames slows them further, and so on.
+@export var budget_floor_fps := 60.0
 @export var chunk_m := 64.0
-## Vertex spacing of the near (full-detail) and far meshes.
+## Vertex spacing of the three detail levels: near (the 2×2 chunks round the car), mid (which
+## also carries the trees and everything else planted) and far (the horizon).
 @export var near_stride_m := 2.0
+## The near level is drawn in squares this size (2×2 of them round the car), smaller than a
+## chunk so less of it is rebuilt per metre driven. Must divide chunk_m, and be a multiple of
+## mid_stride_m and far_stride_m.
+@export var near_tile_m := 32.0
+@export var mid_stride_m := 8.0
 @export var far_stride_m := 16.0
-## Radii in chunks: full detail, horizon, and live collision.
-@export var near_radius := 2
+## Radii in chunks: mid detail and planting, and the horizon. Collision covers the near block.
+@export var mid_radius := 1.5
 @export var far_radius := 6
-@export var collision_radius := 1
+## The mid band narrows as the car speeds up, reaching these shares of its reach to the side and
+## behind at mid_squash_speed_mps (ahead it always reaches mid_radius).
+@export_range(0.1, 1.0) var mid_side_frac := 0.6
+@export_range(0.1, 1.0) var mid_back_frac := 0.6
+@export var mid_squash_speed_mps := 25.0
 ## The safety net: if the chunk the car will be over in this many seconds has no collision yet,
 ## it is built at once, over the frame budget (a hitch rather than a fall through the world).
 @export var collision_rush_s := 0.5

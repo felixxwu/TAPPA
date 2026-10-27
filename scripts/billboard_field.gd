@@ -22,6 +22,8 @@ extends Node3D
 # correct = bin centre + local).
 
 const BILLBOARD_OPAQUE_SHADER := preload("res://shaders/billboard_opaque.gdshader")
+const BILLBOARD_ALPHA_SHADER := preload("res://shaders/billboard_alpha.gdshader")
+const BILLBOARD_BLEND_SHADER := preload("res://shaders/billboard_blend.gdshader")
 
 # Held so the shape RID added to the body via PhysicsServer3D stays alive for
 # the body's lifetime. Null when built without collision.
@@ -98,13 +100,21 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 	# Clamp below 1.0 so 1 - _aspect_jitter stays positive (no zero/negative scale).
 	_aspect_jitter = clampf(aspect_jitter, 0.0, 0.9)
 
-	var mat := ShaderMaterial.new()
-	mat.shader = BILLBOARD_OPAQUE_SHADER
-	mat.set_shader_parameter("albedo", texture)
-	mat.set_shader_parameter("render_distance", render_distance)
-	mat.set_shader_parameter("fade_band", render_fade)
-	# Bias distant foliage to cheaper mips (mobile texture-bandwidth win).
-	mat.set_shader_parameter("lod_bias", Config.data.texture_lod_bias)
+	# The silhouette mesh is shared by every field of its species, and so is its material: reuse
+	# it when it already matches rather than building a new one per field (~1 ms each on a phone).
+	var shader: Shader = [BILLBOARD_OPAQUE_SHADER, BILLBOARD_ALPHA_SHADER, BILLBOARD_BLEND_SHADER][clampi(Config.data.tree_cutout_mode, 0, 2)]
+	var mat := render_mesh.surface_get_material(0) as ShaderMaterial if render_mesh.get_surface_count() > 0 else null
+	if mat == null or mat.shader != shader or mat.get_shader_parameter("albedo") != texture \
+			or mat.get_shader_parameter("render_distance") != render_distance \
+			or mat.get_shader_parameter("fade_band") != render_fade \
+			or mat.get_shader_parameter("lod_bias") != Config.data.texture_lod_bias:
+		mat = ShaderMaterial.new()
+		mat.shader = shader
+		mat.set_shader_parameter("albedo", texture)
+		mat.set_shader_parameter("render_distance", render_distance)
+		mat.set_shader_parameter("fade_band", render_fade)
+		# Bias distant foliage to cheaper mips (mobile texture-bandwidth win).
+		mat.set_shader_parameter("lod_bias", Config.data.texture_lod_bias)
 	# Trees take the terrain's hemisphere-ambient + directional-sun model so they
 	# match the lit ground (billboard_opaque.gdshader). Pushed through
 	# apply_foliage_light rather than set here, so the sun/ambient dim with the
@@ -114,7 +124,7 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 	# A supplied silhouette mesh can be empty (0 surfaces) if its source texture
 	# had no opaque area; skip material assignment then (the field renders nothing)
 	# rather than indexing a missing surface.
-	if render_mesh.get_surface_count() > 0:
+	if render_mesh.get_surface_count() > 0 and render_mesh.surface_get_material(0) != mat:
 		render_mesh.surface_set_material(0, mat)
 
 	instance_positions = PackedVector3Array()

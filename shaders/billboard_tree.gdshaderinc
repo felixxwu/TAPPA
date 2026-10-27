@@ -1,0 +1,122 @@
+// The tree billboard shader body, shared by billboard_opaque.gdshader (the cutout baked into the
+// mesh, no discard), billboard_alpha.gdshader (a plain card cut out per pixel by its alpha, the way
+// trees used to be drawn) and billboard_blend.gdshader (the card blended by its alpha), kept so
+// their costs can be compared on a phone. Each sets its own render_mode. See the header of
+// billboard_opaque.gdshader for how it works.
+
+uniform sampler2D albedo : source_color, filter_nearest;
+uniform float render_distance = 80.0;
+uniform float fade_band = 15.0;
+// Bias distant sampling toward cheaper mips (mobile texture-bandwidth win).
+uniform float lod_bias = 0.0;
+// Fake hemisphere-ambient + one directional sun, matching the terrain
+// (terrain_manager._bake_light / ps1_models_lit.gdshader). The billboard card
+// normal is the horizontal to-camera direction, so hemi is fixed at 0.5 (a
+// vertical surface sees half sky, half ground). NO source_color hint: terrain
+// bakes raw Color floats, so trees match the ground by using them raw too.
+uniform vec3 sun_dir = vec3(0.0, 0.0, 1.0);
+uniform vec3 sun_color = vec3(0.0);
+uniform vec3 sky_color = vec3(1.0);
+uniform vec3 ground_color = vec3(1.0);
+// 0 = flat (unlit, no-op multiply), 1 = full shading. Default 0 keeps a material
+// that never sets these rendering exactly as before.
+uniform float light_amount = 0.0;
+
+varying vec3 v_tint;
+
+#include "res://shaders/spike_id.gdshaderinc"
+#include "res://shaders/headlight_cone.gdshaderinc"
+#include "res://shaders/wind_sway.gdshaderinc"
+
+void vertex() {
+	if (id_pass) {  // keep the hash out of the normal colour pass
+		v_spike_id = spike_id_color(object_id, INSTANCE_ID);
+	}
+	// Per-instance world origin (base, column 3 of the model matrix) and its scaled
+	// height (column 1 length — the authored size baked into the instance basis).
+	vec3 origin = MODEL_MATRIX[3].xyz;
+	float height = length(MODEL_MATRIX[1].xyz);
+	// Distance is measured to the TRUNK AXIS (the camera projected onto the trunk line,
+	// clamped to the tree's [base, base+height] span), not the ground-level base.
+	vec3 cam = INV_VIEW_MATRIX[3].xyz;
+	float ref_y = clamp(cam.y, origin.y, origin.y + height);
+	float cam_dist = distance(cam, vec3(origin.x, ref_y, origin.z));
+	// Distance shrink-out: 1 up close, 0 at the far cutoff.
+	float scale = clamp((render_distance - cam_dist) / max(fade_band, 0.001), 0.0, 1.0);
+
+	// Fixed hemisphere ambient for a vertical card (hemi = 0.5).
+	vec3 ambient = mix(ground_color, sky_color, 0.5);
+
+	bool felled = INSTANCE_CUSTOM.x > 0.5;
+	vec3 world_pos;
+	if (felled) {
+		// Locked cross: the MODEL transform already carries the topple tilt + the
+		// authored size scale. Shrink toward the base pivot for the distance fade.
+		world_pos = (MODEL_MATRIX * vec4(VERTEX * scale, 1.0)).xyz;
+		// Ambient-only: felled trees lie flat and are a rare, transient minority,
+		// so skip the directional term rather than derive a per-plane normal.
+		v_tint = mix(vec3(1.0), ambient, light_amount);
+	} else if (COLOR.r > 0.5) {
+		// Standing: collapse plane 1 (the ZY plane) to the origin so only the
+		// billboarded front card is visible — a standing tree is one camera-facing
+		// card, not a "+", and pays no doubled overdraw.
+		world_pos = origin;
+		v_tint = vec3(1.0); // zero-area, never rasterised; assign for completeness.
+	} else {
+		// Standing: Y-billboard plane 0 toward the camera (flattened to XZ so it
+		// stays upright). Authored size lives as the instance scale (column lengths).
+		vec3 to_cam = INV_VIEW_MATRIX[3].xyz - origin;
+		to_cam.y = 0.0;
+		to_cam = normalize(to_cam);
+		vec3 up = vec3(0.0, 1.0, 0.0);
+		vec3 right = normalize(cross(up, to_cam));
+		float sx = length(MODEL_MATRIX[0].xyz);
+		vec3 local = (right * (VERTEX.x * sx) + up * (VERTEX.y * height)) * scale;
+		world_pos = origin + local;
+		// Wind sway — STANDING trees only. Not applied in the felled branch (a
+		// toppled tree lies on the ground and its mesh-space y is no longer "up",
+		// so bending by height_frac would swing it sideways along the ground) and
+		// not in the collapsed plane-1 branch above (zero-area, never rasterised).
+		// VERTEX.y is already the mesh's normalized 0..1 height (confirmed by the
+		// `up * (VERTEX.y * height)` term just above), so it's passed straight
+		// through as height_frac. Deliberately UN-SCALED by `scale`: scale is the
+		// distance shrink-out toward the trunk-axis pivot, and multiplying the sway
+		// by it would make a collapsing tree's canopy swing away from its own base
+		// as it shrinks, instead of shrinking straight down onto it.
+		world_pos += wind_sway_offset(origin, VERTEX.y, height);
+		// Card normal == to_cam (horizontal). Same math as the terrain bake; the
+		// dot naturally ignores sun_dir's vertical component against a flat normal.
+		float ndl = max(dot(to_cam, sun_dir), 0.0);
+		vec3 lit = ambient + sun_color * ndl;
+		v_tint = mix(vec3(1.0), lit, light_amount);
+	}
+	// Fake headlight cone (night weather), ADDED to the light term — never a
+	// multiply, since at night v_tint is already near-black and scaling it by a
+	// bright cone stays near-black. Applied here rather than inside the branches so
+	// FELLED trees get it too: their branch is ambient-only, and a knocked-over tree
+	// sitting unlit inside the headlight pool would read as a hole in the light.
+	// Per-vertex is exact enough — cards are small in world space — and it avoids
+	// paying the cone per fragment across a dense tree field.
+	v_tint += hl_color * headlight_lit(world_pos);
+	// Rewrite to clip space directly; the default MODELVIEW path is bypassed.
+	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world_pos, 1.0);
+}
+
+void fragment() {
+	vec4 tex = texture(albedo, UV, lod_bias);
+#ifdef ALPHA_CUTOUT
+	if (tex.a < 0.5) {
+		discard;
+	}
+#endif
+#ifdef ALPHA_BLEND
+	if (tex.a < 0.1) {
+		discard;
+	}
+	ALPHA = tex.a;
+#endif
+	ALBEDO = tex.rgb * v_tint;
+	if (id_pass) {
+		ALBEDO = spike_pack(v_spike_id.rg, false, length(VERTEX));
+	}
+}

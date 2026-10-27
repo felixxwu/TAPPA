@@ -30,6 +30,7 @@ const TREE_CANOPY_SHADER := preload("res://shaders/tree_canopy.gdshader")
 # billboard texture, e.g. tree-greece.webp) and cached by the texture's resource path,
 # so each distinct cutout is built once and shared across every instance in its field.
 static var _tree_silhouette_cache: Dictionary = {}
+static var _bush_mesh_cache: Dictionary = {}  # bush_tint -> mesh
 
 
 # How far the VISIBLE ground sits above the terrain height the CPU reports, in metres.
@@ -178,8 +179,12 @@ static func spawn_bushes(parent: Node3D, positions: PackedVector2Array, terrain:
 # Cached per texture path so each distinct cutout (home + any region tree) is built
 # once. Region textures (tree-greece.webp) trace the same single camera-facing card.
 static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
-	var key := tex.resource_path
+	var alpha: bool = Config.data.tree_cutout_mode != 0
+	var key := tex.resource_path + ("#card" if alpha else "")
 	if _tree_silhouette_cache.has(key):
+		return _tree_silhouette_cache[key]
+	if alpha:
+		_tree_silhouette_cache[key] = _alpha_card_mesh()
 		return _tree_silhouette_cache[key]
 	var mesh := TreeSilhouette.build(
 		tex.get_image(), TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON)
@@ -187,15 +192,34 @@ static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
 	return mesh
 
 
+# The plain card the alpha trees are drawn on (GameConfig.tree_cutout_mode): the same "+"
+# of two planes, plane flag in COLOR.r and normalized coordinates as the traced silhouette, but
+# each plane one full quad of the texture, cut out or blended per pixel by its shader.
+static func _alpha_card_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var corners := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 0), Vector2(1, 1), Vector2(0, 1)]
+	for plane in 2:
+		for uv: Vector2 in corners:
+			st.set_uv(uv)
+			st.set_color(Color(float(plane), 0.0, 0.0))
+			var nx := uv.x - 0.5
+			var ny := 1.0 - uv.y
+			st.add_vertex(Vector3(nx, ny, 0.0) if plane == 0 else Vector3(0.0, ny, nx))
+	return st.commit()
+
+
 # The ground-cover bush mesh: the low-poly GLB mesh, its imported (tone-matched)
 # foliage texture kept but the surface rebuilt as a ShaderMaterial (TREE_CANOPY_SHADER).
 # It multiplies the texture by the per-instance MultiMesh COLOR (the baked terrain light
 # TreeMeshField writes, matching the ground tint everywhere) AND by cfg.bush_tint, and is
 # double-sided (the shader is cull_disabled, so the single-sided cards don't vanish from
-# behind). Duplicated so the cached scene resource is
-# not mutated; NOT cached (the material carries cfg.bush_tint, cheap to rebuild).
+# behind). Duplicated so the cached scene resource is not mutated, and cached per tint:
+# building it costs a GPU mesh upload, which on a phone's WebGL took ~17 ms per chunk.
 static func bush_mesh() -> Mesh:
 	var cfg: GameConfig = Config.data
+	if _bush_mesh_cache.has(cfg.bush_tint):
+		return _bush_mesh_cache[cfg.bush_tint]
 	var mesh: Mesh = MeshUtil.first_mesh(GROUNDCOVER_SCENE).duplicate()
 	var base := mesh.surface_get_material(0) as StandardMaterial3D
 	var albedo: Texture2D = base.albedo_texture if base != null else null
@@ -204,6 +228,7 @@ static func bush_mesh() -> Mesh:
 	mat.set_shader_parameter("albedo", albedo)
 	mat.set_shader_parameter("tint", cfg.bush_tint)
 	mesh.surface_set_material(0, mat)
+	_bush_mesh_cache[cfg.bush_tint] = mesh
 	return mesh
 
 

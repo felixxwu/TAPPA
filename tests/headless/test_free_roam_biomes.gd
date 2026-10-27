@@ -28,7 +28,7 @@ func _settings() -> FreeRoamSettings:
 	var s := FreeRoamSettings.new()
 	s.world_seed = 7
 	s.island_radius_m = 3000.0
-	s.near_radius = 1
+	s.mid_radius = 1
 	s.far_radius = 3
 	s.ring_count = 2
 	s.ring_regions = PackedStringArray(["icy", "plain"])
@@ -127,7 +127,7 @@ func test_a_chunk_is_drawn_with_its_rings_ground_material() -> void:
 	add_child_autofree(st)
 	st.prefill()
 	var cs: TerrainStreamer.ChunkState = st._chunks[Vector2i.ZERO]
-	var mat := cs.near_mesh.material_override as ShaderMaterial
+	var mat := cs.mid_mesh.material_override as ShaderMaterial
 	assert_eq(st.terrain.ring_index(32.0, 32.0), 0)
 	assert_eq((mat.get_shader_parameter("albedo_texture") as Texture2D).resource_path, ICY["grass_texture"])
 
@@ -146,7 +146,7 @@ func _ground_streamer(s: FreeRoamSettings) -> TerrainStreamer:
 
 
 func _built_chunk(st: TerrainStreamer, coord: Vector2i) -> TerrainStreamer.ChunkJob:
-	var job := st._new_job(coord, false, false)
+	var job := st._new_job(coord, TerrainStreamer.Level.FAR, false)
 	st._queue.erase(job)
 	st._step(job, Time.get_ticks_usec() + 60_000_000, TerrainStreamer.Stage.UPLOAD)
 	return job

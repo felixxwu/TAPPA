@@ -306,8 +306,7 @@ func _build_benchmark_page() -> void:
 	add_child(_benchmark_page)
 	_benchmark_page.add_child(_make_heading("Benchmark"))
 	_benchmark_page.add_child(_make_sub(
-		"Auto-drive a long stage at %d km/h and measure performance. Toggle features to isolate their cost:"
-		% int(BenchmarkRunner.TARGET_SPEED_KMH)))
+		"Auto-drive a route across a fixed island and measure performance. Toggle features to isolate their cost:"))
 	benchmark_rows.clear()
 	for entry in Benchmark.TOGGLES:
 		var key := String(entry["key"])

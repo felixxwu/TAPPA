@@ -5,6 +5,10 @@ extends Node
 
 
 func _ready() -> void:
+	if Benchmark.autostart_requested():
+		Benchmark.apply_sweep(Benchmark.fetch_sweep_config())
+		Benchmark.start()
+		return
 	if not WorldSession.has_world():
 		WorldSession.new_world(FreeRoamSettings.new().world_seed, TitleScreen.starter_choices()[0])
 		WorldSession.fresh = true

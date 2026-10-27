@@ -1,13 +1,23 @@
 extends GutTest
-# Benchmark mode (features/benchmark.md): the Benchmark autoload's config
-# override/restore lifecycle, the toggle → GameConfig mapping, the stats
-# summariser, and the runner's pure driving math. UI coverage (settings page,
-# results panel) lives in test_benchmark_ui.gd.
+# Benchmark mode (features/benchmark.md): the Benchmark autoload's config and profile
+# override/restore lifecycle, the toggle → GameConfig mapping, the stats summariser,
+# the straight benchmark road, and the runner's pure driving math. UI coverage
+# (settings page, results panel) lives in test_benchmark_ui.gd.
 
-# Preloaded at parse time so the scene's script compiles (and their pre-existing
-# engine warnings, e.g. billboard_field's shadowed `basis`) happen outside any
-# test — GUT otherwise attributes them to whichever test loads main.tscn first.
-const MAIN_SCENE := preload("res://main.tscn")
+const TEST_PATH := "user://test_benchmark_mode_profile.json"
+
+
+func before_all() -> void:
+	Save.profile_path = TEST_PATH
+	Save.save_disabled = false
+	Save.load_or_new()
+
+
+func after_all() -> void:
+	Save.profile_path = Save.DEFAULT_PROFILE_PATH
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(TEST_PATH + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
 func before_each() -> void:
@@ -49,11 +59,9 @@ func test_set_option_flips_and_reads_back() -> void:
 
 # --- Config overrides ----------------------------------------------------------
 
-func test_apply_overrides_sets_up_the_benchmark_stage() -> void:
+func test_apply_overrides_turns_the_hud_off() -> void:
 	var cfg: GameConfig = Config.data
 	Benchmark.apply_overrides(cfg)
-	assert_eq(cfg.track_seed, Benchmark.TRACK_SEED, "the fixed benchmark seed is applied")
-	assert_eq(cfg.track_turn_count, Benchmark.TRACK_TURN_COUNT, "the long benchmark stage is applied")
 	assert_false(cfg.hud_enabled, "the HUD is off during a benchmark (the perf overlay is the UI)")
 
 
@@ -81,10 +89,13 @@ func test_toggles_off_disable_their_config_switches() -> void:
 func test_render_distance_toggle_halves_foliage_distance() -> void:
 	var cfg: GameConfig = Config.data
 	var full: float = cfg.tree_render_distance_m
+	var phone: float = cfg.tree_render_distance_web_touch_m
 	Benchmark.set_option("full_render_distance", false)
 	Benchmark.apply_overrides(cfg)
 	assert_almost_eq(cfg.tree_render_distance_m, full * 0.5, 0.001,
 		"render distance is halved when the toggle is off")
+	assert_almost_eq(cfg.tree_render_distance_web_touch_m, phone * 0.5, 0.001,
+		"and the phone's own distance with it")
 
 
 func test_uncap_fps_toggle_clears_the_frame_cap() -> void:
@@ -198,57 +209,75 @@ func test_percentile_nearest_rank() -> void:
 	assert_eq(BenchmarkStats.percentile([], 0.5), 0.0, "empty input reads 0")
 
 
-# --- Run-scene wiring ------------------------------------------------------------
+# --- Throwaway world + run-scene wiring -------------------------------------------
 
-func test_benchmark_scene_boots_gated_and_drives() -> void:
-	Benchmark.set_option("vegetation", false)
-	Benchmark.set_option("spectators", false)
+func test_a_run_drives_a_throwaway_world_and_hands_back_the_players_profile() -> void:
+	Save.save_disabled = false
+	var before := Save.profile.duplicate(true)
+	Benchmark.begin()
+	assert_eq(WorldSession.world_seed(), Benchmark.WORLD_SEED, "the benchmark world is seeded")
+	assert_true(Save.save_disabled, "nothing is written while it runs")
+	Benchmark.end()
+	assert_eq(Save.profile, before, "the player's profile comes back untouched")
+	assert_false(Save.save_disabled, "saving is switched back on")
+
+
+func test_a_sweep_config_switches_off_the_toggles_it_names_and_resets_the_rest() -> void:
+	var first := String(Benchmark.TOGGLES[0]["key"])
+	Benchmark.apply_sweep({"disabled": [first], "two_pass": true, "render_height": 720, "tree_mode": 2})
+	assert_false(Benchmark.get_option(first), "a named toggle is switched off")
+	for t in Benchmark.TOGGLES.slice(1):
+		assert_true(Benchmark.get_option(String(t["key"])), "the others stay on")
+	assert_true(Benchmark.two_pass)
+	assert_eq(Benchmark.render_height, 720)
+	assert_eq(Benchmark.tree_mode, 2)
 	Benchmark.apply_overrides(Config.data)
-	Config.data.track_turn_count = 1  # keep the build cheap; the toggles are the point
-	Benchmark.active = true
-	var scene: Node3D = MAIN_SCENE.instantiate()
-	add_child_autofree(scene)  # headless: world._ready builds synchronously
+	assert_eq(Config.data.tree_cutout_mode, 2, "the run draws its trees that way")
+	Benchmark.restore(Config.data)
+	Benchmark.apply_sweep({})
+	assert_true(Benchmark.get_option(first), "an empty config is the full baseline")
+	assert_false(Benchmark.two_pass)
+	assert_eq(Benchmark.render_height, 0)
+	assert_eq(Benchmark.tree_mode, -1, "an empty config keeps the game's own tree drawing")
 
+
+func test_the_straight_road_option_builds_one_straight_link() -> void:
+	var s := FreeRoamSettings.new()
+	s.straight_road_m = 1500.0
+	var net := RoadNetwork.new()
+	var terrain := RoadTerrain.new()
+	terrain.setup(s, net)
+	net.build(s, terrain)
+	assert_eq(net.edges.size(), 1, "one road")
+	assert_almost_eq(net.total_length_m, 1500.0, 0.01, "dead straight: as long as the line it follows")
+
+
+func test_the_benchmark_boots_free_roam_and_drives_down_the_road() -> void:
+	Benchmark.begin()
+	var scene: Node3D = load(Scenes.FREE_ROAM).instantiate()
+	var s := FreeRoamSettings.new()
+	s.island_radius_m = 3000.0
+	s.mid_radius = 1
+	s.far_radius = 3
+	(scene.get_node("Terrain") as TerrainStreamer).settings = s
+	add_child_autofree(scene)
+	await get_tree().physics_frame
+	var streamer: TerrainStreamer = scene.get_node("Terrain")
+	assert_eq(streamer.network.edges.size(), 1, "the benchmark island has the one straight road")
+	assert_eq(s.straight_road_m, 0.0, "the shared settings resource is left alone")
 	assert_not_null(scene.get_node_or_null("BenchmarkRunner"), "the runner is spawned")
-	assert_false(scene.get_node("HUD").visible, "the HUD is hidden (cfg.hud_enabled off)")
-	assert_false(scene.get_node("MobileControls").visible, "touch controls are hidden")
-	var overlay_on := false
-	for child in scene.get_children():
-		if child is PerfOverlay:
-			overlay_on = child.visible
-	assert_true(overlay_on, "the perf overlay is forced on for the run")
-	assert_false(scene.get_node("StageManager")._armed,
-		"the stage flow (countdown/lock) is skipped — the runner drives instead")
-	for child in scene.get_children():
-		assert_false(child is TreeMeshField, "vegetation off: no foliage fields built")
-
-	# The runner is really driving: the car is AI-controlled and, after a few
-	# seconds of sim, is moving forward along the road with progress accruing.
-	var car := scene.get_node("Car")
-	assert_true(car.ai_controlled, "the car is handed to the AI")
-	var progress: TrackProgress = scene.get_node("TrackProgress")
-	var start_offset := progress.progress_offset()
+	var car: VehicleBody3D = scene.get_node("Car")
+	assert_true(car.ai_controlled, "the car is handed to the auto-driver")
+	assert_true(car.damage.invulnerable, "the car can't be wrecked mid-run")
 	for _i in 240:
 		await get_tree().physics_frame
-	assert_gt((car as RigidBody3D).linear_velocity.length(), 3.0,
-		"the car is up to speed after a few seconds")
-	assert_gt(progress.progress_offset() - start_offset, 5.0,
-		"track progress accrues as the runner drives")
-
-	# Finish flow: pin progress to 100% (the dev-cheat hook) — the runner's next
-	# physics tick must summarise the run and show the results panel.
-	progress.jump_to_finish()
-	await get_tree().physics_frame
+	assert_gt(car.linear_velocity.length(), 3.0, "the car is up to speed after a few seconds")
+	assert_gt((scene.get_node("AutoDriver") as AutoDriver).driven_m, 5.0, "and covering ground")
+	scene.get_node("BenchmarkRunner")._finish()
 	await get_tree().process_frame
-	assert_false(Benchmark.results.is_empty(), "the finish hands the summary to Benchmark")
+	assert_false(Benchmark.results.is_empty(), "the end of the run hands the summary to Benchmark")
 	assert_gt(int(Benchmark.results.get("frames", 0)), 0, "the summary carries frame samples")
-	var results_panel: Node = null
-	for child in scene.get_node("BenchmarkRunner").get_children():
-		if child is BenchmarkResults:
-			results_panel = child
-	assert_not_null(results_panel, "the results breakdown is shown at the finish")
-
-
+	Benchmark.end()
 
 
 # --- Runner driving math (BenchmarkRunner statics) -------------------------------
@@ -275,7 +304,7 @@ func test_steer_toward_respects_the_car_heading() -> void:
 
 
 func test_throttle_for_holds_the_target_speed() -> void:
-	var target := BenchmarkRunner.TARGET_SPEED_MPS
+	var target := 10.0
 	assert_eq(BenchmarkRunner.throttle_for(0.0, target), 1.0,
 		"well below target: full throttle")
 	assert_almost_eq(BenchmarkRunner.throttle_for(target, target), 0.0, 0.001,

@@ -174,12 +174,12 @@ func _on_signed_in(uid: String) -> void:
 
 
 func _on_profile_changed() -> void:
-	if sync != null:
+	if sync != null and not Benchmark.active:  # the benchmark's throwaway world must not upload
 		sync.request_push()
 
 
 func _on_flushed() -> void:
-	if sync != null:
+	if sync != null and not Benchmark.active:
 		sync.flush()
 
 

@@ -106,7 +106,8 @@ RESULTS_DIR="build/bench-results"
 CERT="build/dev-cert.pem"
 SCHEME="https"
 if command -v openssl >/dev/null 2>&1; then
-  if [[ ! -f "$CERT" ]]; then
+  # Remade when this Mac's LAN address changes: the phone refuses a cert issued for another IP.
+  if [[ ! -f "$CERT" ]] || ! openssl x509 -in "$CERT" -noout -text | grep -qF "IP Address:$LAN_IP,"; then
     echo "Generating self-signed dev cert ($CERT) ..."
     openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
       -keyout build/dev-key.pem -out build/dev-crt.pem \
