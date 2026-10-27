@@ -689,5 +689,5 @@ func test_a_card_page_has_a_see_through_body_box() -> void:
 func test_every_loot_item_icon_exists() -> void:
 	for table: Array in LootRules.ring_tables(3):
 		for item: Dictionary in table:
-			var path := "res://icons/cards/%s.svg" % LootRules.icon(item)
+			var path := "res://icons/cards/%s.png" % LootRules.icon(item)
 			assert_true(ResourceLoader.exists(path), "%s has an icon (%s)" % [LootRules.item_key(item), path])

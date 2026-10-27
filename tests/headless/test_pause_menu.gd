@@ -95,11 +95,11 @@ func test_resume_unfreezes_and_closes() -> void:
 	assert_false(_pause.is_open(), "Resume hides the overlay")
 
 
-# The Pause button shows a proper drawn pause glyph (PauseIcon), not a text stand-in.
+# The Pause button shows a pixel-art pause glyph, not a text stand-in.
 func test_pause_button_uses_a_drawn_icon() -> void:
 	assert_eq(_pause._pause_button.text, "", "the Pause button carries no text stand-in")
-	assert_eq(_pause._pause_button.find_children("*", "PauseIcon", true, false).size(), 1,
-		"the Pause button shows a drawn PauseIcon glyph")
+	assert_eq(_pause._pause_button.find_children("*", "PixelIcon", true, false).size(), 1,
+		"the Pause button shows a pixel-art glyph")
 
 
 # Opening the menu lands the keyboard/gamepad cursor on a row of the menu, and the

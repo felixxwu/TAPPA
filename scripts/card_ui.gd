@@ -9,10 +9,8 @@ extends RefCounted
 # a new menu is a list of entries rather than a fresh layout.
 
 
-# A card's visual-slot icon — one white-outline SVG from icons/cards/, named by what the
-# card IS (a boost/skill id, "car", "region", …). The whole set shares one style: white
-# only, uniform 6px stroke, round caps/joins — so the carousels read as one system rather
-# than a mix of clip-art.
+# A card's visual-slot icon — one 1-bit pixel-art PNG from icons/cards/ (authored in
+# tools/build_pixel_icons.py), named by what the card IS (a part id, "car", "region", …).
 # How far the icon's rect is inset from the visual slot's edges, as a fraction of the slot
 # per side — the icon used to fill the whole top half of the card, which read as a
 # full-bleed illustration rather than an icon; a ~55%-width mark leaves the card room to
@@ -20,16 +18,14 @@ extends RefCounted
 const CARD_ICON_INSET := 0.22
 
 static func card_icon(icon: String) -> Control:
-	var path := "res://icons/cards/%s.svg" % icon
+	var path := "res://icons/cards/%s.png" % icon
 	# A fallback for ids with no authored icon (a test fixture's fx_* id, say) rather than
 	# an empty slot — but a MISSING SHIPPED icon stays loud, caught by test_card_carousel's
 	# every-catalogue-icon-exists guard instead of degrading here.
 	if not ResourceLoader.exists(path):
-		path = "res://icons/cards/generic.svg"
-	var tex := TextureRect.new()
+		path = "res://icons/cards/generic.png"
+	var tex := PixelIcon.new()
 	tex.texture = load(path)
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tex.anchor_left = CARD_ICON_INSET
 	tex.anchor_right = 1.0 - CARD_ICON_INSET
 	tex.anchor_top = CARD_ICON_INSET * 0.8
@@ -206,7 +202,7 @@ static func card_page(host: Node, opts: Dictionary = {}) -> MenuPage:
 #   "desc"     (String)   a dim one-line note under the title saying what the thing does (optional)
 #   "subtitle" (String)   a dim line under that (optional)
 #   "extra"    (String)   a third line, e.g. a state (optional), coloured by "extra_variant"
-#   "icon"     (String)   an icons/cards/ name (optional — generic.svg otherwise)
+#   "icon"     (String)   an icons/cards/ name (optional — generic.png otherwise)
 #   "car"      (Dictionary or int) show this car spinning in 3D instead of the icon: an owned-car
 #                         dict, or a CarLibrary index (CarPreviewCache; park_previews before
 #                         freeing the page so the next visit reuses it)

@@ -116,7 +116,8 @@ func _ready() -> void:
 	add_child(_overlay)
 	prompt_label = UITheme.label("")
 	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	prompt_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	prompt_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	prompt_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, 0))
 	prompt_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	prompt_label.gui_input.connect(_on_prompt_input)
 	add_child(prompt_label)

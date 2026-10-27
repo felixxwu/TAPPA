@@ -395,7 +395,7 @@ before assuming a "sharp" import alone is enough.
 ## Gauge captions — the one drop-shadow exception
 
 The in-run HUD gauges (`HudGauge` vertical strips — see [hud.md](hud.md)) draw their
-`GaugeIcons` glyph in flat ink below the bar, and their name runs up the bar itself in
+`GaugeIcons` pixel glyph in flat ink below the bar, and their name runs up the bar itself in
 FAINT ink with **no shadow** — a hard black drop shadow is exactly what muddied the old
 bars' captions against a saturated fill. Both are drawn directly by the gauge, not via a
 `Label`, so the theme's shadow never reaches them.
@@ -416,22 +416,29 @@ There is no longer a caption-on-fill widget to guard, so the drop-shadow half of
 is documentation only. The tint half is still live and still guarded, by
 `test_hud.gd::test_health_grading_recolours_the_fill_only` — the health grade must move
 the fill without dragging the icon's ink with it.
-## Card icons
+## Pixel-art icons
 
-Every card's visual slot (`CardCarousel` cards — `card-carousel.md (deleted)`) draws one
-SVG from `icons/cards/`, named by what the card is: a boost/skill's catalogue id
-(`grip.svg`, `coin_magnet.svg`, …) or a fixed name (`car`, `region`, `region_locked`,
-`engine_swap`, `shop`, `skills`, `stats`, `settings`, `new_run`, `resume_run`,
-`rally_challenge`, `generic`).
+Every icon in a menu or the HUD is 1-bit pixel art: card icons in `icons/cards/` (20×20),
+the gauge glyphs and pause glyph in `icons/hud/` (8×8 / 9×9). They are authored as ASCII
+grids in `tools/build_pixel_icons.py` — edit a grid there and re-run it
+(`python3 tools/build_pixel_icons.py [sheet.png]`; the optional path writes a review
+sheet). Never hand-edit the PNGs.
 
-**Style rules — keep every new icon inside them:**
+**Rules — keep every new icon inside them:**
 
-- **White only.** No other colour, no gradients; `stroke="#FFFFFF"`.
-- **Uniform line weight:** `stroke-width="6"` on a `0 0 96 96` viewBox, everywhere.
-- **`stroke-linecap="round"` and `stroke-linejoin="round"`** — never butt/mitre.
-- **Outline, not fill** (`fill="none"`); the one exception is a solid-white accent cell
-  (the checkered flag's squares, a gauge's hub dot).
+- **Each texel is pure white or fully clear.** Nothing in between; colour comes from a
+  draw-time tint (the HUD uses `UITheme.INK`). Guarded by
+  `test_pixel_icon.gd::test_every_icon_is_pure_white_or_transparent`.
+- **Import lossless.** The project's default 2D import is lossy (WebP), which adds
+  in-between values; each icon's `.import` overrides `compress/mode=0`. A new icon
+  needs the same override.
+- **Draw at a whole-number scale on whole pixels.** `PixelIcon` (a Control) picks the
+  largest integer scale that fits its rect; `PixelIcon.draw_snapped` (used by
+  `HudGauge`) takes an explicit scale. Both round the on-screen top-left to a whole
+  pixel, and `PixelIcon` re-snaps when it moves (cards slide by fractional amounts).
+  Card icons land at ×4 next to 36 px titles, HUD glyphs at ×2 next to 18 px text.
+- One-pixel strokes and square corners, so the line weight matches Jersey 10's.
 
-`hub_shell.gd::_card_icon` falls back to `generic.svg` for an id with no authored icon
-(a test fixture's `fx_*` id); a SHIPPED catalogue entry missing its icon is caught by
-`test_hub_shell.gd -> test_every_catalogued_boost_and_skill_has_a_card_icon`.
+`CardUI.card_icon` falls back to `generic.png` for an id with no authored icon (a test
+fixture's `fx_*` id); a shipped loot item missing its icon is caught by
+`test_card_carousel.gd::test_every_loot_item_icon_exists`.

@@ -777,9 +777,6 @@ func has_nitrous() -> bool:
 ## Seconds between the car giving up (0 HP: the engine cuts out and it coasts) and the wreck
 ## page appearing (RestStops.step counts it down).
 @export_range(0.0, 10.0, 0.1) var wreck_page_delay_s := 3.0
-## Fastest the car may be going (m/s) for Enter / A to open a rest stop's page, so a handbrake
-## turn (A on a pad) through a checkpoint doesn't pop it open mid-drift.
-@export_range(0.0, 20.0, 0.5) var rest_stop_open_speed_mps := 3.0
 ## Onlookers gathered at each rest stop: a live crowd in front of its cabin (TerrainStreamer._rest_crowd).
 @export_range(0, 60) var rest_stop_crowd_size := 14
 ## How far each rest stop's log cabin stands back from its pad's centre, away from the road

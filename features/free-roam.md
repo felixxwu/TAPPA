@@ -397,9 +397,9 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
   Teleports (travel, respawn, the R reset) are not swept as drives: `RestStops.move_car_to`,
   `RoadRecovery.reset_done` → `car_teleported` on `RestStops` and `LootDirector` reset the swept
   start, and `free_roam.gd` resets its odometer's start on the same two signals. The `RoadSites.TELEPORT_M` jump guard (shared by `RestStops`, `LootDirector` and the odometer) stays as the backstop for teleports with no signal (the boot placement, `AutoDriver.place_on_route`).
-- **Opening the page:** at a rest stop, nearly stopped (below `GameConfig.rest_stop_open_speed_mps`, because gamepad A is also the handbrake), `menu_select` (Enter /
+- **Opening the page:** at a rest stop, at any speed, `menu_select` (Enter /
   gamepad A) opens the rest-stop page (`features/menus.md`); `RestStops.can_open` says when (it is also false until `free_roam._hand_over`, `RestStops.input_enabled`, so nothing opens under the boot warm-up), and
-  the minimap's line shows the prompt. On touch the prompt reads "Tap" and tapping it calls
+  the minimap's line shows the prompt on a solid black bar (readable against a bright sky). On touch the prompt reads "Tap" and tapping it calls
   `RestStops.open_here` (`MiniMap._on_prompt_input`). Coming to a halt alone does nothing.
 - **Respawn:** on `gave_up` the engine cuts out completely (`EngineSim.killed`: no combustion,
   clutch open so no drive or engine braking, revs spin down to 0, `EngineAudio` pushes silence;

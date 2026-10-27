@@ -118,8 +118,8 @@ closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`):
 
 A `PauseMenu` `CanvasLayer`, `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is
 frozen, in both `free_roam.tscn` and the dev stage `main.tscn`. It owns a **top-right Pause
-button** bearing a drawn pause glyph (`PauseIcon`, `scripts/pause_icon.gd`, since the font has
-no ⏸ glyph) that **freezes the game** (`get_tree().paused = true`) and shows **PAUSED** over a
+button** bearing a pixel-art pause glyph (`icons/hud/pause.png` in a `PixelIcon`, since the font
+has no ⏸ glyph) that **freezes the game** (`get_tree().paused = true`) and shows **PAUSED** over a
 card list (`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**, **Reset**,
 **Photo Mode**, the host's extra rows, **Settings** and **Quit**. Coming back from Settings,
 photo mode or an extra page puts the cursor back on the card that left (`_focus_card`). The

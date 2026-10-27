@@ -1,130 +1,17 @@
 class_name GaugeIcons
 extends RefCounted
-# Glyph geometry for the three in-run HUD gauges (features/hud.md): health, boost
-# pressure and NOS. These replaced the `HEALTH` / `BOOST` / `NITROUS` text captions that
-# used to sit inside the old linear bars — at a glance an icon reads faster than a word,
-# and it survives being shrunk in a way 11px type does not.
-#
-# All three are authored on a 24-unit square with a 4-unit module: every edge lands on a
-# multiple of MODULE, every negative gap is exactly one MODULE wide, corners are square
-# (design-system house rule: no rounded corners), and each glyph is ONE flat fill with no
-# outline. That shared construction is what makes them read as a set rather than three
-# unrelated pictures — so if you add a fourth gauge, author it to the same grid.
-#
-# Consumers get triangles, not outlines. `draw_colored_polygon` only renders CONVEX
-# polygons correctly, and two of these glyphs are concave (the heart, the bottle) while
-# the third is a disc with a slot cut out of it. So each glyph is triangulated ONCE and
-# cached in unit space, then scaled at draw time — see `draw_into`.
+# The pixel-art glyph under each in-run HUD gauge (features/hud.md): health, boost pressure,
+# NOS and temperature. Authored in tools/build_pixel_icons.py, drawn by HudGauge.
 
 enum Kind { HEALTH, BOOST, NOS, TEMP }
 
-# The authoring grid. Geometry below is in these units; `draw_into` scales it.
-const GRID := 24.0
-const MODULE := 4.0
-
-# Segment count for the boost dial's rim. 48 is smooth at every size the HUD uses and
-# keeps the triangulated glyph small; the rim is the only curve in the whole set.
-const _DISC_SEGMENTS := 48
-
-# Triangulated glyphs in GRID space, keyed by Kind. Built on first use and shared by
-# every gauge — the geometry is constant, so paying for it per-instance would be waste.
-static var _cache: Dictionary = {}
+const TEXTURES := {
+	Kind.HEALTH: preload("res://icons/hud/health.png"),
+	Kind.BOOST: preload("res://icons/hud/boost.png"),
+	Kind.NOS: preload("res://icons/hud/nos.png"),
+	Kind.TEMP: preload("res://icons/hud/temp.png"),
+}
 
 
-# Triangle soup for `kind`, in GRID space: 3 vertices per triangle, so size() is a
-# multiple of 3. Empty only if triangulation somehow fails, which callers must tolerate.
-static func triangles(kind: Kind) -> PackedVector2Array:
-	if _cache.has(kind):
-		return _cache[kind]
-	var tris := PackedVector2Array()
-	for poly: PackedVector2Array in _outlines(kind):
-		var idx := Geometry2D.triangulate_polygon(poly)
-		# A failed triangulation returns empty rather than erroring; skipping the piece
-		# loses that shape but must not take the whole HUD down mid-run.
-		for i in idx:
-			tris.push_back(poly[i])
-	_cache[kind] = tris
-	return tris
-
-
-# Draw `kind` centred on `centre`, `px` wide and tall, in `color`. One draw call per
-# triangle: the glyphs are a couple of dozen triangles each and gauge redraws are
-# change-gated by the caller, so this is nowhere near hot.
-static func draw_into(ci: CanvasItem, kind: Kind, centre: Vector2, px: float, color: Color) -> void:
-	var tris := triangles(kind)
-	if tris.is_empty() or px <= 0.0:
-		return
-	var scale := px / GRID
-	var origin := centre - Vector2(px, px) * 0.5
-	var tri := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
-	for i in range(0, tris.size() - 2, 3):
-		tri[0] = origin + tris[i] * scale
-		tri[1] = origin + tris[i + 1] * scale
-		tri[2] = origin + tris[i + 2] * scale
-		ci.draw_colored_polygon(tri, color)
-
-
-# The glyphs as closed outlines, already cut. Each entry is a separate filled piece.
-static func _outlines(kind: Kind) -> Array:
-	match kind:
-		Kind.HEALTH:
-			# A heart — the standard health glyph: two round lobes merged with a downward point,
-			# one solid silhouette with no interior gap, so it survives the smallest HUD size.
-			var lobes := Geometry2D.merge_polygons(_circle(Vector2(6.5, 8.0), 6.5), _circle(Vector2(17.5, 8.0), 6.5))
-			var point := PackedVector2Array([Vector2(0.4, 10.0), Vector2(23.6, 10.0), Vector2(12, 23.5)])
-			var heart: Array = []
-			for lobe: PackedVector2Array in lobes:
-				heart.append_array(Geometry2D.merge_polygons(lobe, point))
-			return heart
-		Kind.NOS:
-			# A pressure bottle: 1-module valve, 1-module shoulder chamfer, 3-module body.
-			# Left as one unbroken silhouette — a label band across the body was the first
-			# detail to muddy at gauge size, and the profile alone carries the read.
-			return [PackedVector2Array([
-				Vector2(10, 0), Vector2(14, 0), Vector2(14, 4), Vector2(16, 4),
-				Vector2(18, 8), Vector2(18, 24), Vector2(6, 24), Vector2(6, 8),
-				Vector2(8, 4), Vector2(10, 4),
-			])]
-		Kind.TEMP:
-			# A thermometer: a 1-module-wide stem standing on a round bulb, merged into one
-			# silhouette so it reads at gauge size without an interior detail.
-			var bulb := PackedVector2Array()
-			for i in _DISC_SEGMENTS:
-				var a := TAU * float(i) / float(_DISC_SEGMENTS)
-				bulb.push_back(Vector2(12, 18) + Vector2(cos(a), sin(a)) * 6.0)
-			var stem := PackedVector2Array([Vector2(9, 0), Vector2(15, 0), Vector2(15, 16), Vector2(9, 16)])
-			return Geometry2D.merge_polygons(stem, bulb)
-		_:
-			# Boost: a dial with the needle cut OUT as a 1-module slot swept to the upper
-			# right, where a boost gauge sits under load. Round on purpose — every pressure
-			# instrument in a car is.
-			return Geometry2D.clip_polygons(_disc(), _needle())
-
-
-# A closed circle of `r` around `c`, in GRID units.
-static func _circle(c: Vector2, r: float) -> PackedVector2Array:
-	var pts := PackedVector2Array()
-	for i in _DISC_SEGMENTS:
-		var a := TAU * float(i) / float(_DISC_SEGMENTS)
-		pts.push_back(c + Vector2(cos(a), sin(a)) * r)
-	return pts
-
-
-# The dial rim, as a closed polygon.
-static func _disc() -> PackedVector2Array:
-	var pts := PackedVector2Array()
-	var centre := Vector2(GRID, GRID) * 0.5
-	for i in _DISC_SEGMENTS:
-		var a := TAU * float(i) / float(_DISC_SEGMENTS)
-		pts.push_back(centre + Vector2(cos(a), sin(a)) * (GRID * 0.5))
-	return pts
-
-
-# The needle slot: a MODULE-wide bar on the 45° axis, running from the hub out PAST the
-# rim so the cut reaches all the way through and the needle reads as open to the edge.
-static func _needle() -> PackedVector2Array:
-	var centre := Vector2(GRID, GRID) * 0.5
-	var axis := Vector2(1, -1).normalized()          # up and to the right
-	var side := Vector2(axis.y, -axis.x) * (MODULE * 0.5)
-	var tip := centre + axis * (GRID * 0.58)         # past the rim, so the slot breaks it
-	return PackedVector2Array([centre - side, tip - side, tip + side, centre + side])
+static func texture(kind: Kind) -> Texture2D:
+	return TEXTURES[kind]

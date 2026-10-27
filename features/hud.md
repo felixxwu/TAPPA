@@ -73,18 +73,11 @@ The gauge node itself is
 `mouse_filter = IGNORE` / `focus_mode = FOCUS_NONE` — it's a pure readout, never a tap
 target.
 
-The icon glyphs (`GaugeIcons.Kind.HEALTH` / `BOOST` / `NOS`) are authored on a shared
-24-unit grid with a 4-unit module — every edge on a module multiple, every negative
-gap exactly one module, square corners, one flat fill, no outline — so the three read
-as one family: a heart (health — the standard health glyph: two round lobes and a point,
-one solid silhouette with no interior gap, so it survives being shrunk to gauge size), a dial with the needle cut out as a slot swept
-to the upper right (boost — the one round glyph, because every pressure instrument in
-a real car is), and a pressure bottle (NOS, left as one unbroken silhouette). Two are
-concave and the dial is a disc with a slot cut out of it, so `draw_colored_polygon`
-can't take them directly; `GaugeIcons.triangles(kind)` triangulates each glyph once
-via `Geometry2D.triangulate_polygon`/`clip_polygons` and caches the result in
-`GaugeIcons._cache`, and `GaugeIcons.draw_into` just scales and blits the cached
-triangles. Adding a fourth gauge means authoring its glyph to the same grid.
+The icon glyphs (`GaugeIcons.Kind.HEALTH` / `BOOST` / `NOS` / `TEMP`) are 8×8 1-bit
+pixel art in `icons/hud/` — a heart, a dial with its needle, a bottle and a thermometer —
+authored in `tools/build_pixel_icons.py`. `GaugeIcons.texture(kind)` returns one and
+`HudGauge._draw` blits it at `ICON_SCALE` (×2) through `PixelIcon.draw_snapped`, so it
+sits on whole pixels. See `ui-design-system.md` → *Pixel-art icons*.
 
 ## Damage gauge
 
@@ -111,7 +104,7 @@ has no `TempGauge`, so none of this runs there (`hud.gd → _update_temp`).
 ## Money counter (free roam only)
 
 Not part of `hud.gd`: `LootDirector.money_label` draws "$n" (`WorldSession.money`) in the top-left
-corner, added to the HUD layer (so the pause fade above hides it too) ([loot.md](loot.md)).
+corner on a black box (as is the pickup toast under the minimap, so both read against a bright sky), added to the HUD layer (so the pause fade above hides it too) ([loot.md](loot.md)).
 
 ## Boost gauge
 

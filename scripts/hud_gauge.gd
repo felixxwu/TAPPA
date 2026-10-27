@@ -11,7 +11,7 @@ extends Control
 const BAR_W := 16
 const BAR_TOP := 8
 const ICON_AREA := 24
-const ICON_PX := 12
+const ICON_SCALE := 2
 const NEEDLE_OVERHANG := 4
 const NEEDLE_H := 2
 # Jersey 10 only renders cleanly at UITheme.FONT_SIZE or a multiple of it, so the bar is
@@ -84,7 +84,7 @@ func _draw() -> void:
 	_draw_name(bar_x, bar_h)
 	draw_rect(Rect2(bar_x - NEEDLE_OVERHANG, level - NEEDLE_H * 0.5, BAR_W + NEEDLE_OVERHANG * 2, NEEDLE_H), UITheme.INK)
 	var icon_centre := Vector2(size.x * 0.5, size.y - ICON_AREA * 0.5)
-	GaugeIcons.draw_into(self, icon, icon_centre.floor(), ICON_PX, UITheme.INK)
+	PixelIcon.draw_snapped(self, GaugeIcons.texture(icon), icon_centre, ICON_SCALE, UITheme.INK)
 
 
 # The name reads bottom-to-top along the bar, centred on it. Rotated -90°, the text's

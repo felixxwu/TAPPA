@@ -152,7 +152,6 @@ const BREADCRUMB_BASELINE := [
 	"music_schedule.gd",
 	"obstacle_body.gd",
 	"pacenotes.gd",
-	"pause_icon.gd",
 	"perf_log.gd",
 	"perf_overlay.gd",
 	"platform.gd",

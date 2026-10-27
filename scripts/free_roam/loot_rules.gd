@@ -193,7 +193,7 @@ static func fielded(owned: Dictionary) -> Dictionary:
 
 # --- names ---------------------------------------------------------------------------------------
 
-# The card icon (icons/cards/<name>.svg) an item shows on a card list.
+# The card icon (icons/cards/<name>.png) an item shows on a card list.
 static func icon(item: Dictionary) -> String:
 	match String(item.get("kind", "")):
 		"car":

@@ -64,3 +64,18 @@ func test_a_travel_while_wrecked_does_nothing() -> void:
 	_pages.travelled = false
 	_pages._travel_to(0, false)
 	assert_false(_pages.travelled)
+
+
+# The map is sized to fill the page, so it must fit the body exactly rather than scroll.
+func test_the_map_fits_without_scrolling() -> void:
+	var rest: RestStops = autofree(RestStops.new())
+	rest.streamer = _pages.streamer
+	rest.car = add_child_autofree(VehicleBody3D.new())
+	_pages.rest_stops = rest
+	_pages.streamer.terrain.setup(_pages.streamer.settings, null)
+	_pages.show_map(func() -> void: pass)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var page: MenuPage = _pages._page
+	assert_true(page._scroll.custom_minimum_size.y >= page._body.get_combined_minimum_size().y,
+		"the map and its target line fit the body without a scrollbar")

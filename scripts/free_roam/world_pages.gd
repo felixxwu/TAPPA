@@ -62,7 +62,7 @@ func show_map(on_close: Callable, from_site := -1) -> void:
 	_canvas.pages = self
 	# As big as the frame allows, leaving room for the title, the target line and the actions.
 	var frame := UITheme.layout_frame_size(self, Vector2(480.0, 360.0))
-	var side := maxf(minf(frame.x * 0.9, frame.y - UITheme.px(170)), UITheme.px(200))
+	var side := maxf(minf(frame.x * 0.9, frame.y - UITheme.px(170) - 2 * UITheme.MARGIN), UITheme.px(200))
 	_canvas.custom_minimum_size = Vector2(side, side)
 	_page.body().add_child(_canvas)
 	_target_label = Label.new()

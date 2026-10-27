@@ -55,6 +55,7 @@ func _ready() -> void:
 	_toast.anchor_bottom = _toast.anchor_top
 	_toast.offset_top = Config.data.minimap_top_px
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(6)))
 	_toast.visible = false
 	layer.add_child(_toast)
 	_sync_dropped_node()
@@ -62,6 +63,7 @@ func _ready() -> void:
 	money_label.name = "MoneyLabel"
 	money_label.position = Vector2(UITheme.px(12), UITheme.px(8))
 	money_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	money_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(6)))
 	# On the HUD's layer, so it hides under paused pages with the gauges (features/hud.md).
 	var hud := get_parent().get_node_or_null("HUD")
 	(hud if hud != null else layer).add_child(money_label)

@@ -210,7 +210,7 @@ func _build() -> void:
 	layer = 5  # above HUD (2) and mobile controls (3)
 
 	# Top-right Pause button, always available during gameplay. Square, with a proper
-	# drawn pause glyph (PauseIcon) instead of a cramped "| |" string.
+	# pixel-art pause glyph.
 	_pause_button = Button.new()
 	_pause_button.focus_mode = Control.FOCUS_NONE
 	_pause_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -220,9 +220,10 @@ func _build() -> void:
 	_pause_button.offset_bottom = 48
 	_pause_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_pause_button.pressed.connect(open)
-	var pause_icon := PauseIcon.new()
+	var pause_icon := PixelIcon.new()
+	pause_icon.texture = preload("res://icons/hud/pause.png")
+	pause_icon.tint = UITheme.INK
 	pause_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-	pause_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for side in ["left", "top"]:
 		pause_icon.set("offset_" + side, 11)
 	for side in ["right", "bottom"]:

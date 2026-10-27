@@ -3,8 +3,8 @@
 **Source:** `scripts/card_carousel.gd` (`CardCarousel`, the widget), `scripts/car_card_preview.gd` /
 `scripts/car_prop.gd` / `scripts/car_preview_cache.gd` (the car cards' 3D preview), `scripts/card_ui.gd`
 (`CardUI` — the card-building API every menu uses: `card_page`, `card_list`, `text_card`,
-`header_slot`, and the `titles` / `index_of` / `pick` readouts). Card icons are the white-outline
-SVGs in `icons/cards/`.
+`header_slot`, and the `titles` / `index_of` / `pick` readouts). Card icons are the 1-bit
+pixel-art PNGs in `icons/cards/` (`PixelIcon`).
 
 **Tests:** `tests/headless/test_card_carousel.gd` (the widget, and `CardUI.card_list`'s entry →
 card → action wiring); each menu's own nav test covers its page (`test_title_screen`,
@@ -66,10 +66,9 @@ fully opaque and every other card dimmed to
 `Config.data.card_carousel_unselected_alpha`. Each card is a `PanelContainer` split into:
 
 - **`card.visual`** (top half) — an empty `Control` the caller populates: a
-  `CarCardPreview` (car choice), or a white-outline SVG icon from `icons/cards/`
-  (`hub_shell.gd::_card_icon`, named by boost/skill id or a fixed name like
-  "region_locked" — see `features/ui-design-system.md` → *Card icons* for the set's
-  style rules).
+  `CarCardPreview` (car choice), or a pixel-art icon from `icons/cards/`
+  (`CardUI.card_icon`, named by part id or a fixed name like "car" — see
+  `features/ui-design-system.md` → *Pixel-art icons* for the rules).
 - **`card.info`** (bottom half) — a `VBoxContainer` the caller fills with whatever the
   screen wants to say: name, price, locked/owned state.
 

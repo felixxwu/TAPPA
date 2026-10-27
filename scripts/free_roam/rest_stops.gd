@@ -5,7 +5,7 @@ extends Node
 # The rest stops as gameplay: Dark Souls bonfires (todo/2026-10-19-free-roam-pivot.md decision 9).
 #   * Driving past a rest stop — onto its pad or just along the road beside it, at any speed —
 #     LIGHTS it, makes it the respawn point and fully HEALS the car (`healed`).
-#   * Pressing menu_select (Enter / gamepad A) there, nearly stopped (A is also the handbrake), opens the rest-stop
+#   * Pressing menu_select (Enter / gamepad A) there, at any speed, opens the rest-stop
 #     page (`opened`); the minimap shows the prompt (`prompt_site`), which a touch player taps.
 #   * When the car gives up (DamageModel.gave_up: 0 HP), the engine cuts out (EngineSim.killed: silent,
 #     no drive) and the car rolls on with no controls; wreck_page_delay_s later `wrecked` opens the wreck page. its Respawn puts the car back at the last lit rest stop, fully repaired with a cold engine (`respawned`, carrying where the wreck was).
@@ -134,9 +134,9 @@ func prompt_site() -> int:
 	return _on_site
 
 
-# Whether the rest-stop page can be opened now: at a stop, nearly stopped, and the world handed over.
+# Whether the rest-stop page can be opened now: at a stop and the world handed over.
 func can_open() -> bool:
-	return input_enabled and prompt_site() >= 0 and car.linear_velocity.length() < Config.data.rest_stop_open_speed_mps
+	return input_enabled and prompt_site() >= 0
 
 
 func _unhandled_input(event: InputEvent) -> void:

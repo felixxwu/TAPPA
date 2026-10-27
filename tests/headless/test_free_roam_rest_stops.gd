@@ -171,7 +171,7 @@ func test_menu_select_while_stopped_at_a_rest_stop_opens_the_page() -> void:
 	_rest.set_physics_process(true)
 
 
-func test_menu_select_while_moving_through_a_rest_stop_does_not_open_the_page_until_slow() -> void:
+func test_menu_select_while_moving_through_a_rest_stop_opens_the_page() -> void:
 	var site := _a_rest_stop()
 	await _park_on(site)
 	_rest.set_physics_process(false)
@@ -179,9 +179,6 @@ func test_menu_select_while_moving_through_a_rest_stop_does_not_open_the_page_un
 	_car.linear_velocity = -_car.global_transform.basis.z * 30.0
 	watch_signals(_rest)
 	assert_eq(_rest.prompt_site(), site)
-	_rest._unhandled_input(_press("menu_select"))
-	assert_signal_not_emitted(_rest, "opened")
-	_car.linear_velocity = Vector3.ZERO
 	_rest._unhandled_input(_press("menu_select"))
 	assert_signal_emitted_with_parameters(_rest, "opened", [site])
 	_rest.set_physics_process(true)
@@ -428,16 +425,11 @@ func test_lighting_a_checkpoint_shows_the_banner_and_the_director_unlocks_its_ri
 
 
 
-# Enter / A is also the handbrake, so the page opens only when the car is nearly stopped at a stop,
-# and not at all before the host has handed the world over.
-func test_the_page_opens_only_when_nearly_stopped_and_after_hand_over() -> void:
+# The page does not open before the host has handed the world over.
+func test_the_page_opens_only_after_hand_over() -> void:
 	await _park_on(_a_rest_stop())
 	_rest._on_site = _a_rest_stop()
 	assert_true(_rest.can_open(), "stopped at a stop")
-	_car.linear_velocity = Vector3(0.0, 0.0, -(Config.data.rest_stop_open_speed_mps + 5.0))
-	assert_false(_rest.can_open(), "a handbrake turn through a stop does not open it")
-	assert_false(_rest.open_here())
-	_car.linear_velocity = Vector3.ZERO
 	_rest.input_enabled = false
 	assert_false(_rest.open_here(), "nothing opens under the boot warm-up")
 	_rest.input_enabled = true
