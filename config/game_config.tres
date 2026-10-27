@@ -188,6 +188,7 @@ exhaust_offsets = {
 "acty": [Vector3(-0.3, -0.04, 1.5)],
 "beast": [Vector4(1, -0.28, 1.05, 30.0), Vector4(-1, -0.28, 1.05, -30.0)],
 "charger": [Vector3(0.65, -0.14, 2.71), Vector3(-0.65, -0.14, 2.71)],
+"f150": [Vector3(0.63, 0.05, 2.72)],
 "focus": [Vector3(-0.5, -0.25, 2.05)],
 "mx5": [Vector3(0.41, -0.23, 2.0), Vector3(-0.41, -0.23, 2.0)],
 "porsche911": [Vector3(-0.4, -0.17, 2.2), Vector3(-0.5, -0.17, 2.2)],
@@ -203,6 +204,10 @@ exhaust_flame_width_m = 0.16
 exhaust_flame_wobble = 0.2
 exhaust_flame_core_fraction = 0.45
 lamp_offsets = {
+"f150": {
+"head": [Vector3(-0.74, 0.42, -2.09), Vector3(0.74, 0.42, -2.09)],
+"tail": [Vector3(-0.9, 0.43, 2.59), Vector3(0.9, 0.43, 2.59)]
+},
 "mx5": {
 "head": [Vector3(-0.5, 0.16, -1.62), Vector3(0.5, 0.16, -1.62)],
 "tail": [Vector3(-0.52, 0.22, 1.82), Vector3(0.52, 0.22, 1.82)]

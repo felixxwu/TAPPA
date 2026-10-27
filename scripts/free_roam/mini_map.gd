@@ -130,6 +130,8 @@ func _ready() -> void:
 # Size and place the frame: top-centre, clear of the HUD readouts (top-left) and the pause
 # button (top-right), and above the touch controls' reach (the top fifth of the screen).
 func _layout() -> void:
+	if not is_inside_tree():
+		return  # a new world reloads the scene; the old map leaves the tree before it is freed
 	var cfg: GameConfig = Config.data
 	var vs := get_viewport().get_visible_rect().size
 	var h := vs.y * cfg.minimap_height_frac

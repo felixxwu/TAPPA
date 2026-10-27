@@ -347,8 +347,12 @@ to the boxes. Every car in the shipped roster now carries a model: the **MX-5**
 (`blender/thebeast/mrbeast.glb`, node `Car/TheBeastBody`), the **911 Turbo**
 (`blender/911/911.glb`, node `Car/Porsche911Body`), the **Jaguar XJS**
 (`blender/xjs/xjs.glb`, node `Car/XjsBody`) and the **Viper RT/10**
-(`blender/viper/viper.glb`, node `Car/ViperBody`). The MX-5 body is a
-photogrammetry scan decimated to ~500 tris, with its wheel arches cut where the
+(`blender/viper/viper.glb`, node `Car/ViperBody`), and the **F-150** (`blender/f150/f150.glb`, node
+`Car/F150Body`) — a body modelled by hand over a photogrammetry scan and painted from a video of the
+real paint (`tools/car_scan/texture.py`, see [car-scanning.md](car-scanning.md)); its `track`,
+`wheelbase` and `wheel_radius` were measured off the scan's wheels and its arches were cut there, so they
+must stay matched. It rides on its own scanned `wheel_model` (see Scanned wheel models below). The MX-5 body is a
+photogrammetry scan (made with `tools/car_scan/`, see [car-scanning.md](car-scanning.md)) decimated to ~500 tris, with its wheel arches cut where the
 scan's wheels were — so its spec `wheelbase` (2.25) must stay matched to the arches
 or the wheels clip the body. All are
 instanced in `car.tscn`, hidden by default. The procedural-box path still exists
@@ -363,12 +367,25 @@ vertical offset is tuned per model so it seats on the wheels. `car.gd`'s `apply_
 `model_node`, and assigns the `ps1_models_lit.gdshader` material to its mesh —
 `albedo_texture` = the spec's `model_texture`, `albedo_color` white — so the
 painted detail renders through the same quantize/dither/fog pipeline as the rest
-of the scene. The four wheels stay procedural; the collision box is unchanged
+of the scene. The wheels stay procedural (a cylinder), unless the spec names a `wheel_model` (below); the collision box is unchanged
 (and invisible). Models are used at 1:1 scale.
+
+## Scanned wheel models
+
+A spec with a `wheel_model` (a glb: axle along +X, outer face toward +X, centred on the origin) shows that model
+on every wheel instead of the cylinder: `car.gd` → `_apply_wheel_model`, called per wheel from `_relocate_wheels`,
+instances it as `Visual/WheelModel`, hides `Visual/Tire`, scales it uniformly to the spec's `wheel_radius` (by the
+model's own half-height) and turns right-hand wheels round, since every wheel's `Visual` faces local +X to the car's
+left. It wears the glb's own texture through the same PS1 material as the bodies. A spec without the field gets the
+cylinder back, and the model is dropped. The scale is uniform, so a model car's visual tyre width is the scan's,
+whatever `wheel_width_front`/`_rear` say (they still set grip). A `wheel_model` that won't load falls back to the
+cylinder with a warning. Spin and steer need nothing: `drivetrain.gd` → `_update_visuals` already
+turns `Visual`. Built from the car's scan by `tools/car_scan/wheels.py` ([car-scanning.md](car-scanning.md)).
+**Tests:** `tests/headless/test_wheel_models.gd`.
 
 ## Per-car wheel-cap textures
 
-The four wheels are procedural cylinders; the flat cap faces (the disc seen from
+Cars without a `wheel_model` have procedural cylinder wheels; the flat cap faces (the disc seen from
 the side) take a per-car texture via `ps1_wheel_tire.gdshader`. `apply_car()`
 assigns each tire a `ShaderMaterial` from `car.gd:_wheel_material()`, keyed by the
 spec's optional `wheel_texture`: the MX-5 uses `blender/mx5/wheel.png`, the Focus

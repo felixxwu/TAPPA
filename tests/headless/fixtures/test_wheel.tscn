@@ -1,0 +1,12 @@
+[gd_scene format=3]
+
+[sub_resource type="CylinderMesh" id="wheel_mesh"]
+top_radius = 0.5
+bottom_radius = 0.5
+height = 0.3
+
+[node name="TestWheel" type="Node3D"]
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("wheel_mesh")

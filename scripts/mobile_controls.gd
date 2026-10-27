@@ -399,6 +399,8 @@ func _update_debug_label() -> void:
 # Compute hit rects (as fractions of the viewport so it scales across screens) for
 # the active scheme, then position the visual nodes to match.
 func _layout() -> void:
+	if not is_inside_tree():
+		return  # a new world reloads the scene; the old controls leave the tree before they are freed
 	var size := get_viewport().get_visible_rect().size
 	_compute_rects(size)
 	var off := UITheme.card_shadow_offset()

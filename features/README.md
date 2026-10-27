@@ -108,6 +108,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [mobile-controls.md](mobile-controls.md) | On-screen touch buttons: steer/throttle/brake (phones/web) |
 | [rendering.md](rendering.md) | PS1 shaders, dither post-process, materials, fog |
 | [asset-pipeline.md](asset-pipeline.md) | Source art → PCK: texture import settings, the live/orphan car-texture trap, the 1024×512 sky-panorama house format, export exclude filters, PCK sizing |
+| [car-scanning.md](car-scanning.md) | `tools/car_scan/` — walk-around video of a car → Apple Object Capture photogrammetry → low-poly textured body glb |
 | [debug-tools.md](debug-tools.md) | Force-arrow visualization overlay |
 | [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven long stage at 50 km/h, perf overlay + end-of-run stats breakdown |
 | [controls.md](controls.md) | Full input map / key bindings |

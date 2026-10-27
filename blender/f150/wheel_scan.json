@@ -1,0 +1,5 @@
+{
+ "spokes": 5,
+ "include": ["fl", "fr", "rl", "rr"],
+ "nudges": {}
+}

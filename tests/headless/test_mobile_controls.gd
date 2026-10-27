@@ -929,3 +929,14 @@ func test_real_mouse_still_drives_the_controls() -> void:
 		"a real mouse press still works (desktop testing with mobile_controls_force)")
 	_controls._input(_mouse(Vector2(550, 550), false, 0))
 	assert_false(_controls._pointers.has(-1), "and its release still clears the pointer")
+
+
+func test_a_window_resize_while_out_of_the_tree_is_ignored() -> void:
+	# A new world reloads the scene: the old controls leave the tree a moment before they are freed,
+	# and the window's scaling can resize the viewport in that gap.
+	var parent: Node = _controls.get_parent()
+	var vp: Viewport = _controls.get_viewport()
+	parent.remove_child(_controls)
+	vp.size_changed.emit()
+	assert_null(_controls.get_viewport(), "the controls are out of the tree")
+	parent.add_child(_controls)

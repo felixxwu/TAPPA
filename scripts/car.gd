@@ -1695,6 +1695,7 @@ func _relocate_wheels(spec: Dictionary) -> void:
 			# nothing else (radius/width above stay the car's own; see
 			# features/wheel-customization.md).
 			tire.set_surface_override_material(0, _wheel_material(_wheel_texture_for(spec)))
+		_apply_wheel_model(wheel, String(spec.get("wheel_model", "")), radius)
 
 	# VehicleWheel3D latches its suspension connection point when it enters the
 	# tree and repaints the node transform every physics step, so the position
@@ -2294,6 +2295,60 @@ func reskin_wheels(tex_path: String) -> void:
 		var tire := wheel.get_node_or_null("Visual/Tire") as MeshInstance3D
 		if tire != null:
 			tire.set_surface_override_material(0, mat)
+
+
+# A car whose spec names a wheel_model (a glb with its axle along +X and its outer face toward +X, see
+# features/car-scanning.md) shows that model on the wheel instead of the textured cylinder, sized to the spec's
+# radius. Called per wheel from _relocate_wheels; a car without one gets the cylinder back.
+func _apply_wheel_model(wheel: VehicleWheel3D, path: String, radius: float) -> void:
+	var visual := wheel.get_node_or_null("Visual") as Node3D
+	if visual == null:
+		return
+	var tire := visual.get_node_or_null("Tire") as Node3D
+	var model := visual.get_node_or_null("WheelModel") as Node3D
+	if model != null and String(model.get_meta("path", "")) != path:
+		visual.remove_child(model)
+		model.queue_free()  # freeing it outright mid-frame upsets the renderer, which still holds its materials
+		model = null
+	var scene: PackedScene = null
+	if not path.is_empty():
+		scene = load(path) as PackedScene if ResourceLoader.exists(path) else null
+		if scene == null:
+			push_warning("wheel_model %s doesn't load; showing the plain tyre instead" % path)
+	if tire != null:
+		tire.visible = scene == null
+	if scene == null:
+		return
+	if model == null:
+		model = scene.instantiate() as Node3D
+		model.name = "WheelModel"
+		model.set_meta("path", path)
+		model.set_meta("own_radius", _model_half_height(model))
+		visual.add_child(model)
+		_apply_model_material(model, _model_albedo(model))
+	# The Visual node faces every wheel's local +X towards the car's left, so right-hand wheels turn the model round.
+	var turn := PI if wheel.position.x > 0.0 else 0.0
+	model.transform = Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * radius / float(model.get_meta("own_radius"))), Vector3.ZERO)
+
+
+# Half the height of a model's meshes in its own space: the wheel's radius as authored.
+func _model_half_height(model: Node3D) -> float:
+	var lo := INF
+	var hi := -INF
+	for mi in model.find_children("*", "MeshInstance3D", true):
+		var box: AABB = (mi as MeshInstance3D).transform * (mi as MeshInstance3D).get_aabb()
+		lo = minf(lo, box.position.y)
+		hi = maxf(hi, box.end.y)
+	return maxf((hi - lo) * 0.5, 0.01)
+
+
+# The colour texture a glb's own material carries, so the PS1 material can wear it.
+func _model_albedo(model: Node3D) -> Texture2D:
+	for mi in model.find_children("*", "MeshInstance3D", true):
+		var mesh := (mi as MeshInstance3D).mesh
+		if mesh != null and mesh.get_surface_count() > 0 and mesh.surface_get_material(0) is BaseMaterial3D:
+			return (mesh.surface_get_material(0) as BaseMaterial3D).albedo_texture
+	return null
 
 
 # A ShaderMaterial for the tire caps using `tex_path` (a wheel.png), or a blank dark

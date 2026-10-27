@@ -136,6 +136,15 @@ const ENGINES: Array[Dictionary] = [
 		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 7, "shift_time": 0.22,  # Getrag MT82 6-speed manual
 	},
 	{
+		# Ford 300 (4.9 L) OHV straight-six, 1986 F-150: ~120 hp @ 3400, 339 N·m (250 lb-ft) @ 2000.
+		# The truck plodder: all low-down torque, a heavy crank and a low redline.
+		"id": "ford_49_i6", "name": "4.9 straight-six", "layout": "i6", "displacement_l": 4.9, "mass": 250.0,
+		"redline_rpm": 4200.0, "peak_torque": 339.0, "peak_torque_rpm": 2000.0, "engine_inertia": 0.40,
+		"engine_friction_base": 35.0,  # i6 4.9L
+		"low_octave_mix": 0.5, "volume_db": 2.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
+		"gear_ratios": [6.32, 3.09, 1.69, 1.00], "final_drive": 5, "shift_time": 0.35,  # Borg-Warner T-18 4-speed manual
+	},
+	{
 		"id": "mopar_440_v8", "name": "440 Magnum V8", "layout": "v8", "displacement_l": 7.2, "mass": 290.0,
 		"redline_rpm": 5500.0, "peak_torque": 600.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.56,
 		"engine_friction_base": 60.0,  # V8 7.2L (big-block, more than the 5.0)

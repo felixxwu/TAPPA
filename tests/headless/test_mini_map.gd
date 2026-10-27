@@ -246,3 +246,14 @@ func test_a_tap_on_the_prompt_opens_the_rest_stop_not_the_map() -> void:
 	mm.prompt_label.gui_input.emit(ev)
 	assert_eq(rs.opens, 1)
 	assert_signal_not_emitted(mm, "open_requested")
+
+
+func test_a_window_resize_while_it_is_out_of_the_tree_is_ignored() -> void:
+	# A new world reloads the scene: the old map leaves the tree a moment before it is freed,
+	# and the window's scaling can resize the viewport in that gap.
+	var mm := _map()
+	var vp := mm.get_viewport()
+	remove_child(mm)
+	vp.size_changed.emit()
+	assert_null(mm.get_viewport(), "the map is out of the tree")
+	add_child(mm)

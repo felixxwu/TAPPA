@@ -36,6 +36,11 @@ off the image by eye, then ray-cast that point onto the body for its depth, and 
 from the glb's Blender axes into car-local axes through the body node's transform in
 `car.tscn` (`Mx5Body`: glb +X → car −Z, glb up → car +Y, offset −0.5 m in Y).
 
+The **F-150**'s were found the same way, but off its levelled photogrammetry scan (`f150_scan.blend`, see
+[car-scanning.md](car-scanning.md)): orthographic front/back views at 200 px/m with a 10 cm grid, a ray cast for
+depth, then scan axes (front +Y, ground at 0) to car-local (x as-is, y = z − 0.565 for the body's ride height,
+z = −y). Its one exhaust pipe in `exhaust_offsets` was read off the same scan.
+
 ## The flare shader
 
 `car_lamp.gdshader` is unshaded and **additive** (light adds to what is behind it) with no

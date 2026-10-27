@@ -86,6 +86,8 @@ const FWD := 2
 # greenhouse along the car's length (+ = rearward). track and wheelbase set the
 # wheel positions; wheel_radius sizes the tyre cylinders and wheel_width_front /
 # wheel_width_rear set each axle's tyre width (visual AND grip via load sensitivity).
+# Optional wheel_model names a scanned wheel glb shown in place of the tyre cylinders, sized to
+# wheel_radius (car.gd _apply_wheel_model; features/rendering.md → Scanned wheel models).
 #
 # suspension_travel (m) is the spring's working length — it also doubles as the
 # wheel raycast / rest length (GameConfig.suspension_travel), so a shorter travel
@@ -149,7 +151,7 @@ const CARS: Array[Dictionary] = [
 		# Durability ~3/10: heavy solid GT shell, but a notorious money-pit — the V12 cooks
 		# head gaskets, the wiring bakes and fails, and everything is complex, cramped and
 		# costly to fix. Reliability/repairability drag it down despite the mass.
-		"id": "xjs", "ring": 0, "price": 3500, "max_hp": 600.0,
+		"id": "xjs", "ring": 1, "price": 5000, "max_hp": 600.0,
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75, # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95, # period touring / GT tyres
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD GT)
@@ -305,6 +307,30 @@ const CARS: Array[Dictionary] = [
 		"model_node": "TheBeastBody",
 		"model_texture": "res://blender/thebeast/mrbeast_texture.png",
 		"wheel_texture": "res://blender/thebeast/wheel.png",
+	},
+	{
+		"name": "Fjord F-15", # parody of the 1986 Ford F-150. Regular cab short bed: ~1800 kg, 4.9 straight-six, RWD pickup
+		# Durability ~9/10: an unkillable low-stressed straight-six in a body-on-frame work truck,
+		# parts everywhere and fixable with a hammer — slow, but it shrugs off punishment.
+		"id": "f150", "ring": 0, "price": 3500, "max_hp": 1700.0,
+		"mass": 1800.0, "engine": "ford_49_i6", "weight_front": 0.57, "engine_pos": 0.85, # long-nosed truck, empty bed: nose-heavy
+		"tire_compound": 0.85, # all-terrain light-truck tyres
+		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD)
+		"brake_torque": 900.0, # heavy truck; authored so the worst axle sits ~1.5x its static grip budget
+		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0, # tall brick of a cab → real aero drag
+		"bonnet_cam_offset": Vector3(0.0, 0.4, 0.0), # local-space nudge for the hood cam; tweak per body
+		# Track, wheelbase and tyre size measured off the photogrammetry scan's wheels (tools/car_scan/wheels.py,
+		# fits.json); the body's arches were cut there, so they must stay matched. Width excludes the mirrors.
+		"body": Vector3(1.90, 0.70, 5.00), "cabin": Vector3(1.60, 0.60, 1.60),
+		"cabin_z": 0.30, "track": 1.58, "wheelbase": 2.93,
+		"wheel_radius": 0.361, "wheel_width_front": 0.268, "wheel_width_rear": 0.268, # P235/75R15 square, as scanned
+		"suspension_travel": 0.42, "suspension_stiffness": 11.0, # soft leaf-sprung work truck
+		# Renders blender/f150/f150.glb (Car/F150Body), a hand-modelled body painted from the
+		# scan's paint video, on its own scanned wheels (features/car-scanning.md).
+		"use_model": true,
+		"model_node": "F150Body",
+		"model_texture": "res://blender/f150/f150_texture.png",
+		"wheel_model": "res://blender/f150/wheel.glb",
 	},
 ]
 
