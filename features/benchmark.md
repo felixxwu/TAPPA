@@ -28,16 +28,15 @@ feature's frame cost can be isolated by running with it on and off:
 
 | Toggle | Drives |
 |--------|--------|
-| Trees & bushes | `cfg.vegetation_enabled` — skips the foliage scatter + fields (and the bush hit volume) entirely in `world._build_foliage` |
+| Trees & bushes | `cfg.vegetation_enabled` — skips the foliage planting entirely (`TerrainStreamer`) |
 | Spectators | `cfg.spectators_enabled` |
-| Corner barriers | `cfg.barriers_enabled` — skips `world._build_barriers` (the armco / jersey runs on the sharp corners) |
-| Distant terrain | `cfg.distant_terrain_enabled` (the far horizon backdrop) |
+| Corner barriers | `cfg.barriers_enabled` — skips the roadside barriers (`TerrainStreamer`) |
 | Road markings | `cfg.road_markings_enabled` |
 | Tire marks & dust FX | `cfg.tire_marks_enabled` + `cfg.wheel_particles_enabled` + `cfg.engine_smoke_enabled` |
 | Full render distance | off = `cfg.tree_render_distance_m` and the phone value `tree_render_distance_web_touch_m` halved (foliage draw distance) |
 | Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 **and** `cfg.target_fps_web` = 0 (all three, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
 
-**Distant terrain** does nothing in free roam (it has none), so that row currently measures nothing. All default ON (the full game as shipped). Toggle states are session-scoped
+All default ON (the full game as shipped). Toggle states are session-scoped
 (not saved). The feature master switches added for this
 (`vegetation_enabled`, `barriers_enabled` on `GameConfig`) default
 true and are untouched by normal play.
@@ -217,7 +216,7 @@ back → build/bench-results/*.json → analyse → edit → repeat
 - **Isolating a system.** Two attribution paths feed the same collector: a single
   run already separates CPU (per-script + physics ms) from GPU (draws/prims/render
   gpu); a **toggle sweep** (baseline, then one Settings→Benchmark toggle off at a
-  time — trees, distant terrain, FX, render distance) posts one labelled
+  time — trees, FX, render distance) posts one labelled
   report each, and the frame-cost deltas pin terrain vs objects vs FX.
 
 ## Tests

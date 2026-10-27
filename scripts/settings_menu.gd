@@ -16,8 +16,7 @@ extends VBoxContainer
 #     it next run. Defaults to the platform's cap (web-touch 30, else 60).
 #   • Camera — pick the camera angle (chase / bonnet), persisted under
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
-#     CameraManager) can switch immediately; the HQ has no camera so it just saves
-#     and the choice is applied on the next run.
+#     CameraManager) can switch immediately.
 #   • Gearbox — the transmission is always automatic now; there is no manual option
 #     and no settings row for it. `SettingsMenu.gearbox_auto()` always returns true;
 #     car.gd mirrors it onto the live engine every tick.
@@ -39,7 +38,7 @@ extends VBoxContainer
 # Navigation is internal: show_list()/show_camera()/show_schemes() swap which page
 # is visible. `page_changed(is_root)` lets the host adapt its single bottom button
 # — on a sub-page it means "< Back" (to the list); on the list it means the host's
-# own action (exit Settings, or Start in the pre-rally gate). Choices are stored
+# own action (exit Settings). Choices are stored
 # via Save.set_setting. The host wraps this whole VBox in a (touch) ScrollContainer;
 # only the visible page contributes height, so the long schemes page scrolls while
 # the short list/camera pages don't.
@@ -413,8 +412,7 @@ func select_camera(mode: int) -> void:
 
 # Persist the chosen scheme, refresh the highlight, and tell any live scene to switch
 # (the run's MobileControls wires `scheme_changed`, so the on-screen controls update
-# the instant you pick a scheme rather than only on the next run). The HQ has no live
-# controls, so it just saves and the choice is applied when the next run boots.
+# the instant you pick a scheme rather than only on the next run).
 func select_scheme(id: int) -> void:
 	Save.set_setting(MobileControls.SETTING_KEY, id)
 	_refresh_scheme_selection()
@@ -423,7 +421,7 @@ func select_scheme(id: int) -> void:
 
 # Persist the chosen frame cap and apply it live. Unlike camera/scheme, the frame
 # cap is a global engine property, so it's applied by writing Engine.max_fps
-# directly (both hosts, HQ and pause, take effect immediately) rather than via a
+# directly (takes effect immediately) rather than via a
 # live-scene signal. world._ready() re-derives it from the same setting next run.
 # Skipped under --headless (no rendering to pace / test runner must stay uncapped).
 func select_fps(value: int) -> void:

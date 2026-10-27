@@ -74,8 +74,7 @@ fully opaque and every other card dimmed to
 
 `CardCarousel.add_card(disabled: bool) -> Card` returns the `{root, visual, info,
 disabled}` handle. A `disabled` card is **shown, dimmed, but never confirmable** — the
-same "locked rows stay visible, just unfocusable" convention `hub_shell.gd` already used
-for locked regions/skills, now expressed as a card rather than a `disabled` `Button` with
+"locked rows stay visible, just unfocusable" convention, expressed as a card rather than a `disabled` `Button` with
 `menu_nav_skip` (a plain `Control` card has no such meta to set; the disabled flag lives
 on the `Card` struct instead and `_confirm_selected()` reads it directly).
 
@@ -130,9 +129,7 @@ duration — it's owned by the flash tween, not the usual selected/unselected di
 
 `skip_confirm_flash()` is the test/host seam: jumps straight to `confirmed` firing, for a
 test that cares about the confirm wiring rather than the flash animation itself (see
-`test_card_carousel.gd`'s confirm-flash tests, and `test_hub_shell.gd`'s
-`_touch_tap_selected_card`, which uses it to keep its menu-walk tests from needing to wait
-out the real flash duration).
+`test_card_carousel.gd`'s confirm-flash tests).
 
 ## One tap is delivered TWICE, and must still count as one tap
 
@@ -224,16 +221,15 @@ flash above).
 `add_card` starts each card at `modulate.a == 0` and defers (`call_deferred`) the start of
 a per-card `Card.entrance` progress tween (0 -> 1, over `card_carousel_entrance_duration_s`)
 until the current call stack finishes — so a caller that restores a remembered selection
-with `select()` right after its `add_card` loop (hub_shell.gd's `_build_car`/`_build_cars`
-— see below) gets to do so before any fade actually starts. `_animate_entrance` then delays
+with `select()` right after its `add_card` loop (`CardUI.card_list`'s `selected`) gets to do so before any fade actually starts. `_animate_entrance` then delays
 each card's tween by `abs(index - _selected) * card_carousel_entrance_stagger_s`: the
 SELECTED card starts fading immediately and the rest fan outward from it in both
 directions, reading as the strip building itself out from wherever the player's eye
 already is rather than always left to right. (When `_selected` is 0 — the common case,
-a fresh MAIN/REGION/SHOP/SKILLS page — this degenerates to the old left-to-right order.)
-This is why the fix for "reopening the CARS page miles down a long list took seconds to
-show anything" lives here rather than in hub_shell.gd: hub_shell only had to remember
-which car to reselect, and the stagger fanning out from `_selected` made that selection
+a fresh page — this degenerates to the old left-to-right order.)
+This is why the fix for "reopening a page miles down a long list took seconds to
+show anything" lives here rather than in each page: a page only has to remember
+which card to reselect, and the stagger fanning out from `_selected` made that selection
 visible immediately regardless of its position in the list. `_layout()` multiplies
 `entrance` into the alpha it already computes for selection dimming (`card.entrance *
 (1.0 if selected else unselected_alpha)`), so a card fades in to whatever its STEADY-STATE
@@ -275,7 +271,7 @@ centred card — `UITheme.reward_card_box`'s existing precedent for a black card
 pop against another black panel).
 
 That border is GONE now (removed on request, from both states) because the fix that
-actually holds arrived one layer up: the five carousel pages sit on a TRANSPARENT
+actually holds arrived one layer up: the carousel pages sit on a TRANSPARENT
 `MenuPage` body box (see "the gaps show the live 3D showcase" below), so a card's own
 opaque black fill already reads as a distinct shape against the busier background behind
 it — an explicit border on top of that was visual clutter, not a second safety net.
@@ -380,8 +376,7 @@ strip's own bounds, never mid-render.
 
 ### The fit has to be re-run on every window resize, not just once at open
 
-`CardUI.build_carousel` (`card_ui.gd`) — the shared home for the sizing above, now that
-`hub_shell.gd`'s and `run_pick_panel.gd`'s private copies both point at it — used to call
+`CardUI.build_carousel` (`card_ui.gd`) — the shared home for the sizing above — used to call
 `fit_to_available_width` exactly once, at the moment the carousel page opened. A player who
 resized or maximized the window (or rotated a device) while a carousel page stayed open kept
 whichever width the window happened to be at open time forever: reported as "the card list
@@ -397,7 +392,7 @@ both leak one per page opened AND keep firing into a freed `page`/`carousel` pai
 The hookup uses a **lambda**, not `Callable(CardUI, "_refit_carousel").bind(page, carousel)`:
 Godot's `Signal.connect`/`is_connected` treat two bound `Callable`s to the same static method
 as equal regardless of their bound arguments, so binding gave "Signal already connected" the
-moment a SECOND carousel page was ever opened (every `hub_shell.gd` page change hit it). Each
+moment a SECOND carousel page was ever opened. Each
 lambda closure is its own distinct object, which sidesteps the comparison entirely.
 
 ## A card must never grow past card_width, or it overlaps its neighbour

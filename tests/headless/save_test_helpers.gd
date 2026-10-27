@@ -32,7 +32,7 @@ extends RefCounted
 #       SaveTestHelpers.cleanup(TEST_PATH)            # delete + restore real path
 
 # Sibling files the SaveManager can write alongside the main profile.
-const _SUFFIXES := ["", ".bak", ".tmp", ".conflict.bak"]
+const _SUFFIXES := ["", ".bak", ".tmp", ".conflict.bak", ".newer.bak"]
 
 
 # Point the Save autoload at `path`, enable saving, and load a fresh default

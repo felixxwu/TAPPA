@@ -953,19 +953,6 @@ func test_apply_owned_rebuilds_the_voice_for_a_swapped_engine() -> void:
 		"the voice was rebuilt from the post-swap config")
 
 
-# fit_engine rebuilds the voice UNCONDITIONALLY, including for an empty/stock engine id, so a
-# prop fielded via apply_car(index, false) is never left mute. Tested directly here rather
-# than through StartLine, which is far more machinery for the same contract.
-func test_fit_engine_builds_a_voice_even_with_no_swap() -> void:
-	CarFixtures.install()
-	_car.apply_car(0, false)  # voice deliberately NOT built yet
-	_car.fit_engine("")
-	var synth = _car.get_node("EngineAudio")._synth
-	assert_not_null(synth, "a stock-fitted car has an engine synth")
-	assert_eq(synth._firing_phases.size(), _car.config.engine_firing_phases().size(),
-		"fit_engine built the voice despite no engine change")
-
-
 func test_stock_car_is_unaffected_by_the_swap_step() -> void:
 	CarFixtures.install()
 	_car.apply_owned({"model_id": "fx_light_rwd", "hp": 700.0,

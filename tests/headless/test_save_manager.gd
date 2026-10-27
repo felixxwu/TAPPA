@@ -28,7 +28,7 @@ func after_each() -> void:
 
 
 func _clean() -> void:
-	for suffix in ["", ".bak", ".tmp", ".conflict.bak"]:
+	for suffix in ["", ".bak", ".tmp", ".conflict.bak", ".newer.bak"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
@@ -89,6 +89,22 @@ func test_migration_refuses_newer_version() -> void:
 	var future: Dictionary = _save._default_profile()
 	future["schema_version"] = _save.SCHEMA_VERSION + 1
 	assert_true(_save._migrate(future).is_empty(), "a newer-version profile is refused (returns empty)")
+
+
+# The fresh profile's saves rotate the refused file out through .bak within two writes, so a
+# newer build's career must get a copy nothing rotates.
+func test_a_newer_profile_on_disk_survives_the_fresh_profiles_saves() -> void:
+	var future: Dictionary = _save._default_profile()
+	future["schema_version"] = _save.SCHEMA_VERSION + 1
+	future["created_utc"] = "from_the_future"
+	var f := FileAccess.open(TEST_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify(future))
+	f.close()
+	_save.load_or_new()
+	_save.save_now()
+	_save.save_now()
+	var kept: Dictionary = _save._read_file(TEST_PATH + ".newer.bak")
+	assert_eq(kept.get("created_utc", ""), "from_the_future")
 
 
 # Regression: load_or_new() used to set save_disabled = true whenever the on-disk profile

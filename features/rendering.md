@@ -890,9 +890,9 @@ drawing across the whole stage).
 
 That shared distance is **per-target**: a web **touch** device (phone/tablet browser
 — the same low-end target as the 30fps `target_fps_web` cap) gets the shorter
-`tree_render_distance_web_touch_m` (60 m); every other target (native mobile, desktop,
-desktop browser) gets the longer `tree_render_distance_m` (120 m). `world.gd._ready`
-resolves the effective value ONCE at boot via `GameConfig.tree_render_distance_for(web,
+`tree_render_distance_web_touch_m`; every other target (native mobile, desktop,
+desktop browser) gets the longer `tree_render_distance_m`. `free_roam.gd._enter_tree`
+(and `world.gd._ready` on the dev stage) resolves the effective value ONCE at boot via `GameConfig.tree_render_distance_for(web,
 touch)` and writes it back onto `cfg.tree_render_distance_m`, so all the readers below
 stay unchanged. The terrain LOD bands split the same way —
 `terrain_lod_bands_for(web, touch)` picks `terrain_lod_bands_web_touch_m`

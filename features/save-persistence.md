@@ -75,7 +75,9 @@ Max-HP is **CarLibrary metadata, not stored**. The world's terrain, roads and si
   while the tree is paused, so a burst of mutations is one write.
 - **Load fallback chain:** primary → `.tmp` (a write whose final rename failed) → `.bak` → fresh default. A corrupt/garbage
   file is never silently overwritten (parsed via the `JSON` instance API so
-  malformed input returns an error code rather than crashing).
+  malformed input returns an error code rather than crashing). A profile from a **newer**
+  schema (a downgrade, e.g. a stale cached web build) is copied to `profile.json.newer.bak`,
+  which nothing rotates, before the fresh profile's saves consume the rolling `.bak`.
 - **Unknown `model_id`** (a car dropped from `CarLibrary`) is pruned on load by `_sanitise`
   with a warning, keeping old saves loadable as the roster evolves.
 - **No migration.** `_migrate` refuses any profile whose `schema_version` is not exactly

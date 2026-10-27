@@ -69,7 +69,7 @@ func test_apply_overrides_with_everything_on_keeps_features_enabled() -> void:
 	var cfg: GameConfig = Config.data
 	Benchmark.apply_overrides(cfg)
 	for field in ["vegetation_enabled", "spectators_enabled",
-			"distant_terrain_enabled", "road_markings_enabled", "tire_marks_enabled",
+			"road_markings_enabled", "tire_marks_enabled",
 			"wheel_particles_enabled", "engine_smoke_enabled"]:
 		assert_true(bool(cfg.get(field)), "%s stays on with all toggles on" % field)
 
@@ -81,7 +81,7 @@ func test_toggles_off_disable_their_config_switches() -> void:
 		Benchmark.set_option(String(t["key"]), false)
 	Benchmark.apply_overrides(cfg)
 	for field in ["vegetation_enabled", "spectators_enabled",
-			"distant_terrain_enabled", "road_markings_enabled", "tire_marks_enabled",
+			"road_markings_enabled", "tire_marks_enabled",
 			"wheel_particles_enabled", "engine_smoke_enabled"]:
 		assert_false(bool(cfg.get(field)), "%s is off when its toggle is off" % field)
 

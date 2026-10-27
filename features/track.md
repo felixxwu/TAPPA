@@ -116,8 +116,7 @@ the road around lakes.
   `_is_hairpin`, which is deliberately geometry-derived) because rarity is an authoring
   choice about a specific corner rather than a property its curve can express; the cost
   is that a rename would silently reset the multiplier, which
-  `test_corner_weights_name_real_corners` guards. `CORNER_WEIGHTS` is folded into
-  `constants_fingerprint()`, so a retune auto-invalidates the committed track cache.
+  `test_corner_weights_name_real_corners` guards.
 - **No consecutive hairpins (hard rule):** a candidate whose corner is
   a hairpin SHAPE is rejected outright when the piece already at the
   frontier is also one — a 180° straight into another 180° reads as a switchback
@@ -136,8 +135,7 @@ the road around lakes.
   `_corner_straightness`'s own stated intent (no hand-maintained per-corner table).
   The threshold sits far below every other authored corner (a 90° `Square` is 0.5),
   so it selects the `Hairpin` alone today and widens only if a new near-180° shape is
-  authored. `HAIRPIN_STRAIGHTNESS_MAX` is folded into `constants_fingerprint()`, so
-  the committed track cache auto-invalidates.
+  authored.
 - **No consecutive jumps (hard rule):** a `Jump` candidate is rejected outright when the
   piece already at the frontier is also a `Jump`. Same mechanism and same place in
   `_search`'s candidate loop as the hairpin rule above (before `_build_candidate`, so the

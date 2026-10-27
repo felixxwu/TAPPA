@@ -46,21 +46,6 @@ static func _base(cfg: GameConfig) -> TrackGenParams:
 	return p
 
 
-# Seat the pre-relocation origin/heading/reserve from cfg's start-line staging. A
-# staged run generates from a point cfg.start_lead_in_ahead_m ahead of the nominal
-# spawn and reserves the lead-in corridor behind it; free-roam is never staged.
-# Identical logic in the run scene and target derivation keeps their shapes in sync.
-static func _apply_staging(p: TrackGenParams, cfg: GameConfig, staged: bool) -> void:
-	p.heading = NOMINAL_HEADING
-	if staged:
-		p.reserve_behind = cfg.start_lead_in_ahead_m + cfg.start_lead_in_behind_m
-		p.origin = NOMINAL_ORIGIN + NOMINAL_HEADING * cfg.start_lead_in_ahead_m
-	else:
-		p.reserve_behind = 0.0
-		p.origin = NOMINAL_ORIGIN
-	p.base_origin = p.origin
-
-
 # Build the pure headless sampler from the seed + config layers.
 static func _sampler_for(seed_value: int, cfg: GameConfig) -> Callable:
 	return TerrainNoise.make_sampler(seed_value, cfg.terrain_layers())
@@ -76,7 +61,9 @@ static func for_config(cfg: GameConfig) -> TrackGenParams:
 	p.water_enabled = cfg.water_enabled
 	p.water_level = cfg.track_water_level_m
 	p.water_sampler = _sampler_for(p.seed, cfg)
-	_apply_staging(p, cfg, false)
+	p.heading = NOMINAL_HEADING
+	p.origin = NOMINAL_ORIGIN
+	p.base_origin = p.origin
 	p.recompute_origin()
 	return p
 

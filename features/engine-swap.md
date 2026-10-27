@@ -82,35 +82,26 @@ no scene or Save coupling; `car.gd` applies the result.
 
 ## Fielding pipeline (`car.gd`)
 
-### Three fielding paths — pick the right one
+### Two fielding paths — pick the right one
 
-There are **three** ways to put an engine on a car, and choosing wrong fails
-*silently*: the car simply runs the wrong engine, with no error. That is exactly how
-start-line rivals ended up on their cars' stock engines.
+There are **two** ways to put an engine on a car, and choosing wrong fails
+*silently*: the car simply runs the wrong engine, with no error.
 
 | Call | Applies | Use for |
 |---|---|---|
 | `apply_car(index, rebuild_audio := true)` | the CarLibrary entry's **stock** engine, nothing else | a generic **catalogue model** — free-roam previews, flavour props, the dev car-cycle. Stock is the *correct* answer here. |
 | `apply_owned(owned)` | stock baseline → **engine swap** → upgrades → tuning → damage, then one terminal voice rebuild | a **saved `OwnedCar`** — fielding the player's own car (run fielding, hub previews). |
-| `fit_engine(engine_id)` | **only** the engine swap (+ suspension re-sync + voice rebuild) | a **catalogue model running a non-stock engine** — i.e. a rival with an engine swap, where there is no `OwnedCar` to hand. Call after `apply_car(index, false)`. |
-
-`fit_engine` deliberately does **not** do what `apply_owned` does: no upgrades, no
-tuning, no live-baseline snapshot, no damage/HP-to-instance binding. A prop wants
-none of those.
 
 **Prop callers go through `CarProp.spawn`**, whose opts express the choice:
-`"owned"` → `apply_owned`; `"engine_id"` (non-empty) → `apply_car(index, false)` +
-`fit_engine`; otherwise the bare `"index"` → stock. Before `engine_id` existed the
-`index` branch was the *only* way to name a car by id, which is why every caller
-holding just a `car_id` was forced onto the stock engine.
+`"owned"` → `apply_owned`; otherwise the bare `"index"` → stock.
 
 **The deferred-audio footgun.** `apply_car(index, false)` skips the engine-voice
 build so a caller can rebuild once after all its config mutation. Forgetting the
 follow-up leaves the car **mute** — the config carries the engine either way, so
 nothing else complains. `apply_car` therefore arms `_audio_build_pending`, and the
-first live `_physics_process` tick `push_warning`s if it is still set. Both current
-deferrers (`apply_owned`, `fit_engine`) clear it via `_reconfigure_engine_audio`, so
-it never fires today; it exists to catch the third caller.
+first live `_physics_process` tick `push_warning`s if it is still set. The one current
+deferrer (`apply_owned`) clears it via `_reconfigure_engine_audio`, so it never fires
+today; it exists to catch the next caller.
 
 ### `apply_owned`
 

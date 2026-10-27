@@ -330,6 +330,10 @@ func load_or_new() -> void:
 		# ever allowed to write the replacement.
 		push_warning("Save: profile at %s is unreadable/newer than v%d — starting fresh"
 			% [profile_path, SCHEMA_VERSION])
+		# The rolling .bak is gone two saves from now, so a newer build's career (say, a stale
+		# cached web build running after an update) gets a copy that nothing rotates.
+		if int(loaded.get("schema_version", 0)) > SCHEMA_VERSION:
+			_write_copy(profile_path + ".newer.bak", loaded)
 		profile = _default_profile()
 		_note_known_profile_keys()
 		return
@@ -521,11 +525,15 @@ func adopt_profile(incoming: Dictionary) -> bool:
 # mistake is recoverable. Deliberately a SEPARATE filename from the rolling .bak
 # (which the next ordinary write would consume within seconds).
 func write_conflict_backup() -> void:
-	var f := FileAccess.open(profile_path + ".conflict.bak", FileAccess.WRITE)
+	_write_copy(profile_path + ".conflict.bak", profile)
+
+
+func _write_copy(path: String, p: Dictionary) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
-		push_warning("Save: could not write a conflict backup before replacing the profile")
+		push_warning("Save: could not write the backup %s" % path)
 		return
-	f.store_string(JSON.stringify(profile))
+	f.store_string(JSON.stringify(p))
 	f.close()
 
 

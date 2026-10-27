@@ -210,6 +210,9 @@ collider physics has.
   snowy region, so winter rubber is exactly what should pay off out on the ice.
 - **The water-drag query is not wired** on a frozen stage — dragging a car down on a
   surface it is meant to slide across is the opposite of the feature.
+- **Free roam** has no ice collider, only the grip. The grip test reads
+  `cfg.track_water_level_m`, so `BiomeDirector._wire_water` seats the island's
+  `FreeRoamSettings.water_level_m` there (and puts the stage value back on `_exit_tree`).
 - **Look** reuses the water shader with ice colours and `scroll_speed = 0`. Ice does not
   flow, and stopping the scroll is what separates it from water at a glance. No second
   shader.
@@ -227,8 +230,7 @@ cannot collide with the region's `snow_*_grip` fields, the same reason fog's are
 It **authors no `grip_mult`**. The region already owns grip in this corner; a weather
 multiplier on top would be a second, redundant lever over the same variable and would make
 a snowfall stage arbitrarily slipperier than a dry stage on the same frozen ground. It
-therefore names nothing in `physics_fields` and never re-keys the opponent cache — correct,
-since it changes no lap time.
+therefore changes no handling of its own.
 
 `road_tint.color` already generalises to a lerp toward a colour (sandstorm's mechanism), so
 snow settling white on the road needed no `world.gd` change. The one code addition is

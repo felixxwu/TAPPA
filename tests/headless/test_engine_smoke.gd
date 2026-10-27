@@ -17,27 +17,17 @@ class StubDrivetrain:
 	var engine
 
 
-# Stub damage model: only the misfire_level severity EngineSmoke reads in synthetic mode.
-class StubDamage:
-	extends RefCounted
-	var level := 0.0
-	func misfire_level(_cfg) -> float:
-		return level
-
-
-# Stub car: a drivetrain + a damage model + a world transform (engine emit point) +
+# Stub car: a drivetrain + a world transform (engine emit point) +
 # the per-car engine_smoke_local EngineSmoke reads for the emit point.
 class StubCar:
 	extends Node3D
 	var drivetrain
-	var damage
 	var engine_smoke_local := Vector3(0.0, 0.4, -1.2)
 
 
 var _car: StubCar
 var _engine: StubEngine
 var _dt: StubDrivetrain
-var _damage: StubDamage
 
 
 func before_each() -> void:
@@ -46,10 +36,8 @@ func before_each() -> void:
 	_engine = StubEngine.new()
 	_dt = StubDrivetrain.new()
 	_dt.engine = _engine
-	_damage = StubDamage.new()
 	_car = StubCar.new()
 	_car.drivetrain = _dt
-	_car.damage = _damage
 	add_child_autofree(_car)
 	_car.position = Vector3(0, 1, 0)
 
@@ -62,13 +50,6 @@ func _make() -> EngineSmoke:
 	var es := EngineSmoke.new()
 	add_child_autofree(es)
 	es.setup(_car)
-	return es
-
-
-func _make_synthetic() -> EngineSmoke:
-	var es := EngineSmoke.new()
-	add_child_autofree(es)
-	es.setup_synthetic(_car)
 	return es
 
 
@@ -175,39 +156,3 @@ func test_disabled_emits_nothing() -> void:
 	_engine.misfire_count += 1
 	_tick(es)
 	assert_eq(es.live_count(), 0, "no smoke when the effect is disabled")
-
-
-# --- Synthetic mode (HQ / static display cars) -------------------------------
-
-func test_synthetic_healthy_never_puffs() -> void:
-	_damage.level = 0.0  # fully healthy
-	var es := _make_synthetic()
-	for i in 10:
-		es._physics_process(1.0)  # plenty of time
-	assert_eq(es.live_count(), 0, "a healthy display car puffs no synthetic smoke")
-
-
-func test_synthetic_damaged_puffs_on_the_timer() -> void:
-	_damage.level = 1.0  # worst damage -> shortest interval
-	var es := _make_synthetic()
-	# One tick shorter than the min interval: not yet.
-	es._physics_process(Config.data.engine_smoke_synthetic_interval_min * 0.5)
-	assert_eq(es.live_count(), 0, "no puff before the interval elapses")
-	# Cross the interval: a burst spawns.
-	es._physics_process(Config.data.engine_smoke_synthetic_interval_min)
-	assert_eq(es.live_count(), Config.data.engine_smoke_per_cut, "a puff fires once the interval elapses")
-
-
-func test_synthetic_worse_damage_puffs_sooner() -> void:
-	# Same elapsed time: a fully damaged car (severity 1) has puffed, a lightly-damaged car
-	# (severity just above the threshold) has a longer interval and has not.
-	var dt: float = Config.data.engine_smoke_synthetic_interval_min + 0.01
-	_damage.level = 1.0
-	var severe := _make_synthetic()
-	severe._physics_process(dt)
-	assert_gt(severe.live_count(), 0, "a fully damaged car puffs within the short interval")
-
-	_damage.level = 0.1
-	var light := _make_synthetic()
-	light._physics_process(dt)
-	assert_eq(light.live_count(), 0, "a lightly-damaged car's interval is longer, so not yet")

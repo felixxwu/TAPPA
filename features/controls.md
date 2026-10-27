@@ -39,7 +39,7 @@ the live engine every tick while the driver is in control. The old `toggle_gearb
 action was retired earlier (T was unreachable on a phone, and no mobile control scheme
 has shift buttons); its controller button was reassigned to `nitrous`. The manual-shift
 engine code (`engine.gd`'s `request_shift`, the `shift_up`/`shift_down` input actions)
-is still present but unreachable from the settings UI.
+is still present but unreachable, so the shift actions are not offered for rebinding.
 
 There is **no direct "reset car" input** — resetting the car onto the track is only
 available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →
@@ -48,8 +48,7 @@ available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →
 ## Rebinding (settings → Key bindings)
 
 Only the driving/menu actions listed in `scripts/input_remap.gd`'s `ACTIONS` can be
-**rebound**: `accelerate`, `brake_reverse`, `steer_left`, `steer_right`, `shift_up`,
-`shift_down`, `handbrake`, `nitrous`, `cycle_camera`, `reset_to_road` and `pause`. Everything else in the
+**rebound**: `accelerate`, `brake_reverse`, `steer_left`, `steer_right`, `handbrake`, `nitrous`, `cycle_camera`, `reset_to_road` and `pause`. Everything else in the
 table above is **not** rebindable — the keyboard-only debug overlays
 (`toggle_debug_arrows`, `toggle_perf_overlay`), the dev-only action (`reload_config`), `toggle_map` (see above),
 and the `ui_*`/`menu_*` navigation actions are all excluded — on

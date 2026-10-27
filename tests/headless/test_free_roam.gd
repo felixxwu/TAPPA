@@ -258,7 +258,7 @@ func test_chunk_vertices_carry_the_signed_road_distance_the_shader_paints_from()
 			sides[signf(uv.x)] = true
 	assert_gt(near_road, 0, "a road runs through the chunk")
 	assert_true(sides.has(1.0) and sides.has(-1.0), "vertices either side of the road carry opposite signs")
-	var mat := st.ring_material_at(st._chunk_of_tile(coord)) as ShaderMaterial
+	var mat := st._ground_material(job) as ShaderMaterial
 	assert_true(mat.get_shader_parameter("paint_road_per_pixel"), "free roam paints the road per pixel")
 	assert_almost_eq(mat.get_shader_parameter("road_paint_mid_m"), st.terrain.paint_mid_m(), 1e-5)
 

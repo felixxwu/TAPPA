@@ -201,12 +201,12 @@ func _finish() -> void:
 		stats["terrain"] = terrain_stats(_terrain as TerrainStreamer, _queue_timeline)
 	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
 	Benchmark.finish(stats)
-	_report(stats, scripts)
 
 	# Two-pass spike diagnosis: after the cold pass, reset and drive the SAME stage
 	# again in the same page (warm WebGL shader/texture cache) instead of showing
 	# results, so comparing pass 0 vs pass 1 spikes isolates first-use GPU stalls.
 	if Benchmark.two_pass and Benchmark.pass_index == 0:
+		_report(stats, scripts)
 		Benchmark.pass_index = 1
 		# Let the POST flush, then scene-reload (NOT a page reload — the GL context
 		# and its compiled shaders must persist for the warm pass).
@@ -218,6 +218,7 @@ func _finish() -> void:
 	_results_screen = BenchmarkResults.new()
 	add_child(_results_screen)
 	_results_screen.setup(stats, _run_again, Benchmark.exit_to_title)
+	_report(stats, scripts)  # after the screen exists, so it can show "reporting…"
 
 
 # How the terrain streamer kept up over the run: the queue over time, its work per frame, and

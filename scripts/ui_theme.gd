@@ -357,7 +357,7 @@ const BODY_SCROLL_MARGIN := 32.0 * UI_SCALE
 # (N-1) x line_spacing too short and scrolled. We add the spacing back, and then
 # re-fit from the Label itself (via its `resized` signal) once it has a real
 # width and reports its exact content height — which also covers the body TEXT
-# being replaced later (ConfirmPopup.set_body / open_committing).
+# being replaced later.
 static func fit_body_scroll(scroll: ScrollContainer, body: Label, wrap_width: float) -> void:
 	if not is_instance_valid(scroll) or not is_instance_valid(body):
 		return

@@ -1,8 +1,8 @@
 class_name WheelStyle
 extends RefCounted
 # Pure COSMETIC wheel-swap logic: which wheel style an owned car is wearing, and the
-# texture that style resolves to. No scene / save coupling — Save owns the mutation
-# (Save.set_wheels) and car.gd applies the result. See features/wheel-customization.md.
+# texture that style resolves to. No scene / save coupling — car.gd applies the result
+# (nothing writes the `wheels` key today). See features/wheel-customization.md.
 #
 # A wheel style is just a DONOR CAR's stable CarLibrary id: every car in the roster
 # donates its wheels to every other car, always, for free. The swap carries the wheel

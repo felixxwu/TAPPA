@@ -55,12 +55,9 @@ extends RefCounted
 #                     only the supercharger UPGRADE turns the belt physics on.
 #   * ring / price   — on a swap_tier engine: the free-roam biome ring whose checkpoints sell
 #                     it, and what it costs there (LootRules.ring_tables / price).
-#   * swap_tier      — optional bool. True on the four dedicated mid-run-swap engines
-#                     (i6_300/v8_400/v10_500/v12_600) at the bottom of ENGINES.
-#                     `RunSession._pool_engine_swap_ids()` only ever offers an engine
-#                     flagged this way — every other entry here (every car's stock
-#                     engine, plus the older swap-only audi_25t_i5/ford_50_v8) stays
-#                     reachable only via free play. See features/engine-swap.md.
+#   * swap_tier      — optional bool. True on the dedicated swap engines at the bottom of
+#                     ENGINES, the only ones rest stops sell (by `ring` / `price` above).
+#                     See features/engine-swap.md.
 
 # Standard firing tables: crank angles (degrees) over the 720° four-stroke cycle,
 # shared across engines of the same layout. Even spacing sounds smooth; the uneven
@@ -200,13 +197,11 @@ const ENGINES: Array[Dictionary] = [
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9, "shift_time": 0.35,  # Acty HA4 5-speed manual
 	},
-	# THE MID-RUN ENGINE SWAP TIERS (features/engine-swap.md) — the only four engines
-	# `RunSession._pool_engine_swap_ids()` will ever offer as a swap, marked by the
-	# "swap_tier" flag. Deliberately generic (no real car this catalogue's stock
-	# engines are borrowed from) and evenly spaced ~100hp apart so every car walks the
-	# same four rungs regardless of its own stock engine. Torque/redline are picked so
-	# CarLibrary.horsepower lands close to the name's advertised figure; free play still
-	# offers every catalogue engine including these, unrestricted.
+	# THE ENGINE SWAP TIERS (features/engine-swap.md) — the only engines rest stops sell,
+	# marked by the "swap_tier" flag. Deliberately generic (no real car this catalogue's
+	# stock engines are borrowed from) and evenly spaced ~100hp apart so every car walks
+	# the same rungs regardless of its own stock engine. Torque/redline are picked so
+	# CarLibrary.horsepower lands close to the name's advertised figure.
 	{
 		"id": "i6_300", "name": "I6 (300hp swap)", "layout": "i6", "displacement_l": 3.5, "mass": 170.0,
 		"redline_rpm": 7200.0, "peak_torque": 380.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.20,

@@ -307,13 +307,6 @@ func _ground_material(job: ChunkJob) -> Material:
 	return _ring_materials[clampi(floori((job.ring_lo + job.ring_hi) * 0.5), 0, _ring_materials.size() - 1)]
 
 
-func ring_material_at(coord: Vector2i) -> Material:
-	if _ring_materials.is_empty():
-		return material
-	var cm := settings.chunk_m
-	return _ring_materials[terrain.ring_index((coord.x + 0.5) * cm, (coord.y + 0.5) * cm)]
-
-
 # --- what the car asks of its terrain ------------------------------------------------------
 
 # Answered from the loaded chunk under the point when there is one: cheap, and exactly the

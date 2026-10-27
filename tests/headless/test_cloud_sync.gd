@@ -252,7 +252,36 @@ func test_an_unreadable_cloud_blob_is_not_overwritten() -> void:
 	assert_eq(_rest.requests.size(), 1, "a corrupt remote copy is reported, never replaced")
 
 
+# The pull refusing is not enough: the next local save arms a background push, which must not
+# upload over the copy the pull just refused either.
+func test_a_refused_cloud_copy_holds_off_later_background_pushes() -> void:
+	for doc in [CloudSync.to_document("{not json", Save.SCHEMA_VERSION, 9, "", "web"),
+			_remote_doc(9, _remote_profile(), Save.SCHEMA_VERSION + 1)]:
+		_rest.queue_ok(doc)
+		await _sync.pull()
+		var before := _rest.requests.size()
+		_sync.pending = true
+		var pushed: Dictionary = await _sync.push()
+		assert_false(pushed.ok)
+		assert_eq(_rest.requests.size(), before, "nothing may be uploaded over a refused cloud copy")
+
+
 # --- Resolution ---------------------------------------------------------------
+
+# On a first sign-in (or an account switch) this device's revision belongs to no account, so
+# keep-local must still upload ABOVE the remote revision, not restart the count from 1.
+func test_keep_local_on_a_device_new_to_the_account_uploads_above_the_remote_revision() -> void:
+	_seat_local_career()
+	_save.profile["cloud_uid"] = "someone_else"
+	_save.save()
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
+	var pulled: Dictionary = await _sync.pull()
+	assert_eq(pulled.state, "conflict")
+	_rest.queue_ok({})
+	var result: Dictionary = await _sync.resolve_keep_local()
+	assert_true(result.ok)
+	assert_eq(int(_save.profile["cloud_revision"]), 10)
+
 
 func test_keep_local_uploads_above_the_remote_revision() -> void:
 	_seat_local_career()

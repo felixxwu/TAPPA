@@ -40,7 +40,7 @@ func _ready() -> void:
 	# call (the reset page's "Wipe all progress" -> Cloud.publish_local_wipe, the
 	# account page's sign-in/out). The symptom was CloudBusy's full-screen cover going
 	# up and never coming down — the wipe looked "stuck" — for a signed-in player
-	# wiping from the Overworld HQ or from a mid-rally pause.
+	# wiping from the pause menu.
 	#
 	# Set on the RestClient (the one owner of HTTPRequest in the project), so its
 	# _http child inherits it and every cloud caller is fixed at the single point
@@ -99,7 +99,6 @@ func _perform(method: int, url: String, headers: PackedStringArray,
 	var completed: Array = await _http.request_completed
 	var transport: int = completed[0]
 	var status: int = completed[1]
-	var response_headers: PackedStringArray = completed[2]
 	var raw: PackedByteArray = completed[3]
 
 	if transport != HTTPRequest.RESULT_SUCCESS:
@@ -128,41 +127,11 @@ func _perform(method: int, url: String, headers: PackedStringArray,
 		"json": parsed,
 		"error": "" if ok else "http_%d" % status,
 		"network": false,
-		"date_ms": date_ms_from(response_headers),
 	}
 
 
 func _failure(status: int, error: String, network: bool) -> Dictionary:
-	return {"ok": false, "status": status, "json": {}, "error": error, "network": network,
-		"date_ms": 0}
-
-
-# The server's clock, in unix milliseconds, from an HTTP Date header. 0 when absent
-# or unparseable.
-#
-# Currently UNUSED: its only consumer was the deleted multiplayer lobby, which
-# needed it because a device with a skewed clock would race a different round than
-# everyone else. Kept as a generic utility — `date_ms` is part of every response
-# dict's shape — but no caller reads the key today.
-static func date_ms_from(headers: PackedStringArray) -> int:
-	for h: String in headers:
-		if not h.to_lower().begins_with("date:"):
-			continue
-		var raw: String = h.substr(5).strip_edges()
-		# RFC 7231: "Tue, 15 Nov 1994 08:12:31 GMT". Time.get_unix_time_from_datetime_string
-		# wants ISO 8601, so reshape it rather than hand-rolling a month table.
-		var parts: PackedStringArray = raw.split(" ", false)
-		if parts.size() < 5:
-			return 0
-		var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-			"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-		var month: int = months.find(parts[2]) + 1
-		if month <= 0:
-			return 0
-		var iso := "%s-%02d-%02dT%s" % [parts[3], month, int(parts[1]), parts[4]]
-		var unix: int = int(Time.get_unix_time_from_datetime_string(iso))
-		return unix * 1000 if unix > 0 else 0
-	return 0
+	return {"ok": false, "status": status, "json": {}, "error": error, "network": network}
 
 
 # --- Helpers shared by the callers -------------------------------------------

@@ -59,6 +59,15 @@ func test_owned_and_catalogue_keys_never_collide() -> void:
 		"an owned car's instance_id and a catalogue index share the number 0 but must not share a cache key")
 
 
+# A fitted wing changes the model, so the same car with and without it must not share a preview.
+func test_fitting_a_wing_gives_the_car_a_new_preview_key() -> void:
+	var bare := {"instance_id": 3, "model_id": "fx_light_rwd", "boosts": []}
+	var winged := bare.duplicate(true)
+	winged["boosts"] = [{"id": "aero", "effect": {}}]
+	assert_true(UpgradeLibrary.aero_fitted(winged), "the fixture really has the wing on")
+	assert_ne(CarPreviewCache.key_for(bare), CarPreviewCache.key_for(winged))
+
+
 func test_park_then_get_or_build_reuses_without_rebuilding() -> void:
 	_track(1)
 	var preview := CarPreviewCache.get_or_build(1)

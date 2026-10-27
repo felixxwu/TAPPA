@@ -70,7 +70,7 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   see world-session.md), so the map's free travel can't carry money to safety; checkpoint to checkpoint keeps it.
 - **The counter:** `LootDirector.money_label`, "$n" in the top-left corner while driving, parented to the HUD layer so it hides under paused pages like the gauges.
 - **On the ground:** a gold disc stood on its edge, spinning and bobbing in `coin.gdshader` (no
-  per-coin scripts), lit by the fake headlight cone at night (`headlight_cone.gdshaderinc`, added to its glow), built with the near chunk (`TerrainStreamer._coin_marker`, node `Loot<site>`).
+  per-coin scripts), lit by the fake headlight cone at night (`headlight_cone.gdshaderinc`, added to its glow), planted with the mid chunk (`TerrainStreamer._queue_site_markers` → `_coin_marker`, node `Loot<site>`).
 
 All of it lives in the world block (`WorldSession`: money, collected, revealed; parts live on each owned car); see
 [world-session.md](world-session.md).
@@ -82,11 +82,11 @@ A car's fitted parts are saved on its owned-car record (`parts`, `Save.set_car_p
 `BoostLibrary.magnitude_for(id, level)`), `swapped_engine` and `drivetrain_override`.
 `Car.apply_owned` and `UpgradeLibrary.apply` do the rest. There's no other modifier path.
 
-Fitting rules (`can_fit`, `occupant`): one of each part id; one engine and one drivetrain kit (a new
-one swaps with the fitted one); a kit for the car's own layout only fits in place of another kit
-(changing a converted car back). `fit_block_reason` gives the
-Parts card's label when a part can't go on ("Already RWD", "Already fitted"); `can_fit` is just
-"no reason".
+Fitting rules (`can_fit`, `toggled`): one of each part id per car; a kit for the car's own layout
+never fits (switching its other kit off changes it back). Each part is switched on or off, and
+switching an engine or kit on switches off whichever other one of its kind was on.
+`fit_block_reason` gives the shop card's label when a part can't go on ("Already RWD",
+"Already unlocked"); `can_fit` is just "no reason".
 
 ## Rest-stop pages
 
@@ -97,9 +97,9 @@ Rebuilding the page you're on (a part fitted, a car picked, something bought) ke
 where it was (`RestStopPage._keep_at`). There's no separate shop: things on sale show at the end of the page they belong on, their price
 as the third line, green when the player can afford it and red when not (`RestStopPage.price_variant`). The MAIN page is Continue /
 Parts / Garage / Map / Tune car (travel is on the map); its header says the money held.
-**Parts:** a card per fitted part (pick to take off), then one per other part owned (pick to fit; it
-says "Fit", "Swap for X", or — disabled — "Can't fit"; other cars keep theirs), then one per part on
-sale ("for sale"; picking one buys it and fits it straight away, `_buy_part`). **Garage:** a card per
+**Parts:** a card per part unlocked for this car, labelled "On" or "Off" (pick to switch it,
+`_toggle_part`; other cars keep theirs), then one per part on sale (its price, or the
+`fit_block_reason` label, disabled; picking one buys it and switches it on, `_buy_part`). **Garage:** a card per
 owned car (pick to drive one; the cursor starts on the car being driven), each with an
 "x / y upgrades" line under its power line (`LootRules.upgrades_text`: parts unlocked for that car, on or off, out of
 `LootRules.parts_for(owned)` — the whole part catalogue less the drivetrain kit for its own stock

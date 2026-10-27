@@ -90,34 +90,14 @@ latch of its own any more; `account_menu` in particular could be instantiated th
 over (Settings, the HQ title overlay, the standings page — the latter two now deleted), so
 a per-instance bool could never have answered the question.
 
-#### Commit AFTER you have the screen (`ConfirmPopup.open_committing`)
+#### Commit AFTER you have the screen
 
-Because `open` can be **refused**, *an irreversible mutation must never run before the
-presentation that reports it.* Doing it the other way round is a silent data loss:
-the rule was learned the hard way by a since-deleted consumable flow that *consumed the
-item, installed the part and saved* and only **then** opened the reveal — so a player
-holding two of them spent both and saw one reveal, the second popup having been refused
-behind the first. The mechanism is gone; the ordering rule it taught is not.
-
-`ConfirmPopup.open_committing(host, title, placeholder, actions, commit, …)` inverts
-the order so that state is unrepresentable: it **acquires the modal slot first**, and
-runs `commit` only once the popup that will report the result is already on screen. If
-the slot cannot be had it returns `null` and **`commit` is never called** — the caller
-has mutated nothing and can just return.
-
-The body is **deferred**, not a return value, because `world.gd`'s challenge reward has
-to `await` its grant (`ChallengeRunMode.try_grant_completion_reward`) and a synchronous
-`Callable -> String` contract cannot express that. So the popup is built with
-`placeholder`; `commit` may be a plain function *or* a coroutine (its result is awaited
-either way), and either returns a non-empty `String` to become the body or writes one
-itself via `popup.set_body(...)` on the popup it is handed. `open_committing` is
-therefore itself a coroutine — call it as `await ConfirmPopup.open_committing(...)`.
-There is deliberately no `allow_stack` here: the refusal *is* the feature.
-
-Covered by `test_confirm_popup.gd` — the commit does not run when a modal is already
-up, does run (once) when the slot is free, a coroutine commit is awaited, `set_body`
-fills the placeholder, and the popup it returns behaves like any other (buttons, Back,
-dismissal).
+Because `open` can be **refused** (it returns `null`), *an irreversible mutation must
+never run before the presentation that reports it.* A since-deleted consumable flow
+consumed the item, installed the part and saved, and only **then** opened the reveal, so
+a player holding two spent both and saw one reveal. Open the popup first, and mutate only
+once it is non-null. (The `open_committing` helper that enforced this is deleted; no live
+code reserves a modal slot around a transaction.)
 
 #### `MenuNav.input_blocked(node)` — the one "am I deaf right now?" question
 

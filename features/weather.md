@@ -50,8 +50,8 @@ omitted key means "this condition does not have that feature":
 | `wind` | lateral **crosswind body force**: `strength` / `gust` / `dir_deg` → GameConfig fields (`WIND_KEYS`). Omitted ⇒ no wind force. Read by the crosswind force in `car.gd` — see [car-physics.md](car-physics.md) |
 | `lightning` | cosmetic **flash**: `flash` / `duration` / `interval_min` / `interval_max` → GameConfig fields (`LIGHTNING_KEYS`). Omitted ⇒ no flashes. Read by `world.gd` → `_start_lightning` |
 | `sky_panorama` | GameConfig field holding a **sky texture path** the condition swaps in, overriding whatever the region chose. Omitted ⇒ the region's sky is left alone. Only `night` names one |
-| `headlights` | GameConfig field holding the **strength** (0..1) of the fake headlight cone this condition switches on. Omitted ⇒ the car's lights stay off and every cone uniform is a bit-for-bit no-op. Read by `HeadlightCone`; cosmetic, so it is **not** in `physics_fields` |
-| `foliage_wind` | GameConfig field holding the tree wind-sway **strength** for this condition. Omitted ⇒ the shared base `foliage_wind_strength` — deliberately the case for every condition but `storm`/`sandstorm`, since wind reads the same everywhere except in a storm. Read by `WindSway`; cosmetic, so it is **not** in `physics_fields` — see [trees.md](trees.md) → "Wind sway" |
+| `headlights` | GameConfig field holding the **strength** (0..1) of the fake headlight cone this condition switches on. Omitted ⇒ the car's lights stay off and every cone uniform is a bit-for-bit no-op. Read by `HeadlightCone`; cosmetic |
+| `foliage_wind` | GameConfig field holding the tree wind-sway **strength** for this condition. Omitted ⇒ the shared base `foliage_wind_strength` — deliberately the case for every condition but `storm`/`sandstorm`, since wind reads the same everywhere except in a storm. Read by `WindSway`; cosmetic — see [trees.md](trees.md) → "Wind sway" |
 | `terrain_relight` | A plain `true`/omitted flag. Marked a condition worth pre-baking a second terrain vertex-colour array for; its only reader (the deleted menu showcase) is gone, so **nothing reads it today**. |
 
 **`sky_panorama` is deliberately NOT a sixth `LOOK_KEYS` entry.** `LOOK_KEYS` is
@@ -66,20 +66,8 @@ tints the road toward something new (dust today, snow tomorrow) just names a col
 field. Same for particle speed: `WeatherField` reads no condition's config field
 itself, so the "every consumer goes through the table" rule holds without exception.
 
-**Two field sets, and the rule that separates them:**
-
-- `config_fields(entry)` — every GameConfig field the entry names. Its full surface,
-  used for validation and tests.
-- `physics_fields(entry)` — **only** `grip_mult` and the `wind` block, i.e. the values
-  that can change *how fast the stage is driven*. This, and only this, is what
-  `fingerprint()` hashes.
-
-Everything else — particle counts, every colour and fog value in `look`, the road
-tint, the lightning flash — is LOOK, and deliberately stays out of the physics
-fingerprint. The safety net for a *new*
-condition (or a new key) that does affect times is `fingerprint()`'s `str(all())`:
-any structural edit to the table re-keys everything regardless. Both sets
-de-duplicate — storm points both its particle `wind_dir` and its force's
+`config_fields(entry)` lists every GameConfig field an entry names (its full surface,
+used for validation and tests). Storm points both its particle `wind_dir` and its force's
 `wind.dir_deg` at one heading, so the drops stream the way the car is pushed.
 
 Public API (a contract — other conditions are added against it):
@@ -90,10 +78,6 @@ Public API (a contract — other conditions are added against it):
 - `grip_mult(cfg, id) -> float` — the μ multiplier from the named config field;
   dry (and therefore any unknown id) is exactly **1.0**.
 - `config_fields(entry) -> Array` — every GameConfig field name the entry references.
-- `physics_fields(entry) -> Array` — the subset that can change a lap time
-  (`grip_mult` + the `wind` block). See the rule above.
-- `fingerprint(cfg) -> String` — hash of the whole table plus every *time-affecting*
-  config value it names.
 
 **Dry is the absence of every feature** — its entry is literally `{"id": "dry"}`. That
 is load-bearing, not tidiness: grip becomes an unconditional multiply by 1.0, and the
@@ -143,8 +127,7 @@ than a crash — the same tolerance every other query here has.
 
 No consumer changes. If the condition needs a genuinely new *kind* of feature (a wind
 force, a lightning flash) add a new entry key plus the one consumer that reads it, and
-list it in `config_fields` — then, **only if it can change a lap time**, in
-`physics_fields` too.
+list it in `config_fields`.
 
 ## Config (`GameConfig`, `scripts/game_config.gd`)
 
@@ -303,10 +286,8 @@ All authored in `config/game_config.tres`, per the project rule that tuning valu
 live in the resource, not script literals — the `@export` defaults in
 `game_config.gd` are fallbacks only.
 
-**Weather never reaches `TrackGenParams` or the track cache.** It is not a
-track-shape determinant; routing it into generation would invalidate all baked
-track-cache entries for no shape change. Nothing in this piece of work adds it
-there — keep it that way.
+**Weather never reaches `TrackGenParams`.** It is not a track-shape determinant —
+keep it that way.
 
 ## Seating the live condition
 
@@ -344,16 +325,15 @@ It touches **only** the Environment, never the `TerrainManager`'s baked sun/ambi
 (changing those would need a chunk rebake, which is not a per-frame operation), and
 it is **purely cosmetic** — it changes no physics and no time, so unlike the
 crosswind it need not be deterministic and is free to use `randf()`. That is also
-why its config fields stay out of `config_fields`/`fingerprint`.
+why it needs no seeded random stream.
 
 ## Night
 
 The seventh condition, and **purely a look** — deliberately. Its entry authors a
 `look` block, a `road_tint`, a `sky_panorama` and a `headlights` strength, and
 nothing else: no `grip_mult` (μ is exactly 1.0, identical to dry), no `wind`, no
-`particles`, no `lightning`. It therefore
-names nothing in `physics_fields()`, so it changes no lap time, needs no
-needs no rebalancing. Design rationale and the four
+`particles`, no `lightning`. It therefore changes no handling and needs no
+rebalancing. Design rationale and the four
 other settled decisions are in `todo/night-weather-and-headlights.md`.
 
 **The darkening is not done in a shader.** It comes for free from the existing
@@ -410,8 +390,7 @@ Consequences worth knowing:
   That is nine global uniform writes, no geometry and no draw calls (the
   fragment-side cone on terrain was already compiled into the shader on every
   stage) — but a storm stage is no longer bit-for-bit identical to a dry one.
-- **It changes no lap time.** `headlights` is cosmetic, so it stays out of
-  `physics_fields()`.
+- **It changes no handling.** `headlights` is cosmetic.
 
 ### Unshaded means nothing dims for free — `weather_lit` is the rule
 
@@ -484,12 +463,6 @@ destination, and runs before the incoming scene's `_ready`.
 **This visibly changes rain and storm** as well as night, which is intended:
 their cars, trees, lakes and signs are now dimmer than before, matching the
 ground they sit on.
-
-## Fingerprint
-
-`WeatherLibrary.fingerprint(cfg)` hashes the whole table plus every
-**time-affecting** config value it names (`physics_fields`: `grip_mult` + `wind`), so adding
-a condition or a key can never silently slip a lap-time change past review.
 
 ## Look
 
@@ -575,9 +548,7 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   the dry entry for an unknown/empty id; dry's `grip_mult` is exactly 1.0 and dry
   constructs nothing (both structural identities, not tuned values); `grip_mult`
   reads the config field the entry names; `config_fields` reports every referenced
-  field while `physics_fields` reports only the time-affecting subset, and a purely
-  cosmetic retune leaves `fingerprint` unchanged where a grip retune re-keys it; `fingerprint` changes when the table changes or a referenced value is
-  retuned, and is stable otherwise. All against a synthetic table via
+  field. All against a synthetic table via
   `override_for_test`, never the shipped conditions' numbers. Also: a
   **visibility-only** shape (fog's — a `look` block alone) has grip exactly 1.0, no
   particle kind and no road tint, where a precipitation sibling in the same synthetic
@@ -600,7 +571,7 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   authored at exactly 0 is off, two lit conditions each push their OWN strength
   rather than one shared constant, and a null config is not a crash; every
   `headlights` field the SHIPPED table names (iterated opaquely) is a real
-  `GameConfig` float in 0..1, and none of them reaches `physics_fields`; the two
+  `GameConfig` float in 0..1; the two
   dark conditions (night, storm) do arm the cone, with no assertion about how
   brightly either burns; `params` is empty on a condition with no cone; the cone points and its apex offset
   rotates with the car; the outer edge is always wider than the inner one and

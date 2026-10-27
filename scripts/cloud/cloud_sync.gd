@@ -31,8 +31,8 @@ signal conflict_detected(summary: Dictionary)
 enum Status { IDLE, WORKING, SYNCED, OFFLINE, ERROR, CONFLICT }
 
 # Longer than Save's ~1s local debounce on purpose: a disk write is free, a
-# network round trip is not. Bursty progress (a rally payout granting a car, an
-# upgrade and a rally record) collapses into one upload.
+# network round trip is not. Bursty progress (a purchase, a part fitted, a rest stop
+# lit) collapses into one upload.
 const PUSH_DEBOUNCE_SEC := 8.0
 
 const BACKOFF_START_SEC := 2.0
@@ -50,6 +50,8 @@ var pending := false
 # Set while a conflict is unresolved; blocks pushes so neither side is clobbered
 # before the player decides.
 var blocked_by_conflict := false
+# Set while the cloud copy is one this build must not overwrite (unreadable, or from a newer build).
+var _remote_refused := false
 
 var _debounce: Timer
 var _retry: Timer
@@ -121,6 +123,7 @@ func pull() -> Dictionary:
 
 	# 404 is the expected "this player has never synced" answer, not an error.
 	if response.status == 404:
+		_remote_refused = false
 		var pushed := await push(true)
 		return {"ok": pushed.ok, "state": "no_cloud", "error": pushed.get("error", "")}
 	if not response.ok:
@@ -131,14 +134,17 @@ func pull() -> Dictionary:
 		# Present but unreadable. Do NOT overwrite it — a player with a corrupt
 		# cloud doc still has their local career, and silently replacing the
 		# remote copy would destroy whatever could have been recovered from it.
+		_remote_refused = true
 		_set_status(Status.ERROR, "Cloud save is unreadable.")
 		return {"ok": false, "state": "unreadable", "error": "Cloud save is unreadable."}
 
 	if int(remote.get("schema_version", 0)) > Save.SCHEMA_VERSION:
+		_remote_refused = true
 		_set_status(Status.ERROR, "Cloud save needs a newer version of the game.")
 		return {"ok": false, "state": "newer_schema",
 			"error": "Cloud save needs a newer version of the game."}
 
+	_remote_refused = false
 	var remote_revision := int(remote.get("revision", 0))
 	if int(remote.get("schema_version", 0)) < Save.SCHEMA_VERSION:
 		# An old profile resets whatever its version (decision 34): there is nothing in it this
@@ -164,6 +170,7 @@ func pull() -> Dictionary:
 		# Cloud is ahead and we have nothing to lose — take it.
 		var applied := apply_remote(remote)
 		if not applied.ok:
+			_remote_refused = true
 			_set_status(Status.ERROR, applied.error)
 			return {"ok": false, "state": "apply_failed", "error": applied.error}
 		_set_status(Status.SYNCED, "Up to date")
@@ -200,6 +207,8 @@ func push(force := false) -> Dictionary:
 		return {"ok": false, "error": "Not signed in."}
 	if blocked_by_conflict and not force:
 		return {"ok": false, "error": "Resolve the sync conflict first."}
+	if _remote_refused and not force:
+		return {"ok": false, "error": "The cloud save can't be replaced by this version."}
 	if _busy:
 		# A push is already in flight; if the profile changed since it took its copy, it re-arms
 		# the debounce when it lands.
@@ -318,6 +327,7 @@ func resolve_keep_local() -> Dictionary:
 	if _conflict.is_empty():
 		return {"ok": false, "error": "No conflict to resolve."}
 	Save.profile["cloud_revision"] = int(_conflict.get("revision", 0))
+	Save.profile["cloud_uid"] = auth.uid
 	_conflict = {}
 	blocked_by_conflict = false
 	pending = true
@@ -373,8 +383,8 @@ func apply_remote(remote: Dictionary, backup := false) -> Dictionary:
 
 # --- Firestore document encoding ---------------------------------------------
 # The value-level encoding (type tags, the integer-as-string trap) lives in
-# FirestoreCodec, shared with ChallengeLeaderboard. What stays here is only the
-# SHAPE of the user document — which fields it has and what they mean.
+# FirestoreCodec. What stays here is only the SHAPE of the user document —
+# which fields it has and what they mean.
 
 const DOC_FIELDS := ["profile", "schema_version", "revision", "updated_utc", "device"]
 

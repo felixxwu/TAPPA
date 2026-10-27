@@ -306,6 +306,7 @@ func _build_settings_panel() -> Control:
 	var title := Label.new()
 	title.text = "SETTINGS"
 	title.add_theme_font_size_override("font_size", UITheme.TITLE_FONT_SIZE)
+	title.set_meta("ui_title_size", true)
 	col.add_child(title)
 
 	var scroll := TouchScrollContainer.new()

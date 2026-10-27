@@ -466,9 +466,9 @@ var weather_sun_mult := 1.0
 # so the engine idling never creeps the car.
 @export var clutch_engage_speed := 4.0
 @export var shift_time := 0.25 # seconds of open clutch + throttle cut per shift
-## Default transmission mode: true = automatic. The transmission is always
-## automatic now (SettingsMenu.gearbox_auto() always returns true); this field
-## is unused pending a broader cleanup of the manual-shift engine code.
+## A new engine's transmission mode: true = automatic. The player's car is always
+## switched to automatic once live (SettingsMenu.gearbox_auto()); this is what a
+## scripted car (the auto-driver, the benchmark) starts in.
 @export var auto_gearbox := false
 ## Automatic-mode upshift point, as a fraction of redline. Each gear upshifts at
 ## the ground speed where it reaches this fraction of redline rpm. Must stay
@@ -708,21 +708,12 @@ func has_nitrous() -> bool:
 ## exactly, so _best_offset can reach the baked length — see track_progress.gd.
 @export_range(0.0, 100.0) var stage_complete_percent := 100.0
 @export_group("Start Line")
-## Stage the generated track: feeds TrackGenParams._apply_staging, which shifts the generation
-## origin ahead of the nominal spawn and reserves a lead-in corridor behind it.
-@export var start_line_enabled := true
 ## Orbit camera angular speed (rad/s) around the car during the start reveal.
 @export var start_orbit_speed := 0.5
 ## Orbit camera radius (m) out from the car.
 @export var start_orbit_radius := 7.0
 ## Orbit camera height (m) above the car it looks at.
 @export var start_orbit_height := 2.4
-## Straight road (m) forced AHEAD of the start line on a staged run, so the car has
-## road to drive off down.
-@export var start_lead_in_ahead_m := 22.0
-## Straight road (m) extended BEHIND the start line on a staged run, so a staged
-## player sits on paved road rather than the generated track's raw edge.
-@export var start_lead_in_behind_m := 30.0
 
 @export_group("Damage")
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
@@ -1834,13 +1825,6 @@ func has_nitrous() -> bool:
 ## Bonnet emit point in the car's LOCAL space (metres): front (−Z) and top (+Y) of
 ## the chassis, so smoke rises from the engine bay. Added to the car origin each puff.
 @export var engine_smoke_offset := Vector3(0.0, 0.4, -1.2)
-## Synthetic (out-of-event) puffing for display cars whose engine isn't running (HQ
-## car park / lift): seconds between puffs at the WORST damage (severity 1, at 0 HP)
-## and at the LIGHTEST damage (severity → 0, just past the health threshold). The
-## interval lerps between them with severity, so a wreck smokes far more than a
-## lightly-damaged car. A fully-healthy car never puffs.
-@export_range(0.05, 3.0) var engine_smoke_synthetic_interval_min := 0.35
-@export_range(0.1, 6.0) var engine_smoke_synthetic_interval_max := 1.4
 
 @export_group("Exhaust Flames")
 ## Master switch for the exhaust backfire flames (features/exhaust-flames.md). Off

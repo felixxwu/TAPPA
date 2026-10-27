@@ -37,8 +37,6 @@ const ACTIONS := [
 	{"action": "brake_reverse", "name": "Brake / Reverse"},
 	{"action": "steer_left", "name": "Steer left"},
 	{"action": "steer_right", "name": "Steer right"},
-	{"action": "shift_up", "name": "Shift up"},
-	{"action": "shift_down", "name": "Shift down"},
 	{"action": "handbrake", "name": "Handbrake"},
 	{"action": "nitrous", "name": "Nitrous"},
 	{"action": "cycle_camera", "name": "Cycle camera"},

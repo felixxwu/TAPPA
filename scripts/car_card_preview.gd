@@ -115,7 +115,7 @@ func _center_on_pivot(car: Node3D) -> void:
 
 # Union of every VISIBLE MeshInstance3D's AABB under `root`, transformed into
 # `relative_to`'s local space. CarProp.spawn already pruned every inactive embedded car
-# body (car_prop.gd's prune_bodies) before this runs, so this only ever measures the one
+# body (car_prop.gd's prune_inactive_bodies) before this runs, so this only ever measures the one
 # model actually being shown.
 static func _visible_mesh_aabb(root: Node3D, relative_to: Node3D) -> AABB:
 	var out := AABB()

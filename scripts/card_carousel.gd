@@ -516,12 +516,9 @@ func _begin_drag(global_x: float) -> void:
 # touch-press, mouse-press, touch-release, mouse-release — and the two releases used to run
 # _tap_card twice in a row on the same card. The first call selected the card, which made the
 # second call's `index == _selected` test TRUE, so it CONFIRMED it: tapping any non-centred
-# card fired its action immediately instead of merely scrolling it to the centre. Reported on
-# the hub's MAIN page — tapping "Shop" while "New run" was centred jumped straight into the
-# shop. It was never MAIN-specific; MAIN is just the page whose cards are all enabled, so it
-# was where the phantom confirm had something to do (SHOP/SKILLS cards are mostly disabled —
-# locked, at MAX, or unaffordable — and _confirm_selected drops a disabled index on the
-# floor, which is why those pages LOOKED correct).
+# card fired its action immediately instead of merely scrolling it to the centre. It showed
+# only on pages whose cards are enabled: _confirm_selected drops a disabled index on the
+# floor, so pages of mostly locked or unaffordable cards LOOKED correct.
 #
 # Deduped by gesture rather than by event type: neither type can simply be dropped (the mouse
 # pair is the only one a desktop player sends, the touch pair carries the drag frame

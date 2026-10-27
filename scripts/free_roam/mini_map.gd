@@ -331,6 +331,9 @@ func _process(delta: float) -> void:
 	_ground.visible = Config.data.minimap_enabled
 	_overlay.visible = Config.data.minimap_enabled
 	mouse_filter = Control.MOUSE_FILTER_STOP if Config.data.minimap_enabled else Control.MOUSE_FILTER_IGNORE
+	# Hiding the map's sprites alone leaves the viewport drawing it every frame.
+	_vp.render_target_update_mode = SubViewport.UPDATE_WHEN_PARENT_VISIBLE if Config.data.minimap_enabled \
+		else SubViewport.UPDATE_DISABLED
 	if not Config.data.minimap_enabled:
 		return
 	var f := -car.global_transform.basis.z

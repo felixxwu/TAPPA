@@ -332,3 +332,35 @@ func test_the_region_banner_waits_for_the_checkpoint_band_then_shows() -> void:
 	assert_eq(label.text, UITheme.caps("Plain"))
 	banner._banner_done()
 	assert_false(banner.is_showing_banner())
+
+
+class WaterCar extends VehicleBody3D:
+	var query := Callable()
+	func set_water_query(q: Callable) -> void:
+		query = q
+
+
+# The tyre model finds frozen lakes below cfg.track_water_level_m, a stage field: free roam must
+# seat its own waterline there while it runs (again after a retune), and put the stage's back
+# when it leaves.
+func test_free_roam_seats_its_waterline_for_the_ice_and_restores_the_stages() -> void:
+	var cfg: GameConfig = Config.data
+	var stage_level := cfg.track_water_level_m
+	var bd := BiomeDirector.new()
+	bd.streamer = TerrainStreamer.new()
+	bd.streamer.settings = _settings()
+	bd.streamer.settings.water_level_m = stage_level + 5.0
+	bd.car = WaterCar.new()
+	bd._wire_water()
+	assert_eq(cfg.track_water_level_m, stage_level + 5.0)
+	# A rest-stop retune restores the car's config snapshot, stage waterline included.
+	cfg.track_water_level_m = stage_level
+	bd.ring = 0
+	bd._base_env = {"bg": Color.BLACK, "fog": Color.BLACK, "density": 0.01, "sky_affect": 0.1}
+	bd.reapply()
+	assert_eq(cfg.track_water_level_m, stage_level + 5.0, "reapply after a retune seats it again")
+	bd._exit_tree()
+	assert_eq(cfg.track_water_level_m, stage_level)
+	bd.car.free()
+	bd.streamer.free()
+	bd.free()

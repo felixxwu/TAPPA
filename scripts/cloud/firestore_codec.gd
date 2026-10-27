@@ -13,7 +13,7 @@ extends RefCounted
 #      {"integerValue": …}). An untagged value is rejected outright.
 #   2. integerValue is carried as a JSON **string**, so 64-bit values survive
 #      JSON's double-only number type. Decoding it as a number silently yields 0,
-#      which would break every revision comparison and every stage time.
+#      which would break every revision comparison.
 #
 # A third trap lives in update_mask: a PATCH without an explicit
 # updateMask.fieldPaths is treated by Firestore as a FULL REPLACE, dropping any
@@ -34,20 +34,14 @@ static func int_value(number: int) -> Dictionary:
 	return {"integerValue": str(number)}
 
 
-static func bool_value(flag: bool) -> Dictionary:
-	return {"booleanValue": flag}
-
-
-# Wrap a plain {key: String|int|bool} dictionary as a Firestore document body.
+# Wrap a plain {key: String|int} dictionary as a Firestore document body.
 # Insertion order is preserved, so the field order of the request matches the
 # order the caller wrote — which is also the order update_mask() should be given.
 static func document(values: Dictionary) -> Dictionary:
 	var fields: Dictionary = {}
 	for key in values:
 		var value: Variant = values[key]
-		if typeof(value) == TYPE_BOOL:
-			fields[String(key)] = bool_value(bool(value))
-		elif typeof(value) == TYPE_INT:
+		if typeof(value) == TYPE_INT:
 			fields[String(key)] = int_value(int(value))
 		else:
 			fields[String(key)] = string_value(String(value))

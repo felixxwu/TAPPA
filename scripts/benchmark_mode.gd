@@ -38,7 +38,6 @@ const TOGGLES: Array[Dictionary] = [
 	{"key": "vegetation", "name": "Trees & bushes"},
 	{"key": "spectators", "name": "Spectators"},
 	{"key": "barriers", "name": "Corner barriers"},
-	{"key": "distant_terrain", "name": "Distant terrain"},
 	{"key": "road_markings", "name": "Road markings"},
 	{"key": "surface_fx", "name": "Tire marks & dust FX"},
 	{"key": "full_render_distance", "name": "Full render distance"},
@@ -212,7 +211,7 @@ func end() -> void:
 const _OVERRIDDEN_FIELDS: Array[String] = [
 	"target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
 	"vegetation_enabled", "spectators_enabled", "barriers_enabled",
-	"distant_terrain_enabled", "road_markings_enabled",
+	"road_markings_enabled",
 	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled",
 	"tree_render_distance_m", "tree_render_distance_web_touch_m", "tree_cutout_mode",
 ]
@@ -232,7 +231,6 @@ func apply_overrides(cfg: GameConfig) -> void:
 	cfg.vegetation_enabled = get_option("vegetation")
 	cfg.spectators_enabled = get_option("spectators")
 	cfg.barriers_enabled = get_option("barriers")
-	cfg.distant_terrain_enabled = get_option("distant_terrain")
 	cfg.road_markings_enabled = get_option("road_markings")
 	cfg.tire_marks_enabled = get_option("surface_fx")
 	cfg.wheel_particles_enabled = get_option("surface_fx")

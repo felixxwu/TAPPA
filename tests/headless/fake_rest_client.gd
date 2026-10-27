@@ -17,7 +17,7 @@ var queued: Array[Dictionary] = []
 var requests: Array[Dictionary] = []
 
 var _fallback: Dictionary = {"ok": true, "status": 200, "json": {}, "error": "",
-	"network": false, "date_ms": 0}
+	"network": false}
 
 
 func request_json(method: int, url: String, headers: PackedStringArray,
@@ -31,9 +31,9 @@ func request_json(method: int, url: String, headers: PackedStringArray,
 
 # --- Response builders --------------------------------------------------------
 
-func queue_ok(json: Variant = {}, status := 200, date_ms := 0) -> FakeRestClient:
+func queue_ok(json: Variant = {}, status := 200) -> FakeRestClient:
 	queued.append({"ok": true, "status": status, "json": json, "error": "",
-		"network": false, "date_ms": date_ms})
+		"network": false})
 	return self
 
 
@@ -42,7 +42,7 @@ func queue_error(status: int, code := "") -> FakeRestClient:
 	if code != "":
 		body = {"error": {"message": code}}
 	queued.append({"ok": false, "status": status, "json": body,
-		"error": "http_%d" % status, "network": false, "date_ms": 0})
+		"error": "http_%d" % status, "network": false})
 	return self
 
 

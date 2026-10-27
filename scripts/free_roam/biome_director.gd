@@ -49,6 +49,7 @@ var _to := {}
 var _fade_t := -1.0
 var _swapped := true
 var _particles: Node = null
+var _stage_water_level := NAN
 # The ground colours the weather tints; the _b pair is the outer ring's on a border chunk.
 const TINTED := ["albedo_color", "tarmac_color", "albedo_color_b", "tarmac_color_b"]
 var _base_colors := {}  # ShaderMaterial -> TINTED's colours as authored
@@ -109,6 +110,7 @@ func reapply() -> void:
 	apply_handling(Config.data, region)
 	Config.data.weather = weather
 	Config.data.weather_sun_mult = float(target_look(Config.data, region, weather, _base_env).get("sun_mult", 1.0))
+	_wire_water()
 
 
 # The wheel debris's off-road particle (colour, blade or clod) for the ring's region; the default
@@ -287,6 +289,10 @@ func _apply_weather(cfg: GameConfig) -> void:
 func _wire_water() -> void:
 	if not car.has_method("set_water_query"):
 		return
+	# The tyre model finds frozen lakes by the stage's flood height, so give it the island's.
+	if is_nan(_stage_water_level):
+		_stage_water_level = Config.data.track_water_level_m
+	Config.data.track_water_level_m = streamer.settings.water_level_m
 	if Config.data.frozen_water_grip > 0.0:
 		car.set_water_query(Callable())
 	else:
@@ -304,3 +310,5 @@ func _exit_tree() -> void:
 	cfg.weather_sun_mult = 1.0
 	cfg.weather = WeatherLibrary.DEFAULT_ID
 	apply_handling(cfg, "")
+	if not is_nan(_stage_water_level):
+		cfg.track_water_level_m = _stage_water_level

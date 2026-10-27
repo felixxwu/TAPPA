@@ -27,12 +27,6 @@ var _max_life: PackedFloat32Array
 # Last EngineSim.misfire_count we turned into puffs — the delta each tick is the
 # number of new cuts to emit for.
 var _last_misfire_count := 0
-# Synthetic mode (HQ / other out-of-event displays): the car is frozen and its engine
-# never runs, so there are no misfire cutouts to key off. Instead we self-time puffs
-# from the car's damage severity, so a badly-damaged car still smokes on display. See
-# features/engine-smoke.md.
-var _synthetic := false
-var _puff_timer := 0.0
 
 
 func _stride() -> int:
@@ -41,19 +35,7 @@ func _stride() -> int:
 
 func setup(car: Node) -> void:
 	_car = car
-	_synthetic = false
 	_last_misfire_count = _engine_misfire_count()
-	_build_pool()
-
-
-# Set up for an out-of-event display (HQ car park / lift): puffs are self-timed from
-# the car's damage severity instead of engine misfire cutouts. Parent this to a
-# STATIC scene node (not the car), like the event pool, so it keeps running even
-# though the display car is frozen / process-disabled.
-func setup_synthetic(car: Node) -> void:
-	_car = car
-	_synthetic = true
-	_puff_timer = 0.0
 	_build_pool()
 
 
@@ -130,11 +112,9 @@ func _physics_process(delta: float) -> void:
 func _timed_physics_process(delta: float) -> void:
 	if not Config.data.engine_smoke_enabled or multimesh == null:
 		return
-	# Age the live smoke (rise + grow + fade), then emit new puffs — from misfire
-	# cutouts in an event, or self-timed from damage severity on a static display.
+	# Age the live smoke (rise + grow + fade), then emit a puff per new misfire cutout.
 	var changed := _advance(delta)
-	var emitted := _emit_synthetic(delta) if _synthetic else _emit_for_misfires()
-	if emitted:
+	if _emit_for_misfires():
 		changed = true
 	if changed:
 		multimesh.buffer = _buffer
@@ -182,52 +162,17 @@ func _emit_for_misfires() -> bool:
 	return true
 
 
-# Self-timed puffs for a static display car: the interval between bursts shrinks as
-# the car's damage severity rises (a healthier car puffs lazily, a wrecked one often),
-# and a fully-healthy car (severity 0) never puffs. Returns true if a burst spawned.
-func _emit_synthetic(delta: float) -> bool:
-	var severity := _car_severity()
-	if severity <= 0.0:
-		_puff_timer = 0.0
-		return false
-	var cfg: GameConfig = Config.data
-	_puff_timer += delta
-	var interval := lerpf(cfg.engine_smoke_synthetic_interval_max,
-		cfg.engine_smoke_synthetic_interval_min, severity)
-	if _puff_timer < maxf(interval, 1e-3):
-		return false
-	_puff_timer = 0.0
-	_puff(cfg)
-	return true
-
-
-# The display car's damage severity ∈ [0,1] (0 = healthy, no smoke) — the same
-# misfire intensity the engine would run with, so smoke onsets at the same health
-# threshold as the misfire.
-func _car_severity() -> float:
-	if not is_instance_valid(_car) or _car.get("damage") == null:
-		return 0.0
-	return _car.damage.misfire_level(Config.data)
-
-
 # Emit one burst of smoke particles at the car's engine emit point, each rising with
 # a little random scatter. The local emit point is the CAR's per-car engine_smoke_local
 # (its longitudinal position tracks where the engine actually sits — a rear-engine 911
 # smokes from the tail), falling back to the global GameConfig.engine_smoke_offset when
-# the car doesn't expose one (e.g. a bare stub). Coordinate space matches how this pool
-# is parented:
-# - EVENT mode is parented to the world root, so we emit in WORLD space
-#   (car.global_transform * local) as the moving car drives around.
-# - SYNTHETIC mode is parented to the (static, level) display CAR, so we emit in the
-#   car's LOCAL space — the offset directly — and the MultiMesh renders it relative to
-#   the car, placing the puff at the engine without any world-transform juggling.
+# the car doesn't expose one (e.g. a bare stub). The pool is parented to the world root,
+# so the puff is emitted in WORLD space.
 func _puff(cfg: GameConfig) -> void:
 	var local: Vector3 = cfg.engine_smoke_offset
 	if is_instance_valid(_car) and _car.get("engine_smoke_local") != null:
 		local = _car.engine_smoke_local
-	var origin: Vector3 = local
-	if not _synthetic:
-		origin = _car.global_transform * local
+	var origin: Vector3 = _car.global_transform * local
 	for _n in maxi(1, cfg.engine_smoke_per_cut):
 		var scatter := Vector3(
 			randf_range(-1.0, 1.0), randf_range(0.0, 0.5), randf_range(-1.0, 1.0)

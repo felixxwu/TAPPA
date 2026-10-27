@@ -42,7 +42,8 @@ func _ready() -> void:
 # instance_id and a catalogue index can never collide.
 static func key_for(car_ref) -> String:
 	if car_ref is Dictionary:
-		return "owned:%d" % int(car_ref.get("instance_id", -1))
+		# A fitted wing changes the model, so it needs its own preview.
+		return "owned:%d:%d" % [int(car_ref.get("instance_id", -1)), int(UpgradeLibrary.aero_fitted(car_ref))]
 	return "catalog:%d" % int(car_ref)
 
 

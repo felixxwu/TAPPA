@@ -398,7 +398,7 @@ func _physics_process(delta: float) -> void:
 		_audio_build_pending = false
 		push_warning("car.gd: fielded with apply_car(rebuild_audio=false) and no follow-up "
 			+ "_reconfigure_engine_audio() — this car's engine voice was never built. "
-			+ "Call fit_engine() (props) or apply_owned() (owned cars).")
+			+ "Call apply_owned(), which rebuilds it once fielding is done.")
 	var __t := Time.get_ticks_usec()
 	_timed_physics_process(delta)
 	PerfLog.track(&"car", Time.get_ticks_usec() - __t)
@@ -1436,8 +1436,8 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 		# Deferring is legitimate, but FORGETTING to follow up leaves the car mute with no
 		# error — the config carries the engine either way, so nothing else complains. Arm a
 		# flag the first live physics tick checks (see _physics_process) so a third caller
-		# that defers and never rebuilds is loud instead of silent. Both current deferrers
-		# (apply_owned, fit_engine) clear it, so this never fires today.
+		# that defers and never rebuilds is loud instead of silent. The one current deferrer,
+		# apply_owned, clears it, so this never fires today.
 		_audio_build_pending = true
 
 	# Per-car HP pool (CarLibrary metadata, mass-keyed). Free-roam fields it unbound
@@ -1836,9 +1836,8 @@ func apply_owned(owned: Dictionary) -> String:
 	_snapshot_live_baseline()
 	# Step 2: the effects funnel multiplies/extends the live config. apply_car already
 	# copied the baseline mass onto the RigidBody, so re-sync after a mass effect mutates
-	# cfg.mass (other written fields are read live each physics step). Currently a NO-OP on
-	# every car — UpgradeLibrary.active_effects reads `owned["boosts"]`, which nothing writes
-	# until stage 5 (todo/roguelike-pivot.md); the call stays because that is the seam.
+	# cfg.mass (other written fields are read live each physics step). The boosts it reads
+	# are the fitted parts LootRules.fielded hands in.
 	UpgradeLibrary.apply(owned, config)
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of that baseline (features/tuning.md). All three axes are ungated now (decision 24),
@@ -1868,29 +1867,6 @@ func apply_owned(owned: Dictionary) -> String:
 	# rather than inheriting this owned car's donor style.
 	_owned_wheel_texture = ""
 	return car_name
-
-
-# Fit `engine_id` onto a car that has already had apply_car() run, then rebuild the
-# engine voice. This is the swap-only counterpart to apply_owned's step 1b, for PROPS —
-# the start-line grid spawns the top rivals, and rivals run engine swaps
-# (features/rally-roster.md), so without this a "V12 Rondel Twist" would idle and pull
-# away sounding like a stock Rondel Twist (layout fixes cylinder count, which fixes the
-# firing table, which IS the voice — features/engine-audio.md) on stock gearing and mass.
-#
-# Deliberately NOT apply_owned: a prop wants none of that path's upgrades, tuning, aero
-# visibility, live-baseline snapshot or damage/HP-to-instance binding.
-#
-# Call with apply_car(index, false) so the voice is built exactly ONCE, here — this
-# rebuilds unconditionally, including when `engine_id` is empty or already the stock
-# engine, so a stock prop is never left silent.
-func fit_engine(engine_id: String) -> void:
-	if engine_id != "":
-		_apply_engine_swap({"swapped_engine": engine_id})
-		# _apply_engine_swap moves cfg.weight_front (the engine is a point mass at
-		# engine_pos) and syncs the body mass, but leaves the spring split derived from
-		# the OLD distribution — apply_owned re-syncs afterwards for the same reason.
-		_sync_suspension_to_wheels()
-	_reconfigure_engine_audio()
 
 
 # The FULL pre-upgrade, pre-tune config snapshot taken at fielding (after apply_car +

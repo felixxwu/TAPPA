@@ -43,7 +43,7 @@ already works on any body.
 |---|---|
 | Resolution rules | `scripts/wheel_style.gd` (`WheelStyle`) — `current_wheel_id`, `texture_for`, `options_for(stock_model_id, profile)`, `option_index` |
 | Style catalogue | `scripts/car_library.gd` → `wheel_catalogue(profile)` — derived from `profile["cars"]` (owned cars only), no authored wheel table |
-| Persistence | `scripts/save_manager.gd` → `set_wheels()` |
+| Persistence | the owned car's `wheels` key (nothing writes it today) |
 | Applied to the car | `scripts/car.gd` → `_owned_wheel_texture`, `_wheel_texture_for`, `reskin_wheels` |
 | The wheel view | **DELETED** with the diegetic hub — it was `hq.gd` → `CarparkMode.WHEELS` (`_enter_wheel_swap`, `_cycle_wheel`, `_apply_wheel_preview`, `_revert_wheel_preview`, `_commit_wheels`). No screen fits wheels today |
 | Entry button | `scripts/tuning_panel.gd` → `TuningPanel._wheels_button` (inside the Tuning menu; wired via `setup(owned, on_change, on_wheels)`) |
@@ -57,10 +57,11 @@ One **optional** key on the OwnedCar dict:
 "wheels": "<donor CarLibrary model id>"   # absent = the car's own (stock) wheels
 ```
 
-`Save.set_wheels(instance_id, wheel_id)` normalises **stock to an absent key** (an
-empty id, or the car's own `model_id`, erases it). That matters: it keeps
-`owned.hash()` — the key the HQ car-prop caches use — identical to a
-never-customised car, so a revert invalidates the cached prop exactly as a fit does.
+Nothing writes this key today (the `Save.set_wheels` mutator went with the wheel view);
+`car.gd` `apply_owned` → `WheelStyle.texture_for` only reads it. A future writer should
+store stock as an **absent key** (an empty id, or the car's own `model_id`), so a reverted
+car is identical to a never-customised one. `CarPreviewCache.key_for` keys on the
+instance id (plus whether a wing is fitted), so a writer must also make the preview rebuild.
 
 **No schema migration.** `_migrate` / `_default_profile` only backfill *top-level*
 profile keys, and an absent per-car key already means stock — the same convention
@@ -90,7 +91,7 @@ re-latch moved suspension connection points.
 There is **no screen that fits wheels today.** `TuningPanel` still builds the **Wheels**
 button, but it is hidden whenever the host wires no `on_wheels`, and no host does
 ([tuning.md](tuning.md)). Everything below the data model still works: the catalogue, the
-eligibility rule, `Save.set_wheels`, and the apply path. Only the way in is gone.
+eligibility rule and the apply path. The way in, and the save mutator, are gone.
 
 These are the decisions the deleted view had made, all of them earned, and a rebuild
 should not re-derive them from scratch:

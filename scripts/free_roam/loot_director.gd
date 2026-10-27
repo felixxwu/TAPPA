@@ -15,8 +15,6 @@ signal collected(site: int, value: int)
 signal recovered(value: int)
 
 const DROP_CRYSTAL := preload("res://shaders/crystal.gdshader")
-# Which coins show may have changed (one was picked up, or they all came back).
-signal pool_changed
 
 @export var streamer: TerrainStreamer
 @export var car: Node3D
@@ -85,7 +83,6 @@ func _sync_spent() -> void:
 	for s in WorldSession.list("collected"):
 		_spent[int(s)] = true
 	streamer.refresh_loot_markers()
-	pool_changed.emit()
 
 
 func _physics_process(delta: float) -> void:

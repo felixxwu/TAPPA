@@ -184,9 +184,9 @@ a conflict against one that made progress.
 | `revision > cloud_revision` | clean | Download and apply |
 | `revision > cloud_revision` | unsynced, **world never driven** | **Auto-restore the cloud** (see below) |
 | `revision > cloud_revision` | unsynced | **Conflict → ask the player** |
-| `schema_version > SCHEMA_VERSION` | any | Refuse; do not push either |
+| `schema_version > SCHEMA_VERSION` | any | Refuse; do not push either (`_remote_refused` holds off later background pushes until a pull reads a doc this build can replace) |
 | `schema_version < SCHEMA_VERSION` | any | **Overwrite with local** at `revision + 1` (state `obsolete`): an old profile resets whatever its version (decision 34), so it is no side of a conflict |
-| blob unparseable | any | Report; never overwrite the remote copy |
+| blob unparseable | any | Report; never overwrite the remote copy (same `_remote_refused` hold) |
 
 ### The one case that is resolved automatically: a wiped local save
 
@@ -231,7 +231,8 @@ The conflict prompt is a `ConfirmPopup` with legible summaries produced by
 revision numbers:
 
 - **Keep this device** — push at `remote.revision + 1`, so the other device sees
-  a clean "cloud is ahead" next time.
+  a clean "cloud is ahead" next time. It also seats `cloud_uid`: on a first sign-in or an
+  account switch the revision would otherwise count from 0.
 - **Use cloud** — apply the downloaded profile, after writing
   `profile.json.conflict.bak`. Deliberately a *separate* filename from the
   rolling `.bak`, which the next ordinary write consumes within seconds.
@@ -437,7 +438,9 @@ behind a page the player had no reason to visit.
 app. Free roam latches `Cloud.conflict_detected` and opens the prompt on its pause menu as soon
 as nothing else is on screen (not under the title, a page, the pause menu or another modal),
 pausing the game and disarming the pause menu until it closes. "Decide later" clears the latch,
-so it is not asked again until the next conflict. The account page's private copy of the resolution
+so it is not asked again until the next conflict or the next free-roam scene load (a car swap,
+a new world), which re-latches from `ConflictPrompt.is_blocked()` so a conflict raised during a
+scene change is never lost. The account page's private copy of the resolution
 handlers was DELETED rather than kept in parallel; keeping it is what let the behaviour
 drift in the first place.
 

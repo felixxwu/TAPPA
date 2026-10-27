@@ -153,6 +153,7 @@ func _ready() -> void:
 	Save.flushing.connect(save_world)  # window close, app pause, browser tab hidden
 	Cloud.profile_replaced.connect(_on_profile_replaced)
 	Cloud.conflict_detected.connect(_on_conflict_detected)
+	_conflict_due = ConflictPrompt.is_blocked()  # one raised before this scene loaded, or left for Later
 	_rest_page.map_requested.connect(func(site: int) -> void:
 		$WorldPages.show_map(_rest_page.return_from_map, site))
 	_minimap.open_requested.connect(open_full_map)
