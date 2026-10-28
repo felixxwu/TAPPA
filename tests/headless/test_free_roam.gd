@@ -747,7 +747,7 @@ func test_spawn_faces_down_the_road_out_with_its_cabin_behind() -> void:
 	assert_almost_eq(sites.back(0).dot(d), -1.0, 1e-4, "the cabin side is back the other way")
 
 
-func test_every_dead_end_and_only_dead_ends_get_a_dead_end_site() -> void:
+func test_every_dead_end_and_only_dead_ends_get_a_dead_end_site_and_a_checkpoint() -> void:
 	var terrain := _sited(_settings())
 	var net := terrain.net
 	var degree := {}
@@ -761,9 +761,16 @@ func test_every_dead_end_and_only_dead_ends_get_a_dead_end_site() -> void:
 	var found := {}
 	for i in terrain.sites.of_kind(RoadSites.Kind.DEAD_END):
 		found[terrain.sites.node[i]] = true
+	var checkpoint := {}
+	for i in terrain.sites.of_kind(RoadSites.Kind.REST):
+		if terrain.sites.node[i] > 0:
+			checkpoint[terrain.sites.node[i]] = true
+			assert_lt(terrain.sites.pos[i].distance_to(Vector2(net.node_x[terrain.sites.node[i]], net.node_y[terrain.sites.node[i]])), 1.0, "dead-end checkpoint %d sits on the road's end" % i)
 	assert_eq(found.keys().size(), expected.keys().size())
+	assert_eq(checkpoint.keys().size(), expected.keys().size())
 	for n in expected.keys():
 		assert_true(found.has(n), "dead end at node %d has its site" % n)
+		assert_true(checkpoint.has(n), "dead end at node %d has a checkpoint" % n)
 
 
 func test_roadside_pads_are_dry_hang_off_their_own_road_and_never_overlap() -> void:
@@ -819,7 +826,7 @@ func test_a_pad_is_flat_at_its_roads_height_and_reads_as_road() -> void:
 	var terrain := _sited(_settings())
 	var sites := terrain.sites
 	for i in sites.count():
-		if sites.kind[i] == RoadSites.Kind.LOOT:
+		if sites.radius[i] <= 0.0:
 			continue
 		var c := sites.pos[i]
 		assert_almost_eq(terrain.height(c.x, c.y, PackedInt32Array(), false), sites.pad_h[i], 0.001, "pad %d is flat" % i)

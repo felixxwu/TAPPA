@@ -175,12 +175,12 @@ func light_all() -> void:
 
 
 # Where the car is put at rest stop `site`: on its road beside the pad, facing along the road.
-# At spawn that is a little way down the road out, facing away from the cabin behind it.
+# At spawn and dead ends that is a little way down the road out, facing away from the cabin behind it.
 func pose_at(site: int) -> Transform3D:
 	var sites := streamer.sites
 	var a := sites.anchor[site]
 	var d := sites.dir[site]
-	if site == 0:
+	if a == sites.pos[site] and d != Vector2.ZERO:
 		return RoadRecovery.road_pose(streamer, a + d * Config.data.spawn_ahead_m, Vector3(d.x, 0.0, d.y))
 	if d == Vector2.ZERO:
 		return RoadRecovery.road_pose(streamer, a, Vector3.FORWARD)

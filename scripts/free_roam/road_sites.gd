@@ -8,9 +8,9 @@ extends RefCounted
 #              along the roads outward from spawn. Spawn itself is the first one.
 #   LOOT     — loot spots in the middle of the road, every `loot_slot_spacing_m`, picked up by
 #              driving over them. These are SLOTS: stage 7 decides which hold something.
-#   DEAD_END — the clearing at the end of every road that stops (a node with one road, not spawn).
-#              Each gets a payoff later.
-# Rest stops and dead ends are flat round pads beside (or at the end of) their road. RoadTerrain
+#   DEAD_END — the coin on the road just before the end of every road that stops (a node with one
+#              road, not spawn). The end itself is a rest stop, so every dead end has a checkpoint.
+# Rest stops are flat round pads beside (or, at a dead end, at the end of) their road. RoadTerrain
 # flattens the ground under one to the road's height and reads it as road surface, so the car can
 # pull in. A loot spot has no pad (radius 0) and leaves the ground alone.
 
@@ -107,7 +107,14 @@ func build(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain) -> void:
 				pts.reverse()  # so the polyline ends at the dead end
 			var end := pts[pts.size() - 1]
 			var d := (end - pts[pts.size() - 2]).normalized()
-			_add(Kind.DEAD_END, end, end, d, s.dead_end_radius_m, terrain, ei, n)
+			# Like spawn, a pad on the junction whose `dir` is the road out, so the cabin stands past the end.
+			_add(Kind.REST, end, end, -d, s.rest_stop_radius_m, terrain, ei, n)
+			var cum := PackedFloat64Array([0.0])
+			for i in pts.size() - 1:
+				cum.append(cum[i] + pts[i].distance_to(pts[i + 1]))
+			var coin_at := maxf(cum[cum.size() - 1] - s.rest_stop_radius_m - s.dead_end_coin_gap_m, 0.0)
+			var c := _at(pts, cum, coin_at)
+			_add(Kind.DEAD_END, c, c, -d, 0.0, terrain, ei, n)
 
 
 # Walk a link from its start, `since` metres after the last site of this kind; place one each time
@@ -183,7 +190,7 @@ static func _road_out_of_spawn(net: RoadNetwork) -> Vector2:
 
 
 # The way from site `i`'s road to the back of its pad, where its cabin stands: away from the
-# road for a roadside pad, and back down the road out for spawn, whose pad sits on its junction.
+# road for a roadside pad, and back down the road out for spawn and dead ends, whose pads sit on their junction.
 func back(i: int) -> Vector2:
 	if anchor[i] != pos[i]:
 		return (pos[i] - anchor[i]).normalized()

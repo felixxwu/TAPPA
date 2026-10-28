@@ -506,9 +506,9 @@ func _timed_physics_process(delta: float) -> void:
 	_update_steering(delta, steer_input, steer_demand)
 	# Slide-recovery aid: pulls the nose back once the car has rotated past
 	# spin_assist_angle from its travel direction. Sets the assist readout. Its own 2 m/s
-	# forward-motion floor lives in _chassis_slip_angle, which returns 0 below it — that
+	# forward-motion floor lives in chassis_slip_angle, which returns 0 below it — that
 	# replaces the speed fade the deleted understeer assist used to share.
-	_apply_spin_protection(_chassis_slip_angle(), handbrake)
+	_apply_spin_protection(chassis_slip_angle(), handbrake)
 	# Self-righting assist while any wheel is airborne.
 	_apply_level_assist()
 
@@ -813,7 +813,7 @@ static func grip_servo_step(usage_error: float, slip_peak: float) -> float:
 #
 # The 2 m/s floor is what keeps spin protection out of low-speed manoeuvring, replacing the
 # speed fade it used to share with the deleted understeer assist.
-func _chassis_slip_angle() -> float:
+func chassis_slip_angle() -> float:
 	# transposed(), not inverse(): a rigid body's basis is orthonormal (this node is
 	# never scaled), so the transpose IS the inverse — and it skips the determinant
 	# + cofactor work inverse() does, every physics tick.
@@ -960,7 +960,7 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 # the only thing that addresses the case the servo cannot: a player who holds steering INTO a
 # slide until the car rotates past recovery. Do not delete it on the grounds of being unused.
 #
-# Low-speed manoeuvring is kept clear by _chassis_slip_angle's own 2 m/s forward-motion
+# Low-speed manoeuvring is kept clear by chassis_slip_angle's own 2 m/s forward-motion
 # floor — it returns 0 below that, and 0 past 90° / when reversing — which replaces the
 # speed fade this used to share with the deleted understeer assist. The aid prevents
 # reaching a spin; it doesn't unwind a completed one.
@@ -1185,7 +1185,7 @@ func _reset() -> void:
 func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 	# Only hold once the car is actually resting on the ground — a boot-locked car
 	# (StageManager forces the handbrake) must be free to drop onto its wheels first.
-	if not (braked and speed < config.handbrake_lock_speed and _is_grounded()) or delta <= 0.0:
+	if not (braked and speed < config.handbrake_lock_speed and is_grounded()) or delta <= 0.0:
 		_hold_anchor_set = false
 		return
 	# First engaged tick: anchor on the spot the car is standing (horizontal only —
@@ -1264,12 +1264,16 @@ func _apply_heading_hold(_delta: float) -> void:
 
 # True once the car is settled on its wheels (a solid majority in ground contact),
 # so the handbrake lock never engages while it's still dropping in / airborne.
-func _is_grounded() -> bool:
+func is_grounded() -> bool:
+	return wheels_in_contact() >= 3
+
+
+func wheels_in_contact() -> int:
 	var n := 0
 	for wheel in _wheel_mounts:
 		if wheel.is_in_contact():
 			n += 1
-	return n >= 3
+	return n
 
 
 # Soft pass-through contact (a brushed bush / mowed spectator): shed a small,

@@ -6,6 +6,7 @@ extends Node
 # it, and coins are money to spend at checkpoints. Money is only safe once it's spent: when the car
 # gives up, all of it is dropped at the wreck (under a floating crystal) and every coin comes back.
 # Driving back to the wreck picks the money up again; giving up again first loses it for good.
+# Risky driving pays too: a long drift, a stretch flat out, a jump, or a tree passed close (`stunt_step`).
 # A biome ring's stock goes on sale once one of its checkpoints is lit (`unlock`).
 # Money, coins taken and rings on sale live in the world session (WorldSession). Parts belong to the
 # one car they were unlocked for: the shop sells the car being driven what it hasn't unlocked and can
@@ -13,6 +14,7 @@ extends Node
 
 signal collected(site: int, value: int)
 signal recovered(value: int)
+signal said(text: String, seconds: float)  # a money message, for the line under the minimap
 
 const DROP_CRYSTAL := preload("res://shaders/crystal.gdshader")
 
@@ -26,10 +28,12 @@ var lost := 0
 var _dropped_node: Node3D
 var _warm_crystal: Node3D
 var _wrecked := false  # from giving up until the respawn
-var _toast: Label
 var money_label: Label  # the counter in the top-left corner while driving
-var _toast_t := 0.0
 var _money_shown := -1
+var _streaks := {"Drift": [0.0, 0.0], "Speed": [0.0, 0.0], "Jump": [0.0, 0.0]}  # [seconds held, seconds since it dropped out]
+var _settled := false  # on its wheels since the last spawn, so dropping in isn't a jump
+var _near := {}  # trees inside the near-miss radius -> whether passing them still pays
+var _near_query: PhysicsShapeQueryParameters3D
 
 
 func _ready() -> void:
@@ -41,20 +45,7 @@ func _ready() -> void:
 	_sync_spent()
 	if car != null and car.get("damage") != null:
 		(car.damage as DamageModel).gave_up.connect(wreck)
-	var layer := CanvasLayer.new()
-	layer.layer = 3
-	add_child(layer)
-	_toast = Label.new()
-	_toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_toast.offset_left = -200
-	_toast.offset_right = 200
-	# Below the minimap (top-centre, minimap_top_px + minimap_height_frac of the screen).
-	_toast.anchor_top = Config.data.minimap_height_frac + 0.03
-	_toast.anchor_bottom = _toast.anchor_top
-	_toast.offset_top = Config.data.minimap_top_px
-	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast.visible = false
-	layer.add_child(_toast)
+		(car.damage as DamageModel).damaged.connect(func(_loss: float, _at: Vector3) -> void: _void_stunts())
 	_sync_dropped_node()
 	money_label = UITheme.label("")
 	money_label.name = "MoneyLabel"
@@ -63,7 +54,7 @@ func _ready() -> void:
 	money_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(6)))
 	# On the HUD's layer, so it hides under paused pages with the gauges (features/hud.md).
 	var hud := get_parent().get_node_or_null("HUD")
-	(hud if hud != null else layer).add_child(money_label)
+	(hud if hud != null else self).add_child(money_label)
 
 
 # The coin at `site` now ({"kind": "coin", "value": n}), or {} when it's been taken or isn't a coin spot.
@@ -89,14 +80,12 @@ func _physics_process(delta: float) -> void:
 	if car == null or streamer == null:
 		return
 	step()
+	if car is VehicleBody3D:
+		stunt_step(delta, car.chassis_slip_angle(), car.linear_velocity.length(), car.wheels_in_contact(), _trees_near())
 	var money := WorldSession.money()
 	if money != _money_shown:
 		_money_shown = money
 		money_label.text = "$%d" % money
-	if _toast_t > 0.0:
-		_toast_t -= delta
-		if _toast_t <= 0.0:
-			_toast.visible = false
 
 
 # Pick up the coins the car drives past — anywhere on the road around one counts
@@ -124,10 +113,86 @@ func _has_loot(site: int) -> bool:
 # it was, or the straight line through the terrain would count as a drive past.
 func car_teleported(p: Vector2) -> void:
 	_last_p = p
+	_reset_stunts()
 
 
 func respawned(_site: int, _wreck: Vector3) -> void:
 	_wrecked = false
+	_reset_stunts()
+
+
+# Pay for risky driving: a drift, fast stretch or jump pays for its length once it ends, and a tree in
+# `near` (ids from _trees_near) pays once it's passed. Taking a hit voids whatever is under way.
+func stunt_step(dt: float, slip: float, speed: float, wheels_down: int, near: Array) -> void:
+	if _wrecked:
+		return
+	var s := streamer.settings
+	_settled = _settled or wheels_down >= 3
+	_streak("Drift", dt, wheels_down >= 3 and speed >= s.drift_min_speed_mps and absf(slip) >= deg_to_rad(s.drift_min_angle_deg), s.drift_money_per_s, s.stunt_min_s)
+	_streak("Speed", dt, speed >= s.fast_speed_mps, s.fast_money_per_s, s.stunt_min_s)
+	_streak("Jump", dt, _settled and wheels_down == 0, s.jump_money_per_s, s.jump_min_s)
+	var still := {}
+	for id in near:
+		still[id] = _near.get(id, speed >= s.near_miss_min_speed_mps)
+	for id in _near:
+		if _near[id] and not still.has(id):
+			_pay("Near miss", s.near_miss_money)
+	_near = still
+
+
+func _streak(label: String, dt: float, on: bool, per_s: float, min_s: float) -> void:
+	var st: Array = _streaks[label]
+	if on:
+		st[0] += dt
+		st[1] = 0.0
+	elif st[0] > 0.0:
+		st[1] += dt
+		if st[1] >= streamer.settings.stunt_grace_s:
+			if st[0] >= min_s:
+				_pay(label, roundi(st[0] * per_s))
+			st[0] = 0.0
+			st[1] = 0.0
+
+
+# Trees near the car, one id per tree: every tree of a field shares one collision body, told apart
+# by shape index.
+func _trees_near() -> Array:
+	if _near_query == null:
+		_near_query = PhysicsShapeQueryParameters3D.new()
+		_near_query.shape = SphereShape3D.new()
+		_near_query.exclude = [(car as CollisionObject3D).get_rid()]
+	(_near_query.shape as SphereShape3D).radius = streamer.settings.near_miss_radius_m
+	_near_query.transform = Transform3D(Basis.IDENTITY, car.global_position)
+	var out := []
+	for hit in car.get_world_3d().direct_space_state.intersect_shape(_near_query, 16):
+		var body: Node = hit["collider"]
+		if body != null and body.get_parent() is BillboardField:
+			out.append("%d:%d" % [body.get_instance_id(), hit["shape"]])
+	return out
+
+
+func _pay(label: String, value: int) -> void:
+	WorldSession.set_money(WorldSession.money() + value)
+	Audio.play_beep(Config.data.coin_pickup_sfx_freq_hz, Config.data.coin_pickup_sfx_duration_sec)
+	_say("%s +$%d" % [label, value])
+
+
+func _void_stunts() -> void:
+	for label in _streaks:
+		if label == "Jump":
+			continue  # every landing jolts the car enough to count as a hit
+		_streaks[label][0] = 0.0
+		_streaks[label][1] = 0.0
+	for id in _near:
+		_near[id] = false
+
+
+func _reset_stunts() -> void:
+	for st: Array in _streaks.values():
+		st[0] = 0.0
+		st[1] = 0.0
+	_near.clear()
+	_settled = false
 
 
 func collect(site: int) -> void:
@@ -303,8 +368,4 @@ func buy(item: Dictionary) -> Dictionary:
 
 
 func _say(text: String) -> void:
-	if _toast == null:
-		return
-	_toast.text = text
-	_toast.visible = true
-	_toast_t = streamer.settings.toast_s
+	said.emit(text, streamer.settings.toast_s)

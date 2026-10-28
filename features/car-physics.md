@@ -163,7 +163,7 @@ for each).
      direction, a corrective yaw torque pulls the nose back, ramping in linearly from 0 at the
      threshold to full at twice it, with a yaw-rate damping term (`SPIN_ASSIST_DAMPING`) so the
      slide settles instead of oscillating. Suppressed while the handbrake is held (so
-     deliberate drifts work), and gated by `Car._chassis_slip_angle`'s own 2 m/s
+     deliberate drifts work), and gated by `Car.chassis_slip_angle`'s own 2 m/s
      forward-motion floor, which keeps it out of low-speed manoeuvring — it prevents reaching a
      spin rather than unwinding a completed one.
 

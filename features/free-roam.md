@@ -317,7 +317,7 @@ was spawned with. There is **one water level** for the whole island (no per-ring
 ## Sites: rest stops, loot slots and dead ends
 
 `RoadSites` plans every place that hangs off the network, once at boot from the whole graph
-(decisions 30–31 in `todo/2026-10-19-free-roam-pivot.md`). Rest stops and dead ends are flat round pads.
+(decisions 30–31 in `todo/2026-10-19-free-roam-pivot.md`). Rest stops are flat round pads.
 `RoadTerrain.height` flattens the ground under it to its road's height (`pad_h`, blending back
 over `pad_blend_m`, widened where the pad sits far above or below the land so the fade's slope stays
 under `pad_blend_max_slope`, up to `pad_blend_max_m` — `RoadSites.blend_m`) and reports it as road, so it draws as gravel, grips as road and nothing is
@@ -337,7 +337,11 @@ planted on it (`is_clear`).
   stops and water. They sit on the road's centreline with radius 0 and no pad: the ground isn't
   flattened and they stay out of `pad_at` / `is_clear`, so the coin floats over the road and is
   collected by driving over or past it. Each holds a coin ([loot.md](loot.md)).
-- **Dead ends (`DEAD_END`):** a clearing at every junction with only one road (spawn aside).
+- **Dead ends (`DEAD_END`):** every junction with only one road (spawn aside) ends in a rest stop
+  centred on the road's end, set up like spawn: its `dir` is the road out, so `back` puts the
+  cabin past the end and `RestStops.pose_at` respawns the car `spawn_ahead_m` back up the road
+  facing away from it. So every dead end has a checkpoint. The dead end's own site is just a coin on the road
+  `dead_end_coin_gap_m` before that pad (radius 0, like a loot slot).
 - **Roadside placement** (`_place_along`, `_try_roadside`, rest stops only): never within `JUNCTION_CLEAR_M` of
   a junction. The pad sits beside the road on a seeded side, or the other side if that one is
   water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
@@ -359,7 +363,7 @@ planted on it (`is_clear`).
 - **No beacons:** the tall beams of light over rest stops (`SiteBeacons`) were removed on
   2026-10-23 when the cabins arrived; from afar, rest stops show only on the minimap.
 
-On the default island (seed 1): 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
+On the default island (seed 1), before dead ends got checkpoints: 147 rest stops, 78 loot slots and 27 dead ends on 48 km of road.
 
 ## Damage and rest stops
 

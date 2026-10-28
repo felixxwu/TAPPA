@@ -57,6 +57,8 @@ var _overlay: MarkerLayer
 var prompt_label: Label
 var _prompt_how := ""
 var _prompt_text := ""
+var _toast_text := ""
+var _toast_left := 0.0
 var _mat: ShaderMaterial
 var _inner := Rect2(0, 0, 1, 1)
 var _cells := {}  # Vector2i (CELL_M cell of the midpoint) -> PackedInt32Array of segment ids
@@ -117,7 +119,7 @@ func _ready() -> void:
 	prompt_label = UITheme.label("")
 	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	prompt_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	prompt_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, 0))
+	prompt_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
 	prompt_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	prompt_label.gui_input.connect(_on_prompt_input)
 	add_child(prompt_label)
@@ -150,8 +152,7 @@ func set_frame_size(s: Vector2) -> void:
 		_mat.set_shader_parameter("inner", Vector4(0.0, 0.0, _inner.size.x / s.x, _inner.size.y / s.y))
 		_mat.set_shader_parameter("shadow_uv", Vector2(SHADOW_PX / s.x, SHADOW_PX / s.y))
 	if prompt_label != null:
-		prompt_label.position = Vector2(0.0, s.y)
-		prompt_label.size = Vector2(s.x, UITheme.FONT_SIZE * 3)  # a finger-sized hit box
+		_place_prompt_label()
 
 
 # --- the projection (the GDScript twin of mini_map.gdshader's `ground`) -------------------------
@@ -325,6 +326,7 @@ static func marker_color(m: int) -> Color:
 # --- per frame ---------------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
+	_toast_left = maxf(_toast_left - delta, 0.0)
 	visible = is_live()
 	if not visible or car == null:
 		return
@@ -359,15 +361,30 @@ func _process(delta: float) -> void:
 	_overlay.queue_redraw()
 
 
-# The line under the frame: the action you can take here.
+# The line under the frame: the rest-stop prompt when there is one, else the latest money message
+# (`toast`) while it lasts — one box, so the two never show at once.
 func update_prompt_label() -> void:
 	var at_stop := rest_stops != null and rest_stops.can_open()
-	prompt_label.visible = at_stop
 	var how := "Tap" if Platform.is_touch() else "Enter / A"
 	if how != _prompt_how:
 		_prompt_how = how
 		_prompt_text = UITheme.caps(how + ": open rest stop")
-	prompt_label.text = _prompt_text if at_stop else ""
+	var text := _prompt_text if at_stop else (_toast_text if _toast_left > 0.0 else "")
+	prompt_label.visible = text != ""
+	if text != prompt_label.text:
+		prompt_label.text = text
+		_place_prompt_label()
+
+
+func toast(text: String, seconds: float) -> void:
+	_toast_text = text
+	_toast_left = seconds
+
+
+# Hug the text and centre it under the frame, on whole pixels.
+func _place_prompt_label() -> void:
+	prompt_label.size = Vector2.ZERO
+	prompt_label.position = Vector2(roundf((size.x - prompt_label.size.x) * 0.5), size.y)
 
 
 # Which way the outer rings lie on screen: from the car, straight away from spawn (the world

@@ -257,3 +257,25 @@ func test_a_window_resize_while_it_is_out_of_the_tree_is_ignored() -> void:
 	vp.size_changed.emit()
 	assert_null(mm.get_viewport(), "the map is out of the tree")
 	add_child(mm)
+
+
+# The rest-stop prompt and money messages share the one line under the frame: the prompt always
+# wins, and a message shows only while it lasts.
+func test_the_line_shows_money_messages_but_the_rest_stop_prompt_wins() -> void:
+	var mm := _map()
+	var rs := FakeRestStops.new()
+	autofree(rs)
+	mm.rest_stops = rs
+	mm.toast("+$5", 1.0)
+	mm.update_prompt_label()
+	assert_true(mm.prompt_label.visible)
+	assert_eq(mm.prompt_label.text, "+$5")
+	rs.site = 3
+	mm.update_prompt_label()
+	assert_string_contains(mm.prompt_label.text, "REST STOP", "the prompt takes the line")
+	rs.site = -1
+	mm.update_prompt_label()
+	assert_eq(mm.prompt_label.text, "+$5", "the message is back once the stop is left")
+	mm._toast_left = 0.0
+	mm.update_prompt_label()
+	assert_false(mm.prompt_label.visible, "and gone once it has lasted")

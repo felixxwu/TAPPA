@@ -94,7 +94,8 @@ extends Resource
 ## Money a coin is worth on top of that, per ring further out.
 @export var coin_value_per_ring := 500
 @export var rest_stop_radius_m := 16.0
-@export var dead_end_radius_m := 14.0
+## How far before a dead end's checkpoint pad its coin sits on the road.
+@export var dead_end_coin_gap_m := 10.0
 ## How far a pad's flat ground blends back into the natural terrain, at least. The blend widens
 ## where the pad sits far above or below the land around it, so its slope stays under
 ## pad_blend_max_slope (rise over run), up to pad_blend_max_m.
@@ -161,6 +162,29 @@ extends Resource
 ## and far gaps at the same distance tie; larger favours the horizon over foliage). Never puts
 ## either ahead of a collision or near-mesh build.
 @export_range(0.0, 40.0) var far_lead_chunks := 3.0
+
+@export_group("Stunts")
+## A drift: the car pointing at least this far from where it's going, at this speed (m/s). Each
+## second of it pays this much once the drift ends.
+@export var drift_min_angle_deg := 25.0
+@export var drift_min_speed_mps := 10.0
+@export var drift_money_per_s := 75.0
+## Going fast: each second at this speed (m/s) or more pays this much once the car slows.
+@export var fast_speed_mps := 30.0
+@export var fast_money_per_s := 50.0
+## A drift or fast stretch shorter than this pays nothing; dropping out of one for less than
+## stunt_grace_s (a drift swinging to the other side) doesn't end it.
+@export var stunt_min_s := 1.0
+@export var stunt_grace_s := 0.4
+## A jump: each second with all four wheels off the ground pays this much once the car lands;
+## a hop shorter than jump_min_s pays nothing.
+@export var jump_money_per_s := 200.0
+@export var jump_min_s := 0.3
+## A near miss: a tree passing within this distance of the car's centre at this speed (m/s),
+## without being hit.
+@export var near_miss_radius_m := 2.0
+@export var near_miss_min_speed_mps := 15.0
+@export var near_miss_money := 100
 
 @export_group("Feedback")
 ## How long a loot / shop message stays up, in seconds.

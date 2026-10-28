@@ -58,7 +58,7 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
 - **Collect:** driving past — at any speed, anywhere on the road around it (`RoadSites.reached`,
   swept over the step's travel; a jump of 100 m or more in one step, a teleport, doesn't count).
   The spot joins `collected`, the money is added, its coin is removed (`TerrainStreamer.refresh_loot_marker`, that one site only) and
-  the HUD toasts "+$n".
+  "+$n" shows on the line under the minimap (`said` → `MiniMap.toast`, see minimap.md).
 - **The wreck:** when the car gives up (`DamageModel.gave_up` → `LootDirector.wreck`), all the money
   is left at the wreck (`WorldSession.dropped`: `{pos, money}`; `lost` keeps the amount for the
   wreck page, "You dropped $n here"), replacing — and losing — any earlier drop, and `collected` is
@@ -71,6 +71,24 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
 - **The counter:** `LootDirector.money_label`, "$n" in the top-left corner while driving, parented to the HUD layer so it hides under paused pages like the gauges.
 - **On the ground:** a gold disc stood on its edge, spinning and bobbing in `coin.gdshader` (no
   per-coin scripts), lit by the fake headlight cone at night (`headlight_cone.gdshaderinc`, added to its glow), planted with the mid chunk (`TerrainStreamer._queue_site_markers` → `_coin_marker`, node `Loot<site>`).
+
+## Stunt money
+
+Risky driving pays into the same money (and so is dropped on a wreck like coins), said on the
+same line as coins ("Drift +$n", "Speed +$n", "Jump +$n", "Near miss +$n"). `LootDirector.stunt_step` takes
+plain readings each physics tick (`Car.chassis_slip_angle`, speed, `Car.wheels_in_contact`, the
+trees near the car) so tests drive it without physics. Knobs: `FreeRoamSettings` → "Stunts".
+
+- **Drift / Speed / Jump** are streaks: a drift past `drift_min_angle_deg` with the wheels down, a
+  stretch at `fast_speed_mps`, or time with all four wheels off the ground. Each pays seconds held ×
+  its rate once it ends (out of it for `stunt_grace_s`, so a drift swinging sides is one drift);
+  one shorter than `stunt_min_s` / `jump_min_s` pays nothing.
+- **Near miss:** a tree inside `near_miss_radius_m` of the car at `near_miss_min_speed_mps` pays
+  `near_miss_money` once it's left behind (`_trees_near`: a sphere query, trees told apart by
+  collision shape index since a `BillboardField` shares one body). Rocks and barriers don't count.
+- **A hit voids it:** `DamageModel.damaged` drops every streak under way and every pending near
+  miss — except a jump, since every landing jolts the car hard enough to register as a hit. Teleports and respawns reset it, and a jump only counts once the car has been on its wheels since
+  (so dropping in at a spawn isn't one); a wrecked car earns nothing.
 
 All of it lives in the world block (`WorldSession`: money, collected, revealed; parts live on each owned car); see
 [world-session.md](world-session.md).
