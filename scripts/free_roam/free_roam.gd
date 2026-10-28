@@ -270,6 +270,7 @@ func show_title() -> TitleScreen:
 		layer.queue_free()
 		orbit.queue_free()
 		$CameraManager.activate_current()
+		$MobileControls.set_scheme(int(Save.get_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)))
 		get_tree().paused = false
 		_pause.set_input_enabled(true)
 	layer.add_child(title)

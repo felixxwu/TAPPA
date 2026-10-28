@@ -15,6 +15,7 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.profile = _save._default_profile()
+	_save.set_setting(TitleScreen.FIRST_RUN_DONE_KEY, true)
 	CarFixtures.install()
 	_entered[0] = 0
 	_closed[0] = 0
@@ -151,6 +152,46 @@ func test_the_title_screen_is_keyboard_and_gamepad_navigable() -> void:
 	MenuNav.of(t._page)._unhandled_input(_press("ui_cancel"))
 	await get_tree().process_frame
 	assert_eq(t.view, TitleScreen.View.MAIN, "back from the starter choice returns to the title")
+
+
+func _first_run_title(touch: bool) -> TitleScreen:
+	_save.profile = _save._default_profile()
+	Config.data.mobile_controls_force = touch
+	WorldSession.new_world(3, TitleScreen.starter_choices()[0])
+	WorldSession.fresh = true
+	var t := await _open()
+	await get_tree().process_frame
+	return t
+
+
+func test_a_new_player_picks_a_camera_first() -> void:
+	var force: bool = Config.data.mobile_controls_force
+	var t := await _first_run_title(false)
+	assert_eq(t.view, TitleScreen.View.FIRST_RUN)
+	assert_true(t._settings_menu.showing("camera"))
+	var row: Dictionary = t._settings_menu.camera_rows[-1]
+	assert_true(t._settings_menu.camera_rows.any(func(r: Dictionary) -> bool:
+		return r.button == t.get_viewport().gui_get_focus_owner()), "a camera row has the cursor")
+	row.button.pressed.emit()
+	await get_tree().process_frame
+	Config.data.mobile_controls_force = force
+	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)), int(row.key))
+	assert_eq(t.view, TitleScreen.View.MAIN, "no touch layout to pick off a touch device")
+	assert_false(TitleScreen.needs_first_run(), "shown only once")
+
+
+func test_a_new_player_on_touch_also_picks_a_layout() -> void:
+	var force: bool = Config.data.mobile_controls_force
+	var t := await _first_run_title(true)
+	MenuNav.of(t._page)._unhandled_input(_press("ui_cancel"))
+	await get_tree().process_frame
+	assert_true(t._settings_menu.showing("schemes"), "back keeps the default camera and moves on")
+	var row: Dictionary = t._settings_menu.scheme_rows[-1]
+	row.button.pressed.emit()
+	await get_tree().process_frame
+	Config.data.mobile_controls_force = force
+	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)), int(row.key))
+	assert_eq(t.view, TitleScreen.View.MAIN)
 
 
 func test_the_update_prompt_records_its_dismissal() -> void:

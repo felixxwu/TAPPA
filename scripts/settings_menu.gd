@@ -364,6 +364,10 @@ func show_page(id: String) -> void:
 	_show_page(_pages[id])
 
 
+func showing(id: String) -> bool:
+	return (_pages[id] as Control).visible
+
+
 func show_list() -> void:
 	show_page("list")
 

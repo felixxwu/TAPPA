@@ -9,11 +9,15 @@ extends Control
 #   STARTER  — a new world starts by choosing one of a few starter cars (decision 19); picking one
 #              creates the world and drives into it.
 #   SETTINGS — the shared SettingsMenu.
+#   FIRST_RUN — shown once to a brand-new player before MAIN: the SettingsMenu's camera page, then
+#              (on touch devices) its touch-layout page. Picking a row, Next or Back moves on.
 # New World over an existing world asks first: the old world, its cars and its loot are lost.
 # A first-time player's world was already built at boot (WorldSession.fresh), so New World just
 # picks the car for it.
 
-enum View { MAIN, STARTER, SETTINGS }
+enum View { MAIN, STARTER, SETTINGS, FIRST_RUN }
+
+const FIRST_RUN_DONE_KEY := "first_run_setup_done"
 
 var view := View.MAIN
 var _page: MenuPage
@@ -33,8 +37,12 @@ func _ready() -> void:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	_show(View.MAIN)
+	_show(View.FIRST_RUN if needs_first_run() else View.MAIN)
 	_check_for_update()
+
+
+static func needs_first_run() -> bool:
+	return WorldSession.fresh and not Save.get_setting(FIRST_RUN_DONE_KEY, false)
 
 
 static func starter_choices() -> PackedStringArray:
@@ -77,6 +85,17 @@ func _show(v: View) -> void:
 			var back := _page.add_action(UITheme.row_button("< Back", _settings_back))
 			MenuNav.attach(_page, {first = back, on_back = _settings_back})
 			_settings_menu.show_list.call_deferred()
+		View.FIRST_RUN:
+			_page = MenuPage.new({"title": "Welcome", "alpha": 0.0, "width": UITheme.px(560)})
+			add_child(_page)
+			_settings_menu = SettingsMenu.new()
+			_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_page.body().add_child(_settings_menu)
+			_settings_menu.camera_changed.connect(_first_run_next.unbind(1))
+			_settings_menu.scheme_changed.connect(_first_run_next.unbind(1))
+			var next := _page.add_action(UITheme.row_button("Next >", _first_run_next))
+			MenuNav.attach(_page, {first = next, on_back = _first_run_next})
+			_settings_menu.show_camera.call_deferred()
 	UITheme.enforce(_page)
 
 
@@ -126,6 +145,14 @@ func show_update_prompt(current: int, latest: int) -> void:
 func _settings_back() -> void:
 	if _settings_menu != null and _settings_menu.go_back():
 		return
+	_show(View.MAIN)
+
+
+func _first_run_next() -> void:
+	if Platform.is_touch() and not _settings_menu.showing("schemes"):
+		_settings_menu.show_schemes()
+		return
+	Save.set_setting(FIRST_RUN_DONE_KEY, true)
 	_show(View.MAIN)
 
 

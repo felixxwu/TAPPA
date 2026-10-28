@@ -96,6 +96,11 @@ Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.m
   existing world, a `ConfirmPopup` asks first. On a `fresh` world there's no confirm: picking the car
   already fielded just closes the menu, and another car keeps the same seed and reloads to field it.
 - **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
+- **FIRST_RUN:** shown instead of MAIN, once, on a `fresh` world while the `first_run_setup_done`
+  setting is unset (`needs_first_run`): the `SettingsMenu` camera page, then on touch devices
+  (`Platform.is_touch`) its touch-layout page. Picking a row, Next or Back moves on; the end sets the
+  setting and shows MAIN. Closing the title re-reads both choices (`CameraManager.activate_current`,
+  `MobileControls.set_scheme` in `free_roam.gd` → `show_title`), so they apply without a reload.
 
 Free roam's pause menu quits to the title (`PauseMenu.quit_to_title`), saving first — which reloads
 the world with the menu over it. A rest-stop reload or `--auto-drive` boot shows no menu.
