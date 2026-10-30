@@ -1796,6 +1796,44 @@ func has_nitrous() -> bool:
 ## cone (and grows with how hard the wheel is spinning).
 @export_range(0.0, 1.0) var wheel_particle_spread := 0.35
 
+@export_group("Dust Puffs")
+## Opaque, blocky low-poly dust clouds left behind the rear wheels on a road
+## (DustPuffs, features/dust-puffs.md). Separate from the wheelspin clods above.
+@export var dust_puffs_enabled := true
+## Puff colour on a gravel road — the average of textures/gravel.jpg, so the dust is
+## the gravel's own colour (lit like the car, then jittered per puff). A region with its
+## own gravel_texture authors its matching RegionLibrary look_of()["dust_color"].
+@export var dust_puff_color := Color(0.53, 0.49, 0.42)
+## Puff colour on tarmac — near-white, since paved road has no gravel to colour it.
+@export var dust_puff_tarmac_color := Color(0.95, 0.95, 0.93)
+## Per-puff random brightness variation, as a +/- fraction of the colour.
+@export_range(0.0, 1.0) var dust_puff_color_jitter := 0.1
+## Hard cap on live puffs (ring-buffer size + MultiMesh instance count).
+@export_range(8, 500) var dust_puff_max := 128
+## Puff radius at birth, in metres (it grows over its life).
+@export var dust_puff_size_m := 0.22
+## How much a puff grows over its life (final radius = birth radius x this).
+@export_range(1.0, 8.0) var dust_puff_growth := 2.8
+## How long a puff lives before it disappears, in seconds (+/-20% per puff).
+@export var dust_puff_lifetime_s := 1.2
+## Metres each rear wheel rolls on gravel between puffs (lower = denser trail).
+@export var dust_puff_spacing_m := 0.8
+## Below this ground speed (m/s) no dust is kicked up.
+@export var dust_puff_min_speed_mps := 4.0
+## Fraction of the car's velocity a puff starts with (it then slows under drag).
+@export_range(0.0, 1.0) var dust_puff_inherit := 0.25
+## Upward drift speed of a new puff, in m/s.
+@export var dust_puff_rise_mps := 0.8
+## Random scatter speed added to each new puff, in m/s.
+@export var dust_puff_scatter_mps := 0.6
+## Linear drag per second on a puff's velocity (fraction bled off each second).
+@export_range(0.0, 10.0) var dust_puff_drag := 2.0
+## A puff closer than this to the camera (metres) is hidden...
+@export var dust_puff_camera_hide_m := 1.5
+## ...and back to full size by this distance, so the chase camera never drives
+## through a solid puff.
+@export var dust_puff_camera_show_m := 3.5
+
 @export_group("Engine Smoke")
 ## Grey smoke that puffs from the bonnet each time a damaged engine misfires
 ## (EngineSmoke, features/engine-smoke.md). Its own small MultiMesh pool, separate

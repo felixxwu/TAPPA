@@ -129,7 +129,8 @@ call site (and auditing for other hardcoded `"home"` checks).
 `sky_panorama`, `grass_texture`, `gravel_texture`, `tree_mix`,
 `bush_billboard`, `spawn_bush_mesh`, `background_color`, `terrain_tint`,
 `terrain_layers`, `tarmac_color`, `road_marking_color`,
-`grass_particle_color`, `grass_particle_square`, `rock_density`.
+`grass_particle_color`, `grass_particle_square`, `rock_density`, `dust_color`
+(the [dust puff](dust-puffs.md) colour on gravel, the average of the region's `gravel_texture`; Greece and the Alps author it).
 `bush_billboard`/`terrain_tint`/`terrain_layers` are
 reserved slots — schema support exists, nothing authors them yet.
 

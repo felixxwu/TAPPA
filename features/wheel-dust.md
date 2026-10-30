@@ -12,6 +12,8 @@ where `TerrainStreamer.surface_at` answers the surface query (see [free-roam.md]
 
 **Tests:** `tests/headless/test_wheel_particles.gd`, `tests/headless/test_cpu_particle_pool.gd`
 
+The big opaque dust clouds behind the car on the road are a separate pool, [dust-puffs.md](dust-puffs.md).
+
 ## Why a hand-rolled CPU pool + MultiMesh
 
 The project renders with `gl_compatibility` (desktop + mobile), which has no

@@ -94,6 +94,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles |
 | [tire-marks.md](tire-marks.md) | `TireMarks` — gravel ruts laid behind the wheels (per-wheel ribbon mesh, gated to the road, capped) |
 | [wheel-dust.md](wheel-dust.md) | `WheelParticles` — cheap surface debris flung from the driven wheels under wheelspin (one CPU pool + MultiMesh, ring-buffered; per-particle colour/size/roll picks gravel clods, grass blades, or nothing on tarmac) |
+| [dust-puffs.md](dust-puffs.md) | `DustPuffs` — opaque, flat-shaded low-poly dust clouds left behind the rear wheels on road (gravel-coloured on gravel, near-white on tarmac) (one blob mesh + MultiMesh; size/tumble in the instance basis; hidden near the camera; pops at end of life) |
 | [engine-smoke.md](engine-smoke.md) | `EngineSmoke` — grey smoke puffed from the bonnet on each damage misfire (own small CPU pool + MultiMesh, grows & fades) |
 | [exhaust-flames.md](exhaust-flames.md) | `ExhaustFlames` — backfire flame from each exhaust pipe on a rev-limiter bang and while nitrous delivers; plus the exhaust lab dev scene for positioning the pipes |
 | [car-lamps.md](car-lamps.md) | `CarLamps` — glowing head and tail lamp flares at each car's authored lamp centres; headlights with the night cone, tail lamps with it and under the foot brake |

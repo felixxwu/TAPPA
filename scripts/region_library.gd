@@ -18,7 +18,7 @@ const LOOK_KEYS := [
 	"sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
 	"terrain_tint", "terrain_layers", "tarmac_color", "road_marking_color",
-	"grass_particle_color", "grass_particle_square", "rock_density",
+	"grass_particle_color", "grass_particle_square", "rock_density", "dust_color",
 ]
 
 # The home region's billboard tree (also the fallback when a region authors no
@@ -129,6 +129,8 @@ const REGIONS: Array[Dictionary] = [
 		"tarmac_color": Color(0.26, 0.25, 0.23),
 		"road_marking_color": Color(0.85, 0.70, 0.16),
 		"grass_particle_color": Color(0.52, 0.49, 0.38),
+		# Dust puffs on gravel take the gravel's colour (gravel-greece.jpg averages this).
+		"dust_color": Color(0.74, 0.73, 0.65),
 	},
 	# The taiga — the NW corner. Deliberately the THINNEST region in the catalogue:
 	# `look_from: "home"` takes home's sky, gravel, tarmac, lane paint, terrain tints
@@ -239,6 +241,8 @@ const REGIONS: Array[Dictionary] = [
 		# clod already uses, sized off the same wheel_particle_size_m, so the two can
 		# never drift apart.
 		"grass_particle_square": true,
+		# Dust puffs on the snow road take its colour (snow-road.jpg averages this).
+		"dust_color": Color(0.75, 0.76, 0.78),
 		# NOT optional here, unlike in the other regions. world.gd drives BOTH
 		# env.background_color and env.fog_light_color off this, and the scene baseline
 		# in main.tscn is an olive green (0.482, 0.498, 0.403) chosen for the home

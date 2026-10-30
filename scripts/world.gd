@@ -953,6 +953,11 @@ func _build_persistent_managers(cfg: GameConfig, _result: Dictionary,
 	# green) and shape (snow throws square clods of powder, not slim grass blades) —
 	# falls back to GameConfig when the region authors none.
 	_wheel_particles.apply_region_look(region_look)
+	# Opaque blocky dust clouds behind the rear wheels on gravel (features/dust-puffs.md).
+	_dust_puffs = _ensure_child("DustPuffs",
+		func() -> Node: return DustPuffs.new()) as DustPuffs
+	_dust_puffs.setup($Car)
+	_dust_puffs.apply_region_look(region_look)
 
 	# Grey smoke puffed from the bonnet each time a damaged engine misfires. Its own
 	# small MultiMesh pool; reads the car's engine misfire counter live. See
@@ -1066,6 +1071,7 @@ var _road_markings: RoadMarkings
 
 # Flings cheap gravel dust off the driven wheels under wheelspin.
 var _wheel_particles: WheelParticles
+var _dust_puffs: DustPuffs
 var _engine_smoke: EngineSmoke
 var _exhaust_flames: ExhaustFlames
 var _car_lamps: CarLamps

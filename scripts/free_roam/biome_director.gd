@@ -35,6 +35,7 @@ const SWAP_FOG_SWELL := 2.5
 # The car's wheel debris (free_roam.gd creates it). A new ring re-seats its off-road particle
 # colour and shape from the ring's region look, the way world.gd does once per stage.
 var wheel_particles: WheelParticles = null
+var dust_puffs: DustPuffs = null
 
 var ring := -1
 var weather := ""
@@ -116,8 +117,11 @@ func reapply() -> void:
 # The wheel debris's off-road particle (colour, blade or clod) for the ring's region; the default
 # blade where the region authors none.
 func _seat_particle_look() -> void:
+	var look := RegionLibrary.look_of(region_of(streamer.settings, ring))
 	if wheel_particles != null:
-		wheel_particles.apply_region_look(RegionLibrary.look_of(region_of(streamer.settings, ring)))
+		wheel_particles.apply_region_look(look)
+	if dust_puffs != null:
+		dust_puffs.apply_region_look(look)
 
 
 # The region a ring wears: ring_regions[i], wrapping; the authored progression if the list is empty.

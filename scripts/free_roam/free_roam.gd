@@ -28,6 +28,7 @@ var owned: Dictionary = {}
 # surface under each wheel comes from the streamer's surface_at, the same query the tyres' grip
 # reads. Made here exactly as world.gd makes the stage's (features/wheel-dust.md).
 var wheel_particles: WheelParticles
+var dust_puffs: DustPuffs
 var region_banner: RegionBanner
 
 # How often the car's pose and condition are written to the world session, in seconds.
@@ -93,6 +94,12 @@ func _ready() -> void:
 	add_child(wheel_particles)
 	wheel_particles.setup(_car)
 	$BiomeDirector.wheel_particles = wheel_particles  # re-seats the region's blade per ring
+	# Opaque blocky dust clouds behind the rear wheels on gravel (features/dust-puffs.md).
+	dust_puffs = DustPuffs.new()
+	dust_puffs.name = "DustPuffs"
+	add_child(dust_puffs)
+	dust_puffs.setup(_car)
+	$BiomeDirector.dust_puffs = dust_puffs  # re-seats the region's dust colour per ring
 	# The region's name across the screen the first time the car drives into each biome ring.
 	region_banner = RegionBanner.new()
 	region_banner.name = "RegionBanner"
