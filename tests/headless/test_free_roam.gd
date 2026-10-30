@@ -1308,3 +1308,11 @@ func test_far_gaps_interleave_with_planting_but_never_beat_near_work() -> void:
 	assert_gt(st._far_priority(hole, 0.0), s.far_radius + 0.5 + TerrainStreamer.PLANT_PRIORITY,
 		"a far mesh hidden under a finer one waits behind all planting")
 	hole.mid_mesh.free()
+
+
+func test_new_world_picks_an_island_whose_roads_reach_the_snow_ring() -> void:
+	var s: FreeRoamSettings = Config.data.free_roam.duplicate()
+	s.world_seed = s.pick_world_seed()
+	assert_true(s.island_qualifies())
+	s.new_world_min_road_km = 1.0e6
+	assert_false(s.island_qualifies(), "an island is turned down when its roads are too short")

@@ -17,7 +17,9 @@ puts the car back on the nearest road. A label in the top-left shows the streami
 `LabNoise` reproduces the lab's random stream (mulberry32), hash and value noise bit for bit,
 and `RoadNetwork` / `RoadTerrain` follow the lab's growth, wiggle and height maths step by step,
 holding coordinates in 64-bit floats (Vector2 is 32-bit). Checked on seed 1: identical
-junctions and identical heights at 175 inland points. Two details keep it exact:
+junctions and identical heights at 175 inland points. The lab's "Next seed reaching snow" button
+steps through seeds until the roads reach the outermost (snow) ring and total more than the given
+km, the same test New World uses (`FreeRoamSettings.pick_world_seed`). Two details keep it exact:
 - a near-tie (within 1 nm) between road segments goes to the lower segment number in both,
   because two roads meeting at a junction are only equally near up to rounding;
 - point counts use `ceil(x - 1e-9)`, so a length that divides exactly can't flip on
@@ -440,10 +442,12 @@ owned`), so the rest-stop page's tuning works on the shared `TuningPanel` / `car
 stage's `BarrierField` (modules, MultiMesh batching, solid collision in the damage obstacle
 group), under the foliage node. The rules match the stage's corner barriers
 (`features/barriers.md`):
-- **Sharp bends only:** a polyline vertex that turns by more than
-  `FreeRoamSettings.barrier_turn_min_deg`. The run covers the outside of the chord before
-  it, the arc the road edge makes about the vertex, and the chord after it, reaching
-  `barrier_lead_m + BEND_REACH_M` each way.
+- **Sharp bends only:** corner rounding (`max_corner_turn_deg`) splits a sharp corner into
+  several gentle vertices, so `RoadBarriers._bends` groups same-way vertices within
+  `barrier_lead_m + BEND_REACH_M` and calls the group sharp when its turns add up to more than
+  `FreeRoamSettings.barrier_turn_min_deg`. The run covers the outside of the chord before the
+  bend, the arc about each vertex and the chords between them, and the chord after it,
+  reaching `barrier_lead_m + BEND_REACH_M` each way.
 - **Only where the land falls away:** `BarrierLayout._land_falls_away`, with the stage's
   `GameConfig` `barrier_*` drop and bank settings. It's judged once per three modules to keep
   boot cheap, about 0.3 s on the default island.

@@ -8,6 +8,9 @@ extends Resource
 
 @export_group("Island")
 @export var world_seed := 5687
+## New World draws random seeds until the roads reach the outermost (snow) ring and total more
+## than this, measured junction to junction like tools/road_network_lab.html.
+@export var new_world_min_road_km := 40.0
 ## The car the game starts in, by CarLibrary id (the first car if it is missing).
 @export var car_id := "porsche911"
 @export var island_radius_m := 10000.0
@@ -107,7 +110,7 @@ extends Resource
 @export var pad_blend_max_slope := 0.25
 
 @export_group("Barriers")
-## A road vertex that turns by more than this is a sharp bend and gets a barrier on its outside
+## A bend (the few rounded vertices of one corner) that turns by more than this in total is sharp and gets a barrier on its outside
 ## where the land falls away. The module and drop rules are GameConfig's barrier_* fields.
 @export var barrier_turn_min_deg := 28.0
 
@@ -217,3 +220,26 @@ extends Resource
 # The closest the coast ever comes, which is also the radius the biome rings divide.
 func inner_radius_m() -> float:
 	return island_radius_m * 0.82
+
+
+# A random island worth playing, for New World (falls back to world_seed if none turns up).
+func pick_world_seed() -> int:
+	var s: FreeRoamSettings = duplicate()
+	for _try in 200:
+		s.world_seed = randi() % 100000
+		if s.island_qualifies():
+			return s.world_seed
+	return world_seed
+
+
+func island_qualifies() -> bool:
+	var net := RoadNetwork.new()
+	var terrain := RoadTerrain.new()
+	terrain.setup(self, net)
+	net.build(self, terrain)
+	var length := 0.0
+	var reaches_snow := false
+	for e: Vector2i in net.edges:
+		length += Vector2(net.node_x[e.x] - net.node_x[e.y], net.node_y[e.x] - net.node_y[e.y]).length()
+		reaches_snow = reaches_snow or terrain.ring_index(net.node_x[e.y], net.node_y[e.y]) == ring_count - 1
+	return reaches_snow and length > new_world_min_road_km * 1000.0

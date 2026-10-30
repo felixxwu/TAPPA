@@ -10,7 +10,7 @@ func _ready() -> void:
 		Benchmark.start()
 		return
 	if not WorldSession.has_world():
-		WorldSession.new_world(Config.data.free_roam.world_seed, TitleScreen.starter_choices()[0])
+		WorldSession.new_world(Config.data.free_roam.pick_world_seed(), TitleScreen.starter_choices()[0])
 		WorldSession.fresh = true
 	WorldSession.title_pending = true
 	Scenes.change_to.call_deferred(get_tree(), Scenes.FREE_ROAM)

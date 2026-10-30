@@ -25,6 +25,9 @@
 <div id="side">
   <label>Seed</label>
   <div class="row"><input id="seed" type="number" value="5687"><button id="rnd">🎲</button></div>
+  <div class="row"><button id="find">Next seed reaching snow with road over</button>
+    <input id="minKm" type="number" value="40" style="width:50px"> km</div>
+  <span id="found" class="hint"></span>
 
   <label>Algorithm</label>
   <select id="algo">
@@ -582,12 +585,16 @@ let last = null, picked = -1;
 
 const view = { zoom: 1, panX: 0, panY: 0 };
 
-function draw() {
-  const seed = +$("seed").value, R = state.radius, algo = $("algo").value;
-  const rand = mulberry32(seed * 7919 + 1);
-  const t0 = performance.now();
+function buildNet(seed, R) {
+  const rand = mulberry32(seed * 7919 + 1), algo = $("algo").value;
   const custom = { growth, growthPruned, ports, colonize, tensor }[algo];
-  const net = custom ? custom(rand, seed, R) : graphAlgo(algo, rand, seed, R);
+  return custom ? custom(rand, seed, R) : graphAlgo(algo, rand, seed, R);
+}
+
+function draw() {
+  const seed = +$("seed").value, R = state.radius;
+  const t0 = performance.now();
+  const net = buildNet(seed, R);
   last = { net, seed, R, ms: performance.now() - t0 };
   render();
   if (view3d) schedule3D();
@@ -1048,6 +1055,19 @@ cv.onwheel = ev => {
 cv.ondblclick = () => { view.zoom = 1; view.panX = view.panY = 0; render(); };
 $("seed").oninput = () => { picked = -1; draw(); };
 $("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 99999); picked = -1; draw(); };
+// Snow is the outermost biome ring (FreeRoamSettings.ring_regions ends on it).
+$("find").onclick = () => {
+  const R = state.radius, minM = +$("minKm").value * 1000, snow = state.ringCount - 1;
+  for (let seed = +$("seed").value + 1, tries = 0; tries < 5000; seed++, tries++) {
+    const { nodes, edges } = buildNet(seed, R);
+    if (edges.reduce((s, e) => s + e[2], 0) <= minM) continue;
+    const d = shortest(nodes.length, edges, nodes, 0).d;
+    if (!nodes.some((p, i) => d[i] < Infinity && ringOf(p, seed, R, state.ringCount) === snow)) continue;
+    $("seed").value = seed; $("found").textContent = `found after ${tries + 1} tries`; picked = -1; draw();
+    return;
+  }
+  $("found").textContent = "none in the next 5000 seeds";
+};
 $("algo").onchange = () => { picked = -1; buildParams(); draw(); };
 for (const id of ["wiggle", "rings", "water"]) $(id).onchange = draw;
 $("terrain").onchange = () => { buildParams(); render(); if (view3d) schedule3D(); };

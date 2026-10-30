@@ -7,10 +7,10 @@ extends RefCounted
 # (features/barriers.md): only on the OUTSIDE of sharp bends, and only where the land falls away
 # (BarrierLayout._land_falls_away). The modules and their collision are the stage's BarrierField.
 #
-# A free-roam road is a polyline, so a sharp bend is a vertex where the road turns by more than
-# `barrier_turn_min_deg`. Its barrier runs along the outside of the chord before the vertex, round
-# the arc the road edge makes about the vertex, and along the chord after it, each side reaching
-# `barrier_lead_m + BEND_REACH_M` from the vertex. Junctions, and the pads of rest stops, loot
+# A free-roam road is a polyline whose corners are rounded into runs of gentle vertices, so a sharp
+# bend is such a run that turns by more than `barrier_turn_min_deg` in total. Its barrier runs along
+# the outside of the chord before the bend, round each vertex and between them, and along the chord
+# after it, each side reaching `barrier_lead_m + BEND_REACH_M` from the bend. Junctions, and the pads of rest stops, loot
 # slots and dead ends, stay open.
 
 const BEND_REACH_M := 14.0
@@ -44,37 +44,35 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 		for i in pts.size() - 1:
 			cum.append(cum[i] + pts[i].distance_to(pts[i + 1]))
 		var length := cum[cum.size() - 1]
-		for v in range(1, pts.size() - 1):
-			var t0 := (pts[v] - pts[v - 1]).normalized()
-			var t1 := (pts[v + 1] - pts[v]).normalized()
-			var turn := t0.angle_to(t1)
-			if absf(turn) < turn_min:
-				continue
-
-			# Outside of the bend: the road turns toward +perp when the cross product is positive.
-			var side := -1 if t0.cross(t1) > 0.0 else 1
+		for bend: Vector2i in _bends(pts, cum, reach, turn_min):
+			var v0 := bend.x
+			var v1 := bend.y
+			# Outside of the bend: the road turns toward +perp when the turn is positive.
+			var side := -1 if _turn(pts, v0) > 0.0 else 1
 			var stretch: Array = []
-			# Before the vertex, along the incoming chord.
-			var s0 := maxf(cum[v] - reach, JUNCTION_CLEAR_M)
-			var a := s0
-			while a < cum[v] - pitch * 0.25:
+			# Before the bend, along the incoming chord.
+			var a := maxf(cum[v0] - reach, JUNCTION_CLEAR_M)
+			while a < cum[v0] - pitch * 0.25:
 				stretch.append(_entry(pts, cum, a, side))
 				a += pitch
-			# Round the arc the road edge makes about the vertex.
 			var arc_r := half_w + road_gap
-			var steps := ceili(absf(turn) * arc_r / pitch)
-			for k in steps:
-				var tangent := t0.rotated(turn * (k + 0.5) / steps)
-				stretch.append({"pos": pts[v], "tangent": tangent, "side": side, "style": BarrierSection.Style.ARMCO})
-			# After the vertex, along the outgoing chord.
-			var b := cum[v] + pitch * 0.5
-			var s1 := minf(cum[v] + reach, length - JUNCTION_CLEAR_M)
-			while b <= s1:
-				stretch.append(_entry(pts, cum, b, side))
-				b += pitch
+			for v in range(v0, v1 + 1):
+				# Round the arc the road edge makes about each vertex, then follow the chord to the next.
+				var t0 := (pts[v] - pts[v - 1]).normalized()
+				var turn := _turn(pts, v)
+				var steps := ceili(absf(turn) * arc_r / pitch)
+				for k in steps:
+					var tangent := t0.rotated(turn * (k + 0.5) / steps)
+					stretch.append({"pos": pts[v], "tangent": tangent, "side": side, "style": BarrierSection.Style.ARMCO})
+				var b := cum[v] + pitch * 0.5
+				var end := minf(cum[v] + reach, length - JUNCTION_CLEAR_M) if v == v1 else cum[v + 1] - pitch * 0.25
+				while b <= end:
+					stretch.append(_entry(pts, cum, b, side))
+					b += pitch
 			# Keep only modules over falling land and clear of every pad, in runs of min_run or more.
 			# The bend's road candidates are gathered once, so each height sample scans a short list.
-			var cands := net.candidates_for(pts[v].x, pts[v].y, reach + half_w + probe + 2.0, s.mountain_dist_m)
+			var span := cum[v1] - cum[v0]
+			var cands := net.candidates_for(pts[v0].x, pts[v0].y, reach + span + half_w + probe + 2.0, s.mountain_dist_m)
 			var ground := func(p: Vector2) -> float: return terrain.height(p.x, p.y, cands, true)
 			var kept: Array = []
 			# Whether the land falls away is judged once per FALLS_SAMPLE_EVERY modules (at the middle
@@ -100,6 +98,32 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 					kept = []
 			if not kept.is_empty():
 				run = _flush(kept, run, min_run)
+
+
+# The sharp bends of one road, as [first, last] vertex. Rounding splits a sharp corner into several
+# gentle vertices a few metres apart, so a bend is a run of vertices turning the same way within
+# `window` metres whose turns add up to turn_min; the ends of the road stay open for junctions.
+static func _bends(pts: PackedVector2Array, cum: PackedFloat64Array, window: float, turn_min: float) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var last := cum[cum.size() - 1] - JUNCTION_CLEAR_M
+	var v := 1
+	while v < pts.size() - 1:
+		var sign := signf(_turn(pts, v))
+		var total := _turn(pts, v)
+		var w := v
+		while w + 1 < pts.size() - 1 and cum[w + 1] - cum[v] <= window and signf(_turn(pts, w + 1)) == sign:
+			w += 1
+			total += _turn(pts, w)
+		if absf(total) >= turn_min and cum[v] >= JUNCTION_CLEAR_M and cum[w] <= last:
+			out.append(Vector2i(v, w))
+			v = w + 1
+		else:
+			v += 1
+	return out
+
+
+static func _turn(pts: PackedVector2Array, v: int) -> float:
+	return (pts[v] - pts[v - 1]).angle_to(pts[v + 1] - pts[v])
 
 
 func _entry(pts: PackedVector2Array, cum: PackedFloat64Array, arc: float, side: int) -> Dictionary:

@@ -51,7 +51,7 @@ screen for a frame after the swap (the benchmark ending, the title's New World, 
 write its car into the world that replaced it. `CarPreviewCache` drops its owned-car previews on
 the same signal.
 
-- **New world** (`new_world`): the fixed island seed (`FreeRoamSettings.world_seed`) and a starter car. It replaces the old world **and the
+- **New world** (`new_world`): a random seed whose roads reach the snow ring and total over `new_world_min_road_km` (`FreeRoamSettings.pick_world_seed`) and a starter car. It replaces the old world **and the
   old owned cars**, because a world is the whole save.
 - **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints;
   `is_seen` / `see` keep an int set, rebuilt only when the stored list is a different one).
@@ -84,14 +84,14 @@ The game boots straight into the world with the title menu over it. The main sce
 the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_speed`, kept above the
 ground, its tween running while paused); closing hands back to the chosen camera
 (`CameraManager.activate_current`).
-A first-time player (no world) gets one built at boot with the first starter car and `FreeRoamSettings.world_seed`,
+A first-time player (no world) gets one built at boot with the first starter car and a seed from `FreeRoamSettings.pick_world_seed`,
 marked `WorldSession.fresh` (in memory only), so it's already there behind the menu.
 Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
 - **MAIN:** Continue (only with a world that isn't `fresh`) just closes the menu (`close`) and
   unpauses; New World; Settings.
 - **STARTER:** New World first asks for a starter car. The choices are the cars in
   `CarLibrary` with `"ring": 0` (`starter_choices` → `LootRules.starter_cars`).
-  Picking one makes the world (seed `FreeRoamSettings.world_seed`, so it matches tools/road_network_lab.html) and reloads free roam (`enter_world`; the
+  Picking one makes the world (a seed from `FreeRoamSettings.pick_world_seed`) and reloads free roam (`enter_world`; the
   new world moves the generation on, so the old scene's exit save doesn't write the old car's pose into it). Over an
   existing world, a `ConfirmPopup` asks first. On a `fresh` world there's no confirm: picking the car
   already fielded just closes the menu, and another car keeps the same seed and reloads to field it.
