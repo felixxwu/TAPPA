@@ -19,6 +19,7 @@ const WHEEL_SHADER := preload("res://shaders/ps1_wheel_tire.gdshader")
 const AERO_TAG := "_aero"
 
 var _wheel_mats: Dictionary = {}
+var _warm_specks: Array[MeshInstance3D] = []
 # The last owned dict applied to this car (apply_owned / live re-derive). Empty
 # until fielded from an owned car. Used by set_body_hidden(false) to re-derive
 # aero-part visibility after the debug overlay restores the body.
@@ -2234,15 +2235,46 @@ func _apply_model_material(model: Node3D, texture: Texture2D) -> void:
 			continue
 		var mat := mi.get_surface_override_material(0) as ShaderMaterial
 		if mat == null or mat.shader != shader:
-			mat = ShaderMaterial.new()
-			mat.shader = shader
-			mat.set_shader_parameter("texture_tile", Vector2(1, 1))
-			mat.set_shader_parameter("albedo_color", Color.WHITE)
-			mat.set_shader_parameter("albedo_texture", texture)
-			# Same fake per-vertex lighting as the procedural car meshes (see
-			# world.gd) so the authored body gets shape too, not just flat colour.
-			config.apply_car_light(mat)
-			mi.set_surface_override_material(0, mat)
+			mi.set_surface_override_material(0, _body_material(texture))
+
+
+func _body_material(texture: Texture2D) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/ps1_models_lit.gdshader")
+	mat.set_shader_parameter("texture_tile", Vector2(1, 1))
+	mat.set_shader_parameter("albedo_color", Color.WHITE)
+	mat.set_shader_parameter("albedo_texture", texture)
+	# Same fake per-vertex lighting as the procedural car meshes (see
+	# world.gd) so the authored body gets shape too, not just flat colour.
+	config.apply_car_light(mat)
+	return mat
+
+
+# Shader warm-up (found by the loading screen's warm_up() walk): a speck of every catalogue car's
+# body and wheel texture, so switching car at a rest stop doesn't upload them mid-drive.
+func warm_up(pos: Vector3) -> void:
+	clear_warm_up()
+	for spec in CarLibrary.all():
+		var mats: Array[Material] = [_wheel_material(String(spec.get("wheel_texture", "")))]
+		var body_tex := String(spec.get("model_texture", ""))
+		if not body_tex.is_empty():
+			mats.append(_body_material(load(body_tex)))
+		for m in mats:
+			var box := BoxMesh.new()
+			box.size = Vector3.ONE * 0.01  # a box, so a face points at the camera whatever the car's heading
+			var mi := MeshInstance3D.new()
+			mi.mesh = box
+			mi.material_override = m
+			add_child(mi)
+			mi.global_position = pos
+			_warm_specks.append(mi)
+
+
+func clear_warm_up() -> void:
+	for mi in _warm_specks:
+		if is_instance_valid(mi):
+			mi.queue_free()
+	_warm_specks.clear()
 
 
 # Set visibility on every *_aero-tagged MeshInstance3D under `body` (the wing

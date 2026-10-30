@@ -38,7 +38,10 @@ only the game has.
    whose branches all die out goes too (`_prune_dead_ends`). Each link then becomes
    a wiggled polyline (`_densify`, a seeded noise offset inside a band around the straight line,
    landing exactly on both ends; `road_twist` sets how far it may swing and `bend_length_m` how
-often it turns). The polylines are flattened into segments in a 100 m grid, and
+often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_turn_deg` (a
+   point becomes two points a quarter of the way along its segments, repeated until none is too
+   sharp). Where exactly two links meet, the cut spans both and that node moves to the middle of
+   it; spawn, junctions and dead ends never move. The lab does the same (`roundCorners`). The polylines are flattened into segments in a 100 m grid, and
    everything downstream asks one question: `nearest(p, max_d)`, which leaves its answer in
    `hit_d` / `hit_q` / `hit_s` / `hit_edge` / `hit_side` / `hit_dir` so a query allocates nothing.
    `candidates_for` gathers, once per chunk, every segment that can be nearest for any point in
@@ -196,9 +199,10 @@ often it turns). The polylines are flattened into segments in a 100 m grid, and
   making its own.
   Then `free_roam.gd._warm_up` compiles every first-use shader behind a `LoadingScreen` with the
   car's controls locked, the same passes as the stage's load (`world.gd._warm_shaders_behind_cover`):
-  every `warm_up()`/`clear_warm_up()` node (debris, tyre marks, smoke, flames, crowds), a speck of
+  every `warm_up()`/`clear_warm_up()` node (debris, tyre marks, smoke, flames, crowds, every weather
+  particle kind, every car's body and wheel textures), a speck of
   every ring's ground material (`warm_up_materials`), one of every ring's trees plus a bush, every
-  rock, a coin, a rest-stop cabin (without its collision box) (`warm_up_spawns`, on flat stand-in ground), and a
+  rock, a coin, a rest-stop cabin and one barrier module (both without their collision) (`warm_up_spawns`, on flat stand-in ground), and a
   throwaway camera turning full circle above the car and then looking down from high up
   (`_look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
   the auto-driver or the title menu take over (`_hand_over`). Headless skips the warm-up.
@@ -377,9 +381,8 @@ Players see rest stops as **checkpoints**: every player-facing string says "Chec
 code (`RestStops`, `RestStopPage`, `RoadSites.Kind.REST`, the save's `lit_sites`) keeps the old name.
 
 `CheckpointBanner` (`scripts/free_roam/checkpoint_banner.gd`, on `RestStops.lit`): the first time a
-checkpoint is lit, a full-width "Checkpoint reached" band fades in, with a small "Damage
-repaired" subtitle under it (`SUBTITLE`, at `UITheme.FONT_SIZE`; lighting always goes through
-`RestStops._pass`, which fully repairs the car), holds `banner_hold_s` (3 s) and fades
+checkpoint is lit, a full-width "Checkpoint reached" band fades in, with a small "Repairs while you stay"
+subtitle under it (`SUBTITLE`, at `UITheme.FONT_SIZE`), holds `banner_hold_s` (3 s) and fades
 out while the car drives on (the tween runs through pauses). The band is presentation only: the ring's stock goes on sale from `RestStops.lit` → `LootDirector.site_lit` (see loot.md). The band itself is
 the static `CheckpointBanner.build_band(text, subtitle = "")`, shared with the region banner
 (which passes no subtitle).
@@ -395,8 +398,10 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
   (`rest_reached` → `RoadSites.reached`, swept over the step's travel with
   `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its cabin
-  doorway glows orange and its minimap mark turns orange), makes it the respawn point (`last_site`) and fully heals the car
-  (`DamageModel.repair`, cooling included; `healed`). Spawn is lit from the start. A move there by
+  doorway glows orange and its minimap mark turns orange), makes it the respawn point (`last_site`). Every physics step the car is
+  there it heals (`RestStops._heal`: `checkpoint_heal_fraction_per_s` of max HP per second); reaching
+  full HP runs `DamageModel.repair` (cooling mended, wheels straightened) and emits `healed`. A fast
+  drive-by only gets a tick's worth. Spawn is lit from the start. A move there by
   travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
   stop (a new game, Continue, the reload after a parts or car change): the first `step` only notes
   where the car is (`_primed`), so the page doesn't open until it drives away and comes back.

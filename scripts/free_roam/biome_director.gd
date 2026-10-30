@@ -50,6 +50,7 @@ var _to := {}
 var _fade_t := -1.0
 var _swapped := true
 var _particles: Node = null
+var _warm_fields: Array[Node] = []
 var _stage_water_level := NAN
 # The ground colours the weather tints; the _b pair is the outer ring's on a border chunk.
 const TINTED := ["albedo_color", "tarmac_color", "albedo_color_b", "tarmac_color_b"]
@@ -253,6 +254,28 @@ func _sky_material() -> PanoramaSkyMaterial:
 	if env == null or env.sky == null:
 		return null
 	return env.sky.sky_material as PanoramaSkyMaterial
+
+
+# Boot warm-up (free_roam.gd._warm_up): a small field of every weather particle kind on the camera,
+# so the first rain, snow or sandstorm of a drive doesn't compile its shaders mid-drive.
+func warm_up(_pos: Vector3) -> void:
+	clear_warm_up()
+	if camera == null:
+		return
+	var kinds := {}
+	for entry in WeatherLibrary.CONDITIONS:
+		kinds[String(entry.get("particles", ""))] = true
+	for kind: String in kinds:
+		var field := WeatherField.spawn(camera, kind, 64, 0.0)
+		if field != null:
+			_warm_fields.append(field)
+
+
+func clear_warm_up() -> void:
+	for field in _warm_fields:
+		if is_instance_valid(field):
+			field.queue_free()
+	_warm_fields.clear()
 
 
 # The weather's own side effects, outside the cross-faded environment.

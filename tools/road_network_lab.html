@@ -73,6 +73,7 @@ const PARAMS = {
     ["waterLevel", "Water level (m)", -20, 10, -2, 1],
     ["roadTwist", "Road twistiness (bend size)", 0, 1.5, 0.24, 0.01],
     ["bendLen", "Bend length (m)", 30, 800, 150, 10],
+    ["cornerTurn", "Max corner turn (deg)", 1, 180, 20, 1],
   ],
   ports: [
     ["cell", "Cell size (m)", 200, 1500, 500, 25],
@@ -610,7 +611,7 @@ function render() {
 
   const { nodes, edges } = net;
   const edgePts = e => e.pts || ($("wiggle").checked ? wiggle(nodes[e[0]], nodes[e[1]], seed) : [nodes[e[0]], nodes[e[1]]]);
-  const roadPts = edges.map(edgePts);
+  const roadPts = roundCorners(nodes, edges, edges.map(edgePts));
   last.roadPts = roadPts; last.sc = sc;
 
   // land, rings and water, sampled on a coarse screen grid
@@ -974,6 +975,42 @@ function wiggle(a, b, seed) {
     out.push({ x: a.x + (b.x - a.x) * t + nx * off, y: a.y + (b.y - a.y) * t + ny * off });
   }
   return out;
+}
+
+// Same as RoadNetwork._round_corners: every bend sharper than the limit becomes two points a
+// quarter of the way along its segments, repeated; where exactly two links meet the cut spans both.
+function roundCorners(nodes, edges, roadPts) {
+  const max = state.cornerTurn * Math.PI / 180, deg = new Array(nodes.length).fill(0), ends = new Map();
+  const turn = (a, b, c) => { const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y; return Math.abs(Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)); };
+  const cut = (p, q) => ({ x: p.x + (q.x - p.x) * 0.25, y: p.y + (q.y - p.y) * 0.25 });
+  for (const [a, b] of edges) { deg[a]++; deg[b]++; }
+  edges.forEach(([a, b], ei) => [[a, true], [b, false]].forEach(([n, atStart]) => {
+    if (n !== 0 && deg[n] === 2) ends.set(n, [...(ends.get(n) || []), [ei, atStart]]);
+  }));
+  let pts = roadPts.map(l => l.slice());
+  for (let pass = 0; pass < 6; pass++) {
+    let any = false;
+    pts = pts.map(l => {
+      const out = [l[0]];
+      for (let i = 1; i < l.length - 1; i++) {
+        if (turn(l[i - 1], l[i], l[i + 1]) > max) { out.push(cut(l[i], l[i - 1]), cut(l[i], l[i + 1])); any = true; }
+        else out.push(l[i]);
+      }
+      out.push(l[l.length - 1]);
+      return out;
+    });
+    for (const [[ea, sa], [eb, sb]] of ends.values()) {
+      const A = pts[ea], B = pts[eb], p = sa ? A[0] : A[A.length - 1];
+      const na = sa ? A[1] : A[A.length - 2], nb = sb ? B[1] : B[B.length - 2];
+      if (turn(na, p, nb) <= max) continue;
+      const ca = cut(p, na), cb = cut(p, nb), m = { x: (ca.x + cb.x) / 2, y: (ca.y + cb.y) / 2 };
+      if (sa) A.splice(0, 1, m, ca); else A.splice(A.length - 1, 1, ca, m);
+      if (sb) B.splice(0, 1, m, cb); else B.splice(B.length - 1, 1, cb, m);
+      any = true;
+    }
+    if (!any) break;
+  }
+  return pts;
 }
 
 function pick(mx, my) {

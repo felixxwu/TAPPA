@@ -286,6 +286,23 @@ func test_a_forced_weather_overrides_every_rings_draw_until_cleared() -> void:
 	st.free()
 
 
+func test_the_warm_up_draws_every_weather_particle_kind_and_cleans_up() -> void:
+	var d := BiomeDirector.new()
+	add_child_autofree(d)
+	var cam := Camera3D.new()
+	add_child_autofree(cam)
+	d.camera = cam
+	d.warm_up(Vector3.ZERO)
+	var kinds := {}
+	for entry in WeatherLibrary.CONDITIONS:
+		if String(entry.get("particles", "")) != "":
+			kinds[entry["particles"]] = true
+	assert_eq(cam.get_child_count(), kinds.size(), "one field per particle kind")
+	d.clear_warm_up()
+	await get_tree().process_frame
+	assert_eq(cam.get_child_count(), 0, "the fields are gone after the warm-up")
+
+
 func _terrain(s: FreeRoamSettings) -> RoadTerrain:
 	var t := RoadTerrain.new()
 	t.setup(s, RoadNetwork.new())
@@ -329,6 +346,10 @@ func test_one_of_every_plant_rock_and_marker_is_drawn_at_boot_and_cleaned_up() -
 	assert_not_null(root, "the warm-up set is out")
 	var meshes := root.find_children("*", "GeometryInstance3D", true, false)
 	assert_gt(meshes.size(), Foliage.ROCK_SCENES.size(), "trees, a bush, every rock and the markers")
+	var barriers := root.find_children("*", "BarrierField", true, false)
+	assert_eq(barriers.size(), 1, "a barrier module")
+	assert_eq(root.find_children("*", "CollisionObject3D", true, false).size(), 0,
+		"nothing solid is left in front of the car")
 	for i in 4:
 		await get_tree().process_frame
 	assert_false(is_instance_valid(root) and root.is_inside_tree(), "and it is gone after the warm-up")

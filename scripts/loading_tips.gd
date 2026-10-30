@@ -27,7 +27,7 @@ const TIPS: Array[String] = [
 	"Heavy damage makes an engine misfire long before the car gives up.",
 	"An overheating engine slowly drains the car's health.",
 	# --- Free roam ---
-	"Driving past a checkpoint lights it and fully repairs your car.",
+	"Driving past a checkpoint lights it. Stay there and your car repairs itself.",
 	"Stop at a checkpoint and press Enter or A to open its page: parts, garage, map and tuning.",
 	"If your car gives up, you respawn at the last checkpoint you passed.",
 	"A wreck drops all your money where it happened. Drive back to the crystal to pick it up.",

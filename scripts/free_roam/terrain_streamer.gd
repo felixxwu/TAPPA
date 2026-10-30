@@ -473,7 +473,7 @@ func warm_up_materials(camera: Camera3D, frames := 3) -> void:
 			mi.queue_free()
 
 
-# Draw one of every plant, rock, site marker and coin any ring can show, a few metres in front of
+# Draw one of every plant, rock, site marker, coin and a barrier module any ring can show, a few metres in front of
 # `camera`, for a few frames: their shaders compile and textures upload now, behind the boot,
 # rather than on the first chunk that holds one.
 func warm_up_spawns(camera: Camera3D, frames := 3) -> void:
@@ -501,6 +501,12 @@ func warm_up_spawns(camera: Camera3D, frames := 3) -> void:
 	for marker: Node3D in [_coin_marker(0), cabin]:
 		root.add_child(marker)
 		marker.global_position = ahead
+	var barrier := BarrierField.new()
+	root.add_child(barrier)
+	barrier.build([{"pos": Vector2(ahead.x, ahead.z), "tangent": Vector2.RIGHT, "side": 1,
+		"style": BarrierSection.Style.ARMCO, "run": 0}], barrier_params(), func(_p: Vector2) -> float: return ahead.y)
+	for body in barrier.find_children("*", "CollisionObject3D", true, false):
+		body.free()  # only its look needs warming, not a rail in front of the car
 	for i in frames:
 		await get_tree().process_frame
 	root.queue_free()

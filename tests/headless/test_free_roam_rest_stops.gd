@@ -123,9 +123,9 @@ func test_driving_onto_a_rest_stop_lights_it_and_makes_it_the_respawn_point() ->
 
 
 # Driving straight past a rest stop, on the far lane of its road and at speed, still counts: it
-# lights, becomes the respawn point and heals the car fully — without stopping, and without the
-# page (that's for stopping).
-func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> void:
+# lights, becomes the respawn point and starts healing the car — without the page (that's for
+# stopping).
+func test_driving_past_a_rest_stop_at_speed_lights_it_and_starts_healing() -> void:
 	var site := _a_rest_stop()
 	_rest.lit_sites.erase(site)
 	_rest.set_physics_process(false)
@@ -136,8 +136,6 @@ func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> voi
 	var d := sites.dir[site]
 	var dmg: DamageModel = _car.damage
 	dmg.hp = dmg.max_hp * 0.3
-	dmg.cooling_broken = true
-	dmg.engine_temp = 50.0
 	watch_signals(_rest)
 	# One physics step's travel at ~200 km/h straight past it, so a per-frame point check would miss.
 	_rest._last_p = far_lane - d * 15.0
@@ -147,11 +145,31 @@ func test_driving_past_a_rest_stop_at_speed_lights_it_and_heals_the_car() -> voi
 	_rest.step(1.0 / 60.0)
 	assert_true(_rest.is_lit(site), "lit by driving past")
 	assert_eq(_rest.last_site, site, "and the respawn point")
+	assert_gt(dmg.hp, dmg.max_hp * 0.3, "healing started")
+	assert_signal_not_emitted(_rest, "opened", "no page without stopping")
+	_rest.set_physics_process(true)
+
+
+# Staying at a rest stop heals the car tick by tick; full HP finishes the repair once.
+func test_staying_at_a_rest_stop_heals_the_car_to_full() -> void:
+	var site := _a_rest_stop()
+	await _park_on(site)
+	_rest.set_physics_process(false)
+	var dmg: DamageModel = _car.damage
+	dmg.hp = dmg.max_hp * 0.3
+	dmg.cooling_broken = true
+	dmg.engine_temp = 50.0
+	watch_signals(_rest)
+	_rest.step(1.0 / 60.0)
+	assert_true(dmg.hp > dmg.max_hp * 0.3 and dmg.hp < dmg.max_hp, "one tick heals a little, not all")
+	assert_true(dmg.cooling_broken, "cooling waits for full HP")
+	for i in 60:
+		_car.linear_velocity = Vector3.ZERO
+		_rest.step(1.0)
 	assert_eq(dmg.hp, dmg.max_hp, "fully healed")
 	assert_false(dmg.cooling_broken, "cooling mended too")
 	assert_eq(dmg.engine_temp, 50.0, "a repair is not a reset: the engine keeps its heat")
-	assert_signal_emitted_with_parameters(_rest, "healed", [site])
-	assert_signal_not_emitted(_rest, "opened", "no page without stopping")
+	assert_signal_emit_count(_rest, "healed", 1)
 	_rest.set_physics_process(true)
 
 

@@ -806,3 +806,52 @@ func test_front_axle_state_reports_no_contact_when_airborne() -> void:
 	var state: Dictionary = dt.front_axle_state(Config.data)
 	assert_false(bool(state["in_contact"]), "no contacts means no reading")
 	assert_eq(float(state["slip_angle"]), 0.0, "and the fields are zeroed, not stale")
+
+
+func test_a_spinning_front_axle_reads_its_lateral_share_against_the_spin() -> void:
+	# Past peak, a spinning tire's force points along its slip vector, so the same lateral
+	# slip is a SMALLER share of its force than on a rolling tire. Reading it against
+	# slip_peak alone stopped the servo a few degrees off the travel direction and a
+	# powerful FWD/AWD car would not rotate however hard it was steered.
+	var dt: Drivetrain = _car.drivetrain
+	var fronts: Array = dt.front_wheels
+	var c: Drivetrain.WheelContact = dt._contact_pool[fronts[0]]
+	c.wheel = fronts[0]
+	c.n_force = 3000.0
+	c.slip_peak = 0.15
+	c.slip_lat_norm = 0.1
+	c.slip_angle = 0.1
+	dt._contacts.clear()
+	dt._contacts.append(c)
+
+	c.slip_long_norm = 0.0
+	var rolling := float(dt.front_axle_state(Config.data)["lat_used"])
+	c.slip_long_norm = c.slip_peak * 0.5 / Config.data.traction_ellipse_ratio
+	var below_peak := float(dt.front_axle_state(Config.data)["lat_used"])
+	c.slip_long_norm = c.slip_peak * 10.0 / Config.data.traction_ellipse_ratio
+	var spinning := float(dt.front_axle_state(Config.data)["lat_used"])
+
+	assert_almost_eq(rolling, c.slip_lat_norm / c.slip_peak, 1e-5,
+		"a rolling tire reads lateral slip against its peak")
+	assert_almost_eq(below_peak, rolling, 1e-5, "drive below peak leaves the reading alone")
+	assert_lt(spinning, rolling, "the same lateral slip is a smaller share of a spinning tire")
+
+
+func test_full_steering_turns_a_spinning_front_driven_car() -> void:
+	# The servo must wind past the free-rolling peak slip when wheelspin is diluting the
+	# sideways force, or the car never rotates.
+	_car.drivetrain.drive_mode = Drivetrain.DriveMode.FWD
+	_car.drivetrain.engine.gear = 1
+	Input.action_press("accelerate")
+	Input.action_press("steer_left")
+	for i in 45:
+		_car.linear_velocity = -_car.global_transform.basis.z * 8.0
+		await get_tree().physics_frame
+	var state: Dictionary = _car.drivetrain.front_axle_state(Config.data)
+	var yaw := _car.angular_velocity.dot(_car.global_transform.basis.y)
+	Input.action_release("steer_left")
+	Input.action_release("accelerate")
+	assert_gt(float(state["long_used"]), 1.0, "precondition: the fronts are spinning past peak")
+	assert_gt(absf(float(state["slip_lat_norm"])), float(state["slip_peak"]),
+		"the servo asks a spinning axle for more lateral slip than a rolling one's peak")
+	assert_gt(yaw, 0.0, "and the car rotates toward the steer")

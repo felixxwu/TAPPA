@@ -307,6 +307,25 @@ func test_fitting_wheels_changes_the_rendered_texture() -> void:
 	assert_eq(seen, 4, "all four wheels are re-skinned (no per-axle staggering)")
 
 
+func test_the_warm_up_draws_every_cars_wheel_texture_and_cleans_up() -> void:
+	var car: Variant = (load("res://car.tscn") as PackedScene).instantiate()
+	add_child_autofree(car)
+	car.use_isolated_config()
+	car.warm_up(Vector3.ZERO)
+	var drawn := []
+	for mi: MeshInstance3D in car._warm_specks:
+		var tex: Variant = (mi.material_override as ShaderMaterial).get_shader_parameter("albedo_texture")
+		if tex is Texture2D:
+			drawn.append((tex as Texture2D).resource_path)
+	for entry in CarLibrary.all():
+		assert_has(drawn, String(entry["wheel_texture"]), "every car's wheels are drawn")
+	var specks: Array = car._warm_specks.duplicate()
+	car.clear_warm_up()
+	await get_tree().process_frame
+	for mi in specks:
+		assert_false(is_instance_valid(mi), "and gone after the warm-up")
+
+
 # An UNOWNED fielding (free roam / prop / opponent, via apply_car) must show stock
 # wheels even if this same instance previously wore a donor style.
 func test_bare_apply_car_reverts_to_stock_wheels() -> void:

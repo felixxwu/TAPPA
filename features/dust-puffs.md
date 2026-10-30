@@ -1,7 +1,7 @@
 # Dust puffs (opaque blocky dust clouds)
 
 `DustPuffs` (`scripts/dust_puffs.gd`, `class_name DustPuffs extends CpuParticlePool`)
-leaves a trail of **opaque, flat-shaded low-poly clouds** behind the rear wheels while
+leaves a trail of **opaque, flat-shaded low-poly clouds** behind all four wheels while
 the car drives on a road: gravel-coloured on gravel, near-white on tarmac. It **replaced** the gravel clods that
 [`WheelParticles`](wheel-dust.md) used to throw on wheelspin; that pool now throws
 only off-road debris (grass blades, snow clods). Created + wired by
@@ -55,9 +55,10 @@ camera to the puff's centre)`, so puffs near the lens shrink to nothing.
 
 ## Emission
 
-`_emit_from_wheels` walks `drivetrain.rear_wheels`. A wheel raises dust when it is
+`_emit_from_wheels` walks `drivetrain.front_wheels + drivetrain.rear_wheels`. A wheel raises dust when it is
 in contact, its ground speed (`velocity_at` at the contact patch, horizontal) is at
-least `dust_puff_min_speed_mps`, and `color_for_surface(surface_at(...))` returns a
+least `dust_puff_min_speed_mps` **or the tyre is sliding** (same grip-usage test as tarmac
+smoke, below — so wheelspin puffs at any speed), and `color_for_surface(surface_at(...))` returns a
 colour (the same `ROAD_WEIGHT_MIN` / `TARMAC_WEIGHT_MAX` midpoints as the wheel
 debris): the gravel colour on gravel, `dust_puff_tarmac_color` on tarmac, and alpha 0
 (nothing) on grass. Tarmac dust is new — the wheel debris throws nothing there.
@@ -76,8 +77,9 @@ trail density is the same at any speed and frame rate. Grip doesn't matter, unli
 the wheelspin clods.
 
 **Emission rate** is the faster of the wheel's horizontal ground speed and its
-**slip speed** (`scrub.length()`, below), gated at `dust_puff_min_speed_mps`. So a
-standing burnout raises dust from a stationary car, not just driving.
+**slip speed** (`scrub.length()`, below). Only the ground speed is gated at
+`dust_puff_min_speed_mps`; the slip speed counts whenever the tyre slides
+(`tarmac_smokes`), so a standing or slow burnout raises dust from a stationary car.
 
 ### Throw: slip vs wake
 

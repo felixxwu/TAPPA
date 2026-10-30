@@ -3,10 +3,10 @@ extends CanvasLayer
 # Docs: features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_free_roam_rest_stops.gd — extend in the same change.
 # Lighting a checkpoint for the first time: a Dark Souls style "Checkpoint reached" band across the
-# screen, with a small "Damage repaired" line under it (passing a checkpoint fully heals the car,
-# RestStops._pass), while the car drives on.
+# screen, with a small line under it saying the car heals while it stays (RestStops._heal), while
+# the car drives on.
 
-const SUBTITLE := "Damage repaired"
+const SUBTITLE := "Repairs while you stay"
 
 @export var rest_stops: RestStops
 

@@ -91,12 +91,12 @@ func _drive(d: DustPuffs, metres: float) -> void:
 	d._physics_process(metres / speed)
 
 
-func test_driving_on_gravel_leaves_one_puff_per_spacing_per_rear_wheel() -> void:
+func test_driving_on_gravel_leaves_one_puff_per_spacing_per_wheel() -> void:
 	var d := _make()
 	var spacing := Config.data.dust_puff_spacing_m
 	_drive(d, spacing * 3.5)
-	assert_eq(d.live_count(), 3 * _dt.rear_wheels.size(),
-		"each rear wheel drops floor(distance / spacing) puffs")
+	assert_eq(d.live_count(), 3 * _dt.all_wheels.size(),
+		"every wheel, front and rear, drops floor(distance / spacing) puffs")
 
 
 func test_no_dust_below_min_speed() -> void:
@@ -106,6 +106,25 @@ func test_no_dust_below_min_speed() -> void:
 	for i in 120:
 		d._physics_process(1.0 / 60.0)
 	assert_eq(d.live_count(), 0, "a crawling car kicks up no dust")
+
+
+func test_slow_wheelspin_raises_dust_below_min_speed() -> void:
+	var d := _make()
+	_dt.ground_vel = Vector3.ZERO
+	_dt.grip_usage = Config.data.dust_puff_tarmac_min_grip + 1.0
+	var slip := Config.data.dust_puff_min_speed_mps * 0.5
+	_dt.tread_speed = slip
+	d._physics_process(Config.data.dust_puff_spacing_m * 1.01 / slip)
+	assert_gt(d.live_count(), 0, "the min speed gates rolling only, not wheelspin")
+
+
+func test_grippy_slow_tyre_raises_no_dust() -> void:
+	var d := _make()
+	_dt.ground_vel = Vector3.ZERO
+	var slip := Config.data.dust_puff_min_speed_mps * 0.5
+	_dt.tread_speed = slip
+	d._physics_process(Config.data.dust_puff_spacing_m * 1.01 / slip)
+	assert_eq(d.live_count(), 0, "slip without sliding (below the grip threshold) is not wheelspin")
 
 
 func _slot_color(d: DustPuffs, i: int) -> Color:
@@ -181,7 +200,7 @@ func test_color_for_surface_picks_by_surface() -> void:
 
 func test_airborne_wheel_raises_no_dust() -> void:
 	var d := _make()
-	for w in _dt.rear_wheels:
+	for w in _dt.all_wheels:
 		w._contact = false
 	_drive(d, Config.data.dust_puff_spacing_m * 5.0)
 	assert_eq(d.live_count(), 0)
@@ -247,6 +266,7 @@ func test_standing_burnout_shoots_puffs_back_at_the_slip_speed() -> void:
 	Config.data.dust_puff_scatter_mps = 0.0
 	var d := _make()
 	_dt.ground_vel = Vector3.ZERO
+	_dt.grip_usage = Config.data.dust_puff_tarmac_min_grip + 1.0
 	var slip := Config.data.dust_puff_min_speed_mps + 10.0
 	_dt.tread_speed = slip
 	d._physics_process(Config.data.dust_puff_spacing_m * 1.01 / slip)

@@ -64,6 +64,25 @@ func test_every_road_lands_exactly_on_its_two_junctions() -> void:
 		assert_almost_eq(pts[pts.size() - 1], net.node(net.edges[ei].y), Vector2(0.01, 0.01))
 
 
+func test_no_bend_is_sharper_than_the_corner_limit_except_at_junctions() -> void:
+	var s := _settings()
+	var net := _world(s).net
+	var limit := deg_to_rad(s.max_corner_turn_deg) + 1e-6
+	var ends := {}  # pass-through node -> the next point along each road leaving it
+	for ei in net.edges.size():
+		var pts := net.polyline(ei)
+		for i in range(1, pts.size() - 1):
+			assert_lte(absf((pts[i] - pts[i - 1]).angle_to(pts[i + 1] - pts[i])), limit, "bend inside road %d" % ei)
+		for at_start in [true, false]:
+			var nd := net.edges[ei].x if at_start else net.edges[ei].y
+			if nd != 0 and net.node_degree[nd] == 2:
+				ends[nd] = ends.get(nd, []) + [pts[1] if at_start else pts[pts.size() - 2]]
+	assert_gt(ends.size(), 0, "the island must have a node where two roads meet")
+	for nd in ends:
+		var p := net.node(nd)
+		assert_lte(absf((p - ends[nd][0]).angle_to(ends[nd][1] - p)), limit, "bend where two roads meet at node %d" % nd)
+
+
 func test_pruning_leaves_only_dead_ends_longer_than_the_limit() -> void:
 	var s := _settings()
 	s.world_seed = 1  # seed 7 happens to grow no short dead ends

@@ -110,6 +110,13 @@ for each).
      first — past peak the friction vector is saturated, so further slip does not reserve grip
      that turning could have used, and without the clamp a spinning axle walks the authority
      back toward zero.
+   - **The measured lateral share is taken against the spin, once the spin is past peak.**
+     `front_axle_state` reports `lat_used = |slip_lat| / max(slip_peak, |slip_long · ellipse
+     ratio|)`. A free-rolling axle (RWD fronts) reads plain `|slip_lat| / slip_peak`, but a
+     spinning one is saturated and its force points along the slip vector, so the sideways
+     share is lateral slip relative to the spin. Measuring against `slip_peak` alone made a
+     powerful FWD/AWD car sliding on dirt read "cornering hard" a few degrees off its travel,
+     so the servo stopped there and full steering gave no rotation.
    - **The step is `error * slip_peak`** (`Car.grip_servo_step`) — the usage error converted
      into radians, a Newton step of gain 1. Requiring that a tick never move further than the
      remaining angular error collapses any gain term to exactly this, so **there is no gain

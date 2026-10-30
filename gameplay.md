@@ -63,8 +63,8 @@ title (Continue · New World · Settings)
 - **At 0 HP the car gives up.** You respawn at the last lit rest stop, repaired. All the money you
   were carrying lies at the wreck under a crystal: drive back for it, but give up again first and
   it's gone. Every coin is back on the road.
-- **Rest stops are bonfires.** Driving past one — no need to stop — lights it and fully heals the
-  car. Pulling in and pressing Enter / A opens the rest-stop page: you can buy cars and parts, fit parts, tune,
+- **Rest stops are bonfires.** Driving past one — no need to stop — lights it; staying there
+  heals the car over a few seconds. Pulling in and pressing Enter / A opens the rest-stop page: you can buy cars and parts, fit parts, tune,
   swap cars, and travel to any rest stop you've lit. A crowd gathers at each.
 - **Rest-stop spacing is the main balance lever**, because it decides how survivable a cooling
   failure is. It is set per ring.

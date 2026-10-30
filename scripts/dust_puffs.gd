@@ -2,7 +2,7 @@ class_name DustPuffs
 extends CpuParticlePool
 # Docs: features/dust-puffs.md — update in the same change as this file.
 # Tests: tests/headless/test_dust_puffs.gd — extend in the same change.
-# Opaque, blocky low-poly dust clouds left behind the rear wheels while the car drives
+# Opaque, blocky low-poly dust clouds left behind the wheels while the car drives
 # on a road (gravel or tarmac). A hand-rolled CPU pool (the ring buffer lives in CpuParticlePool)
 # drawn through ONE MultiMesh of ONE flat-shaded blob mesh built at load.
 #
@@ -44,7 +44,7 @@ var _car: Node
 # The per-tick write is this times the puff's current size.
 var _shape: PackedFloat32Array
 var _max_life: PackedFloat32Array
-# Metres travelled per rear wheel since its last puff (index = rear_wheels index).
+# Metres travelled per wheel since its last puff (index = front_wheels then rear_wheels).
 var _travel: PackedFloat32Array
 
 # Region override for the GRAVEL dust colour. Alpha 0 = unset (GameConfig.dust_puff_color).
@@ -254,11 +254,11 @@ func _advance(delta: float) -> bool:
 	return true
 
 
-# Drop a puff behind each rear wheel every dust_puff_spacing_m of tread it runs over the
-# road, once that rate is past dust_puff_min_speed_mps. The rate is the faster of the
-# wheel's ground speed and its slip speed, so a standing burnout (no ground speed, lots
-# of slip) raises dust as well as cruising does. Distance-based, so the trail density is
-# the same at any frame rate.
+# Drop a puff behind each wheel every dust_puff_spacing_m of tread it runs over the
+# road. The rate is the faster of the wheel's ground speed (only once past
+# dust_puff_min_speed_mps) and, while the tyre slides, its slip speed, so wheelspin
+# raises dust at any speed. Distance-based, so the trail density is the same at any
+# frame rate.
 func _emit_from_wheels(delta: float) -> bool:
 	var cfg: GameConfig = Config.data
 	var dt = _car.drivetrain
@@ -267,7 +267,7 @@ func _emit_from_wheels(delta: float) -> bool:
 		return false
 	# A wet road raises no dust and no tyre smoke, gravel or tarmac.
 	var wet := WeatherLibrary.is_wet(cfg.weather)
-	var wheels: Array = dt.rear_wheels
+	var wheels: Array = dt.front_wheels + dt.rear_wheels
 	if _travel.size() != wheels.size():
 		_travel.resize(wheels.size())
 		_travel.fill(0.0)
@@ -285,15 +285,20 @@ func _emit_from_wheels(delta: float) -> bool:
 		# minus the backward-running tread surface velocity. ~zero for a rolling tyre,
 		# -fwd x spin speed in a standing burnout, the car's velocity for a locked wheel.
 		var scrub: Vector3 = vel - dt.wheel_forward(wheel) * (dt.wheel_omega(wheel) * r)
-		var rate := maxf(Vector2(vel.x, vel.z).length(), scrub.length())
+		var sliding := tarmac_smokes(cfg, dt.wheel_grip_usage(wheel))
+		var rate := Vector2(vel.x, vel.z).length()
+		if rate < cfg.dust_puff_min_speed_mps:
+			rate = 0.0
+		if sliding:
+			rate = maxf(rate, scrub.length())
 		var color := Color(0, 0, 0, 0)
-		if rate >= cfg.dust_puff_min_speed_mps and not wet:
+		if rate > 0.0 and not wet:
 			var surf: Vector2 = terrain.surface_at(wpos.x, wpos.z)
 			color = color_for_surface(cfg, surf)
 			# Tarmac only smokes from a tyre that is actually sliding (spinning, locked or
 			# skidding sideways: the combined grip usage past dust_puff_tarmac_min_grip).
 			# Gravel throws dust from any rolling wheel.
-			if surf.y > TARMAC_WEIGHT_MAX and not tarmac_smokes(cfg, dt.wheel_grip_usage(wheel)):
+			if surf.y > TARMAC_WEIGHT_MAX and not sliding:
 				color = Color(0, 0, 0, 0)
 		if color.a <= 0.0:
 			_travel[k] = 0.0

@@ -811,8 +811,11 @@ the loading cover instead of mid-drive. Free roam runs the same passes at its bo
   (single mesh / MultiMesh / particle / 2D), so the correct gl_compatibility program
   *variant* compiles (not a synthetic quad that would compile the wrong one). Cleared
   after the rendered frame. Implementers today: `tire_marks.gd`, `wheel_particles.gd`,
-  `engine_smoke.gd` (via `cpu_particle_pool.gd`), and `spectator_group.gd` (the
-  ragdoll's single-instance crowd-mesh variant, distinct from the crowd MultiMesh).
+  `engine_smoke.gd` (via `cpu_particle_pool.gd`), `spectator_group.gd` (the
+  ragdoll's single-instance crowd-mesh variant, distinct from the crowd MultiMesh),
+  `biome_director.gd` (a small field of every weather particle kind, since free roam
+  only builds one when the weather turns) and `car.gd` (a speck of every catalogue
+  car's body + wheel texture, so a rest-stop car switch uploads nothing).
   **Any new effect is included automatically just by implementing the contract** — no
   edit to `world.gd` — which is the guardrail against future first-use spikes silently
   shipping. (A runtime-only variant that isn't in the tree at load must still be

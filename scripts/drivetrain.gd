@@ -657,9 +657,14 @@ func front_axle_state(cfg: GameConfig) -> Dictionary:
 		# match what _tire_force actually applies, and having the servo re-derive it from
 		# traction_ellipse_ratio meant two formulas in two files kept in step by comment alone.
 		if _front_scratch.slip_peak > 0.0:
-			var long_used: float = absf(
-				_front_scratch.slip_long_norm * cfg.traction_ellipse_ratio) / _front_scratch.slip_peak
-			_front_scratch.lat_used = absf(_front_scratch.slip_lat_norm) / _front_scratch.slip_peak
+			var long_slip: float = absf(_front_scratch.slip_long_norm * cfg.traction_ellipse_ratio)
+			var long_used: float = long_slip / _front_scratch.slip_peak
+			# Once wheelspin carries the tire past peak, its force points along the slip vector,
+			# so its sideways share is lateral slip against the SPIN, not against slip_peak.
+			# Measuring against slip_peak alone read a spinning front axle as already cornering
+			# hard and stopped the wheels a few degrees off their travel, so the car would not turn.
+			_front_scratch.lat_used = absf(_front_scratch.slip_lat_norm) \
+				/ maxf(_front_scratch.slip_peak, long_slip)
 			# long_used is deliberately UNCLAMPED: past peak it reads > 1, and a caller that
 			# needs to know the axle is overdriven (rather than merely saturated) cannot
 			# recover that from a clamped value. Callers clamp for their own purposes.

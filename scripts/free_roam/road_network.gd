@@ -69,12 +69,12 @@ func build(settings: FreeRoamSettings, terrain: RoadTerrain) -> void:
 	else:
 		_grow()
 		_prune_dead_ends()
-	_densify()
 	node_degree.resize(node_x.size())
 	node_degree.fill(0)
 	for e in edges:
 		node_degree[e.x] += 1
 		node_degree[e.y] += 1
+	_densify()
 
 
 func polyline(ei: int) -> PackedVector2Array:
@@ -204,6 +204,8 @@ func _densify() -> void:
 	_grid.clear()
 	total_length_m = 0.0
 	var step := minf(40.0, _s.bend_length_m / 6.0)
+	var all_x: Array[PackedFloat64Array] = []
+	var all_y: Array[PackedFloat64Array] = []
 	for ei in edges.size():
 		var ax := node_x[edges[ei].x]
 		var ay := node_y[edges[ei].x]
@@ -225,9 +227,15 @@ func _densify() -> void:
 			var off := (LabNoise.fbm(t * d / _s.bend_length_m, 0.0, s) - 0.5) * 2.0 * amp * env
 			px.append(ax + (bx - ax) * t + nx * off)
 			py.append(ay + (by - ay) * t + ny * off)
+		all_x.append(px)
+		all_y.append(py)
+	_round_corners(all_x, all_y)
+	for ei in edges.size():
+		var px := all_x[ei]
+		var py := all_y[ei]
 		edge_first_seg.append(seg_ax.size())
 		var cum := 0.0
-		for i in n:
+		for i in px.size() - 1:
 			var si := seg_ax.size()
 			var length := LabNoise.hyp(px[i] - px[i + 1], py[i] - py[i + 1])
 			seg_ax.append(px[i]); seg_ay.append(py[i]); seg_bx.append(px[i + 1]); seg_by.append(py[i + 1])
@@ -238,6 +246,93 @@ func _densify() -> void:
 				_append_to(_grid, c, si)
 		edge_len.append(cum)
 		total_length_m += cum
+
+
+# Rounds off every bend sharper than max_corner_turn_deg by cutting the corner: the point becomes
+# two points a quarter of the way along its two segments, which about halves the bend, repeated
+# until none is too sharp. Where exactly two links meet, the cut spans both and the node moves to
+# its middle; spawn, junctions and dead ends stay put.
+func _round_corners(xs: Array[PackedFloat64Array], ys: Array[PackedFloat64Array]) -> void:
+	var max_turn := _rad(_s.max_corner_turn_deg)
+	var ends := {}  # node -> [[edge, true if the edge starts there], ...]
+	for ei in edges.size():
+		for at_start in [true, false]:
+			var nd := edges[ei].x if at_start else edges[ei].y
+			if nd != 0 and node_degree[nd] == 2:
+				ends[nd] = ends.get(nd, []) + [[ei, at_start]]
+	for _pass in 6:
+		var cut_any := false
+		for ei in xs.size():
+			var px := xs[ei]
+			var py := ys[ei]
+			var ox := PackedFloat64Array([px[0]])
+			var oy := PackedFloat64Array([py[0]])
+			for i in range(1, px.size() - 1):
+				if _turn(px[i - 1], py[i - 1], px[i], py[i], px[i + 1], py[i + 1]) > max_turn:
+					ox.append(px[i] + (px[i - 1] - px[i]) * 0.25)
+					oy.append(py[i] + (py[i - 1] - py[i]) * 0.25)
+					ox.append(px[i] + (px[i + 1] - px[i]) * 0.25)
+					oy.append(py[i] + (py[i + 1] - py[i]) * 0.25)
+					cut_any = true
+				else:
+					ox.append(px[i])
+					oy.append(py[i])
+			ox.append(px[px.size() - 1])
+			oy.append(py[py.size() - 1])
+			xs[ei] = ox
+			ys[ei] = oy
+		for nd in ends:
+			var a: Array = ends[nd][0]
+			var b: Array = ends[nd][1]
+			var ia := 1 if a[1] else xs[a[0]].size() - 2
+			var ib := 1 if b[1] else xs[b[0]].size() - 2
+			var x := node_x[nd]
+			var y := node_y[nd]
+			var ax := xs[a[0]][ia]
+			var ay := ys[a[0]][ia]
+			var bx := xs[b[0]][ib]
+			var by := ys[b[0]][ib]
+			if _turn(ax, ay, x, y, bx, by) <= max_turn:
+				continue
+			var cax := x + (ax - x) * 0.25
+			var cay := y + (ay - y) * 0.25
+			var cbx := x + (bx - x) * 0.25
+			var cby := y + (by - y) * 0.25
+			node_x[nd] = (cax + cbx) * 0.5
+			node_y[nd] = (cay + cby) * 0.5
+			_move_end(xs, ys, a[0], a[1], cax, cay, node_x[nd], node_y[nd])
+			_move_end(xs, ys, b[0], b[1], cbx, cby, node_x[nd], node_y[nd])
+			cut_any = true
+		if not cut_any:
+			return
+
+
+# Replaces the end of edge `ei` with a corner point `c` followed by the moved node `m`.
+static func _move_end(xs: Array[PackedFloat64Array], ys: Array[PackedFloat64Array], ei: int, at_start: bool,
+		cx: float, cy: float, mx: float, my: float) -> void:
+	var px := xs[ei]
+	var py := ys[ei]
+	if at_start:
+		px[0] = mx
+		py[0] = my
+		px.insert(1, cx)
+		py.insert(1, cy)
+	else:
+		px[px.size() - 1] = cx
+		py[py.size() - 1] = cy
+		px.append(mx)
+		py.append(my)
+	xs[ei] = px
+	ys[ei] = py
+
+
+# How sharply the road turns at b, coming from a and going on to c (radians, 0 = straight on).
+static func _turn(ax: float, ay: float, bx: float, by: float, cx: float, cy: float) -> float:
+	var ux := bx - ax
+	var uy := by - ay
+	var vx := cx - bx
+	var vy := cy - by
+	return absf(atan2(ux * vy - uy * vx, ux * vx + uy * vy))
 
 
 # How far along edge `ei` the point at arc length `s` is from the nearer end that is a junction

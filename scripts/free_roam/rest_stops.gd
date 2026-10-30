@@ -4,7 +4,8 @@ extends Node
 # Tests: tests/headless/test_free_roam_rest_stops.gd — extend in the same change.
 # The rest stops as gameplay: Dark Souls bonfires (todo/2026-10-19-free-roam-pivot.md decision 9).
 #   * Driving past a rest stop — onto its pad or just along the road beside it, at any speed —
-#     LIGHTS it, makes it the respawn point and fully HEALS the car (`healed`).
+#     LIGHTS it and makes it the respawn point; every tick the car stays there it HEALS, and once
+#     it's back to full HP the rest of the repair lands (cooling, wheels) and `healed` fires.
 #   * Pressing menu_select (Enter / gamepad A) there, at any speed, opens the rest-stop
 #     page (`opened`); the minimap shows the prompt (`prompt_site`), which a touch player taps.
 #   * When the car gives up (DamageModel.gave_up: 0 HP), the engine cuts out (EngineSim.killed: silent,
@@ -23,7 +24,7 @@ signal travelled(site: int)
 signal respawn_point_changed(site: int)
 # The car was moved by a travel or a respawn, to this XZ (listeners reset their swept checks).
 signal car_teleported_to(p: Vector2)
-# The car drove past rest stop `site` and was fully healed.
+# The car's healing at rest stop `site` brought it back to full health.
 signal healed(site: int)
 
 @export var streamer: TerrainStreamer
@@ -98,8 +99,8 @@ func _physics_process(delta: float) -> void:
 	step(delta)
 
 
-# Driving past a rest stop (on its pad or the road beside it, at any speed) lights it, makes it
-# the respawn point and fully heals the car.
+# Driving past a rest stop (on its pad or the road beside it, at any speed) lights it and makes it
+# the respawn point; the car heals for as long as it stays there.
 func step(delta: float) -> void:
 	if is_wrecked:
 		if _wreck_page_in >= 0.0:
@@ -122,9 +123,10 @@ func step(delta: float) -> void:
 	if i != _on_site:
 		_on_site = i
 		if i >= 0:
-			_pass(i)
+			light(i)
 	if i >= 0:
 		last_site = i
+		_heal(i, delta)
 
 
 # The rest stop the car is at (and can act on), or -1.
@@ -152,12 +154,17 @@ func open_here() -> bool:
 	return true
 
 
-# The car reached rest stop `i`: light it (the first time) and heal the car fully.
-func _pass(i: int) -> void:
-	light(i)
-	if car != null and car.get("damage") != null:
-		(car.damage as DamageModel).repair(Config.data)
-	healed.emit(i)
+# One tick of healing at rest stop `i`; reaching full HP finishes the repair (cooling, wheels).
+func _heal(i: int, delta: float) -> void:
+	var dmg := car.get("damage") as DamageModel
+	if dmg == null:
+		return
+	var was_full := dmg.hp >= dmg.max_hp
+	dmg.hp = minf(dmg.max_hp, dmg.hp + dmg.max_hp * Config.data.checkpoint_heal_fraction_per_s * delta)
+	if dmg.hp >= dmg.max_hp:
+		dmg.repair(Config.data)
+		if not was_full:
+			healed.emit(i)
 
 
 func light(i: int) -> void:
@@ -243,7 +250,7 @@ func respawn() -> void:
 	move_car_to(last_site)
 	var dmg := car.damage as DamageModel
 	dmg.repair(Config.data)
-	# A respawn is a fresh car, so it starts cold; a rest-stop repair (_pass) keeps the heat.
+	# A respawn is a fresh car, so it starts cold; a rest-stop repair (_heal) keeps the heat.
 	dmg.engine_temp = 0.0
 	respawned.emit(last_site, wreck)
 

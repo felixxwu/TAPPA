@@ -780,6 +780,9 @@ func has_nitrous() -> bool:
 ## How far down the road out of spawn the car starts (and respawns at the spawn rest stop), so
 ## it sits clear of the cabin and its crowd, facing away from them (RestStops.pose_at).
 @export_range(0.0, 15.0, 0.5) var spawn_ahead_m := 8.0
+## Share of max HP a checkpoint heals per second while the car is at it (RestStops._heal):
+## 0.25 takes a wreck to full in 4 s. Full HP also mends the cooling and straightens the wheels.
+@export_range(0.0, 2.0, 0.01) var checkpoint_heal_fraction_per_s := 0.25
 ## HP regained per second while driving; 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export_range(0.0, 50.0, 0.5) var damage_regen_hp_per_s := 0.0
@@ -1801,7 +1804,7 @@ func has_nitrous() -> bool:
 @export_range(0.0, 1.0) var wheel_particle_spread := 0.35
 
 @export_group("Dust Puffs")
-## Opaque, blocky low-poly dust clouds left behind the rear wheels on a road
+## Opaque, blocky low-poly dust clouds left behind the wheels on a road
 ## (DustPuffs, features/dust-puffs.md). Replaced the gravel clods; the wheel
 ## particles above now only throw off-road debris.
 @export var dust_puffs_enabled := true
@@ -1812,29 +1815,30 @@ func has_nitrous() -> bool:
 ## Puff colour on tarmac — near-white, since paved road has no gravel to colour it.
 @export var dust_puff_tarmac_color := Color(0.95, 0.95, 0.93)
 ## Combined grip usage (Drivetrain.wheel_grip_usage; 1.0 = at peak grip, above it the
-## tyre slides) a rear tyre needs before it smokes on tarmac. No tarmac smoke when wet.
-@export_range(0.0, 3.0) var dust_puff_tarmac_min_grip := 1.0
+## tyre slides) a tyre needs before it smokes on tarmac, or puffs below
+## dust_puff_min_speed_mps on any road. No puffs when wet.
+@export_range(0.0, 3.0) var dust_puff_tarmac_min_grip := 1.5
 ## Per-puff random brightness variation, as a +/- fraction of the colour.
 @export_range(0.0, 1.0) var dust_puff_color_jitter := 0.1
 ## Hard cap on live puffs (ring-buffer size + MultiMesh instance count).
 @export_range(8, 500) var dust_puff_max := 128
 ## Puff radius at birth, in metres (it grows over its life).
-@export var dust_puff_size_m := 0.22
+@export var dust_puff_size_m := 0.3
 ## How much a puff grows over its life (final radius = birth radius x this).
 @export_range(1.0, 8.0) var dust_puff_growth := 2.8
 ## How long a puff lives before it disappears, in seconds (+/-20% per puff).
-@export var dust_puff_lifetime_s := 1.2
-## Metres each rear wheel rolls on gravel between puffs (lower = denser trail).
-@export var dust_puff_spacing_m := 0.8
-## Below this ground speed (m/s) no dust is kicked up.
-@export var dust_puff_min_speed_mps := 4.0
+@export var dust_puff_lifetime_s := 3
+## Metres each wheel rolls on gravel between puffs (lower = denser trail).
+@export var dust_puff_spacing_m := 0.5
+## Below this ground speed (m/s) a rolling tyre kicks up no dust (wheelspin still does).
+@export var dust_puff_min_speed_mps := 10.0
 ## Fraction of the car's velocity a puff starts with, so at speed the puffs are dragged
 ## along after the car a little (it then slows under drag).
 @export_range(0.0, 1.0) var dust_puff_inherit := 0.25
 ## Fraction of the tyre's slide over the ground (tread vs ground velocity at the contact
 ## patch) a puff is thrown with: a standing burnout shoots puffs back at about the slip
 ## speed, a clean-rolling tyre adds nothing.
-@export_range(0.0, 2.0) var dust_puff_slip_throw := 0.8
+@export_range(0.0, 2.0) var dust_puff_slip_throw := 1
 ## Upward drift speed of a new puff, in m/s.
 @export var dust_puff_rise_mps := 0.8
 ## Random scatter speed added to each new puff, in m/s.

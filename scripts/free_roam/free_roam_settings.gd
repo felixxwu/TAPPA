@@ -53,6 +53,9 @@ extends Resource
 @export var straight_road_m := 0.0
 ## Roughly how far the road runs between changes of direction.
 @export var bend_length_m := 150.0
+## Bends sharper than this (degrees, at one polyline point or where two links meet) are rounded
+## off by cutting the corner; 180 leaves every corner as it is.
+@export var max_corner_turn_deg := 20.0
 @export var road_half_width_m := 1.9
 @export var road_shoulder_m := 1.0
 ## How wide the drawn grass-to-gravel fade is, centred on the shoulder (looks only; the road's grip
