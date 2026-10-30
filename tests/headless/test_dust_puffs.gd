@@ -139,6 +139,13 @@ func test_no_tarmac_smoke_in_the_wet() -> void:
 	assert_eq(d.live_count(), 0, "a wet road never smokes, slide or not")
 
 
+func test_no_gravel_dust_in_the_wet() -> void:
+	Config.data.weather = WeatherLibrary.wet_ids()[0]
+	var d := _make()
+	_drive(d, Config.data.dust_puff_spacing_m * 5.0)
+	assert_eq(d.live_count(), 0, "wet gravel raises no dust")
+
+
 func test_gravel_dust_needs_no_slip() -> void:
 	var d := _make()
 	_dt.grip_usage = 0.0

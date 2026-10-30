@@ -65,9 +65,11 @@ debris): the gravel colour on gravel, `dust_puff_tarmac_color` on tarmac, and al
 off any rolling wheel, but on tarmac `tarmac_smokes(cfg, grip_usage)` also requires
 `Drivetrain.wheel_grip_usage(wheel)` (the combined fore/aft + sideways figure the HUD
 grip grid shows; above 1.0 the tyre is sliding) to be at least
-`dust_puff_tarmac_min_grip`, and `WeatherLibrary.is_wet(cfg.weather)` to be false. So
-wheelspin, a lockup and a drift all smoke on dry tarmac; clean driving and anything in
-the rain don't. Emission is **by distance**: each wheel accumulates
+`dust_puff_tarmac_min_grip`. So wheelspin, a lockup and a drift all smoke on dry
+tarmac; clean driving doesn't.
+
+**Nothing in the wet.** While `WeatherLibrary.is_wet(cfg.weather)` (rain, storm) no
+puffs are raised on any surface: wet gravel makes no dust and a wet road no tyre smoke. Emission is **by distance**: each wheel accumulates
 metres travelled in `_travel` and drops a puff every `dust_puff_spacing_m`, so the
 trail density is the same at any speed and frame rate. Grip doesn't matter, unlike
 the wheelspin clods.
@@ -104,4 +106,4 @@ values pending playtest. If it costs too much on a weak device, the dials are
 ## Not done yet (ideas)
 
 Shrink or dither out at end of life instead of popping; dust off-road in dry/snowy
-regions; size scaled by speed; mud instead of dust on gravel in the wet.
+regions; size scaled by speed.

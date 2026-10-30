@@ -16,7 +16,7 @@ extends CpuParticlePool
 # on wheelspin; these are emitted by distance travelled whenever the car is moving on
 # a road, grip or no grip.
 #
-# Tarmac smokes only while a tyre slides (tarmac_smokes) and never in the wet.
+# Tarmac smokes only while a tyre slides (tarmac_smokes). Nothing is raised in the wet.
 #
 # Colour follows the surface: on gravel it is the gravel's own colour (GameConfig
 # dust_puff_color, matched to textures/gravel.jpg, or the region's "dust_color" look key
@@ -242,6 +242,8 @@ func _emit_from_wheels(delta: float) -> bool:
 	var terrain = dt.terrain
 	if terrain == null or not terrain.has_method("surface_at"):
 		return false
+	# A wet road raises no dust and no tyre smoke, gravel or tarmac.
+	var wet := WeatherLibrary.is_wet(cfg.weather)
 	var wheels: Array = dt.rear_wheels
 	if _travel.size() != wheels.size():
 		_travel.resize(wheels.size())
@@ -258,12 +260,12 @@ func _emit_from_wheels(delta: float) -> bool:
 		var vel: Vector3 = dt.velocity_at(cp)
 		var speed := Vector2(vel.x, vel.z).length()
 		var color := Color(0, 0, 0, 0)
-		if speed >= cfg.dust_puff_min_speed_mps:
+		if speed >= cfg.dust_puff_min_speed_mps and not wet:
 			var surf: Vector2 = terrain.surface_at(wpos.x, wpos.z)
 			color = color_for_surface(cfg, surf)
 			# Tarmac only smokes from a tyre that is actually sliding (spinning, locked or
-			# skidding sideways: the combined grip usage past dust_puff_tarmac_min_grip),
-			# and never on a wet road. Gravel throws dust from any rolling wheel.
+			# skidding sideways: the combined grip usage past dust_puff_tarmac_min_grip).
+			# Gravel throws dust from any rolling wheel.
 			if surf.y > TARMAC_WEIGHT_MAX and not tarmac_smokes(cfg, dt.wheel_grip_usage(wheel)):
 				color = Color(0, 0, 0, 0)
 		if color.a <= 0.0:
@@ -287,9 +289,9 @@ func color_for_surface(cfg: GameConfig, surf: Vector2) -> Color:
 	return dust_color()
 
 
-# Whether a tyre at this combined grip usage smokes on tarmac in the current weather.
+# Whether a tyre at this combined grip usage smokes on (dry) tarmac.
 static func tarmac_smokes(cfg: GameConfig, grip_usage: float) -> bool:
-	return grip_usage >= cfg.dust_puff_tarmac_min_grip and not WeatherLibrary.is_wet(cfg.weather)
+	return grip_usage >= cfg.dust_puff_tarmac_min_grip
 
 
 func _emit_puff(cfg: GameConfig, cp: Vector3, car_vel: Vector3, c: Color) -> void:
