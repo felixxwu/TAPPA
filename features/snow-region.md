@@ -120,23 +120,35 @@ Two effects doing two different jobs: low μ makes the car **slide**, drag makes
 
 ### The sink — a separate shader, not a uniform
 
-`shaders/ps1_terrain_snow.gdshader` is `ps1_models.gdshader` plus one vertex stage:
+`shaders/ps1_terrain_snow.gdshader` is `ps1_models.gdshader` plus one vertex stage that
+raises the ground off-road by `snow_depth`, weighted by how far off the road a vertex is:
 
-```glsl
-VERTEX.y += snow_depth * (1.0 - (blend_road ? COLOR.a : 0.0));
-```
+- **Free roam** (`paint_road_per_pixel` on): the weight comes from the road distance baked
+  into `UV` (`max(|UV.x|, UV.y)`), `smoothstep`ped from where the road paint ends
+  (`road_paint_mid_m + road_paint_half_m`) out over `snow_bank_m`
+  (`GameConfig.snow_bank_width_m`). The bank is that wide because the near mesh is a 2 m grid.
+- **Stage** (`main.tscn`): `1 - COLOR.a`, the baked road weight, whose feather is the ramp.
 
-`COLOR.a` is the baked road weight the fragment stage already blends with, so the road is
-never lifted and the existing smoothstep feather turns the step into a ramp — which reads
-as a plough bank at the verge. Collision is a separate `HeightMapShape3D` and is
-untouched, so the wheels rest at true ground level and the car sits *in* the snow.
+Either way the road is never lifted and the step reads as a plough bank at the verge.
+Collision is a separate `HeightMapShape3D` and is untouched, so the wheels rest at true
+ground level and the car sits *in* the snow.
+
+**Free roam wiring.** `TerrainStreamer._material_for` gives a ring the snow variant when its
+region authors deep snow (`TerrainStreamer.snow_depth_of`), with `snow_depth` from that
+block. A biome-border material (`_pair_material`) next to a snow ring also wears it, and fades
+the lift between `snow_depth` and `snow_depth_b` by the same per-vertex ring coordinate the
+textures use, so it meets the plain chunks on either side without a step. This was lost in the
+free-roam pivot (the streamer drew every ring with the base shader) and restored on 2026-10-30.
 
 **Why a variant shader.** `ps1_models` is the shared terrain shader, terrain is the
 heaviest geometry in the game, and this renderer targets low-end phones — so it is
 deliberately kept free of any vertex stage, enforced by
 `test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage`. The established answer
 here is a variant, exactly what `ps1_models_lit.gdshader` already is for the car. Only
-snow stages pay. **Keep the two fragment stages in sync.**
+snow ground pays. **Everything but the vertex stage is a copy of `ps1_models`**: change the
+two together. `test_render_smoke.gd::test_snow_terrain_shader_matches_the_base_shader` fails
+when the uniforms or the fragment stage drift (the copy had silently fallen behind the
+free-roam per-pixel road paint before that test existed).
 
 It is also not done in `terrain_chunk_builder`: chunk data is cached with a prebuilt
 `HeightMapShape3D`, so a region-dependent vertex offset would have to be keyed into that
@@ -150,11 +162,11 @@ instantiation in the process — the same trap that once left the ground at
 `rain_road_darken²`. Without the restore, one snow stage would leave every later stage's
 ground floating.
 
-**Accepted cost:** props (trees, signs, spectators, barriers) are placed from collision
-heights, so off-road they sit buried by `snow_depth`. Correct-looking for trees, shin-deep
-for spectators, and tunable with the one value. Lifting props to the visual surface would
-cost a second height query each and get barriers wrong (a barrier must sit where the car
-actually hits it).
+**Props are buried on purpose.** Trees, bushes, rocks, signs and barriers are placed from
+collision heights and are NOT lifted onto the drawn snow, so off-road they sit sunk by
+`snow_depth`. Felix wants them to look buried in the snow (2026-10-30). An earlier
+`Foliage.visual_ground_lift` that lifted props onto the surface was removed;
+`test_rocks.gd::test_deep_snow_does_not_lift_props` holds the line.
 
 ### The bog
 

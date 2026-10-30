@@ -959,10 +959,13 @@ terrain shader is deliberately kept free of any vertex stage — terrain is the 
 geometry in the game and this renderer targets low-end phones — a ban enforced by
 `test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage`. Same pattern as
 `ps1_models_lit.gdshader`, which exists so the car's fake lighting does not land on the
-terrain either. Only snow stages pay for it.
+terrain either. Only snow ground pays for it: a snow stage, and in free roam the snow ring and
+its border (`TerrainStreamer._material_for` / `_pair_material`; see
+`features/snow-region.md` for the lift itself). Props are not lifted with it, so they look
+buried in the snow.
 
-**The two fragment stages must be kept in sync**, and so must their **uniform
-sets** — `ps1_terrain_snow` `#include`s `headlight_cone.gdshaderinc` and applies
+**Everything but the vertex stage is a verbatim copy of `ps1_models`** — the fragment stage
+and the uniform set — checked by `test_render_smoke.gd::test_snow_terrain_shader_matches_the_base_shader` — `ps1_terrain_snow` `#include`s `headlight_cone.gdshaderinc` and applies
 the cone exactly as `ps1_models` does, because the swap below relies on
 `ShaderMaterial` keeping its by-name parameter map across a shader change. A
 uniform added to one and not the other silently drops its value on a snow stage.

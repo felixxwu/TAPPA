@@ -33,26 +33,6 @@ static var _tree_silhouette_cache: Dictionary = {}
 static var _bush_mesh_cache: Dictionary = {}  # bush_tint -> mesh
 
 
-# How far the VISIBLE ground sits above the terrain height the CPU reports, in metres.
-#
-# On a deep-snow stage the off-road ground is raised in the terrain's VERTEX SHADER
-# (ps1_terrain_snow.gdshader: `VERTEX.y += snow_depth * (1 - road_weight)`) so the snow
-# reads as deep. That lift is GPU-only — TerrainManager.height_at, which every scatter
-# uses to seat its props, still returns the UNLIFTED height. So anything placed at
-# height_at() on a snow stage is planted below the snow the player can see, by exactly
-# the lift: on the Alps that buried the conifers' trunks up to their authored sink plus
-# another snow_visual_depth_m on top, and read as the trees having their bases chopped off.
-#
-# Added to every prop's ground offset so props sit on the surface that is DRAWN. Zero on
-# every non-snow stage, so it is an exact no-op everywhere else.
-#
-# Only the off-road lift is modelled: the shader leaves the road itself unraised, and no
-# scatter places props on the carriageway (they are all road-rejected), so the road case
-# cannot arise.
-static func visual_ground_lift() -> float:
-	return maxf(Config.data.deep_snow_depth_m, 0.0)
-
-
 # --- Rocks -------------------------------------------------------------------
 #
 # Roadside boulders: low-poly MESHES, not billboards. A tree card is tall, thin and
@@ -139,9 +119,9 @@ static func spawn_trees(parent: Node3D, positions: PackedVector2Array, terrain: 
 	var size_jitter := cfg.region_tree_billboard_min_scale if use_region_profile else cfg.tree_billboard_min_scale
 	# Sink the cards into the ground by a per-path tunable offset (negative) to hide
 	# the seam where the trunk meets a sloped surface — same split as size_jitter.
-	# ...lifted onto the DRAWN ground, which on a deep-snow stage sits above the terrain
-	# height this scatter seats itself from (see visual_ground_lift).
-	var ground_offset := visual_ground_lift() + (
+	# Props are seated on the collision height, NOT lifted onto deep snow's raised ground
+	# (ps1_terrain_snow.gdshader), so in the snow they look buried in it.
+	var ground_offset := (
 		cfg.region_tree_billboard_ground_offset_m if use_region_profile
 		else cfg.tree_billboard_ground_offset_m)
 	# Per-instance width/height aspect jitter, same per-path split as size_jitter:
@@ -169,8 +149,7 @@ static func spawn_bushes(parent: Node3D, positions: PackedVector2Array, terrain:
 	parent.add_child(field)
 	field.build(positions, terrain, bush_mesh(),
 		cfg.bush_height_m, 0.0, 0.0,
-		render_distance, render_fade, cfg.tree_bin_size_m, false, true,
-		visual_ground_lift())
+		render_distance, render_fade, cfg.tree_bin_size_m, false, true)
 	return field
 
 
@@ -316,5 +295,5 @@ static func spawn_rocks(parent: Node3D, positions: PackedVector2Array,
 	field.build(positions, terrain, mesh, height,
 		TreeMeshField.xz_radius(mesh, height) * cfg.rock_collision_radius_frac, height,
 		render_distance, render_fade, cfg.tree_bin_size_m, with_collision, false,
-		visual_ground_lift() - height * cfg.rock_sink_frac)
+		-height * cfg.rock_sink_frac)
 	return field

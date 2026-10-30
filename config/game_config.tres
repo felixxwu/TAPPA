@@ -99,6 +99,7 @@ snow_gravel_grip = 0.55
 snow_tarmac_grip = 0.7
 snow_deep_drag = 1000.0
 snow_visual_depth_m = 0.35
+snow_bank_width_m = 2.0
 ice_grip = 0.12
 ice_color = Color(0.8, 0.86, 0.9, 1)
 ice_shore_color = Color(0.88, 0.92, 0.95, 1)

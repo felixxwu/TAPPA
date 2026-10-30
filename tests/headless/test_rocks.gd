@@ -361,33 +361,15 @@ func test_a_generated_stage_carries_grouped_rocks() -> void:
 		"a stage with rocks should carry at least one whole group")
 
 
-# --- Deep-snow ground lift ---------------------------------------------------------
+# --- Deep snow buries props ----------------------------------------------------
 
-# A deep-snow stage raises the off-road ground in the terrain VERTEX SHADER, which
-# TerrainManager.height_at (what every scatter seats props from) knows nothing about.
-# Props must be lifted to match, or they sit buried under the snow that is drawn.
-func test_deep_snow_lifts_props_onto_the_drawn_ground() -> void:
+# A deep-snow ground is raised in the terrain VERTEX SHADER only. Props stay seated on the
+# collision height underneath, so they read as buried in the snow (Felix's call, 2026-10-30).
+func test_deep_snow_does_not_lift_props() -> void:
 	var depth_before := _cfg.deep_snow_depth_m
-
 	_cfg.deep_snow_depth_m = 0.0
-	assert_eq(Foliage.visual_ground_lift(), 0.0,
-		"a stage without deep snow must not lift anything")
 	var flat_y: float = _spawn(PackedVector2Array([Vector2(6.0, 6.0)])).instance_positions[0].y
-
 	_cfg.deep_snow_depth_m = 0.4
-	assert_almost_eq(Foliage.visual_ground_lift(), 0.4, 0.0001,
-		"the lift should equal the snow the shader raises the ground by")
 	var snow_y: float = _spawn(PackedVector2Array([Vector2(6.0, 6.0)])).instance_positions[0].y
-	assert_almost_eq(snow_y - flat_y, 0.4, 0.001,
-		"props on a snow stage should rise by exactly the visual snow depth")
-
 	_cfg.deep_snow_depth_m = depth_before
-
-
-# Guards the sign. A negative authored depth would push props further UNDER the ground,
-# which is the failure this whole helper exists to prevent.
-func test_visual_ground_lift_never_pushes_props_down() -> void:
-	var depth_before := _cfg.deep_snow_depth_m
-	_cfg.deep_snow_depth_m = -1.0
-	assert_eq(Foliage.visual_ground_lift(), 0.0)
-	_cfg.deep_snow_depth_m = depth_before
+	assert_almost_eq(snow_y, flat_y, 0.0001, "props sit at the same height with or without deep snow")

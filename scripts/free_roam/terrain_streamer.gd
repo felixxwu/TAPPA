@@ -12,6 +12,7 @@ extends Node3D
 # surface_at), the same way it sees the stage Floor.
 
 const UV_PER_M := 0.125
+const SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
 # How many vertices the array stage packs between clock checks (each is a few µs).
 const CHECK_EVERY := 4
 
@@ -201,9 +202,10 @@ func _ready() -> void:
 	# Biome ring i wears region ring_regions[i]: its trees and rocks, and a ground material
 	# carrying its grass / gravel textures and tarmac colour.
 	for i in settings.ring_count:
-		var look := RegionLibrary.look_of(BiomeDirector.region_of(settings, i))
+		var region := BiomeDirector.region_of(settings, i)
+		var look := RegionLibrary.look_of(region)
 		_ring_looks.append(look)
-		_ring_materials.append(_material_for(look))
+		_ring_materials.append(_material_for(look, region))
 	for k in range(1, settings.ring_count):
 		var pair := _pair_material(k)
 		if pair != null:
@@ -215,11 +217,19 @@ func _ready() -> void:
 	print("free roam: %d barrier modules" % barriers.modules.size())
 
 
-func _material_for(look: Dictionary) -> Material:
+func _material_for(look: Dictionary, region := "") -> Material:
 	var sm := material as ShaderMaterial
 	if sm == null:
 		return material
 	var m := sm.duplicate() as ShaderMaterial
+	# A deep-snow ring draws its ground with the snow variant, whose vertex stage raises the
+	# ground off-road (features/snow-region.md). Every other ring keeps the base shader, which
+	# has no vertex stage at all.
+	var depth := snow_depth_of(region)
+	if depth > 0.0:
+		m.shader = SNOW_SHADER
+		m.set_shader_parameter("snow_depth", depth)
+		m.set_shader_parameter("snow_bank_m", Config.data.snow_bank_width_m)
 	if look.has("grass_texture"):
 		m.set_shader_parameter("albedo_texture", load(look["grass_texture"]))
 	if look.has("gravel_texture"):
@@ -244,6 +254,13 @@ func _material_for(look: Dictionary) -> Material:
 	return m
 
 
+# Metres a region's deep snow raises the ground off-road (0.0 for a region without deep snow).
+static func snow_depth_of(region: String) -> float:
+	if region == "":
+		return 0.0
+	return maxf(float(RegionLibrary.deep_snow_of(Config.data, region).get("depth", 0.0)), 0.0)
+
+
 # Ring k - 1's ground with ring k's textures and colours in the shader's B slot.
 func _pair_material(k: int) -> ShaderMaterial:
 	var outer := _ring_materials[k] as ShaderMaterial
@@ -252,6 +269,16 @@ func _pair_material(k: int) -> ShaderMaterial:
 	var m := _ring_materials[k - 1].duplicate() as ShaderMaterial
 	for p in ["albedo_texture", "road_texture", "tarmac_color", "road_marking_color"]:
 		m.set_shader_parameter(p + "_b", outer.get_shader_parameter(p))
+	# Deep snow on either side: the border wears the snow variant, its lift fading across the
+	# border with the textures (snow_depth_b), so it meets both neighbours without a step.
+	if outer.shader == SNOW_SHADER or m.shader == SNOW_SHADER:
+		var inner_depth := float(m.get_shader_parameter("snow_depth")) if m.shader == SNOW_SHADER else 0.0
+		var outer_depth := float(outer.get_shader_parameter("snow_depth")) if outer.shader == SNOW_SHADER else 0.0
+		if m.shader != SNOW_SHADER:
+			m.shader = SNOW_SHADER
+			m.set_shader_parameter("snow_bank_m", outer.get_shader_parameter("snow_bank_m"))
+		m.set_shader_parameter("snow_depth", inner_depth)
+		m.set_shader_parameter("snow_depth_b", outer_depth)
 	m.set_shader_parameter("albedo_color_b", m.get_shader_parameter("albedo_color"))
 	m.set_shader_parameter("fade_rings", true)
 	m.set_shader_parameter("ring_border", float(k))

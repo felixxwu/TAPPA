@@ -799,7 +799,8 @@ Three constraints this had to respect, all still true:
   shaders every stage boot and re-applies only `snow_depth`, relying on
   `ShaderMaterial` keeping its by-name parameter map across the swap. That works
   only while the two declare identical uniform sets, so **any uniform added to
-  one must be added to the other** — both `#include`
+  one must be added to the other** (copy it across;
+  `test_render_smoke.gd::test_snow_terrain_shader_matches_the_base_shader` checks) — both `#include`
   `shaders/headlight_cone.gdshaderinc` for exactly this reason.
 
 Nothing about the bake or the chunk cache changes: the

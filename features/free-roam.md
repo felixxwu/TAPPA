@@ -222,7 +222,9 @@ border. Ring i wears region `FreeRoamSettings.ring_regions[i]` (`BiomeDirector.r
 wrapping). By default that's home, greece, taiga, snow.
 
 **Per chunk (`TerrainStreamer`):** each ring has its own copy of the ground material, carrying
-the region's `grass_texture`, `gravel_texture` and `tarmac_color` (`_material_for`). Trees,
+the region's `grass_texture`, `gravel_texture` and `tarmac_color` (`_material_for`). A ring
+whose region authors deep snow gets `ps1_terrain_snow.gdshader` instead, which raises the
+ground off-road so the car sinks in (props stay buried; `features/snow-region.md`). Trees,
 bushes and rocks follow the region at the chunk's centre (`tree_mix`, bush switch, rock
 density), so they still switch at chunk edges.
 

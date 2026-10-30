@@ -233,6 +233,21 @@ func test_terrain_shader_has_no_vertex_stage() -> void:
 	assert_false(src.contains("light_amount"), "ps1_models (terrain) carries no lighting cost")
 
 
+# The snow terrain shader is a copy of ps1_models plus a vertex stage (they cannot share an
+# include without hiding ps1_models' source from the text checks above). This catches the copy
+# drifting: the uniforms before the stage and the whole fragment stage must match exactly.
+func test_snow_terrain_shader_matches_the_base_shader() -> void:
+	var base := FileAccess.get_file_as_string("res://shaders/ps1_models.gdshader")
+	var snow := FileAccess.get_file_as_string("res://shaders/ps1_terrain_snow.gdshader")
+	assert_true(snow.contains("void vertex()"), "the snow variant has the lift stage")
+	assert_eq(snow.substr(snow.find("void fragment()")), base.substr(base.find("void fragment()")),
+		"the fragment stages are identical")
+	var base_pre := base.substr(0, base.find("void fragment()"))
+	var uniforms_start := base_pre.find("uniform ")
+	assert_true(snow.contains(base_pre.substr(uniforms_start)),
+		"every uniform and helper of ps1_models is copied verbatim")
+
+
 func test_car_meshes_are_lit_but_terrain_is_flat() -> void:
 	# The car meshes use the lit shader (world.gd applies the light params); the
 	# terrain uses the plain shader, which has no light_amount uniform at all.

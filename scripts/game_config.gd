@@ -296,9 +296,13 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 @export_range(0.0, 400.0) var snow_deep_drag := 90.0
 ## Metres the VISUAL ground is drawn above the collision surface off-road, so the car
 ## visibly sinks in. Collision is untouched, so the wheels rest at true ground level.
-## Applied in ps1_models.gdshader's vertex stage against the baked road weight, so the
-## road itself is never raised and the existing feather turns the step into a bank.
+## Applied in ps1_terrain_snow.gdshader's vertex stage against the road weight, so the
+## road itself is never raised and the step becomes a bank. Props are not lifted with it,
+## so trees, bushes and rocks look buried in the snow.
 @export_range(0.0, 2.0) var snow_visual_depth_m := 0.35
+## Free roam: metres past the painted road edge over which the snow rises to full depth
+## (the plough bank). A stage ramps over its baked road feather instead.
+@export_range(0.0, 10.0) var snow_bank_width_m := 2.0
 ## LIVE per-stage values, seated by BiomeDirector from the current
 ## region (0.0 for every region that authors no deep snow). Never author these — they
 ## are the deep-snow counterpart to `weather`, written by the funnel and read by

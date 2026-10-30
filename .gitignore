@@ -85,3 +85,5 @@ __pycache__/
 # Capture-tool output
 /tools/*.png
 /tools/*.png.import
+/tools/snow_capture_*.png
+/tools/snow_capture_*.png.import

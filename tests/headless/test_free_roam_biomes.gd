@@ -175,6 +175,30 @@ func test_a_chunk_on_a_border_fades_into_the_outer_rings_ground() -> void:
 	assert_true(border in st.ring_materials(), "the weather tints border materials too")
 
 
+# A ring whose region authors deep snow draws its ground with the snow variant (whose vertex
+# stage raises the ground off-road); a ring without keeps the vertex-free base shader; and the
+# border between them fades the lift from one ring's depth to the other's.
+func test_a_deep_snow_ring_raises_its_ground_and_the_border_fades_the_lift() -> void:
+	var deep := ICY.duplicate()
+	deep["deep_snow"] = {"depth": "snow_visual_depth_m", "drag": "snow_deep_drag"}
+	var regions: Array[Dictionary] = [deep, PLAIN]
+	RegionLibrary.override_for_test(regions)
+	var depth_before := Config.data.snow_visual_depth_m
+	Config.data.snow_visual_depth_m = 0.5
+	var st := _ground_streamer(_settings())
+	Config.data.snow_visual_depth_m = depth_before
+	var snowy := st._ring_materials[0] as ShaderMaterial
+	var plain := st._ring_materials[1] as ShaderMaterial
+	assert_eq(snowy.shader, TerrainStreamer.SNOW_SHADER, "the deep-snow ring wears the snow variant")
+	assert_almost_eq(float(snowy.get_shader_parameter("snow_depth")), 0.5, 0.0001,
+		"its lift is the depth its region names")
+	assert_ne(plain.shader, TerrainStreamer.SNOW_SHADER, "a ring without deep snow keeps the base shader")
+	var border := st._pair_materials[0] as ShaderMaterial
+	assert_eq(border.shader, TerrainStreamer.SNOW_SHADER, "the border lifts too, so it meets the snow without a step")
+	assert_almost_eq(float(border.get_shader_parameter("snow_depth")), 0.5, 0.0001, "slot A is the snowy ring's depth")
+	assert_almost_eq(float(border.get_shader_parameter("snow_depth_b")), 0.0, 0.0001, "slot B is the plain ring's")
+
+
 # The vertex tint follows the same fade: each ring's own tint either side of the border, and no
 # hard step across it. The tints and the fade width are synthetic.
 func test_the_ground_tint_fades_across_a_border() -> void:
