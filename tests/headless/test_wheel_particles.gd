@@ -70,6 +70,9 @@ func before_each() -> void:
 	_car = StubCar.new()
 	_dt = StubDrivetrain.new()
 	_terrain = StubTerrain.new()
+	# Every wheel off the road (grass) by default: the road throws no debris now (its dust
+	# is the DustPuffs trail), so grass is the surface the emission tests exercise.
+	_terrain.road_half = -1.0
 	_dt.terrain = _terrain
 	_car.drivetrain = _dt
 	add_child_autofree(_car)
@@ -121,13 +124,22 @@ func test_pool_starts_empty_and_capped() -> void:
 	assert_eq(wp.live_count(), 0, "no particles before any wheel spins")
 
 
-func test_driven_spinning_on_gravel_emits() -> void:
+func test_driven_spinning_off_road_emits() -> void:
 	var wp := _make()
 	# Rear (driven) wheel spun up past its fore/aft grip limit at 10 m/s of tread
-	# speed, sitting on the gravel road.
+	# speed, sitting on the grass.
 	_break_traction(2, 10.0)
 	_tick(wp)
-	assert_gt(wp.live_count(), 0, "a driven wheel spinning on the gravel throws dirt")
+	assert_gt(wp.live_count(), 0, "a driven wheel spinning off the road throws debris")
+
+
+func test_no_emit_on_gravel() -> void:
+	var wp := _make()
+	# Spinning on the gravel road: its dust is the DustPuffs trail, not clods.
+	_terrain.road_half = 3.0
+	_break_traction(2, 10.0)
+	_tick(wp)
+	assert_eq(wp.live_count(), 0, "a wheel spinning on gravel throws no clods")
 
 
 func test_undriven_wheel_does_not_emit() -> void:
@@ -186,6 +198,7 @@ func test_grass_emits_blades() -> void:
 func test_no_emit_on_tarmac() -> void:
 	var wp := _make()
 	# Driven wheel spinning on the road, but the surface is tarmac -> no dirt.
+	_terrain.road_half = 3.0
 	_terrain.tarmac = 1.0
 	_break_traction(2, 10.0)
 	_tick(wp)
@@ -231,7 +244,7 @@ func test_ring_buffer_caps_live_particles() -> void:
 # --- Per-particle appearance (colour / dimensions / roll) --------------------
 
 # The pool is shared by every surface, so one cap and one draw call cover both the
-# gravel clods and the grass blades.
+# wheels on every surface.
 func test_one_shared_pool_for_every_surface() -> void:
 	Config.data.wheel_particle_max = 32
 	var wp := _make()
@@ -239,13 +252,11 @@ func test_one_shared_pool_for_every_surface() -> void:
 	assert_eq(wp.multimesh.instance_count, 32, "one MultiMesh sized to the shared cap")
 	assert_eq(wp._buffer.size(), 32 * WheelParticles.STRIDE,
 		"the buffer holds transform + colour floats for every slot")
-	# Spin one wheel on the road and another off it in the same tick: both surfaces
-	# feed the SAME ring buffer rather than a pool each.
+	# Spin two wheels in the same tick: both feed the SAME ring buffer.
 	_break_traction(2, 10.0)
-	_wheels[3].position = Vector3(10, 0, 0)
 	_break_traction(3, 10.0)
 	_tick(wp)
-	assert_gt(wp.live_count(), 1, "gravel and grass particles share one pool")
+	assert_gt(wp.live_count(), 1, "every wheel's particles share one pool")
 
 
 # _write_slot's basis is the contract billboard_particle.gdshader reads back:
@@ -320,18 +331,18 @@ func test_zero_jitter_uses_the_look_colour_verbatim() -> void:
 		"zero jitter leaves the colour untouched")
 
 
-# Tarmac is unchanged by the multi-surface work: paved road still throws nothing.
+# Only off-road throws debris; the road's dust is the DustPuffs trail.
 func test_look_for_surface_picks_by_surface() -> void:
 	var wp := _make()
 	var cfg: GameConfig = Config.data
 	assert_null(wp._look_for_surface(cfg, Vector2(1.0, 1.0)), "tarmac throws nothing")
-	assert_not_null(wp._look_for_surface(cfg, Vector2(1.0, 0.0)), "gravel road throws clods")
+	assert_null(wp._look_for_surface(cfg, Vector2(1.0, 0.0)), "gravel road throws nothing (DustPuffs)")
 	assert_not_null(wp._look_for_surface(cfg, Vector2(0.0, 0.0)), "off-road throws grass")
 
 
 func test_a_region_can_make_the_off_road_particle_a_square_clod() -> void:
 	# The Alps: snow throws clods of powder, not blades of grass. The region override
-	# swaps the SHAPE to the gravel clod's square while keeping the region's COLOUR, so
+	# swaps the SHAPE to the clod look's square while keeping the region's COLOUR, so
 	# the spray stays white rather than turning into dirt. Relations only — no authored
 	# width/length/size value is pinned, so a designer can retune any of them.
 	var wp := _make()
@@ -342,10 +353,10 @@ func test_a_region_can_make_the_off_road_particle_a_square_clod() -> void:
 	wp.set_grass_square_override(true)
 	var clod: WheelParticles.Look = wp._grass_look(cfg)
 	assert_eq(clod.half_w, clod.half_h, "the override makes it square")
-	var gravel: WheelParticles.Look = WheelParticles._gravel_look(cfg)
-	assert_eq(clod.half_w, gravel.half_w,
-		"...sized off the same field as the gravel clod, so the two cannot drift apart")
-	assert_ne(clod.color, gravel.color, "but it keeps its own colour, not the gravel's")
+	var square: WheelParticles.Look = WheelParticles._clod_look(cfg)
+	assert_eq(clod.half_w, square.half_w,
+		"...sized off the same field as the clod look, so the two cannot drift apart")
+	assert_ne(clod.color, square.color, "but it keeps its own colour, not the clod's")
 
 
 func test_the_square_override_still_honours_the_region_colour() -> void:

@@ -2,8 +2,9 @@
 
 `DustPuffs` (`scripts/dust_puffs.gd`, `class_name DustPuffs extends CpuParticlePool`)
 leaves a trail of **opaque, flat-shaded low-poly clouds** behind the rear wheels while
-the car drives on a road: gravel-coloured on gravel, near-white on tarmac. It sits next to [`WheelParticles`](wheel-dust.md)
-(the tiny clods thrown on wheelspin), which is unchanged. Created + wired by
+the car drives on a road: gravel-coloured on gravel, near-white on tarmac. It **replaced** the gravel clods that
+[`WheelParticles`](wheel-dust.md) used to throw on wheelspin; that pool now throws
+only off-road debris (grass blades, snow clods). Created + wired by
 `world.gd._generate_track` (`_dust_puffs`, reused across regenerations) and in free
 roam by `free_roam.gd._ready`, where `BiomeDirector._seat_particle_look` re-seats the
 region colour on every ring change.

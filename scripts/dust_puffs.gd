@@ -12,9 +12,9 @@ extends CpuParticlePool
 # instance basis, so growing a puff rewrites 9 basis floats per tick — the mesh never
 # changes after load.
 #
-# Separate from WheelParticles (the small clods thrown on wheelspin): those still fly
-# on wheelspin; these are emitted by distance travelled whenever the car is moving on
-# a road, grip or no grip.
+# This REPLACED WheelParticles' gravel clods: that pool now throws only off-road debris
+# (grass blades, snow clods). These are emitted by distance travelled whenever the car
+# is moving on a road.
 #
 # Tarmac smokes only while a tyre slides (tarmac_smokes). Nothing is raised in the wet.
 #

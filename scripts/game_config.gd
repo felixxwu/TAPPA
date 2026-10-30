@@ -1748,8 +1748,8 @@ func has_nitrous() -> bool:
 ## surface — each particle carries its own colour, size and roll, picked at emit
 ## time: grey clods on gravel, slim green blades on grass, nothing on tarmac.
 @export var wheel_particles_enabled := true
-## Clod colour — matched to the gravel road (gravel.jpg averages ~0.42 grey).
-## Unshaded, so tune it against the lit road in-game.
+## Colour of the square clod look — only seen in the shader warm-up now, since the
+## gravel road's debris was replaced by the Dust Puffs trail.
 @export var wheel_particle_color := Color(0.42, 0.40, 0.36)
 ## Hard cap on live particles (the ring-buffer size + MultiMesh instance count).
 ## Shared across ALL surfaces, so total draw cost is bounded wherever the car is;
@@ -1798,7 +1798,8 @@ func has_nitrous() -> bool:
 
 @export_group("Dust Puffs")
 ## Opaque, blocky low-poly dust clouds left behind the rear wheels on a road
-## (DustPuffs, features/dust-puffs.md). Separate from the wheelspin clods above.
+## (DustPuffs, features/dust-puffs.md). Replaced the gravel clods; the wheel
+## particles above now only throw off-road debris.
 @export var dust_puffs_enabled := true
 ## Puff colour on a gravel road — the average of textures/gravel.jpg, so the dust is
 ## the gravel's own colour (lit like the car, then jittered per puff). A region with its

@@ -291,9 +291,9 @@ func test_junction_gap_measures_to_the_nearer_junction_end_only() -> void:
 	assert_eq(net.junction_gap(-1, 0.0), INF, "no road")
 
 
-# The wheel debris picks its look from the same surface_at the tyres read: gravel clods on the
-# road, grass blades off it (free roam's roads are all loose, so nothing reads as tarmac).
-func test_wheel_debris_reads_gravel_on_the_road_and_grass_off_it() -> void:
+# The wheel debris picks its look from the same surface_at the tyres read: nothing on the road
+# (its dust is the DustPuffs trail), grass blades off it.
+func test_wheel_debris_reads_nothing_on_the_road_and_grass_off_it() -> void:
 	var st := _streamer(_settings())
 	var p := _road_midpoint(st.network)
 	var wp := WheelParticles.new()
@@ -301,8 +301,7 @@ func test_wheel_debris_reads_gravel_on_the_road_and_grass_off_it() -> void:
 	var cfg: GameConfig = Config.data
 	var on_road: WheelParticles.Look = wp._look_for_surface(cfg, st.surface_at(p.x, p.y))
 	var off_road: WheelParticles.Look = wp._look_for_surface(cfg, st.surface_at(p.x + 5000.0, p.y + 5000.0))
-	assert_not_null(on_road, "the road throws debris")
-	assert_eq(on_road.color, WheelParticles._gravel_look(cfg).color, "gravel on the road")
+	assert_null(on_road, "the road throws no debris")
 	assert_not_null(off_road, "the open ground throws debris")
 	assert_eq(off_road.color, wp._grass_look(cfg).color, "grass off it")
 

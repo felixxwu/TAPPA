@@ -13,9 +13,10 @@ extends CpuParticlePool
 #
 # ONE pool serves every surface. Each particle carries its own colour, half-extents
 # and roll, chosen at emit time from the surface under the wheel:
-#   - gravel road -> a squarish grey-brown clod of dirt,
-#   - grass (off the road footprint) -> a slim green blade,
-#   - tarmac -> nothing at all (paved throws no debris).
+#   - grass (off the road footprint) -> a slim green blade (a square clod of the
+#     region's colour where the region asks, e.g. the Alps' snow),
+#   - gravel road and tarmac -> nothing here: the road's dust is the opaque blocky
+#     DustPuffs trail (features/dust-puffs.md), which replaced the gravel clods.
 # Sharing one ring buffer means the total particle cost stays hard-capped at
 # wheel_particle_max no matter which surface the car is on, and it stays a single
 # draw call.
@@ -43,11 +44,9 @@ const PARTICLE_SHADER := preload("res://shaders/billboard_particle.gdshader")
 const STRIDE := 16
 
 # Surface gate thresholds against TerrainManager.surface_at (road_weight, tarmac_weight).
-# Below ROAD_WEIGHT_MIN the wheel is off the road footprint (grass); on the road, above
-# TARMAC_WEIGHT_MAX it is paved (no debris). 0.5 is the midpoint of the same feather
-# bands the road colour/grip blend across.
+# Below ROAD_WEIGHT_MIN the wheel is off the road footprint (grass); 0.5 is the midpoint
+# of the same feather band the road colour/grip blend across.
 const ROAD_WEIGHT_MIN := 0.5
-const TARMAC_WEIGHT_MAX := 0.5
 
 var _car: Node                 # the VehicleBody3D (read for drivetrain + position)
 
@@ -60,7 +59,7 @@ var _grass_color_override := Color(0.0, 0.0, 0.0, 0.0)
 
 # Region override for the off-road particle's SHAPE (RegionLibrary look_of()'s
 # "grass_particle_square"). False — every region but the Alps — keeps the slim tall
-# blade. True swaps it for the gravel clod's square, because a snowfield throws powder,
+# blade. True swaps it for the square clod, because a snowfield throws powder,
 # not blades of grass. Seated by world.gd alongside the colour override.
 var _grass_square_override := false
 
@@ -134,8 +133,10 @@ class Look:
 		color = c
 
 
-# The gravel clod: a square of dirt, sized off the shared wheel_particle_size_m.
-static func _gravel_look(cfg: GameConfig) -> Look:
+# The square clod, sized off wheel_particle_size_m: the off-road particle's shape in a
+# region with grass_particle_square, and the warm-up particle. (It was the gravel road's
+# particle until DustPuffs replaced that.)
+static func _clod_look(cfg: GameConfig) -> Look:
 	var half := cfg.wheel_particle_size_m * 0.5
 	return Look.new(half, half, cfg.wheel_particle_color)
 
@@ -148,7 +149,7 @@ func _grass_look(cfg: GameConfig) -> Look:
 	if _grass_color_override.a > 0.0:
 		color = _grass_color_override
 	# A region may state that its off-road surface throws clods rather than blades (the
-	# Alps: snow). Only the SHAPE comes from the gravel look — the colour is still the
+	# Alps: snow). Only the SHAPE comes from the clod look — the colour is still the
 	# region's, so this stays white spray rather than becoming dirt.
 	if _grass_square_override:
 		var half := cfg.wheel_particle_size_m * 0.5
@@ -220,10 +221,10 @@ func _hide_slot(i: int) -> void:
 
 
 # A warmed-up slot must actually DRAW so the shader variant compiles, so give it a
-# full gravel look rather than the zeroed (degenerate) basis a fresh pool carries.
+# full clod look rather than the zeroed (degenerate) basis a fresh pool carries.
 func _build_slot(i: int, p: Vector3) -> void:
 	var cfg: GameConfig = Config.data
-	var look := _gravel_look(cfg)
+	var look := _clod_look(cfg)
 	_write_slot(i, p, look, 0.0, look.color)
 
 
@@ -328,14 +329,12 @@ func _emit_from_wheels() -> bool:
 
 
 # Pick the particle look for a surface sample, or null when the surface throws
-# nothing. Off the road footprint it's grass; on the road it's gravel unless the
-# road is paved there.
+# nothing. Off the road footprint it's grass; the road (gravel or tarmac) throws
+# nothing here, since its dust is the DustPuffs trail.
 func _look_for_surface(cfg: GameConfig, surf: Vector2) -> Look:
 	if surf.x < ROAD_WEIGHT_MIN:
 		return _grass_look(cfg)
-	if surf.y > TARMAC_WEIGHT_MAX:
-		return null
-	return _gravel_look(cfg)
+	return null
 
 
 # Fling a burst of particles from one wheel's contact patch. The throw direction is

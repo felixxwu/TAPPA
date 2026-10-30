@@ -4,8 +4,10 @@
 CpuParticlePool`) flings cheap debris backwards from the **driven** wheels whenever
 they spin faster than the ground — a standing burnout, a wheelspin launch, or a
 spinning slide. **One pool serves every surface**, with each particle carrying its
-own colour, dimensions and roll picked at emit time: grey-brown clods on gravel,
-slim green blades on grass, nothing on tarmac (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
+own colour, dimensions and roll picked at emit time: slim green blades on grass (or
+a region's square clods, e.g. snow), and **nothing on the road** — gravel and tarmac
+dust is the opaque blocky [DustPuffs](dust-puffs.md) trail, which replaced the old
+gravel clods (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
 across event regenerations), exactly like `TireMarks`, and in free roam by `free_roam.gd._ready`,
 where `TerrainStreamer.surface_at` answers the surface query (see [free-roam.md](free-roam.md) →
 "The shell").
@@ -42,9 +44,9 @@ coverage of the base ring lives in `tests/headless/test_cpu_particle_pool.gd`.
 Every particle carries its own **colour**, **half-extents** and **roll**, chosen at
 emit time by `_look_for_surface` from the one `surface_at` sample the emitter
 already takes, then **frozen for the particle's whole life**. A `Look` (an inner
-`RefCounted`: `half_w`, `half_h`, `color`) is built by `_gravel_look` (a square
-clod at `wheel_particle_size_m`) or `_grass_look` (a slim blade at
-`wheel_particle_grass_width_m` x `wheel_particle_grass_length_m`); tarmac returns
+`RefCounted`: `half_w`, `half_h`, `color`) is built by `_grass_look` (a slim blade at
+`wheel_particle_grass_width_m` x `wheel_particle_grass_length_m`, or the square
+`_clod_look` shape at `wheel_particle_size_m` where the region asks); the road returns
 `null` and throws nothing. `_jittered` then varies the brightness per particle by
 +/- `wheel_particle_color_jitter` so a burst reads as many separate bits of debris
 rather than one flat smear.
@@ -109,7 +111,7 @@ spin. Dead slots are parked far below the world (origin Y = `HIDE_Y`) rather tha
 zero-scaled — billboard materials don't reliably honour a zero instance scale
 under `gl_compatibility`, and a quad that far down is always off-screen.
 
-## Shader warm-up (no first-gravel hitch)
+## Shader warm-up (no first-spray hitch)
 
 Under `gl_compatibility` a material's shader variant compiles on its **first
 visible draw**. Because the pool sits off-screen at `HIDE_Y` until the first
@@ -182,9 +184,9 @@ Each `_physics_process` (skipped when `wheel_particles_enabled` is off):
     `Drivetrain.terrain.surface_at(x, z)` lookup returns `(road_weight,
     tarmac_weight)` and picks the flavour rather than merely rejecting:
     `road_weight < ROAD_WEIGHT_MIN` is off the road footprint -> **grass blades**;
-    otherwise `tarmac_weight > TARMAC_WEIGHT_MAX` is **tarmac** -> nothing;
-    otherwise **gravel clods**. Both thresholds sit at the midpoint of the same
-    feather bands the road colour/grip blend across. With no terrain wired (flat
+    otherwise it is road (gravel or tarmac) -> nothing (the road's dust is
+    [DustPuffs](dust-puffs.md)). The threshold sits at the midpoint of the same
+    feather band the road colour/grip blend across. With no terrain wired (flat
     fixtures), nothing is thrown. This reuses the surface system added for
     per-surface grip — see `features/drivetrain-and-tires.md`.
 
@@ -216,30 +218,30 @@ All in `GameConfig` (the "Wheel Particles" group): `wheel_particles_enabled`,
 
 ## Surfaces
 
-The live `surface_at` sample drives all three cases: **gravel** road throws square
-grey clods, **grass** (off the road footprint) throws slim green blades, and
-**tarmac** (paved) throws nothing. Adding a further surface means one more `Look`
+The live `surface_at` sample decides: **grass** (off the road footprint) throws slim
+green blades, and the **road** (gravel or tarmac) throws nothing here — its dust is
+[DustPuffs](dust-puffs.md). Adding a further surface means one more `Look`
 in `_look_for_surface` — no new pool, mesh, material or draw call.
 
 ## Tests
 
 `tests/headless/test_wheel_particles.gd` — a stub car with a stub drivetrain, stub
 wheels and a stub terrain surface drive the gating / emission / ring-buffer logic
-without a real vehicle or rendering: dirt flies from a driven, spinning, on-gravel
-wheel; none from an undriven wheel, a wheel rolling no faster than the ground, or a
-wheel on tarmac; a wheel on grass throws grass; a spinning *and* sliding wheel
+without a real vehicle or rendering (the stub's wheels sit on grass by default):
+debris flies from a driven, spinning wheel off the road; none from an undriven wheel,
+a wheel rolling no faster than the ground, or a wheel on gravel or tarmac; a wheel on grass throws grass; a spinning *and* sliding wheel
 still emits and throws backward + sideways; and the ring buffer caps the live count.
 
 `apply_region_look` seats both overrides and an empty look clears them. Free-roam coverage
-lives with free roam: `test_free_roam.gd` (the streamer's `surface_at` picks gravel on the road and
+lives with free roam: `test_free_roam.gd` (the streamer's `surface_at` gives nothing on the road and
 grass off it), `test_free_roam_shell.gd` (the scene makes the pool, wires it to the car, and the
 car's terrain is the streamer) and `test_free_roam_biomes.gd` (each ring seats its region's
 particle).
 
-The per-particle look has its own cases: gravel and grass share one pool/cap,
+The per-particle look has its own cases: every wheel shares one pool/cap,
 `_write_slot`'s basis encodes the half-extents as column lengths and the roll as
 column 0's direction (asserted against the values passed in, not against authored
 config), the two half-extent axes stay independent (a slim blade stays slim), the
 colour lands in the trailing RGBA floats, `_advance` moves a particle's origin
-while leaving its basis + colour frozen, and `_look_for_surface` returns grass /
-gravel / `null` for the three surfaces.
+while leaving its basis + colour frozen, and `_look_for_surface` returns grass off
+the road and `null` on gravel and tarmac.
