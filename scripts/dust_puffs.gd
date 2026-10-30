@@ -16,6 +16,8 @@ extends CpuParticlePool
 # on wheelspin; these are emitted by distance travelled whenever the car is moving on
 # a road, grip or no grip.
 #
+# Tarmac smokes only while a tyre slides (tarmac_smokes) and never in the wet.
+#
 # Colour follows the surface: on gravel it is the gravel's own colour (GameConfig
 # dust_puff_color, matched to textures/gravel.jpg, or the region's "dust_color" look key
 # matched to its gravel_texture); on tarmac it is a near-white dust_puff_tarmac_color.
@@ -257,7 +259,13 @@ func _emit_from_wheels(delta: float) -> bool:
 		var speed := Vector2(vel.x, vel.z).length()
 		var color := Color(0, 0, 0, 0)
 		if speed >= cfg.dust_puff_min_speed_mps:
-			color = color_for_surface(cfg, terrain.surface_at(wpos.x, wpos.z))
+			var surf: Vector2 = terrain.surface_at(wpos.x, wpos.z)
+			color = color_for_surface(cfg, surf)
+			# Tarmac only smokes from a tyre that is actually sliding (spinning, locked or
+			# skidding sideways: the combined grip usage past dust_puff_tarmac_min_grip),
+			# and never on a wet road. Gravel throws dust from any rolling wheel.
+			if surf.y > TARMAC_WEIGHT_MAX and not tarmac_smokes(cfg, dt.wheel_grip_usage(wheel)):
+				color = Color(0, 0, 0, 0)
 		if color.a <= 0.0:
 			_travel[k] = 0.0
 			continue
@@ -277,6 +285,11 @@ func color_for_surface(cfg: GameConfig, surf: Vector2) -> Color:
 	if surf.y > TARMAC_WEIGHT_MAX:
 		return cfg.dust_puff_tarmac_color
 	return dust_color()
+
+
+# Whether a tyre at this combined grip usage smokes on tarmac in the current weather.
+static func tarmac_smokes(cfg: GameConfig, grip_usage: float) -> bool:
+	return grip_usage >= cfg.dust_puff_tarmac_min_grip and not WeatherLibrary.is_wet(cfg.weather)
 
 
 func _emit_puff(cfg: GameConfig, cp: Vector3, car_vel: Vector3, c: Color) -> void:

@@ -26,9 +26,12 @@ class StubDrivetrain:
 	var rear_wheels: Array = []
 	var all_wheels: Array = []
 	var ground_vel := Vector3.ZERO
+	var grip_usage := 0.0  # combined grip usage of every wheel (1.0 = at peak grip)
 	var terrain
 	func velocity_at(_point) -> Vector3:
 		return ground_vel
+	func wheel_grip_usage(_w) -> float:
+		return grip_usage
 
 
 class StubCar:
@@ -108,14 +111,39 @@ func test_no_dust_on_grass() -> void:
 	assert_eq(d.live_count(), 0, "grass raises no dust")
 
 
-func test_tarmac_raises_tarmac_coloured_dust() -> void:
+func test_sliding_on_tarmac_raises_tarmac_coloured_smoke() -> void:
 	Config.data.dust_puff_color_jitter = 0.0
 	Config.data.dust_puff_tarmac_color = Color(0.9, 0.8, 0.7)
 	var d := _make()
 	_terrain.tarmac = 1.0
+	_dt.grip_usage = Config.data.dust_puff_tarmac_min_grip + 0.5
 	_drive(d, Config.data.dust_puff_spacing_m * 1.01)
-	assert_gt(d.live_count(), 0, "tarmac raises dust too")
+	assert_gt(d.live_count(), 0, "a sliding tyre smokes on tarmac")
 	assert_true(_slot_color(d, d._next).is_equal_approx(Color(0.9, 0.8, 0.7)), "in the tarmac colour")
+
+
+func test_gripping_tyre_on_tarmac_raises_nothing() -> void:
+	var d := _make()
+	_terrain.tarmac = 1.0
+	_dt.grip_usage = Config.data.dust_puff_tarmac_min_grip * 0.5
+	_drive(d, Config.data.dust_puff_spacing_m * 5.0)
+	assert_eq(d.live_count(), 0, "no smoke from a tyre that still grips")
+
+
+func test_no_tarmac_smoke_in_the_wet() -> void:
+	Config.data.weather = WeatherLibrary.wet_ids()[0]
+	var d := _make()
+	_terrain.tarmac = 1.0
+	_dt.grip_usage = Config.data.dust_puff_tarmac_min_grip + 0.5
+	_drive(d, Config.data.dust_puff_spacing_m * 5.0)
+	assert_eq(d.live_count(), 0, "a wet road never smokes, slide or not")
+
+
+func test_gravel_dust_needs_no_slip() -> void:
+	var d := _make()
+	_dt.grip_usage = 0.0
+	_drive(d, Config.data.dust_puff_spacing_m * 2.0)
+	assert_gt(d.live_count(), 0, "a gripping tyre still raises gravel dust")
 
 
 func test_gravel_dust_takes_the_gravel_colour() -> void:

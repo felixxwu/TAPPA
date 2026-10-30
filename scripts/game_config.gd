@@ -1806,6 +1806,9 @@ func has_nitrous() -> bool:
 @export var dust_puff_color := Color(0.53, 0.49, 0.42)
 ## Puff colour on tarmac — near-white, since paved road has no gravel to colour it.
 @export var dust_puff_tarmac_color := Color(0.95, 0.95, 0.93)
+## Combined grip usage (Drivetrain.wheel_grip_usage; 1.0 = at peak grip, above it the
+## tyre slides) a rear tyre needs before it smokes on tarmac. No tarmac smoke when wet.
+@export_range(0.0, 3.0) var dust_puff_tarmac_min_grip := 1.0
 ## Per-puff random brightness variation, as a +/- fraction of the colour.
 @export_range(0.0, 1.0) var dust_puff_color_jitter := 0.1
 ## Hard cap on live puffs (ring-buffer size + MultiMesh instance count).

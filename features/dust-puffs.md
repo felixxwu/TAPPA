@@ -59,7 +59,15 @@ in contact, its ground speed (`velocity_at` at the contact patch, horizontal) is
 least `dust_puff_min_speed_mps`, and `color_for_surface(surface_at(...))` returns a
 colour (the same `ROAD_WEIGHT_MIN` / `TARMAC_WEIGHT_MAX` midpoints as the wheel
 debris): the gravel colour on gravel, `dust_puff_tarmac_color` on tarmac, and alpha 0
-(nothing) on grass. Tarmac dust is new — the wheel debris throws nothing there. Emission is **by distance**: each wheel accumulates
+(nothing) on grass. Tarmac dust is new — the wheel debris throws nothing there.
+
+**Tarmac only smokes while a tyre slides, and never in the wet.** Gravel dust comes
+off any rolling wheel, but on tarmac `tarmac_smokes(cfg, grip_usage)` also requires
+`Drivetrain.wheel_grip_usage(wheel)` (the combined fore/aft + sideways figure the HUD
+grip grid shows; above 1.0 the tyre is sliding) to be at least
+`dust_puff_tarmac_min_grip`, and `WeatherLibrary.is_wet(cfg.weather)` to be false. So
+wheelspin, a lockup and a drift all smoke on dry tarmac; clean driving and anything in
+the rain don't. Emission is **by distance**: each wheel accumulates
 metres travelled in `_travel` and drops a puff every `dust_puff_spacing_m`, so the
 trail density is the same at any speed and frame rate. Grip doesn't matter, unlike
 the wheelspin clods.
@@ -85,7 +93,7 @@ Tarmac dust is `GameConfig.dust_puff_tarmac_color`, near-white, for every region
 ## Configuration
 
 `GameConfig` "Dust Puffs" group: `dust_puffs_enabled`, `dust_puff_color`,
-`dust_puff_tarmac_color`,
+`dust_puff_tarmac_color`, `dust_puff_tarmac_min_grip`,
 `dust_puff_color_jitter`, `dust_puff_max`, `dust_puff_size_m`, `dust_puff_growth`,
 `dust_puff_lifetime_s`, `dust_puff_spacing_m`, `dust_puff_min_speed_mps`,
 `dust_puff_inherit`, `dust_puff_rise_mps`, `dust_puff_scatter_mps`,
@@ -96,4 +104,4 @@ values pending playtest. If it costs too much on a weak device, the dials are
 ## Not done yet (ideas)
 
 Shrink or dither out at end of life instead of popping; dust off-road in dry/snowy
-regions; size scaled by speed; tarmac dust only while sliding (tyre smoke).
+regions; size scaled by speed; mud instead of dust on gravel in the wet.
