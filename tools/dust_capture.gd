@@ -44,9 +44,23 @@ func _ready() -> void:
 	car.reset_to(Transform3D(basis, Vector3(p.x, streamer.height_at(p.x, p.y) + 1.0, p.y)))
 	for _i in 30:
 		await get_tree().process_frame
+	if OS.get_environment("DUST_CAPTURE_OFF") == "1":
+		Config.data.dust_puffs_enabled = false
 	Input.action_press("accelerate")
-	for _i in 150:
-		await get_tree().physics_frame
+	# Frame-time log, to spot a first-use hitch when the first puffs appear.
+	var last := Time.get_ticks_usec()
+	var worst := 0
+	var worst_at := 0
+	for i in 150:
+		await get_tree().process_frame
+		var now := Time.get_ticks_usec()
+		if now - last > worst:
+			worst = now - last
+			worst_at = i
+		if now - last > 50000:
+			print("dust-capture: frame %d took %d ms (puffs live %d)" % [i, (now - last) / 1000, world.find_children("*", "DustPuffs", true, false)[0].live_count()])
+		last = now
+	print("dust-capture: worst frame %d ms at %d" % [worst / 1000, worst_at])
 	var cam := Camera3D.new()
 	world.add_child(cam)
 	var back := car.global_position + car.global_basis.z * 6.0 + Vector3.UP * 2.0

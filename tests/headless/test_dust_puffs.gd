@@ -32,6 +32,15 @@ class StubDrivetrain:
 		return ground_vel
 	func wheel_grip_usage(_w) -> float:
 		return grip_usage
+	# Tread speed (m/s) of every wheel; NAN means rolling cleanly at the ground speed.
+	var tread_speed := NAN
+	func wheel_forward(_w) -> Vector3:
+		return Vector3(0, 0, -1)
+	func wheel_omega(_w) -> float:
+		var t := tread_speed
+		if is_nan(t):
+			t = ground_vel.dot(Vector3(0, 0, -1))
+		return t / Config.data.wheel_radius
 
 
 class StubCar:
@@ -232,6 +241,51 @@ func test_blob_mesh_faces_point_outward() -> void:
 		assert_gt(n.dot(a + b + c), 0.0, "face %d normal points outward" % f)
 		# Godot front faces wind clockwise from outside: (b-a)x(c-a) points inward.
 		assert_lt((b - a).cross(c - a).dot(n), 0.0, "face %d winds clockwise from outside" % f)
+
+
+func test_standing_burnout_shoots_puffs_back_at_the_slip_speed() -> void:
+	Config.data.dust_puff_scatter_mps = 0.0
+	var d := _make()
+	_dt.ground_vel = Vector3.ZERO
+	var slip := Config.data.dust_puff_min_speed_mps + 10.0
+	_dt.tread_speed = slip
+	d._physics_process(Config.data.dust_puff_spacing_m * 1.01 / slip)
+	assert_gt(d.live_count(), 0, "a standing burnout raises dust")
+	var v: Vector3 = d._vel[d._next]
+	assert_almost_eq(v.z, slip * Config.data.dust_puff_slip_throw, 1e-3,
+		"thrown straight back (+Z, the car faces -Z) at the slip speed times the throw")
+	assert_almost_eq(v.x, 0.0, 1e-3)
+
+
+func test_clean_rolling_at_speed_drags_puffs_after_the_car() -> void:
+	Config.data.dust_puff_scatter_mps = 0.0
+	var d := _make()
+	_drive(d, Config.data.dust_puff_spacing_m * 1.01)
+	var car_v := _dt.ground_vel
+	var v: Vector3 = d._vel[d._next]
+	assert_almost_eq(Vector2(v.x, v.z), Vector2(car_v.x, car_v.z) * Config.data.dust_puff_inherit,
+		Vector2(1e-3, 1e-3), "no slip: only the car's wake drags the puff along")
+
+
+func test_locked_wheel_throws_puffs_forward() -> void:
+	Config.data.dust_puff_scatter_mps = 0.0
+	var d := _make()
+	_dt.tread_speed = 0.0
+	_drive(d, Config.data.dust_puff_spacing_m * 1.01)
+	var v: Vector3 = d._vel[d._next]
+	assert_lt(v.z, _dt.ground_vel.z * Config.data.dust_puff_inherit,
+		"a locked wheel sprays dust ahead, faster than the wake alone")
+
+
+func test_warm_up_lifts_the_near_camera_hide_and_clear_restores_it() -> void:
+	var d := _make()
+	var mat := d.material_override as ShaderMaterial
+	d.warm_up(Vector3.ZERO)
+	assert_eq(float(mat.get_shader_parameter("camera_hide_m")), 0.0, "warm puff draws full-size")
+	assert_eq(d.live_count(), 1)
+	d.clear_warm_up()
+	assert_eq(float(mat.get_shader_parameter("camera_hide_m")), Config.data.dust_puff_camera_hide_m)
+	assert_eq(d.live_count(), 0)
 
 
 func test_disabled_emits_nothing() -> void:

@@ -1828,8 +1828,13 @@ func has_nitrous() -> bool:
 @export var dust_puff_spacing_m := 0.8
 ## Below this ground speed (m/s) no dust is kicked up.
 @export var dust_puff_min_speed_mps := 4.0
-## Fraction of the car's velocity a puff starts with (it then slows under drag).
+## Fraction of the car's velocity a puff starts with, so at speed the puffs are dragged
+## along after the car a little (it then slows under drag).
 @export_range(0.0, 1.0) var dust_puff_inherit := 0.25
+## Fraction of the tyre's slide over the ground (tread vs ground velocity at the contact
+## patch) a puff is thrown with: a standing burnout shoots puffs back at about the slip
+## speed, a clean-rolling tyre adds nothing.
+@export_range(0.0, 2.0) var dust_puff_slip_throw := 0.8
 ## Upward drift speed of a new puff, in m/s.
 @export var dust_puff_rise_mps := 0.8
 ## Random scatter speed added to each new puff, in m/s.

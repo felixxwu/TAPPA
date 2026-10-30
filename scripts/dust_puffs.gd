@@ -177,6 +177,27 @@ func _hide_slot(i: int) -> void:
 	_buffer[b + 11] = 0.0
 
 
+# Warm-up draws its puff right in front of the camera, inside the near-camera hide
+# range, so switch the hide off for the warmed frame: the puff then draws full-size
+# through the real path and the shader variant is surely compiled behind the loading
+# cover, not on the first puff in play.
+func warm_up(pos: Vector3) -> void:
+	var mat := material_override as ShaderMaterial
+	if mat != null:
+		# (show must stay above hide: GLSL smoothstep is undefined for equal edges)
+		mat.set_shader_parameter("camera_hide_m", 0.0)
+		mat.set_shader_parameter("camera_show_m", 0.001)
+	super.warm_up(pos)
+
+
+func clear_warm_up() -> void:
+	var mat := material_override as ShaderMaterial
+	if mat != null:
+		mat.set_shader_parameter("camera_hide_m", Config.data.dust_puff_camera_hide_m)
+		mat.set_shader_parameter("camera_show_m", Config.data.dust_puff_camera_show_m)
+	super.clear_warm_up()
+
+
 func _build_slot(i: int, p: Vector3) -> void:
 	_set_shape(i, Basis.IDENTITY)
 	_max_life[i] = 1.0
@@ -233,9 +254,11 @@ func _advance(delta: float) -> bool:
 	return true
 
 
-# Drop a puff behind each rear wheel every dust_puff_spacing_m it rolls on road,
-# once the car is past dust_puff_min_speed_mps. Distance-based, so the trail density
-# along the road is the same at any speed and frame rate.
+# Drop a puff behind each rear wheel every dust_puff_spacing_m of tread it runs over the
+# road, once that rate is past dust_puff_min_speed_mps. The rate is the faster of the
+# wheel's ground speed and its slip speed, so a standing burnout (no ground speed, lots
+# of slip) raises dust as well as cruising does. Distance-based, so the trail density is
+# the same at any frame rate.
 func _emit_from_wheels(delta: float) -> bool:
 	var cfg: GameConfig = Config.data
 	var dt = _car.drivetrain
@@ -258,9 +281,13 @@ func _emit_from_wheels(delta: float) -> bool:
 		var wpos: Vector3 = wheel.global_position
 		var cp := Vector3(wpos.x, wpos.y - r, wpos.z)
 		var vel: Vector3 = dt.velocity_at(cp)
-		var speed := Vector2(vel.x, vel.z).length()
+		# How the tread at the contact patch slides over the ground: chassis velocity
+		# minus the backward-running tread surface velocity. ~zero for a rolling tyre,
+		# -fwd x spin speed in a standing burnout, the car's velocity for a locked wheel.
+		var scrub: Vector3 = vel - dt.wheel_forward(wheel) * (dt.wheel_omega(wheel) * r)
+		var rate := maxf(Vector2(vel.x, vel.z).length(), scrub.length())
 		var color := Color(0, 0, 0, 0)
-		if speed >= cfg.dust_puff_min_speed_mps and not wet:
+		if rate >= cfg.dust_puff_min_speed_mps and not wet:
 			var surf: Vector2 = terrain.surface_at(wpos.x, wpos.z)
 			color = color_for_surface(cfg, surf)
 			# Tarmac only smokes from a tyre that is actually sliding (spinning, locked or
@@ -271,10 +298,10 @@ func _emit_from_wheels(delta: float) -> bool:
 		if color.a <= 0.0:
 			_travel[k] = 0.0
 			continue
-		_travel[k] += speed * delta
+		_travel[k] += rate * delta
 		while _travel[k] >= spacing:
 			_travel[k] -= spacing
-			_emit_puff(cfg, cp, vel, color)
+			_emit_puff(cfg, cp, puff_velocity(cfg, vel, scrub), color)
 			emitted = true
 	return emitted
 
@@ -294,9 +321,18 @@ static func tarmac_smokes(cfg: GameConfig, grip_usage: float) -> bool:
 	return grip_usage >= cfg.dust_puff_tarmac_min_grip
 
 
-func _emit_puff(cfg: GameConfig, cp: Vector3, car_vel: Vector3, c: Color) -> void:
+# A new puff's velocity (before scatter/rise): dragged along a little in the car's wake
+# (dust_puff_inherit of the car's velocity) plus thrown with the tread's slide over the
+# ground (dust_puff_slip_throw of the scrub). So a standing burnout shoots puffs straight
+# back at the slip speed, a locked wheel sprays them forward, a drift flings them
+# sideways, and a tyre rolling cleanly at speed leaves them drifting after the car.
+static func puff_velocity(cfg: GameConfig, car_vel: Vector3, scrub: Vector3) -> Vector3:
+	return car_vel * cfg.dust_puff_inherit + scrub * cfg.dust_puff_slip_throw
+
+
+func _emit_puff(cfg: GameConfig, cp: Vector3, base_vel: Vector3, c: Color) -> void:
 	var scatter := cfg.dust_puff_scatter_mps
-	var vel := car_vel * cfg.dust_puff_inherit + Vector3(
+	var vel := base_vel + Vector3(
 		randf_range(-scatter, scatter),
 		cfg.dust_puff_rise_mps + randf_range(0.0, scatter),
 		randf_range(-scatter, scatter))

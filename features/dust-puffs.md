@@ -75,10 +75,34 @@ metres travelled in `_travel` and drops a puff every `dust_puff_spacing_m`, so t
 trail density is the same at any speed and frame rate. Grip doesn't matter, unlike
 the wheelspin clods.
 
-A new puff starts on the ground at the contact patch (lifted by its own radius,
-scattered across the tyre width), with `dust_puff_inherit` of the car's velocity,
-`dust_puff_rise_mps` upward and random `dust_puff_scatter_mps`, then slows under
-`dust_puff_drag`. Lifetime is `dust_puff_lifetime_s` +/- 20%.
+**Emission rate** is the faster of the wheel's horizontal ground speed and its
+**slip speed** (`scrub.length()`, below), gated at `dust_puff_min_speed_mps`. So a
+standing burnout raises dust from a stationary car, not just driving.
+
+### Throw: slip vs wake
+
+At the contact patch the tread slides over the ground at
+`scrub = velocity_at(cp) - wheel_forward * wheel_omega * radius` (the same quantity
+the wheel debris throws along). `puff_velocity(cfg, car_vel, scrub)` is
+`car_vel * dust_puff_inherit + scrub * dust_puff_slip_throw`:
+- **standing burnout** — scrub is `-fwd x spin speed`, so puffs shoot straight back
+  at about the slip speed;
+- **rolling cleanly at speed** — scrub ~0, so puffs only get the wake term and drift
+  after the car a little;
+- **locked wheel** — scrub is the car's velocity, so dust sprays ahead;
+- **drift** — scrub has a sideways part, so puffs fling out to the side.
+
+The same rule applies on gravel and tarmac (tarmac only emits while sliding anyway).
+On top: `dust_puff_rise_mps` up and random `dust_puff_scatter_mps`. A new puff starts
+on the ground at the contact patch (lifted by its own radius, scattered across the tyre
+width), then slows under `dust_puff_drag`. Lifetime is `dust_puff_lifetime_s` +/- 20%.
+
+### Warm-up
+
+`DustPuffs` overrides `warm_up` / `clear_warm_up` to switch the near-camera hide off
+for the warmed frame. The warm-up point is 2 m in front of the camera, inside the hide
+range, so otherwise the warm puff drew shrunk; this way it draws full-size through the
+real path and the shader compiles behind the loading cover.
 
 ## Colour
 
@@ -99,7 +123,7 @@ Tarmac dust is `GameConfig.dust_puff_tarmac_color`, near-white, for every region
 `dust_puff_tarmac_color`, `dust_puff_tarmac_min_grip`,
 `dust_puff_color_jitter`, `dust_puff_max`, `dust_puff_size_m`, `dust_puff_growth`,
 `dust_puff_lifetime_s`, `dust_puff_spacing_m`, `dust_puff_min_speed_mps`,
-`dust_puff_inherit`, `dust_puff_rise_mps`, `dust_puff_scatter_mps`,
+`dust_puff_inherit`, `dust_puff_slip_throw`, `dust_puff_rise_mps`, `dust_puff_scatter_mps`,
 `dust_puff_drag`, `dust_puff_camera_hide_m`, `dust_puff_camera_show_m`. First-pass
 values pending playtest. If it costs too much on a weak device, the dials are
 `dust_puff_max`, `dust_puff_spacing_m` and `dust_puff_lifetime_s`.
