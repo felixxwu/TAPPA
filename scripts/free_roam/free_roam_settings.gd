@@ -243,10 +243,10 @@ extends Resource
 ## The lines shown one after another in place of the loading screen (LoadingScreen.story), each for
 ## cold_open_story_line_s; the last stays until the island is loaded. "%s" is the car's name.
 @export var cold_open_story := PackedStringArray([
-	"You found a broken %s on the side of the road",
-	"Bring it to the next checkpoint to repair it",
+	"You found a broken %s on the side of the road...",
+	"Bring it to the next checkpoint to repair it...",
 ])
-@export var cold_open_story_line_s := 4.0
+@export var cold_open_story_line_s := 3.0
 ## Seconds after the "Checkpoint reached" band before the camera and control options open.
 @export var cold_open_options_delay_s := 1.0
 
