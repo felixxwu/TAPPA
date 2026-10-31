@@ -51,6 +51,10 @@ title-screen Settings page has no live controls, so there it just saves.)
 
 ## Behavior
 
+- **The cold open's hint.** While `hint_gas` is on, the GAS button pulses (between its idle and
+  pressed colours) until it's held; `ColdOpen` turns it on at the start of a first-time player's
+  drive and off at the first throttle (free-roam.md → *Cold open*). Schemes without a GAS button
+  (auto throttle) press `accelerate` themselves, which clears it at once.
 - **Free-look touches.** `owns_point(pos)` says whether a touch lands on any control (the slider or a button region). The chase camera's free look takes only touches that land on none of them (see [camera.md](camera.md) › *Free look*), so in the `SIMPLE_LR_AUTO` scheme, whose halves cover the whole screen, there is no touch look.
 - **Drives existing input actions.** All schemes press the same actions as the
   keyboard via `Input.action_press/release` (`accelerate`, `brake_reverse`,

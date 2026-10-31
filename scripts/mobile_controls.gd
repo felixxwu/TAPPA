@@ -93,6 +93,8 @@ const _REGION_LABEL := {
 const _MIN_NITROUS_W := 8.0
 
 var _active := false
+# Pulse the GAS button until it's pressed (the cold open's only hint, ColdOpen._set_hint).
+var hint_gas := false
 var _root: Control
 var _scheme := DEFAULT_SCHEME
 
@@ -1161,6 +1163,12 @@ func _update_visuals(brake: bool, gas: bool) -> void:
 			_: held = _region_pressed(region)
 		# Only write on a change: assigning ColorRect.color dirties the canvas item
 		# even when the value is identical, and that's 2-4 panels every frame.
+		if region == "gas" and hint_gas and not held:
+			# The cold open's throttle hint: GAS pulses until it's first pressed (ColdOpen).
+			var t := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.001 * TAU)
+			(_panels[region] as ColorRect).color = _IDLE_COLOR.lerp(_PRESSED_COLOR, t)
+			_panel_held[region] = null
+			continue
 		if _panel_held.get(region, null) != held:
 			_panel_held[region] = held
 			(_panels[region] as ColorRect).color = _PRESSED_COLOR if held else _IDLE_COLOR

@@ -11,7 +11,9 @@ extends Node
 #   car            — the active owned car's instance id (Save.KEY_CARS)
 #   pose           — [x, y, z, yaw]: where the car is, written every few seconds and on leaving
 #   car_state      — {hp, cooling_broken, engine_temp, toe}: its damage, so a reload resumes it
-#   lit            — rest stop site ids lit so far (spawn, 0, always)
+#   lit            — rest stop site ids lit so far (spawn, 0, always — except during the cold open,
+#                    which lights it on arrival)
+#   cold_open      — true while a first-time player's cold open is still to be driven (ColdOpen); absent after
 #   last_site      — the respawn point
 #   driven         — map cells the car has driven through ("x,y" keys of DRIVEN_CELL_M cells)
 #   max_ring       — the furthest biome ring reached (the map shows the borders crossed)
@@ -303,6 +305,22 @@ func adopt_old_stash() -> void:
 				parts.append(off)
 		Save.set_car_parts(int(car["instance_id"]), parts)
 	_world().erase("stash")
+	_touch()
+
+
+# A first-time player's world: the cold open (ColdOpen) is still to be driven. Set by the boot scene
+# when it makes the world, cleared once the car reaches the spawn cabin. A quit midway drives it again.
+func cold_open_pending() -> bool:
+	return has_world() and bool(_world().get("cold_open", false))
+
+
+func set_cold_open_pending(on: bool) -> void:
+	if not has_world():
+		return
+	if on:
+		_world()["cold_open"] = true
+	else:
+		_world().erase("cold_open")
 	_touch()
 
 

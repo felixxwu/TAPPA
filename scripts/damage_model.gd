@@ -55,6 +55,10 @@ var wheel_toe: Dictionary = _zero_toe()
 var thermal := false
 # Takes no damage at all (the benchmark, so a crash can't wreck the run or bend the steering).
 var invulnerable := false
+# The lowest HP any loss can take the car to. 0 (off) everywhere except the free-roam cold open
+# (ColdOpen), which raises it for its one drive so the dying car can limp but never give up. Never
+# saved.
+var min_hp := 0.0
 var cooling_broken := false
 var engine_temp := 0.0
 var _gave_up := false
@@ -208,11 +212,12 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 	return loss
 
 
-# Drain HP by `amount`, bottoming out at 0. With `thermal` on, reaching 0 emits `gave_up` once.
+# Drain HP by `amount`, bottoming out at min_hp (0 unless the cold open is on). With `thermal` on,
+# reaching 0 emits `gave_up` once.
 func apply_loss(amount: float) -> void:
 	if invulnerable:
 		return
-	hp = maxf(0.0, hp - amount)
+	hp = maxf(maxf(min_hp, 0.0), hp - amount) if hp > min_hp else hp
 	if thermal and hp <= 0.0 and not _gave_up:
 		_gave_up = true
 		gave_up.emit()

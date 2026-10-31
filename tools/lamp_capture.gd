@@ -1,8 +1,7 @@
 extends Node
 # Verification aid: boot free roam at night and photograph the spawn cabin's lamp from 15 m, 100 m
-# and 300 m down its road (todo/2026-10-30-cold-open.md, open question 1). Pure tooling; not shipped.
-# Writes tools/lamp_capture_<m>m.png; `-- --lantern` adds a mock lantern post and glow, `--high` lifts
-# the camera 40 m. Run:
+# and 300 m down its road, to check its lamp post (TerrainStreamer._lamp_post) reads at night. Pure tooling; not shipped.
+# Writes tools/lamp_capture_<m>m.png; `-- --high` lifts the camera 40 m. Run:
 #
 #   xvfb-run -a -s "-screen 0 1280x720x24" godot --rendering-driver opengl3 \
 #       res://tools/lamp_capture.tscn
@@ -33,8 +32,6 @@ func _ready() -> void:
 		get_tree().quit()
 		return
 	var target := cabin.global_position + Vector3(0.0, 1.8, 0.0)
-	if "--lantern" in OS.get_cmdline_user_args():
-		_add_lantern(cabin, streamer)
 	# Walk the road away from spawn, along the way the spawn pose faces.
 	var net := streamer.network
 	var a := streamer.sites.anchor[0]
@@ -52,15 +49,15 @@ func _ready() -> void:
 		(hud as CanvasLayer).visible = false
 	# Straight in at the doorway first (the model's door is on its +z side), lamp state printed.
 	var door := cabin.global_transform.basis.z.normalized()
-	var deye := cabin.global_position + door * 10.0 + Vector3(0.0, 2.0, 0.0)
+	var deye := cabin.global_position + door * 18.0 + Vector3(0.0, 2.5, 0.0)
 	var dcam := Camera3D.new()
 	world.add_child(dcam)
 	dcam.global_transform = Transform3D(Basis.looking_at(target - deye, Vector3.UP), deye)
 	dcam.make_current()
 	for _i in 240:
 		await get_tree().process_frame
-	get_viewport().get_texture().get_image().save_png("res://tools/lamp_capture_door%s.png" % _suffix())
-	print("lamp-capture: door, lamp node %s" % [cabin.get_node_or_null("Lamp") != null])
+	get_viewport().get_texture().get_image().save_png("res://tools/lamp_capture_door.png")
+	print("lamp-capture: door, lamp post %s" % [cabin.get_node_or_null("LampPost") != null])
 	dcam.queue_free()
 	for d: float in DISTANCES:
 		var walked := 0.0
@@ -90,86 +87,8 @@ func _ready() -> void:
 		cam.make_current()
 		for _i in 240:
 			await get_tree().process_frame
-		get_viewport().get_texture().get_image().save_png("res://tools/lamp_capture_%dm%s.png" % [int(d), _suffix()])
+		get_viewport().get_texture().get_image().save_png("res://tools/lamp_capture_%dm.png" % int(d))
 		print("lamp-capture: %d m (walked %.0f, cabin %.0f m away, weather %s)" % [d, walked, eye.distance_to(target), biome.weather])
 		cam.queue_free()
 	get_tree().quit()
 
-
-func _suffix() -> String:
-	return "_lantern" if "--lantern" in OS.get_cmdline_user_args() else ""
-
-
-# Mock-up (pass `-- --lantern`): a lantern post at the front corner of the cabin, a glowing bulb
-# that reads at distance, a billboard halo round it and a light pooling on the pad.
-func _add_lantern(cabin: Node3D, streamer: TerrainStreamer) -> void:
-	var door := cabin.global_transform.basis.z.normalized()
-	var side := cabin.global_transform.basis.x.normalized()
-	var base := cabin.global_position + door * 5.0 + side * 4.5
-	base.y = streamer.height_at(base.x, base.z)
-	var root := Node3D.new()
-	root.name = "LanternMock"
-	add_child(root)
-	root.global_position = base
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = Color(0.2, 0.13, 0.08)
-	var post := MeshInstance3D.new()
-	var pm := BoxMesh.new()
-	pm.size = Vector3(0.2, 3.6, 0.2)
-	pm.material = wood
-	post.mesh = pm
-	post.position.y = 1.8
-	root.add_child(post)
-	var arm := MeshInstance3D.new()
-	var am := BoxMesh.new()
-	am.size = Vector3(0.9, 0.12, 0.12)
-	am.material = wood
-	arm.mesh = am
-	arm.position = Vector3(0.4, 3.5, 0.0)
-	root.add_child(arm)
-	var bulb := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.4, 0.5, 0.4)
-	var glow := StandardMaterial3D.new()
-	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glow.albedo_color = Color(1.0, 0.75, 0.35)
-	bm.material = glow
-	bulb.mesh = bm
-	bulb.position = Vector3(0.75, 3.15, 0.0)
-	root.add_child(bulb)
-	var halo := MeshInstance3D.new()
-	var qm := QuadMesh.new()
-	qm.size = Vector2(4.0, 4.0)
-	var grad := Gradient.new()
-	grad.set_color(0, Color(1.0, 0.6, 0.2, 0.9))
-	grad.set_color(1, Color(1.0, 0.5, 0.1, 0.0))
-	var tex := GradientTexture2D.new()
-	tex.gradient = grad
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, 0.5)
-	tex.fill_to = Vector2(1.0, 0.5)
-	var hm := StandardMaterial3D.new()
-	hm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	hm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	hm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	hm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	hm.albedo_texture = tex
-	hm.disable_fog = true
-	qm.material = hm
-	halo.mesh = qm
-	halo.position = bulb.position
-	root.add_child(halo)
-	# A soft glow hanging over the cabin, above the treetops, so the stop reads from down the road.
-	var sky := MeshInstance3D.new()
-	var sq := QuadMesh.new()
-	sq.size = Vector2(18.0, 18.0)
-	sq.material = hm
-	sky.mesh = sq
-	add_child(sky)
-	sky.global_position = cabin.global_position + Vector3(0.0, 14.0, 0.0)
-	var light := OmniLight3D.new()
-	light.light_color = TerrainStreamer.BEACON_LIT
-	light.light_energy = 2.5
-	light.omni_range = 14.0
-	light.position = bulb.position - Vector3(0.0, 0.4, 0.0)
-	root.add_child(light)

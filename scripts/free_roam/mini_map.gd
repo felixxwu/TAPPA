@@ -58,6 +58,8 @@ var prompt_label: Label
 var _prompt_how := ""
 var _prompt_text := ""
 var _toast_text := ""
+# A standing hint shown when there's no prompt and no toast (the cold open's throttle button).
+var hint := ""
 var _toast_left := 0.0
 var _mat: ShaderMaterial
 var _inner := Rect2(0, 0, 1, 1)
@@ -362,14 +364,14 @@ func _process(delta: float) -> void:
 
 
 # The line under the frame: the rest-stop prompt when there is one, else the latest money message
-# (`toast`) while it lasts — one box, so the two never show at once.
+# (`toast`) while it lasts, else the standing `hint` — one box, so they never show at once.
 func update_prompt_label() -> void:
 	var at_stop := rest_stops != null and rest_stops.can_open()
 	var how := "Tap" if Platform.is_touch() else "Enter / A"
 	if how != _prompt_how:
 		_prompt_how = how
 		_prompt_text = UITheme.caps(how + ": open rest stop")
-	var text := _prompt_text if at_stop else (_toast_text if _toast_left > 0.0 else "")
+	var text := _prompt_text if at_stop else (_toast_text if _toast_left > 0.0 else hint)
 	prompt_label.visible = text != ""
 	if text != prompt_label.text:
 		prompt_label.text = text

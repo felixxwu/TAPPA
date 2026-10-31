@@ -1231,13 +1231,22 @@ func test_a_rest_stops_cabin_faces_the_road_and_glows_once_lit() -> void:
 	assert_not_null(floor_mat, "its floor is given a material")
 	if floor_mat != null:
 		assert_ne(floor_mat.shading_mode, BaseMaterial3D.SHADING_MODE_UNSHADED, "a shaded floor, not a flat painted square")
-	assert_null(cabin.get_node_or_null("Lamp"), "no lamp before it is lit")
-	st.rest_lit_query = func(_s: int) -> bool: return true
-	st.refresh_site_marker(i)
-	assert_not_null(cabin.get_node_or_null("Lamp") as OmniLight3D, "a lamp glows inside once lit")
-	assert_eq(inside.material_override, floor_mat, "lighting it leaves the floor alone")
-	st.refresh_site_marker(i)
-	assert_eq(cabin.find_children("Lamp*", "OmniLight3D", true, false).size(), 1, "refreshing a lit cabin keeps one lamp")
+	# A lamp post at every cabin, lit or not, so a rest stop can be found at night.
+	var post := cabin.get_node_or_null("LampPost") as Node3D
+	assert_not_null(post, "an unlit cabin has its lamp post")
+	if post == null:
+		return
+	assert_eq(post.find_children("*", "OmniLight3D", true, false).size(), 1, "with one light")
+	var lantern := post.get_node_or_null("Lantern") as MeshInstance3D
+	assert_not_null(lantern, "and a lantern")
+	if lantern != null:
+		var mat := lantern.mesh.surface_get_material(0) as BaseMaterial3D
+		assert_eq(mat.shading_mode, BaseMaterial3D.SHADING_MODE_UNSHADED, "drawn unshaded, so it glows in the dark")
+	var at_post := cabin.to_global(post.position)
+	assert_gt(Vector2(at_post.x - cabin.position.x, at_post.z - cabin.position.z).dot(Vector2(door.x, door.z)), 0.0,
+		"it stands on the door side, towards the road")
+	if body != null:
+		assert_eq(body.find_children("*", "CollisionShape3D", false, false).size(), 2, "and is solid, with the walls")
 
 
 # A rest stop's crowd gathers between its cabin's door and the road, off the road, and is live:

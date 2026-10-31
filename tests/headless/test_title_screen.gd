@@ -240,3 +240,29 @@ func test_every_settings_page_keeps_its_back_button_on_screen() -> void:
 	await get_tree().process_frame
 	assert_lte(start.get_global_rect().end.y, t._page.panel().get_global_rect().end.y + 1.0,
 		"focusing the last benchmark row scrolls it into view")
+
+
+# The end of the cold open: just the first-run options over the game, and Next (or Back) closes them
+# back into it — never on to the main menu. Keyboard/gamepad: the cursor starts on a camera row and
+# Back moves on.
+func test_the_options_after_the_cold_open_close_back_into_the_game() -> void:
+	var force: bool = Config.data.mobile_controls_force
+	Config.data.mobile_controls_force = false
+	_save.set_setting(TitleScreen.FIRST_RUN_DONE_KEY, false)
+	_title = TitleScreen.new()
+	_title.options_only = true
+	_title.enter_world = func() -> void: _entered[0] += 1
+	_title.close = func() -> void: _closed[0] += 1
+	add_child(_title)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(_title.view, TitleScreen.View.FIRST_RUN)
+	assert_true(_title._settings_menu.showing("camera"))
+	assert_true(_title._settings_menu.camera_rows.any(func(r: Dictionary) -> bool:
+		return r.button == _title.get_viewport().gui_get_focus_owner()), "a camera row has the cursor")
+	MenuNav.of(_title._page)._unhandled_input(_press("ui_cancel"))
+	await get_tree().process_frame
+	Config.data.mobile_controls_force = force
+	assert_eq(_closed[0], 1, "back closes them into the game")
+	assert_ne(_title.view, TitleScreen.View.MAIN, "not on to the main menu")
+	assert_true(_save.get_setting(TitleScreen.FIRST_RUN_DONE_KEY, false), "shown only once")

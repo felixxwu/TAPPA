@@ -201,11 +201,16 @@ func collect(site: int) -> void:
 	col.append(site)
 	WorldSession.set_list("collected", col)
 	_spent[site] = true
-	WorldSession.set_money(WorldSession.money() + value)
 	streamer.refresh_loot_marker(site)
+	pay_coin(value)
+	collected.emit(site, value)
+
+
+# A coin's money into the wallet, with its beep and "+$N" (a road coin, or a cold-open trail coin).
+func pay_coin(value: int) -> void:
+	WorldSession.set_money(WorldSession.money() + value)
 	Audio.play_beep(Config.data.coin_pickup_sfx_freq_hz, Config.data.coin_pickup_sfx_duration_sec)
 	_say("+$%d" % value)
-	collected.emit(site, value)
 
 
 # The car gave up: its money is left at the wreck, replacing (and losing) any earlier drop, and every

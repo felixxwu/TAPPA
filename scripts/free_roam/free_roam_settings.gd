@@ -209,12 +209,34 @@ extends Resource
 @export var drop_crystal_top_m := 0.9
 @export var drop_crystal_bottom_m := 0.6
 @export var drop_crystal_float_m := 1.4
-## The lamp inside a lit rest stop's cabin.
-@export var cabin_lamp_range_m := 6.0
-@export var cabin_lamp_energy := 3.0
+## The light on the lamp post by every rest stop's cabin (TerrainStreamer._lamp_post).
+@export var cabin_lamp_range_m := 14.0
+@export var cabin_lamp_energy := 2.5
 ## The crowd by a rest stop: half its length along the road and half its depth.
 @export var rest_crowd_half_len_m := 6.0
 @export var rest_crowd_half_depth_m := 3.0
+
+@export_group("Cold open")
+## A first-time player's start (ColdOpen, todo/2026-10-30-cold-open.md): the car they start in
+## (a CarLibrary id; the first starter car if it's missing).
+@export var cold_open_car_id := "mx5"
+## The furthest down the spawn cabin's road the cold open may start, and the nearest it may: it
+## starts as far out as the lamp post stays in view, but never nearer than the minimum.
+@export var cold_open_max_distance_m := 320.0
+@export var cold_open_min_distance_m := 220.0
+## How far the road between the start and the cabin may stray off the straight line between them
+## for the lamp post to count as in view.
+@export var cold_open_view_corridor_m := 6.0
+## The car's state at the start: HP as a fraction of max (below the cooling-failure fraction, so the
+## cooling is already gone), and engine temperature as a fraction of the overheat threshold.
+@export_range(0.0, 1.0) var cold_open_start_hp_frac := 0.4
+@export_range(0.0, 2.0) var cold_open_start_temp_frac := 0.85
+## The lowest HP the car can fall to during the cold open, as a fraction of max: it limps, never gives up.
+@export_range(0.0, 1.0) var cold_open_hp_floor_frac := 0.1
+## How many coins the trail to the cabin is split into. Their total is the dearest other starter car.
+@export var cold_open_trail_coins := 12
+## Seconds after the "Checkpoint reached" band before the camera and control options open.
+@export var cold_open_options_delay_s := 1.0
 
 
 # The closest the coast ever comes, which is also the radius the biome rings divide.

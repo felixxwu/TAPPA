@@ -58,8 +58,6 @@ var stat_spike_by := {}
 var stat_rushes := 0
 var _last_kind := ""
 var _plan_override: Variant = null  # a Vector2 to plan around instead of the focus (prefill_at)
-# Whether rest stop `site` is lit (RestStops.is_lit), for its marker's colour. Unset: none are.
-var rest_lit_query := Callable()
 # The coin still lying at a site (LootDirector.loot_at → {"kind": "coin", ...} or {}). Unset: none.
 var loot_query := Callable()
 # A decaying peak of the cost of one unit in the sample-at-a-time stages (heights, arrays,
@@ -1389,15 +1387,12 @@ const CABIN_WALLS := AABB(Vector3(-3.7, 0.0, -4.7), Vector3(7.4, 3.5, 7.5))
 # A rest stop's log cabin ("Lowpoly simple Log Cabin" by tamminen, CC-BY-4.0, see
 # models/cabin/README.md): set back from the pad's centre towards its far side by
 # rest_stop_cabin_back_m, door facing the road, inside the crowd's arc. Solid, and in the damage
-# obstacle group like a barrier. Lit, a lamp inside glows BEACON_LIT through its doorway (refresh_site_marker).
+# obstacle group like a barrier. A lamp post stands at its front corner, glowing BEACON_LIT lit or not,
+# so a rest stop can be found at night (_lamp_post).
 func _site_marker(i: int) -> Node3D:
 	var cabin: Node3D = LOG_CABIN.instantiate()
 	cabin.name = "Site%d" % i
-	var c := sites.pos[i]
-	var away := sites.back(i)
-	var at := c + away * Config.data.rest_stop_cabin_back_m
-	cabin.position = Vector3(at.x, sites.pad_h[i], at.y)
-	cabin.rotation.y = atan2(-away.x, -away.y)  # the model's door is on its +z side
+	cabin.transform = cabin_transform(i)
 	var body := StaticBody3D.new()
 	body.name = "Body"
 	body.add_to_group(DamageModel.OBSTACLE_GROUP)
@@ -1407,20 +1402,38 @@ func _site_marker(i: int) -> Node3D:
 	shape.shape = box
 	shape.position = CABIN_WALLS.get_center()
 	body.add_child(shape)
+	var post := CollisionShape3D.new()  # the lamp post is solid too
+	var post_box := BoxShape3D.new()
+	post_box.size = Vector3(0.3, LAMP_POST_HEIGHT_M, 0.3)
+	post.shape = post_box
+	post.position = LAMP_POST_AT + Vector3(0.0, LAMP_POST_HEIGHT_M * 0.5, 0.0)
+	body.add_child(post)
 	cabin.add_child(body)
-	_light_cabin(cabin, rest_lit_query.is_valid() and rest_lit_query.call(i))
+	_paint_cabin_floor(cabin)
+	cabin.add_child(_lamp_post())
 	return cabin
 
 
-# The cabin's interior floor (the model ships it as a flat black plane) is plain planks, and once
-# its rest stop is lit a warm lamp hangs inside, so the doorway glows BEACON_LIT. The floor itself
-# never glows: painted unshaded it read as a flat yellow square through the door.
+# Where rest stop `i`'s cabin stands: set back from the pad's centre towards its far side by
+# rest_stop_cabin_back_m, its door (the model's +z side) facing the road.
+func cabin_transform(i: int) -> Transform3D:
+	var away := sites.back(i)
+	var at := sites.pos[i] + away * Config.data.rest_stop_cabin_back_m
+	return Transform3D(Basis(Vector3.UP, atan2(-away.x, -away.y)), Vector3(at.x, sites.pad_h[i], at.y))
+
+
+# Where rest stop `i`'s lantern hangs, in the world (the cold open aims the car at it).
+func lantern_position(i: int) -> Vector3:
+	return cabin_transform(i) * (LAMP_POST_AT + LANTERN_AT)
+
+
+# The cabin's interior floor (the model ships it as a flat black plane) is plain planks. It never
+# glows: painted unshaded it read as a flat yellow square through the door.
 const CABIN_FLOOR_COLOR := Color(0.28, 0.18, 0.1)
-const CABIN_LAMP_AT := Vector3(0.0, 2.6, -1.0)  # under the roof, over the interior floor
 static var _cabin_floor: StandardMaterial3D
 
 
-static func _light_cabin(cabin: Node3D, lit: bool) -> void:
+static func _paint_cabin_floor(cabin: Node3D) -> void:
 	var inside := cabin.find_child("Interior", true, false) as MeshInstance3D
 	if inside == null:
 		return
@@ -1429,25 +1442,94 @@ static func _light_cabin(cabin: Node3D, lit: bool) -> void:
 		_cabin_floor.albedo_color = CABIN_FLOOR_COLOR
 		_cabin_floor.roughness = 1.0
 	inside.material_override = _cabin_floor
-	var lamp := cabin.get_node_or_null("Lamp") as OmniLight3D
-	if not lit:
-		if lamp != null:
-			lamp.free()
-		return
-	if lamp != null:
-		return
-	lamp = OmniLight3D.new()
+
+
+# The lamp post at a cabin's front corner, in the cabin's own space (door on +z): a wooden post and
+# arm, a lantern drawn unshaded so it reads as a light from down the road, a soft halo round it, and
+# a light that pools on the cabin front, the pad and the crowd. Every cabin has one, lit or not
+# (todo/2026-10-30-cold-open.md): the lamp an earlier version hung inside a lit cabin couldn't be
+# seen at night even from the door. The meshes and materials are shared by every post.
+const LAMP_POST_AT := Vector3(5.5, 0.0, 6.0)
+const LAMP_POST_HEIGHT_M := 3.6
+const LANTERN_AT := Vector3(0.75, 3.15, 0.0)  # under the arm's end, from the post's foot
+const LANTERN_COLOR := Color(1.0, 0.75, 0.35)
+static var _post_meshes: Array[Mesh] = []
+
+
+static func _lamp_post() -> Node3D:
+	if _post_meshes.is_empty():
+		var wood := StandardMaterial3D.new()
+		wood.albedo_color = Color(0.2, 0.13, 0.08)
+		var post := BoxMesh.new()
+		post.size = Vector3(0.2, LAMP_POST_HEIGHT_M, 0.2)
+		post.material = wood
+		var arm := BoxMesh.new()
+		arm.size = Vector3(0.9, 0.12, 0.12)
+		arm.material = wood
+		var lantern := BoxMesh.new()
+		lantern.size = Vector3(0.4, 0.5, 0.4)
+		var glow := StandardMaterial3D.new()
+		glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		glow.albedo_color = LANTERN_COLOR
+		lantern.material = glow
+		var grad := Gradient.new()
+		grad.set_color(0, Color(1.0, 0.6, 0.2, 0.9))
+		grad.set_color(1, Color(1.0, 0.5, 0.1, 0.0))
+		var tex := GradientTexture2D.new()
+		tex.gradient = grad
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.5)
+		tex.fill_to = Vector2(1.0, 0.5)
+		var halo_mat := StandardMaterial3D.new()
+		halo_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		halo_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		halo_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		halo_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		halo_mat.albedo_texture = tex
+		var halo := QuadMesh.new()
+		halo.size = Vector2(4.0, 4.0)
+		halo.material = halo_mat
+		_post_meshes = [post, arm, lantern, halo]
+	var root := Node3D.new()
+	root.name = "LampPost"
+	root.position = LAMP_POST_AT
+	var parts := [["Post", Vector3(0.0, LAMP_POST_HEIGHT_M * 0.5, 0.0)], ["Arm", Vector3(0.4, 3.5, 0.0)],
+		["Lantern", LANTERN_AT], ["Halo", LANTERN_AT]]
+	for k in parts.size():
+		var mi := MeshInstance3D.new()
+		mi.name = parts[k][0]
+		mi.mesh = _post_meshes[k]
+		mi.position = parts[k][1]
+		if mi.name != "Post" and mi.name != "Arm":
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+	var lamp := OmniLight3D.new()
 	lamp.name = "Lamp"
-	lamp.position = CABIN_LAMP_AT
+	lamp.position = LANTERN_AT - Vector3(0.0, 0.4, 0.0)
 	lamp.light_color = BEACON_LIT
 	lamp.light_energy = Config.data.free_roam.cabin_lamp_energy
 	lamp.omni_range = Config.data.free_roam.cabin_lamp_range_m
 	lamp.shadow_enabled = false
-	cabin.add_child(lamp)
+	root.add_child(lamp)
+	return root
 
 
 # A coin floating over its spot on the road, spinning (coin.gdshader).
 func _coin_marker(i: int) -> Node3D:
+	var mi := coin_mesh(ScatterMath.hash01(i, 1, settings.world_seed, 91) * 10.0)
+	mi.name = "Loot%d" % i
+	var c := sites.pos[i]
+	mi.position = Vector3(c.x, sites.pad_h[i] + COIN_FLOAT_M, c.y)
+	return mi
+
+
+# How high a coin floats over the ground it lies on.
+const COIN_FLOAT_M := 1.1
+
+
+# A coin's look (also the cold open's trail coins): a flat disc the shader stands up, spins and
+# bobs, `phase` offsetting its spin so a row of them doesn't turn in step.
+static func coin_mesh(phase: float) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = 0.45
 	mesh.bottom_radius = 0.45
@@ -1456,14 +1538,11 @@ func _coin_marker(i: int) -> Node3D:
 	mesh.rings = 1
 	var mat := ShaderMaterial.new()
 	mat.shader = COIN
-	mat.set_shader_parameter("phase", ScatterMath.hash01(i, 1, settings.world_seed, 91) * 10.0)
+	mat.set_shader_parameter("phase", phase)
 	mesh.material = mat
 	var mi := MeshInstance3D.new()
-	mi.name = "Loot%d" % i
 	mi.mesh = mesh
 	mi.extra_cull_margin = 1.0  # the shader stands the flat disc up and bobs it
-	var c := sites.pos[i]
-	mi.position = Vector3(c.x, sites.pad_h[i] + 1.1, c.y)
 	return mi
 
 
@@ -1505,17 +1584,6 @@ func _remove_site_markers(parent: Node3D, i: int) -> void:
 		if old != null:
 			parent.remove_child(old)
 			old.queue_free()
-
-
-# Light a loaded rest stop's cabin (it was just lit).
-func refresh_site_marker(i: int) -> void:
-	var st: ChunkState = _chunks.get(_chunk_of(sites.pos[i]))
-	if st == null or st.foliage == null:
-		return
-	var cabin := st.foliage.get_node_or_null("Site%d" % i) as Node3D
-	if cabin == null:
-		return
-	_light_cabin(cabin, rest_lit_query.is_valid() and rest_lit_query.call(i))
 
 
 # A live crowd (SpectatorGroup, as on the old stages) added under `parent`, gathered in front of

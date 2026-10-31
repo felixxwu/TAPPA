@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
@@ -359,10 +359,17 @@ planted on it (`is_clear`).
   `GameConfig.rest_stop_cabin_back_m` from the pad's centre away from the road, door facing the
   road, inside the crowd's arc. It is solid (a box over its walls, `CABIN_WALLS`, in the damage
   obstacle group). Its interior floor (the model's `Interior` plane, seen through the ajar
-  door and under the bottom log) is always a plain plank-brown material, and once lit a warm
-  `BEACON_LIT` lamp (`Lamp`, an `OmniLight3D`) hangs inside (`_light_cabin`, via
-  `refresh_site_marker`). The floor used to be painted unshaded `BEACON_LIT` when lit, which read
-  as a flat yellow square through the door. A loot site or dead end
+  door and under the bottom log) is always a plain plank-brown material (`_paint_cabin_floor`; it
+  used to be painted unshaded `BEACON_LIT` when lit, which read as a flat yellow square through the
+  door). **Every cabin has a lamp post** (`_lamp_post`, node `LampPost`, at `LAMP_POST_AT` in the
+  cabin's space, door side), lit or not, so a rest stop can be found at night: a wooden post and arm,
+  a lantern drawn unshaded (`Lantern`), an additive billboard halo (`Halo`) and an `OmniLight3D`
+  (`Lamp`, `FreeRoamSettings.cabin_lamp_range_m` / `cabin_lamp_energy`, no shadows) that lights the
+  cabin front, pad and crowd. Meshes and materials are shared by every post; the post is solid (a
+  second shape on the cabin's `Body`). It replaced (2026-10-31) a lamp hung inside lit cabins only,
+  which couldn't be seen at night even from the door (`tools/lamp_capture.tscn` photographs a cabin at
+  night from the door and down its road). Lit vs unlit shows on the minimap only.
+  `cabin_transform(i)` / `lantern_position(i)` give where a cabin and its lantern stand. A loot site or dead end
   holding a coin shows a spinning gold disc over the road (`_coin_marker`, `shaders/coin.gdshader`, rebuilt by `refresh_loot_markers` when coins are taken or come back). Both the queued
   marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
   `Loot%d` / `Site%d` first, so a refresh landing between a chunk getting its foliage node and
@@ -581,6 +588,46 @@ Run it from the command line to drive 3 km of the real island and print the repo
 (2026-10-20, container CPU, after the stage 2 fixes) it finished the 3 km with 0 holes at about
 50 km/h, with 2.2% of frames over the 1 ms budget (40 ms of overshoot in total) and 12 spikes
 over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames were over.
+
+## Cold open (a first-time player's start)
+
+`ColdOpen` (`scripts/free_roam/cold_open.gd`, spec `todo/2026-10-30-cold-open.md`). A first-time
+player gets no title screen: they start mid-drive at night, in the chase camera, down the spawn
+cabin's road facing it, the cooling already gone and the engine near overheating. A coin trail
+leads to the cabin; reaching it lights it as usual, clears the night, and opens the camera and
+control options.
+
+- **When:** `ColdOpen.due()`: the world block's `cold_open` flag (`WorldSession.cold_open_pending`),
+  set by `title_boot.gd` when it makes a first-time world (in `ColdOpen.car_id`: the
+  `FreeRoamSettings.cold_open_car_id` car, else the first starter) and cleared on arrival. Never
+  under the benchmark or `--auto-drive`. A quit midway drives it again from the start.
+- **Wiring:** `free_roam.gd` → `_add_cold_open` (before `RestStops.restore`, which then leaves spawn
+  unlit: `restore(..., spawn_lit = false)`, and the world's `lit` list is emptied), `begin()` for the
+  start pose (instead of spawn or a saved pose; it forces `BiomeDirector.forced_weather = "night"`
+  and the chase camera), `start()` in `_hand_over` (instead of the title).
+- **The start** (`pick_start`, pure): on a road leaving spawn on the cabin's door side, as far out
+  (to `cold_open_max_distance_m`) as the lantern stays in view (the road back keeps within
+  `cold_open_view_corridor_m` of the straight line, and the ground stays under the sight line),
+  but never nearer than `cold_open_min_distance_m`. The roads near spawn wiggle, so on the islands
+  tried (2026-10-31) the lantern was in view from only 65–95 m: in practice the start is at the
+  minimum and the lantern comes into view on the last stretch.
+- **The car:** `start()` sets HP to `cold_open_start_hp_frac`, `cooling_broken`, the temperature to
+  `cold_open_start_temp_frac` of the overheat threshold, and `DamageModel.min_hp` to
+  `cold_open_hp_floor_frac` of max (see damage.md), so it limps but never gives up.
+- **The trail** (`_lay_trail`): `cold_open_trail_coins` coins (`TerrainStreamer.coin_mesh`) from
+  just ahead of the car to the pad's edge, worth `trail_total` together: the dearest other starter
+  car (`LootRules.price`), so the player can swap at the cabin. Picked up by a swept check in
+  `step()`, paid through `LootDirector.pay_coin`. Not saved: they're gone after the cold open.
+- **The hint:** the throttle's bindings (`throttle_hint`, "W / RIGHT TRIGGER") in the minimap's line
+  (`MiniMap.hint`), or on touch a pulsing GAS button (`MobileControls.hint_gas`), until the first
+  `accelerate` press.
+- **Arrival** (`RestStops.lit(0)` → `finish`): `min_hp` back to 0, leftover coins removed,
+  `forced_weather = "dry"` until the weather's next slot (then the rings' draw), `cold_open` and
+  `WorldSession.fresh` cleared. Once the "Checkpoint reached" band is gone (plus
+  `cold_open_options_delay_s`) `free_roam.show_title(true)` shows the first-run options on their own
+  (`TitleScreen.options_only`), closing back into the game.
+- **Seeing it:** `tools/cold_open_capture.tscn` boots a first-time world and photographs the start,
+  the trail, the arrival and the options.
 
 ## Not in the prototype yet
 

@@ -298,6 +298,10 @@ dev stage keeps HP as a pure degradation.
    lit rest stop (see `free-roam.md`).
 5. **`repair()`** (a rest stop, a respawn or a travel) restores full HP, fixes the cooling,
    straightens the wheels and re-arms `gave_up`.
+6. **The health floor (`min_hp`):** no loss (`apply_loss`, so impacts and overheating alike) takes
+   HP below it, so `gave_up` can't fire while it's up. 0 (off) except during the free-roam cold
+   open, which raises it for its one drive and lowers it on arrival (`ColdOpen`, free-roam.md).
+   Never saved.
 
 The HUD's temperature gauge and cooling warning read `temp_fraction` / `cooling_broken`
 (`hud.md`).

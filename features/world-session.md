@@ -79,13 +79,15 @@ the same signal.
 
 The game boots straight into the world with the title menu over it. The main scene
 (`project.godot → run/main_scene = res://title.tscn`) is just `title_boot.gd`: it sets
-`WorldSession.title_pending` and loads free roam, whose `_ready` then calls `show_title()` — a
+`WorldSession.title_pending` (unless the cold open is due — then there's no title, see
+free-roam.md → *Cold open*) and loads free roam, whose `_ready` then calls `show_title()` — a
 `TitleScreen` on a `CanvasLayer` (layer 10) over the paused world, with a light dim behind it. Behind the menu a `TitleOrbitCamera` circles
 the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_speed`, kept above the
 ground, its tween running while paused); closing hands back to the chosen camera
 (`CameraManager.activate_current`).
-A first-time player (no world) gets one built at boot with the first starter car and a seed from `FreeRoamSettings.pick_world_seed`,
-marked `WorldSession.fresh` (in memory only), so it's already there behind the menu.
+A first-time player (no world) gets one built at boot with the cold-open car (`ColdOpen.car_id`) and a seed from `FreeRoamSettings.pick_world_seed`,
+marked `WorldSession.fresh` (in memory only) and `cold_open` pending (in the world block,
+`set_cold_open_pending`), so they start in the cold open instead of the menu.
 Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
 - **MAIN:** Continue (only with a world that isn't `fresh`) just closes the menu (`close`) and
   unpauses; New World; Settings.
@@ -101,6 +103,8 @@ Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.m
   (`Platform.is_touch`) its touch-layout page. Picking a row, Next or Back moves on; the end sets the
   setting and shows MAIN. Closing the title re-reads both choices (`CameraManager.activate_current`,
   `MobileControls.set_scheme` in `free_roam.gd` → `show_title`), so they apply without a reload.
+  At the end of the cold open the same pages show on their own (`options_only`, via
+  `show_title(true)`, no orbit camera): the end closes them back into the game instead of MAIN.
 
 Free roam's pause menu quits to the title (`PauseMenu.quit_to_title`), saving first — which reloads
 the world with the menu over it. A rest-stop reload or `--auto-drive` boot shows no menu.

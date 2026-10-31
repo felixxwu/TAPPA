@@ -57,8 +57,9 @@ func _ready() -> void:
 
 # Seed from a saved world (WorldSession): which stops are lit and where to respawn. An id that
 # isn't a rest stop on this island (a save from before a retune) is dropped.
-func restore(lit_list: Array, last: int) -> void:
-	lit_sites = {0: true}
+# `spawn_lit` false only for the cold open, whose drive ends by lighting spawn (ColdOpen).
+func restore(lit_list: Array, last: int, spawn_lit := true) -> void:
+	lit_sites = {0: true} if spawn_lit else {}
 	for site in lit_list:
 		if _is_rest(int(site)):
 			lit_sites[int(site)] = true
@@ -171,7 +172,6 @@ func light(i: int) -> void:
 	if lit_sites.has(i):
 		return
 	lit_sites[i] = true
-	streamer.refresh_site_marker(i)
 	lit.emit(i)
 
 

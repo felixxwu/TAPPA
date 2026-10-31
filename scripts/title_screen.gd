@@ -10,7 +10,8 @@ extends Control
 #              creates the world and drives into it.
 #   SETTINGS — the shared SettingsMenu.
 #   FIRST_RUN — shown once to a brand-new player before MAIN: the SettingsMenu's camera page, then
-#              (on touch devices) its touch-layout page. Picking a row, Next or Back moves on.
+#              (on touch devices) its touch-layout page. Picking a row, Next or Back moves on. After
+#              the cold open (ColdOpen) it's shown on its own (`options_only`) and closes into the game.
 # New World over an existing world asks first: the old world, its cars and its loot are lost.
 # A first-time player's world was already built at boot (WorldSession.fresh), so New World just
 # picks the car for it.
@@ -20,6 +21,8 @@ enum View { MAIN, STARTER, SETTINGS, FIRST_RUN }
 const FIRST_RUN_DONE_KEY := "first_run_setup_done"
 
 var view := View.MAIN
+# Only the first-run options, closing back into the game when done (the end of the cold open).
+var options_only := false
 var _page: MenuPage
 var _cards: CardCarousel
 var _settings_menu: SettingsMenu
@@ -37,8 +40,9 @@ func _ready() -> void:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	_show(View.FIRST_RUN if needs_first_run() else View.MAIN)
-	_check_for_update()
+	_show(View.FIRST_RUN if options_only or needs_first_run() else View.MAIN)
+	if not options_only:
+		_check_for_update()
 
 
 static func needs_first_run() -> bool:
@@ -153,6 +157,9 @@ func _first_run_next() -> void:
 		_settings_menu.show_schemes()
 		return
 	Save.set_setting(FIRST_RUN_DONE_KEY, true)
+	if options_only:
+		close.call()
+		return
 	_show(View.MAIN)
 
 

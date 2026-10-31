@@ -33,7 +33,8 @@ A navigation-software style map at the top centre of the screen while driving.
   full map.
 - **A line under the frame** (`MiniMap.update_prompt_label`, per frame): the action prompt
   ("ENTER / A: OPEN REST STOP", or "TAP: …" on touch, while `RestStops.prompt_site` >= 0), else the latest money message ("+$n", "Drift +$n", …: `LootDirector.said` →
-  `MiniMap.toast`, for `FreeRoamSettings.toast_s`), hidden otherwise. One box, so the two never show at once, and the
+  `MiniMap.toast`, for `FreeRoamSettings.toast_s`), else the standing `MiniMap.hint` (the cold open's
+  throttle button), hidden otherwise. One box, so the two never show at once, and the
   prompt always wins. It hugs its text (black, small padding) centred under the frame. Tapping the prompt opens the rest stop (`_on_prompt_input` → `RestStops.open_here`). The money
   counter is top-left, not here (`LootDirector.money_label`, [loot.md](loot.md)).
 

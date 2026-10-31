@@ -30,6 +30,8 @@ var owned: Dictionary = {}
 var wheel_particles: WheelParticles
 var dust_puffs: DustPuffs
 var region_banner: RegionBanner
+# A first-time player's cold open (ColdOpen), while it's due; null otherwise.
+var cold_open: ColdOpen
 
 # How often the car's pose and condition are written to the world session, in seconds.
 var _save_t := 0.0
@@ -125,8 +127,9 @@ func _ready() -> void:
 	lamps.name = "CarLamps"
 	add_child(lamps)
 	lamps.setup(_car)
-	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site())
-	_streamer.rest_lit_query = _rest_stops.is_lit
+	if ColdOpen.due():
+		_add_cold_open()
+	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site(), cold_open == null)
 	_rest_stops.lit.connect($LootDirector.site_lit)
 	for site: int in _rest_stops.lit_sites:
 		$LootDirector.site_lit(site)  # a saved world's stock follows what is lit
@@ -167,6 +170,9 @@ func _ready() -> void:
 	_minimap.open_requested.connect(open_full_map)
 	var spawn: Transform3D = _rest_stops.pose_at(_rest_stops.last_site if respawn_now else 0)  # facing down the road, the cabin behind
 	var saved: Variant = null if respawn_now else WorldSession.pose_transform()
+	if cold_open != null:
+		saved = null  # a quit midway drives the cold open again from its start
+		spawn = cold_open.begin($CameraManager)
 	if saved != null:
 		spawn = saved
 	_car.global_transform = spawn
@@ -182,7 +188,7 @@ func _ready() -> void:
 		await _streamer.prefill_async()
 		_car.freeze = false
 	print("free roam: prefill %d ms" % (Time.get_ticks_msec() - t0))
-	if saved != null:
+	if saved != null or cold_open != null:
 		# Re-seat on the built ground, so a pose saved mid-air or on a since-retuned surface
 		# can't drop the car through it.
 		spawn.origin.y = _streamer.height_at(spawn.origin.x, spawn.origin.z) + 1.0
@@ -254,6 +260,8 @@ func _hand_over() -> void:
 	_pause.set_input_enabled(true)
 	if Benchmark.active:
 		start_benchmark()
+	elif cold_open != null:
+		cold_open.start()
 	elif "--auto-drive" in OS.get_cmdline_user_args():
 		start_auto_drive()
 	elif WorldSession.title_pending:
@@ -261,21 +269,43 @@ func _hand_over() -> void:
 		show_title()
 
 
+# The cold open (ColdOpen): wired up before the car is placed, since it decides where that is.
+func _add_cold_open() -> void:
+	WorldSession.set_list("lit", [])  # the drive ends by lighting spawn
+	cold_open = ColdOpen.new()
+	cold_open.name = "ColdOpen"
+	cold_open.streamer = _streamer
+	cold_open.car = _car
+	cold_open.rest_stops = _rest_stops
+	cold_open.biome = $BiomeDirector
+	cold_open.loot = $LootDirector
+	cold_open.minimap = _minimap
+	cold_open.mobile = $MobileControls
+	cold_open.checkpoint_banner = $CheckpointBanner
+	cold_open.show_options = func() -> void: show_title(true)
+	add_child(cold_open)
+
+
 # The title menu over the paused world, as the game boots, with a camera circling the car. Continue
 # just closes it; a new world reloads the scene (and save_world, seeing the world replaced, writes
 # nothing into it on the way out).
-func show_title() -> TitleScreen:
+#
+# `options_only`: just the first-run camera and control options, over the car where it stands, closing
+# back into the game (the end of the cold open).
+func show_title(options_only := false) -> TitleScreen:
 	get_tree().paused = true
 	_pause.set_input_enabled(false)
-	var orbit := _start_title_orbit()
+	var orbit: Camera3D = null if options_only else _start_title_orbit()
 	var layer := CanvasLayer.new()
 	layer.name = "TitleLayer"
 	layer.layer = 10
 	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	var title := TitleScreen.new()
+	title.options_only = options_only
 	title.close = func() -> void:
 		layer.queue_free()
-		orbit.queue_free()
+		if orbit != null:
+			orbit.queue_free()
 		$CameraManager.activate_current()
 		$MobileControls.set_scheme(int(Save.get_setting(MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)))
 		get_tree().paused = false
