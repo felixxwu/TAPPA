@@ -390,7 +390,7 @@ Players see rest stops as **checkpoints**: every player-facing string says "Chec
 code (`RestStops`, `RestStopPage`, `RoadSites.Kind.REST`, the save's `lit_sites`) keeps the old name.
 
 `CheckpointBanner` (`scripts/free_roam/checkpoint_banner.gd`, on `RestStops.lit`): the first time a
-checkpoint is lit, a full-width "Checkpoint reached" band fades in, with a small "Repairs while you stay"
+checkpoint is lit, a full-width "Checkpoint reached" band fades in, with a small "Your car is being repaired"
 subtitle under it (`SUBTITLE`, at `UITheme.FONT_SIZE`), holds `banner_hold_s` (3 s) and fades
 out while the car drives on (the tween runs through pauses). The band is presentation only: the ring's stock goes on sale from `RestStops.lit` → `LootDirector.site_lit` (see loot.md). The band itself is
 the static `CheckpointBanner.build_band(text, subtitle = "")`, shared with the region banner

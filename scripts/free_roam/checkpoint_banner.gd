@@ -6,7 +6,7 @@ extends CanvasLayer
 # screen, with a small line under it saying the car heals while it stays (RestStops._heal), while
 # the car drives on.
 
-const SUBTITLE := "Repairs while you stay"
+const SUBTITLE := "Your car is being repaired"
 
 @export var rest_stops: RestStops
 
