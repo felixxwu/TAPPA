@@ -79,6 +79,7 @@ func test_1_a_first_time_world_starts_down_the_road_at_night_in_a_dying_car() ->
 	assert_gt(Vector2(fwd.x, fwd.z).dot(cabin - p), 0.0, "facing the cabin")
 	var dmg: DamageModel = _car.damage
 	assert_true(dmg.cooling_broken, "the cooling has already gone")
+	assert_false(dmg.is_overheating(Config.data), "but the engine starts below overheating")
 	assert_lt(dmg.hp, dmg.max_hp)
 	assert_gt(dmg.min_hp, 0.0, "the health floor is up")
 	assert_false(_scene.has_node("TitleLayer"), "no title menu")
@@ -177,6 +178,13 @@ func test_the_cold_open_car_is_the_configured_one_or_the_first_starter() -> void
 	assert_eq(ColdOpen.car_id(s), s.cold_open_car_id)
 	s.cold_open_car_id = "no_such_car"
 	assert_eq(ColdOpen.car_id(s), starters[0])
+
+
+func test_the_story_lines_name_the_car() -> void:
+	var s := FreeRoamSettings.new()
+	s.cold_open_story = PackedStringArray(["A %s here", "no name"])
+	var name := String(CarLibrary.by_id(String(WorldSession.active_car()["model_id"]))["name"])
+	assert_eq(ColdOpen.story_lines(s), PackedStringArray(["A %s here" % name, "no name"]))
 
 
 func test_the_starting_money_covers_every_other_starter_car() -> void:

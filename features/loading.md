@@ -47,6 +47,11 @@ player only ever sees one at a time. `_build_lakes` / `_build_foliage` / `_build
 dropped their now-unused `loading: LoadingScreen` parameters when the forwarding call was
 removed.
 
+**Story mode** (`LoadingScreen.story(lines, seconds_each)`): the headline and tip give way to a
+few lines shown in turn, the last held until `finish()`; `story_running()` / `story_finished` let
+the caller wait until every line has had its time. Used for a first-time player's cold open
+(free-roam.md → *Cold open*, started in `Scenes.change_to`).
+
 The other `LoadingScreen` users cover HUB startup rather than a stage: `menu_showcase.gd`'s
 build holds one while the background track visual loads (committed-cache hit or live
 generate), and `hub_shell.gd` holds one while `CarPreviewCache.warm_all()` builds every

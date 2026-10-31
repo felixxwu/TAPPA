@@ -23,6 +23,13 @@ extends CanvasLayer
 # of 3 "." glyphs (measured from the font directly), so adding/removing visible
 # dots never shifts the centered base text — this does NOT rely on the font
 # being monospace (Jersey10, the current UI font, is not).
+#
+# STORY mode (`story()`, the cold open's opening lines, free-roam.md → *Cold open*): the headline
+# and tip give way to a few lines of text shown one after another for a set time each; the last one
+# stays until the loading is done. `story_running()` / `story_finished` let the caller hold the
+# hand-over until every line has had its time, however fast the load was.
+
+signal story_finished
 
 # Drawn above the HUD (layer 2) and mobile controls (layer 3).
 const _LAYER := 100
@@ -54,6 +61,17 @@ var _dot_count := 0
 # so its tip keeps cycling for the whole load.
 var _step_locked := false
 
+var _box: VBoxContainer
+var _headline: HBoxContainer
+var _story: Label
+var _story_lines := PackedStringArray()
+var _story_i := -1
+var _story_t := 0.0
+var _story_each := 0.0
+# The story clock never takes more than this from one frame, so a frame frozen by the synchronous
+# world build doesn't eat a line's time before it has been seen.
+const _STORY_MAX_STEP_SEC := 0.1
+
 
 func _init() -> void:
 	layer = _LAYER
@@ -68,6 +86,7 @@ func _init() -> void:
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(box)
+	_box = box
 
 	# Headline = base label + animated-dots label, side by side in a centered
 	# HBox. The dots label always holds _MAX_DOTS character slots (visible "."
@@ -77,6 +96,7 @@ func _init() -> void:
 	var headline := HBoxContainer.new()
 	headline.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(headline)
+	_headline = headline
 
 	# The headline (title + dots) is the one thing on this screen, so it wears
 	# UITheme.TITLE_FONT_SIZE — same exception as UITheme.title()/card_title() (see
@@ -118,6 +138,8 @@ func _init() -> void:
 
 
 func _process(delta: float) -> void:
+	if _story_i >= 0:
+		_story_tick(delta)
 	# Cycle the tip unless a caller has claimed the step line with set_step().
 	if not _step_locked:
 		_tip_timer += delta
@@ -165,6 +187,52 @@ func set_step(text: String) -> void:
 	if _step != null:
 		_step.text = UITheme.caps(text)
 		_step_locked = true
+
+
+# Show `lines` one after another, `seconds_each` apiece, in place of the headline and tips. The
+# last line stays up until finish().
+func story(lines: PackedStringArray, seconds_each: float) -> void:
+	if lines.is_empty():
+		return
+	if _story == null:
+		_story = Label.new()
+		_story.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_story.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_story.custom_minimum_size = Vector2(1, 0)
+		_story.add_theme_font_size_override("font_size", UITheme.TITLE_FONT_SIZE)
+		_box.add_child(_story)
+	_headline.visible = false
+	_step.visible = false
+	_story_lines = lines
+	_story_each = seconds_each
+	_story_i = 0
+	_story_t = 0.0
+	_story.text = UITheme.caps(lines[0])
+
+
+# True while a story line still has time to run (the last one counts until its time is up).
+func story_running() -> bool:
+	return _story_i >= 0 and (_story_i < _story_lines.size() - 1 or _story_t < _story_each)
+
+
+func is_story() -> bool:
+	return _story_i >= 0
+
+
+# The line on screen, or "" outside story mode.
+func story_line() -> String:
+	return _story_lines[_story_i] if _story_i >= 0 else ""
+
+
+func _story_tick(delta: float) -> void:
+	var was := story_running()
+	_story_t += minf(delta, _STORY_MAX_STEP_SEC)
+	if _story_t >= _story_each and _story_i < _story_lines.size() - 1:
+		_story_i += 1
+		_story_t = 0.0
+		_story.text = UITheme.caps(_story_lines[_story_i])
+	if was and not story_running():
+		story_finished.emit()
 
 
 # Tear the overlay down once the world is ready.

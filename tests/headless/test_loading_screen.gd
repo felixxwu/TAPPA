@@ -203,3 +203,44 @@ func test_loading_screen_joins_loading_screen_group() -> void:
 	var ls: LoadingScreen = autofree(LoadingScreen.new())
 	assert_true(ls.is_in_group("loading_screen"),
 		"LoadingScreen must be in the 'loading_screen' group so music resume can gate on it")
+
+
+# Story mode (the cold open's opening lines): each line gets its time, the last one stays, and the
+# finish signal fires once every line has had its turn.
+func test_story_shows_each_line_for_its_time_then_holds_the_last() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen.set_process(false)  # driven by hand below
+	watch_signals(screen)
+	screen.story(PackedStringArray(["first", "second"]), 1.0)
+	assert_true(screen.is_story())
+	assert_false(screen._headline.visible, "the headline gives way")
+	assert_false(screen._step.visible, "and the tip too")
+	assert_eq(screen.story_line(), "first")
+	assert_true(screen.story_running())
+	for _i in 9:
+		screen._process(0.1)
+	assert_eq(screen.story_line(), "first", "not before its time")
+	for _i in 2:
+		screen._process(0.1)
+	assert_eq(screen.story_line(), "second")
+	assert_true(screen.story_running(), "the last line still has its time to run")
+	assert_signal_not_emitted(screen, "story_finished")
+	for _i in 11:
+		screen._process(0.1)
+	assert_false(screen.story_running())
+	assert_signal_emit_count(screen, "story_finished", 1)
+	for _i in 20:
+		screen._process(0.1)
+	assert_eq(screen.story_line(), "second", "the last line stays until finish()")
+	assert_signal_emit_count(screen, "story_finished", 1, "once")
+
+
+# A frame frozen by the world build mustn't eat a line before it has been seen.
+func test_a_long_frame_does_not_skip_a_story_line() -> void:
+	var screen := LoadingScreen.new()
+	add_child_autofree(screen)
+	screen.set_process(false)
+	screen.story(PackedStringArray(["first", "second"]), 1.0)
+	screen._process(5.0)
+	assert_eq(screen.story_line(), "first")

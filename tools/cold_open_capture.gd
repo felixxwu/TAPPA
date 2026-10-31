@@ -20,8 +20,13 @@ func _ready() -> void:
 	var world := (load("res://free_roam.tscn") as PackedScene).instantiate()
 	add_child(world)
 	var co: ColdOpen = null
+	var story_shots := 0
 	for _i in 2000:
 		await get_tree().process_frame
+		var cover := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
+		if cover != null and cover.is_story() and story_shots < cover._story_i + 1 and cover._story_t > 1.0:
+			story_shots += 1
+			_shot("0_story_%d" % story_shots)
 		co = world.get("cold_open") as ColdOpen
 		if co != null and co.running:
 			break

@@ -593,7 +593,7 @@ over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames wer
 
 `ColdOpen` (`scripts/free_roam/cold_open.gd`, spec `todo/2026-10-30-cold-open.md`). A first-time
 player gets no title screen: they start mid-drive at night, in the chase camera, on the road to
-the roadside rest stop nearest spawn, the cooling already gone and the engine near overheating,
+the roadside rest stop nearest spawn, the cooling already gone and a cold engine whose gauge climbs on the way,
 with money up front for another starter car. Reaching the cabin lights it as usual, clears the
 night, and opens the camera and control options; past it the road carries on, so there is no
 turning round (spawn's own cabin stands across its road's end, which is why it isn't the goal).
@@ -604,6 +604,13 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   `starting_money` (the dearest other starter car, `LootRules.price`, so the player can swap at the
   cabin) and cleared on arrival. Never
   under the benchmark or `--auto-drive`. A quit midway drives it again from the start.
+- **The opening lines:** instead of the loading screen's headline and tips, the cover shows
+  `ColdOpen.story_lines` (`FreeRoamSettings.cold_open_story`, "%s" = the car's name) one after
+  another, `cold_open_story_line_s` each (`LoadingScreen.story`; started in `Scenes.change_to`, or
+  by `free_roam._warm_up` when the scene was built without that cover). The story clock takes at most
+  0.1 s from a frame, so the frozen world-build frames don't eat a line. The island loads behind
+  them; `_warm_up` awaits `story_finished` before `cover.finish()`, so a fast load waits for the
+  lines and a slow one holds the last line, and the player drives the moment the cover goes.
 - **Wiring:** `free_roam.gd` → `_add_cold_open` (before `RestStops.restore`; spawn is lit as
   normal), `begin()` for the
   start pose (instead of spawn or a saved pose; it forces `BiomeDirector.forced_weather = "night"`
@@ -618,7 +625,7 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   tried (2026-10-31) the lantern was in view from only 65–95 m: in practice the start is at the
   minimum and the lantern comes into view on the last stretch.
 - **The car:** `start()` sets HP to `cold_open_start_hp_frac`, `cooling_broken`, the temperature to
-  `cold_open_start_temp_frac` of the overheat threshold, and `DamageModel.min_hp` to
+  `cold_open_start_temp_frac` of the overheat threshold (0: cold, so the gauge climbs on the way), and `DamageModel.min_hp` to
   `cold_open_hp_floor_frac` of max (see damage.md), so it limps but never gives up.
 - **The hint:** the throttle's bindings (`throttle_hint`, "W / RIGHT TRIGGER") in the minimap's line
   (`MiniMap.hint`), or on touch a pulsing GAS button (`MobileControls.hint_gas`), until the first

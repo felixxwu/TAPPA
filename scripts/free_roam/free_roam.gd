@@ -221,6 +221,11 @@ func _warm_up() -> void:
 			n.clear_warm_up()
 	await _streamer.warm_up_spawns(cam)
 	await _look_around()
+	if cold_open != null and not cover.is_story():
+		var s := _streamer.settings
+		cover.story(ColdOpen.story_lines(s), s.cold_open_story_line_s)  # booted without Scenes' cover
+	if cover.story_running():
+		await cover.story_finished  # every opening line gets its time, however fast the load
 	cover.finish()
 	_car.controls_locked = false
 	_hand_over()

@@ -4,7 +4,7 @@ extends Node
 # Tests: tests/headless/test_cold_open.gd — extend in the same change.
 # A first-time player's first minute (todo/2026-10-30-cold-open.md): no title screen. They start
 # mid-drive at night, in the chase camera, a couple of hundred metres before the rest stop nearest
-# spawn (pick_start), with the cooling already gone and the engine near overheating. The cabin's lamp
+# spawn (pick_start), with the cooling already gone and the engine cold (its gauge climbs on the way). The cabin's lamp
 # post marks the goal, and past it the road carries on. A health floor (DamageModel.min_hp) means
 # the car limps but never gives up. Reaching the cabin lights it as usual, clears the night to dry
 # weather, and then opens the camera and control options (free_roam.gd → show_options). The world
@@ -56,6 +56,15 @@ static func new_world(world_seed: int, s: FreeRoamSettings) -> void:
 	WorldSession.fresh = true
 	WorldSession.set_cold_open_pending(true)
 	WorldSession.set_money(WorldSession.money() + starting_money(model))
+
+
+# The cold open's opening lines (FreeRoamSettings.cold_open_story), with the active car's name in.
+static func story_lines(s: FreeRoamSettings) -> PackedStringArray:
+	var car_name := String(CarLibrary.by_id(String(WorldSession.active_car().get("model_id", ""))).get("name", "car"))
+	var out := PackedStringArray()
+	for line in s.cold_open_story:
+		out.append(line % car_name if "%s" in line else line)
+	return out
 
 
 # The money a first-time world starts with: the dearest starter car other than `car_model`, so the
