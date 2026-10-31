@@ -72,8 +72,7 @@ func test_1_a_first_time_world_starts_down_the_road_at_night_in_a_dying_car() ->
 	var p := Vector2(_car.global_position.x, _car.global_position.z)
 	var cabin := _streamer.sites.anchor[goal]
 	var s := _streamer.settings
-	assert_between(p.distance_to(cabin), s.cold_open_min_distance_m * 0.5, s.cold_open_max_distance_m + 20.0,
-		"it starts a drive away from the cabin")
+	assert_gt(p.distance_to(cabin), s.cold_open_min_distance_m * 0.5, "it starts a drive away from the cabin")
 	assert_true(_streamer.network.nearest(p.x, p.y, s.road_half_width_m + 1.0), "on the road")
 	var fwd := -_car.global_transform.basis.z
 	assert_gt(Vector2(fwd.x, fwd.z).dot(cabin - p), 0.0, "facing the cabin")
@@ -114,7 +113,7 @@ func test_3_the_throttle_hint_shows_until_the_throttle_is_pressed() -> void:
 func test_4_the_world_starts_with_money_for_another_starter_car() -> void:
 	if _co == null:
 		return
-	assert_eq(WorldSession.money(), ColdOpen.starting_money(String(WorldSession.active_car()["model_id"])),
+	assert_eq(WorldSession.money(), _streamer.settings.cold_open_start_money,
 		"a first-time world starts with the swap money")
 	assert_eq(_co.get_children().filter(func(n: Node) -> bool: return n is MeshInstance3D).size(), 0,
 		"no coins laid on the road")
@@ -187,15 +186,6 @@ func test_the_story_lines_name_the_car() -> void:
 	assert_eq(ColdOpen.story_lines(s), PackedStringArray(["A %s here" % name, "no name"]))
 
 
-func test_the_starting_money_covers_every_other_starter_car() -> void:
-	var starters := LootRules.starter_cars()
-	var mine := starters[0]
-	var total := ColdOpen.starting_money(mine)
-	for id in starters:
-		if id != mine:
-			assert_gte(total, LootRules.price({"kind": "car", "id": id}), "enough for %s" % id)
-
-
 func test_the_start_is_on_the_road_to_a_roadside_rest_stop() -> void:
 	var st := TerrainStreamer.new()
 	st.settings = _settings()
@@ -216,7 +206,10 @@ func test_the_start_is_on_the_road_to_a_roadside_rest_stop() -> void:
 	assert_ne(st.sites.anchor[g], st.sites.pos[g], "a roadside cabin, off its road")
 	var p: Vector2 = spot["pos"]
 	var path: PackedVector2Array = spot["path"]
-	assert_lte(float(spot["dist"]), st.settings.cold_open_max_distance_m)
+	var back := path.duplicate()
+	back.reverse()
+	assert_lte(ColdOpen.first_coin(back, st.sites, st.sites.edge[g]) + st.settings.cold_open_coin_lead_m,
+		float(spot["dist"]) + 0.01, "a road coin lies on the way, with a lead-in before it")
 	assert_almost_eq(path[path.size() - 1].distance_to(st.sites.anchor[g]), 0.0, 0.01, "the path ends at the cabin's road point")
 	assert_eq(path[0], p)
 	assert_true(st.network.nearest(p.x, p.y, 0.5), "on the road")

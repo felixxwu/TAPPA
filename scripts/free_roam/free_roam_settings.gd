@@ -224,6 +224,12 @@ extends Resource
 ## starts as far out as the lamp post stays in view, but never nearer than the minimum.
 @export var cold_open_max_distance_m := 450.0
 @export var cold_open_min_distance_m := 350.0
+## The money a first-time world starts with: with the road coin picked up on the way, just about
+## enough for another starter car at the first cabin.
+@export var cold_open_start_money := 3000
+## How far before a road coin the start is at least, so the player picks one up on the way to the
+## cabin (the start moves back past the nearest coin when it has to).
+@export var cold_open_coin_lead_m := 40.0
 ## How far the road between the start and the cabin may stray off the straight line between them
 ## for the lamp post to count as in view.
 @export var cold_open_view_corridor_m := 6.0

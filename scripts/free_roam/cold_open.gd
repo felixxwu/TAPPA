@@ -48,14 +48,15 @@ static func car_id(s: FreeRoamSettings) -> String:
 	return LootRules.starter_cars()[0]
 
 
-# A first-time player's world (title_boot.gd): the cold-open car, pending, and enough money to swap it
-# for any other starter car at the first cabin.
+# A first-time player's world (title_boot.gd): the cold-open car, pending, and
+# FreeRoamSettings.cold_open_start_money (with the road coin on the way, about enough to swap it for
+# another starter car at the first cabin).
 static func new_world(world_seed: int, s: FreeRoamSettings) -> void:
 	var model := car_id(s)
 	WorldSession.new_world(world_seed, model)
 	WorldSession.fresh = true
 	WorldSession.set_cold_open_pending(true)
-	WorldSession.set_money(WorldSession.money() + starting_money(model))
+	WorldSession.set_money(WorldSession.money() + s.cold_open_start_money)
 
 
 # The cold open's opening lines (FreeRoamSettings.cold_open_story), with the active car's name in.
@@ -67,16 +68,6 @@ static func story_lines(s: FreeRoamSettings) -> PackedStringArray:
 	return out
 
 
-# The money a first-time world starts with: the dearest starter car other than `car_model`, so the
-# player can swap at the first cabin. 0 when there is no other starter car.
-static func starting_money(car_model: String) -> int:
-	var best := 0
-	for id in LootRules.starter_cars():
-		if id != car_model:
-			best = maxi(best, LootRules.price({"kind": "car", "id": id}))
-	return best
-
-
 # Where the cold open starts, and which cabin it drives to. The goal is the roadside rest stop
 # nearest spawn (not spawn's own cabin, which stands across the road's end, so arriving there meant
 # turning round to carry on; Felix, 2026-10-31) whose road leaves room for the drive before it. The
@@ -86,7 +77,10 @@ static func starting_money(car_model: String) -> int:
 # road from the start to the cabin keeps within cold_open_view_corridor_m of the straight line
 # between them (so no bend or roadside tree hides it) and the ground stays under the sight line. The
 # roads wiggle, so that's often short; the lamp then comes into view on the last stretch, and
-# the road itself leads the way. `height(x, z)` is the ground height.
+# the road itself leads the way. The start is also always at least cold_open_coin_lead_m before a
+# road coin (a LOOT site on the way), so the player picks one up before the cabin (Felix,
+# 2026-10-31): a road with a coin on it is preferred, and the start moves back past the coin when
+# the lamp's view alone would put it nearer. `height(x, z)` is the ground height.
 # Returns {"site": int, "pos": Vector2, "dist": float, "path": PackedVector2Array from the start to
 # the cabin's road point}, or {} when the island has no roadside rest stop.
 static func pick_start(net: RoadNetwork, sites: RoadSites, height: Callable, lantern: Callable, s: FreeRoamSettings) -> Dictionary:
@@ -96,6 +90,7 @@ static func pick_start(net: RoadNetwork, sites: RoadSites, height: Callable, lan
 			goals.append(g)
 	goals.sort_custom(func(a: int, b: int) -> bool: return sites.anchor[a].length() < sites.anchor[b].length())
 	var roomiest: Dictionary = {}
+	var roomy: Dictionary = {}  # the first with room for the drive, coin or not
 	for g in goals:
 		for back in _roads_back(net, sites, g):
 			var room := _length(back)
@@ -103,10 +98,33 @@ static func pick_start(net: RoadNetwork, sites: RoadSites, height: Callable, lan
 				roomiest = {"site": g, "back": back, "room": room}
 			if room < s.cold_open_min_distance_m:
 				continue
-			return _start_on(back, g, height, lantern.call(g), s)
-	if roomiest.is_empty():
+			if roomy.is_empty():
+				roomy = {"site": g, "back": back}
+			var need := first_coin(back, sites, sites.edge[g]) + s.cold_open_coin_lead_m
+			if need <= room - 1.0:
+				return _start_on(back, g, height, lantern.call(g), s, need)
+	var pick := roomy if not roomy.is_empty() else roomiest
+	if pick.is_empty():
 		return {}
-	return _start_on(roomiest["back"], int(roomiest["site"]), height, lantern.call(int(roomiest["site"])), s)
+	return _start_on(pick["back"], int(pick["site"]), height, lantern.call(int(pick["site"])), s)
+
+
+# How far along `back` (from the cabin's road point) the nearest road coin on road `edge` is; INF
+# when there's none.
+static func first_coin(back: PackedVector2Array, sites: RoadSites, edge: int) -> float:
+	var best := INF
+	for i: int in sites.of_kind(RoadSites.Kind.LOOT):
+		if sites.edge[i] != edge:
+			continue
+		var p := sites.pos[i]
+		var walked := 0.0
+		for k in back.size() - 1:
+			var q := Geometry2D.get_closest_point_to_segment(p, back[k], back[k + 1])
+			if p.distance_to(q) < 1.0:
+				best = minf(best, walked + back[k].distance_to(q))
+				break
+			walked += back[k].distance_to(back[k + 1])
+	return best
 
 
 # Rest stop `g`'s road walked back from its road point both ways, the way towards spawn first.
@@ -139,11 +157,13 @@ static func _length(pl: PackedVector2Array) -> float:
 
 
 # The start on road `back` (walked back from goal `g`'s road point): as far as the lamp stays in view,
-# at least the minimum (or the whole road when it's shorter).
-static func _start_on(back: PackedVector2Array, g: int, height: Callable, target: Vector3, s: FreeRoamSettings) -> Dictionary:
+# at least the minimum (or the whole road when it's shorter), and at least `need` (past a coin).
+static func _start_on(back: PackedVector2Array, g: int, height: Callable, target: Vector3, s: FreeRoamSettings,
+		need := 0.0) -> Dictionary:
 	var found := _furthest_in_view(back, height, target, s)
-	if float(found.get("dist", 0.0)) < s.cold_open_min_distance_m:
-		found = _spot(back, minf(s.cold_open_min_distance_m, _length(back) - 1.0))
+	var least := maxf(s.cold_open_min_distance_m, need)
+	if float(found.get("dist", 0.0)) < least:
+		found = _spot(back, minf(least, _length(back) - 1.0))
 	if found.is_empty():
 		return {}
 	found["site"] = g

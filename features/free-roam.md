@@ -601,8 +601,8 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
 - **When:** `ColdOpen.due()`: the world block's `cold_open` flag (`WorldSession.cold_open_pending`),
   set by `ColdOpen.new_world` (called by `title_boot.gd`) when it makes a first-time world in
   `ColdOpen.car_id` (the `FreeRoamSettings.cold_open_car_id` car, else the first starter) with
-  `starting_money` (the dearest other starter car, `LootRules.price`, so the player can swap at the
-  cabin) and cleared on arrival. Never
+  `cold_open_start_money` (with the road coin on the way, just about enough to swap for another
+  starter car at the cabin) and cleared on arrival. Never
   under the benchmark or `--auto-drive`. A quit midway drives it again from the start.
 - **The opening lines:** instead of the loading screen's headline and tips, the cover shows
   `ColdOpen.story_lines` (`FreeRoamSettings.cold_open_story`, "%s" = the car's name) one after
@@ -618,7 +618,9 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
 - **The goal and start** (`pick_start`, pure): the goal (`goal()`, `start_spot["site"]`) is the
   roadside REST site (anchor off its road, `edge >= 0`) nearest spawn whose road leaves at least
   `cold_open_min_distance_m` before it (`_roads_back`, the side towards spawn first; else the
-  roomiest). The start is on that road, as far out
+  roomiest). A road with a road coin on it is preferred, and the start is always at least
+  `cold_open_coin_lead_m` before the nearest one (`first_coin`), so the player picks up a coin on
+  the way (Felix, 2026-10-31). The start is on that road, as far out
   (to `cold_open_max_distance_m`) as the lantern stays in view (the road back keeps within
   `cold_open_view_corridor_m` of the straight line, and the ground stays under the sight line),
   but never nearer than `cold_open_min_distance_m`. The roads near spawn wiggle, so on the islands
