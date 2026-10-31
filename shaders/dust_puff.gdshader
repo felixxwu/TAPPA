@@ -11,7 +11,8 @@
 //
 // Lighting is the car's fake per-vertex sun/sky/ground block (ps1_models_lit), fed by
 // GameConfig.apply_car_light, so puffs sit in the same light as the car. The mesh is
-// flat-shaded (one normal per face), so per-vertex lighting reads as faceted tones.
+// flat-shaded (one normal per face), so per-vertex lighting reads as faceted tones. The headlight
+// cone is added on top, as in every world shader (test_lighting_coverage).
 shader_type spatial;
 render_mode unshaded, specular_disabled, cull_back, depth_draw_opaque;
 
@@ -30,6 +31,8 @@ uniform float camera_show_m = 3.5;
 
 varying vec3 v_color;
 
+#include "res://shaders/headlight_cone.gdshaderinc"
+
 void vertex() {
 	vec3 origin = MODEL_MATRIX[3].xyz;
 	vec3 cam = INV_VIEW_MATRIX[3].xyz;
@@ -41,6 +44,9 @@ void vertex() {
 	vec3 ambient = mix(ground_color, sky_color, hemi);
 	float ndl = max(dot(wn, normalize(light_dir)), 0.0);
 	vec3 lit = mix(vec3(1.0), ambient + sun_color * ndl, light_amount);
+	// The headlight cone, ADDED like every lit shader's (ps1_models_lit), so a puff the car throws
+	// up at night shows in its own lights instead of hanging dark in the beam.
+	lit += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn);
 	// Per-instance colour (mm.use_colors) arrives in COLOR.
 	v_color = COLOR.rgb * lit;
 }

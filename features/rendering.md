@@ -377,7 +377,10 @@ on every wheel instead of the cylinder: `car.gd` → `_apply_wheel_model`, calle
 instances it as `Visual/WheelModel`, hides `Visual/Tire`, scales it uniformly to the spec's `wheel_radius` (by the
 model's own half-height) and turns right-hand wheels round, since every wheel's `Visual` faces local +X to the car's
 left. It wears the glb's own texture through the same PS1 material as the bodies. A spec without the field gets the
-cylinder back, and the model is dropped. The scale is uniform, so a model car's visual tyre width is the scan's,
+cylinder back, and the model is dropped (`_drop_wheel_model`). Dropping it, or freeing the car
+(`_notification` → PREDELETE), first clears its meshes' override materials (`_release_materials`):
+freed together, the material could go before the mesh instance, and the renderer then reported
+`Parameter "material" is null` (it failed `test_car_library` / `test_rest_pose` until 2026-10-31). The scale is uniform, so a model car's visual tyre width is the scan's,
 whatever `wheel_width_front`/`_rear` say (they still set grip). A `wheel_model` that won't load falls back to the
 cylinder with a warning. Spin and steer need nothing: `drivetrain.gd` → `_update_visuals` already
 turns `Visual`. Built from the car's scan by `tools/car_scan/wheels.py` ([car-scanning.md](car-scanning.md)).

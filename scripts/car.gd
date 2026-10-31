@@ -2343,8 +2343,7 @@ func _apply_wheel_model(wheel: VehicleWheel3D, path: String, radius: float) -> v
 	var tire := visual.get_node_or_null("Tire") as Node3D
 	var model := visual.get_node_or_null("WheelModel") as Node3D
 	if model != null and String(model.get_meta("path", "")) != path:
-		visual.remove_child(model)
-		model.queue_free()  # freeing it outright mid-frame upsets the renderer, which still holds its materials
+		_drop_wheel_model(visual, model)
 		model = null
 	var scene: PackedScene = null
 	if not path.is_empty():
@@ -2365,6 +2364,29 @@ func _apply_wheel_model(wheel: VehicleWheel3D, path: String, radius: float) -> v
 	# The Visual node faces every wheel's local +X towards the car's left, so right-hand wheels turn the model round.
 	var turn := PI if wheel.position.x > 0.0 else 0.0
 	model.transform = Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * radius / float(model.get_meta("own_radius"))), Vector3.ZERO)
+
+
+# A freed car takes its wheel models with it: let go of their materials first, as _drop_wheel_model does.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		for model in find_children("WheelModel", "Node3D", true, false):
+			_release_materials(model)
+
+
+func _release_materials(model: Node3D) -> void:
+	for mi in model.find_children("*", "MeshInstance3D", true):
+		for k in (mi as MeshInstance3D).get_surface_override_material_count():
+			(mi as MeshInstance3D).set_surface_override_material(k, null)
+
+
+# Take a wheel model off its wheel. Its meshes let go of their PS1 materials first: freed together,
+# the material could go before the mesh instance did, and the renderer then looked the instance's
+# shader parameters up on a material that was already gone ("Parameter "material" is null").
+# queue_free, not free: freeing it outright mid-frame upsets the renderer, which still holds it.
+func _drop_wheel_model(visual: Node3D, model: Node3D) -> void:
+	_release_materials(model)
+	visual.remove_child(model)
+	model.queue_free()
 
 
 # Half the height of a model's meshes in its own space: the wheel's radius as authored.

@@ -45,7 +45,9 @@ and only when something is alive or spawned.
 
 Unshaded with the car's fake per-vertex sun/sky/ground lighting (the
 `ps1_models_lit` block, fed by `GameConfig.apply_car_light`, re-applied each tick a
-puff is alive so weather changes reach a live trail). Normals go through
+puff is alive so weather changes reach a live trail), plus the night headlight cone
+(`headlight_cone.gdshaderinc`, added like every lit world shader; `test_lighting_coverage` checks it).
+Normals go through
 `MODEL_NORMAL_MATRIX` because puffs are non-uniformly stretched.
 
 **Near-camera hiding:** the chase camera drives straight through the trail, and a
