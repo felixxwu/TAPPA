@@ -68,8 +68,7 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   `clear_warm_up`), so the first wreck doesn't hitch compiling it. A wrecked car picks nothing up until it respawns (`RestStops.respawned`).
 - **Travelling from the road** drops the money the same way (`drop_money`, after a confirm on the map —
   see world-session.md), so the map's free travel can't carry money to safety; checkpoint to checkpoint keeps it.
-- **Paying:** `LootDirector.pay_coin(value)` adds it, beeps and says "+$n"; the cold open's trail
-  coins (free-roam.md → *Cold open*) pay through it too.
+- **Paying:** `LootDirector.pay_coin(value)` adds it, beeps and says "+$n".
 - **The counter:** `LootDirector.money_label`, "$n" in the top-left corner while driving, parented to the HUD layer so it hides under paused pages like the gauges.
 - **On the ground:** a gold disc stood on its edge, spinning and bobbing in `coin.gdshader` (no
   per-coin scripts), lit by the fake headlight cone at night (`headlight_cone.gdshaderinc`, added to its glow), planted with the mid chunk (`TerrainStreamer._queue_site_markers` → `_coin_marker`, node `Loot<site>`).

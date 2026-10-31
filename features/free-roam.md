@@ -592,20 +592,26 @@ over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames wer
 ## Cold open (a first-time player's start)
 
 `ColdOpen` (`scripts/free_roam/cold_open.gd`, spec `todo/2026-10-30-cold-open.md`). A first-time
-player gets no title screen: they start mid-drive at night, in the chase camera, down the spawn
-cabin's road facing it, the cooling already gone and the engine near overheating. A coin trail
-leads to the cabin; reaching it lights it as usual, clears the night, and opens the camera and
-control options.
+player gets no title screen: they start mid-drive at night, in the chase camera, on the road to
+the roadside rest stop nearest spawn, the cooling already gone and the engine near overheating,
+with money up front for another starter car. Reaching the cabin lights it as usual, clears the
+night, and opens the camera and control options; past it the road carries on, so there is no
+turning round (spawn's own cabin stands across its road's end, which is why it isn't the goal).
 
 - **When:** `ColdOpen.due()`: the world block's `cold_open` flag (`WorldSession.cold_open_pending`),
-  set by `title_boot.gd` when it makes a first-time world (in `ColdOpen.car_id`: the
-  `FreeRoamSettings.cold_open_car_id` car, else the first starter) and cleared on arrival. Never
+  set by `ColdOpen.new_world` (called by `title_boot.gd`) when it makes a first-time world in
+  `ColdOpen.car_id` (the `FreeRoamSettings.cold_open_car_id` car, else the first starter) with
+  `starting_money` (the dearest other starter car, `LootRules.price`, so the player can swap at the
+  cabin) and cleared on arrival. Never
   under the benchmark or `--auto-drive`. A quit midway drives it again from the start.
-- **Wiring:** `free_roam.gd` → `_add_cold_open` (before `RestStops.restore`, which then leaves spawn
-  unlit: `restore(..., spawn_lit = false)`, and the world's `lit` list is emptied), `begin()` for the
+- **Wiring:** `free_roam.gd` → `_add_cold_open` (before `RestStops.restore`; spawn is lit as
+  normal), `begin()` for the
   start pose (instead of spawn or a saved pose; it forces `BiomeDirector.forced_weather = "night"`
   and the chase camera), `start()` in `_hand_over` (instead of the title).
-- **The start** (`pick_start`, pure): on a road leaving spawn on the cabin's door side, as far out
+- **The goal and start** (`pick_start`, pure): the goal (`goal()`, `start_spot["site"]`) is the
+  roadside REST site (anchor off its road, `edge >= 0`) nearest spawn whose road leaves at least
+  `cold_open_min_distance_m` before it (`_roads_back`, the side towards spawn first; else the
+  roomiest). The start is on that road, as far out
   (to `cold_open_max_distance_m`) as the lantern stays in view (the road back keeps within
   `cold_open_view_corridor_m` of the straight line, and the ground stays under the sight line),
   but never nearer than `cold_open_min_distance_m`. The roads near spawn wiggle, so on the islands
@@ -614,20 +620,16 @@ control options.
 - **The car:** `start()` sets HP to `cold_open_start_hp_frac`, `cooling_broken`, the temperature to
   `cold_open_start_temp_frac` of the overheat threshold, and `DamageModel.min_hp` to
   `cold_open_hp_floor_frac` of max (see damage.md), so it limps but never gives up.
-- **The trail** (`_lay_trail`): `cold_open_trail_coins` coins (`TerrainStreamer.coin_mesh`) from
-  just ahead of the car to the pad's edge, worth `trail_total` together: the dearest other starter
-  car (`LootRules.price`), so the player can swap at the cabin. Picked up by a swept check in
-  `step()`, paid through `LootDirector.pay_coin`. Not saved: they're gone after the cold open.
 - **The hint:** the throttle's bindings (`throttle_hint`, "W / RIGHT TRIGGER") in the minimap's line
   (`MiniMap.hint`), or on touch a pulsing GAS button (`MobileControls.hint_gas`), until the first
   `accelerate` press.
-- **Arrival** (`RestStops.lit(0)` → `finish`): `min_hp` back to 0, leftover coins removed,
+- **Arrival** (`RestStops.lit(goal())` → `finish`): `min_hp` back to 0,
   `forced_weather = "dry"` until the weather's next slot (then the rings' draw), `cold_open` and
   `WorldSession.fresh` cleared. Once the "Checkpoint reached" band is gone (plus
   `cold_open_options_delay_s`) `free_roam.show_title(true)` shows the first-run options on their own
   (`TitleScreen.options_only`), closing back into the game.
 - **Seeing it:** `tools/cold_open_capture.tscn` boots a first-time world and photographs the start,
-  the trail, the arrival and the options.
+  the drive, the arrival and the options.
 
 ## Not in the prototype yet
 

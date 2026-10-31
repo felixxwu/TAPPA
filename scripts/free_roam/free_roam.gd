@@ -129,7 +129,7 @@ func _ready() -> void:
 	lamps.setup(_car)
 	if ColdOpen.due():
 		_add_cold_open()
-	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site(), cold_open == null)
+	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site())
 	_rest_stops.lit.connect($LootDirector.site_lit)
 	for site: int in _rest_stops.lit_sites:
 		$LootDirector.site_lit(site)  # a saved world's stock follows what is lit
@@ -271,14 +271,12 @@ func _hand_over() -> void:
 
 # The cold open (ColdOpen): wired up before the car is placed, since it decides where that is.
 func _add_cold_open() -> void:
-	WorldSession.set_list("lit", [])  # the drive ends by lighting spawn
 	cold_open = ColdOpen.new()
 	cold_open.name = "ColdOpen"
 	cold_open.streamer = _streamer
 	cold_open.car = _car
 	cold_open.rest_stops = _rest_stops
 	cold_open.biome = $BiomeDirector
-	cold_open.loot = $LootDirector
 	cold_open.minimap = _minimap
 	cold_open.mobile = $MobileControls
 	cold_open.checkpoint_banner = $CheckpointBanner

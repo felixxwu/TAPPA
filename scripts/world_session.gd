@@ -11,8 +11,7 @@ extends Node
 #   car            — the active owned car's instance id (Save.KEY_CARS)
 #   pose           — [x, y, z, yaw]: where the car is, written every few seconds and on leaving
 #   car_state      — {hp, cooling_broken, engine_temp, toe}: its damage, so a reload resumes it
-#   lit            — rest stop site ids lit so far (spawn, 0, always — except during the cold open,
-#                    which lights it on arrival)
+#   lit            — rest stop site ids lit so far (spawn, 0, always)
 #   cold_open      — true while a first-time player's cold open is still to be driven (ColdOpen); absent after
 #   last_site      — the respawn point
 #   driven         — map cells the car has driven through ("x,y" keys of DRIVEN_CELL_M cells)

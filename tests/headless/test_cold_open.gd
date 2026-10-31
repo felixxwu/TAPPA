@@ -1,7 +1,7 @@
 extends GutTest
 # The cold open (features/free-roam.md → "Cold open", todo/2026-10-30-cold-open.md): a first-time
-# player starts down the spawn cabin's road at night in a dying car, follows a coin trail to the
-# cabin, and gets the camera and control options there. The free-roam scene is built ONCE, as a
+# player starts at night in a dying car on the road to the nearest roadside rest stop, drives to that
+# cabin (the road carries on past it) with money up front for another starter car, and gets the camera and control options there. The free-roam scene is built ONCE, as a
 # first-time player's world, on a small synthetic island with the fixture car roster.
 
 const TEST_PATH := "user://test_cold_open_profile.json"
@@ -31,9 +31,7 @@ func before_all() -> void:
 	_save.profile = _save._default_profile()
 	CarFixtures.install()
 	var s := _settings()
-	WorldSession.new_world(s.world_seed, ColdOpen.car_id(s))
-	WorldSession.fresh = true
-	WorldSession.set_cold_open_pending(true)
+	ColdOpen.new_world(s.world_seed, s)
 	_scene = load("res://free_roam.tscn").instantiate()
 	(_scene.get_node("Terrain") as TerrainStreamer).settings = s
 	add_child(_scene)
@@ -65,12 +63,14 @@ func test_1_a_first_time_world_starts_down_the_road_at_night_in_a_dying_car() ->
 	if _co == null:
 		return
 	assert_true(_co.running, "it has started with the hand-over")
-	assert_false(_rest.is_lit(0), "the spawn cabin is still to be reached")
+	var goal := _co.goal()
+	assert_ne(goal, 0, "the goal is a roadside cabin, not spawn's road-end one")
+	assert_false(_rest.is_lit(goal), "the cabin is still to be reached")
 	var biome: BiomeDirector = _scene.get_node("BiomeDirector")
 	assert_eq(biome.forced_weather, "night")
 	assert_eq((_scene.get_node("CameraManager") as CameraManager).current_mode(), CameraManager.Mode.CHASE)
 	var p := Vector2(_car.global_position.x, _car.global_position.z)
-	var cabin := _streamer.sites.pos[0]
+	var cabin := _streamer.sites.anchor[goal]
 	var s := _streamer.settings
 	assert_between(p.distance_to(cabin), s.cold_open_min_distance_m * 0.5, s.cold_open_max_distance_m + 20.0,
 		"it starts a drive away from the cabin")
@@ -110,33 +110,19 @@ func test_3_the_throttle_hint_shows_until_the_throttle_is_pressed() -> void:
 	assert_eq(minimap.hint, "", "and it doesn't come back")
 
 
-func test_4_driving_the_trail_pays_its_coins_once_each() -> void:
+func test_4_the_world_starts_with_money_for_another_starter_car() -> void:
 	if _co == null:
 		return
-	var coins := _co._trail.duplicate()
-	assert_gt(coins.size(), 0, "a coin trail is laid")
-	var expected := 0
-	for c in coins:
-		expected += int(c["value"])
-	assert_eq(expected, ColdOpen.trail_total(String(WorldSession.active_car()["model_id"])),
-		"the trail pays enough for the other starter cars")
-	var before := WorldSession.money()
-	var path: PackedVector2Array = _co.start_spot["path"]
-	_co._last_p = path[0]
-	for k in range(1, path.size() - 1):  # sweep along the road, short of the cabin's pad
-		_car.global_position = Vector3(path[k].x, _car.global_position.y, path[k].y)
-		_co.step()
-	var paid := WorldSession.money() - before
-	assert_eq(_co._trail.size(), 0, "every coin was picked up")
-	assert_eq(paid, expected, "each paid once")
-	_co.step()
-	assert_eq(WorldSession.money() - before, expected, "nothing more on a second pass")
+	assert_eq(WorldSession.money(), ColdOpen.starting_money(String(WorldSession.active_car()["model_id"])),
+		"a first-time world starts with the swap money")
+	assert_eq(_co.get_children().filter(func(n: Node) -> bool: return n is MeshInstance3D).size(), 0,
+		"no coins laid on the road")
 
 
 func test_5_reaching_the_cabin_ends_the_cold_open_and_opens_the_options() -> void:
 	if _co == null:
 		return
-	_rest.light(0)
+	_rest.light(_co.goal())
 	assert_true(_co.done)
 	assert_false(_co.running)
 	var dmg: DamageModel = _car.damage
@@ -193,28 +179,16 @@ func test_the_cold_open_car_is_the_configured_one_or_the_first_starter() -> void
 	assert_eq(ColdOpen.car_id(s), starters[0])
 
 
-func test_the_trail_total_covers_every_other_starter_car() -> void:
+func test_the_starting_money_covers_every_other_starter_car() -> void:
 	var starters := LootRules.starter_cars()
 	var mine := starters[0]
-	var total := ColdOpen.trail_total(mine)
+	var total := ColdOpen.starting_money(mine)
 	for id in starters:
 		if id != mine:
 			assert_gte(total, LootRules.price({"kind": "car", "id": id}), "enough for %s" % id)
 
 
-func test_split_shares_out_the_whole_total() -> void:
-	for case in [[1000, 3], [7, 7], [5, 12], [0, 4]]:
-		var parts := ColdOpen.split(case[0], case[1])
-		var sum := 0
-		for v in parts:
-			sum += v
-			assert_gte(v, 0)
-		assert_eq(sum, case[0] if case[0] > 0 else 0)
-		if case[0] > 0:
-			assert_eq(parts.size(), case[1])
-
-
-func test_the_start_is_on_a_road_out_of_spawn_on_the_cabins_side() -> void:
+func test_the_start_is_on_the_road_to_a_roadside_rest_stop() -> void:
 	var st := TerrainStreamer.new()
 	st.settings = _settings()
 	var focus := Node3D.new()
@@ -222,18 +196,22 @@ func test_the_start_is_on_a_road_out_of_spawn_on_the_cabins_side() -> void:
 	st.focus = focus
 	add_child_autofree(st)
 	var t := st.terrain
-	var spot := ColdOpen.pick_start(st.network, func(x: float, z: float) -> float: return t.height(x, z, PackedInt32Array(), false),
-		st.lantern_position(0), st.sites.dir[0], st.settings)
-	assert_false(spot.is_empty(), "a road leaves spawn")
+	var spot := ColdOpen.pick_start(st.network, st.sites,
+		func(x: float, z: float) -> float: return t.height(x, z, PackedInt32Array(), false),
+		st.lantern_position, st.settings)
+	assert_false(spot.is_empty(), "the island has a roadside rest stop")
 	if spot.is_empty():
 		return
+	var g := int(spot["site"])
+	assert_ne(g, 0, "not spawn's cabin")
+	assert_eq(st.sites.kind[g], RoadSites.Kind.REST)
+	assert_ne(st.sites.anchor[g], st.sites.pos[g], "a roadside cabin, off its road")
 	var p: Vector2 = spot["pos"]
 	var path: PackedVector2Array = spot["path"]
 	assert_lte(float(spot["dist"]), st.settings.cold_open_max_distance_m)
-	assert_almost_eq(path[path.size() - 1].distance_to(st.network.node(0)), 0.0, 0.01, "the path ends at spawn")
+	assert_almost_eq(path[path.size() - 1].distance_to(st.sites.anchor[g]), 0.0, 0.01, "the path ends at the cabin's road point")
 	assert_eq(path[0], p)
 	assert_true(st.network.nearest(p.x, p.y, 0.5), "on the road")
-	assert_gt((p - st.network.node(0)).dot(st.sites.dir[0]), 0.0, "on the cabin's door side")
 
 
 func test_only_a_pending_world_is_due() -> void:

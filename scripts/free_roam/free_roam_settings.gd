@@ -233,8 +233,6 @@ extends Resource
 @export_range(0.0, 2.0) var cold_open_start_temp_frac := 0.85
 ## The lowest HP the car can fall to during the cold open, as a fraction of max: it limps, never gives up.
 @export_range(0.0, 1.0) var cold_open_hp_floor_frac := 0.1
-## How many coins the trail to the cabin is split into. Their total is the dearest other starter car.
-@export var cold_open_trail_coins := 12
 ## Seconds after the "Checkpoint reached" band before the camera and control options open.
 @export var cold_open_options_delay_s := 1.0
 

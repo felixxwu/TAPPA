@@ -1,7 +1,7 @@
 extends Node
 # Verification aid: boot free roam as a first-time player (the cold open, ColdOpen), photograph the
 # start, then carry the car down the road to the cabin in short hops (each one counts as driving,
-# so trail coins are picked up and the cabin lights) and photograph the trail, the arrival and the
+# so the cabin lights) and photograph the drive, the arrival and the
 # options page. Pure tooling; not shipped. Writes tools/cold_open_capture_<n>_<what>.png. Run:
 #
 #   xvfb-run -a -s "-screen 0 1280x720x24" godot --rendering-driver opengl3 \
@@ -16,9 +16,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--seed="):
 			seed = int(a.trim_prefix("--seed="))
-	WorldSession.new_world(seed, ColdOpen.car_id(Config.data.free_roam))
-	WorldSession.fresh = true
-	WorldSession.set_cold_open_pending(true)
+	ColdOpen.new_world(seed, Config.data.free_roam)
 	var world := (load("res://free_roam.tscn") as PackedScene).instantiate()
 	add_child(world)
 	var co: ColdOpen = null
@@ -31,7 +29,7 @@ func _ready() -> void:
 		push_error("cold-open-capture: the cold open never started")
 		get_tree().quit()
 		return
-	print("cold-open-capture: seed %d, start %.0f m out, %d coins" % [seed, float(co.start_spot.get("dist", 0.0)), co._trail.size()])
+	print("cold-open-capture: seed %d, start %.0f m out, $%d" % [seed, float(co.start_spot.get("dist", 0.0)), WorldSession.money()])
 	for _i in 90:
 		await get_tree().process_frame
 	_shot("1_start")
@@ -58,7 +56,7 @@ func _ready() -> void:
 			mid_done = true
 			for _i in 30:
 				await get_tree().process_frame
-			_shot("2_trail")
+			_shot("2_drive")
 	Input.action_release("accelerate")
 	print("cold-open-capture: done %s, money $%d" % [co.done, WorldSession.money()])
 	for _i in 40:
