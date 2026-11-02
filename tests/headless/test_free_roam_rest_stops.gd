@@ -250,6 +250,45 @@ func test_giving_up_cuts_the_engine_then_shows_the_wreck_page_then_respawns_cold
 	_rest.set_physics_process(true)
 
 
+func test_a_wreck_that_rolls_into_a_rest_stop_is_healed_in_place() -> void:
+	var site := _a_rest_stop()
+	_rest.set_physics_process(false)
+	_rest.move_car_to(0)
+	_rest.last_site = 0
+	await get_tree().physics_frame
+	watch_signals(_rest)
+	var dmg: DamageModel = _car.damage
+	dmg.apply_loss(dmg.max_hp * 2.0)
+	await get_tree().physics_frame
+	_rest.step(0.1)
+	assert_true(_rest.is_wrecked, "still wrecked while it is only rolling on the pad it died at")
+	_rest.wrecked.emit()
+	assert_true(_page.is_open())
+	var pose := _rest.pose_at(site)
+	_car.global_position = pose.origin
+	_rest.step(0.1)
+	assert_false(_rest.is_wrecked)
+	assert_signal_emitted(_rest, "wreck_recovered")
+	assert_signal_not_emitted(_rest, "respawned", "no respawn: the car stays where it rolled")
+	assert_false(_car.ai_controlled, "the controls come back")
+	assert_gt(dmg.hp, 0.0, "it starts healing at once")
+	assert_false(_page.is_open(), "the wreck page closes")
+	_rest.set_physics_process(true)
+
+
+func test_cabin_lamp_posts_glow_only_while_the_weather_has_headlights() -> void:
+	var posts := get_tree().get_nodes_in_group(TerrainStreamer.LAMP_GROUP)
+	assert_gt(posts.size(), 0, "the island has cabins with lamp posts")
+	TerrainStreamer.light_lamp_posts(get_tree(), false)
+	for post: Node3D in posts:
+		assert_false(post.get_node("Lamp").visible)
+		assert_false(post.get_node("Halo").visible)
+	TerrainStreamer.light_lamp_posts(get_tree(), true)
+	for post: Node3D in posts:
+		assert_true(post.get_node("Lamp").visible)
+		assert_null((post.get_node("Lantern") as MeshInstance3D).material_override)
+
+
 func test_travel_goes_only_to_lit_rest_stops() -> void:
 	var site := _a_rest_stop()
 	_rest.lit_sites.erase(site)

@@ -20,6 +20,8 @@ signal opened(site: int)
 # The car gave up (0 HP): the host shows the wreck page, whose Continue calls respawn().
 signal wrecked
 signal respawned(site: int, wreck_pos: Vector3)
+# A wrecked car rolled into rest stop `site` and was brought back in place (no respawn; the dropped money stays where it fell).
+signal wreck_recovered(site: int)
 signal travelled(site: int)
 signal respawn_point_changed(site: int)
 # The car was moved by a travel or a respawn, to this XZ (listeners reset their swept checks).
@@ -102,14 +104,9 @@ func _physics_process(delta: float) -> void:
 # Driving past a rest stop (on its pad or the road beside it, at any speed) lights it and makes it
 # the respawn point; the car heals for as long as it stays there.
 func step(delta: float) -> void:
-	if is_wrecked:
-		if _wreck_page_in >= 0.0:
-			_wreck_page_in -= delta
-			if _wreck_page_in <= 0.0:
-				_wreck_page_in = -1.0
-				wrecked.emit()
-		return
 	var p := Vector2(car.global_position.x, car.global_position.z)
+	if is_wrecked and not _primed:
+		return
 	if not _primed:
 		# The first step after the scene loads (a new game, Continue, or the reload after a parts or
 		# car change) finds the car wherever it was spawned: it has already arrived there, not passed.
@@ -120,6 +117,17 @@ func step(delta: float) -> void:
 	var from := _last_p if _last_p.distance_to(p) < RoadSites.TELEPORT_M else p  # a teleport isn't a drive past
 	_last_p = p
 	var i := rest_reached(from, p)
+	if is_wrecked:
+		if i < 0 or i == _on_site:
+			_on_site = i
+			if _wreck_page_in >= 0.0:
+				_wreck_page_in -= delta
+				if _wreck_page_in <= 0.0:
+					_wreck_page_in = -1.0
+					wrecked.emit()
+			return
+		_end_wreck()
+		wreck_recovered.emit(i)
 	if i != _on_site:
 		_on_site = i
 		if i >= 0:
@@ -239,12 +247,18 @@ func _set_engine_killed(on: bool) -> void:
 		dt.engine.killed = on
 
 
+func _end_wreck() -> void:
+	is_wrecked = false
+	_wreck_page_in = -1.0
+	_set_driverless(false)
+	_set_engine_killed(false)
+	if pause_menu != null:
+		pause_menu.set_input_enabled(true)
+
+
 func respawn() -> void:
 	if is_wrecked:
-		is_wrecked = false
-		_wreck_page_in = -1.0
-		_set_driverless(false)
-		_set_engine_killed(false)
+		_end_wreck()
 	var wreck := car.global_position
 	move_car_to(last_site)
 	var dmg := car.damage as DamageModel

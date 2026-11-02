@@ -352,69 +352,6 @@ compression from a mount a whole travel too low and over-reported EVERY wheel's 
 by ~60%. `_recompute_axles()` read the live position the same way, so the downforce points
 drifted too; both now read `wheel_mount()`.
 
-### Static rest pose (`settled_ride_height`)
-
-Display / prop cars (`CarProp`) are placed
-**analytically at rest and frozen at once**, instead of being dropped as live physics
-bodies and frozen a beat later. That old drop-and-settle was a recurring bug source: it depended on a ground
-collider being present under the car (a prop sank through the streamed-in-only-near-
-the-player terrain), on the car not rolling on a slope, and on the landing impact not
-knocking HP off it — plus the freeze timing.
-
-Placing a prop takes **two** offsets — the body and the wheels move independently:
-
-```
-settled_ride_height = wheel_radius + axle_travel − mount_y            # wheel fully drooped
-                    − SUSPENSION_COMPRESSION_COEFF · g / suspension_stiffness   # sag under weight
-wheel Visual droop  = wheel_rest_length − WHEEL_DROOP_COEFF · g / suspension_stiffness  # per wheel
-```
-
-`car.settled_ride_height()` returns how far the body origin sits above flat ground at
-rest — the height a **live** car settles to. That height assumes the wheels have drooped
-down below their authored mount (as Godot's solver renders them while driving). But a
-frozen prop's solver never runs, and `drivetrain._update_visuals` only re-orients the
-wheel Visual (never translates it), so left alone the Visual stays at its authored mount
-— ~`axle_travel` too high, so the car reads as sitting on **over-compressed** suspension
-and floats. So after seating the body, a caller also calls **`car.settle_wheel_visuals()`**,
-which drops each wheel Visual by the droop above to where Godot's live solver would render
-it. This must run on frozen props **only** — a live car lets Godot move the wheel node and
-keeps its Visual at the local origin.
-
-Both compression terms come from Godot's built-in `VehicleWheel3D` solver (**not** the
-game's own tire model — they disagree by ~0.1 m) and are **mass-independent** (Godot
-normalises the spring by chassis mass). `SUSPENSION_COMPRESSION_COEFF` and
-`WHEEL_DROOP_COEFF` are both calibrated against a real settle and pinned by
-`test_rest_pose.gd`, which re-derives them from an actual `VehicleWheel3D` settle across a
-range of configs (and checks the drooped prop Visual lands at the live wheel height),
-failing loudly if a Godot upgrade shifts the solver — so the constants can't silently
-drift. A caller seats the car on its ground plane, lifts the body by
-`settled_ride_height()`, droops the wheels, then freezes `FREEZE_MODE_STATIC`.
-
-**Ground-conforming wheels (uneven ground).** Props that sit on real,
-possibly-uneven ground — today the rival ghost over its stage terrain (HQ car-park,
-lift and wreck hosts are deleted) — use
-**`car.settle_wheels_to_ground(ground_at)`** instead of the flat `settle_wheel_visuals()`.
-It droops each wheel Visual so the **tyre bottom sits on `ground_at(wheel_world_pos)`**
-(geometric contact), clamped to `[0, wheel_rest_length]` — so a wheel over lower ground
-extends further and one over higher ground tucks up, and a wheel with no ground in reach
-dangles at full droop. If `ground_at` returns a **non-finite** value (e.g. a raycast miss),
-that wheel keeps the analytic `settle_wheel_visuals` droop rather than dangling. The
-rival ghost passes its stage terrain's `height_at` (a self-excluded downward ray —
-**`car.ground_raycast()`** — survives for any future host that needs one). The deleted
-HQ-lift "wheels extend as the lift raises" behaviour went with its host.
-**`Car.compression_budget(cfg)`** (static) returns how far a wheel can droop below the
-rest plane.
-
-**Undoing a settle: `car.clear_wheel_visual_droop()`.** Both settle functions translate the wheel
-`Visual` **down**, and nothing on the live path ever translates it back (`_update_visuals` only
-spins and steers), so the offset is permanent until something clears it. That is fine for a prop,
-which stays frozen forever — but a car that is settled while frozen and then handed **back to the
-player** renders its wheels sunk by up to a full `wheel_rest_length` below where the solver
-actually has them, i.e. a tyre visibly cutting through the ground with the physics perfectly
-healthy. Call this whenever a settled prop becomes a driven car again. No live caller
-makes that transition today (the overworld garage lift that did is deleted); the helper
-stays for the next host that freezes a car and hands it back.
-
 ## Weight distribution (centre of mass)
 
 Each `CarLibrary` entry carries a real `weight_front` — the car's published static
@@ -432,7 +369,7 @@ The height matters because the roll lever a tyre force acts through is the verti
 CoM-to-contact-patch distance (see `wheel_roll_influence` below), which sets the static
 rollover threshold `track / (2 × CoG height)`. A real car slides before it tips because
 that lands at ~1.4 g while its tyres only make ~1 g. The body origin sits high —
-`settled_ride_height` is ~1 m drooped with the shipped 0.6 m suspension travel, ~0.75 m
+the body origin sits ~1 m above the ground with the wheels fully drooped (shipped 0.6 m suspension travel), ~0.75 m
 settled — so leaving the CoM at `y = 0` gave a ~0.8–0.9 g threshold against 1.21–1.6 m
 authored tracks, and cars tipped over as soon as grip rose. `com_height` lowers it to a
 real car's ~0.5 m and restores the margin. This is the reason the shipped

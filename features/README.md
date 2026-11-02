@@ -58,14 +58,14 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [configuration.md](configuration.md) | `GameConfig` resource — every tunable, the `Config` autoload |
 | [save-persistence.md](save-persistence.md) | `Save` autoload — player profile (owned cars, HP, inventory, the world block) at `user://profile.json` |
 | [cloud-save.md](cloud-save.md) | Optional Firebase account — sign-in, Firestore profile sync, conflict resolution |
-| [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm / fog / storm / snowfall / night) — the `WeatherLibrary` table that is the single source of truth for every condition, the `GameConfig` blocks it names, and the fake headlight cone night re-lights the world with (authored on five stages, one per region) |
-| [snow-region.md](snow-region.md) | The Alps — the map's NE corner. The first region to influence HANDLING as well as look: per-surface grip overrides, deep snow you sink into and bog down in, frozen lakes you drive on, snowfall, and the six rallies (two carrying re-sited part unlocks) |
-| [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), the `region` rally tag, driven-world theming, per-corner waterlines, the unconditional sky re-seed that stops one region's sky leaking into the next stage. Regions gate NOTHING any more — look + `water_level` only |
+| [weather.md](weather.md) | Per-event weather (dry / rain / sandstorm / fog / storm / snowfall / night) — the `WeatherLibrary` table that is the single source of truth for every condition, the `GameConfig` blocks it names, and the fake headlight cone night re-lights the world with |
+| [snow-region.md](snow-region.md) | The Alps — the map's NE corner. The first region to influence HANDLING as well as look: per-surface grip overrides, deep snow you sink into and bog down in, frozen lakes you drive on, snowfall |
+| [regions.md](regions.md) | `RegionLibrary` — region catalogue (look overrides per region), driven-world theming, per-corner waterlines, the unconditional sky re-seed that stops one region's sky leaking into the next stage. Regions gate NOTHING any more — look + `water_level` only |
 | [progress.md](progress.md) | `TrackProgress` — distance along the road centerline + off-track auto-reset. **Per-stage distance, NOT career progress** — run state lives in [save-persistence.md](save-persistence.md) |
 | [upgrade-catalogue.md](upgrade-catalogue.md) | `UpgradeLibrary` — the `EFFECTS` descriptor table and the `apply` pipeline that writes a car's `boosts` onto its config, plus the drive-mode resolver |
-| [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) + the tuning-lift UI |
+| [tuning.md](tuning.md) | `TuningLibrary` — free, reversible per-car handling tuning (grip / brake-bias / aero sliders) |
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
-| [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only); the solo car-park wheel view |
+| [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only) |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` + `car.gd::_apply_engine_swap`, plus the legacy owned-car `swapped_engine` read path and the engine-detune power knob |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, misfire + rev cap as HP falls; in free roam 0 HP gives up into the wreck page |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
@@ -79,7 +79,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [loot.md](loot.md) | **Free-roam coins and shops** — `LootRules` (ring tables, prices, parts through the owned-car funnel), `LootDirector` (coins, money, the wreck loses it all, what's on sale), buying on the rest-stop Parts / Garage pages |
 | [world-session.md](world-session.md) | **The persistent free-roam world** — `WorldSession` (the world block in the profile: seed, car, pose, lit rest stops, map), the title screen the game boots into, and the map / stats pages |
 | [hud.md](hud.md) | `hud.gd` — speed / gear / rpm readouts, the Health / boost / nitrous / temperature gauges, and the debug readouts (H) |
-| [minimap.md](minimap.md) | **Free roam's minimap** — `MiniMap` (heading-up, perspective-tilted nav-style map top-centre: driven roads, nearby road ahead, seen rest stops and loot; tap / M opens the full map), the `seen` sites record |
+| [minimap.md](minimap.md) | **Free roam's minimap** — `MiniMap` (heading-up, perspective-tilted nav-style map top-centre: driven roads, nearby road ahead, seen rest stops; tap / M opens the full map), the `seen` sites record |
 | [free-roam.md](free-roam.md) | **The free-roam game, entered from the title screen** — `RoadNetwork` (radial-growth road layout), `RoadTerrain` (height built from the roads, base-field lakes), `TerrainStreamer` (resumable chunk jobs under a strict per-frame time budget, two LODs, skirts, collision ring) |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
@@ -102,7 +102,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [card-carousel.md](card-carousel.md) | **Every menu is a card list** — `CardCarousel` (the side-scrolling card widget) and `CardUI` (`card_page` / `card_list` — build a menu from a list of entry dicts); which menus are cards and which are plain pages |
 | [menus.md](menus.md) | Scene routing (`Scenes`), the title menu, the pause menu, the rest-stop page and world pages, modals |
 | [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
-| [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure; the ledger skill unlock gates read |
+| [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure |
 | [settings.md](settings.md) | **Adding or changing a persisted setting** — the one-module-per-setting apply-owner pattern (`*_setting.gd`), boot re-application, the shared `SettingsMenu` used by both the title screen and the pause menu, and the developer-only pages |
 | [modals.md](modals.md) | **Modals and confirms** — `ConfirmPopup`, the one-modal-at-a-time `MODAL_GROUP`, the scrolled-body / pinned-exit modal page shape, and `MenuNav.input_blocked` |
 | [ui-design-system.md](ui-design-system.md) | `UITheme` + global theme — palette, pixel font, panel/button styling shared by every screen |
@@ -111,7 +111,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [asset-pipeline.md](asset-pipeline.md) | Source art → PCK: texture import settings, the live/orphan car-texture trap, the 1024×512 sky-panorama house format, export exclude filters, PCK sizing |
 | [car-scanning.md](car-scanning.md) | `tools/car_scan/` — walk-around video of a car → Apple Object Capture photogrammetry → low-poly textured body glb |
 | [debug-tools.md](debug-tools.md) | Force-arrow visualization overlay |
-| [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven long stage at 50 km/h, perf overlay + end-of-run stats breakdown |
+| [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven free-roam run at 50 km/h, perf overlay + end-of-run stats breakdown |
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |
 | [release-pipeline.md](release-pipeline.md) | The `Release` workflow — cache gate, itch/Play/Pages/Firestore jobs, the `install-butler` composite action, secrets |
@@ -139,8 +139,8 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | HUD | `scripts/hud.gd` |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `config/game_config.tres` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
-| Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the linear unlock order) |
-| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the in-run boosts) |
+| Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the biome-ring order) |
+| Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the parts catalogue) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the rest stop page) |
 | Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, layout label, mass/weight-front recompute), `scripts/car.gd` (`_apply_engine_swap`) |

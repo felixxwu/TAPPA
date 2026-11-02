@@ -307,6 +307,7 @@ func _apply_weather(cfg: GameConfig) -> void:
 		_particles = WeatherField.spawn(camera, kind, int(cfg.get(String(entry["particle_count"]))),
 			float(cfg.get(wind_field)) if wind_field != "" else 0.0,
 			float(cfg.get(speed_field)) if speed_field != "" else 0.0)
+	TerrainStreamer.light_lamp_posts(get_tree(), HeadlightCone.has_headlights(cfg))
 	if not HeadlightCone.has_headlights(cfg):
 		HeadlightCone.reset()
 

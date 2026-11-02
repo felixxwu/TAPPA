@@ -116,6 +116,11 @@ func car_teleported(p: Vector2) -> void:
 	_reset_stunts()
 
 
+# The wrecked car rolled into a rest stop: it collects again, and the dropped money is still out there.
+func wreck_recovered(_site: int) -> void:
+	_wrecked = false
+
+
 func respawned(_site: int, _wreck: Vector3) -> void:
 	_wrecked = false
 	_reset_stunts()
@@ -174,7 +179,7 @@ func _trees_near() -> Array:
 func _pay(label: String, value: int) -> void:
 	WorldSession.set_money(WorldSession.money() + value)
 	Audio.play_beep(Config.data.coin_pickup_sfx_freq_hz, Config.data.coin_pickup_sfx_duration_sec)
-	_say("%s +$%d" % [label, value])
+	_say(("%s +$%d" % [label, value]).strip_edges())
 
 
 func _void_stunts() -> void:
@@ -202,15 +207,9 @@ func collect(site: int) -> void:
 	WorldSession.set_list("collected", col)
 	_spent[site] = true
 	streamer.refresh_loot_marker(site)
-	pay_coin(value)
+	_pay("", value)
 	collected.emit(site, value)
 
-
-# A coin's money into the wallet, with its beep and "+$N" (a road coin, or a cold-open trail coin).
-func pay_coin(value: int) -> void:
-	WorldSession.set_money(WorldSession.money() + value)
-	Audio.play_beep(Config.data.coin_pickup_sfx_freq_hz, Config.data.coin_pickup_sfx_duration_sec)
-	_say("+$%d" % value)
 
 
 # The car gave up: its money is left at the wreck, replacing (and losing) any earlier drop, and every

@@ -362,7 +362,9 @@ planted on it (`is_clear`).
   door and under the bottom log) is always a plain plank-brown material (`_paint_cabin_floor`; it
   used to be painted unshaded `BEACON_LIT` when lit, which read as a flat yellow square through the
   door). **Every cabin has a lamp post** (`_lamp_post`, node `LampPost`, at `LAMP_POST_AT` in the
-  cabin's space, door side), lit or not, so a rest stop can be found at night: a wooden post and arm,
+  cabin's space, door side), lit or not, so a rest stop can be found at night (the glow, halo and light are
+  on only while the weather has headlights; `TerrainStreamer.light_lamp_posts`, called from
+  `BiomeDirector._apply_weather`, switches them, so by day it is a plain post with a dark lantern): a wooden post and arm,
   a lantern drawn unshaded (`Lantern`), an additive billboard halo (`Halo`) and an `OmniLight3D`
   (`Lamp`, `FreeRoamSettings.cabin_lamp_range_m` / `cabin_lamp_energy`, no shadows) that lights the
   cabin front, pad and crowd. Meshes and materials are shared by every post; the post is solid (a
@@ -627,7 +629,7 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   tried (2026-10-31) the lantern was in view from only 65–95 m: in practice the start is at the
   minimum and the lantern comes into view on the last stretch.
 - **The car:** `start()` sets HP to `cold_open_start_hp_frac`, `cooling_broken`, the temperature to
-  `cold_open_start_temp_frac` of the overheat threshold (0: cold, so the gauge climbs on the way), and `DamageModel.min_hp` to
+  `cold_open_start_temp_frac` of the overheat threshold (0.5: half-warm, so the gauge climbs from the middle), and `DamageModel.min_hp` to
   `cold_open_hp_floor_frac` of max (see damage.md), so it limps but never gives up.
 - **The hint:** the throttle's bindings (`throttle_hint`, "W / RIGHT TRIGGER") in the minimap's line
   (`MiniMap.hint`), or on touch a pulsing GAS button (`MobileControls.hint_gas`), until the first

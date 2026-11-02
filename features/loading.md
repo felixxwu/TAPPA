@@ -52,13 +52,7 @@ few lines shown in turn, the last held until `finish()`; `story_running()` / `st
 the caller wait until every line has had its time. Used for a first-time player's cold open
 (free-roam.md → *Cold open*, started in `Scenes.change_to`).
 
-The other `LoadingScreen` users cover HUB startup rather than a stage: `menu_showcase.gd`'s
-build holds one while the background track visual loads (committed-cache hit or live
-generate), and `hub_shell.gd` holds one while `CarPreviewCache.warm_all()` builds every
-car-selection preview — on a cold boot the two overlap and present as one continuous
-"Loading…" stage (card-carousel.md (deleted) → the warming section). Neither claims the
-step line, so their tips keep cycling; only world.gd's generation stages stopped
-forwarding to the label. `set_step()` **locks** the step line (`_step_locked`) so the
+`set_step()` **locks** the step line (`_step_locked`) so the
 7-second tip cycle never overwrites a caller's own status text.
 
 The headline's trailing ellipsis is **animated** (0 → 1 → 2 → 3 dots, looping on

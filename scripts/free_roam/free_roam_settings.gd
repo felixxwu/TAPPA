@@ -234,10 +234,10 @@ extends Resource
 ## for the lamp post to count as in view.
 @export var cold_open_view_corridor_m := 6.0
 ## The car's state at the start: HP as a fraction of max (below the cooling-failure fraction, so the
-## cooling is already gone), and engine temperature as a fraction of the overheat threshold (0: a
-## cold engine, so the player watches the gauge climb).
-@export_range(0.0, 1.0) var cold_open_start_hp_frac := 0.4
-@export_range(0.0, 2.0) var cold_open_start_temp_frac := 0.0
+## cooling is already gone), and engine temperature as a fraction of the overheat threshold (half: a
+## warm-ish engine, so the gauge climbs from the middle).
+@export_range(0.0, 1.0) var cold_open_start_hp_frac := 0.1
+@export_range(0.0, 2.0) var cold_open_start_temp_frac := 0.5
 ## The lowest HP the car can fall to during the cold open, as a fraction of max: it limps, never gives up.
 @export_range(0.0, 1.0) var cold_open_hp_floor_frac := 0.1
 ## The lines shown one after another in place of the loading screen (LoadingScreen.story), each for

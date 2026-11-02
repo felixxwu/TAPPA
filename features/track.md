@@ -285,7 +285,7 @@ road_heights[gv] = _noise_height_at(footx, footz) + TrackProfile.offset_at(s, _c
 
 This seam is load-bearing, and the reason to keep the offset here rather than anywhere
 else: **`road_heights` is the single point every consumer funnels through** — the chunk
-grid, the `HeightMapShape3D` collision, and `baked_height_at` all derive from it. Putting
+grid, the `HeightMapShape3D` collision all derive from it. Putting
 the crest here makes it impossible for the visible mesh and the physics the car actually
 drives on to disagree. It also gets **lateral feathering for free**, because `road_blend`
 lerps *toward* `road_heights`, so the crest fades across the transition band exactly like

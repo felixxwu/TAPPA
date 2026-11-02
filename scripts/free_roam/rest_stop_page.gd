@@ -69,6 +69,12 @@ func open_wrecked() -> void:
 	_show(View.WRECKED)
 
 
+# The wrecked car reached a rest stop by itself: the wreck page has nothing left to offer.
+func dismiss_wrecked() -> void:
+	if _page != null and view == View.WRECKED:
+		close()
+
+
 func close() -> void:
 	_clear()
 	get_tree().paused = false

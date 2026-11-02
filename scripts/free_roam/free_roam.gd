@@ -139,6 +139,8 @@ func _ready() -> void:
 		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP))
 	_rest_stops.car_teleported_to.connect($LootDirector.car_teleported)
 	_rest_stops.respawned.connect($LootDirector.respawned)
+	_rest_stops.wreck_recovered.connect($LootDirector.wreck_recovered)
+	_rest_stops.wreck_recovered.connect(func(_site: int) -> void: _rest_page.dismiss_wrecked())
 	$LootDirector.said.connect(_minimap.toast)
 	_recovery.reset_done.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect(_rest_stops.car_teleported)

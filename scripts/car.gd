@@ -114,7 +114,7 @@ var downforce_readouts: Array = []  # [global point, force vector] pairs for the
 var steer_assist_readout: float = 0.0
 var _car_index := -1  # selected CarLibrary entry, or -1 for the untouched baseline
 # Per-fielding drivetrain override (0/1/2), or -1 = use the spec's stock drive_mode.
-# Set by apply_owned before the drivetrain rebuilds; -1 for free-roam apply_car.
+# Set by apply_owned before the drivetrain rebuilds; -1 for the stock layout (plain apply_car).
 var _owned_drive_override := -1
 # Per-fielding COSMETIC wheel-texture override, or "" = use the spec's own wheel
 # texture. Set by apply_owned before the wheels are built (same pattern as
@@ -406,22 +406,6 @@ func _physics_process(delta: float) -> void:
 
 
 func _timed_physics_process(delta: float) -> void:
-	# THE DISPLAY-DROOP INVARIANT, enforced in the one place that knows this body is live.
-	#
-	# A frozen body needs its wheel Visuals dropped by hand (it cannot sink onto its suspension);
-	# a live one must NOT have that offset, or the wheels render up to a full `wheel_rest_length`
-	# below where the solver has them.
-	#
-	# GATED ON `freeze`, and that gate is the whole subtlety: `_physics_process` runs on a FROZEN
-	# body too — `freeze` stops the simulation, not the script callback. An earlier version of this
-	# check assumed reaching here proved the body was live, and it wiped the droop off every frozen
-	# display prop in the game (test_rest_pose caught it immediately).
-	#
-	# Enforced here rather than at the call sites because the call sites are the problem: the same
-	# forgotten clear produced the garage lift dropping a car with its tyres through the road, and
-	# the car picker showing cached props with misplaced wheels. Two instances, two files, one rule.
-	if _display_droop_applied and not freeze:
-		clear_wheel_visual_droop()
 	var cfg: GameConfig = config
 	# Capture the pre-solve travel speed for _integrate_forces' damage keying — this
 	# runs before the physics solver, so it still holds the true approach speed even
@@ -1808,10 +1792,8 @@ func _compute_engine_smoke_local(spec: Dictionary) -> void:
 	engine_smoke_local = Vector3(base.x, base.y, spec["wheelbase"] * (0.5 - engine_pos))
 
 
-# Field an OwnedCar (features/rally-session.md fielding pipeline): the CarLibrary
-# baseline, then the installed upgrades, then the per-car tuning, then the working
-# damage state from the saved HP. Used by world.gd when a RallySession is active;
-# free-roam uses apply_car directly (no upgrades/tuning).
+# Field an OwnedCar (free roam's fielding pipeline): the CarLibrary baseline, then the
+# installed parts, then the per-car tuning, then the working damage state from the saved HP.
 func apply_owned(owned: Dictionary) -> String:
 	var model_id := String(owned.get("model_id", ""))
 	var idx := CarLibrary.index_of(model_id)
@@ -2035,172 +2017,6 @@ func _sync_suspension_to_wheels() -> void:
 	# it rather than re-walking the scene tree (find_children allocates an Array each call).
 	for wheel in _wheel_mounts:
 		_apply_suspension(wheel)
-
-
-# --- Analytic rest pose (for static display / prop cars) ---------------------
-# The height a settled car's body origin rests above flat ground, computed directly
-# instead of by dropping a live physics body and freezing it seconds later (which was
-# a recurring bug source — it depends on a collider being present under the car, the
-# car not rolling on a slope, not re-wrecking on landing, and the freeze timing). See
-# features/opponent-wrecks.md and features/car-physics.md → "Static rest pose".
-#
-# At rest the body sits at `wheel_radius + suspension_travel - mount_y` (the wheel
-# fully drooped) MINUS the suspension compression under the car's own weight. The wheel
-# VISUAL never moves with compression (drivetrain._update_visuals only spins/steers it,
-# never translates it), so this single body offset fully reproduces the settled look.
-#
-# The compression term comes from Godot's built-in VehicleWheel3D solver, NOT the game's
-# own tire model (they disagree by ~0.1 m). It's MASS-INDEPENDENT (Godot normalises the
-# spring by chassis mass) and, per calibration, is `SUSPENSION_COMPRESSION_COEFF · g /
-# suspension_stiffness`. The coefficient is calibrated against a real settle and pinned
-# by test_rest_pose.gd, which re-derives it and fails loudly if a Godot upgrade shifts
-# the solver — so the constant can never silently drift.
-const SUSPENSION_COMPRESSION_COEFF := 0.3545
-
-func settled_ride_height() -> float:
-	var cfg: GameConfig = config
-	var g: float = _default_gravity
-	# Representative front wheel; props sit level (front/rear compression is kept equal
-	# by the weight-split axle rates), so one axle's geometry defines the offset.
-	var front_mount_y := -0.1
-	for wheel in _wheel_mounts:
-		if _wheel_is_front(wheel):
-			front_mount_y = float(_wheel_mounts[wheel].y)
-			break
-	var geometry: float = cfg.wheel_radius + cfg.axle_travel(true) - front_mount_y
-	var compression: float = SUSPENSION_COMPRESSION_COEFF * g / cfg.suspension_stiffness
-	return geometry - compression
-
-
-# The vertical distance a settled prop's wheels can still droop BELOW the analytic rest
-# plane before a wheel floats — i.e. the compression baked into settled_ride_height().
-# Used by the roadside-wreck site gate to reject verges steeper than the car can follow.
-# Front-axle reach, reduced by any rear-axle travel shortfall so the shorter axle governs.
-# Static (no instance): uses Platform.gravity() (the same physics/3d/default_gravity the
-# car reads at _ready) so callers without a Car instance (world.gd) can compute it.
-static func compression_budget(cfg: GameConfig) -> float:
-	var front_budget: float = SUSPENSION_COMPRESSION_COEFF * Platform.gravity() / cfg.suspension_stiffness
-	return front_budget - maxf(0.0, cfg.axle_travel(true) - cfg.axle_travel(false))
-
-
-# A STATIC prop is frozen the instant it's placed, so Godot's VehicleWheel3D solver never
-# runs and never repositions the wheel nodes — the wheel Visuals stay at their authored
-# mount, ~travel above where a driven car's wheels hang. settled_ride_height() puts the
-# BODY where a live car settles (which assumes the wheels have drooped down that far), so
-# without this the prop's wheels are tucked up into the arches (reads as "over-compressed")
-# and the car floats. This droops each Visual to where Godot's live solver renders it, so a
-# parked prop matches the driven car. Call it AFTER apply_car/apply_owned (needs the wheels'
-# resolved rest length + stiffness) on frozen props ONLY — a live car lets Godot move the
-# wheel node and must keep its Visual at the local origin (_update_visuals only re-orients
-# the Visual, never translates it, so this offset persists).
-#
-# droop = wheel_rest_length - WHEEL_DROOP_COEFF · g / suspension_stiffness, per wheel from
-# its OWN resolved params. Like SUSPENSION_COMPRESSION_COEFF this comes from Godot's wheel
-# solver (not the game's tire model); the coefficient is calibrated against a real settle
-# and pinned by test_rest_pose.gd, so a Godot upgrade that shifts the render fails loudly.
-const WHEEL_DROOP_COEFF := 0.25
-
-# TRUE while a DISPLAY droop offset is sitting on the wheel Visual nodes.
-#
-# The two settle functions below translate each wheel's `Visual` child DOWN, and nothing on the
-# live path ever translates it back — `drivetrain._update_visuals` only spins and steers that node.
-# The correct offset therefore depends on a mode: a FROZEN body cannot sink onto its suspension so
-# its wheels must be dropped visually, while a LIVE body sinks for real and the offset would be
-# counted twice, putting the wheels through the floor.
-#
-# Nothing used to enforce that, and it produced the same bug twice: the garage lift handed a
-# settled car back to physics with its wheels rendered below where the solver had them, and the
-# overworld's car picker showed cached props with wheels in the wrong place while cycling. Both
-# were fixed by remembering to call `clear_wheel_visual_droop` — which is exactly the kind of rule
-# that gets forgotten by the third caller.
-#
-# So the invariant is enforced HERE instead, in the one place that knows the body is live: the
-# physics tick clears the offset the first time it runs unfrozen. Callers may still clear it
-# explicitly (and the two above do, before handing the body over), but nobody has to.
-var _display_droop_applied := false
-
-func settle_wheel_visuals() -> void:
-	var g: float = _default_gravity
-	for wheel in _wheel_mounts:  # cached wheel nodes; avoids a find_children Array alloc
-		var visual: Node3D = wheel.get_node_or_null("Visual")
-		if visual == null:
-			continue
-		var droop: float = maxf(
-			wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0
-		)
-		visual.position.y = -droop
-	_display_droop_applied = true
-
-
-# How far above the wheel mount to start the down-ray, and slack added to its length.
-const GROUND_RAY_MARGIN := 0.5
-
-# Build a `ground_at` callable for settle_wheels_to_ground that raycasts straight DOWN
-# from each wheel against this car's physics space, excluding the car's own body. Returns
-# the hit Y, or NAN on a miss (settle_wheels_to_ground then keeps the analytic droop).
-# Ray length covers wheel radius + the longer axle's full travel + margin. Reads on
-# direct_space_state from idle are valid (space is only locked during the physics step);
-# HQ already raycasts this way in _car_index_at.
-func ground_raycast() -> Callable:
-	var space := get_world_3d().direct_space_state
-	var self_rid := get_rid()
-	var reach: float = config.wheel_radius + maxf(config.axle_travel(true), config.axle_travel(false)) + GROUND_RAY_MARGIN
-	return func(p: Vector3) -> float:
-		var q := PhysicsRayQueryParameters3D.create(
-			p + Vector3.UP * GROUND_RAY_MARGIN, p + Vector3.DOWN * (reach + GROUND_RAY_MARGIN))
-		q.exclude = [self_rid]
-		var hit := space.intersect_ray(q)
-		return float(hit["position"].y) if not hit.is_empty() else NAN
-
-
-# Droop each frozen prop's wheel Visual so the tyre bottom rests on the ground under it,
-# supplied by `ground_at(world_pos) -> float`. Geometric contact, clamped to the
-# suspension's droop range [0, wheel_rest_length]. A NON-FINITE ground value (e.g. a
-# raycast miss) leaves that wheel at its analytic rest droop (as settle_wheel_visuals)
-# rather than dangling. Frozen props ONLY (a live solver would fight it). The Visual is a
-# CHILD of the wheel node, so writing visual.position.y never feeds back into
-# wheel.global_position — safe to call every frame (the lift raise/lower).
-func settle_wheels_to_ground(ground_at: Callable) -> void:
-	var g: float = _default_gravity
-	# Called every frame during the lift raise/lower — iterate the cached wheel nodes
-	# (_wheel_mounts keys) instead of a per-frame find_children scene walk + Array alloc.
-	for wheel in _wheel_mounts:
-		var visual: Node3D = wheel.get_node_or_null("Visual")
-		if visual == null:
-			continue
-		var ground: float = ground_at.call(wheel.global_position)
-		var droop: float
-		if is_finite(ground):
-			droop = clampf(wheel.global_position.y - wheel.wheel_radius - ground,
-				0.0, wheel.wheel_rest_length)
-		else:
-			# No ground (miss): analytic rest droop, matching settle_wheel_visuals().
-			droop = maxf(wheel.wheel_rest_length - WHEEL_DROOP_COEFF * g / wheel.suspension_stiffness, 0.0)
-		visual.position.y = -droop
-	_display_droop_applied = true
-
-
-# THE INVERSE of settle_wheels_to_ground / settle_wheel_visuals: put every wheel Visual back at
-# its local origin, which is where a LIVE car's must sit.
-#
-# Both settle functions translate the Visual DOWN by a droop, and nothing in the live path ever
-# translates it back — `drivetrain._update_visuals` only spins and steers it — so the offset is
-# permanent until something clears it. That is harmless for a prop (it stays frozen forever), but
-# a car that is settled while frozen and then handed BACK to the player renders its wheels sunk by
-# up to `wheel_rest_length` below where the solver actually has them: the tyre visibly cuts
-# through the ground even though the physics is fine.
-#
-# You do NOT have to call this. `_timed_physics_process` clears the offset the first time it runs
-# on an unfrozen body (see `_display_droop_applied`), which is what makes the rule hold for callers
-# who have never heard of it. Calling it explicitly is still right when you want the wheels correct
-# on the SAME frame you hand the body over, rather than one physics tick later — the garage lift and
-# the overworld car picker both do.
-func clear_wheel_visual_droop() -> void:
-	_display_droop_applied = false
-	for wheel in _wheel_mounts:
-		var visual: Node3D = wheel.get_node_or_null("Visual")
-		if visual != null:
-			visual.position.y = 0.0
 
 
 # Give every MeshInstance3D in the authored body model the lit PS1 material

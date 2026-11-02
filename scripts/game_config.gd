@@ -186,7 +186,7 @@ var peak_torque_rpm := 4500.0
 ## physical roll and pitch).
 @export_range(0.0, 1.0) var wheel_roll_influence := 0.1
 ## Centre-of-mass height (m) relative to the car body's origin — negative lowers it.
-## The body origin sits high (settled_ride_height = wheel_radius + axle_travel -
+## The body origin sits high (rest height = wheel_radius + axle_travel -
 ## mount_y, ~1 m drooped with the shipped long-travel suspension), so leaving the CoM
 ## there puts it far above a real car's ~0.5 m CoG. Since the roll lever a tyre force
 ## gets is the vertical CoM-to-contact-patch distance (drivetrain.gd, scaled by

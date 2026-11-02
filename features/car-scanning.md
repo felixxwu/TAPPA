@@ -166,7 +166,7 @@ The MX-5 (`blender/mx5/`) went in the same way, its old hand-made body reshaped 
 modelled (`texture.py --no-cut`), and its wheels coloured from the scan. The F-150 (`blender/f150/`) went in this way: hand-modelled body textured with `texture.py`, then
 `export.py`, a `CarLibrary` entry whose `track`/`wheelbase`/`wheel_radius` match the scan's WHEELS
 contacts and arch cut, and an `F150Body` node in `car.tscn` sitting at minus the car's settled ride
-height (`car.gd` → `settled_ride_height`), since the exported body's origin is on the ground.
+height (wheel radius + axle travel − mount height − suspension sag), since the exported body's origin is on the ground.
 
 ```
 $BLENDER -b <work>/body/car_body.blend --python tools/car_scan/export.py -- <work>/body blender/<car> <car>

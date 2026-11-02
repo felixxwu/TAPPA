@@ -1511,7 +1511,28 @@ static func _lamp_post() -> Node3D:
 	lamp.omni_range = Config.data.free_roam.cabin_lamp_range_m
 	lamp.shadow_enabled = false
 	root.add_child(lamp)
+	root.add_to_group(LAMP_GROUP)
+	_light_lamp_post(root, HeadlightCone.has_headlights(Config.data))
 	return root
+
+
+const LAMP_GROUP := &"cabin_lamp_posts"
+static var _dead_lantern: StandardMaterial3D
+
+
+# The lamp posts glow only while it's dark (a weather with headlights): by day they are plain posts.
+static func light_lamp_posts(tree: SceneTree, on: bool) -> void:
+	for post: Node3D in tree.get_nodes_in_group(LAMP_GROUP):
+		_light_lamp_post(post, on)
+
+
+static func _light_lamp_post(post: Node3D, on: bool) -> void:
+	if _dead_lantern == null:
+		_dead_lantern = StandardMaterial3D.new()
+		_dead_lantern.albedo_color = Color(0.35, 0.3, 0.22)
+	post.get_node("Halo").visible = on
+	post.get_node("Lamp").visible = on
+	(post.get_node("Lantern") as MeshInstance3D).material_override = null if on else _dead_lantern
 
 
 # A coin floating over its spot on the road, spinning (coin.gdshader).

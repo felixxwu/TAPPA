@@ -464,30 +464,6 @@ func height_at(x: float, z: float) -> float:
 	return _noise_height_at(x, z)
 
 
-# Baked height WITHOUT needing the chunk cache: noise + cliff offset + road flatten,
-# read straight from the bake fields at the nearest L0 vertex. Reproduces what
-# TerrainChunkBuilder._sampled_height / _vertex_row_* produce, so it agrees with the
-# terrain the player gets — but it is available as soon as bake_track has run, where
-# height_at would still be falling back to pure noise (empty chunk cache).
-#
-# Exists for the loading screen's water preview, which wants the real (cliff-dropped)
-# waterline painted BEFORE the chunk precompute — the longest stage — rather than
-# after it. Vertex-nearest, not bilinear: the preview samples on a coarse lattice
-# anyway, so sub-cell accuracy would be wasted work.
-#
-# Falls back to height_at once free_load_only_data() has dropped the bake fields
-# (they only live through loading), so a late caller degrades rather than lying.
-func baked_height_at(x: float, z: float) -> float:
-	if _bake_fields_freed:
-		return height_at(x, z)
-	var h := _noise_height_at(x, z)
-	var gv := Vector2i(roundi(x / CELL_M), roundi(z / CELL_M))
-	h += float(cliff_offsets.get(gv, 0.0))
-	if road_blend.has(gv):
-		h = lerpf(h, float(road_heights[gv]), float(road_blend[gv]))
-	return h
-
-
 # Scratch outputs for _resolve_bilinear — reused across calls instead of returning
 # a Dictionary, so the cache-first accessors below (called per physics frame via
 # height_at) stay allocation-free. Value types (Vector2i / int / float) live inline
@@ -1386,7 +1362,7 @@ func _bake_vertex_block(cgx: int, cgz: int) -> void:
 			# Flatten: pull road-band vertices to the noise height at their exact foot, plus
 			# the vertical-channel jump offset (TrackProfile) at this foot's arc distance.
 			# `road_heights` is the SINGLE point every consumer funnels through — the chunk
-			# grid, the HeightMapShape3D collision, and baked_height_at all derive from it —
+			# grid, the HeightMapShape3D collision all derive from it —
 			# so adding the crest here is what makes it impossible for the visible mesh and
 			# the physics the car actually drives on to disagree. It also gets lateral
 			# feathering for free: road_blend lerps TOWARD road_heights, so the crest fades
@@ -1639,43 +1615,6 @@ static func bake_args(cfg: GameConfig) -> Array:
 		TrackSurface.orientation_tarmac_first(cfg.track_seed),
 		cfg.track_surface_transition_m,
 	]
-
-
-# The config's terrain layers as TerrainLayer resources, in layer order — the same
-# wavelengths/amplitudes the run scene uses (world.gd seats $Floor.layers the same
-# way), so an off-tree sampler agrees with the terrain the player drives.
-#
-# This builds NODE STATE. For a pure height
-# SAMPLER with no node at all, use TerrainNoise.make_sampler(seed, cfg.terrain_layers())
-# instead — that is the headless path.
-static func layers_from_config(cfg: GameConfig) -> Array[TerrainLayer]:
-	var built: Array[TerrainLayer] = []
-	for params in cfg.terrain_layers():
-		var layer := TerrainLayer.new()
-		layer.wavelength_m = params.x
-		layer.amplitude_m = params.y
-		built.append(layer)
-	return built
-
-
-# A bare, off-tree TerrainManager baked for `centerline` under `cfg` — noise layers,
-# seed and cliff params all seated from the config, then bake_track run so
-# `baked_height_at` answers with road flatten + cliff offsets included.
-#
-# For PREVIEWS (the Seed Lab) that have no run scene: it deliberately builds no
-# chunks, no meshes and is never added to the tree, so it costs the distance-field
-# pass and nothing else. Cliff offsets are the whole point — a preview sampled from
-# pure noise shows far less water than the stage really has, because cliff drops are
-# signed and several metres deep.
-static func baked_preview(cfg: GameConfig, centerline: Curve2D) -> TerrainManager:
-	var tm := TerrainManager.new()
-	tm.defer_initial_build = true  # never build a ring; this is a sampler, not a scene
-	tm.noise_seed = cfg.track_seed
-	tm.layers = layers_from_config(cfg)
-	cfg.apply_cliffs(tm)
-	var a := bake_args(cfg)
-	await tm.bake_track(centerline, a[0], a[1], a[2], a[3], a[4])
-	return tm
 
 
 func _ready() -> void:
