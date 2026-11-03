@@ -365,12 +365,6 @@ func baked_length() -> float:
 	return _baked_length
 
 
-# Arc offset of the finish line (100%). Shorter than baked_length() when the
-# rendered centerline extends past the finish (the post-finish runoff road).
-func finish_offset() -> float:
-	return _finish_offset
-
-
 # 0.0 .. 1.0 fraction of the track reached, measured from the start line
 # (_origin_offset) to the finish (baked length) — so the off reads 0% and the
 # finish line reads 100%. Used by the HUD and the stage-completion gate.

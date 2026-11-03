@@ -528,8 +528,9 @@ node for node:
 - `HUD` (`hud.gd`): speed, gear and the Health / boost / nitrous gauges. The stage-only labels
   (timer, countdown, stage complete) stay hidden because nothing calls them.
 - `MobileControls`, `CameraManager` with the bonnet camera, `PostProcess` and `SpeedLines`.
-- `PauseMenu`, armed once `prefill` is done. It has no Photo Mode row (`offer_photo_mode =
-  false`), "Reset to road" calls `RoadRecovery.reset_now`, and "Quit to title" goes to
+- `PauseMenu`, armed once `prefill` is done. Its Photo Mode row flies a camera over the frozen
+  world, up to the streamed range around where it started (`PhotoModeHost`, see
+  [camera.md](camera.md)). "Reset to road" calls `RoadRecovery.reset_now`, and "Quit to title" goes to
   `title.tscn` with free roam's own confirm text (both set on the node in `free_roam.tscn`).
 - `MiniMapLayer/MiniMap` (layer 2, with the HUD): the heading-up, perspective-tilted minimap,
   top-centre. Tap it (or M / gamepad Back) for the full map. See [minimap.md](minimap.md).
@@ -638,7 +639,9 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   `forced_weather = "dry"` until the weather's next slot (then the rings' draw), `cold_open` and
   `WorldSession.fresh` cleared. Once the "Checkpoint reached" band is gone (plus
   `cold_open_options_delay_s`) `free_roam.show_title(true)` shows the first-run options on their own
-  (`TitleScreen.options_only`), closing back into the game.
+  (`TitleScreen.options_only`), closing back into the game. The rest-stop page stays shut until then:
+  buying a car reloads the scene, which would lose the waiting options. An island with no roadside
+  stop finishes in `start`, because its goal (spawn's stop) is already lit and `lit` would never fire.
 - **Seeing it:** `tools/cold_open_capture.tscn` boots a first-time world and photographs the start,
   the drive, the arrival and the options.
 

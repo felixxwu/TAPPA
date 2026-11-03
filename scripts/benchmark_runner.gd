@@ -29,8 +29,7 @@ var _start_driven_m := 0.0            # driver.driven_m when sampling began
 var _samples := {}                    # stream name -> Array of per-frame values
 var _spike_frames: Array = []         # per-spike component breakdown (diagnostics)
 var _frame_no := 0                    # sampled-frame index (spike timeline)
-var _terrain: Node                    # TerrainManager, for spike↔chunk-integration correlation
-var _last_integrations := 0           # integrations_total at the previous sampled frame
+var _terrain: Node                    # the TerrainStreamer, for its streaming stats
 var _engine_audio: Node               # the fielded car's EngineAudio, for overrun (skip) tracking
 var _last_skips := 0                  # skip_count() at the previous sampled frame
 var _audio_skips_total := 0           # generator underruns over the sampled window
@@ -145,13 +144,6 @@ func _process(delta: float) -> void:
 	# report can attribute the hitch (render_cpu ⇒ shader compile / render stall,
 	# physics ⇒ collision/ragdoll, process ⇒ script/GC/terrain build). `_frame_no`
 	# is the sampled-frame index so spikes can be located in time along the run.
-	# Terrain chunk integrations since the last sampled frame — a chunk spawned on a
-	# spike frame implicates chunk streaming (mesh/collision build) as the cause.
-	var integ := 0
-	if _terrain != null and "integrations_total" in _terrain:
-		var total: int = _terrain.integrations_total
-		integ = total - _last_integrations
-		_last_integrations = total
 	# Audio overruns (generator buffer underruns) since the last sampled frame — a
 	# skip on a slow frame implicates main-thread audio starvation (the fill runs in
 	# _process; a long frame drains the buffer). Correlated with the spike breakdown.
@@ -165,7 +157,7 @@ func _process(delta: float) -> void:
 		_spike_frames.append({
 			"frame": _frame_no, "frame_ms": frame_ms,
 			"render_cpu_ms": rcpu, "process_ms": proc, "physics_ms": phys,
-			"chunk_integrations": integ, "audio_skips": skips,
+			"audio_skips": skips,
 		})
 	_frame_no += 1
 	if _terrain is TerrainStreamer and int(_run_time) >= _queue_timeline.size():

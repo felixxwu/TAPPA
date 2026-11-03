@@ -95,7 +95,8 @@ binding the loopback listener, which presents as "no connection" plus
 to Google's auth endpoint with `response_type=id_token`, redirecting to
 `docs/oauth-callback.html` (served at `felixxwu.github.io/TAPPA/` by the
 `deploy-pages` job), which `postMessage`s the token back to the game window and
-closes. Driven over `JavaScriptBridge` with the same `create_callback` +
+closes. It only posts to the game's own hosts (an allowlist in that page), because any site can
+open this flow with a crafted `state`; a new web host must be added there. Known limit: `html.itch.zone` is shared by every itch game, so another itch game could still receive the token if a player approves it. Driven over `JavaScriptBridge` with the same `create_callback` +
 member-held-handle pattern as `save_manager.gd`'s lifecycle hook.
 
 `response_type=id_token` rather than an authorization code, because a code has
@@ -199,16 +200,20 @@ blank straight over it. So `CloudSync.pull` takes the cloud copy itself
 (`_local_is_wiped() and _remote_has_progress(remote)` → `apply_remote(remote, true)`),
 still writing the `profile.json.conflict.bak` backup.
 
-**Keyed on map cells driven (`CloudSync.has_progress`), not cars or `drive_time`.**
-`title_boot.gd` builds a world and grants a starter car before the first pull can run, so a
-brand-new install always owns a car, and `drive_time` ticks even while the car sits parked.
-Every kind of real progress needs the car to have driven out of the cells around spawn.
+**Keyed on more than 2 lit stops or more than 1 car (`CloudSync.has_progress`), not ground driven
+or `drive_time`.** A new player's forced cold open drives hundreds of metres in one car and lights
+spawn's stop and one cabin, so it must not count: a returning player signing in on a new device
+would otherwise be offered their intro save over their career. The prompt's cursor starts on
+"Decide later", and "Keep this device" writes the overwritten cloud copy to the same
+`.conflict.bak` first.
 
 Both guards matter. A wiped local against a wiped **cloud** is a genuine
 nothing-to-choose-between and still prompts, and if `apply_remote` fails the code
 falls through to the normal prompt rather than leaving sync silently blocked.
 
 ### The progress wipe must clear the cloud too
+
+`push_wipe` first waits out any upload in flight, since that upload still carries the wiped career.
 
 `Settings -> Reset progress -> Wipe all progress` calls `Save.reset_new_game()`, which only
 clears THIS device (keeping `cloud_revision` / `cloud_uid`, so the wipe's push lands at the next
@@ -252,7 +257,10 @@ driving doesn't restart the timer, and `CloudSync` runs with
 `PROCESS_MODE_ALWAYS` so its timers keep going under the pause menu, rest stops
 and the title. A change made while an upload is in flight (`_changes` moved on
 since the copy was taken) keeps `pending` and re-arms the debounce rather than
-being marked synced. A token refresh that gets a 429 or 5xx keeps the session,
+being marked synced. Debounced, retried and flushed uploads go through `pull()`
+(`CloudSync._upload_pending`), so a newer cloud save raises the conflict prompt instead of being
+overwritten; only the small gap between that read and the upload is unguarded. Signing out clears
+any conflict and refusal (`reset_for_account`), so they can't reach the next account. A token refresh that gets a 429 or 5xx keeps the session,
 like a transport failure; only a 4xx rejection signs out. That last point matters: the existing web
 `visibilitychange`/`pagehide` listeners and the native close/pause notifications
 already funnel through that one entry point, so the cloud path inherits

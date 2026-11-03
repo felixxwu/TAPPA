@@ -214,7 +214,7 @@ index plus a `lerp`.
 
 ## Readouts
 
-`progress_offset()`, `baked_length()`, `finish_offset()`, `off_road_time()` and `progress_percent()`
+`progress_offset()`, `baked_length()`, `off_road_time()` and `progress_percent()`
 (0..1) are exposed for the stage-completion gate ([stage.md](stage.md),
 which fires at 100% — coinciding with the finish arch). **100% is the finish
 offset, not the curve end.** The rendered road now continues past the finish for a

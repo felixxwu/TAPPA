@@ -232,11 +232,7 @@ func _build_overlays_and_benchmark() -> void:
 	if pause_menu != null:
 		if not pause_menu.reset_to_track_requested.is_connected(_on_reset_to_track_requested):
 			pause_menu.reset_to_track_requested.connect(_on_reset_to_track_requested)
-		# Pause-menu "Photo Mode" hands the frozen screen up here too — the free-fly
-		# camera has to take over the viewport and hide the HUD, both of which this
-		# scene owns. See features/camera.md.
-		if not pause_menu.photo_mode_requested.is_connected(_on_photo_mode_requested):
-			pause_menu.photo_mode_requested.connect(_on_photo_mode_requested)
+		PhotoModeHost.attach(self)
 		# Arm the pause menu now the world is generated — it's default-inert
 		# (fail-closed) so the Pause button / Esc can't open it during the awaited
 		# generation above, where pausing would freeze the tree mid-build and let the
@@ -676,10 +672,6 @@ func _warm_shaders_behind_cover(loading: LoadingScreen) -> void:
 		await _prewarm_corridor()
 
 
-# Below-water cell CENTRES + the sample step, over `bounds` (world XZ), for the
-# loading preview. Uses the params' pure water sampler (no track/terrain needed).
-# The step adapts so a large region stays ~cheap and the drawn squares still tile.
-# Returns [PackedVector2Array cells, float step].
 # Drop any XZ points whose terrain sits at/below the water level, so scattered
 # props (trees, bushes, spectators) never spawn in a lake. No-op when water is off.
 func _drop_submerged(points: PackedVector2Array, cfg: GameConfig) -> PackedVector2Array:
@@ -720,11 +712,6 @@ func _build_lakes(cfg: GameConfig) -> void:
 	# see _generate_track → LakeField.preview_cells), so nothing to feed here.
 
 
-# Scatter trees + ground-cover bushes around the stage and render both as binned
-# MultiMesh fields (TreeMeshField), plus the pass-through bush hit volume. Takes the
-# already-generated track `result` + rendered `road_centerline`; owns the two
-# loading steps. Returns {"trees", "road_cells"} — the tree points and road-margin
-# cells the spectator layout reuses.
 # The road-rejection cell set every scatter pass rejects against: the VISIBLE road
 # footprint (track_width) widened by tree_road_margin_m, plus `mesh_radius` for a pass
 # whose prop is wide enough to overhang its own centre point (bushes, rocks). Rasterised
@@ -739,6 +726,11 @@ func _road_cells(cfg: GameConfig, road_poly: PackedVector2Array,
 		road_poly, cfg.track_width + 2.0 * (cfg.tree_road_margin_m + mesh_radius))
 
 
+# Scatter trees + ground-cover bushes around the stage and render both as binned
+# MultiMesh fields (TreeMeshField), plus the pass-through bush hit volume. Takes the
+# already-generated track `result` + rendered `road_centerline`; owns the two
+# loading steps. Returns {"trees", "road_cells"} — the tree points and road-margin
+# cells the spectator layout reuses.
 func _build_foliage(cfg: GameConfig, result: Dictionary, road_centerline: Curve2D) -> Dictionary:
 	if not cfg.vegetation_enabled:
 		# Foliage off (the benchmark's vegetation toggle): skip the scatter and the
@@ -1081,13 +1073,6 @@ var _car_lamps: CarLamps
 var _distant_terrain: DistantTerrain
 
 
-# The free-fly PHOTO MODE camera while it's up, else null (see _on_photo_mode_requested).
-var _photo_camera: PhotoModeCamera
-# On-screen touch controls for photo mode, built alongside the camera ONLY on a touch
-# device (Platform.is_touch()) — see _on_photo_mode_requested/_on_photo_mode_finished.
-var _photo_controls: PhotoModeControls
-
-
 # Pause-menu "Reset to track": snap the live car onto the centerline beside its
 # CURRENT position ("the middle of the road, regardless of where the car is right
 # now") — TrackProgress.manual_reset_pose() does a fresh nearest-point query, so it
@@ -1100,72 +1085,6 @@ func _on_reset_to_track_requested() -> void:
 	if _track_progress == null or not has_node("Car"):
 		return
 	$Car.reset_to(_track_progress.manual_reset_pose())
-
-
-# Pause-menu Photo Mode: hand the screen to a free-fly PhotoModeCamera with the tree
-# still paused (the pause menu deliberately does not unpause on the way in), so the
-# world is frozen and only the viewpoint moves. This scene owns the pieces the camera
-# needs taken care of:
-#
-#  - the HUD / touch controls / speed lines are hidden, so the shot is unobstructed;
-#  - PostProcess is switched to PROCESS_MODE_ALWAYS. Its _process mirrors the current
-#    camera into the SubViewport that actually renders the world (see
-#    post_process_view.gd) — left PAUSABLE it freezes with everything else and the
-#    photo camera would move with nothing on screen changing.
-#
-# Every one of those is put back in _on_photo_mode_finished.
-func _on_photo_mode_requested() -> void:
-	if is_instance_valid(_photo_camera):
-		return  # already flying (a double-press); nothing to do
-	_photo_camera = PhotoModeCamera.new()
-	_photo_camera.name = "PhotoModeCamera"
-	_photo_camera.exited.connect(_on_photo_mode_finished)
-	add_child(_photo_camera)
-	_photo_camera.enter(get_viewport().get_camera_3d())
-	_set_photo_mode_chrome(false)
-	# Touch controls: the phone has no Esc key and MobileControls is hidden above, so
-	# without these a touch player would be stuck flying with no way out. Desktop/native
-	# gets none — the mouse+keyboard path above already covers it.
-	if Platform.is_touch():
-		_photo_controls = PhotoModeControls.new()
-		_photo_controls.name = "PhotoModeControls"
-		add_child(_photo_controls)
-		_photo_controls.setup(_photo_camera)
-
-
-# Esc in photo mode: drop the camera, restore the chrome, re-assert the player's chosen
-# gameplay camera and give the (still frozen) pause menu back.
-func _on_photo_mode_finished() -> void:
-	if is_instance_valid(_photo_controls):
-		remove_child(_photo_controls)
-		_photo_controls.queue_free()
-	_photo_controls = null
-	if is_instance_valid(_photo_camera):
-		# Detach BEFORE queue_free: the free lands at the end of the frame, so a photo
-		# mode re-opened in the same frame would otherwise collide with the dying node's
-		# name and land as "PhotoModeCamera2".
-		remove_child(_photo_camera)
-		_photo_camera.queue_free()
-	_photo_camera = null
-	_set_photo_mode_chrome(true)
-	if has_node("CameraManager"):
-		($CameraManager as CameraManager).activate_current()
-	var pause_menu := _pause_menu()
-	if pause_menu != null:
-		pause_menu.return_from_photo_mode()
-
-
-# Show (`on = true`) or hide the in-run screen furniture around the photo camera, and
-# flip the post-process mirror between PAUSABLE and ALWAYS with it. One writer for both
-# halves so an early return can never restore the overlays but leave the mirror running.
-func _set_photo_mode_chrome(on: bool) -> void:
-	for node_name in ["HUD", "MobileControls", "SpeedLines"]:
-		var layer := get_node_or_null(node_name) as CanvasLayer
-		if layer != null:
-			layer.visible = on
-	var post := get_node_or_null("PostProcess") as Node
-	if post != null:
-		post.process_mode = (Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_ALWAYS)
 
 
 # The pause menu, or null in the harnesses that don't mount one. One accessor because

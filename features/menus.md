@@ -125,8 +125,7 @@ card list (`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**
 photo mode or an extra page puts the cursor back on the card that left (`_focus_card`). The
 settings page starts hidden, so the first `open()` lands the cursor on Resume.
 
-**Per-host options** (exports, set in the hosting scene): `offer_photo_mode` (free roam turns it
-off — it has no free-fly photo camera) and `extra_rows`. The rows' text is free roam's ("Reset to
+**Per-host options** (exports, set in the hosting scene): `extra_rows`. The rows' text is free roam's ("Reset to
 road", "Quit to title") for every host.
 
 **Reset** emits `reset_to_track_requested`; the menu owns no car reference, so the host performs

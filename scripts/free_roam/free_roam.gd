@@ -158,6 +158,7 @@ func _ready() -> void:
 	$DebugStats.visible = false
 	_pause.reset_to_track_requested.connect(_recovery.reset_now)
 	_pause.extra_requested.connect(_on_pause_extra)
+	PhotoModeHost.attach(self, _streamer.settings.chunk_m * _streamer.settings.far_radius)
 	_pause.quitting.connect(save_world)
 	# Every other exit (a scene change, the window closing). The children leave the tree before this
 	# node's tree_exiting fires, so the car's transform is unreadable by then: save_world falls back

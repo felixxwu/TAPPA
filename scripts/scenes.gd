@@ -71,9 +71,19 @@ static func change_to(tree: SceneTree, path: String) -> void:
 	# free_roam.gd._warm_up) the screen sits blank grey meanwhile.
 	# A first-time player's cover tells the cold open's opening lines instead (ColdOpen.story_lines).
 	if path == FREE_ROAM and not Platform.is_headless():
+		drop_stale_covers(tree)
 		var cover := LoadingScreen.new()
 		if ColdOpen.due():
 			var s: FreeRoamSettings = Config.data.free_roam
 			cover.story(ColdOpen.story_lines(s), s.cold_open_story_line_s)
 		tree.root.add_child(cover)
 	tree.change_scene_to_file(path)
+
+
+# A load cut short (a cloud download rebooting the world) leaves its cover on the root. The new
+# world would adopt and free that one, leaving the new cover black over the game.
+static func drop_stale_covers(tree: SceneTree) -> void:
+	for node in tree.get_nodes_in_group("loading_screen"):
+		if node.get_parent() == tree.root:
+			node.get_parent().remove_child(node)
+			node.queue_free()

@@ -47,19 +47,6 @@ no scene or Save coupling; `car.gd` applies the result.
 - **`current_engine_id(owned, stock_id) -> String`** — the engine a car is
   actually running: `owned.swapped_engine` if set, else the `stock_id`
   (`CarLibrary` entry's `engine`) passed in.
-- **`layout_label_from(layout) -> String`** — formats a layout STRING for
-  display: uppercased, with any qualifier suffix after the first `_` dropped
-  (`"v8"` → `"V8"`, `"v12_uneven"` → `"V12"`). Layout keys index
-  `EngineLibrary.FIRING`, where a qualified key like `v12_uneven` is a separate
-  firing table for the same physical layout (a lopier voice for the Merlin), so
-  only the leading token is the layout name — without the strip a swapped-in
-  Merlin displayed as `"V12_UNEVEN Rondel Twist"`. The rule is derived from the
-  string, so a future qualified table needs no change here.
-  Note: an engine may deliberately borrow another layout's firing table for its
-  sound (the flat-six Porsche uses `i6`, so it displays "I6") — that's a known
-  simplification of the audio model, not something the label tries to correct.
-- **`layout_label(engine_id) -> String`** — the engine's `EngineLibrary`
-  `layout` run through `layout_label_from`; `""` if unknown.
 - **`recompute_mass(m_total, m_stock_engine, m_new_engine) -> float`** — total
   mass with the engine component swapped out:
 
@@ -172,10 +159,7 @@ the swapped engine + upgrade kits produced. See [tuning.md](tuning.md) for the f
 ## Tests
 
 `tests/headless/test_engine_swap.gd` — `current_engine_id` prefers the swap
-over stock; `layout_label_from` uppercases and strips the qualifier suffix on
-supplied layout strings, and every key in `EngineLibrary.FIRING` yields a
-non-empty label with no underscore and no lowercase; `layout_label` equals the
-formatter applied to each roster entry's own `layout`; `recompute_mass` swaps the engine component;
+over stock; `recompute_mass` swaps the engine component;
 `recompute_weight_front` moves the CoG by the injected engine position (with
 injected numbers, not authored values — see the project's testing rules);
 `test_car.gd` covers `_apply_engine_swap`'s mass/CoM/

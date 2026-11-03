@@ -64,8 +64,8 @@ They walk the **script property list**, not just the `@export`ed fields, because
 engine fields (`peak_torque`, `redline_rpm`, `engine_cylinders`, `engine_firing_angles`) are
 plain `var`s that `EngineLibrary.apply()` writes at fielding time — `Resource.duplicate()`
 resets those to their declared defaults, so it isn't a value-complete snapshot either.
-Callers: `car.gd`'s `_live_baseline` (the pre-upgrade/pre-tune baseline `retune()`
-re-derives from) and `start_line.gd`'s `_spawn_grid`. Only
+Caller: `car.gd`'s `_live_baseline` (the pre-upgrade/pre-tune baseline `retune()`
+re-derives from). Only
 `Config.reset()` / `reload_from_disk()` legitimately install a new object, and both are
 boot/debug paths that re-field the car afterwards. Guarded by
 `tests/headless/test_config_isolation.gd`.

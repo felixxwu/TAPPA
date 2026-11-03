@@ -58,7 +58,7 @@ hillside or a prop that rises behind the car; there is no collision. Guarded by
 
 ### Free look
 
-`chase_camera.gd` → `_input`, `look_by`, `_update_look`. The player can swivel the chase camera
+`chase_camera.gd` → `_input`, `look_by`, `_update_look`. A pause ends a look drag, since its release would never arrive. The player can swivel the chase camera
 round the car with **mouse motion** (no button needed; mouse events the engine synthesised from
 a touch are skipped), a **touch drag that starts off the on-screen controls**
 (`MobileControls.owns_point`; the ChaseCamera's `mobile_controls` export is wired to the scene's
@@ -272,7 +272,7 @@ camera's `target`.
 
 **Source:** `scripts/photo_mode.gd` (`class_name PhotoModeCamera`, extends `Camera3D`).
 Not part of the `CameraManager` cycle — it's a **standalone free-fly camera created on
-demand** by `world.gd` when the player picks "Photo Mode" from the in-run pause menu (see
+demand** by `PhotoModeHost` (`scripts/photo_mode_host.gd`, attached by `free_roam.gd` and `world.gd`) when the player picks "Photo Mode" from the in-run pause menu (see
 [menus.md](menus.md) → "Pause menu"). The whole world stays **frozen** (`get_tree().paused`
 remains `true`); only the camera moves, seating itself on the transform and FOV of the
 gameplay camera that was active when the player paused, so the shot doesn't jump.
@@ -284,14 +284,17 @@ one), **Shift** raises altitude and **Ctrl** lowers it on the **world Y axis** (
 straight up doesn't hijack vertical movement), the **mouse looks** around (yaw and pitch,
 pitch clamped to ±89 degrees to prevent singularities; no roll — the free camera starts
 level), and **Esc** (the `ui_cancel` action, or gamepad **Start** / the `pause` action)
-leaves. While photo mode is active, the pause menu is **disarmed** — Esc and the Pause
-button talk to the photo camera, not the menu — and the HUD / `MobileControls` / `SpeedLines`
-are hidden. Exiting frees the camera, restores the chrome, calls `CameraManager.activate_current()`
+leaves. On a **gamepad**, the left stick moves, the right stick looks, the triggers lower and raise,
+and B or Start leaves. Free roam limits the flight to the streamed range around where the camera
+started (`max_range_m`: `chunk_m * far_radius`), because the terrain doesn't load further out while
+the world is frozen. While photo mode is active, the pause menu is **disarmed** — Esc and the Pause
+button talk to the photo camera, not the menu — and every on-screen `CanvasLayer` the scene is
+showing is hidden, then brought back on exit. Exiting frees the camera, restores the chrome, calls `CameraManager.activate_current()`
 to re-seat the gameplay camera, and opens the pause menu again via `PauseMenu.return_from_photo_mode()`.
 
 The camera owns the mouse pointer (captured in `enter()`, released on `exit()` or if
 `_exit_tree` fires without an explicit exit — a defensive safety so a host that frees the
-camera can't strand a captured mouse). The lifetime is owned by `world.gd` (`_on_photo_mode_requested`),
+camera can't strand a captured mouse). The lifetime is owned by `PhotoModeHost.open`,
 which creates one, calls `enter(from)` to seat it on the current gameplay camera, and frees it
 when the `exited` signal fires.
 
@@ -308,10 +311,10 @@ when the `exited` signal fires.
 **Source:** `scripts/photo_mode_controls.gd` (`class_name PhotoModeControls`, extends
 `CanvasLayer`). Photo mode's mouse+keyboard story (above) leaves a phone with no way to
 move the camera or even leave — there's no Esc key, and `MobileControls`/the Pause button
-are hidden for the duration. `world.gd` (`_on_photo_mode_requested`) closes that gap by
+are hidden for the duration. `PhotoModeHost.open` closes that gap by
 building a `PhotoModeControls` overlay, but **only when `Platform.is_touch()` is true**;
 desktop and native keep the raw-key/mouse path above and get no overlay at all. It's freed
-in lockstep with the camera in `_on_photo_mode_finished`. Like the camera, its
+in lockstep with the camera in `PhotoModeHost._close`. Like the camera, its
 `process_mode` is `PROCESS_MODE_ALWAYS` — the tree stays paused for the whole of photo
 mode, and this overlay has to keep working through that.
 

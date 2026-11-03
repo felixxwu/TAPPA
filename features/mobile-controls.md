@@ -179,8 +179,8 @@ Reading a phone's tilt fails silently in two different ways, and the TILT scheme
     device's natural **Y**, not X. (The legacy `window.orientation` fallback uses the
     opposite sign, hence the negation on that branch.)
   - **iOS 13+** only delivers the events after `DeviceOrientationEvent.requestPermission()`,
-    and only asks when called from inside a user gesture — so the JS asks on the first
-    `pointerdown`/`touchend` and then unhooks itself.
+    and only asks when called from inside a user gesture — so the JS asks on `touchend`/`click`
+    (a touch's `pointerdown` isn't a gesture) and unhooks once a request gets an answer.
 
   Both hosts are https (a secure context is required). In a **cross-origin iframe**
   (itch.io embeds the game in one) the default permissions policy blocks the sensor

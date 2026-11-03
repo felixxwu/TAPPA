@@ -55,10 +55,8 @@ All three are **outside `LOOK_KEYS`**, for the reason `water_level` is: they are
 at stage setup, not by `world.gd`'s look pass after generation. `look_from` inheritance
 does not extend to them.
 
-API is a `has_*` / `*_of` **pair**, so a
-caller cannot mistake "authors nothing" for a real value in a language with no null:
-`has_surface_grip` / `surface_grip_of`, `has_deep_snow` / `deep_snow_of`,
-`has_frozen_water` / `frozen_water_of`.
+API is `surface_grip_of`, `deep_snow_of` and `frozen_water_of`, each `{}` when the region
+authors nothing.
 
 `_resolve_fields` returns values **un-coerced**. An earlier version wrapped them in
 `float()` and crashed rally start with `Nonexistent 'float' constructor` the moment a

@@ -13,20 +13,6 @@ static func current_engine_id(owned: Dictionary, stock_id: String) -> String:
 	return swapped if not swapped.is_empty() else stock_id
 
 
-# A layout key formatted for display: uppercased, with any qualifier suffix after
-# the first "_" dropped — "v8" -> "V8", "v12_uneven" -> "V12". Layout keys index
-# EngineLibrary.FIRING, where a qualified key ("v12_uneven") is a separate firing
-# table for the SAME physical layout, so only the leading token is the layout name.
-# Derived from the string, so a future qualified table needs no change here. "" if empty.
-static func layout_label_from(layout: String) -> String:
-	return layout.get_slice("_", 0).to_upper()
-
-
-# The engine's layout key (EngineLibrary) formatted for display. "" if unknown.
-static func layout_label(engine_id: String) -> String:
-	return layout_label_from(String(EngineLibrary.by_id(engine_id).get("layout", "")))
-
-
 # Total mass with the engine component swapped out: M' = M - m0 + m1.
 static func recompute_mass(m_total: float, m_stock_engine: float, m_new_engine: float) -> float:
 	return m_total - m_stock_engine + m_new_engine

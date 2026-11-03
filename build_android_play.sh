@@ -13,7 +13,7 @@
 # For a release export set:
 #   GODOT_ANDROID_KEYSTORE_RELEASE_PATH / _USER / _PASSWORD
 # CI generates/restores a keystore and sets these — see
-# .github/workflows/android-play.yml. It also needs a JDK + Android SDK and the
+# .github/workflows/deploy.yml. It also needs a JDK + Android SDK and the
 # Godot Android build template (Gradle build), which the GitHub Ubuntu runners
 # provide — this is why the AAB build runs in CI rather than locally.
 set -euo pipefail

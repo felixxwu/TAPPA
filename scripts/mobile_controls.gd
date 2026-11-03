@@ -191,7 +191,7 @@ func _ready() -> void:
 # Every menu in the game (title, pause, rest stop, map, wrecked page…) pauses
 # the tree, and this layer is pausable, so a paused tree means a menu is up: the
 # controls hide under it and come back on resume. Done on an inner root rather than the
-# layer's own `visible`, which photo mode and the benchmark own (world.gd) — so the two
+# layer's own `visible`, which photo mode and the benchmark own — so the two
 # writers can never fight. Held input is dropped on the way in, since a finger lifted
 # while paused sends its release to a layer that isn't listening.
 func _notification(what: int) -> void:

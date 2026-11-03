@@ -403,10 +403,10 @@ func _process(delta: float) -> void:
 		return
 	_plan_timer -= delta
 	var cc := _chunk_of(_focus_xz())
-	if cc != _plan_coord or _plan_timer <= 0.0:
-		_plan()
 	var budget := budget_us(delta)
 	var start := Time.get_ticks_usec()
+	if cc != _plan_coord or _plan_timer <= 0.0:
+		_plan()
 	_guard_collision()
 	_run_queue(start + budget)
 	var used := Time.get_ticks_usec() - start
@@ -763,7 +763,7 @@ func _prep(job: ChunkJob) -> void:
 	var ny := clampf(0.0, job.origin.y - job.stride, job.origin.y + job.size_m + job.stride)
 	if LabNoise.hyp(nx, ny) >= settings.island_radius_m:
 		job.heights.fill(terrain.sea_floor())
-		job.road_d.fill(INF)
+		job.road_d.fill(1.0e4)  # finite, so it interpolates
 		job.road_info.fill(0.0)
 		for i in job.n * job.n:
 			job.road_info[3 * i] = 1.0e4
@@ -1023,6 +1023,11 @@ func _coarse_mesh(src: Array, n: int, cells_per_tile: int, tpc: int, mask: int, 
 	var uv2s: PackedVector2Array = src[3]
 	var idx := _indices_for(n)
 	if mask != 0:
+		# Skirts add vertices, and these arrays are shared with the chunk's stored copy.
+		verts = verts.duplicate()
+		colors = colors.duplicate()
+		uvs = uvs.duplicate()
+		uv2s = uv2s.duplicate()
 		var covered := func(cx: int, cz: int) -> bool: return _covered(mask, cx, cz, cells_per_tile, tpc)
 		idx = PackedInt32Array()
 		for zi in n - 1:
@@ -1548,7 +1553,7 @@ func _coin_marker(i: int) -> Node3D:
 const COIN_FLOAT_M := 1.1
 
 
-# A coin's look (also the cold open's trail coins): a flat disc the shader stands up, spins and
+# A coin's look: a flat disc the shader stands up, spins and
 # bobs, `phase` offsetting its spin so a row of them doesn't turn in step.
 static func coin_mesh(phase: float) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()

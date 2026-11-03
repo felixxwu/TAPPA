@@ -61,8 +61,8 @@ Uniforms come from `GameConfig.apply_car_light(mat)`, so rocks dim with the weat
 (`weather_sun_mult`), go dark at night, and pick up the headlight cone — the shader
 `#include`s `headlight_cone.gdshaderinc`, whose globals every material gets for free.
 
-> Do **not** copy the pattern in `barrier_section.gd` / `finish_arch.gd`, which hardcode
-> their own `light_dir` / `sun_color` literals. Those props do not dim with the weather.
+> Do **not** copy the pattern in `barrier_section.gd`, which hardcodes
+> its own `light_dir` / `sun_color` literals. That prop does not dim with the weather.
 > Rocks go through the config applier on purpose.
 
 ## The mesh merge

@@ -147,6 +147,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |
 | Settings page | `scripts/settings_menu.gd` (`SettingsMenu` — shared camera-angle + key-binding + mobile-control picker) |
+| Photo mode | `scripts/photo_mode_host.gd` (`PhotoModeHost`: the pause menu's row, screen clearing), `scripts/photo_mode.gd` (the camera), `scripts/photo_mode_controls.gd` (touch) — see [camera.md](camera.md) |
 | Key rebinding | `scripts/input_remap.gd` (`InputRemap` autoload — keyboard/controller rebind over the InputMap) |
 | Pause menu | `scripts/pause_menu.gd` (`PauseMenu` — top-right freeze button → Resume / Settings) |
 | Scene wiring | `scripts/world.gd`, `main.tscn` |

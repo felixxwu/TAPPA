@@ -61,7 +61,7 @@ static func open(host: Node, on_finished := Callable()) -> Node:
 		{"label": "Use cloud", "callback": func() -> void: Cloud.resolve_use_cloud()},
 		{"label": "Keep this device",
 			"callback": func() -> void: await _resolve(host, "Uploading this device's progress…", _keep_local)},
-	], 2, 0)  # focus stays on Keep-this-device; Back/Esc = Decide later (index 0)
+	], 0, 0)  # the cursor and Back/Esc both start on Decide later, the one choice that overwrites nothing
 	if on_finished.is_valid() and popup != null:
 		popup.finished.connect(func() -> void: on_finished.call())
 	return popup

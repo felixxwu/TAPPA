@@ -55,6 +55,18 @@ func test_stats_ui_cancel_closes_and_calls_on_close() -> void:
 	assert_eq(_closed[0], 1, "and hands control back via on_close")
 
 
+func test_the_map_key_leaves_an_open_confirm_alone() -> void:
+	await _open_stats()
+	_pages._canvas = autofree(WorldPages.MapCanvas.new())
+	ConfirmPopup.open(_pages, "Leave your money?", "", [{"label": "Cancel", "callback": Callable()}], 0, 0)
+	var e := InputEventAction.new()
+	e.action = "toggle_map"
+	e.pressed = true
+	_pages._unhandled_input(e)
+	assert_true(_pages.is_open(), "closing would unpause the game under the armed popup")
+	assert_eq(_closed[0], 0)
+
+
 # A travel refused because the car is wrecked must not read as a travel (the host would resume
 # driving, or close the pause menu, under the wreck page).
 func test_a_travel_while_wrecked_does_nothing() -> void:

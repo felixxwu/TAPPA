@@ -213,6 +213,26 @@ func test_wipe_button_asks_before_destroying_anything() -> void:
 
 
 # Confirming does the wipe: a fresh new-game profile, and the page reports it.
+func test_a_failed_cloud_wipe_says_so_before_rebooting() -> void:
+	var menu := _make_menu()
+	Scenes.last_blocked_path = ""
+	menu._after_cloud_wipe({"ok": false})
+	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(popup)
+	assert_eq(Scenes.last_blocked_path, "", "no reboot until it has been read")
+	_popup_button(popup, "OK").pressed.emit()
+	await get_tree().process_frame
+	assert_eq(Scenes.last_blocked_path, Scenes.TITLE)
+
+
+func test_a_failed_cloud_wipe_still_reboots_when_its_popup_is_refused() -> void:
+	var menu := _make_menu()
+	ConfirmPopup.open(menu, "Another", "", [{"label": "OK", "callback": Callable()}])
+	Scenes.last_blocked_path = ""
+	menu._after_cloud_wipe({"ok": false})
+	assert_eq(Scenes.last_blocked_path, Scenes.TITLE)
+
+
 func test_confirming_the_modal_wipes_the_save() -> void:
 	_save.grant_car("fx_light_rwd")
 	var menu := _make_menu()

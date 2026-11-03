@@ -64,7 +64,7 @@ func _touch() -> void:
 	Save.save()
 
 
-# Start a new world: on `world_seed` (callers pass FreeRoamSettings' fixed island) with a starter car, replacing any world (and its loot)
+# Start a new world: on `world_seed` with a starter car, replacing any world (and its loot)
 # in this profile. Owned cars from an old world go with it — a world is the whole save
 # (decision 2: "one persistent world per save").
 func new_world(world_seed: int, starter_model_id: String) -> void:

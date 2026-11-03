@@ -257,8 +257,8 @@ Use one of those for any new dimmer rather than picking a fresh alpha.
 The global theme covers HUD, mobile controls, the loading screen and every menu.
 Specific design-system touches:
 
-- **The hub** (`hub_shell.gd`) — every page is a `MenuPage` of house buttons; a row the
-  player cannot take (a locked region, an unaffordable purchase, a period already run) is
+- **Menu pages** — every page is a `MenuPage` of house buttons; a row the
+  player cannot take (an unaffordable purchase, say) is
   `disabled` and carries `menu_nav_skip`, never a differently-coloured live row.
 - **Settings** (`settings_menu.gd`) — selected camera/scheme rows use
   `UITheme.mark_selected` (green underline) instead of the old blue tint.
@@ -296,9 +296,8 @@ kind of screen, so that shape is gone.
 The consequence for a reusable component: it **builds** its action buttons but does not
 parent them, and exposes them for the host to place. `TuningPanel`
 (`scripts/tuning_panel.gd` → `action_buttons()`) does exactly this with **Reset to
-neutral** and **Wheels**; its host — `start_line.gd` → `_build_menu_overlay`, which picks
-them up generically via `component.has_method("action_buttons")` — adds them beside its own
-Back. A host MUST add them to a container, or they are never shown and never freed.
+neutral** and **Wheels**; its host picks them up (`component.has_method("action_buttons")`)
+and adds them beside its own Back. A host MUST add them to a container, or they are never shown and never freed.
 `< Back` on these pages is a compact `UITheme.row_button` with `focus_mode = FOCUS_ALL`,
 since sub-pages navigate by native focus (`MenuNav`).
 

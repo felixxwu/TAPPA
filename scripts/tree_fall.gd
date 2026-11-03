@@ -12,15 +12,6 @@ class_name TreeFall
 const FLAT_ANGLE := PI * 0.55
 
 
-# True when a crash at `speed_mps` is fast enough to topple a tree, per the
-# configured km/h threshold. A non-positive threshold means "never fell" (the
-# feature is effectively off), so trees stay solid obstacles at any speed.
-static func should_fell(speed_mps: float, cfg: GameConfig) -> bool:
-	if cfg.tree_fell_speed_kmh <= 0.0:
-		return false
-	return speed_mps * DamageModel.MPS_TO_KMH >= cfg.tree_fell_speed_kmh
-
-
 # Speed (km/h) at which a tree of visual `size` (0..1) fells. Scales LINEARLY with
 # size off the full-size threshold cfg.tree_fell_speed_kmh, so a small tree topples
 # sooner. size == 1.0 preserves the configured threshold exactly.
@@ -28,8 +19,7 @@ static func fell_speed_kmh(size: float, cfg: GameConfig) -> float:
 	return cfg.tree_fell_speed_kmh * clampf(size, 0.0, 1.0)
 
 
-# True when a crash at `speed_mps` fells a tree of visual `size`. The size-aware
-# twin of should_fell. A non-positive full-size threshold means "never fell".
+# True when a crash at `speed_mps` fells a tree of visual `size`. A non-positive full-size threshold means "never fell".
 static func should_fell_sized(speed_mps: float, size: float, cfg: GameConfig) -> bool:
 	var thresh := fell_speed_kmh(size, cfg)
 	if thresh <= 0.0:

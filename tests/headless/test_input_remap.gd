@@ -118,10 +118,23 @@ func test_overrides_persist_and_reapply() -> void:
 	assert_eq(bound.physical_keycode, KEY_K, "the saved binding survives a re-apply")
 
 
+func test_a_rebound_button_works_on_any_controller() -> void:
+	var button := InputEventJoypadButton.new()
+	button.button_index = JOY_BUTTON_Y
+	InputRemap.rebind("accelerate", InputRemap.SLOT_CONTROLLER, button)
+	var press := InputEventJoypadButton.new()
+	press.button_index = JOY_BUTTON_Y
+	press.device = 1
+	assert_true(press.is_action("accelerate"))
+
+
 func test_describe_produces_human_labels() -> void:
 	var key := InputEventKey.new()
 	key.physical_keycode = KEY_W
 	assert_eq(InputRemap.describe(key), "W", "a key reads as its label")
+	var keycode_only := InputEventKey.new()
+	keycode_only.keycode = KEY_ESCAPE
+	assert_eq(InputRemap.describe(keycode_only), "Escape", "a default bound by keycode alone reads too")
 
 	var button := InputEventJoypadButton.new()
 	button.button_index = JOY_BUTTON_A

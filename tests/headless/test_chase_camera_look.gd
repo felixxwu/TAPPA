@@ -122,6 +122,19 @@ func test_a_drag_off_the_controls_swivels_and_holds_while_the_finger_is_down() -
 	assert_almost_eq(_cam._look_yaw, 0.0, 0.01, "lifting it lets the view return")
 
 
+func test_a_pause_ends_a_look_drag() -> void:
+	_touch(0, Vector2(500.0, 300.0), true)
+	_cam.notification(Node.NOTIFICATION_PAUSED)
+	assert_null(_cam._look_pointer, "its release would never arrive")
+
+
+func test_a_lost_release_does_not_turn_the_next_control_press_into_a_look() -> void:
+	_touch(0, Vector2(500.0, 300.0), true)
+	_touch(0, Vector2(50.0, 300.0), true)
+	_drag(0, Vector2(40.0, 0.0))
+	assert_eq(_cam._look_yaw, 0.0)
+
+
 func test_a_drag_on_the_controls_does_not_look() -> void:
 	_touch(1, Vector2(50.0, 300.0), true)
 	_drag(1, Vector2(40.0, 0.0))

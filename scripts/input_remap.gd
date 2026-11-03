@@ -184,8 +184,9 @@ func describe(event: InputEvent) -> String:
 	if event == null:
 		return "Unbound"
 	if event is InputEventKey:
-		var s := OS.get_keycode_string(event.physical_keycode)
-		return s if s != "" else "Key %d" % event.physical_keycode
+		var code: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+		var s := OS.get_keycode_string(code)
+		return s if s != "" else "Key %d" % code
 	if event is InputEventJoypadButton:
 		return _BUTTON_NAMES.get(event.button_index, "Button %d" % event.button_index)
 	if event is InputEventJoypadMotion:
@@ -226,21 +227,21 @@ func _event_to_dict(event: InputEvent) -> Dictionary:
 func _dict_to_event(d: Variant) -> InputEvent:
 	if typeof(d) != TYPE_DICTIONARY:
 		return null
+	var e: InputEvent = null
 	match d.get("type", ""):
 		"key":
-			var k := InputEventKey.new()
-			k.physical_keycode = int(d.get("keycode", 0)) as Key
-			return k
+			e = InputEventKey.new()
+			e.physical_keycode = int(d.get("keycode", 0)) as Key
 		"button":
-			var b := InputEventJoypadButton.new()
-			b.button_index = int(d.get("button_index", 0)) as JoyButton
-			return b
+			e = InputEventJoypadButton.new()
+			e.button_index = int(d.get("button_index", 0)) as JoyButton
 		"motion":
-			var m := InputEventJoypadMotion.new()
-			m.axis = int(d.get("axis", 0)) as JoyAxis
-			m.axis_value = float(d.get("axis_value", 0.0))
-			return m
-	return null
+			e = InputEventJoypadMotion.new()
+			e.axis = int(d.get("axis", 0)) as JoyAxis
+			e.axis_value = float(d.get("axis_value", 0.0))
+	if e != null:
+		e.device = -1  # any device, like the defaults; a new event would otherwise only match joypad 0
+	return e
 
 
 func _bindings() -> Dictionary:

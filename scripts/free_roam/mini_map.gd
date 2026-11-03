@@ -379,7 +379,7 @@ func update_prompt_label() -> void:
 
 
 func toast(text: String, seconds: float) -> void:
-	_toast_text = text
+	_toast_text = UITheme.caps(text)
 	_toast_left = seconds
 
 

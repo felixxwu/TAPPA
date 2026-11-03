@@ -50,12 +50,14 @@
   // anywhere. Guessing the origin from a hardcoded list was exactly that bug:
   // itch serves games from html.itch.zone AND html-classic.itch.zone.
   //
-  // Only https (or localhost for development) is accepted as a target, so a
-  // crafted state cannot redirect the token to an arbitrary scheme.
+  // Only the game's own hosts (or localhost for development) are accepted, so any
+  // other site opening this flow with a crafted state gets nothing. Known limit:
+  // html.itch.zone is shared by every itch game, and postMessage can't target a path.
+  // A new host for the game has to be added here, or its sign-in hangs as above.
   var target = '';
   var bar = state.lastIndexOf('|');
   if (bar >= 0) { target = state.slice(bar + 1); }
-  var allowed = /^https:\/\/[^\/]+$/.test(target)
+  var allowed = /^https:\/\/(html\.itch\.zone|html-classic\.itch\.zone|felixxwu\.github\.io)$/.test(target)
     || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(target);
   if (!allowed) { target = ''; }
 

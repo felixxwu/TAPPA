@@ -334,9 +334,7 @@ static func has_tarmac_roads(region_id: String) -> bool:
 # are read by BiomeDirector, NOT through look_of — see
 # the comment on the snow entry for why they are not LOOK_KEYS.
 #
-# Each is a has_*/­*_of PAIR rather than one function returning a
-# sentinel: GDScript has no null, and "the region authors no override" must never be
-# confused with a real value. Callers gate on the has_* before trusting the resolver.
+# A region authoring no override resolves to {}.
 #
 # NEITHER is inherited through `look_from`. A snow-coast child
 # would author its own or have none — "same look, own handling" is the same split that
@@ -349,29 +347,17 @@ static func has_tarmac_roads(region_id: String) -> bool:
 static func surface_grip_of(cfg: GameConfig, region_id: String) -> Dictionary:
 	return _resolve_fields(cfg, by_id(region_id).get("surface_grip", {}))
 
-# Whether this region overrides per-surface grip at all. False for an unknown id.
-static func has_surface_grip(region_id: String) -> bool:
-	return by_id(region_id).has("surface_grip")
-
 # The deep-snow block — {depth, drag} — resolved from the named GameConfig fields.
 # {} when the region authors none, which is how every non-snow stage gets a zero
 # drag and a zero visual raise for free.
 static func deep_snow_of(cfg: GameConfig, region_id: String) -> Dictionary:
 	return _resolve_fields(cfg, by_id(region_id).get("deep_snow", {}))
 
-# Whether this region authors deep snow at all. False for an unknown id.
-static func has_deep_snow(region_id: String) -> bool:
-	return by_id(region_id).has("deep_snow")
-
 # The frozen-lake block — {grip, color, shore_color} — resolved from the named
 # GameConfig fields. {} when the region's water is liquid, which is every region but
 # the Alps, so the lake stays the soft hazard it has always been by default.
 static func frozen_water_of(cfg: GameConfig, region_id: String) -> Dictionary:
 	return _resolve_fields(cfg, by_id(region_id).get("frozen_water", {}))
-
-# Whether this region's water is frozen at all. False for an unknown id.
-static func has_frozen_water(region_id: String) -> bool:
-	return by_id(region_id).has("frozen_water")
 
 # Shared resolver for a {key: <GameConfig field name>} block.
 #

@@ -235,3 +235,30 @@ func test_the_body_wraps_at_the_panel_width_not_one_character_per_line() -> void
 		"and the label is actually given a sane width to wrap within (got %.1f)" % label.size.x)
 	popup.trigger_back()
 	await get_tree().process_frame
+
+
+func _focused_button() -> Button:
+	var b := Button.new()
+	add_child_autofree(b)
+	b.grab_focus()
+	return b
+
+
+func test_closing_hands_the_cursor_back() -> void:
+	var b := _focused_button()
+	var popup := ConfirmPopup.open(_host, "T", "B", _actions_with_flag([""]))
+	await get_tree().process_frame  # the popup takes the cursor a frame after opening
+	popup.trigger_back()
+	await get_tree().process_frame
+	assert_eq(b.get_viewport().gui_get_focus_owner(), b)
+
+
+func test_an_action_that_moves_the_cursor_keeps_it() -> void:
+	var b := _focused_button()
+	var other := Button.new()
+	add_child_autofree(other)
+	var popup := ConfirmPopup.open(_host, "T", "B", [{"label": "Go", "callback": other.grab_focus}])
+	await get_tree().process_frame  # the popup takes the cursor a frame after opening
+	popup.trigger_back()
+	await get_tree().process_frame
+	assert_eq(b.get_viewport().gui_get_focus_owner(), other)

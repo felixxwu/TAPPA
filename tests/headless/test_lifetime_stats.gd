@@ -33,12 +33,6 @@ func test_every_declared_id_has_a_stats_entry_and_a_label() -> void:
 			"%s resolves to a non-empty label" % id)
 
 
-func test_is_known_agrees_with_the_stats_table() -> void:
-	for id in LifetimeStats.IDS:
-		assert_true(LifetimeStats.is_known(String(id)))
-	assert_false(LifetimeStats.is_known("fx_not_a_real_stat"))
-
-
 # --- Save persistence: read/write, only ever grows --------------------------------
 
 func test_an_unset_stat_reads_as_zero() -> void:

@@ -111,7 +111,7 @@ A hit that costs HP emits `damaged(hp_loss, contact_point)` for the HUD/audio cu
 and **bends the wheels** (`nudge_wheels`, below).
 
 **Object reactions stay contact-driven.** The `_integrate_forces` contact loop is
-kept, but *only* to trigger reactions — trees fall (`TreeFall.should_fell`), etc. —
+kept, but *only* to trigger reactions — trees fall (`TreeFall.should_fell_sized`), etc. —
 on their own approach-speed thresholds (they still need to know *which* object was
 hit). It no longer touches HP. `OBSTACLE_GROUP` (`"obstacle"`) still tags those
 collision bodies so the loop can find them.
@@ -293,7 +293,7 @@ dev stage keeps HP as a pure degradation.
 3. **Drain:** above `overheat_temp_threshold_c` HP drains at `overheat_hp_drain_per_s`, and
    `overheat_ramp` feeds the same misfire / rev-cap ramp as damage (`damage_ramp` takes the
    larger), so an overheating engine sounds sick.
-4. **Giving up:** at 0 HP, `gave_up` fires once. `RestStops` kills the engine (silent, no drive)
+4. **Giving up:** at 0 HP, `gave_up` fires once, and again only after HP has come back above 0. `RestStops` kills the engine (silent, no drive)
    and, after `wreck_page_delay_s`, shows the wreck page whose Respawn puts the car at the last
    lit rest stop (see `free-roam.md`).
 5. **`repair()`** (a rest stop, a respawn or a travel) restores full HP, fixes the cooling,

@@ -226,8 +226,9 @@ func _input(event: InputEvent) -> void:
 			look_by(-event.relative.x * _look_mouse_sens)
 	elif event is InputEventScreenTouch:
 		if event.pressed:
-			if event.index == _look_pointer or (_look_pointer == null and not _on_controls(event.position)):
-				_look_pointer = event.index
+			# Our own index pressing again means its release was lost, so it starts afresh.
+			if event.index == _look_pointer or _look_pointer == null:
+				_look_pointer = null if _on_controls(event.position) else event.index
 		elif event.index == _look_pointer:
 			_look_pointer = null
 	elif event is InputEventScreenDrag and event.index == _look_pointer:
@@ -238,6 +239,12 @@ func _input(event: InputEvent) -> void:
 func look_by(yaw: float) -> void:
 	_look_yaw = wrapf(_look_yaw + yaw, -PI, PI)
 	_look_idle = 0.0
+
+
+# A finger lifted during a pause sends this node no release, which would hold the view swivelled.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PAUSED:
+		_look_pointer = null
 
 
 func _on_controls(pos: Vector2) -> bool:

@@ -562,3 +562,21 @@ func test_with_the_chain_off_damage_still_never_wrecks() -> void:
 	assert_signal_not_emitted(d, "gave_up")
 	d.cooling_broken = true
 	assert_eq(d.thermal_step(1.0, 1.0, cfg), 0.0)
+
+
+func test_a_car_healed_part_way_after_giving_up_can_give_up_again() -> void:
+	var d := _thermal_model(_thermal_cfg())
+	watch_signals(d)
+	d.apply_loss(d.max_hp)
+	d.hp = 1.0
+	d.apply_loss(d.max_hp)
+	assert_signal_emit_count(d, "gave_up", 2)
+
+
+func test_a_wrecked_car_does_not_mend_itself() -> void:
+	var cfg := _thermal_cfg()
+	cfg.damage_regen_hp_per_s = 5.0
+	var d := _thermal_model(cfg)
+	d.apply_loss(d.max_hp)
+	d.regen(1.0, cfg)
+	assert_eq(d.hp, 0.0)

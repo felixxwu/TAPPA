@@ -233,6 +233,12 @@ func test_reset_new_game_overwrites_with_fresh_profile() -> void:
 	assert_true(FileAccess.file_exists(TEST_PATH), "new game written to disk immediately")
 
 
+func test_reset_new_game_keeps_this_devices_settings() -> void:
+	_save.set_setting("probe_setting", "this_device")
+	_save.reset_new_game()
+	assert_eq(_save.get_setting("probe_setting"), "this_device")
+
+
 # The wipe is uploaded (CloudSync.push_wipe) at the next revision, so it must remember which one.
 func test_reset_new_game_keeps_the_cloud_bookkeeping() -> void:
 	_save.profile["cloud_revision"] = 12
@@ -471,3 +477,9 @@ func test_a_retired_key_already_on_disk_is_not_reported() -> void:
 # green while the player saw the podium count.
 #
 # Derived from the source, so it covers keys that do not exist yet.
+
+
+func test_changing_a_setting_owes_the_cloud_nothing() -> void:
+	_save.mark_synced()
+	_save.set_setting("probe_setting", 1)
+	assert_false(_save.has_unsynced())

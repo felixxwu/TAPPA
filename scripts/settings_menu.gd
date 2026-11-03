@@ -598,8 +598,7 @@ func _prompt_wipe_progress() -> void:
 		0, 0)
 
 
-# Wipe the entire save profile back to a fresh new-game state. Camera / control
-# settings are part of the profile, so refresh their highlights afterwards.
+# Wipe the save profile back to a fresh new-game state, keeping this device's settings.
 # The cloud copy is wiped too when signed in — otherwise the next pull sees a
 # clean local against an ahead cloud and restores everything, so the wipe would
 # silently undo itself (see Cloud.publish_local_wipe). Behind the shared busy
@@ -612,8 +611,6 @@ func _prompt_wipe_progress() -> void:
 # world still holds the old car and state the wipe just erased.
 func _wipe_progress() -> void:
 	Save.reset_new_game()
-	_refresh_camera_selection()
-	_refresh_scheme_selection()
 	_reset_status.text = "Wiped all progress."
 	if Cloud == null or not Cloud.is_signed_in():
 		_reload_after_wipe()
@@ -621,12 +618,18 @@ func _wipe_progress() -> void:
 	var result: Dictionary = await CloudBusy.run_covered(
 		self, "Wiping your progress…", "Clearing your cloud save…",
 		func() -> Dictionary: return await Cloud.publish_local_wipe())
-	if not is_instance_valid(_reset_status):
+	if is_instance_valid(_reset_status):
+		_after_cloud_wipe(result)
+
+
+# The reboot would clear a status line before it could be read, so a failure gets a popup.
+func _after_cloud_wipe(result: Dictionary) -> void:
+	if bool(result.get("ok", false)):
+		_reload_after_wipe()
 		return
-	_reset_status.text = "Wiped all progress (local and cloud)." \
-		if bool(result.get("ok", false)) \
-		else "Wiped locally — the cloud copy could not be cleared, so it may come back."
-	_reload_after_wipe()
+	if ConfirmPopup.open(self, "Cloud save not cleared", "Wiped on this device, but the cloud copy could not be cleared, so it may come back.",
+			[{"label": "OK", "callback": _reload_after_wipe}], 0, 0) == null:
+		_reload_after_wipe()  # another modal is up, and this one must not leave a live world on a wiped save
 
 
 # Boot again as a brand-new player would. Routed through

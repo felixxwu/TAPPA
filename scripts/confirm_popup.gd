@@ -28,6 +28,7 @@ const MODAL_GROUP := "modal"
 
 var _actions: Array = []
 var _back_index: int = -1
+var _return_focus: Control = null
 var _buttons: Array[Button] = []
 var _body_label: Label = null
 
@@ -79,6 +80,7 @@ static func open(host: Node, title: String, body: String, actions: Array,
 	# abandon a rally or overwrite a career. Single-action popups are unaffected (first
 	# and last are the same button).
 	popup._back_index = back_index if back_index >= 0 else 0
+	popup._return_focus = host.get_viewport().gui_get_focus_owner()
 	host.add_child(popup)
 	popup._build(title, body, default_index)
 	return popup
@@ -210,5 +212,15 @@ func trigger_back() -> void:
 		_dismiss()
 
 func _dismiss() -> void:
+	_restore_focus.call_deferred()  # after the action's callback, which may move the cursor itself
 	finished.emit()
 	queue_free()
+
+
+# Hands the keyboard and gamepad cursor back, unless the chosen action has already moved it.
+func _restore_focus() -> void:
+	var owner_now := get_viewport().gui_get_focus_owner()
+	if owner_now != null and not is_ancestor_of(owner_now):
+		return
+	if is_instance_valid(_return_focus) and _return_focus.is_visible_in_tree() and not _return_focus.is_queued_for_deletion():
+		_return_focus.grab_focus.call_deferred()

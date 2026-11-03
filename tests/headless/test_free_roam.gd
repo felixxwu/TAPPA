@@ -226,6 +226,32 @@ func test_every_road_stays_above_the_water_edge_to_edge() -> void:
 		pass_test("no lake reaches a road on this synthetic island; checked the roads stay dry anyway")
 
 
+func test_open_sea_chunks_interpolate_to_a_finite_road_distance() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	var job := TerrainStreamer.ChunkJob.new()
+	job.origin = Vector2(s.island_radius_m * 2.0, 0.0)
+	st._prep(job)
+	var d := st._mesh_height(job.road_d, job.stride, 0, job.origin, job.size_m, job.origin.x + 3.0, job.origin.y + 3.0)
+	assert_true(is_finite(d), "the tyres' grip reads this, and a NaN would reach the car's forces")
+
+
+func test_cutting_a_hole_in_a_coarse_mesh_leaves_its_stored_arrays_alone() -> void:
+	var st := _streamer(_settings())
+	var verts := PackedVector3Array()
+	var colors := PackedColorArray()
+	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
+	for z in 3:
+		for x in 3:
+			verts.append(Vector3(x, 0.0, z))
+			colors.append(Color.WHITE)
+			uvs.append(Vector2.ZERO)
+			uv2s.append(Vector2.ZERO)
+	st._coarse_mesh([verts, colors, uvs, uv2s], 3, 1, 2, 1, 1.0)
+	assert_eq(verts.size(), 9, "skirt vertices belong to the new mesh alone")
+
+
 func test_the_car_reads_road_on_the_road_and_none_far_from_it() -> void:
 	var s := _settings()
 	var st := _streamer(s)

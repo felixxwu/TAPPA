@@ -27,6 +27,8 @@ configured action (default: the **first** one — dismiss/leave sits leftmost, s
   popup still processes).
 - `title` / `body` — confirm header + message text.
 - `actions` — Array of action dicts; disabled actions are greyed and unselectable.
+- Closing hands the focus cursor back to whatever held it before the popup opened, unless the
+  chosen action has moved it (`_restore_focus`).
 - `default_index` — 0-based index to focus on open (defaults to 0, falls back to first
   enabled if the default is disabled).
 - `back_index` — 0-based index of the action to fire on Back / cancel. **Defaults to the

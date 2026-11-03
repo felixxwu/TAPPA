@@ -217,6 +217,8 @@ func register_deceleration(dv_mps: float, dt: float, contact_point: Vector3, cfg
 func apply_loss(amount: float) -> void:
 	if invulnerable:
 		return
+	if hp > 0.0:  # healed since giving up (a rest stop part-way through), so it can give up again
+		_gave_up = false
 	hp = maxf(maxf(min_hp, 0.0), hp - amount) if hp > min_hp else hp
 	if thermal and hp <= 0.0 and not _gave_up:
 		_gave_up = true
@@ -266,7 +268,7 @@ func repair(_cfg: GameConfig) -> void:
 # Healing does not straighten wheels — only a full repair resets `wheel_toe`.
 # Returns the HP actually regained (0.0 when already full, or the rate is 0).
 func regen(dt: float, cfg: GameConfig) -> float:
-	if dt <= 0.0 or cfg.damage_regen_hp_per_s <= 0.0:
+	if dt <= 0.0 or cfg.damage_regen_hp_per_s <= 0.0 or _gave_up:
 		return 0.0
 	var before := hp
 	hp = minf(max_hp, hp + cfg.damage_regen_hp_per_s * dt)

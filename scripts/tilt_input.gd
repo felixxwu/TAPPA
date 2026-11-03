@@ -189,20 +189,24 @@ const _TILT_JS := """
 		publish((dx * ca + dy * sa) * G, (-dx * sa + dy * ca) * G, dz * G);
 	}, true);
 
-	// iOS 13+ hands out orientation events only after an explicit grant, and only
-	// asks when the request is made from inside a user gesture — so we ask on the
-	// first touch and then get out of the way.
-	function askPermission() {
-		window.removeEventListener('pointerdown', askPermission, true);
+	// iOS 13+ hands out orientation events only after an explicit grant, and only asks from
+	// inside a user gesture. A touch's pointerdown doesn't count as one, so we ask on touchend or
+	// click, and keep listening until a request gets an answer (a refused request rejects).
+	function stopAsking() {
+		window.removeEventListener('click', askPermission, true);
 		window.removeEventListener('touchend', askPermission, true);
+	}
+	function askPermission() {
 		try {
 			if (typeof DeviceOrientationEvent !== 'undefined'
 					&& typeof DeviceOrientationEvent.requestPermission === 'function') {
-				DeviceOrientationEvent.requestPermission().catch(function () {});
+				DeviceOrientationEvent.requestPermission().then(stopAsking).catch(function () {});
+				return;
 			}
 		} catch (err) {}
+		stopAsking();
 	}
-	window.addEventListener('pointerdown', askPermission, true);
+	window.addEventListener('click', askPermission, true);
 	window.addEventListener('touchend', askPermission, true);
 	console.log('[rally] tilt sensor installed');
 })();

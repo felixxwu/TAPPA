@@ -348,7 +348,7 @@ func _spray(cfg: GameConfig, look: Look, cp: Vector3, fwd: Vector3, vel: Vector3
 	# chassis velocity to get how the patch is sliding over the ground.
 	var scrub := vel - fwd * surface_speed
 	var dir := scrub.normalized() if scrub.length() > 0.01 else -fwd
-	var throw_speed := surface_speed * cfg.wheel_particle_speed_scale
+	var throw_speed := absf(surface_speed) * cfg.wheel_particle_speed_scale  # surface_speed is negative in reverse
 	var base := dir * throw_speed + Vector3.UP * cfg.wheel_particle_up_speed_mps
 	var spread := cfg.wheel_particle_spread * throw_speed
 	for _n in maxi(1, cfg.wheel_particle_spawn_count):

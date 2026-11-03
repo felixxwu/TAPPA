@@ -98,20 +98,6 @@ func test_plough_restore_preserves_vertical_component() -> void:
 	assert_almost_eq(v.y, -5.0, 1e-6, "vertical velocity untouched")
 
 
-func test_should_fell_boundary_is_relative_to_threshold() -> void:
-	var threshold := 50.0
-	var cfg := _cfg(threshold)
-	var thr_mps := threshold / DamageModel.MPS_TO_KMH
-	assert_false(TreeFall.should_fell(thr_mps - 1.0, cfg), "below threshold: no fell")
-	assert_true(TreeFall.should_fell(thr_mps, cfg), "at threshold: fell")
-	assert_true(TreeFall.should_fell(thr_mps + 5.0, cfg), "above threshold: fell")
-
-
-func test_should_fell_disabled_when_threshold_non_positive() -> void:
-	assert_false(TreeFall.should_fell(1000.0, _cfg(0.0)),
-		"zero threshold disables felling at any speed")
-
-
 func test_fall_angle_starts_upright_is_monotonic_and_clamps_flat() -> void:
 	var dur := 0.6
 	assert_almost_eq(TreeFall.fall_angle(0.0, dur), 0.0, 1e-6, "upright at t=0")

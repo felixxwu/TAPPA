@@ -128,8 +128,6 @@ func test_the_wheel_debris_follows_the_car_and_reads_the_streamers_surface() -> 
 	assert_eq(_scene.get_node("BiomeDirector").wheel_particles, wp, "the biome director re-seats its look per ring")
 
 
-# Free roam has no free-fly photo camera host, so the Photo Mode card is left out, and the
-# keyboard/gamepad cursor walks straight from Reset to road to Map.
 func test_the_title_menu_covers_the_paused_world_and_continue_closes_it() -> void:
 	WorldSession.fresh = false
 	var title: TitleScreen = _scene.show_title()
@@ -147,9 +145,28 @@ func test_the_title_menu_covers_the_paused_world_and_continue_closes_it() -> voi
 	assert_null(_scene.get_node_or_null("TitleOrbitCamera"), "and its camera")
 
 
-func test_the_pause_menu_leaves_out_the_photo_card() -> void:
+func test_photo_mode_clears_the_screen_and_gives_it_back() -> void:
+	var before := {}
+	for layer in ["HUD", "MiniMapLayer", "MobileControls", "DebugStats"]:
+		before[layer] = _scene.get_node(layer).visible
+	_pause.open()
+	_pause._on_photo_mode_pressed()
+	var cam := _scene.get_node("PhotoModeCamera") as PhotoModeCamera
+	assert_true(cam.current)
+	assert_gt(cam.max_range_m, 0.0, "the terrain stops loading while frozen, so the flight is limited")
+	for layer: String in before:
+		assert_false(_scene.get_node(layer).visible, layer)
+	cam.exit()
+	await get_tree().process_frame
+	assert_null(_scene.get_node_or_null("PhotoModeCamera"))
+	for layer: String in before:
+		assert_eq(_scene.get_node(layer).visible, before[layer], layer + " is as it was, so a hidden one stays hidden")
+	assert_true(_pause.is_open())
+	_pause.resume()
+
+
+func test_the_cursor_walks_the_pause_menu_through_photo_mode() -> void:
 	var cards := _pause.cards()
-	assert_eq(CardUI.index_of(cards, "Photo Mode"), -1)
 	var nav := MenuNav.of(_pause._overlay)
 	await get_tree().process_frame
 	nav.forget()
@@ -161,7 +178,11 @@ func test_the_pause_menu_leaves_out_the_photo_card() -> void:
 	nav._unhandled_input(_press("menu_right"))
 	assert_eq(titles[cards.selected_index()], "Reset to road")
 	nav._unhandled_input(_press("menu_right"))
-	assert_eq(titles[cards.selected_index()], "Map", "Photo Mode is not offered, on to Map")
+	assert_eq(titles[cards.selected_index()], "Photo Mode")
+	nav._unhandled_input(_press("menu_right"))
+	assert_eq(titles[cards.selected_index()], "Map")
+	nav._unhandled_input(_press("menu_left"))
+	assert_eq(titles[cards.selected_index()], "Photo Mode")
 	nav._unhandled_input(_press("menu_left"))
 	assert_eq(titles[cards.selected_index()], "Reset to road")
 	_pause.resume()

@@ -129,7 +129,7 @@ func _clear() -> void:
 
 # M / gamepad Back (`toggle_map`, the key that opens the full map from driving) closes the map too.
 func _unhandled_input(event: InputEvent) -> void:
-	if _canvas != null and event.is_action_pressed("toggle_map") and not event.is_echo():
+	if _canvas != null and event.is_action_pressed("toggle_map") and not event.is_echo() and ConfirmPopup.any_open(get_tree()) == null:
 		get_viewport().set_input_as_handled()
 		close()
 
@@ -149,9 +149,9 @@ func _refresh_target() -> void:
 	if _target_label == null:
 		return
 	if _targets.is_empty():
-		_target_label.text = "No other checkpoint reached yet"
+		_target_label.text = UITheme.caps("No other checkpoint reached yet")
 	else:
-		_target_label.text = rest_stops.name_of(selected_target())
+		_target_label.text = UITheme.caps(rest_stops.name_of(selected_target()))
 	if _canvas != null:
 		_canvas.queue_redraw()
 

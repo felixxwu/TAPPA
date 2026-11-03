@@ -468,13 +468,16 @@ func _caller_trace() -> String:
 
 # Overwrite the current profile with a fresh one (after a ConfirmModal in the
 # menus). Writes immediately so "New game" is durable at once. The cloud bookkeeping is kept,
-# so the wipe's upload (CloudSync.push_wipe) lands above the old cloud copy instead of under it.
+# so the wipe's upload (CloudSync.push_wipe) lands above the old cloud copy instead of under it,
+# and so are the settings, which belong to the device rather than the game.
 func reset_new_game() -> void:
 	var revision: int = int(profile.get("cloud_revision", 0))
 	var uid := String(profile.get("cloud_uid", ""))
+	var settings: Dictionary = profile.get("settings", {})
 	profile = _default_profile()
 	profile["cloud_revision"] = revision
 	profile["cloud_uid"] = uid
+	profile["settings"] = settings
 	_note_known_profile_keys()
 	save_disabled = false
 	save_now()
@@ -524,8 +527,8 @@ func adopt_profile(incoming: Dictionary) -> bool:
 # Snapshot the profile before a cloud copy replaces it, so "Use cloud" chosen by
 # mistake is recoverable. Deliberately a SEPARATE filename from the rolling .bak
 # (which the next ordinary write would consume within seconds).
-func write_conflict_backup() -> void:
-	_write_copy(profile_path + ".conflict.bak", profile)
+func write_conflict_backup(copy := {}) -> void:
+	_write_copy(profile_path + ".conflict.bak", copy if not copy.is_empty() else profile)
 
 
 func _write_copy(path: String, p: Dictionary) -> void:
@@ -654,7 +657,7 @@ func set_setting(key: String, value: Variant) -> void:
 	var settings: Dictionary = profile.get("settings", {})
 	settings[key] = value
 	profile["settings"] = settings
-	save()
+	save(false)  # device-local and never uploaded, so nothing is owed to the cloud
 
 
 # --- Lifetime stats (todo/roguelike-pivot.md "Lifetime global stats") -----------

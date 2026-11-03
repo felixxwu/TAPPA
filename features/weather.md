@@ -118,8 +118,7 @@ than a crash — the same tolerance every other query here has.
 ### Adding a condition
 
 1. Add its tuning fields to `scripts/game_config.gd` + `config/game_config.tres`.
-2. Add one entry to `WeatherLibrary.CONDITIONS` naming those fields (and, if it wants
-   a name in code, a `WEATHER_*` const in `stage_fields.gd`).
+2. Add one entry to `WeatherLibrary.CONDITIONS` naming those fields.
 3. Add its `WETNESS` row — `"<id>": true/false`. Not optional: the guard test above
    fails without it.
 4. Add it to the `ring_weather` pools of the rings that should draw it (free roam), and/or

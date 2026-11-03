@@ -14,7 +14,6 @@ extends Node
 # free_roam.gd adds this node only when `due()`, calls `begin()` before the car is placed (it returns
 # the start pose) and `start()` when the player gets control. Nothing else grows a cold-open branch.
 
-signal finished
 
 var streamer: TerrainStreamer
 var car: VehicleBody3D
@@ -255,16 +254,8 @@ func start() -> void:
 	rest_stops.lit.connect(_on_lit)
 	_set_hint(true)
 	running = true
-
-
-static func _along(path: PackedVector2Array, d: float) -> Vector2:
-	var walked := 0.0
-	for k in path.size() - 1:
-		var seg := path[k].distance_to(path[k + 1])
-		if walked + seg >= d:
-			return path[k].lerp(path[k + 1], (d - walked) / maxf(seg, 0.001))
-		walked += seg
-	return path[path.size() - 1]
+	if rest_stops.is_lit(goal()):  # an island with no roadside stop: spawn's is already lit, so `lit` never fires
+		finish()
 
 
 func _physics_process(_delta: float) -> void:
@@ -321,7 +312,8 @@ func finish() -> void:
 	WorldSession.set_cold_open_pending(false)
 	WorldSession.fresh = false
 	_options_in = streamer.settings.cold_open_options_delay_s
-	finished.emit()
+	# Buying a car here reloads the scene, which would lose the first-run options still waiting to open.
+	rest_stops.input_enabled = false
 
 
 func _slot() -> int:
@@ -334,6 +326,7 @@ func _process(delta: float) -> void:
 	if _options_in >= 0.0 and (checkpoint_banner == null or not checkpoint_banner.is_showing_banner()):
 		_options_in -= delta
 		if _options_in < 0.0:
+			rest_stops.input_enabled = true
 			show_options.call()
 	if _dry_slot >= 0 and _slot() != _dry_slot:
 		_dry_slot = -1

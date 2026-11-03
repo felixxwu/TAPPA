@@ -45,16 +45,12 @@ func after_each() -> void:
 
 func test_a_region_authoring_no_handling_reports_and_resolves_nothing() -> void:
 	for rid in [PLAIN_REGION, "no_such_region", ""]:
-		assert_false(RegionLibrary.has_surface_grip(rid), "%s: no grip block" % rid)
-		assert_false(RegionLibrary.has_deep_snow(rid), "%s: no deep snow" % rid)
-		assert_false(RegionLibrary.has_frozen_water(rid), "%s: no ice" % rid)
 		assert_eq(RegionLibrary.surface_grip_of(_cfg, rid), {}, "%s: empty grip" % rid)
 		assert_eq(RegionLibrary.deep_snow_of(_cfg, rid), {}, "%s: empty snow" % rid)
 		assert_eq(RegionLibrary.frozen_water_of(_cfg, rid), {}, "%s: empty ice" % rid)
 
 
 func test_a_region_authoring_handling_resolves_the_named_config_fields() -> void:
-	assert_true(RegionLibrary.has_surface_grip(SNOW_REGION))
 	var grip := RegionLibrary.surface_grip_of(_cfg, SNOW_REGION)
 	# The region names FIELDS, never numbers — so what comes back must be what the
 	# config currently holds, whatever the designer has set it to.

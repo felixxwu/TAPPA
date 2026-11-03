@@ -224,7 +224,6 @@ layer = 5
 script = ExtResource("24_pause")
 camera_manager = NodePath("../CameraManager")
 mobile_controls = NodePath("../MobileControls")
-offer_photo_mode = false
 extra_rows = PackedStringArray("Map", "Stats")
 
 [node name="RoadRecovery" type="Node" parent="." node_paths=PackedStringArray("car", "streamer")]

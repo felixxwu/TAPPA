@@ -148,6 +148,18 @@ func test_diagonal_movement_is_not_faster() -> void:
 
 
 # Movement is frame-rate independent: twice the delta covers twice the ground.
+func test_flight_stops_at_the_range_limit() -> void:
+	var cam := _lone_camera()
+	cam.max_range_m = 10.0
+	cam.apply_move(Vector3(0.0, 0.0, 1.0), 1000.0)
+	assert_almost_eq(cam.global_position.length(), 10.0, 0.01)
+
+
+func test_a_gamepad_stick_and_triggers_fly_the_camera() -> void:
+	assert_eq(PhotoModeCamera.pad_move(0.5, -1.0, 0.0, 1.0), Vector3(0.5, 1.0, 1.0), "stick up is forward, right trigger rises")
+	assert_eq(PhotoModeCamera.pad_move(0.0, 0.0, 1.0, 0.0).y, -1.0, "left trigger lowers")
+
+
 func test_movement_scales_with_delta() -> void:
 	var short := _lone_camera()
 	short.apply_move(Vector3(0.0, 0.0, 1.0), 0.1)
@@ -276,16 +288,19 @@ func test_returning_from_photo_mode_reopens_the_still_frozen_menu() -> void:
 	assert_true(_pause._input_enabled, "the menu is armed again")
 
 
-# --- world.gd wiring ----------------------------------------------------------
+# --- host wiring ----------------------------------------------------------
 
 # The scene answers the menu: a camera appears, takes the viewport, and the in-run
 # screen furniture gets out of the shot. The post-process mirror has to keep running
 # while paused or the photo camera would move with nothing on screen changing.
 func test_world_opens_and_closes_photo_mode() -> void:
+	var before := {}
+	for node_name in ["HUD", "MobileControls", "SpeedLines"]:
+		before[node_name] = (_scene.get_node(node_name) as CanvasLayer).visible
 	_pause.open()
 	_pause._on_photo_mode_pressed()
 	var cam := _scene.get_node_or_null("PhotoModeCamera") as PhotoModeCamera
-	assert_not_null(cam, "world.gd creates the free-fly camera")
+	assert_not_null(cam, "the host creates the free-fly camera")
 	assert_true(cam.current, "the photo camera takes over the viewport")
 	for node_name in ["HUD", "MobileControls", "SpeedLines"]:
 		assert_false((_scene.get_node(node_name) as CanvasLayer).visible,
@@ -298,8 +313,8 @@ func test_world_opens_and_closes_photo_mode() -> void:
 	await get_tree().process_frame  # queue_free lands next frame
 	assert_null(_scene.get_node_or_null("PhotoModeCamera"), "the camera is dropped on exit")
 	for node_name in ["HUD", "MobileControls", "SpeedLines"]:
-		assert_true((_scene.get_node(node_name) as CanvasLayer).visible,
-			node_name + " comes back")
+		assert_eq((_scene.get_node(node_name) as CanvasLayer).visible, before[node_name],
+			node_name + " goes back to how it was")
 	assert_eq((_scene.get_node("PostProcess") as Node).process_mode,
 		Node.PROCESS_MODE_INHERIT, "and the mirror goes back to pausing with the world")
 	assert_true(_pause.is_open(), "the pause menu is back")
@@ -309,6 +324,6 @@ func test_world_opens_and_closes_photo_mode() -> void:
 func test_double_request_makes_one_camera() -> void:
 	_pause.open()
 	_pause._on_photo_mode_pressed()
-	_scene._on_photo_mode_requested()
+	(_scene.get_node("PhotoModeHost") as PhotoModeHost).open()
 	assert_eq(_scene.find_children("PhotoModeCamera", "", false, false).size(), 1,
 		"only one photo camera at a time")

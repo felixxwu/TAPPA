@@ -61,7 +61,7 @@ A **Reset to defaults** row clears all overrides.
 The model is the `InputRemap` autoload (`scripts/input_remap.gd`):
 
 - At boot it **snapshots** the pristine `project.godot` bindings, then applies the
-  player's saved overrides on top of them (`apply_saved`). Because the InputMap is
+  player's saved overrides on top of them (`apply_saved`), each matching any device, like the defaults. Because the InputMap is
   global, this must run before any scene reads input — hence an autoload (ordered
   after `Save`, which it reads).
 - Overrides are persisted in the Save profile under `InputRemap.SETTING_KEY`

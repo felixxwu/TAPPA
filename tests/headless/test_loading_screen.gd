@@ -244,3 +244,13 @@ func test_a_long_frame_does_not_skip_a_story_line() -> void:
 	screen.story(PackedStringArray(["first", "second"]), 1.0)
 	screen._process(5.0)
 	assert_eq(screen.story_line(), "first")
+
+
+func test_a_cover_left_on_the_root_by_a_cut_short_load_is_dropped() -> void:
+	var stale := LoadingScreen.new()
+	get_tree().root.add_child(stale)
+	var hosted: LoadingScreen = add_child_autofree(LoadingScreen.new())
+	Scenes.drop_stale_covers(get_tree())
+	assert_true(stale.is_queued_for_deletion())
+	assert_false(stale.is_in_group("loading_screen") and stale.is_inside_tree(), "the new world must not adopt it")
+	assert_false(hosted.is_queued_for_deletion(), "a cover a page hosts isn't a leftover")

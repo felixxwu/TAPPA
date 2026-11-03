@@ -30,7 +30,8 @@ whole schema):
 - `world` (`Save.KEY_WORLD`) — the persistent free-roam world, `{}` until New World. Its only
   writer is `WorldSession` ([world-session.md](world-session.md)).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences, read/written via
-  `get_setting` / `set_setting`.
+  `get_setting` / `set_setting`. Settings are never uploaded, so changing one doesn't mark the
+  profile unsynced.
 - `cloud_revision` / `cloud_uid` / `unsynced` — the optional cloud-save
   bookkeeping ([cloud-save.md](cloud-save.md)). `unsynced` is PERSISTED deliberately:
   progress made offline must still read as unsynced after a relaunch.

@@ -64,7 +64,7 @@ func _remote_profile(cars: int = 1) -> Dictionary:
 	var p: Dictionary = _save._default_profile()
 	p["cars"] = []
 	if cars > 0:
-		p[Save.KEY_WORLD] = {"seed": 1, "lit": [0, 4], "drive_time": 600.0,
+		p[Save.KEY_WORLD] = {"seed": 1, "lit": [0, 4, 7], "drive_time": 600.0,
 			"driven": {"0,0": true, "1,0": true, "2,0": true, "3,0": true}}
 	for i in cars:
 		# Synthetic fixture cars, never real catalogue entries: this test is about
@@ -297,6 +297,8 @@ func test_keep_local_uploads_above_the_remote_revision() -> void:
 		"pushing above the remote revision is what makes the other device see us as ahead")
 	assert_eq(_save.profile["created_utc"], "local_only")
 	assert_false(_sync.blocked_by_conflict)
+	var backup := FileAccess.get_file_as_string(TEST_PATH + ".conflict.bak")
+	assert_ne(JSON.parse_string(backup).get("created_utc", ""), "local_only", "the overwritten cloud copy is kept")
 
 
 func test_use_cloud_replaces_the_profile_and_backs_up_what_it_replaced() -> void:
@@ -712,15 +714,16 @@ func test_a_new_install_with_its_boot_built_world_takes_the_cloud() -> void:
 	# Boot builds a world and grants a starter car before the first pull can run.
 	_save.profile["cloud_revision"] = 1
 	_save.profile["cars"] = _remote_profile(1)["cars"]
-	# Idled a while at spawn: the clock ran, but the car never left the cells around it.
-	_save.profile[Save.KEY_WORLD] = {"seed": 1, "lit": [0], "drive_time": 90.0, "driven": {"0,0": true}}
+	# Everything the forced cold open gives: a long drive, spawn's stop and one cabin, one car.
+	_save.profile[Save.KEY_WORLD] = {"seed": 1, "lit": [0, 4], "drive_time": 90.0,
+		"driven": {"0,0": true, "1,0": true, "2,0": true, "3,0": true}}
 	_save.save()
 	watch_signals(_sync)
 	_rest.queue_ok(_remote_doc(9, _remote_profile(3)))
 
 	var result: Dictionary = await _sync.pull()
 
-	assert_eq(result.state, "applied", "a world never driven is not progress worth asking about")
+	assert_eq(result.state, "applied", "a finished cold open is not progress worth asking about")
 	assert_signal_not_emitted(_sync, "conflict_detected")
 
 func test_a_wiped_local_takes_the_cloud_without_asking() -> void:
@@ -819,3 +822,44 @@ func test_publishing_a_wipe_discards_a_pending_conflict() -> void:
 	await _sync.push_wipe()
 
 	assert_false(_sync.blocked_by_conflict, "the wipe clears the conflict it invalidated")
+
+
+func test_a_background_upload_reads_the_cloud_and_never_overwrites_a_newer_save() -> void:
+	_seat_local_career()
+	_save.profile["cloud_revision"] = 1
+	_save.save()
+	_sync.pending = true
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
+	_sync._on_debounce()
+	await wait_until(func() -> bool: return _sync.blocked_by_conflict, 1.0)
+	assert_true(_sync.blocked_by_conflict)
+	assert_eq(_rest.requests.size(), 1, "the read only, no upload")
+
+
+func test_a_blocked_upload_does_not_read_or_ask_again() -> void:
+	_seat_local_career()
+	_sync.pending = true
+	_sync.blocked_by_conflict = true
+	_sync._on_debounce()
+	assert_eq(_rest.requests.size(), 0)
+
+
+func test_signing_out_forgets_the_old_accounts_conflict() -> void:
+	Cloud.sync._conflict = {"revision": 9}
+	Cloud.sync.blocked_by_conflict = true
+	Cloud.sync._remote_refused = true
+	Cloud.auth.signed_out.emit()
+	assert_false(Cloud.sync.blocked_by_conflict)
+	assert_false(Cloud.sync._remote_refused)
+	assert_true(Cloud.sync.conflict_summary().is_empty())
+
+
+func test_a_wipe_waits_for_the_upload_in_flight_then_replaces_it() -> void:
+	_sync._busy = true
+	_rest.queue_ok({})
+	_sync.push_wipe()
+	await get_tree().process_frame
+	assert_eq(_rest.requests.size(), 0, "not reported done while the old career is still uploading")
+	_sync._busy = false
+	await wait_until(func() -> bool: return _rest.requests.size() == 1, 1.0)
+	assert_eq(_rest.requests.size(), 1)

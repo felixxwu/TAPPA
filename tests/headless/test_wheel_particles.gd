@@ -221,6 +221,16 @@ func test_sliding_and_spinning_still_emits_and_sprays_sideways() -> void:
 	assert_gt(v.y, 0.0, "dirt is angled upwards")
 
 
+func test_reverse_wheelspin_throws_dirt_up_and_ahead() -> void:
+	var wp := _make()
+	_break_traction(2, -10.0)
+	_tick(wp)
+	assert_gt(wp.live_count(), 0)
+	var v: Vector3 = wp._vel[wp._next]
+	assert_lt(v.z, 0.0, "the tread runs the other way, so dirt goes the other way (-Z, the heading)")
+	assert_gt(v.y, 0.0, "and still upwards")
+
+
 func test_warm_up_draws_then_clears() -> void:
 	# warm_up() parks one visible instance so the shader compiles behind the loading
 	# screen; clear_warm_up() must return the pool to empty (no lingering clod).

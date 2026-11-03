@@ -132,6 +132,7 @@ func test_5_reaching_the_cabin_ends_the_cold_open_and_opens_the_options() -> voi
 	assert_false(WorldSession.cold_open_pending(), "a later boot is a normal one")
 	assert_false(ColdOpen.due())
 	assert_false(WorldSession.fresh)
+	assert_false(_rest.can_open(), "no shopping (and scene reload) before the options have opened")
 	var banner: CheckpointBanner = _co.checkpoint_banner
 	assert_true(banner.is_showing_banner(), "\"Checkpoint reached\" first")
 	_co._process(10.0)
@@ -140,11 +141,29 @@ func test_5_reaching_the_cabin_ends_the_cold_open_and_opens_the_options() -> voi
 	_co._process(10.0)
 	_co.checkpoint_banner = banner
 	assert_eq(_options[0], 1, "then the camera and control options open")
+	assert_true(_rest.input_enabled)
 	_co._process(10.0)
 	assert_eq(_options[0], 1, "once")
 	biome.drive_time += _streamer.settings.weather_hold_s
 	_co._process(0.1)
 	assert_eq(biome.forced_weather, "", "the rings' weather takes over at its next slot")
+
+
+func test_6_an_island_with_no_roadside_stop_finishes_at_once_instead_of_never() -> void:
+	if _co == null:
+		return
+	var co := ColdOpen.new()
+	co.streamer = _streamer
+	co.car = _car
+	co.rest_stops = _rest
+	co.biome = _scene.get_node("BiomeDirector")
+	add_child_autofree(co)
+	co.set_process(false)
+	co.start()
+	assert_true(co.done, "spawn's stop is already lit, so reaching it can never fire")
+	assert_eq((_car.damage as DamageModel).min_hp, 0.0)
+	(_car.damage as DamageModel).repair(Config.data)
+	_rest.input_enabled = true
 
 
 # --- the logic on its own ------------------------------------------------------------------------

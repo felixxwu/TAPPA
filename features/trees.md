@@ -273,9 +273,7 @@ obstacle (the collision above, unchanged).
   full-size tree keeps the configured threshold. Keyed to the car's **pre-solve**
   `_approach_speed` / `_approach_dir` (`car.gd`), captured at the top of
   `_physics_process` — a head-on hit's post-solve velocity is ~0, so reading it later
-  would never fell (same rationale as the damage speed). (The size-agnostic
-  `should_fell(speed, cfg)` is kept for callers/tests without a size — equivalent to
-  `size == 1.0`.)
+  would never fell (same rationale as the damage speed).
 - **Trigger.** `car.gd._integrate_forces`'s object-reaction loop (contact-driven, and
   now run **before** the global deceleration-damage tick): for each obstacle contact
   it reads the struck instance's `field.size_factor(shape_idx)` and, if the approach

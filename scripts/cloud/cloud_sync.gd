@@ -57,6 +57,7 @@ var _debounce: Timer
 var _retry: Timer
 var _backoff := BACKOFF_START_SEC
 var _busy := false
+var _pulling := false
 # Bumped on every local change, so a push can tell whether the profile moved on while it uploaded.
 var _changes := 0
 var _conflict: Dictionary = {}
@@ -94,7 +95,19 @@ func flush() -> void:
 	if not _can_sync() or not pending:
 		return
 	_debounce.stop()
-	push()
+	_upload_pending()
+
+
+# Forget everything learned about the signed-out account, so none of it blocks or leaks into the next.
+func reset_for_account() -> void:
+	_debounce.stop()
+	_retry.stop()
+	_conflict = {}
+	blocked_by_conflict = false
+	_remote_refused = false
+	pending = false
+	_backoff = BACKOFF_START_SEC
+	_set_status(Status.IDLE, "")
 
 
 # Read the cloud document and reconcile it with the local profile. Returns
@@ -110,6 +123,13 @@ func pull() -> Dictionary:
 	# Never compare against this device's own upload while it is still in flight.
 	while _busy:
 		await get_tree().process_frame
+	_pulling = true
+	var result := await _pull_inner()
+	_pulling = false
+	return result
+
+
+func _pull_inner() -> Dictionary:
 	if not _can_sync():
 		return {"ok": false, "state": "offline", "error": "Not signed in."}
 	_set_status(Status.WORKING, "Checking…")
@@ -280,6 +300,9 @@ func _push_inner() -> Dictionary:
 # exists, so keeping the prompt alive would offer the player a choice between the
 # cloud and a save they just deleted on purpose.
 func push_wipe() -> Dictionary:
+	# An upload in flight carries the career just wiped; going after it is what replaces that.
+	while _busy:
+		await get_tree().process_frame
 	_conflict = {}
 	blocked_by_conflict = false
 	pending = true
@@ -289,16 +312,15 @@ func push_wipe() -> Dictionary:
 # --- Conflict resolution -----------------------------------------------------
 
 # A player-legible description of both sides, for the prompt.
-# "This device has nothing to lose." Keyed on ground driven, not cars: boot builds a world
-# with a starter car before the first pull, so a brand-new install always owns a car.
+# "This device has nothing to lose."
 func _local_is_wiped() -> bool:
 	return not has_progress(Save.profile)
 
 
-# Every kind of progress needs the car to have driven out of the few map cells around spawn.
-# Not drive_time: that clock runs while the car sits parked.
+# More than a new player's forced cold open gives: it lights spawn's stop and one cabin, in one car.
 static func has_progress(p: Dictionary) -> bool:
-	return ((p.get(Save.KEY_WORLD, {}) as Dictionary).get("driven", {}) as Dictionary).size() > 2
+	var lit: Array = (p.get(Save.KEY_WORLD, {}) as Dictionary).get("lit", [])
+	return lit.size() > 2 or (p.get(Save.KEY_CARS, []) as Array).size() > 1
 
 
 # The cloud copy has a career worth restoring. Guards the auto-take: replacing an
@@ -326,6 +348,9 @@ func conflict_summary() -> Dictionary:
 func resolve_keep_local() -> Dictionary:
 	if _conflict.is_empty():
 		return {"ok": false, "error": "No conflict to resolve."}
+	var overwritten: Variant = _parse_profile(String(_conflict.get("profile", "")))
+	if typeof(overwritten) == TYPE_DICTIONARY:
+		Save.write_conflict_backup(overwritten)
 	Save.profile["cloud_revision"] = int(_conflict.get("revision", 0))
 	Save.profile["cloud_uid"] = auth.uid
 	_conflict = {}
@@ -466,12 +491,23 @@ func _can_sync() -> bool:
 
 
 func _on_debounce() -> void:
-	push()
+	_upload_pending()
 
 
 func _on_retry() -> void:
-	if pending:
-		push()
+	_upload_pending()
+
+
+# Background uploads go through pull, so a save another device wrote since the last check raises a
+# conflict instead of being overwritten.
+# ponytail: a write landing between the read and the upload still wins; use a Firestore update-time precondition if that shows up.
+func _upload_pending() -> void:
+	if not pending or blocked_by_conflict or _remote_refused or not _can_sync():
+		return
+	if _busy or _pulling:
+		_debounce.start()
+		return
+	pull()
 
 
 func _fail_from_auth(result: Dictionary) -> Dictionary:

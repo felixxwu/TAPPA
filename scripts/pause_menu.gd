@@ -16,7 +16,7 @@ extends CanvasLayer
 # the centerline beside its current position (TrackProgress.manual_reset_pose) and the
 # menu resumes. The menu itself has no car reference, so it delegates the reset upward.
 signal reset_to_track_requested
-# Emitted when the player picks "Photo Mode". world.gd owns the free-fly camera (it
+# Emitted when the player picks "Photo Mode". PhotoModeHost owns the free-fly camera (it
 # owns the scene's cameras and overlays); this menu only hides itself and disarms so
 # the frozen shot is unobstructed. The tree stays PAUSED throughout — leaving photo
 # mode comes back to this menu, still frozen, via return_from_photo_mode().
@@ -26,9 +26,6 @@ signal photo_mode_requested
 # The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
 # on-screen controls immediately (rather than only taking effect on the next run).
 @export var mobile_controls: MobileControls
-# Photo Mode needs a host that owns a free-fly camera (world.gd). A scene without one turns
-# the row off rather than offering a button that would leave the game frozen.
-@export var offer_photo_mode := true
 # Extra rows the host handles itself (free roam: "Map", "Stats"), placed above Settings. Pressing
 # one emits extra_requested with its label; the menu stays open, still paused, for the host's page
 # to cover. The host calls return_from_extra() when its page closes.
@@ -267,8 +264,7 @@ func _build_menu_panel() -> MenuPage:
 	]
 	# Hand the screen to the host's free-fly camera with the tree still frozen. Esc there comes
 	# back to this menu (return_from_photo_mode).
-	if offer_photo_mode:
-		entries.append({"title": "Photo Mode", "icon": "photo", "action": _on_photo_mode_pressed})
+	entries.append({"title": "Photo Mode", "icon": "photo", "action": _on_photo_mode_pressed})
 	for label in extra_rows:
 		entries.append({"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)})
 	entries.append({"title": "Settings", "icon": "settings", "action": _show_settings.bind(true)})

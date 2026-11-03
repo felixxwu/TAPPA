@@ -46,7 +46,3 @@ const IDS: Array = [
 
 static func label_for(id: String) -> String:
 	return String(STATS.get(id, {}).get("label", id))
-
-
-static func is_known(id: String) -> bool:
-	return STATS.has(id)

@@ -177,8 +177,7 @@ Four beats, built from envelope shapes already in the file:
 worth of substeps has usually already cleared the sim flags.
 
 **`nitrous_on` is the DELIVERY state, never "nitrous is fitted".** That is what
-keeps the HQ garage preview silent: `car_preview_audio.gd` applies the
-highlighted car's fitted upgrades before revving, so a nitrous-equipped car
+keeps a car preview silent: a nitrous-equipped car
 *has* nitrous there — but with no throttle-and-button input there is no delivery,
 and the preview passes the nitrous args hard-false anyway.
 

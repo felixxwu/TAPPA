@@ -30,7 +30,7 @@ func _ready() -> void:
 	auth = AuthService.new()
 	auth.rest = rest
 	auth.signed_in.connect(_on_signed_in)
-	auth.signed_out.connect(func() -> void: signed_out.emit(); state_changed.emit())
+	auth.signed_out.connect(_on_signed_out)
 	auth.auth_lost.connect(func(reason: String) -> void: auth_lost.emit(reason))
 
 	sync = CloudSync.new()
@@ -178,14 +178,20 @@ func _on_profile_changed() -> void:
 		sync.request_push()
 
 
+func _on_signed_out() -> void:
+	sync.reset_for_account()
+	signed_out.emit()
+	state_changed.emit()
+
+
 func _on_flushed() -> void:
 	if sync != null:
 		sync.flush()
 
 
 # Pull again when the app comes back to the foreground: the player may have been
-# on another device in the meantime. The web build gets the same signal through
-# Save's existing visibilitychange listener (see _ready).
+# on another device in the meantime. Web and desktop don't get this signal; there the
+# read before each upload (CloudSync._upload_pending) catches a newer cloud save.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_RESUMED and is_signed_in():
 		_kick_off_initial_pull.call_deferred()
