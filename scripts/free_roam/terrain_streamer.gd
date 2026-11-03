@@ -69,6 +69,7 @@ var _chunks := {}  # Vector2i -> ChunkState
 var _tiles := {}  # Vector2i -> TileState, in near_tile_m squares
 var _queue: Array[ChunkJob] = []
 var _est := {}  # atomic stage -> moving average of its cost, µs
+var _holes_due := {}  # chunks whose near tiles changed in the planner: _run_queue recuts their holes, first
 var _indices := {}  # verts per side -> PackedInt32Array, grid plus skirts
 var _plan_coord := Vector2i(1 << 30, 0)
 var _plan_here := Vector2.ZERO  # the car and where it will be, as of the last plan
@@ -571,6 +572,10 @@ func has_collision_at(x: float, z: float) -> bool:
 
 func _run_queue(deadline: int) -> void:
 	_ran_this_frame = false
+	for coord: Vector2i in _holes_due.keys():
+		if not _atomic("holes", deadline, _cut_holes.bind(coord)):
+			return
+		_holes_due.erase(coord)
 	# Planting and horizon jobs whose next unit didn't fit in what's left of this frame. Smaller
 	# work behind them in that same tier may still fit, so it runs instead of the frame's budget
 	# going unused; anything ahead of that tier (collision, near and mid meshes) still stops the
@@ -717,7 +722,7 @@ func _step(job: ChunkJob, deadline: int, stop_at := Stage.DONE) -> bool:
 				if not _atomic("upload_%d" % job.n, deadline, _upload.bind(job)):
 					return false
 			Stage.ATTACH:
-				if not _atomic("attach", deadline, _attach.bind(job)):
+				if not _atomic("attach_%d" % job.level, deadline, _attach.bind(job)):
 					return false
 			Stage.COLLIDE:
 				if not _atomic("collide", deadline, _collide.bind(job)):
@@ -1199,10 +1204,8 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 	if st == null:
 		job.stage = Stage.DONE
 		return true
-	if job.cursor < 0:
-		job.ground = _ground_for(job.coord, st)
-		_plant_candidates(job)
-		job.cursor = 0
+	if job.cursor < 0 and not _atomic("plant_prep", deadline, _plant_prep.bind(job, st)):
+		return false
 	var cfg: GameConfig = Config.data
 	var water := settings.water_level_m
 	var road := settings.road_half_width_m + cfg.tree_road_margin_m
@@ -1234,10 +1237,19 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 	_ran_this_frame = _ran_this_frame or done > 0
 	if job.cursor < job.plant_pts.size():
 		return false
-	_queue_spawns(job, water, road + radius[Plant.ROCK])
+	return _atomic("plant_queue", deadline, _plant_queue.bind(job, water, road + radius[Plant.ROCK]))
+
+
+func _plant_prep(job: ChunkJob, st: ChunkState) -> void:
+	job.ground = _ground_for(job.coord, st)
+	_plant_candidates(job)
+	job.cursor = 0
+
+
+func _plant_queue(job: ChunkJob, water: float, rock_clearance: float) -> void:
+	_queue_spawns(job, water, rock_clearance)
 	job.cursor = 0
 	job.stage = Stage.SPAWN
-	return true
 
 
 # Water and road are judged from the spot's own chunk (its height via the planting ground, its
@@ -1961,7 +1973,7 @@ func _drop_near_tile(t: Vector2i, ts: TileState) -> void:
 		ts.near_mesh = null
 		ts.near_heights = PackedFloat32Array()
 		ts.near_road_d = PackedFloat32Array()
-		_cut_holes(_chunk_of_tile(t))
+		_holes_due[_chunk_of_tile(t)] = true
 
 
 func _drop_mid(st: ChunkState) -> void:
@@ -1980,7 +1992,7 @@ func _drop_mid(st: ChunkState) -> void:
 			st.foliage = null
 		st.mid_arrays = []
 		_show_finest(st)
-		_cut_holes(st.coord)
+		_holes_due[st.coord] = true
 
 
 # The chunk's collision and any queued collision build go (it left the collision block).
@@ -2013,6 +2025,7 @@ func _drop_chunk(coord: Vector2i, st: ChunkState) -> void:
 	if st.far_mesh != null:
 		st.far_mesh.queue_free()
 	_chunks.erase(coord)
+	_holes_due.erase(coord)
 
 
 # --- shared mesh buffers -------------------------------------------------------------------

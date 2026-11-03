@@ -39,10 +39,8 @@ const CATALOGUE := {
 	"lightweight": {
 		"ring": 0, "price": 1200,
 		"label": "Lightweight", "blurb": "Sheds weight.",
-		# "mult_floor", not "mult": a proportional weight cut clamped at
-		# GameConfig.min_lightweight_mass.
-		"effect_fields": {"mass_mult_floor": "run_boost_mass_mult"},
-		"level_direction": - 1, # lower mass_mult_floor = lighter = more boost
+		"effect_fields": {"mass_mult": "run_boost_mass_mult"},
+		"level_direction": - 1, # lower mass_mult = lighter = more boost
 	},
 	"turbo": {
 		"ring": 0, "price": 1800,
@@ -62,12 +60,6 @@ const CATALOGUE := {
 		"scaled_subfields": ["turbo_boost_gain"],
 		"level_direction": 1, # higher turbo_boost_gain = more boost
 	},
-	# "grip": {
-	# 	"ring": 0,
-	# 	"label": "Sticky tyres",
-	# 	"effect_fields": {"tire_grip_mult": "run_boost_grip_mult"},
-	# 	"level_direction": 1,  # higher tire_grip_mult = more boost
-	# },
 	"gearbox": {
 		"ring": 1, "price": 2500,
 		"label": "Quick shifter", "blurb": "Faster gear changes.",

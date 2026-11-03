@@ -86,22 +86,19 @@ the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_s
 ground, its tween running while paused); closing hands back to the chosen camera
 (`CameraManager.activate_current`).
 A first-time player (no world) gets one built at boot with the cold-open car (`ColdOpen.car_id`) and a seed from `FreeRoamSettings.pick_world_seed`,
-marked `WorldSession.fresh` (in memory only) and `cold_open` pending (in the world block,
+marked `cold_open` pending (in the world block,
 `set_cold_open_pending`), so they start in the cold open instead of the menu.
 Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
-- **MAIN:** Continue (only with a world that isn't `fresh`) just closes the menu (`close`) and
+- **MAIN:** Continue (only with a world) just closes the menu (`close`) and
   unpauses; New World; Settings.
 - **STARTER:** New World first asks for a starter car. The choices are the cars in
   `CarLibrary` with `"ring": 0` (`starter_choices` → `LootRules.starter_cars`).
   Picking one makes the world (a seed from `FreeRoamSettings.pick_world_seed`) and reloads free roam (`enter_world`; the
   new world moves the generation on, so the old scene's exit save doesn't write the old car's pose into it). Over an
-  existing world, a `ConfirmPopup` asks first. On a `fresh` world there's no confirm: picking the car
-  already fielded just closes the menu, and another car keeps the same seed and reloads to field it.
+  existing world, a `ConfirmPopup` asks first.
 - **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
-- **FIRST_RUN:** shown instead of MAIN, once, on a `fresh` world while the `first_run_setup_done`
-  setting is unset (`needs_first_run`): the `SettingsMenu` camera page, then on touch devices
-  (`Platform.is_touch`) its touch-layout page. Picking a row, Next or Back moves on; the end sets the
-  setting and shows MAIN. Closing the title re-reads both choices (`CameraManager.activate_current`,
+- **FIRST_RUN:** the `SettingsMenu` camera page, then on touch devices
+  (`Platform.is_touch`) its touch-layout page. Picking a row, Next or Back moves on. Closing the title re-reads both choices (`CameraManager.activate_current`,
   `MobileControls.set_scheme` in `free_roam.gd` → `show_title`), so they apply without a reload.
   At the end of the cold open the same pages show on their own (`options_only`, via
   `show_title(true)`, no orbit camera): the end closes them back into the game instead of MAIN.

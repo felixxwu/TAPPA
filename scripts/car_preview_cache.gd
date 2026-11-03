@@ -13,19 +13,10 @@ extends Node
 # An AUTOLOAD, not a Dictionary a page owns itself: pages are torn down and rebuilt on every
 # visit and scene change, so a cache scoped to one would lose everything at exactly the point
 # a persistent one is supposed to help. A page PARKS its previews before it frees its cards
-# (CardUI.park_previews) so the next visit reuses them. warm_all() builds every car's preview
-# a frame at a time; nothing calls it at boot today (building on first view is cheap enough
-# for the few cars a page shows), but it's there for a page that shows many.
+# (CardUI.park_previews) so the next visit reuses them.
 
 var _cache: Dictionary = {}
 var _graveyard: Control
-var _warming := false
-
-# How many NEW previews warm_all builds before yielding a frame. Spreading the cost out
-# is the whole point — building every car SYNCHRONOUSLY in one call is exactly the
-# original "the game freezes" bug this cache exists to avoid, just moved to a different
-# trigger (hub startup) instead of removed.
-const _WARM_PER_FRAME := 1
 
 
 func _ready() -> void:
@@ -103,46 +94,9 @@ func drop_owned() -> void:
 
 
 # Park a preview the caller is done showing FOR NOW, without freeing it — a later
-# get_or_build for the same car reuses it instead of spawning again. Also what actually
-# seats a freshly built preview into the tree in the first place (see warm_all): a
-# CarCardPreview does nothing until it enters the SceneTree (_ready is what triggers the
-# CarProp spawn), so a warmed car that's never shown still needs parking somewhere.
+# get_or_build for the same car reuses it instead of spawning again.
 func park(preview: CarCardPreview) -> void:
 	var parent := preview.get_parent()
 	if parent != null:
 		parent.remove_child(preview)
 	_graveyard.add_child(preview)
-
-
-# Build (and park) every current owned + unowned-catalogue car's preview, a few at a time
-# across separate frames. Idempotent — a car already cached is skipped in the same frame,
-# so a later call is cheap regardless of how many cars exist. Awaiting the call means
-# waiting for the WHOLE cache: a call that arrives while a pass is already running WAITS
-# for that pass (and then runs its own, instant one) rather than returning "done" with cars
-# still building, so a host can hold a loading screen until warming has genuinely finished.
-func warm_all() -> void:
-	while _warming:
-		await get_tree().process_frame
-	_warming = true
-	var refs: Array = []
-	for car in Save.profile.get(Save.KEY_CARS, []):
-		var entry: Dictionary = car
-		if int(entry.get("instance_id", -1)) >= 0:
-			refs.append(entry)
-	var catalogue := CarLibrary.all()
-	for index in catalogue.size():
-		var model_id := String(catalogue[index].get("id", ""))
-		if model_id != "" and not Save.owns_model(model_id):
-			refs.append(index)
-
-	var since_yield := 0
-	for car_ref in refs:
-		if not is_instance_valid(self):
-			return
-		if not _cache.has(key_for(car_ref)):
-			park(get_or_build(car_ref))
-			since_yield += 1
-			if since_yield >= _WARM_PER_FRAME:
-				since_yield = 0
-				await get_tree().process_frame
-	_warming = false

@@ -43,6 +43,22 @@ func _make_menu() -> SettingsMenu:
 	return menu
 
 
+func test_a_rebind_left_pending_when_the_menu_closes_captures_nothing() -> void:
+	var menu := _make_menu()
+	var action: String = InputRemap.ACTIONS[0]["action"]
+	var before := InputMap.action_get_events(action).size()
+	var bound_before := str(InputMap.action_get_events(action))
+	menu._listening = {"action": action, "slot": InputRemap.SLOT_KEYBOARD}
+	menu.visible = false
+	var key := InputEventKey.new()
+	key.physical_keycode = KEY_F9
+	key.pressed = true
+	menu._input(key)
+	assert_true(menu._listening.is_empty(), "the pending rebind is dropped")
+	assert_eq(InputMap.action_get_events(action).size(), before)
+	assert_eq(str(InputMap.action_get_events(action)), bound_before, "and the key isn't bound")
+
+
 # Find the button on the dev page whose text begins with `prefix` (case-insensitive).
 func _dev_button(menu: SettingsMenu, prefix: String) -> Button:
 	for child in menu._dev_page.get_children():

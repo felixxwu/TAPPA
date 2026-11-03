@@ -176,7 +176,7 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 			mm.set_instance_transform(j, Transform3D(xform_basis, pos - centre))
 			mm.set_instance_custom_data(j, Color(0.0, 0.0, 0.0, 0.0))
 			# Bridge the global index (== shape index) back to its binned slot so
-			# knock_down / reset_fallen can find and animate the one struck tree.
+			# knock_down can find and animate the one struck tree.
 			_slot_of[gi] = {"mmi": mmi, "mm": mm, "j": j, "base_pos": pos, "centre": centre}
 
 		# Far cull + dither-fade: far bins stop drawing (and their instances stop
@@ -273,29 +273,6 @@ func knock_down(idx: int, dir: Vector3, duration: float) -> void:
 # True once instance `idx` has been felled (hitbox disabled, toppling or flat).
 func is_fallen(idx: int) -> bool:
 	return _fallen.has(idx)
-
-
-# Stand every felled instance back up: re-enable its hitbox and restore its MultiMesh
-# transform to the upright pose build() authored. The BillboardField twin of
-# TreeMeshField.reset_fallen — used to reset the stage before the replay. Only touches
-# felled instances, so a stand with nothing knocked over costs nothing.
-func reset_fallen() -> void:
-	if _fallen.is_empty():
-		return
-	for idx: int in _fallen:
-		if not _slot_of.has(idx):
-			continue
-		if _collision_body != null:
-			PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, false)
-		var slot: Dictionary = _slot_of[idx]
-		var pos: Vector3 = slot["base_pos"]
-		var mm: MultiMesh = slot["mm"]
-		mm.set_instance_transform(slot["j"], Transform3D(_upright_basis(pos), pos - (slot["centre"] as Vector3)))
-		# Back to standing: clear the FELLED flag so the shader billboards it again.
-		mm.set_instance_custom_data(slot["j"], Color(0.0, 0.0, 0.0, 0.0))
-	_fallen.clear()
-	_falling.clear()
-	set_process(false)
 
 
 func _process(delta: float) -> void:

@@ -118,21 +118,6 @@ func test_mark_selected_underlines_green_when_selected() -> void:
 	b.free()
 
 
-func test_flank_shows_markers_only_when_active() -> void:
-	var inner := UITheme.button("Continue")
-	var row := UITheme.flank(inner, true)
-	# Triangle, inner, triangle.
-	assert_eq(row.get_child_count(), 3, "flank wraps inner with two markers")
-	assert_true((row.get_child(0) as Label).visible, "left marker shown when active")
-	assert_true((row.get_child(2) as Label).visible, "right marker shown when active")
-	row.free()
-
-	var inner2 := UITheme.button("Continue")
-	var row2 := UITheme.flank(inner2, false)
-	assert_false((row2.get_child(0) as Label).visible, "markers hidden when inactive")
-	row2.free()
-
-
 func test_panel_box_is_black_and_sharp_cornered() -> void:
 	var box := UITheme.panel_box(0.9, 18)
 	assert_eq(box.bg_color, Color(0.0, 0.0, 0.0, 0.9), "panel is black at the given alpha")

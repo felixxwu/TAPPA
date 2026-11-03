@@ -83,7 +83,7 @@ Covered by `tests/headless/test_text_field.gd`.
 ## Account page (`account_menu.gd`)
 
 `AccountMenu` is the optional cloud-save UI — a category page inside Settings
-(`show_account`), currently hidden from the category list (see cloud-save.md). It exposes `at_root()` / `go_back()` so Settings treats its sub-forms
+currently hidden from the category list (see cloud-save.md). It exposes `at_root()` / `go_back()` so Settings treats its sub-forms
 exactly like its own sub-pages — `SettingsMenu.go_back()` gives it first refusal before
 backing out of the page. See [cloud-save.md](cloud-save.md).
 
@@ -151,9 +151,8 @@ page's **Complete stage** relays to `world.gd`'s `_dev_complete_stage` through
 **Quit to title** pops a confirm (`confirm_quit_to_title`: "Your world is saved") and on accept
 (`quit_to_title`) unfreezes, emits `quitting` (free roam saves on it) and goes to `Scenes.TITLE`;
 during a benchmark it exits through `Benchmark.exit_to_title` instead, so the config overrides and
-the real profile come back. `ui_cancel` (Esc / gamepad B)
-toggles the menu and backs out of Settings first; the gamepad **Start** button (`pause` action)
-opens it.
+the real profile come back. Esc and gamepad **Start** (`pause`) toggle the
+menu; in Settings, Esc and gamepad B (`ui_cancel`) step out a level first, and B on the menu itself resumes.
 
 The menu is **default-inert** (`_input_enabled` starts `false`): the Pause button and `ui_cancel`
 do nothing until the host calls `set_input_enabled(true)` after the world is built, so the player

@@ -93,7 +93,12 @@ for iface in en0 en1 en2; do
   LAN_IP="$(ipconfig getifaddr "$iface" 2>/dev/null || true)"
   [[ -n "$LAN_IP" ]] && break
 done
-[[ -z "$LAN_IP" ]] && LAN_IP="<your-LAN-IP>"
+# No LAN address: the placeholder can't go in the certificate, or openssl refuses it.
+SAN_LAN="IP:$LAN_IP,"
+if [[ -z "$LAN_IP" ]]; then
+  LAN_IP="<your-LAN-IP>"
+  SAN_LAN=""
+fi
 
 RESULTS_DIR="build/bench-results"
 
@@ -112,7 +117,7 @@ if command -v openssl >/dev/null 2>&1; then
     openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
       -keyout build/dev-key.pem -out build/dev-crt.pem \
       -subj "/CN=rally-dev" \
-      -addext "subjectAltName=IP:$LAN_IP,DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
+      -addext "subjectAltName=${SAN_LAN}DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
     cat build/dev-crt.pem build/dev-key.pem > "$CERT"
     rm -f build/dev-crt.pem build/dev-key.pem
   fi

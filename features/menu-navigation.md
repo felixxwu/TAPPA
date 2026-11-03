@@ -1,7 +1,7 @@
 # Menu navigation (keyboard / gamepad)
 
 **Sources:** `scripts/menu_nav.gd` (`class_name MenuNav` — the flat-menu framework:
-`attach`, `of`, `forget`, `remembered_target`, `is_on_screen`, `is_text_editing`,
+`attach`, `of`, `is_on_screen`, `is_text_editing`,
 `input_blocked`) and `scripts/ui_theme.gd` (`focus_grab`,
 `first_focusable`, the focus stylebox that paints the cursor).
 
@@ -57,23 +57,6 @@ forget) the per-widget setup.
 `MenuNav` goes inert while its `root` is hidden — including a hidden `CanvasLayer` ancestor
 (`Control.is_visible_in_tree()` alone misses that), so a hidden overlay never steals input
 from whatever is behind it.
-
-**Remembering the selected row (`remember = true`).** By default a menu re-opens on its
-`first` row. Pass `remember = true` to `MenuNav.attach` and the cursor instead returns to
-whichever row the player last had selected, falling back to `first` on the very first open,
-or when the remembered row has gone away or is hidden. The framework tracks focus through
-the **viewport's `gui_focus_changed`**, not per-widget `focus_entered` signals, so rows
-built *after* `attach` (a menu that rebuilds itself) are covered with no re-wiring, and
-focus landing outside the menu is ignored rather than recorded as this menu's row.
-`MenuNav.remembered_target()` exposes the resolved answer for a host that needs to ask.
-**Do not hand-roll this in a menu script** — a per-widget `focus_entered` tracker has to
-know which of its widgets count as rows, misses ones added later, and has to re-derive the
-hidden-sub-panel rule; one flag here covers every `MenuNav` menu. Covered by
-`tests/headless/test_menu_nav.gd` (the `test_remember_*` group). **No shipped screen opts
-into it today** — it's exercised directly by that test group, not by a live caller — so the
-first page that wants "reopen where I left it" can turn it on with no framework
-work of its own. (Every page passes `remember: false` today: each is rebuilt from scratch
-on entry, so the first action is always the right landing spot.)
 
 **One owner for opening focus.** A menu that attaches `MenuNav` must **not** also fire its
 own `UITheme.focus_grab` when it opens. Showing the root fires `visibility_changed`, which

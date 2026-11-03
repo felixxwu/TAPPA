@@ -129,7 +129,6 @@ func test_the_wheel_debris_follows_the_car_and_reads_the_streamers_surface() -> 
 
 
 func test_the_title_menu_covers_the_paused_world_and_continue_closes_it() -> void:
-	WorldSession.fresh = false
 	var title: TitleScreen = _scene.show_title()
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -169,7 +168,6 @@ func test_the_cursor_walks_the_pause_menu_through_photo_mode() -> void:
 	var cards := _pause.cards()
 	var nav := MenuNav.of(_pause._overlay)
 	await get_tree().process_frame
-	nav.forget()
 	_pause.open()
 	await get_tree().process_frame
 	assert_eq(_pause.get_viewport().gui_get_focus_owner(), cards)

@@ -17,9 +17,7 @@ func after_all() -> void:
 
 
 func before_each() -> void:
-	# CarPreviewCache reads the REAL Save autoload, shared globally across every test file
-	# in this run — reset it so warm_all's assertions don't depend on what another test
-	# left behind.
+	# Save is shared across every test file in this run: start from a clean profile.
 	Save.profile = Save._default_profile()
 
 
@@ -79,55 +77,11 @@ func test_park_then_get_or_build_reuses_without_rebuilding() -> void:
 		"get_or_build must hand back an UNPARENTED preview, not one still sitting in the graveyard")
 
 
-func test_warm_all_builds_a_preview_for_every_owned_and_unowned_car() -> void:
-	# A model id that matches nothing in the (fixture) catalogue, so this owned car
-	# doesn't make any catalogue entry look "owned" and get skipped by warm_all's own
-	# unowned-only filter — the point here is that BOTH lists get warmed, not one at the
-	# other's expense.
-	var owned := {"instance_id": 999, "model_id": "zzz_not_a_real_model"}
-	Save.profile[Save.KEY_CARS] = [owned]
-	_track(owned)
-	for index in CarLibrary.all().size():
-		_track(index)
-
-	await CarPreviewCache.warm_all()
-
-	assert_true(CarPreviewCache._cache.has(CarPreviewCache.key_for(owned)),
-		"the owned car must be warmed")
-	for index in CarLibrary.all().size():
-		assert_true(CarPreviewCache._cache.has(CarPreviewCache.key_for(index)),
-			"catalogue car %d must be warmed" % index)
-
-	Save.profile[Save.KEY_CARS] = []
-
-
-# A second warm_all() must WAIT for a pass that is already running, not return "done"
-# while cars are still building — HubShell._ready holds its loading screen until the
-# awaited call returns, so an early return would lift the screen with the cache
-# half-built and reintroduce exactly the interactive trickle this cache exists to
-# remove (features/card-carousel.md → the warming section).
-func test_warm_all_awaits_an_inflight_pass() -> void:
-	# A not-in-catalogue owned car guarantees the pass has REAL work left no matter what
-	# earlier tests left cached, so it deterministically suspends mid-pass with _warming
-	# still true. It is first in warm_all's refs (owned cars are collected before
-	# catalogue indices), so the fire-and-forget call below always yields inside it.
-	var owned := {"instance_id": 777, "model_id": "zzz_warm_wait"}
-	Save.profile[Save.KEY_CARS] = [owned]
-	_track(owned)
-	for index in CarLibrary.all().size():
-		_track(index)
-
-	CarPreviewCache.warm_all()  # fire-and-forget: runs to its first yield, then continues alone
-	assert_true(CarPreviewCache._warming, "setup: a warming pass is in flight")
-
-	await CarPreviewCache.warm_all()
-
-	assert_false(CarPreviewCache._warming,
-		"returning from an awaited warm_all must mean no pass is still running")
-	assert_true(CarPreviewCache._cache.has(CarPreviewCache.key_for(owned)),
-		"the in-flight pass must have completed, not been abandoned")
-
-	Save.profile[Save.KEY_CARS] = []
+func test_a_display_car_bakes_no_engine_voice() -> void:
+	var parent := Node3D.new()
+	add_child_autofree(parent)
+	var car: Node = CarProp.spawn(parent, Scenes.car_scene(), {"index": 0, "stop_physics": true})
+	assert_null(car.get_node("EngineAudio")._synth)
 
 
 # A page queue_free()d WITHOUT parking its previews leaves the preview parented under that

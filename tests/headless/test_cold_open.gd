@@ -49,7 +49,6 @@ func after_all() -> void:
 	Input.action_release("accelerate")
 	_scene.free()
 	CarFixtures.restore()
-	WorldSession.fresh = false
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -131,7 +130,6 @@ func test_5_reaching_the_cabin_ends_the_cold_open_and_opens_the_options() -> voi
 	assert_eq(biome.forced_weather, "dry", "the night clears")
 	assert_false(WorldSession.cold_open_pending(), "a later boot is a normal one")
 	assert_false(ColdOpen.due())
-	assert_false(WorldSession.fresh)
 	assert_false(_rest.can_open(), "no shopping (and scene reload) before the options have opened")
 	var banner: CheckpointBanner = _co.checkpoint_banner
 	assert_true(banner.is_showing_banner(), "\"Checkpoint reached\" first")

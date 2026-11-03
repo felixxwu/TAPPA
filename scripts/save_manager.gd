@@ -173,8 +173,7 @@ var profile_path: String = DEFAULT_PROFILE_PATH:
 		else:
 			profile_path = value
 
-# True when a degraded environment (blocked storage / read-only fs) forces an
-# in-memory-only profile — the UI surfaces a "progress won't be saved" notice.
+# Switched on by a benchmark, so its throwaway profile never reaches disk.
 var save_disabled := false
 
 var _debounce: Timer
@@ -392,9 +391,8 @@ func _sanitise(p: Dictionary) -> Dictionary:
 # worth a cloud upload, so it rides along with the next real change instead.
 # No-op when storage is disabled.
 func save(sync := true) -> void:
-	# Mark unsynced + notify BEFORE the save_disabled bail-out: blocked local
-	# storage (private browsing, read-only fs) is exactly the situation where a
-	# cloud copy is most valuable, so it must not also switch off cloud sync.
+	# Mark unsynced + notify BEFORE the save_disabled bail-out, so a disabled disk
+	# write never also switches off cloud sync.
 	_warn_undeclared_profile_keys()
 	if sync:
 		profile["updated_utc"] = Time.get_datetime_string_from_system(true)
@@ -434,12 +432,20 @@ func save_now() -> void:
 	_debounce.stop()
 	var tmp := profile_path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	# A failed write only skips this save: the next one tries again, and a short .tmp (a full disk)
+	# must never be renamed over the good profile.
 	if f == null:
-		push_warning("Save: cannot open %s for writing — progress will not be saved" % tmp)
-		save_disabled = true
+		push_warning("Save: cannot open %s for writing" % tmp)
 		return
-	f.store_string(JSON.stringify(profile))
+	var data := JSON.stringify(profile).to_utf8_buffer()
+	f.store_buffer(data)
 	f.close()
+	# close() writes the end of the file and reports nothing, so only the size on disk proves it landed.
+	var written := FileAccess.open(tmp, FileAccess.READ)
+	if written == null or written.get_length() != data.size():
+		push_warning("Save: could not write %s" % tmp)
+		return
+	written.close()
 	var dir := DirAccess.open(profile_path.get_base_dir())
 	if dir == null:
 		push_warning("Save: cannot open %s — the newest progress is left in %s" % [profile_path.get_base_dir(), tmp])

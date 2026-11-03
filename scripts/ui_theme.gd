@@ -90,11 +90,6 @@ const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 # --- Size (rule 2: one fixed font size everywhere) ---------------------------
 # Deliberately small. There is NO type hierarchy — titles, headings, body and
 # buttons all use this single size, the way a terminal readout is uniform.
-#
-# The map table's floating pin readouts are the ONE exception, and they are not an exception
-# to the rule so much as a different medium: they render into a SubViewport and are then
-# shown in 3D at a distance, losing resolution twice, so they carry their own larger size
-# (hq.PIN_LABEL_FONT_SIZE). Flat 2D menus stay at this value.
 # --- UI scale ------------------------------------------------------------------
 # The UI was authored against the original 400-tall logical canvas; the shipped
 # render height is now larger (GameConfig.render_height, applied by
@@ -566,23 +561,6 @@ static func focus_grab(ctrl) -> void:
 	if c != null and c.is_inside_tree() \
 			and c.is_visible_in_tree() and c.focus_mode != Control.FOCUS_NONE:
 		c.grab_focus()
-
-
-# Wrap a control with white ▶ ◀ selection triangles (shown only when `active`),
-# mirroring the focused-row markers in the web build. Returns the HBox to add.
-static func flank(inner: Control, active: bool) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", GAP)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	var left := label("▶")   # ▶
-	var right := label("◀")  # ◀
-	left.visible = active
-	right.visible = active
-	row.add_child(left)
-	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(inner)
-	row.add_child(right)
-	return row
 
 
 # --- Rule enforcement --------------------------------------------------------

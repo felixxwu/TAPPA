@@ -551,6 +551,19 @@ func test_near_detail_covers_only_its_tiles_and_the_coarse_mesh_leaves_a_hole_th
 		assert_true(cs.hole_mask & (1 << (local.y * tpc + local.x)) != 0, "with a hole where tile %s is" % t)
 
 
+func test_dropping_a_near_tile_recuts_its_hole_as_a_budgeted_unit() -> void:
+	var st := _streamer(_settings())
+	st.prefill()
+	var t: Vector2i = st._tile_of(Vector2(st.focus.position.x, st.focus.position.z))
+	var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of_tile(t)]
+	var mask := cs.hole_mask
+	st._drop_near_tile(t, st._tiles[t])
+	assert_eq(cs.hole_mask, mask, "the planner leaves the mesh rebuild to the queue")
+	st._run_queue(Time.get_ticks_usec() + 60_000_000)
+	assert_ne(cs.hole_mask, mask, "the queue fills the hole")
+	assert_true(st._est.has("holes"), "and the scheduler measured it")
+
+
 func test_holes_leave_out_the_covered_cells_and_hang_skirts_round_them() -> void:
 	var st := _streamer(_settings())
 	st.prefill()

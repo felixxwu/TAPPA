@@ -5,20 +5,16 @@ extends Control
 # The title screen (todo/2026-10-19-free-roam-pivot.md decision 20): the game's front door, shown
 # over the live, paused world (free_roam.gd → _show_title). Card pages (CardUI.card_page / card_list)
 # driven by MenuNav:
-#   MAIN     — Continue (closes the menu; only with a world the player has driven), New World, Settings.
+#   MAIN     — Continue (closes the menu; only with a world), New World, Settings.
 #   STARTER  — a new world starts by choosing one of a few starter cars (decision 19); picking one
 #              creates the world and drives into it.
 #   SETTINGS — the shared SettingsMenu.
-#   FIRST_RUN — shown once to a brand-new player before MAIN: the SettingsMenu's camera page, then
-#              (on touch devices) its touch-layout page. Picking a row, Next or Back moves on. After
-#              the cold open (ColdOpen) it's shown on its own (`options_only`) and closes into the game.
+#   FIRST_RUN — at the end of the cold open (ColdOpen, `options_only`): the SettingsMenu's camera page,
+#              then (on touch devices) its touch-layout page. Picking a row, Next or Back moves on,
+#              and the last closes into the game.
 # New World over an existing world asks first: the old world, its cars and its loot are lost.
-# A first-time player's world was already built at boot (WorldSession.fresh), so New World just
-# picks the car for it.
 
 enum View { MAIN, STARTER, SETTINGS, FIRST_RUN }
-
-const FIRST_RUN_DONE_KEY := "first_run_setup_done"
 
 var view := View.MAIN
 # Only the first-run options, closing back into the game when done (the end of the cold open).
@@ -28,7 +24,7 @@ var _cards: CardCarousel
 var _settings_menu: SettingsMenu
 # Continue: the host hides the menu over the world it's already showing.
 var close := func() -> void: pass
-# A new world (or a new car on the fresh one) loads the scene afresh. A test swaps it for a capture.
+# A new world loads the scene afresh. A test swaps it for a capture.
 var enter_world := func() -> void: Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
 
 
@@ -40,13 +36,9 @@ func _ready() -> void:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	_show(View.FIRST_RUN if options_only or needs_first_run() else View.MAIN)
+	_show(View.FIRST_RUN if options_only else View.MAIN)
 	if not options_only:
 		_check_for_update()
-
-
-static func needs_first_run() -> bool:
-	return WorldSession.fresh and not Save.get_setting(FIRST_RUN_DONE_KEY, false)
 
 
 static func starter_choices() -> PackedStringArray:
@@ -63,7 +55,7 @@ func _show(v: View) -> void:
 		View.MAIN:
 			_page = CardUI.card_page(self, {"title": "TAPPA"})
 			var entries: Array = []
-			if WorldSession.has_world() and not WorldSession.fresh:
+			if WorldSession.has_world():
 				entries.append({"title": "Continue", "icon": "resume_run", "action": close})
 			entries.append({"title": "New world", "icon": "new_run", "action": _on_new_world})
 			entries.append({"title": "Settings", "icon": "settings", "action": _show.bind(View.SETTINGS)})
@@ -156,15 +148,11 @@ func _first_run_next() -> void:
 	if Platform.is_touch() and not _settings_menu.showing("schemes"):
 		_settings_menu.show_schemes()
 		return
-	Save.set_setting(FIRST_RUN_DONE_KEY, true)
-	if options_only:
-		close.call()
-		return
-	_show(View.MAIN)
+	close.call()
 
 
 func _on_new_world() -> void:
-	if not WorldSession.has_world() or WorldSession.fresh:
+	if not WorldSession.has_world():
 		_show(View.STARTER)
 		return
 	ConfirmPopup.open(self, "New world?", "Your current world, its cars and everything you've found are lost.",
@@ -173,12 +161,7 @@ func _on_new_world() -> void:
 
 
 func _start(model_id: String) -> void:
-	var was_fresh := WorldSession.fresh
-	WorldSession.fresh = false
-	if was_fresh and String(WorldSession.active_car()["model_id"]) == model_id:
-		close.call()
-		return
-	WorldSession.new_world(WorldSession.world_seed() if was_fresh else Config.data.free_roam.pick_world_seed(), model_id)
+	WorldSession.new_world(Config.data.free_roam.pick_world_seed(), model_id)
 	enter_world.call()
 
 

@@ -37,7 +37,7 @@
 | --- | --- |
 | `free_roam.tscn`, `scripts/free_roam/free_roam.gd` | The game scene and its glue to the world session |
 | `scripts/free_roam/road_network.gd`, `road_terrain.gd`, `lab_noise.gd` | The road layout and the road-first terrain (bit-exact with `tools/road_network_lab.html` until something diverges — decision 32) |
-| `scripts/free_roam/terrain_streamer.gd` | Chunk streaming under a strict 1 ms/frame budget, with foliage, sites, barriers, loot markers and per-ring materials |
+| `scripts/free_roam/terrain_streamer.gd` | Chunk streaming under a strict per-frame budget, with foliage, sites, barriers, loot markers and per-ring materials |
 | `scripts/free_roam/road_sites.gd`, `road_barriers.gd` | Rest stops, loot slots and dead ends; barriers on sharp bends |
 | `scripts/free_roam/biome_director.gd` | Ring → region look, handling and weather, following the car |
 | `scripts/free_roam/rest_stops.gd`, `rest_stop_page.gd`, `world_pages.gd` | Bonfires, the rest-stop page, the map and stats pages |

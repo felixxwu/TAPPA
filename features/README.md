@@ -101,7 +101,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [camera.md](camera.md) | Camera modes: chase follow, bonnet hood, and photo mode free-fly |
 | [card-carousel.md](card-carousel.md) | **Every menu is a card list** — `CardCarousel` (the side-scrolling card widget) and `CardUI` (`card_page` / `card_list` — build a menu from a list of entry dicts); which menus are cards and which are plain pages |
 | [menus.md](menus.md) | Scene routing (`Scenes`), the title menu, the pause menu, the rest-stop page and world pages, modals |
-| [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing, remembering the selected row. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
+| [menu-navigation.md](menu-navigation.md) | **Keyboard / gamepad menu navigation — the `MenuNav` framework.** Focus, WASD/arrow/D-pad movement, back routing. Read this before adding or changing ANY menu: every menu must work on keyboard and controller, and that is a CLAUDE.md rule with a required nav test |
 | [lifetime-stats.md](lifetime-stats.md) | Persistent lifetime counters (`LifetimeStats`) — one authored registry, only ever grows, survives run failure |
 | [settings.md](settings.md) | **Adding or changing a persisted setting** — the one-module-per-setting apply-owner pattern (`*_setting.gd`), boot re-application, the shared `SettingsMenu` used by both the title screen and the pause menu, and the developer-only pages |
 | [modals.md](modals.md) | **Modals and confirms** — `ConfirmPopup`, the one-modal-at-a-time `MODAL_GROUP`, the scrolled-body / pinned-exit modal page shape, and `MenuNav.input_blocked` |
@@ -142,7 +142,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the biome-ring order) |
 | Effects funnel | `scripts/upgrade_library.gd` (`UpgradeLibrary` — the `EFFECTS` table, `apply`; no longer a catalogue), `scripts/boost_library.gd` (`BoostLibrary` — the parts catalogue) |
 | Per-car tuning | `scripts/tuning_library.gd` (`TuningLibrary` — grip/brake/aero sliders), `scripts/drivetrain.gd` (brake-bias split), `scripts/tuning_panel.gd` (the slider UI, hosted by the rest stop page) |
-| Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/save_manager.gd` (`Save.set_wheels`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |
+| Cosmetic wheels | `scripts/wheel_style.gd` (`WheelStyle` — style resolution), `scripts/car_library.gd` (`wheel_catalogue`), `scripts/car.gd` (`reskin_wheels`) — **no screen fits them today** |
 | Engine swap / detune | `scripts/engine_swap.gd` (`EngineSwap` — current-engine resolution, layout label, mass/weight-front recompute), `scripts/car.gd` (`_apply_engine_swap`) |
 | Stage flow | `scripts/stage_manager.gd` (`StageManager`), `scripts/car.gd` (`controls_locked`) |
 | Damage / HP | `scripts/damage_model.gd` (`DamageModel`), `scripts/car.gd` (contacts + effects) |

@@ -106,29 +106,16 @@ func test_pause_button_uses_a_drawn_icon() -> void:
 # buttons are focusable so ui_up/ui_down + ui_accept work the menu without a pointer.
 # The whole layer is PROCESS_MODE_ALWAYS, so focus works even though the tree is paused.
 #
-# "Lands on RESUME" is asserted only for the WITH-NOTHING-SELECTED-YET case, and that
-# precondition is established here explicitly (MenuNav.forget()) rather than assumed.
-# It used to be assumed: this file shares one _pause through before_all, no earlier
-# test moved focus, so the assertion passed INCIDENTALLY and two rounds of graders
-# flagged it as order-dependent leakage. It also froze a product choice — a menu is
-# allowed to opt into MenuNav's `remember`, at which case reopening SHOULD return to
-# the last row — so as written it would have blocked a sanctioned change to this menu.
-# What is invariant, and all this now asserts: the cursor always lands on a real,
-# focusable row of the menu, and lands on `first` when there is nothing to remember.
 func test_pause_menu_is_keyboard_navigable() -> void:
 	var nav := MenuNav.of(_pause._overlay)
 	assert_not_null(nav, "the pause overlay is wired to the MenuNav framework")
-	# Let any focus grab queued by an EARLIER test in this shared-instance file land
-	# before we clear the memory — otherwise it flushes after forget() and re-records
-	# a row, which is the same order-dependence this test used to have.
-	await get_tree().process_frame
-	nav.forget()  # make "nothing selected yet" TRUE, not merely true-so-far
+	await get_tree().process_frame  # let a focus grab queued by an earlier test land
 	_pause.open()
 	await get_tree().process_frame  # let the deferred grab_focus run
 	var cards := _pause.cards()
 	assert_eq(cards.focus_mode, Control.FOCUS_ALL, "the card list is focusable")
 	assert_eq(_pause.get_viewport().gui_get_focus_owner(), cards,
-		"with nothing remembered, opening the menu focuses the card list (`first`)")
+		"opening the menu focuses the card list (`first`)")
 	assert_eq(CardUI.titles(cards)[cards.selected_index()], "Resume", "on Resume")
 	nav._unhandled_input(_press_action("menu_right"))
 	assert_eq(cards.selected_index(), 1, "right walks to the next card")
@@ -144,10 +131,25 @@ func _press_action(action: String) -> InputEventAction:
 	return e
 
 
-# Order-safety guard for the assertion above: whatever the menu remembers, opening it
-# must never leave the cursor nowhere or on something outside the menu — that is the
-# property that has to hold no matter which test ran first, and no matter whether this
-# menu opts into `remember` later.
+# Esc is bound to both `pause` and `ui_cancel`, so only a real key event shows which one wins.
+func test_esc_in_settings_steps_out_a_level_instead_of_resuming() -> void:
+	_pause.open()
+	_pause._show_settings(true)
+	_pause.settings_menu.show_camera()
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	_pause._unhandled_input(esc)
+	assert_true(_pause.is_open(), "still paused")
+	assert_true(_pause.settings_menu.at_root(), "the sub-page steps back to the category list")
+	_pause._unhandled_input(esc)
+	assert_true(_pause.is_open(), "still paused")
+	assert_false(_pause._settings_panel.visible, "the list steps back to the menu")
+	_pause._unhandled_input(esc)
+	assert_false(_pause.is_open(), "Esc on the menu itself resumes")
+
+
+# Whichever test ran first, opening the menu must land the cursor on one of its own rows.
 func test_opening_the_menu_always_lands_the_cursor_inside_it() -> void:
 	_pause.open()
 	await get_tree().process_frame

@@ -27,9 +27,9 @@ signal open_requested
 @export var rest_stops: RestStops
 
 const SHADER := preload("res://shaders/mini_map.gdshader")
-const BEACON_LIT := Color(1.0, 0.55, 0.1)      # TerrainStreamer.BEACON_LIT
+const BEACON_LIT := TerrainStreamer.BEACON_LIT
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)  # a checkpoint not yet reached
-const CELL_M := 40.0  # road lookup cells match the driven cells (WorldSession.DRIVEN_CELL_M)
+const CELL_M: float = preload("res://scripts/world_session.gd").DRIVEN_CELL_M  # road lookup cells match the driven cells
 const MARKER_REFRESH_S := 1.0
 const SHADOW_PX := 3.0
 

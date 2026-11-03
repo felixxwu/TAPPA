@@ -80,8 +80,7 @@ consistency, they just do it directly rather than via `enforce`.
    role-coloured labels (`UITheme.money`, `UITheme.label(text, "green")`),
    pure-black panel boxes (`UITheme.panel` / `panel_box`), the rule-enforcing
    `UITheme.enforce(root)`, and the selection treatment from the web build — a
-   green underline + green text (`UITheme.mark_selected`) and the **▶ ◀** markers
-   around the focused option (`UITheme.flank`).
+   green underline + green text (`UITheme.mark_selected`).
 
 ## The card carousel
 

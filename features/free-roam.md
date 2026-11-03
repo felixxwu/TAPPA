@@ -114,7 +114,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
     scales with the square's side).
   - **Holes, not overlap:** a chunk's drawn coarse mesh (mid, else far) is rebuilt without the
     quarters its near tiles cover, with a skirt round each hole so no crack shows against the
-    tile (`_cut_holes` / `_coarse_mesh`, from the vertex arrays kept on `ChunkState`). The two
+    tile (`_cut_holes` / `_coarse_mesh`, from the vertex arrays kept on `ChunkState`; when the planner drops a tile or mid mesh, the recut waits in `_holes_due` for the first units of `_run_queue`, so the scheduler measures it). The two
     grids differ slightly in height, so drawing both in one place would flicker.
   - **mid**, `mid_stride_m` (8 m) within `mid_radius` (1.5 chunks, so it ends about where the 120 m foliage draw distance does): carries all the planting.
     It **narrows with speed** (`squashed_distance`): ahead it always reaches `mid_radius`, but to
@@ -152,7 +152,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   car, or the one it will be over in `collision_rush_s` (0.5 s), has no collision, it is built at
   once with no budget, only as far as the collision (`_rush_collision`; its foliage is left to
   the queue). Each one is a hitch of a few tens of ms instead of a fall, counted in
-  `stat_rushes` (HUD readout and the auto driver's report). The 1 ms budget can't build a
+  `stat_rushes` (HUD readout and the auto driver's report). The budget can't build a
   3-chunk-wide collision band at much over 100 km/h in a straight line (a 2 m chunk's heights
   alone were about 45 ms of work), so very fast driving leans on this net: probe on the default
   island, straight line at 144 km/h, one rush every 200–400 m; the auto driver on the roads
@@ -319,8 +319,9 @@ car's ring and the weather.
 - **Exit:** `_exit_tree` puts back the weather, grip, sun dimming, wind and headlight globals.
 
 **Not ported from the stage:** storm lightning, and night's terrain re-bake. Night darkens the
-ground through the albedo tint only. Foliage spawned before a weather change keeps the light it
-was spawned with. There is **one water level** for the whole island (no per-ring waterline).
+ground through the albedo tint only. On a weather change the sky and fog fade, while everything lit by `GameConfig.apply_car_light` (the
+car, rocks, barriers, dust) jumps straight to the new light: setting `weather_sun_mult` relights them.
+A tree species takes the light of its most recently spawned field. There is **one water level** for the whole island (no per-ring waterline).
 
 ## Sites: rest stops, loot slots and dead ends
 
@@ -403,7 +404,8 @@ the car drives into a biome ring in this world, the same band shows the ring's r
 (`name_for`: `RegionLibrary` `name` of `BiomeDirector.region_of`). "First time" is
 `WorldSession.reach_ring` returning true (the persisted `max_ring` high-water mark, checked every
 0.25 s in `_physics_process`), so it survives reloads and ring 0 (spawn) never shows. If the
-checkpoint band is up, the region band waits for it to finish rather than stacking.
+checkpoint band is up, the region band waits for it to finish rather than stacking, and a
+checkpoint reached under a region band hides that band until the checkpoint band is gone.
 
 `RestStops` makes the REST sites into Dark Souls bonfires:
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
@@ -411,7 +413,7 @@ checkpoint band is up, the region band waits for it to finish rather than stacki
   `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its cabin
   doorway glows orange and its minimap mark turns orange), makes it the respawn point (`last_site`). Every physics step the car is
   there it heals (`RestStops._heal`: `checkpoint_heal_fraction_per_s` of max HP per second); reaching
-  full HP runs `DamageModel.repair` (cooling mended, wheels straightened) and emits `healed`. A fast
+  full HP runs `DamageModel.repair` (cooling mended, wheels straightened) . A fast
   drive-by only gets a tick's worth. Spawn is lit from the start. A move there by
   travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
   stop (a new game, Continue, the reload after a parts or car change): the first `step` only notes
@@ -636,8 +638,8 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   (`MiniMap.hint`), or on touch a pulsing GAS button (`MobileControls.hint_gas`), until the first
   `accelerate` press.
 - **Arrival** (`RestStops.lit(goal())` → `finish`): `min_hp` back to 0,
-  `forced_weather = "dry"` until the weather's next slot (then the rings' draw), `cold_open` and
-  `WorldSession.fresh` cleared. Once the "Checkpoint reached" band is gone (plus
+  `forced_weather = "dry"` until the weather's next slot (then the rings' draw), `cold_open`
+  cleared. Once the "Checkpoint reached" band is gone (plus
   `cold_open_options_delay_s`) `free_roam.show_title(true)` shows the first-run options on their own
   (`TitleScreen.options_only`), closing back into the game. The rest-stop page stays shut until then:
   buying a car reloads the scene, which would lose the waiting options. An island with no roadside

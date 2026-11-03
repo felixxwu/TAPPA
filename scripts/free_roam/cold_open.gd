@@ -53,7 +53,6 @@ static func car_id(s: FreeRoamSettings) -> String:
 static func new_world(world_seed: int, s: FreeRoamSettings) -> void:
 	var model := car_id(s)
 	WorldSession.new_world(world_seed, model)
-	WorldSession.fresh = true
 	WorldSession.set_cold_open_pending(true)
 	WorldSession.set_money(WorldSession.money() + s.cold_open_start_money)
 
@@ -310,7 +309,6 @@ func finish() -> void:
 	biome.forced_weather = "dry"
 	_dry_slot = _slot()
 	WorldSession.set_cold_open_pending(false)
-	WorldSession.fresh = false
 	_options_in = streamer.settings.cold_open_options_delay_s
 	# Buying a car here reloads the scene, which would lose the first-run options still waiting to open.
 	rest_stops.input_enabled = false

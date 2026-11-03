@@ -119,8 +119,9 @@ func build(positions: PackedVector2Array, terrain: Object, mesh: Mesh,
 			# Remember where each global instance lives (and its standing yaw) so
 			# knock_down() can find and animate the one struck tree without recomputing
 			# it — build() bins away from build order.
-			_slot_of[idxs[j]] = {
-				"mmi": mmi, "j": j, "base_pos": pos, "centre": centre, "yaw": yaw}
+			if with_collision:
+				_slot_of[idxs[j]] = {
+					"mmi": mmi, "j": j, "base_pos": pos, "centre": centre, "yaw": yaw}
 
 		# Far cull + dither-fade, replacing the billboard shader's distance cull.
 		# The importer mesh LODs handle decimation up to this range.
@@ -189,31 +190,6 @@ func size_factor(_idx: int) -> float:
 # True once tree `idx` has been felled (hitbox disabled, toppling or flat).
 func is_fallen(idx: int) -> bool:
 	return _fallen.has(idx)
-
-
-# Stand every felled tree back up: re-enable its hitbox and restore its MultiMesh
-# instance to the upright pose recorded in _slot_of at build (base_pos + standing
-# yaw). Used to reset the stage between the driven run and the replay so the replay
-# shows an intact forest. Only touches trees in the _fallen set, so a stage with
-# nothing knocked over costs nothing (the common case).
-func reset_fallen() -> void:
-	if _fallen.is_empty():
-		return
-	var s := Vector3(instance_scale, instance_scale, instance_scale)
-	for idx: int in _fallen:
-		if not _slot_of.has(idx):
-			continue
-		var slot: Dictionary = _slot_of[idx]
-		if _collision_body != null:
-			PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, false)
-		var upright := Basis(Vector3.UP, slot["yaw"]).scaled(s)
-		var mmi: MultiMeshInstance3D = slot["mmi"]
-		mmi.multimesh.set_instance_transform(
-			slot["j"], Transform3D(upright, slot["base_pos"] - slot["centre"]))
-	_fallen.clear()
-	_falling.clear()
-	# Every tree is upright again; nothing to animate.
-	set_process(false)
 
 
 func _process(delta: float) -> void:

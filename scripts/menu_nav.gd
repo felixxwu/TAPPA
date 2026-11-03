@@ -31,13 +31,6 @@ extends Node
 #                        first focusable descendant in tree order.
 #   on_back : Callable — invoked on ui_cancel / menu_back. If null, back is left
 #                        to the host.
-#   remember: bool     — return the cursor to the row the player last selected,
-#                        instead of `first`, when the menu is shown again. Off by
-#                        default. Never hand-roll this in a menu script; one flag
-#                        here covers every MenuNav menu. Fallback rules, and what
-#                        else a menu change owes (docs + a nav test), are in
-#                        features/menu-navigation.md -> "Remembering the selected
-#                        row" — read it before turning this on.
 #
 # Idempotent: attaching twice to the same root reuses the existing node (updates
 # its first/on_back) rather than stacking handlers.
@@ -47,8 +40,6 @@ const _NODE_NAME := "__MenuNav"
 var _root: Control
 var _first: Control
 var _on_back: Callable
-var _remember := false
-var _last_focused: Control   # only meaningful while _remember is true
 
 
 # The live MenuNav attached to `root`, or null if the framework was never attached
@@ -78,7 +69,6 @@ static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 		root.add_child(nav)
 	nav._root = root
 	nav._on_back = opts.get("on_back", Callable())
-	nav._remember = bool(opts.get("remember", false))
 	nav._make_focusable(root)
 	nav._enable_scroll_follow(root)
 	nav._first = opts.get("first", null)
@@ -97,58 +87,12 @@ static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 	# Re-grab whenever the menu is shown again (guarded inside focus_grab).
 	if not root.visibility_changed.is_connected(nav._on_root_visibility):
 		root.visibility_changed.connect(nav._on_root_visibility)
-	# `remember` tracks focus through the VIEWPORT rather than per-widget signals, so
-	# rows built after attach() (a menu that rebuilds itself) are covered without
-	# re-wiring, and no menu script has to know which of its widgets are "rows".
-	if nav._remember:
-		var vp := root.get_viewport()
-		if vp != null and not vp.gui_focus_changed.is_connected(nav._on_focus_changed):
-			vp.gui_focus_changed.connect(nav._on_focus_changed)
 	return nav
 
 
 func _on_root_visibility() -> void:
 	if is_instance_valid(_root) and _root.is_visible_in_tree():
-		if _remember:
-			# Resolve the target INSIDE the deferred call, not here: the host
-			# typically shows the root and only then hides sub-panels (pause_menu's
-			# open() does exactly this), so a row's visibility is only trustworthy
-			# once the frame has settled. The viewport's gui_focus_changed is also
-			# not guaranteed to have fired by the time this signal runs, so
-			# resolving here would miss the row the player just moved to.
-			_grab_remembered.call_deferred()
-		else:
-			UITheme.focus_grab.bind(_first).call_deferred()
-
-
-# Record the row the player is on, so `remember` can return to it. Ignores focus
-# landing anywhere outside this menu.
-func _on_focus_changed(node: Control) -> void:
-	if is_instance_valid(node) and is_instance_valid(_root) and _root.is_ancestor_of(node):
-		_last_focused = node
-
-
-# The remembered row if it is still real, still under this menu and actually on
-# screen; otherwise `first`. Public so a host can ask the framework rather than
-# keeping its own copy.
-func remembered_target() -> Control:
-	if _remember and is_instance_valid(_last_focused) \
-			and is_instance_valid(_root) and _root.is_ancestor_of(_last_focused) \
-			and _last_focused.is_visible_in_tree():
-		return _last_focused
-	return _first
-
-
-# Drop the remembered row, so the next show lands on `first` again. For a host that
-# wants a fresh start (a new run, a new session) without turning `remember` off, and
-# for tests that need "nothing has been selected yet" to be TRUE rather than merely
-# true-so-far because they happen to run early in the file.
-func forget() -> void:
-	_last_focused = null
-
-
-func _grab_remembered() -> void:
-	UITheme.focus_grab.bind(remembered_target()).call_deferred()
+		UITheme.focus_grab.bind(_first).call_deferred()
 
 
 # Make every interactive descendant focusable, unless it opted out via the

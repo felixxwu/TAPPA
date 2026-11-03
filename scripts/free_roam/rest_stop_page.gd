@@ -15,7 +15,6 @@ extends CanvasLayer
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
-signal closed
 # The Map row: the host opens the map as the travel picker, over this page.
 signal map_requested(site: int)
 signal car_changed
@@ -80,7 +79,6 @@ func close() -> void:
 	get_tree().paused = false
 	if pause_menu != null:
 		pause_menu.set_input_enabled(true)
-	closed.emit()
 	if dirty:
 		dirty = false
 		car_changed.emit()

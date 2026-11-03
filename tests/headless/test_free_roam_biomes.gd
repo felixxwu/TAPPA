@@ -379,6 +379,23 @@ func test_the_region_banner_waits_for_the_checkpoint_band_then_shows() -> void:
 	assert_false(banner.is_showing_banner())
 
 
+func test_a_checkpoint_reached_under_the_region_band_hides_it() -> void:
+	var cp := CheckpointBanner.new()
+	add_child_autofree(cp)
+	var banner := RegionBanner.new()
+	banner.checkpoint_banner = cp
+	add_child_autofree(banner)
+	banner.announce("Plain")
+	await wait_process_frames(1)
+	assert_true(banner._band.visible)
+	cp.show_reached(0)
+	await wait_process_frames(1)
+	assert_false(banner._band.visible, "never stacked on the checkpoint band")
+	cp._banner_done()
+	await wait_process_frames(1)
+	assert_true(banner._band.visible, "back once the checkpoint band is gone")
+
+
 class WaterCar extends VehicleBody3D:
 	var query := Callable()
 	func set_water_query(q: Callable) -> void:

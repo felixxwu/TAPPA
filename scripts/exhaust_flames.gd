@@ -24,7 +24,7 @@ extends Node3D
 #     state (held AND charged AND combusting), not "a bottle is fitted", so an empty tank
 #     puts the flame out.
 #
-# Created + wired by world.gd, exactly like WheelParticles / EngineSmoke. The exhaust lab
+# Created + wired by the host scene (free_roam.gd, world.gd). The exhaust lab
 # (scripts/exhaust_lab.gd) drives it with both triggers forced on.
 # See features/exhaust-flames.md.
 

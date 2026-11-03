@@ -125,9 +125,8 @@ func test_level_scale_never_crosses_zero_however_extreme_the_step() -> void:
 		"an extreme positive-direction climb still yields a positive scale")
 
 
-# A "mult" (or "mult_floor" — same ratio semantics before any clamp; magnitude_for never
-# applies the floor, only apply() does) boost's base magnitude must push
-# the SAME WAY its level ladder does: a lightweight kit whose mass_mult_floor sat above
+# A "mult" boost's base magnitude must push
+# the SAME WAY its level ladder does: a lightweight kit whose mass_mult sat above
 # 1.0 would make the car heavier while its levels made it lighter. A relationship, not a
 # pinned number — any sane tuning satisfies it, and a magnitude of exactly 1.0 (a boost
 # that does nothing) is genuinely broken.
@@ -137,7 +136,7 @@ func test_a_multiplier_boosts_base_magnitude_pushes_the_way_its_levels_do() -> v
 		for effect_key in BoostLibrary.magnitude_for(id, 0):
 			var desc: Dictionary = UpgradeLibrary.EFFECTS.get(effect_key, {})
 			var op := String(desc.get("op", "mult"))
-			if op != "mult" and op != "mult_floor":
+			if op != "mult":
 				continue
 			var magnitude := float(BoostLibrary.magnitude_for(id, 0)[effect_key])
 			assert_ne(magnitude, 1.0, "'%s' actually changes %s" % [id, effect_key])

@@ -204,7 +204,7 @@ func _on_action(index: int) -> void:
 	if cb.is_valid():
 		cb.call()
 
-# Route Back / cancel to the configured action (default: the last one).
+# Route Back / cancel to the configured action (default: the first one).
 func trigger_back() -> void:
 	if _back_index >= 0 and _back_index < _actions.size():
 		_on_action(_back_index)

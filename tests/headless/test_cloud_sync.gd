@@ -590,7 +590,9 @@ func _new_busy_host() -> Control:
 func test_cloud_busy_is_shown_while_the_call_runs_and_gone_after() -> void:
 	var host := _new_busy_host()
 	assert_false(CloudBusy.showing(host), "nothing in flight to begin with")
-	var result: Dictionary = await CloudBusy.run_ambient(host, "Loading…", _slow_ok)
+	var busy := CloudBusy.ambient(host, "Loading…", host)
+	var result: Dictionary = await _slow_ok()
+	await busy.end()
 	assert_eq(_busy_seen, [true, true],
 		"the busy state is up for the whole call, across the suspend")
 	assert_true(bool(result.get("ok", false)), "and the call's own answer comes back")
@@ -609,9 +611,9 @@ func test_cloud_busy_covers_headless_without_a_visual_but_still_awaits() -> void
 
 func test_cloud_busy_begin_and_end_bracket_a_direct_await() -> void:
 	# The shape call sites use when their await must stay literally direct
-	# (global_standings, hq.gd): the same state, without the Callable hop.
+	# the same state, without the Callable hop.
 	var host := _new_busy_host()
-	var busy := CloudBusy.ambient(host, "Loading…")
+	var busy := CloudBusy.ambient(host, "Loading…", host)
 	assert_true(CloudBusy.showing(host), "busy from the moment the call starts")
 	await get_tree().process_frame
 	assert_true(CloudBusy.showing(host), "and for as long as it takes")
@@ -725,6 +727,13 @@ func test_a_new_install_with_its_boot_built_world_takes_the_cloud() -> void:
 
 	assert_eq(result.state, "applied", "a finished cold open is not progress worth asking about")
 	assert_signal_not_emitted(_sync, "conflict_detected")
+
+func test_a_fitted_part_counts_as_progress_worth_asking_about() -> void:
+	var stock := {Save.KEY_CARS: [{"parts": []}]}
+	var fitted := {Save.KEY_CARS: [{"parts": [{"id": "any"}]}]}
+	assert_false(CloudSync.has_progress(stock))
+	assert_true(CloudSync.has_progress(fitted))
+
 
 func test_a_wiped_local_takes_the_cloud_without_asking() -> void:
 	_save.profile["cloud_revision"] = 1

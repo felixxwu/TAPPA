@@ -175,6 +175,21 @@ func test_confirming_a_card_blocks_a_second_confirm_until_the_flash_finishes() -
 	assert_eq(confirmed, [0], "the mashed second confirm must not double-fire or restart the flash")
 
 
+# The pause menu keeps running while closed, so Esc mid-flash must not fire the card over live gameplay.
+func test_hiding_the_carousel_cancels_a_running_flash() -> void:
+	var confirmed: Array = []
+	_carousel.confirmed.connect(func(i): confirmed.append(i))
+	_carousel.select(0, false)
+	_carousel._confirm_selected()
+	_carousel.visible = false
+	_carousel.visible = true
+	_carousel.skip_confirm_flash()
+	assert_true(confirmed.is_empty(), "reopening the menu inside the flash doesn't bring it back")
+	_carousel._confirm_selected()
+	_carousel.skip_confirm_flash()
+	assert_eq(confirmed, [0], "and the carousel can still confirm once shown again")
+
+
 func test_skip_confirm_flash_is_a_no_op_when_nothing_is_confirming() -> void:
 	var confirmed: Array = []
 	_carousel.confirmed.connect(func(i): confirmed.append(i))

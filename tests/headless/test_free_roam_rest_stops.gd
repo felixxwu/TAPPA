@@ -169,7 +169,6 @@ func test_staying_at_a_rest_stop_heals_the_car_to_full() -> void:
 	assert_eq(dmg.hp, dmg.max_hp, "fully healed")
 	assert_false(dmg.cooling_broken, "cooling mended too")
 	assert_eq(dmg.engine_temp, 50.0, "a repair is not a reset: the engine keeps its heat")
-	assert_signal_emit_count(_rest, "healed", 1)
 	_rest.set_physics_process(true)
 
 

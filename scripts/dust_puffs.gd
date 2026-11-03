@@ -229,8 +229,6 @@ func _timed_physics_process(delta: float) -> void:
 			changed = true
 	if changed:
 		multimesh.buffer = _buffer
-		# Weather / time of day can change the light under a live trail (free roam).
-		Config.data.apply_car_light(material_override)
 
 
 # Drift, slow, rise and grow every live puff; a puff past its lifetime just vanishes.

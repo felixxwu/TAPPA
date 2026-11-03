@@ -415,6 +415,19 @@ func test_foliage_and_car_agree_on_the_light() -> void:
 	assert_almost_eq(t.g, c.g, 0.001, "on every channel")
 
 
+func test_a_weather_change_relights_materials_already_lit() -> void:
+	var cfg := GameConfig.new()
+	var mat := ShaderMaterial.new()
+	var gone := ShaderMaterial.new()
+	cfg.apply_car_light(mat)
+	cfg.apply_car_light(gone)
+	var before: Color = mat.get_shader_parameter("sun_color")
+	gone = null  # a material freed since it was lit must not get in the way
+	cfg.weather_sun_mult = 0.5
+	assert_ne(mat.get_shader_parameter("sun_color"), before, "the lit material follows the weather")
+	assert_eq(mat.get_shader_parameter("sun_color"), cfg.weather_lit(cfg.sun_color))
+
+
 func test_the_weather_sun_multiplier_defaults_to_no_dimming() -> void:
 	# A session-less boot (free roam, benchmark, dev) never runs the weather look, so
 	# the default must be the identity or those stages would render dark.

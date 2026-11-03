@@ -405,6 +405,11 @@ func _layout() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
 		_layout()
+	elif what == NOTIFICATION_VISIBILITY_CHANGED and _confirm_index != -1 and not is_visible_in_tree():
+		# Closed mid-flash (Esc on the pause menu): the card must not fire behind the player's back.
+		_confirm_tween.kill()
+		_confirm_index = -1
+		_layout()
 
 
 # --- Keyboard / gamepad: the MenuNav seam ------------------------------------

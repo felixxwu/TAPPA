@@ -12,8 +12,6 @@ extends Node
 # one car they were unlocked for: the shop sells the car being driven what it hasn't unlocked and can
 # use, and another car has to unlock its own.
 
-signal collected(site: int, value: int)
-signal recovered(value: int)
 signal said(text: String, seconds: float)  # a money message, for the line under the minimap
 
 const DROP_CRYSTAL := preload("res://shaders/crystal.gdshader")
@@ -208,7 +206,6 @@ func collect(site: int) -> void:
 	_spent[site] = true
 	streamer.refresh_loot_marker(site)
 	_pay("", value)
-	collected.emit(site, value)
 
 
 
@@ -237,7 +234,6 @@ func recover_dropped() -> void:
 	WorldSession.set_money(WorldSession.money() + value)
 	_sync_dropped_node()
 	_say("Recovered $%d" % value)
-	recovered.emit(value)
 
 
 # The crystal floating over the dropped money, so it can be found again.

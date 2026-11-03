@@ -350,7 +350,6 @@ func _reload_car() -> void:
 
 # A cloud download replaced the save: boot again onto it (save_world leaves the new world alone).
 func _on_profile_replaced() -> void:
-	WorldSession.fresh = false
 	Scenes.change_to(get_tree(), Scenes.TITLE)
 
 

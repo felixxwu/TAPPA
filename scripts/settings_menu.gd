@@ -517,6 +517,10 @@ func _reset_bindings() -> void:
 func _input(event: InputEvent) -> void:
 	if _listening.is_empty():
 		return
+	# The host closed with a rebind pending (gamepad Start on a keyboard slot): don't capture a driving key.
+	if not is_visible_in_tree():
+		cancel_listen()
+		return
 	if event is InputEventKey and event.pressed and not event.echo \
 			and event.physical_keycode == KEY_ESCAPE:
 		get_viewport().set_input_as_handled()

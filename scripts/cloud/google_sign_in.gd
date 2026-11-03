@@ -59,9 +59,6 @@ var rest = null
 # The connection is queued by the OS and completes the moment the game resumes,
 # so nothing is lost; the player just has to know to return, otherwise the
 # browser appears to hang forever on Google's "Continue" screen.
-#
-# Fixing this properly means accepting the connection off the frame loop (a
-# Thread), which is a bigger change; saying so plainly is the honest interim.
 static func waiting_message() -> String:
 	if Platform.is_web():
 		return "Opening Google sign-in…"
@@ -417,8 +414,6 @@ func _sign_in_web() -> Dictionary:
 	if _web_result == "":
 		if reason == "state":
 			return _error("Sign-in couldn\'t be verified. Please try again.")
-		if reason == "blocked":
-			return _error("Your browser blocked the sign-in window. Allow pop-ups and try again.")
 		return _error("Google sign-in was cancelled.")
 	return {"ok": true, "id_token": _web_result, "error": ""}
 

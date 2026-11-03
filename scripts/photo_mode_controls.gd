@@ -7,7 +7,7 @@ extends CanvasLayer
 # with no touch story at all: it hides MobileControls and disarms the pause menu (which
 # hides the Pause button), leaving Esc — a keyboard-only key — as the sole way out on a
 # phone. This file is that missing control surface, built ONLY when Platform.is_touch()
-# is true (see world.gd's _on_photo_mode_requested) and driven straight off the same
+# is true (see PhotoModeHost.open) and driven straight off the same
 # PhotoModeCamera every other input path uses.
 #
 # process_mode is ALWAYS: exactly like the camera it drives, this whole overlay has to
@@ -97,8 +97,8 @@ func _init() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 
-# Wire this overlay to the live camera and build the widgets. Called once by world.gd
-# right after the camera itself is created (see _on_photo_mode_requested).
+# Wire this overlay to the live camera and build the widgets. Called once by
+# PhotoModeHost.open right after the camera itself is created.
 func setup(camera: PhotoModeCamera) -> void:
 	_camera = camera
 	_build()
@@ -247,15 +247,17 @@ func is_hidden() -> bool:
 func _input(event: InputEvent) -> void:
 	if _camera == null or not _camera.is_active():
 		return
+	# Fetched first: a release on the exit button takes this overlay out of the tree.
+	var vp := get_viewport()
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_press(event.index, event.position)
 		else:
 			_release(event.index)
-		get_viewport().set_input_as_handled()
+		vp.set_input_as_handled()
 	elif event is InputEventScreenDrag:
 		_drag(event.index, event.position)
-		get_viewport().set_input_as_handled()
+		vp.set_input_as_handled()
 
 
 func _press(idx: int, pos: Vector2) -> void:

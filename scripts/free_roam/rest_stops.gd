@@ -22,12 +22,9 @@ signal wrecked
 signal respawned(site: int, wreck_pos: Vector3)
 # A wrecked car rolled into rest stop `site` and was brought back in place (no respawn; the dropped money stays where it fell).
 signal wreck_recovered(site: int)
-signal travelled(site: int)
 signal respawn_point_changed(site: int)
 # The car was moved by a travel or a respawn, to this XZ (listeners reset their swept checks).
 signal car_teleported_to(p: Vector2)
-# The car's healing at rest stop `site` brought it back to full health.
-signal healed(site: int)
 
 @export var streamer: TerrainStreamer
 @export var car: VehicleBody3D
@@ -167,12 +164,9 @@ func _heal(i: int, delta: float) -> void:
 	var dmg := car.get("damage") as DamageModel
 	if dmg == null:
 		return
-	var was_full := dmg.hp >= dmg.max_hp
 	dmg.hp = minf(dmg.max_hp, dmg.hp + dmg.max_hp * Config.data.checkpoint_heal_fraction_per_s * delta)
 	if dmg.hp >= dmg.max_hp:
 		dmg.repair(Config.data)
-		if not was_full:
-			healed.emit(i)
 
 
 func light(i: int) -> void:
@@ -219,7 +213,6 @@ func travel_to(site: int) -> bool:
 		return false
 	move_car_to(site)
 	(car.damage as DamageModel).repair(Config.data)
-	travelled.emit(site)
 	return true
 
 

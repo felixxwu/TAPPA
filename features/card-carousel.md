@@ -539,11 +539,6 @@ preview to `CarPreviewCache.park(preview)` instead of freeing it — parked prev
 cache's own hidden `graveyard` Control (a child of the autoload); `visible = false` on an
 ancestor stops a `SubViewport` costing render time while parked.
 
-`CarPreviewCache.warm_all()` (no production caller today) walks every owned + catalogue car and builds (then parks)
-whichever aren't cached yet, yielding a frame every `_WARM_PER_FRAME` cars rather than
-doing it in one synchronous burst; a second call WAITS for the in-flight pass. Idempotent and
-cheap afterwards: a cached car is skipped instantly.
-
 `CardCarousel.get_card(index)` reaches back into a card's `visual` slot after `add_card`
 returned it. Don't revert to a page-scoped cache or to rebuilding a car's `CarProp` on every
 re-entry into view. `CarCardPreview.show_car` still exists for a caller that wants "this same

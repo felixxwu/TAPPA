@@ -51,10 +51,9 @@ The single source of truth for what each effect key does, so adding an effect me
 | --- | --- |
 | `field` | The CAR-META spelling of the quantity (a key on the car dict) |
 | `cfg_fields` | The LIVE-CONFIG spelling(s), when the two vocabularies diverge |
-| `op` | `mult` / `add` / `set` / `mult_floor` / `install_induction` / `write_fields` |
+| `op` | `mult` / `add` / `set` / `install_induction` / `write_fields` |
 | `reseed` | Whether the row's config fields are restored from the authored baseline first |
 | `enable` | Induction-only: the config flag to switch on |
-| `floor_field` | `mult_floor`-only: the GameConfig field the clamp floor is read from (`UpgradeLibrary._floor_value`) |
 
 **A `mult`/`add` row may target more than one config field, under a different name.**
 `field` is the meta spelling; `cfg_fields` overrides for a row whose two vocabularies

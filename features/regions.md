@@ -222,8 +222,7 @@ region only authors WHICH texture, WHICH profile, and the WEIGHT. Helpers:
 roam / unknown id); `RegionLibrary.spawns_bush_mesh(look)` returns the
 `spawn_bush_mesh` flag, defaulting `true`. The partition is deterministic per
 `track_seed` (hashed off each point's grid cell), so felling-restore keeps a
-tree its species, and multiple `BillboardField`s replay-reset fine (`world.gd`
-walks every foliage child for `reset_fallen`).
+tree its species.
 
 Like `CarLibrary`, `RegionLibrary` sits behind a `Registry.Seam`
 (`static var _seam := Registry.Seam.new(REGIONS)`) so tests can

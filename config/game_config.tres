@@ -217,7 +217,6 @@ lamp_offsets = {
 loading_max_fps = 0
 loading_touch_max_fps = 60
 run_boost_mass_mult = 0.8
-min_lightweight_mass = 1000.0
 run_boost_shift_time_s = 0.12
 run_boost_downforce_n = 3.0
 run_boost_brake_torque_n = 2500.0

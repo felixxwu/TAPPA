@@ -103,7 +103,7 @@ func _ready() -> void:
 	gen.mix_rate = _mix_rate
 	gen.buffer_length = buffer_seconds()
 	stream = gen  # set the stream unconditionally (smoke test checks its type)
-	_synth = EngineAudioSynth.new(cfg, _mix_rate)
+	_build_synth()
 	# Headless (test/CI): set up the stream but never PLAY it. Godot's headless
 	# AudioDriverDummy still runs a mix thread, and a *playing* AudioStreamGeneratorPlayback
 	# (which extends AudioStreamPlaybackResampled) is freed underneath it at engine teardown
@@ -136,7 +136,13 @@ func reconfigure() -> void:
 		if _playback != null:
 			play()
 			_playback = get_stream_playback() as AudioStreamGeneratorPlayback
-	_synth = EngineAudioSynth.new(_cfg, _mix_rate)
+	_build_synth()
+
+
+# A silenced display car never plays its voice, and baking one is slow: a garage spawns a whole roster at once.
+func _build_synth() -> void:
+	if process_mode != Node.PROCESS_MODE_DISABLED:
+		_synth = EngineAudioSynth.new(_cfg, _mix_rate)
 
 
 # Cumulative generator buffer underruns ("skips"): each one is a frame that drained
@@ -224,7 +230,7 @@ func _timed_process(_delta: float) -> void:
 	engine.bov_event = false
 	# Raw `boost`, deliberately NOT EngineSim.boost_reading(): this argument drives the
 	# turbo WHISTLE and blow-off valve, layers a supercharged car does not have (its whine
-	# is rpm-pitched, and install_supercharger clears turbo_enabled so neither can fire).
+	# is rpm-pitched).
 	# Feeding belt boost in would make a blown car whistle and vent like a turbo.
 	# Nitrous audio state. `nitrous_on` is the sim's LATCHED delivery state (held AND charged
 	# AND combusting) — read, never re-derived, so the hiss can't sound while the engine is

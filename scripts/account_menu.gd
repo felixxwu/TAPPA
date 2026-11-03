@@ -2,10 +2,7 @@ class_name AccountMenu
 extends VBoxContainer
 # The optional-account UI: sign in, see sync status, resolve a conflict, sign out.
 #
-# ONE builder, TWO hosts — the same arrangement SettingsMenu already uses. It is
-# added as a page inside Settings, and again as a standalone overlay reachable
-# from the title screen (a player who wants to restore their career on a new
-# device should not have to dig through Settings to find that out).
+# A page inside Settings.
 #
 # Rebuilt wholesale on every state change rather than poking individual widgets:
 # the page is small, it is never on screen during gameplay, and a full rebuild
@@ -61,11 +58,9 @@ func go_back() -> bool:
 
 
 func focus_first() -> void:
-	# Only when actually on screen. This page is built once at boot and parked
-	# inside the Settings overlay, which the HQ hides via its CanvasLayer — and
-	# a hidden CanvasLayer does not make is_visible_in_tree() false, so without
-	# this guard a rebuild here yanks focus off whatever the player is looking
-	# at (it stole the HQ title screen's cursor).
+	# Only when actually on screen: a hidden CanvasLayer does not make
+	# is_visible_in_tree() false, so a rebuild here could yank focus off whatever
+	# the player is looking at.
 	if not MenuNav.is_on_screen(self):
 		return
 	UITheme.focus_grab(UITheme.first_focusable(self))

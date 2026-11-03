@@ -15,7 +15,6 @@ func before_each() -> void:
 	_save.profile_path = TEST_PATH
 	_save.save_disabled = false
 	_save.profile = _save._default_profile()
-	_save.set_setting(TitleScreen.FIRST_RUN_DONE_KEY, true)
 	CarFixtures.install()
 	_entered[0] = 0
 	_closed[0] = 0
@@ -25,7 +24,6 @@ func after_each() -> void:
 	if is_instance_valid(_title):
 		_title.free()
 	CarFixtures.restore()
-	WorldSession.fresh = false
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -65,37 +63,6 @@ func _pick_starter(t: TitleScreen, i: int) -> void:
 	t.cards().select(i, false)
 	t.cards()._confirm_selected()
 	t.cards().skip_confirm_flash()
-
-
-func test_a_first_time_world_is_kept_when_its_car_is_picked() -> void:
-	var first := TitleScreen.starter_choices()[0]
-	WorldSession.new_world(3, first)
-	WorldSession.fresh = true
-	var t := await _open()
-	assert_eq(CardUI.index_of(t.cards(), "Continue"), -1, "nothing to continue on a first boot")
-	assert_true(CardUI.pick(t.cards(), "New world"))
-	await get_tree().process_frame
-	assert_null(ConfirmPopup.any_open(get_tree()), "no confirm: there's nothing to lose")
-	assert_eq(t.view, TitleScreen.View.STARTER)
-	_pick_starter(t, 0)
-	assert_eq(_closed[0], 1, "the world behind the menu is the new world")
-	assert_eq(_entered[0], 0)
-	assert_false(WorldSession.fresh)
-
-
-func test_a_first_time_world_keeps_its_island_for_another_car() -> void:
-	if TitleScreen.starter_choices().size() < 2:
-		pass_test("only one starter car")
-		return
-	WorldSession.new_world(3, TitleScreen.starter_choices()[0])
-	WorldSession.fresh = true
-	var t := await _open()
-	assert_true(CardUI.pick(t.cards(), "New world"))
-	await get_tree().process_frame
-	_pick_starter(t, 1)
-	assert_eq(String(WorldSession.active_car()["model_id"]), TitleScreen.starter_choices()[1])
-	assert_eq(WorldSession.world_seed(), 3, "the island already built is kept")
-	assert_eq(_entered[0], 1, "the scene reloads to field the chosen car")
 
 
 func test_the_starter_choice_is_the_innermost_rings_cars() -> void:
@@ -155,13 +122,16 @@ func test_the_title_screen_is_keyboard_and_gamepad_navigable() -> void:
 
 
 func _first_run_title(touch: bool) -> TitleScreen:
-	_save.profile = _save._default_profile()
 	Config.data.mobile_controls_force = touch
-	WorldSession.new_world(3, TitleScreen.starter_choices()[0])
-	WorldSession.fresh = true
-	var t := await _open()
+	_title = TitleScreen.new()
+	_title.options_only = true
+	_title.enter_world = func() -> void: _entered[0] += 1
+	_title.close = func() -> void: _closed[0] += 1
+	add_child(_title)
 	await get_tree().process_frame
-	return t
+	await get_tree().process_frame
+	await get_tree().process_frame
+	return _title
 
 
 func test_a_new_player_picks_a_camera_first() -> void:
@@ -176,8 +146,7 @@ func test_a_new_player_picks_a_camera_first() -> void:
 	await get_tree().process_frame
 	Config.data.mobile_controls_force = force
 	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)), int(row.key))
-	assert_eq(t.view, TitleScreen.View.MAIN, "no touch layout to pick off a touch device")
-	assert_false(TitleScreen.needs_first_run(), "shown only once")
+	assert_eq(_closed[0], 1, "no touch layout to pick off a touch device, so it closes into the game")
 
 
 func test_a_new_player_on_touch_also_picks_a_layout() -> void:
@@ -191,7 +160,7 @@ func test_a_new_player_on_touch_also_picks_a_layout() -> void:
 	await get_tree().process_frame
 	Config.data.mobile_controls_force = force
 	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)), int(row.key))
-	assert_eq(t.view, TitleScreen.View.MAIN)
+	assert_eq(_closed[0], 1, "the layout is the last page")
 
 
 func test_the_update_prompt_records_its_dismissal() -> void:
@@ -248,7 +217,6 @@ func test_every_settings_page_keeps_its_back_button_on_screen() -> void:
 func test_the_options_after_the_cold_open_close_back_into_the_game() -> void:
 	var force: bool = Config.data.mobile_controls_force
 	Config.data.mobile_controls_force = false
-	_save.set_setting(TitleScreen.FIRST_RUN_DONE_KEY, false)
 	_title = TitleScreen.new()
 	_title.options_only = true
 	_title.enter_world = func() -> void: _entered[0] += 1
@@ -265,4 +233,3 @@ func test_the_options_after_the_cold_open_close_back_into_the_game() -> void:
 	Config.data.mobile_controls_force = force
 	assert_eq(_closed[0], 1, "back closes them into the game")
 	assert_ne(_title.view, TitleScreen.View.MAIN, "not on to the main menu")
-	assert_true(_save.get_setting(TitleScreen.FIRST_RUN_DONE_KEY, false), "shown only once")

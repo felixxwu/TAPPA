@@ -1477,8 +1477,6 @@ func _apply_physics_spec(spec: Dictionary) -> void:
 	# value. apply_owned adds any active downforce effect ON TOP of this afterwards.
 	cfg.downforce_front = spec.get("downforce_front", 0.0)
 	cfg.downforce_rear = spec.get("downforce_rear", 0.0)
-	# Per-car steer-assist yaw torque (understeer aid). SET (not added) so a spec of
-	# 0 means no assist — no hidden global baseline. Only the focus authors a value.
 	# Per-car default brake bias (front share of foot-brake torque). This is the
 	# baseline the brake-bias tuning slider re-centres on (TuningLibrary.apply, run
 	# after); at neutral the car keeps this default. Omit to inherit the

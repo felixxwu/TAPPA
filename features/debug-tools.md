@@ -132,9 +132,8 @@ CanvasLayer`). Created by `world.gd` in `_ready()` (like the wheel-force
 overlay), passing the `Floor` terrain manager for correlation and pointing
 `measure_viewport` at the `PostProcess/View` SubViewport (where the 3D pass
 actually runs in `main.tscn` — the root's 3D is disabled there). Toggled with
-**P** (`toggle_perf_overlay`); hidden and idle by default. Forced on for a whole
-run in benchmark mode via `activate()` ([benchmark.md](benchmark.md)). Text is
-`FONT_SIZE` = 15 px so the readout is legible at a glance.
+**P** (`toggle_perf_overlay`); hidden and idle by default. It lives on the dev stage only: in free roam P toggles
+`DebugStats` instead.
 
 Diagnoses choppiness by separating the suspects per frame:
 

@@ -118,7 +118,7 @@ standing, 1 knocked over), and `billboard_opaque.gdshader` branches on it:
   billboarding and locks BOTH planes in place, applying the instance's MODEL
   transform (a **topple tilt** about the base + the size scale) verbatim. The card
   snaps into the fixed "+" cross and topples, so a fallen tree reads as a solid 3D
-  shape instead of a flat sheet lying on the ground. `reset_fallen` clears the flag.
+  shape instead of a flat sheet lying on the ground.
 
 **Sun shading (matches the terrain).** Standing billboards are no longer flat:
 `billboard_opaque.gdshader` runs the same hemisphere-ambient + one-directional-sun
@@ -313,19 +313,7 @@ obstacle (the collision above, unchanged).
   `dir`). `fall_angle` is an eased 0 → `FLAT_ANGLE` (just past PI/2), monotone,
   clamped. Records retire when flat and `set_process(false)` when none remain, so a
   settled forest costs nothing per frame.
-- **`reset_fallen()`** stands every felled tree back up: re-enables each box in place
-  (`body_set_shape_disabled(..., idx, false)`), clears the felled flag and restores
-  the instance's upright pose (identity rotation + size scale from `_upright_basis`),
-  and clears `_fallen` / `_falling` (`set_process(false)`). Only the `_fallen` set is
-  touched, so a stand with nothing knocked over is a cheap early-out. The **event
-  replay** calls it — see Persistence.
-- **Persistence.** Run-local and transient — a fresh run regenerates standing trees.
-  A mid-run off-track auto-reset (`TrackProgress`) does not regenerate the world, so
-  **felled trees stay felled** after a reset (you broke them, they're broken). BUT when
-  the run ends and the **replay** begins, `world.gd._present_standings_overlay` calls
-  `_reset_props_for_replay()` (which invokes `reset_fallen()` on every foliage field and
-  `reset_knocked()` on the `SignField`) so the replay plays back against a pristine,
-  intact stage rather than the wreckage the driven run left behind.
+- **Persistence.** Transient: felled trees stay felled until the field is rebuilt.
 
 Config knobs `tree_fell_speed_kmh` / `tree_fell_duration_s` are balance values (see
 Configuration); tests assert the felling *logic*, never the chosen numbers.

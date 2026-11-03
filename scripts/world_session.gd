@@ -30,9 +30,6 @@ const DRIVEN_CELL_M := 40.0
 
 # Set by the boot scene (title_boot.gd) so the next free-roam load opens the title menu over itself.
 var title_pending := false
-# The world was made at boot for a first-time player, so New World can pick a car on it instead of
-# building another.
-var fresh := false
 
 signal world_changed()
 

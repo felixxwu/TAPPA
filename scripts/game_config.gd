@@ -336,7 +336,14 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 # CAR the same dimming the terrain already bakes into its vertex colours, so a
 # dimmed stage doesn't leave a full-brightness car floating in it. Read only by
 # apply_car_light. Defaults to 1.0 so a session-less boot is unaffected.
-var weather_sun_mult := 1.0
+var weather_sun_mult := 1.0:
+	set(value):
+		if value != weather_sun_mult:
+			weather_sun_mult = value
+			_relight_car_materials()
+# Every live material apply_car_light has lit, so a weather change reaches them all at once:
+# the car, rocks and barriers. Material instance id -> WeakRef.
+var _car_lit := {}
 ## GLOBAL GRIP: one multiplier on every tyre's μ, for every car, on every surface and in every
 ## weather (Drivetrain's per-contact resolver, alongside the weather multiplier). 1.0 is the
 ## authored grip; below 1.0 everything slides more. The one knob for "the cars are too grippy".
@@ -2718,6 +2725,19 @@ func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("sun_color", weather_lit(sun_color))
 	mat.set_shader_parameter("sky_color", weather_lit(sky_color))
 	mat.set_shader_parameter("ground_color", ground_color)
+	var id := mat.get_instance_id()
+	if not _car_lit.has(id):
+		_car_lit[id] = weakref(mat)
+
+
+func _relight_car_materials() -> void:
+	for id: int in _car_lit.keys():
+		var mat: ShaderMaterial = _car_lit[id].get_ref()
+		if mat == null:
+			_car_lit.erase(id)
+		else:
+			apply_car_light(mat)
+
 
 # The same fake sun/ambient block for FOLIAGE billboards (billboard_opaque.gdshader).
 # Mirrors apply_car_light so trees sit in the same light as the ground and the car —
@@ -2905,12 +2925,8 @@ func spectator_params() -> Dictionary:
 # The base strengths of the loot parts (BoostLibrary, features/loot.md). A part's level is the
 # biome ring it was found in; BoostLibrary.magnitude_for scales these by
 # `boost_level_magnitude_step` below, so a level-0 part has exactly the value authored here.
-## "Lightweight" — mass multiplier (below 1.0 = lighter, i.e. a real boost),
-## clamped at min_lightweight_mass below (the "mult_floor" op) so it can't push a car
-## below that floor — see UpgradeLibrary.EFFECTS["mass_mult_floor"].
+## "Lightweight" — mass multiplier (below 1.0 = lighter, i.e. a real boost).
 @export_range(0.5, 1.0, 0.01) var run_boost_mass_mult := 0.8
-## The floor "Lightweight" can't push a car's mass below (kg).
-@export var min_lightweight_mass := 1000.0
 ## "Quick shifter" — an ABSOLUTE shift time (the "set" op), not a scaling.
 @export_range(0.02, 0.3, 0.01) var run_boost_shift_time_s := 0.12
 ## "Aero kit" — added downforce (N), the SAME figure on both front and rear.

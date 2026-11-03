@@ -22,8 +22,6 @@ extends RefCounted
 #   field    — the target GameConfig / meta field ("" for induction)
 #   op       — "mult" (field *= val), "add" (field += val), "set" (field = val — an
 #              ABSOLUTE figure that replaces the baseline rather than scaling it),
-#              "mult_floor" (field = max(field * val, floor_field) — a proportional
-#              reduction that can't push the field past a floor; see `floor_field` below),
 #              "install_induction" (special: enable one flag and splat the sub-dict),
 #              or "write_fields" (splat a sub-dict, no flag)
 #
@@ -52,15 +50,6 @@ const EFFECTS := {
 	# Nitrous writes its config fields and NOTHING else.
 	"install_nitrous": {"field": "", "op": "write_fields"},
 	"mass_mult":           {"field": "mass", "op": "mult"},
-	# Lightweight parts (BoostLibrary "lightweight"): a proportional weight cut that can't
-	# push a car below min_lightweight_mass — so it's a real upgrade on a heavy car and a
-	# genuine no-op on one already at/under
-	# the floor, rather than a % that keeps scaling a car that's already light. `floor_field`
-	# names the GameConfig field _cfg_set/mult_floor reads the floor from — a LIVE CONFIG
-	# spelling like `enable`/`cfg_fields`, not a meta one.
-	"mass_mult_floor": {
-		"field": "mass", "op": "mult_floor", "floor_field": "min_lightweight_mass",
-	},
 	# Race tyres. `field` names the META spelling (a car's rubber is ONE `tire_compound`
 	# coefficient) while `cfg_fields` names the live-config spelling (a PER-AXLE pair, seeded
 	# from that same compound by car.gd::_apply_physics_spec and then shifted apart by the
@@ -77,7 +66,8 @@ const EFFECTS := {
 	#
 	# `mult` rather than `set` deliberately: it makes 1.0 the identity on BOTH sides, so a
 	# car with no such compound fitted needs no entry anywhere — the meta key is simply
-	# absent (readers default it to 1.0) and the config field is the 1.0 car.gd re-seeds.
+	# absent (readers default it to 1.0). No part authors these today; one that does needs
+	# `reseed`, because nothing else resets these fields on the long-lived config.
 	#
 	# These do NOT move the menu's GRIP row, which reads `tire_compound` alone: a
 	# single headline number cannot honestly state a figure that changes with the surface.
@@ -102,7 +92,6 @@ const EFFECTS := {
 	# builds its curve from (cfg.peak_torque, engine.gd::_torque_at) — a plain mult on it
 	# is "a stronger engine was fitted". NOT global_torque_scale: that field is a hidden
 	# uniform de-rate (see BoostLibrary's header), never a per-car effect target.
-	"engine_power_mult": {"field": "peak_torque", "op": "mult"},
 }
 
 # The LIVE-CONFIG fields a "mult"/"add" row writes. Usually just `field`: the meta and the
@@ -147,19 +136,6 @@ static func _cfg_set(cfg: GameConfig, field: String, value: Variant) -> void:
 		push_error("UpgradeLibrary: effect writes GameConfig.%s, which does not exist — write ignored" % field)
 		return
 	cfg.set(field, value)
-
-
-# A "mult_floor" row's clamp floor, read off whichever config source the caller has
-# (apply() has a live `cfg`). A missing/typo'd `floor_field`, or one naming a
-# GameConfig property that doesn't exist, degrades to NO clamp (mass_mult behaves like a
-# plain "mult") rather than a silent 0.0 floor or a crash — same "effect reads as active,
-# nothing enforces it" failure shape _cfg_set guards against for a write, just for a read.
-static func _floor_value(source: Object, desc: Dictionary) -> float:
-	var floor_field := String(desc.get("floor_field", ""))
-	if floor_field.is_empty() or not (floor_field in source):
-		push_error("UpgradeLibrary: mult_floor row names floor_field '%s', which does not exist on GameConfig — clamp disabled" % floor_field)
-		return -INF
-	return float(source.get(floor_field))
 
 
 # --- The reseed pre-pass -----------------------------------------------------
@@ -223,11 +199,6 @@ static func apply(owned_car: Dictionary, cfg: GameConfig) -> void:
 				"mult":
 					for f in _cfg_fields(desc):
 						_cfg_set(cfg, f, float(cfg.get(f)) * float(val))
-				"mult_floor":
-					# Same as "mult", but never pushes the field past floor_field.
-					var floor_val := _floor_value(cfg, desc)
-					for f in _cfg_fields(desc):
-						_cfg_set(cfg, f, maxf(float(cfg.get(f)) * float(val), floor_val))
 				"add":
 					for f in _cfg_fields(desc):
 						_cfg_set(cfg, f, float(cfg.get(f)) + float(val))

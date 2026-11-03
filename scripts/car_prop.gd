@@ -34,6 +34,7 @@ static func spawn(parent: Node, scene: PackedScene, opts: Dictionary) -> Node3D:
 	# car.tscn's root script type at parse time — that inference is environment-fragile
 	# (Godot 4.6 can fail it and break the whole script). Runtime behaviour is unchanged.
 	var car: Variant = scene.instantiate()
+	car.silence_engine_audio()  # before it enters the tree, so it never bakes an engine voice
 	parent.add_child(car)
 	# Isolated config so this display car's reshape can't clobber the player car's
 	# engine/gearbox in the shared global Config.data (see car.gd `config`).

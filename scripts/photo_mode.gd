@@ -174,7 +174,7 @@ func apply_move(axis: Vector3, delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if not _entered:
 		return
-	if event is InputEventMouseMotion and _wants_capture:
+	if event is InputEventMouseMotion and _wants_capture and event.device != InputEvent.DEVICE_ID_EMULATION:
 		var motion := event as InputEventMouseMotion
 		var sens: float = Config.data.photo_look_sensitivity
 		look_by(-motion.relative.x * sens, -motion.relative.y * sens)
@@ -188,8 +188,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# while photo mode is up, so neither reaches it and stacks an overlay
 	# over the frozen shot.
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
+		# Fetched first: exit() takes this camera out of the tree.
+		var vp := get_viewport()
 		exit()
-		get_viewport().set_input_as_handled()
+		vp.set_input_as_handled()
 
 
 # Turn the camera by a yaw/pitch DELTA in radians.

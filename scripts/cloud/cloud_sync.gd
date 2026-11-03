@@ -317,10 +317,12 @@ func _local_is_wiped() -> bool:
 	return not has_progress(Save.profile)
 
 
-# More than a new player's forced cold open gives: it lights spawn's stop and one cabin, in one car.
+# More than a new player's forced cold open gives: it lights spawn's stop and one cabin, in one stock car.
 static func has_progress(p: Dictionary) -> bool:
 	var lit: Array = (p.get(Save.KEY_WORLD, {}) as Dictionary).get("lit", [])
-	return lit.size() > 2 or (p.get(Save.KEY_CARS, []) as Array).size() > 1
+	var cars: Array = p.get(Save.KEY_CARS, [])
+	return lit.size() > 2 or cars.size() > 1 or cars.any(func(c: Dictionary) -> bool:
+		return not (c.get("parts", []) as Array).is_empty())
 
 
 # The cloud copy has a career worth restoring. Guards the auto-take: replacing an

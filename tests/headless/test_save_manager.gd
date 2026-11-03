@@ -324,9 +324,16 @@ func test_save_emits_profile_changed() -> void:
 	assert_signal_emitted(_save, "profile_changed")
 
 
-func test_blocked_storage_still_notifies_the_cloud() -> void:
-	# Blocked local storage (private browsing, read-only fs) is exactly when a
-	# cloud copy matters most, so it must not also switch off cloud sync.
+func test_a_failed_write_does_not_stop_later_saves() -> void:
+	_save.profile_path = "user://no_such_directory/profile.json"
+	_save.save_now()
+	assert_false(_save.save_disabled, "one failure doesn't switch saving off")
+	_save.profile_path = TEST_PATH
+	_save.save_now()
+	assert_true(FileAccess.file_exists(TEST_PATH), "the next save reaches disk")
+
+
+func test_disabled_storage_still_notifies_the_cloud() -> void:
 	_save.save_disabled = true
 	watch_signals(_save)
 	_save.save()

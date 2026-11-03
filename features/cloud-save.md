@@ -25,7 +25,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/cloud/auth_service.gd` | `AuthService` — sign-in, token refresh, credential storage, error mapping. |
 | `scripts/cloud/cloud_sync.gd` | `CloudSync` — Firestore document encoding, the conflict model, debounce/backoff. |
 | `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). |
-| `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page (and, as an inline overlay, by the standings page's sign-in prompt). |
+| `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page. |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()` shared by this document AND the leaderboard's, extracted out of this file (see the deleted global leaderboards). |
 | `firestore.rules` | Security rules, kept in git rather than only in the console, and deployed by CI. Only `users/{uid}` is reachable, owner-only. `stage_times`, `challenge_runs` and the two `lobby_*` collections went with their features; the file grants them nothing now. Structurally guarded by `tests/headless/test_firestore_rules.gd` — see below. |
@@ -322,8 +322,7 @@ correctly.
 A pull that REPLACES the local profile (first sign-in on a new device, or "Use cloud" on a
 conflict) changes the save out from under the running game. `CloudSync` emits
 **`profile_replaced`**, re-emitted by `Cloud`. `free_roam.gd` → `_on_profile_replaced` reboots
-through `title.tscn` onto the downloaded world, clearing `WorldSession.fresh` so the title offers
-Continue and confirms New World. Its exit save writes nothing: `Save.adopt_profile` emits
+through `title.tscn` onto the downloaded world. Its exit save writes nothing: `Save.adopt_profile` emits
 `Save.replaced`, which moves `WorldSession.generation` on, and `save_world` only writes the world
 it was built on ([world-session.md](world-session.md)).
 
@@ -346,7 +345,7 @@ it was built on ([world-session.md](world-session.md)).
 already works:
 
 - **Settings → Account** (`settings_menu.gd`: `_build_account_page`,
-  `show_account`, an entry in `_pages`). **Hidden for now (2026-10-27):** the page is
+  an entry in `_pages`). **Hidden for now (2026-10-27):** the page is
   still built but has no entry in the category grid, so players can't reach it; cloud
   sync itself still runs for an already-signed-in profile. Re-add the grid entry in
   `_build_list_page` to bring it back.
@@ -397,12 +396,10 @@ Two shapes, chosen by what the call does:
 - **`CloudBusy.cover(host, title, step)`** — a blocking full-screen `LoadingScreen`,
   for calls that rewrite the profile or gate progression: conflict resolution and the
   boot restore.
-- **`CloudBusy.ambient(host, text, container = null)`** — non-blocking, for reads
+- **`CloudBusy.ambient(host, text, container)`** — non-blocking, for reads
   behind already-rendered UI (the account page's message row).
-  With no `container` the host already draws its own waiting line and only the marker
-  is added, so two lines never say the same thing.
 
-`await busy.end()` takes it down. `run_covered(...)` / `run_ambient(...)` wrap a
+`await busy.end()` takes it down. `run_covered(...)` wraps a
 `Callable` for sites that want a one-liner; sites whose `await` must stay literally
 direct use `cover`/`ambient` + `end`.
 
@@ -421,8 +418,7 @@ Mechanics worth knowing:
   `CloudBusy.showing(host)` is provable in tests; only the visuals are skipped. The
   rule throughout this repo: skip the animation, never the decision or the final state.
 - **Rebuild survival** — everything joins group `CloudBusy.GROUP`, and hosts that
-  rebuild their children wholesale (`account_menu.rebuild`,
-  `global_standings._build_ui`) skip that group. Otherwise a `Cloud.state_changed`
+  rebuild their children wholesale (`account_menu.rebuild`) skip that group. Otherwise a `Cloud.state_changed`
   arriving mid-sign-in frees the busy line.
 
 `Cloud.resolve_use_cloud()` is deliberately NOT wrapped: applying an

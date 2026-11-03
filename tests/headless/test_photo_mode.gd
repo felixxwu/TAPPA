@@ -220,6 +220,17 @@ func test_mouse_motion_turns_the_camera() -> void:
 	assert_eq(cam.yaw(), turned, "once photo mode is over the mouse steers nothing")
 
 
+# A phone's touch drags also arrive as emulated mouse motion; PhotoModeControls already handles them.
+func test_emulated_mouse_motion_does_not_turn_the_camera() -> void:
+	var cam := _lone_camera()
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(40.0, 0.0)
+	motion.device = InputEvent.DEVICE_ID_EMULATION
+	cam._input(motion)
+	assert_eq(cam.yaw(), 0.0)
+	cam.exit()
+
+
 # exit() is the single way out and is safe to call twice (after_each does exactly that
 # on a camera the test already closed).
 func test_exit_emits_once() -> void:
@@ -242,7 +253,6 @@ func test_pause_menu_offers_photo_mode() -> void:
 	var nav := MenuNav.of(_pause._overlay)
 	assert_not_null(nav, "the pause overlay is wired to the MenuNav framework")
 	await get_tree().process_frame
-	nav.forget()
 	_pause.open()
 	await get_tree().process_frame
 	assert_eq(_pause.get_viewport().gui_get_focus_owner(), cards, "the card list has the cursor")
@@ -286,6 +296,20 @@ func test_returning_from_photo_mode_reopens_the_still_frozen_menu() -> void:
 	assert_true(_pause.is_open(), "leaving photo mode gives the pause menu back")
 	assert_true(get_tree().paused, "and the world is still frozen")
 	assert_true(_pause._input_enabled, "the menu is armed again")
+
+
+# Through the real input path: the key that closes photo mode must not also reach the menu it reopens.
+func test_esc_leaves_photo_mode_for_the_pause_menu_and_stays_there() -> void:
+	_pause.open()
+	_pause._on_photo_mode_pressed()
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	get_viewport().push_input(esc)
+	await get_tree().process_frame
+	assert_null(_scene.get_node_or_null("PhotoModeCamera"), "Esc leaves photo mode")
+	assert_true(_pause.is_open(), "the pause menu is back")
+	assert_true(get_tree().paused, "and the world is still frozen")
 
 
 # --- host wiring ----------------------------------------------------------

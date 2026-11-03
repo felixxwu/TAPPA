@@ -185,6 +185,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# is NOT an opener — in gameplay B is the handbrake — it only acts as "back" once the
 	# menu is already open (step out of a sub-page, else resume). This keeps the pause
 	# menu off the B button while still letting B/Esc back out of it.
+	# Esc is bound to both actions, so stepping out of Settings has to be checked first.
+	if is_open() and _settings_panel.visible and event.is_action_pressed("ui_cancel"):
+		_on_settings_back()  # sub-page → list → menu
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("pause"):
 		if is_open():
 			resume()
@@ -194,10 +199,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not is_open() or not event.is_action_pressed("ui_cancel"):
 		return
-	if _settings_panel.visible:
-		_on_settings_back()  # Esc / B steps out a level: sub-page → list → menu
-	else:
-		resume()
+	resume()
 	get_viewport().set_input_as_handled()
 
 

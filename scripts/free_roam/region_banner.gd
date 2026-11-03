@@ -5,7 +5,7 @@ extends CanvasLayer
 # Driving into a biome ring for the first time in this world: the region's name in the same band
 # across the screen as "Checkpoint reached" (CheckpointBanner.build_band). "First time" is
 # WorldSession's max_ring high-water mark, so it persists with the save. A region reached while the
-# checkpoint band is up waits for it, so the two never stack.
+# checkpoint band is up waits for it, and a checkpoint reached under this band hides it, so the two never stack.
 
 var checkpoint_banner: CheckpointBanner
 
@@ -37,6 +37,8 @@ func announce(region_name: String) -> void:
 func _process(_delta: float) -> void:
 	if _pending != "":
 		_try_show()
+	if _band != null and checkpoint_banner != null:
+		_band.visible = not checkpoint_banner.is_showing_banner()
 
 
 func _try_show() -> void:

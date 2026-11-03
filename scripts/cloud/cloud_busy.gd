@@ -4,15 +4,6 @@ extends RefCounted
 # Tests: tests/headless/test_cloud_sync.gd — extend in the same change.
 # The ONE way the game says "a cloud call is in flight".
 #
-# WHY THIS EXISTS. Every screen that awaited Cloud invented its own waiting UI,
-# or none: account_menu.gd had a private _begin/_finish, hq.gd and
-# conflict_prompt.gd each rolled their own covering LoadingScreen, global_standings
-# had an in-panel LOADING state, and challenge_session had NOTHING — which is the
-# silent pause a player reported at the end of a run, and the one that made them
-# say "I clicked it and nothing happened for a while". "Show that we are waiting on
-# the network" is a rule, and it was re-derived per call site until the derivations
-# disagreed. See todo/challenge-career-reuse-drift.md item 11.
-#
 # It is a static helper over a Callable (plus a begin/end pair for call sites that
 # must keep their `await` direct), NOT an autoload: a busy state belongs to the
 # node that is waiting, and there is never a global one.
@@ -23,9 +14,7 @@ extends RefCounted
 #             profile or gate progression: conflict resolution, sign-in, the boot
 #             restore. Blocking is the honest signal there — the player must not
 #             act on a career that is about to be replaced.
-#   ambient() An in-panel line, or just the marker when the host already renders
-#             its own. For reads behind UI that is already on screen (leaderboard
-#             fetches). A modal over a leaderboard would be worse than nothing.
+#   ambient() An in-panel line. For calls behind UI that stays usable (the account page).
 #
 # HEADLESS: skip the VISUAL, never the await and never the decision — the rule
 # ConflictPrompt._resolve already follows
@@ -36,8 +25,7 @@ extends RefCounted
 # How long a COVER stays up once shown, at minimum. A round trip that lands in
 # 50 ms must not flash a full-screen cover for one frame — that reads as a glitch,
 # not as feedback. Covers only: an ambient line appearing and vanishing quickly is
-# not the problem this floor exists to solve, and holding a rally's leaderboard
-# fetch open for the floor would slow the game down for nothing.
+# not the problem this floor exists to solve.
 #
 # Not applied headless (there is nothing to see, and it would tax every test run),
 # which is safe precisely because it is a look, not a decision.
@@ -82,26 +70,18 @@ static func cover(host: Node, title: String, step: String) -> CloudBusy:
 	return busy
 
 
-# An ambient busy state on `host`. When `container` is given, `text` is rendered
-# into it as a dim in-panel line (that line IS the marker, so a host rebuild that
-# preserves GROUP keeps it). When it is null the host already draws its own
-# waiting line — global_standings' LOADING status row — and only the invisible
-# marker is added, so the relationship stays observable without a second line
-# saying the same thing twice.
-static func ambient(host: Node, text: String, container: Node = null) -> CloudBusy:
+# An ambient busy state on `host`: `text` as a dim line in `container` (that line IS
+# the marker, so a host rebuild that preserves GROUP keeps it).
+static func ambient(host: Node, text: String, container: Node) -> CloudBusy:
 	var busy := CloudBusy.new()
 	busy._host = host
 	busy._shown_msec = Time.get_ticks_msec()
 	if not is_instance_valid(host) or not host.is_inside_tree():
 		return busy
-	var parent: Node = container if is_instance_valid(container) else host
-	if is_instance_valid(container):
-		busy._marker = UITheme.label(text, "dim")
-	else:
-		busy._marker = Node.new()
+	busy._marker = UITheme.label(text, "dim")
 	busy._marker.name = "CloudBusyMarker"
 	busy._marker.add_to_group(GROUP)
-	parent.add_child(busy._marker)
+	container.add_child(busy._marker)
 	return busy
 
 
@@ -129,23 +109,12 @@ func end() -> void:
 # --- Wrapping a call ----------------------------------------------------------
 #
 # `action` is awaited, so a coroutine stays a coroutine. Call sites that must keep
-# their await literally direct (global_standings documents why — a Callable hop is
-# resolved at runtime, and routing the LIVE path through the test seam is the one
-# thing its tests could never catch) should use cover()/ambient() + end() instead.
+# their await literally direct use cover()/ambient() + end() instead.
 
 # Run `action` behind a cover and return its normalised result.
 static func run_covered(host: Node, title: String, step: String,
 		action: Callable) -> Dictionary:
 	var busy := CloudBusy.cover(host, title, step)
-	var raw: Variant = await action.call()
-	await busy.end()
-	return result_of(raw)
-
-
-# Run `action` behind an ambient state and return its normalised result.
-static func run_ambient(host: Node, text: String, action: Callable,
-		container: Node = null) -> Dictionary:
-	var busy := CloudBusy.ambient(host, text, container)
 	var raw: Variant = await action.call()
 	await busy.end()
 	return result_of(raw)
