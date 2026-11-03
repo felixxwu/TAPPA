@@ -34,6 +34,7 @@ var view := View.MAIN
 var site := -1
 var _fielded_id := -1  # the car body in the world: after a Garage swap `owned` is another car
 var dirty := false
+var _swapped_car := false
 var _keep_at := 0
 var _page: MenuPage
 var _cards: CardCarousel
@@ -52,6 +53,7 @@ func is_open() -> bool:
 func open(p_site: int) -> void:
 	site = p_site
 	dirty = false
+	_swapped_car = false
 	_fielded_id = int(owned.get("instance_id", -1))
 	if car != null and car.get("damage") != null:
 		(car.damage as DamageModel).repair(Config.data)
@@ -142,11 +144,17 @@ func _build_main() -> void:
 		"$%d. Spend it: a wreck drops it all" % WorldSession.money()]
 	_card_page("Checkpoint", [
 		{"title": "Continue", "icon": "resume_run", "action": close},
-		{"title": "Parts", "icon": "parts", "action": _show.bind(View.PARTS)},
+		{"title": "Shop", "subtitle": _shop_text(), "icon": "parts", "action": _show.bind(View.PARTS)},
 		{"title": "Garage", "icon": "car", "action": _show.bind(View.GARAGE)},
 		{"title": "Map", "icon": "map", "action": _open_map},
 		{"title": "Tune car", "icon": "tune", "action": _show.bind(View.TUNE)},
 	], header)
+
+
+func _shop_text() -> String:
+	var parts: Array = owned.get("parts", [])
+	var applied := parts.filter(LootRules.is_on).size()
+	return "%d applied, %d unlocked" % [applied, parts.size()]
 
 
 func _build_tune() -> void:
@@ -192,7 +200,7 @@ func _build_parts() -> void:
 			"disabled": not block.is_empty() or cost > money, "action": _buy_part.bind(part)})
 	if entries.is_empty():
 		entries.append({"title": "No parts yet", "subtitle": "Light checkpoints further out to buy some", "icon": "stash"})
-	_card_page("Parts", entries, [_car_name(owned), "$%d" % money])
+	_card_page("Shop", entries, [_car_name(owned), "$%d" % money])
 
 
 # A price reads green when the player can pay it and red when they can't.
@@ -263,7 +271,13 @@ func _drive(instance_id: int) -> void:
 	WorldSession.set_active_car(instance_id)
 	owned = WorldSession.active_car()
 	dirty = true
+	_swapped_car = true
 	_show(View.GARAGE)
+
+
+# What the loading screen says while the world reloads to apply this visit's changes.
+func reload_title() -> String:
+	return "Changing cars" if _swapped_car else "Applying parts to your car"
 
 
 func _open_map() -> void:

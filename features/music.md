@@ -62,7 +62,9 @@ it wants the **current menu song** — one entry of `MusicLibrary.MENU_SONGS` (`
 `skillz`); otherwise the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS`.
 The result is re-queued via `play_song`, which is idempotent and **latches the swap for the
 next 8-bar handoff**, so the change lands beat-aligned. The `MusicDirector` autoload persists
-across scene changes, so playback is continuous throughout.
+across scene changes, so playback is continuous throughout. The one exception is a first-time
+player's cold open: while `ColdOpen.due()`, `_tick` stops any voices and plays nothing, so the music
+starts when the first checkpoint is reached (free-roam.md → *Cold open*).
 
 ### Random menu song and rally song (per visit / per event)
 

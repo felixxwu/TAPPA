@@ -246,6 +246,13 @@ func test_a_long_frame_does_not_skip_a_story_line() -> void:
 	assert_eq(screen.story_line(), "first")
 
 
+func test_a_pinned_title_survives_later_titles() -> void:
+	var screen: LoadingScreen = add_child_autofree(LoadingScreen.new())
+	screen.pin_title("Why")
+	screen.set_title("Building the island…")
+	assert_eq(screen._title.text, UITheme.caps("Why"))
+
+
 func test_a_cover_left_on_the_root_by_a_cut_short_load_is_dropped() -> void:
 	var stale := LoadingScreen.new()
 	get_tree().root.add_child(stale)

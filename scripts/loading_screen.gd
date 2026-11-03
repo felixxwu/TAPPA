@@ -48,6 +48,7 @@ const _DOT_STEP_SEC := 0.4
 # so the headline's center never moves as the visible count changes.
 const _MAX_DOTS := 3
 
+var _title_pinned := false
 var _title: Label       # base headline, e.g. "LOADING STAGE 2 OF 8" (no ellipsis)
 var _dots: Label        # animated trailing dots — always _MAX_DOTS chars wide
 var _step: Label
@@ -170,11 +171,17 @@ func _refresh_dots() -> void:
 # A trailing "…" is stripped — the animated dots label replaces it, and leaving
 # both would stack ("……").
 func set_title(text: String) -> void:
-	if _title != null:
+	if _title != null and not _title_pinned:
 		var capped := UITheme.caps(text)
 		if capped.ends_with("…"):
 			capped = capped.substr(0, capped.length() - 1)
 		_title.text = capped
+
+
+# A headline that says why this load is happening: later set_title() calls leave it in place.
+func pin_title(text: String) -> void:
+	set_title(text)
+	_title_pinned = true
 
 
 # Overwrite the step line with `text` (e.g. "Preparing the garage…"), replacing whatever

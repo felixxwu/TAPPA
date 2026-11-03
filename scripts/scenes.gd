@@ -62,7 +62,7 @@ static var last_blocked_path := ""
 # page, the pause menu) paused the tree to open, and the next scene's CardCarousel tweens and
 # MenuNav run on the tree's pause state — arriving paused is a soft-lock. No caller wants to
 # stay paused across a change. Done before the test kill switch so tests can assert it.
-static func change_to(tree: SceneTree, path: String) -> void:
+static func change_to(tree: SceneTree, path: String, cover_title := "") -> void:
 	tree.paused = false
 	if block_real_changes:
 		last_blocked_path = path
@@ -76,6 +76,8 @@ static func change_to(tree: SceneTree, path: String) -> void:
 		if ColdOpen.due():
 			var s: FreeRoamSettings = Config.data.free_roam
 			cover.story(ColdOpen.story_lines(s), s.cold_open_story_line_s)
+		if not cover_title.is_empty():
+			cover.pin_title(cover_title)
 		tree.root.add_child(cover)
 	tree.change_scene_to_file(path)
 

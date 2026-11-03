@@ -345,7 +345,7 @@ func _start_title_orbit() -> Camera3D:
 # The reload is the rest stop's one acceptable load.
 func _reload_car() -> void:
 	save_world()
-	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
+	Scenes.change_to(get_tree(), Scenes.FREE_ROAM, _rest_page.reload_title())
 
 
 # A cloud download replaced the save: boot again onto it (save_world leaves the new world alone).

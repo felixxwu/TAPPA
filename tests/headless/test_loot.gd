@@ -521,6 +521,24 @@ func test_the_parts_page_switches_parts_on_and_off_and_reloads_the_car_on_close(
 	assert_signal_emitted(page, "car_changed")
 
 
+# The reload's loading screen names what the visit changed; a car swap wins over parts changed before it.
+func test_the_reload_title_says_whether_parts_or_the_car_changed() -> void:
+	var scene := await _boot()
+	_nothing_for_sale()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	var other: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
+	page.open(0)
+	page._set_parts([])
+	assert_string_contains(page.reload_title(), "parts")
+	page._drive(int(other["instance_id"]))
+	assert_string_contains(page.reload_title(), "cars")
+	page.dirty = false
+	page.close()
+	page.open(0)
+	assert_string_contains(page.reload_title(), "parts", "each visit starts afresh")
+	page.close()
+
+
 # A part belongs to the car it was bought for: another car neither sees it nor counts as owning it.
 func test_a_part_on_one_car_is_not_available_to_another() -> void:
 	var scene := await _boot()

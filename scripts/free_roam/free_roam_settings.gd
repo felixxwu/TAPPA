@@ -222,8 +222,8 @@ extends Resource
 @export var cold_open_car_id := "mx5"
 ## The furthest back down the goal cabin's road the cold open may start, and the nearest it may: it
 ## starts as far out as the lamp post stays in view, but never nearer than the minimum.
-@export var cold_open_max_distance_m := 450.0
-@export var cold_open_min_distance_m := 350.0
+@export var cold_open_max_distance_m := 700.0
+@export var cold_open_min_distance_m := 600.0
 ## The money a first-time world starts with: with the road coin picked up on the way, just about
 ## enough for another starter car at the first cabin.
 @export var cold_open_start_money := 3000

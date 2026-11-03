@@ -639,7 +639,7 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   `accelerate` press.
 - **Arrival** (`RestStops.lit(goal())` → `finish`): `min_hp` back to 0,
   `forced_weather = "dry"` until the weather's next slot (then the rings' draw), `cold_open`
-  cleared. Once the "Checkpoint reached" band is gone (plus
+  cleared, which also starts the music: `MusicDirector._tick` plays nothing while `ColdOpen.due()`. Once the "Checkpoint reached" band is gone (plus
   `cold_open_options_delay_s`) `free_roam.show_title(true)` shows the first-run options on their own
   (`TitleScreen.options_only`), closing back into the game. The rest-stop page stays shut until then:
   buying a car reloads the scene, which would lose the waiting options. An island with no roadside

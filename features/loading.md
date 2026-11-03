@@ -52,6 +52,10 @@ few lines shown in turn, the last held until `finish()`; `story_running()` / `st
 the caller wait until every line has had its time. Used for a first-time player's cold open
 (free-roam.md → *Cold open*, started in `Scenes.change_to`).
 
+**Pinned headline** (`LoadingScreen.pin_title`, via `Scenes.change_to(tree, path, cover_title)`): names why
+the load is happening, and free roam's later "Building the island…" / "Warming shaders…" `set_title()` calls
+leave it in place. Used by the rest-stop reload (loot.md).
+
 `set_step()` **locks** the step line (`_step_locked`) so the
 7-second tip cycle never overwrites a caller's own status text.
 

@@ -195,6 +195,12 @@ func _tick(now: float) -> void:
 	# on resume / next normal frame) uses the new song.
 	_update_loading_edge()
 
+	# A first-time player's drive is silent; the music starts when ColdOpen.finish clears this.
+	if ColdOpen.due():
+		if current_song != "":
+			_stop_voices()
+		return
+
 	if _stall_recovery_enabled() and had_prev and gap > _stall_threshold():
 		_enter_suspend()
 		return
@@ -226,6 +232,10 @@ func _enter_suspend() -> void:
 		return
 	_suspended = true
 	_stable_sec = 0.0
+	_stop_voices()
+
+
+func _stop_voices() -> void:
 	current_song = ""
 	requested_song = ""
 	if _player != null:

@@ -115,8 +115,8 @@ All card lists ([card-carousel.md](card-carousel.md)); item cards use `LootRules
 Rebuilding the page you're on (a part fitted, a car picked, something bought) keeps the cursor
 where it was (`RestStopPage._keep_at`). There's no separate shop: things on sale show at the end of the page they belong on, their price
 as the third line, green when the player can afford it and red when not (`RestStopPage.price_variant`). The MAIN page is Continue /
-Parts / Garage / Map / Tune car (travel is on the map); its header says the money held.
-**Parts:** a card per part unlocked for this car, labelled "On" or "Off" (pick to switch it,
+Shop (subtitle "N applied, M unlocked") / Garage / Map / Tune car (travel is on the map); its header says the money held.
+**Shop:** a card per part unlocked for this car, labelled "On" or "Off" (pick to switch it,
 `_toggle_part`; other cars keep theirs), then one per part on sale (its price, or the
 `fit_block_reason` label, disabled; picking one buys it and switches it on, `_buy_part`). **Garage:** a card per
 owned car (pick to drive one; the cursor starts on the car being driven), each with an
@@ -126,4 +126,5 @@ layout), then one per car on sale
 (picking one buys it and switches to it, `_buy_car`). There is no journal (a read-only list of what
 each unlocked biome sells): it was deleted on 2026-10-25 at the user's ask. A change
 of parts or car re-fields the car when the page closes: `car_changed` makes free roam save and
-reload the scene at the rest stop, because a live body is never re-staged.
+reload the scene at the rest stop, because a live body is never re-staged. The loading screen says why
+(`RestStopPage.reload_title`: "Changing cars" after a Garage pick, otherwise "Applying parts to your car").

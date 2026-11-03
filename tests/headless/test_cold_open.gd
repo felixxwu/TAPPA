@@ -109,6 +109,15 @@ func test_3_the_throttle_hint_shows_until_the_throttle_is_pressed() -> void:
 	assert_eq(minimap.hint, "", "and it doesn't come back")
 
 
+func test_the_music_stays_silent_on_the_way() -> void:
+	var md: MusicDirector = autofree(MusicDirector.new())
+	md._bpm_override = {"a": 170.0}
+	md.seed_grid(100.0, "a")
+	md._tick(100.0)
+	assert_eq(md.current_song, "", "a song already playing is stopped")
+	assert_eq(md.requested_song, "")
+
+
 func test_4_the_world_starts_with_money_for_another_starter_car() -> void:
 	if _co == null:
 		return
@@ -145,6 +154,14 @@ func test_5_reaching_the_cabin_ends_the_cold_open_and_opens_the_options() -> voi
 	biome.drive_time += _streamer.settings.weather_hold_s
 	_co._process(0.1)
 	assert_eq(biome.forced_weather, "", "the rings' weather takes over at its next slot")
+
+
+func test_the_music_is_free_to_play_once_the_cabin_is_reached() -> void:
+	var md: MusicDirector = autofree(MusicDirector.new())
+	md._bpm_override = {"a": 170.0}
+	md.seed_grid(100.0, "a")
+	md._tick(100.0)
+	assert_eq(md.current_song, "a")
 
 
 func test_6_an_island_with_no_roadside_stop_finishes_at_once_instead_of_never() -> void:

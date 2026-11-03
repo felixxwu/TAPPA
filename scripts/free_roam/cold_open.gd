@@ -3,11 +3,11 @@ extends Node
 # Docs: features/free-roam.md (Cold open) — update in the same change as this file.
 # Tests: tests/headless/test_cold_open.gd — extend in the same change.
 # A first-time player's first minute (todo/2026-10-30-cold-open.md): no title screen. They start
-# mid-drive at night, in the chase camera, a couple of hundred metres before the rest stop nearest
+# mid-drive at night, in the chase camera, several hundred metres before the rest stop nearest
 # spawn (pick_start), with the cooling already gone and the engine cold (its gauge climbs on the way). The cabin's lamp
 # post marks the goal, and past it the road carries on. A health floor (DamageModel.min_hp) means
 # the car limps but never gives up. Reaching the cabin lights it as usual, clears the night to dry
-# weather, and then opens the camera and control options (free_roam.gd → show_options). The world
+# weather, starts the music (MusicDirector is silent while this is due), and then opens the camera and control options (free_roam.gd → show_options). The world
 # starts with enough money to buy any other starter car there (`new_world`; Felix chose money up front
 # over a coin trail, 2026-10-31).
 #
