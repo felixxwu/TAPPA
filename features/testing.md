@@ -369,6 +369,8 @@ the second.
 ./run_tests.sh --fast "menu_flow rally_flag" # same, as one whitespace-separated string
 ```
 
+Every run, `--fast` included, starts with `tools/compile_check.tscn`, the same check that gates a release in CI. It loads every script and scene, including `tools/` scripts that no test touches.
+
 ### Analysis scripts (not tests)
 
 Some questions are measurements, not assertions — "how steep is the ground the car actually drives

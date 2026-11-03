@@ -49,8 +49,8 @@ func _ready() -> void:
 	var mid_done := false
 	while d < length:
 		d = minf(d + 4.0, length)
-		var p := ColdOpen._along(path, d)
-		var ahead := ColdOpen._along(path, minf(d + 2.0, length))
+		var p: Vector2 = ColdOpen._spot(path, d).get("pos", path[-1])
+		var ahead: Vector2 = ColdOpen._spot(path, minf(d + 2.0, length)).get("pos", path[-1])
 		var dir := ahead - p
 		if dir.length() < 0.01:
 			dir = -streamer.sites.dir[0]

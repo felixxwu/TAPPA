@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Test runner for the rally project:
+#   compile check: every script and scene loads (tools/compile_check.tscn, the CI gate)
 #   headless: smoke + gameplay tests (tests/headless/)
 # Flags:
 #   --fast <name>...  run only test files whose name matches <name>
@@ -269,6 +270,11 @@ if ! with_timeout "$WARMUP_TIMEOUT" "$GODOT" --headless --import >/dev/null 2>&1
   echo "warning: class-cache warmup (--import) failed or timed out — script loading" \
     "may be nondeterministic this run (cross-script class_name references can flake)" >&2
 fi
+
+# The same gate CI runs before any release. It takes seconds, and catches a broken tool or scene that
+# no test loads, so it runs on --fast passes too.
+echo "=== compile check ==="
+run_pass with_timeout "$WARMUP_TIMEOUT" "$GODOT" --headless --path . res://tools/compile_check.tscn || FAIL=1
 
 # --fixed-fps 60 decouples the main loop from wall-clock: each iteration advances
 # by a fixed 1/60 s delta (matching the default physics_ticks_per_second) and the
