@@ -428,3 +428,41 @@ func test_free_roam_seats_its_waterline_for_the_ice_and_restores_the_stages() ->
 	bd.car.free()
 	bd.streamer.free()
 	bd.free()
+
+
+# The bushes' baked light never sees the weather, so a darkening weather has to reach their
+# material directly, the same way it darkens the ground; a colour tint (sand, snow) leaves them be.
+func test_a_darkening_weather_darkens_the_bushes_and_water_and_a_colour_tint_does_not() -> void:
+	var dark: Array[Dictionary] = [{"id": "dim", "road_tint": {"amount": "night_road_darken"}},
+		{"id": "dusty", "road_tint": {"amount": "sand_road_tint", "color": "sand_road_tint_color"}}]
+	WeatherLibrary.override_for_test(dark)
+	var cfg: GameConfig = Config.data
+	var st := _ground_streamer(_settings())
+	var d := BiomeDirector.new()
+	d.streamer = st
+	var water_mat := StandardMaterial3D.new()
+	water_mat.albedo_color = Color(0.2, 0.4, 0.6, 0.8)
+	d.water = MeshInstance3D.new()
+	d.water.material_override = water_mat
+	add_child(d)
+	var mat := Foliage.bush_mesh().surface_get_material(0) as ShaderMaterial
+	d.weather = "dim"
+	d._apply_weather(cfg)
+	var t: Color = mat.get_shader_parameter("tint")
+	var ground: ShaderMaterial = st.ring_materials()[0]
+	var paint: Color = d._base_colors[ground][BiomeDirector.TINTED.find("road_marking_color")]
+	assert_almost_eq((ground.get_shader_parameter("road_marking_color") as Color).r, paint.r * cfg.night_road_darken, 0.001,
+		"the lane paint darkens with the road")
+	assert_almost_eq(t.r, cfg.bush_tint.r * cfg.night_road_darken, 0.001, "a darkening tint scales the bushes")
+	assert_almost_eq(water_mat.albedo_color.b, 0.6 * cfg.night_road_darken, 0.001, "and the water")
+	assert_almost_eq(water_mat.albedo_color.a, 0.8, 0.001, "the water keeps its see-through")
+	d.weather = "dusty"
+	d._apply_weather(cfg)
+	assert_eq(mat.get_shader_parameter("tint"), cfg.bush_tint, "a colour tint keeps the bushes' own tint")
+	d.weather = "dim"
+	d._apply_weather(cfg)
+	remove_child(d)
+	assert_eq(mat.get_shader_parameter("tint"), cfg.bush_tint, "leaving puts the authored tint back")
+	assert_true(water_mat.albedo_color.is_equal_approx(Color(0.2, 0.4, 0.6, 0.8)), "and the authored water colour")
+	d.water.free()
+	d.free()

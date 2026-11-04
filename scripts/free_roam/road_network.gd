@@ -89,7 +89,7 @@ func polyline(ei: int) -> PackedVector2Array:
 
 
 # The lab's growth(): branches step outward from spawn, fork, and join existing road when they
-# run into it. A spatial grid speeds up the "is there a node near here" scan, but always picks
+# run into it, ending only at the coast. A spatial grid speeds up the "is there a node near here" scan, but always picks
 # the lowest-numbered match, which is what the lab's linear scan does.
 func _grow() -> void:
 	var rng := LabNoise.Rng.new(_s.world_seed * 7919 + 1)
@@ -120,7 +120,7 @@ func _grow() -> void:
 			ang += atan2(sin(out_ang - ang), cos(out_ang - ang)) * _s.outward_pull
 		var tx := fx + cos(ang) * _s.segment_m
 		var ty := fy + sin(ang) * _s.segment_m
-		if _terrain.is_water(tx, ty) or _seg_hits_water(fx, fy, tx, ty):
+		if not _terrain.on_land(tx, ty) or _seg_leaves_island(fx, fy, tx, ty):
 			continue
 		var near := _lowest_node_within(node_grid, tx, ty, at)
 		var crosses := _crosses_edge(edge_grid, fx, fy, tx, ty, at, -1)
@@ -447,10 +447,11 @@ func _consider(si: int, x: float, y: float) -> void:
 		hit_dy = aby / length
 
 
-func _seg_hits_water(ax: float, ay: float, bx: float, by: float) -> bool:
+# Only the sea stops a road: lakes are driven through and filled in behind it (RoadTerrain.fill_cut_lakes).
+func _seg_leaves_island(ax: float, ay: float, bx: float, by: float) -> bool:
 	var n := ceili(LabNoise.hyp(ax - bx, ay - by) / 60.0 - 1e-9)
 	for i in range(1, n):
-		if _terrain.is_water(ax + (bx - ax) * i / n, ay + (by - ay) * i / n):
+		if not _terrain.on_land(ax + (bx - ax) * i / n, ay + (by - ay) * i / n):
 			return true
 	return false
 

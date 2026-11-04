@@ -988,12 +988,12 @@ func test_stunts_pay_when_they_end_and_a_hit_voids_them() -> void:
 	var steps := ceili(s.stunt_min_s / dt) + 2
 	var calm := func() -> void:
 		for i in ceili(s.stunt_grace_s / dt) + 1:
-			loot.stunt_step(dt, 0.0, 0.0, 4, [])
+			loot.stunt_step(dt, 0.0, 0.0, 4, {})
 	WorldSession.set_money(0)
 	watch_signals(loot)
 
 	for i in steps:
-		loot.stunt_step(dt, drift, s.drift_min_speed_mps, 4, [])
+		loot.stunt_step(dt, drift, s.drift_min_speed_mps, 4, {})
 	assert_eq(WorldSession.money(), 0, "a drift pays only once it ends")
 	calm.call()
 	var after_drift := WorldSession.money()
@@ -1003,36 +1003,41 @@ func test_stunts_pay_when_they_end_and_a_hit_voids_them() -> void:
 	assert_eq(WorldSession.money(), after_drift, "it pays once")
 
 	for i in steps:
-		loot.stunt_step(dt, drift, s.drift_min_speed_mps, 4, [])
+		loot.stunt_step(dt, drift, s.drift_min_speed_mps, 4, {})
 	loot._void_stunts()
 	calm.call()
 	assert_eq(WorldSession.money(), after_drift, "a hit voids the drift")
 
 	for i in ceili(s.jump_min_s / dt) + 2:
-		loot.stunt_step(dt, 0.0, 0.0, 0, [])
+		loot.stunt_step(dt, 0.0, 0.0, 3, {})  # one wheel up is enough
 	loot._void_stunts()  # the landing jolt
 	calm.call()
 	var after_jump := WorldSession.money()
 	assert_gt(after_jump, after_drift, "a jump pays on landing")
 	loot._reset_stunts()  # a spawn or teleport: the car drops in from above the road
 	for i in ceili(s.jump_min_s / dt) + 2:
-		loot.stunt_step(dt, 0.0, 0.0, 0, [])
+		loot.stunt_step(dt, 0.0, 0.0, 0, {})
 	calm.call()
 	assert_eq(WorldSession.money(), after_jump, "dropping in after a spawn isn't a jump")
 
 	var fast := s.near_miss_min_speed_mps
-	loot.stunt_step(dt, 0.0, fast, 4, ["tree"])
-	loot.stunt_step(dt, 0.0, fast, 4, ["tree"])
-	loot.stunt_step(dt, 0.0, fast, 4, [])
+	loot.stunt_step(dt, 0.0, fast, 4, {"tree": s.near_miss_radius_m})
+	loot.stunt_step(dt, 0.0, fast, 4, {"tree": s.near_miss_radius_m})
+	loot.stunt_step(dt, 0.0, fast, 4, {})
 	assert_eq(WorldSession.money(), after_jump + s.near_miss_money, "a tree passed close pays once")
-	loot.stunt_step(dt, 0.0, fast, 4, ["tree"])
+	loot.stunt_step(dt, 0.0, fast, 4, {"tree": s.near_miss_radius_m})
 	loot._void_stunts()
-	loot.stunt_step(dt, 0.0, fast, 4, [])
+	loot.stunt_step(dt, 0.0, fast, 4, {})
 	assert_eq(WorldSession.money(), after_jump + s.near_miss_money, "a tree that was hit doesn't pay")
+	for gap in [s.near_miss_radius_m, 0.0, s.near_miss_radius_m]:
+		loot.stunt_step(dt, 0.0, fast, 4, {"brushed": gap})
+	loot.stunt_step(dt, 0.0, fast, 4, {})
+	assert_eq(WorldSession.money(), after_jump + s.near_miss_money + s.near_miss_max_money,
+		"a tree pays by the closest it came")
 
 	loot._wrecked = true  # what wreck() sets, without its drop needing the car
 	WorldSession.set_money(0)
 	for i in steps:
-		loot.stunt_step(dt, drift, s.drift_min_speed_mps, 4, [])
+		loot.stunt_step(dt, drift, s.drift_min_speed_mps, 4, {})
 	calm.call()
 	assert_eq(WorldSession.money(), 0, "a wrecked car earns nothing")

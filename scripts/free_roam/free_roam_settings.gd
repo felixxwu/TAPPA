@@ -6,7 +6,7 @@ extends Resource
 # and the streaming budget. Defaults are the preset liked in tools/road_network_lab.html
 # (todo/2026-10-19-free-roam-pivot.md).
 
-@export var world_seed := 5687
+@export var world_seed := 1011
 ## New World draws random seeds until the roads reach the outermost (snow) ring and total more
 ## than this, measured junction to junction like tools/road_network_lab.html.
 @export var new_world_min_road_km := 40.0
@@ -37,15 +37,15 @@ extends Resource
 
 @export var node_spacing_m := 300.0
 @export var segment_m := 750.0
-@export var fork_chance := 0.38
+@export var fork_chance := 0.2
 @export var fork_angle_deg := 109.0
-@export var heading_jitter_deg := 39.0
-@export var outward_pull := 0.48
+@export var heading_jitter_deg := 86.0
+@export var outward_pull := 0.25
 @export var join_chance := 1.0
 @export var roads_from_spawn := 1
 ## Dead ends no longer than this, measured back to their junction, are cut after growth,
 ## repeatedly, so a fork whose branches all die out goes too; 0 keeps every dead end.
-@export var prune_dead_ends_m := 1000.0
+@export var prune_dead_ends_m := 0.0
 ## How far a road may swing from the straight line between its junctions, as a fraction of
 ## its length; 0 is dead straight.
 @export var road_twist := 0.24
@@ -72,12 +72,12 @@ extends Resource
 @export var lake_depth_factor := 1.6
 @export var shore_band_m := 5.0
 ## Where a road runs along or across a lake, the bank from the road's edge down to the lake bed.
-@export var lake_road_bank_m := 12.0
+@export var lake_road_bank_m := 15.0
 
 @export var mountain_m := 300.0
 @export var flat_band_m := 2.0
-@export var mountain_dist_m := 400.0
-@export var ribbon_bank_m := 47.0
+@export var mountain_dist_m := 150.0
+@export var ribbon_bank_m := 93.0
 @export var ribbon_width_m := 320.0
 
 ## Small hills over everything: their height and roughly how far apart they are.
@@ -162,7 +162,7 @@ extends Resource
 
 ## A drift: the car pointing at least this far from where it's going, at this speed (m/s). Each
 ## second of it pays this much once the drift ends.
-@export var drift_min_angle_deg := 25.0
+@export var drift_min_angle_deg := 15.0
 @export var drift_min_speed_mps := 10.0
 @export var drift_money_per_s := 75.0
 ## Going fast: each second at this speed (m/s) or more pays this much once the car slows.
@@ -177,10 +177,12 @@ extends Resource
 @export var jump_money_per_s := 200.0
 @export var jump_min_s := 0.3
 ## A near miss: a tree passing within this distance of the car's side at this speed (m/s),
-## without being hit.
+## without being hit. Pays near_miss_money at the edge of that distance, rising to
+## near_miss_max_money for a tree that brushes the car.
 @export var near_miss_radius_m := 1.1
 @export var near_miss_min_speed_mps := 15.0
 @export var near_miss_money := 100
+@export var near_miss_max_money := 300
 
 ## How long a loot / shop message stays up, in seconds.
 @export var toast_s := 3.0

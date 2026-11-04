@@ -192,6 +192,7 @@ func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 	terrain.setup(settings, network)
 	network.build(settings, terrain)
+	terrain.fill_cut_lakes()
 	sites.build(settings, network, terrain)
 	terrain.sites = sites
 	if Config.data.barriers_enabled:

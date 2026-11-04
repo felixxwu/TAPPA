@@ -4,13 +4,17 @@ extends RefCounted
 # Tests: tests/headless/test_free_roam.gd — extend in the same change.
 # Road-first terrain: height is built FROM the roads instead of roads being carved into noise.
 # Roads sit in valleys, mountains rise with distance from the nearest road, and banks or drops
-# line each road. Lakes come from a base field that ignores the roads, so the road layout can
-# avoid them before any terrain exists. Every query is a pure function of position, so any
-# chunk can be built alone and in any order.
+# line each road. Lakes come from a base field that ignores the roads; roads drive straight
+# through them, and wherever roads cut a lake into pieces all but the largest are filled in
+# (fill_cut_lakes). Every query is a pure function of position, so any chunk can be built alone
+# and in any order.
 #
 # The maths mirrors heightAt() in tools/road_network_lab.html exactly, so a seed shows the
 # same mountains in both. The one addition is a fade to sea floor near the coast (stopping short
 # of the roads), which the lab never draws.
+
+const FILL_CELL_M := 20.0
+const FLOOD_STEPS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 var net: RoadNetwork
 # The rest stop / loot / dead-end pads (RoadSites), once planned: the ground under each is
@@ -27,6 +31,7 @@ var last_road_s := 0.0
 var last_road_mark := 0.0
 
 var _s: FreeRoamSettings
+var _filled := {}  # Vector2i fill cell -> true: lake bed filled in as land (fill_cut_lakes)
 var _tarmac := PackedFloat32Array()  # per ring: 1 when its region's roads are tarmac
 var _any_tarmac := false
 
@@ -53,7 +58,79 @@ func bump(x: float, y: float) -> float:
 
 
 func is_lake(x: float, y: float) -> bool:
-	return base_h(x, y) < _s.water_level_m
+	return base_h(x, y) < _s.water_level_m and not is_filled(x, y)
+
+
+func is_filled(x: float, y: float) -> bool:
+	return not _filled.is_empty() and _filled.has(Vector2i(floori(x / FILL_CELL_M), floori(y / FILL_CELL_M)))
+
+
+# Run once the roads exist. Each lake a road touches is split along its roads; only the largest
+# piece stays water, the rest (and the water under the road) becomes land. Mirrors fillCutLakes()
+# in tools/road_network_lab.html.
+func fill_cut_lakes() -> void:
+	_filled.clear()
+	var lake_cache := {}
+	var is_lake_cell := func(c: Vector2i) -> bool:
+		if not lake_cache.has(c):
+			var x := (c.x + 0.5) * FILL_CELL_M
+			var y := (c.y + 0.5) * FILL_CELL_M
+			lake_cache[c] = on_land(x, y) and base_h(x, y) < _s.water_level_m
+		return lake_cache[c]
+	var road := {}
+	for si in net.seg_ax.size():
+		var ax := net.seg_ax[si]
+		var ay := net.seg_ay[si]
+		var steps := ceili(net.seg_len[si] / (FILL_CELL_M * 0.5))
+		for k in steps + 1:
+			var t := float(k) / maxi(steps, 1)
+			var c := Vector2i(floori((ax + (net.seg_bx[si] - ax) * t) / FILL_CELL_M), floori((ay + (net.seg_by[si] - ay) * t) / FILL_CELL_M))
+			road[c] = true
+			_filled[c] = true
+	var lake_of := {}
+	var piece_of := {}
+	var lakes := 0
+	for start: Vector2i in road:
+		if lake_of.has(start) or not is_lake_cell.call(start):
+			continue
+		lakes += 1
+		var id := lakes
+		var whole := _flood(start, is_lake_cell, lake_of, id)
+		var biggest: Array[Vector2i] = []
+		for c in whole:
+			_filled[c] = true
+			if road.has(c) or piece_of.has(c):
+				continue
+			var piece := _flood(c, func(j: Vector2i) -> bool: return lake_of.get(j, 0) == id and not road.has(j), piece_of, 1)
+			if piece.size() > biggest.size():
+				biggest = piece
+		for c in biggest:
+			_filled.erase(c)
+		# a filled cell's dry neighbours can still hold a sliver of the lake past their centre
+		for c in whole:
+			if not _filled.has(c):
+				continue
+			for o in FLOOD_STEPS:
+				if not lake_of.has(c + o):
+					_filled[c + o] = true
+
+
+# Every cell 4-connected to `start` that passes `ok`, each marked in `seen`. Four neighbours,
+# not eight, so a flood can't slip diagonally between two cells of a road line.
+static func _flood(start: Vector2i, ok: Callable, seen: Dictionary, id: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = [start]
+	var stack: Array[Vector2i] = [start]
+	seen[start] = id
+	while not stack.is_empty():
+		var c: Vector2i = stack.pop_back()
+		for o in FLOOD_STEPS:
+			var j: Vector2i = c + o
+			if seen.has(j) or not ok.call(j):
+				continue
+			seen[j] = id
+			out.append(j)
+			stack.append(j)
+	return out
 
 
 func coast_r(x: float, y: float) -> float:
@@ -120,6 +197,8 @@ func _natural_height(x: float, y: float, cands: PackedInt32Array, use_cands: boo
 func _inland_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool) -> float:
 	var water := _s.water_level_m
 	var bp := base_h(x, y)
+	if bp < water and is_filled(x, y):
+		bp = water + (water - bp) * 0.25  # filled-in lake bed: a low mound meeting the old shore at the water level
 	if bp < water:
 		var lake := water - _s.lake_depth_factor * (water - bp)  # meets the shore at exactly the water level
 		# A lake never cuts into a road: near one, its bed rises into a bank up to the road's level.

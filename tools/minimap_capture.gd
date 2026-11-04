@@ -53,7 +53,14 @@ func _ready() -> void:
 		mm._markers = MiniMap.site_markers(mm.streamer.sites, mm.rest_stops.lit_sites, mm.car_xz, mm.view_m)
 	print("minimap: site_markers avg %.1f us, %d shown, %d seen" % [(Time.get_ticks_usec() - t0) / 50.0, mm._markers.size(), WorldSession.seen_sites().size()])
 	world.open_full_map()
+	t0 = Time.get_ticks_usec()
+	var pages: WorldPages = world.find_children("*", "WorldPages", true, false)[0]
 	for _i in 30:
+		await get_tree().process_frame
+	while pages.map_terrain == null or not pages.map_terrain.done():
+		await get_tree().process_frame
+	print("full map: terrain picture took %.2f s" % ((Time.get_ticks_usec() - t0) / 1e6))
+	for _i in 5:
 		await get_tree().process_frame
 	await _shot("full_map_" + tag)
 	get_tree().quit()

@@ -31,6 +31,7 @@ const SWAP_FOG_SWELL := 2.5
 @export var car: VehicleBody3D
 @export var environment: WorldEnvironment
 @export var camera: Camera3D
+@export var water: MeshInstance3D
 
 # The car's wheel debris (free_roam.gd creates it). A new ring re-seats its off-road particle
 # colour and shape from the ring's region look, the way world.gd does once per stage.
@@ -53,8 +54,10 @@ var _particles: Node = null
 var _warm_fields: Array[Node] = []
 var _stage_water_level := NAN
 # The ground colours the weather tints; the _b pair is the outer ring's on a border chunk.
-const TINTED := ["albedo_color", "tarmac_color", "albedo_color_b", "tarmac_color_b"]
+const TINTED := ["albedo_color", "tarmac_color", "road_marking_color",
+	"albedo_color_b", "tarmac_color_b", "road_marking_color_b"]
 var _base_colors := {}  # ShaderMaterial -> TINTED's colours as authored
+var _water_color := Color()  # the scene's authored water colour, before any weather darkening
 
 
 func _ready() -> void:
@@ -296,6 +299,12 @@ func _apply_weather(cfg: GameConfig) -> void:
 				col = WeatherLibrary.tinted(col, float(cfg.get(String(tint["amount"]))),
 					cfg.get(color_field) if color_field != "" else Color.BLACK, color_field != "")
 			mat.set_shader_parameter(TINTED[k], col)
+	# bushes and water darken with the ground, but keep their colour under a sand or snow tint
+	var darken := 1.0
+	if not tint.is_empty() and String(tint.get("color", "")) == "":
+		darken = float(cfg.get(String(tint["amount"])))
+	_bush_material().set_shader_parameter("tint", WeatherLibrary.tinted(cfg.bush_tint, darken, Color.BLACK, false))
+	_tint_water(darken)
 	# particles on the chase camera
 	if is_instance_valid(_particles):
 		_particles.queue_free()
@@ -336,7 +345,23 @@ func _exit_tree() -> void:
 	WindSway.reset()
 	var cfg: GameConfig = Config.data
 	cfg.weather_sun_mult = 1.0
+	_bush_material().set_shader_parameter("tint", cfg.bush_tint)
+	_tint_water(1.0)
 	cfg.weather = WeatherLibrary.DEFAULT_ID
 	apply_handling(cfg, "")
 	if not is_nan(_stage_water_level):
 		cfg.track_water_level_m = _stage_water_level
+
+
+func _bush_material() -> ShaderMaterial:
+	return Foliage.bush_mesh().surface_get_material(0) as ShaderMaterial
+
+
+
+func _tint_water(darken: float) -> void:
+	var mat := water.material_override as StandardMaterial3D if water != null else null
+	if mat == null:
+		return
+	if _water_color == Color():
+		_water_color = mat.albedo_color
+	mat.albedo_color = WeatherLibrary.tinted(_water_color, darken, Color.BLACK, false)

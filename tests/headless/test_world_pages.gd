@@ -91,3 +91,40 @@ func test_the_map_fits_without_scrolling() -> void:
 	var page: MenuPage = _pages._page
 	assert_true(page._scroll.custom_minimum_size.y >= page._body.get_combined_minimum_size().y,
 		"the map and its target line fit the body without a scrollbar")
+
+
+# The map's terrain picture (MapTerrain.paint): the sea is left see-through, lakes are flat lake
+# colour, and land is opaque and shaded.
+func test_the_map_terrain_leaves_the_sea_clear_and_paints_lakes_flat() -> void:
+	var heights := PackedFloat32Array([0.0, -3.0, 10.0, 40.0])
+	var kind := PackedByteArray([0, 2, 1, 1])
+	var ring := PackedByteArray([0, 0, 0, 1])
+	var img := MapTerrain.paint(heights, kind, ring, 2, 2, 50.0)
+	assert_eq(img.get_pixel(0, 0).a, 0.0, "the sea shows the map's background")
+	assert_true(img.get_pixel(1, 0).is_equal_approx(Config.data.map_lake_color), "a lake is flat lake colour")
+	assert_eq(img.get_pixel(0, 1).a, 1.0, "land is opaque")
+	assert_ne(img.get_pixel(0, 1), img.get_pixel(1, 1), "land differs by ring and height")
+
+
+# Drawn a tile at a time and cached: the tiles cover the view asked for, and asking again (or
+# for the view a little moved) draws nothing new.
+func test_the_map_terrain_is_drawn_in_tiles_and_kept() -> void:
+	var s := FreeRoamSettings.new()
+	s.island_radius_m = 3000.0
+	var net := RoadNetwork.new()
+	var terrain := RoadTerrain.new()
+	terrain.setup(s, net)
+	net.build(s, terrain)
+	var mt := MapTerrain.new(terrain, s.island_radius_m)
+	var view := Rect2(-1000, -1000, 2000, 2000)
+	mt.request(view, 40)
+	var steps := 1
+	while not mt.step(0):
+		steps += 1
+	assert_gt(steps, 1, "a zero budget draws one tile per step")
+	var covered := Rect2()
+	for tile: Array in mt.drawn():
+		covered = tile[0] if covered.size == Vector2.ZERO else covered.merge(tile[0])
+	assert_true(covered.encloses(view), "the tiles cover the view")
+	mt.request(Rect2(view.position + Vector2(10, 10), view.size), 40)
+	assert_true(mt.done(), "a slightly moved view reuses the cached tiles")

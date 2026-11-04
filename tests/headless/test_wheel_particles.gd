@@ -395,3 +395,17 @@ func test_a_region_look_seats_both_overrides_and_an_empty_look_clears_them() -> 
 	look = wp._grass_look(cfg)
 	assert_eq(look.color, cfg.wheel_particle_grass_color, "no override: back to the default colour")
 	assert_ne(look.half_w, look.half_h, "...and the default blade")
+
+
+# The debris is unshaded, so it has to be told the weather's light or it glows at night.
+func test_debris_dims_with_the_weathers_sun() -> void:
+	Config.data.wheel_particle_color_jitter = 0.0
+	var reds: Array[float] = []
+	for mult in [1.0, 0.5]:
+		Config.data.weather_sun_mult = mult
+		var wp := _make()
+		_break_traction(2, 10.0)
+		_tick(wp)
+		reds.append(wp._buffer[12])
+	assert_gt(reds[0], 0.0)
+	assert_almost_eq(reds[1], reds[0] * 0.5, 0.001, "half the sun, half as bright")

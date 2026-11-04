@@ -47,7 +47,22 @@ which adds any site within the radius to the world's `seen` list (`WorldSession.
 Tap or click anywhere on the minimap's box (not only the tilted map inside it), or press
 **M** / gamepad **Back** (`toggle_map`). It emits `open_requested`; `free_roam.gd →
 open_full_map` pauses the game, disarms the pause menu and shows `WorldPages.show_map`.
-Closing the map (Back, Esc / B, or M again) unpauses and goes straight back to driving. The
+Closing the map (Back, Esc / B, or M again) unpauses and goes straight back to driving.
+
+The full map's ground is a top-down terrain picture copied from `tools/road_network_lab.html`'s
+2D view (`drawTerrain`): `MapTerrain` (`scripts/free_roam/map_terrain.gd`) samples heights
+over the map's view and `paint`s them: each biome ring in its `map_ring_colors` entry, shaded by
+slope, darkened along contour lines every `map_contour_m`, higher ground lighter (over
+`map_lift_range_m` above the water), lakes flat `map_lake_color`, the sea left clear over
+`map_sea_color`.
+
+It is built from 32×32-cell tiles cached for the session (`WorldPages.map_terrain`). A tile's cell
+size is the power of two (in metres) that puts about `map_terrain_cells` cells across the view, so
+moving the car or growing the explored area a little reuses the tiles already drawn. Each tile is
+sampled with a one-cell border so slopes and contour lines run across tile edges. While driving,
+`WorldPages._process` asks for the tiles of the current `explored_view` every 0.5 s and draws them
+at `map_terrain_driving_budget_us` per frame, so the map usually opens ready; any tiles still
+missing are drawn while the map is open at `map_terrain_budget_us` per frame, over a plain coast. The
 pause menu's Map row still opens the same page and returns to the pause menu.
 
 ## Hiding and input

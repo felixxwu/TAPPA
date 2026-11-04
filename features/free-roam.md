@@ -27,17 +27,21 @@ km, the same test New World uses (`FreeRoamSettings.pick_world_seed`). Two detai
 
 This parity is **no longer a requirement**. From 2026-10-20 the game is the reference and
 may diverge from the lab (decision 32 in `todo/2026-10-19-free-roam-pivot.md`). Until
-something breaks it, the two still match: the lab's defaults (its "Radial growth, dead ends
-pruned" algorithm) are `FreeRoamSettings`' defaults, checked on seed 5687 (same 49 nodes and
-50 edges). Heights still differ in the last 400 m before the coast and at site pads, which
+something breaks it, the two still match: the lab's defaults (its "Radial growth" algorithm,
+seed 1011) are `FreeRoamSettings`' defaults, with dead-end pruning off (`prune_dead_ends_m` 0).
+Both fill cut-off lakes the same way (`fillCutLakes` / `RoadTerrain.fill_cut_lakes`). Checked
+2026-11-04 on seed 1011: same 68 nodes and 70 edges, polylines within 0.5 mm (32-bit `polyline()`),
+the same 5401 filled cells, and heights within 1 mm at 3438 inland points, lake beds and road
+shoulders included. Heights still differ in the last 400 m before the coast and at site pads, which
 only the game has.
 
 ## The three layers
 
 1. **`RoadNetwork` — the layout, built once at boot.** Radial growth from spawn: branches step
-   outward, fork, and join existing road when they run into it (`_grow`). Dead ends no longer than
-   `prune_dead_ends_m` (measured back to their junction) are then cut, repeatedly, so a fork
-   whose branches all die out goes too (`_prune_dead_ends`). Each link then becomes
+   outward, fork, and join existing road when they run into it (`_grow`). Only the coast stops a
+   branch: lakes are driven straight through (see "Lakes cut by roads" below). Dead ends no longer
+   than `prune_dead_ends_m` (measured back to their junction; 0, the default, keeps them all) are
+   then cut, repeatedly, so a fork whose branches all die out goes too (`_prune_dead_ends`). Each link then becomes
    a wiggled polyline (`_densify`, a seeded noise offset inside a band around the straight line,
    landing exactly on both ends; `road_twist` sets how far it may swing and `bend_length_m` how
 often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_turn_deg` (a
@@ -56,8 +60,15 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
 2. **`RoadTerrain` — height built from the roads.** Same model as the lab
    (`tools/road_network_lab.html`):
    - **Base field:** low-frequency noise that ignores roads (`base_h`). It sets the roads' own
-     height and decides lakes (`is_lake`: base below the water level), so the layout can avoid
-     water before any terrain exists. It is lifted near spawn so spawn is always dry.
+     height and decides lakes (`is_lake`: base below the water level, unless filled in). It is
+     lifted near spawn so spawn is always dry.
+   - **Lakes cut by roads** (`fill_cut_lakes`, run once by `TerrainStreamer` after the network is
+     built, before the sites are planned). Roads ignore lakes, so a road can run across one. On a
+     20 m grid, each lake a road touches is flood-filled, split along its road cells, and every
+     piece but the largest is filled in as land, along with the cells under the road and the dry
+     cells bordering a filled one (which can hold a sliver of lake past their centre). Filled lake
+     bed becomes a low mound meeting the old shore at the water level (`_inland_height`). The
+     kept piece's edge along the road follows the 20 m grid. Mirrors the lab's `fillCutLakes`.
    - **Mountains:** ridged noise that rises only with distance from the nearest road, so roads
      sit in valleys.
    - **Ribbon:** a bank or drop beside each road, varying along it and per side.
@@ -319,7 +330,7 @@ car's ring and the weather.
 - **Exit:** `_exit_tree` puts back the weather, grip, sun dimming, wind and headlight globals.
 
 **Not ported from the stage:** storm lightning, and night's terrain re-bake. Night darkens the
-ground through the albedo tint only. On a weather change the sky and fog fade, while everything lit by `GameConfig.apply_car_light` (the
+ground through the albedo tint only (lane paint included), and a pure darkening tint (rain, storm, night, not sand or snow's colour blend) also scales the shared bush material's `tint` (`BiomeDirector._bush_material`) and the `Water` plane's colour (`_tint_water`), since neither the bushes' baked light nor the unshaded water sees the weather. On a weather change the sky and fog fade, while everything lit by `GameConfig.apply_car_light` (the
 car, rocks, barriers, dust) jumps straight to the new light: setting `weather_sun_mult` relights them.
 A tree species takes the light of its most recently spawned field. There is **one water level** for the whole island (no per-ring waterline).
 

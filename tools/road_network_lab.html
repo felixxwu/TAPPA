@@ -24,15 +24,15 @@
 <body>
 <div id="side">
   <label>Seed</label>
-  <div class="row"><input id="seed" type="number" value="5687"><button id="rnd">🎲</button></div>
+  <div class="row"><input id="seed" type="number" value="1011"><button id="rnd">🎲</button></div>
   <div class="row"><button id="find">Next seed reaching snow with road over</button>
     <input id="minKm" type="number" value="40" style="width:50px"> km</div>
   <span id="found" class="hint"></span>
 
   <label>Algorithm</label>
   <select id="algo">
-    <option value="growth">Radial growth (organic tree, forks)</option>
-    <option value="growthPruned" selected>Radial growth, dead ends pruned</option>
+    <option value="growth" selected>Radial growth (organic tree, forks)</option>
+    <option value="growthPruned">Radial growth, dead ends pruned</option>
     <option value="ports">Chunk ports (local tiling)</option>
     <option value="colonize">Space colonisation (attractor-led)</option>
     <option value="tensor">Tensor field streamlines</option>
@@ -47,7 +47,7 @@
 
   <label><input type="checkbox" id="wiggle" checked> Preview road wiggle (layer 2)</label>
   <label><input type="checkbox" id="rings" checked> Show biome rings</label>
-  <label><input type="checkbox" id="water" checked> Lakes (block nodes + roads)</label>
+  <label><input type="checkbox" id="water" checked> Lakes (roads cross; smaller cut-off side filled)</label>
   <label><input type="checkbox" id="terrain" checked> Road-first terrain (heightmap)</label>
   <button id="open3d">3D view of the square at map centre</button>
   <button id="copy">Copy settings to clipboard</button> <span id="copied" class="hint"></span>
@@ -101,10 +101,10 @@ const PARAMS = {
   ],
   growth: [
     ["step", "Segment length (m)", 25, 1200, 750, 25],
-    ["fork", "Fork chance per step", 0, 0.8, 0.38, 0.01],
+    ["fork", "Fork chance per step", 0, 0.8, 0.2, 0.01],
     ["forkAngle", "Fork angle (deg)", 15, 180, 109, 1],
-    ["jitter", "Heading jitter (deg)", 0, 180, 39, 1],
-    ["outward", "Outward pull", 0, 1, 0.48, 0.01],
+    ["jitter", "Heading jitter (deg)", 0, 180, 86, 1],
+    ["outward", "Outward pull", 0, 1, 0.25, 0.01],
     ["loopChance", "Join-on-collide chance", 0, 1, 1, 0.01],
     ["starts", "Roads leaving spawn", 1, 6, 1, 1],
   ],
@@ -114,11 +114,11 @@ const PARAMS = {
   terrain: [
     ["lakeDepth", "Lake depth factor", 0.2, 4, 1.6, 0.1],
     ["shoreBand", "Shore band (m above water)", 1, 100, 5, 1],
-    ["lakeBank", "Bank from road to lake bed (m)", 0, 100, 12, 1],
+    ["lakeBank", "Bank from road to lake bed (m)", 0, 100, 15, 1],
     ["mountain", "Mountain height (m)", 0, 2500, 300, 10],
     ["flatW", "Flat band beside road (m)", 2, 200, 2, 2],
-    ["mountainDist", "Distance to full mountain (m)", 100, 4000, 400, 25],
-    ["bank", "Ribbon bank / drop (m)", 0, 300, 47, 1],
+    ["mountainDist", "Distance to full mountain (m)", 100, 4000, 150, 25],
+    ["bank", "Ribbon bank / drop (m)", 0, 300, 93, 1],
     ["ribbonW", "Ribbon width (m)", 20, 1000, 320, 5],
     ["bumpHeight", "Bump height (m)", 0, 30, 5, 0.5],
     ["bumpSize", "Bump size (m)", 10, 400, 50, 5],
@@ -187,16 +187,82 @@ function baseH(p, seed) {
   const raw = state.roadRelief * (fbm(p.x / state.baseScale + 3, p.y / state.baseScale + 3, seed + 41) - 0.5) * 2;
   return raw + (1 - smooth(300, 900, hyp(p.x, p.y))) * Math.max(0, state.waterLevel + 10 - raw);
 }
-// A lake is wherever the base height sits below the water level.
-const isLake = (p, seed) => $("water").checked && baseH(p, seed) < state.waterLevel;
+// A lake is wherever the base height sits below the water level, unless a road cut it off and it was filled in.
+const lakeBed = (p, seed) => $("water").checked && baseH(p, seed) < state.waterLevel;
+const isLake = (p, seed) => lakeBed(p, seed) && !isFilled(p);
 function isWater(p, seed, R) { return !onLand(p, seed, R) || isLake(p, seed); }
+const offIsland = (p, seed, R) => !onLand(p, seed, R);
+
+// Roads ignore lakes and drive straight through. Wherever roads cut a lake into pieces, only the
+// largest piece stays water; the rest, and the water under the road, is filled in as land.
+const FILL_CELL = 20;
+let lakeFill = null;
+function isFilled(p) {
+  if (!lakeFill) return false;
+  const { n, off, filled } = lakeFill, ix = Math.floor(p.x / FILL_CELL) + off, iy = Math.floor(p.y / FILL_CELL) + off;
+  return ix >= 0 && iy >= 0 && ix < n && iy < n && filled[iy * n + ix] === 1;
+}
+function fillCutLakes(roadPts, seed, R) {
+  const off = Math.ceil(R / FILL_CELL), n = off * 2, C = FILL_CELL;
+  const lakeCache = new Uint8Array(n * n), road = new Uint8Array(n * n), filled = new Uint8Array(n * n);
+  const lakeId = new Int32Array(n * n), pieceId = new Int32Array(n * n);
+  const isLakeCell = k => {
+    if (!lakeCache[k]) {
+      const p = { x: (k % n - off + 0.5) * C, y: (Math.floor(k / n) - off + 0.5) * C };
+      lakeCache[k] = onLand(p, seed, R) && lakeBed(p, seed) ? 1 : 2;
+    }
+    return lakeCache[k] === 1;
+  };
+  const cellOf = p => {
+    const ix = Math.floor(p.x / C) + off, iy = Math.floor(p.y / C) + off;
+    return ix >= 0 && iy >= 0 && ix < n && iy < n ? iy * n + ix : -1;
+  };
+  // 4-neighbour flood: an 8-connected road line can't be slipped past diagonally
+  const flood = (start, ok, mark, id) => {
+    const out = [start], stack = [start];
+    mark[start] = id;
+    while (stack.length) {
+      const k = stack.pop(), x = k % n;
+      for (const j of [x > 0 ? k - 1 : -1, x < n - 1 ? k + 1 : -1, k - n, k + n]) {
+        if (j < 0 || j >= n * n || mark[j] || !ok(j)) continue;
+        mark[j] = id; out.push(j); stack.push(j);
+      }
+    }
+    return out;
+  };
+  const roadCells = [];
+  for (const pts of roadPts) for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], steps = Math.ceil(dist(a, b) / (C / 2));
+    for (let s = 0; s <= steps; s++) {
+      const k = cellOf({ x: a.x + (b.x - a.x) * s / steps, y: a.y + (b.y - a.y) * s / steps });
+      if (k >= 0 && !road[k]) { road[k] = filled[k] = 1; roadCells.push(k); }
+    }
+  }
+  let lakes = 0, pieces = 0;
+  for (const k of roadCells) {
+    if (lakeId[k] || !isLakeCell(k)) continue;
+    const whole = flood(k, isLakeCell, lakeId, ++lakes);
+    let biggest = [];
+    for (const c of whole) {
+      filled[c] = 1;
+      if (road[c] || pieceId[c]) continue;
+      const piece = flood(c, j => lakeId[j] === lakes && !road[j], pieceId, ++pieces);
+      if (piece.length > biggest.length) biggest = piece;
+    }
+    for (const c of biggest) filled[c] = 0;
+    // a filled cell's dry neighbours can still hold a sliver of the lake past their centre
+    for (const c of whole) if (filled[c] === 1) for (const j of [c - 1, c + 1, c - n, c + n])
+      if (j >= 0 && j < n * n && !lakeId[j]) filled[j] = 1;
+  }
+  return { n, off, filled };
+}
 function ringOf(p, seed, R, n) {
   const wob = (fbm(p.x / 1500 + 9, p.y / 1500 + 9, seed + 3) - 0.5) * 0.25;
   return Math.max(0, Math.min(n - 1, Math.floor((hyp(p.x, p.y) / (R * 0.82) + wob) * n)));
 }
-function segHitsWater(a, b, seed, R) {
+function segLeavesIsland(a, b, seed, R) {
   const n = Math.ceil(dist(a, b) / 60 - 1e-9);
-  for (let i = 1; i < n; i++) if (isWater({ x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }, seed, R)) return true;
+  for (let i = 1; i < n; i++) if (offIsland({ x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }, seed, R)) return true;
   return false;
 }
 function segsCross(a, b, c, d) {
@@ -208,7 +274,7 @@ function poisson(rand, seed, R, spacing) {
   const pts = [{ x: 0, y: 0 }];
   for (let tries = 0; tries < 30000 && pts.length < 2000; tries++) {
     const p = { x: (rand() * 2 - 1) * R, y: (rand() * 2 - 1) * R };
-    if (isWater(p, seed, R)) continue;
+    if (offIsland(p, seed, R)) continue;
     if (pts.every(q => dist(p, q) >= spacing)) pts.push(p);
   }
   return pts;
@@ -219,7 +285,7 @@ function candidateEdges(nodes, seed, R, maxLen) {
   const out = [];
   for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
     const d = dist(nodes[i], nodes[j]);
-    if (d <= maxLen && !segHitsWater(nodes[i], nodes[j], seed, R)) out.push([i, j, d]);
+    if (d <= maxLen && !segLeavesIsland(nodes[i], nodes[j], seed, R)) out.push([i, j, d]);
   }
   return out;
 }
@@ -297,7 +363,7 @@ function growth(rand, seed, R) {
       ang += diff * state.outward;
     }
     const to = { x: from.x + Math.cos(ang) * state.step, y: from.y + Math.sin(ang) * state.step };
-    if (isWater(to, seed, R) || segHitsWater(from, to, seed, R)) continue;
+    if (offIsland(to, seed, R) || segLeavesIsland(from, to, seed, R)) continue;
     const near = nodes.findIndex((p, k) => k !== h.at && dist(p, to) < state.spacing);
     const crosses = edges.some(([a, b]) => a !== h.at && b !== h.at && segsCross(from, to, nodes[a], nodes[b]));
     if (near >= 0 || crosses) {
@@ -398,7 +464,7 @@ function ports(rand, seed, R) {
     const hx = cx * 2 + v;
     const t = 0.2 + 0.6 * hash2(hx, cy, seed + 23);
     const p = v ? { x: (cx + 0.5) * C, y: (cy - 0.5 + t) * C } : { x: (cx - 0.5 + t) * C, y: (cy + 0.5) * C };
-    if (isWater(p, seed, R)) continue;
+    if (offIsland(p, seed, R)) continue;
     const ring = ringOf(p, seed, R, state.ringCount);
     if (hash2(hx, cy, seed + 11) >= state.density * (1 - state.falloff * ring / Math.max(1, state.ringCount - 1))) continue;
     nodes.push(p);
@@ -406,14 +472,14 @@ function ports(rand, seed, R) {
     add(cx, cy, i);
     v ? add(cx + 1, cy, i) : add(cx, cy + 1, i);
   }
-  const link = (a, b) => { if (!segHitsWater(nodes[a], nodes[b], seed, R)) edges.push([a, b, dist(nodes[a], nodes[b])]); };
+  const link = (a, b) => { if (!segLeavesIsland(nodes[a], nodes[b], seed, R)) edges.push([a, b, dist(nodes[a], nodes[b])]); };
   for (const [k, P] of cellPorts) {
     const [cx, cy] = k.split(",").map(Number);
     if (cx === 0 && cy === 0) { P.forEach(i => link(0, i)); continue; }
     if (P.length === 2) { link(P[0], P[1]); continue; }
     let hub = { x: (cx + (hash2(cx, cy, seed + 31) - 0.5) * 2 * state.hubJitter) * C,
                 y: (cy + (hash2(cx, cy, seed + 37) - 0.5) * 2 * state.hubJitter) * C };
-    if (isWater(hub, seed, R)) hub = { x: P.reduce((s, i) => s + nodes[i].x, 0) / P.length, y: P.reduce((s, i) => s + nodes[i].y, 0) / P.length };
+    if (offIsland(hub, seed, R)) hub = { x: P.reduce((s, i) => s + nodes[i].x, 0) / P.length, y: P.reduce((s, i) => s + nodes[i].y, 0) / P.length };
     nodes.push(hub);
     const h = nodes.length - 1;
     P.forEach(i => link(h, i));
@@ -427,7 +493,7 @@ function colonize(rand, seed, R) {
   const attr = [];
   for (let t = 0; t < state.attractors * 30 && attr.length < state.attractors; t++) {
     const p = { x: (rand() * 2 - 1) * R, y: (rand() * 2 - 1) * R };
-    if (!isWater(p, seed, R)) attr.push(p);
+    if (!offIsland(p, seed, R)) attr.push(p);
   }
   const nodes = [{ x: 0, y: 0 }], edges = [], G = state.influence, grid = new Map();
   const key = (x, y) => Math.floor(x / G) + "," + Math.floor(y / G);
@@ -456,7 +522,7 @@ function colonize(rand, seed, R) {
       const L = hyp(v.x, v.y);
       if (L < 1e-6) continue;
       const np = { x: nodes[j].x + v.x / L * state.cstep, y: nodes[j].y + v.y / L * state.cstep };
-      if (isWater(np, seed, R) || segHitsWater(nodes[j], np, seed, R)) continue;
+      if (offIsland(np, seed, R) || segLeavesIsland(nodes[j], np, seed, R)) continue;
       const close = nearest(np, state.cstep * 0.5);
       if (close >= 0) continue;
       nodes.push(np);
@@ -516,7 +582,7 @@ function tensor(rand, seed, R) {
       const mid = { x: p.x + d.x * h / 2, y: p.y + d.y * h / 2 };
       if (k > 0) d = align(unit(fieldAng(mid) + fam * Math.PI / 2), d);
       const np = { x: p.x + d.x * h, y: p.y + d.y * h };
-      if (isWater(np, seed, R)) break;
+      if (offIsland(np, seed, R)) break;
       const hit = hitTest(p, np, li, len < 3 * h ? ignore : -2);
       if (hit) {
         nodes.push(hit.point);
@@ -619,6 +685,8 @@ function render() {
   const { nodes, edges } = net;
   const edgePts = e => e.pts || ($("wiggle").checked ? wiggle(nodes[e[0]], nodes[e[1]], seed) : [nodes[e[0]], nodes[e[1]]]);
   const roadPts = roundCorners(nodes, edges, edges.map(edgePts));
+  if (!last.lakeFill) last.lakeFill = fillCutLakes(roadPts, seed, R);
+  lakeFill = last.lakeFill;
   last.roadPts = roadPts; last.sc = sc;
 
   // land, rings and water, sampled on a coarse screen grid
@@ -764,7 +832,9 @@ function bumpAt(x, y, seed) {
 const ROAD_EDGE_M = 2.9;
 
 function heightAt(rg, p, seed) {
-  const L = state.waterLevel, bp = baseH(p, seed);
+  const L = state.waterLevel, raw = baseH(p, seed);
+  // filled-in lake bed becomes a low mound that meets the old shore at the water level
+  const bp = raw < L && $("water").checked && isFilled(p) ? L + (L - raw) * 0.25 : raw;
   if (isLake(p, seed)) {
     const lake = L - state.lakeDepth * (L - bp); // meets the shore at exactly L
     // a lake never cuts into a road: near one, its bed rises into a bank up to the road's level

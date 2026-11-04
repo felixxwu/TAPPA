@@ -1257,7 +1257,7 @@ func has_nitrous() -> bool:
 @export var night_fog_sky_affect := 0.9
 ## Darkens the road/ground albedo on a night stage (albedo × amount, like rain's — a
 ## night road is not tinted toward a new colour, just unlit).
-@export var night_road_darken := 0.85
+@export var night_road_darken := 0.5
 ## The sky panorama a night stage swaps in, overriding whatever the REGION chose.
 ## Named by the night entry's `sky_panorama` key in WeatherLibrary, so a condition
 ## that wants its own sky is authored data rather than a branch in world.gd. Empty
@@ -3014,6 +3014,21 @@ func spectator_params() -> Dictionary:
 ## The full map frames what has been explored (plus a margin); this is the smallest stretch of
 ## ground across it shows, in metres, so the start isn't zoomed in to nothing.
 @export var map_min_view_m := 900.0
+## The full map's terrain picture (MapTerrain, copying tools/road_network_lab.html's 2D view):
+## cells across it, the colour of each biome ring's ground (repeating outward), lakes, the sea
+## around the island, and the height between contour lines in metres.
+@export var map_terrain_cells := 150
+@export var map_ring_colors := PackedColorArray([Color("#5d8a4a"), Color("#b59b5a"), Color("#3f6f55"), Color("#5b8a8f"),
+	Color("#c9d6dc"), Color("#8a5b5b"), Color("#7a6a9a"), Color("#9a8a5a")])
+@export var map_lake_color := Color("#1d4f6a")
+@export var map_sea_color := Color("#0d2a3a")
+@export var map_contour_m := 135.0
+## Higher ground is lighter over this many metres above the water.
+@export var map_lift_range_m := 300.0
+## Time per frame the open map may spend drawing its terrain picture, and while driving, in
+## microseconds (driving, it draws ahead for the explored area so the map opens ready).
+@export var map_terrain_budget_us := 8000
+@export var map_terrain_driving_budget_us := 1000
 ## Free roam's heading-up minimap, top-centre (scripts/free_roam/mini_map.gd, features/minimap.md).
 ## Off, only the rest-stop prompt under it shows; the full map still opens with M / Back.
 @export var minimap_enabled := true

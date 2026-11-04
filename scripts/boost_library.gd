@@ -120,7 +120,7 @@ const CATALOGUE := {
 		# the same number.
 	},
 	"brakes": {
-		"ring": 2, "price": 3500,
+		"ring": 1, "price": 2500,
 		"mass_kg": 10, "label": "Big brakes", "blurb": "Stronger braking.",
 		# Fixed absolute brake_torque ("set", not a multiplier) — strong enough to push
 		# ABS into play on every car in the roster, including the heaviest

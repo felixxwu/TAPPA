@@ -82,12 +82,13 @@ plain readings each physics tick (`Car.chassis_slip_angle`, speed, `Car.wheels_i
 trees near the car) so tests drive it without physics. Knobs: `FreeRoamSettings` → "Stunts".
 
 - **Drift / Speed / Jump** are streaks: a drift past `drift_min_angle_deg` with the wheels down, a
-  stretch at `fast_speed_mps`, or time with all four wheels off the ground. Each pays seconds held ×
+  stretch at `fast_speed_mps`, or time with at least one wheel off the ground. Each pays seconds held ×
   its rate once it ends (out of it for `stunt_grace_s`, so a drift swinging sides is one drift);
   one shorter than `stunt_min_s` / `jump_min_s` pays nothing.
 - **Near miss:** a tree within `near_miss_radius_m` of the car's side (the query sphere adds `Car.half_width()`, so wide cars get the same gap) at `near_miss_min_speed_mps` pays
-  `near_miss_money` once it's left behind (`_trees_near`: a sphere query, trees told apart by
-  collision shape index since a `BillboardField` shares one body). Rocks and barriers don't count.
+  once it's left behind, from `near_miss_money` at the edge of the radius up to `near_miss_max_money` for a tree
+  that brushes the car, by the closest it came (`_trees_near`: a sphere query returning id -> gap, trees told apart by
+  collision shape index since a `BillboardField` shares one body, gap measured from `instance_positions[shape]`). Rocks and barriers don't count.
 - **A hit voids it:** `DamageModel.damaged` drops every streak under way and every pending near
   miss — except a jump, since every landing jolts the car hard enough to register as a hit. Teleports and respawns reset it, and a jump only counts once the car has been on its wheels since
   (so dropping in at a spawn isn't one); a wrecked car earns nothing.

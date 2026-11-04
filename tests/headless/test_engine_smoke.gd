@@ -156,3 +156,12 @@ func test_disabled_emits_nothing() -> void:
 	_engine.misfire_count += 1
 	_tick(es)
 	assert_eq(es.live_count(), 0, "no smoke when the effect is disabled")
+
+
+# The smoke is unshaded, so it has to be told the weather's light or it glows at night.
+func test_smoke_dims_with_the_weathers_sun() -> void:
+	Config.data.weather_sun_mult = 0.5
+	var es := _make()
+	_engine.misfire_count += 1
+	_tick(es)
+	assert_almost_eq(es._buffer[12], Config.data.engine_smoke_color.r * 0.5, 0.001)

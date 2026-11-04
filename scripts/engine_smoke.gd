@@ -79,7 +79,7 @@ func _write_slot(i: int, p: Vector3, slot_scale: float, alpha: float) -> void:
 	_buffer[b + 3] = p.x
 	_buffer[b + 7] = p.y
 	_buffer[b + 11] = p.z
-	var col: Color = Config.data.engine_smoke_color
+	var col: Color = Config.data.weather_lit(Config.data.engine_smoke_color)
 	_buffer[b + 12] = col.r
 	_buffer[b + 13] = col.g
 	_buffer[b + 14] = col.b

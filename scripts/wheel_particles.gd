@@ -369,4 +369,4 @@ func _spray(cfg: GameConfig, look: Look, cp: Vector3, fwd: Vector3, vel: Vector3
 func _emit(cfg: GameConfig, look: Look, pos: Vector3, vel: Vector3) -> void:
 	_emit_slot(pos, vel, cfg.wheel_particle_lifetime_s)
 	# caller uploads the whole buffer once per tick
-	_write_slot(_next, pos, look, randf_range(0.0, TAU), _jittered(cfg, look.color))
+	_write_slot(_next, pos, look, randf_range(0.0, TAU), cfg.weather_lit(_jittered(cfg, look.color)))

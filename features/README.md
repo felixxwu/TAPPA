@@ -79,7 +79,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [loot.md](loot.md) | **Free-roam coins and shops** — `LootRules` (ring tables, prices, parts through the owned-car funnel), `LootDirector` (coins, money, the wreck loses it all, what's on sale), buying on the rest-stop Shop / Garage pages |
 | [world-session.md](world-session.md) | **The persistent free-roam world** — `WorldSession` (the world block in the profile: seed, car, pose, lit rest stops, map), the title screen the game boots into, and the map / stats pages |
 | [hud.md](hud.md) | `hud.gd` — speed / gear / rpm readouts, the Health / boost / nitrous / temperature gauges, and the debug readouts (H) |
-| [minimap.md](minimap.md) | **Free roam's minimap** — `MiniMap` (heading-up, perspective-tilted nav-style map top-centre: driven roads, nearby road ahead, seen rest stops; tap / M opens the full map), the `seen` sites record |
+| [minimap.md](minimap.md) | **Free roam's minimap** — `MiniMap` (heading-up, perspective-tilted nav-style map top-centre: driven roads, nearby road ahead, seen rest stops; tap / M opens the full map), the full map's lab-style terrain picture (`MapTerrain`), the `seen` sites record |
 | [free-roam.md](free-roam.md) | **The free-roam game, entered from the title screen** — `RoadNetwork` (radial-growth road layout), `RoadTerrain` (height built from the roads, base-field lakes), `TerrainStreamer` (resumable chunk jobs under a strict per-frame time budget, two LODs, skirts, collision ring) |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |

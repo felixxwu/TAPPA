@@ -4,7 +4,7 @@ extends CanvasLayer
 # Tests: tests/headless/test_world_session.gd, tests/headless/test_world_pages.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # Free roam's world pages (todo/2026-10-19-free-roam-pivot.md decisions 21–22), opened over a
 # frozen game from the pause menu or the rest-stop page:
-#   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven
+#   MAP   — the island: its terrain drawn like the road lab's 2D view (MapTerrain), the biome-ring borders you've crossed, the roads you've driven
 #           (and in grey the undriven road near them, `map_roads`),
 #           the rest stops you've come across (orange lit, grey not; MiniMap.site_markers, shared
 #           with the minimap), the money left on the road (dropped_xz) and the car. It is
@@ -33,6 +33,8 @@ var _targets := PackedInt32Array()
 var _selected := 0
 var _here := -1
 var travelled := false  # whether the map's last visit ended in a quick travel
+var map_terrain: MapTerrain  # the map's terrain tiles, kept for the session
+var _warm_t := 0.0
 var _target_label: Label
 var _travel_button: Button
 var _prev_button: Button
@@ -47,6 +49,26 @@ func _init() -> void:
 
 func is_open() -> bool:
 	return _page != null
+
+
+# The map's terrain cache, or null while the island has no roads built (a bare test streamer).
+func terrain_cache() -> MapTerrain:
+	if map_terrain == null and streamer != null and streamer.terrain.net != null:
+		map_terrain = MapTerrain.new(streamer.terrain, streamer.settings.island_radius_m)
+	return map_terrain
+
+
+# While driving, draws the terrain tiles the map would show now, a little per frame, so the map
+# usually opens with its picture ready.
+func _process(delta: float) -> void:
+	if _canvas != null or terrain_cache() == null:
+		return
+	_warm_t -= delta
+	if _warm_t <= 0.0:
+		_warm_t = 0.5
+		map_terrain.request(explored_view(), Config.data.map_terrain_cells)
+	if not map_terrain.done():
+		map_terrain.step(Config.data.map_terrain_driving_budget_us)
 
 
 # The map, which is also the quick-travel picker. `from_site` >= 0: opened at that rest stop (it is
@@ -297,6 +319,13 @@ class MapCanvas:
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		clip_contents = true
+		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+
+	func _process(_delta: float) -> void:
+		var mt := pages.terrain_cache()
+		if mt != null and not mt.done():
+			mt.step(Config.data.map_terrain_budget_us)
+			queue_redraw()
 
 	# World xz to this canvas, as last drawn.
 	func to_canvas(p: Vector2) -> Vector2:
@@ -319,13 +348,19 @@ class MapCanvas:
 		_k = k
 		_mid = mid
 		var to_px := func(p: Vector2) -> Vector2: return c + (p - mid) * k
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.04, 0.07, 0.1))
-		# The coast.
+		draw_rect(Rect2(Vector2.ZERO, size), Config.data.map_sea_color)
+		# The coast, under any terrain tiles not drawn yet.
 		var coast := PackedVector2Array()
 		for i in 96:
 			var a := TAU * i / 96.0
 			coast.append(to_px.call(Vector2(cos(a), sin(a)) * st.terrain.coast_r(cos(a) * 1000.0, sin(a) * 1000.0)))
-		draw_colored_polygon(coast, Color(0.11, 0.13, 0.09))
+		draw_colored_polygon(coast, Config.data.map_ring_colors[0])
+		var mt := pages.terrain_cache()
+		if mt != null:
+			mt.request(view, Config.data.map_terrain_cells)
+			for tile: Array in mt.drawn():
+				var r: Rect2 = tile[0]
+				draw_texture_rect(tile[1], Rect2(to_px.call(r.position), r.size * k), false)
 		# The biome-ring borders crossed (the noisy border, drawn as its average circle).
 		var inner := s.inner_radius_m()
 		for ring in range(1, WorldSession.max_ring() + 1):

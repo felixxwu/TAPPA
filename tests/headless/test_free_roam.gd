@@ -18,6 +18,7 @@ func _world(s: FreeRoamSettings) -> RoadTerrain:
 	var terrain := RoadTerrain.new()
 	terrain.setup(s, net)
 	net.build(s, terrain)
+	terrain.fill_cut_lakes()
 	return terrain
 
 
@@ -85,11 +86,17 @@ func test_no_bend_is_sharper_than_the_corner_limit_except_at_junctions() -> void
 
 func test_pruning_leaves_only_dead_ends_longer_than_the_limit() -> void:
 	var s := _settings()
-	s.world_seed = 1  # seed 7 happens to grow no short dead ends
-	s.prune_dead_ends_m = 0.0
-	var full := _world(s).net
-	s.prune_dead_ends_m = 1000.0
-	var net := _world(s).net
+	var full: RoadNetwork
+	var net: RoadNetwork
+	# the first seed that grows a short dead end, so the test never hangs on one seed's layout
+	for seed in range(1, 100):
+		s.world_seed = seed
+		s.prune_dead_ends_m = 0.0
+		full = _world(s).net
+		s.prune_dead_ends_m = 1000.0
+		net = _world(s).net
+		if net.edges.size() < full.edges.size():
+			break
 	assert_lt(net.edges.size(), full.edges.size(), "something must be pruned for this to test anything")
 	for i in range(1, net.node_x.size()):
 		assert_gt(net.node_degree[i], 0, "a pruned node must not be left behind")
@@ -167,6 +174,7 @@ func test_beside_the_road_the_ground_takes_the_roads_own_height() -> void:
 func test_zero_twist_makes_every_road_a_straight_line() -> void:
 	var s := _settings()
 	s.road_twist = 0.0
+	s.max_corner_turn_deg = 180.0  # corner rounding moves nodes off the straight line on purpose
 	var net := _world(s).net
 	for ei in net.edges.size():
 		var a := net.node(net.edges[ei].x)
@@ -196,6 +204,30 @@ func test_no_road_runs_through_water() -> void:
 		for i in range(0, pts.size(), 4):
 			assert_false(terrain.is_lake(pts[i].x, pts[i].y) and pts[i].length() > 900.0,
 				"road point %s sits in a lake" % pts[i])
+
+
+# Roads drive across lakes instead of stopping at them; the water they cut off is filled in, and
+# a lake keeps its largest piece as water.
+func test_roads_cross_lakes_and_fill_the_cut_off_water() -> void:
+	var s := _settings()
+	s.water_level_m = 1.0  # plenty of lake on this synthetic island
+	var terrain := _world(s)
+	var crossed := 0
+	var water_beside_road := 0
+	for ei in terrain.net.edges.size():
+		var pts := terrain.net.polyline(ei)
+		for i in range(0, pts.size(), 2):
+			var p: Vector2 = pts[i]
+			if terrain.base_h(p.x, p.y) >= s.water_level_m or not terrain.on_land(p.x, p.y):
+				continue
+			crossed += 1
+			assert_false(terrain.is_lake(p.x, p.y), "road point %s is still in a lake" % p)
+			var side := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized().orthogonal()
+			for off in [-80.0, 80.0]:
+				var q: Vector2 = p + side * off
+				water_beside_road += int(terrain.is_lake(q.x, q.y))
+	assert_gt(crossed, 0, "a road must run across a lake bed for this to test anything")
+	assert_gt(water_beside_road, 0, "a lake a road crosses keeps its largest piece as water")
 
 
 # Neither a lake nor the sea cuts into a road: across its whole width, every road stays above the

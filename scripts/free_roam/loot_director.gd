@@ -31,6 +31,7 @@ var _money_shown := -1
 var _streaks := {"Drift": [0.0, 0.0], "Speed": [0.0, 0.0], "Jump": [0.0, 0.0]}  # [seconds held, seconds since it dropped out]
 var _settled := false  # on its wheels since the last spawn, so dropping in isn't a jump
 var _near := {}  # trees inside the near-miss radius -> whether passing them still pays
+var _near_gap := {}  # those trees -> the closest they came to the car's side, in metres
 var _near_query: PhysicsShapeQueryParameters3D
 
 
@@ -125,22 +126,27 @@ func respawned(_site: int, _wreck: Vector3) -> void:
 
 
 # Pay for risky driving: a drift, fast stretch or jump pays for its length once it ends, and a tree in
-# `near` (ids from _trees_near) pays once it's passed. Taking a hit voids whatever is under way.
-func stunt_step(dt: float, slip: float, speed: float, wheels_down: int, near: Array) -> void:
+# `near` (id -> gap from _trees_near) pays once it's passed, more the closer it came. Taking a hit
+# voids whatever is under way.
+func stunt_step(dt: float, slip: float, speed: float, wheels_down: int, near: Dictionary) -> void:
 	if _wrecked:
 		return
 	var s := streamer.settings
 	_settled = _settled or wheels_down >= 3
 	_streak("Drift", dt, wheels_down >= 3 and speed >= s.drift_min_speed_mps and absf(slip) >= deg_to_rad(s.drift_min_angle_deg), s.drift_money_per_s, s.stunt_min_s)
 	_streak("Speed", dt, speed >= s.fast_speed_mps, s.fast_money_per_s, s.stunt_min_s)
-	_streak("Jump", dt, _settled and wheels_down == 0, s.jump_money_per_s, s.jump_min_s)
+	_streak("Jump", dt, _settled and wheels_down < 4, s.jump_money_per_s, s.jump_min_s)
 	var still := {}
+	var gaps := {}
 	for id in near:
 		still[id] = _near.get(id, speed >= s.near_miss_min_speed_mps)
+		gaps[id] = minf(near[id], _near_gap.get(id, INF))
 	for id in _near:
 		if _near[id] and not still.has(id):
-			_pay("Near miss", s.near_miss_money)
+			var t := clampf(_near_gap[id] / s.near_miss_radius_m, 0.0, 1.0)
+			_pay("Near miss", roundi(lerpf(s.near_miss_max_money, s.near_miss_money, t)))
 	_near = still
+	_near_gap = gaps
 
 
 func _streak(label: String, dt: float, on: bool, per_s: float, min_s: float) -> void:
@@ -157,9 +163,9 @@ func _streak(label: String, dt: float, on: bool, per_s: float, min_s: float) -> 
 			st[1] = 0.0
 
 
-# Trees near the car, one id per tree: every tree of a field shares one collision body, told apart
-# by shape index.
-func _trees_near() -> Array:
+# Trees near the car, as id -> gap between the car's side and the tree, in metres. Every tree of a
+# field shares one collision body, told apart by shape index.
+func _trees_near() -> Dictionary:
 	if _near_query == null:
 		_near_query = PhysicsShapeQueryParameters3D.new()
 		var sphere := SphereShape3D.new()
@@ -167,11 +173,20 @@ func _trees_near() -> Array:
 		_near_query.shape = sphere
 		_near_query.exclude = [(car as CollisionObject3D).get_rid()]
 	_near_query.transform = Transform3D(Basis.IDENTITY, car.global_position)
-	var out := []
+	var out := {}
+	var at := Vector2(car.global_position.x, car.global_position.z)
 	for hit in car.get_world_3d().direct_space_state.intersect_shape(_near_query, 16):
 		var body: Node = hit["collider"]
-		if body != null and body.get_parent() is BillboardField:
-			out.append("%d:%d" % [body.get_instance_id(), hit["shape"]])
+		var field := body.get_parent() as BillboardField if body != null else null
+		if field == null:
+			continue
+		var idx: int = hit["shape"]
+		var gap := INF
+		if idx < field.instance_positions.size():
+			var tree := field.instance_positions[idx]
+			# ponytail: the car is treated as a circle, so a tree off a corner reads a little far
+			gap = maxf(0.0, at.distance_to(Vector2(tree.x, tree.z)) - car.half_width())
+		out["%d:%d" % [body.get_instance_id(), idx]] = gap
 	return out
 
 
@@ -196,6 +211,7 @@ func _reset_stunts() -> void:
 		st[0] = 0.0
 		st[1] = 0.0
 	_near.clear()
+	_near_gap.clear()
 	_settled = false
 
 
