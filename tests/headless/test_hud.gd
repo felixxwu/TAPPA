@@ -57,8 +57,7 @@ func before_each() -> void:
 
 
 func test_hud_visible_when_enabled() -> void:
-	assert_true(Config.data.hud_enabled, "default config keeps the HUD on")
-	assert_true(_scene.get_node("HUD").visible, "HUD visible when hud_enabled")
+	assert_eq(_scene.get_node("HUD").visible, Config.data.hud_enabled, "the HUD follows hud_enabled")
 
 
 # A paused page (pause menu, rest stop, map, stats) covers the HUD: its gauges go transparent

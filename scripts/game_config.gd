@@ -248,7 +248,7 @@ var peak_torque_rpm := 4500.0
 ## with the axle μ (pipeline step 1) and UpgradeLibrary.apply multiplies the fitted
 ## part's figures in (step 2). 1.0 on a car with no such tyre fitted, which makes the
 ## whole mechanism an exact no-op for every other compound. The authored numbers live
-## on the part in UpgradeLibrary.UPGRADES, like every other effect.
+## in the shop_tire_* fields ("Shop Tires"), which LootRules.TIRES names.
 ##
 ## TO ADD AN AXIS (wet, gravel, ice, …): add an @export here AND a row in
 ## TIRE_SURFACE_AXES right below AND its arm in _channel_weight. Those three edits sit
@@ -477,9 +477,7 @@ var _car_lit := {}
 # so the engine idling never creeps the car.
 @export var clutch_engage_speed := 4.0
 @export var shift_time := 0.25 # seconds of open clutch + throttle cut per shift
-## A new engine's transmission mode: true = automatic. The player's car is always
-## switched to automatic once live (SettingsMenu.gearbox_auto()); this is what a
-## scripted car (the auto-driver, the benchmark) starts in.
+## A new engine's transmission mode: true = automatic. There is no manual option in the game.
 @export var auto_gearbox := false
 ## Automatic-mode upshift point, as a fraction of redline. Each gear upshifts at
 ## the ground speed where it reaches this fraction of redline rpm. Must stay
@@ -764,6 +762,8 @@ func has_nitrous() -> bool:
 ## decision 8). Below this health fraction the cooling system breaks, and stays broken until a
 ## rest-stop repair.
 @export_range(0.0, 1.0) var cooling_failure_hp_fraction := 0.5
+## Multiplies the car's authored max HP. Stays 1.0 here: only a fitted roll cage changes it.
+@export var max_hp_mult := 1.0
 ## Above this temperature (°C) an overheating engine loses HP continuously.
 @export_range(0.0, 250.0) var overheat_temp_threshold_c := 120.0
 ## The hottest the engine gets (°C); also where its misfire and rev cap reach their worst.
@@ -2404,6 +2404,9 @@ func snapshot_values() -> Dictionary:
 	for prop in get_property_list():
 		if not (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE):
 			continue
+		# `_car_lit` lists live materials, not a setting: restoring it would forget newer ones.
+		if String(prop["name"]).begins_with("_"):
+			continue
 		var value: Variant = get(prop["name"])
 		if value is Array or value is Dictionary or value is Resource:
 			value = value.duplicate(true)
@@ -2937,19 +2940,28 @@ func spectator_params() -> Dictionary:
 ## enough to reliably trigger ABS (features/drivetrain-and-tires.md) even on the
 ## heaviest car in the roster.
 @export var run_boost_brake_torque_n := 2500.0
-# "Turbocharger" / "Supercharger" — the install_turbo/install_supercharger EFFECTS rows
+# "Small turbo" / "Big turbo" / "Supercharger" — the install_turbo/install_supercharger EFFECTS rows
 # (features/forced-induction.md). Only the *_boost_gain field SCALES with level (it's the
 # part's actual strength); the rest are the part's fixed "personality" (spool character/
 # drag) and never scale — see BoostLibrary.CATALOGUE's "turbo"/"supercharger" entries and
 # magnitude_for's dict-shaped effect_fields handling.
-## Torque multiplier at full boost — the turbo boost's scaled field.
-@export_range(0.05, 1.5, 0.01) var run_boost_turbo_boost_gain := 0.45
+## Torque multiplier at full boost — the small turbo's scaled field.
+@export_range(0.05, 1.5, 0.01) var run_boost_turbo_boost_gain := 0.28
 ## Shaft speed (rad/s) boost saturates at — fixed, does not scale with level.
-@export_range(2000.0, 20000.0, 100.0) var run_boost_turbo_omega_ref := 10000.0
+@export_range(2000.0, 20000.0, 100.0) var run_boost_turbo_omega_ref := 8000.0
 ## Turbo shaft rotational inertia (kg·m²) — fixed, does not scale with level.
-@export_range(0.001, 0.05, 0.001) var run_boost_turbo_inertia := 0.008
+@export_range(0.001, 0.05, 0.001) var run_boost_turbo_inertia := 0.005
 ## Always-on crank friction (N·m) the fitted turbo adds — fixed, does not scale with level.
-@export_range(0.0, 40.0, 0.5) var run_boost_turbo_parasitic_friction := 8.0
+@export_range(0.0, 40.0, 0.5) var run_boost_turbo_parasitic_friction := 5.0
+## The big turbo's versions of the four fields above.
+@export_range(0.05, 1.5, 0.01) var run_boost_big_turbo_boost_gain := 0.65
+@export_range(2000.0, 20000.0, 100.0) var run_boost_big_turbo_omega_ref := 11000.0
+@export_range(0.001, 0.05, 0.001) var run_boost_big_turbo_inertia := 0.012
+@export_range(0.0, 40.0, 0.5) var run_boost_big_turbo_parasitic_friction := 12.0
+## Radiator: multiplies cooling_failure_hp_fraction, so the cooling breaks at lower health.
+@export_range(0.1, 1.0, 0.01) var run_boost_radiator_failure_mult := 0.6
+## Roll cage: multiplies the car's max HP.
+@export_range(1.0, 3.0, 0.01) var run_boost_rollcage_hp_mult := 1.3
 ## Torque multiplier at full belt boost — the supercharger boost's scaled field.
 @export_range(0.05, 1.5, 0.01) var run_boost_supercharger_boost_gain := 0.4
 ## Engine rpm belt boost saturates at — fixed, does not scale with level.
@@ -2974,6 +2986,19 @@ func spectator_params() -> Dictionary:
 @export_range(0.05, 1.0, 0.01) var run_boost_nitrous_boost_gain := 0.25
 ## Seconds a full tank holds — fixed, does not scale with level.
 @export_range(1.0, 20.0, 0.5) var run_boost_nitrous_tank_seconds := 6.0
+
+@export_group("Shop Tires")
+## Grip multipliers for each tire LootRules.TIRES sells. `flat` applies on every surface and is
+## the whole story on gravel; `tarmac` and `snow` multiply on top of it on those surfaces.
+@export var shop_tire_gravel_flat := 1.12
+@export var shop_tire_gravel_tarmac := 0.89
+@export var shop_tire_gravel_snow := 1.1
+@export var shop_tire_road_flat := 0.92
+@export var shop_tire_road_tarmac := 1.2
+@export var shop_tire_road_snow := 0.9
+@export var shop_tire_snow_flat := 1.1
+@export var shop_tire_snow_tarmac := 0.85
+@export var shop_tire_snow_snow := 1.35
 
 @export_group("Loot Part Levels")
 ## How far ONE level pushes a boost's magnitude away from its unleveled baseline, as a

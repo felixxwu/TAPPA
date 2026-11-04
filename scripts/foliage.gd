@@ -4,7 +4,7 @@ extends RefCounted
 # Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
 # Centralised foliage spawning. ONE place owns how trees + bushes are represented
 # and builds the shared mesh/material, so they look identical everywhere they
-# appear. Trees are ALWAYS opaque billboard cutouts (BillboardField);
+# appear. Trees are ALWAYS billboards (BillboardField, cut out as `tree_cutout_mode` says);
 # bushes and rocks are ALWAYS 3D low-poly meshes (TreeMeshField). Routing every
 # spawn through here keeps the scenes from drifting apart.
 #
@@ -73,8 +73,7 @@ const ROCK_CAP_MATERIAL := "grass"
 static var _rock_mesh_cache: Dictionary = {}
 
 
-# Spawn a tree field as a child of `parent`: always a BillboardField (opaque
-# cutout). Positions are lifted onto `terrain`; `with_collision` gates the
+# Spawn a tree field as a child of `parent`: always a BillboardField. Positions are lifted onto `terrain`; `with_collision` gates the
 # per-instance hitboxes (stages want them, decorative clearings don't). Returns
 # the created field node.
 #

@@ -333,7 +333,8 @@ looks around (`PhotoModeCamera.look_by`, same sign convention as the mouse path 
 right turns the view left), and a two-finger pinch anywhere zooms the fov
 (`PhotoModeCamera.zoom_by`). The one-finger look is suppressed for as long as a second
 finger is down, so a pinch can never also swing the camera (`_register_free_pointer`
-promotes the pair to a pinch and drops `_look_owner`).
+promotes the pair to a pinch and drops `_look_owner`). When one finger lifts, the other goes
+back to looking.
 
 **While hidden, a plain TAP restores the widgets** — but a drag still looks and a pinch
 still zooms, so a player can compose a shot with the chrome completely gone and only tap
@@ -370,10 +371,7 @@ delta don't cover comparable pixel ranges.
 > held UP/DOWN button in the pressed state. If this turns out to bite in practice, port
 > the same watchdog pattern over rather than re-deriving it from scratch.
 
-One non-obvious piece of the takeover: `world.gd` (`_set_photo_mode_chrome`) also flips the
-`PostProcess` `SubViewportContainer` to `PROCESS_MODE_ALWAYS` for the duration. Its `_process`
-is what mirrors the current camera into the `SubViewport` that actually renders the world (see
-[rendering.md](rendering.md) and `post_process_view.gd`); left `PAUSABLE` it freezes with
-everything else and the photo camera would fly around with nothing on screen changing. It goes
-back to `PROCESS_MODE_INHERIT` on the way out, in the same one writer, so the overlays can
-never come back with the mirror left running.
+One non-obvious piece of the takeover: the `PostProcess` `SubViewportContainer` is always
+`PROCESS_MODE_ALWAYS` (`post_process_view.gd._ready`). Its `_process` mirrors the current camera
+into the `SubViewport` that actually renders the world (see [rendering.md](rendering.md)), so
+paused it would freeze and the photo camera would fly around with nothing on screen changing.

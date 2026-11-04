@@ -24,7 +24,7 @@ need a migration, so it stays as is).
 | `seed` | the island's world seed (`FreeRoamSettings.world_seed`) |
 | `car` | the active owned car's instance id (`Save.KEY_CARS`) |
 | `pose` | `[x, y, z, yaw]`, written every `FreeRoamSettings.save_every_s` (5 s) and when leaving the scene |
-| `car_state` | `{hp, cooling_broken, engine_temp, toe}`, so a reload resumes the damage too |
+| `car_state` | `{hp, max_hp, cooling_broken, engine_temp, toe}`, so a reload resumes the damage too; health carries over as a share of max HP, so a full car stays full after fitting a roll cage or swapping cars |
 | `lit` / `last_site` | lit rest stops (site ids; spawn 0 always) and the respawn point |
 | `driven` | map cells (`DRIVEN_CELL_M` = 40 m) the car has driven through, for the map |
 | `max_ring` | the furthest biome ring reached, a high-water mark (`reach_ring` returns true on a new one, which cues the region-name banner) |

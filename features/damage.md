@@ -282,7 +282,9 @@ reverses "damage never wrecks" **for free roam only**: `thermal` is false by def
 dev stage keeps HP as a pure degradation.
 
 1. **Cooling failure:** the first time HP falls to `cooling_failure_hp_fraction` of max,
-   `cooling_broken` is set. It stays broken until `repair()`, whatever the HP does.
+   `cooling_broken` is set. It stays broken until `repair()`, whatever the HP does. The **Radiator**
+   part lowers that fraction (`cooling_failure_mult`), and the **Roll cage** raises max HP
+   (`max_hp_mult`, applied in `Car.apply_owned` after the effects funnel).
 2. **Temperature:** `thermal_step` (called by `car.gd` each physics tick with rpm / redline)
    adds `engine_heat_c_per_s` × rpm / redline, then working cooling multiplies the temperature
    by `engine_cooling_retain_per_s ^ dt`, so a hotter engine sheds more and it settles where heat

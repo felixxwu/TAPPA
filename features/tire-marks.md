@@ -13,7 +13,7 @@ Both marks are **pure black**; only their opacity differs. See *Colour* below fo
 that is the whole design and not just a palette choice.
 
 The grass off the road footprint never marks. Created + wired by
-`world.gd._generate_track` (reused across event regenerations).
+`free_roam.gd._ready`, or `world.gd._generate_track` on the test stage (reused across event regenerations).
 
 **Tests:** `tests/headless/test_tire_marks.gd`, `tests/headless/test_drivetrain.gd`
 
@@ -55,10 +55,9 @@ discards alpha — and since both mark colours are now pure black, that means **
 black trails**, not the flat grey it used to give. It buys back early-Z and the alpha
 pass; it does not give a usable look. It changes only how *solid* marks are, never
 *where* they appear — the min-alpha cull is gated on the raw strength, not the final
-alpha, so both modes lay the identical set of segments. The flag is checked once per
-`flush_uploads()` (one bool compare) and rebuilding the material re-dirties every
-ribbon, so it is a **live** toggle: flip it in the inspector and the next frame that
-lays a mark switches the look, without regenerating the track.
+alpha, so both modes lay the identical set of segments. The flag is checked every
+tick (one bool compare) and the material rebuilt when it changes, so it is a **live** toggle: the
+next segment laid switches the look. Existing ribbons follow only on `flush_uploads()`.
 
 ### Draw-call cost: none
 

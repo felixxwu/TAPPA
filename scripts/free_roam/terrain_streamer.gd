@@ -603,6 +603,10 @@ func _run_queue(deadline: int) -> void:
 			continue
 		if job.stage == Stage.DONE:
 			_queue.remove_at(i)
+			# A finished job's closures and height data would otherwise live as long as the chunk.
+			var st: ChunkState = _chunks.get(job.coord)
+			if st != null and st.plant_job == job:
+				st.plant_job = null
 		elif not planting and job.stage > Stage.COLLIDE:
 			_queue.remove_at(i)
 			_to_planting(job)
@@ -753,7 +757,6 @@ func _atomic(kind: String, deadline: int, work: Callable) -> bool:
 
 
 func _prep(job: ChunkJob) -> void:
-	var cm := settings.chunk_m
 	job.halo = 0 if job.level == Level.FAR else 1
 	var m := job.n + 2 * job.halo
 	job.heights.resize(m * m)
@@ -976,6 +979,10 @@ func _attach(job: ChunkJob) -> void:
 			st.far_job = null
 	if st != null:
 		_show_finest(st)
+		# The mesh just uploaded has no holes: only recut it if near tiles really cover the chunk.
+		if mi == (st.mid_mesh if st.mid_mesh != null else st.far_mesh):
+			st.hole_mesh = mi
+			st.hole_mask = 0
 		_cut_holes(job.coord)
 	job.verts = PackedVector3Array(); job.colors = PackedColorArray(); job.uvs = PackedVector2Array()
 	job.uv2s = PackedVector2Array()
@@ -1349,7 +1356,7 @@ func _queue_spawns(job: ChunkJob, water: float, rock_clearance: float) -> void:
 			var pts: PackedVector2Array = groups[i]
 			if not pts.is_empty():
 				_add_spawn(job, _spawn_kind("rock", pts.size()), func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, g, i, true, dist, fade))
-	_queue_site_markers(job, g)
+	_queue_site_markers(job)
 	_queue_barriers(job, g)
 
 
@@ -1372,9 +1379,9 @@ func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 
 
 # The chunk's site dressing. A rest stop gets a log cabin with a live crowd gathered at its door
-# (decision 9: spectators gather at rest stops); the doorway glows once the stop is lit.
+# (decision 9: spectators gather at rest stops).
 # Loot slots and dead ends show a coin until it is picked up.
-func _queue_site_markers(job: ChunkJob, _g: PlantGround) -> void:
+func _queue_site_markers(job: ChunkJob) -> void:
 	var cm := settings.chunk_m
 	var ids := sites.in_box(job.coord.x * cm, job.coord.y * cm, (job.coord.x + 1) * cm, (job.coord.y + 1) * cm)
 	var mine := PackedInt32Array()
@@ -1404,7 +1411,7 @@ const CABIN_WALLS := AABB(Vector3(-3.7, 0.0, -4.7), Vector3(7.4, 3.5, 7.5))
 # A rest stop's log cabin ("Lowpoly simple Log Cabin" by tamminen, CC-BY-4.0, see
 # models/cabin/README.md): set back from the pad's centre towards its far side by
 # rest_stop_cabin_back_m, door facing the road, inside the crowd's arc. Solid, and in the damage
-# obstacle group like a barrier. A lamp post stands at its front corner, glowing BEACON_LIT lit or not,
+# obstacle group like a barrier. A lamp post stands at its front corner, glowing BEACON_LIT in the dark, lit or not,
 # so a rest stop can be found at night (_lamp_post).
 func _site_marker(i: int) -> Node3D:
 	var cabin: Node3D = LOG_CABIN.instantiate()
@@ -1869,7 +1876,7 @@ func _plan() -> void:
 						ts.col_job.stage = Stage.COLLIDE
 					if ts.col_job != null:
 						ts.col_job.priority = d - 2000.0
-			if st.plant_job != null and st.plant_job.stage != Stage.DONE:
+			if st.plant_job != null:
 				st.plant_job.dist = d
 				st.plant_job.priority = _plant_priority(coord, d)
 	# Near tiles: the 2×2 round the tile corner nearest the car, kept a little past it.
@@ -1957,7 +1964,7 @@ func _new_job(coord: Vector2i, level: Level, with_collision: bool) -> ChunkJob:
 	job.origin = Vector2(coord) * job.size_m
 	job.n = int(job.size_m / job.stride) + 1
 	# Every mid build runs the planting stages: they also spawn the chunk's barriers (with
-	# collision), rest-stop crowds, site posts and coins. vegetation_enabled only thins the
+	# collision), rest-stop crowds, cabins and coins. vegetation_enabled only thins the
 	# trees, bushes and rocks out of it (_plant_candidates).
 	job.plants = level == Level.MID
 	_queue.append(job)

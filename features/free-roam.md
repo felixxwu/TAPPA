@@ -11,7 +11,7 @@ The free-roam game (`todo/2026-10-19-free-roam-pivot.md`), entered from the titl
 (`title.tscn`). It's driven from the persistent world in the profile, which covers the seed, car,
 pose, lit rest stops and map; see [world-session.md](world-session.md). The old hub and region
 run are unreachable from the game. Drive with the usual controls; **R**
-puts the car back on the nearest road. A label in the top-left shows the streaming stats.
+puts the car back on the nearest road.
 
 **The game builds the same island as `tools/road_network_lab.html` for the same seed.**
 `LabNoise` reproduces the lab's random stream (mulberry32), hash and value noise bit for bit,
@@ -175,7 +175,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   past the 90 m foliage distance, and those trees were the dearest spawns in the queue. Before 2026-10-20 planting always beat far meshes,
   so at speed far jobs never ran and the horizon had gaps. Nothing in the plant / far tier can
   overtake a collision or a finer mesh.
-- **Dropping:** a chunk sheds its near mesh past `NEAR_KEEP_CHUNKS` (`_drop_near`), its mid mesh,
+- **Dropping:** a chunk sheds its near mesh past `NEAR_KEEP_TILES` (`_drop_near_tile`), its mid mesh,
   foliage and mid / plant jobs past `mid_radius + 1.5` (`_drop_mid`), and its collision and
   collision job with its near mesh (`_drop_collision`), whatever its distance; a far job past `far_radius + 1.5` is
   cancelled; a chunk past `far_radius + 2` (Chebyshev) goes whole (`_drop_chunk`). Until
@@ -355,7 +355,7 @@ planted on it (`is_clear`).
   a junction. The pad sits beside the road on a seeded side, or the other side if that one is
   water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
   further on.
-- **Site markers:** each rest stop in near chunks has a **log cabin** (`_site_marker`,
+- **Site markers:** each rest stop in a mid chunk has a **log cabin** (`_site_marker`,
   `models/cabin/log_cabin.glb`, CC-BY, credit in `models/cabin/README.md`), set back
   `GameConfig.rest_stop_cabin_back_m` from the pad's centre away from the road, door facing the
   road, inside the crowd's arc. It is solid (a box over its walls, `CABIN_WALLS`, in the damage
@@ -410,14 +410,14 @@ checkpoint reached under a region band hides that band until the checkpoint band
 `RestStops` makes the REST sites into Dark Souls bonfires:
 - **Driving past:** reaching a rest stop — its pad, or anywhere on the road beside it, at any speed
   (`rest_reached` → `RoadSites.reached`, swept over the step's travel with
-  `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its cabin
-  doorway glows orange and its minimap mark turns orange), makes it the respawn point (`last_site`). Every physics step the car is
+  `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its minimap
+  mark turns orange), makes it the respawn point (`last_site`). Every physics step the car is
   there it heals (`RestStops._heal`: `checkpoint_heal_fraction_per_s` of max HP per second); reaching
   full HP runs `DamageModel.repair` (cooling mended, wheels straightened) . A fast
   drive-by only gets a tick's worth. Spawn is lit from the start. A move there by
   travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
   stop (a new game, Continue, the reload after a parts or car change): the first `step` only notes
-  where the car is (`_primed`), so the page doesn't open until it drives away and comes back.
+  where the car is (`_primed`), so nothing lights again, but the page can be opened straight away.
   Teleports (travel, respawn, the R reset) are not swept as drives: `RestStops.move_car_to`,
   `RoadRecovery.reset_done` → `car_teleported` on `RestStops` and `LootDirector` reset the swept
   start, and `free_roam.gd` resets its odometer's start on the same two signals. The `RoadSites.TELEPORT_M` jump guard (shared by `RestStops`, `LootDirector` and the odometer) stays as the backstop for teleports with no signal (the boot placement, `AutoDriver.place_on_route`).
@@ -444,12 +444,12 @@ checkpoint reached under a region band hides that band until the checkpoint band
   ragdoll pool: bodies are built on a knock, so streaming a crowd in stays cheap
   (`features/spectators.md`).
 
-The car is fielded through `apply_owned` with a transient owned-car dict (`free_roam.gd →
+The car is fielded through `apply_owned` with the active owned-car dict from `Save` (`free_roam.gd →
 owned`), so the rest-stop page's tuning works on the shared `TuningPanel` / `car.retune` path.
 
 ## Barriers
 
-`RoadBarriers` plans crash barriers once at boot, and each near chunk builds its share with the
+`RoadBarriers` plans crash barriers once at boot, and each mid chunk builds its share with the
 stage's `BarrierField` (modules, MultiMesh batching, solid collision in the damage obstacle
 group), under the foliage node. The rules match the stage's corner barriers
 (`features/barriers.md`):
@@ -548,11 +548,11 @@ node for node:
   ruts on the gravel roads, nothing on grass). A teleport (`RestStops.car_teleported_to`,
   `RoadRecovery.reset_done`) calls `TireMarks.break_ribbons`, so a mark never bridges the jump.
 - The streaming readout moved to its own `DebugStats` layer. It starts hidden; **P**
-  (`toggle_perf_overlay`) toggles it in every build, release/web exports included.
+  (`toggle_perf_overlay`) toggles it in debug builds only.
   Its `frame` line is the rough share of the frame budget still free (`frame_headroom`): the
   budget is `Engine.max_fps`, else the display refresh rate; spent time is the busier of CPU
   (process + physics + render submit) and GPU, measured on the root and `PostProcess/View`
-  viewports only while the readout is shown.
+  viewports all the time, because the streamer's spare-time budget reads it every frame.
 
 **Road recovery** (`RoadRecovery`) replaces `TrackProgress`' recovery, which needs a single
 centreline. On request (the `reset_to_road` action: **R** / right-stick click, or the pause menu) it puts the car on the nearest road, facing

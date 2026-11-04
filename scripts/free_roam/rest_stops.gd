@@ -17,7 +17,7 @@ extends Node
 
 signal lit(site: int)
 signal opened(site: int)
-# The car gave up (0 HP): the host shows the wreck page, whose Continue calls respawn().
+# The car gave up (0 HP): the host shows the wreck page, whose Respawn card calls respawn().
 signal wrecked
 signal respawned(site: int, wreck_pos: Vector3)
 # A wrecked car rolled into rest stop `site` and was brought back in place (no respawn; the dropped money stays where it fell).
@@ -166,7 +166,7 @@ func _heal(i: int, delta: float) -> void:
 		return
 	dmg.hp = minf(dmg.max_hp, dmg.hp + dmg.max_hp * Config.data.checkpoint_heal_fraction_per_s * delta)
 	if dmg.hp >= dmg.max_hp:
-		dmg.repair(Config.data)
+		dmg.repair()
 
 
 func light(i: int) -> void:
@@ -212,7 +212,7 @@ func travel_to(site: int) -> bool:
 	if is_wrecked or not lit_sites.has(site):
 		return false
 	move_car_to(site)
-	(car.damage as DamageModel).repair(Config.data)
+	(car.damage as DamageModel).repair()
 	return true
 
 
@@ -255,7 +255,7 @@ func respawn() -> void:
 	var wreck := car.global_position
 	move_car_to(last_site)
 	var dmg := car.damage as DamageModel
-	dmg.repair(Config.data)
+	dmg.repair()
 	# A respawn is a fresh car, so it starts cold; a rest-stop repair (_heal) keeps the heat.
 	dmg.engine_temp = 0.0
 	respawned.emit(last_site, wreck)

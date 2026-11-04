@@ -106,9 +106,7 @@ var _last_pos: Array = []   # per wheel: Vector2 last emit XZ, or null = ribbon 
 # copy-on-write duplication of the whole buffer on every emit.
 # `_snap_verts` / `_snap_cols` hold the COMPACT, oldest-to-newest view of ONE wheel's
 # ring, materialised only at upload time (_sync_snapshot) — that's what the mesh gets.
-# It is ONE shared scratch buffer, overwritten per wheel, so it is only valid for the
-# wheel just synced; nothing may hold on to it (a stored reference would alias the next
-# wheel's data). Tests read a wheel's geometry through ribbon_verts/ribbon_cols, which
+# They hold only the wheel just synced. Tests read a wheel's geometry through ribbon_verts/ribbon_cols, which
 # re-sync and hand back a copy.
 const RING_QUAD_VERTS := 6  # verts per ribbon quad (two triangles)
 var _ring_verts := PackedVector3Array()
@@ -431,9 +429,7 @@ func _drop_front_quad(i: int) -> void:
 
 
 # Materialise a wheel's ring into the compact oldest-to-newest _snap_verts/_snap_cols
-# view the mesh consumes. Written through reused member scratch buffers, so this
-# doesn't grow the heap once the ribbon reaches its steady-state length — which is why
-# the result is only valid until the NEXT wheel is synced.
+# view the mesh consumes. The result is only valid until the NEXT wheel is synced.
 func _sync_snapshot(i: int) -> void:
 	# No ring yet — this wheel has never emitted (the rings are built lazily on the first
 	# segment). The counters are empty arrays until then, so bail before indexing them.
@@ -443,15 +439,14 @@ func _sync_snapshot(i: int) -> void:
 			_snap_cols.resize(0)
 		return
 	var n: int = maxi(_ring_count[i], 0) * RING_QUAD_VERTS
-	if _snap_verts.size() != n:
-		_snap_verts.resize(n)
-		_snap_cols.resize(n)
-	for q in maxi(_ring_count[i], 0):
-		var src: int = (i * _ring_cap + (_ring_head[i] + q) % _ring_cap) * RING_QUAD_VERTS
-		var dst: int = q * RING_QUAD_VERTS
-		for k in RING_QUAD_VERTS:
-			_snap_verts[dst + k] = _ring_verts[src + k]
-			_snap_cols[dst + k] = _ring_cols[src + k]
+	var base: int = i * _ring_cap * RING_QUAD_VERTS
+	var head: int = base + _ring_head[i] * RING_QUAD_VERTS
+	var tail: int = mini(n, _ring_cap * RING_QUAD_VERTS - _ring_head[i] * RING_QUAD_VERTS)
+	_snap_verts = _ring_verts.slice(head, head + tail)
+	_snap_cols = _ring_cols.slice(head, head + tail)
+	if n > tail:  # the oldest quads run off the end of the ring and wrap to its start
+		_snap_verts.append_array(_ring_verts.slice(base, base + n - tail))
+		_snap_cols.append_array(_ring_cols.slice(base, base + n - tail))
 
 
 # Re-upload every wheel's ribbon now. Marks upload eagerly as they're emitted (see
@@ -656,12 +651,11 @@ func clear_warm_up() -> void:
 
 # Build the shared ribbon material if it's missing, or REBUILD it if
 # tire_mark_alpha_enabled has been flipped since (transparent vs opaque is baked into
-# the material). Returns true if it (re)built, so the caller can re-upload the ribbons
-# that are still carrying the old one.
-func _ensure_material() -> bool:
+# the material).
+func _ensure_material() -> void:
 	var want_alpha: bool = Config.data.tire_mark_alpha_enabled
 	if _material != null and _material_alpha == want_alpha:
-		return false
+		return
 	# Each segment carries its own colour (gravel rut vs tarmac skid) as a vertex
 	# colour, so one ribbon mesh per wheel can show both surfaces — and, with the fade
 	# on, its own ALPHA too, so one mesh also carries the whole range of mark strengths.
@@ -676,7 +670,6 @@ func _ensure_material() -> bool:
 		# darken every overlap into a blob, so the marks stop reading as separate lines.
 		# Same call the smoke puffs make for stacked transparency (engine_smoke.gd).
 		_material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
-	return true
 
 
 # --- Readouts (tests) --------------------------------------------------------

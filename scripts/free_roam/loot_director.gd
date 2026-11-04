@@ -162,9 +162,10 @@ func _streak(label: String, dt: float, on: bool, per_s: float, min_s: float) -> 
 func _trees_near() -> Array:
 	if _near_query == null:
 		_near_query = PhysicsShapeQueryParameters3D.new()
-		_near_query.shape = SphereShape3D.new()
+		var sphere := SphereShape3D.new()
+		sphere.radius = streamer.settings.near_miss_radius_m + car.half_width()
+		_near_query.shape = sphere
 		_near_query.exclude = [(car as CollisionObject3D).get_rid()]
-	(_near_query.shape as SphereShape3D).radius = streamer.settings.near_miss_radius_m
 	_near_query.transform = Transform3D(Basis.IDENTITY, car.global_position)
 	var out := []
 	for hit in car.get_world_3d().direct_space_state.intersect_shape(_near_query, 16):

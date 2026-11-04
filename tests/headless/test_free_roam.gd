@@ -564,6 +564,22 @@ func test_dropping_a_near_tile_recuts_its_hole_as_a_budgeted_unit() -> void:
 	assert_true(st._est.has("holes"), "and the scheduler measured it")
 
 
+func test_a_mesh_with_no_near_tiles_over_it_is_not_built_twice() -> void:
+	var st := _streamer(_settings())
+	var coord := Vector2i(3, 3)
+	st._chunk(coord)
+	var job := st._new_job(coord, TerrainStreamer.Level.FAR, false)
+	st._step(job, Time.get_ticks_usec() + 60_000_000, TerrainStreamer.Stage.COLLIDE)
+	assert_eq(st._chunks[coord].far_mesh.mesh, job.mesh, "the uploaded mesh stays in place")
+
+
+func test_a_finished_planting_job_is_let_go() -> void:
+	var st := _streamer(_settings())
+	st.prefill()
+	for cs: TerrainStreamer.ChunkState in st._chunks.values():
+		assert_null(cs.plant_job, "chunk %s" % cs.coord)
+
+
 func test_holes_leave_out_the_covered_cells_and_hang_skirts_round_them() -> void:
 	var st := _streamer(_settings())
 	st.prefill()
@@ -1190,7 +1206,7 @@ func test_a_loot_refresh_during_planting_leaves_exactly_one_marker() -> void:
 	# The chunk's marker spawn, queued again as a planting job would have it...
 	var job := TerrainStreamer.ChunkJob.new()
 	job.coord = coord
-	st._queue_site_markers(job, st._ground_for(coord, cs))
+	st._queue_site_markers(job)
 	# ...with a refresh landing before it runs.
 	st.refresh_loot_markers()
 	for k in job.spawns.size():

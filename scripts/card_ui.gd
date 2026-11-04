@@ -241,7 +241,11 @@ static func card_list(page: MenuPage, entries: Array, header: Array = [], select
 
 # A car's card subtitle: its power and drive layout, e.g. "180 hp · RWD".
 static func car_subtitle(entry: Dictionary) -> String:
-	return "%d hp · %s" % [roundi(CarLibrary.horsepower(entry)), CarLibrary.drive_text(int(entry.get("drive_mode", -1)))]
+	return stats_line(CarLibrary.horsepower(entry), float(entry.get("mass", 0.0)), int(entry.get("drive_mode", -1)))
+
+
+static func stats_line(hp: float, mass: float, drive_mode: int) -> String:
+	return "%d hp · %d kg · %s" % [roundi(hp), roundi(mass), CarLibrary.drive_text(drive_mode)]
 
 
 # Hand every car preview on `page` back to CarPreviewCache before the page is freed, so the

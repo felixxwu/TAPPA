@@ -168,7 +168,6 @@ func _list_has_button(menu: SettingsMenu, text: String) -> bool:
 # way to select manual.
 func test_gearbox_is_always_automatic_and_not_in_the_menu() -> void:
 	var menu := _make_menu()
-	assert_true(SettingsMenu.gearbox_auto(), "gearbox_auto() always reports automatic")
 	assert_false(_list_has_button(menu, "gearbox"),
 		"the category list has no Gearbox row")
 

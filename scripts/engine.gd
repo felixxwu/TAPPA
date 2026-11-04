@@ -8,10 +8,6 @@ extends RefCounted
 # no stalling: omega is clamped to idle, and the auto-clutch opens when
 # coasting slowly, during shifts, and when the gearbox input over-revs.
 
-# Seconds over which a clutch dump may convert the flywheel's speed margin
-# above idle into drive torque (model stability constant, not a tuning knob).
-const FLYWHEEL_DRAIN_TIME := 0.3
-
 # Boost above which snapping the throttle shut vents the blow-off valve.
 const BOV_BOOST_THRESHOLD := 0.3
 
@@ -25,8 +21,8 @@ var auto := false  # automatic gearbox (picks the gear from the airspeed)
 var shift_timer := 0.0  # seconds of clutch-open throttle cut left in a shift
 var throttle := 0.0  # last drive request seen by step(), for the audio synth
 # Crank-torque delivery fraction (0..1): snaps to 1 the instant combustion resumes, but
-# ramps DOWN to 0 over TORQUE_RAMP_TIME when it stops (lift-off, rev-limiter/misfire fuel
-# cut, mid-shift), so only the cut is a short ramp, not an instant drop — see step().
+# ramps DOWN to 0 over TORQUE_RAMP_TIME on a fuel cut or mid-shift with the pedal held. Lifting
+# off is not ramped: the torque term is scaled by the pedal too, so it drops with it.
 var _torque_ramp := 1.0
 const TORQUE_RAMP_TIME := 0.1  # seconds for the ramp above to fully fall
 # Smallest usable rev range under a damage rev cap: the capped redline never falls below this
@@ -53,9 +49,8 @@ var antilag_active := false  # true while anti-lag bangs (off-throttle, still bo
 # crank-driven it is a pure function of the current rpm, recomputed every substep
 # and inert (0) whenever supercharger_boost_gain is 0. See forced-induction.md.
 var sc_boost := 0.0
-# Nitrous (features/nitrous.md). A per-STAGE resource: reset() refills the tank, so
-# every stage start and every reset-to-start begins full and there is no spent state to
-# carry or exploit. `nitrous_active` is written each tick by car.gd from the `nitrous`
+# Nitrous (features/nitrous.md). reset() refills the tank; RoadRecovery.reset_now puts the charge
+# back afterwards, so an R reset doesn't refill it. `nitrous_active` is written each tick by car.gd from the `nitrous`
 # action; step() multiplies delivered torque by (1 + nitrous_boost_gain) while it is
 # held and the tank has charge, draining nitrous_charge by the substep. The audio bridge
 # reads nitrous_delivering / nitrous_event / nitrous_emptied for the hiss and its cues.
@@ -331,8 +326,6 @@ func reset() -> void:
 	sc_boost = 0.0
 	bov_event = false
 	antilag_active = false
-	# A full tank at every stage start AND every reset-to-start (car.gd reset_to calls
-	# this) — the deliberate "no spent state" rule, so there is nothing to savescum.
 	_has_nitrous = config.has_nitrous()
 	nitrous_charge = config.nitrous_tank_seconds if _has_nitrous else 0.0
 	nitrous_active = false
@@ -420,8 +413,8 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 	# check rather than a call and two property reads per substep (as with `blown` above).
 	var nitrous_on := _step_nitrous(h, combusting) if _has_nitrous else false
 	# Ramp delivery DOWN toward none when combustion stops, but snap straight back UP
-	# to full the instant it resumes — only the cut (lift-off, rev-limiter/misfire fuel
-	# cut, mid-shift) is a short ramp; throttle response back on is untouched. Nitrous
+	# to full the instant it resumes — only the cut (rev-limiter/misfire fuel cut, mid-shift)
+	# is a short ramp; throttle response back on is untouched. Nitrous
 	# stays gated on `combusting` directly (see _step_nitrous), not part of this ramp.
 	_torque_ramp = 1.0 if combusting else move_toward(_torque_ramp, 0.0, h / TORQUE_RAMP_TIME)
 	if _torque_ramp > 0.0:
@@ -431,10 +424,7 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 		# The turbo multiplies delivered torque by boost_torque_factor(): a shaping
 		# exponent (turbo_boost_response) bends the delivery toward full spool so lag
 		# is felt (see features/forced-induction.md); response 1.0 = the old linear gain.
-		# The two forced-induction paths MULTIPLY, but the turbo and supercharger parts
-		# share one upgrade slot so in practice only one is ever non-unity.
-		# Nitrous multiplies on top of both induction paths — it is a separate system
-		# (a chemical charge, not compressed air), so it stacks rather than sharing a slot.
+		# The two forced-induction paths MULTIPLY, and nitrous multiplies on top of both.
 		crank += (
 			_torque_ramp * throttle * cfg.peak_torque * cfg.global_torque_scale * _torque_fraction(r)
 			* boost_torque_factor(boost, cfg.turbo_boost_gain, cfg.turbo_boost_response)
@@ -459,13 +449,11 @@ func step(h: float, throttle_in: float, driveline_omega: float, declutch := fals
 		var slip := omega - input_omega
 		var lock := slip / (h * (1.0 / cfg.engine_inertia + gr * gr / cfg.axle_inertia))
 		clutch_torque = clampf(lock, -cfg.clutch_max_torque, cfg.clutch_max_torque)
-		# The no-stall idle clamp must not become a free torque source: the
-		# clutch can never drain more than the crank produces plus the
-		# flywheel's margin above idle (released over FLYWHEEL_DRAIN_TIME, not
-		# one substep, or the clamp still pumps unbounded energy). This is
-		# what makes a high-gear standstill launch bog instead of spinning
-		# the wheels: at idle, drive torque is capped at crank torque.
-		var sustainable := crank + (omega - idle_omega()) * cfg.engine_inertia / FLYWHEEL_DRAIN_TIME
+		# The clutch can drain what the crank makes plus all the flywheel holds above idle, so
+		# spinning wheels keep being driven after a lift until they match the road. It can't take
+		# more, or the idle clamp would be a free torque source: at idle, drive is just crank
+		# torque, which is what makes a high-gear standstill launch bog.
+		var sustainable := crank + (omega - idle_omega()) * cfg.engine_inertia / h
 		clutch_torque = minf(clutch_torque, maxf(sustainable, 0.0))
 
 	omega += (crank - clutch_torque) / cfg.engine_inertia * h
@@ -546,9 +534,8 @@ static func boost_torque_factor(boost_frac: float, gain: float, response: float)
 # max is simply whichever is live.
 #
 # NOTE the audio bridges (engine_audio.gd / car_preview_audio.gd) deliberately pass the
-# raw `boost` field instead: it drives the turbo WHISTLE and blow-off valve, layers a
-# blown car does not have (install_supercharger clears turbo_enabled precisely so they
-# cannot fire). Feeding belt boost in would make a supercharged car whistle and vent like
+# raw `boost` field instead: it drives the turbo WHISTLE and blow-off valve, layers that
+# belong to the turbo alone. Feeding belt boost in would make a supercharged car whistle and vent like
 # a turbo. The supercharger's own whine is rpm-pitched, not boost-driven.
 func boost_reading() -> float:
 	return maxf(boost, sc_boost)

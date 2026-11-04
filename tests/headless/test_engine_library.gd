@@ -115,6 +115,22 @@ func test_apply_falls_back_to_the_config_friction_when_omitted() -> void:
 	assert_almost_eq(cfg.engine_friction_base, 33.0, 0.001, "friction untouched when the engine omits it")
 
 
+func test_an_engine_omitting_turbo_tuning_does_not_inherit_the_last_engines() -> void:
+	var cfg := GameConfig.new()
+	var authored: float = Config.authored_value("turbo_drive_gain", cfg.turbo_drive_gain)
+	var eng := {
+		"layout": "i4", "redline_rpm": 7000.0, "peak_torque": 200.0, "peak_torque_rpm": 4500.0,
+		"engine_inertia": 0.15, "low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0,
+		"soft_clip_post_gain": 0.07,
+	}
+	var tuned := eng.duplicate()
+	tuned["turbo_drive_gain"] = authored + 1.0
+	EngineLibrary.apply(tuned, cfg)
+	assert_almost_eq(cfg.turbo_drive_gain, authored + 1.0, 1e-6, "an engine's own value is used")
+	EngineLibrary.apply(eng, cfg)
+	assert_almost_eq(cfg.turbo_drive_gain, authored, 1e-6, "the next engine starts from the authored one")
+
+
 func test_every_engine_declares_a_non_negative_friction_base() -> void:
 	# Sanity guard only (not a value pin): apply() reads engine_friction_base off every
 	# shipped engine. Negative or non-finite crank friction would be non-physical; zero

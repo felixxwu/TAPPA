@@ -311,7 +311,6 @@ func push_wipe() -> Dictionary:
 
 # --- Conflict resolution -----------------------------------------------------
 
-# A player-legible description of both sides, for the prompt.
 # "This device has nothing to lose."
 func _local_is_wiped() -> bool:
 	return not has_progress(Save.profile)
@@ -333,6 +332,7 @@ func _remote_has_progress(remote: Dictionary) -> bool:
 	return typeof(parsed) == TYPE_DICTIONARY and has_progress(parsed)
 
 
+# A player-legible description of both sides, for the prompt.
 func conflict_summary() -> Dictionary:
 	if _conflict.is_empty():
 		return {}
@@ -350,6 +350,26 @@ func conflict_summary() -> Dictionary:
 func resolve_keep_local() -> Dictionary:
 	if _conflict.is_empty():
 		return {"ok": false, "error": "No conflict to resolve."}
+	# "Decide later" can leave this conflict hours old: don't overwrite a cloud save the player hasn't seen.
+	var fresh := await auth.ensure_fresh_token()
+	if not fresh.ok:
+		return _unresolved(_fail_from_auth(fresh))
+	var response = await rest.request_json(
+		HTTPClient.METHOD_GET, FirebaseConfig.user_doc(auth.uid),
+		RestClient.json_headers(auth.id_token))
+	if not response.ok and response.status != 404:
+		return _unresolved(_fail_from_response(response))
+	var latest := from_document(response.json) if response.ok else {}
+	# The same two refusals as a pull: never overwrite what this build can't read.
+	if response.ok and (latest.is_empty() or int(latest.get("schema_version", 0)) > Save.SCHEMA_VERSION):
+		var refusal := "Cloud save is unreadable." if latest.is_empty() else "Cloud save needs a newer version of the game."
+		_remote_refused = true
+		_set_status(Status.ERROR, refusal)
+		return {"ok": false, "error": refusal}
+	if int(latest.get("revision", 0)) != int(_conflict.get("revision", 0)):
+		_conflict = latest
+		conflict_detected.emit(conflict_summary())
+		return {"ok": false, "error": "The cloud save changed again. Choose again."}
 	var overwritten: Variant = _parse_profile(String(_conflict.get("profile", "")))
 	if typeof(overwritten) == TYPE_DICTIONARY:
 		Save.write_conflict_backup(overwritten)
@@ -359,6 +379,13 @@ func resolve_keep_local() -> Dictionary:
 	blocked_by_conflict = false
 	pending = true
 	return await push(true)
+
+
+# Nothing retries a resolution while the conflict stands: it comes back at the next pull.
+func _unresolved(failure: Dictionary) -> Dictionary:
+	if failure.get("state", "") == "offline":
+		failure["error"] = "No connection. Nothing changed; you'll be asked again."
+	return failure
 
 
 # Take the cloud copy, keeping a one-shot backup of what was replaced. A

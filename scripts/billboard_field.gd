@@ -88,10 +88,8 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 		with_collision: bool, render_distance: float, render_fade: float,
 		y_offset: float, mesh: Mesh,
 		size_jitter_min: float = 1.0, aspect_jitter: float = 0.0) -> void:
-	# One render path: the supplied silhouette mesh + opaque shader — the tree
-	# cutout baked into geometry, no discard (early-Z friendly). The mesh is
-	# normalized (x in [-0.5,0.5], y in [0,1]); size is carried as per-instance
-	# scale so the opaque shader reads it from MODEL_MATRIX.
+	# The mesh is normalized (x in [-0.5,0.5], y in [0,1]) and the shader follows
+	# tree_cutout_mode; size is carried as per-instance scale, read from MODEL_MATRIX.
 	if mesh == null:
 		push_error("BillboardField.build requires a silhouette mesh")
 		return

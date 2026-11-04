@@ -354,6 +354,9 @@ func _release(idx: int) -> void:
 	_pointers.erase(idx)
 
 	if idx == _pinch_a or idx == _pinch_b:
+		# The finger still down goes back to looking, or sliding it could press a button.
+		_look_owner = _pinch_b if idx == _pinch_a else _pinch_a
+		_look_last_pos = _pinch_b_pos if idx == _pinch_a else _pinch_a_pos
 		_pinch_active = false
 		_pinch_a = null
 		_pinch_b = null

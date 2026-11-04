@@ -17,9 +17,6 @@ extends VBoxContainer
 #   • Camera — pick the camera angle (chase / bonnet), persisted under
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately.
-#   • Gearbox — the transmission is always automatic now; there is no manual option
-#     and no settings row for it. `SettingsMenu.gearbox_auto()` always returns true;
-#     car.gd mirrors it onto the live engine every tick.
 #   • Key bindings — rebind the keyboard and controller controls. Each driving
 #     action (InputRemap.ACTIONS) gets a row with a keyboard button and a controller
 #     button showing its current binding; tapping one listens for the next key /
@@ -301,7 +298,7 @@ func _build_reset_page() -> void:
 
 
 # Account sub-page — optional cloud save. The AccountMenu widget owns the whole
-# page (it is also hosted standalone from the title screen), so this is just a
+# page, so this is just a
 # mount point.
 func _build_account_page() -> void:
 	_account_page = _make_page()
@@ -445,12 +442,6 @@ func _refresh_selection(rows: Array, key: String, default: int) -> void:
 
 func _refresh_camera_selection() -> void:
 	_refresh_selection(camera_rows, CameraManager.SETTING_KEY, int(CameraManager.ORDER[0]))
-
-
-# Is the transmission automatic? Always true now — there is no manual option.
-# Static so car.gd can ask without holding a menu instance.
-static func gearbox_auto() -> bool:
-	return true
 
 
 func _refresh_scheme_selection() -> void:

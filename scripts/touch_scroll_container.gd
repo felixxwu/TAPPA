@@ -27,6 +27,12 @@ var _press_button: BaseButton = null
 
 
 func _input(event: InputEvent) -> void:
+	# _input reaches hidden nodes too, and a hidden list would swallow touches meant for the pedals.
+	if not MenuNav.is_on_screen(self):
+		_pressing = false
+		_dragging = false
+		_press_button = null
+		return
 	if event is InputEventScreenTouch or event is InputEventScreenDrag:
 		# We scroll from the emulated mouse events below; swallow the raw touch
 		# inside our rect so the built-in ScrollContainer touch-scroll doesn't ALSO

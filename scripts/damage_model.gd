@@ -256,7 +256,7 @@ func is_overheating(cfg: GameConfig) -> bool:
 
 # The rest-stop repair: full HP, cooling fixed (it brings the temperature down by itself), wheels
 # straight, and `gave_up` re-armed.
-func repair(_cfg: GameConfig) -> void:
+func repair() -> void:
 	hp = max_hp
 	cooling_broken = false
 	_gave_up = false

@@ -82,6 +82,26 @@ func test_the_cars_condition_round_trips() -> void:
 	assert_almost_eq(float(e.wheel_toe["WheelRR"]), 0.02, 1e-6)
 
 
+func test_health_carries_over_as_a_share_when_max_hp_changes() -> void:
+	WorldSession.new_world(1, _any_car())
+	var d := DamageModel.new()
+	d.field(1000.0, 500.0)
+	WorldSession.save_car_state(d)
+	var e := DamageModel.new()
+	e.field(2000.0, 2000.0)
+	WorldSession.restore_car_state(e)
+	assert_almost_eq(e.hp, 1000.0, 0.001, "half health stays half health")
+
+
+func test_a_save_without_max_hp_restores_its_hp_as_is() -> void:
+	WorldSession.new_world(1, _any_car())
+	WorldSession._world()["car_state"] = {"hp": 400.0}
+	var e := DamageModel.new()
+	e.field(1000.0, 1000.0)
+	WorldSession.restore_car_state(e)
+	assert_eq(e.hp, 400.0)
+
+
 func test_lighting_a_rest_stop_is_remembered_once_and_counted_once() -> void:
 	WorldSession.new_world(1, _any_car())
 	WorldSession.light(3)

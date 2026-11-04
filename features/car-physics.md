@@ -65,9 +65,9 @@ for each).
 
 ## Per-step loop (`_physics_process`)
 
-1. **Mode inputs:** `engine.auto` is mirrored from `SettingsMenu.gearbox_auto()`, which
-   always returns `true` (see [controls.md](controls.md)) — there is no manual gearbox
-   option, so `shift_up`/`shift_down` (E/Q) never fire.
+1. **Mode inputs:** `engine.auto` comes from `GameConfig.auto_gearbox` (see
+   [controls.md](controls.md)) — there is no manual gearbox option, so
+   `shift_up`/`shift_down` (E/Q) never fire.
 2. **Throttle/brake resolution:**
    - *Auto:* `engine.select_forward/select_reverse` pick a gear at low speed;
 	 `engine.update_auto` handles upshifts based on ground speed.

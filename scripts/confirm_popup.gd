@@ -219,6 +219,8 @@ func _dismiss() -> void:
 
 # Hands the keyboard and gamepad cursor back, unless the chosen action has already moved it.
 func _restore_focus() -> void:
+	if not is_inside_tree():
+		return  # the action changed scene, taking this popup out of the tree
 	var owner_now := get_viewport().gui_get_focus_owner()
 	if owner_now != null and not is_ancestor_of(owner_now):
 		return

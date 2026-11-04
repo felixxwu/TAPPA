@@ -177,7 +177,7 @@ func test_6_an_island_with_no_roadside_stop_finishes_at_once_instead_of_never() 
 	co.start()
 	assert_true(co.done, "spawn's stop is already lit, so reaching it can never fire")
 	assert_eq((_car.damage as DamageModel).min_hp, 0.0)
-	(_car.damage as DamageModel).repair(Config.data)
+	(_car.damage as DamageModel).repair()
 	_rest.input_enabled = true
 
 

@@ -168,12 +168,6 @@ var _hold_anchor_set := false
 # up pointing the wrong way by the time the countdown reached GO.
 var _hold_anchor_yaw := 0.0
 
-# The Gearbox setting (SettingsMenu.gearbox_auto()) as last mirrored onto this car's
-# engine, as a tri-state int: -1 = not yet seen, 0 = manual, 1 = auto. An int rather than a
-# Variant because this is compared every tick. Only CHANGES are pushed, so nothing else that
-# writes `engine.auto` gets clobbered every frame — see _physics_process.
-var _gearbox_auto_seen := -1
-
 
 # True when the human driver's live inputs should be read: not locked (staging/finish),
 # not scripted (AI / opponent). One predicate so a future
@@ -424,21 +418,11 @@ func _timed_physics_process(delta: float) -> void:
 	# mode actions — so it reads is_action_pressed every tick and is cleared whenever the
 	# driver isn't live, so a countdown or a scripted car can never be spraying.
 	engine.nitrous_active = input_live and Input.is_action_pressed("nitrous")
-	if input_live:
-		# Transmission mode is a SETTING now (Settings -> Gearbox), not the old
-		# `toggle_gearbox` (T) runtime flip — T was unreachable on touch and on a
-		# controller. Mirror it onto the engine when it CHANGES (including the first live
-		# tick), not every tick: that applies a pause-menu change mid-run while leaving
-		# anything else that sets `engine.auto` (a scripted car, a test) alone.
-		var want_auto := 1 if SettingsMenu.gearbox_auto() else 0
-		if want_auto != _gearbox_auto_seen:
-			_gearbox_auto_seen = want_auto
-			engine.auto = want_auto == 1
-		if not engine.auto:
-			if Input.is_action_just_pressed("shift_up"):
-				engine.request_shift(1)
-			if Input.is_action_just_pressed("shift_down"):
-				engine.request_shift(-1)
+	if input_live and not engine.auto:
+		if Input.is_action_just_pressed("shift_up"):
+			engine.request_shift(1)
+		if Input.is_action_just_pressed("shift_down"):
+			engine.request_shift(-1)
 
 	var speed := linear_velocity.length()
 	# Resolve the continuous driver controls (throttle/brake split, driven
@@ -1180,7 +1164,7 @@ func _apply_parking_hold(braked: bool, speed: float, delta: float) -> void:
 		_hold_anchor = global_position
 		_hold_anchor_yaw = _yaw()
 		_hold_anchor_set = true
-	_apply_heading_hold(delta)
+	_apply_heading_hold()
 	var cfg: GameConfig = config
 	var offset := global_position - _hold_anchor
 	offset.y = 0.0
@@ -1215,7 +1199,7 @@ func _yaw() -> float:
 # authored separately, so this cannot be tuned into an oscillation — a car that
 # wobbles on the start line is never what anyone wants, whatever the stiffness is
 # set to. Reuses parking_hold_stiffness so the two halves of the hold stay one knob.
-func _apply_heading_hold(_delta: float) -> void:
+func _apply_heading_hold() -> void:
 	var cfg: GameConfig = config
 	var k: float = cfg.parking_hold_stiffness
 	if k <= 0.0:
@@ -1298,6 +1282,8 @@ func reset_to(xform: Transform3D) -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	steering = 0.0
+	# The parking hold's anchor belongs to the old spot: its yaw spring would spin the car at the new one.
+	_hold_anchor_set = false
 	drivetrain.rear_omega = 0.0
 	for wheel in drivetrain.front_omega:
 		drivetrain.front_omega[wheel] = 0.0
@@ -1825,6 +1811,7 @@ func apply_owned(owned: Dictionary) -> String:
 	# cfg.mass (other written fields are read live each physics step). The boosts it reads
 	# are the fitted parts LootRules.fielded hands in.
 	UpgradeLibrary.apply(owned, config)
+	damage.field(damage.max_hp * config.max_hp_mult, damage.max_hp * config.max_hp_mult)
 	# Step 3: free, reversible per-car tuning re-balances grip / brake / aero on top
 	# of that baseline (features/tuning.md). All three axes are ungated now (decision 24),
 	# but it still runs after step 2 so it shifts whatever the effects produced.
@@ -1842,11 +1829,6 @@ func apply_owned(owned: Dictionary) -> String:
 	# config-derived fitment caches are stale — re-derive them now the config is final.
 	# (Rally staging would reset the engine anyway; free roam never does.)
 	drivetrain.engine.refresh_fitment()
-	# Step 4: the car is fielded whole and straight; free roam then restores the world's saved
-	# car_state (its damage) over that.
-	var entry := CarLibrary.by_id(model_id)
-	var max_hp: float = entry.get("max_hp", damage.max_hp) if not entry.is_empty() else damage.max_hp
-	damage.field(max_hp, max_hp)
 	_owned_drive_override = -1
 	# Clear the per-fielding wheel override so a later BARE apply_car (free-roam /
 	# prop / opponent re-fielding of this same instance) falls back to stock wheels

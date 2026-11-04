@@ -451,7 +451,7 @@ func _thermal_model(cfg: GameConfig) -> DamageModel:
 	var d := DamageModel.new()
 	d.field(1000.0, 1000.0)
 	d.thermal = true
-	d.repair(cfg)
+	d.repair()
 	return d
 
 
@@ -544,7 +544,7 @@ func test_reaching_zero_hp_gives_up_once_and_a_repair_resets_the_chain() -> void
 	d.cooling_broken = true
 	d.engine_temp = 135.0
 	d.wheel_toe["WheelFL"] = 0.05
-	d.repair(cfg)
+	d.repair()
 	assert_eq(d.hp, d.max_hp)
 	assert_false(d.cooling_broken)
 	assert_eq(d.engine_temp, 135.0, "the fixed cooling brings it down, not the repair")

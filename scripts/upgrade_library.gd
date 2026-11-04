@@ -50,6 +50,7 @@ const EFFECTS := {
 	# Nitrous writes its config fields and NOTHING else.
 	"install_nitrous": {"field": "", "op": "write_fields"},
 	"mass_mult":           {"field": "mass", "op": "mult"},
+	"mass_add":            {"field": "mass", "op": "add"},
 	# Race tyres. `field` names the META spelling (a car's rubber is ONE `tire_compound`
 	# coefficient) while `cfg_fields` names the live-config spelling (a PER-AXLE pair, seeded
 	# from that same compound by car.gd::_apply_physics_spec and then shifted apart by the
@@ -66,8 +67,8 @@ const EFFECTS := {
 	#
 	# `mult` rather than `set` deliberately: it makes 1.0 the identity on BOTH sides, so a
 	# car with no such compound fitted needs no entry anywhere — the meta key is simply
-	# absent (readers default it to 1.0). No part authors these today; one that does needs
-	# `reseed`, because nothing else resets these fields on the long-lived config.
+	# absent (readers default it to 1.0). LootRules.TIRES authors these. `_apply_physics_spec` resets
+	# these fields when a car is fielded, through TIRE_SURFACE_AXES.
 	#
 	# These do NOT move the menu's GRIP row, which reads `tire_compound` alone: a
 	# single headline number cannot honestly state a figure that changes with the surface.
@@ -88,10 +89,9 @@ const EFFECTS := {
 	# absolute figure (see run_boost_brake_torque_n) rather than scaling whatever it
 	# shipped with, so it lands at the same strength on every car.
 	"brake_torque_set": {"field": "brake_torque", "op": "set"},
-	# The engine-swap boost's row. peak_torque is the PER-CAR published figure engine.gd
-	# builds its curve from (cfg.peak_torque, engine.gd::_torque_at) — a plain mult on it
-	# is "a stronger engine was fitted". NOT global_torque_scale: that field is a hidden
-	# uniform de-rate (see BoostLibrary's header), never a per-car effect target.
+	# Damage parts. Neither field is re-seeded per car, so both need `reseed`.
+	"cooling_failure_mult": {"field": "cooling_failure_hp_fraction", "op": "mult", "reseed": true},
+	"max_hp_mult": {"field": "max_hp_mult", "op": "mult", "reseed": true},
 }
 
 # The LIVE-CONFIG fields a "mult"/"add" row writes. Usually just `field`: the meta and the

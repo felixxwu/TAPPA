@@ -1,4 +1,4 @@
-# Trees (opaque billboard scatter around turns)
+# Trees (billboard scatter around turns)
 
 **Source:** `scripts/foliage.gd` (`class_name Foliage` — the ONE place that owns
 the shared tree/bush meshes + materials), `scripts/tree_scatter.gd`
@@ -35,7 +35,7 @@ card mesh is `Foliage._alpha_card_mesh` (same "+" layout and plane flags as the 
 **Centralised spawning (`Foliage`).** Every place that spawns foliage (the dev stage's
 `world.gd`) goes through `Foliage.spawn_trees()` / `Foliage.spawn_bushes()`. So the shared
 meshes and the size normalization all live in exactly one file: a tree is the same kind of
-tree wherever it appears (an opaque billboard cutout), and a tree/bush is scaled to
+tree wherever it appears, and a tree/bush is scaled to
 `cfg.tree_size_m` / `cfg.bush_height_m` everywhere.
 
 Shared low-level helpers used across the scatter/field code: `ScatterMath`
@@ -46,7 +46,7 @@ single-`BoxShape3D` StaticBody obstacle builder used by `TreeMeshField` and
 `BillboardField`.
 
 After the track is generated and baked, foliage is scattered around each turn.
-**Trees** are opaque billboard cutouts (`BillboardField`); **bushes** are solid
+**Trees** are billboards (`BillboardField`); **bushes** are solid
 low-poly 3D meshes (`TreeMeshField`). Both share the same `TreeScatter` placement.
 
 **Per-region tree species split.** A region authors a weighted `tree_mix` of

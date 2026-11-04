@@ -25,7 +25,7 @@
 | Roads | One DFS centreline per stage, carved into terrain | **A whole road network laid out at boot** (`RoadNetwork`); terrain built *around* the roads (`RoadTerrain`) |
 | Fail state | The stage clock | **None.** At 0 HP the car gives up and you respawn at the last lit rest stop |
 | Damage | Never wrecks | **Cooling fails at half health; the engine overheats and drains HP** (`DamageModel.thermal`) |
-| Progress | Money, shop, skills, boost levels | **Coins → bought at checkpoints** (D89): cars, parts (the old boosts, by level), engines, drivetrain kits; a wreck drops all the money, Souls-style |
+| Progress | Money, shop, skills, boost levels | **Coins → bought at checkpoints** (D89): cars, parts (the old boosts, by level), drivetrain kits; a wreck drops all the money, Souls-style |
 | Between stages | Repair or a boost | **Rest stops**: free repair, parts and garage (buying in both), map (travel), tune |
 | Regions | Picked per run | **Biome rings** by distance from spawn, with drifting weather (`BiomeDirector`) |
 | Front end | `HubShell` (11 pages) | **Title screen** (`title.tscn`): Continue / New World / Settings |

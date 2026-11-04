@@ -87,7 +87,7 @@ func current_mode() -> int:
 	return ORDER[_index]
 
 
-# The persisted mode mapped to its ORDER index, or 0 (chase) when unset or when
+# The persisted mode mapped to its ORDER index, or 0 (ORDER's first mode) when unset or when
 # Save is absent (bare-logic harness).
 func _saved_index() -> int:
 	var save := get_node_or_null("/root/Save")

@@ -112,6 +112,12 @@ the title screen, the rest-stop page and the world pages (map, stats) — each c
 > **own** the thing that was being refreshed and re-apply it from its own `rebuild()`, so
 > `attach` runs once per build and nobody re-attaches from outside.
 
+## Nested card pages: the rest-stop Shop
+
+`RestStopPage` passes each page's parent to `_card_page`, so the Back button and Esc / gamepad B step
+one level: part page → Shop → main page → closed. Guarded by `test_free_roam_rest_stops.gd` →
+`test_the_shop_sub_menus_are_keyboard_and_gamepad_navigable`.
+
 ## `TextField` and the WASD/typing seam
 
 `scripts/text_field.gd` (`TextField`) is the project's only text input — a labelled

@@ -207,7 +207,7 @@ echo $$ >.godot/run_tests.lock
 # when the run modified the REAL player profile (user://profile.json) instead of a
 # throwaway one — a data-loss bug that has already cost one developer their career
 # save, so it fails the run outright.
-TEST_ERROR_PATTERN='SCRIPT ERROR|Parse Error|Failed to load script|PROFILE SANDBOX VIOLATION'
+TEST_ERROR_PATTERN='SCRIPT ERROR|Parse Error|Failed to load script|PROFILE SANDBOX VIOLATION|Could not find script matching|Nothing was run'
 
 # Retry budget for engine SIGSEGV crashes (not test failures — see below).
 TEST_CRASH_RETRIES="${TEST_CRASH_RETRIES:-2}"

@@ -151,7 +151,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Fjord F-15", # parody of the 1986 Ford F-150. Regular cab short bed: ~1800 kg, 4.9 straight-six, RWD pickup
 		# Durability ~9/10: an unkillable low-stressed straight-six in a body-on-frame work truck,
 		# parts everywhere and fixable with a hammer — slow, but it shrugs off punishment.
-		"id": "f150", "ring": 0, "price": 3500, "max_hp": 1700.0,
+		"id": "f150", "ring": 0, "price": 2500, "max_hp": 1700.0,
 		"mass": 1800.0, "engine": "ford_49_i6", "weight_front": 0.57, "engine_pos": 0.85, # long-nosed truck, empty bed: nose-heavy
 		"tire_compound": 0.85, # all-terrain light-truck tyres
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD)

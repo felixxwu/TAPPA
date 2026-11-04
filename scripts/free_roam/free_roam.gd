@@ -82,12 +82,12 @@ func _ready() -> void:
 	# The free-roam damage chain: cooling failure, overheating, and giving up at 0 HP.
 	_car.damage.thermal = true
 	_car.damage.invulnerable = Benchmark.active
-	_car.damage.repair(Config.data)
+	_car.damage.repair()
 	WorldSession.restore_car_state(_car.damage)
 	# Quit while wrecked: come back as the wreck page's Respawn would, at the last rest stop.
 	var respawn_now: bool = _car.damage.hp <= 0.0
 	if respawn_now:
-		_car.damage.repair(Config.data)
+		_car.damage.repair()
 		_car.damage.engine_temp = 0.0
 		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP)  # the Respawn that quitting skipped
 	_streamer.focus = _car
@@ -366,6 +366,8 @@ func _offer_conflict() -> void:
 	get_tree().paused = true
 	_pause.set_input_enabled(false)
 	var done := func() -> void:
+		if not is_inside_tree():
+			return  # taking the cloud copy rebooted the world
 		get_tree().paused = false
 		_pause.set_input_enabled(true)
 	if ConflictPrompt.open(_pause, done) == null:

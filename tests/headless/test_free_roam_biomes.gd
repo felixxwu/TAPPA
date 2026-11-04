@@ -44,6 +44,7 @@ func test_rings_wear_their_listed_regions_and_wrap() -> void:
 
 
 func test_weather_comes_from_the_rings_pool_and_holds_for_a_slot() -> void:
+	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "rain"}, {"id": "fog"}])
 	var s := _settings()
 	s.weather_hold_s = 100.0
 	for t in [0.0, 150.0, 333.0, 1234.0]:
@@ -57,6 +58,7 @@ func test_weather_comes_from_the_rings_pool_and_holds_for_a_slot() -> void:
 
 
 func test_a_pool_drops_unknown_conditions_and_empty_weights() -> void:
+	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "rain"}, {"id": "fog"}])
 	var pool := BiomeDirector.parse_pool("dry:2, nonsense:5, rain:0, fog")
 	assert_eq(pool, [["dry", 2.0], ["fog", 1.0]])
 

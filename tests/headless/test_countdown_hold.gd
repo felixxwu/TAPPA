@@ -68,3 +68,10 @@ func test_the_hold_still_releases() -> void:
 	_car.apply_central_impulse(Vector3(1.0, 0.0, 0.0) * _car.mass * 5.0)
 	await _wait_physics(30)
 	assert_gt(_car.linear_velocity.length(), 0.5, "released, the car moves freely")
+
+
+func test_a_teleport_does_not_spring_back_to_the_old_heading() -> void:
+	_car.reset_to(_car.global_transform.rotated_local(Vector3.UP, 2.0))
+	var target: float = _car._yaw()
+	await _wait_physics(10)
+	assert_almost_eq(wrapf(_car._yaw() - target, -PI, PI), 0.0, 0.05)

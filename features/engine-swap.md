@@ -1,17 +1,21 @@
 # Engine Swap & Detune
 
-**Sources:** `scripts/free_roam/loot_rules.gd` (`LootRules` — an engine is a found part with id
-`"engine_swap:<EngineLibrary id>"`; `fielded` writes it as the car's `swapped_engine`),
-`scripts/engine_swap.gd` (`EngineSwap`, pure math/lookup module) and the
+**Sources:** `scripts/free_roam/rest_stop_page.gd` (`_build_engines`, the Shop's Engine swaps page),
+`Save.swap_engines`, `scripts/free_roam/loot_rules.gd` (`engine_owner`, `engine_name`; `fielded` writes the
+car's `swapped_engine`), `scripts/engine_swap.gd` (`EngineSwap`, pure math/lookup module) and the
 `_apply_engine_swap` fielding step in `scripts/car.gd`.
 
 **Tests:** `tests/headless/test_engine_swap.gd`, `tests/headless/test_loot.gd`, `tests/headless/test_car.gd`
 
-**In free roam an engine is loot.** Each `EngineLibrary` entry names the biome `ring` it is
-found in ([loot.md](loot.md)); fitting one at a rest stop's Garage puts it in the car's
-`parts`, and `LootRules.fielded(owned)` turns it into `swapped_engine` on the duplicate that
-fields the car. A car holds one engine part at a time (`LootRules` swaps the old one out).
-The persisted car never carries `swapped_engine` itself.
+**In free roam two owned cars trade engines; engines aren't sold.** The Engine swaps page lists every
+owned car and the engine in it ("Fjord F-15 engine"). Picking a car marks it with a green "Swap with..."
+line, and picking another swaps their engines (picking the same car or going back drops the mark). A car
+saves whose engine it has as `engine_from` (a model id; absent means its own), and
+`LootRules.fielded(owned)` turns that into `swapped_engine` on the duplicate that fields the car. The
+persisted car never carries `swapped_engine` itself. Parts and tuning stay with the car.
+
+The swap tier engines at the bottom of `EngineLibrary` are no longer reachable, and an `engine_swap:<id>`
+part in an older save does nothing.
 
 **Engine detune** is a per-car value (0-100%) in the `tuning` bag that scales the fitted
 engine's torque. No screen sets it today; it is read-path-only (see [tuning.md](tuning.md)).

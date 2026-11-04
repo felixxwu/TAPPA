@@ -430,21 +430,53 @@ func test_closing_the_game_writes_the_cars_latest_place_first() -> void:
 func test_the_hud_shows_engine_temperature_and_warns_when_the_cooling_fails() -> void:
 	var hud := _scene.get_node("HUD")
 	var dmg: DamageModel = _car.damage
-	dmg.repair(Config.data)
+	dmg.repair()
 	await get_tree().process_frame
 	assert_true(hud.temp_gauge_visible())
 	assert_eq(hud.cooling_warning(), "")
 	dmg.cooling_broken = true
 	await get_tree().process_frame
 	assert_ne(hud.cooling_warning(), "")
-	dmg.repair(Config.data)
+	dmg.repair()
+
+
+# Shop -> each part page and back again, the way a keyboard or gamepad player walks it.
+func test_the_shop_sub_menus_are_keyboard_and_gamepad_navigable() -> void:
+	_page.open(0)
+	await get_tree().process_frame
+	var vp := _page.get_viewport()
+	assert_true(_page.pick("Shop"))
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(_page.view, RestStopPage.View.SHOP)
+	assert_eq(vp.gui_get_focus_owner(), _page.cards(), "the shop's cards have the cursor")
+	MenuNav.of(_page._page)._unhandled_input(_press("menu_right"))
+	assert_eq(_page.cards().selected_index(), 1, "right walks the cards")
+	MenuNav.of(_page._page)._unhandled_input(_press("menu_left"))
+	assert_eq(_page.cards().selected_index(), 0, "and left walks back")
+	var pages := {"Upgrades": RestStopPage.View.UPGRADES, "Tires": RestStopPage.View.TIRES, "Engine": RestStopPage.View.ENGINES,
+		"Drivetrain": RestStopPage.View.DRIVETRAINS}
+	for title: String in pages:
+		assert_true(_page.pick(title), title)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		assert_eq(_page.view, pages[title], title)
+		assert_eq(vp.gui_get_focus_owner(), _page.cards(), "%s has the cursor" % title)
+		MenuNav.of(_page._page)._unhandled_input(_press("ui_cancel"))
+		await get_tree().process_frame
+		assert_eq(_page.view, RestStopPage.View.SHOP, "back from %s steps out to the shop" % title)
+	MenuNav.of(_page._page)._unhandled_input(_press("ui_cancel"))
+	await get_tree().process_frame
+	assert_eq(_page.view, RestStopPage.View.MAIN, "back from the shop steps out to the main page")
+	_page.close()
 
 
 # No menu blocks out the world behind it with a solid colour: every full-screen dim is
 # see-through, and the page's own body box is too, on the card pages and on Tune car.
 func test_no_rest_stop_page_paints_an_opaque_backdrop() -> void:
 	_page.open(0)
-	for v in [RestStopPage.View.MAIN, RestStopPage.View.TUNE, RestStopPage.View.PARTS]:
+	for v in [RestStopPage.View.MAIN, RestStopPage.View.TUNE, RestStopPage.View.SHOP, RestStopPage.View.UPGRADES,
+			RestStopPage.View.TIRES, RestStopPage.View.ENGINES, RestStopPage.View.DRIVETRAINS]:
 		_page._show(v)
 		for rect in _page._page.find_children("*", "ColorRect", true, false):
 			var cr := rect as ColorRect
@@ -519,6 +551,35 @@ func test_tuning_after_a_car_swap_does_not_retune_the_fielded_body() -> void:
 	assert_eq(stub.calls, 1, "another car's tuning leaves the fielded body alone")
 	_page.close()
 	_page.car = real_car
+	_page.owned = real_owned
+
+
+class StockedLoot extends LootDirector:
+	var stock: Array = []
+
+	func for_sale() -> Array:
+		return stock
+
+
+# A Shop page's card counts what could actually be bought for this car, not what it already has.
+func test_shop_subtitle_counts_only_parts_on_sale_that_fit() -> void:
+	var real_loot := _page.loot
+	var real_owned := _page.owned
+	var stub: StockedLoot = autofree(StockedLoot.new())
+	stub.stock = [
+		{"kind": "part", "id": "fx_new"},
+		{"kind": "part", "id": "fx_have"},
+		{"kind": "car", "id": "fx_car"},
+	]
+	_page.loot = stub
+	_page.owned = {"instance_id": 1, "parts": [
+		{"kind": "part", "id": "fx_have", "on": true},
+		{"kind": "part", "id": "fx_off", "on": false},
+	]}
+	assert_eq(_page._shop_text(LootRules.is_upgrade), "1 applied, 1 available")
+	stub.stock = []
+	assert_eq(_page._shop_text(LootRules.is_upgrade), "1 applied, 0 available", "nothing on sale reads zero")
+	_page.loot = real_loot
 	_page.owned = real_owned
 
 

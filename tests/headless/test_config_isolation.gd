@@ -213,3 +213,12 @@ func test_reset_restores_the_authored_baseline_after_a_swap() -> void:
 	assert_ne(Config.data, authored,
 		"...into a private DUPLICATE, so a test mutating Config.data cannot poison the cached "
 		+ "resource that every later reset() re-duplicates from")
+
+
+func test_a_material_registered_after_a_snapshot_still_follows_the_weather() -> void:
+	var cfg := GameConfig.new()
+	var snap := cfg.snapshot_values()
+	var mat := ShaderMaterial.new()
+	cfg.apply_car_light(mat)
+	cfg.restore_values(snap)
+	assert_true(cfg._car_lit.has(mat.get_instance_id()))

@@ -33,9 +33,8 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 All actions use a 0.2 deadzone.
 
 There is **no gearbox toggle input** any more, and **no manual transmission option**.
-The transmission is always automatic — `SettingsMenu.gearbox_auto()` always returns
-`true`, and there is no Settings → Gearbox page to change it. `car.gd` mirrors it onto
-the live engine every tick while the driver is in control. The old `toggle_gearbox` (T)
+The transmission is always automatic — `GameConfig.auto_gearbox` is on, and there is no
+Settings → Gearbox page to change it. The old `toggle_gearbox` (T)
 action was retired earlier (T was unreachable on a phone, and no mobile control scheme
 has shift buttons); its controller button was reassigned to `nitrous`. The manual-shift
 engine code (`engine.gd`'s `request_shift`, the `shift_up`/`shift_down` input actions)

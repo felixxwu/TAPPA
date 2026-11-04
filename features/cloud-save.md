@@ -27,7 +27,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). |
 | `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page. |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
-| `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()` shared by this document AND the leaderboard's, extracted out of this file (see the deleted global leaderboards). |
+| `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()`. |
 | `firestore.rules` | Security rules, kept in git rather than only in the console, and deployed by CI. Only `users/{uid}` is reachable, owner-only. `stage_times`, `challenge_runs` and the two `lobby_*` collections went with their features; the file grants them nothing now. Structurally guarded by `tests/headless/test_firestore_rules.gd` — see below. |
 | `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project. |
 | `.github/workflows/deploy.yml` › `deploy-rules` | Deploys the rules on change (and on manual dispatch). |
@@ -72,19 +72,10 @@ this project does not have. A loopback listener needs none of it.
 
 **Android caveat — the player must return to the game.** Handing off to the
 system browser BACKGROUNDS the game, and Godot stops running frames while
-backgrounded, so `_await_callback` (which polls the listener once per frame)
-cannot accept the browser's redirect. The connection is queued by the OS and
-completes the instant the player switches back — nothing is lost — but until
-they do, Google's "Continue" page spins forever, which reads as a hang.
-Confirmed by measurement on 2026-07-31: switching back to the game completes the
-sign-in immediately.
-
-The interim answer is to say so: `GoogleSignIn.waiting_message()` returns
-"Approve in your browser, then RETURN TO THE GAME to finish" on touch devices,
-and the loopback page's response text says "Return to TAPPA to finish". The
-proper fix is to accept the connection off the frame loop (a `Thread`), so the
-browser completes on its own; that is a contained change to `_await_callback`
-and is worth doing if this flow proves annoying in practice.
+backgrounded, so the redirect is accepted off the frame loop on a `Thread`
+(`_serve_callback`). `_serve_on_main_loop` is the fallback when the thread can't start:
+there the connection waits until the player switches back. `GoogleSignIn.waiting_message()`
+tells touch players to come back to the game either way.
 
 The `permissions/internet=true` flag on BOTH Android presets in
 `export_presets.cfg` is required — without it Android blocks `HTTPRequest` *and*
@@ -147,8 +138,7 @@ this document but its own owner. No other collection is reachable.
 
 Encoding lives in the pure statics `CloudSync.to_document` / `from_document`,
 which build the document SHAPE (which five fields, in what order) and delegate
-the actual value tagging/mask-building to `FirestoreCodec` (see
-the deleted global leaderboards for why that split exists).
+the actual value tagging/mask-building to `FirestoreCodec`.
 Note that Firestore encodes `integerValue` as a JSON **string** (so 64-bit values
 survive JSON); decoding it as a number would silently yield 0 and break every
 revision comparison. `PATCH` always carries an explicit `updateMask.fieldPaths`,
@@ -261,11 +251,10 @@ being marked synced. Debounced, retried and flushed uploads go through `pull()`
 (`CloudSync._upload_pending`), so a newer cloud save raises the conflict prompt instead of being
 overwritten; only the small gap between that read and the upload is unguarded. Signing out clears
 any conflict and refusal (`reset_for_account`), so they can't reach the next account. A token refresh that gets a 429 or 5xx keeps the session,
-like a transport failure; only a 4xx rejection signs out. That last point matters: the existing web
+like a transport failure; only a 4xx rejection signs out. The web
 `visibilitychange`/`pagehide` listeners and the native close/pause notifications
-already funnel through that one entry point, so the cloud path inherits
-tab-close and app-pause handling on every platform **with no new lifecycle
-plumbing**.
+all funnel through `Save.flush_and_sync()`, so the cloud path inherits tab-close and app-pause
+handling on every platform.
 
 Pull happens at sign-in and on `NOTIFICATION_APPLICATION_RESUMED`. A pull first waits out any
 upload still in flight (`_busy`), so it never compares against this device's own half-landed
@@ -341,9 +330,6 @@ it was built on ([world-session.md](world-session.md)).
 
 ## UI
 
-`AccountMenu` is one builder with two hosts, mirroring how `SettingsMenu`
-already works:
-
 - **Settings → Account** (`settings_menu.gd`: `_build_account_page`,
   an entry in `_pages`). **Hidden for now (2026-10-27):** the page is
   still built but has no entry in the category grid, so players can't reach it; cloud
@@ -394,8 +380,7 @@ nothing at all showed while a call was in flight.
 Two shapes, chosen by what the call does:
 
 - **`CloudBusy.cover(host, title, step)`** — a blocking full-screen `LoadingScreen`,
-  for calls that rewrite the profile or gate progression: conflict resolution and the
-  boot restore.
+  for calls that rewrite the profile or gate progression: conflict resolution and sign-in.
 - **`CloudBusy.ambient(host, text, container)`** — non-blocking, for reads
   behind already-rendered UI (the account page's message row).
 
@@ -407,7 +392,7 @@ Mechanics worth knowing:
 
 - **Minimum visible duration** — `MIN_COVER_VISIBLE_SEC` stops a fast call flashing a
   cover for one frame. Applied to COVERS only (a dim ambient line blinking isn't the
-  glitch being fixed, and holding a leaderboard fetch open would just slow the game),
+  glitch being fixed),
   and never headless.
 - **One answer for failure** — `failure_text()` returns the server's own words, or a
   generic message when it gave none, or `""` on success. Hosts with a message row
@@ -441,7 +426,7 @@ behind a page the player had no reason to visit.
 `_offer_conflict`) for a conflict found in the background — at boot or on coming back to the
 app. Free roam latches `Cloud.conflict_detected` and opens the prompt on its pause menu as soon
 as nothing else is on screen (not under the title, a page, the pause menu or another modal),
-pausing the game and disarming the pause menu until it closes. "Decide later" clears the latch,
+pausing the game and disarming the pause menu until the chosen action has finished, upload included. "Decide later" clears the latch,
 so it is not asked again until the next conflict or the next free-roam scene load (a car swap,
 a new world), which re-latches from `ConflictPrompt.is_blocked()` so a conflict raised during a
 scene change is never lost. The account page's private copy of the resolution
@@ -452,8 +437,10 @@ drift in the first place.
 conflict". Reaching into `Cloud.sync.blocked_by_conflict` directly is how a second,
 drifting copy of that question starts.
 
-Note the three resolutions are NOT symmetric: "keep this device" uploads the whole
-profile (a real round-trip, so it gets a cover), "use cloud" is local-only (the
+Note the three resolutions are NOT symmetric: "keep this device" first re-reads the cloud
+copy (a conflict left on "decide later" can be hours old; if it moved, the player is asked
+again; if it's unreadable or from a newer schema, nothing is uploaded, like a pull) and then uploads the whole profile (a real round-trip, so it gets a cover, and the
+game stays paused until it and any failure notice are done), "use cloud" is local-only (the
 document was already downloaded when the conflict was raised), and "decide later" must
 call `Cloud.resolve_later()` — sync stays paused and the account page keeps warning,
 deliberately not a silent pick of either side.
@@ -478,8 +465,6 @@ deliberately not a silent pick of either side.
 Both client-id constants are **empty** until step 2/3 are done;
 `FirebaseConfig.google_configured()` is false meanwhile and the UI hides the
 Google button rather than offering an option that cannot work.
-
-### Deploying the rules
 
 ### The rules file is deployed by CI, and a broken one fails SILENTLY
 
@@ -581,29 +566,8 @@ Record results here as they land.
 - [ ] Genuine divergence: play offline on both, reconnect, confirm the prompt.
 - [ ] Airplane mode mid-session: no hang, no data loss, sync resumes.
 
-### Google sign-in on the web build (itch) — known to be fragile
+### Web persistence
 
-The itch build serves the game from **`https://html.itch.zone`** (measured via
-`location.origin` inside the game iframe, 2026-07-31), which must be listed in
-the **Web** OAuth client's *Authorised JavaScript origins* — otherwise GIS
-answers `GET /gsi/status … 403` and the prompt never renders. Note that origin
-is shared by every HTML game on itch, so authorising it is a wider grant than a
-domain you own; that is inherent to the shared CDN, not something tightenable.
-
-**A second blocker is not fixable from this repo.** itch embeds the game in an
-iframe, and Google's FedCM requires the *embedding* page to grant
-`allow="identity-credentials-get"`. It does not, so FedCM fails with
-`NotAllowedError: The 'identity-credentials-get' feature is not enabled in this
-document`. The legacy non-FedCM path may still work, but Google's own console
-warnings say it is being retired — at which point web Google sign-in on itch
-stops working regardless of what we do.
-
-If that happens, the options are: hide the Google button on web (email/password
-works fine there), build a popup-based OAuth flow (a top-level popup escapes the
-iframe policy, but needs an exact registered redirect URI), or host the web
-build on a domain we control. Native (desktop/Android) is unaffected — the
-loopback flow has no iframe and no FedCM involvement.
-
-Related: the local web round-trip in `todo/web-save-persistence.md` is still
-unverified too. Do that one **first** — a broken local IndexedDB flush would make
+The local web round-trip in `todo/web-save-persistence.md` is still
+unverified. Do that one **first** — a broken local IndexedDB flush would make
 the two-device check ambiguous.

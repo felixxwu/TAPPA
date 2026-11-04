@@ -3,15 +3,9 @@ extends RefCounted
 # The storm CROSSWIND profile: a lateral body force that pushes the car off line and
 # must be steered against. See features/car-physics.md → "Crosswind".
 #
-# DETERMINISM IS THE POINT OF THIS FILE. The gust profile is a PURE function of
-# (distance along the stage, event seed) — never `randf()`, never the clock, never a
-# frame counter, and no RandomNumberGenerator state carried between ticks. Two runs of
-# the same stage therefore feel the identical force at the identical point on the road.
-# That is load-bearing: every stage has a GLOBAL leaderboard keyed by
-# RallyLibrary.stage_key (features/global-leaderboards.md), and a wind that differed
-# between runs would silently stop the board comparing like with like. Seeding by
-# DISTANCE rather than time also makes gusts learnable — the same gust waits in the
-# same place every attempt — which is fairer play as well as fairer scoring.
+# The gust profile is a PURE function of (distance travelled, seed): never `randf()`, the clock or
+# a frame counter. Seeding by distance rather than time makes gusts learnable: the same gust waits
+# in the same place.
 #
 # The whole module is static and side-effect free, so the guarantee is trivially
 # testable (tests/headless/test_crosswind.gd) rather than merely asserted.

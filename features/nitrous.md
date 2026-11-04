@@ -89,8 +89,7 @@ zero when not fitted) and clears the three flags; `RoadRecovery.reset_now` resto
   The action is named `nitrous`, never `shift` — `shift_up` / `shift_down` (E/Q)
   are gear changes.
 - **Controller: X, joypad button 2.** Freed up by removing the `toggle_gearbox`
-  action, which is now a settings-menu option instead (`settings_menu.gd`
-  `gearbox_auto()`). See [controls.md](controls.md).
+  action; the transmission is always automatic now. See [controls.md](controls.md).
 - **Mobile: a small "NOS" button**, which also holds the throttle while pressed (no
   scenario wants nitrous without gas, and the buttons are adjacent).
   See [mobile-controls.md](mobile-controls.md);

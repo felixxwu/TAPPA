@@ -10,7 +10,7 @@ extends Node
 #   seed           — the island's world seed (FreeRoamSettings.world_seed)
 #   car            — the active owned car's instance id (Save.KEY_CARS)
 #   pose           — [x, y, z, yaw]: where the car is, written every few seconds and on leaving
-#   car_state      — {hp, cooling_broken, engine_temp, toe}: its damage, so a reload resumes it
+#   car_state      — {hp, max_hp, cooling_broken, engine_temp, toe}: its damage, so a reload resumes it
 #   lit            — rest stop site ids lit so far (spawn, 0, always)
 #   cold_open      — true while a first-time player's cold open is still to be driven (ColdOpen); absent after
 #   last_site      — the respawn point
@@ -129,16 +129,18 @@ func pose_transform() -> Variant:
 func save_car_state(dmg: DamageModel) -> void:
 	if not has_world() or dmg == null:
 		return
-	_world()["car_state"] = {"hp": dmg.hp, "cooling_broken": dmg.cooling_broken,
+	_world()["car_state"] = {"hp": dmg.hp, "max_hp": dmg.max_hp, "cooling_broken": dmg.cooling_broken,
 		"engine_temp": dmg.engine_temp, "toe": dmg.toe_array()}
 
 
-# Put the saved damage back onto a freshly fielded car. Nothing saved: leave it as fielded.
+# Put the saved damage back onto a freshly fielded car. Nothing saved: leave it as fielded. Health
+# carries over as a share of max HP, so a full car stays full when a roll cage or car swap changes its max.
 func restore_car_state(dmg: DamageModel) -> void:
 	var st: Dictionary = _world().get("car_state", {})
 	if st.is_empty() or dmg == null:
 		return
-	dmg.hp = clampf(float(st.get("hp", dmg.max_hp)), 0.0, dmg.max_hp)
+	var saved_max := maxf(float(st.get("max_hp", dmg.max_hp)), 1.0)
+	dmg.hp = clampf(float(st.get("hp", dmg.max_hp)) * dmg.max_hp / saved_max, 0.0, dmg.max_hp)
 	dmg.cooling_broken = bool(st.get("cooling_broken", false))
 	dmg.engine_temp = float(st.get("engine_temp", dmg.engine_temp))
 	dmg.set_toe_from_array(st.get("toe", []))

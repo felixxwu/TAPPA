@@ -288,3 +288,14 @@ func test_exit_clears_the_touch_axis() -> void:
 func test_controls_run_while_paused() -> void:
 	assert_eq(_controls.process_mode, Node.PROCESS_MODE_ALWAYS,
 		"the touch controls run while the world is frozen")
+
+
+func test_the_finger_left_after_a_pinch_goes_back_to_looking() -> void:
+	var centre := Vector2(VIEWPORT) * 0.5
+	_controls._register_free_pointer(0, centre)
+	_controls._register_free_pointer(1, centre + Vector2(60, 0))
+	assert_true(_controls._pinch_active, "setup: two fingers pinch")
+	_controls._release(1)
+	assert_false(_controls._pinch_active)
+	assert_eq(_controls._look_owner, 0)
+	assert_eq(_controls._look_last_pos, centre)

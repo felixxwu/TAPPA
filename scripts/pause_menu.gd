@@ -6,7 +6,7 @@ extends CanvasLayer
 # (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to title;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
 # controls). Quit to title saves and goes back to the title screen. The whole layer
-# runs with PROCESS_MODE_ALWAYS (set in main.tscn) so its button and the menu still
+# runs with PROCESS_MODE_ALWAYS (set in free_roam.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu
 # too. See features/menus.md.
@@ -104,9 +104,6 @@ func _on_reset_to_track_pressed() -> void:
 	resume()
 
 
-# Photo Mode: hide this overlay and DISARM the menu (so Esc / the Pause button belong
-# to the photo camera, and can't stack an overlay over the shot), but do NOT unpause —
-# the frozen world is the whole feature. The host answers on photo_mode_requested.
 # An extra row: hide the overlay but stay paused and armed-off while the host's page is up.
 func _on_extra_pressed(label: String) -> void:
 	_extra_return_card = label
@@ -179,7 +176,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# (Start does nothing) rather than silently resuming under an orphaned modal; the
 	# player still has ui_cancel/B (routed to the popup's own Cancel action) or a tap
 	# on one of the popup's own buttons to get out.
-	if ConfirmPopup.any_open(get_tree()) != null:
+	if ConfirmPopup.any_open(get_tree()) != null or get_tree().has_group(CloudBusy.GROUP):
 		return
 	# The `pause` action (Esc / gamepad Start) TOGGLES the menu. ui_cancel (gamepad B)
 	# is NOT an opener — in gameplay B is the handbrake — it only acts as "back" once the

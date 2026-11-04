@@ -340,7 +340,7 @@ func test_world_opens_and_closes_photo_mode() -> void:
 		assert_eq((_scene.get_node(node_name) as CanvasLayer).visible, before[node_name],
 			node_name + " goes back to how it was")
 	assert_eq((_scene.get_node("PostProcess") as Node).process_mode,
-		Node.PROCESS_MODE_INHERIT, "and the mirror goes back to pausing with the world")
+		Node.PROCESS_MODE_ALWAYS, "the mirror keeps following the camera behind the pause menu")
 	assert_true(_pause.is_open(), "the pause menu is back")
 
 

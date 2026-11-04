@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/loot_rules.gd` (`LootRules`: pure tables, prices, fitting, names),
 `scripts/free_roam/loot_director.gd` (`LootDirector`: coins, money, the wreck, the shop stock), the
-Parts / Garage pages of `scripts/free_roam/rest_stop_page.gd`, and the coins in
+Shop / Garage pages of `scripts/free_roam/rest_stop_page.gd`, and the coins in
 `TerrainStreamer` (`_coin_marker`, `shaders/coin.gdshader`).
 
 **Tests:** `tests/headless/test_loot.gd`
@@ -18,14 +18,14 @@ This replaced the found-loot loop of decisions 10–18 (crystals, carry / bank /
 |---|---|---|
 | Car | `{"kind": "car", "id": <CarLibrary id>}` | a new owned car (`Save.grant_car`) |
 | Part | `{"kind": "part", "id": <BoostLibrary id>, "level": n}` | a fittable part (the former boost, at level n) |
-| Engine | `{"kind": "part", "id": "engine_swap:<engine id>"}` | a fittable engine (the swap-tier engines) |
 | Drivetrain kit | `{"kind": "part", "id": "drivetrain:<mode>"}` | a fittable layout conversion |
+| Tires | `{"kind": "part", "id": "tire:<TIRES key>"}` | a fittable set of tires |
 
 ## What each ring sells (the pacing split, decision 3)
 
-Each car (`CarLibrary.CARS`), swap-tier engine (`EngineLibrary`) and boost part
+Each car (`CarLibrary.CARS`) and boost part
 (`BoostLibrary.CATALOGUE`) names its own biome `ring` and `price` in its entry; drivetrain kits have
-no entry, so theirs live in `LootRules.KITS`. `ring_tables(ring_count)` collects them (a boost part
+no entry, so theirs live in `LootRules.KITS`, and tires in `LootRules.TIRES` (gravel from the start, road at The Dunes, snow in The Alps; grip strengths in `GameConfig`'s `shop_tire_*`). `ring_tables(ring_count)` collects them (a boost part
 at level = its ring; a ring past `ring_count` folds into the last), and `LootRules.price(item)`
 reads the price back. Ring 0's cars are also the starter choice (`starter_cars`).
 
@@ -38,15 +38,16 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   (`owned_keys(owned)`: every car in the garage, and the parts of the car being driven).
 - **A part is unlocked for one car, then switched on or off.** Each owned car's `parts` are the
   parts unlocked for it, each with an `on` flag (`LootRules.is_on`; only switched-on parts reach the
-  car through `LootRules.fielded`). Another car has to unlock its own. Engines and drivetrain kits
+  car through `LootRules.fielded`). Another car has to unlock its own. Drivetrain kits
   share a slot: `LootRules.toggled` switches the other one off when one goes on, and switching a kit
-  off returns the car to its stock layout, so a kit for the car's own layout is never sold.
+  off returns the car to its stock layout, so a kit for the car's own layout is never sold. Tires
+  share a slot the same way (none on means the car runs its stock tires), and so do the parts naming the same `slot` in `BoostLibrary.CATALOGUE` (the small and big turbo).
   `WorldSession.adopt_old_stash` unlocks an older save's shared `stash` for the car being driven
   (switched off), once.
 - **Buying** (`buy`) checks it's on sale, affordable and — for a part — usable on the car being
   driven (`LootRules.can_fit`), takes the money, and grants the car or hands the part back for the
-  Parts page to unlock and switch on. A part the car can't use shows greyed out with the reason.
-- `test_loot.gd` → `test_shipped_cars_engines_and_parts_each_name_a_ring_on_the_island_and_a_price`
+  Shop page to unlock and switch on. A part the car can't use shows greyed out with the reason.
+- `test_loot.gd` → `test_shipped_cars_and_parts_each_name_a_ring_on_the_island_and_a_price`
   guards that every shipped entry has a ring on the island and a price.
 
 ## Coins
@@ -65,7 +66,7 @@ reads the price back. Ring 0's cars are also the starter choice (`starter_cars`)
   cleared, so every coin comes back. A gold crystal bobs over the drop (`_sync_dropped_node`,
   `shaders/crystal.gdshader`, the old loot crystal); driving within `FreeRoamSettings.dropped_reach_m` of it
   recovers the money (`recover_dropped`). The boot's shader warm-up draws one too (`LootDirector.warm_up` /
-  `clear_warm_up`), so the first wreck doesn't hitch compiling it. A wrecked car picks nothing up until it respawns (`RestStops.respawned`).
+  `clear_warm_up`), so the first wreck doesn't hitch compiling it. A wrecked car picks nothing up until it respawns or rolls into a rest stop (`respawned` / `wreck_recovered`).
 - **Travelling from the road** drops the money the same way (`drop_money`, after a confirm on the map —
   see world-session.md), so the map's free travel can't carry money to safety; checkpoint to checkpoint keeps it.
 - **Paying:** `LootDirector._pay` adds it, beeps and says "+$n".
@@ -84,7 +85,7 @@ trees near the car) so tests drive it without physics. Knobs: `FreeRoamSettings`
   stretch at `fast_speed_mps`, or time with all four wheels off the ground. Each pays seconds held ×
   its rate once it ends (out of it for `stunt_grace_s`, so a drift swinging sides is one drift);
   one shorter than `stunt_min_s` / `jump_min_s` pays nothing.
-- **Near miss:** a tree inside `near_miss_radius_m` of the car at `near_miss_min_speed_mps` pays
+- **Near miss:** a tree within `near_miss_radius_m` of the car's side (the query sphere adds `Car.half_width()`, so wide cars get the same gap) at `near_miss_min_speed_mps` pays
   `near_miss_money` once it's left behind (`_trees_near`: a sphere query, trees told apart by
   collision shape index since a `BillboardField` shares one body). Rocks and barriers don't count.
 - **A hit voids it:** `DamageModel.damaged` drops every streak under way and every pending near
@@ -98,12 +99,13 @@ All of it lives in the world block (`WorldSession`: money, collected, revealed; 
 
 A car's fitted parts are saved on its owned-car record (`parts`, `Save.set_car_parts`). At fielding,
 `LootRules.fielded(owned)` writes them onto the funnel's own keys: `boosts` (`{id, effect}` from
-`BoostLibrary.magnitude_for(id, level)`), `swapped_engine` and `drivetrain_override`.
+`BoostLibrary.magnitude_for(id, level)`, or `LootRules._tire_effect` for tires, which don't scale with level), `swapped_engine` and `drivetrain_override`.
+Each switched-on part also adds weight (`mass_kg` in `BoostLibrary.CATALOGUE`, `TIRES` and `KITS`; a kit adds the difference from the car's stock layout, and an engine's own mass goes through `EngineSwap`). `fielded` totals it into one `mass_add` effect at the front of `boosts`, so the Lightweight multiplier scales it whatever order the parts were bought in.
 `Car.apply_owned` and `UpgradeLibrary.apply` do the rest. There's no other modifier path.
 
 Fitting rules (`can_fit`, `toggled`): one of each part id per car; a kit for the car's own layout
 never fits (switching its other kit off changes it back). Each part is switched on or off, and
-switching an engine or kit on switches off whichever other one of its kind was on.
+switching on a kit, tire or turbo switches off whichever other one of its kind was on (`LootRules._slot`).
 `fit_block_reason` gives the shop card's label when a part can't go on ("Already RWD",
 "Already unlocked"); `can_fit` is just "no reason".
 
@@ -115,10 +117,11 @@ All card lists ([card-carousel.md](card-carousel.md)); item cards use `LootRules
 Rebuilding the page you're on (a part fitted, a car picked, something bought) keeps the cursor
 where it was (`RestStopPage._keep_at`). There's no separate shop: things on sale show at the end of the page they belong on, their price
 as the third line, green when the player can afford it and red when not (`RestStopPage.price_variant`). The MAIN page is Continue /
-Shop (subtitle "N applied, M unlocked") / Garage / Map / Tune car (travel is on the map); its header says the money held.
-**Shop:** a card per part unlocked for this car, labelled "On" or "Off" (pick to switch it,
+Shop / Garage / Map / Tune car (travel is on the map); its header says the money held.
+The Shop pages' header line is the car, its weight, power, driven wheels and max health with the parts switched on (`LootRules.shop_header` over `fitted_stats`, which runs the parts through a throwaway `GameConfig` via `UpgradeLibrary.apply`; power is at full boost, without nitrous), rebuilt whenever a part changes. Garage cards show power · weight · drive (`CardUI.stats_line`): fitted values for owned cars, stock for cars on sale.
+**Shop:** four cards opening **Upgrades** (`LootRules.is_upgrade`: the boost parts), **Tires**, **Drivetrain** (`_build_part_page`, each card with an "N applied, M available" line, where M counts the parts of that kind on sale this car can fit, affordable or not) and **Engine swaps**, which trades engines between owned cars ([engine-swap.md](engine-swap.md)). Each page has a card per part of that kind unlocked for this car, labelled "On" or "Off" (pick to switch it,
 `_toggle_part`; other cars keep theirs), then one per part on sale (its price, or the
-`fit_block_reason` label, disabled; picking one buys it and switches it on, `_buy_part`). **Garage:** a card per
+`fit_block_reason` label, disabled; picking one buys it and switches it on, `_buy_part`). Tires starts with a **Stock tires** card, which isn't a part: it's on when no bought tire is, and picking it switches them off (`LootRules.on_stock_tires`). Back steps part page → Shop → main page. **Garage:** a card per
 owned car (pick to drive one; the cursor starts on the car being driven), each with an
 "x / y upgrades" line under its power line (`LootRules.upgrades_text`: parts unlocked for that car, on or off, out of
 `LootRules.parts_for(owned)` — the whole part catalogue less the drivetrain kit for its own stock

@@ -175,6 +175,8 @@ by the same factor — the one knob for "the cars are too grippy". Tested by
 
 ## Surface-specialised compounds (the snow-tyre rule)
 
+**In free roam these are the Shop's tires:** `LootRules.TIRES` authors `tire_grip_mult`, `tire_snow_grip_mult` and `tire_tarmac_grip_mult` from `GameConfig`'s `shop_tire_*` fields (see [loot.md](loot.md)). Snow Tires and Race Tires below are the roguelike-era parts this rule was written for; neither is sold now.
+
 A tyre compound used to be a single number: one multiplier on μ, the same everywhere. That
 made **Snow Tires** a strictly weaker rung of the same ladder Race Tires topped — the
 choice between them was trivial the moment both were owned, and a part called "Snow Tires"

@@ -31,48 +31,13 @@ signal flushing()
 # holding the old world must let go of it (WorldSession.invalidate).
 signal replaced()
 
-# Bump on any breaking shape change to PlayerProfile. NO LONGER MIGRATED FORWARD
-# (todo/roguelike-pivot.md decision 20 / decision 34): the old `_migrate_step` ladder
-# (schemas 1-6) is deleted along with the legacy backfill keys it wrote. A profile whose
-# `schema_version` does not match exactly — older OR newer — is refused by `_migrate()`
-# and `load_or_new()` falls back to a fresh default, exactly as it already does for an
-# unreadable file: the ON-DISK FILE IS LEFT AS-IS FOR THIS LOAD (nothing overwrites it on
-# the spot), and the LIVE session starts clean instead of guessing how to interpret it.
-# It is NOT protected forever — the fresh profile saves normally, so the player's first
-# purchase or finished run legitimately supersedes it (see load_or_new()'s own comment;
-# a save_disabled flag used to sit here to keep the file untouched, and instead silently
-# blocked every save for the rest of the session — see that function for the bug this
-# was). That is deliberate, not an oversight:
-#
-#   - Decision 34 says "a pre-pivot profile resets whatever its version" — the pivot
-#     replaces the whole economy (stars -> money) and the whole reward model (prize
-#     rallies -> a shop), so a v6 profile's `stars_earned`, its legacy part-unlock /
-#     engine-swap backfill keys (all now gone) and its rally-completion-as-currency shape
-#     do not describe anything this build still understands well enough to interpret safely.
-#   - Writing a transform between two economies that never coexist (decision 20's "no
-#     dual code paths") is the thing decision 20 explicitly rejects as not worth the
-#     complexity, so there is no migration to write even for the parts of the schema
-#     (owned cars, tuning) that DID survive this particular wave unchanged.
-#   - This wave (the save/economy demolition) is where SCHEMA_VERSION bumps for the pivot:
-#     it is the one wave that owns this file, and it is what makes "a pre-pivot profile"
-#     concrete rather than aspirational — an old profile stops parsing as current from
-#     this change forward, even though later pivot waves (regions_cleared, money, boost
-#     levels, …) have not landed yet. Bumping later, per-wave, would mean multiple
-#     schema bumps for one demolition and no single point where "old" became well-defined.
-#   - `_migrate()` still backfills any KEY MISSING off a correctly-versioned (current
-#     SCHEMA_VERSION) profile from `_default_profile()` — that half is unrelated to
-#     migration and stays exactly as it works for `cloud_revision` today.
+# Bump on any breaking shape change to PlayerProfile. A profile at any other version, older or
+# newer, is refused and the player starts fresh; nothing migrates (decisions 20 and 34).
 # 8: the free-roam pivot (todo/2026-10-19-free-roam-pivot.md decision 26) — one persistent
 # world per save (KEY_WORLD). Every v7 profile is refused and the player starts a new world.
 const SCHEMA_VERSION := 8
 
-# The two profile keys the REST of the codebase reads (the owned-car array and the
-# per-rally record map) — named here because SaveManager owns the save schema, and a
-# ~50-site spread of the bare literals made a rename a silent cross-device data bug
-# (scripts/cloud/cloud_sync.gd keys off the same strings). These are ON-DISK key
-# STRINGS: changing either VALUE breaks every existing profile, so they are frozen
-# unless a SCHEMA_VERSION bump comes with the change (there is no migration to pair it
-# with any more — see that const's own comment).
+# On-disk key: changing its value breaks every existing profile unless SCHEMA_VERSION bumps too.
 const KEY_CARS := "cars"
 
 const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
@@ -308,25 +273,8 @@ func load_or_new() -> void:
 		return
 	var migrated := _migrate(loaded)
 	if migrated.is_empty():
-		# A newer-than-known or unmigratable (e.g. pre-pivot) file: run on a fresh
-		# in-memory profile rather than guessing how to interpret it.
-		#
-		# DELIBERATELY NOT save_disabled = true. That used to be set here on the theory
-		# of "keep the untrusted file untouched on disk" — but save_disabled blocks EVERY
-		# future save() / save_now(), not just the one that would have clobbered this
-		# file on the spot. The result was silent, total, and permanent: every pre-pivot
-		# player's on-disk profile is at a stale schema_version, so THIS branch runs on
-		# their very first post-pivot launch, and once it set save_disabled the player
-		# could buy cars and finish runs all session with literally nothing reaching
-		# disk — and the same stale file would still be there refusing again on every
-		# subsequent launch, forever. That is exactly the bug reported as "runs and cars
-		# bought are still not saved properly" post-pivot.
-		#
-		# The fresh profile assigned below must be able to save normally: the first
-		# legitimate save() this session is what properly supersedes the unreadable
-		# file, which is precisely decision 34's intent ("a pre-pivot profile resets
-		# whatever its version") — a reset that can never actually take if nothing is
-		# ever allowed to write the replacement.
+		# A newer or pre-pivot file: start fresh rather than guess. Saving must stay enabled,
+		# since the first save is what replaces the refused file (decision 34).
 		push_warning("Save: profile at %s is unreadable/newer than v%d — starting fresh"
 			% [profile_path, SCHEMA_VERSION])
 		# The rolling .bak is gone two saves from now, so a newer build's career (say, a stale
@@ -575,16 +523,8 @@ func _default_profile() -> Dictionary:
 
 
 # --- Migration ---------------------------------------------------------------
-# NO LONGER A LADDER (todo/roguelike-pivot.md decisions 20 & 34): `_migrate_step` and
-# `_MIGRATABLE_FROM` (which used to step a profile forward one schema version at a time,
-# versions 1 through 6) are deleted along with their legacy backfill data
-# (`MOVED_PART_UNLOCKS`, `OLD_ENGINE_SWAP_UNLOCK_RALLY`) — see SCHEMA_VERSION's own
-# comment for why a bump with no migration is the correct call here, not an oversight.
-# `_migrate` now does exactly two things: refuse anything that is not EXACTLY the current
-# schema (older or newer — both are "not what this build understands"), and backfill any
-# key a correctly-versioned but partial file is missing, which is unrelated to migration
-# and works exactly as it always has for `cloud_revision` / any other key
-# added without a version bump.
+# Refuse anything that is not exactly the current schema (there are no migrations, decisions 20
+# and 34), and backfill any key a correctly-versioned file is missing.
 func _migrate(p: Dictionary) -> Dictionary:
 	if int(p.get("schema_version", 0)) != SCHEMA_VERSION:
 		return {}  # pre-pivot (or newer-than-known) profile: refuse rather than guess
@@ -596,14 +536,6 @@ func _migrate(p: Dictionary) -> Dictionary:
 
 
 # --- Owned-car mutators ------------------------------------------------------
-
-# Does the garage already hold a car of this catalogue model (whatever its health)?
-func owns_model(model_id: String) -> bool:
-	for car in profile.get(KEY_CARS, []):
-		if String((car as Dictionary).get("model_id", "")) == model_id:
-			return true
-	return false
-
 
 # Grant a new owned-car instance referencing a CarLibrary model id. Returns the
 # new OwnedCar dict. Its damage lives in the world (WorldSession car_state), not here.
@@ -638,6 +570,18 @@ func set_car_parts(instance_id: int, parts: Array) -> void:
 	if car.is_empty():
 		return
 	car["parts"] = parts.duplicate(true)
+	save()
+
+
+# Swap the engines of two owned cars. Each keeps its parts and tuning.
+func swap_engines(id_a: int, id_b: int) -> void:
+	var a := get_car(id_a)
+	var b := get_car(id_b)
+	if a.is_empty() or b.is_empty() or id_a == id_b:
+		return
+	var a_engine := LootRules.engine_owner(a)
+	a["engine_from"] = LootRules.engine_owner(b)
+	b["engine_from"] = a_engine
 	save()
 
 

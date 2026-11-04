@@ -45,6 +45,42 @@ func test_retune_applies_the_changed_tuning_to_the_live_config() -> void:
 	assert_lt(_car.config.wheel_friction_slip_rear, rear_before, "oversteer shifts grip off the rear, live")
 
 
+func _damage_part_owned(effect: Dictionary) -> Dictionary:
+	return {"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {}, "upgrades": {},
+		"boosts": [{"id": "fx_part", "effect": effect}]}
+
+
+func test_a_mass_effect_reaches_the_physics_body() -> void:
+	var stock: float = _car.mass
+	_car.apply_owned(_damage_part_owned({"mass_add": 50.0}))
+	assert_almost_eq(_car.mass, stock + 50.0, 0.01, "fielded heavier")
+	_car.retune(_damage_part_owned({"mass_add": 50.0}))
+	assert_almost_eq(_car.mass, stock + 50.0, 0.01, "retuning doesn't compound it")
+
+
+func test_a_max_hp_effect_raises_the_cars_health_and_leaving_it_off_restores_it() -> void:
+	var stock: float = _car.damage.max_hp
+	_car.apply_owned(_damage_part_owned({"max_hp_mult": 2.0}))
+	assert_almost_eq(_car.damage.max_hp, stock * 2.0, 0.001, "more max HP")
+	assert_almost_eq(_car.damage.hp, _car.damage.max_hp, 0.001, "fielded at full health")
+	_car.apply_owned(_damage_part_owned({"max_hp_mult": 2.0}))
+	assert_almost_eq(_car.damage.max_hp, stock * 2.0, 0.001, "re-fielding doesn't compound")
+	_car.retune(_damage_part_owned({"max_hp_mult": 2.0}))
+	assert_almost_eq(_car.damage.max_hp, stock * 2.0, 0.001, "retuning doesn't change it")
+	_car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {}, "upgrades": {}})
+	assert_almost_eq(_car.damage.max_hp, stock, 0.001, "off again")
+
+
+func test_a_cooling_failure_effect_lowers_the_break_point_without_compounding() -> void:
+	var authored: float = Config.authored_value("cooling_failure_hp_fraction", 0.0)
+	_car.apply_owned(_damage_part_owned({"cooling_failure_mult": 0.5}))
+	assert_almost_eq(_car.config.cooling_failure_hp_fraction, authored * 0.5, 1e-5, "lower break point")
+	_car.retune(_damage_part_owned({"cooling_failure_mult": 0.5}))
+	assert_almost_eq(_car.config.cooling_failure_hp_fraction, authored * 0.5, 1e-5, "doesn't compound")
+	_car.apply_owned({"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {}, "upgrades": {}})
+	assert_almost_eq(_car.config.cooling_failure_hp_fraction, authored, 1e-5, "off again")
+
+
 func test_retune_is_idempotent_and_does_not_compound() -> void:
 	var owned := {"model_id": "fx_light_rwd", "instance_id": 1, "tuning": {"grip_balance": 0.7}, "upgrades": {}}
 	_car.retune(owned)

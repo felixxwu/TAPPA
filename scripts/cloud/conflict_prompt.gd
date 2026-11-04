@@ -33,9 +33,9 @@ static func summary() -> Dictionary:
 	return Cloud.sync.conflict_summary()
 
 
-# Put the conflict to the player on `host`. `on_finished` (optional) is called with
-# no arguments once the popup closes, however it closed — hosts use it to clear
-# their own "a prompt is already up" latch and to re-check is_blocked().
+# Put the conflict to the player on `host`. `on_finished` (optional) is called with no
+# arguments once the chosen action has finished, including any upload behind it — hosts
+# use it to hand play back and to re-check is_blocked().
 #
 # Returns the popup, or null when there is nothing to ask about OR when a modal is
 # already on screen. Callers must not assume a popup came back.
@@ -50,21 +50,26 @@ static func open(host: Node, on_finished := Callable()) -> Node:
 		info.get("local", ""), info.get("cloud_device", "another device"),
 		info.get("cloud", ""),
 	]
-	var popup := ConfirmPopup.open(host, "Your progress differs", body, [
+	var done := func() -> void:
+		if on_finished.is_valid():
+			on_finished.call()
+	return ConfirmPopup.open(host, "Your progress differs", body, [
 		# Keep-this-device UPLOADS the whole profile — a real network round-trip, so it
 		# gets the cover. Use-cloud does NOT: the document was already downloaded when
 		# the conflict was raised, so applying it is local (parse, migrate, write) and
 		# a cover would only flash. Decide-later must go through Cloud.resolve_later()
 		# rather than doing nothing — sync stays paused and the account page keeps
 		# warning, deliberately not a silent pick of either side.
-		{"label": "Decide later", "callback": func() -> void: Cloud.resolve_later()},
-		{"label": "Use cloud", "callback": func() -> void: Cloud.resolve_use_cloud()},
-		{"label": "Keep this device",
-			"callback": func() -> void: await _resolve(host, "Uploading this device's progress…", _keep_local)},
+		{"label": "Decide later", "callback": func() -> void:
+			Cloud.resolve_later()
+			done.call()},
+		{"label": "Use cloud", "callback": func() -> void:
+			Cloud.resolve_use_cloud()
+			done.call()},
+		{"label": "Keep this device", "callback": func() -> void:
+			await _resolve(host, "Uploading this device's progress…", _keep_local)
+			done.call()},
 	], 0, 0)  # the cursor and Back/Esc both start on Decide later, the one choice that overwrites nothing
-	if on_finished.is_valid() and popup != null:
-		popup.finished.connect(func() -> void: on_finished.call())
-	return popup
 
 
 # Run one resolution behind the SHARED busy cover (scripts/cloud/cloud_busy.gd) so
@@ -77,7 +82,9 @@ static func _resolve(host: Node, busy_text: String, action: Callable) -> Diction
 		host, "Syncing your progress…", busy_text, action)
 	# This prompt has no message line of its own, and a resolution that failed
 	# silently is exactly how a conflict stays stuck forever — so it gets said.
-	CloudBusy.report_failure(host, result)
+	var notice := CloudBusy.report_failure(host, result)
+	if notice != null:
+		await notice.finished
 	return result
 
 

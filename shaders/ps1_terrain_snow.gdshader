@@ -179,10 +179,10 @@ void fragment() {
 		tarmac = mix(tarmac_color, tarmac_color_b, region_t);
 		marking = mix(road_marking_color, road_marking_color_b, region_t);
 	}
-	vec3 ground = mix(texture(albedo_texture, ground_uv * texture_tile).rgb,
-		texture(albedo_texture_b, ground_uv * texture_tile).rgb, region_t);
+	vec3 ground = texture(albedo_texture, ground_uv * texture_tile).rgb;
 	vec3 gravel = texture(road_texture, ground_uv * texture_tile * road_uv_scale).rgb;
 	if (fade_rings) {
+		ground = mix(ground, texture(albedo_texture_b, ground_uv * texture_tile).rgb, region_t);
 		gravel = mix(gravel, texture(road_texture_b, ground_uv * texture_tile * road_uv_scale).rgb, region_t);
 	}
 	vec3 road = mix(gravel, tarmac.rgb, tarmac_t);

@@ -369,6 +369,8 @@ the second.
 ./run_tests.sh --fast "menu_flow rally_flag" # same, as one whitespace-separated string
 ```
 
+A `--fast` name that matches no test file fails the run rather than passing with nothing run.
+
 Every run, `--fast` included, starts with `tools/compile_check.tscn`, the same check that gates a release in CI. It loads every script and scene, including `tools/` scripts that no test touches.
 
 ### Analysis scripts (not tests)

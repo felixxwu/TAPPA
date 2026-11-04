@@ -11,8 +11,8 @@ extends RefCounted
 # TWO SHAPES, deliberately — forcing every site into one was the wrong answer:
 #
 #   cover()   A full-screen LoadingScreen. For calls that rewrite the whole
-#             profile or gate progression: conflict resolution, sign-in, the boot
-#             restore. Blocking is the honest signal there — the player must not
+#             profile or gate progression: conflict resolution and sign-in.
+#             Blocking is the honest signal there — the player must not
 #             act on a career that is about to be replaced.
 #   ambient() An in-panel line. For calls behind UI that stays usable (the account page).
 #
@@ -33,7 +33,7 @@ const MIN_COVER_VISIBLE_SEC := 0.45
 
 # Every busy visual joins this group, so a host that rebuilds its children
 # wholesale can preserve the in-flight state instead of freeing it mid-call
-# (see account_menu.rebuild / global_standings._build_ui).
+# (see account_menu.rebuild).
 const GROUP := "cloud_busy"
 
 # The ONE thing the player is told when a cloud call fails without saying why.
@@ -152,16 +152,16 @@ static func failure_text(raw: Variant) -> String:
 # page's red row — should render failure_text() there instead of stacking a modal
 # on top of it. No-op on success, and headless (no popup to show; the caller's
 # state is already correct either way).
-static func report_failure(host: Node, raw: Variant) -> void:
+static func report_failure(host: Node, raw: Variant) -> ConfirmPopup:
 	var text := failure_text(raw)
 	if text == "" or Platform.is_headless() or not is_instance_valid(host) \
 			or not host.is_inside_tree():
-		return
+		return null
 	# allow_stack: a failure notice is the one modal that must be seen even over
 	# another one. Everything else is refused when a modal is already up, but a
 	# silently dropped "couldn't sync" is exactly how a failed resolution becomes
 	# invisible and the conflict stays stuck forever.
-	ConfirmPopup.open(host, "Couldn't sync", text, [{"label": "OK"}], 0, 0, true)
+	return ConfirmPopup.open(host, "Couldn't sync", text, [{"label": "OK"}], 0, 0, true)
 
 
 # --- Introspection (hosts + tests) --------------------------------------------

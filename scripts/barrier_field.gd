@@ -53,7 +53,7 @@ func build(layout: Array, params: Dictionary, ground_at := Callable()) -> void:
 	var groups := {}
 	for entry in layout:
 		var style := int(entry["style"])
-		var proto := _prototype(style, pitch, params)
+		var proto := _prototype(style, pitch)
 		var xform := _module_transform(entry, ground_at, half_w, road_gap,
 			float(proto["aabb"].end.x), sink, pitch)
 		var key := Vector2i(int(entry.get("run", 0)), style)
@@ -117,7 +117,7 @@ func _ground(ground_at: Callable, p: Vector2) -> float:
 
 # One style's geometry, built once: a prototype BarrierSection is created off-tree,
 # its parts and AABB harvested, and the node freed. Nothing of it stays in the scene.
-func _prototype(style: int, pitch: float, _params: Dictionary) -> Dictionary:
+func _prototype(style: int, pitch: float) -> Dictionary:
 	if _protos.has(style):
 		return _protos[style]
 	var proto := BarrierSection.new()

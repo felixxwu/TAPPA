@@ -60,9 +60,7 @@ func _close() -> void:
 	(get_parent().get_node("PauseMenu") as PauseMenu).return_from_photo_mode()
 
 
-# Hides every on-screen layer the scene is showing, and brings back only those. PostProcess mirrors
-# the camera into the viewport that renders the world, so it must keep running while paused, or the
-# photo camera would move with nothing on screen changing.
+# Hides every on-screen layer the scene is showing, and brings back only those.
 func _set_chrome(on: bool) -> void:
 	if on:
 		for layer in _hidden_layers:
@@ -74,6 +72,3 @@ func _set_chrome(on: bool) -> void:
 			if child is CanvasLayer and child.visible and not child is PauseMenu:
 				child.visible = false
 				_hidden_layers.append(child)
-	var post := get_parent().get_node_or_null("PostProcess")
-	if post != null:
-		post.process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_ALWAYS

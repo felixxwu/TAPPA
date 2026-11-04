@@ -16,10 +16,8 @@ var _debug := SettingsMenu.dev_tools_enabled()
 # --- Benchmark capture window --------------------------------------------------
 # A second, independent accumulator the benchmark opens for a whole run so it can
 # report per-script CPU cost with the results (features/benchmark.md → feedback
-# loop). Unlike the per-second log above this runs in RELEASE builds too (the
-# shipped web build is a release export, where the per-second logger is off) —
-# `track()` always accumulates into it while `_capturing`, so profiling numbers
-# come from the representative release build, not the fatter debug one.
+# loop). `track()` always accumulates into it while `_capturing`, whatever
+# dev_tools_enabled() says.
 var _capturing := false
 var _cap_us: Dictionary = {}  # StringName -> accumulated usec since begin_capture
 
@@ -27,8 +25,7 @@ var _cap_us: Dictionary = {}  # StringName -> accumulated usec since begin_captu
 ## car.gd._physics_process). Accumulates cost per script between prints.
 func track(key: StringName, usec: int) -> void:
 	# _debug is cached (a SettingsMenu.dev_tools_enabled() call per track() would
-	# cost more than it saves); _capturing still records in ANY build so the
-	# benchmark can profile the release export.
+	# cost more than it saves).
 	if _capturing:
 		_cap_us[key] = int(_cap_us.get(key, 0)) + usec
 	if not _debug:

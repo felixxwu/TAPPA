@@ -303,16 +303,12 @@ static func mark_seen_near(sites: RoadSites, p: Vector2, radius: float) -> int:
 # (site -> true).
 static func site_markers(sites: RoadSites, lit: Dictionary, centre: Vector2, radius: float) -> Array:
 	var out: Array = []
-	var seen := {}
-	for s: int in WorldSession.seen_sites():
-		seen[s] = true
 	var r2 := radius * radius
-	for i in sites.count():
-		var k := sites.kind[i]
-		if k != RoadSites.Kind.REST or sites.pos[i].distance_squared_to(centre) > r2:
+	for i in sites.of_kind(RoadSites.Kind.REST):
+		if sites.pos[i].distance_squared_to(centre) > r2:
 			continue
-		var is_lit := k == RoadSites.Kind.REST and lit.has(i)
-		if not (seen.has(i) or is_lit):
+		var is_lit := lit.has(i)
+		if not (is_lit or WorldSession.is_seen(i)):
 			continue
 		out.append([sites.pos[i], Marker.REST_LIT if is_lit else Marker.REST_UNLIT, i])
 	return out

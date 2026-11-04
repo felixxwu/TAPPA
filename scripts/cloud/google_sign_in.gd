@@ -77,17 +77,6 @@ func sign_in() -> Dictionary:
 	return await _sign_in_native()
 
 
-# Abandon an in-flight attempt (the player pressed Cancel). Closes the listening
-# socket so the port is not held for the rest of the session.
-func cancel() -> void:
-	_cancelled = true
-	# Do NOT stop the server here: the serving thread may be mid-accept, and
-	# pulling the socket out from under it would race. It observes _cancelled and
-	# exits on its own; _sign_in_native closes the server after joining.
-	if _thread == null:
-		_close_server()
-
-
 # --- Native: loopback + PKCE --------------------------------------------------
 
 func _sign_in_native() -> Dictionary:

@@ -270,6 +270,25 @@ func test_airspeed_past_shift_point_upshifts() -> void:
 	assert_eq(_engine.gear, 2, "airspeed past the shift point upshifts to 2nd")
 
 
+# Lifting off with the wheels spinning: the flywheel keeps driving them through the clutch, rather
+# than the clutch letting go and leaving the revs stranded above the wheels.
+func test_a_lift_feeds_the_flywheel_into_a_slower_driveline() -> void:
+	var cfg: GameConfig = Config.data
+	_engine.gear = cfg.gear_ratios.size()
+	var input_omega := _engine.idle_omega() * 1.5
+	var driveline := input_omega / _engine.ratio()
+	if absf(driveline) * cfg.wheel_radius <= cfg.clutch_engage_speed:
+		pass_test("the clutch is open at this speed on this tune")
+		return
+	_engine.omega = _engine.redline_omega() * 0.5
+	var delivered := 0.0
+	for i in 96:  # 0.2 s of substeps
+		delivered += _engine.step(1.0 / 480.0, 0.0, driveline)
+	assert_gt(delivered, 0.0, "drive reaches the wheels after the throttle closes")
+	assert_almost_eq(_engine.omega, input_omega, input_omega * 0.1, "the revs come down to meet the wheels")
+	assert_gte(_engine.omega, _engine.idle_omega(), "and never below idle")
+
+
 func test_engine_braking_grows_with_rpm() -> void:
 	# Engine friction is affine in RPM (FMEP-style), so off-throttle braking must
 	# drag the flywheel down FASTER at high revs than low. In neutral the clutch

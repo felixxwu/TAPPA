@@ -13,8 +13,6 @@ extends RefCounted
 #   * displacement_l — real swept volume (litres). Lives HERE, not on the car, because
 #                     it is an engine property: an engine swap must move it with the
 #                     engine (a car dict field would go stale the moment it's re-powered).
-#                     Rally restrictions (engine_min_l / engine_max_l) resolve it through
-#                     the car's CURRENT engine — see RallyLibrary.ineligibility_reason.
 #                     Cylinder count is NOT authored alongside it: it's derived from
 #                     `layout` via FIRING (see `cylinders`), so the two can't disagree.
 #   * redline_rpm / peak_torque / peak_torque_rpm — the PERFORMANCE. peak_torque is
@@ -53,11 +51,8 @@ extends RefCounted
 #                     engine sets supercharger_enabled for the whine but leaves
 #                     supercharger_boost_gain at 0 (its power is baked into peak_torque) —
 #                     only the supercharger UPGRADE turns the belt physics on.
-#   * ring / price   — on a swap_tier engine: the free-roam biome ring whose checkpoints sell
-#                     it, and what it costs there (LootRules.ring_tables / price).
-#   * swap_tier      — optional bool. True on the dedicated swap engines at the bottom of
-#                     ENGINES, the only ones rest stops sell (by `ring` / `price` above).
-#                     See features/engine-swap.md.
+#   * ring / price / swap_tier — on the swap tier engines at the bottom of ENGINES. Rest stops no
+#                     longer sell engines, so nothing reads these. See features/engine-swap.md.
 
 # Standard firing tables: crank angles (degrees) over the 720° four-stroke cycle,
 # shared across engines of the same layout. Even spacing sounds smooth; the uneven
@@ -107,8 +102,7 @@ const ENGINES: Array[Dictionary] = [
 		# RWD roadster) rather than a choice of how hard the early game will be.
 		#
 		# effective_meta folds this into peak_torque, so it moves the car's eligibility as
-		# well as its pace — retuning it means re-exporting eligibility and re-running
-		# tools/sim_career.gd.
+		# well as its pace.
 		"turbo_enabled": true, "turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3,
 		"turbo_omega_ref": 10000.0, "turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6,
 		"turbo_parasitic_friction": 5.0,
@@ -206,8 +200,8 @@ const ENGINES: Array[Dictionary] = [
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
 		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9, "shift_time": 0.35,  # Acty HA4 5-speed manual
 	},
-	# THE ENGINE SWAP TIERS (features/engine-swap.md) — the only engines rest stops sell,
-	# marked by the "swap_tier" flag. Deliberately generic (no real car this catalogue's
+	# THE ENGINE SWAP TIERS (features/engine-swap.md), which no car in the game runs now that cars swap
+	# engines between themselves. Marked by the "swap_tier" flag. Deliberately generic (no real car this catalogue's
 	# stock engines are borrowed from) and evenly spaced ~100hp apart so every car walks
 	# the same rungs regardless of its own stock engine. Torque/redline are picked so
 	# CarLibrary.horsepower lands close to the name's advertised figure.
@@ -320,8 +314,9 @@ static func apply(engine: Dictionary, cfg: GameConfig) -> void:
 	cfg.turbo_omega_ref = engine.get("turbo_omega_ref", cfg.turbo_omega_ref)
 	cfg.turbo_boost_gain = engine.get("turbo_boost_gain", 0.0)
 	cfg.turbo_parasitic_friction = engine.get("turbo_parasitic_friction", 0.0)
-	cfg.turbo_drive_gain = engine.get("turbo_drive_gain", cfg.turbo_drive_gain)
-	cfg.turbo_drag_coef = engine.get("turbo_drag_coef", cfg.turbo_drag_coef)
+	# Config.data outlives the car, so falling back to the live value would inherit the last car's.
+	cfg.turbo_drive_gain = engine.get("turbo_drive_gain", Config.authored_value("turbo_drive_gain", cfg.turbo_drive_gain))
+	cfg.turbo_drag_coef = engine.get("turbo_drag_coef", Config.authored_value("turbo_drag_coef", cfg.turbo_drag_coef))
 	cfg.turbo_antilag = engine.get("turbo_antilag", false)
 	cfg.turbo_antilag_drive = engine.get("turbo_antilag_drive", 0.0)
 	cfg.supercharger_enabled = engine.get("supercharger_enabled", false)
@@ -346,5 +341,3 @@ static func apply(engine: Dictionary, cfg: GameConfig) -> void:
 	# nitrous plus a HUD gauge and a mobile NOS button it never earned.
 	cfg.nitrous_boost_gain = 0.0
 	cfg.nitrous_tank_seconds = 0.0
-	cfg.engine_nitrous_hiss_gain = engine.get("engine_nitrous_hiss_gain",
-		cfg.engine_nitrous_hiss_gain)

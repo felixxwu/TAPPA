@@ -97,6 +97,22 @@ func test_a_background_sync_conflict_is_put_to_the_player() -> void:
 	Cloud.sync.status = CloudSync.Status.IDLE
 
 
+# Keep this device uploads behind a cover: play can't be handed back as the popup closes.
+func test_the_conflict_prompt_hands_back_after_its_action_not_when_it_closes() -> void:
+	Cloud.sync._conflict = {"profile": "{}", "device": "test-device", "updated_utc": ""}
+	Cloud.sync.blocked_by_conflict = true
+	var seen := {"done": false, "done_at_close": false}
+	var popup := ConflictPrompt.open(_pause, func() -> void: seen["done"] = true)
+	assert_not_null(popup)
+	popup.finished.connect(func() -> void: seen["done_at_close"] = seen["done"])
+	popup.trigger_back()
+	assert_false(seen["done_at_close"])
+	assert_true(seen["done"])
+	Cloud.sync._conflict = {}
+	Cloud.sync.blocked_by_conflict = false
+	Cloud.sync.status = CloudSync.Status.IDLE
+
+
 func test_the_debug_readout_starts_hidden_and_p_toggles_it() -> void:
 	var stats: CanvasLayer = _scene.get_node("DebugStats")
 	assert_false(stats.visible, "hidden by default")
@@ -261,6 +277,6 @@ func test_a_wrecked_car_is_not_reset() -> void:
 	assert_true(_car.drivetrain.engine.killed, "the engine stays dead")
 	assert_eq(_car.global_position, before, "the wreck stays where it is")
 	assert_true(_recovery.is_wrecked())
-	dmg.repair(Config.data)
+	dmg.repair()
 	dmg.thermal = was_thermal
 	_car.drivetrain.engine.killed = false

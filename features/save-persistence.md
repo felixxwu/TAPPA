@@ -55,7 +55,7 @@ Max-HP is **CarLibrary metadata, not stored**. The world's terrain, roads and si
   marking the profile unsynced or telling the cloud — churn, see [cloud-save.md](cloud-save.md)),
   `save_now()`, `flush_and_sync()`, `reset_new_game()` (keeps `cloud_revision` / `cloud_uid`, so
   the wipe's upload lands above the old cloud copy).
-- Cars: `grant_car(model_id)`, `owns_model(model_id)`, `get_car(instance_id)`,
+- Cars: `grant_car(model_id)`, `get_car(instance_id)`,
   `set_tuning`, `set_car_parts`.
 - Lifetime stats: `lifetime_stat(id)`, `add_lifetime_stat(id, amount := 1)`.
 - Settings: `get_setting(key, default)`, `set_setting(key, value)`.

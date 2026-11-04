@@ -77,13 +77,10 @@ loaded, which nothing ever mutates (`data` is a `duplicate(true)` of it precisel
 runtime is free to retune itself). `Config.authored_value(field, fallback)` reads a field
 off it.
 
-Its one caller is `UpgradeLibrary._reseed_globals`. A per-car field mutated by the effects
-funnel is re-seeded by `car.gd::apply_car` on the next fielding, but the skill rows
-(`todo/roguelike-pivot.md` decision 51) target GLOBAL tunables — a coin radius, a money
-rate, a stage-target pace — that nothing re-seeds, on a `Config.data` that outlives every
-scene. Without a pristine copy to read there is no way back to the authored number, so a
-multiplier would compound stage after stage and un-equipping the skill would never undo it.
-See skills.md (deleted with the free-roam pivot) → *Why every skill row carries `reseed`*.
+Its callers are `UpgradeLibrary._reseed_globals`, for a global field an effect writes (no row
+carries `reseed` today), and `EngineLibrary.apply`, for turbo fields an engine may not author.
+`Config.data` outlives every scene, so without a pristine copy there is no way back to the
+authored number.
 
 Note the difference from `snapshot_values()` above: that captures the LIVE config at a
 moment (including engine fields written at fielding time); this is the authored file, and
@@ -140,7 +137,7 @@ servo measures the grip limit instead of predicting it. See
 | `clutch_max_torque` | 250.0 | Max clutch holding torque |
 | `clutch_engage_speed` | 4.0 | Coast speed below which auto-clutch opens |
 | `shift_time` | 0.25 | Clutch-open throttle cut per gear change (s); **overridden per-car** by `CarLibrary` |
-| `auto_gearbox` | false | Unused — the transmission is always automatic now (`SettingsMenu.gearbox_auto()` always returns `true`); there is no gearbox settings row or runtime toggle |
+| `auto_gearbox` | true | The transmission mode a new engine starts in; there is no gearbox settings row or runtime toggle |
 | `nitrous_boost_gain` | 0.0 | Extra torque fraction while nitrous is held (delivered torque × `(1 + this)`); 0 = no nitrous fitted. See [nitrous.md](nitrous.md) |
 | `nitrous_tank_seconds` | 0.0 | Seconds of nitrous a full tank holds; 0 = no nitrous fitted. `has_nitrous()` is true only when both this and `nitrous_boost_gain` are positive. See [nitrous.md](nitrous.md) |
 | `upshift_redline_fraction` | 0.90 | Auto upshift at this % of redline |

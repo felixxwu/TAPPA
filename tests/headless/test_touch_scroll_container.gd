@@ -79,3 +79,11 @@ func test_short_list_does_not_hijack_input() -> void:
 	assert_false(scroll._has_overflow(), "a list that fits has no overflow")
 	scroll._input(_press(Vector2(100, 30)))
 	assert_false(scroll._pressing, "no gesture is armed when there is nothing to scroll")
+
+
+func test_a_hidden_list_ignores_input() -> void:
+	var scroll := _make_scroll(10)
+	await get_tree().process_frame
+	scroll.hide()
+	scroll._input(_press(Vector2(50, 50)))
+	assert_false(scroll._pressing)

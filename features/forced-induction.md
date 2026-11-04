@@ -15,8 +15,8 @@ Turbo and supercharger are both properties of the **engine**, not the car —
 same pattern as the torque curve and gearbox (see
 [engine-and-transmission.md](engine-and-transmission.md)). Either can arrive
 two ways: baked into a stock `EngineLibrary` entry, or fitted as a found free-roam **part**
-— `BoostLibrary.CATALOGUE`'s `"turbo"` / `"supercharger"` entries, found by level in the biome
-ring each names ([loot.md](loot.md)). A part reaches the car through `LootRules.fielded` →
+— `BoostLibrary.CATALOGUE`'s `"turbo"` (the Small turbo) / `"big_turbo"` / `"supercharger"` entries, found by level in the biome
+ring each names ([loot.md](loot.md)). The two turbos write the same fields, so they share a `slot` and only one can be on; either stacks with the supercharger. A part reaches the car through `LootRules.fielded` →
 the `boosts` list → the `install_turbo` / `install_supercharger` `EFFECTS` rows. Only the
 part's `*_boost_gain` scales with its level; the rest of its character is fixed.
 

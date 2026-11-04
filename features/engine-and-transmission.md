@@ -104,8 +104,15 @@ for overall pace, not a per-car spec. `1.0` disables it. The frozen test fixture
 drive-mode launch tests stay calibrated to full torque and don't drift when the
 shipped de-rate is retuned.
 
-Off throttle (and during fuel-cut/shifts) the gross term ramps DOWN to zero over
-`EngineSim.TORQUE_RAMP_TIME` (100ms) rather than cutting instantly — a `_torque_ramp`
+**Lifting off with the wheels spinning keeps driving them.** Closing the throttle ends combustion,
+but the engine and wheels stay coupled through the clutch: while the wheels turn faster than the
+road, the tyres slow them and the flywheel's stored energy feeds through as drive. Once wheel speed
+matches the road, the same coupling becomes engine braking. The clutch can pass everything the
+flywheel holds above idle, and no more.
+
+During a fuel cut or shift with the pedal held, the gross term ramps DOWN to zero over
+`EngineSim.TORQUE_RAMP_TIME` (100ms) rather than cutting instantly (a lift-off isn't ramped: the
+term is scaled by the pedal too, so it drops with it) — a `_torque_ramp`
 multiplier (0..1) tracks `combusting` and decays via `move_toward` when it goes
 false, so `crank` settles to just `−friction`, which is the **engine braking**; because
 friction rises with revs the braking is stronger at high RPM (and bounces the revs off
@@ -132,7 +139,7 @@ and the rev limiter as well.
 `combusting` itself is still a plain boolean, but the crank-torque term no longer
 steps with it directly — it follows a `_torque_ramp` multiplier that ramps to 0 over
 `TORQUE_RAMP_TIME` (100ms) when `combusting` goes false, and snaps back to 1 the instant
-it goes true. So lift-off, a fuel cut and a mid-shift all produce a short torque
+it goes true. So a fuel cut and a mid-shift produce a short torque
 ramp-down rather than an instant cut, while getting back on the throttle is unaffected.
 
 The `friction` term above has **two customers**: it is both the coasting engine

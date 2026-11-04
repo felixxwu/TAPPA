@@ -186,9 +186,9 @@ extends Resource
 ## a hop shorter than jump_min_s pays nothing.
 @export var jump_money_per_s := 200.0
 @export var jump_min_s := 0.3
-## A near miss: a tree passing within this distance of the car's centre at this speed (m/s),
+## A near miss: a tree passing within this distance of the car's side at this speed (m/s),
 ## without being hit.
-@export var near_miss_radius_m := 2.0
+@export var near_miss_radius_m := 1.1
 @export var near_miss_min_speed_mps := 15.0
 @export var near_miss_money := 100
 
@@ -226,7 +226,7 @@ extends Resource
 @export var cold_open_min_distance_m := 600.0
 ## The money a first-time world starts with: with the road coin picked up on the way, just about
 ## enough for another starter car at the first cabin.
-@export var cold_open_start_money := 3000
+@export var cold_open_start_money := 2000
 ## How far before a road coin the start is at least, so the player picks one up on the way to the
 ## cabin (the start moves back past the nearest coin when it has to).
 @export var cold_open_coin_lead_m := 40.0

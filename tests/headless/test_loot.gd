@@ -1,7 +1,7 @@
 extends GutTest
 # Free-roam coins and shops (features/loot.md): the ring tables and prices, fitting parts through
 # the owned-car funnel, and the economy in the world: picking up coins, dropping the money on a wreck,
-# buying at a checkpoint, and the rest-stop Parts / Garage pages. A synthetic car
+# buying at a checkpoint, and the rest-stop Shop / Garage pages. A synthetic car
 # roster throughout (CarFixtures); the boost catalogue is iterated whole, as opaque input.
 
 const TEST_PATH := "user://test_loot_profile.json"
@@ -57,18 +57,18 @@ func _ring_of(tables: Array) -> Dictionary:
 	return out
 
 
-func test_every_car_engine_kit_and_part_lands_once_in_its_own_ring() -> void:
+func test_every_car_kit_and_part_lands_once_in_its_own_ring() -> void:
 	var ring_of := _ring_of(LootRules.ring_tables(4))
 	for car: Dictionary in CarLibrary.all():
 		assert_eq(ring_of.get("car:" + String(car["id"]), -1), int(car["ring"]), "%s in its ring" % car["id"])
-	for e: Dictionary in EngineLibrary.all():
-		if bool(e.get("swap_tier", false)):
-			assert_eq(ring_of.get("part:engine_swap:%s:0" % e["id"], -1), int(e["ring"]), "%s in its ring" % e["id"])
 	for mode in LootRules.KITS:
 		assert_eq(ring_of.get("part:drivetrain:%d:0" % mode, -1), int(LootRules.KITS[mode]["ring"]), "kit %d in its ring" % mode)
 	for id in BoostLibrary.CATALOGUE.keys():
 		var r := int(BoostLibrary.CATALOGUE[id]["ring"])
 		assert_eq(ring_of.get("part:%s:%d" % [id, r], -1), r, "%s in its ring at level = ring" % id)
+	for id in LootRules.TIRES:
+		assert_eq(ring_of.get("part:tire:%s:0" % id, -1), int(LootRules.TIRES[id]["ring"]), "%s tires in their ring" % id)
+		assert_eq(LootRules.price({"kind": "part", "id": "tire:%s" % id}), int(LootRules.TIRES[id]["price"]), "%s tires' price" % id)
 
 
 func test_rings_past_the_ring_count_fold_into_the_last() -> void:
@@ -86,7 +86,7 @@ func test_starter_cars_are_the_ring_0_cars() -> void:
 
 # Catalogue contract on the SHIPPED data: an entry without a ring on the island could never go on
 # sale, and one without a price would be free.
-func test_shipped_cars_engines_and_parts_each_name_a_ring_on_the_island_and_a_price() -> void:
+func test_shipped_cars_and_parts_each_name_a_ring_on_the_island_and_a_price() -> void:
 	CarFixtures.restore()
 	var rings := FreeRoamSettings.new().ring_count
 	var check := func(who: String, entry: Dictionary) -> void:
@@ -95,9 +95,6 @@ func test_shipped_cars_engines_and_parts_each_name_a_ring_on_the_island_and_a_pr
 		assert_gt(int(entry.get("price", 0)), 0, "%s has a price" % who)
 	for car: Dictionary in CarLibrary.all():
 		check.call(String(car["id"]), car)
-	for e: Dictionary in EngineLibrary.all():
-		if bool(e.get("swap_tier", false)):
-			check.call(String(e["id"]), e)
 	for id in BoostLibrary.CATALOGUE.keys():
 		check.call(String(id), BoostLibrary.CATALOGUE[id])
 	for mode in Drivetrain.DriveMode.values():
@@ -123,13 +120,14 @@ func test_a_price_comes_from_the_items_own_entry() -> void:
 func test_switched_on_parts_reach_the_car_only_through_the_funnel_keys() -> void:
 	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "instance_id": 1, "tuning": {},
 		"parts": [{"kind": "part", "id": String(BoostLibrary.CATALOGUE.keys()[0]), "level": 2},
-			{"kind": "part", "id": "engine_swap:some_engine"},
-			{"kind": "part", "id": "drivetrain:%d" % Drivetrain.DriveMode.AWD}]}
+			{"kind": "part", "id": "drivetrain:%d" % Drivetrain.DriveMode.AWD}],
+		"engine_from": String(CarLibrary.all()[2]["id"])}
 	var f := LootRules.fielded(owned)
-	assert_eq((f["boosts"] as Array).size(), 1)
-	assert_eq(f["boosts"][0]["id"], BoostLibrary.CATALOGUE.keys()[0])
-	assert_eq(f["boosts"][0]["effect"], BoostLibrary.magnitude_for(String(BoostLibrary.CATALOGUE.keys()[0]), 2))
-	assert_eq(f["swapped_engine"], "some_engine")
+	var parts_only: Array = f["boosts"].filter(func(b: Dictionary) -> bool: return b["id"] != "part_weight")
+	assert_eq(parts_only.size(), 1)
+	assert_eq(parts_only[0]["id"], BoostLibrary.CATALOGUE.keys()[0])
+	assert_eq(parts_only[0]["effect"], BoostLibrary.magnitude_for(String(BoostLibrary.CATALOGUE.keys()[0]), 2))
+	assert_eq(f["swapped_engine"], CarLibrary.all()[2]["engine"])
 	assert_eq(f["drivetrain_override"], Drivetrain.DriveMode.AWD)
 	assert_false(owned.has("boosts"), "the saved car is untouched")
 	var bare := LootRules.fielded({"model_id": "x", "parts": []})
@@ -139,7 +137,6 @@ func test_switched_on_parts_reach_the_car_only_through_the_funnel_keys() -> void
 
 func test_parts_switched_off_dont_reach_the_car() -> void:
 	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [
-		{"kind": "part", "id": "engine_swap:some_engine", "on": false},
 		{"kind": "part", "id": "drivetrain:%d" % Drivetrain.DriveMode.AWD, "on": false}]}
 	var f := LootRules.fielded(owned)
 	assert_false(f.has("swapped_engine") or f.has("drivetrain_override"))
@@ -151,7 +148,7 @@ func test_one_of_each_part_and_no_kit_for_the_cars_own_layout() -> void:
 	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "grip", "level": 3}), "Already unlocked", "one of each")
 	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "drivetrain:%d" % own}),
 		"Already " + CarLibrary.drive_text(own), "a kit for the car's own layout would do nothing")
-	assert_true(LootRules.can_fit(owned, {"kind": "part", "id": "engine_swap:a"}))
+	assert_true(LootRules.can_fit(owned, {"kind": "part", "id": "tire:a"}))
 	assert_false(LootRules.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
 
 
@@ -176,14 +173,14 @@ func test_a_cars_upgrade_count_is_its_unlocked_parts_on_or_off_out_of_every_part
 	assert_eq(LootRules.upgrades_text({"model_id": owned["model_id"]}), "0 / %d upgrades" % all.size())
 
 
-func test_switching_an_engine_or_kit_on_switches_the_other_one_off() -> void:
-	var parts := [{"kind": "part", "id": "engine_swap:a", "on": true}, {"kind": "part", "id": "engine_swap:b", "on": false},
+func test_switching_a_kit_on_switches_the_other_one_off() -> void:
+	var parts := [{"kind": "part", "id": "drivetrain:0", "on": true}, {"kind": "part", "id": "drivetrain:1", "on": false},
 		{"kind": "part", "id": "grip", "level": 0, "on": true}]
 	var on_b := LootRules.toggled(parts, 1)
 	assert_eq(on_b.map(func(p: Dictionary) -> bool: return LootRules.is_on(p)), [false, true, true],
-		"one engine at a time; other parts are left alone")
+		"one kit at a time; other parts are left alone")
 	assert_eq(LootRules.toggled(on_b, 1).map(func(p: Dictionary) -> bool: return LootRules.is_on(p)), [false, false, true],
-		"switching it off again leaves the stock engine")
+		"switching it off again leaves the stock layout")
 	assert_true(LootRules.is_on(parts[0]), "the input is untouched")
 
 
@@ -362,11 +359,11 @@ func test_the_parts_page_sells_parts_and_buying_one_switches_it_on() -> void:
 	var scene := await _boot()
 	var page: RestStopPage = scene.get_node("RestStopPage")
 	var sale: Array = page.loot.for_sale().filter(func(i: Dictionary) -> bool:
-		return i["kind"] == "part" and LootRules.fit_block_reason(WorldSession.active_car(), i).is_empty())
+		return LootRules.is_upgrade(i) and LootRules.fit_block_reason(WorldSession.active_car(), i).is_empty())
 	var part: Dictionary = sale[0]
 	WorldSession.set_money(LootRules.price(part))
 	page.open(0)
-	page._show(RestStopPage.View.PARTS)
+	page._show(RestStopPage.View.UPGRADES)
 	assert_eq(page.cards().card_count(), sale.size(), "a card per part on sale")
 	for k in sale.size():
 		assert_eq(page.cards()._cards[k].disabled, LootRules.price(sale[k]) > WorldSession.money(), "card %d" % k)
@@ -510,7 +507,7 @@ func test_the_parts_page_switches_parts_on_and_off_and_reloads_the_car_on_close(
 	page.owned = WorldSession.active_car()
 	page.open(0)
 	watch_signals(page)
-	page._show(RestStopPage.View.PARTS)
+	page._show(RestStopPage.View.UPGRADES)
 	assert_eq(page.cards().card_count(), 1, "a card for the unlocked part")
 	_confirm(page.cards(), 0)
 	assert_true(LootRules.is_on(WorldSession.active_car()["parts"][0]), "switched on, and saved on the car")
@@ -552,8 +549,8 @@ func test_a_part_on_one_car_is_not_available_to_another() -> void:
 	_save.set_car_parts(int(other["instance_id"]), [part])
 	assert_true(loot.for_sale().has(part), "the car being driven can still buy its own")
 	page.open(0)
-	page._show(RestStopPage.View.PARTS)
-	var on_sale := loot.for_sale().filter(func(i: Dictionary) -> bool: return i["kind"] == "part").size()
+	page._show(RestStopPage.View.UPGRADES)
+	var on_sale := loot.for_sale().filter(LootRules.is_upgrade).size()
 	assert_eq(page.cards().card_count(), on_sale, "only parts on sale: nothing of the other car's to switch on")
 	page.close()
 
@@ -642,7 +639,7 @@ func test_switching_a_part_keeps_the_cursor_where_it_was() -> void:
 		{"kind": "part", "id": "turbo", "level": 0, "on": false}, {"kind": "part", "id": "aero", "level": 0, "on": false}])
 	page.owned = WorldSession.active_car()
 	page.open(0)
-	page._show(RestStopPage.View.PARTS)
+	page._show(RestStopPage.View.UPGRADES)
 	await _confirm_for_real(page, 2)
 	assert_true(LootRules.is_on(WorldSession.active_car()["parts"][2]), "switched on")
 	assert_eq(page.cards().selected_index(), 2, "the cursor stays put")
@@ -666,6 +663,305 @@ func test_picking_a_car_keeps_the_cursor_on_it() -> void:
 	await get_tree().process_frame
 	assert_almost_eq(page.cards()._offset, page.cards()._target_offset_for(2), 0.5, "and the strip is scrolled to it")
 	page.dirty = false
+	page.close()
+
+
+# Two parts writing the same install_turbo fields would silently overwrite each other if both were on.
+func test_only_one_turbo_is_on_at_once() -> void:
+	var parts := []
+	for id: String in BoostLibrary.CATALOGUE:
+		if (BoostLibrary.CATALOGUE[id]["effect_fields"] as Dictionary).has("install_turbo"):
+			parts.append({"kind": "part", "id": id, "on": false})
+	for i in parts.size():
+		var on := LootRules.toggled(parts, i).map(LootRules.is_on)
+		assert_eq(on.count(true), 1, "switching on %s leaves only it on" % parts[i]["id"])
+		assert_true(on[i])
+
+
+# The near-miss gap is measured from the car's side, so a wider car gets the same gap.
+func test_the_near_miss_sphere_grows_with_the_cars_width() -> void:
+	var scene := await _boot()
+	var loot: LootDirector = scene.get_node("LootDirector")
+	loot._trees_near()
+	var radius: float = (loot._near_query.shape as SphereShape3D).radius
+	assert_gt(loot.car.half_width(), 0.0, "the car is fielded")
+	assert_almost_eq(radius, loot.streamer.settings.near_miss_radius_m + loot.car.half_width(), 0.001)
+
+
+# Every part names its weight, so a new one can't quietly weigh nothing. Weight savers and engines
+# (whose own mass is swapped in) are the exceptions.
+func test_every_part_names_its_weight() -> void:
+	for id: String in BoostLibrary.CATALOGUE:
+		if not (BoostLibrary.CATALOGUE[id]["effect_fields"] as Dictionary).has("mass_mult"):
+			assert_true(BoostLibrary.CATALOGUE[id].has("mass_kg"), id)
+	for mode in LootRules.KITS:
+		assert_true(LootRules.KITS[mode].has("mass_kg"), "kit %d" % mode)
+	for id: String in LootRules.TIRES:
+		assert_true(LootRules.TIRES[id].has("mass_kg"), id)
+
+
+func test_a_switched_on_part_adds_its_weight() -> void:
+	var car := {"model_id": String(CarLibrary.all()[0]["id"]), "instance_id": 1}
+	var stock := float(LootRules.fitted_stats(car)["mass"])
+	for id: String in BoostLibrary.CATALOGUE:
+		if not BoostLibrary.CATALOGUE[id].has("mass_kg"):
+			continue
+		car["parts"] = [{"kind": "part", "id": id, "on": true}]
+		assert_almost_eq(float(LootRules.fitted_stats(car)["mass"]), stock + float(BoostLibrary.CATALOGUE[id]["mass_kg"]), 0.01, id)
+		car["parts"][0]["on"] = false
+		assert_almost_eq(float(LootRules.fitted_stats(car)["mass"]), stock, 0.01, "%s off weighs nothing" % id)
+
+
+func test_a_drivetrain_kit_adds_the_difference_from_the_stock_layout() -> void:
+	var car := {"model_id": String(CarLibrary.all()[0]["id"]), "instance_id": 1}
+	var stock := float(LootRules.fitted_stats(car)["mass"])
+	var stock_kit := float(LootRules.KITS[UpgradeLibrary.stock_drive_mode(car)]["mass_kg"])
+	for mode in LootRules.KITS:
+		car["parts"] = [{"kind": "part", "id": "drivetrain:%d" % mode, "on": true}]
+		assert_almost_eq(float(LootRules.fitted_stats(car)["mass"]), stock + float(LootRules.KITS[mode]["mass_kg"]) - stock_kit, 0.01, "kit %d" % mode)
+
+
+func test_the_weight_doesnt_depend_on_the_order_parts_were_bought() -> void:
+	var saver := ""
+	var heavy := ""
+	for id: String in BoostLibrary.CATALOGUE:
+		if (BoostLibrary.CATALOGUE[id]["effect_fields"] as Dictionary).has("mass_mult"):
+			saver = id
+		elif BoostLibrary.CATALOGUE[id].has("mass_kg"):
+			heavy = id
+	var parts := [{"kind": "part", "id": saver, "on": true}, {"kind": "part", "id": heavy, "on": true}]
+	var model := String(CarLibrary.all()[0]["id"])
+	var one_way := float(LootRules.fitted_stats({"model_id": model, "parts": parts})["mass"])
+	parts.reverse()
+	assert_almost_eq(float(LootRules.fitted_stats({"model_id": model, "parts": parts})["mass"]), one_way, 0.01)
+
+
+# The shop header and garage cards read what the fitted parts actually do to the car.
+func test_fitted_stats_follow_the_parts_switched_on() -> void:
+	var car := {"model_id": String(CarLibrary.all()[0]["id"]), "instance_id": 1}
+	var stock := LootRules.fitted_stats(car)
+	assert_almost_eq(float(stock["hp"]), CarLibrary.horsepower(CarLibrary.all()[0]), 0.01, "no parts: the car's rated power")
+	assert_almost_eq(float(stock["mass"]), float(CarLibrary.all()[0]["mass"]), 0.01, "no parts: the car's own weight")
+	var ids := {"mass_mult": "", "install_turbo": "", "max_hp_mult": ""}
+	for id: String in BoostLibrary.CATALOGUE:
+		for key: String in ids:
+			if (BoostLibrary.CATALOGUE[id]["effect_fields"] as Dictionary).has(key):
+				ids[key] = id
+	car["parts"] = [{"kind": "part", "id": ids["mass_mult"], "on": true}]
+	assert_lt(float(LootRules.fitted_stats(car)["mass"]), float(stock["mass"]), "a weight part makes it lighter")
+	car["parts"][0]["on"] = false
+	assert_almost_eq(float(LootRules.fitted_stats(car)["mass"]), float(stock["mass"]), 0.01, "switched off, it doesn't count")
+	car["parts"] = [{"kind": "part", "id": ids["install_turbo"], "on": true}]
+	assert_ne(float(LootRules.fitted_stats(car)["hp"]), float(stock["hp"]), "a turbo changes the power")
+	assert_almost_eq(float(stock["max_hp"]), float(CarLibrary.all()[0]["max_hp"]), 0.01, "no parts: the car's own health")
+	car["parts"] = [{"kind": "part", "id": ids["max_hp_mult"], "on": true}]
+	assert_gt(float(LootRules.fitted_stats(car)["max_hp"]), float(stock["max_hp"]), "a roll cage adds health")
+	var other := (UpgradeLibrary.stock_drive_mode(car) + 1) % Drivetrain.DriveMode.size()
+	car["parts"] = [{"kind": "part", "id": "drivetrain:%d" % other, "on": true}]
+	assert_eq(int(LootRules.fitted_stats(car)["drive_mode"]), other, "a kit changes the driven wheels")
+
+
+func test_the_shop_header_updates_when_a_part_is_switched() -> void:
+	var scene := await _boot()
+	_nothing_for_sale()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	var weight_part := ""
+	for id: String in BoostLibrary.CATALOGUE:
+		if (BoostLibrary.CATALOGUE[id]["effect_fields"] as Dictionary).has("mass_mult"):
+			weight_part = id
+	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": weight_part, "level": 0, "on": false}])
+	page.owned = WorldSession.active_car()
+	page.open(0)
+	page._show(RestStopPage.View.UPGRADES)
+	var before := LootRules.shop_header(page.owned)
+	_confirm(page.cards(), 0)
+	assert_ne(LootRules.shop_header(page.owned), before, "switching it on changes the line")
+	var labels: Array = page._page.find_children("*", "Label", true, false).map(func(l: Label) -> String: return l.text.to_lower())
+	assert_true(labels.has(LootRules.shop_header(page.owned).to_lower()), "and the rebuilt page shows it")
+	page.dirty = false
+	page.close()
+
+
+# --- engine swaps --------------------------------------------------------------------------------
+
+func _card_lines(page: RestStopPage, index: int) -> Array:
+	var lines: Array = []
+	for l in page.cards().get_card(index).info.get_children():
+		if l is Label:
+			lines.append((l as Label).text.to_lower())
+	return lines
+
+
+func test_swapping_twice_puts_both_engines_back() -> void:
+	var a: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
+	var b: Dictionary = _save.grant_car(String(CarLibrary.all()[2]["id"]))
+	_save.swap_engines(a["instance_id"], b["instance_id"])
+	assert_eq(LootRules.engine_owner(a), b["model_id"])
+	assert_eq(LootRules.engine_owner(b), a["model_id"])
+	assert_eq(LootRules.fielded(a)["swapped_engine"], CarLibrary.all()[2]["engine"], "the car is fielded with the other's engine")
+	_save.swap_engines(a["instance_id"], b["instance_id"])
+	assert_eq(LootRules.engine_owner(a), a["model_id"])
+	assert_eq(LootRules.engine_owner(b), b["model_id"])
+
+
+func test_a_swap_passes_each_engine_on_rather_than_copying_it() -> void:
+	var a: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
+	var b: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
+	var c: Dictionary = _save.grant_car(String(CarLibrary.all()[2]["id"]))
+	_save.swap_engines(a["instance_id"], b["instance_id"])
+	_save.swap_engines(b["instance_id"], c["instance_id"])
+	assert_eq([LootRules.engine_owner(a), LootRules.engine_owner(b), LootRules.engine_owner(c)],
+		[b["model_id"], c["model_id"], a["model_id"]])
+
+
+func test_a_cars_weight_and_power_follow_its_swapped_engine() -> void:
+	var a := {"model_id": String(CarLibrary.all()[0]["id"]), "engine_from": String(CarLibrary.all()[2]["id"])}
+	var donor_engine := String(CarLibrary.all()[2]["engine"])
+	var own_engine := String(CarLibrary.all()[0]["engine"])
+	var stats := LootRules.fitted_stats(a)
+	assert_almost_eq(float(stats["hp"]), CarLibrary.horsepower({"engine": donor_engine}), 0.01)
+	assert_almost_eq(float(stats["mass"]), EngineSwap.recompute_mass(float(CarLibrary.all()[0]["mass"]),
+		float(EngineLibrary.by_id(own_engine)["mass"]), float(EngineLibrary.by_id(donor_engine)["mass"])), 0.01)
+
+
+func test_an_old_saves_bought_engine_does_nothing() -> void:
+	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [{"kind": "part", "id": "engine_swap:old", "on": true}]}
+	assert_false(LootRules.fielded(owned).has("swapped_engine"))
+	assert_true(LootRules.upgrades_text(owned).begins_with("0 / "), "and doesn't count as an upgrade")
+
+
+func test_the_engine_page_swaps_two_cars_and_names_their_engines() -> void:
+	var scene := await _boot()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	var other: Dictionary = _save.grant_car(String(CarLibrary.all()[2]["id"]))
+	var driven := WorldSession.active_car()
+	page.owned = driven
+	page.open(0)
+	page._show(RestStopPage.View.ENGINES)
+	assert_eq(page.cards().card_count(), 2, "a card per owned car")
+	assert_has(_card_lines(page, 0), LootRules.engine_name(driven).to_lower(), "names the engine in it")
+	_confirm(page.cards(), 0)
+	assert_has(_card_lines(page, 0), "swap with...", "the picked car says so")
+	assert_false(_card_lines(page, 1).has("swap with..."), "and only it")
+	assert_false(page.dirty, "nothing has changed yet")
+	_confirm(page.cards(), 1)
+	assert_eq(LootRules.engine_owner(WorldSession.active_car()), other["model_id"], "swapped")
+	assert_has(_card_lines(page, 0), LootRules.engine_name(other.merged({"engine_from": other["model_id"]}, true)).to_lower())
+	assert_false(_card_lines(page, 0).has("swap with..."), "the pick is cleared")
+	assert_true(page.dirty, "the car being driven reloads with its new engine")
+	page.dirty = false
+	page.close()
+
+
+func test_picking_the_same_car_or_going_back_drops_the_pick() -> void:
+	var scene := await _boot()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	_save.grant_car(String(CarLibrary.all()[2]["id"]))
+	page.owned = WorldSession.active_car()
+	page.open(0)
+	page._show(RestStopPage.View.ENGINES)
+	_confirm(page.cards(), 0)
+	_confirm(page.cards(), 0)
+	assert_false(_card_lines(page, 0).has("swap with..."), "picking it again drops it")
+	assert_eq(LootRules.engine_owner(WorldSession.active_car()), WorldSession.active_car()["model_id"], "nothing swapped")
+	_confirm(page.cards(), 0)
+	page._back_from_engines()
+	assert_eq(page.view, RestStopPage.View.ENGINES, "back drops the pick first")
+	assert_false(_card_lines(page, 0).has("swap with..."))
+	page._back_from_engines()
+	assert_eq(page.view, RestStopPage.View.SHOP, "then leaves the page")
+	page.close()
+
+
+func test_swapping_two_cars_not_being_driven_needs_no_reload() -> void:
+	var scene := await _boot()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	_save.grant_car(String(CarLibrary.all()[1]["id"]))
+	_save.grant_car(String(CarLibrary.all()[2]["id"]))
+	page.owned = WorldSession.active_car()
+	page.open(0)
+	page._show(RestStopPage.View.ENGINES)
+	_confirm(page.cards(), 1)
+	_confirm(page.cards(), 2)
+	assert_false(page.dirty)
+	page.close()
+
+
+func test_with_one_car_there_is_nothing_to_swap_with() -> void:
+	var scene := await _boot()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	page.owned = WorldSession.active_car()
+	page.open(0)
+	page._show(RestStopPage.View.ENGINES)
+	_confirm(page.cards(), 0)
+	assert_false(_card_lines(page, 0).has("swap with..."))
+	page.close()
+
+
+# --- tires ---------------------------------------------------------------------------------------
+
+func test_only_one_tire_is_on_at_once_and_other_parts_are_left_alone() -> void:
+	var parts := [{"kind": "part", "id": "tire:a", "on": true}, {"kind": "part", "id": "tire:b", "on": false},
+		{"kind": "part", "id": "engine_swap:e", "on": true}]
+	var on_b := LootRules.toggled(parts, 1)
+	assert_eq(on_b.map(LootRules.is_on), [false, true, true])
+	assert_eq(LootRules.on_stock_tires(on_b).map(LootRules.is_on), [false, false, true], "stock switches off tires only")
+
+
+func test_a_fitted_tire_reaches_the_config_through_the_funnel() -> void:
+	for id: String in LootRules.TIRES:
+		var part := {"kind": "part", "id": "tire:" + id, "on": true}
+		var fielded := LootRules.fielded({"parts": [part]})
+		assert_true((fielded["boosts"] as Array).any(func(b: Dictionary) -> bool: return b["id"] == "tire:" + id), "%s is a boost on the fielded car" % id)
+		var cfg := GameConfig.new()
+		cfg.wheel_friction_slip_front = 1.0
+		cfg.wheel_friction_slip_rear = 1.0
+		UpgradeLibrary.apply(fielded, cfg)
+		var fields: Dictionary = LootRules.TIRES[id]["effect_fields"]
+		assert_almost_eq(cfg.wheel_friction_slip_front, float(Config.data.get(fields["tire_grip_mult"])), 1e-5, "%s flat" % id)
+		assert_almost_eq(cfg.tire_tarmac_grip_mult, float(Config.data.get(fields["tire_tarmac_grip_mult"])), 1e-5, "%s tarmac" % id)
+		assert_almost_eq(cfg.tire_snow_grip_mult, float(Config.data.get(fields["tire_snow_grip_mult"])), 1e-5, "%s snow" % id)
+		part["on"] = false
+		assert_true((LootRules.fielded({"parts": [part]})["boosts"] as Array).is_empty(), "%s off is stock" % id)
+
+
+func test_tires_fit_every_car_once() -> void:
+	var tire := {"kind": "part", "id": "tire:x"}
+	assert_true(LootRules.can_fit({"model_id": "fx"}, tire))
+	assert_false(LootRules.can_fit({"model_id": "fx", "parts": [tire]}, tire), "not twice")
+
+
+func test_every_part_on_sale_shows_on_exactly_one_shop_page() -> void:
+	for table: Array in LootRules.ring_tables(1):
+		for item: Dictionary in table:
+			if String(item["kind"]) != "part":
+				assert_false(LootRules.is_upgrade(item), "a car is not an upgrade")
+				continue
+			assert_false(LootRules.is_engine(item), "engines aren't sold")
+			var pages := [LootRules.is_upgrade(item), LootRules.is_tire(item), LootRules.is_drivetrain(item)]
+			assert_eq(pages.count(true), 1, LootRules.item_key(item))
+
+
+func test_the_tires_page_buys_a_tire_and_stock_puts_the_car_back() -> void:
+	var scene := await _boot()
+	var page: RestStopPage = scene.get_node("RestStopPage")
+	for r in 4:
+		page.loot.unlock(r)
+	var on_sale: Array = page.loot.for_sale().filter(LootRules.is_tire)
+	assert_gt(on_sale.size(), 0, "tires on sale")
+	WorldSession.set_money(LootRules.price(on_sale[0]))
+	page.open(0)
+	page._show(RestStopPage.View.TIRES)
+	assert_eq(page.cards().card_count(), 1 + on_sale.size(), "a stock card, then a card per tire on sale")
+	_confirm(page.cards(), 1)
+	assert_eq(page.view, RestStopPage.View.TIRES, "buying stays on the page")
+	var parts: Array = WorldSession.active_car()["parts"]
+	assert_true(LootRules.is_on(parts[0]), "bought and switched on")
+	assert_true((LootRules.fielded(WorldSession.active_car())["boosts"] as Array).any(func(b: Dictionary) -> bool: return b["id"] == on_sale[0]["id"]))
+	_confirm(page.cards(), 0)
+	assert_false(LootRules.is_on(WorldSession.active_car()["parts"][0]), "stock switches it off")
+	assert_true((LootRules.fielded(WorldSession.active_car())["boosts"] as Array).is_empty())
+	assert_eq((WorldSession.active_car()["parts"] as Array).size(), 1, "and it stays unlocked")
 	page.close()
 
 

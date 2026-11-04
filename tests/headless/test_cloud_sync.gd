@@ -277,10 +277,53 @@ func test_keep_local_on_a_device_new_to_the_account_uploads_above_the_remote_rev
 	_rest.queue_ok(_remote_doc(9, _remote_profile()))
 	var pulled: Dictionary = await _sync.pull()
 	assert_eq(pulled.state, "conflict")
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
 	_rest.queue_ok({})
 	var result: Dictionary = await _sync.resolve_keep_local()
 	assert_true(result.ok)
 	assert_eq(int(_save.profile["cloud_revision"]), 10)
+
+
+func test_keep_local_asks_again_when_the_cloud_moved_since_the_conflict() -> void:
+	_seat_local_career()
+	_save.profile["cloud_revision"] = 1
+	_save.save()
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
+	await _sync.pull()
+	_rest.queue_ok(_remote_doc(15, _remote_profile()))
+	var before: int = _rest.requests.size()
+	watch_signals(_sync)
+	var result: Dictionary = await _sync.resolve_keep_local()
+	assert_false(result.ok)
+	assert_eq(_rest.requests.size(), before + 1, "the read, and no upload")
+	assert_true(_sync.blocked_by_conflict, "still unsettled")
+	assert_signal_emitted(_sync, "conflict_detected")
+	_rest.queue_ok(_remote_doc(15, _remote_profile()))
+	_rest.queue_ok({})
+	result = await _sync.resolve_keep_local()
+	assert_true(result.ok)
+	assert_eq(int(_save.profile["cloud_revision"]), 16, "the second answer uploads above the newer copy")
+
+
+func test_keep_local_does_not_overwrite_a_cloud_copy_a_pull_would_refuse() -> void:
+	var refused := {
+		"newer schema": _remote_doc(9, _remote_profile(), Save.SCHEMA_VERSION + 1),
+		"unreadable": {"fields": {"revision": {"integerValue": "9"}}},
+	}
+	for why: String in refused:
+		_seat_local_career()
+		_save.profile["cloud_revision"] = 1
+		_save.save()
+		_sync._remote_refused = false
+		_rest.queue_ok(_remote_doc(9, _remote_profile()))
+		await _sync.pull()
+		assert_true(_sync.blocked_by_conflict, "setup: " + why)
+		_rest.queue_ok(refused[why])
+		var before: int = _rest.requests.size()
+		var result: Dictionary = await _sync.resolve_keep_local()
+		assert_false(result.ok, why)
+		assert_eq(_rest.requests.size(), before + 1, why + ": the read, and no upload")
+		_sync.resolve_later()
 
 
 func test_keep_local_uploads_above_the_remote_revision() -> void:
@@ -290,6 +333,7 @@ func test_keep_local_uploads_above_the_remote_revision() -> void:
 	_save.save()
 	_rest.queue_ok(_remote_doc(9, _remote_profile()))
 	await _sync.pull()
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
 	_rest.queue_ok({})
 	var result: Dictionary = await _sync.resolve_keep_local()
 	assert_true(result.ok)

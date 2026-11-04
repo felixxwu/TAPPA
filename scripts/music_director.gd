@@ -374,8 +374,7 @@ func _ensure_music_bus() -> void:
 # Dedicated bus every EngineAudio instance routes to (see engine_audio.gd _ready),
 # so its volume/mute is one lever independent of the Music/Master buses. Created
 # here (not in engine_audio.gd) so it exists before the first EngineAudio._ready()
-# runs: autoloads are ready before the main scene, and Music is the last-declared
-# autoload in project.godot, so this always runs first.
+# runs: autoloads are ready before the main scene, so this always runs first.
 func _ensure_engine_bus() -> void:
 	if AudioServer.get_bus_index(AudioBuses.ENGINE) != -1:
 		return

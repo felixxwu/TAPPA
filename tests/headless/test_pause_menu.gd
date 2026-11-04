@@ -314,6 +314,18 @@ func test_pause_action_while_quit_confirm_is_open_does_not_resume() -> void:
 	await get_tree().process_frame
 
 
+func test_pause_action_does_nothing_under_a_cloud_cover() -> void:
+	_pause.open()
+	var busy = CloudBusy.cover(_pause, "Busy", "Busy")
+	var ev := InputEventAction.new()
+	ev.action = "pause"
+	ev.pressed = true
+	_pause._unhandled_input(ev)
+	assert_true(_pause.is_open(), "the game must not resume behind the cover")
+	assert_true(get_tree().paused)
+	await busy.end()
+
+
 # ui_cancel (gamepad B) while the confirm is up must dismiss the CONFIRM (its own
 # Cancel action, via MenuNav's on_back -> trigger_back), not fall through and resume
 # the game underneath it. The engine delivers ui_cancel to the popup's own MenuNav
