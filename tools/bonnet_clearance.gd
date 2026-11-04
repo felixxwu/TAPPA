@@ -25,7 +25,7 @@ const CLEARANCE_M := 0.1
 
 func _initialize() -> void:
 	await process_frame
-	var cfg = load("res://config/game_config.tres")
+	var cfg = GameConfig.new()
 	var lib = load("res://scripts/car_library.gd")
 	var car: Node3D = (load("res://car.tscn") as PackedScene).instantiate()
 	for spec: Dictionary in lib.CARS:

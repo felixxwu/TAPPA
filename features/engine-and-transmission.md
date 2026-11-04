@@ -100,7 +100,7 @@ rpm-linear belt drive.
 drive torque every car makes. It scales acceleration for the whole field at once
 without changing the published `peak_torque`, so the stats panel still reports the full, pre-scaling figure — it's a balance knob
 for overall pace, not a per-car spec. `1.0` disables it. The frozen test fixture
-(`tests/fixtures/test_config.tres`) pins it to `1.0` on purpose, so the
+(`SceneTestHelpers.TEST_CONFIG`) pins it to `1.0` on purpose, so the
 drive-mode launch tests stay calibrated to full torque and don't drift when the
 shipped de-rate is retuned.
 
@@ -160,7 +160,7 @@ friction to give the big engines authority stalled the tiny ones (the kei Acty
 couldn't pull away). The GameConfig `engine_friction_base` (**20**) is now only a
 **fallback** for the baseline car before an engine is fielded (or a synthetic engine
 dict that omits the field). The rpm-dependent `engine_friction_slope` (**1.0**,
-the script default — it is not overridden in `config/game_config.tres`) stays
+the script default — it is not overridden in `scripts/game_config.gd`) stays
 global. As a feel anchor, a 3.0 L flat-6 (`engine_friction_base = 30`) gives ≈34 N·m
 of drag at its 4000-rpm peak (30 + 1.0 × 4).
 

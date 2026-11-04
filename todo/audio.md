@@ -146,7 +146,7 @@ the damage model already computes, so no new physics read.
 
 ## New `GameConfig` tunables
 
-**Already added** (`@export_group("SFX")`, authored in `config/game_config.tres`):
+**Already added** (`@export_group("SFX")`, authored in `scripts/game_config.gd`):
 `sfx_enabled`, `sfx_beep_frequency_hz`, `sfx_beep_duration_sec`, `sfx_beep_volume_db`,
 `sfx_beep_decay`, `sfx_mix_rate`. Still to add, with the clip library:
 

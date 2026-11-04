@@ -12,7 +12,7 @@ extends RefCounted
 # effect target. Engine swaps are a genuine EngineLibrary swap, not an EFFECTS row.
 #
 # MAGNITUDES ARE TUNABLE DATA (CLAUDE.md) and live on GameConfig
-# (config/game_config.tres, "Loot Parts") — never a const here, and no test
+# (scripts/game_config.gd, "Loot Parts") — never a const here, and no test
 # may pin the shipped number. This table only says WHICH GameConfig field(s) each
 # catalogue entry's effect draws its value from, so `effect_for` re-reads Config.data
 # live rather than baking a value in.

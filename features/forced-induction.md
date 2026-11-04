@@ -27,7 +27,7 @@ AND nitrous at once. It's a torque multiplier in the live sim only
 `install_turbo`/`install_supercharger` (`feeds_pw: true`) it never changes a
 car's displayed power-to-weight — it makes the car quicker to drive, it isn't a stat.
 
-## Config fields (`game_config.gd`, `@export_group("Engine & Transmission")`)
+## Config fields (`game_config.gd`)
 
 | Field | Meaning |
 |-------|---------|
@@ -36,7 +36,7 @@ car's displayed power-to-weight — it makes the car quicker to drive, it isn't 
 | `turbo_omega_ref` | Shaft speed (rad/s) at which boost saturates at 1.0. Bigger turbos need a higher value (come on later/higher). |
 | `turbo_boost_gain` | Torque multiplier at full boost: `delivered = na_torque * (1 + boost^turbo_boost_response * turbo_boost_gain)`. 0 = no gain (NA). |
 | `turbo_parasitic_friction` | Constant extra crank friction (N·m) the fitted turbo adds (backpressure/pumping loss). **Always-on — not gated on boost or rpm.** Bigger turbos author more. Off boost it just bogs the engine; once boost is up the delivered torque swamps it. Because it's a fixed N·m, it's a large fraction of a small engine's peak torque and a small one of a big engine's — so a big turbo on a small motor really struggles to climb the low range, then comes alive up top. Authored per-turbo (engine dict / `install_turbo`); 0 = NA. |
-| `turbo_boost_response` | Shaping exponent on `boost` for the **torque path only** (the HUD gauge + audio still read raw `boost`). `1.0` = linear (spool 50% → half the gain); `> 1` delays the power so a partially-spooled turbo delivers disproportionately little — lag felt more. Endpoints (0 boost, full boost) are unchanged for any value. Global (not per-turbo); tuned in `game_config.tres`. |
+| `turbo_boost_response` | Shaping exponent on `boost` for the **torque path only** (the HUD gauge + audio still read raw `boost`). `1.0` = linear (spool 50% → half the gain); `> 1` delays the power so a partially-spooled turbo delivers disproportionately little — lag felt more. Endpoints (0 boost, full boost) are unchanged for any value. Global (not per-turbo); tuned in `game_config.gd`. |
 | `turbo_drive_gain` | Couples exhaust flow (∝ throttle × rpm) into shaft drive torque. |
 | `turbo_drag_coef` | Bearing/aero drag on the shaft (∝ ω²) — sets steady-state speed for a given flow and the off-throttle bleed rate. |
 | `turbo_antilag` | Anti-lag switch: keeps the shaft spinning off-throttle + triggers exhaust bangs. |

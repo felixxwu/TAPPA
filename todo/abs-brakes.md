@@ -102,7 +102,7 @@ Modulate the brake torque actually applied to each axle inside
 
 - Pulse frequency / release ratio: tune as `GameConfig` fields
   (`abs_release_ratio`, `abs_slip_margin`, `abs_min_speed`) rather than
-  hardcoded constants, per the "tunables live in game_config.tres" project
+  hardcoded constants, per the "tunables live in game_config.gd" project
   rule.
 - Should ABS engagement have an audible/visual tell (chatter sound, brake
   light flicker) so the player can feel it working, or should it be silent?

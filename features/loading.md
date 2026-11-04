@@ -105,7 +105,7 @@ If you add work between those two points, do not assume the car is on the ground
 **after** `_end_load_timing()` in `_ready`.
 
 **The two caps are GameConfig fields** — `loading_max_fps` (non-touch) and
-`loading_touch_max_fps` (touch/web), authored in `config/game_config.tres` and read by
+`loading_touch_max_fps` (touch/web), authored in `scripts/game_config.gd` and read by
 `loading_cap`. `WorldRuntime.LOADING_MAX_FPS` / `LOADING_TOUCH_MAX_FPS` remain as the
 fallback defaults only, so retuning a const alone changes nothing; see
 [configuration.md](configuration.md) → *Loading*.
@@ -115,7 +115,7 @@ The cap-applying logic lives in `scripts/world_runtime.gd`
 two world hosts used to carry byte-identical copies. Each host keeps a thin `_apply_fps_cap`
 wrapper that passes its own `applied_fps_caps` array and headless flag, so the recorded
 intent (and the tests reading it) are unchanged. ⚠️ The two cap consts are loading-time
-TUNING values and carry a `TODO(config)` to move into `GameConfig` / `game_config.tres`.
+TUNING values and carry a `TODO(config)` to move into `GameConfig` / `game_config.gd`.
 
 Why it matters, measured on a real web export at the web-touch branch:
 

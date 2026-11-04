@@ -166,7 +166,7 @@ ships one global grip multiplier rather than per-surface wet curves (see
 [weather.md](weather.md) for the design rationale and the per-surface
 alternative it defers).
 
-**Global grip.** `GameConfig.global_grip_mult` (0.8 in `game_config.tres`) rides in the same
+**Global grip.** `GameConfig.global_grip_mult` (0.8 in `game_config.gd`) rides in the same
 memoised product (`_weather_mu` = weather multiplier × global grip, re-resolved when either
 changes), so it scales every tyre's μ for every car, on every surface and in every weather,
 by the same factor — the one knob for "the cars are too grippy". Tested by

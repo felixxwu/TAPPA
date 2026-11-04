@@ -613,12 +613,12 @@ that edge with dense fog (which also hid the sky), a coarse **`DistantTerrain`**
 (`scripts/distant_terrain.gd`, a plain `Node3D`) extends the visible terrain far
 past the ring — collision-free scenery sampling the same `height_at`/`light_at`
 — so the now-thin fog (`fog_density`, authored 0.01 in
-`config/game_config.tres`; the script/scene default 0.005 is only a fallback)
+`scripts/game_config.gd`; the script/scene default 0.005 is only a fallback)
 reveals a horizon for the skybox instead of a cliff. See
 [rendering.md](rendering.md).
 
 Two things to know before relying on this section: `distant_terrain_enabled` is
-**`false`** in the shipped `config/game_config.tres`, so the backdrop described
+**`false`** in the shipped `scripts/game_config.gd`, so the backdrop described
 below is currently switched off; and the ring radius and the fog are entirely
 independent — no cull anywhere reads a fog value, so a foggy/wet stage still draws
 the geometry the fog hides (see [rendering.md](rendering.md) → "Fog does not shorten

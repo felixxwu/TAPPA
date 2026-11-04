@@ -167,7 +167,7 @@ static func parse_pool(text: String) -> Array:
 # Write a region's handling onto the live config, from the authored values (so leaving the snow
 # ring puts every other ring's grip back).
 static func apply_handling(cfg: GameConfig, region_id: String) -> void:
-	var base: GameConfig = load(Config.CONFIG_PATH)
+	var base: GameConfig = GameConfig.new()
 	var sgrip := RegionLibrary.surface_grip_of(base, region_id)
 	cfg.grass_grip = float(sgrip.get("grass", base.grass_grip))
 	cfg.gravel_grip = float(sgrip.get("gravel", base.gravel_grip))

@@ -125,7 +125,7 @@ static func aero_fitted(owned_car: Dictionary) -> bool:
 
 # Apply every ACTIVE effect on top of the CarLibrary baseline that apply_car
 # already wrote into `cfg` (step 1). Pure: mutates the passed-in live `cfg` only,
-# never the authored .tres. Driven by the EFFECTS table above, off whatever
+# never the authored baseline. Driven by the EFFECTS table above, off whatever
 # `active_effects` hands back — a no-op outside a run, when nothing has written `boosts`.
 # Loud write for the apply path. `Object.set()` on a name the config does not
 # declare is a SILENT no-op — the part reads as fitted and does nothing, and no
@@ -143,7 +143,7 @@ static func _cfg_set(cfg: GameConfig, field: String, value: Variant) -> void:
 # Every row today targets a PER-CAR field, which car.gd's apply_car re-seeds from the
 # CarLibrary baseline before apply() runs, so a "mult" always lands on a fresh value.
 # A row that writes a GLOBAL tunable has no such re-seed — Config.data is long-lived — so
-# it must carry `reseed: true`, and this restores it from the authored .tres
+# it must carry `reseed: true`, and this restores it from the authored baseline
 # (Config.authored_value) first. Without that, each fielding would compound the effect
 # and removing it would never give the authored number back.
 static func _reseed_globals(cfg: GameConfig) -> void:

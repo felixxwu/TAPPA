@@ -176,7 +176,7 @@ Do not go looking for these — they are gone, not moved:
 2. **The reseed pre-pass.** `Config.data` is a long-lived singleton, so a *global* config
    field an effect writes would compound every time `apply` ran. `EFFECTS` rows that
    touch a global field carry `reseed: true`, and `UpgradeLibrary._reseed_globals`
-   restores them from the pristine authored `.tres` via `Config.authored_value()` before
+   restores them from the pristine authored baseline via `Config.authored_value()` before
    applying. Add a global-field effect ⇒ set `reseed`.
 
 3. **`RunMode`, not `if kind == …`.** Anything that differs between a region run and a

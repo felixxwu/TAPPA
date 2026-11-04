@@ -43,6 +43,7 @@ var redraw_move_m := 12.0
 var redraw_interval_s := 1.0 / 15.0
 var undriven_alpha := 0.85
 var undriven_width := 3.5
+var road_width := 9.0
 var undriven_outline_alpha := 0.45
 var car_arrow_px := 4.0
 
@@ -86,6 +87,7 @@ func _ready() -> void:
 	redraw_interval_s = 1.0 / maxf(cfg.minimap_redraw_hz, 1.0)
 	undriven_alpha = cfg.minimap_undriven_road_alpha
 	undriven_width = cfg.minimap_undriven_road_width
+	road_width = cfg.minimap_road_width
 	undriven_outline_alpha = cfg.minimap_undriven_road_outline_alpha
 	car_arrow_px = cfg.minimap_car_arrow_px
 	_vp = SubViewport.new()
@@ -385,14 +387,6 @@ func _place_prompt_label() -> void:
 	prompt_label.position = Vector2(roundf((size.x - prompt_label.size.x) * 0.5), size.y)
 
 
-# Which way the outer rings lie on screen: from the car, straight away from spawn (the world
-# origin), as a unit vector in this control. Zero right at spawn, where every way is out.
-func outward_dir() -> Vector2:
-	if car_xz.length() < 1.0:
-		return Vector2.ZERO
-	return (world_to_local(car_xz + car_xz.normalized() * 50.0) - world_to_local(car_xz)).normalized()
-
-
 func draw_radius() -> float:
 	return view_m * 0.95 + redraw_move_m
 
@@ -420,8 +414,8 @@ class RoadLayer:
 					map.undriven_width + 2.5)
 			draw_multiline(faint, Color(UITheme.INK, map.undriven_alpha), map.undriven_width)
 		if not driven.is_empty():
-			draw_multiline(driven, Color(0.0, 0.0, 0.0, 0.85), 8.0)
-			draw_multiline(driven, UITheme.INK, 4.5)
+			draw_multiline(driven, Color(0.0, 0.0, 0.0, 0.85), map.road_width + 3.5)
+			draw_multiline(driven, UITheme.INK, map.road_width)
 
 
 # The upright layer on top of the tilted ground: site icons and the car.
@@ -456,14 +450,3 @@ class MarkerLayer:
 		draw_colored_polygon(arrow, UITheme.GREEN)
 		arrow.append(arrow[0])
 		draw_polyline(arrow, Color.BLACK, 1.0)
-		# A small arrow circling the car, pointing out toward the outer rings.
-		var d := map.outward_dir()
-		if d != Vector2.ZERO:
-			var tip := cp + d * a * 3.2
-			var side := d.orthogonal() * a * 0.55
-			var out := PackedVector2Array([tip, tip - d * a + side, tip - d * a - side])
-			var out_shadow := PackedVector2Array()
-			for q in out:
-				out_shadow.append(q + Vector2(2, 2))
-			draw_colored_polygon(out_shadow, Color(0, 0, 0, 0.9))
-			draw_colored_polygon(out, BEACON_LIT)

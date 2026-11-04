@@ -7,15 +7,12 @@ extends Node3D
 # It shows ONE car, frozen, on a plain apron, with its ExhaustFlames rig in forced mode
 # (scripts/exhaust_flames.gd::setup_forced) so the flame is lit continuously — you are
 # aiming at a steady target, not waiting for the car to bounce off the limiter. Orbit the camera with the mouse to inspect the pipes from
-# any angle, cycle cars to check the whole roster, then edit
-# GameConfig.exhaust_offsets in config/game_config.tres and press F8 to see the change
-# WITHOUT restarting: that hot-reload loop is the entire reason the offsets live in the
-# config resource rather than in CarLibrary. See features/exhaust-flames.md and
-# features/debug-tools.md.
+# any angle, cycle cars to check the whole roster. The offsets live in
+# GameConfig.exhaust_offsets (scripts/game_config.gd); edit them there and re-run the scene.
+# See features/exhaust-flames.md and features/debug-tools.md.
 #
 #   Drag (left mouse) .... orbit          Wheel ............... zoom
 #   [ / ] or Left/Right .. previous / next car
-#   F8 ................... re-read config/game_config.tres and rebuild the flames
 #
 # Being a dev scene reachable only from the editor, this is outside the "every menu is
 # keyboard + gamepad navigable" rule in CLAUDE.md — but car cycling is wired to
@@ -132,22 +129,6 @@ func _show_car(index: int) -> void:
 	_update_label()
 
 
-# Apply a just-reloaded config to the live car: re-resolve its pipes from the new
-# exhaust_offsets, then REBUILD the flame rig. The rebuild is what makes the look knobs
-# hot-reloadable at all — the quad size, the pipe yaw and the generated frame textures are
-# all baked in when the rig is built, so re-reading the config without rebuilding would
-# silently ignore every one of them.
-func _reapply_pipes() -> void:
-	if not is_instance_valid(_car):
-		return
-	var roster := CarLibrary.all()
-	if _index < roster.size():
-		_car.set("exhaust_locals", Config.data.exhaust_locals_for(roster[_index]))
-	if is_instance_valid(_flames):
-		_flames.setup_forced(_car)
-	_update_label()
-
-
 # How far to lift the car so its wheels rest ON the apron rather than sinking into it.
 # A frozen VehicleBody3D never settles its suspension, so each wheel sits at its authored
 # mount height and the contact point is mount.y − wheel_radius; the lowest of those is how
@@ -199,7 +180,7 @@ func _update_label() -> void:
 		lines.append("  pipe %d: Vector4(%.3f, %.3f, %.3f, %.1f)" % [i, p.x, p.y, p.z, p.w])
 	lines.append("")
 	lines.append("Vector4 w = yaw degrees: 0 = straight back, + = toward the car's right")
-	lines.append("drag = orbit   wheel = zoom   [ / ] = car   F8 = reload config")
+	lines.append("drag = orbit   wheel = zoom   [ / ] = car")
 	_label.text = "\n".join(lines)
 
 
@@ -228,16 +209,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_BRACKETRIGHT:
 				_show_car(_index + 1)
 				return
-	# Gamepad / arrow keys cycle the roster too, and F8 hot-reloads exactly as it does
-	# in the HQ (hq.gd::hot_reload_config) — the whole point of the offsets living in
-	# the config resource.
+	# Gamepad / arrow keys cycle the roster too.
 	if event.is_action_pressed("ui_left"):
 		_show_car(_index - 1)
 	elif event.is_action_pressed("ui_right"):
 		_show_car(_index + 1)
-	elif event.is_action_pressed("reload_config"):
-		if Config.reload_from_disk():
-			_reapply_pipes()
 
 
 # Orbit by a mouse delta, clamping the pitch so the camera can never flip over the pole.

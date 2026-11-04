@@ -186,7 +186,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   wanted, not yet dropped) fall to the mid-mesh tier. Cancelled or finished jobs are purged from
   the queue at each plan (a queue that never drains used to carry them for ever).
 - **Settings:** the shipped `FreeRoamSettings` is `GameConfig.free_roam` (a sub-resource in
-  `game_config.tres`); production code reads `Config.data.free_roam`, and `free_roam.gd` hands the
+  `game_config.gd`); production code reads `Config.data.free_roam`, and `free_roam.gd` hands the
   streamer a `duplicate()` since it sets `world_seed` (and the benchmark `straight_road_m`). The
   feedback timings (toast, banner, save / map cadence), dropped-money crystal, cabin lamp and rest
   stop crowd size are in its *Feedback* group. `GameConfig.snapshot_values` / `restore_values`
@@ -430,7 +430,8 @@ checkpoint reached under a region band hides that band until the checkpoint band
   `EngineSim.reset` clears it) and, `GameConfig.wreck_page_delay_s` later (counted down in
   `RestStops.step`), `RestStops.wrecked` opens the wreck page (`RestStopPage.open_wrecked`,
   View.WRECKED: it says how much money was dropped — `LootDirector.wreck` leaves it at the wreck on `gave_up`). The game keeps running: the
-  car rolls on driverless (`RestStops.is_wrecked`, all `ai_*` inputs zero) and rest stops ignore it. Its
+  player can still steer and brake the dead car until the page opens, then it rolls on driverless
+  (`RestStops.is_wrecked`, all `ai_*` inputs zero) and rest stops ignore it. Its
   Respawn card (or Back) calls `respawn()`: the car is moved to the last lit rest stop (`move_car_to`:
   stream the destination in with `TerrainStreamer.prefill_at`, then put the car on its road beside
   the pad), repaired, and its engine temperature reset to 0 (a respawn is a fresh car; a rest-stop

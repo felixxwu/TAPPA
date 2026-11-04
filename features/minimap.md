@@ -14,21 +14,19 @@ A navigation-software style map at the top centre of the screen while driving.
 
 - **Heading-up.** The map turns so the car's facing is up. The car is a fixed green chevron
   low in the frame (`minimap_car_depth`), so most of the view is road ahead.
-- **Way out.** A small orange arrow circles the chevron, pointing straight away from spawn
-  (the world origin) toward the outer rings (`outward_dir`); hidden right at spawn.
 - **Tilted like the ground.** The flat map is shown as a plane tilted away from the viewer:
   the far edge (top) is narrower and compressed, the near edge (bottom) full size, with a soft
   fade at every edge (far, near and sides) — no backdrop, rim or shadow; the roads float over
   the world (the shader's `bg_color`, `rim_color` and `shadow_color` are transparent). `minimap_tilt` is how
   much wider the ground at the far edge is than at the near edge.
 - **Roads you've driven** (`WorldSession.has_driven` on the segment's midpoint cell, the same
-  rule as the full map), in ink with a dark casing.
-- **A little road ahead:** undriven road within `minimap_nearby_road_m` of a point a little
+  rule as the full map), in ink with a dark casing, `minimap_road_width` wide.
+- **A little road ahead** (off: `minimap_nearby_road_m` is 0, so only driven road shows): undriven road within `minimap_nearby_road_m` of a point a little
   ahead of the car, drawn faint, so the road you're on and the next junction show. Its look is
   `minimap_undriven_road_alpha` / `_width` / `_outline_alpha` (a thin dark outline so it reads
   on bright ground); the chevron's size is `minimap_car_arrow_px`.
 - **Rest stops you've come across** (`WorldSession.seen_sites`) as dots (orange lit, grey unlit:
-  `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`). Loot isn't shown on either map. Icons are drawn
+  `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`). Coins aren't shown on either map; the full map also marks dropped money (`WorldPages.dropped_xz`). Icons are drawn
   upright on top of the tilted ground, smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the
   full map.
 - **A line under the frame** (`MiniMap.update_prompt_label`, per frame): the action prompt

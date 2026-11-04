@@ -106,9 +106,7 @@ func _engine() -> Object:
 
 
 # Regenerate the frames, the material and one crossed-quad rig per pipe. Called on setup
-# and on any hot-reload — everything here is baked from config at build time (texture
-# content, quad size), so re-reading the config without rebuilding would silently ignore
-# every look change.
+# — everything here is baked from config at build time (texture content, quad size).
 func _rebuild() -> void:
 	for p in _pipes:
 		p.queue_free()
@@ -184,7 +182,7 @@ static func pipe_points(car: Node, cfg: GameConfig) -> PackedVector4Array:
 
 
 # Build the flame frames as textures, drawn from the config rather than loaded from disk.
-# Generated rather than authored so the shape stays tunable (and F8-reloadable) and
+# Generated rather than authored so the shape stays tunable and
 # nothing ships in the PCK; the cost is a handful of small images built once per setup.
 #
 # Texture space: +V (image top) is the flame TIP, so it maps onto the quad's up-axis and

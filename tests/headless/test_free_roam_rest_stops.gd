@@ -220,14 +220,15 @@ func test_giving_up_cuts_the_engine_then_shows_the_wreck_page_then_respawns_cold
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	assert_true(engine.killed, "the engine cuts out the moment the car gives up")
-	assert_true(_car.ai_controlled, "the wreck rolls on with no player controls")
-	assert_eq(_car.ai_throttle, 0.0)
+	assert_false(_car.ai_controlled, "the player can still steer the dead car until the wreck page")
 	assert_signal_not_emitted(_rest, "wrecked", "the wreck page waits")
 	assert_false(_page.is_open())
 	_rest.step(1.0)
 	assert_signal_not_emitted(_rest, "wrecked", "still waiting partway through the delay")
 	_rest.step(1.1)
 	assert_signal_emit_count(_rest, "wrecked", 1)
+	assert_true(_car.ai_controlled, "the wreck page takes the controls away")
+	assert_eq(_car.ai_steer, 0.0)
 	_rest.step(5.0)
 	assert_signal_emit_count(_rest, "wrecked", 1, "the page is shown once")
 	assert_signal_not_emitted(_rest, "respawned", "the wreck page comes first")

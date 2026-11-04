@@ -5,7 +5,7 @@ extends GutTest
 # seam — the autoload exists, the SFX bus exists, calling it headless does nothing and
 # cannot crash, repeated calls are harmless, and the config gate turns it off. It
 # deliberately pins NO frequency, duration, volume or decay VALUE: those are tunables
-# in game_config.tres (CLAUDE.md → Testing), and a designer retuning the beep must not
+# in game_config.gd (CLAUDE.md → Testing), and a designer retuning the beep must not
 # turn this file red.
 
 

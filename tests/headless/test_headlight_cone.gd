@@ -4,7 +4,7 @@ extends GutTest
 # features/weather.md.
 #
 # BEHAVIOUR ONLY. Nothing here pins an authored angle, range, colour or strength —
-# a designer retuning headlight_outer_deg or headlight_range_m in the inspector must
+# a designer retuning headlight_outer_deg or headlight_range_m must
 # not break a single assertion, and neither must moving the cone onto a further
 # condition or retuning how hard any of them burns. What IS pinned is the structure
 # that has to hold for any values: the gate is the weather table's "headlights" key,
@@ -303,7 +303,7 @@ func test_night_is_purely_a_look_and_never_touches_physics() -> void:
 func test_the_dark_conditions_switch_the_headlights_on() -> void:
 	# The two conditions dark enough for a driver to reach for the lights. Structure
 	# only: that each arms the cone at all, never how brightly — the strengths differ
-	# (each condition's world is dark to a different degree) and are inspector tuning.
+	# (each condition's world is dark to a different degree) and are tuning values.
 	for id in [WeatherLibrary.WEATHER_NIGHT, WeatherLibrary.WEATHER_STORM]:
 		var cfg := GameConfig.new()
 		cfg.weather = id

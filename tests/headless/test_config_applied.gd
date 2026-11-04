@@ -28,7 +28,7 @@ func test_road_tile_per_meter_present() -> void:
 
 
 func test_bonnet_camera_config_present() -> void:
-	var cfg := load("res://config/game_config.tres") as GameConfig
+	var cfg := GameConfig.new()
 	assert_typeof(cfg.bonnet_offset, TYPE_VECTOR3, "bonnet_offset is a Vector3")
 	assert_lt(cfg.bonnet_offset.z, 0.0, "bonnet_offset sits toward the car's front (-Z)")
 	assert_gt(cfg.bonnet_fov, 0.0, "bonnet_fov is a positive FOV")
@@ -53,7 +53,7 @@ func test_target_fps_for_selects_by_platform() -> void:
 func test_render_distance_for_selects_by_platform() -> void:
 	# Contract, not the shipped numbers: only a web TOUCH device gets the web-touch
 	# distance; every other target gets the main one. Sentinel values so retuning
-	# the shipped 60/120 in the inspector can't break this.
+	# the shipped 60/120 can't break this.
 	var cfg := GameConfig.new()
 	cfg.tree_render_distance_m = 999.0
 	cfg.tree_render_distance_web_touch_m = 111.0
@@ -88,9 +88,8 @@ func test_target_fps_for_passes_through_uncapped() -> void:
 	assert_eq(cfg.target_fps_for(true, true, false), 0, "uncapped web desktop stays 0")
 
 
-func test_config_resource_loads() -> void:
-	var cfg := load("res://config/game_config.tres") as GameConfig
-	assert_not_null(cfg, "game_config.tres loads as a GameConfig")
+func test_config_defaults_are_sane() -> void:
+	var cfg := GameConfig.new()
 	assert_gt(cfg.peak_torque, 0.0, "peak_torque sane")
 	# peak_torque / redline_rpm / firing etc. are the LIVE engine fields, written by
 	# EngineLibrary.apply() when a car is fielded (scripts/engine_library.gd); the
@@ -110,14 +109,6 @@ func test_config_resource_loads() -> void:
 	assert_true("downforce_rear" in cfg, "downforce_rear exists on GameConfig")
 	assert_between(cfg.downforce_front, -2.0, 2.0, "downforce_front sane")
 	assert_between(cfg.downforce_rear, -2.0, 2.0, "downforce_rear sane")
-
-
-# Looks up the export metadata (hint + hint_string) for a property by name.
-func _export_hint(prop_name: String, obj: Object) -> Dictionary:
-	for p in obj.get_property_list():
-		if p.name == prop_name:
-			return p
-	return {}
 
 
 func test_car_values_applied() -> void:
@@ -251,16 +242,10 @@ func _restore(previous: Dictionary) -> void:
 		Config.data.set(name, previous[name])
 
 
-func test_promoted_tuning_fields_are_exports_the_tres_can_author() -> void:
-	# Both halves of "authored in the .tres": the field must exist as a declared property on a
-	# bare GameConfig (so a typo'd name in the resource would be dropped on load), and it must
-	# also be present on the LOADED resource. No value is asserted — only that the seam exists.
+func test_promoted_tuning_fields_are_declared() -> void:
 	var fresh := GameConfig.new()
-	var authored := load("res://config/game_config.tres") as GameConfig
-	assert_not_null(authored, "game_config.tres still loads as a GameConfig")
 	for name in _PROMOTED_FIELDS:
-		assert_true(name in fresh, "%s is a declared GameConfig export" % name)
-		assert_true(name in authored, "%s survives the .tres round trip" % name)
+		assert_true(name in fresh, "%s is a declared GameConfig field" % name)
 
 
 func test_loading_cap_reads_the_config_fields() -> void:

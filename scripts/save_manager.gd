@@ -7,7 +7,7 @@ extends Node
 # survives a restart on both desktop and the web build.
 #
 # It is deliberately SEPARATE from the `Config` autoload: `Config` holds the
-# authored car/world tuning baseline (a duplicate of game_config.tres), while
+# authored car/world tuning baseline (a duplicate of game_config.gd), while
 # this profile is per-player mutable progress.
 #
 # Ownership is INSTANCE-BASED: each owned car is a unique instance (instance_id)

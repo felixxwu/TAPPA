@@ -34,7 +34,7 @@ in five files that all had to be kept in sync.
 
 An entry holds the condition's **shape** — WHICH GameConfig fields it reads and which
 structural features it has — never the numbers (those stay in
-`config/game_config.tres` per the project rule). Keys, all optional but `id`; an
+`scripts/game_config.gd` per the project rule). Keys, all optional but `id`; an
 omitted key means "this condition does not have that feature":
 
 | key | meaning |
@@ -117,7 +117,7 @@ than a crash — the same tolerance every other query here has.
 
 ### Adding a condition
 
-1. Add its tuning fields to `scripts/game_config.gd` + `config/game_config.tres`.
+1. Add its tuning fields to `scripts/game_config.gd` + `scripts/game_config.gd`.
 2. Add one entry to `WeatherLibrary.CONDITIONS` naming those fields.
 3. Add its `WETNESS` row — `"<id>": true/false`. Not optional: the guard test above
    fails without it.
@@ -220,8 +220,8 @@ list it in `config_fields`.
     OUTSIDE the headlight cone is lit by, so zeroing it turns unlit geometry into
     an unreadable silhouette, and a pure-black horizon reads as a hole in the frame.
   - `night_sun_energy_mult` — **the dominant knob**: this, and nothing in any
-    shader, is what makes the world dark. Its `@export_range` starts at `0.0`
-    (unlike the daytime conditions) because night lives at the bottom of it.
+    shader, is what makes the world dark. It goes all the way down
+    toward `0.0` (unlike the daytime conditions) because night lives at the bottom of it.
   - `night_fog_density_mult` — deliberately kept LOW. Fog is environment-side
     (`fog_light_color`), so the headlight cone cannot light it; thick haze at
     night gives a lit pool of ground under a flat grey sheet.
@@ -281,7 +281,7 @@ list it in `config_fields`.
     its clearance from. **0 collapses to a single cone** and makes the shader skip
     the second evaluation, so this is the cost knob as well as the look knob.
 
-All authored in `config/game_config.tres`, per the project rule that tuning values
+All authored in `scripts/game_config.gd`, per the project rule that tuning values
 live in the resource, not script literals — the `@export` defaults in
 `game_config.gd` are fallbacks only.
 
@@ -599,4 +599,4 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
 - `tests/headless/test_loading_screen.gd` — the wet tell changes the headline.
 
 Every one asserts a **relation or structure**, never a tuned value — retuning
-`rain_grip_mult` or any rain colour in the inspector must not break a test.
+`rain_grip_mult` or any rain colour must not break a test.

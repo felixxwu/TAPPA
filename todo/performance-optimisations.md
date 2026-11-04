@@ -33,7 +33,7 @@
 > game ships. `GameConfig` knobs exist for tuning that single shipped value (and for
 > dev/debug), NOT to switch between a "high" and "low" path. Do not add a quality-tier
 > switch. Follow the config-first convention: every new tunable goes in `GameConfig`
-> (`scripts/game_config.gd` + `config/game_config.tres`), never hardcoded; update the
+> (`scripts/game_config.gd` + `scripts/game_config.gd`), never hardcoded; update the
 > relevant `features/*.md` doc and add tests in the same piece of work.
 
 
@@ -42,7 +42,7 @@
 - Renderer: GL Compatibility, `rendering_method.mobile="gl_compatibility"`,
   `force_vertex_shading=true` (`project.godot [rendering]`). Internal viewport
   480×360 via viewport stretch. All materials `unshaded`. Good baseline.
-- **Active config is `config/game_config.tres`, which overrides the code
+- **Active config is `scripts/game_config.gd`, which overrides the code
   defaults.** The live values that matter here:
   `trees_per_turn = 200`, `track_turn_count = 30`, `tree_spawn_radius_m = 50`,
   `tree_min_tree_dist_m = 3`, `tree_collision_radius_m = 0.1`,
@@ -141,7 +141,7 @@ submitted, with a hard cap on visible instances.
 
 ### Files
 `scripts/billboard_field.gd` (main work), `scripts/world.gd` (optional camera
-hand-off), `scripts/game_config.gd` + `config/game_config.tres`
+hand-off), `scripts/game_config.gd` + `scripts/game_config.gd`
 (`max_visible_billboards`, cull cadence), `features/trees.md`.
 
 ### Tests
@@ -189,7 +189,7 @@ present in the body.
 
 ### Files
 `scripts/billboard_field.gd`, `scripts/game_config.gd` +
-`config/game_config.tres`, `features/trees.md`.
+`scripts/game_config.gd`, `features/trees.md`.
 
 ### Tests
 Add a headless test: given a car position, only trees within the active radius
@@ -306,7 +306,7 @@ that's only ~3 frames of headroom).
 
 ### Files
 `scripts/engine_audio_synth.gd`, `scripts/engine_audio.gd`,
-`scripts/game_config.gd` + `config/game_config.tres`, `features/engine-audio.md`.
+`scripts/game_config.gd` + `scripts/game_config.gd`, `features/engine-audio.md`.
 
 ## 9. Post-process back-buffer copy (awareness)
 

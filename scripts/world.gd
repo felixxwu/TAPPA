@@ -1343,7 +1343,7 @@ func _apply_overcast_look(background: Color, sky: Color, sun_mult: float,
 # entry named a target COLOUR field (`blend`), never by which condition it is:
 #   * no colour  — a straight multiply (a wet road is DARKER, not recoloured);
 #   * a colour   — a lerp toward it (dust CAKES on the surface; snow would whiten it).
-# The colour itself is authored in game_config.tres and named by the entry, so
+# The colour itself is authored in game_config.gd and named by the entry, so
 # nothing here needs editing to add a condition that tints toward something new.
 #
 # This is a read-modify-write, and both parameters it touches are RE-SEEDED from the

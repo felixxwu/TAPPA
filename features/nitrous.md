@@ -42,7 +42,7 @@ mirroring `has_supercharger_physics`. It is the single "is nitrous fitted"
 predicate, shared by the sim, the HUD gauge and the mobile overlay.
 
 Both default to `0.0` in the script and are **not** authored in
-`config/game_config.tres` — the baseline car has no nitrous, and the upgrade's
+`scripts/game_config.gd` — the baseline car has no nitrous, and the upgrade's
 effect dict is what writes them in (pipeline step 2, see
 [configuration.md](configuration.md)).
 
@@ -186,11 +186,11 @@ and the preview passes the nitrous args hard-false anyway.
 (i.e. a test). Filtered noise carries a lower RMS than a tonal wavetable, so the layer levels
 sit nearer `TURBO_WHISTLE_LEVEL` than `TURBO_TONE_LEVEL`.
 
-It ships at **0.25** in `config/game_config.tres`, down from the `0.7` script default. Worth
+It ships at **0.25** in `scripts/game_config.gd`, down from the `0.7` script default. Worth
 knowing why, because 0.7 sounded fine in isolation: `engine_turbo_whistle_gain` and
 `engine_supercharger_whine_gain` both ship at **0**, so nitrous is the only layer of that
 family actually audible, and a level chosen against its siblings-on-paper was far too loud
-against the engine alone. Retune it in the `.tres`, and judge it against the mix it actually
+against the engine alone. Retune it in `game_config.gd`, and judge it against the mix it actually
 plays in.
 
 

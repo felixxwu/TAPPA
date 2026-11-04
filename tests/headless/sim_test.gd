@@ -44,7 +44,7 @@ static var _has_settled := false
 # RESTORE THE GLOBAL CONFIG WHEN THIS FILE FINISHES.
 #
 # setup_settled_car() calls SceneTestHelpers.use_test_config(), which REPLACES the global
-# `Config.data` with the frozen physics baseline (tests/fixtures/test_config.tres) and never
+# `Config.data` with the frozen physics baseline (SceneTestHelpers.TEST_CONFIG) and never
 # puts it back. That baseline authors ~37 properties against the shipped config's ~239, so
 # every field it does not author falls back to the GameConfig script default (com_height,
 # wheel_roll_influence, wheel_friction_slip_rear, tire_load_sensitivity, …). Leaving it

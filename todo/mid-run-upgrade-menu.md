@@ -72,7 +72,7 @@ pool — every `BoostLibrary.CATALOGUE` id plus whatever drivetrain/engine-swap 
 are currently available — so both categories are always populated (short of both
 `gearbox` and an engine swap being simultaneously unavailable, which cannot happen:
 `gearbox` is always in the catalogue). `run_boost_choices` is retired outright (removed
-from `GameConfig` and `config/game_config.tres`) — there is no draw left for it to size.
+from `GameConfig` and `scripts/game_config.gd`) — there is no draw left for it to size.
 
 **The reveal step is presentation-only, not persisted.** If the app closes mid-flow
 (after picking a category, before pressing Next), nothing has been committed —

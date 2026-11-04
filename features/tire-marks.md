@@ -212,7 +212,7 @@ multiplies the segment's strength (see *Opacity* above) by that authored ceiling
 ceiling sets the top of the range and the strength picks a point inside it. Gravel's
 ceiling is the **shallower** of the two, and that is the physical claim: a rut is
 *displaced surface*, while a tarmac skid is *deposited rubber* and goes darker at its
-worst. Both live in `config/game_config.tres` and are free to be retuned.
+worst. Both live in `scripts/game_config.gd` and are free to be retuned.
 
 **Why black rather than an authored grey.** Every material in this renderer is
 `unshaded`, so nothing dims because the world got darker — the bug class

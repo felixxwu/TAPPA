@@ -22,7 +22,7 @@ hand-rolling it goes wrong here.
 | Thing | Where |
 |---|---|
 | The autoload | `scripts/audio.gd` (`class_name AudioManager`), registered as `Audio` in `project.godot` |
-| Tunables | `config/game_config.tres` / `scripts/game_config.gd` → `@export_group("SFX")` |
+| Tunables | `scripts/game_config.gd` (the `sfx_*` fields) |
 | Tests | `tests/headless/test_audio.gd` |
 | Planned cue set / clip library | `todo/audio.md` |
 | The other audio systems | `features/engine-audio.md` (procedural engine note), `features/music.md` (music beds) |
@@ -94,7 +94,7 @@ Never route a sound to Master directly.
 The bus is created **headless too** (the bus graph is safe under the dummy driver;
 only *playback* is not), so the bus-layout contract holds in tests.
 
-## Tunables (`@export_group("SFX")`)
+## Tunables
 
 | Field | Purpose |
 |---|---|

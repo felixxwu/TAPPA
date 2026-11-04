@@ -5,9 +5,8 @@
 | Key | Action | Does |
 |-----|--------|------|
 | **H** | `toggle_debug_arrows` | Per-wheel force arrows + the HUD dev readout (below) |
-| **F8** | `reload_config` | Re-read `config/game_config.tres` from disk and re-apply, no restart |
 
-Both are gated on `SettingsMenu.dev_tools_enabled()`, which defaults to **true** — release
+It is gated on `SettingsMenu.dev_tools_enabled()`, which defaults to **true** — release
 exports (including the web build) get them too, same as the editor and debug exports. A config
 value that starts a feature on still works in any build regardless of the switch.
 
@@ -200,11 +199,8 @@ keyboard + gamepad navigable" rule in `CLAUDE.md`.
 | `corner_catalog.tscn` | `corner_catalog.gd` | Draws every `CornerLibrary` turn type side by side so the bezier shapes can be eyeballed. Pure 2D. |
 | `exhaust_lab.tscn` | `exhaust_lab.gd` | Positions each car's exhaust pipes by eye — one frozen car, flames forced permanently on, orbit camera. See [exhaust-flames.md](exhaust-flames.md). |
 
-The exhaust lab is the one place **F8** (`reload_config`) is handled outside the HQ, and
-that hot-reload is the whole reason `GameConfig.exhaust_offsets` lives in
-`config/game_config.tres` rather than in `CarLibrary`: a `.tres` can be re-read from disk
-mid-session, a `.gd` cannot. Drag to orbit, wheel to zoom, `[` / `]` (or Left/Right) to
-cycle cars, F8 to re-read the config and re-apply the pipes. The readout prints each pipe
+In the exhaust lab: drag to orbit, wheel to zoom, `[` / `]` (or Left/Right) to cycle cars;
+edit `GameConfig.exhaust_offsets` in `scripts/game_config.gd` and re-run the scene. The readout prints each pipe
 as a literal `Vector3(x, y, z)` ready to paste back into `exhaust_offsets`.
 
 ## Standalone performance benchmark

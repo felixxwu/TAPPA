@@ -10,7 +10,7 @@ extends GutTest
 # WHY THESE ASSERTIONS AND NOT OTHERS. No tunable is asserted: not the cap values (the branch is
 # checked against the const, never against a number), not a snow depth, not a terrain layer
 # shape. Every input is synthetic — a bare `GameConfig.new()`, hand-built `TerrainLayer`s, a
-# throwaway `ShaderMaterial` — so nothing here depends on `game_config.tres` or on any catalogue
+# throwaway `ShaderMaterial` — so nothing here depends on `game_config.gd` or on any catalogue
 # entry. The one thing worth pinning hard is the deep-snow RESTORE: the floor material is a
 # shared sub-resource that outlives a scene change, so a missing else-branch would leave every
 # later world's ground floating in mid-air.

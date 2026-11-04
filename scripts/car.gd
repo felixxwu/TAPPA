@@ -96,8 +96,7 @@ var engine_smoke_local := Vector3.ZERO
 # single-exit car has one and a quad-exit car four. Each is a Vector4: xyz is the pipe
 # position in car-local metres, w is its yaw in DEGREES about the vertical axis (0 =
 # straight back, positive = toward the car's right). Authored per car in
-# GameConfig.exhaust_offsets (keyed on the car id) so the F8 hot-reload can re-read
-# them; a car with no entry gets a wheelbase-derived mirrored pair. Recomputed per spec
+# GameConfig.exhaust_offsets (keyed on the car id); a car with no entry gets a wheelbase-derived mirrored pair. Recomputed per spec
 # in _apply_physics_spec. See GameConfig.exhaust_locals_for and features/exhaust-flames.md.
 var exhaust_locals: PackedVector4Array = PackedVector4Array()
 # Car-local lamp centres, { "head": PackedVector3Array, "tail": PackedVector3Array }, read by
@@ -2188,7 +2187,7 @@ func _wheel_material(tex_path: String) -> ShaderMaterial:
 	mat.set_shader_parameter("albedo_texture", _blank_wheel_texture() if tex_path == "" else load(tex_path))
 	# The tread colour + PS1 fake lighting that world.gd used to push onto the shared
 	# tire material — now carried by each per-car material (world.gd's push lands on the
-	# scene's default .tres, which apply_car replaces with this).
+	# scene's default material, which apply_car replaces with this).
 	mat.set_shader_parameter("albedo_color", config.wheel_color)
 	config.apply_car_light(mat)
 	_wheel_mats[tex_path] = mat

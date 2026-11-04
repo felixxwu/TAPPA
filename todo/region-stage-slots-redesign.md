@@ -217,7 +217,7 @@ Reasoning:
    subtler effect. There is no version of "keep it smaller" that keeps the win.
 
 Consequences to sequence: `GameConfig.stage_hilliness_scale_min`/`_max` and
-`stage_curviness_scale_min`/`_max` (`config/game_config.tres`,
+`stage_curviness_scale_min`/`_max` (`scripts/game_config.gd`,
 `scripts/game_config.gd`) lose their only reader and should be deleted with it;
 `DrivingContext.apply_stage_config` drops the two arguments it passes.
 
@@ -316,7 +316,7 @@ in place before the scale is removed, or every stage flattens).
    `stage_scale`; drop both params from `apply_event_config` /
    `canonical_event_config`.
 8. `scripts/driving_context.gd` — `apply_stage_config` drops the two args.
-9. `scripts/game_config.gd` + `config/game_config.tres` — remove the four
+9. `scripts/game_config.gd` + `scripts/game_config.gd` — remove the four
    `stage_hilliness_scale_*` / `stage_curviness_scale_*` fields.
 10. `tests/headless/test_stage_config.gd` — four `stage_scale` tests and
     `test_later_stage_is_hillier_and_curvier_*` lose their subject (§9a).

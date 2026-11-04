@@ -28,7 +28,6 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `menu_right` | D | → | D-pad right | Menu navigation: move right |
 | `menu_select` | Enter | — | A / Cross (South) | Menu navigation: activate focused widget |
 | `menu_back` | Esc | — | B / Circle (East) | Menu navigation: back out / cancel |
-| `reload_config` | F8 | — | — | Dev: re-read `config/game_config.tres` from disk and re-apply, no restart |
 
 All actions use a 0.2 deadzone.
 
@@ -49,7 +48,7 @@ available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →
 Only the driving/menu actions listed in `scripts/input_remap.gd`'s `ACTIONS` can be
 **rebound**: `accelerate`, `brake_reverse`, `steer_left`, `steer_right`, `handbrake`, `nitrous`, `cycle_camera`, `reset_to_road` and `pause`. Everything else in the
 table above is **not** rebindable — the keyboard-only debug overlays
-(`toggle_debug_arrows`, `toggle_perf_overlay`), the dev-only action (`reload_config`), `toggle_map` (see above),
+(`toggle_debug_arrows`, `toggle_perf_overlay`), `toggle_map` (see above),
 and the `ui_*`/`menu_*` navigation actions are all excluded — on
 the **Key bindings** page of the shared settings menu (`scripts/settings_menu.gd`) —
 reachable from the title-screen Settings and the in-run pause menu alike. Each action

@@ -42,7 +42,7 @@ const _RAIN_FALL_SPEED := 18.0  # m/s downward
 const _SAND_QUAD_SIZE := Vector2(0.12, 0.12)
 # Fallback drift speed (m/s) for a dust field spawned without a speed — a structural
 # default so a caller that names no "particle_speed" field still gets moving dust, NOT
-# the authored value (that lives in game_config.tres and reaches here via the table).
+# the authored value (that lives in game_config.gd and reaches here via the table).
 const _SAND_DRIFT_SPEED := 10.0
 # Lifetime: box depth / travel speed, so particles recycle before drifting far
 # outside the emission volume (world-space particles that outlive the box just

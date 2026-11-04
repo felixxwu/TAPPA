@@ -87,7 +87,7 @@ predictably:
 3. **Per-car tuning** — the player's tuning deltas ([tuning.md](tuning.md)).
 4. **Damage** — power and steering degraded by HP fraction ([damage.md](damage.md)).
 
-`apply` is pure: it mutates only the passed-in live `cfg`, never the authored `.tres`.
+`apply` is pure: it mutates only the passed-in live `cfg`, never the authored baseline.
 `mult` keys multiply the baseline, `add` keys add, `set` keys **replace** it outright with
 an absolute figure, `install_turbo` / `install_supercharger` switch their induction flag on
 (they stack — [forced-induction.md](forced-induction.md)), and `install_nitrous` (`write_fields`) straight-splats

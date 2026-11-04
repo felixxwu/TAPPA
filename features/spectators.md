@@ -21,7 +21,7 @@ is a thin wrapper over `SpatialGrid.of_points`.
 | `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one LIVE crowd: steering, its own dynamic MultiMesh (rewritten each frame), LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). Not a `Crowd.multimesh_instance()` caller (dynamic, not static) but shares the figure via `Crowd.mesh()`/`Crowd.foot_offset()`. |
 | `scripts/free_roam/terrain_streamer.gd` | Free roam: `_rest_crowd()` builds one live group per rest stop in front of its cabin as its chunk streams in (road cells rasterised locally by `_road_cells_near`, cabin walls as the avoided "trees" via `_cabin_wall_points`, `ragdoll_pool_size` forced to 0). See `features/free-roam.md` → Crowds. |
 | `scripts/world.gd` | `_spawn_spectators()` / `_spawn_spectator_group()` build the three live groups in `_generate_track`. |
-| `scripts/game_config.gd` | `@export_group("Spectators")` + `spectator_params()`. |
+| `scripts/game_config.gd` | `spectator_params()`. |
 | `blender/spectator/spectator.glb` | The low-poly figure: 150 triangles, no armature (hence single-capsule ragdolls). Quadric-decimated for cheap crowds; one mesh used at all distances. |
 
 ## How it works
@@ -177,7 +177,7 @@ road), facing the pad. Being static, they have no steering and no ragdolls.
 
 ## Config
 
-`@export_group("Spectators")` in `game_config.gd` (group size, mid-progress band,
+The spectator fields in `game_config.gd` (group size, mid-progress band,
 crowd-band length/width, separation, flee/knock radii, max speed + accel, LOD radius,
 the five steering weights, ragdoll launch params, `spectator_ragdoll_pool_size`, despawn
 distance). Disable with

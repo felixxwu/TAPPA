@@ -290,7 +290,7 @@ grep -rn 'pending(' tests/headless/*.gd    # parked tests
 ```
 
 For the tunable-value pins, apply `CLAUDE.md`'s test: *"would a designer
-retuning this in the inspector break my test?"* If yes, delete the **assertion**
+retuning this break my test?"* If yes, delete the **assertion**
 — and if that empties the test, delete the test. Often the right move is to
 rewrite rather than delete: keep the behaviour ("applying a car copies its
 engine's torque onto the config") and drop the number ("torque is 400").

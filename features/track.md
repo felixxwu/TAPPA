@@ -391,7 +391,7 @@ default 20 m — see the *Finish runoff* generation bullet above),
 `track_transition_cells`, `track_tarmac_fraction`, `jump_height_m` / `jump_span_m`
 (the crest — tune the PAIR to the launch speed you want, per the formula in *Jumps*
 above, not to how tall the bump looks),
-`track_surface_transition_m`, `tarmac_color` in `config/game_config.tres` (the
+`track_surface_transition_m`, `tarmac_color` in `scripts/game_config.gd` (the
 `Track` group of `GameConfig`). Lane paint lives in the `Road Markings` group:
 `road_markings_enabled`, `road_marking_color`, `road_marking_width_m`,
 `road_marking_edge_inset_m`, `road_marking_center_dash_m`,

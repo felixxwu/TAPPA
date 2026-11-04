@@ -4,8 +4,8 @@ extends RefCounted
 # Tests: tests/headless/test_cloud_auth.gd — extend in the same change.
 # Build configuration for the Firebase project backing optional cloud save.
 #
-# This is deliberately NOT in config/game_config.tres: the config-first rule in
-# CLAUDE.md covers gameplay / look values a designer retunes in the inspector.
+# This is deliberately NOT in scripts/game_config.gd: the config-first rule in
+# CLAUDE.md covers gameplay / look values a designer retunes.
 # These are backend endpoint identifiers — they change when the Firebase project
 # changes, never during tuning, and a wrong value is a build error rather than a
 # balance decision.

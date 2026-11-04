@@ -119,34 +119,6 @@ func test_snapshot_does_not_share_the_free_roam_resource() -> void:
 	assert_not_same(snap["free_roam"], cfg.free_roam, "restoring does not hand the snapshot's copy to the live config")
 
 
-# HOT RELOAD (Config.reload_from_disk) — the tuning loop for world-space menu placement: retune a
-# value on game_config.tres in the inspector, press F8 in the running game, see it.
-#
-# The bug this guards is subtle and was the reason the feature didn't work at first: `load()` returns
-# the CACHED resource, so reset() re-duplicates the copy read at boot however many times it is
-# called and a disk edit is invisible. Only CACHE_MODE_REPLACE goes back to the file. That is not
-# directly observable without editing a file mid-test, so what IS asserted is the two things that
-# must hold for it to be capable of working at all: it succeeds, and it installs a FRESH instance
-# rather than handing back the object already in use.
-func test_reload_from_disk_swaps_in_a_fresh_config() -> void:
-	var before: GameConfig = Config.data
-	# A runtime mutation of the kind the game makes (car.gd's apply_car reshapes the live config).
-	# A real re-read must not preserve it — that is the difference between reloading and no-op.
-	before.trees_per_turn = 12345
-
-	assert_true(Config.reload_from_disk(), "the authored config re-reads from disk")
-	assert_ne(Config.data, before, "reload installs a NEW GameConfig, not the one already in use")
-	assert_ne(Config.data.trees_per_turn, 12345,
-		"a re-read drops runtime mutations — otherwise nothing was actually re-read")
-
-
-# The key that drives it. Debug-build-only in hq.gd, but the ACTION has to exist or the handler is
-# dead code (the same reasoning as test_menu_nav's gamepad-button guard).
-func test_the_config_hot_reload_action_exists() -> void:
-	assert_true(InputMap.has_action("reload_config"),
-		"F8 hot-reload needs its input action in project.godot")
-
-
 # --- Cross-FILE config hygiene ------------------------------------------------------------
 #
 # Config.data is a single global that outlives the script that mutated it, so a file which
@@ -196,12 +168,11 @@ func test_the_frozen_test_baseline_really_differs_from_the_authored_one() -> voi
 func test_reset_restores_the_authored_baseline_after_a_swap() -> void:
 	# The teardown contract every physics file relies on: whatever a script left in the
 	# global, Config.reset() must put the authored baseline back exactly. Compared against a
-	# freshly loaded duplicate of the authored resource, so no value is pinned here.
+	# fresh GameConfig, so no value is pinned here.
 	SceneTestHelpers.use_test_config()
 	Config.data.suspension_travel_front = 0.123   # the kind of reshape apply_car leaves behind
 	Config.reset()
-	var authored := load("res://config/game_config.tres") as GameConfig
-	assert_not_null(authored, "the authored config loads")
+	var authored := GameConfig.new()
 	var restored := _fields(Config.data)
 	var mismatched: Array[String] = []
 	var authored_fields := _fields(authored)
@@ -210,9 +181,8 @@ func test_reset_restores_the_authored_baseline_after_a_swap() -> void:
 			mismatched.append(name)
 	assert_eq(mismatched, [] as Array[String],
 		"reset() restores every authored field — a leftover here is a cross-file config leak")
-	assert_ne(Config.data, authored,
-		"...into a private DUPLICATE, so a test mutating Config.data cannot poison the cached "
-		+ "resource that every later reset() re-duplicates from")
+	assert_ne(Config.data, Config._authored,
+		"...into its own instance, so a test mutating Config.data cannot poison the baseline")
 
 
 func test_a_material_registered_after_a_snapshot_still_follows_the_weather() -> void:

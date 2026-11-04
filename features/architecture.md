@@ -13,7 +13,7 @@
 ├── project.godot          # Engine config: autoloads, input map, rendering
 ├── run_tests.sh           # Test runner (headless + visual passes)
 ├── config/
-│   └── game_config.tres   # GameConfig resource — all tuning values
+│   └── game_config.gd   # GameConfig resource — all tuning values
 ├── scripts/               # All GDScript (see file map below)
 ├── shaders/               # ps1_models.gdshader, ps1_post_process.gdshader
 ├── textures/              # terrain, sky, sign and car textures
@@ -83,7 +83,7 @@ Car [VehicleBody3D]                 script: car.gd, mass 120
 
 Declared in `project.godot` `[autoload]`:
 
-- **`Config`** → `scripts/config.gd`. Loads `config/game_config.tres` at startup
+- **`Config`** → `scripts/config.gd`. Loads `scripts/game_config.gd` at startup
   into `Config.data` (a `GameConfig`). Every gameplay system reads from it.
   ⚠️ It is a **single shared instance that `car.gd`'s `apply_car()`/`apply_owned()`
   MUTATE in place** to reshape the live car (gearbox, mass, grip, engine, …) —
@@ -121,7 +121,7 @@ Declared in `project.godot` `[autoload]`:
 
 ## Data flow
 
-1. `Config` autoload loads `game_config.tres` before any scene runs.
+1. `Config` autoload loads `game_config.gd` before any scene runs.
 2. In the dev stage, `world.gd._ready()` pushes config values into scene-owned resources
    (environment fog/color, terrain layers, material colors, post-process res —
    `_apply_scene_config`), fields the player's car (`_field_player_car`), then

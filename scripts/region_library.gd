@@ -263,7 +263,7 @@ const REGIONS: Array[Dictionary] = [
 		# reasoning that keeps `water_level` out of the whitelist.
 		#
 		# They name GameConfig fields rather than authoring numbers (the WeatherLibrary
-		# pattern), so every tunable stays in config/game_config.tres.
+		# pattern), so every tunable stays in scripts/game_config.gd.
 		"surface_grip": {
 			"grass": "snow_grass_grip", # deep snow at the roadside
 			"gravel": "snow_gravel_grip", # packed snow road
@@ -341,7 +341,7 @@ static func has_tarmac_roads(region_id: String) -> bool:
 # makes the coastal regions work.
 
 # The three per-surface μ scales this region overrides, resolved from the GameConfig
-# fields it NAMES (it never authors numbers, so all tuning stays in game_config.tres).
+# fields it NAMES (it never authors numbers, so all tuning stays in game_config.gd).
 # {} when the region authors none — the overwhelmingly common case, and the reason
 # every other region's grip is byte-identical to the authored baseline.
 static func surface_grip_of(cfg: GameConfig, region_id: String) -> Dictionary:

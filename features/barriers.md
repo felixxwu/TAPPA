@@ -306,7 +306,7 @@ rendering real GL frames offscreen under `xvfb`:
 tools/render_barriers.sh        # writes docs/barriers/*.png
 ```
 
-It loads the real `config/game_config.tres` (falling back to a hand dict if that
+It loads the real `scripts/game_config.gd` (falling back to a hand dict if that
 can't load standalone) so the renders show the shipped pitch and gap. Outputs:
 
 | Output | View |

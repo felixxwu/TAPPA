@@ -376,7 +376,7 @@ the tree field and the bush field back to back.
 
 ## Configuration
 
-`Trees` group in `GameConfig` (`config/game_config.tres` overrides some):
+`Trees` group in `GameConfig` (`scripts/game_config.gd` overrides some):
 `vegetation_enabled` (master switch — false skips the whole scatter + fields +
 bush hit volume; the benchmark's vegetation toggle drives it, see
 [benchmark.md](benchmark.md)),

@@ -18,7 +18,7 @@ extends GutTest
 #   - which coords are resident / queued / evicted — pure set arithmetic;
 #   - the RELATIONSHIP between two derived budgets, never either one's value.
 # Never a timing, never a byte count, never a tunable. Every radius, budget, bound and cap
-# here is a SYNTHETIC value the test sets itself, so retuning `config/game_config.tres`
+# here is a SYNTHETIC value the test sets itself, so retuning `scripts/game_config.gd`
 # cannot break any of these. Nothing reaches into an authored catalogue.
 #
 # ALL SCENE-FREE, using the cheap seam from test_terrain_memory.gd: a bare TerrainManager via

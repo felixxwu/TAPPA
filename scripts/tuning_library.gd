@@ -12,7 +12,7 @@ extends RefCounted
 #
 # Distinguish from the EFFECTS FUNNEL (upgrade_library.gd): that applies whatever run
 # boosts are active, changing the baseline; tuning is free, instant, reversible per-car
-# deltas stored on the OwnedCar (Save.set_tuning) and never written back to the .tres.
+# deltas stored on the OwnedCar (Save.set_tuning) and never written back to GameConfig.
 #
 # Each axis is a single normalized slider in [-1, +1], default 0 (the baseline,
 # neutral). apply() reads owned_car.tuning and re-balances the LIVE cfg

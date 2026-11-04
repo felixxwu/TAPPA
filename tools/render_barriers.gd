@@ -11,7 +11,6 @@ extends SceneTree
 
 const OUT_DIR := "res://docs/barriers"
 const CELL := Vector2i(720, 540)
-const CONFIG_PATH := "res://config/game_config.tres"
 
 const SECTION_LEN := 2.0
 const CORNER_RADIUS := 12.0     # road CENTERLINE radius of the test corner
@@ -88,21 +87,9 @@ func _render_all() -> void:
 	quit()
 
 
-# The shipped barrier params if the config resource loads standalone, so the renders
-# show the real pitch/gap; a hand dict otherwise (the harness is autoload-free, so
-# there is no Config singleton to fall back on).
+# The shipped barrier params, so the renders show the real pitch/gap.
 func _barrier_params() -> Dictionary:
-	var cfg = load(CONFIG_PATH)
-	if cfg != null and cfg.has_method("barrier_render_params"):
-		return cfg.barrier_render_params()
-	print("NOTE: could not load ", CONFIG_PATH, " — using fallback barrier params")
-	return {
-		"section_length_m": SECTION_LEN, "road_gap_m": 0.4, "lead_m": 5.0,
-		"tarmac_threshold": 0.5, "sink_m": 0.06, "track_width": 7.0,
-		"slope_probe_m": 5.0, "drop_min_m": 1.0, "min_run_modules": 3,
-		"render_distance_m": 0.0, "render_fade_m": 0.0,
-	}
-
+	return GameConfig.new().barrier_render_params()
 
 # ---------------------------------------------------------------------------
 # Stage: viewport, ground, road, a car-sized proxy for scale

@@ -4,7 +4,7 @@ extends GutTest
 # features/configuration.md). This file pins the CONTRACT only: an existing field
 # returns its authored value (never a specific value — that's a tunable a designer may
 # retune) and an absent field returns the caller's fallback. It deliberately asserts NO
-# tunable VALUE from game_config.tres.
+# tunable VALUE from game_config.gd.
 
 
 func after_each() -> void:

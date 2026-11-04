@@ -8,7 +8,7 @@ var _car: VehicleBody3D
 func before_each() -> void:
 	# Pin the frozen test car: another scene's car selection mutates the shared
 	# Config singleton, and these assertions are calibrated to the stable test
-	# baseline (fixtures/test_config.tres), not the shipped gameplay tuning.
+	# baseline (SceneTestHelpers.TEST_CONFIG), not the shipped gameplay tuning.
 	SceneTestHelpers.use_test_config()
 	_scene = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(_scene)
@@ -95,7 +95,7 @@ func test_awd_locks_front_to_rear() -> void:
 	# (wheel_roll_influence 1.0 -> 0.5, longitudinal force applied at the
 	# roll-scaled height) further reduced launch wheelspin (slip ~1.56 vs peak
 	# 1.5) — still a clear margin past peak, just smaller. Calibrated against the
-	# frozen test car (fixtures/test_config.tres), not the shipped tuning.
+	# frozen test car (SceneTestHelpers.TEST_CONFIG), not the shipped tuning.
 	var slip: float = dt.rear_omega * cfg.wheel_radius - _car.linear_velocity.length()
 	assert_gt(slip, cfg.tire_slip_peak + 0.05, "the locked driveline spins under power")
 

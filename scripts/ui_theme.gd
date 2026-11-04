@@ -59,7 +59,7 @@ const FONT_PATH := "res://fonts/Jersey10.ttf"
 # hint_screen_texture backbuffer copy every frame.
 #
 # These are therefore DERIVED values. Retuning the grade in
-# config/game_config.tres does NOT update them — re-run
+# scripts/game_config.gd does NOT update them — re-run
 # `godot --headless --script tools/bake_ui_palette.gd`, paste its output here, then
 # re-run tools/build_ui_theme.gd to regenerate theme/ui_theme.tres. The bake tool
 # holds the authored palette itself, so it stays idempotent.

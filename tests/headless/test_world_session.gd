@@ -496,3 +496,12 @@ func test_the_map_greys_in_undriven_road_near_driven_road_only() -> void:
 	var roads := WorldPages.map_roads(net, cell * 3.0)
 	assert_eq(roads[1], PackedInt32Array([0]), "the driven segment")
 	assert_eq(roads[0], PackedInt32Array([1]), "the nearby undriven one, not the far one")
+
+
+func test_the_map_marks_dropped_money_only_while_some_is_out_there() -> void:
+	WorldSession.new_world(1, _any_car())
+	assert_false(WorldPages.dropped_xz().is_finite(), "nothing dropped, nothing marked")
+	WorldSession.set_dropped({"pos": [12.0, 3.0, -40.0], "money": 25})
+	assert_eq(WorldPages.dropped_xz(), Vector2(12.0, -40.0), "the marker sits at the drop's x/z")
+	WorldSession.set_dropped({"pos": [12.0, 3.0, -40.0], "money": 0})
+	assert_false(WorldPages.dropped_xz().is_finite(), "an empty drop isn't marked")

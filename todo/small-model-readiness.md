@@ -268,7 +268,7 @@ name that lies (now `is_lifting_off`).
    documented the absence at the definition; the feature itself is unbuilt.
 15. **Docs quote live tunable values inline** (round 006, T006 — NEW).
    `features/engine-and-transmission.md:92` states the slope is **1.0** AND that it
-   "is not overridden in `config/game_config.tres`"; a correct one-line change
+   "is not overridden in `scripts/game_config.gd`"; a correct one-line change
    falsified all of it. Nothing routes an edit in the `.tres` back to the doc that
    quotes it — the `.tres` carries no breadcrumb of its own. Candidate: describe the
    knob's role and point at the `.tres` for the number, plus a clause on the header

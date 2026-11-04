@@ -16,7 +16,7 @@ extends SceneTree
 # This script does not edit anything: it PRINTS the graded literals, which are
 # then pasted into scripts/ui_theme.gd's palette (each line keeps its authored
 # value in a trailing comment). Re-run it and re-paste if the grade is retuned in
-# config/game_config.tres, then re-run tools/build_ui_theme.gd to regenerate
+# scripts/game_config.gd, then re-run tools/build_ui_theme.gd to regenerate
 # theme/ui_theme.tres.
 #
 # The maths below MUST stay in step with shaders/ps1_post_process.gdshader's
@@ -45,13 +45,9 @@ const AUTHORED := {
 
 
 func _init() -> void:
-	# Loaded directly rather than through the Config autoload: a --script
+	# Built directly rather than through the Config autoload: a --script
 	# SceneTree run has no autoloads.
-	var cfg: GameConfig = load("res://config/game_config.tres")
-	if cfg == null:
-		push_error("could not load config/game_config.tres")
-		quit(1)
-		return
+	var cfg := GameConfig.new()
 	print("# Graded with amount=%.3f saturation=%.3f contrast=%.3f" % [
 		cfg.grade_amount, cfg.grade_saturation, cfg.grade_contrast])
 	print("# shadow_tint=%s highlight_tint=%s" % [cfg.grade_shadow_tint, cfg.grade_highlight_tint])

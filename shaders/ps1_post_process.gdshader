@@ -15,7 +15,7 @@ uniform vec2 virtual_resolution = vec2(320.0, 240.0);
 // intermediate values and soften the exact banding the PS1 look is built on.
 // All the maths here is sRGB-space (TEXTURE is the SubViewport's already-encoded
 // output, not linear) — that is intended for this era of look, so don't
-// "correct" it to linear. Defaults mirror config/game_config.tres and MUST stay
+// "correct" it to linear. Defaults mirror scripts/game_config.gd and MUST stay
 // non-zero: mat_post in main.tscn only authors virtual_resolution, so any path
 // that doesn't run world.gd's _ready (the editor viewport) grades on these.
 // Master strength. 0 = exact passthrough (vignette included), 1 = full grade.

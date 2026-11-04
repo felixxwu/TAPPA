@@ -194,7 +194,7 @@ func test_damage_fraction_tracks_hp() -> void:
 
 
 # A config with an explicit, known damage ramp/cap, so no assertion below depends on
-# the authored (tunable) values in game_config.tres — only on the relationships.
+# the authored (tunable) values in game_config.gd — only on the relationships.
 func _damage_cfg(threshold := 0.5, misfire_max := 0.8, rev_floor := 0.6) -> GameConfig:
 	var cfg := GameConfig.new()
 	cfg.damage_misfire_health_threshold = threshold

@@ -12,7 +12,7 @@ extends RefCounted
 #
 # WHAT AN ENTRY HOLDS: the condition's SHAPE — which GameConfig fields it reads and
 # which structural features it has. NOT the numbers. Per the project rule, every
-# tunable value lives in config/game_config.tres; the table only names the fields.
+# tunable value lives in scripts/game_config.gd; the table only names the fields.
 #
 # Entry keys (all optional except "id"; an omitted key means "this condition does not
 # have that feature", which is exactly how DRY is expressed — an entry with nothing
@@ -67,7 +67,7 @@ extends RefCounted
 #                              fields (see LIGHTNING_KEYS). Omitted => no flashes.
 #                              Read by world.gd._start_lightning. Cosmetic.
 #
-# ADDING A CONDITION: add its GameConfig fields to game_config.gd + game_config.tres,
+# ADDING A CONDITION: add its GameConfig fields to game_config.gd + game_config.gd,
 # add one entry here naming them, and author `"weather": "<id>"` on the events that
 # should run it. No consumer changes.
 

@@ -30,9 +30,9 @@ const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
 # throttled phone then plays worse. 0 = uncapped.
 #
 # THESE TWO NOW LIVE IN GameConfig — the consts are FALLBACK DEFAULTS ONLY.
-# Authored in config/game_config.tres (group "Loading") as `loading_max_fps` /
-# `loading_touch_max_fps` and read through `loading_cap()` below, per CLAUDE.md. RETUNE IN THE
-# .tres. The consts stay as the documented shipped values and as the fallback when the field is
+# Authored in scripts/game_config.gd as `loading_max_fps` /
+# `loading_touch_max_fps` and read through `loading_cap()` below, per CLAUDE.md. RETUNE THERE.
+# The consts stay as the documented shipped values and as the fallback when the field is
 # missing; world.gd reaches the value through `loading_cap`.
 const LOADING_MAX_FPS := 0         # non-touch (desktop/native): no ceiling for the load
 const LOADING_TOUCH_MAX_FPS := 60  # touch/web: fast, but still a ceiling

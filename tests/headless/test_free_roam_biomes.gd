@@ -65,7 +65,7 @@ func test_a_pool_drops_unknown_conditions_and_empty_weights() -> void:
 
 func test_entering_a_region_writes_its_handling_and_leaving_restores_the_authored_values() -> void:
 	var cfg: GameConfig = Config.data
-	var base: GameConfig = load(Config.CONFIG_PATH)
+	var base: GameConfig = GameConfig.new()
 	BiomeDirector.apply_handling(cfg, "icy")
 	assert_eq(cfg.gravel_grip, base.snow_gravel_grip)
 	assert_eq(cfg.grass_grip, base.snow_grass_grip)

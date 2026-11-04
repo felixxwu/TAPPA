@@ -65,7 +65,7 @@ reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the c
   wreck page, "You dropped $n here"), replacing — and losing — any earlier drop, and `collected` is
   cleared, so every coin comes back. A gold crystal bobs over the drop (`_sync_dropped_node`,
   `shaders/crystal.gdshader`, the old loot crystal); driving within `FreeRoamSettings.dropped_reach_m` of it
-  recovers the money (`recover_dropped`). The boot's shader warm-up draws one too (`LootDirector.warm_up` /
+  recovers the money (`recover_dropped`). The full map marks the drop with a gold diamond (`WorldPages.dropped_xz`, [world-session.md](world-session.md)). The boot's shader warm-up draws one too (`LootDirector.warm_up` /
   `clear_warm_up`), so the first wreck doesn't hitch compiling it. A wrecked car picks nothing up until it respawns or rolls into a rest stop (`respawned` / `wreck_recovered`).
 - **Travelling from the road** drops the money the same way (`drop_money`, after a confirm on the map —
   see world-session.md), so the map's free travel can't carry money to safety; checkpoint to checkpoint keeps it.

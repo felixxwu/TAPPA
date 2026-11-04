@@ -65,7 +65,7 @@ The resolution lives in **one place**, `GameConfig.exhaust_locals_for(spec)`, sh
 `car.gd` and by `ExhaustFlames` (which falls back to it for a bare stub car):
 
 - **Authored** positions come from `GameConfig.exhaust_offsets`, a
-  `{ car_id: [Vector3, ...] }` dictionary in `config/game_config.tres`. Car-local metres,
+  `{ car_id: [Vector3, ...] }` dictionary in `scripts/game_config.gd`. Car-local metres,
   **+Z rearward** (forward is −Z), +Y up, +X right.
 
   **Every shipped car has an entry**, seeded from its own geometry rather than a shared
@@ -96,19 +96,15 @@ place it **outside** the body surface and use the yaw to aim it, rather than tuc
 in and relying on the flame to escape. If a car flames everywhere except one pipe, this
 is the first thing to check.
 
-### Why the offsets live in the config resource, not in CarLibrary
+### Where the offsets live
 
-By precedent they belong in `CarLibrary.CARS` next to `bonnet_cam_offset` — also a
-per-car local-space visual nudge. They are in `game_config.tres` for one reason: **F8
-hot-reload re-reads that resource, and a `.gd` script cannot be reloaded.** Positioning a
-pipe by eye is a tweak-reload-look loop, and only a resource gives you that without
-restarting the game. Once a car's pipes are dialled in, its entry is settled data and
-could reasonably move to `CarLibrary`.
+In `GameConfig.exhaust_offsets`. By precedent they could move to `CarLibrary.CARS` next to
+`bonnet_cam_offset` — also a per-car local-space visual nudge.
 
 ## Frames
 
 The frames are **generated at runtime** from config rather than loaded from disk: nothing
-ships in the PCK, and the shape stays tunable (and F8-reloadable) instead of being frozen
+ships in the PCK, and the shape stays tunable instead of being frozen
 into a PNG. `build_frames` draws `exhaust_flame_frames` small images
 (`exhaust_flame_texture_px` square), each seeded on its frame index so the same config
 always yields the same frames — the variation between them is authored, not a per-run
@@ -184,7 +180,6 @@ transform in the way.
 | Drag (left mouse) | Orbit the camera |
 | Wheel | Zoom (clamped) |
 | `[` / `]`, or Left/Right (keyboard + pad) | Previous / next car |
-| **F8** | Re-read `config/game_config.tres` and re-apply the pipes, no restart |
 
 The on-screen readout names the car and its id, says whether its offsets are **authored
 or falling back**, and prints each pipe as a literal `Vector3(x, y, z)` ready to paste
@@ -214,4 +209,4 @@ so a pad works.
 - [wheel-dust.md](wheel-dust.md) — the shared `CpuParticlePool` base these two use
 - [engine-audio.md](engine-audio.md) — the crackle burst that fires on the same signal
 - [nitrous.md](nitrous.md) — the delivery state the stream reads
-- [debug-tools.md](debug-tools.md) — the other dev-build affordances, including F8
+- [debug-tools.md](debug-tools.md) — the other dev-build affordances

@@ -53,7 +53,7 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
 A purely stylistic anamorphic widening of the **entire** frame — the 3D world
 and every UI CanvasLayer on top of it, in every scene. The `DisplayStretch`
 autoload draws everything `Config.data.horizontal_stretch`× wider than reality
-(default **1.1**, set in the "PS1 Look" group of `config/game_config.tres`;
+(default **1.1**, set in the "PS1 Look" group of `scripts/game_config.gd`;
 `1.0` disables it).
 
 It works through the stretch system rather than a post-process shader,
@@ -207,7 +207,7 @@ A desaturate + contrast + warm-brown **split tone** + vignette, in the same pass
 ahead of the dither. GRID's look was never a uniform sepia wash — it was muddy
 warm-brown crushed blacks against yellowed highlights — so shadows and
 highlights are tinted separately, crossfaded by luma. Knobs live in the **PS1
-Look** group of `game_config.tres` (`grade_amount`, `grade_saturation`,
+Look** group of `game_config.gd` (`grade_amount`, `grade_saturation`,
 `grade_contrast`, `grade_shadow_tint`, `grade_highlight_tint`,
 `grade_vignette_strength`, `grade_vignette_radius`), pushed by `post_process_view.gd`'s
 `_ready` alongside `virtual_resolution`. `grade_amount = 0` is an exact

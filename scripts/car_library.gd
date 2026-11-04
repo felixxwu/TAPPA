@@ -2,7 +2,7 @@ class_name CarLibrary
 extends RefCounted
 # A small roster of selectable cars, cycled in-game with the HUD's car button
 # (see hud.gd) and applied by car.gd's apply_car(). Each entry overlays the
-# neutral baseline tuning (car.tscn + game_config.tres) with one real car's
+# neutral baseline tuning (car.tscn + game_config.gd) with one real car's
 # character: body/cabin box dimensions, wheelbase and track, wheel/tyre size,
 # mass, tyre grip, aero drag, the driven axle layout, and an "engine" id naming
 # its powerplant in EngineLibrary (scripts/engine_library.gd) — the single source
@@ -204,7 +204,7 @@ const CARS: Array[Dictionary] = [
 		"brake_bias": 0.4, # front share of foot-brake torque (mid-engine, tail-heavy)
 		"brake_torque": 310.0, # authored so the worst axle sits ~1.5x its static grip budget
 		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
-		"bonnet_cam_offset": Vector3(0.0, 0.64, 0.0), # local-space nudge for the hood cam; tweak per body
+		"bonnet_cam_offset": Vector3(0.0, 0.25, -1.15), # cab-over with no bonnet: sits just ahead of the windscreen
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
 		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
 		"body": Vector3(1.42, 0.70, 3.35), "cabin": Vector3(1.35, 0.75, 1.10),

@@ -2,7 +2,7 @@ extends GutTest
 # The storm crosswind profile (scripts/crosswind.gd).
 #
 # Relations, determinism and structure only — never a tuned value. A designer must be
-# free to retune strength/gust/wavelength in game_config.tres without breaking any
+# free to retune strength/gust/wavelength in game_config.gd without breaking any
 # assertion here, so nothing pins a newton figure, a gust frequency or a strength.
 # The DETERMINISM tests are the load-bearing ones: they guard leaderboard parity for
 # every storm stage (two runs of a stage must meet the identical wind in the same

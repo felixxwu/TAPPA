@@ -17,7 +17,7 @@ extends GutTest
 # It does NOT pin a tunable. Every input this test digests is CONSTRUCTED BY THE TEST:
 # the noise seed, the terrain layers (wavelength/amplitude), texture_tile_per_meter, the
 # centerline Curve2D, the bake width/transition, the lighting params and every cliff param
-# are all set explicitly here. A designer retuning `config/game_config.tres` — or any
+# are all set explicitly here. A designer retuning `scripts/game_config.gd` — or any
 # authored catalogue — cannot make this fail, because none of those values are read.
 # It reaches into no catalogue (`CarLibrary` / `RallyLibrary` / …) and asserts nothing about
 # any authored entry.

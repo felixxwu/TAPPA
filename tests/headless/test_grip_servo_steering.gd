@@ -346,7 +346,7 @@ func test_airborne_fronts_fall_back_to_direct_input() -> void:
 # --- The step shape, where the loop's stability actually lives -----------------
 # Deliberately NOT a driving "does it oscillate" test: that would key off steer_speed, which
 # is a tuning value (the test fixture leaves it at the script default while the game sets it
-# in game_config.tres), so retuning the rate would break the test. See CLAUDE.md.
+# in game_config.gd), so retuning the rate would break the test. See CLAUDE.md.
 
 func test_the_servo_step_is_proportional_to_the_error() -> void:
 	# Proportionality is what stops the loop dithering at the setpoint: as the error shrinks

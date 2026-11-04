@@ -114,7 +114,7 @@ A `CanvasLayer` (layer 7, always processing) over the frozen game:
   as average circles; the real border is noisy), the roads driven (segments whose midpoint
   cell is driven) over, in grey, the undriven road within `GameConfig.minimap_nearby_road_m` of
   a driven cell (`WorldPages.map_roads`), the rest stops come across (orange lit, grey not; `MiniMap.site_markers`, shared with the
-  minimap) and the car. Opened
+  minimap), the dropped money (a diamond in `drop_crystal_color`, `WorldPages.dropped_xz`) and the car. Opened
   from the minimap it pauses the game itself and closing it goes straight back to driving
   (`free_roam.gd → open_full_map`). The page body is transparent (`"alpha": 0.0`): only the
   drawn map is opaque, over the dim. It **frames what has been explored** (`explored_view` →

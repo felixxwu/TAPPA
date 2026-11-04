@@ -49,7 +49,7 @@ func test_degenerate_inputs_are_safe() -> void:
 
 
 func test_config_carries_the_authored_stretch() -> void:
-	var cfg := load("res://config/game_config.tres") as GameConfig
+	var cfg := GameConfig.new()
 	assert_gt(cfg.horizontal_stretch, 0.0, "horizontal_stretch is a positive factor")
 
 
@@ -136,5 +136,5 @@ func test_degenerate_window_with_native_config_is_safe() -> void:
 func test_config_carries_a_sane_render_height() -> void:
 	# Sanity only (never pin the chosen value): non-negative, and if fixed, tall
 	# enough to be a usable frame.
-	var cfg := load("res://config/game_config.tres") as GameConfig
+	var cfg := GameConfig.new()
 	assert_true(cfg.render_height >= 0, "render_height is 0 (native) or a positive height")

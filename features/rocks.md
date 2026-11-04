@@ -14,7 +14,7 @@ billboard scenery) and [regions.md](regions.md) (what a region varies).
 | Mesh merge, sizing, spawn | `scripts/foliage.gd` → `rock_mesh`, `rock_height`, `spawn_rocks` |
 | Rendering + collision field | `scripts/tree_mesh_field.gd` (shared with bushes) |
 | Scatter + placement | `scripts/world.gd` → `_build_rocks` |
-| Size / colour / hitbox tuning | `GameConfig`, `@export_group("Rocks")` |
+| Size / colour / hitbox tuning | `GameConfig` (the `rock_*` fields) |
 | Per-region density | `scripts/region_library.gd` → `rock_density` |
 | Shader | `shaders/ps1_models_lit.gdshader` (shared with the car, barriers, finish arch) |
 | Tests | `tests/headless/test_rocks.gd` |

@@ -1,14 +1,14 @@
 # Configuration (`GameConfig`)
 
-All gameplay and look tuning lives in a single resource so it can be changed
-without touching code or scenes.
+All gameplay and look tuning lives in one script as plain `var` defaults — each
+literal IS the shipped value (there is no `.tres` and no inspector workflow). Fields
+stay `@export` only so `Resource.duplicate()` copies them.
 
-- **Resource file:** `config/game_config.tres`
 - **Script / class:** `scripts/game_config.gd` (`class_name GameConfig extends Resource`)
 - **Autoload accessor:** `scripts/config.gd` (`Config` singleton) → `Config.data`
 
 **Free roam:** `free_roam` holds the island's `FreeRoamSettings` (road network, terrain streaming,
-feedback timings; see `features/free-roam.md`), authored as a sub-resource in the `.tres`.
+feedback timings; see `features/free-roam.md`), built as `FreeRoamSettings.new()`.
 
 **Tests:** `tests/headless/test_config_applied.gd`, `tests/headless/test_config_isolation.gd`
 
@@ -18,9 +18,8 @@ var cfg := Config.data
 body.mass = cfg.mass
 ```
 
-`config.gd._init()` loads `res://config/game_config.tres`, falling back to a
-fresh `GameConfig.new()` if missing. Values are read-only during play; editing
-the `.tres` requires a scene reload to take effect.
+`config.gd._init()` builds a fresh `GameConfig.new()`; editing a value means
+editing `game_config.gd` and restarting.
 
 ## Reading a field with a fallback
 
@@ -66,14 +65,14 @@ plain `var`s that `EngineLibrary.apply()` writes at fielding time — `Resource.
 resets those to their declared defaults, so it isn't a value-complete snapshot either.
 Caller: `car.gd`'s `_live_baseline` (the pre-upgrade/pre-tune baseline `retune()`
 re-derives from). Only
-`Config.reset()` / `reload_from_disk()` legitimately install a new object, and both are
-boot/debug paths that re-field the car afterwards. Guarded by
+`Config.reset()` legitimately installs a new object, a
+boot/test path that re-field the car afterwards. Guarded by
 `tests/headless/test_config_isolation.gd`.
 
 ## The authored baseline (`Config.authored_value`)
 
-`Config` keeps a SECOND reference alongside `data`: `_authored`, the pristine `.tres` as
-loaded, which nothing ever mutates (`data` is a `duplicate(true)` of it precisely so the
+`Config` keeps a SECOND reference alongside `data`: `_authored`, a second
+`GameConfig.new()` that nothing ever mutates (`data` is a separate instance precisely so the
 runtime is free to retune itself). `Config.authored_value(field, fallback)` reads a field
 off it.
 
@@ -100,15 +99,15 @@ only ever the authored file.
 | `hitbox_chamfer_fraction` | 0.333 | Fraction of body width cut off each vertical corner of the collision hull, chamfering it into an elongated octagon (equal inset on X + Z → 45° corners, regular octagon at the nose). Only affects obstacle contacts + damage impulses, not grip/speed. 0 = plain box (range 0.0–0.5) |
 | `downforce_front` / `downforce_rear` | 0.0 | N per (m/s)² at each axle; negative = lift (range -2.0–2.0). Set **per-car** by `apply_car` from the CarLibrary spec (these defaults are just the fallback); every car has a small rear value |
 | `steer_limit` | 1.0 rad | The wheel's MECHANICAL stop, and the only bound on the angle. The grip servo measures the peak-grip angle rather than predicting a cap, so there is no slip-derived limit or low-speed blend to configure |
-| `steer_speed` | 2.0 (`.tres`) | Rate limit (rad/s) when winding MORE lock on (target further from center, same direction as the current wheel angle, or starting from center) — the model of how fast a hand can turn the wheel, and also the input smoothing. The servo covers just the tire's slip angle (~8.6° on tarmac), not full lock, so this is the dominant feel parameter and is tuned far below a lock-to-lock rate |
-| `counter_steer_speed` | 3.5 (`.tres`) | Rate limit (rad/s) when winding lock back OFF, measured relative to `null_angle` (not center) — target closer to the null or across to its far side. Real countersteering/slide-catching happens faster than winding new lock on, so this is tuned higher than `steer_speed`; being null-relative keeps one continuous slide-catch on this rate even as it crosses center, see `features/car-physics.md` |
+| `steer_speed` | 2.0 | Rate limit (rad/s) when winding MORE lock on (target further from center, same direction as the current wheel angle, or starting from center) — the model of how fast a hand can turn the wheel, and also the input smoothing. The servo covers just the tire's slip angle (~8.6° on tarmac), not full lock, so this is the dominant feel parameter and is tuned far below a lock-to-lock rate |
+| `counter_steer_speed` | 3.5 | Rate limit (rad/s) when winding lock back OFF, measured relative to `null_angle` (not center) — target closer to the null or across to its far side. Real countersteering/slide-catching happens faster than winding new lock on, so this is tuned higher than `steer_speed`; being null-relative keeps one continuous slide-catch on this rate even as it crosses center, see `features/car-physics.md` |
 | `steer_deadzone` | 0.02 | Steering demand below which the wheels servo to their zero-lateral-slip angle (auto-countersteer). A deadzone, not an exact-zero test, because sticks and the touch slider never return 0 |
 | `spin_assist_torque` | **0.0 (off)** | Spin protection: corrective yaw torque (N·m) back toward the travel direction past `spin_assist_angle` of slip; suppressed while the handbrake is held. **Deliberately disabled** — grip-servo steering plus the lowered `com_height` and the grounded anti-roll bar handle slides without a yaw aid. The code stays for anyone who wants it back |
-| `spin_assist_angle` | 0.6 rad (`.tres`) | Slip angle (≈34°) where spin protection starts; ramps to full at twice this angle |
-| `level_assist_torque` | 10000.0 (`.tres`) | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
-| `level_assist_grounded` | 1.0 (`.tres`) | Fraction of `level_assist_torque` kept with all four wheels planted, where the aid acts as an anti-roll bar (referenced to the wheel contact normal, not world up); 0 = airborne-only |
-| `wheel_roll_influence` | 1 (`.tres`) | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM (rollover-proof fudge), 1 = contact patch (physical) |
-| `com_height` | −0.25 (`.tres`) | Centre-of-mass height (m) relative to the body origin; negative lowers it. Sets the rollover threshold `track / (2 × CoG height)` — see car-physics.md |
+| `spin_assist_angle` | 0.6 rad | Slip angle (≈34°) where spin protection starts; ramps to full at twice this angle |
+| `level_assist_torque` | 10000.0 | Self-righting roll+pitch torque while airborne (N·m at 90° tilt); 0 disables |
+| `level_assist_grounded` | 1.0 | Fraction of `level_assist_torque` kept with all four wheels planted, where the aid acts as an anti-roll bar (referenced to the wheel contact normal, not world up); 0 = airborne-only |
+| `wheel_roll_influence` | 1 | Height tire forces act at (0..1): body roll (lateral) + pitch dive/squat (longitudinal); 0 = CoM (rollover-proof fudge), 1 = contact patch (physical) |
+| `com_height` | −0.25 | Centre-of-mass height (m) relative to the body origin; negative lowers it. Sets the rollover threshold `track / (2 × CoG height)` — see car-physics.md |
 | `wheel_friction_slip_front` | 0.8 | Front tire grip coefficient μ |
 | `wheel_friction_slip_rear` | 0.6 | Rear tire grip coefficient μ |
 | `parking_hold_grip` | 1.0 | Static-friction hold cap (`·m·g`) for a stopped, fully-braked car so it doesn't creep down a slope (`car._apply_parking_hold`); 0 disables |
@@ -263,7 +262,7 @@ The frame cap held for the duration of world generation only, via
 > **The old consts still exist, as FALLBACK DEFAULTS ONLY.** Each of the scripts above
 > keeps its `const` (documenting the shipped value beside the design rationale, and
 > serving as the `Config.get_float` fallback), and outside callers (tests) still name them. Retuning one changes NOTHING on its
-> own: the authored value in `game_config.tres` is what the game reads.
+> own: the authored value in `game_config.gd` is what the game reads.
 
 ## Engine data
 
@@ -290,10 +289,3 @@ only writer of these fields. See
 - `suspension_damping_relaxation(rate)` → 1.5× compression (stiffer rebound)
 - `engine_firing_phases()` → firing angles normalized to 0..1 crank cycle
 - `terrain_layers()` → `[Vector2(wavelength, amplitude), ...]`
-
-## Current overrides in `game_config.tres`
-
-The committed `.tres` differs from script defaults in places, e.g.
-`auto_gearbox = true`, `drag_coefficient = 2.645`, `steer_speed = 2.0`,
-`engine_nitrous_hiss_gain = 0.25`, `upshift_redline_fraction = 0.7`. Check the file
-for the authoritative values.

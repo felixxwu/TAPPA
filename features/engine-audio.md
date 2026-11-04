@@ -122,10 +122,10 @@ the FINAL mixed signal after the soft clipper, so it scales every element at
 once — firing voice, broadband noise, exhaust crackle, turbo whistle/air-rush,
 supercharger whine, blow-off vent, and anti-lag bangs. Default `0.0` dB (no
 change); negative attenuates the whole engine mix, `-80` effectively mutes it.
-It is a `GameConfig` value in `game_config.tres`, not a per-car property.
+It is a `GameConfig` value in `game_config.gd`, not a per-car property.
 
 The pre-amp `engine_soft_clip_drive` is a single **global** `GameConfig` value
-(default `0.6`; the live `game_config.tres` is tuned higher) — higher drive
+(default `0.6`; the live `game_config.gd` is tuned higher) — higher drive
 boosts low-level content and hardens the knee (more grit). The post-amp
 `engine_soft_clip_post_gain` is an **engine** property (default `1.0`,
 transparent; set from `EngineLibrary`'s `soft_clip_post_gain` — see *Per-engine
@@ -239,7 +239,7 @@ the `_playback == null` guard, so it never runs headless (no audio device) —
 tests that instantiate the intro are unaffected. Tunables:
 `engine_audio_ref_distance_m` (full-volume radius) and
 `engine_audio_max_attenuation_db` (floor), both on `GameConfig` /
-`game_config.tres`.
+`game_config.gd`.
 
 **Suppressing the voice** is done by disabling the node's processing, never by
 fighting the per-frame `volume_db` writer: `car.gd`'s `silence_engine_audio()`
@@ -275,7 +275,7 @@ synth and the generator can never run detuned relative to each other.
 Why: `fill()` is a per-sample GDScript DSP loop, so its CPU cost scales with **sample
 rate, not frame rate** — it is the largest single script cost in the game (~0.96 ms/frame
 even on native desktop, and the web export is single-threaded, so the mixer *is* the main
-loop). The shipped `game_config.tres` sets the web-touch rate to **11025**. The audible
+loop). The shipped `game_config.gd` sets the web-touch rate to **11025**. The audible
 price is dulled crackle and turbo-whistle layers (Nyquist drops to ~5.5 kHz), not a lost
 engine fundamental.
 
@@ -433,7 +433,7 @@ case where the edge landed on the final substep.
 **Still to wire:** the mix level is currently the `NITROUS_HISS_GAIN` constant in
 `engine_audio_synth.gd`. A `GameConfig.engine_nitrous_hiss_gain` export mirroring
 `engine_supercharger_whine_gain` should replace it (cached in `_init`, like the
-other gains) so nitrous loudness is tunable from `config/game_config.tres`.
+other gains) so nitrous loudness is tunable from `scripts/game_config.gd`.
 
 ## Related config
 
@@ -474,7 +474,7 @@ WASM than on desktop). Optimisations in place, all behaviour-preserving:
   h)/h`) once per call rather than per firing phase.
 - `engine_audio.gd` sizes its scratch buffer to exactly the frames available and
   pushes it directly, dropping the per-frame `slice()` allocation.
-- The shipped `engine_harmonics` is **3** (`config/game_config.tres`; code default
+- The shipped `engine_harmonics` is **3** (`scripts/game_config.gd`; code default
   is 4). With the wavetable this no longer affects the per-sample cost (only the
   one-time bake), but it still shapes the baked timbre. Config value, not a code
   change; the synth reads it unchanged.

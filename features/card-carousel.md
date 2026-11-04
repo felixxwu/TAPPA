@@ -570,7 +570,7 @@ the cards land at the same screen height on every page. A page built with no tit
 ## Known open decisions (unilateral — flag for design review)
 
 - **Card width / aspect / dim alpha / snap duration** are all authored defaults in
-  `game_config.tres`, not something a designer asked for by number — they were picked to
+  `game_config.gd`, not something a designer asked for by number — they were picked to
   look reasonable, not measured against the shipped look. Retune freely; nothing else
   depends on the exact values.
 - **The drag-to-select threshold** (`card_carousel_drag_step_fraction`, default 0.35) is a

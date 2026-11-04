@@ -71,9 +71,8 @@ map of what changed, which seams not to work around, and where the decision reco
 
 ## Testing (mandatory)
 
-- **Never test tunable/balance VALUES.** If a value can be changed in the
-  inspector / a config resource / an authored data table (`GameConfig` /
-  `game_config.tres`, and the authored `CARS` / `ENGINES` / `REGIONS` /
+- **Never test tunable/balance VALUES.** If a value is a tuning default in
+  `GameConfig` (`scripts/game_config.gd`) or an authored data table ( the authored `CARS` / `ENGINES` / `REGIONS` /
   `CONDITIONS` / `CATALOGUE` / `KITS` tables in `CarLibrary` / `EngineLibrary` /
   `RegionLibrary` / `WeatherLibrary` / `BoostLibrary` / `LootRules`), and changing that value to another reasonable setting would
   make the test fail, DO NOT write that test — it pins a moving number and adds
@@ -89,7 +88,7 @@ map of what changed, which seams not to work around, and where the decision reco
   "W drives the car forward", "reset returns to the start". Sanity guards that
   only rule out truly broken values (mass > 0, a grip coefficient is finite) are
   fine; pinning the *chosen* value is not. When in doubt, ask: "would a designer
-  retuning this in the inspector break my test?" If yes, delete the assertion.
+  retuning this value break my test?" If yes, delete the assertion.
 - **Never depend on a specific catalogue entry existing.** A logic/physics test
   must not reach into `CarLibrary` / `EngineLibrary` / `RegionLibrary` /
   `WeatherLibrary` / `BoostLibrary` / `LootRules` for a particular authored entry by id (`CarLibrary.by_id("mx5")`,
@@ -311,7 +310,7 @@ map of what changed, which seams not to work around, and where the decision reco
   directly. Silence is how work gets clobbered; a one-line message is cheaper
   than a lost edit or a merge untangle.
   - Before you start editing files that another agent is plausibly in the middle
-    of (shared physics/config, `config/game_config.tres`, `car.gd`, core scene
+    of (shared physics/config, `scripts/game_config.gd`, `car.gd`, core scene
     setup, a `features/` file, a `todo/` spec), message them first and say which
     paths you're taking. If they're already in there, agree who owns the file
     rather than both writing it.
@@ -350,9 +349,9 @@ map of what changed, which seams not to work around, and where the decision reco
   the current branch unless the user asks you to branch (or you're in the remote
   environment on a harness-assigned branch). Don't run `git checkout -b`,
   `git switch -c`, or otherwise start a new branch on your own initiative.
-- All gameplay/look tuning values live in `config/game_config.tres`
-  (a `GameConfig` resource) — change values there, not in scripts or
-  `main.tscn`. Scene/script literals are only fallback defaults.
+- All gameplay/look tuning values live in `scripts/game_config.gd` as plain
+  `var` defaults (there is no `.tres` and no editor inspector workflow) —
+  change values there, not in other scripts or `main.tscn`.
 - If you're running in a managed remote execution environment (Claude Code on
   the web — an isolated cloud container, not the user's local machine), keep
   developing on whatever feature branch the harness assigned, but ALWAYS merge

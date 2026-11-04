@@ -19,7 +19,7 @@ kit" locks below are gone with the parts that set them. A third, purely
 free-and-reversible character but touches no stat at all; see
 [wheel-customization.md](wheel-customization.md). Tuning is stored as
 per-car deltas, costs nothing, and is reset instantly; it is never written back to
-the authored `.tres`.
+the authored GameConfig.
 
 ## The three axes
 

@@ -2,8 +2,25 @@ extends GutTest
 # EngineAudioSynth pure-DSP behavior and GameConfig firing-phase helper.
 
 
-func test_firing_phases_default_inline4_even() -> void:
+# A frozen synth baseline, so these DSP checks never depend on the shipped mix (a hot
+# master gain or a hard-driven soft clipper would swamp the effects they isolate).
+static func _cfg() -> GameConfig:
 	var cfg := GameConfig.new()
+	cfg.engine_master_volume_db = 0.0
+	cfg.engine_idle_gain = 0.25
+	cfg.engine_harmonics = 4
+	cfg.engine_noise_level = 0.15
+	cfg.engine_smoothing_rate = 200.0
+	cfg.engine_limiter_crackle = 0.5
+	cfg.engine_soft_clip_drive = 0.6
+	cfg.engine_soft_clip_post_gain = 1.0
+	cfg.engine_nitrous_hiss_gain = 0.7
+	cfg.turbo_boost_response = 1.0
+	return cfg
+
+
+func test_firing_phases_default_inline4_even() -> void:
+	var cfg := _cfg()
 	cfg.engine_cylinders = 4
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	var phases := cfg.engine_firing_phases()
@@ -15,7 +32,7 @@ func test_firing_phases_default_inline4_even() -> void:
 
 
 func test_firing_phases_empty_falls_back_to_even() -> void:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_cylinders = 4
 	cfg.engine_firing_angles = []
 	var phases := cfg.engine_firing_phases()
@@ -27,7 +44,7 @@ const MIX_RATE := 22050.0
 
 
 func _make_synth() -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	return EngineAudioSynth.new(cfg, MIX_RATE)
 
@@ -36,7 +53,7 @@ func _make_synth() -> EngineAudioSynth:
 # random sign flips that swamp the tone's crossings, so silence it to isolate
 # the firing frequency. (Noise is exercised separately by the other tests.)
 func _clean_synth() -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0
 	return EngineAudioSynth.new(cfg, MIX_RATE)
@@ -138,7 +155,7 @@ func test_shift_cut_stays_audible_like_a_throttle_lift() -> void:
 
 # A clean synth with the low-octave voice crossfaded in by `mix`.
 func _clean_synth_with_low_octave(mix: float) -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0
 	cfg.engine_low_octave_mix = mix
@@ -189,7 +206,7 @@ func test_low_octave_mix_zero_is_unchanged() -> void:
 
 # A synth at a given master volume (engine_volume_db) and broadband noise level.
 func _synth_with_volume(volume_db: float, noise_level: float) -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = noise_level
 	cfg.engine_volume_db = volume_db
@@ -245,7 +262,7 @@ func test_noise_is_independent_of_volume() -> void:
 # (very low volume_db) so the output is essentially the noise floor: lowering the
 # global master must still quieten it.
 func _synth_with_master(master_db: float) -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_volume_db = -60.0   # firing voice negligible → output is the noise floor
 	cfg.engine_noise_level = 0.2
@@ -273,7 +290,7 @@ func test_master_volume_mute_silences_everything() -> void:
 # A clean (noiseless) synth with explicit limiter knobs, for isolating the
 # fuel-cut duck and the crackle burst from each other and from the noise floor.
 func _limiter_synth(cut_level: float, crackle: float, smoothing := 200.0) -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0
 	cfg.engine_limiter_cut_level = cut_level
@@ -357,7 +374,7 @@ func test_wavetable_matches_direct_voice() -> void:
 
 
 func _synth_with_angles(angles: Array[float]) -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = angles
 	return EngineAudioSynth.new(cfg, MIX_RATE)
 
@@ -378,7 +395,7 @@ func test_uneven_table_differs_from_even() -> void:
 
 # Soft clipper: a synth driven hard must still produce bounded, rounded output.
 func _clean_synth_with(drive: float, post_gain: float) -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0
 	cfg.engine_soft_clip_drive = drive
@@ -428,7 +445,7 @@ func test_soft_clip_post_gain_scales_output() -> void:
 # DC blocker centres the signal so overdrive produces a loud, symmetric
 # (square-ish) tone: the output is dominated by AC content (not a DC offset).
 func test_dc_blocker_keeps_overdriven_voice_audible() -> void:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0  # isolate the voice
 	cfg.engine_volume_db = 12.0   # loud
@@ -454,7 +471,7 @@ func test_dc_blocker_keeps_overdriven_voice_audible() -> void:
 
 
 func _turbo_synth() -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0  # isolate the tonal turbo/supercharger layers
 	cfg.turbo_enabled = true
@@ -495,7 +512,7 @@ func test_whistle_pitch_rises_with_shaft_speed() -> void:
 	# shaft speed, so faster spin => higher spectral content => more zero-crossings.
 	# Mute the firing voice so the whistle dominates the buffer, isolating the cue.
 	var mk := func() -> EngineAudioSynth:
-		var cfg := GameConfig.new()
+		var cfg := _cfg()
 		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 		cfg.engine_noise_level = 0.0
 		cfg.engine_volume_db = -80.0  # mute the firing voice; isolate the whistle
@@ -539,7 +556,7 @@ func test_bov_burst_scales_with_boost() -> void:
 func _long_bov_synth() -> EngineAudioSynth:
 	# Isolate the BOV tail: muted voice, no whistle/noise, a long decay so a tail
 	# survives across buffers unless something kills it.
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0
 	cfg.engine_volume_db = -80.0
@@ -581,7 +598,7 @@ func test_bov_flutter_modulates_the_burst() -> void:
 	# The flutter LFO scales the burst between (1 - amount) and 1, so its mean
 	# amplitude — and thus total energy over the tail — drops when flutter is on.
 	var mk := func(amount: float) -> EngineAudioSynth:
-		var cfg := GameConfig.new()
+		var cfg := _cfg()
 		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 		cfg.engine_noise_level = 0.0
 		cfg.engine_volume_db = -80.0
@@ -605,7 +622,7 @@ func test_bov_decay_ms_shapes_the_tail() -> void:
 	# A longer decay time rings out longer, so the burst carries more total energy
 	# over the buffer than a short decay (same gain, same trigger).
 	var mk := func(decay_ms: float) -> EngineAudioSynth:
-		var cfg := GameConfig.new()
+		var cfg := _cfg()
 		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 		cfg.engine_noise_level = 0.0
 		cfg.engine_volume_db = -80.0  # mute the voice; isolate the burst
@@ -623,7 +640,7 @@ func test_bov_decay_ms_shapes_the_tail() -> void:
 
 func test_supercharger_whine_only_when_enabled() -> void:
 	var mk := func(blown: bool) -> EngineAudioSynth:
-		var cfg := GameConfig.new()
+		var cfg := _cfg()
 		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 		cfg.engine_noise_level = 0.0
 		cfg.supercharger_enabled = blown
@@ -640,7 +657,7 @@ func test_supercharger_whine_only_when_enabled() -> void:
 # The nitrous layer is synthesised noise gated on the DELIVERY state. The voice is
 # muted in this fixture so the buffer is essentially the nitrous layer alone.
 func _nitrous_synth() -> EngineAudioSynth:
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_noise_level = 0.0  # isolate the nitrous layer from the noise floor
 	cfg.engine_volume_db = -80.0  # mute the firing voice
@@ -733,7 +750,7 @@ func test_nitrous_respects_the_global_master_volume() -> void:
 	# in-game audio volume sliders (which drive engine_master_volume_db / the Engine
 	# bus) quieten and mute it too.
 	var mk := func(master_db: float) -> EngineAudioSynth:
-		var cfg := GameConfig.new()
+		var cfg := _cfg()
 		cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 		cfg.engine_noise_level = 0.0
 		cfg.engine_volume_db = -80.0  # isolate the nitrous layer
@@ -755,7 +772,7 @@ func test_nitrous_respects_the_global_master_volume() -> void:
 func test_nitrous_uses_its_own_noise_stream() -> void:
 	# Every noise layer keeps its own rolling index into the shared table; if nitrous
 	# reused another layer's samples the sum would be a fixed multiple of it.
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_volume_db = -80.0
 	cfg.nitrous_boost_gain = 0.5
@@ -817,7 +834,7 @@ const EngineAudioScript := preload("res://scripts/engine_audio.gd")
 func test_mix_rate_resolver_picks_web_touch_branch_only_on_web_touch() -> void:
 	# Behaviour, not values: web AND touch takes the web-touch field, every other
 	# target passes the full rate straight through.
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_mix_rate_web_touch = 12345.0  # synthetic, not the shipped tuning
 	var full := 40000.0
 	assert_eq(cfg.engine_mix_rate_for(true, true, full), 12345.0, "web touch -> web-touch rate")
@@ -829,7 +846,7 @@ func test_mix_rate_resolver_picks_web_touch_branch_only_on_web_touch() -> void:
 func test_synth_output_is_valid_at_a_reduced_mix_rate() -> void:
 	# The synth must stay well-formed at ANY mix rate it can be constructed with,
 	# not just the base one — the per-sample coefficients are all rate-derived.
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	for rate in [MIX_RATE, MIX_RATE * 0.5]:
 		var synth := EngineAudioSynth.new(cfg, rate)
@@ -853,7 +870,7 @@ func test_noise_table_layers_are_decorrelated() -> void:
 	# adding the crackle burst has to change the waveform's SHAPE, not just scale it.
 	# (If crackle reused the base noise samples, the sum would be an exact multiple
 	# of the noise-only signal at every sample.)
-	var cfg := GameConfig.new()
+	var cfg := _cfg()
 	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
 	cfg.engine_volume_db = -80.0  # mute the tonal voice so only noise layers remain
 	var plain := EngineAudioSynth.new(cfg, MIX_RATE)

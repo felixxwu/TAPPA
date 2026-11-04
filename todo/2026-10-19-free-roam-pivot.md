@@ -467,7 +467,7 @@ Reviewed 2026-10-20 against the prototype. Each stage notes what's done and what
    - stuck or flipped auto-recovery made network-aware. `TrackProgress` assumes one
      centreline, so recovery should reuse `free_roam.gd._road_pose`.
    The hub stays unreachable until stage 6 rewires title → world. Moving
-   `FreeRoamSettings` onto `GameConfig` / `game_config.tres` (CLAUDE.md: tunables live
+   `FreeRoamSettings` onto `GameConfig` / `game_config.gd` (CLAUDE.md: tunables live
    there) can happen here or in stage 6, once the knobs have settled. (Done 2026-10-27:
    `GameConfig.free_roam`.)
 5. **Damage chain and rest stops — DONE 2026-10-20** (`features/free-roam.md` → *Damage and rest stops*). Temperature, cooling failure,
@@ -706,7 +706,7 @@ Numbering continues from decision 32.
   (`tools/compile_check.tscn`: every script and scene loads with the autoloads present).
 - **D72. REVIEW — dead `GameConfig` fields were left in place** (signs, coins, arches,
   pacenotes, start line, rival pace, run economy, skills). Removing them means editing
-  `game_config.tres` and the config tests in one sweep; worth a `/housekeeping` pass.
+  `game_config.gd` and the config tests in one sweep; worth a `/housekeeping` pass.
 - **D73. `todo/` specs for deleted systems were NOT deleted** (`region-stage-slots-redesign.md`,
   `mid-run-upgrade-menu.md`, parts of `backlog.md` and `roguelike-pivot.md`). `CLAUDE.md` says to
   ask before removing todo items. Please decide.

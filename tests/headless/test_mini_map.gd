@@ -112,18 +112,6 @@ func test_ahead_is_up_and_right_is_right_whatever_the_heading() -> void:
 		assert_gt(side.x, c.x, "a point to the right is to the right for %s" % fwd)
 
 
-func test_the_way_out_arrow_points_away_from_spawn_whatever_the_heading() -> void:
-	var mm := _map()
-	mm.set_view(Vector2.ZERO, Vector2(0, -1))
-	assert_eq(mm.outward_dir(), Vector2.ZERO, "no arrow at spawn")
-	for fwd: Vector2 in [Vector2(0, -1), Vector2(1, 0), Vector2(-0.6, 0.8)]:
-		var car := Vector2(500, -200)
-		mm.set_view(car, fwd)
-		var away := mm.world_to_local(car * 1.1) - mm.world_to_local(car)
-		assert_almost_eq(mm.outward_dir().angle_to(away), 0.0, 0.01, "points away from spawn for %s" % fwd)
-		assert_almost_eq(mm.outward_dir().length(), 1.0, 0.001)
-
-
 func test_the_ground_is_tilted_away_far_is_narrower_and_compressed() -> void:
 	var mm := _map()
 	mm.near_frac = 0.5

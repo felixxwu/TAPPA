@@ -303,7 +303,7 @@ travel), overlaid onto the live config by `car.gd`'s `apply_car()` and pushed on
 each wheel per axle via `_apply_suspension()` (dampers re-derived; the standalone
 `_sync_suspension_to_wheels()` re-pushes after an upgrade mutates the rate). Soft &
 tall roadster/muscle (MX-5, Charger) vs stiff & low supercars (911, Viper,
-XJS). The `config/game_config.tres` values are the baseline/fallback.
+XJS). The `scripts/game_config.gd` values are the baseline/fallback.
 
 ### The mount a compression is measured from (`Car.wheel_mount`)
 

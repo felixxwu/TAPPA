@@ -121,6 +121,7 @@ func step(delta: float) -> void:
 				_wreck_page_in -= delta
 				if _wreck_page_in <= 0.0:
 					_wreck_page_in = -1.0
+					_set_driverless(true)
 					wrecked.emit()
 			return
 		_end_wreck()
@@ -220,12 +221,11 @@ func _on_gave_up() -> void:
 	is_wrecked = true
 	if pause_menu != null:
 		pause_menu.set_input_enabled(false)
-	_set_driverless(true)
 	_set_engine_killed(true)
 	_wreck_page_in = Config.data.wreck_page_delay_s
 
 
-# Scripted control with every input at zero: the car rolls on where it was heading.
+# Scripted control with every input at zero, so the wreck page's menu keys don't steer the car.
 func _set_driverless(on: bool) -> void:
 	car.set("ai_throttle", 0.0)
 	car.set("ai_steer", 0.0)

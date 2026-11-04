@@ -28,7 +28,7 @@ class _FakeFloor extends Node:
 # build still exercises everything asserted below.
 func before_all() -> void:
 	SceneTestHelpers.minimal_world()
-	# The shipped config ships the distant-terrain backdrop OFF (game_config.tres), but
+	# The shipped config ships the distant-terrain backdrop OFF (game_config.gd), but
 	# this suite asserts the backdrop-building path, so enable it for the test scene.
 	Config.data.distant_terrain_enabled = true
 	_scene = load("res://main.tscn").instantiate()

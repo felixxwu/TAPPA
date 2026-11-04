@@ -6,7 +6,6 @@ extends Resource
 # and the streaming budget. Defaults are the preset liked in tools/road_network_lab.html
 # (todo/2026-10-19-free-roam-pivot.md).
 
-@export_group("Island")
 @export var world_seed := 5687
 ## New World draws random seeds until the roads reach the outermost (snow) ring and total more
 ## than this, measured junction to junction like tools/road_network_lab.html.
@@ -16,7 +15,6 @@ extends Resource
 @export var island_radius_m := 10000.0
 @export var ring_count := 4
 
-@export_group("Biomes")
 ## The region each biome ring wears, counting outward from spawn (RegionLibrary ids; wraps if
 ## there are more rings). Its look, trees, rocks and handling come from RegionLibrary.
 @export var ring_regions := PackedStringArray(["home", "greece", "taiga", "snow"])
@@ -37,7 +35,6 @@ extends Resource
 ## wobble in the border stretches or squeezes it in places).
 @export var biome_fade_m := 10.0
 
-@export_group("Road network (radial growth)")
 @export var node_spacing_m := 300.0
 @export var segment_m := 750.0
 @export var fork_chance := 0.38
@@ -69,7 +66,6 @@ extends Resource
 ## don't cross each other; they fade back in over the next 4 m.
 @export var marking_junction_clear_m := 6.0
 
-@export_group("Base height and lakes")
 @export var base_scale_m := 500.0
 @export var base_relief_m := 5.0
 @export var water_level_m := -2.0
@@ -78,7 +74,6 @@ extends Resource
 ## Where a road runs along or across a lake, the bank from the road's edge down to the lake bed.
 @export var lake_road_bank_m := 12.0
 
-@export_group("Road-first terrain")
 @export var mountain_m := 300.0
 @export var flat_band_m := 2.0
 @export var mountain_dist_m := 400.0
@@ -89,7 +84,6 @@ extends Resource
 @export var bump_height_m := 5.0
 @export var bump_scale_m := 50.0
 
-@export_group("Sites")
 ## Road between rest stops in a ring whose region doesn't set its own `rest_stop_spacing_m`
 ## (RegionLibrary).
 @export var rest_stop_spacing_m := 1050.0
@@ -109,12 +103,10 @@ extends Resource
 @export var pad_blend_max_m := 40.0
 @export var pad_blend_max_slope := 0.25
 
-@export_group("Barriers")
 ## A bend (the few rounded vertices of one corner) that turns by more than this in total is sharp and gets a barrier on its outside
 ## where the land falls away. The module and drop rules are GameConfig's barrier_* fields.
 @export var barrier_turn_min_deg := 28.0
 
-@export_group("Foliage")
 ## One candidate spot per cell of this size; trees are then thinned by the forest noise.
 @export var tree_cell_m := 6.0
 ## Share of the land that is forest (0 = no trees, 1 = everywhere).
@@ -124,18 +116,17 @@ extends Resource
 ## (and the forest noise leaves no gaps), easing over this distance to the far densities below.
 @export var roadside_falloff_m := 50.0
 ## Share of tree / bush spots kept far from the road.
-@export_range(0.0, 1.0) var far_tree_density := 0.35
-@export_range(0.0, 1.0) var far_bush_density := 0.3
+@export var far_tree_density := 0.35
+@export var far_bush_density := 0.3
 ## One rock-group candidate per cell, before the region's rock density thins it.
 @export var rock_cell_m := 45.0
 @export var rock_group_chance := 0.35
 
-@export_group("Streaming")
 ## Share of the frame's free time (from the last frames' cpu / gpu load) terrain work may use.
-@export_range(0.0, 1.0) var budget_fraction := 0.5
+@export var budget_fraction := 0.5
 ## Floor under that budget, as a share of the actual frame time, so a slow frame gets a longer
 ## floor and streaming gets the same time per second at any frame rate...
-@export_range(0.0, 1.0) var budget_min_fraction := 0.25
+@export var budget_min_fraction := 0.25
 ## ...but no longer than it would be at this frame rate. On a device whose every frame is busy
 ## (a phone browser), a floor that grows with slow frames slows them further, and so on.
 @export var budget_floor_fps := 60.0
@@ -157,8 +148,8 @@ extends Resource
 @export var far_radius := 6
 ## The mid band narrows as the car speeds up, reaching these shares of its reach to the side and
 ## behind at mid_squash_speed_mps (ahead it always reaches mid_radius).
-@export_range(0.1, 1.0) var mid_side_frac := 0.6
-@export_range(0.1, 1.0) var mid_back_frac := 0.6
+@export var mid_side_frac := 0.6
+@export var mid_back_frac := 0.6
 @export var mid_squash_speed_mps := 25.0
 ## The safety net: if the chunk the car will be over in this many seconds has no collision yet,
 ## it is built at once, over the frame budget (a hitch rather than a fall through the world).
@@ -167,9 +158,8 @@ extends Resource
 ## far mesh that would fill a gap in the horizon closer than d + this many chunks (0 = planting
 ## and far gaps at the same distance tie; larger favours the horizon over foliage). Never puts
 ## either ahead of a collision or near-mesh build.
-@export_range(0.0, 40.0) var far_lead_chunks := 3.0
+@export var far_lead_chunks := 3.0
 
-@export_group("Stunts")
 ## A drift: the car pointing at least this far from where it's going, at this speed (m/s). Each
 ## second of it pays this much once the drift ends.
 @export var drift_min_angle_deg := 25.0
@@ -192,7 +182,6 @@ extends Resource
 @export var near_miss_min_speed_mps := 15.0
 @export var near_miss_money := 100
 
-@export_group("Feedback")
 ## How long a loot / shop message stays up, in seconds.
 @export var toast_s := 3.0
 ## The "Checkpoint reached" / region band: fade in and out time, and how long it holds.
@@ -216,7 +205,6 @@ extends Resource
 @export var rest_crowd_half_len_m := 6.0
 @export var rest_crowd_half_depth_m := 3.0
 
-@export_group("Cold open")
 ## A first-time player's start (ColdOpen, todo/2026-10-30-cold-open.md): the car they start in
 ## (a CarLibrary id; the first starter car if it's missing).
 @export var cold_open_car_id := "mx5"
@@ -236,10 +224,10 @@ extends Resource
 ## The car's state at the start: HP as a fraction of max (below the cooling-failure fraction, so the
 ## cooling is already gone), and engine temperature as a fraction of the overheat threshold (half: a
 ## warm-ish engine, so the gauge climbs from the middle).
-@export_range(0.0, 1.0) var cold_open_start_hp_frac := 0.1
-@export_range(0.0, 2.0) var cold_open_start_temp_frac := 0.5
+@export var cold_open_start_hp_frac := 0.1
+@export var cold_open_start_temp_frac := 0.5
 ## The lowest HP the car can fall to during the cold open, as a fraction of max: it limps, never gives up.
-@export_range(0.0, 1.0) var cold_open_hp_floor_frac := 0.1
+@export var cold_open_hp_floor_frac := 0.1
 ## The lines shown one after another in place of the loading screen (LoadingScreen.story), each for
 ## cold_open_story_line_s; the last stays until the island is loaded. "%s" is the car's name.
 @export var cold_open_story := PackedStringArray([

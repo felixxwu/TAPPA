@@ -3,7 +3,7 @@ extends GutTest
 # The snow region — the first region to influence HANDLING as well as look.
 #
 # Everything here is a RELATION or a STRUCTURE, never a tuned value: a designer retuning
-# snow_grass_grip / ice_grip / snow_deep_drag in the inspector must not break this file
+# snow_grass_grip / ice_grip / snow_deep_drag must not break this file
 # (CLAUDE.md). Where a region is needed, a SYNTHETIC one is installed via the
 # Registry.Seam rather than leaning on the shipped Alps entry — except in the two places
 # explicitly marked as catalogue-contract checks.
@@ -89,7 +89,7 @@ func test_resolving_does_not_coerce_to_float() -> void:
 
 func test_the_shipped_snow_region_names_only_real_config_properties() -> void:
 	RegionLibrary.reset()
-	var cfg: GameConfig = load(Config.CONFIG_PATH)
+	var cfg: GameConfig = GameConfig.new()
 	var named := 0
 	for region in RegionLibrary.all():
 		for block_key in ["surface_grip", "deep_snow", "frozen_water"]:

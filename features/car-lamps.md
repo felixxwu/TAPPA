@@ -24,7 +24,7 @@ is what hides that it is only a point.
 ## Where the lamps are
 
 Authored per car in `GameConfig.lamp_offsets`, a `{ car_id: { "head": [...], "tail": [...] } }`
-dictionary in `config/game_config.tres` — car-local metres, **+Z rearward**, the same axes
+dictionary in `scripts/game_config.gd` — car-local metres, **+Z rearward**, the same axes
 as `exhaust_offsets`. `GameConfig.lamp_locals_for(spec)` resolves it; `car.gd` caches the
 result into `lamp_locals` per spec in `_apply_physics_spec`. A car with **no entry gets no
 lamps** — there is no guessed fallback, since a flare floating off the body looks worse

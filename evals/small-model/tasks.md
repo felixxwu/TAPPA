@@ -43,11 +43,11 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   only required for a NEW key.
 - **ALSO GRADE:** `level_direction` (+1 if a purchased level should push the magnitude UP, -1 if
   down) — getting it backwards makes the meta shop weaken the boost, and no test catches it, so it is
-  a correctness call. And the magnitude belongs in `config/game_config.tres`, never as a const in the
+  a correctness call. And the magnitude belongs in `scripts/game_config.gd`, never as a const in the
   catalogue.
 - areas: upgrades, config, run loop
 - expected_files: `scripts/boost_library.gd` (`CATALOGUE`), `scripts/game_config.gd` (the magnitude
-  `@export`, under `@export_group("Roguelike Run Boosts")`), `config/game_config.tres`, and
+  `@export`, under `@export_group("Roguelike Run Boosts")`), `scripts/game_config.gd`, and
   `scripts/upgrade_library.gd` (`EFFECTS`) only if the effect key is new
 - expected_docs: `features/region-runs.md` (the boost catalogue section),
   `features/upgrade-catalogue.md` (only if an `EFFECTS` row was added)
@@ -55,7 +55,7 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - test_conventions: no asserting a shipped magnitude, a catalogue size, or that a particular boost
   exists — those are all authored data. Test the contract (every authored effect key has an `EFFECTS`
   row; a drawn boost is a real catalogue entry; level 0 is an exact no-op)
-- conventions: values in `config/game_config.tres`
+- conventions: values in `scripts/game_config.gd`
 - why this task: it is the narrowest real "one authored row, two registries must agree" change in the
   repo, and both registries fail SILENTLY when they disagree
 
@@ -108,7 +108,7 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   the conversion is metres/(mm/s) so a slower chaser yields a LARGER gap. `readout_for` is documented as
   "Pure so the test can pin the gap conversion without a scene" — so a test needs no scene.
 - conventions: reuse `LobbyStandings.gap_ms`, never re-derive the conversion; any new label
-  position/size belongs in `config/game_config.tres`
+  position/size belongs in `scripts/game_config.gd`
 - HIDDEN TRAPS (all real, all already documented in-file — this task measures whether those notes work):
   1. **THE UNITS TRAP.** `lobby_standings.gd:8-13` warns in a dedicated UNITS block: `progress_m` is
      metres, `speed_mms` is millimetres/second, so metres -> milliseconds is `* 1_000_000 / speed_mms`,
@@ -317,18 +317,18 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
      decision 28's whole point is that the shop is always reachable.
   3. **`selected_instance_id`** points at the sold car afterwards.
   4. **The refund price.** `CarLibrary`'s `cost` is authored data; a refund fraction is a tunable and
-     belongs in `config/game_config.tres`, not as a literal.
+     belongs in `scripts/game_config.gd`, not as a literal.
 - **A PROBE THAT ASKS RATHER THAN GUESSES** on the refund fraction, or that reports trap 2 instead of
   silently allowing it, should score WELL on judgment even if it ships less code.
 - areas: save/profile, economy, menus
 - expected_files: `scripts/save_manager.gd` (the mutator), `scripts/hub_shell.gd` (the CAR page row),
-  `scripts/game_config.gd` + `config/game_config.tres` (the refund fraction)
+  `scripts/game_config.gd` + `scripts/game_config.gd` (the refund fraction)
 - expected_docs: `features/save-persistence.md`, `features/region-runs.md` (the meta tier),
   `features/hub-shell.md`
 - expected_tests: `save_manager`, `hub_shell`
 - test_conventions: no asserting the refund fraction or any car's cost; assert the RULE (a refused
   sale leaves the profile byte-identical; money goes up by the same amount the car left for)
-- conventions: values in `config/game_config.tres`; the byte-identical-refusal rule
+- conventions: values in `scripts/game_config.gd`; the byte-identical-refusal rule
 - why this task: it is the first task in the bank that ADDS money rather than spending it, and the
   failure modes are all state-consistency ones that a passing test suite would not catch
 
@@ -464,7 +464,7 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - expected_tests: `region_library`, `region_assets`, `region_docs`, `terrain`, `region_stage_pool`
 - test_conventions: no asserting a specific region exists or its authored values;
   test the contract (`by_id` round-trips, `count()` consistent, grip lookups finite)
-- conventions: values in `config/game_config.tres`
+- conventions: values in `scripts/game_config.gd`
 - why this task: `region_library.gd` has a wide static surface
   (`surface_grip_of`, `deep_snow_of`, `water_level_of`) and touches
   `terrain_manager.gd` (2895 lines) — a real coupling test
@@ -533,7 +533,7 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - expected_docs: `features/hud.md`
 - expected_tests: `hud`
 - test_conventions: no pinning label positions or font sizes (tunables)
-- conventions: any position/size value belongs in `config/game_config.tres`
+- conventions: any position/size value belongs in `scripts/game_config.gd`
 - why this task: `hud.gd` is 781 lines of many near-identical `_build_*` methods —
   tests whether the pattern is discoverable enough to copy correctly
 
@@ -615,11 +615,11 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   `Engine.is_lifting_off()` now exists as the searchable throttle-position-only predicate and
   `combusting`'s comment is an explicit three-state table. GRADE A ROUND-010 ATTEMPT ON
   WHETHER IT FINDS `is_lifting_off`. Note for the grader: a new `@export` whose authored value
-  equals its default correctly has NO `config/game_config.tres` line — Godot serialises only
+  equals its default correctly has NO `scripts/game_config.gd` line — Godot serialises only
   non-defaults. Do not dock convention for that (round 009's grader did; I overrode it).
   Still missing from every attempt so far: `features/engine-and-transmission.md` and a test.
 - RUBRIC NOTE round 006: **solved on convention** (3/2/3/1) — the probe added
-  `engine_friction_slope = 2.0` to `config/game_config.tres` and never touched the
+  `engine_friction_slope = 2.0` to `scripts/game_config.gd` and never touched the
   trap property, citing the hoisted FALLBACK ONLY block. The remaining gaps are
   MAGNITUDE (2x the slope is only 9-23% more braking torque because the base
   dominates — grade a bare doubling as insufficient) and the stale doc at
@@ -632,7 +632,7 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   literal is live. Judge: did the probe touch `engine_friction_slope` (globally live) or
   the ENGINES table, rather than `engine_friction_base`? And is the magnitude big enough
   to FEEL — the round-005 attempt bought ~8% at 4000 rpm, which is not.
-- RUBRIC NOTE round 002: `engine_friction_slope` in `config/game_config.tres` is the right
+- RUBRIC NOTE round 002: `engine_friction_slope` in `scripts/game_config.gd` is the right
   knob and raising it there is a legitimate, full-marks answer on convention — no test is
   required (pinning the chosen value is banned). Judge correctness on MAGNITUDE: the base
   term dominates, so a change must be big enough to actually feel.
@@ -644,7 +644,7 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - expected_tests: `car`, `sim`, `retune`
 - test_conventions: NEVER pin the chosen value; test the behaviour that must hold
   for any reasonable setting (lifting off decelerates the car)
-- conventions: the value goes in `config/game_config.tres`; `car.gd`'s
+- conventions: the value goes in `scripts/game_config.gd`; `car.gd`'s
   `_live_baseline` snapshot/restore contract must not break
 - why this task: the single most likely place for a small model to hardcode a
   literal instead of adding a config knob
@@ -716,11 +716,11 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - **ALSO GRADE:** where the money is added. `RegionRunMode.stage_money` is the one place a stage's
   payout is computed and takes the arguments a bonus needs; adding money anywhere else bypasses the
   region scale and the fast-completion bonus and will not appear in `RunSession.money_earned()`.
-  The amount is a tunable (`config/game_config.tres`), never a literal. And a challenge stage has no
+  The amount is a tunable (`scripts/game_config.gd`), never a literal. And a challenge stage has no
   `stage_money` of its own — decide whether the bonus applies there and say so.
 - areas: economy, damage, run loop
 - expected_files: `scripts/region_run_mode.gd` (`stage_money`), `scripts/run_session.gd` (carrying
-  the clean-stage signal to it), `scripts/game_config.gd` + `config/game_config.tres`
+  the clean-stage signal to it), `scripts/game_config.gd` + `scripts/game_config.gd`
 - expected_docs: `features/region-runs.md` (the money sources), `features/damage.md`
 - expected_tests: `region_run`
 - test_conventions: no asserting the bonus amount; assert that a stage reported with damage pays
@@ -750,12 +750,12 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
   answer, not a deviation.
 - areas: upgrades, tyres, weather
 - expected_files: `scripts/boost_library.gd` (`CATALOGUE`), `scripts/upgrade_library.gd` (`EFFECTS`),
-  `scripts/game_config.gd` (`TIRE_SURFACE_AXES` + the `@export`), `config/game_config.tres`
+  `scripts/game_config.gd` (`TIRE_SURFACE_AXES` + the `@export`), `scripts/game_config.gd`
 - expected_docs: `features/drivetrain-and-tires.md`, `features/region-runs.md`
 - expected_tests: `boost_library`, `upgrade_library`, `drivetrain`
 - test_conventions: no asserting a grip magnitude; assert the axis behaves like its siblings (the
   blend weight is finite and sums correctly, the effect key resolves)
-- conventions: values in `config/game_config.tres`
+- conventions: values in `scripts/game_config.gd`
 - why this task: it is the deepest registry chain left in the repo, and three of its four sites give
   no feedback when skipped
 
@@ -812,7 +812,7 @@ ratchet rules (retire after two consecutive clean solves; replenish harder).
 - expected_tests: `hud`, `countdown_hold`, `start_line`
 - test_conventions: never pin a volume, pitch, or beep duration — those are tunables;
   test the LOGIC (a beep fires once per count and not twice; nothing plays after GO)
-- conventions: any volume/pitch/duration value belongs in `config/game_config.tres`;
+- conventions: any volume/pitch/duration value belongs in `scripts/game_config.gd`;
   a new script needs the `# Docs:` / `# Tests:` header breadcrumb (a guard test
   enforces this for every script not in the frozen baseline — so a NEW file WILL fail
   the suite if it has no breadcrumb). **This task is the first live test of the

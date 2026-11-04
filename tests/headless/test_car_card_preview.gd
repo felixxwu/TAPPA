@@ -96,7 +96,7 @@ func test_camera_distance_compensates_for_the_configured_fov() -> void:
 # bounding sphere of the largest possible car (half the max-bounds diagonal — the radius
 # that contains a car at ANY turntable heading) fits inside the frame. Checked as an
 # INVARIANT at several fov values rather than against a specific distance, and it holds
-# for every margin the config's export_range allows (>= 1.0), so retuning the margin
+# for every margin a sane config allows (>= 1.0), so retuning the margin
 # can't break it.
 func test_camera_distance_fits_the_largest_roster_car() -> void:
 	var original_fov := Config.data.card_carousel_car_preview_fov_deg

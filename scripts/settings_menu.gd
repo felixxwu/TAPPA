@@ -69,7 +69,7 @@ static var dev_tools_override := -1
 # project (car.gd, hud.gd, world.gd, terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
 # switch, defaulting to true: dev features are exposed to every player, not just
 # debug builds, so the whole in-game toolkit (grip grid, force arrows,
-# config hot-reload, perf overlay) is
+# perf overlay) is
 # reachable in the shipped release/web export as well as the editor.
 static func dev_tools_enabled() -> bool:
 	if dev_tools_override >= 0:

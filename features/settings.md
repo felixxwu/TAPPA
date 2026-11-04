@@ -96,7 +96,7 @@ the tuning pages in [tuning.md](tuning.md), and the one-bottom-action-row rule i
 those three category buttons whenever `SettingsMenu.dev_tools_enabled()` — the
 single switch `car.gd` / `hud.gd` / `world.gd` /
 `terrain_manager.gd` / `perf_log.gd` all key off for every other
-dev affordance (force arrows, grip grid, world-menu A/B, config hot-reload,
+dev affordance (force arrows, grip grid, world-menu A/B,
 skip-to-finish, chunk-border overlay, perf log). It defaults to **true** — dev
 tools are exposed in the exported release/web build, not just the editor and
 debug exports.

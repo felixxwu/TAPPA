@@ -42,7 +42,7 @@ coexist on a stage.
 ### The config-block indirection
 
 A region **names GameConfig fields**; it never authors numbers. Same pattern as
-`WeatherLibrary`, so all tuning stays in `config/game_config.tres`:
+`WeatherLibrary`, so all tuning stays in `scripts/game_config.gd`:
 
 ```gdscript
 "surface_grip": {"grass": "snow_grass_grip", "gravel": "snow_gravel_grip",

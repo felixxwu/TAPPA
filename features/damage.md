@@ -89,12 +89,12 @@ hp_loss = impact_ref_hp_loss · v² / impact_ref_speed_kmh²
   if it feels twitchy.)
 - **Continuity.** For a full solid arrest `dv ≈ approach speed`, so a 60 km/h head-on
   lands exactly where the old speed-keyed model did — `impact_ref_hp_loss` (390 HP in
-  `game_config.tres`) and the whole square-law tuning carry over. `hp_loss_for_speed()`
+  `game_config.gd`) and the whole square-law tuning carry over. `hp_loss_for_speed()`
   is still the pure, unit-tested static.
 
 Two things shape survivability:
 - **Per-hit cap** — each tick's loss is clamped to a flat `impact_max_loss` HP amount
-  (`450` in `game_config.tres`), so no one spike can strip the whole pool. Being absolute
+  (`450` in `game_config.gd`), so no one spike can strip the whole pool. Being absolute
   rather than a fraction of max HP, a car's `max_hp` genuinely matters — a fragile car is
   flattened to 0 by fewer capped hits than a tough one, and so reaches the worst misfire
   and the lowest rev cap sooner.

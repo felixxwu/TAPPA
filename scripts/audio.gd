@@ -41,7 +41,7 @@ extends Node
 const BUS := AudioBuses.SFX
 
 # Fallbacks used only when GameConfig is unavailable (e.g. an off-tree unit test).
-# The real values are authored in config/game_config.tres — tune them THERE.
+# The real values are authored in scripts/game_config.gd — tune them THERE.
 const DEFAULT_FREQUENCY_HZ := 880.0
 const DEFAULT_DURATION_SEC := 0.12
 const DEFAULT_VOLUME_DB := -6.0

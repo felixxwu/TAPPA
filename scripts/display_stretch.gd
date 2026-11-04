@@ -26,7 +26,7 @@ extends Node
 # the HUD/menus live on higher CanvasLayers drawn after it.
 #
 # The factor itself is the authored look value Config.data.horizontal_stretch
-# (config/game_config.tres); 1.0 makes this a no-op.
+# (scripts/game_config.gd); 1.0 makes this a no-op.
 
 # Logical frame height the game is laid out against. Comes straight from
 # project.godot (window/size/viewport_height), the same on every target — native

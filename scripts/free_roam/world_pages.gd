@@ -7,7 +7,7 @@ extends CanvasLayer
 #   MAP   — the island: its coast, the biome-ring borders you've crossed, the roads you've driven
 #           (and in grey the undriven road near them, `map_roads`),
 #           the rest stops you've come across (orange lit, grey not; MiniMap.site_markers, shared
-#           with the minimap) and the car. It is
+#           with the minimap), the money left on the road (dropped_xz) and the car. It is
 #           also the minimap's "whole map" (tap the minimap, or M / gamepad Back, which closes it too).
 #           It frames what has been explored (explored_view), not the whole island. Wherever it's
 #           opened it is also the QUICK-TRAVEL picker: Prev / Next (or a tap on a lit rest stop)
@@ -217,7 +217,18 @@ func explored_view() -> Rect2:
 			pts.append(Vector2(net.seg_bx[si], net.seg_by[si]))
 	for mk: Array in MiniMap.site_markers(streamer.sites, rest_stops.lit_sites, Vector2.ZERO, INF):
 		pts.append(mk[0])
+	if dropped_xz().is_finite():
+		pts.append(dropped_xz())
 	return fit_view(pts, Config.data.map_min_view_m, streamer.settings.island_radius_m * 1.05)
+
+
+# Where the money left at a wreck (or by travelling off the road) lies, or INF when none is out there.
+static func dropped_xz() -> Vector2:
+	var d := WorldSession.dropped()
+	var at: Array = d.get("pos", [])
+	if at.size() < 3 or int(d.get("money", 0)) <= 0:
+		return Vector2.INF
+	return Vector2(float(at[0]), float(at[2]))
 
 
 # The square view around `pts`: their bounds plus a margin, at least `min_side` across, and at most
@@ -336,6 +347,14 @@ class MapCanvas:
 			draw_circle(p, 4.0, col)
 			if mk[2] == target:
 				draw_arc(p, 8.0, 0.0, TAU, 24, Color.WHITE, 2.0)
+		# The dropped money, as a diamond in the colour of the crystal floating over it.
+		var drop := WorldPages.dropped_xz()
+		if drop.is_finite():
+			var dp: Vector2 = to_px.call(drop)
+			var diamond := func(r: float) -> PackedVector2Array:
+				return PackedVector2Array([dp + Vector2(0, -r), dp + Vector2(r, 0), dp + Vector2(0, r), dp + Vector2(-r, 0)])
+			draw_colored_polygon(diamond.call(7.0), Color.BLACK)
+			draw_colored_polygon(diamond.call(5.5), s.drop_crystal_color)
 		# The car.
 		if pages.car != null:
 			var cp: Vector2 = to_px.call(Vector2(pages.car.global_position.x, pages.car.global_position.z))

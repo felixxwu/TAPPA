@@ -441,7 +441,7 @@ and should escalate: RR grows its tracks with
 here is to order the drawn 8 by an authored difficulty proxy (the parent rally's
 `difficulty`, or `turn_count`) so stage 8 is the hardest of the drawn set — and
 optionally scale `turn_count` up on later stages. All escalation constants are
-`GameConfig` tunables in `config/game_config.tres`, never script literals.
+`GameConfig` tunables in `scripts/game_config.gd`, never script literals.
 
 ### The timer — the one fail state
 
@@ -680,7 +680,7 @@ and of every screen that had to work in both.
 
 **`WorldPanel` goes too.** `scripts/world_panel.gd` / `world_panel_host.gd`
 (`features/world-panel.md`) welds menus into 3D world space off an anchor, and
-`config/game_config.tres` ships `world_space_menus` **ON**, so it is the path
+`scripts/game_config.gd` ships `world_space_menus` **ON**, so it is the path
 players actually get. Its consumers are `hq_overlays.gd`, `hq_challenge.gd`,
 `rally_detail.gd` and `upgrade_slot_popup.gd` — every one of them hub-side and
 either deleted or re-hosted by this pivot. With no 3D hub there is nothing left

@@ -76,7 +76,7 @@ run only those sections. A bare `/housekeeping` runs everything.
 Per `CLAUDE.md` (Testing section), flag tests that:
 - **Pin tunable/balance values** — assert a specific stat, reward tier,
   ordering across authored entries, or an exported enum hint string. Ask "would
-  a designer retuning this in the inspector break this test?"
+  a designer retuning this break this test?"
 - **Depend on a specific catalogue entry** — `CarLibrary.by_id("mx5")`,
   `EngineLibrary.by_id(...)`, `RallyLibrary`/`UpgradeLibrary` lookups by id in a
   logic/physics test. Grep: `grep -rn "by_id(" tests/headless/`. Iterating a
@@ -124,13 +124,10 @@ Point at it instead of deleting anything in this sweep.
 
 ### 6. Config drift (`GameConfig`)
 
-- `config/game_config.tres` is authored data for the `GameConfig` resource
-  (`scripts/game_config.gd`, one of the largest scripts in the repo — several
-  thousand `@export`s' worth). Check the `.tres` for properties that
-  no longer exist as `@export`s in the script (orphaned authored values) and
-  `@export`s with no counterpart being exercised.
-- Reminder to surface: tuning values belong in the `.tres`, not script/scene
-  literals. Flag any newly-hardcoded gameplay/look constants in scripts that
+- `scripts/game_config.gd` holds every tuning value as a plain default (one of
+  the largest scripts in the repo). Check for fields nothing reads any more.
+- Reminder to surface: tuning values belong in `game_config.gd`, not other
+  script/scene literals. Flag any newly-hardcoded gameplay/look constants in scripts that
   should be config fields.
 
 ### 7. Oversized scripts / refactor candidates
@@ -360,7 +357,7 @@ real suspect — the housekeeping pass itself is grep/read-level.)
   `grep -rn "max_fps\|target_fps\|FpsSetting" scripts/`.
 - **Foliage / draw budget hasn't ballooned.** The scene builds roughly
   `track_turn_count × trees_per_turn` instances (`world.gd`). Check
-  `config/game_config.tres` for upward drift in `trees_per_turn`,
+  `scripts/game_config.gd` for upward drift in `trees_per_turn`,
   `track_turn_count`, `tree_render_distance_m`, `tree_spawn_radius_m` since the
   last sweep — bigger numbers = more vertices/fill/collision every frame on the
   weakest device. These are designer values, so *flag drift*, don't "fix"; but a

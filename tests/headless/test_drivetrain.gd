@@ -9,7 +9,7 @@ func before_each() -> void:
 	# depend on terrain generation settings.
 	# Pin the frozen test car: another scene's car selection mutates the shared
 	# Config singleton, and these assertions are calibrated to the stable test
-	# baseline (fixtures/test_config.tres), not the shipped gameplay tuning.
+	# baseline (SceneTestHelpers.TEST_CONFIG), not the shipped gameplay tuning.
 	SceneTestHelpers.use_test_config()
 	_scene = load("res://tests/fixtures/test_track.tscn").instantiate()
 	add_child_autofree(_scene)
@@ -81,7 +81,7 @@ func test_surface_tire_params_rain_reduces_mu() -> void:
 	# contact, all other inputs held equal — in both the terrain-backed path
 	# and the no-terrain (flat fixture) fallback. Do not assert the specific
 	# resulting value or rain_grip_mult itself: only the dry > wet relation,
-	# so retuning rain_grip_mult in the inspector can't break this test.
+	# so retuning rain_grip_mult can't break this test.
 	var cfg: GameConfig = Config.data
 	var dt: Drivetrain = _car.drivetrain
 
@@ -140,7 +140,7 @@ func test_launch_wheelspin() -> void:
 	# This test is about whether the DRIVETRAIN can spin the wheels given enough
 	# crank torque, not about the current power balance, so pin full power
 	# (no de-rate) for the launch regardless of the shipped global_torque_scale
-	# (config/game_config.tres) — test-only, gameplay tuning untouched.
+	# (scripts/game_config.gd) — test-only, gameplay tuning untouched.
 	var cfg: GameConfig = Config.data
 	cfg.global_torque_scale = 1.0
 	Input.action_press("accelerate")

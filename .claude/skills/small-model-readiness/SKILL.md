@@ -201,7 +201,7 @@ probe never sees:
 - expected_tests: test_upgrades_grid, test_upgrade_library
 - test_conventions: no tunable-value pins; no CarLibrary.by_id() identity;
   CarFixtures.restore() in teardown; Config.reset() after a non-authored baseline
-- conventions: values in config/game_config.tres; features/ updated AND indexed
+- conventions: values in scripts/game_config.gd; features/ updated AND indexed
 - areas: catalogue, garage-ui
 ```
 
@@ -769,9 +769,6 @@ A test run cannot catch the three most likely silent failures of a refactor here
 ```bash
 # VERIFIED round 001 close (all four checks)
 cd /Users/felixwu/git/rallygodot
-# authored config values — tests CANNOT cover this (CLAUDE.md bans asserting tunables,
-# and .tres stores only non-defaults, so a renamed @export silently reverts the value)
-grep -c '=' config/game_config.tres
 # uid integrity — every .gd has a tracked .gd.uid sidecar; a move that drops it
 # makes Godot mint a fresh uid and silently orphans every uid= reference
 git ls-files '*.gd.uid' | wc -l
@@ -782,7 +779,7 @@ grep -rh '^class_name' scripts/ | awk '{print $2}' | sort | uniq -d
 "${GODOT:-/Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot}" --headless --quit  # project still loads
 ```
 
-Every `key = value` in `config/game_config.tres` must still resolve to a live
+Every `key = value` in `scripts/game_config.gd` must still resolve to a live
 `GameConfig` property, and the authored set must be unchanged except where you
 deliberately changed it.
 
@@ -868,7 +865,7 @@ Not code beauty. Not smaller files as an end in themselves. This:
   break with no compile error). A little straight-through repetition beats an
   abstraction to reverse-engineer.
 - **Convention at the point of use.** A one-line comment where a literal is
-  declared ("tunables live in `config/game_config.tres`") beats another paragraph
+  declared ("tunables live in `scripts/game_config.gd`") beats another paragraph
   in `CLAUDE.md`, which a small model under context pressure will not have read.
 - **Every extracted module ships orientation**: header comment (what it does,
   what it depends on, where its tests live) plus a `features/` entry indexed in
@@ -889,7 +886,7 @@ Check these against anything you move. All verified present in this repo:
   are reached by `preload` of the script (`hq.gd`'s `ChallengeSessionScript` idiom),
   plus ~23 other `preload("res://scripts/*.gd")` sites and `scripts/scenes.gd`'s
   path constants.
-- **`scripts/game_config.gd` is split-exempt.** `config/game_config.tres` binds
+- **`scripts/game_config.gd` is split-exempt.** `scripts/game_config.gd` binds
   it as one `script_class` + `ext_resource`, and
   `snapshot_values()`/`restore_values()` walk *one* script's property list
   (relied on by `car.gd`'s `_live_baseline`, `start_line.gd`'s `_spawn_grid`).
@@ -952,4 +949,4 @@ so the user can see the trend and interrupt if they want to.
   change, fix the *cause* yourself, from scratch, in the main checkout.
 - Changing authored gameplay balance values. You may add a `@export` mirroring an
   existing literal **at its current value**; you may never change an authored
-  value in `config/game_config.tres`.
+  value in `scripts/game_config.gd`.
