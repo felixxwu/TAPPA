@@ -33,7 +33,7 @@ need a migration, so it stays as is).
 | `money` | coins picked up and not yet spent (`money` / `set_money`); dropped when the car gives up |
 | `dropped` | the money left at the last wreck, `{pos: [x, y, z], money: n}`, or `{}` (`dropped` / `set_dropped`) |
 | `collected`, `revealed` | coin spots taken, rings whose stock is on sale ([loot.md](loot.md)). Parts live on each owned car (`parts`, each switched on or off), not here |
-| `sites_hash` | a fingerprint of the generated site list the ids above index into (`sites_fingerprint`: the hash of every site's kind, so their count and order) |
+| `sites_hash` | a fingerprint of the generated site list the ids above index into (`sites_fingerprint`: the hash of every site's kind and position in whole metres, so a retune that moves sites is caught too) |
 
 **Site ids are only good for the sites they were saved against.** The streamer rebuilds the site
 list from the seed every boot, so a retune of the road or site generation renumbers them. Free roam
@@ -51,7 +51,7 @@ screen for a frame after the swap (the benchmark ending, the title's New World, 
 write its car into the world that replaced it. `CarPreviewCache` drops its owned-car previews on
 the same signal.
 
-- **New world** (`new_world`): a random seed whose roads reach the snow ring and total over `new_world_min_road_km` (`FreeRoamSettings.pick_world_seed`) and a starter car. It replaces the old world **and the
+- **New world** (`new_world`): a random seed whose roads reach the snow ring and total over `new_world_min_road_km` (`FreeRoamSettings.pick_world_seed`) and the cold-open car (`ColdOpen.new_world`). It replaces the old world **and the
   old owned cars**, because a world is the whole save.
 - **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints;
   `is_seen` / `see` keep an int set, rebuilt only when the stored list is a different one).
@@ -87,7 +87,7 @@ ground, its tween running while paused); closing hands back to the chosen camera
 (`CameraManager.activate_current`).
 A first-time player (no world) gets one built at boot with the cold-open car (`ColdOpen.car_id`) and a seed from `FreeRoamSettings.pick_world_seed`,
 marked `cold_open` pending (in the world block,
-`set_cold_open_pending`), so they start in the cold open instead of the menu.
+`set_cold_open_pending`), so they start in the cold open instead of the menu. The title's New World makes its world the same way.
 Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
 - **MAIN:** Continue (only with a world) just closes the menu (`close`) and
   unpauses; New World; Settings.

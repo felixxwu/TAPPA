@@ -265,7 +265,7 @@ func _emit_from_wheels(delta: float) -> bool:
 		return false
 	# A wet road raises no dust and no tyre smoke, gravel or tarmac.
 	var wet := WeatherLibrary.is_wet(cfg.weather)
-	var wheels: Array = dt.front_wheels + dt.rear_wheels
+	var wheels: Array = dt.all_wheels
 	if _travel.size() != wheels.size():
 		_travel.resize(wheels.size())
 		_travel.fill(0.0)

@@ -12,7 +12,7 @@ extends VBoxContainer
 #     (MusicDirector.set_master_volume / set_volume).
 #   • Display — pick the frame-rate cap (30 / 60 / uncapped), persisted under
 #     FpsSetting.SETTING_KEY. Applied live via Engine.max_fps (a global engine
-#     property, so both hosts take effect immediately); world._ready() re-derives
+#     property, so both hosts take effect immediately); free roam's boot re-derives
 #     it next run. Defaults to the platform's cap (web-touch 30, else 60).
 #   • Camera — pick the camera angle (chase / bonnet), persisted under
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
@@ -69,7 +69,7 @@ static var dev_tools_override := -1
 # project (car.gd, hud.gd, world.gd, terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
 # switch, defaulting to true: dev features are exposed to every player, not just
 # debug builds, so the whole in-game toolkit (grip grid, force arrows,
-# config hot-reload, perf overlay/log) is
+# config hot-reload, perf overlay) is
 # reachable in the shipped release/web export as well as the editor.
 static func dev_tools_enabled() -> bool:
 	if dev_tools_override >= 0:
@@ -423,7 +423,7 @@ func select_scheme(id: int) -> void:
 # Persist the chosen frame cap and apply it live. Unlike camera/scheme, the frame
 # cap is a global engine property, so it's applied by writing Engine.max_fps
 # directly (takes effect immediately) rather than via a
-# live-scene signal. world._ready() re-derives it from the same setting next run.
+# live-scene signal. Free roam's boot re-derives it from the same setting next run.
 # Skipped under --headless (no rendering to pace / test runner must stay uncapped).
 func select_fps(value: int) -> void:
 	Save.set_setting(FpsSetting.SETTING_KEY, value)

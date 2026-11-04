@@ -120,7 +120,7 @@ func _init() -> void:
 
 	# Defaults — set_title() strips the trailing "…" (the animated dots
 	# replace it) and _refresh_dots() seeds the initial 0-dot field.
-	set_title("Loading stage…")
+	set_title("Loading…")
 	_refresh_dots()
 
 	_step = Label.new()
@@ -167,7 +167,7 @@ func _refresh_dots() -> void:
 	_dots.text = ".".repeat(_dot_count)
 
 
-# Set the headline (defaults to "Loading stage…"; the HQ uses its own wording).
+# Set the headline (defaults to "Loading…").
 # A trailing "…" is stripped — the animated dots label replaces it, and leaving
 # both would stack ("……").
 func set_title(text: String) -> void:

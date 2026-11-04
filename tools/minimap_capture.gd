@@ -23,7 +23,7 @@ func _ready() -> void:
 			frames = int(a.substr(9))
 	get_window().size = size
 	Save.save_disabled = true
-	WorldSession.new_world(1, TitleScreen.starter_choices()[0])
+	WorldSession.new_world(1, LootRules.starter_cars()[0])
 	var world := (load("res://free_roam.tscn") as PackedScene).instantiate()
 	add_child(world)
 	for _i in 30:

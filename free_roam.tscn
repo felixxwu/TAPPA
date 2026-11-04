@@ -85,7 +85,7 @@ script = ExtResource("4_cam")
 target = NodePath("../Car")
 mobile_controls = NodePath("../MobileControls")
 
-[node name="Water" type="MeshInstance3D" parent="."]
+[node name="Water" type="MeshInstance3D" parent="." groups=["id_terrain"]]
 mesh = SubResource("water_mesh")
 material_override = SubResource("water_mat")
 

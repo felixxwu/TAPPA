@@ -157,10 +157,7 @@ Labels are direct children of the `HUD` CanvasLayer, positioned via
 `offset_*` with explicit `font_size` overrides. All sizes are deliberately
 small (font 14 for labels) — the HUD is rendered at 1/2 scale.
 
-The `ElapsedLabel` run timer is anchored to the **top centre**
-(`anchor_left/right = 0.5`, `grow_horizontal = 2`, `horizontal_alignment = 1`) so
-it sits in the middle of the screen regardless of viewport width, with the
-`CutFlashLabel` popup stacked below it on the same centred column, from `_POPUP_TOP`. The **top-right corner is left
+The **top-right corner is left
 clear for the Pause button**, which lives on the separate `PauseMenu` CanvasLayer
 (see [menus.md](menus.md)), not the HUD. The gauges are anchored to the
 **bottom centre** of the viewport as one row, in the order health, boost, nitrous,

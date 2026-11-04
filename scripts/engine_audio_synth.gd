@@ -402,8 +402,7 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 				_n2o_lp += (_n2o_lp_coeff_lo + n2o_lp_span * bright) * (nn - _n2o_lp)
 				noise += _n2o_lp * n2o_amp * n2o_level
 				if _n2o_crack > 0.0001:
-					# Scaled by the same n2o_level as the hiss, so the config gain really is
-					# the whole layer's level — at 0 the solenoid crack goes silent too,
+					# Scaled by the config gain, so at 0 the solenoid crack goes silent too,
 					# which is what engine_nitrous_hiss_gain's "0 = off" promises.
 					_n2o_crack_attack = lerpf(_n2o_crack_attack, 1.0, n2o_crack_attack)
 					noise += nn * _n2o_crack * _n2o_crack_attack * n2o_crack_gain

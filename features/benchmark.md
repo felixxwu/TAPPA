@@ -32,7 +32,7 @@ feature's frame cost can be isolated by running with it on and off:
 | Spectators | `cfg.spectators_enabled` |
 | Corner barriers | `cfg.barriers_enabled` — skips the roadside barriers (`TerrainStreamer`) |
 | Road markings | `cfg.road_markings_enabled` |
-| Tire marks & dust FX | `cfg.tire_marks_enabled` + `cfg.wheel_particles_enabled` + `cfg.engine_smoke_enabled` |
+| Tire marks & dust FX | `cfg.tire_marks_enabled` + `cfg.wheel_particles_enabled` + `cfg.engine_smoke_enabled` + `cfg.dust_puffs_enabled` |
 | Full render distance | off = `cfg.tree_render_distance_m` and the phone value `tree_render_distance_web_touch_m` halved (foliage draw distance) |
 | Uncap FPS (vsync off) | `cfg.target_fps` = 0 **and** `cfg.target_fps_mobile` = 0 **and** `cfg.target_fps_web` = 0 (all three, so the cap is cleared on every target), `Engine.max_fps` = 0, vsync disabled — exposes real headroom instead of pinning to the refresh rate |
 

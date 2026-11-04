@@ -223,7 +223,7 @@ func wreck() -> void:
 func drop_money() -> int:
 	var money := WorldSession.money()
 	var p := car.global_position
-	WorldSession.set_dropped({"pos": [p.x, p.y, p.z], "money": money} if money > 0 else {})
+	WorldSession.set_dropped({"pos": [p.x, p.y, p.z], "money": money} if money > 0 and p.is_finite() else {})
 	WorldSession.set_money(0)
 	_sync_dropped_node()
 	return money

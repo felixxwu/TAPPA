@@ -136,3 +136,8 @@ func test_results_panel_is_keyboard_navigable_and_actions_fire() -> void:
 	assert_not_null(nav, "the results panel attaches the MenuNav framework")
 	nav._unhandled_input(back)
 	assert_eq(hits["exited"], 2, "back routes to Exit")
+
+
+func test_the_results_name_the_spike_threshold_the_run_counted_with() -> void:
+	var lines := BenchmarkResults.format_lines({"spike_ms": 50.0, "spikes": 3})
+	assert_true(lines.any(func(l: String) -> bool: return l.begins_with("spikes >50ms  3")))

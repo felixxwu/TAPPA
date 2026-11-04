@@ -100,7 +100,7 @@ static func format_lines(stats: Dictionary) -> Array[String]:
 		float(stats.get("frame_avg_ms", 0.0)), float(stats.get("frame_p95_ms", 0.0)),
 		float(stats.get("frame_p99_ms", 0.0)), float(stats.get("frame_max_ms", 0.0))])
 	lines.append("spikes >%dms  %d   audio overruns %d" % [
-		int(BenchmarkStats.SPIKE_MS), int(stats.get("spikes", 0)), int(stats.get("audio_skips", 0))])
+		int(stats.get("spike_ms", BenchmarkStats.SPIKE_MS)), int(stats.get("spikes", 0)), int(stats.get("audio_skips", 0))])
 	lines.append("draws  avg %d   max %d" % [
 		int(stats.get("draws_avg", 0.0)), int(stats.get("draws_max", 0.0))])
 	lines.append("objects avg %d   prims avg %dk" % [

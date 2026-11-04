@@ -77,7 +77,7 @@ func setup(car: Node, driver: AutoDriver, view: Viewport = null, terrain: Node =
 	driver.finished.connect(func(_r: Dictionary) -> void: _finish())
 	_engine_audio = car.get_node_or_null("EngineAudio")
 	# Spike threshold relative to the frame cap (Engine.max_fps was set by
-	# world._ready): 0 = uncapped → 28 ms; a 30 fps cap → ~50 ms, so a 33 ms normal
+	# Benchmark.begin): 0 = uncapped → 28 ms; a 30 fps cap → ~50 ms, so a 33 ms normal
 	# frame isn't miscounted as a spike (the fixed 28 ms flagged every 30 fps frame).
 	_spike_ms = BenchmarkStats.spike_threshold_ms(Engine.max_fps)
 	_samples.clear()

@@ -213,8 +213,7 @@ carries physics:
   engage: the engine's forced-induction power is already baked into its
   authored `peak_torque`, and the flag drives nothing but the whine audio
   layer (below). This is exactly the pre-existing audio-only behaviour.
-- **As the `supercharger` upgrade** — the top rung of the `"turbo"` slot,
-  prerequisite-gated behind `turbo_large`. Its `install_supercharger` effect
+- **As the `supercharger` part.** Its `install_supercharger` effect
   authors a non-zero `supercharger_boost_gain` (plus `supercharger_rpm_ref`
   and `supercharger_parasitic_coef`), which turns on the belt sim below.
 

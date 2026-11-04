@@ -57,20 +57,12 @@ inside the ~5 minute budget. Re-measure with `/optimise-test-suite` (or a full
 §0 has the exact invocation. Per-test JUnit times cover test bodies only, so `before_all`
 builds and script loading are invisible in them.
 
-The known heavy files: `test_track_generator.gd` (the sweep below), `test_smoke.gd` (a live
+The known heavy files: `test_track_generator.gd` (live track generation), `test_smoke.gd` (a live
 world build), `test_terrain_memory.gd` (each test bakes a road into its own `TerrainManager`,
 and what they assert IS what the cache keeps and drops, so sharing one would destroy the
 subject), the per-car physics sweeps (`test_car_types.gd`, `test_car_library.gd`,
 `test_retune.gd`, `test_car.gd`, already on `SimTest`'s cached settle) and
 `test_terrain_precompute.gd`.
-
-**The irreducible sweeps.** `test_every_rally_event_generates_a_complete_track_quickly`
-generates every authored rally event live (~0.7 s each). It is the regression guard
-for the seed-3002 blow-up, where one seed once took ~474 s. Sampling a subset
-defeats it (the original bug was a *single* seed). **Do not weaken it to hit the budget.** If the ~5 min
-budget is ever threatened, the structural options are to move these sweeps into a slow
-CI/pre-release lane (as `run_benchmark.sh` is to the suite), or to re-base the budget here
-and in `CLAUDE.md`. **Both are the user's call.**
 
 
 By default Godot's headless main loop is **paced to real time** at the tick

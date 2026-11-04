@@ -1,8 +1,7 @@
 class_name PostProcessView
 extends SubViewportContainer
 # PS1 post-process host (see features/rendering.md). Packaged as
-# post_process.tscn and instanced by every 3D scene (main.tscn's stage and the
-# hub's MenuShowcase), so both render through the exact same pipeline. The 3D world stays in the
+# post_process.tscn and instanced by every 3D scene, so all render through the same pipeline. The 3D world stays in the
 # main scene tree (so every node path, physics body, and camera is untouched),
 # but it's RENDERED through the child SubViewport: the viewport shares the main
 # World3D (own_world_3d = false) and carries a mirror camera synced every frame
@@ -12,8 +11,7 @@ extends SubViewportContainer
 # a render-pass break + mid-frame GPU submit per frame on the GL backend.
 #
 # While this scene is in the tree, 3D rendering on the ROOT viewport is
-# disabled (the world would otherwise render twice); restored on exit so the
-# HQ scene renders normally. Cameras stay current on the root viewport, which
+# disabled (the world would otherwise render twice); restored on exit. Cameras stay current on the root viewport, which
 # keeps positional audio and get_camera_3d() working — disable_3d only skips
 # the render pass.
 

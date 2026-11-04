@@ -85,10 +85,6 @@ static func open(host: Node, title: String, body: String, actions: Array,
 	popup._build(title, body, default_index)
 	return popup
 
-# open_committing / set_body are DELETED: their one awaited caller (world.gd's
-# challenge reward) presents through plain open(), and no live code reserves a
-# modal slot around a transaction any more.
-
 
 func _build(title: String, body: String, default_index: int) -> void:
 	layer = 101  # above overlays
@@ -148,7 +144,7 @@ func _build(title: String, body: String, default_index: int) -> void:
 	# ui_cancel/menu_back), and its dim backdrop swallows taps, so a long body
 	# (server error text, a computed multi-line reward) must never be able to
 	# push them off the bottom of the screen. TouchScrollContainer is the house
-	# scroll widget (see hq_overlays.gd / pause_menu.gd / standings.gd); the
+	# scroll widget (see pause_menu.gd); the
 	# buttons stay OUTSIDE it in `row` below so focus never has to enter the
 	# scroll at all.
 	var scroll := TouchScrollContainer.new()

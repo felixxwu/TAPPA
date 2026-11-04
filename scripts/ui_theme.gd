@@ -8,7 +8,7 @@ extends RefCounted
 #
 # The look is a retro arcade / terminal aesthetic adapted from the previous web
 # build of this game: pure-black, sharp-cornered panels; a hand-drawn monospace
-# font (Syne Mono); crisp white text with a hard drop shadow; and a tight accent
+# font (Jersey 10); crisp white text with a hard drop shadow; and a tight accent
 # palette (green = active/positive, gold = money/reward, red = danger/timer). No
 # rounded corners, no gradients, no blur. This is a STYLING layer only — it never
 # changes what a screen says or where its buttons are; text is rendered verbatim.
@@ -441,8 +441,7 @@ static func row_button(text: String, on_press: Callable) -> Button:
 
 
 # Show/clear the "this option is selected" treatment used by the web build:
-# the label is underlined and tinted green while selected. Pair with `flank()`
-# for the ▶◀ triangles around the active row.
+# the label is underlined and tinted green while selected.
 #
 # The `focus` state is deliberately LEFT to the global theme (a SURFACE_HOVER box
 # with a green underline, white text — see tools/build_ui_theme.gd) so that a
@@ -495,17 +494,8 @@ static func mark_panel_focused(container: PanelContainer, focused: bool, pad: in
 	container.add_theme_stylebox_override("panel", shadowed(box))
 
 
-# Grab keyboard/gamepad focus on `ctrl`, but only when it can actually take it —
-# valid, in the tree, visible, and focusable. Call deferred so it runs after the
-# host has finished showing/laying out the menu, e.g.
-#   UITheme.focus_grab.bind(my_button).call_deferred()
-# Guards against the errors grab_focus() pushes when a control isn't visible yet
-# (a menu built while its layer is still hidden, a podium button mid-spin, ...).
-# `ctrl` is left untyped on purpose: a typed `Control` param breaks the bound-and-
-# deferred Callable path (`UITheme.focus_grab.bind(btn).call_deferred()`) — the
-# deferred queue stores the arg as a generic Object and the typed conversion fails.
 # The first focusable, enabled, visible Control under `root` (tree order), or null.
-# Shared by the menu framework (MenuNav) and HQ's native-focus pages to seat the
+# Shared by the menu framework (MenuNav) to seat the
 # cursor when a menu opens. Skips FOCUS_NONE widgets and disabled buttons.
 # `cls` optionally restricts the scan to a single class (e.g. "Button" to seat the
 # cursor on the first real button, skipping focusable non-button widgets like
@@ -552,6 +542,15 @@ static func in_dying_subtree(node: Node) -> bool:
 	return false
 
 
+# Grab keyboard/gamepad focus on `ctrl`, but only when it can actually take it —
+# valid, in the tree, visible, and focusable. Call deferred so it runs after the
+# host has finished showing/laying out the menu, e.g.
+#   UITheme.focus_grab.bind(my_button).call_deferred()
+# Guards against the errors grab_focus() pushes when a control isn't visible yet
+# (a menu built while its layer is still hidden, ...).
+# `ctrl` is left untyped on purpose: a typed `Control` param breaks the bound-and-
+# deferred Callable path (`UITheme.focus_grab.bind(btn).call_deferred()`) — the
+# deferred queue stores the arg as a generic Object and the typed conversion fails.
 static func focus_grab(ctrl) -> void:
 	# Check validity BEFORE casting: a deferred grab can fire after its menu was freed
 	# (e.g. a scene torn down in a test), and `as Control` on a freed object errors.

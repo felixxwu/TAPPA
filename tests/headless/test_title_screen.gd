@@ -1,6 +1,6 @@
 extends GutTest
 # The title screen (features/world-session.md → "Title screen"): Continue / New World / Settings,
-# the starter-car choice, and keyboard/gamepad navigation.
+# New World going into the cold open, and keyboard/gamepad navigation.
 
 const TEST_PATH := "user://test_title_profile.json"
 
@@ -59,26 +59,13 @@ func test_continue_is_only_offered_with_a_world() -> void:
 	assert_eq(_entered[0], 0, "and doesn't reload it")
 
 
-func _pick_starter(t: TitleScreen, i: int) -> void:
-	t.cards().select(i, false)
-	t.cards()._confirm_selected()
-	t.cards().skip_confirm_flash()
-
-
-func test_the_starter_choice_is_the_innermost_rings_cars() -> void:
-	assert_eq(TitleScreen.starter_choices(), LootRules.starter_cars())
-
-
-func test_new_world_picks_a_starter_and_drives_in() -> void:
+func test_new_world_goes_into_the_cold_open() -> void:
 	var t := await _open()
 	assert_true(CardUI.pick(t.cards(), "New world"))
 	await get_tree().process_frame
-	assert_eq(t.view, TitleScreen.View.STARTER)
-	assert_eq(t.cards().card_count(), TitleScreen.starter_choices().size(), "a card per starter car")
-	var choice := TitleScreen.starter_choices()[1]
-	_pick_starter(t, 1)
 	assert_true(WorldSession.has_world())
-	assert_eq(String(WorldSession.active_car()["model_id"]), choice)
+	assert_true(WorldSession.cold_open_pending())
+	assert_eq(String(WorldSession.active_car()["model_id"]), ColdOpen.car_id(Config.data.free_roam))
 	assert_eq(_entered[0], 1)
 
 
@@ -112,13 +99,6 @@ func test_the_title_screen_is_keyboard_and_gamepad_navigable() -> void:
 	t._settings_back()
 	await get_tree().process_frame
 	assert_eq(t.view, TitleScreen.View.MAIN, "back from Settings returns to the title")
-	t._show(TitleScreen.View.STARTER)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_eq(vp.gui_get_focus_owner(), t.cards())
-	MenuNav.of(t._page)._unhandled_input(_press("ui_cancel"))
-	await get_tree().process_frame
-	assert_eq(t.view, TitleScreen.View.MAIN, "back from the starter choice returns to the title")
 
 
 func _first_run_title(touch: bool) -> TitleScreen:

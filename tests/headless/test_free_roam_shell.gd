@@ -113,6 +113,35 @@ func test_the_conflict_prompt_hands_back_after_its_action_not_when_it_closes() -
 	Cloud.sync.status = CloudSync.Status.IDLE
 
 
+func test_a_benchmark_does_not_put_a_sync_conflict_to_the_player() -> void:
+	Cloud.sync._conflict = {"profile": "{}", "device": "test-device", "updated_utc": ""}
+	Cloud.sync.blocked_by_conflict = true
+	Cloud.conflict_detected.emit({})
+	Benchmark.active = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Benchmark.active = false
+	assert_null(ConfirmPopup.any_open(get_tree()))
+	_scene._conflict_due = false
+	Cloud.sync._conflict = {}
+	Cloud.sync.blocked_by_conflict = false
+	Cloud.sync.status = CloudSync.Status.IDLE
+
+
+func test_boot_applies_a_loading_cap_then_the_players_cap() -> void:
+	var caps: Array[int] = _scene.applied_fps_caps
+	assert_eq(caps.size(), 2)
+	assert_eq(caps[1], FpsSetting.resolve())
+
+
+func test_outlines_treat_the_ground_and_water_as_terrain() -> void:
+	var ground := _streamer.get_children().filter(func(n: Node) -> bool: return n is MeshInstance3D)
+	assert_gt(ground.size(), 0)
+	for mi: MeshInstance3D in ground:
+		assert_true(mi.is_in_group(&"id_terrain"))
+	assert_true(_scene.get_node("Water").is_in_group(&"id_terrain"))
+
+
 func test_the_debug_readout_starts_hidden_and_p_toggles_it() -> void:
 	var stats: CanvasLayer = _scene.get_node("DebugStats")
 	assert_false(stats.visible, "hidden by default")

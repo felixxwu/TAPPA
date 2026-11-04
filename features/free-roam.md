@@ -202,7 +202,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   Then `free_roam.gd._warm_up` compiles every first-use shader behind a `LoadingScreen` with the
   car's controls locked, the same passes as the stage's load (`world.gd._warm_shaders_behind_cover`):
   every `warm_up()`/`clear_warm_up()` node (debris, tyre marks, smoke, flames, crowds, every weather
-  particle kind, every car's body and wheel textures), a speck of
+  particle kind), a speck of
   every ring's ground material (`warm_up_materials`), one of every ring's trees plus a bush, every
   rock, a coin, a rest-stop cabin and one barrier module (both without their collision) (`warm_up_spawns`, on flat stand-in ground), and a
   throwaway camera turning full circle above the car and then looking down from high up
@@ -594,17 +594,17 @@ Run it from the command line to drive 3 km of the real island and print the repo
 50 km/h, with 2.2% of frames over the 1 ms budget (40 ms of overshoot in total) and 12 spikes
 over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames were over.
 
-## Cold open (a first-time player's start)
+## Cold open (every new world's start)
 
-`ColdOpen` (`scripts/free_roam/cold_open.gd`, spec `todo/2026-10-30-cold-open.md`). A first-time
-player gets no title screen: they start mid-drive at night, in the chase camera, on the road to
+`ColdOpen` (`scripts/free_roam/cold_open.gd`, spec `todo/2026-10-30-cold-open.md`). Every new world
+starts the same way, with no menu or car choice: the player is mid-drive at night, in the chase camera, on the road to
 the roadside rest stop nearest spawn, the cooling already gone and a cold engine whose gauge climbs on the way,
 with money up front for another starter car. Reaching the cabin lights it as usual, clears the
 night, and opens the camera and control options; past it the road carries on, so there is no
 turning round (spawn's own cabin stands across its road's end, which is why it isn't the goal).
 
 - **When:** `ColdOpen.due()`: the world block's `cold_open` flag (`WorldSession.cold_open_pending`),
-  set by `ColdOpen.new_world` (called by `title_boot.gd`) when it makes a first-time world in
+  set by `ColdOpen.new_world` (called by `title_boot.gd` for a first-time player and by the title's New World) when it makes a world in
   `ColdOpen.car_id` (the `FreeRoamSettings.cold_open_car_id` car, else the first starter) with
   `cold_open_start_money` (with the road coin on the way, just about enough to swap for another
   starter car at the cabin) and cleared on arrival. Never

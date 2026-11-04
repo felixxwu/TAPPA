@@ -20,7 +20,7 @@ private coroutine per phase, each named after the load-stage label it opens:
 (`result`, `road_centerline`, `finish_len`, `start_pos`, `start_heading`, `staged`,
 `water_bounds`) the later phases read. `_ready` is split the same way:
 `_apply_scene_config` → `_field_player_car` → `await _generate_track` →
-`await _wire_session_and_stage` → `_build_overlays_and_benchmark`. The awaiting order is
+`_build_overlays_and_benchmark`. The awaiting order is
 identical to when all of this ran inline; only the nesting changed. `_interactive(loading)`
 is the single definition of "an overlay is up AND we're not headless", shared by the phases.
 
@@ -43,13 +43,13 @@ to a fresh draw every 7 seconds** (`LoadingScreen._TIP_CYCLE_SEC`) for as long a
 overlay is up, so a long load doesn't sit on one sentence for its whole duration. Each tip
 is a short, standalone gameplay fact (aero balance, turbo lag, checkpoints, what a wreck costs, …) verified
 against the mechanic it names — every entry must read correctly in ISOLATION, since the
-player only ever sees one at a time. `_build_lakes` / `_build_foliage` / `_build_signs`
+player only ever sees one at a time. `_build_lakes` / `_build_foliage`
 dropped their now-unused `loading: LoadingScreen` parameters when the forwarding call was
 removed.
 
 **Story mode** (`LoadingScreen.story(lines, seconds_each)`): the headline and tip give way to a
 few lines shown in turn, the last held until `finish()`; `story_running()` / `story_finished` let
-the caller wait until every line has had its time. Used for a first-time player's cold open
+the caller wait until every line has had its time. Used for a new world's cold open
 (free-roam.md → *Cold open*, started in `Scenes.change_to`).
 
 **Pinned headline** (`LoadingScreen.pin_title`, via `Scenes.change_to(tree, path, cover_title)`): names why
@@ -94,8 +94,7 @@ player *driving*; the body itself simulates across every awaited frame below, an
 the start of generation until `build_initial()` there is deliberately **no terrain under
 it** (see `terrain.md` → *Who builds the initial ring*). Without the freeze the car falls
 for the length of the load. With it, the car drops onto carved, flattened ground with
-several hundred ms of covered frames left to settle before `_build_start_line` or the
-player sees it.
+several hundred ms of covered frames left to settle before the player sees it.
 
 If you add work between those two points, do not assume the car is on the ground there.
 

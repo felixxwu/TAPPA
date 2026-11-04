@@ -182,7 +182,6 @@ servo measures the grip limit instead of predicting it. See
 |----------|---------|---------|
 | `stage_countdown_seconds` | 3.0 | Countdown before controls unlock at the start of a stage |
 | `stage_complete_percent` | 99.0 | Track-progress % (0..100) that ends the stage |
-| `hud_popup_show_seconds` | 3.0 | How long a transient in-run HUD tag (the corner-cut flash) stays before fading |
 
 See [stage.md](stage.md).
 
@@ -232,7 +231,7 @@ Three (wavelength, amplitude) pairs — `terrain_layerN_wavelength` /
 ### Water
 Roadside lakes (see [lakes.md](lakes.md)). `water_enabled` (off by default),
 `track_water_level_m` (per-event flood height), `water_shore_clearance_m` (start-pad
-margin), `water_drag` (soft-hazard drag), `water_min_basin_area_m2`, and the
+margin), `water_drag` (soft-hazard drag), and the
 `water_color` / `water_shore_color` / `water_ripple_speed` / `water_sparkle_strength`
 look knobs.
 

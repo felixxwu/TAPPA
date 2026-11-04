@@ -80,6 +80,18 @@ func test_a_run_stands_outside_the_road_facing_it() -> void:
 		assert_gt(xform.basis.x.normalized().dot(to_road), 0.9, "module %d faces the road" % i)
 
 
+func test_fields_share_their_meshes_and_materials() -> void:
+	var first := _build(_layout(4))
+	var second := _build(_layout(4))
+	var a := first.find_children("*", "MultiMeshInstance3D", true, false)
+	var b := second.find_children("*", "MultiMeshInstance3D", true, false)
+	assert_gt(a.size(), 0)
+	assert_eq(a.size(), b.size())
+	for i in a.size():
+		assert_eq(a[i].multimesh.mesh, b[i].multimesh.mesh)
+		assert_eq(a[i].material_override, b[i].material_override)
+
+
 func test_a_run_on_level_ground_stays_level() -> void:
 	var field := _build(_layout(4), _flat())
 	for i in range(field.module_transforms.size()):

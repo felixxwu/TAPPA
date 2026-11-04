@@ -40,8 +40,6 @@ static func percentile(samples: Array, q: float) -> float:
 # Summarise a run. `samples` maps stream name -> Array of per-frame values:
 #   frame_ms (required), draws, objects, prims,
 #   render_cpu_ms, render_gpu_ms, process_ms, physics_ms.
-# Missing / empty streams summarise to zeros, so a backend without GPU timers
-# (render_gpu_ms all 0) or a partial capture still produces a full dictionary.
 # The spike threshold: a frame this much slower than the target counts as a
 # dropped-frame spike. Relative to the frame cap so it's meaningful at any target —
 # a hardcoded 28 ms flags EVERY frame of a 30 fps (33 ms) run. `spike_ms` lets the
@@ -53,6 +51,8 @@ static func spike_threshold_ms(target_fps: int) -> float:
 	return maxf(SPIKE_MS, 1000.0 / float(target_fps) * 1.5)
 
 
+# Missing / empty streams summarise to zeros, so a backend without GPU timers
+# (render_gpu_ms all 0) or a partial capture still produces a full dictionary.
 static func summarise(samples: Dictionary, spike_ms := SPIKE_MS) -> Dictionary:
 	var frames: Array = samples.get("frame_ms", [])
 	var total_ms := 0.0

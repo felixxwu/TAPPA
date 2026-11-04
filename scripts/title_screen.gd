@@ -5,16 +5,14 @@ extends Control
 # The title screen (todo/2026-10-19-free-roam-pivot.md decision 20): the game's front door, shown
 # over the live, paused world (free_roam.gd → _show_title). Card pages (CardUI.card_page / card_list)
 # driven by MenuNav:
-#   MAIN     — Continue (closes the menu; only with a world), New World, Settings.
-#   STARTER  — a new world starts by choosing one of a few starter cars (decision 19); picking one
-#              creates the world and drives into it.
+#   MAIN     — Continue (closes the menu; only with a world), New World (into the cold open), Settings.
 #   SETTINGS — the shared SettingsMenu.
 #   FIRST_RUN — at the end of the cold open (ColdOpen, `options_only`): the SettingsMenu's camera page,
 #              then (on touch devices) its touch-layout page. Picking a row, Next or Back moves on,
 #              and the last closes into the game.
 # New World over an existing world asks first: the old world, its cars and its loot are lost.
 
-enum View { MAIN, STARTER, SETTINGS, FIRST_RUN }
+enum View { MAIN, SETTINGS, FIRST_RUN }
 
 var view := View.MAIN
 # Only the first-run options, closing back into the game when done (the end of the cold open).
@@ -41,10 +39,6 @@ func _ready() -> void:
 		_check_for_update()
 
 
-static func starter_choices() -> PackedStringArray:
-	return LootRules.starter_cars()
-
-
 func _show(v: View) -> void:
 	if _page != null:
 		CardUI.park_previews(_page)
@@ -62,16 +56,6 @@ func _show(v: View) -> void:
 			_cards = CardUI.card_list(_page, entries)
 			MenuNav.attach(_page, {first = _cards})
 			_build_version_label()
-		View.STARTER:
-			_page = CardUI.card_page(self, {"title": "Choose your car"})
-			var entries: Array = []
-			for id in starter_choices():
-				var car := CarLibrary.by_id(id)
-				entries.append({"title": String(car.get("name", id)), "subtitle": CardUI.car_subtitle(car),
-					"car": CarLibrary.index_of(id), "action": _start.bind(id)})
-			_cards = CardUI.card_list(_page, entries)
-			_page.add_action(UITheme.row_button("< Back", _show.bind(View.MAIN)))
-			MenuNav.attach(_page, {first = _cards, on_back = _show.bind(View.MAIN)})
 		View.SETTINGS:
 			_page = MenuPage.new({"title": "Settings", "alpha": 0.0, "width": UITheme.px(560)})
 			add_child(_page)
@@ -153,15 +137,15 @@ func _first_run_next() -> void:
 
 func _on_new_world() -> void:
 	if not WorldSession.has_world():
-		_show(View.STARTER)
+		_start()
 		return
 	ConfirmPopup.open(self, "New world?", "Your current world, its cars and everything you've found are lost.",
-		[{"label": "Cancel", "callback": Callable()}, {"label": "New world", "callback": _show.bind(View.STARTER)}],
+		[{"label": "Cancel", "callback": Callable()}, {"label": "New world", "callback": _start}],
 		0, 0)
 
 
-func _start(model_id: String) -> void:
-	WorldSession.new_world(Config.data.free_roam.pick_world_seed(), model_id)
+func _start() -> void:
+	ColdOpen.new_world(Config.data.free_roam.pick_world_seed(), Config.data.free_roam)
 	enter_world.call()
 
 

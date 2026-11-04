@@ -157,13 +157,10 @@ on the `VehicleWheel3D` nodes themselves.
   So a damaged car still crabs and scrubs, and the pull is still emergent physics with no
   synthetic steer bias — the *cue* just shifts from "the car wanders" to "the wheels are
   cocked and the rear still crabs". Do **not** try to exclude the toe from the measurement.
-- **Persistence.** `wheel_toe` lives on the **OwnedCar** (a 4-float array ordered
-  like `WHEEL_NAMES`), persisted at each event boundary alongside HP
-  (`world.gd._on_session_event_completed` → `Save.set_wheel_toe`), so a car carries
-  its bent wheels **between events**. The between-event field repair bends them back
-  toward straight along with restoring some HP (`DamageModel.reset_wheel_toe` is the
-  in-model equivalent of zeroing them). Older saves with no `wheel_toe` key are backfilled
-  straight (`Save._sanitise`).
+- **Persistence.** The toes are saved with the rest of the car's condition in the world
+  block (`WorldSession.save_car_state`, a 4-float array ordered like `WHEEL_NAMES`), so a
+  reload resumes the bent wheels. A rest stop's repair straightens them along with the HP
+  (`DamageModel.reset_wheel_toe`).
 
 The solid props that arrest the car and so cost HP through the rule above are the
 trees ([trees.md](trees.md)) and the **corner barriers** ([barriers.md](barriers.md)),

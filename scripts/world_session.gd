@@ -12,7 +12,7 @@ extends Node
 #   pose           — [x, y, z, yaw]: where the car is, written every few seconds and on leaving
 #   car_state      — {hp, max_hp, cooling_broken, engine_temp, toe}: its damage, so a reload resumes it
 #   lit            — rest stop site ids lit so far (spawn, 0, always)
-#   cold_open      — true while a first-time player's cold open is still to be driven (ColdOpen); absent after
+#   cold_open      — true while a new world's cold open is still to be driven (ColdOpen); absent after
 #   last_site      — the respawn point
 #   driven         — map cells the car has driven through ("x,y" keys of DRIVEN_CELL_M cells)
 #   max_ring       — the furthest biome ring reached (the map shows the borders crossed)
@@ -110,7 +110,8 @@ func pose() -> Array:
 
 
 func save_pose(xform: Transform3D) -> void:
-	if not has_world():
+	# JSON writes a NaN as null, and reading that back would stop every later boot.
+	if not has_world() or not xform.is_finite():
 		return
 	var fwd := -xform.basis.z
 	_world()["pose"] = [xform.origin.x, xform.origin.y, xform.origin.z, atan2(fwd.x, fwd.z)]
@@ -129,8 +130,11 @@ func pose_transform() -> Variant:
 func save_car_state(dmg: DamageModel) -> void:
 	if not has_world() or dmg == null:
 		return
+	var toe := dmg.toe_array()
+	if ([dmg.hp, dmg.max_hp, dmg.engine_temp] + toe).any(func(v: float) -> bool: return not is_finite(v)):
+		return  # the same NaN hazard as save_pose
 	_world()["car_state"] = {"hp": dmg.hp, "max_hp": dmg.max_hp, "cooling_broken": dmg.cooling_broken,
-		"engine_temp": dmg.engine_temp, "toe": dmg.toe_array()}
+		"engine_temp": dmg.engine_temp, "toe": toe}
 
 
 # Put the saved damage back onto a freshly fielded car. Nothing saved: leave it as fielded. Health
@@ -278,8 +282,13 @@ func check_sites(fingerprint: int) -> void:
 	Save.save(false)
 
 
+# Whole metres, so a tiny float difference between platforms can't read as a changed island.
 func sites_fingerprint(sites: RoadSites) -> int:
-	return hash(sites.kind)
+	var ids := PackedInt32Array(sites.kind)
+	for p in sites.pos:
+		ids.append(roundi(p.x))
+		ids.append(roundi(p.y))
+	return hash(ids)
 
 
 # --- the coin economy (LootDirector reads and writes these) ----------------------------------------
@@ -306,8 +315,8 @@ func adopt_old_stash() -> void:
 	_touch()
 
 
-# A first-time player's world: the cold open (ColdOpen) is still to be driven. Set by the boot scene
-# when it makes the world, cleared once the car reaches the spawn cabin. A quit midway drives it again.
+# A new world: the cold open (ColdOpen) is still to be driven. Set when the world is made,
+# cleared once the car reaches the cabin. A quit midway drives it again.
 func cold_open_pending() -> bool:
 	return has_world() and bool(_world().get("cold_open", false))
 

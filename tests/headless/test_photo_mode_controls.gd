@@ -251,7 +251,7 @@ func test_controls_feed_the_camera_touch_axis() -> void:
 
 
 # The touch axis actually flies the camera, and holding the stick AND a key at once is
-# not faster than either alone (apply_move normalises the summed direction).
+# not faster than either alone (apply_move caps the summed direction's length).
 func test_touch_axis_moves_the_camera_at_the_same_speed_as_a_key() -> void:
 	_camera.global_position = Vector3.ZERO
 	_camera.touch_axis = Vector3(0.0, 0.0, 1.0)

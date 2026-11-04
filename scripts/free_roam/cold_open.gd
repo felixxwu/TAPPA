@@ -2,7 +2,7 @@ class_name ColdOpen
 extends Node
 # Docs: features/free-roam.md (Cold open) — update in the same change as this file.
 # Tests: tests/headless/test_cold_open.gd — extend in the same change.
-# A first-time player's first minute (todo/2026-10-30-cold-open.md): no title screen. They start
+# The first minute of every new world (todo/2026-10-30-cold-open.md): no menu. The player starts
 # mid-drive at night, in the chase camera, several hundred metres before the rest stop nearest
 # spawn (pick_start), with the cooling already gone and the engine warm (its gauge climbs on the way). The cabin's lamp
 # post marks the goal, and past it the road carries on. A health floor (DamageModel.min_hp) means
@@ -33,13 +33,13 @@ var _dry_slot := -1
 var _options_in := -1.0
 
 
-# Whether this boot is a first-time player's cold open.
+# Whether this boot is a new world's cold open.
 static func due() -> bool:
 	return WorldSession.cold_open_pending() and not Benchmark.active \
 		and not "--auto-drive" in OS.get_cmdline_user_args()
 
 
-# The car a first-time world starts with: FreeRoamSettings.cold_open_car_id, or the first starter car
+# The car a new world starts with: FreeRoamSettings.cold_open_car_id, or the first starter car
 # if that id isn't in the catalogue.
 static func car_id(s: FreeRoamSettings) -> String:
 	if s != null and CarLibrary.index_of(s.cold_open_car_id) >= 0:
@@ -47,7 +47,7 @@ static func car_id(s: FreeRoamSettings) -> String:
 	return LootRules.starter_cars()[0]
 
 
-# A first-time player's world (title_boot.gd): the cold-open car, pending, and
+# A new world (title_boot.gd for a first-time player, the title's New World): the cold-open car, pending, and
 # FreeRoamSettings.cold_open_start_money (with the road coin on the way, about enough to swap it for
 # another starter car at the first cabin).
 static func new_world(world_seed: int, s: FreeRoamSettings) -> void:
@@ -297,8 +297,8 @@ func _on_lit(site: int) -> void:
 
 
 # The car reached the cabin: the floor goes, the night clears to dry weather
-# (held until the weather's next slot, then the rings' draw takes over), the world stops being a
-# first-time one, and the options open once the "Checkpoint reached" band has gone.
+# (held until the weather's next slot, then the rings' draw takes over), the cold open stops being
+# due, and the options open once the "Checkpoint reached" band has gone.
 func finish() -> void:
 	running = false
 	done = true

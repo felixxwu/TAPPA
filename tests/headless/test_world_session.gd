@@ -65,6 +65,21 @@ func test_the_cars_pose_round_trips_facing_the_same_way() -> void:
 	assert_almost_eq(-back.basis.z, fwd, Vector3.ONE * 1e-4)
 
 
+func test_non_finite_values_are_not_saved() -> void:
+	WorldSession.new_world(1, _any_car())
+	var pose := Transform3D(Basis.IDENTITY, Vector3(1, 2, 3))
+	WorldSession.save_pose(pose)
+	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(NAN, 0, 0)))
+	assert_almost_eq(WorldSession.pose_transform().origin, pose.origin, Vector3.ONE * 1e-4)
+	var d := DamageModel.new()
+	d.field(1000.0, 400.0)
+	WorldSession.save_car_state(d)
+	var saved: Dictionary = WorldSession._world()["car_state"]
+	d.engine_temp = NAN
+	WorldSession.save_car_state(d)
+	assert_eq(WorldSession._world()["car_state"], saved)
+
+
 func test_the_cars_condition_round_trips() -> void:
 	WorldSession.new_world(1, _any_car())
 	var d := DamageModel.new()
@@ -174,6 +189,17 @@ func test_only_progress_is_announced_to_the_cloud() -> void:
 	assert_false(_save.has_unsynced())
 	WorldSession.set_money(5)
 	assert_signal_emitted(_save, "profile_changed", "picking up money")
+
+
+func test_the_site_fingerprint_notices_a_moved_site_but_not_a_tiny_float_difference() -> void:
+	var sites := RoadSites.new()
+	sites.kind = PackedInt32Array([RoadSites.Kind.REST, RoadSites.Kind.LOOT])
+	sites.pos = PackedVector2Array([Vector2(10.2, 20.2), Vector2(300.2, -40.2)])
+	var before := WorldSession.sites_fingerprint(sites)
+	sites.pos[1] += Vector2(0.01, 0.0)
+	assert_eq(WorldSession.sites_fingerprint(sites), before)
+	sites.pos[1] += Vector2(50.0, 0.0)
+	assert_ne(WorldSession.sites_fingerprint(sites), before)
 
 
 func test_a_world_saved_against_other_sites_drops_its_site_progress() -> void:

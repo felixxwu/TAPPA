@@ -104,14 +104,14 @@ stops on a rest stop (`RestStops.opened`). Opening it repairs the car for
 free, freezes the game and disarms the pause menu. Every page but TUNE is a card list
 (`_card_page` → `CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)), with
 `MenuNav.attach`:
-- **MAIN:** the stop's name, "Car repaired" and the money held above the cards Continue / Parts /
+- **MAIN:** the stop's name, "Car repaired" and the money held above the cards Continue / Shop /
   Garage / Map / Tune car. Travel is on the map (the quick-travel picker).
 - **TUNE:** the shared `TuningPanel` (`car.retune` on the funnel view of the car) on a plain,
   widened `MenuPage` — sliders, not a list.
-- **PARTS / GARAGE** (with what's on sale at the end of each): see [loot.md](loot.md).
+- **SHOP** (four cards opening UPGRADES / TIRES / DRIVETRAINS / ENGINES) **and GARAGE**: see [loot.md](loot.md).
 
-Back (Esc / gamepad B, or the `< Back` button under a sub-page's cards) steps a sub-page → MAIN →
-closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`): when the car gives up it says only "You dropped $n here" (`LootDirector.lost`; nothing when there was no money), and its single Respawn card (or Back) respawns at the last lit stop. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
+Back (Esc / gamepad B, or the `< Back` button under a sub-page's cards) steps a sub-page → its parent
+page → MAIN → closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`): when the car gives up it says only "You dropped $n here" (`LootDirector.lost`; nothing when there was no money), and its single Respawn card (or Back) respawns at the last lit stop. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
 `test_free_roam_rest_stops.gd` and `test_loot.gd`.
 
 ## Pause menu (`pause_menu.gd`)
@@ -144,9 +144,7 @@ the camera. Exiting re-opens the pause menu.
 
 **Settings** shows the shared `SettingsMenu` with a **◄ Back**. A camera pick applies
 immediately to the live `CameraManager` (`SettingsMenu.camera_changed` → `CameraManager.set_mode`)
-and a mobile-control pick to the live `MobileControls` (`scheme_changed` → `set_scheme`). The dev
-page's **Complete stage** relays to `world.gd`'s `_dev_complete_stage` through
-`dev_complete_stage_requested` (see [settings.md](settings.md) → "Developer-only pages").
+and a mobile-control pick to the live `MobileControls` (`scheme_changed` → `set_scheme`).
 
 **Quit to title** pops a confirm (`confirm_quit_to_title`: "Your world is saved") and on accept
 (`quit_to_title`) unfreezes, emits `quitting` (free roam saves on it) and goes to `Scenes.TITLE`;

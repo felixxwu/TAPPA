@@ -45,8 +45,8 @@ var _wants_capture := false
 # Movement axis pushed by PhotoModeControls (touch thumbstick + up/down buttons), in the
 # same x=right/y=up/z=forward camera-local convention as input_axis(). Added to the
 # keyboard axis each frame (see _process) so touch and keyboard can't be driven at once
-# on a device that somehow has both — apply_move already normalises the summed
-# direction, so holding the stick fully over AND a key can't exceed photo_move_speed.
+# on a device that somehow has both — apply_move already caps the summed
+# direction's length, so holding the stick fully over AND a key can't exceed photo_move_speed.
 # Reset on exit() so a stale value can't survive into the next time photo mode opens.
 var touch_axis := Vector3.ZERO
 
@@ -165,7 +165,7 @@ func apply_move(axis: Vector3, delta: float) -> void:
 		forward = Vector3(up.x, 0.0, up.z) * (-1.0 if global_transform.basis.z.y < 0.0 else 1.0)
 	forward = forward.normalized()
 	var right := Vector3(-forward.z, 0.0, forward.x)
-	var dir := (forward * axis.z + right * axis.x + Vector3.UP * axis.y).normalized()
+	var dir := (forward * axis.z + right * axis.x + Vector3.UP * axis.y).limit_length(1.0)
 	global_position += dir * Config.data.photo_move_speed * delta
 	if max_range_m > 0.0:
 		global_position = _origin + (global_position - _origin).limit_length(max_range_m)

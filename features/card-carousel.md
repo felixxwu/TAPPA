@@ -19,10 +19,11 @@ menu that is a list of choices is a card list:**
 | Menu | Cards |
 |---|---|
 | Title MAIN (`title_screen.gd`) | Continue (only with a world), New world, Settings |
-| Title STARTER | one per starter car (a spinning 3D preview, name, "hp · drive layout") |
 | Pause menu (`pause_menu.gd`) | Resume, Reset, Photo Mode (only where the host offers it), the host's extra rows (free roam: Map, Stats), Settings, Quit |
-| Rest stop MAIN (`rest_stop_page.gd`) | Continue, Parts, Garage, Map, Tune car; the stop's name, "Car repaired" and the money held sit above the cards |
-| Rest stop PARTS | one per fitted part (pick → take off), then one per other part owned (pick → fit, or swap with the part in that slot; "Can't fit" cards are disabled), then one per part on sale (pick → buy and fit) |
+| Rest stop MAIN (`rest_stop_page.gd`) | Continue, Shop, Garage, Map, Tune car; the stop's name, "Car repaired" and the money held sit above the cards |
+| Rest stop SHOP | four cards opening Upgrades, Tires, Drivetrain and Engine swaps |
+| Rest stop UPGRADES / TIRES / DRIVETRAINS | one per part of that kind unlocked for this car (pick → switch on or off), then one per part on sale for it (pick → buy, which switches it on); Tires starts with a Stock card, the car's own tires |
+| Rest stop ENGINES | one per owned car naming the engine in it (pick one, then another, to swap their engines) |
 | Rest stop GARAGE | one per owned car (a spinning 3D preview; the cursor starts on the car being driven), then one per car on sale (pick → buy and drive it) |
 | Stats (`world_pages.gd`) | one per lifetime stat, and the biome rings reached (read-only) |
 
@@ -33,7 +34,7 @@ pick a destination), and **confirm popups** (`ConfirmPopup`). Those are plain `M
 (`"width"`) so they are not a narrow column either.
 
 **Build a new card menu** with `CardUI.card_page(host, {"title": …})` and
-`CardUI.card_list(page, entries, header_lines, selected)`, where each entry is a dict —
+`CardUI.card_list(page, entries, header, selected)`, where each entry is a dict —
 `title`, `desc` (one line), `subtitle`, `extra` (+ `extra_variant`), `icon`, `disabled`, `action`. A card with no
 `action` is read-only (the cursor can still land on it). Add a `< Back` with
 `page.add_action(UITheme.row_button(...))` on a sub-page, and `MenuNav.attach(page, {first =
@@ -48,7 +49,7 @@ shows a `CarCardPreview` (`scripts/car_card_preview.gd`: a frozen `CarProp` —
 `scripts/car_prop.gd` — on a turntable in a small SubViewport) instead of an icon. Previews come from
 the `CarPreviewCache` autoload (`scripts/car_preview_cache.gd`), one per car for the session; a page
 calls `CardUI.park_previews(page)` before freeing itself so the next visit reuses them. Used by the
-title's starter choice and the rest stop's Garage. Tests: `test_car_card_preview.gd`,
+rest stop's Garage. Tests: `test_car_card_preview.gd`,
 `test_car_preview_cache.gd`.
 
 Cache hygiene: `get_or_build` always hands back an UNPARENTED preview — it pulls the node out of

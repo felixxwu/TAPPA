@@ -140,14 +140,21 @@ func _pull_inner() -> Dictionary:
 	var response = await rest.request_json(
 		HTTPClient.METHOD_GET, FirebaseConfig.user_doc(auth.uid),
 		RestClient.json_headers(auth.id_token))
+	if not _can_sync():  # the benchmark may have swapped its throwaway world in meanwhile
+		return {"ok": false, "state": "offline", "error": "Not syncing now."}
+
+	if not response.ok and response.status != 404:
+		return _fail_from_response(response)
+
+	# This fresh answer supersedes any conflict still waiting; the end of this function raises it again if it stands.
+	_conflict = {}
+	blocked_by_conflict = false
 
 	# 404 is the expected "this player has never synced" answer, not an error.
 	if response.status == 404:
 		_remote_refused = false
 		var pushed := await push(true)
 		return {"ok": pushed.ok, "state": "no_cloud", "error": pushed.get("error", "")}
-	if not response.ok:
-		return _fail_from_response(response)
 
 	var remote := from_document(response.json)
 	if remote.is_empty():
@@ -366,7 +373,7 @@ func resolve_keep_local() -> Dictionary:
 		_remote_refused = true
 		_set_status(Status.ERROR, refusal)
 		return {"ok": false, "error": refusal}
-	if int(latest.get("revision", 0)) != int(_conflict.get("revision", 0)):
+	if response.ok and int(latest.get("revision", 0)) != int(_conflict.get("revision", 0)):
 		_conflict = latest
 		conflict_detected.emit(conflict_summary())
 		return {"ok": false, "error": "The cloud save changed again. Choose again."}

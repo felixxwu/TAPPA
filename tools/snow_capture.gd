@@ -11,7 +11,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_window().size = Vector2i(1280, 720)
 	Save.save_disabled = true
-	WorldSession.new_world(7, TitleScreen.starter_choices()[0])
+	WorldSession.new_world(7, LootRules.starter_cars()[0])
 	var world := (load("res://free_roam.tscn") as PackedScene).instantiate()
 	add_child(world)
 	for _i in 120:

@@ -329,10 +329,6 @@ old `_ready` returned early when the effect was off, leaving `_mat` null and
 `_process` disabled, so a disabled overlay could never be switched back on without
 a scene reload.
 
-The overlay is **driving-only**: `world.gd::_hide_driving_ui` switches the `SpeedLines`
-layer off alongside the HUD and the touch controls when a run hands over to the
-cinematic replay, so the streaks never play over a replay the player is only watching.
-See event-replay.md (deleted with the free-roam pivot).
 
 ## Authored body models (MX-5, Focus, Twingo, Acty, Charger, The Beast)
 

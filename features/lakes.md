@@ -114,7 +114,7 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
   alpha, and scaling it would make a dim lake *transparent* rather than *dark*.
   See [weather.md](weather.md) → "Unshaded means nothing dims for free".
 - **The water tile is a committed asset, not baked at load.** It used to be a
-  `NoiseTexture2D` built by `LakeField._make_water_texture` on every stage load.
+  `NoiseTexture2D` built on every stage load.
   `NoiseTexture2D` bakes on a *worker thread* — but the web export ships
   `variant/thread_support = false`, so on web there is no worker and the bake ran on
   the main loop; `seamless = true` makes Godot generate and cross-blend a larger
@@ -138,7 +138,7 @@ Built in `world.gd._build_lakes` after foliage when `cfg.water_enabled`:
 ## Config (`GameConfig` "Water" group)
 
 `water_enabled`, `track_water_level_m`, `water_shore_clearance_m`, `water_drag`,
-`water_min_basin_area_m2`, `water_color`, `water_shore_color`, `water_ripple_speed`,
+`water_color`, `water_shore_color`, `water_ripple_speed`,
 `water_sparkle_strength`. Off by default so shipped events without a water level are
 unaffected.
 

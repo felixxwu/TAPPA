@@ -30,7 +30,7 @@ var owned: Dictionary = {}
 var wheel_particles: WheelParticles
 var dust_puffs: DustPuffs
 var region_banner: RegionBanner
-# A first-time player's cold open (ColdOpen), while it's due; null otherwise.
+# A new world's cold open (ColdOpen), while it's due; null otherwise.
 var cold_open: ColdOpen
 
 # How often the car's pose and condition are written to the world session, in seconds.
@@ -44,6 +44,8 @@ var _has_pose := false
 # (a new world, a cloud download, the benchmark ending) this scene writes nothing more.
 var _generation := -1
 var _conflict_due := false  # a cloud sync conflict is waiting to be put to the player
+# Every frame cap this boot applied, in order. Recorded under headless too, where the engine write is skipped.
+var applied_fps_caps: Array[int] = []
 
 
 # The island's seed comes from the saved world, and must be set before the streamer builds its
@@ -67,6 +69,10 @@ func _enter_tree() -> void:
 
 
 func _ready() -> void:
+	# A low cap would pace every frame the load waits on; the player's cap lands in _hand_over.
+	# A benchmark sets its own frame pacing.
+	if not Benchmark.active:
+		WorldRuntime.apply_fps_cap(applied_fps_caps, WorldRuntime.loading_cap(Platform.is_touch()), Platform.is_headless())
 	for vp in _measured_viewports():
 		RenderingServer.viewport_set_measure_render_time(vp, true)
 	# A dev boot straight into this scene with no world yet makes one, with the configured car.
@@ -264,6 +270,8 @@ func _look_around() -> void:
 
 # Boot is done: the pause menu, then the auto-driver or the title menu if either is due.
 func _hand_over() -> void:
+	if not Benchmark.active:
+		WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	_rest_stops.input_enabled = true
 	_pause.set_input_enabled(true)
 	if Benchmark.active:
@@ -491,7 +499,7 @@ func start_benchmark() -> BenchmarkRunner:
 
 
 func _process(_delta: float) -> void:
-	if _conflict_due:
+	if _conflict_due and not Benchmark.active:  # the benchmark's profile is a throwaway; the world's next load asks
 		_offer_conflict()
 	_track_spare_time()
 	_place_water()

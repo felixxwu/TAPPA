@@ -18,7 +18,8 @@ a setting is its apply module, not any screen.
 1. **It must be RE-APPLIED AT BOOT.** Writing `Save.set_setting` at toggle time only means
    the setting silently will not survive a restart. The apply-owner pattern below is what
    carries it; `camera_manager.gd`, `fps_setting.gd` and `music_director.gd` are the
-   canonical examples to clone.
+   canonical examples to clone. The frame cap is applied by free roam's boot
+   (`free_roam.gd` → `_hand_over`), after a raised cap for the load (`WorldRuntime.loading_cap`).
 2. **Its row must be keyboard + gamepad navigable**, with a nav test — see
    [menu-navigation.md](menu-navigation.md). This is a CLAUDE.md rule for every menu change.
 
@@ -67,12 +68,8 @@ height, so the long schemes page scrolls while the short list/camera pages don't
 and `page_changed(is_root)` lets the host steer its single bottom button — on a
 sub-page it reads **< Back** (returns to the list); on the list it is the host's own
 action. The saved choice in each section is highlighted and persisted via
-`Save.set_setting`. Settings is also shown as a **pre-rally gate**: on mobile, if no
-scheme has been chosen yet, Start opens this page (`_open_settings(true)`) instead of
-launching — jumping **straight to the Mobile controls page** (skipping the category
-list) so the player only picks a touch layout. The bottom button reads **Start >**
-and confirms the pick (the highlighted default if untouched), saving it so the gate
-never reappears, then begins the run; pressing back cancels the gate.
+`Save.set_setting`. A first-time player sees the camera page, and on touch the Mobile
+controls page, at the end of the cold open (`title_screen.gd` → `View.FIRST_RUN`).
 
 Every scrollable menu list uses **`TouchScrollContainer`** (`scripts/touch_scroll_container.gd`)
 in place of a plain `ScrollContainer`: it drag-scrolls under touch even when the
@@ -113,7 +110,7 @@ can't produce.
 
 **Reset progress is NOT one of them.** Wiping the save used to sit on the Dev page
 and so was invisible in release builds; it is now its own **player** category
-(`show_reset`, added to the list unconditionally) and the Dev page no longer offers
+and the Dev page no longer offers
 a second copy — one route to an irreversible action, guarded by a confirm modal
 rather than by hiding. Dev builds simply see both categories.
 

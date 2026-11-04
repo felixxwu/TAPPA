@@ -45,7 +45,7 @@ const TOGGLES: Array[Dictionary] = [
 ]
 
 # True from start() until exit_to_title() — the run scene keys benchmark behaviour
-# (skip the stage flow, spawn the runner, force the perf overlay) off this.
+# (spawn the runner) off this.
 var active := false
 
 # Toggle states, keyed by TOGGLES key. Session-scoped (reset each boot).
@@ -117,6 +117,7 @@ func begin() -> void:
 	# running benchmark (pause menu → Settings → Start) must keep the ORIGINAL
 	# cap/vsync so exit_to_title restores the pre-benchmark state, not our override.
 	if not active:
+		Save.flushing.emit()  # the real world's latest place and damage, or leaving the benchmark loses them
 		_saved_max_fps = Engine.max_fps
 		if not Platform.is_headless():
 			_saved_vsync = DisplayServer.window_get_vsync_mode(0)
@@ -212,13 +213,12 @@ const _OVERRIDDEN_FIELDS: Array[String] = [
 	"target_fps", "target_fps_mobile", "target_fps_web", "hud_enabled",
 	"vegetation_enabled", "spectators_enabled", "barriers_enabled",
 	"road_markings_enabled",
-	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled",
+	"tire_marks_enabled", "wheel_particles_enabled", "engine_smoke_enabled", "dust_puffs_enabled",
 	"tree_render_distance_m", "tree_render_distance_web_touch_m", "tree_cutout_mode",
 ]
 
 
-# Snapshot the config and write the benchmark values: the HUD off (the perf overlay
-# is the benchmark's UI) and each toggle mapped onto the feature switch(es) it
+# Snapshot the config and write the benchmark values: the HUD off and each toggle mapped onto the feature switch(es) it
 # controls. Re-applying over a live snapshot (a re-start from inside a benchmark)
 # first restores the baseline, so the snapshot keeps the true pre-benchmark values
 # and relative overrides (the render-distance halving) can't compound.
@@ -235,15 +235,16 @@ func apply_overrides(cfg: GameConfig) -> void:
 	cfg.tire_marks_enabled = get_option("surface_fx")
 	cfg.wheel_particles_enabled = get_option("surface_fx")
 	cfg.engine_smoke_enabled = get_option("surface_fx")
+	cfg.dust_puffs_enabled = get_option("surface_fx")
 	if not get_option("full_render_distance"):
 		cfg.tree_render_distance_m *= 0.5
 		cfg.tree_render_distance_web_touch_m *= 0.5
 	if tree_mode >= 0:
 		cfg.tree_cutout_mode = tree_mode
 	if get_option("uncap_fps"):
-		# Zero all caps so world.gd's target_fps_for() picks 0 on every target
+		# Zero all caps so target_fps_for() picks 0 on every target
 		# (web reads target_fps_web, native mobile target_fps_mobile, desktop target_fps).
-		cfg.target_fps = 0  # world.gd otherwise re-applies the cap at _ready
+		cfg.target_fps = 0
 		cfg.target_fps_mobile = 0
 		cfg.target_fps_web = 0
 

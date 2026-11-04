@@ -150,6 +150,17 @@ func test_local_changes_at_the_agreed_revision_are_pushed() -> void:
 	assert_false(_save.has_unsynced())
 
 
+func test_a_pull_in_flight_when_a_benchmark_starts_applies_nothing() -> void:
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
+	_sync.pull()
+	Benchmark.active = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
+	Benchmark.active = false
+	assert_ne(int(_save.profile.get("cloud_revision", 0)), 9)
+
+
 func test_a_newer_cloud_over_a_clean_profile_is_downloaded() -> void:
 	_save.profile["cloud_revision"] = 1
 	_save.profile["created_utc"] = "local_only"
@@ -303,6 +314,36 @@ func test_keep_local_asks_again_when_the_cloud_moved_since_the_conflict() -> voi
 	result = await _sync.resolve_keep_local()
 	assert_true(result.ok)
 	assert_eq(int(_save.profile["cloud_revision"]), 16, "the second answer uploads above the newer copy")
+
+
+func test_keep_local_uploads_when_the_cloud_copy_was_deleted_since_the_conflict() -> void:
+	_seat_local_career()
+	_save.profile["cloud_revision"] = 1
+	_save.save()
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
+	await _sync.pull()
+	_rest.queue_error(404)
+	_rest.queue_ok({})
+	var result: Dictionary = await _sync.resolve_keep_local()
+	assert_true(result.ok)
+	assert_false(_sync.blocked_by_conflict)
+
+
+func test_a_pull_that_finds_no_conflict_clears_a_waiting_one() -> void:
+	_seat_local_career()
+	_save.profile["cloud_revision"] = 1
+	_save.save()
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
+	await _sync.pull()
+	assert_true(_sync.blocked_by_conflict, "setup")
+	_sync.resolve_later()
+	_save.profile["cars"] = []
+	_save.profile[Save.KEY_WORLD] = {}
+	_rest.queue_ok(_remote_doc(9, _remote_profile()))
+	var result: Dictionary = await _sync.pull()
+	assert_eq(result.state, "applied", "a wiped device takes the cloud without asking")
+	assert_false(_sync.blocked_by_conflict)
+	assert_eq(_sync.conflict_summary(), {})
 
 
 func test_keep_local_does_not_overwrite_a_cloud_copy_a_pull_would_refuse() -> void:

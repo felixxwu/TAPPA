@@ -46,7 +46,6 @@ and a single corner ends up too small to judge:
 | Tool | What it gives |
 |---|---|
 | `tools/corner_capture.tscn` | photographs the whole catalogue to a PNG in `tools/`, **and prints every corner's minimum radius plus the cornering-speed ceiling it implies**. Works headless for the numbers (no renderer needed); needs a window for the PNG. |
-| `tools/square_compare.tscn` | a zoomed before/after overlay of one corner's handle lengths, with the tightest point marked on each curve, written as a PNG in `tools/` |
 
 **Minimum radius is the number that matters**, not how the curve looks:
 A cornering speed ceiling of `sqrt(mu*g/kappa)` off the *tightest* point means one
@@ -70,10 +69,9 @@ corners into a stage. It works in a plane mapping directly to world XZ
 (`x → world x`, `y → world z`).
 
 `generate` takes a single **`TrackGenParams`** object (`scripts/track_gen_params.gd`)
-holding every shape determinant — there is no positional form. Build it only via
-`TrackGenParams.for_event` / `for_config` / `for_trial`, which all require a water
-level, so a shape can't be generated without one (this is what keeps opponent times
-in sync once water makes the shape origin-dependent — see [lakes.md](lakes.md)).
+holding every shape determinant — there is no positional form. Build it via
+`TrackGenParams.for_config` (production) or `of` (tests and tools), which both require a water
+level, so a shape can't be generated without one (see [lakes.md](lakes.md)).
 When water is enabled the search treats below-water cells as obstacles and routes
 the road around lakes.
 

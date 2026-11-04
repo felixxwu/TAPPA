@@ -28,7 +28,7 @@ func after_each() -> void:
 
 
 func _clean() -> void:
-	for suffix in ["", ".bak", ".tmp", ".conflict.bak", ".newer.bak"]:
+	for suffix in ["", ".bak", ".tmp", ".conflict.bak", ".newer.bak", ".corrupt.bak"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
@@ -169,6 +169,16 @@ func test_corrupt_json_falls_back_to_default() -> void:
 	_save.load_or_new()
 	assert_eq(_save.profile["cars"].size(), 0, "garbage file -> fresh default profile")
 	assert_eq(_save.profile["schema_version"], _save.SCHEMA_VERSION, "default schema after corruption")
+
+
+func test_an_unreadable_primary_keeps_a_copy_past_the_next_saves() -> void:
+	var f := FileAccess.open(TEST_PATH, FileAccess.WRITE)
+	f.store_string("garbage")
+	f.close()
+	_save.load_or_new()
+	_save.save_now()
+	_save.save_now()
+	assert_eq(FileAccess.get_file_as_string(TEST_PATH + ".corrupt.bak"), "garbage")
 
 
 func test_corrupt_primary_falls_back_to_bak() -> void:

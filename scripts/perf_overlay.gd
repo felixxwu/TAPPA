@@ -1,7 +1,6 @@
 class_name PerfOverlay
 extends CanvasLayer
-# Diagnostic frame-profiling overlay. Toggled with P (`toggle_perf_overlay`);
-# forced on for the whole run in benchmark mode (features/benchmark.md).
+# Diagnostic frame-profiling overlay on the dev stage scene (world.gd). Toggled with P (`toggle_perf_overlay`).
 #
 # Choppiness is almost always intermittent frame-time SPIKES, not low average
 # FPS, so this tool reports the breakdown that fingerprints the cause:

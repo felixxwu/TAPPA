@@ -259,10 +259,12 @@ func request_web_sync() -> void:
 # --- Load --------------------------------------------------------------------
 
 # Populate `profile` from disk, falling back to .tmp, then .bak, then a fresh default.
-# Never overwrites a file it could not read (the player may want to recover it).
+# A primary file it could not read gets a copy nothing rotates, since saving will replace it.
 func load_or_new() -> void:
 	save_disabled = false
 	var loaded := _read_file(profile_path)
+	if loaded.is_empty() and FileAccess.file_exists(profile_path):
+		DirAccess.copy_absolute(profile_path, profile_path + ".corrupt.bak")
 	if loaded.is_empty():
 		loaded = _read_file(profile_path + ".tmp")  # a write whose final rename failed
 	if loaded.is_empty():

@@ -74,7 +74,7 @@ Max-HP is **CarLibrary metadata, not stored**. The world's terrain, roads and si
   warned about, not ignored.
 - **Debounced:** `save()` arms a ~1 s one-shot timer (`SAVE_DEBOUNCE_SEC`) that keeps running
   while the tree is paused, so a burst of mutations is one write.
-- **Load fallback chain:** primary → `.tmp` (a write whose final rename failed) → `.bak` → fresh default. A corrupt/garbage
+- **Load fallback chain:** primary → `.tmp` (a write whose final rename failed) → `.bak` → fresh default; an unreadable primary is first copied to `profile.json.corrupt.bak`, which nothing rotates. A corrupt/garbage
   file is never silently overwritten (parsed via the `JSON` instance API so
   malformed input returns an error code rather than crashing). A profile from a **newer**
   schema (a downgrade, e.g. a stale cached web build) is copied to `profile.json.newer.bak`,

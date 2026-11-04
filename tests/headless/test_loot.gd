@@ -142,10 +142,14 @@ func test_parts_switched_off_dont_reach_the_car() -> void:
 	assert_false(f.has("swapped_engine") or f.has("drivetrain_override"))
 
 
+func _part_id(k: int) -> String:
+	return String(BoostLibrary.CATALOGUE.keys()[k])
+
+
 func test_one_of_each_part_and_no_kit_for_the_cars_own_layout() -> void:
-	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [{"kind": "part", "id": "grip", "level": 0}]}
+	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [{"kind": "part", "id": _part_id(0), "level": 0}]}
 	var own := UpgradeLibrary.stock_drive_mode(owned)
-	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "grip", "level": 3}), "Already unlocked", "one of each")
+	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": _part_id(0), "level": 3}), "Already unlocked", "one of each")
 	assert_eq(LootRules.fit_block_reason(owned, {"kind": "part", "id": "drivetrain:%d" % own}),
 		"Already " + CarLibrary.drive_text(own), "a kit for the car's own layout would do nothing")
 	assert_true(LootRules.can_fit(owned, {"kind": "part", "id": "tire:a"}))
@@ -154,7 +158,7 @@ func test_one_of_each_part_and_no_kit_for_the_cars_own_layout() -> void:
 
 func test_a_cars_upgrade_count_is_its_unlocked_parts_on_or_off_out_of_every_part_it_could_have() -> void:
 	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [
-		{"kind": "part", "id": "grip", "level": 0, "on": true}, {"kind": "part", "id": "turbo", "level": 0, "on": false}]}
+		{"kind": "part", "id": _part_id(0), "level": 0, "on": true}, {"kind": "part", "id": _part_id(1), "level": 0, "on": false}]}
 	var own := UpgradeLibrary.stock_drive_mode(owned)
 	var all := LootRules.parts_for(owned)
 	var keys := {}
@@ -503,7 +507,7 @@ func test_the_parts_page_switches_parts_on_and_off_and_reloads_the_car_on_close(
 	var scene := await _boot()
 	_nothing_for_sale()
 	var page: RestStopPage = scene.get_node("RestStopPage")
-	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": "grip", "level": 1, "on": false}])
+	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": _part_id(0), "level": 1, "on": false}])
 	page.owned = WorldSession.active_car()
 	page.open(0)
 	watch_signals(page)
@@ -603,7 +607,7 @@ func test_each_owned_car_in_the_garage_says_how_many_upgrades_it_has() -> void:
 	var scene := await _boot()
 	_nothing_for_sale()
 	var page: RestStopPage = scene.get_node("RestStopPage")
-	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": "grip", "level": 0, "on": false}])
+	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": _part_id(0), "level": 0, "on": false}])
 	var second: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
 	page.owned = WorldSession.active_car()
 	page.open(0)
@@ -635,8 +639,8 @@ func test_switching_a_part_keeps_the_cursor_where_it_was() -> void:
 	var scene := await _boot()
 	_nothing_for_sale()
 	var page: RestStopPage = scene.get_node("RestStopPage")
-	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": "grip", "level": 1, "on": false},
-		{"kind": "part", "id": "turbo", "level": 0, "on": false}, {"kind": "part", "id": "aero", "level": 0, "on": false}])
+	_save.set_car_parts(int(WorldSession.active_car()["instance_id"]), [{"kind": "part", "id": _part_id(0), "level": 1, "on": false},
+		{"kind": "part", "id": _part_id(1), "level": 0, "on": false}, {"kind": "part", "id": _part_id(2), "level": 0, "on": false}])
 	page.owned = WorldSession.active_car()
 	page.open(0)
 	page._show(RestStopPage.View.UPGRADES)

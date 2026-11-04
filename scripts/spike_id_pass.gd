@@ -79,7 +79,7 @@ func _twin(n) -> void:
 		return
 	if not (n.layers & 1) or n.get_viewport() == _id_view or _under(n, [TireMarks]):
 		return
-	var terrain := _under(n, [TerrainChunk, DistantTerrain, LakeField, RoadMarkings])
+	var terrain: bool = n.is_in_group(&"id_terrain") or _under(n, [TerrainChunk, DistantTerrain, LakeField, RoadMarkings])
 	var twin: GeometryInstance3D
 	if n is MeshInstance3D:
 		twin = MeshInstance3D.new()

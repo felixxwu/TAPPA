@@ -165,7 +165,7 @@ it (and always headless); the overlay labels that case.
 ## PerfLog autoload (per-second log lines + per-script timing)
 
 **Source:** `scripts/perf_log.gd`, registered as the `PerfLog` autoload. Gated on
-`SettingsMenu.dev_tools_enabled()` (true by default in every build). Once per second it
+`OS.is_debug_build()`, so release builds don't log. Once per second it
 prints to stdout (and therefore the Godot log at
 `user://logs/godot.log`):
 
@@ -186,8 +186,7 @@ note tests may call the public callback directly — keep its signature).
 `PerfLog` also exposes a **benchmark capture window** (`begin_capture()` /
 `end_capture(frame_count)`) that `track()` feeds regardless of
 `OS.is_debug_build()`, so the benchmark's report can carry a per-script CPU
-breakdown from the representative *release* web build (the per-second logger
-above is off there). See [benchmark.md](benchmark.md) → "Feedback loop".
+breakdown from the representative *release* web build. See [benchmark.md](benchmark.md) → "Feedback loop".
 
 ## Standalone dev scenes
 
@@ -232,20 +231,6 @@ report — then calls `Benchmark.end()` and quits. GPU timers
 need a real display (skipped/zero under `--headless`) and aren't supported on
 every backend (e.g. OpenGL/macOS may report 0) — then infer GPU cost from the
 frame interval minus render-cpu.
-
-## Road-curve probe jitter
-
-`tools/probe_jitter.tscn` (headless) generates a real stage and reports, for several probe
-spans, the worst frame-to-frame heading change and the number of curvature SIGN flips along
-it.
-
-It exists because the road curve is baked every 5 m and lerped, so anything sampling it
-with a probe shorter than a chord gets a piecewise-constant reading that jumps at each
-vertex. That is invisible in code review and hard to reproduce synthetically (a uniform arc
-turns by the same angle at every vertex, so short probes look fine on one) — but it once made
-the (now-deleted) rival ghost slide side to side, because a curvature sign flip swaps which
-side of the road it sits on. Use this before trusting any new consumer of the road
-centerline's geometry.
 
 ## Tests
 

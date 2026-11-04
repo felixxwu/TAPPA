@@ -87,8 +87,8 @@ friction = engine_friction_base + engine_friction_slope × rpm / 1000
 crank    = throttle × peak_torque × global_torque_scale × _torque_fraction(rpm) − friction
 ```
 
-Forced induction (stock, or fitted via the `turbo_small` / `turbo_large` /
-`supercharger` upgrades, which share one slot) further multiplies the throttle
+Forced induction (stock, or fitted via the `turbo` / `big_turbo` /
+`supercharger` parts) further multiplies the throttle
 torque term — by `(1 + boost × turbo_boost_gain)` for a turbo, or
 `(1 + sc_boost × supercharger_boost_gain)` for a blower — reshaping the
 delivered curve without altering `_torque_fraction` or the published
@@ -218,8 +218,7 @@ Catalogue fields that describe an engine's shape. Which catalogue owns each is d
   manual MX-5's i4 shifts slowly (0.30 s) while dual-clutch / automated boxes
   (the 2.5T i5's 7-speed S tronic) snap through gears (~0.08 s). The `GameConfig`
   default (0.25 s) is just the baseline before a car is selected.
-  **`shift_time` is upgradeable**: the `gearbox` upgrade slot holds the **Sequential
-  Gearbox** (`sequential_gearbox`), whose `shift_time_set` effect **replaces** whatever the
+  **`shift_time` is upgradeable**: the **`gearbox`** part's `shift_time_set` effect **replaces** whatever the
   fitted engine authors with its own absolute figure, in pipeline step 2. Because the
   baseline is per-engine and the kit's figure is not, fitting it makes a car with an
   already-quicker gearbox **slower** — the S tronic (0.08 s) is the only one on the shipped

@@ -27,7 +27,7 @@ Each car (`CarLibrary.CARS`) and boost part
 (`BoostLibrary.CATALOGUE`) names its own biome `ring` and `price` in its entry; drivetrain kits have
 no entry, so theirs live in `LootRules.KITS`, and tires in `LootRules.TIRES` (gravel from the start, road at The Dunes, snow in The Alps; grip strengths in `GameConfig`'s `shop_tire_*`). `ring_tables(ring_count)` collects them (a boost part
 at level = its ring; a ring past `ring_count` folds into the last), and `LootRules.price(item)`
-reads the price back. Ring 0's cars are also the starter choice (`starter_cars`).
+reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the cold open falls back on the first, and its money is about enough to swap to another.
 
 - **On sale once lit.** A ring's stock goes on sale at every checkpoint once one of its checkpoints
   is lit (`RestStops.lit` → `LootDirector.site_lit` → `unlock`, wired in `free_roam.gd`, kept in the world's `revealed`

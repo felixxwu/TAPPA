@@ -28,7 +28,7 @@ you are racing the temperature gauge to a rest stop.
 
 ```
 title (Continue · New World · Settings)
-  └─ new world: choose a starter car (the cheapest few in the catalogue)
+  └─ new world: the cold open, in a set car, with money to swap it at the first checkpoint
        └─ drive out from the spawn rest stop
             ├─ drive over coins → MONEY (dropped at the wreck if the car gives up)
             ├─ drive through a rest stop → it's LIT (your respawn point)

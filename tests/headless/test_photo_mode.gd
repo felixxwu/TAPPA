@@ -84,6 +84,16 @@ func test_enter_adopts_the_previous_camera_shot() -> void:
 	cam.exit()
 
 
+func test_a_half_pushed_stick_flies_half_as_far() -> void:
+	var cam := _lone_camera()
+	cam.apply_move(Vector3(0.0, 0.0, 1.0), 0.5)
+	var full := cam.global_position.length()
+	cam.global_position = Vector3.ZERO
+	cam.apply_move(Vector3(0.0, 0.0, 0.5), 0.5)
+	assert_almost_eq(cam.global_position.length(), full * 0.5, 0.001)
+	cam.exit()
+
+
 # W flies the camera along the direction it is looking, S back the other way — the
 # defining check that the lateral keys mean what they say.
 func test_w_and_s_fly_forward_and_back() -> void:

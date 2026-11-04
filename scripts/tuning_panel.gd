@@ -95,8 +95,7 @@ func _on_wheels_pressed() -> void:
 
 # Build one handling-axis row via the shared SliderRow builder, then bind the axis-
 # specific bits (value persistence + the axis's slider/value/panel handles refresh()
-# and _reset() reach for). The layout + focus-highlight live in SliderRow so this row
-# can't drift from the detune slider in UpgradeSlotPopup (the shared modal picker).
+# and _reset() reach for). The layout + focus-highlight live in SliderRow.
 func _make_slider_row(spec: Dictionary) -> Control:
 	var axis := String(spec["axis"])
 	var handles := SliderRow.build(spec)

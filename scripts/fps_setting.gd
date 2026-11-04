@@ -12,7 +12,7 @@ extends RefCounted
 ##
 ## Unlike the camera / mobile-scheme settings (which drive scene-local state via a
 ## signal), the frame cap IS a global engine property, so the picker applies it by
-## writing Engine.max_fps directly and world._ready() re-derives it on the next run.
+## writing Engine.max_fps directly and free roam's boot re-derives it on the next run.
 
 const SETTING_KEY := "fps_cap"
 
@@ -38,6 +38,6 @@ static func default_cap() -> int:
 
 
 # The cap to actually apply: the player's saved choice, or the platform default
-# when unset. world._ready() and the Settings picker both read this.
+# when unset. Free roam's boot and the stage scene's both apply this.
 static func resolve() -> int:
 	return int(Save.get_setting(SETTING_KEY, default_cap()))

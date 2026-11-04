@@ -11,7 +11,7 @@ extends RefCounted
 # the same rule CLAUDE.md applies to code comments.
 
 const TIPS: Array[String] = [
-	# --- Tuning / parts (Tune car and Parts at a checkpoint) ---
+	# --- Tuning / parts (Tune car and Shop at a checkpoint) ---
 	"Aero balance helps tune understeer and oversteer at speed.",
 	"Grip balance helps tune oversteer against understeer.",
 	"Brake bias helps tune understeer and oversteer during braking.",
@@ -28,7 +28,7 @@ const TIPS: Array[String] = [
 	"An overheating engine slowly drains the car's health.",
 	# --- Free roam ---
 	"Driving past a checkpoint lights it. Stay there and your car repairs itself.",
-	"Stop at a checkpoint and press Enter or A to open its page: parts, garage, map and tuning.",
+	"Stop at a checkpoint and press Enter or A to open its page: shop, garage, map and tuning.",
 	"If your car gives up, you respawn at the last checkpoint you passed.",
 	"A wreck drops all your money where it happened. Drive back to the crystal to pick it up.",
 	"A second wreck loses the money the first one dropped, so spend what you carry.",

@@ -1,8 +1,7 @@
 class_name SliderRow
 extends RefCounted
 # Shared builder for the house "labeled slider row" used by the tuning panel
-# (TuningPanel, the handling axes) and the upgrades grid's tune popup (UpgradeSlotPopup, the engine
-# detune). One place owns the layout, the fixed 130px label column, the font sizes,
+# (TuningPanel, the handling axes). One place owns the layout, the fixed 130px label column, the font sizes,
 # the extremity end-labels, and the focus-highlight wiring — so the rows can't drift
 # apart (they used to be two hand-copied builders). Pure construction, no per-frame
 # state, so it's a static builder rather than a scene/node.

@@ -2523,9 +2523,7 @@ func terrain_layers() -> Array[Vector2]:
 	]
 
 # Push every ps1_post_process.gdshader uniform onto a post-process material —
-# the dither grid plus the whole colour grade. Shared by BOTH hosts of that pass
-# (world.gd for the stage, hq.gd for the HQ hub) so the two can never drift into
-# grading the game differently depending on which screen you're on. Every target
+# the dither grid plus the whole colour grade. Every target
 # renders at the same authored resolution, so both the dither grid and the grade
 # are resolution-independent and pushed raw.
 func apply_post_process(mat: ShaderMaterial) -> void:
@@ -2538,10 +2536,6 @@ func apply_post_process(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("grade_vignette_strength", grade_vignette_strength)
 	mat.set_shader_parameter("grade_vignette_radius", grade_vignette_radius)
 
-# Push the fake car-lighting uniforms onto a ps1_models.gdshader material. Used
-# for every lit car mesh (chassis/cabin/wheels in world.gd, the MX-5 body in
-# car.gd) so the light parameters live in one place. Terrain materials are never
-# passed here, so they keep the shader's default light_amount of 0 (flat).
 # Dim an authored colour by the ACTIVE weather's sun multiplier, preserving alpha.
 #
 # THE ONE PLACE THAT KNOWS THE RULE. Every material in the game is `unshaded`, so
@@ -2720,6 +2714,10 @@ static func tire_surface_mult(snow_mult: float, tarmac_mult: float,
 		"tire_tarmac_grip_mult": tarmac_mult,
 	}, fill_tire_context({}, tarmac_weight, snowy, WeatherLibrary.WEATHER_DRY))
 
+# Push the fake car-lighting uniforms onto a ps1_models.gdshader material. Used
+# for every lit car mesh (chassis/cabin/wheels in world.gd, the MX-5 body in
+# car.gd) so the light parameters live in one place. Terrain materials are never
+# passed here, so they keep the shader's default light_amount of 0 (flat).
 func apply_car_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("light_amount", car_light_amount)
 	mat.set_shader_parameter("light_dir", sun_direction)
@@ -2835,10 +2833,6 @@ func barrier_render_params() -> Dictionary:
 		"render_fade_m": tree_render_fade_m,
 	}
 
-# Everything SpectatorGroup.setup needs (todo/roadside-spectators.md). The collision
-# bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
-# the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
-# an explicit exception for since the car shares layer 1.
 func road_marking_params() -> Dictionary:
 	return {
 		"enabled": road_markings_enabled,
@@ -2853,6 +2847,10 @@ func road_marking_params() -> Dictionary:
 		"sample_step_m": road_marking_sample_step_m,
 	}
 
+# Everything SpectatorGroup.setup needs (todo/roadside-spectators.md). The collision
+# bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
+# the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
+# an explicit exception for since the car shares layer 1.
 func spectator_params() -> Dictionary:
 	return {
 		"group_size": spectator_group_size,

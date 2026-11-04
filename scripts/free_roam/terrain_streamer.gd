@@ -955,6 +955,7 @@ func _attach(job: ChunkJob) -> void:
 	mi.mesh = job.mesh
 	mi.material_override = _ground_material(job)
 	mi.position = Vector3(job.origin.x, 0.0, job.origin.y)
+	mi.add_to_group(&"id_terrain")  # outlines treat all ground as one surface, with no line at chunk seams
 	add_child(mi)
 	var arrays := [job.verts, job.colors, job.uvs, job.uv2s]
 	match job.level:

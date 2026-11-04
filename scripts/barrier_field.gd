@@ -31,9 +31,9 @@ var module_transforms: Array[Transform3D] = []
 # are instanced into the bodies by RID, so dropping the last reference frees them.
 var _shapes: Array[BoxShape3D] = []
 
-# style -> {"parts": Array (BarrierSection.parts()), "aabb": AABB} — each style's
-# prototype geometry, built once and reused by every module of that style.
-var _protos := {}
+# Vector2(style, pitch) -> {"parts": Array (BarrierSection.parts()), "aabb": AABB}. Static because
+# free roam makes a field per chunk, and building the meshes and materials again is a streaming hitch.
+static var _protos := {}
 
 
 # Build one module per layout entry. `params` is GameConfig.barrier_render_params().
@@ -79,8 +79,8 @@ func build(layout: Array, params: Dictionary, ground_at := Callable()) -> void:
 # the rail is continuous over a crest or a climb. Reading a single centre height and
 # leaving the module level instead is what makes a stepped, gap-toothed run uphill.
 #
-# The barrier line lies INSIDE the road's flatten band (`track_transition_cells`), so
-# the heights it reads are the carved road's own smooth gradient, not raw verge noise
+# The barrier line lies just outside the flatten band's full-weight part (`track_transition_cells`), so
+# the heights it reads are still the carved road's smooth gradient, not raw verge noise
 # — the pitch follows the road up the hill and can't jitter module to module.
 func _module_transform(entry: Dictionary, ground_at: Callable, half_w: float,
 		road_gap: float, face_reach: float, sink: float, pitch: float) -> Transform3D:
@@ -118,8 +118,9 @@ func _ground(ground_at: Callable, p: Vector2) -> float:
 # One style's geometry, built once: a prototype BarrierSection is created off-tree,
 # its parts and AABB harvested, and the node freed. Nothing of it stays in the scene.
 func _prototype(style: int, pitch: float) -> Dictionary:
-	if _protos.has(style):
-		return _protos[style]
+	var key := Vector2(style, pitch)
+	if _protos.has(key):
+		return _protos[key]
 	var proto := BarrierSection.new()
 	# Explicit cast: `style` is carried as an int through the batching maps (dictionary
 	# keys), while BarrierSection.style is typed as its own enum.
@@ -128,13 +129,13 @@ func _prototype(style: int, pitch: float) -> Dictionary:
 	proto.build()  # explicit: never entered the tree, so _ready() has not run
 	var entry := {"parts": proto.parts(), "aabb": proto.local_aabb()}
 	proto.free()
-	_protos[style] = entry
+	_protos[key] = entry
 	return entry
 
 
 # Render + collide one (run, style) group of module transforms.
 func _build_group(style: int, xforms: Array, pitch: float, params: Dictionary) -> void:
-	var proto: Dictionary = _protos[style]
+	var proto := _prototype(style, pitch)
 	var parts: Array = proto["parts"]
 	var box: AABB = proto["aabb"]
 	# Anchor the batches at the run's centroid so the shared render-distance cull

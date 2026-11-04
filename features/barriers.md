@@ -210,17 +210,6 @@ as "all concrete barriers are sunk into the ground", and it was not a terrain-he
 If you write a third placement path: pin the two axes that carry meaning and take the third from a
 cross product, then assert `basis.y ≈ Vector3.UP` in its test.
 
-`build_modules(style, xforms, params)` is the **other** entry point: it takes module
-centre poses the caller already worked out (obeying the local frame above) and skips
-the roadside layout entirely, sharing everything below the transforms — prototype
-reuse, batching, culling and collision. Its one client is the overworld's
-**roadblocks** (`OverworldBlocks`, the deleted overworld → "Roadblocks"), a
-short jersey-rail run laid **across** a carriageway to signal a road the player
-cannot take yet — the opposite orientation to a roadside run, which is why it computes
-its own poses rather than going through `BarrierLayout`. `module_aabb(style, params)`
-exposes the prototype's silhouette so such a caller spaces and aligns its run against
-the real model instead of a guessed size.
-
 **Rendering: one MultiMesh per part, per run.** A run's modules are identical, so
 each part of the prototype (beam, post, bolt, …) becomes one `MultiMeshInstance3D`
 holding one instance per module. The prototype `BarrierSection` is built off-tree,

@@ -163,8 +163,7 @@ in the page. Pinning makes that unreachable-by-construction.
 focus across container boundaries by geometry, so down-nav off the last body row lands on
 the footer, and `MenuNav._enable_scroll_follow` sets `follow_focus = true` on every
 `ScrollContainer` under the attached root so walking back up scrolls the body to reveal
-the row the cursor moved onto. `build_settings_overlay` (title → scroll → `< Back`
-sibling) and `build_lift_overlay` are the reference implementations.
+the row the cursor moved onto. `ConfirmPopup` (its scrolling body with the buttons outside it) is the reference implementation.
 
 **The passthrough carve-out is gone with its stations.** The diegetic 3D stations (garage,
 map table, car park) set `MOUSE_FILTER_IGNORE` on their overlay roots so taps fell through

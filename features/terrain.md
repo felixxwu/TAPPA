@@ -405,8 +405,7 @@ cache keeps* above; `track_weights` / `track_surface` are resident for the whole
   and always under headless) they never suspend, completing in the same frame, so headless
   world-build stays synchronous. A further trailing `on_progress: Callable(fraction: float)`
   (forwarded from `set_track`), when valid, is called at the same stride with a carve
-  fraction (0→1) — `world.gd` wires it to `LoadingScreen.set_carve_progress` so the grey
-  preview line fills white as the bake progresses. Independent of `should_yield` (reports
+  fraction (0→1) . Independent of `should_yield` (reports
   even without yielding) and never changes the baked result.
   - **Carve performance.** The sweep is O(band vertices × ring-search) in interpreted
     GDScript, so the carve is usually the single heaviest load stage (grep the console for

@@ -62,8 +62,8 @@ it wants the **current menu song** — one entry of `MusicLibrary.MENU_SONGS` (`
 `skillz`); otherwise the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS`.
 The result is re-queued via `play_song`, which is idempotent and **latches the swap for the
 next 8-bar handoff**, so the change lands beat-aligned. The `MusicDirector` autoload persists
-across scene changes, so playback is continuous throughout. The one exception is a first-time
-player's cold open: while `ColdOpen.due()`, `_tick` stops any voices and plays nothing, so the music
+across scene changes, so playback is continuous throughout. The one exception is a new
+world's cold open: while `ColdOpen.due()`, `_tick` stops any voices and plays nothing, so the music
 starts when the first checkpoint is reached (free-roam.md → *Cold open*).
 
 ### Random menu song and rally song (per visit / per event)
@@ -83,7 +83,7 @@ The edge check runs **before** the stall/suspend early-returns, so it still fire
 on the web build (where a load suspends the director) — the pick lands while the
 loading screen is up, so the following scene uses it. `_current_menu_song` and
 `_current_rally_song` are each seeded once in `_ready` (and lazily by
-`_song_for_scene`) so a scene entered before any loading screen still has a valid
+`_song_for_context`) so a scene entered before any loading screen still has a valid
 song. `skillz` is shared by both pools — it's an independent per-context pick, so
 a rally can play `skillz` at the same time HQ's own pick (independently) also
 happens to be `skillz`.

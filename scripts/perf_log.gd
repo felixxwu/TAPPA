@@ -1,31 +1,26 @@
 extends Node
 ## Debug perf logger: prints Performance monitors once per second so CPU cost
-## can be read back from the Godot log after a play session. Gated on
-## SettingsMenu.dev_tools_enabled() (true by default, in every build).
+## can be read back from the Godot log after a play session. Debug builds only.
 
 const INTERVAL := 1.0
 
 var _accum := 0.0
 var _frames := 0
 var _script_us: Dictionary = {}  # StringName -> accumulated usec since last print
-# SettingsMenu.dev_tools_enabled() cached once — track() is called ~34x/frame and
-# the whole point of the early-out is to not pay per call. Tests flip it via
-# set_debug().
-var _debug := SettingsMenu.dev_tools_enabled()
+# Cached once — track() is called ~34x/frame and the whole point of the early-out
+# is to not pay per call. Tests flip it via set_debug().
+var _debug := OS.is_debug_build()
 
 # --- Benchmark capture window --------------------------------------------------
 # A second, independent accumulator the benchmark opens for a whole run so it can
 # report per-script CPU cost with the results (features/benchmark.md → feedback
-# loop). `track()` always accumulates into it while `_capturing`, whatever
-# dev_tools_enabled() says.
+# loop). `track()` always accumulates into it while `_capturing`, in any build.
 var _capturing := false
 var _cap_us: Dictionary = {}  # StringName -> accumulated usec since begin_capture
 
 ## Called by the timing wrappers around per-frame callbacks (see e.g.
 ## car.gd._physics_process). Accumulates cost per script between prints.
 func track(key: StringName, usec: int) -> void:
-	# _debug is cached (a SettingsMenu.dev_tools_enabled() call per track() would
-	# cost more than it saves).
 	if _capturing:
 		_cap_us[key] = int(_cap_us.get(key, 0)) + usec
 	if not _debug:
@@ -56,9 +51,8 @@ func end_capture(frame_count: int) -> Dictionary:
 		out[String(key)] = float(_cap_us[key]) / 1000.0 / float(frame_count)
 	return out
 
-## Override the cached debug flag. Exists so a test can exercise the RELEASE path
-## (where the per-second logger is off and track() must not accumulate) without
-## needing an actual release build.
+## Override the cached debug flag. Exists so a test can exercise the release path
+## (where the per-second logger is off and track() must not accumulate).
 func set_debug(on: bool) -> void:
 	_debug = on
 	set_process(on)

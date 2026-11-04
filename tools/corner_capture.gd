@@ -21,8 +21,7 @@ const REFERENCE_MU := 1.1     # a mid grip, purely so the printed km/h is compar
 # chord and then the whole chord's turn in one step, inflating kappa by (chord / step) and
 # under-reporting radius by the same factor — the first version of this tool claimed turn 1
 # was a 0.39 m radius. Bake finely, then probe at a step comfortably above the bake
-# interval. Same quantisation trap as the rival ghost's timed-span resample
-# (features/rival-ghost.md).
+# interval.
 const BAKE_INTERVAL_M := 0.05
 const PROBE_STEP_M := 0.5
 

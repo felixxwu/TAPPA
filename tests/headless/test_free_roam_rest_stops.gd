@@ -403,7 +403,7 @@ func test_tuning_keeps_the_rings_weather() -> void:
 	_page.open(0)
 	_page._show(RestStopPage.View.TUNE)
 	var slider := _page._tune_panel.first_slider() as HSlider
-	slider.value = slider.max_value
+	slider.value = slider.min_value if slider.value == slider.max_value else slider.max_value
 	var after := Config.data.weather
 	biome.ring = was[0]
 	biome.weather = was[1]
@@ -422,9 +422,10 @@ func test_a_car_swapped_out_does_not_save_its_damage_onto_the_new_car() -> void:
 
 
 func test_closing_the_game_writes_the_cars_latest_place_first() -> void:
-	WorldSession.save_pose(Transform3D.IDENTITY)
+	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(900, 0, 900)))
 	Save.flush_and_sync()
-	assert_ne(WorldSession.pose_transform(), Transform3D.IDENTITY, "the live pose, not the last periodic save")
+	var saved: Transform3D = WorldSession.pose_transform()
+	assert_lt(saved.origin.distance_to(_car.global_position), 2.0, "the live pose, not the last periodic save")
 
 
 func test_the_hud_shows_engine_temperature_and_warns_when_the_cooling_fails() -> void:
