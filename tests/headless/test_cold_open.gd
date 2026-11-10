@@ -118,13 +118,22 @@ func test_the_music_stays_silent_on_the_way() -> void:
 	assert_eq(md.requested_song, "")
 
 
-func test_4_the_world_starts_with_money_for_another_starter_car() -> void:
+func test_4_the_world_starts_with_money() -> void:
 	if _co == null:
 		return
 	assert_eq(WorldSession.money(), _streamer.settings.cold_open_start_money,
-		"a first-time world starts with the swap money")
+		"a first-time world starts with money")
 	assert_eq(_co.get_children().filter(func(n: Node) -> bool: return n is MeshInstance3D).size(), 0,
 		"no coins laid on the road")
+
+
+func test_4b_the_map_offers_no_travel_on_the_way() -> void:
+	if _co == null:
+		return
+	var pages: WorldPages = _scene.get_node("WorldPages")
+	pages.show_map(func() -> void: pass)
+	assert_true(pages._targets.is_empty(), "no quick travel out of the scripted opening")
+	pages.close()
 
 
 func test_5_reaching_the_cabin_ends_the_cold_open_and_opens_the_options() -> void:

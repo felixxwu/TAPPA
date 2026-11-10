@@ -137,6 +137,8 @@ func stunt_step(dt: float, slip: float, speed: float, wheels_down: int, near: Di
 	_streak("Drift", dt, wheels_down >= 3 and speed >= s.drift_min_speed_mps and absf(slip) >= deg_to_rad(s.drift_min_angle_deg), s.drift_money_per_s, s.stunt_min_s)
 	_streak("Speed", dt, speed >= s.fast_speed_mps, s.fast_money_per_s, s.stunt_min_s)
 	_streak("Jump", dt, _settled and wheels_down < 4, s.jump_money_per_s, s.jump_min_s)
+	if near.is_empty() and _near.is_empty():
+		return
 	var still := {}
 	var gaps := {}
 	for id in near:
@@ -324,12 +326,9 @@ func is_unlocked(ring: int) -> bool:
 	return false
 
 
-# The item_key of everything the player has, as far as `owned` (a car) is concerned: every car in
-# the garage, and the parts unlocked for that car.
+# The item_key of every part unlocked for `owned` (a car).
 func owned_keys(owned: Dictionary) -> Dictionary:
 	var out := {}
-	for c: Dictionary in Save.profile.get(Save.KEY_CARS, []):
-		out[LootRules.item_key({"kind": "car", "id": String(c.get("model_id", ""))})] = true
 	for p: Dictionary in owned.get("parts", []):
 		out[LootRules.item_key(p)] = true
 	return out

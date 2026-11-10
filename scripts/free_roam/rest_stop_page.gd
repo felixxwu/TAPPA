@@ -13,8 +13,7 @@ extends CanvasLayer
 #   UPGRADES, TIRES, DRIVETRAINS — a card per part of that kind unlocked for this car (pick to switch it
 #             on or off), then one per part on sale for it (pick to buy it, which switches it on).
 #             TIRES starts with a Stock card, the car's own tires.
-#   GARAGE — a card per owned car with its "x / y upgrades" line (pick one to drive it), then one per car on sale (pick to buy and
-#             drive it).
+#   GARAGE — a card per owned car with its "x / y upgrades" line (pick one to drive it).
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
@@ -218,7 +217,7 @@ func _build_engines() -> void:
 			"action": _pick_engine_swap.bind(id) if cars.size() > 1 else Callable()})
 	var header: Array = [LootRules.shop_header(owned)]
 	if cars.size() < 2:
-		header.append("Buy another car to swap engines with")
+		header.append("Find another car to swap engines with")
 	_card_page("Engine swaps", entries, header, -1, View.SHOP, _back_from_engines)
 
 

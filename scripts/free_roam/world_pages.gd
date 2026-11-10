@@ -90,7 +90,7 @@ func show_map(on_close: Callable, from_site := -1) -> void:
 	_target_label = Label.new()
 	_page.body().add_child(_target_label)
 	_back_button = _page.add_action(UITheme.row_button("< Back", close))
-	_targets = rest_stops.travel_targets(from_site)
+	_targets = PackedInt32Array() if ColdOpen.due() else rest_stops.travel_targets(from_site)  # no skipping the scripted opening
 	_prev_button = _page.add_action(UITheme.row_button("<", _step.bind(-1)))
 	_next_button = _page.add_action(UITheme.row_button(">", _step.bind(1)))
 	_travel_button = _page.add_action(UITheme.row_button("Travel", _travel))

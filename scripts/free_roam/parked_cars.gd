@@ -14,6 +14,7 @@ signal switch_requested(owned: Dictionary)
 
 var streamer: TerrainStreamer
 var car: Node3D  # the player's car
+var rest_stops: RestStops  # a wrecked car can't switch, or it would skip the respawn
 var show_props := not Platform.is_headless()  # the models only; finding a car works without them
 var _here := {}  # CAR sites with a car parked on them this load
 var _props := {}  # CAR site -> its pivot on the pad
@@ -112,20 +113,22 @@ func take(site: int) -> Dictionary:
 
 # The car parked where the car is, which the prompt offers to drive; {} when there's none.
 func offer() -> Dictionary:
+	if rest_stops != null and (rest_stops.is_wrecked or not rest_stops.input_enabled):
+		return {}
 	return _offer
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("menu_select") and not _offer.is_empty():
+	if event.is_action_pressed("menu_select") and not offer().is_empty():
 		get_viewport().set_input_as_handled()  # first: switching reloads the scene, leaving the tree
 		switch_here()
 
 
 # Drive the car parked here (Enter / A, or a tap on the minimap's prompt). False when there's none.
 func switch_here() -> bool:
-	if _offer.is_empty():
+	var owned := offer()
+	if owned.is_empty():
 		return false
-	var owned := _offer
 	_offer = {}
 	_offer_site = -1
 	switch_requested.emit(owned)

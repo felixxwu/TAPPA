@@ -16,9 +16,9 @@ is a thin wrapper over `SpatialGrid.of_points`.
 
 | File | Role |
 |------|------|
-| `scripts/crowd.gd` | `Crowd` — the ONE place that owns the shared figure mesh (`mesh()`), the ground foot-offset (`foot_offset()`), and the static-crowd MultiMesh build (`multimesh_instance()`). Every decorative crowd goes through it (like `Foliage` for trees/bushes); `SpectatorGroup` pulls the mesh + foot offset through it too, so no crowd can drift from the others. |
+| `scripts/crowd.gd` | `Crowd` — the ONE place that owns the shared figure mesh (`mesh()`) and the ground foot-offset (`foot_offset()`). Every crowd goes through it (like `Foliage` for trees/bushes); `SpectatorGroup` pulls the mesh + foot offset through it too, so no crowd can drift from the others. |
 | `scripts/spectator_scatter.gd` | Pure, seeded placement — `mid_offset()` (where the mid group goes) + `members()` (off-road, tree-avoiding, separated standing positions). Headless, no scene. |
-| `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one LIVE crowd: steering, its own dynamic MultiMesh (rewritten each frame), LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). Not a `Crowd.multimesh_instance()` caller (dynamic, not static) but shares the figure via `Crowd.mesh()`/`Crowd.foot_offset()`. |
+| `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one LIVE crowd: steering, its own dynamic MultiMesh (rewritten each frame), LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). Shares the figure via `Crowd.mesh()`/`Crowd.foot_offset()`. |
 | `scripts/free_roam/terrain_streamer.gd` | Free roam: `_rest_crowd()` builds one live group per rest stop in front of its cabin as its chunk streams in (road cells rasterised locally by `_road_cells_near`, cabin walls as the avoided "trees" via `_cabin_wall_points`, `ragdoll_pool_size` forced to 0). See `features/free-roam.md` → Crowds. |
 | `scripts/world.gd` | `_spawn_spectators()` / `_spawn_spectator_group()` build the three live groups in `_generate_track`. |
 | `scripts/game_config.gd` | `spectator_params()`. |
@@ -162,10 +162,9 @@ replaces rather than stacks them (mirrors `_place_arch`).
 
 ## Rest-stop crowds (free roam)
 
-Each free-roam rest stop gets a static onlooker crowd, built per near chunk by
-`TerrainStreamer._rest_crowd` through `Crowd.multimesh_instance`. There are
-`rest_stop_crowd_size` figures in an arc along the back of the pad (the side away from its
-road), facing the pad. Being static, they have no steering and no ragdolls.
+Each free-roam rest stop gets a live `SpectatorGroup` of `rest_stop_crowd_size` figures in
+front of its cabin, built per near chunk by `TerrainStreamer._rest_crowd`. Ragdolls are
+built on a knock rather than pooled up front (`ragdoll_pool_size` 0).
 
 ## Collision layers
 

@@ -49,7 +49,7 @@ var _last_window_size := Vector2i.ZERO
 # these without a window resize, so _process re-applies when they change — this
 # is what makes the portrait->landscape swap and the resolution-sweep height take
 # effect at Benchmark.start() rather than waiting for the next resize.
-var _last_bench_state := [false, 0]
+var _last_bench := [false, 0, 0]
 
 
 func _ready() -> void:
@@ -78,10 +78,10 @@ func _notification(what: int) -> void:
 # on some platforms/configurations).
 func _process(_delta: float) -> void:
 	var size := get_window().size
-	var bench_state := [Benchmark.active, Benchmark.render_height, Config.data.render_height]
-	if size != _last_window_size or bench_state != _last_bench_state:
+	if size != _last_window_size or Benchmark.active != _last_bench[0] \
+			or Benchmark.render_height != _last_bench[1] or Config.data.render_height != _last_bench[2]:
 		_last_window_size = size
-		_last_bench_state = bench_state
+		_last_bench = [Benchmark.active, Benchmark.render_height, Config.data.render_height]
 		_apply()
 
 

@@ -113,7 +113,7 @@ Two different mechanisms draw the SAME look, for two different reasons:
   `UIHardShadowBox`/`UITheme.shadowed(box)` (`scripts/ui_hard_shadow_box.gd`) — a StyleBox
   WRAPPER that draws the shadow rect then delegates to the wrapped box's own `draw()`, all
   in one draw call. `UITheme.panel()`, `mark_selected`, `mark_focused`,
-  `mark_panel_focused`, `reward_card_box()` and `menu_page.gd`'s body panel all call
+  `mark_panel_focused` and `menu_page.gd`'s body panel all call
   `shadowed()` on their own hand-built stylebox; `UITheme.enforce()` applies the same
   wrapper to any Button/Panel/PanelContainer still on the theme's plain default look (see
   house rule 5 above).
@@ -271,19 +271,6 @@ Specific design-system touches:
   need to guard), so there's no size-reset to dodge and no need for the `ui_title_size`
   marker. The tip line underneath (`_step`) stays at `UITheme.FONT_SIZE`.
 
-## A passive readout in a row of buttons (`UITheme.readout_box`)
-
-A read-only value that has to sit *inside* a row of buttons — the deleted tuning lift's car
-nameplate between its `<` / `>` chevrons was the original case — wears
-`UITheme.readout_box()` rather than a hand-built panel. It returns the theme's own
-**Button "normal"** stylebox, so the readout cannot drift from the buttons beside it.
-Rebuilding one from `panel_box()` is NOT equivalent: a panel is fully padded (14px all
-round) and may be translucent to float over the 3D world, while a button is pure black
-with tight 4px vertical margins — so a hand-built readout came out visibly **taller** than
-its neighbours and a slightly different shade. Pair it with
-`custom_minimum_size.y = UITheme.MENU_ROW_H` so the heights match too (house rule 3 pins
-buttons to exactly that).
-
 ## A page's actions go in ONE bottom row
 
 Every menu page ends in a **single horizontal action row**, centred, separated by
@@ -318,9 +305,6 @@ is the one place that does it:
 - **Two measurements.** Before the first layout pass the Label has no width, so the
   height is *estimated* from the font at the known wrap width; once the Label has a
   real width its `resized` signal re-fits from the Label's own exact content height.
-  That second pass also covers the body TEXT being swapped later
-  (`ConfirmPopup.set_body` / `open_committing`), which the one-shot measurement
-  never did.
 - **Don't measure with `Font.get_multiline_string_size` alone.** It returns
   lines x font-height and knows nothing about a Label's `line_spacing` theme
   constant, so it comes out `(lines - 1) * line_spacing` **short** — that was a real

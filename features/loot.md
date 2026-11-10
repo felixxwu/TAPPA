@@ -17,7 +17,6 @@ This replaced the found-loot loop of decisions 10–18 (crystals, carry / bank /
 
 | Kind | Shape | Becomes |
 |---|---|---|
-| Car | `{"kind": "car", "id": <CarLibrary id>}` | a new owned car (`Save.grant_car`), found, never sold |
 | Part | `{"kind": "part", "id": <BoostLibrary id>, "level": n}` | a fittable part (the former boost, at level n) |
 | Drivetrain kit | `{"kind": "part", "id": "drivetrain:<mode>"}` | a fittable layout conversion |
 | Tires | `{"kind": "part", "id": "tire:<TIRES key>"}` | a fittable set of tires |
@@ -151,7 +150,7 @@ Rebuilding the page you're on (a part fitted, a car picked, something bought) ke
 where it was (`RestStopPage._keep_at`). There's no separate shop: things on sale show at the end of the page they belong on, their price
 as the third line, green when the player can afford it and red when not (`RestStopPage.price_variant`). The MAIN page is Continue /
 Shop / Garage / Map / Tune car (travel is on the map); its header says the money held.
-The Shop pages' header line is the car, its weight, power, driven wheels and max health with the parts switched on (`LootRules.shop_header` over `fitted_stats`, which runs the parts through a throwaway `GameConfig` via `UpgradeLibrary.apply`; power is at full boost, without nitrous), rebuilt whenever a part changes. Garage cards show power · weight · drive (`CardUI.stats_line`): fitted values for owned cars, stock for cars on sale.
+The Shop pages' header line is the car, its weight, power, driven wheels and max health with the parts switched on (`LootRules.shop_header` over `fitted_stats`, which runs the parts through a throwaway `GameConfig` via `UpgradeLibrary.apply`; power is at full boost, without nitrous), rebuilt whenever a part changes. Garage cards show power · weight · drive (`CardUI.stats_line`): fitted values.
 **Shop:** four cards opening **Upgrades** (`LootRules.is_upgrade`: the boost parts), **Tires**, **Drivetrain** (`_build_part_page`, each card with an "N applied, M available" line, where M counts the parts of that kind on sale this car can fit, affordable or not) and **Engine swaps**, which trades engines between owned cars ([engine-swap.md](engine-swap.md)). Each page has a card per part of that kind unlocked for this car, labelled "On" or "Off" (pick to switch it,
 `_toggle_part`; other cars keep theirs), then one per part on sale (its price, or the
 `fit_block_reason` label, disabled; picking one buys it and switches it on, `_buy_part`). Tires starts with a **Stock tires** card, which isn't a part: it's on when no bought tire is, and picking it switches them off (`LootRules.on_stock_tires`). Back steps part page → Shop → main page. **Garage:** a card per

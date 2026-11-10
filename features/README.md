@@ -9,7 +9,7 @@ oriented before diving into source.
 (GL Compatibility renderer). One persistent procedural island per save: you drive outward from
 the spawn rest stop on a road network that streams in around you, through biome rings that get
 rarer further out, finding cars and parts. Damage is unforgiving: once the cooling fails you
-race the temperature gauge to the next rest stop, where you repair, buy cars and parts, fit parts and
+race the temperature gauge to the next rest stop, where you repair, buy and fit parts, swap cars and
 fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 [world-session.md](world-session.md).
 

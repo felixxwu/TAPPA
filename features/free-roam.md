@@ -627,7 +627,7 @@ over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames wer
 `ColdOpen` (`scripts/free_roam/cold_open.gd`, spec `todo/2026-10-30-cold-open.md`). Every new world
 starts the same way, with no menu or car choice: the player is mid-drive at night, in the chase camera, on the road to
 the roadside rest stop nearest spawn, the cooling already gone and a cold engine whose gauge climbs on the way,
-with money up front for another starter car. Reaching the cabin lights it as usual, clears the
+with some money up front. Reaching the cabin lights it as usual, clears the
 night, and opens the camera and control options; past it the road carries on, so there is no
 turning round (spawn's own cabin stands across its road's end, which is why it isn't the goal).
 
@@ -669,7 +669,7 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   cleared, which also starts the music: `MusicDirector._tick` plays nothing while `ColdOpen.due()`. Once the "Checkpoint reached" band is gone (plus
   `cold_open_options_delay_s`) `free_roam.show_title(true)` shows the first-run options on their own
   (`TitleScreen.options_only`), closing back into the game. The rest-stop page stays shut until then:
-  buying a car reloads the scene, which would lose the waiting options. An island with no roadside
+  a Garage pick or a parts change reloads the scene, which would lose the waiting options. An island with no roadside
   stop finishes in `start`, because its goal (spawn's stop) is already lit and `lit` would never fire.
 - **Seeing it:** `tools/cold_open_capture.tscn` boots a first-time world and photographs the start,
   the drive, the arrival and the options.

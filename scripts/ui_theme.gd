@@ -303,7 +303,7 @@ static func card_shadow_box() -> StyleBoxFlat:
 # single wrapped draw call here, unlike CardCarousel's sibling-quad form). Used both by
 # tools/build_ui_theme.gd (bakes it into the global theme, covering every Button/Panel
 # in the game) and by call sites that build a stylebox override by hand (`panel()`,
-# `mark_selected`, `mark_focused`, `mark_panel_focused`, `reward_card_box`) so a
+# `mark_selected`, `mark_focused`, `mark_panel_focused`) so a
 # widget's shadow never disappears when it becomes selected/focused.
 #
 # Copies `box`'s own margins onto the wrapper's REAL `content_margin_*` properties here,
@@ -604,7 +604,7 @@ static func enforce(root: Node) -> void:
 # engine on every test run. `enforce()` always runs well after boot, so it's safe here.
 #
 # Skipped for a widget that already carries its OWN stylebox override — mark_selected,
-# mark_focused, panel(), reward_card_box() and menu_page.gd's body box all call
+# mark_focused, panel() and menu_page.gd's body box all call
 # `shadowed()` themselves already; re-wrapping here would double the shadow (and, for a
 # manually-managed button like mark_focused's, fight with the state it's mid-transition
 # to). A plain `UITheme.button()`/native Button or Panel with no override still wears

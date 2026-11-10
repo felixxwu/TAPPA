@@ -84,8 +84,7 @@ var track_surface: Dictionary = {}
 # construction). Empty when cliff_enabled is off or the effective height is 0.
 var cliff_offsets: Dictionary = {}   # global vertex index (Vector2i) -> signed offset (m)
 # Cliff params, set from GameConfig.apply_cliffs before bake_track (like the Lighting
-# group). cliff_amount is the runtime per-event scale on cliff_max_height_m (0..1),
-# written by RallySession from the event's cliffiness; cliff_seed derives the camber
+# group). cliff_amount scales cliff_max_height_m (0..1); cliff_seed derives the camber
 # noise from the stage's track_seed.
 var cliff_enabled: bool = false
 var cliff_wavelength_m: float = 60.0

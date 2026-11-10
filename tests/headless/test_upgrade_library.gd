@@ -184,9 +184,8 @@ func test_no_stored_override_resolves_to_stock() -> void:
 		"-1 means 'use the car's authored layout'")
 
 
-# A conversion is a run-scoped mid-run upgrade now (RunSession.choose_drivetrain), not a
-# purchase — resolve_drive_override just range-checks the stored value, with no separate
-# gate, since world.gd::_field_car is the only legitimate writer of the field.
+# A conversion comes from a drivetrain kit part (LootRules.fielded) — resolve_drive_override
+# just range-checks the stored value, with no separate gate.
 func test_a_stored_override_is_honoured() -> void:
 	var owned := _car()
 	var stock := UpgradeLibrary.stock_drive_mode(owned)

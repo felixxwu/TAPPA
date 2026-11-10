@@ -2,8 +2,7 @@ extends GutTest
 # GUARD: no test may leave a whole GAME SCENE parked under /root.
 #
 # WHY THIS FILE EXISTS. Several production paths end in
-# `get_tree().change_scene_to_file(...)` — RallySession._load_event_scene,
-# RunSession.continue_to_next_stage, hq.gd, pause_menu.gd,
+# a scene change — free_roam.gd's car swaps and reloads, pause_menu.gd,
 # benchmark_mode.gd. Under the headless runner that is not a no-op and it is not
 # scoped to the test that triggered it: the requested scene is instantiated and
 # added to /root, where NOTHING ever frees it, so it stays for the whole rest of

@@ -153,6 +153,7 @@ func _ready() -> void:
 	parked_cars.name = "ParkedCars"
 	parked_cars.streamer = _streamer
 	parked_cars.car = _car
+	parked_cars.rest_stops = _rest_stops
 	add_child(parked_cars)
 	parked_cars.found.connect(func(found_car: Dictionary) -> void:
 		_minimap.refresh_markers()

@@ -8,8 +8,7 @@ extends Node
 # post marks the goal, and past it the road carries on. A health floor (DamageModel.min_hp) means
 # the car limps but never gives up. Reaching the cabin lights it as usual, clears the night to dry
 # weather, starts the music (MusicDirector is silent while this is due), and then opens the camera and control options (free_roam.gd → show_options). The world
-# starts with enough money to buy any other starter car there (`new_world`; Felix chose money up front
-# over a coin trail, 2026-10-31).
+# starts with some money to spend (`new_world`; Felix chose money up front over a coin trail, 2026-10-31).
 #
 # free_roam.gd adds this node only when `due()`, calls `begin()` before the car is placed (it returns
 # the start pose) and `start()` when the player gets control. Nothing else grows a cold-open branch.
@@ -325,7 +324,7 @@ func finish() -> void:
 	_dry_slot = _slot()
 	WorldSession.set_cold_open_pending(false)
 	_options_in = streamer.settings.cold_open_options_delay_s
-	# Buying a car here reloads the scene, which would lose the first-run options still waiting to open.
+	# A Garage pick or a parts change reloads the scene, which would lose the first-run options still waiting to open.
 	rest_stops.input_enabled = false
 
 

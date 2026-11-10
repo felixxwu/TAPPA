@@ -218,6 +218,18 @@ func test_enter_on_the_pad_switches_to_the_found_car_and_reloads_the_world() -> 
 	assert_eq(Scenes.last_blocked_path, Scenes.FREE_ROAM, "the world reloads around the new car")
 
 
+func test_a_wrecked_car_on_the_pad_cant_switch_to_the_found_car() -> void:
+	var scene := await _boot()
+	var site := _car_site(scene)
+	var parked: ParkedCars = scene.get_node("ParkedCars")
+	var before := String(WorldSession.active_car()["model_id"])
+	_drive_onto(scene, site)
+	parked.rest_stops.is_wrecked = true
+	assert_true(parked.offer().is_empty(), "no offer while wrecked")
+	_press_select(parked)
+	assert_eq(String(WorldSession.active_car()["model_id"]), before, "the wreck plays out in the same car")
+
+
 func test_a_found_car_is_not_parked_again_when_the_world_next_loads() -> void:
 	var scene := await _boot()
 	var site := _car_site(scene)

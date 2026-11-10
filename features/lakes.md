@@ -82,8 +82,7 @@ pose-independent). Rules that keep the shape deterministic:
   rendered/collided lake (`_build_lakes`), the chase camera's ground seat
   (`chase_camera.gd::_ground_height_at`), the submersion reset
   (`track_progress.gd`) — so skipping this makes them all use a waterline the
-  terrain doesn't have: the lake disagrees with the loading preview (which reads
-  `params` directly, via `LakeField.preview_cells`), and the camera lifts off the
+  terrain doesn't have: the camera lifts off the
   chase view over a basin it wrongly believes is flooded. Guarded by
   `test_world_water_reconcile`.
 

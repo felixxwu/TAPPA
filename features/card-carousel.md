@@ -24,7 +24,7 @@ menu that is a list of choices is a card list:**
 | Rest stop SHOP | four cards opening Upgrades, Tires, Drivetrain and Engine swaps |
 | Rest stop UPGRADES / TIRES / DRIVETRAINS | one per part of that kind unlocked for this car (pick → switch on or off), then one per part on sale for it (pick → buy, which switches it on); Tires starts with a Stock card, the car's own tires |
 | Rest stop ENGINES | one per owned car naming the engine in it (pick one, then another, to swap their engines) |
-| Rest stop GARAGE | one per owned car (a spinning 3D preview; the cursor starts on the car being driven), then one per car on sale (pick → buy and drive it) |
+| Rest stop GARAGE | one per owned car (a spinning 3D preview; the cursor starts on the car being driven; pick → drive it) |
 | Stats (`world_pages.gd`) | one per lifetime stat, and the biome rings reached (read-only) |
 
 **Not card lists**, because they are not lists of choices: the **Settings** page (the shared
@@ -40,7 +40,7 @@ pick a destination), and **confirm popups** (`ConfirmPopup`). Those are plain `M
 `page.add_action(UITheme.row_button(...))` on a sub-page, and `MenuNav.attach(page, {first =
 carousel, on_back = …})`. Item and car text should be SHORT — a card is a fixed size, and a title
 that wraps to three lines pushes the subtitle off the card: loot uses `LootRules.card_text(item)`
-(name, then what it does) and `LootRules.icon(item)`; cars use `CardUI.car_subtitle(entry)`.
+(name, then what it does) and `LootRules.icon(item)`; garage cars use `CardUI.stats_line` over `LootRules.fitted_stats`.
 Tests drive a card list through `CardUI.pick(carousel, title)` (select + confirm, no flash) or
 `select(i)` + `_confirm_selected()` + `skip_confirm_flash()`.
 
@@ -268,8 +268,7 @@ space between two equally-invisible rectangles bigger. `modulate.a` dimming didn
 either: 50% transparent black over black is still black. The whole strip read as one
 fused black slab with a few floating coloured squares — the "cards joined into one" bug
 this section originally existed to fix, with an accent border (1px unselected, 3px on the
-centred card — `UITheme.reward_card_box`'s existing precedent for a black card that must
-pop against another black panel).
+centred card).
 
 That border is GONE now (removed on request, from both states) because the fix that
 actually holds arrived one layer up: the carousel pages sit on a TRANSPARENT

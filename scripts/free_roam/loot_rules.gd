@@ -6,7 +6,6 @@ extends RefCounted
 # and the coin economy). Pure: the same catalogue always gives the same stock.
 #
 # An ITEM is a small dict:
-#   {"kind": "car",    "id": <CarLibrary id>}                         — a car (found, never sold)
 #   {"kind": "part",   "id": <BoostLibrary id>, "level": <int>}       — a part (a former boost)
 #   {"kind": "part",   "id": "drivetrain:<Drivetrain.DriveMode int>"}  — a drivetrain kit
 #   {"kind": "part",   "id": "tire:<TIRES key>"}                       — a set of tires
@@ -350,9 +349,6 @@ static func shop_header(owned: Dictionary) -> String:
 
 # The card icon (icons/cards/<name>.png) an item shows on a card list.
 static func icon(item: Dictionary) -> String:
-	match String(item.get("kind", "")):
-		"car":
-			return "car"
 	if is_drivetrain(item):
 		return "drivetrain"
 	if is_tire(item):
@@ -364,9 +360,6 @@ static func icon(item: Dictionary) -> String:
 # An item's card text, short enough for a card: [title, desc] — the name, then what it does.
 static func card_text(item: Dictionary) -> PackedStringArray:
 	var id := String(item.get("id", ""))
-	match String(item.get("kind", "")):
-		"car":
-			return PackedStringArray([String(CarLibrary.by_id(id).get("name", id)), ""])
 	if is_drivetrain(item):
 		var mode := int(id.substr("drivetrain:".length()))
 		return PackedStringArray([CarLibrary.drive_text(mode) + " kit", "Changes driven wheels."])

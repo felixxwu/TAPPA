@@ -59,7 +59,7 @@ var _centerline: Curve2D
 # UNGATED MODE — see setup(). true when there is no centerline at all (the OVERWORLD, whose
 # roads are a NETWORK rather than one curve): every corridor/offset test is skipped and the
 # only thing that decides whether a wheel marks is the terrain's own surface answer, since the
-# overworld's roads are carved into the terrain surface weights. A stage always supplies a
+# free roam's roads are carved into the terrain surface weights. A stage always supplies a
 # centerline and so never enters this mode.
 var _ungated := false
 # Below this ROAD weight (surface_at().x) an ungated wheel is on open ground rather than on a
@@ -221,7 +221,7 @@ func _timed_physics_process(_delta: float) -> void:
 			continue
 		var wpos: Vector3 = wheel.global_position
 		var wxz := Vector2(wpos.x, wpos.z)
-		# UNGATED (overworld): there is no curve to be off, so the corridor test is skipped
+		# UNGATED (free roam): there is no curve to be off, so the corridor test is skipped
 		# entirely and only the surface answer below decides. The road normal likewise has no
 		# curve to come from, so the ribbon is laid across the CAR's right axis.
 		var w_off := 0.0
@@ -502,7 +502,7 @@ static func _build_ribbon(pairs: Array) -> Dictionary:
 # GOING, never to where it is pointing.
 #
 # THE SIDEWAYS BUG THIS FIXES. The width used to come from the road normal (stage) or the car's
-# right axis (overworld) — i.e. from the tyre's HEADING. That is only perpendicular to travel
+# right axis (free roam) — i.e. from the tyre's HEADING. That is only perpendicular to travel
 # while the car tracks straight. In a slide or a spin the travel direction rotates away from the
 # heading, and once travel and the spread direction line up the two verts of each pair advance
 # ALONG the ribbon instead of across it: consecutive pairs become collinear and the quads

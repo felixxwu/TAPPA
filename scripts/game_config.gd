@@ -1476,8 +1476,7 @@ func has_nitrous() -> bool:
 @export var track_turn_count := 30
 ## Bias toward straighter, easier turns during track generation, in [0, 1]. 0 = no
 ## bias (corners chosen freely, the default for free-roam); higher favours gentler
-## corners and longer connecting straights, yielding a less twisty stage.  Changes the generated SHAPE, so opponent target times
-## are derived with the same value (RallySession._compute_event_data).
+## corners and longer connecting straights, yielding a less twisty stage.
 @export var track_straightness := 0.0
 ## Length (m) of the straight runoff road appended AFTER the finish line, so the
 ## car has room to skid to a stop past the arch. Treated as a real road piece: it is
@@ -1615,9 +1614,7 @@ func has_nitrous() -> bool:
 ## cliff walls (e.g. the wall a hairpin's inner crook would leave). Walls narrower than
 ## ~2× this in either axis are removed; wider cliffs/drops survive. 0 disables.
 @export var cliff_open_radius_m := 4.0
-## Runtime per-event scale on cliff_max_height_m, in [0, 1]. Written by RallySession
-## from the event's cliffiness; the value shipped here is only the fallback for
-## standalone/editor main.tscn runs.
+## Scale on cliff_max_height_m, in [0, 1], for the main.tscn stage harness.
 @export var cliff_amount := 0.7
 
 ## Painted lane lines (two solid edge lines + a dashed centre line) laid along the

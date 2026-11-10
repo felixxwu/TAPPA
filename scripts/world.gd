@@ -708,8 +708,6 @@ func _build_lakes(cfg: GameConfig) -> void:
 		else:
 			($Car as Node).call("set_water_query",
 				func(p: Vector3) -> bool: return floor_tm.height_at(p.x, p.z) < wl)
-	# The loading preview already painted the waterline up-front (before generation,
-	# see _generate_track → LakeField.preview_cells), so nothing to feed here.
 
 
 # The road-rejection cell set every scatter pass rejects against: the VISIBLE road

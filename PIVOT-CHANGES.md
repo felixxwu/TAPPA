@@ -26,7 +26,7 @@
 | Fail state | The stage clock | **None.** At 0 HP the car gives up and you respawn at the last lit rest stop |
 | Damage | Never wrecks | **Cooling fails at half health; the engine overheats and drains HP** (`DamageModel.thermal`) |
 | Progress | Money, shop, skills, boost levels | **Coins → bought at checkpoints** (D89): parts (the old boosts, by level), drivetrain kits, tires; **cars are found** at the ends of side roads (2026-11-04, D90); a wreck drops all the money, Souls-style |
-| Between stages | Repair or a boost | **Rest stops**: free repair, parts and garage (buying in both), map (travel), tune |
+| Between stages | Repair or a boost | **Rest stops**: free repair, parts (bought) and garage (found cars), map (travel), tune |
 | Regions | Picked per run | **Biome rings** by distance from spawn, with drifting weather (`BiomeDirector`) |
 | Front end | `HubShell` (11 pages) | **Title screen** (`title.tscn`): Continue / New World / Settings |
 | Save | Run slot + economy keys, schema 7 | **`world` block** (`WorldSession`), schema 8; v7 profiles are refused |

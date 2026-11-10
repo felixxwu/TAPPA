@@ -136,8 +136,7 @@ func _card_height() -> float:
 
 
 # A card's own panel is solid black (like every other panel in the theme — UITheme's
-# "pure black, no border" rule). This USED to need an accent border (reward_card_box()'s
-# precedent) to read as a distinct shape at all, back when the MenuPage body box behind
+# "pure black, no border" rule). This USED to need an accent border to read as a distinct shape at all, back when the MenuPage body box behind
 # it was ALSO solid black — a black card on a black body was optically invisible, and
 # modulate.a dimming (transparent black over black is still black) did nothing to help.
 # That's no longer the case: the five carousel pages now sit on a TRANSPARENT body box

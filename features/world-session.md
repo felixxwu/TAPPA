@@ -91,11 +91,6 @@ marked `cold_open` pending (in the world block,
 Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
 - **MAIN:** Continue (only with a world) just closes the menu (`close`) and
   unpauses; New World; Settings.
-- **STARTER:** New World first asks for a starter car. The choices are the cars in
-  `CarLibrary` with `"ring": 0` (`starter_choices` → `LootRules.starter_cars`).
-  Picking one makes the world (a seed from `FreeRoamSettings.pick_world_seed`) and reloads free roam (`enter_world`; the
-  new world moves the generation on, so the old scene's exit save doesn't write the old car's pose into it). Over an
-  existing world, a `ConfirmPopup` asks first.
 - **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
 - **FIRST_RUN:** the `SettingsMenu` camera page, then on touch devices
   (`Platform.is_touch`) its touch-layout page. Picking a row, Next or Back moves on. Closing the title re-reads both choices (`CameraManager.activate_current`,
