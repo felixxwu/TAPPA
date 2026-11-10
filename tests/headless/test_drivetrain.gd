@@ -291,6 +291,27 @@ func test_parking_brake_holds_longitudinally() -> void:
 
 # --- ABS ----------------------------------------------------------------------
 
+func test_fielding_a_car_sets_abs_from_the_car_and_its_abs_part() -> void:
+	var roster := CarFixtures.cars()
+	roster[0]["abs"] = false
+	roster[1]["abs"] = true
+	CarLibrary.override_for_test(roster)
+	EngineLibrary.override_for_test(CarFixtures.engines())
+	var no_abs := {"model_id": String(roster[0]["id"])}
+	_car.apply_owned(LootRules.fielded(no_abs))
+	assert_false(Config.data.abs_enabled, "a car without factory ABS has none")
+	no_abs["parts"] = [{"kind": "part", "id": "abs", "level": 1, "on": true}]
+	_car.apply_owned(LootRules.fielded(no_abs))
+	assert_true(Config.data.abs_enabled, "the part fits it")
+	no_abs["parts"] = []
+	_car.apply_owned(LootRules.fielded(no_abs))
+	assert_false(Config.data.abs_enabled, "removing the part takes it away again")
+	_car.apply_owned(LootRules.fielded({"model_id": String(roster[1]["id"])}))
+	assert_true(Config.data.abs_enabled, "a car with factory ABS has it with no part")
+	CarLibrary.reset()
+	EngineLibrary.reset()
+
+
 func test_abs_keeps_the_rear_axle_spinning_under_hard_braking_that_would_lock_it() -> void:
 	# Same hard-braking-at-speed scenario as test_brake_lockup, but with ABS on
 	# (the default): where ABS-off fully locks the rear (omega*r < 1.0, asserted

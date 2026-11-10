@@ -89,7 +89,7 @@ predictably:
 
 `apply` is pure: it mutates only the passed-in live `cfg`, never the authored baseline.
 `mult` keys multiply the baseline, `add` keys add, `set` keys **replace** it outright with
-an absolute figure, `install_turbo` / `install_supercharger` switch their induction flag on
+an absolute figure, `install_abs` switches `abs_enabled` on (an empty sub-dict through the induction op, so no level scaling), `install_turbo` / `install_supercharger` switch their induction flag on
 (they stack — [forced-induction.md](forced-induction.md)), and `install_nitrous` (`write_fields`) straight-splats
 its fields with no enable flag — `has_nitrous()` reads the values themselves, so a zero
 gain/tank already reads as "not fitted" ([nitrous.md](nitrous.md)).

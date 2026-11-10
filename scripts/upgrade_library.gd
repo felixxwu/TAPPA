@@ -47,6 +47,10 @@ const EFFECTS := {
 		"field": "", "op": "install_induction",
 		"enable": "supercharger_enabled",
 	},
+	"install_abs": {
+		"field": "", "op": "install_induction",
+		"enable": "abs_enabled",
+	},
 	# Nitrous writes its config fields and NOTHING else.
 	"install_nitrous": {"field": "", "op": "write_fields"},
 	"mass_mult":           {"field": "mass", "op": "mult"},

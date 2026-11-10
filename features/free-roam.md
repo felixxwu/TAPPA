@@ -27,8 +27,8 @@ km, the same test New World uses (`FreeRoamSettings.pick_world_seed`). Two detai
 
 This parity is **no longer a requirement**. From 2026-10-20 the game is the reference and
 may diverge from the lab (decision 32 in `todo/2026-10-19-free-roam-pivot.md`). Until
-something breaks it, the two still match: the lab's defaults (its "Radial growth" algorithm,
-seed 1011) are `FreeRoamSettings`' defaults, with dead-end pruning off (`prune_dead_ends_m` 0).
+something breaks it, the two still match: the lab's defaults (its "Radial growth, dead ends pruned" algorithm,
+seed 1011, prune up to 1000 m) are `FreeRoamSettings`' defaults.
 Both fill cut-off lakes the same way (`fillCutLakes` / `RoadTerrain.fill_cut_lakes`). Checked
 2026-11-04 on seed 1011: same 68 nodes and 70 edges, polylines within 0.5 mm (32-bit `polyline()`),
 the same 5401 filled cells, and heights within 1 mm at 3438 inland points, lake beds and road
@@ -40,14 +40,27 @@ only the game has.
 1. **`RoadNetwork` — the layout, built once at boot.** Radial growth from spawn: branches step
    outward, fork, and join existing road when they run into it (`_grow`). Only the coast stops a
    branch: lakes are driven straight through (see "Lakes cut by roads" below). Dead ends no longer
-   than `prune_dead_ends_m` (measured back to their junction; 0, the default, keeps them all) are
+   than `prune_dead_ends_m` (measured back to their junction; 0 keeps them all) are
    then cut, repeatedly, so a fork whose branches all die out goes too (`_prune_dead_ends`). Each link then becomes
    a wiggled polyline (`_densify`, a seeded noise offset inside a band around the straight line,
    landing exactly on both ends; `road_twist` sets how far it may swing and `bend_length_m` how
 often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_turn_deg` (a
    point becomes two points a quarter of the way along its segments, repeated until none is too
    sharp). Where exactly two links meet, the cut spans both and that node moves to the middle of
-   it; spawn, junctions and dead ends never move. The lab does the same (`roundCorners`). The polylines are flattened into segments in a 100 m grid, and
+   it; spawn, junctions and dead ends never move. The lab does the same (`roundCorners`).
+   **Side roads** come next, as a separate step once the sites are known (`add_side_roads`, called
+   by `TerrainStreamer._ready`): each car to be found (`LootRules.cars_to_find`, every car but the
+   new world's) gets a short straight road at right angles off a random polyline point in its ring,
+   `side_road_min_m`–`side_road_max_m` long (longest first), on dry land and `side_road_clear_m`
+   clear of other roads, its branch `side_road_junction_clear_m` from junctions and other branches.
+   The point becomes a junction (the edge is split) and the side road a new edge to a dead end
+   (`side_road_car`: node → car, `is_side_road(edge)`). No room in its ring: the nearest ring with
+   room; no room anywhere: shorter, closer to other roads, then closer to junctions, so every car
+   is always placed. Side roads keep off the cold open's road and every nearer cabin's
+   (`ColdOpen.roads_to_keep_clear`), which is why the sites are planned once without them, then
+   again with them. Seeded, so nothing about them is saved. The lab draws them too ("Radial growth,
+   dead ends pruned", a key and the car's name at each end), but without the cold-open rule.
+   The polylines are flattened into segments in a 100 m grid (`_flatten`), and
    everything downstream asks one question: `nearest(p, max_d)`, which leaves its answer in
    `hit_d` / `hit_q` / `hit_s` / `hit_edge` / `hit_side` / `hit_dir` so a query allocates nothing.
    `candidates_for` gathers, once per chunk, every segment that can be nearest for any point in
@@ -334,7 +347,7 @@ ground through the albedo tint only (lane paint included), and a pure darkening 
 car, rocks, barriers, dust) jumps straight to the new light: setting `weather_sun_mult` relights them.
 A tree species takes the light of its most recently spawned field. There is **one water level** for the whole island (no per-ring waterline).
 
-## Sites: rest stops, loot slots and dead ends
+## Sites: rest stops, loot slots, dead ends and parked cars
 
 `RoadSites` plans every place that hangs off the network, once at boot from the whole graph
 (decisions 30–31 in `todo/2026-10-19-free-roam-pivot.md`). Rest stops are flat round pads.
@@ -362,6 +375,9 @@ planted on it (`is_clear`).
   cabin past the end and `RestStops.pose_at` respawns the car `spawn_ahead_m` back up the road
   facing away from it. So every dead end has a checkpoint. The dead end's own site is just a coin on the road
   `dead_end_coin_gap_m` before that pad (radius 0, like a loot slot).
+- **Parked cars (`CAR`):** a side road's dead end is a pad with the car to be found on it
+  (`car_id`, and `branch`, where its side road starts), not a rest stop, and side roads get no
+  rest stops, loot slots or coins (the breadth-first walk skips them). See [loot.md](loot.md).
 - **Roadside placement** (`_place_along`, `_try_roadside`, rest stops only): never within `JUNCTION_CLEAR_M` of
   a junction. The pad sits beside the road on a seeded side, or the other side if that one is
   water, another road or another pad. When neither side fits, it tries again `RETRY_STEP_M`
@@ -618,8 +634,7 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
 - **When:** `ColdOpen.due()`: the world block's `cold_open` flag (`WorldSession.cold_open_pending`),
   set by `ColdOpen.new_world` (called by `title_boot.gd` for a first-time player and by the title's New World) when it makes a world in
   `ColdOpen.car_id` (the `FreeRoamSettings.cold_open_car_id` car, else the first starter) with
-  `cold_open_start_money` (with the road coin on the way, just about enough to swap for another
-  starter car at the cabin) and cleared on arrival. Never
+  `cold_open_start_money` (0 by default: cars are found, so there's nothing to buy a swap with) and cleared on arrival. Never
   under the benchmark or `--auto-drive`. A quit midway drives it again from the start.
 - **The opening lines:** instead of the loading screen's headline and tips, the cover shows
   `ColdOpen.story_lines` (`FreeRoamSettings.cold_open_story`, "%s" = the car's name) one after

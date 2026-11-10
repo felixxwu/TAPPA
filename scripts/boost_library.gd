@@ -131,6 +131,11 @@ const CATALOGUE := {
 		# absolute N·m it sets rather than a percentage of a baseline that does not
 		# exist.
 	},
+	"abs": {
+		"ring": 1, "price": 500, "icon": "brakes",
+		"mass_kg": 4, "label": "ABS", "blurb": "Stops wheels locking.",
+		"effect_fields": {"install_abs": {}}, # on or off, so a level has nothing to scale
+	},
 	"supercharger": {
 		"ring": 2, "price": 5000,
 		"mass_kg": 30, "label": "Supercharger", "blurb": "Boost with no lag.",

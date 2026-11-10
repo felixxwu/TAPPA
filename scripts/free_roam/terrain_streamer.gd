@@ -194,6 +194,11 @@ func _ready() -> void:
 	network.build(settings, terrain)
 	terrain.fill_cut_lakes()
 	sites.build(settings, network, terrain)
+	# The side roads go in once the cold open's road is known, so they can keep off it; the sites
+	# are then planned again around them.
+	network.add_side_roads(LootRules.cars_to_find(settings), ColdOpen.roads_to_keep_clear(network, sites, settings))
+	sites = RoadSites.new()
+	sites.build(settings, network, terrain)
 	terrain.sites = sites
 	if Config.data.barriers_enabled:
 		barriers.plan(settings, network, terrain, sites, barrier_params())
@@ -210,10 +215,10 @@ func _ready() -> void:
 		var pair := _pair_material(k)
 		if pair != null:
 			_pair_materials.append(pair)
-	print("free roam: network %d nodes, %d links, %.0f km of road, %d rest stops, %d loot slots, %d dead ends, built in %d ms" % [
+	print("free roam: network %d nodes, %d links, %.0f km of road, %d rest stops, %d loot slots, %d dead ends, %d cars, built in %d ms" % [
 		network.node_x.size(), network.edges.size(), network.total_length_m / 1000.0,
 		sites.of_kind(RoadSites.Kind.REST).size(), sites.of_kind(RoadSites.Kind.LOOT).size(),
-		sites.of_kind(RoadSites.Kind.DEAD_END).size(), stat_build_ms])
+		sites.of_kind(RoadSites.Kind.DEAD_END).size(), sites.of_kind(RoadSites.Kind.CAR).size(), stat_build_ms])
 	print("free roam: %d barrier modules" % barriers.modules.size())
 
 

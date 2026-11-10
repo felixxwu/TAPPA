@@ -32,6 +32,7 @@ var dust_puffs: DustPuffs
 var region_banner: RegionBanner
 # A new world's cold open (ColdOpen), while it's due; null otherwise.
 var cold_open: ColdOpen
+var parked_cars: ParkedCars
 
 # How often the car's pose and condition are written to the world session, in seconds.
 var _save_t := 0.0
@@ -148,6 +149,16 @@ func _ready() -> void:
 	_rest_stops.wreck_recovered.connect($LootDirector.wreck_recovered)
 	_rest_stops.wreck_recovered.connect(func(_site: int) -> void: _rest_page.dismiss_wrecked())
 	$LootDirector.said.connect(_minimap.toast)
+	parked_cars = ParkedCars.new()
+	parked_cars.name = "ParkedCars"
+	parked_cars.streamer = _streamer
+	parked_cars.car = _car
+	add_child(parked_cars)
+	parked_cars.found.connect(func(found_car: Dictionary) -> void:
+		_minimap.refresh_markers()
+		$CheckpointBanner.show_found(String(CarLibrary.by_id(String(found_car.get("model_id", ""))).get("name", "car"))))
+	parked_cars.switch_requested.connect(_drive_found_car)
+	_minimap.parked_cars = parked_cars
 	_recovery.reset_done.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect(_rest_stops.car_teleported)
 	_recovery.reset_done.connect(_on_car_teleported)
@@ -380,6 +391,14 @@ func _offer_conflict() -> void:
 		_pause.set_input_enabled(true)
 	if ConflictPrompt.open(_pause, done) == null:
 		done.call()
+
+
+# A car found at the end of its side road (it's in the garage already) and then picked on its pad:
+# drive it now, reloading the world where the car stands, as a Garage pick does at a checkpoint.
+func _drive_found_car(found_car: Dictionary) -> void:
+	WorldSession.set_active_car(int(found_car.get("instance_id", -1)))
+	save_world()
+	Scenes.change_to(get_tree(), Scenes.FREE_ROAM, "Changing cars")
 
 
 # The pause menu's Map / Stats rows: the page covers the frozen game and hands back on Back.

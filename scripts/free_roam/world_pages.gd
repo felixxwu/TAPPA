@@ -6,7 +6,7 @@ extends CanvasLayer
 # frozen game from the pause menu or the rest-stop page:
 #   MAP   — the island: its terrain drawn like the road lab's 2D view (MapTerrain), the biome-ring borders you've crossed, the roads you've driven
 #           (and in grey the undriven road near them, `map_roads`),
-#           the rest stops you've come across (orange lit, grey not; MiniMap.site_markers, shared
+#           the rest stops you've come across (orange lit, grey not) and cars waiting to be found (a key; MiniMap.site_markers, shared
 #           with the minimap), the money left on the road (dropped_xz) and the car. It is
 #           also the minimap's "whole map" (tap the minimap, or M / gamepad Back, which closes it too).
 #           It frames what has been explored (explored_view), not the whole island. Wherever it's
@@ -378,6 +378,9 @@ class MapCanvas:
 		for mk: Array in MiniMap.site_markers(st.sites, pages.rest_stops.lit_sites, Vector2.ZERO, INF):
 			var p: Vector2 = to_px.call(mk[0])
 			var col := MiniMap.marker_color(mk[1])
+			if mk[1] == MiniMap.Marker.CAR_KEY:
+				MiniMap.draw_key(self, p, 1.0, col, Color.BLACK)
+				continue
 			draw_circle(p, 5.0, Color.BLACK)
 			draw_circle(p, 4.0, col)
 			if mk[2] == target:

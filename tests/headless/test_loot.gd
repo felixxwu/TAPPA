@@ -59,8 +59,8 @@ func _ring_of(tables: Array) -> Dictionary:
 
 func test_every_car_kit_and_part_lands_once_in_its_own_ring() -> void:
 	var ring_of := _ring_of(LootRules.ring_tables(4))
-	for car: Dictionary in CarLibrary.all():
-		assert_eq(ring_of.get("car:" + String(car["id"]), -1), int(car["ring"]), "%s in its ring" % car["id"])
+	for key: String in ring_of:
+		assert_false(key.begins_with("car:"), "cars are found, never sold: %s" % key)
 	for mode in LootRules.KITS:
 		assert_eq(ring_of.get("part:drivetrain:%d:0" % mode, -1), int(LootRules.KITS[mode]["ring"]), "kit %d in its ring" % mode)
 	for id in BoostLibrary.CATALOGUE.keys():
@@ -73,10 +73,10 @@ func test_every_car_kit_and_part_lands_once_in_its_own_ring() -> void:
 
 func test_rings_past_the_ring_count_fold_into_the_last() -> void:
 	var tables := LootRules.ring_tables(2)
-	for car: Dictionary in CarLibrary.all():
-		var want := mini(int(car["ring"]), 1)
-		assert_true(tables[want].any(func(i: Dictionary) -> bool: return i["kind"] == "car" and i["id"] == car["id"]),
-			"%s folds into ring %d" % [car["id"], want])
+	for id in BoostLibrary.CATALOGUE.keys():
+		var want := mini(int(BoostLibrary.CATALOGUE[id]["ring"]), 1)
+		assert_true(tables[want].any(func(i: Dictionary) -> bool: return i["id"] == id),
+			"%s folds into ring %d" % [id, want])
 
 
 func test_starter_cars_are_the_ring_0_cars() -> void:
@@ -84,19 +84,19 @@ func test_starter_cars_are_the_ring_0_cars() -> void:
 		assert_eq(LootRules.starter_cars().has(String(car["id"])), int(car["ring"]) == 0, String(car["id"]))
 
 
-# Catalogue contract on the SHIPPED data: an entry without a ring on the island could never go on
-# sale, and one without a price would be free.
-func test_shipped_cars_and_parts_each_name_a_ring_on_the_island_and_a_price() -> void:
+# Catalogue contract on the SHIPPED data: an entry without a ring on the island could never be found
+# or go on sale, and a part without a price would be free.
+func test_shipped_cars_name_a_ring_on_the_island_and_parts_a_ring_and_a_price() -> void:
 	CarFixtures.restore()
 	var rings := FreeRoamSettings.new().ring_count
-	var check := func(who: String, entry: Dictionary) -> void:
+	var has_ring := func(who: String, entry: Dictionary) -> void:
 		assert_true(entry.get("ring") is int and int(entry["ring"]) >= 0 and int(entry["ring"]) < rings,
 			"%s has a ring in 0..%d" % [who, rings - 1])
-		assert_gt(int(entry.get("price", 0)), 0, "%s has a price" % who)
 	for car: Dictionary in CarLibrary.all():
-		check.call(String(car["id"]), car)
+		has_ring.call(String(car["id"]), car)
 	for id in BoostLibrary.CATALOGUE.keys():
-		check.call(String(id), BoostLibrary.CATALOGUE[id])
+		has_ring.call(String(id), BoostLibrary.CATALOGUE[id])
+		assert_gt(int(BoostLibrary.CATALOGUE[id].get("price", 0)), 0, "%s has a price" % id)
 	for mode in Drivetrain.DriveMode.values():
 		assert_true(LootRules.KITS.has(mode), "kit %d has a ring" % mode)
 		assert_gt(LootRules.price({"kind": "part", "id": "drivetrain:%d" % mode}), 0, "kit %d has a price" % mode)
@@ -109,8 +109,6 @@ func test_a_ring_with_no_rest_stop_is_sold_in_the_nearest_ring_that_has_one() ->
 
 
 func test_a_price_comes_from_the_items_own_entry() -> void:
-	var car: Dictionary = CarLibrary.all()[0]
-	assert_eq(LootRules.price({"kind": "car", "id": String(car["id"])}), int(car.get("price", 0)))
 	var id: String = BoostLibrary.CATALOGUE.keys()[0]
 	assert_eq(LootRules.price({"kind": "part", "id": id, "level": 0}), int(BoostLibrary.CATALOGUE[id]["price"]))
 
@@ -172,7 +170,8 @@ func test_a_cars_upgrade_count_is_its_unlocked_parts_on_or_off_out_of_every_part
 		for item: Dictionary in table:
 			if String(item["kind"]) == "part":
 				catalogue += 1
-	assert_eq(all.size(), catalogue - 1, "every other part in the catalogue counts")
+	var factory_abs := 1 if CarLibrary.has_abs(CarLibrary.for_owned(owned)) else 0
+	assert_eq(all.size(), catalogue - 1 - factory_abs, "every other part in the catalogue counts")
 	assert_eq(LootRules.upgrades_text(owned), "2 / %d upgrades" % all.size(), "switched-off parts still count as bought")
 	assert_eq(LootRules.upgrades_text({"model_id": owned["model_id"]}), "0 / %d upgrades" % all.size())
 
@@ -213,12 +212,12 @@ func _drive_to(scene: Node3D, p: Vector2) -> void:
 	await get_tree().physics_frame
 
 
-func test_every_loot_spot_holds_a_coin_and_rest_stops_none() -> void:
+func test_every_loot_spot_holds_a_coin_and_rest_stops_and_parked_cars_none() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
 	var sites := loot.streamer.sites
 	for i in sites.count():
-		assert_eq(loot.loot_at(i).is_empty(), sites.kind[i] == RoadSites.Kind.REST, "site %d" % i)
+		assert_eq(loot.loot_at(i).is_empty(), sites.kind[i] in [RoadSites.Kind.REST, RoadSites.Kind.CAR], "site %d" % i)
 
 
 func test_driving_to_a_coin_adds_its_value_and_spends_the_spot() -> void:
@@ -316,9 +315,7 @@ func test_only_unlocked_rings_sell_and_only_what_the_player_lacks() -> void:
 	var loot: LootDirector = scene.get_node("LootDirector")
 	var stock := loot.ring_stock()
 	var keys := func(items: Array) -> Array: return items.map(LootRules.item_key)
-	var want: Array = keys.call(stock[0])
-	want.erase(LootRules.item_key({"kind": "car", "id": String(WorldSession.active_car()["model_id"])}))
-	assert_eq(keys.call(loot.for_sale()), want, "ring 0 only, without the car already owned")
+	assert_eq(keys.call(loot.for_sale()), keys.call(stock[0]), "ring 0 only")
 	var ring := -1
 	for r in range(1, stock.size()):
 		if ring < 0 and not (stock[r] as Array).is_empty():
@@ -328,21 +325,17 @@ func test_only_unlocked_rings_sell_and_only_what_the_player_lacks() -> void:
 	assert_true(keys.call(loot.for_sale()).has(LootRules.item_key(stock[ring][0])), "lighting a checkpoint there unlocks it")
 
 
-func test_buying_spends_the_money_and_a_car_joins_the_garage_and_a_part_is_handed_back_to_unlock() -> void:
+func test_buying_spends_the_money_and_hands_the_part_back_to_unlock_and_no_car_is_sold() -> void:
 	var scene := await _boot()
 	var loot: LootDirector = scene.get_node("LootDirector")
 	for r in 4:
 		loot.unlock(r)
-	var car: Dictionary = loot.for_sale().filter(func(i: Dictionary) -> bool: return i["kind"] == "car")[0]
+	assert_false(loot.for_sale().any(func(i: Dictionary) -> bool: return i["kind"] == "car"), "cars are found, not sold")
 	var part: Dictionary = loot.for_sale().filter(func(i: Dictionary) -> bool:
 		return i["kind"] == "part" and LootRules.can_fit(WorldSession.active_car(), i))[0]
-	WorldSession.set_money(LootRules.price(car) + LootRules.price(part))
-	var cars := (_save.profile[_save.KEY_CARS] as Array).size()
-	assert_eq(String(loot.buy(car).get("model_id", "")), String(car["id"]), "returns the new owned car")
-	assert_eq((_save.profile[_save.KEY_CARS] as Array).size(), cars + 1, "the car is owned")
+	WorldSession.set_money(LootRules.price(part))
 	assert_eq(loot.buy(part), part)
 	assert_eq(WorldSession.money(), 0)
-	assert_false(loot.for_sale().has(car), "bought things leave the shop")
 
 
 func test_the_player_cant_buy_what_they_cant_afford() -> void:
@@ -357,6 +350,32 @@ func test_the_player_cant_buy_what_they_cant_afford() -> void:
 # The parts and garage tests below count cards; with nothing on sale, only the player's own show.
 func _nothing_for_sale() -> void:
 	WorldSession.set_list("revealed", [])
+
+
+func test_abs_is_for_sale_only_to_a_car_without_it() -> void:
+	var with_abs := {"abs": true, "id": "fx_abs"}
+	var without_abs := {"abs": false, "id": "fx_no_abs"}
+	var roster: Array[Dictionary] = [with_abs, without_abs]
+	CarLibrary.override_for_test(roster)
+	var part := {"kind": "part", "id": "abs", "level": 1}
+	assert_eq(LootRules.fit_block_reason({"model_id": "fx_abs"}, part), "Already has ABS")
+	assert_true(LootRules.can_fit({"model_id": "fx_no_abs"}, part))
+	var ids := func(owned: Dictionary) -> Array:
+		return LootRules.parts_for(owned).map(func(i: Dictionary) -> String: return String(i["id"]))
+	assert_does_not_have(ids.call({"model_id": "fx_abs"}), "abs", "not counted as an upgrade it could have")
+	assert_has(ids.call({"model_id": "fx_no_abs"}), "abs")
+	CarLibrary.reset()
+
+
+func test_the_abs_part_switches_abs_on_through_the_funnel() -> void:
+	var cfg := GameConfig.new()
+	cfg.abs_enabled = false
+	var off := {"model_id": "fx", "parts": [{"kind": "part", "id": "abs", "level": 1, "on": false}]}
+	UpgradeLibrary.apply(LootRules.fielded(off), cfg)
+	assert_false(cfg.abs_enabled, "switched off, it does nothing")
+	var on := {"model_id": "fx", "parts": [{"kind": "part", "id": "abs", "level": 1, "on": true}]}
+	UpgradeLibrary.apply(LootRules.fielded(on), cfg)
+	assert_true(cfg.abs_enabled)
 
 
 func test_the_parts_page_sells_parts_and_buying_one_switches_it_on() -> void:
@@ -382,32 +401,18 @@ func test_the_parts_page_sells_parts_and_buying_one_switches_it_on() -> void:
 	assert_signal_emitted(page, "car_changed", "the car is re-fielded with it")
 
 
-func test_the_garage_sells_cars_and_buying_one_switches_to_it() -> void:
+func test_the_garage_lists_owned_cars_then_greyed_out_cars_still_to_be_found() -> void:
 	var scene := await _boot()
 	var page: RestStopPage = scene.get_node("RestStopPage")
-	var cars: Array = page.loot.for_sale().filter(func(i: Dictionary) -> bool: return i["kind"] == "car")
-	var car: Dictionary = cars[0]
-	WorldSession.set_money(LootRules.price(car))
+	for r in 4:
+		page.loot.unlock(r)
+	WorldSession.set_money(1000000)
 	page.open(0)
 	page._show(RestStopPage.View.GARAGE)
-	assert_eq(page.cards().card_count(), 1 + cars.size(), "the car owned, then a card per car on sale")
-	watch_signals(page)
-	_confirm(page.cards(), 1)
-	assert_eq(String(WorldSession.active_car()["model_id"]), String(car["id"]), "driving the car just bought")
-	assert_eq(WorldSession.money(), 0)
-	assert_eq(page.cards().card_count(), 2, "it's now an owned car, not one on sale")
-	page.close()
-	assert_signal_emitted(page, "car_changed")
-
-
-func test_a_car_on_sale_that_cant_be_afforded_is_greyed_out() -> void:
-	var scene := await _boot()
-	var page: RestStopPage = scene.get_node("RestStopPage")
-	var car: Dictionary = page.loot.for_sale().filter(func(i: Dictionary) -> bool: return i["kind"] == "car")[0]
-	WorldSession.set_money(LootRules.price(car) - 1)
-	page.open(0)
-	page._show(RestStopPage.View.GARAGE)
-	assert_true(page.cards()._cards[1].disabled)
+	var owned := (_save.profile[_save.KEY_CARS] as Array).size()
+	var unfound := page.loot.streamer.sites.of_kind(RoadSites.Kind.CAR).size()
+	assert_eq(page.cards().card_count(), owned + unfound, "a card per owned car, then one per car still to be found")
+	assert_true(page.cards()._cards[owned].disabled, "a car not found yet can't be picked")
 	page.close()
 
 
@@ -480,20 +485,21 @@ func test_the_wreck_page_says_the_money_was_dropped() -> void:
 	page.close()
 
 
-func test_the_garage_with_cars_on_sale_is_navigable() -> void:
+func test_the_garage_with_several_cars_is_navigable() -> void:
 	var scene := await _boot()
+	Save.grant_car(String(CarLibrary.all()[1]["id"]))
 	var page: RestStopPage = scene.get_node("RestStopPage")
 	page.open(0)
 	assert_true(page.pick("garage"))
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_eq(page.get_viewport().gui_get_focus_owner(), page.cards())
-	assert_gt(page.cards().card_count(), 1, "the owned car and the cars on sale")
+	assert_gt(page.cards().card_count(), 1, "a card per owned car")
 	var right := InputEventAction.new()
 	right.action = "ui_right"
 	right.pressed = true
 	page.cards()._gui_input(right)
-	assert_eq(page.cards().selected_index(), 1, "right moves onto a car on sale")
+	assert_eq(page.cards().selected_index(), 1, "right moves onto the next car")
 	var e := InputEventAction.new()
 	e.action = "ui_cancel"
 	e.pressed = true
@@ -593,7 +599,7 @@ func test_the_garage_switches_the_active_car() -> void:
 	var second: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
 	page.open(0)
 	page._show(RestStopPage.View.GARAGE)
-	assert_eq(page.cards().card_count(), 2, "a card per owned car")
+	assert_eq(page.cards().card_count(), 2 + page.unfound_cards().size(), "a card per owned car, then the cars still to be found")
 	assert_eq(page.cards().selected_index(), 0, "the cursor starts on the car being driven")
 	_confirm(page.cards(), 0)
 	assert_ne(int(WorldSession.active_car()["instance_id"]), int(second["instance_id"]), "picking the car being driven changes nothing")

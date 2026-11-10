@@ -308,6 +308,10 @@ handbrake locks the driven axle.
 
 ## Anti-lock braking (ABS)
 
+Not every car has it: `car.gd` → `_apply_physics_spec` seeds `abs_enabled` from the car's `abs`
+key in `CarLibrary.CARS` (`CarLibrary.has_abs`, true when missing). A car without it locks its
+wheels under hard braking until the ABS part is fitted (`BoostLibrary.CATALOGUE["abs"]`).
+
 `step` splits the foot brake into `rear_brake_foot` / `front_brake` and the
 handbrake into `rear_brake_hb`, then — each of the 8 spin substeps, right after
 `_tire_force` refreshes `c.slip_long_norm` — calls `_update_abs_active(cfg, c)`

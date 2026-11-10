@@ -36,6 +36,7 @@ var peak_torque_rpm := 4500.0
 ## its grip-curve peak (locking), Drivetrain releases a share of the FOOT brake torque
 ## on that wheel/axle until slip falls back under the peak. Never touches
 ## handbrake_torque — handbrake lockup is the intended drift/turn mechanic.
+## Set per car when it is fielded (CarLibrary.has_abs), and switched on by the ABS part.
 @export var abs_enabled := true
 ## Fraction of foot-brake torque released while ABS is active on a wheel/axle (0 = no
 ## release/no effect, 1 = fully release). Real ABS pulses rather than fully releasing;
@@ -3043,7 +3044,7 @@ func spectator_params() -> Dictionary:
 ## Side of the square of ground the minimap shows, in metres.
 @export var minimap_view_m := 100.0
 ## Where the car sits in that square, front (0) to back (1): high values show mostly road ahead.
-@export var minimap_car_depth := 0.8
+@export var minimap_car_depth := 0.9
 ## The perspective tilt: the far edge shows (1 + tilt) times the ground width of the near edge.
 @export var minimap_tilt := 4.0
 ## A rest stop or loot slot counts as seen (and shows on the minimap and map) once the car has
@@ -3055,9 +3056,9 @@ func spectator_params() -> Dictionary:
 ## Opacity of that not-yet-driven road (driven road is drawn fully opaque).
 @export var minimap_undriven_road_alpha := 0.85
 ## Width of driven road on the map texture, in texture pixels; its dark casing is 3.5 px wider.
-@export var minimap_road_width := 9.0
+@export var minimap_road_width := 13.0
 ## Width of the not-yet-driven road on the map texture, in texture pixels.
-@export var minimap_undriven_road_width := 3.5
+@export var minimap_undriven_road_width := 5.0
 ## Opacity of the dark outline under the not-yet-driven road, so it reads against bright ground.
 @export var minimap_undriven_road_outline_alpha := 0.45
 ## Half-height of the car's chevron on the minimap, in logical pixels (scaled by the UI scale).

@@ -7,7 +7,8 @@ Shop / Garage pages of `scripts/free_roam/rest_stop_page.gd`, and the coins in
 
 **Tests:** `tests/headless/test_loot.gd`
 
-Coins on the road are money; money buys cars and parts at checkpoints; a wreck
+Coins on the road are money; money buys parts at checkpoints; cars are found, parked at the ends
+of side roads (see "Found cars" below); a wreck
 drops all of it at the wreck, Souls-style: drive back for it, or wreck again first and it's gone.
 This replaced the found-loot loop of decisions 10–18 (crystals, carry / bank / drop, rumours) on
 2026-10-25 — see D89 in `todo/2026-10-19-free-roam-pivot.md`.
@@ -16,18 +17,18 @@ This replaced the found-loot loop of decisions 10–18 (crystals, carry / bank /
 
 | Kind | Shape | Becomes |
 |---|---|---|
-| Car | `{"kind": "car", "id": <CarLibrary id>}` | a new owned car (`Save.grant_car`) |
+| Car | `{"kind": "car", "id": <CarLibrary id>}` | a new owned car (`Save.grant_car`), found, never sold |
 | Part | `{"kind": "part", "id": <BoostLibrary id>, "level": n}` | a fittable part (the former boost, at level n) |
 | Drivetrain kit | `{"kind": "part", "id": "drivetrain:<mode>"}` | a fittable layout conversion |
 | Tires | `{"kind": "part", "id": "tire:<TIRES key>"}` | a fittable set of tires |
 
 ## What each ring sells (the pacing split, decision 3)
 
-Each car (`CarLibrary.CARS`) and boost part
-(`BoostLibrary.CATALOGUE`) names its own biome `ring` and `price` in its entry; drivetrain kits have
+Each boost part (`BoostLibrary.CATALOGUE`) names its own biome `ring` and `price` in its entry
+(a car names only its `ring`, where it is found); drivetrain kits have
 no entry, so theirs live in `LootRules.KITS`, and tires in `LootRules.TIRES` (gravel from the start, road at The Dunes, snow in The Alps; grip strengths in `GameConfig`'s `shop_tire_*`). `ring_tables(ring_count)` collects them (a boost part
 at level = its ring; a ring past `ring_count` folds into the last), and `LootRules.price(item)`
-reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the cold open falls back on the first, and its money is about enough to swap to another.
+reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the cold open falls back on the first.
 
 - **On sale once lit.** A ring's stock goes on sale at every checkpoint once one of its checkpoints
   is lit (`RestStops.lit` → `LootDirector.site_lit` → `unlock`, wired in `free_roam.gd`, kept in the world's `revealed`
@@ -35,7 +36,7 @@ reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the c
   stock is sold by the nearest ring that has one (`LootRules.pool_rings` over rest-stop counts,
   `LootDirector.ring_stock`).
 - **One of each, per car.** `for_sale()` is the unlocked stock minus what the player has
-  (`owned_keys(owned)`: every car in the garage, and the parts of the car being driven).
+  (`owned_keys(owned)`: the parts of the car being driven).
 - **A part is unlocked for one car, then switched on or off.** Each owned car's `parts` are the
   parts unlocked for it, each with an `on` flag (`LootRules.is_on`; only switched-on parts reach the
   car through `LootRules.fielded`). Another car has to unlock its own. Drivetrain kits
@@ -44,11 +45,42 @@ reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the c
   share a slot the same way (none on means the car runs its stock tires), and so do the parts naming the same `slot` in `BoostLibrary.CATALOGUE` (the small and big turbo).
   `WorldSession.adopt_old_stash` unlocks an older save's shared `stash` for the car being driven
   (switched off), once.
-- **Buying** (`buy`) checks it's on sale, affordable and — for a part — usable on the car being
-  driven (`LootRules.can_fit`), takes the money, and grants the car or hands the part back for the
+- **Buying** (`buy`) checks it's on sale, affordable and usable on the car being
+  driven (`LootRules.can_fit`), takes the money, and hands the part back for the
   Shop page to unlock and switch on. A part the car can't use shows greyed out with the reason.
-- `test_loot.gd` → `test_shipped_cars_and_parts_each_name_a_ring_on_the_island_and_a_price`
-  guards that every shipped entry has a ring on the island and a price.
+- `test_loot.gd` → `test_shipped_cars_name_a_ring_on_the_island_and_parts_a_ring_and_a_price`
+  guards that every shipped car has a ring on the island, and every part a ring and a price.
+
+## Found cars
+
+**Source:** `scripts/free_roam/parked_cars.gd` (`ParkedCars`), the side roads in `RoadNetwork`
+(`add_side_roads`, see [free-roam.md](free-roam.md)), `RoadSites.Kind.CAR`, `free_roam.gd` →
+`_drive_found_car`. **Tests:** `tests/headless/test_found_cars.gd`.
+
+- **Where:** every car but the one a new world starts with (`LootRules.cars_to_find`, which leaves
+  out `ColdOpen.car_id`) is parked at the end of its own short side road in its `ring`.
+- **The model:** `ParkedCars` builds a frozen `CarProp` of each car still waiting, on its pad facing
+  back up the road, once at boot behind the loading screen, and keeps it there (a prop is too dear to
+  build while driving). The boot's warm-up shows them all to the camera for a few frames
+  (`warm_up` / `clear_warm_up`), so meeting one doesn't stall on its shaders. It is solid but never
+  moves: a frozen body that stays in the physics world with its own car-shaped hull
+  (`DISABLE_MODE_KEEP_ACTIVE`). Headless builds none (`show_props`); finding a car works without them.
+- **Finding:** driving onto the pad from off it (`RoadSites.reached`, swept like coins) grants the
+  car (`Save.grant_car`) and emits `found`. Its model stays on the pad, and coming back onto the pad
+  offers it again, until the world next loads, when only cars still to be found are parked: free roam shows the checkpoint band,
+  "Car found" with the car's name under it (`CheckpointBanner.show_found`), and the car drives on,
+  nothing paused. While it stays on that pad, the rest stop's prompt line under the minimap reads
+  "Enter / A: drive it" (`ParkedCars.offer`, `MiniMap.update_prompt_label`); menu_select or a tap
+  on it (`switch_here` → `switch_requested` → `free_roam.gd._drive_found_car`) makes it the active
+  car (`WorldSession.set_active_car`, so it starts undamaged) and reloads the world where the car
+  stands ("Changing cars"), as a Garage pick does. Leaving the pad withdraws the offer; the car
+  waits in the Garage. Enter marks the input handled before switching, because the reload takes the
+  node out of the tree. Nothing is found while the cold open is due (`ColdOpen.due`). A car is
+  waiting while no owned car has its model (`ParkedCars.model_owned`), so a car bought in an older
+  save is already found.
+- **On the maps:** a gold car key (`MiniMap.draw_key`, `Marker.CAR_KEY`) once the side road has
+  been seen (coming within `minimap_seen_radius_m` of where it starts or of the car), until the
+  car is owned. See [minimap.md](minimap.md).
 
 ## Coins
 
@@ -108,7 +140,7 @@ Fitting rules (`can_fit`, `toggled`): one of each part id per car; a kit for the
 never fits (switching its other kit off changes it back). Each part is switched on or off, and
 switching on a kit, tire or turbo switches off whichever other one of its kind was on (`LootRules._slot`).
 `fit_block_reason` gives the shop card's label when a part can't go on ("Already RWD",
-"Already unlocked"); `can_fit` is just "no reason".
+"Already has ABS", "Already unlocked"); `can_fit` is just "no reason".
 
 ## Rest-stop pages
 
@@ -126,8 +158,9 @@ The Shop pages' header line is the car, its weight, power, driven wheels and max
 owned car (pick to drive one; the cursor starts on the car being driven), each with an
 "x / y upgrades" line under its power line (`LootRules.upgrades_text`: parts unlocked for that car, on or off, out of
 `LootRules.parts_for(owned)` — the whole part catalogue less the drivetrain kit for its own stock
-layout), then one per car on sale
-(picking one buys it and switches to it, `_buy_car`). There is no journal (a read-only list of what
+layout and, for a car that came with it, ABS). No cars are sold: after the owned cars comes a greyed-out card for each car still parked on
+the island, "<region> region" / "Not found yet" under its name (`RestStopPage.unfound_cards`, the
+region of the ring its side road is in). There is no journal (a read-only list of what
 each unlocked biome sells): it was deleted on 2026-10-25 at the user's ask. A change
 of parts or car re-fields the car when the page closes: `car_changed` makes free roam save and
 reload the scene at the rest stop, because a live body is never re-staged. The loading screen says why

@@ -301,13 +301,6 @@ func _buy_part(item: Dictionary) -> void:
 	_show(view)
 
 
-# Buy a car on sale and switch to it.
-func _buy_car(item: Dictionary) -> void:
-	var bought := loot.buy(item)
-	if not bought.is_empty():
-		_drive(int(bought["instance_id"]))
-
-
 func _toggle_part(index: int) -> void:
 	_set_parts(LootRules.toggled(owned.get("parts", []), index))
 	_show(view)
@@ -331,16 +324,27 @@ func _build_garage() -> void:
 		entries.append({"title": _car_name(c), "desc": CardUI.stats_line(stats["hp"], stats["mass"], stats["drive_mode"]),
 			"subtitle": LootRules.upgrades_text(c), "car": LootRules.fielded(c),
 			"extra": "Driving" if id == active else "", "action": Callable() if id == active else _drive.bind(id)})
-	var money := WorldSession.money()
-	for item: Dictionary in loot.for_sale() if loot != null else []:
-		if String(item["kind"]) != "car":
+	entries.append_array(unfound_cards())
+	_card_page("Garage", entries, ["$%d" % WorldSession.money()], selected)
+
+
+# A greyed-out card for each car still parked somewhere on the island, saying which region it's in
+# (the ring its side road is in, which can differ from the car's own when that ring had no room).
+func unfound_cards() -> Array:
+	var out: Array = []
+	if loot == null or loot.streamer == null:
+		return out
+	var sites := loot.streamer.sites
+	var cars := Array(sites.of_kind(RoadSites.Kind.CAR))
+	cars.sort_custom(func(a: int, b: int) -> bool: return sites.ring[a] < sites.ring[b])
+	for i: int in cars:
+		var id := String(sites.car_id[i])
+		if ParkedCars.model_owned(id):
 			continue
-		var model := CarLibrary.by_id(String(item["id"]))
-		var cost := LootRules.price(item)
-		entries.append({"title": String(model.get("name", item["id"])), "subtitle": CardUI.car_subtitle(model),
-			"car": CarLibrary.index_of(String(item["id"])), "extra": "$%d" % cost, "extra_variant": price_variant(cost, money),
-			"disabled": cost > money, "action": _buy_car.bind(item)})
-	_card_page("Garage", entries, ["$%d" % money], selected)
+		out.append({"title": String(CarLibrary.by_id(id).get("name", id)),
+			"desc": "%s region" % RegionBanner.name_for(loot.streamer.settings, sites.ring[i]),
+			"subtitle": "Not found yet", "car": CarLibrary.index_of(id), "disabled": true})
+	return out
 
 
 func _car_name(c: Dictionary) -> String:

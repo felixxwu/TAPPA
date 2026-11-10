@@ -26,11 +26,13 @@ A navigation-software style map at the top centre of the screen while driving.
   `minimap_undriven_road_alpha` / `_width` / `_outline_alpha` (a thin dark outline so it reads
   on bright ground); the chevron's size is `minimap_car_arrow_px`.
 - **Rest stops you've come across** (`WorldSession.seen_sites`) as dots (orange lit, grey unlit:
-  `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`). Coins aren't shown on either map; the full map also marks dropped money (`WorldPages.dropped_xz`). Icons are drawn
+  `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`), and **cars waiting to be found** as a gold car key
+  (`Marker.CAR_KEY`, `MiniMap.draw_key`) once their side road has been seen (`mark_seen_near` also
+  counts coming near where the side road starts, `RoadSites.branch`), until the car is owned. Coins aren't shown on either map; the full map also marks dropped money (`WorldPages.dropped_xz`). Icons are drawn
   upright on top of the tilted ground, smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the
   full map.
 - **A line under the frame** (`MiniMap.update_prompt_label`, per frame): the action prompt
-  ("ENTER / A: OPEN REST STOP", or "TAP: …" on touch, while `RestStops.prompt_site` >= 0), else the latest money message ("+$n", "Drift +$n", …: `LootDirector.said` →
+  ("ENTER / A: OPEN REST STOP", or "TAP: …" on touch, while `RestStops.prompt_site` >= 0; "ENTER / A: DRIVE IT" on the pad of a car just found, `ParkedCars.offer`), else the latest money message ("+$n", "Drift +$n", …: `LootDirector.said` →
   `MiniMap.toast`, for `FreeRoamSettings.toast_s`), else the standing `MiniMap.hint` (the cold open's
   throttle button), hidden otherwise. One box, so the two never show at once, and the
   prompt always wins. It hugs its text (black, small padding) centred under the frame. Tapping the prompt opens the rest stop (`_on_prompt_input` → `RestStops.open_here`). The money

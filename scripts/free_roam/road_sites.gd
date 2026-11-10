@@ -10,11 +10,13 @@ extends RefCounted
 #              driving over them. These are SLOTS: stage 7 decides which hold something.
 #   DEAD_END — the coin on the road just before the end of every road that stops (a node with one
 #              road, not spawn). The end itself is a rest stop, so every dead end has a checkpoint.
+#   CAR      — the pad at the end of a side road (RoadNetwork.side_road_car) where a car to be found
+#              is parked. Side roads carry no rest stop, loot or coin.
 # Rest stops are flat round pads beside (or, at a dead end, at the end of) their road. RoadTerrain
 # flattens the ground under one to the road's height and reads it as road surface, so the car can
 # pull in. A loot spot has no pad (radius 0) and leaves the ground alone.
 
-enum Kind { REST, LOOT, DEAD_END }
+enum Kind { REST, LOOT, DEAD_END, CAR }
 
 # A car that moves further than this in one physics step was teleported, not driven.
 const TELEPORT_M := 100.0
@@ -35,6 +37,8 @@ var pad_h := PackedFloat32Array()    # the pad's flat height (the road's height 
 var ring := PackedInt32Array()
 var edge := PackedInt32Array()       # the road link it hangs off (-1 for spawn)
 var node := PackedInt32Array()       # the junction for spawn and dead ends, else -1
+var car_id := {}                     # CAR site -> the CarLibrary id parked there
+var branch := {}                     # CAR site -> where its side road leaves the main road
 var _grid := {}  # Vector2i -> PackedInt32Array
 var _box_cells := {}  # Vector2i -> PackedInt32Array, by BOX_CELL_M
 var _blend := 12.0  # the widest a pad's blend can reach
@@ -84,7 +88,7 @@ func build(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain) -> void:
 			if not adj.has(at):
 				continue
 			for ei: int in adj[at]:
-				if done_edge.has(ei):
+				if done_edge.has(ei) or net.is_side_road(ei):
 					continue
 				done_edge[ei] = true
 				var e := net.edges[ei]
@@ -107,6 +111,11 @@ func build(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain) -> void:
 				pts.reverse()  # so the polyline ends at the dead end
 			var end := pts[pts.size() - 1]
 			var d := (end - pts[pts.size() - 2]).normalized()
+			if net.side_road_car.has(n):
+				car_id[kind.size()] = String(net.side_road_car[n])
+				branch[kind.size()] = pts[0]
+				_add(Kind.CAR, end, end, -d, s.rest_stop_radius_m, terrain, ei, n)
+				continue
 			# Like spawn, a pad on the junction whose `dir` is the road out, so the cabin stands past the end.
 			_add(Kind.REST, end, end, -d, s.rest_stop_radius_m, terrain, ei, n)
 			var cum := PackedFloat64Array([0.0])

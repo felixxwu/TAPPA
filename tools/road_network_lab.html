@@ -31,8 +31,8 @@
 
   <label>Algorithm</label>
   <select id="algo">
-    <option value="growth" selected>Radial growth (organic tree, forks)</option>
-    <option value="growthPruned">Radial growth, dead ends pruned</option>
+    <option value="growth">Radial growth (organic tree, forks)</option>
+    <option value="growthPruned" selected>Radial growth, dead ends pruned</option>
     <option value="ports">Chunk ports (local tiling)</option>
     <option value="colonize">Space colonisation (attractor-led)</option>
     <option value="tensor">Tensor field streamlines</option>
@@ -128,7 +128,9 @@ const PARAMS = {
     ["exag", "3D height exaggeration", 0.5, 4, 1, 0.1],
   ],
 };
-PARAMS.growthPruned = [...PARAMS.growth, ["pruneLen", "Prune dead ends up to (m)", 0, 5000, 1000, 25]];
+PARAMS.growthPruned = [...PARAMS.growth, ["pruneLen", "Prune dead ends up to (m)", 0, 5000, 1000, 25],
+  ["sideMax", "Car side road max (m)", 30, 800, 100, 10], ["sideMin", "Car side road min (m)", 30, 800, 50, 10],
+  ["sideClear", "Side road clearance (m)", 10, 300, 80, 5], ["sideJunction", "Side road junction clearance (m)", 20, 500, 120, 5]];
 const state = {};
 
 function buildParams() {
@@ -682,9 +684,15 @@ function render() {
   const X = x => W / 2 + view.panX + x * sc, Y = y => H / 2 + view.panY + y * sc;
   last.X = X; last.Y = Y;
 
-  const { nodes, edges } = net;
+  let { nodes, edges } = net;
   const edgePts = e => e.pts || ($("wiggle").checked ? wiggle(nodes[e[0]], nodes[e[1]], seed) : [nodes[e[0]], nodes[e[1]]]);
-  const roadPts = roundCorners(nodes, edges, edges.map(edgePts));
+  let roadPts = roundCorners(nodes, edges, edges.map(edgePts));
+  let cars = [];
+  if ($("algo").value === "growthPruned") {
+    if (!last.side) last.side = addSideRoads(nodes, edges, roadPts, seed, R);
+    ({ nodes, edges, roadPts, cars } = last.side);
+  }
+  const carAt = new Map(cars.map(c => [c.node, c]));
   if (!last.lakeFill) last.lakeFill = fillCutLakes(roadPts, seed, R);
   lakeFill = last.lakeFill;
   last.roadPts = roadPts; last.sc = sc;
@@ -742,6 +750,10 @@ function render() {
     const x = X(p.x), y = Y(p.y);
     if (i === 0) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); return; }
     if (deg[i] >= 3) { junctions++; ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.stroke(); }
+    else if (carAt.has(i)) {
+      drawKey(x - 1, y, 1.3);
+      ctx.fillStyle = "#fff"; ctx.font = "11px monospace"; ctx.fillText(carAt.get(i).name, x + 9, y - 4);
+    }
     else if (deg[i] === 1) { deadEnds++; ctx.fillStyle = "#e05555"; ctx.fillRect(x - 3, y - 3, 6, 6); }
     if (i === picked) { ctx.strokeStyle = "#ffdd55"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.stroke(); }
   });
@@ -763,6 +775,7 @@ function render() {
     `nodes        ${nodes.length}\nedges        ${edges.length}\n` +
     `loops        ${Math.max(0, edges.length - reach.length + 1)}\n` +
     `junctions    ${junctions}\ndead ends    ${deadEnds}\nrest stops   ${restStops.length}\n` +
+    (cars.length || $("algo").value === "growthPruned" ? `cars placed  ${cars.length}/${FIND_CARS.length}\n` : "") +
     `unreachable  ${nodes.length - reach.length}\nrings reached ${ringsReached}/${state.ringCount}\n` +
     `road total   ${(len / 1000).toFixed(1)} km\nmean edge    ${(len / Math.max(1, edges.length)).toFixed(0)} m\n` +
     `furthest     ${(Math.max(...reach) / 1000).toFixed(1)} km by road\n` +
@@ -1056,6 +1069,98 @@ function wiggle(a, b, seed) {
 
 // Same as RoadNetwork._round_corners: every bend sharper than the limit becomes two points a
 // quarter of the way along its segments, repeated; where exactly two links meet the cut spans both.
+// The cars to be found (scripts/car_library.gd, less the cold open's car): id, name, ring.
+const FIND_CARS = [["focus", "Fjord Focal", 0], ["f150", "Fjord F-15", 0], ["xjs", "Panthera XJS", 1],
+  ["acty", "Honcho Actus", 1], ["charger", "Surger R/T", 1], ["twingo", "Rondel Twist", 2],
+  ["porsche911", "Porker Turbo", 2], ["viper", "Serpent RT/10", 3], ["beast", "The Beast", 3]];
+
+// RoadNetwork._add_side_roads: each car gets a short straight road at right angles off a random
+// point on a road in its ring, ending where it is parked. No room in its ring: the nearest ring that
+// has room; no room anywhere: shorter, then closer to other roads. Returns copies, plus the cars.
+// The game also keeps them off the cold open's road, which the lab doesn't model.
+function addSideRoads(nodes, edges, roadPts, seed, R) {
+  nodes = nodes.slice(); edges = edges.map(e => e.slice()); const pts = roadPts.slice();
+  const side = new Set(), cars = [], branches = [], n = state.ringCount;
+  lakeFill = null; // the game places side roads before cut lakes are filled
+  const rand = mulberry32(seed * 104729 + 7), G = 100, segs = [], grid = new Map();
+  const addSegs = l => { for (let i = 0; i < l.length - 1; i++) {
+    const a = l[i], b = l[i + 1], k = segs.length; segs.push([a, b]);
+    for (let gx = Math.floor(Math.min(a.x, b.x) / G); gx <= Math.floor(Math.max(a.x, b.x) / G); gx++)
+      for (let gy = Math.floor(Math.min(a.y, b.y) / G); gy <= Math.floor(Math.max(a.y, b.y) / G); gy++) {
+        const key = gx + "," + gy; if (!grid.has(key)) grid.set(key, []); grid.get(key).push(k);
+      }
+  } };
+  pts.forEach(addSegs);
+  const segD = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+    return hyp(p.x - a.x - dx * t, p.y - a.y - dy * t); };
+  const nearestD = (p, maxD) => { let best = Infinity;
+    for (let gx = Math.floor((p.x - maxD) / G); gx <= Math.floor((p.x + maxD) / G); gx++)
+      for (let gy = Math.floor((p.y - maxD) / G); gy <= Math.floor((p.y + maxD) / G); gy++)
+        for (const k of grid.get(gx + "," + gy) || []) best = Math.min(best, segD(p, segs[k][0], segs[k][1]));
+    return best; };
+  const spurOk = (p, nx, ny, len, clear) => { const m = Math.ceil(len / 20);
+    for (let k = 1; k <= m; k++) { const s = len * k / m, q = { x: p.x + nx * s, y: p.y + ny * s };
+      if (isWater(q, seed, R) || nearestD(q, clear) < Math.min(s * 0.9, clear)) return false; }
+    return true; };
+  const spots = clear => { const out = Array.from({ length: n }, () => []);
+    pts.forEach((l, ei) => { if (side.has(ei)) return;
+      const cum = [0]; for (let i = 1; i < l.length; i++) cum.push(cum[i - 1] + dist(l[i], l[i - 1]));
+      const len = cum[cum.length - 1];
+      for (let i = 1; i < l.length - 1; i++) {
+        if (cum[i] < clear || len - cum[i] < clear || branches.some(b => dist(b, l[i]) < clear * 2)) continue;
+        out[ringOf(l[i], seed, R, n)].push([ei, i]);
+      } });
+    return out; };
+  const jc = state.sideJunction;
+  const phases = [[state.sideMax, state.sideClear, jc], [state.sideMin, state.sideClear, jc], [state.sideMin, state.sideClear * 0.5, jc],
+    [16 * 3, 1.9 * 4, jc], [16 * 3, 1.9 * 4, 45]];
+  for (const [id, name, ring] of FIND_CARS) {
+    const want = Math.max(0, Math.min(n - 1, ring));
+    const rings = [...Array(n).keys()].sort((a, b) => Math.abs(a - want) - Math.abs(b - want) || a - b);
+    let placed = false;
+    for (const [len, clear, jclear] of phases) {
+      const sp = spots(jclear);
+      for (const r of rings) {
+        const list = sp[r];
+        for (let t = 0; t < Math.min(40, list.length) && !placed; t++) {
+          const [ei, i] = list[Math.floor(rand() * list.length)], sd = rand() < 0.5 ? 1 : -1, l = pts[ei];
+          const tx = l[i + 1].x - l[i - 1].x, ty = l[i + 1].y - l[i - 1].y, tl = hyp(tx, ty);
+          for (const s2 of [sd, -sd]) {
+            const nx = -ty / tl * s2, ny = tx / tl * s2;
+            if (!spurOk(l[i], nx, ny, len, clear)) continue;
+            const mid = nodes.length, end = mid + 1, far = edges[ei][1];
+            nodes.push({ x: l[i].x, y: l[i].y }, { x: l[i].x + nx * len, y: l[i].y + ny * len });
+            pts[ei] = l.slice(0, i + 1); edges[ei] = [edges[ei][0], mid, polyLen(pts[ei])];
+            pts.push(l.slice(i)); edges.push([mid, far, polyLen(l.slice(i))]);
+            const m = Math.max(2, Math.ceil(len / 40)), spur = [];
+            for (let k = 0; k <= m; k++) spur.push({ x: l[i].x + nx * len * k / m, y: l[i].y + ny * len * k / m });
+            side.add(edges.length); pts.push(spur); edges.push([mid, end, len]);
+            addSegs(spur); branches.push(l[i]); cars.push({ node: end, name, ring: r });
+            placed = true; break;
+          }
+        }
+        if (placed) break;
+      }
+      if (placed) break;
+    }
+  }
+  return { nodes, edges, roadPts: pts, cars };
+}
+
+// A car key lying on its side, centred on (x, y), u pixels per unit: where a car waits (MiniMap.draw_key).
+function drawKey(x, y, u) {
+  ctx.lineCap = "round";
+  for (const [col, w] of [["#000", u * 1.4 + 2], ["#ffd94d", u * 1.4]]) {
+    ctx.strokeStyle = col; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.arc(x - 3 * u, y, 2 * u, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - u, y); ctx.lineTo(x + 5 * u, y);
+    ctx.moveTo(x + 3 * u, y); ctx.lineTo(x + 3 * u, y + 2 * u);
+    ctx.moveTo(x + 4.6 * u, y); ctx.lineTo(x + 4.6 * u, y + 2 * u); ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+}
+
 function roundCorners(nodes, edges, roadPts) {
   const max = state.cornerTurn * Math.PI / 180, deg = new Array(nodes.length).fill(0), ends = new Map();
   const turn = (a, b, c) => { const ux = b.x - a.x, uy = b.y - a.y, vx = c.x - b.x, vy = c.y - b.y; return Math.abs(Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)); };

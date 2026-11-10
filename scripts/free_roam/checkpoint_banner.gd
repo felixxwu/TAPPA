@@ -4,7 +4,7 @@ extends CanvasLayer
 # Tests: tests/headless/test_free_roam_rest_stops.gd — extend in the same change.
 # Lighting a checkpoint for the first time: a Dark Souls style "Checkpoint reached" band across the
 # screen, with a small line under it saying the car heals while it stays (RestStops._heal), while
-# the car drives on.
+# the car drives on. Finding a car (ParkedCars) shows the same band, "Car found", with its name.
 
 const SUBTITLE := "Your car is being repaired"
 
@@ -28,9 +28,17 @@ func is_showing_banner() -> bool:
 
 
 func show_reached(_site: int) -> void:
+	_show("Checkpoint reached", SUBTITLE)
+
+
+func show_found(car_name: String) -> void:
+	_show("Car found", car_name)
+
+
+func _show(text: String, subtitle: String) -> void:
 	if _band != null:
 		_band.queue_free()
-	_band = build_band("Checkpoint reached", SUBTITLE)
+	_band = build_band(text, subtitle)
 	add_child(_band)
 	_band.modulate.a = 0.0
 	var fade := Config.data.free_roam.banner_fade_s

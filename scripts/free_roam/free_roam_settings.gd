@@ -45,7 +45,7 @@ extends Resource
 @export var roads_from_spawn := 1
 ## Dead ends no longer than this, measured back to their junction, are cut after growth,
 ## repeatedly, so a fork whose branches all die out goes too; 0 keeps every dead end.
-@export var prune_dead_ends_m := 0.0
+@export var prune_dead_ends_m := 1000.0
 ## How far a road may swing from the straight line between its junctions, as a fraction of
 ## its length; 0 is dead straight.
 @export var road_twist := 0.24
@@ -56,6 +56,14 @@ extends Resource
 ## Bends sharper than this (degrees, at one polyline point or where two links meet) are rounded
 ## off by cutting the corner; 180 leaves every corner as it is.
 @export var max_corner_turn_deg := 20.0
+## Every car to be found sits at the end of its own side road, branching off at right angles
+## somewhere in the car's ring: this long at most and at least (RoadNetwork._add_side_roads).
+@export var side_road_max_m := 100.0
+@export var side_road_min_m := 50.0
+## How far a side road keeps from every other road past its first stretch, and how far its
+## branch point keeps from junctions and from other side roads' branch points.
+@export var side_road_clear_m := 80.0
+@export var side_road_junction_clear_m := 120.0
 @export var road_half_width_m := 1.9
 @export var road_shoulder_m := 1.0
 ## How wide the drawn grass-to-gravel fade is, centred on the shoulder (looks only; the road's grip
@@ -214,9 +222,8 @@ extends Resource
 ## starts as far out as the lamp post stays in view, but never nearer than the minimum.
 @export var cold_open_max_distance_m := 700.0
 @export var cold_open_min_distance_m := 600.0
-## The money a first-time world starts with: with the road coin picked up on the way, just about
-## enough for another starter car at the first cabin.
-@export var cold_open_start_money := 2000
+## The money a first-time world starts with (none: cars are found, and coins pay for parts).
+@export var cold_open_start_money := 0
 ## How far before a road coin the start is at least, so the player picks one up on the way to the
 ## cabin (the start moves back past the nearest coin when it has to).
 @export var cold_open_coin_lead_m := 40.0

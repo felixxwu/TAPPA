@@ -32,6 +32,10 @@ var seg_half := PackedFloat64Array()
 var edge_first_seg := PackedInt32Array()  # each edge's segments are contiguous from here
 var edge_len := PackedFloat64Array()  # each edge's arc length
 var node_degree := PackedInt32Array()  # how many edges meet at each node
+var side_road_car := {}  # a side road's dead-end node -> the car parked there
+var _side_edges := {}  # side road edges, as a set
+var _poly_x: Array[PackedFloat64Array] = []  # every edge's polyline, kept so side roads can be added after build
+var _poly_y: Array[PackedFloat64Array] = []
 var _grid := {}  # Vector2i -> PackedInt32Array of segment ids
 
 # The answer to the last nearest() query, kept in fields so a query allocates nothing.
@@ -198,11 +202,6 @@ func _prune_dead_ends() -> void:
 # The lab's wiggle(): each link as a seeded noise offset inside a band around its straight
 # line, landing exactly on both ends. Twistiness sets how far it swings, bend length how often.
 func _densify() -> void:
-	seg_ax.clear(); seg_ay.clear(); seg_bx.clear(); seg_by.clear()
-	seg_len.clear(); seg_cum.clear(); seg_edge.clear(); edge_first_seg.clear(); edge_len.clear()
-	seg_mx.clear(); seg_my.clear(); seg_half.clear()
-	_grid.clear()
-	total_length_m = 0.0
 	var step := minf(40.0, _s.bend_length_m / 6.0)
 	var all_x: Array[PackedFloat64Array] = []
 	var all_y: Array[PackedFloat64Array] = []
@@ -230,6 +229,20 @@ func _densify() -> void:
 		all_x.append(px)
 		all_y.append(py)
 	_round_corners(all_x, all_y)
+	_poly_x = all_x
+	_poly_y = all_y
+	_flatten()
+
+
+# Every polyline cut into segments, gridded for the nearest-road queries.
+func _flatten() -> void:
+	seg_ax.clear(); seg_ay.clear(); seg_bx.clear(); seg_by.clear()
+	seg_len.clear(); seg_cum.clear(); seg_edge.clear(); edge_first_seg.clear(); edge_len.clear()
+	seg_mx.clear(); seg_my.clear(); seg_half.clear()
+	_grid.clear()
+	total_length_m = 0.0
+	var all_x := _poly_x
+	var all_y := _poly_y
 	for ei in edges.size():
 		var px := all_x[ei]
 		var py := all_y[ei]
@@ -246,6 +259,171 @@ func _densify() -> void:
 				_append_to(_grid, c, si)
 		edge_len.append(cum)
 		total_length_m += cum
+
+
+func is_side_road(ei: int) -> bool:
+	return _side_edges.has(ei)
+
+
+# After build: each car in `cars` ([{"id": String, "ring": int}]) gets a short straight road
+# branching off at right angles from a random point on a road in its ring, ending where the car is
+# parked. A car whose ring has no room goes to the nearest ring that does, and if none has, the
+# rules relax (shorter, then closer to other roads) so every car is always placed. No side road
+# leaves the edges in `keep_clear` (the cold open's road, ColdOpen.roads_to_keep_clear).
+func add_side_roads(cars: Array, keep_clear := {}) -> void:
+	_add_side_roads(_poly_x, _poly_y, cars, keep_clear)
+	_flatten()
+
+
+func _add_side_roads(xs: Array[PackedFloat64Array], ys: Array[PackedFloat64Array], cars: Array, keep_clear: Dictionary) -> void:
+	side_road_car.clear()
+	_side_edges.clear()
+	if cars.is_empty() or edges.is_empty() or _s.straight_road_m > 0.0:
+		return
+	var rng := LabNoise.Rng.new(_s.world_seed * 104729 + 7)
+	var segs := PackedFloat64Array()  # ax, ay, bx, by per segment, for the clearance checks
+	var grid := {}
+	for ei in xs.size():
+		_add_segs(segs, grid, xs[ei], ys[ei])
+	var branches := PackedVector2Array()
+	# [length, clearance from other roads, clearance of the branch from junctions and other branches]
+	var jc := _s.side_road_junction_clear_m
+	var phases := [[_s.side_road_max_m, _s.side_road_clear_m, jc], [_s.side_road_min_m, _s.side_road_clear_m, jc],
+		[_s.side_road_min_m, _s.side_road_clear_m * 0.5, jc], [_s.rest_stop_radius_m * 3.0, _s.road_half_width_m * 4.0, jc],
+		[_s.rest_stop_radius_m * 3.0, _s.road_half_width_m * 4.0, RoadSites.JUNCTION_CLEAR_M]]
+	for car: Dictionary in cars:
+		var want := clampi(int(car.get("ring", 0)), 0, _s.ring_count - 1)
+		var rings := range(_s.ring_count)
+		rings.sort_custom(func(a: int, b: int) -> bool: return absi(a - want) < absi(b - want) or (absi(a - want) == absi(b - want) and a < b))
+		var placed := false
+		for ph: Array in phases:
+			var spots := _branch_spots(xs, ys, branches, keep_clear, ph[2])
+			for r: int in rings:
+				var list: Array = spots[r]
+				for _try in mini(40, list.size()):
+					var spot: Vector2i = list[floori(rng.next() * list.size())]
+					var side := 1.0 if rng.next() < 0.5 else -1.0
+					var px := xs[spot.x]
+					var py := ys[spot.x]
+					var i := spot.y
+					var tx := px[i + 1] - px[i - 1]
+					var ty := py[i + 1] - py[i - 1]
+					var tl := LabNoise.hyp(tx, ty)
+					for sd in [side, -side]:
+						var nx: float = -ty / tl * sd
+						var ny: float = tx / tl * sd
+						if _spur_ok(px[i], py[i], nx, ny, ph[0], ph[1], segs, grid):
+							_split_and_branch(xs, ys, spot.x, i, nx, ny, ph[0], String(car["id"]), segs, grid)
+							branches.append(Vector2(px[i], py[i]))
+							placed = true
+							break
+					if placed:
+						break
+				if placed:
+					break
+			if placed:
+				break
+		if not placed:
+			push_warning("RoadNetwork: no room anywhere for car %s's side road" % car.get("id", "?"))
+
+
+# Every polyline point a side road may branch from, per ring, as Vector2i(edge, point): on a main
+# road not in `keep_clear`, `clear` along from both of its ends and that far from other branches.
+func _branch_spots(xs: Array[PackedFloat64Array], ys: Array[PackedFloat64Array], branches: PackedVector2Array,
+		keep_clear: Dictionary, clear: float) -> Array:
+	var out: Array = []
+	for r in _s.ring_count:
+		out.append([])
+	for ei in xs.size():
+		if _side_edges.has(ei) or keep_clear.has(ei):
+			continue
+		var px := xs[ei]
+		var py := ys[ei]
+		var cum := PackedFloat64Array([0.0])
+		for i in px.size() - 1:
+			cum.append(cum[i] + LabNoise.hyp(px[i + 1] - px[i], py[i + 1] - py[i]))
+		var length := cum[cum.size() - 1]
+		for i in range(1, px.size() - 1):
+			if cum[i] < clear or length - cum[i] < clear:
+				continue
+			var p := Vector2(px[i], py[i])
+			var taken := false
+			for b in branches:
+				taken = taken or b.distance_to(p) < clear * 2.0
+			if not taken:
+				(out[_terrain.ring_index(px[i], py[i])] as Array).append(Vector2i(ei, i))
+	return out
+
+
+# Whether a side road from (x, y) along (nx, ny) for `length` stays on dry land, crosses no road,
+# and keeps `clear` from every other road once it is that far out (nearer in, at least as far as it
+# has come, so it can't run alongside or into another road).
+func _spur_ok(x: float, y: float, nx: float, ny: float, length: float, clear: float,
+		segs: PackedFloat64Array, grid: Dictionary) -> bool:
+	var n := ceili(length / 20.0)
+	for k in range(1, n + 1):
+		var s := length * k / n
+		var qx := x + nx * s
+		var qy := y + ny * s
+		if _terrain.is_water(qx, qy):
+			return false
+		if _nearest_seg_d(segs, grid, qx, qy, clear) < minf(s * 0.9, clear):
+			return false
+	return true
+
+
+func _nearest_seg_d(segs: PackedFloat64Array, grid: Dictionary, x: float, y: float, max_d: float) -> float:
+	var best := INF
+	for gx in range(floori((x - max_d) / GRID_M), floori((x + max_d) / GRID_M) + 1):
+		for gy in range(floori((y - max_d) / GRID_M), floori((y + max_d) / GRID_M) + 1):
+			for si in grid.get(Vector2i(gx, gy), PackedInt32Array()):
+				var a := Vector2(segs[si * 4], segs[si * 4 + 1])
+				var b := Vector2(segs[si * 4 + 2], segs[si * 4 + 3])
+				best = minf(best, Vector2(x, y).distance_to(Geometry2D.get_closest_point_to_segment(Vector2(x, y), a, b)))
+	return best
+
+
+static func _add_segs(segs: PackedFloat64Array, grid: Dictionary, px: PackedFloat64Array, py: PackedFloat64Array) -> void:
+	for i in px.size() - 1:
+		var si := segs.size() / 4
+		segs.append_array([px[i], py[i], px[i + 1], py[i + 1]])
+		for c in _cells(px[i], py[i], px[i + 1], py[i + 1], GRID_M):
+			_append_to(grid, c, si)
+
+
+# Edge `ei` is cut in two at its point `i`, which becomes a junction, and the side road runs from
+# there to a new dead end where `car_id` is parked.
+func _split_and_branch(xs: Array[PackedFloat64Array], ys: Array[PackedFloat64Array], ei: int, i: int,
+		nx: float, ny: float, length: float, car_id: String, segs: PackedFloat64Array, grid: Dictionary) -> void:
+	var px := xs[ei]
+	var py := ys[ei]
+	var mid := node_x.size()
+	node_x.append(px[i])
+	node_y.append(py[i])
+	node_degree.append(3)
+	var far := edges[ei].y
+	edges[ei] = Vector2i(edges[ei].x, mid)
+	xs[ei] = px.slice(0, i + 1)
+	ys[ei] = py.slice(0, i + 1)
+	edges.append(Vector2i(mid, far))
+	xs.append(px.slice(i))
+	ys.append(py.slice(i))
+	var end := node_x.size()
+	node_x.append(px[i] + nx * length)
+	node_y.append(py[i] + ny * length)
+	node_degree.append(1)
+	var n := maxi(2, ceili(length / 40.0))
+	var sx := PackedFloat64Array()
+	var sy := PackedFloat64Array()
+	for k in n + 1:
+		sx.append(px[i] + nx * length * k / n)
+		sy.append(py[i] + ny * length * k / n)
+	_side_edges[edges.size()] = true
+	edges.append(Vector2i(mid, end))
+	xs.append(sx)
+	ys.append(sy)
+	_add_segs(segs, grid, sx, sy)
+	side_road_car[end] = car_id
 
 
 # Rounds off every bend sharper than max_corner_turn_deg by cutting the corner: the point becomes

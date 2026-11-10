@@ -294,8 +294,7 @@ func step(delta: float, throttle: float, brake: float, handbrake: bool, declutch
 		var front_abs_scale := _abs_release_scale(cfg, _contacts, ABS_GROUP_FRONT)
 		# AWD without handbrake locks front+rear into one driveline (one inertia, one
 		# move_toward below) — ABS can only act on that combined pair, not the axles
-		# independently, without opening the centre diff (out of scope; see
-		# todo/abs-brakes.md). Uses the worst-latched wheel across BOTH axles.
+		# independently, without opening the centre diff. Uses the worst-latched wheel across BOTH axles.
 		var combined_abs_scale := _abs_release_scale(cfg, _contacts, ABS_GROUP_ALL)
 
 		# The engine is geared to the driven axle(s); its total wheel torque

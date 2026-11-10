@@ -805,3 +805,10 @@ Numbering continues from decision 32.
   loot crystal and recovered by driving back; giving up again first loses it for good. Coins still
   all come back on a wreck. The minimap is off (`GameConfig.minimap_enabled = false`); the full map
   is enough.
+- **D90. Cars are found, not bought (user ask, 2026-11-04; supersedes D89's car buying).** Every car
+  but the one a new world starts with is parked at the dead end of its own short side road (50–100 m,
+  `FreeRoamSettings.side_road_min_m` / `side_road_max_m`) off a random point on a road in its ring,
+  added after the network and kept off the cold open's road. Driving onto the pad grants it and a
+  "Car found" band shows while the car drives on, and Enter / A on the pad drives it now (a found
+  car starts undamaged). A gold key marks it on the minimap and map once its turn-off has been
+  passed. Checkpoints sell only parts. Docs: `features/loot.md` ("Found cars").

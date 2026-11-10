@@ -25,25 +25,27 @@ signal open_requested
 @export var streamer: TerrainStreamer
 @export var car: Node3D
 @export var rest_stops: RestStops
+var parked_cars: ParkedCars  # its offer to drive a car just found shares the rest stop's prompt
 
 const SHADER := preload("res://shaders/mini_map.gdshader")
 const BEACON_LIT := TerrainStreamer.BEACON_LIT
 const BEACON_UNLIT := Color(0.45, 0.45, 0.45)  # a checkpoint not yet reached
+const KEY_COLOR := Color(1.0, 0.85, 0.3)  # a car waiting at the end of a side road
 const CELL_M: float = preload("res://scripts/world_session.gd").DRIVEN_CELL_M  # road lookup cells match the driven cells
 const MARKER_REFRESH_S := 1.0
 const SHADOW_PX := 3.0
 
-enum Marker { REST_UNLIT, REST_LIT }
+enum Marker { REST_UNLIT, REST_LIT, CAR_KEY }
 
 var view_m := 460.0
-var car_depth := 0.8
+var car_depth := 0.9
 var near_frac := 1.0 / 2.7
 var nearby_m := 120.0
 var redraw_move_m := 12.0
 var redraw_interval_s := 1.0 / 15.0
 var undriven_alpha := 0.85
-var undriven_width := 3.5
-var road_width := 9.0
+var undriven_width := 5.0
+var road_width := 13.0
 var undriven_outline_alpha := 0.45
 var car_arrow_px := 4.0
 
@@ -58,6 +60,7 @@ var _overlay: MarkerLayer
 var prompt_label: Label
 var _prompt_how := ""
 var _prompt_text := ""
+var _drive_text := ""
 var _toast_text := ""
 # A standing hint shown when there's no prompt and no toast (the cold open's throttle button).
 var hint := ""
@@ -205,7 +208,8 @@ func _gui_input(event: InputEvent) -> void:
 func _on_prompt_input(event: InputEvent) -> void:
 	var tap: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
 		or (event is InputEventScreenTouch and event.pressed)
-	if tap and is_live() and prompt_label.visible and rest_stops != null and rest_stops.open_here():
+	if tap and is_live() and prompt_label.visible and ((rest_stops != null and rest_stops.open_here())
+			or (parked_cars != null and parked_cars.switch_here())):
 		prompt_label.accept_event()
 
 
@@ -291,18 +295,22 @@ func gather_roads(radius: float) -> Array:
 
 # --- sites -------------------------------------------------------------------------------------
 
-# Mark every site (rest stop, loot slot, dead end) within `radius` of `p` as seen. Returns how many were new.
+# Mark every site (rest stop, loot slot, dead end, parked car) within `radius` of `p` as seen, and
+# every parked car whose side road starts that near. Returns how many were new.
 static func mark_seen_near(sites: RoadSites, p: Vector2, radius: float) -> int:
 	var fresh := 0
 	var r2 := radius * radius
 	for i in sites.in_box(p.x - radius, p.y - radius, p.x + radius, p.y + radius):
 		if sites.pos[i].distance_squared_to(p) <= r2 and WorldSession.see(i):
 			fresh += 1
+	for i: int in sites.branch:
+		if (sites.branch[i] as Vector2).distance_squared_to(p) <= r2 and WorldSession.see(i):
+			fresh += 1
 	return fresh
 
 
-# Which sites a map shows: the rest stops seen (or lit), lit or not. `lit` is RestStops.lit_sites
-# (site -> true).
+# Which sites a map shows: the rest stops seen (or lit), lit or not, and the cars seen at the ends
+# of side roads that are still waiting to be found. `lit` is RestStops.lit_sites (site -> true).
 static func site_markers(sites: RoadSites, lit: Dictionary, centre: Vector2, radius: float) -> Array:
 	var out: Array = []
 	var r2 := radius * radius
@@ -313,13 +321,32 @@ static func site_markers(sites: RoadSites, lit: Dictionary, centre: Vector2, rad
 		if not (is_lit or WorldSession.is_seen(i)):
 			continue
 		out.append([sites.pos[i], Marker.REST_LIT if is_lit else Marker.REST_UNLIT, i])
+	for i in sites.of_kind(RoadSites.Kind.CAR):
+		if sites.pos[i].distance_squared_to(centre) <= r2 and WorldSession.is_seen(i) \
+				and not ParkedCars.model_owned(String(sites.car_id.get(i, ""))):
+			out.append([sites.pos[i], Marker.CAR_KEY, i])
 	return out
+
+
+# A car key lying on its side, centred on `p`, `u` pixels per unit (about 10 units long): where a
+# car waits to be found.
+static func draw_key(ci: CanvasItem, p: Vector2, u: float, col: Color, ink: Color) -> void:
+	for pass_i in 3:
+		var at := p + (Vector2(1.5, 1.5) if pass_i == 0 else Vector2.ZERO)
+		var c := col if pass_i == 2 else ink
+		var w := u * 1.4 + (0.0 if pass_i == 2 else 2.0)
+		ci.draw_arc(at + Vector2(-3.0, 0.0) * u, u * 2.0, 0.0, TAU, 12, c, w)
+		ci.draw_line(at + Vector2(-1.0, 0.0) * u, at + Vector2(5.0, 0.0) * u, c, w)
+		ci.draw_line(at + Vector2(3.0, 0.0) * u, at + Vector2(3.0, 2.0) * u, c, w)
+		ci.draw_line(at + Vector2(4.6, 0.0) * u, at + Vector2(4.6, 2.0) * u, c, w)
 
 
 static func marker_color(m: int) -> Color:
 	match m:
 		Marker.REST_LIT:
 			return BEACON_LIT
+		Marker.CAR_KEY:
+			return KEY_COLOR
 	return BEACON_UNLIT
 
 
@@ -365,11 +392,13 @@ func _process(delta: float) -> void:
 # (`toast`) while it lasts, else the standing `hint` — one box, so they never show at once.
 func update_prompt_label() -> void:
 	var at_stop := rest_stops != null and rest_stops.can_open()
+	var at_car := parked_cars != null and not parked_cars.offer().is_empty()
 	var how := "Tap" if Platform.is_touch() else "Enter / A"
 	if how != _prompt_how:
 		_prompt_how = how
 		_prompt_text = UITheme.caps(how + ": open rest stop")
-	var text := _prompt_text if at_stop else (_toast_text if _toast_left > 0.0 else hint)
+		_drive_text = UITheme.caps(how + ": drive it")
+	var text := _prompt_text if at_stop else (_drive_text if at_car else (_toast_text if _toast_left > 0.0 else hint))
 	prompt_label.visible = text != ""
 	if text != prompt_label.text:
 		prompt_label.text = text
@@ -434,6 +463,9 @@ class MarkerLayer:
 			var col := MiniMap.marker_color(mk[1])
 			col.a *= fade
 			var ink := Color(0.0, 0.0, 0.0, 0.9 * fade)
+			if mk[1] == Marker.CAR_KEY:
+				MiniMap.draw_key(self, p, 0.9 * s, col, ink)
+				continue
 			var r := 3.8 * s
 			draw_circle(p + Vector2(1.5, 1.5), r + 1.0, ink)
 			draw_circle(p, r + 1.0, ink)

@@ -6,15 +6,15 @@ extends RefCounted
 # and the coin economy). Pure: the same catalogue always gives the same stock.
 #
 # An ITEM is a small dict:
-#   {"kind": "car",    "id": <CarLibrary id>}                         — a car
+#   {"kind": "car",    "id": <CarLibrary id>}                         — a car (found, never sold)
 #   {"kind": "part",   "id": <BoostLibrary id>, "level": <int>}       — a part (a former boost)
 #   {"kind": "part",   "id": "drivetrain:<Drivetrain.DriveMode int>"}  — a drivetrain kit
 #   {"kind": "part",   "id": "tire:<TIRES key>"}                       — a set of tires
 #
-# THE PACING SPLIT (decision 3: cars and parts should run out with the biomes): every car and boost
-# part names its own biome `ring` and `price` in its library entry, and drivetrain
-# kits and tires in KITS and TIRES. A ring's stock goes on sale once a checkpoint in it is lit. Ring 0's
-# cars are the starter choice.
+# THE PACING SPLIT (decision 3: cars and parts should run out with the biomes): every boost part
+# names its own biome `ring` and `price` in its library entry, and drivetrain kits and tires in KITS
+# and TIRES. A ring's stock goes on sale once a checkpoint in it is lit. Cars aren't sold: each is
+# parked at the end of a side road in its own `ring` (cars_to_find, RoadNetwork._add_side_roads).
 # Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
 # swapped_engine and drivetrain_override, which UpgradeLibrary / Car.apply_owned already read. Engines
 # aren't sold: cars swap them between each other (`engine_from`, Save.swap_engines).
@@ -99,6 +99,16 @@ static func _tire_effect(item: Dictionary) -> Dictionary:
 	return effect
 
 
+# The cars waiting at the ends of side roads: every car but the one a new world starts with.
+static func cars_to_find(s: FreeRoamSettings) -> Array:
+	var start := ColdOpen.car_id(s)
+	var out: Array = []
+	for car: Dictionary in CarLibrary.all():
+		if String(car["id"]) != start:
+			out.append({"id": String(car["id"]), "ring": int(car.get("ring", 0))})
+	return out
+
+
 static func starter_cars() -> PackedStringArray:
 	var out := PackedStringArray()
 	for car: Dictionary in CarLibrary.all():
@@ -115,8 +125,6 @@ static func ring_tables(ring_count: int) -> Array:
 	if ring_count <= 0:
 		return tables
 	var last := ring_count - 1
-	for car: Dictionary in CarLibrary.all():
-		tables[mini(int(car.get("ring", 0)), last)].append({"kind": "car", "id": String(car["id"])})
 	for id in BoostLibrary.CATALOGUE.keys():
 		var r := mini(int(BoostLibrary.CATALOGUE[id].get("ring", 0)), last)
 		tables[r].append({"kind": "part", "id": String(id), "level": r})
@@ -130,8 +138,6 @@ static func ring_tables(ring_count: int) -> Array:
 # What `item` costs in a shop, from its catalogue entry.
 static func price(item: Dictionary) -> int:
 	var id := String(item.get("id", ""))
-	if String(item.get("kind", "")) == "car":
-		return int(CarLibrary.by_id(id).get("price", 0))
 	if is_drivetrain(item):
 		return int(KITS.get(int(id.substr("drivetrain:".length())), {}).get("price", 0))
 	if is_tire(item):
@@ -185,20 +191,28 @@ static func fit_block_reason(owned: Dictionary, part: Dictionary) -> String:
 		var mode := int(String(part["id"]).substr("drivetrain:".length()))
 		if mode == UpgradeLibrary.stock_drive_mode(owned):
 			return "Already " + CarLibrary.drive_text(mode)
+	if _is_factory_abs(owned, part):
+		return "Already has ABS"
 	for p: Dictionary in owned.get("parts", []):
 		if String(p["id"]) == String(part["id"]):
 			return "Already unlocked"
 	return ""
 
 
+static func _is_factory_abs(owned: Dictionary, part: Dictionary) -> bool:
+	return String(part.get("id", "")) == "abs" and CarLibrary.has_abs(CarLibrary.for_owned(owned))
+
+
 # Every part the shops can ever sell `owned`: the whole catalogue, less a drivetrain kit for its
-# own stock layout (which it can never fit). Includes the parts it has already unlocked.
+# own stock layout and ABS for a car born with it (which it can never fit). Includes the parts it has already unlocked.
 static func parts_for(owned: Dictionary) -> Array:
 	var out: Array = []
 	for item: Dictionary in ring_tables(1)[0]:
 		if String(item["kind"]) != "part":
 			continue
 		if is_drivetrain(item) and int(String(item["id"]).substr("drivetrain:".length())) == UpgradeLibrary.stock_drive_mode(owned):
+			continue
+		if _is_factory_abs(owned, item):
 			continue
 		out.append(item)
 	return out

@@ -7,7 +7,8 @@ extends Node
 # gives up, all of it is dropped at the wreck (under a floating crystal) and every coin comes back.
 # Driving back to the wreck picks the money up again; giving up again first loses it for good.
 # Risky driving pays too: a long drift, a stretch flat out, a jump, or a tree passed close (`stunt_step`).
-# A biome ring's stock goes on sale once one of its checkpoints is lit (`unlock`).
+# A biome ring's parts go on sale once one of its checkpoints is lit (`unlock`); cars are found
+# instead (ParkedCars).
 # Money, coins taken and rings on sale live in the world session (WorldSession). Parts belong to the
 # one car they were unlocked for: the shop sells the car being driven what it hasn't unlocked and can
 # use, and another car has to unlock its own.
@@ -58,8 +59,8 @@ func _ready() -> void:
 
 # The coin at `site` now ({"kind": "coin", "value": n}), or {} when it's been taken or isn't a coin spot.
 func loot_at(site: int) -> Dictionary:
-	if site < 0 or site >= streamer.sites.count() or streamer.sites.kind[site] == RoadSites.Kind.REST \
-			or _spent.has(site):
+	if site < 0 or site >= streamer.sites.count() or _spent.has(site) \
+			or not streamer.sites.kind[site] in [RoadSites.Kind.LOOT, RoadSites.Kind.DEAD_END]:
 		return {}
 	return {"kind": "coin", "value": LootRules.coin_value(streamer.settings, streamer.sites.ring[site])}
 
@@ -368,19 +369,15 @@ func for_sale() -> Array:
 	return out
 
 
-# Spend money on `item`: a car joins the garage (returns the new owned car); a part is paid for and
-# returned for the caller to unlock on the car being driven. {} when it isn't for sale, that car
-# can't use it, or the player can't afford it.
+# Spend money on part `item`: it is paid for and returned for the caller to unlock on the car being
+# driven. {} when it isn't for sale, that car can't use it, or the player can't afford it.
 func buy(item: Dictionary) -> Dictionary:
 	var cost := LootRules.price(item)
 	if cost > WorldSession.money() or not for_sale().any(func(i: Dictionary) -> bool: return LootRules.item_key(i) == LootRules.item_key(item)):
 		return {}
-	var is_car := String(item["kind"]) == "car"
-	if not is_car and not LootRules.can_fit(WorldSession.active_car(), item):
+	if not LootRules.can_fit(WorldSession.active_car(), item):
 		return {}
 	WorldSession.set_money(WorldSession.money() - cost)
-	if is_car:
-		return Save.grant_car(String(item["id"]))
 	return item
 
 

@@ -53,6 +53,8 @@ func test_every_catalogue_cfg_field_is_a_real_config_property() -> void:
 func test_a_higher_level_pushes_the_magnitude_further_in_its_authored_direction() -> void:
 	Config.data.boost_level_magnitude_step = 0.1
 	for id in BoostLibrary.CATALOGUE:
+		if not _has_a_leveled_scalar(id):
+			continue
 		var direction := int((BoostLibrary.CATALOGUE[id] as Dictionary).get("level_direction", 1))
 		var lvl0 := _leveled_scalar(id, 0)
 		var lvl1 := _leveled_scalar(id, 1)
@@ -63,6 +65,14 @@ func test_a_higher_level_pushes_the_magnitude_further_in_its_authored_direction(
 		else:
 			assert_lt(lvl1, lvl0, "'%s' level 1 rolls lower than level 0" % id)
 			assert_lt(lvl3, lvl1, "'%s' level 3 rolls lower still than level 1" % id)
+
+
+# An on/off part like ABS has an empty effect sub-dict: there is no number for a level to move.
+func _has_a_leveled_scalar(id: String) -> bool:
+	for spec: Variant in (BoostLibrary.CATALOGUE[id]["effect_fields"] as Dictionary).values():
+		if not (spec is Dictionary) or not (spec as Dictionary).is_empty():
+			return true
+	return false
 
 
 # The one number a catalogue entry's level ladder actually moves: its first effect key's

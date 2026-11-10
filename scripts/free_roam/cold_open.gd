@@ -48,8 +48,7 @@ static func car_id(s: FreeRoamSettings) -> String:
 
 
 # A new world (title_boot.gd for a first-time player, the title's New World): the cold-open car, pending, and
-# FreeRoamSettings.cold_open_start_money (with the road coin on the way, about enough to swap it for
-# another starter car at the first cabin).
+# FreeRoamSettings.cold_open_start_money.
 static func new_world(world_seed: int, s: FreeRoamSettings) -> void:
 	var model := car_id(s)
 	WorldSession.new_world(world_seed, model)
@@ -105,6 +104,22 @@ static func pick_start(net: RoadNetwork, sites: RoadSites, height: Callable, lan
 	if pick.is_empty():
 		return {}
 	return _start_on(pick["back"], int(pick["site"]), height, lantern.call(int(pick["site"])), s)
+
+
+# The roads side roads must keep off (RoadNetwork.add_side_roads), as an edge set: the cold open's
+# road, and the road of every nearer cabin it passed over, so the side roads can't move the drive.
+# The pick of cabin doesn't depend on the ground or the lamp, so flat stand-ins do here.
+static func roads_to_keep_clear(net: RoadNetwork, sites: RoadSites, s: FreeRoamSettings) -> Dictionary:
+	var pick := pick_start(net, sites, func(_x: float, _z: float) -> float: return 0.0,
+		func(_g: int) -> Vector3: return Vector3.ZERO, s)
+	var out := {}
+	if pick.is_empty():
+		return out
+	var reach := sites.anchor[int(pick["site"])].length()
+	for g: int in sites.of_kind(RoadSites.Kind.REST):
+		if g != 0 and sites.edge[g] >= 0 and sites.anchor[g].length() <= reach:
+			out[sites.edge[g]] = true
+	return out
 
 
 # How far along `back` (from the cabin's road point) the nearest road coin on road `edge` is; INF

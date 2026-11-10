@@ -28,14 +28,15 @@ you are racing the temperature gauge to a rest stop.
 
 ```
 title (Continue · New World · Settings)
-  └─ new world: the cold open, in a set car, with money to swap it at the first checkpoint
+  └─ new world: the cold open, in a set car, with no money
        └─ drive out from the spawn rest stop
             ├─ drive over coins → MONEY (dropped at the wreck if the car gives up)
+            ├─ drive up a side road to its dead end → FIND the CAR parked there (drive it now or later)
             ├─ drive through a rest stop → it's LIT (your respawn point)
             ├─ crash → HP down; below half health the cooling FAILS
             │     └─ engine only heats up → over the limit it drains HP → 0 HP: the car gives up
             │           └─ respawn at the last lit rest stop; the money lies at the wreck, every coin comes back
-            └─ stop at a rest stop → free REPAIR · buy & fit PARTS · buy & swap CAR · MAP
+            └─ stop at a rest stop → free REPAIR · buy & fit PARTS · swap CAR · MAP
                                        (TRAVEL to any lit rest stop) · TUNE
 ```
 
@@ -64,7 +65,7 @@ title (Continue · New World · Settings)
   were carrying lies at the wreck under a crystal: drive back for it, but give up again first and
   it's gone. Every coin is back on the road.
 - **Rest stops are bonfires.** Driving past one — no need to stop — lights it; staying there
-  heals the car over a few seconds. Pulling in and pressing Enter / A opens the rest-stop page: you can buy cars and parts, fit parts, tune,
+  heals the car over a few seconds. Pulling in and pressing Enter / A opens the rest-stop page: you can buy and fit parts, tune,
   swap cars, and travel to any rest stop you've lit. A crowd gathers at each.
 - **Rest-stop spacing is the main balance lever**, because it decides how survivable a cooling
   failure is. It is set per ring.
@@ -74,12 +75,14 @@ title (Continue · New World · Settings)
 - **Coins on the road are money.** Every pull-in and dead end holds one, worth more further out.
   Money is only safe once spent: the car giving up loses all of it, so buy what you can at each
   checkpoint.
-- **Cars and parts are bought at checkpoints**, once a checkpoint in their biome is lit.
-- **Cars** join your garage once bought. **Parts** are the old boosts (turbo, supercharger,
-  nitrous, sticky tyres, quick-shift gearbox, aero, brakes, lightweight parts) sold at a
+- **Parts are bought at checkpoints**, once a checkpoint in their biome is lit.
+- **Cars are found**, each parked at the dead end of its own short side road in its biome, marked
+  with a key on the map once you've passed the turn-off. Driving up to one puts it in your garage.
+  The roads the first drive (the cold open) takes have none. **Parts** are the old boosts (turbo, supercharger,
+  nitrous, sticky tyres, quick-shift gearbox, aero, brakes, ABS, lightweight parts) sold at a
   level that rises with the ring. **Engines** and **drivetrain kits** are parts too. Parts go into
   a shared collection: a part owned fits every car at once.
-- **Every car and part exists once**: once bought it leaves the shop. Log cabins mark rest stops.
+- **Every car and part exists once**: once bought a part leaves the shop. Log cabins mark rest stops.
 - **The pacing goal:** the cars and parts run out at about the same time as the biomes, so the late
   game is fresh in both.
 
