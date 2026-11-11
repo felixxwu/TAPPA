@@ -26,6 +26,7 @@ signal open_requested
 @export var car: Node3D
 @export var rest_stops: RestStops
 var parked_cars: ParkedCars  # its offer to drive a car just found shares the rest stop's prompt
+var network: RoadNetwork  # near one of its genuine forks the line offers the full map
 
 const SHADER := preload("res://shaders/mini_map.gdshader")
 const BEACON_LIT := TerrainStreamer.BEACON_LIT
@@ -60,6 +61,7 @@ var prompt_label: Label
 var _prompt_how := ""
 var _prompt_text := ""
 var _drive_text := ""
+var _map_text := ""
 var _toast_text := ""
 # A standing hint shown when there's no prompt and no toast (the cold open's throttle button).
 var hint := ""
@@ -206,9 +208,13 @@ func _gui_input(event: InputEvent) -> void:
 func _on_prompt_input(event: InputEvent) -> void:
 	var tap: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
 		or (event is InputEventScreenTouch and event.pressed)
-	if tap and is_live() and prompt_label.visible and ((rest_stops != null and rest_stops.open_here())
-			or (parked_cars != null and parked_cars.switch_here())):
+	if not (tap and is_live() and prompt_label.visible):
+		return
+	if (rest_stops != null and rest_stops.open_here()) or (parked_cars != null and parked_cars.switch_here()):
 		prompt_label.accept_event()
+	elif prompt_label.text == _map_text:
+		prompt_label.accept_event()
+		open_requested.emit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -390,7 +396,8 @@ func _process(delta: float) -> void:
 	_overlay.queue_redraw()
 
 
-# The line under the frame: the rest-stop prompt when there is one, else the latest money message
+# The line under the frame: the rest-stop prompt when there is one, else the offer to drive a car
+# just found, else the offer of the full map near a fork in the road, else the latest money message
 # (`toast`) while it lasts, else the standing `hint` — one box, so they never show at once.
 func update_prompt_label() -> void:
 	var at_stop := rest_stops != null and rest_stops.can_open()
@@ -400,11 +407,24 @@ func update_prompt_label() -> void:
 		_prompt_how = how
 		_prompt_text = UITheme.caps(how + ": open rest stop")
 		_drive_text = UITheme.caps(how + ": drive it")
-	var text := _prompt_text if at_stop else (_drive_text if at_car else (_toast_text if _toast_left > 0.0 else hint))
+		_map_text = UITheme.caps(("Tap" if Platform.is_touch() else "M / Back") + ": open map")
+	var text := _prompt_text if at_stop else (_drive_text if at_car
+		else (_map_text if at_fork() else (_toast_text if _toast_left > 0.0 else hint)))
 	prompt_label.visible = text != ""
 	if text != prompt_label.text:
 		prompt_label.text = text
 		_place_prompt_label()
+
+
+# Whether the car is near a genuine fork (RoadNetwork.fork_nodes) with the world handed over (as a
+# rest stop's page needs) and not wrecked, so the map it offers can open.
+func at_fork() -> bool:
+	if network == null or car == null or Config.data.map_fork_prompt_m <= 0.0:
+		return false
+	if rest_stops != null and (not rest_stops.input_enabled or rest_stops.is_wrecked):
+		return false
+	var p := car.global_position
+	return network.fork_near(p.x, p.z, Config.data.map_fork_prompt_m) >= 0
 
 
 func toast(text: String, seconds: float) -> void:

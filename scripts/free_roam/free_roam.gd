@@ -161,6 +161,7 @@ func _ready() -> void:
 		$CheckpointBanner.show_found(String(CarLibrary.by_id(String(found_car.get("model_id", ""))).get("name", "car"))))
 	parked_cars.switch_requested.connect(_drive_found_car)
 	_minimap.parked_cars = parked_cars
+	_minimap.network = _streamer.network
 	_recovery.reset_done.connect($LootDirector.car_teleported)
 	_recovery.reset_done.connect(_rest_stops.car_teleported)
 	_recovery.reset_done.connect(_on_car_teleported)

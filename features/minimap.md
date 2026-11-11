@@ -33,10 +33,10 @@ A navigation-software style map at the top centre of the screen while driving.
   upright on top of the tilted ground, smaller with distance. `MiniMap.site_markers` decides this for both the minimap and the
   full map.
 - **A line under the frame** (`MiniMap.update_prompt_label`, per frame): the action prompt
-  ("ENTER / A: OPEN REST STOP", or "TAP: …" on touch, while `RestStops.prompt_site` >= 0; "ENTER / A: DRIVE IT" on the pad of a car just found, `ParkedCars.offer`), else the latest money message ("+$n", "Drift +$n", …: `LootDirector.said` →
+  ("ENTER / A: OPEN REST STOP", or "TAP: …" on touch, while `RestStops.prompt_site` >= 0; "ENTER / A: DRIVE IT" on the pad of a car just found, `ParkedCars.offer`), else the map offer ("M / BACK: OPEN MAP", "TAP: OPEN MAP" on touch) within `GameConfig.map_fork_prompt_m` of a genuine fork (`MiniMap.at_fork` → `RoadNetwork.fork_near`; not a parked car's side-road branch, and only while `RestStops.input_enabled` and not wrecked; `MiniMap.network` is set by `free_roam.gd`), else the latest money message ("+$n", "Drift +$n", …: `LootDirector.said` →
   `MiniMap.toast`, for `FreeRoamSettings.toast_s`), else the standing `MiniMap.hint` (the cold open's
   throttle button), hidden otherwise. One box, so the two never show at once, and the
-  prompt always wins. It hugs its text (black, small padding) centred under the frame. Tapping the prompt opens the rest stop (`_on_prompt_input` → `RestStops.open_here`). The money
+  prompt always wins. It hugs its text (black, small padding) centred under the frame. Tapping the prompt opens the rest stop (`_on_prompt_input` → `RestStops.open_here`), or, when it is the map offer, emits `open_requested` like a tap on the map. The money
   counter is top-left, not here (`LootDirector.money_label`, [loot.md](loot.md)).
 
 ## Seen sites

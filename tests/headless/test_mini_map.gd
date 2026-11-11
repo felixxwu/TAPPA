@@ -236,6 +236,67 @@ func test_a_tap_on_the_prompt_opens_the_rest_stop_not_the_map() -> void:
 	assert_signal_not_emitted(mm, "open_requested")
 
 
+# A fork at the origin (three main roads), and at (500, 0) a side road's branch (two main, one side).
+func _fork_net() -> RoadNetwork:
+	var net := RoadNetwork.new()
+	net.node_x = PackedFloat64Array([0, -200, 200, 0, 500, 700, 500])
+	net.node_y = PackedFloat64Array([0, 0, 0, 200, 0, 0, 40])
+	net.edges = [Vector2i(0, 1), Vector2i(0, 2), Vector2i(0, 3), Vector2i(2, 4), Vector2i(4, 5), Vector2i(4, 6)]
+	net._side_edges[5] = true
+	net.find_forks()
+	return net
+
+
+func _car_at(mm: MiniMap, xz: Vector2) -> void:
+	var car := Node3D.new()
+	add_child_autofree(car)
+	car.global_position = Vector3(xz.x, 0.0, xz.y)
+	mm.car = car
+
+
+func test_only_genuine_forks_count() -> void:
+	var net := _fork_net()
+	assert_eq(Array(net.fork_nodes), [0], "a parked car's branch is not a fork")
+	assert_eq(net.fork_near(10, 10, 50), 0)
+	assert_eq(net.fork_near(500, 0, 50), -1)
+	assert_eq(net.fork_near(100, 0, 50), -1, "too far")
+
+
+func test_near_a_fork_the_line_offers_the_map_and_a_tap_opens_it() -> void:
+	var mm := _map()
+	mm.network = _fork_net()
+	_car_at(mm, Vector2(500, 0))
+	mm.update_prompt_label()
+	assert_false(mm.prompt_label.visible, "no offer at a side road's branch")
+	mm.car.global_position = Vector3(5, 0, 5)
+	mm.update_prompt_label()
+	assert_true(mm.prompt_label.visible)
+	assert_string_contains(mm.prompt_label.text, "OPEN MAP")
+	watch_signals(mm)
+	var ev := InputEventScreenTouch.new()
+	ev.pressed = true
+	mm.prompt_label.gui_input.emit(ev)
+	assert_signal_emitted(mm, "open_requested")
+
+
+func test_the_rest_stop_prompt_beats_the_map_offer_and_none_shows_before_handover() -> void:
+	var mm := _map()
+	mm.network = _fork_net()
+	_car_at(mm, Vector2.ZERO)
+	var rs := FakeRestStops.new()
+	autofree(rs)
+	mm.rest_stops = rs
+	rs.input_enabled = false
+	mm.update_prompt_label()
+	assert_false(mm.prompt_label.visible, "the map can't open yet, so no offer")
+	rs.input_enabled = true
+	mm.update_prompt_label()
+	assert_string_contains(mm.prompt_label.text, "OPEN MAP")
+	rs.site = 3
+	mm.update_prompt_label()
+	assert_string_contains(mm.prompt_label.text, "REST STOP")
+
+
 func test_a_window_resize_while_it_is_out_of_the_tree_is_ignored() -> void:
 	# A new world reloads the scene: the old map leaves the tree a moment before it is freed,
 	# and the window's scaling can resize the viewport in that gap.

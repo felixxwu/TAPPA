@@ -3041,6 +3041,9 @@ func spectator_params() -> Dictionary:
 ## Free roam's heading-up minimap, top-centre (scripts/free_roam/mini_map.gd, features/minimap.md).
 ## Off, only the rest-stop prompt under it shows; the full map still opens with M / Back.
 @export var minimap_enabled := true
+## How near a genuine fork in the road (3+ main roads meeting; not a parked car's side road) the
+## line under the minimap offers the full map ("M / Back: open map"). 0 turns the offer off.
+@export var map_fork_prompt_m := 60.0
 ## Height of the minimap as a fraction of the screen height. Keep top + height under 0.2 of the
 ## screen: below that, the simple touch scheme's steering halves begin (mobile_controls.gd).
 @export var minimap_height_frac := 0.175

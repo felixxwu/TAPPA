@@ -69,6 +69,24 @@ func test_every_car_gets_exactly_one_side_road_ending_in_a_dead_end_off_a_new_ju
 		assert_eq(side, CARS.size())
 
 
+func test_a_side_roads_branch_is_not_a_fork_but_real_junctions_are() -> void:
+	var net: RoadNetwork = _world(_settings(), CARS)[0]
+	var forks := {}
+	for n in net.fork_nodes:
+		forks[n] = true
+	for ei in net.edges.size():
+		if net.is_side_road(ei):
+			assert_false(forks.has(net.edges[ei].x), "a parked car's branch offers no map")
+	var main_degree := PackedInt32Array()
+	main_degree.resize(net.node_x.size())
+	for ei in net.edges.size():
+		if not net.is_side_road(ei):
+			main_degree[net.edges[ei].x] += 1
+			main_degree[net.edges[ei].y] += 1
+	for n in main_degree.size():
+		assert_eq(forks.has(n), main_degree[n] >= 3, "node %d is a fork iff 3+ main roads meet there" % n)
+
+
 func test_side_roads_leave_the_main_roads_as_they_were() -> void:
 	var s := _settings()
 	var bare: RoadNetwork = _world(s, [])[0]

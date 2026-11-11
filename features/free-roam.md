@@ -54,7 +54,10 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
    `side_road_min_m`–`side_road_max_m` long (longest first), on dry land and `side_road_clear_m`
    clear of other roads, its branch `side_road_junction_clear_m` from junctions and other branches.
    The point becomes a junction (the edge is split) and the side road a new edge to a dead end
-   (`side_road_car`: node → car, `is_side_road(edge)`). No room in its ring: the nearest ring with
+   (`side_road_car`: node → car, `is_side_road(edge)`). That branch node has degree 3 but only two
+   main roads, so it is not a **fork**: `RoadNetwork.fork_nodes` (rebuilt by `find_forks` at the
+   end of every `_flatten`) lists only nodes where 3+ main roads meet, and `fork_near` finds the
+   nearest within a distance (the minimap's map offer, [minimap.md](minimap.md)). No room in its ring: the nearest ring with
    room; no room anywhere: shorter, closer to other roads, then closer to junctions, so every car
    is always placed. Side roads keep off the cold open's road and every nearer cabin's
    (`ColdOpen.roads_to_keep_clear`), which is why the sites are planned once without them, then

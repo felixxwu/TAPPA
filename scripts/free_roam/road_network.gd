@@ -33,6 +33,7 @@ var edge_first_seg := PackedInt32Array()  # each edge's segments are contiguous 
 var edge_len := PackedFloat64Array()  # each edge's arc length
 var node_degree := PackedInt32Array()  # how many edges meet at each node
 var side_road_car := {}  # a side road's dead-end node -> the car parked there
+var fork_nodes := PackedInt32Array()  # genuine forks: nodes where 3+ main (not side) roads meet
 var _side_edges := {}  # side road edges, as a set
 var _poly_x: Array[PackedFloat64Array] = []  # every edge's polyline, kept so side roads can be added after build
 var _poly_y: Array[PackedFloat64Array] = []
@@ -259,6 +260,36 @@ func _flatten() -> void:
 				_append_to(_grid, c, si)
 		edge_len.append(cum)
 		total_length_m += cum
+	find_forks()
+
+
+# The genuine forks: every node where three or more main roads meet. A side road to a parked car
+# splits its main road in two at the branch, which makes a degree-3 node too, but only two of its
+# roads are main, so it is not a fork — taking it leads nowhere but the car. Rebuilt with _flatten.
+func find_forks() -> void:
+	fork_nodes.clear()
+	var main := PackedInt32Array()
+	main.resize(node_x.size())
+	for ei in edges.size():
+		if is_side_road(ei):
+			continue
+		main[edges[ei].x] += 1
+		main[edges[ei].y] += 1
+	for n in main.size():
+		if main[n] >= 3:
+			fork_nodes.append(n)
+
+
+# The nearest fork within `max_d` of (x, y) (world xz), or -1.
+func fork_near(x: float, y: float, max_d: float) -> int:
+	var best := -1
+	var best_d2 := max_d * max_d
+	for n in fork_nodes:
+		var d2 := (node_x[n] - x) * (node_x[n] - x) + (node_y[n] - y) * (node_y[n] - y)
+		if d2 <= best_d2:
+			best_d2 = d2
+			best = n
+	return best
 
 
 func is_side_road(ei: int) -> bool:
