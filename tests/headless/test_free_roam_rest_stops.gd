@@ -172,6 +172,30 @@ func test_staying_at_a_rest_stop_heals_the_car_to_full() -> void:
 	_rest.set_physics_process(true)
 
 
+# Staying at a rest stop tops the nitrous tank up gradually, capped at full.
+func test_staying_at_a_rest_stop_refills_the_nitrous_tank() -> void:
+	var site := _a_rest_stop()
+	await _park_on(site)
+	_rest.set_physics_process(false)
+	var engine: EngineSim = _car.drivetrain.engine
+	var gain := Config.data.nitrous_boost_gain
+	var tank := Config.data.nitrous_tank_seconds
+	Config.data.nitrous_boost_gain = 0.3
+	Config.data.nitrous_tank_seconds = 4.0
+	engine.nitrous_charge = 0.0
+	_rest.step(1.0 / 60.0)
+	assert_true(engine.nitrous_charge > 0.0 and engine.nitrous_charge < 4.0,
+		"one tick refills a little, not all")
+	for i in 60:
+		_car.linear_velocity = Vector3.ZERO
+		_rest.step(1.0)
+	assert_eq(engine.nitrous_charge, 4.0, "refilled to a full tank, no further")
+	Config.data.nitrous_boost_gain = gain
+	Config.data.nitrous_tank_seconds = tank
+	engine.nitrous_charge = 0.0
+	_rest.set_physics_process(true)
+
+
 # Stopping alone doesn't open the page: menu_select (Enter / gamepad A) does.
 func test_menu_select_while_stopped_at_a_rest_stop_opens_the_page() -> void:
 	var site := _a_rest_stop()

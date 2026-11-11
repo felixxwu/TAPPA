@@ -7,10 +7,13 @@ makes hard stretches easier rather than a stat that reshapes the car.
 
 Two properties define it, and every design decision below falls out of them:
 
-1. **It is refilled only by a fresh start.** `EngineSim.reset()` refills the tank, and
+1. **It is refilled by a fresh start or a checkpoint.** `EngineSim.reset()` refills the tank, and
    runs on every `Car.reset_to`. In free roam that means a respawn or a travel refills
    it, but `RoadRecovery.reset_now` (R, the pause menu's Reset to road, the stuck reset)
-   puts the charge back after the reset, so a reset is not a free refill.
+   puts the charge back after the reset, so a reset is not a free refill. Sitting at a
+   checkpoint (rest stop) tops the tank up gradually alongside the HP heal
+   (`RestStops._refill_nitrous`, `checkpoint_nitrous_refill_fraction_per_s` of a full tank per
+   second).
 2. **It is invisible to car stats.** It never feeds a car's power-to-weight.
 
 

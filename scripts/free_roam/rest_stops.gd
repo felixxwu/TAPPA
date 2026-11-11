@@ -161,13 +161,28 @@ func open_here() -> bool:
 
 
 # One tick of healing at rest stop `i`; reaching full HP finishes the repair (cooling, wheels).
+# The nitrous tank tops up alongside the HP, at its own rate.
 func _heal(i: int, delta: float) -> void:
+	_refill_nitrous(delta)
 	var dmg := car.get("damage") as DamageModel
 	if dmg == null:
 		return
 	dmg.hp = minf(dmg.max_hp, dmg.hp + dmg.max_hp * Config.data.checkpoint_heal_fraction_per_s * delta)
 	if dmg.hp >= dmg.max_hp:
 		dmg.repair()
+
+
+# One tick of nitrous refill: checkpoint_nitrous_refill_fraction_per_s of a full tank per
+# second, capped at full. Does nothing when no nitrous is fitted.
+func _refill_nitrous(delta: float) -> void:
+	var dt = car.get("drivetrain")
+	if dt == null or dt.engine == null:
+		return
+	var tank: float = dt.engine.config.nitrous_tank_seconds
+	if tank <= 0.0 or not dt.engine.config.has_nitrous():
+		return
+	dt.engine.nitrous_charge = minf(tank, dt.engine.nitrous_charge
+		+ tank * Config.data.checkpoint_nitrous_refill_fraction_per_s * delta)
 
 
 func light(i: int) -> void:
