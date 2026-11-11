@@ -279,4 +279,4 @@ func name_of(site: int) -> String:
 	if site == 0:
 		return "Home"
 	var region := RegionLibrary.by_id(BiomeDirector.region_of(streamer.settings, streamer.sites.ring[site]))
-	return "Checkpoint %d · %s" % [site, String(region.get("name", ""))]
+	return "Checkpoint %d · %s" % [streamer.sites.of_kind(RoadSites.Kind.REST).find(site), String(region.get("name", ""))]

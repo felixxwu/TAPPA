@@ -114,7 +114,6 @@ func _sample_cell() -> void:
 static func paint(heights: PackedFloat32Array, kind: PackedByteArray, ring: PackedByteArray, cols: int, rows: int, cell_m: float) -> Image:
 	var cfg := Config.data
 	var img := Image.create(cols, rows, false, Image.FORMAT_RGBA8)
-	var h_at := func(c: int, r: int) -> float: return heights[clampi(r, 0, rows - 1) * cols + clampi(c, 0, cols - 1)]
 	var palette: PackedColorArray = cfg.map_ring_colors
 	var water: float = cfg.free_roam.water_level_m
 	for r in rows:
@@ -126,10 +125,14 @@ static func paint(heights: PackedFloat32Array, kind: PackedByteArray, ring: Pack
 			if kind[i] == 2:
 				img.set_pixel(c, r, cfg.map_lake_color)
 				continue
-			var slope: float = ((h_at.call(c + 1, r) - h_at.call(c - 1, r)) + (h_at.call(c, r + 1) - h_at.call(c, r - 1))) / (2.0 * cell_m)
+			var right := heights[r * cols + mini(c + 1, cols - 1)]
+			var left := heights[r * cols + maxi(c - 1, 0)]
+			var below := heights[mini(r + 1, rows - 1) * cols + c]
+			var above := heights[maxi(r - 1, 0) * cols + c]
+			var slope := ((right - left) + (below - above)) / (2.0 * cell_m)
 			var shade := clampf(0.85 - slope * 1.2, 0.35, 1.3)
 			var band := floori(heights[i] / cfg.map_contour_m)
-			if band != floori(h_at.call(c + 1, r) / cfg.map_contour_m) or band != floori(h_at.call(c, r + 1) / cfg.map_contour_m):
+			if band != floori(right / cfg.map_contour_m) or band != floori(below / cfg.map_contour_m):
 				shade *= 0.7
 			var lift := clampf((heights[i] - water) / cfg.map_lift_range_m, 0.0, 1.0) * 60.0 / 255.0
 			var base := palette[ring[i] % palette.size()]

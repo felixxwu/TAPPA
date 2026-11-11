@@ -35,7 +35,8 @@ var _here := -1
 var travelled := false  # whether the map's last visit ended in a quick travel
 var map_terrain: MapTerrain  # the map's terrain tiles, kept for the session
 var _warm_t := 0.0
-var _warm_driven := -1  # how many cells had been driven at the last warm-up request
+var _warm_view := Rect2()
+var _explored := PackedVector2Array()  # explored_points scanned once, then grown by where the car goes
 var _target_label: Label
 var _travel_button: Button
 var _prev_button: Button
@@ -67,9 +68,14 @@ func _process(delta: float) -> void:
 	_warm_t -= delta
 	if _warm_t <= 0.0:
 		_warm_t = Config.data.map_terrain_refresh_s
-		if WorldSession.driven_count() != _warm_driven:
-			_warm_driven = WorldSession.driven_count()
-			map_terrain.request(explored_view(), Config.data.map_terrain_cells)
+		if _explored.is_empty():
+			_explored = explored_points()
+		elif car != null:
+			_explored.append(Vector2(car.global_position.x, car.global_position.z))
+		var view := fit_view(_explored, Config.data.map_min_view_m, streamer.settings.island_radius_m * 1.05)
+		if view != _warm_view:
+			_warm_view = view
+			map_terrain.request(view, Config.data.map_terrain_cells)
 	if not map_terrain.done():
 		map_terrain.step(Config.data.map_terrain_driving_budget_us)
 
@@ -238,6 +244,11 @@ func tap_map_at(local: Vector2) -> bool:
 # The part of the island the map shows: everything explored (roads driven, sites come across, the
 # car), with a margin, never smaller than map_min_view_m across, and never past the island.
 func explored_view() -> Rect2:
+	return fit_view(explored_points(), Config.data.map_min_view_m, streamer.settings.island_radius_m * 1.05)
+
+
+# Scans every road segment, so too slow to run often while driving.
+func explored_points() -> PackedVector2Array:
 	var pts := PackedVector2Array()
 	if car != null:
 		pts.append(Vector2(car.global_position.x, car.global_position.z))
@@ -250,7 +261,7 @@ func explored_view() -> Rect2:
 		pts.append(mk[0])
 	if dropped_xz().is_finite():
 		pts.append(dropped_xz())
-	return fit_view(pts, Config.data.map_min_view_m, streamer.settings.island_radius_m * 1.05)
+	return pts
 
 
 # Where the money left at a wreck (or by travelling off the road) lies, or INF when none is out there.

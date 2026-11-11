@@ -197,8 +197,12 @@ func exit_to_title() -> void:
 # Everything exit_to_title() does except the scene change.
 func end() -> void:
 	if active:
+		# Settings changed mid-benchmark (volume, key bindings, fps cap) are the player's, so keep them.
+		if Save.profile.has("settings"):
+			_saved_profile["settings"] = Save.profile["settings"]
 		Save.profile = _saved_profile
 		Save.save_disabled = _saved_save_disabled
+		Save.save(false)
 		WorldSession.invalidate()  # the benchmark scene must not save its world into the real one
 	active = false
 	restore(Config.data)

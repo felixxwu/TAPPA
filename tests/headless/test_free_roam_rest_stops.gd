@@ -616,3 +616,10 @@ class RetuneCounter:
 
 	func retune(_owned: Dictionary) -> void:
 		calls += 1
+
+
+# Checkpoints are numbered among rest stops only, not by their index among every kind of site.
+func test_checkpoints_are_numbered_among_rest_stops() -> void:
+	var rests := _streamer.sites.of_kind(RoadSites.Kind.REST)
+	assert_gt(rests.size(), 1)
+	assert_string_starts_with(_rest.name_of(rests[rests.size() - 1]), "Checkpoint %d " % (rests.size() - 1))

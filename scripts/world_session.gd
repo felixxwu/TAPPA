@@ -200,10 +200,6 @@ func mark_driven(x: float, z: float) -> bool:
 	return true
 
 
-func driven_count() -> int:
-	return (_world().get("driven", {}) as Dictionary).size()
-
-
 func has_driven(x: float, z: float) -> bool:
 	return (_world().get("driven", {}) as Dictionary).has(cell_key(x, z))
 

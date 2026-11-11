@@ -222,6 +222,14 @@ func test_a_run_drives_a_throwaway_world_and_hands_back_the_players_profile() ->
 	assert_false(Save.save_disabled, "saving is switched back on")
 
 
+func test_a_setting_changed_during_a_run_is_kept() -> void:
+	Save.save_disabled = false
+	Benchmark.begin()
+	Save.set_setting("test_only_key", 7)
+	Benchmark.end()
+	assert_eq(Save.get_setting("test_only_key"), 7)
+
+
 func test_a_run_saves_the_real_world_before_setting_it_aside() -> void:
 	Save.save_disabled = false
 	var seen := [0]

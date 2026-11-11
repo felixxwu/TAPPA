@@ -558,11 +558,16 @@ func _update_stats() -> void:
 		+ "R = back to road"
 
 
+var _refresh_hz := 0.0  # asking the OS is slow on some platforms, so once per session
+
+
 # The frame's budget is the frame cap, else the display's refresh rate (what vsync paces to).
 func _frame_budget_ms() -> float:
 	var fps := float(Engine.max_fps)
 	if fps <= 0.0:
-		fps = DisplayServer.screen_get_refresh_rate()
+		if _refresh_hz <= 0.0:
+			_refresh_hz = DisplayServer.screen_get_refresh_rate()
+		fps = _refresh_hz
 	return 1000.0 / (fps if fps > 0.0 else 60.0)
 
 
