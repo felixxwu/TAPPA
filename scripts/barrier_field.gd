@@ -88,7 +88,7 @@ func _module_transform(entry: Dictionary, ground_at: Callable, half_w: float,
 	var tangent: Vector2 = (entry["tangent"] as Vector2).normalized()
 	var side: int = int(entry["side"])
 	var perp := Vector2(-tangent.y, tangent.x)
-	var edge := pos + float(side) * perp * (half_w + road_gap + face_reach)
+	var edge := pos + float(side) * perp * (float(entry.get("half_w", half_w)) + road_gap + face_reach)
 	# Inward normal — from the barrier back toward the road, i.e. where +X must point.
 	var inward := -float(side) * perp
 	# Local +Z is the run direction (the module's length axis).

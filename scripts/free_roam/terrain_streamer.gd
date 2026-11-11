@@ -34,6 +34,7 @@ var network := RoadNetwork.new()
 var terrain := RoadTerrain.new()
 var sites := RoadSites.new()
 var barriers := RoadBarriers.new()
+var poles := RoadPoles.new()
 var focus: Node3D
 # Frame time not taken by anything but terrain (µs), smoothed over recent frames; set by the HUD side.
 var spare_us := 2000.0
@@ -202,6 +203,7 @@ func _ready() -> void:
 	terrain.sites = sites
 	if Config.data.barriers_enabled:
 		barriers.plan(settings, network, terrain, sites, barrier_params())
+	poles.plan(settings, network, terrain, sites)
 	stat_build_ms = Time.get_ticks_msec() - t0
 	_forest = TreeScatter.make_forest_noise(settings.world_seed, Config.data.forest_wavelength_m)
 	# Biome ring i wears region ring_regions[i]: its trees and rocks, and a ground material
@@ -1222,7 +1224,7 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 		return false
 	var cfg: GameConfig = Config.data
 	var water := settings.water_level_m
-	var road := settings.road_half_width_m + cfg.tree_road_margin_m
+	var margin := cfg.tree_road_margin_m
 	var radius := [0.5, TreeMeshField.xz_radius(Foliage.bush_mesh(), cfg.bush_height_m), _widest_rock()]
 	var done := 0
 	_last_kind = "plant"
@@ -1235,6 +1237,7 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 		var kind := job.plant_kind[job.cursor]
 		job.cursor += 1
 		done += 1
+		var road := settings.road_half_width_at(p.x, p.y) + margin
 		if _spot_is_clear(job.ground, p, water, road + radius[kind]) and _roadside_keep(p, kind, road + radius[kind]):
 			var kept: PackedVector2Array = job.kept[kind]  # a copy: packed arrays are values
 			kept.append(p)
@@ -1251,7 +1254,7 @@ func _plant(job: ChunkJob, deadline: int) -> bool:
 	_ran_this_frame = _ran_this_frame or done > 0
 	if job.cursor < job.plant_pts.size():
 		return false
-	return _atomic("plant_queue", deadline, _plant_queue.bind(job, water, road + radius[Plant.ROCK]))
+	return _atomic("plant_queue", deadline, _plant_queue.bind(job, water, settings.road_half_width_max_m() + margin + radius[Plant.ROCK]))
 
 
 func _plant_prep(job: ChunkJob, st: ChunkState) -> void:
@@ -1365,6 +1368,7 @@ func _queue_spawns(job: ChunkJob, water: float, rock_clearance: float) -> void:
 				_add_spawn(job, _spawn_kind("rock", pts.size()), func(parent: Node3D) -> void: Foliage.spawn_rocks(parent, pts, g, i, true, dist, fade))
 	_queue_site_markers(job)
 	_queue_barriers(job, g)
+	_queue_poles(job, g)
 
 
 # The stage's barrier modules and collision, fed the free-roam layout and this road's width.
@@ -1383,6 +1387,15 @@ func _queue_barriers(job: ChunkJob, g: PlantGround) -> void:
 		field.name = "Barriers"
 		parent.add_child(field)
 		field.build(layout, barrier_params(), func(p: Vector2) -> float: return g.height_at(p.x, p.y)))
+
+
+func _queue_poles(job: ChunkJob, g: PlantGround) -> void:
+	var n := poles.poles_in_chunk(job.coord).size()
+	if n == 0 and poles.wires_in_chunk(job.coord).is_empty():
+		return
+	# Exact heights, so a wire meets its pole whichever chunk builds each end.
+	_add_spawn(job, _spawn_kind("pole", n), func(parent: Node3D) -> void:
+		poles.build(parent, job.coord, func(x: float, z: float) -> float: return seat_exact(g, x, z)))
 
 
 # The chunk's site dressing. A rest stop gets a log cabin with a live crowd gathered at its door
@@ -1439,10 +1452,54 @@ func _site_marker(i: int) -> Node3D:
 	post.shape = post_box
 	post.position = LAMP_POST_AT + Vector3(0.0, LAMP_POST_HEIGHT_M * 0.5, 0.0)
 	body.add_child(post)
+	post = RoadPoles.pole_shape(CABIN_POLE_AT)
+	body.add_child(post)
 	cabin.add_child(body)
 	_paint_cabin_floor(cabin)
 	cabin.add_child(_lamp_post())
+	cabin.add_child(_cabin_power(_feed_point(i)))
 	return cabin
+
+
+# Where the line feeding rest stop `i`'s pole comes from, in the cabin's space: the top of the nearest
+# road pole, standing on the same exact height its chunk seats it at (or null when none is near).
+func _feed_point(i: int) -> Variant:
+	var xf := cabin_transform(i)
+	var at := xf * CABIN_POLE_AT
+	var pi := poles.nearest(Vector2(at.x, at.z), CABIN_FEED_MAX_M)
+	if pi < 0:
+		return null
+	var p := poles.poles[pi]
+	var h := terrain.height(p.x, p.y, _cands_of(_chunk_of(p)), true) - RoadPoles.SINK_M + RoadPoles.ARM_Y
+	return xf.affine_inverse() * Vector3(p.x, h, p.y)
+
+
+# An electricity pole beside the cabin, wired to the cabin wall, the lamp post and (`feed`, in the
+# cabin's space) the road's line.
+# Beside the lamp post, outside the roof's overhang (it reaches x = ±4.8) and the crowd, so no wire
+# passes through the cabin; the house wire meets the eave on that side.
+const CABIN_POLE_AT := Vector3(7.0, 0.0, 5.0)
+const CABIN_WIRE_AT := Vector3(4.75, 3.2, 3.5)
+const CABIN_FEED_MAX_M := 60.0
+
+
+static func _cabin_power(feed: Variant = null) -> Node3D:
+	var root := Node3D.new()
+	root.name = "PowerPole"
+	root.add_child(RoadPoles.pole_instance(Transform3D(Basis(Vector3.UP, PI * 0.5), CABIN_POLE_AT)))
+	var top := CABIN_POLE_AT + Vector3(0.0, RoadPoles.ARM_Y, 0.0)
+	var arm := Vector3(0.0, 0.0, RoadPoles.ARM_HALF_M)
+	var wires := MeshInstance3D.new()
+	wires.name = "Wires"
+	var spans: Array[PackedVector3Array] = [
+		PackedVector3Array([top - arm, CABIN_WIRE_AT]),
+		PackedVector3Array([top + arm, LAMP_POST_AT + Vector3(0.0, 3.5, 0.0)])]
+	if feed != null:
+		spans.append(PackedVector3Array([top, feed]))
+	wires.mesh = RoadPoles.wire_mesh(spans)
+	wires.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(wires)
+	return root
 
 
 # Where rest stop `i`'s cabin stands: set back from the pad's centre towards its far side by
@@ -1676,7 +1733,7 @@ func _rest_crowd(i: int, parent: Node3D) -> SpectatorGroup:
 # stop's crowd can reach is rasterised.
 func _road_cells_near(centre: Vector2, reach: float) -> Dictionary:
 	var cells := {}
-	var half := settings.road_half_width_m + settings.road_shoulder_m
+	var half := settings.road_half_width_max_m() + settings.road_shoulder_m
 	var step := ScatterMath.CELL_M
 	for si in network.candidates_for(centre.x, centre.y, reach, reach + half):
 		var a := Vector2(network.seg_ax[si], network.seg_ay[si])

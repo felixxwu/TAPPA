@@ -371,6 +371,13 @@ elements, all independently gained and all opt-in via their config gains
   engine rpm directly (belt-driven: `rpm * SUPERCHARGER_BELT_HZ_PER_RPM`) and it
   is always on (not gated on boost) while `supercharger_enabled` is true, scaled
   by `engine_supercharger_whine_gain`.
+- **Straight-cut gear whine.** The same tonal wavetable, but its pitch is LINEAR
+  in driven-wheel speed (`wheel_speed * engine_gear_whine_hz_per_mps`; wheel speed
+  is `Drivetrain.driveline_omega() * wheel_radius`, passed into `fill()` by
+  `engine_audio.gd`), louder on throttle, faded out below `GEAR_WHINE_FADE_MPS`.
+  `engine_gear_whine_gain` is 0 on every car until the Quick shifter part
+  (`BoostLibrary` "gearbox", `install_gear_whine`) writes `run_boost_gear_whine_gain`;
+  `EngineLibrary.apply` resets it per fielding.
 
 The whistle and whine are summed onto the `voice` signal (after its own
 `_master_gain` is applied, so they carry their own independent gains rather
@@ -446,6 +453,7 @@ other gains) so nitrous loudness is tunable from `scripts/game_config.gd`.
 `EngineLibrary.soft_clip_post_gain`), `turbo_enabled`, `turbo_omega_ref`,
 `supercharger_enabled`, `engine_turbo_whistle_gain`, `engine_turbo_bov_gain`,
 `engine_turbo_antilag_bang_gain`, `engine_supercharger_whine_gain`,
+`engine_gear_whine_gain`, `engine_gear_whine_hz_per_mps`,
 `engine_audio_ref_distance_m` (proximity full-volume radius),
 `engine_audio_max_attenuation_db` (proximity floor). See
 [configuration.md](configuration.md) and `scripts/engine_library.gd`.

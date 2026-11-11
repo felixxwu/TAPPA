@@ -91,7 +91,10 @@ const CATALOGUE := {
 	"gearbox": {
 		"ring": 1, "price": 2500,
 		"mass_kg": 2, "label": "Quick shifter", "blurb": "Faster gear changes.",
-		"effect_fields": {"shift_time_set": "run_boost_shift_time_s"},
+		"effect_fields": {
+			"shift_time_set": "run_boost_shift_time_s",
+			"install_gear_whine": {"engine_gear_whine_gain": "run_boost_gear_whine_gain"},
+		},
 		"level_direction": - 1, # lower shift time = faster = more boost
 		# A "set" op replaces the car's shift time outright, so the shop shows the
 		# absolute seconds it sets rather than a percentage of a baseline that does not

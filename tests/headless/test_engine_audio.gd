@@ -653,6 +653,37 @@ func test_supercharger_whine_only_when_enabled() -> void:
 	assert_gt(_energy(blown), _energy(plain), "a supercharged engine adds a whine layer")
 
 
+func _gear_synth(gain: float) -> EngineAudioSynth:
+	var cfg := _cfg()
+	cfg.engine_firing_angles = [0.0, 180.0, 360.0, 540.0]
+	cfg.engine_noise_level = 0.0
+	cfg.engine_volume_db = -80.0  # mute the firing voice; isolate the whine
+	cfg.engine_gear_whine_gain = gain
+	cfg.engine_gear_whine_hz_per_mps = 20.0
+	return EngineAudioSynth.new(cfg, MIX_RATE)
+
+
+func _gear_fill(gain: float, wheel_speed: float) -> PackedVector2Array:
+	var buf := PackedVector2Array(); buf.resize(8192)
+	_gear_synth(gain).fill(buf, 3000.0, 1.0, false, 8192, false, false, 0.0, 0.0, false, false, false, false, false, wheel_speed)
+	return buf
+
+
+func test_gear_whine_only_when_fitted() -> void:
+	assert_gt(_energy(_gear_fill(0.9, 30.0)), _energy(_gear_fill(0.0, 30.0)) + 1e-3,
+		"a fitted quick shifter adds a gear whine")
+
+
+func test_gear_whine_pitch_is_linear_in_wheel_speed() -> void:
+	var ratio := float(_zero_crossings(_gear_fill(0.9, 40.0))) / float(_zero_crossings(_gear_fill(0.9, 20.0)))
+	assert_almost_eq(ratio, 2.0, 0.15, "doubling wheel speed doubles the whine pitch")
+
+
+func test_gear_whine_ignores_driving_direction() -> void:
+	assert_almost_eq(_energy(_gear_fill(0.9, -30.0)), _energy(_gear_fill(0.9, 30.0)), 1e-4,
+		"reversing whines the same as going forward")
+
+
 # --- Nitrous hiss layer (features/nitrous.md, features/engine-audio.md) ------
 # The nitrous layer is synthesised noise gated on the DELIVERY state. The voice is
 # muted in this fixture so the buffer is essentially the nitrous layer alone.

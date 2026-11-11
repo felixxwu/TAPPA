@@ -61,6 +61,8 @@ const TURBO_TONE_LEVEL := 0.12    # tonal supercharger whine (wavetable)
 # Cutoff (Hz) of the broadband air-rush layer blended under the resonant whine.
 const TURBO_AIR_LP_HZ := 1800.0
 const SUPERCHARGER_BELT_HZ_PER_RPM := 0.12  # whine pitch = rpm * this (belt ratio)
+# Below this wheel speed (m/s) the gear whine fades out, so a crawling car doesn't hum a sub-audible tone.
+const GEAR_WHINE_FADE_MPS := 5.0
 const ANTILAG_BANG_INTERVAL := 0.08  # seconds between anti-lag bangs while coasting
 
 # --- Nitrous (features/nitrous.md) -------------------------------------------
@@ -162,6 +164,9 @@ var _supercharger_whine_gain := 0.0
 var _nitrous_hiss_gain := NITROUS_HISS_GAIN  # cached from config in configure()
 var _whistle_table := PackedFloat32Array()  # single-cycle whine tone (supercharger), baked once
 var _whine_phase := 0.0
+var _gear_whine_gain := 0.0
+var _gear_whine_hz_per_mps := 0.0
+var _gear_phase := 0.0
 var _bov_env := 0.0  # decaying blow-off burst amplitude
 var _antilag_env := 0.0  # decaying anti-lag bang amplitude
 var _antilag_timer := 0.0  # spacing between anti-lag bangs while coasting on boost
@@ -212,6 +217,8 @@ func _init(cfg: GameConfig, mix_rate: float) -> void:
 	_supercharger = cfg.supercharger_enabled
 	_supercharger_whine_gain = cfg.engine_supercharger_whine_gain
 	_nitrous_hiss_gain = cfg.engine_nitrous_hiss_gain
+	_gear_whine_gain = cfg.engine_gear_whine_gain
+	_gear_whine_hz_per_mps = cfg.engine_gear_whine_hz_per_mps
 	# Nitrous coefficients: rate-derived, so they are resolved here (like the
 	# air-rush LP) and the per-sample path only lerps between them.
 	_n2o_lp_coeff_hi = 1.0 - exp(-TAU * NITROUS_HISS_LP_HZ / _mix_rate)
@@ -232,7 +239,7 @@ func _build_noise_table() -> void:
 		_noise_table[i] = _rng.randf() * 2.0 - 1.0
 
 
-func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false, boost := 0.0, turbo_spin := 0.0, bov_event := false, antilag_active := false, nitrous_on := false, nitrous_trigger := false, nitrous_empty := false) -> void:
+func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bool, n_frames: int, fuel_cut := false, crackle_cut := false, boost := 0.0, turbo_spin := 0.0, bov_event := false, antilag_active := false, nitrous_on := false, nitrous_trigger := false, nitrous_empty := false, wheel_speed := 0.0) -> void:
 	var dt := 1.0 / _mix_rate
 	var smooth := clampf(_smooth_rate * dt, 0.0, 1.0)
 	# A shift opens the clutch and cuts throttle, but the engine keeps spinning:
@@ -295,6 +302,9 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 	var n2o_crack_gain := _nitrous_hiss_gain
 	var n2o_lp_span := _n2o_lp_coeff_hi - _n2o_lp_coeff_lo
 	var whistle_active := _turbo_whistle_gain != 0.0 and boost > 0.0
+	var gear_speed := absf(wheel_speed)
+	var gear_hz := gear_speed * _gear_whine_hz_per_mps
+	var gear_level := _gear_whine_gain * TURBO_TONE_LEVEL * minf(gear_speed / GEAR_WHINE_FADE_MPS, 1.0)
 	var svf_a1 := 0.0
 	var svf_a2 := 0.0
 	var svf_a3 := 0.0
@@ -357,6 +367,10 @@ func fill(buffer: PackedVector2Array, rpm: float, throttle: float, shift_cut: bo
 			var whine_hz := _sm_rpm * SUPERCHARGER_BELT_HZ_PER_RPM
 			_whine_phase = fposmod(_whine_phase + whine_hz * dt, 1.0)
 			voice += _read_whistle(_whine_phase) * (0.3 + 0.7 * _sm_throttle) * _supercharger_whine_gain * TURBO_TONE_LEVEL
+		# Straight-cut gears: a tonal whine whose pitch tracks wheel speed, loudest under load.
+		if gear_level != 0.0:
+			_gear_phase = fposmod(_gear_phase + gear_hz * dt, 1.0)
+			voice += _read_whistle(_gear_phase) * (0.5 + 0.5 * _sm_throttle) * gear_level
 		# Blow-off vent burst (decaying filtered noise), optionally fluttered by an
 		# LFO tremolo (the stuttering surge "brrrap"): the LFO scales the burst
 		# amplitude between (1 - amount) and 1 at _bov_flutter_hz.

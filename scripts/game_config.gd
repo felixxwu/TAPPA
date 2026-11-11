@@ -652,6 +652,10 @@ func has_nitrous() -> bool:
 ## Mix level of the belt-driven supercharger whine (0 = off). Pitch tracks engine rpm.
 ## Negative values invert the layer's phase (subtractive mix).
 @export var engine_supercharger_whine_gain := 0.0
+## Mix level of the straight-cut gear whine (0 = off). Only the Quick shifter part sets it.
+@export var engine_gear_whine_gain := 0.0
+## Gear whine pitch (Hz) per m/s of driven-wheel speed — the pitch is linear in wheel speed.
+@export var engine_gear_whine_hz_per_mps := 40.0
 ## Mix level of the nitrous hiss layer (0 = off). Unlike the whine this is BROADBAND noise
 ## with no tonal component, and it only sounds while nitrous is actually being delivered —
 ## see features/nitrous.md. Negative values invert the layer's phase (subtractive mix).
@@ -907,7 +911,7 @@ func has_nitrous() -> bool:
 ## APK set this to your dev machine, e.g. "http://192.168.1.50:8080/bench".
 @export var bench_report_url := ""
 
-@export var follow_distance := 2.5
+@export var follow_distance := 4
 ## Chase camera height above the car, expressed as a multiple of
 ## follow_distance (so a 1.0 ratio keeps height == distance). Scaling off the
 ## follow distance keeps the camera pitch stable when the distance changes.
@@ -2941,11 +2945,13 @@ func spectator_params() -> Dictionary:
 ## whatever the car's own (usually NA, zero-gain) engine authored, so a fitted turbo ran silent.
 @export var run_boost_turbo_whistle_gain := 0.015
 ## Blow-off valve audio gain for the turbo boost — fixed, does not scale with level.
-@export var run_boost_turbo_bov_gain := 0.005
+@export var run_boost_turbo_bov_gain := 0.015
 ## Anti-lag bang audio gain for the turbo boost — fixed, does not scale with level.
 @export var run_boost_turbo_antilag_bang_gain := 0.0
 ## Belt-whine audio gain for the supercharger boost — fixed, does not scale with level.
 @export var run_boost_supercharger_whine_gain := 0.06
+## Straight-cut gear whine audio gain for the Quick shifter — fixed, does not scale with level.
+@export var run_boost_gear_whine_gain := 0.05
 # "Nitrous" — the same install_nitrous EFFECTS row features/nitrous.md documents (a plain
 # write_fields splat, no enable flag), like the two induction parts above. Only *_boost_gain
 # SCALES with level (the part's real strength);

@@ -64,7 +64,14 @@ extends Resource
 ## branch point keeps from junctions and from other side roads' branch points.
 @export var side_road_clear_m := 80.0
 @export var side_road_junction_clear_m := 120.0
+## Half the road's width at its narrowest-but-common setting: the width every flat road-side
+## measure (pads, clearances) is quoted against. The real width wanders along the road between
+## road_width_min_scale and road_width_max_scale times this (road_half_width_at).
 @export var road_half_width_m := 1.9
+@export var road_width_min_scale := 0.85
+@export var road_width_max_scale := 1.9
+## The distance over which the road's width noise goes from one wide stretch to the next.
+@export var road_width_wavelength_m := 700.0
 @export var road_shoulder_m := 1.0
 ## How wide the drawn grass-to-gravel fade is, centred on the shoulder (looks only; the road's grip
 ## edge stays the shoulder). The ground shader paints it per pixel from the distance to the road,
@@ -114,6 +121,12 @@ extends Resource
 ## A bend (the few rounded vertices of one corner) that turns by more than this in total is sharp and gets a barrier on its outside
 ## where the land falls away. The module and drop rules are GameConfig's barrier_* fields.
 @export var barrier_turn_min_deg := 28.0
+
+## Electricity poles along the roads: metres between poles (0 = none), how far beyond the road's
+## edge they stand, and the chance at each pole that the line hops to the other side of the road.
+@export var pole_spacing_m := 40.0
+@export var pole_road_gap_m := 3.0
+@export var pole_cross_chance := 0.12
 
 ## One candidate spot per cell of this size; trees are then thinned by the forest noise.
 @export var tree_cell_m := 6.0
@@ -251,6 +264,17 @@ extends Resource
 # The closest the coast ever comes, which is also the radius the biome rings divide.
 func inner_radius_m() -> float:
 	return island_radius_m * 0.82
+
+
+# How wide the road is (half its width) at centreline point (x, y). It is world-space noise, so two
+# roads meeting at a junction agree on the width there.
+func road_half_width_at(x: float, y: float) -> float:
+	var n := LabNoise.fbm(x / road_width_wavelength_m + 31.0, y / road_width_wavelength_m + 31.0, world_seed + 71)
+	return road_half_width_m * lerpf(road_width_min_scale, road_width_max_scale, smoothstep(0.3, 0.7, n))
+
+
+func road_half_width_max_m() -> float:
+	return road_half_width_m * maxf(road_width_min_scale, road_width_max_scale)
 
 
 # A random island worth playing, for New World (falls back to world_seed if none turns up).

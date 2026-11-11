@@ -21,6 +21,8 @@ var net: RoadNetwork
 # flattened to its road's height and reads as road. Null while the sites are being planned.
 var sites: RoadSites
 # Distance to the nearest road found by the last height() call; INF when none was looked up.
+# It is measured in the road's own width: stretched so the local edge always sits at
+# road_half_width_m, however wide the road is there, which keeps grip and paint on one edge.
 var last_road_d := INF
 # More about that road, for the per-pixel road paint (TerrainStreamer bakes these per vertex):
 # the distance signed by which side of the road the point is on (so it interpolates straight
@@ -31,6 +33,7 @@ var last_road_s := 0.0
 var last_road_mark := 0.0
 
 var _s: FreeRoamSettings
+var _road_widen := 0.0  # how much wider than road_half_width_m the last road found is, each side
 var _filled := {}  # Vector2i fill cell -> true: lake bed filled in as land (fill_cut_lakes)
 var _tarmac := PackedFloat32Array()  # per ring: 1 when its region's roads are tarmac
 var _any_tarmac := false
@@ -203,12 +206,12 @@ func _inland_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool
 		var lake := water - _s.lake_depth_factor * (water - bp)  # meets the shore at exactly the water level
 		# A lake never cuts into a road: near one, its bed rises into a bank up to the road's level.
 		var edge := _s.road_half_width_m + _s.road_shoulder_m
-		var reach := edge + _s.lake_road_bank_m
+		var reach := (edge + _s.lake_road_bank_m) * _s.road_half_width_max_m() / _s.road_half_width_m
 		if not (net.nearest_in(x, y, cands, reach) if use_cands else net.nearest(x, y, reach)):
 			return lake
 		_note_road()
 		var bq := bump(net.hit_qx, net.hit_qy)
-		return lerpf(_road_base(bq) + bq, lake, LabNoise.smooth(edge, reach, net.hit_d))
+		return lerpf(_road_base(bq) + bq, lake, LabNoise.smooth(edge, edge + _s.lake_road_bank_m, last_road_d))
 	# mountains flatten out toward a shore, so lakes get banks rather than walls
 	var shore := LabNoise.smooth(0.0, _s.shore_band_m, bp - water)
 	var ridged := 1.0 - absf(2.0 * LabNoise.fbm(x / 1200.0 + 11.0, y / 1200.0 + 11.0, _s.world_seed + 43) - 1.0)
@@ -217,15 +220,17 @@ func _inland_height(x: float, y: float, cands: PackedInt32Array, use_cands: bool
 	if not found:
 		return bp + mtn + bump(x, y) * shore
 	_note_road()
-	var far := LabNoise.smooth(_s.flat_band_m, _s.mountain_dist_m, net.hit_d)
+	# measured from where the road would end at its base width, so a wide stretch stays level across
+	var d := maxf(0.0, net.hit_d - _road_widen)
+	var far := LabNoise.smooth(_s.flat_band_m, _s.mountain_dist_m, d)
 	# the road takes the bumps at its own centre, so it rolls along its length but stays level across
 	var bq := bump(net.hit_qx, net.hit_qy)
 	var hq := _road_base(bq)
 	var base := hq + (bp - hq) * far
 	var k := (LabNoise.fbm(net.hit_s / 400.0 + net.hit_edge * 13.7, net.hit_side * 5.0 + 100.0, _s.world_seed + 57) - 0.5) * 2.0 * _s.ribbon_bank_m
 	var rw := _s.ribbon_width_m
-	var rib := k * LabNoise.smooth(_s.flat_band_m * 0.5, rw * 0.5, net.hit_d) * (1.0 - LabNoise.smooth(rw * 0.5, rw, net.hit_d))
-	var bumps := bq + (bump(x, y) * shore - bq) * LabNoise.smooth(_s.flat_band_m * 0.5, _s.flat_band_m * 0.5 + 30.0, net.hit_d)
+	var rib := k * LabNoise.smooth(_s.flat_band_m * 0.5, rw * 0.5, d) * (1.0 - LabNoise.smooth(rw * 0.5, rw, d))
+	var bumps := bq + (bump(x, y) * shore - bq) * LabNoise.smooth(_s.flat_band_m * 0.5, _s.flat_band_m * 0.5 + 30.0, d)
 	return base + mtn * far + rib * shore + bumps
 
 
@@ -237,8 +242,10 @@ func _road_base(bq: float) -> float:
 
 # Remember the road the last net.nearest found, for the road paint (see last_road_d).
 func _note_road() -> void:
-	last_road_d = net.hit_d
-	last_road_sd = net.hit_d * (-1.0 if net.hit_side < 0.0 else 1.0)
+	var w := _s.road_half_width_at(net.hit_qx, net.hit_qy)
+	_road_widen = w - _s.road_half_width_m
+	last_road_d = net.hit_d * _s.road_half_width_m / w
+	last_road_sd = last_road_d * (-1.0 if net.hit_side < 0.0 else 1.0)
 	last_road_s = net.hit_s
 	last_road_mark = LabNoise.smooth(_s.marking_junction_clear_m, _s.marking_junction_clear_m + 4.0, net.junction_gap(net.hit_edge, net.hit_s))
 

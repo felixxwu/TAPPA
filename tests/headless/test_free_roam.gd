@@ -356,6 +356,40 @@ func test_signed_road_distance_matches_the_distance_and_flips_across_the_road() 
 	assert_lt(a * b, 0.0, "the two sides of the road have opposite signs")
 
 
+func test_road_width_wanders_between_its_scales() -> void:
+	var s := _settings()
+	s.road_width_min_scale = 0.5
+	s.road_width_max_scale = 3.0
+	var lo := INF
+	var hi := -INF
+	for i in 400:
+		var w := s.road_half_width_at(float(i % 20) * 300.0, floorf(i / 20.0) * 300.0)
+		lo = minf(lo, w)
+		hi = maxf(hi, w)
+	assert_gte(lo, s.road_half_width_m * 0.5 - 1e-4)
+	assert_lte(hi, s.road_half_width_m * 3.0 + 1e-4)
+	assert_gt(hi - lo, s.road_half_width_m * 0.5, "the width actually varies across the island")
+
+
+# A wide stretch is road (grip and paint) out to its own edge, not the base width's.
+func test_a_wider_road_reads_as_road_out_to_its_local_edge() -> void:
+	var s := _settings()
+	s.road_width_min_scale = 2.0
+	s.road_width_max_scale = 2.0
+	var terrain := _world(s)
+	var net := terrain.net
+	var p := _road_midpoint(net)
+	net.nearest(p.x, p.y, 50.0)
+	var q := net.hit_q
+	var across := Vector2(-net.hit_dir.y, net.hit_dir.x)
+	var inside := q + across * s.road_half_width_m * 1.8
+	terrain.height(inside.x, inside.y, PackedInt32Array(), false)
+	assert_almost_eq(terrain.road_weight(terrain.last_road_d), 1.0, 0.001, "past the base width but inside the wide road")
+	var outside := q + across * (s.road_half_width_m * 2.0 + s.road_shoulder_m * 2.0 + 0.5)
+	terrain.height(outside.x, outside.y, PackedInt32Array(), false)
+	assert_eq(terrain.road_weight(terrain.last_road_d), 0.0, "beyond the wide road's shoulder")
+
+
 # Lane markings stop short of junctions so crossing roads don't paint over each other.
 func test_junction_gap_measures_to_the_nearer_junction_end_only() -> void:
 	var net := RoadNetwork.new()
@@ -1011,11 +1045,10 @@ func test_barriers_sit_on_the_outside_of_bends_in_whole_runs_clear_of_pads() -> 
 	rb.plan(s, terrain.net, terrain, terrain.sites, params)
 	assert_gt(rb.modules.size(), 0)
 	var per_run := {}
-	var half_w: float = params["track_width"] * 0.5
 	for m: Dictionary in rb.modules:
 		per_run[m["run"]] = per_run.get(m["run"], 0) + 1
 		var tg: Vector2 = m["tangent"]
-		var edge: Vector2 = m["pos"] + Vector2(-tg.y, tg.x) * float(m["side"]) * (half_w + float(params["road_gap_m"]))
+		var edge: Vector2 = m["pos"] + Vector2(-tg.y, tg.x) * float(m["side"]) * (float(m["half_w"]) + float(params["road_gap_m"]))
 		assert_true(terrain.sites.is_clear(edge, RoadBarriers.PAD_CLEAR_M - 0.01), "barrier clear of every pad")
 	for run in per_run.keys():
 		assert_true(per_run[run] >= int(params["min_run_modules"]), "run %d is long enough" % run)
@@ -1038,6 +1071,121 @@ func test_a_chunk_builds_its_barrier_modules_with_collision() -> void:
 	var field: BarrierField = cs.foliage.get_node("Barriers")
 	assert_eq(field.barrier_count, st.barriers.in_chunk(st._chunk_of(p)).size())
 	assert_true(field.find_children("*", "StaticBody3D", true, false).size() > 0, "barriers are solid")
+
+
+# --- electricity poles ---------------------------------------------------------------------------
+
+# How many wires along one road have their two poles on opposite sides of it (junction joins aside).
+func _crossings(terrain: RoadTerrain, rp: RoadPoles) -> int:
+	var n := 0
+	for w in rp.wires:
+		var a := rp.poles[w.x]
+		var b := rp.poles[w.y]
+		terrain.net.nearest(a.x, a.y, 50.0)
+		var side_a := terrain.net.hit_side
+		var road_a := terrain.net.hit_edge
+		terrain.net.nearest(b.x, b.y, 50.0)
+		if road_a == terrain.net.hit_edge and signf(side_a) != signf(terrain.net.hit_side):
+			n += 1
+	return n
+
+
+func test_poles_stand_off_the_road_clear_of_water_and_pads() -> void:
+	var s := _settings()
+	var terrain := _sited(s)
+	var rp := RoadPoles.new()
+	rp.plan(s, terrain.net, terrain, terrain.sites)
+	assert_gt(rp.poles.size(), 0)
+	for p in rp.poles:
+		assert_false(terrain.net.nearest(p.x, p.y, s.road_half_width_m), "pole %s off the road" % p)
+		assert_false(terrain.is_water(p.x, p.y), "pole %s on dry land" % p)
+		assert_true(terrain.sites.is_clear(p, 0.0), "pole %s off every pad" % p)
+	for w in rp.wires:
+		assert_lt(rp.poles[w.x].distance_to(rp.poles[w.y]), RoadPoles._max_span(s, s.road_half_width_max_m() + s.pole_road_gap_m) + 0.01,
+			"a wire spans at most one skipped pole")
+
+
+# Lines along different roads meet at their junctions instead of stopping short of them.
+func test_pole_lines_are_wired_together_at_junctions() -> void:
+	var s := _settings()
+	var terrain := _sited(s)
+	var rp := RoadPoles.new()
+	rp.plan(s, terrain.net, terrain, terrain.sites)
+	var joins := 0
+	for w in rp.wires:
+		terrain.net.nearest(rp.poles[w.x].x, rp.poles[w.x].y, 50.0)
+		var road_a := terrain.net.hit_edge
+		terrain.net.nearest(rp.poles[w.y].x, rp.poles[w.y].y, 50.0)
+		if terrain.net.hit_edge != road_a:
+			joins += 1
+	assert_gt(joins, 0, "some wire joins the lines of two roads")
+
+
+func test_pole_lines_cross_the_road_only_when_allowed() -> void:
+	var s := _settings()
+	var terrain := _sited(s)
+	var rp := RoadPoles.new()
+	s.pole_cross_chance = 0.0
+	rp.plan(s, terrain.net, terrain, terrain.sites)
+	assert_eq(_crossings(terrain, rp), 0, "a line that never hops stays on its side")
+	s.pole_cross_chance = 1.0
+	rp.plan(s, terrain.net, terrain, terrain.sites)
+	assert_gt(_crossings(terrain, rp), 0, "a line that hops sends wires over the road")
+
+
+func test_no_pole_spacing_means_no_poles() -> void:
+	var s := _settings()
+	s.pole_spacing_m = 0.0
+	var terrain := _sited(s)
+	var rp := RoadPoles.new()
+	rp.plan(s, terrain.net, terrain, terrain.sites)
+	assert_eq(rp.poles.size(), 0)
+
+
+func test_a_chunk_builds_its_poles_solid_with_wires() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	var coord := Vector2i.ZERO
+	for p in st.poles.poles:
+		coord = st._chunk_of(p)
+		if not st.poles.wires_in_chunk(coord).is_empty():
+			st.focus.position = Vector3(p.x, 0.0, p.y)
+			break
+	st.prefill()
+	var cs: TerrainStreamer.ChunkState = st._chunks[coord]
+	var root := cs.foliage.get_node_or_null("Poles")
+	assert_not_null(root, "the chunk has its poles")
+	if root == null:
+		return
+	var body := root.find_children("*", "StaticBody3D", true, false)
+	assert_eq(body.size(), 1)
+	assert_eq(body[0].get_child_count(), st.poles.poles_in_chunk(coord).size(), "every pole is solid")
+	assert_true(body[0].is_in_group(DamageModel.OBSTACLE_GROUP), "and hitting one costs HP")
+	assert_not_null(root.get_node_or_null("Wires"), "wires hang between them")
+
+
+func test_a_rest_stops_pole_is_wired_to_the_road_line() -> void:
+	var s := _settings()
+	var st := _streamer(s)
+	var i := -1
+	var pi := -1
+	for r: int in st.sites.of_kind(RoadSites.Kind.REST):
+		var at := st.cabin_transform(r) * TerrainStreamer.CABIN_POLE_AT
+		pi = st.poles.nearest(Vector2(at.x, at.z), TerrainStreamer.CABIN_FEED_MAX_M)
+		if pi >= 0:
+			i = r
+			break
+	assert_gt(i, -1, "a rest stop with a road pole nearby")
+	if i < 0:
+		return
+	var cabin := st._site_marker(i)
+	add_child_autofree(cabin)
+	var mesh := (cabin.get_node("PowerPole/Wires") as MeshInstance3D).mesh
+	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var end := cabin.transform * verts[verts.size() - 1]
+	var p := st.poles.poles[pi]
+	var foot := st.terrain.height(p.x, p.y, PackedInt32Array(), false) - RoadPoles.SINK_M
+	assert_almost_eq(end, Vector3(p.x, foot + RoadPoles.ARM_Y, p.y), Vector3.ONE * 0.01, "the feed wire ends on the road pole's arm")
 
 
 func test_a_chunk_with_bushes_can_be_brushed_by_the_car() -> void:
@@ -1310,6 +1458,7 @@ func test_a_rest_stops_cabin_faces_the_road_and_glows_once_lit() -> void:
 	assert_not_null(body, "it is solid")
 	if body != null:
 		assert_true(body.is_in_group(DamageModel.OBSTACLE_GROUP), "and hitting it costs HP")
+	assert_not_null(cabin.get_node_or_null("PowerPole/Wires"), "a power pole wired to the cabin and its lamp")
 	var inside := cabin.find_child("Interior", true, false) as MeshInstance3D
 	assert_not_null(inside, "the model keeps its interior")
 	if inside == null:
@@ -1333,7 +1482,7 @@ func test_a_rest_stops_cabin_faces_the_road_and_glows_once_lit() -> void:
 	assert_gt(Vector2(at_post.x - cabin.position.x, at_post.z - cabin.position.z).dot(Vector2(door.x, door.z)), 0.0,
 		"it stands on the door side, towards the road")
 	if body != null:
-		assert_eq(body.find_children("*", "CollisionShape3D", false, false).size(), 2, "and is solid, with the walls")
+		assert_eq(body.find_children("*", "CollisionShape3D", false, false).size(), 3, "and is solid, with the walls and the power pole")
 
 
 # A rest stop's crowd gathers between its cabin's door and the road, off the road, and is live:

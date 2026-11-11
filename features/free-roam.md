@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/road_poles.gd` (`RoadPoles`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
@@ -274,8 +274,18 @@ in the border stretches or squeezes it in places):
   (`BiomeDirector.TINTED`) and the boot warm-up compiles them.
 - `tools/biome_fade_capture.tscn` photographs a few borders from above, to check them by eye.
 
+**Road width wanders.** `FreeRoamSettings.road_half_width_at(x, y)` is world-space noise
+(`road_width_wavelength_m`) scaling `road_half_width_m` between `road_width_min_scale` and
+`road_width_max_scale`; being world-space, roads meeting at a junction agree on the width. The
+terrain (`RoadTerrain._note_road`) stretches `last_road_d` / `last_road_sd` so the local edge always
+sits at `road_half_width_m` — grip (`road_weight`), the per-pixel paint and lane lines all keep
+reading one fixed edge and widen with the road. The height maths measures from the base-width edge
+(`_road_widen`) so wide stretches stay level. Poles, roadside pads, barriers (`half_w` per module
+entry, read by `BarrierField`) and tree clearance use the local width; reach margins
+(`RoadSites.road_margin`, crowd road cells) use `road_half_width_max_m()`.
+
 **Road paint is per pixel, not per vertex.** The near mesh is a 2 m grid (16 m far away), and the
-road is only 3.8 m wide, so a per-vertex road weight (what the stage did on its 0.5 m grid)
+road is only ~4–7 m wide, so a per-vertex road weight (what the stage did on its 0.5 m grid)
 draws the road's edge along the triangles: a zig-zag. Instead `TerrainStreamer._arrays` bakes
 the *distance* to the road into each vertex, and the ground shader (`ps1_models.gdshader`, the
 `paint_road_per_pixel` path that `_material_for` turns on) works out the weight per fragment:
@@ -346,6 +356,22 @@ car's ring and the weather.
 ground through the albedo tint only (lane paint included), and a pure darkening tint (rain, storm, night, not sand or snow's colour blend) also scales the shared bush material's `tint` (`BiomeDirector._bush_material`) and the `Water` plane's colour (`_tint_water`), since neither the bushes' baked light nor the unshaded water sees the weather. On a weather change the sky and fog fade, while everything lit by `GameConfig.apply_car_light` (the
 car, rocks, barriers, dust, trees and bushes) jumps straight to the new light: setting `weather_sun_mult` relights them.
 There is **one water level** for the whole island (no per-ring waterline).
+
+## Electricity poles
+
+`RoadPoles` plans wooden poles along every road once at boot (`TerrainStreamer._ready`, after the
+barriers), one every `FreeRoamSettings.pole_spacing_m` (0 = none), `pole_road_gap_m` beyond the
+road's edge. Each road starts on a seeded side; at each pole the line hops to the other side with
+chance `pole_cross_chance`, so that span's wires cross over the road. A pole is skipped on water,
+on a pad, near the road's ends (`JUNCTION_CLEAR_M`) or on another road's shoulder. One skipped
+pole is bridged (a wire up to `_max_span`, two spacings); a longer gap, such as a pad or a lake,
+breaks the line. At each junction every road's line end is wired to the first one there, like a
+junction pole (no join when they are more than two spacings apart). A chunk's planting builds its poles (one solid
+`StaticBody3D`, damage obstacle group) and the wires ending at them (`_queue_poles` →
+`RoadPoles.build`, node `Poles`), two sagging `PRIMITIVE_LINES` wires per span from the cross-arm
+ends. Both ends stand on the exact terrain height (`seat_exact`), so a wire meets its pole
+whichever chunk builds each end. Every rest-stop cabin also has its own pole (`_cabin_power`,
+node `PowerPole`, at `CABIN_POLE_AT` beside the lamp post, outside the roof's overhang) wired to the cabin wall, the lamp post and the nearest road pole within `CABIN_FEED_MAX_M` (`_feed_point`, `RoadPoles.nearest`; no wire when none is that close).
 
 ## Sites: rest stops, loot slots, dead ends and parked cars
 
@@ -529,7 +555,7 @@ provides both.
     `network.hit_d`, so the noise test runs in the budgeted `PLANT` stage, not on the candidates.
   - Rock groups are thinned by `rock_group_chance` × the region's rock density, then fanned
     into outcrops with `TreeScatter.cluster`.
-  - Each spot is rejected if it is in water or within the road's half width plus
+  - Each spot is rejected if it is in water or within the road's local half width plus
     `tree_road_margin_m` plus the plant's own radius (not the shoulder, so trees stand right by
     the tarmac).
 - **Biomes:** each ring uses its region's `tree_mix`, bush switch (`spawns_bush_mesh`) and

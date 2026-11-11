@@ -29,7 +29,6 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 	_by_chunk.clear()
 	_chunk_m = s.chunk_m
 	var pitch: float = maxf(float(params.get("section_length_m", 2.0)), 0.1)
-	var half_w: float = float(params.get("track_width", 7.0)) * 0.5
 	var reach: float = float(params.get("lead_m", 5.0)) + BEND_REACH_M
 	var probe: float = float(params.get("slope_probe_m", 5.0))
 	var drop_min: float = float(params.get("drop_min_m", 1.0))
@@ -53,8 +52,9 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 			# Before the bend, along the incoming chord.
 			var a := maxf(cum[v0] - reach, JUNCTION_CLEAR_M)
 			while a < cum[v0] - pitch * 0.25:
-				stretch.append(_entry(pts, cum, a, side))
+				stretch.append(_entry(s, pts, cum, a, side))
 				a += pitch
+			var half_w := s.road_half_width_at(pts[v0].x, pts[v0].y)
 			var arc_r := half_w + road_gap
 			for v in range(v0, v1 + 1):
 				# Round the arc the road edge makes about each vertex, then follow the chord to the next.
@@ -63,11 +63,12 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 				var steps := ceili(absf(turn) * arc_r / pitch)
 				for k in steps:
 					var tangent := t0.rotated(turn * (k + 0.5) / steps)
-					stretch.append({"pos": pts[v], "tangent": tangent, "side": side, "style": BarrierSection.Style.ARMCO})
+					stretch.append({"pos": pts[v], "tangent": tangent, "side": side, "style": BarrierSection.Style.ARMCO,
+						"half_w": s.road_half_width_at(pts[v].x, pts[v].y)})
 				var b := cum[v] + pitch * 0.5
 				var end := minf(cum[v] + reach, length - JUNCTION_CLEAR_M) if v == v1 else cum[v + 1] - pitch * 0.25
 				while b <= end:
-					stretch.append(_entry(pts, cum, b, side))
+					stretch.append(_entry(s, pts, cum, b, side))
 					b += pitch
 			# Keep only modules over falling land and clear of every pad, in runs of min_run or more.
 			# The bend's road candidates are gathered once, so each height sample scans a short list.
@@ -81,7 +82,7 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 			falls.resize(stretch.size())
 			for g in range(0, stretch.size(), FALLS_SAMPLE_EVERY):
 				var mid: Dictionary = stretch[mini(g + floori(FALLS_SAMPLE_EVERY / 2.0), stretch.size() - 1)]
-				var f := BarrierLayout._land_falls_away(mid["pos"], mid["tangent"], side, ground, half_w, probe, drop_min, hill_tol)
+				var f := BarrierLayout._land_falls_away(mid["pos"], mid["tangent"], side, ground, float(mid["half_w"]), probe, drop_min, hill_tol)
 				for k in range(g, mini(g + FALLS_SAMPLE_EVERY, stretch.size())):
 					falls[k] = 1 if f else 0
 			for mi in stretch.size():
@@ -89,7 +90,7 @@ func plan(s: FreeRoamSettings, net: RoadNetwork, terrain: RoadTerrain, sites: Ro
 				var p: Vector2 = m["pos"]
 				var tg: Vector2 = m["tangent"]
 				var perp := Vector2(-tg.y, tg.x) * float(side)
-				var edge := p + perp * (half_w + road_gap)
+				var edge := p + perp * (float(m["half_w"]) + road_gap)
 				var ok := falls[mi] == 1 and sites.is_clear(edge, PAD_CLEAR_M)
 				if ok:
 					kept.append(m)
@@ -126,11 +127,12 @@ static func _turn(pts: PackedVector2Array, v: int) -> float:
 	return (pts[v] - pts[v - 1]).angle_to(pts[v + 1] - pts[v])
 
 
-func _entry(pts: PackedVector2Array, cum: PackedFloat64Array, arc: float, side: int) -> Dictionary:
+func _entry(s: FreeRoamSettings, pts: PackedVector2Array, cum: PackedFloat64Array, arc: float, side: int) -> Dictionary:
 	var i := clampi(cum.bsearch(arc) - 1, 0, pts.size() - 2)
 	var seg := cum[i + 1] - cum[i]
 	var p := pts[i].lerp(pts[i + 1], clampf((arc - cum[i]) / maxf(seg, 1e-6), 0.0, 1.0))
-	return {"pos": p, "tangent": (pts[i + 1] - pts[i]).normalized(), "side": side, "style": BarrierSection.Style.ARMCO}
+	return {"pos": p, "tangent": (pts[i + 1] - pts[i]).normalized(), "side": side, "style": BarrierSection.Style.ARMCO,
+		"half_w": s.road_half_width_at(p.x, p.y)}
 
 
 func _flush(kept: Array, run: int, min_run: int) -> int:

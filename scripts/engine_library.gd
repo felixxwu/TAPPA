@@ -155,7 +155,7 @@ const ENGINES: Array[Dictionary] = [
 		# large turbo, famous for its lag. Balance placeholders.
 		"turbo_enabled": true, "turbo_boost_gain": 0.5, "turbo_inertia": 1.0e-2, "turbo_omega_ref": 11000.0,
 		"turbo_parasitic_friction": 10.0,
-		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
+		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.01,
 	},
 	{
 		# Dodge Viper RT/10 (1st gen, 1992) 8.0 L (488 cu in) OHV V10: 400 bhp @ 4600, 610 N·m (450 lb-ft) @ 3600.
@@ -341,3 +341,5 @@ static func apply(engine: Dictionary, cfg: GameConfig) -> void:
 	# nitrous plus a HUD gauge and a mobile NOS button it never earned.
 	cfg.nitrous_boost_gain = 0.0
 	cfg.nitrous_tank_seconds = 0.0
+	# Gearbox sound, not an engine one: reset so a swapped-in car doesn't keep the last car's quick-shifter whine.
+	cfg.engine_gear_whine_gain = 0.0

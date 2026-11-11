@@ -172,10 +172,11 @@ func _try_roadside(k: Kind, s: FreeRoamSettings, net: RoadNetwork, terrain: Road
 	var normal := Vector2(-d.y, d.x)
 	var first := 1.0 if ScatterMath.hash01(floori(p.x), floori(p.y), s.world_seed, 77 + k) < 0.5 else -1.0
 	for side in [first, -first]:
-		var c: Vector2 = p + normal * side * (s.road_half_width_m + r * 0.6)
+		var w := s.road_half_width_at(p.x, p.y)
+		var c: Vector2 = p + normal * side * (w + r * 0.6)
 		if terrain.is_water(c.x, c.y) or _near_site(c, r + 10.0):
 			continue
-		if not net.nearest(c.x, c.y, r + s.road_half_width_m + s.road_shoulder_m + 2.0) or net.hit_edge != ei:
+		if not net.nearest(c.x, c.y, r + w + s.road_shoulder_m + 2.0) or net.hit_edge != ei:
 			continue  # another road is as near: this pad would sit across it
 		_add(k, c, p, d, r, terrain, ei, -1)
 		return true
@@ -283,7 +284,7 @@ func reached(a: Vector2, b: Vector2, margin: float, want: Callable) -> int:
 # How far either side of a pad's centre the whole road beside it reaches past the pad's edge: the
 # reach margin for drive-past pickups and rest stops (see reached).
 static func road_margin(s: FreeRoamSettings) -> float:
-	return s.road_half_width_m * 2.0 + s.road_shoulder_m
+	return s.road_half_width_max_m() * 2.0 + s.road_shoulder_m
 
 
 # How wide a pad's blend back to the land is, given the height gap `dh` it has to cover there.

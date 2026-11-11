@@ -195,3 +195,11 @@ func test_applying_turbo_and_supercharger_effects_together_keeps_both() -> void:
 	assert_almost_eq(cfg.engine_turbo_whistle_gain, 0.5, 0.0001, "the turbo's audio gain is written")
 	assert_almost_eq(cfg.engine_supercharger_whine_gain, 0.4, 0.0001, "the supercharger's audio gain is written")
 	assert_almost_eq(cfg.turbo_boost_gain, 0.3, 0.0001, "installing the second part leaves the first's fields alone")
+
+
+func test_gear_whine_effect_writes_the_audio_gain_and_an_engine_swap_clears_it() -> void:
+	var cfg := GameConfig.new()
+	UpgradeLibrary.apply({"boosts": [{"id": "g", "effect": {"install_gear_whine": {"engine_gear_whine_gain": 0.5}}}]}, cfg)
+	assert_almost_eq(cfg.engine_gear_whine_gain, 0.5, 0.0001, "the quick shifter's whine gain is written")
+	EngineLibrary.apply(EngineLibrary.all()[0], cfg)
+	assert_eq(cfg.engine_gear_whine_gain, 0.0, "fielding an engine clears a previous car's whine")

@@ -53,6 +53,7 @@ const EFFECTS := {
 	},
 	# Nitrous writes its config fields and NOTHING else.
 	"install_nitrous": {"field": "", "op": "write_fields"},
+	"install_gear_whine": {"field": "", "op": "write_fields"},
 	"mass_mult":           {"field": "mass", "op": "mult"},
 	"mass_add":            {"field": "mass", "op": "add"},
 	# Race tyres. `field` names the META spelling (a car's rubber is ONE `tire_compound`

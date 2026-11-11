@@ -48,6 +48,7 @@ var _prev_nitrous_empty := false  # so the tank-dry cue arms once, not every fra
 # calls reconfigure() (car.gd `_reconfigure_engine_audio`), so that's where we refresh.
 var _car: Node3D
 var _engine: EngineSim
+var _drivetrain: Drivetrain
 var _cfg: GameConfig
 # The active camera CAN legitimately change at runtime (chase ↔ free-roam ↔ replay), so
 # it's check-and-update rather than cache-once: compare the viewport's current camera to
@@ -71,7 +72,8 @@ func _resolve_mix_rate(cfg: GameConfig) -> float:
 func _resolve_refs() -> void:
 	_car = get_parent() as Node3D
 	_cfg = _car_config()
-	_engine = _car.drivetrain.engine if _car != null and _car.get("drivetrain") != null else null
+	_drivetrain = _car.get("drivetrain") if _car != null else null
+	_engine = _drivetrain.engine if _drivetrain != null else null
 
 
 # The car injects an isolated GameConfig copy into its own `config` (so a prop/
@@ -238,6 +240,7 @@ func _timed_process(_delta: float) -> void:
 		or (_prev_nitrous_on and not _prev_nitrous_empty and engine.nitrous_fraction() <= 0.0))
 	_prev_nitrous_empty = nitrous_empty
 	_prev_nitrous_on = nitrous_on
-	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active, nitrous_on, nitrous_trigger, nitrous_empty)
+	var wheel_speed := _drivetrain.driveline_omega() * cfg.wheel_radius
+	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active, nitrous_on, nitrous_trigger, nitrous_empty, wheel_speed)
 	_scratch_silent = false
 	_playback.push_buffer(_scratch)
