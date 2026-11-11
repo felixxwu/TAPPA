@@ -2,7 +2,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/road_poles.gd` (`RoadPoles`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/road_poles.gd` (`RoadPoles`), `scripts/free_roam/road_crowds.gd` (`RoadCrowds`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
@@ -372,6 +372,18 @@ junction pole (no join when they are more than two spacings apart). A chunk's pl
 ends. Both ends stand on the exact terrain height (`seat_exact`), so a wire meets its pole
 whichever chunk builds each end. Every rest-stop cabin also has its own pole (`_cabin_power`,
 node `PowerPole`, at `CABIN_POLE_AT` beside the lamp post, outside the roof's overhang) wired to the cabin wall, the lamp post and the nearest road pole within `CABIN_FEED_MAX_M` (`_feed_point`, `RoadPoles.nearest`; no wire when none is that close).
+
+## Roadside crowds
+
+`RoadCrowds` plans spectator groups once at boot (`TerrainStreamer._ready`, after the poles): every
+`FreeRoamSettings.crowd_interval_m` along each road, each side gets a group with chance
+`crowd_chance` (0 = none), centred just past the shoulder. A group is skipped on water, on a pad,
+near the road's ends (`JUNCTION_CLEAR_M`) or on another road. Trees and rocks keep off a group's
+ground (`RoadCrowds.is_clear` in `_spot_is_clear`). The chunk holding a group's centre builds it
+(`_roadside_crowd`, spawn kind `spawn_crowd`): one or two pop-up gazebos (`RoadCrowds.gazebo`,
+primitive legs and a coloured pyramid canopy, no collision, skipped if a pole stands in the way)
+set back a little from the road, and a live `SpectatorGroup` of `crowd_size` (node `RoadCrowd<i>`)
+over the band, so some stand under the canopies. The crowd steers round nearby poles.
 
 ## Sites: rest stops, loot slots, dead ends and parked cars
 

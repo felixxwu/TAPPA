@@ -71,8 +71,9 @@ reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the c
   nothing paused. While it stays on that pad, the rest stop's prompt line under the minimap reads
   "Enter / A: drive it" (`ParkedCars.offer`, `MiniMap.update_prompt_label`); menu_select or a tap
   on it (`switch_here` → `switch_requested` → `free_roam.gd._drive_found_car`) makes it the active
-  car (`WorldSession.set_active_car`, so it starts undamaged) and reloads the world where the car
-  stands ("Changing cars"), as a Garage pick does. Leaving the pad withdraws the offer; the car
+  car (`WorldSession.set_active_car`, so it starts undamaged) and reloads the world ("Changing
+  cars") with it standing where it was parked, facing the same way (`ParkedCars.pad_pose`, held in
+  `free_roam.gd._next_pose` so the exit's `save_world` doesn't overwrite it). Leaving the pad withdraws the offer; the car
   waits in the Garage. Enter marks the input handled before switching, because the reload takes the
   node out of the tree. Nothing is found while the cold open is due (`ColdOpen.due`). A car is
   waiting while no owned car has its model (`ParkedCars.model_owned`), so a car bought in an older

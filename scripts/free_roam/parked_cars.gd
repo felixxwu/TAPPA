@@ -10,7 +10,7 @@ extends Node3D
 # put: a car prop is too dear to build while driving.
 
 signal found(owned: Dictionary)
-signal switch_requested(owned: Dictionary)
+signal switch_requested(owned: Dictionary, pose: Transform3D)
 
 var streamer: TerrainStreamer
 var car: Node3D  # the player's car
@@ -68,15 +68,20 @@ func _park(i: int) -> Node3D:
 	var pivot := Node3D.new()
 	pivot.name = "Parked%d" % i
 	add_child(pivot)
-	var d := sites.dir[i]
-	pivot.global_transform = Transform3D(Basis.looking_at(Vector3(d.x, 0.0, d.y), Vector3.UP),
-		Vector3(sites.pos[i].x, sites.pad_h[i], sites.pos[i].y))
+	pivot.global_transform = pad_pose(i)
 	var prop := CarProp.spawn(pivot, Scenes.car_scene(), {"index": CarLibrary.index_of(String(sites.car_id[i])),
 		"stop_physics": true, "disable_process": true})
 	prop.disable_mode = CollisionObject3D.DISABLE_MODE_KEEP_ACTIVE  # a disabled body otherwise leaves the physics world, so nothing could hit it
 	var box := CarCardPreview._visible_mesh_aabb(prop, pivot)
 	prop.position -= Vector3(box.get_center().x, box.position.y, box.get_center().z)
 	return pivot
+
+
+# Where a car stands on `site`'s pad, facing back up the road.
+func pad_pose(site: int) -> Transform3D:
+	var d := streamer.sites.dir[site]
+	var p := streamer.sites.pos[site]
+	return Transform3D(Basis.looking_at(Vector3(d.x, 0.0, d.y), Vector3.UP), Vector3(p.x, streamer.sites.pad_h[site], p.y))
 
 
 func _physics_process(_delta: float) -> void:
@@ -129,9 +134,11 @@ func switch_here() -> bool:
 	var owned := offer()
 	if owned.is_empty():
 		return false
+	var pose := pad_pose(_offer_site)
+	pose.origin.y += SWITCH_LIFT_M
 	_offer = {}
 	_offer_site = -1
-	switch_requested.emit(owned)
+	switch_requested.emit(owned, pose)
 	return true
 
 
@@ -171,5 +178,6 @@ func clear_warm_up() -> void:
 				body.remove_meta("layers")
 
 
+const SWITCH_LIFT_M := 1.0  # the player's car spawns this far above the pad and settles onto it
 const WARM_UP_AHEAD_M := 14.0
 const WARM_UP_GAP_M := 6.0

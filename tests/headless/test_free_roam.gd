@@ -1164,6 +1164,57 @@ func test_a_chunk_builds_its_poles_solid_with_wires() -> void:
 	assert_not_null(root.get_node_or_null("Wires"), "wires hang between them")
 
 
+# --- roadside crowds --------------------------------------------------------------------------------
+
+func test_roadside_crowds_stand_beside_the_road_on_dry_land_off_pads() -> void:
+	var s := _settings()
+	s.crowd_chance = 1.0
+	var terrain := _sited(s)
+	var rc := RoadCrowds.new()
+	rc.plan(s, terrain.net, terrain, terrain.sites)
+	assert_gt(rc.spots.size(), 0)
+	for c in rc.spots:
+		assert_false(terrain.net.nearest(c.x, c.y, s.road_half_width_m + s.crowd_half_depth_m), "crowd %s off the road" % c)
+		assert_true(terrain.net.nearest(c.x, c.y, s.road_half_width_max_m() + s.road_shoulder_m + s.crowd_half_depth_m + 1.0), "crowd %s beside a road" % c)
+		assert_false(terrain.is_water(c.x, c.y), "crowd %s on dry land" % c)
+		assert_true(terrain.sites.is_clear(c, 0.0), "crowd %s off every pad" % c)
+		assert_false(rc.is_clear(c, 0.0), "trees keep off crowd %s" % c)
+
+
+func test_no_crowd_chance_means_no_crowds() -> void:
+	var s := _settings()
+	s.crowd_chance = 0.0
+	var terrain := _sited(s)
+	var rc := RoadCrowds.new()
+	rc.plan(s, terrain.net, terrain, terrain.sites)
+	assert_eq(rc.spots.size(), 0)
+
+
+func test_a_chunk_builds_its_crowd_with_gazebos() -> void:
+	var s := _settings()
+	s.crowd_chance = 1.0
+	var st := _streamer(s)
+	var ci := -1
+	for k in st.crowds.spots.size():
+		var at := st.crowds.spots[k]
+		if st.poles.nearest(at, 12.0) < 0:
+			ci = k
+			break
+	assert_gt(ci, -1, "a crowd away from any pole")
+	if ci < 0:
+		return
+	var c := st.crowds.spots[ci]
+	st.focus.position = Vector3(c.x, 0.0, c.y)
+	st.prefill()
+	var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of(c)]
+	assert_not_null(cs.foliage.get_node_or_null("RoadCrowd%d" % ci), "the chunk has its crowd")
+	var near := 0
+	for g: Node3D in cs.foliage.find_children("*Gazebo*", "MeshInstance3D", false, false):
+		if Vector2(g.position.x, g.position.z).distance_to(c) < s.crowd_half_len_m:
+			near += 1
+	assert_between(near, 1, 2, "one or two gazebos among the crowd")
+
+
 func test_a_rest_stops_pole_is_wired_to_the_road_line() -> void:
 	var s := _settings()
 	var st := _streamer(s)

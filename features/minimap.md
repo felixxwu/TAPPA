@@ -20,10 +20,11 @@ A navigation-software style map at the top centre of the screen while driving.
   the world (the shader's `bg_color`, `rim_color` and `shadow_color` are transparent). `minimap_tilt` is how
   much wider the ground at the far edge is than at the near edge.
 - **Roads you've driven** (`WorldSession.has_driven` on the segment's midpoint cell, the same
-  rule as the full map), in ink with a dark casing, `minimap_road_width` wide.
+  rule as the full map), in ink with a dark casing, at their real width on the ground (`FreeRoamSettings.road_half_width_at`, times `minimap_road_width_scale`). Reaching a new biome ring
+  marks every road in it as driven and its rest stops and cars as seen (`free_roam.gd` → `reveal_ring_roads`), so a new biome's roads and markers all show. The starting ring's roads are revealed on every load.
 - **A little road ahead** (off: `minimap_nearby_road_m` is 0, so only driven road shows): undriven road within `minimap_nearby_road_m` of a point a little
   ahead of the car, drawn faint, so the road you're on and the next junction show. Its look is
-  `minimap_undriven_road_alpha` / `_width` / `_outline_alpha` (a thin dark outline so it reads
+  `minimap_undriven_road_alpha` / `_outline_alpha` (a thin dark outline so it reads
   on bright ground); the chevron's size is `minimap_car_arrow_px`.
 - **Rest stops you've come across** (`WorldSession.seen_sites`) as dots (orange lit, grey unlit:
   `TerrainStreamer.BEACON_LIT` / `BEACON_UNLIT`), and **cars waiting to be found** as a gold car key

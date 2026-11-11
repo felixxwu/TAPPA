@@ -267,3 +267,31 @@ func test_the_line_shows_money_messages_but_the_rest_stop_prompt_wins() -> void:
 	mm._toast_left = 0.0
 	mm.update_prompt_label()
 	assert_false(mm.prompt_label.visible, "and gone once it has lasted")
+
+
+# --- road width ----------------------------------------------------------------------------------
+
+func _road_widths(scale: float) -> Array:
+	var s := FreeRoamSettings.new()
+	s.road_width_min_scale = scale
+	s.road_width_max_scale = scale
+	var net := RoadNetwork.new()
+	net.seg_ax = PackedFloat64Array([0.0]); net.seg_ay = PackedFloat64Array([0.0])
+	net.seg_bx = PackedFloat64Array([10.0]); net.seg_by = PackedFloat64Array([0.0])
+	var streamer := TerrainStreamer.new()
+	autofree(streamer)
+	streamer.settings = s
+	streamer.network = net
+	var mm := _map()
+	mm.streamer = streamer
+	mm.index_roads(net)
+	mm._draw_centre = Vector2.ZERO
+	WorldSession.mark_driven(5.0, 0.0)
+	return [mm.gather_roads(100.0)[0].keys(), s.road_half_width_at(5.0, 0.0) * 2.0]
+
+
+func test_roads_are_drawn_at_their_real_width() -> void:
+	for scale in [1.0, 2.0]:
+		var got := _road_widths(scale)
+		assert_eq(got[0].size(), 1)
+		assert_almost_eq(float(got[0][0]), float(got[1]), 0.125, "the map's road is as wide as the road")

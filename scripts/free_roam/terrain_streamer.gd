@@ -35,6 +35,7 @@ var terrain := RoadTerrain.new()
 var sites := RoadSites.new()
 var barriers := RoadBarriers.new()
 var poles := RoadPoles.new()
+var crowds := RoadCrowds.new()
 var focus: Node3D
 # Frame time not taken by anything but terrain (µs), smoothed over recent frames; set by the HUD side.
 var spare_us := 2000.0
@@ -204,6 +205,7 @@ func _ready() -> void:
 	if Config.data.barriers_enabled:
 		barriers.plan(settings, network, terrain, sites, barrier_params())
 	poles.plan(settings, network, terrain, sites)
+	crowds.plan(settings, network, terrain, sites)
 	stat_build_ms = Time.get_ticks_msec() - t0
 	_forest = TreeScatter.make_forest_noise(settings.world_seed, Config.data.forest_wavelength_m)
 	# Biome ring i wears region ring_regions[i]: its trees and rocks, and a ground material
@@ -1275,7 +1277,7 @@ func _spot_is_clear(g: PlantGround, p: Vector2, water: float, clearance: float) 
 	if g.height_at(p.x, p.y) < water + 0.3 or terrain.is_lake(p.x, p.y):
 		return false
 	var near_road := network.nearest_in(p.x, p.y, _cands_of(_chunk_of(p)), clearance)
-	return not near_road and sites.is_clear(p, 2.0)
+	return not near_road and sites.is_clear(p, 2.0) and crowds.is_clear(p, 1.0)
 
 
 # Whether a clear spot grows: everything right by the road, thinning to the far density over
@@ -1369,6 +1371,8 @@ func _queue_spawns(job: ChunkJob, water: float, rock_clearance: float) -> void:
 	_queue_site_markers(job)
 	_queue_barriers(job, g)
 	_queue_poles(job, g)
+	for ci in crowds.in_chunk(job.coord):
+		_add_spawn(job, "spawn_crowd", func(parent: Node3D) -> void: _roadside_crowd(ci, parent, g))
 
 
 # The stage's barrier modules and collision, fed the free-roam layout and this road's width.
@@ -1726,6 +1730,47 @@ func _rest_crowd(i: int, parent: Node3D) -> SpectatorGroup:
 	parent.add_child(group)
 	group.setup(members, focus, self, road, wall_grid, p)
 	return group
+
+
+# Roadside group `ci` (RoadCrowds): one or two pop-up gazebos and a live crowd around them, some
+# standing under the canopies. Built like a rest-stop crowd, steering round the nearby poles.
+func _roadside_crowd(ci: int, parent: Node3D, g: PlantGround) -> void:
+	var c := crowds.spots[ci]
+	var fwd := crowds.along[ci]
+	var away := crowds.out[ci]
+	var hl := settings.crowd_half_len_m
+	var hd := settings.crowd_half_depth_m
+	var gazebos := 1 + int(ScatterMath.hash01(ci, 1, settings.world_seed, 67) < 0.5)
+	var colour := int(ScatterMath.hash01(ci, 2, settings.world_seed, 67) * RoadCrowds.GAZEBO_COLOURS.size())
+	for k in gazebos:
+		var f := (k + 0.5) / gazebos * 2.0 - 1.0
+		var at := c + fwd * f * (hl - RoadCrowds.GAZEBO_HALF_M) + away * (hd - RoadCrowds.GAZEBO_HALF_M) * 0.5
+		if poles.nearest(at, RoadCrowds.GAZEBO_HALF_M + 1.0) >= 0:
+			continue
+		var xf := Transform3D(Basis(Vector3.UP, atan2(-fwd.y, fwd.x)), Vector3(at.x, seat_exact(g, at.x, at.y), at.y))
+		parent.add_child(RoadCrowds.gazebo(xf, colour + k))
+	var cfg: GameConfig = Config.data
+	if settings.crowd_size <= 0 or not cfg.spectators_enabled:
+		return
+	var p := cfg.spectator_params()
+	p["seed"] = int(ScatterMath.hash01(ci, 0, settings.world_seed, 67) * 1_000_000.0)
+	p["ragdoll_pool_size"] = 0
+	var road := _road_cells_near(c, hl + p["road_probe_m"] + 2.0)
+	var near_poles := PackedVector2Array()
+	var cc := _chunk_of(c)
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			for pi in poles.poles_in_chunk(cc + Vector2i(dx, dz)):
+				near_poles.append(poles.poles[pi])
+	var grid := SpectatorScatter.build_point_grid(near_poles, p["tree_cell_m"])
+	var members := SpectatorScatter.members(c, fwd, hl, hd, settings.crowd_size, cfg.spectator_separation_m,
+		road, grid, p["tree_cell_m"], p["tree_avoid_m"], p["seed"])
+	if members.is_empty():
+		return
+	var group := SpectatorGroup.new()
+	group.name = "RoadCrowd%d" % ci
+	parent.add_child(group)
+	group.setup(members, focus, self, road, grid, p)
 
 
 # Road cells (ScatterMath's raster) within `reach` of `centre`: each nearby road segment is walked

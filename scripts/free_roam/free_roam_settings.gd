@@ -58,8 +58,8 @@ extends Resource
 @export var max_corner_turn_deg := 20.0
 ## Every car to be found sits at the end of its own side road, branching off at right angles
 ## somewhere in the car's ring: this long at most and at least (RoadNetwork._add_side_roads).
-@export var side_road_max_m := 100.0
-@export var side_road_min_m := 50.0
+@export var side_road_max_m := 30.0
+@export var side_road_min_m := 20.0
 ## How far a side road keeps from every other road past its first stretch, and how far its
 ## branch point keeps from junctions and from other side roads' branch points.
 @export var side_road_clear_m := 80.0
@@ -127,6 +127,15 @@ extends Resource
 @export var pole_spacing_m := 40.0
 @export var pole_road_gap_m := 3.0
 @export var pole_cross_chance := 0.12
+
+## Roadside spectator groups (RoadCrowds): every crowd_interval_m along each road, each side gets a
+## group with chance crowd_chance (0 = none). Each is crowd_size people over a band half_len along
+## the road and half_depth across it, with one or two pop-up gazebos.
+@export var crowd_interval_m := 250.0
+@export var crowd_chance := 0.08
+@export var crowd_size := 10
+@export var crowd_half_len_m := 6.0
+@export var crowd_half_depth_m := 3.0
 
 ## One candidate spot per cell of this size; trees are then thinned by the forest noise.
 @export var tree_cell_m := 6.0

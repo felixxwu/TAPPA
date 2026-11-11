@@ -41,6 +41,7 @@ var _odometer_m := 0.0
 var _last_xz := Vector2.ZERO
 var _last_pose := Transform3D.IDENTITY  # the car's pose as of the last physics tick (see save_world)
 var _has_pose := false
+var _next_pose: Variant = null  # where the next load puts the car, overriding where it is now
 # The world this scene was built on (WorldSession.generation). Once the profile's world is replaced
 # (a new world, a cloud download, the benchmark ending) this scene writes nothing more.
 var _generation := -1
@@ -97,6 +98,7 @@ func _ready() -> void:
 		_car.damage.engine_temp = 0.0
 		Save.add_lifetime_stat(LifetimeStats.TIMES_GAVE_UP)  # the Respawn that quitting skipped
 	_streamer.focus = _car
+	reveal_ring_roads(0, 0)
 	wheel_particles = WheelParticles.new()
 	wheel_particles.name = "WheelParticles"
 	add_child(wheel_particles)
@@ -395,9 +397,10 @@ func _offer_conflict() -> void:
 
 
 # A car found at the end of its side road (it's in the garage already) and then picked on its pad:
-# drive it now, reloading the world where the car stands, as a Garage pick does at a checkpoint.
-func _drive_found_car(found_car: Dictionary) -> void:
+# drive it now, reloading the world with it standing where it was parked, as if climbed into.
+func _drive_found_car(found_car: Dictionary, pose: Transform3D) -> void:
 	WorldSession.set_active_car(int(found_car.get("instance_id", -1)))
+	_next_pose = pose
 	save_world()
 	Scenes.change_to(get_tree(), Scenes.FREE_ROAM, "Changing cars")
 
@@ -442,7 +445,9 @@ func save_world() -> void:
 	if _car.is_inside_tree():
 		_last_pose = _car.global_transform
 		_has_pose = true
-	if _has_pose:
+	if _next_pose != null:
+		WorldSession.save_pose(_next_pose)
+	elif _has_pose:
 		WorldSession.save_pose(_last_pose)
 	# After a swap at a rest stop this car is no longer the active one; its damage isn't the new car's.
 	if int(owned.get("instance_id", -1)) == int(WorldSession.active_car().get("instance_id", -2)):
@@ -458,9 +463,25 @@ func save_world() -> void:
 func unlock_map() -> void:
 	_rest_stops.light_all()
 	WorldSession.reach_ring(_streamer.settings.ring_count - 1)
+	reveal_ring_roads(0, _streamer.settings.ring_count - 1)
+
+
+# Puts every road, rest stop and car in rings `from`..`to` on the map, as if driven and seen.
+func reveal_ring_roads(from: int, to: int) -> void:
 	var net := _streamer.network
 	for si in net.seg_ax.size():
-		WorldSession.mark_driven((net.seg_ax[si] + net.seg_bx[si]) * 0.5, (net.seg_ay[si] + net.seg_by[si]) * 0.5)
+		var mx := (net.seg_ax[si] + net.seg_bx[si]) * 0.5
+		var my := (net.seg_ay[si] + net.seg_by[si]) * 0.5
+		var r := _streamer.terrain.ring_index(mx, my)
+		if r >= from and r <= to:
+			WorldSession.mark_driven(mx, my)
+	var sites := _streamer.sites
+	for kind in [RoadSites.Kind.REST, RoadSites.Kind.CAR]:
+		for i in sites.of_kind(kind):
+			var r := _streamer.terrain.ring_index(sites.pos[i].x, sites.pos[i].y)
+			if r >= from and r <= to:
+				WorldSession.see(i)
+	_minimap.refresh_markers()
 
 
 func _on_car_teleported(p: Vector2) -> void:
@@ -482,8 +503,11 @@ func _physics_process(delta: float) -> void:
 		_map_t = _streamer.settings.map_every_s
 		WorldSession.mark_driven(p.x, p.y)
 		var ring := _streamer.terrain.ring_index(p.x, p.y)
+		var prev_ring := WorldSession.max_ring()
 		if WorldSession.reach_ring(ring):
 			region_banner.announce(RegionBanner.name_for(_streamer.settings, ring))
+			reveal_ring_roads(prev_ring + 1, ring)
+			_minimap.redraw()
 		if MiniMap.mark_seen_near(_streamer.sites, p, Config.data.minimap_seen_radius_m) > 0:
 			_minimap.refresh_markers()
 	_save_t -= delta

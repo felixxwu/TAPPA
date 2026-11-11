@@ -605,6 +605,46 @@ func test_unlocking_the_map_lights_every_rest_stop_for_travel() -> void:
 	_rest.lit_sites = before
 
 
+func test_the_starting_rings_roads_are_on_the_map_from_the_start() -> void:
+	var net := _streamer.network
+	for si in net.seg_ax.size():
+		var mx := (net.seg_ax[si] + net.seg_bx[si]) * 0.5
+		var my := (net.seg_ay[si] + net.seg_by[si]) * 0.5
+		if _streamer.terrain.ring_index(mx, my) == 0:
+			assert_true(WorldSession.has_driven(mx, my), "starting road %d is on the map" % si)
+	var sites := _streamer.sites
+	for kind in [RoadSites.Kind.REST, RoadSites.Kind.CAR]:
+		for i in sites.of_kind(kind):
+			if _streamer.terrain.ring_index(sites.pos[i].x, sites.pos[i].y) == 0:
+				assert_true(WorldSession.is_seen(i), "starting site %d is on the map" % i)
+
+
+func test_revealing_a_ring_maps_only_that_rings_roads() -> void:
+	var w: Dictionary = WorldSession._world()
+	var before: Dictionary = w.get("driven", {}).duplicate()
+	w["driven"] = {}
+	_scene.reveal_ring_roads(1, 1)
+	var net := _streamer.network
+	var inside := 0
+	for si in net.seg_ax.size():
+		var mx := (net.seg_ax[si] + net.seg_bx[si]) * 0.5
+		var my := (net.seg_ay[si] + net.seg_by[si]) * 0.5
+		var in_ring := _streamer.terrain.ring_index(mx, my) == 1
+		inside += int(in_ring)
+		if in_ring:
+			assert_true(WorldSession.has_driven(mx, my), "road %d in the ring is on the map" % si)
+	assert_gt(inside, 0, "the island has roads in ring 1")
+	for si in net.seg_ax.size():
+		var mx := (net.seg_ax[si] + net.seg_bx[si]) * 0.5
+		var my := (net.seg_ay[si] + net.seg_by[si]) * 0.5
+		if _streamer.terrain.ring_index(mx, my) == 0 and not WorldSession.has_driven(mx, my):
+			w["driven"] = before
+			pass_test("roads outside the ring stay hidden")
+			return
+	w["driven"] = before
+	fail_test("some ring-0 road should stay off the map")
+
+
 func test_a_price_is_green_when_affordable_and_red_when_not() -> void:
 	assert_eq(RestStopPage.price_variant(100, 100), "green", "exactly enough money is affordable")
 	assert_eq(RestStopPage.price_variant(101, 100), "red")

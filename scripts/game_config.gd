@@ -3063,10 +3063,8 @@ func spectator_params() -> Dictionary:
 @export var minimap_nearby_road_m := 0.0
 ## Opacity of that not-yet-driven road (driven road is drawn fully opaque).
 @export var minimap_undriven_road_alpha := 0.85
-## Width of driven road on the map texture, in texture pixels; its dark casing is 3.5 px wider.
-@export var minimap_road_width := 13.0
-## Width of the not-yet-driven road on the map texture, in texture pixels.
-@export var minimap_undriven_road_width := 5.0
+## Roads are drawn at their real width on the ground times this; their dark casing is 3.5 texture px wider.
+@export var minimap_road_width_scale := 1.0
 ## Opacity of the dark outline under the not-yet-driven road, so it reads against bright ground.
 @export var minimap_undriven_road_outline_alpha := 0.45
 ## Half-height of the car's chevron on the minimap, in logical pixels (scaled by the UI scale).

@@ -27,7 +27,7 @@ need a migration, so it stays as is).
 | `car_state` | `{hp, max_hp, cooling_broken, engine_temp, toe}`, so a reload resumes the damage too; health carries over as a share of max HP, so a full car stays full after fitting a roll cage or swapping cars |
 | `lit` / `last_site` | lit rest stops (site ids; spawn 0 always) and the respawn point |
 | `driven` | map cells (`DRIVEN_CELL_M` = 40 m) the car has driven through, for the map |
-| `max_ring` | the furthest biome ring reached, a high-water mark (`reach_ring` returns true on a new one, which cues the region-name banner) |
+| `max_ring` | the furthest biome ring reached, a high-water mark (`reach_ring` returns true on a new one, which cues the region-name banner and puts the ring's roads on the map) |
 | `drive_time` | seconds driven: the weather timeline (`BiomeDirector`) runs on it |
 | `seen` | site ids (rest stops, loot slots, dead ends) the car has come within `GameConfig.minimap_seen_radius_m` of (`see`, `seen_sites`, `is_seen`; spawn 0 from the start). The minimap and the map show only these ([minimap.md](minimap.md)). A save without the key reads as `[0]` |
 | `money` | coins picked up and not yet spent (`money` / `set_money`); dropped when the car gives up |

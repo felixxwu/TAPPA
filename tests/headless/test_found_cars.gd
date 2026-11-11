@@ -216,6 +216,11 @@ func test_enter_on_the_pad_switches_to_the_found_car_and_reloads_the_world() -> 
 	_press_select(parked)
 	assert_eq(String(WorldSession.active_car()["model_id"]), String(parked.streamer.sites.car_id[site]))
 	assert_eq(Scenes.last_blocked_path, Scenes.FREE_ROAM, "the world reloads around the new car")
+	var pose: Transform3D = WorldSession.pose_transform()
+	var pad := parked.pad_pose(site)
+	assert_almost_eq(Vector2(pose.origin.x, pose.origin.z), Vector2(pad.origin.x, pad.origin.z), Vector2.ONE * 0.01,
+		"the new car stands where it was parked")
+	assert_almost_eq(pose.basis.z, pad.basis.z, Vector3.ONE * 0.01, "facing the way it was parked")
 
 
 func test_a_wrecked_car_on_the_pad_cant_switch_to_the_found_car() -> void:

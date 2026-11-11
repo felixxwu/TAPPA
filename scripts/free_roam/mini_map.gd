@@ -44,8 +44,7 @@ var nearby_m := 120.0
 var redraw_move_m := 12.0
 var redraw_interval_s := 1.0 / 15.0
 var undriven_alpha := 0.85
-var undriven_width := 5.0
-var road_width := 13.0
+var road_width_scale := 1.0
 var undriven_outline_alpha := 0.45
 var car_arrow_px := 4.0
 
@@ -89,8 +88,7 @@ func _ready() -> void:
 	redraw_move_m = cfg.minimap_redraw_move_m
 	redraw_interval_s = 1.0 / maxf(cfg.minimap_redraw_hz, 1.0)
 	undriven_alpha = cfg.minimap_undriven_road_alpha
-	undriven_width = cfg.minimap_undriven_road_width
-	road_width = cfg.minimap_road_width
+	road_width_scale = cfg.minimap_road_width_scale
 	undriven_outline_alpha = cfg.minimap_undriven_road_outline_alpha
 	car_arrow_px = cfg.minimap_car_arrow_px
 	_vp = SubViewport.new()
@@ -254,12 +252,12 @@ func refresh_markers() -> void:
 
 
 # Everything a redraw needs within `radius` of the draw centre: driven segments, and undriven ones
-# near a point a little ahead of the car. Returns [driven PackedVector2Array, faint ...] as
-# segment end pairs relative to the draw centre, in metres.
+# near a point a little ahead of the car. Returns [driven, faint], each {road width in metres:
+# segment end pairs relative to the draw centre, in metres}.
 func gather_roads(radius: float) -> Array:
 	var t0 := Time.get_ticks_usec()
-	var driven := PackedVector2Array()
-	var faint := PackedVector2Array()
+	var driven := {}
+	var faint := {}
 	if streamer == null:
 		return [driven, faint]
 	var net := streamer.network
@@ -283,12 +281,16 @@ func gather_roads(radius: float) -> Array:
 			for si in cell as PackedInt32Array:
 				var a := Vector2(net.seg_ax[si], net.seg_ay[si])
 				var b := Vector2(net.seg_bx[si], net.seg_by[si])
-				if was_driven:
-					driven.append(a - c)
-					driven.append(b - c)
-				elif ((a + b) * 0.5).distance_squared_to(ahead) < near2:
-					faint.append(a - c)
-					faint.append(b - c)
+				var m := (a + b) * 0.5
+				if not was_driven and m.distance_squared_to(ahead) >= near2:
+					continue
+				var into: Dictionary = driven if was_driven else faint
+				# Bucketed to a quarter metre so each width is one draw call.
+				var w := snappedf(streamer.settings.road_half_width_at(m.x, m.y) * 2.0, 0.25)
+				if not into.has(w):
+					into[w] = PackedVector2Array()
+				into[w].append(a - c)
+				into[w].append(b - c)
 	last_redraw_us = Time.get_ticks_usec() - t0
 	return [driven, faint]
 
@@ -431,20 +433,18 @@ class RoadLayer:
 		var k := float(map._vp.size.x) / map.view_m
 		var radius := map.draw_radius()
 		var roads := map.gather_roads(radius)
-		var driven: PackedVector2Array = roads[0]
-		var faint: PackedVector2Array = roads[1]
-		for i in driven.size():
-			driven[i] = driven[i] * k
-		for i in faint.size():
-			faint[i] = faint[i] * k
-		if not faint.is_empty():
-			if map.undriven_outline_alpha > 0.0:
-				draw_multiline(faint, Color(0.0, 0.0, 0.0, map.undriven_outline_alpha),
-					map.undriven_width + 2.5)
-			draw_multiline(faint, Color(UITheme.INK, map.undriven_alpha), map.undriven_width)
-		if not driven.is_empty():
-			draw_multiline(driven, Color(0.0, 0.0, 0.0, 0.85), map.road_width + 3.5)
-			draw_multiline(driven, UITheme.INK, map.road_width)
+		_draw_roads(roads[1], k, Color(0.0, 0.0, 0.0, map.undriven_outline_alpha), Color(UITheme.INK, map.undriven_alpha))
+		_draw_roads(roads[0], k, Color(0.0, 0.0, 0.0, 0.85), UITheme.INK)
+
+	func _draw_roads(by_width: Dictionary, k: float, casing: Color, ink: Color) -> void:
+		for w: float in by_width:
+			var pts: PackedVector2Array = by_width[w]
+			for i in pts.size():
+				pts[i] = pts[i] * k
+			var px := w * k * map.road_width_scale
+			if casing.a > 0.0:
+				draw_multiline(pts, casing, px + 3.5)
+			draw_multiline(pts, ink, px)
 
 
 # The upright layer on top of the tilted ground: site icons and the car.
