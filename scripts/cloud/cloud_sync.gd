@@ -187,6 +187,9 @@ func _pull_inner() -> Dictionary:
 
 	if remote_revision <= agreed_revision:
 		# We are level with, or ahead of, what the cloud has.
+		if (local_moved or pending) and _local_is_wiped() and _remote_has_progress(remote):
+			# A blank world (wiped or started over while signed out) would replace the career: ask.
+			return _raise_conflict(remote)
 		if local_moved or pending:
 			var pushed := await push(true)
 			return {"ok": pushed.ok, "state": "pushed", "error": pushed.get("error", "")}
@@ -221,6 +224,10 @@ func _pull_inner() -> Dictionary:
 		# to be told their progress differs rather than left silently blocked.
 
 	# Both sides moved on. Ask; do not guess.
+	return _raise_conflict(remote)
+
+
+func _raise_conflict(remote: Dictionary) -> Dictionary:
 	_conflict = remote
 	blocked_by_conflict = true
 	_set_status(Status.CONFLICT, "Your progress differs from the cloud.")
@@ -273,6 +280,7 @@ func _push_inner() -> Dictionary:
 	blob.erase("settings")
 	var payload := to_document(JSON.stringify(blob), Save.SCHEMA_VERSION,
 		revision, stamp, FirebaseConfig.device_tag())
+	var uploaded_profile := Save.profile  # a benchmark may swap in its throwaway profile during the request
 
 	var response = await rest.request_json(
 		HTTPClient.METHOD_PATCH, _patch_url(),
@@ -281,8 +289,8 @@ func _push_inner() -> Dictionary:
 		return _fail_from_response(response)
 
 	# Only now is the local profile allowed to claim it agrees with this revision.
-	Save.profile["cloud_revision"] = revision
-	Save.profile["cloud_uid"] = auth.uid
+	uploaded_profile["cloud_revision"] = revision
+	uploaded_profile["cloud_uid"] = auth.uid
 	if _changes == changes_uploaded:
 		Save.mark_synced()
 		pending = false

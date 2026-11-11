@@ -254,15 +254,10 @@ Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mir
 The frame cap held for the duration of world generation only, via
 `WorldRuntime.loading_cap(touch)` — see [loading.md](loading.md).
 
-| Property | Old const | Purpose |
-|----------|-----------|---------|
-| `loading_max_fps` | `WorldRuntime.LOADING_MAX_FPS` | Loading-window cap on non-touch targets. 0 = uncapped (the fastest load). |
-| `loading_touch_max_fps` | `WorldRuntime.LOADING_TOUCH_MAX_FPS` | The same on touch/web — bounded, to avoid cooking a phone through a long load. |
-
-> **The old consts still exist, as FALLBACK DEFAULTS ONLY.** Each of the scripts above
-> keeps its `const` (documenting the shipped value beside the design rationale, and
-> serving as the `Config.get_float` fallback), and outside callers (tests) still name them. Retuning one changes NOTHING on its
-> own: the authored value in `game_config.gd` is what the game reads.
+| Property | Purpose |
+|----------|---------|
+| `loading_max_fps` | Loading-window cap on non-touch targets. 0 = uncapped (the fastest load). |
+| `loading_touch_max_fps` | The same on touch/web — bounded, to avoid cooking a phone through a long load. |
 
 ## Engine data
 

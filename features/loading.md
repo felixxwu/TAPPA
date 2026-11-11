@@ -106,8 +106,7 @@ If you add work between those two points, do not assume the car is on the ground
 
 **The two caps are GameConfig fields** — `loading_max_fps` (non-touch) and
 `loading_touch_max_fps` (touch/web), authored in `scripts/game_config.gd` and read by
-`loading_cap`. `WorldRuntime.LOADING_MAX_FPS` / `LOADING_TOUCH_MAX_FPS` remain as the
-fallback defaults only, so retuning a const alone changes nothing; see
+`loading_cap`; see
 [configuration.md](configuration.md) → *Loading*.
 
 The cap-applying logic lives in `scripts/world_runtime.gd`

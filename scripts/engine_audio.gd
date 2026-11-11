@@ -122,20 +122,6 @@ func _ready() -> void:
 # engine (cylinder count + firing order), which the synth caches at init.
 func reconfigure() -> void:
 	_resolve_refs()
-	var rate := _resolve_mix_rate(_cfg)
-	# The car injects its own GameConfig copy, so the resolved rate CAN change on a
-	# swap. The generator's mix_rate is baked into the live playback, so re-seat the
-	# stream when (and only when) it actually differs — a swap is already an audible
-	# discontinuity, whereas a synth running at a rate the generator doesn't share
-	# would be permanently detuned.
-	if not is_equal_approx(rate, _mix_rate):
-		_mix_rate = rate
-		var gen := stream as AudioStreamGenerator
-		if gen != null:
-			gen.mix_rate = rate
-		if _playback != null:
-			play()
-			_playback = get_stream_playback() as AudioStreamGeneratorPlayback
 	_build_synth()
 
 

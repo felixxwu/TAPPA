@@ -123,6 +123,15 @@ func test_a_cloud_call_in_flight_shows_the_shared_busy_state() -> void:
 	assert_false(CloudBusy.showing(_menu), "which is gone once the call lands")
 
 
+func test_back_cancels_a_google_sign_in_waiting_on_the_browser() -> void:
+	Cloud.google._cancelled = false
+	assert_true(_menu._begin("Signing in…"))
+	assert_true(_menu.go_back(), "Back stays on the page until the call lands")
+	assert_true(Cloud.google._cancelled, "and tells the waiting sign-in to stop")
+	_menu._finish({"ok": false, "error": ""})
+	Cloud.google._cancelled = false
+
+
 func test_a_second_request_cannot_start_while_one_is_in_flight() -> void:
 	assert_true(_menu._begin("Signing in…"))
 	assert_false(_menu._begin("Signing in again…"),

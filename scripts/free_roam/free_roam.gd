@@ -87,7 +87,6 @@ func _ready() -> void:
 	_car.apply_owned(LootRules.fielded(owned))
 	($CameraManager as CameraManager).refresh_bonnet_offset()
 	# The free-roam damage chain: cooling failure, overheating, and giving up at 0 HP.
-	_car.damage.thermal = true
 	_car.damage.invulnerable = Benchmark.active
 	_car.damage.repair()
 	WorldSession.restore_car_state(_car.damage)
@@ -282,6 +281,7 @@ func _look_around() -> void:
 
 # Boot is done: the pause menu, then the auto-driver or the title menu if either is due.
 func _hand_over() -> void:
+	_car.damage.thermal = true  # not sooner: an overheating car would lose health behind the loading cover
 	if not Benchmark.active:
 		WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	_rest_stops.input_enabled = true
@@ -603,7 +603,7 @@ func _measured_viewports() -> Array[RID]:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("reset_to_road") and not event.is_echo():
+	if event.is_action_pressed("reset_to_road") and not event.is_echo() and _pause.is_armed():
 		_recovery.reset_now()
 	elif event.is_action_pressed("toggle_perf_overlay") and OS.is_debug_build():
 		$DebugStats.visible = not $DebugStats.visible

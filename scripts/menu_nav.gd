@@ -11,8 +11,7 @@ extends Node
 #   1. FOCUS — walks `root`'s descendants and makes every interactive Control
 #      (BaseButton / Slider / anything already FOCUS_ALL) keyboard/gamepad
 #      focusable, so Godot's native focus cursor can land on it. A node can opt
-#      OUT by setting the `menu_nav_skip` meta (used by the diegetic HQ station
-#      buttons, which keep FOCUS_NONE so left/right can drive the 3D car instead).
+#      OUT by setting the `menu_nav_skip` meta.
 #   2. GRAB — defers a guarded focus grab onto `opts.first` (or the first
 #      focusable descendant), and re-grabs whenever `root` becomes visible again,
 #      so the cursor is never "dead until you click" and survives a menu re-show.
@@ -158,7 +157,7 @@ func _menu_visible() -> bool:
 # which a player also has to be able to TYPE. A focused LineEdit consumes
 # printable keys in the GUI phase before _unhandled_input, so WASD is safe by
 # construction — but Esc is NOT consumed, and any host with its own
-# _unhandled_input (hq.gd's station nav, settings_menu.gd's key-rebind capture)
+# _unhandled_input (settings_menu.gd's key-rebind capture)
 # sees everything regardless. One shared predicate so those hosts all ask the
 # same question rather than each inventing a guard.
 static func is_text_editing() -> bool:
@@ -174,9 +173,7 @@ static func is_text_editing() -> bool:
 # SHOULD `node` IGNORE MENU INPUT RIGHT NOW? The one predicate every menu host asks,
 # extending the same convention as is_text_editing() above: two different reasons to go
 # deaf (the player is typing; a modal owns the screen) that every host would otherwise
-# re-invent, half of them forgetting the second one. hq.gd's station nav did exactly
-# that — it allowlisted its own two overlays but not ConfirmPopup, so HQ rows still
-# fired behind an open popup, which is how a second modal became reachable at all.
+# re-invent, half of them forgetting the second one.
 #
 # THE CARVE-OUT: a node INSIDE the open modal is not blocked by it. The modal builds a
 # MenuNav of its own on its centring container (ConfirmPopup._build), and that nav has

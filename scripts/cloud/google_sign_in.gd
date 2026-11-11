@@ -67,6 +67,19 @@ static func waiting_message() -> String:
 	return "Approve in your browser to finish signing in…"
 
 
+# Stops waiting for the browser; the sign-in under way ends as cancelled.
+func cancel() -> void:
+	_cancelled = true
+
+
+# The waiting thread reads this node's fields, so it has to stop before the node is freed.
+func _exit_tree() -> void:
+	cancel()
+	if _thread != null:
+		_thread.wait_to_finish()
+		_thread = null
+
+
 # Returns {ok: bool, id_token: String, error: String}.
 func sign_in() -> Dictionary:
 	if not FirebaseConfig.google_configured():

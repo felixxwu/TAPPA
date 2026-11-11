@@ -5,7 +5,7 @@ extends Node
 # The rest stops as gameplay: Dark Souls bonfires (todo/2026-10-19-free-roam-pivot.md decision 9).
 #   * Driving past a rest stop — onto its pad or just along the road beside it, at any speed —
 #     LIGHTS it and makes it the respawn point; every tick the car stays there it HEALS, and once
-#     it's back to full HP the rest of the repair lands (cooling, wheels) and `healed` fires.
+#     it's back to full HP the rest of the repair lands (cooling, wheels).
 #   * Pressing menu_select (Enter / gamepad A) there, at any speed, opens the rest-stop
 #     page (`opened`); the minimap shows the prompt (`prompt_site`), which a touch player taps.
 #   * When the car gives up (DamageModel.gave_up: 0 HP), the engine cuts out (EngineSim.killed: silent,

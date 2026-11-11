@@ -64,10 +64,7 @@ back on without a scene reload.
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
 `show_schemes()` / `show_benchmark()` / `show_dev()` swap which page is visible (only the visible page contributes
-height, so the long schemes page scrolls while the short list/camera pages don't),
-and `page_changed(is_root)` lets the host steer its single bottom button — on a
-sub-page it reads **< Back** (returns to the list); on the list it is the host's own
-action. The saved choice in each section is highlighted and persisted via
+height, so the long schemes page scrolls while the short list/camera pages don't). The saved choice in each section is highlighted and persisted via
 `Save.set_setting`. A first-time player sees the camera page, and on touch the Mobile
 controls page, at the end of the cold open (`title_screen.gd` → `View.FIRST_RUN`).
 

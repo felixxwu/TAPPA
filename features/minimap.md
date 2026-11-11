@@ -62,9 +62,9 @@ It is built from 32×32-cell tiles cached for the session (`WorldPages.map_terra
 size is the power of two (in metres) that puts about `map_terrain_cells` cells across the view, so
 moving the car or growing the explored area a little reuses the tiles already drawn. Each tile is
 sampled with a one-cell border so slopes and contour lines run across tile edges. While driving,
-`WorldPages._process` asks for the tiles of the current `explored_view` every 0.5 s and draws them
-at `map_terrain_driving_budget_us` per frame, so the map usually opens ready; any tiles still
-missing are drawn while the map is open at `map_terrain_budget_us` per frame, over a plain coast. The
+`WorldPages._process` asks for the tiles of the current `explored_view` every `map_terrain_refresh_s` (if a new cell has been driven since) and samples them
+at `map_terrain_driving_budget_us` per frame, stopping mid-tile when the budget runs out (`MapTerrain.step`), so the map usually opens ready; any tiles still
+missing are drawn while the map is open at `map_terrain_budget_us` per frame, over a plain coast. `MapCanvas` works out its view and road lists once per opening, since the game is frozen under it. The
 pause menu's Map row still opens the same page and returns to the pause menu.
 
 ## Hiding and input

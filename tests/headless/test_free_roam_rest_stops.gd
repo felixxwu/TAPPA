@@ -515,6 +515,10 @@ func test_lighting_a_checkpoint_shows_the_banner_and_the_director_unlocks_its_ri
 
 
 
+func test_the_overheat_chain_is_on_once_the_world_is_handed_over() -> void:
+	assert_true(_car.damage.thermal)
+
+
 # The page does not open before the host has handed the world over.
 func test_the_page_opens_only_after_hand_over() -> void:
 	await _park_on(_a_rest_stop())

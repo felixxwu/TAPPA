@@ -30,6 +30,15 @@ func _any_car() -> String:
 	return String(CarLibrary.all()[0]["id"])
 
 
+func test_the_travel_warning_names_an_earlier_pile_it_would_lose() -> void:
+	WorldSession.new_world(42, _any_car())
+	WorldSession.set_money(10)
+	var pages: WorldPages = autofree(WorldPages.new())
+	assert_false(pages.travel_warning().contains("5000"), "no earlier pile, nothing extra to say")
+	WorldSession.set_dropped({"pos": [0.0, 0.0, 0.0], "money": 5000})
+	assert_true(pages.travel_warning().contains("$5000"))
+
+
 func test_a_fresh_profile_has_no_world() -> void:
 	assert_false(WorldSession.has_world())
 
@@ -129,6 +138,7 @@ func test_the_map_remembers_driven_cells_and_the_furthest_ring() -> void:
 	WorldSession.new_world(1, _any_car())
 	assert_true(WorldSession.mark_driven(5.0, 5.0))
 	assert_false(WorldSession.mark_driven(6.0, 6.0), "same cell")
+	assert_eq(WorldSession.driven_count(), 1, "a repeat visit adds no cell")
 	assert_true(WorldSession.has_driven(1.0, 1.0))
 	assert_false(WorldSession.has_driven(500.0, 500.0))
 	assert_true(WorldSession.reach_ring(2), "a ring never reached is new")

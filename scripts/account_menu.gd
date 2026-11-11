@@ -8,8 +8,6 @@ extends VBoxContainer
 # the page is small, it is never on screen during gameplay, and a full rebuild
 # cannot leave a stale label behind.
 
-signal page_changed(is_root: bool)
-
 enum View { MAIN, SIGN_IN, REGISTER, RESET }
 
 var _view: int = View.MAIN
@@ -50,6 +48,7 @@ func at_root() -> bool:
 # Step back one level. Returns true when it consumed the press.
 func go_back() -> bool:
 	if _busy:
+		Cloud.google.cancel()  # a sign-in waiting on the browser would hold this page for minutes
 		return true  # a request is in flight; swallow rather than half-leave
 	if at_root():
 		return false
@@ -110,7 +109,6 @@ func rebuild() -> void:
 	MenuNav.attach(self, {"grab": on_screen})
 	if on_screen:
 		focus_first.call_deferred()
-	page_changed.emit(at_root())
 
 	# A conflict raised while this page was closed still needs answering; show it
 	# on OPEN — but only when this page is genuinely on screen. The modal is a

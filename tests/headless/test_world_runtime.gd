@@ -8,7 +8,7 @@ extends GutTest
 # now live once, in `WorldRuntime`, and this file pins the CONTRACT each host relies on.
 #
 # WHY THESE ASSERTIONS AND NOT OTHERS. No tunable is asserted: not the cap values (the branch is
-# checked against the const, never against a number), not a snow depth, not a terrain layer
+# checked against the config field, never against a number), not a snow depth, not a terrain layer
 # shape. Every input is synthetic — a bare `GameConfig.new()`, hand-built `TerrainLayer`s, a
 # throwaway `ShaderMaterial` — so nothing here depends on `game_config.gd` or on any catalogue
 # entry. The one thing worth pinning hard is the deep-snow RESTORE: the floor material is a
@@ -27,12 +27,12 @@ func _layer(wavelength: float, amplitude: float) -> TerrainLayer:
 
 # --- Loading frame cap -------------------------------------------------------------------
 
-# The branch, not the number: touch/web and non-touch take the two different consts. Asserted
-# against the consts themselves so retuning either cap cannot break this test.
+# The branch, not the number: touch/web and non-touch take the two different fields. Asserted
+# against the fields themselves so retuning either cap cannot break this test.
 func test_loading_cap_picks_the_touch_cap_only_for_touch() -> void:
-	assert_eq(WorldRuntime.loading_cap(true), WorldRuntime.LOADING_TOUCH_MAX_FPS,
+	assert_eq(WorldRuntime.loading_cap(true), Config.data.loading_touch_max_fps,
 		"touch/web takes the bounded loading cap")
-	assert_eq(WorldRuntime.loading_cap(false), WorldRuntime.LOADING_MAX_FPS,
+	assert_eq(WorldRuntime.loading_cap(false), Config.data.loading_max_fps,
 		"desktop/native takes the non-touch loading cap")
 
 

@@ -294,9 +294,6 @@ static func override_for_test(regions: Array[Dictionary]) -> void:
 static func reset() -> void:
 	_seam.reset()
 
-static func count() -> int:
-	return all().size()
-
 static func by_id(id: String) -> Dictionary:
 	return Registry.by_id(all(), id)
 

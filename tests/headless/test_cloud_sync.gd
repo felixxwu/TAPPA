@@ -138,6 +138,7 @@ func test_matching_revisions_with_a_clean_profile_do_nothing() -> void:
 
 
 func test_local_changes_at_the_agreed_revision_are_pushed() -> void:
+	_seat_local_career()
 	_save.profile["cloud_revision"] = 4
 	_save.mark_synced()
 	_save.save()  # local progress
@@ -159,6 +160,22 @@ func test_a_pull_in_flight_when_a_benchmark_starts_applies_nothing() -> void:
 	await get_tree().process_frame
 	Benchmark.active = false
 	assert_ne(int(_save.profile.get("cloud_revision", 0)), 9)
+
+
+func test_a_push_in_flight_when_a_benchmark_starts_records_on_the_uploaded_profile() -> void:
+	_save.profile["cloud_revision"] = 4
+	_save.save()
+	_sync.pending = true
+	_rest.queue_ok({})
+	var real: Dictionary = _save.profile
+	_sync.push()  # runs to its first await: the upload is in flight
+	_save.profile = real.duplicate(true)  # what Benchmark.begin does
+	while _sync._busy:
+		await get_tree().process_frame
+	var throwaway: Dictionary = _save.profile
+	_save.profile = real
+	assert_eq(int(real["cloud_revision"]), 5, "the real profile agrees with what it uploaded")
+	assert_eq(int(throwaway["cloud_revision"]), 4, "the benchmark's copy is left alone")
 
 
 func test_a_newer_cloud_over_a_clean_profile_is_downloaded() -> void:
@@ -936,6 +953,15 @@ func test_a_blocked_upload_does_not_read_or_ask_again() -> void:
 	_sync.blocked_by_conflict = true
 	_sync._on_debounce()
 	assert_eq(_rest.requests.size(), 0)
+
+
+# Sign out, start over, sign back in: the blank world must not upload over the career.
+func test_a_blank_world_after_signing_out_does_not_overwrite_the_cloud() -> void:
+	_save.profile["cloud_revision"] = 20
+	_save.save()
+	_rest.queue_ok(_remote_doc(20, _remote_profile()))
+	var result: Dictionary = await _sync.pull()
+	assert_eq(result.state, "conflict", "the cloud career is not replaced without asking")
 
 
 func test_signing_out_forgets_the_old_accounts_conflict() -> void:

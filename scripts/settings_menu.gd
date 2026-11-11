@@ -33,9 +33,7 @@ extends VBoxContainer
 #     (vegetation, spectators, render distance, …) and a Start row that hands off
 #     to the Benchmark autoload (which owns the config overrides + scene change).
 # Navigation is internal: show_list()/show_camera()/show_schemes() swap which page
-# is visible. `page_changed(is_root)` lets the host adapt its single bottom button
-# — on a sub-page it means "< Back" (to the list); on the list it means the host's
-# own action (exit Settings). Choices are stored
+# is visible. Choices are stored
 # via Save.set_setting. The host wraps this whole VBox in a (touch) ScrollContainer;
 # only the visible page contributes height, so the long schemes page scrolls while
 # the short list/camera pages don't.
@@ -44,8 +42,6 @@ signal camera_changed(mode: int)
 # Emitted when the touch-control scheme is picked, so a live MobileControls (the
 # run's, via the pause menu) can switch the on-screen controls immediately.
 signal scheme_changed(id: int)
-# Emitted on every page switch; is_root == the category list is showing.
-signal page_changed(is_root: bool)
 # Fixed width for the key-binding buttons (and their column captions), wide enough
 # for the longest label ("RIGHT STICK RIGHT", "RIGHT BUMPER").
 const _BIND_BUTTON_W := 168.0 * UITheme.UI_SCALE
@@ -397,7 +393,6 @@ func _show_page(page: Control) -> void:
 	cancel_listen()  # leaving a page abandons any pending key capture
 	for p in _pages.values():
 		(p as Control).visible = page == p
-	page_changed.emit(at_root())
 	# Move the focus cursor onto the newly-shown page (deferred so it runs after the
 	# visibility change settles; no-op while the whole menu is still hidden on _ready).
 	focus_current_page.call_deferred()

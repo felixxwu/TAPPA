@@ -123,7 +123,7 @@ has no ⏸ glyph) that **freezes the game** (`get_tree().paused = true`) and sho
 card list (`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**, **Reset**,
 **Photo Mode**, the host's extra rows, **Settings** and **Quit**. Coming back from Settings,
 photo mode or an extra page puts the cursor back on the card that left (`_focus_card`). The
-settings page starts hidden, so the first `open()` lands the cursor on Resume.
+settings page starts hidden, and `open()` selects the first card, so every opening lands the cursor on Resume.
 
 **Per-host options** (exports, set in the hosting scene): `extra_rows`. The rows' text is free roam's ("Reset to
 road", "Quit to title") for every host.

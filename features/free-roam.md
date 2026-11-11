@@ -344,8 +344,8 @@ car's ring and the weather.
 
 **Not ported from the stage:** storm lightning, and night's terrain re-bake. Night darkens the
 ground through the albedo tint only (lane paint included), and a pure darkening tint (rain, storm, night, not sand or snow's colour blend) also scales the shared bush material's `tint` (`BiomeDirector._bush_material`) and the `Water` plane's colour (`_tint_water`), since neither the bushes' baked light nor the unshaded water sees the weather. On a weather change the sky and fog fade, while everything lit by `GameConfig.apply_car_light` (the
-car, rocks, barriers, dust) jumps straight to the new light: setting `weather_sun_mult` relights them.
-A tree species takes the light of its most recently spawned field. There is **one water level** for the whole island (no per-ring waterline).
+car, rocks, barriers, dust, trees and bushes) jumps straight to the new light: setting `weather_sun_mult` relights them.
+There is **one water level** for the whole island (no per-ring waterline).
 
 ## Sites: rest stops, loot slots, dead ends and parked cars
 

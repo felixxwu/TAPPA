@@ -164,38 +164,30 @@ func _ready() -> void:
 	install_web_lifecycle()
 
 
-# Persist on the way out, including when a mobile/web tab is backgrounded — on
-# the HTML5 export user:// is IndexedDB, which may not flush before the tab
-# closes, so we force a synchronous write on these notifications.
+# Persist on the way out, including when a mobile app is backgrounded.
 #
 # NOTE these are DESKTOP/native signals: browsers never send
 # NOTIFICATION_WM_CLOSE_REQUEST, so the web build reaches the same flush entry
 # point (flush_and_sync) through the browser lifecycle listeners installed by
 # install_web_lifecycle() instead.
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED:
+	if what in [NOTIFICATION_WM_CLOSE_REQUEST, NOTIFICATION_WM_GO_BACK_REQUEST, NOTIFICATION_APPLICATION_PAUSED]:
 		flush_and_sync()
 
 
 # --- Web lifecycle -----------------------------------------------------------
 # On the HTML5 export user:// is IndexedDB (Emscripten IDBFS): FileAccess writes
-# land in an in-memory FS that is flushed to IndexedDB ASYNCHRONOUSLY. Two things
-# have to happen before the page goes away:
-#   1. the debounced write must actually run (flush), and
-#   2. the resulting FS state must be pushed to IndexedDB (sync).
+# land in an in-memory FS that the engine pushes to IndexedDB on its next frame.
 # The only page-teardown signals mobile browsers fire reliably are
-# `visibilitychange`→hidden and `pagehide`, so we hook both. The export is
-# SINGLE-THREADED (`variant/thread_support=false` in export_presets.cfg), so the
-# write itself is cheap and synchronous on the main thread — the risk being
-# mitigated here is the async IDB sync not landing, not write cost.
+# `visibilitychange`→hidden and `pagehide`, so we hook both to run the debounced
+# write at once. The engine keeps its FS private, so the push can't be forced: a
+# tab killed before its next frame loses that last write.
 
 # The single flush entry point used by BOTH the desktop close notification and
-# the web lifecycle listeners: write immediately, then ask the browser FS to push
-# the result to IndexedDB (a no-op off the web build).
+# the web lifecycle listeners: write immediately.
 func flush_and_sync() -> void:
 	flushing.emit()
 	save_now()
-	request_web_sync()
 	# Give the optional cloud layer its chance to upload too. It is fire-and-
 	# forget: a browser tab can die before an HTTP request completes, which is
 	# why the local file — already written above — stays the source of truth.
@@ -235,25 +227,6 @@ func install_web_lifecycle() -> bool:
 # Invoked from JS when the page is hidden / unloading.
 func _on_web_lifecycle(_args: Array) -> void:
 	flush_and_sync()
-
-
-# Ask the Emscripten filesystem to push its in-memory state to IndexedDB. Godot
-# schedules its own sync after writes, but it is async and may not land before a
-# tab close, so we request one explicitly at the lifecycle boundary. Defensive by
-# design: FS is not guaranteed to be exposed on the JS globals, and a failure
-# here must never take the game down — worst case we fall back to the engine's
-# own sync. No-op off the web build.
-func request_web_sync() -> void:
-	if not Platform.is_web():
-		return
-	JavaScriptBridge.eval("""
-		(function () {
-			try {
-				var fs = window.FS || (window.Module && window.Module.FS);
-				if (fs && fs.syncfs) { fs.syncfs(false, function () {}); }
-			} catch (e) { console.warn('[rally] IDB sync failed', e); }
-		})();
-	""", true)
 
 
 # --- Load --------------------------------------------------------------------

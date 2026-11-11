@@ -28,14 +28,7 @@ const TERRAIN_SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
 # frame at cap 30 vs 8.3 ms uncapped). Bounded rather than uncapped on touch: running a phone
 # flat-out through a long load is the thermal/battery failure this is meant to avoid, and a
 # throttled phone then plays worse. 0 = uncapped.
-#
-# THESE TWO NOW LIVE IN GameConfig — the consts are FALLBACK DEFAULTS ONLY.
-# Authored in scripts/game_config.gd as `loading_max_fps` /
-# `loading_touch_max_fps` and read through `loading_cap()` below, per CLAUDE.md. RETUNE THERE.
-# The consts stay as the documented shipped values and as the fallback when the field is
-# missing; world.gd reaches the value through `loading_cap`.
-const LOADING_MAX_FPS := 0         # non-touch (desktop/native): no ceiling for the load
-const LOADING_TOUCH_MAX_FPS := 60  # touch/web: fast, but still a ceiling
+# Authored in scripts/game_config.gd as `loading_max_fps` / `loading_touch_max_fps`.
 
 
 ## The loading-window frame cap for this platform. `touch` covers touch/web.
@@ -43,9 +36,7 @@ const LOADING_TOUCH_MAX_FPS := 60  # touch/web: fast, but still a ceiling
 ## Called ONCE per world boot (each host's _ready), not per frame, so it reads the config here
 ## rather than caching — the cap it returns is then held for the whole load window.
 static func loading_cap(touch: bool) -> int:
-	if touch:
-		return int(Config.get_float("loading_touch_max_fps", float(LOADING_TOUCH_MAX_FPS)))
-	return int(Config.get_float("loading_max_fps", float(LOADING_MAX_FPS)))
+	return Config.data.loading_touch_max_fps if touch else Config.data.loading_max_fps
 
 
 ## Apply a frame cap and record the intent in `caps`. The Engine write is suppressed under

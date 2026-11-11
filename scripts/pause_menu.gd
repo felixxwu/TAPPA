@@ -82,6 +82,7 @@ func open() -> void:
 	get_tree().paused = true
 	_set_open(true)
 	_show_settings(false)
+	_cards.select(0, false)  # always open on Resume, or Enter would repeat the last pick
 	# NO focus grab here. Showing the overlay fires its visibility_changed, and the
 	# MenuNav attached in _build owns where the cursor lands (see _build's attach
 	# call). One owner: a second grab here would silently beat the framework, and

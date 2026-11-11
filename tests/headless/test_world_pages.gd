@@ -106,6 +106,27 @@ func test_the_map_terrain_leaves_the_sea_clear_and_paints_lakes_flat() -> void:
 	assert_ne(img.get_pixel(0, 1), img.get_pixel(1, 1), "land differs by ring and height")
 
 
+# A tile takes far longer than a frame can spare, so a step can stop inside one and pick it up later.
+func test_a_part_sampled_tile_survives_a_new_request() -> void:
+	var s := FreeRoamSettings.new()
+	s.island_radius_m = 3000.0
+	var net := RoadNetwork.new()
+	var terrain := RoadTerrain.new()
+	terrain.setup(s, net)
+	net.build(s, terrain)
+	var mt := MapTerrain.new(terrain, s.island_radius_m)
+	var view := Rect2(-100, -100, 200, 200)
+	mt.request(view, 40)
+	mt.step(0)
+	assert_false(mt.done(), "the part-sampled tile is still work to do")
+	assert_true(mt.drawn().is_empty(), "and isn't drawn yet")
+	mt.request(view, 40)
+	assert_false(mt._wanted.has(mt._job_key), "asking again doesn't queue it a second time")
+	while not mt.step(1_000_000):
+		pass
+	assert_false(mt.drawn().is_empty(), "it is finished in the end")
+
+
 # Drawn a tile at a time and cached: the tiles cover the view asked for, and asking again (or
 # for the view a little moved) draws nothing new.
 func test_the_map_terrain_is_drawn_in_tiles_and_kept() -> void:
@@ -121,7 +142,7 @@ func test_the_map_terrain_is_drawn_in_tiles_and_kept() -> void:
 	var steps := 1
 	while not mt.step(0):
 		steps += 1
-	assert_gt(steps, 1, "a zero budget draws one tile per step")
+	assert_gt(steps, 1, "a zero budget stops after one cell")
 	var covered := Rect2()
 	for tile: Array in mt.drawn():
 		covered = tile[0] if covered.size == Vector2.ZERO else covered.merge(tile[0])

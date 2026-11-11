@@ -245,6 +245,20 @@ func test_reset_to_road_puts_the_car_on_the_nearest_road() -> void:
 	assert_false(get_tree().paused)
 
 
+func test_the_reset_key_does_nothing_until_the_world_is_handed_over() -> void:
+	var p := _off_road_point()
+	_car.reset_to(Transform3D(Basis.IDENTITY, Vector3(p.x, _streamer.height_at(p.x, p.y) + 1.0, p.y)))
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_pause.set_input_enabled(false)
+	_scene._unhandled_input(_press("reset_to_road"))
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_pause.set_input_enabled(true)
+	var c := _car.global_position
+	assert_false(_streamer.network.nearest(c.x, c.z, 2.0), "the car stays where it was placed")
+
+
 func test_a_flipped_stationary_car_is_recovered_after_the_timeout() -> void:
 	var cfg: GameConfig = Config.data
 	var pos := _car.global_position

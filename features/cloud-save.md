@@ -24,7 +24,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/cloud/rest_client.gd` | `RestClient` — the ONLY `HTTPRequest` in the project. The test seam. |
 | `scripts/cloud/auth_service.gd` | `AuthService` — sign-in, token refresh, credential storage, error mapping. |
 | `scripts/cloud/cloud_sync.gd` | `CloudSync` — Firestore document encoding, the conflict model, debounce/backoff. |
-| `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). |
+| `scripts/cloud/google_sign_in.gd` | `GoogleSignIn` — the OAuth dance (two platform implementations). Back on the account page cancels a sign-in waiting on the browser (`cancel`). |
 | `scripts/account_menu.gd` | `AccountMenu` — the UI, hosted by the Settings page. |
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()`. |
@@ -204,6 +204,8 @@ falls through to the normal prompt rather than leaving sync silently blocked.
 ### The progress wipe must clear the cloud too
 
 `push_wipe` first waits out any upload in flight, since that upload still carries the wiped career.
+
+A pull that would upload a blank local world over a cloud copy with progress asks instead (`_pull_inner`), even when the local profile claims to be level with or ahead of the cloud: a wipe or New World made while signed out keeps the old `cloud_revision`, so it would otherwise read as a continuation of the cloud career.
 
 `Settings -> Reset progress -> Wipe all progress` calls `Save.reset_new_game()`, which only
 clears THIS device (keeping `cloud_revision` / `cloud_uid`, so the wipe's push lands at the next

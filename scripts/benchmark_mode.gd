@@ -118,10 +118,12 @@ func begin() -> void:
 	# cap/vsync so exit_to_title restores the pre-benchmark state, not our override.
 	if not active:
 		Save.flushing.emit()  # the real world's latest place and damage, or leaving the benchmark loses them
+		Save.save_now()  # saving is about to be switched off, so a pending write would never land
 		_saved_max_fps = Engine.max_fps
 		if not Platform.is_headless():
 			_saved_vsync = DisplayServer.window_get_vsync_mode(0)
-		_saved_profile = Save.profile.duplicate(true)
+		_saved_profile = Save.profile
+		Save.profile = Save.profile.duplicate(true)
 		_saved_save_disabled = Save.save_disabled
 	apply_overrides(Config.data)
 	results = {}

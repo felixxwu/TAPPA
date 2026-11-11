@@ -92,7 +92,7 @@ Max-HP is **CarLibrary metadata, not stored**. The world's terrain, roads and si
   `FileAccess` writes land in an in-memory FS that is pushed to IndexedDB
   *asynchronously*, so a write that hasn't synced when the page goes away is
   lost. Both platforms funnel through one entry point, `Save.flush_and_sync()`
-  (immediate `save_now()` + `request_web_sync()`):
+  (an immediate `save_now()`):
   - **Desktop/native** reaches it from `_notification` on
     `NOTIFICATION_WM_CLOSE_REQUEST` / `NOTIFICATION_APPLICATION_PAUSED`.
   - **Web** never gets those (a browser sends no window-manager close), so
@@ -102,9 +102,9 @@ Max-HP is **CarLibrary metadata, not stored**. The world's terrain, roads and si
     `pagehide`. They call back into `flush_and_sync()` through a
     `JavaScriptBridge.create_callback` handle parked on `window.rallySaveFlush`
     (the handle is held in a member var — dropping it detaches the listeners).
-  - `request_web_sync()` then asks the Emscripten FS for an explicit
-    `FS.syncfs(false, …)`, defensively (FS may not be exposed on the JS globals;
-    failure falls back to the engine's own async sync and never takes the game down).
+  - The push to IndexedDB is the engine's own, on its next frame. Godot's web build keeps
+    the Emscripten FS private, so it can't be forced: a tab killed before that frame loses
+    the last write.
   The web export is **single-threaded** (`variant/thread_support=false` in
   `export_presets.cfg`), so the write itself is cheap and synchronous on the main
   loop — the risk being mitigated is the async IDB sync not landing, not write
@@ -128,5 +128,5 @@ and `.bak` fallback, unknown-model pruning, new-game reset, the cloud bookkeepin
 the undeclared-key check. `tests/headless/test_save_web_lifecycle.gd` — the web lifecycle seam:
 the shared `flush_and_sync()` entry point writes immediately (bypassing the debounce) and
 round-trips, the desktop close notification reaches that same entry point, a disabled store
-stays in-memory, and `install_web_lifecycle()` / `request_web_sync()` are inert off web. Both
+stays in-memory, and `install_web_lifecycle()` is inert off web. Both
 run against a throwaway `user://test_profile.json`.

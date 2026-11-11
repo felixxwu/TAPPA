@@ -428,6 +428,14 @@ func test_a_weather_change_relights_materials_already_lit() -> void:
 	assert_eq(mat.get_shader_parameter("sun_color"), cfg.weather_lit(cfg.sun_color))
 
 
+func test_a_weather_change_relights_foliage_already_lit() -> void:
+	var cfg := GameConfig.new()
+	var mat := ShaderMaterial.new()
+	cfg.apply_foliage_light(mat)
+	cfg.weather_sun_mult = 0.5
+	assert_eq(mat.get_shader_parameter("sun_color"), cfg.weather_lit(cfg.sun_color))
+
+
 func test_the_weather_sun_multiplier_defaults_to_no_dimming() -> void:
 	# A session-less boot (free roam, benchmark, dev) never runs the weather look, so
 	# the default must be the identity or those stages would render dark.

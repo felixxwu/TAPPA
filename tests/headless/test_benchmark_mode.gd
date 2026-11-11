@@ -227,10 +227,13 @@ func test_a_run_saves_the_real_world_before_setting_it_aside() -> void:
 	var seen := [0]
 	var count := func() -> void: seen[0] += 1
 	Save.flushing.connect(count)
+	Save.profile["created_utc"] = "just_before_the_run"
 	Benchmark.begin()
+	var on_disk: Dictionary = Save._read_file(Save.profile_path)
 	Benchmark.end()
 	Save.flushing.disconnect(count)
 	assert_eq(seen[0], 1)
+	assert_eq(on_disk.get("created_utc"), "just_before_the_run", "written out, since saving is off during the run")
 
 
 # The pause menu's Quit during a run ends the benchmark (the real profile comes back) and goes to

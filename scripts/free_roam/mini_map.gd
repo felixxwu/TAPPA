@@ -147,8 +147,8 @@ func _layout() -> void:
 	var side_clear := 140.0  # HUD speed/gear labels end at x = 128; pause button is 48 wide
 	var w := minf(h * cfg.minimap_aspect, maxf(vs.x - 2.0 * side_clear, h))
 	set_anchors_preset(Control.PRESET_TOP_LEFT)
-	position = Vector2((vs.x - w) * 0.5, cfg.minimap_top_px)
-	size = Vector2(w, h)
+	position = Vector2((vs.x - w) * 0.5, cfg.minimap_top_px).round()
+	size = Vector2(w, h).round()
 	set_frame_size(size)
 
 

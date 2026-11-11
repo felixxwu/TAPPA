@@ -160,6 +160,15 @@ func test_opening_the_menu_always_lands_the_cursor_inside_it() -> void:
 	_pause.resume()
 
 
+func test_reopening_the_menu_lands_on_resume_not_the_last_pick() -> void:
+	_pause.open()
+	_pause.cards().select(1, false)
+	_pause.resume()
+	_pause.open()
+	assert_eq(_pause.cards().selected_index(), 0)
+	_pause.resume()
+
+
 # "Reset to track" delegates the reset upward (the menu owns no car) via a signal,
 # then unfreezes and closes the overlay so the player drops back into the run.
 func test_reset_to_track_emits_and_resumes() -> void:

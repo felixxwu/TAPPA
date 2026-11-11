@@ -35,6 +35,7 @@ var _here := -1
 var travelled := false  # whether the map's last visit ended in a quick travel
 var map_terrain: MapTerrain  # the map's terrain tiles, kept for the session
 var _warm_t := 0.0
+var _warm_driven := -1  # how many cells had been driven at the last warm-up request
 var _target_label: Label
 var _travel_button: Button
 var _prev_button: Button
@@ -65,8 +66,10 @@ func _process(delta: float) -> void:
 		return
 	_warm_t -= delta
 	if _warm_t <= 0.0:
-		_warm_t = 0.5
-		map_terrain.request(explored_view(), Config.data.map_terrain_cells)
+		_warm_t = Config.data.map_terrain_refresh_s
+		if WorldSession.driven_count() != _warm_driven:
+			_warm_driven = WorldSession.driven_count()
+			map_terrain.request(explored_view(), Config.data.map_terrain_cells)
 	if not map_terrain.done():
 		map_terrain.step(Config.data.map_terrain_driving_budget_us)
 
@@ -183,10 +186,16 @@ func _travel() -> void:
 	if t < 0:
 		return
 	if travel_drops_money():
-		ConfirmPopup.open(self, "Leave your money?", "Travelling from the road drops your $%d here. Travel from a checkpoint to keep it." % WorldSession.money(),
+		ConfirmPopup.open(self, "Leave your money?", travel_warning(),
 			[{"label": "Cancel", "callback": Callable()}, {"label": "Travel", "callback": _travel_to.bind(t, true)}], 0, 0)
 		return
 	_travel_to(t, false)
+
+
+func travel_warning() -> String:
+	var text := "Travelling from the road drops your $%d here. Travel from a checkpoint to keep it." % WorldSession.money()
+	var left := int(WorldSession.dropped().get("money", 0))
+	return text + (" The $%d you left earlier will be lost." % left if left > 0 else "")
 
 
 # Off a checkpoint, a travel can't carry money: it's dropped where the car is.
@@ -315,6 +324,8 @@ class MapCanvas:
 
 	var _k := 1.0
 	var _mid := Vector2.ZERO
+	var _view := Rect2()
+	var _roads := []  # worked out on the first draw: nothing moves while the game is frozen under the map
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
@@ -341,10 +352,12 @@ class MapCanvas:
 		var st := pages.streamer
 		var s := st.settings
 		# Frame what has been explored, not the whole island, so the start isn't a speck.
-		var view := pages.explored_view()
-		var k := minf(size.x / view.size.x, size.y / view.size.y)
+		if _roads.is_empty():
+			_view = pages.explored_view()
+			_roads = WorldPages.map_roads(st.network, Config.data.minimap_nearby_road_m)
+		var k := minf(size.x / _view.size.x, size.y / _view.size.y)
 		var c := size * 0.5
-		var mid := view.get_center()
+		var mid := _view.get_center()
 		_k = k
 		_mid = mid
 		var to_px := func(p: Vector2) -> Vector2: return c + (p - mid) * k
@@ -357,7 +370,7 @@ class MapCanvas:
 		draw_colored_polygon(coast, Config.data.map_ring_colors[0])
 		var mt := pages.terrain_cache()
 		if mt != null:
-			mt.request(view, Config.data.map_terrain_cells)
+			mt.request(_view, Config.data.map_terrain_cells)
 			for tile: Array in mt.drawn():
 				var r: Rect2 = tile[0]
 				draw_texture_rect(tile[1], Rect2(to_px.call(r.position), r.size * k), false)
@@ -367,10 +380,9 @@ class MapCanvas:
 			draw_arc(to_px.call(Vector2.ZERO), inner * ring / s.ring_count * k, 0.0, TAU, 96, Color(1, 1, 1, 0.35), 1.0)
 		# The roads driven, over the undriven road near them in grey.
 		var net := st.network
-		var roads := WorldPages.map_roads(net, Config.data.minimap_nearby_road_m)
 		for pass_i in 2:
 			var col := Color(0.6, 0.6, 0.6, 0.8) if pass_i == 0 else Color(0.95, 0.9, 0.75)
-			for si: int in roads[pass_i]:
+			for si: int in _roads[pass_i]:
 				draw_line(to_px.call(Vector2(net.seg_ax[si], net.seg_ay[si])), to_px.call(Vector2(net.seg_bx[si], net.seg_by[si])),
 					col, 2.0)
 		# The rest stops come across (orange lit, grey not); the travel target ringed.

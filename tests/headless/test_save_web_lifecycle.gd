@@ -45,6 +45,13 @@ func test_close_notification_reaches_the_same_flush() -> void:
 	assert_eq(_save.profile.get("created_utc", ""), "close_probe")
 
 
+func test_android_back_flushes_before_the_app_quits() -> void:
+	_save.profile["created_utc"] = "back_probe"
+	_save.save()
+	_save.notification(NOTIFICATION_WM_GO_BACK_REQUEST)
+	assert_true(FileAccess.file_exists(TEST_PATH), "the Back button quits the app, so it has to flush")
+
+
 func test_flush_respects_disabled_storage() -> void:
 	# A degraded environment (blocked IndexedDB / read-only fs) must stay
 	# in-memory-only — the lifecycle flush must not resurrect writing.
@@ -58,5 +65,3 @@ func test_install_web_lifecycle_is_inert_off_web() -> void:
 	# installed" and touch nothing (headless has no JavaScriptBridge).
 	assert_false(Platform.is_web(), "sanity: the test runner is not the web export")
 	assert_false(_save.install_web_lifecycle(), "no listeners off web")
-	_save.request_web_sync()  # must not error off web
-	pass_test("request_web_sync is a no-op off web")

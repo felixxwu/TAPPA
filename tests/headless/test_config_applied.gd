@@ -213,8 +213,7 @@ func test_track_transition_cells_default() -> void:
 # Clusters of tuning constants moved out of scripts and into GameConfig (the overworld fog
 # frontier, the HQ present box, the loading frame caps). The rival pace / field cluster that
 # used to be listed here is deleted along with the rival field
-# (todo/roguelike-pivot.md decision 5). The remaining consts survive as FALLBACK DEFAULTS
-# only, so what needs guarding is the WIRING: the code must read the config field, not the
+# (todo/roguelike-pivot.md decision 5). What needs guarding is the WIRING: the code must read the config field, not the
 # literal. Every test below sets a SYNTHETIC value and asserts the behaviour follows it —
 # never the authored number, which is a designer's to retune.
 #

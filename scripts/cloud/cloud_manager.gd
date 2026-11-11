@@ -131,8 +131,8 @@ func sync_now() -> Dictionary:
 
 # DEV "wipe all progress": publish the wiped profile so the cloud copy is cleared
 # too. Without this the next pull restores everything the player just deleted —
-# see CloudSync.push_wipe. A no-op when signed out, where there is no cloud copy
-# to clear and the local wipe is already the whole story.
+# see CloudSync.push_wipe. A no-op when signed out: the cloud copy is left alone, and
+# signing back in asks which to keep.
 func publish_local_wipe() -> Dictionary:
 	if not is_signed_in():
 		return {"ok": true, "error": ""}

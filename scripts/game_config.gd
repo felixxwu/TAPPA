@@ -329,10 +329,12 @@ var weather_sun_mult := 1.0:
 	set(value):
 		if value != weather_sun_mult:
 			weather_sun_mult = value
-			_relight_car_materials()
+			_relight(_car_lit, apply_car_light)
+			_relight(_foliage_lit, apply_foliage_light)
 # Every live material apply_car_light has lit, so a weather change reaches them all at once:
 # the car, rocks and barriers. Material instance id -> WeakRef.
 var _car_lit := {}
+var _foliage_lit := {}  # the same, for apply_foliage_light: the trees and bushes
 ## GLOBAL GRIP: one multiplier on every tyre's μ, for every car, on every surface and in every
 ## weather (Drivetrain's per-contact resolver, alongside the weather multiplier). 1.0 is the
 ## authored grip; below 1.0 everything slides more. The one knob for "the cars are too grippy".
@@ -2701,13 +2703,13 @@ func apply_car_light(mat: ShaderMaterial) -> void:
 		_car_lit[id] = weakref(mat)
 
 
-func _relight_car_materials() -> void:
-	for id: int in _car_lit.keys():
-		var mat: ShaderMaterial = _car_lit[id].get_ref()
+func _relight(lit: Dictionary, apply: Callable) -> void:
+	for id: int in lit.keys():
+		var mat: ShaderMaterial = lit[id].get_ref()
 		if mat == null:
-			_car_lit.erase(id)
+			lit.erase(id)
 		else:
-			apply_car_light(mat)
+			apply.call(mat)
 
 
 # The same fake sun/ambient block for FOLIAGE billboards (billboard_opaque.gdshader).
@@ -2720,6 +2722,7 @@ func apply_foliage_light(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("sky_color", weather_lit(sky_color))
 	mat.set_shader_parameter("ground_color", ground_color)
 	mat.set_shader_parameter("light_amount", foliage_light_amount)
+	_foliage_lit[mat.get_instance_id()] = weakref(mat)
 
 # Push the shared sun/ambient values + the terrain amount onto a TerrainManager,
 # which bakes them into vertex colours when chunks generate. Call BEFORE the
@@ -3027,6 +3030,8 @@ func spectator_params() -> Dictionary:
 ## microseconds (driving, it draws ahead for the explored area so the map opens ready).
 @export var map_terrain_budget_us := 8000
 @export var map_terrain_driving_budget_us := 1000
+## How often, while driving, the map's explored area is worked out again. That walks every road.
+@export var map_terrain_refresh_s := 5.0
 ## Free roam's heading-up minimap, top-centre (scripts/free_roam/mini_map.gd, features/minimap.md).
 ## Off, only the rest-stop prompt under it shows; the full map still opens with M / Back.
 @export var minimap_enabled := true

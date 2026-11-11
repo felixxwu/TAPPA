@@ -35,7 +35,3 @@ static func make_sampler(seed_value: int, layers: Array) -> Callable:
 		for i in noises.size():
 			h += noises[i].get_noise_2d(x, z) * amplitudes[i]
 		return h
-
-
-static func height_at(seed_value: int, layers: Array, x: float, z: float) -> float:
-	return make_sampler(seed_value, layers).call(x, z)

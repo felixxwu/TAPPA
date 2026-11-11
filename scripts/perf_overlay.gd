@@ -56,11 +56,6 @@ func _ready() -> void:
 		_last_integrations = terrain.integrations_total
 
 
-# Force the overlay on (benchmark mode) — same path as the P toggle.
-func activate() -> void:
-	_set_active(true)
-
-
 func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("toggle_perf_overlay"):
 		_set_active(not visible)
