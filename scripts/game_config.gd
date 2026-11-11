@@ -777,6 +777,9 @@ func has_nitrous() -> bool:
 ## Share of max HP a checkpoint heals per second while the car is at it (RestStops._heal):
 ## 0.25 takes a wreck to full in 4 s. Full HP also mends the cooling and straightens the wheels.
 @export var checkpoint_heal_fraction_per_s := 0.25
+## Share of a full nitrous tank a checkpoint refills per second while the car is at it
+## (RestStops._heal), alongside the HP. 0.25 refills an empty tank in 4 s, same as the heal.
+@export var checkpoint_nitrous_refill_fraction_per_s := 0.25
 ## HP regained per second while driving; 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export var damage_regen_hp_per_s := 0.0
@@ -2959,7 +2962,7 @@ func spectator_params() -> Dictionary:
 ## Extra torque fraction while nitrous is held — the nitrous boost's scaled field.
 @export var run_boost_nitrous_boost_gain := 0.25
 ## Seconds a full tank holds — fixed, does not scale with level.
-@export var run_boost_nitrous_tank_seconds := 6.0
+@export var run_boost_nitrous_tank_seconds := 30.0
 
 ## Grip multipliers for each tire LootRules.TIRES sells. `flat` applies on every surface and is
 ## the whole story on gravel; `tarmac` and `snow` multiply on top of it on those surfaces.

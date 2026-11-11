@@ -480,7 +480,8 @@ checkpoint reached under a region band hides that band until the checkpoint band
   (`rest_reached` → `RoadSites.reached`, swept over the step's travel with
   `RoadSites.road_margin`, so neither speed nor the far lane can miss it) — lights it (its minimap
   mark turns orange), makes it the respawn point (`last_site`). Every physics step the car is
-  there it heals (`RestStops._heal`: `checkpoint_heal_fraction_per_s` of max HP per second); reaching
+  there it heals (`RestStops._heal`: `checkpoint_heal_fraction_per_s` of max HP per second) and tops up the nitrous tank (`RestStops._refill_nitrous`:
+  `checkpoint_nitrous_refill_fraction_per_s` of a full tank per second); reaching
   full HP runs `DamageModel.repair` (cooling mended, wheels straightened) . A fast
   drive-by only gets a tick's worth. Spawn is lit from the start. A move there by
   travel or respawn (`move_car_to`) counts as already arrived, and so does a car SPAWNED at a rest
