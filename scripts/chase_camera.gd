@@ -79,6 +79,12 @@ var _look_touch_sens: float
 var _look_stick_speed: float # radians per second
 var _look_hold: float
 var _look_return: float
+# On the web build a bare hover must not look: the page is embedded (itch.io) so the pointer is
+# never captured, every move across the canvas (to a menu, off the page) would swivel the view, and
+# browsers can keep reporting movementX with the mouse at rest, which held the view spinning. So
+# there the mouse looks only while a button is held (a drag) or the pointer is captured. Desktop
+# keeps hover look. A var, not a const, so tests can flip it.
+var _mouse_look_needs_drag := OS.has_feature("web")
 
 
 func _ready() -> void:
@@ -214,7 +220,7 @@ func _timed_physics_process(delta: float) -> void:
 	_update_shake(delta, _apply_gforce_tilt(delta))
 
 
-# Free look input. Mouse motion and a touch drag that started off the on-screen controls swivel
+# Free look input. Mouse motion (on web only while dragged, see _mouse_may_look) and a touch drag that started off the on-screen controls swivel
 # the camera; every one turns the view the way the input moves (right turns the view right), as
 # photo mode's look does. Mouse events the engine synthesised from a touch are skipped, or a finger
 # would count twice. Only while this camera is the one in use.
@@ -222,7 +228,7 @@ func _input(event: InputEvent) -> void:
 	if not current:
 		return
 	if event is InputEventMouseMotion:
-		if event.device != InputEvent.DEVICE_ID_EMULATION:
+		if event.device != InputEvent.DEVICE_ID_EMULATION and _mouse_may_look(event):
 			look_by(-event.relative.x * _look_mouse_sens)
 	elif event is InputEventScreenTouch:
 		if event.pressed:
@@ -233,6 +239,14 @@ func _input(event: InputEvent) -> void:
 			_look_pointer = null
 	elif event is InputEventScreenDrag and event.index == _look_pointer:
 		look_by(-event.relative.x * _look_touch_sens)
+
+
+# Whether this mouse motion counts as look input. Always on desktop; on web only as a drag (a
+# button held) or with the pointer captured — see _mouse_look_needs_drag.
+func _mouse_may_look(event: InputEventMouseMotion) -> bool:
+	if not _mouse_look_needs_drag:
+		return true
+	return event.button_mask != 0 or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 
 
 # Swivel the view by `yaw` radians and count it as look input (holds off the return to centre).

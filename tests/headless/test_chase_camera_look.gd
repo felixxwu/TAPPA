@@ -87,6 +87,19 @@ func test_mouse_motion_right_turns_the_view_right() -> void:
 	assert_lt(_cam._look_yaw, 0.0, "a negative yaw turns the look direction clockwise (right)")
 
 
+func test_on_web_a_bare_hover_does_not_look_but_a_drag_does() -> void:
+	_cam._mouse_look_needs_drag = true
+	var hover := InputEventMouseMotion.new()
+	hover.relative = Vector2(50.0, 0.0)
+	_cam._input(hover)
+	assert_eq(_cam._look_yaw, 0.0, "hovering over the page must not swivel the view")
+	var drag := InputEventMouseMotion.new()
+	drag.relative = Vector2(50.0, 0.0)
+	drag.button_mask = MOUSE_BUTTON_MASK_LEFT
+	_cam._input(drag)
+	assert_lt(_cam._look_yaw, 0.0, "dragging with a button held still looks")
+
+
 func test_mouse_motion_synthesised_from_a_touch_is_ignored() -> void:
 	var e := InputEventMouseMotion.new()
 	e.device = InputEvent.DEVICE_ID_EMULATION

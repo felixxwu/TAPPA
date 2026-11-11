@@ -59,8 +59,10 @@ hillside or a prop that rises behind the car; there is no collision. Guarded by
 ### Free look
 
 `chase_camera.gd` → `_input`, `look_by`, `_update_look`. A pause ends a look drag, since its release would never arrive. The player can swivel the chase camera
-round the car with **mouse motion** (no button needed; mouse events the engine synthesised from
-a touch are skipped), a **touch drag that starts off the on-screen controls**
+round the car with **mouse motion** (no button needed on desktop; on the **web build** only while
+a mouse button is held or the pointer is captured — `_mouse_look_needs_drag` / `_mouse_may_look` —
+because the embedded page never captures the pointer, so a bare hover spun the view; mouse events
+the engine synthesised from a touch are skipped), a **touch drag that starts off the on-screen controls**
 (`MobileControls.owns_point`; the ChaseCamera's `mobile_controls` export is wired to the scene's
 `MobileControls`), or the **right stick** (`look_left` / `look_right`, axis 2, rate-controlled at
 `chase_look_stick_speed`). Every source turns the view the way the input moves, as photo mode does.
