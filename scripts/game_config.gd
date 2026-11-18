@@ -796,14 +796,14 @@ func has_nitrous() -> bool:
 ## Worst misfire intensity, at 0 HP — the "certain point" past which damage stops weakening
 ## the engine. Below 1.0 on purpose: damage must never take the car out of the run, so even a
 ## 0 HP engine keeps firing often enough to drive to the finish, just badly.
-@export var damage_misfire_level_max := 0.8
+@export var damage_misfire_level_max := 0.9
 ## Fraction of the engine's redline still usable at 0 HP — a damaged engine won't pull to the
 ## top end, so every gear runs out early and the car is slower everywhere (and audibly bounces
 ## off a lower limiter). Ramps down from 1.0 at damage_misfire_health_threshold. Also floored
 ## well above zero so the car always revs enough to drive. See features/damage.md.
 @export var damage_rev_limit_min_fraction := 0.6
 ## Cuts per second at 0 HP under full load — the worst-case misfire frequency.
-@export var damage_misfire_rate_max := 4.0
+@export var damage_misfire_rate_max := 6.0
 ## How much the misfire fires INDEPENDENT of load (0..1): the cut rate is
 ## rate_max * damage_fraction * (this + (1-this) * load), where load blends throttle
 ## and rpm. 1 = load-independent; 0 = only ever cuts under full load/revs.
