@@ -118,11 +118,10 @@ func test_ground_multiplier_is_white_off_cover_and_tinted_on_it() -> void:
 	assert_ne(GroundCover.ground_multiplier(all, GRID, tint, 0.0, 0.0), Color.WHITE)
 
 
-func test_tuft_hidden_past_its_cutoff_and_shown_inside_fade_start() -> void:
-	var cut := GroundCover.cutoff(5.0, 7.0, 22.0, 34.0)
-	assert_between(cut, 22.0, 34.0)
-	assert_eq(GroundCover.shown(cut + 0.1, cut), 0.0)
-	assert_eq(GroundCover.shown(21.0, cut), 1.0)
+func test_tuft_fully_drawn_inside_fade_start_and_gone_past_fade_end() -> void:
+	assert_eq(GroundCover.near_alpha(21.0, 22.0, 34.0), 1.0)
+	assert_between(GroundCover.near_alpha(28.0, 22.0, 34.0), 0.01, 0.99)
+	assert_eq(GroundCover.near_alpha(35.0, 22.0, 34.0), 0.0)
 
 
 func test_far_placements_only_for_bush_layers() -> void:
@@ -148,16 +147,13 @@ func test_far_reach_extends_far_list_only() -> void:
 	assert_true(far.has("1:0"))
 
 
-func test_each_bush_is_drawn_by_exactly_one_of_near_and_far() -> void:
-	var cut := GroundCover.cutoff(5.0, 7.0, 22.0, 34.0)
-	var far_cut := GroundCover.cutoff(5.0, 7.0, 70.0, 90.0)
+func test_near_and_far_bush_dither_together_to_one_full_bush() -> void:
 	var d := 0.0
-	while d < far_cut - 2.0:
-		var near_on := GroundCover.shown(d, cut) > 0.0
-		var far_on := GroundCover.far_scale(d, cut, far_cut) > 0.0
-		assert_ne(near_on, far_on, "d=%s" % d)
+	while d < 70.0:
+		var total := GroundCover.near_alpha(d, 22.0, 34.0) + GroundCover.far_alpha(d, 22.0, 34.0, 70.0, 90.0)
+		assert_almost_eq(total, 1.0, 0.0001, "d=%s" % d)
 		d += 0.25
-	assert_eq(GroundCover.far_scale(far_cut + 0.1, cut, far_cut), 0.0)
+	assert_eq(GroundCover.far_alpha(91.0, 22.0, 34.0, 70.0, 90.0), 0.0)
 
 
 func test_bush_spots_are_where_the_bushes_are_drawn_and_skip_grass() -> void:

@@ -68,21 +68,21 @@ uniform vec2 fade;
 uniform vec2 far_fade;
 uniform bool is_far;
 varying vec3 local;
+varying float alpha;
 float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 void vertex() {
 	local = VERTEX;
-	vec3 root = MODEL_MATRIX[3].xyz;
-	float h = fract(sin(dot(root.xz, vec2(12.9898, 78.233))) * 43758.5453);
-	float cut = mix(fade.x, fade.y, h);
-	float d = distance(root.xz, centre.xz);
-	if (is_far) {
-		float fcut = mix(far_fade.x, far_fade.y, h);
-		VERTEX *= step(cut, d) * step(d, fcut);
-	} else {
-		VERTEX *= step(d, cut);
-	}
+	float d = distance(MODEL_MATRIX[3].xz, centre.xz);
+	float near = 1.0 - smoothstep(fade.x, fade.y, d);
+	alpha = is_far ? (1.0 - near) * (1.0 - smoothstep(far_fade.x, far_fade.y, d)) : near;
+	VERTEX *= step(0.001, alpha);
 }
 void fragment() {
+	// screen-door fade: near and far use the same 4x4 Bayer threshold, so where one drops a pixel the other draws it
+	ivec2 px = ivec2(FRAGCOORD.xy) % 4;
+	int bayer[16] = int[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+	float threshold = (float(bayer[px.y * 4 + px.x]) + 0.5) / 16.0;
+	if (is_far ? 1.0 - alpha >= threshold : alpha < threshold) discard;
 	ALBEDO = COLOR.rgb;
 	// a bush is one smooth dome; UV.x (leaves per metre) paints clumps of lit leaves over dark gaps onto it
 	if (UV.x > 0.0) {
@@ -102,20 +102,14 @@ void fragment() {
 	return m
 
 
-# Each tuft thins out at its own distance between the fade bounds (mirrored in the shader), so it dithers into the ground tint.
-static func cutoff(x: float, z: float, fade_start: float, fade_end: float) -> float:
-	var h := fposmod(sin(x * 12.9898 + z * 78.233) * 43758.5453, 1.0)
-	return lerpf(fade_start, fade_end, h)
+# How much of a tuft is drawn at `dist` from the camera (mirrors the shader); the rest of its pixels are dithered away.
+static func near_alpha(dist: float, fade_start: float, fade_end: float) -> float:
+	return 1.0 - smoothstep(fade_start, fade_end, dist)
 
 
-# A bush's far dome is drawn from the instant its near tuft is gone (cut) until its own far cut-off (far_cut).
-static func far_scale(dist: float, cut: float, far_cut: float) -> float:
-	return (1.0 if dist >= cut else 0.0) * shown(dist, far_cut)
-
-
-# Tufts switch off outright at their cut-off; shrinking them instead read as a visible "grow-in" while driving.
-static func shown(dist: float, cut: float) -> float:
-	return 1.0 if dist <= cut else 0.0
+# A far bush dome fills exactly the pixels its near bush dithers away, then dithers out itself between the far fade bounds.
+static func far_alpha(dist: float, fade_start: float, fade_end: float, far_start: float, far_end: float) -> float:
+	return (1.0 - near_alpha(dist, fade_start, fade_end)) * (1.0 - smoothstep(far_start, far_end, dist))
 
 
 # Ground colour per cover type id: the average of its layers' tuft colours, weighted by density.

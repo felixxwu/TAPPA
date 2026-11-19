@@ -5,7 +5,6 @@ extends Node3D
 # Streams road-first terrain around the car under a strict per-frame time budget.
 #
 # Building a chunk is a resumable job split into small units of work: gather nearby roads,
-# compute heights a few samples at a time, pack the mesh arrays, upload the mesh, attach it,
 # build collision. Each frame the scheduler runs units until the budget is spent and never
 # starts a unit that its measured cost says would not fit, so a job can stop between any two
 # units and carry on next frame. The car sees this node as its terrain (height_at /

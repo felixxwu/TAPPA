@@ -115,8 +115,8 @@ func spawn_pose() -> Transform3D:
 	return bake.spawn_pose(height_at)
 
 
-# Sun shading and the cover's ground tint go into COLOR.rgb; the road and grass boost are painted per pixel from the bake's textures.
+# Sun shading and the cover's ground tint go into COLOR.rgb, the ground's uprightness (normal.y) into COLOR.a for the rock blend; the road and grass boost are painted per pixel from the bake's textures.
 func _pack_vertex(job: ChunkJob, i: int, px: float, pz: float, normal: Vector3) -> void:
 	var light := 0.55 + 0.45 * maxf(normal.dot(_sun_dir), 0.0)
 	var tint := GroundCover.ground_multiplier(_cover, int(bake.size), _cover_tints, px, pz)
-	job.colors[i] = Color(light * tint.r, light * tint.g, light * tint.b, 1.0)
+	job.colors[i] = Color(light * tint.r, light * tint.g, light * tint.b, normal.y)

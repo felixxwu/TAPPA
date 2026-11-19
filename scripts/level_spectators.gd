@@ -79,6 +79,7 @@ func _spawn(i: int, g: Dictionary) -> SpectatorGroup:
 	var meshes := Crowd.level_meshes()
 	p["homes"] = edge_homes(members, road, cfg.level_spectator_edge_gap_m, cfg.spectator_separation_m * 1.5)
 	p["road_probe_m"] = cfg.level_spectator_road_probe_m
+	p["w_anchor"] = cfg.level_spectator_walk_mps
 	p["seed"] = seed_value
 	p["ragdoll_pool_size"] = 0
 	p["face_car"] = true

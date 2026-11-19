@@ -94,7 +94,9 @@ free roam's car, cameras, HUD and pause menu around one `LevelView` node, which 
 
 - rebuilds the lab's terrain and road network (the same splines and blend) on a 1.5 m grid, the road painted as gravel by
   `shaders/level_ground.gdshader` per pixel from the baked road frame textures (`LevelBake`; see "Gravel road" below),
-  so the edge is a smooth line rather than the 1.5 m triangles; trimesh collision;
+  so the edge is a smooth line rather than the 1.5 m triangles; ground steeper than the shader's `rock_start_deg`
+  (fading to all rock at `rock_full_deg`) is drawn as bare rock (`rock`), the slope read from `COLOR.a`, which
+  `LevelStreamer._pack_vertex` fills with the smooth vertex normal's y; trimesh collision;
 - draws the bake's trees through `LevelTrees` (see "Tree tiles" below);
 - answers `height_at` / `surface_at`, so the car seats itself and the tyres read road grip from it;
 - draws trees as MultiMeshes of `Foliage._alpha_card_mesh` stars, in `shaders/level_tree.gdshader`
@@ -128,7 +130,7 @@ when the bake's maths changes. Run `BAKE_LEVEL=res://tools/levels/<name>.json go
 **Shipping bakes.** `*.bake.res` is git-ignored. `tools/bake_level.sh` publishes its result itself by running `tools/publish_bake.sh tools/levels/<name>.json` (run that by hand after an in-process bake): it refuses a missing, stale or incomplete bake (checked by `tools/bake_key.tscn`, which prints `LevelBake.key_of`) and uploads `<name>-<key>.bake.res` to the `bakes` release. The web export job runs `tools/fetch_bakes.sh` before exporting, which downloads the asset matching each level's key and fails naming the publish command if it is missing. Flow: edit level, bake (which publishes), push. Only the web preset bundles `tools/levels` (its include filter lists `*.bake.res`); the test workflow bakes in-process and needs none.
 `apply_to(material)` hands the textures to `level_ground.gdshader`, which reads it nearest and blends the four texels by
 hand: across is blended signed where the four values differ by about one texel gradient (so ruts near the centreline stay exact),
-else |across| is blended with the nearest texel's sign (a signed blend would fake a road between two roads); along is blended circularly. The shader no longer reads vertex UV/UV2/COLOR.a: COLOR.rgb is sun light x cover tint
+else |across| is blended with the nearest texel's sign (a signed blend would fake a road between two roads); along is blended circularly. The shader no longer reads vertex UV/UV2: COLOR.rgb is sun light x cover tint, COLOR.a the ground normal's y (rock on steep ground)
 only (the shader is unshaded, so normals are unused), and the lime grass boost fading out near the road edge lives in the
 shader. The gravel noises that take `along` (`gnp`) repeat every 64 m (1 and 8 noise cells per 64 m) in both the shader and the
 lab's `GRAVEL_GLSL`.
@@ -174,12 +176,11 @@ game carries no preset copy) feed `scripts/ground_cover.gd` (`GroundCover`, owne
 - bush layers also slow the car: `GroundCover.bush_spots` lists a tile's bush XZs (the same spots
   `placements` draws) and each tile's `build_tile` gives each bush layer a `BushField` (freed with the tile), as free roam's bushes have, its hit
   radius the layer's `bushRadius` × `bush_hit_radius_frac`;
-- the tuft shader (opaque, both sides lit) hides each instance outright (no shrinking) at its own hash-picked distance between
-  `ground_cover_fade_start` and `_end`, so tufts thin out one by one rather than all at once;
+- the tuft shader (opaque, both sides lit) dithers each instance out with a 4x4 screen-space Bayer pattern (`discard`, no
+  shrinking) as its distance goes from `ground_cover_fade_start` to `_end` (`GroundCover.near_alpha`);
 - bush layers (preset shape `bush`) also get a far version (`build_far_bush`: the same bush builder with a 6 x 2 dome, so it keeps the near bush's colours, outline and painted leaves) from the same `placements` pass (`far_out`, out to `ground_cover_far_reach`, same transforms).
-  The far shader (`is_far`) uses the near tuft's own hash cut-off: the dome appears exactly when the near bush is
-  hidden, then disappears at its own cut-off between `ground_cover_far_fade_start` and `_end`
-  (`GroundCover.far_scale`). Grass layers get no far version. Not mirrored in the lab's 3D view;
+  The far shader (`is_far`) uses the inverted Bayer test, so the dome fills exactly the pixels the near bush drops,
+  then dithers out itself between `ground_cover_far_fade_start` and `_end` (`GroundCover.far_alpha`). Grass layers get no far version. Not mirrored in the lab's 3D view;
 - beyond that range the ground shows the cover: `LevelView._build_ground` multiplies its baked vertex light
   (`COLOR.rgb`, which `level_ground.gdshader` already multiplies into the surface) by `GroundCover.ground_multiplier`,
   each type's colour being the density-weighted average of its layers' tuft colours (`GroundCover.tints`), with

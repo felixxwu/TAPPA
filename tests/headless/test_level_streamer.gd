@@ -57,3 +57,12 @@ func test_an_edge_wall_surrounds_the_square() -> void:
 	await wait_physics_frames(2)
 	var q := PhysicsRayQueryParameters3D.create(Vector3(SIZE, 5.0, 0.0), Vector3(0.0, 5.0, 0.0))
 	assert_false(space.intersect_ray(q).is_empty(), "a ray crossing the edge hits the wall")
+
+
+func test_vertex_alpha_carries_how_upright_the_ground_is() -> void:
+	var job := TerrainStreamer.ChunkJob.new()
+	job.colors = PackedColorArray([Color(), Color()])
+	_streamer._pack_vertex(job, 0, 0.0, 0.0, Vector3.UP)
+	_streamer._pack_vertex(job, 1, 0.0, 0.0, Vector3(1.0, 1.0, 0.0).normalized())
+	assert_almost_eq(job.colors[0].a, 1.0, 0.001)
+	assert_lt(job.colors[1].a, job.colors[0].a, "a slope packs a smaller alpha, so the shader can draw it as rock")

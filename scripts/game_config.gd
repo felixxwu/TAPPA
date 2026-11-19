@@ -3112,14 +3112,16 @@ func spectator_params() -> Dictionary:
 @export var level_spectator_edge_gap_m := 0.75
 ## Level view: how far (m) a spectator looks for road to avoid; small so the verge is reachable. Free roam uses its own.
 @export var level_spectator_road_probe_m := 1.0
+## Level view: how fast (m/s) spectators walk to their spot by the road (and back to it after dodging the car).
+@export var level_spectator_walk_mps := 2.2
 
 # --- Ground cover in the level view ---
 ## How far from the camera ground-cover tufts are drawn, in metres.
-@export var ground_cover_reach := 44.0
-## Tufts shrink to nothing between these two distances from the camera, in metres.
-@export var ground_cover_fade_start := 22.0
-@export var ground_cover_fade_end := 34.0
-## Bush layers also get a cheap dome version out to this distance (metres), shrinking out between the two fade distances.
+@export var ground_cover_reach := 60.0
+## Tufts dither out (pixel by pixel) between these two distances from the camera, in metres.
+@export var ground_cover_fade_start := 25.0
+@export var ground_cover_fade_end := 56.0
+## Bush layers also get a cheap dome version out to this distance (metres), dithering out between the two fade distances.
 @export var ground_cover_far_reach := 90.0
 @export var ground_cover_far_fade_start := 70.0
 @export var ground_cover_far_fade_end := 90.0

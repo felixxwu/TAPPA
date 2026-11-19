@@ -9,6 +9,9 @@ uniform sampler2D gravel_texture : source_color, filter_nearest_mipmap, repeat_e
 uniform float ground_uv_per_m = 0.125;
 uniform float grass_saturation = 0.65;
 uniform float gravel_tile_m = 6.4;
+// Ground steeper than rock_start_deg starts to show bare rock; by rock_full_deg it is all rock.
+uniform float rock_start_deg = 30.0;
+uniform float rock_full_deg = 45.0;
 // The road frame, one RGBA8 texture read nearest and filtered by hand: across (signed), half-width, along (modulo 64 m), junction weight.
 uniform sampler2D road_frame : filter_nearest, hint_default_black;
 uniform float frame_size_m = 600.0;
@@ -53,6 +56,19 @@ vec3 gravel(vec2 w, float lat, float half_w, float along, float junc) {
 	col *= 1.0 - 0.3 * rut * (1.0 - junc) * smoothstep(0.6, 0.8, n);  // damp where water sits in the ruts
 	float moss = smoothstep(0.5, 0.78, gn(w * 1.3) * (crown * 0.85 + verge * 1.15) + t.r * 0.15);
 	return mix(col, vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), moss * 0.85);
+}
+
+// Grey rock face, projected onto the side it faces so a steep bank isn't smeared vertically.
+vec3 rock(vec3 world, vec3 n) {
+	vec2 p = abs(n.x) > abs(n.z) ? world.zy : world.xy;
+	p += vec2(gn(p * 0.21), gn(p * 0.21 + 5.3)) * 3.0;  // warp, so no noise grid lines up
+	float big = gn(p * vec2(0.37, 0.83)) * 0.6 + gn(p * 0.13 + 9.1) * 0.4;
+	mat2 r = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
+	float grain = gn(p * 4.7) * 0.4 + gn(r * p * 9.3) * 0.35 + gn(r * r * p * 19.1) * 0.25;
+	vec3 col = mix(vec3(0.42, 0.41, 0.39), vec3(0.6, 0.58, 0.55), big);
+	col *= 0.78 + 0.4 * grain;
+	float lichen = smoothstep(0.62, 0.8, gn(p * 0.8 + 17.0)) * 0.6;
+	return mix(col, vec3(0.36, 0.42, 0.26), lichen);
 }
 
 vec3 grass_at(vec2 uv) {
@@ -100,6 +116,13 @@ void fragment() {
 	float edge = gravel_edge(world.xz, half_w);
 	float road_t = 1.0 - smoothstep(edge - 0.12, edge + 0.12, dist);
 	vec3 surface = grass_at(world.xz * ground_uv_per_m);
+	// COLOR.a is the smooth per-vertex normal.y (level_streamer._pack_vertex); the face normal only picks the rock's projection.
+	vec3 n = normalize(cross(dFdy(world), dFdx(world)));
+	float steep = degrees(acos(clamp(COLOR.a, 0.0, 1.0))) + (gn(world.xz * 0.4) - 0.5) * 8.0 + (gn(world.xz * 2.3) - 0.5) * 4.0;
+	float rock_t = smoothstep(rock_start_deg, rock_full_deg, steep);
+	if (rock_t > 0.0) {
+		surface = mix(surface, rock(world, n), rock_t);
+	}
 	if (road_t > 0.0) {
 		surface = mix(surface, gravel(world.xz, lat, half_w, along, junc), road_t);
 	}
