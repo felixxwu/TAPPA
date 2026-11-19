@@ -313,6 +313,8 @@ across `[speed_lines_start_kmh, speed_lines_full_kmh]` → `[0, 1]`, scales by
 (`speed_lines_response`) so the streaks fade in/out rather than pop. All tunables
 live in `GameConfig` under the **Speed Lines** group.
 
+**Currently disabled by default** (`speed_lines_enabled = false`); there is no menu row, so it stays off unless that default is flipped back.
+
 **Whether the effect draws at all is a player setting**, owned by
 `scripts/speed_lines_setting.gd` (`SpeedLinesSetting`) — the key (`"speed_lines"`),
 the fallback default (the authored `GameConfig.speed_lines_enabled`), `resolve()`,

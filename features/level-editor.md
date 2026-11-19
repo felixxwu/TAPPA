@@ -15,7 +15,7 @@ live three.js render of it. Serve the repo over http (`python3 -m http.server`) 
 game's textures; `?level=levels/<name>.json` opens a save.
 
 - **Terrain:** seeded noise, or a real height grid (`heightmap`) carried in the save. Near the road the
-  ground is pulled to the road's own level, smoothed along it, and stays flat for `GameConfig.level_road_flat_margin` (0.5 m) past the road edge, then blends back to the LiDAR height over 1 m. The lab rebuilds the ground on a 1.5 m grid (`G`), the same as the game, so that blend shows.
+  ground is pulled to the road's own level, smoothed along it, and stays flat for `GameConfig.level_road_flat_margin` (1 m) past the road edge, then blends back to the LiDAR height over 1 m. The lab rebuilds the ground on a 1.5 m grid (`G`), the same as the game, so that blend shows.
 - **Road:** one Hermite spline through nodes, each with a half-width and an optional hand-set
   tangent scaled by a tension.
 - **Trees:** the game's 6-card star atlases ([trees.md](trees.md)) or the lab's own in `tools/levels/trees/`.
@@ -59,15 +59,29 @@ either world (pause → Settings → Dev) saves and swaps to the other world at 
 free roam's car, cameras, HUD and pause menu around one `LevelView` node, which reads
 `GameConfig.dev_level_path` and:
 
-- rebuilds the lab's terrain and road (the same spline and blend) on a 1.5 m grid, the road painted by
-  `ps1_models.gdshader` per pixel (`paint_road_per_pixel`, like free roam) from each vertex's distance to the road's
-  edge in `UV.x`, so the edge is a smooth line rather than the 1.5 m triangles; trimesh collision;
+- rebuilds the lab's terrain and road (the same spline and blend) on a 1.5 m grid, the road painted as gravel by
+  `shaders/level_ground.gdshader` per pixel from each vertex's place on the road (`_road_frame`; see "Gravel road" below),
+  so the edge is a smooth line rather than the 1.5 m triangles; trimesh collision;
 - if the save has a bake, draws only the trees it lists for the two viewpoint rows either side of the
   road point nearest the camera (`show_from`, re-run when that row changes): each species' visible
   instances are packed to the front of its MultiMesh and `visible_instance_count` cuts off the rest;
 - answers `height_at` / `surface_at`, so the car seats itself and the tyres read road grip from it;
-- draws each species as one MultiMesh of `Foliage._alpha_card_mesh` stars (no tree collision);
+- draws each species as one MultiMesh of `Foliage._alpha_card_mesh` stars, in `shaders/level_tree.gdshader`
+  (unshaded, alpha scissor, nearest filter, `KIND_TINT`) which sways with the same `wind_sway.gdshaderinc` globals as free roam's trees;
+- adds free roam's driving effects once the car is ready (`_add_effects`): wheel particles and dust puffs in the `home` region's
+  colours, engine smoke, tyre marks (reset by the pause menu's reset), exhaust flames, car lamps, and the night headlight cone
+  pushed each frame; `GameConfig.dev_level_weather` (a `WeatherLibrary` id) sets `cfg.weather`, the wind and the weather particles on
+  the chase camera (`apply_weather`; no road tint or environment look). `_warm_up` compiles the effects' and every weather's
+  shaders with the car locked, then `WorldRuntime.look_around` (free roam's spin round the spawn) draws the car, ground, trees and near and far ground cover once. Leaving the scene resets the headlight cone, wind and weather;
+- gives every tree a box hitbox (`ObstacleBody.build`, shape index = tree index) and answers the car's
+  `size_factor` / `knock_down` like a `BillboardField`: a tree's size is its height over
+  `GameConfig.level_tree_full_height_m`, and a felled tree's card topples (`_step_falls`) by rewriting its
+  transform in the species' full buffer, so the baked-visibility repack keeps it fallen;
 - parks the car on the road's first node, facing the second; the pause menu's reset puts it back there.
+- puts the car back on the road with free roam's `RoadRecovery` (R, the pause menu's reset, stuck or fallen through, which
+  includes driving off the square's edge), answering its `road_pose` with the nearest road point (`LevelView.road_pose`);
+- loads behind a `LoadingScreen` (`Scenes.change_to` covers `LEVEL_VIEW` too, without the cold-open story) until the shader
+  warm-up ends, then applies the player's frame cap (`FpsSetting.resolve`) and arms the pause menu
 
 The toggle is not saved: it resets to the `GameConfig` default on the next boot. Level files and
 atlases load from `res://tools/`, so this works in the editor, not in an exported build.
@@ -81,8 +95,13 @@ game carries no preset copy) feed `scripts/ground_cover.gd` (`GroundCover`, buil
 
 - `build_tuft` ports the lab's `buildTuft` to an ArrayMesh (vertex colours, up normals);
 - `placements` mirrors `rebuild3DCover`: per cell within `ground_cover_reach` a hash decides the tufts of each
-  layer, seated on `height_at`, one MultiMesh per (type, layer); `update_centre` regenerates when the camera
-  moves `ground_cover_rebuild_m` (all four values are `GameConfig` vars);
+  layer, seated on `height_at`. `GroundCover.build` places the whole square once at load (about 150k tufts on Hafren)
+  and bins them into `TILE` (32 m) squares, one MultiMesh per (tile, layer), each with `visibility_range_end` at
+  `ground_cover_reach` (far bushes: `ground_cover_far_reach`) plus half a tile, so driving regenerates nothing;
+  `update_centre` only moves the shaders' fade centre;
+- bush layers also slow the car: `GroundCover.bush_spots` lists every bush's XZ over the whole square (the same spots
+  `placements` draws) and `LevelView._add_bush_fields` gives each bush layer a `BushField`, as free roam's bushes have, its hit
+  radius the layer's `bushRadius` × `bush_hit_radius_frac`;
 - the tuft shader (opaque, both sides lit) hides each instance outright (no shrinking) at its own hash-picked distance between
   `ground_cover_fade_start` and `_end`, so tufts thin out one by one rather than all at once;
 - bush layers (preset shape `bush`) also get a far version (`build_far_bush`: the same bush builder with a 6 x 2 core and a quarter
@@ -91,7 +110,7 @@ game carries no preset copy) feed `scripts/ground_cover.gd` (`GroundCover`, buil
   hidden, then disappears at its own cut-off between `ground_cover_far_fade_start` and `_end`
   (`GroundCover.far_scale`). Grass layers get no far version. Not mirrored in the lab's 3D view;
 - beyond that range the ground shows the cover: `LevelView._build_ground` multiplies its baked vertex light
-  (`COLOR.rgb`, which `ps1_models.gdshader` already multiplies into the surface) by `GroundCover.ground_multiplier`,
+  (`COLOR.rgb`, which `level_ground.gdshader` already multiplies into the surface) by `GroundCover.ground_multiplier`,
   each type's colour being the density-weighted average of its layers' tuft colours (`GroundCover.tints`), with
   hash-jittered cell edges. The lab mirrors this in `paintCoverTint` and its `tuftMaterial` cut-off.
 
@@ -99,7 +118,7 @@ game carries no preset copy) feed `scripts/ground_cover.gd` (`GroundCover`, buil
 
 The level view is graded to read as a daytime photo, not the free-roam overcast: its own `Environment` in
 `level_view.tscn` (a seamless noise-cloud `PanoramaSkyMaterial` ramped blue to white, `fog_light_color` pale blue,
-`fog_sky_affect` 0); `tarmac_color` is lightened and the ground's `UV2.x` is 1 so the road paints as grey tarmac;
+`fog_sky_affect` 0);
 `LevelView._build_ground` multiplies the grass vertex colour by `(0.95, 1.25, 0.72)`, fading out over the few metres around the road's edge, to push the ground
 lime; `KIND_TINT` in `level_view.gd` tints each Welsh species (spruce near-black green, broadleaves yellow-green).
 Global grade values in `GameConfig`: `grade_saturation` 0.85, `grade_contrast` 1.1, neutral `grade_shadow_tint` / `grade_highlight_tint`,
@@ -107,6 +126,24 @@ Global grade values in `GameConfig`: `grade_saturation` 0.85, `grade_contrast` 1
 `CAP_OUT`) for eye-height photo-match renders.
 
 The lab's 3D view copies this look so it matches the game: unshaded ground with the same baked sun light
-(`lightAt`) and grass multiplier, a flat `tarmac_color` road, `KIND_TINT` as each tree kind's `tint`, the sky's mid
+(`lightAt`) and grass multiplier, `KIND_TINT` as each tree kind's `tint`, the sky's mid
 colour behind, Godot-style `exp(-density·d)` fog in `fog_light_color`, and a CSS saturate/contrast for the grade.
 It skips the grade's warm tints, vignette and dither. When the game's look changes, update both.
+
+### Gravel road
+
+The road is a gravel forestry track, drawn the same way in the game (`shaders/level_ground.gdshader` → `gravel`) and the
+lab (`GRAVEL_GLSL`, a verbatim copy patched into the road's `MeshBasicMaterial`; keep the two in step):
+
+- **Stones** are baked, not computed: `textures/gravel-forest.png` (`node tools/bake_gravel.js`) is a seamless 256 px tile over
+  6.4 m (2.5 cm texels, nearest filtered with mipmaps, so distance doesn't shimmer). RGB is the stone colour; alpha is each
+  stone's rank. A stone shows only where the road's looseness exceeds its rank, so one tile serves both the bare ruts and the
+  stony crown; big stones have high ranks and appear only on loose ground. Gaps (rank 1) show the shader's dust colour.
+- **Road-shaped masks** are a few value-noise lookups per pixel: two wheel ruts about 0.8 m either side of the centre that
+  wander along the road, swept mostly clean, with tyre-polished streaks and damp patches; moss on the crown and verges; a
+  ragged edge up to 0.45 m inside the half-width (`gravel_edge`).
+- **Inputs:** world xz, signed metres across, half-width, metres along. The game's ground vertices carry them as `UV` = (signed
+  across, |across| − one grid step) and `UV2` = (half-width, along), from `LevelView._road_frame`; the shader takes
+  max(|UV.x|, UV.y) so the sign flip between vertices inside a bend (far off the road) can't fake a road there. The lab's
+  road mesh carries `rd` = (across, along, half-width) and discards past the edge instead of blending into grass.
+- The lab decodes the tile to linear light (its one line that differs from the game) and gamma-encodes the result, as Godot does, so the colours match.

@@ -182,7 +182,7 @@ func test_post_process_grades_before_quantising() -> void:
 
 func test_shader_sources_load() -> void:
 	for path in ["res://shaders/ps1_models.gdshader", "res://shaders/ps1_post_process.gdshader",
-			"res://shaders/speed_lines.gdshader"]:
+			"res://shaders/speed_lines.gdshader", "res://shaders/level_ground.gdshader"]:
 		var shader := load(path) as Shader
 		assert_not_null(shader, path + " loads as a Shader")
 		if shader != null:

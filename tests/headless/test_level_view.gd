@@ -55,6 +55,29 @@ func test_the_road_is_road_and_the_field_beside_it_is_not() -> void:
 	assert_lt(view.surface_at(0.0, 40.0).x, 0.01, "well off it")
 
 
+# The ground shader paints the gravel from each vertex's place on the road: UV = (signed metres across, unsigned less
+# a slack), UV2 = (half-width, metres along).
+func test_ground_vertices_carry_their_place_on_the_road() -> void:
+	var view := _built(_level())
+	var arrays := (view.get_node("Ground") as MeshInstance3D).mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var uv2: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	var at := func(x: float, z: float) -> int:
+		for i in verts.size():
+			if is_equal_approx(verts[i].x, x) and is_equal_approx(verts[i].z, z):
+				return i
+		return -1
+	var left: int = at.call(0.0, -10.0)
+	var right: int = at.call(0.0, 10.0)
+	var ahead: int = at.call(50.0, 10.0)
+	assert_almost_eq(absf(uv[left].x), 10.0, 0.01, "across is the distance from the centreline")
+	assert_almost_eq(uv[left].x, -uv[right].x, 0.01, "the two sides have opposite signs")
+	assert_lt(uv[right].y, absf(uv[right].x), "the unsigned distance is held back by a slack")
+	assert_almost_eq(uv2[right].x, 3.0, 0.01, "the road's half-width")
+	assert_almost_eq(uv2[ahead].y - uv2[right].y, 50.0, 0.5, "metres along grow with the road")
+
+
 func test_ground_is_pulled_to_the_road_level_and_left_alone_far_from_it() -> void:
 	var view := _built(_level(10.0))
 	assert_almost_eq(view.height_at(0.0, 0.0), 10.0, 0.2, "the road sits on the saved ground")
@@ -143,3 +166,71 @@ func test_the_flat_margin_setting_moves_where_the_ground_rises_beside_the_road()
 	Config.data.level_road_flat_margin = saved
 	assert_lt(wide, 0.5, "inside the margin the ground stays at road height")
 	assert_gt(none, 2.0, "with no margin it is back on the valley side")
+
+
+func test_tree_cards_use_the_swaying_shader() -> void:
+	var view := _built(_level())
+	var mmi := view.get_child(view.get_child_count() - 1)
+	for c in view.get_children():
+		if c is MultiMeshInstance3D:
+			mmi = c
+	var mat := (mmi as MultiMeshInstance3D).material_override as ShaderMaterial
+	assert_not_null(mat)
+	assert_true(mat.shader.code.contains("wind_sway_offset"))
+
+
+func test_apply_weather_spawns_and_clears_particles() -> void:
+	var view := _built(_level())
+	var cam := Camera3D.new()
+	cam.name = "ChaseCamera"
+	var host := Node3D.new()
+	host.add_child(cam)
+	host.add_child(view)
+	add_child_autofree(host)
+	var before := Config.data.weather
+	for entry in WeatherLibrary.CONDITIONS:
+		view.apply_weather(String(entry["id"]))
+		assert_eq(Config.data.weather, String(entry["id"]))
+		await get_tree().process_frame
+		assert_eq(cam.get_children().any(func(n: Node) -> bool: return n is WeatherField),
+			String(entry.get("particles", "")) != "")
+	view.apply_weather(WeatherLibrary.DEFAULT_ID)
+	WindSway.reset()
+	Config.data.weather = before
+
+
+func test_every_tree_gets_an_obstacle_hitbox() -> void:
+	var view := _built(_level())
+	var body := view.get_node("Collision") as StaticBody3D
+	assert_true(body.is_in_group(DamageModel.OBSTACLE_GROUP))
+	assert_eq(PhysicsServer3D.body_get_shape_count(body.get_rid()), 2)
+
+
+func test_a_taller_tree_is_harder_to_fell() -> void:
+	var full: float = Config.data.level_tree_full_height_m
+	Config.data.level_tree_full_height_m = 1000.0  # so neither synthetic tree is clamped to full size
+	var view := _built(_level())
+	assert_gt(view.size_factor(1), view.size_factor(0), "tree 1 is twice as tall")
+	Config.data.level_tree_full_height_m = full
+
+
+func test_a_felled_tree_falls_flat_and_stays_down() -> void:
+	var view := _built(_level())
+	var standing: float = view._full[0][5]
+	view.knock_down(0, Vector3.FORWARD, 0.0)
+	view.knock_down(0, Vector3.FORWARD, 0.0)
+	view._step_falls(0.1)
+	assert_true(view.is_fallen(0))
+	assert_false(view.is_fallen(1))
+	# the species' full transform buffer (12 floats per tree; [5] is the card's up axis' y), which every redraw reads
+	var f: PackedFloat32Array = view._full[0]
+	assert_lt(f[5], standing * 0.2, "toppled over")
+	assert_gt(f[12 + 5], 0.0, "the other tree still stands")
+
+
+func test_recovery_puts_the_car_on_the_nearest_road_facing_along_it() -> void:
+	var view := _built(_level())
+	var pose := view.road_pose(Vector2(30.0, 40.0), Vector3(-1.0, 0.0, 0.2))
+	assert_almost_eq(pose.origin.x, 30.0, 0.5)
+	assert_almost_eq(pose.origin.z, 0.0, 0.5, "on the road, not where the car was")
+	assert_lt(-pose.basis.z.x, -0.99, "the road direction nearest the car's own facing")

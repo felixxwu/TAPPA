@@ -128,3 +128,40 @@ func test_each_bush_is_drawn_by_exactly_one_of_near_and_far() -> void:
 		assert_ne(near_on, far_on, "d=%s" % d)
 		d += 0.25
 	assert_eq(GroundCover.far_scale(far_cut + 0.1, cut, far_cut), 0.0)
+
+
+func test_bush_spots_are_where_the_bushes_are_drawn_and_skip_grass() -> void:
+	var cov := PackedByteArray([1, 2, 2, 1])
+	var kinds := {"1": [[{"shape": "bush", "bushRadius": 0.5}, 2.0]], "2": [[{"shape": "blades"}, 5.0]]}
+	var spots := GroundCover.bush_spots(cov, 2, kinds)
+	assert_eq(spots.size(), 1, "only the bush layer")
+	assert_eq(float(spots[0][1]), 0.5)
+	var drawn: PackedFloat32Array = GroundCover.placements(cov, 2, kinds, Vector2.ZERO, 100.0,
+		func(_x: float, _z: float) -> float: return 0.0)["1:0"]
+	var pts: PackedVector2Array = spots[0][0]
+	assert_eq(pts.size(), drawn.size() / 12)
+	for i in pts.size():
+		assert_almost_eq(pts[i], Vector2(drawn[i * 12 + 3], drawn[i * 12 + 11]), Vector2(1e-4, 1e-4))
+
+
+func test_build_places_every_tuft_once_in_tiles_drawn_only_near_the_camera() -> void:
+	var cells: Array = []
+	for x in GRID:
+		for z in GRID:
+			cells.append(Vector2i(x, z))
+	var kinds := {"1": [[BLADES, 2.0]]}
+	var gc := GroundCover.new()
+	add_child_autofree(gc)
+	gc.setup({"cover": Marshalls.raw_to_base64(_cover(cells)), "coverKinds": kinds}, _flat, GRID)
+	gc.build()
+	var expected: int = GroundCover.placements(_cover(cells), GRID, kinds, Vector2.ZERO, GRID, _flat)["1:0"].size() / 12
+	var total := 0
+	var tiles := {}
+	for c in gc.get_children():
+		var mmi := c as MultiMeshInstance3D
+		total += mmi.multimesh.instance_count
+		tiles[mmi.custom_aabb.position] = true
+		assert_gt(mmi.visibility_range_end, 0.0, "a tile stops drawing past its reach")
+	assert_eq(total, expected, "every tuft, none twice")
+	assert_eq(tiles.size(), gc.get_child_count(), "one MultiMesh per tile")
+	assert_gt(tiles.size(), 1, "the square is split into tiles")

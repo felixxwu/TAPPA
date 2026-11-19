@@ -4,11 +4,11 @@
 
 [ext_resource type="Script" path="res://scripts/chase_camera.gd" id="4_cam"]
 
-[ext_resource type="Shader" path="res://shaders/ps1_models.gdshader" id="5_shader"]
+[ext_resource type="Shader" path="res://shaders/level_ground.gdshader" id="5_shader"]
 
 [ext_resource type="Texture2D" path="res://textures/grass.jpg" id="6_grass"]
 
-[ext_resource type="Texture2D" path="res://textures/gravel.jpg" id="7_gravel"]
+[ext_resource type="Texture2D" path="res://textures/gravel-forest.png" id="7_gravel"]
 
 [ext_resource type="Texture2D" path="res://textures/sky_field.png" id="8_sky"]
 
@@ -64,12 +64,7 @@ fog_sky_affect = 0.0
 render_priority = 0
 shader = ExtResource("5_shader")
 shader_parameter/albedo_texture = ExtResource("6_grass")
-shader_parameter/road_texture = ExtResource("7_gravel")
-shader_parameter/albedo_color = Color(1, 1, 1, 1)
-shader_parameter/texture_tile = Vector2(1, 1)
-shader_parameter/blend_road = true
-shader_parameter/road_uv_scale = 1.0
-shader_parameter/tarmac_color = Color(0.62, 0.63, 0.63, 1)
+shader_parameter/gravel_texture = ExtResource("7_gravel")
 
 [sub_resource type="ShaderMaterial" id="mat_lines"]
 shader = ExtResource("27_lines")

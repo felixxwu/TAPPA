@@ -59,7 +59,7 @@ shift+click: extend road · double-click road: insert node · Delete removes sel
 // A hand-editable patch of world: a 2D top-down editor (left) and the same patch rendered in 3D the way the game draws it (right).
 const $ = id => document.getElementById(id);
 
-const SIZE = 600, N = 200, CELL = SIZE / N, CONTOUR_M = 2, FALLOFF = 1, ROAD_FLAT_M = 0.5; // ROAD_FLAT_M mirrors GameConfig.level_road_flat_margin
+const SIZE = 600, N = 200, CELL = SIZE / N, CONTOUR_M = 2, FALLOFF = 1, ROAD_FLAT_M = 1; // ROAD_FLAT_M mirrors GameConfig.level_road_flat_margin
 // The ground is rebuilt on a 1.5 m grid like the game's, fine enough to show the 1 m road-edge blend; N is the saved heightmap's grid.
 const G = 400, GCELL = SIZE / G;
 // Height follows region_library.gd's tree_mix sizes; width is height x the atlas frame's aspect.
@@ -559,7 +559,51 @@ function tex(name, repeat) {
 
 const terrainGeo = new THREE.PlaneGeometry(SIZE, SIZE, G, G).rotateX(-Math.PI / 2);
 scene.add(new THREE.Mesh(terrainGeo, new THREE.MeshBasicMaterial(served ? { vertexColors: true, map: tex("grass.jpg", SIZE / 8) } : { vertexColors: true, color: 0x5f7a45 })));
-const road = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(0.62, 0.63, 0.63) })); // the level view paints its road as flat tarmac_color
+// The game's gravel road (shaders/level_ground.gdshader), copied verbatim: baked stones (textures/gravel-forest.png,
+// tools/bake_gravel.js) under ruts, moss, damp and a ragged edge worked out per pixel. Keep the two in step.
+const GRAVEL_GLSL = `
+uniform sampler2D gravel_texture;
+const float gravel_tile_m = 6.4;
+varying vec3 vRd; varying vec2 vW;
+float gh(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float gn(vec2 p) {
+	vec2 i = floor(p), f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(gh(i), gh(i + vec2(1.0, 0.0)), f.x), mix(gh(i + vec2(0.0, 1.0)), gh(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+// Where the road's edge is at this point: a little inside the half-width, by a ragged amount.
+float gravel_edge(vec2 w, float half_w) { return half_w - 0.45 * gn(w * 0.9); }
+
+// w: world xz; lat: metres across the road from its centre (signed); along: metres along it.
+vec3 gravel(vec2 w, float lat, float half_w, float along) {
+	float a = abs(lat + (gn(vec2(along * 0.06, 3.0)) - 0.5) * 0.35);  // the ruts wander a little
+	float rut = exp(-pow((a - min(0.8, half_w * 0.42)) / 0.3, 2.0));
+	float crown = 1.0 - smoothstep(0.1, 0.4, a);
+	float verge = smoothstep(half_w - 1.0, half_w - 0.15, a);
+	float loose = clamp(1.0 - rut * 0.9 + verge * 0.4, 0.0, 1.0);
+	vec4 t = texture2D(gravel_texture, w / gravel_tile_m);
+	t.rgb = pow(t.rgb, vec3(2.2)); // lab only: Godot's source_color decodes sRGB, three leaves a custom sampler raw
+	float n = gn(w * 0.07);
+	vec3 col = vec3(0.53, 0.5, 0.45) * (0.88 + 0.24 * n);
+	col = mix(col, t.rgb, smoothstep(t.a - 0.05, t.a + 0.05, 0.15 + loose * 0.75));  // a stone shows where the ground is looser than its rank
+	col *= mix(1.0, 0.86 + 0.16 * gn(vec2(along * 0.5, lat * 16.0)), rut);  // tyre-polished streaks
+	col *= 1.0 - 0.3 * rut * smoothstep(0.6, 0.8, n);  // damp where water sits in the ruts
+	float moss = smoothstep(0.5, 0.78, gn(w * 1.3) * (crown * 0.85 + verge * 1.15) + t.r * 0.15);
+	return mix(col, vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), moss * 0.85);
+}
+`;
+const gravelTex = served ? loader.load("../textures/gravel-forest.png") : new THREE.DataTexture(new Uint8Array([128, 122, 112, 255]), 1, 1, THREE.RGBAFormat);
+gravelTex.wrapS = gravelTex.wrapT = THREE.RepeatWrapping; gravelTex.magFilter = THREE.NearestFilter;
+gravelTex.minFilter = served ? THREE.NearestMipmapLinearFilter : THREE.NearestFilter; // Godot's filter_nearest_mipmap
+const roadMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+roadMat.onBeforeCompile = sh => {
+  sh.uniforms.gravel_texture = { value: gravelTex };
+  sh.vertexShader = "attribute vec3 rd;\nvarying vec3 vRd; varying vec2 vW;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvRd = rd; vW = (modelMatrix * vec4(position, 1.)).xz;");
+  sh.fragmentShader = GRAVEL_GLSL + sh.fragmentShader.replace("#include <map_fragment>",
+    "if (abs(vRd.x) > gravel_edge(vW, vRd.z)) discard;\ndiffuseColor.rgb = pow(gravel(vW, vRd.x, vRd.z, vRd.y), vec3(1. / 2.2));");
+};
+const road = new THREE.Mesh(new THREE.BufferGeometry(), roadMat);
 scene.add(road);
 
 // The ground under each cover type takes the average of its tufts' colours (the game bakes the same into its terrain), with ragged cell edges.
@@ -594,7 +638,7 @@ function rebuild3DTerrain() {
   for (let i = 0; i < pos.count; i++) pos.setY(i, heights[i]);
   pos.needsUpdate = true; terrainGeo.computeVertexNormals();
   paintCoverTint();
-  const p = [], uv = [], rc = [], idx = [];
+  const p = [], rd = [], rc = [], idx = [];
   let along = 0;
   samples.forEach((s, i) => {
     const a = samples[Math.max(0, i - 1)], b = samples[Math.min(samples.length - 1, i + 1)], len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
@@ -602,14 +646,14 @@ function rebuild3DTerrain() {
     if (i) along += Math.hypot(s.x - samples[i - 1].x, s.z - samples[i - 1].z);
     const ax = s.x + nx * s.w, az = s.z + nz * s.w, bx = s.x - nx * s.w, bz = s.z - nz * s.w;
     p.push(ax, s.h + 0.05, az, bx, s.h + 0.05, bz);
-    uv.push(0, along / (2 * s.w), 1, along / (2 * s.w));
+    rd.push(s.w, along, s.w, -s.w, along, s.w); // across (m, + on the a side), along (m), half-width
     const L = lightAt(Math.round((s.z + SIZE / 2) / GCELL) * (G + 1) + Math.round((s.x + SIZE / 2) / GCELL));
     rc.push(L, L, L, L, L, L);
     if (i) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
   });
   road.geometry.dispose(); road.geometry = new THREE.BufferGeometry();
   road.geometry.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
-  road.geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  road.geometry.setAttribute("rd", new THREE.Float32BufferAttribute(rd, 3));
   road.geometry.setAttribute("color", new THREE.Float32BufferAttribute(rc, 3));
   road.geometry.setIndex(idx); road.geometry.computeVertexNormals();
 }

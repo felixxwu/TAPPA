@@ -11,7 +11,7 @@ extends Node
 # moving or not. A recovery is free: Car.reset_to suppresses impact damage.
 
 @export var car: VehicleBody3D
-@export var streamer: TerrainStreamer
+@export var streamer: Node  # a TerrainStreamer, or any node with height_at and its own road_pose (LevelView)
 
 # A reset moved the car to this XZ (hosts reset their swept pickup / rest-stop checks).
 signal reset_done(p: Vector2)
@@ -48,7 +48,7 @@ func is_stuck_step(delta: float) -> bool:
 		return false
 	var stationary := car.linear_velocity.length() < cfg.recovery_speed_mps
 	var pos := car.global_position
-	var below := pos.y < streamer.height_at(pos.x, pos.z) - cfg.recovery_depth_m
+	var below: bool = pos.y < streamer.height_at(pos.x, pos.z) - cfg.recovery_depth_m
 	var flipped := car.global_transform.basis.y.dot(Vector3.UP) < cfg.recovery_upright_dot
 	var throttling: bool = car.has_method("is_throttling") and car.is_throttling()
 	if not stationary or not (below or flipped or throttling):
@@ -76,7 +76,8 @@ func reset_now() -> void:
 	var engine = car.drivetrain.engine
 	var charge: float = engine.nitrous_charge
 	var p := Vector2(car.global_position.x, car.global_position.z)
-	var pose := road_pose(streamer, p, -car.global_transform.basis.z)
+	var facing := -car.global_transform.basis.z
+	var pose: Transform3D = streamer.road_pose(p, facing) if streamer.has_method("road_pose") else road_pose(streamer, p, facing)
 	car.reset_to(pose)
 	engine.nitrous_charge = charge
 	reset_done.emit(Vector2(pose.origin.x, pose.origin.z))

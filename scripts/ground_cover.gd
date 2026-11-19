@@ -3,10 +3,12 @@ extends Node3D
 # Docs: features/level-editor.md — update in the same change as this file.
 # Tests: tests/headless/test_ground_cover.gd — extend in the same change.
 # The level editor's ground cover (grass, rush, heather, bushes) drawn around the camera as instanced opaque tufts,
-# generated on the fly from the save's 1 m cover grid and the tuft recipes it carries (coverKinds).
+# placed once at load from the save's 1 m cover grid and the tuft recipes it carries (coverKinds), in square tiles
+# that the engine stops drawing past the reach, so driving never regenerates anything.
 
 const DEG := PI / 180.0
 const MAX_PER_LAYER := 15
+const TILE := 32.0  # metres per side of one batch of tufts
 const TINT_GAIN := 2.0  # the ground texture is mid-tone, so a tint colour is doubled to multiply it
 
 var size := 600
@@ -17,8 +19,6 @@ var material: ShaderMaterial
 var far_material: ShaderMaterial
 var _meshes := {}
 var _far_meshes := {}  # recipe index key -> ArrayMesh
-var _centre := Vector2(INF, INF)
-var _mmis: Array[MultiMeshInstance3D] = []
 
 
 static func decode_cover(d: Dictionary) -> PackedByteArray:
@@ -125,22 +125,39 @@ func update_centre(pos: Vector3) -> void:
 		return
 	material.set_shader_parameter("centre", pos)
 	far_material.set_shader_parameter("centre", pos)
-	var p := Vector2(pos.x, pos.z)
-	if p.distance_to(_centre) <= Config.data.ground_cover_rebuild_m:
+
+
+# Places every tuft in the square once, one MultiMesh per (tile, layer), each drawn only within its reach of the camera.
+func build() -> void:
+	if not has_cover():
 		return
-	_centre = p
-	for m in _mmis:
-		m.queue_free()
-	_mmis.clear()
 	var far_placed := {}
-	var placed := placements(cover, size, kinds, p, Config.data.ground_cover_reach, height_fn, Config.data.ground_cover_far_reach, far_placed)
+	var whole := float(size)
+	var placed := placements(cover, size, kinds, Vector2.ZERO, whole, height_fn, whole, far_placed)
+	var diag := TILE * 0.71
 	for key: String in placed:
-		_add_layer(placed[key], _mesh_for(key), material)
+		_add_tiles(placed[key], _mesh_for(key), material, Config.data.ground_cover_reach + diag)
 	for key: String in far_placed:
-		_add_layer(far_placed[key], _far_mesh_for(key), far_material)
+		_add_tiles(far_placed[key], _far_mesh_for(key), far_material, Config.data.ground_cover_far_reach + diag)
 
 
-func _add_layer(buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial) -> void:
+func _add_tiles(buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial, reach: float) -> void:
+	var per_tile := {}  # tile -> Array of tuft indices (an Array, so appending doesn't copy)
+	for i in buf.size() / 12:
+		var t := Vector2i(floori(buf[i * 12 + 3] / TILE), floori(buf[i * 12 + 11] / TILE))
+		if not per_tile.has(t):
+			per_tile[t] = []
+		per_tile[t].append(i)
+	for t: Vector2i in per_tile:
+		var out := PackedFloat32Array()
+		for i: int in per_tile[t]:
+			out.append_array(buf.slice(i * 12, i * 12 + 12))
+		var mmi := _add_layer(out, mesh, mat)
+		mmi.custom_aabb = AABB(Vector3(t.x * TILE, -1000.0, t.y * TILE), Vector3(TILE, 2000.0, TILE))
+		mmi.visibility_range_end = reach
+
+
+func _add_layer(buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
@@ -152,7 +169,7 @@ func _add_layer(buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial) -
 	mmi.custom_aabb = AABB(Vector3(-size, -size, -size), Vector3.ONE * size * 2.0)
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
-	_mmis.append(mmi)
+	return mmi
 
 
 func _far_mesh_for(key: String) -> ArrayMesh:
@@ -218,7 +235,7 @@ static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, cen
 				var fbuf: PackedFloat32Array = far_lists.get(key, PackedFloat32Array())
 				for k in n:
 					var x := wx + hash2(cc, rr, salt + k * 4)
-					var z := wz + hash2(cc, rr, salt + k * 4 + 1)
+					var z := wz + hash2(cc, rr, salt + k * 4 + 1)  # bush_spots repeats these two lines
 					var yaw := hash2(cc, rr, salt + k * 4 + 2) * TAU
 					var sc := 0.7 + 0.6 * hash2(cc, rr, salt + k * 4 + 3)
 					var cy := cos(yaw) * sc
@@ -315,6 +332,33 @@ static func _add_blades(g: Dictionary, rng: RandomNumberGenerator, s: Dictionary
 		var q := first + 2 * (n - 1)
 		idx.append_array([q, first + 2 * n, q + 1])
 	g["idx"] = idx
+
+
+# Per bush layer: [every bush's XZ over the whole square (the spots placements draws them at), the bush's radius].
+static func bush_spots(cov: PackedByteArray, grid: int, kinds_d: Dictionary) -> Array:
+	var lists := {}
+	var half := grid / 2.0
+	for rr in grid:
+		for cc in grid:
+			var id := cov[rr * grid + cc]
+			if id == 0 or not kinds_d.has(str(id)):
+				continue
+			var layers: Array = kinds_d[str(id)]
+			for li in layers.size():
+				var recipe: Dictionary = layers[li][0]
+				if str(recipe.get("shape", "blades")) != "bush":
+					continue
+				var salt := (id * 8 + li + 1) * 64
+				var n := mini(MAX_PER_LAYER, floori(float(layers[li][1]) + hash2(cc, rr, salt + 63)))
+				var key := "%d:%d" % [id, li]
+				if n > 0 and not lists.has(key):
+					lists[key] = [PackedVector2Array(), float(recipe["bushRadius"])]
+				var pts: PackedVector2Array = lists[key][0] if n > 0 else PackedVector2Array()
+				for k in n:
+					pts.append(Vector2(cc - half + hash2(cc, rr, salt + k * 4), rr - half + hash2(cc, rr, salt + k * 4 + 1)))
+				if n > 0:
+					lists[key][0] = pts
+	return lists.values()
 
 
 static func _add_bush(g: Dictionary, rng: RandomNumberGenerator, s: Dictionary) -> void:

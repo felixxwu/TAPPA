@@ -243,7 +243,8 @@ func _warm_up() -> void:
 		if is_instance_valid(n):
 			n.clear_warm_up()
 	await _streamer.warm_up_spawns(cam)
-	await _look_around()
+	await WorldRuntime.look_around(self, _car.global_position)
+	$CameraManager.activate_current()
 	if cold_open != null and not cover.is_story():
 		var s := _streamer.settings
 		cover.story(ColdOpen.story_lines(s), s.cold_open_story_line_s)  # booted without Scenes' cover
@@ -260,26 +261,6 @@ func _loading_cover() -> LoadingScreen:
 		cover = LoadingScreen.new()
 		add_child(cover)
 	return cover
-
-
-# A throwaway camera turns full circle above the car, then looks down from high up, so everything
-# loaded around the spawn (trees, water, barriers, cabins, crowds) draws once.
-func _look_around() -> void:
-	var cam := Camera3D.new()
-	cam.far = 400.0
-	add_child(cam)
-	cam.make_current()
-	var c := _car.global_position
-	for k in 9:
-		var eye := c + Vector3(0.0, 3.0, 0.0)
-		var dir := Vector3(sin(k * TAU / 8.0), -0.1, cos(k * TAU / 8.0)) if k < 8 else Vector3(0.0, -1.0, 0.01)
-		if k == 8:
-			eye = c + Vector3(0.0, 120.0, 0.0)
-		cam.look_at_from_position(eye, eye + dir, Vector3.UP)
-		await get_tree().process_frame
-		await get_tree().process_frame
-	cam.queue_free()
-	$CameraManager.activate_current()
 
 
 # Boot is done: the pause menu, then the auto-driver or the title menu if either is due.

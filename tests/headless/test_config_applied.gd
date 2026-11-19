@@ -184,7 +184,6 @@ func test_world_values_applied() -> void:
 
 func test_speed_lines_config_defaults_present() -> void:
 	var cfg := GameConfig.new()
-	assert_true(cfg.speed_lines_enabled, "speed lines on by default")
 	assert_eq(cfg.speed_lines_color, Color(0.0, 0.0, 0.0, 1.0), "speed lines are black by default")
 	# The effect must ramp over a real speed band (start below full).
 	assert_lt(cfg.speed_lines_start_kmh, cfg.speed_lines_full_kmh,

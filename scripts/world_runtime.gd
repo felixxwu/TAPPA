@@ -107,3 +107,25 @@ static func warm_up_point(cam: Camera3D, fallback: Vector3) -> Vector3:
 	if cam != null:
 		return cam.global_position - cam.global_transform.basis.z * 2.0
 	return fallback
+
+
+## A throwaway camera turns full circle above `centre`, then looks down from high up, so everything
+## loaded around it draws once and its shaders compile behind the loading cover. The caller then
+## hands the view back to its own camera.
+static func look_around(host: Node, centre: Vector3) -> void:
+	var tree := host.get_tree()
+	var cam := Camera3D.new()
+	cam.far = 400.0
+	host.add_child(cam)
+	cam.make_current()
+	for k in 9:
+		var eye := centre + Vector3(0.0, 3.0, 0.0)
+		var dir := Vector3(sin(k * TAU / 8.0), -0.1, cos(k * TAU / 8.0)) if k < 8 else Vector3(0.0, -1.0, 0.01)
+		if k == 8:
+			eye = centre + Vector3(0.0, 120.0, 0.0)
+		cam.look_at_from_position(eye, eye + dir, Vector3.UP)
+		await tree.process_frame
+		await tree.process_frame
+		if not is_instance_valid(host):
+			return  # the scene closed mid-spin
+	cam.queue_free()

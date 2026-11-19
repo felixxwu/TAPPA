@@ -233,7 +233,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   every ring's ground material (`warm_up_materials`), one of every ring's trees plus a bush, every
   rock, a coin, a rest-stop cabin and one barrier module (both without their collision) (`warm_up_spawns`, on flat stand-in ground), and a
   throwaway camera turning full circle above the car and then looking down from high up
-  (`_look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
+  (`WorldRuntime.look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
   the auto-driver or the title menu take over (`_hand_over`). Headless skips the warm-up.
 - **Stats** (debug readout and the auto driver's report): overruns, the total overshoot, and
   **spikes** (frames over 1.5× budget), each broken down by the kind of unit that ran last.

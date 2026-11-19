@@ -1412,7 +1412,7 @@ func has_nitrous() -> bool:
 # radiating inward from the screen edges, ramping in with the car's speed.
 # Driven by scripts/speed_lines.gd over shaders/speed_lines.gdshader.
 ## Master switch for the speed-lines overlay.
-@export var speed_lines_enabled := true
+@export var speed_lines_enabled := false
 ## Streak colour. Black is the standard manga look.
 @export var speed_lines_color := Color(0.0, 0.0, 0.0, 1.0)
 ## Speed (km/h) at which the streaks start to appear. ~80 km/h is realistically
@@ -3090,19 +3090,21 @@ func spectator_params() -> Dictionary:
 ## DEV, temporary: entering the world loads this level-editor save (tools/level_editor_lab.html) in
 ## level_view.tscn instead of free roam. Flipped at runtime by the Dev page's level button.
 @export var dev_level_instead_of_free_roam := true
+## The weather id (WeatherLibrary) the level view shows: its particles and wind only.
+@export var dev_level_weather := "dry"
 @export var dev_level_path := "res://tools/levels/hafren_forest.json"
+## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
+@export var level_tree_full_height_m := 22.0
 ## How far past the road's edge the level view keeps the ground flat at road height before it
 ## blends back to the terrain, in metres. The lab (tools/level_editor_lab.html) mirrors it as ROAD_FLAT_M.
-@export var level_road_flat_margin := 0.5
+@export var level_road_flat_margin := 1.0
 
 # --- Ground cover in the level view ---
-## How far from the camera ground-cover tufts are generated, in metres.
+## How far from the camera ground-cover tufts are drawn, in metres.
 @export var ground_cover_reach := 44.0
 ## Tufts shrink to nothing between these two distances from the camera, in metres.
 @export var ground_cover_fade_start := 22.0
 @export var ground_cover_fade_end := 34.0
-## How far the camera moves before the tufts are regenerated around it, in metres.
-@export var ground_cover_rebuild_m := 10.0
 ## Bush layers also get a cheap dome version out to this distance (metres), shrinking out between the two fade distances.
 @export var ground_cover_far_reach := 90.0
 @export var ground_cover_far_fade_start := 70.0
