@@ -1,4 +1,4 @@
-// Opaque ground-cover tufts and bushes (plain vertex-coloured triangles, no texture or alpha) shared by the ground cover lab and the level editor lab.
+// Opaque ground-cover tufts and bushes (plain vertex-coloured triangles, no texture or alpha; bush leaves are painted by the shader) shared by the ground cover lab and the level editor lab.
 const DEG = Math.PI / 180;
 // Every preset is applied over these, so switching from a bush preset to a grass one doesn't keep bush-only settings.
 const PRESET_BASE = { shape: "blades", flowers: 0, flowerColour: "#f2d01c", bushRadius: 0.5, bushHeight: 0.45, leaves: 150, leafSize: 0.09, fuzz: 0.35, core: 1 };
@@ -9,7 +9,7 @@ const PRESETS = {
   "Hafren soft rush": { blades: 8, radius: 0.1, height: 1.3, heightJitter: 0.25, width: 0.05, segments: 1, lean: 12, leanJitter: 8, bend: 0, colourVar: 0.1, base: "#577540", tip: "#6f9050", ground: "#5c7b40" },
   "Hafren dead bracken": { blades: 5, radius: 0.3, height: 1.0, heightJitter: 0.35, width: 0.16, segments: 2, lean: 50, leanJitter: 25, bend: 70, colourVar: 0.15, base: "#7a6044", tip: "#9a7a58", ground: "#5a5a32" },
   "Hafren bilberry mound": { shape: "bush", bushRadius: 0.8, bushHeight: 0.8, leaves: 45, leafSize: 0.25, fuzz: 0.45, core: 1, colourVar: 0.15, base: "#6b8648", tip: "#8aa65c", ground: "#658645" },
-  "Hafren heather": { shape: "bush", bushRadius: 0.7, bushHeight: 0.6, leaves: 40, leafSize: 0.22, fuzz: 0.6, core: 1, colourVar: 0.2, base: "#54433b", tip: "#6e5a50", ground: "#4e5a2c" },
+  "Hafren heather": { shape: "bush", bushRadius: 0.7, bushHeight: 0.6, leaves: 40, leafSize: 0.22, fuzz: 0.6, core: 1, colourVar: 0.2, base: "#827866", tip: "#9c947e", ground: "#4e5a2c" },
   "Hafren scrub mound": { shape: "bush", bushRadius: 1.4, bushHeight: 1.2, leaves: 70, leafSize: 0.35, fuzz: 0.5, core: 1, colourVar: 0.15, base: "#617a41", tip: "#7f9d54", ground: "#658645" },
   "Short grass": { blades: 10, radius: 0.06, height: 0.22, heightJitter: 0.4, width: 0.03, segments: 2, lean: 25, leanJitter: 12, bend: 25, colourVar: 0.12, base: "#3e5c24", tip: "#8fb447", ground: "#4a5a2c" },
   "Meadow grass": { blades: 18, radius: 0.1, height: 0.6, heightJitter: 0.5, width: 0.025, segments: 3, lean: 20, leanJitter: 15, bend: 45, colourVar: 0.15, base: "#4a5e26", tip: "#b8c060", ground: "#4f5a2e" },
@@ -23,17 +23,18 @@ const UP = V(0, 1, 0);
 
 function buildTuft(seed, upNormals, s) {
   const rnd = mulberry32(seed);
-  const g = { pos: [], col: [], nrm: [], idx: [], tips: [], rnd, s, upNormals };
+  const g = { pos: [], col: [], nrm: [], leaf: [], idx: [], tips: [], rnd, s, upNormals };
   (s.shape === "bush" ? addBush : addBlades)(g);
   addFlowers(g);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(g.pos, 3));
   geo.setAttribute("color", new THREE.Float32BufferAttribute(g.col, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(g.nrm, 3));
+  geo.setAttribute("leaf", new THREE.Float32BufferAttribute(g.leaf, 1));
   geo.setIndex(g.idx);
   return geo;
 }
-function vert(g, p, c, n) { g.pos.push(p.x, p.y, p.z); g.col.push(c.r, c.g, c.b); g.nrm.push(n.x, n.y, n.z); return g.pos.length / 3 - 1; }
+function vert(g, p, c, n, leaf = 0) { g.leaf.push(leaf); g.pos.push(p.x, p.y, p.z); g.col.push(c.r, c.g, c.b); g.nrm.push(n.x, n.y, n.z); return g.pos.length / 3 - 1; }
 
 // Each blade is a strip of quads up a bending centre line, closed by a single tip triangle: 2*segments-1 triangles.
 function addBlades(g) {
@@ -63,32 +64,24 @@ function addBlades(g) {
   }
 }
 
-// A bush is a low-poly dome (so you never see through it) wearing a coat of single-triangle leaves on its surface.
+// A bush is one lumpy dome, shaded from base to tip colour by height; the shader paints its leaves on (mirrors ground_cover.gd).
 function addBush(g) {
   const { rnd, s } = g, base = new THREE.Color(s.base), tip = new THREE.Color(s.tip);
-  const R = s.bushRadius, H = s.bushHeight;
-  const outward = d => g.upNormals ? d.clone().add(UP).normalize() : d;
-  if (s.core) {
-    const dome = new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), dp = dome.attributes.position, first = g.pos.length / 3;
-    const inner = base.clone().multiplyScalar(0.7);
-    for (let i = 0; i < dp.count; i++) { const d = V(dp.getX(i), dp.getY(i), dp.getZ(i)); vert(g, V(d.x * R * 0.85, d.y * H * 0.9, d.z * R * 0.85), inner, outward(d)); }
-    for (const i of dome.index.array) g.idx.push(first + i);
-  }
-  for (let k = 0; k < s.leaves; k++) {
-    const y = rnd() * 1.1 - 0.1, th = rnd() * Math.PI * 2, rr = Math.sqrt(Math.max(0, 1 - y * y));
-    const d = V(rr * Math.cos(th), y, rr * Math.sin(th));
-    const out = 1 + (rnd() - 0.4) * s.fuzz * 0.5;
-    const c0 = V(d.x * R * out, Math.max(d.y, 0) * H * out, d.z * R * out);
-    const t1 = V().crossVectors(Math.abs(d.y) > 0.9 ? V(1, 0, 0) : UP, d).normalize(), t2 = V().crossVectors(d, t1);
-    const col = base.clone().lerp(tip, Math.max(0, y) * 0.8 + rnd() * 0.2).multiplyScalar(1 + (rnd() * 2 - 1) * s.colourVar);
-    const a0 = rnd() * Math.PI * 2, sz = s.leafSize * (0.6 + 0.4 * rnd()) / 1.7, n = outward(d), ids = [];
-    for (let j = 0; j < 3; j++) {
-      const a = a0 + j * 2.0944, p = c0.clone().addScaledVector(t1, Math.cos(a) * sz).addScaledVector(t2, Math.sin(a) * sz);
-      if (j === 0) p.addScaledVector(d, s.fuzz * sz * 1.5);
-      ids.push(vert(g, p, col, n));
+  const R = s.bushRadius, H = s.bushHeight, sides = 8, rows = 4, leaf = 1 / Math.max(s.leafSize, 0.01), first = g.pos.length / 3;
+  const p1 = rnd() * Math.PI * 2, p2 = rnd() * Math.PI * 2;
+  for (let iy = 0; iy <= rows; iy++) {
+    const th = iy / rows * Math.PI / 2;
+    for (let ix = 0; ix <= sides; ix++) {
+      const ph = ix / sides * Math.PI * 2, d = V(-Math.cos(ph) * Math.sin(th), Math.cos(th), Math.sin(ph) * Math.sin(th));
+      const lump = 1 + s.fuzz * 0.3 * (Math.sin(3 * ph + p1) * Math.sin(3 * th) + 0.5 * Math.sin(5 * ph + p2) * Math.sin(5 * th));
+      const p = V(d.x * R * lump, d.y * H * lump, d.z * R * lump);
+      vert(g, p, base.clone().lerp(tip, d.y * 0.8), g.upNormals ? d.clone().add(UP).normalize() : d, leaf);
+      if (iy === 0 || (iy < rows && ix < sides && rnd() < 0.3)) g.tips.push(p);
     }
-    g.idx.push(...ids);
-    g.tips.push(c0);
+  }
+  for (let iy = 0; iy < rows; iy++) for (let ix = 0; ix < sides; ix++) {
+    const a = first + iy * (sides + 1) + ix + 1, b = first + iy * (sides + 1) + ix, c = first + (iy + 1) * (sides + 1) + ix, d = c + 1;
+    g.idx.push(a, b, d, b, c, d);
   }
 }
 
@@ -108,7 +101,8 @@ function tuftMaterial(wire, h) {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, wireframe: wire });
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U, { uH: { value: Math.max(h, 0.05) } });
-    sh.vertexShader = "uniform float uTime, uWind, uH; uniform vec2 uFade; uniform vec3 uCenter;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+    sh.vertexShader = "uniform float uTime, uWind, uH; uniform vec2 uFade; uniform vec3 uCenter; attribute float leaf; varying vec3 vLocal; varying float vLeaf;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      vLocal = position; vLeaf = leaf;
       vec3 root = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
       float cut = mix(uFade.x, uFade.y, fract(sin(dot(root.xz, vec2(12.9898, 78.233))) * 43758.5453));
       transformed *= step(distance(root.xz, uCenter.xz), cut);
@@ -117,6 +111,10 @@ function tuftMaterial(wire, h) {
     // three.js lights the back of a two-sided triangle as if its normal pointed the other way (down, for up-normals),
     // which turned every blade seen from behind near-black; light both sides the same instead
     sh.fragmentShader = sh.fragmentShader.replace(/\( gl_FrontFacing \)/g, "( true )");
+    sh.fragmentShader = `varying vec3 vLocal; varying float vLeaf;
+      float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      ` + sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
+      if (vLeaf > 0.0) { vec3 q = vLocal * vLeaf * 3.0; diffuseColor.rgb *= mix(0.75, 1.15, smoothstep(0.3, 0.7, hash3(floor(q)) * 0.6 + hash3(floor(q * 2.0 + 17.0)) * 0.4)); }`);
   };
   return m;
 }

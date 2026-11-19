@@ -572,7 +572,8 @@ around a car-sized box, with wind sway and a shrink-to-nothing distance fade don
 (`tuftMaterial`), an option to point every normal up so tufts light exactly like flat ground, and stats for
 triangles per tuft and triangles in range. "Download tuft .glb" exports one tuft with vertex colours (a Godot
 material needs `vertex_color_use_as_albedo` to show them). Shape "bush" builds a mound instead
-(`addBush`): a low-poly dome so it's never see-through, coated in single-triangle leaves. "Flowers per tuft"
+(`addBush`): one lumpy low-poly dome (8 x 4, 64 triangles) shaded base-to-tip by height, with leaf clumps painted on by
+the fragment shader (blocky nearest-neighbour 3D noise in the bush's own space, one clump per `leafSize`; game copy in `ground_cover.gd` `make_material`). "Flowers per tuft"
 perches small flat triangles on blade tips (`addFlowers`). The Hafren presets were matched to Street View photos
 of the Hafren Forest roadside, and `?scene=hafren` (or the checkbox) lays all of them out in bands off a
 single-track road (`MIX`). Nothing in the game uses these tufts yet; the level editor lab draws painted ground cover with them ([level-editor.md](level-editor.md)).

@@ -37,7 +37,9 @@ game's textures; `?level=levels/<name>.json` opens a save.
   sample has `first: true` and segments never span it (`nearestRoad`, terrain, drawing skip them).
   Junctions are derived, never stored (`junctions`): chain ends within 0.75 m of each other or of another
   chain's node, centre = mean, half-width = widest member. Road height is smoothed per chain, then eased to the
-  junction's own ground height over `JUNC_BLEND_M` (12 m). In 3D each junction's weight (1 − smoothstep(1.5·w, 3·w, d))
+  junction's level over `JUNC_BLEND_M` (25 m); that level is the mean of each member chain's smoothed height at its
+  sample nearest the centre (`LevelData._junction_levels`), so a road ending on a slope meets the others halfway
+  instead of dropping to the bare ground in a few metres. In 3D each junction's weight (1 − smoothstep(1.5·w, 3·w, d))
   is computed per pixel (`junc_at`, `uJ`) and passed as the fifth argument of `gravel`; roads overlapping at a
   junction are separate ribbons lifted 1 cm apart, with the per-pixel edge discard making the union. In 2D a junction
   is an orange disc. The bake rows use the concatenated sample index.
@@ -45,6 +47,8 @@ game's textures; `?level=levels/<name>.json` opens a save.
   end (or starts a road if none is selected); double-click a road inserts a node; **x** splits the road at the selected
   node; Delete removes a node, shift+Delete the whole road. Dragging or placing a road end within 12 px of another
   road's node snaps onto it, forming a junction. `tools/geo/pack_level.js` clears trees and cover off every road (segments bucketed, so it copes with ~200k trees).
+  A selected node's **Clear trees off road** button (`clearRoad`) does the same for that node's whole road, with the
+  same margins (trees within 2 m of the edge, cover within 0.5 m).
 - **Trees:** the game's 6-card star atlases ([trees.md](trees.md)) or the lab's own in `tools/levels/trees/`.
 - **Visibility** is no longer baked in the lab: `tools/bake_level.gd` renders it into the game's bake (see "Tree tiles" below). The lab shows every tree.
 - **WASD** (`walk`) moves the view centre, the sight-line eye and the 3D camera's target, relative to the
@@ -63,10 +67,10 @@ game's textures; `?level=levels/<name>.json` opens a save.
 - **Buildings**: `level.buildings` (read-only in the editor for now) are drawn as footprints on the 2D map and as `tools/buildings.js` meshes in 3D (`rebuild3DBuildings`, one shared atlas, unshaded with baked sun); see [buildings.md](buildings.md).
 - **Saves** are packed: trees as `treesBin` (base64, 7 bytes per tree, little-endian: x and z uint16 of `round((v + size/2) * 10)` clamped, rot uint8 of 256 per turn, scale uint8 hundredths (sx == sy), kind uint8 index into `kinds`; `packTrees`/`unpackTrees` in the lab, `LevelData.unpack` in the game; the legacy `[x, z, rot, sx, sy, kind index]` rows still load; `bakeKey` mixes rot in 1/256 turns so a bake survives the quantisation), the height
   grid and the cover as base64 (int16 decimetres / bytes). A save with no cover loads as all zero, and an empty
-  cover is left out of the save. Cover is saved run-length encoded as `coverRle` (base64 of `(type byte, run length varint)` pairs, row-major; `rleEncode`/`rleDecode` in the lab, `GroundCover.decode_cover` in the game, which needs the save's `size`); the legacy raw `cover` still loads. `tools/geo/webp_pack.py` (last step of the geo pipeline, after `pack_level.js`) rewrites a packed save to `heightWebp` (lossless WebP, (N+1)², int16 decimetres + 32768 as R = high byte, G = low byte) and `coverWebp` (lossless WebP, `size`², R = type id, row 0 = north); `LevelData.unpack` and `GroundCover.decode_cover` read both these and the legacy keys, and the lab reads them async (`unpackAsync`) on file load and `?level=`. The lab itself still SAVES the legacy formats (canvas `toBlob("image/webp")` is not guaranteed lossless); hafren_5km goes 16 MB to 8.5 MB. The 2D overlay is one cached `size x size` offscreen canvas (`coverOverlay`), repainted per brushed rectangle (`coverPaintRect`), so painting stays cheap at 5 km.
+  cover is left out of the save. Cover is saved run-length encoded as `coverRle` (base64 of `(type byte, run length varint)` pairs, row-major; `rleEncode`/`rleDecode` in the lab, `GroundCover.decode_cover` in the game, which needs the save's `size`); the legacy raw `cover` still loads. `tools/geo/webp_pack.py` (last step of the geo pipeline, after `pack_level.js`) rewrites a packed save to `heightWebp` (lossless WebP, (N+1)², int16 decimetres + 32768 as R = high byte, G = low byte) and `coverWebp` (lossless WebP, `size`², R = type id, row 0 = north); `LevelData.unpack` and `GroundCover.decode_cover` read both these and the legacy keys, and the lab reads them async (`unpackAsync`) on file load and `?level=`. The lab's **Save .json** writes the WebP keys too (`packForDownload`: canvas `toBlob("image/webp", 1)`, which Chrome encodes losslessly; each image is decoded back and the legacy key kept if any value differs), so a download can go straight into `tools/levels/`. Its localStorage autosave stays in the legacy formats. The 2D overlay is one cached `size x size` offscreen canvas (`coverOverlay`), repainted per brushed rectangle (`coverPaintRect`), so painting stays cheap at 5 km.
 
-`tools/levels/hafren_forest.json` is a 600 m square of Hafren Forest (Wales): Welsh Government LiDAR
-ground heights, an OSM forestry track, and trees at LiDAR canopy peaks with species picked from canopy
+`tools/levels/hafren_5km.json` is a 5 km square of Hafren Forest (Wales): Welsh Government LiDAR
+ground heights, OSM roads, and trees at LiDAR canopy peaks with species picked from canopy
 height and satellite colour.
 
 ## In the game
@@ -111,7 +115,7 @@ atlases load from `res://tools/`, so this works in the editor, not in an exporte
 RGBA8 texture at 2 m texels (`frame`: across (signed, within ±16 m), half-width (0-16 m), along (modulo 64 m), junction
 weight; 8 bits each, so 5 km is about 25 MB) and the road samples (`sx..sc`, so `surface_at` / `road_pose` / `spawn_pose`
 run without `LevelData._build_road`). `LevelBake.bake(data, key)` is pure; `load_or_bake(save_path, data)` reads `<save>.bake.res`
-and compares `source_key` (md5 of the save's bytes + `BAKE_VERSION`): stale or missing bakes in process on desktop (warns,
+and compares `source_key` (md5 of the save minus `coverKinds`, which isn't baked, + `BAKE_VERSION`): stale or missing bakes in process on desktop (warns,
 saves beside the save), returns null on web and sets `last_error`; an empty path bakes in memory only. Bump `BAKE_VERSION`
 when the bake's maths changes. Run `BAKE_LEVEL=res://tools/levels/<name>.json godot --headless --path . res://tools/bake_level.tscn`; for the rendered tree visibility use `tools/bake_level.sh [N]`, which runs N silent (`--audio-driver Dummy`) windows over contiguous slices of the road and merges them (decode is a sort plus `bsearch` per view, not a per-pixel loop).
 
@@ -143,7 +147,7 @@ of each sample, so a segment is a sample pair with the same chain; buckets, `nea
 `nearest` only ever use such pairs). Sample indices are the concatenated ones, which is what the bake's `every` rows
 count. Junctions are not saved: `LevelData._find_junctions` clusters chain ends within `JUNCTION_TOL` (0.75 m) of each other and
 any end within it of another chain's node; the centre is the mean, its half-width the widest clustered node. Each chain's
-height is smoothed on its own, then eased to the ground height at the junction centre over `JUNCTION_BLEND` (12 m).
+height is smoothed on its own, then eased over `JUNCTION_BLEND` (25 m) to the junction's level, the mean of its chains' smoothed heights there (`_junction_levels`).
 `junction_at` gives a point's junction weight, 1 - smoothstep(1.5 wj, 3 wj, d); `road_frame` returns it as `.w`, the
 bake stores it in `frame`, and it eases the half-width to the junction's so the edge has no step where two roads'
 frames meet. `gravel()` takes it as `junc` and fades ruts, crown, verge moss and streaks to an even pad (the lab's copy
@@ -166,8 +170,7 @@ game carries no preset copy) feed `scripts/ground_cover.gd` (`GroundCover`, owne
   radius the layer's `bushRadius` × `bush_hit_radius_frac`;
 - the tuft shader (opaque, both sides lit) hides each instance outright (no shrinking) at its own hash-picked distance between
   `ground_cover_fade_start` and `_end`, so tufts thin out one by one rather than all at once;
-- bush layers (preset shape `bush`) also get a far version (`build_far_bush`: the same bush builder with a 6 x 2 core and a quarter
-  of the leaves at twice the size, so it keeps the near bush's colours and outline) from the same `placements` pass (`far_out`, out to `ground_cover_far_reach`, same transforms).
+- bush layers (preset shape `bush`) also get a far version (`build_far_bush`: the same bush builder with a 6 x 2 dome, so it keeps the near bush's colours, outline and painted leaves) from the same `placements` pass (`far_out`, out to `ground_cover_far_reach`, same transforms).
   The far shader (`is_far`) uses the near tuft's own hash cut-off: the dome appears exactly when the near bush is
   hidden, then disappears at its own cut-off between `ground_cover_far_fade_start` and `_end`
   (`GroundCover.far_scale`). Grass layers get no far version. Not mirrored in the lab's 3D view;

@@ -1,7 +1,7 @@
 extends Node
 # Bakes a level save into <name>.bake.res beside it (scripts/level_bake.gd), including which trees each stretch of road can see. Run, with BAKE_LEVEL the save's path (default: the dev level):
 #
-#   BAKE_LEVEL=res://tools/levels/hafren_forest.json godot --audio-driver Dummy --path . res://tools/bake_level.tscn
+#   BAKE_LEVEL=res://tools/levels/hafren_5km.json godot --audio-driver Dummy --path . res://tools/bake_level.tscn
 #
 # Visibility is rendered, so it needs a window; with --headless the bake skips it and every tree is drawn.
 # tools/bake_level.sh runs it as N parallel shards (-- --shard=i/N) and then a merge (-- --merge=N).

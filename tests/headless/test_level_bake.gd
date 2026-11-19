@@ -116,6 +116,9 @@ func test_an_edited_save_makes_the_bake_stale_and_an_unedited_one_does_not() -> 
 	var rebuilt := LevelBake.load_or_bake(SAVE, _data)
 	assert_eq(LevelBake.baked_in_process, before + 2, "an edited save is baked again")
 	assert_ne(rebuilt.source_key, first.source_key)
+	write.call('{"size": 120, "roads": [], "edited": true, "coverKinds": {"1": [[{"base": "#123456"}, 1.0]]}}')
+	LevelBake.load_or_bake(SAVE, _data)
+	assert_eq(LevelBake.baked_in_process, before + 2, "retuning ground cover recipes keeps the bake")
 
 
 func test_an_empty_path_bakes_in_memory() -> void:

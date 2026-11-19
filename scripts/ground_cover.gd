@@ -67,7 +67,10 @@ uniform vec3 centre;
 uniform vec2 fade;
 uniform vec2 far_fade;
 uniform bool is_far;
+varying vec3 local;
+float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 void vertex() {
+	local = VERTEX;
 	vec3 root = MODEL_MATRIX[3].xyz;
 	float h = fract(sin(dot(root.xz, vec2(12.9898, 78.233))) * 43758.5453);
 	float cut = mix(fade.x, fade.y, h);
@@ -81,6 +84,12 @@ void vertex() {
 }
 void fragment() {
 	ALBEDO = COLOR.rgb;
+	// a bush is one smooth dome; UV.x (leaves per metre) paints clumps of lit leaves over dark gaps onto it
+	if (UV.x > 0.0) {
+		vec3 q = local * UV.x * 3.0;
+		float n = hash3(floor(q)) * 0.6 + hash3(floor(q * 2.0 + 17.0)) * 0.4;
+		ALBEDO *= mix(0.75, 1.15, smoothstep(0.3, 0.7, n));
+	}
 	ROUGHNESS = 1.0;
 	if (!FRONT_FACING) NORMAL = -NORMAL;
 }
@@ -344,7 +353,7 @@ static func build_tuft(seed_: int, s: Dictionary) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_
 	# plain Arrays while building: packed arrays are copied by value, so appending through the dictionary would be lost
-	var g := {"pos": [], "col": [], "nrm": [], "idx": PackedInt32Array(), "tips": []}
+	var g := {"pos": [], "col": [], "nrm": [], "uv": [], "idx": PackedInt32Array(), "tips": []}
 	if str(s.get("shape", "blades")) == "bush":
 		_add_bush(g, rng, s)
 	else:
@@ -355,6 +364,7 @@ static func build_tuft(seed_: int, s: Dictionary) -> ArrayMesh:
 	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array(g["pos"])
 	arrays[Mesh.ARRAY_COLOR] = PackedColorArray(g["col"])
 	arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array(g["nrm"])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array(g["uv"])
 	arrays[Mesh.ARRAY_INDEX] = g["idx"]
 	var mesh := ArrayMesh.new()
 	if not (g["idx"] as PackedInt32Array).is_empty():
@@ -362,20 +372,17 @@ static func build_tuft(seed_: int, s: Dictionary) -> ArrayMesh:
 	return mesh
 
 
-# Low-poly dome (6 sides x 2 rows, 18 triangles) in the bush's mixed colour, for bushes too far for leaves.
-# The far bush is the same bush with a coarser core and a quarter of the leaves at twice the size (so they cover about
-# as much), so it keeps the near bush's colours and outline and the swap is hard to spot.
+# The far bush is the same leaf-painted dome with fewer sides, so the swap is hard to spot.
 static func build_far_bush(s: Dictionary) -> ArrayMesh:
 	var far := s.duplicate()
-	far["leaves"] = maxi(6, int(s["leaves"]) / 4)
-	far["leafSize"] = float(s["leafSize"]) * 2.0
 	far["coreSides"] = 6
 	far["coreRows"] = 2
 	far["flowers"] = 0
 	return build_tuft(1, far)
 
 
-static func _vert(g: Dictionary, p: Vector3, c: Color, n: Vector3) -> int:
+static func _vert(g: Dictionary, p: Vector3, c: Color, n: Vector3, uv := Vector2.ZERO) -> int:
+	(g["uv"] as Array).append(uv)
 	(g["pos"] as Array).append(p)
 	(g["col"] as Array).append(c)
 	(g["nrm"] as Array).append(n)
@@ -455,53 +462,39 @@ static func bush_spots(cov: PackedByteArray, grid: int, kinds_d: Dictionary, til
 	return lists.values()
 
 
+# A bush is one lumpy dome, shaded from base to tip colour by height; the shader paints its leaves on.
 static func _add_bush(g: Dictionary, rng: RandomNumberGenerator, s: Dictionary) -> void:
 	var base := Color(str(s["base"]))
 	var tip := Color(str(s["tip"]))
 	var R := float(s["bushRadius"])
 	var H := float(s["bushHeight"])
-	var idx: PackedInt32Array = g["idx"]
-	if int(s["core"]) != 0:
-		var first: int = (g["pos"] as Array).size()
-		var inner := base * 0.7
-		inner.a = 1.0
-		var sides := int(s.get("coreSides", 8))
-		var rows := int(s.get("coreRows", 4))
-		for iy in rows + 1:
-			var th := float(iy) / rows * PI / 2.0
-			for ix in sides + 1:
-				var ph := float(ix) / sides * TAU
-				var d := Vector3(-cos(ph) * sin(th), cos(th), sin(ph) * sin(th))
-				_vert(g, Vector3(d.x * R * 0.85, d.y * H * 0.9, d.z * R * 0.85), inner, (d + Vector3.UP).normalized())
-		for iy in rows:
-			for ix in sides:
-				var a := first + iy * (sides + 1) + ix + 1
-				var b := first + iy * (sides + 1) + ix
-				var c := first + (iy + 1) * (sides + 1) + ix
-				var d2 := first + (iy + 1) * (sides + 1) + ix + 1
-				idx.append_array([a, b, d2, b, c, d2])
 	var fuzz := float(s["fuzz"])
-	for _k in int(s["leaves"]):
-		var y := rng.randf() * 1.1 - 0.1
-		var th := rng.randf() * TAU
-		var rr := sqrt(maxf(0.0, 1.0 - y * y))
-		var d := Vector3(rr * cos(th), y, rr * sin(th))
-		var out := 1.0 + (rng.randf() - 0.4) * fuzz * 0.5
-		var c0 := Vector3(d.x * R * out, maxf(d.y, 0.0) * H * out, d.z * R * out)
-		var t1 := (Vector3(1, 0, 0) if absf(d.y) > 0.9 else Vector3.UP).cross(d).normalized()
-		var t2 := d.cross(t1)
-		var col := base.lerp(tip, maxf(0.0, y) * 0.8 + rng.randf() * 0.2) * (1.0 + (rng.randf() * 2.0 - 1.0) * float(s["colourVar"]))
-		col.a = 1.0
-		var a0 := rng.randf() * TAU
-		var sz := float(s["leafSize"]) * (0.6 + 0.4 * rng.randf()) / 1.7
-		var n := (d + Vector3.UP).normalized()
-		for j in 3:
-			var a := a0 + j * 2.0944
-			var p := c0 + t1 * cos(a) * sz + t2 * sin(a) * sz
-			if j == 0:
-				p += d * fuzz * sz * 1.5
-			idx.append(_vert(g, p, col, n))
-		(g["tips"] as Array).append(c0)
+	var leaf := Vector2(1.0 / maxf(float(s["leafSize"]), 0.01), 0.0)
+	var idx: PackedInt32Array = g["idx"]
+	var first: int = (g["pos"] as Array).size()
+	var sides := int(s.get("coreSides", 8))
+	var rows := int(s.get("coreRows", 4))
+	var p1 := rng.randf() * TAU
+	var p2 := rng.randf() * TAU
+	for iy in rows + 1:
+		var th := float(iy) / rows * PI / 2.0
+		for ix in sides + 1:
+			var ph := float(ix) / sides * TAU
+			var d := Vector3(-cos(ph) * sin(th), cos(th), sin(ph) * sin(th))
+			# whole-number frequencies around and zero at the top, so the lumps close up at the seam and the pole
+			var lump := 1.0 + fuzz * 0.3 * (sin(3.0 * ph + p1) * sin(3.0 * th) + 0.5 * sin(5.0 * ph + p2) * sin(5.0 * th))
+			var col := base.lerp(tip, d.y * 0.8)
+			col.a = 1.0
+			_vert(g, Vector3(d.x * R * lump, d.y * H * lump, d.z * R * lump), col, (d + Vector3.UP).normalized(), leaf)
+			if iy == 0 or (iy < rows and ix < sides and rng.randf() < 0.3):
+				(g["tips"] as Array).append(Vector3(d.x * R * lump, d.y * H * lump, d.z * R * lump))
+	for iy in rows:
+		for ix in sides:
+			var a := first + iy * (sides + 1) + ix + 1
+			var b := first + iy * (sides + 1) + ix
+			var c := first + (iy + 1) * (sides + 1) + ix
+			var d2 := first + (iy + 1) * (sides + 1) + ix + 1
+			idx.append_array([a, b, d2, b, c, d2])
 	g["idx"] = idx
 
 

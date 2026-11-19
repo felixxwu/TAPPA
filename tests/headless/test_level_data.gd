@@ -206,15 +206,18 @@ func test_the_spawn_is_the_first_chains_first_node() -> void:
 	assert_gt(-pose.basis.z.x, 0.99)
 
 
-func test_road_height_is_pinned_to_the_ground_at_a_junction() -> void:
+func test_a_junction_sits_between_its_roads_levels_not_on_the_bare_ground() -> void:
 	var hm: Array = []
 	for r in 201:
 		for c in 201:
-			hm.append(float(c) * 0.2)  # a steady slope along x
+			hm.append(float(r) * 0.5)  # the ground climbs along +z, so the branch ending at the T climbs away from it
 	var level := _network()
 	level["heightmap"] = hm
 	var data := _built(level)
-	assert_almost_eq(data.ground(0.0, 0.0), data.natural(0.0, 0.0), 0.3)
+	var main_road := data.ground(-60.0, 0.0)
+	var at_junction := data.ground(0.0, 0.0)
+	assert_gt(at_junction, data.natural(0.0, 0.0) + 0.5, "lifted towards the climbing branch's level")
+	assert_gt(at_junction, main_road + 0.5)
 
 
 # Shared with the lab's own check (tests/headless/lab_parity.js): the same save must give the same road and ground.

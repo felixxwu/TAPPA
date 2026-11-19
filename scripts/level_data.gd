@@ -5,7 +5,7 @@ extends RefCounted
 const FALLOFF := 1.0         # how far beyond the road's edge the ground blends back to its own height
 const BUCKET := 20.0
 const JUNCTION_TOL := 0.75   # chain ends this close to each other, or to another chain's node, make a junction
-const JUNCTION_BLEND := 12.0 # road height eases to the ground at a junction over this many metres
+const JUNCTION_BLEND := 25.0 # road height eases to the junction's level over this many metres
 
 var level: Dictionary
 var size := 600.0               # the square's side in metres, centred on the origin
@@ -196,9 +196,7 @@ func _build_road(roads: Array) -> void:
 					sum += hs[k]
 				sh[i] = sum / (hi - lo + 1)
 	_bucket_junctions()
-	var natural_at: Array[float] = []
-	for jn in junctions:
-		natural_at.append(natural(jn.x, jn.y))
+	var level_at := _junction_levels()
 	for i in sx.size():
 		var best := -1
 		var best_d := JUNCTION_BLEND
@@ -208,8 +206,28 @@ func _build_road(roads: Array) -> void:
 				best_d = d
 				best = ji
 		if best >= 0:
-			sh[i] = lerpf(natural_at[best], sh[i], smoothstep(0.0, JUNCTION_BLEND, best_d))
+			sh[i] = lerpf(level_at[best], sh[i], smoothstep(0.0, JUNCTION_BLEND, best_d))
 	bucket_samples()
+
+
+# Each junction's road level: the mean of its roads' own smoothed levels there, so a road ending on a hillside
+# meets the others halfway instead of being dragged down (or up) to the bare ground in a few metres.
+func _junction_levels() -> Array[float]:
+	var closest: Array[Dictionary] = []  # per junction: chain -> Vector2(distance, height) of its nearest sample
+	for jn in junctions:
+		closest.append({})
+	for i in sx.size():
+		for ji in _near_junctions(sx[i], sz[i]):
+			var d := Vector2(sx[i] - junctions[ji].x, sz[i] - junctions[ji].y).length()
+			if d < 3.0 and d < closest[ji].get(sc[i], Vector2(INF, 0.0)).x:
+				closest[ji][sc[i]] = Vector2(d, sh[i])
+	var out: Array[float] = []
+	for ji in junctions.size():
+		var sum := 0.0
+		for v: Vector2 in closest[ji].values():
+			sum += v.y
+		out.append(sum / closest[ji].size() if closest[ji].size() > 0 else natural(junctions[ji].x, junctions[ji].y))
+	return out
 
 
 # Junction centres as (x, z, half-width): chain ends within JUNCTION_TOL of each other or of another chain's node.

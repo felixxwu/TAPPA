@@ -46,7 +46,7 @@
   <div id="wrap2d"><canvas id="map"></canvas><div id="pop"></div><div class="hint">drag empty: pan · wasd: walk (shift: run) · wheel: zoom · click empty: add tree
 cover tool: drag paints (right-drag pans) · e: paint/erase · [ ]: brush · 1-4: type · c: switch tool
 click tree / node: select (details pop up) · drag the selected tree / node: move
-selected node: drag ◆ handles to bend (direction + tension), ● handles to widen
+selected node: drag ◆ handles to bend (direction + tension); set the width in the pop-up
 shift+click: extend the selected road end (or start a road) · n then click: start a new road · double-click road: insert node
 x: split road at the selected node · Delete: remove node · shift+Delete: remove whole road
 drag a road end onto another road's node: snaps and makes a junction (orange ring)</div></div>
@@ -201,7 +201,7 @@ function unpack(l) {
   else if (typeof l.cover === "string") out.cover = fromB64(l.cover);
   return out;
 }
-// heightWebp / coverWebp saves (tools/geo/webp_pack.py) are lossless WebP images; the lab itself still saves the legacy int16 / run-length formats.
+// heightWebp / coverWebp are lossless WebP images (height: R/G = high/low byte of decimetres + 32768; cover: the type id), the form the game ships.
 async function webpPixels(b64) {
   const bmp = await createImageBitmap(new Blob([fromB64(b64)], { type: "image/webp" }), { colorSpaceConversion: "none", premultiplyAlpha: "none" });
   const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
@@ -223,6 +223,32 @@ async function unpackAsync(l) {
     }
   }
   return unpack(l);
+}
+// The download keeps the height grid and cover as WebP; each image is read back, and kept in the older format if any value didn't survive.
+async function toWebp(px, n) {
+  const c = document.createElement("canvas"); c.width = c.height = n;
+  c.getContext("2d").putImageData(new ImageData(px, n, n), 0, 0);
+  const blob = await new Promise(r => c.toBlob(r, "image/webp", 1)); // Chrome writes lossless WebP at quality 1
+  if (blob?.type !== "image/webp") return null;
+  const b64 = toB64(new Uint8Array(await blob.arrayBuffer())), back = await webpPixels(b64);
+  for (let i = 0; i < px.length; i += 4) if (back[i] !== px[i] || back[i + 1] !== px[i + 1]) return null;
+  return b64;
+}
+async function packForDownload(l) {
+  const out = pack(l);
+  if (out.heightmap) {
+    const n = Math.round(Math.sqrt(l.heightmap.length)), px = new Uint8ClampedArray(n * n * 4);
+    l.heightmap.forEach((h, i) => { const u = Math.round(h * 10) + 32768; px[i * 4] = u >> 8; px[i * 4 + 1] = u & 255; px[i * 4 + 3] = 255; });
+    const b64 = await toWebp(px, n);
+    if (b64) { out.heightWebp = b64; delete out.heightmap; } else console.warn("height grid didn't survive WebP; saved as int16");
+  }
+  if (out.coverRle) {
+    const n = l.size ?? 600, px = new Uint8ClampedArray(n * n * 4);
+    l.cover.forEach((id, i) => { px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = id; px[i * 4 + 3] = 255; });
+    const b64 = await toWebp(px, n);
+    if (b64) { out.coverWebp = b64; delete out.coverRle; } else console.warn("cover didn't survive WebP; saved run-length encoded");
+  }
+  return out;
 }
 try { level = unpack(JSON.parse(localStorage.getItem("levelEditorLab"))); } catch (e) {}
 function save() { if (big()) return; try { localStorage.setItem("levelEditorLab", JSON.stringify(pack(level))); } catch (e) {} }
@@ -341,7 +367,7 @@ function natural(x, z) {
 }
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-const JUNC_BLEND_M = 12; // road height eases to the junction's own ground level over this distance
+const JUNC_BLEND_M = 25; // road height eases to the junction's level over this distance
 let samples = [], juncs = [], roadPath = new Path2D(), heights = new Float32Array(1), roadD = new Float32Array(1); // roadD: metres beyond the road's edge
 const inWin = (x, z, m = 0) => T.full || x > T.x0 - m && x < T.x0 + WW() + m && z > T.z0 - m && z < T.z0 + WW() + m;
 function rebuildRoads() {
@@ -351,7 +377,11 @@ function rebuildRoads() {
     const hs = samples.map(s => s.h);
     samples.forEach((s, i) => { let sum = 0, n = 0; for (let k = -12; k <= 12; k++) if (samples[i + k]?.c === s.c) { sum += hs[i + k]; n++; } s.h = sum / n; });
   }
-  for (const j of juncs) j.h = natural(j.x, j.z);
+  for (const j of juncs) { // the mean of its roads' own smoothed levels, so a road ending on a hillside meets the others halfway
+    const near = new Map();
+    for (const s of samples) { const d = Math.hypot(s.x - j.x, s.z - j.z); if (d < 3 && d < (near.get(s.c)?.d ?? Infinity)) near.set(s.c, { d, h: s.h }); }
+    j.h = near.size ? [...near.values()].reduce((a, v) => a + v.h, 0) / near.size : natural(j.x, j.z);
+  }
   for (const s of samples) {
     let best = null, bd = JUNC_BLEND_M;
     for (const j of juncs) { const d = Math.hypot(s.x - j.x, s.z - j.z); if (d < bd) { bd = d; best = j; } }
@@ -459,13 +489,10 @@ const fitZoom = () => Math.min(cv.width, cv.height) / SIZE * 0.95;
 const toScreen = (x, z) => [cv.width / 2 + (x - view.x) * view.zoom, cv.height / 2 + (z - view.z) * view.zoom];
 const toWorld = (sx, sz) => [view.x + (sx - cv.width / 2) / view.zoom, view.z + (sz - cv.height / 2) / view.zoom];
 
-// The selected node's handles in world space: two tangent handles (Bezier-style, a third of the tangent out) and two width handles.
+// The selected node's two tangent handles in world space (Bezier-style, a third of the tangent out).
 function handles(c, i) {
-  const n = level.roads[c][i], m = tangent(level.roads[c], i), len = Math.hypot(m.x, m.z) || 1, nx = -m.z / len, nz = m.x / len;
-  return [
-    { kind: "out", x: n.x + m.x / 3, z: n.z + m.z / 3 }, { kind: "in", x: n.x - m.x / 3, z: n.z - m.z / 3 },
-    { kind: "width", x: n.x + nx * n.w, z: n.z + nz * n.w }, { kind: "width", x: n.x - nx * n.w, z: n.z - nz * n.w },
-  ];
+  const n = level.roads[c][i], m = tangent(level.roads[c], i);
+  return [{ kind: "out", x: n.x + m.x / 3, z: n.z + m.z / 3 }, { kind: "in", x: n.x - m.x / 3, z: n.z - m.z / 3 }];
 }
 
 function draw2D() {
@@ -517,14 +544,15 @@ function draw2D() {
     const [sx, sz] = toScreen(p.x, p.z), on = sel?.type === "node" && sel.c === c && sel.i === i, end = i === 0 || i === road.length - 1;
     if (sx < -20 || sx > W + 20 || sz < -20 || sz > H + 20) return;
     ctx.fillStyle = on ? "#fc6" : end ? "#9cf" : "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(sx, sz, on ? 7 : 5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sx, sz, (on ? 7 : 5) * devicePixelRatio, 0, 7); ctx.fill(); ctx.stroke();
     if (!on || road.length < 2) return;
     for (const h of handles(c, i)) {
       const [hx, hz] = toScreen(h.x, h.z);
       ctx.strokeStyle = "#fc6"; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
       ctx.beginPath(); ctx.moveTo(sx, sz); ctx.lineTo(hx, hz); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = h.kind === "width" ? "#6cf" : "#fc6"; ctx.beginPath();
-      if (h.kind === "width") ctx.arc(hx, hz, 5, 0, 7); else { ctx.moveTo(hx, hz - 6); ctx.lineTo(hx + 6, hz); ctx.lineTo(hx, hz + 6); ctx.lineTo(hx - 6, hz); }
+      ctx.fillStyle = "#fc6"; ctx.beginPath();
+      const r = 6 * devicePixelRatio;
+      ctx.moveTo(hx, hz - r); ctx.lineTo(hx + r, hz); ctx.lineTo(hx, hz + r); ctx.lineTo(hx - r, hz);
       ctx.fill(); ctx.strokeStyle = "#000"; ctx.stroke();
     }
   }));
@@ -542,9 +570,11 @@ function draw2D() {
 }
 
 function hit(sx, sz) {
-  const [x, z] = toWorld(sx, sz), near = (wx, wz) => { const [px, pz] = toScreen(wx, wz); return Math.hypot(px - sx, pz - sz) < 9; };
+  const [x, z] = toWorld(sx, sz), near = (wx, wz) => { const [px, pz] = toScreen(wx, wz); return Math.hypot(px - sx, pz - sz) < 14 * devicePixelRatio; };
   if (sel?.type === "node" && level.roads[sel.c].length > 1) for (const h of handles(sel.c, sel.i)) if (near(h.x, h.z)) return { type: "handle", c: sel.c, i: sel.i, kind: h.kind };
-  for (let c = level.roads.length - 1; c >= 0; c--) for (let i = level.roads[c].length - 1; i >= 0; i--) if (near(level.roads[c][i].x, level.roads[c][i].z)) return { type: "node", c, i };
+  let best = null, bestD = 14 * devicePixelRatio;
+  level.roads.forEach((road, c) => road.forEach((p, i) => { const [px, pz] = toScreen(p.x, p.z), d = Math.hypot(px - sx, pz - sz); if (d < bestD) { bestD = d; best = { type: "node", c, i }; } }));
+  if (best) return best;
   for (let i = level.trees.length - 1; i >= 0; i--) {
     const t = level.trees[i];
     if (Math.hypot(t.x - x, t.z - z) < Math.max(8 / view.zoom, treeW(t) / 2)) return { type: "tree", i };
@@ -558,8 +588,8 @@ cv.onpointerdown = e => {
   cv.setPointerCapture(e.pointerId);
   if (coverTool() && e.button === 0) { drag = { paint: true, shift: e.shiftKey, last: toWorld(...px(e)) }; coverStroke(drag, drag.last); return; }
   let h = coverTool() ? null : hit(...px(e)), clicked = null;
-  // only the selected tree or node can be dragged: pressing on anything else pans the map, and a plain click selects it
-  if ((h?.type === "tree" || h?.type === "node") && !(sel?.type === h.type && sel.i === h.i && sel.c === h.c)) { clicked = h; h = null; }
+  // only the selected tree can be dragged; nodes drag straight away: pressing on anything else pans the map, and a plain click selects it
+  if (h?.type === "tree" && !(sel?.type === h.type && sel.i === h.i && sel.c === h.c)) { clicked = h; h = null; }
   drag = { sx: e.clientX, sz: e.clientY, moved: false, item: h, clicked, vx: view.x, vz: view.z, shift: e.shiftKey };
   if (h && h.type !== "handle") select(h);
 };
@@ -576,7 +606,6 @@ cv.onpointermove = e => {
   if (it.type === "tree") { Object.assign(level.trees[it.i], { x, z }); changed(); return; }
   const n = level.roads[it.c][it.i];
   if (it.type === "node") { const road = level.roads[it.c]; Object.assign(n, it.i === 0 || it.i === road.length - 1 ? snapNear(it.c, x, z) : { x, z }); }
-  else if (it.kind === "width") n.w = Math.max(1, Math.hypot(x - n.x, z - n.z));
   else { const s = (it.kind === "out" ? 3 : -3) / n.tension; n.m = { x: (x - n.x) * s, z: (z - n.z) * s }; }
   syncPopup(); changed(true);
 };
@@ -656,6 +685,39 @@ function removeSelected() {
   if (isNode) { const road = level.roads[sel.c]; road.splice(sel.i, 1); if (!road.length) level.roads.splice(sel.c, 1); } else level.trees.splice(sel.i, 1);
   select(null); changed(isNode); save();
 }
+// Clears trees and ground cover off the selected node's whole road, keeping the same margins as tools/geo/pack_level.js.
+const TREE_CLEAR = 2, COVER_CLEAR = 0.5; // metres beyond the road's edge: a tree's trunk and low branches, a tuft's spread
+function clearRoad() {
+  const segs = [], B = 32, buckets = new Map(), key = (x, z) => Math.floor(x / B) * 65536 + Math.floor(z / B);
+  for (let i = 0; i < samples.length - 1; i++) if (samples[i].c === sel.c && !samples[i + 1].first) segs.push(i);
+  const gap = (i, x, z) => {
+    const a = samples[i], b = samples[i + 1], abx = b.x - a.x, abz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / (abx * abx + abz * abz || 1)));
+    return Math.hypot(x - a.x - abx * t, z - a.z - abz * t) - a.w;
+  };
+  const box = (i, m) => { const a = samples[i], b = samples[i + 1], r = Math.max(a.w, b.w) + m; return [Math.min(a.x, b.x) - r, Math.min(a.z, b.z) - r, Math.max(a.x, b.x) + r, Math.max(a.z, b.z) + r]; };
+  for (const i of segs) {
+    const [x0, z0, x1, z1] = box(i, TREE_CLEAR);
+    for (let gx = Math.floor(x0 / B); gx <= Math.floor(x1 / B); gx++) for (let gz = Math.floor(z0 / B); gz <= Math.floor(z1 / B); gz++) {
+      const k = gx * 65536 + gz; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(i);
+    }
+  }
+  const before = level.trees.length;
+  level.trees = level.trees.filter(t => !(buckets.get(key(t.x, t.z)) || []).some(i => gap(i, t.x, t.z) <= TREE_CLEAR));
+  let cells = 0;
+  for (const i of segs) {
+    const [x0, z0, x1, z1] = box(i, COVER_CLEAR), h = SIZE / 2;
+    const c0 = Math.max(0, Math.floor(x0 + h)), c1 = Math.min(SIZE - 1, Math.ceil(x1 + h)), r0 = Math.max(0, Math.floor(z0 + h)), r1 = Math.min(SIZE - 1, Math.ceil(z1 + h));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const k = r * SIZE + c;
+      if (level.cover[k] && gap(i, c + 0.5 - h, r + 0.5 - h) < COVER_CLEAR) { level.cover[k] = 0; cells++; }
+    }
+    if (c0 <= c1 && r0 <= r1) coverPaintRect(c0, r0, c1, r1);
+  }
+  cover3DDirty = true;
+  pop.querySelector("[data-act=clear]").textContent = `Cleared ${before - level.trees.length} trees, ${cells} m² cover`;
+  changed(false); save();
+}
 const selObj = () => sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
 
 // --- the details pop-up for the selected tree or road node --------------------------------------
@@ -669,13 +731,13 @@ function select(s) {
       field("rot", "Rotation", 5, "°") + field("sx", "Stretch X", 0.05) + field("sy", "Stretch Y", 0.05) + field("width", "Width", 0.1, "m") + field("height", "Height", 0.1, "m") +
       `<button data-act="del">Delete tree</button>`
     : `<b>Road ${sel.c} node ${sel.i}</b>` + field("w", "Half-width", 0.1, "m") + field("tension", "Tension", 0.05) +
-      `<button data-act="auto">Auto curve (follow neighbours)</button><button data-act="split">Split road here (x)</button><button data-act="del">Delete node</button><button data-act="delroad">Delete whole road</button>`;
+      `<button data-act="auto">Auto curve (follow neighbours)</button><button data-act="split">Split road here (x)</button><button data-act="del">Delete node</button><button data-act="delroad">Delete whole road</button><button data-act="clear">Clear trees off road</button>`;
   pop.style.display = "flex";
   for (const inp of pop.querySelectorAll("[data-k]")) inp.oninput = () => edit(inp.dataset.k, inp.value);
   pop.querySelector("[data-act=del]").onclick = removeSelected;
   const auto = pop.querySelector("[data-act=auto]");
   if (auto) auto.onclick = () => { Object.assign(selObj(), { m: null, tension: 1 }); syncPopup(); changed(true); save(); };
-  for (const [name, fn] of [["split", splitRoad], ["delroad", removeRoad]]) { const b = pop.querySelector(`[data-act=${name}]`); if (b) b.onclick = fn; }
+  for (const [name, fn] of [["split", splitRoad], ["delroad", removeRoad], ["clear", clearRoad]]) { const b = pop.querySelector(`[data-act=${name}]`); if (b) b.onclick = fn; }
   syncPopup(); mapDirty = true;
 }
 function edit(k, v) {
@@ -707,7 +769,7 @@ function placePopup() {
 $("kind").innerHTML = Object.keys(KINDS).map(k => `<option>${k}</option>`).join("");
 $("seed").oninput = e => { level.seed = +e.target.value || 0; changed(true); save(); };
 $("relief").oninput = e => { level.relief = +e.target.value; $("v_relief").textContent = level.relief + " m"; changed(true); save(); };
-$("save").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(pack(level))])); a.download = "level.json"; a.click(); };
+$("save").onclick = async () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(await packForDownload(level))])); a.download = "level.json"; a.click(); };
 $("loadBtn").onclick = () => $("loadFile").click();
 $("loadFile").onchange = async e => { try { level = await unpackAsync(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
 $("tool").onchange = () => { $("coverBar").hidden = !coverTool(); if (coverTool()) select(null); mapDirty = true; };

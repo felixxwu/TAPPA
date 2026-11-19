@@ -3,7 +3,7 @@ extends Resource
 # Everything about a level that is worked out once, offline: final ground heights, the road frame textures the ground shader reads, the road samples, the trees in tiles and which of them each stretch of road can see. Saved beside the level as <name>.bake.res and loaded instead of running LevelData's road build.
 # The big arrays live decoded in memory but are stored as zstd blobs (see _get_property_list), and visibility stays as row-to-row diffs.
 
-const BAKE_VERSION := 5
+const BAKE_VERSION := 6
 const FRAME_RANGE := 16.0    # across and half-width are stored within this many metres; beyond it there is no road to paint
 const FRAME_CELL := 2.0      # road frame texel size in metres
 const ALONG_PERIOD := 64.0   # along is stored modulo this; the gravel noise repeats at it (level_ground.gdshader)
@@ -52,8 +52,13 @@ var _cur_row := -2
 var _texture: ImageTexture
 
 
+# The ground cover recipes (coverKinds) aren't baked, so retuning a bush or grass doesn't force a rebake.
 static func key_of(save_path: String) -> String:
-	return "%s/v%d" % [FileAccess.get_md5(save_path), BAKE_VERSION]
+	var d: Variant = JSON.parse_string(FileAccess.get_file_as_string(save_path))
+	if not d is Dictionary:
+		return "%s/v%d" % [FileAccess.get_md5(save_path), BAKE_VERSION]
+	(d as Dictionary).erase("coverKinds")
+	return "%s/v%d" % [JSON.stringify(d).md5_text(), BAKE_VERSION]
 
 
 static func bake_path(save_path: String) -> String:

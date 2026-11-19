@@ -7,6 +7,7 @@ render_mode unshaded, specular_disabled;
 uniform sampler2D albedo_texture : source_color, filter_nearest, hint_default_white;
 uniform sampler2D gravel_texture : source_color, filter_nearest_mipmap, repeat_enable, hint_default_white;
 uniform float ground_uv_per_m = 0.125;
+uniform float grass_saturation = 0.65;
 uniform float gravel_tile_m = 6.4;
 // The road frame, one RGBA8 texture read nearest and filtered by hand: across (signed), half-width, along (modulo 64 m), junction weight.
 uniform sampler2D road_frame : filter_nearest, hint_default_black;
@@ -54,6 +55,11 @@ vec3 gravel(vec2 w, float lat, float half_w, float along, float junc) {
 	return mix(col, vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), moss * 0.85);
 }
 
+vec3 grass_at(vec2 uv) {
+	vec3 c = texture(albedo_texture, uv).rgb;
+	return mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, grass_saturation);
+}
+
 void fragment() {
 	// The frame texel grid starts at the square's corner; the four texels round a point are blended by hand.
 	// Across is blended signed where the four values change by about one texel gradient (a plain slope, or the straight crossing of one road's centreline);
@@ -93,15 +99,13 @@ void fragment() {
 	}
 	float edge = gravel_edge(world.xz, half_w);
 	float road_t = 1.0 - smoothstep(edge - 0.12, edge + 0.12, dist);
-	vec3 surface = texture(albedo_texture, world.xz * ground_uv_per_m).rgb;
+	vec3 surface = grass_at(world.xz * ground_uv_per_m);
 	if (road_t > 0.0) {
 		surface = mix(surface, gravel(world.xz, lat, half_w, along, junc), road_t);
 	}
-	// grass pushed toward lime, fading out over the few metres round the road's edge; COLOR.rgb is only the baked sun light and cover tint
-	vec3 grass = mix(vec3(0.97, 1.1, 0.86), vec3(1.0), 1.0 - smoothstep(-1.0, 2.0, dist - half_w));
-	ALBEDO = surface * (COLOR.rgb * grass + hl_color * headlight_lit(world));
+	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world));
 	if (UV2.x < -0.5) {
 		// a skirt: one flat colour per 8 m of its length, never the ground texture stretched down its face
-		ALBEDO = texture(albedo_texture, (floor(world.xz / 8.0) + 0.5) * 8.0 * ground_uv_per_m).rgb * (COLOR.rgb + hl_color * headlight_lit(world));
+		ALBEDO = grass_at((floor(world.xz / 8.0) + 0.5) * 8.0 * ground_uv_per_m) * (COLOR.rgb + hl_color * headlight_lit(world));
 	}
 }

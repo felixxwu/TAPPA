@@ -27,8 +27,6 @@ Run from `tools/geo/`, in order (`cover_mask.py` before `pack_level.js` so the c
    apart from 1 m satellite pixels, and gaps inside plantation come out as grass.
 5. `python preview.py <name>` → `level_preview.png`, a top-down hillshade with trees and road.
 
-`tools/levels/hafren_forest.json` is `hafren_forest` at E 285500, N 287400; the pipeline reproduces it exactly.
-
 `tools/tree_lab_lineup.sh "<preset>" …` screenshots tree lab presets with headless Chrome into one line-up image
 (serve the repo on port 8941 first), used to compare species against roadside photos.
 
