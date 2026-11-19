@@ -1,0 +1,419 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tree Lab</title>
+<style>
+  body { margin: 0; display: flex; font: 13px system-ui, sans-serif; background: #15171a; color: #ddd; height: 100vh; }
+  #side { width: 280px; padding: 12px; overflow-y: auto; background: #1d2024; box-sizing: border-box; flex-shrink: 0; }
+  #side label { display: block; margin: 9px 0 2px; }
+  #side input[type=range], #side select, #side input[type=number] { width: 100%; box-sizing: border-box; }
+  #side input[type=color] { width: 100%; height: 24px; border: 0; padding: 0; background: none; }
+  #side .row { display: flex; gap: 6px; }
+  #side button { margin-top: 6px; }
+  #side h3 { margin: 16px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #8a9; border-bottom: 1px solid #333; }
+  #stats { margin-top: 14px; white-space: pre; font-family: ui-monospace, monospace; font-size: 12px; color: #aab; }
+  #wrap { flex: 1; position: relative; }
+  #wrap canvas { display: block; width: 100%; height: 100%; }
+  .hint { color: #889; font-size: 11px; margin-top: 10px; }
+  .val { float: right; color: #9ab; }
+</style>
+</head>
+<body>
+<div id="side">
+  <label>Preset</label>
+  <select id="preset"></select>
+  <label>Seed</label>
+  <div class="row"><input id="seed" type="number" value="1"><button id="rnd">🎲</button></div>
+  <div id="params"></div>
+  <label><input type="checkbox" id="showLeaves" checked> Leaves</label>
+  <label><input type="checkbox" id="showImpostor" checked> Sprite star version alongside</label>
+  <label>Star sprites (angles) <span class="val" id="v_spriteCount"></span></label><input type="range" id="spriteCount" min="2" max="16" step="1" value="6">
+  <label>Sprite resolution <span class="val" id="v_spriteRes"></span></label><input type="range" id="spriteRes" min="64" max="1024" step="64" value="256">
+  <label><input type="checkbox" id="wind" checked> Wind sway (preview only)</label>
+  <button id="glb">Download .glb</button>
+  <button id="png">Download PNG billboard</button>
+  <button id="copy">Copy settings</button> <span id="copied" class="hint"></span>
+  <div id="stats"></div>
+  <div class="hint">Drag to orbit, scroll to zoom, right-drag to pan.</div>
+</div>
+<div id="wrap"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script>
+// Procedural tree generator: recursive branches as tapered tubes, alpha-cut leaf cards on the twigs.
+const $ = id => document.getElementById(id);
+
+const PARAMS = [
+  ["Trunk"],
+  ["height", "Trunk height (m)", 1, 30, 8, 0.1],
+  ["radius", "Trunk radius (m)", 0.05, 1.5, 0.3, 0.01],
+  ["flare", "Root flare", 0, 3, 0.8, 0.05],
+  ["taper", "Taper (tip radius share)", 0, 1, 0.2, 0.01],
+  ["bare", "Bare trunk fraction", 0, 0.9, 0.3, 0.01],
+  ["Branching"],
+  ["levels", "Branch levels", 1, 5, 3, 1],
+  ["trunkKids", "Branches on trunk", 0, 60, 12, 1],
+  ["kids", "Branches per branch", 0, 12, 5, 1],
+  ["angle", "Trunk branch angle (deg)", 5, 120, 50, 1],
+  ["subAngle", "Sub-branch angle (deg)", 5, 120, 40, 1],
+  ["angleJitter", "Angle jitter (deg)", 0, 45, 10, 1],
+  ["spiral", "Spiral step (deg)", 0, 360, 137.5, 0.5],
+  ["lenRatio", "Branch length ratio", 0.1, 1.2, 0.6, 0.01],
+  ["radRatio", "Branch radius ratio", 0.2, 1, 0.6, 0.01],
+  ["kidStart", "Sub-branch start", 0, 0.9, 0.25, 0.01],
+  ["Growth"],
+  ["gnarl", "Gnarliness", 0, 1, 0.15, 0.01],
+  ["gravity", "Droop ← → reach up", -1.5, 1, 0.1, 0.01],
+  ["segments", "Segments per branch", 2, 20, 8, 1],
+  ["radial", "Radial sides", 3, 16, 8, 1],
+  ["Leaves"],
+  ["leafCount", "Leaves per twig", 0, 60, 14, 1],
+  ["leafSize", "Leaf size (m)", 0.02, 1.5, 0.25, 0.01],
+  ["leafAspect", "Leaf length / width", 0.3, 8, 1.6, 0.05],
+  ["leafStart", "Leaves start along twig", 0, 1, 0.3, 0.01],
+  ["leafTilt", "Leaf droop", -1, 1, 0.2, 0.01],
+  ["leafVar", "Leaf colour variation", 0, 0.5, 0.12, 0.01],
+];
+const SHAPES = { conical: t => 1 - 0.8 * t, spherical: t => 0.25 + 0.75 * Math.sin(Math.PI * t),
+  hemispherical: t => 0.2 + 0.8 * Math.sqrt(1 - t * t),
+  cylindrical: () => 1, flame: t => t < 0.7 ? 0.2 + t / 0.7 * 0.8 : (1 - t) / 0.3, inverse: t => 0.4 + 0.6 * t };
+const LEAF_SHAPES = ["oval", "lobed", "round", "needles", "frond"];
+const EXTRA = { shape: "spherical", leafShape: "oval", bark: "#5b4a3a", leaf: "#4f7a2c" };
+
+const PRESETS = {
+  "Broadleaf (oak-ish)": { height: 4.5, radius: 0.45, flare: 1.2, taper: 0.25, bare: 0.35, levels: 4, trunkKids: 7, kids: 4, angle: 55, subAngle: 45, angleJitter: 15, lenRatio: 0.85, radRatio: 0.55, kidStart: 0.3, gnarl: 0.35, gravity: 0.05, segments: 8, leafCount: 18, leafSize: 0.28, leafAspect: 1.4, leafShape: "lobed", shape: "spherical", leaf: "#4c6e2a", bark: "#4e4237" },
+  "Pine": { height: 14, radius: 0.3, flare: 0.6, taper: 0.05, bare: 0.3, levels: 3, trunkKids: 45, kids: 6, angle: 85, subAngle: 50, angleJitter: 8, lenRatio: 0.3, radRatio: 0.35, kidStart: 0.15, gnarl: 0.08, gravity: -0.15, segments: 6, leafCount: 10, leafSize: 0.35, leafAspect: 2.5, leafShape: "needles", leafTilt: 0, shape: "conical", leaf: "#2f4a2a", bark: "#4a3a30" },
+  "Birch": { height: 11, radius: 0.16, flare: 0.3, taper: 0.1, bare: 0.4, levels: 3, trunkKids: 18, kids: 5, angle: 35, subAngle: 35, angleJitter: 12, lenRatio: 0.4, radRatio: 0.4, kidStart: 0.2, gnarl: 0.18, gravity: -0.35, segments: 8, leafCount: 16, leafSize: 0.12, leafAspect: 1.3, leafShape: "round", shape: "flame", leaf: "#7a9a38", bark: "#d9d4c8" },
+  "Willow": { height: 5, radius: 0.4, flare: 1, taper: 0.2, bare: 0.5, levels: 4, trunkKids: 8, kids: 6, angle: 45, subAngle: 30, angleJitter: 10, lenRatio: 0.9, radRatio: 0.5, kidStart: 0.2, gnarl: 0.2, gravity: -1.2, segments: 12, leafCount: 20, leafSize: 0.18, leafAspect: 4, leafShape: "oval", leafTilt: 0.8, shape: "spherical", leaf: "#7c9640", bark: "#5a4e40" },
+  "Dead snag": { height: 7, radius: 0.3, flare: 1, taper: 0.1, bare: 0.25, levels: 3, trunkKids: 9, kids: 3, angle: 50, subAngle: 45, angleJitter: 25, lenRatio: 0.45, radRatio: 0.5, kidStart: 0.2, gnarl: 0.6, gravity: 0.15, segments: 8, leafCount: 0, shape: "conical", bark: "#6b6258" },
+};
+
+const state = {};
+const defaults = () => { for (const p of PARAMS) if (p.length > 1) state[p[0]] = p[4]; Object.assign(state, EXTRA); };
+
+// --- UI ---------------------------------------------------------------------------------
+function buildUI() {
+  const box = $("params");
+  for (const p of PARAMS) {
+    if (p.length === 1) { box.insertAdjacentHTML("beforeend", `<h3>${p[0]}</h3>`); continue; }
+    const [k, label, min, max, , step] = p;
+    box.insertAdjacentHTML("beforeend", `<label>${label} <span class="val" id="v_${k}"></span></label><input type="range" id="p_${k}" min="${min}" max="${max}" step="${step}">`);
+    $("p_" + k).oninput = e => { state[k] = +e.target.value; $("v_" + k).textContent = state[k]; $("preset").value = ""; regen(); };
+    if (k === "bare") box.insertAdjacentHTML("beforeend", `<label>Crown shape</label><select id="p_shape">${Object.keys(SHAPES).map(s => `<option>${s}</option>`).join("")}</select><label>Bark colour</label><input type="color" id="p_bark">`);
+    if (k === "leafCount") box.insertAdjacentHTML("beforeend", `<label>Leaf shape</label><select id="p_leafShape">${LEAF_SHAPES.map(s => `<option>${s}</option>`).join("")}</select><label>Leaf colour</label><input type="color" id="p_leaf">`);
+  }
+  for (const k of Object.keys(EXTRA)) $("p_" + k).oninput = e => { state[k] = e.target.value; $("preset").value = ""; regen(); };
+  $("preset").innerHTML = `<option value="">— custom —</option>` + Object.keys(PRESETS).map(n => `<option>${n}</option>`).join("");
+  $("preset").onchange = e => { if (!e.target.value) return; defaults(); Object.assign(state, PRESETS[e.target.value]); syncUI(); regen(true); };
+  $("seed").oninput = () => regen();
+  $("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e6); regen(); };
+  $("showLeaves").onchange = $("showImpostor").onchange = () => regen();
+  $("spriteRes").oninput = () => { $("v_spriteRes").textContent = $("spriteRes").value; regen(); };
+  $("v_spriteRes").textContent = $("spriteRes").value;
+  $("spriteCount").oninput = () => { $("v_spriteCount").textContent = $("spriteCount").value; regen(); };
+  $("v_spriteCount").textContent = $("spriteCount").value;
+  $("copy").onclick = () => { navigator.clipboard.writeText(JSON.stringify({ seed: +$("seed").value, ...state })); $("copied").textContent = "copied"; setTimeout(() => $("copied").textContent = "", 1500); };
+  $("glb").onclick = exportGLB;
+  $("png").onclick = exportPNG;
+}
+function syncUI() {
+  for (const p of PARAMS) if (p.length > 1) { $("p_" + p[0]).value = state[p[0]]; $("v_" + p[0]).textContent = state[p[0]]; }
+  for (const k of Object.keys(EXTRA)) $("p_" + k).value = state[k];
+}
+
+// --- generation -------------------------------------------------------------------------
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const UP = V(0, 1, 0);
+
+// Each branch is a polyline of points with a radius and a (tangent, normal) frame per point.
+function generate(seed) {
+  const rnd = mulberry32(seed), rs = () => rnd() * 2 - 1;
+  const S = state, branches = [], twigs = [];
+  const shape = SHAPES[S.shape];
+  function grow(origin, dir, length, radius, level, normal) {
+    if (branches.length > 30000) return;
+    const segs = Math.max(2, S.segments - level), step = length / segs;
+    const pts = [origin.clone()], rad = [], tan = [dir.clone()], nor = [];
+    let n = normal.clone().sub(dir.clone().multiplyScalar(normal.dot(dir))).normalize();
+    const tipR = radius * S.taper;
+    const rAt = t => Math.max(0.004, (radius + (tipR - radius) * t) * (level === 0 ? 1 + S.flare * Math.pow(1 - t, 6) : 1));
+    rad.push(rAt(0)); nor.push(n.clone());
+    const d = dir.clone();
+    for (let i = 1; i <= segs; i++) {
+      const pull = level === 0 ? S.gravity * 0.05 : S.gravity * 0.25 * (level / Math.max(1, S.levels - 1));
+      d.add(V(rs(), rs(), rs()).multiplyScalar(S.gnarl * 0.35)).addScaledVector(UP, pull).normalize();
+      if (level === 0 && d.y < 0.3) { d.y = 0.3; d.normalize(); }
+      pts.push(pts[i - 1].clone().addScaledVector(d, step));
+      n.sub(d.clone().multiplyScalar(n.dot(d))).normalize();
+      tan.push(d.clone()); nor.push(n.clone()); rad.push(rAt(i / segs));
+    }
+    const b = { pts, rad, tan, nor, level, length };
+    branches.push(b);
+    const at = t => { const f = t * segs, i = Math.min(segs - 1, Math.floor(f)), u = f - i;
+      return { p: pts[i].clone().lerp(pts[i + 1], u), t: tan[i].clone().lerp(tan[i + 1], u).normalize(), n: nor[i].clone(), r: rad[i] + (rad[i + 1] - rad[i]) * u }; };
+    const last = level === S.levels - 1;
+    if (last || S.levels === 1) twigs.push({ b, at });
+    if (last) return;
+    const count = level === 0 ? S.trunkKids : S.kids, start = level === 0 ? S.bare : S.kidStart;
+    let phase = rnd() * 360;
+    for (let k = 0; k < count; k++) {
+      const t = start + (1 - start) * (k + 0.3 + rnd() * 0.4) / count;
+      const f = at(t);
+      phase += S.spiral + rs() * 10;
+      const side = f.n.clone().applyAxisAngle(f.t, phase * Math.PI / 180);
+      const ang = ((level === 0 ? S.angle : S.subAngle) + rs() * S.angleJitter) * Math.PI / 180;
+      const cd = f.t.clone().multiplyScalar(Math.cos(ang)).addScaledVector(side, Math.sin(ang)).normalize();
+      const len = level === 0 ? length * S.lenRatio * shape((t - start) / Math.max(1e-3, 1 - start)) : length * S.lenRatio * (1 - 0.5 * t);
+      grow(f.p.addScaledVector(cd, f.r * 0.5), cd, len * (0.85 + rnd() * 0.3), Math.min(f.r * 0.95, f.r * S.radRatio), level + 1, f.t.clone().cross(side));
+    }
+  }
+  grow(V(), UP.clone().add(V(rs(), 0, rs()).multiplyScalar(0.03)).normalize(), S.height, S.radius, 0, V(1, 0, 0));
+  const leaves = [];
+  if ($("showLeaves").checked && S.leafCount > 0) for (const { b, at } of twigs) {
+    for (let k = 0; k < S.leafCount; k++) {
+      const t = S.leafCount === 1 ? S.leafStart : S.leafStart + (1 - S.leafStart) * rnd();
+      const f = at(Math.min(t, 0.999));
+      const side = f.n.clone().applyAxisAngle(f.t, rnd() * Math.PI * 2);
+      const dir = f.t.clone().multiplyScalar(0.6).add(side).addScaledVector(UP, -S.leafTilt).normalize();
+      leaves.push({ p: f.p.addScaledVector(side, f.r), dir, spin: rs() * Math.PI, shade: rs() });
+    }
+  }
+  return { branches, leaves };
+}
+
+// --- meshes -----------------------------------------------------------------------------
+function barkGeometry(branches) {
+  const R = state.radial, pos = [], nrm = [], uv = [], idx = [];
+  for (const b of branches) {
+    const base = pos.length / 3, sides = Math.max(3, R - b.level * 2);
+    let v = 0;
+    for (let i = 0; i < b.pts.length; i++) {
+      if (i) v += b.pts[i].distanceTo(b.pts[i - 1]) / (2 * Math.PI * Math.max(b.rad[0], 0.05));
+      const t = b.tan[i], n = b.nor[i], bn = t.clone().cross(n);
+      for (let j = 0; j <= sides; j++) {
+        const a = j / sides * Math.PI * 2, o = n.clone().multiplyScalar(Math.cos(a)).addScaledVector(bn, Math.sin(a));
+        const p = b.pts[i].clone().addScaledVector(o, b.rad[i]);
+        pos.push(p.x, p.y, p.z); nrm.push(o.x, o.y, o.z); uv.push(j / sides, v);
+      }
+    }
+    for (let i = 0; i < b.pts.length - 1; i++) for (let j = 0; j < sides; j++) {
+      const a = base + i * (sides + 1) + j, c = a + sides + 1;
+      idx.push(a, a + 1, c, a + 1, c + 1, c);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+
+function leafGeometry(leaves) {
+  const pos = [], nrm = [], uv = [], col = [], idx = [];
+  const L = state.leafSize, W = L / state.leafAspect, base = new THREE.Color(state.leaf).convertSRGBToLinear();
+  for (const lf of leaves) {
+    const side = lf.dir.clone().cross(UP);
+    if (side.lengthSq() < 1e-4) side.set(1, 0, 0);
+    side.normalize().applyAxisAngle(lf.dir, lf.spin * 0.5);
+    const nn = side.clone().cross(lf.dir).normalize(), i0 = pos.length / 3;
+    const c = base.clone().offsetHSL(lf.shade * state.leafVar * 0.3, lf.shade * state.leafVar * 0.5, lf.shade * state.leafVar * 0.5);
+    for (const [s, l] of [[-0.5, 0], [0.5, 0], [0.5, 1], [-0.5, 1]]) {
+      const p = lf.p.clone().addScaledVector(side, s * W).addScaledVector(lf.dir, l * L).addScaledVector(nn, l * l * L * 0.15);
+      pos.push(p.x, p.y, p.z); nrm.push(nn.x, nn.y, nn.z); uv.push(s + 0.5, l); col.push(c.r, c.g, c.b);
+    }
+    idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return g;
+}
+
+// Leaf card art: drawn in light greys so the per-leaf vertex colour tints it. Base of leaf = bottom (v=0).
+function leafTexture(kind) {
+  const c = document.createElement("canvas"); c.width = c.height = 256;
+  const g = c.getContext("2d");
+  g.translate(128, 256); g.scale(1, -1);
+  g.fillStyle = "#e8e8e8"; g.strokeStyle = "#9a9a9a";
+  const leafPath = (w, h, y0) => { g.beginPath(); g.moveTo(0, y0); g.bezierCurveTo(w, y0 + h * 0.25, w * 0.8, y0 + h * 0.8, 0, y0 + h); g.bezierCurveTo(-w * 0.8, y0 + h * 0.8, -w, y0 + h * 0.25, 0, y0); g.fill(); };
+  if (kind === "oval") { leafPath(150, 240, 12); }
+  else if (kind === "round") { g.beginPath(); g.ellipse(0, 130, 112, 112, 0, 0, Math.PI * 2); g.fill(); }
+  else if (kind === "lobed") {
+    g.beginPath();
+    for (let a = 0; a < Math.PI * 2; a += 0.01) { const r = 100 * (0.72 + 0.28 * Math.cos(5 * a)); g.lineTo(Math.sin(a) * r, 128 - Math.cos(a) * r); }
+    g.fill();
+  } else if (kind === "needles") {
+    g.lineWidth = 7; g.lineCap = "round"; g.strokeStyle = "#e0e0e0";
+    for (let i = 0; i < 42; i++) { const a = (i / 41 - 0.5) * 2.4, l = 200 + (i * 37 % 40); g.beginPath(); g.moveTo(0, 10); g.lineTo(Math.sin(a) * l * 0.55, 10 + Math.cos(a) * l); g.stroke(); }
+    return finish(c);
+  } else if (kind === "frond") {
+    g.lineWidth = 9; g.lineCap = "round"; g.strokeStyle = "#e0e0e0";
+    for (let i = 0; i < 26; i++) { const y = 20 + i * 9, l = 120 * Math.sin(Math.PI * (i + 1) / 27);
+      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(0, y); g.lineTo(s * l, y + 60); g.stroke(); } }
+  }
+  g.lineWidth = 5; g.beginPath(); g.moveTo(0, 0); g.lineTo(0, 240); g.stroke();
+  return finish(c);
+  function finish(cv) { const t = new THREE.CanvasTexture(cv); t.anisotropy = 8; return t; }
+}
+
+function barkTexture() {
+  const c = document.createElement("canvas"); c.width = 128; c.height = 256;
+  const g = c.getContext("2d"), rnd = mulberry32(7);
+  g.fillStyle = "#c8c8c8"; g.fillRect(0, 0, 128, 256);
+  for (let i = 0; i < 400; i++) {
+    const x = rnd() * 128, y = rnd() * 256, v = 120 + rnd() * 130 | 0;
+    g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, y, 1 + rnd() * 3, 10 + rnd() * 50);
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1);
+  return t;
+}
+
+// --- scene ------------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+$("wrap").append(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb8c8).convertSRGBToLinear();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 500);
+camera.position.set(14, 7, 14);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 4, 0);
+scene.add(new THREE.HemisphereLight(0xdfefff, 0x5a5040, 0.7));
+const sun = new THREE.DirectionalLight(0xfff1dc, 1.0);
+sun.position.set(-12, 25, 8); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -35, right: 35, top: 35, bottom: -35, far: 100 });
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(80, 64).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: new THREE.Color(0x5f7a45).convertSRGBToLinear() }));
+ground.receiveShadow = true; scene.add(ground);
+
+const barkMat = new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.95 });
+const leafMats = {};
+function leafMat(kind) {
+  if (!leafMats[kind]) {
+    const map = leafTexture(kind);
+    leafMats[kind] = { mat: new THREE.MeshStandardMaterial({ map, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 }),
+      depth: new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5 }) };
+    leafMats[kind].mat.map.encoding = THREE.sRGBEncoding;
+  }
+  return leafMats[kind];
+}
+
+const tree = new THREE.Group(); scene.add(tree);
+const impostor = new THREE.Group(); scene.add(impostor);
+
+// The back of a card is a separate mesh pushed slightly behind, so where an even star puts two
+// cards on the same plane, the correct front image wins over the mirrored back one.
+function cardMaterial(map, back) {
+  return new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: back ? THREE.BackSide : THREE.FrontSide,
+    polygonOffset: !!back, polygonOffsetFactor: 1, polygonOffsetUnits: 4 });
+}
+
+// Cheap stand-in for the tree: N transparent renders taken around it, each pasted on a
+// double-sided card facing the direction it was shot from, the cards crossing in a star.
+function buildImpostor() {
+  for (const m of [...impostor.children]) { m.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); m.children[0]?.material.dispose(); impostor.remove(m); }
+  if (!$("showImpostor").checked) return null;
+  let R = 0.1, top = 0;
+  for (const m of tree.children) {
+    const a = m.geometry.attributes.position.array;
+    for (let i = 0; i < a.length; i += 3) { R = Math.max(R, Math.hypot(a[i], a[i + 2])); top = Math.max(top, a[i + 1]); }
+  }
+  const H = top * 1.02, cy = H / 2, res = +$("spriteRes").value, W = Math.max(8, Math.round(res * 2 * R / H));
+  const cam = new THREE.OrthographicCamera(-R, R, H / 2, -H / 2, 0.1, 4 * R + 10);
+  const bg = scene.background;
+  scene.background = null; ground.visible = false; impostor.visible = false; tree.rotation.z = 0;
+  renderer.setClearColor(0, 0);
+  const n = +$("spriteCount").value;
+  for (let i = 0; i < n; i++) {
+    const th = i * 2 * Math.PI / n, rt = new THREE.WebGLRenderTarget(W, res);
+    rt.texture.encoding = THREE.sRGBEncoding;
+    cam.position.set(Math.sin(th) * (2 * R + 5), cy, Math.cos(th) * (2 * R + 5)); cam.lookAt(0, cy, 0);
+    renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, cam);
+    const card = new THREE.Mesh(new THREE.PlaneGeometry(2 * R, H), cardMaterial(rt.texture));
+    card.material.map.dispose = () => rt.dispose();
+    card.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: rt.texture, alphaTest: 0.5 });
+    card.position.y = cy; card.rotation.y = th; card.castShadow = true;
+    const backCard = new THREE.Mesh(card.geometry, cardMaterial(rt.texture, true));
+    impostor.add(card); card.add(backCard);
+  }
+  renderer.setRenderTarget(null);
+  scene.background = bg; ground.visible = true; impostor.visible = true;
+  impostor.position.x = 2.4 * R;
+  return { R, W, res, n };
+}
+let pending = false, fitNext = false;
+function regen(fit) { fitNext ||= !!fit; if (!pending) { pending = true; requestAnimationFrame(build); } }
+function build() {
+  pending = false;
+  const t0 = performance.now();
+  for (const m of [...tree.children]) { m.geometry.dispose(); tree.remove(m); }
+  const { branches, leaves } = generate(+$("seed").value || 0);
+  barkMat.color.set(state.bark).convertSRGBToLinear();
+  const bark = new THREE.Mesh(barkGeometry(branches), barkMat);
+  bark.castShadow = bark.receiveShadow = true; bark.name = "bark";
+  tree.add(bark);
+  let leafTris = 0;
+  if (leaves.length) {
+    const lm = leafMat(state.leafShape), lmesh = new THREE.Mesh(leafGeometry(leaves), lm.mat);
+    lmesh.customDepthMaterial = lm.depth; lmesh.castShadow = lmesh.receiveShadow = true; lmesh.name = "leaves";
+    tree.add(lmesh); leafTris = leaves.length * 2;
+  }
+  const box = new THREE.Box3().setFromObject(tree), size = box.getSize(V());
+  const imp = buildImpostor();
+  if (fitNext) {
+    fitNext = false;
+    const h = Math.max(size.x, size.y, size.z) * (imp ? 1.8 : 1), cx = imp ? imp.R * 1.2 : 0;
+    controls.target.set(cx, size.y / 2, 0);
+    camera.position.set(cx, size.y * 0.6, h * 1.7);
+  }
+  const barkTris = bark.geometry.index.count / 3;
+  $("stats").textContent = `branches  ${branches.length}\nleaves    ${leaves.length}\ntris      ${barkTris + leafTris}\n  bark    ${barkTris}\n  leaves  ${leafTris}\nsize      ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} m\nbuild     ${(performance.now() - t0).toFixed(0)} ms` +
+    (imp ? `\n\nstar      ${imp.n * 2} tris\n  sprites ${imp.n} × ${imp.W}×${imp.res} px` : "");
+}
+
+function resize() { const w = $("wrap").clientWidth, h = $("wrap").clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize);
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime();
+  tree.rotation.z = impostor.rotation.z = $("wind").checked ? Math.sin(t * 0.9) * 0.012 + Math.sin(t * 2.3) * 0.004 : 0;
+  controls.update(); renderer.render(scene, camera);
+});
+
+// --- export -----------------------------------------------------------------------------
+function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+function exportGLB() {
+  tree.rotation.z = 0;
+  new THREE.GLTFExporter().parse(tree, buf => download(new Blob([buf]), `tree_${$("seed").value}.glb`), { binary: true });
+}
+// Side-on orthographic render with a transparent background, for billboard sprites.
+function exportPNG() {
+  const box = new THREE.Box3().setFromObject(tree), size = box.getSize(V()), c = box.getCenter(V());
+  const w = Math.max(size.x, size.z) / 2 * 1.05, h = size.y / 2 * 1.05;
+  const cam = new THREE.OrthographicCamera(-w, w, h, -h, 0.1, 200);
+  cam.position.set(c.x, c.y, c.z + 50); cam.lookAt(c);
+  const H = 1024, W = Math.round(H * w / h);
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  r.outputEncoding = THREE.sRGBEncoding; r.setSize(W, H); r.setClearColor(0, 0);
+  const bg = scene.background; scene.background = null; ground.visible = false; tree.rotation.z = 0;
+  impostor.visible = false; r.render(scene, cam); impostor.visible = true;
+  scene.background = bg; ground.visible = true;
+  r.domElement.toBlob(b => { download(b, `tree_${$("seed").value}.png`); r.dispose(); });
+}
+
+defaults(); Object.assign(state, PRESETS["Broadleaf (oak-ish)"]);
+buildUI(); syncUI(); resize();
+$("preset").value = "Broadleaf (oak-ish)"; regen(true);
+</script>
+</body>
+</html>

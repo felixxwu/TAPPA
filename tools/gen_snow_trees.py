@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Build the Alps' two conifer billboards from a CC0 source pack.
+"""NOTE: its output textures were replaced by 6-frame atlases made with tools/tree_lab.html.
+
+Build the Alps' two conifer billboards from a CC0 source pack.
 
     textures/tree-snow.webp        dense spruce, snow painted onto the branch tops
     textures/tree-snow-laden.webp  scruffier spruce that already carries real snow

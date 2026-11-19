@@ -275,7 +275,7 @@ func _build_dev_page() -> void:
 	_dev_status = _make_sub("Developer actions.")
 	_dev_page.add_child(_dev_status)
 	_dev_page.add_child(_make_action_button("Add $%d" % DEV_MONEY_GRANT, _add_dev_money))
-	_dev_page.add_child(_make_action_button("Unlock entire map", _unlock_map))
+	_dev_page.add_child(_make_action_button("Unlock everything", _unlock_map))
 	_dev_weather_button = _make_action_button("", _cycle_dev_weather)
 	_dev_page.add_child(_dev_weather_button)
 	_refresh_dev_weather()
@@ -644,7 +644,8 @@ func _add_dev_money() -> void:
 	_dev_status.text = "$%d." % WorldSession.money()
 
 
-# Put every biome ring's stock on sale and open the whole island for travel (the live free-roam scene does the rest).
+# Put every biome ring's stock on sale, put every car in the garage, and open the whole island for
+# travel (the live free-roam scene does the rest).
 func _unlock_map() -> void:
 	var scene := get_tree().current_scene
 	if not WorldSession.has_world() or scene == null or not scene.has_method("unlock_map"):
@@ -654,8 +655,11 @@ func _unlock_map() -> void:
 	for r in Config.data.free_roam.ring_count:
 		rings.append(r)
 	WorldSession.set_list("revealed", rings)
+	for spec: Dictionary in CarLibrary.all():
+		if not ParkedCars.model_owned(String(spec["id"])):
+			Save.grant_car(String(spec["id"]))
 	scene.unlock_map()
-	_dev_status.text = "Map unlocked."
+	_dev_status.text = "Everything unlocked."
 
 
 # The live world's biome director, or null outside free roam.

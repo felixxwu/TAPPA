@@ -1365,7 +1365,7 @@ func has_nitrous() -> bool:
 ## original 400-tall canvas and re-inflated by UITheme.UI_SCALE — keep that
 ## constant equal to render_height / 400 when retuning this (see
 ## scripts/ui_theme.gd → "UI scale", then re-run tools/build_ui_theme.gd).
-@export var render_height := 540
+@export var render_height := 720
 @export var virtual_resolution := Vector2(480, 360) # independent LOOK value (PS1 dither grid), deliberately decoupled from the window/viewport height (DisplayStretch.DESIGN_HEIGHT reads display/window/size/viewport_height) — do not "fix" this to match it
 ## Purely stylistic horizontal (anamorphic) stretch of the WHOLE frame — world
 ## and UI alike. 1.0 = off; 1.2 draws everything 20% wider than reality. Applied

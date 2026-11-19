@@ -129,7 +129,7 @@ func test_panel_box_is_black_and_sharp_cornered() -> void:
 
 func test_px_scales_authored_sizes_consistently() -> void:
 	# The design constants and px() must agree — whatever UI_SCALE is tuned to.
-	assert_eq(UITheme.FONT_SIZE, UITheme.px(13), "FONT_SIZE is the scaled authored 13")
+	assert_eq(UITheme.FONT_SIZE, UITheme.px(10), "FONT_SIZE is the scaled authored 10")
 	assert_eq(UITheme.MENU_ROW_H, UITheme.px(30), "MENU_ROW_H is the scaled authored 30")
 	assert_eq(UITheme.px(0), 0, "px(0) stays 0")
 

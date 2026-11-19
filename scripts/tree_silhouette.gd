@@ -14,8 +14,8 @@ class_name TreeSilhouette
 
 # alpha_threshold: alpha at/above which a texel counts as opaque (higher = airier,
 # more fragmented clusters). simplify_epsilon: RDP contour simplification in px
-# (higher = fewer triangles). Both are rendering constants chosen by the caller.
-static func build(image: Image, alpha_threshold: float, simplify_epsilon: float) -> ArrayMesh:
+# (higher = fewer triangles; uv_x_scale squeezes U into an atlas frame). Both are rendering constants chosen by the caller.
+static func build(image: Image, alpha_threshold: float, simplify_epsilon: float, uv_x_scale: float = 1.0) -> ArrayMesh:
 	var w := image.get_width()
 	var h := image.get_height()
 	var bm := BitMap.new()
@@ -35,10 +35,8 @@ static func build(image: Image, alpha_threshold: float, simplify_epsilon: float)
 		# (z = 0), plane 1 the same silhouette rotated 90 deg about Y (into the ZY
 		# plane), sharing UVs. Each vertex carries a plane FLAG in its vertex COLOR
 		# (red 0 = plane 0, red 1 = plane 1). billboard_opaque.gdshader reads that flag:
-		# while the tree is upright it Y-billboards plane 0 toward the camera and
-		# collapses plane 1 (so a standing tree is a single camera-facing card, no
-		# overdraw); once the tree is FELLED it locks BOTH planes in place as the cross
-		# and topples them, so a fallen tree reads as a solid 3D shape, not flat paper.
+		# while the tree is upright it draws both planes fixed as a "+"; once the
+		# tree is FELLED it topples them as the cross, so a fallen tree reads as a solid 3D shape, not flat paper.
 		# Keep the three verts of a triangle contiguous so PRIMITIVE_TRIANGLES winds
 		# correctly. triangulate_polygon emits three indices per triangle, so the count
 		# is always a multiple of 3 — the division is exact and intentionally integer.
@@ -51,7 +49,7 @@ static func build(image: Image, alpha_threshold: float, simplify_epsilon: float)
 					var px := outline[tris[t * 3 + k]]
 					var nx := px.x / float(w) - 0.5
 					var ny := 1.0 - px.y / float(h)
-					st.set_uv(Vector2(px.x / float(w), px.y / float(h)))
+					st.set_uv(Vector2(px.x / float(w) * uv_x_scale, px.y / float(h)))
 					st.set_color(plane_flag)
 					if plane == 0:
 						st.add_vertex(Vector3(nx, ny, 0.0))

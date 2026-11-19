@@ -1,4 +1,4 @@
-// The tree billboard shader body, shared by billboard_opaque.gdshader (the cutout baked into the
+// The tree star shader body, shared by billboard_opaque.gdshader (the cutout baked into the
 // mesh, no discard), billboard_alpha.gdshader (a plain card cut out per pixel by its alpha, the way
 // trees used to be drawn) and billboard_blend.gdshader (the card blended by its alpha), kept so
 // their costs can be compared on a phone. Each sets its own render_mode. See the header of
@@ -10,8 +10,8 @@ uniform float fade_band = 15.0;
 // Bias distant sampling toward cheaper mips (mobile texture-bandwidth win).
 uniform float lod_bias = 0.0;
 // Fake hemisphere-ambient + one directional sun, matching the terrain
-// (terrain_manager._bake_light / ps1_models_lit.gdshader). The billboard card
-// normal is the horizontal to-camera direction, so hemi is fixed at 0.5 (a
+// (terrain_manager._bake_light / ps1_models_lit.gdshader). A star card's
+// normal is horizontal, so hemi is fixed at 0.5 (a
 // vertical surface sees half sky, half ground). NO source_color hint: terrain
 // bakes raw Color floats, so trees match the ground by using them raw too.
 uniform vec3 sun_dir = vec3(0.0, 0.0, 1.0);
@@ -56,37 +56,21 @@ void vertex() {
 		// Ambient-only: felled trees lie flat and are a rare, transient minority,
 		// so skip the directional term rather than derive a per-plane normal.
 		v_tint = mix(vec3(1.0), ambient, light_amount);
-	} else if (COLOR.r > 0.5) {
-		// Standing: collapse plane 1 (the ZY plane) to the origin so only the
-		// billboarded front card is visible — a standing tree is one camera-facing
-		// card, not a "+", and pays no doubled overdraw.
-		world_pos = origin;
-		v_tint = vec3(1.0); // zero-area, never rasterised; assign for completeness.
 	} else {
-		// Standing: Y-billboard plane 0 toward the camera (flattened to XZ so it
-		// stays upright). Authored size lives as the instance scale (column lengths).
-		vec3 to_cam = INV_VIEW_MATRIX[3].xyz - origin;
-		to_cam.y = 0.0;
-		to_cam = normalize(to_cam);
-		vec3 up = vec3(0.0, 1.0, 0.0);
-		vec3 right = normalize(cross(up, to_cam));
-		float sx = length(MODEL_MATRIX[0].xyz);
-		vec3 local = (right * (VERTEX.x * sx) + up * (VERTEX.y * height)) * scale;
-		world_pos = origin + local;
-		// Wind sway — STANDING trees only. Not applied in the felled branch (a
-		// toppled tree lies on the ground and its mesh-space y is no longer "up",
-		// so bending by height_frac would swing it sideways along the ground) and
-		// not in the collapsed plane-1 branch above (zero-area, never rasterised).
-		// VERTEX.y is already the mesh's normalized 0..1 height (confirmed by the
-		// `up * (VERTEX.y * height)` term just above), so it's passed straight
-		// through as height_frac. Deliberately UN-SCALED by `scale`: scale is the
-		// distance shrink-out toward the trunk-axis pivot, and multiplying the sway
-		// by it would make a collapsing tree's canopy swing away from its own base
-		// as it shrinks, instead of shrinking straight down onto it.
+		// Standing: a static star of vertical cards, drawn exactly where the mesh and
+		// the instance transform (size + yaw) put them. No camera facing.
+		world_pos = (MODEL_MATRIX * vec4(VERTEX * scale, 1.0)).xyz;
+		// Wind sway is standing-only, and NOT scaled by the distance shrink, so a
+		// shrinking canopy collapses straight down onto its base instead of swinging.
 		world_pos += wind_sway_offset(origin, VERTEX.y, height);
-		// Card normal == to_cam (horizontal). Same math as the terrain bake; the
-		// dot naturally ignores sun_dir's vertical component against a flat normal.
-		float ndl = max(dot(to_cam, sun_dir), 0.0);
+		// Light with the card's own normal, flipped to face the camera. The traced
+		// silhouette mesh has no normals, so fall back to its plane's axis.
+		vec3 n = length(NORMAL) > 0.5 ? NORMAL : (COLOR.r > 0.5 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0));
+		n = normalize((MODEL_MATRIX * vec4(n, 0.0)).xyz);
+		if (dot(n, INV_VIEW_MATRIX[3].xyz - origin) < 0.0) {
+			n = -n;
+		}
+		float ndl = max(dot(n, sun_dir), 0.0);
 		vec3 lit = ambient + sun_color * ndl;
 		v_tint = mix(vec3(1.0), lit, light_amount);
 	}

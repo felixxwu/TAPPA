@@ -116,7 +116,8 @@ through the page's `_dev_status` line, and both editing the free-roam world sess
 
 - **Add $10000** — adds `SettingsMenu.DEV_MONEY_GRANT` (a dev amount, not a tunable) to
   `WorldSession.money`, for trying the checkpoint shop ([loot.md](loot.md)).
-- **Unlock entire map** — `_unlock_map`: every biome ring's stock goes on sale, and the live
+- **Unlock everything** — `_unlock_map`: every biome ring's stock goes on sale, every
+  `CarLibrary` model not yet owned is granted into the garage (`Save.grant_car`), and the live
   free-roam scene's `unlock_map` lights every rest stop (`RestStops.light_all`, so Travel can
   reach any of them), marks the outermost ring reached and every road driven, so the map shows
   the whole island.

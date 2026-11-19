@@ -97,7 +97,7 @@ const SHADOW := Color(0.0, 0.0, 0.0, 0.95)          # hard text drop shadow
 # small glyph up) and metrics/spacing grow to match. Keep it equal to
 # GameConfig.render_height / 400 (the authoring canvas) — retune it whenever
 # render_height changes, then re-run tools/build_ui_theme.gd.
-const UI_SCALE := 540.0 / 400.0
+const UI_SCALE := 720.0 / 400.0
 
 # The size of the frame a node is laid out in: its viewport's visible rect, else `fallback`.
 static func layout_frame_size(node: Node, fallback := Vector2(480, 360)) -> Vector2:
@@ -123,7 +123,7 @@ static func px(authored: float) -> int:
 # below is picked to land exactly on 18 at the current UI_SCALE. If UI_SCALE
 # ever changes (see below), re-run that sweep and re-pick BOTH numbers so the
 # rendered size still lands on a clean one — don't just let the scale drift it.
-const FONT_SIZE := int(13 * UI_SCALE + 0.5)
+const FONT_SIZE := int(10 * UI_SCALE + 0.5)
 
 # Rule 2's ONE documented exception: a title/heading reads better at 2x FONT_SIZE
 # (screen titles via `title()`, card names via `card_title()`) — see house rule 2

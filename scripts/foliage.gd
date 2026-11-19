@@ -154,7 +154,7 @@ static func spawn_bushes(parent: Node3D, positions: PackedVector2Array, terrain:
 # The opaque billboard-tree silhouette mesh, traced once from `tex`'s alpha (default
 # the home TREE_TEXTURE) and shared by every instance in a tree BillboardField.
 # Cached per texture path so each distinct cutout (home + any region tree) is built
-# once. Region textures (tree-greece.webp) trace the same single camera-facing card.
+# once. Tree textures are 6-frame atlases; the trace uses frame 0 only.
 static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
 	var alpha: bool = Config.data.tree_cutout_mode != 0
 	var key := tex.resource_path + ("#card" if alpha else "")
@@ -163,26 +163,33 @@ static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
 	if alpha:
 		_tree_silhouette_cache[key] = _alpha_card_mesh()
 		return _tree_silhouette_cache[key]
+	var img := tex.get_image()
+	img.crop(int(img.get_width() / float(STAR_CARDS)), img.get_height())
 	var mesh := TreeSilhouette.build(
-		tex.get_image(), TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON)
+		img, TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON, 1.0 / STAR_CARDS)
 	_tree_silhouette_cache[key] = mesh
 	return mesh
 
 
-# The plain card the alpha trees are drawn on (GameConfig.tree_cutout_mode): the same "+"
-# of two planes, plane flag in COLOR.r and normalized coordinates as the traced silhouette, but
-# each plane one full quad of the texture, cut out or blended per pixel by its shader.
+# The star the alpha trees are drawn on (GameConfig.tree_cutout_mode): six vertical cards
+# through the trunk at 60 degree steps, each showing its own frame of the tree's 6-frame atlas
+# texture (tools/tree_lab.html). Cut out or blended per pixel by its shader; seen from behind a
+# card shows its frame mirrored, which is intended.
+const STAR_CARDS := 6
+
+
 static func _alpha_card_mesh() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var corners := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 0), Vector2(1, 1), Vector2(0, 1)]
-	for plane in 2:
+	for i in STAR_CARDS:
+		var theta := deg_to_rad(i * 60.0)
+		var right := Vector3(cos(theta), 0.0, -sin(theta))
+		var normal := Vector3(sin(theta), 0.0, cos(theta))
 		for uv: Vector2 in corners:
-			st.set_uv(uv)
-			st.set_color(Color(float(plane), 0.0, 0.0))
-			var nx := uv.x - 0.5
-			var ny := 1.0 - uv.y
-			st.add_vertex(Vector3(nx, ny, 0.0) if plane == 0 else Vector3(0.0, ny, nx))
+			st.set_uv(Vector2((i + uv.x) / STAR_CARDS, uv.y))
+			st.set_normal(normal)
+			st.add_vertex(right * (uv.x - 0.5) + Vector3(0.0, 1.0 - uv.y, 0.0))
 	return st.commit()
 
 

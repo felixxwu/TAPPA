@@ -2,7 +2,7 @@ class_name BillboardField
 extends Node3D
 # Docs: features/trees.md — update in the same change as this file.
 # Tests: tests/headless/test_billboard_field.gd, tests/headless/test_tree_scatter.gd — extend in the same change.
-# Renders scattered positions as cylindrical billboards, using a caller-supplied
+# Renders scattered positions as static card stars, using a caller-supplied
 # silhouette mesh + texture. Each instance is lifted onto the terrain via
 # TerrainManager.height_at; the mesh pivot is its bottom edge so sprites sit on
 # the ground (the mesh is normalized: x in [-0.5,0.5], y in [0,1]). When
@@ -128,8 +128,8 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 	instance_positions = PackedVector3Array()
 	instance_positions.resize(positions.size())
 
-	# The normalized mesh is scaled by size. It is a "+" cross, so its Z (the
-	# second plane) scales with the horizontal size.x just like X.
+	# The normalized mesh is scaled by size. It is a star of vertical cards, so
+	# its Z scales with the horizontal size.x just like X.
 	instance_scale = Vector3(size.x, size.y, size.x)
 
 	# World positions in build (caller) order — the collision shapes are added in
@@ -153,8 +153,7 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		# Each instance carries a FELLED flag in custom data (INSTANCE_CUSTOM.x): 0
-		# while standing (shader billboards a single card), 1 once knocked over
-		# (shader locks the full "+" cross and topples it).
+		# while standing, 1 once knocked over (the shader then draws it from its tilted transform).
 		mm.use_custom_data = true
 		mm.mesh = render_mesh
 		mm.instance_count = idxs.size()
@@ -166,12 +165,7 @@ func build(positions: PackedVector2Array, terrain: Object, size: Vector2,
 		for j in idxs.size():
 			var gi := idxs[j]
 			var pos := instance_positions[gi]
-			# Trees billboard toward the camera in the shader, so the instance basis
-			# carries only the authored size scale (rotation stays identity) — no
-			# per-instance yaw, which would pre-rotate the card off the camera. A felled
-			# tree's topple tilt is applied on top of this identity basis later.
-			var xform_basis := Basis.IDENTITY.scaled(_instance_scale(pos))
-			mm.set_instance_transform(j, Transform3D(xform_basis, pos - centre))
+			mm.set_instance_transform(j, Transform3D(_upright_basis(pos), pos - centre))
 			mm.set_instance_custom_data(j, Color(0.0, 0.0, 0.0, 0.0))
 			# Bridge the global index (== shape index) back to its binned slot so
 			# knock_down can find and animate the one struck tree.
@@ -234,12 +228,14 @@ func size_factor(idx: int) -> float:
 
 # The upright instance basis build() authored for the instance at world `pos`, so a
 # fall animation can rebuild the transform. Mirrors the build() loop: identity
-# rotation + authored size scale (the shader billboards it).
+# yaw + authored size scale. A topple tilt is composed on top of this in _process.
 func _upright_basis(pos: Vector3) -> Basis:
-	# Identity rotation + authored size scale (times the per-instance jitter factor);
-	# the shader yaws the card to the camera, so there is no authored yaw to restore.
-	# A topple tilt is composed on top of this in _process / knock_down.
-	return Basis.IDENTITY.scaled(_instance_scale(pos))
+	return Basis(Vector3.UP, _yaw(pos)) * Basis.IDENTITY.scaled(_instance_scale(pos))
+
+
+# Deterministic per-instance yaw hashed off world XZ, so a stand of stars isn't aligned.
+func _yaw(pos: Vector3) -> float:
+	return ScatterMath.hash01(int(round(pos.x)), int(round(pos.z)), 0, 19) * TAU
 
 
 # Fell instance `idx`, toppling it in horizontal unit direction `dir` over
@@ -255,8 +251,7 @@ func knock_down(idx: int, dir: Vector3, duration: float) -> void:
 	# break the shape-index -> instance-index mapping this relies on.
 	PhysicsServer3D.body_set_shape_disabled(_collision_body.get_rid(), idx, true)
 	var slot: Dictionary = _slot_of[idx]
-	# Flip the FELLED flag so the shader locks this instance into the "+" cross and
-	# stops billboarding it — the topple below then tilts the fixed cross.
+	# Flip the FELLED flag so the shader draws the tilted transform verbatim.
 	(slot["mm"] as MultiMesh).set_instance_custom_data(slot["j"], Color(1.0, 0.0, 0.0, 0.0))
 	_fallen[idx] = true
 	# Copy the slot (mm / j / base_pos / centre) and layer on the per-fall animation.

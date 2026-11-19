@@ -74,22 +74,12 @@ const REGIONS: Array[Dictionary] = [
 		"rest_stop_spacing_m": 750.0, # metres of road between free-roam checkpoints
 		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
 		"water_level": - 12.0,
-		# size_scale 1.25 uniform — the home forest 25% bigger than the profile's
-		# authored card (7.5 -> 9.375 m). Done HERE, on the species, rather than by
-		# raising GameConfig.tree_size_m, because that profile is shared: Greece's 30%
-		# of ordinary trees, both Alps conifers and the taiga spire all sit on it, and
-		# all four are tuned relative to its current value. Bumping the profile would
-		# silently scale every one of them. This scales the home forest and nothing else
-		# (home_coast included, since it inherits this whole block — same forest).
-		#
-		# Uniform on both axes on purpose: it changes SIZE only, leaving the billboard
-		# at the 1:1 the square profile card already gave it. tree.png's cutout is
-		# actually 164x256 (w/h 0.64), so it has always been drawn wider than its own
-		# proportions — correcting that is a separate, much more visible change than
-		# the one asked for here, so it is deliberately left alone.
+		# size_scale sets each species' size and card shape: height 9.375 m (the profile's 7.5
+		# x 1.25), width = height x the atlas frame's aspect. It is done here, not on the
+		# shared GameConfig profile, so the other species keep their tuned sizes.
 		"tree_mix": [
 			{"texture": "res://textures/tree.png", "profile": "home", "weight": 1.0,
-			 "size_scale": Vector2(1.25, 1.25)}, # 9.375 x 9.375 m
+			 "size_scale": Vector2(1.294, 1.25)}, # 9.375 m tall, frame aspect 1.035
 		],
 		"spawn_bush_mesh": true,
 	},
@@ -117,7 +107,8 @@ const REGIONS: Array[Dictionary] = [
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
 		"tree_mix": [
-			{"texture": "res://textures/tree-greece.webp", "profile": "region", "weight": 0.7},
+			{"texture": "res://textures/tree-greece.webp", "profile": "region", "weight": 0.7,
+			 "size_scale": Vector2(1.273, 1.0)}, # frame aspect 1.273 at the profile height
 			{"texture": "res://textures/tree.png", "profile": "home", "weight": 0.3},
 		],
 		"spawn_bush_mesh": false,
@@ -140,17 +131,10 @@ const REGIONS: Array[Dictionary] = [
 	# same country with a different tree, and every extra override would blur the one
 	# signal that actually separates the two corners.
 	#
-	# Which puts all the weight on the silhouette, hence the size_scale. The spire's
-	# natural w/h is 0.30 (the narrowest cutout in the source pack — see
-	# tools/gen_taiga_tree.py), so x is 0.30 * y to draw it at its own proportions
-	# rather than stretched to the profile's square card. KEEP THAT RELATIONSHIP if you
-	# retune the height: raising y alone stretches the tree into a needle.
-	#
-	# y = 3.0 makes it 22.5 m against the home broadleaf's 7.5 m and the Alps' ~12.9 m —
-	# three times the forest the player just drove through. Overscaled against a real
-	# spruce (40-60 m exists, but not next to a 7.5 m broadleaf), and deliberately: the
-	# corner shares every other look key with home, so the skyline is the ONLY thing
-	# saying "somewhere else" and it has to say it from a moving car.
+	# Which puts all the weight on the silhouette, hence the size_scale: x = 0.31 * y matches
+	# the spire's atlas frame aspect (0.310), so raise the height by scaling both axes.
+	# y = 3.0 makes it 22.5 m against the home broadleaf's 7.5 m, deliberately: the
+	# skyline is the ONLY thing saying "somewhere else" and it has to say it from a car.
 	#
 	# spawn_bush_mesh stays inherited (true, from home) on purpose. Real taiga has a
 	# dense low mat of shrub under the canopy, and the bare-trunked spire leaves a lot
@@ -163,7 +147,7 @@ const REGIONS: Array[Dictionary] = [
 		"water_level": - 12.0,
 		"tree_mix": [
 			{"texture": "res://textures/tree-taiga.webp", "profile": "home", "weight": 1.0,
-			 "size_scale": Vector2(0.90, 3.0)}, # 6.75 x 22.5 m, ratio 0.30
+			 "size_scale": Vector2(0.93, 3.0)}, # 6.98 x 22.5 m, frame aspect 0.310
 		],
 	},
 	# The same forest look with the sea raised — a lakeland / forested shore.
@@ -200,26 +184,14 @@ const REGIONS: Array[Dictionary] = [
 		# sets the shape of the forest and the laden one breaks it up.
 		# Both are CC0 photographs — see tools/gen_snow_trees.py for provenance.
 		#
-		# `size_scale` states each species' BASELINE PROPORTIONS. The profile card is
-		# square (tree_size_m 7.5 x 7.5), so a billboard is stretched to 1:1 whatever
-		# shape its cutout really is — and these conifers are tall and narrow (natural
-		# w/h 0.49 and 0.63), so unscaled they were drawn at up to twice their real
-		# width and read as fat christmas trees. The x values restore each texture's own
-		# ratio; the y values add height, because a spruce stand wants to be taller than
-		# the home broadleaf forest. Every other species omits the key and is therefore
-		# untouched.
-		#
-		# Both pairs were then scaled by 1.5 across BOTH axes to grow the forest 50%
-		# (4.1 x 8.6 -> 6.2 x 12.9, and 5.1 x 8.3 -> 7.7 x 12.4). Uniformly on both axes
-		# on purpose: the ratio each x was chosen to restore survives a uniform multiply,
-		# and scaling y alone would stretch these back into the needles the x values
-		# exist to prevent. KEEP THAT RULE when resizing again — the trailing `ratio`
-		# comments are the invariant to check against.
+		# `size_scale` sets each species' height and width = height x its atlas frame aspect.
+		# KEEP that ratio if you resize (scale both axes together); the trailing comments
+		# state it.
 		"tree_mix": [
 			{"texture": "res://textures/tree-snow.webp", "profile": "home", "weight": 0.6,
-			 "size_scale": Vector2(0.825, 1.725)}, # 6.2 x 12.9 m, ratio 0.48
+			 "size_scale": Vector2(1.572, 1.72)}, # 12.9 m tall, frame aspect 0.914
 			{"texture": "res://textures/tree-snow-laden.webp", "profile": "home", "weight": 0.4,
-			 "size_scale": Vector2(1.02, 1.65)}, # 7.7 x 12.4 m, ratio 0.62
+			 "size_scale": Vector2(1.556, 1.653)}, # 12.4 m tall, frame aspect 0.941
 		],
 		# No undergrowth, same as Greece: under real snow cover there is nothing
 		# growing through. A snowed version of the ground-cover clump was tried and

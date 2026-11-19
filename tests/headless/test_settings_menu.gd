@@ -191,6 +191,28 @@ func test_add_money_adds_to_the_world_money() -> void:
 			child.pressed.emit()
 	assert_eq(WorldSession.money(), 5 + SettingsMenu.DEV_MONEY_GRANT)
 
+
+class FakeFreeRoam extends Node:
+	func unlock_map() -> void:
+		pass
+
+
+func test_unlock_everything_puts_every_car_in_the_garage_once() -> void:
+	WorldSession.new_world(1, "fx_light_rwd")
+	var menu := _make_menu()
+	var fake := FakeFreeRoam.new()
+	get_tree().root.add_child(fake)
+	var real_scene := get_tree().current_scene
+	get_tree().current_scene = fake
+	_dev_button(menu, "unlock everything").pressed.emit()
+	get_tree().current_scene = real_scene
+	fake.free()
+	var models: Array = []
+	for c: Dictionary in _save.profile[_save.KEY_CARS]:
+		models.append(String(c["model_id"]))
+	for spec: Dictionary in CarLibrary.all():
+		assert_eq(models.count(String(spec["id"])), 1, "%s owned exactly once" % spec["id"])
+
 # --- Reset progress ----------------------------------------------------------
 
 # Starting over is a PLAYER setting, not dev tooling: the category is offered even

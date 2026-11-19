@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Build the taiga region's spire billboard from the same CC0 source pack as the Alps.
+"""NOTE: its output textures were replaced by 6-frame atlases made with tools/tree_lab.html.
+
+Build the taiga region's spire billboard from the same CC0 source pack as the Alps.
 
     textures/tree-taiga.webp   tall narrow spruce, bare lower trunk
 

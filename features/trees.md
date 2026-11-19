@@ -552,3 +552,29 @@ canopy) animates `VERTEX` in *model space*, not world space (see
 `wind_sway_offset` would need a model→world basis transform to apply correctly, which
 this change does not add. Left for a later pass — see `shaders/tree_canopy.gdshader`
 if picking this up.
+
+## Tree Lab (procedural tree playground)
+
+`tools/tree_lab.html` is a standalone browser page (open the file directly, three.js from CDN)
+for designing procedural trees: recursive tapered branches with alpha-cut leaf cards, sliders
+for trunk / branching / growth / leaves, presets, and seeds. It exports a `.glb` mesh or a
+transparent side-on PNG, the latter in the same shape as the billboard sprites above. Beside
+the real tree it shows a cheap "star" version, rebuilt on every change (`buildImpostor`): N
+(slider, default 6) transparent renders taken evenly around the tree, each on a double-sided card (mirrored on the back) facing the
+direction it was shot from, all crossing at the trunk. All cards always draw. The game's tree textures were generated with it.
+
+## Star trees (6-card atlas)
+
+Standing trees are a static star, not a camera-facing billboard. Every tree texture
+(`tree.png`, `tree-greece/taiga/snow/snow-laden.webp`) is a horizontal ATLAS of 6 equal frames; frame
+i is the tree seen from direction (sin(i*60), 0, cos(i*60)), trunk centred, base at the bottom.
+`Foliage._alpha_card_mesh` builds 6 vertical cards through the trunk at i*60 degrees (card i maps to
+frame i, UV.x = (i+u)/6, per-vertex normals set); all draw at once and nothing faces the camera
+(the alpha/blend shaders cull back faces: opposite cards share a plane, and drawing both sides
+made them flicker against each other). `billboard_tree.gdshaderinc`
+places them with the instance transform, lights with the card normal flipped toward the camera, and
+keeps the wind sway and distance shrink. `BillboardField._yaw` (hash of world XZ) gives each
+instance a fixed yaw; felling composes the topple tilt on top of it. Cutout mode 0 traces frame 0
+only (`tree_silhouette_mesh` crops the image and squeezes UVs into the frame). `region_library`
+`size_scale` keeps each species' height and sets width = height x frame aspect. The old
+`tools/gen_*` outputs were replaced by tree_lab atlases.

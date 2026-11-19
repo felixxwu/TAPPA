@@ -1,82 +1,82 @@
-[gd_resource type="Theme" format=3 uid="uid://cq80drs7f7dpx"]
+[gd_resource type="Theme" format=3]
 
-[ext_resource type="FontFile" uid="uid://bcub52e1kwlr" path="res://fonts/Jersey10.ttf" id="1_27v6b"]
+[ext_resource type="FontFile" path="res://fonts/Jersey10.ttf" id="1_27v6b"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_27v6b"]
-content_margin_left = 19.0
-content_margin_top = 5.0
-content_margin_right = 19.0
-content_margin_bottom = 5.0
+content_margin_left = 25.0
+content_margin_top = 7.0
+content_margin_right = 25.0
+content_margin_bottom = 7.0
 bg_color = Color(0.03, 0.03, 0.03, 0.9)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7uusv"]
-content_margin_left = 19.0
-content_margin_top = 5.0
-content_margin_right = 19.0
-content_margin_bottom = 5.0
+content_margin_left = 25.0
+content_margin_top = 7.0
+content_margin_right = 25.0
+content_margin_bottom = 7.0
 bg_color = Color(0.0807, 0.0989, 0.0642, 1)
-border_width_bottom = 4
+border_width_bottom = 5
 border_color = Color(0.4272, 0.8594, 0.3718, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8aw70"]
-content_margin_left = 19.0
-content_margin_top = 5.0
-content_margin_right = 19.0
-content_margin_bottom = 5.0
+content_margin_left = 25.0
+content_margin_top = 7.0
+content_margin_right = 25.0
+content_margin_bottom = 7.0
 bg_color = Color(0.0807, 0.0989, 0.0642, 1)
-border_width_bottom = 4
+border_width_bottom = 5
 border_color = Color(0.4272, 0.8594, 0.3718, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_eqcwn"]
-content_margin_left = 19.0
-content_margin_top = 5.0
-content_margin_right = 19.0
-content_margin_bottom = 5.0
+content_margin_left = 25.0
+content_margin_top = 7.0
+content_margin_right = 25.0
+content_margin_bottom = 7.0
 bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_6r5ox"]
-content_margin_left = 19.0
-content_margin_top = 5.0
-content_margin_right = 19.0
-content_margin_bottom = 5.0
+content_margin_left = 25.0
+content_margin_top = 7.0
+content_margin_right = 25.0
+content_margin_bottom = 7.0
 bg_color = Color(0.0807, 0.0989, 0.0642, 1)
-border_width_bottom = 4
+border_width_bottom = 5
 border_color = Color(0.4272, 0.8594, 0.3718, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_es402"]
-content_margin_top = 4.0
-content_margin_bottom = 4.0
+content_margin_top = 5.0
+content_margin_bottom = 5.0
 bg_color = Color(0.4272, 0.8594, 0.3718, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_p7mgs"]
-content_margin_top = 4.0
-content_margin_bottom = 4.0
+content_margin_top = 5.0
+content_margin_bottom = 5.0
 bg_color = Color(0.4272, 0.8594, 0.3718, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7p73w"]
-content_margin_top = 4.0
-content_margin_bottom = 4.0
+content_margin_top = 5.0
+content_margin_bottom = 5.0
 bg_color = Color(0.1, 0.12, 0.1, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xtkyl"]
-content_margin_left = 19.0
-content_margin_top = 19.0
-content_margin_right = 19.0
-content_margin_bottom = 19.0
+content_margin_left = 25.0
+content_margin_top = 25.0
+content_margin_right = 25.0
+content_margin_bottom = 25.0
 bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_yj2gf"]
-content_margin_left = 19.0
-content_margin_top = 19.0
-content_margin_right = 19.0
-content_margin_bottom = 19.0
+content_margin_left = 25.0
+content_margin_top = 25.0
+content_margin_right = 25.0
+content_margin_bottom = 25.0
 bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xhl8p"]
-content_margin_left = 22.0
-content_margin_top = 22.0
-content_margin_right = 22.0
-content_margin_bottom = 22.0
+content_margin_left = 29.0
+content_margin_top = 29.0
+content_margin_right = 29.0
+content_margin_bottom = 29.0
 bg_color = Color(0, 0, 0, 1)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_epfr8"]
@@ -103,8 +103,8 @@ HSlider/styles/grabber_area_highlight = SubResource("StyleBoxFlat_p7mgs")
 HSlider/styles/slider = SubResource("StyleBoxFlat_7p73w")
 Label/colors/font_color = Color(1, 0.9938, 0.8346, 1)
 Label/colors/font_shadow_color = Color(0, 0, 0, 0.95)
-Label/constants/shadow_offset_x = 3
-Label/constants/shadow_offset_y = 3
+Label/constants/shadow_offset_x = 4
+Label/constants/shadow_offset_y = 4
 Label/constants/shadow_outline_size = 0
 Panel/styles/panel = SubResource("StyleBoxFlat_xtkyl")
 PanelContainer/styles/panel = SubResource("StyleBoxFlat_yj2gf")
