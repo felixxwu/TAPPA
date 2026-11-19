@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Building Lab</title>
+<style>
+  body { margin: 0; display: flex; font: 13px system-ui, sans-serif; background: #15171a; color: #ddd; height: 100vh; }
+  #side { width: 260px; padding: 12px; overflow-y: auto; background: #1d2024; box-sizing: border-box; flex-shrink: 0; }
+  #side label { display: block; margin: 9px 0 2px; }
+  #side select, #side input[type=number] { width: 100%; box-sizing: border-box; }
+  #side .row { display: flex; gap: 6px; }
+  #side button { margin-top: 6px; display: block; width: 100%; }
+  #stats { margin-top: 14px; white-space: pre; font-family: ui-monospace, monospace; font-size: 12px; color: #aab; }
+  #wrap { flex: 1; position: relative; }
+  #wrap canvas { display: block; width: 100%; height: 100%; }
+  #atlasView { width: 100%; image-rendering: pixelated; margin-top: 10px; display: none; }
+  .hint { color: #889; font-size: 11px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="side">
+  <label>Type</label>
+  <select id="type"></select>
+  <label>Seed</label>
+  <div class="row"><input id="seed" type="number" value="1"><button id="rnd" style="width:auto;margin:0">🎲</button></div>
+  <label><input type="checkbox" id="lineup"> Show every type in a row</label>
+  <label><input type="checkbox" id="pixel"> Nearest-pixel filtering</label>
+  <label><input type="checkbox" id="showAtlas"> Show texture atlas</label>
+  <button id="glb">Download .glb</button>
+  <button id="png">Download atlas PNG</button>
+  <div id="stats"></div>
+  <img id="atlasView">
+  <div class="hint">Drag to orbit, scroll to zoom, right-drag to pan. Every building is one mesh, one material and one shared atlas.</div>
+</div>
+<div id="wrap"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="buildings.js"></script>
+<script>
+// Preview page for tools/buildings.js.
+const $ = id => document.getElementById(id);
+// --- scene -------------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding;
+$("wrap").appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color("#a9c3d6");
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000); camera.position.set(14, 7, 16);
+const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.target.set(0, 2, 0);
+scene.add(new THREE.HemisphereLight("#cfe0ef", "#4a5a30", 0.75));
+const sun = new THREE.DirectionalLight("#fff4e0", 0.9); sun.position.set(8, 14, 10); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: "#5a7a38" }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+
+const { TYPES, ATLAS_W, ATLAS_H, PPM } = Buildings, V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const atlas = Buildings.paintAtlas();
+const tex = new THREE.CanvasTexture(atlas);
+tex.wrapS = THREE.RepeatWrapping; tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
+const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, alphaTest: 0.5, side: THREE.DoubleSide });
+$("atlasView").src = atlas.toDataURL();
+
+let group = new THREE.Group(); scene.add(group);
+$("type").innerHTML = Object.keys(TYPES).map(t => `<option>${t}</option>`).join("");
+function regen() {
+  scene.remove(group); group.traverse(o => o.geometry?.dispose());
+  group = new THREE.Group(); scene.add(group);
+  const seed = +$("seed").value, types = $("lineup").checked ? Object.keys(TYPES) : [$("type").value];
+  let x = 0, tris = 0;
+  for (const t of types) {
+    const mesh = new THREE.Mesh(Buildings.build(t, seed * 31 + t.length), mat);
+    mesh.name = t.replace(/ /g, "_").toLowerCase();
+    const size = new THREE.Box3().setFromObject(mesh).getSize(V());
+    mesh.position.x = x + size.x / 2; x += size.x + 4;
+    group.add(mesh); tris += mesh.geometry.attributes.position.count / 3;
+  }
+  group.position.x = types.length > 1 ? -x / 2 : -group.children[0].position.x;
+  $("stats").textContent = `triangles   ${tris}\ndraw calls  ${types.length}\natlas       ${ATLAS_W}x${ATLAS_H}\ntexel       ${PPM} px/m`;
+}
+$("type").onchange = $("seed").oninput = $("lineup").onchange = regen;
+$("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e6); regen(); };
+$("pixel").onchange = () => { tex.magFilter = $("pixel").checked ? THREE.NearestFilter : THREE.LinearFilter; tex.needsUpdate = true; };
+$("showAtlas").onchange = () => $("atlasView").style.display = $("showAtlas").checked ? "block" : "none";
+
+function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+$("glb").onclick = () => {
+  const p = group.position.clone(); group.position.set(0, 0, 0);
+  new THREE.GLTFExporter().parse(group, buf => download(new Blob([buf]), `building_${$("seed").value}.glb`), { binary: true });
+  group.position.copy(p);
+};
+$("png").onclick = () => atlas.toBlob(b => download(b, "building_atlas.png"));
+
+function resize() { const w = $("wrap").clientWidth, h = $("wrap").clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+const q = new URLSearchParams(location.search);
+if (q.get("type")) $("type").value = q.get("type");
+if (q.get("lineup")) $("lineup").checked = true;
+regen();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>

@@ -52,6 +52,18 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	add_child_autofree(world)
 	await wait_for_signal(world.get_node("Level").loaded, 30.0)
 	assert_true(world.get_node("PauseMenu").is_armed(), "Esc / Start open the pause menu")
+	var map: LevelMap = world.get_node("Level").map
+	var m := InputEventKey.new()
+	m.physical_keycode = KEY_M
+	m.pressed = true
+	map._input(m)
+	assert_true(map.visible and get_tree().paused, "M opens the map and pauses")
+	assert_almost_eq(map.to_world(map.to_screen(Vector2(30, -20))), Vector2(30, -20), Vector2.ONE * 0.01)
+	assert_almost_eq(map.snap_to_road(Vector2(40, 25)).y, 0.0, 0.5, "a spot snaps onto the road")
+	await map.teleport(map.snap_to_road(Vector2(60, 25)))
+	var car := world.get_node("Car") as Node3D
+	assert_almost_eq(Vector2(car.global_position.x, car.global_position.z), Vector2(60, 0), Vector2.ONE * 1.0, "teleported onto the road")
+	assert_false(map.visible or get_tree().paused, "teleporting closes the map and resumes")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 

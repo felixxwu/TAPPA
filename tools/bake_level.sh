@@ -1,6 +1,6 @@
 #!/bin/bash
 # Windows are small, side by side and always on top: macOS stops drawing a covered window, which stalls the bake.
-# Bakes a level with its visibility rendered by N parallel Godot windows, then merges. Usage: BAKE_LEVEL=res://tools/levels/x.json tools/bake_level.sh [N]
+# Bakes a level with its visibility rendered by N parallel Godot windows, then merges and publishes it (tools/publish_bake.sh). Usage: BAKE_LEVEL=res://tools/levels/x.json tools/bake_level.sh [N]
 cd "$(dirname "$0")/.." || exit 1
 GODOT=${GODOT:-$(ls /Applications/Godot.app/Contents/MacOS/Godot /Users/felixwu/Downloads/Godot.app/Contents/MacOS/Godot 2>/dev/null | head -1)}
 N=${1:-$(( $(sysctl -n hw.ncpu 2>/dev/null || nproc) / 2 ))}
@@ -14,4 +14,6 @@ done
 fail=0
 for p in "${pids[@]}"; do wait "$p" || fail=1; done
 if [ $fail = 1 ]; then echo "a shard failed; see ${TMPDIR:-/tmp}/bake_shard_*.log"; exit 1; fi
-exec "$GODOT" --audio-driver Dummy --path . --headless res://tools/bake_level.tscn -- --merge=$N
+"$GODOT" --audio-driver Dummy --path . --headless res://tools/bake_level.tscn -- --merge=$N || exit 1
+level=${BAKE_LEVEL:-$(grep -o 'dev_level_path.*"res://[^"]*"' scripts/game_config.gd | grep -o 'res://[^"]*')}
+exec tools/publish_bake.sh "${level#res://}"

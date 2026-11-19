@@ -25,6 +25,7 @@ var _car: VehicleBody3D
 var _particles: WeatherField
 var _recovery: RoadRecovery
 var _pause: Node
+var map: LevelMap
 var applied_fps_caps: Array[int] = []
 
 
@@ -80,6 +81,12 @@ func _ready() -> void:
 	WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	if _pause != null:
 		_pause.set_input_enabled(true)  # the menu stays inert until its world says it has finished loading
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	add_child(layer)
+	map = LevelMap.new()
+	map.view = self
+	layer.add_child(map)
 	loaded.emit()
 
 
@@ -213,6 +220,10 @@ func load_level(d: Dictionary) -> void:
 	_trees.setup(_bake)
 	add_child(_trees)
 	print("level view: tree setup %d ms" % (Time.get_ticks_msec() - t_trees))
+	var buildings := LevelBuildings.new()
+	buildings.name = "Buildings"
+	add_child(buildings)
+	buildings.setup(_save_path, height_at)
 
 func _build_streamer() -> void:
 	_streamer = LevelStreamer.new()

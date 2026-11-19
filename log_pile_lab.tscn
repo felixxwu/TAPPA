@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/log_pile_lab.gd" id="1"]
+
+[node name="LogPileLab" type="Node3D"]
+script = ExtResource("1")

@@ -41,7 +41,11 @@ def clip(a, b):  # Liang-Barsky: the part of segment a-b inside the square minus
         elif p < 0: t0 = max(t0, q / p)
         else: t1 = min(t1, q / p)
     return (t0, t1) if t0 < t1 else None
-pos, adj = {}, {}
+pos, adj, ew = {}, {}, {}
+def half_width(t):  # OSM here has no width tags, so guess from the road class and track grade (1 = firmest)
+    if t.get('highway') in ('unclassified', 'tertiary', 'secondary', 'primary'): return 3.0
+    if t.get('highway') == 'service': return 2.5
+    return {'grade1': 2.6, 'grade2': 2.2, 'grade3': 1.9, 'grade4': 1.7, 'grade5': 1.6}.get(t.get('tracktype'), 2.2 if t.get('highway') == 'track' else 1.8)
 def vertex(a_id, a, b, t):  # an original node at t=0/1, else a new node where the segment meets the square's edge
     if t == 0: k, p = a_id[0], a
     elif t == 1: k, p = a_id[1], b
@@ -52,13 +56,14 @@ for w in root.iter('way'):
     if keep is not None:
         if w.get('id') not in keep: continue
     elif t.get('highway') not in ('track', 'unclassified'): continue
+    hw = half_width(t)
     ids = [x.get('ref') for x in w.iter('nd') if x.get('ref') in nodes]
     for ia, ib in zip(ids, ids[1:]):
         a, b = nodes[ia], nodes[ib]; c = clip(a, b)
         if not c: continue
         if keep is None and canopy((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) >= 4: continue  # a "track" under full canopy isn't drivable
         u, v = vertex((ia, ib), a, b, c[0]), vertex((ia, ib), a, b, c[1])
-        if u != v: adj.setdefault(u, set()).add(v); adj.setdefault(v, set()).add(u)
+        if u != v: adj.setdefault(u, set()).add(v); adj.setdefault(v, set()).add(u); ew[frozenset((u, v))] = hw
 plen = lambda ks: sum(math.dist(pos[x], pos[y]) for x, y in zip(ks, ks[1:]))
 brk = {k for k, n in adj.items() if len(n) != 2}
 used, chains = set(), []
@@ -82,10 +87,16 @@ chains = [c for c in chains if not (deg(c[0]) == 1 and deg(c[-1]) == 1 and plen(
 def dp(p, eps):  # Douglas-Peucker
     if len(p) < 3: return p
     a, b = np.array(p[0]), np.array(p[-1]); ab = b - a; L = np.linalg.norm(ab) or 1
-    d = [abs(np.cross(ab, np.array(q) - a)) / L for q in p[1:-1]]; i = int(np.argmax(d)) + 1
+    d = [abs(ab[0] * (q[1] - a[1]) - ab[1] * (q[0] - a[0])) / L for q in p[1:-1]]; i = int(np.argmax(d)) + 1
     return dp(p[:i + 1], eps)[:-1] + dp(p[i:], eps) if d[i - 1] > eps else [p[0], p[-1]]
 chains.sort(key=plen, reverse=True)
-roads = [[{"x": round(E - CE, 1), "z": round(CN - Nn, 1), "w": 2.2, "m": None, "tension": 1} for E, Nn in dp([pos[k] for k in c], 4)] for c in chains]
+def node_widths(c):  # a node takes the wider of the two ways it joins
+    ws = [ew[frozenset(e)] for e in zip(c, c[1:])]
+    return {pos[k]: max(ws[max(i - 1, 0)], ws[min(i, len(ws) - 1)]) for i, k in enumerate(c)}
+def chain_nodes(c):
+    w = node_widths(c)
+    return [{"x": round(E - CE, 1), "z": round(CN - Nn, 1), "w": w[(E, Nn)], "m": None, "tension": 1} for E, Nn in dp([pos[k] for k in c], 4)]
+roads = [chain_nodes(c) for c in chains]
 ends = Counter(k for c in chains for k in (c[0], c[-1]))
 total = sum(plen(c) for c in chains)
 

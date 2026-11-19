@@ -55,6 +55,7 @@ drag a road end onto another road's node: snaps and makes a junction (orange rin
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="groundcover_tufts.js"></script>
+<script src="buildings.js"></script>
 <script>
 // A hand-editable patch of world: a 2D top-down editor (left) and the same patch rendered in 3D the way the game draws it (right).
 const $ = id => document.getElementById(id);
@@ -493,6 +494,8 @@ function draw2D() {
   }
   ctx.fillStyle = "rgba(255,150,40,.25)"; ctx.strokeStyle = "#f93"; ctx.lineWidth = 2 / view.zoom;
   for (const j of juncs) { ctx.beginPath(); ctx.arc(j.x, j.z, j.w, 0, 7); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = "#8a6a5a"; ctx.strokeStyle = "#000";
+  for (const b of level.buildings ?? []) { ctx.save(); ctx.translate(b.x, b.z); ctx.rotate(b.rot); ctx.fillRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.strokeRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.restore(); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const vis = treesInView(vx0 - 10, vz0 - 10, vx1 + 10, vz1 + 10), stride = Math.max(1, Math.ceil(vis.length / TREE_DRAW_MAX));
   if (stride > 1) { // too many to draw one by one: an evenly thinned set of dots
@@ -950,6 +953,23 @@ for (const [kind, k] of Object.entries(KINDS)) {
   // the game culls card backs: opposite cards share a plane and would flicker against each other
   treeMats[kind] = new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, color: new THREE.Color(...(k.tint || [0.85, 0.85, 0.85])), side: THREE.FrontSide });
 }
+// Buildings come from tools/buildings.js: { x, z, rot (radians, ridge direction on the map), type, L, W, h, seed }; each is one mesh on a shared atlas.
+const buildingMat = new THREE.MeshBasicMaterial({ map: Object.assign(new THREE.CanvasTexture(Buildings.paintAtlas()), { wrapS: THREE.RepeatWrapping, magFilter: THREE.NearestFilter }), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
+const buildingGeos = new Map();
+let buildingMeshes = [];
+function rebuild3DBuildings() {
+  for (const m of buildingMeshes) scene.remove(m);
+  buildingMeshes = [];
+  for (const b of level.buildings ?? []) {
+    if (!inWin(b.x, b.z, 30)) continue;
+    const key = JSON.stringify([b.type, b.seed, b.L, b.W, b.h]);
+    if (!buildingGeos.has(key)) buildingGeos.set(key, Buildings.build(b.type, b.seed, b));
+    const mesh = new THREE.Mesh(buildingGeos.get(key), buildingMat), c = Math.cos(b.rot), s = Math.sin(b.rot);
+    const ys = [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]].map(([u, v]) => heightAt(b.x + c * u * b.L / 2 - s * v * b.W / 2, b.z + s * u * b.L / 2 + c * v * b.W / 2));
+    mesh.position.set(b.x, Math.min(...ys) - 0.1, b.z); mesh.rotation.y = -b.rot;
+    scene.add(mesh); buildingMeshes.push(mesh);
+  }
+}
 let treeMeshes = [];
 function rebuild3DTrees() {
   for (const m of treeMeshes) { scene.remove(m); m.dispose(); }
@@ -1042,7 +1062,7 @@ function frame() {
     placeWindow(); rebuildGrid(); rebuild3DTerrain(); windowDirty = false; treesDirty = mapDirty = cover3DDirty = true;
     if (T.full) buildContours(heights, G, GCELL, 1, CONTOUR_M);
   }
-  if (treesDirty) { rebuild3DTrees(); treesDirty = false; }
+  if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); treesDirty = false; }
   U.uCenter.value.set(view.x, 0, view.z); U.uTime.value = now / 1000;
   if (!coverAt || cover3DDirty && now - coverGenAt > 150 || Math.hypot(view.x - coverAt[0], view.z - coverAt[1]) > 10) rebuild3DCover();
   if (++frames % 15 === 0) $("sight").textContent = big()

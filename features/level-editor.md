@@ -4,7 +4,7 @@ A hand-built patch of world, edited in a browser lab and driven in the game. Tem
 beside free roam, not part of it.
 
 **Source:** `tools/level_editor_lab.html`, `scripts/level_view.gd` (`LevelView`), `level_view.tscn`,
-`scripts/scenes.gd` (`change_to`'s redirect), `scripts/settings_menu.gd` (`_toggle_dev_level`)
+`scripts/level_map.gd` (`LevelMap`), `scripts/scenes.gd` (`change_to`'s redirect), `scripts/settings_menu.gd` (`_toggle_dev_level`)
 
 **Tests:** `tests/headless/test_level_view.gd`, `tests/headless/test_level_trees.gd`, `tests/headless/test_level_data.gd`, `tests/headless/test_level_bake.gd`, `tests/headless/lab_parity.js`
 
@@ -17,7 +17,8 @@ game's textures; `?level=levels/<name>.json` opens a save.
 - **Size:** a save's `size` (metres, square centred on the origin; missing = 600, and a save of 600 omits it) sets `SIZE`; the
   height grid is `N` cells a side (read from the heightmap's length, ~3 m; `make_level.py` uses `round(size / 3)`), the cover grid
   is `size * size` bytes. Up to `WIN_M` (600) everything is as described below. Above it (`big()`, e.g. `tools/levels/hafren_5km.json`,
-  5 km, ~185k trees, from `make_level.py <name> --size 5000` then `pack_level.js`):
+  5 km, ~185k trees, from `make_level.py <name> --size 5000` then `pack_level.js`; OSM there has no width tags, so
+  `make_level.py` → `half_width` guesses each road's half-width from its `highway` class and `tracktype` grade):
   - 2D: the map shades the saved height grid once into one offscreen image (`buildBigShade`, contours every 10 m on every third cell,
     only drawn at zoom 0.4 and up); roads and road nodes are culled to the viewport, and zoomed out below 0.5 the roads are one
     constant-width stroke (`roadPath`); trees are bucketed into 50 m squares (`treesInView`) and drawn as an evenly thinned set of
@@ -59,6 +60,7 @@ game's textures; `?level=levels/<name>.json` opens a save.
   `heightAt`, only within `COVER_REACH` of the 3D target, each hidden past its own cut-off within `COVER_FADE` in the shader, and
   regenerated when the cover or terrain changes or the target moves 10 m. The tuft geometry and presets come from
   `tools/groundcover_tufts.js`, shared with the Ground Cover Lab ([trees.md](trees.md)).
+- **Buildings**: `level.buildings` (read-only in the editor for now) are drawn as footprints on the 2D map and as `tools/buildings.js` meshes in 3D (`rebuild3DBuildings`, one shared atlas, unshaded with baked sun); see [buildings.md](buildings.md).
 - **Saves** are packed: trees as `treesBin` (base64, 7 bytes per tree, little-endian: x and z uint16 of `round((v + size/2) * 10)` clamped, rot uint8 of 256 per turn, scale uint8 hundredths (sx == sy), kind uint8 index into `kinds`; `packTrees`/`unpackTrees` in the lab, `LevelData.unpack` in the game; the legacy `[x, z, rot, sx, sy, kind index]` rows still load; `bakeKey` mixes rot in 1/256 turns so a bake survives the quantisation), the height
   grid and the cover as base64 (int16 decimetres / bytes). A save with no cover loads as all zero, and an empty
   cover is left out of the save. Cover is saved run-length encoded as `coverRle` (base64 of `(type byte, run length varint)` pairs, row-major; `rleEncode`/`rleDecode` in the lab, `GroundCover.decode_cover` in the game, which needs the save's `size`); the legacy raw `cover` still loads. `tools/geo/webp_pack.py` (last step of the geo pipeline, after `pack_level.js`) rewrites a packed save to `heightWebp` (lossless WebP, (N+1)², int16 decimetres + 32768 as R = high byte, G = low byte) and `coverWebp` (lossless WebP, `size`², R = type id, row 0 = north); `LevelData.unpack` and `GroundCover.decode_cover` read both these and the legacy keys, and the lab reads them async (`unpackAsync`) on file load and `?level=`. The lab itself still SAVES the legacy formats (canvas `toBlob("image/webp")` is not guaranteed lossless); hafren_5km goes 16 MB to 8.5 MB. The 2D overlay is one cached `size x size` offscreen canvas (`coverOverlay`), repainted per brushed rectangle (`coverPaintRect`), so painting stays cheap at 5 km.
@@ -68,6 +70,11 @@ ground heights, an OSM forestry track, and trees at LiDAR canopy peaks with spec
 height and satellite colour.
 
 ## In the game
+
+**Map (M, or the pad's Back button):** `LevelMap`, added by `LevelView` once loaded, pauses the game and shows the bake's road
+samples as polylines over a `IMAGE_PX`² image of tree dots and building footprints (built on first open, not the satellite image).
+Drag / WASD / arrows / left stick pan, wheel / +- / LB RB zoom; click (or Enter / A on the centre crosshair) teleports to the nearest road
+sample (`snap_to_road`, `LevelView.road_pose`), prefilling the streamer there before unpausing so the car doesn't fall through.
 
 With **Settings → Dev → "Level instead of free roam"** on (or `GameConfig.dev_level_instead_of_free_roam`),
 `Scenes.change_to` sends the title's world entry to `level_view.tscn` instead of free roam. Flipping the toggle from inside
@@ -108,7 +115,7 @@ and compares `source_key` (md5 of the save's bytes + `BAKE_VERSION`): stale or m
 saves beside the save), returns null on web and sets `last_error`; an empty path bakes in memory only. Bump `BAKE_VERSION`
 when the bake's maths changes. Run `BAKE_LEVEL=res://tools/levels/<name>.json godot --headless --path . res://tools/bake_level.tscn`; for the rendered tree visibility use `tools/bake_level.sh [N]`, which runs N silent (`--audio-driver Dummy`) windows over contiguous slices of the road and merges them (decode is a sort plus `bsearch` per view, not a per-pixel loop).
 
-**Shipping bakes.** `*.bake.res` is git-ignored. After baking, run `tools/publish_bake.sh tools/levels/<name>.json`: it refuses a missing, stale or incomplete bake (checked by `tools/bake_key.tscn`, which prints `LevelBake.key_of`) and uploads `<name>-<key>.bake.res` to the `bakes` release. The web export job runs `tools/fetch_bakes.sh` before exporting, which downloads the asset matching each level's key and fails naming the publish command if it is missing. Flow: edit level, bake, publish, push. Only the web preset bundles `tools/levels` (its include filter lists `*.bake.res`); the test workflow bakes in-process and needs none.
+**Shipping bakes.** `*.bake.res` is git-ignored. `tools/bake_level.sh` publishes its result itself by running `tools/publish_bake.sh tools/levels/<name>.json` (run that by hand after an in-process bake): it refuses a missing, stale or incomplete bake (checked by `tools/bake_key.tscn`, which prints `LevelBake.key_of`) and uploads `<name>-<key>.bake.res` to the `bakes` release. The web export job runs `tools/fetch_bakes.sh` before exporting, which downloads the asset matching each level's key and fails naming the publish command if it is missing. Flow: edit level, bake (which publishes), push. Only the web preset bundles `tools/levels` (its include filter lists `*.bake.res`); the test workflow bakes in-process and needs none.
 `apply_to(material)` hands the textures to `level_ground.gdshader`, which reads it nearest and blends the four texels by
 hand: across is blended signed where the four values differ by about one texel gradient (so ruts near the centreline stay exact),
 else |across| is blended with the nearest texel's sign (a signed blend would fake a road between two roads); along is blended circularly. The shader no longer reads vertex UV/UV2/COLOR.a: COLOR.rgb is sun light x cover tint
