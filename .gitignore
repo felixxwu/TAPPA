@@ -90,3 +90,8 @@ __pycache__/
 
 # Downloaded satellite / OSM / LiDAR data and generated outputs (re-fetch with tools/geo/fetch.py)
 /tools/geo/data/
+
+# Bakes are built locally and shipped as release assets (tools/publish_bake.sh, tools/fetch_bakes.sh)
+*.bake.res
+
+/logs/

@@ -3,8 +3,8 @@ extends Node3D
 # Docs: features/level-editor.md — update in the same change as this file.
 # Tests: tests/headless/test_ground_cover.gd — extend in the same change.
 # The level editor's ground cover (grass, rush, heather, bushes) drawn around the camera as instanced opaque tufts,
-# placed once at load from the save's 1 m cover grid and the tuft recipes it carries (coverKinds), in square tiles
-# that the engine stops drawing past the reach, so driving never regenerates anything.
+# placed from the save's 1 m cover grid and the tuft recipes it carries (coverKinds), in square tiles built as the
+# camera nears them (stream) and dropped once far behind, each tile with its own bush fields.
 
 const DEG := PI / 180.0
 const MAX_PER_LAYER := 15
@@ -19,11 +19,44 @@ var material: ShaderMaterial
 var far_material: ShaderMaterial
 var _meshes := {}
 var _far_meshes := {}  # recipe index key -> ArrayMesh
+var tiles := {}  # Vector2i -> Node3D holding that tile's tufts and bush fields
 
 
 static func decode_cover(d: Dictionary) -> PackedByteArray:
+	var webp: Variant = d.get("coverWebp")
+	if webp is String:
+		var img := Image.new()
+		if img.load_webp_from_buffer(Marshalls.base64_to_raw(webp)) != OK:
+			return PackedByteArray()
+		img.convert(Image.FORMAT_R8)
+		return img.get_data()
+	var rle: Variant = d.get("coverRle")
+	if rle is String:
+		return _rle_decode(Marshalls.base64_to_raw(rle), int(d.get("size", 600)) ** 2)
 	var c: Variant = d.get("cover")
 	return Marshalls.base64_to_raw(c) if c is String else PackedByteArray()
+
+
+static func _rle_decode(b: PackedByteArray, length: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(length)
+	var i := 0
+	var o := 0
+	while i < b.size():
+		var t := b[i]
+		i += 1
+		var n := 0
+		var shift := 0
+		var v := 128
+		while v & 128:
+			v = b[i]
+			i += 1
+			n |= (v & 127) << shift
+			shift += 7
+		for k in n:
+			out[o + k] = t
+		o += n
+	return out
 
 
 static func make_material(fade_start: float, fade_end: float, far_fade := Vector2.ZERO) -> ShaderMaterial:
@@ -127,37 +160,83 @@ func update_centre(pos: Vector3) -> void:
 	far_material.set_shader_parameter("centre", pos)
 
 
-# Places every tuft in the square once, one MultiMesh per (tile, layer), each drawn only within its reach of the camera.
-func build() -> void:
+# Builds the tiles within reach of `centre` (nearest first) while there is time before `deadline_us`, and drops the ones far behind.
+# The tile under `centre` and its eight neighbours always build, over the deadline if need be, so cover never goes missing round the car.
+func stream(centre: Vector2, deadline_us: int, car: Node3D = null) -> void:
 	if not has_cover():
 		return
+	var reach := Config.data.ground_cover_far_reach + TILE * 0.71
+	for t: Vector2i in tiles.keys():
+		if tile_centre(t).distance_to(centre) > reach + TILE:
+			(tiles[t] as Node).queue_free()
+			tiles.erase(t)
+	var core := Vector2i((centre / TILE).floor())
+	for t in missing(centre):
+		var is_core := maxi(absi(t.x - core.x), absi(t.y - core.y)) <= 1
+		if is_core or Time.get_ticks_usec() < deadline_us:
+			build_tile(t, car)
+
+
+# The tiles within reach of `centre` that aren't built yet, nearest first.
+func missing(centre: Vector2) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if not has_cover():
+		return out
+	var reach := Config.data.ground_cover_far_reach + TILE * 0.71
+	var limit := size * 0.5 + TILE
+	for tz in range(floori((centre.y - reach) / TILE), floori((centre.y + reach) / TILE) + 1):
+		for tx in range(floori((centre.x - reach) / TILE), floori((centre.x + reach) / TILE) + 1):
+			var t := Vector2i(tx, tz)
+			var c := tile_centre(t)
+			if not tiles.has(t) and c.distance_to(centre) <= reach and absf(c.x) < limit and absf(c.y) < limit:
+				out.append(t)
+	out.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return tile_centre(a).distance_squared_to(centre) < tile_centre(b).distance_squared_to(centre))
+	return out
+
+
+static func tile_centre(t: Vector2i) -> Vector2:
+	return (Vector2(t) + Vector2(0.5, 0.5)) * TILE
+
+
+# One tile's tufts, one MultiMesh per layer drawn only within its reach of the camera, plus a BushField per bush layer when there is a car to brush them.
+func build_tile(t: Vector2i, car: Node3D = null) -> void:
+	var node := Node3D.new()
+	node.name = "Tile_%d_%d" % [t.x, t.y]
+	add_child(node)
+	tiles[t] = node
+	var rect := Rect2(Vector2(t) * TILE, Vector2.ONE * TILE)
 	var far_placed := {}
-	var whole := float(size)
-	var placed := placements(cover, size, kinds, Vector2.ZERO, whole, height_fn, whole, far_placed)
+	var placed := placements(cover, size, kinds, Vector2.ZERO, 1.0, height_fn, 1.0, far_placed, rect)
 	var diag := TILE * 0.71
 	for key: String in placed:
-		_add_tiles(placed[key], _mesh_for(key), material, Config.data.ground_cover_reach + diag)
+		_add_layer(node, t, placed[key], _mesh_for(key), material, Config.data.ground_cover_reach + diag)
 	for key: String in far_placed:
-		_add_tiles(far_placed[key], _far_mesh_for(key), far_material, Config.data.ground_cover_far_reach + diag)
+		_add_layer(node, t, far_placed[key], _far_mesh_for(key), far_material, Config.data.ground_cover_far_reach + diag)
+	if car == null:
+		return
+	var cfg: GameConfig = Config.data
+	for spots: Array in bush_spots(cover, size, kinds, rect):
+		var field := BushField.new()
+		field.name = "BushInteraction"
+		node.add_child(field)
+		field.setup(spots[0], car, float(spots[1]) * cfg.bush_hit_radius_frac, cfg.bush_drag_strength,
+			cfg.bush_drag_torque, cfg.bush_min_speed_kmh / DamageModel.MPS_TO_KMH)
 
 
-func _add_tiles(buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial, reach: float) -> void:
-	var per_tile := {}  # tile -> Array of tuft indices (an Array, so appending doesn't copy)
-	for i in buf.size() / 12:
-		var t := Vector2i(floori(buf[i * 12 + 3] / TILE), floori(buf[i * 12 + 11] / TILE))
-		if not per_tile.has(t):
-			per_tile[t] = []
-		per_tile[t].append(i)
-	for t: Vector2i in per_tile:
-		var out := PackedFloat32Array()
-		for i: int in per_tile[t]:
-			out.append_array(buf.slice(i * 12, i * 12 + 12))
-		var mmi := _add_layer(out, mesh, mat)
-		mmi.custom_aabb = AABB(Vector3(t.x * TILE, -1000.0, t.y * TILE), Vector3(TILE, 2000.0, TILE))
-		mmi.visibility_range_end = reach
+# The tile's footprint, as tall as its tufts' ground: the draw range is measured to the middle of this box, so a tall box would put it out of range.
+static func tile_aabb(t: Vector2i, buf: PackedFloat32Array) -> AABB:
+	var lo := INF
+	var hi := -INF
+	for i in range(7, buf.size(), 12):
+		lo = minf(lo, buf[i])
+		hi = maxf(hi, buf[i])
+	if lo > hi:
+		lo = 0.0
+		hi = 0.0
+	return AABB(Vector3(t.x * TILE, lo - 1.0, t.y * TILE), Vector3(TILE, hi - lo + 4.0, TILE))
 
 
-func _add_layer(buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial) -> MultiMeshInstance3D:
+func _add_layer(parent: Node3D, t: Vector2i, buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial, reach: float) -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
@@ -166,10 +245,10 @@ func _add_layer(buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial) -
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.material_override = mat
-	mmi.custom_aabb = AABB(Vector3(-size, -size, -size), Vector3.ONE * size * 2.0)
+	mmi.custom_aabb = tile_aabb(t, buf)
+	mmi.visibility_range_end = reach
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mmi)
-	return mmi
+	parent.add_child(mmi)
 
 
 func _far_mesh_for(key: String) -> ArrayMesh:
@@ -196,7 +275,7 @@ static func hash2(x: int, y: int, s: int) -> float:
 
 # Per "<id>:<layer>", MultiMesh buffers (12 floats per tuft) for every cover cell within `reach` of `centre`.
 # With far_reach > 0, bush layers' instances out to that distance are also written (same transforms) into far_out.
-static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, centre: Vector2, reach: float, height: Callable, far_reach := 0.0, far_out := {}) -> Dictionary:
+static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, centre: Vector2, reach: float, height: Callable, far_reach := 0.0, far_out := {}, tile := Rect2()) -> Dictionary:
 	var out := {}
 	var ext := maxf(reach, far_reach)
 	var half := grid / 2.0
@@ -204,6 +283,12 @@ static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, cen
 	var c1 := mini(grid - 1, ceili(centre.x + half + ext))
 	var r0 := maxi(0, floori(centre.y + half - ext))
 	var r1 := mini(grid - 1, ceili(centre.y + half + ext))
+	var boxed := tile.has_area()
+	if boxed:
+		c0 = maxi(0, floori(tile.position.x + half))
+		c1 = mini(grid - 1, ceili(tile.end.x + half) - 1)
+		r0 = maxi(0, floori(tile.position.y + half))
+		r1 = mini(grid - 1, ceili(tile.end.y + half) - 1)
 	var lists := {}
 	var far_lists := {}
 	for rr in range(r0, r1 + 1):
@@ -213,7 +298,7 @@ static func placements(cov: PackedByteArray, grid: int, kinds_d: Dictionary, cen
 				continue
 			var wx := cc - half
 			var wz := rr - half
-			var cell_d := Vector2(wx + 0.5, wz + 0.5).distance_to(centre)
+			var cell_d := 0.0 if boxed else Vector2(wx + 0.5, wz + 0.5).distance_to(centre)
 			if cell_d > ext:
 				continue
 			var layers: Array = kinds_d[str(id)]
@@ -334,12 +419,21 @@ static func _add_blades(g: Dictionary, rng: RandomNumberGenerator, s: Dictionary
 	g["idx"] = idx
 
 
-# Per bush layer: [every bush's XZ over the whole square (the spots placements draws them at), the bush's radius].
-static func bush_spots(cov: PackedByteArray, grid: int, kinds_d: Dictionary) -> Array:
+# Per bush layer: [every bush's XZ over the square, or only the cells of `tile` (the spots placements draws them at), the bush's radius].
+static func bush_spots(cov: PackedByteArray, grid: int, kinds_d: Dictionary, tile := Rect2()) -> Array:
 	var lists := {}
 	var half := grid / 2.0
-	for rr in grid:
-		for cc in grid:
+	var c0 := 0
+	var c1 := grid - 1
+	var r0 := 0
+	var r1 := grid - 1
+	if tile.has_area():
+		c0 = maxi(0, floori(tile.position.x + half))
+		c1 = mini(grid - 1, ceili(tile.end.x + half) - 1)
+		r0 = maxi(0, floori(tile.position.y + half))
+		r1 = mini(grid - 1, ceili(tile.end.y + half) - 1)
+	for rr in range(r0, r1 + 1):
+		for cc in range(c0, c1 + 1):
 			var id := cov[rr * grid + cc]
 			if id == 0 or not kinds_d.has(str(id)):
 				continue

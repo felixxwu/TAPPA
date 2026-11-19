@@ -591,23 +591,25 @@ func test_foliage_crowds_the_road_and_thins_away_from_it() -> void:
 		assert_lt(far, n / 2, "far from the road most spots are thinned out")
 
 
-func test_the_near_tiles_are_the_two_by_two_round_the_nearest_tile_corner() -> void:
+func test_the_near_tiles_are_exactly_those_within_the_reach_of_the_car() -> void:
 	var st := _streamer(_settings())
 	var tm := st.settings.near_tile_m
-	for p: Vector2 in [Vector2(0.3, 0.2), Vector2(0.7, 0.9), Vector2(-1.4, 2.6), Vector2(5.5, -3.49)]:
-		var block: Rect2i = st.near_tiles_of(p * tm)
-		assert_eq(block.size, Vector2i(2, 2))
-		var inside := Rect2(Vector2(block.position) * tm, Vector2(block.size) * tm).grow(-tm * 0.5)
-		assert_true(inside.has_point(p * tm), "the car is at least half a tile inside them")
+	for p: Vector2 in [Vector2(0.3, 0.2) * tm, Vector2(-1.4, 2.6) * tm, Vector2(5.5, -3.49) * tm]:
+		var got := st.near_tiles_of(p)
+		assert_true(got.has(st._tile_of(p)), "the car's own tile")
+		for tz in range(-12, 12):
+			for tx in range(-12, 12):
+				var t := st._tile_of(p) + Vector2i(tx, tz)
+				assert_eq(got.has(t), st._tile_gap(t, p) <= TerrainStreamer.NEAR_REACH_M, "tile %s" % t)
 
 
 func test_near_detail_covers_only_its_tiles_and_the_coarse_mesh_leaves_a_hole_there() -> void:
 	var st := _streamer(_settings())
 	st.prefill()
-	var block: Rect2i = st.near_tiles_of(Vector2(st.focus.position.x, st.focus.position.z))
+	var block := st.near_tiles_of(Vector2(st.focus.position.x, st.focus.position.z))
 	for t: Vector2i in st._tiles:
 		var ts: TerrainStreamer.TileState = st._tiles[t]
-		assert_eq(ts.near_mesh != null, block.has_point(t), "tile %s near mesh only in the block" % t)
+		assert_eq(ts.near_mesh != null, block.has(t), "tile %s near mesh only in the block" % t)
 		if ts.near_mesh == null:
 			continue
 		var cs: TerrainStreamer.ChunkState = st._chunks[st._chunk_of_tile(t)]
@@ -658,7 +660,8 @@ func test_holes_leave_out_the_covered_cells_and_hang_skirts_round_them() -> void
 	var cells := (n - 1) * (n - 1)
 	var quarter := cells / 4
 	var skirt_edges := 2 * ((n - 1) / 2)  # the hole's two inner sides
-	assert_eq(holed_idx.size(), whole_idx.size() - quarter * 6 + skirt_edges * 12)
+	var border_edges := 2 * ((n - 1) / 2)  # the chunk-border skirt segments beside the covered quarter
+	assert_eq(holed_idx.size(), whole_idx.size() - quarter * 6 + skirt_edges * 12 - border_edges * 12)
 
 
 func test_collision_built_from_the_mid_grid_is_rebuilt_from_the_near_grid() -> void:
@@ -1612,3 +1615,66 @@ func test_new_world_picks_an_island_whose_roads_reach_the_snow_ring() -> void:
 	assert_true(s.island_qualifies())
 	s.new_world_min_road_km = 1.0e6
 	assert_false(s.island_qualifies(), "an island is turned down when its roads are too short")
+
+
+func test_a_coarse_chunk_fully_under_near_tiles_draws_nothing_not_even_a_border_skirt() -> void:
+	var st := _streamer(_settings())
+	var n := 9
+	var src := [PackedVector3Array(), PackedColorArray(), PackedVector2Array(), PackedVector2Array()]
+	for i in n * n + st._perimeter(n).size():
+		src[0].append(Vector3.ZERO)
+		src[1].append(Color.WHITE)
+		src[2].append(Vector2.ZERO)
+		src[3].append(Vector2.ZERO)
+	assert_eq(st._coarse_mesh(src, n, 4, 2, 0b1111, 6.0).get_surface_count(), 0, "all four tiles covered")
+	assert_eq(st._coarse_mesh(src, n, 4, 2, 0b0111, 6.0).get_surface_count(), 1, "one tile uncovered still draws")
+
+
+func _stitch_job(st: TerrainStreamer, stitch: int) -> TerrainStreamer.ChunkJob:
+	var job := TerrainStreamer.ChunkJob.new()
+	job.stride = st.settings.near_stride_m
+	job.n = int(st.settings.near_tile_m / job.stride) + 1
+	job.halo = 1
+	var m := job.n + 2
+	job.heights.resize(m * m)
+	job.verts.resize(job.n * job.n)
+	for i in m * m:
+		job.heights[i] = sin(i * 0.7) * 3.0
+	for i in job.n * job.n:
+		job.verts[i] = Vector3(0.0, job.heights[(i / job.n + 1) * m + i % job.n + 1], 0.0)
+	job.stitch = stitch
+	return job
+
+
+func test_a_stitched_edge_follows_the_mid_line_and_other_edges_are_untouched() -> void:
+	var st := _streamer(_settings())
+	var job := _stitch_job(st, 0b0001)
+	var before := job.verts.duplicate()
+	st._stitch(job.verts, job.heights, job.n, job.halo, job.stride, job.stitch)
+	var n := job.n
+	var r := roundi(st.settings.mid_stride_m / job.stride)
+	var m := n + 2
+	for j in n:
+		var j0 := j / r * r
+		var j1 := mini(j0 + r, n - 1)
+		var h0 := job.heights[(j0 + 1) * m + 1]
+		var h1 := job.heights[(j1 + 1) * m + 1]
+		assert_almost_eq(job.verts[j * n].y, lerpf(h0, h1, float(j - j0) / r), 0.0001, "west edge vertex %d" % j)
+	for j in n:
+		assert_eq(job.verts[j * n + n - 1], before[j * n + n - 1], "east edge")
+		assert_eq(job.verts[j], before[j], "south edge")
+	for i in n * n:
+		var x: int = i % n
+		if x * job.stride >= TerrainStreamer.STITCH_BLEND_M:
+			assert_eq(job.verts[i], before[i], "outside the blend")
+
+
+func test_an_edge_is_stitched_only_where_no_near_neighbour_is_coming() -> void:
+	var st := _streamer(_settings())
+	var t := Vector2i(5, 5)
+	assert_eq(st._stitch_mask(t), 0b1111)
+	st._tile(t + Vector2i(1, 0)).near_mesh = MeshInstance3D.new()
+	assert_eq(st._stitch_mask(t), 0b1101)
+	st._tile(t + Vector2i(0, 1)).near_job = TerrainStreamer.ChunkJob.new()
+	assert_eq(st._stitch_mask(t), 0b0101)
+	st._tile(t + Vector2i(1, 0)).near_mesh.free()

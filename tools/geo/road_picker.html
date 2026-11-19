@@ -1,0 +1,74 @@
+<!doctype html>
+<!-- Pick which OSM ways become game roads: every way from align.py drawn over the satellite image, click to keep/drop.
+     Serve tools/geo (python3 -m http.server -d tools/geo) and open road_picker.html?dir=data/hafren_5km&tag=5km.
+     "Save" downloads roads_keep_<tag>.json; put it next to roads_<tag>.json for make_level.py. -->
+<meta charset="utf-8"><title>Road picker</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 13px system-ui, sans-serif; overflow: hidden }
+  svg { width: 100%; height: 100%; cursor: grab; display: block }
+  #bar { position: fixed; top: 8px; left: 8px; background: #000c; padding: 8px 10px; border-radius: 6px; max-width: 340px }
+  #bar button { margin: 4px 4px 0 0 }
+  #info { margin-top: 6px; white-space: pre-wrap; color: #bbb }
+  polyline { fill: none; stroke-linecap: round; stroke-linejoin: round; cursor: pointer }
+  .drop { stroke: #ff3b3b; opacity: .55 } .keep { stroke: #3bff6a } .hover { stroke: #fff !important; opacity: 1 }
+  label { display: block }
+</style>
+<div id="bar">
+  <b>Road picker</b> — click a way to keep (green) / drop (red). Drag to pan, wheel to zoom.
+  <label><input type="checkbox" id="showDrop" checked> show dropped ways</label>
+  <label><input type="checkbox" id="showSat" checked> satellite</label>
+  <button id="save">Save keep-list</button><button id="all">Keep all</button><button id="none">Drop all</button>
+  <div id="count"></div><div id="info">hover a way for its OSM tags</div>
+</div>
+<svg id="v"><g id="w"><image id="img"/><g id="lines"></g></g></svg>
+<script>
+const q = new URLSearchParams(location.search), DIR = q.get("dir") || "data/hafren_5km", TAG = q.get("tag") || "5km";
+const svg = document.getElementById("v"), g = document.getElementById("w"), lines = document.getElementById("lines");
+let view = { x: 0, y: 0, s: 1 }, data, keep = new Set();
+const apply = () => g.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.s})`);
+const width = () => Math.max(1.5, 4 / view.s);
+function draw() {
+  for (const el of lines.children) {
+    const k = keep.has(el.dataset.id);
+    el.setAttribute("class", k ? "keep" : "drop");
+    el.style.display = k || showDrop.checked ? "" : "none";
+    el.setAttribute("stroke-width", width() * (k ? 1.3 : 1));
+  }
+  count.textContent = `${keep.size} of ${data.roads.length} ways kept`;
+}
+(async () => {
+  data = await (await fetch(`${DIR}/roads_${TAG}.json`)).json();
+  const [E0, N1] = data.origin_bng_top_left, S = data.size_m;
+  try { keep = new Set((await (await fetch(`${DIR}/roads_keep_${TAG}.json`)).json()).keep); }
+  catch { keep = new Set(data.roads.filter(r => ["track", "unclassified"].includes(r.highway) && (r.canopy ?? 0) < 0.5).map(r => r.id)); }
+  img.setAttribute("href", `${DIR}/satellite_${TAG}_1m.jpg`); img.setAttribute("width", S); img.setAttribute("height", S);
+  for (const r of data.roads) {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    el.setAttribute("points", r.bng.map(([e, n]) => `${(e - E0).toFixed(1)},${(N1 - n).toFixed(1)}`).join(" "));
+    el.dataset.id = r.id;
+    el.onclick = ev => { if (moved) return; keep.has(r.id) ? keep.delete(r.id) : keep.add(r.id); draw(); };
+    el.onmouseenter = () => { el.classList.add("hover"); info.textContent = `way ${r.id}  canopy ${r.canopy}\n` + Object.entries(r.tags).map(([k, v]) => `${k} = ${v}`).join("\n"); };
+    el.onmouseleave = () => el.classList.remove("hover");
+    lines.append(el);
+  }
+  view.s = Math.min(innerWidth, innerHeight) / S; view.x = (innerWidth - S * view.s) / 2; view.y = (innerHeight - S * view.s) / 2;
+  apply(); draw();
+})();
+let drag = null, moved = false;
+svg.onpointerdown = e => { drag = [e.clientX - view.x, e.clientY - view.y]; moved = false; };
+onpointermove = e => { if (!drag) return; moved = true; view.x = e.clientX - drag[0]; view.y = e.clientY - drag[1]; apply(); };
+onpointerup = () => { drag = null; setTimeout(() => moved = false); };
+svg.onwheel = e => {
+  e.preventDefault(); const f = Math.exp(-e.deltaY * 0.0015);
+  view.x = e.clientX - (e.clientX - view.x) * f; view.y = e.clientY - (e.clientY - view.y) * f; view.s *= f; apply(); draw();
+};
+showDrop.onchange = draw;
+showSat.onchange = () => img.style.display = showSat.checked ? "" : "none";
+all.onclick = () => { keep = new Set(data.roads.map(r => r.id)); draw(); };
+none.onclick = () => { keep.clear(); draw(); };
+save.onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ keep: [...keep] })], { type: "application/json" }));
+  a.download = `roads_keep_${TAG}.json`; a.click();
+};
+</script>

@@ -67,6 +67,36 @@ func test_cover_decodes_from_save() -> void:
 	assert_true(GroundCover.decode_cover({}).is_empty())
 
 
+# 6x6 lossless WebP encoded by PIL: cell i = (i * 7) % 5, except cells 0, 1 and 35 = 255, 0 and 200.
+const COVER_WEBP := "UklGRkwAAABXRUJQVlA4TEAAAAAvBUABADdAkG2z+pOd6SJk0jaNf2XTtIdM2qbxr2ya9sx/VAEA/tsGCiLZoN6HBgKooIIq+teQIaL/NcjyTr8c"
+
+
+func test_cover_decodes_lossless_webp() -> void:
+	var expected := PackedByteArray()
+	expected.resize(36)
+	for i in expected.size():
+		expected[i] = (i * 7) % 5
+	expected[0] = 255
+	expected[1] = 0
+	expected[35] = 200
+	assert_eq(GroundCover.decode_cover({"size": 6, "coverWebp": COVER_WEBP}), expected)
+
+
+func test_cover_decodes_run_length_encoding() -> void:
+	var raw := PackedByteArray()
+	raw.resize(16)
+	for i in 5:
+		raw[i] = 2
+	for i in range(9, 16):
+		raw[i] = 3
+	var rle := PackedByteArray([2, 5, 0, 4, 3, 7])
+	var back := GroundCover.decode_cover({"size": 4, "coverRle": Marshalls.raw_to_base64(rle)})
+	assert_eq(back, raw)
+	var long := GroundCover.decode_cover({"size": 20, "coverRle": Marshalls.raw_to_base64(PackedByteArray([7, 0x90, 0x03]))})
+	assert_eq(long.size(), 400)
+	assert_eq(long[399], 7)
+
+
 func test_tint_derives_from_layer_colours() -> void:
 	var a := BLADES.duplicate()
 	a["base"] = "#000000"
@@ -144,24 +174,88 @@ func test_bush_spots_are_where_the_bushes_are_drawn_and_skip_grass() -> void:
 		assert_almost_eq(pts[i], Vector2(drawn[i * 12 + 3], drawn[i * 12 + 11]), Vector2(1e-4, 1e-4))
 
 
-func test_build_places_every_tuft_once_in_tiles_drawn_only_near_the_camera() -> void:
+func _cover_node(kinds: Dictionary) -> GroundCover:
 	var cells: Array = []
 	for x in GRID:
 		for z in GRID:
 			cells.append(Vector2i(x, z))
-	var kinds := {"1": [[BLADES, 2.0]]}
 	var gc := GroundCover.new()
 	add_child_autofree(gc)
 	gc.setup({"cover": Marshalls.raw_to_base64(_cover(cells)), "coverKinds": kinds}, _flat, GRID)
-	gc.build()
+	return gc
+
+
+func test_tiles_place_every_tuft_once_and_draw_only_near_the_camera() -> void:
+	var kinds := {"1": [[BLADES, 2.0]]}
+	var gc := _cover_node(kinds)
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	var cells: Array = []
+	for x in GRID:
+		for z in GRID:
+			cells.append(Vector2i(x, z))
 	var expected: int = GroundCover.placements(_cover(cells), GRID, kinds, Vector2.ZERO, GRID, _flat)["1:0"].size() / 12
 	var total := 0
-	var tiles := {}
-	for c in gc.get_children():
-		var mmi := c as MultiMeshInstance3D
-		total += mmi.multimesh.instance_count
-		tiles[mmi.custom_aabb.position] = true
-		assert_gt(mmi.visibility_range_end, 0.0, "a tile stops drawing past its reach")
+	for node: Node3D in gc.tiles.values():
+		for mmi: MultiMeshInstance3D in node.get_children():
+			total += mmi.multimesh.instance_count
+			assert_gt(mmi.visibility_range_end, 0.0, "a tile stops drawing past its reach")
 	assert_eq(total, expected, "every tuft, none twice")
-	assert_eq(tiles.size(), gc.get_child_count(), "one MultiMesh per tile")
-	assert_gt(tiles.size(), 1, "the square is split into tiles")
+	assert_gt(gc.tiles.size(), 1, "the square is split into tiles")
+
+
+func test_tiles_far_from_the_camera_are_dropped_and_missing_ones_wait_for_budget() -> void:
+	var gc := _cover_node({"1": [[BLADES, 2.0]]})
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	assert_gt(gc.tiles.size(), 0)
+	gc.stream(Vector2(1.0e5, 0.0), Time.get_ticks_usec() + 60_000_000)
+	assert_eq(gc.tiles.size(), 0, "tiles beyond reach are dropped")
+
+
+func test_the_tiles_round_the_car_build_even_with_no_budget_left() -> void:
+	var gc := _cover_node({"1": [[BLADES, 2.0]]})
+	gc.stream(Vector2(1.0, 1.0), 0)
+	assert_true(gc.tiles.has(Vector2i.ZERO), "the tile under the camera")
+	assert_true(gc.tiles.has(Vector2i(-1, -1)), "and its neighbours")
+
+
+func test_tiles_outside_the_floor_ring_wait_for_budget() -> void:
+	var cov := PackedByteArray()
+	cov.resize(200 * 200)
+	cov.fill(1)
+	var gc := GroundCover.new()
+	add_child_autofree(gc)
+	gc.setup({"cover": Marshalls.raw_to_base64(cov), "coverKinds": {"1": [[BLADES, 0.1]]}}, _flat, 200)
+	gc.stream(Vector2.ZERO, 0)
+	assert_eq(gc.tiles.size(), 9, "only the tile under the camera and its eight neighbours")
+	assert_false(gc.tiles.has(Vector2i(2, 2)), "a tile past the ring waits")
+	assert_gt(gc.missing(Vector2.ZERO).size(), 0)
+
+
+func test_after_a_full_stream_no_tile_in_reach_is_missing() -> void:
+	var gc := _cover_node({"1": [[BLADES, 2.0]]})
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	assert_true(gc.missing(Vector2.ZERO).is_empty())
+
+
+func test_a_tile_owns_bush_fields_that_go_with_it() -> void:
+	var gc := _cover_node({"1": [[BUSH, 2.0]]})
+	var car := Node3D.new()
+	add_child_autofree(car)
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000, car)
+	var tile: Node3D = gc.tiles.values()[0]
+	assert_gt(tile.find_children("*", "BushField", false, false).size(), 0)
+	var first: Vector2i = gc.tiles.keys()[0]
+	gc.stream(Vector2(1.0e5, 0.0), Time.get_ticks_usec() + 60_000_000)
+	await get_tree().process_frame
+	assert_false(is_instance_valid(tile), "the fields leave with their tile")
+	assert_false(gc.tiles.has(first))
+
+
+func test_a_tiles_draw_box_wraps_its_tufts_where_the_ground_is_not_around_the_origin() -> void:
+	var buf := PackedFloat32Array()
+	for y in [300.0, 310.0]:
+		buf.append_array([1, 0, 0, 40.0, 0, 1, 0, y, 0, 0, 1, 50.0])
+	var box := GroundCover.tile_aabb(Vector2i(1, 1), buf)
+	for y in [300.0, 310.0]:
+		assert_true(box.has_point(Vector3(40.0, y, 50.0)), "the tuft is inside the box")
+	assert_almost_eq(box.get_center().y, 305.0, 5.0, "the draw range is measured to the box's middle, so it must sit at the tufts")

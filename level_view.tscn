@@ -57,7 +57,11 @@ sky_material = SubResource("sky_mat")
 background_mode = 2
 sky = SubResource("sky")
 fog_enabled = true
+fog_mode = 1
 fog_light_color = Color(0.72, 0.82, 0.95, 1)
+fog_depth_curve = 1.0
+fog_depth_begin = 0.0
+fog_depth_end = 500.0
 fog_sky_affect = 0.0
 
 [sub_resource type="ShaderMaterial" id="mat_ground"]

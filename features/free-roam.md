@@ -133,9 +133,9 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
 - **Three levels of detail** (`TerrainStreamer.Level`), each chunk drawing only its finest built
   mesh (`_show_finest`):
   - **near**, `near_stride_m` (2 m), drawn in `near_tile_m` (32 m) **tiles** smaller than a chunk
-    (`TileState`, in `_tiles`): only the 2×2 tiles round the tile corner nearest the car
-    (`near_tiles_of`), so the car is always at least half a tile (16 m) inside them. Drawn and
-    driven on, nothing planted. A tile is kept until its centre is `NEAR_KEEP_TILES` (1.6 tiles)
+    (`TileState`, in `_tiles`): every tile whose closest point is within
+    `NEAR_REACH_M` (70 m) of the car (`near_tiles_of`). Drawn and
+    driven on, nothing planted. A tile is kept until its closest point is `NEAR_REACH_M` + `NEAR_KEEP_MARGIN_M` (16 m)
     from the car, so wavering on a tile's middle line doesn't rebuild it. Tiles halve the near
     work per metre against 64 m near chunks (it is two new near squares per square driven, so it
     scales with the square's side).
@@ -143,6 +143,15 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
     quarters its near tiles cover, with a skirt round each hole so no crack shows against the
     tile (`_cut_holes` / `_coarse_mesh`, from the vertex arrays kept on `ChunkState`; when the planner drops a tile or mid mesh, the recut waits in `_holes_due` for the first units of `_run_queue`, so the scheduler measures it). The two
     grids differ slightly in height, so drawing both in one place would flicker.
+    A chunk-border skirt is left out beside a covered cell (it would stand up through a cut slope).
+  - **Stitching:** a near tile's edge that meets mid ground (no near mesh or job on the other
+    side, `_stitch_mask`, kept as `TileState.stitch`) has its drawn vertices blended onto the
+    straight line between the mid grid's samples over `STITCH_BLEND_M` (3 m), so the two meshes
+    meet with no step (`_stitch`). Collision keeps the true heights. When a neighbour's state
+    changes the planner patches that tile in place (`_restitch`: resets the edge bands from `near_heights`, restitches, rebuilds the mesh from the kept `near_arrays`; no job, no collision change; `stat_restitches`, `stat_patch_us`).
+  - **Skirt shading:** skirt vertices go through `_skirt_uv2`; the level streamer marks them
+    (UV2.x = -1) and `level_ground.gdshader` draws them flat, one colour per 8 m. Free roam is
+    unchanged.
   - **mid**, `mid_stride_m` (8 m) within `mid_radius` (1.5 chunks, so it ends about where the 120 m foliage draw distance does): carries all the planting.
     It **narrows with speed** (`squashed_distance`): ahead it always reaches `mid_radius`, but to
     the sides and behind it shrinks towards `mid_side_frac` / `mid_back_frac` (0.6) of that by

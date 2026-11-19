@@ -17,7 +17,7 @@ const SNOW_SHADER := preload("res://shaders/ps1_terrain_snow.gdshader")
 const CHECK_EVERY := 4
 
 enum Stage { PREP, HEIGHTS, ARRAYS, UPLOAD, ATTACH, COLLIDE, PLANT, SPAWN, DONE }
-# Detail levels, finest first. NEAR is the 2×2 chunks round the car, drawn and driven on only.
+# Detail levels, finest first. NEAR is the tiles within NEAR_REACH_M of the car, drawn and driven on only.
 # MID reaches further and carries everything planted (trees, barriers, sites). FAR is the horizon.
 enum Level { NEAR, MID, FAR }
 
@@ -58,6 +58,8 @@ var stat_spike_by := {}
 # Times collision under (or just ahead of) the car was missing and was built at once, over the
 # budget (_rush_collision). Rare when streaming keeps up; each one is a hitch instead of a fall.
 var stat_rushes := 0
+var stat_restitches := 0  # near tiles whose edge stitching changed
+var stat_patch_us := 0  # time spent re-stitching them
 var _last_kind := ""
 var _plan_override: Variant = null  # a Vector2 to plan around instead of the focus (prefill_at)
 # The coin still lying at a site (LootDirector.loot_at → {"kind": "coin", ...} or {}). Unset: none.
@@ -124,6 +126,8 @@ class TileState:
 	var near_heights := PackedFloat32Array()  # halo grid
 	var near_road_d := PackedFloat32Array()
 	var near_job: ChunkJob
+	var near_arrays := []  # vertices, colours, UVs and UV2s of the drawn near mesh, kept so its edges can be re-stitched
+	var stitch := 0  # which edges of the drawn near mesh were blended down to the mid line (see _stitch_mask)
 	var body: StaticBody3D
 	var body_level := Level.FAR
 	var col_job: ChunkJob
@@ -143,6 +147,7 @@ class ChunkJob:
 	var priority := 0.0
 	var dist := 0.0  # distance from the car, in chunks, at the last plan
 	var cancelled := false
+	var stitch := 0
 	var cands := PackedInt32Array()
 	# Near and mid chunks sample a one-sample border so edge normals match their neighbours; far chunks
 	# skip it and take one-sided slopes at their edges, which fog hides.
@@ -186,6 +191,10 @@ class PlantGround:
 
 	func light_at(x: float, z: float) -> Color:
 		return streamer._light_with(height_at, x, z)
+
+
+var _road_slack := 0.0
+var _paint_reach := 0.0
 
 
 func _ready() -> void:
@@ -360,7 +369,12 @@ func height_at(x: float, z: float) -> float:
 			return _mesh_height(st.mid_heights, settings.mid_stride_m, 1, o, settings.chunk_m, x, z)
 		if not st.far_heights.is_empty():
 			return _mesh_height(st.far_heights, settings.far_stride_m, 0, o, settings.chunk_m, x, z)
-	return terrain.height(x, z, PackedInt32Array(), false)
+	return _exact_height(x, z)
+
+
+# The full terrain maths at a point, for where no grid is loaded.
+func _exact_height(x: float, z: float, cands := PackedInt32Array(), with_road := false) -> float:
+	return terrain.height(x, z, cands, with_road)
 
 
 # Height on a square's grid (corner `origin`, side `size`), interpolated across the same two
@@ -649,8 +663,11 @@ const UNSEEN_PLANT_PRIORITY := 1000.0
 # How far (chunk centre to car, in chunks) a chunk's collision is kept once it leaves the 2×2
 # collision block. A block chunk's centre is at most √2 chunks from the car.
 const NEAR_KEEP_CHUNKS := 1.6
-# The same for a near tile, in tiles.
-const NEAR_KEEP_TILES := 1.6
+# Near detail reaches this far from the car (nearest point of a tile), and a tile is kept this much further.
+const NEAR_REACH_M := 70.0
+const NEAR_KEEP_MARGIN_M := 16.0
+# A near tile's edge against mid ground is blended to the mid line over this many metres.
+const STITCH_BLEND_M := 3.0
 
 
 func _far_priority(st: ChunkState, d: float) -> float:
@@ -776,6 +793,11 @@ func _prep(job: ChunkJob) -> void:
 	job.stage = Stage.HEIGHTS
 	job.ring_lo = INF
 	job.ring_hi = -INF
+	_prep_samples(job)
+
+
+# Gets a job ready to be sampled: the island's open-sea shortcut and the road segments near the chunk.
+func _prep_samples(job: ChunkJob) -> void:
 	# A chunk wholly beyond the furthest possible coastline is open sea: no sampling needed.
 	var nx := clampf(0.0, job.origin.x - job.stride, job.origin.x + job.size_m + job.stride)
 	var ny := clampf(0.0, job.origin.y - job.stride, job.origin.y + job.size_m + job.stride)
@@ -824,13 +846,10 @@ func _heights(job: ChunkJob, deadline: int) -> bool:
 		var gx := job.cursor % m - job.halo
 		@warning_ignore("integer_division")
 		var gz := job.cursor / m - job.halo
-		job.heights[job.cursor] = terrain.height(ox + gx * job.stride, oy + gz * job.stride, job.cands, true)
+		var vi := -1
 		if gx >= 0 and gz >= 0 and gx < job.n and gz < job.n:
-			var vi := gz * job.n + gx
-			job.road_d[vi] = minf(terrain.last_road_d, 1.0e4)  # finite, so it interpolates
-			job.road_info[3 * vi] = clampf(terrain.last_road_sd, -1.0e4, 1.0e4)
-			job.road_info[3 * vi + 1] = terrain.last_road_s
-			job.road_info[3 * vi + 2] = terrain.last_road_mark
+			vi = gz * job.n + gx
+		job.heights[job.cursor] = _sample(job, ox + gx * job.stride, oy + gz * job.stride, vi)
 		job.cursor += 1
 		done += 1
 		var t_now := Time.get_ticks_usec()
@@ -844,6 +863,17 @@ func _heights(job: ChunkJob, deadline: int) -> bool:
 		return false
 	_start_arrays(job)
 	return true
+
+
+# One height sample; `vi` is the vertex index when the sample is a vertex (not the halo), else -1.
+func _sample(job: ChunkJob, x: float, z: float, vi: int) -> float:
+	var h := terrain.height(x, z, job.cands, true)
+	if vi >= 0:
+		job.road_d[vi] = minf(terrain.last_road_d, 1.0e4)  # finite, so it interpolates
+		job.road_info[3 * vi] = clampf(terrain.last_road_sd, -1.0e4, 1.0e4)
+		job.road_info[3 * vi + 1] = terrain.last_road_s
+		job.road_info[3 * vi + 2] = terrain.last_road_mark
+	return h
 
 
 func _start_arrays(job: ChunkJob) -> void:
@@ -867,10 +897,7 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 	var ox := job.origin.x
 	var oy := job.origin.y
 	var done := 0
-	# how far the interpolated unsigned distance can overshoot the true one across a centreline
-	var road_slack := 0.75 * s
-	# a vertex within one triangle of painted road carries the tarmac weight the pixels blend with
-	var paint_reach := terrain.paint_mid_m() + terrain.paint_half_m() + s
+	_begin_pack(job)
 	_last_kind = "arrays"
 	var peak: float = _peak_us["arrays"]
 	var t_prev := Time.get_ticks_usec()
@@ -898,30 +925,8 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		var normal := Vector3(-dhx, 1.0, -dhz).normalized()
 		var px := ox + gx * s
 		var pz := oy + gz * s
-		var ring := terrain.ring_coord(px, pz)
-		job.ring_lo = minf(job.ring_lo, ring)
-		job.ring_hi = maxf(job.ring_hi, ring)
-		var col := _tint_at_ring(ring) * ground_light(normal)
-		# The ground shader paints the road per pixel (ps1_models.gdshader, paint_road_per_pixel)
-		# from what the vertices carry here, never from a per-vertex weight, so the road's edge
-		# stays smooth however coarse the mesh. The ground texture is placed from the world
-		# position in that mode, which frees UV to carry the distances:
-		#   UV.x   distance to the road, signed by side. It is linear across the centreline, so it
-		#          interpolates exactly over a triangle that straddles the road;
-		#   UV.y   unsigned distance less road_slack. Where the side flips between two roads (in a
-		#          junction, or midway between parallel roads) UV.x interpolates through a false
-		#          zero and UV.y does not; the shader takes max(|UV.x|, UV.y). road_slack covers
-		#          how far UV.y overshoots across a real centreline, so there it never wins;
-		#   UV2    x tarmac weight, y arc length along the road (dashes);
-		#   COLOR.a  lane-marking weight (0 on rest-stop pads and in junctions).
-		col.a = job.road_info[3 * i + 2]
-		var tarmac := 0.0
-		if job.road_d[i] < paint_reach:
-			tarmac = terrain.tarmac_weight(px, pz)
-		job.uv2s[i] = Vector2(tarmac, job.road_info[3 * i + 1])
 		job.verts[i] = Vector3(gx * s, h, gz * s)
-		job.colors[i] = col
-		job.uvs[i] = Vector2(job.road_info[3 * i], job.road_d[i] - road_slack)
+		_pack_vertex(job, i, px, pz, normal)
 		job.cursor += 1
 		done += 1
 	_peak_us["arrays"] = peak
@@ -930,6 +935,10 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		return false
 	# Skirts: a strip hanging below the edge, so neighbouring chunks at different detail never
 	# show a crack between them.
+	if job.tile:
+		job.stitch = _stitch_mask(job.coord)
+		if job.stitch != 0:
+			_stitch(job.verts, job.heights, n, hl, job.stride, job.stitch)
 	var drop: float = [3.0, 6.0, 12.0][job.level]
 	var perim := _perimeter(n)
 	for k in perim.size():
@@ -937,9 +946,126 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		job.verts[n * n + k] = job.verts[src] - Vector3(0.0, drop, 0.0)
 		job.colors[n * n + k] = job.colors[src]
 		job.uvs[n * n + k] = job.uvs[src]
-		job.uv2s[n * n + k] = job.uv2s[src]
+		job.uv2s[n * n + k] = _skirt_uv2(job.uv2s[src])
 	job.stage = Stage.UPLOAD
 	return true
+
+
+# What a skirt vertex carries in UV2; a ground shader may use it to draw skirts flat.
+func _skirt_uv2(uv2: Vector2) -> Vector2:
+	return uv2
+
+
+# Bit per tile edge (west, east, south, north) set where the neighbouring tile has no near mesh coming, so mid ground meets it.
+func _stitch_mask(t: Vector2i) -> int:
+	var mask := 0
+	for e in 4:
+		var nb: TileState = _tiles.get(t + [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)][e])
+		if nb == null or (nb.near_mesh == null and nb.near_job == null):
+			mask |= 1 << e
+	return mask
+
+
+# Pulls a near tile's edge vertices onto the straight line between the mid grid's samples (every
+# `mid_stride_m`), fading the change out over STITCH_BLEND_M, so no step shows against mid ground.
+# Only the drawn vertices move: collision keeps the true heights.
+func _stitch(verts: PackedVector3Array, heights: PackedFloat32Array, n: int, hl: int, stride: float, mask: int) -> void:
+	var m := n + 2 * hl
+	var r := maxi(1, roundi(settings.mid_stride_m / stride))
+	var depth := int(STITCH_BLEND_M / stride)
+	for e in 4:
+		if mask & (1 << e) == 0:
+			continue
+		var edge := PackedFloat32Array()
+		for j in n:
+			var c := Vector2i(0 if e == 0 else n - 1, j) if e < 2 else Vector2i(j, 0 if e == 2 else n - 1)
+			edge.append(heights[(c.y + hl) * m + c.x + hl])
+		for j in n:
+			var j0 := j / r * r
+			var j1 := mini(j0 + r, n - 1)
+			var delta := lerpf(edge[j0], edge[j1], float(j - j0) / r) - edge[j]
+			if delta == 0.0:
+				continue
+			for d in depth:
+				var w := 1.0 - d * stride / STITCH_BLEND_M
+				var c := Vector2i(d if e == 0 else n - 1 - d, j) if e < 2 else Vector2i(j, d if e == 2 else n - 1 - d)
+				verts[c.y * n + c.x].y += w * delta
+
+
+# A neighbour's near mesh came or went: re-stitch the drawn tile's edge bands in place, from its
+# kept true heights, rebuilding only the mesh (no job, no collision change) and only if a vertex moved.
+func _restitch(ts: TileState, mask: int) -> void:
+	var t0 := Time.get_ticks_usec()
+	var verts: PackedVector3Array = ts.near_arrays[0]
+	var n := int(settings.near_tile_m / settings.near_stride_m) + 1
+	var hl := (roundi(sqrt(ts.near_heights.size())) - n) / 2
+	var m := n + 2 * hl
+	var depth := int(STITCH_BLEND_M / settings.near_stride_m)
+	var moved := false
+	var before := verts.duplicate()
+	for e in 4:
+		for j in n:
+			for d in depth:
+				var c := Vector2i(d if e == 0 else n - 1 - d, j) if e < 2 else Vector2i(j, d if e == 2 else n - 1 - d)
+				verts[c.y * n + c.x].y = ts.near_heights[(c.y + hl) * m + c.x + hl]
+	_stitch(verts, ts.near_heights, n, hl, settings.near_stride_m, mask)
+	var perim := _perimeter(n)
+	for k in perim.size():
+		verts[n * n + k].y = verts[perim[k]].y - 3.0
+	for i in verts.size():
+		if absf(verts[i].y - before[i].y) > 0.01:
+			moved = true
+			break
+	ts.stitch = mask
+	if moved:
+		ts.near_arrays[0] = verts
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_COLOR] = ts.near_arrays[1]
+		arrays[Mesh.ARRAY_TEX_UV] = ts.near_arrays[2]
+		arrays[Mesh.ARRAY_TEX_UV2] = ts.near_arrays[3]
+		arrays[Mesh.ARRAY_INDEX] = _indices_for(n)
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		ts.near_mesh.mesh = mesh
+		stat_restitches += 1
+	stat_patch_us += Time.get_ticks_usec() - t0
+
+
+# Once per _arrays call: values _pack_vertex reuses for every vertex.
+func _begin_pack(job: ChunkJob) -> void:
+	# how far the interpolated unsigned distance can overshoot the true one across a centreline
+	_road_slack = 0.75 * job.stride
+	# a vertex within one triangle of painted road carries the tarmac weight the pixels blend with
+	_paint_reach = terrain.paint_mid_m() + terrain.paint_half_m() + job.stride
+
+
+# Fills colour, UVs and UV2 of vertex `i` (verts[i] is already set); also widens the job's ring span.
+func _pack_vertex(job: ChunkJob, i: int, px: float, pz: float, normal: Vector3) -> void:
+	var ring := terrain.ring_coord(px, pz)
+	job.ring_lo = minf(job.ring_lo, ring)
+	job.ring_hi = maxf(job.ring_hi, ring)
+	var col := _tint_at_ring(ring) * ground_light(normal)
+	# The ground shader paints the road per pixel (ps1_models.gdshader, paint_road_per_pixel)
+	# from what the vertices carry here, never from a per-vertex weight, so the road's edge
+	# stays smooth however coarse the mesh. The ground texture is placed from the world
+	# position in that mode, which frees UV to carry the distances:
+	#   UV.x   distance to the road, signed by side. It is linear across the centreline, so it
+	#          interpolates exactly over a triangle that straddles the road;
+	#   UV.y   unsigned distance less _road_slack. Where the side flips between two roads (in a
+	#          junction, or midway between parallel roads) UV.x interpolates through a false
+	#          zero and UV.y does not; the shader takes max(|UV.x|, UV.y). _road_slack covers
+	#          how far UV.y overshoots across a real centreline, so there it never wins;
+	#   UV2    x tarmac weight, y arc length along the road (dashes);
+	#   COLOR.a  lane-marking weight (0 on rest-stop pads and in junctions).
+	col.a = job.road_info[3 * i + 2]
+	var tarmac := 0.0
+	if job.road_d[i] < _paint_reach:
+		tarmac = terrain.tarmac_weight(px, pz)
+	job.uv2s[i] = Vector2(tarmac, job.road_info[3 * i + 1])
+	job.colors[i] = col
+	job.uvs[i] = Vector2(job.road_info[3 * i], job.road_d[i] - _road_slack)
 
 
 func _upload(job: ChunkJob) -> void:
@@ -970,7 +1096,11 @@ func _attach(job: ChunkJob) -> void:
 	var arrays := [job.verts, job.colors, job.uvs, job.uv2s]
 	match job.level:
 		Level.NEAR:
+			if ts.near_mesh != null:
+				ts.near_mesh.queue_free()
 			ts.near_mesh = mi
+			ts.stitch = job.stitch
+			ts.near_arrays = [job.verts, job.colors, job.uvs, job.uv2s]
 			ts.near_heights = job.heights
 			ts.near_road_d = job.road_d
 			ts.near_job = null
@@ -1073,10 +1203,17 @@ func _coarse_mesh(src: Array, n: int, cells_per_tile: int, tpc: int, mask: int, 
 						verts.append(verts[v] - Vector3(0.0, drop, 0.0))
 						colors.append(colors[v])
 						uvs.append(uvs[v])
-						uv2s.append(uv2s[v])
+						uv2s.append(_skirt_uv2(uv2s[v]))
 					idx.append_array([t0, t1, s0, t1, s0 + 1, s0, t0, s0, t1, t1, s0, s0 + 1])
-		var full := _indices_for(n)
-		idx.append_array(full.slice(6 * (n - 1) * (n - 1)))  # the outer skirts, unchanged
+		var perim := _perimeter(n)
+		for k in perim.size():
+			var t0 := perim[k]
+			var t1 := perim[(k + 1) % perim.size()]
+			if covered.call(_edge_cell(n, t0, t1).x, _edge_cell(n, t0, t1).y):
+				continue
+			var s0 := n * n + k
+			var s1 := n * n + (k + 1) % perim.size()
+			idx.append_array([t0, t1, s0, t1, s1, s0, t0, s0, t1, t1, s0, s1])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -1085,7 +1222,8 @@ func _coarse_mesh(src: Array, n: int, cells_per_tile: int, tpc: int, mask: int, 
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	if not idx.is_empty():
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
 
 
@@ -1197,7 +1335,7 @@ func plant_height(g: PlantGround, x: float, z: float) -> float:
 # Work out and cache the exact terrain height at a point for this chunk's planting.
 func seat_exact(g: PlantGround, x: float, z: float) -> float:
 	var key := Vector2(x, z)
-	var h: float = terrain.height(x, z, _cands_of(_chunk_of(key)), true)
+	var h := _exact_height(x, z, _cands_of(_chunk_of(key)), true)
 	g.exact[key] = h
 	return h
 
@@ -1988,23 +2126,25 @@ func _plan() -> void:
 			if st.plant_job != null:
 				st.plant_job.dist = d
 				st.plant_job.priority = _plant_priority(coord, d)
-	# Near tiles: the 2×2 round the tile corner nearest the car, kept a little past it.
+	# Near tiles: every tile within NEAR_REACH_M of the car, kept a little past it.
 	var tm := settings.near_tile_m
 	for t: Vector2i in _tiles.keys():
 		var ts: TileState = _tiles[t]
-		if ((Vector2(t) + Vector2(0.5, 0.5)) * tm).distance_to(here) / tm > NEAR_KEEP_TILES:
+		if _tile_gap(t, here) > NEAR_REACH_M + NEAR_KEEP_MARGIN_M:
 			_drop_near_tile(t, ts)
 		if ts.near_mesh == null and ts.near_job == null and ts.body == null and ts.col_job == null:
 			_tiles.erase(t)
-	var block := near_tiles_of(here)
-	for i in 4:
-		var t := block.position + Vector2i(i % 2, i >> 1)
+	for t in near_tiles_of(here):
 		var ts := _tile(t)
 		if ts.near_mesh == null and ts.near_job == null:
 			ts.near_job = _new_job(t, Level.NEAR, false)
 		if ts.near_job != null:
 			ts.near_job.dist = ((Vector2(t) + Vector2(0.5, 0.5)) * tm).distance_to(here) / cm
-			ts.near_job.priority = ts.near_job.dist - 200.0
+			ts.near_job.priority = ts.near_job.dist - 200.0 
+	for t in near_tiles_of(here):
+		var ts: TileState = _tiles[t]
+		if ts.near_mesh != null and ts.near_job == null and ts.stitch != _stitch_mask(t):
+			_restitch(ts, _stitch_mask(t))
 	# Cancelled and finished jobs leave now rather than when they reach the head: a queue that
 	# never drains (a car outdriving the far ring) would otherwise carry them for ever.
 	var live: Array[ChunkJob] = []
@@ -2022,10 +2162,22 @@ func collision_block_of(p: Vector2) -> Rect2i:
 	return Rect2i(corner - Vector2i.ONE, Vector2i(2, 2))
 
 
-# The 2×2 near tiles drawn at full detail: the four round the tile corner nearest `p`.
-func near_tiles_of(p: Vector2) -> Rect2i:
-	var corner := Vector2i(roundi(p.x / settings.near_tile_m), roundi(p.y / settings.near_tile_m))
-	return Rect2i(corner - Vector2i.ONE, Vector2i(2, 2))
+# The near tiles drawn at full detail: those whose closest point is within NEAR_REACH_M of `p`.
+func near_tiles_of(p: Vector2) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var lo := _tile_of(p - Vector2.ONE * NEAR_REACH_M)
+	var hi := _tile_of(p + Vector2.ONE * NEAR_REACH_M)
+	for tz in range(lo.y, hi.y + 1):
+		for tx in range(lo.x, hi.x + 1):
+			if _tile_gap(Vector2i(tx, tz), p) <= NEAR_REACH_M:
+				out.append(Vector2i(tx, tz))
+	return out
+
+
+# Distance from `p` to the closest point of tile `t`.
+func _tile_gap(t: Vector2i, p: Vector2) -> float:
+	var tm := settings.near_tile_m
+	return p.distance_to(Vector2(clampf(p.x, t.x * tm, (t.x + 1) * tm), clampf(p.y, t.y * tm, (t.y + 1) * tm)))
 
 
 # Distance as the mid band measures it: true distance ahead of the car, but stretched to the sides
@@ -2088,6 +2240,7 @@ func _drop_near_tile(t: Vector2i, ts: TileState) -> void:
 		ts.near_mesh.queue_free()
 		ts.near_mesh = null
 		ts.near_heights = PackedFloat32Array()
+		ts.near_arrays = []
 		ts.near_road_d = PackedFloat32Array()
 		_holes_due[_chunk_of_tile(t)] = true
 
@@ -2153,6 +2306,21 @@ func _perimeter(n: int) -> PackedInt32Array:
 	for x in range(n - 2, -1, -1): out.append((n - 1) * n + x)
 	for z in range(n - 2, 0, -1): out.append(z * n)
 	return out
+
+
+# The grid cell the chunk-border skirt segment t0 -> t1 hangs from.
+func _edge_cell(n: int, t0: int, t1: int) -> Vector2i:
+	var x0 := t0 % n
+	var z0 := t0 / n
+	var x1 := t1 % n
+	var z1 := t1 / n
+	if z0 == 0 and z1 == 0:
+		return Vector2i(mini(x0, x1), 0)
+	if z0 == n - 1 and z1 == n - 1:
+		return Vector2i(mini(x0, x1), n - 2)
+	if x0 == 0 and x1 == 0:
+		return Vector2i(0, mini(z0, z1))
+	return Vector2i(n - 2, mini(z0, z1))
 
 
 func _indices_for(n: int) -> PackedInt32Array:

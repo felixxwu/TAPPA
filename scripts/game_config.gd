@@ -160,7 +160,7 @@ var peak_torque_rpm := 4500.0
 ## torque (N·m at full 90° tilt) eases the car back toward flat, scaling with how
 ## far it has tilted. Never yaws the car. 0 disables. A landing/anti-flip aid,
 ## not a physical force.
-@export var level_assist_torque := 10000.0
+@export var level_assist_torque := 2000.0
 ## Fraction of level_assist_torque the aid keeps while ALL FOUR wheels are
 ## planted, where it acts as a cheap anti-roll bar: it resists body roll in
 ## corners and dive/squat under braking, and settles the chassis flat ON THE
@@ -187,7 +187,7 @@ var peak_torque_rpm := 4500.0
 ## instead of sliding. Lowering it here restores the real ~1.4 g margin WITHOUT
 ## faking the lever via wheel_roll_influence. Global (all cars); a per-car CarLibrary
 ## field would be the next step if tall vans should roll more than low coupes.
-@export var com_height := 0.0
+@export var com_height := -0.2
 ## Runtime per-axle tyre μ. apply_car() seeds BOTH from the car's single
 ## tire_compound (same rubber front and rear); the grip_balance tuning slider
 ## (TuningLibrary) then shifts them apart to trim handling. The drivetrain scales
@@ -929,11 +929,11 @@ func has_nitrous() -> bool:
 ## Field of view (degrees) for the bonnet camera.
 @export var bonnet_fov := 85.0
 ## Base field of view (degrees) for the chase camera at a standstill.
-@export var chase_fov := 85.0
+@export var chase_fov := 80.0
 ## Extra FOV (degrees) added on top of chase_fov at chase_fov_speed and above, to
 ## sell a sense of speed. The FOV eases linearly from chase_fov (stationary) to
 ## chase_fov + chase_fov_speed_boost at chase_fov_speed (m/s).
-@export var chase_fov_speed_boost := 100.0
+@export var chase_fov_speed_boost := 70.0
 ## Speed (m/s) at which the full chase_fov_speed_boost is reached.
 @export var chase_fov_speed := 55.0
 ## Extra FOV (degrees) added, on top of the speed boost, for as long as nitrous is
@@ -942,7 +942,7 @@ func has_nitrous() -> bool:
 ## moment of the boost, so it reads at any speed. Eases in and out at
 ## chase_fov_smoothing like every other FOV change. 0 disables it.
 ## See features/nitrous.md.
-@export var chase_fov_nitrous_boost := 20.0
+@export var chase_fov_nitrous_boost := 10.0
 ## Easing rate for chase FOV changes (1 - exp(-rate*dt)); higher snaps faster.
 @export var chase_fov_smoothing := 2.0
 ## Dolly-zoom strength: how strongly the follow distance is pulled in to
@@ -3092,9 +3092,15 @@ func spectator_params() -> Dictionary:
 @export var dev_level_instead_of_free_roam := true
 ## The weather id (WeatherLibrary) the level view shows: its particles and wind only.
 @export var dev_level_weather := "dry"
-@export var dev_level_path := "res://tools/levels/hafren_forest.json"
+@export var dev_level_path := "res://tools/levels/hafren_5km.json"
+## Level view: spawn at roads[x][y] of the save (0-based, facing the next node, or the previous one at the end of a road); (-1, -1) keeps the default spawn.
+@export var dev_level_spawn := Vector2i(26, 14)
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
+## Level view: how far trees are drawn, in metres. The level's depth fog ends here, so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.
+@export var level_tree_draw_m := 500.0
+## Level view: a tree tile gets collision boxes once the car is within this many metres of it, and loses them past twice this.
+@export var level_tree_collision_m := 60.0
 ## How far past the road's edge the level view keeps the ground flat at road height before it
 ## blends back to the terrain, in metres. The lab (tools/level_editor_lab.html) mirrors it as ROAD_FLAT_M.
 @export var level_road_flat_margin := 1.0

@@ -99,6 +99,13 @@ jobs:
       - name: Import project (build resource cache)
         run: godot --headless --import --quit || true
 
+      # Level bakes are built locally and published as release assets (tools/publish_bake.sh); web is the only target that bundles tools/levels.
+      - name: Fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tools/fetch_bakes.sh
+
       - name: Export web build (via build_web.sh)
         env:
           GODOT: /usr/local/bin/godot

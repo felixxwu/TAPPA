@@ -30,7 +30,8 @@ dark = lum < 70                                             # heather reads dark
 shadowed = nd.maximum_filter(chm > 6, 9)                   # ...but so does the shadow a spruce wall casts, so skip near tall trees
 level = json.load(open(DIR + "/level.json"))
 m = Image.new("L", (SIZE, SIZE), 0)
-ImageDraw.Draw(m).line([(n["x"] + SIZE / 2, n["z"] + SIZE / 2) for n in level["road"]], fill=255, width=4)
+for road in level.get("roads") or [level["road"]]:
+    ImageDraw.Draw(m).line([(n["x"] + SIZE / 2, n["z"] + SIZE / 2) for n in road], fill=255, width=4)
 road_d = nd.distance_transform_edt(np.asarray(m) == 0)
 cls = np.zeros((SIZE, SIZE), np.uint8)                      # 0 = nothing (under forest canopy, or road)
 open_ = chm < 3
