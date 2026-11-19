@@ -21,6 +21,26 @@ per-car engine RNG is seeded from `Benchmark.RNG_SEED` while `Benchmark.active`.
 be confused with the *standalone* harness (`benchmark/perf_benchmark.gd`,
 [debug-tools.md](debug-tools.md)), which runs this same drive from the command line.
 
+## Level replay (the dev level)
+
+`benchmark/level_replay.gd` (`./run_level_replay.sh`) benchmarks the level view (`GameConfig.dev_level_path`,
+Hafren Forest; [level-editor.md](level-editor.md)) on a drive a person recorded. `--record [path]` opens the level
+for you to drive and, when you quit (pause → quit, or close the window), saves every physics tick's car pose,
+velocities and inputs (default `benchmark/runs/hafren.rec`). With no flag it replays that file: the inputs go
+through `Car.ai_controlled` and the pose is written to the physics server each tick, so the path, dust, marks and
+felled trees repeat exactly; frame rate is uncapped with vsync off, frames are sampled as `BenchmarkRunner` does
+after `WARMUP_FRAMES`, and `BenchmarkStats.print_summary` prints the stats before it quits. Replays use the default
+car and the chase camera, not your save. A replay stops after `DEFAULT_UNTIL_S` (15 s); `--full` plays the whole
+drive, `--until=<s>` any length, and `--off=DustPuffs,BushInteraction*,GroundCover` frees the scene nodes with those names (wildcards) or script classes first, to isolate a feature's
+cost. Every frame over `BenchmarkStats.SPIKE_MS` is printed with its time and the car's position. In a browser
+(`./serve_web.sh`, a web build includes the level and `benchmark/runs/`), `?replay=1` boots straight into it
+(`title_boot.gd`) and takes the same flags from the URL (`&until=30`, `&full=1`); the report POSTs to the collector
+like the in-game benchmark's, labelled `level-replay-<recording>` (plus `-off-<nodes>`). A browser holds the frame to
+the screen's refresh, so `frame_ms` hides headroom; the replay also samples `busy_ms`, the main-thread time from a
+frame's first physics or process step to `RenderingServer.frame_post_draw` (scripts, physics and draw submission,
+not GPU time), which `BenchmarkStats.summarise` reports as `busy_avg_ms` / `_p95` / `_p99` / `_max`. The web
+fullscreen prompt rechecks when `Benchmark.active` flips, since the replay turns it on after boot.
+
 ## Pre-run toggles
 
 The Settings page lists one ON/OFF row per entry in `Benchmark.TOGGLES` so a

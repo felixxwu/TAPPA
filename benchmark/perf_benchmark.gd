@@ -41,7 +41,7 @@ func _ready() -> void:
 	if Benchmark.results.is_empty():
 		print("  TIMED OUT after %d frames — the run never ended." % frames)
 	else:
-		_report(Benchmark.results)
+		BenchmarkStats.print_summary(Benchmark.results, _headless())
 		print("  terrain: ", Benchmark.results.get("terrain", {}))
 		var driver := scene.get_node_or_null("AutoDriver") as AutoDriver
 		if driver != null:
@@ -55,33 +55,3 @@ func _ready() -> void:
 
 func _headless() -> bool:
 	return DisplayServer.get_name() == "headless"
-
-
-# Print the BenchmarkStats.summarise breakdown Benchmark.finish() stored.
-func _report(s: Dictionary) -> void:
-	print("  frames %d   duration %.1f s   distance %.0f m" % [
-		int(s.get("frames", 0)), float(s.get("duration_s", 0.0)),
-		float(s.get("distance_m", 0.0))])
-	print("  fps          avg %7.1f    1%% low %7.1f" % [
-		float(s.get("fps_avg", 0.0)), float(s.get("fps_1pct_low", 0.0))])
-	print("  frame ms     avg %7.2f    p95 %7.2f   p99 %7.2f   max %7.2f" % [
-		float(s.get("frame_avg_ms", 0.0)), float(s.get("frame_p95_ms", 0.0)),
-		float(s.get("frame_p99_ms", 0.0)), float(s.get("frame_max_ms", 0.0))])
-	print("  process ms   avg %7.2f    max %7.2f" % [
-		float(s.get("process_ms_avg", 0.0)), float(s.get("process_ms_max", 0.0))])
-	print("  physics ms   avg %7.2f    max %7.2f" % [
-		float(s.get("physics_ms_avg", 0.0)), float(s.get("physics_ms_max", 0.0))])
-	print("  render cpu   avg %7.2f    max %7.2f" % [
-		float(s.get("render_cpu_ms_avg", 0.0)), float(s.get("render_cpu_ms_max", 0.0))])
-	print("  render gpu   avg %7.2f    max %7.2f" % [
-		float(s.get("render_gpu_ms_avg", 0.0)), float(s.get("render_gpu_ms_max", 0.0))])
-	print("  draws %d   objects %d   prims %d   spikes>%dms %d" % [
-		int(s.get("draws_avg", 0.0)), int(s.get("objects_avg", 0.0)),
-		int(s.get("prims_avg", 0.0)), int(BenchmarkStats.SPIKE_MS),
-		int(s.get("spikes", 0))])
-	var disabled: Array = s.get("disabled", [])
-	if not disabled.is_empty():
-		print("  disabled: %s" % ", ".join(disabled))
-	if float(s.get("render_gpu_ms_avg", 0.0)) <= 0.0 and not _headless():
-		print("  note: GPU timer unsupported on this backend (e.g. OpenGL/macOS).")
-		print("        With vsync off, frame interval ≈ GPU+present cost.")

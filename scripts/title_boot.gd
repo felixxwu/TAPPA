@@ -5,6 +5,9 @@ extends Node
 
 
 func _ready() -> void:
+	if Platform.is_web() and str(JavaScriptBridge.eval("window.location.search", true)).find("replay=1") != -1:
+		get_tree().change_scene_to_file.call_deferred("res://benchmark/level_replay.tscn")  # benchmark/level_replay.gd
+		return
 	if Benchmark.autostart_requested():
 		Benchmark.apply_sweep(Benchmark.fetch_sweep_config())
 		Benchmark.start()

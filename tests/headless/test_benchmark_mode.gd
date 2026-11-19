@@ -190,6 +190,13 @@ func test_summarise_handles_missing_and_empty_streams() -> void:
 	assert_eq(float(s["draws_avg"]), 0.0, "missing streams summarise to zero")
 
 
+func test_summarise_reports_busy_time_only_when_sampled() -> void:
+	assert_false(BenchmarkStats.summarise({"frame_ms": [16.7]}).has("busy_avg_ms"), "no busy stream, no busy stats")
+	var s := BenchmarkStats.summarise({"frame_ms": [16.7, 16.7], "busy_ms": [4.0, 8.0]})
+	assert_almost_eq(float(s["busy_avg_ms"]), 6.0, 0.001, "busy average")
+	assert_eq(float(s["busy_max_ms"]), 8.0, "busy max")
+
+
 func test_summarise_covers_the_monitor_streams() -> void:
 	var s := BenchmarkStats.summarise({
 		"frame_ms": [16.0, 16.0],

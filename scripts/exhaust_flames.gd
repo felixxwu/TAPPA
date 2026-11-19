@@ -70,6 +70,7 @@ var _forced := false
 # scene tree already composes the transform for us — writing it there would fight the
 # parent and stack the offset twice.
 var _follow_car := true
+var _warming := false
 
 
 func setup(car: Node) -> void:
@@ -256,6 +257,8 @@ func _timed_physics_process(delta: float) -> void:
 		_set_lit(false)
 		return
 	var cfg: GameConfig = Config.data
+	if _warming:
+		return  # the warm-up holds the flames lit where it put them until clear_warm_up
 	if _follow_car and is_instance_valid(_car):
 		global_transform = _car.global_transform
 	# Any new limiter cut re-arms the hold; holding the trigger down (a limiter bounce)
@@ -325,11 +328,17 @@ func _set_lit(lit: bool) -> void:
 # world.gd's warm-up pass purely by implementing this pair. Same contract as the particle
 # pools, even though this is not one — the pass keys on the methods, not the type.
 func warm_up(pos: Vector3) -> void:
-	global_position = pos
+	_warming = true
+	# The pipes sit metres behind this node's origin, i.e. behind the camera: move the first pipe onto
+	# `pos`, turned side-on to the view so the flame isn't edge-on.
+	global_transform = Transform3D(global_basis.rotated(Vector3.UP, PI * 0.5), pos)
+	if not _pipes.is_empty():
+		global_position -= global_basis * _pipes[0].position
 	_set_lit(true)
 
 
 func clear_warm_up() -> void:
+	_warming = false
 	_set_lit(false)
 
 

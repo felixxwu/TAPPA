@@ -19,6 +19,7 @@ const OVERLAY_LAYER := 512
 
 var _layer: CanvasLayer
 var _last_size := Vector2i.ZERO
+var _last_bench := false
 
 
 func _ready() -> void:
@@ -33,9 +34,10 @@ func _ready() -> void:
 # web/embedded configs, and the check is a cheap Vector2i compare.
 func _process(_delta: float) -> void:
 	var size := DisplayServer.window_get_size()
-	if size == _last_size:
+	if size == _last_size and Benchmark.active == _last_bench:
 		return
 	_last_size = size
+	_last_bench = Benchmark.active
 	_update()
 
 

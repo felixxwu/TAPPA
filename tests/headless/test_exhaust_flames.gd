@@ -182,8 +182,17 @@ func test_warm_up_shows_then_hides_the_flame() -> void:
 	_flames.warm_up(Vector3(1, 2, 3))
 	assert_true(_flames.is_lit(),
 		"warm-up must actually draw, or the shader never compiles behind the loading overlay")
+	_flames._timed_physics_process(TICK)
+	assert_true(_flames.is_lit(), "a physics tick before the warm-up frame renders must not put the flame out")
 	_flames.clear_warm_up()
 	assert_false(_flames.is_lit(), "and it must not be left burning afterwards")
+
+
+func test_warm_up_puts_the_flame_at_the_given_point() -> void:
+	_flames.warm_up(Vector3(1, 2, 3))
+	assert_almost_eq(_flames.get_child(0).global_position, Vector3(1, 2, 3), Vector3.ONE * 1e-4,
+		"the warm-up point is in front of the camera; the pipe offset must not carry the flame out of view")
+	_flames.clear_warm_up()
 
 
 # --- Frames ------------------------------------------------------------------

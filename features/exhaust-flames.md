@@ -147,7 +147,10 @@ Shader warm-up is **automatic**: `world.gd`'s warm-up pass auto-discovers every 
 implementing the `warm_up()`/`clear_warm_up()` contract, and this implements that pair
 directly (the pass keys on the methods, not on the type, so it works even though this is
 no longer a particle pool) — the shader variant compiles behind the loading overlay
-instead of hitching on the first bang.
+instead of hitching on the first bang. Between `warm_up` and `clear_warm_up` the per-tick
+update is skipped (`_warming`): otherwise the next physics tick, which runs before the frame
+renders, puts the unlit flame out and snaps it back to the car, nothing draws, and the shader
+compiles on the first real bang instead (a ~55 ms hitch, found with the level replay benchmark).
 
 `exhaust_flames_enabled` is the master switch. Per-frame cost is a visibility flag and, only
 while lit, a texture swap — an unlit flame does essentially nothing.
