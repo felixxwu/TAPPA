@@ -81,6 +81,7 @@ var outline_button: Button = null
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
 var _dev_weather_button: Button
+var _dev_level_button: Button
 # Benchmark toggle rows, exposed for tests: [{key: String, button: Button}].
 var benchmark_rows: Array = []
 
@@ -279,6 +280,9 @@ func _build_dev_page() -> void:
 	_dev_weather_button = _make_action_button("", _cycle_dev_weather)
 	_dev_page.add_child(_dev_weather_button)
 	_refresh_dev_weather()
+	_dev_level_button = _make_action_button("", _toggle_dev_level)
+	_dev_page.add_child(_dev_level_button)
+	_refresh_dev_level()
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -669,6 +673,23 @@ func _biome_director() -> BiomeDirector:
 
 
 # Step the forced weather through Auto (the rings' own draw) and every condition, applied at once.
+# Temporary: drive the level-editor save (GameConfig.dev_level_path) instead of free roam. Flipped from inside
+# either world, it swaps worlds at once; from the title it applies to the next world entry.
+func _toggle_dev_level() -> void:
+	Config.data.dev_level_instead_of_free_roam = not Config.data.dev_level_instead_of_free_roam
+	_refresh_dev_level()
+	var scene := get_tree().current_scene
+	if scene == null or not scene.scene_file_path in [Scenes.FREE_ROAM, Scenes.LEVEL_VIEW]:
+		return
+	if scene.has_method("save_world"):
+		scene.save_world()
+	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
+
+
+func _refresh_dev_level() -> void:
+	_dev_level_button.text = "Level instead of free roam: %s" % ("On" if Config.data.dev_level_instead_of_free_roam else "Off")
+
+
 func _cycle_dev_weather() -> void:
 	var director := _biome_director()
 	if director == null:

@@ -212,7 +212,7 @@ suspension), and the replay/cinematic cameras are deliberately steady.
 - `smoothing` (5.0) — rate at which the camera's orbital position eases toward
   the travel direction; higher snaps faster, lower is more languid. The look-at
   is unaffected. See [configuration.md](configuration.md).
-- `chase_fov` (100.0) — base field of view at a standstill.
+- `chase_fov` (85.0) — base field of view at a standstill.
 - `chase_fov_speed_boost` (15.0) — extra FOV degrees added at full speed.
 - `chase_fov_speed` (55.0 m/s) — speed at which the full boost is reached.
 - `chase_fov_nitrous_boost` — extra FOV degrees while nitrous is delivering, a

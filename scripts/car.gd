@@ -211,6 +211,7 @@ func _ready() -> void:
 	global_transform = _start_transform
 	mass = cfg.mass
 	linear_damp = 0.0  # aero drag below is the only speed-dependent loss
+	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE  # COMBINE would add the project's default 0.1/s damping
 	angular_damp = 0.0  # no passive angular decay — the car keeps its spin mid-air
 	# (Godot's implicit default is 0.1; force 0 so a launched car isn't slowed in
 	# the air). Grounded rotation is governed by the tire model + steer/spin assists.
@@ -1430,7 +1431,7 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 func _apply_physics_spec(spec: Dictionary) -> void:
 	var cfg: GameConfig = config
 	cfg.mass = spec["mass"]
-	cfg.drag_coefficient = spec["drag"]
+	cfg.drag_coefficient = float(spec["frontal_area"]) * cfg.drag_per_frontal_area
 	cfg.wheel_radius = spec["wheel_radius"]
 	# All engine data (sound + performance + voicing + the TRANSMISSION it's bolted to:
 	# gear_ratios / final_drive / shift_time) comes from the referenced engine in

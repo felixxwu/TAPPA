@@ -241,11 +241,9 @@ Catalogue fields that describe an engine's shape. Which catalogue owns each is d
   5-speed, the Acty its real HA4 5-speed. Only `final_drive` remains a
   game-tuned value, kept deliberately HIGH (mostly ~6–7, but tuned per car
   across a wider band — e.g. 4 on the torquey Charger up to 12 on the Audi TFSI i5)
-  so the
-  cars pull against Jolt's built-in rolling resistance rather than stalling
-  against a tall real final drive; the internal gear ratios themselves are real.
-  See [drivetrain-and-tires.md](drivetrain-and-tires.md) for why the baseline
-  rolling resistance forces `final_drive` this high. The `GameConfig`
+  — tuned against a hidden damping that has since been removed (see
+  [drivetrain-and-tires.md](drivetrain-and-tires.md)); the internal gear ratios
+  themselves are real. The `GameConfig`
   `gear_ratios`/`final_drive` are only the baseline before a car is selected.
 ## Tests
 

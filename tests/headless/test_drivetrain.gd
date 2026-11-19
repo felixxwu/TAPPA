@@ -159,6 +159,7 @@ func test_brake_lockup() -> void:
 	# disabled here: this test is about the raw brake-torque-to-omega
 	# mechanics, not ABS (see test_abs_*, below, for that).
 	Config.data.abs_enabled = false
+	Config.data.brake_torque *= 2.0  # comfortably more than the tyres can hold, so lockup is certain
 	var fwd := -_car.global_transform.basis.z
 	var r: float = Config.data.wheel_radius
 	_car.linear_velocity = fwd * 15.0
@@ -336,6 +337,7 @@ func test_abs_disabled_still_locks_like_before_abs_existed() -> void:
 	# The abs_enabled config flag is a real off switch: with it false, hard
 	# braking behaves exactly like the pre-ABS lockup in test_brake_lockup.
 	Config.data.abs_enabled = false
+	Config.data.brake_torque *= 2.0  # comfortably more than the tyres can hold, so lockup is certain
 	var fwd := -_car.global_transform.basis.z
 	var r: float = Config.data.wheel_radius
 	_car.linear_velocity = fwd * 15.0

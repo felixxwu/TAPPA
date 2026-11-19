@@ -20,10 +20,9 @@ func after_each() -> void:
 
 func test_drag_applied_in_water_and_recoverable() -> void:
 	_car.set_water_query(func(_pos): return true)
-	Config.data.water_drag = 8.0
+	Config.data.water_drag = _car.mass  # 1 m/s² per m/s: clearly measurable in 20 frames
 	_car.linear_velocity = Vector3(0, 0, -20)
-	var v0 := _car.linear_velocity.length()
 	for i in 20:
 		await get_tree().physics_frame
-	assert_lt(_car.linear_velocity.length(), v0, "water drag slowed the car")
+	assert_lt(absf(_car.linear_velocity.z), 20.0, "water drag slowed the car")
 	assert_gt(absf(_car.global_position.z), 0.0, "car kept moving, no reset to origin")

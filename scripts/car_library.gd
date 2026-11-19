@@ -23,20 +23,10 @@ extends RefCounted
 #   * (gearbox) — gear_ratios / final_drive / shift_time NO LONGER live here; they
 #                moved onto the ENGINE (EngineLibrary), so a swapped engine brings its
 #                own transmission. See EngineLibrary's header for the tuning rationale
-#                (real internal ratios; game-tuned final_drive against Jolt's baseline
-#                rolling resistance; manual-slow vs PDK-fast shift_time).
-#   * drag     — quadratic aero drag coefficient (GameConfig.drag_coefficient):
-#                the force is drag x speed². NOTE these are deliberately SMALL: the
-#                physics engine (Jolt VehicleBody3D) already applies a large
-#                baseline rolling resistance of its own (~0.2 g, mass-proportional;
-#                see features/drivetrain-and-tires.md), which on its own already
-#                lands the cars near their real top speeds. drag is therefore sized
-#                only to TOP UP that baseline to the realistic total — NOT to be the
-#                whole aero force — and was tuned per car by measuring top speed in
-#                the sim. Draggy bodies (Charger) still need a real coefficient;
-#                slippery coupes (Viper, XJS) sit near zero because the engine's
-#                baseline alone already meets (or slightly exceeds) the resistance
-#                for their real top speed.
+#                (real internal ratios; game-tuned final_drive; manual-slow vs PDK-fast
+#                shift_time).
+#   * frontal_area — head-on area (m²) measured from the car's model by
+#                tools/measure_frontal_area.gd; scales its aero drag (GameConfig.drag_per_frontal_area).
 #   * tire_compound — ONE dimensionless rubber-grip coefficient per car (same
 #                compound both axles), ~0.85 for hard economy/commercial tyres up to
 #                ~1.30 for track semi-slicks. This is only the RUBBER; effective μ is
@@ -109,7 +99,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.9, # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"brake_bias": 0.4, # front share of foot-brake torque (50/50 RWD roadster)
 		"brake_torque": 518.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, -0.22, 0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.5, 0.50, 3.8), "cabin": Vector3(1.35, 0.45, 1.40),
 		# Track, wheelbase and tyre size measured off the photogrammetry scan's wheels (tools/car_scan/wheels.py).
@@ -119,7 +109,7 @@ const CARS: Array[Dictionary] = [
 		# Renders the hand-modelled blender/mx5/mx5.glb body (Car/Mx5Body), textured from the
 		# photogrammetry scan, on its own scanned wheels (features/car-scanning.md).
 		"use_model": true,
-		"model_node": "Mx5Body",
+		"model_node": "Mx5Body", "frontal_area": 1.61,
 		"model_texture": "res://blender/mx5/mx5_texture.png",
 		"wheel_texture": "res://blender/mx5/wheel.png",
 		"wheel_model": "res://blender/mx5/wheel.glb",
@@ -133,7 +123,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.88, # economy / touring all-season tyres
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
 		"brake_torque": 458.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": FWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.18, 0), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/focus/focus.glb: L 4.30 m, W 1.84 m (real width; the glb's
 		# 1.89 includes the mirrors, excluded from collision as for the MX-5).
@@ -144,7 +134,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Focus's own wheel.png.
 		"use_model": true,
-		"model_node": "FocusBody",
+		"model_node": "FocusBody", "frontal_area": 2.33,
 		"model_texture": "res://blender/focus/focus_texture.png",
 		"wheel_texture": "res://blender/focus/wheel.png",
 	},
@@ -157,7 +147,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.85, # all-terrain light-truck tyres
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD)
 		"brake_torque": 900.0, # heavy truck; authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0, # tall brick of a cab → real aero drag
+		"drive_mode": RWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.4, 0.0), # local-space nudge for the hood cam; tweak per body
 		# Track, wheelbase and tyre size measured off the photogrammetry scan's wheels (tools/car_scan/wheels.py,
 		# fits.json); the body's arches were cut there, so they must stay matched. Width excludes the mirrors.
@@ -168,7 +158,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/f150/f150.glb (Car/F150Body), a hand-modelled body painted from the
 		# scan's paint video, on its own scanned wheels (features/car-scanning.md).
 		"use_model": true,
-		"model_node": "F150Body",
+		"model_node": "F150Body", "frontal_area": 2.50,
 		"model_texture": "res://blender/f150/f150_texture.png",
 		"wheel_model": "res://blender/f150/wheel.glb",
 	},
@@ -182,7 +172,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.95, # period touring / GT tyres
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy RWD GT)
 		"brake_torque": 889.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, -0.18, 0.0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.59, 0.50, 4.87), "cabin": Vector3(1.45, 0.48, 1.70),
 		"cabin_z": 0.30, "track": 1.60, "wheelbase": 2.68,
@@ -191,7 +181,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "XjsBody",
+		"model_node": "XjsBody", "frontal_area": 1.81,
 		"model_texture": "res://blender/xjs/texture.png",
 		"wheel_texture": "res://blender/xjs/wheel.png",
 	},
@@ -204,7 +194,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.8, # hard commercial tyres, skinny
 		"brake_bias": 0.4, # front share of foot-brake torque (mid-engine, tail-heavy)
 		"brake_torque": 310.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": AWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": AWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, 0.25, -1.15), # cab-over with no bonnet: sits just ahead of the windscreen
 		# Hitbox from blender/acty/acty.glb: L 3.35 m, W 1.42 m (real body width; the real
 		# HA4 is 3.40 m x 1.48 m). Tall cab-over body, so a taller collision box.
@@ -215,7 +205,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/acty/acty.glb (Car/ActyBody) with the texture extracted from
 		# the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "ActyBody",
+		"model_node": "ActyBody", "frontal_area": 1.87,
 		"model_texture": "res://blender/acty/acty_texture.png",
 		"wheel_texture": "res://blender/acty/wheel.png",
 	},
@@ -228,7 +218,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.95, # touring tyres
 		"brake_bias": 0.45, # front share of foot-brake torque (nose-heavy RWD muscle)
 		"brake_torque": 943.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0.05, "downforce_rear": 0,
+		"drive_mode": RWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, -0.03, 0.0), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/charger/charger.glb: L 5.28 m, W 1.88 m (real '69 R/T is
 		# 5.28 m x 1.95 m). Long, low, heavy coupe.
@@ -239,7 +229,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
 		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "ChargerBody",
+		"model_node": "ChargerBody", "frontal_area": 2.01,
 		"model_texture": "res://blender/charger/charger_texture.png",
 		"wheel_texture": "res://blender/charger/wheel.png",
 	},
@@ -252,7 +242,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.85, # hard economy tyres, skinny
 		"brake_bias": 0.4, # front share of foot-brake torque (nose-heavy FWD)
 		"brake_torque": 330.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": FWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": FWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0, 0.17, -0.1), # local-space nudge for the hood cam; tweak per body
 		# Hitbox from blender/twingo/twingo.glb: L 3.38 m, W 1.63 m (real body width).
 		"body": Vector3(1.63, 0.50, 3.38), "cabin": Vector3(1.45, 0.55, 1.50),
@@ -262,7 +252,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/twingo/twingo.glb (Car/TwingoBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Twingo's own wheel.png.
 		"use_model": true,
-		"model_node": "TwingoBody",
+		"model_node": "TwingoBody", "frontal_area": 1.80,
 		"model_texture": "res://blender/twingo/twingo_texture.png",
 		"wheel_texture": "res://blender/twingo/wheel.png",
 	},
@@ -275,7 +265,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.92,
 		"brake_bias": 0.4, # front share of foot-brake torque (rear-engine, tail-heavy)
 		"brake_torque": 489.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, -0.22, 0.0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.75, 0.52, 4.29), "cabin": Vector3(1.40, 0.48, 1.50),
 		"cabin_z": 0.10, "track": 1.6, "wheelbase": 2.35,
@@ -284,7 +274,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/911/911.glb (Car/Porsche911Body) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "Porsche911Body",
+		"model_node": "Porsche911Body", "frontal_area": 1.71,
 		"model_texture": "res://blender/911/texture.png",
 		"wheel_texture": "res://blender/911/wheel.png",
 	},
@@ -298,7 +288,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 0.9, # sticky performance tyres (period bias-belted rubber)
 		"brake_bias": 0.4, # front share of foot-brake torque (~49/51 front-mid RWD)
 		"brake_torque": 827.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0, "downforce_rear": 0,
+		"drive_mode": RWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, -0.19, 0.0), # local-space nudge for the hood cam; tweak per body
 		"body": Vector3(1.92, 0.44, 4.45), "cabin": Vector3(1.40, 0.42, 1.45), # low open roadster
 		"cabin_z": 0.10, "track": 1.55, "wheelbase": 2.6,
@@ -307,7 +297,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/viper/viper.glb (Car/ViperBody) with its baked body atlas
 		# (texture.png); see car.gd apply_car(). Wheels use its own three-spoke wheel.jpg.
 		"use_model": true,
-		"model_node": "ViperBody",
+		"model_node": "ViperBody", "frontal_area": 1.87,
 		"model_texture": "res://blender/viper/texture.png",
 		"wheel_texture": "res://blender/viper/wheel.jpg",
 	},
@@ -321,7 +311,7 @@ const CARS: Array[Dictionary] = [
 		"tire_compound": 1.05, # period touring tyres
 		"brake_bias": 0.3, # front share of foot-brake torque (nose-heavy RWD)
 		"brake_torque": 862.0, # authored so the worst axle sits ~1.5x its static grip budget
-		"drive_mode": RWD, "drag": 0.06, "downforce_rear": 0, # long, brick-like body → real aero drag
+		"drive_mode": RWD, "downforce_rear": 0,
 		"bonnet_cam_offset": Vector3(0.0, -0.02, 0.0), # local-space nudge for the hood cam; tweak per body
 		# ~19 ft (5.9 m) long one-off; box sized to the real length. Verify fit in-game.
 		"body": Vector3(1.90, 0.55, 5.90), "cabin": Vector3(1.45, 0.48, 1.60),
@@ -330,7 +320,7 @@ const CARS: Array[Dictionary] = [
 		"suspension_travel": 0.37, "suspension_stiffness": 11.0, # heavy long GT, softer ride
 		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().
 		"use_model": true,
-		"model_node": "TheBeastBody",
+		"model_node": "TheBeastBody", "frontal_area": 2.28,
 		"model_texture": "res://blender/thebeast/mrbeast_texture.png",
 		"wheel_texture": "res://blender/thebeast/wheel.png",
 	},

@@ -96,6 +96,9 @@ var peak_torque_rpm := 4500.0
 ##      what catches the braking side effect part 1 warns about.
 @export var axle_inertia := 2.645 # kg·m² rear axle spin inertia; fronts use half each
 @export var drag_coefficient := 2.645 # quadratic aero drag on the chassis
+## Aero drag per m² of frontal area (½ × air density × drag coefficient); apply_car
+## sets drag_coefficient = this × the car's authored frontal_area.
+@export var drag_per_frontal_area := 0.2
 ## Fraction of the chassis WIDTH cut off each of the four vertical corners of the
 ## collision hull, chamfering the box into an elongated octagon (top-down). The
 ## cut is applied as an equal ABSOLUTE inset on both the width (X) and length (Z)
@@ -926,7 +929,7 @@ func has_nitrous() -> bool:
 ## Field of view (degrees) for the bonnet camera.
 @export var bonnet_fov := 85.0
 ## Base field of view (degrees) for the chase camera at a standstill.
-@export var chase_fov := 90.0
+@export var chase_fov := 85.0
 ## Extra FOV (degrees) added on top of chase_fov at chase_fov_speed and above, to
 ## sell a sense of speed. The FOV eases linearly from chase_fov (stationary) to
 ## chase_fov + chase_fov_speed_boost at chase_fov_speed (m/s).
@@ -1003,11 +1006,11 @@ func has_nitrous() -> bool:
 @export var shake_g_threshold := 2.5
 ## Intensity added per g of acceleration above shake_g_threshold. 1.0 means ~1 g of excess
 ## already reaches full amplitude.
-@export var shake_g_gain := 0.0
+@export var shake_g_gain := 0.4
 ## SPEED source: intensity added at chase_fov_speed and above (the same reference speed the FOV
 ## ramp uses, so the two "sense of speed" effects cannot disagree), ramping linearly from 0.
 ## A constant low-level buzz — keep it small.
-@export var shake_speed_gain := 0.5
+@export var shake_speed_gain := 0.0
 ## WHEELSPIN source: intensity added per 1.0 of fore/aft breakaway past peak on the worst DRIVEN
 ## tire (Drivetrain.drive_wheelspin_excess). Only driven wheels count — a locked undriven wheel
 ## already reaches the camera through the g-force term.
@@ -1044,7 +1047,7 @@ func has_nitrous() -> bool:
 ## Exponential distance fog. Demoted from "opaque wall hiding the ~75 m terrain
 ## edge" to thin aerial haze now that DistantTerrain provides a far horizon — low
 ## enough to see the distant hills + skybox. See todo/distant-terrain-and-sky.md.
-@export var fog_density := 0.004
+@export var fog_density := 0.0025
 ## How much the fog tints the sky (Environment.fog_sky_affect). Low so the skybox
 ## reads clearly above the haze.
 @export var fog_sky_affect := 0.15
@@ -1388,17 +1391,17 @@ func has_nitrous() -> bool:
 ## Default for the player's Outlines setting (OutlineSetting) when they haven't chosen.
 @export var outlines_enabled := false
 ## 1 = colours untouched, 0 = fully greyscale.
-@export var grade_saturation := 0.7
+@export var grade_saturation := 0.85
 ## Contrast around mid-grey. 1 = untouched. Pushing this hard makes the 5-bit
 ## banding visible in the sky gradient and on flat terrain (the dither only
 ## masks so much).
-@export var grade_contrast := 1.3
+@export var grade_contrast := 1.1
 ## Tint pushed into the dark end of the image — a desaturated brown gives GRID's
 ## muddy warm blacks. Only the HUE matters: the shader divides out the tint's own
 ## luminance so it can't change overall brightness.
-@export var grade_shadow_tint := Color(0.62, 0.52, 0.40)
+@export var grade_shadow_tint := Color(0.75, 0.72, 0.66)
 ## Tint pushed into the bright end — a warm cream for GRID's yellowed highlights.
-@export var grade_highlight_tint := Color(1.0, 0.94, 0.78)
+@export var grade_highlight_tint := Color(1.0, 0.97, 0.9)
 ## Corner darkening strength. 0 = no vignette.
 @export var grade_vignette_strength := 0.6
 ## Normalised radius (1.0 = the edge midpoints) at which the corner darkening
@@ -3082,3 +3085,25 @@ func spectator_params() -> Dictionary:
 @export var minimap_redraw_move_m := 12.0
 ## Resolution of the flat map texture the tilt is applied to, in pixels per side.
 @export var minimap_texture_px := 384
+
+# --- Level editor (temporary dev toggle) ---
+## DEV, temporary: entering the world loads this level-editor save (tools/level_editor_lab.html) in
+## level_view.tscn instead of free roam. Flipped at runtime by the Dev page's level button.
+@export var dev_level_instead_of_free_roam := true
+@export var dev_level_path := "res://tools/levels/hafren_forest.json"
+## How far past the road's edge the level view keeps the ground flat at road height before it
+## blends back to the terrain, in metres. The lab (tools/level_editor_lab.html) mirrors it as ROAD_FLAT_M.
+@export var level_road_flat_margin := 0.5
+
+# --- Ground cover in the level view ---
+## How far from the camera ground-cover tufts are generated, in metres.
+@export var ground_cover_reach := 44.0
+## Tufts shrink to nothing between these two distances from the camera, in metres.
+@export var ground_cover_fade_start := 22.0
+@export var ground_cover_fade_end := 34.0
+## How far the camera moves before the tufts are regenerated around it, in metres.
+@export var ground_cover_rebuild_m := 10.0
+## Bush layers also get a cheap dome version out to this distance (metres), shrinking out between the two fade distances.
+@export var ground_cover_far_reach := 90.0
+@export var ground_cover_far_fade_start := 70.0
+@export var ground_cover_far_fade_end := 90.0

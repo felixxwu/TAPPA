@@ -88,7 +88,9 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [lakes.md](lakes.md) | Per-event water level floods natural basins; the track DFS routes the road around water; soft-hazard drag; `TrackGenParams` shape contract |
 | [track.md](track.md) | Corner shape library (Curve2D) + catalog scene |
 | [stage.md](stage.md) | `StageManager` — the dev stage's countdown → run timer → completion + the car control lock |
-| [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn; `tools/tree_lab.html` procedural tree playground |
+| [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn; `tools/tree_lab.html` procedural tree playground; `tools/groundcover_lab.html` opaque grass-tuft playground |
+| [geo-pipeline.md](geo-pipeline.md) | `tools/geo/` scripts: fetch Welsh LiDAR, OSM and satellite for a real square, build a level editor save and a ground-cover mask |
+| [level-editor.md](level-editor.md) | **Temporary dev tooling:** `tools/level_editor_lab.html` (2D/3D level editor) and `level_view.tscn` (`LevelView`), which drives a saved level in place of free roam behind the Dev page's toggle |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |
 | [barriers.md](barriers.md) | Solid crash barriers on the outside of sharp corners — 2 m modules stitched into a run; armco guardrail on gravel, concrete jersey rail on tarmac (`BarrierSection` / `BarrierLayout` / `BarrierField`) |
 | [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles |

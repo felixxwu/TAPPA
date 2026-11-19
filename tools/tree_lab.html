@@ -33,6 +33,7 @@
   <label><input type="checkbox" id="wind" checked> Wind sway (preview only)</label>
   <button id="glb">Download .glb</button>
   <button id="png">Download PNG billboard</button>
+  <button id="atlas">Download star atlas (game format)</button>
   <button id="copy">Copy settings</button> <span id="copied" class="hint"></span>
   <div id="stats"></div>
   <div class="hint">Drag to orbit, scroll to zoom, right-drag to pan.</div>
@@ -88,6 +89,12 @@ const PRESETS = {
   "Pine": { height: 14, radius: 0.3, flare: 0.6, taper: 0.05, bare: 0.3, levels: 3, trunkKids: 45, kids: 6, angle: 85, subAngle: 50, angleJitter: 8, lenRatio: 0.3, radRatio: 0.35, kidStart: 0.15, gnarl: 0.08, gravity: -0.15, segments: 6, leafCount: 10, leafSize: 0.35, leafAspect: 2.5, leafShape: "needles", leafTilt: 0, shape: "conical", leaf: "#2f4a2a", bark: "#4a3a30" },
   "Birch": { height: 11, radius: 0.16, flare: 0.3, taper: 0.1, bare: 0.4, levels: 3, trunkKids: 18, kids: 5, angle: 35, subAngle: 35, angleJitter: 12, lenRatio: 0.4, radRatio: 0.4, kidStart: 0.2, gnarl: 0.18, gravity: -0.35, segments: 8, leafCount: 16, leafSize: 0.12, leafAspect: 1.3, leafShape: "round", shape: "flame", leaf: "#7a9a38", bark: "#d9d4c8" },
   "Willow": { height: 5, radius: 0.4, flare: 1, taper: 0.2, bare: 0.5, levels: 4, trunkKids: 8, kids: 6, angle: 45, subAngle: 30, angleJitter: 10, lenRatio: 0.9, radRatio: 0.5, kidStart: 0.2, gnarl: 0.2, gravity: -1.2, segments: 12, leafCount: 20, leafSize: 0.18, leafAspect: 4, leafShape: "oval", leafTilt: 0.8, shape: "spherical", leaf: "#7c9640", bark: "#5a4e40" },
+  "Sitka spruce": { height: 22, radius: 0.35, flare: 0.7, taper: 0.03, bare: 0.08, levels: 3, trunkKids: 80, kids: 7, angle: 100, subAngle: 50, angleJitter: 8, lenRatio: 0.3, radRatio: 0.3, kidStart: 0.05, gnarl: 0.05, gravity: -0.35, segments: 6, radial: 6, leafCount: 30, leafSize: 0.5, leafAspect: 2.2, leafShape: "needles", leafStart: 0, leafTilt: 0.3, leafVar: 0.06, shape: "conical", leaf: "#1e3322", bark: "#4a3a30" },
+  "Young spruce (edge)": { height: 10, radius: 0.2, flare: 0.5, taper: 0.04, bare: 0.02, levels: 3, trunkKids: 60, kids: 7, angle: 95, subAngle: 50, angleJitter: 10, lenRatio: 0.38, radRatio: 0.32, kidStart: 0.05, gnarl: 0.06, gravity: -0.2, segments: 6, radial: 6, leafCount: 30, leafSize: 0.45, leafAspect: 2.2, leafShape: "needles", leafStart: 0, leafTilt: 0.25, leafVar: 0.07, shape: "conical", leaf: "#25402a", bark: "#4a3a30" },
+  "Welsh birch": { height: 9, radius: 0.13, flare: 0.3, taper: 0.08, bare: 0.3, levels: 4, trunkKids: 18, kids: 5, angle: 38, subAngle: 35, angleJitter: 15, lenRatio: 0.5, radRatio: 0.42, kidStart: 0.2, gnarl: 0.2, gravity: -0.3, segments: 8, leafCount: 30, leafSize: 0.2, leafAspect: 1.3, leafShape: "round", leafVar: 0.15, shape: "flame", leaf: "#8fbf3c", bark: "#d6d0c4" },
+  "Rowan sapling": { height: 5, radius: 0.13, flare: 0.4, taper: 0.2, bare: 0.35, levels: 4, trunkKids: 9, kids: 5, angle: 45, subAngle: 38, angleJitter: 18, lenRatio: 0.65, radRatio: 0.55, kidStart: 0.25, gnarl: 0.3, gravity: 0.1, segments: 8, leafCount: 42, leafSize: 0.3, leafAspect: 1.5, leafShape: "oval", leafVar: 0.14, shape: "spherical", leaf: "#7cbb35", bark: "#5a5048" },
+  "Alder": { height: 9, radius: 0.28, flare: 0.8, taper: 0.2, bare: 0.25, levels: 4, trunkKids: 12, kids: 5, angle: 42, subAngle: 38, angleJitter: 15, lenRatio: 0.62, radRatio: 0.55, kidStart: 0.3, gnarl: 0.22, gravity: 0.1, segments: 8, leafCount: 45, leafSize: 0.38, leafAspect: 1.2, leafShape: "round", leafVar: 0.12, shape: "spherical", leaf: "#5f9a2e", bark: "#4e4540" },
+  "Roadside scrub": { height: 1.4, radius: 0.08, flare: 0.5, taper: 0.3, bare: 0.02, levels: 4, trunkKids: 12, kids: 4, angle: 60, subAngle: 45, angleJitter: 25, lenRatio: 0.7, radRatio: 0.5, kidStart: 0.1, gnarl: 0.4, gravity: 0.15, segments: 6, leafCount: 18, leafSize: 0.16, leafAspect: 1.2, leafShape: "lobed", leafVar: 0.15, shape: "hemispherical", leaf: "#5f9a2a", bark: "#4e4237" },
   "Dead snag": { height: 7, radius: 0.3, flare: 1, taper: 0.1, bare: 0.25, levels: 3, trunkKids: 9, kids: 3, angle: 50, subAngle: 45, angleJitter: 25, lenRatio: 0.45, radRatio: 0.5, kidStart: 0.2, gnarl: 0.6, gravity: 0.15, segments: 8, leafCount: 0, shape: "conical", bark: "#6b6258" },
 };
 
@@ -328,7 +335,7 @@ function buildImpostor() {
     const a = m.geometry.attributes.position.array;
     for (let i = 0; i < a.length; i += 3) { R = Math.max(R, Math.hypot(a[i], a[i + 2])); top = Math.max(top, a[i + 1]); }
   }
-  const H = top * 1.02, cy = H / 2, res = +$("spriteRes").value, W = Math.max(8, Math.round(res * 2 * R / H));
+  const H = top * 1.02, cy = H / 2, res = exporting?.res || +$("spriteRes").value, W = Math.max(8, Math.round(res * 2 * R / H));
   const cam = new THREE.OrthographicCamera(-R, R, H / 2, -H / 2, 0.1, 4 * R + 10);
   const bg = scene.background;
   scene.background = null; ground.visible = false; impostor.visible = false; tree.rotation.z = 0;
@@ -339,6 +346,7 @@ function buildImpostor() {
     rt.texture.encoding = THREE.sRGBEncoding;
     cam.position.set(Math.sin(th) * (2 * R + 5), cy, Math.cos(th) * (2 * R + 5)); cam.lookAt(0, cy, 0);
     renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, cam);
+    if (exporting) captureFrame(rt, i, n, W, res);
     const card = new THREE.Mesh(new THREE.PlaneGeometry(2 * R, H), cardMaterial(rt.texture));
     card.material.map.dispose = () => rt.dispose();
     card.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: rt.texture, alphaTest: 0.5 });
@@ -369,6 +377,7 @@ function build() {
     tree.add(lmesh); leafTris = leaves.length * 2;
   }
   const box = new THREE.Box3().setFromObject(tree), size = box.getSize(V());
+  if (exporting?.snow) paintSnow(exporting.snow);
   const imp = buildImpostor();
   if (fitNext) {
     fitNext = false;
@@ -379,6 +388,7 @@ function build() {
   const barkTris = bark.geometry.index.count / 3;
   $("stats").textContent = `branches  ${branches.length}\nleaves    ${leaves.length}\ntris      ${barkTris + leafTris}\n  bark    ${barkTris}\n  leaves  ${leafTris}\nsize      ${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} m\nbuild     ${(performance.now() - t0).toFixed(0)} ms` +
     (imp ? `\n\nstar      ${imp.n * 2} tris\n  sprites ${imp.n} × ${imp.W}×${imp.res} px` : "");
+  if (new URLSearchParams(location.search).get("atlas")) document.body.insertAdjacentHTML("beforeend", `<pre id="atlasOut">${starAtlas().toDataURL()}</pre>`); // read back by a headless export
 }
 
 function resize() { const w = $("wrap").clientWidth, h = $("wrap").clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
@@ -410,10 +420,78 @@ function exportPNG() {
   scene.background = bg; ground.visible = true;
   r.domElement.toBlob(b => { download(b, `tree_${$("seed").value}.png`); r.dispose(); });
 }
+// The game's star-tree atlas: 6 transparent frames side by side, frame i seen from (sin i·60°, 0, cos i·60°), trunk centred, base at the bottom.
+function starAtlas(H = 256) {
+  let R = 0.1, top = 0;
+  for (const m of tree.children) {
+    const a = m.geometry.attributes.position.array;
+    for (let i = 0; i < a.length; i += 3) { R = Math.max(R, Math.hypot(a[i], a[i + 2])); top = Math.max(top, a[i + 1]); }
+  }
+  const h = top * 1.02, W = Math.round(H * 2 * R / h);
+  const cam = new THREE.OrthographicCamera(-R, R, h, 0, 0.1, 4 * R + 10);
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  r.outputEncoding = THREE.sRGBEncoding; r.setSize(W, H); r.setClearColor(0, 0);
+  const out = document.createElement("canvas"); out.width = W * 6; out.height = H;
+  const bg = scene.background; scene.background = null; ground.visible = impostor.visible = false; tree.rotation.z = 0;
+  for (let i = 0; i < 6; i++) {
+    const th = i * Math.PI / 3;
+    cam.position.set(Math.sin(th) * (2 * R + 5), 0, Math.cos(th) * (2 * R + 5)); cam.lookAt(0, 0, 0);
+    r.render(scene, cam); out.getContext("2d").drawImage(r.domElement, i * W, 0);
+  }
+  scene.background = bg; ground.visible = impostor.visible = true; r.dispose();
+  return out;
+}
+$("atlas").onclick = () => starAtlas().toBlob(b => download(b, `tree_atlas_${$("seed").value}.png`));
 
-defaults(); Object.assign(state, PRESETS["Broadleaf (oak-ish)"]);
+// The game's shipped tree textures, made by `tools/export_tree_atlases.sh` from this table: each is
+// a species' 6 star sprites side by side (frame i seen from i*60 degrees). `res` scales the sprite
+// height (taiga is drawn taller). Retune a species here, then re-run the script.
+const GAME_TREES = [
+  { file: "tree.png", seed: 3,
+    params: { height: 8, radius: 0.16, flare: 0.4, taper: 0.15, bare: 0.3, levels: 3, trunkKids: 18, kids: 5, angle: 55, subAngle: 40, angleJitter: 12, lenRatio: 0.6, radRatio: 0.5, kidStart: 0.2, gnarl: 0.15, gravity: 0.1, segments: 8, leafCount: 36, leafSize: 0.32, leafAspect: 1.2, leafStart: 0.2, leafShape: "round", leafVar: 0.15, shape: "spherical", leaf: "#5e8a3a", bark: "#5a4e44" } },
+  { file: "tree-greece.webp", seed: 7,
+    params: { height: 2.2, radius: 0.2, flare: 0.8, taper: 0.3, bare: 0.15, levels: 3, trunkKids: 14, kids: 5, angle: 60, subAngle: 45, angleJitter: 15, lenRatio: 0.75, radRatio: 0.5, kidStart: 0.15, gnarl: 0.3, gravity: 0.05, segments: 7, leafCount: 34, leafSize: 0.18, leafAspect: 2.6, leafStart: 0.1, leafShape: "oval", leafVar: 0.12, shape: "spherical", leaf: "#4c5c4a", bark: "#5a5048" } },
+  { file: "tree-taiga.webp", seed: 2, res: 1.5,
+    params: { height: 20, radius: 0.22, flare: 0.5, taper: 0.03, bare: 0.12, levels: 3, trunkKids: 60, kids: 4, angle: 88, subAngle: 60, angleJitter: 8, lenRatio: 0.14, radRatio: 0.3, kidStart: 0.15, gnarl: 0.08, gravity: -0.4, segments: 6, leafCount: 26, leafSize: 0.35, leafAspect: 1.6, leafStart: 0.1, leafShape: "needles", leafTilt: 0, leafVar: 0.1, shape: "conical", leaf: "#26332a", bark: "#3e342e" } },
+  { file: "tree-snow.webp", seed: 4, snow: 0.08,
+    params: { height: 12, radius: 0.25, flare: 0.5, taper: 0.03, bare: 0.04, levels: 3, trunkKids: 46, kids: 4, angle: 80, subAngle: 60, angleJitter: 10, lenRatio: 0.4, radRatio: 0.3, kidStart: 0.1, gnarl: 0.1, gravity: -0.5, segments: 6, leafCount: 34, leafSize: 0.42, leafAspect: 1.6, leafStart: 0.05, leafShape: "needles", leafTilt: 0.1, leafVar: 0.1, shape: "conical", leaf: "#29342e", bark: "#3a302a" } },
+  { file: "tree-snow-laden.webp", seed: 9, snow: 0.35,
+    params: { height: 11, radius: 0.28, flare: 0.5, taper: 0.03, bare: 0.05, levels: 3, trunkKids: 40, kids: 4, angle: 82, subAngle: 60, angleJitter: 14, lenRatio: 0.42, radRatio: 0.3, kidStart: 0.1, gnarl: 0.15, gravity: -0.6, segments: 6, leafCount: 34, leafSize: 0.45, leafAspect: 1.6, leafStart: 0.05, leafShape: "needles", leafTilt: 0.1, leafVar: 0.1, shape: "conical", leaf: "#26302a", bark: "#3a302a" } },
+];
+let exporting = null; const atlases = {};
+// Snow settles on upward-facing leaves, so flatter leaf cards are more likely to be painted white.
+function paintSnow(share) {
+  const lv = tree.getObjectByName("leaves"); if (!lv) return;
+  const c = lv.geometry.attributes.color, n = lv.geometry.attributes.normal, rnd = mulberry32(5);
+  for (let i = 0; i < c.count; i += 4) if (rnd() < share * (0.5 + Math.abs(n.getY(i)))) for (let k = 0; k < 4; k++) c.setXYZ(i + k, 0.85, 0.88, 0.92);
+}
+function captureFrame(rt, i, n, W, H) {
+  if (i === 0) { const c = document.createElement("canvas"); c.width = W * n; c.height = H; atlases[exporting.file] = c; }
+  const buf = new Uint8Array(W * H * 4); renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+  const img = new ImageData(W, H);
+  for (let y = 0; y < H; y++) img.data.set(buf.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);
+  atlases[exporting.file].getContext("2d").putImageData(img, i * W, 0);
+}
+function exportGameTrees(res) {
+  $("spriteCount").value = 6; $("showImpostor").checked = true;
+  for (const t of GAME_TREES) {
+    exporting = { file: t.file, snow: t.snow || 0, res: Math.round(res * (t.res || 1)) };
+    defaults(); Object.assign(state, t.params); $("seed").value = t.seed; build();
+  }
+  exporting = null;
+  const pre = document.createElement("pre"); pre.id = "gameTrees";
+  pre.textContent = JSON.stringify(Object.fromEntries(Object.entries(atlases).map(([f, c]) => [f, c.toDataURL("image/png")])));
+  document.body.append(pre);
+}
+
+// ?preset=Name opens that preset; &render=1 hides the star version and the sway, for clean screenshots
+const q = new URLSearchParams(location.search), start = PRESETS[q.get("preset")] ? q.get("preset") : "Broadleaf (oak-ish)";
+if (q.get("render")) $("showImpostor").checked = $("wind").checked = false;
+defaults(); Object.assign(state, PRESETS[start]);
 buildUI(); syncUI(); resize();
-$("preset").value = "Broadleaf (oak-ish)"; regen(true);
+$("preset").value = start; regen(true);
+// ?export=<sprite height px> renders every GAME_TREES atlas into a <pre> for tools/export_tree_atlases.sh
+if (q.get("export")) exportGameTrees(+q.get("export"));
 </script>
 </body>
 </html>

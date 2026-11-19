@@ -51,6 +51,9 @@ func test_apply_car_overlays_dimensions_mass_engine_and_drive() -> void:
 	assert_almost_eq(_car.mass, float(spec["mass"]), 0.001, "rigidbody mass overlaid")
 	assert_almost_eq(Config.data.mass, float(spec["mass"]), 0.001, "config mass overlaid")
 	assert_almost_eq(Config.data.wheel_radius, float(spec["wheel_radius"]), 0.001, "wheel_radius overlaid")
+	assert_almost_eq(Config.data.drag_coefficient,
+		float(spec["frontal_area"]) * Config.data.drag_per_frontal_area, 0.001,
+		"aero drag scales with the car's frontal area")
 	# The car's referenced engine drives the sound + power (a V8 = 8 cylinders).
 	var eng := EngineLibrary.by_id(spec["engine"])
 	assert_eq(Config.data.engine_cylinders, EngineLibrary.FIRING[eng["layout"]].size(), "cylinders overlaid")
@@ -215,3 +218,4 @@ func _chassis_hull_extents() -> Vector3:
 	for p in hull.points:
 		aabb = aabb.expand(p)
 	return aabb.size
+

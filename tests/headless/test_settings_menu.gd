@@ -337,3 +337,32 @@ func test_developer_builds_still_reach_the_dev_pages() -> void:
 	SettingsMenu.dev_tools_override = -1
 
 	assert_true(joined.contains("BENCHMARK"))
+
+
+class FakeWorld extends Node:
+	var saved := false
+	func save_world() -> void:
+		saved = true
+
+
+func test_the_level_toggle_inside_a_world_saves_it_and_swaps_worlds_at_once() -> void:
+	var menu := _make_menu()
+	var fake := FakeWorld.new()
+	fake.scene_file_path = Scenes.FREE_ROAM
+	get_tree().root.add_child(fake)
+	var real_scene := get_tree().current_scene
+	get_tree().current_scene = fake
+	Config.data.dev_level_instead_of_free_roam = false
+	Scenes.last_blocked_path = ""
+	_dev_button(menu, "level instead of free roam").pressed.emit()
+	get_tree().current_scene = real_scene
+	assert_true(fake.saved, "the world is saved before it's left")
+	fake.free()
+	assert_eq(Scenes.last_blocked_path, Scenes.LEVEL_VIEW)
+
+
+func test_the_level_toggle_on_the_title_waits_for_the_next_world_entry() -> void:
+	var menu := _make_menu()
+	Scenes.last_blocked_path = ""
+	_dev_button(menu, "level instead of free roam").pressed.emit()
+	assert_eq(Scenes.last_blocked_path, "")

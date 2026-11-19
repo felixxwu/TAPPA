@@ -87,3 +87,6 @@ __pycache__/
 /tools/*.png.import
 /tools/snow_capture_*.png
 /tools/snow_capture_*.png.import
+
+# Downloaded satellite / OSM / LiDAR data and generated outputs (re-fetch with tools/geo/fetch.py)
+/tools/geo/data/

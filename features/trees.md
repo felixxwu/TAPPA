@@ -561,7 +561,26 @@ for trunk / branching / growth / leaves, presets, and seeds. It exports a `.glb`
 transparent side-on PNG, the latter in the same shape as the billboard sprites above. Beside
 the real tree it shows a cheap "star" version, rebuilt on every change (`buildImpostor`): N
 (slider, default 6) transparent renders taken evenly around the tree, each on a double-sided card (mirrored on the back) facing the
-direction it was shot from, all crossing at the trunk. All cards always draw. The game's tree textures were generated with it.
+direction it was shot from, all crossing at the trunk. All cards always draw. The game's tree textures were generated with it. `?preset=<name>` opens a preset and `&render=1` hides the star version and sway, for headless screenshots; the Welsh-forest presets (Sitka spruce, young spruce, birch, rowan, alder, roadside scrub) were tuned against a Hafren Forest roadside photo.
+
+## Ground Cover Lab
+
+`tools/groundcover_lab.html` (open the file directly, like the tree lab; the tuft geometry, `PRESETS` and `tuftMaterial` live in `tools/groundcover_tufts.js`, loaded by it and by the level editor lab) designs grass/heather/rush tufts as
+opaque, untextured, vertex-coloured triangles: each blade is a strip of quads up a bending centre line closed
+by a tip triangle (`buildTuft`, 2*segments-1 triangles per blade). It previews them as one instanced field
+around a car-sized box, with wind sway and a shrink-to-nothing distance fade done in the vertex shader
+(`tuftMaterial`), an option to point every normal up so tufts light exactly like flat ground, and stats for
+triangles per tuft and triangles in range. "Download tuft .glb" exports one tuft with vertex colours (a Godot
+material needs `vertex_color_use_as_albedo` to show them). Shape "bush" builds a mound instead
+(`addBush`): a low-poly dome so it's never see-through, coated in single-triangle leaves. "Flowers per tuft"
+perches small flat triangles on blade tips (`addFlowers`). The Hafren presets were matched to Street View photos
+of the Hafren Forest roadside, and `?scene=hafren` (or the checkbox) lays all of them out in bands off a
+single-track road (`MIX`). Nothing in the game uses these tufts yet; the level editor lab draws painted ground cover with them ([level-editor.md](level-editor.md)).
+
+## Level Editor Lab
+
+See [level-editor.md](level-editor.md). Its Welsh tree atlases in `tools/levels/trees/` come from this
+lab's "Download star atlas".
 
 ## Star trees (6-card atlas)
 
@@ -577,4 +596,8 @@ keeps the wind sway and distance shrink. `BillboardField._yaw` (hash of world XZ
 instance a fixed yaw; felling composes the topple tilt on top of it. Cutout mode 0 traces frame 0
 only (`tree_silhouette_mesh` crops the image and squeezes UVs into the frame). `region_library`
 `size_scale` keeps each species' height and sets width = height x frame aspect. The old
-`tools/gen_*` outputs were replaced by tree_lab atlases.
+`tools/gen_*` outputs were replaced by tree_lab atlases. The settings (params + seed + snow share) for every
+shipped tree live in `GAME_TREES` in `tools/tree_lab.html`; `tools/export_tree_atlases.sh [height]`
+re-renders all five in headless Chrome and overwrites `textures/` (default 512 px tall frames, taiga
+1.5x). `Foliage.TREE_SILHOUETTE_EPSILON` is in pixels of a 256 px frame and scales with the texture
+height, so a re-export at another resolution keeps the cutout's triangle count.

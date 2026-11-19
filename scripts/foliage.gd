@@ -18,7 +18,9 @@ const GROUNDCOVER_SCENE := preload("res://models/vegetation/groundcover_opaque.g
 const TREE_TEXTURE := preload("res://textures/tree.png")
 # Silhouette build params for the opaque billboard tree cutout (rendering
 # constants, not gameplay balance). Higher threshold = airier/more fragmented
-# canopy; higher epsilon = fewer triangles. See TreeSilhouette / features/trees.md.
+# canopy; higher epsilon = fewer triangles. Epsilon is in pixels of a 256 px tall
+# frame and scales with the texture, so re-exporting at a higher resolution keeps the
+# triangle count. See TreeSilhouette / features/trees.md.
 const TREE_SILHOUETTE_ALPHA := 0.3
 const TREE_SILHOUETTE_EPSILON := 3.0
 # Near-camera dither dissolve applied to the tree canopy so trees don't block the
@@ -166,7 +168,7 @@ static func tree_silhouette_mesh(tex: Texture2D = TREE_TEXTURE) -> Mesh:
 	var img := tex.get_image()
 	img.crop(int(img.get_width() / float(STAR_CARDS)), img.get_height())
 	var mesh := TreeSilhouette.build(
-		img, TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON, 1.0 / STAR_CARDS)
+		img, TREE_SILHOUETTE_ALPHA, TREE_SILHOUETTE_EPSILON * img.get_height() / 256.0, 1.0 / STAR_CARDS)
 	_tree_silhouette_cache[key] = mesh
 	return mesh
 

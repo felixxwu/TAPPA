@@ -1,0 +1,230 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://car.tscn" id="3_car"]
+
+[ext_resource type="Script" path="res://scripts/chase_camera.gd" id="4_cam"]
+
+[ext_resource type="Shader" path="res://shaders/ps1_models.gdshader" id="5_shader"]
+
+[ext_resource type="Texture2D" path="res://textures/grass.jpg" id="6_grass"]
+
+[ext_resource type="Texture2D" path="res://textures/gravel.jpg" id="7_gravel"]
+
+[ext_resource type="Texture2D" path="res://textures/sky_field.png" id="8_sky"]
+
+[ext_resource type="Script" path="res://scripts/hud.gd" id="20_hud"]
+
+[ext_resource type="Script" path="res://scripts/hud_gauge.gd" id="21_gauge"]
+
+[ext_resource type="Script" path="res://scripts/mobile_controls.gd" id="22_mobile"]
+
+[ext_resource type="Script" path="res://scripts/camera_manager.gd" id="23_cammgr"]
+
+[ext_resource type="Script" path="res://scripts/pause_menu.gd" id="24_pause"]
+
+[ext_resource type="PackedScene" path="res://post_process.tscn" id="25_pp"]
+
+[ext_resource type="Script" path="res://scripts/speed_lines.gd" id="26_lines_s"]
+
+[ext_resource type="Shader" path="res://shaders/speed_lines.gdshader" id="27_lines"]
+
+[ext_resource type="Script" path="res://scripts/level_view.gd" id="level_script"]
+
+[sub_resource type="FastNoiseLite" id="sky_noise"]
+noise_type = 3
+frequency = 0.012
+fractal_octaves = 5
+fractal_gain = 0.55
+
+[sub_resource type="Gradient" id="sky_ramp"]
+offsets = PackedFloat32Array(0.0, 0.4, 0.62, 1.0)
+colors = PackedColorArray(0.42, 0.5, 0.66, 1, 0.6, 0.67, 0.8, 1, 0.86, 0.88, 0.92, 1, 0.97, 0.97, 0.97, 1)
+
+[sub_resource type="NoiseTexture2D" id="sky_tex"]
+width = 1024
+height = 512
+seamless = true
+color_ramp = SubResource("sky_ramp")
+noise = SubResource("sky_noise")
+
+[sub_resource type="PanoramaSkyMaterial" id="sky_mat"]
+panorama = SubResource("sky_tex")
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+fog_enabled = true
+fog_light_color = Color(0.72, 0.82, 0.95, 1)
+fog_sky_affect = 0.0
+
+[sub_resource type="ShaderMaterial" id="mat_ground"]
+render_priority = 0
+shader = ExtResource("5_shader")
+shader_parameter/albedo_texture = ExtResource("6_grass")
+shader_parameter/road_texture = ExtResource("7_gravel")
+shader_parameter/albedo_color = Color(1, 1, 1, 1)
+shader_parameter/texture_tile = Vector2(1, 1)
+shader_parameter/blend_road = true
+shader_parameter/road_uv_scale = 1.0
+shader_parameter/tarmac_color = Color(0.62, 0.63, 0.63, 1)
+
+[sub_resource type="ShaderMaterial" id="mat_lines"]
+shader = ExtResource("27_lines")
+shader_parameter/intensity = 0.0
+shader_parameter/line_color = Color(0, 0, 0, 1)
+shader_parameter/density = 28.0
+shader_parameter/inner_radius = 0.55
+shader_parameter/outer_radius = 0.9
+shader_parameter/flicker_speed = 14.0
+
+[node name="LevelView" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Level" type="Node3D" parent="."]
+script = ExtResource("level_script")
+material = SubResource("mat_ground")
+
+[node name="Car" parent="." instance=ExtResource("3_car")]
+
+[node name="BonnetCamera" type="Camera3D" parent="Car"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.7, -0.6)
+
+[node name="ChaseCamera" type="Camera3D" parent="." node_paths=PackedStringArray("target", "mobile_controls")]
+fov = 100.0
+script = ExtResource("4_cam")
+target = NodePath("../Car")
+mobile_controls = NodePath("../MobileControls")
+
+[node name="CameraManager" type="Node" parent="." node_paths=PackedStringArray("chase_camera", "bonnet_camera")]
+script = ExtResource("23_cammgr")
+chase_camera = NodePath("../ChaseCamera")
+bonnet_camera = NodePath("../Car/BonnetCamera")
+
+[node name="PostProcess" parent="." instance=ExtResource("25_pp")]
+
+[node name="SpeedLines" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+script = ExtResource("26_lines_s")
+car = NodePath("../Car")
+
+[node name="ColorRect" type="ColorRect" parent="SpeedLines"]
+material = SubResource("mat_lines")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="HUD" type="CanvasLayer" parent="." node_paths=PackedStringArray("car")]
+layer = 2
+script = ExtResource("20_hud")
+car = NodePath("../Car")
+
+[node name="SpeedLabel" type="Label" parent="HUD"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 108.0
+offset_bottom = 28.0
+theme_override_font_sizes/font_size = 18
+text = "0 km/h"
+
+[node name="GearLabel" type="Label" parent="HUD"]
+offset_left = 8.0
+offset_top = 28.0
+offset_right = 33.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 18
+text = "1"
+
+[node name="RPMLabel" type="Label" parent="HUD"]
+offset_left = 28.0
+offset_top = 28.0
+offset_right = 128.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 18
+text = "0 rpm"
+
+[node name="BoostGauge" type="Control" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -32.0
+offset_top = -96.0
+offset_right = 0.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("21_gauge")
+icon = 1
+
+[node name="HPGauge" type="Control" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -64.0
+offset_top = -96.0
+offset_right = -32.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("21_gauge")
+icon = 0
+
+[node name="NitrousGauge" type="Control" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = -96.0
+offset_right = 32.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("21_gauge")
+icon = 2
+
+[node name="TempGauge" type="Control" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = -96.0
+offset_right = 64.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("21_gauge")
+icon = 3
+
+[node name="ImpactFlash" type="ColorRect" parent="HUD"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(1, 0.15, 0.1, 0)
+
+[node name="MobileControls" type="CanvasLayer" parent="."]
+layer = 3
+script = ExtResource("22_mobile")
+
+[node name="PauseMenu" type="CanvasLayer" parent="." node_paths=PackedStringArray("camera_manager", "mobile_controls")]
+process_mode = 3
+layer = 5
+script = ExtResource("24_pause")
+camera_manager = NodePath("../CameraManager")
+mobile_controls = NodePath("../MobileControls")

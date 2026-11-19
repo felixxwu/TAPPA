@@ -35,8 +35,7 @@ extends RefCounted
 #                     engine-swap weight model (features/engine-swap.md).
 #   * gear_ratios / final_drive / shift_time — the TRANSMISSION bolted to this engine.
 #                     Real published internal ratios + a game-tuned final_drive (kept
-#                     higher than the real ~3-4 so each pulls against Jolt's built-in
-#                     rolling resistance) + the clutch-open shift cut (manual slow, PDK
+#                     higher than the real ~3-4) + the clutch-open shift cut (manual slow, PDK
 #                     fast). apply() writes them, so an ENGINE SWAP carries its whole
 #                     drivetrain — gearing spacing, overall ratio, and shift feel — to
 #                     the new car (features/engine-swap.md). See features/drivetrain-and-tires.md.

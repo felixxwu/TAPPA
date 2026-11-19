@@ -1,0 +1,842 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Level Editor Lab</title>
+<style>
+  body { margin: 0; display: flex; flex-direction: column; font: 13px system-ui, sans-serif; background: #15171a; color: #ddd; height: 100vh; }
+  #bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px 12px; background: #1d2024; }
+  #bar label, #pop label { display: flex; align-items: center; gap: 6px; }
+  #bar input[type=range] { width: 110px; }
+  input[type=number] { width: 70px; }
+  .val { color: #9ab; min-width: 34px; font-family: ui-monospace, monospace; }
+  #coverBar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  #coverBar[hidden] { display: none; }
+  #views { flex: 1; display: flex; min-height: 0; }
+  #views > div { flex: 1; position: relative; min-width: 0; border-left: 1px solid #333; overflow: hidden; }
+  #views canvas { display: block; width: 100%; height: 100%; }
+  #map { cursor: crosshair; }
+  .hint { position: absolute; left: 8px; bottom: 8px; padding: 4px 8px; background: rgba(0,0,0,.55); color: #ccd; font-size: 11px; pointer-events: none; white-space: pre; }
+  #pop { position: absolute; display: none; flex-direction: column; gap: 5px; padding: 8px 10px; background: #1d2024ee; border: 1px solid #fc6; border-radius: 4px; }
+  #pop label { justify-content: space-between; }
+  #pop b { color: #fc6; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <label>New tree <select id="kind"></select></label>
+  <label>Seed <input id="seed" type="number"></label>
+  <label>Relief <input id="relief" type="range" min="0" max="60" step="1"><span class="val" id="v_relief"></span></label>
+  <button id="save">Save .json</button>
+  <button id="loadBtn">Load .json</button><input id="loadFile" type="file" accept=".json" hidden>
+  <button id="random">🎲 Random</button>
+  <button id="reset">Reset</button>
+  <label>Tool <select id="tool"><option value="edit">Trees &amp; road</option><option value="cover">Ground cover</option></select></label>
+  <span id="coverBar" hidden>
+    <label>Cover <select id="coverType"></select></label>
+    <label>Brush <input id="brush" type="range" min="1" max="40" step="1" value="6"><span class="val" id="v_brush"></span></label>
+    <label>Mode <select id="coverMode"><option value="paint">Paint</option><option value="erase">Erase</option></select></label>
+    <button id="coverImport">Import cover mask</button><input id="coverFile" type="file" accept=".png,image/png" hidden>
+    <button id="coverClear">Clear cover</button>
+  </span>
+  <label><input id="showCover" type="checkbox" checked> Cover overlay</label>
+  <button id="bake">Bake visibility</button>
+  <span class="val" id="sight"></span>
+</div>
+<div id="views">
+  <div id="wrap2d"><canvas id="map"></canvas><div id="pop"></div><div class="hint">drag empty: pan · wasd: walk (shift: run) · wheel: zoom · click empty: add tree
+after Bake visibility, the road point nearest the centre decides what's shown: faded trees are hidden
+cover tool: drag paints (right-drag pans) · e: paint/erase · [ ]: brush · 1-4: type · c: switch tool
+click tree / node: select (details pop up) · drag the selected tree / node: move
+selected node: drag ◆ handles to bend (direction + tension), ● handles to widen
+shift+click: extend road · double-click road: insert node · Delete removes selection</div></div>
+  <div id="wrap3d"><div class="hint" id="hint3d">drag: orbit around the 2D view's centre · wheel: zoom</div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="groundcover_tufts.js"></script>
+<script>
+// A hand-editable patch of world: a 2D top-down editor (left) and the same patch rendered in 3D the way the game draws it (right).
+const $ = id => document.getElementById(id);
+
+const SIZE = 600, N = 200, CELL = SIZE / N, CONTOUR_M = 2, FALLOFF = 1, ROAD_FLAT_M = 0.5; // ROAD_FLAT_M mirrors GameConfig.level_road_flat_margin
+// The ground is rebuilt on a 1.5 m grid like the game's, fine enough to show the 1 m road-edge blend; N is the saved heightmap's grid.
+const G = 400, GCELL = SIZE / G;
+// Height follows region_library.gd's tree_mix sizes; width is height x the atlas frame's aspect.
+const KINDS = {
+  "tree.png": { h: 9.375, col: "#4f7a2c" },
+  "tree-greece.webp": { h: 4.0, col: "#7a8a3a" },
+  "tree-taiga.webp": { h: 22.5, col: "#2f4a2a" },
+  "tree-snow.webp": { h: 12.9, col: "#cfd8dc" },
+  "tree-snow-laden.webp": { h: 12.4, col: "#e6ecef" },
+  // Welsh forest species, exported from the tree lab's presets as star atlases; tint = level_view.gd's KIND_TINT
+  "levels/trees/sitka_spruce.png": { h: 22, col: "#1e3322", tint: [0.3, 0.38, 0.32] },
+  "levels/trees/young_spruce.png": { h: 10, col: "#25402a", tint: [0.34, 0.42, 0.34] },
+  "levels/trees/birch.png": { h: 9, col: "#9fcf4c", tint: [0.82, 0.86, 0.72] },
+  "levels/trees/rowan.png": { h: 5, col: "#7cbb35", tint: [0.82, 0.86, 0.72] },
+  "levels/trees/alder.png": { h: 9, col: "#5f9a2e", tint: [0.8, 0.86, 0.72] },
+  "levels/trees/scrub.png": { h: 1.4, col: "#6faa3a", tint: [0.8, 0.85, 0.72] },
+};
+// Game textures are named bare; the lab's own atlases are paths relative to this page.
+const texUrl = kind => kind.includes("/") ? kind : "../textures/" + kind;
+const aspects = {};
+// A tree stores stretch factors; its real size is the species' size times them.
+const treeH = t => KINDS[t.kind].h * t.sy, treeW = t => KINDS[t.kind].h * (aspects[t.kind] ?? 1) * t.sx;
+
+// --- level data ---------------------------------------------------------------------------
+// A road node: position, half-width w, and an optional hand-set tangent m (null = follow its neighbours), scaled by tension.
+const node = (x, z, w = 2.9) => ({ x, z, w, m: null, tension: 1 });
+// The Random button: a road wandering across the square from the west edge, trees scattered off it.
+function randomLevel(seed) {
+  const rnd = mulberry32(seed), road = [];
+  let x = -SIZE * 0.45, z = (rnd() - 0.5) * SIZE * 0.6, heading = (rnd() - 0.5) * 0.8;
+  const w = 2.5 + rnd() * 2;
+  while (Math.abs(x) <= SIZE * 0.45 && Math.abs(z) <= SIZE * 0.45 && road.length < 30) {
+    road.push(node(x, z, w * (0.85 + rnd() * 0.3)));
+    heading = Math.max(-1.2, Math.min(1.2, heading + (rnd() - 0.5) * 1.6 - z / SIZE)); // keeps drifting east, pulled back toward the middle
+    const step = 40 + rnd() * 60;
+    x += Math.cos(heading) * step; z += Math.sin(heading) * step;
+  }
+  return { ...scatter(road, rnd, 60 + Math.floor(rnd() * 160)), seed: Math.floor(rnd() * 1e6), relief: 10 + Math.floor(rnd() * 40) };
+}
+function scatter(road, rnd, count) {
+  const trees = [], s = roadSamples(road), kind = $("kind").value || "tree.png";
+  while (trees.length < count) {
+    const t = { x: (rnd() - 0.5) * SIZE * 0.9, z: (rnd() - 0.5) * SIZE * 0.9, rot: rnd() * 360, sx: 1, sy: 0.8 + rnd() * 0.4, kind };
+    if (nearestRoad(t.x, t.z, s).d > 10) trees.push(t);
+  }
+  return { road, trees };
+}
+function defaultLevel() {
+  const road = [[-260, 40], [-170, -30], [-80, 10], [0, -60], [90, -10], [170, 70], [260, 20]].map(([x, z]) => node(x, z));
+  return { ...scatter(road, mulberry32(3), 140), seed: 1, relief: 25 };
+}
+let level;
+// Saves are packed: trees as [x, z, rot, sx, sy, kind index] rows, the height grid as base64 int16 decimetres, the ground cover as base64 bytes.
+const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100;
+function toB64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192)); // spreading a whole grid at once overflows the call stack
+  return btoa(bin);
+}
+const fromB64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+function pack(l) {
+  const kinds = [...new Set(l.trees.map(t => t.kind))];
+  // a bake from before the last edit is dropped here, so anything reading a save (the game) can trust its bake
+  const out = { ...l, visibility: l.visibility?.key === bakeKey(l) ? l.visibility : undefined, kinds, trees: l.trees.map(t => [r1(t.x), r1(t.z), Math.round(t.rot), r2(t.sx), r2(t.sy), kinds.indexOf(t.kind)]),
+    road: l.road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension) })) };
+  if (l.heightmap) {
+    const bytes = new Uint8Array(Int16Array.from(l.heightmap, h => Math.round(h * 10)).buffer);
+    out.heightmap = toB64(bytes);
+  }
+  if (l.cover?.some(v => v)) {
+    out.cover = toB64(l.cover);
+    out.coverKinds = Object.fromEntries(Object.entries(COVER_RENDER).map(([id, layers]) => [id, layers.map(([name, dens]) => [{ ...PRESET_BASE, ...PRESETS[name] }, dens])]));
+  } else { delete out.cover; delete out.coverKinds; }
+  return out;
+}
+function unpack(l) {
+  if (!l?.kinds) return l; // an unpacked (older) save
+  const out = { ...l, trees: l.trees.map(([x, z, rot, sx, sy, k]) => ({ x, z, rot, sx, sy, kind: l.kinds[k] })) };
+  delete out.kinds; delete out.coverKinds;
+  if (typeof l.heightmap === "string") out.heightmap = Array.from(new Int16Array(fromB64(l.heightmap).buffer), v => v / 10);
+  if (typeof l.cover === "string") out.cover = fromB64(l.cover);
+  return out;
+}
+try { level = unpack(JSON.parse(localStorage.getItem("levelEditorLab"))); } catch (e) {}
+function save() { try { localStorage.setItem("levelEditorLab", JSON.stringify(pack(level))); } catch (e) {} }
+
+// --- ground cover: a 1 m grid of type ids over the square (row 0 = north edge, col 0 = west edge, 0 = none) ---
+const COVER_DEFAULT = [
+  { id: 1, name: "Verge grass", col: "#8fd23f" }, { id: 2, name: "Molinia", col: "#d9c27a" },
+  { id: 3, name: "Heather", col: "#a24fb0" }, { id: 4, name: "Bilberry / scrub", col: "#2f7a46" },
+];
+const coverImg = new ImageData(SIZE, SIZE), coverOverlay = document.createElement("canvas");
+coverOverlay.width = coverOverlay.height = SIZE;
+let coverImgDirty = true;
+const coverTool = () => $("tool").value === "cover";
+function coverRgb(id) { const c = parseInt((level.coverTypes.find(t => t.id === id)?.col ?? "#888888").slice(1), 16); return [c >> 16, c >> 8 & 255, c & 255]; }
+function paintCoverPixel(i) { const id = level.cover[i]; if (id) coverImg.data.set([...coverRgb(id), 255], i * 4); else coverImg.data[i * 4 + 3] = 0; }
+function coverRebuild() { for (let i = 0; i < SIZE * SIZE; i++) paintCoverPixel(i); coverImgDirty = cover3DDirty = mapDirty = true; }
+function paintCover(x, z, r, id) {
+  const c0 = Math.max(0, Math.floor(x + SIZE / 2 - r)), c1 = Math.min(SIZE - 1, Math.ceil(x + SIZE / 2 + r));
+  const r0 = Math.max(0, Math.floor(z + SIZE / 2 - r)), r1 = Math.min(SIZE - 1, Math.ceil(z + SIZE / 2 + r));
+  for (let rr = r0; rr <= r1; rr++) for (let cc = c0; cc <= c1; cc++) {
+    const i = rr * SIZE + cc;
+    if (Math.hypot(cc + 0.5 - SIZE / 2 - x, rr + 0.5 - SIZE / 2 - z) <= r && level.cover[i] !== id) { level.cover[i] = id; paintCoverPixel(i); }
+  }
+  coverImgDirty = cover3DDirty = mapDirty = true;
+}
+// Paints a round dab every half brush-width along the drag so fast strokes leave no gaps.
+function coverStroke(d, [x, z]) {
+  const r = +$("brush").value, id = $("coverMode").value === "erase" || d.shift ? 0 : +$("coverType").value, [lx, lz] = d.last;
+  const n = Math.max(1, Math.ceil(Math.hypot(x - lx, z - lz) / Math.max(1, r / 2)));
+  for (let k = 1; k <= n; k++) paintCover(lx + (x - lx) * k / n, lz + (z - lz) * k / n, r, id);
+  d.last = [x, z];
+}
+// A greyscale PNG whose pixel value is the type id (tools/geo/cover_mask.py), stretched to the square; unknown values become none.
+async function importCover(file) {
+  const bmp = await createImageBitmap(file, { colorSpaceConversion: "none" }), c = document.createElement("canvas");
+  c.width = c.height = SIZE;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.imageSmoothingEnabled = false; g.drawImage(bmp, 0, 0, SIZE, SIZE);
+  const px = g.getImageData(0, 0, SIZE, SIZE).data, ids = new Set(level.coverTypes.map(t => t.id));
+  level.cover = Uint8Array.from({ length: SIZE * SIZE }, (_, i) => ids.has(px[i * 4]) ? px[i * 4] : 0);
+  coverRebuild(); save();
+}
+
+// --- the road: a cubic Hermite spline through the nodes, sampled every ~2 m ---------------------
+function tangent(road, i) {
+  const n = road[i], a = road[Math.max(0, i - 1)], b = road[Math.min(road.length - 1, i + 1)];
+  const m = n.m ?? { x: (b.x - a.x) / 2, z: (b.z - a.z) / 2 };
+  return { x: m.x * n.tension, z: m.z * n.tension };
+}
+const segSteps = (a, b) => Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 2));
+function roadSamples(road) {
+  const out = [];
+  for (let i = 0; i < road.length - 1; i++) {
+    const p1 = road[i], p2 = road[i + 1], m1 = tangent(road, i), m2 = tangent(road, i + 1), n = segSteps(p1, p2);
+    for (let j = i ? 1 : 0; j <= n; j++) {
+      const t = j / n, t2 = t * t, t3 = t2 * t, h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+      out.push({ x: h00 * p1.x + h10 * m1.x + h01 * p2.x + h11 * m2.x, z: h00 * p1.z + h10 * m1.z + h01 * p2.z + h11 * m2.z, w: p1.w + (p2.w - p1.w) * t, seg: i });
+    }
+  }
+  return out;
+}
+function nearestRoad(x, z, samples) {
+  let best = { d: Infinity, i: 0 };
+  for (let i = 0; i < samples.length - 1; i++) {
+    const a = samples[i], b = samples[i + 1], abx = b.x - a.x, abz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / (abx * abx + abz * abz || 1)));
+    const d = Math.hypot(x - a.x - abx * t, z - a.z - abz * t);
+    if (d < best.d) best = { d, i };
+  }
+  return best;
+}
+
+// --- terrain: seeded noise, with the ground pulled to the road's own smoothed level near it ---
+function hash2(x, y, s) { let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s | 0, 2147483647); h = Math.imul(h ^ h >>> 13, 1274126177); return ((h ^ h >>> 16) >>> 0) / 4294967296; }
+function vnoise(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi, s), b = hash2(xi + 1, yi, s), c = hash2(xi, yi + 1, s), d = hash2(xi + 1, yi + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+const fbm = (x, y, s) => vnoise(x, y, s) * 0.6 + vnoise(x * 2.1, y * 2.1, s + 7) * 0.3 + vnoise(x * 4.3, y * 4.3, s + 13) * 0.1;
+// A level may carry a real height grid (heightmap, row-major (N+1)² over the square); otherwise the ground is seeded noise.
+function natural(x, z) {
+  if (!level.heightmap) return level.relief * (fbm(x / 160 + 3, z / 160 + 3, level.seed) - 0.5) * 2;
+  const fc = Math.max(0, Math.min(N - 1e-6, (x + SIZE / 2) / CELL)), fr = Math.max(0, Math.min(N - 1e-6, (z + SIZE / 2) / CELL));
+  const c = Math.floor(fc), r = Math.floor(fr), u = fc - c, v = fr - r, H = (cc, rr) => level.heightmap[rr * (N + 1) + cc];
+  return (H(c, r) * (1 - u) + H(c + 1, r) * u) * (1 - v) + (H(c, r + 1) * (1 - u) + H(c + 1, r + 1) * u) * v;
+}
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+let samples = [], heights = new Float32Array((G + 1) ** 2), roadD = new Float32Array((G + 1) ** 2); // roadD: metres beyond the road's edge
+function rebuildTerrain() {
+  samples = level.road.length > 1 ? roadSamples(level.road) : [];
+  for (const s of samples) s.h = natural(s.x, s.z);
+  for (let pass = 0; pass < 3; pass++) { // a moving average along the road, so it rolls gently instead of copying every bump
+    const hs = samples.map(s => s.h);
+    samples.forEach((s, i) => { let sum = 0, n = 0; for (let k = -12; k <= 12; k++) { const v = hs[i + k]; if (v !== undefined) { sum += v; n++; } } s.h = sum / n; });
+  }
+  // ponytail: bucket grid of road segments so each terrain vertex checks only the nearby ones
+  const B = 20, buckets = new Map(), reach = FALLOFF + 14;
+  for (let i = 0; i < samples.length - 1; i++) {
+    const a = samples[i], b = samples[i + 1];
+    for (let gx = Math.floor((Math.min(a.x, b.x) - reach) / B); gx <= Math.floor((Math.max(a.x, b.x) + reach) / B); gx++)
+      for (let gz = Math.floor((Math.min(a.z, b.z) - reach) / B); gz <= Math.floor((Math.max(a.z, b.z) + reach) / B); gz++) {
+        const k = gx * 100003 + gz; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(i);
+      }
+  }
+  for (let r = 0; r <= G; r++) for (let c = 0; c <= G; c++) {
+    const x = c * GCELL - SIZE / 2, z = r * GCELL - SIZE / 2;
+    let h = natural(x, z), best = null;
+    for (const i of buckets.get(Math.floor(x / B) * 100003 + Math.floor(z / B)) || []) {
+      const a = samples[i], b = samples[i + 1], abx = b.x - a.x, abz = b.z - a.z;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / (abx * abx + abz * abz || 1)));
+      const d = Math.hypot(x - a.x - abx * t, z - a.z - abz * t);
+      if (!best || d < best.d) best = { d, h: a.h + (b.h - a.h) * t, w: a.w + (b.w - a.w) * t };
+    }
+    if (best) h = best.h - 0.05 + (h - best.h + 0.05) * smooth(best.w + ROAD_FLAT_M, best.w + ROAD_FLAT_M + FALLOFF, best.d);
+    heights[r * (G + 1) + c] = h;
+    roadD[r * (G + 1) + c] = best ? best.d - best.w : 1000;
+  }
+  buildContours();
+}
+function heightAt(x, z) {
+  const fc = Math.max(0, Math.min(G - 1e-6, (x + SIZE / 2) / GCELL)), fr = Math.max(0, Math.min(G - 1e-6, (z + SIZE / 2) / GCELL));
+  const c = Math.floor(fc), r = Math.floor(fr), u = fc - c, v = fr - r, H = (cc, rr) => heights[rr * (G + 1) + cc];
+  return (H(c, r) * (1 - u) + H(c + 1, r) * u) * (1 - v) + (H(c, r + 1) * (1 - u) + H(c + 1, r + 1) * u) * v;
+}
+
+let seen = new Uint8Array(0); // per tree: 1 shown, 0 culled
+
+// --- 2D view ------------------------------------------------------------------------------
+const cv = $("map"), ctx = cv.getContext("2d");
+const view = { x: 0, z: 0, zoom: 1.4 }; // world point at the canvas centre, pixels per metre
+let shade = null, contours = null, contoursMajor = null, sel = null; // sel = { type: "tree"|"node", i }
+
+function buildContours() {
+  // hillshaded height image, one pixel per terrain cell
+  const img = new ImageData(G + 1, G + 1);
+  let lo = Infinity, hi = -Infinity;
+  for (const h of heights) { lo = Math.min(lo, h); hi = Math.max(hi, h); }
+  for (let r = 0; r <= G; r++) for (let c = 0; c <= G; c++) {
+    const i = r * (G + 1) + c, h = heights[i];
+    const dx = heights[r * (G + 1) + Math.min(G, c + 1)] - heights[r * (G + 1) + Math.max(0, c - 1)];
+    const dz = heights[Math.min(G, r + 1) * (G + 1) + c] - heights[Math.max(0, r - 1) * (G + 1) + c];
+    const s = Math.max(0.45, Math.min(1.3, 0.9 - (dx + dz) / (2 * GCELL) * 1.5)), lift = (h - lo) / Math.max(1, hi - lo) * 50;
+    img.data.set([85 * s + lift, 112 * s + lift, 74 * s + lift, 255], i * 4);
+  }
+  shade = document.createElement("canvas"); shade.width = shade.height = G + 1;
+  shade.getContext("2d").putImageData(img, 0, 0);
+  // marching squares for every CONTOUR_M step, in world coordinates; every fifth line is bolder
+  contours = new Path2D(); contoursMajor = new Path2D();
+  for (let lvl = Math.ceil(lo / CONTOUR_M) * CONTOUR_M; lvl <= hi; lvl += CONTOUR_M) {
+    const path = Math.round(lvl) % (CONTOUR_M * 5) === 0 ? contoursMajor : contours;
+    for (let r = 0; r < G; r++) for (let c = 0; c < G; c++) {
+      const v = [heights[r * (G + 1) + c], heights[r * (G + 1) + c + 1], heights[(r + 1) * (G + 1) + c + 1], heights[(r + 1) * (G + 1) + c]];
+      const corner = [[c, r], [c + 1, r], [c + 1, r + 1], [c, r + 1]], pts = [];
+      for (let e = 0; e < 4; e++) {
+        const a = v[e], b = v[(e + 1) % 4];
+        if ((a < lvl) !== (b < lvl)) { const t = (lvl - a) / (b - a), p = corner[e], q = corner[(e + 1) % 4]; pts.push([(p[0] + (q[0] - p[0]) * t) * GCELL - SIZE / 2, (p[1] + (q[1] - p[1]) * t) * GCELL - SIZE / 2]); }
+      }
+      for (let k = 0; k + 1 < pts.length; k += 2) { path.moveTo(pts[k][0], pts[k][1]); path.lineTo(pts[k + 1][0], pts[k + 1][1]); }
+    }
+  }
+}
+
+const toScreen = (x, z) => [cv.width / 2 + (x - view.x) * view.zoom, cv.height / 2 + (z - view.z) * view.zoom];
+const toWorld = (sx, sz) => [view.x + (sx - cv.width / 2) / view.zoom, view.z + (sz - cv.height / 2) / view.zoom];
+
+// The selected node's handles in world space: two tangent handles (Bezier-style, a third of the tangent out) and two width handles.
+function handles(i) {
+  const n = level.road[i], m = tangent(level.road, i), len = Math.hypot(m.x, m.z) || 1, nx = -m.z / len, nz = m.x / len;
+  return [
+    { kind: "out", x: n.x + m.x / 3, z: n.z + m.z / 3 }, { kind: "in", x: n.x - m.x / 3, z: n.z - m.z / 3 },
+    { kind: "width", x: n.x + nx * n.w, z: n.z + nz * n.w }, { kind: "width", x: n.x - nx * n.w, z: n.z - nz * n.w },
+  ];
+}
+
+function draw2D() {
+  const W = cv.width, H = cv.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#101214"; ctx.fillRect(0, 0, W, H);
+  ctx.setTransform(view.zoom, 0, 0, view.zoom, W / 2 - view.x * view.zoom, H / 2 - view.z * view.zoom);
+  ctx.drawImage(shade, -SIZE / 2 - GCELL / 2, -SIZE / 2 - GCELL / 2, SIZE + GCELL, SIZE + GCELL);
+  ctx.lineWidth = 1 / view.zoom; ctx.strokeStyle = "rgba(20,30,15,.45)"; ctx.stroke(contours);
+  ctx.lineWidth = 2 / view.zoom; ctx.strokeStyle = "rgba(20,30,15,.7)"; ctx.stroke(contoursMajor);
+  if ($("showCover").checked) {
+    if (coverImgDirty) { coverOverlay.getContext("2d").putImageData(coverImg, 0, 0); coverImgDirty = false; }
+    ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.65;
+    ctx.drawImage(coverOverlay, -SIZE / 2, -SIZE / 2, SIZE, SIZE);
+    ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true;
+  }
+  // road: each sample drawn as its own short stroke, so the width can vary along it
+  ctx.lineCap = "round"; ctx.strokeStyle = "#b9ad93";
+  for (let i = 0; i < samples.length - 1; i++) {
+    ctx.lineWidth = samples[i].w * 2; ctx.beginPath(); ctx.moveTo(samples[i].x, samples[i].z); ctx.lineTo(samples[i + 1].x, samples[i + 1].z); ctx.stroke();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (const [i, t] of level.trees.entries()) {
+    const [sx, sz] = toScreen(t.x, t.z), on = sel?.type === "tree" && sel.i === i;
+    ctx.fillStyle = KINDS[t.kind].col + (seen[i] ? "dd" : "22"); ctx.strokeStyle = on ? "#fc6" : seen[i] ? "#000a" : "#0004"; ctx.lineWidth = on ? 3 : 1;
+    ctx.beginPath(); ctx.arc(sx, sz, Math.max(3, treeW(t) / 2 * view.zoom), 0, 7); ctx.fill(); ctx.stroke();
+  }
+  level.road.forEach((p, i) => {
+    const [sx, sz] = toScreen(p.x, p.z), on = sel?.type === "node" && sel.i === i;
+    ctx.fillStyle = on ? "#fc6" : "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(sx, sz, on ? 7 : 5, 0, 7); ctx.fill(); ctx.stroke();
+    if (!on) return;
+    for (const h of handles(i)) {
+      const [hx, hz] = toScreen(h.x, h.z);
+      ctx.strokeStyle = "#fc6"; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(sx, sz); ctx.lineTo(hx, hz); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = h.kind === "width" ? "#6cf" : "#fc6"; ctx.beginPath();
+      if (h.kind === "width") ctx.arc(hx, hz, 5, 0, 7); else { ctx.moveTo(hx, hz - 6); ctx.lineTo(hx + 6, hz); ctx.lineTo(hx, hz + 6); ctx.lineTo(hx - 6, hz); }
+      ctx.fill(); ctx.strokeStyle = "#000"; ctx.stroke();
+    }
+  });
+  // the 3D camera's look-at point, with a wedge showing which way it faces
+  const cx = W / 2, cz = H / 2, fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw);
+  ctx.fillStyle = "rgba(255,90,60,.35)"; ctx.beginPath(); ctx.moveTo(cx - fx * 30, cz - fz * 30);
+  ctx.lineTo(cx - fx * 30 + (fx * 0.8 - fz * 0.6) * 60, cz - fz * 30 + (fz * 0.8 + fx * 0.6) * 60);
+  ctx.lineTo(cx - fx * 30 + (fx * 0.8 + fz * 0.6) * 60, cz - fz * 30 + (fz * 0.8 - fx * 0.6) * 60); ctx.fill();
+  ctx.strokeStyle = "#ff5a3c"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx - 8, cz); ctx.lineTo(cx + 8, cz); ctx.moveTo(cx, cz - 8); ctx.lineTo(cx, cz + 8); ctx.stroke();
+  if (coverTool() && pointer) {
+    ctx.strokeStyle = $("coverMode").value === "erase" ? "#f66" : "#fff"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(pointer[0], pointer[1], +$("brush").value * view.zoom, 0, 7); ctx.stroke();
+  }
+  placePopup();
+}
+
+function hit(sx, sz) {
+  const [x, z] = toWorld(sx, sz), near = (wx, wz) => { const [px, pz] = toScreen(wx, wz); return Math.hypot(px - sx, pz - sz) < 9; };
+  if (sel?.type === "node") for (const h of handles(sel.i)) if (near(h.x, h.z)) return { type: "handle", i: sel.i, kind: h.kind };
+  for (let i = level.road.length - 1; i >= 0; i--) if (near(level.road[i].x, level.road[i].z)) return { type: "node", i };
+  for (let i = level.trees.length - 1; i >= 0; i--) {
+    const t = level.trees[i];
+    if (Math.hypot(t.x - x, t.z - z) < Math.max(8 / view.zoom, treeW(t) / 2)) return { type: "tree", i };
+  }
+  return null;
+}
+
+const px = e => [e.offsetX * devicePixelRatio, e.offsetY * devicePixelRatio];
+let drag = null;
+cv.onpointerdown = e => {
+  cv.setPointerCapture(e.pointerId);
+  if (coverTool() && e.button === 0) { drag = { paint: true, shift: e.shiftKey, last: toWorld(...px(e)) }; coverStroke(drag, drag.last); return; }
+  let h = coverTool() ? null : hit(...px(e)), clicked = null;
+  // only the selected tree or node can be dragged: pressing on anything else pans the map, and a plain click selects it
+  if ((h?.type === "tree" || h?.type === "node") && !(sel?.type === h.type && sel.i === h.i)) { clicked = h; h = null; }
+  drag = { sx: e.clientX, sz: e.clientY, moved: false, item: h, clicked, vx: view.x, vz: view.z, shift: e.shiftKey };
+  if (h && h.type !== "handle") select(h);
+};
+let pointer = null;
+cv.onpointermove = e => {
+  pointer = px(e); if (coverTool()) mapDirty = true;
+  if (!drag) return;
+  if (drag.paint) { coverStroke(drag, toWorld(...px(e))); return; }
+  const dx = (e.clientX - drag.sx) * devicePixelRatio, dz = (e.clientY - drag.sz) * devicePixelRatio;
+  if (Math.hypot(dx, dz) > 4) drag.moved = true;
+  if (!drag.moved) return;
+  const it = drag.item, [x, z] = toWorld(...px(e));
+  if (!it) { view.x = drag.vx - dx / view.zoom; view.z = drag.vz - dz / view.zoom; changed(); return; }
+  if (it.type === "tree") { Object.assign(level.trees[it.i], { x, z }); changed(); return; }
+  const n = level.road[it.i];
+  if (it.type === "node") Object.assign(n, { x, z });
+  else if (it.kind === "width") n.w = Math.max(1, Math.hypot(x - n.x, z - n.z));
+  else { const s = (it.kind === "out" ? 3 : -3) / n.tension; n.m = { x: (x - n.x) * s, z: (z - n.z) * s }; }
+  syncPopup(); changed(true);
+};
+cv.oncontextmenu = e => { if (coverTool()) e.preventDefault(); };
+cv.onpointerup = e => {
+  if (drag?.paint) { drag = null; save(); return; }
+  if (drag && !drag.moved && drag.clicked) select(drag.clicked);
+  else if (drag && !drag.moved && !drag.item && !coverTool()) {
+    const [x, z] = toWorld(...px(e));
+    if (drag.shift) { level.road.push(node(x, z, level.road.at(-1)?.w)); select({ type: "node", i: level.road.length - 1 }); changed(true); }
+    else if (sel) select(null); // a click on empty ground first just clears the selection
+    else { level.trees.push({ x, z, rot: Math.random() * 360, sx: 1, sy: 1, kind: $("kind").value }); changed(); }
+  }
+  if (drag?.moved) save();
+  drag = null; mapDirty = true;
+};
+cv.ondblclick = e => {
+  const [x, z] = toWorld(...px(e));
+  if (samples.length < 2) return;
+  const near = nearestRoad(x, z, samples);
+  if (near.d > samples[near.i].w + 6 / view.zoom) return;
+  const seg = samples[near.i].seg;
+  level.road.splice(seg + 1, 0, node(x, z, samples[near.i].w));
+  select({ type: "node", i: seg + 1 }); changed(true); save();
+};
+cv.onwheel = e => { e.preventDefault(); view.zoom = Math.max(0.3, Math.min(20, view.zoom * Math.exp(-e.deltaY * 0.0015))); changed(); };
+
+// WASD walks the view centre (the sight-line eye and the 3D camera's target) relative to the 3D camera's facing; shift runs.
+const keys = new Set();
+addEventListener("keydown", e => { if (!/INPUT|SELECT/.test(e.target.tagName)) keys.add(e.code); });
+addEventListener("keyup", e => keys.delete(e.code));
+addEventListener("blur", () => keys.clear());
+function walk(dt) {
+  const f = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0), r = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+  if (!f && !r) return;
+  const step = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 400 : 40) * dt / Math.hypot(f, r), fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw);
+  view.x = Math.max(-SIZE / 2, Math.min(SIZE / 2, view.x + (fx * f - fz * r) * step));
+  view.z = Math.max(-SIZE / 2, Math.min(SIZE / 2, view.z + (fz * f + fx * r) * step));
+  mapDirty = true;
+}
+
+addEventListener("keydown", e => {
+  if (!sel || /INPUT|SELECT/.test(e.target.tagName) || !(e.key === "Delete" || e.key === "Backspace")) return;
+  removeSelected();
+});
+function removeSelected() { const isNode = sel.type === "node"; (isNode ? level.road : level.trees).splice(sel.i, 1); select(null); changed(isNode); save(); }
+
+// --- the details pop-up for the selected tree or road node --------------------------------------
+const pop = $("pop");
+const field = (key, label, step, unit = "") => `<label>${label} <span><input type="number" data-k="${key}" step="${step}"> ${unit}</span></label>`;
+function select(s) {
+  sel = s;
+  if (!sel) { pop.style.display = "none"; mapDirty = true; return; }
+  pop.innerHTML = sel.type === "tree"
+    ? `<b>Tree ${sel.i}</b><label>Species <select data-k="kind">${Object.keys(KINDS).map(k => `<option>${k}</option>`).join("")}</select></label>` +
+      field("rot", "Rotation", 5, "°") + field("sx", "Stretch X", 0.05) + field("sy", "Stretch Y", 0.05) + field("width", "Width", 0.1, "m") + field("height", "Height", 0.1, "m") +
+      `<button data-act="del">Delete tree</button>`
+    : `<b>Road node ${sel.i}</b>` + field("w", "Half-width", 0.1, "m") + field("tension", "Tension", 0.05) +
+      `<button data-act="auto">Auto curve (follow neighbours)</button><button data-act="del">Delete node</button>`;
+  pop.style.display = "flex";
+  for (const inp of pop.querySelectorAll("[data-k]")) inp.oninput = () => edit(inp.dataset.k, inp.value);
+  pop.querySelector("[data-act=del]").onclick = removeSelected;
+  const auto = pop.querySelector("[data-act=auto]");
+  if (auto) auto.onclick = () => { Object.assign(level.road[sel.i], { m: null, tension: 1 }); syncPopup(); changed(true); save(); };
+  syncPopup(); mapDirty = true;
+}
+function edit(k, v) {
+  const o = sel.type === "tree" ? level.trees[sel.i] : level.road[sel.i];
+  if (k === "kind") o.kind = v;
+  else if (!isFinite(+v) || +v <= 0 && k !== "rot") return;
+  else if (k === "width") o.sx = +v / treeW({ ...o, sx: 1 });
+  else if (k === "height") o.sy = +v / treeH({ ...o, sy: 1 });
+  else o[k] = +v;
+  syncPopup(document.activeElement); changed(sel.type === "node"); save();
+}
+// Refresh every field except the one being typed in, so typing isn't fought.
+function syncPopup(skip) {
+  if (!sel) return;
+  const o = sel.type === "tree" ? level.trees[sel.i] : level.road[sel.i];
+  const vals = sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+                                   : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
+  for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
+}
+function placePopup() {
+  if (!sel) return;
+  const o = sel.type === "tree" ? level.trees[sel.i] : level.road[sel.i], [sx, sz] = toScreen(o.x, o.z);
+  const box = $("wrap2d"), x = sx / devicePixelRatio + 24, y = sz / devicePixelRatio - 20;
+  pop.style.left = Math.round(Math.min(x, box.clientWidth - pop.offsetWidth - 8)) + "px";
+  pop.style.top = Math.round(Math.max(8, Math.min(y, box.clientHeight - pop.offsetHeight - 8))) + "px";
+}
+
+// --- toolbar ------------------------------------------------------------------------------
+$("kind").innerHTML = Object.keys(KINDS).map(k => `<option>${k}</option>`).join("");
+$("seed").oninput = e => { level.seed = +e.target.value || 0; changed(true); save(); };
+$("relief").oninput = e => { level.relief = +e.target.value; $("v_relief").textContent = level.relief + " m"; changed(true); save(); };
+$("save").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(pack(level))])); a.download = "level.json"; a.click(); };
+$("loadBtn").onclick = () => $("loadFile").click();
+$("loadFile").onchange = async e => { try { level = unpack(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
+$("bake").onclick = bake;
+$("tool").onchange = () => { $("coverBar").hidden = !coverTool(); if (coverTool()) select(null); mapDirty = true; };
+$("showCover").onchange = () => mapDirty = coverImgDirty = true;
+$("brush").oninput = () => { $("v_brush").textContent = $("brush").value + " m"; mapDirty = true; };
+$("v_brush").textContent = $("brush").value + " m";
+$("coverMode").onchange = () => mapDirty = true;
+$("coverImport").onclick = () => $("coverFile").click();
+$("coverFile").onchange = async e => { try { await importCover(e.target.files[0]); } catch (err) { alert("Couldn't read the cover mask: " + err.message); } e.target.value = ""; };
+$("coverClear").onclick = () => { level.cover.fill(0); coverRebuild(); save(); };
+addEventListener("keydown", e => {
+  if (/INPUT|SELECT/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === "KeyC") { $("tool").value = coverTool() ? "edit" : "cover"; $("tool").onchange(); }
+  if (!coverTool()) return;
+  if (e.code === "KeyE") { $("coverMode").value = $("coverMode").value === "erase" ? "paint" : "erase"; mapDirty = true; }
+  if (e.key === "[" || e.key === "]") { $("brush").value = +$("brush").value + (e.key === "]" ? 1 : -1) * Math.max(1, Math.round(+$("brush").value / 5)); $("brush").oninput(); }
+  if ([...$("coverType").options].some(o => o.value === e.key)) $("coverType").value = e.key;
+});
+$("reset").onclick = () => { level = defaultLevel(); loaded(); };
+$("random").onclick = () => { level = randomLevel(Math.floor(Math.random() * 1e9)); view.x = view.z = 0; loaded(); };
+function loaded() {
+  if (!(level.cover instanceof Uint8Array) || level.cover.length !== SIZE * SIZE) level.cover = new Uint8Array(SIZE * SIZE);
+  level.coverTypes ??= COVER_DEFAULT.map(t => ({ ...t }));
+  $("coverType").innerHTML = level.coverTypes.map(t => `<option value="${t.id}">${t.id} ${t.name}</option>`).join("");
+  coverRebuild();
+  $("seed").value = level.seed; $("relief").value = level.relief; $("v_relief").textContent = level.relief + " m"; select(null); changed(true); save(); }
+
+// --- 3D view ------------------------------------------------------------------------------
+const wrap = $("wrap3d");
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setPixelRatio(0.5); // chunky pixels, closer to the game's PS1 look
+renderer.domElement.style.filter = "saturate(0.91) contrast(1.06)"; // GameConfig's grade (saturation, contrast) at grade_amount 0.6
+wrap.insertAdjacentHTML("beforeend", '<div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 70.7% 70.7% at 50% 50%, transparent 42.4%, rgba(0,0,0,.18) 71%, rgba(0,0,0,.36) 100%)"></div>'); // the grade's vignette
+wrap.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+// The game's look (level_view.tscn): sky, exponential fog, and ground/trees drawn unshaded with the light baked in.
+scene.background = new THREE.Color(0.525, 0.56, 0.61); // the game's cloudy sky, averaged
+scene.fog = new THREE.FogExp2(new THREE.Color(0.72, 0.82, 0.95), 0.0025); // GameConfig.fog_density
+THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace(/exp\( - fogDensity \* fogDensity \* (\w+) \* \1 \)/, "exp( - fogDensity * $1 )"); // Godot's fog is exp(-density·d), not three's squared form
+// only the grass tufts are lit; the level view has no sun, so they take just the sky's ambient light
+scene.add(new THREE.AmbientLight(new THREE.Color(0.525, 0.56, 0.61), 1.1));
+const camera = new THREE.PerspectiveCamera(55, 1, 0.3, 2000);
+const cam = { yaw: 0.6, pitch: 0.45, dist: 90 };
+
+// Textures need the page served over http (WebGL refuses file:// images); from file:// it falls back to flat colours and drawn trees.
+const served = location.protocol.startsWith("http");
+if (!served) $("hint3d").textContent += "\nopened from file:// — run python3 -m http.server in the repo root to see the game's textures";
+const loader = new THREE.TextureLoader();
+function tex(name, repeat) {
+  const t = loader.load("../textures/" + name);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter; if (repeat) t.repeat.set(repeat, repeat);
+  return t;
+}
+
+const terrainGeo = new THREE.PlaneGeometry(SIZE, SIZE, G, G).rotateX(-Math.PI / 2);
+scene.add(new THREE.Mesh(terrainGeo, new THREE.MeshBasicMaterial(served ? { vertexColors: true, map: tex("grass.jpg", SIZE / 8) } : { vertexColors: true, color: 0x5f7a45 })));
+const road = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(0.62, 0.63, 0.63) })); // the level view paints its road as flat tarmac_color
+scene.add(road);
+
+// The ground under each cover type takes the average of its tufts' colours (the game bakes the same into its terrain), with ragged cell edges.
+const coverTints = {};
+// The game's baked sun shading for terrain vertex i (level_view.gd → _build_ground).
+const SUN = new THREE.Vector3(-1, 1.4, 0.6).normalize();
+function lightAt(i) {
+  const r = Math.floor(i / (G + 1)), c = i % (G + 1), H = (rr, cc) => heights[rr * (G + 1) + cc];
+  const n = new THREE.Vector3(-(H(r, Math.min(G, c + 1)) - H(r, Math.max(0, c - 1))), 2 * GCELL, -(H(Math.min(G, r + 1), c) - H(Math.max(0, r - 1), c))).normalize();
+  return 0.55 + 0.45 * Math.max(n.dot(SUN), 0);
+}
+function paintCoverTint() {
+  if (!terrainGeo.attributes.color) terrainGeo.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(terrainGeo.attributes.position.count * 3), 3));
+  for (const [id, layers] of Object.entries(COVER_RENDER)) {
+    const sum = new THREE.Color(0, 0, 0); let w = 0;
+    for (const [name, dens] of layers) { const s = PRESETS[name]; sum.add(new THREE.Color(s.base).lerp(new THREE.Color(s.tip), 0.5).multiplyScalar(dens)); w += dens; }
+    coverTints[id] = sum.multiplyScalar(1 / w);
+  }
+  const pos = terrainGeo.attributes.position, col = terrainGeo.attributes.color;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const cx = Math.floor(x + SIZE / 2 + (hash2(Math.floor(x * 2), Math.floor(z * 2), 901) - 0.5) * 1.2), cz = Math.floor(z + SIZE / 2 + (hash2(Math.floor(x * 2), Math.floor(z * 2), 902) - 0.5) * 1.2);
+    const t = level.cover && cx >= 0 && cz >= 0 && cx < SIZE && cz < SIZE ? coverTints[level.cover[cz * SIZE + cx]] : null;
+    const L = lightAt(i), d = roadD[i], g = 1 - smooth(-1, 2, d); // the game's grass tint (level_view.gd), fading out onto the road
+    col.setXYZ(i, L * (t ? Math.min(t.r * 2, 1.5) : 1) * (0.95 + 0.05 * g), L * (t ? Math.min(t.g * 2, 1.5) : 1) * (1.25 - 0.25 * g), L * (t ? Math.min(t.b * 2, 1.5) : 1) * (0.72 + 0.28 * g));
+  }
+  col.needsUpdate = true;
+}
+
+function rebuild3DTerrain() {
+  const pos = terrainGeo.attributes.position; // PlaneGeometry vertex order is row-major from -z to +z, matching heights[]
+  for (let i = 0; i < pos.count; i++) pos.setY(i, heights[i]);
+  pos.needsUpdate = true; terrainGeo.computeVertexNormals();
+  paintCoverTint();
+  const p = [], uv = [], rc = [], idx = [];
+  let along = 0;
+  samples.forEach((s, i) => {
+    const a = samples[Math.max(0, i - 1)], b = samples[Math.min(samples.length - 1, i + 1)], len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    const nx = -(b.z - a.z) / len, nz = (b.x - a.x) / len;
+    if (i) along += Math.hypot(s.x - samples[i - 1].x, s.z - samples[i - 1].z);
+    const ax = s.x + nx * s.w, az = s.z + nz * s.w, bx = s.x - nx * s.w, bz = s.z - nz * s.w;
+    p.push(ax, s.h + 0.05, az, bx, s.h + 0.05, bz);
+    uv.push(0, along / (2 * s.w), 1, along / (2 * s.w));
+    const L = lightAt(Math.round((s.z + SIZE / 2) / GCELL) * (G + 1) + Math.round((s.x + SIZE / 2) / GCELL));
+    rc.push(L, L, L, L, L, L);
+    if (i) { const k = i * 2; idx.push(k - 2, k, k - 1, k - 1, k, k + 1); }
+  });
+  road.geometry.dispose(); road.geometry = new THREE.BufferGeometry();
+  road.geometry.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
+  road.geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  road.geometry.setAttribute("color", new THREE.Float32BufferAttribute(rc, 3));
+  road.geometry.setIndex(idx); road.geometry.computeVertexNormals();
+}
+
+// Trees are the game's 6-card star (foliage.gd → _alpha_card_mesh): card i shows atlas frame i, seen from (sin i·60°, 0, cos i·60°).
+function starGeometry() {
+  const p = [], uv = [];
+  for (let i = 0; i < 6; i++) {
+    const th = i * Math.PI / 3, rx = Math.cos(th), rz = -Math.sin(th);
+    for (const [u, v] of [[0, 0], [1, 1], [0, 1], [0, 0], [1, 0], [1, 1]]) { p.push(rx * (u - 0.5), v, rz * (u - 0.5)); uv.push((i + u) / 6, v); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  return g;
+}
+const STAR = starGeometry();
+// Stand-in atlas for file:// use: 6 frames of a simple drawn tree.
+function drawnAtlas(col) {
+  const c = document.createElement("canvas"); c.width = 6 * 64; c.height = 128; const g = c.getContext("2d");
+  for (let i = 0; i < 6; i++) {
+    g.fillStyle = "#5b4a3a"; g.fillRect(i * 64 + 29, 80, 6, 48);
+    g.fillStyle = col; g.beginPath(); g.moveTo(i * 64 + 32, 4); g.lineTo(i * 64 + 58, 100); g.lineTo(i * 64 + 6, 100); g.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+const treeMats = {};
+for (const [kind, k] of Object.entries(KINDS)) {
+  const map = served ? loader.load(texUrl(kind), t => { aspects[kind] = t.image.width / 6 / t.image.height; changed(); syncPopup(); }) : drawnAtlas(k.col);
+  map.magFilter = THREE.NearestFilter;
+  // the game culls card backs: opposite cards share a plane and would flicker against each other
+  treeMats[kind] = new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, color: new THREE.Color(...(k.tint || [0.85, 0.85, 0.85])), side: THREE.FrontSide });
+}
+let treeMeshes = [];
+function rebuild3DTrees() {
+  for (const m of treeMeshes) { scene.remove(m); m.dispose(); }
+  treeMeshes = [];
+  for (const [kind, idx] of treesByKind()) {
+    const mesh = new THREE.InstancedMesh(STAR, treeMats[kind], idx.length);
+    idx.forEach((ti, j) => mesh.setMatrixAt(j, treeMatrix(level.trees[ti])));
+    mesh.userData = { idx, full: mesh.instanceMatrix.array.slice() };
+    scene.add(mesh); treeMeshes.push(mesh);
+  }
+}
+const treesByKind = () => Object.keys(KINDS).map(k => [k, level.trees.flatMap((t, i) => t.kind === k ? [i] : [])]).filter(([, idx]) => idx.length);
+const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion();
+const treeMatrix = t => m4.compose(new THREE.Vector3(t.x, heightAt(t.x, t.z) - 0.2, t.z), q4.setFromAxisAngle(UP, t.rot * Math.PI / 180), new THREE.Vector3(treeW(t), treeH(t), treeW(t)));
+
+// --- ground cover in 3D: opaque tufts generated on the fly from the grid around the camera target ---
+// Each cell's tufts come from a hash of (cell, layer, k), so the same grid always grows the same ground. [preset, tufts per m²] per type id.
+const COVER_FADE = [22, 34], COVER_REACH = COVER_FADE[1] + 10;
+const COVER_RENDER = {
+  1: [["Hafren verge grass", 3], ["Hafren soft rush", 0.15]],
+  2: [["Hafren molinia (straw tussock)", 1.2]],
+  3: [["Hafren heather", 0.5]],
+  4: [["Hafren bilberry mound", 0.35], ["Hafren scrub mound", 0.03]],
+};
+U.uFade.value.set(...COVER_FADE); U.uWind.value = 0.3;
+const tuftKits = {};
+function tuftKit(name) {
+  if (tuftKits[name]) return tuftKits[name];
+  const s = { ...PRESET_BASE, ...PRESETS[name] };
+  return tuftKits[name] = { geo: buildTuft(1, true, s), mat: tuftMaterial(false, s.shape === "bush" ? s.bushHeight : s.height) };
+}
+let coverMeshes = [], coverAt = null, cover3DDirty = true, coverGenAt = 0;
+function rebuild3DCover() {
+  for (const m of coverMeshes) { scene.remove(m); m.dispose(); }
+  paintCoverTint(); coverMeshes = []; coverAt = [view.x, view.z]; cover3DDirty = false; coverGenAt = performance.now();
+  const lo = v => Math.max(0, Math.floor(v + SIZE / 2 - COVER_REACH)), hi = v => Math.min(SIZE - 1, Math.ceil(v + SIZE / 2 + COVER_REACH));
+  const out = {}, v = new THREE.Vector3(), s3 = new THREE.Vector3();
+  for (let rr = lo(view.z); rr <= hi(view.z); rr++) for (let cc = lo(view.x); cc <= hi(view.x); cc++) {
+    const id = level.cover[rr * SIZE + cc], wx = cc - SIZE / 2, wz = rr - SIZE / 2;
+    if (!id || Math.hypot(wx + 0.5 - view.x, wz + 0.5 - view.z) > COVER_REACH) continue;
+    (COVER_RENDER[id] ?? []).forEach(([name, dens], li) => {
+      const salt = (id * 8 + li + 1) * 64, n = Math.min(15, Math.floor(dens + hash2(cc, rr, salt + 63)));
+      for (let k = 0; k < n; k++) {
+        const x = wx + hash2(cc, rr, salt + k * 4), z = wz + hash2(cc, rr, salt + k * 4 + 1), sc = 0.7 + 0.6 * hash2(cc, rr, salt + k * 4 + 3);
+        m4.compose(v.set(x, heightAt(x, z), z), q4.setFromAxisAngle(UP, hash2(cc, rr, salt + k * 4 + 2) * Math.PI * 2), s3.set(sc, sc, sc));
+        m4.toArray(out[name] ??= [], out[name].length);
+      }
+    });
+  }
+  for (const [name, arr] of Object.entries(out)) {
+    const mesh = new THREE.InstancedMesh(tuftKit(name).geo, tuftKit(name).mat, arr.length / 16);
+    mesh.instanceMatrix.array.set(arr); mesh.frustumCulled = false; // instances sit far from the geometry's own bounds
+    scene.add(mesh); coverMeshes.push(mesh);
+  }
+}
+
+// --- baked visibility: what the game's camera could really see from along the road, rendered once and kept in the level ---
+// Every tree is drawn in its own colour (its index + 1) through its real alpha cut-out, the ground in black, from
+// viewpoints every few metres down the road (centre and both verges, bonnet and chase-camera heights, all 4 ways);
+// a tree covering at least BAKE_MIN_PX pixels of one view is visible from that stretch. Without an up-to-date bake every tree is shown.
+const BAKE_EVERY = 4, BAKE_RES = 512, BAKE_EYES = [1.2, 3], BAKE_SIDE = 3; // road samples (~2 m each), px, m, m past the road edge
+const BAKE_MIN_PX = 2; // fewer pixels than this in a 512 px, 90° view is a speck nobody would miss
+let bakeKeyNow = 0, bakeKeyDirty = true, shownRow = -1;
+// A fingerprint of everything the bake depends on, at the precision a save keeps, so a stale bake is never used.
+function bakeKey(l = level) {
+  let h = 2166136261;
+  const mix = v => { h = Math.imul(h ^ Math.round(v), 16777619); };
+  for (const t of l.trees) { mix(t.x * 10); mix(t.z * 10); mix(t.rot); mix(t.sx * 100); mix(t.sy * 100); for (const c of t.kind) mix(c.charCodeAt(0)); }
+  for (const n of l.road) { mix(n.x * 10); mix(n.z * 10); mix(n.w * 100); mix(n.tension * 100); mix((n.m?.x ?? 0) * 10); mix((n.m?.z ?? 0) * 10); }
+  mix(l.seed); mix(l.relief);
+  return h >>> 0;
+}
+// The atlas's alpha decides coverage; the colour comes only from the instance's ID colour.
+function idMaterial(kind) {
+  const map = treeMats[kind].map.clone();
+  map.minFilter = map.magFilter = THREE.NearestFilter; map.generateMipmaps = false; map.needsUpdate = true;
+  const mat = new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.FrontSide });
+  mat.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace("#include <map_fragment>", "diffuseColor.a *= texture2D( map, vUv ).a;"); };
+  return mat;
+}
+let baking = false;
+async function bake() {
+  if (!served) { $("sight").textContent = "baking needs the page served over http, for the real tree cut-outs"; return; }
+  if (baking || samples.length < 2) return;
+  baking = true;
+  const key = bakeKey(), idScene = new THREE.Scene(), mats = [];
+  idScene.background = new THREE.Color(0);
+  idScene.add(new THREE.Mesh(terrainGeo, new THREE.MeshBasicMaterial({ color: 0 })));
+  const col = new THREE.Color();
+  for (const [kind, idx] of treesByKind()) {
+    const mat = idMaterial(kind), mesh = new THREE.InstancedMesh(STAR, mat, idx.length);
+    idx.forEach((ti, j) => { mesh.setMatrixAt(j, treeMatrix(level.trees[ti])); mesh.setColorAt(j, col.setHex(ti + 1)); });
+    idScene.add(mesh); mats.push(mat);
+  }
+  const rt = new THREE.WebGLRenderTarget(BAKE_RES, BAKE_RES), buf = new Uint8Array(BAKE_RES * BAKE_RES * 4);
+  const eye = new THREE.PerspectiveCamera(90, 1, 0.3, 2000), mark = new Uint8Array(level.trees.length + 1), rows = [];
+  const count = new Uint32Array(level.trees.length + 1), touched = [];
+  const nRows = Math.ceil(samples.length / BAKE_EVERY);
+  for (let r = 0; r < nRows; r++) {
+    const i = r * BAKE_EVERY, sm = samples[i], a = samples[Math.max(0, i - 1)], b = samples[Math.min(samples.length - 1, i + 1)];
+    const len = Math.hypot(b.x - a.x, b.z - a.z) || 1, nx = -(b.z - a.z) / len, nz = (b.x - a.x) / len, ids = [];
+    for (const side of [-1, 0, 1]) for (const h of BAKE_EYES) {
+      const x = sm.x + nx * side * (sm.w + BAKE_SIDE), z = sm.z + nz * side * (sm.w + BAKE_SIDE);
+      eye.position.set(x, heightAt(x, z) + h, z);
+      for (let k = 0; k < 4; k++) {
+        eye.rotation.set(0, k * Math.PI / 2, 0);
+        renderer.setRenderTarget(rt); renderer.render(idScene, eye); renderer.readRenderTargetPixels(rt, 0, 0, BAKE_RES, BAKE_RES, buf);
+        for (let p = 0; p < buf.length; p += 4) { const id = buf[p] << 16 | buf[p + 1] << 8 | buf[p + 2]; if (id && count[id]++ === 0) touched.push(id); }
+        for (const id of touched) { if (count[id] >= BAKE_MIN_PX && !mark[id]) { mark[id] = 1; ids.push(id - 1); } count[id] = 0; }
+        touched.length = 0;
+      }
+    }
+    renderer.setRenderTarget(null);
+    for (const id of ids) mark[id + 1] = 0;
+    rows.push(ids.sort((p, q) => p - q));
+    $("sight").textContent = `baking ${r + 1} / ${nRows}`;
+    await new Promise(requestAnimationFrame);
+    if (bakeKey() !== key) { rows.length = 0; break; } // edited mid-bake
+  }
+  rt.dispose(); for (const m of mats) { m.map.dispose(); m.dispose(); }
+  if (rows.length) { level.visibility = { key, every: BAKE_EVERY, rows }; save(); }
+  baking = false;
+}
+// The baked answer for the view centre: the two viewpoint rows either side of the nearest stretch of road.
+function bakedSight(ex, ez) {
+  const v = level.visibility;
+  if (bakeKeyDirty) { bakeKeyNow = bakeKey(); bakeKeyDirty = false; shownRow = -1; }
+  if (!v || v.key !== bakeKeyNow || samples.length < 2) return false;
+  const r = Math.floor(nearestRoad(ex, ez, samples).i / v.every);
+  if (r === shownRow) return true;
+  seen = new Uint8Array(level.trees.length);
+  for (const row of [v.rows[r], v.rows[r + 1]]) if (row) for (const id of row) seen[id] = 1;
+  shownRow = r; mapDirty = true;
+  return true;
+}
+
+// Trees the sight lines hide are squashed to nothing, so the 3D view draws exactly what the 2D view marks as seen.
+function cull3DTrees() {
+  for (const mesh of treeMeshes) {
+    const { idx, full } = mesh.userData, out = mesh.instanceMatrix.array;
+    for (let j = 0; j < idx.length; j++) if (seen[idx[j]]) out.set(full.subarray(j * 16, j * 16 + 16), j * 16); else out.fill(0, j * 16, j * 16 + 16);
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// 3D camera: orbits the 2D view's centre; dragging here only turns it.
+let orbit = null;
+renderer.domElement.onpointerdown = e => { renderer.domElement.setPointerCapture(e.pointerId); orbit = { x: e.clientX, y: e.clientY }; };
+renderer.domElement.onpointermove = e => {
+  if (!orbit) return;
+  cam.yaw -= (e.clientX - orbit.x) * 0.006; cam.pitch = Math.max(0.03, Math.min(1.55, cam.pitch + (e.clientY - orbit.y) * 0.006));
+  orbit = { x: e.clientX, y: e.clientY }; mapDirty = true;
+};
+renderer.domElement.onpointerup = () => orbit = null;
+renderer.domElement.onwheel = e => { e.preventDefault(); cam.dist = Math.max(5, Math.min(600, cam.dist * Math.exp(e.deltaY * 0.0015))); };
+
+// --- frame loop: rebuild whatever changed, then draw both views ------------------------------
+let terrainDirty = true, treesDirty = true, mapDirty = true, sightMs = 0, frames = 0;
+function changed(terrainToo) { if (terrainToo) terrainDirty = true; treesDirty = true; mapDirty = true; bakeKeyDirty = true; }
+function resize() {
+  cv.width = cv.clientWidth * devicePixelRatio; cv.height = cv.clientHeight * devicePixelRatio;
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight); camera.aspect = wrap.clientWidth / wrap.clientHeight; camera.updateProjectionMatrix();
+  mapDirty = true;
+}
+addEventListener("resize", resize);
+let lastT = performance.now();
+function frame() {
+  const now = performance.now(); walk(Math.min(0.1, (now - lastT) / 1000)); lastT = now;
+  if (terrainDirty) { rebuildTerrain(); rebuild3DTerrain(); terrainDirty = false; treesDirty = true; mapDirty = true; cover3DDirty = true; }
+  if (treesDirty) { rebuild3DTrees(); treesDirty = false; }
+  U.uCenter.value.set(view.x, 0, view.z); U.uTime.value = now / 1000;
+  if (!coverAt || cover3DDirty && now - coverGenAt > 150 || Math.hypot(view.x - coverAt[0], view.z - coverAt[1]) > 10) rebuild3DCover();
+  const t0 = performance.now();
+  const baked = !baking && bakedSight(view.x, view.z);
+  if (!baking && !baked && seen.length !== level.trees.length) seen = new Uint8Array(level.trees.length);
+  if (!baking && !baked) { seen.fill(1); shownRow = -1; }
+  cull3DTrees();
+  sightMs = sightMs * 0.95 + (performance.now() - t0) * 0.05;
+  if (++frames % 15 === 0) !baking && ($("sight").textContent = baked
+    ? `baked visibility: ${seen.reduce((a, v) => a + v, 0)} / ${seen.length} trees shown · ${sightMs.toFixed(2)} ms`
+    : level.visibility ? "bake is out of date (level edited): showing every tree, bake again" : "not baked: showing every tree");
+  if (mapDirty) { draw2D(); mapDirty = false; }
+  const ty = heightAt(view.x, view.z) + 1.5;
+  camera.position.set(view.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, ty + Math.sin(cam.pitch) * cam.dist, view.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist);
+  camera.lookAt(view.x, ty, view.z);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+if (!level?.road?.every(n => "tension" in n) || !level.trees.every(t => "sx" in t)) level = defaultLevel();
+loaded(); resize(); frame();
+// ?level=levels/foo.json opens that save (relative to this page) instead of the last session
+const levelUrl = new URLSearchParams(location.search).get("level");
+if (levelUrl) fetch(levelUrl).then(r => r.json()).then(l => { level = unpack(l); loaded(); }).catch(err => alert("Couldn't load " + levelUrl + ": " + err.message));
+</script>
+</body>
+</html>

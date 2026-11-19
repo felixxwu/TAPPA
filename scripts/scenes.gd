@@ -8,6 +8,8 @@ const MAIN := "res://main.tscn"
 # The title screen (the game's main scene) and the free-roam world it leads into.
 const TITLE := "res://title.tscn"
 const FREE_ROAM := "res://free_roam.tscn"
+# A level-editor save, driven in place of free roam while GameConfig.dev_level_instead_of_free_roam is on.
+const LEVEL_VIEW := "res://level_view.tscn"
 # The player's car scene — spawned as the live drivable car, a frozen display prop, or a
 # dev-tool subject (exhaust_lab.gd).
 const CAR := "res://car.tscn"
@@ -64,6 +66,8 @@ static var last_blocked_path := ""
 # stay paused across a change. Done before the test kill switch so tests can assert it.
 static func change_to(tree: SceneTree, path: String, cover_title := "") -> void:
 	tree.paused = false
+	if path == FREE_ROAM and Config.data.dev_level_instead_of_free_roam:
+		path = LEVEL_VIEW
 	if block_real_changes:
 		last_blocked_path = path
 		return

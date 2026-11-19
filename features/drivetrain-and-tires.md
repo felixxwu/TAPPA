@@ -350,7 +350,7 @@ Granularity follows whatever the spin state already is per drive mode:
 See [game_config.gd](../scripts/game_config.gd) → `abs_enabled`,
 `abs_release_ratio`, `abs_slip_margin`, `abs_min_speed`.
 
-## Gearing, top speed & the engine's hidden rolling resistance
+## Gearing, top speed & resistance
 
 Gearing (`gear_ratios` + `final_drive` + `shift_time`) lives on the **engine**
 (`EngineLibrary`), written by `EngineLibrary.apply()` (see
@@ -367,33 +367,20 @@ gearbox, `[6, 4, 2.9, 2.4, 2.0] × 3.0`, that was far too short — tractive for
 = `peak_torque × gear × final_drive ÷ wheel_radius`, so its short ratios
 over-multiplied the light cars' torque into violent low/mid-gear acceleration.)
 
-**Important physics caveat:** Jolt's `VehicleBody3D` applies a built-in rolling
-resistance of roughly **0.2 g, proportional to mass**, that our model does *not*
-control (it persists even coasting in neutral with the wheels rolling freely, and
-is independent of `drag_coefficient`). This — not aero drag — is what actually
-caps the cars' top speeds, and it is why every car's `final_drive` is kept deliberately HIGH (tuned per car,
-mostly ~6–7 but ranging from 4 on the torquey Charger to 12 on the Audi TFSI i5, not
-the real ~3–4) — a car needs enough wheel torque multiplication to overcome it.
-The **MX-5**, with only ~150 hp, can't pull its *real* tall final drive (2.866)
-against the resistance and stalls/crawls, so its `final_drive` is game-tuned to
-**7**: short enough to pull cleanly. Its real gear ratios are kept as-is; gears
-5–6 sit above its ~95 km/h power-limited top and go unused. Every other car
-follows the same pattern — real internal gear ratios, but a final drive raised
-above the real value to keep it pulling against the baseline resistance.
-Fully neutralising the Jolt resistance (to make real drag + real gearing yield
-realistic top speeds game-wide) was considered and deferred as a larger, riskier
-change.
+**No hidden resistance:** `car.gd` sets `linear_damp = 0.0` with
+`linear_damp_mode = REPLACE`. Under the default COMBINE mode Godot adds the
+project's `physics/3d/default_linear_damp` (0.1/s, about 0.2 g at 20 m/s) on top —
+that was the "built-in rolling resistance" earlier docs blamed on Jolt. The current
+`final_drive` values (mostly ~6–7, raised above the real ~3–4) were tuned while that
+damping was still active; removing it raised top speeds above real on purpose (the
+free-roam island wants faster cars).
 
-Because this baseline resistance already lands the cars near their real top speeds
-on its own, the per-car `drag` coefficients are **sized to top it up to the
-realistic total, not to be the whole aero force** — so they are deliberately small
-(slippery cars like the Viper/XJS sit near zero; only draggy bodies like the
-Charger carry a real coefficient). They were tuned by measuring top speed in the
-sim; with them the cars top out within a couple of percent of real, except for a
-few whose baseline friction caps them a little under their real tops even at
-near-zero drag. Setting `drag` to a from-scratch
-aerodynamic value here would double-count the resistance and leave every car
-10–25 % slow.
+**Aero drag** is derived, not authored: `car.gd` `_apply_physics_spec` sets
+`drag_coefficient = spec.frontal_area × GameConfig.drag_per_frontal_area`, where
+each car's `frontal_area` (m²) is its model's head-on silhouette, measured by
+`tools/measure_frontal_area.gd` (re-run it when a model changes or a car is added). `_apply_aero`
+then applies `drag_coefficient × v²` against the velocity, so bigger, boxier cars
+top out lower.
 
 ## Tests
 

@@ -1,0 +1,245 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ground Cover Lab</title>
+<style>
+  body { margin: 0; display: flex; font: 13px system-ui, sans-serif; background: #15171a; color: #ddd; height: 100vh; }
+  #side { width: 280px; padding: 12px; overflow-y: auto; background: #1d2024; box-sizing: border-box; flex-shrink: 0; }
+  #side label { display: block; margin: 9px 0 2px; }
+  #side input[type=range], #side select, #side input[type=number] { width: 100%; box-sizing: border-box; }
+  #side input[type=color] { width: 100%; height: 24px; border: 0; padding: 0; background: none; }
+  #side .row { display: flex; gap: 6px; }
+  #side button { margin-top: 6px; }
+  #side h3 { margin: 16px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #8a9; border-bottom: 1px solid #333; }
+  #stats { margin-top: 14px; white-space: pre; font-family: ui-monospace, monospace; font-size: 12px; color: #aab; }
+  #wrap { flex: 1; position: relative; }
+  #wrap canvas { display: block; width: 100%; height: 100%; }
+  .hint { color: #889; font-size: 11px; margin-top: 10px; }
+  .val { float: right; color: #9ab; }
+</style>
+</head>
+<body>
+<div id="side">
+  <label>Preset</label>
+  <select id="preset"></select>
+  <label>Seed</label>
+  <div class="row"><input id="seed" type="number" value="1"><button id="rnd">🎲</button></div>
+  <label><input type="checkbox" id="mix"> Hafren roadside scene (every Hafren preset in bands off the road)</label>
+  <div id="params"></div>
+  <h3>View</h3>
+  <label><input type="checkbox" id="field" checked> Field around the car (off: one tuft)</label>
+  <label><input type="checkbox" id="wind" checked> Wind sway</label>
+  <label><input type="checkbox" id="upNormals" checked> Light like the ground (normals point up)</label>
+  <label><input type="checkbox" id="wire"> Wireframe</label>
+  <button id="chase">Chase-cam view</button>
+  <button id="glb">Download tuft .glb</button>
+  <button id="copy">Copy settings</button> <span id="copied" class="hint"></span>
+  <div id="stats"></div>
+  <div class="hint">Drag to orbit, scroll to zoom, right-drag to pan. The red box is a car for scale; tufts shrink away with distance from it.</div>
+</div>
+<div id="wrap"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="groundcover_tufts.js"></script>
+<script>
+// Opaque ground cover: grass tufts (tapered blades) and bushes (leaf triangles over a solid dome), all plain
+// vertex-coloured triangles with no texture or alpha, so mobile GPUs keep their early depth test.
+const $ = id => document.getElementById(id);
+
+const PARAMS = [
+  ["Tuft (shape = blades)"],
+  ["blades", "Blades", 1, 40, 12, 1],
+  ["radius", "Root spread (m)", 0, 0.6, 0.08, 0.01],
+  ["height", "Blade height (m)", 0.05, 2, 0.35, 0.01],
+  ["heightJitter", "Height jitter", 0, 1, 0.4, 0.01],
+  ["width", "Blade width at base (m)", 0.005, 0.3, 0.04, 0.005],
+  ["segments", "Segments per blade (1 = one triangle)", 1, 6, 2, 1],
+  ["lean", "Outward lean (deg)", 0, 80, 25, 1],
+  ["leanJitter", "Lean jitter (deg)", 0, 45, 12, 1],
+  ["bend", "Extra bend toward tip (deg, >90 flops over)", -30, 150, 30, 1],
+  ["Bush (shape = bush)"],
+  ["bushRadius", "Bush radius (m)", 0.1, 2, 0.5, 0.01],
+  ["bushHeight", "Bush height (m)", 0.1, 2, 0.45, 0.01],
+  ["leaves", "Leaf triangles", 10, 600, 150, 1],
+  ["leafSize", "Leaf size (m)", 0.02, 0.4, 0.09, 0.005],
+  ["fuzz", "Fuzz (leaves stick out)", 0, 1, 0.35, 0.01],
+  ["core", "Solid core dome (0 off, 1 on)", 0, 1, 1, 1],
+  ["Colour"],
+  ["colourVar", "Per-blade/leaf brightness jitter", 0, 0.5, 0.12, 0.01],
+  ["flowers", "Flowers per tuft", 0, 4, 0, 0.05],
+  ["Field"],
+  ["area", "Field size (m)", 4, 120, 40, 1],
+  ["density", "Tufts per m²", 0.1, 30, 4, 0.1],
+  ["patchy", "Patchiness", 0, 1, 0.4, 0.01],
+  ["scaleJitter", "Tuft size jitter", 0, 0.9, 0.35, 0.01],
+  ["fadeStart", "Shrink-out starts (m)", 2, 80, 20, 1],
+  ["fadeEnd", "Gone by (m)", 3, 100, 30, 1],
+  ["windAmp", "Wind strength", 0, 1, 0.3, 0.01],
+];
+const EXTRA = { shape: "blades", base: "#3e5c24", tip: "#8fb447", flowerColour: "#f2d01c", ground: "#4a5a2c" };
+// The Hafren scene: a single-track road along z, and each preset kept where it grows in the photos,
+// by distance e from the road edge and a patch noise so species gather in drifts.
+const ROAD_X = -4.5, ROAD_HALF = 1.75;
+const MIX = [
+  { preset: "Hafren verge grass", density: 12, keep: (e, x, z) => e < 3 ? 1 : 0.6 },
+  { preset: "Hafren molinia (straw tussock)", density: 3, keep: (e, x, z) => e > 1.5 && patch(x + 40, z) > 0.55 ? 1 : 0 },
+  { preset: "Hafren soft rush", density: 0.25, keep: (e) => e > 2 ? 1 : 0 },
+  { preset: "Hafren dead bracken", density: 0.6, keep: (e, x, z) => e > 2 && patch(x - 70, z + 13) > 0.6 ? 1 : 0 },
+  { preset: "Hafren bilberry mound", density: 0.35, keep: (e, x, z) => e > 2.5 && patch(x + 11, z - 90) > 0.5 ? 1 : 0 },
+  { preset: "Hafren heather", density: 0.2, keep: (e, x, z) => e > 3 && patch(x - 70, z + 13) < 0.4 ? 1 : 0 },
+  { preset: "Hafren scrub mound", density: 0.04, keep: (e) => e > 4 ? 1 : 0 },
+];
+
+const state = {};
+for (const p of PARAMS) if (p.length > 1) state[p[0]] = p[4];
+Object.assign(state, EXTRA);
+
+// --- UI ---------------------------------------------------------------------------------
+function buildUI() {
+  const box = $("params");
+  for (const p of PARAMS) {
+    if (p.length === 1) {
+      box.insertAdjacentHTML("beforeend", `<h3>${p[0]}</h3>`);
+      if (p[0].startsWith("Tuft")) box.insertAdjacentHTML("beforeend", `<label>Shape</label><select id="p_shape"><option>blades</option><option>bush</option></select>`);
+      continue;
+    }
+    const [k, label, min, max, , step] = p;
+    box.insertAdjacentHTML("beforeend", `<label>${label} <span class="val" id="v_${k}"></span></label><input type="range" id="p_${k}" min="${min}" max="${max}" step="${step}">`);
+    $("p_" + k).oninput = e => { state[k] = +e.target.value; $("v_" + k).textContent = state[k]; $("preset").value = ""; regen(); };
+    if (k === "colourVar") box.insertAdjacentHTML("beforeend", `<label>Root / inner colour</label><input type="color" id="p_base"><label>Tip / outer colour</label><input type="color" id="p_tip"><label>Ground colour</label><input type="color" id="p_ground">`);
+    if (k === "flowers") box.insertAdjacentHTML("beforeend", `<label>Flower colour</label><input type="color" id="p_flowerColour">`);
+  }
+  for (const k of Object.keys(EXTRA)) $("p_" + k).oninput = $("p_" + k).onchange = e => { state[k] = e.target.value; $("preset").value = ""; regen(); };
+  $("preset").innerHTML = `<option value="">— custom —</option>` + Object.keys(PRESETS).map(n => `<option>${n}</option>`).join("");
+  $("preset").onchange = e => { if (e.target.value) applyPreset(e.target.value); };
+  $("seed").oninput = () => regen();
+  $("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e6); regen(); };
+  $("field").onchange = $("upNormals").onchange = $("wire").onchange = $("mix").onchange = () => regen();
+  $("chase").onclick = () => { const x = $("mix").checked ? ROAD_X : 0; camera.position.set(x, 2.2, 6.5); controls.target.set(x, 0.6, -6); };
+  $("copy").onclick = () => { navigator.clipboard.writeText(JSON.stringify({ seed: +$("seed").value, ...state })); $("copied").textContent = "copied"; setTimeout(() => $("copied").textContent = "", 1500); };
+  $("glb").onclick = exportGLB;
+}
+function applyPreset(name) { Object.assign(state, PRESET_BASE, PRESETS[name]); syncUI(); $("preset").value = name; regen(); }
+function syncUI() {
+  for (const p of PARAMS) if (p.length > 1) { $("p_" + p[0]).value = state[p[0]]; $("v_" + p[0]).textContent = state[p[0]]; }
+  for (const k of Object.keys(EXTRA)) $("p_" + k).value = state[k];
+}
+
+// Smooth blobs of 0..1 so tufts gather in patches instead of a uniform carpet.
+const patch = (x, z) => 0.5 + 0.5 * Math.sin(x * 0.23 + Math.sin(z * 0.17) * 2) * Math.sin(z * 0.19 + Math.sin(x * 0.13) * 2);
+
+const MAX_TUFTS = 100000;
+function placements(seed, density, keep) {
+  const rnd = mulberry32(seed * 7919 + 1), L = state.area, out = [];
+  const want = Math.min(MAX_TUFTS, Math.round(L * L * density));
+  const q = new THREE.Quaternion(), sc3 = V(), m = new THREE.Matrix4();
+  for (let k = 0; k < want; k++) {
+    const x = (rnd() - 0.5) * L, z = (rnd() - 0.5) * L;
+    if (rnd() > keep(x, z)) continue;
+    q.setFromAxisAngle(UP, rnd() * Math.PI * 2);
+    const sc = 1 - state.scaleJitter * rnd();
+    out.push(m.clone().compose(V(x, 0, z), q, sc3.set(sc, sc, sc)));
+  }
+  return out;
+}
+
+// --- scene ------------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding;
+$("wrap").append(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#9fb8cc");
+const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 500);
+camera.position.set(0, 2.2, 6.5);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.6, -6);
+scene.add(new THREE.HemisphereLight("#d8e8ff", "#5a4a30", 0.65));
+const sun = new THREE.DirectionalLight("#fff4e0", 0.9); sun.position.set(5, 10, 3); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial());
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HALF * 2, 400), new THREE.MeshLambertMaterial({ color: "#7d7f80" }));
+road.rotation.x = -Math.PI / 2; road.position.set(ROAD_X, 0.01, 0); scene.add(road);
+const car = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.4, 4.2), new THREE.MeshLambertMaterial({ color: "#b03a2e" }));
+car.position.y = 0.7; scene.add(car);
+
+let layers = [];
+function addLayer(s, placed, seed) {
+  const geo = buildTuft(seed, $("upNormals").checked, s);
+  const mesh = new THREE.InstancedMesh(geo, tuftMaterial($("wire").checked, s.shape === "bush" ? s.bushHeight : s.height), placed.length);
+  placed.forEach((m, i) => mesh.setMatrixAt(i, m));
+  scene.add(mesh);
+  layers.push({ mesh, placed, tris: geo.index.count / 3, verts: geo.attributes.position.count });
+}
+function regen() {
+  const seed = +$("seed").value || 0, mix = $("mix").checked, fieldOn = $("field").checked || mix;
+  for (const l of layers) { scene.remove(l.mesh); l.mesh.geometry.dispose(); l.mesh.material.dispose(); }
+  layers = [];
+  if (mix) {
+    MIX.forEach((m, i) => {
+      const s = { ...state, ...PRESET_BASE, ...PRESETS[m.preset] };
+      const edge = x => Math.abs(x - ROAD_X) - ROAD_HALF;
+      addLayer(s, placements(seed + i * 101, m.density, (x, z) => edge(x) < 0 ? 0 : m.keep(edge(x), x, z)), seed + i);
+    });
+  } else {
+    const keep = (x, z) => 1 - state.patchy * (1 - Math.min(1, Math.max(0, patch(x, z) * 2 - 0.5)));
+    addLayer(state, fieldOn ? placements(seed, state.density, keep) : [new THREE.Matrix4()], seed);
+  }
+  ground.material.color.set(mix ? "#4f6f28" : state.ground);
+  road.visible = mix;
+  car.visible = fieldOn;
+  car.position.x = mix ? ROAD_X : 0;
+  U.uCenter.value.set(car.position.x, 0, 0);
+  U.uFade.value.set(state.fadeStart, Math.max(state.fadeEnd, state.fadeStart + 0.1));
+  stats();
+}
+
+let fps = 0;
+function stats() {
+  const cx = car.position.x;
+  let tufts = 0, near = 0, tris = 0;
+  for (const l of layers) {
+    const n = l.placed.filter(m => Math.hypot(m.elements[12] - cx, m.elements[14]) < state.fadeEnd).length;
+    tufts += l.placed.length; near += n; tris += n * l.tris;
+  }
+  const one = layers.length === 1 ? layers[0] : null;
+  $("stats").textContent =
+    (one ? `triangles / tuft  ${one.tris}\nvertices / tuft   ${one.verts}\n` : layers.map((l, i) => `${MIX[i].preset.replace("Hafren ", "").slice(0, 16).padEnd(17)}${l.tris} tris\n`).join("")) +
+    `tufts             ${tufts}\n` +
+    `tufts in range    ${near}\n` +
+    `tris in range     ${tris.toLocaleString()}\n` +
+    `draw calls        ${layers.length}\n` +
+    `fps               ${fps}`;
+}
+
+function resize() { const w = $("wrap").clientWidth, h = $("wrap").clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize);
+const clock = new THREE.Clock();
+let frames = 0, lastT = 0;
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime();
+  U.uTime.value = t;
+  U.uWind.value = $("wind").checked ? state.windAmp : 0;
+  controls.update(); renderer.render(scene, camera);
+  frames++;
+  if (t - lastT > 1) { fps = Math.round(frames / (t - lastT)); frames = 0; lastT = t; stats(); }
+});
+
+function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
+function exportGLB() {
+  const mesh = new THREE.Mesh(buildTuft(+$("seed").value || 0, $("upNormals").checked, state), new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+  new THREE.GLTFExporter().parse(mesh, buf => download(new Blob([buf]), `tuft_${$("seed").value}.glb`), { binary: true });
+}
+
+buildUI();
+// ?preset=Name opens that preset; ?scene=hafren opens the Hafren roadside scene in the chase-cam view
+const q = new URLSearchParams(location.search);
+$("mix").checked = q.get("scene") === "hafren";
+resize();
+applyPreset(PRESETS[q.get("preset")] ? q.get("preset") : "Hafren verge grass");
+if ($("mix").checked) $("chase").onclick();
+</script>
+</body>
+</html>
