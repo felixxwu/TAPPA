@@ -65,8 +65,12 @@ var _road_cells: Dictionary       # Vector2i -> true, the visible carriageway
 var _tree_grid: Dictionary        # Vector2i -> PackedVector2Array (built by SpectatorScatter)
 var _p: Dictionary                # spectator_params() snapshot
 
-var _mm: MultiMesh
-var _foot_offset := 0.0           # lifts the mesh so its feet sit on the ground
+var _mms: Array[MultiMesh] = []   # one per model in use; free roam has just the one shared figure
+var _meshes: Array[Mesh] = []     # the model of each _mms entry
+var _foots := PackedFloat32Array()  # per _mms entry, lifts the mesh so its feet sit on the ground
+var _model := PackedInt32Array()  # per member, its index into _mms
+var _slot := PackedInt32Array()   # per member, its instance index inside its MultiMesh
+var _face_car := false            # upright members turn to face the car (models with a front)
 var _capsule_height := 1.6
 var _capsule_radius := 0.3
 var _center := Vector2.ZERO       # group centroid, for the LOD distance test
@@ -107,7 +111,8 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 
 	var n := member_positions.size()
 	_pos = member_positions.duplicate()
-	_home = member_positions.duplicate()
+	var homes: PackedVector2Array = params.get("homes", PackedVector2Array())
+	_home = homes.duplicate() if homes.size() == member_positions.size() else member_positions.duplicate()
 	_vel = PackedVector2Array(); _vel.resize(n)
 	_upright = PackedByteArray(); _upright.resize(n)
 	_yaw = PackedFloat32Array(); _yaw.resize(n)
@@ -123,15 +128,32 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	# centroid, so not every active group recomputes on the same physics frame.
 	_sim_stagger = absi(int(_center.x) + int(_center.y) * 7)
 
-	# Shared figure mesh + foot offset (Crowd owns them, so the live crowd can't drift
-	# from the decorative ones); the capsule dims are this sim's own concern.
-	var mesh := Crowd.mesh()
-	if mesh != null:
-		var aabb := mesh.get_aabb()
-		_foot_offset = Crowd.foot_offset(mesh)
-		_capsule_height = maxf(aabb.size.y, 0.2)
-		_capsule_radius = maxf(maxf(aabb.size.x, aabb.size.z) * 0.5, 0.1)
-	_build_multimesh(mesh, n)
+	_face_car = bool(params.get("face_car", false))
+	var models: PackedInt32Array = params.get("models", PackedInt32Array())
+	var meshes: Array = params.get("meshes", [])
+	if meshes.is_empty():
+		meshes = [Crowd.mesh()]
+	_model = PackedInt32Array(); _model.resize(n)
+	_slot = PackedInt32Array(); _slot.resize(n)
+	var counts := PackedInt32Array(); counts.resize(meshes.size())
+	for i in n:
+		var m := clampi(models[i], 0, meshes.size() - 1) if i < models.size() else 0
+		_model[i] = m
+		_slot[i] = counts[m]
+		counts[m] += 1
+	for m in meshes.size():
+		var mesh: Mesh = meshes[m]
+		_meshes.append(mesh)
+		_foots.append(Crowd.foot_offset(mesh))
+		if mesh != null:
+			var aabb := mesh.get_aabb()
+			_capsule_height = maxf(aabb.size.y, 0.2) if m == 0 else maxf(_capsule_height, aabb.size.y)
+			_capsule_radius = maxf(_capsule_radius if m > 0 else 0.1, maxf(aabb.size.x, aabb.size.z) * 0.5)
+		_build_multimesh(mesh, counts[m])
+	if _face_car and car is Node3D:
+		var at: Vector3 = car.global_transform.origin
+		for i in n:
+			_yaw[i] = face_yaw(_pos[i], Vector2(at.x, at.z))
 	_refresh_all_instances()
 	# Pre-build the recycled ragdoll bodies now (load time), never on the knock frame.
 	_ragdoll_pool_cap = maxi(int(params.get("ragdoll_pool_size", 0)), 0)
@@ -141,17 +163,18 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 
 func _build_multimesh(mesh: Mesh, n: int) -> void:
 	var mmi := MultiMeshInstance3D.new()
-	mmi.name = "Crowd"
+	mmi.name = "Crowd%d" % _mms.size()
 	# Anchor the (single) instance node at the group centroid so its ONE
 	# visibility_range test measures camera→crowd distance rather than
 	# camera→world-origin; instance transforms below are written RELATIVE to it.
 	_mm_origin = Vector3(_center.x, _ground(_center.x, _center.y), _center.y)
 	mmi.position = _mm_origin
-	_mm = MultiMesh.new()
-	_mm.transform_format = MultiMesh.TRANSFORM_3D
-	_mm.mesh = mesh
-	_mm.instance_count = n
-	mmi.multimesh = _mm
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = n
+	_mms.append(mm)
+	mmi.multimesh = mm
 	# Shared world-prop render distance (params carry cfg.tree_render_distance_m /
 	# tree_render_fade_m) so the crowd pops in at the same range as the surrounding
 	# foliage/signs. 0 = uncapped (flat fixtures leave it disabled).
@@ -320,6 +343,12 @@ static func anchor_force(pos: Vector2, home: Vector2, dead_zone: float) -> Vecto
 	return to_home.normalized()
 
 
+# Yaw that turns a model facing +Z towards `target` (both in world XZ).
+static func face_yaw(pos: Vector2, target: Vector2) -> float:
+	var d := target - pos
+	return atan2(d.x, d.y) if d.length_squared() > 1e-8 else 0.0
+
+
 static func clamp_speed(v: Vector2, max_speed: float) -> Vector2:
 	if v.length() > max_speed:
 		return v.normalized() * max_speed
@@ -453,7 +482,9 @@ func _timed_physics_process(delta: float) -> void:
 		# delta since the last steered tick — see the decimation gate above).
 		_vel[i] = clamp_speed(_vel[i].move_toward(desired, accel * step), max_speed)
 		_pos[i] += _vel[i] * step
-		if _vel[i].length_squared() > 0.0004:
+		if _face_car:
+			_yaw[i] = face_yaw(_pos[i], car_xz)
+		elif _vel[i].length_squared() > 0.0004:
 			_yaw[i] = atan2(_vel[i].x, _vel[i].y)
 		_write_instance(i)
 
@@ -462,15 +493,15 @@ func _timed_physics_process(delta: float) -> void:
 
 # Position one MultiMesh instance from agent i's state (feet on the ground).
 func _write_instance(i: int) -> void:
-	if _mm == null:
+	if _mms.is_empty():
 		return
 	var x := _pos[i].x
 	var z := _pos[i].y
-	var y := _ground(x, z) + _foot_offset
+	var y := _ground(x, z) + _foots[_model[i]]
 	var yaw_basis := Basis(Vector3.UP, _yaw[i])
 	# Local to the MMI node (anchored at the centroid) so visibility_range measures
 	# camera→crowd, not camera→world-origin.
-	_mm.set_instance_transform(i, Transform3D(yaw_basis, Vector3(x, y, z) - _mm_origin))
+	_mms[_model[i]].set_instance_transform(_slot[i], Transform3D(yaw_basis, Vector3(x, y, z) - _mm_origin))
 
 
 func _refresh_all_instances() -> void:
@@ -494,7 +525,7 @@ func _ground(x: float, z: float) -> float:
 # crowd mesh (the ragdoll's exact draw path); clear_warm_up() drops it after the
 # rendered frame. See features/rendering.md → "Shader pre-warm".
 func warm_up(pos: Vector3) -> void:
-	var mesh := Crowd.mesh()
+	var mesh: Mesh = _meshes[0] if not _meshes.is_empty() else Crowd.mesh()
 	if mesh == null:
 		return
 	if _warm_mi == null:
@@ -515,8 +546,8 @@ func _knock_over(i: int) -> void:
 		return
 	_upright[i] = 0
 	# Hide the upright instance by collapsing it to zero scale.
-	if _mm != null:
-		_mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+	if not _mms.is_empty():
+		_mms[_model[i]].set_instance_transform(_slot[i], Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
 
 	var x := _pos[i].x
 	var z := _pos[i].y
@@ -526,6 +557,7 @@ func _knock_over(i: int) -> void:
 	# Body origin = capsule centre = figure mid-height, so the auto centre-of-mass
 	# (single centred capsule) sits at the body's middle and it tumbles about its
 	# waist, not its head. Upright pose: a recycled body must not start mid-tumble.
+	_dress_ragdoll(body, i)
 	body.global_transform = Transform3D(Basis(), Vector3(x, ragdoll_body_y(ground, _capsule_height), z))
 
 	# Launch along the car's travel direction, with the WHOLE impulse scaled by the car's
@@ -563,10 +595,11 @@ func _build_ragdoll() -> RigidBody3D:
 	body.add_child(shape)
 
 	var mi := MeshInstance3D.new()
-	mi.mesh = _mm.mesh if _mm != null else null
+	mi.name = "Figure"
+	mi.mesh = _meshes[0] if not _meshes.is_empty() else null
 	# Offset the mesh within the body so its feet meet the capsule bottom on the
 	# ground (accounting for the mesh's own foot offset above its origin).
-	mi.position = Vector3(0, ragdoll_mesh_offset_y(_foot_offset, _capsule_height), 0)
+	mi.position = Vector3(0, ragdoll_mesh_offset_y(_foots[0] if not _foots.is_empty() else 0.0, _capsule_height), 0)
 	body.add_child(mi)
 
 	# Ragdolls land on the terrain/trees (all on layer 1) but must never collide
@@ -581,6 +614,13 @@ func _build_ragdoll() -> RigidBody3D:
 
 # Make `body` inert: no simulation, no collision layers/mask, not drawn, no residual
 # velocity. The state a pooled body sits in between uses.
+# Shows member i's own model on a ragdoll body (a pooled body may last have worn another).
+func _dress_ragdoll(body: RigidBody3D, i: int) -> void:
+	var fig := body.get_node("Figure") as MeshInstance3D
+	fig.mesh = _meshes[_model[i]]
+	fig.position.y = ragdoll_mesh_offset_y(_foots[_model[i]], _capsule_height)
+
+
 func _park_ragdoll(body: RigidBody3D) -> void:
 	body.freeze = true
 	body.collision_layer = 0

@@ -5,6 +5,8 @@ extends Node3D
 
 const ATLAS := "res://tools/levels/buildings_atlas.png"
 
+var footprint_points := PackedVector2Array()  # points round each building's footprint, for crowds to steer clear of
+
 
 ## Builds every building in the bake next to `save_path`, seated on the ground's lowest point under its footprint.
 func setup(save_path: String, height_at: Callable) -> void:
@@ -64,6 +66,13 @@ func _building(b: Dictionary, mat: Material, height_at: Callable) -> StaticBody3
 	for corner in [Vector2.ZERO, Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
 		var off := Vector2(corner.x * len / 2, corner.y * wid / 2).rotated(rot)
 		ground = minf(ground, height_at.call(x + off.x, z + off.y))
+	var half := Vector2(len, wid) / 2.0
+	for k in range(-int(half.x), int(half.x) + 1):
+		for sy in [-half.y, half.y]:
+			footprint_points.append(Vector2(x, z) + Vector2(k, sy).rotated(rot))
+	for k in range(-int(half.y), int(half.y) + 1):
+		for sx in [-half.x, half.x]:
+			footprint_points.append(Vector2(x, z) + Vector2(sx, k).rotated(rot))
 	var body := StaticBody3D.new()
 	body.transform = Transform3D(Basis(Vector3.UP, -rot), Vector3(x, ground - 0.1, z))
 	var mi := MeshInstance3D.new()

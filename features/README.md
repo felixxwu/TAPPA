@@ -94,7 +94,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [level-editor.md](level-editor.md) | **Temporary dev tooling:** `tools/level_editor_lab.html` (2D/3D level editor) and `level_view.tscn` (`LevelView`), which drives a saved level in place of free roam behind the Dev page's toggle |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |
 | [barriers.md](barriers.md) | Solid crash barriers on the outside of sharp corners — 2 m modules stitched into a run; armco guardrail on gravel, concrete jersey rail on tarmac (`BarrierSection` / `BarrierLayout` / `BarrierField`) |
-| [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles |
+| [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles; `tools/spectator_lab.html` procedural stylised spectator generator |
 | [tire-marks.md](tire-marks.md) | `TireMarks` — gravel ruts laid behind the wheels (per-wheel ribbon mesh, gated to the road, capped) |
 | [wheel-dust.md](wheel-dust.md) | `WheelParticles` — cheap surface debris flung from the driven wheels under wheelspin (one CPU pool + MultiMesh, ring-buffered; per-particle colour/size/roll picks gravel clods, grass blades, or nothing on tarmac) |
 | [dust-puffs.md](dust-puffs.md) | `DustPuffs` — opaque, flat-shaded low-poly dust clouds left behind the rear wheels on road (gravel-coloured on gravel, near-white on tarmac) (one blob mesh + MultiMesh; size/tumble in the instance basis; hidden near the camera; pops at end of life) |

@@ -14,6 +14,7 @@ beside free roam, not part of it.
 live three.js render of it. Serve the repo over http (`python3 -m http.server`) so it can load the
 game's textures; `?level=levels/<name>.json` opens a save.
 
+- **Spectators:** the save's top-level `spectators: [{x, z, r, n}]` (origin and radius in metres, same x east / z south frame as `logPiles`; people count `n`; omitted when empty, kept in the autosave, not part of `bakeKey`). The **Spectators** tool (toolbar, or `P`) adds a group on a click of empty ground (r 8, n 10); drag a group to move it, drag the rim handle, scroll or `[` `]` to change `r`, the pop-up edits `r` and `n`, Delete removes it. 2D draws each as a circle with its count (legend layer "Spectators"). 3D (`rebuild3DSpectators`) scatters `n` seeded people per group inside `r` on `heightAt`, each facing the nearest road point, built with `tools/spectators.js` into one merged mesh; only groups in the ground window are built.
 - **Size:** a save's `size` (metres, square centred on the origin; missing = 600, and a save of 600 omits it) sets `SIZE`; the
   height grid is `N` cells a side (read from the heightmap's length, ~3 m; `make_level.py` uses `round(size / 3)`), the cover grid
   is `size * size` bytes. Up to `WIN_M` (600) everything is as described below. Above it (`big()`, e.g. `tools/levels/hafren_5km.json`,
@@ -199,6 +200,10 @@ The lab's 3D view copies this look so it matches the game: unshaded ground with 
 (`lightAt`) and grass multiplier, `KIND_TINT` as each tree kind's `tint`, the sky's mid
 colour behind, Godot-style `exp(-density·d)` fog in `fog_light_color`, and a CSS saturate/contrast for the grade.
 It skips the grade's warm tints, vignette and dither. When the game's look changes, update both.
+
+### In the game: spectators
+
+The save's `spectators` ({x, z, r, n}) become live crowds in the level view: see [spectators.md](spectators.md) -> "Level spectator groups". Spawn/despawn distances are `level_spectator_spawn_m` / `level_spectator_despawn_m`; the key is excluded from the bake key, so editing groups never forces a rebake.
 
 ### Gravel road
 

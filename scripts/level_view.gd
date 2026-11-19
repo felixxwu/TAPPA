@@ -21,6 +21,7 @@ var _spawn_nodes: Array[Vector2] = []
 var _save_path := ""
 var _streamer: LevelStreamer
 var _trees: LevelTrees
+var _spectators: LevelSpectators
 var _car: VehicleBody3D
 var _particles: WeatherField
 var _recovery: RoadRecovery
@@ -125,6 +126,8 @@ func _add_effects(car: VehicleBody3D) -> TireMarks:
 	get_parent().add_child(lamps)
 	lamps.setup(car)
 	_car = car
+	if _spectators != null:
+		_spectators.car = car
 	apply_weather(Config.data.dev_level_weather)
 	return marks
 
@@ -238,6 +241,10 @@ func load_level(d: Dictionary) -> void:
 	buildings.setup(_save_path, height_at)
 	for i in d.get("logPiles", []).size():
 		add_child(_log_pile(d["logPiles"][i], i))
+	_spectators = LevelSpectators.new()
+	_spectators.name = "Spectators"
+	add_child(_spectators)
+	_spectators.setup(d.get("spectators", []), self, _bake, buildings)
 
 # A roadside timber pile from the save's `logPiles` ({x, z}), sawn ends facing the nearest road, kept clear of its surface.
 func _log_pile(p: Dictionary, seed: int) -> StaticBody3D:

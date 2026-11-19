@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Spectator Lab</title>
+<style>
+  body { margin: 0; display: flex; font: 13px system-ui, sans-serif; background: #15171a; color: #ddd; height: 100vh; }
+  #side { width: 260px; padding: 12px; overflow-y: auto; background: #1d2024; box-sizing: border-box; flex-shrink: 0; }
+  #side label { display: block; margin: 9px 0 2px; }
+  #side select, #side input[type=number] { width: 100%; box-sizing: border-box; }
+  #side .row { display: flex; gap: 6px; }
+  #side button { margin-top: 6px; display: block; width: 100%; }
+  #stats { margin-top: 14px; white-space: pre; font-family: ui-monospace, monospace; font-size: 12px; color: #aab; }
+  #wrap { flex: 1; position: relative; }
+  #wrap canvas { display: block; width: 100%; height: 100%; }
+  .hint { color: #889; font-size: 11px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="side">
+  <label>Seed</label>
+  <div class="row"><input id="seed" type="number" value="1"><button id="rnd" style="width:auto;margin:0">🎲</button></div>
+  <label>Count</label>
+  <input id="count" type="number" value="24" min="1" max="200">
+  <label>Style</label>
+  <select id="style"><option>peg</option><option>limbless</option></select>
+  <label>Pose</label>
+  <select id="pose"></select>
+  <label>Height range (m)</label>
+  <div class="row"><input id="hMin" type="number" value="1.2" step="0.05"><input id="hMax" type="number" value="1.95" step="0.05"></div>
+  <label><input type="checkbox" id="rain"> Rain (umbrellas, hoods)</label>
+  <label><input type="checkbox" id="marshals" checked> Some marshals in orange</label>
+  <button id="glb">Download .glb</button>
+  <div id="stats"></div>
+  <div class="hint">Drag to orbit, scroll to zoom, right-drag to pan. The whole crowd is one mesh with vertex colours and one material: one draw call.</div>
+</div>
+<div id="wrap"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="spectators.js"></script>
+<script>
+// Preview page for tools/spectators.js.
+const $ = id => document.getElementById(id);
+const { rng, POSES, Builder, spectator } = Spectators;
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+// --- scene -------------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding;
+$("wrap").appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color("#a9c3d6");
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500); camera.position.set(3, 3, 9);
+const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.target.set(0, 1.2, -1);
+scene.add(new THREE.HemisphereLight("#d8e6f2", "#4a5a30", 0.8));
+const sun = new THREE.DirectionalLight("#fff4e0", 0.8); sun.position.set(6, 12, 8); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: "#5a7a38" }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, side: THREE.DoubleSide });
+
+$("pose").innerHTML = ["random", ...Object.keys(POSES)].map(p => `<option>${p}</option>`).join("");
+let crowd = null;
+function regen() {
+  if (crowd) { scene.remove(crowd); crowd.geometry.dispose(); }
+  const opts = { limbless: $("style").value === "limbless", pose: $("pose").value, hMin: +$("hMin").value, hMax: +$("hMax").value, rain: $("rain").checked, marshals: $("marshals").checked };
+  const seed = +$("seed").value, n = Math.max(1, Math.min(200, +$("count").value | 0));
+  const perRow = Math.ceil(Math.sqrt(n * 3)), rows = Math.ceil(n / perRow), out = new Builder();
+  const place = rng(seed * 7919);
+  for (let i = 0; i < n; i++) {
+    const row = Math.floor(i / perRow), col = i % perRow;
+    const x = (col - (perRow - 1) / 2) * 0.8 + (place() - 0.5) * 0.35 + (row % 2) * 0.4;
+    const z = -row * 1.0 + (place() - 0.5) * 0.3, y = row * 0.3, yaw = (place() - 0.5) * 0.8;
+    const height = opts.hMin + (opts.hMax - opts.hMin) * (place() + place()) / 2;
+    const root = new THREE.Matrix4().compose(V(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), V(1, 1, 1).multiplyScalar(height / 1.75));
+    spectator(out, root, seed * 1000 + i, opts);
+  }
+  crowd = new THREE.Mesh(out.geometry(), mat); crowd.name = "spectators"; scene.add(crowd);
+  if (n === 1) { controls.target.set(0, 0.9, 0); camera.position.set(1.2, 1.4, 3.2); }
+  $("stats").textContent = `spectators  ${n}\ntriangles   ${out.tris}\nper person  ${Math.round(out.tris / n)}\ndraw calls  1\nrows        ${rows}`;
+}
+["seed", "count", "hMin", "hMax"].forEach(id => $(id).oninput = regen);
+["style", "pose", "rain", "marshals"].forEach(id => $(id).onchange = regen);
+$("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 100000); regen(); };
+$("glb").onclick = () => new THREE.GLTFExporter().parse(crowd, buf => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buf], { type: "model/gltf-binary" }));
+  a.download = `spectators_${$("seed").value}.glb`; a.click();
+}, { binary: true });
+
+function resize() {
+  const w = $("wrap").clientWidth, h = $("wrap").clientHeight;
+  renderer.setSize(w, h, false); renderer.setPixelRatio(devicePixelRatio);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize(); regen();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>

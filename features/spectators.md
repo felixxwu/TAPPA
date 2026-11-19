@@ -166,6 +166,13 @@ Each free-roam rest stop gets a live `SpectatorGroup` of `rest_stop_crowd_size` 
 front of its cabin, built per near chunk by `TerrainStreamer._rest_crowd`. Ragdolls are
 built on a knock rather than pooled up front (`ragdoll_pool_size` 0).
 
+## Level spectator groups
+
+The level view (`LevelView`) reads the save's top-level `spectators: [{x, z, r, n}]` (origin m, radius m, count) into `LevelSpectators` (`scripts/level_spectators.gd`). A group exists only while the car is within `level_spectator_spawn_m` of its centre and is freed past `level_spectator_despawn_m` (`wants_alive`, with hysteresis); the seed comes from the group index, so a respawn looks identical.
+The Hafren level's groups come from `node tools/geo/place_spectators.js` (seeded; rewrites only the save's `spectators` key): groups by buildings near a road, on the inside of sharp bends and by junctions, each circle snapped to overlap the nearest road edge by 2 m (`snapToEdge`) so people fill right up to the verge. Group counts and sizes are the `kinds` table and the `n` ranges in the script.
+`place()` scatters `n` seeded spots in the disc, off the road (`road_cells_near`, rasterised from `LevelBake.surface_at`), clear of baked trees (`tree_points_near`) and building footprints (`LevelBuildings.footprint_points`), `spectator_separation_m` apart.
+Each member gets a model from `Crowd.level_meshes()` (`assign_models`); `SpectatorGroup` keeps one MultiMesh per model (`_mms`, with per-member `_model` / `_slot`) and ragdolls wear the member's own model. Params: `meshes`, `models`, `face_car` (upright members turn their +Z front towards the car each steer tick, `face_yaw`; default off so free roam is unchanged). Behaviour is otherwise the free-roam crowd's. Members start at their scattered spot but their home (anchor) is set by `edge_homes`: nearest-road members take spots `level_spectator_edge_gap_m` off the road's edge cells, later ones step back towards their own spot in `spectator_separation_m * 1.5` steps until clear of earlier homes, so they shuffle to the verge on spawn and stay put (`setup` param `homes`). Level groups use `level_spectator_road_probe_m` as `road_probe_m` so road avoidance doesn't hold them off the edge. `spectators` is erased from `LevelBake.key_of`. Tests: `tests/headless/test_level_spectators.gd`.
+
 ## Collision layers
 
 - Upright crowd: no physics bodies at all (pure data + MultiMesh).
@@ -204,3 +211,21 @@ distance). Disable with
 - Optional articulated ragdoll if the single capsule reads too stiff.
 - Re-export `spectator.glb` from Blender for correct per-material colours
   (current colours are placeholders from a pure-Python extraction).
+
+## Spectator Lab
+
+`tools/spectator_lab.html` is a standalone browser page (open the file directly, three.js from CDN, like the building lab)
+that generates a crowd of abstract, faceless low-poly peg-figure spectators from a seed. Not wired into the game yet: the game still uses `blender/spectator/spectator.glb` (150 triangles) for every crowd.
+
+`spectator(out, root, seed, opts)` builds one person from a handful of primitives (4-sided prisms for limbs, a 6-sided
+torso, a 20-face icosahedron head, low partial spheres for hair and hats; no hands, feet or neck), modelled at 1.75 m and scaled per person to a height drawn from
+the height range. Random per person: skin, hair, jacket/trousers colours, body width and belly, coat / t-shirt, hat
+(beanie, cap, bucket hat, hood in rain), backpack, orange marshal tabard, and a pose from `POSES`
+(two arm directions per side: stand, pockets, folded, wave, cheer, camera, umbrella).
+
+Cheap to render by construction: no textures, colours are per-vertex, and the whole crowd is merged into ONE mesh with ONE
+flat-shaded material (one draw call), ~130 triangles per person (~105 in the "limbless" style, where legs are one tapered trouser block and there are no arms; only the umbrella and camera poses still show, the camera floating in front of the face). "Download .glb" exports the current crowd.
+
+## Baked export for the game
+
+`node tools/bake_spectators.js` runs `tools/spectators.js` under node (three r128 downloaded once into the OS temp dir) and writes `models/spectators/spectators.glb`: 10 limbless people (`Spectator0`..`Spectator9`, one mesh each, flat normals, `COLOR_0` linear vertex colours, one shared double-sided roughness-1 material, feet at y=0, facing +Z, real metres). People are the `PEOPLE` list (seed, height) in the script; `SCAN=40 node tools/bake_spectators.js` prints triangle counts per seed to help pick. After changing it run `godot --headless --import`. `Crowd.level_meshes()` (`scripts/crowd.gd`) returns the 10 meshes in node order with a shared vertex-colour material.

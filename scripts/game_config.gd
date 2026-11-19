@@ -337,7 +337,7 @@ var weather_sun_mult := 1.0:
 # Every live material apply_car_light has lit, so a weather change reaches them all at once:
 # the car, rocks and barriers. Material instance id -> WeakRef.
 var _car_lit := {}
-var _foliage_lit := {}  # the same, for apply_foliage_light: the trees and bushes
+var _foliage_lit := {} # the same, for apply_foliage_light: the trees and bushes
 ## GLOBAL GRIP: one multiplier on every tyre's μ, for every car, on every surface and in every
 ## weather (Drivetrain's per-contact resolver, alongside the weather multiplier). 1.0 is the
 ## authored grip; below 1.0 everything slides more. The one knob for "the cars are too grippy".
@@ -933,7 +933,7 @@ func has_nitrous() -> bool:
 ## Extra FOV (degrees) added on top of chase_fov at chase_fov_speed and above, to
 ## sell a sense of speed. The FOV eases linearly from chase_fov (stationary) to
 ## chase_fov + chase_fov_speed_boost at chase_fov_speed (m/s).
-@export var chase_fov_speed_boost := 70.0
+@export var chase_fov_speed_boost := 60.0
 ## Speed (m/s) at which the full chase_fov_speed_boost is reached.
 @export var chase_fov_speed := 55.0
 ## Extra FOV (degrees) added, on top of the speed boost, for as long as nitrous is
@@ -3104,6 +3104,14 @@ func spectator_params() -> Dictionary:
 ## How far past the road's edge the level view keeps the ground flat at road height before it
 ## blends back to the terrain, in metres. The lab (tools/level_editor_lab.html) mirrors it as ROAD_FLAT_M.
 @export var level_road_flat_margin := 1.0
+## Level view: a spectator group from the save appears once the car is within this many metres of its centre.
+@export var level_spectator_spawn_m := 150.0
+## Level view: a spawned spectator group is freed again once the car is farther than this (kept above the spawn distance so it doesn't flicker).
+@export var level_spectator_despawn_m := 200.0
+## Level view: spectators with room drift to stand this far (m) off the road's edge.
+@export var level_spectator_edge_gap_m := 0.75
+## Level view: how far (m) a spectator looks for road to avoid; small so the verge is reachable. Free roam uses its own.
+@export var level_spectator_road_probe_m := 1.0
 
 # --- Ground cover in the level view ---
 ## How far from the camera ground-cover tufts are drawn, in metres.

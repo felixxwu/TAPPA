@@ -20,6 +20,7 @@ const EXEMPT := {
 	"res://models/rocks/rock_largeD.glb": "foliage.gd draws rocks with ps1_models_lit",
 	"res://models/rocks/rock_smallA.glb": "foliage.gd draws rocks with ps1_models_lit",
 	"res://models/vegetation/groundcover_opaque.glb": "foliage.gd draws it with tree_canopy",
+	"res://models/spectators/spectators.glb": "crowd.gd level_meshes puts the level spectators on ps1_models_lit",
 	"res://blender/911/911.glb": "car.gd puts car bodies on ps1_models_lit",
 	"res://blender/acty/acty.glb": "car.gd puts car bodies on ps1_models_lit",
 	"res://blender/charger/charger.glb": "car.gd puts car bodies on ps1_models_lit",

@@ -33,7 +33,7 @@
   <button id="loadBtn">Load .json</button><input id="loadFile" type="file" accept=".json" hidden>
   <button id="random">🎲 Random</button>
   <button id="reset">Reset</button>
-  <label>Tool <select id="tool"><option value="edit">Trees &amp; road</option><option value="cover">Ground cover</option></select></label>
+  <label>Tool <select id="tool"><option value="edit">Trees &amp; road</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option></select></label>
   <span id="coverBar" hidden>
     <label>Cover <select id="coverType"></select></label>
     <label>Brush <input id="brush" type="range" min="1" max="40" step="1" value="6"><span class="val" id="v_brush"></span></label>
@@ -51,6 +51,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="groundcover_tufts.js"></script>
 <script src="buildings.js"></script>
+<script src="spectators.js"></script>
 <script>
 // A hand-editable patch of world: a 2D top-down editor (left) and the same patch rendered in 3D the way the game draws it (right).
 const $ = id => document.getElementById(id);
@@ -175,6 +176,7 @@ function pack(l) {
   const out = { ...l, kinds, treesBin: packTrees(l.trees, kinds, l.size ?? 600),
     roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension) }))) };
   delete out.road; delete out.trees;
+  if (!out.spectators?.length) delete out.spectators;
   if (out.size === 600) delete out.size;
   if (l.heightmap) {
     const bytes = new Uint8Array(Int16Array.from(l.heightmap, h => Math.round(h * 10)).buffer);
@@ -255,6 +257,7 @@ const COVER_DEFAULT = [
 ];
 const coverOverlay = document.createElement("canvas");
 const coverTool = () => $("tool").value === "cover";
+const specTool = () => $("tool").value === "spec";
 let coverRgbs = {};
 function coverPaintRect(c0, r0, c1, r1) {
   const w = c1 - c0 + 1, h = r1 - r0 + 1, img = new ImageData(w, h), d = img.data;
@@ -542,6 +545,14 @@ function draw2D() {
   ctx.fillStyle = "#c8873a";
   if (show.logPiles) for (const p of pileFootprints()) { ctx.save(); ctx.translate(p.x, p.z); ctx.rotate(p.rot); ctx.fillRect(-p.L / 2, -p.W / 2, p.L, p.W); ctx.strokeRect(-p.L / 2, -p.W / 2, p.L, p.W); ctx.restore(); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (show.spectators) (level.spectators ?? []).forEach((g, i) => {
+    const [sx, sz] = toScreen(g.x, g.z), on = sel?.type === "spec" && sel.i === i, r = g.r * view.zoom;
+    ctx.fillStyle = on ? "rgba(255,220,90,.35)" : "rgba(230,90,160,.3)"; ctx.strokeStyle = on ? "#fc6" : "#e65aa0"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sx, sz, r, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3; ctx.font = `bold ${12 * devicePixelRatio}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.strokeText(g.n, sx, sz); ctx.fillText(g.n, sx, sz);
+    if (on) { ctx.fillStyle = "#fc6"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx + r, sz, 6 * devicePixelRatio, 0, 7); ctx.fill(); ctx.stroke(); }
+  });
   const vis = !show.trees ? [] : treesInView(vx0 - 10, vz0 - 10, vx1 + 10, vz1 + 10), stride = Math.max(1, Math.ceil(vis.length / TREE_DRAW_MAX));
   if (stride > 1) { // too many to draw one by one: an evenly thinned set of dots
     let last = "";
@@ -589,6 +600,12 @@ function draw2D() {
 
 function hit(sx, sz) {
   const [x, z] = toWorld(sx, sz), near = (wx, wz) => { const [px, pz] = toScreen(wx, wz); return Math.hypot(px - sx, pz - sz) < 14 * devicePixelRatio; };
+  if (specTool()) {
+    const gs = level.spectators ?? [];
+    if (sel?.type === "spec" && gs[sel.i] && near(gs[sel.i].x + gs[sel.i].r, gs[sel.i].z)) return { type: "specr", i: sel.i };
+    for (let i = gs.length - 1; i >= 0; i--) if (Math.hypot(gs[i].x - x, gs[i].z - z) < Math.max(gs[i].r, 8 / view.zoom)) return { type: "spec", i };
+    return null;
+  }
   if (sel?.type === "node" && level.roads[sel.c].length > 1) for (const h of handles(sel.c, sel.i)) if (near(h.x, h.z)) return { type: "handle", c: sel.c, i: sel.i, kind: h.kind };
   let best = null, bestD = 14 * devicePixelRatio;
   if (show.roads) level.roads.forEach((road, c) => road.forEach((p, i) => { const [px, pz] = toScreen(p.x, p.z), d = Math.hypot(px - sx, pz - sz); if (d < bestD) { bestD = d; best = { type: "node", c, i }; } }));
@@ -609,7 +626,7 @@ cv.onpointerdown = e => {
   // only the selected tree can be dragged; nodes drag straight away: pressing on anything else pans the map, and a plain click selects it
   if (h?.type === "tree" && !(sel?.type === h.type && sel.i === h.i && sel.c === h.c)) { clicked = h; h = null; }
   drag = { sx: e.clientX, sz: e.clientY, moved: false, item: h, clicked, vx: view.x, vz: view.z, shift: e.shiftKey };
-  if (h && h.type !== "handle") select(h);
+  if (h && h.type !== "handle" && h.type !== "specr") select(h);
 };
 let pointer = null;
 cv.onpointermove = e => {
@@ -622,6 +639,8 @@ cv.onpointermove = e => {
   const it = drag.item, [x, z] = toWorld(...px(e));
   if (!it) { view.x = drag.vx - dx / view.zoom; view.z = drag.vz - dz / view.zoom; changed(); return; }
   if (it.type === "tree") { Object.assign(level.trees[it.i], { x, z }); changed(); return; }
+  if (it.type === "spec") { Object.assign(level.spectators[it.i], { x, z }); syncPopup(); changed(); return; }
+  if (it.type === "specr") { const g = level.spectators[it.i]; g.r = Math.max(1, Math.round(Math.hypot(x - g.x, z - g.z) * 2) / 2); syncPopup(); changed(); return; }
   const n = level.roads[it.c][it.i];
   if (it.type === "node") { const road = level.roads[it.c]; Object.assign(n, it.i === 0 || it.i === road.length - 1 ? snapNear(it.c, x, z) : { x, z }); }
   else { const s = (it.kind === "out" ? 3 : -3) / n.tension; n.m = { x: (x - n.x) * s, z: (z - n.z) * s }; }
@@ -635,6 +654,7 @@ cv.onpointerup = e => {
     const [x, z] = toWorld(...px(e));
     if (newRoadArmed) newRoad(x, z);
     else if (drag.shift) extendRoad(x, z);
+    else if (specTool()) { (level.spectators ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r: 8, n: 10 }); select({ type: "spec", i: level.spectators.length - 1 }); changed(); }
     else if (sel) select(null); // a click on empty ground first just clears the selection
     else { level.trees.push({ x, z, rot: Math.random() * 360, sx: 1, sy: 1, kind: $("kind").value }); changed(); }
   }
@@ -678,7 +698,9 @@ function splitRoad() {
   select({ type: "node", c, i }); changed(true); save();
 }
 function removeRoad() { level.roads.splice(sel.c, 1); select(null); changed(true); save(); }
-cv.onwheel = e => { e.preventDefault(); view.zoom = Math.max(Math.min(0.3, fitZoom() * 0.8), Math.min(20, view.zoom * Math.exp(-e.deltaY * 0.0015))); changed(); };
+cv.onwheel = e => {
+  e.preventDefault();
+  if (specTool() && sel?.type === "spec") { const g = level.spectators[sel.i]; g.r = Math.max(1, Math.round((g.r - Math.sign(e.deltaY)) * 2) / 2); syncPopup(); changed(); save(); return; } view.zoom = Math.max(Math.min(0.3, fitZoom() * 0.8), Math.min(20, view.zoom * Math.exp(-e.deltaY * 0.0015))); changed(); };
 
 // WASD walks the view centre (the sight-line eye and the 3D camera's target) relative to the 3D camera's facing; shift runs.
 const keys = new Set();
@@ -699,6 +721,7 @@ addEventListener("keydown", e => {
   if (e.shiftKey && sel.type === "node") removeRoad(); else removeSelected();
 });
 function removeSelected() {
+  if (sel.type === "spec") { level.spectators.splice(sel.i, 1); select(null); changed(); save(); return; }
   const isNode = sel.type === "node";
   if (isNode) { const road = level.roads[sel.c]; road.splice(sel.i, 1); if (!road.length) level.roads.splice(sel.c, 1); } else level.trees.splice(sel.i, 1);
   select(null); changed(isNode); save();
@@ -736,7 +759,7 @@ function clearRoad() {
   pop.querySelector("[data-act=clear]").textContent = `Cleared ${before - level.trees.length} trees, ${cells} m² cover`;
   changed(false); save();
 }
-const selObj = () => sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
+const selObj = () => sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
 
 // --- the details pop-up for the selected tree or road node --------------------------------------
 const pop = $("pop");
@@ -744,7 +767,9 @@ const field = (key, label, step, unit = "") => `<label>${label} <span><input typ
 function select(s) {
   sel = s;
   if (!sel) { pop.style.display = "none"; mapDirty = true; return; }
-  pop.innerHTML = sel.type === "tree"
+  pop.innerHTML = sel.type === "spec"
+    ? `<b>Spectators ${sel.i}</b>` + field("r", "Radius", 0.5, "m") + field("n", "People", 1) + `<button data-act="del">Delete group</button>`
+    : sel.type === "tree"
     ? `<b>Tree ${sel.i}</b><label>Species <select data-k="kind">${Object.keys(KINDS).map(k => `<option>${k}</option>`).join("")}</select></label>` +
       field("rot", "Rotation", 5, "°") + field("sx", "Stretch X", 0.05) + field("sy", "Stretch Y", 0.05) + field("width", "Width", 0.1, "m") + field("height", "Height", 0.1, "m") +
       `<button data-act="del">Delete tree</button>`
@@ -762,6 +787,7 @@ function edit(k, v) {
   const o = selObj();
   if (k === "kind") o.kind = v;
   else if (!isFinite(+v) || +v <= 0 && k !== "rot") return;
+  else if (sel.type === "spec") o[k] = k === "n" ? Math.min(500, Math.round(+v)) : +v;
   else if (k === "width") o.sx = +v / treeW({ ...o, sx: 1 });
   else if (k === "height") o.sy = +v / treeH({ ...o, sy: 1 });
   else o[k] = +v;
@@ -771,7 +797,7 @@ function edit(k, v) {
 function syncPopup(skip) {
   if (!sel) return;
   const o = selObj();
-  const vals = sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+  const vals = sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
                                    : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
   for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
 }
@@ -790,12 +816,12 @@ $("relief").oninput = e => { level.relief = +e.target.value; $("v_relief").textC
 $("save").onclick = async () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(await packForDownload(level))])); a.download = "level.json"; a.click(); };
 $("loadBtn").onclick = () => $("loadFile").click();
 $("loadFile").onchange = async e => { try { level = await unpackAsync(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
-$("tool").onchange = () => { $("coverBar").hidden = !coverTool(); if (coverTool()) select(null); mapDirty = true; };
+$("tool").onchange = () => { $("coverBar").hidden = !coverTool(); if (coverTool() || specTool()) select(null); mapDirty = true; };
 // The map legend: each layer can be hidden; hidden roads and trees can't be clicked either.
-const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], roads: ["Roads", "#b9ad93"], cover: ["Ground cover", "#6a8a4a"], contours: ["Contours", "#2a3a20"] };
+const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], roads: ["Roads", "#b9ad93"], cover: ["Ground cover", "#6a8a4a"], contours: ["Contours", "#2a3a20"] };
 const show = Object.fromEntries(Object.keys(LAYERS).map(k => [k, true]));
 $("legend").innerHTML = Object.entries(LAYERS).map(([k, [name, col]]) => `<label><input type="checkbox" data-layer="${k}" checked><i style="background:${col}"></i>${name}</label>`).join("");
-$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : "roads"]) select(null); mapDirty = true; };
+$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : "roads"]) select(null); mapDirty = true; };
 $("brush").oninput = () => { $("v_brush").textContent = $("brush").value + " m"; mapDirty = true; };
 $("v_brush").textContent = $("brush").value + " m";
 $("coverMode").onchange = () => mapDirty = true;
@@ -804,6 +830,8 @@ $("coverFile").onchange = async e => { try { await importCover(e.target.files[0]
 $("coverClear").onclick = () => { level.cover.fill(0); coverRebuild(); save(); };
 addEventListener("keydown", e => {
   if (/INPUT|SELECT/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === "KeyP") { $("tool").value = specTool() ? "edit" : "spec"; $("tool").onchange(); }
+  if (e.key === "[" || e.key === "]") if (specTool() && sel?.type === "spec") { const g = selObj(); g.r = Math.max(1, g.r + (e.key === "]" ? 1 : -1)); syncPopup(); changed(); save(); }
   if (e.code === "KeyC") { $("tool").value = coverTool() ? "edit" : "cover"; $("tool").onchange(); }
   if (!coverTool()) {
     if (e.code === "KeyN") { newRoadArmed = !newRoadArmed; cv.style.cursor = newRoadArmed ? "crosshair" : ""; }
@@ -1076,6 +1104,27 @@ function rebuild3DLogPiles() {
   logs.forEach((mat, n) => pileMesh.setMatrixAt(n, mat));
   scene.add(pileMesh);
 }
+// Spectator groups: n people scattered inside each circle, facing the nearest road point, merged into one mesh (tools/spectators.js).
+const crowdMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+let crowdMesh = null;
+function rebuild3DSpectators() {
+  if (crowdMesh) { scene.remove(crowdMesh); crowdMesh.geometry.dispose(); crowdMesh = null; }
+  const out = new Spectators.Builder(), root = new THREE.Matrix4(), pos = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), q = new THREE.Quaternion();
+  (level.spectators ?? []).forEach((g, gi) => {
+    if (!inWin(g.x, g.z, g.r + 10)) return;
+    const rnd = Spectators.rng(gi * 7919 + 17);
+    let face = 0;
+    if (samples.length > 1) { const a = samples[nearestRoad(g.x, g.z, samples).i]; face = Math.atan2(a.x - g.x, a.z - g.z); }
+    for (let k = 0; k < g.n; k++) {
+      const a = rnd() * Math.PI * 2, d = g.r * Math.sqrt(rnd()), x = g.x + Math.cos(a) * d, z = g.z + Math.sin(a) * d;
+      root.compose(pos.set(x, heightAt(x, z), z), q.setFromAxisAngle(UP, face + (rnd() - 0.5) * 0.6), one);
+      Spectators.spectator(out, root, gi * 1000 + k, { limbless: true, pose: "random", rain: false, marshals: true });
+    }
+  });
+  if (!out.tris) return;
+  crowdMesh = new THREE.Mesh(out.geometry(), crowdMat);
+  scene.add(crowdMesh);
+}
 let treeMeshes = [];
 function rebuild3DTrees() {
   for (const m of treeMeshes) { scene.remove(m); m.dispose(); }
@@ -1168,7 +1217,7 @@ function frame() {
     placeWindow(); rebuildGrid(); rebuild3DTerrain(); windowDirty = false; treesDirty = mapDirty = cover3DDirty = true;
     if (T.full) buildContours(heights, G, GCELL, 1, CONTOUR_M);
   }
-  if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); rebuild3DLogPiles(); treesDirty = false; }
+  if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); rebuild3DLogPiles(); rebuild3DSpectators(); treesDirty = false; }
   U.uCenter.value.set(view.x, 0, view.z); U.uTime.value = now / 1000;
   if (!coverAt || cover3DDirty && now - coverGenAt > 150 || Math.hypot(view.x - coverAt[0], view.z - coverAt[1]) > 10) rebuild3DCover();
   if (++frames % 15 === 0) $("sight").textContent = big()
