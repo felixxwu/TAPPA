@@ -185,7 +185,7 @@ The level view is graded to read as a daytime photo, not the free-roam overcast:
 `level_view.tscn` (a seamless noise-cloud `PanoramaSkyMaterial` ramped blue to white, `fog_light_color` pale blue, depth fog ending at `GameConfig.level_tree_draw_m`,
 `fog_sky_affect` 0);
 `LevelView._build_ground` multiplies the grass vertex colour by `(0.95, 1.25, 0.72)`, fading out over the few metres around the road's edge, to push the ground
-lime; `KIND_TINT` in `level_trees.gd` tints each Welsh species (spruce near-black green, broadleaves yellow-green).
+lime; `KIND_TINT` in `level_trees.gd` tints each Welsh species (spruce near-black green, broadleaves yellow-green); the shader then squashes leaf contrast and saturation so trees sit in the muted palette.
 Global grade values in `GameConfig`: `grade_saturation` 0.85, `grade_contrast` 1.1, neutral `grade_shadow_tint` / `grade_highlight_tint`,
 `fog_density` 0.0025. `tools/level_view_capture.gd` takes `CAP_POSES="x,z,tx,tz,name;..."` (+ `CAP_EYE`, `CAP_FOV`,
 `CAP_OUT`) for eye-height photo-match renders.
