@@ -21,6 +21,7 @@ var _hint: Label
 var _busy := false
 var _pad_used := false  # a gamepad aims with the centre crosshair instead of the mouse
 var _drag_from := Vector2.ZERO
+var _painter: Thread  # paints the map image in the background from load, so the first M opens instantly
 
 
 func _init() -> void:
@@ -31,6 +32,17 @@ func _init() -> void:
 	_hint = UITheme.label("Drag / WASD / arrows: pan   Wheel / LB RB: zoom   Click / Enter: teleport   M: close", "ink")
 	_hint.position = Vector2(UITheme.FONT_SIZE, UITheme.FONT_SIZE)
 	add_child(_hint)
+
+
+func _ready() -> void:
+	_painter = Thread.new()
+	_painter.start(_paint)
+
+
+func _exit_tree() -> void:
+	if _painter != null:
+		_painter.wait_to_finish()
+		_painter = null
 
 
 func size_m() -> float:
@@ -73,6 +85,19 @@ func snap_to_road(w: Vector2) -> Vector2:
 func _build() -> void:
 	if _texture != null:
 		return
+	_texture = ImageTexture.create_from_image(_painter.wait_to_finish())  # waits only if the painting isn't done yet
+	_painter = null
+	var b := view._bake
+	var line := PackedVector2Array()
+	for i in b.sx.size():
+		if i > 0 and b.sc[i] != b.sc[i - 1]:
+			_chains.append(line)
+			line = PackedVector2Array()
+		line.append(Vector2(b.sx[i], b.sz[i]))
+	_chains.append(line)
+
+
+func _paint() -> Image:
 	var b := view._bake
 	var half := size_m() / 2.0
 	var k := IMAGE_PX / size_m()
@@ -94,14 +119,7 @@ func _build() -> void:
 					var p := Vector2i(cp) + Vector2i(x, y)
 					if p.x >= 0 and p.y >= 0 and p.x < IMAGE_PX and p.y < IMAGE_PX:
 						img.set_pixelv(p, BUILDING)
-	_texture = ImageTexture.create_from_image(img)
-	var line := PackedVector2Array()
-	for i in b.sx.size():
-		if i > 0 and b.sc[i] != b.sc[i - 1]:
-			_chains.append(line)
-			line = PackedVector2Array()
-		line.append(Vector2(b.sx[i], b.sz[i]))
-	_chains.append(line)
+	return img
 
 
 # Each tree as a disc as wide as its canopy, darker in the middle so neighbouring crowns stay apart.
@@ -210,6 +228,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if _painter != null and not _painter.is_alive():
+		_build()
 	if not visible:
 		return
 	var dir := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")

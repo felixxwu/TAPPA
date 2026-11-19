@@ -28,3 +28,9 @@ canvas stand-ins) and writes `<level>.buildings.json` (each building's triangles
 adds a `LevelBuildings` node (`scripts/level_buildings.gd`) that builds one `StaticBody3D` per building: the mesh
 (unshaded with the baked sun shading in vertex colours, nearest-filtered atlas, alpha scissor) plus a box collider over
 the footprint, seated on the lowest ground under it. No bake file → no buildings.
+
+**Log piles.** The level JSON's `logPiles` list (`{x, z}`) places roadside timber piles (`LogPile.build`, `log_pile.gd`) via
+`LevelView._log_pile`: sawn ends facing the nearest road (logs at right angles to it), a two-section pile's stacks side by side along
+the road, pushed at least 7 m off its centreline, with a box collider. The list
+is left out of `LevelBake.key_of`, so moving piles never forces a rebake. The Hafren sites were picked by script: verges with
+no trees within 7 m, dense forest behind and sparser ground across the road, 200 m+ from buildings and 500 m apart.

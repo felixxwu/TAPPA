@@ -121,6 +121,15 @@ func test_an_edited_save_makes_the_bake_stale_and_an_unedited_one_does_not() -> 
 	assert_eq(LevelBake.baked_in_process, before + 2, "retuning ground cover recipes keeps the bake")
 
 
+func test_a_bake_on_another_thread_reports_progress_and_returns_the_bake() -> void:
+	LevelBake.progress = 0.0
+	var worker := Thread.new()
+	worker.start(LevelBake.load_or_bake.bind("", _data))
+	var b: LevelBake = worker.wait_to_finish()
+	assert_not_null(b)
+	assert_gt(LevelBake.progress, 0.5, "the progress walked through both grids")
+
+
 func test_an_empty_path_bakes_in_memory() -> void:
 	var before := LevelBake.baked_in_process
 	assert_not_null(LevelBake.load_or_bake("", _data))

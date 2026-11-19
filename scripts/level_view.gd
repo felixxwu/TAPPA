@@ -40,7 +40,7 @@ func _ready() -> void:
 	WorldRuntime.apply_fps_cap(applied_fps_caps, WorldRuntime.loading_cap(Platform.is_touch()), Platform.is_headless())
 	_save_path = path
 	var t0 := Time.get_ticks_msec()
-	load_level(parsed)
+	await load_level(parsed)
 	parsed = null  # the raw save is large and this function waits below
 	if _bake == null:
 		return
@@ -205,7 +205,19 @@ func load_level(d: Dictionary) -> void:
 	level = data.level
 	_spawn_nodes = spawn_override(d.get("roads", []), Config.data.dev_level_spawn)
 	if _bake == null:
-		_bake = LevelBake.load_or_bake(_save_path, data)
+		if not _save_path.is_empty() and not OS.has_feature("web") and not Platform.is_headless():
+			var baking := LoadingScreen.new()
+			add_child(baking)
+			baking.set_title("Baking the level…")
+			var worker := Thread.new()
+			worker.start(LevelBake.load_or_bake.bind(_save_path, data))
+			while worker.is_alive():
+				baking.set_step("%d%%" % roundi(LevelBake.progress * 100.0))
+				await get_tree().process_frame
+			_bake = worker.wait_to_finish()
+			baking.set_step("")
+		else:
+			_bake = LevelBake.load_or_bake(_save_path, data)
 	print("level view: bake load %d ms, decode %d ms" % [t1 - t0, Time.get_ticks_msec() - t1])
 	if _bake == null:
 		push_error("LevelView: %s" % LevelBake.last_error)
@@ -224,6 +236,34 @@ func load_level(d: Dictionary) -> void:
 	buildings.name = "Buildings"
 	add_child(buildings)
 	buildings.setup(_save_path, height_at)
+	for i in d.get("logPiles", []).size():
+		add_child(_log_pile(d["logPiles"][i], i))
+
+# A roadside timber pile from the save's `logPiles` ({x, z}), sawn ends facing the nearest road, kept clear of its surface.
+func _log_pile(p: Dictionary, seed: int) -> StaticBody3D:
+	var at := Vector2(p.x, p.z)
+	var road := road_pose(at, Vector3.FORWARD)
+	var rows := 4 + seed % 3
+	var base := 7 + seed % 4
+	var sections := 1 + seed % 2
+	var away := at - Vector2(road.origin.x, road.origin.z)
+	var clear := 7.0
+	if away.length() < clear:
+		at = Vector2(road.origin.x, road.origin.z) + away.normalized() * clear
+	var radius := 0.16
+	var mesh := LogPile.build(seed + 1, seed % 2, rows, base, 4.0, radius, sections)
+	var body := StaticBody3D.new()
+	body.name = "LogPile%d" % seed
+	body.transform = Transform3D(road.basis.orthonormalized().rotated(Vector3.UP, PI / 2.0), Vector3(at.x, height_at(at.x, at.y) - 0.1, at.y))
+	body.add_child(mesh)
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(sections * LogPile.section_width(base, radius), radius * (2.0 + (rows - 1) * 1.75), 4.15)
+	shape.shape = box
+	shape.position.y = box.size.y / 2
+	body.add_child(shape)
+	return body
+
 
 func _build_streamer() -> void:
 	_streamer = LevelStreamer.new()

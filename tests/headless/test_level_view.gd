@@ -112,3 +112,14 @@ func test_the_spawn_override_picks_the_node_and_faces_along_the_road_or_falls_ba
 	assert_eq(LevelView.spawn_override(roads, Vector2i(-1, -1)).size(), 0)
 	assert_eq(LevelView.spawn_override(roads, Vector2i(3, 0)).size(), 0, "out of range")
 	assert_eq(LevelView.spawn_override(roads, Vector2i(0, 9)).size(), 0)
+
+
+func test_log_piles_sit_clear_of_the_road_with_ends_facing_it() -> void:
+	var level := _level()
+	level["logPiles"] = [{"x": 20.0, "z": 2.0}, {"x": -40.0, "z": -30.0}]
+	var view := _built(level)
+	var near := view.get_node("LogPile0") as Node3D
+	var half_length: float = ((near.get_child(1) as CollisionShape3D).shape as BoxShape3D).size.z / 2.0
+	assert_gt(absf(near.position.z) - half_length, 3.0, "a pile placed on the verge is pushed off the road, near end included")
+	assert_almost_eq(absf(near.basis.z.z), 1.0, 0.01, "its logs point at the road, sawn ends facing it")
+	assert_almost_eq((view.get_node("LogPile1") as Node3D).position.z, -30.0, 0.01, "a pile already clear stays put")

@@ -3094,7 +3094,7 @@ func spectator_params() -> Dictionary:
 @export var dev_level_weather := "dry"
 @export var dev_level_path := "res://tools/levels/hafren_5km.json"
 ## Level view: spawn at roads[x][y] of the save (0-based, facing the next node, or the previous one at the end of a road); (-1, -1) keeps the default spawn.
-@export var dev_level_spawn := Vector2i(26, 14)
+@export var dev_level_spawn := Vector2i(26, 13)
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
 ## Level view: how far trees are drawn, in metres. The level's depth fog ends here, so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.

@@ -53,11 +53,16 @@ game's textures; `?level=levels/<name>.json` opens a save.
 - **Visibility** is no longer baked in the lab: `tools/bake_level.gd` renders it into the game's bake (see "Tree tiles" below). The lab shows every tree.
 - **WASD** (`walk`) moves the view centre, the sight-line eye and the 3D camera's target, relative to the
   3D camera's facing (40 m/s, 400 with shift), kept inside the square.
+- **Map legend** (top-right of the 2D view, `LAYERS` / `show` in `draw2D`): checkboxes hide trees, buildings,
+  log piles (`level.logPiles`, drawn as their real footprint — `pileFootprints` mirrors `level_view.gd` → `_log_pile`), roads, ground cover and contours. Hidden trees and roads
+  can't be clicked or selected. 2D map only; the 3D view always shows everything.
+  The 3D view draws log piles too (`rebuild3DLogPiles`: one InstancedMesh of cylinders stacked like
+  `log_pile.gd` → `_stack`, minus its random jitter).
 - **Ground cover** (`level.cover`, `level.coverTypes`): a 1 m grid of type ids over the square, `SIZE * SIZE`
   bytes, row 0 = north edge (z = -SIZE/2), col 0 = west edge, 0 = none. `coverTypes` is `[{id, name, col}]`
   (defaults 1 verge grass, 2 molinia, 3 heather, 4 bilberry/scrub). The **Ground cover** tool (toolbar select, or
   `c`) paints a round brush (`[` `]` size, `e` paint/erase, shift-drag erases, `1`-`4` pick the type, right-drag
-  pans); **Cover overlay** tints the 2D map; **Import cover mask** loads a greyscale PNG where pixel value = type id
+  pans); the **Ground cover** box in the map legend tints the 2D map; **Import cover mask** loads a greyscale PNG where pixel value = type id
   (`tools/geo/cover_mask.py` writes `tools/geo/data/<name>/cover_index.png`), stretched to the square.
   Cover is not part of `bakeKey`. The 3D view draws it as opaque tufts (`rebuild3DCover`): one InstancedMesh per
   (type, preset) in `COVER_RENDER` (tufts per m² each), positions from `hash2(cell, layer, k)` seated on
@@ -76,7 +81,7 @@ height and satellite colour.
 ## In the game
 
 **Map (M, or the pad's Back button):** `LevelMap`, added by `LevelView` once loaded, pauses the game and shows the bake's road
-samples as polylines over a `IMAGE_PX`² image of tree dots and building footprints (built on first open, not the satellite image).
+samples as polylines over a `IMAGE_PX`² image of tree dots and building footprints (painted on a background thread (`_paint`) as soon as the map is added, so the first open is instant; not the satellite image).
 Drag / WASD / arrows / left stick pan, wheel / +- / LB RB zoom; click (or Enter / A on the centre crosshair) teleports to the nearest road
 sample (`snap_to_road`, `LevelView.road_pose`), prefilling the streamer there before unpausing so the car doesn't fall through.
 
@@ -115,7 +120,7 @@ atlases load from `res://tools/`, so this works in the editor, not in an exporte
 RGBA8 texture at 2 m texels (`frame`: across (signed, within ±16 m), half-width (0-16 m), along (modulo 64 m), junction
 weight; 8 bits each, so 5 km is about 25 MB) and the road samples (`sx..sc`, so `surface_at` / `road_pose` / `spawn_pose`
 run without `LevelData._build_road`). `LevelBake.bake(data, key)` is pure; `load_or_bake(save_path, data)` reads `<save>.bake.res`
-and compares `source_key` (md5 of the save minus `coverKinds`, which isn't baked, + `BAKE_VERSION`): stale or missing bakes in process on desktop (warns,
+and compares `source_key` (md5 of the save minus `coverKinds`, which isn't baked, + `BAKE_VERSION`): stale or missing bakes in process on desktop (`LevelView.load_level` puts up a "Baking the level" loading screen and runs the bake on a thread, showing `LevelBake.progress` as a percentage; warns,
 saves beside the save), returns null on web and sets `last_error`; an empty path bakes in memory only. Bump `BAKE_VERSION`
 when the bake's maths changes. Run `BAKE_LEVEL=res://tools/levels/<name>.json godot --headless --path . res://tools/bake_level.tscn`; for the rendered tree visibility use `tools/bake_level.sh [N]`, which runs N silent (`--audio-driver Dummy`) windows over contiguous slices of the road and merges them (decode is a sort plus `bsearch` per view, not a per-pixel loop).
 

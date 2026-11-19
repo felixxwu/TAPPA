@@ -16,10 +16,12 @@
   #views > div { flex: 1; position: relative; min-width: 0; border-left: 1px solid #333; overflow: hidden; }
   #views canvas { display: block; width: 100%; height: 100%; }
   #map { cursor: crosshair; }
-  .hint { position: absolute; left: 8px; bottom: 8px; padding: 4px 8px; background: rgba(0,0,0,.55); color: #ccd; font-size: 11px; pointer-events: none; white-space: pre; }
   #pop { position: absolute; display: none; flex-direction: column; gap: 5px; padding: 8px 10px; background: #1d2024ee; border: 1px solid #fc6; border-radius: 4px; }
   #pop label { justify-content: space-between; }
   #pop b { color: #fc6; }
+  #legend { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; background: #1d2024dd; border-radius: 4px; }
+  #legend label { display: flex; align-items: center; gap: 6px; }
+  #legend i { width: 10px; height: 10px; border-radius: 2px; }
 </style>
 </head>
 <body>
@@ -39,18 +41,11 @@
     <button id="coverImport">Import cover mask</button><input id="coverFile" type="file" accept=".png,image/png" hidden>
     <button id="coverClear">Clear cover</button>
   </span>
-  <label><input id="showCover" type="checkbox" checked> Cover overlay</label>
   <span class="val" id="sight"></span>
 </div>
 <div id="views">
-  <div id="wrap2d"><canvas id="map"></canvas><div id="pop"></div><div class="hint">drag empty: pan · wasd: walk (shift: run) · wheel: zoom · click empty: add tree
-cover tool: drag paints (right-drag pans) · e: paint/erase · [ ]: brush · 1-4: type · c: switch tool
-click tree / node: select (details pop up) · drag the selected tree / node: move
-selected node: drag ◆ handles to bend (direction + tension); set the width in the pop-up
-shift+click: extend the selected road end (or start a road) · n then click: start a new road · double-click road: insert node
-x: split road at the selected node · Delete: remove node · shift+Delete: remove whole road
-drag a road end onto another road's node: snaps and makes a junction (orange ring)</div></div>
-  <div id="wrap3d"><div class="hint" id="hint3d">drag: orbit around the 2D view's centre · wheel: zoom</div></div>
+  <div id="wrap2d"><canvas id="map"></canvas><div id="pop"></div><div id="legend"></div></div>
+  <div id="wrap3d"></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -338,6 +333,26 @@ function junctions(roads) {
     return { x: m.reduce((a, n) => a + n.x, 0) / m.length, z: m.reduce((a, n) => a + n.z, 0) / m.length, w: Math.max(...m.map(n => n.w)) };
   });
 }
+// Each log pile's footprint as the game lays it (level_view.gd → _log_pile): sawn ends facing the nearest road, its near end kept off it.
+let pileCache = null;
+const pileSectionW = base => base * 0.16 * 2.05 + 0.3; // log_pile.gd → section_width
+function pileFootprints() {
+  const piles = level.logPiles ?? [];
+  if (pileCache?.samples === samples && pileCache.piles === piles) return pileCache.out;
+  const out = piles.map((p, i) => {
+    let x = p.x, z = p.z, rot = 0;
+    if (samples.length > 1) {
+      const n = nearestRoad(x, z, samples), a = samples[n.i], b = samples[n.i + 1], abx = b.x - a.x, abz = b.z - a.z;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / (abx * abx + abz * abz || 1)));
+      const ox = a.x + abx * t, oz = a.z + abz * t, d = Math.hypot(x - ox, z - oz);
+      if (d < 7 && d > 0) { x = ox + (x - ox) / d * 7; z = oz + (z - oz) / d * 7; }
+      rot = Math.atan2(abz, abx) + Math.PI / 2;
+    }
+    return { x, z, rot, L: 4.15, W: (1 + i % 2) * pileSectionW(7 + i % 4) };
+  });
+  pileCache = { samples, piles, out };
+  return out;
+}
 function nearestRoad(x, z, samples) {
   let best = { d: Infinity, i: 0 };
   for (let i = 0; i < samples.length - 1; i++) {
@@ -501,11 +516,11 @@ function draw2D() {
   ctx.fillStyle = "#101214"; ctx.fillRect(0, 0, W, H);
   ctx.setTransform(view.zoom, 0, 0, view.zoom, W / 2 - view.x * view.zoom, H / 2 - view.z * view.zoom);
   ctx.drawImage(shade, -SIZE / 2 - shadeCell / 2, -SIZE / 2 - shadeCell / 2, SIZE + shadeCell, SIZE + shadeCell);
-  if (!big() || view.zoom >= 0.4) {
+  if (show.contours && (!big() || view.zoom >= 0.4)) {
     ctx.lineWidth = 1 / view.zoom; ctx.strokeStyle = "rgba(20,30,15,.45)"; ctx.stroke(contours);
     ctx.lineWidth = 2 / view.zoom; ctx.strokeStyle = "rgba(20,30,15,.7)"; ctx.stroke(contoursMajor);
   }
-  if ($("showCover").checked) {
+  if (show.cover) {
     ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.65;
     ctx.drawImage(coverOverlay, -SIZE / 2, -SIZE / 2, SIZE, SIZE);
     ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true;
@@ -513,18 +528,21 @@ function draw2D() {
   // road: each sample drawn as its own short stroke, so the width can vary along it
   ctx.lineCap = "round"; ctx.strokeStyle = "#b9ad93";
   const [vx0, vz0] = toWorld(-30, -30), [vx1, vz1] = toWorld(W + 30, H + 30);
-  if (big() && view.zoom < 0.5) { ctx.lineWidth = Math.max(6, 2 / view.zoom); ctx.stroke(roadPath); } // zoomed out: one constant-width stroke
+  if (!show.roads) {}
+  else if (big() && view.zoom < 0.5) { ctx.lineWidth = Math.max(6, 2 / view.zoom); ctx.stroke(roadPath); } // zoomed out: one constant-width stroke
   else for (let i = 0; i < samples.length - 1; i++) {
     const a = samples[i], b = samples[i + 1];
     if (b.first || Math.max(a.x, b.x) < vx0 || Math.min(a.x, b.x) > vx1 || Math.max(a.z, b.z) < vz0 || Math.min(a.z, b.z) > vz1) continue;
     ctx.lineWidth = a.w * 2; ctx.beginPath(); ctx.moveTo(a.x, a.z); ctx.lineTo(b.x, b.z); ctx.stroke();
   }
   ctx.fillStyle = "rgba(255,150,40,.25)"; ctx.strokeStyle = "#f93"; ctx.lineWidth = 2 / view.zoom;
-  for (const j of juncs) { ctx.beginPath(); ctx.arc(j.x, j.z, j.w, 0, 7); ctx.fill(); ctx.stroke(); }
+  if (show.roads) for (const j of juncs) { ctx.beginPath(); ctx.arc(j.x, j.z, j.w, 0, 7); ctx.fill(); ctx.stroke(); }
   ctx.fillStyle = "#8a6a5a"; ctx.strokeStyle = "#000";
-  for (const b of level.buildings ?? []) { ctx.save(); ctx.translate(b.x, b.z); ctx.rotate(b.rot); ctx.fillRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.strokeRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.restore(); }
+  if (show.buildings) for (const b of level.buildings ?? []) { ctx.save(); ctx.translate(b.x, b.z); ctx.rotate(b.rot); ctx.fillRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.strokeRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.restore(); }
+  ctx.fillStyle = "#c8873a";
+  if (show.logPiles) for (const p of pileFootprints()) { ctx.save(); ctx.translate(p.x, p.z); ctx.rotate(p.rot); ctx.fillRect(-p.L / 2, -p.W / 2, p.L, p.W); ctx.strokeRect(-p.L / 2, -p.W / 2, p.L, p.W); ctx.restore(); }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  const vis = treesInView(vx0 - 10, vz0 - 10, vx1 + 10, vz1 + 10), stride = Math.max(1, Math.ceil(vis.length / TREE_DRAW_MAX));
+  const vis = !show.trees ? [] : treesInView(vx0 - 10, vz0 - 10, vx1 + 10, vz1 + 10), stride = Math.max(1, Math.ceil(vis.length / TREE_DRAW_MAX));
   if (stride > 1) { // too many to draw one by one: an evenly thinned set of dots
     let last = "";
     for (let n = 0; n < vis.length; n += stride) {
@@ -540,7 +558,7 @@ function draw2D() {
       ctx.beginPath(); ctx.arc(sx, sz, Math.max(3, treeW(t) / 2 * view.zoom), 0, 7); ctx.fill(); ctx.stroke();
     }
   }
-  level.roads.forEach((road, c) => road.forEach((p, i) => {
+  if (show.roads) level.roads.forEach((road, c) => road.forEach((p, i) => {
     const [sx, sz] = toScreen(p.x, p.z), on = sel?.type === "node" && sel.c === c && sel.i === i, end = i === 0 || i === road.length - 1;
     if (sx < -20 || sx > W + 20 || sz < -20 || sz > H + 20) return;
     ctx.fillStyle = on ? "#fc6" : end ? "#9cf" : "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
@@ -573,9 +591,9 @@ function hit(sx, sz) {
   const [x, z] = toWorld(sx, sz), near = (wx, wz) => { const [px, pz] = toScreen(wx, wz); return Math.hypot(px - sx, pz - sz) < 14 * devicePixelRatio; };
   if (sel?.type === "node" && level.roads[sel.c].length > 1) for (const h of handles(sel.c, sel.i)) if (near(h.x, h.z)) return { type: "handle", c: sel.c, i: sel.i, kind: h.kind };
   let best = null, bestD = 14 * devicePixelRatio;
-  level.roads.forEach((road, c) => road.forEach((p, i) => { const [px, pz] = toScreen(p.x, p.z), d = Math.hypot(px - sx, pz - sz); if (d < bestD) { bestD = d; best = { type: "node", c, i }; } }));
+  if (show.roads) level.roads.forEach((road, c) => road.forEach((p, i) => { const [px, pz] = toScreen(p.x, p.z), d = Math.hypot(px - sx, pz - sz); if (d < bestD) { bestD = d; best = { type: "node", c, i }; } }));
   if (best) return best;
-  for (let i = level.trees.length - 1; i >= 0; i--) {
+  if (show.trees) for (let i = level.trees.length - 1; i >= 0; i--) {
     const t = level.trees[i];
     if (Math.hypot(t.x - x, t.z - z) < Math.max(8 / view.zoom, treeW(t) / 2)) return { type: "tree", i };
   }
@@ -773,7 +791,11 @@ $("save").onclick = async () => { const a = document.createElement("a"); a.href 
 $("loadBtn").onclick = () => $("loadFile").click();
 $("loadFile").onchange = async e => { try { level = await unpackAsync(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
 $("tool").onchange = () => { $("coverBar").hidden = !coverTool(); if (coverTool()) select(null); mapDirty = true; };
-$("showCover").onchange = () => mapDirty = true;
+// The map legend: each layer can be hidden; hidden roads and trees can't be clicked either.
+const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], roads: ["Roads", "#b9ad93"], cover: ["Ground cover", "#6a8a4a"], contours: ["Contours", "#2a3a20"] };
+const show = Object.fromEntries(Object.keys(LAYERS).map(k => [k, true]));
+$("legend").innerHTML = Object.entries(LAYERS).map(([k, [name, col]]) => `<label><input type="checkbox" data-layer="${k}" checked><i style="background:${col}"></i>${name}</label>`).join("");
+$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : "roads"]) select(null); mapDirty = true; };
 $("brush").oninput = () => { $("v_brush").textContent = $("brush").value + " m"; mapDirty = true; };
 $("v_brush").textContent = $("brush").value + " m";
 $("coverMode").onchange = () => mapDirty = true;
@@ -823,7 +845,7 @@ const cam = { yaw: 0.6, pitch: 0.45, dist: 90 };
 
 // Textures need the page served over http (WebGL refuses file:// images); from file:// it falls back to flat colours and drawn trees.
 const served = location.protocol.startsWith("http");
-if (!served) $("hint3d").textContent += "\nopened from file:// — run python3 -m http.server in the repo root to see the game's textures";
+if (!served) console.warn("opened from file:// — run python3 -m http.server in the repo root to see the game's textures");
 const loader = new THREE.TextureLoader();
 function tex(name, repeat) {
   const t = loader.load("../textures/" + name);
@@ -1032,6 +1054,28 @@ function rebuild3DBuildings() {
     scene.add(mesh); buildingMeshes.push(mesh);
   }
 }
+// Log piles as the game stacks them (log_pile.gd → _stack, without its random jitter): even piles upright, odd ones tapered.
+const logGeo = new THREE.CylinderGeometry(1, 1, 1, 10).rotateZ(Math.PI / 2);
+logGeo.setAttribute("color", new THREE.Float32BufferAttribute(Array.from({ length: logGeo.attributes.normal.count }, (_, v) => { const l = 0.7 + 0.3 * logGeo.attributes.normal.getY(v); return [0.42 * l, 0.36 * l, 0.30 * l]; }).flat(), 3));
+const logMat = [new THREE.MeshBasicMaterial({ vertexColors: true }), new THREE.MeshBasicMaterial({ color: 0xdb9e66 }), new THREE.MeshBasicMaterial({ color: 0xdb9e66 })]; // bark, then the two sawn ends
+let pileMesh = null;
+function rebuild3DLogPiles() {
+  if (pileMesh) { scene.remove(pileMesh); pileMesh.dispose(); pileMesh = null; }
+  const r = 0.16, logs = [], m = new THREE.Matrix4(), place = new THREE.Matrix4();
+  pileFootprints().forEach((p, i) => {
+    if (!inWin(p.x, p.z, 30)) return;
+    const tapered = i % 2 === 1, rows = 4 + i % 3, sections = 1 + i % 2, y0 = heightAt(p.x, p.z) - 0.1;
+    place.makeRotationY(-p.rot).setPosition(p.x, y0, p.z);
+    for (let sct = 0; sct < sections; sct++) for (let row = 0, count = 7 + i % 4; row < rows && count > 0; row++) {
+      for (let k = 0; k < count; k++) logs.push(m.clone().makeScale(4, r, r).setPosition(0, r + row * r * 1.75, (sct - (sections - 1) / 2) * pileSectionW(7 + i % 4) + (k - (count - 1) / 2) * r * 2.05).premultiply(place));
+      count += tapered || row % 2 === 0 ? -1 : 1;
+    }
+  });
+  if (!logs.length) return;
+  pileMesh = new THREE.InstancedMesh(logGeo, logMat, logs.length);
+  logs.forEach((mat, n) => pileMesh.setMatrixAt(n, mat));
+  scene.add(pileMesh);
+}
 let treeMeshes = [];
 function rebuild3DTrees() {
   for (const m of treeMeshes) { scene.remove(m); m.dispose(); }
@@ -1124,7 +1168,7 @@ function frame() {
     placeWindow(); rebuildGrid(); rebuild3DTerrain(); windowDirty = false; treesDirty = mapDirty = cover3DDirty = true;
     if (T.full) buildContours(heights, G, GCELL, 1, CONTOUR_M);
   }
-  if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); treesDirty = false; }
+  if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); rebuild3DLogPiles(); treesDirty = false; }
   U.uCenter.value.set(view.x, 0, view.z); U.uTime.value = now / 1000;
   if (!coverAt || cover3DDirty && now - coverGenAt > 150 || Math.hypot(view.x - coverAt[0], view.z - coverAt[1]) > 10) rebuild3DCover();
   if (++frames % 15 === 0) $("sight").textContent = big()

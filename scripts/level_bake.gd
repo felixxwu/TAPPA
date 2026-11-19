@@ -45,6 +45,7 @@ var vis_rem := PackedInt32Array()                # trees no longer visible from 
 
 static var last_error := ""
 static var baked_in_process := 0
+static var progress := 0.0  # 0..1 through the running bake, for a loading screen on another thread
 
 var _road: LevelData
 var _cur := PackedInt32Array()   # the decoded visibility of _cur_row
@@ -58,6 +59,7 @@ static func key_of(save_path: String) -> String:
 	if not d is Dictionary:
 		return "%s/v%d" % [FileAccess.get_md5(save_path), BAKE_VERSION]
 	(d as Dictionary).erase("coverKinds")
+	(d as Dictionary).erase("logPiles")
 	return "%s/v%d" % [JSON.stringify(d).md5_text(), BAKE_VERSION]
 
 
@@ -75,6 +77,7 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 	var hs := PackedFloat32Array()
 	hs.resize(b.n * b.n)
 	for r in b.n:
+		progress = 0.5 * r / b.n
 		for c in b.n:
 			hs[r * b.n + c] = data.ground(c * cell - b.size / 2, r * cell - b.size / 2)
 	b.height_base = hs[0]
@@ -87,6 +90,7 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 	b.frame.resize(b.frame_n * b.frame_n * 4)
 	var fcell := b.size / (b.frame_n - 1)
 	for r in b.frame_n:
+		progress = 0.5 + 0.5 * r / b.frame_n
 		for c in b.frame_n:
 			var f := data.road_frame(c * fcell - b.size / 2, r * fcell - b.size / 2)
 			var across := clampf(f.x if f.x != INF else FRAME_RANGE, -FRAME_RANGE, FRAME_RANGE)

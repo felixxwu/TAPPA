@@ -27,8 +27,8 @@ static func build(seed: int, style: int, rows: int = 6, base_count: int = 9,
 			_loose(rng, logs, base_count, length_m, radius_m)
 		_:
 			for s in sections:
-				var z := (s - (sections - 1) * 0.5) * (length_m + 0.15)
-				_stack(rng, logs, style == Style.TAPERED, rows, base_count, length_m, radius_m, z)
+				var x := (s - (sections - 1) * 0.5) * section_width(base_count, radius_m)
+				_stack(rng, logs, style == Style.TAPERED, rows, base_count, length_m, radius_m, x)
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -42,10 +42,15 @@ static func build(seed: int, style: int, rows: int = 6, base_count: int = 9,
 	return mi
 
 
+# How far apart side-by-side sections sit: one section's bottom row plus a small gap.
+static func section_width(base_count: int, radius_m: float) -> float:
+	return base_count * radius_m * 2.05 + 0.3
+
+
 # Hex-packed rows, each row resting in the grooves of the one below. TAPERED drops a log
 # per row (the triangular face in the reference photos); STACK keeps the face upright.
 static func _stack(rng: RandomNumberGenerator, logs: Array[Dictionary], tapered: bool,
-		rows: int, base_count: int, length_m: float, r: float, z0: float) -> void:
+		rows: int, base_count: int, length_m: float, r: float, x0: float) -> void:
 	var pitch := r * 2.05
 	var count := base_count
 	for row in rows:
@@ -54,7 +59,7 @@ static func _stack(rng: RandomNumberGenerator, logs: Array[Dictionary], tapered:
 		for i in count:
 			if not tapered and row > 0 and rng.randf() < 0.12 * row / rows:
 				continue
-			var x := (i - (count - 1) * 0.5) * pitch
+			var x := x0 + (i - (count - 1) * 0.5) * pitch
 			var y := r + row * r * 1.75
 			var rr := r * rng.randf_range(0.75, 1.15)
 			var len_m := length_m * rng.randf_range(0.97, 1.03)
@@ -62,7 +67,7 @@ static func _stack(rng: RandomNumberGenerator, logs: Array[Dictionary], tapered:
 			if row == rows - 1 or count <= 2:
 				len_m *= rng.randf_range(1.0, 1.15)
 			logs.append({
-				"pos": Vector3(x, y, z0 + rng.randf_range(-0.05, 0.05)),
+				"pos": Vector3(x, y, rng.randf_range(-0.05, 0.05)),
 				"basis": Basis.from_euler(Vector3(0.0, rng.randf_range(-0.012, 0.012), 0.0)),
 				"r": rr, "len": len_m,
 			})
