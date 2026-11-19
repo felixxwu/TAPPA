@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.." || exit 1
 GODOT=${GODOT:-godot}
 for save in tools/levels/*.json; do
 	name=$(basename "${save%.json}")
+	[[ $name == *.* ]] && continue  # a sidecar like <level>.buildings.json, not a level
 	read -r _ key _ < <("$GODOT" --headless --path . res://tools/bake_key.tscn -- "res://$save" 2>&1 | grep '^bake_key:')
 	asset="$name-$key.bake.res"
 	gh release download bakes --pattern "$asset" --output "${save%.json}.bake.res" --clobber 2>/dev/null \
