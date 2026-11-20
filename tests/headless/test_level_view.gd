@@ -144,6 +144,26 @@ func test_the_level_answers_road_queries_through_its_data() -> void:
 	assert_almost_eq(pose.origin.x, 0.0, 0.5, "recovery lands on the nearest road")
 
 
+func test_off_the_road_for_the_timeout_resets_the_car() -> void:
+	var view := _built(_level())
+	assert_false(view.is_off_road(Vector2(0.0, 1.0)), "on the road")
+	assert_true(view.is_off_road(Vector2(0.0, 40.0)), "well off it")
+	var car := VehicleBody3D.new()
+	add_child_autofree(car)
+	car.global_position = Vector3(0.0, 0.0, 40.0)
+	var rec := RoadRecovery.new()
+	rec.car = car
+	rec.streamer = view
+	autofree(rec)
+	var t: float = Config.data.off_road_reset_timeout_s
+	assert_false(rec.off_road_step(t * 0.6), "not yet")
+	assert_ne(LevelView.off_road_text(Config.data.off_road_warning_after_s), "", "a countdown warns of the coming reset")
+	assert_eq(LevelView.off_road_text(0.0), "", "no warning on the road")
+	assert_true(rec.off_road_step(t * 0.6), "off the road for the timeout")
+	car.global_position = Vector3(0.0, 0.0, 1.0)
+	assert_false(rec.off_road_step(t * 2.0), "back on the road stops the clock")
+
+
 func test_the_spawn_override_picks_the_node_and_faces_along_the_road_or_falls_back() -> void:
 	var roads := [[{"x": 0.0, "z": 0.0}, {"x": 10.0, "z": 0.0}, {"x": 20.0, "z": 5.0}]]
 	assert_eq(LevelView.spawn_override(roads, Vector2i(0, 1)), [Vector2(10, 0), Vector2(20, 5)] as Array[Vector2])

@@ -31,6 +31,7 @@ var _particles: WeatherField
 var _recovery: RoadRecovery
 var _pause: Node
 var map: LevelMap
+var off_road_label: Label
 var applied_fps_caps: Array[int] = []
 
 
@@ -69,6 +70,10 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	add_child(layer)
+	off_road_label = UITheme.label("")  # styled as free roam's prompt box (MiniMap.prompt_label)
+	off_road_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
+	off_road_label.visible = false
+	layer.add_child(off_road_label)
 	map = LevelMap.new()
 	map.view = self
 	map.process_mode = Node.PROCESS_MODE_DISABLED  # painting starts now, but M stays dead until the level has loaded
@@ -376,6 +381,11 @@ func _build_streamer() -> void:
 
 
 func _process(_dt: float) -> void:
+	if _recovery != null:
+		off_road_label.text = off_road_text(_recovery.off_road_seconds())
+		off_road_label.visible = not off_road_label.text.is_empty()
+		off_road_label.size = Vector2.ZERO
+		off_road_label.position = Vector2(roundf((get_viewport().get_visible_rect().size.x - off_road_label.size.x) * 0.5), UITheme.FONT_SIZE)
 	if _car != null and HeadlightCone.has_headlights(Config.data):
 		HeadlightCone.push(Config.data, _car.global_transform, _car.half_width() * 2.0 if _car.has_method("half_width") else 1.8)
 	var cam := get_viewport().get_camera_3d()
@@ -392,6 +402,22 @@ func height_at(x: float, z: float) -> float:
 	if _streamer != null:
 		return _streamer.height_at(x, z)
 	return _bake.height(x, z) if _bake != null else 0.0
+
+
+# The top-of-screen warning while the off-road clock runs: empty until off_road_warning_after_s, then the seconds left.
+static func off_road_text(off_s: float) -> String:
+	var cfg: GameConfig = Config.data
+	if off_s < cfg.off_road_warning_after_s:
+		return ""
+	return "OFF ROAD - RESET IN %.1f" % maxf(cfg.off_road_reset_timeout_s - off_s, 0.0)
+
+
+# Past the road edge plus GameConfig.off_road_margin_m; RoadRecovery's off-road clock runs while this holds.
+func is_off_road(p: Vector2) -> bool:
+	if _bake == null:
+		return false
+	var near := _bake.road_nearest(p.x, p.y)
+	return near.x > near.z + Config.data.off_road_margin_m
 
 
 # Where RoadRecovery puts the car: the nearest road point to `p`, facing along the road the way nearest `facing`.

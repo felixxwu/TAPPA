@@ -111,7 +111,7 @@ free roam's car, cameras, HUD and pause menu around one `LevelView` node, which 
   the chase camera (`apply_weather`; no road tint or environment look). `_warm_up` compiles the effects' and every weather's
   shaders with the car locked, then `WorldRuntime.look_around` (free roam's spin round the spawn) draws the car, ground, trees and near and far ground cover once. Leaving the scene resets the headlight cone, wind and weather;
 - parks the car on the first road's first node, facing the second; the pause menu's reset puts it back there.
-- puts the car back on the road with free roam's `RoadRecovery` (R, the pause menu's reset, stuck or fallen through, which
+- puts the car back on the road with free roam's `RoadRecovery` (R, the pause menu's reset, off the road for `off_road_reset_timeout_s` via `LevelView.is_off_road`, with a top-centre `off_road_label` countdown in free roam's prompt-box style once `off_road_warning_after_s` has passed, stuck or fallen through, which
   includes driving off the square's edge), answering its `road_pose` with the nearest road point (`LevelView.road_pose`, which asks `LevelData.road_pose`);
 - loads behind a `LoadingScreen` (`Scenes.change_to` covers `LEVEL_VIEW` too, without the cold-open story) until the shader
   warm-up ends, then applies the player's frame cap (`FpsSetting.resolve`) and arms the pause menu

@@ -1567,6 +1567,8 @@ func has_nitrous() -> bool:
 ## enough out to trip a distance leash — always recovers. Returning to the road
 ## zeroes the clock, so a quick cut across the inside costs nothing.
 @export var off_road_reset_timeout_s := 6.0
+## Seconds off the road before the level view shows its "Off road" countdown to the reset.
+@export var off_road_warning_after_s := 2.0
 ## Absolute world Y below which the car is considered to have fallen off the
 ## world entirely (a void with no water plane) and is snapped back to the last
 ## on-road pose (TrackProgress._best_reset), regardless of lateral distance from

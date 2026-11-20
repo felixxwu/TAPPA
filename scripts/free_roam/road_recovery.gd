@@ -8,7 +8,8 @@ extends Node
 # (recovery_*): stationary AND unable to get out by itself (flipped, flooring it and going
 # nowhere, or fallen below the ground) for recovery_timeout_s. A car far below the ground
 # (recovery_void_depth_m: it fell through a gap in the streamed collision) goes back at once,
-# moving or not. A recovery is free: Car.reset_to suppresses impact damage.
+# moving or not. A host with is_off_road (LevelView) also gets the stage's off-road clock: off the
+# road for off_road_reset_timeout_s, moving or not, puts it back. A recovery is free: Car.reset_to suppresses impact damage.
 
 @export var car: VehicleBody3D
 @export var streamer: Node  # a TerrainStreamer, or any node with height_at and its own road_pose (LevelView)
@@ -17,6 +18,7 @@ extends Node
 signal reset_done(p: Vector2)
 
 var _stuck_time := 0.0
+var _off_road_time := 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -25,8 +27,24 @@ func _physics_process(delta: float) -> void:
 	if is_wrecked():
 		_stuck_time = 0.0
 		return
-	if is_stuck_step(delta) or fell_out_of_world():
+	if is_stuck_step(delta) or off_road_step(delta) or fell_out_of_world():
 		reset_now()
+
+
+# Advance the off-road clock by `delta`; true when the car has been off the road for off_road_reset_timeout_s.
+func off_road_step(delta: float) -> bool:
+	var cfg: GameConfig = Config.data
+	var pos := car.global_position
+	if not cfg.off_track_reset_enabled or not streamer.has_method("is_off_road") or not streamer.is_off_road(Vector2(pos.x, pos.z)):
+		_off_road_time = 0.0
+		return false
+	_off_road_time += delta
+	return _off_road_time >= cfg.off_road_reset_timeout_s
+
+
+# Seconds the car has been continuously off the road (0 on it), for a countdown to the reset.
+func off_road_seconds() -> float:
+	return _off_road_time
 
 
 # The last-ditch net under the streamed world: the car is far below the ground, which only
@@ -71,6 +89,7 @@ func is_wrecked() -> bool:
 # pointing. The nitrous tank keeps its charge: only a respawn or travel refills it.
 func reset_now() -> void:
 	_stuck_time = 0.0
+	_off_road_time = 0.0
 	if is_wrecked():
 		return
 	var engine = car.drivetrain.engine

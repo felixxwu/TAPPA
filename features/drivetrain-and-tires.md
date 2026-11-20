@@ -350,6 +350,12 @@ Granularity follows whatever the spin state already is per drive mode:
 See [game_config.gd](../scripts/game_config.gd) → `abs_enabled`,
 `abs_release_ratio`, `abs_slip_margin`, `abs_min_speed`.
 
+`tools/measure_braking.tscn` stops every car from 100 km/h at full foot brake on the flat
+test track and prints, per axle, the brake force it used as a share of its tyres' peak
+(`mu × load`), the average slip relative to the grip limit, and how often a wheel was past it.
+With `-- solve` it finds each car's `brake_torque` / `brake_bias` that put both axles at 75% of
+their limit (the shipped values in `CarLibrary.CARS`), leaving headroom for the Big brakes upgrade.
+
 ## Gearing, top speed & resistance
 
 Gearing (`gear_ratios` + `final_drive` + `shift_time`) lives on the **engine**

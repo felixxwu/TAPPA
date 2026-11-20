@@ -277,6 +277,11 @@ func nearest_sample(x: float, z: float) -> int:
 	return _roads().nearest_sample(x, z)
 
 
+# Nearest road point: (distance, road height, half-width), as LevelData.nearest.
+func road_nearest(x: float, z: float) -> Vector3:
+	return _roads().nearest(x, z)
+
+
 func cell() -> float:
 	return size / (n - 1)
 
