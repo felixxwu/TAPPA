@@ -27,7 +27,8 @@ canvas stand-ins) and writes `<level>.buildings.json` (each building's triangles
 `tools/levels/buildings_atlas.png`. Re-run it after changing a level's buildings or `buildings.js`. `LevelView.load_level`
 adds a `LevelBuildings` node (`scripts/level_buildings.gd`) that builds one `StaticBody3D` per building: the mesh
 (unshaded with the baked sun shading in vertex colours, nearest-filtered atlas, alpha scissor) plus a box collider over
-the footprint, seated on the lowest ground under it. No bake file → no buildings.
+the footprint, seated on the lowest ground under it. No bake file → no buildings. On a slope that buries the uphill side, so
+`tools/geo/pack_level.js` levels a pad under each building and clears trees and cover off its footprint (see [level-editor.md](level-editor.md)).
 
 **Log piles.** The level JSON's `logPiles` list (`{x, z}`) places roadside timber piles (`LogPile.build`, `log_pile.gd`) via
 `LevelView._log_pile`: sawn ends facing the nearest road (logs at right angles to it), a two-section pile's stacks side by side along

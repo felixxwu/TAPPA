@@ -216,3 +216,34 @@ func test_snow_dust_is_lightened_like_the_road_and_untouched_off_the_snow() -> v
 	var c := LevelView.snow_dust(base, 1.0, 0.5)
 	assert_gt(c.r, base.r, "lighter on snow")
 	assert_almost_eq(c.a, base.a, 0.001, "same opacity")
+
+
+func test_the_last_driven_car_and_parts_come_back_next_launch() -> void:
+	var start_car := Config.data.dev_level_car_id
+	var start_setting: Variant = Save.get_setting(LevelView.SAVED_CAR_KEY)
+	var id := String(CarLibrary.all()[0]["id"])
+	var saved := {"model_id": id, "tuning": {}, "parts": [{"id": "x", "on": true}]}
+	Save.set_setting(LevelView.SAVED_CAR_KEY, saved)
+	LevelView.owned = {}
+	LevelView.restore_saved_car()
+	assert_eq(Config.data.dev_level_car_id, id, "the saved car is the level's car")
+	assert_eq(LevelView.owned, saved, "with its parts")
+	LevelView.owned = {}
+	Config.data.dev_level_car_id = start_car
+	Save.set_setting(LevelView.SAVED_CAR_KEY, {"model_id": "no_such_car"})
+	LevelView.restore_saved_car()
+	assert_eq(Config.data.dev_level_car_id, start_car, "a car gone from the roster is ignored")
+	assert_true(LevelView.owned.is_empty())
+	Save.set_setting(LevelView.SAVED_CAR_KEY, start_setting)
+	Config.data.dev_level_car_id = start_car
+
+
+func test_the_last_spot_on_this_level_comes_back_next_launch() -> void:
+	var view := _built(_level(2.0))
+	var fallback := Transform3D(Basis(), Vector3(1, 2, 3))
+	var pose := view.saved_pose({"level": "a.json", "x": 30.0, "z": -10.0, "yaw": 1.0}, "a.json", fallback)
+	assert_almost_eq(Vector2(pose.origin.x, pose.origin.z), Vector2(30, -10), Vector2.ONE * 0.01, "back where it was")
+	assert_gt(pose.origin.y, view.height_at(30, -10), "standing above the ground")
+	assert_almost_eq(pose.basis.get_euler().y, 1.0, 0.01, "facing the same way")
+	assert_eq(view.saved_pose({"level": "b.json", "x": 30.0, "z": -10.0}, "a.json", fallback), fallback, "a spot from another level is ignored")
+	assert_eq(view.saved_pose(null, "a.json", fallback), fallback, "nothing saved starts at the spawn")

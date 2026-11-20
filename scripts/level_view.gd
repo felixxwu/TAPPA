@@ -25,6 +25,9 @@ var _spectators: LevelSpectators
 var garage: MenuPage
 static var _next_pose: Variant = null  # where the car stands after a car-change reload
 static var owned: Dictionary = {}  # the level's car with every shop part unlocked, kept across reloads
+const SAVED_CAR_KEY := "level_car"
+const SAVED_POSE_KEY := "level_pose"
+const POSE_SAVE_SEC := 5.0
 var shop: RestStopPage
 var _car: VehicleBody3D
 var _particles: WeatherField
@@ -35,6 +38,7 @@ var _pause: Node
 var map: LevelMap
 var off_road_label: Label
 var applied_fps_caps: Array[int] = []
+var _driving := false  # true once loaded, so a half-built level never overwrites the saved spot
 
 
 func _ready() -> void:
@@ -61,12 +65,15 @@ func _ready() -> void:
 		return
 	if not car.is_node_ready():
 		await car.ready  # this node sits before the car, so builds first and fields the car once it exists
+	if owned.is_empty():
+		restore_saved_car()
 	if String(owned.get("model_id", "")) != Config.data.dev_level_car_id:
 		owned = {"model_id": Config.data.dev_level_car_id, "tuning": {}, "parts": LootRules.parts_for({"model_id": Config.data.dev_level_car_id}).map(
 			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))}
+	Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
 	car.apply_owned(LootRules.fielded(owned))
 	get_parent().get_node("CameraManager").refresh_bonnet_offset()
-	car.reset_to(_next_pose if _next_pose != null else spawn_pose())
+	car.reset_to(_next_pose if _next_pose != null else saved_pose(Save.get_setting(SAVED_POSE_KEY), _save_path, spawn_pose()))
 	_next_pose = null
 	_pause = get_parent().get_node_or_null("PauseMenu")
 	var layer := CanvasLayer.new()
@@ -104,6 +111,13 @@ func _ready() -> void:
 	if _pause != null:
 		_pause.set_input_enabled(true)  # the menu stays inert until its world says it has finished loading
 	map.process_mode = Node.PROCESS_MODE_ALWAYS
+	_driving = true
+	Save.flushing.connect(save_pose)  # window close, app pause, browser tab hidden
+	var timer := Timer.new()
+	timer.wait_time = POSE_SAVE_SEC  # also on a timer: stopping the game from the editor sends no close
+	timer.timeout.connect(save_pose)
+	add_child(timer)
+	timer.start()
 	loaded.emit()
 
 
@@ -167,6 +181,30 @@ func _close_garage() -> void:
 	garage.get_parent().queue_free()
 	garage = null
 	_pause.return_from_extra()
+
+
+# The car and parts last driven here, from a previous launch; a car since dropped from the roster is ignored.
+static func restore_saved_car() -> void:
+	var saved: Variant = Save.get_setting(SAVED_CAR_KEY, {})
+	if saved is Dictionary and CarLibrary.index_of(String(saved.get("model_id", ""))) >= 0:
+		owned = saved.duplicate(true)
+		Config.data.dev_level_car_id = String(owned["model_id"])
+
+
+# Remembers where the car stands on this level, so the next launch starts there.
+func save_pose() -> void:
+	if _driving and is_instance_valid(_car):
+		var p := _car.position  # local: on leaving the level the car may already be out of the tree
+		Save.set_setting(SAVED_POSE_KEY, {"level": _save_path, "x": p.x, "z": p.z, "yaw": _car.rotation.y})
+
+
+# The saved spot as an upright pose just above the ground, or `fallback` if it was saved on another level.
+func saved_pose(saved: Variant, level: String, fallback: Transform3D) -> Transform3D:
+	if not saved is Dictionary or saved.get("level") != level:
+		return fallback
+	var x := float(saved.get("x", 0.0))
+	var z := float(saved.get("z", 0.0))
+	return Transform3D(Basis(Vector3.UP, float(saved.get("yaw", 0.0))), Vector3(x, height_at(x, z) + 1.0, z))
 
 
 func _drive(id: String) -> void:
@@ -312,6 +350,7 @@ static func set_snow(cfg: GameConfig, snow: float) -> void:
 
 
 func _exit_tree() -> void:
+	save_pose()
 	set_snow(Config.data, 0.0)
 	HeadlightCone.reset()
 	WindSway.reset()
