@@ -3148,6 +3148,12 @@ func spectator_params() -> Dictionary:
 ## How far past the road's edge the level view keeps the ground flat at road height before it
 ## blends back to the terrain, in metres. The lab (tools/level_editor_lab.html) mirrors it as ROAD_FLAT_M.
 @export var level_road_flat_margin := 2.0
+## Level view map (M): only ground within this many metres of where the car has driven is shown; the rest is under fog (LevelDiscovery). Teleport points show and work everywhere.
+@export var level_map_reveal_radius_m := 250.0
+## Level view map: the shown area's edge fades into the fog over this many metres.
+@export var level_map_reveal_feather_m := 60.0
+## Level view map: the size (m) of one cell of the discovery grid. Changing it forgets every saved discovery.
+@export var level_map_reveal_cell_m := 10.0
 ## Level view: a spectator group from the save appears once the car is within this many metres of its centre.
 @export var level_spectator_spawn_m := 150.0
 ## Level view: a spawned spectator group is freed again once the car is farther than this (kept above the spawn distance so it doesn't flicker).

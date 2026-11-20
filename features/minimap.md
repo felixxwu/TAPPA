@@ -1,5 +1,7 @@
 # Minimap (free roam)
 
+(This is free roam's minimap. The level view's map (M), which hides undriven ground under fog, is `LevelMap` + `LevelDiscovery`: see [level-editor.md](level-editor.md), "Map discovery".)
+
 **Source:** `scripts/free_roam/mini_map.gd` (`MiniMap`), `shaders/mini_map.gdshader`, wired in
 `free_roam.tscn` (`MiniMapLayer/MiniMap`) and `scripts/free_roam/free_roam.gd`
 (`open_full_map`, the seen-sites tick). Tunables: `GameConfig` → *Minimap* group

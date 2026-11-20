@@ -18,6 +18,9 @@ const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show
 const ROAD_EDGE := Color(0.25, 0.15, 0.08)
 const WASD := {KEY_W: Vector2.UP, KEY_A: Vector2.LEFT, KEY_S: Vector2.DOWN, KEY_D: Vector2.RIGHT}
 const PAN_SPEED_PX := 600.0
+const FOG := Color(0.4, 0.39, 0.33)  # the undiscovered ground: GROUND.darkened(0.5), the same as off the level's edge
+const REVEAL_TICK_S := 0.25         # how often the car's position is stamped into the discovery grid
+const SEEN_KEY := "level_map_seen"  # the Save setting holding the discovery grid (LevelDiscovery.to_save)
 
 var view: LevelView
 var center := Vector2.ZERO  # world x, z at the middle of the screen
@@ -31,6 +34,11 @@ var _busy := false
 var _pad_used := false  # a gamepad aims with the centre crosshair instead of the mouse
 var _drag_from := Vector2.ZERO
 var _painter: Thread  # paints the map image in the background from load, so the first M opens instantly
+var discovery: LevelDiscovery  # where the car has driven: only ground near it is drawn, the rest is under fog
+var _fog: CanvasTexture        # discovery's fog, linear filtered so its edge is soft at any zoom
+var _fog_dirty := true
+var _reveal_clock := 0.0
+var _revealed_at := Vector2.INF  # where the car was last stamped; it is only stamped again once it has moved a grid cell
 
 
 func _init() -> void:
@@ -44,6 +52,9 @@ func _init() -> void:
 
 
 func _ready() -> void:
+	var cfg: GameConfig = Config.data
+	discovery = LevelDiscovery.new(size_m(), cfg.level_map_reveal_cell_m)
+	discovery.load_save(Save.get_setting(SEEN_KEY), view._save_path)
 	_painter = Thread.new()
 	_painter.start(_paint)
 
@@ -65,6 +76,8 @@ func toggle() -> void:
 	get_tree().paused = visible
 	if visible:
 		build()
+		reveal_at_car()
+		_update_fog()
 		var car := view.get_parent().get_node_or_null("Car") as Node3D
 		if car != null:
 			center = Vector2(car.global_position.x, car.global_position.z)
@@ -213,7 +226,9 @@ func _draw() -> void:
 		draw_polyline(pts, ROAD_EDGE, 1.0)
 	for pile: Dictionary in view.level.get("logPiles", []):
 		draw_circle(to_screen(Vector2(float(pile["x"]), float(pile["z"]))), maxf(MIN_MARK_PX, 4.0 * zoom) / 2.0, LOG_PILE)
-	for t: Dictionary in view.level.get("teleports", []):
+	if _fog != null:
+		draw_texture_rect(_fog, Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * discovery.cells * discovery.cell_m * zoom), false)
+	for t: Dictionary in view.level.get("teleports", []):  # drawn over the fog: every teleport works, driven near or not
 		var tp := to_screen(Vector2(float(t["x"]), float(t["z"])))
 		draw_colored_polygon(PackedVector2Array([tp + Vector2(0, -8), tp + Vector2(8, 0), tp + Vector2(0, 8), tp + Vector2(-8, 0)]), TELEPORT)
 	var car := view.get_parent().get_node_or_null("Car") as Node3D
@@ -290,6 +305,10 @@ func _process(delta: float) -> void:
 	if _painter != null and not _painter.is_alive():
 		build()
 	if not visible:
+		_reveal_clock += delta
+		if _reveal_clock >= REVEAL_TICK_S and not get_tree().paused:
+			_reveal_clock = 0.0
+			reveal_at_car()
 		return
 	var dir := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 	for key: Key in WASD:
@@ -299,6 +318,42 @@ func _process(delta: float) -> void:
 	if dir != Vector2.ZERO:
 		center += dir * PAN_SPEED_PX * delta / zoom
 		queue_redraw()
+
+
+# Shows the map within level_map_reveal_radius_m of the car.
+func reveal_at_car() -> void:
+	var car := view.get_parent().get_node_or_null("Car") as Node3D
+	if car == null or discovery == null:
+		return
+	var at := Vector2(car.global_position.x, car.global_position.z)
+	if at.distance_to(_revealed_at) < discovery.cell_m:
+		return
+	_revealed_at = at
+	var cfg: GameConfig = Config.data
+	if discovery.stamp(at, cfg.level_map_reveal_radius_m, cfg.level_map_reveal_feather_m):
+		_fog_dirty = true
+
+
+# Saves the discovery grid if it has grown since the last save; LevelView calls it with the car's pose.
+func save_discovery() -> void:
+	if discovery != null and discovery.changed:
+		discovery.changed = false
+		Save.set_setting(SEEN_KEY, discovery.to_save(view._save_path))
+
+
+func _update_fog() -> void:
+	if not _fog_dirty or discovery == null:
+		return
+	_fog_dirty = false
+	if _fog == null:
+		_fog = CanvasTexture.new()
+		_fog.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	var img := discovery.fog_image(FOG)
+	var tex := _fog.diffuse_texture as ImageTexture
+	if tex != null and tex.get_size() == Vector2(img.get_size()):
+		tex.update(img)
+	else:
+		_fog.diffuse_texture = ImageTexture.create_from_image(img)
 
 
 # Puts the car on the road nearest `p`, facing away from any dead end there, loading the ground there before the game resumes so the car doesn't fall through.
