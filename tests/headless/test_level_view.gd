@@ -68,7 +68,13 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var start_car := Config.data.dev_level_car_id
 	var pause: PauseMenu = world.get_node("PauseMenu")
 	var level: LevelView = world.get_node("Level")
+	var dmg: DamageModel = world.get_node("Car").damage
+	assert_false(dmg.invulnerable, "the level's car takes damage")
+	dmg.apply_loss(dmg.max_hp * 0.5)
 	pause.open()
+	CardUI.pick(pause.cards(), "Repair")
+	assert_eq(dmg.hp, dmg.max_hp, "the pause menu's Repair fixes the car")
+	assert_true(pause.is_open(), "and returns to the pause menu")
 	CardUI.pick(pause.cards(), "Shop")
 	assert_not_null(level.shop, "the pause menu's Shop opens the shop")
 	assert_true(level.shop.pick("Upgrades"))

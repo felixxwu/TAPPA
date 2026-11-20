@@ -63,10 +63,16 @@ func _ready() -> void:
 			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))}
 	car.apply_owned(LootRules.fielded(owned))
 	get_parent().get_node("CameraManager").refresh_bonnet_offset()
-	car.damage.invulnerable = true
 	car.reset_to(_next_pose if _next_pose != null else spawn_pose())
 	_next_pose = null
 	_pause = get_parent().get_node_or_null("PauseMenu")
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	add_child(layer)
+	map = LevelMap.new()
+	map.view = self
+	map.process_mode = Node.PROCESS_MODE_DISABLED  # painting starts now, but M stays dead until the level has loaded
+	layer.add_child(map)
 	if _streamer != null:
 		_streamer.focus = car
 		var t_fill := Time.get_ticks_msec()
@@ -82,7 +88,7 @@ func _ready() -> void:
 	_recovery.reset_done.connect(func(_p: Vector2) -> void: marks.break_ribbons())
 	if _pause != null:
 		_pause.reset_to_track_requested.connect(_recovery.reset_now)
-		_pause.extra_requested.connect(func(label: String) -> void: open_shop() if label == "Shop" else open_garage())
+		_pause.extra_requested.connect(_on_extra)
 	if not Platform.is_headless():  # nothing renders, so there is nothing to compile
 		var t_warm := Time.get_ticks_msec()
 		await _warm_up(car)
@@ -90,18 +96,22 @@ func _ready() -> void:
 	WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	if _pause != null:
 		_pause.set_input_enabled(true)  # the menu stays inert until its world says it has finished loading
-	var layer := CanvasLayer.new()
-	layer.layer = 50
-	add_child(layer)
-	map = LevelMap.new()
-	map.view = self
-	layer.add_child(map)
+	map.process_mode = Node.PROCESS_MODE_ALWAYS
 	loaded.emit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _recovery != null and _pause != null and event.is_action_pressed("reset_to_road") and not event.is_echo() and _pause.is_armed():
 		_recovery.reset_now()
+
+
+func _on_extra(label: String) -> void:
+	match label:
+		"Shop": open_shop()
+		"Garage": open_garage()
+		"Repair":
+			_car.damage.repair()
+			_pause.return_from_extra()
 
 
 # The pause menu's Garage: a card per catalogue car, stock; picking one reloads the level with it.
@@ -259,6 +269,7 @@ func _warm_up(car: VehicleBody3D) -> void:
 	await WorldRuntime.look_around(self, car.global_position)
 	get_parent().get_node("CameraManager").activate_current()
 	car.controls_locked = false
+	map.build()
 	if cover != null:
 		cover.finish()
 
@@ -279,8 +290,10 @@ func load_level(d: Dictionary) -> void:
 	_spawn_nodes = spawn_override(d.get("roads", []), Config.data.dev_level_spawn)
 	if _bake == null:
 		if not _save_path.is_empty() and not OS.has_feature("web") and not Platform.is_headless():
-			var baking := LoadingScreen.new()
-			add_child(baking)
+			var baking := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
+			if baking == null:
+				baking = LoadingScreen.new()
+				add_child(baking)
 			baking.set_title("Baking the level…")
 			var worker := Thread.new()
 			worker.start(LevelBake.load_or_bake.bind(_save_path, data))
@@ -374,8 +387,11 @@ func _process(_dt: float) -> void:
 
 
 
+# Zero until the bake exists: the car asks for its spawn height while a stale level is still rebaking, and is moved to the spawn once loading ends.
 func height_at(x: float, z: float) -> float:
-	return _streamer.height_at(x, z) if _streamer != null else _bake.height(x, z)
+	if _streamer != null:
+		return _streamer.height_at(x, z)
+	return _bake.height(x, z) if _bake != null else 0.0
 
 
 # Where RoadRecovery puts the car: the nearest road point to `p`, facing along the road the way nearest `facing`.
@@ -408,4 +424,4 @@ func spawn_pose() -> Transform3D:
 
 
 func surface_at(x: float, z: float) -> Vector2:
-	return _bake.surface_at(x, z)
+	return _bake.surface_at(x, z) if _bake != null else Vector2.ZERO

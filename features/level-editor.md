@@ -12,7 +12,7 @@ beside free roam, not part of it.
 
 `tools/level_editor_lab.html` is a standalone page: a 2D top-down editor of a square (600 m by default) beside a
 live three.js render of it. Serve the repo over http (`python3 -m http.server`) so it can load the
-game's textures; `?level=levels/<name>.json` opens a save.
+game's textures; `?level=levels/<name>.json` opens a save. `tools/open_level_editor.sh` does both for the Hafren level.
 
 - **Spectators:** the save's top-level `spectators: [{x, z, r, n}]` (origin and radius in metres, same x east / z south frame as `logPiles`; people count `n`; omitted when empty, kept in the autosave, not part of `bakeKey`). The **Spectators** tool (toolbar, or `P`) adds a group on a click of empty ground (r 8, n 10); drag a group to move it, drag the rim handle, scroll or `[` `]` to change `r`, the pop-up edits `r` and `n`, Delete removes it. 2D draws each as a circle with its count (legend layer "Spectators"). 3D (`rebuild3DSpectators`) scatters `n` seeded people per group inside `r` on `heightAt`, each facing the nearest road point, built with `tools/spectators.js` into one merged mesh; only groups in the ground window are built.
 - **Size:** a save's `size` (metres, square centred on the origin; missing = 600, and a save of 600 omits it) sets `SIZE`; the
@@ -49,7 +49,11 @@ game's textures; `?level=levels/<name>.json` opens a save.
   node; Delete removes a node, shift+Delete the whole road. Dragging or placing a road end within 12 px of another
   road's node snaps onto it, forming a junction. `tools/geo/pack_level.js` clears trees and cover off every road (segments bucketed, so it copes with ~200k trees).
   A selected node's **Clear trees off road** button (`clearRoad`) does the same for that node's whole road, with the
-  same margins (trees within 2 m of the edge, cover within 0.5 m).
+  same margins (cover within 0.5 m of the edge; a tree goes when its trunk is within 0.5 m plus its kind's `low` x its scale,
+  where `low` in the lab's `KINDS` is how far that species' leaves spread in its lowest 3 m, so wide-skirted spruces stay
+  well back while sparse broadleaves can stand at the edge). Re-measure `low` with `tools/tree_low_reach.py` after
+  re-exporting an atlas. Re-running `pack_level.js` on a packed save (`node pack_level.js ../level_editor_lab.html ../levels/<name>.json`,
+  from `tools/geo`) re-clears it in place; it only removes trees, so a looser margin never brings trees back.
 - **Trees:** the game's 6-card star atlases ([trees.md](trees.md)) or the lab's own in `tools/levels/trees/`.
 - **Visibility** is no longer baked in the lab: `tools/bake_level.gd` renders it into the game's bake (see "Tree tiles" below). The lab shows every tree.
 - **WASD** (`walk`) moves the view centre, the sight-line eye and the 3D camera's target, relative to the
@@ -82,7 +86,7 @@ height and satellite colour.
 ## In the game
 
 **Map (M, or the pad's Back button):** `LevelMap`, added by `LevelView` once loaded, pauses the game and shows the bake's road
-samples as polylines over a `IMAGE_PX`² image of tree dots and building footprints (painted on a background thread (`_paint`) as soon as the map is added, so the first open is instant; not the satellite image).
+samples as polylines over a `IMAGE_PX`² image of tree dots and building footprints (painted on a background thread (`_paint`) from before the ground prefill, and uploaded with its road lines traced by `build()` at the end of the shader warm-up, behind the loading screen, since the 4096² upload stalls a frame for about 30 ms; the map's input stays off until the level has loaded; not the satellite image).
 Drag / WASD / arrows / left stick pan, wheel / +- / LB RB zoom; click (or Enter / A on the centre crosshair) teleports to the nearest road
 sample (`snap_to_road`, `LevelView.road_pose`), prefilling the streamer there before unpausing so the car doesn't fall through.
 
@@ -90,7 +94,7 @@ With **Settings → Dev → "Level instead of free roam"** on (or `GameConfig.de
 `Scenes.change_to` sends the title's world entry to `level_view.tscn` instead of free roam. Flipping the toggle from inside
 either world (pause → Settings → Dev) saves and swaps to the other world at once (`SettingsMenu._toggle_dev_level`). That scene is
 free roam's car, cameras, HUD and pause menu around one `LevelView` node, which reads
-`GameConfig.dev_level_path`, fields a stock `GameConfig.dev_level_car_id` (not the world's car; the pause menu's Garage, `open_garage`, picks any catalogue car and reloads the level with it parked where the old one stood, as free roam does; the pause menu's Shop, `open_shop`, is free roam's shop with every part free and unlocked, kept on the static `LevelView.owned` across the reload that fits them), and:
+`GameConfig.dev_level_path`, fields a stock `GameConfig.dev_level_car_id` (not the world's car; the pause menu's Garage, `open_garage`, picks any catalogue car and reloads the level with it parked where the old one stood, as free roam does; the pause menu's Shop, `open_shop`, is free roam's shop with every part free and unlocked, kept on the static `LevelView.owned` across the reload that fits them; the car takes damage as anywhere else, and the pause menu's Repair, `_on_extra`, fixes it for free via `DamageModel.repair`), and:
 
 - rebuilds the lab's terrain and road network (the same splines and blend) on a 1.5 m grid, the road painted as gravel by
   `shaders/level_ground.gdshader` per pixel from the baked road frame textures (`LevelBake`; see "Gravel road" below),
@@ -229,7 +233,8 @@ as `tree_xf` (12 floats each, the MultiMesh buffer layout), `tree_kind` and `tre
 tree's height. The visibility rows (`vis_every`; `set_visibility`, `visible_in`) are per viewpoint row (every 4 road
 samples), ascending tree numbers, so one tile's trees are a binary-searched slice. They are kept as diffs against the row
 before (`vis_add` / `vis_rem` with their `*_start`; a whole row every `VIS_KEY` rows) and `visible_in` decodes the row it
-is asked for, caching the last one.
+is asked for, caching the last four (`_rows`): the trees ask for rows r and r+1 in turn for every tile, and with only one
+cached each call decoded back from the keyframe, about 3 ms a tile.
 
 **Storage:** the big arrays are not exported; `_get_property_list` / `_get` / `_set` save each as a zstd blob (`z_*`,
 `BLOBS`) and decode it on load, so the file is plain `ResourceSaver.save` with no `FLAG_COMPRESS`. Heights are stored as

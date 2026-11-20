@@ -159,14 +159,16 @@ func _start_sampling(view: Viewport) -> void:
 		_samples[stream] = []
 
 
-# Frees every node whose name (wildcards allowed: BushInteraction*) or script class (GroundCover) is in --off.
+# Hides and stops every node whose name (wildcards allowed: BushInteraction*) or script class (GroundCover) is in --off; not freed, since other nodes still call into some of them.
 func _turn_off() -> void:
 	for pattern in _off:
 		var hits := 0
 		for n in _level.find_children("*", "", true, false):
 			var script := n.get_script() as Script
 			if String(n.name).match(pattern) or (script != null and script.get_global_name() == pattern):
-				n.queue_free()
+				n.process_mode = Node.PROCESS_MODE_DISABLED
+				if "visible" in n:
+					n.visible = false
 				hits += 1
 		if hits == 0:
 			push_warning("level replay: nothing matches --off=%s" % pattern)

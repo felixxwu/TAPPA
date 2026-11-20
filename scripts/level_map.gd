@@ -55,7 +55,7 @@ func toggle() -> void:
 	visible = not visible
 	get_tree().paused = visible
 	if visible:
-		_build()
+		build()
 		var car := view.get_parent().get_node_or_null("Car") as Node3D
 		if car != null:
 			center = Vector2(car.global_position.x, car.global_position.z)
@@ -82,8 +82,9 @@ func snap_to_road(w: Vector2) -> Vector2:
 	return Vector2(b.sx[i], b.sz[i]) if i >= 0 else w
 
 
-func _build() -> void:
-	if _texture != null:
+# Uploads the painted image and traces the road lines; the level view calls it behind the loading screen, since the upload alone stalls a frame for tens of ms.
+func build() -> void:
+	if _texture != null or _painter == null:
 		return
 	_texture = ImageTexture.create_from_image(_painter.wait_to_finish())  # waits only if the painting isn't done yet
 	_painter = null
@@ -229,7 +230,7 @@ func _input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	if _painter != null and not _painter.is_alive():
-		_build()
+		build()
 	if not visible:
 		return
 	var dir := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")

@@ -73,19 +73,20 @@ function setSize(l) {
   remakeTerrainGeo();
 }
 // Height follows region_library.gd's tree_mix sizes; width is height x the atlas frame's aspect.
+// `low` is how far the leaves spread from the trunk in the lowest 3 m (tools/tree_low_reach.py), so clearing the road keeps them off it.
 const KINDS = {
-  "tree.png": { h: 9.375, col: "#4f7a2c" },
-  "tree-greece.webp": { h: 4.0, col: "#7a8a3a" },
-  "tree-taiga.webp": { h: 22.5, col: "#2f4a2a" },
-  "tree-snow.webp": { h: 12.9, col: "#cfd8dc" },
-  "tree-snow-laden.webp": { h: 12.4, col: "#e6ecef" },
+  "tree.png": { low: 1.2, h: 9.375, col: "#4f7a2c" },
+  "tree-greece.webp": { low: 1.7, h: 4.0, col: "#7a8a3a" },
+  "tree-taiga.webp": { low: 2.3, h: 22.5, col: "#2f4a2a" },
+  "tree-snow.webp": { low: 4.0, h: 12.9, col: "#cfd8dc" },
+  "tree-snow-laden.webp": { low: 4.3, h: 12.4, col: "#e6ecef" },
   // Welsh forest species, exported from the tree lab's presets as star atlases; tint = level_view.gd's KIND_TINT
-  "levels/trees/sitka_spruce.png": { h: 22, col: "#1e3322", tint: [0.3, 0.38, 0.32] },
-  "levels/trees/young_spruce.png": { h: 10, col: "#25402a", tint: [0.34, 0.42, 0.34] },
-  "levels/trees/birch.png": { h: 9, col: "#9fcf4c", tint: [0.82, 0.86, 0.72] },
-  "levels/trees/rowan.png": { h: 5, col: "#7cbb35", tint: [0.82, 0.86, 0.72] },
-  "levels/trees/alder.png": { h: 9, col: "#5f9a2e", tint: [0.8, 0.86, 0.72] },
-  "levels/trees/scrub.png": { h: 1.4, col: "#6faa3a", tint: [0.8, 0.85, 0.72] },
+  "levels/trees/sitka_spruce.png": { low: 5.4, h: 22, col: "#1e3322", tint: [0.3, 0.38, 0.32] },
+  "levels/trees/young_spruce.png": { low: 3.0, h: 10, col: "#25402a", tint: [0.34, 0.42, 0.34] },
+  "levels/trees/birch.png": { low: 0.7, h: 9, col: "#9fcf4c", tint: [0.82, 0.86, 0.72] },
+  "levels/trees/rowan.png": { low: 1.4, h: 5, col: "#7cbb35", tint: [0.82, 0.86, 0.72] },
+  "levels/trees/alder.png": { low: 1.3, h: 9, col: "#5f9a2e", tint: [0.8, 0.86, 0.72] },
+  "levels/trees/scrub.png": { low: 0.7, h: 1.4, col: "#6faa3a", tint: [0.8, 0.85, 0.72] },
 };
 // Game textures are named bare; the lab's own atlases are paths relative to this page.
 const texUrl = kind => kind.includes("/") ? kind : "../textures/" + kind;
@@ -727,7 +728,8 @@ function removeSelected() {
   select(null); changed(isNode); save();
 }
 // Clears trees and ground cover off the selected node's whole road, keeping the same margins as tools/geo/pack_level.js.
-const TREE_CLEAR = 2, COVER_CLEAR = 0.5; // metres beyond the road's edge: a tree's trunk and low branches, a tuft's spread
+const TREE_CLEAR = 0.5, COVER_CLEAR = 0.5; // metres beyond the road's edge: past a tree's low branches, a tuft's spread
+const treeClear = t => TREE_CLEAR + KINDS[t.kind].low * t.sx;
 function clearRoad() {
   const segs = [], B = 32, buckets = new Map(), key = (x, z) => Math.floor(x / B) * 65536 + Math.floor(z / B);
   for (let i = 0; i < samples.length - 1; i++) if (samples[i].c === sel.c && !samples[i + 1].first) segs.push(i);
@@ -737,14 +739,15 @@ function clearRoad() {
     return Math.hypot(x - a.x - abx * t, z - a.z - abz * t) - a.w;
   };
   const box = (i, m) => { const a = samples[i], b = samples[i + 1], r = Math.max(a.w, b.w) + m; return [Math.min(a.x, b.x) - r, Math.min(a.z, b.z) - r, Math.max(a.x, b.x) + r, Math.max(a.z, b.z) + r]; };
+  const reach = Math.max(TREE_CLEAR, ...level.trees.map(treeClear));
   for (const i of segs) {
-    const [x0, z0, x1, z1] = box(i, TREE_CLEAR);
+    const [x0, z0, x1, z1] = box(i, reach);
     for (let gx = Math.floor(x0 / B); gx <= Math.floor(x1 / B); gx++) for (let gz = Math.floor(z0 / B); gz <= Math.floor(z1 / B); gz++) {
       const k = gx * 65536 + gz; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(i);
     }
   }
   const before = level.trees.length;
-  level.trees = level.trees.filter(t => !(buckets.get(key(t.x, t.z)) || []).some(i => gap(i, t.x, t.z) <= TREE_CLEAR));
+  level.trees = level.trees.filter(t => !(buckets.get(key(t.x, t.z)) || []).some(i => gap(i, t.x, t.z) <= treeClear(t)));
   let cells = 0;
   for (const i of segs) {
     const [x0, z0, x1, z1] = box(i, COVER_CLEAR), h = SIZE / 2;

@@ -50,6 +50,7 @@ static var progress := 0.0  # 0..1 through the running bake, for a loading scree
 var _road: LevelData
 var _cur := PackedInt32Array()   # the decoded visibility of _cur_row
 var _cur_row := -2
+var _rows := {}  # a few recently decoded rows, since the trees ask for two neighbouring rows in turn for every tile
 var _texture: ImageTexture
 
 
@@ -209,6 +210,7 @@ func set_visibility(every: int, rows: Array) -> void:
 	vis_add = PackedInt32Array()
 	vis_rem = PackedInt32Array()
 	_cur_row = -2
+	_rows.clear()
 	var prev := PackedInt32Array()
 	for r in rows.size():
 		var ids := PackedInt32Array(rows[r])
@@ -235,10 +237,13 @@ func set_visibility(every: int, rows: Array) -> void:
 func visible_in(row: int, first: int, end: int) -> PackedInt32Array:
 	if row < 0 or row >= vis_row_count():
 		return PackedInt32Array()
-	_decode_row(row)
-	var a := _lower_bound(0, _cur.size(), first)
-	var b := _lower_bound(a, _cur.size(), end)
-	return _cur.slice(a, b)
+	if not _rows.has(row):
+		_decode_row(row)
+		if _rows.size() >= 4:
+			_rows.erase(_rows.keys()[0])
+		_rows[row] = _cur
+	var ids: PackedInt32Array = _rows[row]
+	return ids.slice(ids.bsearch(first), ids.bsearch(end))
 
 
 func _decode_row(row: int) -> void:
@@ -324,16 +329,6 @@ func apply_to(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("frame_size_m", size)
 	mat.set_shader_parameter("frame_cell_m", size / (frame_n - 1))
 	mat.set_shader_parameter("frame_n", frame_n)
-
-
-func _lower_bound(lo: int, hi: int, value: int) -> int:
-	while lo < hi:
-		var mid := (lo + hi) >> 1
-		if _cur[mid] < value:
-			lo = mid + 1
-		else:
-			hi = mid
-	return lo
 
 
 func _bake_trees(trees: Array) -> void:

@@ -200,11 +200,14 @@ func test_visibility_rows_decode_in_any_order_across_keyframes() -> void:
 	assert_eq(ResourceSaver.save(b, path), OK)
 	var back := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE) as LevelBake
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	for r in [LevelBake.VIS_KEY + 3, 2, LevelBake.VIS_KEY - 1, LevelBake.VIS_KEY, rows.size() - 1, LevelBake.VIS_KEY + 2]:
+	var order := [LevelBake.VIS_KEY + 3, 2, LevelBake.VIS_KEY - 1, LevelBake.VIS_KEY, rows.size() - 1, LevelBake.VIS_KEY + 2]
+	order.append_array([5, 6, 5, 6, 7, 1, 5])  # neighbouring rows asked in turn, as the trees do per tile
+	for r: int in order:
 		var want := PackedInt32Array(rows[r])
 		want.sort()
 		assert_eq(b.visible_in(r, 0, 1 << 30), want, "row %d" % r)
 		assert_eq(back.visible_in(r, 0, 1 << 30), want, "row %d after reload" % r)
+		assert_eq(b.visible_in(r, 10, 20), PackedInt32Array(Array(want).filter(func(v: int) -> bool: return v >= 10 and v < 20)), "row %d in [10, 20)" % r)
 
 
 func test_a_bake_with_trees_but_no_visibility_is_incomplete() -> void:

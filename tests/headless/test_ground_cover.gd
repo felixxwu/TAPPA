@@ -233,6 +233,14 @@ func test_after_a_full_stream_no_tile_in_reach_is_missing() -> void:
 	assert_true(gc.missing(Vector2.ZERO).is_empty())
 
 
+func test_hidden_cover_builds_no_tiles_and_waits_for_none() -> void:
+	var gc := _cover_node({"1": [[BLADES, 2.0]]})
+	gc.visible = false
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	assert_true(gc.tiles.is_empty())
+	assert_true(gc.missing(Vector2.ZERO).is_empty(), "a load that waits for missing tiles doesn't hang")
+
+
 func test_a_tile_owns_bush_fields_that_go_with_it() -> void:
 	var gc := _cover_node({"1": [[BUSH, 2.0]]})
 	var car := Node3D.new()

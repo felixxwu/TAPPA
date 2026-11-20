@@ -178,8 +178,9 @@ func setup(d: Dictionary, height: Callable, mat_size := 600) -> void:
 	far_material = make_material(Config.data.ground_cover_fade_start, Config.data.ground_cover_fade_end, Vector2(Config.data.ground_cover_far_fade_start, Config.data.ground_cover_far_fade_end))
 
 
+# Hidden cover (the level replay's --off) builds no tiles either.
 func has_cover() -> bool:
-	return not cover.is_empty() and not kinds.is_empty()
+	return visible and not cover.is_empty() and not kinds.is_empty()
 
 
 func update_centre(pos: Vector3) -> void:

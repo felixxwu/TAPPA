@@ -31,7 +31,7 @@ through `Car.ai_controlled` and the pose is written to the physics server each t
 felled trees repeat exactly; frame rate is uncapped with vsync off, frames are sampled as `BenchmarkRunner` does
 after `WARMUP_FRAMES`, and `BenchmarkStats.print_summary` prints the stats before it quits. Replays use the default
 car and the chase camera, not your save. A replay stops after `DEFAULT_UNTIL_S` (15 s); `--full` plays the whole
-drive, `--until=<s>` any length, and `--off=DustPuffs,BushInteraction*,GroundCover` frees the scene nodes with those names (wildcards) or script classes first, to isolate a feature's
+drive, `--until=<s>` any length, and `--off=DustPuffs,BushInteraction*,GroundCover` hides and stops the scene nodes with those names (wildcards) or script classes first (hidden ground cover also builds no tiles), to isolate a feature's
 cost. Every frame over `BenchmarkStats.SPIKE_MS` is printed with its time and the car's position. In a browser
 (`./serve_web.sh`, a web build includes the level and `benchmark/runs/`), `?replay=1` boots straight into it
 (`title_boot.gd`) and takes the same flags from the URL (`&until=30`, `&full=1`); the report POSTs to the collector

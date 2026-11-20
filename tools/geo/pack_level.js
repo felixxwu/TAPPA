@@ -9,16 +9,18 @@ const jsSrc = fs.readFileSync(require("path").join(require("path").dirname(proce
 const literal = (text, start) => { const i = text.indexOf(start); return text.slice(i, text.indexOf("\n};", i) + 4).replace(/;?\s*$/, ";\n").replace(start.split(" ")[0] + " ", "var "); };
 const oneLine = (text, start) => { const i = text.indexOf(start); return text.slice(i, text.indexOf("\n", i) + 1).replace("const ", "var "); };
 const coverCode = oneLine(jsSrc, "const PRESET_BASE") + literal(jsSrc, "const PRESETS = {") + literal(src, "const COVER_RENDER = {");
+const KINDS = new Function(literal(src, "const KINDS = {") + "return KINDS;")();
 const code = coverCode + src.slice(src.indexOf("const r1 ="), src.indexOf("try { level = unpack")) + line("const segSteps =")
   + ["bakeKey", "tangent", "roadSamples"].map(fn).join("");
 const { pack, unpack, roadSamples } = new Function("btoa", "atob", code + "return { pack, unpack, roadSamples };")(s => Buffer.from(s, "binary").toString("base64"), s => Buffer.from(s, "base64").toString("binary"));
-const lvl = unpack(JSON.parse(fs.readFileSync(process.argv[3], "utf8")));
+const raw = JSON.parse(fs.readFileSync(process.argv[3], "utf8")), lvl = unpack(raw);
 if (typeof lvl.cover === "string") lvl.cover = Uint8Array.from(Buffer.from(lvl.cover, "base64")); // cover_mask.py writes it already encoded
-const TREE_CLEAR = 2, COVER_CLEAR = 0.5; // metres beyond the road's edge kept free: a tree's trunk and low branches, a tuft's spread
+const TREE_CLEAR = 0.5, COVER_CLEAR = 0.5; // metres beyond the road's edge kept free: past a tree's low branches (its kind's `low` spread), a tuft's spread
+const treeClear = t => TREE_CLEAR + KINDS[t.kind].low * t.sx;
 const SIZE = lvl.size ?? 600;
 const samples = roadSamples(lvl.roads);
 // Segments bucketed into 32 m squares, each listed in every square within `reach` of it, so a point only checks the segments that could be that close.
-const BUCKET = 32, reach = Math.max(...samples.map(s => s.w)) + TREE_CLEAR + 1, buckets = new Map(), key = (gx, gz) => gx * 65536 + gz;
+const BUCKET = 32, reach = Math.max(...samples.map(s => s.w)) + lvl.trees.reduce((m, t) => Math.max(m, treeClear(t)), TREE_CLEAR) + 1, buckets = new Map(), key = (gx, gz) => gx * 65536 + gz;
 for (let i = 0; i < samples.length - 1; i++) {
   if (samples[i + 1].first) continue;
   const a = samples[i], b = samples[i + 1];
@@ -39,14 +41,14 @@ const edge = (x, z) => {
   return bi < 0 ? Infinity : bd - samples[bi].w;
 };
 const before = lvl.trees.length;
-lvl.trees = lvl.trees.filter(t => edge(t.x, t.z) > TREE_CLEAR);
+lvl.trees = lvl.trees.filter(t => edge(t.x, t.z) > treeClear(t));
 let cleared = 0;
 if (lvl.cover) for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
   const i = r * SIZE + c;
   if (lvl.cover[i] && edge(c + 0.5 - SIZE / 2, r + 0.5 - SIZE / 2) < COVER_CLEAR) { lvl.cover[i] = 0; cleared++; }
 }
 console.log(`off the road: ${before - lvl.trees.length} trees, ${cleared} cover cells`);
-const packed = JSON.stringify(pack(lvl)), back = unpack(JSON.parse(packed));
-let maxH = 0; lvl.heightmap.forEach((h, i) => maxH = Math.max(maxH, Math.abs(h - back.heightmap[i])));
+const packed = JSON.stringify({ ...pack(lvl), ...(lvl.coverWebp && { coverKinds: raw.coverKinds }) }), back = unpack(JSON.parse(packed));
+let maxH = 0; lvl.heightmap?.forEach((h, i) => maxH = Math.max(maxH, Math.abs(h - back.heightmap[i])));
 console.log("trees", back.trees.length === lvl.trees.length, back.trees[0].kind, "roads", back.roads.length, "max height error", maxH.toFixed(3), "m");
 fs.writeFileSync(process.argv[4] || process.argv[3], packed);

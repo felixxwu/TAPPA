@@ -561,7 +561,7 @@ for trunk / branching / growth / leaves, presets, and seeds. It exports a `.glb`
 transparent side-on PNG, the latter in the same shape as the billboard sprites above. Beside
 the real tree it shows a cheap "star" version, rebuilt on every change (`buildImpostor`): N
 (slider, default 6) transparent renders taken evenly around the tree, each on a double-sided card (mirrored on the back) facing the
-direction it was shot from, all crossing at the trunk. All cards always draw. The game's tree textures were generated with it. `?preset=<name>` opens a preset and `&render=1` hides the star version and sway, for headless screenshots; the Welsh-forest presets (Sitka spruce, young spruce, birch, rowan, alder, roadside scrub) were tuned against a Hafren Forest roadside photo.
+direction it was shot from, all crossing at the trunk. All cards always draw. The game's tree textures were generated with it. `?preset=<name>` opens a preset and `&render=1` hides the star version and sway, for headless screenshots; the Welsh-forest presets (Sitka spruce, young spruce, birch, rowan, alder, roadside scrub) were tuned against a Hafren Forest roadside photo. Their atlases in `tools/levels/trees/` are re-rendered one preset at a time: `--dump-dom` the lab headless with `?preset=<name>&atlas=1` and decode the data URL in `<pre id="atlasOut">` (default seed 1, 256 px tall).
 
 ## Ground Cover Lab
 
