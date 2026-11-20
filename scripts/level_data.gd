@@ -6,6 +6,10 @@ const FALLOFF := 1.0         # how far beyond the road's edge the ground blends 
 const BUCKET := 20.0
 const JUNCTION_TOL := 0.75   # chain ends this close to each other, or to another chain's node, make a junction
 const JUNCTION_BLEND := 25.0 # road height eases to the junction's level over this many metres
+const PATCH_FALLOFF := 4.0   # how far beyond a gravel patch's edge the ground blends back to its own height
+const PATCH_CELL := 32.0
+const PATCH_RAMP := 0.04      # the most a road's grade may steepen where it eases onto a patch's level
+const PATCH_BLEND_MAX := 80.0 # but it eases over no more than this many metres
 
 var level: Dictionary
 var size := 600.0               # the square's side in metres, centred on the origin
@@ -19,6 +23,9 @@ var sa := PackedFloat32Array()  # metres along the road to each sample
 var sc := PackedInt32Array()    # which road chain each sample belongs to; a segment joins two samples of one chain
 var st := PackedFloat32Array()  # how tarmac each sample is: 0 gravel, 1 tarmac (a node's `tarmac` flag, blended between nodes)
 var junctions: Array[Vector3] = []  # (x, z, half-width) of each junction centre
+var patches: Array[PackedVector2Array] = []  # gravel patches: level gravel pads (driveways, turning areas) as polygons in x, z
+var patch_h := PackedFloat32Array()          # each patch's one level
+var _pbuckets := {}
 var buckets := {}
 var _hm := PackedFloat32Array()
 var _jbuckets := {}
@@ -32,6 +39,7 @@ func load_save(d: Dictionary, with_trees := true, with_ground := true) -> void:
 	_hm = level.get("heightmap", PackedFloat32Array())
 	var side := roundi(sqrt(_hm.size()))
 	grid_n = side - 1 if side > 1 and side * side == _hm.size() else 0
+	patches = parse_patches(level.get("gravelPatches", []))
 	if with_ground:
 		_build_road(chains(level))
 
@@ -91,6 +99,192 @@ static func unpack(d: Dictionary, with_trees := true, with_ground := true) -> Di
 	return out
 
 
+# A save's `gravelPatches` ([[{x, z}, ...], ...]) as polygons, skipping any with fewer than three points.
+static func parse_patches(raw: Array) -> Array[PackedVector2Array]:
+	var out: Array[PackedVector2Array] = []
+	for pts: Array in raw:
+		if pts.size() >= 3:
+			out.append(PackedVector2Array(pts.map(func(q: Dictionary) -> Vector2: return Vector2(q["x"], q["z"]))))
+	return out
+
+
+# Signed metres from (x, z) to a polygon's edge: negative inside.
+static func polygon_distance(poly: PackedVector2Array, x: float, z: float) -> float:
+	var p := Vector2(x, z)
+	var best := INF
+	var inside := false
+	var j := poly.size() - 1
+	for i in poly.size():
+		var a := poly[j]
+		var b := poly[i]
+		var ab := b - a
+		var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-9), 0.0, 1.0)
+		best = minf(best, p.distance_to(a + ab * t))
+		if (a.y > z) != (b.y > z) and x < a.x + (z - a.y) / (b.y - a.y) * ab.x:
+			inside = not inside
+		j = i
+	return -best if inside else best
+
+
+# (signed distance, patch index) of the nearest gravel patch within PATCH_CELL; (INF, -1) when none.
+func patch_at(x: float, z: float) -> Vector2:
+	var best := Vector2(INF, -1)
+	for pi: int in _pbuckets.get(floori(x / PATCH_CELL) * 100003 + floori(z / PATCH_CELL), []):
+		var d := polygon_distance(patches[pi], x, z)
+		if d < best.x:
+			best = Vector2(d, pi)
+	return best
+
+
+# Files each patch under every cell within PATCH_CELL of it, so a query looks only at its own cell.
+func bucket_patches() -> void:
+	_pbuckets.clear()
+	for pi in patches.size():
+		var lo := Vector2(INF, INF)
+		var hi := -lo
+		for q in patches[pi]:
+			lo = lo.min(q)
+			hi = hi.max(q)
+		for gx in range(floori((lo.x - PATCH_CELL) / PATCH_CELL), floori((hi.x + PATCH_CELL) / PATCH_CELL) + 1):
+			for gz in range(floori((lo.y - PATCH_CELL) / PATCH_CELL), floori((hi.y + PATCH_CELL) / PATCH_CELL) + 1):
+				var key := gx * 100003 + gz
+				if not _pbuckets.has(key):
+					_pbuckets[key] = []
+				_pbuckets[key].append(pi)
+
+
+# Each patch's level is its roads' height inside it (or, with no road in it, the mean ground at its corners). A road that
+# enters a patch eases to its level, measured along the road network (through junctions, so every road meeting there moves
+# together), over JUNCTION_BLEND metres or longer when the road has
+# more height to make up (so its grade steepens by no more than PATCH_RAMP); a road that only passes near a patch is left alone.
+# Two patches joined by a road are pulled toward each other's level until the road between them climbs no more than it
+# did before; between them the levels are blended, weighted toward the nearer, so the road never steps from one to the other.
+func _level_patches() -> void:
+	bucket_patches()
+	patch_h.resize(patches.size())
+	var inside: Array[PackedInt32Array] = []
+	inside.resize(patches.size())
+	for i in sx.size():
+		for pi: int in _pbuckets.get(floori(sx[i] / PATCH_CELL) * 100003 + floori(sz[i] / PATCH_CELL), []):
+			if polygon_distance(patches[pi], sx[i], sz[i]) <= 0.0:
+				inside[pi].append(i)
+	var in_patch := PackedInt32Array()  # the first patch each sample lies inside, or -1
+	in_patch.resize(sx.size())
+	in_patch.fill(-1)
+	for pi in patches.size():
+		for i in inside[pi]:
+			if in_patch[i] < 0:
+				in_patch[i] = pi
+		var sum := 0.0
+		if inside[pi].is_empty():
+			for q in patches[pi]:
+				sum += natural(q.x, q.y)
+			patch_h[pi] = sum / patches[pi].size()
+		else:
+			for i in inside[pi]:
+				sum += sh[i]
+			patch_h[pi] = sum / inside[pi].size()
+	var last_p := -1
+	var last_i := -1
+	for i in sx.size():
+		if i > 0 and sc[i] != sc[i - 1]:
+			last_p = -1
+		var pi := in_patch[i]
+		if pi < 0:
+			continue
+		if last_p >= 0 and pi != last_p:
+			var diff := patch_h[pi] - patch_h[last_p]
+			var excess := absf(diff) - absf(sh[i] - sh[last_i])
+			if excess > 0.0:
+				patch_h[pi] -= signf(diff) * excess / 2.0
+				patch_h[last_p] += signf(diff) * excess / 2.0
+		last_p = pi
+		last_i = i
+	var links := _junction_links()
+	var pull := PackedFloat32Array()      # per sample: the strongest pull toward any patch's level, 0..1
+	var weighed := PackedFloat32Array()   # sum of weight x level, and of weights, over the patches pulling it
+	var weights := PackedFloat32Array()
+	var exact := PackedInt32Array()       # the patch a sample lies inside, or -1
+	for arr in [pull, weighed, weights]:
+		arr.resize(sx.size())
+	exact.resize(sx.size())
+	exact.fill(-1)
+	for pi in patches.size():
+		if inside[pi].is_empty():
+			continue
+		var climb := 0.0
+		for i in inside[pi]:
+			climb = maxf(climb, absf(sh[i] - patch_h[pi]))
+		var blend := clampf(1.5 * climb / PATCH_RAMP, JUNCTION_BLEND, PATCH_BLEND_MAX)  # a smoothstep's steepest slope is 1.5x its mean
+		var dist := _network_distances(inside[pi], blend, links)
+		for i: int in dist:
+			var d: float = dist[i]
+			if d <= 0.0:
+				if exact[i] < 0:
+					exact[i] = pi
+			else:
+				var w := 1.0 - smoothstep(0.0, blend, d)
+				pull[i] = maxf(pull[i], w)
+				weighed[i] += w / (d * d) * patch_h[pi]
+				weights[i] += w / (d * d)
+	for i in sx.size():
+		if exact[i] >= 0:
+			sh[i] = patch_h[exact[i]]
+		elif pull[i] > 0.0:
+			sh[i] = lerpf(weighed[i] / weights[i], sh[i], 1.0 - pull[i])
+
+
+# Where roads meet: each junction's nearest sample of every road within 3 m of it, linked to each other's (sample -> [[sample, metres], ...]).
+func _junction_links() -> Dictionary:
+	var closest: Array[Dictionary] = []  # per junction: chain -> Vector2(distance, sample)
+	for jn in junctions:
+		closest.append({})
+	for i in sx.size():
+		for ji: int in _near_junctions(sx[i], sz[i]):
+			var d := Vector2(sx[i] - junctions[ji].x, sz[i] - junctions[ji].y).length()
+			if d < 3.0 and d < closest[ji].get(sc[i], Vector2(INF, 0.0)).x:
+				closest[ji][sc[i]] = Vector2(d, i)
+	var links := {}
+	for m: Dictionary in closest:
+		for a: Vector2 in m.values():
+			for b: Vector2 in m.values():
+				if a.y != b.y:
+					var ia := int(a.y)
+					var ib := int(b.y)
+					if not links.has(ia):
+						links[ia] = []
+					links[ia].append([ib, Vector2(sx[ia] - sx[ib], sz[ia] - sz[ib]).length()])
+	return links
+
+
+# Metres along the road network (through junctions) from the nearest of `sources` to every sample within `reach` (sample -> metres).
+func _network_distances(sources: PackedInt32Array, reach: float, links: Dictionary) -> Dictionary:
+	var dist := {}
+	var open: Array[int] = []
+	for i in sources:
+		dist[i] = 0.0
+		open.append(i)
+	while not open.is_empty():
+		var k := 0
+		for q in range(1, open.size()):
+			if dist[open[q]] < dist[open[k]]:
+				k = q
+		var i := open[k]
+		open.remove_at(k)
+		var next: Array = links.get(i, []).duplicate()
+		if i > 0 and sc[i - 1] == sc[i]:
+			next.append([i - 1, sa[i] - sa[i - 1]])
+		if i < sx.size() - 1 and sc[i + 1] == sc[i]:
+			next.append([i + 1, sa[i + 1] - sa[i]])
+		for e: Array in next:
+			var nd: float = dist[i] + e[1]
+			if nd < reach and nd < dist.get(e[0], INF):
+				if not dist.has(e[0]):
+					open.append(e[0])
+				dist[e[0]] = nd
+	return dist
+
+
 # A save's road chains; an older save's single `road` is one chain.
 static func chains(d: Dictionary) -> Array:
 	if d.has("roads"):
@@ -130,7 +324,9 @@ func road_pose(p: Vector2, facing: Vector3, height := Callable()) -> Transform3D
 func surface_at(x: float, z: float) -> Vector2:
 	var near := nearest(x, z)
 	var road := 1.0 - smoothstep(near.z - 0.5, near.z + 0.5, near.x)
-	return Vector2(road, road * near.w)
+	var p := patch_at(x, z)
+	var pad := 1.0 - smoothstep(-0.5, 0.5, p.x)
+	return Vector2(maxf(road, pad), road * near.w * (1.0 - pad))
 
 
 # The lab's ground before the road: its saved height grid, or flat.
@@ -150,9 +346,13 @@ func natural(x: float, z: float) -> float:
 func ground(x: float, z: float) -> float:
 	var h := natural(x, z)
 	var near := nearest(x, z)
-	if near.x == INF:
-		return h
-	return near.y - 0.05 + (h - near.y + 0.05) * smoothstep(near.z + flat_margin, near.z + flat_margin + FALLOFF, near.x)
+	if near.x != INF:
+		h = near.y - 0.05 + (h - near.y + 0.05) * smoothstep(near.z + flat_margin, near.z + flat_margin + FALLOFF, near.x)
+	var p := patch_at(x, z)
+	if p.x < flat_margin + PATCH_FALLOFF:
+		var level := patch_h[int(p.y)] - 0.05
+		h = level + (h - level) * smoothstep(flat_margin, flat_margin + PATCH_FALLOFF, p.x)
+	return h
 
 
 # The lab's roads: each chain's Hermite spline, smoothed road level and segment buckets as the lab's roadSamples /
@@ -210,6 +410,7 @@ func _build_road(roads: Array) -> void:
 				best = ji
 		if best >= 0:
 			sh[i] = lerpf(level_at[best], sh[i], smoothstep(0.0, JUNCTION_BLEND, best_d))
+	_level_patches()
 	bucket_samples()
 
 

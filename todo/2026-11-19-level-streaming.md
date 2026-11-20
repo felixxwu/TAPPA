@@ -79,7 +79,7 @@ loaded-grid `height_at` / `_mesh_height`, and the HUD stats `benchmark_runner.gd
 2. **The level gets its own 1.5 m settings.** It has its own `FreeRoamSettings` instance with
    `chunk_m` 48, `near_tile_m` 24, `near_stride_m` 1.5 and mid/far 6 / 12 m. That meets the rule in
    `free_roam_settings.gd`: the tile divides the chunk and is a multiple of the mid and far strides.
-   2 m would coarsen the 1 m flat margin (`level_road_flat_margin`) and the 1 m `FALLOFF` shoulder.
+   2 m would coarsen the 2 m flat margin (`level_road_flat_margin`) and the 1 m `FALLOFF` shoulder.
 3. **Visibility is baked offline, per tile, with far-tree simplification as a fallback.** Dropping
    the bake loses occlusion (hills, spruce walls cutting sight to ~30 m), not just distance, and
    ~23 k trees in range at a 1 km draw is doubtful on phones. The browser can't bake 5 km, so the

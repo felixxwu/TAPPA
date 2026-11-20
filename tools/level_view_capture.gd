@@ -7,7 +7,7 @@ extends Node
 #
 # Photo-match mode (env vars): CAP_POSES="x,z,tx,tz;..." renders an eye-height camera (CAP_EYE m above the
 # ground, CAP_FOV vertical degrees; CAP_LEVEL overrides the level file) at each x,z looking at tx,tz, into CAP_OUT/<n>.png.
-# CAP_SPAWN="road,node" parks the car on that road node instead of GameConfig.dev_level_spawn.
+# CAP_SPAWN="road,node[,face]" parks the car on that road node instead of GameConfig.dev_level_spawn.
 
 func _ready() -> void:
 	get_window().size = Vector2i(1280, 720)
@@ -16,7 +16,7 @@ func _ready() -> void:
 		Config.data.dev_level_path = OS.get_environment("CAP_LEVEL")
 	if OS.get_environment("CAP_SPAWN") != "":
 		var pick := OS.get_environment("CAP_SPAWN").split(",")
-		Config.data.dev_level_spawn = Vector2i(int(pick[0]), int(pick[1]))
+		Config.data.dev_level_spawn = Vector3i(int(pick[0]), int(pick[1]), int(pick[2]) if pick.size() > 2 else -1)
 	var world := (load("res://level_view.tscn") as PackedScene).instantiate()
 	add_child(world)
 	await (world.get_node("Level") as LevelView).loaded

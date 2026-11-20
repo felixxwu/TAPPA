@@ -166,6 +166,76 @@ func test_a_tarmac_node_paves_the_road_and_blends_to_gravel_between_nodes() -> v
 	assert_lt(data.surface_at(-99.0, 40.0).y, 0.01, "no tarmac off the road")
 
 
+func _square(x: float, z: float, half: float) -> Array:
+	return [{"x": x - half, "z": z - half}, {"x": x + half, "z": z - half}, {"x": x + half, "z": z + half}, {"x": x - half, "z": z + half}]
+
+
+# A road climbing along x, so a patch on it has to pick one level.
+func _slope_with_patches() -> Dictionary:
+	var hm: Array = []
+	for r in 201:
+		for c in 201:
+			hm.append(c * 0.3)
+	return {"road": [_node(-100.0, 0.0), _node(100.0, 0.0)], "heightmap": hm,
+		"gravelPatches": [_square(0.0, 0.0, 8.0), _square(-150.0, 150.0, 6.0)]}
+
+
+func test_a_gravel_patch_is_level_and_meets_its_road() -> void:
+	var data := _built(_slope_with_patches())
+	var h := data.ground(0.0, 0.0)
+	for p in [Vector2(-7.0, -7.0), Vector2(7.0, 5.0), Vector2(3.0, 6.5), Vector2(-6.0, 7.0)]:
+		assert_almost_eq(data.ground(p.x, p.y), h, 0.001, "level across the patch at %s" % p)
+	var i := data.nearest_sample(0.0, 0.0)
+	assert_almost_eq(data.sh[i] - 0.05, h, 0.001, "the road inside the patch is at the patch's level")
+	assert_almost_eq(data.ground(0.0, 40.0), data.natural(0.0, 40.0), 0.001, "the ground well away is untouched")
+
+
+func test_two_patches_on_one_road_climb_no_steeper_between_them_than_the_road_did() -> void:
+	var lv := _slope_with_patches()
+	lv["gravelPatches"] = [_square(-30.0, 0.0, 8.0), _square(30.0, 0.0, 8.0)]
+	var data := _built(lv)
+	var a := data.nearest_sample(-22.5, 0.0)
+	var b := data.nearest_sample(22.5, 0.0)
+	var road_climb := absf(data.natural(22.0, 0.0) - data.natural(-22.0, 0.0))
+	assert_lt(absf(data.sh[b] - data.sh[a]), road_climb + 0.1, "the pads meet the road's own climb, not their full height apart")
+	assert_almost_eq(data.ground(-36.0, 5.0), data.ground(-24.0, -5.0), 0.001, "each pad stays level")
+
+
+func test_a_patch_pulls_every_road_at_a_nearby_junction_alike() -> void:
+	var lv := _slope_with_patches()
+	lv.erase("road")
+	lv["roads"] = [[_node(-100.0, 0.0), _node(0.0, 0.0)], [_node(0.0, 0.0), _node(60.0, 0.0)], [_node(0.0, 0.0), _node(0.0, 80.0)]]
+	lv["gravelPatches"] = [_square(20.0, 0.0, 8.0)]
+	var data := _built(lv)
+	var hs: Array[float] = []
+	for c in 3:
+		var best := INF
+		var h := 0.0
+		for i in data.sx.size():
+			var d := Vector2(data.sx[i], data.sz[i]).length()
+			if data.sc[i] == c and d < best:
+				best = d
+				h = data.sh[i]
+		hs.append(h)
+	assert_almost_eq(hs[0], hs[1], 0.05, "the road into the patch and the one carrying on meet level")
+	assert_almost_eq(hs[2], hs[1], 0.05, "the side road meets them level too")
+
+
+func test_a_patch_away_from_roads_is_level_and_counts_as_road() -> void:
+	var data := _built(_slope_with_patches())
+	assert_almost_eq(data.ground(-155.0, 145.0), data.ground(-145.0, 155.0), 0.001, "level although the hill climbs across it")
+	assert_gt(data.surface_at(-150.0, 150.0).x, 0.99, "drives as road")
+	assert_eq(data.surface_at(-150.0, 150.0).y, 0.0, "gravel, not tarmac")
+	assert_lt(data.surface_at(-150.0, 170.0).x, 0.01, "grass past its edge")
+
+
+func test_polygon_distance_is_negative_inside_and_metres_to_the_edge() -> void:
+	var sq := LevelData.parse_patches([_square(0.0, 0.0, 5.0)])[0]
+	assert_almost_eq(LevelData.polygon_distance(sq, 0.0, 0.0), -5.0, 1e-4)
+	assert_almost_eq(LevelData.polygon_distance(sq, 8.0, 0.0), 3.0, 1e-4)
+	assert_almost_eq(LevelData.polygon_distance(sq, 8.0, 9.0), 5.0, 1e-4, "to the corner")
+
+
 func test_a_legacy_single_road_still_loads_as_one_chain() -> void:
 	var data := _built(_level())
 	assert_gt(data.surface_at(0.0, 0.0).x, 0.9)

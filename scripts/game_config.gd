@@ -3137,8 +3137,8 @@ func spectator_params() -> Dictionary:
 @export var dev_level_path := "res://tools/levels/hafren_5km.json"
 ## The car the level view drives (a stock CarLibrary id), whatever car the world has.
 @export var dev_level_car_id := "mx5"
-## Level view: spawn at roads[x][y] of the save (0-based, facing the next node, or the previous one at the end of a road); (-1, -1) keeps the default spawn.
-@export var dev_level_spawn := Vector2i(26, 13)
+## Level view: spawn at roads[x][y] of the save (0-based), facing node z of that road (-1: the next node, or the previous one at the end of a road); x = -1 keeps the default spawn.
+@export var dev_level_spawn := Vector3i(31, 4, 3)
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
 ## Level view: how far trees are drawn, in metres. The level's depth fog ends here, so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.
@@ -3147,7 +3147,7 @@ func spectator_params() -> Dictionary:
 @export var level_tree_collision_m := 60.0
 ## How far past the road's edge the level view keeps the ground flat at road height before it
 ## blends back to the terrain, in metres. The lab (tools/level_editor_lab.html) mirrors it as ROAD_FLAT_M.
-@export var level_road_flat_margin := 1.0
+@export var level_road_flat_margin := 2.0
 ## Level view: a spectator group from the save appears once the car is within this many metres of its centre.
 @export var level_spectator_spawn_m := 150.0
 ## Level view: a spawned spectator group is freed again once the car is farther than this (kept above the spawn distance so it doesn't flicker).

@@ -34,7 +34,7 @@
   <button id="random">🎲 Random</button>
   <button id="reset">Reset</button>
   <button id="undo" title="Ctrl/⌘ Z">Undo</button><button id="redo" title="Ctrl/⌘ Shift Z, Ctrl Y">Redo</button>
-  <label>Tool <select id="tool"><option value="edit">Trees &amp; road</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="biome">Biome</option></select></label>
+  <label>Tool <select id="tool"><option value="pan">Pan</option><option value="tree">Trees</option><option value="road">Roads</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="patch">Gravel patch (G)</option><option value="biome">Biome</option></select></label>
   <span id="biomeBar" hidden>
     <label>Biome <select id="biomeType"></select></label>
     <label>Brush <input id="biomeBrush" type="range" min="10" max="500" step="10" value="100"><span class="val" id="v_biomeBrush"></span></label>
@@ -63,7 +63,7 @@
 // A hand-editable patch of world: a 2D top-down editor (left) and the same patch rendered in 3D the way the game draws it (right).
 const $ = id => document.getElementById(id);
 
-const WIN_M = 600, WIN_MOVE = 100, CONTOUR_M = 2, FALLOFF = 1, ROAD_FLAT_M = 1; // ROAD_FLAT_M mirrors GameConfig.level_road_flat_margin
+const WIN_M = 600, WIN_MOVE = 100, CONTOUR_M = 2, FALLOFF = 1, ROAD_FLAT_M = 2; // ROAD_FLAT_M mirrors GameConfig.level_road_flat_margin
 // A level is a square of `size` metres (default 600) centred on the origin. N is the saved heightmap's grid (~3 m cells). The 3D ground is rebuilt on a
 // 1.5 m grid like the game's, fine enough to show the 1 m road-edge blend: G cells over the whole square, or over a WIN_M window following the view centre when the square is bigger.
 let SIZE = 600, N = 200, CELL = 3, G = 400, GCELL = 1.5, viewSize = 600;
@@ -195,6 +195,7 @@ function pack(l) {
     roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension), ...(n.tarmac && { tarmac: true }) }))) };
   delete out.road; delete out.trees;
   if (!out.spectators?.length) delete out.spectators;
+  if (out.gravelPatches?.length) out.gravelPatches = out.gravelPatches.map(p => p.map(q => ({ x: r1(q.x), z: r1(q.z) }))); else delete out.gravelPatches;
   if (out.size === 600) delete out.size;
   if (l.heightmap) {
     const bytes = new Uint8Array(Int16Array.from(l.heightmap, h => Math.round(h * 10)).buffer);
@@ -294,6 +295,7 @@ const COVER_DEFAULT = [
 const coverOverlay = document.createElement("canvas");
 const coverTool = () => $("tool").value === "cover";
 const specTool = () => $("tool").value === "spec";
+const patchTool = () => $("tool").value === "patch";
 let coverRgbs = {};
 function coverPaintRect(c0, r0, c1, r1) {
   const w = c1 - c0 + 1, h = r1 - r0 + 1, img = new ImageData(w, h), d = img.data;
@@ -446,6 +448,28 @@ function natural(x, z) {
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 const JUNC_BLEND_M = 25; // road height eases to the junction's level over this distance
+// Gravel patches (level.gravelPatches, [[{x, z}, ...], ...]): level gravel pads by buildings and dead ends (level_data.gd keeps the same maths).
+const PATCH_FALLOFF = 4; // metres past a patch's edge over which the ground blends back
+const PATCH_RAMP = 0.04, PATCH_BLEND_MAX = 80; // a road easing onto a patch steepens by at most this grade, over at most this many metres
+// Signed metres from (x, z) to a polygon's edge, negative inside.
+function polygonDistance(poly, x, z) {
+  let best = Infinity, inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[j], b = poly[i], abx = b.x - a.x, abz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (z - a.z) * abz) / Math.max(abx * abx + abz * abz, 1e-9)));
+    best = Math.min(best, Math.hypot(x - a.x - abx * t, z - a.z - abz * t));
+    if ((a.z > z) !== (b.z > z) && x < a.x + (z - a.z) / (b.z - a.z) * abx) inside = !inside;
+  }
+  return inside ? -best : best;
+}
+const patchList = () => (level.gravelPatches ?? []).filter(p => p.length >= 3);
+// The nearest patch to (x, z): { d: signed distance, h: its level }, or null.
+function patchAt(x, z) {
+  let best = null;
+  patchList().forEach((p, i) => { const d = polygonDistance(p, x, z); if (!best || d < best.d) best = { d, h: patchH[i] }; });
+  return best;
+}
+let patchH = [];
 let samples = [], juncs = [], roadPath = new Path2D(), heights = new Float32Array(1), roadD = new Float32Array(1); // roadD: metres beyond the road's edge
 const inWin = (x, z, m = 0) => T.full || x > T.x0 - m && x < T.x0 + WW() + m && z > T.z0 - m && z < T.z0 + WW() + m;
 function rebuildRoads() {
@@ -465,6 +489,53 @@ function rebuildRoads() {
     for (const j of juncs) { const d = Math.hypot(s.x - j.x, s.z - j.z); if (d < bd) { bd = d; best = j; } }
     if (best) { const t = smooth(0, JUNC_BLEND_M, bd); s.h = best.h + (s.h - best.h) * t; }
   }
+  // each patch sits at its roads' height inside it (else its corners' mean ground); two patches joined by a road are pulled
+  // toward each other until the road between climbs no more than it did; a road entering a patch eases onto it over
+  // JUNC_BLEND_M m (longer with more height to make up) along the road network, through junctions so every road there moves
+  // together, and a road only passing near is left alone (level_data.gd → _level_patches)
+  samples.forEach((s, i) => { s.a = s.first ? 0 : samples[i - 1].a + Math.hypot(s.x - samples[i - 1].x, s.z - samples[i - 1].z); });
+  const pull = samples.map(() => 0), weighed = samples.map(() => 0), weights = samples.map(() => 0), exact = samples.map(() => -1);
+  const insides = patchList().map(p => { const inside = new Set(); samples.forEach((s, i) => { if (polygonDistance(p, s.x, s.z) <= 0) inside.add(i); }); return inside; });
+  const inPatch = samples.map((_, i) => insides.findIndex(set => set.has(i)));
+  patchH = patchList().map((p, k) => insides[k].size ? [...insides[k]].reduce((a, i) => a + samples[i].h, 0) / insides[k].size : p.reduce((a, q) => a + natural(q.x, q.z), 0) / p.length);
+  let lastP = -1, lastI = -1;
+  samples.forEach((s, i) => {
+    if (i > 0 && s.c !== samples[i - 1].c) lastP = -1;
+    const k = inPatch[i];
+    if (k < 0) return;
+    if (lastP >= 0 && k !== lastP) {
+      const diff = patchH[k] - patchH[lastP], excess = Math.abs(diff) - Math.abs(s.h - samples[lastI].h);
+      if (excess > 0) { patchH[k] -= Math.sign(diff) * excess / 2; patchH[lastP] += Math.sign(diff) * excess / 2; }
+    }
+    lastP = k; lastI = i;
+  });
+  // where roads meet: each junction's nearest sample of every road within 3 m, linked to each other's, so easing crosses junctions
+  const links = new Map();
+  if (patchH.length) for (const j of juncs) {
+    const near = new Map();
+    samples.forEach((s, i) => { const d = Math.hypot(s.x - j.x, s.z - j.z); if (d < 3 && d < (near.get(s.c)?.d ?? Infinity)) near.set(s.c, { d, i }); });
+    for (const a of near.values()) for (const b of near.values()) if (a.i !== b.i) { if (!links.has(a.i)) links.set(a.i, []); links.get(a.i).push([b.i, Math.hypot(samples[a.i].x - samples[b.i].x, samples[a.i].z - samples[b.i].z)]); }
+  }
+  insides.forEach((inside, k) => {
+    if (!inside.size) return;
+    const lvl = patchH[k], blend = Math.max(JUNC_BLEND_M, Math.min(PATCH_BLEND_MAX, 1.5 * Math.max(...[...inside].map(i => Math.abs(samples[i].h - lvl))) / PATCH_RAMP));
+    const dist = new Map([...inside].map(i => [i, 0])), open = [...inside];
+    while (open.length) { // metres along the road network from the patch, through junctions
+      let m = 0; for (let q = 1; q < open.length; q++) if (dist.get(open[q]) < dist.get(open[m])) m = q;
+      const i = open.splice(m, 1)[0], next = [...(links.get(i) ?? [])];
+      if (i > 0 && samples[i - 1].c === samples[i].c) next.push([i - 1, samples[i].a - samples[i - 1].a]);
+      if (i < samples.length - 1 && samples[i + 1].c === samples[i].c) next.push([i + 1, samples[i + 1].a - samples[i].a]);
+      for (const [n, w] of next) { const nd = dist.get(i) + w; if (nd < blend && nd < (dist.get(n) ?? Infinity)) { if (!dist.has(n)) open.push(n); dist.set(n, nd); } }
+    }
+    for (const [i, d] of dist) {
+      if (d <= 0) { if (exact[i] < 0) exact[i] = k; }
+      else { const w = 1 - smooth(0, blend, d); pull[i] = Math.max(pull[i], w); weighed[i] += w / (d * d) * lvl; weights[i] += w / (d * d); }
+    }
+  });
+  samples.forEach((s, i) => { // between two patches on one road, their levels blend toward the nearer, so the road never steps
+    if (exact[i] >= 0) s.h = patchH[exact[i]];
+    else if (pull[i] > 0) { const t = weighed[i] / weights[i]; s.h = t + (s.h - t) * (1 - pull[i]); }
+  });
   roadPath = new Path2D();
   samples.forEach((s, i) => s.first ? roadPath.moveTo(s.x, s.z) : roadPath.lineTo(s.x, s.z));
 }
@@ -496,6 +567,8 @@ function rebuildGrid() {
       if (!best || d < best.d) best = { d, h: a.h + (b.h - a.h) * t, w: a.w + (b.w - a.w) * t };
     }
     if (best) h = best.h - 0.05 + (h - best.h + 0.05) * smooth(best.w + ROAD_FLAT_M, best.w + ROAD_FLAT_M + FALLOFF, best.d);
+    const pad = patchH.length && patchAt(x, z);
+    if (pad && pad.d < ROAD_FLAT_M + PATCH_FALLOFF) h = pad.h - 0.05 + (h - pad.h + 0.05) * smooth(ROAD_FLAT_M, ROAD_FLAT_M + PATCH_FALLOFF, pad.d);
     heights[r * (G + 1) + c] = h;
     roadD[r * (G + 1) + c] = best ? best.d - best.w : 1000;
   }
@@ -593,6 +666,11 @@ function draw2D() {
     ctx.drawImage(biomeOverlay, -SIZE / 2, -SIZE / 2, BN() * BIOME_CELL, BN() * BIOME_CELL);
     ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true;
   }
+  if (show.patches) patchList().forEach((p, pi) => {
+    ctx.fillStyle = "#c9bc9f"; ctx.strokeStyle = sel?.type === "pv" && sel.p === pi ? "#fc6" : "#7a6c50"; ctx.lineWidth = 2 / view.zoom;
+    ctx.beginPath(); p.forEach((q, i) => i ? ctx.lineTo(q.x, q.z) : ctx.moveTo(q.x, q.z)); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (view.zoom >= 0.5 || sel?.p === pi) for (const q of p) { ctx.fillStyle = "#7a6c50"; ctx.fillRect(q.x - 3 / view.zoom, q.z - 3 / view.zoom, 6 / view.zoom, 6 / view.zoom); }
+  });
   // road: each sample drawn as its own short stroke, so the width can vary along it
   ctx.lineCap = "round"; ctx.strokeStyle = "#b9ad93";
   const [vx0, vz0] = toWorld(-30, -30), [vx1, vz1] = toWorld(W + 30, H + 30);
@@ -681,6 +759,7 @@ function hit(sx, sz) {
   if (sel?.type === "node" && level.roads[sel.c].length > 1) for (const h of handles(sel.c, sel.i)) if (near(h.x, h.z)) return { type: "handle", c: sel.c, i: sel.i, kind: h.kind };
   const best = nodesNear(sx, sz)[0];
   if (best) return best;
+  if (show.patches) { const ps = level.gravelPatches ?? []; for (let p = ps.length - 1; p >= 0; p--) for (let i = 0; i < ps[p].length; i++) if (near(ps[p][i].x, ps[p][i].z)) return { type: "pv", p, i }; }
   if (show.trees) for (let i = level.trees.length - 1; i >= 0; i--) {
     const t = level.trees[i];
     if (Math.hypot(t.x - x, t.z - z) < Math.max(8 / view.zoom, treeW(t) / 2)) return { type: "tree", i };
@@ -713,6 +792,7 @@ cv.onpointermove = e => {
   if (!it) { view.x = drag.vx - dx / view.zoom; view.z = drag.vz - dz / view.zoom; changed(); return; }
   if (it.type === "tree") { Object.assign(level.trees[it.i], { x, z }); changed(); return; }
   if (it.type === "spec") { Object.assign(level.spectators[it.i], { x, z }); syncPopup(); changed(); return; }
+  if (it.type === "pv") { Object.assign(level.gravelPatches[it.p][it.i], { x, z }); changed(true); return; }
   if (it.type === "specr") { const g = level.spectators[it.i]; g.r = Math.max(1, Math.round(Math.hypot(x - g.x, z - g.z) * 2) / 2); syncPopup(); changed(); return; }
   const n = level.roads[it.c][it.i];
   if (it.type === "node") { const road = level.roads[it.c]; Object.assign(n, it.i === 0 || it.i === road.length - 1 ? snapNear(it.c, x, z) : { x, z }); }
@@ -731,16 +811,22 @@ cv.onpointerup = e => {
   else if (drag && !drag.moved && !drag.item && !paintTool()) {
     const [x, z] = toWorld(...px(e));
     if (newRoadArmed) newRoad(x, z);
-    else if (drag.shift) extendRoad(x, z);
+    else if ($("tool").value === "road") extendRoad(x, z);
+    else if (patchTool()) { const s = 6, q = (dx, dz) => ({ x: Math.round((x + dx) * 10) / 10, z: Math.round((z + dz) * 10) / 10 });
+      (level.gravelPatches ??= []).push([q(-s, -s), q(s, -s), q(s, s), q(-s, s)]); select({ type: "pv", p: level.gravelPatches.length - 1, i: 0 }); changed(true); save(); }
     else if (specTool()) { (level.spectators ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r: 8, n: 10 }); select({ type: "spec", i: level.spectators.length - 1 }); changed(); save(); }
     else if (sel) select(null); // a click on empty ground first just clears the selection
-    else { level.trees.push({ x, z, rot: Math.random() * 360, sx: 1, sy: 1, kind: $("kind").value }); changed(); save(); }
+    else if ($("tool").value === "tree") { level.trees.push({ x, z, rot: Math.random() * 360, sx: 1, sy: 1, kind: $("kind").value }); changed(); save(); }
   }
   if (drag?.moved) save();
   drag = null; mapDirty = true;
 };
 cv.ondblclick = e => {
   const [x, z] = toWorld(...px(e));
+  if (show.patches) for (const [p, poly] of (level.gravelPatches ?? []).entries()) for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    if (polygonDistance([a, b, a], x, z) < 6 / view.zoom) { poly.splice(i + 1, 0, { x, z }); select({ type: "pv", p, i: i + 1 }); changed(true); save(); return; }
+  }
   if (samples.length < 2) return;
   const near = nearestRoad(x, z, samples);
   if (near.d > samples[near.i].w + 6 / view.zoom) return;
@@ -796,9 +882,11 @@ function walk(dt) {
 
 addEventListener("keydown", e => {
   if (!sel || /INPUT|SELECT/.test(e.target.tagName) || !(e.key === "Delete" || e.key === "Backspace")) return;
-  if (e.shiftKey && sel.type === "node") removeRoad(); else removeSelected();
+  if (e.shiftKey && sel.type === "node") removeRoad(); else if (e.shiftKey && sel.type === "pv") removePatch(); else removeSelected();
 });
+function removePatch() { level.gravelPatches.splice(sel.p, 1); select(null); changed(true); save(); }
 function removeSelected() {
+  if (sel.type === "pv") { const p = level.gravelPatches[sel.p]; p.splice(sel.i, 1); if (p.length < 3) return removePatch(); select(null); changed(true); save(); return; }
   if (sel.type === "spec") { level.spectators.splice(sel.i, 1); select(null); changed(); save(); return; }
   const isNode = sel.type === "node";
   if (isNode) { const road = level.roads[sel.c]; road.splice(sel.i, 1); if (!road.length) level.roads.splice(sel.c, 1); } else level.trees.splice(sel.i, 1);
@@ -839,7 +927,7 @@ function clearRoad() {
   pop.querySelector("[data-act=clear]").textContent = `Cleared ${before - level.trees.length} trees, ${cells} m² cover`;
   changed(false); save();
 }
-const selObj = () => sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
+const selObj = () => sel.type === "pv" ? level.gravelPatches[sel.p][sel.i] : sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
 
 // --- the details pop-up for the selected tree or road node --------------------------------------
 const pop = $("pop");
@@ -847,7 +935,9 @@ const field = (key, label, step, unit = "") => `<label>${label} <span><input typ
 function select(s) {
   sel = s;
   if (!sel) { pop.style.display = "none"; mapDirty = true; return; }
-  pop.innerHTML = sel.type === "spec"
+  pop.innerHTML = sel.type === "pv"
+    ? `<b>Gravel patch ${sel.p} corner ${sel.i}</b><span>Drag corners; double-click an edge to add one</span><button data-act="del">Delete corner</button><button data-act="delpatch">Delete whole patch (shift+Delete)</button>`
+    : sel.type === "spec"
     ? `<b>Spectators ${sel.i}</b>` + field("r", "Radius", 0.5, "m") + field("n", "People", 1) + `<button data-act="del">Delete group</button>`
     : sel.type === "tree"
     ? `<b>Tree ${sel.i}</b><label>Species <select data-k="kind">${Object.keys(KINDS).map(k => `<option>${k}</option>`).join("")}</select></label>` +
@@ -859,6 +949,8 @@ function select(s) {
   pop.style.display = "flex";
   for (const inp of pop.querySelectorAll("[data-k]")) inp.oninput = () => edit(inp.dataset.k, inp.value);
   pop.querySelector("[data-act=del]").onclick = removeSelected;
+  const delPatch = pop.querySelector("[data-act=delpatch]");
+  if (delPatch) delPatch.onclick = removePatch;
   const auto = pop.querySelector("[data-act=auto]");
   if (auto) auto.onclick = () => { Object.assign(selObj(), { m: null, tension: 1 }); syncPopup(); changed(true); save(); };
   const tar = pop.querySelector("[data-act=tarmac]");
@@ -888,7 +980,7 @@ function edit(k, v) {
 function syncPopup(skip) {
   if (!sel) return;
   const o = selObj();
-  const vals = sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+  const vals = sel.type === "pv" ? {} : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
                                    : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
   for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
 }
@@ -909,10 +1001,10 @@ $("loadBtn").onclick = () => $("loadFile").click();
 $("loadFile").onchange = async e => { try { level = await unpackAsync(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
 $("tool").onchange = () => { $("coverBar").hidden = !coverTool(); $("biomeBar").hidden = !biomeTool(); if (paintTool() || specTool()) select(null); mapDirty = true; };
 // The map legend: each layer can be hidden; hidden roads and trees can't be clicked either.
-const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], roads: ["Roads", "#b9ad93"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
+const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], roads: ["Roads", "#b9ad93"], patches: ["Gravel patches", "#c9bc9f"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
 const show = Object.fromEntries(Object.keys(LAYERS).map(k => [k, true]));
 $("legend").innerHTML = Object.entries(LAYERS).map(([k, [name, col]]) => `<label><input type="checkbox" data-layer="${k}" checked><i style="background:${col}"></i>${name}</label>`).join("");
-$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : "roads"]) select(null); mapDirty = true; };
+$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : sel.type === "pv" ? "patches" : "roads"]) select(null); mapDirty = true; };
 $("brush").oninput = () => { $("v_brush").textContent = $("brush").value + " m"; mapDirty = true; };
 $("v_brush").textContent = $("brush").value + " m";
 $("coverMode").onchange = () => mapDirty = true;
@@ -931,9 +1023,10 @@ $("undo").onclick = () => stepHistory(-1);
 $("redo").onclick = () => stepHistory(1);
 addEventListener("keydown", e => {
   if (/INPUT|SELECT/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.code === "KeyP") { $("tool").value = specTool() ? "edit" : "spec"; $("tool").onchange(); }
+  if (e.code === "KeyP") { $("tool").value = specTool() ? "pan" : "spec"; $("tool").onchange(); }
+  if (e.code === "KeyG") { $("tool").value = patchTool() ? "pan" : "patch"; $("tool").onchange(); }
   if (e.key === "[" || e.key === "]") if (specTool() && sel?.type === "spec") { const g = selObj(); g.r = Math.max(1, g.r + (e.key === "]" ? 1 : -1)); syncPopup(); changed(); save(); }
-  if (e.code === "KeyC") { $("tool").value = coverTool() ? "edit" : "cover"; $("tool").onchange(); }
+  if (e.code === "KeyC") { $("tool").value = coverTool() ? "pan" : "cover"; $("tool").onchange(); }
   if (biomeTool()) return;
   if (!coverTool()) {
     if (e.code === "KeyN") { newRoadArmed = !newRoadArmed; cv.style.cursor = newRoadArmed ? "crosshair" : ""; }
@@ -1127,6 +1220,16 @@ roadMat.onBeforeCompile = sh => {
 };
 const road = new THREE.Mesh(new THREE.BufferGeometry(), roadMat);
 scene.add(road);
+// Gravel patches: the game draws them as an even junction-style pad (level_bake.gd → PATCH_HALF), so gravel() with junc = 1.
+const patchMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
+patchMat.onBeforeCompile = sh => {
+  sh.uniforms.gravel_texture = { value: gravelTex }; sh.uniforms.tarmac_texture = { value: tarmacTex }; Object.assign(sh.uniforms, snowUni);
+  sh.vertexShader = "varying vec3 vRd; varying vec2 vW; varying float vT;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvW = (modelMatrix * vec4(position, 1.)).xz;");
+  sh.fragmentShader = SNOW_GLSL + GRAVEL_GLSL + sh.fragmentShader.replace("#include <map_fragment>",
+    "float sn = snow_at(vW);\ndiffuseColor.rgb = pow(mix(gravel(vW, 0., 8., 0., 1., sn), vec3(1.), " + SNOW_ROAD_LIGHTEN.toFixed(3) + " * sn), vec3(1. / 2.2));");
+};
+const patchMesh = new THREE.Mesh(new THREE.BufferGeometry(), patchMat);
+scene.add(patchMesh);
 
 // The ground under each cover type takes the average of its tufts' colours (the game bakes the same into its terrain), with ragged cell edges.
 const coverTints = {};
@@ -1176,7 +1279,7 @@ function rebuild3DTerrain() {
   samples.forEach((s, i) => {
     if (i && !s.first) along += Math.hypot(s.x - samples[i - 1].x, s.z - samples[i - 1].z); else along = 0;
     if (!inWin(s.x, s.z, 15)) { prevIn = false; return; }
-    const [nx, nz] = frameAt(i), y = s.h + 0.05 + s.c * 0.01; // each road a hair higher than the last, so overlaps at a junction don't z-fight
+    const [nx, nz] = frameAt(i), y = s.h + 0.05 + (s.c % 8) * 0.01; // roads a hair apart (cycling, so the lift stays small) so overlaps at a junction don't z-fight
     const ax = s.x + nx * s.w, az = s.z + nz * s.w, bx = s.x - nx * s.w, bz = s.z - nz * s.w;
     p.push(ax, y, az, bx, y, bz);
     rd.push(s.w, along, s.w, -s.w, along, s.w); // across (m, + on the a side), along (m), half-width
@@ -1192,6 +1295,17 @@ function rebuild3DTerrain() {
   road.geometry.setAttribute("rt", new THREE.Float32BufferAttribute(rt, 1));
   road.geometry.setAttribute("color", new THREE.Float32BufferAttribute(rc, 3));
   road.geometry.setIndex(idx); road.geometry.computeVertexNormals();
+  const pp = [], pc = [], pi = [];
+  patchList().forEach((poly, k) => {
+    if (!poly.some(q => inWin(q.x, q.z, 30))) return;
+    const base = pp.length / 3, y = patchH[k] + 0.05; // pulled in front of the road ribbons by the material's depth offset
+    for (const q of poly) { pp.push(q.x, y, q.z); const L = lightAt(gi(q.z, T.z0) * (G + 1) + gi(q.x, T.x0)); pc.push(L, L, L); }
+    for (const t of THREE.ShapeUtils.triangulateShape(poly.map(q => new THREE.Vector2(q.x, q.z)), [])) pi.push(base + t[0], base + t[2], base + t[1]);
+  });
+  patchMesh.geometry.dispose(); patchMesh.geometry = new THREE.BufferGeometry();
+  patchMesh.geometry.setAttribute("position", new THREE.Float32BufferAttribute(pp, 3));
+  patchMesh.geometry.setAttribute("color", new THREE.Float32BufferAttribute(pc, 3));
+  patchMesh.geometry.setIndex(pi);
 }
 
 // Unit normal of the road at sample i, from its neighbours on the same road.

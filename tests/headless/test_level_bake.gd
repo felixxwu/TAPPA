@@ -18,7 +18,7 @@ func before_all() -> void:
 	_data = LevelData.new()
 	var paved := _node(50.0, 8.0)
 	paved["tarmac"] = true
-	_data.load_save({"size": SIZE, "heightmap": hm, "roads": [
+	_data.load_save({"size": SIZE, "heightmap": hm, "gravelPatches": [[{"x": -40.0, "z": 30.0}, {"x": -25.0, "z": 30.0}, {"x": -30.0, "z": 45.0}]], "roads": [
 		[_node(-50.0, -10.0), _node(0.0, 0.0), paved],
 		[_node(0.0, 0.3, 2.0), _node(5.0, 40.0, 2.0)]]})
 	_bake = LevelBake.bake(_data, "k")
@@ -56,6 +56,8 @@ func test_the_road_frame_texels_agree_with_the_road_frame() -> void:
 			var x := c * fcell - SIZE / 2.0
 			var z := r * fcell - SIZE / 2.0
 			var want := _data.road_frame(x, z)
+			if _data.patch_at(x, z).x < (absf(want.x) - want.y if want.x != INF else INF):
+				continue  # a gravel patch's pad, checked on its own
 			var got := _bake.frame_texel(c, r)
 			var across := clampf(want.x if want.x != INF else LevelBake.FRAME_RANGE, -LevelBake.FRAME_RANGE, LevelBake.FRAME_RANGE)
 			assert_almost_eq(got.x, across, 0.07, "across at %s, %s" % [x, z])
@@ -72,6 +74,19 @@ func test_the_frame_junction_channel_is_one_at_a_junction_and_zero_away() -> voi
 		return _bake.frame_texel(roundi((x + SIZE / 2.0) / fcell), roundi((z + SIZE / 2.0) / fcell))
 	assert_almost_eq(at.call(0.0, 0.0).w, 1.0, 0.05, "junction centre")
 	assert_eq(at.call(-50.0, -10.0).w, 0.0, "away from any junction")
+
+
+func test_a_gravel_patch_is_an_even_gravel_pad_in_the_frame() -> void:
+	var fcell := float(SIZE) / (_bake.frame_n - 1)
+	var c := roundi((-32.0 + SIZE / 2.0) / fcell)
+	var r := roundi((36.0 + SIZE / 2.0) / fcell)
+	var t := _bake.frame_texel(c, r)
+	assert_lt(t.x, t.y, "inside the road edge the shader draws")
+	assert_almost_eq(t.w, 1.0, 0.01, "junction weight 1: no ruts, no direction")
+	assert_false(_bake.frame_tarmac(c, r))
+	assert_lt(_bake.patch_distance(-32.0, 36.0), 0.0)
+	assert_eq(_bake.patch_distance(-32.0, 36.0), _data.patch_at(-32.0, 36.0).x)
+	assert_gt(_bake.surface_at(-32.0, 36.0).x, 0.99)
 
 
 func test_surface_and_poses_agree_with_the_level_data() -> void:
@@ -100,6 +115,7 @@ func test_a_bake_survives_saving_and_loading() -> void:
 	assert_eq(back.sx, _bake.sx)
 	assert_eq(back.sc, _bake.sc)
 	assert_eq(back.st, _bake.st)
+	assert_eq(back.patches, _bake.patches)
 	assert_eq(back.source_key, "k")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
@@ -242,3 +258,10 @@ func test_visibility_gate_rejects_unknown_trees_and_far_ones_but_passes_local_ro
 	b.set_visibility(4, [[-1, 0]])
 	assert_ne(b.visibility_problem(1000.0), "", "a negative id is refused")
 	assert_eq(_tree_bake().visibility_problem(1.0), "", "no visibility baked means nothing to check")
+
+
+func test_spectators_see_a_gravel_pad_as_ground_not_road() -> void:
+	assert_gt(_bake.surface_at(-32.0, 36.0).x, 0.99)
+	assert_lt(LevelSpectators.road_only(-32.0, 36.0, _bake).x, 0.5)
+	var road := _bake.spawn_nodes[0]
+	assert_gt(LevelSpectators.road_only(road.x, road.y, _bake).x, 0.99, "the road itself still counts")

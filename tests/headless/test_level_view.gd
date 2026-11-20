@@ -179,9 +179,12 @@ func test_the_level_answers_road_queries_through_its_data() -> void:
 
 
 func test_off_the_road_for_the_timeout_resets_the_car() -> void:
-	var view := _built(_level())
+	var lv := _level()
+	lv["gravelPatches"] = [[{"x": 30.0, "z": 30.0}, {"x": 45.0, "z": 30.0}, {"x": 45.0, "z": 45.0}, {"x": 30.0, "z": 45.0}]]
+	var view := _built(lv)
 	assert_false(view.is_off_road(Vector2(0.0, 1.0)), "on the road")
 	assert_true(view.is_off_road(Vector2(0.0, 40.0)), "well off it")
+	assert_false(view.is_off_road(Vector2(38.0, 38.0)), "on a gravel patch")
 	var car := VehicleBody3D.new()
 	add_child_autofree(car)
 	car.global_position = Vector3(0.0, 0.0, 40.0)
@@ -200,11 +203,13 @@ func test_off_the_road_for_the_timeout_resets_the_car() -> void:
 
 func test_the_spawn_override_picks_the_node_and_faces_along_the_road_or_falls_back() -> void:
 	var roads := [[{"x": 0.0, "z": 0.0}, {"x": 10.0, "z": 0.0}, {"x": 20.0, "z": 5.0}]]
-	assert_eq(LevelView.spawn_override(roads, Vector2i(0, 1)), [Vector2(10, 0), Vector2(20, 5)] as Array[Vector2])
-	assert_eq(LevelView.spawn_override(roads, Vector2i(0, 2)), [Vector2(20, 5), Vector2(10, 0)] as Array[Vector2], "the last node faces back")
-	assert_eq(LevelView.spawn_override(roads, Vector2i(-1, -1)).size(), 0)
-	assert_eq(LevelView.spawn_override(roads, Vector2i(3, 0)).size(), 0, "out of range")
-	assert_eq(LevelView.spawn_override(roads, Vector2i(0, 9)).size(), 0)
+	assert_eq(LevelView.spawn_override(roads, Vector3i(0, 1, -1)), [Vector2(10, 0), Vector2(20, 5)] as Array[Vector2])
+	assert_eq(LevelView.spawn_override(roads, Vector3i(0, 2, -1)), [Vector2(20, 5), Vector2(10, 0)] as Array[Vector2], "the last node faces back")
+	assert_eq(LevelView.spawn_override(roads, Vector3i(0, 1, 0)), [Vector2(10, 0), Vector2(0, 0)] as Array[Vector2], "faces the chosen node")
+	assert_eq(LevelView.spawn_override(roads, Vector3i(-1, -1, -1)).size(), 0)
+	assert_eq(LevelView.spawn_override(roads, Vector3i(3, 0, -1)).size(), 0, "out of range")
+	assert_eq(LevelView.spawn_override(roads, Vector3i(0, 9, -1)).size(), 0)
+	assert_eq(LevelView.spawn_override(roads, Vector3i(0, 1, 1)).size(), 0, "can't face itself")
 
 
 func test_log_piles_sit_clear_of_the_road_with_ends_facing_it() -> void:

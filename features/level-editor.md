@@ -33,7 +33,7 @@ game's textures; `?level=levels/<name>.json` opens a save. `tools/open_level_edi
     data texture (`setJuncTex`, `uJT` / `uJN`), not a fixed array.
   - Off: the localStorage autosave is skipped. Ground cover works at any size.
 - **Terrain:** seeded noise, or a real height grid (`heightmap`) carried in the save. Near the road the
-  ground is pulled to the road's own level, smoothed along it, and stays flat for `GameConfig.level_road_flat_margin` (1 m) past the road edge, then blends back to the LiDAR height over 1 m. The lab rebuilds the ground on a 1.5 m grid (`G`), the same as the game, so that blend shows.
+  ground is pulled to the road's own level, smoothed along it, and stays flat for `GameConfig.level_road_flat_margin` (2 m) past the road edge, then blends back to the LiDAR height over `FALLOFF` (1 m). The lab rebuilds the ground on a 1.5 m grid (`G`), the same as the game, so that blend shows.
 - **Road network:** `level.roads` is an array of chains, each a Hermite spline through nodes with a
   half-width and an optional hand-set tangent scaled by a tension (a legacy single `road` loads as one chain;
   saves write `roads` only). `roadSamples` concatenates the chains' samples in chain order; a chain's first
@@ -46,8 +46,8 @@ game's textures; `?level=levels/<name>.json` opens a save. `tools/open_level_edi
   is computed per pixel (`junc_at`, `uJ`) and passed as the fifth argument of `gravel`; roads overlapping at a
   junction are separate ribbons lifted 1 cm apart, with the per-pixel edge discard making the union. In 2D a junction
   is an orange disc. The bake rows use the concatenated sample index.
-  Editing: click a node to select, drag it to move; clicking the selected node again selects the next node within reach of the pointer (`nodesNear`), so nodes stacked under it (a junction's road ends) can be reached; **n** then click starts a road; shift+click extends the selected
-  end (or starts a road if none is selected); double-click a road inserts a node; **x** splits the road at the selected
+  Editing: the toolbar's Tool select decides what a click on empty ground does: **Pan** (the default) only pans and selects, **Trees** adds a tree of the "New tree" species, **Roads** extends the selected road
+  end (or starts a road if none is selected). Click a node to select, drag it to move; clicking the selected node again selects the next node within reach of the pointer (`nodesNear`), so nodes stacked under it (a junction's road ends) can be reached; **n** then click starts a road; double-click a road inserts a node; **x** splits the road at the selected
   node; Delete removes a node, shift+Delete the whole road. Dragging or placing a road end within 12 px of another
   road's node snaps onto it, forming a junction. `tools/geo/pack_level.js` clears trees and cover off every road (segments bucketed, so it copes with ~200k trees).
   A selected node's **Clear trees off road** button (`clearRoad`) does the same for that node's whole road, with the
@@ -92,7 +92,7 @@ height and satellite colour.
 ## In the game
 
 **Map (M, or the pad's Back button):** `LevelMap`, added by `LevelView` once loaded, pauses the game and shows the bake's road
-samples as polylines (orange gravel, grey tarmac, split where `st` crosses 0.5), buildings (`LevelMap.footprint`) and log piles drawn on top
+samples as polylines (orange gravel, grey tarmac, split where `st` crosses 0.5), roads and buildings (`LevelMap.footprint`) at true size, log piles drawn on top
 at no less than `MIN_MARK_PX` so they show zoomed out, over a `IMAGE_PX`² image of tree dots on ground faintly tinted by the cover
 grid (`_cover_image`: sampled at `COVER_PX`², each type's tuft colour mixed in by `COVER_TINT`) (painted on a background thread (`_paint`) from before the ground prefill, and uploaded with its road lines traced by `build()` at the end of the shader warm-up, behind the loading screen, since the 4096² upload stalls a frame for about 30 ms; the map's input stays off until the level has loaded; not the satellite image).
 Drag / WASD / arrows / left stick pan, wheel / +- / LB RB zoom; click (or Enter / A on the centre crosshair) teleports to the nearest road
@@ -217,6 +217,33 @@ It skips the grade's warm tints, vignette and dither. When the game's look chang
 ### In the game: spectators
 
 The save's `spectators` ({x, z, r, n}) become live crowds in the level view: see [spectators.md](spectators.md) -> "Level spectator groups". Spawn/despawn distances are `level_spectator_spawn_m` / `level_spectator_despawn_m`; the key is excluded from the bake key, so editing groups never forces a rebake.
+
+### Gravel patches
+
+The save's `gravelPatches` (`[[{x, z}, ...], ...]`, polygons) are level gravel pads: turning areas at dead ends and yards
+round buildings, so the player can turn round and buildings look reachable. `LevelData` (`parse_patches`, `polygon_distance`,
+`patch_at`, `_level_patches`) and the lab's `rebuildRoads` / `rebuildGrid` share the maths (pinned by the parity fixture):
+
+- **Level:** a patch sits at the mean height of the road samples inside it, or, with none, the mean ground at its corners.
+  The ground inside is that level (5 cm under it, like a road) and blends back over `PATCH_FALLOFF` (4 m) past its edge plus the
+  road flat margin.
+- **Roads onto it:** only a road that enters a patch is eased to its level, by distance *along the road network*
+  (`_network_distances`, crossing junctions through `_junction_links`, so every road at a nearby junction moves together and
+  meets level; a hairpin or a road merely passing beside the patch is untouched), over `JUNCTION_BLEND` m, longer when it has more height to make up (`PATCH_RAMP`,
+  capped at `PATCH_BLEND_MAX`). Two patches joined by a road are first pulled toward each other's level until the road
+  between them climbs no more than it did before (so the pads' height gap doesn't become a ramp); between them the levels are
+  blended, weighted toward the nearer by inverse square distance, so the road never steps from one level to the other.
+- **Look:** the bake writes a patch's texels into the road frame as an even junction pad (`LevelBake.PATCH_HALF` half-width,
+  junction weight 1, never tarmac) wherever it is nearer the patch's inside than any road's edge, so `gravel()` draws it
+  with no ruts or direction and the existing shader needs nothing new. The polygons are stored in the bake (`z_patches`).
+- **Driving:** `surface_at` counts a patch as road (gravel grip); `LevelView.is_off_road` doesn't run the reset clock on one.
+- **Made by** `tools/geo/pack_level.js` when the save has no `gravelPatches` (delete the key to remake them): a jittered
+  disc of `DEAD_END_R` m just past each dead end (a road end meeting no other road, away from the square's edge), and each
+  building's footprint grown by `YARD` m plus a mouth on the nearest road within `DRIVE_MAX` m. Patches within `MERGE_GAP`
+  m merge (convex hull), since two nearby pads at different heights leave a steep ramp. Trees and cover are cleared off them.
+- **Lab:** the "Gravel patches" layer in 2D; the **Gravel patch** tool (G) adds a 12 m square with a click; drag corners,
+  double-click an edge to add one, Delete removes a corner, Shift+Delete the patch. 3D draws each as `gravel()` with junction
+  weight 1, pulled in front of the road ribbons by a depth offset. The level map (M) draws them under the roads.
 
 ### Tarmac roads
 

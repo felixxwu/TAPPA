@@ -116,3 +116,23 @@ func test_edge_homes_member_with_no_room_stays() -> void:
 func test_edge_homes_without_road_keeps_members() -> void:
 	var members := PackedVector2Array([Vector2(1, 1)])
 	assert_eq(LevelSpectators.edge_homes(members, {}, 0.75, 1.5), members)
+
+
+class _NobodyPlaced extends LevelSpectators:
+	var tries := 0
+	func _spawn(_i: int, _g: Dictionary) -> SpectatorGroup:
+		tries += 1
+		return null
+
+
+func test_a_group_that_places_nobody_is_not_retried_until_the_car_leaves() -> void:
+	var s := _NobodyPlaced.new()
+	add_child_autofree(s)
+	s.groups = [{"x": 0.0, "z": 0.0, "r": 5.0, "n": 3}]
+	s.refresh(Vector2.ZERO)
+	s.refresh(Vector2.ZERO)
+	assert_eq(s.tries, 1)
+	s.refresh(Vector2(Config.data.level_spectator_despawn_m + 1.0, 0.0))
+	s.refresh(Vector2.ZERO)
+	assert_eq(s.tries, 2, "coming back tries again")
+	assert_eq(s.live_count(), 0)

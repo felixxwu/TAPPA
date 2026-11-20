@@ -13,7 +13,8 @@ function synthetic() {
     [node(-50, -10), node(-20, 0), node(2, 5.5), { ...node(10, 8), tarmac: true }, { ...node(50, 0), tarmac: true }],
     [node(10, 8.3, 2), node(15, 40, 2), node(30, 55, 2)],
     [node(-40, 45), node(-20, 30), node(-20.2, 0.2, 4)],
-    [node(-5, 30), node(2.1, 5.6, 2)]] };
+    [node(-5, 30), node(2.1, 5.6, 2)]],
+    gravelPatches: [[{ x: 44, z: -6 }, { x: 58, z: -6 }, { x: 58, z: 6 }, { x: 44, z: 6 }], [{ x: -50, z: -50 }, { x: -35, z: -50 }, { x: -40, z: -35 }]] };
 }
 
 function runLab(save) {
@@ -38,7 +39,7 @@ function observe(save, r, points) {
   };
 }
 
-const points = [[0, 0], [-20, 0], [10, 8], [10, 12], [10, 20], [-20, 15], [-20, -3], [-50, -10], [40, 3], [0, 30], [30, 55], [-45, 40], [55, -25], [-59, 59], [5, 5], [2, 5], [4, 6], [6, 7], [8, 8], [2, 10]];
+const points = [[0, 0], [-20, 0], [10, 8], [10, 12], [10, 20], [-20, 15], [-20, -3], [-50, -10], [40, 3], [0, 30], [30, 55], [-45, 40], [55, -25], [-59, 59], [5, 5], [2, 5], [4, 6], [6, 7], [8, 8], [2, 10], [50, 0], [56, 4], [46, -8], [-42, -45], [-44, -40], [-30, -52]];
 if (process.argv.includes("--write")) {
   const save = synthetic(), { flat, ...rest } = save;
   fs.writeFileSync(fixturePath, JSON.stringify({ save: { ...rest }, flat_margin: flat, points, expected: observe(save, runLab(save), points) }) + "\n");

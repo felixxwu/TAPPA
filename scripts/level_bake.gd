@@ -3,13 +3,14 @@ extends Resource
 # Everything about a level that is worked out once, offline: final ground heights, the road frame textures the ground shader reads, the road samples, the trees in tiles and which of them each stretch of road can see. Saved beside the level as <name>.bake.res and loaded instead of running LevelData's road build.
 # The big arrays live decoded in memory but are stored as zstd blobs (see _get_property_list), and visibility stays as row-to-row diffs.
 
-const BAKE_VERSION := 7
+const BAKE_VERSION := 10
 const FRAME_RANGE := 16.0    # across and half-width are stored within this many metres; beyond it there is no road to paint
 const FRAME_CELL := 2.0      # road frame texel size in metres
+const PATCH_HALF := 8.0      # a gravel patch is stored in the frame as a road this wide whose centre is the patch's inside
 const ALONG_PERIOD := 64.0   # along is stored modulo this; the gravel noise repeats at it (level_ground.gdshader)
 const TREE_TILE_M := 100.0
 const VIS_KEY := 64          # every this many rows the visibility is stored whole, so decoding a row never walks far
-const BLOBS := ["z_heights", "z_frame", "z_road", "z_trees", "z_tree_first", "z_tree_kind", "z_vis_add", "z_vis_rem", "z_vis_add_start", "z_vis_rem_start"]
+const BLOBS := ["z_heights", "z_frame", "z_road", "z_patches", "z_trees", "z_tree_first", "z_tree_kind", "z_vis_add", "z_vis_rem", "z_vis_add_start", "z_vis_rem_start"]
 const TREE_HEIGHT := {       # species heights, as in the lab's KINDS table; width comes from each atlas frame's aspect
 	"tree.png": 9.375, "tree-greece.webp": 4.0, "tree-taiga.webp": 22.5, "tree-snow.webp": 12.9,
 	"tree-snow-laden.webp": 12.4, "levels/trees/sitka_spruce.png": 22.0, "levels/trees/young_spruce.png": 10.0,
@@ -33,6 +34,7 @@ var sh := PackedFloat32Array()
 var sa := PackedFloat32Array()
 var sc := PackedInt32Array()
 var st := PackedFloat32Array()
+var patches: Array[PackedVector2Array] = []
 @export var spawn_nodes := PackedVector2Array()  # the first road's first two nodes
 @export var tree_kinds := PackedStringArray()    # species, by the index tree_kind holds
 @export var tree_tile_n := 0                     # tree tiles per side
@@ -97,13 +99,21 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 	for r in b.frame_n:
 		progress = 0.5 + 0.5 * r / b.frame_n
 		for c in b.frame_n:
-			var f := data.road_frame(c * fcell - b.size / 2, r * fcell - b.size / 2)
+			var x := c * fcell - b.size / 2
+			var z := r * fcell - b.size / 2
+			var f := data.road_frame(x, z)
+			var tarmac := data.nearest(x, z).w >= 0.5
+			var pad := data.patch_at(x, z).x
+			if pad < (absf(f.x) - f.y if f.x != INF else INF):
+				# nearer a patch's inside than any road's edge: an even junction-style pad, so the gravel has no direction
+				f = Vector4(maxf(PATCH_HALF + pad, 0.0), PATCH_HALF, 0.0, 1.0)
+				tarmac = false
 			var across := clampf(f.x if f.x != INF else FRAME_RANGE, -FRAME_RANGE, FRAME_RANGE)
 			var o := (r * b.frame_n + c) * 4
 			b.frame[o] = roundi((across + FRAME_RANGE) / (2.0 * FRAME_RANGE) * 255.0)
 			b.frame[o + 1] = roundi(clampf(f.y, 0.0, FRAME_RANGE) / FRAME_RANGE * 255.0)
 			b.frame[o + 2] = roundi(fposmod(f.z, ALONG_PERIOD) / ALONG_PERIOD * 255.0)
-			b.frame[o + 3] = roundi(clampf(f.w, 0.0, 1.0) * 127.0) | (128 if data.nearest(c * fcell - b.size / 2, r * fcell - b.size / 2).w >= 0.5 else 0)
+			b.frame[o + 3] = roundi(clampf(f.w, 0.0, 1.0) * 127.0) | (128 if tarmac else 0)
 	b.sx = data.sx
 	b.sz = data.sz
 	b.sw = data.sw
@@ -111,6 +121,7 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 	b.sa = data.sa
 	b.sc = data.sc
 	b.st = data.st
+	b.patches = data.patches
 	b._bake_trees(data.level.get("trees", []))
 	var cs := LevelData.chains(data.level)
 	if not cs.is_empty() and cs[0].size() >= 2:
@@ -324,6 +335,11 @@ func surface_at(x: float, z: float) -> Vector2:
 	return _roads().surface_at(x, z)
 
 
+# Signed metres to the nearest gravel patch's edge (negative inside), INF with none near.
+func patch_distance(x: float, z: float) -> float:
+	return _roads().patch_at(x, z).x
+
+
 func spawn_pose(h := Callable()) -> Transform3D:
 	var hf := h if h.is_valid() else height
 	if spawn_nodes.size() < 2:
@@ -394,6 +410,8 @@ func _roads() -> LevelData:
 		_road.sa = sa
 		_road.sc = sc
 		_road.st = st
+		_road.patches = patches
+		_road.bucket_patches()
 		_road.bucket_samples()
 	return _road
 
@@ -485,6 +503,13 @@ func _get(property: StringName) -> Variant:
 			raw.append_array(sc.to_byte_array())
 			raw.append_array(st.to_byte_array())
 			return _zip(raw)
+		&"z_patches":
+			var flat := PackedFloat32Array()
+			for poly in patches:
+				flat.append(poly.size())
+				for q in poly:
+					flat.append_array([q.x, q.y])
+			return _zip(flat.to_byte_array())
 		&"z_trees": return _zip(tree_xf.to_byte_array())
 		&"z_tree_first": return _zip_ints(tree_tile_first)
 		&"z_tree_kind": return _zip(tree_kind)
@@ -509,6 +534,17 @@ func _set(property: StringName, value: Variant) -> bool:
 			sa = raw.slice(count * 16, count * 20).to_float32_array()
 			sc = raw.slice(count * 20, count * 24).to_int32_array()
 			st = raw.slice(count * 24, count * 28).to_float32_array()
+		&"z_patches":
+			var flat := _unzip(value).to_float32_array()
+			patches.clear()
+			var i := 0
+			while i < flat.size():
+				var n := int(flat[i])
+				var poly := PackedVector2Array()
+				for k in n:
+					poly.append(Vector2(flat[i + 1 + k * 2], flat[i + 2 + k * 2]))
+				patches.append(poly)
+				i += 1 + n * 2
 		&"z_trees": tree_xf = _unzip(value).to_float32_array()
 		&"z_tree_first": tree_tile_first = _unzip_ints(value)
 		&"z_tree_kind": tree_kind = _unzip(value)

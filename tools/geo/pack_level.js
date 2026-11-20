@@ -1,5 +1,7 @@
 // Packs make_level.py's unpacked save into the level editor lab's format using the lab's own pack/unpack, checking the
 // round trip, and clears every tree and ground-cover cell off the road (measured against every road of the lab's own road network).
+// A save with no `gravelPatches` gets one at every dead end (a turning area) and every building (a yard reaching to the nearest road);
+// delete the key to have them made again. Trees and cover are cleared off every patch.
 // The level's `size` (square, metres; missing = 600) sets the cover grid. Usage: node pack_level.js ../level_editor_lab.html data/<name>/level.json ../levels/<name>.json
 // Re-running it on an already packed save (one path) just clears the road again in place.
 const fs = require("fs"), src = fs.readFileSync(process.argv[2], "utf8");
@@ -11,8 +13,8 @@ const oneLine = (text, start) => { const i = text.indexOf(start); return text.sl
 const coverCode = oneLine(jsSrc, "const PRESET_BASE") + literal(jsSrc, "const PRESETS = {") + literal(src, "const COVER_RENDER = {");
 const KINDS = new Function(literal(src, "const KINDS = {") + "return KINDS;")();
 const code = coverCode + src.slice(src.indexOf("const r1 ="), src.indexOf("try { level = unpack")) + line("const segSteps =")
-  + ["bakeKey", "tangent", "roadSamples"].map(fn).join("");
-const { pack, unpack, roadSamples } = new Function("btoa", "atob", code + "return { pack, unpack, roadSamples };")(s => Buffer.from(s, "binary").toString("base64"), s => Buffer.from(s, "base64").toString("binary"));
+  + ["bakeKey", "tangent", "roadSamples", "junctions", "polygonDistance"].map(fn).join("");
+const { pack, unpack, roadSamples, junctions, polygonDistance } = new Function("btoa", "atob", code + "return { pack, unpack, roadSamples, junctions, polygonDistance };")(s => Buffer.from(s, "binary").toString("base64"), s => Buffer.from(s, "base64").toString("binary"));
 const raw = JSON.parse(fs.readFileSync(process.argv[3], "utf8")), lvl = unpack(raw);
 if (typeof lvl.cover === "string") lvl.cover = Uint8Array.from(Buffer.from(lvl.cover, "base64")); // cover_mask.py writes it already encoded
 // A lab download keeps cover as a lossless WebP (red = type id); node can't decode it, so libwebp's dwebp / cwebp do the round trip.
@@ -65,10 +67,68 @@ const outside = (b, x, z) => { const lx = x - b.x, lz = z - b.z, c = Math.cos(b.
   return Math.hypot(Math.max(Math.abs(lx * c + lz * s) - b.L / 2, 0), Math.max(Math.abs(-lx * s + lz * c) - b.W / 2, 0)); };
 const treesBefore = lvl.trees.length;
 lvl.trees = lvl.trees.filter(t => buildings.every(b => outside(b, t.x, t.z) > treeClear(t)));
+const treesByBuildings = treesBefore - lvl.trees.length;
 let coverIn = 0;
 if (lvl.cover) for (const b of buildings) { const R = Math.hypot(b.L, b.W) / 2 + 1;
   for (let r = Math.max(0, Math.floor(b.z - R + SIZE / 2)); r < Math.min(SIZE, b.z + R + SIZE / 2); r++) for (let c = Math.max(0, Math.floor(b.x - R + SIZE / 2)); c < Math.min(SIZE, b.x + R + SIZE / 2); c++) {
     const i = r * SIZE + c; if (lvl.cover[i] && outside(b, c + 0.5 - SIZE / 2, r + 0.5 - SIZE / 2) < COVER_CLEAR) { lvl.cover[i] = 0; coverIn++; } } }
+// Gravel patches. A dead end (a road end that meets no other road, away from the square's edge) gets a rough disc of
+// DEAD_END_R m just past its end; a building gets its footprint grown by YARD m plus a mouth on the nearest road within
+// DRIVE_MAX m. Patches within MERGE_GAP m of each other merge into one (the convex hull of both): two level pads that
+// close at different heights would leave a steep ramp between them.
+const DEAD_END_R = 9, YARD = 3, DRIVE_MAX = 40, MOUTH = 5, MERGE_GAP = 12;
+const hull = pts => { // Andrew's monotone chain
+  const p = [...pts].sort((a, b) => a.x - b.x || a.z - b.z), cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x), lo = [], hi = [];
+  for (const q of p) { while (lo.length > 1 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of p.reverse()) { while (hi.length > 1 && cross(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+};
+let made = 0;
+if (!lvl.gravelPatches) {
+  const sets = [], jitter = (k, s) => { let h = Math.imul(k + 1, 2654435761) ^ Math.imul(s + 7, 40503); h = Math.imul(h ^ h >>> 15, 2246822519); return ((h ^ h >>> 13) >>> 0) / 4294967296; };
+  const allNodes = lvl.roads.flatMap((road, c) => road.map(n => ({ n, c })));
+  lvl.roads.forEach((road, c) => {
+    if (road.length < 2) return;
+    for (const [end, prev] of [[road[0], road[1]], [road[road.length - 1], road[road.length - 2]]]) {
+      if (Math.max(Math.abs(end.x), Math.abs(end.z)) > SIZE / 2 - 10) continue;
+      if (allNodes.some(({ n, c: c2 }) => n !== end && Math.hypot(n.x - end.x, n.z - end.z) < 0.75 && (c2 !== c || n === road[0] || n === road[road.length - 1]))) continue;
+      const d = Math.hypot(end.x - prev.x, end.z - prev.z) || 1, cx = end.x + (end.x - prev.x) / d * 3, cz = end.z + (end.z - prev.z) / d * 3;
+      sets.push(Array.from({ length: 10 }, (_, k) => { const a = k / 10 * Math.PI * 2, r = DEAD_END_R * (0.85 + 0.25 * jitter(sets.length, k)); return { x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r }; }));
+    }
+  });
+  for (const b of buildings) {
+    const c = Math.cos(b.rot), s = Math.sin(b.rot), pts = [];
+    for (const [u, v] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) { const lx = u * (b.L / 2 + YARD), lz = v * (b.W / 2 + YARD); pts.push({ x: b.x + lx * c - lz * s, z: b.z + lx * s + lz * c }); }
+    let best = null;
+    for (let i = 0; i < samples.length - 1; i++) {
+      if (samples[i + 1].first) continue;
+      const a = samples[i], e = samples[i + 1], abx = e.x - a.x, abz = e.z - a.z, t = Math.max(0, Math.min(1, ((b.x - a.x) * abx + (b.z - a.z) * abz) / (abx * abx + abz * abz || 1)));
+      const qx = a.x + abx * t, qz = a.z + abz * t, d = Math.hypot(b.x - qx, b.z - qz);
+      if (!best || d < best.d) best = { d, qx, qz, ux: abx / (Math.hypot(abx, abz) || 1), uz: abz / (Math.hypot(abx, abz) || 1) };
+    }
+    if (best && best.d < DRIVE_MAX) pts.push({ x: best.qx + best.ux * MOUTH, z: best.qz + best.uz * MOUTH }, { x: best.qx - best.ux * MOUTH, z: best.qz - best.uz * MOUTH });
+    sets.push(hull(pts));
+  }
+  let merged = true, polys = sets.map(hull);
+  const touch = (a, b) => a.some(q => polygonDistance(b, q.x, q.z) < MERGE_GAP) || b.some(q => polygonDistance(a, q.x, q.z) < MERGE_GAP);
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < polys.length && !merged; i++) for (let j = i + 1; j < polys.length && !merged; j++)
+      if (touch(polys[i], polys[j])) { polys[i] = hull([...polys[i], ...polys[j]]); polys.splice(j, 1); merged = true; }
+  }
+  lvl.gravelPatches = polys.map(p => p.map(q => ({ x: Math.round(q.x * 10) / 10, z: Math.round(q.z * 10) / 10 })));
+  made = polys.length;
+}
+const patches = lvl.gravelPatches.filter(p => p.length >= 3), box = p => [Math.min(...p.map(q => q.x)), Math.min(...p.map(q => q.z)), Math.max(...p.map(q => q.x)), Math.max(...p.map(q => q.z))];
+const boxes = patches.map(box), padGap = (x, z, m) => Math.min(...patches.map((p, i) => { const b = boxes[i];
+  return x < b[0] - m || z < b[1] - m || x > b[2] + m || z > b[3] + m ? Infinity : polygonDistance(p, x, z); }));
+const treesOnPads = lvl.trees.length;
+lvl.trees = lvl.trees.filter(t => padGap(t.x, t.z, treeClear(t) + 1) > treeClear(t));
+let coverOnPads = 0;
+if (lvl.cover) patches.forEach((p, i) => { const b = boxes[i];
+  for (let r = Math.max(0, Math.floor(b[1] - 1 + SIZE / 2)); r < Math.min(SIZE, b[3] + 1 + SIZE / 2); r++) for (let c = Math.max(0, Math.floor(b[0] - 1 + SIZE / 2)); c < Math.min(SIZE, b[2] + 1 + SIZE / 2); c++) {
+    const k = r * SIZE + c; if (lvl.cover[k] && polygonDistance(p, c + 0.5 - SIZE / 2, r + 0.5 - SIZE / 2) < COVER_CLEAR) { lvl.cover[k] = 0; coverOnPads++; } } });
+console.log(`gravel patches: ${made} made, ${patches.length} in all; ${treesOnPads - lvl.trees.length} trees, ${coverOnPads} cover cells cleared off them`);
 let hm = lvl.heightmap;
 if (typeof raw.heightWebp === "string") {
   fs.writeFileSync(tmp + ".webp", Buffer.from(raw.heightWebp, "base64"));
@@ -105,7 +165,7 @@ if (hm) { const hn = Math.round(Math.sqrt(hm.length)), HC = SIZE / (hn - 1);
     pads++;
   }
 }
-console.log(`buildings: ${treesBefore - lvl.trees.length} trees, ${coverIn} cover cells cleared, ${pads} levelled`);
+console.log(`buildings: ${treesByBuildings} trees, ${coverIn} cover cells cleared, ${pads} levelled`);
 const out = { ...pack(lvl), ...((lvl.coverWebp || raw.coverWebp) && { coverKinds: raw.coverKinds }) };
 if (pads && typeof raw.heightWebp === "string") {
   const n = Math.round(Math.sqrt(hm.length)), px = Buffer.alloc(n * n * 3);

@@ -37,16 +37,15 @@ func refresh(car_xz: Vector2) -> void:
 	for i in groups.size():
 		var g: Dictionary = groups[i]
 		var d := car_xz.distance_to(Vector2(g.x, g.z))
-		var alive := _live.has(i) and is_instance_valid(_live[i])
+		var alive := _live.has(i)  # a group that placed nobody is kept as null, so it isn't rebuilt every check
 		if wants_alive(alive, d, cfg.level_spectator_spawn_m, cfg.level_spectator_despawn_m) == alive:
 			continue
 		if alive:
-			_live[i].queue_free()
+			if is_instance_valid(_live[i]):
+				_live[i].queue_free()
 			_live.erase(i)
 		else:
-			var group := _spawn(i, g)
-			if group != null:
-				_live[i] = group
+			_live[i] = _spawn(i, g)
 
 
 func live_count() -> int:
@@ -65,7 +64,7 @@ func _spawn(i: int, g: Dictionary) -> SpectatorGroup:
 	var centre := Vector2(g.x, g.z)
 	var r := float(g.r)
 	var reach: float = r + p["road_probe_m"] + 2.0
-	var road := road_cells_near(centre, reach, _bake.surface_at)
+	var road := road_cells_near(centre, reach, road_only.bind(_bake))
 	var obstacles := tree_points_near(_bake, centre, reach + p["tree_avoid_m"])
 	if _buildings != null:
 		for q in _buildings.footprint_points:
@@ -181,6 +180,12 @@ static func assign_models(n: int, models: int, seed_value: int) -> PackedInt32Ar
 	for i in n:
 		out[i] = int(ScatterMath.hash01(i, 0, seed_value, 73) * models) % models
 	return out
+
+
+# The road weight `surface_at` gives, without the gravel pads round buildings, which spectators may stand on.
+static func road_only(x: float, z: float, bake: LevelBake) -> Vector2:
+	var near := bake.road_nearest(x, z)
+	return Vector2(1.0 - smoothstep(near.z - 0.5, near.z + 0.5, near.x), 0.0)
 
 
 # Road cells (ScatterMath's raster) in the box round `centre`, where `surface` ((x, z) -> Vector2 whose x is the road weight) says road.

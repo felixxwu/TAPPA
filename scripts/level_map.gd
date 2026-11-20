@@ -9,10 +9,11 @@ const TREE := Color(0.33, 0.47, 0.28)
 const BUILDING := Color(0.45, 0.38, 0.34)
 const ROAD := Color(0.93, 0.55, 0.16)
 const TARMAC := Color(0.36, 0.37, 0.4)
+const PATCH := Color(0.72, 0.66, 0.55)
 const LOG_PILE := Color(0.55, 0.36, 0.2)
 const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
 const COVER_TINT := 0.3   # how far the ground leans toward each cover type's colour
-const MIN_MARK_PX := 7.0  # buildings and log piles never draw smaller than this, so they show when zoomed out
+const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show when zoomed out
 const ROAD_EDGE := Color(0.25, 0.15, 0.08)
 const WASD := {KEY_W: Vector2.UP, KEY_A: Vector2.LEFT, KEY_S: Vector2.DOWN, KEY_D: Vector2.RIGHT}
 const PAN_SPEED_PX := 600.0
@@ -189,7 +190,9 @@ func _draw() -> void:
 	var half := size_m() / 2.0
 	draw_texture_rect(_texture, Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * size_m() * zoom), false)
 	draw_set_transform(size / 2.0 - center * zoom, 0.0, Vector2(zoom, zoom))
-	var w := maxf(5.0, 3.0 * zoom) / zoom  # roads stay readable when zoomed out, true width when zoomed in
+	for poly in view._bake.patches:
+		draw_colored_polygon(poly, PATCH)
+	var w := 3.0
 	for line in _chains:
 		if line.size() > 1:
 			draw_polyline(line, ROAD_EDGE, w + 2.0 / zoom)
@@ -198,11 +201,9 @@ func _draw() -> void:
 			draw_polyline(_chains[i], TARMAC if _tarmac[i] else ROAD, w)
 	draw_set_transform(Vector2.ZERO)
 	for fp in _buildings:
-		var c := (fp[0] + fp[2]) / 2.0
-		var grow := maxf(1.0, MIN_MARK_PX / (zoom * minf(fp[0].distance_to(fp[1]), fp[1].distance_to(fp[2]))))
 		var pts := PackedVector2Array()
 		for corner in fp:
-			pts.append(to_screen(c + (corner - c) * grow))
+			pts.append(to_screen(corner))
 		draw_colored_polygon(pts, BUILDING)
 		pts.append(pts[0])
 		draw_polyline(pts, ROAD_EDGE, 1.0)

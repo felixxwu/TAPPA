@@ -94,6 +94,8 @@ func _ready() -> void:
 	if not _recording and not _load():
 		get_tree().quit(1)
 		return
+	if _recording:  # start at GameConfig.dev_level_spawn, not wherever the level view was last left
+		Save.set_setting(LevelView.SAVED_POSE_KEY, null)
 	_level = load(Scenes.LEVEL_VIEW).instantiate()
 	add_child(_level)
 	_car = _level.get_node("Car")

@@ -484,12 +484,12 @@ static func off_road_text(off_s: float) -> String:
 	return "OFF ROAD - RESET IN %.1f" % maxf(cfg.off_road_reset_timeout_s - off_s, 0.0)
 
 
-# Past the road edge plus GameConfig.off_road_margin_m; RoadRecovery's off-road clock runs while this holds.
+# Past the road edge, and any gravel patch's, plus GameConfig.off_road_margin_m; RoadRecovery's off-road clock runs while this holds.
 func is_off_road(p: Vector2) -> bool:
 	if _bake == null:
 		return false
 	var near := _bake.road_nearest(p.x, p.y)
-	return near.x > near.z + Config.data.off_road_margin_m
+	return near.x > near.z + Config.data.off_road_margin_m and _bake.patch_distance(p.x, p.y) > Config.data.off_road_margin_m
 
 
 # Where RoadRecovery puts the car: the nearest road point to `p`, facing along the road the way nearest `facing`.
@@ -498,15 +498,16 @@ func road_pose(p: Vector2, facing: Vector3) -> Transform3D:
 
 
 # The two road nodes (spawn, then the one to face) picked by `dev_level_spawn`, or none when it is unset or out of range.
-static func spawn_override(roads: Array, pick: Vector2i) -> Array[Vector2]:
+static func spawn_override(roads: Array, pick: Vector3i) -> Array[Vector2]:
 	var out: Array[Vector2] = []
-	if pick == Vector2i(-1, -1):
+	if pick.x == -1:
 		return out
-	if pick.x < 0 or pick.x >= roads.size() or pick.y < 0 or pick.y >= roads[pick.x].size() or roads[pick.x].size() < 2:
+	if pick.x < 0 or pick.x >= roads.size() or pick.y < 0 or pick.y >= roads[pick.x].size() or roads[pick.x].size() < 2 \
+			or pick.z >= roads[pick.x].size() or pick.z == pick.y:
 		push_warning("LevelView: dev_level_spawn %s is not a road node; using the default spawn" % pick)
 		return out
 	var road: Array = roads[pick.x]
-	var other: int = pick.y + 1 if pick.y + 1 < road.size() else pick.y - 1
+	var other: int = pick.z if pick.z >= 0 else (pick.y + 1 if pick.y + 1 < road.size() else pick.y - 1)
 	out.append(Vector2(road[pick.y].x, road[pick.y].z))
 	out.append(Vector2(road[other].x, road[other].z))
 	return out
