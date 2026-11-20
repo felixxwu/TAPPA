@@ -41,7 +41,7 @@ longer reaches the player. `LoadingScreen`'s visible line is a random pick from
 `LoadingTips.TIPS` (`scripts/loading_tips.gd`), drawn once in `_init()` and then **cycled
 to a fresh draw every 7 seconds** (`LoadingScreen._TIP_CYCLE_SEC`) for as long as the
 overlay is up, so a long load doesn't sit on one sentence for its whole duration. Each tip
-is a short, standalone gameplay fact (aero balance, turbo lag, checkpoints, what a wreck costs, …) verified
+is a short, standalone gameplay fact about the Hafren level (the free Shop and Garage, turbo lag, snow grip, the map teleport, …) verified
 against the mechanic it names — every entry must read correctly in ISOLATION, since the
 player only ever sees one at a time. `_build_lakes` / `_build_foliage`
 dropped their now-unused `loading: LoadingScreen` parameters when the forwarding call was

@@ -10,35 +10,38 @@ extends RefCounted
 # it names when written — re-verify against the relevant features/*.md before editing one,
 # the same rule CLAUDE.md applies to code comments.
 
+# Written for the Hafren level (level_view.gd, features/level-editor.md "In the game"), the
+# world the title screen leads into while GameConfig.dev_level_instead_of_free_roam is on: no
+# checkpoints, coins or wrecks there, and no overheating drain (DamageModel.thermal stays off).
 const TIPS: Array[String] = [
-	# --- Tuning / parts (Tune car and Shop at a checkpoint) ---
-	"Aero balance helps tune understeer and oversteer at speed.",
-	"Grip balance helps tune oversteer against understeer.",
-	"Brake bias helps tune understeer and oversteer during braking.",
+	# --- Pause menu: Shop, Garage, Repair (LevelView._on_extra) ---
+	"Every part in the Shop is free. Open it from the pause menu.",
+	"The Garage in the pause menu puts you in any car.",
+	"Repair the car for free from the pause menu.",
+	"Your car, its parts and where you left it are kept for next time.",
+	# --- Parts ---
 	"All-wheel drive gives the most grip and the least drama.",
 	"Big turbos hit harder but take longer to spool up.",
 	"A fitted turbo drags on the engine even when it isn't boosting.",
 	"Superchargers deliver full power instantly, with no spool-up lag.",
 	"An engine swap shifts a car's front-to-rear weight balance.",
 	"Nitrous boosts power for as long as its tank lasts.",
+	"Snow tires grip better on snow and worse on tarmac.",
 	# --- Damage ---
 	"Damage depends on how hard you decelerate, not how fast you were going.",
 	"A hard impact can bend a wheel out of alignment until it's repaired.",
-	"Heavy damage makes an engine misfire long before the car gives up.",
-	"An overheating engine slowly drains the car's health.",
-	# --- Free roam ---
-	"Driving past a checkpoint lights it. Stay there and your car repairs itself.",
-	"Stop at a checkpoint and press Enter or A to open its page: shop, garage, map and tuning.",
-	"If your car gives up, you respawn at the last checkpoint you passed.",
-	"A wreck drops all your money where it happened. Drive back to the crystal to pick it up.",
-	"A second wreck loses the money the first one dropped, so spend what you carry.",
-	"Travelling from anywhere but a checkpoint leaves your money behind.",
-	"Open the map to travel to any checkpoint you have lit.",
-	"Light a checkpoint in a new biome to put that biome's cars and parts on sale.",
-	"Each biome has its own weather and its own grip.",
-	"Press R to put the car back on the nearest road.",
+	"Heavy damage makes an engine misfire.",
+	# --- The forest ---
+	"Tarmac roads grip harder than the forest gravel.",
+	"Snowy roads have far less grip, so brake early.",
+	"Deep snow off the road bogs the car down.",
+	"Hit a small tree fast enough and it falls over. Big trees take far more speed.",
+	"Spectators gather by buildings, junctions and sharp bends.",
+	"Open the map with M or Back to teleport to any group of buildings.",
+	"Press R or click the right stick to put the car back on the nearest road.",
+	"Stay off the road too long and the car is put back on it.",
 	"A car that is stuck or flipped is put back on the road by itself.",
-	"Drive past the coins beside the road to collect them.",
+	"These roads are mapped from real laser scans of Hafren Forest in Wales.",
 ]
 
 
