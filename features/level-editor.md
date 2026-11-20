@@ -6,7 +6,7 @@ beside free roam, not part of it.
 **Source:** `tools/level_editor_lab.html`, `scripts/level_view.gd` (`LevelView`), `level_view.tscn`,
 `scripts/level_map.gd` (`LevelMap`), `scripts/scenes.gd` (`change_to`'s redirect), `scripts/settings_menu.gd` (`_toggle_dev_level`)
 
-**Tests:** `tests/headless/test_level_view.gd`, `tests/headless/test_level_trees.gd`, `tests/headless/test_level_data.gd`, `tests/headless/test_level_bake.gd`, `tests/headless/lab_parity.js`, `tests/headless/lab_history.js`
+**Tests:** `tests/headless/test_level_view.gd`, `tests/headless/test_export_presets.gd`, `tests/headless/test_level_trees.gd`, `tests/headless/test_level_data.gd`, `tests/headless/test_level_bake.gd`, `tests/headless/lab_parity.js`, `tests/headless/lab_history.js`
 
 ## The lab
 
@@ -136,8 +136,13 @@ free roam's car, cameras, HUD and pause menu around one `LevelView` node, which 
 - loads behind a `LoadingScreen` (`Scenes.change_to` covers `LEVEL_VIEW` too, without the cold-open story) until the shader
   warm-up ends, then applies the player's frame cap (`FpsSetting.resolve`) and arms the pause menu
 
-The toggle is not saved: it resets to the `GameConfig` default on the next boot. Level files and
-atlases load from `res://tools/`, so this works in the editor, not in an exported build.
+The toggle is not saved: it resets to the `GameConfig` default on the next boot (currently ON, so every
+build boots into the Hafren level). Level files and atlases load from `res://tools/levels/`, so every
+export preset must bundle that folder: each one's include filter lists `tools/levels/*.json` and
+`*.bake.res`, and its exclude filter names only tools' scripts and sources, never `tools/*` (Android's
+old `tools/*` exclude left the save out and hung the APK on the loading screen; `test_export_presets.gd`
+guards it). A save that can't be read puts "The level file is missing from this build." on the cover
+instead of spinning forever.
 `tools/level_view_capture.tscn` photographs the scene for checking.
 
 ### In the game: the bake
@@ -151,7 +156,7 @@ and compares `source_key` (md5 of the save minus `coverKinds`, which isn't baked
 saves beside the save), returns null on web and sets `last_error`; an empty path bakes in memory only. Bump `BAKE_VERSION`
 when the bake's maths changes. Run `BAKE_LEVEL=res://tools/levels/<name>.json godot --headless --path . res://tools/bake_level.tscn`; for the rendered tree visibility use `tools/bake_level.sh [N]`, which runs N silent (`--audio-driver Dummy`) windows over contiguous slices of the road and merges them (decode is a sort plus `bsearch` per view, not a per-pixel loop).
 
-**Shipping bakes.** `*.bake.res` is git-ignored. `tools/bake_level.sh` publishes its result itself by running `tools/publish_bake.sh tools/levels/<name>.json` (run that by hand after an in-process bake): it refuses a missing, stale or incomplete bake (checked by `tools/bake_key.tscn`, which prints `LevelBake.key_of`) and uploads `<name>-<key>.bake.res` to the `bakes` release. The web export job runs `tools/fetch_bakes.sh` before exporting, which downloads the asset matching each level's key and fails naming the publish command if it is missing. Flow: edit level, bake (which publishes), push. Only the web preset bundles `tools/levels` (its include filter lists `*.bake.res`); the test workflow bakes in-process and needs none.
+**Shipping bakes.** `*.bake.res` is git-ignored. `tools/bake_level.sh` publishes its result itself by running `tools/publish_bake.sh tools/levels/<name>.json` (run that by hand after an in-process bake): it refuses a missing, stale or incomplete bake (checked by `tools/bake_key.tscn`, which prints `LevelBake.key_of`) and uploads `<name>-<key>.bake.res` to the `bakes` release. Every export job (web, Android APK, Play AAB, Windows) runs `tools/fetch_bakes.sh` before exporting, which downloads the asset matching each level's key and fails naming the publish command if it is missing. Flow: edit level, bake (which publishes), push. Every preset bundles `tools/levels` (its include filter lists `*.bake.res`); without a fetched bake a native build would bake in process on the device, minutes on a phone. The test workflow bakes in-process and needs none.
 `apply_to(material)` hands the textures to `level_ground.gdshader`, which reads it nearest and blends the four texels by
 hand: across is blended signed where the four values differ by about one texel gradient (so ruts near the centreline stay exact),
 else |across| is blended with the nearest texel's sign (a signed blend would fake a road between two roads); along is blended circularly. The shader no longer reads vertex UV/UV2: COLOR.rgb is sun light x cover tint, COLOR.a the ground normal's y (rock on steep ground)

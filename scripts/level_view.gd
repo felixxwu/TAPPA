@@ -48,6 +48,14 @@ func _ready() -> void:
 	print("level view: parse %d ms" % (Time.get_ticks_msec() - t_parse))
 	if not parsed is Dictionary:
 		push_error("LevelView: couldn't read %s" % path)
+		# Say so on the loading cover rather than leave it spinning forever (an export that left
+		# tools/levels out hung here on Android with no message).
+		var cover := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
+		if cover == null and not Platform.is_headless():
+			cover = LoadingScreen.new()
+			add_child(cover)
+		if cover != null:
+			cover.set_title("The level file is missing from this build.")
 		return
 	WorldRuntime.apply_fps_cap(applied_fps_caps, WorldRuntime.loading_cap(Platform.is_touch()), Platform.is_headless())
 	_save_path = path

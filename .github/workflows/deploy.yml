@@ -99,7 +99,7 @@ jobs:
       - name: Import project (build resource cache)
         run: godot --headless --import --quit || true
 
-      # Level bakes are built locally and published as release assets (tools/publish_bake.sh); web is the only target that bundles tools/levels.
+      # Level bakes are built locally and published as release assets (tools/publish_bake.sh). Every export bundles tools/levels (the game starts in the Hafren level), so every export job fetches them.
       - name: Fetch level bakes
         env:
           GODOT: /usr/local/bin/godot
@@ -201,6 +201,12 @@ jobs:
       - name: Import project (build resource cache)
         run: godot --headless --import --quit || true
 
+      - name: Fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tools/fetch_bakes.sh
+
       - name: Export Android APK (via build_android.sh)
         env:
           GODOT: /usr/local/bin/godot
@@ -246,6 +252,12 @@ jobs:
 
       - name: Import project (build resource cache)
         run: godot --headless --import --quit || true
+
+      - name: Fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tools/fetch_bakes.sh
 
       - name: Export Windows .exe (via build_windows.sh)
         env:
@@ -348,6 +360,12 @@ jobs:
 
       - name: Import project (build resource cache)
         run: godot --headless --import --quit || true
+
+      - name: Fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tools/fetch_bakes.sh
 
       - name: Export Android App Bundle (via build_android_play.sh)
         env:
