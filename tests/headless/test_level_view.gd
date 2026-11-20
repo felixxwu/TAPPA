@@ -38,6 +38,30 @@ func _built(level: Dictionary) -> LevelView:
 	return view
 
 
+func test_a_building_footprint_is_its_rotated_rectangle() -> void:
+	var fp := LevelMap.footprint({"x": 5.0, "z": -3.0, "rot": 0.7, "L": 10.0, "W": 4.0})
+	assert_almost_eq((fp[0] + fp[2]) / 2.0, Vector2(5.0, -3.0), Vector2.ONE * 1e-4, "centred on the building")
+	assert_almost_eq(fp[0].distance_to(fp[3]), 10.0, 1e-4, "long side")
+	assert_almost_eq(fp[0].distance_to(fp[1]), 4.0, 1e-4, "short side")
+
+
+func test_the_map_ground_leans_toward_the_cover_colour() -> void:
+	var lv := _level()
+	var rle := PackedByteArray([1])
+	var n := 600 * 600
+	while n >= 128:
+		rle.append(n & 127 | 128)
+		n >>= 7
+	rle.append(n)
+	lv["coverRle"] = Marshalls.raw_to_base64(rle)
+	lv["coverKinds"] = {"1": [[{"base": "#ff0000", "tip": "#ff0000"}, 1.0]]}
+	var map := LevelMap.new()
+	autofree(map)
+	map.view = _built(lv)
+	var c := map._cover_image().get_pixel(LevelMap.IMAGE_PX / 2, LevelMap.IMAGE_PX / 2)
+	assert_gt(c.r - c.g, LevelMap.GROUND.r - LevelMap.GROUND.g + 0.05, "tinted toward the red cover")
+
+
 func test_the_toggle_sends_world_entry_to_the_level() -> void:
 	Config.data.dev_level_instead_of_free_roam = true
 	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
@@ -49,8 +73,11 @@ func test_the_toggle_sends_world_entry_to_the_level() -> void:
 
 func test_the_level_scene_arms_its_pause_menu() -> void:
 	var path := "user://test_level_view_level.json"
+	var lv := _level()
+	lv["road"][0]["tarmac"] = true
+	lv["buildings"] = [{"x": 20.0, "z": 30.0, "rot": 0.0, "L": 10.0, "W": 6.0}]
 	var f := FileAccess.open(path, FileAccess.WRITE)
-	f.store_string(JSON.stringify(_level()))
+	f.store_string(JSON.stringify(lv))
 	f.close()
 	var world: Node = (load(Scenes.LEVEL_VIEW) as PackedScene).instantiate()
 	world.get_node("Level").level_path = path
@@ -64,6 +91,8 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	m.pressed = true
 	map._input(m)
 	assert_true(map.visible and get_tree().paused, "M opens the map and pauses")
+	assert_true(true in map._tarmac and false in map._tarmac, "the map splits the road where it turns from tarmac to gravel")
+	assert_eq(map._buildings.size(), 1, "the map draws the save's building")
 	assert_almost_eq(map.to_world(map.to_screen(Vector2(30, -20))), Vector2(30, -20), Vector2.ONE * 0.01)
 	assert_almost_eq(map.snap_to_road(Vector2(40, 25)).y, 0.0, 0.5, "a spot snaps onto the road")
 	await map.teleport(map.snap_to_road(Vector2(60, 25)))

@@ -16,8 +16,10 @@ func before_all() -> void:
 		for c in grid_n + 1:
 			hm.append(3.0 * sin(c / 3.0) + 2.0 * cos(r / 4.0))
 	_data = LevelData.new()
+	var paved := _node(50.0, 8.0)
+	paved["tarmac"] = true
 	_data.load_save({"size": SIZE, "heightmap": hm, "roads": [
-		[_node(-50.0, -10.0), _node(0.0, 0.0), _node(50.0, 8.0)],
+		[_node(-50.0, -10.0), _node(0.0, 0.0), paved],
 		[_node(0.0, 0.3, 2.0), _node(5.0, 40.0, 2.0)]]})
 	_bake = LevelBake.bake(_data, "k")
 
@@ -60,7 +62,8 @@ func test_the_road_frame_texels_agree_with_the_road_frame() -> void:
 			assert_almost_eq(got.y, clampf(want.y, 0.0, LevelBake.FRAME_RANGE), 0.04, "half-width")
 			var along_gap := absf(fposmod(got.z - want.z + LevelBake.ALONG_PERIOD / 2, LevelBake.ALONG_PERIOD) - LevelBake.ALONG_PERIOD / 2)
 			assert_lt(along_gap, 0.14, "along")
-			assert_almost_eq(got.w, want.w, 0.003, "junction weight")
+			assert_almost_eq(got.w, want.w, 0.5 / 127.0 + 1e-4, "junction weight")
+			assert_eq(_bake.frame_tarmac(c, r), _data.nearest(x, z).w >= 0.5, "tarmac at %s, %s" % [x, z])
 
 
 func test_the_frame_junction_channel_is_one_at_a_junction_and_zero_away() -> void:
@@ -72,7 +75,8 @@ func test_the_frame_junction_channel_is_one_at_a_junction_and_zero_away() -> voi
 
 
 func test_surface_and_poses_agree_with_the_level_data() -> void:
-	for p in [Vector2(0.0, 0.0), Vector2(0.0, 30.0), Vector2(30.0, -40.0), Vector2(-40.0, 5.0)]:
+	assert_gt(_bake.surface_at(45.0, 7.0).y, 0.5, "the paved end is tarmac")
+	for p in [Vector2(0.0, 0.0), Vector2(0.0, 30.0), Vector2(30.0, -40.0), Vector2(-40.0, 5.0), Vector2(45.0, 7.0)]:
 		assert_eq(_bake.surface_at(p.x, p.y), _data.surface_at(p.x, p.y))
 		var want := _data.road_pose(p, Vector3(1.0, 0.0, 0.2))
 		var got := _bake.road_pose(p, Vector3(1.0, 0.0, 0.2))
@@ -95,6 +99,7 @@ func test_a_bake_survives_saving_and_loading() -> void:
 	assert_eq(back.frame, _bake.frame)
 	assert_eq(back.sx, _bake.sx)
 	assert_eq(back.sc, _bake.sc)
+	assert_eq(back.st, _bake.st)
 	assert_eq(back.source_key, "k")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 

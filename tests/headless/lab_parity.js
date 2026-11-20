@@ -10,7 +10,7 @@ function synthetic() {
   const node = (x, z, w = 3) => ({ x, z, w, m: null, tension: 1 }), n = 24, heightmap = [];
   for (let r = 0; r <= n; r++) for (let c = 0; c <= n; c++) heightmap.push(Math.round((4 * Math.sin(c / 3) + 3 * Math.cos(r / 4) + c * 0.2) * 10) / 10);
   return { size: 120, flat: 1.0, heightmap, roads: [
-    [node(-50, -10), node(-20, 0), node(2, 5.5), node(10, 8), node(50, 0)],
+    [node(-50, -10), node(-20, 0), node(2, 5.5), { ...node(10, 8), tarmac: true }, { ...node(50, 0), tarmac: true }],
     [node(10, 8.3, 2), node(15, 40, 2), node(30, 55, 2)],
     [node(-40, 45), node(-20, 30), node(-20.2, 0.2, 4)],
     [node(-5, 30), node(2.1, 5.6, 2)]] };
@@ -32,7 +32,7 @@ function runLab(save) {
 function observe(save, r, points) {
   return {
     sample_count: r.samples.length,
-    samples: r.samples.map((s, i) => [i, s.x, s.z, s.w, s.h]).filter(s => s[0] % 6 === 0),
+    samples: r.samples.map((s, i) => [i, s.x, s.z, s.w, s.h, s.t]).filter(s => s[0] % 6 === 0),
     junctions: r.juncs.map(j => [j.x, j.z, j.w]),
     heights: points.map(([x, z]) => [x, z, r.heights[(z + save.size / 2) * (r.G + 1) + x + save.size / 2]]),
   };

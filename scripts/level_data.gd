@@ -17,6 +17,7 @@ var sw := PackedFloat32Array()
 var sh := PackedFloat32Array()
 var sa := PackedFloat32Array()  # metres along the road to each sample
 var sc := PackedInt32Array()    # which road chain each sample belongs to; a segment joins two samples of one chain
+var st := PackedFloat32Array()  # how tarmac each sample is: 0 gravel, 1 tarmac (a node's `tarmac` flag, blended between nodes)
 var junctions: Array[Vector3] = []  # (x, z, half-width) of each junction centre
 var buckets := {}
 var _hm := PackedFloat32Array()
@@ -125,10 +126,11 @@ func road_pose(p: Vector2, facing: Vector3, height := Callable()) -> Transform3D
 	return Transform3D(Basis.looking_at(dir, Vector3.UP), Vector3(q.x, h.call(q.x, q.y) + 1.0, q.y))
 
 
-# (road weight, tarmac weight) under a wheel, as the drivetrain asks the terrain; the lab's roads are gravel.
+# (road weight, tarmac weight) under a wheel, as the drivetrain asks the terrain.
 func surface_at(x: float, z: float) -> Vector2:
 	var near := nearest(x, z)
-	return Vector2(1.0 - smoothstep(near.z - 0.5, near.z + 0.5, near.x), 0.0)
+	var road := 1.0 - smoothstep(near.z - 0.5, near.z + 0.5, near.x)
+	return Vector2(road, road * near.w)
 
 
 # The lab's ground before the road: its saved height grid, or flat.
@@ -156,7 +158,7 @@ func ground(x: float, z: float) -> float:
 # The lab's roads: each chain's Hermite spline, smoothed road level and segment buckets as the lab's roadSamples /
 # rebuildTerrain, chains concatenated (no segment joins two chains), road height pinned to the ground at each junction.
 func _build_road(roads: Array) -> void:
-	for arr in [sx, sz, sw, sh, sa, sc]:
+	for arr in [sx, sz, sw, sh, sa, sc, st]:
 		arr.clear()
 	buckets.clear()
 	var cs := roads.filter(func(c: Array) -> bool: return c.size() >= 2)
@@ -184,6 +186,7 @@ func _build_road(roads: Array) -> void:
 				sx.append(x)
 				sz.append(z)
 				sw.append(lerpf(p1["w"], p2["w"], t))
+				st.append(lerpf(1.0 if p1.get("tarmac") else 0.0, 1.0 if p2.get("tarmac") else 0.0, t))
 				sh.append(natural(x, z))
 				sc.append(ci)
 		for _pass in 3:  # a moving average along the road, so it rolls gently instead of copying every bump
@@ -363,9 +366,9 @@ func road_frame(x: float, z: float) -> Vector4:
 	return Vector4(best.x, best.y, best.z, jn.x)
 
 
-# Nearest road point: (distance, road height there, half-width there); distance is INF away from any road.
-func nearest(x: float, z: float) -> Vector3:
-	var best := Vector3(INF, 0, 0)
+# Nearest road point: (distance, road height there, half-width there, tarmac weight there); distance is INF away from any road.
+func nearest(x: float, z: float) -> Vector4:
+	var best := Vector4(INF, 0, 0, 0)
 	for i: int in buckets.get(floori(x / BUCKET) * 100003 + floori(z / BUCKET), []):
 		var ax := sx[i]
 		var az := sz[i]
@@ -374,7 +377,7 @@ func nearest(x: float, z: float) -> Vector3:
 		var t := clampf(((x - ax) * abx + (z - az) * abz) / maxf(abx * abx + abz * abz, 1e-9), 0.0, 1.0)
 		var d := Vector2(x - ax - abx * t, z - az - abz * t).length()
 		if d < best.x:
-			best = Vector3(d, lerpf(sh[i], sh[i + 1], t), lerpf(sw[i], sw[i + 1], t))
+			best = Vector4(d, lerpf(sh[i], sh[i + 1], t), lerpf(sw[i], sw[i + 1], t), lerpf(st[i], st[i + 1], t))
 	return best
 
 

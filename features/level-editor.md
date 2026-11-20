@@ -92,7 +92,9 @@ height and satellite colour.
 ## In the game
 
 **Map (M, or the pad's Back button):** `LevelMap`, added by `LevelView` once loaded, pauses the game and shows the bake's road
-samples as polylines over a `IMAGE_PX`² image of tree dots and building footprints (painted on a background thread (`_paint`) from before the ground prefill, and uploaded with its road lines traced by `build()` at the end of the shader warm-up, behind the loading screen, since the 4096² upload stalls a frame for about 30 ms; the map's input stays off until the level has loaded; not the satellite image).
+samples as polylines (orange gravel, grey tarmac, split where `st` crosses 0.5), buildings (`LevelMap.footprint`) and log piles drawn on top
+at no less than `MIN_MARK_PX` so they show zoomed out, over a `IMAGE_PX`² image of tree dots on ground faintly tinted by the cover
+grid (`_cover_image`: sampled at `COVER_PX`², each type's tuft colour mixed in by `COVER_TINT`) (painted on a background thread (`_paint`) from before the ground prefill, and uploaded with its road lines traced by `build()` at the end of the shader warm-up, behind the loading screen, since the 4096² upload stalls a frame for about 30 ms; the map's input stays off until the level has loaded; not the satellite image).
 Drag / WASD / arrows / left stick pan, wheel / +- / LB RB zoom; click (or Enter / A on the centre crosshair) teleports to the nearest road
 sample (`snap_to_road`, `LevelView.road_pose`), prefilling the streamer there before unpausing so the car doesn't fall through.
 
@@ -131,7 +133,7 @@ atlases load from `res://tools/`, so this works in the editor, not in an exporte
 `scripts/level_bake.gd` (`LevelBake`, a Resource) holds what is worked out once per save: final ground heights on a 1.5 m grid
 (uint16 centimetres over `height_base`; `height` clamps into the square so the edge repeats outwards), the road frame as one
 RGBA8 texture at 2 m texels (`frame`: across (signed, within ±16 m), half-width (0-16 m), along (modulo 64 m), junction
-weight; 8 bits each, so 5 km is about 25 MB) and the road samples (`sx..sc`, so `surface_at` / `road_pose` / `spawn_pose`
+weight (7 bits, top bit = tarmac); 8 bits each, so 5 km is about 25 MB) and the road samples (`sx..sc`, so `surface_at` / `road_pose` / `spawn_pose`
 run without `LevelData._build_road`). `LevelBake.bake(data, key)` is pure; `load_or_bake(save_path, data)` reads `<save>.bake.res`
 and compares `source_key` (md5 of the save minus `coverKinds`, which isn't baked, + `BAKE_VERSION`): stale or missing bakes in process on desktop (`LevelView.load_level` puts up a "Baking the level" loading screen and runs the bake on a thread, showing `LevelBake.progress` as a percentage; warns,
 saves beside the save), returns null on web and sets `last_error`; an empty path bakes in memory only. Bump `BAKE_VERSION`
@@ -216,9 +218,25 @@ It skips the grade's warm tints, vignette and dither. When the game's look chang
 
 The save's `spectators` ({x, z, r, n}) become live crowds in the level view: see [spectators.md](spectators.md) -> "Level spectator groups". Spawn/despawn distances are `level_spectator_spawn_m` / `level_spectator_despawn_m`; the key is excluded from the bake key, so editing groups never forces a rebake.
 
+### Tarmac roads
+
+A road node with `tarmac: true` is paved; the flag blends between nodes like the half-width (`LevelData.st`, the lab's sample `t`), so a
+road that changes surface fades over one segment. `make_level.py` paves the OSM public roads (`unclassified` and up, the 3 m
+half-width ones); everything else is a gravel track. In the lab the node pop-up's **Tarmac** box sets one node and **Whole road to this
+surface** copies it along the chain; 2D draws paved samples grey.
+
+- **Grip:** `LevelData.surface_at` returns the tarmac weight as `.y`, so the drivetrain, dust and tyre marks treat it as tarmac with no
+  level-specific code. `LevelData.nearest` carries it as `.w`.
+- **Bake:** the frame's alpha keeps the junction weight in its low 7 bits and sets the top bit on tarmac (`LevelBake.frame_tarmac`);
+  the samples' `st` is stored in `z_road` (`BAKE_VERSION` 7).
+- **Look:** `tarmac()` in the shader (and the lab's copy beside `gravel()`): `textures/tarmac.png` (also from `tools/bake_gravel.js`,
+  1.25 cm texels over 3.2 m) holds chippings whose alpha is how much wear strips their binder, so the wheel tracks (one lane each side
+  above 2.4 m half-width) show pale stone and the rest stays dark; an oily strip mid-lane, squared repair patches every 8 m along, and a
+  crumbly, mossy edge (`tarmac_edge`, less ragged than `gravel_edge`). The two are mixed by the frame's blended tarmac weight.
+
 ### Gravel road
 
-The road is a gravel forestry track, drawn the same way in the game (`shaders/level_ground.gdshader` → `gravel`) and the
+The default road is a gravel forestry track, drawn the same way in the game (`shaders/level_ground.gdshader` → `gravel`) and the
 lab (`GRAVEL_GLSL`, a verbatim copy patched into the road's `MeshBasicMaterial`; keep the two in step):
 
 - **Stones** are baked, not computed: `textures/gravel-forest.png` (`node tools/bake_gravel.js`) is a seamless 256 px tile over

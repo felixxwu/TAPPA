@@ -155,6 +155,17 @@ func test_recovery_puts_the_car_on_the_nearest_road_facing_along_it() -> void:
 	assert_lt(-pose.basis.z.x, -0.99, "the road direction nearest the car's own facing")
 
 
+func test_a_tarmac_node_paves_the_road_and_blends_to_gravel_between_nodes() -> void:
+	var paved := _node(-100.0, 0.0)
+	paved["tarmac"] = true
+	var data := _built({"road": [paved, _node(0.0, 0.0), _node(100.0, 0.0)], "heightmap": _level()["heightmap"]})
+	assert_almost_eq(data.surface_at(-99.0, 0.0).y, 1.0, 0.03, "tarmac at the paved node")
+	var mid := data.surface_at(-50.0, 0.0).y
+	assert_true(mid > 0.1 and mid < 0.9, "partly paved between the paved and gravel nodes: %s" % mid)
+	assert_eq(data.surface_at(50.0, 0.0).y, 0.0, "gravel past it")
+	assert_lt(data.surface_at(-99.0, 40.0).y, 0.01, "no tarmac off the road")
+
+
 func test_a_legacy_single_road_still_loads_as_one_chain() -> void:
 	var data := _built(_level())
 	assert_gt(data.surface_at(0.0, 0.0).x, 0.9)
@@ -234,6 +245,7 @@ func test_the_road_and_ground_match_the_lab_fixture() -> void:
 		assert_almost_eq(data.sz[i], float(row[2]), 0.01, "sample %d z" % i)
 		assert_almost_eq(data.sw[i], float(row[3]), 0.01, "sample %d half-width" % i)
 		assert_almost_eq(data.sh[i], float(row[4]), 0.01, "sample %d height" % i)
+		assert_almost_eq(data.st[i], float(row[5]), 0.01, "sample %d tarmac" % i)
 	assert_eq(data.junctions.size(), want["junctions"].size())
 	for k in data.junctions.size():
 		var j: Array = want["junctions"][k]

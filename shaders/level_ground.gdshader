@@ -1,6 +1,6 @@
-// The level view's ground: grass, with a gravel forestry track painted per pixel from the baked road frame textures (scripts/level_bake.gd).
-// The stones are a baked tile (tools/bake_gravel.js); only the road-shaped parts (ruts, moss, damp, edge) are worked out
-// here. tools/level_editor_lab.html carries the same gravel() for its own road, so keep the two in step.
+// The level view's ground: grass, with gravel forestry tracks and tarmac lanes painted per pixel from the baked road frame textures (scripts/level_bake.gd).
+// The stones and chippings are baked tiles (tools/bake_gravel.js); only the road-shaped parts (ruts, moss, damp, edge) are worked out
+// here. tools/level_editor_lab.html carries the same gravel() and tarmac() for its own road, so keep the two in step.
 shader_type spatial;
 render_mode unshaded, specular_disabled;
 
@@ -9,10 +9,13 @@ uniform sampler2D gravel_texture : source_color, filter_nearest_mipmap, repeat_e
 uniform float ground_uv_per_m = 0.125;
 uniform float grass_saturation = 0.65;
 uniform float gravel_tile_m = 6.4;
+uniform sampler2D tarmac_texture : source_color, filter_nearest_mipmap, repeat_enable, hint_default_white;
+uniform float tarmac_tile_m = 3.2;
 // Ground steeper than rock_start_deg starts to show bare rock; by rock_full_deg it is all rock.
 uniform float rock_start_deg = 30.0;
 uniform float rock_full_deg = 45.0;
-// The road frame, one RGBA8 texture read nearest and filtered by hand: across (signed), half-width, along (modulo 64 m), junction weight.
+// The road frame, one RGBA8 texture read nearest and filtered by hand: across (signed), half-width, along (modulo 64 m),
+// junction weight in the low 7 bits of alpha with the top bit set on tarmac.
 uniform sampler2D road_frame : filter_nearest, hint_default_black;
 uniform float frame_size_m = 600.0;
 uniform float frame_cell_m = 1.0;
@@ -70,6 +73,32 @@ vec3 gravel(vec2 w, float lat, float half_w, float along, float junc, float snow
 	return mix(col, moss_col, moss * 0.85);
 }
 
+// A tarmac lane road, with the same inputs as gravel(): baked chippings (textures/tarmac.png) whose binder wears off in the
+// wheel tracks, a darker oily strip between them, squared-off repair patches, and a crumbling mossy edge.
+float tarmac_edge(vec2 w, float half_w) { return half_w - 0.1 - 0.15 * gn(w * 2.3); }
+vec3 tarmac(vec2 w, float lat, float half_w, float along, float junc, float snow) {
+	float a = abs(lat);
+	float lane = abs(a - (half_w > 2.4 ? half_w * 0.5 : 0.0));  // across from the middle of this side's lane (one lane when narrow)
+	float track = exp(-pow((lane - 0.8) / 0.32, 2.0)) * (1.0 - junc);
+	float oil = exp(-pow(lane / 0.35, 2.0)) * (1.0 - junc) * gnp(vec2(along * 0.25, a), 16.0);
+	float verge = smoothstep(half_w - 0.7, half_w - 0.1, a) * (1.0 - 0.6 * junc);
+	vec4 t = texture(tarmac_texture, w / tarmac_tile_m);
+	float n = gn(w * 0.09);
+	float wear = 0.25 + 0.55 * track + 0.2 * n + 0.25 * junc;
+	vec3 binder = vec3(0.16, 0.16, 0.17) * (0.9 + 0.2 * gn(w * 0.6));
+	vec3 col = mix(binder, t.rgb, smoothstep(t.a - 0.08, t.a + 0.08, wear));  // a chip shows pale where traffic has worn the binder off it
+	col *= 1.0 - 0.25 * oil;
+	vec2 cell = vec2(floor(along / 8.0), floor(lat / 1.6 + 8.0));
+	float patch_id = gh(vec2(mod(cell.x, 8.0), cell.y));
+	vec2 inside = abs(vec2(fract(along / 8.0), fract(lat / 1.6)) - 0.5);
+	float patched = step(0.96, patch_id) * step(inside.x, 0.2 + 0.25 * fract(patch_id * 7.0)) * step(inside.y, 0.4) * (1.0 - junc);
+	col = mix(col, mix(binder * 0.8, t.rgb, 0.12 * step(t.a, 0.6)), patched * 0.85);  // fresh repair patches are smoother and darker
+	col = mix(col, vec3(0.42, 0.39, 0.33) * (0.8 + 0.4 * t.r), verge * smoothstep(0.35, 0.75, gn(w * 1.7)));  // crumbled to grit at the edge
+	float moss = smoothstep(0.55, 0.8, gn(w * 1.3) * verge * 1.2 + t.g * 0.1);
+	vec3 moss_col = mix(vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), texture(snow_texture, w * ground_uv_per_m).rgb, snow);
+	return mix(col, moss_col, moss * 0.8);
+}
+
 // Grey rock face, projected onto the side it faces so a steep bank isn't smeared vertically.
 vec3 rock(vec3 world, vec3 n) {
 	vec2 p = abs(n.x) > abs(n.z) ? world.zy : world.xy;
@@ -101,7 +130,7 @@ void fragment() {
 	ivec2 i0 = ivec2(floor(u));
 	vec2 f = fract(u);
 	ivec2 hi = ivec2(frame_n - 1);
-	float signed_across = 0.0, dist = 0.0, half_w = 0.0, junc = 0.0, along = 0.0, ref_along = 0.0, nearest_across = 0.0;
+	float signed_across = 0.0, dist = 0.0, half_w = 0.0, junc = 0.0, tarmac_w = 0.0, along = 0.0, ref_along = 0.0, nearest_across = 0.0;
 	float lo_a = 1e9, hi_a = -1e9;
 	for (int k = 0; k < 4; k++) {
 		ivec2 o = ivec2(k & 1, k >> 1);
@@ -117,7 +146,10 @@ void fragment() {
 		signed_across += w * across;
 		dist += w * abs(across);
 		half_w += w * t.g * FRAME_RANGE;
-		junc += w * t.a;
+		float a8 = round(t.a * 255.0);
+		float is_tarmac = step(127.5, a8);
+		junc += w * (a8 - 128.0 * is_tarmac) / 127.0;
+		tarmac_w += w * is_tarmac;
 		along += w * (mod(al - ref_along + ALONG_PERIOD * 0.5, ALONG_PERIOD) - ALONG_PERIOD * 0.5);
 		if ((o.x == 1) == (f.x > 0.5) && (o.y == 1) == (f.y > 0.5)) {
 			nearest_across = across;
@@ -129,7 +161,7 @@ void fragment() {
 	if (smooth_field) {
 		dist = abs(signed_across);
 	}
-	float edge = gravel_edge(world.xz, half_w);
+	float edge = mix(gravel_edge(world.xz, half_w), tarmac_edge(world.xz, half_w), tarmac_w);
 	float road_t = 1.0 - smoothstep(edge - 0.12, edge + 0.12, dist);
 	vec3 surface = grass_at(world.xz * ground_uv_per_m);
 	// COLOR.a is the smooth per-vertex normal.y (level_streamer._pack_vertex); the face normal only picks the rock's projection.
@@ -144,7 +176,11 @@ void fragment() {
 		surface = mix(surface, texture(snow_texture, world.xz * ground_uv_per_m).rgb, snow_t);
 	}
 	if (road_t > 0.0) {
-		surface = mix(surface, mix(gravel(world.xz, lat, half_w, along, junc, UV.x), vec3(1.0), snow_road_lighten * UV.x), road_t);
+		vec3 road = tarmac_w < 1.0 ? gravel(world.xz, lat, half_w, along, junc, UV.x) : vec3(0.0);
+		if (tarmac_w > 0.0) {
+			road = mix(road, tarmac(world.xz, lat, half_w, along, junc, UV.x), tarmac_w);
+		}
+		surface = mix(surface, mix(road, vec3(1.0), snow_road_lighten * UV.x), road_t);
 	}
 	ivec2 tc = ivec2(floor(u + 0.5));
 	float tree_ao = 1.0;

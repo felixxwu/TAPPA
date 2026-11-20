@@ -42,7 +42,7 @@ def clip(a, b):  # Liang-Barsky: the part of segment a-b inside the square minus
         else: t1 = min(t1, q / p)
     return (t0, t1) if t0 < t1 else None
 pos, adj, ew = {}, {}, {}
-def half_width(t):  # OSM here has no width tags, so guess from the road class and track grade (1 = firmest)
+def half_width(t):  # OSM here has no width tags, so guess from the road class and track grade (1 = firmest); 3.0 marks a paved public road
     if t.get('highway') in ('unclassified', 'tertiary', 'secondary', 'primary'): return 3.0
     if t.get('highway') == 'service': return 2.5
     return {'grade1': 2.6, 'grade2': 2.2, 'grade3': 1.9, 'grade4': 1.7, 'grade5': 1.6}.get(t.get('tracktype'), 2.2 if t.get('highway') == 'track' else 1.8)
@@ -95,7 +95,8 @@ def node_widths(c):  # a node takes the wider of the two ways it joins
     return {pos[k]: max(ws[max(i - 1, 0)], ws[min(i, len(ws) - 1)]) for i, k in enumerate(c)}
 def chain_nodes(c):
     w = node_widths(c)
-    return [{"x": round(E - CE, 1), "z": round(CN - Nn, 1), "w": w[(E, Nn)], "m": None, "tension": 1} for E, Nn in dp([pos[k] for k in c], 4)]
+    return [{"x": round(E - CE, 1), "z": round(CN - Nn, 1), "w": w[(E, Nn)], "m": None, "tension": 1, **({"tarmac": True} if w[(E, Nn)] >= 3 else {})}
+            for E, Nn in dp([pos[k] for k in c], 4)]
 roads = [chain_nodes(c) for c in chains]
 ends = Counter(k for c in chains for k in (c[0], c[-1]))
 total = sum(plen(c) for c in chains)

@@ -8,6 +8,11 @@ const GROUND := Color(0.80, 0.78, 0.66)
 const TREE := Color(0.33, 0.47, 0.28)
 const BUILDING := Color(0.45, 0.38, 0.34)
 const ROAD := Color(0.93, 0.55, 0.16)
+const TARMAC := Color(0.36, 0.37, 0.4)
+const LOG_PILE := Color(0.55, 0.36, 0.2)
+const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
+const COVER_TINT := 0.3   # how far the ground leans toward each cover type's colour
+const MIN_MARK_PX := 7.0  # buildings and log piles never draw smaller than this, so they show when zoomed out
 const ROAD_EDGE := Color(0.25, 0.15, 0.08)
 const WASD := {KEY_W: Vector2.UP, KEY_A: Vector2.LEFT, KEY_S: Vector2.DOWN, KEY_D: Vector2.RIGHT}
 const PAN_SPEED_PX := 600.0
@@ -16,7 +21,9 @@ var view: LevelView
 var center := Vector2.ZERO  # world x, z at the middle of the screen
 var zoom := 1.0             # screen pixels per metre
 var _texture: ImageTexture
-var _chains: Array[PackedVector2Array] = []
+var _chains: Array[PackedVector2Array] = []  # road lines, split wherever the surface changes
+var _tarmac: Array[bool] = []                 # per line in _chains
+var _buildings: Array[PackedVector2Array] = []  # each building's footprint corners in world metres
 var _hint: Label
 var _busy := false
 var _pad_used := false  # a gamepad aims with the centre crosshair instead of the mouse
@@ -91,35 +98,65 @@ func build() -> void:
 	var b := view._bake
 	var line := PackedVector2Array()
 	for i in b.sx.size():
+		var paved := b.st[i] >= 0.5
 		if i > 0 and b.sc[i] != b.sc[i - 1]:
-			_chains.append(line)
+			_add_line(line, b.st[i - 1] >= 0.5)
 			line = PackedVector2Array()
+		elif i > 0 and paved != (b.st[i - 1] >= 0.5):
+			_add_line(line, not paved)
+			line = PackedVector2Array([line[-1]])  # the next line starts where this one ended, so the road has no gap
 		line.append(Vector2(b.sx[i], b.sz[i]))
+	_add_line(line, b.st.size() > 0 and b.st[-1] >= 0.5)
+	for bd: Dictionary in view.level.get("buildings", []):
+		_buildings.append(footprint(bd))
+
+
+func _add_line(line: PackedVector2Array, paved: bool) -> void:
 	_chains.append(line)
+	_tarmac.append(paved)
+
+
+# A save's building ({x, z, rot, L, W}) as its four corners in world x, z.
+static func footprint(bd: Dictionary) -> PackedVector2Array:
+	var rot := float(bd.get("rot", 0.0))
+	var ax := Vector2(cos(rot), -sin(rot)) * float(bd.get("L", 8.0)) / 2.0
+	var az := Vector2(sin(rot), cos(rot)) * float(bd.get("W", 6.0)) / 2.0
+	var c := Vector2(float(bd["x"]), float(bd["z"]))
+	return PackedVector2Array([c + ax + az, c + ax - az, c - ax - az, c - ax + az])
 
 
 func _paint() -> Image:
 	var b := view._bake
 	var half := size_m() / 2.0
 	var k := IMAGE_PX / size_m()
-	var img := Image.create(IMAGE_PX, IMAGE_PX, false, Image.FORMAT_RGB8)
-	img.fill(GROUND)
+	var img := _cover_image()
 	_paint_trees(img, b, half, k)
-	for bd: Dictionary in view.level.get("buildings", []):
-		var rot := float(bd.get("rot", 0.0))
-		var ax := Vector2(cos(rot), -sin(rot)) * float(bd.get("L", 8.0)) / 2.0
-		var az := Vector2(sin(rot), cos(rot)) * float(bd.get("W", 6.0)) / 2.0
-		var c := Vector2(float(bd["x"]), float(bd["z"]))
-		var r := ceili((ax.length() + az.length()) * k)
-		var cp := (c + Vector2(half, half)) * k
-		for y in range(-r, r + 1):
-			for x in range(-r, r + 1):
-				var w := c + Vector2(x, y) / k
-				var d := w - c
-				if absf(d.dot(ax.normalized())) <= ax.length() and absf(d.dot(az.normalized())) <= az.length():
-					var p := Vector2i(cp) + Vector2i(x, y)
-					if p.x >= 0 and p.y >= 0 and p.x < IMAGE_PX and p.y < IMAGE_PX:
-						img.set_pixelv(p, BUILDING)
+	return img
+
+
+# The ground, faintly tinted by the save's ground cover (heather, rush, ...) in each type's own colour.
+func _cover_image() -> Image:
+	var cov := GroundCover.decode_cover(view.level)
+	var grid := roundi(sqrt(cov.size()))
+	var img := Image.create(COVER_PX, COVER_PX, false, Image.FORMAT_RGB8)
+	img.fill(GROUND)
+	if grid > 0:
+		var palette := PackedByteArray()
+		var tints := GroundCover.tints(view.level.get("coverKinds", {}))
+		for id in 256:
+			var c := GROUND.lerp(tints.get(id, GROUND), COVER_TINT)
+			palette.append_array([c.r8, c.g8, c.b8])
+		var px := img.get_data()
+		for y in COVER_PX:
+			var row := floori((y + 0.5) * grid / COVER_PX) * grid
+			for x in COVER_PX:
+				var id := cov[row + floori((x + 0.5) * grid / COVER_PX)] * 3
+				var i := (y * COVER_PX + x) * 3
+				px[i] = palette[id]
+				px[i + 1] = palette[id + 1]
+				px[i + 2] = palette[id + 2]
+		img.set_data(COVER_PX, COVER_PX, false, Image.FORMAT_RGB8, px)
+	img.resize(IMAGE_PX, IMAGE_PX, Image.INTERPOLATE_BILINEAR)
 	return img
 
 
@@ -156,10 +193,21 @@ func _draw() -> void:
 	for line in _chains:
 		if line.size() > 1:
 			draw_polyline(line, ROAD_EDGE, w + 2.0 / zoom)
-	for line in _chains:
-		if line.size() > 1:
-			draw_polyline(line, ROAD, w)
+	for i in _chains.size():
+		if _chains[i].size() > 1:
+			draw_polyline(_chains[i], TARMAC if _tarmac[i] else ROAD, w)
 	draw_set_transform(Vector2.ZERO)
+	for fp in _buildings:
+		var c := (fp[0] + fp[2]) / 2.0
+		var grow := maxf(1.0, MIN_MARK_PX / (zoom * minf(fp[0].distance_to(fp[1]), fp[1].distance_to(fp[2]))))
+		var pts := PackedVector2Array()
+		for corner in fp:
+			pts.append(to_screen(c + (corner - c) * grow))
+		draw_colored_polygon(pts, BUILDING)
+		pts.append(pts[0])
+		draw_polyline(pts, ROAD_EDGE, 1.0)
+	for pile: Dictionary in view.level.get("logPiles", []):
+		draw_circle(to_screen(Vector2(float(pile["x"]), float(pile["z"]))), maxf(MIN_MARK_PX, 4.0 * zoom) / 2.0, LOG_PILE)
 	var car := view.get_parent().get_node_or_null("Car") as Node3D
 	if car != null:
 		var p := to_screen(Vector2(car.global_position.x, car.global_position.z))

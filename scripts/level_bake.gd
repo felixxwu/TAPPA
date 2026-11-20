@@ -3,7 +3,7 @@ extends Resource
 # Everything about a level that is worked out once, offline: final ground heights, the road frame textures the ground shader reads, the road samples, the trees in tiles and which of them each stretch of road can see. Saved beside the level as <name>.bake.res and loaded instead of running LevelData's road build.
 # The big arrays live decoded in memory but are stored as zstd blobs (see _get_property_list), and visibility stays as row-to-row diffs.
 
-const BAKE_VERSION := 6
+const BAKE_VERSION := 7
 const FRAME_RANGE := 16.0    # across and half-width are stored within this many metres; beyond it there is no road to paint
 const FRAME_CELL := 2.0      # road frame texel size in metres
 const ALONG_PERIOD := 64.0   # along is stored modulo this; the gravel noise repeats at it (level_ground.gdshader)
@@ -25,13 +25,14 @@ const TREE_HEIGHT := {       # species heights, as in the lab's KINDS table; wid
 @export var height_base := 0.0           # heights are uint16 centimetres above this
 var heights := PackedByteArray()
 @export var frame_n := 0                 # road frame texels per side
-var frame := PackedByteArray()   # RGBA8 per texel: across (signed), half-width, along (modulo ALONG_PERIOD), junction weight
+var frame := PackedByteArray()   # RGBA8 per texel: across (signed), half-width, along (modulo ALONG_PERIOD), junction weight in 7 bits with the top bit set on tarmac
 var sx := PackedFloat32Array()   # road samples, as LevelData's
 var sz := PackedFloat32Array()
 var sw := PackedFloat32Array()
 var sh := PackedFloat32Array()
 var sa := PackedFloat32Array()
 var sc := PackedInt32Array()
+var st := PackedFloat32Array()
 @export var spawn_nodes := PackedVector2Array()  # the first road's first two nodes
 @export var tree_kinds := PackedStringArray()    # species, by the index tree_kind holds
 @export var tree_tile_n := 0                     # tree tiles per side
@@ -102,13 +103,14 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 			b.frame[o] = roundi((across + FRAME_RANGE) / (2.0 * FRAME_RANGE) * 255.0)
 			b.frame[o + 1] = roundi(clampf(f.y, 0.0, FRAME_RANGE) / FRAME_RANGE * 255.0)
 			b.frame[o + 2] = roundi(fposmod(f.z, ALONG_PERIOD) / ALONG_PERIOD * 255.0)
-			b.frame[o + 3] = roundi(clampf(f.w, 0.0, 1.0) * 255.0)
+			b.frame[o + 3] = roundi(clampf(f.w, 0.0, 1.0) * 127.0) | (128 if data.nearest(c * fcell - b.size / 2, r * fcell - b.size / 2).w >= 0.5 else 0)
 	b.sx = data.sx
 	b.sz = data.sz
 	b.sw = data.sw
 	b.sh = data.sh
 	b.sa = data.sa
 	b.sc = data.sc
+	b.st = data.st
 	b._bake_trees(data.level.get("trees", []))
 	var cs := LevelData.chains(data.level)
 	if not cs.is_empty() and cs[0].size() >= 2:
@@ -279,8 +281,8 @@ func nearest_sample(x: float, z: float) -> int:
 	return _roads().nearest_sample(x, z)
 
 
-# Nearest road point: (distance, road height, half-width), as LevelData.nearest.
-func road_nearest(x: float, z: float) -> Vector3:
+# Nearest road point: (distance, road height, half-width, tarmac weight), as LevelData.nearest.
+func road_nearest(x: float, z: float) -> Vector4:
 	return _roads().nearest(x, z)
 
 
@@ -303,11 +305,19 @@ func height(x: float, z: float) -> float:
 	return lerpf(lerpf(grid_height(c, r), grid_height(c + 1, r), u), lerpf(grid_height(c, r + 1), grid_height(c + 1, r + 1), u), v)
 
 
-# One road frame texel as LevelData.road_frame returns it, except across and half-width are clamped to FRAME_RANGE, along is modulo ALONG_PERIOD, and all are 8-bit quantised.
+# One road frame texel as LevelData.road_frame returns it, except across and half-width are clamped to FRAME_RANGE, along is modulo ALONG_PERIOD, and all are 8-bit quantised (the junction weight 7-bit).
 func frame_texel(ix: int, iz: int) -> Vector4:
-	var o := (clampi(iz, 0, frame_n - 1) * frame_n + clampi(ix, 0, frame_n - 1)) * 4
+	var o := _frame_offset(ix, iz)
 	return Vector4(frame[o] / 255.0 * 2.0 * FRAME_RANGE - FRAME_RANGE, frame[o + 1] / 255.0 * FRAME_RANGE,
-		frame[o + 2] / 255.0 * ALONG_PERIOD, frame[o + 3] / 255.0)
+		frame[o + 2] / 255.0 * ALONG_PERIOD, (frame[o + 3] & 127) / 127.0)
+
+
+func frame_tarmac(ix: int, iz: int) -> bool:
+	return frame[_frame_offset(ix, iz) + 3] >= 128
+
+
+func _frame_offset(ix: int, iz: int) -> int:
+	return (clampi(iz, 0, frame_n - 1) * frame_n + clampi(ix, 0, frame_n - 1)) * 4
 
 
 func surface_at(x: float, z: float) -> Vector2:
@@ -383,6 +393,7 @@ func _roads() -> LevelData:
 		_road.sh = sh
 		_road.sa = sa
 		_road.sc = sc
+		_road.st = st
 		_road.bucket_samples()
 	return _road
 
@@ -472,6 +483,7 @@ func _get(property: StringName) -> Variant:
 			raw.append_array(sh.to_byte_array())
 			raw.append_array(sa.to_byte_array())
 			raw.append_array(sc.to_byte_array())
+			raw.append_array(st.to_byte_array())
 			return _zip(raw)
 		&"z_trees": return _zip(tree_xf.to_byte_array())
 		&"z_tree_first": return _zip_ints(tree_tile_first)
@@ -489,13 +501,14 @@ func _set(property: StringName, value: Variant) -> bool:
 		&"z_frame": frame = _unzip(value)
 		&"z_road":
 			var raw := _unzip(value)
-			var count := raw.size() / 24
+			var count := raw.size() / 28
 			sx = raw.slice(0, count * 4).to_float32_array()
 			sz = raw.slice(count * 4, count * 8).to_float32_array()
 			sw = raw.slice(count * 8, count * 12).to_float32_array()
 			sh = raw.slice(count * 12, count * 16).to_float32_array()
 			sa = raw.slice(count * 16, count * 20).to_float32_array()
 			sc = raw.slice(count * 20, count * 24).to_int32_array()
+			st = raw.slice(count * 24, count * 28).to_float32_array()
 		&"z_trees": tree_xf = _unzip(value).to_float32_array()
 		&"z_tree_first": tree_tile_first = _unzip_ints(value)
 		&"z_tree_kind": tree_kind = _unzip(value)

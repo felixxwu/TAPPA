@@ -108,7 +108,8 @@ const aspects = {};
 const treeH = t => KINDS[t.kind].h * t.sy, treeW = t => KINDS[t.kind].h * (aspects[t.kind] ?? 1) * t.sx;
 
 // --- level data ---------------------------------------------------------------------------
-// A road node: position, half-width w, and an optional hand-set tangent m (null = follow its neighbours), scaled by tension.
+// A road node: position, half-width w, and an optional hand-set tangent m (null = follow its neighbours), scaled by tension;
+// `tarmac: true` paves it (gravel otherwise), blended between nodes like the width.
 const node = (x, z, w = 2.9) => ({ x, z, w, m: null, tension: 1 });
 // The Random button: a road wandering across the square from the west edge, trees scattered off it.
 function randomLevel(seed) {
@@ -191,7 +192,7 @@ function unpackTrees(b64, kinds, size) {
 function pack(l) {
   const kinds = [...new Set(l.trees.map(t => t.kind))];
   const out = { ...l, kinds, treesBin: packTrees(l.trees, kinds, l.size ?? 600),
-    roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension) }))) };
+    roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension), ...(n.tarmac && { tarmac: true }) }))) };
   delete out.road; delete out.trees;
   if (!out.spectators?.length) delete out.spectators;
   if (out.size === 600) delete out.size;
@@ -373,7 +374,7 @@ function roadSamples(roads) {
       const p1 = road[i], p2 = road[i + 1], m1 = tangent(road, i), m2 = tangent(road, i + 1), n = segSteps(p1, p2);
       for (let j = i ? 1 : 0; j <= n; j++) {
         const t = j / n, t2 = t * t, t3 = t2 * t, h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
-        out.push({ x: h00 * p1.x + h10 * m1.x + h01 * p2.x + h11 * m2.x, z: h00 * p1.z + h10 * m1.z + h01 * p2.z + h11 * m2.z, w: p1.w + (p2.w - p1.w) * t, seg: i, c, first: !i && !j });
+        out.push({ x: h00 * p1.x + h10 * m1.x + h01 * p2.x + h11 * m2.x, z: h00 * p1.z + h10 * m1.z + h01 * p2.z + h11 * m2.z, w: p1.w + (p2.w - p1.w) * t, t: +!!p1.tarmac + (+!!p2.tarmac - +!!p1.tarmac) * t, seg: i, c, first: !i && !j });
       }
     }
   });
@@ -600,6 +601,7 @@ function draw2D() {
   else for (let i = 0; i < samples.length - 1; i++) {
     const a = samples[i], b = samples[i + 1];
     if (b.first || Math.max(a.x, b.x) < vx0 || Math.min(a.x, b.x) > vx1 || Math.max(a.z, b.z) < vz0 || Math.min(a.z, b.z) > vz1) continue;
+    ctx.strokeStyle = a.t >= 0.5 ? "#6b6d72" : "#b9ad93";
     ctx.lineWidth = a.w * 2; ctx.beginPath(); ctx.moveTo(a.x, a.z); ctx.lineTo(b.x, b.z); ctx.stroke();
   }
   ctx.fillStyle = "rgba(255,150,40,.25)"; ctx.strokeStyle = "#f93"; ctx.lineWidth = 2 / view.zoom;
@@ -852,14 +854,25 @@ function select(s) {
       field("rot", "Rotation", 5, "°") + field("sx", "Stretch X", 0.05) + field("sy", "Stretch Y", 0.05) + field("width", "Width", 0.1, "m") + field("height", "Height", 0.1, "m") +
       `<button data-act="del">Delete tree</button>`
     : `<b>Road ${sel.c} node ${sel.i}</b>` + field("w", "Half-width", 0.1, "m") + field("tension", "Tension", 0.05) +
+      `<label>Tarmac <input type="checkbox" data-act="tarmac"></label><button data-act="tarmacroad">Whole road to this surface</button>` +
       `<button data-act="auto">Auto curve (follow neighbours)</button><button data-act="split">Split road here (x)</button><button data-act="del">Delete node</button><button data-act="delroad">Delete whole road</button><button data-act="clear">Clear trees off road</button>`;
   pop.style.display = "flex";
   for (const inp of pop.querySelectorAll("[data-k]")) inp.oninput = () => edit(inp.dataset.k, inp.value);
   pop.querySelector("[data-act=del]").onclick = removeSelected;
   const auto = pop.querySelector("[data-act=auto]");
   if (auto) auto.onclick = () => { Object.assign(selObj(), { m: null, tension: 1 }); syncPopup(); changed(true); save(); };
+  const tar = pop.querySelector("[data-act=tarmac]");
+  if (tar) {
+    tar.checked = !!selObj().tarmac;
+    tar.onchange = () => { setTarmac([selObj()], tar.checked); };
+    pop.querySelector("[data-act=tarmacroad]").onclick = () => setTarmac(level.roads[sel.c], !!selObj().tarmac);
+  }
   for (const [name, fn] of [["split", splitRoad], ["delroad", removeRoad], ["clear", clearRoad]]) { const b = pop.querySelector(`[data-act=${name}]`); if (b) b.onclick = fn; }
   syncPopup(); mapDirty = true;
+}
+function setTarmac(nodes, on) {
+  for (const n of nodes) if (on) n.tarmac = true; else delete n.tarmac;
+  changed(true); save();
 }
 function edit(k, v) {
   const o = selObj();
@@ -1001,12 +1014,14 @@ const terrainMesh = new THREE.Mesh(new THREE.BufferGeometry(), terrainMat);
 let terrainGeo = terrainMesh.geometry;
 scene.add(terrainMesh);
 function remakeTerrainGeo() { terrainGeo.dispose(); terrainGeo = terrainMesh.geometry = new THREE.PlaneGeometry(WW(), WW(), G, G).rotateX(-Math.PI / 2); }
-// The game's gravel road (shaders/level_ground.gdshader), copied verbatim: baked stones (textures/gravel-forest.png,
-// tools/bake_gravel.js) under ruts, moss, damp and a ragged edge worked out per pixel. Keep the two in step.
+// The game's gravel and tarmac roads (shaders/level_ground.gdshader), copied verbatim: baked stones and chippings
+// (textures/gravel-forest.png, tarmac.png, tools/bake_gravel.js) under ruts, moss, damp and a ragged edge worked out per pixel. Keep the two in step.
 const GRAVEL_GLSL = `
 uniform sampler2D gravel_texture;
 const float gravel_tile_m = 6.4;
-varying vec3 vRd; varying vec2 vW;
+uniform sampler2D tarmac_texture;
+const float tarmac_tile_m = 3.2;
+varying vec3 vRd; varying vec2 vW; varying float vT;
 float gh(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float gn(vec2 p) {
 	vec2 i = floor(p), f = fract(p);
@@ -1044,10 +1059,39 @@ vec3 gravel(vec2 w, float lat, float half_w, float along, float junc, float snow
 	vec3 moss_col = mix(vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), pow(texture2D(snow_texture, w * 0.125).rgb, vec3(2.2)), snow);
 	return mix(col, moss_col, moss * 0.85);
 }
+
+// A tarmac lane road, with the same inputs as gravel(): baked chippings (textures/tarmac.png) whose binder wears off in the
+// wheel tracks, a darker oily strip between them, squared-off repair patches, and a crumbling mossy edge.
+float tarmac_edge(vec2 w, float half_w) { return half_w - 0.1 - 0.15 * gn(w * 2.3); }
+vec3 tarmac(vec2 w, float lat, float half_w, float along, float junc, float snow) {
+	float a = abs(lat);
+	float lane = abs(a - (half_w > 2.4 ? half_w * 0.5 : 0.0));  // across from the middle of this side's lane (one lane when narrow)
+	float track = exp(-pow((lane - 0.8) / 0.32, 2.0)) * (1.0 - junc);
+	float oil = exp(-pow(lane / 0.35, 2.0)) * (1.0 - junc) * gnp(vec2(along * 0.25, a), 16.0);
+	float verge = smoothstep(half_w - 0.7, half_w - 0.1, a) * (1.0 - 0.6 * junc);
+	vec4 t = texture2D(tarmac_texture, w / tarmac_tile_m);
+	t.rgb = pow(t.rgb, vec3(2.2)); // lab only, as in gravel()
+	float n = gn(w * 0.09);
+	float wear = 0.25 + 0.55 * track + 0.2 * n + 0.25 * junc;
+	vec3 binder = vec3(0.16, 0.16, 0.17) * (0.9 + 0.2 * gn(w * 0.6));
+	vec3 col = mix(binder, t.rgb, smoothstep(t.a - 0.08, t.a + 0.08, wear));  // a chip shows pale where traffic has worn the binder off it
+	col *= 1.0 - 0.25 * oil;
+	vec2 cell = vec2(floor(along / 8.0), floor(lat / 1.6 + 8.0));
+	float patch_id = gh(vec2(mod(cell.x, 8.0), cell.y));
+	vec2 inside = abs(vec2(fract(along / 8.0), fract(lat / 1.6)) - 0.5);
+	float patched = step(0.96, patch_id) * step(inside.x, 0.2 + 0.25 * fract(patch_id * 7.0)) * step(inside.y, 0.4) * (1.0 - junc);
+	col = mix(col, mix(binder * 0.8, t.rgb, 0.12 * step(t.a, 0.6)), patched * 0.85);  // fresh repair patches are smoother and darker
+	col = mix(col, vec3(0.42, 0.39, 0.33) * (0.8 + 0.4 * t.r), verge * smoothstep(0.35, 0.75, gn(w * 1.7)));  // crumbled to grit at the edge
+	float moss = smoothstep(0.55, 0.8, gn(w * 1.3) * verge * 1.2 + t.g * 0.1);
+	vec3 moss_col = mix(vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), pow(texture2D(snow_texture, w * 0.125).rgb, vec3(2.2)), snow);
+	return mix(col, moss_col, moss * 0.8);
+}
 `;
 const gravelTex = served ? loader.load("../textures/gravel-forest.png") : new THREE.DataTexture(new Uint8Array([128, 122, 112, 255]), 1, 1, THREE.RGBAFormat);
 gravelTex.wrapS = gravelTex.wrapT = THREE.RepeatWrapping; gravelTex.magFilter = THREE.NearestFilter;
 gravelTex.minFilter = served ? THREE.NearestMipmapLinearFilter : THREE.NearestFilter; // Godot's filter_nearest_mipmap
+const tarmacTex = served ? loader.load("../textures/tarmac.png") : new THREE.DataTexture(new Uint8Array([60, 60, 62, 255]), 1, 1, THREE.RGBAFormat);
+tarmacTex.wrapS = tarmacTex.wrapT = THREE.RepeatWrapping; tarmacTex.magFilter = THREE.NearestFilter; tarmacTex.minFilter = gravelTex.minFilter;
 // Junction centres (x, z, half-width), one texel each, for the junctions in the ground window: the road's ruts give way to plain gravel where roads meet.
 const JUNC_MAX = 512;
 const juncTex = { value: null }, juncCount = { value: 0 };
@@ -1076,10 +1120,10 @@ float junc_at(vec2 w) {
 `;
 const roadMat = new THREE.MeshBasicMaterial({ vertexColors: true });
 roadMat.onBeforeCompile = sh => {
-  sh.uniforms.gravel_texture = { value: gravelTex }; sh.uniforms.uJT = juncTex; sh.uniforms.uJN = juncCount; Object.assign(sh.uniforms, snowUni);
-  sh.vertexShader = "attribute vec3 rd;\nvarying vec3 vRd; varying vec2 vW;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvRd = rd; vW = (modelMatrix * vec4(position, 1.)).xz;");
+  sh.uniforms.gravel_texture = { value: gravelTex }; sh.uniforms.tarmac_texture = { value: tarmacTex }; sh.uniforms.uJT = juncTex; sh.uniforms.uJN = juncCount; Object.assign(sh.uniforms, snowUni);
+  sh.vertexShader = "attribute vec3 rd; attribute float rt;\nvarying vec3 vRd; varying vec2 vW; varying float vT;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvRd = rd; vT = rt; vW = (modelMatrix * vec4(position, 1.)).xz;");
   sh.fragmentShader = SNOW_GLSL + GRAVEL_GLSL + JUNC_GLSL + sh.fragmentShader.replace("#include <map_fragment>",
-    "if (abs(vRd.x) > gravel_edge(vW, vRd.z)) discard;\nfloat sn = snow_at(vW);\ndiffuseColor.rgb = pow(mix(gravel(vW, vRd.x, vRd.z, vRd.y, junc_at(vW), sn), vec3(1.), " + SNOW_ROAD_LIGHTEN.toFixed(3) + " * sn), vec3(1. / 2.2));");
+    "if (abs(vRd.x) > mix(gravel_edge(vW, vRd.z), tarmac_edge(vW, vRd.z), vT)) discard;\nfloat sn = snow_at(vW), jn = junc_at(vW);\ndiffuseColor.rgb = pow(mix(mix(gravel(vW, vRd.x, vRd.z, vRd.y, jn, sn), tarmac(vW, vRd.x, vRd.z, vRd.y, jn, sn), vT), vec3(1.), " + SNOW_ROAD_LIGHTEN.toFixed(3) + " * sn), vec3(1. / 2.2));");
 };
 const road = new THREE.Mesh(new THREE.BufferGeometry(), roadMat);
 scene.add(road);
@@ -1126,7 +1170,7 @@ function rebuild3DTerrain() {
   for (let i = 0; i < pos.count; i++) pos.setY(i, heights[i]);
   pos.needsUpdate = true; terrainGeo.computeVertexNormals();
   paintCoverTint();
-  const p = [], rd = [], rc = [], idx = [], gi = (v, o) => Math.max(0, Math.min(G, Math.round((v - o) / GCELL)));
+  const p = [], rd = [], rt = [], rc = [], idx = [], gi = (v, o) => Math.max(0, Math.min(G, Math.round((v - o) / GCELL)));
   let along = 0, k = 0, prevIn = false;
   setJuncTex(juncs.filter(j => inWin(j.x, j.z, 20)).sort((a, b) => Math.hypot(a.x - view.x, a.z - view.z) - Math.hypot(b.x - view.x, b.z - view.z)));
   samples.forEach((s, i) => {
@@ -1136,6 +1180,7 @@ function rebuild3DTerrain() {
     const ax = s.x + nx * s.w, az = s.z + nz * s.w, bx = s.x - nx * s.w, bz = s.z - nz * s.w;
     p.push(ax, y, az, bx, y, bz);
     rd.push(s.w, along, s.w, -s.w, along, s.w); // across (m, + on the a side), along (m), half-width
+    rt.push(s.t, s.t);
     const L = lightAt(gi(s.z, T.z0) * (G + 1) + gi(s.x, T.x0));
     rc.push(L, L, L, L, L, L);
     if (prevIn && !s.first) idx.push(k - 2, k, k - 1, k - 1, k, k + 1);
@@ -1144,6 +1189,7 @@ function rebuild3DTerrain() {
   road.geometry.dispose(); road.geometry = new THREE.BufferGeometry();
   road.geometry.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
   road.geometry.setAttribute("rd", new THREE.Float32BufferAttribute(rd, 3));
+  road.geometry.setAttribute("rt", new THREE.Float32BufferAttribute(rt, 1));
   road.geometry.setAttribute("color", new THREE.Float32BufferAttribute(rc, 3));
   road.geometry.setIndex(idx); road.geometry.computeVertexNormals();
 }
