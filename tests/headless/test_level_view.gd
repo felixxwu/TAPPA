@@ -92,6 +92,9 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	m.pressed = true
 	map._input(m)
 	assert_true(map.visible and get_tree().paused, "M opens the map and pauses")
+	var here := Vector2((world.get_node("Car") as Node3D).global_position.x, (world.get_node("Car") as Node3D).global_position.z)
+	assert_eq(map.discovery.shown(here), 1.0, "the ground round the car is discovered")
+	assert_not_null(map._fog, "the rest of the map is drawn under fog")
 	assert_true(true in map._tarmac and false in map._tarmac, "the map splits the road where it turns from tarmac to gravel")
 	assert_eq(map._buildings.size(), 1, "the map draws the save's building")
 	assert_almost_eq(map.to_world(map.to_screen(Vector2(30, -20))), Vector2(30, -20), Vector2.ONE * 0.01)

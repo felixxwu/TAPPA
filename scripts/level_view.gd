@@ -196,6 +196,8 @@ func save_pose() -> void:
 	if _driving and is_instance_valid(_car):
 		var p := _car.position  # local: on leaving the level the car may already be out of the tree
 		Save.set_setting(SAVED_POSE_KEY, {"level": _save_path, "x": p.x, "z": p.z, "yaw": _car.rotation.y})
+		if map != null:
+			map.save_discovery()
 
 
 # The saved spot as an upright pose just above the ground, or `fallback` if it was saved on another level.

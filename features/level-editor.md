@@ -99,6 +99,17 @@ grid (`_cover_image`: sampled at `COVER_PX`², each type's tuft colour mixed in 
 Drag / WASD / arrows / left stick pan, wheel / +- / LB RB zoom; click (or Enter / A on the centre crosshair) teleports to the nearest of the save's
 teleport points (`nearest_teleport`, drawn as cyan diamonds; nowhere if the save has none), onto the road beside it (`LevelView.road_pose`), facing away from the dead end when that road has one at one end only (`LevelData.away_from_dead_end`), prefilling the streamer there before unpausing so the car doesn't fall through.
 
+**Map discovery** (`scripts/level_discovery.gd`, `LevelDiscovery`; tests `tests/headless/test_level_discovery.gd`): the map only
+shows ground the player has driven near. `LevelMap` keeps a byte grid over the level (`level_map_reveal_cell_m` cells, 0 hidden,
+255 shown) and every `REVEAL_TICK_S` while driving (and on opening the map) stamps a disc of `level_map_reveal_radius_m` round the car,
+fading over its last `level_map_reveal_feather_m` (`reveal_at_car`, skipped until the car has moved a cell). Everything under the
+roads, buildings and log piles is then covered by a fog texture, one pixel per cell (`LevelDiscovery.fog_image`, wrapped in a linear-filtered
+`CanvasTexture` so its edge is soft at any zoom), in the same colour as the ground off the level's edge. Teleport points and the car are drawn over
+the fog: **every teleport still works, discovered or not** (Felix, 2026-11-20: locking them to discovery comes later). The grid is saved as the
+`level_map_seen` setting (`LevelDiscovery.to_save`: level path, size, cell size, the grid deflated + base64) whenever `LevelView.save_pose` runs,
+if it has grown; a save from another level file, size or cell size is ignored. `tools/level_map_capture.tscn` walks the car along the road
+samples and photographs the map (`user://level_map_capture_*.png`).
+
 With **Settings → Dev → "Level instead of free roam"** on (or `GameConfig.dev_level_instead_of_free_roam`),
 `Scenes.change_to` sends the title's world entry to `level_view.tscn` instead of free roam. Flipping the toggle from inside
 either world (pause → Settings → Dev) saves and swaps to the other world at once (`SettingsMenu._toggle_dev_level`). That scene is
