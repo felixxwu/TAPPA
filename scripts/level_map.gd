@@ -1,7 +1,7 @@
 class_name LevelMap
 extends Control
 # Docs: features/level-editor.md — update in the same change as this file.
-# The level view's full-screen map (M): the road network over trees and buildings, pan / zoom, and teleport to a road.
+# The level view's full-screen map (M): the road network over trees and buildings, pan / zoom, and teleport to one of the save's teleport points.
 
 const IMAGE_PX := 4096
 const GROUND := Color(0.80, 0.78, 0.66)
@@ -11,6 +11,7 @@ const ROAD := Color(0.93, 0.55, 0.16)
 const TARMAC := Color(0.36, 0.37, 0.4)
 const PATCH := Color(0.72, 0.66, 0.55)
 const LOG_PILE := Color(0.55, 0.36, 0.2)
+const TELEPORT := Color(0.23, 0.82, 0.9)
 const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
 const COVER_TINT := 0.3   # how far the ground leans toward each cover type's colour
 const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show when zoomed out
@@ -83,11 +84,14 @@ func to_world(s: Vector2) -> Vector2:
 	return center + (s - size / 2.0) / zoom
 
 
-# The road point nearest a world spot.
-func snap_to_road(w: Vector2) -> Vector2:
-	var b := view._bake
-	var i := b.nearest_sample(w.x, w.y)
-	return Vector2(b.sx[i], b.sz[i]) if i >= 0 else w
+# The save's teleport point (`teleports`: [{x, z}]) nearest a world spot; INF when the save has none.
+func nearest_teleport(w: Vector2) -> Vector2:
+	var best := Vector2.INF
+	for t: Dictionary in view.level.get("teleports", []):
+		var p := Vector2(float(t["x"]), float(t["z"]))
+		if p.distance_squared_to(w) < best.distance_squared_to(w):
+			best = p
+	return best
 
 
 # Uploads the painted image and traces the road lines; the level view calls it behind the loading screen, since the upload alone stalls a frame for tens of ms.
@@ -209,13 +213,18 @@ func _draw() -> void:
 		draw_polyline(pts, ROAD_EDGE, 1.0)
 	for pile: Dictionary in view.level.get("logPiles", []):
 		draw_circle(to_screen(Vector2(float(pile["x"]), float(pile["z"]))), maxf(MIN_MARK_PX, 4.0 * zoom) / 2.0, LOG_PILE)
+	for t: Dictionary in view.level.get("teleports", []):
+		var tp := to_screen(Vector2(float(t["x"]), float(t["z"])))
+		draw_colored_polygon(PackedVector2Array([tp + Vector2(0, -8), tp + Vector2(8, 0), tp + Vector2(0, 8), tp + Vector2(-8, 0)]), TELEPORT)
 	var car := view.get_parent().get_node_or_null("Car") as Node3D
 	if car != null:
 		var p := to_screen(Vector2(car.global_position.x, car.global_position.z))
 		var f := Vector2(-car.global_basis.z.x, -car.global_basis.z.z).normalized() * 12.0
 		draw_colored_polygon(PackedVector2Array([p + f, p - f * 0.6 + f.orthogonal() * 0.6, p - f * 0.6 - f.orthogonal() * 0.6]), UITheme.RED)
 	var aim := get_local_mouse_position() if _mouse_inside() else size / 2.0
-	draw_arc(to_screen(snap_to_road(to_world(aim))), 8.0, 0.0, TAU, 24, UITheme.INK, 2.0)
+	var target := nearest_teleport(to_world(aim))
+	if target != Vector2.INF:
+		draw_arc(to_screen(target), 12.0, 0.0, TAU, 24, UITheme.INK, 2.0)
 	if not _mouse_inside():
 		draw_line(size / 2.0 - Vector2(10, 0), size / 2.0 + Vector2(10, 0), UITheme.INK, 2.0)
 		draw_line(size / 2.0 - Vector2(0, 10), size / 2.0 + Vector2(0, 10), UITheme.INK, 2.0)
@@ -256,7 +265,7 @@ func _input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT: _drag_from = event.position
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		if event.position.distance_to(_drag_from) < 6.0:
-			teleport(snap_to_road(to_world(event.position)))
+			teleport(nearest_teleport(to_world(event.position)))
 	elif event is InputEventPanGesture:  # a Mac trackpad's two-finger scroll
 		zoom_by(pow(1.1, -event.delta.y), event.position)
 	elif event is InputEventMagnifyGesture:
@@ -267,7 +276,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		queue_redraw()
 	elif event.is_action_pressed("ui_accept"):
-		teleport(snap_to_road(center))
+		teleport(nearest_teleport(center))
 	elif (event is InputEventKey and event.pressed and event.keycode in [KEY_EQUAL, KEY_KP_ADD]) \
 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_RIGHT_SHOULDER):
 		zoom_by(1.5, size / 2.0)
@@ -292,14 +301,15 @@ func _process(delta: float) -> void:
 		queue_redraw()
 
 
-# Puts the car on the road at `p`, loading the ground there before the game resumes so the car doesn't fall through.
+# Puts the car on the road nearest `p`, facing away from any dead end there, loading the ground there before the game resumes so the car doesn't fall through.
 func teleport(p: Vector2) -> void:
 	var car := view.get_parent().get_node_or_null("Car") as VehicleBody3D
-	if car == null or _busy:
+	if car == null or _busy or p == Vector2.INF:
 		return
 	_busy = true
 	visible = false
-	var pose := view.road_pose(p, -car.global_basis.z)
+	var facing := view._bake._roads().away_from_dead_end(p, -car.global_basis.z)
+	var pose := view.road_pose(p, facing)
 	if view._streamer != null:
 		var marker := Node3D.new()
 		view.add_child(marker)
@@ -310,7 +320,7 @@ func teleport(p: Vector2) -> void:
 		view._streamer.process_mode = PROCESS_MODE_INHERIT
 		view._streamer.focus = car
 		marker.queue_free()
-		pose = view.road_pose(p, -car.global_basis.z)  # the streamed ground's height
+		pose = view.road_pose(p, facing)  # the streamed ground's height
 	car.reset_to(pose)
 	get_tree().paused = false
 	_busy = false

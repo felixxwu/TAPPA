@@ -66,6 +66,7 @@ static func key_of(save_path: String) -> String:
 	(d as Dictionary).erase("coverKinds")
 	(d as Dictionary).erase("logPiles")
 	(d as Dictionary).erase("spectators")
+	(d as Dictionary).erase("teleports")
 	(d as Dictionary).erase("biomeRle")
 	return "%s/v%d" % [JSON.stringify(d).md5_text(), BAKE_VERSION]
 

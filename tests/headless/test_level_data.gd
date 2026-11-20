@@ -324,3 +324,11 @@ func test_the_road_and_ground_match_the_lab_fixture() -> void:
 		assert_almost_eq(data.junctions[k].z, float(j[2]), 0.01)
 	for row: Array in want["heights"]:
 		assert_almost_eq(data.ground(float(row[0]), float(row[1])), float(row[2]), 0.01, "ground at %s, %s" % [row[0], row[1]])
+
+
+func test_a_side_road_into_a_dead_end_faces_back_toward_its_junction() -> void:
+	var data := _built(_network())
+	var f := data.away_from_dead_end(Vector2(1.0, 30.0), Vector3(0.0, 0.0, 1.0))
+	assert_lt(f.normalized().z, -0.99, "turned away from the dead end at z = 60")
+	assert_lt(data.away_from_dead_end(Vector2(1.0, 30.0), Vector3(0.0, 0.0, -1.0)).normalized().z, -0.99, "already facing out stays so")
+	assert_eq(data.away_from_dead_end(Vector2(0.0, 201.0), Vector3(1.0, 0.0, 0.0)), Vector3(1.0, 0.0, 0.0), "a road dead at both ends keeps the facing")

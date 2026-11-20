@@ -320,6 +320,33 @@ func road_pose(p: Vector2, facing: Vector3, height := Callable()) -> Transform3D
 	return Transform3D(Basis.looking_at(dir, Vector3.UP), Vector3(q.x, h.call(q.x, q.y) + 1.0, q.y))
 
 
+# `facing`, unless the road at `p` runs into a dead end at one end only: then the way along it away from that end.
+func away_from_dead_end(p: Vector2, facing: Vector3) -> Vector3:
+	if sx.size() < 2:
+		return facing
+	var i := nearest_sample(p.x, p.y)
+	var first := i
+	while first > 0 and sc[first - 1] == sc[i]:
+		first -= 1
+	var last := i + 1
+	while last < sx.size() - 1 and sc[last + 1] == sc[i]:
+		last += 1
+	var dead_first := not _joined(first)
+	var dead_last := not _joined(last)
+	if dead_first == dead_last or Vector2(sx[first] - sx[last], sz[first] - sz[last]).length() <= 2.0 * JUNCTION_TOL:
+		return facing
+	var along := Vector3(sx[i + 1] - sx[i], 0.0, sz[i + 1] - sz[i])
+	return along if dead_first else -along
+
+
+# Whether another road passes within reach of sample `e`. Reads only the samples, so it works on a bake's roads, which carry no junctions.
+func _joined(e: int) -> bool:
+	for k in sx.size():
+		if sc[k] != sc[e] and Vector2(sx[k] - sx[e], sz[k] - sz[e]).length() <= 2.0 * JUNCTION_TOL:
+			return true
+	return false
+
+
 # (road weight, tarmac weight) under a wheel, as the drivetrain asks the terrain.
 func surface_at(x: float, z: float) -> Vector2:
 	var near := nearest(x, z)

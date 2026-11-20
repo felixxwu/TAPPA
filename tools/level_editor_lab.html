@@ -34,7 +34,7 @@
   <button id="random">🎲 Random</button>
   <button id="reset">Reset</button>
   <button id="undo" title="Ctrl/⌘ Z">Undo</button><button id="redo" title="Ctrl/⌘ Shift Z, Ctrl Y">Redo</button>
-  <label>Tool <select id="tool"><option value="pan">Pan</option><option value="tree">Trees</option><option value="road">Roads</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="patch">Gravel patch (G)</option><option value="biome">Biome</option></select></label>
+  <label>Tool <select id="tool"><option value="pan">Pan</option><option value="tree">Trees</option><option value="road">Roads</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="tele">Teleport (T)</option><option value="patch">Gravel patch (G)</option><option value="biome">Biome</option></select></label>
   <span id="biomeBar" hidden>
     <label>Biome <select id="biomeType"></select></label>
     <label>Brush <input id="biomeBrush" type="range" min="10" max="500" step="10" value="100"><span class="val" id="v_biomeBrush"></span></label>
@@ -195,6 +195,7 @@ function pack(l) {
     roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension), ...(n.tarmac && { tarmac: true }) }))) };
   delete out.road; delete out.trees;
   if (!out.spectators?.length) delete out.spectators;
+  if (out.teleports?.length) out.teleports = out.teleports.map(q => ({ x: r1(q.x), z: r1(q.z) })); else delete out.teleports;
   if (out.gravelPatches?.length) out.gravelPatches = out.gravelPatches.map(p => p.map(q => ({ x: r1(q.x), z: r1(q.z) }))); else delete out.gravelPatches;
   if (out.size === 600) delete out.size;
   if (l.heightmap) {
@@ -295,6 +296,7 @@ const COVER_DEFAULT = [
 const coverOverlay = document.createElement("canvas");
 const coverTool = () => $("tool").value === "cover";
 const specTool = () => $("tool").value === "spec";
+const teleTool = () => $("tool").value === "tele";
 const patchTool = () => $("tool").value === "patch";
 let coverRgbs = {};
 function coverPaintRect(c0, r0, c1, r1) {
@@ -697,6 +699,11 @@ function draw2D() {
     ctx.strokeText(g.n, sx, sz); ctx.fillText(g.n, sx, sz);
     if (on) { ctx.fillStyle = "#fc6"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx + r, sz, 6 * devicePixelRatio, 0, 7); ctx.fill(); ctx.stroke(); }
   });
+  if (show.teleports) (level.teleports ?? []).forEach((q, i) => {
+    const [sx, sz] = toScreen(q.x, q.z), on = sel?.type === "tele" && sel.i === i, r = 8 * devicePixelRatio;
+    ctx.fillStyle = on ? "#fc6" : "#3ad0e6"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(sx, sz - r); ctx.lineTo(sx + r, sz); ctx.lineTo(sx, sz + r); ctx.lineTo(sx - r, sz); ctx.closePath(); ctx.fill(); ctx.stroke();
+  });
   const vis = !show.trees ? [] : treesInView(vx0 - 10, vz0 - 10, vx1 + 10, vz1 + 10), stride = Math.max(1, Math.ceil(vis.length / TREE_DRAW_MAX));
   if (stride > 1) { // too many to draw one by one: an evenly thinned set of dots
     let last = "";
@@ -757,6 +764,7 @@ function hit(sx, sz) {
     return null;
   }
   if (sel?.type === "node" && level.roads[sel.c].length > 1) for (const h of handles(sel.c, sel.i)) if (near(h.x, h.z)) return { type: "handle", c: sel.c, i: sel.i, kind: h.kind };
+  if (show.teleports) { const ts = level.teleports ?? []; for (let i = ts.length - 1; i >= 0; i--) if (near(ts[i].x, ts[i].z)) return { type: "tele", i }; }
   const best = nodesNear(sx, sz)[0];
   if (best) return best;
   if (show.patches) { const ps = level.gravelPatches ?? []; for (let p = ps.length - 1; p >= 0; p--) for (let i = 0; i < ps[p].length; i++) if (near(ps[p][i].x, ps[p][i].z)) return { type: "pv", p, i }; }
@@ -792,6 +800,7 @@ cv.onpointermove = e => {
   if (!it) { view.x = drag.vx - dx / view.zoom; view.z = drag.vz - dz / view.zoom; changed(); return; }
   if (it.type === "tree") { Object.assign(level.trees[it.i], { x, z }); changed(); return; }
   if (it.type === "spec") { Object.assign(level.spectators[it.i], { x, z }); syncPopup(); changed(); return; }
+  if (it.type === "tele") { Object.assign(level.teleports[it.i], { x, z }); changed(); return; }
   if (it.type === "pv") { Object.assign(level.gravelPatches[it.p][it.i], { x, z }); changed(true); return; }
   if (it.type === "specr") { const g = level.spectators[it.i]; g.r = Math.max(1, Math.round(Math.hypot(x - g.x, z - g.z) * 2) / 2); syncPopup(); changed(); return; }
   const n = level.roads[it.c][it.i];
@@ -814,6 +823,7 @@ cv.onpointerup = e => {
     else if ($("tool").value === "road") extendRoad(x, z);
     else if (patchTool()) { const s = 6, q = (dx, dz) => ({ x: Math.round((x + dx) * 10) / 10, z: Math.round((z + dz) * 10) / 10 });
       (level.gravelPatches ??= []).push([q(-s, -s), q(s, -s), q(s, s), q(-s, s)]); select({ type: "pv", p: level.gravelPatches.length - 1, i: 0 }); changed(true); save(); }
+    else if (teleTool()) { (level.teleports ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 }); select({ type: "tele", i: level.teleports.length - 1 }); changed(); save(); }
     else if (specTool()) { (level.spectators ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r: 8, n: 10 }); select({ type: "spec", i: level.spectators.length - 1 }); changed(); save(); }
     else if (sel) select(null); // a click on empty ground first just clears the selection
     else if ($("tool").value === "tree") { level.trees.push({ x, z, rot: Math.random() * 360, sx: 1, sy: 1, kind: $("kind").value }); changed(); save(); }
@@ -888,6 +898,7 @@ function removePatch() { level.gravelPatches.splice(sel.p, 1); select(null); cha
 function removeSelected() {
   if (sel.type === "pv") { const p = level.gravelPatches[sel.p]; p.splice(sel.i, 1); if (p.length < 3) return removePatch(); select(null); changed(true); save(); return; }
   if (sel.type === "spec") { level.spectators.splice(sel.i, 1); select(null); changed(); save(); return; }
+  if (sel.type === "tele") { level.teleports.splice(sel.i, 1); select(null); changed(); save(); return; }
   const isNode = sel.type === "node";
   if (isNode) { const road = level.roads[sel.c]; road.splice(sel.i, 1); if (!road.length) level.roads.splice(sel.c, 1); } else level.trees.splice(sel.i, 1);
   select(null); changed(isNode); save();
@@ -927,7 +938,7 @@ function clearRoad() {
   pop.querySelector("[data-act=clear]").textContent = `Cleared ${before - level.trees.length} trees, ${cells} m² cover`;
   changed(false); save();
 }
-const selObj = () => sel.type === "pv" ? level.gravelPatches[sel.p][sel.i] : sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
+const selObj = () => sel.type === "tele" ? level.teleports[sel.i] : sel.type === "pv" ? level.gravelPatches[sel.p][sel.i] : sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
 
 // --- the details pop-up for the selected tree or road node --------------------------------------
 const pop = $("pop");
@@ -937,6 +948,8 @@ function select(s) {
   if (!sel) { pop.style.display = "none"; mapDirty = true; return; }
   pop.innerHTML = sel.type === "pv"
     ? `<b>Gravel patch ${sel.p} corner ${sel.i}</b><span>Drag corners; double-click an edge to add one</span><button data-act="del">Delete corner</button><button data-act="delpatch">Delete whole patch (shift+Delete)</button>`
+    : sel.type === "tele"
+    ? `<b>Teleport ${sel.i}</b><span>Drag to move; the game snaps the car to the nearest road</span><button data-act="del">Delete teleport</button>`
     : sel.type === "spec"
     ? `<b>Spectators ${sel.i}</b>` + field("r", "Radius", 0.5, "m") + field("n", "People", 1) + `<button data-act="del">Delete group</button>`
     : sel.type === "tree"
@@ -980,7 +993,7 @@ function edit(k, v) {
 function syncPopup(skip) {
   if (!sel) return;
   const o = selObj();
-  const vals = sel.type === "pv" ? {} : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+  const vals = sel.type === "pv" || sel.type === "tele" ? {} : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
                                    : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
   for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
 }
@@ -1001,10 +1014,10 @@ $("loadBtn").onclick = () => $("loadFile").click();
 $("loadFile").onchange = async e => { try { level = await unpackAsync(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
 $("tool").onchange = () => { $("coverBar").hidden = !coverTool(); $("biomeBar").hidden = !biomeTool(); if (paintTool() || specTool()) select(null); mapDirty = true; };
 // The map legend: each layer can be hidden; hidden roads and trees can't be clicked either.
-const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], roads: ["Roads", "#b9ad93"], patches: ["Gravel patches", "#c9bc9f"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
+const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], teleports: ["Teleports", "#3ad0e6"], roads: ["Roads", "#b9ad93"], patches: ["Gravel patches", "#c9bc9f"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
 const show = Object.fromEntries(Object.keys(LAYERS).map(k => [k, true]));
 $("legend").innerHTML = Object.entries(LAYERS).map(([k, [name, col]]) => `<label><input type="checkbox" data-layer="${k}" checked><i style="background:${col}"></i>${name}</label>`).join("");
-$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : sel.type === "pv" ? "patches" : "roads"]) select(null); mapDirty = true; };
+$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : sel.type === "tele" ? "teleports" : sel.type === "pv" ? "patches" : "roads"]) select(null); mapDirty = true; };
 $("brush").oninput = () => { $("v_brush").textContent = $("brush").value + " m"; mapDirty = true; };
 $("v_brush").textContent = $("brush").value + " m";
 $("coverMode").onchange = () => mapDirty = true;
@@ -1024,6 +1037,7 @@ $("redo").onclick = () => stepHistory(1);
 addEventListener("keydown", e => {
   if (/INPUT|SELECT/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === "KeyP") { $("tool").value = specTool() ? "pan" : "spec"; $("tool").onchange(); }
+  if (e.code === "KeyT") { $("tool").value = teleTool() ? "pan" : "tele"; $("tool").onchange(); }
   if (e.code === "KeyG") { $("tool").value = patchTool() ? "pan" : "patch"; $("tool").onchange(); }
   if (e.key === "[" || e.key === "]") if (specTool() && sel?.type === "spec") { const g = selObj(); g.r = Math.max(1, g.r + (e.key === "]" ? 1 : -1)); syncPopup(); changed(); save(); }
   if (e.code === "KeyC") { $("tool").value = coverTool() ? "pan" : "cover"; $("tool").onchange(); }

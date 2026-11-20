@@ -76,6 +76,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var lv := _level()
 	lv["road"][0]["tarmac"] = true
 	lv["buildings"] = [{"x": 20.0, "z": 30.0, "rot": 0.0, "L": 10.0, "W": 6.0}]
+	lv["teleports"] = [{"x": 10.0, "z": 3.0}, {"x": 60.0, "z": 4.0}]
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(JSON.stringify(lv))
 	f.close()
@@ -94,10 +95,10 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(true in map._tarmac and false in map._tarmac, "the map splits the road where it turns from tarmac to gravel")
 	assert_eq(map._buildings.size(), 1, "the map draws the save's building")
 	assert_almost_eq(map.to_world(map.to_screen(Vector2(30, -20))), Vector2(30, -20), Vector2.ONE * 0.01)
-	assert_almost_eq(map.snap_to_road(Vector2(40, 25)).y, 0.0, 0.5, "a spot snaps onto the road")
-	await map.teleport(map.snap_to_road(Vector2(60, 25)))
+	assert_eq(map.nearest_teleport(Vector2(45, 25)), Vector2(60, 4), "a click picks the nearest teleport point, not the nearest road")
+	await map.teleport(map.nearest_teleport(Vector2(45, 25)))
 	var car := world.get_node("Car") as Node3D
-	assert_almost_eq(Vector2(car.global_position.x, car.global_position.z), Vector2(60, 0), Vector2.ONE * 1.0, "teleported onto the road")
+	assert_almost_eq(Vector2(car.global_position.x, car.global_position.z), Vector2(60, 0), Vector2.ONE * 1.0, "teleported onto the road beside the point")
 	assert_false(map.visible or get_tree().paused, "teleporting closes the map and resumes")
 	var start_car := Config.data.dev_level_car_id
 	var pause: PauseMenu = world.get_node("PauseMenu")
