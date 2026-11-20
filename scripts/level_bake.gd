@@ -14,7 +14,8 @@ const TREE_HEIGHT := {       # species heights, as in the lab's KINDS table; wid
 	"tree.png": 9.375, "tree-greece.webp": 4.0, "tree-taiga.webp": 22.5, "tree-snow.webp": 12.9,
 	"tree-snow-laden.webp": 12.4, "levels/trees/sitka_spruce.png": 22.0, "levels/trees/young_spruce.png": 10.0,
 	"levels/trees/birch.png": 9.0, "levels/trees/rowan.png": 5.0, "levels/trees/alder.png": 9.0,
-	"levels/trees/scrub.png": 1.4,
+	"levels/trees/scrub.png": 1.4, "levels/trees/snow_laden_spruce.png": 18.0, "levels/trees/snowy_young_spruce.png": 7.0,
+	"levels/trees/dusted_spruce.png": 20.0, "levels/trees/snow_bowed_birch.png": 6.0,
 }
 
 @export var source_key := ""
@@ -54,7 +55,7 @@ var _rows := {}  # a few recently decoded rows, since the trees ask for two neig
 var _texture: ImageTexture
 
 
-# The ground cover recipes (coverKinds) aren't baked, so retuning a bush or grass doesn't force a rebake.
+# The ground cover recipes (coverKinds) and the biome mask aren't baked, so retuning a bush or grass or repainting snow doesn't force a rebake.
 static func key_of(save_path: String) -> String:
 	var d: Variant = JSON.parse_string(FileAccess.get_file_as_string(save_path))
 	if not d is Dictionary:
@@ -62,6 +63,7 @@ static func key_of(save_path: String) -> String:
 	(d as Dictionary).erase("coverKinds")
 	(d as Dictionary).erase("logPiles")
 	(d as Dictionary).erase("spectators")
+	(d as Dictionary).erase("biomeRle")
 	return "%s/v%d" % [JSON.stringify(d).md5_text(), BAKE_VERSION]
 
 

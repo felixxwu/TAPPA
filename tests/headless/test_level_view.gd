@@ -4,14 +4,19 @@ extends GutTest
 # Every level here is synthetic; nothing reads the shipped Hafren save.
 
 var _toggle: bool
+var _handling: Array
+const _HANDLING := ["deep_snow_drag", "deep_snow_depth_m", "grass_grip", "gravel_grip", "tarmac_grip"]
 
 
 func before_each() -> void:
 	_toggle = Config.data.dev_level_instead_of_free_roam
+	_handling = _HANDLING.map(func(k: String) -> Variant: return Config.data.get(k))
 
 
 func after_each() -> void:
 	Config.data.dev_level_instead_of_free_roam = _toggle
+	for i in _HANDLING.size():
+		Config.data.set(_HANDLING[i], _handling[i])
 
 
 # A straight road along x through the middle of a flat square, with a hill grid that's flat at `ground`.
@@ -182,3 +187,32 @@ func test_log_piles_sit_clear_of_the_road_with_ends_facing_it() -> void:
 	assert_gt(absf(near.position.z) - half_length, 3.0, "a pile placed on the verge is pushed off the road, near end included")
 	assert_almost_eq(absf(near.basis.z.z), 1.0, 0.01, "its logs point at the road, sawn ends facing it")
 	assert_almost_eq((view.get_node("LogPile1") as Node3D).position.z, -30.0, 0.01, "a pile already clear stays put")
+
+
+func test_snow_handling_follows_the_biome_under_the_car() -> void:
+	var level := _level()
+	level["biomeRle"] = "AYgOAIgO"  # north half (z < 0) snow, south half forest
+	var view := _built(level)
+	var car := VehicleBody3D.new()
+	car.freeze = true
+	add_child_autofree(car)
+	view._car = car
+	car.position = Vector3(0.0, 0.0, -200.0)
+	view._physics_process(0.0)
+	assert_almost_eq(Config.data.deep_snow_drag, Config.data.level_snow_drag, 0.001, "full drag in the snow")
+	assert_almost_eq(Config.data.gravel_grip, Config.data.snow_gravel_grip, 0.001, "snow grip on the road")
+	assert_true(Config.data.ground_is_snow(), "snow tyres count as on snow")
+	car.position = Vector3(0.0, 0.0, 200.0)
+	view._physics_process(0.0)
+	var base := GameConfig.new()
+	assert_almost_eq(Config.data.deep_snow_drag, 0.0, 0.001, "no drag in the forest")
+	assert_almost_eq(Config.data.gravel_grip, base.gravel_grip, 0.001, "normal grip in the forest")
+	assert_false(Config.data.ground_is_snow())
+
+
+func test_snow_dust_is_lightened_like_the_road_and_untouched_off_the_snow() -> void:
+	var base := Color(0.4, 0.35, 0.3, 0.8)
+	assert_eq(LevelView.snow_dust(base, 0.0, 0.5), base, "no snow, no change")
+	var c := LevelView.snow_dust(base, 1.0, 0.5)
+	assert_gt(c.r, base.r, "lighter on snow")
+	assert_almost_eq(c.a, base.a, 0.001, "same opacity")

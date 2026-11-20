@@ -5,7 +5,9 @@ from PIL import Image
 LOW_M = 3.0
 HEIGHTS = {"tree.png": 9.375, "tree-greece.webp": 4.0, "tree-taiga.webp": 22.5, "tree-snow.webp": 12.9,
            "tree-snow-laden.webp": 12.4, "levels/trees/sitka_spruce.png": 22, "levels/trees/young_spruce.png": 10,
-           "levels/trees/birch.png": 9, "levels/trees/rowan.png": 5, "levels/trees/alder.png": 9, "levels/trees/scrub.png": 1.4}
+           "levels/trees/birch.png": 9, "levels/trees/rowan.png": 5, "levels/trees/alder.png": 9, "levels/trees/scrub.png": 1.4,
+           "levels/trees/snow_laden_spruce.png": 18, "levels/trees/snowy_young_spruce.png": 7,
+           "levels/trees/dusted_spruce.png": 20, "levels/trees/snow_bowed_birch.png": 6}
 
 for kind, h0 in HEIGHTS.items():
     im = Image.open(("tools/" if "/" in kind else "textures/") + kind).getchannel("A")

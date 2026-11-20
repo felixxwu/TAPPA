@@ -3171,6 +3171,10 @@ func spectator_params() -> Dictionary:
 @export var level_ao_log_reach_m := 1.5
 ## How much darker the ground is under bush cover.
 @export var level_ao_bush_ground := 0.25
+## The level view's deep-snow drag in its snow biome (free roam's is snow_deep_drag).
+@export var level_snow_drag := 400.0
+## How far the level view's gravel road is lightened toward white in its snow biome (0 none, 1 white).
+@export var level_snow_road_lighten := 0.45
 ## How dark the foot of a tree, bush, log pile and building is, and how far up (tree: fraction of its height; others: metres) the darkening fades out.
 @export var level_ao_tree_base := 0.45
 @export var level_ao_tree_base_height := 0.35

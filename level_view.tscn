@@ -10,6 +10,8 @@
 
 [ext_resource type="Texture2D" path="res://textures/gravel-forest.png" id="7_gravel"]
 
+[ext_resource type="Texture2D" path="res://textures/snow-ground.jpg" id="7_snow"]
+
 [ext_resource type="Texture2D" path="res://textures/sky_field.png" id="8_sky"]
 
 [ext_resource type="Script" path="res://scripts/hud.gd" id="20_hud"]
@@ -69,6 +71,7 @@ render_priority = 0
 shader = ExtResource("5_shader")
 shader_parameter/albedo_texture = ExtResource("6_grass")
 shader_parameter/gravel_texture = ExtResource("7_gravel")
+shader_parameter/snow_texture = ExtResource("7_snow")
 
 [sub_resource type="ShaderMaterial" id="mat_lines"]
 shader = ExtResource("27_lines")

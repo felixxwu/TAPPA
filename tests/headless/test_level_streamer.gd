@@ -14,7 +14,8 @@ func before_all() -> void:
 	hm.resize(101 * 101)
 	hm.fill(0.0)
 	_data = LevelData.new()
-	_data.load_save({"size": SIZE, "heightmap": hm, "road": [
+	# biomeRle: the north half (z < 0) snow, the south half forest, on the 20 x 20 grid of 10 m cells
+	_data.load_save({"size": SIZE, "heightmap": hm, "biomeRle": "AcgBAMgB", "road": [
 		{"x": -80.0, "z": 0.0, "w": 3.0, "m": null, "tension": 1.0}, {"x": 80.0, "z": 0.0, "w": 3.0, "m": null, "tension": 1.0}]})
 	_bake = LevelBake.bake(_data)
 	_streamer = LevelStreamer.new()
@@ -62,7 +63,28 @@ func test_an_edge_wall_surrounds_the_square() -> void:
 func test_vertex_alpha_carries_how_upright_the_ground_is() -> void:
 	var job := TerrainStreamer.ChunkJob.new()
 	job.colors = PackedColorArray([Color(), Color()])
+	job.uvs = PackedVector2Array([Vector2(), Vector2()])
 	_streamer._pack_vertex(job, 0, 0.0, 0.0, Vector3.UP)
 	_streamer._pack_vertex(job, 1, 0.0, 0.0, Vector3(1.0, 1.0, 0.0).normalized())
 	assert_almost_eq(job.colors[0].a, 1.0, 0.001)
 	assert_lt(job.colors[1].a, job.colors[0].a, "a slope packs a smaller alpha, so the shader can draw it as rock")
+
+
+func test_snow_follows_the_biome_mask_and_blends_across_its_edge() -> void:
+	assert_almost_eq(_streamer.snow_at(0.0, -50.0), 1.0, 0.001)
+	assert_almost_eq(_streamer.snow_at(0.0, 50.0), 0.0, 0.001)
+	var edge := _streamer.snow_at(0.0, 0.0)
+	assert_true(edge > 0.0 and edge < 1.0, "the 10 m cells blend rather than step")
+
+
+func test_snowy_ground_is_drawn_white_and_raised_off_the_road_only() -> void:
+	var job := TerrainStreamer.ChunkJob.new()
+	job.colors = PackedColorArray([Color(), Color(), Color()])
+	job.uvs = PackedVector2Array([Vector2(), Vector2(), Vector2()])
+	_streamer._pack_vertex(job, 0, 0.0, -50.0, Vector3.UP)
+	_streamer._pack_vertex(job, 1, 0.0, 0.0, Vector3.UP)
+	_streamer._pack_vertex(job, 2, 0.0, 50.0, Vector3.UP)
+	assert_almost_eq(job.uvs[0].x, 1.0, 0.001, "snow off the road")
+	assert_gt(job.uvs[0].y, 0.0, "snow off the road is drawn raised")
+	assert_almost_eq(job.uvs[1].y, 0.0, 0.001, "the road itself is never raised")
+	assert_eq(job.uvs[2], Vector2.ZERO, "forest is neither white nor raised")

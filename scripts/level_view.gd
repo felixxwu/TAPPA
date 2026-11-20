@@ -29,6 +29,8 @@ var shop: RestStopPage
 var _car: VehicleBody3D
 var _particles: WeatherField
 var _recovery: RoadRecovery
+var _dust: DustPuffs
+var _dust_base: Color  # the gravel's dust colour outside the snow
 var _pause: Node
 var map: LevelMap
 var off_road_label: Label
@@ -190,6 +192,8 @@ func _add_effects(car: VehicleBody3D) -> TireMarks:
 	get_parent().add_child(dust)
 	dust.setup(car)
 	dust.apply_region_look(look)
+	_dust = dust
+	_dust_base = dust.dust_color()
 	var smoke := EngineSmoke.new()
 	smoke.name = "EngineSmoke"
 	get_parent().add_child(smoke)
@@ -279,7 +283,36 @@ func _warm_up(car: VehicleBody3D) -> void:
 		cover.finish()
 
 
+static var _base: GameConfig  # the untouched grip values the snow blends away from
+
+
+# The snow biome's handling follows the ground under the car, as free roam's snow ring does (BiomeDirector.apply_handling):
+# snow grip, deep-snow drag (car.gd feathers it per wheel off the road), and the snow side of the tyre compound rule.
+func _physics_process(_dt: float) -> void:
+	if _car != null and _streamer != null:
+		var snow := _streamer.snow_at(_car.global_position.x, _car.global_position.z)
+		set_snow(Config.data, snow)
+		if _dust != null:
+			_dust.apply_region_look({"dust_color": snow_dust(_dust_base, snow, Config.data.level_snow_road_lighten)})
+
+
+# The dust off the snow road, lightened toward white as level_ground.gdshader lightens the road under it.
+static func snow_dust(base: Color, snow: float, lighten: float) -> Color:
+	return base.lerp(Color(1.0, 1.0, 1.0, base.a), lighten * snow)
+
+
+static func set_snow(cfg: GameConfig, snow: float) -> void:
+	if _base == null:
+		_base = GameConfig.new()
+	cfg.grass_grip = lerpf(_base.grass_grip, cfg.snow_grass_grip, snow)
+	cfg.gravel_grip = lerpf(_base.gravel_grip, cfg.snow_gravel_grip, snow)
+	cfg.tarmac_grip = lerpf(_base.tarmac_grip, cfg.snow_tarmac_grip, snow)
+	cfg.deep_snow_drag = cfg.level_snow_drag * snow
+	cfg.deep_snow_depth_m = cfg.snow_visual_depth_m if snow >= 0.5 else 0.0
+
+
 func _exit_tree() -> void:
+	set_snow(Config.data, 0.0)
 	HeadlightCone.reset()
 	WindSway.reset()
 	Config.data.weather = WeatherLibrary.DEFAULT_ID

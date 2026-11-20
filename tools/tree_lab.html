@@ -77,6 +77,10 @@ const PARAMS = [
   ["leafStart", "Leaves start along twig", 0, 1, 0.3, 0.01],
   ["leafTilt", "Leaf droop", -1, 1, 0.2, 0.01],
   ["leafVar", "Leaf colour variation", 0, 0.5, 0.12, 0.01],
+  ["Snow"],
+  ["snow", "Snowy leaf share", 0, 1, 0, 0.01],
+  ["snowPads", "Snow clumps per twig", 0, 12, 0, 1],
+  ["snowSize", "Snow clump size (m)", 0.05, 1.5, 0.5, 0.01],
 ];
 const SHAPES = { conical: t => 1 - 0.8 * t, spherical: t => 0.25 + 0.75 * Math.sin(Math.PI * t),
   hemispherical: t => 0.2 + 0.8 * Math.sqrt(1 - t * t),
@@ -95,6 +99,10 @@ const PRESETS = {
   "Rowan sapling": { height: 5, radius: 0.13, flare: 0.4, taper: 0.2, bare: 0.35, levels: 4, trunkKids: 9, kids: 5, angle: 45, subAngle: 38, angleJitter: 18, lenRatio: 0.65, radRatio: 0.55, kidStart: 0.25, gnarl: 0.3, gravity: 0.1, segments: 8, leafCount: 42, leafSize: 0.3, leafAspect: 1.5, leafShape: "oval", leafVar: 0.14, shape: "spherical", leaf: "#7cbb35", bark: "#5a5048" },
   "Alder": { height: 9, radius: 0.28, flare: 0.8, taper: 0.2, bare: 0.25, levels: 4, trunkKids: 12, kids: 5, angle: 42, subAngle: 38, angleJitter: 15, lenRatio: 0.62, radRatio: 0.55, kidStart: 0.3, gnarl: 0.22, gravity: 0.1, segments: 8, leafCount: 45, leafSize: 0.38, leafAspect: 1.2, leafShape: "round", leafVar: 0.12, shape: "spherical", leaf: "#5f9a2e", bark: "#4e4540" },
   "Roadside scrub": { height: 1.4, radius: 0.08, flare: 0.5, taper: 0.3, bare: 0.02, levels: 4, trunkKids: 12, kids: 4, angle: 60, subAngle: 45, angleJitter: 25, lenRatio: 0.7, radRatio: 0.5, kidStart: 0.1, gnarl: 0.4, gravity: 0.15, segments: 6, leafCount: 18, leafSize: 0.16, leafAspect: 1.2, leafShape: "lobed", leafVar: 0.15, shape: "hemispherical", leaf: "#5f9a2a", bark: "#4e4237" },
+  "Snow-laden spruce": { height: 18, radius: 0.32, flare: 0.6, taper: 0.03, bare: 0.06, levels: 3, trunkKids: 95, kids: 6, angle: 95, subAngle: 50, angleJitter: 12, lenRatio: 0.26, radRatio: 0.3, kidStart: 0.05, gnarl: 0.08, gravity: -0.7, segments: 6, radial: 6, leafCount: 40, leafSize: 0.55, leafAspect: 2.2, leafShape: "needles", leafStart: 0, leafTilt: 0.35, leafVar: 0.06, shape: "conical", leaf: "#1c2a22", bark: "#3e342e", snow: 0.35, snowPads: 5, snowSize: 0.75 },
+  "Snowy young spruce": { height: 7, radius: 0.16, flare: 0.5, taper: 0.04, bare: 0.02, levels: 3, trunkKids: 50, kids: 6, angle: 95, subAngle: 50, angleJitter: 12, lenRatio: 0.42, radRatio: 0.32, kidStart: 0.05, gnarl: 0.08, gravity: -0.6, segments: 6, radial: 6, leafCount: 26, leafSize: 0.4, leafAspect: 2.2, leafShape: "needles", leafStart: 0, leafTilt: 0.3, leafVar: 0.07, shape: "conical", leaf: "#21302a", bark: "#3e342e", snow: 0.45, snowPads: 6, snowSize: 0.6 },
+  "Dusted spruce (far)": { height: 20, radius: 0.33, flare: 0.6, taper: 0.03, bare: 0.08, levels: 3, trunkKids: 95, kids: 6, angle: 95, subAngle: 50, angleJitter: 10, lenRatio: 0.26, radRatio: 0.3, kidStart: 0.05, gnarl: 0.06, gravity: -0.45, segments: 6, radial: 6, leafCount: 38, leafSize: 0.45, leafAspect: 2.2, leafShape: "needles", leafStart: 0, leafTilt: 0.3, leafVar: 0.06, shape: "conical", leaf: "#1b2620", bark: "#3e342e", snow: 0.15, snowPads: 2, snowSize: 0.5 },
+  "Snow-bowed birch": { height: 6, radius: 0.1, flare: 0.3, taper: 0.08, bare: 0.25, levels: 4, trunkKids: 14, kids: 6, angle: 45, subAngle: 35, angleJitter: 15, lenRatio: 0.6, radRatio: 0.42, kidStart: 0.2, gnarl: 0.2, gravity: -1.1, segments: 10, leafCount: 0, shape: "flame", bark: "#4a423c", snowPads: 6, snowSize: 0.14 },
   "Dead snag": { height: 7, radius: 0.3, flare: 1, taper: 0.1, bare: 0.25, levels: 3, trunkKids: 9, kids: 3, angle: 50, subAngle: 45, angleJitter: 25, lenRatio: 0.45, radRatio: 0.5, kidStart: 0.2, gnarl: 0.6, gravity: 0.15, segments: 8, leafCount: 0, shape: "conical", bark: "#6b6258" },
 };
 
@@ -189,7 +197,16 @@ function generate(seed) {
       leaves.push({ p: f.p.addScaledVector(side, f.r), dir, spin: rs() * Math.PI, shade: rs() });
     }
   }
-  return { branches, leaves };
+  // Snow lies in flat clumps on top of the twigs, which is what makes a laden tree read white from the side.
+  const pads = [];
+  if (S.snowPads > 0) for (const { at } of twigs) for (let k = 0; k < S.snowPads; k++) {
+    const f = at(0.1 + 0.85 * rnd()), dir = V(f.t.x, 0, f.t.z);
+    if (dir.lengthSq() < 1e-4) dir.set(rs(), 0, rs());
+    dir.normalize().applyAxisAngle(UP, rs() * 0.6);
+    const L = S.snowSize * (0.6 + 0.6 * rnd());
+    pads.push({ p: f.p.addScaledVector(UP, f.r + L * 0.1), yaw: Math.atan2(dir.x, dir.z), L });
+  }
+  return { branches, leaves, pads };
 }
 
 // --- meshes -----------------------------------------------------------------------------
@@ -217,6 +234,19 @@ function barkGeometry(branches) {
   g.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
   g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
+  return g;
+}
+
+// Each snow clump is a squashed, flat-shaded icosahedron stretched along its twig.
+function snowGeometry(pads) {
+  const ico = new THREE.IcosahedronGeometry(0.5, 0).toNonIndexed().attributes.position, pos = [], m = new THREE.Matrix4(), v = V();
+  for (const pd of pads) {
+    m.compose(pd.p, new THREE.Quaternion().setFromAxisAngle(UP, pd.yaw), V(pd.L * 0.7, pd.L * 0.5, pd.L));
+    for (let i = 0; i < ico.count; i++) { v.fromBufferAttribute(ico, i).applyMatrix4(m); pos.push(v.x, v.y, v.z); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
   return g;
 }
 
@@ -304,6 +334,7 @@ const ground = new THREE.Mesh(new THREE.CircleGeometry(80, 64).rotateX(-Math.PI 
 ground.receiveShadow = true; scene.add(ground);
 
 const barkMat = new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.95 });
+const snowMat = new THREE.MeshLambertMaterial({ color: new THREE.Color(0xeef3f8).convertSRGBToLinear() });
 const leafMats = {};
 function leafMat(kind) {
   if (!leafMats[kind]) {
@@ -365,7 +396,7 @@ function build() {
   pending = false;
   const t0 = performance.now();
   for (const m of [...tree.children]) { m.geometry.dispose(); tree.remove(m); }
-  const { branches, leaves } = generate(+$("seed").value || 0);
+  const { branches, leaves, pads } = generate(+$("seed").value || 0);
   barkMat.color.set(state.bark).convertSRGBToLinear();
   const bark = new THREE.Mesh(barkGeometry(branches), barkMat);
   bark.castShadow = bark.receiveShadow = true; bark.name = "bark";
@@ -376,8 +407,13 @@ function build() {
     lmesh.customDepthMaterial = lm.depth; lmesh.castShadow = lmesh.receiveShadow = true; lmesh.name = "leaves";
     tree.add(lmesh); leafTris = leaves.length * 2;
   }
+  if (pads.length) {
+    const smesh = new THREE.Mesh(snowGeometry(pads), snowMat);
+    smesh.castShadow = smesh.receiveShadow = true; smesh.name = "snow";
+    tree.add(smesh); leafTris += pads.length * 20;
+  }
   const box = new THREE.Box3().setFromObject(tree), size = box.getSize(V());
-  if (exporting?.snow) paintSnow(exporting.snow);
+  if (state.snow) paintSnow(state.snow);
   const imp = buildImpostor();
   if (fitNext) {
     fitNext = false;
@@ -475,8 +511,8 @@ function captureFrame(rt, i, n, W, H) {
 function exportGameTrees(res) {
   $("spriteCount").value = 6; $("showImpostor").checked = true;
   for (const t of GAME_TREES) {
-    exporting = { file: t.file, snow: t.snow || 0, res: Math.round(res * (t.res || 1)) };
-    defaults(); Object.assign(state, t.params); $("seed").value = t.seed; build();
+    exporting = { file: t.file, res: Math.round(res * (t.res || 1)) };
+    defaults(); Object.assign(state, t.params, { snow: t.snow || 0 }); $("seed").value = t.seed; build();
   }
   exporting = null;
   const pre = document.createElement("pre"); pre.id = "gameTrees";

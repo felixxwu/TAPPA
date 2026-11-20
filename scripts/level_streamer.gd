@@ -5,6 +5,8 @@ extends TerrainStreamer
 const SUN := Vector3(-1.0, 1.4, 0.6)
 const WALL_THICKNESS_M := 10.0
 const WALL_HEIGHT_M := 400.0
+const BIOME_CELL := 10.0  # metres per biome mask cell (BIOME_CELL in tools/level_editor_lab.html)
+const BIOME_SNOW := 1
 
 var data: LevelData
 var bake: LevelBake
@@ -13,6 +15,8 @@ var cover: GroundCover
 var _cover := PackedByteArray()
 var _cover_tints := {}
 var _bush_ids := {}
+var _biome := PackedByteArray()
+var _biome_n := 0
 var _sun_dir := SUN.normalized()
 
 
@@ -41,6 +45,12 @@ func setup(p_data: LevelData, p_bake: LevelBake, p_material: Material) -> void:
 	_cover = GroundCover.decode_cover(data.level)
 	_cover_tints = GroundCover.tints(data.level.get("coverKinds", {}))
 	_bush_ids = GroundCover.bush_ids(data.level.get("coverKinds", {}))
+	var biome: Variant = data.level.get("biomeRle")
+	if biome is String:
+		_biome_n = ceili(bake.size / BIOME_CELL)
+		_biome = GroundCover.rle_decode(Marshalls.base64_to_raw(biome), _biome_n * _biome_n)
+	(p_material as ShaderMaterial).set_shader_parameter("snow_depth_m", Config.data.snow_visual_depth_m)
+	(p_material as ShaderMaterial).set_shader_parameter("snow_road_lighten", Config.data.level_snow_road_lighten)
 	bake.apply_to(p_material as ShaderMaterial)
 	cover = GroundCover.new()
 	cover.name = "Cover"
@@ -117,9 +127,33 @@ func spawn_pose() -> Transform3D:
 	return bake.spawn_pose(height_at)
 
 
-# Sun shading and the cover's ground tint go into COLOR.rgb, the ground's uprightness (normal.y) into COLOR.a for the rock blend; the road and grass boost are painted per pixel from the bake's textures.
+# How snowy the ground is at (x, z), from 0 (forest) to 1 (snow), blended between the centres of the save's biome cells.
+func snow_at(x: float, z: float) -> float:
+	if _biome_n < 2:
+		return 0.0
+	var fc := clampf((x + bake.size / 2) / BIOME_CELL - 0.5, 0.0, _biome_n - 1.0)
+	var fr := clampf((z + bake.size / 2) / BIOME_CELL - 0.5, 0.0, _biome_n - 1.0)
+	var c := mini(int(fc), _biome_n - 2)
+	var r := mini(int(fr), _biome_n - 2)
+	var i := r * _biome_n + c
+	var a := float(_biome[i] == BIOME_SNOW)
+	var b := float(_biome[i + 1] == BIOME_SNOW)
+	var d := float(_biome[i + _biome_n] == BIOME_SNOW)
+	var e := float(_biome[i + _biome_n + 1] == BIOME_SNOW)
+	return lerpf(lerpf(a, b, fc - c), lerpf(d, e, fc - c), fr - r)
+
+
+# Sun shading and the cover's ground tint go into COLOR.rgb, the ground's uprightness (normal.y) into COLOR.a for the rock blend, the biome's snow into UV; the road and grass boost are painted per pixel from the bake's textures.
 func _pack_vertex(job: ChunkJob, i: int, px: float, pz: float, normal: Vector3) -> void:
 	var light := 0.55 + 0.45 * maxf(normal.dot(_sun_dir), 0.0)
 	var tint := GroundCover.ground_multiplier(_cover, int(bake.size), _cover_tints, px, pz)
-	light *= GroundCover.bush_shade(_cover, int(bake.size), _bush_ids, px, pz, Config.data.level_ao_bush_ground)
+	# UV is (snow, lift): how white the ground is drawn, and how much of the snow depth it is drawn raised off the road.
+	var snow := snow_at(px, pz)
+	light *= lerpf(GroundCover.bush_shade(_cover, int(bake.size), _bush_ids, px, pz, Config.data.level_ao_bush_ground), 1.0, snow)  # snow covers the bushes' shade
+	var lift := 0.0
+	if snow > 0.0:
+		tint = tint.lerp(Color.WHITE, snow)
+		var near := bake.road_nearest(px, pz)
+		lift = snow * smoothstep(near.z + 0.5, near.z + 0.5 + Config.data.snow_bank_width_m, near.x)
+	job.uvs[i] = Vector2(snow, lift)
 	job.colors[i] = Color(light * tint.r, light * tint.g, light * tint.b, normal.y)

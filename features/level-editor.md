@@ -6,7 +6,7 @@ beside free roam, not part of it.
 **Source:** `tools/level_editor_lab.html`, `scripts/level_view.gd` (`LevelView`), `level_view.tscn`,
 `scripts/level_map.gd` (`LevelMap`), `scripts/scenes.gd` (`change_to`'s redirect), `scripts/settings_menu.gd` (`_toggle_dev_level`)
 
-**Tests:** `tests/headless/test_level_view.gd`, `tests/headless/test_level_trees.gd`, `tests/headless/test_level_data.gd`, `tests/headless/test_level_bake.gd`, `tests/headless/lab_parity.js`
+**Tests:** `tests/headless/test_level_view.gd`, `tests/headless/test_level_trees.gd`, `tests/headless/test_level_data.gd`, `tests/headless/test_level_bake.gd`, `tests/headless/lab_parity.js`, `tests/headless/lab_history.js`
 
 ## The lab
 
@@ -14,6 +14,8 @@ beside free roam, not part of it.
 live three.js render of it. Serve the repo over http (`python3 -m http.server`) so it can load the
 game's textures; `?level=levels/<name>.json` opens a save. `tools/open_level_editor.sh` does both for the Hafren level.
 
+- **Undo / redo:** toolbar buttons, Ctrl/⌘ Z and Ctrl/⌘ Shift Z (or Ctrl Y). Every `save()` (the end of each edit) pushes a copy of `level` (`snapshot`); `stepHistory` restores one through `loaded()` with `restoring` set, which skips the history reset and the big-level shading rebuild. The cover grid is copied only when `coverEdited` (set by `paintCover` / `coverRebuild`); the height grid is shared. 100 steps; loading, Reset and Random start a fresh history.
+- **Biome:** the save's `biomeRle` (run-length encoded like `coverRle`), one id per `BIOME_CELL` (10 m) square, row 0 = north: 0 Forest, 1 Snow (`BIOMES` in the lab). A save without one gets it filled from the saved ground height (`biomeFromHeight`, snow above the "Snow above" value, default 90 m). The **Biome** tool paints it with a round brush (Shift paints Forest); "Fill from height" refills the whole grid. 2D only in the lab (legend layer "Biome"). In the game, `LevelStreamer.snow_at` reads it (blended between cell centres) and the level view draws snow ground that sinks the car and bogs it down (see [snow-region.md](snow-region.md), "The level view's snow biome"). Hafren's snow-biome trees were swapped once, in the save itself, to the snow species (`levels/trees/snow_laden_spruce.png`, `dusted_spruce.png`, `snowy_young_spruce.png`, `snow_bowed_birch.png`, rendered from the tree lab's snow presets), keeping each tree's real height; nothing switches species at runtime.
 - **Spectators:** the save's top-level `spectators: [{x, z, r, n}]` (origin and radius in metres, same x east / z south frame as `logPiles`; people count `n`; omitted when empty, kept in the autosave, not part of `bakeKey`). The **Spectators** tool (toolbar, or `P`) adds a group on a click of empty ground (r 8, n 10); drag a group to move it, drag the rim handle, scroll or `[` `]` to change `r`, the pop-up edits `r` and `n`, Delete removes it. 2D draws each as a circle with its count (legend layer "Spectators"). 3D (`rebuild3DSpectators`) scatters `n` seeded people per group inside `r` on `heightAt`, each facing the nearest road point, built with `tools/spectators.js` into one merged mesh; only groups in the ground window are built.
 - **Size:** a save's `size` (metres, square centred on the origin; missing = 600, and a save of 600 omits it) sets `SIZE`; the
   height grid is `N` cells a side (read from the heightmap's length, ~3 m; `make_level.py` uses `round(size / 3)`), the cover grid

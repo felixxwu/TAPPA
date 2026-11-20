@@ -32,12 +32,12 @@ static func decode_cover(d: Dictionary) -> PackedByteArray:
 		return img.get_data()
 	var rle: Variant = d.get("coverRle")
 	if rle is String:
-		return _rle_decode(Marshalls.base64_to_raw(rle), int(d.get("size", 600)) ** 2)
+		return rle_decode(Marshalls.base64_to_raw(rle), int(d.get("size", 600)) ** 2)
 	var c: Variant = d.get("cover")
 	return Marshalls.base64_to_raw(c) if c is String else PackedByteArray()
 
 
-static func _rle_decode(b: PackedByteArray, length: int) -> PackedByteArray:
+static func rle_decode(b: PackedByteArray, length: int) -> PackedByteArray:
 	var out := PackedByteArray()
 	out.resize(length)
 	var i := 0

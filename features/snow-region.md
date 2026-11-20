@@ -199,6 +199,19 @@ Tested in `tests/headless/test_deep_snow_drag.gd` (the force rule: feather, magn
 conservation, left/right yaw symmetry, spin damping) and `test_drivetrain.gd` (that the
 road weight is actually reported, including the no-terrain and ice branches).
 
+## The level view's snow biome
+
+The level view (`level_view.tscn`, [level-editor.md](level-editor.md)) has no rings or regions. Its snow comes from the save's
+biome mask (`biomeRle`, 10 m cells), read by `LevelStreamer.snow_at`, and reuses this section's tricks:
+
+- **Look and sink:** `LevelStreamer._pack_vertex` puts `(snow, lift)` into the ground's `UV` and whitens the cover tint and lifts the bush-cover shade (`level_ao_bush_ground`), so the snow is one even white.
+  `lift` ramps from 0.5 m past the road edge over `snow_bank_width_m` (from `LevelBake.road_nearest`). `level_ground.gdshader`
+  mixes in `snow_texture` by `UV.x` (half as much on steep rock), lightens the gravel road toward white by `level_snow_road_lighten * UV.x` (and turns its moss to snow; `LevelView.snow_dust` lightens the dust puffs to match) and raises `VERTEX.y` by `snow_depth_m * UV.y`; `snow_depth_m` is
+  `snow_visual_depth_m`. The collision is the separate trimesh built from the bake's heights, so the car sinks in.
+- **Handling:** `LevelView._physics_process` → `LevelView.set_snow` blends `grass/gravel/tarmac_grip` from their defaults to the `snow_*_grip` values by `snow_at(car)`, sets `deep_snow_drag` to `level_snow_drag * snow_at(car)` (its own value, lighter than free roam's `snow_deep_drag`), and sets `deep_snow_depth_m` past half snow so `ground_is_snow` gives snow tyres their bonus, and
+  `car.gd._apply_deep_snow_drag` feathers it off the road per wheel as in free roam. `_exit_tree` sets it back to 0.
+- Not carried over: ground cover tufts, which still grow in the snow.
+
 ## Frozen lakes
 
 In the Alps the lake is **solid** and driven on, not the soft drag hazard it is elsewhere.

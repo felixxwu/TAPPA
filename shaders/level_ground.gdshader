@@ -22,6 +22,11 @@ uniform sampler2D ao_map : filter_linear, hint_default_white;
 // One tree per texel: R is its offset in the texel (4 bits x, 4 bits z), G its patch radius in texels (0 = none).
 uniform sampler2D tree_ao_map : filter_nearest, hint_default_black;
 uniform float tree_ao_strength = 0.0;
+// Snow biome: UV.x is how snowy the ground is, UV.y how much of snow_depth_m it is drawn raised. Collision stays at the true
+// ground, so the car sits sunk in the snow (features/snow-region.md, "The sink").
+uniform sampler2D snow_texture : source_color, filter_nearest, hint_default_white;
+uniform float snow_depth_m = 0.0;
+uniform float snow_road_lighten = 0.0;  // how far the gravel road is lightened toward white in the snow
 const float FRAME_RANGE = 16.0;
 const float ALONG_PERIOD = 64.0;
 
@@ -47,7 +52,8 @@ float gravel_edge(vec2 w, float half_w) { return half_w - 0.45 * gn(w * 0.9); }
 
 // w: world xz; lat: metres across the road from its centre (signed); along: metres along it; junc: 1 on a junction's
 // pad, where the across/along masks fade to an even driven-gravel pad so the frames of different roads leave no seam.
-vec3 gravel(vec2 w, float lat, float half_w, float along, float junc) {
+// snow: how much of the moss on the crown and verges is snow instead (the lab has no snow and leaves it out).
+vec3 gravel(vec2 w, float lat, float half_w, float along, float junc, float snow) {
 	float a = abs(lat + (gnp(vec2(along * 0.0625, 3.0), 4.0) - 0.5) * 0.35);  // the ruts wander a little
 	float rut = mix(exp(-pow((a - min(0.8, half_w * 0.42)) / 0.3, 2.0)), 0.12, junc);
 	float crown = (1.0 - smoothstep(0.1, 0.4, a)) * (1.0 - junc);
@@ -60,7 +66,8 @@ vec3 gravel(vec2 w, float lat, float half_w, float along, float junc) {
 	col *= mix(1.0, 0.86 + 0.16 * gnp(vec2(along * 0.5, lat * 16.0), 32.0), rut * (1.0 - junc));  // tyre-polished streaks
 	col *= 1.0 - 0.3 * rut * (1.0 - junc) * smoothstep(0.6, 0.8, n);  // damp where water sits in the ruts
 	float moss = smoothstep(0.5, 0.78, gn(w * 1.3) * (crown * 0.85 + verge * 1.15) + t.r * 0.15);
-	return mix(col, vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), moss * 0.85);
+	vec3 moss_col = mix(vec3(0.3, 0.38, 0.2) * (0.8 + 0.4 * t.g), texture(snow_texture, w * ground_uv_per_m).rgb, snow);
+	return mix(col, moss_col, moss * 0.85);
 }
 
 // Grey rock face, projected onto the side it faces so a steep bank isn't smeared vertically.
@@ -79,6 +86,10 @@ vec3 rock(vec3 world, vec3 n) {
 vec3 grass_at(vec2 uv) {
 	vec3 c = texture(albedo_texture, uv).rgb;
 	return mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, grass_saturation);
+}
+
+void vertex() {
+	VERTEX.y += snow_depth_m * UV.y;
 }
 
 void fragment() {
@@ -128,8 +139,12 @@ void fragment() {
 	if (rock_t > 0.0) {
 		surface = mix(surface, rock(world, n), rock_t);
 	}
+	float snow_t = UV.x * (1.0 - 0.5 * rock_t);  // steep rock still shows through
+	if (snow_t > 0.0) {
+		surface = mix(surface, texture(snow_texture, world.xz * ground_uv_per_m).rgb, snow_t);
+	}
 	if (road_t > 0.0) {
-		surface = mix(surface, gravel(world.xz, lat, half_w, along, junc), road_t);
+		surface = mix(surface, mix(gravel(world.xz, lat, half_w, along, junc, UV.x), vec3(1.0), snow_road_lighten * UV.x), road_t);
 	}
 	ivec2 tc = ivec2(floor(u + 0.5));
 	float tree_ao = 1.0;
