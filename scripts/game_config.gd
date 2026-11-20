@@ -96,9 +96,12 @@ var peak_torque_rpm := 4500.0
 ##      what catches the braking side effect part 1 warns about.
 @export var axle_inertia := 2.645 # kg·m² rear axle spin inertia; fronts use half each
 @export var drag_coefficient := 2.645 # quadratic aero drag on the chassis
-## Aero drag per m² of frontal area (½ × air density × drag coefficient); apply_car
-## sets drag_coefficient = this × the car's authored frontal_area.
-@export var drag_per_frontal_area := 0.2
+## Half the air's density (kg/m³); apply_car sets drag_coefficient = this × the car's cd × frontal_area.
+@export var half_air_density := 0.6125
+## Drag coefficient for a car that doesn't author its own `cd`.
+@export var default_cd := 0.35
+## Tyre rolling resistance as a fraction of the car's weight, pushing against its travel while on the ground.
+@export var rolling_resistance := 0.012
 ## Fraction of the chassis WIDTH cut off each of the four vertical corners of the
 ## collision hull, chamfering the box into an elongated octagon (top-down). The
 ## cut is applied as an equal ABSOLUTE inset on both the width (X) and length (Z)
@@ -1936,15 +1939,52 @@ func has_nitrous() -> bool:
 ## +Z REARWARD (forward is −Z), +Y up, +X right. Read off orthographic front/back renders of
 ## the car's model. A car with no entry has no lamps.
 @export var lamp_offsets: Dictionary = {
-		"f150": {
-		"head": [Vector3(-0.74, 0.42, -2.09), Vector3(0.74, 0.42, -2.09)],
-		"tail": [Vector3(-0.9, 0.43, 2.59), Vector3(0.9, 0.43, 2.59)]
-		},
 		"mx5": {
-		"head": [Vector3(-0.5, 0.16, -1.62), Vector3(0.5, 0.16, -1.62)],
-		"tail": [Vector3(-0.52, 0.22, 1.82), Vector3(0.52, 0.22, 1.82)]
+		"head": [Vector3(-0.5, 0.16, -1.71), Vector3(0.5, 0.16, -1.71)],
+		"tail": [Vector3(-0.52, 0.22, 1.81), Vector3(0.52, 0.22, 1.81)]
+		},
+		"focus": {
+		"head": [Vector3(-0.7, 0.2, -1.79), Vector3(0.7, 0.2, -1.78)],
+		"tail": [Vector3(-0.67, 0.55, 1.86), Vector3(0.67, 0.55, 1.86)]
+		},
+		"f150": {
+		"head": [Vector3(-0.74, 0.42, -2.1), Vector3(0.74, 0.42, -2.1)],
+		"tail": [Vector3(-0.9, 0.43, 2.6), Vector3(0.9, 0.43, 2.6)]
+		},
+		"xjs": {
+		"head": [Vector3(-0.67, 0.11, -2.06), Vector3(0.67, 0.11, -2.06)],
+		"tail": [Vector3(-0.62, 0.17, 2.58), Vector3(0.62, 0.17, 2.58)]
+		},
+		"acty": {
+		"head": [Vector3(-0.52, 0.36, -1.71), Vector3(0.52, 0.36, -1.71)],
+		"tail": [Vector3(-0.52, 0.11, 1.53), Vector3(0.52, 0.11, 1.53)]
+		},
+		"charger": {
+		"head": [Vector3(-0.47, 0.09, -2.34), Vector3(0.47, 0.09, -2.34)],
+		"tail": [Vector3(-0.43, 0.21, 2.65), Vector3(0.43, 0.21, 2.65)]
+		},
+		"twingo": {
+		"head": [Vector3(-0.55, 0.27, -1.6), Vector3(0.55, 0.27, -1.59)],
+		"tail": [Vector3(-0.69, 0.36, 1.51), Vector3(0.69, 0.36, 1.52)]
+		},
+		"porsche911": {
+		"head": [Vector3(-0.66, 0.15, -1.74), Vector3(0.66, 0.15, -1.75)],
+		"tail": [Vector3(-0.62, 0.08, 2.08), Vector3(0.62, 0.08, 2.08)]
+		},
+		"viper": {
+		"head": [Vector3(-0.67, 0.2, -1.79), Vector3(0.67, 0.2, -1.79)],
+		"tail": [Vector3(-0.62, 0.29, 2.27), Vector3(0.62, 0.29, 2.27)]
+		},
+		"beast": {
+		"head": [Vector3(-0.84, 0.24, -2.68), Vector3(-0.5, 0.24, -2.75), Vector3(0.5, 0.24, -2.75), Vector3(0.84, 0.24, -2.68)],
+		"tail": [Vector3(-0.79, 0.22, 3.08), Vector3(-0.38, 0.22, 3.08), Vector3(0.38, 0.22, 3.08), Vector3(0.79, 0.22, 3.08)]
 		}
 	}
+## The soft shadow under the player's car (CarShadow): darkness, how far (m) its edge blurs
+## either side of the body outline, and how high above the ground (m) it has faded out entirely.
+@export var car_shadow_alpha := 0.55
+@export var car_shadow_soft_m := 0.3
+@export var car_shadow_fade_height_m := 6.0
 ## Size of each lamp's flare quad, in metres. The lit core is a small part of it; the rest
 ## is room for the halo and the horizontal streak to fade out.
 @export var lamp_size_m := 0.5
@@ -3093,6 +3133,8 @@ func spectator_params() -> Dictionary:
 ## The weather id (WeatherLibrary) the level view shows: its particles and wind only.
 @export var dev_level_weather := "dry"
 @export var dev_level_path := "res://tools/levels/hafren_5km.json"
+## The car the level view drives (a stock CarLibrary id), whatever car the world has.
+@export var dev_level_car_id := "mx5"
 ## Level view: spawn at roads[x][y] of the save (0-based, facing the next node, or the previous one at the end of a road); (-1, -1) keeps the default spawn.
 @export var dev_level_spawn := Vector2i(26, 13)
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
@@ -3114,6 +3156,28 @@ func spectator_params() -> Dictionary:
 @export var level_spectator_road_probe_m := 1.0
 ## Level view: how fast (m/s) spectators walk to their spot by the road (and back to it after dodging the car).
 @export var level_spectator_walk_mps := 2.2
+
+# --- Fake ambient occlusion in the level view (features/level-ao.md) ---
+## How dark (0 none, 1 black) the ground gets at the foot of a tree, a building and a log pile.
+@export var level_ao_tree_ground := 0.35
+@export var level_ao_building_ground := 0.5
+@export var level_ao_log_ground := 0.45
+## Radius (m) of a tree's ground patch per metre of tree width, capped at one map texel (2 m).
+@export var level_ao_tree_radius_scale := 0.3
+## How far (m) the ground darkening reaches past a building's or log pile's footprint.
+@export var level_ao_building_reach_m := 3.0
+@export var level_ao_log_reach_m := 1.5
+## How much darker the ground is under bush cover.
+@export var level_ao_bush_ground := 0.25
+## How dark the foot of a tree, bush, log pile and building is, and how far up (tree: fraction of its height; others: metres) the darkening fades out.
+@export var level_ao_tree_base := 0.45
+@export var level_ao_tree_base_height := 0.35
+@export var level_ao_bush_base := 0.4
+@export var level_ao_bush_base_height_m := 0.6
+@export var level_ao_log_base := 0.4
+@export var level_ao_log_base_height_m := 0.8
+@export var level_ao_building_base := 0.35
+@export var level_ao_building_base_height_m := 2.5
 
 # --- Ground cover in the level view ---
 ## How far from the camera ground-cover tufts are drawn, in metres.

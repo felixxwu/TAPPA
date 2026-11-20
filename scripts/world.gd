@@ -968,6 +968,7 @@ func _build_persistent_managers(cfg: GameConfig, _result: Dictionary,
 	_car_lamps = _ensure_child("CarLamps",
 		func() -> Node: return CarLamps.new()) as CarLamps
 	_car_lamps.setup($Car)
+	(_ensure_child("CarShadow", func() -> Node: return CarShadow.new()) as CarShadow).setup($Car)
 
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).

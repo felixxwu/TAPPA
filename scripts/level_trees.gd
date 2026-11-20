@@ -54,6 +54,8 @@ func setup(p_bake: LevelBake) -> void:
 	for kind in bake.tree_kinds:
 		var mat := ShaderMaterial.new()
 		mat.shader = SHADER
+		mat.set_shader_parameter("base_dark", Config.data.level_ao_tree_base)
+		mat.set_shader_parameter("base_height", Config.data.level_ao_tree_base_height)
 		mat.set_shader_parameter("tint", KIND_TINT.get(kind, Color(0.85, 0.85, 0.85)))
 		var tex := LevelBake.tree_texture(kind)
 		if tex != null:

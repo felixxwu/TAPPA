@@ -17,6 +17,11 @@ uniform sampler2D road_frame : filter_nearest, hint_default_black;
 uniform float frame_size_m = 600.0;
 uniform float frame_cell_m = 1.0;
 uniform int frame_n = 1;
+// Fake ambient occlusion on the same texel grid (scripts/level_ao.gd): 1 clear, lower darker.
+uniform sampler2D ao_map : filter_linear, hint_default_white;
+// One tree per texel: R is its offset in the texel (4 bits x, 4 bits z), G its patch radius in texels (0 = none).
+uniform sampler2D tree_ao_map : filter_nearest, hint_default_black;
+uniform float tree_ao_strength = 0.0;
 const float FRAME_RANGE = 16.0;
 const float ALONG_PERIOD = 64.0;
 
@@ -126,6 +131,24 @@ void fragment() {
 	if (road_t > 0.0) {
 		surface = mix(surface, gravel(world.xz, lat, half_w, along, junc), road_t);
 	}
+	ivec2 tc = ivec2(floor(u + 0.5));
+	float tree_ao = 1.0;
+	for (int k = 0; k < 9; k++) {
+		ivec2 c = tc + ivec2(k % 3 - 1, k / 3 - 1);
+		if (c.x < 0 || c.y < 0 || c.x >= frame_n || c.y >= frame_n) {
+			continue;
+		}
+		vec2 t = texelFetch(tree_ao_map, c, 0).rg;
+		if (t.g > 0.0) {
+			int b = int(t.r * 255.0 + 0.5);
+			vec2 q = vec2(float(b >> 4), float(b & 15));
+			vec2 pos = (vec2(c) + (q + 0.5) / 16.0 - 0.5) * frame_cell_m - frame_size_m * 0.5;
+			float fall = max(1.0 - length(world.xz - pos) / (t.g * frame_cell_m), 0.0);
+			tree_ao = min(tree_ao, 1.0 - tree_ao_strength * fall * fall);
+		}
+	}
+	surface *= tree_ao;
+	surface *= texture(ao_map, (u + 0.5) / float(frame_n)).r;
 	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world));
 	if (UV2.x < -0.5) {
 		// a skirt: one flat colour per 8 m of its length, never the ground texture stretched down its face

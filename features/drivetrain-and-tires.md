@@ -370,17 +370,17 @@ over-multiplied the light cars' torque into violent low/mid-gear acceleration.)
 **No hidden resistance:** `car.gd` sets `linear_damp = 0.0` with
 `linear_damp_mode = REPLACE`. Under the default COMBINE mode Godot adds the
 project's `physics/3d/default_linear_damp` (0.1/s, about 0.2 g at 20 m/s) on top —
-that was the "built-in rolling resistance" earlier docs blamed on Jolt. The current
-`final_drive` values (mostly ~6–7, raised above the real ~3–4) were tuned while that
-damping was still active; removing it raised top speeds above real on purpose (the
-free-roam island wants faster cars).
+that was the "built-in rolling resistance" earlier docs blamed on Jolt. Each engine's `final_drive`
+is set by `tools/measure_top_speed.tscn`, which drives every car flat out on the flat test track and
+picks the final drive that puts its drag-limited top speed at 95% of the redline in top gear; re-run it
+after changing a car's drag, mass or engine (engines no car ships with are scaled by hand).
 
 **Aero drag** is derived, not authored: `car.gd` `_apply_physics_spec` sets
-`drag_coefficient = spec.frontal_area × GameConfig.drag_per_frontal_area`, where
-each car's `frontal_area` (m²) is its model's head-on silhouette, measured by
-`tools/measure_frontal_area.gd` (re-run it when a model changes or a car is added). `_apply_aero`
-then applies `drag_coefficient × v²` against the velocity, so bigger, boxier cars
-top out lower.
+`drag_coefficient = GameConfig.half_air_density × spec.cd × spec.frontal_area` (real air drag), where
+`cd` is the real car's drag coefficient (`GameConfig.default_cd` if omitted) and `frontal_area` (m²) is its model's
+head-on silhouette, measured by `tools/measure_frontal_area.gd` (re-run it when a model changes or a car is added).
+`_apply_aero` then applies `drag_coefficient × v²` against the velocity, plus tyre rolling resistance
+(`GameConfig.rolling_resistance` × weight, scaled by the wheels on the ground, faded in over the first 1 m/s).
 
 ## Tests
 

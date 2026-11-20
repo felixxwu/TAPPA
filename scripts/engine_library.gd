@@ -34,8 +34,8 @@ extends RefCounted
 #   * mass          — real dry weight (kg), independent of the chassis. Fed to the
 #                     engine-swap weight model (features/engine-swap.md).
 #   * gear_ratios / final_drive / shift_time — the TRANSMISSION bolted to this engine.
-#                     Real published internal ratios + a game-tuned final_drive (kept
-#                     higher than the real ~3-4) + the clutch-open shift cut (manual slow, PDK
+#                     Real published internal ratios + a final_drive measured by
+#                     tools/measure_top_speed.tscn + the clutch-open shift cut (manual slow, PDK
 #                     fast). apply() writes them, so an ENGINE SWAP carries its whole
 #                     drivetrain — gearing spacing, overall ratio, and shift feel — to
 #                     the new car (features/engine-swap.md). See features/drivetrain-and-tires.md.
@@ -81,52 +81,35 @@ const ENGINES: Array[Dictionary] = [
 		"redline_rpm": 7500.0, "peak_torque": 205.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.15,
 		"engine_friction_base": 20.0,  # i4 2.0L
 		"low_octave_mix": 0.2, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
-		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 5, "shift_time": 0.30,  # ND 6-speed manual
+		"gear_ratios": [5.087, 2.991, 2.035, 1.594, 1.286, 1.000], "final_drive": 3.46, "shift_time": 0.30,  # ND 6-speed manual
 	},
 	{
-		"id": "renault_12_i4", "name": "1.2 16V turbo i4", "layout": "i4", "displacement_l": 1.2, "mass": 95.0,
+		"id": "renault_12_i4", "name": "1.2 16V i4", "layout": "i4", "displacement_l": 1.2, "mass": 95.0,
 		"redline_rpm": 6800.0, "peak_torque": 105.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.13,
 		"engine_friction_base": 5.0,  # i4 1.2L (small displacement, low friction)
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
-		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 8, "shift_time": 0.35,  # JB1 5-speed manual
-		# STOCK FORCED INDUCTION (features/forced-induction.md), deliberately matching the
-		# Small Turbo upgrade's numbers exactly — this car ships with the part the others
-		# would have to earn.
-		#
-		# It exists to close a STARTER GAP. Naturally aspirated, the 1.2 left the Twingo at
-		# ~82 hp/tonne against the Focus's 114 and the MX-5's 159 — far enough adrift that
-		# no single opening band could hold all three fairly, and the player who picked it
-		# was simply given the slow one. Boosted it lands at ~111, beside the Focus, so the
-		# starter choice is a choice of CHARACTER (light FWD hatch vs heavier FWD hatch vs
-		# RWD roadster) rather than a choice of how hard the early game will be.
-		#
-		# effective_meta folds this into peak_torque, so it moves the car's eligibility as
-		# well as its pace.
-		"turbo_enabled": true, "turbo_boost_gain": 0.35, "turbo_inertia": 6.0e-3,
-		"turbo_omega_ref": 10000.0, "turbo_drive_gain": 0.03, "turbo_drag_coef": 1.0e-6,
-		"turbo_parasitic_friction": 5.0,
-		"engine_turbo_whistle_gain": 0.015, "engine_turbo_bov_gain": 0.005,
+		"gear_ratios": [3.364, 1.864, 1.321, 0.967, 0.756], "final_drive": 5.21, "shift_time": 0.35,  # JB1 5-speed manual
 	},
 	{
 		"id": "ford_20_i4", "name": "2.0 Duratec i4", "layout": "i4", "displacement_l": 2.0, "mass": 130.0,
 		"redline_rpm": 6750.0, "peak_torque": 184.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.16,  # 2009 Focus 2.0 Duratec: 140 hp @ 6000, 136 lb-ft (184 Nm) @ 4500
 		"engine_friction_base": 15.0,  # NA i4 2.0L
 		"low_octave_mix": 0.1, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
-		"gear_ratios": [3.58, 2.02, 1.35, 0.98, 0.76], "final_drive": 8, "shift_time": 0.35,  # MTX-75 5-speed manual
+		"gear_ratios": [3.58, 2.02, 1.35, 0.98, 0.76], "final_drive": 4.97, "shift_time": 0.35,  # MTX-75 5-speed manual
 	},
 	{
 		"id": "audi_25t_i5", "name": "2.5T TFSI i5", "layout": "i5", "displacement_l": 2.5, "mass": 165.0,
 		"redline_rpm": 7000.0, "peak_torque": 500.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.22,
 		"engine_friction_base": 25.0,  # i5 2.5L
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
-		"gear_ratios": [3.563, 2.526, 1.679, 1.022, 0.788, 0.761, 0.635], "final_drive": 12, "shift_time": 0.08,  # 7-speed S tronic
+		"gear_ratios": [3.563, 2.526, 1.679, 1.022, 0.788, 0.761, 0.635], "final_drive": 7.8, "shift_time": 0.08,  # 7-speed S tronic
 	},
 	{
 		"id": "ford_50_v8", "name": "5.0 Coyote V8", "layout": "v8", "displacement_l": 5.0, "mass": 200.0,
 		"redline_rpm": 7500.0, "peak_torque": 569.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.32,
 		"engine_friction_base": 40.0,  # V8 5.0L
 		"low_octave_mix": 0.8, "volume_db": 7.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
-		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 7, "shift_time": 0.22,  # Getrag MT82 6-speed manual
+		"gear_ratios": [3.66, 2.43, 1.69, 1.32, 1.00, 0.65], "final_drive": 4.55, "shift_time": 0.22,  # Getrag MT82 6-speed manual
 	},
 	{
 		# Ford 300 (4.9 L) OHV straight-six, 1986 F-150: ~120 hp @ 3400, 339 N·m (250 lb-ft) @ 2000.
@@ -135,21 +118,21 @@ const ENGINES: Array[Dictionary] = [
 		"redline_rpm": 4200.0, "peak_torque": 339.0, "peak_torque_rpm": 2000.0, "engine_inertia": 0.40,
 		"engine_friction_base": 35.0,  # i6 4.9L
 		"low_octave_mix": 0.5, "volume_db": 2.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [6.32, 3.09, 1.69, 1.00], "final_drive": 5, "shift_time": 0.35,  # Borg-Warner T-18 4-speed manual
+		"gear_ratios": [6.32, 3.09, 1.69, 1.00], "final_drive": 3.31, "shift_time": 0.35,  # Borg-Warner T-18 4-speed manual
 	},
 	{
 		"id": "mopar_440_v8", "name": "440 Magnum V8", "layout": "v8", "displacement_l": 7.2, "mass": 290.0,
 		"redline_rpm": 5500.0, "peak_torque": 600.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.56,
 		"engine_friction_base": 60.0,  # V8 7.2L (big-block, more than the 5.0)
 		"low_octave_mix": 0.8, "volume_db": 8.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
-		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 4.5, "shift_time": 0.30,  # TorqueFlite A727 3-speed auto
+		"gear_ratios": [2.45, 1.45, 1.00], "final_drive": 2.78, "shift_time": 0.30,  # TorqueFlite A727 3-speed auto
 	},
 	{
 		"id": "porsche_30_flat6", "name": "3.0 turbo flat-6", "layout": "i6", "displacement_l": 3.0, "mass": 180.0,
 		"redline_rpm": 6800.0, "peak_torque": 225.0, "peak_torque_rpm": 4000.0, "engine_inertia": 0.18,  # 930 Turbo 3.0: 260 PS @ 5500, 343 Nm @ 4000
 		"engine_friction_base": 20.0,  # flat-6 3.0L
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [3.18, 1.83, 1.26, 0.93], "final_drive": 4.22, "shift_time": 0.25,  # 4-speed manual (930/30)
+		"gear_ratios": [3.18, 1.83, 1.26, 0.93], "final_drive": 3.28, "shift_time": 0.25,  # 4-speed manual (930/30)
 		# Stock forced induction (features/forced-induction.md): the 930's single
 		# large turbo, famous for its lag. Balance placeholders.
 		"turbo_enabled": true, "turbo_boost_gain": 0.5, "turbo_inertia": 1.0e-2, "turbo_omega_ref": 11000.0,
@@ -163,7 +146,7 @@ const ENGINES: Array[Dictionary] = [
 		"redline_rpm": 6000.0, "peak_torque": 610.0, "peak_torque_rpm": 3600.0, "engine_inertia": 0.35,
 		"engine_friction_base": 52.0,  # V10 8.0L
 		"low_octave_mix": 0.7, "volume_db": 9.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [2.66, 1.78, 1.30, 1.00, 0.74, 0.50], "final_drive": 6, "shift_time": 0.30,  # Tremec T-56 6-speed manual
+		"gear_ratios": [2.66, 1.78, 1.30, 1.00, 0.74, 0.50], "final_drive": 5.43, "shift_time": 0.30,  # Tremec T-56 6-speed manual
 	},
 	{
 		# Jaguar XJS 5.3 L V12 HE: 295 PS @ 5500, 432 N·m (318 lb-ft) @ 3000; tach redlined 6500.
@@ -172,7 +155,7 @@ const ENGINES: Array[Dictionary] = [
 		"redline_rpm": 6500.0, "peak_torque": 432.0, "peak_torque_rpm": 3000.0, "engine_inertia": 0.30,
 		"engine_friction_base": 48.0,  # V12 5.3L
 		"low_octave_mix": 0.8, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
-		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 6, "shift_time": 0.30,  # GM TH400 3-speed auto
+		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 2.96, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{
 		# Rolls-Royce Merlin: 27 L (1,650 cu in) aero/tank V12, as in John Dodd's "The Beast".
@@ -190,14 +173,14 @@ const ENGINES: Array[Dictionary] = [
 		# the diff is geared for reach rather than launch: 27 litres at 1890 Nm has torque to
 		# spare from idle, so trading multiplication for top end costs it nothing it misses and
 		# stops a 750 hp car running out of revs at motorway speed.
-		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 2.0, "shift_time": 0.30,  # GM TH400 3-speed auto
+		"gear_ratios": [2.48, 1.48, 1.00], "final_drive": 1.3, "shift_time": 0.30,  # GM TH400 3-speed auto
 	},
 	{
 		"id": "honda_066_i3", "name": "0.66 E07A i3", "layout": "i3", "displacement_l": 0.66, "mass": 70.0,
 		"redline_rpm": 7000.0, "peak_torque": 60.0, "peak_torque_rpm": 4500.0, "engine_inertia": 0.09,
 		"engine_friction_base": 5.0,  # i3 0.66L kei (tiny — with only 60 Nm on tap, 40 stalled it)
 		"low_octave_mix": 0.0, "volume_db": -5.0, "noise_db": -54.0, "soft_clip_post_gain": 0.07,
-		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 9, "shift_time": 0.35,  # Acty HA4 5-speed manual
+		"gear_ratios": [4.083, 2.500, 1.680, 1.064, 0.861], "final_drive": 6.42, "shift_time": 0.35,  # Acty HA4 5-speed manual
 	},
 	# THE ENGINE SWAP TIERS (features/engine-swap.md), which no car in the game runs now that cars swap
 	# engines between themselves. Marked by the "swap_tier" flag. Deliberately generic (no real car this catalogue's
@@ -209,28 +192,28 @@ const ENGINES: Array[Dictionary] = [
 		"redline_rpm": 7200.0, "peak_torque": 380.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.20,
 		"engine_friction_base": 22.0, "swap_tier": true, "ring": 1, "price": 5000,
 		"low_octave_mix": 0.5, "volume_db": 0.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 5, "shift_time": 0.25,
+		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 3.25, "shift_time": 0.25,
 	},
 	{
 		"id": "v8_400", "name": "V8 (400hp swap)", "layout": "v8", "displacement_l": 5.5, "mass": 210.0,
 		"redline_rpm": 6800.0, "peak_torque": 537.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.28,
 		"engine_friction_base": 35.0, "swap_tier": true, "ring": 1, "price": 8000,
 		"low_octave_mix": 0.6, "volume_db": 3.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 5, "shift_time": 0.25,
+		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 3.25, "shift_time": 0.25,
 	},
 	{
 		"id": "v10_500", "name": "V10 (500hp swap)", "layout": "v10", "displacement_l": 7.0, "mass": 245.0,
 		"redline_rpm": 6400.0, "peak_torque": 713.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.38,
 		"engine_friction_base": 48.0, "swap_tier": true, "ring": 2, "price": 12000,
 		"low_octave_mix": 0.7, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 5, "shift_time": 0.25,
+		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 3.25, "shift_time": 0.25,
 	},
 	{
 		"id": "v12_600", "name": "V12 (600hp swap)", "layout": "v12", "displacement_l": 8.5, "mass": 275.0,
 		"redline_rpm": 6000.0, "peak_torque": 913.0, "peak_torque_rpm": 4200.0, "engine_inertia": 0.48,
 		"engine_friction_base": 60.0, "swap_tier": true, "ring": 3, "price": 20000,
 		"low_octave_mix": 0.8, "volume_db": 9.0, "noise_db": -54.0, "soft_clip_post_gain": 0.08,
-		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 5, "shift_time": 0.25,
+		"gear_ratios": [3.5, 2.1, 1.5, 1.1, 0.9, 0.7], "final_drive": 3.25, "shift_time": 0.25,
 	},
 ]
 

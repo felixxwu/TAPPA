@@ -26,7 +26,7 @@ is what hides that it is only a point.
 Authored per car in `GameConfig.lamp_offsets`, a `{ car_id: { "head": [...], "tail": [...] } }`
 dictionary in `scripts/game_config.gd` — car-local metres, **+Z rearward**, the same axes
 as `exhaust_offsets`. `GameConfig.lamp_locals_for(spec)` resolves it; `car.gd` caches the
-result into `lamp_locals` per spec in `_apply_physics_spec`. A car with **no entry gets no
+result into `lamp_locals` per spec in `_apply_physics_spec`. Every car in `CarLibrary` has an entry. A car with **no entry gets no
 lamps** — there is no guessed fallback, since a flare floating off the body looks worse
 than none.
 
@@ -40,6 +40,11 @@ The **F-150**'s were found the same way, but off its levelled photogrammetry sca
 [car-scanning.md](car-scanning.md)): orthographic front/back views at 200 px/m with a 10 cm grid, a ray cast for
 depth, then scan axes (front +Y, ground at 0) to car-local (x as-is, y = z − 0.565 for the body's ride height,
 z = −y). Its one exhaust pipe in `exhaust_offsets` was read off the same scan.
+
+The other cars were placed by eye from `tools/car_lamp_capture.tscn` (`-- <car_id|all> [out_dir]`, run windowed): it spawns the car
+via `apply_car`, attaches `CarLamps` forced fully lit, and saves orthographic front, rear and side PNGs (225 px/m front/rear,
+car-local x = (px - 447) / 225, y = (472 - py) / 225) prints each lamp's z snapped by ray-casting along car Z onto the body triangles (head from the front, tail from the rear; paste these into `lamp_offsets`, x/y stay hand-read), and saves oblique `close_front` / `close_rear` views to confirm each flare touches the surface. Adjust an entry, re-run, check the flare sits on the housing.
+The Beast has four lamps per end (its housings come in pairs).
 
 ## The flare shader
 

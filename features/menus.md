@@ -94,7 +94,7 @@ the map and stats pages (`WorldPages`). Both are described in [world-session.md]
 and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The pause menu has
 host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
 `return_from_extra()` when its page closes). Free roam's rows: Resume / Reset to
-road / Map / Stats / Settings / Quit to title. (There was a Journal row from 2026-10-23 to
+road / Map / Stats / Settings / Quit to title; the level view adds Garage (`LevelView.open_garage`) and Shop (`LevelView.open_shop`: the rest-stop page's shop alone, `RestStopPage.open_shop` with `free` on — every part unlocked from the start, any catalogue car's engine fittable, nothing to buy). (There was a Journal row from 2026-10-23 to
 2026-10-25; the user had it taken out and the journal deleted.)
 
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)

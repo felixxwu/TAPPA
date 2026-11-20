@@ -67,6 +67,8 @@ uniform vec3 centre;
 uniform vec2 fade;
 uniform vec2 far_fade;
 uniform bool is_far;
+uniform float base_dark = 0.0;
+uniform float base_height = 0.5;
 varying vec3 local;
 varying float alpha;
 float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
@@ -83,7 +85,7 @@ void fragment() {
 	int bayer[16] = int[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
 	float threshold = (float(bayer[px.y * 4 + px.x]) + 0.5) / 16.0;
 	if (is_far ? 1.0 - alpha >= threshold : alpha < threshold) discard;
-	ALBEDO = COLOR.rgb;
+	ALBEDO = COLOR.rgb * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, local.y));
 	// a bush is one smooth dome; UV.x (leaves per metre) paints clumps of lit leaves over dark gaps onto it
 	if (UV.x > 0.0) {
 		vec3 q = local * UV.x * 3.0;
@@ -99,6 +101,8 @@ void fragment() {
 	m.set_shader_parameter("fade", Vector2(fade_start, fade_end))
 	m.set_shader_parameter("far_fade", far_fade)
 	m.set_shader_parameter("is_far", far_fade != Vector2.ZERO)
+	m.set_shader_parameter("base_dark", Config.data.level_ao_bush_base)
+	m.set_shader_parameter("base_height", Config.data.level_ao_bush_base_height_m)
 	return m
 
 
@@ -128,16 +132,38 @@ static func tints(kinds_d: Dictionary) -> Dictionary:
 	return out
 
 
-# Multiplier for the terrain's baked light at (x, z): white off cover, the type's tint on it, with hash-jittered cell edges.
-static func ground_multiplier(cov: PackedByteArray, grid: int, tint_d: Dictionary, x: float, z: float) -> Color:
-	if cov.is_empty():
-		return Color.WHITE
+# The cover type id at (x, z), with hash-jittered cell edges; 0 off the grid or off cover.
+static func cover_id(cov: PackedByteArray, grid: int, x: float, z: float) -> int:
 	var half := grid / 2.0
 	var cx := floori(x + half + (hash2(floori(x * 2.0), floori(z * 2.0), 901) - 0.5) * 1.2)
 	var cz := floori(z + half + (hash2(floori(x * 2.0), floori(z * 2.0), 902) - 0.5) * 1.2)
 	if cx < 0 or cz < 0 or cx >= grid or cz >= grid:
+		return 0
+	return cov[cz * grid + cx]
+
+
+# The cover type ids that grow bushes.
+static func bush_ids(kinds_d: Dictionary) -> Dictionary:
+	var out := {}
+	for id: String in kinds_d:
+		for layer: Array in kinds_d[id]:
+			if (layer[0] as Dictionary).has("bushRadius"):
+				out[int(id)] = true
+	return out
+
+
+# 1 off bush cover, 1 - strength under it: the ground darkening beneath bushes.
+static func bush_shade(cov: PackedByteArray, grid: int, ids: Dictionary, x: float, z: float, strength: float) -> float:
+	if cov.is_empty() or ids.is_empty():
+		return 1.0
+	return 1.0 - strength if ids.has(cover_id(cov, grid, x, z)) else 1.0
+
+
+# Multiplier for the terrain's baked light at (x, z): white off cover, the type's tint on it, with hash-jittered cell edges.
+static func ground_multiplier(cov: PackedByteArray, grid: int, tint_d: Dictionary, x: float, z: float) -> Color:
+	if cov.is_empty():
 		return Color.WHITE
-	var t: Variant = tint_d.get(int(cov[cz * grid + cx]))
+	var t: Variant = tint_d.get(cover_id(cov, grid, x, z))
 	if t == null:
 		return Color.WHITE
 	return Color(minf((t as Color).r * TINT_GAIN, 1.5), minf((t as Color).g * TINT_GAIN, 1.5), minf((t as Color).b * TINT_GAIN, 1.5))

@@ -52,6 +52,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	add_child_autofree(world)
 	await wait_for_signal(world.get_node("Level").loaded, 30.0)
 	assert_true(world.get_node("PauseMenu").is_armed(), "Esc / Start open the pause menu")
+	assert_eq(world.get_node("Car")._car_index, CarLibrary.index_of(Config.data.dev_level_car_id), "drives the level's own car")
 	var map: LevelMap = world.get_node("Level").map
 	var m := InputEventKey.new()
 	m.physical_keycode = KEY_M
@@ -64,6 +65,38 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var car := world.get_node("Car") as Node3D
 	assert_almost_eq(Vector2(car.global_position.x, car.global_position.z), Vector2(60, 0), Vector2.ONE * 1.0, "teleported onto the road")
 	assert_false(map.visible or get_tree().paused, "teleporting closes the map and resumes")
+	var start_car := Config.data.dev_level_car_id
+	var pause: PauseMenu = world.get_node("PauseMenu")
+	var level: LevelView = world.get_node("Level")
+	pause.open()
+	CardUI.pick(pause.cards(), "Shop")
+	assert_not_null(level.shop, "the pause menu's Shop opens the shop")
+	assert_true(level.shop.pick("Upgrades"))
+	var parts: Array = LevelView.owned["parts"]
+	var i := parts.find_custom(LootRules.is_upgrade)
+	assert_true(level.shop.pick(LootRules.card_text(parts[i])[0]), "every part is unlocked and free to switch on")
+	assert_true(LootRules.is_on(LevelView.owned["parts"][i]))
+	var back := InputEventAction.new()
+	back.action = "ui_cancel"
+	back.pressed = true
+	MenuNav.of(level.shop._page)._unhandled_input(back)
+	assert_eq(level.shop.view, RestStopPage.View.SHOP, "Back steps out to the shop's cards")
+	MenuNav.of(level.shop._page)._unhandled_input(back)
+	assert_null(level.shop, "and then closes the shop")
+	assert_eq(Scenes.last_blocked_path, Scenes.LEVEL_VIEW, "reloading the level to fit the parts")
+	LevelView._next_pose = null
+	LevelView.owned = {}
+	Scenes.last_blocked_path = ""
+	pause.return_from_extra()
+	CardUI.pick(pause.cards(), "Garage")
+	assert_not_null(level.garage, "the pause menu's Garage opens the car cards")
+	var other := 1 if CarLibrary.all()[0]["id"] == start_car else 0
+	CardUI.pick(level.garage.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.all()[other]["name"]))
+	assert_eq(Config.data.dev_level_car_id, String(CarLibrary.all()[other]["id"]), "picking a car makes it the level's car")
+	assert_eq(Scenes.last_blocked_path, Scenes.LEVEL_VIEW, "and reloads the level to field it")
+	assert_almost_eq(LevelView._next_pose.origin, car.global_position, Vector3.ONE * 0.01, "standing where the old car was")
+	LevelView._next_pose = null
+	Config.data.dev_level_car_id = start_car
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 

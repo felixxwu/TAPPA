@@ -36,6 +36,8 @@ static func build(seed: int, style: int, rows: int = 6, base_count: int = 9,
 		_add_log(st, rng, l)
 	var mat := ShaderMaterial.new()
 	mat.shader = BARK_SHADER
+	mat.set_shader_parameter("base_dark", Config.data.level_ao_log_base)
+	mat.set_shader_parameter("base_height", Config.data.level_ao_log_base_height_m)
 	st.set_material(mat)
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()

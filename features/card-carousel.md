@@ -19,12 +19,13 @@ menu that is a list of choices is a card list:**
 | Menu | Cards |
 |---|---|
 | Title MAIN (`title_screen.gd`) | Continue (only with a world), New world, Settings |
-| Pause menu (`pause_menu.gd`) | Resume, Reset, Photo Mode (only where the host offers it), the host's extra rows (free roam: Map, Stats), Settings, Quit |
+| Pause menu (`pause_menu.gd`) | Resume, Reset, Photo Mode (only where the host offers it), the host's extra rows (free roam: Map, Stats; level view: Garage), Settings, Quit |
 | Rest stop MAIN (`rest_stop_page.gd`) | Continue, Shop, Garage, Map, Tune car; the stop's name, "Car repaired" and the money held sit above the cards |
 | Rest stop SHOP | four cards opening Upgrades, Tires, Drivetrain and Engine swaps |
 | Rest stop UPGRADES / TIRES / DRIVETRAINS | one per part of that kind unlocked for this car (pick → switch on or off), then one per part on sale for it (pick → buy, which switches it on); Tires starts with a Stock card, the car's own tires |
 | Rest stop ENGINES | one per owned car naming the engine in it (pick one, then another, to swap their engines) |
 | Rest stop GARAGE | one per owned car (a spinning 3D preview; the cursor starts on the car being driven; pick → drive it) |
+| Level view GARAGE (`level_view.gd` → `open_garage`, the level's pause menu row) | one per catalogue car, stock (pick → swap to it on the spot and drive on) |
 | Stats (`world_pages.gd`) | one per lifetime stat, and the biome rings reached (read-only) |
 
 **Not card lists**, because they are not lists of choices: the **Settings** page (the shared

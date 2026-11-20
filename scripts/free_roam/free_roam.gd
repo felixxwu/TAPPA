@@ -135,6 +135,10 @@ func _ready() -> void:
 	lamps.name = "CarLamps"
 	add_child(lamps)
 	lamps.setup(_car)
+	var shadow := CarShadow.new()
+	shadow.name = "CarShadow"
+	add_child(shadow)
+	shadow.setup(_car)
 	if ColdOpen.due():
 		_add_cold_open()
 	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site())

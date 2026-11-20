@@ -977,3 +977,7 @@ uniform added to one and not the other silently drops its value on a snow stage.
 swaps the floor material between them every stage boot, including restoring the base
 shader, because that material is a shared `main.tscn` sub-resource that survives scene
 instantiation. See [snow-region.md](snow-region.md).
+
+## Level view ambient occlusion
+
+The level view fakes AO (ground map plus darker object bases); see [level-ao.md](level-ao.md).

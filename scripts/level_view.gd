@@ -22,6 +22,10 @@ var _save_path := ""
 var _streamer: LevelStreamer
 var _trees: LevelTrees
 var _spectators: LevelSpectators
+var garage: MenuPage
+static var _next_pose: Variant = null  # where the car stands after a car-change reload
+static var owned: Dictionary = {}  # the level's car with every shop part unlocked, kept across reloads
+var shop: RestStopPage
 var _car: VehicleBody3D
 var _particles: WeatherField
 var _recovery: RoadRecovery
@@ -54,11 +58,14 @@ func _ready() -> void:
 		return
 	if not car.is_node_ready():
 		await car.ready  # this node sits before the car, so builds first and fields the car once it exists
-	if WorldSession.has_world():
-		car.apply_owned(LootRules.fielded(WorldSession.active_car()))
-		get_parent().get_node("CameraManager").refresh_bonnet_offset()
+	if String(owned.get("model_id", "")) != Config.data.dev_level_car_id:
+		owned = {"model_id": Config.data.dev_level_car_id, "tuning": {}, "parts": LootRules.parts_for({"model_id": Config.data.dev_level_car_id}).map(
+			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))}
+	car.apply_owned(LootRules.fielded(owned))
+	get_parent().get_node("CameraManager").refresh_bonnet_offset()
 	car.damage.invulnerable = true
-	car.reset_to(spawn_pose())
+	car.reset_to(_next_pose if _next_pose != null else spawn_pose())
+	_next_pose = null
 	_pause = get_parent().get_node_or_null("PauseMenu")
 	if _streamer != null:
 		_streamer.focus = car
@@ -75,6 +82,7 @@ func _ready() -> void:
 	_recovery.reset_done.connect(func(_p: Vector2) -> void: marks.break_ribbons())
 	if _pause != null:
 		_pause.reset_to_track_requested.connect(_recovery.reset_now)
+		_pause.extra_requested.connect(func(label: String) -> void: open_shop() if label == "Shop" else open_garage())
 	if not Platform.is_headless():  # nothing renders, so there is nothing to compile
 		var t_warm := Time.get_ticks_msec()
 		await _warm_up(car)
@@ -94,6 +102,64 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _recovery != null and _pause != null and event.is_action_pressed("reset_to_road") and not event.is_echo() and _pause.is_armed():
 		_recovery.reset_now()
+
+
+# The pause menu's Garage: a card per catalogue car, stock; picking one reloads the level with it.
+func open_garage() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	garage = CardUI.card_page(layer, {"title": "Garage", "dim": true})
+	var entries: Array = []
+	var selected := 0
+	for i in CarLibrary.all().size():
+		var id := String(CarLibrary.all()[i]["id"])
+		var stats := LootRules.fitted_stats({"model_id": id})
+		var driving := id == Config.data.dev_level_car_id
+		if driving:
+			selected = i
+		entries.append({"title": String(CarLibrary.all()[i].get("name", id)), "car": i,
+			"desc": CardUI.stats_line(stats["hp"], stats["mass"], stats["drive_mode"]),
+			"extra": "Driving" if driving else "", "action": _drive.bind(id)})
+	var cards := CardUI.card_list(garage, entries, [], selected)
+	garage.add_action(UITheme.row_button("< Back", _close_garage))
+	MenuNav.attach(garage, {first = cards, on_back = _close_garage})
+
+
+# The pause menu's Shop: free roam's rest-stop shop with every part free and unlocked; a change reloads the level.
+func open_shop() -> void:
+	shop = RestStopPage.new()
+	shop.free = true
+	shop.owned = owned
+	add_child(shop)
+	shop.car_changed.connect(func() -> void: _reload("Applying parts to your car"))
+	shop.closed.connect(_close_shop)
+	shop.open_shop()
+
+
+func _close_shop() -> void:
+	shop.queue_free()
+	shop = null
+	if _next_pose == null:  # set when the shop's change is reloading the level
+		_pause.return_from_extra()
+
+
+func _close_garage() -> void:
+	CardUI.park_previews(garage)
+	garage.get_parent().queue_free()
+	garage = null
+	_pause.return_from_extra()
+
+
+func _drive(id: String) -> void:
+	Config.data.dev_level_car_id = id
+	_reload("Changing cars")
+
+
+func _reload(title: String) -> void:
+	_next_pose = _car.global_transform
+	Scenes.change_to(get_tree(), Scenes.LEVEL_VIEW, title)
 
 
 # Free roam's driving effects, set up the way free_roam.gd does; returns the tyre marks.
@@ -125,6 +191,10 @@ func _add_effects(car: VehicleBody3D) -> TireMarks:
 	lamps.name = "CarLamps"
 	get_parent().add_child(lamps)
 	lamps.setup(car)
+	var shadow := CarShadow.new()
+	shadow.name = "CarShadow"
+	get_parent().add_child(shadow)
+	shadow.setup(car)
 	_car = car
 	if _spectators != null:
 		_spectators.car = car
@@ -239,8 +309,18 @@ func load_level(d: Dictionary) -> void:
 	buildings.name = "Buildings"
 	add_child(buildings)
 	buildings.setup(_save_path, height_at)
+	var ao := LevelAO.new(_bake.size, _bake.frame_n)
+	var cfg: GameConfig = Config.data
+	ao.stamp_trees(_bake.tree_xf, cfg.level_ao_tree_radius_scale)
+	for b: Dictionary in buildings.boxes:
+		ao.stamp_box(b.centre, b.axis, b.half, cfg.level_ao_building_reach_m, cfg.level_ao_building_ground)
 	for i in d.get("logPiles", []).size():
-		add_child(_log_pile(d["logPiles"][i], i))
+		var pile := _log_pile(d["logPiles"][i], i)
+		add_child(pile)
+		var box := (pile.get_child(1) as CollisionShape3D).shape as BoxShape3D
+		var axis := Vector2(pile.transform.basis.x.x, pile.transform.basis.x.z).normalized()
+		ao.stamp_box(Vector2(pile.position.x, pile.position.z), axis, Vector2(box.size.x, box.size.z) * 0.5, cfg.level_ao_log_reach_m, cfg.level_ao_log_ground)
+	ao.apply_to(material as ShaderMaterial)
 	_spectators = LevelSpectators.new()
 	_spectators.name = "Spectators"
 	add_child(_spectators)

@@ -607,6 +607,9 @@ func is_throttling() -> bool:
 func _apply_aero() -> void:
 	var cfg: GameConfig = config
 	apply_central_force(-linear_velocity * linear_velocity.length() * cfg.drag_coefficient)
+	# Faded in over the first 1 m/s so a parked car isn't pushed back and forth.
+	var rolling := cfg.rolling_resistance * mass * 9.8 * wheels_in_contact() / 4.0
+	apply_central_force(-linear_velocity.limit_length(1.0) * rolling)
 	# Soft hazard: extra linear drag while in a lake — the car slows but can drive
 	# out (no reset). See features/lakes.md.
 	if _water_query.is_valid() and _water_query.call(global_position):
@@ -1431,7 +1434,7 @@ func apply_car(index: int, rebuild_audio := true) -> String:
 func _apply_physics_spec(spec: Dictionary) -> void:
 	var cfg: GameConfig = config
 	cfg.mass = spec["mass"]
-	cfg.drag_coefficient = float(spec["frontal_area"]) * cfg.drag_per_frontal_area
+	cfg.drag_coefficient = cfg.half_air_density * float(spec.get("cd", cfg.default_cd)) * float(spec["frontal_area"])
 	cfg.wheel_radius = spec["wheel_radius"]
 	# All engine data (sound + performance + voicing + the TRANSMISSION it's bolted to:
 	# gear_ratios / final_drive / shift_time) comes from the referenced engine in

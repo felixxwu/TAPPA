@@ -26,7 +26,8 @@ extends RefCounted
 #                (real internal ratios; game-tuned final_drive; manual-slow vs PDK-fast
 #                shift_time).
 #   * frontal_area — head-on area (m²) measured from the car's model by
-#                tools/measure_frontal_area.gd; scales its aero drag (GameConfig.drag_per_frontal_area).
+#                tools/measure_frontal_area.gd; scales its aero drag with `cd`.
+#   * cd       — real-world drag coefficient (GameConfig.default_cd if omitted).
 #   * tire_compound — ONE dimensionless rubber-grip coefficient per car (same
 #                compound both axles), ~0.85 for hard economy/commercial tyres up to
 #                ~1.30 for track semi-slicks. This is only the RUBBER; effective μ is
@@ -109,7 +110,7 @@ const CARS: Array[Dictionary] = [
 		# Renders the hand-modelled blender/mx5/mx5.glb body (Car/Mx5Body), textured from the
 		# photogrammetry scan, on its own scanned wheels (features/car-scanning.md).
 		"use_model": true,
-		"model_node": "Mx5Body", "frontal_area": 1.61,
+		"model_node": "Mx5Body", "frontal_area": 1.61, "cd": 0.34,
 		"model_texture": "res://blender/mx5/mx5_texture.png",
 		"wheel_texture": "res://blender/mx5/wheel.png",
 		"wheel_model": "res://blender/mx5/wheel.glb",
@@ -134,7 +135,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/focus/focus.glb (Car/FocusBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Focus's own wheel.png.
 		"use_model": true,
-		"model_node": "FocusBody", "frontal_area": 2.33,
+		"model_node": "FocusBody", "frontal_area": 2.33, "cd": 0.32,
 		"model_texture": "res://blender/focus/focus_texture.png",
 		"wheel_texture": "res://blender/focus/wheel.png",
 	},
@@ -158,7 +159,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/f150/f150.glb (Car/F150Body), a hand-modelled body painted from the
 		# scan's paint video, on its own scanned wheels (features/car-scanning.md).
 		"use_model": true,
-		"model_node": "F150Body", "frontal_area": 2.50,
+		"model_node": "F150Body", "frontal_area": 2.50, "cd": 0.55,
 		"model_texture": "res://blender/f150/f150_texture.png",
 		"wheel_model": "res://blender/f150/wheel.glb",
 	},
@@ -181,7 +182,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/xjs/xjs.glb (Car/XjsBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "XjsBody", "frontal_area": 1.81,
+		"model_node": "XjsBody", "frontal_area": 1.81, "cd": 0.39,
 		"model_texture": "res://blender/xjs/texture.png",
 		"wheel_texture": "res://blender/xjs/wheel.png",
 	},
@@ -205,7 +206,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/acty/acty.glb (Car/ActyBody) with the texture extracted from
 		# the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "ActyBody", "frontal_area": 1.87,
+		"model_node": "ActyBody", "frontal_area": 1.87, "cd": 0.48,
 		"model_texture": "res://blender/acty/acty_texture.png",
 		"wheel_texture": "res://blender/acty/wheel.png",
 	},
@@ -229,7 +230,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/charger/charger.glb (Car/ChargerBody) with the texture extracted
 		# from the glb's embedded image; see car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "ChargerBody", "frontal_area": 2.01,
+		"model_node": "ChargerBody", "frontal_area": 2.01, "cd": 0.48,
 		"model_texture": "res://blender/charger/charger_texture.png",
 		"wheel_texture": "res://blender/charger/wheel.png",
 	},
@@ -252,7 +253,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/twingo/twingo.glb (Car/TwingoBody) with its baked texture; see
 		# car.gd apply_car(). Wheels use the Twingo's own wheel.png.
 		"use_model": true,
-		"model_node": "TwingoBody", "frontal_area": 1.80,
+		"model_node": "TwingoBody", "frontal_area": 1.80, "cd": 0.35,
 		"model_texture": "res://blender/twingo/twingo_texture.png",
 		"wheel_texture": "res://blender/twingo/wheel.png",
 	},
@@ -274,7 +275,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/911/911.glb (Car/Porsche911Body) with its baked texture; see
 		# car.gd apply_car(). Wheels use its own wheel.png.
 		"use_model": true,
-		"model_node": "Porsche911Body", "frontal_area": 1.71,
+		"model_node": "Porsche911Body", "frontal_area": 1.71, "cd": 0.39,
 		"model_texture": "res://blender/911/texture.png",
 		"wheel_texture": "res://blender/911/wheel.png",
 	},
@@ -297,7 +298,7 @@ const CARS: Array[Dictionary] = [
 		# Renders blender/viper/viper.glb (Car/ViperBody) with its baked body atlas
 		# (texture.png); see car.gd apply_car(). Wheels use its own three-spoke wheel.jpg.
 		"use_model": true,
-		"model_node": "ViperBody", "frontal_area": 1.87,
+		"model_node": "ViperBody", "frontal_area": 1.87, "cd": 0.5,
 		"model_texture": "res://blender/viper/texture.png",
 		"wheel_texture": "res://blender/viper/wheel.jpg",
 	},
@@ -320,7 +321,7 @@ const CARS: Array[Dictionary] = [
 		"suspension_travel": 0.37, "suspension_stiffness": 11.0, # heavy long GT, softer ride
 		# Renders blender/thebeast/mrbeast.glb (Car/TheBeastBody); see car.gd apply_car().
 		"use_model": true,
-		"model_node": "TheBeastBody", "frontal_area": 2.28,
+		"model_node": "TheBeastBody", "frontal_area": 2.28, "cd": 0.45,
 		"model_texture": "res://blender/thebeast/mrbeast_texture.png",
 		"wheel_texture": "res://blender/thebeast/wheel.png",
 	},

@@ -326,10 +326,9 @@ static func fitted_stats(owned: Dictionary) -> Dictionary:
 	EngineLibrary.apply(engine, cfg)
 	cfg.mass = EngineSwap.recompute_mass(float(spec.get("mass", 0.0)),
 		float(EngineLibrary.by_id(stock_id).get("mass", 0.0)), float(engine.get("mass", 0.0)))
-	# A stock boosted engine's rated power already includes its boost, so only a change to it counts.
-	var engine_boost := _full_boost_factor(cfg)
 	UpgradeLibrary.apply(car, cfg)
-	return {"mass": cfg.mass, "hp": CarLibrary.horsepower({"engine": engine_id}) * _full_boost_factor(cfg) / engine_boost,
+	# An engine's peak_torque is before boost, so a stock turbo's boost counts toward its power too.
+	return {"mass": cfg.mass, "hp": CarLibrary.horsepower({"engine": engine_id}) * _full_boost_factor(cfg),
 		"drive_mode": mode, "max_hp": float(spec.get("max_hp", 0.0)) * cfg.max_hp_mult}
 
 

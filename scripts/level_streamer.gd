@@ -12,6 +12,7 @@ var ground_material: Material
 var cover: GroundCover
 var _cover := PackedByteArray()
 var _cover_tints := {}
+var _bush_ids := {}
 var _sun_dir := SUN.normalized()
 
 
@@ -39,6 +40,7 @@ func setup(p_data: LevelData, p_bake: LevelBake, p_material: Material) -> void:
 	settings = level_settings()
 	_cover = GroundCover.decode_cover(data.level)
 	_cover_tints = GroundCover.tints(data.level.get("coverKinds", {}))
+	_bush_ids = GroundCover.bush_ids(data.level.get("coverKinds", {}))
 	bake.apply_to(p_material as ShaderMaterial)
 	cover = GroundCover.new()
 	cover.name = "Cover"
@@ -119,4 +121,5 @@ func spawn_pose() -> Transform3D:
 func _pack_vertex(job: ChunkJob, i: int, px: float, pz: float, normal: Vector3) -> void:
 	var light := 0.55 + 0.45 * maxf(normal.dot(_sun_dir), 0.0)
 	var tint := GroundCover.ground_multiplier(_cover, int(bake.size), _cover_tints, px, pz)
+	light *= GroundCover.bush_shade(_cover, int(bake.size), _bush_ids, px, pz, Config.data.level_ao_bush_ground)
 	job.colors[i] = Color(light * tint.r, light * tint.g, light * tint.b, normal.y)

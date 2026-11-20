@@ -14,6 +14,7 @@ extends CanvasLayer
 #             on or off), then one per part on sale for it (pick to buy it, which switches it on).
 #             TIRES starts with a Stock card, the car's own tires.
 #   GARAGE — a card per owned car with its "x / y upgrades" line (pick one to drive it).
+# The level view opens only the shop (`open_shop`) with `free` on.
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
@@ -21,6 +22,7 @@ extends CanvasLayer
 signal map_requested(site: int)
 signal car_changed
 signal tuned
+signal closed
 
 enum View { WRECKED, MAIN, TUNE, SHOP, UPGRADES, TIRES, ENGINES, DRIVETRAINS, GARAGE }
 
@@ -31,6 +33,8 @@ enum View { WRECKED, MAIN, TUNE, SHOP, UPGRADES, TIRES, ENGINES, DRIVETRAINS, GA
 
 # The active car's owned-car dict (Save's own copy), so tuning and parts land on it.
 var owned: Dictionary = {}
+# Every part already unlocked and any car's engine fittable, nothing to buy: the level view's shop.
+var free := false
 
 var view := View.MAIN
 var site := -1
@@ -39,6 +43,7 @@ var dirty := false
 var _swapped_car := false
 var _swap_from := -1  # the car picked to swap its engine, waiting for the car to swap with
 var _keep_at := 0
+var _root := View.MAIN  # the page whose Back closes this one
 var _page: MenuPage
 var _cards: CardCarousel
 var _tune_panel: TuningPanel
@@ -55,6 +60,7 @@ func is_open() -> bool:
 
 func open(p_site: int) -> void:
 	site = p_site
+	_root = View.MAIN
 	dirty = false
 	_swapped_car = false
 	_swap_from = -1
@@ -65,6 +71,15 @@ func open(p_site: int) -> void:
 	if pause_menu != null:
 		pause_menu.set_input_enabled(false)
 	_show(View.MAIN)
+
+
+# Just the shop, over a host's own menu (the pause menu, still paused behind it).
+func open_shop() -> void:
+	_root = View.SHOP
+	dirty = false
+	_swap_from = -1
+	_fielded_id = int(owned.get("instance_id", -1))
+	_show(View.SHOP)
 
 
 # The car gave up before reaching a rest stop: say how much money it dropped, and respawn at the last lit stop once the player continues. The game keeps running behind it.
@@ -88,6 +103,7 @@ func close() -> void:
 	if dirty:
 		dirty = false
 		car_changed.emit()
+	closed.emit()
 
 
 func _clear() -> void:
@@ -132,10 +148,10 @@ func _show(v: View) -> void:
 func _card_page(title: String, entries: Array, header: Array = [], selected := -1, back := View.MAIN, on_back := Callable()) -> void:
 	_page = CardUI.card_page(self, {"title": title, "dim": true})
 	_cards = CardUI.card_list(_page, entries, header, mini(_keep_at, entries.size() - 1) if selected < 0 else selected)
-	var go_back := on_back if on_back.is_valid() else _show.bind(back)
+	var go_back := on_back if on_back.is_valid() else close if view == _root else _show.bind(back)
 	if view != View.MAIN:
 		_page.add_action(UITheme.row_button("< Back", go_back))
-	MenuNav.attach(_page, {first = _cards, on_back = close if view == View.MAIN else go_back})
+	MenuNav.attach(_page, {first = _cards, on_back = go_back})
 
 
 func _build_wrecked() -> void:
@@ -204,10 +220,17 @@ func _build_shop() -> void:
 		{"title": "Tires", "subtitle": _shop_text(LootRules.is_tire), "icon": "tire", "action": _show.bind(View.TIRES)},
 		{"title": "Engine swaps", "icon": "engine_swap", "action": _show.bind(View.ENGINES)},
 		{"title": "Drivetrain", "subtitle": _shop_text(LootRules.is_drivetrain), "icon": "drivetrain", "action": _show.bind(View.DRIVETRAINS)},
-	], [LootRules.shop_header(owned), "$%d" % WorldSession.money()])
+	], _header())
+
+
+func _header() -> Array:
+	return [LootRules.shop_header(owned)] if free else [LootRules.shop_header(owned), "$%d" % WorldSession.money()]
 
 
 func _build_engines() -> void:
+	if free:
+		_build_free_engines()
+		return
 	var cars: Array = Save.profile.get(Save.KEY_CARS, [])
 	var entries: Array = []
 	for c: Dictionary in cars:
@@ -219,6 +242,26 @@ func _build_engines() -> void:
 	if cars.size() < 2:
 		header.append("Find another car to swap engines with")
 	_card_page("Engine swaps", entries, header, -1, View.SHOP, _back_from_engines)
+
+
+# Every catalogue car's engine, any one fitted with a pick.
+func _build_free_engines() -> void:
+	var entries: Array = []
+	for i in CarLibrary.all().size():
+		var id := String(CarLibrary.all()[i]["id"])
+		var fitted := LootRules.engine_owner(owned) == id
+		entries.append({"title": _car_name({"model_id": id}), "desc": LootRules.engine_name({"model_id": id}), "car": i,
+			"extra": "Fitted" if fitted else "", "action": Callable() if fitted else _fit_engine.bind(id)})
+	_card_page("Engine swaps", entries, _header(), -1, View.SHOP)
+
+
+func _fit_engine(model_id: String) -> void:
+	if model_id == String(owned.get("model_id", "")):
+		owned.erase("engine_from")
+	else:
+		owned["engine_from"] = model_id
+	dirty = true
+	_show(view)
 
 
 # The first pick marks the car, picking it again drops it, and picking another swaps their engines.
@@ -280,7 +323,7 @@ func _build_part_page(title: String, belongs: Callable, entries_first: Array = [
 			"disabled": not block.is_empty() or cost > money, "action": _buy_part.bind(part)})
 	if entries.is_empty():
 		entries.append({"title": "No parts yet", "subtitle": "Light checkpoints further out to buy some", "icon": "stash"})
-	_card_page(title, entries, [LootRules.shop_header(owned), "$%d" % money], -1, View.SHOP)
+	_card_page(title, entries, _header(), -1, View.SHOP)
 
 
 # A price reads green when the player can pay it and red when they can't.

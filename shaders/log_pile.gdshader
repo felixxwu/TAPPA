@@ -4,6 +4,14 @@
 shader_type spatial;
 render_mode cull_disabled;
 
+uniform float base_dark = 0.0;
+uniform float base_height = 0.8;
+varying float height;
+
+void vertex() {
+	height = VERTEX.y;
+}
+
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
 float noise(vec2 p) {
@@ -33,5 +41,5 @@ void fragment() {
 		col *= 1.0 - 0.5 * crack;
 		ROUGHNESS = 0.9;
 	}
-	ALBEDO = col;
+	ALBEDO = col * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, height));
 }

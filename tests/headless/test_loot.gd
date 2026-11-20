@@ -748,11 +748,19 @@ func test_the_weight_doesnt_depend_on_the_order_parts_were_bought() -> void:
 	assert_almost_eq(float(LootRules.fitted_stats({"model_id": model, "parts": parts})["mass"]), one_way, 0.01)
 
 
+# Power shows what the engine makes at full boost, stock turbo included, since peak_torque is before boost.
+func test_stock_power_counts_the_engines_own_boost() -> void:
+	for spec: Dictionary in CarLibrary.all():
+		var cfg := GameConfig.new()
+		EngineLibrary.apply(EngineLibrary.by_id(String(spec["engine"])), cfg)
+		var boosted := CarLibrary.horsepower(spec) * LootRules._full_boost_factor(cfg)
+		assert_almost_eq(float(LootRules.fitted_stats({"model_id": spec["id"]})["hp"]), boosted, 0.01, String(spec["id"]))
+
+
 # The shop header and garage cards read what the fitted parts actually do to the car.
 func test_fitted_stats_follow_the_parts_switched_on() -> void:
 	var car := {"model_id": String(CarLibrary.all()[0]["id"]), "instance_id": 1}
 	var stock := LootRules.fitted_stats(car)
-	assert_almost_eq(float(stock["hp"]), CarLibrary.horsepower(CarLibrary.all()[0]), 0.01, "no parts: the car's rated power")
 	assert_almost_eq(float(stock["mass"]), float(CarLibrary.all()[0]["mass"]), 0.01, "no parts: the car's own weight")
 	var ids := {"mass_mult": "", "install_turbo": "", "max_hp_mult": ""}
 	for id: String in BoostLibrary.CATALOGUE:

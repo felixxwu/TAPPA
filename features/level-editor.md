@@ -90,7 +90,7 @@ With **Settings → Dev → "Level instead of free roam"** on (or `GameConfig.de
 `Scenes.change_to` sends the title's world entry to `level_view.tscn` instead of free roam. Flipping the toggle from inside
 either world (pause → Settings → Dev) saves and swaps to the other world at once (`SettingsMenu._toggle_dev_level`). That scene is
 free roam's car, cameras, HUD and pause menu around one `LevelView` node, which reads
-`GameConfig.dev_level_path` and:
+`GameConfig.dev_level_path`, fields a stock `GameConfig.dev_level_car_id` (not the world's car; the pause menu's Garage, `open_garage`, picks any catalogue car and reloads the level with it parked where the old one stood, as free roam does; the pause menu's Shop, `open_shop`, is free roam's shop with every part free and unlocked, kept on the static `LevelView.owned` across the reload that fits them), and:
 
 - rebuilds the lab's terrain and road network (the same splines and blend) on a 1.5 m grid, the road painted as gravel by
   `shaders/level_ground.gdshader` per pixel from the baked road frame textures (`LevelBake`; see "Gravel road" below),

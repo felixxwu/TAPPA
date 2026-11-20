@@ -7,6 +7,8 @@ const ATLAS := "res://tools/levels/buildings_atlas.png"
 
 var footprint_points := PackedVector2Array()  # points round each building's footprint, for crowds to steer clear of
 
+var boxes: Array[Dictionary] = []  # each building's footprint: {centre, axis (unit, along its length), half}
+
 
 ## Builds every building in the bake next to `save_path`, seated on the ground's lowest point under its footprint.
 func setup(save_path: String, height_at: Callable) -> void:
@@ -39,13 +41,16 @@ func _building(b: Dictionary, mat: Material, height_at: Callable) -> StaticBody3
 	var uvs := PackedVector2Array()
 	var cols := PackedColorArray()
 	var height := 0.0
+	var dark: float = Config.data.level_ao_building_base
+	var reach: float = maxf(Config.data.level_ao_building_base_height_m, 0.01)
 	# three.js winds front faces counter-clockwise and counts texture V from the bottom; Godot does the opposite of both.
 	for t in range(0, p.size() / 3, 3):
 		for k in [t, t + 2, t + 1]:
 			verts.append(Vector3(p[k * 3], p[k * 3 + 1], p[k * 3 + 2]))
 			normals.append(Vector3(n[k * 3], n[k * 3 + 1], n[k * 3 + 2]))
 			uvs.append(Vector2(uv[k * 2], 1.0 - uv[k * 2 + 1]))
-			cols.append(Color(c[k * 3], c[k * 3 + 1], c[k * 3 + 2]))
+			var shade := 1.0 - dark * (1.0 - smoothstep(0.0, reach, p[k * 3 + 1]))
+			cols.append(Color(c[k * 3] * shade, c[k * 3 + 1] * shade, c[k * 3 + 2] * shade))
 			height = maxf(height, p[k * 3 + 1])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -67,6 +72,7 @@ func _building(b: Dictionary, mat: Material, height_at: Callable) -> StaticBody3
 		var off := Vector2(corner.x * len / 2, corner.y * wid / 2).rotated(rot)
 		ground = minf(ground, height_at.call(x + off.x, z + off.y))
 	var half := Vector2(len, wid) / 2.0
+	boxes.append({"centre": Vector2(x, z), "axis": Vector2.RIGHT.rotated(rot), "half": half})
 	for k in range(-int(half.x), int(half.x) + 1):
 		for sy in [-half.y, half.y]:
 			footprint_points.append(Vector2(x, z) + Vector2(k, sy).rotated(rot))

@@ -91,6 +91,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn; `tools/tree_lab.html` procedural tree playground; `tools/groundcover_lab.html` opaque grass-tuft playground |
 | [geo-pipeline.md](geo-pipeline.md) | `tools/geo/` scripts: fetch Welsh LiDAR, OSM and satellite for a real square, build a level editor save and a ground-cover mask |
 | [buildings.md](buildings.md) | `tools/building_lab.html` — procedural cottages / huts / barns as one-mesh, one-atlas low-poly buildings; `bake_buildings.js` + `LevelBuildings` put a level's buildings in the game |
+| [level-ao.md](level-ao.md) | Fake ambient occlusion in the level view: a ground-darkening map round trees / buildings / log piles, bush-cover vertex shade, and base-darkening on trees, bushes, buildings and log piles |
 | [level-editor.md](level-editor.md) | **Temporary dev tooling:** `tools/level_editor_lab.html` (2D/3D level editor) and `level_view.tscn` (`LevelView`), which drives a saved level in place of free roam behind the Dev page's toggle |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |
 | [barriers.md](barriers.md) | Solid crash barriers on the outside of sharp corners — 2 m modules stitched into a run; armco guardrail on gravel, concrete jersey rail on tarmac (`BarrierSection` / `BarrierLayout` / `BarrierField`) |
@@ -100,6 +101,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [dust-puffs.md](dust-puffs.md) | `DustPuffs` — opaque, flat-shaded low-poly dust clouds left behind the rear wheels on road (gravel-coloured on gravel, near-white on tarmac) (one blob mesh + MultiMesh; size/tumble in the instance basis; hidden near the camera; pops at end of life) |
 | [engine-smoke.md](engine-smoke.md) | `EngineSmoke` — grey smoke puffed from the bonnet on each damage misfire (own small CPU pool + MultiMesh, grows & fades) |
 | [exhaust-flames.md](exhaust-flames.md) | `ExhaustFlames` — backfire flame from each exhaust pipe on a rev-limiter bang and while nitrous delivers; plus the exhaust lab dev scene for positioning the pipes |
+| [car-shadow.md](car-shadow.md) | `CarShadow` — the fake blob shadow laid on the ground under the player's car, fading with height |
 | [car-lamps.md](car-lamps.md) | `CarLamps` — glowing head and tail lamp flares at each car's authored lamp centres; headlights with the night cone, tail lamps with it and under the foot brake |
 | [camera.md](camera.md) | Camera modes: chase follow, bonnet hood, and photo mode free-fly |
 | [card-carousel.md](card-carousel.md) | **Every menu is a card list** — `CardCarousel` (the side-scrolling card widget) and `CardUI` (`card_page` / `card_list` — build a menu from a list of entry dicts); which menus are cards and which are plain pages |
