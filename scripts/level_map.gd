@@ -11,7 +11,7 @@ const ROAD := Color(0.93, 0.55, 0.16)
 const TARMAC := Color(0.36, 0.37, 0.4)
 const PATCH := Color(0.72, 0.66, 0.55)
 const LOG_PILE := Color(0.55, 0.36, 0.2)
-const TELEPORT := Color(0.23, 0.82, 0.9)
+const TELEPORT := UITheme.GOLD
 const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
 const COVER_TINT := 0.3   # how far the ground leans toward each cover type's colour
 const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show when zoomed out
@@ -235,7 +235,7 @@ func _draw() -> void:
 	if car != null:
 		var p := to_screen(Vector2(car.global_position.x, car.global_position.z))
 		var f := Vector2(-car.global_basis.z.x, -car.global_basis.z.z).normalized() * 12.0
-		draw_colored_polygon(PackedVector2Array([p + f, p - f * 0.6 + f.orthogonal() * 0.6, p - f * 0.6 - f.orthogonal() * 0.6]), UITheme.RED)
+		draw_colored_polygon(PackedVector2Array([p + f, p - f * 0.6 + f.orthogonal() * 0.6, p - f * 0.6 - f.orthogonal() * 0.6]), Color.WHITE)
 	var aim := get_local_mouse_position() if _mouse_inside() else size / 2.0
 	var target := nearest_teleport(to_world(aim))
 	if target != Vector2.INF:

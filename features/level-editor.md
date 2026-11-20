@@ -97,7 +97,7 @@ samples as polylines (orange gravel, grey tarmac, split where `st` crosses 0.5),
 at no less than `MIN_MARK_PX` so they show zoomed out, over a `IMAGE_PX`² image of tree dots on ground faintly tinted by the cover
 grid (`_cover_image`: sampled at `COVER_PX`², each type's tuft colour mixed in by `COVER_TINT`) (painted on a background thread (`_paint`) from before the ground prefill, and uploaded with its road lines traced by `build()` at the end of the shader warm-up, behind the loading screen, since the 4096² upload stalls a frame for about 30 ms; the map's input stays off until the level has loaded; not the satellite image).
 Drag / WASD / arrows / left stick pan, wheel / +- / LB RB zoom; click (or Enter / A on the centre crosshair) teleports to the nearest of the save's
-teleport points (`nearest_teleport`, drawn as cyan diamonds; nowhere if the save has none), onto the road beside it (`LevelView.road_pose`), facing away from the dead end when that road has one at one end only (`LevelData.away_from_dead_end`), prefilling the streamer there before unpausing so the car doesn't fall through.
+teleport points (`nearest_teleport`, drawn as yellow diamonds, the car as a white arrow; nowhere if the save has none), onto the road beside it (`LevelView.road_pose`), facing away from the dead end when that road has one at one end only (`LevelData.away_from_dead_end`), prefilling the streamer there before unpausing so the car doesn't fall through.
 
 **Map discovery** (`scripts/level_discovery.gd`, `LevelDiscovery`; tests `tests/headless/test_level_discovery.gd`): the map only
 shows ground the player has driven near. `LevelMap` keeps a byte grid over the level (`level_map_reveal_cell_m` cells, 0 hidden,
@@ -150,7 +150,7 @@ instead of spinning forever.
 `scripts/level_bake.gd` (`LevelBake`, a Resource) holds what is worked out once per save: final ground heights on a 1.5 m grid
 (uint16 centimetres over `height_base`; `height` clamps into the square so the edge repeats outwards), the road frame as one
 RGBA8 texture at 2 m texels (`frame`: across (signed, within ±16 m), half-width (0-16 m), along (modulo 64 m), junction
-weight (7 bits, top bit = tarmac); 8 bits each, so 5 km is about 25 MB) and the road samples (`sx..sc`, so `surface_at` / `road_pose` / `spawn_pose`
+weight (low 4 bits) and tarmac weight (high 4 bits); 8 bits each, so 5 km is about 25 MB) and the road samples (`sx..sc`, so `surface_at` / `road_pose` / `spawn_pose`
 run without `LevelData._build_road`). `LevelBake.bake(data, key)` is pure; `load_or_bake(save_path, data)` reads `<save>.bake.res`
 and compares `source_key` (md5 of the save minus `coverKinds`, which isn't baked, + `BAKE_VERSION`): stale or missing bakes in process on desktop (`LevelView.load_level` puts up a "Baking the level" loading screen and runs the bake on a thread, showing `LevelBake.progress` as a percentage; warns,
 saves beside the save), returns null on web and sets `last_error`; an empty path bakes in memory only. Bump `BAKE_VERSION`
@@ -271,8 +271,8 @@ surface** copies it along the chain; 2D draws paved samples grey.
 
 - **Grip:** `LevelData.surface_at` returns the tarmac weight as `.y`, so the drivetrain, dust and tyre marks treat it as tarmac with no
   level-specific code. `LevelData.nearest` carries it as `.w`.
-- **Bake:** the frame's alpha keeps the junction weight in its low 7 bits and sets the top bit on tarmac (`LevelBake.frame_tarmac`);
-  the samples' `st` is stored in `z_road` (`BAKE_VERSION` 7).
+- **Bake:** the frame's alpha keeps the junction weight in its low 4 bits and the blended tarmac weight in its high 4
+  (`LevelBake.frame_tarmac`), so the surface fades over the segment in the game as in the lab; the samples' `st` is stored in `z_road`.
 - **Look:** `tarmac()` in the shader (and the lab's copy beside `gravel()`): `textures/tarmac.png` (also from `tools/bake_gravel.js`,
   1.25 cm texels over 3.2 m) holds chippings whose alpha is how much wear strips their binder, so the wheel tracks (one lane each side
   above 2.4 m half-width) show pale stone and the rest stays dark; an oily strip mid-lane, squared repair patches every 8 m along, and a

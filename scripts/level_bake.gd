@@ -3,7 +3,7 @@ extends Resource
 # Everything about a level that is worked out once, offline: final ground heights, the road frame textures the ground shader reads, the road samples, the trees in tiles and which of them each stretch of road can see. Saved beside the level as <name>.bake.res and loaded instead of running LevelData's road build.
 # The big arrays live decoded in memory but are stored as zstd blobs (see _get_property_list), and visibility stays as row-to-row diffs.
 
-const BAKE_VERSION := 10
+const BAKE_VERSION := 11
 const FRAME_RANGE := 16.0    # across and half-width are stored within this many metres; beyond it there is no road to paint
 const FRAME_CELL := 2.0      # road frame texel size in metres
 const PATCH_HALF := 8.0      # a gravel patch is stored in the frame as a road this wide whose centre is the patch's inside
@@ -26,7 +26,7 @@ const TREE_HEIGHT := {       # species heights, as in the lab's KINDS table; wid
 @export var height_base := 0.0           # heights are uint16 centimetres above this
 var heights := PackedByteArray()
 @export var frame_n := 0                 # road frame texels per side
-var frame := PackedByteArray()   # RGBA8 per texel: across (signed), half-width, along (modulo ALONG_PERIOD), junction weight in 7 bits with the top bit set on tarmac
+var frame := PackedByteArray()   # RGBA8 per texel: across (signed), half-width, along (modulo ALONG_PERIOD), junction weight in the low 4 bits and tarmac weight in the high 4
 var sx := PackedFloat32Array()   # road samples, as LevelData's
 var sz := PackedFloat32Array()
 var sw := PackedFloat32Array()
@@ -103,18 +103,18 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 			var x := c * fcell - b.size / 2
 			var z := r * fcell - b.size / 2
 			var f := data.road_frame(x, z)
-			var tarmac := data.nearest(x, z).w >= 0.5
+			var tarmac := data.nearest(x, z).w
 			var pad := data.patch_at(x, z).x
 			if pad < (absf(f.x) - f.y if f.x != INF else INF):
 				# nearer a patch's inside than any road's edge: an even junction-style pad, so the gravel has no direction
 				f = Vector4(maxf(PATCH_HALF + pad, 0.0), PATCH_HALF, 0.0, 1.0)
-				tarmac = false
+				tarmac = 0.0
 			var across := clampf(f.x if f.x != INF else FRAME_RANGE, -FRAME_RANGE, FRAME_RANGE)
 			var o := (r * b.frame_n + c) * 4
 			b.frame[o] = roundi((across + FRAME_RANGE) / (2.0 * FRAME_RANGE) * 255.0)
 			b.frame[o + 1] = roundi(clampf(f.y, 0.0, FRAME_RANGE) / FRAME_RANGE * 255.0)
 			b.frame[o + 2] = roundi(fposmod(f.z, ALONG_PERIOD) / ALONG_PERIOD * 255.0)
-			b.frame[o + 3] = roundi(clampf(f.w, 0.0, 1.0) * 127.0) | (128 if tarmac else 0)
+			b.frame[o + 3] = roundi(clampf(f.w, 0.0, 1.0) * 15.0) | (roundi(clampf(tarmac, 0.0, 1.0) * 15.0) << 4)
 	b.sx = data.sx
 	b.sz = data.sz
 	b.sw = data.sw
@@ -317,15 +317,15 @@ func height(x: float, z: float) -> float:
 	return lerpf(lerpf(grid_height(c, r), grid_height(c + 1, r), u), lerpf(grid_height(c, r + 1), grid_height(c + 1, r + 1), u), v)
 
 
-# One road frame texel as LevelData.road_frame returns it, except across and half-width are clamped to FRAME_RANGE, along is modulo ALONG_PERIOD, and all are 8-bit quantised (the junction weight 7-bit).
+# One road frame texel as LevelData.road_frame returns it, except across and half-width are clamped to FRAME_RANGE, along is modulo ALONG_PERIOD, and all are 8-bit quantised (the junction weight 4-bit).
 func frame_texel(ix: int, iz: int) -> Vector4:
 	var o := _frame_offset(ix, iz)
 	return Vector4(frame[o] / 255.0 * 2.0 * FRAME_RANGE - FRAME_RANGE, frame[o + 1] / 255.0 * FRAME_RANGE,
-		frame[o + 2] / 255.0 * ALONG_PERIOD, (frame[o + 3] & 127) / 127.0)
+		frame[o + 2] / 255.0 * ALONG_PERIOD, (frame[o + 3] & 15) / 15.0)
 
 
-func frame_tarmac(ix: int, iz: int) -> bool:
-	return frame[_frame_offset(ix, iz) + 3] >= 128
+func frame_tarmac(ix: int, iz: int) -> float:
+	return (frame[_frame_offset(ix, iz) + 3] >> 4) / 15.0
 
 
 func _frame_offset(ix: int, iz: int) -> int:

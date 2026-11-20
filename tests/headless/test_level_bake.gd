@@ -64,8 +64,8 @@ func test_the_road_frame_texels_agree_with_the_road_frame() -> void:
 			assert_almost_eq(got.y, clampf(want.y, 0.0, LevelBake.FRAME_RANGE), 0.04, "half-width")
 			var along_gap := absf(fposmod(got.z - want.z + LevelBake.ALONG_PERIOD / 2, LevelBake.ALONG_PERIOD) - LevelBake.ALONG_PERIOD / 2)
 			assert_lt(along_gap, 0.14, "along")
-			assert_almost_eq(got.w, want.w, 0.5 / 127.0 + 1e-4, "junction weight")
-			assert_eq(_bake.frame_tarmac(c, r), _data.nearest(x, z).w >= 0.5, "tarmac at %s, %s" % [x, z])
+			assert_almost_eq(got.w, want.w, 0.5 / 15.0 + 1e-4, "junction weight")
+			assert_almost_eq(_bake.frame_tarmac(c, r), _data.nearest(x, z).w, 0.5 / 15.0 + 1e-4, "tarmac at %s, %s" % [x, z])
 
 
 func test_the_frame_junction_channel_is_one_at_a_junction_and_zero_away() -> void:
@@ -83,7 +83,7 @@ func test_a_gravel_patch_is_an_even_gravel_pad_in_the_frame() -> void:
 	var t := _bake.frame_texel(c, r)
 	assert_lt(t.x, t.y, "inside the road edge the shader draws")
 	assert_almost_eq(t.w, 1.0, 0.01, "junction weight 1: no ruts, no direction")
-	assert_false(_bake.frame_tarmac(c, r))
+	assert_eq(_bake.frame_tarmac(c, r), 0.0)
 	assert_lt(_bake.patch_distance(-32.0, 36.0), 0.0)
 	assert_eq(_bake.patch_distance(-32.0, 36.0), _data.patch_at(-32.0, 36.0).x)
 	assert_gt(_bake.surface_at(-32.0, 36.0).x, 0.99)

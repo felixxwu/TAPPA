@@ -15,7 +15,7 @@ uniform float tarmac_tile_m = 3.2;
 uniform float rock_start_deg = 30.0;
 uniform float rock_full_deg = 45.0;
 // The road frame, one RGBA8 texture read nearest and filtered by hand: across (signed), half-width, along (modulo 64 m),
-// junction weight in the low 7 bits of alpha with the top bit set on tarmac.
+// junction weight in the low 4 bits of alpha and tarmac weight in the high 4.
 uniform sampler2D road_frame : filter_nearest, hint_default_black;
 uniform float frame_size_m = 600.0;
 uniform float frame_cell_m = 1.0;
@@ -147,9 +147,9 @@ void fragment() {
 		dist += w * abs(across);
 		half_w += w * t.g * FRAME_RANGE;
 		float a8 = round(t.a * 255.0);
-		float is_tarmac = step(127.5, a8);
-		junc += w * (a8 - 128.0 * is_tarmac) / 127.0;
-		tarmac_w += w * is_tarmac;
+		float tarmac_q = floor(a8 / 16.0);
+		junc += w * (a8 - 16.0 * tarmac_q) / 15.0;
+		tarmac_w += w * tarmac_q / 15.0;
 		along += w * (mod(al - ref_along + ALONG_PERIOD * 0.5, ALONG_PERIOD) - ALONG_PERIOD * 0.5);
 		if ((o.x == 1) == (f.x > 0.5) && (o.y == 1) == (f.y > 0.5)) {
 			nearest_across = across;
