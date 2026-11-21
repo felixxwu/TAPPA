@@ -104,7 +104,7 @@ shows ground the player has driven near. `LevelMap` keeps a byte grid over the l
 255 shown) and every `REVEAL_TICK_S` while driving (and on opening the map) stamps a disc of `level_map_reveal_radius_m` round the car,
 fading over its last `level_map_reveal_feather_m` (`reveal_at_car`, skipped until the car has moved a cell). Everything under the
 roads, buildings and log piles is then covered by a fog texture, one pixel per cell (`LevelDiscovery.fog_image`, wrapped in a linear-filtered
-`CanvasTexture` so its edge is soft at any zoom), in the same colour as the ground off the level's edge. Teleport points and the car are drawn over
+`CanvasTexture` so its edge is soft at any zoom), in the same dark colour as the ground off the level's edge (`LevelMap.FOG`), with a faint line (`LevelMap.BORDER`) round the level's edge so the end of the world shows. On a touch screen two fingers pinch to zoom round their midpoint and pan as it moves (`LevelMap.touch`, from `InputEventScreenTouch` / `ScreenDrag`; a phone's own magnify / pan gestures are ignored while two fingers are down, and lifting them after a pinch doesn't teleport); one finger pans through the emulated mouse. Teleport points and the car are drawn over
 the fog: **every teleport still works, discovered or not** (Felix, 2026-11-20: locking them to discovery comes later). The grid is saved as the
 `level_map_seen` setting (`LevelDiscovery.to_save`: level path, size, cell size, the grid deflated + base64) whenever `LevelView.save_pose` runs,
 if it has grown; a save from another level file, size or cell size is ignored. `tools/level_map_capture.tscn` walks the car along the road

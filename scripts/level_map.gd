@@ -21,7 +21,9 @@ const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show
 const ROAD_EDGE := Color(0.25, 0.15, 0.08)
 const WASD := {KEY_W: Vector2.UP, KEY_A: Vector2.LEFT, KEY_S: Vector2.DOWN, KEY_D: Vector2.RIGHT}
 const PAN_SPEED_PX := 600.0
-const FOG := Color(0.4, 0.39, 0.33)  # the undiscovered ground: GROUND.darkened(0.5), the same as off the level's edge
+const FOG := Color(0.2, 0.195, 0.165)  # the undiscovered ground: GROUND.darkened(0.75), the same as off the level's edge
+const BORDER := Color(0.80, 0.78, 0.66, 0.35)  # the faint line round the level's edge, so the world's end shows through the fog
+const BORDER_PX := 2.0
 const REVEAL_TICK_S := 0.25         # how often the car's position is stamped into the discovery grid
 const SEEN_KEY := "level_map_seen"  # the Save setting holding the discovery grid (LevelDiscovery.to_save)
 
@@ -38,6 +40,8 @@ var _over_pause := false  # opened from the pause menu: closing leaves the game 
 var _busy := false
 var _pad_used := false  # a gamepad aims with the centre crosshair instead of the mouse
 var _drag_from := Vector2.ZERO
+var _touches := {}       # finger index -> screen position, for two-finger pinch zoom on a touch screen
+var _pinched := false    # this touch gesture pinched, so lifting the fingers doesn't teleport
 var _painter: Thread  # paints the map image in the background from load, so the first M opens instantly
 var discovery: LevelDiscovery  # where the car has driven: only ground near it is drawn, the rest is under fog
 var _fog: CanvasTexture        # discovery's fog, linear filtered so its edge is soft at any zoom
@@ -51,7 +55,8 @@ func _init() -> void:
 	process_mode = PROCESS_MODE_ALWAYS
 	mouse_filter = MOUSE_FILTER_STOP
 	visible = false
-	_hint = UITheme.label("Drag / WASD / arrows: pan   Wheel / LB RB: zoom   Click / Enter: teleport   M / Esc: close", "ink")
+	_hint = UITheme.label("Drag: pan   Pinch: zoom   Tap: teleport" if Platform.is_touch() \
+		else "Drag / WASD / arrows: pan   Wheel / LB RB: zoom   Click / Enter: teleport   M / Esc: close", "ink")
 	_hint.position = Vector2(UITheme.FONT_SIZE, UITheme.FONT_SIZE)
 	add_child(_hint)
 	back_button = UITheme.row_button(UITheme.caps("< Back"), close)
@@ -110,6 +115,7 @@ func _open() -> void:
 		return
 	visible = true
 	get_tree().paused = true
+	_touches.clear()
 	if visible:
 		build()
 		reveal_at_car()
@@ -239,7 +245,7 @@ func _paint_trees(img: Image, b: LevelBake, half: float, k: float) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), GROUND.darkened(0.5))
+	draw_rect(Rect2(Vector2.ZERO, size), FOG)
 	var half := size_m() / 2.0
 	draw_texture_rect(_texture, Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * size_m() * zoom), false)
 	draw_set_transform(size / 2.0 - center * zoom, 0.0, Vector2(zoom, zoom))
@@ -264,6 +270,7 @@ func _draw() -> void:
 		draw_circle(to_screen(Vector2(float(pile["x"]), float(pile["z"]))), maxf(MIN_MARK_PX, 4.0 * zoom) / 2.0, LOG_PILE)
 	if _fog != null:
 		draw_texture_rect(_fog, Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * discovery.cells * discovery.cell_m * zoom), false)
+	draw_rect(Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * size_m() * zoom), BORDER, false, BORDER_PX)
 	for t: Dictionary in view.level.get("teleports", []):  # drawn over the fog: every teleport works, driven near or not
 		var tp := to_screen(Vector2(float(t["x"]), float(t["z"])))
 		draw_colored_polygon(PackedVector2Array([tp + Vector2(0, -8), tp + Vector2(8, 0), tp + Vector2(0, 8), tp + Vector2(-8, 0)]), TELEPORT)
@@ -309,21 +316,30 @@ func _input(event: InputEvent) -> void:
 		_pad_used = true
 	elif event is InputEventMouseMotion:
 		_pad_used = false
-	if event.is_action_pressed("ui_cancel"):
+	if event is InputEventScreenTouch or event is InputEventScreenDrag:
+		touch(event)
+	elif event.is_action_pressed("ui_cancel"):
 		close()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP: zoom_by(1.2, event.position)
 			MOUSE_BUTTON_WHEEL_DOWN: zoom_by(1.0 / 1.2, event.position)
-			MOUSE_BUTTON_LEFT: _drag_from = event.position
+			MOUSE_BUTTON_LEFT:
+				_drag_from = event.position
+				_pinched = _touches.size() >= 2
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		if event.position.distance_to(_drag_from) < 6.0:
+		if event.position.distance_to(_drag_from) < 6.0 and not _pinched:
 			teleport(nearest_teleport(to_world(event.position)))
 	elif event is InputEventPanGesture:  # a Mac trackpad's two-finger scroll
-		zoom_by(pow(1.1, -event.delta.y), event.position)
+		if _touches.size() < 2:  # a phone's own pinch already zooms through `touch`
+			zoom_by(pow(1.1, -event.delta.y), event.position)
 	elif event is InputEventMagnifyGesture:
-		zoom_by(event.factor, event.position)
+		if _touches.size() < 2:
+			zoom_by(event.factor, event.position)
 	elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
+		if _touches.size() >= 2:
+			return  # the first finger's emulated mouse: the pinch pans the map itself
+
 		center -= event.relative / zoom
 		queue_redraw()
 	elif event is InputEventMouseMotion:
@@ -337,6 +353,34 @@ func _input(event: InputEvent) -> void:
 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_LEFT_SHOULDER):
 		zoom_by(1.0 / 1.5, size / 2.0)
 
+
+# Touch screens: one finger pans through the emulated mouse; two fingers pinch to zoom round their midpoint and pan as it moves.
+func touch(event: InputEvent) -> void:
+	var before := _pinch()
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			_touches[event.index] = event.position
+		else:
+			_touches.erase(event.index)
+	elif _touches.has(event.index):
+		_touches[event.index] = event.position
+	if _touches.size() >= 2:
+		_pinched = true
+	var after := _pinch()
+	if event is InputEventScreenDrag and before.size() == 2 and after.size() == 2 and before[1] > 0.0:
+		center -= (after[0] - before[0]) / zoom
+		zoom_by(after[1] / before[1], after[0])
+
+
+# The first two fingers' midpoint and spread, or [] with fewer than two down.
+func _pinch() -> Array:
+	if _touches.size() < 2:
+		return []
+	var keys := _touches.keys()
+	keys.sort()
+	var a: Vector2 = _touches[keys[0]]
+	var b: Vector2 = _touches[keys[1]]
+	return [(a + b) / 2.0, a.distance_to(b)]
 
 
 func _process(delta: float) -> void:

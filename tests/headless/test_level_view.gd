@@ -92,6 +92,27 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	m.pressed = true
 	map._input(m)
 	assert_true(map.visible and get_tree().paused, "M opens the map and pauses")
+	map.zoom = map.fit_zoom() * 2.0
+	var zoom0 := map.zoom
+	var under := map.to_world(Vector2(500, 300))  # the ground between the two fingers
+	var press := InputEventMouseButton.new()  # the first finger's emulated mouse, as a touch screen sends it
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = Vector2(400, 300)
+	map._input(press)
+	map._input(_touch(0, Vector2(400, 300), true))
+	map._input(_touch(1, Vector2(600, 300), true))
+	var drag := InputEventScreenDrag.new()
+	drag.index = 1
+	drag.position = Vector2(800, 300)
+	map._input(drag)
+	assert_almost_eq(map.zoom, zoom0 * 2.0, zoom0 * 0.01, "spreading two fingers to twice as far apart zooms in twice as far")
+	assert_almost_eq(map.to_screen(under), Vector2(600, 300), Vector2.ONE, "the ground under the fingers follows their midpoint")
+	map._input(_touch(0, Vector2(400, 300), false))
+	map._input(_touch(1, Vector2(800, 300), false))
+	press.pressed = false
+	map._input(press)
+	assert_true(map.visible, "lifting the fingers after a pinch doesn't teleport")
 	var here := Vector2((world.get_node("Car") as Node3D).global_position.x, (world.get_node("Car") as Node3D).global_position.z)
 	assert_eq(map.discovery.shown(here), 1.0, "the ground round the car is discovered")
 	assert_not_null(map._fog, "the rest of the map is drawn under fog")
@@ -301,3 +322,11 @@ func test_the_last_spot_on_this_level_comes_back_next_launch() -> void:
 	assert_almost_eq(pose.basis.get_euler().y, 1.0, 0.01, "facing the same way")
 	assert_eq(view.saved_pose({"level": "b.json", "x": 30.0, "z": -10.0}, "a.json", fallback), fallback, "a spot from another level is ignored")
 	assert_eq(view.saved_pose(null, "a.json", fallback), fallback, "nothing saved starts at the spawn")
+
+
+func _touch(index: int, at: Vector2, down: bool) -> InputEventScreenTouch:
+	var t := InputEventScreenTouch.new()
+	t.index = index
+	t.position = at
+	t.pressed = down
+	return t
