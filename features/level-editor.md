@@ -92,7 +92,7 @@ height and satellite colour.
 
 ## In the game
 
-**Map (M, or the pad's Back button):** `LevelMap`, added by `LevelView` once loaded, pauses the game and shows the bake's road
+**Map (M, the pad's Back button, or the pause menu's first row, Map):** `LevelMap`, added by `LevelView` once loaded, pauses the game (`toggle`; from the pause menu `open_over_pause`, where closing emits `closed` and `LevelView._on_map_closed` hands back to the menu, or after a teleport re-arms it and drives on). A top-right **< Back** button (`back_button`, the touch screen's way out; `_input` leaves clicks on it to the button) closes it like M / Esc. It shows the bake's road
 samples as polylines (orange gravel, grey tarmac, split where `st` crosses 0.5), roads and buildings (`LevelMap.footprint`) at true size, log piles drawn on top
 at no less than `MIN_MARK_PX` so they show zoomed out, over a `IMAGE_PX`² image of tree dots on ground faintly tinted by the cover
 grid (`_cover_image`: sampled at `COVER_PX`², each type's tuft colour mixed in by `COVER_TINT`) (painted on a background thread (`_paint`) from before the ground prefill, and uploaded with its road lines traced by `build()` at the end of the shader warm-up, behind the loading screen, since the 4096² upload stalls a frame for about 30 ms; the map's input stays off until the level has loaded; not the satellite image).

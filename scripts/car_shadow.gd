@@ -43,10 +43,10 @@ func _physics_process(_delta: float) -> void:
 		fwd = up.cross(Vector3.RIGHT)
 	var footprint := Vector2(_car.call("half_width"), _car.call("half_length")) * 2.0
 	var quad := footprint + Vector2.ONE * 2.0 * cfg.car_shadow_soft_m
-	var basis := Basis.looking_at(fwd.normalized(), up)
-	basis.x *= quad.x
-	basis.z *= quad.y
-	global_transform = Transform3D(basis, hit["position"] + up * LIFT_M)
+	var b := Basis.looking_at(fwd.normalized(), up)
+	b.x *= quad.x
+	b.z *= quad.y
+	global_transform = Transform3D(b, hit["position"] + up * LIFT_M)
 	var fade := 1.0 - from.distance_to(hit["position"]) / cfg.car_shadow_fade_height_m
 	var mat := material_override as ShaderMaterial
 	mat.set_shader_parameter("footprint_m", footprint)

@@ -1,7 +1,10 @@
 class_name LevelMap
 extends Control
 # Docs: features/level-editor.md — update in the same change as this file.
-# The level view's full-screen map (M): the road network over trees and buildings, pan / zoom, and teleport to one of the save's teleport points.
+# The level view's full-screen map (M, or the pause menu's Map row): the road network over trees and buildings, pan / zoom, and teleport to one of the save's teleport points.
+
+# The map closed: `teleported` when it closed by teleporting (the game is running again), `over_pause` when the pause menu opened it (open_over_pause) and should take back over.
+signal closed(teleported: bool, over_pause: bool)
 
 const IMAGE_PX := 4096
 const GROUND := Color(0.80, 0.78, 0.66)
@@ -30,6 +33,8 @@ var _chains: Array[PackedVector2Array] = []  # road lines, split wherever the su
 var _tarmac: Array[bool] = []                 # per line in _chains
 var _buildings: Array[PackedVector2Array] = []  # each building's footprint corners in world metres
 var _hint: Label
+var back_button: Button  # top-right "< Back": the way a touch screen (no M, no Esc) closes the map
+var _over_pause := false  # opened from the pause menu: closing leaves the game paused for it
 var _busy := false
 var _pad_used := false  # a gamepad aims with the centre crosshair instead of the mouse
 var _drag_from := Vector2.ZERO
@@ -46,9 +51,14 @@ func _init() -> void:
 	process_mode = PROCESS_MODE_ALWAYS
 	mouse_filter = MOUSE_FILTER_STOP
 	visible = false
-	_hint = UITheme.label("Drag / WASD / arrows: pan   Wheel / LB RB: zoom   Click / Enter: teleport   M: close", "ink")
+	_hint = UITheme.label("Drag / WASD / arrows: pan   Wheel / LB RB: zoom   Click / Enter: teleport   M / Esc: close", "ink")
 	_hint.position = Vector2(UITheme.FONT_SIZE, UITheme.FONT_SIZE)
 	add_child(_hint)
+	back_button = UITheme.row_button(UITheme.caps("< Back"), close)
+	back_button.set_anchors_preset(PRESET_TOP_RIGHT)
+	back_button.grow_horizontal = GROW_DIRECTION_BEGIN
+	back_button.position = Vector2(-UITheme.FONT_SIZE, UITheme.FONT_SIZE)
+	add_child(back_button)
 
 
 func _ready() -> void:
@@ -69,11 +79,37 @@ func size_m() -> float:
 	return view.data.size
 
 
+# M / the pad's Back: open from driving, or close. Does nothing over another paused page.
 func toggle() -> void:
-	if _busy or (not visible and get_tree().paused):
+	if visible:
+		close()
+	elif not get_tree().paused:
+		_open()
+
+
+# The pause menu's Map row: the game is already paused, and closing hands back to the menu (`closed`).
+func open_over_pause() -> void:
+	if visible or _busy:
 		return
-	visible = not visible
-	get_tree().paused = visible
+	_over_pause = true
+	_open()
+
+
+func close() -> void:
+	if _busy or not visible:
+		return
+	visible = false
+	var over := _over_pause
+	_over_pause = false
+	get_tree().paused = over  # stays frozen under the pause menu it came from
+	closed.emit(false, over)
+
+
+func _open() -> void:
+	if _busy:
+		return
+	visible = true
+	get_tree().paused = true
 	if visible:
 		build()
 		reveal_at_car()
@@ -266,13 +302,15 @@ func _input(event: InputEvent) -> void:
 		return
 	if not visible:
 		return
+	if event is InputEventMouseButton and back_button.get_global_rect().has_point(event.position):
+		return  # left for the Back button's own GUI input
 	get_viewport().set_input_as_handled()
 	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
 		_pad_used = true
 	elif event is InputEventMouseMotion:
 		_pad_used = false
 	if event.is_action_pressed("ui_cancel"):
-		toggle()
+		close()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP: zoom_by(1.2, event.position)
@@ -379,3 +417,6 @@ func teleport(p: Vector2) -> void:
 	car.reset_to(pose)
 	get_tree().paused = false
 	_busy = false
+	var over := _over_pause
+	_over_pause = false
+	closed.emit(true, over)

@@ -127,5 +127,5 @@ A `CanvasLayer` (layer 7, always processing) over the frozen game:
 - **Stats:** a read-only card each for distance driven, rest stops lit, times the car gave up,
   and rings reached.
 
-The pause menu hosts them through its generic extra cards (`PauseMenu.extra_rows`,
+The pause menu hosts them through its generic extra cards (`PauseMenu.lead_rows` for Map, first; `extra_rows` for Stats;
 `extra_requested`, `return_from_extra`).

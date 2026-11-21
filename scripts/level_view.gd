@@ -95,6 +95,7 @@ func _ready() -> void:
 	map.view = self
 	map.process_mode = Node.PROCESS_MODE_DISABLED  # painting starts now, but M stays dead until the level has loaded
 	layer.add_child(map)
+	map.closed.connect(_on_map_closed)
 	if _streamer != null:
 		_streamer.focus = car
 		var t_fill := Time.get_ticks_msec()
@@ -136,11 +137,22 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_extra(label: String) -> void:
 	match label:
+		"Map": map.open_over_pause()
 		"Shop": open_shop()
 		"Garage": open_garage()
 		"Repair":
 			_car.damage.repair()
 			_pause.return_from_extra()
+
+
+# The map opened from the pause menu closed: Back returns to the menu; a teleport goes straight back to driving.
+func _on_map_closed(teleported: bool, over_pause: bool) -> void:
+	if not over_pause or _pause == null:
+		return
+	if teleported:
+		_pause.set_input_enabled(true)
+	else:
+		_pause.return_from_extra()
 
 
 # The pause menu's Garage: a card per catalogue car, stock; picking one reloads the level with it.

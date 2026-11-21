@@ -30,15 +30,18 @@ signal photo_mode_requested
 # one emits extra_requested with its label; the menu stays open, still paused, for the host's page
 # to cover. The host calls return_from_extra() when its page closes.
 @export var extra_rows := PackedStringArray()
+# Host rows placed FIRST, above Resume (the Map: mobile has no M key, so it leads the menu). They
+# behave exactly like extra_rows; the menu still opens with the cursor on Resume.
+@export var lead_rows := PackedStringArray()
 
 signal extra_requested(label: String)
 signal quitting
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
-var _menu_panel: MenuPage      # PAUSED over a card list: Resume, Reset, Photo Mode, extras, Settings, Quit
+var _menu_panel: MenuPage      # PAUSED over a card list: lead rows (Map), Resume, Reset, Photo Mode, extras, Settings, Quit
 var _settings_panel: Control   # the shared SettingsMenu + Back
-var _cards: CardCarousel       # the menu's cards; MenuNav's opening focus (Resume is card 0)
+var _cards: CardCarousel       # the menu's cards; MenuNav's opening focus (open() puts it on Resume)
 
 var settings_menu: SettingsMenu
 
@@ -82,7 +85,7 @@ func open() -> void:
 	get_tree().paused = true
 	_set_open(true)
 	_show_settings(false)
-	_cards.select(0, false)  # always open on Resume, or Enter would repeat the last pick
+	_cards.select(maxi(CardUI.index_of(_cards, "Resume"), 0), false)  # always open on Resume, or Enter would repeat the last pick
 	# NO focus grab here. Showing the overlay fires its visibility_changed, and the
 	# MenuNav attached in _build owns where the cursor lands (see _build's attach
 	# call). One owner: a second grab here would silently beat the framework, and
@@ -256,12 +259,15 @@ func _build() -> void:
 # exports the host sets in its scene.
 func _build_menu_panel() -> MenuPage:
 	_menu_panel = CardUI.card_page(_overlay, {"title": "Paused"})
-	var entries: Array = [
+	var entries: Array = []
+	for label in lead_rows:
+		entries.append({"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)})
+	entries.append_array([
 		{"title": "Resume", "icon": "resume_run", "action": resume},
 		# Snap the car back onto the road at its current progress, then unpause. The host owns
 		# the car and performs the reset.
 		{"title": "Reset to road", "icon": "reset_road", "action": _on_reset_to_track_pressed},
-	]
+	])
 	# Hand the screen to the host's free-fly camera with the tree still frozen. Esc there comes
 	# back to this menu (return_from_photo_mode).
 	entries.append({"title": "Photo Mode", "icon": "photo", "action": _on_photo_mode_pressed})
