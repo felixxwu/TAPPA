@@ -126,7 +126,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_false(map.visible or get_tree().paused, "teleporting closes the map and resumes")
 	var lpause: PauseMenu = world.get_node("PauseMenu")
 	lpause.open()
-	assert_eq(CardUI.titles(lpause.cards())[0], "Map", "the pause menu leads with the map (touch has no M)")
+	assert_eq(CardUI.titles(lpause.cards()).slice(0, 2), PackedStringArray(["Resume", "Map"]), "the map sits right after Resume (touch has no M)")
 	assert_true(CardUI.pick(lpause.cards(), "Map"))
 	assert_true(map.visible and get_tree().paused, "the pause menu's Map opens the map, still paused")
 	assert_false(lpause.is_open(), "the map covers the pause menu")

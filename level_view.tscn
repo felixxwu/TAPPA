@@ -233,5 +233,5 @@ layer = 5
 script = ExtResource("24_pause")
 camera_manager = NodePath("../CameraManager")
 mobile_controls = NodePath("../MobileControls")
-lead_rows = PackedStringArray("Map")
+after_resume_rows = PackedStringArray("Map")
 extra_rows = PackedStringArray("Repair", "Garage", "Shop")

@@ -30,16 +30,16 @@ signal photo_mode_requested
 # one emits extra_requested with its label; the menu stays open, still paused, for the host's page
 # to cover. The host calls return_from_extra() when its page closes.
 @export var extra_rows := PackedStringArray()
-# Host rows placed FIRST, above Resume (the Map: mobile has no M key, so it leads the menu). They
-# behave exactly like extra_rows; the menu still opens with the cursor on Resume.
-@export var lead_rows := PackedStringArray()
+# Host rows placed right after Resume, second in the menu (the Map: mobile has no M key, so it sits
+# near the top). They behave exactly like extra_rows; the menu still opens with the cursor on Resume.
+@export var after_resume_rows := PackedStringArray()
 
 signal extra_requested(label: String)
 signal quitting
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
-var _menu_panel: MenuPage      # PAUSED over a card list: lead rows (Map), Resume, Reset, Photo Mode, extras, Settings, Quit
+var _menu_panel: MenuPage      # PAUSED over a card list: Resume, after-Resume rows (Map), Reset, Photo Mode, extras, Settings, Quit
 var _settings_panel: Control   # the shared SettingsMenu + Back
 var _cards: CardCarousel       # the menu's cards; MenuNav's opening focus (open() puts it on Resume)
 
@@ -260,10 +260,10 @@ func _build() -> void:
 func _build_menu_panel() -> MenuPage:
 	_menu_panel = CardUI.card_page(_overlay, {"title": "Paused"})
 	var entries: Array = []
-	for label in lead_rows:
+	entries.append({"title": "Resume", "icon": "resume_run", "action": resume})
+	for label in after_resume_rows:
 		entries.append({"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)})
 	entries.append_array([
-		{"title": "Resume", "icon": "resume_run", "action": resume},
 		# Snap the car back onto the road at its current progress, then unpause. The host owns
 		# the car and performs the reset.
 		{"title": "Reset to road", "icon": "reset_road", "action": _on_reset_to_track_pressed},
