@@ -10,6 +10,7 @@ func _settings() -> FreeRoamSettings:
 	s.island_radius_m = 3000.0
 	s.mid_radius = 1
 	s.far_radius = 3
+	s.horizon_radius_m = 0.0  # off unless a test is about it: it would add blocks to every prefill
 	return s
 
 
@@ -777,6 +778,90 @@ func test_chunks_past_the_horizon_are_dropped_when_the_car_leaves() -> void:
 	st.focus.position = Vector3(s.chunk_m * (s.far_radius + 10), 0.0, 0.0)
 	st._plan()
 	assert_false(st._chunks.has(Vector2i.ZERO), "the spawn chunk is far behind and should be gone")
+
+
+# The horizon level: every block in reach gets one mesh, and its drawn mesh leaves out exactly the
+# cells whose chunk draws its own far or mid mesh, so the two never cover the same ground.
+func _horizon_settings() -> FreeRoamSettings:
+	var s := _settings()
+	s.horizon_block_chunks = 9  # 81 cells: more than an int bit mask holds
+	s.horizon_radius_m = s.chunk_m * (s.far_radius + 12)
+	return s
+
+
+func test_the_horizon_draws_every_block_in_reach_with_the_far_chunks_cut_out() -> void:
+	var s := _horizon_settings()
+	var st := _streamer(s)
+	st.prefill()
+	assert_eq(st.queued(), 0)
+	var bm := s.chunk_m * s.horizon_block_chunks
+	var here := Vector2(st.focus.position.x, st.focus.position.z)
+	var cells := s.horizon_block_chunks * s.horizon_block_chunks
+	var far_out := 0
+	for b: Vector2i in st._horizon:
+		var hs: TerrainStreamer.HorizonState = st._horizon[b]
+		assert_not_null(hs.mesh, "block %s in reach has a mesh" % b)
+		assert_eq(hs.cut, st.horizon_cut(b), "block %s is cut for the chunks loaded now" % b)
+		assert_eq(hs.mesh.visible, hs.cut.count(1) < cells, "a wholly covered block is hidden")
+		if hs.cut.is_empty():
+			far_out += 1
+	assert_gt(far_out, 0, "blocks past the far level draw whole")
+	# every block whose nearest point is in reach is there
+	for bz in range(-12, 12):
+		for bx in range(-12, 12):
+			var b := Vector2i(bx, bz)
+			var gap := TerrainStreamer._dist_to_rect(here, Rect2(Vector2(b) * bm, Vector2(bm, bm)))
+			if gap <= s.horizon_radius_m:
+				assert_true(st._horizon.has(b), "block %s is in reach" % b)
+	# and every chunk with its own far mesh has its cell cut out
+	for coord: Vector2i in st._chunks:
+		var cs: TerrainStreamer.ChunkState = st._chunks[coord]
+		if cs.far_mesh == null:
+			continue
+		var b := st.horizon_block_of_chunk(coord)
+		if not st._horizon.has(b):
+			continue
+		var local := coord - b * s.horizon_block_chunks
+		assert_eq(st._horizon[b].cut[local.y * s.horizon_block_chunks + local.x], 1,
+			"chunk %s's cell is cut out of block %s" % [coord, b])
+
+
+func test_a_horizon_cell_fills_back_in_when_its_chunk_goes() -> void:
+	var s := _horizon_settings()
+	var st := _streamer(s)
+	st.prefill()
+	var coord := Vector2i(1 << 20, 0)
+	for c: Vector2i in st._chunks:
+		if st._chunks[c].far_mesh != null and st._horizon.has(st.horizon_block_of_chunk(c)):
+			coord = c
+			break
+	assert_true(st._chunks.has(coord), "some chunk with a far mesh lies in a horizon block")
+	if not st._chunks.has(coord):
+		return
+	var b := st.horizon_block_of_chunk(coord)
+	var local := coord - b * s.horizon_block_chunks
+	var cell := local.y * s.horizon_block_chunks + local.x
+	var hs: TerrainStreamer.HorizonState = st._horizon[b]
+	assert_eq(hs.cut[cell], 1)
+	st._drop_chunk(coord, st._chunks[coord])
+	assert_eq(hs.cut[cell], 1, "the planner leaves the recut to the queue")
+	st._run_queue(Time.get_ticks_usec() + 60_000_000)
+	assert_true(hs.cut.is_empty() or hs.cut[cell] == 0, "the queue draws the horizon there again")
+	assert_true(st._est.has("horizon_holes"), "and the scheduler measured it")
+
+
+func test_horizon_blocks_go_when_the_car_leaves_and_none_are_built_with_it_off() -> void:
+	var s := _horizon_settings()
+	var st := _streamer(s)
+	st.prefill()
+	assert_true(st._horizon.has(Vector2i.ZERO))
+	assert_gt(st.horizon_count(), 0)
+	st.focus.position = Vector3(s.horizon_radius_m * 3.0, 0.0, 0.0)
+	st._plan()
+	assert_false(st._horizon.has(Vector2i.ZERO), "the spawn block is far behind and should be gone")
+	s.horizon_radius_m = 0.0
+	st._plan()
+	assert_eq(st._horizon.size(), 0, "turned off, every block goes")
 
 
 func test_the_free_roam_scene_wires_the_streamer_and_the_car() -> void:

@@ -164,8 +164,9 @@ extends Resource
 ## loading screen keeps drawing.
 @export var prefill_slice_ms := 8.0
 @export var chunk_m := 64.0
-## Vertex spacing of the three detail levels: near (the tiles within 70 m of the car), mid (which
-## also carries the trees and everything else planted) and far (the horizon).
+## Vertex spacing of the three streamed detail levels: near (the tiles within 70 m of the car), mid
+## (which also carries the trees and everything else planted) and far. Past far, the horizon level
+## (horizon_radius_m) is one quad per chunk.
 @export var near_stride_m := 2.0
 ## The near level is drawn in squares this size (every one within 70 m of the car), smaller than a
 ## chunk so less of it is rebuilt per metre driven. Must divide chunk_m, and be a multiple of
@@ -176,6 +177,13 @@ extends Resource
 ## Radii in chunks: mid detail and planting, and the horizon. Collision covers the near block.
 @export var mid_radius := 1.5
 @export var far_radius := 6
+## The horizon, past the far level: every chunk out to this distance (metres, from the car to the
+## nearest point of a block) drawn as a single quad, its lowest possible detail. Chunks are baked
+## into blocks of horizon_block_chunks × horizon_block_chunks so each block is one mesh (one draw
+## call), with the cells that have a far or mid mesh cut out. 0 turns the horizon off.
+@export var horizon_radius_m := 2500.0
+## Chunks per side of one horizon block. Bigger blocks mean fewer draw calls but coarser culling.
+@export var horizon_block_chunks := 12
 ## The mid band narrows as the car speeds up, reaching these shares of its reach to the side and
 ## behind at mid_squash_speed_mps (ahead it always reaches mid_radius).
 @export var mid_side_frac := 0.6
