@@ -76,9 +76,12 @@ func enter(from: Camera3D) -> void:
 	_apply_look()
 	_origin = global_position
 	current = true
-	_prev_mouse_mode = Input.mouse_mode
-	_wants_capture = true
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# A touch screen has no pointer to capture, and on Android capturing asks the OS for
+	# pointer capture, which is no use to a finger. Touch looks through PhotoModeControls.
+	if not Platform.is_touch():
+		_prev_mouse_mode = Input.mouse_mode
+		_wants_capture = true
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_entered = true
 
 

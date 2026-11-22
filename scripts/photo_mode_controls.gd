@@ -111,6 +111,9 @@ var _all_widgets: Array = []
 
 func _init() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# Above every in-game layer (HUD 2, MobileControls 3, PauseMenu 5, banners and pages 6-7),
+	# so nothing the scene draws can sit over the only way out of photo mode on a phone.
+	layer = 8
 
 
 # Wire this overlay to the live camera and build the widgets. Called once by

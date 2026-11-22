@@ -318,7 +318,10 @@ building a `PhotoModeControls` overlay, but **only when `Platform.is_touch()` is
 desktop and native keep the raw-key/mouse path above and get no overlay at all. It's freed
 in lockstep with the camera in `PhotoModeHost._close`. Like the camera, its
 `process_mode` is `PROCESS_MODE_ALWAYS` — the tree stays paused for the whole of photo
-mode, and this overlay has to keep working through that.
+mode, and this overlay has to keep working through that. It draws on canvas layer 8, above
+every in-game layer, so nothing the scene shows can cover the only way out. On a touch screen
+`PhotoModeCamera.enter` does **not** capture the mouse (there's no pointer to capture, and on
+Android a capture becomes OS pointer capture); look goes through this overlay instead.
 
 It follows the `mobile_controls.gd` idiom throughout (see [mobile-controls.md](mobile-controls.md)):
 raw `InputEventScreenTouch`/`InputEventScreenDrag` rather than `Control` buttons, so

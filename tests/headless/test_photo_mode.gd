@@ -216,6 +216,19 @@ func test_mouse_is_captured_and_released() -> void:
 		"leaving the tree releases the pointer even without an explicit exit")
 
 
+# A touch screen has no pointer to capture (Android turns a capture into OS pointer
+# capture), so on touch photo mode leaves the pointer alone and looks through its
+# on-screen controls instead.
+func test_touch_screen_does_not_capture_the_pointer() -> void:
+	var was: bool = Config.data.mobile_controls_force
+	Config.data.mobile_controls_force = true
+	var cam := _lone_camera()
+	Config.data.mobile_controls_force = was
+	assert_true(cam.is_active(), "photo mode still opens on a touch screen")
+	assert_false(cam.mouse_captured(), "but does not take the pointer")
+	assert_eq(Input.mouse_mode, Input.MOUSE_MODE_VISIBLE, "and the mouse mode is untouched")
+
+
 # Mouse motion turns the camera while it holds the pointer, and does nothing once it
 # has let go — the pause menu behind it must not be steered by a stray mouse move.
 func test_mouse_motion_turns_the_camera() -> void:
