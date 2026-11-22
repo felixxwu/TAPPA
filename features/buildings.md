@@ -25,9 +25,10 @@ satellite crop and footprint size. The level editor lab draws them as footprints
 In the game: `node tools/bake_buildings.js tools/levels/<level>.json` runs `buildings.js` under node (tiny three.js and
 canvas stand-ins) and writes `<level>.buildings.json` (each building's triangles, already sized) and
 `tools/levels/buildings_atlas.png`. Re-run it after changing a level's buildings or `buildings.js`. `LevelView.load_level`
-adds a `LevelBuildings` node (`scripts/level_buildings.gd`) that builds one `StaticBody3D` per building: the mesh
-(unshaded with the baked sun shading in vertex colours, nearest-filtered atlas, alpha scissor) plus a box collider over
-the footprint, seated on the lowest ground under it. No bake file → no buildings. On a slope that buries the uphill side, so
+adds a `LevelBuildings` node (`scripts/level_buildings.gd`) that builds one `StaticBody3D` per building: a box collider over
+the footprint, seated on the lowest ground under it. The meshes (unshaded with the baked sun shading in vertex colours,
+nearest-filtered atlas, alpha scissor) are merged, each placed where its body stands, into one `MeshInstance3D`
+(`LevelBuildings.mesh`, child "Mesh"), so every building in the level is a single draw call (Hafren: 38 buildings, ~7k vertices). No bake file → no buildings. On a slope that buries the uphill side, so
 `tools/geo/pack_level.js` levels a pad under each building and clears trees and cover off its footprint (see [level-editor.md](level-editor.md)).
 
 **Log piles.** The level JSON's `logPiles` list (`{x, z}`) places roadside timber piles (`LogPile.build`, `log_pile.gd`) via
