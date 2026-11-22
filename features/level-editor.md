@@ -121,7 +121,8 @@ free roam's car, cameras, HUD and pause menu around one `LevelView` node, which 
   so the edge is a smooth line rather than the 1.5 m triangles; ground steeper than the shader's `rock_start_deg`
   (fading to all rock at `rock_full_deg`) is drawn as bare rock (`rock`), the slope read from `COLOR.a`, which
   `LevelStreamer._pack_vertex` fills with the smooth vertex normal's y; streamed by the free-roam streamer
-  with the sizes in `LevelStreamer.level_settings` (48 m chunks; 1.5 / 6 / 12 m near / mid / far out to 11 chunks;
+  with the sizes in `LevelStreamer.level_settings` (96 m chunks, each one draw call, so the far ring is about
+  40 calls a frame rather than the 120 that 48 m chunks cost; 1.5 / 6 / 12 m near (24 m tiles) / mid / far out to 6 chunks;
   the horizon level, one quad per chunk in 12×12-chunk blocks, out to 3 km; see [free-roam.md](free-roam.md));
   `HeightMapShape3D` collision per near tile, as in free roam;
 - draws the bake's trees through `LevelTrees` (see "Tree tiles" below);

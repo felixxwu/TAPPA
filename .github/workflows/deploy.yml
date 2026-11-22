@@ -280,6 +280,12 @@ jobs:
     name: Build AAB & upload to Play
     runs-on: ubuntu-latest
     needs: compile-check
+    # One Play upload at a time: pushes a minute apart ran three uploads at once, and Play expired
+    # one run's edit under the others ("This edit has expired"). Queued runs wait; only the newest
+    # pending one is kept, which carries the highest versionCode anyway.
+    concurrency:
+      group: play-upload
+      cancel-in-progress: false
     steps:
       - name: Checkout
         uses: actions/checkout@v5

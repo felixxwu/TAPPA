@@ -21,7 +21,8 @@ uniform float frame_size_m = 600.0;
 uniform float frame_cell_m = 1.0;
 uniform int frame_n = 1;
 // Fake ambient occlusion on the same texel grid (scripts/level_ao.gd): 1 clear, lower darker.
-uniform sampler2D ao_map : filter_linear, hint_default_white;
+// Blended by hand (ao_at) so the sampler can stay nearest like every other in the game.
+uniform sampler2D ao_map : filter_nearest, hint_default_white;
 // One tree per texel: R is its offset in the texel (4 bits x, 4 bits z), G its patch radius in texels (0 = none).
 uniform sampler2D tree_ao_map : filter_nearest, hint_default_black;
 uniform float tree_ao_strength = 0.0;
@@ -121,6 +122,20 @@ void vertex() {
 	VERTEX.y += snow_depth_m * UV.y;
 }
 
+// The AO texel grid at texel coordinate u (texel centres on whole numbers), blended between the four texels
+// round it: what a linear-filtered sampler gives, edges clamped.
+float ao_at(vec2 u) {
+	vec2 f = fract(u);
+	ivec2 c = ivec2(floor(u));
+	ivec2 hi = ivec2(frame_n - 1);
+	float a = texelFetch(ao_map, clamp(c, ivec2(0), hi), 0).r;
+	float b = texelFetch(ao_map, clamp(c + ivec2(1, 0), ivec2(0), hi), 0).r;
+	float d = texelFetch(ao_map, clamp(c + ivec2(0, 1), ivec2(0), hi), 0).r;
+	float e = texelFetch(ao_map, clamp(c + ivec2(1, 1), ivec2(0), hi), 0).r;
+	return mix(mix(a, b, f.x), mix(d, e, f.x), f.y);
+}
+
+
 void fragment() {
 	// The frame texel grid starts at the square's corner; the four texels round a point are blended by hand.
 	// Across is blended signed where the four values change by about one texel gradient (a plain slope, or the straight crossing of one road's centreline);
@@ -199,7 +214,7 @@ void fragment() {
 		}
 	}
 	surface *= tree_ao;
-	surface *= texture(ao_map, (u + 0.5) / float(frame_n)).r;
+	surface *= ao_at(u);
 	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world));
 	if (UV2.x < -0.5) {
 		// a skirt: one flat colour per 8 m of its length, never the ground texture stretched down its face

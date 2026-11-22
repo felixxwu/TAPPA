@@ -22,13 +22,13 @@ var _sun_dir := SUN.normalized()
 
 static func level_settings() -> FreeRoamSettings:
 	var s := FreeRoamSettings.new()
-	s.chunk_m = 48.0
+	s.chunk_m = 96.0  # one draw call per chunk: 48 m chunks made the far ring ~120 calls a frame, 96 m ~40
 	s.near_tile_m = 24.0
 	s.near_stride_m = 1.5
 	s.mid_stride_m = 6.0
 	s.far_stride_m = 12.0
-	s.mid_radius = 150.0 / 48.0
-	s.far_radius = 11
+	s.mid_radius = 150.0 / 96.0
+	s.far_radius = 6
 	s.horizon_radius_m = 3000.0
 	return s
 

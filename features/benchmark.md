@@ -48,7 +48,9 @@ road samples), prints the frame's draw calls / objects / primitives, then how ma
 terrain chunks, buildings, log piles, spectators, car); `DRAW_OUT=<dir>` also saves a screenshot per spot for before/after comparisons.
 Needs a window: `xvfb-run -a godot --path . --rendering-driver opengl3 res://tools/level_draw_calls.tscn` (and the level's bake, see
 [level-editor.md](level-editor.md)). Hafren, 2026-11-22, mean of 4 spots: 288 calls before merging tree species and buildings, 250 after
-(terrain chunks ~154, ground cover ~64, trees ~15, buildings 1, log piles ~2, sky/car/UI the rest).
+(terrain chunks ~154, ground cover ~64, trees ~15, buildings 1, log piles ~2, sky/car/UI the rest). The horizon terrain level then
+added ~46 (296); doubling the level's chunks to 96 m (`LevelStreamer.level_settings`) took it to 180 (terrain: near 17, mid 8,
+far 39, horizon 17). The probe prints that per-level split as `ground_near` / `_mid` / `_far` / `_horizon`.
 
 ## Pre-run toggles
 

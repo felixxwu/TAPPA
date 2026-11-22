@@ -47,6 +47,25 @@ func _ready() -> void:
 				n.visible = true
 			for _f in 3:
 				await get_tree().process_frame
+		var g := level._streamer
+		var levels := {"near": [], "mid": [], "far": [], "horizon": []}
+		for ts in g._tiles.values():
+			if ts.near_mesh != null: levels["near"].append(ts.near_mesh)
+		for st in g._chunks.values():
+			if st.mid_mesh != null: levels["mid"].append(st.mid_mesh)
+			if st.far_mesh != null and st.far_mesh.visible: levels["far"].append(st.far_mesh)
+		for hs in g._horizon.values():
+			if hs.mesh != null and hs.mesh.visible: levels["horizon"].append(hs.mesh)
+		for k: String in levels:
+			for n: Node3D in levels[k]:
+				n.visible = false
+			for _f in 3:
+				await get_tree().process_frame
+			row["ground_" + k] = row["total"] - _info()
+			for n: Node3D in levels[k]:
+				n.visible = true
+			for _f in 3:
+				await get_tree().process_frame
 		print("draw_calls spot %s (%.0f, %.0f): %s" % [s, p.x, p.y, _fmt(row)])
 		for k: String in row:
 			totals[k] = totals.get(k, Vector3i.ZERO) + row[k]
