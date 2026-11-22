@@ -139,6 +139,15 @@ func test_tree_cards_use_the_swaying_shader() -> void:
 	assert_true(mat.shader.code.contains("wind_sway_offset"))
 
 
+# The trees fade themselves out where they stop being drawn, so the fog no longer has to hide it.
+func test_tree_cards_fade_out_at_the_tree_draw_distance() -> void:
+	_make(_near_trees())
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(0.0, 0.0, 50.0))
+	var mat := _trees.tile(_bake.tree_tile_at(_idx(0.0, 50.0))).mmis[0].material_override as ShaderMaterial
+	assert_eq(mat.get_shader_parameter("draw_end_m"), Config.data.level_tree_draw_m)
+	assert_eq(mat.get_shader_parameter("fade_m"), Config.data.level_tree_fade_m)
+
+
 func test_a_tile_first_made_by_the_collision_scan_is_drawn_at_once() -> void:
 	_make(_near_trees())
 	var a := _idx(0.0, 50.0)

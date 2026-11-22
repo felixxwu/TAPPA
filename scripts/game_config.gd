@@ -3147,8 +3147,14 @@ func spectator_params() -> Dictionary:
 @export var level_spawn := Vector3i(31, 4, 3)
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
-## Level view: how far trees are drawn, in metres. The level's depth fog ends here, so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.
+## Level view: how far trees are drawn, in metres. They thin out over the last level_tree_fade_m in a dither (level_tree.gdshader), so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.
 @export var level_tree_draw_m := 500.0
+## Level view: trees thin out over this many metres before level_tree_draw_m. 0 = a hard cut.
+@export var level_tree_fade_m := 60.0
+## Level view: the depth fog is solid this far from the camera, in metres; past the trees, so the horizon terrain level shows.
+@export var level_fog_end_m := 1500.0
+## Level view: the depth fog's curve (Environment.fog_depth_curve); above 1 keeps the near ground clearer.
+@export var level_fog_curve := 1.5
 ## Level view: a tree tile gets collision boxes once the car is within this many metres of it, and loses them past twice this.
 @export var level_tree_collision_m := 60.0
 ## How far past the road's edge the level view keeps the ground flat at road height before it
