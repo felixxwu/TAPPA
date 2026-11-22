@@ -79,7 +79,7 @@ func test_a_felled_tree_stays_felled_after_its_tile_is_dropped_and_rebuilt() -> 
 	assert_true(_trees.is_fallen(idx))
 	var first := _trees.tile(near).first
 	var buf := _trees.tile(near).mmis[0].multimesh.buffer
-	assert_lt(buf[(idx - first) * 12 + 5], standing * 0.2, "still lying down")
+	assert_lt(buf[(idx - first) * LevelTrees.STRIDE + 5], standing * 0.2, "still lying down")
 
 
 func test_a_row_change_shows_exactly_that_rows_trees() -> void:
@@ -133,3 +133,31 @@ func test_a_tile_first_made_by_the_collision_scan_is_drawn_at_once() -> void:
 	_trees.update(cam, Vector3(0.0, 0.0, 50.0))
 	assert_not_null(_trees.tile(_bake.tree_tile_at(a)).hit, "solid")
 	assert_eq(_trees.drawn_count(), 1, "and drawn")
+
+
+func test_a_tiles_species_share_one_multimesh_each_card_naming_its_texture_slot() -> void:
+	_make(_near_trees())
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(0.0, 0.0, 50.0))
+	_trees.settle()
+	var t := _trees.tile(_bake.tree_tile_at(_idx(0.0, 50.0)))
+	assert_eq(t.mmis.size(), 1, "two species, one draw")
+	var mm := t.mmis[0].multimesh
+	var mat := t.mmis[0].material_override as ShaderMaterial
+	for k in mm.visible_instance_count:
+		var slot := int(mm.buffer[k * LevelTrees.STRIDE + 12])
+		var id := t.first + k
+		assert_eq(t.slots[0][_bake.tree_kind[id]], slot)
+		assert_eq(mat.get_shader_parameter("albedo%d" % slot), LevelBake.tree_texture(_bake.tree_kinds[_bake.tree_kind[id]]),
+			"the slot's texture is the tree's own species")
+
+
+func test_more_species_than_one_draw_holds_split_into_more_multimeshes() -> void:
+	var trees: Array = []
+	for k in LevelTrees.KINDS_PER_DRAW + 1:
+		trees.append(_tree(k * 5.0, 50.0, "kind_%d.png" % k))
+	_make(trees)
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(0.0, 0.0, 50.0))
+	_trees.settle()
+	var t := _trees.tile(_bake.tree_tile_at(_idx(0.0, 50.0)))
+	assert_eq(t.mmis.size(), 2)
+	assert_eq(_trees.drawn_count(), LevelTrees.KINDS_PER_DRAW + 1, "every tree still drawn")

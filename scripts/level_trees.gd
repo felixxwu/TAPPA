@@ -1,6 +1,7 @@
 class_name LevelTrees
 extends Node3D
-# The level's trees, drawn from the bake: one MultiMesh of star-tree cards per tile and species, repacked to what the camera's stretch of road can see, with collision boxes only on tiles near the car.
+# The level's trees, drawn from the bake: one MultiMesh of star-tree cards per tile (up to KINDS_PER_DRAW species in one; the
+# shader picks each card's texture and tint from INSTANCE_CUSTOM.r), repacked to what the camera's stretch of road can see, with collision boxes only on tiles near the car.
 
 const SHADER := preload("res://shaders/level_tree.gdshader")
 const KIND_TINT := {
@@ -9,6 +10,9 @@ const KIND_TINT := {
 	"levels/trees/alder.png": Color(0.8, 0.86, 0.72), "levels/trees/scrub.png": Color(0.8, 0.85, 0.72),
 }
 const REPACKS_PER_FRAME := 3
+# Species one MultiMesh can draw: level_tree.gdshader's albedo0..5. A sampler each, so kept well under WebGL2's 16 texture units.
+const KINDS_PER_DRAW := 6
+const STRIDE := 16  # floats per instance: the 12 of a TRANSFORM_3D, then INSTANCE_CUSTOM (r = the species' slot in the material)
 const MAX_TREE_HEIGHT := 40.0
 
 
@@ -32,13 +36,16 @@ class Tile:
 	var end := 0
 	var rect := Rect2()
 	var mmis: Array[MultiMeshInstance3D] = []
-	var run_end := PackedInt32Array()  # per MultiMesh, where its trees stop; its species' trees run from the previous one's end
+	var run_end := PackedInt32Array()  # per MultiMesh, where its trees stop; its trees run from the previous one's end
+	var slots: Array[PackedInt32Array] = []  # per MultiMesh, each species' slot in its material (-1: not in it)
 	var shown_row := -2
 	var hit: Hitboxes
 
 var bake: LevelBake
 var _card := Foliage._alpha_card_mesh()
-var _materials: Array[ShaderMaterial] = []
+var _textures: Array[Texture2D] = []  # per species
+var _tints := PackedColorArray()  # per species
+var _materials := {}  # "kind,kind,..." -> the ShaderMaterial drawing those species in that slot order
 var _tiles := {}   # tile index -> Tile, made when the camera or car first comes near
 var _fallen := {}  # tree -> true; kept for good, so a tile built again still has its felled trees down
 var _fall_pose := {}  # tree -> where it lies, from the first moment it falls
@@ -52,15 +59,27 @@ var _cam_cell := Vector2i(-100000, -100000)
 func setup(p_bake: LevelBake) -> void:
 	bake = p_bake
 	for kind in bake.tree_kinds:
-		var mat := ShaderMaterial.new()
-		mat.shader = SHADER
-		mat.set_shader_parameter("base_dark", Config.data.level_ao_tree_base)
-		mat.set_shader_parameter("base_height", Config.data.level_ao_tree_base_height)
-		mat.set_shader_parameter("tint", KIND_TINT.get(kind, Color(0.85, 0.85, 0.85)))
-		var tex := LevelBake.tree_texture(kind)
-		if tex != null:
-			mat.set_shader_parameter("albedo", tex)
-		_materials.append(mat)
+		_tints.append(KIND_TINT.get(kind, Color(0.85, 0.85, 0.85)))
+		_textures.append(LevelBake.tree_texture(kind))
+
+
+# The material for one MultiMesh's species, slot i drawing kinds[i]; shared by every tile with the same species.
+func _material_for(kinds: PackedInt32Array) -> ShaderMaterial:
+	var key := ",".join(Array(kinds).map(func(k: int) -> String: return str(k)))
+	if _materials.has(key):
+		return _materials[key]
+	var mat := ShaderMaterial.new()
+	mat.shader = SHADER
+	mat.set_shader_parameter("base_dark", Config.data.level_ao_tree_base)
+	mat.set_shader_parameter("base_height", Config.data.level_ao_tree_base_height)
+	var tints: Array[Color] = []
+	for slot in KINDS_PER_DRAW:
+		tints.append(_tints[kinds[slot]] if slot < kinds.size() else Color.WHITE)
+		if slot < kinds.size() and _textures[kinds[slot]] != null:
+			mat.set_shader_parameter("albedo%d" % slot, _textures[kinds[slot]])
+	mat.set_shader_parameter("tints", tints)
+	_materials[key] = mat
+	return mat
 
 
 # Called every frame with the camera and the car: follows the viewpoint row, spreads the repacking over frames, and gives the car its nearby collision.
@@ -196,14 +215,17 @@ func _repack(t: Tile) -> void:
 		bufs.append(PackedFloat32Array())
 		counts.append(0)
 	var run := 0
+	var custom := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
 	for id in ids:
 		while id >= t.run_end[run]:
 			run += 1
 		bufs[run].append_array(_pose_floats(id))
+		custom[0] = t.slots[run][bake.tree_kind[id]]
+		bufs[run].append_array(custom)
 		counts[run] += 1
 	var from := t.first
 	for r in t.mmis.size():
-		bufs[r].resize((t.run_end[r] - from) * 12)
+		bufs[r].resize((t.run_end[r] - from) * STRIDE)
 		t.mmis[r].multimesh.buffer = bufs[r]
 		t.mmis[r].multimesh.visible_instance_count = counts[r]
 		t.mmis[r].visible = counts[r] > 0
@@ -253,27 +275,35 @@ func _tile_or_make(i: int) -> Tile:
 		low = minf(low, bake.tree_xf[id * 12 + 7])
 		high = maxf(high, bake.tree_xf[id * 12 + 7])
 	var aabb := AABB(Vector3(origin.x, low - 1.0, origin.y), Vector3(LevelBake.TREE_TILE_M, high - low + MAX_TREE_HEIGHT, LevelBake.TREE_TILE_M))
+	# The tile's trees run species by species; each MultiMesh takes the next KINDS_PER_DRAW species' runs.
 	var from := first
 	while from < end:
-		var kind := bake.tree_kind[from]
+		var kinds := PackedInt32Array()
+		var slots := PackedInt32Array()
+		slots.resize(bake.tree_kinds.size())
+		slots.fill(-1)
 		var to := from
-		while to < end and bake.tree_kind[to] == kind:
+		while to < end and (slots[bake.tree_kind[to]] >= 0 or kinds.size() < KINDS_PER_DRAW):
+			if slots[bake.tree_kind[to]] < 0:
+				slots[bake.tree_kind[to]] = kinds.size()
+				kinds.append(bake.tree_kind[to])
 			to += 1
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
 		mm.mesh = _card
-		mm.instance_count = to - from
-		mm.buffer = bake.tree_xf.slice(from * 12, to * 12)
+		mm.instance_count = to - from  # filled by _repack before anything is shown
 		mm.visible_instance_count = 0
 		var mmi := MultiMeshInstance3D.new()
-		mmi.name = "Trees_%d_%s" % [i, bake.tree_kinds[kind].get_file().get_basename()]
+		mmi.name = "Trees_%d_%d" % [i, t.mmis.size()]
 		mmi.multimesh = mm
-		mmi.material_override = _materials[kind]
+		mmi.material_override = _material_for(kinds)
 		mmi.custom_aabb = aabb
 		mmi.visibility_range_end = float(Config.data.level_tree_draw_m) + LevelBake.TREE_TILE_M
 		add_child(mmi)
 		t.mmis.append(mmi)
 		t.run_end.append(to)
+		t.slots.append(slots)
 		from = to
 	_tiles[i] = t
 	return t
