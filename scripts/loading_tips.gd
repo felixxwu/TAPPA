@@ -11,7 +11,7 @@ extends RefCounted
 # the same rule CLAUDE.md applies to code comments.
 
 # Written for the Hafren level (level_view.gd, features/level-editor.md "In the game"), the
-# world the title screen leads into while GameConfig.dev_level_instead_of_free_roam is on: no
+# world the title screen leads into (Scenes.WORLD, the default; not the legacy free-roam island): no
 # checkpoints, coins or wrecks there, and no overheating drain (DamageModel.thermal stays off).
 const TIPS: Array[String] = [
 	# --- Pause menu: Shop, Garage, Repair (LevelView._on_extra) ---

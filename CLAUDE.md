@@ -1,10 +1,19 @@
 # rally — project rules for Claude
 
 **`PIVOT-CHANGES.md` is the orientation file — read it first.** This game was a
-rally career, then a run-based roguelike (September 2026), and is now a free-roam
-game on one persistent procedural island (October 2026). That file is the two-minute
-map of what changed, which seams not to work around, and where the decision record
+rally career, then a run-based roguelike (September 2026), then a free-roam game on
+one persistent procedural island (October 2026), and **is now driven on one authored
+level, Hafren Forest** (November 2026). That file is the two-minute map of what
+changed, which seams not to work around, and where the decision record
 (`todo/2026-10-19-free-roam-pivot.md`) lives.
+
+- **The default game mode is the Hafren level** — `Scenes.WORLD` (`level_view.tscn`,
+  `LevelView`, `GameConfig.level_path`; see `features/level-editor.md`). Every "enter
+  the world" goes to `Scenes.WORLD`. The procedural island (`free_roam.tscn`,
+  `scripts/free_roam/`, `Scenes.LEGACY_FREE_ROAM`) is **legacy, kept for reference
+  only**: nothing reaches it unless `GameConfig.legacy_free_roam_island` (Settings →
+  Dev → "Legacy free-roam island", off by default) is on. Don't build new features on
+  it; parts of it the level reuses (car, HUD, pause menu, shop, `LootRules`) stay live.
 
 ## Feature documentation
 

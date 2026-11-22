@@ -1,4 +1,6 @@
-# Free roam — streamed road-first island (prototype)
+# Free roam — streamed road-first island (LEGACY)
+
+> **LEGACY — kept for reference only (2026-11-22).** The game world is now the authored Hafren level ([level-editor.md](level-editor.md), `Scenes.WORLD` = `level_view.tscn`). This procedural island (`Scenes.LEGACY_FREE_ROAM` = `free_roam.tscn`) is only reachable through Settings → Dev → "Legacy free-roam island" (`GameConfig.legacy_free_roam_island`, off by default). Don't build new features on it.
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
@@ -244,7 +246,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   and tests). The game boots with `prefill_async()` instead: `_run_queue` slices of
   `prefill_slice_ms` with a frame between, behind the loading cover, car frozen and locked, and the
   hand-over / warm-up wait for it. Travel and respawn (`prefill_at`) are still synchronous.
-  Every change into the world (`Scenes.change_to(FREE_ROAM)` — boot, new world, a rest-stop car/part
+  Every change into the world (`Scenes.change_to(LEGACY_FREE_ROAM)` — boot with the legacy toggle on, new world, a rest-stop car/part
   change) first puts a `LoadingScreen` on the tree root, so the synchronous scene load and `_ready`'s
   prefill show the cover instead of a blank grey frame; `_warm_up` adopts that cover rather than
   making its own.

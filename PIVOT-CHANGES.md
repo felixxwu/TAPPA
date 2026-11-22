@@ -1,10 +1,13 @@
-# What changed: two pivots
+# What changed: three pivots
 
-**Read this before working in this repo.** TAPPA has pivoted twice:
+**Read this before working in this repo.** TAPPA has pivoted three times:
 
 1. **September 2026 — rally career → run-based roguelike.** Recorded below as history (*The
    roguelike pivot*); much of what it added has since been deleted again.
-2. **October 2026 — roguelike → free roam.** The current game. It's the section right after this.
+2. **October 2026 — roguelike → free roam** on a procedural island. Now **legacy**; its section
+   below is kept because much of its code (car, HUD, pause menu, shop, loot) is still live.
+3. **November 2026 — procedural island → the authored Hafren level.** The current game; the
+   section right after this.
 
 | If you want… | Read |
 | --- | --- |
@@ -15,7 +18,29 @@
 
 ---
 
-# The free-roam pivot (October 2026)
+# The Hafren level becomes the game (November 2026)
+
+The world is now **one hand-authored level**, Hafren Forest, built in the browser level editor
+(`tools/level_editor_lab.html`) and driven in `level_view.tscn` (`LevelView`). It started as a dev
+stand-in behind a toggle; on 2026-11-22 Felix made it the official default.
+
+- **Enter the world with `Scenes.change_to(tree, Scenes.WORLD)`.** `Scenes.WORLD` is
+  `level_view.tscn`; the save it loads is `GameConfig.level_path`, the car `GameConfig.level_car_id`,
+  the spawn `GameConfig.level_spawn`. How it works: `features/level-editor.md`.
+- **The procedural island is legacy reference code.** `free_roam.tscn`, `scripts/free_roam/`
+  (`TerrainStreamer`, `RoadNetwork`, rest stops, biome rings, the cold open, …) and
+  `Scenes.LEGACY_FREE_ROAM` stay in the tree, with their tests, but nothing in the game enters
+  them unless `GameConfig.legacy_free_roam_island` is on (Settings → Dev → "Legacy free-roam
+  island", off by default), which makes `Scenes.change_to` redirect `WORLD` to it. The in-game
+  benchmark (`BenchmarkMode`) still drives the island; the level has `benchmark/level_replay.gd`.
+- **Shared pieces are not legacy:** the car, HUD, cameras, pause menu, the shop and
+  `LootRules`, `DamageModel` and the title screen serve the level too.
+- The section below (and `gameplay.md`) describes the island game; read it as history plus the
+  map of those shared systems.
+
+---
+
+# The free-roam pivot (October 2026) — legacy
 
 ## The shape of the game, before and after
 

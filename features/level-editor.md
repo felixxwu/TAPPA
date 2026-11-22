@@ -1,10 +1,12 @@
 # Level editor
 
-A hand-built patch of world, edited in a browser lab and driven in the game. Temporary dev tooling
-beside free roam, not part of it.
+A hand-built patch of world, edited in a browser lab and driven in the game. **This is the game
+world — the default mode** (`Scenes.WORLD` = `level_view.tscn`, loading Hafren Forest from
+`GameConfig.level_path`). The procedural free-roam island ([free-roam.md](free-roam.md)) is legacy
+reference code behind a Dev toggle.
 
 **Source:** `tools/level_editor_lab.html`, `scripts/level_view.gd` (`LevelView`), `level_view.tscn`,
-`scripts/level_map.gd` (`LevelMap`), `scripts/scenes.gd` (`change_to`'s redirect), `scripts/settings_menu.gd` (`_toggle_dev_level`)
+`scripts/level_map.gd` (`LevelMap`), `scripts/scenes.gd` (`change_to`'s redirect), `scripts/settings_menu.gd` (`_toggle_legacy_island`)
 
 **Tests:** `tests/headless/test_level_view.gd`, `tests/headless/test_export_presets.gd`, `tests/headless/test_level_trees.gd`, `tests/headless/test_level_data.gd`, `tests/headless/test_level_bake.gd`, `tests/headless/lab_parity.js`, `tests/headless/lab_history.js`
 
@@ -110,11 +112,13 @@ the fog: **every teleport still works, discovered or not** (Felix, 2026-11-20: l
 if it has grown; a save from another level file, size or cell size is ignored. `tools/level_map_capture.tscn` walks the car along the road
 samples and photographs the map (`user://level_map_capture_*.png`).
 
-With **Settings → Dev → "Level instead of free roam"** on (or `GameConfig.dev_level_instead_of_free_roam`),
-`Scenes.change_to` sends the title's world entry to `level_view.tscn` instead of free roam. Flipping the toggle from inside
-either world (pause → Settings → Dev) saves and swaps to the other world at once (`SettingsMenu._toggle_dev_level`). That scene is
+Entering the world (`Scenes.change_to(tree, Scenes.WORLD)` — the boot, the title's Continue / New World) loads
+`level_view.tscn`. Only with **Settings → Dev → "Legacy free-roam island"** on (`GameConfig.legacy_free_roam_island`,
+off by default) does `Scenes.change_to` redirect it to the legacy island (`Scenes.LEGACY_FREE_ROAM`). Flipping the toggle
+from inside either world (pause → Settings → Dev) saves and swaps to the other world at once
+(`SettingsMenu._toggle_legacy_island`). That scene is
 free roam's car, cameras, HUD and pause menu around one `LevelView` node, which reads
-`GameConfig.dev_level_path`, fields a stock `GameConfig.dev_level_car_id` (not the world's car; the pause menu's Garage, `open_garage`, picks any catalogue car and reloads the level with it parked where the old one stood, as free roam does; the pause menu's Shop, `open_shop`, is free roam's shop with every part free and unlocked, kept on the static `LevelView.owned` across the reload that fits them; that car and its parts are also saved to the `level_car` setting (`Save.set_setting`) every time the level fields it, and `restore_saved_car` brings them back on the next launch, ignoring a car since dropped from the roster; where the car stands is saved too (the `level_pose` setting, `save_pose` every 5 s, on `Save.flushing` and on leaving the level), and `saved_pose` starts the next launch there, upright on the ground, unless it was saved on a different level file; the car takes damage as anywhere else, and the pause menu's Repair, `_on_extra`, fixes it for free via `DamageModel.repair`; its Photo Mode works through a `PhotoModeHost` that `LevelView._ready` attaches, deferred, to the scene — see camera.md), and:
+`GameConfig.level_path`, fields a stock `GameConfig.level_car_id` (not the world's car; the pause menu's Garage, `open_garage`, picks any catalogue car and reloads the level with it parked where the old one stood, as free roam does; the pause menu's Shop, `open_shop`, is free roam's shop with every part free and unlocked, kept on the static `LevelView.owned` across the reload that fits them; that car and its parts are also saved to the `level_car` setting (`Save.set_setting`) every time the level fields it, and `restore_saved_car` brings them back on the next launch, ignoring a car since dropped from the roster; where the car stands is saved too (the `level_pose` setting, `save_pose` every 5 s, on `Save.flushing` and on leaving the level), and `saved_pose` starts the next launch there, upright on the ground, unless it was saved on a different level file; the car takes damage as anywhere else, and the pause menu's Repair, `_on_extra`, fixes it for free via `DamageModel.repair`; its Photo Mode works through a `PhotoModeHost` that `LevelView._ready` attaches, deferred, to the scene — see camera.md), and:
 
 - rebuilds the lab's terrain and road network (the same splines and blend) on a 1.5 m grid, the road painted as gravel by
   `shaders/level_ground.gdshader` per pixel from the baked road frame textures (`LevelBake`; see "Gravel road" below),
@@ -130,7 +134,7 @@ free roam's car, cameras, HUD and pause menu around one `LevelView` node, which 
   (unshaded, alpha scissor, nearest filter, `LevelTrees.KIND_TINT`) which sways with the same `wind_sway.gdshaderinc` globals as free roam's trees;
 - adds free roam's driving effects once the car is ready (`_add_effects`): wheel particles and dust puffs in the `home` region's
   colours, engine smoke, tyre marks (reset by the pause menu's reset), exhaust flames, car lamps, and the night headlight cone
-  pushed each frame; `GameConfig.dev_level_weather` (a `WeatherLibrary` id) sets `cfg.weather`, the wind and the weather particles on
+  pushed each frame; `GameConfig.level_weather` (a `WeatherLibrary` id) sets `cfg.weather`, the wind and the weather particles on
   the chase camera (`apply_weather`; no road tint or environment look). `_warm_up` compiles the effects' and every weather's
   shaders with the car locked, then `WorldRuntime.look_around` (free roam's spin round the spawn) draws the car, ground, trees and near and far ground cover once. Leaving the scene resets the headlight cone, wind and weather;
 - parks the car on the first road's first node, facing the second; the pause menu's reset puts it back there.

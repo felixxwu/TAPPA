@@ -15,5 +15,5 @@ fail=0
 for p in "${pids[@]}"; do wait "$p" || fail=1; done
 if [ $fail = 1 ]; then echo "a shard failed; see ${TMPDIR:-/tmp}/bake_shard_*.log"; exit 1; fi
 "$GODOT" --audio-driver Dummy --path . --headless res://tools/bake_level.tscn -- --merge=$N || exit 1
-level=${BAKE_LEVEL:-$(grep -o 'dev_level_path.*"res://[^"]*"' scripts/game_config.gd | grep -o 'res://[^"]*')}
+level=${BAKE_LEVEL:-$(grep -o 'var level_path.*"res://[^"]*"' scripts/game_config.gd | grep -o 'res://[^"]*')}
 exec tools/publish_bake.sh "${level#res://}"

@@ -19,4 +19,4 @@ func _ready() -> void:
 		# A first-time player starts in the cold open (ColdOpen), in its car, with no title menu.
 		ColdOpen.new_world(Config.data.free_roam.pick_world_seed(), Config.data.free_roam)
 	WorldSession.title_pending = not ColdOpen.due()
-	Scenes.change_to.call_deferred(get_tree(), Scenes.FREE_ROAM)
+	Scenes.change_to.call_deferred(get_tree(), Scenes.WORLD)

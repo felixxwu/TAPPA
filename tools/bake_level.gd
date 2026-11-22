@@ -33,7 +33,7 @@ const STRIP_IDS := [0, 1, 2, 255, 256, 65535, 65536]
 func _ready() -> void:
 	var path := OS.get_environment("BAKE_LEVEL")
 	if path.is_empty():
-		path = Config.data.dev_level_path
+		path = Config.data.level_path
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not parsed is Dictionary:
 		push_error("bake_level: couldn't read %s" % path)

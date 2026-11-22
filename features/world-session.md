@@ -80,7 +80,10 @@ the same signal.
 The game boots straight into the world with the title menu over it. The main scene
 (`project.godot → run/main_scene = res://title.tscn`) is just `title_boot.gd`: it sets
 `WorldSession.title_pending` (unless the cold open is due — then there's no title, see
-free-roam.md → *Cold open*) and loads free roam, whose `_ready` then calls `show_title()` — a
+free-roam.md → *Cold open*) and enters `Scenes.WORLD`. **Today that is the Hafren level
+(`level_view.tscn`), which drives straight in: it shows no title menu and runs no cold open** —
+the title, the cold open and the world block below belong to the legacy free-roam island, which
+runs only with Settings → Dev → "Legacy free-roam island" on. There, free roam's `_ready` calls `show_title()` — a
 `TitleScreen` on a `CanvasLayer` (layer 10) over the paused world, with a light dim behind it. Behind the menu a `TitleOrbitCamera` circles
 the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_speed`, kept above the
 ground, its tween running while paused); closing hands back to the chosen camera

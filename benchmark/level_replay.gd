@@ -1,5 +1,5 @@
 extends Node
-# Records a drive through the dev level (GameConfig.dev_level_path, Hafren Forest) and replays it
+# Records a drive through the dev level (GameConfig.level_path, Hafren Forest) and replays it
 # as a repeatable render benchmark. NOT part of the test suite. Run on demand:
 #
 #     ./run_level_replay.sh --record [path]   # you drive; quitting (pause → quit, or close the window) saves
@@ -94,9 +94,9 @@ func _ready() -> void:
 	if not _recording and not _load():
 		get_tree().quit(1)
 		return
-	if _recording:  # start at GameConfig.dev_level_spawn, not wherever the level view was last left
+	if _recording:  # start at GameConfig.level_spawn, not wherever the level view was last left
 		Save.set_setting(LevelView.SAVED_POSE_KEY, null)
-	_level = load(Scenes.LEVEL_VIEW).instantiate()
+	_level = load(Scenes.WORLD).instantiate()
 	add_child(_level)
 	_car = _level.get_node("Car")
 	# The level has fielded the save's car by now (or none, with no save, as in a fresh browser); swap in the recorded one
@@ -321,7 +321,7 @@ func _exit_tree() -> void:
 	if file == null:
 		push_error("level replay: can't write %s" % _path)
 		return
-	file.store_var({"level": Config.data.dev_level_path, "car": _car_id, "hz": Engine.physics_ticks_per_second, "ticks": _ticks})
+	file.store_var({"level": Config.data.level_path, "car": _car_id, "hz": Engine.physics_ticks_per_second, "ticks": _ticks})
 	print("level replay: saved %.1f s to %s" % [_ticks.size() / STRIDE / float(Engine.physics_ticks_per_second), _path])
 	_ticks = PackedFloat32Array()
 
@@ -332,8 +332,8 @@ func _load() -> bool:
 		push_error("level replay: no recording at %s (record one with --record)" % _path)
 		return false
 	var d: Dictionary = file.get_var()
-	if String(d.get("level", "")) != Config.data.dev_level_path:
-		push_warning("level replay: recorded on %s, but the dev level is now %s" % [d.get("level"), Config.data.dev_level_path])
+	if String(d.get("level", "")) != Config.data.level_path:
+		push_warning("level replay: recorded on %s, but the dev level is now %s" % [d.get("level"), Config.data.level_path])
 	if int(d.get("hz", 0)) != Engine.physics_ticks_per_second:
 		push_warning("level replay: recorded at %s Hz physics, running at %d" % [d.get("hz"), Engine.physics_ticks_per_second])
 	_ticks = d["ticks"]

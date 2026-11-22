@@ -299,7 +299,7 @@ func test_the_straight_road_option_builds_one_straight_link() -> void:
 
 func test_the_benchmark_boots_free_roam_and_drives_down_the_road() -> void:
 	Benchmark.begin()
-	var scene: Node3D = load(Scenes.FREE_ROAM).instantiate()
+	var scene: Node3D = load(Scenes.LEGACY_FREE_ROAM).instantiate()
 	var s := FreeRoamSettings.new()
 	s.island_radius_m = 3000.0
 	s.mid_radius = 1

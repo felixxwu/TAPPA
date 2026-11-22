@@ -353,7 +353,7 @@ func _start_title_orbit() -> Camera3D:
 # The reload is the rest stop's one acceptable load.
 func _reload_car() -> void:
 	save_world()
-	Scenes.change_to(get_tree(), Scenes.FREE_ROAM, _rest_page.reload_title())
+	Scenes.change_to(get_tree(), Scenes.LEGACY_FREE_ROAM, _rest_page.reload_title())
 
 
 # A cloud download replaced the save: boot again onto it (save_world leaves the new world alone).
@@ -388,7 +388,7 @@ func _drive_found_car(found_car: Dictionary, pose: Transform3D) -> void:
 	WorldSession.set_active_car(int(found_car.get("instance_id", -1)))
 	_next_pose = pose
 	save_world()
-	Scenes.change_to(get_tree(), Scenes.FREE_ROAM, "Changing cars")
+	Scenes.change_to(get_tree(), Scenes.LEGACY_FREE_ROAM, "Changing cars")
 
 
 # The pause menu's Map / Stats rows: the page covers the frozen game and hands back on Back.

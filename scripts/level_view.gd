@@ -4,7 +4,8 @@ extends Node3D
 # Tests: tests/headless/test_level_view.gd — extend in the same change.
 # A level saved by tools/level_editor_lab.html, built as drivable ground: the lab's terrain and road
 # rebuilt at a finer grid with collision, its trees as the game's 6-card stars, and the car parked on
-# the road's first node. A dev stand-in for free roam (GameConfig.dev_level_instead_of_free_roam).
+# the road's first node. THIS IS THE GAME WORLD (Scenes.WORLD, the default mode): the Hafren level,
+# GameConfig.level_path. The old procedural island (free_roam.tscn) is legacy reference code.
 # Trees come from the bake (LevelTrees): tiles near the camera, culled by what the bake saw from this stretch of road.
 
 const GROUND_SHADER := preload("res://shaders/level_ground.gdshader")
@@ -42,7 +43,7 @@ var _driving := false  # true once loaded, so a half-built level never overwrite
 
 
 func _ready() -> void:
-	var path := level_path if not level_path.is_empty() else Config.data.dev_level_path
+	var path := level_path if not level_path.is_empty() else Config.data.level_path
 	var t_parse := Time.get_ticks_msec()
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	print("level view: parse %d ms" % (Time.get_ticks_msec() - t_parse))
@@ -75,8 +76,8 @@ func _ready() -> void:
 		await car.ready  # this node sits before the car, so builds first and fields the car once it exists
 	if owned.is_empty():
 		restore_saved_car()
-	if String(owned.get("model_id", "")) != Config.data.dev_level_car_id:
-		owned = {"model_id": Config.data.dev_level_car_id, "tuning": {}, "parts": LootRules.parts_for({"model_id": Config.data.dev_level_car_id}).map(
+	if String(owned.get("model_id", "")) != Config.data.level_car_id:
+		owned = {"model_id": Config.data.level_car_id, "tuning": {}, "parts": LootRules.parts_for({"model_id": Config.data.level_car_id}).map(
 			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))}
 	Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
 	car.apply_owned(LootRules.fielded(owned))
@@ -171,7 +172,7 @@ func open_garage() -> void:
 	for i in CarLibrary.all().size():
 		var id := String(CarLibrary.all()[i]["id"])
 		var stats := LootRules.fitted_stats({"model_id": id})
-		var driving := id == Config.data.dev_level_car_id
+		var driving := id == Config.data.level_car_id
 		if driving:
 			selected = i
 		entries.append({"title": String(CarLibrary.all()[i].get("name", id)), "car": i,
@@ -212,7 +213,7 @@ static func restore_saved_car() -> void:
 	var saved: Variant = Save.get_setting(SAVED_CAR_KEY, {})
 	if saved is Dictionary and CarLibrary.index_of(String(saved.get("model_id", ""))) >= 0:
 		owned = saved.duplicate(true)
-		Config.data.dev_level_car_id = String(owned["model_id"])
+		Config.data.level_car_id = String(owned["model_id"])
 
 
 # Remembers where the car stands on this level, so the next launch starts there.
@@ -234,13 +235,13 @@ func saved_pose(saved: Variant, level: String, fallback: Transform3D) -> Transfo
 
 
 func _drive(id: String) -> void:
-	Config.data.dev_level_car_id = id
+	Config.data.level_car_id = id
 	_reload("Changing cars")
 
 
 func _reload(title: String) -> void:
 	_next_pose = _car.global_transform
-	Scenes.change_to(get_tree(), Scenes.LEVEL_VIEW, title)
+	Scenes.change_to(get_tree(), Scenes.WORLD, title)
 
 
 # Free roam's driving effects, set up the way free_roam.gd does; returns the tyre marks.
@@ -281,7 +282,7 @@ func _add_effects(car: VehicleBody3D) -> TireMarks:
 	_car = car
 	if _spectators != null:
 		_spectators.car = car
-	apply_weather(Config.data.dev_level_weather)
+	apply_weather(Config.data.level_weather)
 	return marks
 
 
@@ -390,7 +391,7 @@ func load_level(d: Dictionary) -> void:
 	data = LevelData.new()
 	data.load_save(d, _bake == null, _bake == null)
 	level = data.level
-	_spawn_nodes = spawn_override(d.get("roads", []), Config.data.dev_level_spawn)
+	_spawn_nodes = spawn_override(d.get("roads", []), Config.data.level_spawn)
 	if _bake == null:
 		if not _save_path.is_empty() and not OS.has_feature("web") and not Platform.is_headless():
 			var baking := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
@@ -523,14 +524,14 @@ func road_pose(p: Vector2, facing: Vector3) -> Transform3D:
 	return _bake.road_pose(p, facing, height_at)
 
 
-# The two road nodes (spawn, then the one to face) picked by `dev_level_spawn`, or none when it is unset or out of range.
+# The two road nodes (spawn, then the one to face) picked by `level_spawn`, or none when it is unset or out of range.
 static func spawn_override(roads: Array, pick: Vector3i) -> Array[Vector2]:
 	var out: Array[Vector2] = []
 	if pick.x == -1:
 		return out
 	if pick.x < 0 or pick.x >= roads.size() or pick.y < 0 or pick.y >= roads[pick.x].size() or roads[pick.x].size() < 2 \
 			or pick.z >= roads[pick.x].size() or pick.z == pick.y:
-		push_warning("LevelView: dev_level_spawn %s is not a road node; using the default spawn" % pick)
+		push_warning("LevelView: level_spawn %s is not a road node; using the default spawn" % pick)
 		return out
 	var road: Array = roads[pick.x]
 	var other: int = pick.z if pick.z >= 0 else (pick.y + 1 if pick.y + 1 < road.size() else pick.y - 1)

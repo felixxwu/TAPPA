@@ -1,5 +1,10 @@
 # Gameplay Design — "One island, no clock"
 
+> **Note (2026-11-22):** the game world is now the authored Hafren level (`Scenes.WORLD`,
+> `features/level-editor.md`), the official default mode. The procedural island this document
+> designs is legacy reference code (`Scenes.LEGACY_FREE_ROAM`). Read what follows as the design
+> history and the intent behind the systems the level still shares (damage, parts, cars).
+
 > **This is a design / vision document, not an implementation spec.** It captures the intended
 > game and *why* it is shaped this way. Where it names real systems it's to show feasibility, not
 > to prescribe code.

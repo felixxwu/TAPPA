@@ -30,7 +30,7 @@ func _ready() -> void:
 		if arg.begins_with("--tree-mode="):
 			Benchmark.tree_mode = int(arg.get_slice("=", 1))  # GameConfig.tree_cutout_mode
 	Benchmark.begin()
-	var scene: Node = load(Scenes.FREE_ROAM).instantiate()
+	var scene: Node = load(Scenes.LEGACY_FREE_ROAM).instantiate()
 	add_child(scene)
 
 	var frames := 0

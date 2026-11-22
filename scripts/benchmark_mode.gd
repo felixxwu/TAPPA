@@ -103,10 +103,11 @@ func set_option(key: String, on: bool) -> void:
 
 # Launch the benchmark: leave any paused menu / active rally cleanly, write the
 # benchmark stage + toggles into the live config (snapshotting first), uncap the
-# frame rate, and load free roam. free_roam.gd sees `active` and wires the rest.
+# frame rate, and load the LEGACY free-roam island (not Scenes.WORLD: only free_roam.gd knows the
+# benchmark; it sees `active` and wires the rest). The level's own benchmark is benchmark/level_replay.gd.
 func start() -> void:
 	begin()
-	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
+	Scenes.change_to(get_tree(), Scenes.LEGACY_FREE_ROAM)
 
 
 # Everything start() does except the scene change, for a harness that hosts the scene itself

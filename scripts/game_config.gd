@@ -3132,17 +3132,19 @@ func spectator_params() -> Dictionary:
 ## Resolution of the flat map texture the tilt is applied to, in pixels per side.
 @export var minimap_texture_px := 384
 
-# --- Level editor (temporary dev toggle) ---
-## DEV, temporary: entering the world loads this level-editor save (tools/level_editor_lab.html) in
-## level_view.tscn instead of free roam. Flipped at runtime by the Dev page's level button.
-@export var dev_level_instead_of_free_roam := true
+# --- The game world: the authored level (level_view.tscn) ---
+## LEGACY, for reference only: when on, entering the world (Scenes.WORLD) loads the old procedural
+## free-roam island (free_roam.tscn) instead of the authored level. Off by default — the level IS
+## the game. Flipped at runtime by Settings → Dev → "Legacy free-roam island".
+@export var legacy_free_roam_island := false
 ## The weather id (WeatherLibrary) the level view shows: its particles and wind only.
-@export var dev_level_weather := "dry"
-@export var dev_level_path := "res://tools/levels/hafren_5km.json"
+@export var level_weather := "dry"
+## The level-editor save (tools/level_editor_lab.html) the world loads: Hafren Forest.
+@export var level_path := "res://tools/levels/hafren_5km.json"
 ## The car the level view drives (a stock CarLibrary id), whatever car the world has.
-@export var dev_level_car_id := "mx5"
+@export var level_car_id := "mx5"
 ## Level view: spawn at roads[x][y] of the save (0-based), facing node z of that road (-1: the next node, or the previous one at the end of a road); x = -1 keeps the default spawn.
-@export var dev_level_spawn := Vector3i(31, 4, 3)
+@export var level_spawn := Vector3i(31, 4, 3)
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
 ## Level view: how far trees are drawn, in metres. The level's depth fog ends here, so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.

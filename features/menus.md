@@ -1,13 +1,13 @@
 # Menus
 
-The game boots through `title.tscn` (`title_boot.gd`) straight into the free-roam world, with the
+The game boots through `title.tscn` (`title_boot.gd`) straight into the world (`Scenes.WORLD`, the Hafren level; the legacy free-roam island only with the Dev toggle on), with the
 title menu drawn over it ([world-session.md](world-session.md)). The live menus are the title, the pause menu (with free roam's Map / Stats cards), the rest-stop
 page and the world pages. **Every menu that is a list of choices is a card list**
 (`CardCarousel` built through `CardUI.card_page` / `card_list`) — see
 [card-carousel.md](card-carousel.md) for which menus are cards and which stay plain pages.
 
 **Sources:** the scene-routing seam in `scripts/scenes.gd` (`class_name Scenes` —
-the path consts `TITLE` / `FREE_ROAM` / `MAIN` / `CAR`, and
+the path consts `TITLE` / `WORLD` (the game: the Hafren level) / `LEGACY_FREE_ROAM` (the old island, reference only) / `MAIN` / `CAR`, and
 the `car_scene()` cached-load accessor, the ONE place `"res://car.tscn"` is spelled in
 production code; `preload(Scenes.CAR)` does not compile in GDScript 4.6, which is why
 callers use `Scenes.car_scene()`), the pause overlay in `scripts/pause_menu.gd`

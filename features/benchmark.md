@@ -23,10 +23,10 @@ be confused with the *standalone* harness (`benchmark/perf_benchmark.gd`,
 
 ## Level replay (the dev level)
 
-`benchmark/level_replay.gd` (`./run_level_replay.sh`) benchmarks the level view (`GameConfig.dev_level_path`,
+`benchmark/level_replay.gd` (`./run_level_replay.sh`) benchmarks the level view (`GameConfig.level_path`,
 Hafren Forest; [level-editor.md](level-editor.md)) on a drive a person recorded. `--record [path]` opens the level
 for you to drive and, when you quit (pause → quit, or close the window), saves every physics tick's car pose,
-velocities and inputs (default `benchmark/runs/hafren.rec`). A recording starts at `GameConfig.dev_level_spawn` (road, node, node to face — `LevelView.spawn_override`), not the level view's saved spot. With no flag it replays that file: the inputs go
+velocities and inputs (default `benchmark/runs/hafren.rec`). A recording starts at `GameConfig.level_spawn` (road, node, node to face — `LevelView.spawn_override`), not the level view's saved spot. With no flag it replays that file: the inputs go
 through `Car.ai_controlled` and the pose is written to the physics server each tick, so the path, dust, marks and
 felled trees repeat exactly; frame rate is uncapped with vsync off, frames are sampled as `BenchmarkRunner` does
 after `WARMUP_FRAMES`, and `BenchmarkStats.print_summary` prints the stats before it quits. Replays use the default

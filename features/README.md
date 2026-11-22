@@ -5,8 +5,12 @@ documents one feature area: what it does, where it lives, how the pieces fit
 together, and which config knobs control it. Read this folder first to get
 oriented before diving into source.
 
-`rally` (TAPPA) is a small PS1-aesthetic **free-roam rally game** built in **Godot 4.6**
-(GL Compatibility renderer). One persistent procedural island per save: you drive outward from
+`rally` (TAPPA) is a small PS1-aesthetic **rally game** built in **Godot 4.6**
+(GL Compatibility renderer). **The game world is one authored level, Hafren Forest**
+(`Scenes.WORLD` = `level_view.tscn`, see [level-editor.md](level-editor.md)) — the default mode.
+
+The paragraph below describes the **legacy** procedural island (`Scenes.LEGACY_FREE_ROAM`,
+kept for reference behind Settings → Dev → "Legacy free-roam island"): one persistent procedural island per save: you drive outward from
 the spawn rest stop on a road network that streams in around you, through biome rings that get
 rarer further out, finding cars and parts. Damage is unforgiving: once the cooling fails you
 race the temperature gauge to the next rest stop, where you repair, buy and fit parts, swap cars and
@@ -80,7 +84,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [world-session.md](world-session.md) | **The persistent free-roam world** — `WorldSession` (the world block in the profile: seed, car, pose, lit rest stops, map), the title screen the game boots into, and the map / stats pages |
 | [hud.md](hud.md) | `hud.gd` — speed / gear / rpm readouts, the Health / boost / nitrous / temperature gauges, and the debug readouts (H) |
 | [minimap.md](minimap.md) | **Free roam's minimap** — `MiniMap` (heading-up, perspective-tilted nav-style map top-centre: driven roads, nearby road ahead, seen rest stops; tap / M opens the full map), the full map's lab-style terrain picture (`MapTerrain`), the `seen` sites record |
-| [free-roam.md](free-roam.md) | **The free-roam game, entered from the title screen** — `RoadNetwork` (radial-growth road layout), `RoadTerrain` (height built from the roads, base-field lakes), `TerrainStreamer` (resumable chunk jobs under a strict per-frame time budget, two LODs, skirts, collision ring) |
+| [free-roam.md](free-roam.md) | **LEGACY, reference only:** the procedural free-roam island (`free_roam.tscn`, `Scenes.LEGACY_FREE_ROAM`), reached only through the Dev page's legacy toggle — `RoadNetwork` (radial-growth road layout), `RoadTerrain` (height built from the roads, base-field lakes), `TerrainStreamer` (resumable chunk jobs under a strict per-frame time budget, two LODs, skirts, collision ring) |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [terrain-streaming.md](terrain-streaming.md) | `TerrainManager`'s streaming opt-ins for the stage harness — load radius, generate-on-miss, the LRU cap |
@@ -92,7 +96,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [geo-pipeline.md](geo-pipeline.md) | `tools/geo/` scripts: fetch Welsh LiDAR, OSM and satellite for a real square, build a level editor save and a ground-cover mask |
 | [buildings.md](buildings.md) | `tools/building_lab.html` — procedural cottages / huts / barns as one-mesh, one-atlas low-poly buildings; `bake_buildings.js` + `LevelBuildings` put a level's buildings in the game |
 | [level-ao.md](level-ao.md) | Fake ambient occlusion in the level view: a ground-darkening map round trees / buildings / log piles, bush-cover vertex shade, and base-darkening on trees, bushes, buildings and log piles |
-| [level-editor.md](level-editor.md) | **Temporary dev tooling:** `tools/level_editor_lab.html` (2D/3D level editor) and `level_view.tscn` (`LevelView`), which drives a saved level in place of free roam behind the Dev page's toggle; its map (M), with discovery fog (`LevelDiscovery`) |
+| [level-editor.md](level-editor.md) | **The game world (default mode):** `level_view.tscn` (`LevelView`, `Scenes.WORLD`), which drives the Hafren level (`GameConfig.level_path`), and `tools/level_editor_lab.html` (2D/3D level editor) that authors it; its map (M), with discovery fog (`LevelDiscovery`) |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |
 | [barriers.md](barriers.md) | Solid crash barriers on the outside of sharp corners — 2 m modules stitched into a run; armco guardrail on gravel, concrete jersey rail on tarmac (`BarrierSection` / `BarrierLayout` / `BarrierField`) |
 | [spectators.md](spectators.md) | Roadside crowds (start/mid/end) — boids-style steering while upright, knocked into single-capsule ragdolls by the car; ghost to the car, not obstacles; `tools/spectator_lab.html` procedural stylised spectator generator |

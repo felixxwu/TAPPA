@@ -176,7 +176,7 @@ samples. It only considers trees within
 4. **Cover tiles.** Tiles of `GroundCover.TILE` are placed from the cover texture within
    `ground_cover_far_reach` plus a tile, and dropped beyond it. They're paid for from the frame budget
    the ground queue leaves (`LevelStreamer._process`), each tile with its own `BushField`s.
-5. **5 km.** Bake `hafren_5km`, point `dev_level_path` at it, and set load-time targets from
+5. **5 km.** Bake `hafren_5km`, point `level_path` at it, and set load-time targets from
    measurement. Record `benchmark/runs/hafren_5km.rec` and run `level_replay.gd` on desktop, web
    (`?replay=1`) and phone. Tune radii, tree draw distance and tile sizes.
 6. **GPU terrain (gated).** First a spike that verifies vertex texture fetch in the Compatibility

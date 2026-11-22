@@ -23,7 +23,7 @@ var _settings_menu: SettingsMenu
 # Continue: the host hides the menu over the world it's already showing.
 var close := func() -> void: pass
 # A new world loads the scene afresh. A test swaps it for a capture.
-var enter_world := func() -> void: Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
+var enter_world := func() -> void: Scenes.change_to(get_tree(), Scenes.WORLD)
 
 
 func _ready() -> void:

@@ -6,8 +6,9 @@
 
 ```
 .                          # repository root = Godot project root
-├── title.tscn             # Boot scene (set in project.godot): hands straight over to free_roam.tscn
-├── free_roam.tscn         # The game: one persistent island (see free-roam.md)
+├── title.tscn             # Boot scene (set in project.godot): hands straight over to the world (Scenes.WORLD)
+├── level_view.tscn        # THE GAME WORLD (Scenes.WORLD): the authored Hafren level (see level-editor.md)
+├── free_roam.tscn         # LEGACY, reference only: the old procedural island (Scenes.LEGACY_FREE_ROAM, see free-roam.md)
 ├── main.tscn              # The dev stage and physics test harness (world.gd)
 ├── car.tscn               # VehicleBody3D car, instanced into both world scenes
 ├── project.godot          # Engine config: autoloads, input map, rendering
@@ -27,7 +28,11 @@
 `scripts/scenes.gd` (`class_name Scenes`, a static-only `RefCounted`) is the single
 source of truth for scene paths and for **where the front door is**:
 
-- `Scenes.TITLE` / `FREE_ROAM` / `MAIN` / `CAR` — the canonical paths.
+- `Scenes.TITLE` / `WORLD` / `LEGACY_FREE_ROAM` / `MAIN` / `CAR` — the canonical paths.
+  `WORLD` (`level_view.tscn`, the Hafren level) is the game; enter it with
+  `change_to(tree, Scenes.WORLD)`. `LEGACY_FREE_ROAM` (`free_roam.tscn`) is the old procedural
+  island, kept for reference: `change_to` redirects `WORLD` to it only while
+  `GameConfig.legacy_free_roam_island` is on (Settings → Dev, off by default).
 - `Scenes.change_to(tree, path)` — **the single enforced scene-change point**, with a
   run-scoped kill switch the test pre-run hook arms so no production transition can park a
   live scene under `/root` mid-run. It records the blocked destination, so a test can
@@ -35,7 +40,7 @@ source of truth for scene paths and for **where the front door is**:
 
 Tests should compare captured paths against `Scenes.TITLE`, not a literal.
 
-## Free-roam scene tree (`free_roam.tscn`)
+## Free-roam scene tree (`free_roam.tscn`) — legacy
 
 ```
 FreeRoam [Node3D]                   script: free_roam/free_roam.gd

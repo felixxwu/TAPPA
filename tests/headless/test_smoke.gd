@@ -216,9 +216,9 @@ func test_the_main_scene_is_a_known_boot_scene_and_it_loads() -> void:
 	# The one thing that broke when the diegetic hub was deleted: project.godot still
 	# named `res://hq.tscn`, so the GAME would not boot at all while every test stayed
 	# green (nothing instantiates the main scene by its project setting). The setting must
-	# name the title or the free-roam scene — and it must actually load.
+	# name the title or the world scene — and it must actually load.
 	var main_scene := String(ProjectSettings.get_setting("application/run/main_scene", ""))
-	assert_true(main_scene in [Scenes.TITLE, Scenes.FREE_ROAM],
+	assert_true(main_scene in [Scenes.TITLE, Scenes.WORLD],
 		"project.godot's run/main_scene names an unknown scene: %s" % main_scene)
 	assert_not_null(load(main_scene) as PackedScene, "%s loads as a scene" % main_scene)
 

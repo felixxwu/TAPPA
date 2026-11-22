@@ -1,6 +1,6 @@
 extends GutTest
-# The level-editor save driven in place of free roam (features/level-editor.md): unpacking the lab's
-# save format, the ground built around the road, the trees, and the dev toggle's redirect.
+# The level-editor save that is the game world (Scenes.WORLD, features/level-editor.md): unpacking the
+# lab's save format, the ground built around the road, the trees, and the legacy-island dev redirect.
 # Every level here is synthetic; nothing reads the shipped Hafren save.
 
 var _toggle: bool
@@ -9,12 +9,12 @@ const _HANDLING := ["deep_snow_drag", "deep_snow_depth_m", "grass_grip", "gravel
 
 
 func before_each() -> void:
-	_toggle = Config.data.dev_level_instead_of_free_roam
+	_toggle = Config.data.legacy_free_roam_island
 	_handling = _HANDLING.map(func(k: String) -> Variant: return Config.data.get(k))
 
 
 func after_each() -> void:
-	Config.data.dev_level_instead_of_free_roam = _toggle
+	Config.data.legacy_free_roam_island = _toggle
 	for i in _HANDLING.size():
 		Config.data.set(_HANDLING[i], _handling[i])
 
@@ -62,13 +62,20 @@ func test_the_map_ground_leans_toward_the_cover_colour() -> void:
 	assert_gt(c.r - c.g, LevelMap.GROUND.r - LevelMap.GROUND.g + 0.05, "tinted toward the red cover")
 
 
-func test_the_toggle_sends_world_entry_to_the_level() -> void:
-	Config.data.dev_level_instead_of_free_roam = true
-	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
-	assert_eq(Scenes.last_blocked_path, Scenes.LEVEL_VIEW)
-	Config.data.dev_level_instead_of_free_roam = false
-	Scenes.change_to(get_tree(), Scenes.FREE_ROAM)
-	assert_eq(Scenes.last_blocked_path, Scenes.FREE_ROAM)
+func test_world_entry_is_the_level_unless_the_legacy_island_is_on() -> void:
+	Config.data.legacy_free_roam_island = false
+	Scenes.change_to(get_tree(), Scenes.WORLD)
+	assert_eq(Scenes.last_blocked_path, Scenes.WORLD, "the level is the world by default")
+	Config.data.legacy_free_roam_island = true
+	Scenes.change_to(get_tree(), Scenes.WORLD)
+	assert_eq(Scenes.last_blocked_path, Scenes.LEGACY_FREE_ROAM, "the dev toggle swaps in the legacy island")
+	Config.data.legacy_free_roam_island = false
+	Scenes.change_to(get_tree(), Scenes.LEGACY_FREE_ROAM)
+	assert_eq(Scenes.last_blocked_path, Scenes.LEGACY_FREE_ROAM, "the legacy island reloads itself, never the level")
+
+
+func test_the_shipped_config_makes_the_level_the_default_world() -> void:
+	assert_false(GameConfig.new().legacy_free_roam_island, "the legacy island is off out of the box")
 
 
 func test_the_level_scene_arms_its_pause_menu() -> void:
@@ -80,12 +87,12 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(JSON.stringify(lv))
 	f.close()
-	var world: Node = (load(Scenes.LEVEL_VIEW) as PackedScene).instantiate()
+	var world: Node = (load(Scenes.WORLD) as PackedScene).instantiate()
 	world.get_node("Level").level_path = path
 	add_child_autofree(world)
 	await wait_for_signal(world.get_node("Level").loaded, 30.0)
 	assert_true(world.get_node("PauseMenu").is_armed(), "Esc / Start open the pause menu")
-	assert_eq(world.get_node("Car")._car_index, CarLibrary.index_of(Config.data.dev_level_car_id), "drives the level's own car")
+	assert_eq(world.get_node("Car")._car_index, CarLibrary.index_of(Config.data.level_car_id), "drives the level's own car")
 	var map: LevelMap = world.get_node("Level").map
 	var m := InputEventKey.new()
 	m.physical_keycode = KEY_M
@@ -149,7 +156,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	photo.exit()
 	assert_true(lpause.is_open(), "and leaving it returns to the pause menu")
 	lpause.resume()
-	var start_car := Config.data.dev_level_car_id
+	var start_car := Config.data.level_car_id
 	var pause: PauseMenu = world.get_node("PauseMenu")
 	var level: LevelView = world.get_node("Level")
 	var dmg: DamageModel = world.get_node("Car").damage
@@ -173,7 +180,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_eq(level.shop.view, RestStopPage.View.SHOP, "Back steps out to the shop's cards")
 	MenuNav.of(level.shop._page)._unhandled_input(back)
 	assert_null(level.shop, "and then closes the shop")
-	assert_eq(Scenes.last_blocked_path, Scenes.LEVEL_VIEW, "reloading the level to fit the parts")
+	assert_eq(Scenes.last_blocked_path, Scenes.WORLD, "reloading the level to fit the parts")
 	LevelView._next_pose = null
 	LevelView.owned = {}
 	Scenes.last_blocked_path = ""
@@ -182,11 +189,11 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_not_null(level.garage, "the pause menu's Garage opens the car cards")
 	var other := 1 if CarLibrary.all()[0]["id"] == start_car else 0
 	CardUI.pick(level.garage.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.all()[other]["name"]))
-	assert_eq(Config.data.dev_level_car_id, String(CarLibrary.all()[other]["id"]), "picking a car makes it the level's car")
-	assert_eq(Scenes.last_blocked_path, Scenes.LEVEL_VIEW, "and reloads the level to field it")
+	assert_eq(Config.data.level_car_id, String(CarLibrary.all()[other]["id"]), "picking a car makes it the level's car")
+	assert_eq(Scenes.last_blocked_path, Scenes.WORLD, "and reloads the level to field it")
 	assert_almost_eq(LevelView._next_pose.origin, car.global_position, Vector3.ONE * 0.01, "standing where the old car was")
 	LevelView._next_pose = null
-	Config.data.dev_level_car_id = start_car
+	Config.data.level_car_id = start_car
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
@@ -303,23 +310,23 @@ func test_snow_dust_is_lightened_like_the_road_and_untouched_off_the_snow() -> v
 
 
 func test_the_last_driven_car_and_parts_come_back_next_launch() -> void:
-	var start_car := Config.data.dev_level_car_id
+	var start_car := Config.data.level_car_id
 	var start_setting: Variant = Save.get_setting(LevelView.SAVED_CAR_KEY)
 	var id := String(CarLibrary.all()[0]["id"])
 	var saved := {"model_id": id, "tuning": {}, "parts": [{"id": "x", "on": true}]}
 	Save.set_setting(LevelView.SAVED_CAR_KEY, saved)
 	LevelView.owned = {}
 	LevelView.restore_saved_car()
-	assert_eq(Config.data.dev_level_car_id, id, "the saved car is the level's car")
+	assert_eq(Config.data.level_car_id, id, "the saved car is the level's car")
 	assert_eq(LevelView.owned, saved, "with its parts")
 	LevelView.owned = {}
-	Config.data.dev_level_car_id = start_car
+	Config.data.level_car_id = start_car
 	Save.set_setting(LevelView.SAVED_CAR_KEY, {"model_id": "no_such_car"})
 	LevelView.restore_saved_car()
-	assert_eq(Config.data.dev_level_car_id, start_car, "a car gone from the roster is ignored")
+	assert_eq(Config.data.level_car_id, start_car, "a car gone from the roster is ignored")
 	assert_true(LevelView.owned.is_empty())
 	Save.set_setting(LevelView.SAVED_CAR_KEY, start_setting)
-	Config.data.dev_level_car_id = start_car
+	Config.data.level_car_id = start_car
 
 
 func test_the_last_spot_on_this_level_comes_back_next_launch() -> void:
