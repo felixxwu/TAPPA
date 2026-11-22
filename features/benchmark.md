@@ -41,6 +41,15 @@ frame's first physics or process step to `RenderingServer.frame_post_draw` (scri
 not GPU time), which `BenchmarkStats.summarise` reports as `busy_avg_ms` / `_p95` / `_p99` / `_max`. The web
 fullscreen prompt rechecks when `Benchmark.active` flips, since the replay turns it on after boot.
 
+## Level draw calls
+
+`tools/level_draw_calls.tscn` counts the level view's draw calls: it parks the car at a few road spots (`DRAW_SPOTS`, fractions of the
+road samples), prints the frame's draw calls / objects / primitives, then how many each part adds by hiding it (trees, ground cover,
+terrain chunks, buildings, log piles, spectators, car); `DRAW_OUT=<dir>` also saves a screenshot per spot for before/after comparisons.
+Needs a window: `xvfb-run -a godot --path . --rendering-driver opengl3 res://tools/level_draw_calls.tscn` (and the level's bake, see
+[level-editor.md](level-editor.md)). Hafren, 2026-11-22, mean of 4 spots: 288 calls before merging tree species and buildings, 250 after
+(terrain chunks ~154, ground cover ~64, trees ~15, buildings 1, log piles ~2, sky/car/UI the rest).
+
 ## Pre-run toggles
 
 The Settings page lists one ON/OFF row per entry in `Benchmark.TOGGLES` so a

@@ -123,7 +123,7 @@ free roam's car, cameras, HUD and pause menu around one `LevelView` node, which 
   `LevelStreamer._pack_vertex` fills with the smooth vertex normal's y; trimesh collision;
 - draws the bake's trees through `LevelTrees` (see "Tree tiles" below);
 - answers `height_at` / `surface_at`, so the car seats itself and the tyres read road grip from it;
-- draws trees as MultiMeshes of `Foliage._alpha_card_mesh` stars, in `shaders/level_tree.gdshader`
+- draws trees as MultiMeshes (one per tile, all its species) of `Foliage._alpha_card_mesh` stars, in `shaders/level_tree.gdshader`
   (unshaded, alpha scissor, nearest filter, `LevelTrees.KIND_TINT`) which sways with the same `wind_sway.gdshaderinc` globals as free roam's trees;
 - adds free roam's driving effects once the car is ready (`_add_effects`): wheel particles and dust puffs in the `home` region's
   colours, engine smoke, tyre marks (reset by the pause menu's reset), exhaust flames, car lamps, and the night headlight cone
@@ -319,9 +319,11 @@ bake if a row holds an id outside the trees or many of its trees are beyond `lev
 (A to-linear conversion in the shader once dropped the id's top bits, so trees past id 65535 never showed up.) On the 600 m level: about 0.4 s for heights/frame/trees, about 11 s for 118 rows, a 395 kB bake.
 
 `LevelTrees` (`level_trees.gd`, built by `LevelView.load_level`, updated each frame by `_process`): one MultiMesh per
-tile and species, made lazily within `level_tree_draw_m` of the camera and culled by `visibility_range_end`. When the
+tile (up to `KINDS_PER_DRAW`, 6, species each; a tile with more gets a second), made lazily within `level_tree_draw_m` of the camera and culled by `visibility_range_end`. When the
 camera's road row changes it repacks each queued tile (3 per frame) to the trees rows r and r+1 see, packed to the front
-(`visible_instance_count`); no bake means every tree. Collision (`Hitboxes`, a node per tile, shape index plus the tile's first
+(`visible_instance_count`); no bake means every tree. Each instance carries `INSTANCE_CUSTOM` (`STRIDE` 16 floats: the transform's 12, then r = its
+species' slot), and `level_tree.gdshader` picks that slot's `albedoN` texture and `tints[N]`; `_material_for` keeps one material per species
+list, shared by tiles. This made trees one draw call per tile instead of one per tile and species (Hafren: about 43 to 15 a frame). Collision (`Hitboxes`, a node per tile, shape index plus the tile's first
 tree number = tree number) exists only for tiles within `level_tree_collision_m` of the car and goes at twice that.
 `size_factor` / `knock_down` answer the car by tree number; felled trees (`_fallen`, `_fall_pose`) stay felled when a tile
 is rebuilt. Tests: `test_level_trees.gd`, tree parts of `test_level_bake.gd`.

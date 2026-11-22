@@ -17,13 +17,18 @@ func test_each_baked_building_sits_on_the_lowest_ground_under_it_with_a_collider
 	var b := LevelBuildings.new()
 	add_child_autofree(b)
 	b.setup(SAVE, func(x: float, _z: float) -> float: return x)
-	assert_eq(b.get_child_count(), 2)
+	assert_eq(b.find_children("*", "StaticBody3D", false, false).size(), 2)
 	var body := b.get_child(0) as StaticBody3D
 	assert_lt(body.position.y, 10.0 - 8.0 / 2 * cos(0.5) + 0.01, "seated at the lowest corner, not the centre")
-	var box := (body.get_child(1) as CollisionShape3D).shape as BoxShape3D
+	var box := (body.get_child(0) as CollisionShape3D).shape as BoxShape3D
 	assert_almost_eq(box.size.y, 3.0, 0.001)
-	var uvs: PackedVector2Array = ((body.get_child(0) as MeshInstance3D).mesh as ArrayMesh).surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]
+	assert_eq(b.find_children("*", "MeshInstance3D", true, false), [b.mesh], "both drawn by one merged mesh")
+	var arrays := (b.mesh.mesh as ArrayMesh).surface_get_arrays(0)
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
 	assert_true(uvs.has(Vector2(1, 1)) and not uvs.has(Vector2(1, 0)), "texture V flipped from three.js (bottom-up) to Godot (top-down)")
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	assert_eq(verts.size(), 6)
+	assert_almost_eq(verts[0].distance_to(body.transform * Vector3.ZERO), 0.0, 0.001, "placed where its body stands")
 
 
 func test_a_level_without_a_building_bake_builds_nothing() -> void:
@@ -31,3 +36,4 @@ func test_a_level_without_a_building_bake_builds_nothing() -> void:
 	add_child_autofree(b)
 	b.setup("user://no_such_level.json", func(_x: float, _z: float) -> float: return 0.0)
 	assert_eq(b.get_child_count(), 0)
+	assert_null(b.mesh)
