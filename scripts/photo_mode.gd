@@ -22,6 +22,8 @@ extends Camera3D
 # Emitted when the player presses Esc. The host frees this camera, restores the
 # gameplay camera and re-opens the pause menu.
 signal exited
+# R, gamepad Y or the touch RENDER button: the host's render mode (only when can_render).
+signal render_requested
 
 const PITCH_LIMIT_DEG := 89.0
 const STICK_DEADZONE := 0.2
@@ -49,6 +51,9 @@ var _wants_capture := false
 # direction's length, so holding the stick fully over AND a key can't exceed photo_move_speed.
 # Reset on exit() so a stale value can't survive into the next time photo mode opens.
 var touch_axis := Vector3.ZERO
+
+# Set by a host that offers a render mode (PhotoModeHost.render); gates R / Y and the touch button.
+var can_render := false
 
 
 func _init() -> void:
@@ -190,6 +195,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Esc (ui_cancel) and gamepad Start (pause) both leave. The pause menu is DISARMED
 	# while photo mode is up, so neither reaches it and stacks an overlay
 	# over the frozen shot.
+	if can_render and ((event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_R)
+			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_Y)):
+		render_requested.emit()
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
 		# Fetched first: exit() takes this camera out of the tree.
 		var vp := get_viewport()

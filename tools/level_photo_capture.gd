@@ -1,6 +1,7 @@
 extends Node
 # Verification aid: boot the Hafren level, open Photo Mode and fly the camera well away from the car
 # and road, then photograph what streamed in round it (trees, ground cover). Pure tooling; not shipped.
+# CAP_RENDER=1 then climbs and photographs before, during and after photo mode's RENDER.
 # Writes user://level_photo_capture_<n>.png. Run:
 #
 #   xvfb-run -a -s "-screen 0 1280x720x24" godot --rendering-driver opengl3 res://tools/level_photo_capture.tscn
@@ -31,6 +32,21 @@ func _ready() -> void:
 	for _i in 240:
 		await get_tree().process_frame
 	_shot("far")
+	if OS.get_environment("CAP_RENDER") != "":
+		cam.global_position.y += 60.0
+		cam.look_by(0.0, -0.15)
+		for _i in 30:
+			await get_tree().process_frame
+		_shot("before_render")
+		level.photo_render(cam)
+		await level.render_started
+		for _i in 30:
+			await get_tree().process_frame
+		_shot("render")
+		await level.render_finished
+		for _i in 30:
+			await get_tree().process_frame
+		_shot("after_render")
 	get_tree().quit()
 
 

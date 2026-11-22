@@ -10,6 +10,10 @@ extends Node
 signal opened(camera: PhotoModeCamera)
 signal closed
 
+# The scene's render mode, called with the photo camera when the player asks for it. Left empty,
+# photo mode offers no render.
+var render: Callable
+
 # How far the camera may fly from where it started, in metres. 0 means no limit.
 var max_range_m := 0.0
 
@@ -36,6 +40,9 @@ func open() -> void:
 	_camera.name = "PhotoModeCamera"
 	_camera.max_range_m = max_range_m
 	_camera.exited.connect(_close)
+	if render.is_valid():
+		_camera.can_render = true
+		_camera.render_requested.connect(func() -> void: render.call(_camera))
 	get_parent().add_child(_camera)
 	_camera.enter(get_viewport().get_camera_3d())
 	_set_chrome(false)

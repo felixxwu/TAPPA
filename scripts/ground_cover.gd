@@ -183,6 +183,29 @@ func has_cover() -> bool:
 	return visible and not cover.is_empty() and not kinds.is_empty()
 
 
+# How far the far layer (bush domes) streams and draws: GameConfig.ground_cover_far_reach, or photo
+# mode's render override while it is set.
+var _reach_override := 0.0
+
+
+func far_reach() -> float:
+	return maxf(Config.data.ground_cover_far_reach, _reach_override)
+
+
+# Stream and draw the far layer out to `metres` (photo mode's render); 0 goes back to the configured
+# reach. Built tiles take the new range at once; tiles past the normal reach go on the next stream.
+func set_reach_override(metres: float) -> void:
+	_reach_override = metres
+	var cfg: GameConfig = Config.data
+	if far_material != null:
+		far_material.set_shader_parameter("far_fade", Vector2(maxf(cfg.ground_cover_far_fade_start, metres * 0.9), metres)
+			if metres > 0.0 else Vector2(cfg.ground_cover_far_fade_start, cfg.ground_cover_far_fade_end))
+	for node: Node in tiles.values():
+		for mmi in node.get_children():
+			if mmi is MultiMeshInstance3D and (mmi as MultiMeshInstance3D).material_override == far_material:
+				(mmi as MultiMeshInstance3D).visibility_range_end = far_reach() + TILE * 0.71
+
+
 func update_centre(pos: Vector3) -> void:
 	if not has_cover():
 		return
@@ -195,7 +218,7 @@ func update_centre(pos: Vector3) -> void:
 func stream(centre: Vector2, deadline_us: int, car: Node3D = null) -> void:
 	if not has_cover():
 		return
-	var reach := Config.data.ground_cover_far_reach + TILE * 0.71
+	var reach := far_reach() + TILE * 0.71
 	for t: Vector2i in tiles.keys():
 		if tile_centre(t).distance_to(centre) > reach + TILE:
 			(tiles[t] as Node).queue_free()
@@ -212,7 +235,7 @@ func missing(centre: Vector2) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
 	if not has_cover():
 		return out
-	var reach := Config.data.ground_cover_far_reach + TILE * 0.71
+	var reach := far_reach() + TILE * 0.71
 	var limit := size * 0.5 + TILE
 	for tz in range(floori((centre.y - reach) / TILE), floori((centre.y + reach) / TILE) + 1):
 		for tx in range(floori((centre.x - reach) / TILE), floori((centre.x + reach) / TILE) + 1):
@@ -241,7 +264,7 @@ func build_tile(t: Vector2i, car: Node3D = null) -> void:
 	for key: String in placed:
 		_add_layer(node, t, placed[key], _mesh_for(key), material, Config.data.ground_cover_reach + diag)
 	for key: String in far_placed:
-		_add_layer(node, t, far_placed[key], _far_mesh_for(key), far_material, Config.data.ground_cover_far_reach + diag)
+		_add_layer(node, t, far_placed[key], _far_mesh_for(key), far_material, far_reach() + diag)
 	if car == null:
 		return
 	var cfg: GameConfig = Config.data

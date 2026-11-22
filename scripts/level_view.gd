@@ -11,6 +11,8 @@ extends Node3D
 const GROUND_SHADER := preload("res://shaders/level_ground.gdshader")
 
 signal loaded
+signal render_started  # photo mode's render has built everything and is showing it
+signal render_finished  # and has dropped back to the normal draw distances
 
 @export var level_path := ""
 @export var material: Material  # the ground shader (level_ground.gdshader)
@@ -21,6 +23,7 @@ var _bake: LevelBake
 var _spawn_nodes: Array[Vector2] = []
 var _save_path := ""
 var _streamer: LevelStreamer
+var _rendering := false  # photo mode's render is up (photo_render)
 var _photo_cam: PhotoModeCamera  # while photo mode is up: the viewpoint trees, cover and ground follow
 var _trees: LevelTrees
 var _spectators: LevelSpectators
@@ -506,6 +509,7 @@ func _update_view(cam: Camera3D, free_view: bool) -> void:
 
 func _attach_photo_mode() -> void:
 	var host := PhotoModeHost.attach(get_parent())
+	host.render = photo_render
 	if not host.opened.is_connected(_on_photo_opened):
 		host.opened.connect(_on_photo_opened)
 		host.closed.connect(_on_photo_closed)
@@ -525,6 +529,52 @@ func _on_photo_opened(cam: PhotoModeCamera) -> void:
 func _follow_photo_cam() -> void:
 	if is_instance_valid(_photo_cam):
 		_update_view(_photo_cam, true)
+
+
+# Photo mode's RENDER: trees out to photo_render_tree_m and ground cover out to photo_render_cover_m
+# (photo_render_cover_touch_m on a phone)
+# round `cam` for photo_render_seconds, then back to normal. Building that much at once can stall for
+# a while, so a loading screen covers the build. Asking again while one runs does nothing.
+func photo_render(cam: PhotoModeCamera) -> void:
+	if _rendering or _trees == null or _streamer == null or not is_instance_valid(cam):
+		return
+	_rendering = true
+	var cfg: GameConfig = Config.data
+	var screen: LoadingScreen = null
+	if not Platform.is_headless():
+		screen = LoadingScreen.new()
+		screen.process_mode = Node.PROCESS_MODE_ALWAYS
+		screen.set_title("Rendering…")
+		add_child(screen)
+		for _i in 2:  # let it reach the screen before the stall
+			await get_tree().process_frame
+	var env := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
+	var far0 := cam.far
+	cam.far = maxf(far0, cfg.photo_render_tree_m + LevelBake.TREE_TILE_M)
+	if env != null:
+		env.environment.fog_depth_end = cfg.photo_render_tree_m
+	_trees.set_draw_override(cfg.photo_render_tree_m)
+	_streamer.cover.set_reach_override(cfg.photo_render_cover_touch_m if Platform.is_touch() else cfg.photo_render_cover_m)
+	_trees.update(cam.global_position, _car.global_position if _car != null else cam.global_position, true)
+	_trees.settle()
+	for t in _streamer.cover.missing(Vector2(cam.global_position.x, cam.global_position.z)):
+		_streamer.cover.build_tile(t, _car)
+	if screen != null:
+		screen.finish()
+	render_started.emit()
+	await get_tree().create_timer(cfg.photo_render_seconds, true).timeout
+	_trees.set_draw_override(0.0)
+	_streamer.cover.set_reach_override(0.0)
+	if env != null:
+		env.environment.fog_depth_end = cfg.level_tree_draw_m
+	if is_instance_valid(cam):
+		cam.far = far0
+	_rendering = false
+	render_finished.emit()
+
+
+func is_rendering() -> bool:
+	return _rendering
 
 
 func _on_photo_closed() -> void:

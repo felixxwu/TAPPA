@@ -156,6 +156,22 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var ground: LevelStreamer = world.get_node("Level").get_node("Ground")
 	assert_eq(ground.focus, photo, "the ground and cover stream round the photo camera")
 	assert_eq(ground.process_mode, Node.PROCESS_MODE_ALWAYS, "and keep streaming while the world is frozen")
+	# RENDER (R / Y / the touch button): longer draw distances for a few seconds, then back.
+	var lview: LevelView = world.get_node("Level")
+	assert_true(photo.can_render, "the level offers photo mode's render")
+	var draw0: float = lview._trees.draw_m()
+	var was_secs: float = Config.data.photo_render_seconds
+	Config.data.photo_render_seconds = 0.1
+	photo.render_requested.emit()  # headless shows no loading screen, so the build runs at once
+	assert_true(lview.is_rendering(), "the render is up")
+	assert_gt(lview._trees.draw_m(), draw0, "drawing trees further out")
+	assert_gt(lview._streamer.cover.far_reach(), Config.data.ground_cover_far_reach, "and cover")
+	photo.render_requested.emit()  # asking again while it runs changes nothing
+	await get_tree().create_timer(0.5, true).timeout  # the tree is paused: GUT's own waits would stall
+	Config.data.photo_render_seconds = was_secs
+	assert_false(lview.is_rendering(), "it turns itself off")
+	assert_eq(lview._trees.draw_m(), draw0, "back to the normal tree distance")
+	assert_eq(lview._streamer.cover.far_reach(), Config.data.ground_cover_far_reach, "and cover reach")
 	photo.exit()
 	assert_eq(ground.focus, world.get_node("Car"), "leaving photo mode streams round the car again")
 	assert_eq(ground.process_mode, Node.PROCESS_MODE_INHERIT)

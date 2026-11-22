@@ -102,6 +102,7 @@ var _back_panel: ColorRect
 var _hide_panel: ColorRect
 var _zoom_in_panel: ColorRect
 var _zoom_out_panel: ColorRect
+var _render_panel: ColorRect  # null when the host offers no render mode
 var _stick_base: ColorRect
 var _stick_knob: ColorRect
 var _look_base: ColorRect
@@ -138,6 +139,9 @@ func _build() -> void:
 	_look_knob = _make_stick_part(_STICK_KNOB_COLOR, "LOOK")
 	_all_widgets = [_back_panel, _hide_panel, _up_panel, _down_panel, _zoom_in_panel,
 		_zoom_out_panel, _stick_base, _stick_knob, _look_base, _look_knob]
+	if _camera != null and _camera.can_render:
+		_render_panel = _make_button("RENDER")
+		_all_widgets.append(_render_panel)
 
 
 # A stick's base or knob. The knob carries the stick's name, so the two sticks can't be
@@ -195,6 +199,9 @@ func _layout() -> void:
 	_zoom_in_panel.size = _rects["zoom_in"].size
 	_zoom_out_panel.position = _rects["zoom_out"].position
 	_zoom_out_panel.size = _rects["zoom_out"].size
+	if _render_panel != null:
+		_render_panel.position = _rects["render"].position
+		_render_panel.size = _rects["render"].size
 	_stick_base.size = Vector2.ONE * _stick_radius * 2.0
 	_stick_base.position = _stick_base_center - _stick_base.size * 0.5
 	_look_base.size = _stick_base.size
@@ -208,6 +215,8 @@ func _compute_rects(size: Vector2) -> void:
 	var m := size.x * _MARGIN_FRAC
 	_rects["back"] = Rect2(Vector2(m, m), Vector2(_CORNER_BTN_W, _CORNER_BTN_H))
 	_rects["hide"] = Rect2(Vector2(size.x - m - _CORNER_BTN_W, m), Vector2(_CORNER_BTN_W, _CORNER_BTN_H))
+	if _render_panel != null:  # beside HIDE, the other "take the shot" control
+		_rects["render"] = Rect2(Vector2(size.x - m - _CORNER_BTN_W * 2.0 - size.y * 0.02, m), Vector2(_CORNER_BTN_W, _CORNER_BTN_H))
 
 	_stick_radius = minf(size.x, size.y) * _STICK_RADIUS_FRAC
 	_stick_base_center = Vector2(m + _stick_radius, size.y - m - _stick_radius)
@@ -244,7 +253,7 @@ func hit_test(pos: Vector2) -> String:
 	# and the tap that restores the UI (_release).
 	if _hidden:
 		return ""
-	for region in ["back", "hide", "up", "down", "zoom_in", "zoom_out"]:
+	for region in ["back", "hide", "render", "up", "down", "zoom_in", "zoom_out"]:
 		if _rects.has(region) and (_rects[region] as Rect2).has_point(pos):
 			return region
 	if _rects.is_empty():
@@ -449,6 +458,10 @@ func _release(idx: int) -> void:
 		return
 	if region == "hide":
 		set_hidden(true)
+		return
+	if region == "render":
+		if _camera != null:
+			_camera.render_requested.emit()
 		return
 	if _hidden and info != null:
 		var d: Dictionary = info

@@ -227,6 +227,31 @@ func test_tiles_outside_the_floor_ring_wait_for_budget() -> void:
 	assert_gt(gc.missing(Vector2.ZERO).size(), 0)
 
 
+# Photo mode's render widens the far layer's reach for a moment: tiles too far to stream normally
+# become missing (so the render builds them), and clearing it puts the normal reach back.
+func test_a_reach_override_widens_streaming_and_clears_back() -> void:
+	var cov := PackedByteArray()
+	cov.resize(400 * 400)
+	cov.fill(1)
+	var gc := GroundCover.new()
+	add_child_autofree(gc)
+	gc.setup({"cover": Marshalls.raw_to_base64(cov), "coverKinds": {"1": [[BUSH, 0.1]]}}, _flat, 400)
+	var normal := gc.far_reach()
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	var built := gc.tiles.size()
+	assert_true(gc.missing(Vector2.ZERO).is_empty(), "precondition: everything in normal reach is built")
+	gc.set_reach_override(normal * 2.0)
+	assert_eq(gc.far_reach(), normal * 2.0)
+	assert_false(gc.missing(Vector2.ZERO).is_empty(), "a wider reach leaves tiles to build")
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	var wide := gc.tiles.size()
+	assert_gt(wide, built, "and streaming builds them")
+	gc.set_reach_override(0.0)
+	assert_eq(gc.far_reach(), normal, "clearing the override restores the normal reach")
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	assert_lt(gc.tiles.size(), wide, "and the farthest extra tiles go on the next stream")
+
+
 func test_after_a_full_stream_no_tile_in_reach_is_missing() -> void:
 	var gc := _cover_node({"1": [[BLADES, 2.0]]})
 	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)

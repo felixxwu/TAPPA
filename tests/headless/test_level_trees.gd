@@ -119,6 +119,28 @@ func test_free_view_draws_every_tree_in_reach() -> void:
 	assert_eq(_trees.drawn_count(), 0, "and the road view hides them again")
 
 
+# Photo mode's render draws trees further out for a moment: a tree past the normal draw distance is
+# drawn while the override is set, and the tiles' draw range goes back when it clears.
+func test_a_draw_override_reaches_further_and_clears_back() -> void:
+	_make(_near_trees())
+	var far_cam := Vector3(-_trees.draw_m() - 3.0 * LevelBake.TREE_TILE_M, 0.0, 0.0)
+	_trees.update(far_cam, far_cam, true)
+	_trees.settle()
+	assert_eq(_trees.drawn_count(), 0, "precondition: the trees are past the draw distance")
+	var normal := _trees.draw_m()
+	_trees.set_draw_override(normal * 4.0)
+	_trees.update(far_cam, far_cam, true)
+	_trees.settle()
+	assert_gt(_trees.drawn_count(), 0, "the longer draw distance reaches them")
+	_trees.set_draw_override(0.0)
+	assert_eq(_trees.draw_m(), normal, "clearing it restores the normal distance")
+	for i in _bake.tree_tile_n * _bake.tree_tile_n:
+		var t := _trees.tile(i)
+		if t != null:
+			for mmi in t.mmis:
+				assert_eq(mmi.visibility_range_end, normal + LevelBake.TREE_TILE_M, "every built tile draws to the normal range again")
+
+
 func test_without_a_bake_every_tree_in_range_is_drawn() -> void:
 	_make(_near_trees())
 	_trees.update(Vector3(0.0, 0.0, 0.0), Vector3(0.0, 0.0, 0.0))

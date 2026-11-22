@@ -355,3 +355,25 @@ func test_the_finger_left_after_a_pinch_goes_back_to_looking() -> void:
 	assert_false(_controls._pinch_active)
 	assert_eq(_controls._look_owner, 0)
 	assert_eq(_controls._look_last_pos, centre)
+
+
+# A host with a render mode gets a RENDER button that asks the camera for it; without one there is
+# no button at all.
+func test_render_button_only_when_the_host_offers_one() -> void:
+	assert_false(_controls._rects.has("render"), "no render mode, no button")
+	var cam := PhotoModeCamera.new()
+	add_child_autofree(cam)
+	cam.enter(null)
+	cam.can_render = true
+	var controls := PhotoModeControls.new()
+	add_child_autofree(controls)
+	controls.setup(cam)
+	controls._compute_rects(VIEWPORT)
+	var asked := [0]
+	cam.render_requested.connect(func() -> void: asked[0] += 1)
+	var at := (controls._rects["render"] as Rect2).get_center()
+	assert_eq(controls.hit_test(at), "render", "the button is hit at its centre")
+	controls._press(0, at)
+	controls._release(0)
+	assert_eq(asked[0], 1, "tapping it asks for a render")
+	cam.exit()

@@ -374,3 +374,23 @@ func test_double_request_makes_one_camera() -> void:
 	(_scene.get_node("PhotoModeHost") as PhotoModeHost).open()
 	assert_eq(_scene.find_children("PhotoModeCamera", "", false, false).size(), 1,
 		"only one photo camera at a time")
+
+
+# R (and gamepad Y) asks for the host's render, but only when the host offers one.
+func test_r_asks_for_a_render_only_when_offered() -> void:
+	var cam := _lone_camera()
+	var asked := [0]
+	cam.render_requested.connect(func() -> void: asked[0] += 1)
+	var r := InputEventKey.new()
+	r.physical_keycode = KEY_R
+	r.pressed = true
+	cam._unhandled_input(r)
+	assert_eq(asked[0], 0, "no render mode on offer: R does nothing")
+	cam.can_render = true
+	cam._unhandled_input(r)
+	var y := InputEventJoypadButton.new()
+	y.button_index = JOY_BUTTON_Y
+	y.pressed = true
+	cam._unhandled_input(y)
+	assert_eq(asked[0], 2, "R and Y each ask for one")
+	cam.exit()

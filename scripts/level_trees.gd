@@ -54,6 +54,7 @@ var _dirty := {}   # tiles that need repacking whatever the row
 var _queue: Array[int] = []
 var _row := -2
 var _cam_cell := Vector2i(-100000, -100000)
+var _draw_override := 0.0  # photo mode's render: a longer draw distance for a few seconds (0: GameConfig's)
 
 
 func setup(p_bake: LevelBake) -> void:
@@ -93,6 +94,21 @@ func update(cam_pos: Vector3, car_pos: Vector3, free_view := false) -> void:
 		_queue_tiles_near(cam_pos)
 	_update_collision(car_pos)
 	_pump(REPACKS_PER_FRAME)
+
+
+# How far trees are drawn: GameConfig.level_tree_draw_m, or the render override while it is set.
+func draw_m() -> float:
+	return _draw_override if _draw_override > 0.0 else float(Config.data.level_tree_draw_m)
+
+
+# Draw trees out to `metres` (photo mode's render); 0 goes back to the configured distance. Every built
+# tile takes the new range at once, and the next update queues whatever newly falls within it.
+func set_draw_override(metres: float) -> void:
+	_draw_override = metres
+	for t: Tile in _tiles.values():
+		for mmi in t.mmis:
+			mmi.visibility_range_end = draw_m() + LevelBake.TREE_TILE_M
+	_cam_cell = Vector2i(-100000, -100000)
 
 
 # Repacks everything still waiting, at once; for the first frame and for tests.
@@ -177,7 +193,7 @@ func _distance_to(t: Tile, p: Vector3) -> float:
 
 
 func _queue_tiles_near(cam_pos: Vector3) -> void:
-	var draw: float = Config.data.level_tree_draw_m
+	var draw := draw_m()
 	var found: Array[Tile] = []
 	for i in _tile_cells_near(cam_pos, draw + LevelBake.TREE_TILE_M):
 		var t := _tile_or_make(i)
@@ -300,7 +316,7 @@ func _tile_or_make(i: int) -> Tile:
 		mmi.multimesh = mm
 		mmi.material_override = _material_for(kinds)
 		mmi.custom_aabb = aabb
-		mmi.visibility_range_end = float(Config.data.level_tree_draw_m) + LevelBake.TREE_TILE_M
+		mmi.visibility_range_end = draw_m() + LevelBake.TREE_TILE_M
 		add_child(mmi)
 		t.mmis.append(mmi)
 		t.run_end.append(to)
