@@ -35,6 +35,7 @@ const STICK_DEADZONE := 0.2
 var max_range_m := 0.0
 var _origin := Vector3.ZERO
 
+var _entry_fov := 75.0  # the lens photo mode opened with; look speed is 1x there (see zoom_look_scale)
 var _yaw := 0.0    # radians, world Y
 var _pitch := 0.0  # radians, clamped to +/- PITCH_LIMIT_DEG
 var _entered := false
@@ -86,6 +87,7 @@ func enter(from: Camera3D) -> void:
 		-deg_to_rad(PITCH_LIMIT_DEG), deg_to_rad(PITCH_LIMIT_DEG))
 	_apply_look()
 	_origin = global_position
+	_entry_fov = fov
 	current = true
 	# A touch screen has no pointer to capture, and on Android capturing asks the OS for
 	# pointer capture, which is no use to a finger. Touch looks through PhotoModeControls.
@@ -219,11 +221,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		vp.set_input_as_handled()
 
 
-# Turn the camera by a yaw/pitch DELTA in radians.
+# Turn the camera by a yaw/pitch DELTA in radians, slowed the further the lens is zoomed in so a
+# drag or stick moves the picture by the same share of the screen at any zoom. Every look input
+# (mouse, touch drag, look stick, gamepad) comes through here.
 func look_by(yaw_delta: float, pitch_delta: float) -> void:
-	_yaw = wrapf(_yaw + yaw_delta, -PI, PI)
+	var k := zoom_look_scale(fov, _entry_fov)
+	_yaw = wrapf(_yaw + yaw_delta * k, -PI, PI)
 	var limit := deg_to_rad(PITCH_LIMIT_DEG)
-	_pitch = clampf(_pitch + pitch_delta, -limit, limit)
+	_pitch = clampf(_pitch + pitch_delta * k, -limit, limit)
 	_apply_look()
 
 
@@ -245,6 +250,15 @@ func zoom_by(factor: float) -> void:
 	if factor <= 0.0:
 		return
 	fov = clampf(fov / factor, Config.data.photo_fov_min, Config.data.photo_fov_max)
+
+
+# How much to scale look speed at lens `fov` against `base_fov` (where it is 1): the ratio of the
+# two lenses' view widths, so zooming in to half the width halves the turn per input. Never above 1:
+# zooming out past the opening lens doesn't speed the look up.
+static func zoom_look_scale(fov_deg: float, base_fov_deg: float) -> float:
+	if base_fov_deg <= 0.0 or fov_deg <= 0.0:
+		return 1.0
+	return minf(tan(deg_to_rad(fov_deg) * 0.5) / tan(deg_to_rad(base_fov_deg) * 0.5), 1.0)
 
 
 func is_active() -> bool:

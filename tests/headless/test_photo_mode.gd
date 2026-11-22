@@ -417,3 +417,23 @@ func test_boost_toggles_faster_flight() -> void:
 	cam.boost = true
 	cam.exit()
 	assert_false(cam.boost, "and leaving photo mode drops it")
+
+
+# Zoomed in, the same look input turns the camera less, so the picture moves by the same share of
+# the screen; zooming back out restores the original speed, and going wider never speeds it up.
+func test_look_slows_as_the_lens_zooms_in() -> void:
+	var cam := _lone_camera()
+	var y0 := cam.yaw()
+	cam.look_by(0.1, 0.0)
+	var full := cam.yaw() - y0
+	cam.zoom_by(2.0)
+	var y1 := cam.yaw()
+	cam.look_by(0.1, 0.0)
+	assert_lt(cam.yaw() - y1, full, "zoomed in, the same input turns less")
+	assert_gt(cam.yaw() - y1, 0.0, "but still turns")
+	cam.zoom_by(0.5)
+	var y2 := cam.yaw()
+	cam.look_by(0.1, 0.0)
+	assert_almost_eq(cam.yaw() - y2, full, 1e-5, "back at the opening lens, back to full speed")
+	assert_eq(PhotoModeCamera.zoom_look_scale(90.0, 60.0), 1.0, "a wider lens never speeds the look up")
+	cam.exit()

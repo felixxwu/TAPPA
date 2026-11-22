@@ -345,7 +345,10 @@ photographs the overlay.
 **Gestures**, layered underneath the widgets: a one-finger drag anywhere off a widget
 looks around (`PhotoModeCamera.look_by`, same sign convention as the mouse path — dragging
 right turns the view left), and a two-finger pinch anywhere zooms the fov
-(`PhotoModeCamera.zoom_by`). The one-finger look is suppressed for as long as a second
+(`PhotoModeCamera.zoom_by`). Every look input (mouse, drag, look stick, gamepad) goes through
+`PhotoModeCamera.look_by`, which slows it by `zoom_look_scale` — the ratio of the current lens's view
+width to the one photo mode opened with, capped at 1 — so zoomed in, a drag moves the picture by the
+same share of the screen. The one-finger look is suppressed for as long as a second
 finger is down, so a pinch can never also swing the camera (`_register_free_pointer`
 promotes the pair to a pinch and drops `_look_owner`). When one finger lifts, the other goes
 back to looking.
