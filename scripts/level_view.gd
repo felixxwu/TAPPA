@@ -72,7 +72,8 @@ func _ready() -> void:
 	print("level view: %s built in %d ms" % [path, Time.get_ticks_msec() - t0])
 	var env := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if env != null:
-		env.environment.fog_depth_end = Config.data.level_tree_draw_m
+		env.environment.fog_depth_end = Config.data.level_fog_end_m
+		env.environment.fog_depth_curve = Config.data.level_fog_curve
 	var car := get_parent().get_node_or_null("Car") as VehicleBody3D
 	if car == null:
 		return

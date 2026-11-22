@@ -73,6 +73,8 @@ func _material_for(kinds: PackedInt32Array) -> ShaderMaterial:
 	mat.shader = SHADER
 	mat.set_shader_parameter("base_dark", Config.data.level_ao_tree_base)
 	mat.set_shader_parameter("base_height", Config.data.level_ao_tree_base_height)
+	mat.set_shader_parameter("draw_end_m", Config.data.level_tree_draw_m)
+	mat.set_shader_parameter("fade_m", Config.data.level_tree_fade_m)
 	var tints: Array[Color] = []
 	for slot in KINDS_PER_DRAW:
 		tints.append(_tints[kinds[slot]] if slot < kinds.size() else Color.WHITE)

@@ -226,8 +226,11 @@ game carries no preset copy) feed `scripts/ground_cover.gd` (`GroundCover`, owne
 ### In the game: look
 
 The level view is graded to read as a daytime photo, not the free-roam overcast: its own `Environment` in
-`level_view.tscn` (a seamless noise-cloud `PanoramaSkyMaterial` ramped blue to white, `fog_light_color` pale blue, depth fog ending at `GameConfig.level_tree_draw_m`,
-`fog_sky_affect` 0);
+`level_view.tscn` (a seamless noise-cloud `PanoramaSkyMaterial` ramped blue to white, `fog_light_color` pale blue, depth fog solid at `GameConfig.level_fog_end_m`
+(1.5 km, curve `level_fog_curve` 1.5, set by `LevelView` on load; until 2026-11-22 it ended at the 500 m tree distance, which hid the
+horizon terrain level), `fog_sky_affect` 0). Trees no longer rely on the fog to hide where they stop: `level_tree.gdshader` dithers each
+tree out over the last `level_tree_fade_m` (60 m) before `level_tree_draw_m`, by its root's distance from the camera (`draw_end_m` /
+`fade_m`, set in `LevelTrees._material_for`);
 `LevelView._build_ground` multiplies the grass vertex colour by `(0.95, 1.25, 0.72)`, fading out over the few metres around the road's edge, to push the ground
 lime; `KIND_TINT` in `level_trees.gd` tints each Welsh species (spruce near-black green, broadleaves yellow-green); the shader then squashes leaf contrast and saturation so trees sit in the muted palette.
 Global grade values in `GameConfig`: `grade_saturation` 0.85, `grade_contrast` 1.1, neutral `grade_shadow_tint` / `grade_highlight_tint`,
