@@ -134,6 +134,8 @@ func test_a_draw_override_reaches_further_and_clears_back() -> void:
 	assert_gt(_trees.drawn_count(), 0, "the longer draw distance reaches them")
 	_trees.set_draw_override(0.0)
 	assert_eq(_trees.draw_m(), normal, "clearing it restores the normal distance")
+	for mat: ShaderMaterial in _trees._materials.values():
+		assert_eq(float(mat.get_shader_parameter("draw_end_m")), normal, "and the cards dither out at the normal edge again")
 	for i in _bake.tree_tile_n * _bake.tree_tile_n:
 		var t := _trees.tile(i)
 		if t != null:

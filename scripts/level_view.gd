@@ -553,7 +553,7 @@ func photo_render(cam: PhotoModeCamera) -> void:
 	var far0 := cam.far
 	cam.far = maxf(far0, cfg.photo_render_tree_m + LevelBake.TREE_TILE_M)
 	if env != null:
-		env.environment.fog_depth_end = cfg.photo_render_tree_m
+		env.environment.fog_depth_end = maxf(cfg.level_fog_end_m, cfg.photo_render_tree_m)
 	_trees.set_draw_override(cfg.photo_render_tree_m)
 	_streamer.cover.set_reach_override(cfg.photo_render_cover_touch_m if Platform.is_touch() else cfg.photo_render_cover_m)
 	_trees.update(cam.global_position, _car.global_position if _car != null else cam.global_position, true)
@@ -567,7 +567,7 @@ func photo_render(cam: PhotoModeCamera) -> void:
 	_trees.set_draw_override(0.0)
 	_streamer.cover.set_reach_override(0.0)
 	if env != null:
-		env.environment.fog_depth_end = cfg.level_tree_draw_m
+		env.environment.fog_depth_end = cfg.level_fog_end_m
 	if is_instance_valid(cam):
 		cam.far = far0
 	_rendering = false
