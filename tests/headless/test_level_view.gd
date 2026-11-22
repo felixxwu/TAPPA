@@ -140,6 +140,15 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	await map.teleport(map.nearest_teleport(Vector2(10, 3)))
 	assert_false(map.visible or get_tree().paused or lpause.is_open(), "teleporting from the pause menu's map goes straight back to driving")
 	assert_true(lpause.is_armed(), "with the pause menu armed again")
+	# Photo Mode from the level's pause menu really opens the photo camera — it used to hide the
+	# menu with nothing listening, stranding the player on a frozen frame — and leaving comes back.
+	lpause.open()
+	assert_true(CardUI.pick(lpause.cards(), "Photo Mode"))
+	var photo := world.get_node_or_null("PhotoModeCamera") as PhotoModeCamera
+	assert_true(photo != null and photo.is_active(), "Photo Mode opens the photo camera on a level")
+	photo.exit()
+	assert_true(lpause.is_open(), "and leaving it returns to the pause menu")
+	lpause.resume()
 	var start_car := Config.data.dev_level_car_id
 	var pause: PauseMenu = world.get_node("PauseMenu")
 	var level: LevelView = world.get_node("Level")

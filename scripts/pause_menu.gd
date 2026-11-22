@@ -129,6 +129,11 @@ func return_from_extra() -> void:
 
 
 func _on_photo_mode_pressed() -> void:
+	# Nobody to answer (a scene without a PhotoModeHost): stay put rather than hide this menu and
+	# leave the player on a frozen frame with no way back.
+	if photo_mode_requested.get_connections().is_empty():
+		push_warning("PauseMenu: Photo Mode picked but this scene has no PhotoModeHost")
+		return
 	set_input_enabled(false)
 	_set_open(false)
 	photo_mode_requested.emit()

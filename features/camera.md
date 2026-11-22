@@ -274,7 +274,7 @@ camera's `target`.
 
 **Source:** `scripts/photo_mode.gd` (`class_name PhotoModeCamera`, extends `Camera3D`).
 Not part of the `CameraManager` cycle — it's a **standalone free-fly camera created on
-demand** by `PhotoModeHost` (`scripts/photo_mode_host.gd`, attached by `free_roam.gd` and `world.gd`) when the player picks "Photo Mode" from the in-run pause menu (see
+demand** by `PhotoModeHost` (`scripts/photo_mode_host.gd`, attached by `free_roam.gd`, `world.gd` and `level_view.gd` — every scene with a `PauseMenu` needs one, and `PauseMenu._on_photo_mode_pressed` stays put if nobody is listening) when the player picks "Photo Mode" from the in-run pause menu (see
 [menus.md](menus.md) → "Pause menu"). The whole world stays **frozen** (`get_tree().paused`
 remains `true`); only the camera moves, seating itself on the transform and FOV of the
 gameplay camera that was active when the player paused, so the shot doesn't jump.

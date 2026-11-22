@@ -73,6 +73,19 @@ func test_unarmed_pause_menu_is_inert() -> void:
 	fresh.resume()  # don't leak a paused tree
 
 
+# A scene with no photo mode host must not lose the menu to a Photo Mode pick: hiding it with
+# nothing listening stranded touch players on a frozen frame with no way back.
+func test_photo_mode_with_no_host_keeps_the_menu() -> void:
+	var fresh := PauseMenu.new()
+	add_child_autofree(fresh)
+	fresh.set_input_enabled(true)
+	fresh.open()
+	fresh._on_photo_mode_pressed()
+	assert_true(fresh.is_open(), "the menu stays open")
+	assert_true(fresh.is_armed(), "and armed")
+	fresh.resume()
+
+
 # world.gd arms the pause menu once the world has finished generating, so pause
 # is live for the actual run but was inert during loading.
 func test_world_boot_arms_the_pause_menu() -> void:

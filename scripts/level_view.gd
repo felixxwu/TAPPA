@@ -84,6 +84,10 @@ func _ready() -> void:
 	car.reset_to(_next_pose if _next_pose != null else saved_pose(Save.get_setting(SAVED_POSE_KEY), _save_path, spawn_pose()))
 	_next_pose = null
 	_pause = get_parent().get_node_or_null("PauseMenu")
+	# The pause menu offers Photo Mode here too; without a host its pick hid the menu and left the
+	# player stuck on a frozen frame with no controls and no way back.
+	if _pause != null:
+		PhotoModeHost.attach.call_deferred(get_parent())  # deferred: the scene is still adding its children
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	add_child(layer)
