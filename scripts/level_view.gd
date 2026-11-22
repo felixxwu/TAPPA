@@ -21,6 +21,7 @@ var _bake: LevelBake
 var _spawn_nodes: Array[Vector2] = []
 var _save_path := ""
 var _streamer: LevelStreamer
+var _photo_cam: PhotoModeCamera  # while photo mode is up: the viewpoint trees, cover and ground follow
 var _trees: LevelTrees
 var _spectators: LevelSpectators
 var garage: MenuPage
@@ -88,7 +89,7 @@ func _ready() -> void:
 	# The pause menu offers Photo Mode here too; without a host its pick hid the menu and left the
 	# player stuck on a frozen frame with no controls and no way back.
 	if _pause != null:
-		PhotoModeHost.attach.call_deferred(get_parent())  # deferred: the scene is still adding its children
+		_attach_photo_mode.call_deferred()  # deferred: the scene is still adding its children
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	add_child(layer)
@@ -103,6 +104,7 @@ func _ready() -> void:
 	map.closed.connect(_on_map_closed)
 	if _streamer != null:
 		_streamer.focus = car
+		_streamer.brush = car
 		var t_fill := Time.get_ticks_msec()
 		await _streamer.prefill_async()
 		print("level view: prefill %d ms" % (Time.get_ticks_msec() - t_fill))
@@ -487,12 +489,51 @@ func _process(_dt: float) -> void:
 		off_road_label.position = Vector2(roundf((get_viewport().get_visible_rect().size.x - off_road_label.size.x) * 0.5), UITheme.FONT_SIZE)
 	if _car != null and HeadlightCone.has_headlights(Config.data):
 		HeadlightCone.push(Config.data, _car.global_transform, _car.half_width() * 2.0 if _car.has_method("half_width") else 1.8)
-	var cam := get_viewport().get_camera_3d()
-	if cam != null:
-		if _trees != null:
-			_trees.update(cam.global_position, _car.global_position if _car != null else cam.global_position)
-		if _streamer != null:
-			_streamer.cover.update_centre(cam.global_position)
+	if _photo_cam == null:
+		_update_view(get_viewport().get_camera_3d(), false)
+
+
+# Trees and ground cover round `cam`. `free_view` (photo mode) shows every tree in reach rather than
+# the set baked as visible from the nearest stretch of road, since the camera can be anywhere.
+func _update_view(cam: Camera3D, free_view: bool) -> void:
+	if cam == null:
+		return
+	if _trees != null:
+		_trees.update(cam.global_position, _car.global_position if _car != null else cam.global_position, free_view)
+	if _streamer != null:
+		_streamer.cover.update_centre(cam.global_position)
+
+
+func _attach_photo_mode() -> void:
+	var host := PhotoModeHost.attach(get_parent())
+	if not host.opened.is_connected(_on_photo_opened):
+		host.opened.connect(_on_photo_opened)
+		host.closed.connect(_on_photo_closed)
+
+
+# Photo mode freezes the tree, but the camera flies: the ground, cover and trees follow it instead
+# of the car, and keep streaming while paused, so flying off doesn't leave bare, treeless ground.
+func _on_photo_opened(cam: PhotoModeCamera) -> void:
+	_photo_cam = cam
+	if _streamer != null:
+		_streamer.focus = cam
+		_streamer.process_mode = Node.PROCESS_MODE_ALWAYS
+	if not get_tree().process_frame.is_connected(_follow_photo_cam):
+		get_tree().process_frame.connect(_follow_photo_cam)
+
+
+func _follow_photo_cam() -> void:
+	if is_instance_valid(_photo_cam):
+		_update_view(_photo_cam, true)
+
+
+func _on_photo_closed() -> void:
+	_photo_cam = null
+	if get_tree().process_frame.is_connected(_follow_photo_cam):
+		get_tree().process_frame.disconnect(_follow_photo_cam)
+	if _streamer != null:
+		_streamer.focus = _car
+		_streamer.process_mode = Node.PROCESS_MODE_INHERIT
 
 
 

@@ -12,6 +12,9 @@ var data: LevelData
 var bake: LevelBake
 var ground_material: Material
 var cover: GroundCover
+# What brushes the bushes in cover tiles built from now on: the car, even while photo mode moves `focus`
+# to its camera (a bush tied to the photo camera would outlive it). Null falls back to `focus`.
+var brush: Node3D
 var _cover := PackedByteArray()
 var _cover_tints := {}
 var _bush_ids := {}
@@ -80,7 +83,7 @@ func _ready() -> void:
 func prefill_async() -> void:
 	await super()
 	while focus != null and not cover.missing(_focus_xz()).is_empty():
-		cover.stream(_focus_xz(), Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0), focus)
+		cover.stream(_focus_xz(), Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0), _brush())
 		await get_tree().process_frame
 
 
@@ -89,7 +92,11 @@ func _process(delta: float) -> void:
 	var start := Time.get_ticks_usec()
 	super(delta)
 	if focus != null:
-		cover.stream(_focus_xz(), start + budget_us(delta), focus)
+		cover.stream(_focus_xz(), start + budget_us(delta), _brush())
+
+
+func _brush() -> Node3D:
+	return brush if is_instance_valid(brush) else focus
 
 
 func _ground_material(_job: ChunkJob) -> Material:

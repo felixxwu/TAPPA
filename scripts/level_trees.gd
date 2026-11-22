@@ -83,8 +83,9 @@ func _material_for(kinds: PackedInt32Array) -> ShaderMaterial:
 
 
 # Called every frame with the camera and the car: follows the viewpoint row, spreads the repacking over frames, and gives the car its nearby collision.
-func update(cam_pos: Vector3, car_pos: Vector3) -> void:
-	var row := bake.nearest_sample(cam_pos.x, cam_pos.z) / bake.vis_every if bake.has_visibility() else -1
+# `free_view` (photo mode, the camera anywhere) skips the baked road visibility and shows every tree in reach.
+func update(cam_pos: Vector3, car_pos: Vector3, free_view := false) -> void:
+	var row := bake.nearest_sample(cam_pos.x, cam_pos.z) / bake.vis_every if bake.has_visibility() and not free_view else -1
 	var cell := Vector2i(floori(cam_pos.x / LevelBake.TREE_TILE_M), floori(cam_pos.z / LevelBake.TREE_TILE_M))
 	if row != _row or cell != _cam_cell:
 		_row = row
@@ -205,7 +206,7 @@ func _pump(budget: int) -> void:
 # Shows exactly the trees the two viewpoint rows round the camera's stretch of road can see (every tree if no visibility was baked), packed to the front of each MultiMesh.
 func _repack(t: Tile) -> void:
 	var ids := PackedInt32Array()
-	if bake.has_visibility():
+	if bake.has_visibility() and _row >= 0:
 		ids = _union(bake.visible_in(_row, t.first, t.end), bake.visible_in(_row + 1, t.first, t.end))
 	else:
 		ids = PackedInt32Array(range(t.first, t.end))

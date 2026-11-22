@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tools/level_photo_capture.gd" id="1"]
+
+[node name="LevelPhotoCapture" type="Node"]
+script = ExtResource("1")

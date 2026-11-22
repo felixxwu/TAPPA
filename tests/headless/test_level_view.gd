@@ -153,7 +153,12 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(CardUI.pick(lpause.cards(), "Photo Mode"))
 	var photo := world.get_node_or_null("PhotoModeCamera") as PhotoModeCamera
 	assert_true(photo != null and photo.is_active(), "Photo Mode opens the photo camera on a level")
+	var ground: LevelStreamer = world.get_node("Level").get_node("Ground")
+	assert_eq(ground.focus, photo, "the ground and cover stream round the photo camera")
+	assert_eq(ground.process_mode, Node.PROCESS_MODE_ALWAYS, "and keep streaming while the world is frozen")
 	photo.exit()
+	assert_eq(ground.focus, world.get_node("Car"), "leaving photo mode streams round the car again")
+	assert_eq(ground.process_mode, Node.PROCESS_MODE_INHERIT)
 	assert_true(lpause.is_open(), "and leaving it returns to the pause menu")
 	lpause.resume()
 	var start_car := Config.data.level_car_id

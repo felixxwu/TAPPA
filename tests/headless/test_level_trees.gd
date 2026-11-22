@@ -100,6 +100,25 @@ func test_a_row_change_shows_exactly_that_rows_trees() -> void:
 	assert_eq(_trees.drawn_count(), 0)
 
 
+# Photo mode's camera can be anywhere, so its free view ignores the road-baked visibility and draws
+# every tree in reach — and going back to the road view brings the baked set back.
+func test_free_view_draws_every_tree_in_reach() -> void:
+	_make(_near_trees())
+	var rows: Array = []
+	for _i in ceili(_bake.sx.size() / 4.0):
+		rows.append([])
+	_bake.set_visibility(4, rows)  # no tree is visible from any stretch of road
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(0.0, 0.0, 50.0))
+	_trees.settle()
+	assert_eq(_trees.drawn_count(), 0, "precondition: the road view hides them all")
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(0.0, 0.0, 50.0), true)
+	_trees.settle()
+	assert_eq(_trees.drawn_count(), 4, "the free view draws every tree in reach")
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(0.0, 0.0, 50.0))
+	_trees.settle()
+	assert_eq(_trees.drawn_count(), 0, "and the road view hides them again")
+
+
 func test_without_a_bake_every_tree_in_range_is_drawn() -> void:
 	_make(_near_trees())
 	_trees.update(Vector3(0.0, 0.0, 0.0), Vector3(0.0, 0.0, 0.0))

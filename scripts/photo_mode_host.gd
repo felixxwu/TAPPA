@@ -5,6 +5,11 @@ extends Node
 # Gives a scene with a PauseMenu its photo mode: answers the menu's request with a free-fly camera
 # over the frozen world, clears the screen for the shot, and puts everything back on the way out.
 
+# The photo camera has taken over (opened) / handed back (closed), so a world that streams round
+# a viewpoint can follow the photo camera instead of the car for the duration.
+signal opened(camera: PhotoModeCamera)
+signal closed
+
 # How far the camera may fly from where it started, in metres. 0 means no limit.
 var max_range_m := 0.0
 
@@ -34,6 +39,7 @@ func open() -> void:
 	get_parent().add_child(_camera)
 	_camera.enter(get_viewport().get_camera_3d())
 	_set_chrome(false)
+	opened.emit(_camera)
 	# MobileControls is hidden with the rest and a phone has no Esc key, so without these a touch
 	# player would be stuck flying with no way out.
 	if Platform.is_touch():
@@ -53,6 +59,7 @@ func _close() -> void:
 		get_parent().remove_child(_camera)
 		_camera.queue_free()
 	_camera = null
+	closed.emit()
 	_set_chrome(true)
 	var cameras := get_parent().get_node_or_null("CameraManager") as CameraManager
 	if cameras != null:
