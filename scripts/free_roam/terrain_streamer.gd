@@ -18,7 +18,7 @@ const CHECK_EVERY := 4
 enum Stage { PREP, HEIGHTS, ARRAYS, UPLOAD, ATTACH, COLLIDE, PLANT, SPAWN, DONE }
 # Detail levels, finest first. NEAR is the tiles within NEAR_REACH_M of the car, drawn and driven on only.
 # MID reaches further and carries everything planted (trees, barriers, sites). FAR is the horizon.
-enum Level { NEAR, MID, FAR }
+enum Level { NEAR, MID, FAR, HORIZON }
 
 enum Plant { TREE, BUSH, ROCK }
 const TREE_SALT := 101
@@ -73,6 +73,8 @@ var _tiles := {}  # Vector2i -> TileState, in near_tile_m squares
 var _queue: Array[ChunkJob] = []
 var _est := {}  # atomic stage -> moving average of its cost, µs
 var _holes_due := {}  # chunks whose near tiles changed in the planner: _run_queue recuts their holes, first
+var _horizon := {}  # Vector2i block -> HorizonState, in horizon_block_chunks squares of chunks
+var _horizon_due := {}  # horizon blocks whose chunks' far / mid meshes came or went: _run_queue recuts them
 var _indices := {}  # verts per side -> PackedInt32Array, grid plus skirts
 var _plan_coord := Vector2i(1 << 30, 0)
 var _plan_here := Vector2.ZERO  # the car and where it will be, as of the last plan
@@ -118,6 +120,15 @@ class ChunkState:
 	var plant_job: ChunkJob  # a mid build back in the queue to plant, after its collision
 
 
+# One horizon block (horizon_block_chunks × horizon_block_chunks chunks, one quad each): its mesh,
+# drawn with the cells cut out whose chunk has its own far or mid mesh (see _cut_horizon).
+class HorizonState:
+	var mesh: MeshInstance3D
+	var arrays: Array = []  # vertices, colours, UVs and UV2s of the uncut mesh
+	var cut := PackedByteArray()  # 1 per cell (cz * blocks + cx) the drawn mesh leaves out; empty: uncut
+	var job: ChunkJob
+
+
 # One near_tile_m square: its full-detail mesh, and its share of the collision, built from the
 # finest grid there (this tile's near grid, else the quarter of its chunk's mid grid under it).
 class TileState:
@@ -133,7 +144,7 @@ class TileState:
 
 
 class ChunkJob:
-	var coord: Vector2i  # a near tile's coord for a tile job, else a chunk's
+	var coord: Vector2i  # a near tile's coord for a tile job, a block's for a horizon job, else a chunk's
 	var tile := false
 	var origin := Vector2.ZERO  # world position of the square's corner
 	var size_m := 64.0
@@ -552,7 +563,7 @@ func queued() -> int:
 
 # The jobs due now by what they build, for the benchmark report.
 func due_by_kind() -> Dictionary:
-	var out := {"collision": 0, "near": 0, "mid": 0, "plant": 0, "far": 0}
+	var out := {"collision": 0, "near": 0, "mid": 0, "plant": 0, "far": 0, "horizon": 0}
 	for job in _queue:
 		if job.cancelled or job.stage == Stage.DONE or job.priority >= UNSEEN_PLANT_PRIORITY * 0.5:
 			continue
@@ -565,6 +576,8 @@ func due_by_kind() -> Dictionary:
 			kind = "near"
 		elif job.level == Level.MID:
 			kind = "mid"
+		elif job.level == Level.HORIZON:
+			kind = "horizon"
 		out[kind] += 1
 	return out
 
@@ -599,6 +612,10 @@ func _run_queue(deadline: int) -> void:
 		if not _atomic("holes", deadline, _cut_holes.bind(coord)):
 			return
 		_holes_due.erase(coord)
+	for b: Vector2i in _horizon_due.keys():
+		if not _atomic("horizon_holes", deadline, _cut_horizon.bind(b)):
+			return
+		_horizon_due.erase(b)
 	# Planting and horizon jobs whose next unit didn't fit in what's left of this frame. Smaller
 	# work behind them in that same tier may still fit, so it runs instead of the frame's budget
 	# going unused; anything ahead of that tier (collision, near and mid meshes) still stops the
@@ -667,6 +684,9 @@ const NEAR_REACH_M := 70.0
 const NEAR_KEEP_MARGIN_M := 16.0
 # A near tile's edge against mid ground is blended to the mid line over this many metres.
 const STITCH_BLEND_M := 3.0
+# The horizon's skirts (block edges and round its cut-out cells): deeper than far's 12 m, since a
+# horizon quad's straight edge can stray further from the far mesh's 16 m samples beside it.
+const HORIZON_SKIRT_M := 30.0
 
 
 func _far_priority(st: ChunkState, d: float) -> float:
@@ -808,7 +828,9 @@ func _prep_samples(job: ChunkJob) -> void:
 			job.road_info[3 * i] = 1.0e4
 		_start_arrays(job)
 		return
-	job.cands = _cands_of(_chunk_of_tile(job.coord) if job.tile else job.coord)
+	# A horizon quad is a chunk wide: no road shows at that size, so no candidates are gathered.
+	if job.level != Level.HORIZON:
+		job.cands = _cands_of(_chunk_of_tile(job.coord) if job.tile else job.coord)
 
 
 # The road segments that can be nearest anywhere in chunk `coord`, gathered once and kept on its
@@ -938,7 +960,7 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		job.stitch = _stitch_mask(job.coord)
 		if job.stitch != 0:
 			_stitch(job.verts, job.heights, n, hl, job.stride, job.stitch)
-	var drop: float = [3.0, 6.0, 12.0][job.level]
+	var drop: float = [3.0, 6.0, 12.0, HORIZON_SKIRT_M][job.level]
 	var perim := _perimeter(n)
 	for k in perim.size():
 		var src := perim[k]
@@ -1081,6 +1103,9 @@ func _upload(job: ChunkJob) -> void:
 
 
 func _attach(job: ChunkJob) -> void:
+	if job.level == Level.HORIZON:
+		_attach_horizon(job)
+		return
 	var st: ChunkState = null if job.tile else _chunks.get(job.coord)
 	var ts: TileState = _tiles.get(job.coord) if job.tile else null
 	if st == null and ts == null:
@@ -1112,11 +1137,13 @@ func _attach(job: ChunkJob) -> void:
 			st.mid_road_d = job.road_d
 			st.mid_arrays = arrays
 			st.mid_job = null
+			_horizon_changed(job.coord)
 		Level.FAR:
 			st.far_mesh = mi
 			st.far_heights = job.heights
 			st.far_arrays = arrays
 			st.far_job = null
+			_horizon_changed(job.coord)
 	if st != null:
 		_show_finest(st)
 		# The mesh just uploaded has no holes: only recut it if near tiles really cover the chunk.
@@ -1168,19 +1195,24 @@ static func _covered(mask: int, cx: int, cz: int, cells_per_tile: int, tpc: int)
 	return (mask >> ((cz / cells_per_tile) * tpc + cx / cells_per_tile)) & 1 == 1
 
 
-func _coarse_mesh(src: Array, n: int, cells_per_tile: int, tpc: int, mask: int, drop: float) -> ArrayMesh:
+# `cells` (one byte per grid cell, 1 = covered) replaces `mask` when given: a mask holds at most
+# 63 cells, and a horizon block can have more.
+func _coarse_mesh(src: Array, n: int, cells_per_tile: int, tpc: int, mask: int, drop: float,
+		cells := PackedByteArray()) -> ArrayMesh:
 	var verts: PackedVector3Array = src[0]
 	var colors: PackedColorArray = src[1]
 	var uvs: PackedVector2Array = src[2]
 	var uv2s: PackedVector2Array = src[3]
 	var idx := _indices_for(n)
-	if mask != 0:
+	if mask != 0 or not cells.is_empty():
 		# Skirts add vertices, and these arrays are shared with the chunk's stored copy.
 		verts = verts.duplicate()
 		colors = colors.duplicate()
 		uvs = uvs.duplicate()
 		uv2s = uv2s.duplicate()
 		var covered := func(cx: int, cz: int) -> bool: return _covered(mask, cx, cz, cells_per_tile, tpc)
+		if not cells.is_empty():
+			covered = func(cx: int, cz: int) -> bool: return cells[cz * (n - 1) + cx] == 1
 		idx = PackedInt32Array()
 		for zi in n - 1:
 			for xi in n - 1:
@@ -2144,6 +2176,7 @@ func _plan() -> void:
 		var ts: TileState = _tiles[t]
 		if ts.near_mesh != null and ts.near_job == null and ts.stitch != _stitch_mask(t):
 			_restitch(ts, _stitch_mask(t))
+	_plan_horizon(here)
 	# Cancelled and finished jobs leave now rather than when they reach the head: a queue that
 	# never drains (a car outdriving the far ring) would otherwise carry them for ever.
 	var live: Array[ChunkJob] = []
@@ -2152,6 +2185,136 @@ func _plan() -> void:
 			live.append(job)
 	_queue = live
 	_queue.sort_custom(func(a: ChunkJob, b: ChunkJob) -> bool: return a.priority < b.priority)
+
+
+# --- the horizon level -----------------------------------------------------------------------
+
+func _horizon_blocks() -> int:
+	return maxi(settings.horizon_block_chunks, 1)
+
+
+func _horizon_block_m() -> float:
+	return settings.chunk_m * _horizon_blocks()
+
+
+func horizon_block_of_chunk(coord: Vector2i) -> Vector2i:
+	var b := _horizon_blocks()
+	return Vector2i(floori(float(coord.x) / b), floori(float(coord.y) / b))
+
+
+# Blocks with a horizon mesh drawn (for the HUD, the benchmark and tests).
+func horizon_count() -> int:
+	var n := 0
+	for hs: HorizonState in _horizon.values():
+		n += int(hs.mesh != null)
+	return n
+
+
+# Chunk `coord` gained or lost its far or mid mesh: its horizon block is recut at the head of the
+# next _run_queue, so the two never draw over the same ground.
+func _horizon_changed(coord: Vector2i) -> void:
+	if not _horizon.is_empty():
+		var b := horizon_block_of_chunk(coord)
+		if _horizon.has(b):
+			_horizon_due[b] = true
+
+
+# Every block whose nearest point is within horizon_radius_m of the car gets a horizon mesh; a
+# block goes again once it is a block further than that. Queued at the block's distance in
+# chunks, so a horizon block sits in the far-mesh tier and can be passed over when blocked.
+func _plan_horizon(here: Vector2) -> void:
+	var r := settings.horizon_radius_m
+	if r <= 0.0:
+		for b: Vector2i in _horizon.keys():
+			_drop_horizon(b)
+		return
+	var bm := _horizon_block_m()
+	var cm := settings.chunk_m
+	for b: Vector2i in _horizon.keys():
+		if _dist_to_rect(here, Rect2(Vector2(b) * bm, Vector2(bm, bm))) > r + bm:
+			_drop_horizon(b)
+	var lo := Vector2i(floori((here.x - r) / bm), floori((here.y - r) / bm))
+	var hi := Vector2i(floori((here.x + r) / bm), floori((here.y + r) / bm))
+	for bz in range(lo.y, hi.y + 1):
+		for bx in range(lo.x, hi.x + 1):
+			var b := Vector2i(bx, bz)
+			var rect := Rect2(Vector2(b) * bm, Vector2(bm, bm))
+			if _dist_to_rect(here, rect) > r:
+				continue
+			var hs: HorizonState = _horizon.get(b)
+			if hs == null:
+				hs = HorizonState.new()
+				_horizon[b] = hs
+			if hs.mesh == null and hs.job == null:
+				hs.job = _new_job(b, Level.HORIZON, false)
+			if hs.job != null:
+				hs.job.dist = rect.get_center().distance_to(here) / cm
+				hs.job.priority = hs.job.dist
+
+
+func _attach_horizon(job: ChunkJob) -> void:
+	var hs: HorizonState = _horizon.get(job.coord)
+	job.stage = Stage.DONE
+	if hs == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.mesh = job.mesh
+	mi.material_override = _ground_material(job)
+	mi.position = Vector3(job.origin.x, 0.0, job.origin.y)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.add_to_group(&"id_terrain")
+	add_child(mi)
+	hs.mesh = mi
+	hs.arrays = [job.verts, job.colors, job.uvs, job.uv2s]
+	hs.cut = PackedByteArray()  # the mesh just uploaded is uncut
+	hs.job = null
+	_cut_horizon(job.coord)
+	job.verts = PackedVector3Array(); job.colors = PackedColorArray(); job.uvs = PackedVector2Array()
+	job.uv2s = PackedVector2Array()
+
+
+# The cells of block `b` whose chunk draws its own far or mid mesh: 1 at cz * blocks + cx, or
+# empty when there are none.
+func horizon_cut(b: Vector2i) -> PackedByteArray:
+	var nb := _horizon_blocks()
+	var cut := PackedByteArray()
+	for i in nb * nb:
+		@warning_ignore("integer_division")
+		var st: ChunkState = _chunks.get(b * nb + Vector2i(i % nb, i / nb))
+		if st != null and (st.far_mesh != null or st.mid_mesh != null):
+			if cut.is_empty():
+				cut.resize(nb * nb)
+			cut[i] = 1
+	return cut
+
+
+# Rebuild block `b`'s drawn mesh leaving out the cells finer meshes cover, with a skirt round each
+# hole (the same cut as near tiles make in a coarse mesh, one cell per chunk).
+func _cut_horizon(b: Vector2i) -> void:
+	var hs: HorizonState = _horizon.get(b)
+	if hs == null or hs.mesh == null:
+		return
+	var cut := horizon_cut(b)
+	if cut == hs.cut:
+		return
+	var nb := _horizon_blocks()
+	hs.cut = cut
+	# every cell covered: nothing left to draw
+	hs.mesh.visible = cut.is_empty() or cut.has(0)
+	if hs.mesh.visible:
+		hs.mesh.mesh = _coarse_mesh(hs.arrays, nb + 1, 1, nb, 0, HORIZON_SKIRT_M, cut)
+
+
+func _drop_horizon(b: Vector2i) -> void:
+	var hs: HorizonState = _horizon.get(b)
+	if hs == null:
+		return
+	if hs.job != null:
+		hs.job.cancelled = true
+	if hs.mesh != null:
+		hs.mesh.queue_free()
+	_horizon.erase(b)
+	_horizon_due.erase(b)
 
 
 # The 2×2 chunks that carry collision: the four round the chunk corner nearest `p`, so the car is
@@ -2218,9 +2381,11 @@ func _new_job(coord: Vector2i, level: Level, with_collision: bool) -> ChunkJob:
 	job.coord = coord
 	job.level = level
 	job.with_collision = with_collision
-	job.stride = [settings.near_stride_m, settings.mid_stride_m, settings.far_stride_m][level]
+	job.stride = [settings.near_stride_m, settings.mid_stride_m, settings.far_stride_m, settings.chunk_m][level]
 	job.tile = level == Level.NEAR
 	job.size_m = settings.near_tile_m if job.tile else settings.chunk_m
+	if level == Level.HORIZON:
+		job.size_m = _horizon_block_m()
 	job.origin = Vector2(coord) * job.size_m
 	job.n = int(job.size_m / job.stride) + 1
 	# Every mid build runs the planting stages: they also spawn the chunk's barriers (with
@@ -2261,6 +2426,7 @@ func _drop_mid(st: ChunkState) -> void:
 		st.mid_arrays = []
 		_show_finest(st)
 		_holes_due[st.coord] = true
+		_horizon_changed(st.coord)
 
 
 # The chunk's collision and any queued collision build go (it left the collision block).
@@ -2294,6 +2460,7 @@ func _drop_chunk(coord: Vector2i, st: ChunkState) -> void:
 		st.far_mesh.queue_free()
 	_chunks.erase(coord)
 	_holes_due.erase(coord)
+	_horizon_changed(coord)
 
 
 # --- shared mesh buffers -------------------------------------------------------------------

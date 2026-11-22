@@ -130,8 +130,8 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   start one that would not fit in what is left of the frame. The first unit of a frame always
   runs, so a unit dearer than the whole budget still progresses and shows up as an overrun on
   the HUD rather than stalling the world.
-- **Three levels of detail** (`TerrainStreamer.Level`), each chunk drawing only its finest built
-  mesh (`_show_finest`):
+- **Four levels of detail** (`TerrainStreamer.Level`): near, mid and far per chunk, each chunk drawing
+  only its finest built mesh (`_show_finest`), and the horizon past them:
   - **near**, `near_stride_m` (2 m), drawn in `near_tile_m` (32 m) **tiles** smaller than a chunk
     (`TileState`, in `_tiles`): every tile whose closest point is within
     `NEAR_REACH_M` (70 m) of the car (`near_tiles_of`). Drawn and
@@ -160,6 +160,19 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
     build, and a fast car can't turn into its sides in time.
   - **far**, `far_stride_m` (16 m) out to `far_radius` (6 chunks). Far chunks skip the one-sample
     border and take one-sided slopes at their edges.
+  - **horizon** (added 2026-11-22), one quad per chunk (stride = `chunk_m`) out to `horizon_radius_m`
+    (2.5 km; 0 turns it off), measured from the car to a block's nearest point (`_plan_horizon`). To
+    keep draw calls down the quads are baked into **blocks** of `horizon_block_chunks` ×
+    `horizon_block_chunks` chunks (12), one mesh each (`HorizonState`, in `_horizon`). A block's
+    drawn mesh leaves out every cell whose chunk has its own far or mid mesh (`horizon_cut`, one byte
+    per cell, cut by `_coarse_mesh`'s `cells` argument with `HORIZON_SKIRT_M` (30 m) skirts round
+    the holes), so the horizon also fills any far chunk not built yet. A far / mid mesh coming or going
+    marks its block in `_horizon_due` (`_horizon_changed`), recut at the head of `_run_queue` as a
+    measured unit (`horizon_holes`). Horizon jobs queue at their distance in chunks (the far-mesh tier,
+    skippable when blocked), sample no road candidates, keep a one-sample halo so block edges shade
+    alike, and cast no shadows. A block goes a block-width past the radius (`_drop_horizon`).
+    Measured on Hafren (2026-11-22, `LevelStreamer`, 3 km, 576 m blocks): 112 blocks, +45 draw calls
+    in the chase view (426 → 471), +0.5 s headless boot prefill.
 
   Why (2026-10-26, measured on an Android phone's web build): one height sample cost ~150 µs
   there (31 µs on a desktop), so a 2 m chunk was ~180 ms of noise maths, and with five of them
