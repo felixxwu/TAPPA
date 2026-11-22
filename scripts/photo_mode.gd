@@ -8,6 +8,8 @@ extends Camera3D
 # in place and only the viewpoint moves.
 #
 # Gamepad: left stick moves, right stick looks, triggers lower and raise.
+# B / gamepad L3 / the touch BOOST button toggle a faster flight (photo_boost_multiplier); R / Y /
+# RENDER ask the host for its render toggle (can_render).
 # Keyboard (deliberately RAW physical keys, not InputMap actions): WASD moves laterally
 # in the camera's horizontal plane, Ctrl/Shift drop and raise altitude on the WORLD Y
 # axis, the mouse looks around (captured pointer), Esc leaves. Raw keys because every
@@ -54,6 +56,10 @@ var touch_axis := Vector3.ZERO
 
 # Set by a host that offers a render mode (PhotoModeHost.render); gates R / Y and the touch button.
 var can_render := false
+# Whether the host's render is currently on; set by the host, read to light the touch RENDER button.
+var render_active := false
+# BOOST (touch button, B, gamepad L3): flies photo_boost_multiplier times faster while on.
+var boost := false
 
 
 func _init() -> void:
@@ -174,7 +180,8 @@ func apply_move(axis: Vector3, delta: float) -> void:
 	forward = forward.normalized()
 	var right := Vector3(-forward.z, 0.0, forward.x)
 	var dir := (forward * axis.z + right * axis.x + Vector3.UP * axis.y).limit_length(1.0)
-	global_position += dir * Config.data.photo_move_speed * delta
+	var speed: float = Config.data.photo_move_speed * (Config.data.photo_boost_multiplier if boost else 1.0)
+	global_position += dir * speed * delta
 	if max_range_m > 0.0:
 		global_position = _origin + (global_position - _origin).limit_length(max_range_m)
 
@@ -195,6 +202,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Esc (ui_cancel) and gamepad Start (pause) both leave. The pause menu is DISARMED
 	# while photo mode is up, so neither reaches it and stacks an overlay
 	# over the frozen shot.
+	if (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_B) \
+			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_LEFT_STICK):
+		boost = not boost
+		get_viewport().set_input_as_handled()
+		return
 	if can_render and ((event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_R)
 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_Y)):
 		render_requested.emit()
@@ -221,6 +233,7 @@ func exit() -> void:
 		return
 	_entered = false
 	touch_axis = Vector3.ZERO
+	boost = false
 	release_mouse()
 	exited.emit()
 

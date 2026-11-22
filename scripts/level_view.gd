@@ -11,8 +11,8 @@ extends Node3D
 const GROUND_SHADER := preload("res://shaders/level_ground.gdshader")
 
 signal loaded
-signal render_started  # photo mode's render has built everything and is showing it
-signal render_finished  # and has dropped back to the normal draw distances
+signal render_started  # photo mode's render is on: everything built and showing
+signal render_finished  # and it's off again, back to the normal draw distances
 
 @export var level_path := ""
 @export var material: Material  # the ground shader (level_ground.gdshader)
@@ -23,7 +23,10 @@ var _bake: LevelBake
 var _spawn_nodes: Array[Vector2] = []
 var _save_path := ""
 var _streamer: LevelStreamer
-var _rendering := false  # photo mode's render is up (photo_render)
+var _rendering := false  # photo mode's render is on (photo_render toggles it)
+var _render_busy := false  # building it behind the loading screen
+var _render_cam: PhotoModeCamera
+var _render_far0 := 0.0  # the photo camera's far plane before the render pushed it out
 var _photo_cam: PhotoModeCamera  # while photo mode is up: the viewpoint trees, cover and ground follow
 var _trees: LevelTrees
 var _spectators: LevelSpectators
@@ -532,14 +535,17 @@ func _follow_photo_cam() -> void:
 		_update_view(_photo_cam, true)
 
 
-# Photo mode's RENDER: trees out to photo_render_tree_m and ground cover out to photo_render_cover_m
-# (photo_render_cover_touch_m on a phone)
-# round `cam` for photo_render_seconds, then back to normal. Building that much at once can stall for
-# a while, so a loading screen covers the build. Asking again while one runs does nothing.
+# Photo mode's RENDER, a toggle: on, trees draw out to photo_render_tree_m and ground cover out to
+# photo_render_cover_m (photo_render_cover_touch_m on a phone) round `cam`, and stay that way as it flies;
+# off (or leaving photo mode) puts the normal distances back. Building that much at once can stall for
+# a while, so a loading screen covers the first build.
 func photo_render(cam: PhotoModeCamera) -> void:
-	if _rendering or _trees == null or _streamer == null or not is_instance_valid(cam):
+	if _render_busy or _trees == null or _streamer == null or not is_instance_valid(cam):
 		return
-	_rendering = true
+	if _rendering:
+		_render_off()
+		return
+	_render_busy = true
 	var cfg: GameConfig = Config.data
 	var screen: LoadingScreen = null
 	if not Platform.is_headless():
@@ -549,9 +555,15 @@ func photo_render(cam: PhotoModeCamera) -> void:
 		add_child(screen)
 		for _i in 2:  # let it reach the screen before the stall
 			await get_tree().process_frame
+	if not is_instance_valid(cam) or not cam.is_active():  # photo mode closed under the loading screen
+		if screen != null:
+			screen.finish()
+		_render_busy = false
+		return
 	var env := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
-	var far0 := cam.far
-	cam.far = maxf(far0, cfg.photo_render_tree_m + LevelBake.TREE_TILE_M)
+	_render_cam = cam
+	_render_far0 = cam.far
+	cam.far = maxf(_render_far0, cfg.photo_render_tree_m + LevelBake.TREE_TILE_M)
 	if env != null:
 		env.environment.fog_depth_end = maxf(cfg.level_fog_end_m, cfg.photo_render_tree_m)
 	_trees.set_draw_override(cfg.photo_render_tree_m)
@@ -562,15 +574,27 @@ func photo_render(cam: PhotoModeCamera) -> void:
 		_streamer.cover.build_tile(t, _car)
 	if screen != null:
 		screen.finish()
+	_rendering = true
+	_render_busy = false
+	cam.render_active = true
 	render_started.emit()
-	await get_tree().create_timer(cfg.photo_render_seconds, true).timeout
+
+
+# Back to the normal draw distances (RENDER pressed again, or photo mode closing).
+func _render_off() -> void:
+	if not _rendering:
+		return
+	_rendering = false
+	var cfg: GameConfig = Config.data
 	_trees.set_draw_override(0.0)
 	_streamer.cover.set_reach_override(0.0)
+	var env := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if env != null:
 		env.environment.fog_depth_end = cfg.level_fog_end_m
-	if is_instance_valid(cam):
-		cam.far = far0
-	_rendering = false
+	if is_instance_valid(_render_cam):
+		_render_cam.far = _render_far0
+		_render_cam.render_active = false
+	_render_cam = null
 	render_finished.emit()
 
 
@@ -579,6 +603,7 @@ func is_rendering() -> bool:
 
 
 func _on_photo_closed() -> void:
+	_render_off()
 	_photo_cam = null
 	if get_tree().process_frame.is_connected(_follow_photo_cam):
 		get_tree().process_frame.disconnect(_follow_photo_cam)

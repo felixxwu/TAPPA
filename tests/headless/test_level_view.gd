@@ -156,23 +156,27 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var ground: LevelStreamer = world.get_node("Level").get_node("Ground")
 	assert_eq(ground.focus, photo, "the ground and cover stream round the photo camera")
 	assert_eq(ground.process_mode, Node.PROCESS_MODE_ALWAYS, "and keep streaming while the world is frozen")
-	# RENDER (R / Y / the touch button): longer draw distances for a few seconds, then back.
+	# RENDER (R / Y / the touch button) toggles longer draw distances on and off.
 	var lview: LevelView = world.get_node("Level")
 	assert_true(photo.can_render, "the level offers photo mode's render")
 	var draw0: float = lview._trees.draw_m()
-	var was_secs: float = Config.data.photo_render_seconds
-	Config.data.photo_render_seconds = 0.1
+	var far0 := photo.far
 	photo.render_requested.emit()  # headless shows no loading screen, so the build runs at once
-	assert_true(lview.is_rendering(), "the render is up")
+	assert_true(lview.is_rendering() and photo.render_active, "the render is on")
 	assert_gt(lview._trees.draw_m(), draw0, "drawing trees further out")
 	assert_gt(lview._streamer.cover.far_reach(), Config.data.ground_cover_far_reach, "and cover")
-	photo.render_requested.emit()  # asking again while it runs changes nothing
-	await get_tree().create_timer(0.5, true).timeout  # the tree is paused: GUT's own waits would stall
-	Config.data.photo_render_seconds = was_secs
-	assert_false(lview.is_rendering(), "it turns itself off")
+	await get_tree().create_timer(0.3, true).timeout  # the tree is paused: GUT's own waits would stall
+	assert_true(lview.is_rendering(), "and stays on: no timer")
+	photo.render_requested.emit()
+	assert_false(lview.is_rendering() or photo.render_active, "pressing it again turns it off")
 	assert_eq(lview._trees.draw_m(), draw0, "back to the normal tree distance")
 	assert_eq(lview._streamer.cover.far_reach(), Config.data.ground_cover_far_reach, "and cover reach")
+	assert_eq(photo.far, far0, "and the camera's far plane")
+	photo.render_requested.emit()
+	assert_true(lview.is_rendering(), "on again")
 	photo.exit()
+	assert_false(lview.is_rendering(), "leaving photo mode turns the render off")
+	assert_eq(lview._trees.draw_m(), draw0)
 	assert_eq(ground.focus, world.get_node("Car"), "leaving photo mode streams round the car again")
 	assert_eq(ground.process_mode, Node.PROCESS_MODE_INHERIT)
 	assert_true(lpause.is_open(), "and leaving it returns to the pause menu")

@@ -394,3 +394,26 @@ func test_r_asks_for_a_render_only_when_offered() -> void:
 	cam._unhandled_input(y)
 	assert_eq(asked[0], 2, "R and Y each ask for one")
 	cam.exit()
+
+
+# BOOST (B, gamepad L3, the touch button) toggles faster flight; leaving photo mode drops it.
+func test_boost_toggles_faster_flight() -> void:
+	var cam := _lone_camera()
+	cam.apply_move(Vector3(0.0, 0.0, 1.0), 0.1)
+	var normal := cam.global_position.length()
+	var b := InputEventKey.new()
+	b.physical_keycode = KEY_B
+	b.pressed = true
+	cam._unhandled_input(b)
+	assert_true(cam.boost, "B turns boost on")
+	cam.global_position = Vector3.ZERO
+	cam.apply_move(Vector3(0.0, 0.0, 1.0), 0.1)
+	assert_gt(cam.global_position.length(), normal, "boosted flight covers more ground per frame")
+	var l3 := InputEventJoypadButton.new()
+	l3.button_index = JOY_BUTTON_LEFT_STICK
+	l3.pressed = true
+	cam._unhandled_input(l3)
+	assert_false(cam.boost, "L3 toggles it back off")
+	cam.boost = true
+	cam.exit()
+	assert_false(cam.boost, "and leaving photo mode drops it")

@@ -334,7 +334,7 @@ twin: turns at `chase_look_stick_speed` degrees/s, right turns right, up looks u
 `PhotoModeControls.apply_look_and_zoom`), UP/DOWN buttons in a column just inside the look
 stick (the Ctrl/Shift altitude equivalent, on world up), ZOOM +/- buttons down the right
 edge under HIDE (zoom while held at `photo_zoom_button_rate`, same clamp as the pinch), a
-BACK button top-left (leaves photo mode, same as Esc), a RENDER button beside HIDE when the host offers a render mode
+BACK button top-left (leaves photo mode, same as Esc), a BOOST toggle above the move stick (`PhotoModeCamera.boost`, also B / gamepad L3: flies `photo_boost_multiplier` times faster, lit while on, dropped on exit), a RENDER toggle button beside HIDE when the host offers a render mode
 (`PhotoModeHost.render`; also R / gamepad Y via `PhotoModeCamera.render_requested` — the level's is `LevelView.photo_render`, see level-editor.md), and a HIDE button top-right (hides
 every widget for a clean, chrome-free shot). The look stick and zoom buttons are the
 visible twins of the drag and pinch gestures below, so a player who never guesses that the

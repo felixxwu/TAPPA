@@ -43,7 +43,7 @@ func _ready() -> void:
 		for _i in 30:
 			await get_tree().process_frame
 		_shot("render")
-		await level.render_finished
+		level.photo_render(cam)  # a toggle: off again
 		for _i in 30:
 			await get_tree().process_frame
 		_shot("after_render")

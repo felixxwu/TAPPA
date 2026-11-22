@@ -99,7 +99,7 @@ func test_unheld_stick_reports_no_movement() -> void:
 func test_regions_claim_their_corners_and_leave_the_middle_free() -> void:
 	assert_eq(_controls.hit_test(VIEWPORT * 0.5), "",
 		"the centre of the screen belongs to the look gesture, not a widget")
-	for region in ["back", "hide", "up", "down", "zoom_in", "zoom_out"]:
+	for region in ["back", "hide", "boost", "up", "down", "zoom_in", "zoom_out"]:
 		var rect: Rect2 = _controls._rects[region]
 		assert_eq(_controls.hit_test(rect.get_center()), region,
 			region + " is hit at its own centre")
@@ -377,3 +377,15 @@ func test_render_button_only_when_the_host_offers_one() -> void:
 	controls._release(0)
 	assert_eq(asked[0], 1, "tapping it asks for a render")
 	cam.exit()
+
+
+# The BOOST button is a toggle: one tap turns the camera's boost on, the next turns it off.
+func test_boost_button_toggles_the_camera_boost() -> void:
+	var at := (_controls._rects["boost"] as Rect2).get_center()
+	assert_eq(_controls.hit_test(at), "boost", "the button is hit at its centre")
+	_controls._press(0, at)
+	_controls._release(0)
+	assert_true(_camera.boost, "a tap turns boost on")
+	_controls._press(0, at)
+	_controls._release(0)
+	assert_false(_camera.boost, "the next turns it off")

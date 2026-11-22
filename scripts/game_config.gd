@@ -1042,15 +1042,16 @@ func has_nitrous() -> bool:
 ## second (2.0 = the fov halves, or doubles, every second the button is held). Same clamp
 ## as the pinch: photo_fov_min..photo_fov_max.
 @export var photo_zoom_button_rate := 2.0
-## Photo mode RENDER (the level only; LevelView.photo_render): for a few seconds draws trees out to
-## photo_render_tree_m and ground cover out to photo_render_cover_m round the photo camera, behind a
-## loading screen while it builds, then drops back to the normal draw distances.
+## Photo mode RENDER (the level only; LevelView.photo_render), a toggle: while on, trees draw out to
+## photo_render_tree_m and ground cover out to photo_render_cover_m round the photo camera; the first
+## build happens behind a loading screen.
 @export var photo_render_tree_m := 3000.0
 @export var photo_render_cover_m := 500.0
 ## The same on a touch device (phone/tablet, Platform.is_touch): building cover out to 500 m at once is
 ## ~800 tiles, enough to run a low-memory phone or the web build out of memory, so phones stop shorter.
 @export var photo_render_cover_touch_m := 200.0
-@export var photo_render_seconds := 5.0
+## Photo mode BOOST (touch button, B key, gamepad L3; a toggle): fly speed multiplier on photo_move_speed.
+@export var photo_boost_multiplier := 4.0
 
 ## Built-in Environment glow (bloom). A mip-chain downsample/upsample blur, cheap on
 ## the Compatibility renderer. Materials are unshaded LDR, so the threshold sits

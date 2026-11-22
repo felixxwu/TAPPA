@@ -103,6 +103,7 @@ var _hide_panel: ColorRect
 var _zoom_in_panel: ColorRect
 var _zoom_out_panel: ColorRect
 var _render_panel: ColorRect  # null when the host offers no render mode
+var _boost_panel: ColorRect
 var _stick_base: ColorRect
 var _stick_knob: ColorRect
 var _look_base: ColorRect
@@ -139,6 +140,8 @@ func _build() -> void:
 	_look_knob = _make_stick_part(_STICK_KNOB_COLOR, "LOOK")
 	_all_widgets = [_back_panel, _hide_panel, _up_panel, _down_panel, _zoom_in_panel,
 		_zoom_out_panel, _stick_base, _stick_knob, _look_base, _look_knob]
+	_boost_panel = _make_button("BOOST")
+	_all_widgets.append(_boost_panel)
 	if _camera != null and _camera.can_render:
 		_render_panel = _make_button("RENDER")
 		_all_widgets.append(_render_panel)
@@ -199,6 +202,8 @@ func _layout() -> void:
 	_zoom_in_panel.size = _rects["zoom_in"].size
 	_zoom_out_panel.position = _rects["zoom_out"].position
 	_zoom_out_panel.size = _rects["zoom_out"].size
+	_boost_panel.position = _rects["boost"].position
+	_boost_panel.size = _rects["boost"].size
 	if _render_panel != null:
 		_render_panel.position = _rects["render"].position
 		_render_panel.size = _rects["render"].size
@@ -220,6 +225,9 @@ func _compute_rects(size: Vector2) -> void:
 
 	_stick_radius = minf(size.x, size.y) * _STICK_RADIUS_FRAC
 	_stick_base_center = Vector2(m + _stick_radius, size.y - m - _stick_radius)
+	# BOOST sits just above the move stick, under the left thumb that flies.
+	_rects["boost"] = Rect2(Vector2(m, _stick_base_center.y - _stick_radius - size.y * 0.02 - _CORNER_BTN_H),
+		Vector2(_CORNER_BTN_W, _CORNER_BTN_H))
 	_look_stick_center = Vector2(size.x - m - _stick_radius, size.y - m - _stick_radius)
 
 	# UP/DOWN stand in a column just inside the look stick, so the right thumb rocks
@@ -253,7 +261,7 @@ func hit_test(pos: Vector2) -> String:
 	# and the tap that restores the UI (_release).
 	if _hidden:
 		return ""
-	for region in ["back", "hide", "render", "up", "down", "zoom_in", "zoom_out"]:
+	for region in ["back", "hide", "render", "boost", "up", "down", "zoom_in", "zoom_out"]:
 		if _rects.has(region) and (_rects[region] as Rect2).has_point(pos):
 			return region
 	if _rects.is_empty():
@@ -459,6 +467,10 @@ func _release(idx: int) -> void:
 	if region == "hide":
 		set_hidden(true)
 		return
+	if region == "boost":
+		if _camera != null:
+			_camera.boost = not _camera.boost
+		return
 	if region == "render":
 		if _camera != null:
 			_camera.render_requested.emit()
@@ -532,6 +544,10 @@ func _update_visuals() -> void:
 	_down_panel.color = _PRESSED_COLOR if _region_held("down") else _IDLE_COLOR
 	_zoom_in_panel.color = _PRESSED_COLOR if _region_held("zoom_in") else _IDLE_COLOR
 	_zoom_out_panel.color = _PRESSED_COLOR if _region_held("zoom_out") else _IDLE_COLOR
+	# Toggles stay lit while on.
+	_boost_panel.color = _PRESSED_COLOR if _camera.boost or _region_held("boost") else _IDLE_COLOR
+	if _render_panel != null:
+		_render_panel.color = _PRESSED_COLOR if _camera.render_active or _region_held("render") else _IDLE_COLOR
 	# The knob brightens while held — the one bit of feedback that tells the player the
 	# stick actually caught their finger, on a screen where nothing else moves.
 	_stick_knob.color = _PRESSED_COLOR if _stick_owner != null else _STICK_KNOB_COLOR
