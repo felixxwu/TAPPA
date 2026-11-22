@@ -1038,6 +1038,10 @@ func has_nitrous() -> bool:
 ## zooms IN (toward photo_fov_min), pinching together zooms out (toward photo_fov_max).
 @export var photo_fov_min := 20.0
 @export var photo_fov_max := 90.0
+## How fast photo mode's on-screen ZOOM +/- buttons zoom while held, as an fov FACTOR per
+## second (2.0 = the fov halves, or doubles, every second the button is held). Same clamp
+## as the pinch: photo_fov_min..photo_fov_max.
+@export var photo_zoom_button_rate := 2.0
 
 ## Built-in Environment glow (bloom). A mip-chain downsample/upsample blur, cheap on
 ## the Compatibility renderer. Materials are unshaded LDR, so the threshold sits

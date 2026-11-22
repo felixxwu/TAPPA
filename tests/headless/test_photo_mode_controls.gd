@@ -1,8 +1,9 @@
 extends GutTest
 # PHOTO MODE TOUCH CONTROLS (features/camera.md, features/mobile-controls.md):
 # PhotoModeControls is the on-screen control set photo mode gets on a phone — a
-# thumbstick for lateral movement, Up/Down for altitude, Back to leave, Hide for a
-# clean shot, plus a drag-to-look and a pinch-to-zoom gesture over the whole screen.
+# thumbstick for lateral movement, a look stick, Up/Down for altitude, ZOOM +/-, Back to
+# leave, Hide for a clean shot, plus a drag-to-look and a pinch-to-zoom gesture over the
+# whole screen.
 #
 # Most of this is asserted through the overlay's PURE seams (stick_output_for, is_tap,
 # pinch_zoom_factor, hit_test) rather than by synthesising touch streams: the touch
@@ -98,12 +99,14 @@ func test_unheld_stick_reports_no_movement() -> void:
 func test_regions_claim_their_corners_and_leave_the_middle_free() -> void:
 	assert_eq(_controls.hit_test(VIEWPORT * 0.5), "",
 		"the centre of the screen belongs to the look gesture, not a widget")
-	for region in ["back", "hide", "up", "down"]:
+	for region in ["back", "hide", "up", "down", "zoom_in", "zoom_out"]:
 		var rect: Rect2 = _controls._rects[region]
 		assert_eq(_controls.hit_test(rect.get_center()), region,
 			region + " is hit at its own centre")
 	assert_eq(_controls.hit_test(_controls._stick_base_center), "stick",
 		"the stick is hit at its base centre")
+	assert_eq(_controls.hit_test(_controls._look_stick_center), "look_stick",
+		"the look stick is hit at its base centre")
 
 
 # --- Hide / restore ----------------------------------------------------------
@@ -115,11 +118,13 @@ func test_regions_claim_their_corners_and_leave_the_middle_free() -> void:
 func test_hidden_widgets_stop_hit_testing_entirely() -> void:
 	_controls.set_hidden(true)
 	assert_true(_controls.is_hidden(), "precondition: the UI is hidden")
-	for region in ["back", "hide", "up", "down"]:
+	for region in ["back", "hide", "up", "down", "zoom_in", "zoom_out"]:
 		assert_eq(_controls.hit_test((_controls._rects[region] as Rect2).get_center()), "",
 			"the invisible " + region + " button claims nothing")
 	assert_eq(_controls.hit_test(_controls._stick_base_center), "",
 		"nor does the invisible stick")
+	assert_eq(_controls.hit_test(_controls._look_stick_center), "",
+		"nor the invisible look stick")
 	_controls.set_hidden(false)
 	assert_eq(_controls.hit_test((_controls._rects["back"] as Rect2).get_center()), "back",
 		"and everything answers again once the UI is back")
@@ -131,9 +136,13 @@ func test_hiding_releases_held_input() -> void:
 	_controls._press(0, _controls._stick_base_center)
 	_controls._drag(0, _controls._stick_base_center + Vector2(0.0, -40.0))
 	assert_ne(_controls.stick_output(), Vector2.ZERO, "precondition: the stick is held")
+	_controls._press(1, _controls._look_stick_center)
+	_controls._drag(1, _controls._look_stick_center + Vector2(40.0, 0.0))
+	assert_ne(_controls.look_stick_output(), Vector2.ZERO, "precondition: the look stick is held")
 	_controls.set_hidden(true)
 	assert_eq(_controls.stick_output(), Vector2.ZERO,
 		"hiding the UI stops the movement it was driving")
+	assert_eq(_controls.look_stick_output(), Vector2.ZERO, "and the turning")
 
 
 # A tap restores the UI; a drag does not. Both halves matter: without the first there is
@@ -226,6 +235,53 @@ func test_a_second_finger_stops_the_look() -> void:
 	assert_eq(_camera.yaw(), held, "while two fingers are down, dragging does not look")
 	assert_ne(_camera.fov, lens, "and the pinch drove the lens instead")
 	_controls._release(0)
+	_controls._release(1)
+
+
+# The look stick turns the camera the way the gamepad's right stick does: right turns
+# the view right, up tilts it up — and it keeps turning while held, unlike a drag.
+func test_look_stick_turns_the_camera() -> void:
+	var c := _controls._look_stick_center
+	var r := _controls._stick_radius
+	_controls._press(0, c)
+	_controls._drag(0, c + Vector2(r, 0.0))
+	var yaw0 := _camera.yaw()
+	_controls.apply_look_and_zoom(0.1)
+	var yaw1 := _camera.yaw()
+	assert_lt(yaw1, yaw0, "stick right turns the view right")
+	_controls.apply_look_and_zoom(0.1)
+	assert_lt(_camera.yaw(), yaw1, "and keeps turning while it is held")
+	_controls._drag(0, c + Vector2(0.0, -r))
+	var pitch0 := _camera.pitch()
+	_controls.apply_look_and_zoom(0.1)
+	assert_gt(_camera.pitch(), pitch0, "stick up looks up")
+	_controls._release(0)
+	var held := _camera.yaw()
+	_controls.apply_look_and_zoom(0.1)
+	assert_eq(_camera.yaw(), held, "a released look stick stops turning")
+	assert_eq(_controls.stick_output(), Vector2.ZERO, "and it never moved the camera")
+
+
+# Holding ZOOM + narrows the lens and ZOOM - widens it, inside the same range as the pinch.
+func test_zoom_buttons_zoom_while_held() -> void:
+	_camera.fov = (Config.data.photo_fov_min + Config.data.photo_fov_max) * 0.5
+	var start := _camera.fov
+	_controls._press(0, (_controls._rects["zoom_in"] as Rect2).get_center())
+	_controls.apply_look_and_zoom(0.1)
+	assert_lt(_camera.fov, start, "ZOOM + zooms in")
+	for _i in 600:
+		_controls.apply_look_and_zoom(0.1)
+	assert_almost_eq(_camera.fov, Config.data.photo_fov_min, 0.01, "and stops at the long end")
+	_controls._release(0)
+	var held := _camera.fov
+	_controls.apply_look_and_zoom(0.1)
+	assert_eq(_camera.fov, held, "released, the lens holds still")
+	_controls._press(1, (_controls._rects["zoom_out"] as Rect2).get_center())
+	_controls.apply_look_and_zoom(0.1)
+	assert_gt(_camera.fov, held, "ZOOM - zooms out")
+	for _i in 600:
+		_controls.apply_look_and_zoom(0.1)
+	assert_almost_eq(_camera.fov, Config.data.photo_fov_max, 0.01, "and stops at the wide end")
 	_controls._release(1)
 
 

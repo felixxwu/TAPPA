@@ -286,7 +286,7 @@ one), **Shift** raises altitude and **Ctrl** lowers it on the **world Y axis** (
 straight up doesn't hijack vertical movement), the **mouse looks** around (yaw and pitch,
 pitch clamped to ±89 degrees to prevent singularities; no roll — the free camera starts
 level), and **Esc** (the `ui_cancel` action, or gamepad **Start** / the `pause` action)
-leaves. On a **gamepad**, the left stick moves, the right stick looks, the triggers lower and raise,
+leaves. On a **gamepad**, the left stick moves, the right stick looks (at `chase_look_stick_speed`, which is **degrees** per second, converted with `deg_to_rad` in `PhotoModeCamera._process`), the triggers lower and raise,
 and B or Start leaves. Free roam limits the flight to the streamed range around where the camera
 started (`max_range_m`: `chunk_m * far_radius`), because the terrain doesn't load further out while
 the world is frozen. While photo mode is active, the pause menu is **disarmed** — Esc and the Pause
@@ -325,10 +325,18 @@ raw `InputEventScreenTouch`/`InputEventScreenDrag` rather than `Control` buttons
 several fingers register at once; pointer-index → region-name tracking; `Rect2` hit
 regions recomputed on viewport resize (`_layout`/`_compute_rects`).
 
-**Widgets:** an analogue thumbstick bottom-left (stick up = forward, right = strafe
-right — the WASD equivalent), UP/DOWN buttons bottom-right (the Ctrl/Shift altitude
-equivalent, on world up), a BACK button top-left (leaves photo mode, same as Esc), and a
-HIDE button top-right (hides every widget for a clean, chrome-free shot).
+**Widgets:** an analogue MOVE thumbstick bottom-left (stick up = forward, right = strafe
+right — the WASD equivalent), a LOOK thumbstick bottom-right (the gamepad right stick's
+twin: turns at `chase_look_stick_speed` degrees/s, right turns right, up looks up —
+`PhotoModeControls.apply_look_and_zoom`), UP/DOWN buttons in a column just inside the look
+stick (the Ctrl/Shift altitude equivalent, on world up), ZOOM +/- buttons down the right
+edge under HIDE (zoom while held at `photo_zoom_button_rate`, same clamp as the pinch), a
+BACK button top-left (leaves photo mode, same as Esc), and a HIDE button top-right (hides
+every widget for a clean, chrome-free shot). The look stick and zoom buttons are the
+visible twins of the drag and pinch gestures below, so a player who never guesses that the
+empty screen is draggable still has a control for every axis. Each stick's knob carries its
+name (MOVE / LOOK). `tools/photo_mode_capture.tscn` boots free roam with touch forced on and
+photographs the overlay.
 
 **Gestures**, layered underneath the widgets: a one-finger drag anywhere off a widget
 looks around (`PhotoModeCamera.look_by`, same sign convention as the mouse path — dragging

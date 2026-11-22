@@ -20,8 +20,11 @@ extends CanvasLayer
 # semi-transparent ColorRect panels so the widgets don't dominate the shot the player is
 # framing.
 #
-# Widgets (bottom-left thumbstick, bottom-right Up/Down, top-left Back, top-right Hide)
-# plus two full-screen gestures layered underneath them:
+# Widgets: a MOVE thumbstick bottom-left, a LOOK thumbstick bottom-right with Up/Down
+# beside it, ZOOM +/- down the right edge, Back top-left and Hide top-right. The look
+# stick and zoom buttons are the visible twins of the drag and pinch gestures below — a
+# phone player who never guesses that the empty screen is draggable still has a control
+# for every axis. Plus two full-screen gestures layered underneath them:
 #   - a one-finger drag anywhere NOT on a widget looks around (camera.look_by), and
 #   - a two-finger pinch anywhere zooms the fov (camera.zoom_by),
 #   - and while the widgets are hidden, a plain TAP (not a drag, not a pinch) restores
@@ -32,15 +35,16 @@ extends CanvasLayer
 const _MARGIN_FRAC := 0.03
 const _STICK_RADIUS_FRAC := 0.11   # thumbstick base radius, as a fraction of the SHORT side
 const _STICK_KNOB_FRAC := 0.45     # knob radius as a fraction of the base radius
-const _ALT_BTN_W_FRAC := 0.16
+const _ALT_BTN_W_FRAC := 0.11
 const _ALT_BTN_H_FRAC := 0.10
+const _ZOOM_BTN_H_FRAC := 0.12
 const _CORNER_BTN_W := 96.0
 const _CORNER_BTN_H := 56.0
 
-const _IDLE_COLOR := Color(1, 1, 1, 0.10)
-const _PRESSED_COLOR := Color(1, 1, 1, 0.30)
-const _STICK_BASE_COLOR := Color(1, 1, 1, 0.08)
-const _STICK_KNOB_COLOR := Color(1, 1, 1, 0.28)
+const _IDLE_COLOR := Color(1, 1, 1, 0.16)
+const _PRESSED_COLOR := Color(1, 1, 1, 0.36)
+const _STICK_BASE_COLOR := Color(1, 1, 1, 0.12)
+const _STICK_KNOB_COLOR := Color(1, 1, 1, 0.32)
 
 # Tap-vs-drag classification thresholds. A "tap" (restores the hidden UI) must be a
 # press+release that barely moved and didn't linger — anything else has to keep looking
@@ -66,6 +70,14 @@ var _stick_base_center := Vector2.ZERO
 var _stick_radius := 1.0
 var _stick_knob_pos := Vector2.ZERO  # relative to _stick_base_center, clamped to radius
 
+# Look thumbstick (bottom-right): the same geometry and output convention as the move
+# stick (x = right, y = up the screen), turned into a yaw/pitch RATE each frame in
+# _process — the gamepad right stick's speed, chase_look_stick_speed. Same radius as
+# the move stick, so only its own owner/centre/knob are tracked.
+var _look_stick_owner = null
+var _look_stick_center := Vector2.ZERO
+var _look_stick_knob_pos := Vector2.ZERO
+
 # One-finger look: which pointer is doing it and its last position (for the delta fed
 # to camera.look_by). Cleared the instant a second finger goes down — see _input.
 var _look_owner = null
@@ -88,8 +100,12 @@ var _up_panel: ColorRect
 var _down_panel: ColorRect
 var _back_panel: ColorRect
 var _hide_panel: ColorRect
+var _zoom_in_panel: ColorRect
+var _zoom_out_panel: ColorRect
 var _stick_base: ColorRect
 var _stick_knob: ColorRect
+var _look_base: ColorRect
+var _look_knob: ColorRect
 var _all_widgets: Array = []
 
 
@@ -111,15 +127,32 @@ func _build() -> void:
 	_hide_panel = _make_button("HIDE")
 	_up_panel = _make_button("UP")
 	_down_panel = _make_button("DOWN")
-	_stick_base = ColorRect.new()
-	_stick_base.color = _STICK_BASE_COLOR
-	_stick_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_stick_base)
-	_stick_knob = ColorRect.new()
-	_stick_knob.color = _STICK_KNOB_COLOR
-	_stick_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_stick_knob)
-	_all_widgets = [_back_panel, _hide_panel, _up_panel, _down_panel, _stick_base, _stick_knob]
+	_zoom_in_panel = _make_button("ZOOM +")
+	_zoom_out_panel = _make_button("ZOOM -")
+	_stick_base = _make_stick_part(_STICK_BASE_COLOR, "")
+	_stick_knob = _make_stick_part(_STICK_KNOB_COLOR, "MOVE")
+	_look_base = _make_stick_part(_STICK_BASE_COLOR, "")
+	_look_knob = _make_stick_part(_STICK_KNOB_COLOR, "LOOK")
+	_all_widgets = [_back_panel, _hide_panel, _up_panel, _down_panel, _zoom_in_panel,
+		_zoom_out_panel, _stick_base, _stick_knob, _look_base, _look_knob]
+
+
+# A stick's base or knob. The knob carries the stick's name, so the two sticks can't be
+# told apart only by which side of the screen they sit on.
+func _make_stick_part(color: Color, text: String) -> ColorRect:
+	var rect := ColorRect.new()
+	rect.color = color
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if text != "":
+		var label := Label.new()
+		label.text = text
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
+		rect.add_child(label)
+	add_child(rect)
+	return rect
 
 
 func _make_button(text: String) -> ColorRect:
@@ -155,8 +188,14 @@ func _layout() -> void:
 	_up_panel.size = _rects["up"].size
 	_down_panel.position = _rects["down"].position
 	_down_panel.size = _rects["down"].size
+	_zoom_in_panel.position = _rects["zoom_in"].position
+	_zoom_in_panel.size = _rects["zoom_in"].size
+	_zoom_out_panel.position = _rects["zoom_out"].position
+	_zoom_out_panel.size = _rects["zoom_out"].size
 	_stick_base.size = Vector2.ONE * _stick_radius * 2.0
 	_stick_base.position = _stick_base_center - _stick_base.size * 0.5
+	_look_base.size = _stick_base.size
+	_look_base.position = _look_stick_center - _look_base.size * 0.5
 	_position_knob()
 	_apply_hidden()
 
@@ -167,15 +206,27 @@ func _compute_rects(size: Vector2) -> void:
 	_rects["back"] = Rect2(Vector2(m, m), Vector2(_CORNER_BTN_W, _CORNER_BTN_H))
 	_rects["hide"] = Rect2(Vector2(size.x - m - _CORNER_BTN_W, m), Vector2(_CORNER_BTN_W, _CORNER_BTN_H))
 
-	var alt_w := size.x * _ALT_BTN_W_FRAC
-	var alt_h := size.y * _ALT_BTN_H_FRAC
-	var alt_gap := size.y * 0.02
-	var down_y := size.y - m - alt_h
-	_rects["down"] = Rect2(Vector2(size.x - m - alt_w, down_y), Vector2(alt_w, alt_h))
-	_rects["up"] = Rect2(Vector2(size.x - m - alt_w, down_y - alt_gap - alt_h), Vector2(alt_w, alt_h))
-
 	_stick_radius = minf(size.x, size.y) * _STICK_RADIUS_FRAC
 	_stick_base_center = Vector2(m + _stick_radius, size.y - m - _stick_radius)
+	_look_stick_center = Vector2(size.x - m - _stick_radius, size.y - m - _stick_radius)
+
+	# UP/DOWN stand in a column just inside the look stick, so the right thumb rocks
+	# between turning and climbing without crossing the screen.
+	var gap := size.y * 0.02
+	var alt_w := size.x * _ALT_BTN_W_FRAC
+	var alt_h := size.y * _ALT_BTN_H_FRAC
+	var alt_x := _look_stick_center.x - _stick_radius - gap - alt_w
+	var down_y := size.y - m - alt_h
+	_rects["down"] = Rect2(Vector2(alt_x, down_y), Vector2(alt_w, alt_h))
+	_rects["up"] = Rect2(Vector2(alt_x, down_y - gap - alt_h), Vector2(alt_w, alt_h))
+
+	# ZOOM +/- stack down the right edge, between HIDE and the look stick.
+	var zoom_w := _CORNER_BTN_W
+	var zoom_h := size.y * _ZOOM_BTN_H_FRAC
+	var zoom_x := size.x - m - zoom_w
+	var zoom_in_y := m + _CORNER_BTN_H + gap * 2.0
+	_rects["zoom_in"] = Rect2(Vector2(zoom_x, zoom_in_y), Vector2(zoom_w, zoom_h))
+	_rects["zoom_out"] = Rect2(Vector2(zoom_x, zoom_in_y + zoom_h + gap), Vector2(zoom_w, zoom_h))
 
 
 # --- Pure/testable seams ---------------------------------------------------------------
@@ -190,13 +241,15 @@ func hit_test(pos: Vector2) -> String:
 	# and the tap that restores the UI (_release).
 	if _hidden:
 		return ""
-	for region in ["back", "hide", "up", "down"]:
+	for region in ["back", "hide", "up", "down", "zoom_in", "zoom_out"]:
 		if _rects.has(region) and (_rects[region] as Rect2).has_point(pos):
 			return region
 	if _rects.is_empty():
 		return ""
 	if _stick_radius > 0.0 and pos.distance_to(_stick_base_center) <= _stick_radius:
 		return "stick"
+	if _stick_radius > 0.0 and pos.distance_to(_look_stick_center) <= _stick_radius:
+		return "look_stick"
 	return ""
 
 
@@ -220,6 +273,13 @@ func stick_output() -> Vector2:
 	if _stick_owner == null or _stick_radius <= 0.0:
 		return Vector2.ZERO
 	return Vector2(_stick_knob_pos.x / _stick_radius, -_stick_knob_pos.y / _stick_radius)
+
+
+# The look stick's output, same convention as stick_output (x = right, y = up the screen).
+func look_stick_output() -> Vector2:
+	if _look_stick_owner == null or _stick_radius <= 0.0:
+		return Vector2.ZERO
+	return Vector2(_look_stick_knob_pos.x / _stick_radius, -_look_stick_knob_pos.y / _stick_radius)
 
 
 # Tap-vs-drag classification, pure: a genuine tap is short AND barely moved. Static so
@@ -267,12 +327,16 @@ func _press(idx: int, pos: Vector2) -> void:
 	# A tap while hidden restores the UI instead of doing anything else — handled on
 	# RELEASE (see _release), once we know it really was a tap and not the start of a
 	# drag/pinch. Nothing to capture here in that case; region hit-testing below still
-	# runs (hit_test already refuses "stick" while hidden) so a press elsewhere can
+	# runs (hit_test refuses every widget while hidden) so a press elsewhere can
 	# still start a look.
 	var region := hit_test(pos)
 	if region == "stick":
 		_stick_owner = idx
 		_stick_knob_pos = Vector2.ZERO
+		return
+	if region == "look_stick":
+		_look_stick_owner = idx
+		_look_stick_knob_pos = Vector2.ZERO
 		return
 	if region != "":
 		_pointers[idx] = region
@@ -308,6 +372,11 @@ func _drag(idx: int, pos: Vector2) -> void:
 		_stick_knob_pos = r["knob_offset"]
 		_position_knob()
 		return
+	if idx == _look_stick_owner:
+		var r := stick_output_for(pos, _look_stick_center, _stick_radius)
+		_look_stick_knob_pos = r["knob_offset"]
+		_position_knob()
+		return
 	if idx in _press_info:
 		# Any real movement disqualifies this pointer from being classified as a tap on
 		# release, even if it snaps back near its start (a wobble-then-settle drag).
@@ -337,7 +406,7 @@ func _drag(idx: int, pos: Vector2) -> void:
 	# A drag over a digital button re-tests which region it's over, matching
 	# mobile_controls.gd's sliding-finger behaviour.
 	var region := hit_test(pos)
-	if region != "" and region != "stick":
+	if region != "" and not region.ends_with("stick"):
 		_pointers[idx] = region
 	else:
 		_pointers.erase(idx)
@@ -347,6 +416,12 @@ func _release(idx: int) -> void:
 	if idx == _stick_owner:
 		_stick_owner = null
 		_stick_knob_pos = Vector2.ZERO
+		_position_knob()
+		_press_info.erase(idx)
+		return
+	if idx == _look_stick_owner:
+		_look_stick_owner = null
+		_look_stick_knob_pos = Vector2.ZERO
 		_position_knob()
 		_press_info.erase(idx)
 		return
@@ -380,9 +455,10 @@ func _release(idx: int) -> void:
 			set_hidden(false)
 
 
-# --- Per-frame: held Up/Down + stick feed into the camera's touch axis -----------------
+# --- Per-frame: held Up/Down + stick feed into the camera's touch axis; the look stick
+# and held ZOOM buttons turn and zoom it at a steady rate --------------------------------
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _camera == null or not _camera.is_active():
 		return
 	var out := stick_output()
@@ -392,7 +468,26 @@ func _process(_delta: float) -> void:
 	if _region_held("down"):
 		y -= 1.0
 	_camera.touch_axis = Vector3(out.x, y, out.y)
+	apply_look_and_zoom(delta)
 	_update_visuals()
+
+
+# One frame of the look stick and the held ZOOM buttons. The look stick turns at the
+# gamepad right stick's rate (chase_look_stick_speed) with the same signs: stick right
+# turns the view right, stick up tilts it up. Split out of _process so the suite can drive
+# it with a chosen delta.
+func apply_look_and_zoom(delta: float) -> void:
+	var look := look_stick_output()
+	if look != Vector2.ZERO:
+		var rate: float = deg_to_rad(Config.data.chase_look_stick_speed) * delta  # degrees/s in the config
+		_camera.look_by(-look.x * rate, look.y * rate)
+	var zoom := 0.0
+	if _region_held("zoom_in"):
+		zoom += 1.0
+	if _region_held("zoom_out"):
+		zoom -= 1.0
+	if zoom != 0.0:
+		_camera.zoom_by(pow(Config.data.photo_zoom_button_rate, zoom * delta))
 
 
 func _region_held(region: String) -> bool:
@@ -409,7 +504,9 @@ func _position_knob() -> void:
 		return
 	var knob_radius := _stick_radius * _STICK_KNOB_FRAC
 	_stick_knob.size = Vector2.ONE * knob_radius * 2.0
-	_stick_knob.position = _stick_base_center + _stick_knob_pos - _stick_knob.size * 0.5
+	_stick_knob.position = (_stick_base_center + _stick_knob_pos - _stick_knob.size * 0.5).round()
+	_look_knob.size = _stick_knob.size
+	_look_knob.position = (_look_stick_center + _look_stick_knob_pos - _look_knob.size * 0.5).round()
 
 
 func _update_visuals() -> void:
@@ -417,14 +514,17 @@ func _update_visuals() -> void:
 		return
 	_up_panel.color = _PRESSED_COLOR if _region_held("up") else _IDLE_COLOR
 	_down_panel.color = _PRESSED_COLOR if _region_held("down") else _IDLE_COLOR
+	_zoom_in_panel.color = _PRESSED_COLOR if _region_held("zoom_in") else _IDLE_COLOR
+	_zoom_out_panel.color = _PRESSED_COLOR if _region_held("zoom_out") else _IDLE_COLOR
 	# The knob brightens while held — the one bit of feedback that tells the player the
 	# stick actually caught their finger, on a screen where nothing else moves.
 	_stick_knob.color = _PRESSED_COLOR if _stick_owner != null else _STICK_KNOB_COLOR
+	_look_knob.color = _PRESSED_COLOR if _look_stick_owner != null else _STICK_KNOB_COLOR
 
 
-# Hide or show every widget. While hidden, hit_test refuses "stick" (nothing left to
-# capture) and a plain tap anywhere restores the UI (_release). HELD input (stick,
-# up/down) is force-released on hide so nothing keeps flying with the controls gone.
+# Hide or show every widget. While hidden, hit_test refuses every widget (nothing left to
+# capture) and a plain tap anywhere restores the UI (_release). HELD input (both sticks,
+# up/down, zoom) is force-released on hide so nothing keeps flying with the controls gone.
 func set_hidden(hidden: bool) -> void:
 	if _hidden == hidden:
 		return
@@ -433,6 +533,9 @@ func set_hidden(hidden: bool) -> void:
 		_pointers.clear()
 		_stick_owner = null
 		_stick_knob_pos = Vector2.ZERO
+		_look_stick_owner = null
+		_look_stick_knob_pos = Vector2.ZERO
+		_position_knob()
 	_apply_hidden()
 
 

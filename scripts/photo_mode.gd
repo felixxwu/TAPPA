@@ -108,7 +108,7 @@ func _process(delta: float) -> void:
 	# long the frame took.
 	apply_move(input_axis() + touch_axis + pad_move(_pad(JOY_AXIS_LEFT_X), _pad(JOY_AXIS_LEFT_Y),
 			_pad(JOY_AXIS_TRIGGER_LEFT), _pad(JOY_AXIS_TRIGGER_RIGHT)), delta)
-	var look: float = Config.data.chase_look_stick_speed * delta
+	var look: float = deg_to_rad(Config.data.chase_look_stick_speed) * delta  # degrees/s in the config
 	look_by(-_pad(JOY_AXIS_RIGHT_X) * look, -_pad(JOY_AXIS_RIGHT_Y) * look)
 
 
