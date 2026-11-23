@@ -58,14 +58,22 @@ func _init() -> void:
 	process_mode = PROCESS_MODE_ALWAYS
 	mouse_filter = MOUSE_FILTER_STOP
 	visible = false
-	_hint = UITheme.label("Drag: pan   Pinch: zoom   Tap: teleport" if Platform.is_touch() \
+	_hint = UITheme.label("Drag: pan   Pinch: zoom   Tap: teleport   Back: close" if Platform.is_touch() \
 		else "Drag / WASD / arrows: pan   Wheel / LB RB: zoom   Click / Enter: teleport   M / Esc: close", "ink")
 	_hint.position = Vector2(UITheme.FONT_SIZE, UITheme.FONT_SIZE)
 	add_child(_hint)
 	back_button = UITheme.row_button(UITheme.caps("< Back"), close)
-	back_button.set_anchors_preset(PRESET_TOP_RIGHT)
+	# A full menu-row bar, big enough to hit with a thumb. Pinned by its right edge: setting `position`
+	# on a still zero-sized button pinned its LEFT edge instead, so it grew off the right of the screen
+	# and a phone (no M, no Esc) was left with no way out but teleporting.
+	back_button.custom_minimum_size = Vector2(UITheme.BUTTON_MIN_W, UITheme.MENU_ROW_H)
+	back_button.anchor_left = 1.0
+	back_button.anchor_right = 1.0
+	back_button.offset_right = -UITheme.FONT_SIZE
+	back_button.offset_left = back_button.offset_right - UITheme.BUTTON_MIN_W
+	back_button.offset_top = UITheme.FONT_SIZE
+	back_button.offset_bottom = UITheme.FONT_SIZE + UITheme.MENU_ROW_H
 	back_button.grow_horizontal = GROW_DIRECTION_BEGIN
-	back_button.position = Vector2(-UITheme.FONT_SIZE, UITheme.FONT_SIZE)
 	add_child(back_button)
 
 

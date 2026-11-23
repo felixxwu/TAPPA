@@ -157,8 +157,12 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(CardUI.pick(lpause.cards(), "Map"))
 	assert_true(map.visible and get_tree().paused, "the pause menu's Map opens the map, still paused")
 	assert_false(lpause.is_open(), "the map covers the pause menu")
-	map.back_button.pressed.emit()
-	assert_false(map.visible)
+	await get_tree().process_frame  # lay the opened map out
+	assert_true(map.get_global_rect().encloses(map.back_button.get_global_rect()), "the whole Back button is on screen")
+	var car_at := car.global_position
+	await _tap(map.back_button.get_global_rect().get_center())  # a finger, as a phone sends it: no M, no Esc
+	assert_false(map.visible, "tapping Back closes the map")
+	assert_eq(car.global_position, car_at, "without teleporting")
 	assert_true(lpause.is_open() and get_tree().paused, "Back returns to the pause menu")
 	assert_eq(CardUI.titles(lpause.cards())[lpause.cards().selected_index()], "Map", "the cursor is back on Map")
 	map._input(m)
@@ -383,6 +387,20 @@ func test_the_last_spot_on_this_level_comes_back_next_launch() -> void:
 	assert_almost_eq(pose.basis.get_euler().y, 1.0, 0.01, "facing the same way")
 	assert_eq(view.saved_pose({"level": "b.json", "x": 30.0, "z": -10.0}, "a.json", fallback), fallback, "a spot from another level is ignored")
 	assert_eq(view.saved_pose(null, "a.json", fallback), fallback, "nothing saved starts at the spawn")
+
+
+# A real finger tap at `at` (viewport coordinates) through Input, so the GUI and the touch-emulated mouse
+# both see it. GUT's own output panel sits over the game and would catch the tap, so it's hidden meanwhile.
+func _tap(at: Vector2) -> void:
+	var gut_layer := get_tree().root.get_node_or_null("GutRunner/GutLayer") as CanvasLayer
+	if gut_layer != null:
+		gut_layer.visible = false
+	for down in [true, false]:
+		Input.parse_input_event(_touch(0, get_viewport().get_final_transform() * at, down))
+		Input.flush_buffered_events()
+		await get_tree().process_frame
+	if gut_layer != null:
+		gut_layer.visible = true
 
 
 func _touch(index: int, at: Vector2, down: bool) -> InputEventScreenTouch:
