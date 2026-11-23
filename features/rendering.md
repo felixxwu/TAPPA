@@ -873,8 +873,8 @@ shipped knobs in `GameConfig`:
   effect immediately) and `world._ready()` re-derives it next run. During a benchmark
   the config-driven cap wins (`Benchmark.active` → `default_cap()`), so the uncap
   toggle still works regardless of the player's saved setting. **`target_fps`**
-  (desktop/native, default 60) / **`target_fps_mobile`** (native mobile, default 60) /
-  **`target_fps_web`** (web, default 30) remain the *default* source: the web cap
+  (desktop/native, default 0 = uncapped) / **`target_fps_mobile`** (native mobile, default 0) /
+  **`target_fps_web`** (web, default 0 — all three uncapped since 2026-11-23) remain the *default* source: the web cap
   applies only to a web **touch device** (phone/tablet browser); a **desktop browser**
   (web but not touch) gets the full desktop `target_fps` — the 30fps ceiling is a phone
   concession, not a browser one. `Platform.is_touch()` is the same reliable check the

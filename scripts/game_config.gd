@@ -139,13 +139,13 @@ var peak_torque_rpm := 4500.0
 ## also the input smoothing; there is no separate easing stage. The grip servo needs to cover
 ## only the tire's slip angle (~8.6° on tarmac) rather than most of full lock, so this is the
 ## dominant feel parameter and is tuned much lower than a lock-to-lock rate would be.
-@export var steer_speed := 1.5
+@export var steer_speed := 1.2
 ## How fast the front wheels can turn (rad/s) when COUNTER-steering — the target angle is
 ## back toward center or across to the opposite lock from where the wheel currently sits.
 ## Real countersteering (winding the wheel the other way to catch a slide, or simply
 ## unwinding lock) happens faster than winding new lock on, so this is tuned higher than
 ## steer_speed.
-@export var counter_steer_speed := 4
+@export var counter_steer_speed := 3
 ## Steering demand below which the wheels servo to their zero-lateral-slip angle (pointing
 ## along their own travel — automatic countersteer). A deadzone rather than an exact-zero
 ## test because analogue sticks and the touch slider never return exactly 0.
@@ -2318,10 +2318,10 @@ func has_nitrous() -> bool:
 ## Render frame cap (FPS) on desktop targets. 0 = uncapped. Physics runs
 ## independently at the project physics tick. Mobile uses target_fps_mobile and
 ## web uses target_fps_web instead (see target_fps_for()).
-@export var target_fps := 60
+@export var target_fps := 0
 ## Render frame cap (FPS) on NATIVE mobile targets (not web — see target_fps_web).
 ## The native APK has a real audio thread and performs fine at 60. 0 = uncapped.
-@export var target_fps_mobile := 60
+@export var target_fps_mobile := 0
 ## Render frame cap (FPS) on the WEB target specifically. Lower than desktop/native
 ## for thermal/battery headroom, but bounded by audio: the web export is
 ## SINGLE-THREADED, so audio is serviced by the main loop (no audio thread) and a
@@ -2330,7 +2330,7 @@ func has_nitrous() -> bool:
 ## per-device buffer_seconds() and audio/driver/output_latency.web in project.godot) are sized to
 ## bridge a ~33 ms inter-frame gap plus jitter — raise those before lowering this
 ## further. 0 = uncapped. See features/rendering.md and features/engine-audio.md.
-@export var target_fps_web := 30
+@export var target_fps_web := 0
 ## Texture LOD bias for the foliage/ground shaders: positive values pull distant
 ## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
 ## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
