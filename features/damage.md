@@ -159,7 +159,8 @@ on the `VehicleWheel3D` nodes themselves.
   cocked and the rear still crabs". Do **not** try to exclude the toe from the measurement.
 - **Persistence.** The toes are saved with the rest of the car's condition in the world
   block (`WorldSession.save_car_state`, a 4-float array ordered like `WHEEL_NAMES`), so a
-  reload resumes the bent wheels. A rest stop's repair straightens them along with the HP
+  reload resumes the bent wheels. The self-heal trickle eases them back as the HP returns, and a
+  rest stop's repair straightens them along with the HP
   (`DamageModel.reset_wheel_toe`).
 
 The solid props that arrest the car and so cost HP through the rule above are the
@@ -321,8 +322,11 @@ just the end of a ramp it was already sampling. Only the thermal chain's `gave_u
 same physics step `register_deceleration` measures impacts on. `car.gd` calls it every tick,
 deliberately OUTSIDE the reset/teleport suppression branch — that countdown exists to stop a
 discontinuous velocity reading as a crash, which has nothing to do with mending.
-`damage_regen_hp_per_s` is 5.0 as authored, so the Hafren level slowly mends the car while you drive (the pause menu's Repair still fixes it at once).
-It heals HP **only**; `wheel_toe` stays bent until `repair()`.
+`damage_regen_hp_per_s` is a small positive rate as authored, so the Hafren level slowly mends the car while you drive (the pause menu's Repair still fixes it at once).
+It heals the **wheel alignment** too: each tick every wheel's `wheel_toe` is scaled by the
+missing HP after the tick over the missing HP before it, so the toe shrinks in proportion to
+the HP regained and the wheels are straight exactly when the HP is full (a car already at full
+HP is left as it is: only impacts bend wheels, and they cost HP). A zero rate, or a car that has given up, heals neither.
 
 ## HP is NOT a damage oracle
 

@@ -10,7 +10,7 @@ extends RefCounted
 #
 # Hitting 0 HP never wrecks a stage car: it keeps driving, misfiring and rev-capped. In free
 # roam `thermal` is on: an overheating engine drains HP, and at 0 HP the car gives up (`gave_up`).
-# HP climbs back only via regen() (a tunable rate) or repair().
+# HP (and the wheel alignment with it) climbs back only via regen() (a tunable rate) or repair().
 
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
 # (todo/audio.md). Emitted only for hits that actually cost HP.
@@ -44,7 +44,8 @@ var hp := 1000.0
 # Permanent per-wheel toe misalignment (radians), keyed by WHEEL_NAMES. Each solid
 # impact bends every wheel by a random amount/direction (nudge_wheels); car.gd feeds
 # these into the per-wheel VehicleWheel3D.steering so the car's pull/crab comes from
-# the physics alone. Saved with the world's car_state; a full repair straightens it.
+# the physics alone. Saved with the world's car_state; a full repair straightens it, and the
+# self-heal (regen) eases it back in step with the HP.
 var wheel_toe: Dictionary = _zero_toe()
 
 
@@ -265,11 +266,19 @@ func repair() -> void:
 
 # The self-heal tick: trickle `cfg.damage_regen_hp_per_s` back into the pool, capped at
 # max_hp, on the same physics step the impact damage above is measured on.
-# Healing does not straighten wheels — only a full repair resets `wheel_toe`.
+# The wheel alignment heals along with the HP: every wheel's toe shrinks by the same share
+# of the remaining damage as the HP just regained (missing HP after / before), so the
+# wheels are straight exactly when the HP is full. A car already at full HP has nothing
+# left to mend, so its toe is left as it is (only impacts bend wheels, and they cost HP).
 # Returns the HP actually regained (0.0 when already full, or the rate is 0).
 func regen(dt: float, cfg: GameConfig) -> float:
 	if dt <= 0.0 or cfg.damage_regen_hp_per_s <= 0.0 or _gave_up:
 		return 0.0
 	var before := hp
+	var missing_before := max_hp - hp
 	hp = minf(max_hp, hp + cfg.damage_regen_hp_per_s * dt)
+	if missing_before > 0.0:
+		var keep := (max_hp - hp) / missing_before
+		for name in WHEEL_NAMES:
+			wheel_toe[name] = float(wheel_toe[name]) * keep
 	return hp - before

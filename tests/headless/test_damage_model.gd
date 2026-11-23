@@ -420,17 +420,34 @@ func test_regen_never_exceeds_max_hp() -> void:
 	assert_eq(dm.regen(1.0, cfg), 0.0, "a full car regains nothing more")
 
 
-# Healing is HP only: a bent wheel stays bent.
-func test_regen_does_not_straighten_wheels() -> void:
+# The self-heal mends the wheel alignment along with the HP: the toe shrinks by the same
+# share of the remaining damage as the HP regained (half the missing HP back -> half the toe).
+func test_regen_eases_wheel_toe_in_step_with_hp() -> void:
 	var cfg: GameConfig = Config.data
 	cfg.damage_regen_hp_per_s = 10.0
 	var dm := DamageModel.new()
-	dm.field(1000.0, 400.0)
-	dm.nudge_wheels(200.0, cfg)
-	var bent := dm.toe_array().duplicate()
+	dm.field(1000.0, 980.0, [0.2, -0.1, 0.05, -0.3])
 	@warning_ignore("return_value_discarded")
 	dm.regen(1.0, cfg)
-	assert_eq(dm.toe_array(), bent)
+	var toe := dm.toe_array()
+	var want := [0.1, -0.05, 0.025, -0.15]
+	for i in want.size():
+		assert_almost_eq(float(toe[i]), want[i], 1e-5, "wheel %d toe halves with half the damage healed" % i)
+	@warning_ignore("return_value_discarded")
+	dm.regen(1.0, cfg)
+	assert_eq(dm.hp, 1000.0)
+	assert_eq(dm.toe_array(), [0.0, 0.0, 0.0, 0.0], "wheels are straight once the HP is full")
+
+
+# With the self-heal off, nothing mends: the bend stays.
+func test_regen_leaves_wheels_bent_at_a_zero_rate() -> void:
+	var cfg: GameConfig = Config.data
+	cfg.damage_regen_hp_per_s = 0.0
+	var dm := DamageModel.new()
+	dm.field(1000.0, 400.0, [0.2, -0.1, 0.05, -0.3])
+	@warning_ignore("return_value_discarded")
+	dm.regen(1.0, cfg)
+	assert_eq(dm.toe_array(), [0.2, -0.1, 0.05, -0.3])
 
 
 # --- the free-roam thermal chain (DamageModel.thermal) ---------------------------------------------
