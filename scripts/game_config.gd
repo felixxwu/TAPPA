@@ -791,9 +791,9 @@ func has_nitrous() -> bool:
 ## Share of a full nitrous tank a checkpoint refills per second while the car is at it
 ## (RestStops._heal), alongside the HP. 0.25 refills an empty tank in 4 s, same as the heal.
 @export var checkpoint_nitrous_refill_fraction_per_s := 0.25
-## HP regained per second while driving; 0.0 means nothing heals. Applied by
+## HP regained per second while driving (5 heals a 1000 HP car from empty in ~3 min); 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
-@export var damage_regen_hp_per_s := 0.0
+@export var damage_regen_hp_per_s := 10.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
 ## power in stumbling bursts instead of a smooth derate — fully simulated (crank
 ## torque drops to friction) and audible (the synth ducks + crackles on the cut).

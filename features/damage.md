@@ -321,7 +321,7 @@ just the end of a ramp it was already sampling. Only the thermal chain's `gave_u
 same physics step `register_deceleration` measures impacts on. `car.gd` calls it every tick,
 deliberately OUTSIDE the reset/teleport suppression branch — that countdown exists to stop a
 discontinuous velocity reading as a crash, which has nothing to do with mending.
-`damage_regen_hp_per_s` is 0.0 as authored, so this is a no-op unless the config is retuned.
+`damage_regen_hp_per_s` is 5.0 as authored, so the Hafren level slowly mends the car while you drive (the pause menu's Repair still fixes it at once).
 It heals HP **only**; `wheel_toe` stays bent until `repair()`.
 
 ## HP is NOT a damage oracle
@@ -347,7 +347,7 @@ sits to its left and a **nitrous gauge** to its right, built the same way — se
 
 `impact_threshold_g` (the braking-proof deceleration gate — the single sensitivity
 knob), `impact_ref_speed_kmh`, `impact_ref_hp_loss`,
-`impact_max_loss`, `damage_regen_hp_per_s` (0.0 as authored — see the self-heal trickle), `damage_misfire_health_threshold` (where BOTH engine effects start —
+`impact_max_loss`, `damage_regen_hp_per_s` (see the self-heal trickle), `damage_misfire_health_threshold` (where BOTH engine effects start —
 the shared `damage_ramp`), `damage_misfire_level_max` (worst misfire intensity at 0 HP —
 the "certain point" past which damage stops weakening the engine),
 `damage_rev_limit_min_fraction` (fraction of redline still usable at 0 HP),
