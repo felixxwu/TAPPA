@@ -45,6 +45,26 @@ func test_a_building_footprint_is_its_rotated_rectangle() -> void:
 	assert_almost_eq(fp[0].distance_to(fp[1]), 4.0, 1e-4, "short side")
 
 
+func test_teleport_names_sit_beside_their_diamonds_and_thin_out_when_crowded() -> void:
+	var screen := Rect2(0, 0, 400, 300)
+	var spread := LevelMap.place_names(PackedVector2Array([Vector2(50, 50), Vector2(50, 200)]), PackedFloat32Array([80, 80]), 18.0, screen, -1)
+	assert_gt(spread[0].position.x, 50.0, "a name goes right of its diamond when there's room")
+	assert_false(spread[0].intersects(spread[1]), "names far apart both show")
+	var edge := LevelMap.place_names(PackedVector2Array([Vector2(380, 150)]), PackedFloat32Array([80]), 18.0, screen, -1)
+	assert_lt(edge[0].end.x, 380.0, "a name that would run off the right edge goes left instead")
+	var crowd := PackedVector2Array([Vector2(150, 150), Vector2(150, 150), Vector2(150, 150)])
+	var piled := LevelMap.place_names(crowd, PackedFloat32Array([80, 80, 80]), 18.0, screen, -1)
+	assert_eq(piled[2].size, Vector2.ZERO, "three names on one spot: the one with no free side is dropped, not piled on")
+	for i in 2:
+		for j in range(i + 1, 3):
+			if piled[i].size != Vector2.ZERO and piled[j].size != Vector2.ZERO:
+				assert_false(piled[i].intersects(piled[j]), "shown names never overlap")
+	var aimed := LevelMap.place_names(crowd, PackedFloat32Array([80, 80, 80]), 18.0, screen, 2)
+	assert_ne(aimed[2].size, Vector2.ZERO, "the aimed-at teleport's name always shows")
+	var unnamed := LevelMap.place_names(PackedVector2Array([Vector2(100, 100)]), PackedFloat32Array([0]), 18.0, screen, -1)
+	assert_eq(unnamed[0].size, Vector2.ZERO, "a teleport with no name draws no box")
+
+
 func test_the_map_ground_leans_toward_the_cover_colour() -> void:
 	var lv := _level()
 	var rle := PackedByteArray([1])

@@ -145,7 +145,7 @@ var peak_torque_rpm := 4500.0
 ## Real countersteering (winding the wheel the other way to catch a slide, or simply
 ## unwinding lock) happens faster than winding new lock on, so this is tuned higher than
 ## steer_speed.
-@export var counter_steer_speed := 3
+@export var counter_steer_speed := 3.0
 ## Steering demand below which the wheels servo to their zero-lateral-slip angle (pointing
 ## along their own travel — automatic countersteer). A deadzone rather than an exact-zero
 ## test because analogue sticks and the touch slider never return exactly 0.

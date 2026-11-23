@@ -21,6 +21,9 @@ const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show
 const ROAD_EDGE := Color(0.25, 0.15, 0.08)
 const WASD := {KEY_W: Vector2.UP, KEY_A: Vector2.LEFT, KEY_S: Vector2.DOWN, KEY_D: Vector2.RIGHT}
 const PAN_SPEED_PX := 600.0
+const NAME_GAP_PX := 12.0  # from a teleport's centre to its name
+const NAME_PAD_PX := 3.0   # the dark box round a teleport's name
+const NAME_BACK := Color(0.0, 0.0, 0.0, 0.6)
 const FOG := Color(0.06, 0.058, 0.05)  # the undiscovered ground, near black: GROUND.darkened(0.925), the same as off the level's edge
 const BORDER := Color(0.80, 0.78, 0.66, 0.35)  # the faint line round the level's edge, so the world's end shows through the fog
 const BORDER_PX := 2.0
@@ -149,6 +152,35 @@ func nearest_teleport(w: Vector2) -> Vector2:
 	return best
 
 
+# Screen boxes for the teleports' names (`teleports[i].name`), one per anchor (its diamond's screen spot): right of
+# the diamond, else left. A name that would cover one already placed, another diamond or the screen's edge gets an
+# empty Rect2 and isn't drawn, so zoomed out the map thins its names rather than piling them up; `first` (the
+# aimed-at teleport, or -1) is placed before the rest so its name always shows. A zero width (no name) is skipped.
+static func place_names(anchors: PackedVector2Array, widths: PackedFloat32Array, line_h: float, bounds: Rect2, first: int) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	out.resize(anchors.size())
+	var taken: Array[Rect2] = []
+	for a in anchors:
+		taken.append(Rect2(a - Vector2(8, 8), Vector2(16, 16)))
+	var order := range(anchors.size())
+	if first >= 0 and first < anchors.size():
+		order.erase(first)
+		order.push_front(first)
+	for i: int in order:
+		if widths[i] <= 0.0:
+			continue
+		var y := roundf(anchors[i].y - line_h / 2.0)
+		for x in [roundf(anchors[i].x + NAME_GAP_PX), roundf(anchors[i].x - NAME_GAP_PX - widths[i])]:
+			var r := Rect2(x, y, ceilf(widths[i]), line_h)
+			var padded := r.grow(NAME_PAD_PX)
+			if not bounds.encloses(padded) or taken.any(func(o: Rect2) -> bool: return o.intersects(padded)):
+				continue
+			out[i] = r
+			taken.append(padded)
+			break
+	return out
+
+
 # Uploads the painted image and traces the road lines; the level view calls it behind the loading screen, since the upload alone stalls a frame for tens of ms.
 func build() -> void:
 	if _texture != null or _painter == null:
@@ -271,16 +303,35 @@ func _draw() -> void:
 	if _fog != null:
 		draw_texture_rect(_fog, Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * discovery.cells * discovery.cell_m * zoom), false)
 	draw_rect(Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * size_m() * zoom), BORDER, false, BORDER_PX)
-	for t: Dictionary in view.level.get("teleports", []):  # drawn over the fog: every teleport works, driven near or not
-		var tp := to_screen(Vector2(float(t["x"]), float(t["z"])))
+	var aim := get_local_mouse_position() if _mouse_inside() else size / 2.0
+	var target := nearest_teleport(to_world(aim))
+	var teleports: Array = view.level.get("teleports", [])
+	var anchors := PackedVector2Array()
+	var widths := PackedFloat32Array()
+	var first := -1
+	var font := UITheme.font()
+	for i in teleports.size():  # drawn over the fog: every teleport works, driven near or not
+		var t: Dictionary = teleports[i]
+		var wp := Vector2(float(t["x"]), float(t["z"]))
+		var tp := to_screen(wp)
 		draw_colored_polygon(PackedVector2Array([tp + Vector2(0, -8), tp + Vector2(8, 0), tp + Vector2(0, 8), tp + Vector2(-8, 0)]), TELEPORT)
+		anchors.append(tp)
+		widths.append(font.get_string_size(String(t.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
+		if wp == target:
+			first = i
+	var line_h := float(UITheme.FONT_SIZE)
+	var rects := place_names(anchors, widths, line_h, Rect2(Vector2.ZERO, size), first)
+	for i in rects.size():
+		if rects[i].size == Vector2.ZERO:
+			continue
+		draw_rect(rects[i].grow(NAME_PAD_PX), NAME_BACK)
+		var base := (rects[i].position + Vector2(0, roundf((line_h + font.get_ascent(UITheme.FONT_SIZE) - font.get_descent(UITheme.FONT_SIZE)) / 2.0))).round()
+		draw_string(font, base, String(teleports[i]["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE, TELEPORT if i == first else UITheme.INK)
 	var car := view.get_parent().get_node_or_null("Car") as Node3D
 	if car != null:
 		var p := to_screen(Vector2(car.global_position.x, car.global_position.z))
 		var f := Vector2(-car.global_basis.z.x, -car.global_basis.z.z).normalized() * 12.0
 		draw_colored_polygon(PackedVector2Array([p + f, p - f * 0.6 + f.orthogonal() * 0.6, p - f * 0.6 - f.orthogonal() * 0.6]), Color.WHITE)
-	var aim := get_local_mouse_position() if _mouse_inside() else size / 2.0
-	var target := nearest_teleport(to_world(aim))
 	if target != Vector2.INF:
 		draw_arc(to_screen(target), 12.0, 0.0, TAU, 24, UITheme.INK, 2.0)
 	if not _mouse_inside():

@@ -195,7 +195,7 @@ function pack(l) {
     roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension), ...(n.tarmac && { tarmac: true }) }))) };
   delete out.road; delete out.trees;
   if (!out.spectators?.length) delete out.spectators;
-  if (out.teleports?.length) out.teleports = out.teleports.map(q => ({ x: r1(q.x), z: r1(q.z) })); else delete out.teleports;
+  if (out.teleports?.length) out.teleports = out.teleports.map(q => q.name ? { x: r1(q.x), z: r1(q.z), name: q.name } : { x: r1(q.x), z: r1(q.z) }); else delete out.teleports;
   if (out.gravelPatches?.length) out.gravelPatches = out.gravelPatches.map(p => p.map(q => ({ x: r1(q.x), z: r1(q.z) }))); else delete out.gravelPatches;
   if (out.size === 600) delete out.size;
   if (l.heightmap) {
@@ -703,6 +703,8 @@ function draw2D() {
     const [sx, sz] = toScreen(q.x, q.z), on = sel?.type === "tele" && sel.i === i, r = 8 * devicePixelRatio;
     ctx.fillStyle = on ? "#fc6" : "#3ad0e6"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(sx, sz - r); ctx.lineTo(sx + r, sz); ctx.lineTo(sx, sz + r); ctx.lineTo(sx - r, sz); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (q.name) { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3; ctx.font = `bold ${12 * devicePixelRatio}px sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.strokeText(q.name, sx + r + 4, sz); ctx.fillText(q.name, sx + r + 4, sz); }
   });
   const vis = !show.trees ? [] : treesInView(vx0 - 10, vz0 - 10, vx1 + 10, vz1 + 10), stride = Math.max(1, Math.ceil(vis.length / TREE_DRAW_MAX));
   if (stride > 1) { // too many to draw one by one: an evenly thinned set of dots
@@ -949,7 +951,7 @@ function select(s) {
   pop.innerHTML = sel.type === "pv"
     ? `<b>Gravel patch ${sel.p} corner ${sel.i}</b><span>Drag corners; double-click an edge to add one</span><button data-act="del">Delete corner</button><button data-act="delpatch">Delete whole patch (shift+Delete)</button>`
     : sel.type === "tele"
-    ? `<b>Teleport ${sel.i}</b><span>Drag to move; the game snaps the car to the nearest road</span><button data-act="del">Delete teleport</button>`
+    ? `<b>Teleport ${sel.i}</b><label>Name <input type="text" data-k="name"></label><span>Drag to move; the game snaps the car to the nearest road</span><button data-act="del">Delete teleport</button>`
     : sel.type === "spec"
     ? `<b>Spectators ${sel.i}</b>` + field("r", "Radius", 0.5, "m") + field("n", "People", 1) + `<button data-act="del">Delete group</button>`
     : sel.type === "tree"
@@ -982,6 +984,7 @@ function setTarmac(nodes, on) {
 function edit(k, v) {
   const o = selObj();
   if (k === "kind") o.kind = v;
+  else if (k === "name") { if (v.trim()) o.name = v.trim(); else delete o.name; }
   else if (!isFinite(+v) || +v <= 0 && k !== "rot") return;
   else if (sel.type === "spec") o[k] = k === "n" ? Math.min(500, Math.round(+v)) : +v;
   else if (k === "width") o.sx = +v / treeW({ ...o, sx: 1 });
@@ -993,7 +996,7 @@ function edit(k, v) {
 function syncPopup(skip) {
   if (!sel) return;
   const o = selObj();
-  const vals = sel.type === "pv" || sel.type === "tele" ? {} : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+  const vals = sel.type === "pv" ? {} : sel.type === "tele" ? { name: o.name ?? "" } : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
                                    : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
   for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
 }
