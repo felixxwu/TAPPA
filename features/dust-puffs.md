@@ -121,10 +121,15 @@ are VRAM-compressed, and decompressing them is not reliable on every platform.
 
 Tarmac dust is `GameConfig.dust_puff_tarmac_color`, near-white, for every region.
 
+Snow: while `deep_snow_drag` is live, a wheel on the road edge (road weight below 1, where
+the deep-snow drag is bogging it — `car.gd` → `_apply_deep_snow_drag`) puffs
+`GameConfig.dust_puff_snow_color` (white) instead of the gravel colour
+(`color_for_surface`).
+
 ## Configuration
 
 `GameConfig` "Dust Puffs" group: `dust_puffs_enabled`, `dust_puff_color`,
-`dust_puff_tarmac_color`, `dust_puff_tarmac_min_grip`,
+`dust_puff_tarmac_color`, `dust_puff_snow_color`, `dust_puff_tarmac_min_grip`,
 `dust_puff_color_jitter`, `dust_puff_max`, `dust_puff_size_m`, `dust_puff_growth`,
 `dust_puff_lifetime_s`, `dust_puff_spacing_m`, `dust_puff_min_speed_mps`,
 `dust_puff_inherit`, `dust_puff_slip_throw`, `dust_puff_rise_mps`, `dust_puff_scatter_mps`,

@@ -28,6 +28,7 @@ func before_each() -> void:
 	# rotation measured here is shake and nothing else.
 	_cam._tilt_roll_gain = 0.0
 	_cam._tilt_pitch_gain = 0.0
+	_cam._look_height = 0.0  # _aim_error measures against the car's centre
 	# Synthetic shake tuning: one degree of amplitude, one source at a time.
 	_cam._shake_max = deg_to_rad(1.0)
 	_cam._shake_frequency = 13.0

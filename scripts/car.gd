@@ -121,6 +121,7 @@ var _owned_drive_override := -1
 # always come from the car's own spec. See features/wheel-customization.md.
 var _owned_wheel_texture := ""
 var _wheel_mounts: Dictionary = {}  # wheel -> authored local mount origin (scene rest pose)
+var _visible_bump_y: Dictionary = {}  # wheel -> highest local y its tyre is drawn at (the scene mount)
 var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by H)
 
 # When true, driver input is ignored and the handbrake is forced on, so the car
@@ -226,6 +227,7 @@ func _ready() -> void:
 		# back to the live wheel.position — correct only because nothing has simulated yet
 		# during _ready, i.e. right for the wrong reason.
 		_wheel_mounts[wheel] = wheel.position
+		_visible_bump_y[wheel] = wheel.position.y
 		# All contact friction is handled by the Drivetrain tire model; the
 		# built-in solver only does suspension + raycasts.
 		wheel.wheel_friction_slip = 0.0
@@ -1647,7 +1649,8 @@ func _relocate_wheels(spec: Dictionary) -> void:
 		# repaints the wheel's origin with suspension travel each step, so reading
 		# it back would let the mount drift (and corrupt contact) on each swap.
 		var mount: Vector3 = wheel_mount(wheel)
-		wheel.position = Vector3(signf(mount.x) * half_track, mount.y, signf(mount.z) * half_base)
+		var mount_y: float = _visible_bump_y[wheel] + config.hidden_bump_travel
+		wheel.position = Vector3(signf(mount.x) * half_track, mount_y, signf(mount.z) * half_base)
 		# Re-record it: from here on THIS is the authored mount for this car spec, and it is
 		# what a later drivetrain rebuild must key its suspension geometry off (see
 		# wheel_mount() / Drivetrain._init). Signs and y are preserved, so every other reader
@@ -1962,12 +1965,23 @@ func _apply_suspension(wheel: VehicleWheel3D) -> void:
 	var cfg: GameConfig = config
 	var front := _wheel_is_front(wheel)
 	var k: float = cfg.axle_stiffness(front)
-	var travel: float = cfg.axle_travel(front)
+	var travel: float = cfg.axle_travel(front) + hidden_travel(wheel)
 	wheel.suspension_travel = travel
 	wheel.wheel_rest_length = travel
 	wheel.suspension_stiffness = k
 	wheel.damping_compression = cfg.suspension_damping_compression(k)
 	wheel.damping_relaxation = cfg.suspension_damping_relaxation(k)
+
+
+# How far this wheel's mount currently sits above where its tyre is allowed to be drawn
+# (see GameConfig.hidden_bump_travel); 0 until apply_car has raised the mounts.
+func hidden_travel(wheel: VehicleWheel3D) -> float:
+	return float(wheel_mount(wheel).y) - float(_visible_bump_y.get(wheel, wheel_mount(wheel).y))
+
+
+# The highest local y the tyre of `wheel` is drawn at, so hidden travel never shows.
+func visible_bump_y(wheel: VehicleWheel3D) -> float:
+	return float(_visible_bump_y.get(wheel, wheel_mount(wheel).y))
 
 
 # The AUTHORED suspension mount for `wheel`, in the body's local space.

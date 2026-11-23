@@ -326,7 +326,9 @@ func test_every_car_applies_its_own_suspension() -> void:
 		for wheel in _car.find_children("*", "VehicleWheel3D", false):
 			var front: bool = wheel.position.z < 0.0
 			var k: float = cfg.axle_stiffness(front)
-			var axle_travel: float = cfg.axle_travel(front)
+			assert_almost_eq(_car.hidden_travel(wheel), cfg.hidden_bump_travel, 0.0001,
+				"%s: %s mount raised by the hidden bump travel" % [spec["name"], wheel.name])
+			var axle_travel: float = cfg.axle_travel(front) + cfg.hidden_bump_travel
 			assert_almost_eq(wheel.suspension_travel, axle_travel, 0.0001,
 				"%s: %s travel set per axle" % [spec["name"], wheel.name])
 			assert_almost_eq(wheel.wheel_rest_length, axle_travel, 0.0001,

@@ -25,6 +25,7 @@ func before_each() -> void:
 	_cam.target = _target
 	add_child(_cam)  # _ready() caches config into the _* fields
 	_cam.set_physics_process(false)
+	_cam._look_height = 0.0
 
 
 func after_each() -> void:
@@ -100,3 +101,10 @@ func test_look_at_points_the_camera_at_the_aim_not_the_origin() -> void:
 	var to_origin := (_target.global_position - _cam.global_position).normalized()
 	assert_gt(forward.dot(to_aim), 0.999, "the camera looks straight at the aim point")
 	assert_lt(forward.dot(to_origin), 0.999, "which is NOT straight at the body origin")
+
+
+func test_look_height_raises_the_aim_straight_up_whatever_the_cars_tilt() -> void:
+	_cam._look_ahead_ratio = 0.0
+	_cam._look_height = 0.8
+	_target.rotate_z(deg_to_rad(20.0))
+	assert_almost_eq(_cam._aim_point() - _target.global_position, Vector3.UP * 0.8, Vector3.ONE * 0.001)

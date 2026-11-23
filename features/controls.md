@@ -21,7 +21,7 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
 | `toggle_map` | M | — | Back | Free roam: opens the full map while driving (`MiniMap._unhandled_input` → `free_roam.gd → open_full_map`) and closes it again (`WorldPages._unhandled_input`). Out of `InputRemap.ACTIONS` (that list is the driving controls) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
-| `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay |
+| `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay (Hafren level: tree / cover / triangle stats) |
 | `menu_up` | W | ↑ | D-pad up | Menu navigation: move up |
 | `menu_down` | S | ↓ | D-pad down | Menu navigation: move down |
 | `menu_left` | A | ← | D-pad left | Menu navigation: move left |

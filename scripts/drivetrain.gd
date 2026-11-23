@@ -419,6 +419,8 @@ func _update_visuals() -> void:
 			* Basis(Vector3.UP, wheel.steering + PI)
 			* Basis(Vector3.RIGHT, spin_angle[wheel])
 		)
+		var rise := maxf(wheel.position.y - car.visible_bump_y(wheel), 0.0)
+		visual.global_position = wheel.global_position - car.global_basis.y * rise
 
 
 func _omega_of(wheel: VehicleWheel3D) -> float:

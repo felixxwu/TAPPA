@@ -119,8 +119,9 @@ func test_car_values_applied() -> void:
 		# Built-in friction must be OFF — the Drivetrain tire model owns all
 		# contact forces (the μ sliders are consumed by drivetrain.gd instead).
 		assert_almost_eq(wheel.wheel_friction_slip, 0.0, 0.001, "friction disabled " + str(wheel.name))
-		assert_almost_eq(wheel.suspension_travel, cfg.suspension_travel, 0.001, str(wheel.name))
-		assert_almost_eq(wheel.wheel_rest_length, cfg.suspension_travel, 0.001, "rest length matches travel " + str(wheel.name))
+		var travel: float = cfg.suspension_travel + car.hidden_travel(wheel)
+		assert_almost_eq(wheel.suspension_travel, travel, 0.001, str(wheel.name))
+		assert_almost_eq(wheel.wheel_rest_length, travel, 0.001, "rest length matches travel " + str(wheel.name))
 		# Wheel properties are stored as 32-bit floats; compare with tolerance.
 		assert_almost_eq(wheel.suspension_stiffness, cfg.suspension_stiffness, 0.001, "stiffness " + str(wheel.name))
 		# Dampers are derived from stiffness: critical damping on compression,

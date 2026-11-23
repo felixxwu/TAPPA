@@ -158,13 +158,13 @@ func test_chase_camera_orbit_eases_but_always_looks_at_car() -> void:
 
 
 # Mirrors chase_camera.gd's private _aim_point(): the world point the camera aims
-# at, offset ahead of the car's origin along its own facing by the configured
+# at, raised chase_look_height and offset ahead of the car's origin along its own facing by the configured
 # chase_look_ahead_ratio × the car's half length. Recomputed here (rather than
 # reaching into the camera's private state) so the test tracks the real formula
 # without pinning the ratio's authored value.
 func _expected_aim_point(cam: Camera3D, car: VehicleBody3D) -> Vector3:
 	var ratio: float = (Config.data as GameConfig).chase_look_ahead_ratio
-	var origin: Vector3 = car.global_position
+	var origin: Vector3 = car.global_position + Vector3.UP * (Config.data as GameConfig).chase_look_height
 	if ratio == 0.0 or not car.has_method("half_length"):
 		return origin
 	var forward: Vector3 = -car.global_transform.basis.z

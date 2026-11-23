@@ -91,7 +91,7 @@ height     = distance * follow_height_ratio                  # same angle for ev
 horizontal = sqrt(distance^2 - height^2)
 position   = target.position - travel_dir * horizontal       # behind the smoothed orbit
 position.y = eased(target.position.y) + height               # fixed height above the car
-aim = target.position + (-target.basis.z) * half_length * chase_look_ahead_ratio
+aim = target.position + UP * chase_look_height + (-target.basis.z) * half_length * chase_look_ahead_ratio
 look_at(aim, UP)                             # exact — look-at is NOT smoothed
 ```
 
@@ -229,6 +229,8 @@ suspension), and the replay/cinematic cameras are deliberately steady.
   car's on-screen size).
 - `chase_look_ahead_ratio` (0–2) — how far forward the look-at aims, in multiples
   of the car's half length (0 = body centre, 1 = nose).
+- `chase_look_height` (m) — how far above the car's centre the look-at aims, straight
+  up in world space (0 = the body origin's height); higher tilts the view up the road.
 - `chase_tilt_roll_gain` / `chase_tilt_pitch_gain` (deg per m/s²) — how far the
   view leans per unit of lateral / longitudinal acceleration; negative inverts.
 - `chase_tilt_max_deg` — clamp on the g-force lean magnitude (either axis).

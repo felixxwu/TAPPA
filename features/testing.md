@@ -47,6 +47,7 @@ intermittently fail to resolve. `scripts/car.gd` additionally `preload`s
 | `test_car_terrain.gd` | suspension on slopes |
 | `test_debug_arrows.gd` | force overlay updates |
 | `test_perf_overlay.gd` | frame profiler overlay toggles / samples |
+| `test_level_stats.gd` | Hafren stats overlay toggles; tally counts only MultiMeshes in draw range |
 | `test_hud.gd` | label updates |
 
 ### Keeping the suite fast

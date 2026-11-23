@@ -20,7 +20,8 @@ extends CpuParticlePool
 #
 # Colour follows the surface: on gravel it is the gravel's own colour (GameConfig
 # dust_puff_color, matched to textures/gravel.jpg, or the region's "dust_color" look key
-# matched to its gravel_texture); on tarmac it is a near-white dust_puff_tarmac_color.
+# matched to its gravel_texture); on tarmac it is a near-white dust_puff_tarmac_color;
+# where the deep snow is dragging the wheel it is white dust_puff_snow_color.
 # Grass raises nothing.
 #
 # Created + wired by world.gd._generate_track on a stage and free_roam.gd._ready in
@@ -310,10 +311,13 @@ func _emit_from_wheels(delta: float) -> bool:
 
 
 # The puff colour for a surface_at sample (road_weight, tarmac_weight): the gravel's
-# colour on a gravel road, near-white on tarmac, and alpha 0 (no dust) on grass.
+# colour on a gravel road, near-white on tarmac, and alpha 0 (no dust) on grass. A wheel
+# the deep-snow drag is bogging (any road weight below 1 in snow) kicks up snow instead.
 func color_for_surface(cfg: GameConfig, surf: Vector2) -> Color:
 	if surf.x < ROAD_WEIGHT_MIN:
 		return Color(0, 0, 0, 0)
+	if cfg.deep_snow_drag > 0.0 and surf.x < 1.0:
+		return cfg.dust_puff_snow_color
 	if surf.y > TARMAC_WEIGHT_MAX:
 		return cfg.dust_puff_tarmac_color
 	return dust_color()

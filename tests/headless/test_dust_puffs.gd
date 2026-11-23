@@ -198,6 +198,15 @@ func test_color_for_surface_picks_by_surface() -> void:
 	assert_eq(d.color_for_surface(cfg, Vector2(1.0, 0.0)), d.dust_color(), "gravel")
 
 
+func test_wheel_bogged_in_deep_snow_puffs_snow_colour() -> void:
+	var cfg := Config.data
+	var d := _make()
+	assert_eq(d.color_for_surface(cfg, Vector2(0.7, 0.0)), d.dust_color(), "no snow: gravel")
+	cfg.deep_snow_drag = 1.0
+	assert_eq(d.color_for_surface(cfg, Vector2(0.7, 0.0)), cfg.dust_puff_snow_color, "bogged: snow")
+	assert_eq(d.color_for_surface(cfg, Vector2(1.0, 0.0)), d.dust_color(), "on the road: gravel")
+
+
 func test_airborne_wheel_raises_no_dust() -> void:
 	var d := _make()
 	for w in _dt.all_wheels:

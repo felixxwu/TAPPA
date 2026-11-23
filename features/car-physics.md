@@ -297,7 +297,16 @@ drives both.
 travel also lowers ride height. Optional `suspension_travel_front` /
 `suspension_travel_rear` overrides (0 = inherit `suspension_travel`) let a body run
 a longer front or rear stroke for rake / wheel-well fit; `axle_travel(front)`
-resolves them per wheel. These values are all **per-car**: each `CarLibrary` entry
+resolves them per wheel.
+
+**Hidden bump travel.** `GameConfig.hidden_bump_travel` gives every car extra
+compression stroke that never shows. `_relocate_wheels` raises each wheel mount that far
+above its scene position, and `_apply_suspension` adds the same amount
+(`Car.hidden_travel(wheel)`) to `suspension_travel` and `wheel_rest_length`. The car gets
+about that much more stroke before a hard hit bottoms it out, while the body settles
+only ~11% of the extra travel higher (≈1.7 cm at 0.15 m). The tyre visual is clamped at
+the scene mount (`Car.visible_bump_y`, applied in `Drivetrain._update_visuals`), so it never
+rises into the arch. Covered by `test_hidden_bump_travel.gd`. These values are all **per-car**: each `CarLibrary` entry
 carries its own `suspension_travel` + `suspension_stiffness` (+ optional per-axle
 travel), overlaid onto the live config by `car.gd`'s `apply_car()` and pushed onto
 each wheel per axle via `_apply_suspension()` (dampers re-derived; the standalone

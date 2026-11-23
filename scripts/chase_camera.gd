@@ -27,6 +27,7 @@ var _dolly_mix: float
 # How far forward along the car's facing the look-at point sits, as a multiple of
 # the car's half length. See GameConfig.chase_look_ahead_ratio.
 var _look_ahead_ratio: float
+var _look_height: float
 
 # G-force lean: the view rolls into lateral acceleration and pitches with
 # forward acceleration (brake dips the nose, throttle lifts it). Gains are
@@ -106,6 +107,7 @@ func _ready() -> void:
 	_fov_smoothing = cfg.chase_fov_smoothing
 	_dolly_mix = cfg.chase_dolly_mix
 	_look_ahead_ratio = cfg.chase_look_ahead_ratio
+	_look_height = cfg.chase_look_height
 	_tilt_roll_gain = cfg.chase_tilt_roll_gain
 	_tilt_pitch_gain = cfg.chase_tilt_pitch_gain
 	_tilt_max = deg_to_rad(cfg.chase_tilt_max_deg)
@@ -304,7 +306,7 @@ func _nitrous_delivering() -> bool:
 # forward along its own facing, from the body origin (the wheelbase centre).
 # Falls back to the origin for targets that don't expose half_length().
 func _aim_point() -> Vector3:
-	var origin: Vector3 = target.global_position
+	var origin: Vector3 = target.global_position + Vector3.UP * _look_height
 	if _look_ahead_ratio == 0.0 or not target.has_method("half_length"):
 		return origin
 	var forward: Vector3 = -target.global_transform.basis.z

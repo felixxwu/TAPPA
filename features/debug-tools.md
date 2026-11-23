@@ -10,7 +10,7 @@ It is gated on `SettingsMenu.dev_tools_enabled()`, which defaults to **true** �
 exports (including the web build) get them too, same as the editor and debug exports. A config
 value that starts a feature on still works in any build regardless of the switch.
 
-**Tests:** `tests/headless/test_debug_arrows.gd`, `tests/headless/test_hud.gd`, `tests/headless/test_perf_overlay.gd`, `tests/headless/test_perf_log.gd`, `tests/headless/test_benchmark_mode.gd`
+**Tests:** `tests/headless/test_debug_arrows.gd`, `tests/headless/test_hud.gd`, `tests/headless/test_perf_overlay.gd`, `tests/headless/test_level_stats.gd`, `tests/headless/test_perf_log.gd`, `tests/headless/test_benchmark_mode.gd`
 
 ## Wheel force visualization
 
@@ -132,7 +132,15 @@ overlay), passing the `Floor` terrain manager for correlation and pointing
 `measure_viewport` at the `PostProcess/View` SubViewport (where the 3D pass
 actually runs in `main.tscn` — the root's 3D is disabled there). Toggled with
 **P** (`toggle_perf_overlay`); hidden and idle by default. It lives on the dev stage only: in free roam P toggles
-`DebugStats` instead.
+`DebugStats` instead, and on the Hafren level (`LevelView`) it toggles `LevelStats` (below).
+
+**Hafren level stats** — `scripts/level_stats.gd` (`class_name LevelStats`), added by
+`LevelView._ready` as `perf_stats` and toggled by P in `LevelView._unhandled_input` (all builds).
+Shows fps / frame ms, the frame's total triangles, draw calls and objects (`RenderingServer`
+rendering info), then trees and ground cover: `LevelStats.tally` walks the `Trees` and
+`Ground/Cover` nodes' MultiMeshes and counts instances and triangles within each one's
+`visibility_range_end` of the camera (frustum culling not subtracted), plus trees packed
+(`LevelTrees.drawn_count`) and cover tiles built.
 
 Diagnoses choppiness by separating the suspects per frame:
 

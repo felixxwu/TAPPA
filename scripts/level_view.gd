@@ -46,10 +46,15 @@ var _pause: Node
 var map: LevelMap
 var off_road_label: Label
 var applied_fps_caps: Array[int] = []
+var perf_stats := LevelStats.new()
 var _driving := false  # true once loaded, so a half-built level never overwrites the saved spot
+const GROUP := &"level_view"
 
 
 func _ready() -> void:
+	add_to_group(GROUP)
+	if not Benchmark.active:
+		GraphicsSettings.apply(Config.data)
 	var path := level_path if not level_path.is_empty() else Config.data.level_path
 	var t_parse := Time.get_ticks_msec()
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
@@ -141,12 +146,16 @@ func _ready() -> void:
 	timer.timeout.connect(save_pose)
 	add_child(timer)
 	timer.start()
+	perf_stats.view = self
+	add_child(perf_stats)
 	loaded.emit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _recovery != null and _pause != null and event.is_action_pressed("reset_to_road") and not event.is_echo() and _pause.is_armed():
 		_recovery.reset_now()
+	elif event.is_action_pressed("toggle_perf_overlay") and not event.is_echo():
+		perf_stats.toggle()
 
 
 func _on_extra(label: String) -> void:
@@ -246,6 +255,12 @@ func saved_pose(saved: Variant, level: String, fallback: Transform3D) -> Transfo
 func _drive(id: String) -> void:
 	Config.data.level_car_id = id
 	_reload("Changing cars")
+
+
+# Settings → Graphics changed while driving: most of it is read while the level builds, so rebuild it here.
+func reload_for_graphics() -> void:
+	if _driving and is_instance_valid(_car):
+		_reload("Applying graphics settings")
 
 
 func _reload(title: String) -> void:

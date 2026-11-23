@@ -6,7 +6,7 @@ page used by BOTH the title screen and the pause menu), the per-setting apply-ow
 siblings — one module per persisted setting), and `Save.get_setting` / `Save.set_setting`
 in `scripts/save_manager.gd`.
 
-**Tests:** `tests/headless/test_settings_menu.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_camera_manager.gd`
+**Tests:** `tests/headless/test_settings_menu.gd`, `tests/headless/test_graphics_settings.gd`, `tests/headless/test_menu_nav.gd`, `tests/headless/test_camera_manager.gd`
 
 How to add or change a **persisted setting**. This is its own area doc rather than a
 subsection of the HQ screen because a setting is not an HQ concern: the same
@@ -61,6 +61,23 @@ that is correct in both directions at any time (e.g.
 `speed_lines.gd::set_effect_enabled(on: bool)`), and must stay fully wired while
 switched off — a disabled state that skips its own setup can never be switched
 back on without a scene reload.
+
+## Graphics page
+
+Settings → **Graphics** (`SettingsMenu._build_graphics_page`) lists every `GraphicsSettings.OPTIONS`
+entry (`scripts/graphics_settings.gd`) as a row that cycles its choices: tree and ground-cover draw
+distance, weather particle count, and on/off for dust puffs, wheel spray, engine smoke, exhaust
+flames, tyre marks and spectators. **Reset to defaults** clears the saved choices. To add a knob,
+add an `OPTIONS` entry naming the `GameConfig` field(s) it drives — a bool choice is written as-is,
+a float choice multiplies the field's `GameConfig` value.
+
+This is the one deliberate exception to "never write the player's choice into `Config.data`":
+these fields are read all over the level's build, so `LevelView._ready` calls
+`GraphicsSettings.apply(Config.data)` (skipped while a benchmark runs). The default can't drift
+because `apply` keeps GameConfig's own value of every field it overwrites and only ever scales from
+that, and an option the player never touched is left alone. Choices live in the profile under
+`GraphicsSettings.SETTING_KEY`. Leaving the page after a change calls `reload_for_graphics` on the
+live level (`LevelView.GROUP`), which reloads it at the car's current spot, the way the shop does.
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
 `show_schemes()` / `show_benchmark()` / `show_dev()` swap which page is visible (only the visible page contributes

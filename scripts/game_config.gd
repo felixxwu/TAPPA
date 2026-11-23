@@ -111,6 +111,11 @@ var peak_torque_rpm := 4500.0
 ## independent raycasts), so it changes how the car clips scenery, not its grip
 ## or speed. Clamped in car.gd so every face keeps a positive flat edge.
 @export var hitbox_chamfer_fraction := 1.0 / 3.0
+## Extra bump travel (m) every car gets that the eye never sees: the wheel mounts sit this
+## much higher and the springs are this much longer, so a hard hit has about this much more
+## stroke before it bottoms out while the body sits only ~11% of it higher. The tyre visual stops at the
+## authored mount, so it never rises into the arch.
+@export var hidden_bump_travel := 0.15
 ## N of aero downforce per (m/s)² at the FRONT axle, applied downward at the
 ## axle midpoint. Compresses the suspension so grip rises via normal force.
 ## 0.2 ≈ half the car's weight at 25 m/s. Negative values produce lift,
@@ -134,13 +139,13 @@ var peak_torque_rpm := 4500.0
 ## also the input smoothing; there is no separate easing stage. The grip servo needs to cover
 ## only the tire's slip angle (~8.6° on tarmac) rather than most of full lock, so this is the
 ## dominant feel parameter and is tuned much lower than a lock-to-lock rate would be.
-@export var steer_speed := 1.8
+@export var steer_speed := 1.5
 ## How fast the front wheels can turn (rad/s) when COUNTER-steering — the target angle is
 ## back toward center or across to the opposite lock from where the wheel currently sits.
 ## Real countersteering (winding the wheel the other way to catch a slide, or simply
 ## unwinding lock) happens faster than winding new lock on, so this is tuned higher than
 ## steer_speed.
-@export var counter_steer_speed := 1.8
+@export var counter_steer_speed := 4
 ## Steering demand below which the wheels servo to their zero-lateral-slip angle (pointing
 ## along their own travel — automatic countersteer). A deadzone rather than an exact-zero
 ## test because analogue sticks and the touch slider never return exactly 0.
@@ -930,9 +935,9 @@ func has_nitrous() -> bool:
 ## negative Z sits the camera over the bonnet; +Y raises it to eye height.
 @export var bonnet_offset := Vector3(0.0, 0.7, -0.6)
 ## Field of view (degrees) for the bonnet camera.
-@export var bonnet_fov := 85.0
+@export var bonnet_fov := 70.0
 ## Base field of view (degrees) for the chase camera at a standstill.
-@export var chase_fov := 80.0
+@export var chase_fov := 65.0
 ## Extra FOV (degrees) added on top of chase_fov at chase_fov_speed and above, to
 ## sell a sense of speed. The FOV eases linearly from chase_fov (stationary) to
 ## chase_fov + chase_fov_speed_boost at chase_fov_speed (m/s).
@@ -961,6 +966,9 @@ func has_nitrous() -> bool:
 ## value makes the framing slide sideways as the car drifts — the nose swings out
 ## of centre — which adds motion the centred aim can't show.
 @export var chase_look_ahead_ratio := 0.7
+## How far above the car's centre the chase camera aims, in metres (straight up, so
+## the car rolling doesn't wobble the view). Raising it tilts the view up, showing more road ahead.
+@export var chase_look_height := 1.5
 ## G-force camera lean (chase only). The chase camera derives the car's
 ## acceleration each frame and leans into it: lateral g rolls the view, forward
 ## g pitches it (brake dips the nose, throttle lifts it). Gains are degrees of
@@ -1814,6 +1822,8 @@ func has_nitrous() -> bool:
 @export var dust_puff_color := Color(0.53, 0.49, 0.42)
 ## Puff colour on tarmac — near-white, since paved road has no gravel to colour it.
 @export var dust_puff_tarmac_color := Color(0.95, 0.95, 0.93)
+## Puff colour from a wheel the deep-snow drag is bogging (road edge in snow).
+@export var dust_puff_snow_color := Color(1.0, 1.0, 1.0)
 ## Combined grip usage (Drivetrain.wheel_grip_usage; 1.0 = at peak grip, above it the
 ## tyre slides) a tyre needs before it smokes on tarmac, or puffs below
 ## dust_puff_min_speed_mps on any road. No puffs when wet.
