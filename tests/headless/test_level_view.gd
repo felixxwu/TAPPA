@@ -103,7 +103,14 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var lv := _level()
 	lv["road"][0]["tarmac"] = true
 	lv["buildings"] = [{"x": 20.0, "z": 30.0, "rot": 0.0, "L": 10.0, "W": 6.0}]
-	lv["teleports"] = [{"x": 10.0, "z": 3.0}, {"x": 60.0, "z": 4.0}]
+	LevelView.forget_progress()  # start as a new player: a past run's saved car would count as owned
+	var reward := ""
+	for c in CarLibrary.all():
+		if not String(c["id"]) in LevelView.owned_cars():
+			reward = String(c["id"])
+			break
+	lv["teleports"] = [{"x": 10.0, "z": 3.0, "name": "Alpha"},
+		{"x": 60.0, "z": 4.0, "heading": 90.0, "name": "Beta", "missions": [{"to": "Alpha", "car": reward}]}]
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(JSON.stringify(lv))
 	f.close()
@@ -114,11 +121,16 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(world.get_node("PauseMenu").is_armed(), "Esc / Start open the pause menu")
 	assert_eq(world.get_node("Car")._car_index, CarLibrary.index_of(Config.data.level_car_id), "drives the level's own car")
 	var map: LevelMap = world.get_node("Level").map
+	var minimap: LevelMinimap = world.get_node("Level").minimap
+	await get_tree().process_frame
+	assert_true(minimap.visible, "the minimap shows while driving")
 	var m := InputEventKey.new()
 	m.physical_keycode = KEY_M
 	m.pressed = true
 	map._input(m)
 	assert_true(map.visible and get_tree().paused, "M opens the map and pauses")
+	await get_tree().process_frame
+	assert_false(minimap.visible, "the minimap hides under the open map")
 	map.zoom = map.fit_zoom() * 2.0
 	var zoom0 := map.zoom
 	var under := map.to_world(Vector2(500, 300))  # the ground between the two fingers
@@ -149,8 +161,15 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_eq(map.nearest_teleport(Vector2(45, 25)), Vector2(60, 4), "a click picks the nearest teleport point, not the nearest road")
 	await map.teleport(map.nearest_teleport(Vector2(45, 25)))
 	var car := world.get_node("Car") as Node3D
-	assert_almost_eq(Vector2(car.global_position.x, car.global_position.z), Vector2(60, 0), Vector2.ONE * 1.0, "teleported onto the road beside the point")
+	assert_almost_eq(Vector2(car.global_position.x, car.global_position.z), Vector2(60, 4), Vector2.ONE * 0.5, "teleported exactly onto the point, not the road beside it")
+	assert_almost_eq(-car.global_basis.z, Vector3.RIGHT, Vector3.ONE * 0.05, "facing the point's heading: 90 degrees is east")
 	assert_false(map.visible or get_tree().paused, "teleporting closes the map and resumes")
+	for _i in 3:
+		await get_tree().physics_frame
+	var arrived: LevelView = world.get_node("Level")
+	assert_not_null(arrived.service, "and lands on the point's service menu")
+	if arrived.service != null:
+		arrived.close_service()
 	var lpause: PauseMenu = world.get_node("PauseMenu")
 	lpause.open()
 	assert_eq(CardUI.titles(lpause.cards()).slice(0, 2), PackedStringArray(["Resume", "Map"]), "the map sits right after Resume (touch has no M)")
@@ -205,18 +224,134 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_eq(ground.process_mode, Node.PROCESS_MODE_INHERIT)
 	assert_true(lpause.is_open(), "and leaving it returns to the pause menu")
 	lpause.resume()
+	var lv_node: LevelView = world.get_node("Level")
+	assert_eq(lv_node.beacons.get_child_count(), 2, "an obelisk over every teleport point")
+	var at_car: VehicleBody3D = world.get_node("Car")
+	var car_pos0 := at_car.global_position
+	at_car.global_position = Vector3(60.0, at_car.global_position.y, 5.0)
+	at_car.linear_velocity = Vector3.ZERO
+	assert_eq(lv_node.service_at(), 1, "stopped beside a teleport point")
+	await get_tree().process_frame
+	assert_true(lv_node.service_prompt.visible, "the prompt shows while driving")
+	lpause.open()
+	await get_tree().process_frame
+	assert_false(lv_node.service_prompt.visible, "but not over a menu")
+	lpause.resume()
+	at_car.global_position = Vector3(60.0, at_car.global_position.y, 5.0)
+	at_car.linear_velocity = Vector3.ZERO
+	at_car.linear_velocity = Vector3.FORWARD * (Config.data.level_service_max_speed + 1.0)
+	assert_eq(lv_node.service_at(), -1, "driving past it doesn't count")
+	at_car.linear_velocity = Vector3.ZERO
+	var select := InputEventAction.new()
+	select.action = "menu_select"
+	select.pressed = true
+	lv_node._unhandled_input(select)
+	assert_not_null(lv_node.service, "Enter / A there opens its service menu")
+	assert_true(get_tree().paused and not lpause.is_armed(), "frozen, with the pause menu out of the way")
+	var service_cards: CardCarousel = lv_node.service.find_children("*", "CardCarousel", true, false)[0]
+	CardUI.pick(service_cards, "Swap car")
+	assert_not_null(lv_node.garage, "Swap car opens the garage")
+	var cancel := InputEventAction.new()
+	cancel.action = "ui_cancel"
+	cancel.pressed = true
+	MenuNav.of(lv_node.garage)._unhandled_input(cancel)
+	assert_not_null(lv_node.service, "backing out of the garage returns to the service menu")
+	var sdmg: DamageModel = at_car.damage
+	assert_eq(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Repair"), -1, "no Repair card: the point heals")
+	sdmg.apply_loss(sdmg.max_hp * 0.5)
+	var hp0 := sdmg.hp
+	lv_node.heal_at_points(0.5)
+	assert_gt(sdmg.hp, hp0, "near a teleport point the car heals")
+	var near_pos := at_car.global_position
+	at_car.global_position = Vector3(-100.0, near_pos.y, 0.0)
+	hp0 = sdmg.hp
+	lv_node.heal_at_points(0.5)
+	assert_eq(sdmg.hp, hp0, "away from one it doesn't")
+	at_car.global_position = near_pos
+	for _i in 100:
+		lv_node.heal_at_points(1.0)
+	assert_eq(sdmg.hp, sdmg.max_hp, "and it heals back to full")
+	MenuNav.of(lv_node.service)._unhandled_input(cancel)
+	assert_true(lv_node.service == null and not get_tree().paused, "Back closes the service menu")
+	assert_eq(LevelView.last_point, 1, "being at a teleport point makes it the respawn point")
+	assert_true(sdmg.thermal, "the engine can overheat here")
+	at_car.global_position = Vector3(-100.0, near_pos.y, 0.0)
+	sdmg.apply_loss(sdmg.max_hp)
+	assert_true(lv_node._wrecked and not lpause.is_armed(), "at 0 HP the car is wrecked")
+	await lv_node.respawn()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	assert_almost_eq(Vector2(at_car.global_position.x, at_car.global_position.z), Vector2(60, 4), Vector2.ONE * 0.5, "Respawn goes back to the last teleport point visited")
+	assert_true(sdmg.hp == sdmg.max_hp and not lv_node._wrecked and lpause.is_armed(), "mended and driving again")
+	lv_node._unhandled_input(select)
+	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Missions")
+	assert_not_null(lv_node.missions_page, "Missions opens the point's mission list")
+	var mission_cards: CardCarousel = lv_node.missions_page.find_children("*", "CardCarousel", true, false)[0]
+	MenuNav.of(lv_node.missions_page)._unhandled_input(cancel)
+	assert_not_null(lv_node.service, "Back from the missions returns to the service menu")
+	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Tune car")
+	assert_true(lv_node.shop != null and lv_node.shop.view == RestStopPage.View.TUNE, "Tune car opens the tuning sliders")
+	MenuNav.of(lv_node.shop._page)._unhandled_input(cancel)
+	assert_true(lv_node.shop == null and lv_node.service != null, "Back from the tuning returns to the service menu")
+	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Swap car")
+	var garage_cards: CardCarousel = lv_node.garage.find_children("*", "CardCarousel", true, false)[0]
+	assert_eq(CardUI.index_of(garage_cards, String(CarLibrary.by_id(reward)["name"])), -1, "the garage lists only owned cars")
+	MenuNav.of(lv_node.garage)._unhandled_input(cancel)
+	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Missions")
+	mission_cards = lv_node.missions_page.find_children("*", "CardCarousel", true, false)[0]
+	CardUI.pick(mission_cards, "To Alpha")
+	assert_eq(LevelView.mission["to"], "Alpha", "picking a mission starts it")
+	assert_true(lv_node.service == null and lv_node.missions_page == null and not get_tree().paused, "and drives on")
+	for _f in 2:  # the tree's process_frame fires before the level's own _process has run
+		await get_tree().process_frame
+	assert_true(lv_node.mission_label.visible, "the drive-to label shows")
+	at_car.global_position = Vector3(10.0, at_car.global_position.y, 3.0)
+	at_car.linear_velocity = Vector3.ZERO
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(LevelView.mission.is_empty(), "reaching the target ends the mission")
+	assert_true(reward in LevelView.owned_cars(), "and wins the car")
+	assert_not_null(lv_node.service, "and opens the target's service menu")
+	assert_eq(lv_node.service_name, "Alpha")
+	lv_node.close_service()
+	LevelView.mission = {"from": "Beta", "to": "Alpha", "car": reward}
+	lv_node._on_map_closed(true, false)
+	assert_true(LevelView.mission.is_empty(), "a map teleport abandons the mission")
+	for _i in 4:
+		await get_tree().physics_frame
+	if lv_node.service != null:
+		lv_node.close_service()
+	lpause.open()
+	lv_node.map.reveal_all()
+	CardUI.pick(lpause.cards(), "Missions")
+	assert_not_null(lv_node.missions_page, "the pause menu's Missions lists the missions")
+	var overview: CardCarousel = lv_node.missions_page.find_children("*", "CardCarousel", true, false)[0]
+	assert_eq(overview.card_count(), 1, "every mission from the found teleport points")
+	MenuNav.of(lv_node.missions_page)._unhandled_input(cancel)
+	assert_true(lv_node.missions_page == null and lpause.is_open(), "Back returns to the pause menu")
+	for row in ["Repair", "Garage", "Shop"]:
+		assert_eq(CardUI.index_of(lpause.cards(), row), -1, "the pause menu leaves %s to the teleport points" % row)
+	CardUI.pick(lpause.cards(), "Missions")
+	CardUI.pick(lv_node.missions_page.find_children("*", "CardCarousel", true, false)[0], "To Alpha")
+	for _i in 120:
+		if not get_tree().paused:
+			break
+		await get_tree().process_frame
+	assert_eq(LevelView.mission.get("from", ""), "Beta", "picking a mission from the pause menu starts it")
+	assert_true(lv_node.missions_page == null and not get_tree().paused, "and drives on")
+	for _i in 2:
+		await get_tree().physics_frame
+	assert_almost_eq(Vector2(at_car.global_position.x, at_car.global_position.z), Vector2(60.0, 4.0), Vector2.ONE,
+		"from the mission's start point")
+	LevelView.mission = {}
+	lpause.open()
+	lpause.resume()
 	var start_car := Config.data.level_car_id
-	var pause: PauseMenu = world.get_node("PauseMenu")
-	var level: LevelView = world.get_node("Level")
-	var dmg: DamageModel = world.get_node("Car").damage
-	assert_false(dmg.invulnerable, "the level's car takes damage")
-	dmg.apply_loss(dmg.max_hp * 0.5)
-	pause.open()
-	CardUI.pick(pause.cards(), "Repair")
-	assert_eq(dmg.hp, dmg.max_hp, "the pause menu's Repair fixes the car")
-	assert_true(pause.is_open(), "and returns to the pause menu")
-	CardUI.pick(pause.cards(), "Shop")
-	assert_not_null(level.shop, "the pause menu's Shop opens the shop")
+	var level := lv_node
+	assert_false(sdmg.invulnerable, "the level's car takes damage")
+	level._unhandled_input(select)
+	CardUI.pick(level.service.find_children("*", "CardCarousel", true, false)[0], "Upgrade")
+	assert_not_null(level.shop, "Upgrade opens the shop")
 	assert_true(level.shop.pick("Upgrades"))
 	var parts: Array = LevelView.owned["parts"]
 	var i := parts.find_custom(LootRules.is_upgrade)
@@ -233,17 +368,30 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	LevelView._next_pose = null
 	LevelView.owned = {}
 	Scenes.last_blocked_path = ""
-	pause.return_from_extra()
-	CardUI.pick(pause.cards(), "Garage")
-	assert_not_null(level.garage, "the pause menu's Garage opens the car cards")
 	var other := 1 if CarLibrary.all()[0]["id"] == start_car else 0
+	Save.set_setting(LevelView.CARS_KEY, [start_car, CarLibrary.all()[other]["id"]])
+	level.open_service()  # in the game the reload has replaced the level by now
+	CardUI.pick(level.service.find_children("*", "CardCarousel", true, false)[0], "Swap car")
 	CardUI.pick(level.garage.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.all()[other]["name"]))
 	assert_eq(Config.data.level_car_id, String(CarLibrary.all()[other]["id"]), "picking a car makes it the level's car")
 	assert_eq(Scenes.last_blocked_path, Scenes.WORLD, "and reloads the level to field it")
 	assert_almost_eq(LevelView._next_pose.origin, car.global_position, Vector3.ONE * 0.01, "standing where the old car was")
 	LevelView._next_pose = null
+	Save.erase_setting(LevelView.CARS_KEY)
+	LevelView.mission = {}
+	at_car.global_position = car_pos0
 	Config.data.level_car_id = start_car
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+func test_owned_cars_default_to_the_start_and_current_car_and_drop_unknown_ids() -> void:
+	var a := String(CarLibrary.all()[0]["id"])
+	var b := String(CarLibrary.all()[CarLibrary.all().size() - 1]["id"])
+	assert_eq(LevelView.sanitise_cars(null, a, a), [a], "a save without the list owns the start car once")
+	if a != b:
+		assert_eq(LevelView.sanitise_cars(null, a, b), [a, b], "and the car it was driving")
+	assert_eq(LevelView.sanitise_cars([a, "no_such_car", a], a, a), [a], "unknown and repeated ids are dropped")
+	assert_eq(LevelView.sanitise_cars(["no_such_car"], a, a), [a], "an emptied list falls back to the current car")
 
 
 func test_apply_weather_spawns_and_clears_particles() -> void:
@@ -274,6 +422,76 @@ func _network() -> Dictionary:
 	return {"roads": [[_node(-100.0, 0.0), _node(0.0, 0.0), _node(100.0, 0.0)],
 		[_node(0.0, 0.4, 2.0), _node(0.0, 60.0, 2.0)],
 		[_node(-100.0, 200.0), _node(100.0, 200.0)]]}
+
+
+func test_wiping_progress_forgets_the_level_car_spot_and_map() -> void:
+	var keys := [LevelView.SAVED_CAR_KEY, LevelView.SAVED_POSE_KEY, LevelMap.SEEN_KEY]
+	var kept := keys.map(func(k: String) -> Variant: return Save.get_setting(k))
+	var car_before := Config.data.level_car_id
+	for k: String in keys:
+		Save.set_setting(k, {"x": 1.0})
+	LevelView.owned = {"model_id": "fx_old"}
+	Config.data.level_car_id = "fx_old"
+	LevelView.forget_progress()
+	for k: String in keys:
+		assert_null(Save.get_setting(k), "%s forgotten" % k)
+	assert_true(LevelView.owned.is_empty(), "the car in memory is forgotten")
+	assert_eq(Config.data.level_car_id, Config.authored_value("level_car_id", ""), "back to the starting car")
+	for i in keys.size():
+		if kept[i] != null:
+			Save.set_setting(keys[i], kept[i])
+	Config.data.level_car_id = car_before
+
+
+func test_teleport_points_stay_off_the_map_until_found_or_unlocked() -> void:
+	var lv := _level()
+	lv["teleports"] = [{"x": -80.0, "z": 0.0, "name": "Near"}, {"x": 80.0, "z": 0.0, "name": "Far"}]
+	var map := LevelMap.new()
+	map.view = _built(lv)
+	autofree(map)
+	map.discovery = LevelDiscovery.new(map.size_m(), 10.0)
+	assert_eq(map.known_teleports().size(), 0, "nothing found before driving anywhere")
+	assert_eq(map.nearest_teleport(Vector2.ZERO), Vector2.INF, "and nowhere to teleport to")
+	map.discovery.stamp(Vector2(-80, 0), 30.0, 5.0)
+	assert_eq(map.known_teleports().map(func(t: Dictionary) -> String: return t["name"]), ["Near"], "driving near one finds it")
+	assert_eq(map.nearest_teleport(Vector2(80, 0)), Vector2(-80, 0), "the unfound one can't be teleported to")
+	var seen: Variant = Save.get_setting(LevelMap.SEEN_KEY)
+	map.reveal_all()
+	assert_eq(map.known_teleports().size(), 2, "unlock everything finds them all")
+	if seen == null:
+		Save.erase_setting(LevelMap.SEEN_KEY)
+	else:
+		Save.set_setting(LevelMap.SEEN_KEY, seen)
+
+
+func test_engine_swaps_offer_only_the_cars_owned() -> void:
+	var ids: Array = CarLibrary.all().map(func(c: Dictionary) -> String: return String(c["id"]))
+	var page := RestStopPage.new()
+	page.free = true
+	page.owned = {"model_id": ids[0], "tuning": {}, "parts": []}
+	page.engine_cars = [ids[0], ids[1]]
+	add_child_autofree(page)
+	page.open_shop()
+	assert_true(page.pick("Engine swaps"))
+	var shown := CardUI.titles(page._cards)
+	assert_eq(shown.size(), 2, "one card per owned car")
+	for id in ids.slice(2):
+		assert_false(String(CarLibrary.by_id(id)["name"]) in shown, "%s isn't owned, so its engine isn't offered" % id)
+	page.close()
+
+
+func test_a_new_player_starts_on_the_named_teleport_facing_its_heading() -> void:
+	var before := Config.data.level_spawn_teleport
+	var lv := _level()
+	lv["teleports"] = [{"x": 30.0, "z": 8.0, "name": "Start", "heading": 180.0}]
+	var view := _built(lv)
+	Config.data.level_spawn_teleport = "Start"
+	var pose := view.spawn_pose()
+	assert_almost_eq(Vector2(pose.origin.x, pose.origin.z), Vector2(30, 8), Vector2.ONE * 0.01, "on the point")
+	assert_almost_eq(-pose.basis.z, Vector3.BACK, Vector3.ONE * 0.01, "facing its heading: 180 degrees is south")
+	Config.data.level_spawn_teleport = "Nowhere"
+	assert_ne(Vector2(view.spawn_pose().origin.x, view.spawn_pose().origin.z), Vector2(30, 8), "an unknown name falls back to the road spawn")
+	Config.data.level_spawn_teleport = before
 
 
 func test_the_level_answers_road_queries_through_its_data() -> void:
@@ -409,3 +627,37 @@ func _touch(index: int, at: Vector2, down: bool) -> InputEventScreenTouch:
 	t.position = at
 	t.pressed = down
 	return t
+
+
+func test_the_minimap_keeps_off_the_touch_buttons() -> void:
+	Config.data.mobile_controls_force = true
+	var controls := MobileControls.new()
+	add_child_autofree(controls)
+	var mini := LevelMinimap.new()
+	add_child_autofree(mini)
+	for scheme in [MobileControls.SCHEME_SLIDER_GAS_BRAKE, MobileControls.SCHEME_BUTTONS_GAS_BRAKE, MobileControls.SCHEME_SIMPLE_LR_AUTO]:
+		controls.set_scheme(scheme)
+		mini.place(controls)
+		var r := Rect2(mini.position, mini.size)
+		assert_true(r.size.x > 0.0, "the minimap has a size")
+		for b in controls.button_rects():
+			assert_false(b.intersects(r), "the minimap doesn't sit on a touch button (scheme %d)" % scheme)
+	Config.data.mobile_controls_force = false
+
+
+func test_the_gauge_dial_stays_level_with_the_minimap_and_off_the_touch_buttons() -> void:
+	Config.data.mobile_controls_force = true
+	var controls := MobileControls.new()
+	add_child_autofree(controls)
+	var mini := LevelMinimap.new()
+	add_child_autofree(mini)
+	var screen := get_viewport().get_visible_rect().size
+	for scheme in [MobileControls.SCHEME_SLIDER_GAS_BRAKE, MobileControls.SCHEME_BUTTONS_GAS_BRAKE, MobileControls.SCHEME_SIMPLE_LR_AUTO]:
+		controls.set_scheme(scheme)
+		mini.place(controls)
+		var dial := HudDial.home_rect(screen)
+		dial.position.y += MobileControls.bottom_band_lift(controls, screen)
+		assert_almost_eq(dial.end.y, mini.position.y + mini.size.y, 0.01, "dial and minimap share a bottom edge (scheme %d)" % scheme)
+		for b in controls.button_rects():
+			assert_false(b.intersects(dial), "the dial doesn't sit on a touch button (scheme %d)" % scheme)
+	Config.data.mobile_controls_force = false

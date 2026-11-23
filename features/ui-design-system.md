@@ -376,11 +376,9 @@ before assuming a "sharp" import alone is enough.
 
 ## Gauge captions — the one drop-shadow exception
 
-The in-run HUD gauges (`HudGauge` vertical strips — see [hud.md](hud.md)) draw their
-`GaugeIcons` pixel glyph in flat ink below the bar, and their name runs up the bar itself in
-FAINT ink with **no shadow** — a hard black drop shadow is exactly what muddied the old
-bars' captions against a saturated fill. Both are drawn directly by the gauge, not via a
-`Label`, so the theme's shadow never reaches them.
+The old in-run HUD strip gauges (`HudGauge`, since replaced by the `HudDial` gauge cluster —
+see [hud.md](hud.md)) drew their name up the bar in FAINT ink with **no shadow**, because a
+hard black drop shadow muddied captions against a saturated fill.
 
 This section is kept for history and because the underlying trap is still real: if
 you add another caption-on-fill widget, know that —
@@ -415,10 +413,10 @@ sheet). Never hand-edit the PNGs.
   in-between values; each icon's `.import` overrides `compress/mode=0`. A new icon
   needs the same override.
 - **Draw at a whole-number scale on whole pixels.** `PixelIcon` (a Control) picks the
-  largest integer scale that fits its rect; `PixelIcon.draw_snapped` (used by
-  `HudGauge`) takes an explicit scale. Both round the on-screen top-left to a whole
+  largest integer scale that fits its rect; `PixelIcon.draw_snapped` takes an
+  explicit scale. Both round the on-screen top-left to a whole
   pixel, and `PixelIcon` re-snaps when it moves (cards slide by fractional amounts).
-  Card icons land at ×4 next to 36 px titles, HUD glyphs at ×2 next to 18 px text.
+  Card icons land at ×4 next to 36 px titles, HUD glyphs (e.g. the pause button) next to 18 px text.
 - One-pixel strokes and square corners, so the line weight matches Jersey 10's.
 
 `CardUI.card_icon` falls back to `generic.png` for an id with no authored icon (a test

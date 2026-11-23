@@ -77,3 +77,15 @@ func test_bush_cover_darkens_ground() -> void:
 	cov.fill(2)
 	assert_eq(GroundCover.bush_shade(cov, grid, ids, 0.0, 0.0, 0.3), 1.0)
 	assert_eq(GroundCover.bush_shade(PackedByteArray(), grid, ids, 0.0, 0.0, 0.3), 1.0)
+
+
+func test_spectator_feet_darker_than_head() -> void:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 5, 0)])
+	arrays[Mesh.ARRAY_COLOR] = PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE])
+	var src := ArrayMesh.new()
+	src.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var cols: PackedColorArray = Crowd._with_base_shade(src, null).surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	assert_lt(cols[0].r, 1.0)
+	assert_eq(cols[2], Color.WHITE)

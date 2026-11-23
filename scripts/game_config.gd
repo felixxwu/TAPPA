@@ -744,7 +744,7 @@ func has_nitrous() -> bool:
 ## impact_ref_hp_loss. HP loss grows with the SQUARE of the shed velocity (kinetic
 ## energy) up to here. For a full solid arrest the shed velocity ≈ the approach speed,
 ## so this maps to a real-world crash speed.
-@export var impact_ref_speed_kmh := 20.0
+@export var impact_ref_speed_kmh := 30.0
 ## HP a reference-speed (impact_ref_speed_kmh) hit costs. With per-car max HP of
 ## ~800-1100, ~200 means most cars survive 4-5 such moderate hits; the square law
 ## then makes a 20 km/h hit cost only a small fraction of this (barely any damage).
@@ -791,9 +791,9 @@ func has_nitrous() -> bool:
 ## Share of a full nitrous tank a checkpoint refills per second while the car is at it
 ## (RestStops._heal), alongside the HP. 0.25 refills an empty tank in 4 s, same as the heal.
 @export var checkpoint_nitrous_refill_fraction_per_s := 0.25
-## HP regained per second while driving (5 heals a 1000 HP car from empty in ~3 min); 0.0 means nothing heals. Applied by
+## HP regained per second while driving; 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
-@export var damage_regen_hp_per_s := 10.0
+@export var damage_regen_hp_per_s := 0.0
 ## Damage misfire: a damaged engine intermittently cuts fuel (EngineSim), losing
 ## power in stumbling bursts instead of a smooth derate — fully simulated (crank
 ## torque drops to friction) and audible (the synth ducks + crackles on the cut).
@@ -1588,7 +1588,7 @@ func has_nitrous() -> bool:
 ## a couple of metres off the verge — which can neither drive back on nor get far
 ## enough out to trip a distance leash — always recovers. Returning to the road
 ## zeroes the clock, so a quick cut across the inside costs nothing.
-@export var off_road_reset_timeout_s := 6.0
+@export var off_road_reset_timeout_s := 10.0
 ## Seconds off the road before the level view shows its "Off road" countdown to the reset.
 @export var off_road_warning_after_s := 2.0
 ## Absolute world Y below which the car is considered to have fallen off the
@@ -3162,13 +3162,26 @@ func spectator_params() -> Dictionary:
 ## The level-editor save (tools/level_editor_lab.html) the world loads: Hafren Forest.
 @export var level_path := "res://tools/levels/hafren_5km.json"
 ## The car the level view drives (a stock CarLibrary id), whatever car the world has.
-@export var level_car_id := "mx5"
-## Level view: spawn at roads[x][y] of the save (0-based), facing node z of that road (-1: the next node, or the previous one at the end of a road); x = -1 keeps the default spawn.
+@export var level_car_id := "acty"
+## Level view: the car opens a teleport point's service menu (repair, upgrade, swap cars) within this many metres of it.
+@export var level_service_radius_m := 12.0
+## Level view: HP a second the car heals while within level_service_radius_m of a teleport point.
+@export var level_service_heal_hp_s := 100.0
+## Level view: and only while slower than this (m/s), so a handbrake on gamepad A driving past doesn't open it.
+@export var level_service_max_speed := 3.0
+## Level view: how fast the teleport points' obelisks spin, in radians a second. The lab mirrors these three as BEACON_SPIN / _BOB_M / _BOB_HZ.
+@export var teleport_beacon_spin := 1.2
+## Level view: how far the obelisks bob up and down, in metres either way, and how often (Hz).
+@export var teleport_beacon_bob_m := 0.25
+@export var teleport_beacon_bob_hz := 0.4
+## Level view: a new player (no saved spot) starts on the teleport point with this name, facing its heading. Empty: level_spawn.
+@export var level_spawn_teleport := "Cwmbiga"
+## Level view: spawn at roads[x][y] of the save (0-based), facing node z of that road (-1: the next node, or the previous one at the end of a road); x = -1 keeps the default spawn. Used when level_spawn_teleport is empty or missing, and always by the benchmark, whose recording starts here.
 @export var level_spawn := Vector3i(31, 4, 3)
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
 ## Level view: how far trees are drawn, in metres. They thin out over the last level_tree_fade_m in a dither (level_tree.gdshader), so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.
-@export var level_tree_draw_m := 500.0
+@export var level_tree_draw_m := 1000.0
 ## Level view: trees thin out over this many metres before level_tree_draw_m. 0 = a hard cut.
 @export var level_tree_fade_m := 60.0
 ## Level view: the depth fog is solid this far from the camera, in metres; past the trees, so the horizon terrain level shows.
@@ -3180,12 +3193,26 @@ func spectator_params() -> Dictionary:
 ## How far past the road's edge the level view keeps the ground flat at road height before it
 ## blends back to the terrain, in metres. The lab (tools/level_editor_lab.html) mirrors it as ROAD_FLAT_M.
 @export var level_road_flat_margin := 2.0
-## Level view map (M): only ground within this many metres of where the car has driven is shown; the rest is under fog (LevelDiscovery). Teleport points show and work everywhere.
+## Level view map (M): only ground within this many metres of where the car has driven is shown; the rest is under fog (LevelDiscovery), and so are teleport points until this reveals them.
 @export var level_map_reveal_radius_m := 250.0
 ## Level view map: the shown area's edge fades into the fog over this many metres.
 @export var level_map_reveal_feather_m := 60.0
 ## Level view map: the size (m) of one cell of the discovery grid. Changing it forgets every saved discovery.
 @export var level_map_reveal_cell_m := 10.0
+## Level view minimap (scripts/level_minimap.gd): its diameter as a fraction of the screen's shorter side.
+@export var level_minimap_size_frac := 0.3
+## Level view minimap: metres across the flat map picture it is cut from (the view is wider than the circle's ground).
+@export var level_minimap_view_m := 400.0
+## Level view minimap: how much narrower the far edge looks than the near edge (1 = flat, no tilt).
+@export var level_minimap_tilt := 0.5
+## Level view minimap: how far down the circle the car sits, 0 = top, 1 = bottom.
+@export var level_minimap_car_y := 0.68
+## Level view minimap: pixels across the flat map picture.
+@export var level_minimap_texture_px := 1024
+## Level view minimap: the picture is redrawn once the car has moved this many metres; between redraws the shader scrolls and turns it every frame.
+@export var level_minimap_redraw_move_m := 20.0
+## Level view minimap: the mission route is recomputed once the car has moved this many metres.
+@export var level_minimap_route_move_m := 50.0
 ## Level view: a spectator group from the save appears once the car is within this many metres of its centre.
 @export var level_spectator_spawn_m := 150.0
 ## Level view: a spawned spectator group is freed again once the car is farther than this (kept above the spawn distance so it doesn't flicker).
@@ -3213,7 +3240,7 @@ func spectator_params() -> Dictionary:
 @export var level_snow_drag := 400.0
 ## How far the level view's gravel road is lightened toward white in its snow biome (0 none, 1 white).
 @export var level_snow_road_lighten := 0.45
-## How dark the foot of a tree, bush, log pile and building is, and how far up (tree: fraction of its height; others: metres) the darkening fades out.
+## How dark the foot of a tree, bush, log pile, building and spectator is, and how far up (tree: fraction of its height; others: metres) the darkening fades out.
 @export var level_ao_tree_base := 0.45
 @export var level_ao_tree_base_height := 0.35
 @export var level_ao_bush_base := 0.4
@@ -3222,6 +3249,8 @@ func spectator_params() -> Dictionary:
 @export var level_ao_log_base_height_m := 0.8
 @export var level_ao_building_base := 0.35
 @export var level_ao_building_base_height_m := 2.5
+@export var level_ao_spectator_base := 0.4
+@export var level_ao_spectator_base_height_m := 0.7
 
 # --- Ground cover in the level view ---
 ## How far from the camera ground-cover tufts are drawn, in metres.

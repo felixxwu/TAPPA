@@ -2,7 +2,7 @@
 
 Cheap fake AO for the level view only (the renderer is unshaded, so it is all baked or faked). Strengths and reaches are `GameConfig.level_ao_*`.
 
-**Source:** `scripts/level_ao.gd` (`LevelAO`), `scripts/level_view.gd` (`load_level`), `shaders/level_ground.gdshader` (`ao_map`), `shaders/level_tree.gdshader`, `shaders/log_pile.gdshader`, `scripts/ground_cover.gd` (`make_material`, `bush_ids`, `bush_shade`), `scripts/level_streamer.gd` (`_pack_vertex`), `scripts/level_buildings.gd` (`_building`, `boxes`)
+**Source:** `scripts/level_ao.gd` (`LevelAO`), `scripts/level_view.gd` (`load_level`), `shaders/level_ground.gdshader` (`ao_map`), `shaders/level_tree.gdshader`, `shaders/log_pile.gdshader`, `scripts/ground_cover.gd` (`make_material`, `bush_ids`, `bush_shade`), `scripts/level_streamer.gd` (`_pack_vertex`), `scripts/level_buildings.gd` (`_building`, `boxes`), `scripts/crowd.gd` (`_with_base_shade`)
 
 **Tests:** `tests/headless/test_level_ao.gd`
 
@@ -15,4 +15,4 @@ Cheap fake AO for the level view only (the renderer is unshaded, so it is all ba
 ## Layer 2: objects
 
 - Trees (`level_tree.gdshader`) and bushes (`GroundCover.make_material`'s inline shader) darken toward their base by model height; log piles do the same in `log_pile.gdshader` (uniforms set in `LogPile.build`).
-- Buildings have the darkening baked into their vertex colours in `LevelBuildings._building`, so it costs nothing at runtime.
+- Buildings have the darkening baked into their vertex colours in `LevelBuildings._building`, so it costs nothing at runtime. Spectators get the same once at load in `Crowd._with_base_shade` (`level_meshes`); they move, so they cast no ground AO.

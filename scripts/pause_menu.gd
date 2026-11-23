@@ -284,7 +284,7 @@ func _build_menu_panel() -> MenuPage:
 	return _menu_panel
 
 
-const EXTRA_ICONS := {"Map": "map", "Stats": "stats", "Garage": "car", "Shop": "shop", "Repair": "rest_stop"}
+const EXTRA_ICONS := {"Map": "map", "Stats": "stats", "Missions": "travel"}
 
 
 # Put the cursor on the card titled `title` (the one the player left the menu from).

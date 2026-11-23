@@ -3,7 +3,7 @@
 **Source:** `scripts/hud.gd` (extends `CanvasLayer`). Node `HUD` (layer 2) in
 `free_roam.tscn` and the dev stage `main.tscn`, with `car` wired to the `Car`.
 
-**Tests:** `tests/headless/test_hud.gd`, `tests/headless/test_hud_gauge.gd`,
+**Tests:** `tests/headless/test_hud.gd`,
 `tests/headless/test_hud_docs.gd` (a mechanical guard: parses `HUD.DEBUG_READOUT_NODES`
 straight from `scripts/hud.gd` and fails if this doc — or `features/debug-tools.md` —
 claims a documented label is/isn't H-gated in a way that disagrees with it)
@@ -56,94 +56,45 @@ readouts above — a **2x2** grid of per-tire grip figures, one cell per corner.
 that does **not** refresh while hidden, because its source
 (`Drivetrain.readouts`) isn't published while the overlay is down.
 
-## Gauge widget (`HudGauge` / `GaugeIcons`)
+## Gauge cluster (`HudDial`)
 
-The gauges below share one widget, `HudGauge` (`scripts/hud_gauge.gd`, a `Control`): a
-**vertical strip** on a black column. The bar fills from the bottom in `fill_color`, the
-gauge's name (`HudGauge.NAMES` — HEALTH / BOOST / NITROUS / TEMP) runs bottom-to-top up
-the bar in faint ink, an ink **needle** rides over the bar and the name at the current
-level (`HudGauge.level_y`), quarter ticks sit to its right and the icon
-(`scripts/gauge_icons.gd`) sits underneath. Warnings pulse the fill's alpha only, so the
-needle, name and icon stay readable. The owner sets `HudGauge.value` (0..1, clamped on
-draw) and `HudGauge.fill_color`; both setters change-gate their own `queue_redraw()`, so
-writing an unchanged value each frame costs nothing. The name is drawn at
-`UITheme.FONT_SIZE` (Jersey 10 blurs off 18 px and its multiples), so the strips are
-sized tall enough for NITROUS at that size, and all strip geometry is in whole pixels.
-The gauge node itself is
-`mouse_filter = IGNORE` / `focus_mode = FOCUS_NONE` — it's a pure readout, never a tap
-target.
+Every player-facing gauge lives on one rev-counter dial, `HudDial` (`scripts/hud_dial.gd`, a
+`Control`), built in code by `hud.gd → _build_dial` as the `Dial` node and placed each frame
+in the **bottom-right** corner (`HudDial.home_rect`). When touch controls are showing it lifts
+clear of them together with the level view's minimap, as one band, so the two always stay
+level (`MobileControls.bottom_band_lift`). It is a pure readout
+(`mouse_filter = IGNORE`, `focus_mode = NONE`). `hud.gd` writes plain fields on it each
+frame and calls `queue_redraw()`; a **negative** reading means "not shown".
 
-The icon glyphs (`GaugeIcons.Kind.HEALTH` / `BOOST` / `NOS` / `TEMP`) are 8×8 1-bit
-pixel art in `icons/hud/` — a heart, a dial with its needle, a bottle and a thermometer —
-authored in `tools/build_pixel_icons.py`. `GaugeIcons.texture(kind)` returns one and
-`HudGauge._draw` blits it at `ICON_SCALE` (×2) through `PixelIcon.draw_snapped`, so it
-sits on whole pixels. See `ui-design-system.md` → *Pixel-art icons*.
+| Reading | Drawn as | Source in `hud.gd` |
+|---------|----------|--------------------|
+| `rpm`, `scale_rpm`, `redline_rpm` | 270° scale, needle, red zone | `engine.rpm()`; `HudDial.scale_for(cfg.redline_rpm)` (next whole thousand ≥ 1000 rpm past the redline); `engine.redline_omega()`, so a damage-capped engine's red zone creeps down |
+| `gear_text` | big digit in the centre | `_gear_text(engine.gear)` |
+| `hp`, `hp_color` | the segmented **rim**; segments go dark as HP drops | `_update_damage`: `hp / max_hp`, hue-graded green → red via `_gauge_color`, alpha-pulsed below `hud_low_hp_warn_frac`. `-1` when `hud_hp_enabled` is off |
+| `temp`, `overheating` | the **face** glows red from the rim inward above half temperature; "x1000" becomes a blinking **HOT** while overheating | `_update_temp`: `DamageModel.temp_fraction` / `is_overheating`. `-1` when the damage model has no `thermal` |
+| `boost` | arc in the empty bottom quarter, labelled BOOST | `maxf` of turbo/blower via `engine.boost_reading()`; `-1` unless `GameConfig.has_forced_induction()` |
+| `nitrous`, `nitrous_on` | ring of 10 violet pips round the gear; lit pips grow while firing | `engine.nitrous_fraction()`, `engine.nitrous_delivering`; `-1` unless `GameConfig.has_nitrous()` |
 
-## Damage gauge
+Boost and nitrous colours are fixed hues from the same `_gauge_color` family as the health
+grade (`_BOOST_HUE`, `_NITROUS_HUE`), kept far apart because both can show at once. All text
+is Jersey 10 at 18 / 54 px on whole pixels with the house hard shadow.
 
-`HPGauge` is driven by `_update_damage(delta)` (called from `_process`) off the
-car's `DamageModel` (see [damage.md](damage.md)): `value` tracks `hp / max_hp` and
-`fill_color` is hue-graded from green (full) to red (empty) via `_gauge_color`.
-Below `hud_low_hp_warn_frac` the low-health warning pulse rides on the fill's
-**alpha** (`HudGauge.fill_color.a`) rather than on `modulate`, so the needle, name and
-icon never pulse with the fill. Any HP drop since the previous frame
-bumps the red `ImpactFlash` overlay (sized to the loss), which fades back out each
-frame. The gauge is hidden when `hud_hp_enabled` is off; it shows for every car (the
-starter takes damage like any other — no car can be wrecked, and an empty bar
-means a stumbling, rev-capped engine, not a dead run).
+The code-built `CoolingLabel` (a child of the dial) sits right-aligned just above it and reads
+"RADIATOR DAMAGED" once the cooling breaks, or "OVERHEATING — REACH A CHECKPOINT" past the
+threshold.
 
-## Temperature gauge (free roam only)
+The `H` debug overlay's separate textual `Boost NN%` readout still exists alongside the dial
+(`boost_text`, see [debug-tools.md](debug-tools.md)) for exact numbers.
 
-`TempGauge` is an optional `HudGauge` with the thermometer icon (`GaugeIcons.Kind.TEMP`). Only
-`free_roam.tscn` has one, last in the row. Its fill is `DamageModel.temp_fraction`:
-the temperature in °C over the overheat threshold, so empty at 0 °C and full at the threshold. It runs blue to red and pulses while
-the engine overheats. A code-built `CoolingLabel` above the gauge row reads "RADIATOR DAMAGED" once
-the cooling breaks, and "OVERHEATING — REACH A REST STOP" past the threshold. The stage scene
-has no `TempGauge`, so none of this runs there (`hud.gd → _update_temp`).
+## Impact flash
+
+Any HP drop since the previous frame bumps the red `ImpactFlash` overlay (sized to the loss),
+which fades back out each frame (`_update_damage`).
 
 ## Money counter (free roam only)
 
 Not part of `hud.gd`: `LootDirector.money_label` draws "$n" (`WorldSession.money`) in the top-left
 corner on a black box (so it reads against a bright sky), added to the HUD layer (so the pause fade above hides it too) ([loot.md](loot.md)).
-
-## Boost gauge
-
-`BoostGauge` is built the same way: `_update_boost_gauge(fitted, live_boost)`
-(called from `_process`) sets `value` to `maxf(engine.boost, engine.sc_boost)` —
-turbo and supercharger share one upgrade slot, so at most one is ever live and one
-gauge covers both (see [forced-induction.md](forced-induction.md)). It's **hidden
-entirely** on a naturally-aspirated car rather than sitting permanently at zero; the
-pure static `hud.gd::has_forced_induction(cfg)` is the test (`turbo_enabled` or a
-non-zero `supercharger_boost_gain`, so a stock blown engine's audio-only flag doesn't
-summon an empty gauge). Its `fill_color` is a **fixed blue** at the same
-saturation/value as the health gauge's grade (`_BOOST_HUE` / `_BOOST_SAT` /
-`_BOOST_VAL`), so the two gauges read as one family and only the hue tells them
-apart — fixed rather than graded because boost has no "danger" end. Its icon is
-`GaugeIcons.Kind.BOOST` (the dial glyph).
-
-The `H` debug overlay's separate textual `Boost NN%` readout still exists alongside
-it (`boost_text`, see [debug-tools.md](debug-tools.md)) for exact numbers.
-
-## Nitrous gauge
-
-`NitrousGauge` is the boost gauge's twin, using `GaugeIcons.Kind.NOS` (the pressure
-bottle) as its icon. Both of its answers come from the model, not the HUD:
-`GameConfig.has_nitrous()` says whether a tank is fitted and live, and
-`EngineSim.nitrous_fraction()` reports the 0..1 tank remaining for the stage (see
-[nitrous.md](nitrous.md)). `hud.gd::_update_nitrous_gauge(fitted, frac)` hides the
-gauge **entirely** when nothing is fitted rather than parking it at zero, and
-otherwise sets `value` to the fraction. `_ready()` starts it hidden.
-
-Its `fill_color` is a **fixed violet** (`_NITROUS_HUE`) from the same
-`_gauge_color` family as the health grade and the boost blue — deliberately far
-from the boost hue, because nitrous and forced induction occupy separate upgrade
-slots, so a turbocharged car with nitrous shows **both gauges at once** and they
-must not read as one.
-
-The gauge write is **change-gated** on the rounded integer percent
-(`_last_nitrous_pct`, `-1` = not fitted), the same pattern the boost gauge uses: the
-drain is a continuous float, so writing `value` every frame would queue redraws for
-changes nobody can see.
 
 ## Behavior
 
@@ -159,13 +110,9 @@ small (font 14 for labels) — the HUD is rendered at 1/2 scale.
 
 The **top-right corner is left
 clear for the Pause button**, which lives on the separate `PauseMenu` CanvasLayer
-(see [menus.md](menus.md)), not the HUD. The gauges are anchored to the
-**bottom centre** of the viewport as one row, in the order health, boost, nitrous,
-temperature. `hud.gd → _layout_gauges` places the **visible** ones edge to edge, centred,
-so their black columns read as one panel and a part that isn't fitted closes up rather
-than leaving a hole. It re-lays the row only when the set of visible gauges changes. Each
-strip's size comes from its node in the scene (`free_roam.tscn` / `main.tscn`); the scene
-offsets are only the starting positions.
+(see [menus.md](menus.md)), not the HUD. The gauge cluster dial sits in the
+**bottom-right** corner (see above). On touch screens it shares that corner with the
+gas pedal of [mobile-controls.md](mobile-controls.md).
 
 ## Build version
 

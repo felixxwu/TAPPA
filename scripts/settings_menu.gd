@@ -661,6 +661,7 @@ func _prompt_wipe_progress() -> void:
 # Ends by rebooting through the title scene (see _reload_after_wipe), because the live
 # world still holds the old car and state the wipe just erased.
 func _wipe_progress() -> void:
+	LevelView.forget_progress()
 	Save.reset_new_game()
 	_reset_status.text = "Wiped all progress."
 	if Cloud == null or not Cloud.is_signed_in():
@@ -708,6 +709,11 @@ func _add_dev_money() -> void:
 # Put every biome ring's stock on sale, put every car in the garage, and open the whole island for
 # travel (the live free-roam scene does the rest).
 func _unlock_map() -> void:
+	var level := get_tree().get_first_node_in_group(LevelView.GROUP) as LevelView
+	if level != null and level.map != null:
+		level.unlock_everything()
+		_dev_status.text = "Everything unlocked."
+		return
 	var scene := get_tree().current_scene
 	if not WorldSession.has_world() or scene == null or not scene.has_method("unlock_map"):
 		_dev_status.text = "No world yet."

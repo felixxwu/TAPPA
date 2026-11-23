@@ -16,6 +16,7 @@ func _ready() -> void:
 		Config.data.level_path = OS.get_environment("CAP_LEVEL")
 	if OS.get_environment("CAP_SPAWN") != "":
 		var pick := OS.get_environment("CAP_SPAWN").split(",")
+		Config.data.level_spawn_teleport = ""
 		Config.data.level_spawn = Vector3i(int(pick[0]), int(pick[1]), int(pick[2]) if pick.size() > 2 else -1)
 	var world := (load("res://level_view.tscn") as PackedScene).instantiate()
 	add_child(world)

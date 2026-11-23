@@ -31,12 +31,24 @@ var _photo_cam: PhotoModeCamera  # while photo mode is up: the viewpoint trees, 
 var _trees: LevelTrees
 var _spectators: LevelSpectators
 var garage: MenuPage
+var missions_page: MenuPage
 static var _next_pose: Variant = null  # where the car stands after a car-change reload
 static var owned: Dictionary = {}  # the level's car with every shop part unlocked, kept across reloads
 const SAVED_CAR_KEY := "level_car"
+const CARS_KEY := "level_cars"
+static var mission: Dictionary = {}  # the drive in progress: {from, to, car}; kept across the reloads a car or parts change does
 const SAVED_POSE_KEY := "level_pose"
 const POSE_SAVE_SEC := 5.0
 var shop: RestStopPage
+var beacons: TeleportBeacons
+var service: MenuPage  # the menu a teleport point opens: repair, upgrade, swap cars
+var service_prompt: Button
+static var last_point := -1  # the teleport point last visited, where a wreck respawns; kept across the reloads a car change does
+var wreck_page: MenuPage
+var _wrecked := false
+var _missions_overview := false  # the missions page is the pause menu's overview, not a teleport point's pick
+var service_name := ""  # the teleport point's name, the service menu's title
+var _from_service := false  # the service menu is open, or its Shop / Garage, which return to it
 var _car: VehicleBody3D
 var _particles: WeatherField
 var _recovery: RoadRecovery
@@ -44,7 +56,11 @@ var _dust: DustPuffs
 var _dust_base: Color  # the gravel's dust colour outside the snow
 var _pause: Node
 var map: LevelMap
+var minimap: LevelMinimap
 var off_road_label: Label
+var mission_label: Label
+var _service_point := -1
+var _service_notice := ""
 var applied_fps_caps: Array[int] = []
 var perf_stats := LevelStats.new()
 var _driving := false  # true once loaded, so a half-built level never overwrites the saved spot
@@ -93,6 +109,7 @@ func _ready() -> void:
 		owned = {"model_id": Config.data.level_car_id, "tuning": {}, "parts": LootRules.parts_for({"model_id": Config.data.level_car_id}).map(
 			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))}
 	Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
+	Save.set_setting(CARS_KEY, owned_cars())
 	car.apply_owned(LootRules.fielded(owned))
 	get_parent().get_node("CameraManager").refresh_bonnet_offset()
 	car.reset_to(_next_pose if _next_pose != null else saved_pose(Save.get_setting(SAVED_POSE_KEY), _save_path, spawn_pose()))
@@ -109,17 +126,35 @@ func _ready() -> void:
 	off_road_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
 	off_road_label.visible = false
 	layer.add_child(off_road_label)
+	mission_label = UITheme.label("")
+	mission_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
+	mission_label.visible = false
+	layer.add_child(mission_label)
 	map = LevelMap.new()
 	map.view = self
 	map.process_mode = Node.PROCESS_MODE_DISABLED  # painting starts now, but M stays dead until the level has loaded
 	layer.add_child(map)
 	map.closed.connect(_on_map_closed)
+	minimap = LevelMinimap.new()
+	minimap.view = self
+	minimap.map = map
+	layer.add_child(minimap)
 	if _streamer != null:
 		_streamer.focus = car
 		_streamer.brush = car
 		var t_fill := Time.get_ticks_msec()
 		await _streamer.prefill_async()
 		print("level view: prefill %d ms" % (Time.get_ticks_msec() - t_fill))
+	beacons = TeleportBeacons.new()
+	beacons.setup(teleport_points(), height_at)
+	add_child(beacons)
+	var arrow := RouteArrow.new()
+	arrow.view = self
+	add_child(arrow)
+	service_prompt = UITheme.row_button(UITheme.caps("Tap" if Platform.is_touch() else "Enter / A"), open_service)
+	service_prompt.visible = false
+	layer.add_child(service_prompt)
+	get_tree().process_frame.connect(_place_service_prompt)  # fires while paused too, so menus hide it
 	await get_tree().process_frame  # the parent is still adding its children
 	var marks := _add_effects(car)
 	_recovery = RoadRecovery.new()
@@ -140,6 +175,8 @@ func _ready() -> void:
 		_pause.set_input_enabled(true)  # the menu stays inert until its world says it has finished loading
 	map.process_mode = Node.PROCESS_MODE_ALWAYS
 	_driving = true
+	car.damage.thermal = true  # not sooner: an overheating car would lose health behind the loading cover
+	car.damage.gave_up.connect(_on_gave_up)
 	Save.flushing.connect(save_pose)  # window close, app pause, browser tab hidden
 	var timer := Timer.new()
 	timer.wait_time = POSE_SAVE_SEC  # also on a timer: stopping the game from the editor sends no close
@@ -149,36 +186,47 @@ func _ready() -> void:
 	perf_stats.view = self
 	add_child(perf_stats)
 	loaded.emit()
+	_open_service_on_arrival()
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _recovery != null and _pause != null and event.is_action_pressed("reset_to_road") and not event.is_echo() and _pause.is_armed():
 		_recovery.reset_now()
+	elif event.is_action_pressed("menu_select") and not event.is_echo() and service_at() >= 0:
+		get_viewport().set_input_as_handled()
+		open_service()
 	elif event.is_action_pressed("toggle_perf_overlay") and not event.is_echo():
 		perf_stats.toggle()
 
 
 func _on_extra(label: String) -> void:
-	match label:
-		"Map": map.open_over_pause()
-		"Shop": open_shop()
-		"Garage": open_garage()
-		"Repair":
-			_car.damage.repair()
-			_pause.return_from_extra()
+	if label == "Map":
+		map.open_over_pause()
+	elif label == "Missions":
+		open_missions(true)
 
 
-# The map opened from the pause menu closed: Back returns to the menu; a teleport goes straight back to driving.
+# The map closed. Opened from the pause menu, Back returns to the menu; a teleport goes back to driving, on the point's service menu.
 func _on_map_closed(teleported: bool, over_pause: bool) -> void:
-	if not over_pause or _pause == null:
-		return
+	if over_pause and _pause != null:
+		if teleported:
+			_pause.set_input_enabled(true)
+		else:
+			_pause.return_from_extra()
 	if teleported:
-		_pause.set_input_enabled(true)
-	else:
-		_pause.return_from_extra()
+		mission = {}
+		_open_service_on_arrival()
 
 
-# The pause menu's Garage: a card per catalogue car, stock; picking one reloads the level with it.
+# Arriving on a teleport point (launching there, or a map teleport) opens its service menu.
+func _open_service_on_arrival() -> void:
+	for i in 2:  # Car.reset_to moves the car on the next physics step
+		await get_tree().physics_frame
+	if is_inside_tree() and service_at() >= 0:
+		open_service()
+
+
+# The service menu's Swap car: a card per catalogue car, stock; picking one reloads the level with it.
 func open_garage() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 50
@@ -187,12 +235,15 @@ func open_garage() -> void:
 	garage = CardUI.card_page(layer, {"title": "Garage", "dim": true})
 	var entries: Array = []
 	var selected := 0
+	var have := owned_cars()
 	for i in CarLibrary.all().size():
 		var id := String(CarLibrary.all()[i]["id"])
+		if not id in have:
+			continue
 		var stats := LootRules.fitted_stats({"model_id": id})
 		var driving := id == Config.data.level_car_id
 		if driving:
-			selected = i
+			selected = entries.size()
 		entries.append({"title": String(CarLibrary.all()[i].get("name", id)), "car": i,
 			"desc": CardUI.stats_line(stats["hp"], stats["mass"], stats["drive_mode"]),
 			"extra": "Driving" if driving else "", "action": _drive.bind(id)})
@@ -201,29 +252,352 @@ func open_garage() -> void:
 	MenuNav.attach(garage, {first = cards, on_back = _close_garage})
 
 
-# The pause menu's Shop: free roam's rest-stop shop with every part free and unlocked; a change reloads the level.
+# The service menu's Upgrade: free roam's rest-stop shop with every part free and unlocked; a change reloads the level.
 func open_shop() -> void:
+	_rest_page().open_shop()
+
+
+# The service menu's Tune car: the rest-stop page's tuning sliders, applied to the car as they move and saved.
+func open_tune() -> void:
+	_rest_page().open_tune()
+
+
+func _rest_page() -> RestStopPage:
 	shop = RestStopPage.new()
 	shop.free = true
+	shop.engine_cars = owned_cars()
 	shop.owned = owned
+	shop.car = _car
 	add_child(shop)
 	shop.car_changed.connect(func() -> void: _reload("Applying parts to your car"))
+	shop.tuned.connect(func() -> void: Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true)))
 	shop.closed.connect(_close_shop)
-	shop.open_shop()
+	return shop
 
 
 func _close_shop() -> void:
 	shop.queue_free()
 	shop = null
 	if _next_pose == null:  # set when the shop's change is reloading the level
-		_pause.return_from_extra()
+		open_service()
 
 
 func _close_garage() -> void:
 	CardUI.park_previews(garage)
 	garage.get_parent().queue_free()
 	garage = null
-	_pause.return_from_extra()
+	open_service()
+
+
+# Whether the driving HUD (the minimap) shows: not under a menu, the map, the service menu or photo mode.
+func hud_visible() -> bool:
+	return _driving and is_instance_valid(_car) and not get_tree().paused and not map.visible and not _from_service and _photo_cam == null
+
+
+func _place_service_prompt() -> void:
+	if not is_inside_tree():  # the tree's frame signal still fires while a scene change is removing the level
+		return
+	service_prompt.visible = service_at() >= 0
+	service_prompt.size = Vector2.ZERO
+	service_prompt.position = ((get_viewport().get_visible_rect().size - service_prompt.size) * 0.5).round()
+
+
+func teleport_points() -> Array:
+	return level.get("teleports", []).map(func(t: Dictionary) -> Vector2: return Vector2(float(t["x"]), float(t["z"])))
+
+
+# Near any teleport point the car heals, level_service_heal_hp_s a second; reaching full HP finishes the repair (cooling, wheels).
+# The point becomes the one a wreck respawns at, and a wreck that rolls onto one is mended there.
+func heal_at_points(dt: float) -> void:
+	if not _driving or not is_instance_valid(_car):
+		return
+	var p := Vector2(_car.global_position.x, _car.global_position.z)
+	var points := teleport_points()
+	for i in points.size():
+		if p.distance_to(points[i]) <= Config.data.level_service_radius_m:
+			last_point = i
+			if _wrecked:
+				_end_wreck()
+			var dmg: DamageModel = _car.damage
+			if dmg.hp < dmg.max_hp:
+				dmg.hp = minf(dmg.max_hp, dmg.hp + Config.data.level_service_heal_hp_s * dt)
+				if dmg.hp >= dmg.max_hp:
+					dmg.repair()
+			return
+
+
+# Puts the car on point `p` (LevelMap.teleport, a wreck's respawn), loading the ground there first so it doesn't fall through.
+func place_car_on(p: Vector2) -> void:
+	var pose := teleport_pose(p, -_car.global_basis.z)
+	if _streamer != null:
+		var marker := Node3D.new()
+		add_child(marker)
+		marker.global_position = pose.origin
+		_streamer.focus = marker
+		_streamer.process_mode = PROCESS_MODE_ALWAYS
+		await _streamer.prefill_async()
+		_streamer.process_mode = PROCESS_MODE_INHERIT
+		_streamer.focus = _car
+		marker.queue_free()
+		pose = teleport_pose(p, -_car.global_basis.z)  # the streamed ground's height
+	_car.reset_to(pose)
+
+
+# The engine overheated to 0 HP: it cuts out, the car coasts, and a moment later the wreck page offers a respawn.
+func _on_gave_up() -> void:
+	_wrecked = true
+	_pause.set_input_enabled(false)
+	map.process_mode = Node.PROCESS_MODE_DISABLED  # no teleporting away from a wreck
+	_set_engine_killed(true)
+	await get_tree().create_timer(Config.data.wreck_page_delay_s, false).timeout
+	if _wrecked and wreck_page == null and is_inside_tree():
+		_set_driverless(true)
+		open_wreck_page()
+
+
+func open_wreck_page() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	add_child(layer)
+	wreck_page = CardUI.card_page(layer, {"title": "Wrecked", "dim": true})
+	var points: Array = level.get("teleports", [])
+	var at := String(points[last_point].get("name", "")) if last_point >= 0 and last_point < points.size() else ""
+	var cards := CardUI.card_list(wreck_page, [{"title": "Respawn", "icon": "resume_run", "action": respawn}],
+		["The engine gave up. Back to " + at] if not at.is_empty() else ["The engine gave up"])
+	MenuNav.attach(wreck_page, {first = cards, on_back = respawn})
+
+
+# Back at the last teleport point visited (or the spawn before any), mended and cold.
+func respawn() -> void:
+	_end_wreck()
+	var points := teleport_points()
+	if last_point >= 0 and last_point < points.size():
+		await place_car_on(points[last_point])
+	else:
+		_car.reset_to(spawn_pose())
+	_car.damage.repair()
+	_car.damage.engine_temp = 0.0
+
+
+func _end_wreck() -> void:
+	_wrecked = false
+	if wreck_page != null:
+		wreck_page.get_parent().queue_free()
+		wreck_page = null
+	_set_driverless(false)
+	_set_engine_killed(false)
+	_pause.set_input_enabled(true)
+	map.process_mode = Node.PROCESS_MODE_ALWAYS
+
+
+# Scripted control with every input at zero, so the wreck page's menu keys don't steer the car.
+func _set_driverless(on: bool) -> void:
+	_car.set("ai_throttle", 0.0)
+	_car.set("ai_steer", 0.0)
+	_car.set("ai_handbrake", false)
+	_car.set("ai_controlled", on)
+
+
+# The engine cuts out completely: no drive, no sound.
+func _set_engine_killed(on: bool) -> void:
+	var dt = _car.get("drivetrain")
+	if dt != null and dt.engine != null:
+		dt.engine.killed = on
+
+
+# The teleport point the car has stopped beside, so can open its service menu; -1 when none.
+func service_at() -> int:
+	if not _driving or not is_instance_valid(_car) or get_tree().paused or _pause == null or not _pause.is_armed() \
+			or _car.linear_velocity.length() > Config.data.level_service_max_speed:
+		return -1
+	var p := Vector2(_car.global_position.x, _car.global_position.z)
+	var points := teleport_points()
+	for i in points.size():
+		if p.distance_to(points[i]) <= Config.data.level_service_radius_m:
+			return i
+	return -1
+
+
+# A teleport point's menu: repair, the Shop or the Garage, which come back here when they close.
+func open_service() -> void:
+	var at := service_at()
+	if at < 0 and not _from_service:
+		return
+	if not _from_service:
+		service_name = String(level["teleports"][at].get("name", ""))
+		_service_point = at
+	_from_service = true
+	get_tree().paused = true
+	_pause.set_input_enabled(false)
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	service = CardUI.card_page(layer, {"title": service_name if not service_name.is_empty() else "Service", "dim": true})
+	var missions := _missions_here()
+	var cards := CardUI.card_list(service, [
+		{"title": "Missions", "icon": "travel", "disabled": missions.is_empty(), "action": _service_open.bind(open_missions)},
+		{"title": "Upgrade", "icon": "shop", "action": _service_open.bind(open_shop)},
+		{"title": "Swap car", "icon": "car", "action": _service_open.bind(open_garage)},
+		{"title": "Tune car", "icon": "tune", "action": _service_open.bind(open_tune)},
+	], [_service_notice] if not _service_notice.is_empty() else [])
+	_service_notice = ""
+	service.add_action(UITheme.row_button("< Back", close_service))
+	MenuNav.attach(service, {first = cards, on_back = close_service})
+
+
+func _missions_here() -> Array:
+	if _service_point < 0 or _service_point >= level.get("teleports", []).size():
+		return []
+	return level["teleports"][_service_point].get("missions", [])
+
+
+func _car_name(id: String) -> String:
+	return String(CarLibrary.by_id(id).get("name", id))
+
+
+# The service menu's Missions: a drive to another teleport point wins a car; picking one starts it.
+# The missions to pick from at this teleport point, or with `overview` (the pause menu's Missions) every mission
+# from the teleport points found so far, where picking one teleports the car to its start first.
+func open_missions(overview := false) -> void:
+	_missions_overview = overview
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	missions_page = CardUI.card_page(layer, {"title": "Missions", "dim": true})
+	var have := owned_cars()
+	var active := String(mission.get("from", "")) + ">" + String(mission.get("to", ""))
+	var entries: Array = []
+	var points: Array = map.known_teleports() if overview else [{"name": service_name, "missions": _missions_here()}]
+	for t: Dictionary in points:
+		for m: Dictionary in t.get("missions", []):
+			var id := String(m.get("car", ""))
+			var idx := CarLibrary.index_of(id)
+			if idx < 0:
+				continue
+			var e := {"title": "To " + String(m.get("to", "")), "car": idx, "desc": _car_name(id),
+				"extra": "Won" if id in have else "", "action": _start_mission_from.bind(t, m) if overview else _start_mission.bind(m)}
+			if overview:
+				e["subtitle"] = "From " + String(t.get("name", ""))
+				if String(t.get("name", "")) + ">" + String(m.get("to", "")) == active:
+					e["extra"] = "Driving"
+			entries.append(e)
+	var header: Array = ["Find teleport points to see their missions"] if overview and entries.is_empty() else []
+	var cards := CardUI.card_list(missions_page, entries, header)
+	missions_page.add_action(UITheme.row_button("< Back", _close_missions))
+	MenuNav.attach(missions_page, {first = cards, on_back = _close_missions})
+
+
+func _close_missions() -> void:
+	CardUI.park_previews(missions_page)
+	missions_page.get_parent().queue_free()
+	missions_page = null
+	if _missions_overview:
+		_pause.return_from_extra()
+	else:
+		open_service()
+
+
+func _start_mission(m: Dictionary) -> void:
+	mission = {"from": service_name, "to": String(m.get("to", "")), "car": String(m.get("car", ""))}
+	CardUI.park_previews(missions_page)
+	missions_page.get_parent().queue_free()
+	missions_page = null
+	close_service_state()
+
+
+# A mission picked from the pause menu: start it, then put the car on its start point and resume driving.
+func _start_mission_from(t: Dictionary, m: Dictionary) -> void:
+	service_name = String(t.get("name", ""))
+	mission = {"from": service_name, "to": String(m.get("to", "")), "car": String(m.get("car", ""))}
+	CardUI.park_previews(missions_page)
+	missions_page.get_parent().queue_free()
+	missions_page = null
+	await place_car_on(Vector2(float(t["x"]), float(t["z"])))
+	close_service_state()
+
+
+func close_service_state() -> void:
+	_from_service = false
+	get_tree().paused = false
+	_pause.set_input_enabled(true)
+
+
+func _check_mission() -> void:
+	if mission.is_empty() or not _driving or _from_service or get_tree().paused or not is_instance_valid(_car):
+		return
+	var points := teleport_points()
+	var tps: Array = level.get("teleports", [])
+	var p := Vector2(_car.global_position.x, _car.global_position.z)
+	for i in points.size():
+		if String(tps[i].get("name", "")) == mission["to"] and p.distance_to(points[i]) <= Config.data.level_service_radius_m:
+			_complete_mission(i)
+			return
+
+
+func _complete_mission(at: int) -> void:
+	var id := String(mission["car"])
+	var have := owned_cars()
+	var fresh := not id in have
+	if fresh:
+		have.append(id)
+		Save.set_setting(CARS_KEY, have)
+	mission = {}
+	service_name = String(level["teleports"][at].get("name", ""))
+	_service_point = at
+	_service_notice = "Mission complete: %s is %s" % [_car_name(id), "yours" if fresh else "already yours"]
+	_from_service = true
+	open_service()
+
+
+# The cars the player may drive: the saved list, or the authored start car and the current one for a save without it.
+static func sanitise_cars(saved: Variant, authored: String, current: String) -> Array:
+	var out: Array = []
+	for id: Variant in (saved if saved is Array else [authored, current]):
+		if CarLibrary.index_of(String(id)) >= 0 and not String(id) in out:
+			out.append(String(id))
+	if out.is_empty() and CarLibrary.index_of(current) >= 0:
+		out.append(current)
+	return out
+
+
+static func owned_cars() -> Array:
+	return sanitise_cars(Save.get_setting(CARS_KEY), String(Config.authored_value("level_car_id", Config.data.level_car_id)), Config.data.level_car_id)
+
+
+func close_service() -> void:
+	_free_service()
+	close_service_state()
+
+
+func _free_service() -> void:
+	service.get_parent().queue_free()
+	service = null
+
+
+func _service_open(page: Callable) -> void:
+	_free_service()
+	page.call()
+
+
+# Settings → Dev → Unlock everything: the whole map revealed, every teleport point found, every car owned.
+func unlock_everything() -> void:
+	map.reveal_all()
+	Save.set_setting(CARS_KEY, CarLibrary.all().map(func(c: Dictionary) -> String: return String(c["id"])))
+
+
+# Wipe all progress: forget the level's car, parts, parked spot and explored map, which live in the
+# save's device settings (kept by Save.reset_new_game), and stop a running level saving them again as it closes.
+static func forget_progress() -> void:
+	for key in [SAVED_CAR_KEY, SAVED_POSE_KEY, LevelMap.SEEN_KEY, CARS_KEY]:
+		Save.erase_setting(key)
+	owned = {}
+	mission = {}
+	_next_pose = null
+	Config.data.level_car_id = Config.authored_value("level_car_id", Config.data.level_car_id)
+	for view: LevelView in (Engine.get_main_loop() as SceneTree).get_nodes_in_group(GROUP):
+		view._driving = false
 
 
 # The car and parts last driven here, from a previous launch; a car since dropped from the roster is ignored.
@@ -377,7 +751,8 @@ static var _base: GameConfig  # the untouched grip values the snow blends away f
 
 # The snow biome's handling follows the ground under the car, as free roam's snow ring does (BiomeDirector.apply_handling):
 # snow grip, deep-snow drag (car.gd feathers it per wheel off the road), and the snow side of the tyre compound rule.
-func _physics_process(_dt: float) -> void:
+func _physics_process(dt: float) -> void:
+	heal_at_points(dt)
 	if _car != null and _streamer != null:
 		var snow := _streamer.snow_at(_car.global_position.x, _car.global_position.z)
 		set_snow(Config.data, snow)
@@ -504,6 +879,15 @@ func _build_streamer() -> void:
 
 
 func _process(_dt: float) -> void:
+	_check_mission()
+	if mission_label != null:
+		mission_label.text = "Drive to %s" % mission["to"] if not mission.is_empty() else ""
+		mission_label.visible = not mission.is_empty()
+		mission_label.size = Vector2.ZERO
+		var y := float(UITheme.FONT_SIZE)
+		if off_road_label != null and off_road_label.visible:
+			y += off_road_label.size.y + UITheme.FONT_SIZE * 0.5
+		mission_label.position = Vector2(roundf((get_viewport().get_visible_rect().size.x - mission_label.size.x) * 0.5), roundf(y))
 	if _recovery != null:
 		off_road_label.text = off_road_text(_recovery.off_road_seconds())
 		off_road_label.visible = not off_road_label.text.is_empty()
@@ -672,7 +1056,23 @@ static func spawn_override(roads: Array, pick: Vector3i) -> Array[Vector2]:
 	return out
 
 
+# Where a teleport to point `p` leaves the car: right on it, facing its `heading` (compass degrees: 0 = north, -z; 90 = east, +x),
+# or, for a point with none, `car_facing` turned along the road there if that road is a dead end one way.
+func teleport_pose(p: Vector2, car_facing: Vector3) -> Transform3D:
+	var facing := _bake._roads().away_from_dead_end(p, car_facing)
+	for t: Dictionary in level.get("teleports", []):
+		if Vector2(float(t["x"]), float(t["z"])) == p and t.has("heading"):
+			var h := deg_to_rad(float(t["heading"]))
+			facing = Vector3(sin(h), 0.0, -cos(h))
+	facing.y = 0.0
+	return Transform3D(Basis.looking_at(facing.normalized(), Vector3.UP), Vector3(p.x, height_at(p.x, p.y) + 1.0, p.y))
+
+
+# Where a new player starts: the teleport point named `level_spawn_teleport`, else `level_spawn`'s road node (the benchmark's recorded start).
 func spawn_pose() -> Transform3D:
+	for t: Dictionary in level.get("teleports", []):
+		if not Benchmark.active and not Config.data.level_spawn_teleport.is_empty() and String(t.get("name", "")) == Config.data.level_spawn_teleport:
+			return teleport_pose(Vector2(float(t["x"]), float(t["z"])), Vector3.FORWARD)
 	if _spawn_nodes.size() == 2:
 		var a := Vector3(_spawn_nodes[0].x, 0, _spawn_nodes[0].y)
 		var b := Vector3(_spawn_nodes[1].x, 0, _spawn_nodes[1].y)

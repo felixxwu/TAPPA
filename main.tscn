@@ -10,7 +10,6 @@
 [ext_resource type="Script" uid="uid://dbdwx7yc650em" path="res://scripts/terrain_manager.gd" id="6_terrain"]
 [ext_resource type="Script" uid="uid://bn0pfrwbxaw4v" path="res://scripts/world.gd" id="7_world"]
 [ext_resource type="Script" uid="uid://bx7m7rsqs3hcu" path="res://scripts/hud.gd" id="8_hud"]
-[ext_resource type="Script" path="res://scripts/hud_gauge.gd" id="8_gauge"]
 [ext_resource type="Script" uid="uid://da6jmm86ad2c" path="res://scripts/mobile_controls.gd" id="9_mobile"]
 [ext_resource type="Script" uid="uid://c1ihaadjtfrte" path="res://scripts/camera_manager.gd" id="10_cammgr"]
 [ext_resource type="Texture2D" uid="uid://qxvxctxwm27g" path="res://textures/gravel.jpg" id="11_gravel"]
@@ -136,54 +135,6 @@ offset_right = 128.0
 offset_bottom = 48.0
 theme_override_font_sizes/font_size = 18
 text = "0 rpm"
-
-[node name="BoostGauge" type="Control" parent="HUD" unique_id=1791309601]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -16.0
-offset_top = -96.0
-offset_right = 16.0
-offset_bottom = -8.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("8_gauge")
-icon = 1
-
-[node name="HPGauge" type="Control" parent="HUD" unique_id=1044419651]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -48.0
-offset_top = -96.0
-offset_right = -16.0
-offset_bottom = -8.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("8_gauge")
-icon = 0
-
-[node name="NitrousGauge" type="Control" parent="HUD" unique_id=1044419653]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = 16.0
-offset_top = -96.0
-offset_right = 48.0
-offset_bottom = -8.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("8_gauge")
-icon = 2
 
 [node name="ImpactFlash" type="ColorRect" parent="HUD" unique_id=1044419652]
 anchors_preset = 15

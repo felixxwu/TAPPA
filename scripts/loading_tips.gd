@@ -12,12 +12,13 @@ extends RefCounted
 
 # Written for the Hafren level (level_view.gd, features/level-editor.md "In the game"), the
 # world the title screen leads into (Scenes.WORLD, the default; not the legacy free-roam island): no
-# checkpoints, coins or wrecks there, and no overheating drain (DamageModel.thermal stays off).
+# checkpoints or coins there; the engine overheats and a wreck respawns at the last teleport point visited.
 const TIPS: Array[String] = [
-	# --- Pause menu: Shop, Garage, Repair (LevelView._on_extra) ---
-	"Every part in the Shop is free. Open it from the pause menu.",
-	"The Garage in the pause menu puts you in any car.",
-	"Repair the car for free from the pause menu.",
+	# --- Teleport points: healing (LevelView.heal_at_points), Upgrade, Swap car, Tune car (LevelView.open_service) ---
+	"Stop by a spinning black obelisk to upgrade, tune or swap cars.",
+	"Your car mends itself near a spinning black obelisk.",
+	"Every upgrade at an obelisk is free.",
+	"Any car is yours to drive: swap at an obelisk.",
 	"Your car, its parts and where you left it are kept for next time.",
 	# --- Parts ---
 	"All-wheel drive gives the most grip and the least drama.",
@@ -39,6 +40,7 @@ const TIPS: Array[String] = [
 	"Spectators gather by buildings, junctions and sharp bends.",
 	"Open the map with M or Back to teleport to any group of buildings.",
 	"Press R or click the right stick to put the car back on the nearest road.",
+	"Some teleport points offer a mission: drive to another point to win a car.",
 	"Stay off the road too long and the car is put back on it.",
 	"A car that is stuck or flipped is put back on the road by itself.",
 	"These roads are mapped from real laser scans of Hafren Forest in Wales.",

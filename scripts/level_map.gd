@@ -18,6 +18,8 @@ const TELEPORT := UITheme.GOLD
 const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
 const COVER_TINT := 0.3   # how far the ground leans toward each cover type's colour
 const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show when zoomed out
+const ROUTE := Color(0.25, 0.8, 0.95)
+const ROUTE_PX := 4.0
 const ROAD_EDGE := Color(0.25, 0.15, 0.08)
 const WASD := {KEY_W: Vector2.UP, KEY_A: Vector2.LEFT, KEY_S: Vector2.DOWN, KEY_D: Vector2.RIGHT}
 const PAN_SPEED_PX := 600.0
@@ -38,6 +40,7 @@ var _chains: Array[PackedVector2Array] = []  # road lines, split wherever the su
 var _tarmac: Array[bool] = []                 # per line in _chains
 var _buildings: Array[PackedVector2Array] = []  # each building's footprint corners in world metres
 var _hint: Label
+var _route := PackedVector2Array()  # the sat-nav line to the active mission's target, worked out each time the map opens
 var back_button: Button  # top-right "< Back": the way a touch screen (no M, no Esc) closes the map
 var _over_pause := false  # opened from the pause menu: closing leaves the game paused for it
 var _busy := false
@@ -130,12 +133,20 @@ func _open() -> void:
 	if visible:
 		build()
 		reveal_at_car()
-		_update_fog()
+		update_fog()
 		var car := view.get_parent().get_node_or_null("Car") as Node3D
 		if car != null:
 			center = Vector2(car.global_position.x, car.global_position.z)
+		_route = _mission_route(center if car != null else Vector2.ZERO)
 		zoom = maxf(zoom, fit_zoom())
 		queue_redraw()
+
+
+func _mission_route(from: Vector2) -> PackedVector2Array:
+	for t: Dictionary in view.level.get("teleports", []):
+		if t.get("name", "") == LevelView.mission.get("to", null):
+			return view._bake._roads().route(from, Vector2(float(t["x"]), float(t["z"])))
+	return PackedVector2Array()
 
 
 func fit_zoom() -> float:
@@ -150,10 +161,24 @@ func to_world(s: Vector2) -> Vector2:
 	return center + (s - size / 2.0) / zoom
 
 
-# The save's teleport point (`teleports`: [{x, z}]) nearest a world spot; INF when the save has none.
+# The teleport points the player has found: those the explored area reaches. Only these show on the maps or can be teleported to.
+func known_teleports() -> Array:
+	return view.level.get("teleports", []).filter(func(t: Dictionary) -> bool:
+		return discovery != null and discovery.shown(Vector2(float(t["x"]), float(t["z"]))) > 0.0)
+
+
+# Reveals the whole level, every teleport point with it (Settings → Dev → Unlock everything).
+func reveal_all() -> void:
+	discovery.stamp(Vector2.ZERO, size_m(), 0.0)
+	_fog_dirty = true
+	save_discovery()
+	queue_redraw()
+
+
+# The found teleport point (`teleports`: [{x, z, heading?}]) nearest a world spot; INF when none is found yet.
 func nearest_teleport(w: Vector2) -> Vector2:
 	var best := Vector2.INF
-	for t: Dictionary in view.level.get("teleports", []):
+	for t: Dictionary in known_teleports():
 		var p := Vector2(float(t["x"]), float(t["z"]))
 		if p.distance_squared_to(w) < best.distance_squared_to(w):
 			best = p
@@ -285,44 +310,21 @@ func _paint_trees(img: Image, b: LevelBake, half: float, k: float) -> void:
 
 
 func _draw() -> void:
+	var xf := Transform2D(0.0, Vector2(zoom, zoom), 0.0, size / 2.0 - center * zoom)
 	draw_rect(Rect2(Vector2.ZERO, size), FOG)
-	var half := size_m() / 2.0
-	draw_texture_rect(_texture, Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * size_m() * zoom), false)
-	draw_set_transform(size / 2.0 - center * zoom, 0.0, Vector2(zoom, zoom))
-	for poly in view._bake.patches:
-		draw_colored_polygon(poly, PATCH)
-	var w := 3.0
-	for line in _chains:
-		if line.size() > 1:
-			draw_polyline(line, ROAD_EDGE, w + 2.0 / zoom)
-	for i in _chains.size():
-		if _chains[i].size() > 1:
-			draw_polyline(_chains[i], TARMAC if _tarmac[i] else ROAD, w)
-	draw_set_transform(Vector2.ZERO)
-	for fp in _buildings:
-		var pts := PackedVector2Array()
-		for corner in fp:
-			pts.append(to_screen(corner))
-		draw_colored_polygon(pts, BUILDING)
-		pts.append(pts[0])
-		draw_polyline(pts, ROAD_EDGE, 1.0)
-	for pile: Dictionary in view.level.get("logPiles", []):
-		draw_circle(to_screen(Vector2(float(pile["x"]), float(pile["z"]))), maxf(MIN_MARK_PX, 4.0 * zoom) / 2.0, LOG_PILE)
-	if _fog != null:
-		draw_texture_rect(_fog, Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * discovery.cells * discovery.cell_m * zoom), false)
-	draw_rect(Rect2(to_screen(Vector2(-half, -half)), Vector2.ONE * size_m() * zoom), BORDER, false, BORDER_PX)
+	paint(self, xf, zoom, 1.0, _route)
 	var aim := get_local_mouse_position() if _mouse_inside() else size / 2.0
 	var target := nearest_teleport(to_world(aim))
-	var teleports: Array = view.level.get("teleports", [])
+	var teleports := known_teleports()
 	var anchors := PackedVector2Array()
 	var widths := PackedFloat32Array()
 	var first := -1
 	var font := UITheme.font()
-	for i in teleports.size():  # drawn over the fog: every teleport works, driven near or not
+	for i in teleports.size():
 		var t: Dictionary = teleports[i]
 		var wp := Vector2(float(t["x"]), float(t["z"]))
 		var tp := to_screen(wp)
-		draw_colored_polygon(PackedVector2Array([tp + Vector2(0, -8), tp + Vector2(8, 0), tp + Vector2(0, 8), tp + Vector2(-8, 0)]), TELEPORT)
+		draw_diamond(self, tp, 8.0)
 		anchors.append(tp)
 		widths.append(font.get_string_size(String(t.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
 		if wp == target:
@@ -335,16 +337,70 @@ func _draw() -> void:
 		draw_rect(rects[i].grow(NAME_PAD_PX), NAME_BACK)
 		var base := (rects[i].position + Vector2(0, roundf((line_h + font.get_ascent(UITheme.FONT_SIZE) - font.get_descent(UITheme.FONT_SIZE)) / 2.0))).round()
 		draw_string(font, base, String(teleports[i]["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE, TELEPORT if i == first else UITheme.INK)
-	var car := view.get_parent().get_node_or_null("Car") as Node3D
-	if car != null:
-		var p := to_screen(Vector2(car.global_position.x, car.global_position.z))
-		var f := Vector2(-car.global_basis.z.x, -car.global_basis.z.z).normalized() * 12.0
-		draw_colored_polygon(PackedVector2Array([p + f, p - f * 0.6 + f.orthogonal() * 0.6, p - f * 0.6 - f.orthogonal() * 0.6]), Color.WHITE)
+	paint_car(self, xf, 1.0)
 	if target != Vector2.INF:
 		draw_arc(to_screen(target), 12.0, 0.0, TAU, 24, UITheme.INK, 2.0)
 	if not _mouse_inside():
 		draw_line(size / 2.0 - Vector2(10, 0), size / 2.0 + Vector2(10, 0), UITheme.INK, 2.0)
 		draw_line(size / 2.0 - Vector2(0, 10), size / 2.0 + Vector2(0, 10), UITheme.INK, 2.0)
+
+
+# Draws the map's content (ground, roads, buildings, log piles, fog, border, route) on any canvas item through `xf`
+# (world metres to that item's pixels, so it can be rotated); the minimap shares it. `ui` scales the fixed-pixel marks.
+func paint(ci: CanvasItem, xf: Transform2D, zm: float, ui: float, route: PackedVector2Array) -> void:
+	var half := size_m() / 2.0
+	var world := Rect2(Vector2(-half, -half), Vector2.ONE * size_m())
+	ci.draw_set_transform_matrix(xf)
+	if _texture != null:  # build() uploads it behind the loading screen; a headless run never does
+		ci.draw_texture_rect(_texture, world, false)
+	for poly in view._bake.patches:
+		ci.draw_colored_polygon(poly, PATCH)
+	var w := 3.0
+	for line in _chains:
+		if line.size() > 1:
+			ci.draw_polyline(line, ROAD_EDGE, w + 2.0 * ui / zm)
+	for i in _chains.size():
+		if _chains[i].size() > 1:
+			ci.draw_polyline(_chains[i], TARMAC if _tarmac[i] else ROAD, w)
+	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+	for fp in _buildings:
+		var pts := PackedVector2Array()
+		for corner in fp:
+			pts.append(xf * corner)
+		ci.draw_colored_polygon(pts, BUILDING)
+		pts.append(pts[0])
+		ci.draw_polyline(pts, ROAD_EDGE, ui)
+	for pile: Dictionary in view.level.get("logPiles", []):
+		ci.draw_circle(xf * Vector2(float(pile["x"]), float(pile["z"])), maxf(MIN_MARK_PX * ui, 4.0 * zm) / 2.0, LOG_PILE)
+	ci.draw_set_transform_matrix(xf)
+	if _fog != null:
+		ci.draw_texture_rect(_fog, Rect2(Vector2(-half, -half), Vector2.ONE * discovery.cells * discovery.cell_m), false)
+	ci.draw_rect(world, BORDER, false, BORDER_PX * ui / zm)
+	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
+	if route.size() > 1:
+		var pts := PackedVector2Array()
+		for q in route:
+			pts.append(xf * q)
+		ci.draw_polyline(pts, ROUTE, ROUTE_PX * ui, true)
+
+
+static func draw_diamond(ci: CanvasItem, p: Vector2, r: float) -> void:
+	ci.draw_colored_polygon(PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)]), TELEPORT)
+
+
+func paint_teleports(ci: CanvasItem, xf: Transform2D, ui: float) -> void:
+	for t: Dictionary in known_teleports():
+		draw_diamond(ci, xf * Vector2(float(t["x"]), float(t["z"])), 8.0 * ui)
+
+
+# The car as a white arrow pointing the way it faces, through `xf`.
+func paint_car(ci: CanvasItem, xf: Transform2D, ui: float) -> void:
+	var car := view.get_parent().get_node_or_null("Car") as Node3D
+	if car == null:
+		return
+	var p := xf * Vector2(car.global_position.x, car.global_position.z)
+	var f := xf.basis_xform(Vector2(-car.global_basis.z.x, -car.global_basis.z.z)).normalized() * 12.0 * ui
+	ci.draw_colored_polygon(PackedVector2Array([p + f, p - f * 0.6 + f.orthogonal() * 0.6, p - f * 0.6 - f.orthogonal() * 0.6]), Color.WHITE)
 
 
 func _mouse_inside() -> bool:
@@ -482,7 +538,7 @@ func save_discovery() -> void:
 		Save.set_setting(SEEN_KEY, discovery.to_save(view._save_path))
 
 
-func _update_fog() -> void:
+func update_fog() -> void:
 	if not _fog_dirty or discovery == null:
 		return
 	_fog_dirty = false
@@ -497,27 +553,14 @@ func _update_fog() -> void:
 		_fog.diffuse_texture = ImageTexture.create_from_image(img)
 
 
-# Puts the car on the road nearest `p`, facing away from any dead end there, loading the ground there before the game resumes so the car doesn't fall through.
+# Puts the car exactly on teleport point `p`, facing its heading, loading the ground there before the game resumes so the car doesn't fall through.
 func teleport(p: Vector2) -> void:
 	var car := view.get_parent().get_node_or_null("Car") as VehicleBody3D
 	if car == null or _busy or p == Vector2.INF:
 		return
 	_busy = true
 	visible = false
-	var facing := view._bake._roads().away_from_dead_end(p, -car.global_basis.z)
-	var pose := view.road_pose(p, facing)
-	if view._streamer != null:
-		var marker := Node3D.new()
-		view.add_child(marker)
-		marker.global_position = pose.origin
-		view._streamer.focus = marker
-		view._streamer.process_mode = PROCESS_MODE_ALWAYS
-		await view._streamer.prefill_async()
-		view._streamer.process_mode = PROCESS_MODE_INHERIT
-		view._streamer.focus = car
-		marker.queue_free()
-		pose = view.road_pose(p, facing)  # the streamed ground's height
-	car.reset_to(pose)
+	await view.place_car_on(p)
 	get_tree().paused = false
 	_busy = false
 	var over := _over_pause

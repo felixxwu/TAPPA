@@ -26,7 +26,7 @@ stand-in behind a toggle; on 2026-11-22 Felix made it the official default.
 
 - **Enter the world with `Scenes.change_to(tree, Scenes.WORLD)`.** `Scenes.WORLD` is
   `level_view.tscn`; the save it loads is `GameConfig.level_path`, the car `GameConfig.level_car_id`,
-  the spawn `GameConfig.level_spawn`. How it works: `features/level-editor.md`.
+  the spawn `GameConfig.level_spawn_teleport` (a teleport point's name; `level_spawn` is the benchmark's start). How it works: `features/level-editor.md`.
 - **The procedural island is legacy reference code.** `free_roam.tscn`, `scripts/free_roam/`
   (`TerrainStreamer`, `RoadNetwork`, rest stops, biome rings, the cold open, …) and
   `Scenes.LEGACY_FREE_ROAM` stay in the tree, with their tests, but nothing in the game enters

@@ -322,7 +322,7 @@ just the end of a ramp it was already sampling. Only the thermal chain's `gave_u
 same physics step `register_deceleration` measures impacts on. `car.gd` calls it every tick,
 deliberately OUTSIDE the reset/teleport suppression branch — that countdown exists to stop a
 discontinuous velocity reading as a crash, which has nothing to do with mending.
-`damage_regen_hp_per_s` is a small positive rate as authored, so the Hafren level slowly mends the car while you drive (the pause menu's Repair still fixes it at once).
+`damage_regen_hp_per_s` is 0.0 as authored, so this is a no-op unless the config is retuned (the Hafren level heals at its teleport points instead, `LevelView.heal_at_points`).
 It heals the **wheel alignment** too: each tick every wheel's `wheel_toe` is scaled by the
 missing HP after the tick over the missing HP before it, so the toe shrinks in proportion to
 the HP regained and the wheels are straight exactly when the HP is full (a car already at full
@@ -337,15 +337,12 @@ fact at the moment a loss is applied; do not reconstruct it afterwards.
 
 ## In-run HUD (see [hud.md](hud.md))
 
-`hud.gd` reads `car.damage` each frame: a colour-graded **health gauge** (`HPGauge`,
-a `HudGauge` vertical strip, green → amber → red) whose fill fraction is `hp / max_hp`,
-with the heart **icon** (`GaugeIcons.Kind.HEALTH`) under the bar — no absolute HP number, which was redundant beside a gauge
-showing the same thing; a low-health **warning pulse** below `hud_low_hp_warn_frac`,
-riding on the fill's alpha; and a red **impact flash** (`ImpactFlash`) sized to each
-HP-losing hit. Because the icon is drawn separately from the fill, the pulse never
-tints it. The gauge is hidden when `hud_hp_enabled` is off. A **boost gauge**
-sits to its left and a **nitrous gauge** to its right, built the same way — see
-[hud.md](hud.md).
+`hud.gd` reads `car.damage` each frame: the segmented **rim** of the gauge-cluster dial
+(`HudDial.hp`) is health, hue-graded green → red, losing segments as `hp / max_hp` drops — no
+absolute HP number; a low-health **warning pulse** below `hud_low_hp_warn_frac`, riding on the
+rim colour's alpha; and a red **impact flash** (`ImpactFlash`) sized to each HP-losing hit.
+The rim is hidden when `hud_hp_enabled` is off. Engine temperature glows on the dial's face.
+See [hud.md](hud.md).
 
 ## Config knobs (`GameConfig`, *Damage* group)
 

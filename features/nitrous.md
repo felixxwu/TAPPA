@@ -112,17 +112,15 @@ zero when not fitted) and clears the three flags; `RoadRecovery.reset_now` resto
 
 ## The gauge (`hud.gd`)
 
-A **violet** vertical strip gauge (`NitrousGauge`, a `HudGauge` — see [hud.md](hud.md))
-in the same family as the health and boost gauges: a pressure-bottle icon
-(`GaugeIcons.Kind.NOS`) under the bar, `fill_color`
-tinted via the shared `_gauge_color`, and visible **only** when nitrous is fitted
-rather than sitting at zero.
+A ring of **violet** pips round the gear digit on the gauge-cluster dial (`HudDial.nitrous` —
+see [hud.md](hud.md)), one pip per tenth of the tank; lit pips grow while nitrous is
+delivering (`engine.nitrous_delivering`). Tinted via the shared `_gauge_color` and shown
+**only** when nitrous is fitted.
 
 `_NITROUS_HUE := 0.70` sits beside `_BOOST_HUE := 0.58` and deliberately differs
 from it: a turbocharged car with nitrous shows **both** gauges at once, and two
 near-identical blues would be unreadable mid-stage. The shared `_GAUGE_SAT` /
-`_GAUGE_VAL` keep it a sibling of the other two. Layout is a row, not a stack:
-health sits centred at the bottom with boost to its left and nitrous to its right.
+`_GAUGE_VAL` keep it a sibling of the other two.
 
 Both answers come from the model — `Config.data.has_nitrous()` for "is it
 fitted", `EngineSim.nitrous_fraction()` for "how much is left" — and the write is

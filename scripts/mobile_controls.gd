@@ -535,6 +535,37 @@ func owns_point(pos: Vector2) -> bool:
 	return (_has_slider() and _slider_rect.has_point(pos)) or _button_region(pos) != ""
 
 
+# The screen rects of the controls that need a clear thumb (slider, steer buttons, pedals, NOS), empty while hidden;
+# the simple scheme's whole-screen halves are left out. Lets HUD widgets keep out of their way.
+func button_rects() -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	if not _active or not _overlay().visible:
+		return out
+	if _has_slider():
+		out.append(_slider_rect)
+	for region: String in _rects:
+		if not region.begins_with("simple_"):
+			out.append(_rects[region])
+	return out
+
+
+# How far up to move the bottom-corner HUD widgets (minimap and gauge dial) so neither sits
+# on a touch control. They move as one band, so the two always stay level with each other.
+static func bottom_band_lift(controls: MobileControls, screen: Vector2) -> float:
+	if controls == null:
+		return 0.0
+	var gap := float(UITheme.FONT_SIZE)
+	var homes: Array[Rect2] = [LevelMinimap.home_rect(screen), HudDial.home_rect(screen)]
+	var buttons := controls.button_rects()
+	var dy := 0.0
+	for _pass in 2:
+		for r in homes:
+			for b in buttons:
+				if b.intersects(Rect2(r.position + Vector2(0.0, dy), r.size).grow(gap)):
+					dy = minf(dy, b.position.y - gap - r.end.y)
+	return dy
+
+
 # Steer value [-1, +1] for a thumb at screen X. Centre of the track is straight; the
 # usable travel is the half-track minus half the thumb so the thumb stays on the rail.
 func _steer_from_x(x: float) -> float:

@@ -9,7 +9,6 @@
 [ext_resource type="Texture2D" path="res://textures/gravel.jpg" id="7_gravel"]
 [ext_resource type="Texture2D" path="res://textures/sky_field.png" id="8_sky"]
 [ext_resource type="Script" path="res://scripts/hud.gd" id="20_hud"]
-[ext_resource type="Script" path="res://scripts/hud_gauge.gd" id="21_gauge"]
 [ext_resource type="Script" path="res://scripts/mobile_controls.gd" id="22_mobile"]
 [ext_resource type="Script" path="res://scripts/camera_manager.gd" id="23_cammgr"]
 [ext_resource type="Script" path="res://scripts/pause_menu.gd" id="24_pause"]
@@ -142,70 +141,6 @@ offset_right = 128.0
 offset_bottom = 48.0
 theme_override_font_sizes/font_size = 18
 text = "0 rpm"
-
-[node name="BoostGauge" type="Control" parent="HUD"]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -32.0
-offset_top = -96.0
-offset_right = 0.0
-offset_bottom = -8.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("21_gauge")
-icon = 1
-
-[node name="HPGauge" type="Control" parent="HUD"]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = -64.0
-offset_top = -96.0
-offset_right = -32.0
-offset_bottom = -8.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("21_gauge")
-icon = 0
-
-[node name="NitrousGauge" type="Control" parent="HUD"]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = 0.0
-offset_top = -96.0
-offset_right = 32.0
-offset_bottom = -8.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("21_gauge")
-icon = 2
-
-[node name="TempGauge" type="Control" parent="HUD"]
-anchors_preset = 7
-anchor_left = 0.5
-anchor_top = 1.0
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_left = 32.0
-offset_top = -96.0
-offset_right = 64.0
-offset_bottom = -8.0
-grow_horizontal = 2
-grow_vertical = 0
-mouse_filter = 2
-script = ExtResource("21_gauge")
-icon = 3
 
 [node name="ImpactFlash" type="ColorRect" parent="HUD"]
 anchors_preset = 15

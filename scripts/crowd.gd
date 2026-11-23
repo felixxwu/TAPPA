@@ -35,9 +35,27 @@ static func level_meshes() -> Array[Mesh]:
 			var mi := child as MeshInstance3D
 			if mi == null:
 				continue
-			var m := mi.mesh.duplicate() as Mesh
-			for s in m.get_surface_count():
-				m.surface_set_material(s, mat)
-			_level_meshes.append(m)
+			_level_meshes.append(_with_base_shade(mi.mesh, mat))
 		root.free()
 	return _level_meshes
+
+
+# The mesh with its vertex colours darkened toward the feet, the same fake AO the level bakes into buildings.
+static func _with_base_shade(src: Mesh, mat: Material) -> ArrayMesh:
+	var dark: float = Config.data.level_ao_spectator_base
+	var reach: float = maxf(Config.data.level_ao_spectator_base_height_m, 0.01)
+	var out := ArrayMesh.new()
+	for s in src.get_surface_count():
+		var arrays := src.surface_get_arrays(s)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var cols: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+		if cols.is_empty():
+			cols.resize(verts.size())
+			cols.fill(Color.WHITE)
+		for i in verts.size():
+			var shade := 1.0 - dark * (1.0 - smoothstep(0.0, reach, verts[i].y))
+			cols[i] = Color(cols[i].r * shade, cols[i].g * shade, cols[i].b * shade, cols[i].a)
+		arrays[Mesh.ARRAY_COLOR] = cols
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		out.surface_set_material(s, mat)
+	return out

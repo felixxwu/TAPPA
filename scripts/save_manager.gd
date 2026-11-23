@@ -578,6 +578,11 @@ func get_setting(key: String, default_value = null) -> Variant:
 	return settings.get(key, default_value)
 
 
+func erase_setting(key: String) -> void:
+	(profile.get("settings", {}) as Dictionary).erase(key)
+	save(false)
+
+
 func set_setting(key: String, value: Variant) -> void:
 	var settings: Dictionary = profile.get("settings", {})
 	settings[key] = value

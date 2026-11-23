@@ -30,6 +30,7 @@ var buckets := {}
 var _hm := PackedFloat32Array()
 var _jbuckets := {}
 var _jcell := JUNCTION_BLEND
+var _graph: AStar2D  # built on the first `route`
 
 
 # Without `with_ground` the height grid and road are not built either: the game reads those from the bake.
@@ -345,6 +346,54 @@ func _joined(e: int) -> bool:
 		if sc[k] != sc[e] and Vector2(sx[k] - sx[e], sz[k] - sz[e]).length() <= 2.0 * JUNCTION_TOL:
 			return true
 	return false
+
+
+# The shortest drive along the roads from near `from` to near `to`, as a polyline from `from` to `to`; empty when no road connects them.
+func route(from: Vector2, to: Vector2) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for id in route_ids(from, to):
+		pts.append(Vector2(sx[id], sz[id]))
+	if pts.is_empty():
+		return pts
+	pts.insert(0, from)
+	pts.append(to)
+	return pts
+
+
+# The road samples `route` passes through, in order; empty when the roads don't connect.
+func route_ids(from: Vector2, to: Vector2) -> PackedInt64Array:
+	if sx.size() < 2:
+		return PackedInt64Array()
+	if _graph == null:
+		_build_graph()
+	return _graph.get_id_path(nearest_sample(from.x, from.y), nearest_sample(to.x, to.y))
+
+
+# Whether road sample `id` is where roads split: joined to more than the samples either side of it.
+func is_junction(id: int) -> bool:
+	if _graph == null:
+		_build_graph()
+	return _graph.get_point_connections(id).size() > 2
+
+
+# Samples joined along their chain and across junctions (another chain's sample within 2 * JUNCTION_TOL), for `route`.
+func _build_graph() -> void:
+	_graph = AStar2D.new()
+	var cell := 2.0 * JUNCTION_TOL
+	var grid := {}
+	for i in sx.size():
+		_graph.add_point(i, Vector2(sx[i], sz[i]))
+		if i > 0 and sc[i - 1] == sc[i]:
+			_graph.connect_points(i - 1, i)
+		var key := Vector2i(floori(sx[i] / cell), floori(sz[i] / cell))
+		for gx in range(key.x - 1, key.x + 2):
+			for gz in range(key.y - 1, key.y + 2):
+				for k: int in grid.get(Vector2i(gx, gz), []):
+					if sc[k] != sc[i] and Vector2(sx[k] - sx[i], sz[k] - sz[i]).length() <= cell:
+						_graph.connect_points(k, i)
+		if not grid.has(key):
+			grid[key] = []
+		grid[key].append(i)
 
 
 # (road weight, tarmac weight) under a wheel, as the drivetrain asks the terrain.

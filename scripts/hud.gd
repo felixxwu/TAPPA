@@ -1,6 +1,6 @@
 extends CanvasLayer
 # Docs: features/hud.md, features/stage.md — update in the same change as this file.
-# Tests: tests/headless/test_hud.gd, tests/headless/test_hud_gauge.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'hud' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
+# Tests: tests/headless/test_hud.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'hud' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # On-screen readout of the car's airspeed — the chassis velocity magnitude,
 # not wheel rotation, so wheelspin and lockup don't affect the number.
 
@@ -17,9 +17,6 @@ var _boost_label: Label
 # was formatted under, so the label only re-formats when the readout changes.
 var _last_boost_pct := -999
 var _last_turbo := false
-# Last DISPLAYED nitrous percent (-1 = no nitrous fitted), gating the nitrous gauge
-# writes the same way _last_boost_pct gates the boost bar's.
-var _last_nitrous_pct := -999
 # Track-seed readout, part of the H debug overlay. Built in code and stacked
 # under the boost label; shows the current world seed (Config.data.track_seed)
 # so a run can be identified/reproduced.
@@ -49,30 +46,12 @@ var _grip_grid: GridContainer
 # limit is 1.0 because that IS peak grip, the point grip_fraction is measured against.
 const _GRIP_WARN_FRAC := 0.9
 const _GRIP_LIMIT_FRAC := 1.0
-# The bottom-centre gauge row (features/hud.md): each is a HudGauge vertical strip, laid
-# out edge to edge by _layout_gauges with health first.
-#
-# In-run damage readout (features/damage.md): the health gauge grades green→red with
-# remaining HP and pulses when low, plus a red screen flash on each HP-losing impact.
-# The pulse rides on the FILL's alpha, not `modulate`, so the needle, name and icon stay
-# legible instead of pulsing red along with the fill.
-@onready var _hp_gauge: HudGauge = $HPGauge
-# Boost. Shown only on a car with forced induction fitted — turbo
-# OR supercharger — and its fill tracks the live boost fraction. See
-# features/forced-induction.md.
-@onready var _boost_gauge: HudGauge = $BoostGauge
-# Nitrous. Shown only when nitrous is fitted
-# (GameConfig.has_nitrous()); its fill is the tank fraction left this stage
-# (EngineSim.nitrous_fraction()). A turbocharged car with nitrous shows BOTH flankers at
-# once, hence the distinct violet hue. See features/nitrous.md.
-@onready var _nitrous_gauge: HudGauge = $NitrousGauge
-# Free roam's engine temperature gauge (DamageModel.thermal): optional, so the stage scene
-# simply has none. Fill = DamageModel.temp_fraction (0 °C empty, full at the overheat threshold), blue to
-# red, pulsing while the engine overheats; a label under the gauges warns when the cooling
-# has failed.
-@onready var _temp_gauge: HudGauge = get_node_or_null("TempGauge")
+# The gauge cluster: one dial in the bottom-right corner carrying rpm, gear, health,
+# temperature, boost and nitrous (HudDial, features/hud.md). Built in code in _ready.
+# Low health pulses the rim's alpha rather than `modulate`, so the rest of the dial stays legible.
+var _dial: HudDial
+# Warns just above the dial when the radiator is broken or the engine is overheating.
 var _cooling_label: Label
-var _temp_pulse_t := 0.0
 @onready var _impact_flash: ColorRect = $ImpactFlash
 
 # Low-HP warning pulse speed (rad/s) and the impact-flash response curve: each
@@ -97,8 +76,6 @@ const _BOOST_HUE := 0.58
 # Violet, deliberately well away from the boost blue: nitrous and forced induction are
 # separate slots, so both bars can be on screen together and must not read as one gauge.
 const _NITROUS_HUE := 0.70
-# Gap between the gauge row and the bottom of the screen.
-const _GAUGE_BOTTOM_MARGIN := 8.0
 
 # Last displayed values, so _process only re-formats + re-assigns a label when
 # its value actually changes (avoids per-frame string allocation / GC churn).
@@ -109,8 +86,6 @@ var _last_rpm := -1
 # reading yet / gauge hidden. _hp_pulse_t advances the low-HP warning oscillation.
 var _last_hp := -1.0
 var _hp_pulse_t := 0.0
-# Which gauges were visible at the last row layout, as a bitmask; -1 = never laid out.
-var _gauge_layout_mask := -1
 # The debug readout (membership: DEBUG_READOUT_NODES below — do not re-list it here,
 # a second copy is a second thing to rot) is a dev diagnostic, hidden by default and
 # toggled with H (`toggle_debug_arrows`) — the same gate as the debug force
@@ -159,29 +134,27 @@ func _ready() -> void:
 	# DEBUG_READOUT_NODES so this pass and the H toggle can never disagree.
 	for element in debug_readout_elements():
 		element.visible = false
-	# Boost gauge starts hidden — _update_boost_gauge reveals it once a car with forced
-	# induction is fielded (an NA car never shows an always-empty gauge). Tinted a FIXED
-	# blue: unlike health there's no "danger" end to grade toward, and a distinct hue
-	# keeps it from reading as a second health gauge.
-	_boost_gauge.visible = false
-	_boost_gauge.fill_color = _gauge_color(_BOOST_HUE)
-	# Same deal for nitrous: hidden until _update_nitrous_gauge sees a fitted tank, and a
-	# fixed violet from the same family so it can sit alongside boost unconfused.
-	_nitrous_gauge.visible = false
-	_nitrous_gauge.fill_color = _gauge_color(_NITROUS_HUE)
-	if _temp_gauge != null:
-		_temp_gauge.visible = false
-		_cooling_label = Label.new()
-		_cooling_label.name = "CoolingLabel"
-		_cooling_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_cooling_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-		_cooling_label.offset_left = -160
-		_cooling_label.offset_right = 160
-		_cooling_label.offset_top = -126
-		_cooling_label.offset_bottom = -104
-		_cooling_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
-		_cooling_label.visible = false
-		add_child(_cooling_label)
+	_build_dial()
+
+
+func _build_dial() -> void:
+	_dial = HudDial.new()
+	_dial.name = "Dial"
+	_dial.size = _dial.custom_minimum_size
+	# Fixed hues from the health grade's family; boost and nitrous are separate upgrade
+	# slots, so both can show at once and must not read as one gauge.
+	_dial.boost_color = _gauge_color(_BOOST_HUE)
+	_dial.nitrous_color = _gauge_color(_NITROUS_HUE)
+	add_child(_dial)
+	move_child(_dial, _impact_flash.get_index())
+	_cooling_label = Label.new()
+	_cooling_label.name = "CoolingLabel"
+	_cooling_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_cooling_label.size = Vector2(480, 22)
+	_cooling_label.position = Vector2(_dial.size.x - _cooling_label.size.x, -_cooling_label.size.y)
+	_cooling_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25))
+	_cooling_label.visible = false
+	_dial.add_child(_cooling_label)
 
 
 # Build a debug readout label in code (no scene node), stacked top-left below the
@@ -375,15 +348,16 @@ func _timed_process(_delta: float) -> void:
 		_last_boost_pct = boost_pct
 		_last_turbo = turbo
 		_boost_label.text = boost_text(turbo, live_boost)
-		_update_boost_gauge(turbo, live_boost)
-	# Nitrous is gated the same way: the displayed integer percent (-1 = not fitted) is
-	# the cache key, so a continuous drain only touches the bar when the reading moves.
-	var nitrous_fitted := Config.data.has_nitrous()
-	var nitrous_frac := clampf(engine.nitrous_fraction(), 0.0, 1.0)
-	var nitrous_pct := roundi(nitrous_frac * 100.0) if nitrous_fitted else -1
-	if nitrous_pct != _last_nitrous_pct:
-		_last_nitrous_pct = nitrous_pct
-		_update_nitrous_gauge(nitrous_fitted, nitrous_frac)
+	_dial.rpm = engine.rpm()
+	_dial.scale_rpm = HudDial.scale_for(Config.data.redline_rpm)
+	_dial.redline_rpm = engine.redline_omega() * 60.0 / TAU
+	_dial.gear_text = _gear_text(engine.gear)
+	_dial.boost = live_boost if turbo else -1.0
+	_dial.nitrous = clampf(engine.nitrous_fraction(), 0.0, 1.0) if Config.data.has_nitrous() else -1.0
+	_dial.nitrous_on = engine.nitrous_delivering
+	var screen := get_viewport().get_visible_rect().size
+	var controls := get_parent().get_node_or_null("MobileControls") as MobileControls
+	_dial.position = HudDial.home_rect(screen).position + Vector2(0.0, MobileControls.bottom_band_lift(controls, screen))
 	var track_seed: int = Config.data.track_seed
 	if track_seed != _last_seed:
 		_last_seed = track_seed
@@ -394,6 +368,7 @@ func _timed_process(_delta: float) -> void:
 	if _grip_grid.visible:
 		_update_grip_grid()
 	_update_damage(_delta)
+	_dial.queue_redraw()
 
 
 # The shared tint for both bottom gauges — see _GAUGE_SAT / _GAUGE_VAL. Static so the
@@ -402,50 +377,25 @@ static func _gauge_color(hue: float) -> Color:
 	return Color.from_hsv(hue, _GAUGE_SAT, _GAUGE_VAL)
 
 
-# Drive the player-facing boost gauge: the bar IS the boost reading (0..1), with
-# the boost icon under it. Hidden entirely on a naturally-aspirated car rather than
-# sitting at zero. Turbo and blower share one gauge because they share one upgrade slot,
-# so at most one is ever live (features/forced-induction.md).
-#
-# Both writes are CHANGE-GATED by the caller (the same `boost_pct` / `turbo` caches that
-# gate the debug label): raw boost is a continuous float, so writing `value` every frame
-# would queue a redraw for sub-pixel changes nobody can see.
-func _update_boost_gauge(fitted: bool, live_boost: float) -> void:
-	_boost_gauge.visible = fitted
-	if fitted:
-		_boost_gauge.value = live_boost
-
-
-# Drive the player-facing nitrous gauge, the boost gauge.s twin: the bar IS the tank
-# fraction left this stage, with the NOS bottle icon under it, hidden entirely
-# when no nitrous is fitted rather than sitting at zero. Both answers come from the
-# MODEL — GameConfig.has_nitrous() for "is it fitted", EngineSim.nitrous_fraction() for
-# "how much is left" — and the caller change-gates both writes on the rounded percent.
-func _update_nitrous_gauge(fitted: bool, frac: float) -> void:
-	_nitrous_gauge.visible = fitted
-	if fitted:
-		_nitrous_gauge.value = frac
-
-
-# Drive the HP gauge + impact flash off the car's damage model. Hidden when
-# hud_hp_enabled is off.
+# Drive the dial's health rim + impact flash off the car's damage model. The rim is
+# hidden when hud_hp_enabled is off.
 func _update_damage(delta: float) -> void:
 	var dmg: DamageModel = car.damage
 	var show_gauge := dmg != null and Config.data.hud_hp_enabled
-	_hp_gauge.visible = show_gauge
+	_dial.hp = -1.0
 	if show_gauge:
 		var frac := clampf(dmg.hp / dmg.max_hp, 0.0, 1.0) if dmg.max_hp > 0.0 else 0.0
-		_hp_gauge.value = frac
+		_dial.hp = frac
 		# Green (full) → amber → red (empty) via hue; flash by fading the fill's alpha
 		# when below the low-HP warning fraction so the danger is unmissable. The tint
-		# rides on the FILL only, so the icon stays plain ink instead of pulsing with it.
+		# rides on the rim only, so the rest of the dial stays plain.
 		var col := _gauge_color(frac * _HP_HUE_FULL)
 		if frac < Config.data.hud_low_hp_warn_frac:
 			_hp_pulse_t += delta * _HP_PULSE_SPEED
 			col.a = lerpf(0.35, 1.0, 0.5 + 0.5 * sin(_hp_pulse_t))
 		else:
 			_hp_pulse_t = 0.0
-		_hp_gauge.fill_color = col
+		_dial.hp_color = col
 		# Bump the impact flash on any HP drop since last frame, sized to the loss.
 		if _last_hp >= 0.0 and dmg.hp < _last_hp:
 			var bump := (_last_hp - dmg.hp) / dmg.max_hp * _IMPACT_FLASH_GAIN
@@ -456,72 +406,30 @@ func _update_damage(delta: float) -> void:
 	# Fade the flash back out regardless of gauge visibility.
 	if _impact_flash.color.a > 0.0:
 		_impact_flash.color.a = maxf(0.0, _impact_flash.color.a - delta * _IMPACT_FLASH_DECAY)
-	_update_temp(dmg, delta)
-	_layout_gauges()
+	_update_temp(dmg)
 
 
-# The gauges in left-to-right order. Visible ones sit edge to edge in a centred row along
-# the bottom, so a part that isn't fitted closes up instead of leaving a hole.
-func _gauge_row() -> Array[HudGauge]:
-	var row: Array[HudGauge] = [_hp_gauge, _boost_gauge, _nitrous_gauge]
-	if _temp_gauge != null:
-		row.append(_temp_gauge)
-	return row
-
-
-func _layout_gauges() -> void:
-	var row := _gauge_row()
-	var mask := 0
-	var width := 0.0
-	for i in row.size():
-		if row[i].visible:
-			mask |= 1 << i
-			width += row[i].size.x
-	if mask == _gauge_layout_mask:
-		return
-	_gauge_layout_mask = mask
-	var x := -width * 0.5
-	for gauge in row:
-		if not gauge.visible:
-			continue
-		var w := gauge.size.x
-		var h := gauge.size.y
-		gauge.offset_left = x
-		gauge.offset_right = x + w
-		gauge.offset_bottom = -_GAUGE_BOTTOM_MARGIN
-		gauge.offset_top = -_GAUGE_BOTTOM_MARGIN - h
-		x += w
-
-
-func _update_temp(dmg: DamageModel, delta: float) -> void:
-	if _temp_gauge == null:
-		return
+func _update_temp(dmg: DamageModel) -> void:
 	var thermal := dmg != null and dmg.thermal
-	_temp_gauge.visible = thermal
 	_cooling_label.visible = thermal and dmg.cooling_broken
+	_dial.temp = -1.0
+	_dial.overheating = false
 	if not thermal:
 		return
 	var cfg: GameConfig = Config.data
-	var frac := dmg.temp_fraction(cfg)
-	_temp_gauge.value = frac
-	var col := Color.from_hsv(lerpf(0.58, 0.0, frac), _GAUGE_SAT, _GAUGE_VAL)
-	if dmg.is_overheating(cfg):
-		_temp_pulse_t += delta * _HP_PULSE_SPEED * 1.5
-		col.a = lerpf(0.35, 1.0, 0.5 + 0.5 * sin(_temp_pulse_t))
-	else:
-		_temp_pulse_t = 0.0
-	_temp_gauge.fill_color = col
+	_dial.temp = dmg.temp_fraction(cfg)
+	_dial.overheating = dmg.is_overheating(cfg)
 	if dmg.cooling_broken:
-		_cooling_label.text = "OVERHEATING — REACH A CHECKPOINT" if dmg.is_overheating(cfg) else "RADIATOR DAMAGED"
+		_cooling_label.text = "OVERHEATING — REACH A CHECKPOINT" if _dial.overheating else "RADIATOR DAMAGED"
 
 
 # Readouts for tests.
 func temp_gauge_visible() -> bool:
-	return _temp_gauge != null and _temp_gauge.visible
+	return _dial.temp >= 0.0
 
 
 func cooling_warning() -> String:
-	return _cooling_label.text if _cooling_label != null and _cooling_label.visible else ""
+	return _cooling_label.text if _cooling_label.visible else ""
 
 
 func _gear_text(gear: int) -> String:

@@ -14,7 +14,7 @@ extends CanvasLayer
 #             on or off), then one per part on sale for it (pick to buy it, which switches it on).
 #             TIRES starts with a Stock card, the car's own tires.
 #   GARAGE — a card per owned car with its "x / y upgrades" line (pick one to drive it).
-# The level view opens only the shop (`open_shop`) with `free` on.
+# The level view opens only the shop (`open_shop`) or the tuning (`open_tune`), with `free` on.
 # Back (Esc / gamepad B, or the Back button) steps a sub-page → its parent page → MAIN → closed. A change of parts or car
 # is applied when the page closes: `car_changed` asks the host to re-field the car.
 
@@ -33,8 +33,10 @@ enum View { WRECKED, MAIN, TUNE, SHOP, UPGRADES, TIRES, ENGINES, DRIVETRAINS, GA
 
 # The active car's owned-car dict (Save's own copy), so tuning and parts land on it.
 var owned: Dictionary = {}
-# Every part already unlocked and any car's engine fittable, nothing to buy: the level view's shop.
+# Every part already unlocked and any owned car's engine fittable, nothing to buy: the level view's shop.
 var free := false
+# With `free`: the car ids whose engines can be fitted, the cars the player owns.
+var engine_cars: Array = []
 
 var view := View.MAIN
 var site := -1
@@ -80,6 +82,14 @@ func open_shop() -> void:
 	_swap_from = -1
 	_fielded_id = int(owned.get("instance_id", -1))
 	_show(View.SHOP)
+
+
+# Just the tuning sliders, over a host's own menu: Back closes it.
+func open_tune() -> void:
+	_root = View.TUNE
+	dirty = false
+	_fielded_id = int(owned.get("instance_id", -1))
+	_show(View.TUNE)
 
 
 # The car gave up before reaching a rest stop: say how much money it dropped, and respawn at the last lit stop once the player continues. The game keeps running behind it.
@@ -199,13 +209,14 @@ func _build_tune() -> void:
 	_page.body().add_child(_tune_panel)
 	_tune_panel.setup(owned, _on_tuned)
 	_tune_panel.refresh()
-	var back := _page.add_action(UITheme.row_button("< Back", _show.bind(View.MAIN)))
+	var leave := close if _root == View.TUNE else _show.bind(View.MAIN)
+	var back := _page.add_action(UITheme.row_button("< Back", leave))
 	for b in _tune_panel.action_buttons():
 		if b.get_parent() != null:
 			b.get_parent().remove_child(b)
 		_page.add_action(b)
 	MenuNav.attach(_page, {first = _tune_panel.first_slider() if _tune_panel.first_slider() != null else back,
-		on_back = _show.bind(View.MAIN)})
+		on_back = leave})
 
 
 func _on_tuned() -> void:
@@ -244,11 +255,13 @@ func _build_engines() -> void:
 	_card_page("Engine swaps", entries, header, -1, View.SHOP, _back_from_engines)
 
 
-# Every catalogue car's engine, any one fitted with a pick.
+# The engine of every car the player owns (`engine_cars`), any one fitted with a pick.
 func _build_free_engines() -> void:
 	var entries: Array = []
 	for i in CarLibrary.all().size():
 		var id := String(CarLibrary.all()[i]["id"])
+		if not id in engine_cars:
+			continue
 		var fitted := LootRules.engine_owner(owned) == id
 		entries.append({"title": _car_name({"model_id": id}), "desc": LootRules.engine_name({"model_id": id}), "car": i,
 			"extra": "Fitted" if fitted else "", "action": Callable() if fitted else _fit_engine.bind(id)})

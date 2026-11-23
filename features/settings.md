@@ -144,6 +144,12 @@ through the page's `_dev_status` line, and both editing the free-roam world sess
 
 `Save.grant_car` remains the plain mutator tests use to seed a fixture car.
 
+**The wipe also forgets the Hafren level's progress** (`LevelView.forget_progress`, called first): the
+level's car and parts (`level_car`), parked spot (`level_pose`) and explored map (`level_map_seen`)
+live in the profile's device `settings`, which `reset_new_game` keeps, so they are erased
+(`Save.erase_setting`) along with the in-memory car (`LevelView.owned`, `level_car_id`), and a live
+level stops saving its spot as the reload closes it. Without this the wipe changed nothing in the world.
+
 **Confirming the wipe reloads the hub scene** (`SettingsMenu._wipe_progress` →
 `_reload_after_wipe`, at the end of the local wipe and again after the cloud
 publish resolves when signed in). `Save.reset_new_game()` only replaces the

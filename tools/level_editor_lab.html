@@ -15,6 +15,7 @@
   #views { flex: 1; display: flex; min-height: 0; }
   #views > div { flex: 1; position: relative; min-width: 0; border-left: 1px solid #333; overflow: hidden; }
   #views canvas { display: block; width: 100%; height: 100%; }
+  #views > #wrap3d[hidden] { display: none; }
   #map { cursor: crosshair; }
   #pop { position: absolute; display: none; flex-direction: column; gap: 5px; padding: 8px 10px; background: #1d2024ee; border: 1px solid #fc6; border-radius: 4px; }
   #pop label { justify-content: space-between; }
@@ -48,6 +49,7 @@
     <button id="coverImport">Import cover mask</button><input id="coverFile" type="file" accept=".png,image/png" hidden>
     <button id="coverClear">Clear cover</button>
   </span>
+  <label><input id="only2d" type="checkbox"> 2D only</label>
   <span class="val" id="sight"></span>
 </div>
 <div id="views">
@@ -195,7 +197,7 @@ function pack(l) {
     roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension), ...(n.tarmac && { tarmac: true }) }))) };
   delete out.road; delete out.trees;
   if (!out.spectators?.length) delete out.spectators;
-  if (out.teleports?.length) out.teleports = out.teleports.map(q => q.name ? { x: r1(q.x), z: r1(q.z), name: q.name } : { x: r1(q.x), z: r1(q.z) }); else delete out.teleports;
+  if (out.teleports?.length) out.teleports = out.teleports.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), ...(q.missions?.length ? { missions: q.missions.map(m => ({ to: m.to, car: m.car })) } : {}) })); else delete out.teleports;
   if (out.gravelPatches?.length) out.gravelPatches = out.gravelPatches.map(p => p.map(q => ({ x: r1(q.x), z: r1(q.z) }))); else delete out.gravelPatches;
   if (out.size === 600) delete out.size;
   if (l.heightmap) {
@@ -420,6 +422,51 @@ function pileFootprints() {
   pileCache = { samples, piles, out };
   return out;
 }
+// Shortest drive along the roads between two points (Dijkstra over the samples; chains join where another chain's sample is within 1.5 m): [[x, z], ...], empty when unconnected. Cached per level change and endpoints.
+let routeCache = { samples: null, graph: null, byKey: new Map() };
+function routeCached(a, b) {
+  if (routeCache.samples !== samples) routeCache = { samples, graph: null, byKey: new Map() };
+  const key = `${a.x},${a.z},${b.x},${b.z}`;
+  if (!routeCache.byKey.has(key)) routeCache.byKey.set(key, route(a, b));
+  return routeCache.byKey.get(key);
+}
+function heapPush(h, e) { let i = h.push(e) - 1; while (i && h[(i - 1) >> 1][0] > e[0]) { h[i] = h[(i - 1) >> 1]; i = (i - 1) >> 1; } h[i] = e; }
+function heapPop(h) {
+  const top = h[0], last = h.pop();
+  if (h.length) { let i = 0; for (let c; (c = 2 * i + 1) < h.length; i = c) { if (c + 1 < h.length && h[c + 1][0] < h[c][0]) c++; if (h[c][0] >= last[0]) break; h[i] = h[c]; } h[i] = last; }
+  return top;
+}
+function route(a, b) {
+  if (samples.length < 2) return [];
+  const n = samples.length, cell = 1.5, grid = new Map(), adj = routeCache.graph ??= samples.map(() => []);
+  if (!routeCache.built) {
+    routeCache.built = true;
+    samples.forEach((s, i) => {
+      if (i && !s.first) { const d = Math.hypot(s.x - samples[i - 1].x, s.z - samples[i - 1].z); adj[i].push([i - 1, d]); adj[i - 1].push([i, d]); }
+      const gx = Math.floor(s.x / cell), gz = Math.floor(s.z / cell);
+      for (let x = gx - 1; x <= gx + 1; x++) for (let z = gz - 1; z <= gz + 1; z++) for (const k of grid.get(x + "," + z) ?? []) {
+        const d = Math.hypot(s.x - samples[k].x, s.z - samples[k].z);
+        if (samples[k].c !== s.c && d <= cell) { adj[i].push([k, d]); adj[k].push([i, d]); }
+      }
+      const key = gx + "," + gz; if (!grid.has(key)) grid.set(key, []); grid.get(key).push(i);
+    });
+  }
+  const near = p => { let best = 0, bd = Infinity; samples.forEach((s, i) => { const d = (s.x - p.x) ** 2 + (s.z - p.z) ** 2; if (d < bd) { bd = d; best = i; } }); return best; };
+  const from = near(a), to = near(b), dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), heap = [[0, from]];
+  dist[from] = 0;
+  while (heap.length) {
+    const [d, u] = heapPop(heap);
+    if (u === to) break;
+    if (d > dist[u]) continue;
+    for (const [v, w] of adj[u]) if (d + w < dist[v]) { dist[v] = d + w; prev[v] = u; heapPush(heap, [dist[v], v]); }
+  }
+  if (dist[to] === Infinity) return [];
+  const out = [[b.x, b.z]];
+  for (let u = to; u >= 0; u = prev[u]) out.push([samples[u].x, samples[u].z]);
+  out.push([a.x, a.z]);
+  return out.reverse();
+}
+
 function nearestRoad(x, z, samples) {
   let best = { d: Infinity, i: 0 };
   for (let i = 0; i < samples.length - 1; i++) {
@@ -699,9 +746,21 @@ function draw2D() {
     ctx.strokeText(g.n, sx, sz); ctx.fillText(g.n, sx, sz);
     if (on) { ctx.fillStyle = "#fc6"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx + r, sz, 6 * devicePixelRatio, 0, 7); ctx.fill(); ctx.stroke(); }
   });
+  if (show.teleports && sel?.type === "tele") {
+    const q = level.teleports[sel.i], [sx, sz] = toScreen(q.x, q.z);
+    ctx.strokeStyle = "#fc6"; ctx.lineWidth = 1.5 * devicePixelRatio; ctx.beginPath();
+    for (const m of q.missions ?? []) { const t = level.teleports.find(o => o.name === m.to); if (t) routeCached(q, t).forEach(([x, z], k) => { const [px, pz] = toScreen(x, z); k ? ctx.lineTo(px, pz) : ctx.moveTo(px, pz); }); }
+    ctx.stroke();
+  }
   if (show.teleports) (level.teleports ?? []).forEach((q, i) => {
     const [sx, sz] = toScreen(q.x, q.z), on = sel?.type === "tele" && sel.i === i, r = 8 * devicePixelRatio;
     ctx.fillStyle = on ? "#fc6" : "#3ad0e6"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+    if ("heading" in q) { // which way the car faces on arriving
+      const h = q.heading * Math.PI / 180, dx = Math.sin(h), dz = -Math.cos(h), L = 22 * devicePixelRatio, tip = [sx + dx * L, sz + dz * L];
+      ctx.beginPath(); ctx.moveTo(sx, sz); ctx.lineTo(...tip); ctx.moveTo(tip[0] - (dx + dz) * 6 * devicePixelRatio, tip[1] - (dz - dx) * 6 * devicePixelRatio); ctx.lineTo(...tip);
+      ctx.lineTo(tip[0] - (dx - dz) * 6 * devicePixelRatio, tip[1] - (dz + dx) * 6 * devicePixelRatio);
+      ctx.lineWidth = 4 * devicePixelRatio; ctx.stroke(); ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeStyle = on ? "#fc6" : "#3ad0e6"; ctx.stroke(); ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+    }
     ctx.beginPath(); ctx.moveTo(sx, sz - r); ctx.lineTo(sx + r, sz); ctx.lineTo(sx, sz + r); ctx.lineTo(sx - r, sz); ctx.closePath(); ctx.fill(); ctx.stroke();
     if (q.name) { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3; ctx.font = `bold ${12 * devicePixelRatio}px sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
       ctx.strokeText(q.name, sx + r + 4, sz); ctx.fillText(q.name, sx + r + 4, sz); }
@@ -951,7 +1010,7 @@ function select(s) {
   pop.innerHTML = sel.type === "pv"
     ? `<b>Gravel patch ${sel.p} corner ${sel.i}</b><span>Drag corners; double-click an edge to add one</span><button data-act="del">Delete corner</button><button data-act="delpatch">Delete whole patch (shift+Delete)</button>`
     : sel.type === "tele"
-    ? `<b>Teleport ${sel.i}</b><label>Name <input type="text" data-k="name"></label><span>Drag to move; the game snaps the car to the nearest road</span><button data-act="del">Delete teleport</button>`
+    ? `<b>Teleport ${sel.i}</b><label>Name <input type="text" data-k="name"></label>${field("heading", "Car faces", 15, "° from north")}<span>Drag to move; the car arrives exactly here, facing the arrow</span><b>Missions (drive to another point, win a car)</b><div id="missions"></div><button data-act="addmission">Add mission</button><button data-act="del">Delete teleport</button>`
     : sel.type === "spec"
     ? `<b>Spectators ${sel.i}</b>` + field("r", "Radius", 0.5, "m") + field("n", "People", 1) + `<button data-act="del">Delete group</button>`
     : sel.type === "tree"
@@ -975,7 +1034,30 @@ function select(s) {
     pop.querySelector("[data-act=tarmacroad]").onclick = () => setTarmac(level.roads[sel.c], !!selObj().tarmac);
   }
   for (const [name, fn] of [["split", splitRoad], ["delroad", removeRoad], ["clear", clearRoad]]) { const b = pop.querySelector(`[data-act=${name}]`); if (b) b.onclick = fn; }
+  if (sel.type === "tele") { renderMissions(); pop.querySelector("[data-act=addmission]").onclick = () => { (selObj().missions ??= []).push({ to: "", car: "" }); renderMissions(); changed(); save(); }; }
   syncPopup(); mapDirty = true;
+}
+// The game's cars for the reward dropdown, read from car_library.gd (each entry's "name" comes just before its "id").
+// Opened from file:// the fetch fails and the reward stays a typed car id.
+let CARS = null;
+if (served) fetch("../scripts/car_library.gd").then(r => r.text()).then(src => {
+  CARS = [...src.matchAll(/"name": "([^"]+)"[\s\S]*?"id": "([^"]+)"/g)].map(m => ({ name: m[1], id: m[2] }));
+  if (sel?.type === "tele") renderMissions();
+}).catch(() => {});
+function renderMissions() {
+  const o = selObj(), box = $("missions"), names = level.teleports.filter((t, i) => i !== sel.i && t.name).map(t => t.name);
+  box.innerHTML = "";
+  (o.missions ?? []).forEach((m, k) => {
+    const row = document.createElement("div"), opts = ["", ...names].map(n => `<option${n === m.to ? " selected" : ""}>${n}</option>`).join("");
+    const cars = CARS && [...CARS, ...(m.car && !CARS.some(c => c.id === m.car) ? [{ id: m.car, name: `${m.car} (not in the game)` }] : [])];
+    const reward = cars ? `<select data-car><option value=""></option>${cars.map(c => `<option value="${c.id}"${c.id === m.car ? " selected" : ""}>${c.name}</option>`).join("")}</select>`
+      : `<input data-car type="text" size="8" placeholder="car id" value="${m.car}">`;
+    row.innerHTML = `<select data-to>${opts}</select> ${reward} <button>x</button>`;
+    row.querySelector("[data-to]").onchange = e => { m.to = e.target.value; changed(); save(); };
+    row.querySelector("[data-car]")[cars ? "onchange" : "oninput"] = e => { m.car = e.target.value.trim(); save(); };
+    row.querySelector("button").onclick = () => { o.missions.splice(k, 1); if (!o.missions.length) delete o.missions; renderMissions(); changed(); save(); };
+    box.appendChild(row);
+  });
 }
 function setTarmac(nodes, on) {
   for (const n of nodes) if (on) n.tarmac = true; else delete n.tarmac;
@@ -984,7 +1066,12 @@ function setTarmac(nodes, on) {
 function edit(k, v) {
   const o = selObj();
   if (k === "kind") o.kind = v;
-  else if (k === "name") { if (v.trim()) o.name = v.trim(); else delete o.name; }
+  else if (k === "name") {
+    const old = o.name, nu = v.trim();
+    if (old && nu) for (const t of level.teleports) for (const m of t.missions ?? []) if (m.to === old) m.to = nu;
+    if (nu) o.name = nu; else delete o.name;
+  }
+  else if (k === "heading") { if (v === "") delete o.heading; else if (isFinite(+v)) o.heading = ((Math.round(+v) % 360) + 360) % 360; else return; }
   else if (!isFinite(+v) || +v <= 0 && k !== "rot") return;
   else if (sel.type === "spec") o[k] = k === "n" ? Math.min(500, Math.round(+v)) : +v;
   else if (k === "width") o.sx = +v / treeW({ ...o, sx: 1 });
@@ -996,7 +1083,7 @@ function edit(k, v) {
 function syncPopup(skip) {
   if (!sel) return;
   const o = selObj();
-  const vals = sel.type === "pv" ? {} : sel.type === "tele" ? { name: o.name ?? "" } : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+  const vals = sel.type === "pv" ? {} : sel.type === "tele" ? { name: o.name ?? "", heading: o.heading ?? "" } : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
                                    : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
   for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
 }
@@ -1420,6 +1507,50 @@ function rebuild3DSpectators() {
   crowdMesh = new THREE.Mesh(out.geometry(), crowdMat);
   scene.add(crowdMesh);
 }
+// Teleport points as the game shows them (teleport_beacons.gd): a black obelisk pointing down, the rest_stop icon on both faces,
+// spinning and bobbing at GameConfig.teleport_beacon_spin / _bob_m / _bob_hz (mirrored here as BEACON_*).
+const BEACON = { w: 1.0, d: 0.3, body: 2.4, tip: 0.9, hover: 2.2, icon: 0.7 }, BEACON_SPIN = 1.2, BEACON_BOB_M = 0.25, BEACON_BOB_HZ = 0.4;
+const beaconGeo = (() => {
+  const { w: W, d: D, body: H, tip: P } = BEACON, w = W / 2, d = D / 2, pos = [], col = [];
+  const top = [[-w, H, -d], [w, H, -d], [w, H, d], [-w, H, d]], bot = top.map(([x, , z]) => [x, 0, z]), tip = [0, -P, 0];
+  const light = new THREE.Vector3(0.5, 0.7, 0.3).normalize();
+  const tri = (a, b, c) => {
+    const [A, B, C] = [a, b, c].map(v => new THREE.Vector3(...v)), n = B.clone().sub(A).cross(C.clone().sub(A)).normalize();
+    if (n.dot(A.clone().sub(new THREE.Vector3(0, H / 2, 0))) < 0) n.negate();
+    const l = Math.min(1, Math.max(0, n.dot(light) * 0.5 + 0.5));
+    for (const v of [a, b, c]) { pos.push(...v); col.push(0.16 * l, 0.16 * l, 0.18 * l); }
+  };
+  tri(top[0], top[1], top[2]); tri(top[0], top[2], top[3]);
+  for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; tri(top[i], top[j], bot[j]); tri(top[i], bot[j], bot[i]); tri(bot[i], bot[j], tip); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  return g;
+})();
+const beaconMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+const beaconIcon = new THREE.PlaneGeometry(BEACON.icon, BEACON.icon);
+const beaconIconMat = new THREE.MeshBasicMaterial(served ? { map: loader.load("../icons/cards/rest_stop.png", t => { t.magFilter = THREE.NearestFilter; }), alphaTest: 0.5 } : { color: 0xffffff });
+let beacons = [];
+function rebuild3DTeleports() {
+  for (const b of beacons) scene.remove(b);
+  beacons = [];
+  for (const q of level.teleports ?? []) {
+    if (!inWin(q.x, q.z, 10)) continue;
+    const b = new THREE.Group();
+    b.add(new THREE.Mesh(beaconGeo, beaconMat));
+    for (const side of [1, -1]) {
+      const face = new THREE.Mesh(beaconIcon, beaconIconMat);
+      face.position.set(0, BEACON.body * 0.6, side * (BEACON.d / 2 + 0.01));
+      if (side < 0) face.rotation.y = Math.PI;
+      b.add(face);
+    }
+    b.position.set(q.x, heightAt(q.x, q.z) + BEACON.hover + BEACON.tip, q.z);
+    b.userData.base = b.position.y;
+    scene.add(b); beacons.push(b);
+  }
+}
+function animateTeleports(t) {
+  beacons.forEach((b, i) => { b.rotation.y = t * BEACON_SPIN; b.position.y = b.userData.base + Math.sin((t * BEACON_BOB_HZ + i * 0.37) * Math.PI * 2) * BEACON_BOB_M; });
+}
 let treeMeshes = [];
 function rebuild3DTrees() {
   for (const m of treeMeshes) { scene.remove(m); m.dispose(); }
@@ -1495,7 +1626,7 @@ renderer.domElement.onwheel = e => { e.preventDefault(); cam.dist = Math.max(5, 
 
 // --- frame loop: rebuild whatever changed, then draw both views ------------------------------
 let terrainDirty = true, treesDirty = true, mapDirty = true, frames = 0;
-let windowDirty = true;
+let windowDirty = true, ground3DDirty = true;
 function changed(terrainToo) { if (terrainToo) terrainDirty = true; treesDirty = true; mapDirty = true; treeGridDirty = true; }
 function resize() {
   cv.width = cv.clientWidth * devicePixelRatio; cv.height = cv.clientHeight * devicePixelRatio;
@@ -1503,26 +1634,35 @@ function resize() {
   mapDirty = true;
 }
 addEventListener("resize", resize);
+$("only2d").checked = localStorage.getItem("levelEditorLab2dOnly") === "1";
+function apply2dOnly() { wrap.hidden = $("only2d").checked; localStorage.setItem("levelEditorLab2dOnly", wrap.hidden ? "1" : "0"); resize(); }
+$("only2d").onchange = apply2dOnly; wrap.hidden = $("only2d").checked;
 let lastT = performance.now();
 function frame() {
   const now = performance.now(); walk(Math.min(0.1, (now - lastT) / 1000)); lastT = now;
   if (terrainDirty) { rebuildRoads(); terrainDirty = false; windowDirty = true; }
-  if (!T.full && Math.hypot(view.x - (T.x0 + WW() / 2), view.z - (T.z0 + WW() / 2)) > WIN_MOVE) windowDirty = true;
+  if (!wrap.hidden && !T.full && Math.hypot(view.x - (T.x0 + WW() / 2), view.z - (T.z0 + WW() / 2)) > WIN_MOVE) windowDirty = true;
   if (windowDirty) {
-    placeWindow(); rebuildGrid(); rebuild3DTerrain(); windowDirty = false; treesDirty = mapDirty = cover3DDirty = true;
+    placeWindow(); rebuildGrid(); windowDirty = false; ground3DDirty = treesDirty = mapDirty = cover3DDirty = true;
     if (T.full) buildContours(heights, G, GCELL, 1, CONTOUR_M);
   }
-  if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); rebuild3DLogPiles(); rebuild3DSpectators(); treesDirty = false; }
-  U.uCenter.value.set(view.x, 0, view.z); U.uTime.value = now / 1000;
-  if (!coverAt || cover3DDirty && now - coverGenAt > 150 || Math.hypot(view.x - coverAt[0], view.z - coverAt[1]) > 10) rebuild3DCover();
+  if (!wrap.hidden) {
+    if (ground3DDirty) { rebuild3DTerrain(); ground3DDirty = false; }
+    if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); rebuild3DLogPiles(); rebuild3DSpectators(); rebuild3DTeleports(); treesDirty = false; }
+    animateTeleports(now / 1000);
+    U.uCenter.value.set(view.x, 0, view.z); U.uTime.value = now / 1000;
+    if (!coverAt || cover3DDirty && now - coverGenAt > 150 || Math.hypot(view.x - coverAt[0], view.z - coverAt[1]) > 10) rebuild3DCover();
+  }
   if (++frames % 15 === 0) $("sight").textContent = big()
     ? `${SIZE} m level: the 3D view shows a ${WW()} m window around the view centre${juncCut ? ` (${juncCut} junctions in it are not shaded)` : ""}`
     : "";
   if (mapDirty) { draw2D(); mapDirty = false; }
-  const ty = heightAt(view.x, view.z) + 1.5;
-  camera.position.set(view.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, ty + Math.sin(cam.pitch) * cam.dist, view.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist);
-  camera.lookAt(view.x, ty, view.z);
-  renderer.render(scene, camera);
+  if (!wrap.hidden) {
+    const ty = heightAt(view.x, view.z) + 1.5;
+    camera.position.set(view.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, ty + Math.sin(cam.pitch) * cam.dist, view.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist);
+    camera.lookAt(view.x, ty, view.z);
+    renderer.render(scene, camera);
+  }
   requestAnimationFrame(frame);
 }
 
