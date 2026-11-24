@@ -929,7 +929,7 @@ func has_nitrous() -> bool:
 ## APK set this to your dev machine, e.g. "http://192.168.1.50:8080/bench".
 @export var bench_report_url := ""
 
-@export var follow_distance := 4
+@export var follow_distance := 5
 ## Chase camera height above the car, expressed as a multiple of
 ## follow_distance (so a 1.0 ratio keeps height == distance). Scaling off the
 ## follow distance keeps the camera pitch stable when the distance changes.
@@ -3169,6 +3169,17 @@ func spectator_params() -> Dictionary:
 @export var level_car_id := "acty"
 ## Level view: the car opens a teleport point's service menu (repair, upgrade, swap cars) within this many metres of it.
 @export var level_service_radius_m := 12.0
+## Level view: what a delivery pays per km of road between its two teleport points, in dollars.
+@export var level_delivery_pay_per_km := 200.0
+## Level view: what a teleport picked on the map costs, in dollars (a wreck's respawn stays free).
+@export var level_teleport_cost := 30
+## Level view: the money a new player starts with (they start with no car, at level_start_shop).
+@export var level_start_money := 3000
+## Level view: the shop a player with no car watches (camera orbiting it, its stock open); the first shop if none is named so.
+@export var level_start_shop := "Cwmbiga Motors"
+## Level view: the no-car camera's distance from the start shop (m) and how fast it circles it (radians a second).
+@export var level_shop_orbit_m := 28.0
+@export var level_shop_orbit_rad_s := 0.12
 ## Level view: HP a second the car heals while within level_service_radius_m of a teleport point.
 @export var level_service_heal_hp_s := 100.0
 ## Level view: and only while slower than this (m/s), so a handbrake on gamepad A driving past doesn't open it.
@@ -3217,7 +3228,7 @@ func spectator_params() -> Dictionary:
 @export var level_minimap_texture_px := 1024
 ## Level view minimap: the picture is redrawn once the car has moved this many metres; between redraws the shader scrolls and turns it every frame.
 @export var level_minimap_redraw_move_m := 20.0
-## Level view minimap: the mission route is recomputed once the car has moved this many metres.
+## Level view minimap: the delivery route is recomputed once the car has moved this many metres.
 @export var level_minimap_route_move_m := 50.0
 ## Level view: a spectator group from the save appears once the car is within this many metres of its centre.
 @export var level_spectator_spawn_m := 150.0

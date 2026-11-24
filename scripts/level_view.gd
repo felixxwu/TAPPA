@@ -31,22 +31,39 @@ var _photo_cam: PhotoModeCamera  # while photo mode is up: the viewpoint trees, 
 var _trees: LevelTrees
 var _spectators: LevelSpectators
 var garage: MenuPage
-var missions_page: MenuPage
+var deliveries_page: MenuPage
 static var _next_pose: Variant = null  # where the car stands after a car-change reload
 static var owned: Dictionary = {}  # the level's car with every shop part unlocked, kept across reloads
 const SAVED_CAR_KEY := "level_car"
 const CARS_KEY := "level_cars"
-static var mission: Dictionary = {}  # the drive in progress: {from, to, car}; kept across the reloads a car or parts change does
+const MONEY_KEY := "level_money"
+const DONE_KEY := "level_deliveries_done"  # the keys (delivery_key) of the deliveries already completed
+const PARTS_KEY := "level_parts"  # the upgrade part ids bought at shops; only these can go on a car
+# What a delivery can carry and its weight in kg, which rides in the car until it's dropped off.
+const CARGO := {"Post": 10.0, "Parcels": 20.0, "Medicine": 5.0, "Seed packets": 8.0, "Welsh cakes": 6.0,
+	"Fishing tackle": 12.0, "Honey jars": 15.0, "Newspapers": 18.0, "Camera kit": 10.0, "Wool": 12.0,
+	"Spare fuses": 3.0, "Tea and biscuits": 5.0}
+static var delivery: Dictionary = {}  # the drive in progress: {from, to, pay, cargo, kg, pickup, cargo_hp}; kept across the reloads a car or parts change does
 const SAVED_POSE_KEY := "level_pose"
 const POSE_SAVE_SEC := 5.0
 var shop: RestStopPage
 var beacons: TeleportBeacons
+var shop_beacons: TeleportBeacons
+var store: MenuPage  # a shop's page: its stock to buy
+var orbit_camera: Camera3D  # circles a shop or teleport point while its menu is open (and the start shop while the player has no car)
+var _orbit_centre := Vector3.INF
+var _orbit_a0 := 0.0
+var _orbit_t0 := 0
+var _orbit_prev: Camera3D  # the driving camera to hand back to
+var _menu_point := Vector2.INF  # the teleport point or shop whose menu is open: leaving it puts the car there, facing its way
+var _first_buy_at := -1  # the start shop, once a new player has bought their first car there and is still shopping
+var shop_cars: Dictionary = {}  # car id -> the display car parked in its bay at a shop that sells it
+var _store_dirty := false  # a part was bought, so the car is re-fielded when the shop closes
 var service: MenuPage  # the menu a teleport point opens: repair, upgrade, swap cars
 var service_prompt: Button
 static var last_point := -1  # the teleport point last visited, where a wreck respawns; kept across the reloads a car change does
 var wreck_page: MenuPage
 var _wrecked := false
-var _missions_overview := false  # the missions page is the pause menu's overview, not a teleport point's pick
 var service_name := ""  # the teleport point's name, the service menu's title
 var _from_service := false  # the service menu is open, or its Shop / Garage, which return to it
 var _car: VehicleBody3D
@@ -58,9 +75,11 @@ var _pause: Node
 var map: LevelMap
 var minimap: LevelMinimap
 var off_road_label: Label
-var mission_label: Label
+var delivery_label: Label
+var cargo_label: Label  # bottom middle while carrying cargo: its health, knocked down by the same hits the car takes
+var money_label: Label  # the player's money, top right over the pause menu and the map
+var banner := CheckpointBanner.new()  # free roam's "Checkpoint reached" band, here saying "Delivery complete"
 var _service_point := -1
-var _service_notice := ""
 var applied_fps_caps: Array[int] = []
 var perf_stats := LevelStats.new()
 var _driving := false  # true once loaded, so a half-built level never overwrites the saved spot
@@ -106,8 +125,11 @@ func _ready() -> void:
 	if owned.is_empty():
 		restore_saved_car()
 	if String(owned.get("model_id", "")) != Config.data.level_car_id:
+		var have_parts := bought_parts()  # ponytail: two bought parts sharing a slot (both turbos) both go on; pick one if that ships
 		owned = {"model_id": Config.data.level_car_id, "tuning": {}, "parts": LootRules.parts_for({"model_id": Config.data.level_car_id}).map(
-			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))}
+			func(p: Dictionary) -> Dictionary: return p.merged({"on": String(p["id"]) in have_parts}))}
+	var bought := bought_parts()
+	owned["parts"] = owned.get("parts", []).filter(func(p: Dictionary) -> bool: return not LootRules.is_upgrade(p) or String(p["id"]) in bought)
 	Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
 	Save.set_setting(CARS_KEY, owned_cars())
 	car.apply_owned(LootRules.fielded(owned))
@@ -126,10 +148,14 @@ func _ready() -> void:
 	off_road_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
 	off_road_label.visible = false
 	layer.add_child(off_road_label)
-	mission_label = UITheme.label("")
-	mission_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
-	mission_label.visible = false
-	layer.add_child(mission_label)
+	delivery_label = UITheme.label("")
+	delivery_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
+	delivery_label.visible = false
+	layer.add_child(delivery_label)
+	cargo_label = UITheme.label("")
+	cargo_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
+	cargo_label.visible = false
+	layer.add_child(cargo_label)
 	map = LevelMap.new()
 	map.view = self
 	map.process_mode = Node.PROCESS_MODE_DISABLED  # painting starts now, but M stays dead until the level has loaded
@@ -148,6 +174,14 @@ func _ready() -> void:
 	beacons = TeleportBeacons.new()
 	beacons.setup(teleport_points(), height_at)
 	add_child(beacons)
+	shop_beacons = TeleportBeacons.new()
+	shop_beacons.setup(shop_points(), height_at, TeleportBeacons.SHOP_TINT, TeleportBeacons.SHOP_ICON)
+	add_child(shop_beacons)
+	for sh: Dictionary in level.get("shops", []):
+		if sh.get("model") is Dictionary:
+			var body := shop_model(sh["model"], height_at)
+			add_child(body)
+			park_stock(body, sh)
 	var arrow := RouteArrow.new()
 	arrow.view = self
 	add_child(arrow)
@@ -155,6 +189,15 @@ func _ready() -> void:
 	service_prompt.visible = false
 	layer.add_child(service_prompt)
 	get_tree().process_frame.connect(_place_service_prompt)  # fires while paused too, so menus hide it
+	var money_layer := CanvasLayer.new()
+	money_layer.layer = 60  # over the pause menu's and the map's dimming
+	add_child(money_layer)
+	money_label = UITheme.money("")
+	money_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
+	money_label.visible = false
+	money_layer.add_child(money_label)
+	get_tree().process_frame.connect(_place_money)
+	add_child(banner)
 	await get_tree().process_frame  # the parent is still adding its children
 	var marks := _add_effects(car)
 	_recovery = RoadRecovery.new()
@@ -171,12 +214,17 @@ func _ready() -> void:
 		await _warm_up(car)
 		print("level view: warm-up %d ms" % (Time.get_ticks_msec() - t_warm))
 	WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
+	if not has_car():
+		_start_without_car(car)
+		loaded.emit()
+		return
 	if _pause != null:
 		_pause.set_input_enabled(true)  # the menu stays inert until its world says it has finished loading
 	map.process_mode = Node.PROCESS_MODE_ALWAYS
 	_driving = true
 	car.damage.thermal = true  # not sooner: an overheating car would lose health behind the loading cover
 	car.damage.gave_up.connect(_on_gave_up)
+	car.damage.damaged.connect(_on_car_damaged)
 	Save.flushing.connect(save_pose)  # window close, app pause, browser tab hidden
 	var timer := Timer.new()
 	timer.wait_time = POSE_SAVE_SEC  # also on a timer: stopping the game from the editor sends no close
@@ -186,7 +234,6 @@ func _ready() -> void:
 	perf_stats.view = self
 	add_child(perf_stats)
 	loaded.emit()
-	_open_service_on_arrival()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -195,6 +242,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("menu_select") and not event.is_echo() and service_at() >= 0:
 		get_viewport().set_input_as_handled()
 		open_service()
+	elif event.is_action_pressed("menu_select") and not event.is_echo() and shop_at() >= 0:
+		get_viewport().set_input_as_handled()
+		open_store(shop_at())
 	elif event.is_action_pressed("toggle_perf_overlay") and not event.is_echo():
 		perf_stats.toggle()
 
@@ -202,11 +252,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_extra(label: String) -> void:
 	if label == "Map":
 		map.open_over_pause()
-	elif label == "Missions":
-		open_missions(true)
 
 
-# The map closed. Opened from the pause menu, Back returns to the menu; a teleport goes back to driving, on the point's service menu.
+# The map closed. Opened from the pause menu, Back returns to the menu; a teleport goes back to driving.
 func _on_map_closed(teleported: bool, over_pause: bool) -> void:
 	if over_pause and _pause != null:
 		if teleported:
@@ -214,16 +262,7 @@ func _on_map_closed(teleported: bool, over_pause: bool) -> void:
 		else:
 			_pause.return_from_extra()
 	if teleported:
-		mission = {}
-		_open_service_on_arrival()
-
-
-# Arriving on a teleport point (launching there, or a map teleport) opens its service menu.
-func _open_service_on_arrival() -> void:
-	for i in 2:  # Car.reset_to moves the car on the next physics step
-		await get_tree().physics_frame
-	if is_inside_tree() and service_at() >= 0:
-		open_service()
+		delivery = {}
 
 
 # The service menu's Swap car: a card per catalogue car, stock; picking one reloads the level with it.
@@ -250,11 +289,6 @@ func open_garage() -> void:
 	var cards := CardUI.card_list(garage, entries, [], selected)
 	garage.add_action(UITheme.row_button("< Back", _close_garage))
 	MenuNav.attach(garage, {first = cards, on_back = _close_garage})
-
-
-# The service menu's Upgrade: free roam's rest-stop shop with every part free and unlocked; a change reloads the level.
-func open_shop() -> void:
-	_rest_page().open_shop()
 
 
 # The service menu's Tune car: the rest-stop page's tuning sliders, applied to the car as they move and saved.
@@ -291,15 +325,384 @@ func _close_garage() -> void:
 
 # Whether the driving HUD (the minimap) shows: not under a menu, the map, the service menu or photo mode.
 func hud_visible() -> bool:
-	return _driving and is_instance_valid(_car) and not get_tree().paused and not map.visible and not _from_service and _photo_cam == null
+	return _driving and has_car() and is_instance_valid(_car) and not get_tree().paused and not map.visible and not _from_service and _photo_cam == null
 
 
 func _place_service_prompt() -> void:
 	if not is_inside_tree():  # the tree's frame signal still fires while a scene change is removing the level
 		return
-	service_prompt.visible = service_at() >= 0
+	service_prompt.visible = service_at() >= 0 or shop_at() >= 0
 	service_prompt.size = Vector2.ZERO
 	service_prompt.position = ((get_viewport().get_visible_rect().size - service_prompt.size) * 0.5).round()
+
+
+func _place_money() -> void:
+	if not is_inside_tree():
+		return
+	money_label.visible = map.visible or (_pause != null and _pause.is_open())
+	money_label.text = "$%d" % money()
+	money_label.size = Vector2.ZERO
+	money_label.position = Vector2(get_viewport().get_visible_rect().size.x - money_label.size.x - UITheme.FONT_SIZE, UITheme.FONT_SIZE).round()
+
+
+static func money() -> int:
+	return int(Save.get_setting(MONEY_KEY, Config.data.level_start_money))
+
+
+# A player owns a car once they've bought one; until then the level opens on the start shop instead of driving.
+static func has_car() -> bool:
+	return Benchmark.active or not owned_cars().is_empty()
+
+
+# What delivery `m` from teleport point `t` carries, how far it drives along the roads, and what it pays.
+func delivery_info(t: Dictionary, m: Dictionary) -> Dictionary:
+	return delivery_info_on(level, _bake._roads(), t, m)
+
+
+# The road line delivery `m` drives, from teleport point `t` to its drop-off; empty when the drop-off isn't in the level.
+static func delivery_route(level: Dictionary, roads: LevelData, t: Dictionary, m: Dictionary) -> PackedVector2Array:
+	for o: Dictionary in level.get("teleports", []):
+		if String(o.get("name", "")) == String(m.get("to", "")):
+			return roads.route(Vector2(float(t["x"]), float(t["z"])), Vector2(float(o["x"]), float(o["z"])))
+	return PackedVector2Array()
+
+
+static func delivery_info_on(level: Dictionary, roads: LevelData, t: Dictionary, m: Dictionary) -> Dictionary:
+	var line := delivery_route(level, roads, t, m)
+	var km := 0.0
+	for i in range(1, line.size()):
+		km += line[i - 1].distance_to(line[i]) / 1000.0
+	var cargo := cargo_of(t, m)
+	var kg := float(m["kg"]) if float(m.get("kg", 0)) > 0.0 else float(CARGO.get(cargo, 0.0))
+	var pay := int(m["pay"]) if float(m.get("pay", 0)) > 0.0 else roundi(km * Config.data.level_delivery_pay_per_km / 10.0) * 10
+	return {"cargo": cargo, "kg": kg, "km": km, "pay": pay}
+
+
+# A shop's building from tools/shop_lab.html (a .glb, its front facing the road), standing on the ground at its origin, with
+# a box collider over the building itself; the yard, fence and props have none.
+static func shop_model(m: Dictionary, ground: Callable) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.position = Vector3(float(m["x"]), float(ground.call(float(m["x"]), float(m["z"]))), float(m["z"]))
+	body.rotation.y = float(m.get("yaw", 0.0))
+	var path := String(m.get("path", ""))
+	var scene := load(path) as PackedScene if ResourceLoader.exists(path) else null
+	if scene != null:
+		var model := scene.instantiate()
+		_shade_base(model)
+		body.add_child(model)
+	for t: Dictionary in m.get("texts", []):
+		body.add_child(_shop_text(t))
+	var b: Array = m.get("box", [])
+	if b.size() == 5:
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(b[1] - b[0], b[4], b[3] - b[2])
+		shape.shape = box
+		shape.position = Vector3((b[0] + b[1]) * 0.5, b[4] * 0.5, (b[2] + b[3]) * 0.5)
+		body.add_child(shape)
+	return body
+
+
+# Parks a frozen display copy of every car the shop sells, and the player doesn't own, in its bay in front of the shop.
+func park_stock(body: Node3D, sh: Dictionary) -> void:
+	var have := owned_cars()
+	var selling: Array = sh.get("stock", []).map(func(it: Dictionary) -> String: return String(it.get("car", "")))
+	for bay: Dictionary in sh["model"].get("bays", []):
+		var id := String(bay.get("car", ""))
+		var idx := CarLibrary.index_of(id)
+		if idx < 0 or id in have or not id in selling or shop_cars.has(id):
+			continue
+		var car := CarProp.spawn(body, Scenes.car_scene(), {"index": idx, "stop_physics": true, "disable_process": true})
+		car.rotation.y = float(bay.get("yaw", 0.0)) + PI  # a bay's yaw 0 is nose to the road (+z); a car faces -z
+		car.position = Vector3(float(bay["x"]), 0.0, float(bay["z"]))
+		car.position.y -= CarCardPreview._visible_mesh_aabb(car, body).position.y  # wheels on the ground
+		shop_cars[id] = car
+
+
+# One piece of a shop's text (its sign, a price board, a bay's car name) drawn in the game's font, so the model needs no
+# images: `p` and `q` place it in the model (facing its +z), `w` x `h` metres is the room it fits in.
+static func _shop_text(t: Dictionary) -> Label3D:
+	var l := Label3D.new()
+	l.text = String(t.get("text", ""))
+	l.font = load(UITheme.FONT_PATH)
+	l.font_size = UITheme.FONT_SIZE * 2
+	l.outline_size = 0
+	l.modulate = Color(String(t.get("color", "#ffffff")))
+	l.shaded = false
+	l.double_sided = false
+	l.alpha_cut = Label3D.ALPHA_CUT_DISCARD
+	l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	var p: Array = t.get("p", [0, 0, 0])
+	var q: Array = t.get("q", [0, 0, 0, 1])
+	l.transform = Transform3D(Basis(Quaternion(q[0], q[1], q[2], q[3])), Vector3(p[0], p[1], p[2]))
+	var em := l.font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.font_size)  # the text's size in font pixels
+	l.pixel_size = minf(float(t.get("h", 0.2)) / maxf(em.y, 1.0), float(t.get("w", 1.0)) / maxf(em.x, 1.0))
+	return l
+
+
+# Darkens a model toward the ground the way the level's buildings are (LevelBuildings._building): baked into vertex colours.
+static func _shade_base(root: Node) -> void:
+	var dark: float = Config.data.level_ao_building_base
+	var reach: float = maxf(Config.data.level_ao_building_base_height_m, 0.01)
+	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		var xf := Transform3D.IDENTITY  # the mesh's place in the model, so heights are above the model's ground
+		var n: Node = mi
+		while n != root and n is Node3D:
+			xf = (n as Node3D).transform * xf
+			n = n.get_parent()
+		var out := ArrayMesh.new()
+		for si in mi.mesh.get_surface_count():
+			var arrays := mi.mesh.surface_get_arrays(si)
+			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var cols := PackedColorArray(arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else [])
+			if cols.size() != verts.size():
+				cols.resize(verts.size())
+				cols.fill(Color.WHITE)
+			for i in verts.size():
+				var shade := 1.0 - dark * (1.0 - smoothstep(0.0, reach, (xf * verts[i]).y))
+				cols[i] = Color(cols[i].r * shade, cols[i].g * shade, cols[i].b * shade, cols[i].a)
+			arrays[Mesh.ARRAY_COLOR] = cols
+			out.add_surface_from_arrays(mi.mesh.surface_get_primitive_type(si), arrays)
+			var mat := mi.get_active_material(si)
+			if mat is BaseMaterial3D:
+				mat = mat.duplicate()
+				(mat as BaseMaterial3D).vertex_color_use_as_albedo = true
+			out.surface_set_material(si, mat)
+		mi.mesh = out
+		for si in out.get_surface_count():
+			mi.set_surface_override_material(si, null)
+
+
+# A shop building's footprint on the map, for the ground's ambient occlusion: centre, its x axis and half extents.
+static func shop_box(m: Dictionary) -> Dictionary:
+	var b: Array = m.get("box", [])
+	if b.size() != 5:
+		return {}
+	var yaw := float(m.get("yaw", 0.0))
+	var axis := Vector2(cos(yaw), -sin(yaw))
+	var side := Vector2(sin(yaw), cos(yaw))
+	var local := Vector2((b[0] + b[1]) * 0.5, (b[2] + b[3]) * 0.5)
+	return {"centre": Vector2(float(m["x"]), float(m["z"])) + axis * local.x + side * local.y, "axis": axis,
+		"half": Vector2((b[1] - b[0]) * 0.5, (b[3] - b[2]) * 0.5)}
+
+
+func shop_points() -> Array:
+	return level.get("shops", []).map(func(t: Dictionary) -> Vector2: return Vector2(float(t["x"]), float(t["z"])))
+
+
+static func bought_parts() -> Array:
+	var saved: Variant = Save.get_setting(PARTS_KEY, [])
+	return saved if saved is Array else []
+
+
+# A shop's page: a card per car or part it sells, with its price; picking one buys it after a yes / no.
+func open_store(i: int) -> void:
+	var s: Dictionary = level["shops"][i]
+	_from_service = true
+	get_tree().paused = true
+	_pause.set_input_enabled(false)
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	store = CardUI.card_page(layer, {"title": String(s.get("name", "Shop")), "dim": true})
+	_start_orbit(shop_centre(i))
+	_menu_point = Vector2(float(s["x"]), float(s["z"]))
+	var have := owned_cars()
+	var parts := bought_parts()
+	var entries: Array = []
+	for item: Dictionary in s.get("stock", []):
+		var price := int(item.get("price", 0))
+		if item.has("car"):
+			var id := String(item["car"])
+			var idx := CarLibrary.index_of(id)
+			if idx < 0 or id in have:  # a car the player already owns is no longer on sale
+				continue
+			entries.append({"title": _car_name(id), "car": idx, "desc": "$%d" % price,
+				"action": _buy.bind(_car_name(id), price, _got_car.bind(id, i))})
+		elif BoostLibrary.CATALOGUE.has(String(item.get("part", ""))):
+			var id := String(item["part"])
+			var spec: Dictionary = BoostLibrary.CATALOGUE[id]
+			var got := id in parts
+			entries.append({"title": String(spec.get("label", id)), "icon": String(spec.get("icon", id)), "desc": "$%d" % price,
+				"subtitle": String(spec.get("blurb", "")), "extra": "Owned" if got else "", "extra_variant": "green",
+				"action": Callable() if got else _buy.bind(String(spec.get("label", id)), price, _got_part.bind(id, i))})
+	var cards := CardUI.card_list(store, entries, ["$%d" % money()] if not entries.is_empty() else ["Nothing for sale"])
+	if has_car():
+		store.add_action(UITheme.row_button("Drive >" if _first_buy_at >= 0 else "< Back", close_store))
+	MenuNav.attach(store, {first = cards, on_back = close_store if has_car() else func() -> void: pass})
+
+
+func _car_name(id: String) -> String:
+	return String(CarLibrary.by_id(id).get("name", id))
+
+
+func _buy(what: String, price: int, got: Callable) -> void:
+	_confirm_spend("Buy %s for $%d?" % [what, price], price, got)
+
+
+func _got_car(id: String, at: int) -> void:
+	if shop_cars.has(id):
+		shop_cars[id].queue_free()
+		shop_cars.erase(id)
+	var first := not has_car()
+	var have := owned_cars()
+	have.append(id)
+	Save.set_setting(CARS_KEY, have)
+	if first and not Config.data.level_spawn_teleport.is_empty():
+		delivery = {"from": "", "to": Config.data.level_spawn_teleport}  # the sat nav leads a new player to their first delivery job
+	if first or _first_buy_at >= 0:  # a new player keeps shopping (parts, say) and drives off when they leave the shop
+		_first_buy_at = at
+		Config.data.level_car_id = id
+		_reopen_store(at)
+		return
+	_drive_bought_car(id, at)
+
+
+# A bought part goes straight on the car the player is driving, and on any other car they drive later.
+func _got_part(id: String, at: int) -> void:
+	Save.set_setting(PARTS_KEY, bought_parts() + [id])
+	for item: Dictionary in LootRules.parts_for(owned) if has_car() else []:  # without a car it waits for the first one
+		if String(item["id"]) == id:
+			owned["parts"].append(item.merged({"on": true}))
+			_store_dirty = true
+	_reopen_store(at)
+
+
+# The start with no car: the car is parked out of sight, a camera circles the start shop and its stock is open.
+func _start_without_car(car: VehicleBody3D) -> void:
+	car.visible = false
+	car.freeze = true
+	car.process_mode = Node.PROCESS_MODE_DISABLED
+	if _recovery != null:
+		_recovery.process_mode = Node.PROCESS_MODE_DISABLED  # it would put the parked car back on the road
+	for n in ["HUD", "MobileControls", "SpeedLines"]:
+		var layer := get_parent().get_node_or_null(n) as CanvasLayer
+		if layer != null:
+			layer.visible = false
+	var at := start_shop()
+	if at < 0:
+		return
+	car.global_position = shop_centre(at) + Vector3.DOWN * 50.0  # below the ground, so nothing streams round a car the player can't see
+	open_store(at)
+
+
+func shop_centre(i: int) -> Vector3:
+	var sh: Dictionary = level["shops"][i]
+	var m: Dictionary = sh["model"] if sh.get("model") is Dictionary else sh
+	return Vector3(float(m["x"]), height_at(float(m["x"]), float(m["z"])) + 2.0, float(m["z"]))
+
+
+# Circle the camera slowly round `centre` (a shop, a teleport point) while its menu is up, starting from where the camera is.
+func _start_orbit(centre: Vector3) -> void:
+	if is_instance_valid(orbit_camera) and centre.is_equal_approx(_orbit_centre):
+		return  # already circling it: a menu rebuilt over the same place keeps turning smoothly
+	var cam := get_viewport().get_camera_3d()
+	if cam != orbit_camera:
+		_orbit_prev = cam
+	if not is_instance_valid(orbit_camera):
+		orbit_camera = Camera3D.new()
+		orbit_camera.far = 2000.0
+		add_child(orbit_camera)
+		get_tree().process_frame.connect(_orbit_step)  # fires while the menu pauses the tree
+	var from := cam.global_position - centre if cam != null else Vector3.BACK
+	_orbit_a0 = atan2(from.x, from.z)
+	_orbit_t0 = Time.get_ticks_msec()
+	_orbit_centre = centre
+	_orbit_step()
+	orbit_camera.make_current()
+
+
+func _orbit_step() -> void:
+	if not is_instance_valid(orbit_camera):
+		return
+	var a := _orbit_a0 + (Time.get_ticks_msec() - _orbit_t0) / 1000.0 * Config.data.level_shop_orbit_rad_s
+	var r: float = Config.data.level_shop_orbit_m
+	orbit_camera.global_position = _orbit_centre + Vector3(sin(a), 0.4, cos(a)) * r
+	orbit_camera.look_at(_orbit_centre)
+
+
+func _stop_orbit() -> void:
+	if not is_instance_valid(orbit_camera):
+		return
+	get_tree().process_frame.disconnect(_orbit_step)
+	orbit_camera.queue_free()
+	orbit_camera = null
+	_orbit_centre = Vector3.INF
+	if is_instance_valid(_orbit_prev):
+		_orbit_prev.make_current()
+
+
+# The shop a player with no car starts at: GameConfig.level_start_shop, else the first; -1 with no shops.
+func start_shop() -> int:
+	var shops: Array = level.get("shops", [])
+	for i in shops.size():
+		if String(shops[i].get("name", "")) == Config.data.level_start_shop:
+			return i
+	return 0 if not shops.is_empty() else -1
+
+
+# A car just bought is driven away at once: the level reloads with it on the road by the shop, facing out of its yard.
+func _drive_bought_car(id: String, at: int) -> void:
+	var sh: Dictionary = level["shops"][at]
+	var facing := Vector3.BACK.rotated(Vector3.UP, float(sh["model"].get("yaw", 0.0))) if sh.get("model") is Dictionary else Vector3.FORWARD
+	Config.data.level_car_id = id  # the reload sees `owned` is another car and fields this one (emptying it would restore the saved old car)
+	_next_pose = teleport_pose(Vector2(float(sh["x"]), float(sh["z"])), facing) if _bake != null else null  # right on the obelisk, facing its heading
+	_free_store()
+	close_service_state()
+	Scenes.change_to(get_tree(), Scenes.WORLD, "Fetching your car")
+
+
+func _reopen_store(at: int) -> void:
+	_free_store()
+	open_store(at)
+
+
+func _free_store() -> void:
+	CardUI.park_previews(store)
+	store.get_parent().queue_free()
+	store = null
+
+
+func close_store() -> void:
+	if _first_buy_at >= 0:
+		var at := _first_buy_at
+		_first_buy_at = -1
+		_store_dirty = false
+		_drive_bought_car(Config.data.level_car_id, at)
+		return
+	_free_store()
+	close_service_state()
+	if _store_dirty:
+		_store_dirty = false
+		Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
+		_reload("Fitting parts")
+
+
+# What a delivery carries: the level editor may name it (and set its weight and pay); otherwise it's derived from the two point names.
+static func cargo_of(t: Dictionary, m: Dictionary) -> String:
+	var cargo := String(m.get("cargo", ""))
+	if cargo.is_empty():
+		cargo = CARGO.keys()[posmod(hash(String(t.get("name", "")) + ">" + String(m.get("to", ""))), CARGO.size())]
+	return cargo
+
+
+# Deliveries are one-off: a finished one is remembered by this key and never offered again.
+static func delivery_key(t: Dictionary, m: Dictionary) -> String:
+	return "%s>%s>%s" % [t.get("name", ""), m.get("to", ""), cargo_of(t, m)]
+
+
+static func done_deliveries() -> Array:
+	var saved: Variant = Save.get_setting(DONE_KEY, [])
+	return saved if saved is Array else []
+
+
+# The deliveries still on offer at teleport point `t`.
+static func offered_deliveries(t: Dictionary) -> Array:
+	var done := done_deliveries()
+	return t.get("deliveries", []).filter(func(m: Dictionary) -> bool: return not delivery_key(t, m) in done)
 
 
 func teleport_points() -> Array:
@@ -377,6 +780,8 @@ func respawn() -> void:
 		_car.reset_to(spawn_pose())
 	_car.damage.repair()
 	_car.damage.engine_temp = 0.0
+	if delivery.has("cargo_hp"):
+		delivery["cargo_hp"] = 100.0
 
 
 func _end_wreck() -> void:
@@ -407,11 +812,19 @@ func _set_engine_killed(on: bool) -> void:
 
 # The teleport point the car has stopped beside, so can open its service menu; -1 when none.
 func service_at() -> int:
+	return _stopped_at(teleport_points())
+
+
+# The shop the car has stopped beside; -1 when none.
+func shop_at() -> int:
+	return _stopped_at(shop_points())
+
+
+func _stopped_at(points: Array) -> int:
 	if not _driving or not is_instance_valid(_car) or get_tree().paused or _pause == null or not _pause.is_armed() \
 			or _car.linear_velocity.length() > Config.data.level_service_max_speed:
 		return -1
 	var p := Vector2(_car.global_position.x, _car.global_position.z)
-	var points := teleport_points()
 	for i in points.size():
 		if p.distance_to(points[i]) <= Config.data.level_service_radius_m:
 			return i
@@ -429,141 +842,224 @@ func open_service() -> void:
 	_from_service = true
 	get_tree().paused = true
 	_pause.set_input_enabled(false)
+	var tp: Dictionary = level["teleports"][_service_point]
+	_menu_point = Vector2(float(tp["x"]), float(tp["z"]))
+	_start_orbit(Vector3(float(tp["x"]), height_at(float(tp["x"]), float(tp["z"])) + 2.0, float(tp["z"])))
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(layer)
 	service = CardUI.card_page(layer, {"title": service_name if not service_name.is_empty() else "Service", "dim": true})
-	var missions := _missions_here()
-	var cards := CardUI.card_list(service, [
-		{"title": "Missions", "icon": "travel", "disabled": missions.is_empty(), "action": _service_open.bind(open_missions)},
-		{"title": "Upgrade", "icon": "shop", "action": _service_open.bind(open_shop)},
-		{"title": "Swap car", "icon": "car", "action": _service_open.bind(open_garage)},
-		{"title": "Tune car", "icon": "tune", "action": _service_open.bind(open_tune)},
-	], [_service_notice] if not _service_notice.is_empty() else [])
-	_service_notice = ""
+	var entries: Array = []
+	var t: Dictionary = level["teleports"][_service_point]
+	for m: Dictionary in offered_deliveries(t):  # the point's deliveries first, then the car's own cards
+		entries.append(_delivery_card(t, m, _start_delivery_here.bind(t, m)))
+	entries.append({"title": "Swap car", "icon": "car", "action": _service_open.bind(open_garage)})
+	entries.append({"title": "Tune car", "icon": "tune", "action": _service_open.bind(open_tune)})
+	var cards := CardUI.card_list(service, entries)
 	service.add_action(UITheme.row_button("< Back", close_service))
 	MenuNav.attach(service, {first = cards, on_back = close_service})
 
 
-func _missions_here() -> Array:
-	if _service_point < 0 or _service_point >= level.get("teleports", []).size():
-		return []
-	return level["teleports"][_service_point].get("missions", [])
+# A teleport point clicked on the map: teleport there, navigate there, or start one of its deliveries
+# (a drive to another teleport point that pays money), which teleports there first.
+func open_point(t: Dictionary) -> void:
+	_open_deliveries_page(String(t.get("name", "Teleport")), [t], true)
 
 
-func _car_name(id: String) -> String:
-	return String(CarLibrary.by_id(id).get("name", id))
+# The map's Deliveries button: every delivery from the teleport points found so far.
+func open_deliveries() -> void:
+	_open_deliveries_page("Deliveries", map.known_teleports(), false)
 
 
-# The service menu's Missions: a drive to another teleport point wins a car; picking one starts it.
-# The missions to pick from at this teleport point, or with `overview` (the pause menu's Missions) every mission
-# from the teleport points found so far, where picking one teleports the car to its start first.
-func open_missions(overview := false) -> void:
-	_missions_overview = overview
+func _open_deliveries_page(title: String, points: Array, travel: bool) -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(layer)
-	missions_page = CardUI.card_page(layer, {"title": "Missions", "dim": true})
-	var have := owned_cars()
-	var active := String(mission.get("from", "")) + ">" + String(mission.get("to", ""))
+	deliveries_page = CardUI.card_page(layer, {"title": title, "dim": true})
 	var entries: Array = []
-	var points: Array = map.known_teleports() if overview else [{"name": service_name, "missions": _missions_here()}]
+	if travel:
+		var t: Dictionary = points[0]
+		entries.append({"title": "Teleport", "icon": "travel", "action": _confirm_teleport.bind(_teleport_from_map.bind(t))})
+		entries.append({"title": "Navigate to", "icon": "map", "action": _navigate_to.bind(t),
+			"extra": "Navigating" if delivery.get("to", "") == t.get("name", "") and not delivery.has("cargo") else ""})
 	for t: Dictionary in points:
-		for m: Dictionary in t.get("missions", []):
-			var id := String(m.get("car", ""))
-			var idx := CarLibrary.index_of(id)
-			if idx < 0:
-				continue
-			var e := {"title": "To " + String(m.get("to", "")), "car": idx, "desc": _car_name(id),
-				"extra": "Won" if id in have else "", "action": _start_mission_from.bind(t, m) if overview else _start_mission.bind(m)}
-			if overview:
-				e["subtitle"] = "From " + String(t.get("name", ""))
-				if String(t.get("name", "")) + ">" + String(m.get("to", "")) == active:
-					e["extra"] = "Driving"
-			entries.append(e)
-	var header: Array = ["Find teleport points to see their missions"] if overview and entries.is_empty() else []
-	var cards := CardUI.card_list(missions_page, entries, header)
-	missions_page.add_action(UITheme.row_button("< Back", _close_missions))
-	MenuNav.attach(missions_page, {first = cards, on_back = _close_missions})
+		for m: Dictionary in offered_deliveries(t):
+			entries.append(_delivery_card(t, m, _choose_start.bind(t, m)))
+	var header: Array = ["Find teleport points to see their deliveries"] if entries.is_empty() else []
+	var cards := CardUI.card_list(deliveries_page, entries, header)
+	deliveries_page.add_action(UITheme.row_button("< Back", _close_deliveries))
+	MenuNav.attach(deliveries_page, {first = cards, on_back = _close_deliveries})
 
 
-func _close_missions() -> void:
-	CardUI.park_previews(missions_page)
-	missions_page.get_parent().queue_free()
-	missions_page = null
-	if _missions_overview:
-		_pause.return_from_extra()
+func _delivery_card(t: Dictionary, m: Dictionary, action: Callable) -> Dictionary:
+	var info := delivery_info(t, m)
+	var driving := String(delivery.get("from", "")) == String(t.get("name", "")) and String(delivery.get("to", "")) == String(m.get("to", ""))
+	return {"title": String(info["cargo"]), "icon": "delivery", "desc": "$%d" % info["pay"], "subtitle": "%.1f km · %d kg" % [info["km"], info["kg"]],
+		"extra": "Driving" if driving else "", "extra_variant": "gold", "action": _preview_delivery.bind(t, m, action)}
+
+
+# Before a delivery starts, the map shows its route for the player to confirm: Start runs `start`, Back returns to the page.
+func _preview_delivery(t: Dictionary, m: Dictionary, start: Callable) -> void:
+	var page := deliveries_page if deliveries_page != null else service
+	page.visible = false
+	map.preview(delivery_route(level, _bake._roads(), t, m), start, func() -> void: page.visible = true)
+
+
+func _free_deliveries_page() -> void:
+	CardUI.park_previews(deliveries_page)
+	deliveries_page.get_parent().queue_free()
+	deliveries_page = null
+
+
+func _close_deliveries() -> void:
+	_free_deliveries_page()
+
+
+# Teleporting costs money: ask first, and refuse when the player can't pay.
+func _confirm_teleport(go: Callable) -> void:
+	_confirm_spend("Teleport for $%d?" % Config.data.level_teleport_cost, Config.data.level_teleport_cost, go)
+
+
+# Ask before spending `cost`, then pay and run `go`; just say so when the player can't afford it.
+func _confirm_spend(title: String, cost: int, go: Callable) -> void:
+	var popup: ConfirmPopup
+	if money() < cost:
+		popup = ConfirmPopup.open(self, "Can't afford it", "That costs $%d. You have $%d." % [cost, money()], [{"label": "OK", "callback": Callable()}])
 	else:
-		open_service()
+		popup = ConfirmPopup.open(self, title, "You have $%d." % money(), [{"label": "No", "callback": Callable()},
+			{"label": "Yes", "callback": func() -> void:
+				Save.set_setting(MONEY_KEY, money() - cost)
+				go.call()}], 1, 0)
+	if popup != null:
+		popup.process_mode = Node.PROCESS_MODE_ALWAYS  # the map and its pages run paused
 
 
-func _start_mission(m: Dictionary) -> void:
-	mission = {"from": service_name, "to": String(m.get("to", "")), "car": String(m.get("car", ""))}
-	CardUI.park_previews(missions_page)
-	missions_page.get_parent().queue_free()
-	missions_page = null
+func _teleport_from_map(t: Dictionary) -> void:
+	_free_deliveries_page()
+	map.teleport(Vector2(float(t["x"]), float(t["z"])))
+
+
+# The map's Navigate to: the sat nav routes to the point, as a delivery with no cargo, and driving resumes.
+func _navigate_to(t: Dictionary) -> void:
+	delivery = {"from": "", "to": String(t.get("name", ""))}
+	_free_deliveries_page()
+	map.hide_for_delivery()
 	close_service_state()
 
 
-# A mission picked from the pause menu: start it, then put the car on its start point and resume driving.
-func _start_mission_from(t: Dictionary, m: Dictionary) -> void:
-	service_name = String(t.get("name", ""))
-	mission = {"from": service_name, "to": String(m.get("to", "")), "car": String(m.get("car", ""))}
-	CardUI.park_previews(missions_page)
-	missions_page.get_parent().queue_free()
-	missions_page = null
-	await place_car_on(Vector2(float(t["x"]), float(t["z"])))
+# A delivery picked on the map: how to get to its pick-up point, teleporting there or driving there on the sat nav.
+func _choose_start(t: Dictionary, m: Dictionary) -> void:
+	_free_deliveries_page()
+	var info := delivery_info(t, m)
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	deliveries_page = CardUI.card_page(layer, {"title": String(info["cargo"]), "dim": true})
+	var cards := CardUI.card_list(deliveries_page, [
+		{"title": "Teleport", "icon": "travel", "action": _confirm_teleport.bind(_start_delivery_from.bind(t, m, true))},
+		{"title": "Navigate to", "icon": "map", "action": _start_delivery_from.bind(t, m, false)},
+	], ["Pick up at %s, drop off at %s" % [t.get("name", ""), m.get("to", "")], "%.1f km · $%d" % [info["km"], info["pay"]]])
+	deliveries_page.add_action(UITheme.row_button("< Back", _close_deliveries))
+	MenuNav.attach(deliveries_page, {first = cards, on_back = _close_deliveries})
+
+
+# Starts the delivery: the sat nav leads to its pick-up point first (`pickup`), or with `teleport` the car is put there,
+# which counts as picking up. Either way driving resumes.
+func _start_delivery_from(t: Dictionary, m: Dictionary, teleport: bool) -> void:
+	var info := delivery_info(t, m)
+	delivery = {"from": String(t.get("name", "")), "to": String(m.get("to", "")), "key": delivery_key(t, m),
+		"pay": int(info["pay"]), "cargo": String(info["cargo"]), "kg": float(info["kg"]), "pickup": not teleport}
+	_free_deliveries_page()
+	map.hide_for_delivery()
+	if teleport:
+		await place_car_on(Vector2(float(t["x"]), float(t["z"])))
+		_picked_up()
 	close_service_state()
+
+
+# A delivery picked at its own pick-up point's service menu: the car is already there, so it starts picked up.
+func _start_delivery_here(t: Dictionary, m: Dictionary) -> void:
+	var info := delivery_info(t, m)
+	delivery = {"from": String(t.get("name", "")), "to": String(m.get("to", "")), "key": delivery_key(t, m), "pay": int(info["pay"]), "cargo": String(info["cargo"]), "kg": float(info["kg"])}
+	close_service()
+	_picked_up()
+
+
+func _picked_up() -> void:
+	delivery.erase("pickup")
+	delivery["cargo_hp"] = 100.0
+	banner.show_band("Delivery started", "Take the %s to %s" % [String(delivery["cargo"]).to_lower(), delivery["to"]])
+
+
+# The cargo loses the same share of its health as the car does of its HP; at 0 the delivery fails, though it can be taken again.
+func _on_car_damaged(loss: float, _at: Vector3) -> void:
+	if delivery.has("cargo_hp") and is_instance_valid(_car):
+		delivery["cargo_hp"] = maxf(0.0, float(delivery["cargo_hp"]) - loss / _car.damage.max_hp * 100.0)
+		if delivery["cargo_hp"] <= 0.0:
+			banner.show_band("Cargo destroyed", "The %s didn't make it" % String(delivery["cargo"]).to_lower())
+			delivery = {}
+
+
+# The teleport point the sat nav leads to: a delivery's pick-up point until the car has been there, then its drop-off.
+static func nav_target() -> String:
+	return String(delivery.get("from" if delivery.get("pickup", false) else "to", ""))
 
 
 func close_service_state() -> void:
+	_stop_orbit()
+	# Back on the road the car stands on the point facing its heading, so driving in nose first turns it round for free;
+	# not when a reload (a car bought or swapped) places it anyway.
+	if _menu_point != Vector2.INF and _next_pose == null and is_instance_valid(_car) and has_car():
+		_car.reset_to(teleport_pose(_menu_point, -_car.global_transform.basis.z))
+	_menu_point = Vector2.INF
 	_from_service = false
 	get_tree().paused = false
 	_pause.set_input_enabled(true)
 
 
-func _check_mission() -> void:
-	if mission.is_empty() or not _driving or _from_service or get_tree().paused or not is_instance_valid(_car):
+func _check_delivery() -> void:
+	if delivery.is_empty() or not _driving or _from_service or get_tree().paused or not is_instance_valid(_car):
 		return
 	var points := teleport_points()
 	var tps: Array = level.get("teleports", [])
 	var p := Vector2(_car.global_position.x, _car.global_position.z)
 	for i in points.size():
-		if String(tps[i].get("name", "")) == mission["to"] and p.distance_to(points[i]) <= Config.data.level_service_radius_m:
-			_complete_mission(i)
+		if String(tps[i].get("name", "")) == nav_target() and p.distance_to(points[i]) <= Config.data.level_service_radius_m:
+			if delivery.get("pickup", false):
+				_picked_up()
+				return
+			_complete_delivery()
 			return
 
 
-func _complete_mission(at: int) -> void:
-	var id := String(mission["car"])
-	var have := owned_cars()
-	var fresh := not id in have
-	if fresh:
-		have.append(id)
-		Save.set_setting(CARS_KEY, have)
-	mission = {}
-	service_name = String(level["teleports"][at].get("name", ""))
-	_service_point = at
-	_service_notice = "Mission complete: %s is %s" % [_car_name(id), "yours" if fresh else "already yours"]
-	_from_service = true
-	open_service()
+func _complete_delivery() -> void:
+	if not delivery.has("cargo"):
+		delivery = {}
+		return
+	var pay := int(delivery.get("pay", 0))
+	Save.set_setting(MONEY_KEY, money() + pay)
+	if delivery.has("key"):
+		Save.set_setting(DONE_KEY, done_deliveries() + [delivery["key"]])
+	delivery = {}
+	banner.show_band("Delivery complete", "+$%d" % pay)
 
 
 # The cars the player may drive: the saved list, or the authored start car and the current one for a save without it.
-static func sanitise_cars(saved: Variant, authored: String, current: String) -> Array:
+static func sanitise_cars(saved: Variant) -> Array:
 	var out: Array = []
-	for id: Variant in (saved if saved is Array else [authored, current]):
+	if not saved is Array:
+		return out  # a new player owns no car
+	for id: Variant in saved:
 		if CarLibrary.index_of(String(id)) >= 0 and not String(id) in out:
 			out.append(String(id))
-	if out.is_empty() and CarLibrary.index_of(current) >= 0:
-		out.append(current)
 	return out
 
 
 static func owned_cars() -> Array:
-	return sanitise_cars(Save.get_setting(CARS_KEY), String(Config.authored_value("level_car_id", Config.data.level_car_id)), Config.data.level_car_id)
+	return sanitise_cars(Save.get_setting(CARS_KEY))
 
 
 func close_service() -> void:
@@ -585,15 +1081,16 @@ func _service_open(page: Callable) -> void:
 func unlock_everything() -> void:
 	map.reveal_all()
 	Save.set_setting(CARS_KEY, CarLibrary.all().map(func(c: Dictionary) -> String: return String(c["id"])))
+	Save.set_setting(PARTS_KEY, BoostLibrary.CATALOGUE.keys())
 
 
 # Wipe all progress: forget the level's car, parts, parked spot and explored map, which live in the
 # save's device settings (kept by Save.reset_new_game), and stop a running level saving them again as it closes.
 static func forget_progress() -> void:
-	for key in [SAVED_CAR_KEY, SAVED_POSE_KEY, LevelMap.SEEN_KEY, CARS_KEY]:
+	for key in [SAVED_CAR_KEY, SAVED_POSE_KEY, LevelMap.SEEN_KEY, CARS_KEY, MONEY_KEY, PARTS_KEY, DONE_KEY]:
 		Save.erase_setting(key)
 	owned = {}
-	mission = {}
+	delivery = {}
 	_next_pose = null
 	Config.data.level_car_id = Config.authored_value("level_car_id", Config.data.level_car_id)
 	for view: LevelView in (Engine.get_main_loop() as SceneTree).get_nodes_in_group(GROUP):
@@ -834,6 +1331,10 @@ func load_level(d: Dictionary) -> void:
 	ao.stamp_trees(_bake.tree_xf, cfg.level_ao_tree_radius_scale)
 	for b: Dictionary in buildings.boxes:
 		ao.stamp_box(b.centre, b.axis, b.half, cfg.level_ao_building_reach_m, cfg.level_ao_building_ground)
+	for sh: Dictionary in d.get("shops", []):
+		var sb := shop_box(sh["model"]) if sh.get("model") is Dictionary else {}
+		if not sb.is_empty():
+			ao.stamp_box(sb.centre, sb.axis, sb.half, cfg.level_ao_building_reach_m, cfg.level_ao_building_ground)
 	for i in d.get("logPiles", []).size():
 		var pile := _log_pile(d["logPiles"][i], i)
 		add_child(pile)
@@ -883,15 +1384,30 @@ func _build_streamer() -> void:
 
 
 func _process(_dt: float) -> void:
-	_check_mission()
-	if mission_label != null:
-		mission_label.text = "Drive to %s" % mission["to"] if not mission.is_empty() else ""
-		mission_label.visible = not mission.is_empty()
-		mission_label.size = Vector2.ZERO
+	_check_delivery()
+	if delivery_label != null:
+		delivery_label.text = "" if delivery.is_empty() else ("Pick up %s at %s" if delivery.get("pickup", false) else "Deliver %s to %s") % [delivery["cargo"], nav_target()] \
+			if delivery.has("cargo") else "Drive to %s" % nav_target()
+		delivery_label.visible = not delivery.is_empty()
+		delivery_label.size = Vector2.ZERO
 		var y := float(UITheme.FONT_SIZE)
 		if off_road_label != null and off_road_label.visible:
 			y += off_road_label.size.y + UITheme.FONT_SIZE * 0.5
-		mission_label.position = Vector2(roundf((get_viewport().get_visible_rect().size.x - mission_label.size.x) * 0.5), roundf(y))
+		delivery_label.position = Vector2(roundf((get_viewport().get_visible_rect().size.x - delivery_label.size.x) * 0.5), roundf(y))
+	if is_instance_valid(_car):
+		_car.mass = _car.config.mass + (float(delivery.get("kg", 0.0)) if delivery.has("cargo_hp") else 0.0)
+	if cargo_label != null:
+		cargo_label.visible = delivery.has("cargo_hp")
+		cargo_label.text = "Cargo %d%%" % ceili(float(delivery.get("cargo_hp", 0.0)))
+		cargo_label.size = Vector2.ZERO
+		var screen := get_viewport().get_visible_rect().size
+		var r := Rect2(roundf((screen.x - cargo_label.size.x) * 0.5), screen.y - UITheme.FONT_SIZE - cargo_label.size.y, cargo_label.size.x, cargo_label.size.y)
+		var controls := get_parent().get_node_or_null("MobileControls") as MobileControls
+		if controls != null:
+			for b in controls.button_rects():
+				if b.intersects(r.grow(UITheme.FONT_SIZE)):
+					r.position.y = minf(r.position.y, b.position.y - UITheme.FONT_SIZE - r.size.y)
+		cargo_label.position = r.position.round()
 	if _recovery != null:
 		off_road_label.text = off_road_text(_recovery.off_road_seconds())
 		off_road_label.visible = not off_road_label.text.is_empty()
@@ -1064,7 +1580,7 @@ static func spawn_override(roads: Array, pick: Vector3i) -> Array[Vector2]:
 # or, for a point with none, `car_facing` turned along the road there if that road is a dead end one way.
 func teleport_pose(p: Vector2, car_facing: Vector3) -> Transform3D:
 	var facing := _bake._roads().away_from_dead_end(p, car_facing)
-	for t: Dictionary in level.get("teleports", []):
+	for t: Dictionary in level.get("teleports", []) + level.get("shops", []):
 		if Vector2(float(t["x"]), float(t["z"])) == p and t.has("heading"):
 			var h := deg_to_rad(float(t["heading"]))
 			facing = Vector3(sin(h), 0.0, -cos(h))

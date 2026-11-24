@@ -103,9 +103,9 @@ func _build(title: String, body: String, default_index: int) -> void:
 	var panel := UITheme.panel(1.0, 20)
 	center.add_child(panel)
 
-	# ADAPTIVE WIDTH. 420 is the house default, but on a narrow/portrait aspect
+	# ADAPTIVE WIDTH. 280 is the house default, but on a narrow/portrait aspect
 	# (see DisplayStretch — width follows device aspect and can get much narrower
-	# than 420) a fixed 420 forces the panel wider than the screen. Clamp against the current
+	# than 280) a fixed 280 forces the panel wider than the screen. Clamp against the current
 	# logical viewport width, with a little breathing room on each side.
 	# Fallback mirrors GameConfig.virtual_resolution (scripts/game_config.gd), the real
 	# source of truth for the design resolution. Config.data is populated by the Config
@@ -116,7 +116,7 @@ func _build(title: String, body: String, default_index: int) -> void:
 		if get_viewport() != null else (Config.data.virtual_resolution if Config.data != null else Vector2(480, 360))
 	const SIDE_MARGIN := 32.0
 	const MIN_PANEL_WIDTH := 200.0 * UITheme.UI_SCALE
-	var panel_width: float = clampf(420.0 * UITheme.UI_SCALE, MIN_PANEL_WIDTH,
+	var panel_width: float = clampf(280.0 * UITheme.UI_SCALE, MIN_PANEL_WIDTH,
 		maxf(viewport_size.x - SIDE_MARGIN, MIN_PANEL_WIDTH))
 
 	var vbox := VBoxContainer.new()
@@ -129,6 +129,7 @@ func _build(title: String, body: String, default_index: int) -> void:
 	var body_label := Label.new()
 	body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body_label.text = body
+	body_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	body_label.custom_minimum_size = Vector2(panel_width, 0)
 	body_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# PIN THE WRAP WIDTH. An autowrapped Label's minimum width is a single character, and
@@ -154,6 +155,7 @@ func _build(title: String, body: String, default_index: int) -> void:
 	vbox.add_child(scroll)
 
 	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", UITheme.GAP)
 	vbox.add_child(row)
 	_buttons = []

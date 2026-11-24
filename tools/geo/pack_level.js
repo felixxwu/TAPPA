@@ -1,7 +1,8 @@
 // Packs make_level.py's unpacked save into the level editor lab's format using the lab's own pack/unpack, checking the
 // round trip, and clears every tree and ground-cover cell off the road (measured against every road of the lab's own road network).
 // A save with no `gravelPatches` gets one at every dead end (a turning area) and every building (a yard reaching to the nearest road);
-// delete the key to have them made again. Trees and cover are cleared off every patch.
+// delete the key to have them made again. A building added later that stands in no patch gets its yard on the next run, since the
+// game levels the ground in a yard to the road through it. Trees and cover are cleared off every patch.
 // The level's `size` (square, metres; missing = 600) sets the cover grid. Usage: node pack_level.js ../level_editor_lab.html data/<name>/level.json ../levels/<name>.json
 // Re-running it on an already packed save (one path) just clears the road again in place.
 const fs = require("fs"), src = fs.readFileSync(process.argv[2], "utf8");
@@ -84,7 +85,35 @@ const hull = pts => { // Andrew's monotone chain
   return lo.slice(0, -1).concat(hi.slice(0, -1));
 };
 let made = 0;
-if (!lvl.gravelPatches) {
+const yard = b => {
+  const c = Math.cos(b.rot), s = Math.sin(b.rot), pts = [];
+  for (const [u, v] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) { const lx = u * (b.L / 2 + YARD), lz = v * (b.W / 2 + YARD); pts.push({ x: b.x + lx * c - lz * s, z: b.z + lx * s + lz * c }); }
+  let best = null;
+  for (let i = 0; i < samples.length - 1; i++) {
+    if (samples[i + 1].first) continue;
+    const a = samples[i], e = samples[i + 1], abx = e.x - a.x, abz = e.z - a.z, t = Math.max(0, Math.min(1, ((b.x - a.x) * abx + (b.z - a.z) * abz) / (abx * abx + abz * abz || 1)));
+    const qx = a.x + abx * t, qz = a.z + abz * t, d = Math.hypot(b.x - qx, b.z - qz);
+    if (!best || d < best.d) best = { d, qx, qz, ux: abx / (Math.hypot(abx, abz) || 1), uz: abz / (Math.hypot(abx, abz) || 1) };
+  }
+  if (best && best.d < DRIVE_MAX) pts.push({ x: best.qx + best.ux * MOUTH, z: best.qz + best.uz * MOUTH }, { x: best.qx - best.ux * MOUTH, z: best.qz - best.uz * MOUTH });
+  return hull(pts);
+};
+const merge = sets => {
+  let merged = true, polys = sets.map(hull);
+  const touch = (a, b) => a.some(q => polygonDistance(b, q.x, q.z) < MERGE_GAP) || b.some(q => polygonDistance(a, q.x, q.z) < MERGE_GAP);
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < polys.length && !merged; i++) for (let j = i + 1; j < polys.length && !merged; j++)
+      if (touch(polys[i], polys[j])) { polys[i] = hull([...polys[i], ...polys[j]]); polys.splice(j, 1); merged = true; }
+  }
+  return polys.map(p => p.map(q => ({ x: Math.round(q.x * 10) / 10, z: Math.round(q.z * 10) / 10 })));
+};
+if (lvl.gravelPatches) {
+  const bare = buildings.filter(b => lvl.gravelPatches.every(p => p.length < 3 || polygonDistance(p, b.x, b.z) > 0));
+  const yards = merge(bare.map(yard));
+  lvl.gravelPatches.push(...yards);
+  made = yards.length;
+} else {
   const sets = [], jitter = (k, s) => { let h = Math.imul(k + 1, 2654435761) ^ Math.imul(s + 7, 40503); h = Math.imul(h ^ h >>> 15, 2246822519); return ((h ^ h >>> 13) >>> 0) / 4294967296; };
   const allNodes = lvl.roads.flatMap((road, c) => road.map(n => ({ n, c })));
   lvl.roads.forEach((road, c) => {
@@ -96,28 +125,9 @@ if (!lvl.gravelPatches) {
       sets.push(Array.from({ length: 10 }, (_, k) => { const a = k / 10 * Math.PI * 2, r = DEAD_END_R * (0.85 + 0.25 * jitter(sets.length, k)); return { x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r }; }));
     }
   });
-  for (const b of buildings) {
-    const c = Math.cos(b.rot), s = Math.sin(b.rot), pts = [];
-    for (const [u, v] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) { const lx = u * (b.L / 2 + YARD), lz = v * (b.W / 2 + YARD); pts.push({ x: b.x + lx * c - lz * s, z: b.z + lx * s + lz * c }); }
-    let best = null;
-    for (let i = 0; i < samples.length - 1; i++) {
-      if (samples[i + 1].first) continue;
-      const a = samples[i], e = samples[i + 1], abx = e.x - a.x, abz = e.z - a.z, t = Math.max(0, Math.min(1, ((b.x - a.x) * abx + (b.z - a.z) * abz) / (abx * abx + abz * abz || 1)));
-      const qx = a.x + abx * t, qz = a.z + abz * t, d = Math.hypot(b.x - qx, b.z - qz);
-      if (!best || d < best.d) best = { d, qx, qz, ux: abx / (Math.hypot(abx, abz) || 1), uz: abz / (Math.hypot(abx, abz) || 1) };
-    }
-    if (best && best.d < DRIVE_MAX) pts.push({ x: best.qx + best.ux * MOUTH, z: best.qz + best.uz * MOUTH }, { x: best.qx - best.ux * MOUTH, z: best.qz - best.uz * MOUTH });
-    sets.push(hull(pts));
-  }
-  let merged = true, polys = sets.map(hull);
-  const touch = (a, b) => a.some(q => polygonDistance(b, q.x, q.z) < MERGE_GAP) || b.some(q => polygonDistance(a, q.x, q.z) < MERGE_GAP);
-  while (merged) {
-    merged = false;
-    for (let i = 0; i < polys.length && !merged; i++) for (let j = i + 1; j < polys.length && !merged; j++)
-      if (touch(polys[i], polys[j])) { polys[i] = hull([...polys[i], ...polys[j]]); polys.splice(j, 1); merged = true; }
-  }
-  lvl.gravelPatches = polys.map(p => p.map(q => ({ x: Math.round(q.x * 10) / 10, z: Math.round(q.z * 10) / 10 })));
-  made = polys.length;
+  for (const b of buildings) sets.push(yard(b));
+  lvl.gravelPatches = merge(sets);
+  made = lvl.gravelPatches.length;
 }
 // Fences and hedges clear the same way: trees and cover off the line, hedges by half their 1.4 m base as well.
 const lines = (lvl.fences ?? []).filter(f => f.pts.length > 1), halfW = f => f.kind === "hedge" ? 0.7 : 0;

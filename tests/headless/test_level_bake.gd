@@ -18,7 +18,8 @@ func before_all() -> void:
 	_data = LevelData.new()
 	var paved := _node(50.0, 8.0)
 	paved["tarmac"] = true
-	_data.load_save({"size": SIZE, "heightmap": hm, "gravelPatches": [[{"x": -40.0, "z": 30.0}, {"x": -25.0, "z": 30.0}, {"x": -30.0, "z": 45.0}]], "roads": [
+	_data.load_save({"size": SIZE, "heightmap": hm, "gravelPatches": [[{"x": -40.0, "z": 30.0}, {"x": -25.0, "z": 30.0}, {"x": -30.0, "z": 45.0}],
+		[{"x": 38.0, "z": 0.0}, {"x": 52.0, "z": 0.0}, {"x": 52.0, "z": 14.0}, {"x": 38.0, "z": 0.0 + 14.0}]], "roads": [
 		[_node(-50.0, -10.0), _node(0.0, 0.0), paved],
 		[_node(0.0, 0.3, 2.0), _node(5.0, 40.0, 2.0)]]})
 	_bake = LevelBake.bake(_data, "k")
@@ -56,7 +57,8 @@ func test_the_road_frame_texels_agree_with_the_road_frame() -> void:
 			var x := c * fcell - SIZE / 2.0
 			var z := r * fcell - SIZE / 2.0
 			var want := _data.road_frame(x, z)
-			if _data.patch_at(x, z).x < (absf(want.x) - want.y if want.x != INF else INF):
+			var on_road := want.x != INF and absf(want.x) <= want.y
+			if not on_road and _data.patch_at(x, z).x < (absf(want.x) - want.y if want.x != INF else INF):
 				continue  # a gravel patch's pad, checked on its own
 			var got := _bake.frame_texel(c, r)
 			var across := clampf(want.x if want.x != INF else LevelBake.FRAME_RANGE, -LevelBake.FRAME_RANGE, LevelBake.FRAME_RANGE)
@@ -87,6 +89,16 @@ func test_a_gravel_patch_is_an_even_gravel_pad_in_the_frame() -> void:
 	assert_lt(_bake.patch_distance(-32.0, 36.0), 0.0)
 	assert_eq(_bake.patch_distance(-32.0, 36.0), _data.patch_at(-32.0, 36.0).x)
 	assert_gt(_bake.surface_at(-32.0, 36.0).x, 0.99)
+
+
+func test_a_road_across_a_gravel_patch_keeps_its_own_surface() -> void:
+	var fcell := float(SIZE) / (_bake.frame_n - 1)
+	var c := roundi((45.0 + SIZE / 2.0) / fcell)
+	var r := roundi((7.0 + SIZE / 2.0) / fcell)
+	assert_lt(_bake.patch_distance(45.0, 7.0), 0.0, "the paved end runs through a patch")
+	assert_lt(absf(_bake.frame_texel(c, r).w - _data.road_frame(c * fcell - SIZE / 2.0, r * fcell - SIZE / 2.0).w), 0.1, "drawn as the road, not the pad")
+	assert_gt(_bake.frame_tarmac(c, r), 0.5, "still tarmac")
+	assert_gt(_bake.surface_at(45.0, 7.0).y, 0.5, "and drives as tarmac")
 
 
 func test_surface_and_poses_agree_with_the_level_data() -> void:
@@ -265,3 +277,15 @@ func test_spectators_see_a_gravel_pad_as_ground_not_road() -> void:
 	assert_lt(LevelSpectators.road_only(-32.0, 36.0, _bake).x, 0.5)
 	var road := _bake.spawn_nodes[0]
 	assert_gt(LevelSpectators.road_only(road.x, road.y, _bake).x, 0.99, "the road itself still counts")
+
+
+func test_shops_not_in_bake_key() -> void:
+	var path := "user://shop_key_test.json"
+	var write := func(shops: Array) -> void:
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		f.store_string(JSON.stringify({"roads": [], "shops": shops}))
+		f.close()
+	write.call([])
+	var a := LevelBake.key_of(path)
+	write.call([{"x": 1, "z": 2, "name": "A shop", "stock": [{"part": "turbo", "price": 100}]}])
+	assert_eq(LevelBake.key_of(path), a)

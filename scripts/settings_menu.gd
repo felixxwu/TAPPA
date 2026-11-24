@@ -699,11 +699,15 @@ const DEV_MONEY_GRANT := 10000
 
 
 func _add_dev_money() -> void:
-	if not WorldSession.has_world():
-		_dev_status.text = "No world yet."
+	if Config.data.legacy_free_roam_island:
+		if not WorldSession.has_world():
+			_dev_status.text = "No world yet."
+			return
+		WorldSession.set_money(WorldSession.money() + DEV_MONEY_GRANT)
+		_dev_status.text = "$%d." % WorldSession.money()
 		return
-	WorldSession.set_money(WorldSession.money() + DEV_MONEY_GRANT)
-	_dev_status.text = "$%d." % WorldSession.money()
+	Save.set_setting(LevelView.MONEY_KEY, LevelView.money() + DEV_MONEY_GRANT)
+	_dev_status.text = "$%d." % LevelView.money()
 
 
 # Put every biome ring's stock on sale, put every car in the garage, and open the whole island for

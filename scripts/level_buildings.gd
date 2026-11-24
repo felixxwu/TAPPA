@@ -2,7 +2,7 @@ class_name LevelBuildings
 extends Node3D
 ## The level's houses, barns and huts: meshes baked by tools/bake_buildings.js into <level>.buildings.json,
 ## textured from one shared atlas, each with a box collider over its footprint. They are all drawn as one merged mesh
-## (`mesh`, a single draw call; about 7k vertices for Hafren's 38), each building's vertices placed where its body stands.
+## (`mesh`, a single draw call; about 11k vertices for Hafren's 68), each building's vertices placed where its body stands.
 
 const ATLAS := "res://tools/levels/buildings_atlas.png"
 

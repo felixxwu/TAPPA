@@ -37,6 +37,8 @@ later) is leftmost, and the action that PROCEEDS (Start / Enter / Confirm / Driv
 rightmost.** Everything else sits between them. This is a house rule, not a per-screen
 choice — apply it to every new row without asking.
 
+**`ConfirmPopup` layout:** a panel 280 px wide in design units (`280 * UITheme.UI_SCALE`, clamped to the screen), with the title, body and button row all centred (`scripts/confirm_popup.gd` → `_build`).
+
 **Two traps when reordering an existing row:**
 
 1. **`ConfirmPopup.open`'s `default_index` and `back_index` are POSITIONAL.** Reversing
@@ -96,7 +98,7 @@ host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host 
 `return_from_extra()` when its page closes), and **after-Resume rows** (`after_resume_rows`, the same but placed
 right after Resume: both hosts put Map second, since a touch screen has no M key; `open()` puts the
 cursor on Resume). Free roam's rows: Resume / Map / Reset to
-road / Photo Mode / Stats / Settings / Quit to title; the level view has Map second too (`LevelMap.open_over_pause`: closing returns to the menu, a teleport goes straight back to driving), then Missions (`LevelView.open_missions(true)`: a card per mission; picking one starts it and teleports the car to its start point (`_start_mission_from`) from every teleport point found so far, `LevelMap.known_teleports`, with where it starts, the reward car, and Won / Driving), and no Repair / Garage / Shop: those are at the teleport points (`LevelView.open_service`, see level-editor.md: Missions = `open_missions` (a drive to another point wins a car), Upgrade = `open_shop`, the rest-stop page's shop alone with `free` on, Swap car = `open_garage` and Tune car = `open_tune`; repairing is just being near a point, `heal_at_points`). (There was a Journal row from 2026-10-23 to
+road / Photo Mode / Stats / Settings / Quit to title; the level view has Map second too (`LevelMap.open_over_pause`: closing returns to the menu, a teleport goes straight back to driving) (deliveries are picked on the map: a point's page, or its Deliveries button, see level-editor.md; the money shows top right), and no Repair / Garage / Shop: those are at the teleport points (`LevelView.open_service`, see level-editor.md: Upgrade = `open_shop`, the rest-stop page's shop alone with `free` on, Swap car = `open_garage` and Tune car = `open_tune`; repairing is just being near a point, `heal_at_points`). (There was a Journal row from 2026-10-23 to
 2026-10-25; the user had it taken out and the journal deleted.)
 
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)

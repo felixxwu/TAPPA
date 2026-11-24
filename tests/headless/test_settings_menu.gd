@@ -182,13 +182,30 @@ func test_gearbox_is_always_automatic_and_not_in_the_menu() -> void:
 # Two actions (features/settings.md → "Developer-only pages"): Add money and Unlock all
 # biomes. Dev visibility itself is covered by the players/dev-builds tests further down.
 
-func test_add_money_adds_to_the_world_money() -> void:
-	WorldSession.new_world(1, "fx_light_rwd")
-	WorldSession.set_money(5)
+func _press_add_money() -> void:
 	var menu := _make_menu()
 	for child in menu._dev_page.get_children():
 		if child is Button and String(child.text).to_lower().begins_with("add $"):
 			child.pressed.emit()
+
+
+func test_add_money_adds_to_the_level_money() -> void:
+	var kept: Variant = Save.get_setting(LevelView.MONEY_KEY)
+	Save.set_setting(LevelView.MONEY_KEY, 5)
+	_press_add_money()
+	assert_eq(LevelView.money(), 5 + SettingsMenu.DEV_MONEY_GRANT)
+	if kept == null:
+		Save.erase_setting(LevelView.MONEY_KEY)
+	else:
+		Save.set_setting(LevelView.MONEY_KEY, kept)
+
+
+func test_add_money_on_the_legacy_island_adds_to_the_world_money() -> void:
+	Config.data.legacy_free_roam_island = true
+	WorldSession.new_world(1, "fx_light_rwd")
+	WorldSession.set_money(5)
+	_press_add_money()
+	Config.data.legacy_free_roam_island = false
 	assert_eq(WorldSession.money(), 5 + SettingsMenu.DEV_MONEY_GRANT)
 
 

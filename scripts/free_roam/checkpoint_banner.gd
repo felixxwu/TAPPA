@@ -28,14 +28,15 @@ func is_showing_banner() -> bool:
 
 
 func show_reached(_site: int) -> void:
-	_show("Checkpoint reached", SUBTITLE)
+	show_band("Checkpoint reached", SUBTITLE)
 
 
 func show_found(car_name: String) -> void:
-	_show("Car found", car_name)
+	show_band("Car found", car_name)
 
 
-func _show(text: String, subtitle: String) -> void:
+# Fades the band in, holds it, and fades it out; the level view shows "Delivery complete" on it too.
+func show_band(text: String, subtitle: String) -> void:
 	if _band != null:
 		_band.queue_free()
 	_band = build_band(text, subtitle)

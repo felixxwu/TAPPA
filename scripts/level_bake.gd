@@ -3,7 +3,7 @@ extends Resource
 # Everything about a level that is worked out once, offline: final ground heights, the road frame textures the ground shader reads, the road samples, the trees in tiles and which of them each stretch of road can see. Saved beside the level as <name>.bake.res and loaded instead of running LevelData's road build.
 # The big arrays live decoded in memory but are stored as zstd blobs (see _get_property_list), and visibility stays as row-to-row diffs.
 
-const BAKE_VERSION := 11
+const BAKE_VERSION := 13
 const FRAME_RANGE := 16.0    # across and half-width are stored within this many metres; beyond it there is no road to paint
 const FRAME_CELL := 2.0      # road frame texel size in metres
 const PATCH_HALF := 8.0      # a gravel patch is stored in the frame as a road this wide whose centre is the patch's inside
@@ -68,6 +68,7 @@ static func key_of(save_path: String) -> String:
 	(d as Dictionary).erase("fences")
 	(d as Dictionary).erase("spectators")
 	(d as Dictionary).erase("teleports")
+	(d as Dictionary).erase("shops")
 	(d as Dictionary).erase("biomeRle")
 	return "%s/v%d" % [JSON.stringify(d).md5_text(), BAKE_VERSION]
 
@@ -106,8 +107,10 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 			var f := data.road_frame(x, z)
 			var tarmac := data.nearest(x, z).w
 			var pad := data.patch_at(x, z).x
-			if pad < (absf(f.x) - f.y if f.x != INF else INF):
-				# nearer a patch's inside than any road's edge: an even junction-style pad, so the gravel has no direction
+			var on_road := f.x != INF and absf(f.x) <= f.y
+			if not on_road and pad < (absf(f.x) - f.y if f.x != INF else INF):
+				# off the road and nearer a patch's inside than any road's edge: an even junction-style pad, so the gravel has
+				# no direction; the road itself always keeps its own surface
 				f = Vector4(maxf(PATCH_HALF + pad, 0.0), PATCH_HALF, 0.0, 1.0)
 				tarmac = 0.0
 			var across := clampf(f.x if f.x != INF else FRAME_RANGE, -FRAME_RANGE, FRAME_RANGE)

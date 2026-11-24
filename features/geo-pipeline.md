@@ -20,7 +20,7 @@ Run from `tools/geo/`, in order (`cover_mask.py` before `pack_level.js` so the c
    lab's own `pack`/`unpack`/`bakeKey` (sliced out of the HTML, so the format can't drift) and checks the round trip.
    It also removes every tree within 2 m of the road's edge and every cover cell within 0.5 m, measured against the
    lab's own spline (`roadSamples`/`nearestRoad`). Run on a packed save alone (`node pack_level.js ../level_editor_lab.html
-   ../levels/<name>.json`) it just clears the road again in place; that drops a stale visibility bake, so re-bake after.
+   ../levels/<name>.json`) it just clears the road again in place, and gives any building standing in no gravel patch its yard out to the nearest road (the game levels a yard's ground to the road through it, so a building without one can sit well above or below the road); that drops a stale visibility bake, so re-bake after.
 4. `python cover_mask.py <name>` → `cover_index.png` (pixel = ground-cover type: 0 none, 1 verge grass, 2 molinia,
    3 heather, 4 bilberry/scrub; 1 m per pixel, row 0 = north edge) plus `cover_mask.png` (coloured) and `sat_crop.png`
    to compare by eye, and writes the cover into `level.json` as the editor's packed `cover` (base64, one byte per cell). A rough estimate to paint over in the level editor: heather and bilberry are hard to tell

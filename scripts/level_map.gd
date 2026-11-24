@@ -19,6 +19,7 @@ const HEDGE := Color(0.16, 0.26, 0.12)
 const FENCE := Color(0.5, 0.38, 0.24)
 const LOG_PILE := Color(0.55, 0.36, 0.2)
 const TELEPORT := UITheme.GOLD
+const SHOP := Color(0.62, 0.25, 0.68)  # the shop obelisks' purple (TeleportBeacons.SHOP_TINT, lightened to read on the map)
 const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
 const COVER_TINT := 0.3   # how far the ground leans toward each cover type's colour
 const MIN_MARK_PX := 7.0  # log piles never draw smaller than this, so they show when zoomed out
@@ -44,9 +45,13 @@ var _chains: Array[PackedVector2Array] = []  # road lines, split wherever the su
 var _tarmac: Array[bool] = []                 # per line in _chains
 var _widths := PackedFloat32Array()           # per line in _chains, the road's full width in metres
 var _buildings: Array[PackedVector2Array] = []  # each building's footprint corners in world metres
-var _hint: Label
-var _route := PackedVector2Array()  # the sat-nav line to the active mission's target, worked out each time the map opens
-var back_button: Button  # top-right "< Back": the way a touch screen (no M, no Esc) closes the map
+var _route := PackedVector2Array()  # the sat-nav line to the active delivery's target, worked out each time the map opens
+var back_button: Button  # bottom-left "< Back": the way a touch screen (no M, no Esc) closes the map
+var deliveries_button: Button  # beside Back: every delivery from the points found so far
+var _buttons: HBoxContainer
+var _start := Callable()  # set while a delivery's route is up for the player to confirm (preview); Back runs _cancel
+var _cancel := Callable()
+var _before := []  # the map's [visible, center, zoom, route] from before the preview, put back after it
 var _over_pause := false  # opened from the pause menu: closing leaves the game paused for it
 var _busy := false
 var _pad_used := false  # a gamepad aims with the centre crosshair instead of the mouse
@@ -66,23 +71,21 @@ func _init() -> void:
 	process_mode = PROCESS_MODE_ALWAYS
 	mouse_filter = MOUSE_FILTER_STOP
 	visible = false
-	_hint = UITheme.label("Drag: pan   Pinch: zoom   Tap: teleport   Back: close" if Platform.is_touch() \
-		else "Drag / WASD / arrows: pan   Wheel / LB RB: zoom   Click / Enter: teleport   M / Esc: close", "ink")
-	_hint.position = Vector2(UITheme.FONT_SIZE, UITheme.FONT_SIZE)
-	add_child(_hint)
+	# Full menu-row bars, big enough to hit with a thumb: a phone (no M, no Esc) closes the map with Back.
+	_buttons = HBoxContainer.new()
+	_buttons.anchor_top = 1.0
+	_buttons.anchor_bottom = 1.0
+	_buttons.offset_left = UITheme.FONT_SIZE
+	_buttons.offset_top = -UITheme.FONT_SIZE - UITheme.MENU_ROW_H
+	_buttons.offset_bottom = -UITheme.FONT_SIZE
+	_buttons.grow_vertical = GROW_DIRECTION_BEGIN
+	_buttons.add_theme_constant_override("separation", UITheme.FONT_SIZE)
+	add_child(_buttons)
 	back_button = UITheme.row_button(UITheme.caps("< Back"), close)
-	# A full menu-row bar, big enough to hit with a thumb. Pinned by its right edge: setting `position`
-	# on a still zero-sized button pinned its LEFT edge instead, so it grew off the right of the screen
-	# and a phone (no M, no Esc) was left with no way out but teleporting.
-	back_button.custom_minimum_size = Vector2(UITheme.BUTTON_MIN_W, UITheme.MENU_ROW_H)
-	back_button.anchor_left = 1.0
-	back_button.anchor_right = 1.0
-	back_button.offset_right = -UITheme.FONT_SIZE
-	back_button.offset_left = back_button.offset_right - UITheme.BUTTON_MIN_W
-	back_button.offset_top = UITheme.FONT_SIZE
-	back_button.offset_bottom = UITheme.FONT_SIZE + UITheme.MENU_ROW_H
-	back_button.grow_horizontal = GROW_DIRECTION_BEGIN
-	add_child(back_button)
+	deliveries_button = UITheme.row_button(UITheme.caps("Deliveries"), _open_deliveries)
+	for b: Button in [back_button, deliveries_button]:
+		b.custom_minimum_size = Vector2(UITheme.BUTTON_MIN_W, UITheme.MENU_ROW_H)
+		_buttons.add_child(b)
 
 
 func _ready() -> void:
@@ -120,6 +123,9 @@ func open_over_pause() -> void:
 
 
 func close() -> void:
+	if _start.is_valid():
+		_end_preview(false)
+		return
 	if _busy or not visible:
 		return
 	visible = false
@@ -142,14 +148,46 @@ func _open() -> void:
 		var car := view.get_parent().get_node_or_null("Car") as Node3D
 		if car != null:
 			center = Vector2(car.global_position.x, car.global_position.z)
-		_route = _mission_route(center if car != null else Vector2.ZERO)
+		_route = _delivery_route(center if car != null else Vector2.ZERO)
 		zoom = maxf(zoom, fit_zoom())
 		queue_redraw()
 
 
-func _mission_route(from: Vector2) -> PackedVector2Array:
+# Shows a delivery's `route` fitted to the screen before it starts, its Deliveries button turned into Start: Start runs
+# `start`, Back runs `cancel`, and either puts the map back as it was (closed, or open under the delivery's page).
+func preview(route: PackedVector2Array, start: Callable, cancel: Callable) -> void:
+	_before = [visible, center, zoom, _route]
+	_start = start
+	_cancel = cancel
+	_route = route
+	visible = true
+	build()
+	update_fog()
+	var box := Rect2(route[0], Vector2.ZERO) if route.size() > 0 else Rect2()
+	for p in route:
+		box = box.expand(p)
+	center = box.get_center()
+	zoom = clampf(minf(size.x / maxf(box.size.x, 1.0), size.y / maxf(box.size.y, 1.0)) * 0.7, fit_zoom(), 20.0)
+	deliveries_button.text = UITheme.caps("Start")
+	queue_redraw()
+
+
+func _end_preview(started: bool) -> void:
+	var run := _start if started else _cancel
+	_start = Callable()
+	_cancel = Callable()
+	visible = _before[0]
+	center = _before[1]
+	zoom = _before[2]
+	_route = _before[3]
+	deliveries_button.text = UITheme.caps("Deliveries")
+	queue_redraw()
+	run.call()
+
+
+func _delivery_route(from: Vector2) -> PackedVector2Array:
 	for t: Dictionary in view.level.get("teleports", []):
-		if t.get("name", "") == LevelView.mission.get("to", null):
+		if t.get("name", "") == LevelView.nav_target():
 			return view._bake._roads().route(from, Vector2(float(t["x"]), float(t["z"])))
 	return PackedVector2Array()
 
@@ -164,6 +202,12 @@ func to_screen(w: Vector2) -> Vector2:
 
 func to_world(s: Vector2) -> Vector2:
 	return center + (s - size / 2.0) / zoom
+
+
+# The shops the player has found, the same way as teleport points.
+func known_shops() -> Array:
+	return view.level.get("shops", []).filter(func(t: Dictionary) -> bool:
+		return discovery != null and discovery.shown(Vector2(float(t["x"]), float(t["z"]))) > 0.0)
 
 
 # The teleport points the player has found: those the explored area reaches. Only these show on the maps or can be teleported to.
@@ -190,9 +234,10 @@ func nearest_teleport(w: Vector2) -> Vector2:
 	return best
 
 
-# Screen boxes for the teleports' names (`teleports[i].name`), one per anchor (its diamond's screen spot): right of
-# the diamond, else left. A name that would cover one already placed, another diamond or the screen's edge gets an
-# empty Rect2 and isn't drawn, so zoomed out the map thins its names rather than piling them up; `first` (the
+# Screen boxes for the names of the teleports and shops, one per anchor (its marker's screen spot): right of the
+# marker, else left, else nudged a line up or down (then further) so names close together stack instead of covering
+# each other. A name with no free spot left (one already placed, another marker or the screen's edge in every one) gets
+# an empty Rect2 and isn't drawn, so zoomed far out the map thins its names rather than piling them up; `first` (the
 # aimed-at teleport, or -1) is placed before the rest so its name always shows. A zero width (no name) is skipped.
 static func place_names(anchors: PackedVector2Array, widths: PackedFloat32Array, line_h: float, bounds: Rect2, first: int) -> Array[Rect2]:
 	var out: Array[Rect2] = []
@@ -207,9 +252,14 @@ static func place_names(anchors: PackedVector2Array, widths: PackedFloat32Array,
 	for i: int in order:
 		if widths[i] <= 0.0:
 			continue
-		var y := roundf(anchors[i].y - line_h / 2.0)
-		for x in [roundf(anchors[i].x + NAME_GAP_PX), roundf(anchors[i].x - NAME_GAP_PX - widths[i])]:
-			var r := Rect2(x, y, ceilf(widths[i]), line_h)
+		var step := line_h + NAME_PAD_PX * 2.0 + 2.0
+		var spots: Array[Vector2] = []
+		for k in [0, -1, 1, -2, 2, -3, 3]:
+			var y := roundf(anchors[i].y - line_h / 2.0 + k * step)
+			spots.append(Vector2(roundf(anchors[i].x + NAME_GAP_PX), y))
+			spots.append(Vector2(roundf(anchors[i].x - NAME_GAP_PX - widths[i]), y))
+		for spot in spots:
+			var r := Rect2(spot, Vector2(ceilf(widths[i]), line_h))
 			var padded := r.grow(NAME_PAD_PX)
 			if not bounds.encloses(padded) or taken.any(func(o: Rect2) -> bool: return o.intersects(padded)):
 				continue
@@ -370,6 +420,9 @@ func _draw() -> void:
 	var aim := get_local_mouse_position() if _mouse_inside() else size / 2.0
 	var target := nearest_teleport(to_world(aim))
 	var teleports := known_teleports()
+	var shops := known_shops()
+	var names: Array = teleports.map(func(t: Dictionary) -> String: return String(t.get("name", ""))) \
+		+ shops.map(func(t: Dictionary) -> String: return String(t.get("name", "")))
 	var anchors := PackedVector2Array()
 	var widths := PackedFloat32Array()
 	var first := -1
@@ -383,6 +436,11 @@ func _draw() -> void:
 		widths.append(font.get_string_size(String(t.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
 		if wp == target:
 			first = i
+	for t: Dictionary in shops:
+		var sp := to_screen(Vector2(float(t["x"]), float(t["z"])))
+		draw_shop(self, sp, 7.0)
+		anchors.append(sp)
+		widths.append(font.get_string_size(String(t.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
 	var line_h := float(UITheme.FONT_SIZE)
 	var rects := place_names(anchors, widths, line_h, Rect2(Vector2.ZERO, size), first)
 	for i in rects.size():
@@ -390,7 +448,8 @@ func _draw() -> void:
 			continue
 		draw_rect(rects[i].grow(NAME_PAD_PX), NAME_BACK)
 		var base := (rects[i].position + Vector2(0, roundf((line_h + font.get_ascent(UITheme.FONT_SIZE) - font.get_descent(UITheme.FONT_SIZE)) / 2.0))).round()
-		draw_string(font, base, String(teleports[i]["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE, TELEPORT if i == first else UITheme.INK)
+		draw_string(font, base, String(names[i]), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE,
+			TELEPORT if i == first else SHOP.lightened(0.4) if i >= teleports.size() else UITheme.INK)
 	paint_car(self, xf, 1.0)
 	if target != Vector2.INF:
 		draw_arc(to_screen(target), 12.0, 0.0, TAU, 24, UITheme.INK, 2.0)
@@ -448,9 +507,16 @@ static func draw_diamond(ci: CanvasItem, p: Vector2, r: float) -> void:
 	ci.draw_colored_polygon(PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)]), TELEPORT)
 
 
+# A shop on the map: a purple square, so it reads apart from the teleport diamonds.
+static func draw_shop(ci: CanvasItem, p: Vector2, r: float) -> void:
+	ci.draw_rect(Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), SHOP)
+
+
 func paint_teleports(ci: CanvasItem, xf: Transform2D, ui: float) -> void:
 	for t: Dictionary in known_teleports():
 		draw_diamond(ci, xf * Vector2(float(t["x"]), float(t["z"])), 8.0 * ui)
+	for t: Dictionary in known_shops():
+		draw_shop(ci, xf * Vector2(float(t["x"]), float(t["z"])), 7.0 * ui)
 
 
 # The car as a white arrow pointing the way it faces, through `xf`.
@@ -476,6 +542,8 @@ func zoom_by(f: float, at: Vector2) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if view.deliveries_page != null and view.deliveries_page.visible:
+		return  # a clicked point's page is up over the map and takes the input
 	var toggle_key: bool = (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_M) \
 		or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_BACK)
 	if toggle_key:
@@ -484,8 +552,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if not visible:
 		return
-	if event is InputEventMouseButton and back_button.get_global_rect().has_point(event.position):
-		return  # left for the Back button's own GUI input
+	if event is InputEventMouseButton and _buttons.get_global_rect().has_point(event.position):
+		return  # left for the buttons' own GUI input
 	get_viewport().set_input_as_handled()
 	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
 		_pad_used = true
@@ -495,6 +563,9 @@ func _input(event: InputEvent) -> void:
 		touch(event)
 	elif event.is_action_pressed("ui_cancel"):
 		close()
+	elif (event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_TAB) \
+			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_Y):
+		_open_deliveries()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_WHEEL_UP: zoom_by(1.2, event.position)
@@ -504,7 +575,7 @@ func _input(event: InputEvent) -> void:
 				_pinched = _touches.size() >= 2
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		if event.position.distance_to(_drag_from) < 6.0 and not _pinched:
-			teleport(nearest_teleport(to_world(event.position)))
+			pick(nearest_teleport(to_world(event.position)))
 	elif event is InputEventPanGesture:  # a Mac trackpad's two-finger scroll
 		if _touches.size() < 2:  # a phone's own pinch already zooms through `touch`
 			zoom_by(pow(1.1, -event.delta.y), event.position)
@@ -520,7 +591,10 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		queue_redraw()
 	elif event.is_action_pressed("ui_accept"):
-		teleport(nearest_teleport(center))
+		if _start.is_valid():
+			_end_preview(true)
+		else:
+			pick(nearest_teleport(center))
 	elif (event is InputEventKey and event.pressed and event.keycode in [KEY_EQUAL, KEY_KP_ADD]) \
 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_RIGHT_SHOULDER):
 		zoom_by(1.5, size / 2.0)
@@ -611,6 +685,29 @@ func update_fog() -> void:
 		tex.update(img)
 	else:
 		_fog.diffuse_texture = ImageTexture.create_from_image(img)
+
+
+# Opens the page of the found teleport point at `p` (LevelView.open_point): its deliveries, or teleport there.
+func pick(p: Vector2) -> void:
+	if _busy or _start.is_valid():
+		return
+	for t: Dictionary in known_teleports():
+		if Vector2(float(t["x"]), float(t["z"])) == p:
+			view.open_point(t)
+			return
+
+
+func _open_deliveries() -> void:
+	if _start.is_valid():
+		_end_preview(true)
+	elif not _busy and view.deliveries_page == null:
+		view.open_deliveries()
+
+
+# A delivery picked on a clicked point's page teleports the car itself: the map just closes, without `closed`, which would abandon it.
+func hide_for_delivery() -> void:
+	visible = false
+	_over_pause = false
 
 
 # Puts the car exactly on teleport point `p`, facing its heading, loading the ground there before the game resumes so the car doesn't fall through.

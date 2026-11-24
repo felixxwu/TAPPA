@@ -40,7 +40,7 @@ const TIPS: Array[String] = [
 	"Spectators gather by buildings, junctions and sharp bends.",
 	"Open the map with M or Back to teleport to any group of buildings.",
 	"Press R or click the right stick to put the car back on the nearest road.",
-	"Some teleport points offer a mission: drive to another point to win a car.",
+	"Pick a teleport point on the map to take a delivery: drive it to another point for money and a car.",
 	"Stay off the road too long and the car is put back on it.",
 	"A car that is stuck or flipped is put back on the road by itself.",
 	"These roads are mapped from real laser scans of Hafren Forest in Wales.",

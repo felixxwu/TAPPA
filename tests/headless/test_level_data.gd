@@ -102,6 +102,30 @@ func test_a_non_default_size_reads_its_own_grid() -> void:
 	assert_eq(_built({"size": 1000}).natural(10.0, 10.0), 0.0, "no grid is flat")
 
 
+# A road climbing a slope that rises to the north, heading north-east, through a tight 90° bend at the origin, then north-west.
+func _bend_on_a_slope() -> LevelData:
+	var hm: Array = []
+	hm.resize(201 * 201)
+	for r in 201:
+		for c in 201:
+			hm[r * 201 + c] = 0.1 * (r * 3.0 - 300.0)
+	return _built({"heightmap": hm, "road": [_node(-200.0, -200.0), _node(-100.0, -100.0), _node(-6.0, -6.0),
+		_node(0.0, 0.0), _node(-6.0, 6.0), _node(-100.0, 100.0), _node(-200.0, 200.0)]})
+
+
+func _grade_at(data: LevelData, x: float, z: float) -> float:
+	var i := mini(data.nearest_sample(x, z), data.sx.size() - 2)
+	return absf(data.sh[i + 1] - data.sh[i]) / (data.sa[i + 1] - data.sa[i])
+
+
+func test_a_tight_bend_is_flattened_and_the_straights_do_the_climbing() -> void:
+	var data := _bend_on_a_slope()
+	var straight := _grade_at(data, -150.0, -150.0)
+	assert_almost_eq(straight, 0.1 / sqrt(2.0), 0.01, "a straight far from the bend keeps the ground's grade")
+	assert_lt(_grade_at(data, 0.0, 0.0), straight * 0.5, "the bend's apex is nearly flat, though the ground climbs steepest there")
+	assert_gt(data.sh[-1] - data.sh[0], 35.0, "the road still climbs about the 40 m the ground rises end to end")
+
+
 func test_the_road_is_road_and_the_field_beside_it_is_not() -> void:
 	var data := _built(_level())
 	assert_gt(data.surface_at(0.0, 0.0).x, 0.9, "on the centreline")

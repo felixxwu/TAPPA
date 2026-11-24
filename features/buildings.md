@@ -20,7 +20,7 @@ holds the cut-outs, located by pixel rects in `DETAIL`.
 atlas alone. `tools/levels/hafren_5km.json` has a `buildings` list (`{x, z, rot, type, L, W, h?, seed}`; `rot` is the ridge
 direction in radians on the map, x east / z south). The 24 entries come from the OSM building footprints inside the
 square (oriented bounding box of each outline), height from LiDAR DSM - DTM, and a type picked by eye from the
-satellite crop and footprint size. The level editor lab draws them as footprints in 2D and as meshes in 3D
+satellite crop and footprint size. The 30 beside the teleport points added for the delivery career (a farm, cottage and garage, or forestry hut per point) were placed by script along the road, clear of other roads, buildings and shop yards. The level editor lab draws them as footprints in 2D and as meshes in 3D
 (`rebuild3DBuildings`). 
 In the game: `node tools/bake_buildings.js tools/levels/<level>.json` runs `buildings.js` under node (tiny three.js and
 canvas stand-ins) and writes `<level>.buildings.json` (each building's triangles, already sized) and
@@ -28,8 +28,8 @@ canvas stand-ins) and writes `<level>.buildings.json` (each building's triangles
 adds a `LevelBuildings` node (`scripts/level_buildings.gd`) that builds one `StaticBody3D` per building: a box collider over
 the footprint, seated on the lowest ground under it. The meshes (unshaded with the baked sun shading in vertex colours,
 nearest-filtered atlas, alpha scissor) are merged, each placed where its body stands, into one `MeshInstance3D`
-(`LevelBuildings.mesh`, child "Mesh"), so every building in the level is a single draw call (Hafren: 38 buildings, ~7k vertices). No bake file → no buildings. On a slope that buries the uphill side, so
-`tools/geo/pack_level.js` levels a pad under each building and clears trees and cover off its footprint (see [level-editor.md](level-editor.md)).
+(`LevelBuildings.mesh`, child "Mesh"), so every building in the level is a single draw call (Hafren: 68 buildings, ~11k vertices). No bake file → no buildings. On a slope that buries the uphill side, so
+`tools/geo/pack_level.js` levels a pad under each building, gives any building without one a gravel yard out to the nearest road (which sets its ground to the road's height) and clears trees and cover off its footprint (see [level-editor.md](level-editor.md)).
 
 **Log piles.** The level JSON's `logPiles` list (`{x, z}`) places roadside timber piles (`LogPile.build`, `log_pile.gd`) via
 `LevelView._log_pile`: sawn ends facing the nearest road (logs at right angles to it), a two-section pile's stacks side by side along

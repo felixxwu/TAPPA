@@ -132,7 +132,8 @@ rather than by hiding. Dev builds simply see both categories.
 through the page's `_dev_status` line, and both editing the free-roam world session:
 
 - **Add $10000** — adds `SettingsMenu.DEV_MONEY_GRANT` (a dev amount, not a tunable) to
-  `WorldSession.money`, for trying the checkpoint shop ([loot.md](loot.md)).
+  the level's money (`LevelView.MONEY_KEY`, spent at shops and on teleports), or to `WorldSession.money` with the
+  legacy free-roam island on.
 - **Unlock everything** — `_unlock_map`: every biome ring's stock goes on sale, every
   `CarLibrary` model not yet owned is granted into the garage (`Save.grant_car`), and the live
   free-roam scene's `unlock_map` lights every rest stop (`RestStops.light_all`, so Travel can

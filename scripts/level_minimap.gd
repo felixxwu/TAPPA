@@ -106,9 +106,9 @@ func refresh() -> void:
 	_painter.queue_redraw()
 
 
-# The mission's sat-nav line, recomputed only once the car has moved a way or the target changed.
+# The delivery's sat-nav line, recomputed only once the car has moved a way or the target changed.
 func _refresh_route(pos: Vector2) -> bool:
-	var to := String(LevelView.mission.get("to", ""))
+	var to := LevelView.nav_target()
 	if to.is_empty():
 		var had := not _route.is_empty()
 		_route = PackedVector2Array()
@@ -117,7 +117,7 @@ func _refresh_route(pos: Vector2) -> bool:
 		return had
 	if to == _route_to and pos.distance_to(_route_at) < Config.data.level_minimap_route_move_m:
 		return false
-	_route = map._mission_route(pos)
+	_route = map._delivery_route(pos)
 	_route_at = pos
 	_route_to = to
 	return true

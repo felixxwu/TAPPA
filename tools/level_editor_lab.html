@@ -35,7 +35,7 @@
   <button id="random">🎲 Random</button>
   <button id="reset">Reset</button>
   <button id="undo" title="Ctrl/⌘ Z">Undo</button><button id="redo" title="Ctrl/⌘ Shift Z, Ctrl Y">Redo</button>
-  <label>Tool <select id="tool"><option value="pan">Pan</option><option value="tree">Trees</option><option value="road">Roads</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="tele">Teleport (T)</option><option value="fence">Fences (F)</option><option value="patch">Gravel patch (G)</option><option value="biome">Biome</option></select></label>
+  <label>Tool <select id="tool"><option value="pan">Pan</option><option value="tree">Trees</option><option value="road">Roads</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="tele">Teleport (T)</option><option value="shop">Shop (H)</option><option value="fence">Fences (F)</option><option value="patch">Gravel patch (G)</option><option value="biome">Biome</option></select></label>
   <span id="fenceBar" hidden><label>Kind <select id="fenceKind"><option>fence</option><option>hedge</option></select></label> click to add points, Enter or Esc to finish</span>
   <span id="biomeBar" hidden>
     <label>Biome <select id="biomeType"></select></label>
@@ -59,6 +59,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="groundcover_tufts.js"></script>
 <script src="buildings.js"></script>
 <script src="spectators.js"></script>
@@ -199,7 +200,8 @@ function pack(l) {
   delete out.road; delete out.trees;
   if (!out.spectators?.length) delete out.spectators;
   if (out.fences?.length) out.fences = out.fences.map(f => ({ kind: f.kind, pts: f.pts.map(([x, z]) => [r1(x), r1(z)]) })); else delete out.fences;
-  if (out.teleports?.length) out.teleports = out.teleports.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), ...(q.missions?.length ? { missions: q.missions.map(m => ({ to: m.to, car: m.car })) } : {}) })); else delete out.teleports;
+  if (out.teleports?.length) out.teleports = out.teleports.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), ...(q.deliveries?.length ? { deliveries: q.deliveries.map(m => ({ to: m.to, ...(m.cargo ? { cargo: m.cargo } : {}), ...(m.kg > 0 ? { kg: m.kg } : {}), ...(m.pay > 0 ? { pay: Math.round(m.pay) } : {}) })) } : {}) })); else delete out.teleports;
+  if (out.shops?.length) out.shops = out.shops.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), stock: (q.stock ?? []).map(m => ({ ...("car" in m ? { car: m.car } : { part: m.part }), price: Math.max(0, Math.round(m.price) || 0) })), ...(q.model ? { model: q.model } : {}) })); else delete out.shops;
   if (out.gravelPatches?.length) out.gravelPatches = out.gravelPatches.map(p => p.map(q => ({ x: r1(q.x), z: r1(q.z) }))); else delete out.gravelPatches;
   if (out.size === 600) delete out.size;
   if (l.heightmap) {
@@ -300,6 +302,7 @@ const COVER_DEFAULT = [
 const coverOverlay = document.createElement("canvas");
 const coverTool = () => $("tool").value === "cover";
 const specTool = () => $("tool").value === "spec";
+const shopTool = () => $("tool").value === "shop";
 const teleTool = () => $("tool").value === "tele";
 const fenceTool = () => $("tool").value === "fence";
 let fenceDraft = null; // index of the line being drawn: each click in the Fences tool extends it
@@ -525,6 +528,43 @@ function patchAt(x, z) {
 let patchH = [];
 let samples = [], juncs = [], roadPath = new Path2D(), heights = new Float32Array(1), roadD = new Float32Array(1); // roadD: metres beyond the road's edge
 const inWin = (x, z, m = 0) => T.full || x > T.x0 - m && x < T.x0 + WW() + m && z > T.z0 - m && z < T.z0 + WW() + m;
+const BEND_SPAN = 3, BEND_START_RADIUS = 80, BEND_FLAT_RADIUS = 25, BEND_GRADE_KEEP = 0.15, BEND_SPREAD = 50;
+// Hairpins climb on their straights, not in the bend: grade is taken out of tight curves and spread onto the
+// straighter road nearby, so each road still starts and ends at the same height (level_data.gd's _flatten_bends matches it).
+function flattenBends(ch) {
+  const n = ch.length;
+  if (n < 3) return;
+  const a = [0];
+  for (let i = 1; i < n; i++) a.push(a[i - 1] + Math.hypot(ch[i].x - ch[i - 1].x, ch[i].z - ch[i - 1].z));
+  const keep = ch.map((s, i) => {
+    const lo = Math.max(0, i - BEND_SPAN), hi = Math.min(n - 1, i + BEND_SPAN), half = (a[hi] - a[lo]) / 2;
+    if (lo === i || hi === i || half <= 0) return 1;
+    let turn = Math.abs(Math.atan2(ch[hi].z - s.z, ch[hi].x - s.x) - Math.atan2(s.z - ch[lo].z, s.x - ch[lo].x));
+    if (turn > Math.PI) turn = 2 * Math.PI - turn;
+    return 1 + (BEND_GRADE_KEEP - 1) * smooth(1 / BEND_START_RADIUS, 1 / BEND_FLAT_RADIUS, turn / half);
+  });
+  const grade = ch.slice(1).map((s, i) => s.h - ch[i].h), out = grade.slice();
+  for (let i = 0; i < n - 1; i++) {
+    const k = (keep[i] + keep[i + 1]) / 2;
+    if (k >= 1) continue;
+    const mid = (a[i] + a[i + 1]) / 2, weights = [];
+    let total = 0;
+    let lo = i, hi = i;
+    while (lo > 0 && mid - a[lo] < BEND_SPREAD) lo--;
+    while (hi < n - 2 && a[hi + 1] - mid < BEND_SPREAD) hi++;
+    for (let j = lo; j <= hi; j++) {
+      const d = Math.abs((a[j] + a[j + 1]) / 2 - mid);
+      if (d >= BEND_SPREAD) continue;
+      const w = (keep[j] + keep[j + 1]) / 2 * (1 - d / BEND_SPREAD);
+      weights.push([j, w]); total += w;
+    }
+    if (total < 1) continue; // no straighter road close by to take the climb, so this bend keeps it
+    const removed = grade[i] * (1 - k);
+    out[i] -= removed;
+    for (const [j, w] of weights) out[j] += removed * w / total;
+  }
+  for (let i = 0; i < n - 1; i++) ch[i + 1].h = ch[i].h + out[i];
+}
 function rebuildRoads() {
   samples = roadSamples(level.roads); juncs = junctions(level.roads);
   for (const s of samples) s.h = natural(s.x, s.z);
@@ -532,6 +572,7 @@ function rebuildRoads() {
     const hs = samples.map(s => s.h);
     samples.forEach((s, i) => { let sum = 0, n = 0; for (let k = -12; k <= 12; k++) if (samples[i + k]?.c === s.c) { sum += hs[i + k]; n++; } s.h = sum / n; });
   }
+  for (let i = 0; i < samples.length;) { let j = i; while (samples[j]?.c === samples[i].c) j++; flattenBends(samples.slice(i, j)); i = j; }
   for (const j of juncs) { // the mean of its roads' own smoothed levels, so a road ending on a hillside meets the others halfway
     const near = new Map();
     for (const s of samples) { const d = Math.hypot(s.x - j.x, s.z - j.z); if (d < 3 && d < (near.get(s.c)?.d ?? Infinity)) near.set(s.c, { d, h: s.h }); }
@@ -766,20 +807,31 @@ function draw2D() {
   if (show.teleports && sel?.type === "tele") {
     const q = level.teleports[sel.i], [sx, sz] = toScreen(q.x, q.z);
     ctx.strokeStyle = "#fc6"; ctx.lineWidth = 1.5 * devicePixelRatio; ctx.beginPath();
-    for (const m of q.missions ?? []) { const t = level.teleports.find(o => o.name === m.to); if (t) routeCached(q, t).forEach(([x, z], k) => { const [px, pz] = toScreen(x, z); k ? ctx.lineTo(px, pz) : ctx.moveTo(px, pz); }); }
+    for (const m of q.deliveries ?? []) { const t = level.teleports.find(o => o.name === m.to); if (t) routeCached(q, t).forEach(([x, z], k) => { const [px, pz] = toScreen(x, z); k ? ctx.lineTo(px, pz) : ctx.moveTo(px, pz); }); }
     ctx.stroke();
   }
+  // Which way the car faces on arriving at a teleport point or a shop: an arrow from the marker.
+  const headingArrow = (q, sx, sz, col) => {
+    if (!("heading" in q)) return;
+    const h = q.heading * Math.PI / 180, dx = Math.sin(h), dz = -Math.cos(h), L = 22 * devicePixelRatio, tip = [sx + dx * L, sz + dz * L];
+    ctx.beginPath(); ctx.moveTo(sx, sz); ctx.lineTo(...tip); ctx.moveTo(tip[0] - (dx + dz) * 6 * devicePixelRatio, tip[1] - (dz - dx) * 6 * devicePixelRatio); ctx.lineTo(...tip);
+    ctx.lineTo(tip[0] - (dx - dz) * 6 * devicePixelRatio, tip[1] - (dz + dx) * 6 * devicePixelRatio);
+    ctx.lineWidth = 4 * devicePixelRatio; ctx.stroke(); ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeStyle = col; ctx.stroke(); ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+  };
   if (show.teleports) (level.teleports ?? []).forEach((q, i) => {
     const [sx, sz] = toScreen(q.x, q.z), on = sel?.type === "tele" && sel.i === i, r = 8 * devicePixelRatio;
     ctx.fillStyle = on ? "#fc6" : "#3ad0e6"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
-    if ("heading" in q) { // which way the car faces on arriving
-      const h = q.heading * Math.PI / 180, dx = Math.sin(h), dz = -Math.cos(h), L = 22 * devicePixelRatio, tip = [sx + dx * L, sz + dz * L];
-      ctx.beginPath(); ctx.moveTo(sx, sz); ctx.lineTo(...tip); ctx.moveTo(tip[0] - (dx + dz) * 6 * devicePixelRatio, tip[1] - (dz - dx) * 6 * devicePixelRatio); ctx.lineTo(...tip);
-      ctx.lineTo(tip[0] - (dx - dz) * 6 * devicePixelRatio, tip[1] - (dz + dx) * 6 * devicePixelRatio);
-      ctx.lineWidth = 4 * devicePixelRatio; ctx.stroke(); ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeStyle = on ? "#fc6" : "#3ad0e6"; ctx.stroke(); ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
-    }
+    headingArrow(q, sx, sz, on ? "#fc6" : "#3ad0e6");
     ctx.beginPath(); ctx.moveTo(sx, sz - r); ctx.lineTo(sx + r, sz); ctx.lineTo(sx, sz + r); ctx.lineTo(sx - r, sz); ctx.closePath(); ctx.fill(); ctx.stroke();
     if (q.name) { ctx.fillStyle = "#fff"; ctx.strokeStyle = "#000"; ctx.lineWidth = 3; ctx.font = `bold ${12 * devicePixelRatio}px sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.strokeText(q.name, sx + r + 4, sz); ctx.fillText(q.name, sx + r + 4, sz); }
+  });
+  if (show.shops) (level.shops ?? []).forEach((q, i) => {
+    const [sx, sz] = toScreen(q.x, q.z), on = sel?.type === "shop" && sel.i === i, r = 8 * devicePixelRatio;
+    ctx.fillStyle = on ? "#fc6" : "#f0f"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+    headingArrow(q, sx, sz, on ? "#fc6" : "#f0f");
+    ctx.beginPath(); ctx.rect(sx - r, sz - r, 2 * r, 2 * r); ctx.fill(); ctx.stroke();
+    if (q.name) { ctx.fillStyle = "#fff"; ctx.lineWidth = 3; ctx.font = `bold ${12 * devicePixelRatio}px sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
       ctx.strokeText(q.name, sx + r + 4, sz); ctx.fillText(q.name, sx + r + 4, sz); }
   });
   const vis = !show.trees ? [] : treesInView(vx0 - 10, vz0 - 10, vx1 + 10, vz1 + 10), stride = Math.max(1, Math.ceil(vis.length / TREE_DRAW_MAX));
@@ -843,6 +895,7 @@ function hit(sx, sz) {
   }
   if (sel?.type === "node" && level.roads[sel.c].length > 1) for (const h of handles(sel.c, sel.i)) if (near(h.x, h.z)) return { type: "handle", c: sel.c, i: sel.i, kind: h.kind };
   if (show.fences) for (let f = (level.fences ?? []).length - 1; f >= 0; f--) { const pts = level.fences[f].pts; for (let i = pts.length - 1; i >= 0; i--) if (near(pts[i][0], pts[i][1])) return { type: "fnode", f, i }; }
+  if (show.shops) { const ts = level.shops ?? []; for (let i = ts.length - 1; i >= 0; i--) if (near(ts[i].x, ts[i].z)) return { type: "shop", i }; }
   if (show.teleports) { const ts = level.teleports ?? []; for (let i = ts.length - 1; i >= 0; i--) if (near(ts[i].x, ts[i].z)) return { type: "tele", i }; }
   const best = nodesNear(sx, sz)[0];
   if (best) return best;
@@ -860,8 +913,8 @@ cv.onpointerdown = e => {
   cv.setPointerCapture(e.pointerId);
   if (paintTool() && e.button === 0) { drag = { paint: true, shift: e.shiftKey, last: toWorld(...px(e)) }; (coverTool() ? coverStroke : biomeStroke)(drag, drag.last); return; }
   let h = paintTool() ? null : hit(...px(e)), clicked = null;
-  // only the selected tree can be dragged; nodes drag straight away: pressing on anything else pans the map, and a plain click selects it
-  if (h?.type === "tree" && !(sel?.type === h.type && sel.i === h.i && sel.c === h.c)) { clicked = h; h = null; }
+  // in Pan mode nothing drags; otherwise only the selected tree can be dragged and nodes drag straight away. Pressing on anything undraggable pans the map, and a plain click selects it
+  if (h && $("tool").value === "pan" || h?.type === "tree" && !(sel?.type === h.type && sel.i === h.i && sel.c === h.c)) { clicked = h.type === "handle" ? null : h; h = null; }
   const onSel = h?.type === "handle" || h?.type === "node" && sel?.type === "node" && sel.c === h.c && sel.i === h.i;
   const wasSelected = onSel && nodesNear(...px(e)).some(n => n.c === sel.c && n.i === sel.i);
   drag = { sx: e.clientX, sz: e.clientY, moved: false, item: h, clicked, wasSelected, vx: view.x, vz: view.z, shift: e.shiftKey };
@@ -880,6 +933,7 @@ cv.onpointermove = e => {
   if (it.type === "tree") { Object.assign(level.trees[it.i], { x, z }); changed(); return; }
   if (it.type === "spec") { Object.assign(level.spectators[it.i], { x, z }); syncPopup(); changed(); return; }
   if (it.type === "tele") { Object.assign(level.teleports[it.i], { x, z }); changed(); return; }
+  if (it.type === "shop") { Object.assign(level.shops[it.i], { x, z }); changed(); return; }
   if (it.type === "fnode") { level.fences[it.f].pts[it.i] = [x, z]; syncPopup(); changed(); return; }
   if (it.type === "pv") { Object.assign(level.gravelPatches[it.p][it.i], { x, z }); changed(true); return; }
   if (it.type === "specr") { const g = level.spectators[it.i]; g.r = Math.max(1, Math.round(Math.hypot(x - g.x, z - g.z) * 2) / 2); syncPopup(); changed(); return; }
@@ -903,6 +957,7 @@ cv.onpointerup = e => {
     else if ($("tool").value === "road") extendRoad(x, z);
     else if (patchTool()) { const s = 6, q = (dx, dz) => ({ x: Math.round((x + dx) * 10) / 10, z: Math.round((z + dz) * 10) / 10 });
       (level.gravelPatches ??= []).push([q(-s, -s), q(s, -s), q(s, s), q(-s, s)]); select({ type: "pv", p: level.gravelPatches.length - 1, i: 0 }); changed(true); save(); }
+    else if (shopTool()) { (level.shops ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, stock: [] }); select({ type: "shop", i: level.shops.length - 1 }); changed(); save(); }
     else if (teleTool()) { (level.teleports ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 }); select({ type: "tele", i: level.teleports.length - 1 }); changed(); save(); }
     else if (fenceTool()) addFencePoint(x, z);
     else if (specTool()) { (level.spectators ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r: 8, n: 10 }); select({ type: "spec", i: level.spectators.length - 1 }); changed(); save(); }
@@ -987,6 +1042,7 @@ function removeSelected() {
   if (sel.type === "pv") { const p = level.gravelPatches[sel.p]; p.splice(sel.i, 1); if (p.length < 3) return removePatch(); select(null); changed(true); save(); return; }
   if (sel.type === "spec") { level.spectators.splice(sel.i, 1); select(null); changed(); save(); return; }
   if (sel.type === "fnode") { const pts = level.fences[sel.f].pts; pts.splice(sel.i, 1); if (pts.length < 2) return removeFence(); fenceDraft = null; select(null); changed(); save(); return; }
+  if (sel.type === "shop") { level.shops.splice(sel.i, 1); select(null); changed(); save(); return; }
   if (sel.type === "tele") { level.teleports.splice(sel.i, 1); select(null); changed(); save(); return; }
   const isNode = sel.type === "node";
   if (isNode) { const road = level.roads[sel.c]; road.splice(sel.i, 1); if (!road.length) level.roads.splice(sel.c, 1); } else level.trees.splice(sel.i, 1);
@@ -1028,7 +1084,7 @@ function clearRoad() {
   changed(false); save();
 }
 const fenceNode = (f, i) => ({ get x() { return level.fences[f].pts[i][0]; }, get z() { return level.fences[f].pts[i][1]; }, get kind() { return level.fences[f].kind; }, set kind(v) { level.fences[f].kind = v; } });
-const selObj = () => sel.type === "fnode" ? fenceNode(sel.f, sel.i) : sel.type === "tele" ? level.teleports[sel.i] : sel.type === "pv" ? level.gravelPatches[sel.p][sel.i] : sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
+const selObj = () => sel.type === "fnode" ? fenceNode(sel.f, sel.i) : sel.type === "tele" ? level.teleports[sel.i] : sel.type === "shop" ? level.shops[sel.i] : sel.type === "pv" ? level.gravelPatches[sel.p][sel.i] : sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
 
 // --- the details pop-up for the selected tree or road node --------------------------------------
 const pop = $("pop");
@@ -1040,8 +1096,10 @@ function select(s) {
     ? `<b>Gravel patch ${sel.p} corner ${sel.i}</b><span>Drag corners; double-click an edge to add one</span><button data-act="del">Delete corner</button><button data-act="delpatch">Delete whole patch (shift+Delete)</button>`
     : sel.type === "fnode"
     ? `<b>${level.fences[sel.f].kind === "hedge" ? "Hedge" : "Fence"} ${sel.f} point ${sel.i}</b><label>Kind <select data-k="kind"><option>fence</option><option>hedge</option></select></label><span>Drag points to move them</span><button data-act="del">Delete point</button><button data-act="delpatch">Delete whole line (shift+Delete)</button>`
+    : sel.type === "shop"
+    ? `<b>Shop ${sel.i}</b><label>Name <input type="text" data-k="name"></label>${field("heading", "Car faces", 15, "° from north")}<span>Drag to move; a car bought here arrives exactly here, facing the arrow</span><b>Stock (car or part, price $)</b><div id="stock"></div><button data-act="addstock">Add item</button><button data-act="del">Delete shop</button>`
     : sel.type === "tele"
-    ? `<b>Teleport ${sel.i}</b><label>Name <input type="text" data-k="name"></label>${field("heading", "Car faces", 15, "° from north")}<span>Drag to move; the car arrives exactly here, facing the arrow</span><b>Missions (drive to another point, win a car)</b><div id="missions"></div><button data-act="addmission">Add mission</button><button data-act="del">Delete teleport</button>`
+    ? `<b>Teleport ${sel.i}</b><label>Name <input type="text" data-k="name"></label>${field("heading", "Car faces", 15, "° from north")}<span>Drag to move; the car arrives exactly here, facing the arrow</span><b>Deliveries (target, cargo, weight, pay; blank = automatic)</b><div id="deliveries"></div><button data-act="adddelivery">Add delivery</button><button data-act="del">Delete teleport</button>`
     : sel.type === "spec"
     ? `<b>Spectators ${sel.i}</b>` + field("r", "Radius", 0.5, "m") + field("n", "People", 1) + `<button data-act="del">Delete group</button>`
     : sel.type === "tree"
@@ -1065,28 +1123,45 @@ function select(s) {
     pop.querySelector("[data-act=tarmacroad]").onclick = () => setTarmac(level.roads[sel.c], !!selObj().tarmac);
   }
   for (const [name, fn] of [["split", splitRoad], ["delroad", removeRoad], ["clear", clearRoad]]) { const b = pop.querySelector(`[data-act=${name}]`); if (b) b.onclick = fn; }
-  if (sel.type === "tele") { renderMissions(); pop.querySelector("[data-act=addmission]").onclick = () => { (selObj().missions ??= []).push({ to: "", car: "" }); renderMissions(); changed(); save(); }; }
+  if (sel.type === "shop") { renderStock(); pop.querySelector("[data-act=addstock]").onclick = () => { (selObj().stock ??= []).push({ car: SHOP_IDS.car[0]?.[0] ?? "", price: 1000 }); renderStock(); changed(); save(); }; }
+  if (sel.type === "tele") { renderDeliveries(); pop.querySelector("[data-act=adddelivery]").onclick = () => { (selObj().deliveries ??= []).push({ to: "" }); renderDeliveries(); changed(); save(); }; }
   syncPopup(); mapDirty = true;
 }
-// The game's cars for the reward dropdown, read from car_library.gd (each entry's "name" comes just before its "id").
-// Opened from file:// the fetch fails and the reward stays a typed car id.
-let CARS = null;
-if (location.protocol.startsWith("http")) fetch("../scripts/car_library.gd").then(r => r.text()).then(src => {
-  CARS = [...src.matchAll(/"name": "([^"]+)"[\s\S]*?"id": "([^"]+)"/g)].map(m => ({ name: m[1], id: m[2] }));
-  if (sel?.type === "tele") renderMissions();
-}).catch(() => {});
-function renderMissions() {
-  const o = selObj(), box = $("missions"), names = level.teleports.filter((t, i) => i !== sel.i && t.name).map(t => t.name);
+// Shop stock ids: [id, label] pairs read from the game scripts when served over http; empty on file:// (text input fallback).
+const SHOP_IDS = { car: [], part: [] };
+if (location.protocol.startsWith("http")) {
+  fetch("../scripts/car_library.gd").then(r => r.text()).then(t => { SHOP_IDS.car = [...t.matchAll(/"name": "([^"]+)"[\s\S]*?"id": "([^"]+)"/g)].map(m => [m[2], m[1]]); });
+  fetch("../scripts/boost_library.gd").then(r => r.text()).then(t => { const c = t.slice(t.indexOf("CATALOGUE")); SHOP_IDS.part = [...c.matchAll(/^\t"(\w+)": \{[\s\S]*?"label": "([^"]+)"/gm)].map(m => [m[1], m[2]]); });
+}
+function renderStock() {
+  const o = selObj(), box = $("stock"); box.innerHTML = "";
+  (o.stock ?? []).forEach((m, k) => {
+    const kind = "car" in m ? "car" : "part", row = document.createElement("div"), ids = SHOP_IDS[kind];
+    row.innerHTML = `<select data-kind><option${kind === "car" ? " selected" : ""}>car</option><option${kind === "part" ? " selected" : ""}>part</option></select> `
+      + (ids.length ? `<select data-id>${(ids.some(([i]) => i === m[kind]) ? ids : [...ids, [m[kind], m[kind]]]).map(([i, n]) => `<option value="${i}"${i === m[kind] ? " selected" : ""}>${n} (${i})</option>`).join("")}</select>` : `<input data-id type="text" size="10">`)
+      + ` $<input data-price type="number" min="0" step="50" style="width:5em"> <button>x</button>`;
+    row.querySelector("[data-id]").value = m[kind] ?? ""; row.querySelector("[data-price]").value = m.price ?? 0;
+    row.querySelector("[data-id]").oninput = e => { m[kind] = e.target.value.trim(); save(); };
+    row.querySelector("[data-price]").oninput = e => { m.price = Math.max(0, Math.round(+e.target.value) || 0); save(); };
+    row.querySelector("[data-kind]").onchange = e => { const nk = e.target.value; delete m[kind]; m[nk] = SHOP_IDS[nk][0]?.[0] ?? ""; renderStock(); save(); };
+    row.querySelector("button").onclick = () => { o.stock.splice(k, 1); renderStock(); changed(); save(); };
+    box.appendChild(row);
+  });
+}
+function renderDeliveries() {
+  const o = selObj(), box = $("deliveries"), names = level.teleports.filter((t, i) => i !== sel.i && t.name).map(t => t.name);
   box.innerHTML = "";
-  (o.missions ?? []).forEach((m, k) => {
+  (o.deliveries ?? []).forEach((m, k) => {
     const row = document.createElement("div"), opts = ["", ...names].map(n => `<option${n === m.to ? " selected" : ""}>${n}</option>`).join("");
-    const cars = CARS && [...CARS, ...(m.car && !CARS.some(c => c.id === m.car) ? [{ id: m.car, name: `${m.car} (not in the game)` }] : [])];
-    const reward = cars ? `<select data-car><option value=""></option>${cars.map(c => `<option value="${c.id}"${c.id === m.car ? " selected" : ""}>${c.name}</option>`).join("")}</select>`
-      : `<input data-car type="text" size="8" placeholder="car id" value="${m.car}">`;
-    row.innerHTML = `<select data-to>${opts}</select> ${reward} <button>x</button>`;
+    row.innerHTML = `<select data-to>${opts}</select> <input data-cargo type="text" size="10" placeholder="cargo (auto)"> <input data-kg type="number" min="0" step="1" style="width:4em" placeholder="auto">kg $<input data-pay type="number" min="0" step="10" style="width:5em" placeholder="auto"> <button>x</button>`;
+    row.querySelector("[data-cargo]").value = m.cargo ?? "";
+    row.querySelector("[data-pay]").value = m.pay ?? "";
+    row.querySelector("[data-kg]").value = m.kg ?? "";
+    row.querySelector("[data-kg]").oninput = e => { const v = Number(e.target.value); if (v > 0) m.kg = v; else delete m.kg; save(); };
+    row.querySelector("[data-cargo]").oninput = e => { const v = e.target.value.trim(); if (v) m.cargo = v; else delete m.cargo; save(); };
+    row.querySelector("[data-pay]").oninput = e => { const v = Number(e.target.value); if (v > 0) m.pay = v; else delete m.pay; save(); };
     row.querySelector("[data-to]").onchange = e => { m.to = e.target.value; changed(); save(); };
-    row.querySelector("[data-car]")[cars ? "onchange" : "oninput"] = e => { m.car = e.target.value.trim(); save(); };
-    row.querySelector("button").onclick = () => { o.missions.splice(k, 1); if (!o.missions.length) delete o.missions; renderMissions(); changed(); save(); };
+    row.querySelector("button").onclick = () => { o.deliveries.splice(k, 1); if (!o.deliveries.length) delete o.deliveries; renderDeliveries(); changed(); save(); };
     box.appendChild(row);
   });
 }
@@ -1099,7 +1174,7 @@ function edit(k, v) {
   if (k === "kind") o.kind = v;
   else if (k === "name") {
     const old = o.name, nu = v.trim();
-    if (old && nu) for (const t of level.teleports) for (const m of t.missions ?? []) if (m.to === old) m.to = nu;
+    if (old && nu) for (const t of level.teleports) for (const m of t.deliveries ?? []) if (m.to === old) m.to = nu;
     if (nu) o.name = nu; else delete o.name;
   }
   else if (k === "heading") { if (v === "") delete o.heading; else if (isFinite(+v)) o.heading = ((Math.round(+v) % 360) + 360) % 360; else return; }
@@ -1114,7 +1189,7 @@ function edit(k, v) {
 function syncPopup(skip) {
   if (!sel) return;
   const o = selObj();
-  const vals = sel.type === "pv" ? {} : sel.type === "fnode" ? { kind: o.kind } : sel.type === "tele" ? { name: o.name ?? "", heading: o.heading ?? "" } : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+  const vals = sel.type === "pv" ? {} : sel.type === "fnode" ? { kind: o.kind } : sel.type === "shop" ? { name: o.name ?? "", heading: o.heading ?? "" } : sel.type === "tele" ? { name: o.name ?? "", heading: o.heading ?? "" } : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
                                    : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
   for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
 }
@@ -1135,10 +1210,10 @@ $("loadBtn").onclick = () => $("loadFile").click();
 $("loadFile").onchange = async e => { try { level = await unpackAsync(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
 $("tool").onchange = () => { fenceDraft = null; $("fenceBar").hidden = !fenceTool(); $("coverBar").hidden = !coverTool(); $("biomeBar").hidden = !biomeTool(); if (paintTool() || specTool()) select(null); mapDirty = true; };
 // The map legend: each layer can be hidden; hidden roads and trees can't be clicked either.
-const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], teleports: ["Teleports", "#3ad0e6"], fences: ["Fences", "#7a5a36"], roads: ["Roads", "#b9ad93"], patches: ["Gravel patches", "#c9bc9f"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
+const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], teleports: ["Teleports", "#3ad0e6"], shops: ["Shops", "#f0f"], fences: ["Fences", "#7a5a36"], roads: ["Roads", "#b9ad93"], patches: ["Gravel patches", "#c9bc9f"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
 const show = Object.fromEntries(Object.keys(LAYERS).map(k => [k, true]));
 $("legend").innerHTML = Object.entries(LAYERS).map(([k, [name, col]]) => `<label><input type="checkbox" data-layer="${k}" checked><i style="background:${col}"></i>${name}</label>`).join("");
-$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : sel.type === "tele" ? "teleports" : sel.type === "fnode" ? "fences" : sel.type === "pv" ? "patches" : "roads"]) select(null); mapDirty = true; };
+$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : sel.type === "tele" ? "teleports" : sel.type === "shop" ? "shops" : sel.type === "fnode" ? "fences" : sel.type === "pv" ? "patches" : "roads"]) select(null); mapDirty = true; };
 $("brush").oninput = () => { $("v_brush").textContent = $("brush").value + " m"; mapDirty = true; };
 $("v_brush").textContent = $("brush").value + " m";
 $("coverMode").onchange = () => mapDirty = true;
@@ -1157,6 +1232,7 @@ $("undo").onclick = () => stepHistory(-1);
 $("redo").onclick = () => stepHistory(1);
 addEventListener("keydown", e => {
   if (/INPUT|SELECT/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === "KeyH") { $("tool").value = shopTool() ? "pan" : "shop"; $("tool").onchange(); }
   if (e.code === "KeyP") { $("tool").value = specTool() ? "pan" : "spec"; $("tool").onchange(); }
   if (e.code === "KeyT") { $("tool").value = teleTool() ? "pan" : "tele"; $("tool").onchange(); }
   if (e.code === "KeyF") { $("tool").value = fenceTool() ? "pan" : "fence"; $("tool").onchange(); }
@@ -1349,7 +1425,7 @@ float junc_at(vec2 w) {
 	return j;
 }
 `;
-const roadMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+const roadMat = new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -16 }); // drawn over the gravel patches: the road surface always wins
 roadMat.onBeforeCompile = sh => {
   sh.uniforms.gravel_texture = { value: gravelTex }; sh.uniforms.tarmac_texture = { value: tarmacTex }; sh.uniforms.uJT = juncTex; sh.uniforms.uJN = juncCount; Object.assign(sh.uniforms, snowUni);
   sh.vertexShader = "attribute vec3 rd; attribute float rt;\nvarying vec3 vRd; varying vec2 vW; varying float vT;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvRd = rd; vT = rt; vW = (modelMatrix * vec4(position, 1.)).xz;");
@@ -1631,10 +1707,10 @@ function rebuild3DFences() {
   if (pos.length) { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); add(g, fenceMat); }
   if (npos.length) { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(npos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(nuv, 2)); add(g, nettingMat); }
 }
-// Teleport points as the game shows them (teleport_beacons.gd): a black obelisk pointing down, the rest_stop icon on both faces,
+// Teleport points as the game shows them (teleport_beacons.gd): a black obelisk pointing down, the rest_stop icon on both faces (shops: purple, the shop icon),
 // spinning and bobbing at GameConfig.teleport_beacon_spin / _bob_m / _bob_hz (mirrored here as BEACON_*).
 const BEACON = { w: 1.0, d: 0.3, body: 2.4, tip: 0.9, hover: 2.2, icon: 0.7 }, BEACON_SPIN = 1.2, BEACON_BOB_M = 0.25, BEACON_BOB_HZ = 0.4;
-const beaconGeo = (() => {
+const beaconGeoTinted = tint => {
   const { w: W, d: D, body: H, tip: P } = BEACON, w = W / 2, d = D / 2, pos = [], col = [];
   const top = [[-w, H, -d], [w, H, -d], [w, H, d], [-w, H, d]], bot = top.map(([x, , z]) => [x, 0, z]), tip = [0, -P, 0];
   const light = new THREE.Vector3(0.5, 0.7, 0.3).normalize();
@@ -1642,27 +1718,46 @@ const beaconGeo = (() => {
     const [A, B, C] = [a, b, c].map(v => new THREE.Vector3(...v)), n = B.clone().sub(A).cross(C.clone().sub(A)).normalize();
     if (n.dot(A.clone().sub(new THREE.Vector3(0, H / 2, 0))) < 0) n.negate();
     const l = Math.min(1, Math.max(0, n.dot(light) * 0.5 + 0.5));
-    for (const v of [a, b, c]) { pos.push(...v); col.push(0.16 * l, 0.16 * l, 0.18 * l); }
+    for (const v of [a, b, c]) { pos.push(...v); col.push(tint[0] + 0.16 * l, tint[1] + 0.16 * l, tint[2] + 0.18 * l); }
   };
   tri(top[0], top[1], top[2]); tri(top[0], top[2], top[3]);
   for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; tri(top[i], top[j], bot[j]); tri(top[i], bot[j], bot[i]); tri(bot[i], bot[j], tip); }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   return g;
-})();
+};
+const beaconGeo = beaconGeoTinted([0, 0, 0]), shopBeaconGeo = beaconGeoTinted([0.45, 0.12, 0.5]); // TeleportBeacons.SHOP_TINT
 const beaconMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
 const beaconIcon = new THREE.PlaneGeometry(BEACON.icon, BEACON.icon);
 const beaconIconMat = new THREE.MeshBasicMaterial(served ? { map: loader.load("../icons/cards/rest_stop.png", t => { t.magFilter = THREE.NearestFilter; }), alphaTest: 0.5 } : { color: 0xffffff });
-let beacons = [];
+const shopIconMat = new THREE.MeshBasicMaterial(served ? { map: loader.load("../icons/cards/shop.png", t => { t.magFilter = THREE.NearestFilter; }), alphaTest: 0.5 } : { color: 0xffffff });
+// A shop's model (its .glb from the shop lab, the same file the game loads) is fetched once per path, so only when served.
+const shopModels = new Map();
+function shopModel(path) {
+  if (!served || !THREE.GLTFLoader) return null;
+  if (!shopModels.has(path)) {
+    shopModels.set(path, null);
+    new THREE.GLTFLoader().load("../" + path.replace("res://", ""), g => { shopModels.set(path, g.scene); treesDirty = true; }, undefined, () => {});
+  }
+  return shopModels.get(path);
+}
+let beacons = [], shopMeshes = [];
 function rebuild3DTeleports() {
   for (const b of beacons) scene.remove(b);
-  beacons = [];
-  for (const q of level.teleports ?? []) {
+  for (const m of shopMeshes) scene.remove(m);
+  beacons = []; shopMeshes = [];
+  for (const q of level.shops ?? []) {
+    const m = q.model; if (!m || !inWin(m.x, m.z, 40)) continue;
+    const src = shopModel(m.path); if (!src) continue;
+    const o = src.clone(); o.position.set(m.x, heightAt(m.x, m.z), m.z); o.rotation.y = m.yaw ?? 0;
+    scene.add(o); shopMeshes.push(o);
+  }
+  for (const q of [...(level.teleports ?? []), ...(level.shops ?? []).map(sh => ({ ...sh, shop: true }))]) {
     if (!inWin(q.x, q.z, 10)) continue;
     const b = new THREE.Group();
-    b.add(new THREE.Mesh(beaconGeo, beaconMat));
+    b.add(new THREE.Mesh(q.shop ? shopBeaconGeo : beaconGeo, beaconMat));
     for (const side of [1, -1]) {
-      const face = new THREE.Mesh(beaconIcon, beaconIconMat);
+      const face = new THREE.Mesh(beaconIcon, q.shop ? shopIconMat : beaconIconMat);
       face.position.set(0, BEACON.body * 0.6, side * (BEACON.d / 2 + 0.01));
       if (side < 0) face.rotation.y = Math.PI;
       b.add(face);

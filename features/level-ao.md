@@ -15,4 +15,4 @@ Cheap fake AO for the level view only (the renderer is unshaded, so it is all ba
 ## Layer 2: objects
 
 - Trees (`level_tree.gdshader`) and bushes (`GroundCover.make_material`'s inline shader) darken toward their base by model height; log piles do the same in `log_pile.gdshader` (uniforms set in `LogPile.build`).
-- Buildings have the darkening baked into their vertex colours in `LevelBuildings._building`, so it costs nothing at runtime. Spectators get the same once at load in `Crowd._with_base_shade` (`level_meshes`); they move, so they cast no ground AO.
+- Buildings have the darkening baked into their vertex colours in `LevelBuildings._building`, so it costs nothing at runtime. Shop models (`LevelView.shop_model`) get the same at load (`LevelView._shade_base`: vertex colours, materials switched to use them), and their building box stamps the ground like a building (`LevelView.shop_box`). Spectators get the same once at load in `Crowd._with_base_shade` (`level_meshes`); they move, so they cast no ground AO.

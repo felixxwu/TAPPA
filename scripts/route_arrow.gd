@@ -1,7 +1,7 @@
 class_name RouteArrow
 extends MeshInstance3D
 # Docs: features/level-editor.md — update in the same change as this file.
-# The sat nav's turn arrow: while a mission is on, it floats over the next junction on the route ahead, pointing down the road to take.
+# The sat nav's turn arrow: while a delivery is on, it floats over the next junction on the route ahead, pointing down the road to take.
 
 const SHOW_M := 70.0  # a junction this far ahead along the route gets the arrow
 const EXIT_M := 10.0  # the arrow points at the route this far past the junction
@@ -30,7 +30,7 @@ func _ready() -> void:
 func _process(dt: float) -> void:
 	_t += dt
 	var car := view._car as Node3D
-	var to := String(LevelView.mission.get("to", ""))
+	var to := LevelView.nav_target()
 	if car == null or to.is_empty():
 		visible = false
 		_to = ""

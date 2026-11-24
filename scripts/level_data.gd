@@ -10,6 +10,11 @@ const PATCH_FALLOFF := 4.0   # how far beyond a gravel patch's edge the ground b
 const PATCH_CELL := 32.0
 const PATCH_RAMP := 0.04      # the most a road's grade may steepen where it eases onto a patch's level
 const PATCH_BLEND_MAX := 80.0 # but it eases over no more than this many metres
+const BEND_SPAN := 3             # samples either side used to measure how hard the road turns
+const BEND_START_RADIUS := 80.0  # bends tighter than this radius start losing their grade
+const BEND_FLAT_RADIUS := 25.0   # and at this radius or tighter keep only BEND_GRADE_KEEP of it
+const BEND_GRADE_KEEP := 0.15
+const BEND_SPREAD := 50.0        # the climb taken out of a bend goes onto straighter road within this many metres
 
 var level: Dictionary
 var size := 600.0               # the square's side in metres, centred on the origin
@@ -402,7 +407,7 @@ func surface_at(x: float, z: float) -> Vector2:
 	var road := 1.0 - smoothstep(near.z - 0.5, near.z + 0.5, near.x)
 	var p := patch_at(x, z)
 	var pad := 1.0 - smoothstep(-0.5, 0.5, p.x)
-	return Vector2(maxf(road, pad), road * near.w * (1.0 - pad))
+	return Vector2(maxf(road, pad), road * near.w)  # a tarmac road stays tarmac across a gravel patch
 
 
 # The lab's ground before the road: its saved height grid, or flat.
@@ -474,6 +479,7 @@ func _build_road(roads: Array) -> void:
 				for k in range(lo, hi + 1):
 					sum += hs[k]
 				sh[i] = sum / (hi - lo + 1)
+		_flatten_bends(first)
 	_bucket_junctions()
 	var level_at := _junction_levels()
 	for i in sx.size():
@@ -488,6 +494,63 @@ func _build_road(roads: Array) -> void:
 			sh[i] = lerpf(level_at[best], sh[i], smoothstep(0.0, JUNCTION_BLEND, best_d))
 	_level_patches()
 	bucket_samples()
+
+
+# Hairpins climb on their straights, not in the bend: grade is taken out of tight curves and spread onto the
+# straighter road nearby, so each road still starts and ends at the same height. The lab's flattenBends matches it.
+func _flatten_bends(first: int) -> void:
+	var n := sh.size() - first
+	if n < 3:
+		return
+	var keep := PackedFloat32Array()
+	keep.resize(n)
+	for i in n:
+		var lo := maxi(0, i - BEND_SPAN)
+		var hi := mini(n - 1, i + BEND_SPAN)
+		var half := (sa[first + hi] - sa[first + lo]) / 2.0
+		keep[i] = 1.0
+		if lo == i or hi == i or half <= 0.0:
+			continue
+		var c := first + i
+		var d1 := Vector2(sx[c] - sx[first + lo], sz[c] - sz[first + lo])
+		var d2 := Vector2(sx[first + hi] - sx[c], sz[first + hi] - sz[c])
+		var bend := absf(d1.angle_to(d2)) / half
+		keep[i] = lerpf(1.0, BEND_GRADE_KEEP, smoothstep(1.0 / BEND_START_RADIUS, 1.0 / BEND_FLAT_RADIUS, bend))
+	var grade := PackedFloat32Array()
+	var out := PackedFloat32Array()
+	grade.resize(n - 1)
+	out.resize(n - 1)
+	for i in n - 1:
+		grade[i] = sh[first + i + 1] - sh[first + i]
+		out[i] = grade[i]
+	for i in n - 1:
+		var k := (keep[i] + keep[i + 1]) / 2.0
+		if k >= 1.0:
+			continue
+		var mid := (sa[first + i] + sa[first + i + 1]) / 2.0
+		var weights := {}
+		var total := 0.0
+		var lo := i
+		while lo > 0 and mid - sa[first + lo] < BEND_SPREAD:
+			lo -= 1
+		var hi := i
+		while hi < n - 2 and sa[first + hi + 1] - mid < BEND_SPREAD:
+			hi += 1
+		for j in range(lo, hi + 1):
+			var d := absf((sa[first + j] + sa[first + j + 1]) / 2.0 - mid)
+			if d >= BEND_SPREAD:
+				continue
+			var w := (keep[j] + keep[j + 1]) / 2.0 * (1.0 - d / BEND_SPREAD)
+			weights[j] = w
+			total += w
+		if total < 1.0:
+			continue  # no straighter road close by to take the climb, so this bend keeps it
+		var removed := grade[i] * (1.0 - k)
+		out[i] -= removed
+		for j: int in weights:
+			out[j] += removed * weights[j] / total
+	for i in n - 1:
+		sh[first + i + 1] = sh[first + i] + out[i]
 
 
 # Each junction's road level: the mean of its roads' own smoothed levels there, so a road ending on a hillside

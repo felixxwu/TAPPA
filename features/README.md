@@ -95,6 +95,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [trees.md](trees.md) | Billboard tree & bush sprites scattered around each track turn; `tools/tree_lab.html` procedural tree playground; `tools/groundcover_lab.html` opaque grass-tuft playground |
 | [geo-pipeline.md](geo-pipeline.md) | `tools/geo/` scripts: fetch Welsh LiDAR, OSM and satellite for a real square, build a level editor save and a ground-cover mask |
 | [buildings.md](buildings.md) | `tools/building_lab.html` — procedural cottages / huts / barns as one-mesh, one-atlas low-poly buildings; `bake_buildings.js` + `LevelBuildings` put a level's buildings in the game |
+| [shop-lab.md](shop-lab.md) | `tools/shop_lab.html` — procedural roadside car shop / tuning garage generated from a seed and a level `stock` list (cars on the forecourt, part props, sign, bunting) |
 | [level-ao.md](level-ao.md) | Fake ambient occlusion in the level view: a ground-darkening map round trees / buildings / log piles, bush-cover vertex shade, and base-darkening on trees, bushes, buildings and log piles |
 | [level-editor.md](level-editor.md) | **The game world (default mode):** `level_view.tscn` (`LevelView`, `Scenes.WORLD`), which drives the Hafren level (`GameConfig.level_path`), and `tools/level_editor_lab.html` (2D/3D level editor) that authors it; its map (M), with discovery fog (`LevelDiscovery`) |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |

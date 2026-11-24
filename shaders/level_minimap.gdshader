@@ -3,7 +3,7 @@ shader_type canvas_item;
 
 uniform sampler2D map_tex : filter_linear, repeat_disable;
 uniform vec4 fog_color : source_color = vec4(0.06, 0.058, 0.05, 1.0);
-uniform vec4 rim_color : source_color = vec4(1.0, 0.99, 0.83, 0.8);
+uniform vec4 rim_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 // Far edge width over near edge width.
 uniform float near_frac = 0.5;
 // The picture is this much wider than the circle's ground at the car's row, so the tilted circle stays covered.
