@@ -5,7 +5,7 @@ extends Node
 #
 #   godot --path . res://tools/level_map_capture.tscn
 #
-# CAP_STEPS (default 1500) is how many road samples to walk.
+# CAP_STEPS (default 1500) is how many road samples to walk. CAP_REVEAL=1 reveals the whole map first (to see the snow, say).
 
 func _ready() -> void:
 	get_window().size = Vector2i(1280, 720)
@@ -29,6 +29,8 @@ func _ready() -> void:
 	for i in range(start, mini(start + steps, b.sx.size())):
 		car.global_position = Vector3(b.sx[i], car.global_position.y, b.sz[i])
 		map.reveal_at_car()
+	if OS.get_environment("CAP_REVEAL") == "1":
+		map.reveal_all()
 	map.toggle()
 	map.zoom = map.fit_zoom()
 	map.center = Vector2.ZERO

@@ -901,6 +901,10 @@ func has_nitrous() -> bool:
 ## Height of the right-hand GAS / BRAKE pedal column, as a fraction of the screen height
 ## (split between the two when both are shown). The steer buttons keep their own band.
 @export var mobile_pedal_band_frac := 0.36
+## Width of the left / right steer-button pair (BUTTONS schemes), as a fraction of the
+## screen width, split evenly between the two. Capped at mobile_steer_max_px on a wide screen.
+@export var mobile_steer_width_frac := 0.5
+@export var mobile_steer_max_px := 640.0
 ## Tilt-steering sensitivity (TILT scheme): multiplier on the device roll. 1.0 maps
 ## a full 90° tilt to full lock; higher reaches full lock at a gentler tilt.
 @export var tilt_sensitivity := 2.0

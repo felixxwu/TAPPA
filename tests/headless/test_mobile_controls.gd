@@ -470,6 +470,27 @@ func test_the_pedal_column_is_its_configured_share_of_the_screen() -> void:
 	Config.data.mobile_pedal_band_frac = authored
 
 
+func test_the_steer_buttons_span_their_configured_share_of_the_width() -> void:
+	var size := Vector2(1280, 720)
+	var authored := [Config.data.mobile_steer_width_frac, Config.data.mobile_steer_max_px]
+	Config.data.mobile_steer_max_px = 10000.0
+	for frac in [0.3, 0.45]:
+		Config.data.mobile_steer_width_frac = frac
+		_fit_nitrous_and_lay_out(MobileControls.SCHEME_BUTTONS_GAS_BRAKE, size)
+		var left: Rect2 = _controls._rects["steer_left"]
+		var right: Rect2 = _controls._rects["steer_right"]
+		assert_almost_eq(left.position.x, 0.0, 0.01, "LEFT bleeds to the left edge")
+		assert_almost_eq(right.position.x, left.end.x, 0.01, "RIGHT sits right beside it")
+		assert_almost_eq(left.size.x, right.size.x, 0.01, "the two split it evenly")
+		assert_almost_eq(right.end.x, size.x * frac, 0.01, "together they span the configured share")
+	Config.data.mobile_steer_width_frac = 0.45
+	Config.data.mobile_steer_max_px = 300.0
+	_controls._compute_rects(size)
+	assert_almost_eq((_controls._rects["steer_right"] as Rect2).end.x, 300.0, 0.01, "capped on a wide screen")
+	Config.data.mobile_steer_width_frac = authored[0]
+	Config.data.mobile_steer_max_px = authored[1]
+
+
 func test_nitrous_wins_over_the_simple_steering_halves() -> void:
 	# THE trap: in SIMPLE_LR_AUTO the steering halves cover the whole lower screen, so a
 	# press on the NOS button lands inside a half too. It must be hit-tested FIRST, or

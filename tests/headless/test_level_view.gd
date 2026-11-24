@@ -568,6 +568,37 @@ func test_snow_handling_follows_the_biome_under_the_car() -> void:
 	assert_false(Config.data.ground_is_snow())
 
 
+func test_the_map_shows_the_snow_and_frosts_the_trees_in_it() -> void:
+	var level := _level()
+	level["biomeRle"] = "AYgOAIgO"  # north half (z < 0) snow, south half forest
+	level["trees"] = [{"x": 0.0, "z": -250.0, "rot": 0.0, "sx": 4.0, "sy": 4.0, "kind": "tree.png"},
+		{"x": 0.0, "z": 250.0, "rot": 0.0, "sx": 4.0, "sy": 4.0, "kind": "tree.png"}]
+	var map := LevelMap.new()
+	autofree(map)
+	map.view = _built(level)
+	var img := map._paint()
+	var k := LevelMap.IMAGE_PX / map.size_m()
+	var at := func(x: float, z: float) -> Color:
+		return img.get_pixelv(Vector2i(int((x + map.size_m() / 2.0) * k), int((z + map.size_m() / 2.0) * k)))
+	var snow: Color = at.call(-200.0, -150.0)
+	var forest: Color = at.call(-200.0, 150.0)
+	assert_gt(snow.get_luminance(), forest.get_luminance() + 0.05, "the snowy half is painted lighter")
+	assert_true(snow.b >= snow.r, "and cold, not the warm ground")
+	assert_true(map.snow_cell(LevelStreamer.decode_biome(level, map.size_m()), 0.0, -250.0), "the north tree stands in snow")
+	var frosted: Color = at.call(0.0, -250.0)
+	var green: Color = at.call(0.0, 250.0)
+	assert_ne(frosted, snow, "a tree in the snow still shows over it")
+	assert_gt(frosted.get_luminance(), green.get_luminance(), "and is frosted lighter than a forest tree")
+
+
+func test_the_map_has_no_snow_without_a_biome_mask() -> void:
+	var map := LevelMap.new()
+	autofree(map)
+	map.view = _built(_level())
+	var img := map._cover_image(LevelStreamer.decode_biome(map.view.level, map.size_m()))
+	assert_eq(img.get_pixel(10, 10), img.get_pixel(LevelMap.IMAGE_PX - 10, LevelMap.IMAGE_PX - 10), "plain ground everywhere")
+
+
 func test_snow_dust_is_lightened_like_the_road_and_untouched_off_the_snow() -> void:
 	var base := Color(0.4, 0.35, 0.3, 0.8)
 	assert_eq(LevelView.snow_dust(base, 0.0, 0.5), base, "no snow, no change")

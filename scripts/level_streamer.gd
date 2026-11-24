@@ -49,10 +49,8 @@ func setup(p_data: LevelData, p_bake: LevelBake, p_material: Material) -> void:
 	_cover = GroundCover.decode_cover(data.level)
 	_cover_tints = GroundCover.tints(data.level.get("coverKinds", {}))
 	_bush_ids = GroundCover.bush_ids(data.level.get("coverKinds", {}))
-	var biome: Variant = data.level.get("biomeRle")
-	if biome is String:
-		_biome_n = ceili(bake.size / BIOME_CELL)
-		_biome = GroundCover.rle_decode(Marshalls.base64_to_raw(biome), _biome_n * _biome_n)
+	_biome = decode_biome(data.level, bake.size)
+	_biome_n = ceili(bake.size / BIOME_CELL) if not _biome.is_empty() else 0
 	(p_material as ShaderMaterial).set_shader_parameter("snow_depth_m", Config.data.snow_visual_depth_m)
 	(p_material as ShaderMaterial).set_shader_parameter("snow_road_lighten", Config.data.level_snow_road_lighten)
 	bake.apply_to(p_material as ShaderMaterial)
@@ -133,6 +131,16 @@ func road_pose(p: Vector2, facing: Vector3) -> Transform3D:
 
 func spawn_pose() -> Transform3D:
 	return bake.spawn_pose(height_at)
+
+
+# The save's biome mask (biomeRle) as one byte per BIOME_CELL cell, row-major over a ceil(size / BIOME_CELL) square
+# grid from the level's north-west corner (BIOME_SNOW = snow); empty when the save has none.
+static func decode_biome(level: Dictionary, size: float) -> PackedByteArray:
+	var biome: Variant = level.get("biomeRle")
+	if not biome is String:
+		return PackedByteArray()
+	var n := ceili(size / BIOME_CELL)
+	return GroundCover.rle_decode(Marshalls.base64_to_raw(biome), n * n)
 
 
 # How snowy the ground is at (x, z), from 0 (forest) to 1 (snow), blended between the centres of the save's biome cells.

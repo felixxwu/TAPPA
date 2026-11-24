@@ -461,7 +461,7 @@ func _compute_rects(size: Vector2) -> void:
 		# Bled to the left edge, and split evenly with no gap between the two —
 		# they are the touch-tolerance case the "side by side, no gap" ask is
 		# most about.
-		var steer_w := clampf(size.x * 0.36, 100.0, 360.0)
+		var steer_w := clampf(size.x * Config.data.mobile_steer_width_frac, 100.0, Config.data.mobile_steer_max_px)
 		var half := steer_w * 0.5
 		_rects["steer_left"] = Rect2(0.0, size.y - band_h, half, band_h)
 		_rects["steer_right"] = Rect2(half, size.y - band_h, half, band_h)

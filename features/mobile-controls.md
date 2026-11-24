@@ -86,7 +86,7 @@ title-screen Settings page has no live controls, so there it just saves.)
   ([-1 .. +1], centre = straight). Lifting the finger clears the owner so steering
   **springs back to centre**. Strength is fed in via `Input.action_press(action,
   strength)`, so a half-thrown slider gives half steering.
-- **Steer buttons** (1/3) press `steer_left`/`steer_right` at full strength.
+- **Steer buttons** (1/3) press `steer_left`/`steer_right` at full strength. The pair spans `GameConfig.mobile_steer_width_frac` of the screen width (capped at `mobile_steer_max_px`), split evenly, bled to the left edge; widened from 36% to half the screen on 2026-11-24 (Felix's ask).
 - **Simple left/right** (4): one side steers that way; **both sides at once is the
   brake** (and suppresses steering); throttle is automatic otherwise.
 - **Tilt** (5): `tilt_steer(TiltInput.gravity(), tilt_sensitivity, tilt_deadzone)`

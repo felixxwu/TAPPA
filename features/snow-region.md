@@ -208,6 +208,7 @@ biome mask (`biomeRle`, 10 m cells), read by `LevelStreamer.snow_at`, and reuses
   `lift` ramps from 0.5 m past the road edge over `snow_bank_width_m` (from `LevelBake.road_nearest`). `level_ground.gdshader`
   mixes in `snow_texture` by `UV.x` (half as much on steep rock), lightens the gravel road toward white by `level_snow_road_lighten * UV.x` (and turns its moss to snow; `LevelView.snow_dust` lightens the dust puffs to match) and raises `VERTEX.y` by `snow_depth_m * UV.y`; `snow_depth_m` is
   `snow_visual_depth_m`. The collision is the separate trimesh built from the bake's heights, so the car sinks in.
+- **Map:** the level map (M) and minimap paint the mask's snow white and frost the trees in it (`LevelMap._paint_snow` / `snow_cell`, [level-editor.md](level-editor.md)).
 - **Handling:** `LevelView._physics_process` → `LevelView.set_snow` blends `grass/gravel/tarmac_grip` from their defaults to the `snow_*_grip` values by `snow_at(car)`, sets `deep_snow_drag` to `level_snow_drag * snow_at(car)` (its own value, lighter than free roam's `snow_deep_drag`), and sets `deep_snow_depth_m` past half snow so `ground_is_snow` gives snow tyres their bonus, and
   `car.gd._apply_deep_snow_drag` feathers it off the road per wheel as in free roam. `_exit_tree` sets it back to 0.
 - Not carried over: ground cover tufts, which still grow in the snow.

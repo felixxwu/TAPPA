@@ -12,6 +12,8 @@ const TREE := Color(0.33, 0.47, 0.28)
 const BUILDING := Color(0.45, 0.38, 0.34)
 const ROAD := Color(0.93, 0.55, 0.16)
 const TARMAC := Color(0.36, 0.37, 0.4)
+const SNOW := Color(0.93, 0.95, 0.99)  # the biome mask's snow, painted over the ground under the trees
+const SNOW_TREE := Color(0.42, 0.5, 0.46)  # a tree standing in the snow: frosted, so the snowfield still reads through the forest
 const PATCH := Color(0.72, 0.66, 0.55)
 const LOG_PILE := Color(0.55, 0.36, 0.2)
 const TELEPORT := UITheme.GOLD
@@ -254,13 +256,15 @@ func _paint() -> Image:
 	var b := view._bake
 	var half := size_m() / 2.0
 	var k := IMAGE_PX / size_m()
-	var img := _cover_image()
-	_paint_trees(img, b, half, k)
+	var biome := LevelStreamer.decode_biome(view.level, size_m())
+	var img := _cover_image(biome)
+	_paint_trees(img, b, half, k, biome)
 	return img
 
 
-# The ground, faintly tinted by the save's ground cover (heather, rush, ...) in each type's own colour.
-func _cover_image() -> Image:
+# The ground, faintly tinted by the save's ground cover (heather, rush, ...) in each type's own colour, with the
+# biome mask's snow over it, scaled up to IMAGE_PX (the bilinear resize softens the snow's 10 m cell edges).
+func _cover_image(biome := PackedByteArray()) -> Image:
 	var cov := GroundCover.decode_cover(view.level)
 	var grid := roundi(sqrt(cov.size()))
 	var img := Image.create(COVER_PX, COVER_PX, false, Image.FORMAT_RGB8)
@@ -281,20 +285,56 @@ func _cover_image() -> Image:
 				px[i + 1] = palette[id + 1]
 				px[i + 2] = palette[id + 2]
 		img.set_data(COVER_PX, COVER_PX, false, Image.FORMAT_RGB8, px)
+	_paint_snow(img, biome)
 	img.resize(IMAGE_PX, IMAGE_PX, Image.INTERPOLATE_BILINEAR)
 	return img
 
 
-# Each tree as a disc as wide as its canopy, darker in the middle so neighbouring crowns stay apart.
-func _paint_trees(img: Image, b: LevelBake, half: float, k: float) -> void:
+# Paints the save's snow (the biome mask, LevelStreamer.decode_biome) over the cover image in SNOW, one rect per run
+# of snow cells along a row (native fills, so the 1024² image costs no per-pixel GDScript loop).
+func _paint_snow(img: Image, biome: PackedByteArray) -> void:
+	if biome.is_empty():
+		return
+	var n := ceili(size_m() / LevelStreamer.BIOME_CELL)
+	var k := LevelStreamer.BIOME_CELL * COVER_PX / size_m()  # a biome cell's width in cover pixels
+	for r in n:
+		var y0 := roundi(r * k)
+		var y1 := roundi((r + 1) * k)
+		var c := 0
+		while c < n:
+			if biome[r * n + c] != LevelStreamer.BIOME_SNOW:
+				c += 1
+				continue
+			var start := c
+			while c < n and biome[r * n + c] == LevelStreamer.BIOME_SNOW:
+				c += 1
+			var x0 := roundi(start * k)
+			img.fill_rect(Rect2i(x0, y0, roundi(c * k) - x0, y1 - y0), SNOW)
+
+
+# Whether the biome mask (LevelStreamer.decode_biome) has snow at world (x, z); false off the level or with no mask.
+func snow_cell(biome: PackedByteArray, x: float, z: float) -> bool:
+	if biome.is_empty():
+		return false
+	var n := ceili(size_m() / LevelStreamer.BIOME_CELL)
+	var c := floori((x + size_m() / 2.0) / LevelStreamer.BIOME_CELL)
+	var r := floori((z + size_m() / 2.0) / LevelStreamer.BIOME_CELL)
+	return c >= 0 and r >= 0 and c < n and r < n and biome[r * n + c] == LevelStreamer.BIOME_SNOW
+
+
+# Each tree as a disc as wide as its canopy, darker in the middle so neighbouring crowns stay apart; frosted
+# (SNOW_TREE) where it stands in the snow, so a snowy forest still reads as snow.
+func _paint_trees(img: Image, b: LevelBake, half: float, k: float, biome := PackedByteArray()) -> void:
 	var px := img.get_data()
-	var edge := PackedByteArray([int(TREE.r8), int(TREE.g8), int(TREE.b8)])
-	var dark := TREE.darkened(0.3)
-	var core := PackedByteArray([int(dark.r8), int(dark.g8), int(dark.b8)])
+	var green := [_rgb(TREE), _rgb(TREE.darkened(0.3))]
+	var frost := [_rgb(SNOW_TREE), _rgb(SNOW_TREE.darkened(0.3))]
 	for t in b.tree_count():
 		var o := t * 12
 		var cx := (b.tree_xf[o + 3] + half) * k
 		var cz := (b.tree_xf[o + 11] + half) * k
+		var look: Array = frost if snow_cell(biome, b.tree_xf[o + 3], b.tree_xf[o + 11]) else green
+		var edge: PackedByteArray = look[0]
+		var core: PackedByteArray = look[1]
 		var r := maxf(Vector2(b.tree_xf[o], b.tree_xf[o + 8]).length() * 0.5 * k, 0.7)
 		var ri := ceili(r)
 		for y in range(maxi(int(cz) - ri, 0), mini(int(cz) + ri + 1, IMAGE_PX)):
@@ -307,6 +347,10 @@ func _paint_trees(img: Image, b: LevelBake, half: float, k: float) -> void:
 					px[i + 1] = c[1]
 					px[i + 2] = c[2]
 	img.set_data(IMAGE_PX, IMAGE_PX, false, Image.FORMAT_RGB8, px)
+
+
+static func _rgb(c: Color) -> PackedByteArray:
+	return PackedByteArray([c.r8, c.g8, c.b8])
 
 
 func _draw() -> void:
