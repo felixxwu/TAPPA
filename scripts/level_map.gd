@@ -15,6 +15,8 @@ const TARMAC := Color(0.36, 0.37, 0.4)
 const SNOW := Color(0.93, 0.95, 0.99)  # the biome mask's snow, painted over the ground under the trees
 const SNOW_TREE := Color(0.42, 0.5, 0.46)  # a tree standing in the snow: frosted, so the snowfield still reads through the forest
 const PATCH := Color(0.72, 0.66, 0.55)
+const HEDGE := Color(0.16, 0.26, 0.12)
+const FENCE := Color(0.5, 0.38, 0.24)
 const LOG_PILE := Color(0.55, 0.36, 0.2)
 const TELEPORT := UITheme.GOLD
 const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
@@ -40,6 +42,7 @@ var zoom := 1.0             # screen pixels per metre
 var _texture: ImageTexture
 var _chains: Array[PackedVector2Array] = []  # road lines, split wherever the surface changes
 var _tarmac: Array[bool] = []                 # per line in _chains
+var _widths := PackedFloat32Array()           # per line in _chains, the road's full width in metres
 var _buildings: Array[PackedVector2Array] = []  # each building's footprint corners in world metres
 var _hint: Label
 var _route := PackedVector2Array()  # the sat-nav line to the active mission's target, worked out each time the map opens
@@ -227,20 +230,27 @@ func build() -> void:
 	for i in b.sx.size():
 		var paved := b.st[i] >= 0.5
 		if i > 0 and b.sc[i] != b.sc[i - 1]:
-			_add_line(line, b.st[i - 1] >= 0.5)
+			_add_line(line, b.st[i - 1] >= 0.5, _width_of(b.sw[i - 1]))
 			line = PackedVector2Array()
-		elif i > 0 and paved != (b.st[i - 1] >= 0.5):
-			_add_line(line, not paved)
+		elif i > 0 and (paved != (b.st[i - 1] >= 0.5) or _width_of(b.sw[i]) != _width_of(b.sw[i - 1])):
+			_add_line(line, b.st[i - 1] >= 0.5, _width_of(b.sw[i - 1]))
 			line = PackedVector2Array([line[-1]])  # the next line starts where this one ended, so the road has no gap
 		line.append(Vector2(b.sx[i], b.sz[i]))
-	_add_line(line, b.st.size() > 0 and b.st[-1] >= 0.5)
+	if b.sx.size() > 0:
+		_add_line(line, b.st[-1] >= 0.5, _width_of(b.sw[-1]))
 	for bd: Dictionary in view.level.get("buildings", []):
 		_buildings.append(footprint(bd))
 
 
-func _add_line(line: PackedVector2Array, paved: bool) -> void:
+# A road's full width from its half-width, in 0.25 m steps so a line only splits where the width visibly changes.
+static func _width_of(half_width: float) -> float:
+	return snappedf(2.0 * half_width, 0.25)
+
+
+func _add_line(line: PackedVector2Array, paved: bool, width: float) -> void:
 	_chains.append(line)
 	_tarmac.append(paved)
+	_widths.append(width)
 
 
 # A save's building ({x, z, rot, L, W}) as its four corners in world x, z.
@@ -399,13 +409,19 @@ func paint(ci: CanvasItem, xf: Transform2D, zm: float, ui: float, route: PackedV
 		ci.draw_texture_rect(_texture, world, false)
 	for poly in view._bake.patches:
 		ci.draw_colored_polygon(poly, PATCH)
-	var w := 3.0
-	for line in _chains:
+	for f: Dictionary in view.level.get("fences", []):
+		var line := PackedVector2Array()
+		for p: Array in f.get("pts", []):
+			line.append(Vector2(float(p[0]), float(p[1])))
 		if line.size() > 1:
-			ci.draw_polyline(line, ROAD_EDGE, w + 2.0 * ui / zm)
+			var hedge: bool = f.get("kind", "fence") == "hedge"
+			ci.draw_polyline(line, HEDGE if hedge else FENCE, 1.5 if hedge else maxf(0.5, ui / zm))
 	for i in _chains.size():
 		if _chains[i].size() > 1:
-			ci.draw_polyline(_chains[i], TARMAC if _tarmac[i] else ROAD, w)
+			ci.draw_polyline(_chains[i], ROAD_EDGE, _widths[i] + 2.0 * ui / zm)
+	for i in _chains.size():
+		if _chains[i].size() > 1:
+			ci.draw_polyline(_chains[i], TARMAC if _tarmac[i] else ROAD, _widths[i])
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 	for fp in _buildings:
 		var pts := PackedVector2Array()

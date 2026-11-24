@@ -29,4 +29,6 @@ assert.strictEqual(run("history[historyAt].heightmap"), run("level.heightmap"), 
 run("stepHistory(-1); level.roads[0][0].x = 5; save(); stepHistory(1)");
 assert.strictEqual(run("level.roads[0][0].x"), 5, "a new edit drops the redo steps");
 assert.strictEqual(run("history.length"), 3);
+run("level.fences = [{ kind: 'fence', pts: [[0, 0], [5, 0]] }]; save(); level.fences[0].kind = 'hedge'; save(); stepHistory(-1)");
+assert.strictEqual(run("level.fences[0].kind"), "fence", "undo restores fence edits");
 console.log("lab history ok");

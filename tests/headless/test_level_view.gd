@@ -156,6 +156,8 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_eq(map.discovery.shown(here), 1.0, "the ground round the car is discovered")
 	assert_not_null(map._fog, "the rest of the map is drawn under fog")
 	assert_true(true in map._tarmac and false in map._tarmac, "the map splits the road where it turns from tarmac to gravel")
+	assert_almost_eq(Array(map._widths).max(), 2.0 * Array(map.view._bake.sw).max(), 0.13, "the map draws the widest road at its real width")
+	assert_almost_eq(Array(map._widths).min(), 2.0 * Array(map.view._bake.sw).min(), 0.13, "and the narrowest at its own")
 	assert_eq(map._buildings.size(), 1, "the map draws the save's building")
 	assert_almost_eq(map.to_world(map.to_screen(Vector2(30, -20))), Vector2(30, -20), Vector2.ONE * 0.01)
 	assert_eq(map.nearest_teleport(Vector2(45, 25)), Vector2(60, 4), "a click picks the nearest teleport point, not the nearest road")
@@ -545,6 +547,19 @@ func test_log_piles_sit_clear_of_the_road_with_ends_facing_it() -> void:
 	assert_gt(absf(near.position.z) - half_length, 3.0, "a pile placed on the verge is pushed off the road, near end included")
 	assert_almost_eq(absf(near.basis.z.z), 1.0, 0.01, "its logs point at the road, sawn ends facing it")
 	assert_almost_eq((view.get_node("LogPile1") as Node3D).position.z, -30.0, 0.01, "a pile already clear stays put")
+
+
+func test_a_fence_across_the_road_is_cut_where_the_road_runs() -> void:
+	var level := _level()
+	level["fences"] = [{"kind": "fence", "pts": [[30, -20], [30, 20]]}]
+	var view := _built(level)
+	var fences := view.get_node("Fences") as LevelFences
+	var shapes := 0
+	for b in fences.bodies:
+		for cs: CollisionShape3D in b.get_children():
+			shapes += 1
+			assert_gt(absf(cs.position.z), 1.5, "no fence span stands on the road")
+	assert_gt(shapes, 0, "the fence either side of the road stays")
 
 
 func test_snow_handling_follows_the_biome_under_the_car() -> void:

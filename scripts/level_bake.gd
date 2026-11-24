@@ -65,6 +65,7 @@ static func key_of(save_path: String) -> String:
 		return "%s/v%d" % [FileAccess.get_md5(save_path), BAKE_VERSION]
 	(d as Dictionary).erase("coverKinds")
 	(d as Dictionary).erase("logPiles")
+	(d as Dictionary).erase("fences")
 	(d as Dictionary).erase("spectators")
 	(d as Dictionary).erase("teleports")
 	(d as Dictionary).erase("biomeRle")

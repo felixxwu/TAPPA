@@ -3188,6 +3188,8 @@ func spectator_params() -> Dictionary:
 @export var level_tree_draw_m := 1000.0
 ## Level view: trees thin out over this many metres before level_tree_draw_m. 0 = a hard cut.
 @export var level_tree_fade_m := 60.0
+## Level view: how far fences and hedges are drawn, in metres (they also fade over level_tree_fade_m). Posts and netting are small, so this is shorter than the trees.
+@export var level_fence_draw_m := 500.0
 ## Level view: the depth fog is solid this far from the camera, in metres; past the trees, so the horizon terrain level shows.
 @export var level_fog_end_m := 1500.0
 ## Level view: the depth fog's curve (Environment.fog_depth_curve); above 1 keeps the near ground clearer.

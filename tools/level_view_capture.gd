@@ -54,6 +54,7 @@ func _photo_match(world: Node, poses: String) -> void:
 	cam.fov = fov
 	cam.far = 800.0
 	cam.make_current()
+	level._streamer.focus = cam  # the ground streams its detail around the camera, not the far-off car
 	var n := 0
 	for p in poses.split(";"):
 		var v := p.split(",")
@@ -61,7 +62,7 @@ func _photo_match(world: Node, poses: String) -> void:
 		eye.y = level.height_at(eye.x, eye.z) + eye_h
 		var tgt := Vector3(float(v[2]), eye.y - (float(v[5]) if v.size() > 5 else 1.0), float(v[3]))
 		cam.global_transform = Transform3D(Basis.looking_at(tgt - eye), eye)
-		for _i in 20:
+		for _i in 120:
 			await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png("%s/%s.png" % [out, v[4] if v.size() > 4 else str(n)])
 		n += 1

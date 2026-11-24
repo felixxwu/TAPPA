@@ -2,6 +2,8 @@
 # Serves the repo and opens the level editor with the Hafren level loaded.
 cd "$(dirname "$0")/.." || exit 1
 PORT=${PORT:-8765}
+# A leftover server on the port would answer localhost instead of ours.
+lsof -ti tcp:"$PORT" -sTCP:LISTEN | xargs kill 2>/dev/null
 python3 -m http.server "$PORT" >/dev/null 2>&1 &
 trap 'kill $!' EXIT INT TERM
 sleep 1

@@ -825,6 +825,10 @@ func load_level(d: Dictionary) -> void:
 	buildings.name = "Buildings"
 	add_child(buildings)
 	buildings.setup(_save_path, height_at)
+	var fences := LevelFences.new()
+	fences.name = "Fences"
+	add_child(fences)
+	fences.setup(d.get("fences", []), _bake._roads(), _bake.height)
 	var ao := LevelAO.new(_bake.size, _bake.frame_n)
 	var cfg: GameConfig = Config.data
 	ao.stamp_trees(_bake.tree_xf, cfg.level_ao_tree_radius_scale)

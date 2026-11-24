@@ -119,6 +119,21 @@ if (!lvl.gravelPatches) {
   lvl.gravelPatches = polys.map(p => p.map(q => ({ x: Math.round(q.x * 10) / 10, z: Math.round(q.z * 10) / 10 })));
   made = polys.length;
 }
+// Fences and hedges clear the same way: trees and cover off the line, hedges by half their 1.4 m base as well.
+const lines = (lvl.fences ?? []).filter(f => f.pts.length > 1), halfW = f => f.kind === "hedge" ? 0.7 : 0;
+const lineGap = (x, z) => { let g = Infinity; for (const f of lines) for (let i = 0; i < f.pts.length - 1; i++) {
+  const [ax, az] = f.pts[i], [bx, bz] = f.pts[i + 1], abx = bx - ax, abz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * abx + (z - az) * abz) / (abx * abx + abz * abz || 1)));
+  g = Math.min(g, Math.hypot(x - ax - abx * t, z - az - abz * t) - halfW(f)); } return g; };
+const treesOnLines = lvl.trees.length; let coverOnLines = 0;
+if (lines.length) {
+  lvl.trees = lvl.trees.filter(t => lineGap(t.x, t.z) > treeClear(t));
+  for (const f of lines) for (let i = 0; i < f.pts.length - 1; i++) {
+    const [ax, az] = f.pts[i], [bx, bz] = f.pts[i + 1], m = halfW(f) + COVER_CLEAR + 1;
+    if (lvl.cover) for (let r = Math.max(0, Math.floor(Math.min(az, bz) - m + SIZE / 2)); r < Math.min(SIZE, Math.max(az, bz) + m + SIZE / 2); r++) for (let c = Math.max(0, Math.floor(Math.min(ax, bx) - m + SIZE / 2)); c < Math.min(SIZE, Math.max(ax, bx) + m + SIZE / 2); c++) {
+      const k = r * SIZE + c; if (lvl.cover[k] && lineGap(c + 0.5 - SIZE / 2, r + 0.5 - SIZE / 2) < COVER_CLEAR) { lvl.cover[k] = 0; coverOnLines++; } }
+  }
+}
+console.log(`fences: ${treesOnLines - lvl.trees.length} trees, ${coverOnLines} cover cells cleared off ${lines.length} lines`);
 const patches = lvl.gravelPatches.filter(p => p.length >= 3), box = p => [Math.min(...p.map(q => q.x)), Math.min(...p.map(q => q.z)), Math.max(...p.map(q => q.x)), Math.max(...p.map(q => q.z))];
 const boxes = patches.map(box), padGap = (x, z, m) => Math.min(...patches.map((p, i) => { const b = boxes[i];
   return x < b[0] - m || z < b[1] - m || x > b[2] + m || z > b[3] + m ? Infinity : polygonDistance(p, x, z); }));

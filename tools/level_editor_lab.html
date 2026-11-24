@@ -11,7 +11,7 @@
   input[type=number] { width: 70px; }
   .val { color: #9ab; min-width: 34px; font-family: ui-monospace, monospace; }
   #coverBar, #biomeBar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
-  #coverBar[hidden], #biomeBar[hidden] { display: none; }
+  #coverBar[hidden], #biomeBar[hidden], #fenceBar[hidden] { display: none; }
   #views { flex: 1; display: flex; min-height: 0; }
   #views > div { flex: 1; position: relative; min-width: 0; border-left: 1px solid #333; overflow: hidden; }
   #views canvas { display: block; width: 100%; height: 100%; }
@@ -35,7 +35,8 @@
   <button id="random">🎲 Random</button>
   <button id="reset">Reset</button>
   <button id="undo" title="Ctrl/⌘ Z">Undo</button><button id="redo" title="Ctrl/⌘ Shift Z, Ctrl Y">Redo</button>
-  <label>Tool <select id="tool"><option value="pan">Pan</option><option value="tree">Trees</option><option value="road">Roads</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="tele">Teleport (T)</option><option value="patch">Gravel patch (G)</option><option value="biome">Biome</option></select></label>
+  <label>Tool <select id="tool"><option value="pan">Pan</option><option value="tree">Trees</option><option value="road">Roads</option><option value="cover">Ground cover</option><option value="spec">Spectators (P)</option><option value="tele">Teleport (T)</option><option value="fence">Fences (F)</option><option value="patch">Gravel patch (G)</option><option value="biome">Biome</option></select></label>
+  <span id="fenceBar" hidden><label>Kind <select id="fenceKind"><option>fence</option><option>hedge</option></select></label> click to add points, Enter or Esc to finish</span>
   <span id="biomeBar" hidden>
     <label>Biome <select id="biomeType"></select></label>
     <label>Brush <input id="biomeBrush" type="range" min="10" max="500" step="10" value="100"><span class="val" id="v_biomeBrush"></span></label>
@@ -197,6 +198,7 @@ function pack(l) {
     roads: l.roads.map(road => road.map(n => ({ x: r1(n.x), z: r1(n.z), w: r2(n.w), m: n.m && { x: r1(n.m.x), z: r1(n.m.z) }, tension: r2(n.tension), ...(n.tarmac && { tarmac: true }) }))) };
   delete out.road; delete out.trees;
   if (!out.spectators?.length) delete out.spectators;
+  if (out.fences?.length) out.fences = out.fences.map(f => ({ kind: f.kind, pts: f.pts.map(([x, z]) => [r1(x), r1(z)]) })); else delete out.fences;
   if (out.teleports?.length) out.teleports = out.teleports.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), ...(q.missions?.length ? { missions: q.missions.map(m => ({ to: m.to, car: m.car })) } : {}) })); else delete out.teleports;
   if (out.gravelPatches?.length) out.gravelPatches = out.gravelPatches.map(p => p.map(q => ({ x: r1(q.x), z: r1(q.z) }))); else delete out.gravelPatches;
   if (out.size === 600) delete out.size;
@@ -299,6 +301,8 @@ const coverOverlay = document.createElement("canvas");
 const coverTool = () => $("tool").value === "cover";
 const specTool = () => $("tool").value === "spec";
 const teleTool = () => $("tool").value === "tele";
+const fenceTool = () => $("tool").value === "fence";
+let fenceDraft = null; // index of the line being drawn: each click in the Fences tool extends it
 const patchTool = () => $("tool").value === "patch";
 let coverRgbs = {};
 function coverPaintRect(c0, r0, c1, r1) {
@@ -737,6 +741,19 @@ function draw2D() {
   if (show.buildings) for (const b of level.buildings ?? []) { ctx.save(); ctx.translate(b.x, b.z); ctx.rotate(b.rot); ctx.fillRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.strokeRect(-b.L / 2, -b.W / 2, b.L, b.W); ctx.restore(); }
   ctx.fillStyle = "#c8873a";
   if (show.logPiles) for (const p of pileFootprints()) { ctx.save(); ctx.translate(p.x, p.z); ctx.rotate(p.rot); ctx.fillRect(-p.L / 2, -p.W / 2, p.L, p.W); ctx.strokeRect(-p.L / 2, -p.W / 2, p.L, p.W); ctx.restore(); }
+  if (show.fences) {
+    ctx.lineJoin = "round"; ctx.lineCap = "butt";
+    (level.fences ?? []).forEach((f, fi) => {
+      if (f.pts.length < 2) return;
+      ctx.strokeStyle = f.kind === "hedge" ? "#2f4a22" : "#7a5a36"; ctx.lineWidth = f.kind === "hedge" ? 1.4 : 1.5 / view.zoom;
+      ctx.beginPath(); f.pts.forEach(([x, z], i) => i ? ctx.lineTo(x, z) : ctx.moveTo(x, z)); ctx.stroke();
+    });
+    if (fenceTool() || sel?.type === "fnode") (level.fences ?? []).forEach((f, fi) => f.pts.forEach(([x, z], i) => {
+      if (!fenceTool() && sel.f !== fi) return;
+      const on = sel?.type === "fnode" && sel.f === fi && sel.i === i, r = (on ? 5 : 3.5) / view.zoom;
+      ctx.fillStyle = on ? "#fc6" : f.kind === "hedge" ? "#6fae4a" : "#c9a06a"; ctx.fillRect(x - r, z - r, 2 * r, 2 * r);
+    }));
+  }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (show.spectators) (level.spectators ?? []).forEach((g, i) => {
     const [sx, sz] = toScreen(g.x, g.z), on = sel?.type === "spec" && sel.i === i, r = g.r * view.zoom;
@@ -825,6 +842,7 @@ function hit(sx, sz) {
     return null;
   }
   if (sel?.type === "node" && level.roads[sel.c].length > 1) for (const h of handles(sel.c, sel.i)) if (near(h.x, h.z)) return { type: "handle", c: sel.c, i: sel.i, kind: h.kind };
+  if (show.fences) for (let f = (level.fences ?? []).length - 1; f >= 0; f--) { const pts = level.fences[f].pts; for (let i = pts.length - 1; i >= 0; i--) if (near(pts[i][0], pts[i][1])) return { type: "fnode", f, i }; }
   if (show.teleports) { const ts = level.teleports ?? []; for (let i = ts.length - 1; i >= 0; i--) if (near(ts[i].x, ts[i].z)) return { type: "tele", i }; }
   const best = nodesNear(sx, sz)[0];
   if (best) return best;
@@ -862,6 +880,7 @@ cv.onpointermove = e => {
   if (it.type === "tree") { Object.assign(level.trees[it.i], { x, z }); changed(); return; }
   if (it.type === "spec") { Object.assign(level.spectators[it.i], { x, z }); syncPopup(); changed(); return; }
   if (it.type === "tele") { Object.assign(level.teleports[it.i], { x, z }); changed(); return; }
+  if (it.type === "fnode") { level.fences[it.f].pts[it.i] = [x, z]; syncPopup(); changed(); return; }
   if (it.type === "pv") { Object.assign(level.gravelPatches[it.p][it.i], { x, z }); changed(true); return; }
   if (it.type === "specr") { const g = level.spectators[it.i]; g.r = Math.max(1, Math.round(Math.hypot(x - g.x, z - g.z) * 2) / 2); syncPopup(); changed(); return; }
   const n = level.roads[it.c][it.i];
@@ -885,6 +904,7 @@ cv.onpointerup = e => {
     else if (patchTool()) { const s = 6, q = (dx, dz) => ({ x: Math.round((x + dx) * 10) / 10, z: Math.round((z + dz) * 10) / 10 });
       (level.gravelPatches ??= []).push([q(-s, -s), q(s, -s), q(s, s), q(-s, s)]); select({ type: "pv", p: level.gravelPatches.length - 1, i: 0 }); changed(true); save(); }
     else if (teleTool()) { (level.teleports ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10 }); select({ type: "tele", i: level.teleports.length - 1 }); changed(); save(); }
+    else if (fenceTool()) addFencePoint(x, z);
     else if (specTool()) { (level.spectators ??= []).push({ x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10, r: 8, n: 10 }); select({ type: "spec", i: level.spectators.length - 1 }); changed(); save(); }
     else if (sel) select(null); // a click on empty ground first just clears the selection
     else if ($("tool").value === "tree") { level.trees.push({ x, z, rot: Math.random() * 360, sx: 1, sy: 1, kind: $("kind").value }); changed(); save(); }
@@ -953,12 +973,20 @@ function walk(dt) {
 
 addEventListener("keydown", e => {
   if (!sel || /INPUT|SELECT/.test(e.target.tagName) || !(e.key === "Delete" || e.key === "Backspace")) return;
-  if (e.shiftKey && sel.type === "node") removeRoad(); else if (e.shiftKey && sel.type === "pv") removePatch(); else removeSelected();
+  if (e.shiftKey && sel.type === "node") removeRoad(); else if (e.shiftKey && sel.type === "pv") removePatch(); else if (e.shiftKey && sel.type === "fnode") removeFence(); else removeSelected();
 });
+function addFencePoint(x, z) {
+  const q = [Math.round(x * 10) / 10, Math.round(z * 10) / 10], fences = level.fences ??= [];
+  if (fenceDraft === null || !fences[fenceDraft]) { fences.push({ kind: $("fenceKind").value, pts: [] }); fenceDraft = fences.length - 1; }
+  fences[fenceDraft].pts.push(q);
+  select({ type: "fnode", f: fenceDraft, i: fences[fenceDraft].pts.length - 1 }); changed(); save();
+}
+function removeFence() { level.fences.splice(sel.f, 1); fenceDraft = null; select(null); changed(); save(); }
 function removePatch() { level.gravelPatches.splice(sel.p, 1); select(null); changed(true); save(); }
 function removeSelected() {
   if (sel.type === "pv") { const p = level.gravelPatches[sel.p]; p.splice(sel.i, 1); if (p.length < 3) return removePatch(); select(null); changed(true); save(); return; }
   if (sel.type === "spec") { level.spectators.splice(sel.i, 1); select(null); changed(); save(); return; }
+  if (sel.type === "fnode") { const pts = level.fences[sel.f].pts; pts.splice(sel.i, 1); if (pts.length < 2) return removeFence(); fenceDraft = null; select(null); changed(); save(); return; }
   if (sel.type === "tele") { level.teleports.splice(sel.i, 1); select(null); changed(); save(); return; }
   const isNode = sel.type === "node";
   if (isNode) { const road = level.roads[sel.c]; road.splice(sel.i, 1); if (!road.length) level.roads.splice(sel.c, 1); } else level.trees.splice(sel.i, 1);
@@ -999,7 +1027,8 @@ function clearRoad() {
   pop.querySelector("[data-act=clear]").textContent = `Cleared ${before - level.trees.length} trees, ${cells} m² cover`;
   changed(false); save();
 }
-const selObj = () => sel.type === "tele" ? level.teleports[sel.i] : sel.type === "pv" ? level.gravelPatches[sel.p][sel.i] : sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
+const fenceNode = (f, i) => ({ get x() { return level.fences[f].pts[i][0]; }, get z() { return level.fences[f].pts[i][1]; }, get kind() { return level.fences[f].kind; }, set kind(v) { level.fences[f].kind = v; } });
+const selObj = () => sel.type === "fnode" ? fenceNode(sel.f, sel.i) : sel.type === "tele" ? level.teleports[sel.i] : sel.type === "pv" ? level.gravelPatches[sel.p][sel.i] : sel.type === "spec" ? level.spectators[sel.i] : sel.type === "tree" ? level.trees[sel.i] : level.roads[sel.c][sel.i];
 
 // --- the details pop-up for the selected tree or road node --------------------------------------
 const pop = $("pop");
@@ -1009,6 +1038,8 @@ function select(s) {
   if (!sel) { pop.style.display = "none"; mapDirty = true; return; }
   pop.innerHTML = sel.type === "pv"
     ? `<b>Gravel patch ${sel.p} corner ${sel.i}</b><span>Drag corners; double-click an edge to add one</span><button data-act="del">Delete corner</button><button data-act="delpatch">Delete whole patch (shift+Delete)</button>`
+    : sel.type === "fnode"
+    ? `<b>${level.fences[sel.f].kind === "hedge" ? "Hedge" : "Fence"} ${sel.f} point ${sel.i}</b><label>Kind <select data-k="kind"><option>fence</option><option>hedge</option></select></label><span>Drag points to move them</span><button data-act="del">Delete point</button><button data-act="delpatch">Delete whole line (shift+Delete)</button>`
     : sel.type === "tele"
     ? `<b>Teleport ${sel.i}</b><label>Name <input type="text" data-k="name"></label>${field("heading", "Car faces", 15, "° from north")}<span>Drag to move; the car arrives exactly here, facing the arrow</span><b>Missions (drive to another point, win a car)</b><div id="missions"></div><button data-act="addmission">Add mission</button><button data-act="del">Delete teleport</button>`
     : sel.type === "spec"
@@ -1024,7 +1055,7 @@ function select(s) {
   for (const inp of pop.querySelectorAll("[data-k]")) inp.oninput = () => edit(inp.dataset.k, inp.value);
   pop.querySelector("[data-act=del]").onclick = removeSelected;
   const delPatch = pop.querySelector("[data-act=delpatch]");
-  if (delPatch) delPatch.onclick = removePatch;
+  if (delPatch) delPatch.onclick = sel.type === "fnode" ? removeFence : removePatch;
   const auto = pop.querySelector("[data-act=auto]");
   if (auto) auto.onclick = () => { Object.assign(selObj(), { m: null, tension: 1 }); syncPopup(); changed(true); save(); };
   const tar = pop.querySelector("[data-act=tarmac]");
@@ -1040,7 +1071,7 @@ function select(s) {
 // The game's cars for the reward dropdown, read from car_library.gd (each entry's "name" comes just before its "id").
 // Opened from file:// the fetch fails and the reward stays a typed car id.
 let CARS = null;
-if (served) fetch("../scripts/car_library.gd").then(r => r.text()).then(src => {
+if (location.protocol.startsWith("http")) fetch("../scripts/car_library.gd").then(r => r.text()).then(src => {
   CARS = [...src.matchAll(/"name": "([^"]+)"[\s\S]*?"id": "([^"]+)"/g)].map(m => ({ name: m[1], id: m[2] }));
   if (sel?.type === "tele") renderMissions();
 }).catch(() => {});
@@ -1083,7 +1114,7 @@ function edit(k, v) {
 function syncPopup(skip) {
   if (!sel) return;
   const o = selObj();
-  const vals = sel.type === "pv" ? {} : sel.type === "tele" ? { name: o.name ?? "", heading: o.heading ?? "" } : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
+  const vals = sel.type === "pv" ? {} : sel.type === "fnode" ? { kind: o.kind } : sel.type === "tele" ? { name: o.name ?? "", heading: o.heading ?? "" } : sel.type === "spec" ? { r: o.r, n: o.n } : sel.type === "tree" ? { kind: o.kind, rot: Math.round(o.rot), sx: +o.sx.toFixed(2), sy: +o.sy.toFixed(2), width: +treeW(o).toFixed(1), height: +treeH(o).toFixed(1) }
                                    : { w: +o.w.toFixed(1), tension: +o.tension.toFixed(2) };
   for (const inp of pop.querySelectorAll("[data-k]")) if (inp !== skip) inp.value = vals[inp.dataset.k];
 }
@@ -1102,12 +1133,12 @@ $("relief").oninput = e => { level.relief = +e.target.value; $("v_relief").textC
 $("save").onclick = async () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(await packForDownload(level))])); a.download = "level.json"; a.click(); };
 $("loadBtn").onclick = () => $("loadFile").click();
 $("loadFile").onchange = async e => { try { level = await unpackAsync(JSON.parse(await e.target.files[0].text())); loaded(); } catch (err) { alert("Not a level file: " + err.message); } };
-$("tool").onchange = () => { $("coverBar").hidden = !coverTool(); $("biomeBar").hidden = !biomeTool(); if (paintTool() || specTool()) select(null); mapDirty = true; };
+$("tool").onchange = () => { fenceDraft = null; $("fenceBar").hidden = !fenceTool(); $("coverBar").hidden = !coverTool(); $("biomeBar").hidden = !biomeTool(); if (paintTool() || specTool()) select(null); mapDirty = true; };
 // The map legend: each layer can be hidden; hidden roads and trees can't be clicked either.
-const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], teleports: ["Teleports", "#3ad0e6"], roads: ["Roads", "#b9ad93"], patches: ["Gravel patches", "#c9bc9f"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
+const LAYERS = { trees: ["Trees", "#4a7a3a"], buildings: ["Buildings", "#8a6a5a"], logPiles: ["Log piles", "#c8873a"], spectators: ["Spectators", "#e65aa0"], teleports: ["Teleports", "#3ad0e6"], fences: ["Fences", "#7a5a36"], roads: ["Roads", "#b9ad93"], patches: ["Gravel patches", "#c9bc9f"], cover: ["Ground cover", "#6a8a4a"], biome: ["Biome", "#eef4f8"], contours: ["Contours", "#2a3a20"] };
 const show = Object.fromEntries(Object.keys(LAYERS).map(k => [k, true]));
 $("legend").innerHTML = Object.entries(LAYERS).map(([k, [name, col]]) => `<label><input type="checkbox" data-layer="${k}" checked><i style="background:${col}"></i>${name}</label>`).join("");
-$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : sel.type === "tele" ? "teleports" : sel.type === "pv" ? "patches" : "roads"]) select(null); mapDirty = true; };
+$("legend").onchange = e => { show[e.target.dataset.layer] = e.target.checked; if (sel && !show[sel.type === "tree" ? "trees" : sel.type === "spec" ? "spectators" : sel.type === "tele" ? "teleports" : sel.type === "fnode" ? "fences" : sel.type === "pv" ? "patches" : "roads"]) select(null); mapDirty = true; };
 $("brush").oninput = () => { $("v_brush").textContent = $("brush").value + " m"; mapDirty = true; };
 $("v_brush").textContent = $("brush").value + " m";
 $("coverMode").onchange = () => mapDirty = true;
@@ -1128,6 +1159,8 @@ addEventListener("keydown", e => {
   if (/INPUT|SELECT/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === "KeyP") { $("tool").value = specTool() ? "pan" : "spec"; $("tool").onchange(); }
   if (e.code === "KeyT") { $("tool").value = teleTool() ? "pan" : "tele"; $("tool").onchange(); }
+  if (e.code === "KeyF") { $("tool").value = fenceTool() ? "pan" : "fence"; $("tool").onchange(); }
+  if (fenceTool() && (e.key === "Enter" || e.key === "Escape")) { fenceDraft = null; select(null); }
   if (e.code === "KeyG") { $("tool").value = patchTool() ? "pan" : "patch"; $("tool").onchange(); }
   if (e.key === "[" || e.key === "]") if (specTool() && sel?.type === "spec") { const g = selObj(); g.r = Math.max(1, g.r + (e.key === "]" ? 1 : -1)); syncPopup(); changed(); save(); }
   if (e.code === "KeyC") { $("tool").value = coverTool() ? "pan" : "cover"; $("tool").onchange(); }
@@ -1144,6 +1177,7 @@ addEventListener("keydown", e => {
 $("reset").onclick = () => { level = defaultLevel(); loaded(); };
 $("random").onclick = () => { level = randomLevel(Math.floor(Math.random() * 1e9)); view.x = view.z = 0; loaded(); };
 function loaded() {
+  fenceDraft = null;
   level.size ??= 600; setSize(level);
   if (SIZE !== viewSize) { viewSize = SIZE; view.x = view.z = 0; view.zoom = big() ? fitZoom() : 1.4; }
   if (!(level.cover instanceof Uint8Array && level.cover.length === SIZE * SIZE)) level.cover = new Uint8Array(SIZE * SIZE);
@@ -1507,6 +1541,96 @@ function rebuild3DSpectators() {
   crowdMesh = new THREE.Mesh(out.geometry(), crowdMat);
   scene.add(crowdMesh);
 }
+// Fences and hedges as the game builds them (scripts/level_fences.gd, the source of truth: keep in step). Vertex colours are used raw, as the game's sRGB ones are.
+const fenceHash = (x, z) => { const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453; return v - Math.floor(v); };
+const mipTex = c => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; return t; };
+const nettingTex = (() => {
+  const c = document.createElement("canvas"); c.width = 16; c.height = 128;
+  const g = c.getContext("2d"); g.fillStyle = "#fff";
+  g.fillRect(0, 0, 1, 128);
+  for (const r of [0, 8, 20, 36, 56, 80, 108, 127]) g.fillRect(0, 127 - r, 16, 1);
+  return mipTex(c);
+})();
+const leafTex = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = 32;
+  const g = c.getContext("2d");
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) { const h = fenceHash(x * 1.7, y * 2.3), v = Math.round(255 * (0.55 + 0.45 * h * h)); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, y, 1, 1); }
+  return mipTex(c);
+})();
+// The game hides netting and wire past 60 m; posts and hedges stay.
+const NET_DRAW_M = 60;
+const nettingMat = new THREE.MeshBasicMaterial({ map: nettingTex, alphaTest: 0.25, color: new THREE.Color(0.36, 0.37, 0.36), side: THREE.DoubleSide });
+nettingMat.onBeforeCompile = sh => {
+  sh.vertexShader = "varying float vDist;\n" + sh.vertexShader.replace("#include <project_vertex>", "#include <project_vertex>\nvDist = length(mvPosition.xyz);");
+  sh.fragmentShader = "varying float vDist;\n" + sh.fragmentShader.replace("void main() {", `void main() { if (vDist > ${NET_DRAW_M.toFixed(1)}) discard;`);
+};
+const fenceMat = new THREE.MeshBasicMaterial({ map: leafTex, vertexColors: true, side: THREE.DoubleSide });
+let fenceMeshes = [];
+const nearRoadClear = (x, z) => samples.length > 1 && (() => { const n = nearestRoad(x, z, samples); return n.d < samples[n.i].w + 0.75; })();
+// Points along a polyline: every vertex plus enough evenly spaced ones that no gap exceeds `step`; `v` marks the original vertices.
+function spaced(pts, step) {
+  const out = [{ x: pts[0][0], z: pts[0][1], v: true }];
+  for (let k = 1; k < pts.length; k++) {
+    const [ax, az] = pts[k - 1], [bx, bz] = pts[k], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / step));
+    for (let j = 1; j <= n; j++) out.push({ x: ax + (bx - ax) * j / n, z: az + (bz - az) * j / n, v: j === n });
+  }
+  return out;
+}
+const spanOk = (a, b) => !nearRoadClear(a.x, a.z) && !nearRoadClear(b.x, b.z) && !nearRoadClear((a.x + b.x) / 2, (a.z + b.z) / 2);
+const HEDGE_COLS = [[0.12, 0.19, 0.08], [0.20, 0.30, 0.14], [0.32, 0.46, 0.20], [0.32, 0.46, 0.20], [0.32, 0.46, 0.20], [0.20, 0.30, 0.14], [0.12, 0.19, 0.08]];
+function rebuild3DFences() {
+  for (const m of fenceMeshes) { scene.remove(m); m.geometry.dispose(); }
+  fenceMeshes = [];
+  const pos = [], col = [], uvs = [], npos = [], nuv = [];
+  const Z2 = [[0, 0], [0, 0], [0, 0], [0, 0]];
+  const quad = (a, b, c, d, cs, uv = Z2) => { for (const k of [0, 1, 2, 0, 2, 3]) { pos.push(...[a, b, c, d][k]); col.push(...(cs[0].length ? cs[k] : cs)); uvs.push(...uv[k]); } };
+  const gy = (x, z) => heightAt(x, z);
+  for (const f of level.fences ?? []) {
+    if (f.pts.length < 2 || !f.pts.some(([x, z]) => inWin(x, z, 30))) continue;
+    if (f.kind === "hedge") {
+      const P = spaced(f.pts, 1), N = P.length;
+      const rings = P.map((p, j) => {
+        const a = P[Math.max(0, j - 1)], b = P[Math.min(N - 1, j + 1)], l = Math.hypot(b.x - a.x, b.z - a.z) || 1, sx = (b.z - a.z) / l, sz = -(b.x - a.x) / l;
+        const x = Math.round(p.x * 10) / 10, z = Math.round(p.z * 10) / 10, h = fenceHash(x, z), y = gy(p.x, p.z) - 0.1, H = 1.7 + (h - 0.5) * 0.5, w = (h - 0.5) * 0.3;
+        const bl = (fenceHash(x + 1, z) - 0.5) * 0.5, br = (fenceHash(x, z + 1) - 0.5) * 0.5, tl = (fenceHash(x + 2, z) - 0.5) * 0.5, tc = (fenceHash(x, z + 2) - 0.5) * 0.6, tr = (fenceHash(x + 3, z) - 0.5) * 0.5;
+        const offs = [[0.7 + w, 0], [0.62 + w * 0.8 + bl, H * 0.5], [0.45 + w * 0.6, H + tl * 0.5], [0, H + 0.15 + tc * 0.5], [-0.45 - w * 0.6, H + tr * 0.5], [-0.62 - w * 0.8 - br, H * 0.5], [-0.7 - w, 0]];
+        return offs.map(([o, up], k) => ({ v: [p.x + sx * o, y + up, p.z + sz * o], c: HEDGE_COLS[k].map(c => c * (1 + (h - 0.5) * 0.16)) }));
+      });
+      for (let i = 0; i < N - 1; i++) {
+        if (!spanOk(P[i], P[i + 1])) continue;
+        for (let j = 0; j < 6; j++) {
+          const a0 = rings[i][j], b0 = rings[i][j + 1], a1 = rings[i + 1][j], b1 = rings[i + 1][j + 1];
+          quad(a0.v, a1.v, b1.v, b0.v, [a0.c, a1.c, b1.c, b0.c], [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]]);
+        }
+      }
+      for (const e of [0, N - 1]) {
+        if (nearRoadClear(P[e].x, P[e].z)) continue;
+        const r = rings[e];
+        for (const q of [[0, 1, 5, 6], [1, 2, 4, 5], [2, 3, 3, 4]]) quad(r[q[0]].v, r[q[1]].v, r[q[2]].v, r[q[3]].v, r[q[1]].c, [[0, 0], [0, 1], [1, 1], [1, 0]]);
+      }
+    } else {
+      const P = spaced(f.pts, 2.5), N = P.length, ok = P.slice(0, -1).map((p, j) => spanOk(p, P[j + 1]));
+      P.forEach((p, j) => {
+        const a = j > 0 && ok[j - 1], b = j < N - 1 && ok[j];
+        if (nearRoadClear(p.x, p.z) || !(a || b || p.v)) return;
+        const end = p.v || !(a && b), s = end ? 0.08 : 0.05, H = end ? 1.2 : 1.05, y = gy(p.x, p.z) - 0.1, yt = y + H + 0.1, k = 0.9 + 0.2 * fenceHash(p.x, p.z), c = [0.42 * k, 0.36 * k, 0.28 * k];
+        const o = [[-s, -s], [s, -s], [s, s], [-s, s]].map(([dx, dz]) => [p.x + dx, p.z + dz]);
+        for (let i = 0; i < 4; i++) { const u = o[i], w = o[(i + 1) % 4]; quad([u[0], y, u[1]], [w[0], y, w[1]], [w[0], yt, w[1]], [u[0], yt, u[1]], c); }
+        quad([o[0][0], yt, o[0][1]], [o[1][0], yt, o[1][1]], [o[2][0], yt, o[2][1]], [o[3][0], yt, o[3][1]], c);
+      });
+      ok.forEach((o, j) => {
+        if (!o) return;
+        const a = P[j], b = P[j + 1], ya = gy(a.x, a.z), yb = gy(b.x, b.z), u = Math.hypot(b.x - a.x, b.z - a.z) / 0.15;
+        const net = (q, w) => { for (const k of [0, 1, 2, 0, 2, 3]) { npos.push(...q[k]); nuv.push(...w[k]); } };
+        net([[a.x, ya + 0.05, a.z], [b.x, yb + 0.05, b.z], [b.x, yb + 0.85, b.z], [a.x, ya + 0.85, a.z]], [[0, 0], [u, 0], [u, 1], [0, 1]]);
+        net([[a.x, ya + 1.0, a.z], [b.x, yb + 1.0, b.z], [b.x, yb + 1.02, b.z], [a.x, ya + 1.02, a.z]], [[0, 0.004], [0, 0.004], [0, 0.004], [0, 0.004]]);
+      });
+    }
+  }
+  const add = (g, mat) => { const m = new THREE.Mesh(g, mat); scene.add(m); fenceMeshes.push(m); };
+  if (pos.length) { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); add(g, fenceMat); }
+  if (npos.length) { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(npos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(nuv, 2)); add(g, nettingMat); }
+}
 // Teleport points as the game shows them (teleport_beacons.gd): a black obelisk pointing down, the rest_stop icon on both faces,
 // spinning and bobbing at GameConfig.teleport_beacon_spin / _bob_m / _bob_hz (mirrored here as BEACON_*).
 const BEACON = { w: 1.0, d: 0.3, body: 2.4, tip: 0.9, hover: 2.2, icon: 0.7 }, BEACON_SPIN = 1.2, BEACON_BOB_M = 0.25, BEACON_BOB_HZ = 0.4;
@@ -1648,7 +1772,7 @@ function frame() {
   }
   if (!wrap.hidden) {
     if (ground3DDirty) { rebuild3DTerrain(); ground3DDirty = false; }
-    if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); rebuild3DLogPiles(); rebuild3DSpectators(); rebuild3DTeleports(); treesDirty = false; }
+    if (treesDirty) { rebuild3DTrees(); rebuild3DBuildings(); rebuild3DLogPiles(); rebuild3DSpectators(); rebuild3DTeleports(); rebuild3DFences(); treesDirty = false; }
     animateTeleports(now / 1000);
     U.uCenter.value.set(view.x, 0, view.z); U.uTime.value = now / 1000;
     if (!coverAt || cover3DDirty && now - coverGenAt > 150 || Math.hypot(view.x - coverAt[0], view.z - coverAt[1]) > 10) rebuild3DCover();
