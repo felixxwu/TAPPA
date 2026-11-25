@@ -705,6 +705,23 @@ static func offered_deliveries(t: Dictionary) -> Array:
 	return t.get("deliveries", []).filter(func(m: Dictionary) -> bool: return not delivery_key(t, m) in done)
 
 
+# The deliveries offered at `points`, as {t, m, km}, ordered by new_ends_first.
+func _sorted_jobs(points: Array) -> Array:
+	var jobs: Array = []
+	for t: Dictionary in points:
+		for m: Dictionary in offered_deliveries(t):
+			jobs.append({"t": t, "m": m, "km": float(delivery_info(t, m)["km"])})
+	return new_ends_first(jobs, map.known_teleports().map(func(o: Dictionary) -> String: return String(o.get("name", ""))))
+
+
+# Deliveries ending at a teleport point not yet found (`known` holds the found names) lead the list, shortest first,
+# so the list points the player at new ground; the rest keep their order.
+static func new_ends_first(jobs: Array, known: Array) -> Array:
+	var fresh := jobs.filter(func(j: Dictionary) -> bool: return not String(j["m"].get("to", "")) in known)
+	fresh.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["km"]) < float(b["km"]))
+	return fresh + jobs.filter(func(j: Dictionary) -> bool: return String(j["m"].get("to", "")) in known)
+
+
 func teleport_points() -> Array:
 	return level.get("teleports", []).map(func(t: Dictionary) -> Vector2: return Vector2(float(t["x"]), float(t["z"])))
 
@@ -852,8 +869,8 @@ func open_service() -> void:
 	service = CardUI.card_page(layer, {"title": service_name if not service_name.is_empty() else "Service", "dim": true})
 	var entries: Array = []
 	var t: Dictionary = level["teleports"][_service_point]
-	for m: Dictionary in offered_deliveries(t):  # the point's deliveries first, then the car's own cards
-		entries.append(_delivery_card(t, m, _start_delivery_here.bind(t, m)))
+	for job: Dictionary in _sorted_jobs([t]):  # the point's deliveries first, then the car's own cards
+		entries.append(_delivery_card(t, job["m"], _start_delivery_here.bind(t, job["m"])))
 	entries.append({"title": "Swap car", "icon": "car", "action": _service_open.bind(open_garage)})
 	entries.append({"title": "Tune car", "icon": "tune", "action": _service_open.bind(open_tune)})
 	var cards := CardUI.card_list(service, entries)
@@ -884,9 +901,8 @@ func _open_deliveries_page(title: String, points: Array, travel: bool) -> void:
 		entries.append({"title": "Teleport", "icon": "travel", "action": _confirm_teleport.bind(_teleport_from_map.bind(t))})
 		entries.append({"title": "Navigate to", "icon": "map", "action": _navigate_to.bind(t),
 			"extra": "Navigating" if delivery.get("to", "") == t.get("name", "") and not delivery.has("cargo") else ""})
-	for t: Dictionary in points:
-		for m: Dictionary in offered_deliveries(t):
-			entries.append(_delivery_card(t, m, _choose_start.bind(t, m)))
+	for job: Dictionary in _sorted_jobs(points):
+		entries.append(_delivery_card(job["t"], job["m"], _choose_start.bind(job["t"], job["m"])))
 	var header: Array = ["Find teleport points to see their deliveries"] if entries.is_empty() else []
 	var cards := CardUI.card_list(deliveries_page, entries, header)
 	deliveries_page.add_action(UITheme.row_button("< Back", _close_deliveries))

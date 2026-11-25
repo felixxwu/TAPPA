@@ -92,6 +92,13 @@ func test_the_map_ground_leans_toward_the_cover_colour() -> void:
 	assert_gt(c.r - c.g, LevelMap.GROUND.r - LevelMap.GROUND.g + 0.05, "tinted toward the red cover")
 
 
+func test_deliveries_to_unfound_points_lead_the_list_shortest_first() -> void:
+	var job := func(to: String, km: float) -> Dictionary: return {"t": {}, "m": {"to": to}, "km": km}
+	var jobs := [job.call("Known", 1.0), job.call("FarNew", 9.0), job.call("Known2", 0.5), job.call("NearNew", 3.0)]
+	var order := LevelView.new_ends_first(jobs, ["Known", "Known2"]).map(func(j: Dictionary) -> String: return j["m"]["to"])
+	assert_eq(order, ["NearNew", "FarNew", "Known", "Known2"])
+
+
 func test_world_entry_is_the_level_unless_the_legacy_island_is_on() -> void:
 	Config.data.legacy_free_roam_island = false
 	Scenes.change_to(get_tree(), Scenes.WORLD)

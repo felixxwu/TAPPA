@@ -3170,7 +3170,7 @@ func spectator_params() -> Dictionary:
 ## Level view: the car opens a teleport point's service menu (repair, upgrade, swap cars) within this many metres of it.
 @export var level_service_radius_m := 12.0
 ## Level view: what a delivery pays per km of road between its two teleport points, in dollars.
-@export var level_delivery_pay_per_km := 200.0
+@export var level_delivery_pay_per_km := 500.0
 ## Level view: what a teleport picked on the map costs, in dollars (a wreck's respawn stays free).
 @export var level_teleport_cost := 30
 ## Level view: the money a new player starts with (they start with no car, at level_start_shop).
