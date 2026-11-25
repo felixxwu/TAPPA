@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NPC portrait</title>
+<style>html, body { margin: 0; background: transparent; overflow: hidden; }</style>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="spectators.js"></script>
+<script>
+// One spectator from tools/spectators.js, head and shoulders on a transparent background, for a dialogue portrait.
+// Usage: tools/render_npc.sh <name> <seed> [pose]  (or open tools/npc_portrait.html?seed=7&pose=stand)
+const q = new URLSearchParams(location.search), S = 512;
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setClearColor(0, 0);
+renderer.setSize(S, S);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight("#d8e6f2", "#4a5a30", 0.8));
+const sun = new THREE.DirectionalLight("#fff4e0", 0.8); sun.position.set(6, 12, 8); scene.add(sun);
+const out = new Spectators.Builder();
+Spectators.spectator(out, new THREE.Matrix4(), +(q.get("seed") || 1), { pose: q.get("pose") || "stand", marshals: true, limbless: true });
+scene.add(new THREE.Mesh(out.geometry(), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, side: THREE.DoubleSide })));
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+camera.position.set(0.35, 1.55, 1.5);
+camera.lookAt(0, 1.47, 0);
+renderer.render(scene, camera);
+</script>

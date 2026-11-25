@@ -146,6 +146,9 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var minimap: LevelMinimap = world.get_node("Level").minimap
 	await get_tree().process_frame
 	assert_true(minimap.visible, "the minimap shows while driving")
+	var car0 := world.get_node("Car") as Node3D
+	assert_eq(map.discovery.shown(Vector2(car0.global_position.x, car0.global_position.z)), 1.0,
+		"the minimap's first picture already shows the ground round the car, not all fog")
 	var m := InputEventKey.new()
 	m.physical_keycode = KEY_M
 	m.pressed = true
@@ -430,11 +433,14 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_almost_eq(Vector2(at_car.global_position.x, at_car.global_position.z), Vector2(60, 4), Vector2.ONE * 0.5, "Respawn goes back to the last teleport point visited")
 	assert_true(sdmg.hp == sdmg.max_hp and not lv_node._wrecked and lpause.is_armed(), "mended and driving again")
 	lv_node._unhandled_input(select)
-	assert_gt(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0],
-		String(lv_node.delivery_info(lv_node.level["teleports"][1], lv_node.level["teleports"][1]["deliveries"][0])["cargo"])), -1,
-		"the service menu lists the point's deliveries")
-	assert_eq(CardUI.titles(lv_node.service.find_children("*", "CardCarousel", true, false)[0])[0],
-		String(lv_node.delivery_info(lv_node.level["teleports"][1], lv_node.level["teleports"][1]["deliveries"][0])["cargo"]), "first")
+	var cargo := String(lv_node.delivery_info(lv_node.level["teleports"][1], lv_node.level["teleports"][1]["deliveries"][0])["cargo"])
+	assert_eq(CardUI.titles(lv_node.service.find_children("*", "CardCarousel", true, false)[0])[0], "Deliveries",
+		"the point's deliveries sit behind one Deliveries card, first")
+	assert_eq(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], cargo), -1, "not listed on the service menu itself")
+	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Deliveries")
+	assert_gt(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], cargo), -1, "Deliveries lists the point's deliveries")
+	MenuNav.of(lv_node.service)._unhandled_input(cancel)
+	assert_gt(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Tune car"), -1, "Back returns to the service menu")
 	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Tune car")
 	assert_true(lv_node.shop != null and lv_node.shop.view == RestStopPage.View.TUNE, "Tune car opens the tuning sliders")
 	MenuNav.of(lv_node.shop._page)._unhandled_input(cancel)
@@ -595,7 +601,13 @@ func test_a_new_player_starts_at_the_shop_with_no_car_and_the_starting_money() -
 	var car := world.get_node("Car") as VehicleBody3D
 	assert_true(not car.visible and car.freeze, "no car is fielded")
 	assert_true(view.orbit_camera != null and view.orbit_camera.current, "the camera circles the shop")
-	assert_not_null(view.store, "with its stock open")
+	assert_null(view.store, "the shop waits for the tutorial guy")
+	var talk: Array = view.find_children("*", "NpcDialogue", false, false)
+	assert_eq(talk.size(), 1, "who greets a new player")
+	while is_instance_valid(talk[0]) and not talk[0].is_queued_for_deletion():
+		talk[0].advance()
+	await get_tree().process_frame
+	assert_not_null(view.store, "then its stock opens")
 	assert_eq(view.store.find_children("*", "Button", true, false).filter(func(b: Button) -> bool: return b.text.contains("Back")), [],
 		"and no way back out to drive without a car")
 	await get_tree().process_frame
@@ -610,11 +622,71 @@ func test_a_new_player_starts_at_the_shop_with_no_car_and_the_starting_money() -
 	assert_eq(Scenes.last_blocked_path, Scenes.WORLD, "leaving it reloads the level to drive the car")
 	assert_true(LevelView._next_pose is Transform3D, "from beside the shop")
 	assert_eq(LevelView.delivery, {"from": "", "to": Config.data.level_spawn_teleport}, "with the sat nav set for the first delivery job")
+	assert_true(LevelView._tutor_on_drive, "and the tutorial guy to point them to it")
+	assert_true(LevelView._greet_at_pickup, "and the dispatcher to meet them there")
+	LevelView._tutor_on_drive = false
+	LevelView._greet_at_pickup = false
+	LevelView._greet_at_drop = false
 	LevelView.delivery = {}
 	LevelView._next_pose = null
 	Scenes.last_blocked_path = ""
 	LevelView.forget_progress()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+class PauseStub extends Node:
+	func set_input_enabled(_on: bool) -> void:
+		pass
+
+	func is_armed() -> bool:
+		return true
+
+
+func test_the_dispatcher_and_first_recipient_each_speak_once_with_their_job_counts() -> void:
+	var view := _built(_level())
+	view._pause = autofree(PauseStub.new())
+	add_child(view)
+	view.level["teleports"] = [{"x": 0.0, "z": 0.0, "name": "Depot", "deliveries": [{"to": "A"}, {"to": "B"}]}]
+	LevelView.delivery = {"from": "", "to": "Depot"}
+	LevelView._greet_at_pickup = true
+	var car := VehicleBody3D.new()
+	car.freeze = true
+	view.add_child(car)
+	view._car = car
+	view._driving = true
+	car.linear_velocity = Vector3.FORWARD * (Config.data.level_service_max_speed + 5.0)
+	view._check_delivery()
+	assert_eq(view.find_children("*", "NpcDialogue", false, false).size(), 0, "driving through doesn't stop for the dispatcher")
+	car.linear_velocity = Vector3.ZERO
+	view._check_delivery()
+	view._driving = false
+	view._car = null
+	car.free()
+	var talk: Array = view.find_children("*", "NpcDialogue", false, false)
+	assert_eq(talk.size(), 1, "the dispatcher speaks")
+	assert_eq(talk[0].pages, NpcLines.fill(NpcLines.DISPATCHER_GREETING, 2), "counting the jobs on offer there")
+	assert_true(get_tree().paused, "over the paused game")
+	assert_false(LevelView._greet_at_pickup, "once")
+	assert_true(LevelView._greet_at_drop, "and the first drop-off will thank them")
+	while is_instance_valid(talk[0]) and not talk[0].is_queued_for_deletion():
+		talk[0].advance()
+	await get_tree().process_frame
+	assert_false(get_tree().paused, "driving resumes when dismissed")
+	assert_eq(LevelView.delivery, {})
+	view.level["teleports"].append({"x": 9.0, "z": 0.0, "name": "A", "deliveries": [{"to": "Depot"}]})
+	LevelView.delivery = {"from": "Depot", "to": "A", "cargo": "Box", "pay": 0}
+	view._complete_delivery()
+	talk = view.find_children("*", "NpcDialogue", false, false)
+	assert_eq(talk.size(), 1, "the first delivery's recipient speaks")
+	assert_eq(talk[0].pages, NpcLines.fill(NpcLines.RECIPIENT_THANKS, 1), "about their own jobs")
+	assert_false(LevelView._greet_at_drop, "once only")
+	while is_instance_valid(talk[0]) and not talk[0].is_queued_for_deletion():
+		talk[0].advance()
+	await get_tree().process_frame
+	assert_false(get_tree().paused)
+	LevelView.delivery = {"from": "Depot", "to": "A", "cargo": "Box", "pay": 0}
+	view._complete_delivery()
+	assert_eq(view.find_children("*", "NpcDialogue", false, false).size(), 0, "later deliveries pass without a word")
 
 
 func test_apply_weather_spawns_and_clears_particles() -> void:
@@ -1003,3 +1075,37 @@ func test_yard_layout_rows_sit_in_front_of_the_box_without_overlap() -> void:
 			var a := Rect2(spots[i] - sizes[i] * 0.5, sizes[i])
 			var b := Rect2(spots[j] - sizes[j] * 0.5, sizes[j])
 			assert_false(a.intersects(b), "cars %d and %d don't overlap" % [i, j])
+
+
+func test_the_nav_beam_stands_over_the_sat_nav_target_and_hides_without_one() -> void:
+	var lv := _level()
+	lv["teleports"] = [{"x": 10.0, "z": 3.0, "name": "Alpha"}, {"x": 60.0, "z": 4.0, "name": "Beta"}]
+	var view := _built(lv)
+	view.nav_beam = view._nav_beam()
+	view.add_child(view.nav_beam)
+	var was := LevelView.delivery
+	LevelView.delivery = {"to": "Beta"}
+	view._place_nav_beam()
+	assert_true(view.nav_beam.visible, "the beam shows while a delivery leads somewhere")
+	assert_eq(Vector2(view.nav_beam.position.x, view.nav_beam.position.z), Vector2(60, 4), "over the drop-off")
+	assert_gt(view.nav_beam.position.y, view.height_at(60.0, 4.0), "standing up from the ground")
+	LevelView.delivery = {}
+	view._place_nav_beam()
+	LevelView.delivery = was
+	assert_false(view.nav_beam.visible, "no delivery, no beam")
+
+
+func test_a_swapped_in_car_has_its_bought_parts_on_so_its_stats_show_them() -> void:
+	for c: Dictionary in CarLibrary.all():
+		var id := String(c["id"])
+		for part: Dictionary in LootRules.parts_for({"model_id": id}):
+			var stock := LootRules.fitted_stats({"model_id": id})
+			Save.set_setting(LevelView.PARTS_KEY, {id: [String(part["id"])]})
+			var fitted := LevelView.swapped_in(id)
+			Save.erase_setting(LevelView.PARTS_KEY)
+			assert_eq(fitted["parts"].map(func(p: Dictionary) -> String: return String(p["id"])), [String(part["id"])], "only the bought part")
+			assert_true(LootRules.is_on(fitted["parts"][0]), "switched on")
+			var stats := LootRules.fitted_stats(fitted)
+			if stats["hp"] != stock["hp"] or stats["mass"] != stock["mass"]:
+				return  # a part that changes power or weight shows in the stats the garage reads
+	pending("no part in the catalogue changes power or weight")

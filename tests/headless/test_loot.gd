@@ -481,7 +481,7 @@ func test_the_wreck_page_says_the_money_was_dropped() -> void:
 	var text := ""
 	for l in page._page.find_children("*", "Label", true, false):
 		text += (l as Label).text + "\n"
-	assert_string_contains(text.to_lower(), "dropped $1234")
+	assert_string_contains(text.to_lower(), "dropped £1234")
 	page.close()
 
 
@@ -1014,7 +1014,7 @@ func test_stunts_pay_when_they_end_and_a_hit_voids_them() -> void:
 	calm.call()
 	var after_drift := WorldSession.money()
 	assert_gt(after_drift, 0, "a held drift pays")
-	assert_string_contains(String(get_signal_parameters(loot, "said")[0]), "Drift +$%d" % after_drift, "said like a coin")
+	assert_string_contains(String(get_signal_parameters(loot, "said")[0]), "Drift +£%d" % after_drift, "said like a coin")
 	calm.call()
 	assert_eq(WorldSession.money(), after_drift, "it pays once")
 

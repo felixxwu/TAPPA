@@ -3184,12 +3184,14 @@ func spectator_params() -> Dictionary:
 @export var level_car_id := "acty"
 ## Level view: the car opens a teleport point's service menu (repair, upgrade, swap cars) within this many metres of it.
 @export var level_service_radius_m := 12.0
-## Level view: what a delivery pays per km of road between its two teleport points, in dollars.
+## Level view: what a delivery pays per km of road between its two teleport points, in pounds.
 @export var level_delivery_pay_per_km := 500.0
-## Level view: what a teleport picked on the map costs, in dollars (a wreck's respawn stays free).
+## Level view: what a teleport picked on the map costs, in pounds (a wreck's respawn stays free).
 @export var level_teleport_cost := 30
 ## Level view: the money a new player starts with (they start with no car, at level_start_shop).
 @export var level_start_money := 3000
+## Character dialogue: how fast a line types out, in characters a second.
+@export var npc_text_chars_per_s := 40.0
 ## Level view: the shop a player with no car watches (camera orbiting it, its stock open); the first shop if none is named so.
 @export var level_start_shop := "Cwmbiga Motors"
 ## Level view: the no-car camera's distance from the start shop (m) and how fast it circles it (radians a second).
@@ -3204,6 +3206,10 @@ func spectator_params() -> Dictionary:
 ## Level view: how far the obelisks bob up and down, in metres either way, and how often (Hz).
 @export var teleport_beacon_bob_m := 0.25
 @export var teleport_beacon_bob_hz := 0.4
+## Level view: the faint column of light standing over the sat nav's destination: its height (m), radius (m) and opacity.
+@export var level_nav_beam_height_m := 400.0
+@export var level_nav_beam_radius_m := 1.5
+@export var level_nav_beam_alpha := 0.12
 ## Level view: a new player (no saved spot) starts on the teleport point with this name, facing its heading. Empty: level_spawn.
 @export var level_spawn_teleport := "Cwmbiga"
 ## Level view: spawn at roads[x][y] of the save (0-based), facing node z of that road (-1: the next node, or the previous one at the end of a road); x = -1 keeps the default spawn. Used when level_spawn_teleport is empty or missing, and always by the benchmark, whose recording starts here.

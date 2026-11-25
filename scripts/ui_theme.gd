@@ -197,7 +197,7 @@ static func card_title(text: String, role: String = "ink") -> Label:
 	return l
 
 
-# A money read-out (gold), e.g. "$88,052".
+# A money read-out (gold), e.g. "£88,052".
 static func money(text: String) -> Label:
 	return label(text, "gold")
 

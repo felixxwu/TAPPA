@@ -34,6 +34,9 @@ var garage: MenuPage
 var deliveries_page: MenuPage
 static var _next_pose: Variant = null  # where the car stands after a car-change reload
 static var owned: Dictionary = {}  # the level's car and the parts bought for it, kept across reloads
+const TUTOR := "res://textures/npc/tutorial.webp"  # the tutorial guy's portrait, from tools/render_npc.sh tutorial 7578
+const DISPATCHER := "res://textures/npc/dispatcher.webp"  # who hands out deliveries at the first pick-up point (seed 9042)
+const RECIPIENT := "res://textures/npc/recipient.webp"  # who takes the first delivery (seed 20288)
 const SAVED_CAR_KEY := "level_car"
 const CARS_KEY := "level_cars"
 const MONEY_KEY := "level_money"
@@ -43,12 +46,16 @@ const PARTS_KEY := "level_parts"  # car id -> the part ids (upgrades, tires, kit
 const CARGO := {"Post": 10.0, "Parcels": 20.0, "Medicine": 5.0, "Seed packets": 8.0, "Welsh cakes": 6.0,
 	"Fishing tackle": 12.0, "Honey jars": 15.0, "Newspapers": 18.0, "Camera kit": 10.0, "Wool": 12.0,
 	"Spare fuses": 3.0, "Tea and biscuits": 5.0}
+static var _tutor_on_drive := false  # the tutorial guy points a new player to their first delivery once they drive off
+static var _greet_at_pickup := false  # and the dispatcher greets them when they get there
+static var _greet_at_drop := false  # and whoever takes their first delivery thanks them
 static var delivery: Dictionary = {}  # the drive in progress: {from, to, pay, cargo, kg, pickup, cargo_hp}; kept across the reloads a car or parts change does
 const SAVED_POSE_KEY := "level_pose"
 const POSE_SAVE_SEC := 5.0
 var shop: RestStopPage
 var beacons: TeleportBeacons
 var shop_beacons: TeleportBeacons
+var nav_beam: MeshInstance3D  # the sat nav destination, seen from afar as a tall faint column of light
 var store: MenuPage  # a shop's page: its stock to buy
 var orbit_camera: Camera3D  # circles a shop or teleport point while its menu is open (and the start shop while the player has no car)
 var _orbit_centre := Vector3.INF
@@ -130,13 +137,7 @@ func _ready() -> void:
 	if Save.get_setting(PARTS_KEY) is Array:  # an older save's parts were shared by every car: they stay on the one being driven
 		Save.set_setting(PARTS_KEY, {Config.data.level_car_id: Save.get_setting(PARTS_KEY)})
 	if String(owned.get("model_id", "")) != Config.data.level_car_id:
-		var parts: Array = LootRules.parts_for({"model_id": Config.data.level_car_id}).map(
-			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))
-		for id: String in bought_parts():  # the last one bought in a slot (tires, turbo) is the one left on
-			var i := parts.find_custom(func(p: Dictionary) -> bool: return String(p["id"]) == id)
-			if i >= 0 and not LootRules.is_on(parts[i]):
-				parts = LootRules.toggled(parts, i)
-		owned = {"model_id": Config.data.level_car_id, "tuning": {}, "parts": parts}
+		owned = swapped_in(Config.data.level_car_id)
 	var bought := bought_parts()
 	owned["parts"] = owned.get("parts", []).filter(func(p: Dictionary) -> bool: return String(p["id"]) in bought)
 	Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
@@ -186,6 +187,8 @@ func _ready() -> void:
 	shop_beacons = TeleportBeacons.new()
 	shop_beacons.setup(shop_points(), height_at, TeleportBeacons.SHOP_TINT, TeleportBeacons.SHOP_ICON)
 	add_child(shop_beacons)
+	nav_beam = _nav_beam()
+	add_child(nav_beam)
 	for sh: Dictionary in level.get("shops", []):
 		if sh.get("model") is Dictionary:
 			var body := shop_model(sh["model"], height_at)
@@ -243,6 +246,20 @@ func _ready() -> void:
 	perf_stats.view = self
 	add_child(perf_stats)
 	loaded.emit()
+	if _tutor_on_drive:
+		_tutor_on_drive = false
+		_talk(TUTOR, NpcLines.FIRST_DRIVE)
+
+
+# A character talks over the paused game; driving resumes once they're dismissed.
+func _talk(portrait: String, pages: Array) -> void:
+	if _pause == null:
+		return
+	get_tree().paused = true
+	_pause.set_input_enabled(false)
+	await NpcDialogue.open(self, portrait, pages).finished
+	get_tree().paused = false
+	_pause.set_input_enabled(true)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -288,8 +305,8 @@ func open_garage() -> void:
 		var id := String(CarLibrary.all()[i]["id"])
 		if not id in have:
 			continue
-		var stats := LootRules.fitted_stats({"model_id": id})
 		var driving := id == Config.data.level_car_id
+		var stats := LootRules.fitted_stats(owned if driving and String(owned.get("model_id", "")) == id else swapped_in(id))  # with the parts it drives with
 		if driving:
 			selected = entries.size()
 		entries.append({"title": String(CarLibrary.all()[i].get("name", id)), "car": i,
@@ -368,7 +385,7 @@ func _place_money() -> void:
 	if not is_inside_tree():
 		return
 	money_label.visible = map.visible or (_pause != null and _pause.is_open())
-	money_label.text = "$%d" % money()
+	money_label.text = "£%d" % money()
 	money_label.size = Vector2.ZERO
 	money_label.position = Vector2(get_viewport().get_visible_rect().size.x - money_label.size.x - UITheme.FONT_SIZE, UITheme.FONT_SIZE).round()
 
@@ -573,6 +590,17 @@ func shop_points() -> Array:
 	return level.get("shops", []).map(func(t: Dictionary) -> Vector2: return Vector2(float(t["x"]), float(t["z"])))
 
 
+# Car `id` as it is fielded when swapped to: every part bought for it switched on.
+static func swapped_in(id: String) -> Dictionary:
+	var parts: Array = LootRules.parts_for({"model_id": id}).map(func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))
+	var bought := bought_parts(id)
+	for part_id: String in bought:  # the last one bought in a slot (tires, turbo) is the one left on
+		var i := parts.find_custom(func(p: Dictionary) -> bool: return String(p["id"]) == part_id)
+		if i >= 0 and not LootRules.is_on(parts[i]):
+			parts = LootRules.toggled(parts, i)
+	return {"model_id": id, "tuning": {}, "parts": parts.filter(func(p: Dictionary) -> bool: return String(p["id"]) in bought)}
+
+
 # The upgrade parts bought for car `id` (the one being driven by default): each car's parts are its own.
 static func bought_parts(id: String = Config.data.level_car_id) -> Array:
 	var saved: Variant = Save.get_setting(PARTS_KEY, {})
@@ -606,7 +634,7 @@ func open_store(i: int, remote := false) -> void:
 			var idx := CarLibrary.index_of(id)
 			if idx < 0 or id in have:  # a car the player already owns is no longer on sale
 				continue
-			entries.append({"title": _car_name(id), "car": idx, "desc": "$%d" % price,
+			entries.append({"title": _car_name(id), "car": idx, "desc": "£%d" % price,
 				"action": _buy.bind(_car_name(id), price, _got_car.bind(id, i))})
 		elif item.get("engine_swap", false):
 			if has_car() and not remote:
@@ -618,17 +646,17 @@ func open_store(i: int, remote := false) -> void:
 				continue
 			var text := LootRules.card_text(fit)
 			var got := String(fit["id"]) in parts
-			entries.append({"title": text[0], "icon": LootRules.icon(fit), "desc": "$%d" % price, "subtitle": text[1],
+			entries.append({"title": text[0], "icon": LootRules.icon(fit), "desc": "£%d" % price, "subtitle": text[1],
 				"extra": "Owned" if got else "", "extra_variant": "green",
 				"action": Callable() if got else _buy.bind(text[0], price, _got_part.bind(String(fit["id"]), i))})
 		elif BoostLibrary.CATALOGUE.has(String(item.get("part", ""))):
 			var id := String(item["part"])
 			var spec: Dictionary = BoostLibrary.CATALOGUE[id]
 			var got := id in parts
-			entries.append({"title": String(spec.get("label", id)), "icon": String(spec.get("icon", id)), "desc": "$%d" % price,
+			entries.append({"title": String(spec.get("label", id)), "icon": String(spec.get("icon", id)), "desc": "£%d" % price,
 				"subtitle": String(spec.get("blurb", "")), "extra": "Owned" if got else "", "extra_variant": "green",
 				"action": Callable() if got else _buy.bind(String(spec.get("label", id)), price, _got_part.bind(id, i))})
-	var cards := CardUI.card_list(store, entries, ["$%d" % money()] if not entries.is_empty() else ["Nothing for sale"])
+	var cards := CardUI.card_list(store, entries, ["£%d" % money()] if not entries.is_empty() else ["Nothing for sale"])
 	if has_car():
 		store.add_action(UITheme.row_button("Drive >" if _first_buy_at >= 0 else "< Back", close_store))
 	MenuNav.attach(store, {first = cards, on_back = close_store if has_car() else func() -> void: pass})
@@ -645,7 +673,7 @@ func _car_name(id: String) -> String:
 
 
 func _buy(what: String, price: int, got: Callable) -> void:
-	_confirm_spend("Buy %s for $%d?" % [what, price], price, got)
+	_confirm_spend("Buy %s for £%d?" % [what, price], price, got)
 
 
 func _got_car(id: String, at: int) -> void:
@@ -661,6 +689,8 @@ func _got_car(id: String, at: int) -> void:
 		return
 	if first and not Config.data.level_spawn_teleport.is_empty():
 		delivery = {"from": "", "to": Config.data.level_spawn_teleport}  # the sat nav leads a new player to their first delivery job
+		_tutor_on_drive = true
+		_greet_at_pickup = true
 	if first or _first_buy_at >= 0:  # a new player keeps shopping (parts, say) and drives off when they leave the shop
 		_first_buy_at = at
 		Config.data.level_car_id = id
@@ -698,6 +728,8 @@ func _start_without_car(car: VehicleBody3D) -> void:
 	if at < 0:
 		return
 	car.global_position = shop_centre(at) + Vector3.DOWN * 50.0  # below the ground, so nothing streams round a car the player can't see
+	_start_orbit(shop_centre(at))
+	await NpcDialogue.open(self, TUTOR, NpcLines.fill(NpcLines.WELCOME, money())).finished
 	open_store(at)
 
 
@@ -984,14 +1016,34 @@ func open_service() -> void:
 	service = CardUI.card_page(layer, {"title": service_name if not service_name.is_empty() else "Service", "dim": true})
 	var entries: Array = []
 	var t: Dictionary = level["teleports"][_service_point]
-	for job: Dictionary in _sorted_jobs([t]):  # the point's deliveries first, then the car's own cards
-		entries.append(_delivery_card(t, job["m"], _start_delivery_here.bind(t, job["m"])))
+	var jobs := _sorted_jobs([t]).size()
+	if jobs > 0:
+		entries.append({"title": "Deliveries", "icon": "delivery", "subtitle": "%d on offer" % jobs, "action": _service_open.bind(_open_service_deliveries)})
 	entries.append({"title": "Swap car", "icon": "car", "action": _service_open.bind(open_garage)})
 	entries.append({"title": "Parts", "icon": "parts", "action": _service_open.bind(open_parts)})
 	entries.append({"title": "Tune car", "icon": "tune", "action": _service_open.bind(open_tune)})
 	var cards := CardUI.card_list(service, entries)
 	service.add_action(UITheme.row_button("< Back", close_service))
 	MenuNav.attach(service, {first = cards, on_back = close_service})
+
+
+# The service menu's Deliveries card: the point's deliveries, each started here; Back returns to the service menu.
+func _open_service_deliveries() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	service = CardUI.card_page(layer, {"title": "Deliveries", "dim": true})
+	var t: Dictionary = level["teleports"][_service_point]
+	var entries: Array = []
+	for job: Dictionary in _sorted_jobs([t]):
+		entries.append(_delivery_card(t, job["m"], _start_delivery_here.bind(t, job["m"])))
+	var back := func() -> void:
+		_free_service()
+		open_service()
+	var cards := CardUI.card_list(service, entries)
+	service.add_action(UITheme.row_button("< Back", back))
+	MenuNav.attach(service, {first = cards, on_back = back})
 
 
 # A teleport point clicked on the map: teleport there, navigate there, or start one of its deliveries
@@ -1028,7 +1080,7 @@ func _open_deliveries_page(title: String, points: Array, travel: bool) -> void:
 func _delivery_card(t: Dictionary, m: Dictionary, action: Callable) -> Dictionary:
 	var info := delivery_info(t, m)
 	var driving := String(delivery.get("from", "")) == String(t.get("name", "")) and String(delivery.get("to", "")) == String(m.get("to", ""))
-	return {"title": String(info["cargo"]), "icon": "delivery", "desc": "$%d" % info["pay"], "subtitle": "%.1f km · %d kg" % [info["km"], info["kg"]],
+	return {"title": String(info["cargo"]), "icon": "delivery", "desc": "£%d" % info["pay"], "subtitle": "%.1f km · %d kg" % [info["km"], info["kg"]],
 		"extra": "Driving" if driving else "", "extra_variant": "gold", "action": _preview_delivery.bind(t, m, action)}
 
 
@@ -1051,16 +1103,16 @@ func _close_deliveries() -> void:
 
 # Teleporting costs money: ask first, and refuse when the player can't pay.
 func _confirm_teleport(go: Callable) -> void:
-	_confirm_spend("Teleport for $%d?" % Config.data.level_teleport_cost, Config.data.level_teleport_cost, go)
+	_confirm_spend("Teleport for £%d?" % Config.data.level_teleport_cost, Config.data.level_teleport_cost, go)
 
 
 # Ask before spending `cost`, then pay and run `go`; just say so when the player can't afford it.
 func _confirm_spend(title: String, cost: int, go: Callable) -> void:
 	var popup: ConfirmPopup
 	if money() < cost:
-		popup = ConfirmPopup.open(self, "Can't afford it", "That costs $%d. You have $%d." % [cost, money()], [{"label": "OK", "callback": Callable()}])
+		popup = ConfirmPopup.open(self, "Can't afford it", "That costs £%d. You have £%d." % [cost, money()], [{"label": "OK", "callback": Callable()}])
 	else:
-		popup = ConfirmPopup.open(self, title, "You have $%d." % money(), [{"label": "No", "callback": Callable()},
+		popup = ConfirmPopup.open(self, title, "You have £%d." % money(), [{"label": "No", "callback": Callable()},
 			{"label": "Yes", "callback": func() -> void:
 				Save.set_setting(MONEY_KEY, money() - cost)
 				go.call()}], 1, 0)
@@ -1093,7 +1145,7 @@ func _choose_start(t: Dictionary, m: Dictionary) -> void:
 	var cards := CardUI.card_list(deliveries_page, [
 		{"title": "Teleport", "icon": "travel", "action": _confirm_teleport.bind(_start_delivery_from.bind(t, m, true))},
 		{"title": "Navigate to", "icon": "map", "action": _start_delivery_from.bind(t, m, false)},
-	], ["Pick up at %s, drop off at %s" % [t.get("name", ""), m.get("to", "")], "%.1f km · $%d" % [info["km"], info["pay"]]])
+	], ["Pick up at %s, drop off at %s" % [t.get("name", ""), m.get("to", "")], "%.1f km · £%d" % [info["km"], info["pay"]]])
 	deliveries_page.add_action(UITheme.row_button("< Back", _close_deliveries))
 	MenuNav.attach(deliveries_page, {first = cards, on_back = _close_deliveries})
 
@@ -1140,6 +1192,45 @@ static func nav_target() -> String:
 	return String(delivery.get("from" if delivery.get("pickup", false) else "to", ""))
 
 
+func _nav_beam() -> MeshInstance3D:
+	var cfg: GameConfig = Config.data
+	var tube := CylinderMesh.new()
+	tube.top_radius = cfg.level_nav_beam_radius_m
+	tube.bottom_radius = cfg.level_nav_beam_radius_m
+	tube.height = cfg.level_nav_beam_height_m
+	tube.cap_top = false
+	tube.cap_bottom = false
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.albedo_color = Color(1.0, 0.95, 0.7, cfg.level_nav_beam_alpha)
+	tube.material = mat
+	var beam := MeshInstance3D.new()
+	beam.mesh = tube
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	beam.visible = false
+	return beam
+
+
+func _place_nav_beam() -> void:
+	if nav_beam == null:
+		return
+	var to := nav_target()
+	nav_beam.visible = false
+	if to.is_empty():
+		return
+	var points := teleport_points()
+	var tps: Array = level.get("teleports", [])
+	for i in points.size():
+		if String(tps[i].get("name", "")) == to:
+			var p: Vector2 = points[i]
+			nav_beam.position = Vector3(p.x, height_at(p.x, p.y) + Config.data.level_nav_beam_height_m * 0.5, p.y)
+			nav_beam.visible = true
+			return
+
+
 func close_service_state() -> void:
 	_stop_orbit()
 	# Back on the road the car stands on the point facing its heading, so driving in nose first turns it round for free;
@@ -1160,6 +1251,8 @@ func _check_delivery() -> void:
 	var p := Vector2(_car.global_position.x, _car.global_position.z)
 	for i in points.size():
 		if String(tps[i].get("name", "")) == nav_target() and p.distance_to(points[i]) <= Config.data.level_service_radius_m:
+			if _greet_at_pickup and not delivery.has("cargo") and service_at() != i:
+				return  # the dispatcher waits until the car has stopped there, when the Enter prompt shows
 			if delivery.get("pickup", false):
 				_picked_up()
 				return
@@ -1169,14 +1262,27 @@ func _check_delivery() -> void:
 
 func _complete_delivery() -> void:
 	if not delivery.has("cargo"):
+		if _greet_at_pickup:
+			_greet_at_pickup = false
+			_greet_at_drop = true
+			_talk(DISPATCHER, NpcLines.fill(NpcLines.DISPATCHER_GREETING, _offered_at(delivery["to"])))
 		delivery = {}
 		return
 	var pay := int(delivery.get("pay", 0))
 	Save.set_setting(MONEY_KEY, money() + pay)
 	if delivery.has("key"):
 		Save.set_setting(DONE_KEY, done_deliveries() + [delivery["key"]])
+	if _greet_at_drop:
+		_greet_at_drop = false
+		_talk(RECIPIENT, NpcLines.fill(NpcLines.RECIPIENT_THANKS, _offered_at(delivery["to"])))
 	delivery = {}
-	banner.show_band("Delivery complete", "+$%d" % pay)
+	banner.show_band("Delivery complete", "+£%d" % pay)
+
+
+# How many deliveries the teleport point called `point` still has on offer.
+func _offered_at(point: String) -> int:
+	var here: Array = level.get("teleports", []).filter(func(t: Dictionary) -> bool: return t.get("name", "") == point)
+	return offered_deliveries(here[0]).size() if not here.is_empty() else 0
 
 
 # The cars the player may drive: the saved list, or the authored start car and the current one for a save without it.
@@ -1524,6 +1630,7 @@ func _build_streamer() -> void:
 
 func _process(_dt: float) -> void:
 	_check_delivery()
+	_place_nav_beam()
 	if delivery_label != null:
 		delivery_label.text = "" if delivery.is_empty() else ("Pick up %s at %s" if delivery.get("pickup", false) else "Deliver %s to %s") % [delivery["cargo"], nav_target()] \
 			if delivery.has("cargo") else "Drive to %s" % nav_target()

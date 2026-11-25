@@ -199,9 +199,9 @@ func _travel() -> void:
 
 
 func travel_warning() -> String:
-	var text := "Travelling from the road drops your $%d here. Travel from a checkpoint to keep it." % WorldSession.money()
+	var text := "Travelling from the road drops your £%d here. Travel from a checkpoint to keep it." % WorldSession.money()
 	var left := int(WorldSession.dropped().get("money", 0))
-	return text + (" The $%d you left earlier will be lost." % left if left > 0 else "")
+	return text + (" The £%d you left earlier will be lost." % left if left > 0 else "")
 
 
 # Off a checkpoint, a travel can't carry money: it's dropped where the car is.

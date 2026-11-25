@@ -36,7 +36,7 @@ func test_the_travel_warning_names_an_earlier_pile_it_would_lose() -> void:
 	var pages: WorldPages = autofree(WorldPages.new())
 	assert_false(pages.travel_warning().contains("5000"), "no earlier pile, nothing extra to say")
 	WorldSession.set_dropped({"pos": [0.0, 0.0, 0.0], "money": 5000})
-	assert_true(pages.travel_warning().contains("$5000"))
+	assert_true(pages.travel_warning().contains("£5000"))
 
 
 func test_a_fresh_profile_has_no_world() -> void:

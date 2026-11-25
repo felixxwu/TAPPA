@@ -330,7 +330,7 @@ func _build_dev_page() -> void:
 	_dev_page.add_child(_make_heading("Dev"))
 	_dev_status = _make_sub("Developer actions.")
 	_dev_page.add_child(_dev_status)
-	_dev_page.add_child(_make_action_button("Add $%d" % DEV_MONEY_GRANT, _add_dev_money))
+	_dev_page.add_child(_make_action_button("Add £%d" % DEV_MONEY_GRANT, _add_dev_money))
 	_dev_page.add_child(_make_action_button("Unlock everything", _unlock_map))
 	_dev_weather_button = _make_action_button("", _cycle_dev_weather)
 	_dev_page.add_child(_dev_weather_button)
@@ -704,10 +704,10 @@ func _add_dev_money() -> void:
 			_dev_status.text = "No world yet."
 			return
 		WorldSession.set_money(WorldSession.money() + DEV_MONEY_GRANT)
-		_dev_status.text = "$%d." % WorldSession.money()
+		_dev_status.text = "£%d." % WorldSession.money()
 		return
 	Save.set_setting(LevelView.MONEY_KEY, LevelView.money() + DEV_MONEY_GRANT)
-	_dev_status.text = "$%d." % LevelView.money()
+	_dev_status.text = "£%d." % LevelView.money()
 
 
 # Put every biome ring's stock on sale, put every car in the garage, and open the whole island for

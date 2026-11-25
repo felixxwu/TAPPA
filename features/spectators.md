@@ -229,3 +229,5 @@ flat-shaded material (one draw call), ~130 triangles per person (~105 in the "li
 ## Baked export for the game
 
 `node tools/bake_spectators.js` runs `tools/spectators.js` under node (three r128 downloaded once into the OS temp dir) and writes `models/spectators/spectators.glb`: 10 limbless people (`Spectator0`..`Spectator9`, one mesh each, flat normals, `COLOR_0` linear vertex colours, one shared double-sided roughness-1 material, feet at y=0, facing +Z, real metres). People are the `PEOPLE` list (seed, height) in the script; `SCAN=40 node tools/bake_spectators.js` prints triangle counts per seed to help pick. After changing it run `godot --headless --import`. `Crowd.level_meshes()` (`scripts/crowd.gd`) returns the 10 meshes in node order with a shared vertex-colour material.
+
+Dialogue portraits are rendered from the same figures: `tools/render_npc.sh`, see [npc-dialogue.md](npc-dialogue.md).

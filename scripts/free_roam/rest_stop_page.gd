@@ -174,7 +174,7 @@ func _card_page(title: String, entries: Array, header: Array = [], selected := -
 
 func _build_wrecked() -> void:
 	var lost := loot.lost if loot != null else 0
-	var header: Array = ["You dropped $%d here" % lost] if lost > 0 else []
+	var header: Array = ["You dropped £%d here" % lost] if lost > 0 else []
 	_page = CardUI.card_page(self, {"title": "Wrecked", "dim": true})
 	_cards = CardUI.card_list(_page, [{"title": "Respawn", "icon": "resume_run", "action": _respawn}], header, 0)
 	MenuNav.attach(_page, {first = _cards, on_back = _respawn})
@@ -187,7 +187,7 @@ func _respawn() -> void:
 
 func _build_main() -> void:
 	var header: Array = [rest_stops.name_of(site) if rest_stops != null else "", "Car repaired",
-		"$%d. Spend it: a wreck drops it all" % WorldSession.money()]
+		"£%d. Spend it: a wreck drops it all" % WorldSession.money()]
 	_card_page("Checkpoint", [
 		{"title": "Continue", "icon": "resume_run", "action": close},
 		{"title": "Shop", "icon": "shop", "action": _show.bind(View.SHOP)},
@@ -243,7 +243,7 @@ func _build_shop() -> void:
 
 
 func _header() -> Array:
-	return [LootRules.shop_header(owned)] if free else [LootRules.shop_header(owned), "$%d" % WorldSession.money()]
+	return [LootRules.shop_header(owned)] if free else [LootRules.shop_header(owned), "£%d" % WorldSession.money()]
 
 
 func _build_engines() -> void:
@@ -339,7 +339,7 @@ func _build_part_page(title: String, belongs: Callable, entries_first: Array = [
 		var block := LootRules.fit_block_reason(owned, part)
 		var text := LootRules.card_text(part)
 		entries.append({"title": text[0], "desc": text[1],
-			"extra": block if not block.is_empty() else "$%d" % cost,
+			"extra": block if not block.is_empty() else "£%d" % cost,
 			"extra_variant": "" if not block.is_empty() else price_variant(cost, money), "icon": LootRules.icon(part),
 			"disabled": not block.is_empty() or cost > money, "action": _buy_part.bind(part)})
 	if entries.is_empty():
@@ -388,7 +388,7 @@ func _build_garage() -> void:
 			"subtitle": LootRules.upgrades_text(c), "car": LootRules.fielded(c),
 			"extra": "Driving" if id == active else "", "action": Callable() if id == active else _drive.bind(id)})
 	entries.append_array(unfound_cards())
-	_card_page("Garage", entries, ["$%d" % WorldSession.money()], selected)
+	_card_page("Garage", entries, ["£%d" % WorldSession.money()], selected)
 
 
 # A greyed-out card for each car still parked somewhere on the island, saying which region it's in

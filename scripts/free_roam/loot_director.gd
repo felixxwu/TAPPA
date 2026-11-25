@@ -85,7 +85,7 @@ func _physics_process(delta: float) -> void:
 	var money := WorldSession.money()
 	if money != _money_shown:
 		_money_shown = money
-		money_label.text = "$%d" % money
+		money_label.text = "£%d" % money
 
 
 # Pick up the coins the car drives past — anywhere on the road around one counts
@@ -196,7 +196,7 @@ func _trees_near() -> Dictionary:
 func _pay(label: String, value: int) -> void:
 	WorldSession.set_money(WorldSession.money() + value)
 	Audio.play_beep(Config.data.coin_pickup_sfx_freq_hz, Config.data.coin_pickup_sfx_duration_sec)
-	_say(("%s +$%d" % [label, value]).strip_edges())
+	_say(("%s +£%d" % [label, value]).strip_edges())
 
 
 func _void_stunts() -> void:
@@ -253,7 +253,7 @@ func recover_dropped() -> void:
 	WorldSession.set_dropped({})
 	WorldSession.set_money(WorldSession.money() + value)
 	_sync_dropped_node()
-	_say("Recovered $%d" % value)
+	_say("Recovered £%d" % value)
 
 
 # The crystal floating over the dropped money, so it can be found again.

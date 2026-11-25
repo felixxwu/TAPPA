@@ -149,6 +149,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Corner barriers | `scripts/barrier_layout.gd` (`BarrierLayout` planner), `scripts/barrier_field.gd` (`BarrierField` builder), `scripts/barrier_section.gd` (`BarrierSection` module), `tools/render_barriers.gd`/`.sh` |
 | Camera | `scripts/chase_camera.gd`, `scripts/camera_manager.gd` (`CameraManager` — modes, cycle, persistence), `tools/bonnet_clearance.gd` (per-car bonnet cam height) |
 | HUD | `scripts/hud.gd` |
+| Character dialogue | `scripts/npc_dialogue.gd` (`NpcDialogue`), `tools/render_npc.sh` (portraits) — see [npc-dialogue.md](npc-dialogue.md) |
 | Config | `scripts/game_config.gd`, `scripts/config.gd`, `scripts/game_config.gd` |
 | Player profile / saves | `scripts/save_manager.gd` (`Save` autoload), `scripts/car_library.gd` (car metadata + stable ids) |
 | Regions | `scripts/region_library.gd` (`RegionLibrary` — region catalogue, look overrides, the biome-ring order) |

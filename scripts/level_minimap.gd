@@ -101,6 +101,7 @@ func refresh() -> void:
 	var px := float(_vp.size.x)
 	var zm := px / _pic_m
 	_xf = Transform2D(0.0, Vector2(zm, zm), 0.0, Vector2(px, px) * 0.5) * Transform2D().translated(-pos)
+	map.reveal_at_car()  # the map's own reveal tick may not have run yet, which left the first picture all fog
 	map.update_fog()
 	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_painter.queue_redraw()
