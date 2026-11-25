@@ -14,6 +14,7 @@ var _bake: LevelBake
 var _buildings: LevelBuildings
 var _live := {}
 var _since := 0.0
+var _own := -1  # how many of `groups` are the save's own; set_extra's follow them
 
 
 func setup(list: Array, view: Node, bake: LevelBake, buildings: LevelBuildings) -> void:
@@ -21,6 +22,18 @@ func setup(list: Array, view: Node, bake: LevelBake, buildings: LevelBuildings) 
 	_view = view
 	_bake = bake
 	_buildings = buildings
+
+
+# Replaces the groups added on top of the save's own (an active rally's crowds), freeing any of the old ones alive.
+func set_extra(list: Array) -> void:
+	if _own < 0:
+		_own = groups.size()
+	for i: int in _live.keys():
+		if i >= _own:
+			if is_instance_valid(_live[i]):
+				_live[i].queue_free()
+			_live.erase(i)
+	groups = groups.slice(0, _own) + list
 
 
 func _process(dt: float) -> void:

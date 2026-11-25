@@ -30,6 +30,7 @@ var _render_far0 := 0.0  # the photo camera's far plane before the render pushed
 var _photo_cam: PhotoModeCamera  # while photo mode is up: the viewpoint trees, cover and ground follow
 var _trees: LevelTrees
 var _spectators: LevelSpectators
+var rallies: LevelRallies
 var garage: MenuPage
 var deliveries_page: MenuPage
 static var _next_pose: Variant = null  # where the car stands after a car-change reload
@@ -1591,6 +1592,10 @@ func load_level(d: Dictionary) -> void:
 	_spectators.name = "Spectators"
 	add_child(_spectators)
 	_spectators.setup(d.get("spectators", []), self, _bake, buildings)
+	rallies = LevelRallies.new()
+	rallies.name = "Rallies"
+	add_child(rallies)
+	rallies.setup(d.get("rallies", []), height_at, _spectators)
 
 # A roadside timber pile from the save's `logPiles` ({x, z}), sawn ends facing the nearest road, kept clear of its surface.
 func _log_pile(p: Dictionary, seed: int) -> StaticBody3D:

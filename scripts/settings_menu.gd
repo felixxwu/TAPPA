@@ -84,6 +84,7 @@ var outline_button: Button = null
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
 var _dev_weather_button: Button
+var _dev_rally_button: Button
 var _legacy_island_button: Button
 # Benchmark toggle rows, exposed for tests: [{key: String, button: Button}].
 var benchmark_rows: Array = []
@@ -335,6 +336,9 @@ func _build_dev_page() -> void:
 	_dev_weather_button = _make_action_button("", _cycle_dev_weather)
 	_dev_page.add_child(_dev_weather_button)
 	_refresh_dev_weather()
+	_dev_rally_button = _make_action_button("", _cycle_dev_rally)
+	_dev_page.add_child(_dev_rally_button)
+	_refresh_dev_rally()
 	_legacy_island_button = _make_action_button("", _toggle_legacy_island)
 	_dev_page.add_child(_legacy_island_button)
 	_refresh_legacy_island()
@@ -786,6 +790,27 @@ func _refresh_dev_weather() -> void:
 	var level := _level_weather() if is_inside_tree() else null
 	var id := director.forced_weather if director != null else (LevelWeather.forced_weather if level != null else "")
 	_dev_weather_button.text = "Weather: %s" % (id.capitalize() if id != "" else "Auto")
+
+
+func _level_rallies() -> LevelRallies:
+	var scene := get_tree().current_scene if is_inside_tree() else null
+	return scene.get_node_or_null("Level/Rallies") as LevelRallies if scene != null else null
+
+
+# Dev only: steps the level's active rally through none and each of its rallies, showing its start and finish lines.
+func _cycle_dev_rally() -> void:
+	var rallies := _level_rallies()
+	if rallies == null:
+		_dev_status.text = "No level yet."
+		return
+	var ids: Array = [""] + rallies.names()
+	LevelRallies.active = ids[(ids.find(LevelRallies.active) + 1) % ids.size()]
+	rallies.show_active()
+	_refresh_dev_rally()
+
+
+func _refresh_dev_rally() -> void:
+	_dev_rally_button.text = "Rally: %s" % (LevelRallies.active if LevelRallies.active != "" else "None")
 
 
 # --- Row builders ------------------------------------------------------------

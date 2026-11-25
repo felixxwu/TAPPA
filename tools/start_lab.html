@@ -38,6 +38,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
 <script>
 // Preview page that generates a rally stage start (arch, start control, gazebos, tape, sponsor adverts) around a road of a given width.
 const $ = id => document.getElementById(id);
@@ -262,15 +263,36 @@ function regen(fit) {
 for (const id of ["seed", "width", "len"]) $(id).addEventListener("input", () => regen(true));
 for (const id of ["event", "arch"]) $(id).addEventListener("input", () => regen(false));
 $("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e6); regen(true); };
-$("glb").onclick = () => new THREE.GLTFExporter().parse(group_, buf => {
+// One mesh per material for export, so the game draws a start line in a few dozen calls rather than hundreds.
+function merged(root) {
+  root.updateMatrixWorld(true);
+  const byMat = new Map();
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrixWorld);
+    for (const k of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(k)) g.deleteAttribute(k);
+    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    byMat.get(o.material).push(g);
+  });
+  const out = new THREE.Group();
+  for (const [m, gs] of byMat) out.add(new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(gs), m));
+  return out;
+}
+$("glb").onclick = () => new THREE.GLTFExporter().parse(merged(group_), buf => {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([buf])); a.download = `start_${$("seed").value}.glb`; a.click();
 }, { binary: true });
 
 function resize() { const w = $("wrap").clientWidth, h = $("wrap").clientHeight; renderer.setSize(w, h, false); renderer.setPixelRatio(devicePixelRatio); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
 const q = new URLSearchParams(location.search);
-for (const k of ["seed", "width", "event", "arch"]) if (q.get(k)) $(k).value = q.get(k);
+for (const k of ["seed", "width", "len", "event", "arch"]) if (q.get(k)) $(k).value = q.get(k);
 regen(true);
+// ?dump=1 writes the .glb into the page as base64 (<pre id="glb">), so headless Chrome's --dump-dom can export it without a click
+if (q.get("dump")) new THREE.GLTFExporter().parse(merged(group_), buf => {
+  const b = new Uint8Array(buf); let s = "";
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  const pre = document.createElement("pre"); pre.id = "glb"; pre.textContent = btoa(s); document.body.appendChild(pre);
+}, { binary: true });
 renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
 </script>
 </body>
