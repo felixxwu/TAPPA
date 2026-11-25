@@ -12,7 +12,6 @@
   #side .row { display: flex; gap: 6px; }
   #side button { margin-top: 6px; display: block; width: 100%; }
   #stats { margin-top: 14px; white-space: pre; font-family: ui-monospace, monospace; font-size: 12px; color: #aab; }
-  #err { color: #e87; font-size: 11px; min-height: 14px; }
   #wrap { flex: 1; position: relative; }
   #wrap canvas { display: block; width: 100%; height: 100%; }
   .hint { color: #889; font-size: 11px; margin-top: 10px; }
@@ -22,9 +21,6 @@
 <div id="side">
   <label>Seed</label>
   <div class="row"><input id="seed" type="number" value="1"><button id="rnd" style="width:auto;margin:0">🎲</button></div>
-  <label>Stock (JSON, level format)</label>
-  <textarea id="stock" spellcheck="false"></textarea>
-  <div id="err"></div>
   <label>Sign text</label>
   <input id="sign" type="text" value="">
   <label>Style</label>
@@ -35,11 +31,8 @@
   <input id="size" type="range" min="0.8" max="1.6" step="0.05" value="1">
   <label><input type="checkbox" id="bunting" checked> Bunting and flags</label>
   <button id="glb">Download .glb</button>
-  <label>Bays (position and yaw relative to the shop origin)</label>
-  <textarea id="bays" readonly spellcheck="false" style="height:90px"></textarea>
-  <button id="copy">Copy bay JSON</button>
   <div id="stats"></div>
-  <div class="hint">Drag to orbit, scroll to zoom, right-drag to pan. Each car entry gets a marked parking bay (the game places the real car there; yaw 0 faces +z, towards the road). Parts come from boost_library.gd. ?seed=&amp;sign=&amp;style= preselect.</div>
+  <div class="hint">Drag to orbit, scroll to zoom, right-drag to pan. Cars and prices are not part of the model: the game parks the stock in the open yard in front. Parts are a fixed display set.</div>
 </div>
 <div id="wrap"></div>
 
@@ -47,7 +40,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
 <script>
-// Preview page that generates a roadside car shop / tuning garage from a seed and a stock list.
+// Preview page that generates a roadside car shop / tuning garage from a seed; cars and prices are not modelled.
 const $ = id => document.getElementById(id);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.outputEncoding = THREE.sRGBEncoding;
@@ -67,8 +60,7 @@ const PALETTES = {
   "Blue garage": { wall: "#486a88", roof: "#47494c", trim: "#e8e8e0", door: "#c9cdd0", pad: "#76746e", accent: "#e8d030" },
 };
 $("pal").innerHTML = Object.keys(PALETTES).map(p => `<option>${p}</option>`).join("");
-const DEFAULT_STOCK = [{ car: "acty", price: 3500 }, { car: "twingo", price: 6000 }, { car: "f150", price: 14000 }, { part: "lightweight", price: 1200 }, { part: "turbo", price: 2500 }];
-$("stock").value = JSON.stringify(DEFAULT_STOCK, null, 1);
+const DISPLAY_PARTS = ["turbo", "lightweight", "radiator", "gearbox", "rollcage"];
 
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const pick = (R, a) => a[Math.floor(R() * a.length)];
@@ -206,7 +198,7 @@ const ARCH = {
     roof(cg, "mono", cw, bd, 0.25, ch, shade(cc, 0.8), cc, 1);
     front(cg, cw, shuf(R, [doorS(pal, "#3a3a3a"), winS(pal, 1.8), winS(pal, 1.2)]), bd / 2);
     box(cg, 1.4, 0.3, 0.9, 0, 0.15, bd / 2 + 0.5, "#777"); flue(cg, cw / 2 - 0.8, ch + 0.2, -bd / 4, "#444");
-    // the canopy covers the bays only, so the cabin's own roof stays in the open beside it
+    // the canopy covers the front of the yard only, so the cabin's own roof stays in the open beside it
     const top = 3.6, za = bd / 2 + c.clear - 0.6, zb = bd / 2 + cd, m = Math.max(2, Math.round(W / 3.5) + 1);
     box(g, W + 0.6, 0.14, zb - za + 0.4, 0, top, (za + zb) / 2, shade(pal.roof, 0.85));
     for (const z of [za, zb - 0.1]) for (let i = 0; i < m; i++) cyl(g, 0.08, top, -W / 2 + 0.2 + i * (W - 0.4) / (m - 1), top / 2, z, "#555", 8);
@@ -247,13 +239,12 @@ function makePart(id) {
   return g;
 }
 
-// A part on show: a trestle table (or the ground, for tall parts) with its price tag in front.
+// A part on show: a trestle table (or the ground, for tall parts).
 function display(g, p, x, z, ry) {
   const d = new THREE.Group(); d.position.set(x, 0, z); d.rotation.y = ry; g.add(d);
   const tall = p.part === "rollcage", top = tall ? 0.04 : 0.8;
   if (!tall) { box(d, 1.3, 0.08, 0.9, 0, 0.76, 0, "#7a5a38"); for (const sx of [-0.55, 0.55]) for (const sz of [-0.35, 0.35]) box(d, 0.07, 0.74, 0.07, sx, 0.37, sz, "#4a3a28"); }
   const part = makePart(p.part); part.position.y = top; part.scale.setScalar(tall ? 1 : 0.85); d.add(part);
-  if (p.price != null) { const t = textPlane(0.5, 0.25, () => priceTex(p.price), "$" + p.price, "#b02a1a", "#f4efdc"); t.position.set(0.35, tall ? 0.3 : 0.55, 0.47); d.add(t); }
 }
 // A galvanised five-bar farm gate hung on a post, swung open by `open` radians.
 function farmGate(g, x, z, len, dir, open) {
@@ -295,9 +286,6 @@ const signTexture = (text, pal) => canvasTex(512, 128, x => {
   x.fillStyle = pal.trim; x.font = "bold 56px sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, 256, 68, 480);
 });
 const paintTexture = (text, col) => canvasTex(640, 128, x => { x.fillStyle = col; x.font = "bold 88px sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, 320, 68, 620); });
-const priceTexCache = {}, labelCache = {};
-const priceTex = p => priceTexCache[p] ??= canvasTex(128, 64, x => { x.fillStyle = "#f4efdc"; x.fillRect(0, 0, 128, 64); x.fillStyle = "#b02a1a"; x.font = "bold 36px sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText("$" + p, 64, 34, 120); });
-const labelTex = t => labelCache[t] ??= canvasTex(256, 64, x => { x.fillStyle = "#eee"; x.font = "bold 44px sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(t.toUpperCase(), 128, 34, 244); });
 
 // With `noText` (exporting for the game) no text is baked into a texture: each piece of text becomes an empty marker,
 // collected into the build's `texts` for the game to draw as its own 3D labels, so the model carries no images.
@@ -333,42 +321,19 @@ const NAMES = ["Garage", "Motors", "Autos", "Tuning", "Breakers", "Car Sales"], 
 const PLACES = ["Hafren", "Cwmbiga", "Llanidloes", "Staylittle", "Dylife", "Clywedog"];
 const r2 = v => Math.round(v * 100) / 100;
 
-function buildShop(seed, stock, o) {
+function buildShop(seed, o) {
   const R = rng(seed), root = new THREE.Group(), pal = o.pal, S = o.size;
   NO_TEXT = !!o.noText;
-  const cars = stock.filter(s => s.car), parts = stock.filter(s => s.part), n = cars.length;
+  const parts = DISPLAY_PARTS.map(part => ({ part }));
   const picked = pick(R, STYLE_IDS), style = ARCH[o.style] ? o.style : picked;
 
-  // parking bays: one per car entry, nose to the road (+z), rows of up to four
-  const bays = cars.map(c => { const big = /f150|beast|truck|pickup|van/.test(c.car); return { c, L: big ? 5.8 : 4.8, W: big ? 2.7 : 2.4 }; });
-  const perRow = Math.max(1, Math.min(4, n)), rows = Math.ceil(n / perRow), rowL = Math.max(4.8, ...bays.map(b => b.L)), rowGap = 1.8;
-  const ang = R() < 0.5 ? 0 : 0.3 + R() * 0.2, lineC = R() < 0.5 ? "#eeeeee" : "#e8c830", clear = ARCH[style].clear;
-
-  const a = ARCH[style].fn(root, R, pal, S, { n, perRow, rowL, clear });
-  const z0 = a.bd / 2 + clear + rowL / 2, placed = []; let rowW = 0;
-  for (let r = 0; r < rows; r++) {
-    const rb = bays.slice(r * perRow, (r + 1) * perRow), sp = rb.map(b => b.W / Math.cos(ang) + 0.12), tot = sp.reduce((p, q) => p + q, 0); let x = -tot / 2;
-    rb.forEach((b, k) => { placed.push({ ...b, x: x + sp[k] / 2, z: z0 + r * (rowL + rowGap), yaw: ang }); x += sp[k]; });
-    rowW = Math.max(rowW, tot);
-  }
-  const zFront = (rows ? z0 + (rows - 1) * (rowL + rowGap) + rowL / 2 : a.bd / 2 + clear) + 2.5;
-  const padW = Math.max(2 * Math.max(a.extL, a.extR) + 6, rowW + 4), zBack = -a.bd / 2 - 1.5;
+  const clear = ARCH[style].clear, rowL = 4.8;
+  const a = ARCH[style].fn(root, R, pal, S, { n: 3, perRow: 3, rowL, clear });
+  const zFront = a.bd / 2 + clear + rowL + 2.5;
+  const padW = Math.max(2 * Math.max(a.extL, a.extR) + 6, 14), zBack = -a.bd / 2 - 1.5;
   const surf = pick(R, [pal.pad, pal.pad, "#4a4c4e", "#9a9384"]);
   if (!o.noPad) box(root, padW, 0.06, zFront - zBack, 0, 0.03, (zFront + zBack) / 2, surf);
   for (let i = 0; i < 6 + R() * 6; i++) stain(root, (R() - 0.5) * (padW - 2), zBack + 1 + R() * (zFront - zBack - 2), 0.2 + R() * 0.5);
-
-  const exportBays = [];
-  placed.forEach(p => {
-    const bg = new THREE.Group(); bg.position.set(p.x, 0, p.z); bg.rotation.y = p.yaw; root.add(bg);
-    for (const s of [-1, 1]) box(bg, 0.1, 0.02, p.L, s * p.W / 2, 0.07, 0, lineC);
-    box(bg, p.W, 0.02, 0.1, 0, 0.07, -p.L / 2 + 0.05, lineC); box(bg, p.W * 0.6, 0.12, 0.14, 0, 0.06, -p.L / 2 + 0.45, "#777");
-    const lab = textPlane(1.6, 0.4, () => labelTex(p.c.car), p.c.car.toUpperCase(), "#eeeeee", null);
-    lab.rotation.x = -Math.PI / 2; lab.position.set(0, 0.08, p.L / 2 - 0.9); bg.add(lab);
-    const pl = new THREE.Group(); pl.position.set(p.W / 2 - 0.4, 0.04, p.L / 2 + 0.45); bg.add(pl);
-    box(pl, 0.7, 0.45, 0.05, 0, 0.9, 0, "#f4efdc"); box(pl, 0.05, 0.9, 0.05, 0, 0.45, 0, "#444");
-    const tag = textPlane(0.55, 0.3, () => priceTex(p.c.price), "$" + p.c.price, "#b02a1a", "#f4efdc"); tag.position.set(0, 0.9, 0.035); pl.add(tag);
-    exportBays.push({ car: p.c.car, x: r2(p.x), z: r2(p.z), yaw: r2(p.yaw), len: p.L, wid: p.W });
-  });
 
   // sign
   const sstyle = pick(R, a.signs);
@@ -394,7 +359,7 @@ function buildShop(seed, stock, o) {
   parts.forEach((p, i) => display(root, p, px0 + i * pw, pz, (R() - 0.5) * 0.15));
   // yard dressing
   tyreStack(root, -a.extL - 1.2, a.bd / 2 - 0.6, 4 + Math.floor(R() * 3)); tyreStack(root, -a.extL - 1.2, a.bd / 2 - 1.5, 3);
-  if (parts.some(p => p.part === "turbo" || p.part === "big_turbo" || p.part === "nitrous")) tyreStack(root, a.extR + 1.2, a.bd / 2 - 0.5, 3);
+  tyreStack(root, a.extR + 1.2, a.bd / 2 - 0.5, 3);
   const dcols = [pal.accent, "#2f6aa8", "#555"];
   for (let i = 0; i < 2 + Math.floor(R() * 3); i++) drum(root, a.extR + 0.7 + R() * 0.7, -a.bd / 2 - 0.8 - i * 0.7 + (i > 2 ? 1 : 0), dcols[i % 3]);
   if (R() < 0.35) pumps(root, (R() < 0.5 ? -1 : 1) * (padW / 2 - 2.2), zFront - 2.2, pal);
@@ -407,7 +372,6 @@ function buildShop(seed, stock, o) {
     bunting(root, { x: ax, y: ay, z: az }, { x: x1, y: ph - 0.05, z }, cols);
     bunting(root, { x: x0, y: ph - 0.05, z }, { x: x1, y: ph - 0.05, z }, cols, 0.7);
   }
-  root.userData.bays = exportBays;
   const texts = [];
   if (NO_TEXT) {
     root.updateMatrixWorld(true);
@@ -419,39 +383,29 @@ function buildShop(seed, stock, o) {
       n.parent.remove(n);
     }
   }
-  return { root, bays: exportBays, texts, info: { style, desc: a.desc, sign: sstyle, fence: fk, padW, zBack, zFront, extL: a.extL, extR: a.extR, bd: a.bd, wh: a.wh } };
+  return { root, texts, info: { style, desc: a.desc, sign: sstyle, fence: fk, padW, zBack, zFront, extL: a.extL, extR: a.extR, bd: a.bd, wh: a.wh } };
 }
 
 let group = new THREE.Group(); scene.add(group);
-function readStock() {
-  try {
-    const s = JSON.parse($("stock").value);
-    if (!Array.isArray(s) || !s.every(e => e && (typeof e.car === "string" || typeof e.part === "string"))) throw new Error("each entry needs car or part");
-    $("err").textContent = ""; return s;
-  } catch (e) { $("err").textContent = "Stock: " + e.message; return null; }
-}
 function frame() {
   const b = new THREE.Box3().setFromObject(group), c = b.getCenter(new THREE.Vector3()), r = b.getSize(new THREE.Vector3()).length() / 2;
   controls.target.set(c.x, 1.5, c.z); camera.position.set(c.x + r * 0.75, r * 0.6, c.z + r * 1.25); controls.update();
 }
 function regen(fit) {
-  const stock = readStock(); if (!stock) return;
   scene.remove(group); group.traverse(o => o.geometry?.dispose());
   const seed = +$("seed").value, rr = rng(seed + 7);
   const sign = $("sign").value || (rr() < 0.25 ? "Garej " + pick(rr, PLACES) : pick(rr, PRE) + " " + pick(rr, NAMES));
   $("sizeV").textContent = $("size").value;
-  const res = buildShop(seed, stock, { pal: PALETTES[$("pal").value], size: +$("size").value, sign, bunting: $("bunting").checked, style: $("style").value });
+  const res = buildShop(seed, { pal: PALETTES[$("pal").value], size: +$("size").value, sign, bunting: $("bunting").checked, style: $("style").value });
   group = res.root; scene.add(group);
-  $("bays").value = JSON.stringify(res.bays);
   if (fit === true) frame();
   let tris = 0, meshes = 0; group.traverse(o => { if (o.isMesh) { meshes++; const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
   const i = res.info;
-  $("stats").textContent = `sign        ${sign}\nstyle       ${ARCH[i.style].label}\n            ${i.desc}\nsign type   ${i.sign}\nfence       ${i.fence}\nbays        ${res.bays.length}\nparts       ${stock.filter(s => s.part).length}\nmeshes      ${meshes}\ntriangles   ${tris}`;
+  $("stats").textContent = `sign        ${sign}\nstyle       ${ARCH[i.style].label}\n            ${i.desc}\nsign type   ${i.sign}\nfence       ${i.fence}\nmeshes      ${meshes}\ntriangles   ${tris}`;
 }
-for (const id of ["seed", "stock", "style", "size"]) $(id).addEventListener("input", () => regen(true));
+for (const id of ["seed", "style", "size"]) $(id).addEventListener("input", () => regen(true));
 for (const id of ["sign", "pal", "bunting"]) $(id).addEventListener("input", () => regen(false));
 $("rnd").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e6); regen(true); };
-$("copy").onclick = async () => { try { await navigator.clipboard.writeText($("bays").value); } catch (e) { $("bays").select(); document.execCommand("copy"); } };
 function download(blob, name) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); }
 $("glb").onclick = () => new THREE.GLTFExporter().parse(group, buf => download(new Blob([buf]), `shop_${$("seed").value}.glb`), { binary: true });
 

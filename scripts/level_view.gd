@@ -57,7 +57,7 @@ var _orbit_t0 := 0
 var _orbit_prev: Camera3D  # the driving camera to hand back to
 var _menu_point := Vector2.INF  # the teleport point or shop whose menu is open: leaving it puts the car there, facing its way
 var _first_buy_at := -1  # the start shop, once a new player has bought their first car there and is still shopping
-var shop_cars: Dictionary = {}  # car id -> the display car parked in its bay at a shop that sells it
+var shop_cars: Dictionary = {}  # car id -> the display cars parked at the shops that sell it
 var _shop_return := Callable()  # what a rest-stop page opened from a shop does on closing, instead of reopening the service menu
 var _store_dirty := false  # a part was bought, so the car is re-fielded when the shop closes
 var _store_remote := false  # the open shop was picked on the map, so the car isn't there and isn't moved to it
@@ -69,6 +69,7 @@ var _wrecked := false
 var service_name := ""  # the teleport point's name, the service menu's title
 var _from_service := false  # the service menu is open, or its Shop / Garage, which return to it
 var _car: VehicleBody3D
+var _cargo: CarCargo  # the boxes strapped to the car, shown while a delivery's cargo is aboard
 var _particles: WeatherField
 var _recovery: RoadRecovery
 var _dust: DustPuffs
@@ -430,20 +431,59 @@ static func shop_model(m: Dictionary, ground: Callable) -> StaticBody3D:
 	return body
 
 
-# Parks a frozen display copy of every car the shop sells, and the player doesn't own, in its bay in front of the shop.
+# Parks a frozen display copy of every car the shop sells, and the player doesn't own, in rows on the yard in front of it.
 func park_stock(body: Node3D, sh: Dictionary) -> void:
 	var have := owned_cars()
-	var selling: Array = sh.get("stock", []).map(func(it: Dictionary) -> String: return String(it.get("car", "")))
-	for bay: Dictionary in sh["model"].get("bays", []):
-		var id := String(bay.get("car", ""))
+	var cars: Array[Node3D] = []
+	var ids: Array[String] = []
+	for it: Dictionary in sh.get("stock", []):
+		var id := String(it.get("car", ""))
 		var idx := CarLibrary.index_of(id)
-		if idx < 0 or id in have or not id in selling or shop_cars.has(id):
+		if idx < 0 or id in have:
 			continue
 		var car := CarProp.spawn(body, Scenes.car_scene(), {"index": idx, "stop_physics": true, "disable_process": true})
-		car.rotation.y = float(bay.get("yaw", 0.0)) + PI  # a bay's yaw 0 is nose to the road (+z); a car faces -z
-		car.position = Vector3(float(bay["x"]), 0.0, float(bay["z"]))
+		car.rotation.y = PI  # a car faces -z; the road is +z
+		cars.append(car)
+		ids.append(id)
+	var sizes: Array[Vector2] = []
+	for car in cars:
+		var s := CarCardPreview._visible_mesh_aabb(car, body).size
+		sizes.append(Vector2(s.x, s.z))
+	var spots := yard_layout(sizes, sh["model"].get("box", []))
+	for i in cars.size():
+		var car := cars[i]
+		car.position = Vector3(spots[i].x, 0.0, spots[i].y)
 		car.position.y -= CarCardPreview._visible_mesh_aabb(car, body).position.y  # wheels on the ground
-		shop_cars[id] = car
+		if not shop_cars.has(ids[i]):
+			shop_cars[ids[i]] = []
+		shop_cars[ids[i]].append(car)
+
+
+# Centres (x, z) for cars of the given (width, length) sizes: rows of up to four, nose to the road, on the yard in front
+# of a building `box` ([x0, x1, z0, z1, height], front = +z).
+static func yard_layout(sizes: Array[Vector2], box: Array) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	var cx := 0.0
+	var z := 3.0
+	if box.size() == 5:
+		cx = (float(box[0]) + float(box[1])) * 0.5
+		z = float(box[3]) + 3.0
+	var gap := 0.5
+	var i := 0
+	while i < sizes.size():
+		var row := sizes.slice(i, mini(i + 4, sizes.size()))
+		var width := gap * (row.size() - 1)
+		var depth := 0.0
+		for sz in row:
+			width += sz.x
+			depth = maxf(depth, sz.y)
+		var x := cx - width * 0.5
+		for sz in row:
+			out.append(Vector2(x + sz.x * 0.5, z + depth * 0.5))
+			x += sz.x + gap
+		z += depth + 1.8
+		i += row.size()
+	return out
 
 
 # One piece of a shop's text (its sign, a price board, a bay's car name) drawn in the game's font, so the model needs no
@@ -609,9 +649,9 @@ func _buy(what: String, price: int, got: Callable) -> void:
 
 
 func _got_car(id: String, at: int) -> void:
-	if shop_cars.has(id):
-		shop_cars[id].queue_free()
-		shop_cars.erase(id)
+	for car: Node in shop_cars.get(id, []):
+		car.queue_free()
+	shop_cars.erase(id)
 	var first := not has_car()
 	var have := owned_cars()
 	have.append(id)
@@ -1270,6 +1310,9 @@ func _add_effects(car: VehicleBody3D) -> TireMarks:
 	get_parent().add_child(shadow)
 	shadow.setup(car)
 	_car = car
+	_cargo = CarCargo.build(Config.data.level_car_id)
+	if _cargo != null:
+		car.add_child(_cargo)
 	if _spectators != null:
 		_spectators.car = car
 	LevelWeather.attach(self, func() -> float: return _streamer.snow_at(car.global_position.x, car.global_position.z) if _streamer != null else 0.0)
@@ -1492,6 +1535,8 @@ func _process(_dt: float) -> void:
 		delivery_label.position = Vector2(roundf((get_viewport().get_visible_rect().size.x - delivery_label.size.x) * 0.5), roundf(y))
 	if is_instance_valid(_car):
 		_car.mass = _car.config.mass + (float(delivery.get("kg", 0.0)) if delivery.has("cargo_hp") else 0.0)
+	if is_instance_valid(_cargo):
+		_cargo.visible = delivery.has("cargo_hp")
 	if cargo_label != null:
 		cargo_label.visible = delivery.has("cargo_hp")
 		cargo_label.text = "Cargo %d%%" % ceili(float(delivery.get("cargo_hp", 0.0)))

@@ -10,10 +10,11 @@ const LIGHTS_AT := 0.85
 
 var view: LevelView
 var snow_fn: Callable
-var forced_weather := ""
-var seed_value := 0
-var drive_time := 0.0
-var _slot := 0
+# Static so the weather carries on across the level's reloads (buying parts, changing cars, graphics settings).
+static var forced_weather := ""
+static var seed_value := 0
+static var drive_time := 0.0
+var _slot := -1
 var _slot_id := ""
 var _shown := ""
 var _env: Environment
@@ -34,7 +35,8 @@ static func attach(level: LevelView, snow: Callable) -> void:
 		node.name = "LevelWeather"
 		node.view = level
 		node.snow_fn = snow
-		node.seed_value = randi()
+		if seed_value == 0:
+			seed_value = randi() | 1
 		parent.add_child(node)
 	node.start()
 
@@ -45,11 +47,19 @@ static func reset() -> void:
 	Config.data.lights_weather = ""
 
 
-# A weighted pick from the pool, fixed for the whole hold slot it falls in.
-static func draw(pool_text: String, seed_value_: int, slot: int) -> String:
+# The weather for a hold slot: slot 0 is `first`, and each later slot is a weighted pick that never repeats the one before.
+static func draw(pool_text: String, seed_value_: int, slot: int, first: String = WeatherLibrary.DEFAULT_ID) -> String:
 	var pool := BiomeDirector.parse_pool(pool_text)
 	if pool.is_empty():
 		return WeatherLibrary.DEFAULT_ID
+	var id := first
+	for s in range(1, slot + 1):
+		var others := pool.filter(func(e: Array) -> bool: return e[0] != id)
+		id = _pick(others if not others.is_empty() else pool, seed_value_, s)
+	return id
+
+
+static func _pick(pool: Array, seed_value_: int, slot: int) -> String:
 	var total := 0.0
 	for e: Array in pool:
 		total += float(e[1])
@@ -85,20 +95,24 @@ func start() -> void:
 	if _env != null:
 		_base = {"bg": _env.background_color, "fog": _env.fog_light_color, "density": _env.fog_density,
 			"sky_affect": _env.fog_sky_affect, "panorama": _panorama()}
-	_show(resolve(Config.data.level_weather, _snow()), true)
+	_show(_wanted(), true)
 
 
 func _process(dt: float) -> void:
-	var cfg: GameConfig = Config.data
 	drive_time += dt
-	var slot := floori(drive_time / maxf(cfg.level_weather_hold_s, 1.0))
-	if slot != _slot:
-		_slot = slot
-		_slot_id = draw(cfg.level_weather_pool, seed_value, slot)
-	var want := resolve(forced_weather if forced_weather != "" else (_slot_id if _slot > 0 else cfg.level_weather), _snow())
+	var want := _wanted()
 	if want != _shown:
 		_show(want, false)
 	_step(dt)
+
+
+func _wanted() -> String:
+	var cfg: GameConfig = Config.data
+	var slot := floori(drive_time / maxf(cfg.level_weather_hold_s, 1.0))
+	if slot != _slot:
+		_slot = slot
+		_slot_id = draw(cfg.level_weather_pool, seed_value, slot, cfg.level_weather)
+	return resolve(forced_weather if forced_weather != "" else _slot_id, _snow())
 
 
 func _snow() -> float:

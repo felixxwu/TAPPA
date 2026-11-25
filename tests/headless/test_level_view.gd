@@ -128,7 +128,9 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var for_sale := String(unowned[1])
 	var part := String(BoostLibrary.CATALOGUE.keys()[0])
 	lv["shops"] = [{"x": 35.0, "z": 3.0, "name": "Corner Shop", "stock": [{"car": for_sale, "price": 50}, {"part": part, "price": 50}],
-		"model": {"path": "", "x": 35.0, "z": 60.0, "yaw": 0.0, "bays": [{"car": for_sale, "x": 2.0, "z": 5.0, "yaw": 0.0}]}}]
+		"model": {"path": "", "x": 35.0, "z": 60.0, "yaw": 0.0, "box": [-4.0, 4.0, -3.0, 3.0, 3.0]}},
+		{"x": 90.0, "z": 3.0, "name": "Other Shop", "stock": [{"car": for_sale, "price": 50}],
+		"model": {"path": "", "x": 90.0, "z": 60.0, "yaw": 0.0, "box": [-4.0, 4.0, -3.0, 3.0, 3.0]}}]
 	lv["teleports"] = [{"x": 10.0, "z": 3.0, "name": "Alpha"},
 		{"x": 60.0, "z": 4.0, "heading": 90.0, "name": "Beta", "deliveries": [{"to": "Alpha"}]}]
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -229,7 +231,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	map.pick(Vector2(35, 3))
 	assert_not_null(lv_view.store, "picking a shop on the map opens its stock")
 	assert_eq(CardUI.titles(lv_view.store.find_children("*", "CardCarousel", true, false)[0]).size(), 2, "its car and its part")
-	var bay_body: Node = lv_view.shop_cars[for_sale].get_parent()
+	var shop_bodies: Array = lv_view.shop_cars[for_sale].map(func(c: Node3D) -> Node: return c.get_parent())
 	var driving_id := Config.data.level_car_id
 	Save.set_setting(LevelView.MONEY_KEY, 60)
 	CardUI.pick(lv_view.store.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.by_id(for_sale)["name"]))
@@ -241,7 +243,8 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	MenuNav.of(lv_view.store)._unhandled_input(map_back)
 	assert_true(lv_view.store == null and map.visible and get_tree().paused, "Back from the shop returns to the map")
 	Save.set_setting(LevelView.CARS_KEY, [driving_id])
-	lv_view.park_stock(bay_body, lv_view.level["shops"][0])
+	for i in shop_bodies.size():
+		lv_view.park_stock(shop_bodies[i], lv_view.level["shops"][i])
 	map.pick(map.nearest_teleport(Vector2(45, 25)))
 	Save.set_setting(LevelView.MONEY_KEY, Config.data.level_teleport_cost - 1)
 	CardUI.pick(lv_view.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Teleport")
@@ -328,10 +331,11 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	lpause.resume()
 	var lv_node: LevelView = world.get_node("Level")
 	assert_eq(lv_node.beacons.get_child_count(), 2, "an obelisk over every teleport point")
-	assert_eq(lv_node.shop_beacons.get_child_count(), 1, "and over every shop")
+	assert_eq(lv_node.shop_beacons.get_child_count(), 2, "and over every shop")
 	assert_true(lv_node.shop_cars.has(for_sale), "the car on sale is parked in its bay")
-	var parked: Node3D = lv_node.shop_cars[for_sale]
-	assert_almost_eq(Vector2(parked.global_position.x, parked.global_position.z), Vector2(37.0, 65.0), Vector2.ONE * 0.01, "in front of the shop")
+	assert_eq(lv_node.shop_cars[for_sale].size(), 2, "and at every shop that sells it")
+	var parked: Node3D = lv_node.shop_cars[for_sale][0]
+	assert_true(parked.global_position.z > 63.0 and absf(parked.global_position.x - 35.0) < 3.0, "in front of the shop")
 	assert_true(parked.freeze, "standing still")
 	var at_car: VehicleBody3D = world.get_node("Car")
 	at_car.global_position = Vector3(35.0, at_car.global_position.y, 4.0)
@@ -986,3 +990,16 @@ func test_bought_parts_belong_to_one_car() -> void:
 	assert_eq(LevelView.bought_parts(), [], "another car has none of them")
 	Config.data.level_car_id = driving
 	Save.erase_setting(LevelView.PARTS_KEY)
+
+
+func test_yard_layout_rows_sit_in_front_of_the_box_without_overlap() -> void:
+	var sizes: Array[Vector2] = [Vector2(2.4, 4.8), Vector2(2.7, 5.8), Vector2(2.4, 4.8), Vector2(2.4, 4.8), Vector2(2.4, 4.8), Vector2(2.7, 5.8)]
+	var box := [-6.0, 4.0, -3.0, 3.0, 3.0]
+	var spots := LevelView.yard_layout(sizes, box)
+	assert_eq(spots.size(), sizes.size())
+	for i in sizes.size():
+		assert_true(spots[i].y - sizes[i].y * 0.5 > 3.0, "car %d is in front of the building" % i)
+		for j in range(i + 1, sizes.size()):
+			var a := Rect2(spots[i] - sizes[i] * 0.5, sizes[i])
+			var b := Rect2(spots[j] - sizes[j] * 0.5, sizes[j])
+			assert_false(a.intersects(b), "cars %d and %d don't overlap" % [i, j])

@@ -608,7 +608,7 @@ Every one asserts a **relation or structure**, never a tuned value — retuning
 
 The level (`Scenes.WORLD`) has its own weather driver, `LevelWeather` (`LevelWeather.attach` from `LevelView._add_effects`; it does not use `BiomeDirector`).
 
-- **Drift.** Drive time is cut into `level_weather_hold_s` slots; each slot draws from `level_weather_pool` (`dry/rain/fog/storm/night` only, parsed by `BiomeDirector.parse_pool`) with a seeded hash (`LevelWeather.draw`). Slot 0 is `level_weather`.
+- **Drift.** Drive time is cut into `level_weather_hold_s` slots; each slot draws from `level_weather_pool` (`dry/rain/fog/storm/night` only, parsed by `BiomeDirector.parse_pool`) with a seeded hash (`LevelWeather.draw`), never repeating the slot before, so every slot is a visible change. Slot 0 is `level_weather`. The clock, seed and Dev override are static vars, so they survive the level's scene reloads (parts, car change, graphics settings).
 - **Rain is snow in the snow biome**: `LevelWeather.resolve` swaps `rain` for `snow` while `LevelStreamer.snow_at` at the car is above 0.5, and back when it leaves; it cross-fades like any change.
 - **Fade.** `BiomeDirector.target_look` gives the fog / sky / panorama / `sun_mult` target; `LevelWeather` lerps them over `level_weather_fade_s` (panorama swapped mid-fade behind a fog swell, as free roam does). Nothing is written between fades.
 - **The driver reacts late.** The headlights (cone and lamp glow) follow `GameConfig.lights_weather`, not `weather`, when it is set: `LevelWeather` switches it to the new condition only `LIGHTS_AT` (0.85) of the way through a fade, so lights come on (or off) once the weather has turned. `HeadlightCone.amount` reads it; `""` (free roam, tests) follows `weather`.

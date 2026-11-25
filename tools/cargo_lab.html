@@ -1,0 +1,488 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Cargo Lab</title>
+<style>
+  body { margin: 0; overflow: hidden; font: 13px system-ui, sans-serif; background: #1d2024; color: #ddd; }
+  #panel { position: absolute; top: 0; left: 0; width: 270px; height: 100vh; overflow-y: auto; box-sizing: border-box;
+    padding: 10px; background: rgba(20,22,26,.92); border-right: 1px solid #333; }
+  h3 { margin: 12px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #9ab; }
+  label { display: flex; justify-content: space-between; align-items: center; margin: 3px 0; gap: 6px; }
+  .spin { display: flex; gap: 3px; }
+  .nudge { width: 30px; height: 26px; padding: 0; margin: 0; font-size: 16px; }
+  input[type=number] { width: 80px; background: #2a2e34; color: #eee; border: 1px solid #444; padding: 2px 4px; }
+  select, button { background: #2a2e34; color: #eee; border: 1px solid #555; padding: 4px 8px; margin: 2px 0; cursor: pointer; }
+  button:hover { background: #3a4048; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px; }
+  #help { color: #8a9; font-size: 12px; line-height: 1.5; }
+  #status { color: #fc6; min-height: 1.2em; margin-top: 6px; }
+  #list div { padding: 2px 4px; cursor: pointer; border-radius: 3px; }
+  #list div.sel { background: #345; }
+</style></head>
+<body>
+<div id="panel">
+  <label>Car <select id="car"></select></label>
+  <h3>Auto layout</h3>
+  <div class="row"><button data-zone="roof">Roof</button><button data-zone="back">Back</button><button data-zone="bed">Bed</button></div>
+  <label>Boxes <input type="number" id="count" min="1" max="8" step="1" value="0" title="0 = pick from the zone's size"></label>
+  <h3>Items</h3>
+  <div class="row"><button id="addBox">+ Box</button><button id="addStrap">+ Strap</button><button id="dup">Duplicate</button><button id="del">Delete</button></div>
+  <div id="list"></div>
+  <h3 id="selTitle">Selected</h3>
+  <div id="fields"></div>
+  <h3>File</h3>
+  <div class="row"><button id="save">Save</button><button id="download">Download</button><button id="revert">Revert to file</button></div>
+  <div id="status"></div>
+  <h3>Help</h3>
+  <div id="help">
+    Click a box or strap to select it, drag it to slide it over the car. Boxes rest on the body (or on a box listed above them); straps drape over whatever is under them.<br>
+    Arrows: nudge 1 cm (Shift 10 cm); on a strap, ← → shorten / lengthen it (straps stay centred on the car) · Q / E: turn 5° (Shift 1°) · PgUp / PgDn: lift ±1 cm · Del: delete · D: duplicate · Esc: deselect.<br>
+    Save writes <code>models/car_cargo.json</code> (pick it once; Chrome remembers). Edits are also kept in the browser until saved.
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+// Lays out the delivery boxes and straps each car carries while a delivery is aboard; the game builds them from the saved file (CarCargo).
+// Everything here is in car-local metres, Godot axes: +X right, +Y up, -Z forward.
+const $ = id => document.getElementById(id);
+const FILE = "../models/car_cargo.json";
+const DRAFT = "cargo_lab_draft";
+const BED_CARS = ["acty", "f150"];
+const STRAP_LIFT = 0.005;
+const BOX_COLOR = [0.62, 0.46, 0.3];
+const STRAP_COLOR = [0.95, 0.5, 0.1];
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x30353c);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 100);
+camera.position.set(4, 3, 5);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.6, 0);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445544, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(3, 6, 2); scene.add(sun);
+const grid = new THREE.GridHelper(10, 20, 0x556, 0x445); grid.position.y = -0.55; scene.add(grid);
+
+function resize() {
+  const w = innerWidth - 270, h = innerHeight;
+  renderer.setSize(w, h); renderer.domElement.style.marginLeft = "270px";
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+
+let cars = [];          // [{id, name, glb, texture, matrix}]
+let layouts = {};       // car id -> {boxes: [...], straps: [...]}, the saved file's shape (see exported())
+let carId = "";
+let body = null;        // the loaded body, car-local
+let bodyMeshes = [];
+let bodyBox = new THREE.Box3();
+let sel = null;         // {kind: "box"|"strap", i}
+const cargo = new THREE.Group(); scene.add(cargo);
+let boxMeshes = [], strapMeshes = [];
+
+async function parseCars() {
+  const [lib, tscn] = await Promise.all(["../scripts/car_library.gd", "../car.tscn"].map(p => fetch(p).then(r => r.text())));
+  const res = {};
+  for (const m of tscn.matchAll(/path="res:\/\/([^"]+\.glb)" id="([^"]+)"/g)) res[m[2]] = m[1];
+  const nodes = {};
+  for (const m of tscn.matchAll(/\[node name="(\w+)" parent="\." instance=ExtResource\("([^"]+)"\)\]\ntransform = Transform3D\(([^)]+)\)/g)) {
+    const t = m[3].split(",").map(Number);
+    // Godot writes the basis row by row, then the origin.
+    const mat = new THREE.Matrix4().set(t[0], t[1], t[2], t[9], t[3], t[4], t[5], t[10], t[6], t[7], t[8], t[11], 0, 0, 0, 1);
+    nodes[m[1]] = { glb: res[m[2]], matrix: mat };
+  }
+  for (const chunk of lib.split(/\n\t\{/).slice(1)) {
+    const id = (chunk.match(/"id": "(\w+)"/) || [])[1];
+    const node = (chunk.match(/"model_node": "(\w+)"/) || [])[1];
+    const tex = (chunk.match(/"model_texture": "res:\/\/([^"]+)"/) || [])[1];
+    const name = (chunk.match(/"name": "([^"]+)"/) || [])[1] || id;
+    if (node && nodes[node]) cars.push({ id, name, texture: tex, ...nodes[node] });
+  }
+}
+
+const loader = new THREE.GLTFLoader();
+const texLoader = new THREE.TextureLoader();
+async function loadCar(id) {
+  carId = id; sel = null;
+  if (body) scene.remove(body);
+  const car = cars.find(c => c.id === id);
+  const gltf = await new Promise((ok, fail) => loader.load("../" + car.glb, ok, undefined, fail));
+  const tex = car.texture ? await new Promise(ok => texLoader.load("../" + car.texture, ok, undefined, () => ok(null))) : null;
+  if (tex) { tex.flipY = false; tex.encoding = THREE.sRGBEncoding; tex.magFilter = THREE.NearestFilter; }
+  body = new THREE.Group();
+  body.matrixAutoUpdate = false; body.matrix.copy(car.matrix);
+  body.add(gltf.scene);
+  bodyMeshes = [];
+  gltf.scene.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.name.includes("_aero")) { o.visible = false; return; }
+    o.material = new THREE.MeshLambertMaterial({ map: tex, color: tex ? 0xffffff : 0x999999, side: THREE.DoubleSide });
+    bodyMeshes.push(o);
+  });
+  scene.add(body);
+  scene.updateMatrixWorld(true);
+  bodyBox = new THREE.Box3().setFromObject(body);
+  grid.position.y = bodyBox.min.y;
+  controls.target.set(0, (bodyBox.min.y + bodyBox.max.y) / 2, 0);
+  const broken = L => !L || L.boxes.some(b => !(b.w > 0 && b.d > 0 && isFinite(b.z)));
+  if (broken(layouts[carId])) autoLayout(BED_CARS.includes(carId) ? "bed" : "roof");
+  rebuild();
+}
+
+// ---------- geometry ----------
+const ray = new THREE.Raycaster();
+const DOWN = new THREE.Vector3(0, -1, 0);
+function heightAt(x, z, targets) {
+  ray.set(new THREE.Vector3(x, 10, z), DOWN);
+  const hit = ray.intersectObjects(targets, false)[0];
+  return hit ? hit.point.y : -Infinity;
+}
+
+function boxCorners(b, scale = 1) {
+  const c = Math.cos(b.yaw * Math.PI / 180), s = Math.sin(b.yaw * Math.PI / 180), pts = [];
+  for (const u of [-1, 0, 1]) for (const v of [-1, 0, 1]) {
+    const lx = u * b.w / 2 * scale, lz = v * b.d / 2 * scale;
+    pts.push([b.x + lx * c + lz * s, b.z - lx * s + lz * c]);
+  }
+  return pts;
+}
+
+function boxMesh(b, color) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), new THREE.MeshLambertMaterial({ color: new THREE.Color(...color) }));
+  m.position.set(b.x, b.y + b.h / 2, b.z);
+  m.rotation.y = b.yaw * Math.PI / 180;
+  m.updateMatrixWorld(true);
+  return m;
+}
+
+// Each box sits on the highest point under its footprint: the body, or any box listed before it.
+function settleBoxes(L) {
+  const placed = [];
+  L.boxes.forEach((b, i) => {
+    const targets = bodyMeshes.concat(placed);
+    const top = Math.max(...boxCorners(b, 0.98).map(([x, z]) => heightAt(x, z, targets)));
+    b.y = round((isFinite(top) ? top : bodyBox.max.y) + (b.lift || 0));
+    placed.push(boxMesh(b, BOX_COLOR));
+  });
+  return placed;
+}
+
+// Straps are centred on the car's middle line (x = 0) and reach `span` either side, so both ends match.
+// Older layouts stored a centre x and two ends; they become the half-length that covers both.
+function centreStrap(st) {
+  if (st.span == null) st.span = round(Math.max(Math.abs(st.x + st.from), Math.abs(st.x + st.to)));
+  delete st.from; delete st.to; st.x = 0;
+}
+
+// A strap is a vertical slice through (0, z) at a heading, draped over whatever lies under it.
+function drapeStrap(st, targets) {
+  centreStrap(st);
+  const from = -st.span, to = st.span;
+  const a = st.yaw * Math.PI / 180, dx = Math.cos(a), dz = -Math.sin(a);
+  const h = s => heightAt(st.x + dx * s, st.z + dz * s, targets);
+  const pts = [];
+  const n = Math.max(2, Math.ceil((to - from) / 0.02));
+  let prev = null;
+  for (let k = 0; k <= n; k++) {
+    const s = from + (to - from) * k / n, y = h(s);
+    if (!isFinite(y)) { prev = null; continue; }
+    if (prev && Math.abs(y - prev[1]) > 0.02) {
+      // Find the box edge between the two samples so the strap drops straight down its side.
+      let lo = prev[0], hi = s, ylo = prev[1], yhi = y;
+      for (let it = 0; it < 10; it++) {
+        const mid = (lo + hi) / 2, ym = h(mid);
+        if (Math.abs(ym - ylo) < Math.abs(ym - yhi)) { lo = mid; ylo = ym; } else { hi = mid; yhi = ym; }
+      }
+      pts.push([lo, ylo], [hi, yhi]);
+    }
+    pts.push([s, y]); prev = [s, y];
+  }
+  // A pulled-tight strap bridges every dip: it only touches the highest points, never bending inward.
+  const taut = [];
+  for (const p of pts) {
+    while (taut.length > 1) {
+      const [a, b] = taut.slice(-2);
+      if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) < 0) break;
+      taut.pop();
+    }
+    taut.push(p);
+  }
+  // Push the line off the surfaces along its own normal, so it sits on box tops and sides alike.
+  const out = taut.map((p, i) => {
+    const p0 = taut[Math.max(0, i - 1)], p1 = taut[Math.min(taut.length - 1, i + 1)];
+    let ts = p1[0] - p0[0], th = p1[1] - p0[1]; const l = Math.hypot(ts, th) || 1; ts /= l; th /= l;
+    const s = p[0] - th * STRAP_LIFT, y = p[1] + ts * STRAP_LIFT;
+    return [round(st.x + dx * s), round(y), round(st.z + dz * s)];
+  });
+  return out.filter((p, i) => i === 0 || Math.hypot(p[0] - out[i - 1][0], p[1] - out[i - 1][1], p[2] - out[i - 1][2]) > 0.002);
+}
+
+function ribbon(points, side, width, color) {
+  const pos = [], nor = [];
+  const sv = new THREE.Vector3(...side).multiplyScalar(width / 2);
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = new THREE.Vector3(...points[i]), b = new THREE.Vector3(...points[i + 1]);
+    const t = b.clone().sub(a).normalize(), nrm = new THREE.Vector3(...side).cross(t);
+    const q = [a.clone().sub(sv), a.clone().add(sv), b.clone().add(sv), b.clone().sub(sv)];
+    for (const idx of [0, 1, 2, 0, 2, 3]) { pos.push(...q[idx].toArray()); nor.push(...nrm.toArray()); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: new THREE.Color(...color), side: THREE.DoubleSide }));
+}
+
+function strapSide(st) { const a = st.yaw * Math.PI / 180; return [round(Math.sin(a)), 0, round(Math.cos(a))]; }
+
+function rebuild() {
+  cargo.clear();
+  const L = layouts[carId];
+  boxMeshes = settleBoxes(L).map((m, i) => {
+    const shade = L.boxes[i].shade ?? 1;
+    m.material.color.setRGB(...BOX_COLOR.map(c => c * shade));
+    m.userData = { kind: "box", i };
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color: isSel("box", i) ? 0x66ddff : 0x3a2a1a }));
+    m.add(edges);
+    cargo.add(m);
+    return m;
+  });
+  const targets = bodyMeshes.concat(boxMeshes);
+  strapMeshes = L.straps.map((st, i) => {
+    st.points = drapeStrap(st, targets);
+    const m = ribbon(st.points, strapSide(st), st.width, isSel("strap", i) ? [0.4, 0.85, 1] : STRAP_COLOR);
+    m.userData = { kind: "strap", i };
+    cargo.add(m);
+    return m;
+  });
+  saveDraft(); drawList(); drawFields();
+}
+
+const round = v => Math.round(v * 1000) / 1000;
+const isSel = (kind, i) => sel && sel.kind === kind && sel.i === i;
+
+// ---------- first guess ----------
+function rand(seed) { let s = 0; for (const ch of seed) s = (s * 31 + ch.charCodeAt(0)) >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+
+// The flat patch the boxes go on: the roof top, a pickup's bed floor, or the rear deck.
+function zoneRect(kind) {
+  const b = bodyBox, step = 0.04, cx = (b.min.x + b.max.x) / 2;
+  if (kind === "bed") {
+    const line = [];
+    for (let z = b.max.z - 0.05; z > (b.min.z + b.max.z) / 2; z -= 0.02) {
+      const y = heightAt(cx, z, bodyMeshes);
+      if (isFinite(y)) line.push([z, y]);  // a ray past the tailgate misses the body altogether
+    }
+    const floor = Math.min(...line.map(p => p[1]));
+    const bed = line.filter(p => p[1] < floor + 0.06).map(p => p[0]);
+    const z0 = Math.min(...bed), z1 = Math.max(...bed), zm = (z0 + z1) / 2;
+    let x = 0; while (x < b.max.x && !(heightAt(cx + x, zm, bodyMeshes) >= floor + 0.12)) x += 0.02;
+    return { x0: cx - x + 0.04, x1: cx + x - 0.04, z0: z0 + 0.04, z1: z1 - 0.04, high: false };
+  }
+  if (kind === "back") {
+    const w = (b.max.x - b.min.x) * 0.32;
+    return { x0: cx - w, x1: cx + w, z0: b.max.z - 1.05, z1: b.max.z - 0.2, high: false };
+  }
+  // Only the middle of the car counts, so a mirror or wing sticking up at the side isn't taken for the roof.
+  const half = (b.max.x - b.min.x) / 2; let top = -Infinity; const cells = [];
+  for (let x = cx - half * 0.8; x <= cx + half * 0.8; x += step) for (let z = b.min.z; z <= b.max.z; z += step) {
+    const y = heightAt(x, z, bodyMeshes); cells.push([x, z, y]);
+    if (Math.abs(x - cx) < half * 0.3) top = Math.max(top, y);
+  }
+  const roof = cells.filter(c => c[2] > top - 0.1);
+  const xs = roof.map(c => c[0]), zs = roof.map(c => c[1]);
+  return { x0: Math.min(...xs) + 0.05, x1: Math.max(...xs) - 0.05, z0: Math.min(...zs) + 0.05, z1: Math.max(...zs) - 0.05, high: true };
+}
+
+function autoLayout(kind) {
+  const r = zoneRect(kind), rnd = rand(carId + kind);
+  const zw = r.x1 - r.x0, zl = r.z1 - r.z0;
+  const n = +$("count").value || Math.max(2, Math.min(5, Math.round(zw * zl / 0.3)));
+  const cols = zw > 1.0 && n > 2 ? 2 : 1, rows = Math.ceil(n / cols);
+  const cw = zw / cols, rl = zl / rows, boxes = [];
+  for (let k = 0; k < n; k++) {
+    const row = Math.floor(k / cols), inRow = Math.min(cols, n - row * cols), col = k % cols;
+    const w = Math.min(0.6, cw - 0.06) * (0.75 + 0.25 * rnd()), d = Math.min(0.6, rl - 0.06) * (0.75 + 0.25 * rnd());
+    const h = r.high ? 0.18 + 0.14 * rnd() : 0.26 + 0.2 * rnd();
+    boxes.push({
+      x: round((r.x0 + r.x1) / 2 + (col - (inRow - 1) / 2) * cw + (rnd() - 0.5) * 0.04),
+      z: round(r.z0 + (row + 0.5) * rl + (rnd() - 0.5) * 0.04),
+      w: round(w), h: round(h), d: round(d), yaw: Math.round((rnd() - 0.5) * 8), lift: 0, shade: round(0.85 + 0.3 * rnd()),
+    });
+  }
+  const zMin = Math.min(...boxes.map(b => b.z - b.d / 2)), zMax = Math.max(...boxes.map(b => b.z + b.d / 2));
+  const half = zw / 2 + (r.high ? 0.15 : 0.08), cx = (r.x0 + r.x1) / 2;
+  const straps = [0.28, 0.72].map(f => ({ x: 0, z: round(zMin + (zMax - zMin) * f), yaw: 0, span: round(Math.max(Math.abs(r.x0), Math.abs(r.x1)) + half - zw / 2), width: 0.04 }));
+  layouts[carId] = { boxes, straps };
+  sel = null;
+}
+
+// ---------- panel ----------
+const BOX_FIELDS = [["x", 0.01], ["z", 0.01], ["w", 0.01], ["h", 0.01], ["d", 0.01], ["yaw", 1], ["lift", 0.01], ["shade", 0.05]];
+const STRAP_FIELDS = [["z", 0.01], ["yaw", 1], ["span", 0.01], ["width", 0.005]];
+
+function drawList() {
+  const L = layouts[carId];
+  $("list").innerHTML = "";
+  const add = (kind, i, text) => {
+    const d = document.createElement("div"); d.textContent = text;
+    if (isSel(kind, i)) d.className = "sel";
+    d.onclick = () => { sel = { kind, i }; rebuild(); };
+    $("list").appendChild(d);
+  };
+  L.boxes.forEach((b, i) => add("box", i, `Box ${i + 1}  ${b.w}×${b.h}×${b.d}`));
+  L.straps.forEach((s, i) => add("strap", i, `Strap ${i + 1}`));
+}
+
+function drawFields() {
+  $("fields").innerHTML = "";
+  if (!sel) { $("selTitle").textContent = "Selected: none"; return; }
+  const item = current();
+  $("selTitle").textContent = `Selected: ${sel.kind} ${sel.i + 1}`;
+  for (const [k, step] of sel.kind === "box" ? BOX_FIELDS : STRAP_FIELDS) {
+    const lab = document.createElement("label"); lab.textContent = k;
+    const inp = document.createElement("input"); inp.type = "number"; inp.step = step; inp.value = item[k] ?? 0;
+    inp.onchange = () => { item[k] = +inp.value; rebuild(); };
+    const nudge = (sign, text) => {
+      const btn = document.createElement("button"); btn.textContent = text; btn.className = "nudge";
+      btn.title = "Shift: ×10";
+      btn.onclick = e => { item[k] = round((item[k] ?? 0) + sign * step * (e.shiftKey ? 10 : 1)); rebuild(); };
+      return btn;
+    };
+    const box = document.createElement("span"); box.className = "spin";
+    box.append(nudge(-1, "−"), inp, nudge(1, "+"));
+    lab.appendChild(box); $("fields").appendChild(lab);
+  }
+}
+
+function current() { return sel && layouts[carId][sel.kind === "box" ? "boxes" : "straps"][sel.i]; }
+
+document.querySelectorAll("[data-zone]").forEach(b => b.onclick = () => { autoLayout(b.dataset.zone); rebuild(); });
+$("addBox").onclick = () => {
+  const L = layouts[carId], last = L.boxes[L.boxes.length - 1];
+  L.boxes.push(last ? { ...last, z: round(last.z + last.d + 0.05) } : { x: 0, z: 0, w: 0.45, h: 0.3, d: 0.4, yaw: 0, lift: 0, shade: 1 });
+  sel = { kind: "box", i: L.boxes.length - 1 }; rebuild();
+};
+$("addStrap").onclick = () => {
+  const L = layouts[carId], half = (bodyBox.max.x - bodyBox.min.x) / 2;
+  L.straps.push({ x: 0, z: L.boxes[0] ? L.boxes[0].z : 0, yaw: 0, span: round(half * 0.8), width: 0.04 });
+  sel = { kind: "strap", i: L.straps.length - 1 }; rebuild();
+};
+$("dup").onclick = () => duplicate();
+$("del").onclick = () => remove();
+function duplicate() {
+  if (!sel) return;
+  const list = layouts[carId][sel.kind === "box" ? "boxes" : "straps"], c = { ...current() };
+  c.z = round(c.z + (sel.kind === "box" ? c.d + 0.05 : 0.15));
+  list.push(c); sel = { kind: sel.kind, i: list.length - 1 }; rebuild();
+}
+function remove() {
+  if (!sel) return;
+  layouts[carId][sel.kind === "box" ? "boxes" : "straps"].splice(sel.i, 1); sel = null; rebuild();
+}
+
+// ---------- picking and dragging ----------
+const mouse = new THREE.Vector2();
+let drag = null;
+function pointerRay(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+}
+renderer.domElement.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  pointerRay(e);
+  const hit = ray.intersectObjects(strapMeshes.concat(boxMeshes), false)[0];
+  if (!hit) return;
+  sel = { kind: hit.object.userData.kind, i: hit.object.userData.i };
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -hit.point.y);
+  const item = current();
+  drag = { plane, dx: item.x - hit.point.x, dz: item.z - hit.point.z };
+  controls.enabled = false;
+  rebuild();
+});
+addEventListener("pointermove", e => {
+  if (!drag) return;
+  pointerRay(e);
+  const p = new THREE.Vector3();
+  if (!ray.ray.intersectPlane(drag.plane, p)) return;
+  const item = current();
+  item.x = round(p.x + drag.dx); item.z = round(p.z + drag.dz);
+  rebuild();
+});
+addEventListener("pointerup", () => { drag = null; controls.enabled = true; });
+
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || !sel) return;
+  const item = current(), step = e.shiftKey ? 0.1 : 0.01, turn = e.shiftKey ? 1 : 5;
+  const moves = { ArrowLeft: ["x", -step], ArrowRight: ["x", step], ArrowUp: ["z", -step], ArrowDown: ["z", step], q: ["yaw", turn], e: ["yaw", -turn], Q: ["yaw", turn], E: ["yaw", -turn] };
+  if (sel.kind === "strap") { moves.ArrowLeft[0] = "span"; moves.ArrowRight[0] = "span"; }
+  if (moves[e.key]) { const [k, v] = moves[e.key]; item[k] = round(item[k] + v); }
+  else if (e.key === "PageUp" && sel.kind === "box") item.lift = round((item.lift || 0) + 0.01);
+  else if (e.key === "PageDown" && sel.kind === "box") item.lift = round((item.lift || 0) - 0.01);
+  else if (e.key === "Delete" || e.key === "Backspace") return remove();
+  else if (e.key === "d" || e.key === "D") return duplicate();
+  else if (e.key === "Escape") sel = null;
+  else return;
+  e.preventDefault(); rebuild();
+});
+
+// ---------- saving ----------
+// The file holds both what the game draws (box y, strap points) and the knobs the lab edits.
+function exported() {
+  const out = {};
+  for (const id of Object.keys(layouts).sort()) {
+    const L = layouts[id];
+    out[id] = {
+      boxes: L.boxes.map(b => ({ ...b, color: BOX_COLOR.map(c => round(Math.min(1, c * (b.shade ?? 1)))) })),
+      straps: L.straps.map(s => ({ ...s, side: strapSide(s), color: STRAP_COLOR })),
+    };
+  }
+  return "{\n" + Object.keys(out).map(id => JSON.stringify(id) + ": " + JSON.stringify(out[id])).join(",\n") + "\n}\n";
+}
+
+let handle = null;
+$("save").onclick = async () => {
+  const text = exported();
+  if (!window.showSaveFilePicker) return downloadText(text);
+  try {
+    handle = handle || await showSaveFilePicker({ suggestedName: "car_cargo.json", types: [{ accept: { "application/json": [".json"] } }] });
+    const w = await handle.createWritable(); await w.write(text); await w.close();
+    localStorage.removeItem(DRAFT);
+    status("Saved " + handle.name);
+  } catch (err) { if (err.name !== "AbortError") status("Save failed: " + err.message); }
+};
+$("download").onclick = () => { downloadText(exported()); };
+function downloadText(text) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "application/json" })); a.download = "car_cargo.json"; a.click();
+  status("Downloaded — move it to models/car_cargo.json");
+}
+$("revert").onclick = async () => { localStorage.removeItem(DRAFT); layouts = await loadFile(); await loadCar(carId); status("Reverted to the saved file"); };
+function saveDraft() { localStorage.setItem(DRAFT, JSON.stringify(layouts)); }
+function status(t) { $("status").textContent = t; }
+async function loadFile() {
+  try { return await fetch(FILE, { cache: "no-store" }).then(r => r.ok ? r.json() : {}); } catch { return {}; }
+}
+
+function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); }
+
+(async () => {
+  if (location.protocol === "file:") { status("Open this through a local server: tools/open_cargo_lab.sh"); return; }
+  await parseCars();
+  const draft = localStorage.getItem(DRAFT);
+  layouts = draft ? JSON.parse(draft) : await loadFile();
+  if (draft) status("Restored unsaved edits (Revert to file drops them)");
+  for (const c of cars) $("car").add(new Option(c.name, c.id));
+  const want = new URLSearchParams(location.search).get("car");
+  // ?car=all visits every car first, so each gets its first-guess layout.
+  if (want === "all") for (const c of cars) await loadCar(c.id);
+  $("car").value = cars.some(c => c.id === want) ? want : cars[0].id;
+  $("car").onchange = () => loadCar($("car").value);
+  await loadCar($("car").value);
+  loop();
+})();
+</script>
+</body></html>

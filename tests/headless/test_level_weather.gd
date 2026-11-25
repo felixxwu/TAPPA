@@ -11,6 +11,8 @@ func before_each() -> void:
 func after_each() -> void:
 	Config.data.level_weather_pool = _pool
 	LevelWeather.reset()
+	LevelWeather.forced_weather = ""
+	LevelWeather.drive_time = 0.0
 
 
 func test_draw_is_deterministic_per_seed_and_slot() -> void:
@@ -86,3 +88,19 @@ func test_the_headlights_switch_only_late_in_the_fade() -> void:
 	assert_true(HeadlightCone.has_headlights(Config.data), "on once the weather has turned")
 	LevelWeather.reset()
 	Config.data.weather = WeatherLibrary.DEFAULT_ID
+
+
+func test_a_later_slot_never_repeats_the_weather_before_it() -> void:
+	for seed in 20:
+		var prev := LevelWeather.draw("dry:4,rain:1,fog:1", seed, 0, "dry")
+		for slot in range(1, 8):
+			var now := LevelWeather.draw("dry:4,rain:1,fog:1", seed, slot, "dry")
+			assert_ne(now, prev, "seed %d slot %d repeated %s" % [seed, slot, now])
+			prev = now
+
+
+func test_the_weather_clock_survives_a_level_reload() -> void:
+	LevelWeather.drive_time = Config.data.level_weather_hold_s * 2.5
+	var node := _node(0.0)
+	node.start()
+	assert_eq(node._shown, LevelWeather.draw(Config.data.level_weather_pool, LevelWeather.seed_value, 2, Config.data.level_weather))

@@ -71,6 +71,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [aero-parts.md](aero-parts.md) | Spoiler/splitter meshes tagged `_aero` in a car glb — hidden by default, revealed when the aero kit is enabled |
 | [wheel-customization.md](wheel-customization.md) | Cosmetic wheel swap — any car's wheels on any owned car (free, ungated, texture-only) |
 | [engine-swap.md](engine-swap.md) | `EngineSwap` + `car.gd::_apply_engine_swap`, plus the legacy owned-car `swapped_engine` read path and the engine-detune power knob |
+| [car-cargo.md](car-cargo.md) | Delivery boxes and straps on the car while cargo is aboard — `CarCargo`, authored per car in `tools/cargo_lab.html` |
 | [damage.md](damage.md) | `DamageModel` — per-car HP, impact attrition, power/steer degradation, misfire + rev cap as HP falls; in free roam 0 HP gives up into the wreck page |
 | [car-physics.md](car-physics.md) | Chassis, suspension, steering, braking, reset |
 | [drivetrain-and-tires.md](drivetrain-and-tires.md) | Custom tire model, wheel spin, RWD/AWD/FWD |
@@ -96,6 +97,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [geo-pipeline.md](geo-pipeline.md) | `tools/geo/` scripts: fetch Welsh LiDAR, OSM and satellite for a real square, build a level editor save and a ground-cover mask |
 | [buildings.md](buildings.md) | `tools/building_lab.html` — procedural cottages / huts / barns as one-mesh, one-atlas low-poly buildings; `bake_buildings.js` + `LevelBuildings` put a level's buildings in the game |
 | [shop-lab.md](shop-lab.md) | `tools/shop_lab.html` — procedural roadside car shop / tuning garage generated from a seed and a level `stock` list (cars on the forecourt, part props, sign, bunting) |
+| [start-lab.md](start-lab.md) | `tools/start_lab.html` — procedural rally stage start (arch, start control, gazebos, tape, seeded sponsor adverts) laid out around a road of a given width |
 | [level-ao.md](level-ao.md) | Fake ambient occlusion in the level view: a ground-darkening map round trees / buildings / log piles, bush-cover vertex shade, and base-darkening on trees, bushes, buildings and log piles |
 | [level-editor.md](level-editor.md) | **The game world (default mode):** `level_view.tscn` (`LevelView`, `Scenes.WORLD`), which drives the Hafren level (`GameConfig.level_path`), and `tools/level_editor_lab.html` (2D/3D level editor) that authors it; its map (M), with discovery fog (`LevelDiscovery`) |
 | [rocks.md](rocks.md) | Roadside boulders — low-poly collidable MESHES (not billboards), density set per region |

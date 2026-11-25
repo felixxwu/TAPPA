@@ -777,14 +777,14 @@ func _cycle_dev_weather() -> void:
 		director.update_now()
 	else:
 		var ids: Array = [""] + level.pool_ids()
-		level.forced_weather = ids[(ids.find(level.forced_weather) + 1) % ids.size()]
+		LevelWeather.forced_weather = ids[(ids.find(LevelWeather.forced_weather) + 1) % ids.size()]
 	_refresh_dev_weather()
 
 
 func _refresh_dev_weather() -> void:
 	var director := _biome_director() if is_inside_tree() else null
 	var level := _level_weather() if is_inside_tree() else null
-	var id := director.forced_weather if director != null else (level.forced_weather if level != null else "")
+	var id := director.forced_weather if director != null else (LevelWeather.forced_weather if level != null else "")
 	_dev_weather_button.text = "Weather: %s" % (id.capitalize() if id != "" else "Auto")
 
 
