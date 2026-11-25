@@ -10,6 +10,7 @@ uniform float spin_period_s = 1.6;
 uniform float phase = 0.0;
 
 varying float v_headlight;
+varying vec3 v_flash;
 
 #include "res://shaders/headlight_cone.gdshaderinc"
 
@@ -27,12 +28,13 @@ void vertex() {
 	NORMAL = stand_and_spin(NORMAL, a);
 	VERTEX.y += sin(t * TAU / bob_period_s) * bob_m;
 	v_headlight = headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz));
+	v_flash = flash_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
 }
 
 void fragment() {
-	ALBEDO = color.rgb;
+	ALBEDO = color.rgb * world_light;
 	// Lit so it glints as it turns, glowing enough to read in the dark, and brighter in the headlights.
-	EMISSION = color.rgb * (0.5 + hl_color * v_headlight);
+	EMISSION = color.rgb * (0.5 * world_light + hl_color * v_headlight + v_flash);
 	METALLIC = 0.8;
 	ROUGHNESS = 0.3;
 }

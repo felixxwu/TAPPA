@@ -56,7 +56,8 @@ func setup(p_data: LevelData, p_bake: LevelBake, p_material: Material) -> void:
 	bake.apply_to(p_material as ShaderMaterial)
 	cover = GroundCover.new()
 	cover.name = "Cover"
-	cover.setup(data.level, height_at, int(bake.size))
+	# The baked height, not height_at: a cover tile often builds before the near mesh, and the coarse mid/far grids smooth over road cuttings.
+	cover.setup(data.level, bake.height, int(bake.size))
 	add_child(cover)
 
 

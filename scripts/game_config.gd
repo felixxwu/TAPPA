@@ -336,6 +336,9 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 # CAR the same dimming the terrain already bakes into its vertex colours, so a
 # dimmed stage doesn't leave a full-brightness car floating in it. Read only by
 # apply_car_light. Defaults to 1.0 so a session-less boot is unaffected.
+# The weather the driver has switched the lights on (or off) for, which lags the real weather while
+# it fades in; "" follows `weather`. Runtime only, set by LevelWeather.
+var lights_weather := ""
 var weather_sun_mult := 1.0:
 	set(value):
 		if value != weather_sun_mult:
@@ -1963,6 +1966,12 @@ func has_nitrous() -> bool:
 ## frame lerps between them along its length. Additive-blended, so these read as light.
 @export var exhaust_flame_color_hot := Color(1.0, 0.86, 0.45, 1.0)
 @export var exhaust_flame_color_cool := Color(1.0, 0.30, 0.06, 1.0)
+## Fake light flash thrown on the world where a flame appears (shaders/headlight_cone.gdshaderinc, flash_lit).
+@export var exhaust_flash_color := Color(1.0, 0.55, 0.2, 1.0)
+@export var exhaust_flash_strength := 0.6
+@export var exhaust_flash_range_m := 6.0
+## Seconds the flash takes to fade out after the flame lights.
+@export var exhaust_flash_s := 0.12
 
 ## Glowing head and tail lamps (features/car-lamps.md), as { car_id: { "head": [Vector3, ...],
 ## "tail": [Vector3, ...] } }. Each point is a lamp's centre on the body, car-LOCAL metres:
@@ -3163,6 +3172,12 @@ func spectator_params() -> Dictionary:
 @export var legacy_free_roam_island := false
 ## The weather id (WeatherLibrary) the level view shows: its particles and wind only.
 @export var level_weather := "dry"
+## Level view: the conditions the weather drifts between, "id:weight" pairs (dry, rain, fog, storm, night; rain turns to snow in the snow biome).
+@export var level_weather_pool := "dry:4,rain:1,fog:1,storm:1,night:1"
+## Level view: seconds of driving each drawn weather lasts.
+@export var level_weather_hold_s := 180.0
+## Level view: seconds a weather change takes to cross-fade (fog, sky and the world's brightness).
+@export var level_weather_fade_s := 20.0
 ## The level-editor save (tools/level_editor_lab.html) the world loads: Hafren Forest.
 @export var level_path := "res://tools/levels/hafren_5km.json"
 ## The car the level view drives (a stock CarLibrary id), whatever car the world has.

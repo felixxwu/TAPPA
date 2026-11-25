@@ -45,7 +45,7 @@ const G_AMOUNT := "headlight_amount"
 static func amount(cfg: GameConfig) -> float:
 	if cfg == null:
 		return 0.0
-	return WeatherLibrary.headlight_amount(cfg, cfg.weather)
+	return WeatherLibrary.headlight_amount(cfg, cfg.lights_weather if cfg.lights_weather != "" else cfg.weather)
 
 
 # True when the stage's weather switches the car's headlights on. Deliberately reads
@@ -119,3 +119,4 @@ static func push(cfg: GameConfig, xform: Transform3D, car_width_m: float = 0.0) 
 # when no cone was ever pushed, and safe to call repeatedly.
 static func reset() -> void:
 	RenderingServer.global_shader_parameter_set(G_AMOUNT, 0.0)
+	RenderingServer.global_shader_parameter_set("fl_color", Vector3.ZERO)

@@ -69,11 +69,14 @@ uniform vec2 far_fade;
 uniform bool is_far;
 uniform float base_dark = 0.0;
 uniform float base_height = 0.5;
+#include "res://shaders/headlight_cone.gdshaderinc"
 varying vec3 local;
+varying vec3 world;
 varying float alpha;
 float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 void vertex() {
 	local = VERTEX;
+	world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float d = distance(MODEL_MATRIX[3].xz, centre.xz);
 	float near = 1.0 - smoothstep(fade.x, fade.y, d);
 	alpha = is_far ? (1.0 - near) * (1.0 - smoothstep(far_fade.x, far_fade.y, d)) : near;
@@ -85,13 +88,16 @@ void fragment() {
 	int bayer[16] = int[](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
 	float threshold = (float(bayer[px.y * 4 + px.x]) + 0.5) / 16.0;
 	if (is_far ? 1.0 - alpha >= threshold : alpha < threshold) discard;
-	ALBEDO = COLOR.rgb * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, local.y));
+	vec3 base = COLOR.rgb * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, local.y));
 	// a bush is one smooth dome; UV.x (leaves per metre) paints clumps of lit leaves over dark gaps onto it
 	if (UV.x > 0.0) {
 		vec3 q = local * UV.x * 3.0;
 		float n = hash3(floor(q)) * 0.6 + hash3(floor(q * 2.0 + 17.0)) * 0.4;
-		ALBEDO *= mix(0.75, 1.15, smoothstep(0.3, 0.7, n));
+		base *= mix(0.75, 1.15, smoothstep(0.3, 0.7, n));
 	}
+	ALBEDO = base * world_light;
+	// this shader is sun-lit, so the headlights go in as emission to stay bright when the world is dark
+	EMISSION = base * (hl_color * headlight_lit(world) + flash_lit(world));
 	ROUGHNESS = 1.0;
 	if (!FRONT_FACING) NORMAL = -NORMAL;
 }

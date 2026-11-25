@@ -40,7 +40,7 @@ reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the c
   parts unlocked for it, each with an `on` flag (`LootRules.is_on`; only switched-on parts reach the
   car through `LootRules.fielded`). Another car has to unlock its own. Drivetrain kits
   share a slot: `LootRules.toggled` switches the other one off when one goes on, and switching a kit
-  off returns the car to its stock layout, so a kit for the car's own layout is never sold. Tires
+  off returns the car to its stock layout (on Hafren, tires and kits are bought per car at shops listing `tire:<key>` / `drivetrain:<mode>`, level-editor.md; only bought ones stay in `owned.parts`), so a kit for the car's own layout is never sold. Tires
   share a slot the same way (none on means the car runs its stock tires), and so do the parts naming the same `slot` in `BoostLibrary.CATALOGUE` (the small and big turbo).
   `WorldSession.adopt_old_stash` unlocks an older save's shared `stash` for the car being driven
   (switched off), once.

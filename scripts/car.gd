@@ -1973,6 +1973,19 @@ func _apply_suspension(wheel: VehicleWheel3D) -> void:
 	wheel.damping_relaxation = cfg.suspension_damping_relaxation(k)
 
 
+# Where wheel `w`'s hub sits on a car resting on its springs: the mount, dropped by the spring's rest length less
+# the static sag (a level car sags g / (4 * suspension_stiffness) on both axles; see GameConfig.axle_stiffness).
+func rest_wheel_y(w: VehicleWheel3D) -> float:
+	var sag := 9.81 / (4.0 * config.suspension_stiffness)
+	return wheel_mount(w).y - w.wheel_rest_length + minf(sag, w.wheel_rest_length)
+
+
+# Frozen display cars never run the vehicle solver, so their wheels would stay at the raised mounts, up in the body.
+func seat_wheels_at_rest() -> void:
+	for w in _wheel_mounts:
+		(w as Node3D).position.y = rest_wheel_y(w)
+
+
 # How far this wheel's mount currently sits above where its tyre is allowed to be drawn
 # (see GameConfig.hidden_bump_travel); 0 until apply_car has raised the mounts.
 func hidden_travel(wheel: VehicleWheel3D) -> float:

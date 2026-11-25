@@ -26,8 +26,11 @@ uniform float fade_m = 60.0;
 varying float ao_height;
 varying flat int slot;
 varying float keep;
+varying vec3 v_lamps;
 
 #include "res://shaders/wind_sway.gdshaderinc"
+
+#include "res://shaders/headlight_cone.gdshaderinc"
 
 void vertex() {
 	ao_height = VERTEX.y;
@@ -35,6 +38,7 @@ void vertex() {
 	vec3 origin = MODEL_MATRIX[3].xyz;
 	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_pos += wind_sway_offset(origin, VERTEX.y, length(MODEL_MATRIX[1].xyz));
+	v_lamps = hl_color * headlight_lit(world_pos) + flash_lit(world_pos);
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world_pos, 1.0);
 	keep = 1.0;
 	if (draw_end_m > 0.0) {
@@ -72,5 +76,5 @@ void fragment() {
 	}
 	vec3 c = mix(vec3(mid_grey), tex.rgb, contrast);
 	c = mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, saturation);
-	ALBEDO = c * tints[min(slot, 5)].rgb * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, ao_height));
+	ALBEDO = (world_light + v_lamps) * c * tints[min(slot, 5)].rgb * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, ao_height));
 }

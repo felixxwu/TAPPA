@@ -26,14 +26,10 @@ func setup(save_path: String, height_at: Callable) -> void:
 	if not list is Array:
 		push_error("LevelBuildings: can't read %s" % path)
 		return
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = load(ATLAS)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.vertex_color_use_as_albedo = true
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	mat.texture_repeat = true
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/level_prop.gdshader")
+	mat.set_shader_parameter("albedo_texture", load(ATLAS))
+	mat.set_shader_parameter("alpha_scissor", 0.5)
 	for b: Dictionary in list:
 		add_child(_building(b, height_at))
 	if _verts.is_empty():

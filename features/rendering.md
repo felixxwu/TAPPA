@@ -612,6 +612,12 @@ gameplay event, not an effect — and purely cosmetic, so it may use `randf()`.
 
 ### The fake headlight cone (`shaders/headlight_cone.gdshaderinc`)
 
+The same include also holds `flash_lit(world_pos)`: a short omnidirectional light flash
+(globals `fl_pos`, `fl_color` with strength baked in, `fl_range`) used for exhaust flames
+([exhaust-flames.md](exhaust-flames.md)). Every shader that adds `hl_color * headlight_lit(...)`
+also adds `+ flash_lit(<same pos>)`. It is scaled by `1 - world_light`, so it shows only as far as the weather has darkened the world (none in full day).
+`test_lighting_coverage.gd` enforces the pairing.
+
 A dark weather condition re-lights a wedge in front of the player's car. (The
 design spec `todo/night-weather-and-headlights.md` is gone; the weather-table
 half is in [weather.md](weather.md) → "Night".)
@@ -981,3 +987,8 @@ instantiation. See [snow-region.md](snow-region.md).
 ## Level view ambient occlusion
 
 The level view fakes AO (ground map plus darker object bases); see [level-ao.md](level-ao.md).
+
+
+### `world_light` (the level's brightness)
+
+`world_light` (vec3 global shader uniform, default 1, declared in `headlight_cone.gdshaderinc`) scales every lit world shader's light term: `COLOR.rgb * world_light + hl_color * headlight_lit(...)`. `LevelWeather` tweens it during a weather fade and writes nothing otherwise, so night darkens smoothly with no terrain re-bake. A new 3D world shader must reference it (or sit in `WORLD_LIGHT_EXEMPT` in `test_lighting_coverage.gd`).

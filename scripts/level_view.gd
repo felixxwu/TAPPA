@@ -33,12 +33,12 @@ var _spectators: LevelSpectators
 var garage: MenuPage
 var deliveries_page: MenuPage
 static var _next_pose: Variant = null  # where the car stands after a car-change reload
-static var owned: Dictionary = {}  # the level's car with every shop part unlocked, kept across reloads
+static var owned: Dictionary = {}  # the level's car and the parts bought for it, kept across reloads
 const SAVED_CAR_KEY := "level_car"
 const CARS_KEY := "level_cars"
 const MONEY_KEY := "level_money"
 const DONE_KEY := "level_deliveries_done"  # the keys (delivery_key) of the deliveries already completed
-const PARTS_KEY := "level_parts"  # the upgrade part ids bought at shops; only these can go on a car
+const PARTS_KEY := "level_parts"  # car id -> the part ids (upgrades, tires, kits) bought at shops for that car; only these can go on it
 # What a delivery can carry and its weight in kg, which rides in the car until it's dropped off.
 const CARGO := {"Post": 10.0, "Parcels": 20.0, "Medicine": 5.0, "Seed packets": 8.0, "Welsh cakes": 6.0,
 	"Fishing tackle": 12.0, "Honey jars": 15.0, "Newspapers": 18.0, "Camera kit": 10.0, "Wool": 12.0,
@@ -58,7 +58,9 @@ var _orbit_prev: Camera3D  # the driving camera to hand back to
 var _menu_point := Vector2.INF  # the teleport point or shop whose menu is open: leaving it puts the car there, facing its way
 var _first_buy_at := -1  # the start shop, once a new player has bought their first car there and is still shopping
 var shop_cars: Dictionary = {}  # car id -> the display car parked in its bay at a shop that sells it
+var _shop_return := Callable()  # what a rest-stop page opened from a shop does on closing, instead of reopening the service menu
 var _store_dirty := false  # a part was bought, so the car is re-fielded when the shop closes
+var _store_remote := false  # the open shop was picked on the map, so the car isn't there and isn't moved to it
 var service: MenuPage  # the menu a teleport point opens: repair, upgrade, swap cars
 var service_prompt: Button
 static var last_point := -1  # the teleport point last visited, where a wreck respawns; kept across the reloads a car change does
@@ -124,12 +126,18 @@ func _ready() -> void:
 		await car.ready  # this node sits before the car, so builds first and fields the car once it exists
 	if owned.is_empty():
 		restore_saved_car()
+	if Save.get_setting(PARTS_KEY) is Array:  # an older save's parts were shared by every car: they stay on the one being driven
+		Save.set_setting(PARTS_KEY, {Config.data.level_car_id: Save.get_setting(PARTS_KEY)})
 	if String(owned.get("model_id", "")) != Config.data.level_car_id:
-		var have_parts := bought_parts()  # ponytail: two bought parts sharing a slot (both turbos) both go on; pick one if that ships
-		owned = {"model_id": Config.data.level_car_id, "tuning": {}, "parts": LootRules.parts_for({"model_id": Config.data.level_car_id}).map(
-			func(p: Dictionary) -> Dictionary: return p.merged({"on": String(p["id"]) in have_parts}))}
+		var parts: Array = LootRules.parts_for({"model_id": Config.data.level_car_id}).map(
+			func(p: Dictionary) -> Dictionary: return p.merged({"on": false}))
+		for id: String in bought_parts():  # the last one bought in a slot (tires, turbo) is the one left on
+			var i := parts.find_custom(func(p: Dictionary) -> bool: return String(p["id"]) == id)
+			if i >= 0 and not LootRules.is_on(parts[i]):
+				parts = LootRules.toggled(parts, i)
+		owned = {"model_id": Config.data.level_car_id, "tuning": {}, "parts": parts}
 	var bought := bought_parts()
-	owned["parts"] = owned.get("parts", []).filter(func(p: Dictionary) -> bool: return not LootRules.is_upgrade(p) or String(p["id"]) in bought)
+	owned["parts"] = owned.get("parts", []).filter(func(p: Dictionary) -> bool: return String(p["id"]) in bought)
 	Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
 	Save.set_setting(CARS_KEY, owned_cars())
 	car.apply_owned(LootRules.fielded(owned))
@@ -296,6 +304,20 @@ func open_tune() -> void:
 	_rest_page().open_tune()
 
 
+# The service menu's Parts: the upgrades, tires and drivetrain kits bought for this car, switched on or off.
+func open_parts() -> void:
+	var page := _rest_page()
+	page.engine_cars = []
+	page.open_shop()
+
+
+# A shop's Engine swap: any owned car's engine fitted to the one being driven, free; Back returns to the shop.
+func open_engine_swap(at: int) -> void:
+	_free_store()
+	_shop_return = open_store.bind(at)
+	_rest_page().open_engines()
+
+
 func _rest_page() -> RestStopPage:
 	shop = RestStopPage.new()
 	shop.free = true
@@ -312,8 +334,13 @@ func _rest_page() -> RestStopPage:
 func _close_shop() -> void:
 	shop.queue_free()
 	shop = null
+	var back := _shop_return
+	_shop_return = Callable()
 	if _next_pose == null:  # set when the shop's change is reloading the level
-		open_service()
+		if back.is_valid():
+			back.call()
+		else:
+			open_service()
 
 
 func _close_garage() -> void:
@@ -467,12 +494,26 @@ static func _shade_base(root: Node) -> void:
 			out.add_surface_from_arrays(mi.mesh.surface_get_primitive_type(si), arrays)
 			var mat := mi.get_active_material(si)
 			if mat is BaseMaterial3D:
-				mat = mat.duplicate()
-				(mat as BaseMaterial3D).vertex_color_use_as_albedo = true
+				mat = _prop_material(mat)
 			out.surface_set_material(si, mat)
 		mi.mesh = out
 		for si in out.get_surface_count():
 			mi.set_surface_override_material(si, null)
+
+
+# The shop model's imported material as a level_prop one: same texture, colour, scissor and culling, now lit by the weather and headlights.
+static func _prop_material(src: BaseMaterial3D) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/level_prop.gdshader" if src.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED else "res://shaders/level_prop_sunlit.gdshader")
+	mat.set_shader_parameter("roughness", src.roughness)
+	mat.set_shader_parameter("metallic", src.metallic)
+	if src.albedo_texture != null:
+		mat.set_shader_parameter("albedo_texture", src.albedo_texture)
+	mat.set_shader_parameter("albedo_color", src.albedo_color)
+	if src.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
+		mat.set_shader_parameter("alpha_scissor", src.alpha_scissor_threshold)
+	mat.set_shader_parameter("backface_cull", src.cull_mode == BaseMaterial3D.CULL_BACK)
+	return mat
 
 
 # A shop building's footprint on the map, for the ground's ambient occlusion: centre, its x axis and half extents.
@@ -492,24 +533,29 @@ func shop_points() -> Array:
 	return level.get("shops", []).map(func(t: Dictionary) -> Vector2: return Vector2(float(t["x"]), float(t["z"])))
 
 
-static func bought_parts() -> Array:
-	var saved: Variant = Save.get_setting(PARTS_KEY, [])
-	return saved if saved is Array else []
+# The upgrade parts bought for car `id` (the one being driven by default): each car's parts are its own.
+static func bought_parts(id: String = Config.data.level_car_id) -> Array:
+	var saved: Variant = Save.get_setting(PARTS_KEY, {})
+	return saved.get(id, []) if saved is Dictionary else []
 
 
 # A shop's page: a card per car or part it sells, with its price; picking one buys it after a yes / no.
-func open_store(i: int) -> void:
+# `remote` is a shop picked on the map: bought there, a car waits in the garage instead of being driven away.
+func open_store(i: int, remote := false) -> void:
 	var s: Dictionary = level["shops"][i]
-	_from_service = true
-	get_tree().paused = true
-	_pause.set_input_enabled(false)
+	_store_remote = remote
+	if not remote:
+		_from_service = true
+		get_tree().paused = true
+		_pause.set_input_enabled(false)
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(layer)
 	store = CardUI.card_page(layer, {"title": String(s.get("name", "Shop")), "dim": true})
-	_start_orbit(shop_centre(i))
-	_menu_point = Vector2(float(s["x"]), float(s["z"]))
+	if not remote:
+		_start_orbit(shop_centre(i))
+		_menu_point = Vector2(float(s["x"]), float(s["z"]))
 	var have := owned_cars()
 	var parts := bought_parts()
 	var entries: Array = []
@@ -522,6 +568,19 @@ func open_store(i: int) -> void:
 				continue
 			entries.append({"title": _car_name(id), "car": idx, "desc": "$%d" % price,
 				"action": _buy.bind(_car_name(id), price, _got_car.bind(id, i))})
+		elif item.get("engine_swap", false):
+			if has_car() and not remote:
+				entries.append({"title": "Engine swap", "icon": "engine_swap", "subtitle": "Fit an owned car's engine.",
+					"action": open_engine_swap.bind(i)})
+		elif item.has("part") and not BoostLibrary.CATALOGUE.has(String(item["part"])):
+			var fit := {"kind": "part", "id": String(item["part"])}
+			if not _sellable(fit):
+				continue
+			var text := LootRules.card_text(fit)
+			var got := String(fit["id"]) in parts
+			entries.append({"title": text[0], "icon": LootRules.icon(fit), "desc": "$%d" % price, "subtitle": text[1],
+				"extra": "Owned" if got else "", "extra_variant": "green",
+				"action": Callable() if got else _buy.bind(text[0], price, _got_part.bind(String(fit["id"]), i))})
 		elif BoostLibrary.CATALOGUE.has(String(item.get("part", ""))):
 			var id := String(item["part"])
 			var spec: Dictionary = BoostLibrary.CATALOGUE[id]
@@ -533,6 +592,12 @@ func open_store(i: int) -> void:
 	if has_car():
 		store.add_action(UITheme.row_button("Drive >" if _first_buy_at >= 0 else "< Back", close_store))
 	MenuNav.attach(store, {first = cards, on_back = close_store if has_car() else func() -> void: pass})
+
+
+# A tire or drivetrain kit a shop may list: a real one, and not the kit for the car's own layout.
+func _sellable(part: Dictionary) -> bool:
+	var pool: Array = LootRules.parts_for(owned) if has_car() else LootRules.ring_tables(1)[0]
+	return pool.any(func(p: Dictionary) -> bool: return p["id"] == part["id"] and (LootRules.is_tire(p) or LootRules.is_drivetrain(p)))
 
 
 func _car_name(id: String) -> String:
@@ -551,6 +616,9 @@ func _got_car(id: String, at: int) -> void:
 	var have := owned_cars()
 	have.append(id)
 	Save.set_setting(CARS_KEY, have)
+	if _store_remote:
+		_reopen_store(at)
+		return
 	if first and not Config.data.level_spawn_teleport.is_empty():
 		delivery = {"from": "", "to": Config.data.level_spawn_teleport}  # the sat nav leads a new player to their first delivery job
 	if first or _first_buy_at >= 0:  # a new player keeps shopping (parts, say) and drives off when they leave the shop
@@ -563,10 +631,14 @@ func _got_car(id: String, at: int) -> void:
 
 # A bought part goes straight on the car the player is driving, and on any other car they drive later.
 func _got_part(id: String, at: int) -> void:
-	Save.set_setting(PARTS_KEY, bought_parts() + [id])
+	var all: Variant = Save.get_setting(PARTS_KEY, {})
+	all = all if all is Dictionary else {}
+	all[Config.data.level_car_id] = bought_parts() + [id]
+	Save.set_setting(PARTS_KEY, all)
 	for item: Dictionary in LootRules.parts_for(owned) if has_car() else []:  # without a car it waits for the first one
 		if String(item["id"]) == id:
-			owned["parts"].append(item.merged({"on": true}))
+			owned["parts"].append(item.merged({"on": false}))
+			owned["parts"] = LootRules.toggled(owned["parts"], owned["parts"].size() - 1)
 			_store_dirty = true
 	_reopen_store(at)
 
@@ -657,7 +729,7 @@ func _drive_bought_car(id: String, at: int) -> void:
 
 func _reopen_store(at: int) -> void:
 	_free_store()
-	open_store(at)
+	open_store(at, _store_remote)
 
 
 func _free_store() -> void:
@@ -674,7 +746,10 @@ func close_store() -> void:
 		_drive_bought_car(Config.data.level_car_id, at)
 		return
 	_free_store()
-	close_service_state()
+	if _store_remote:
+		_store_remote = false
+	else:
+		close_service_state()
 	if _store_dirty:
 		_store_dirty = false
 		Save.set_setting(SAVED_CAR_KEY, owned.duplicate(true))
@@ -872,6 +947,7 @@ func open_service() -> void:
 	for job: Dictionary in _sorted_jobs([t]):  # the point's deliveries first, then the car's own cards
 		entries.append(_delivery_card(t, job["m"], _start_delivery_here.bind(t, job["m"])))
 	entries.append({"title": "Swap car", "icon": "car", "action": _service_open.bind(open_garage)})
+	entries.append({"title": "Parts", "icon": "parts", "action": _service_open.bind(open_parts)})
 	entries.append({"title": "Tune car", "icon": "tune", "action": _service_open.bind(open_tune)})
 	var cards := CardUI.card_list(service, entries)
 	service.add_action(UITheme.row_button("< Back", close_service))
@@ -1097,7 +1173,10 @@ func _service_open(page: Callable) -> void:
 func unlock_everything() -> void:
 	map.reveal_all()
 	Save.set_setting(CARS_KEY, CarLibrary.all().map(func(c: Dictionary) -> String: return String(c["id"])))
-	Save.set_setting(PARTS_KEY, BoostLibrary.CATALOGUE.keys())
+	var parts := {}
+	for c: Dictionary in CarLibrary.all():
+		parts[String(c["id"])] = LootRules.parts_for({"model_id": String(c["id"])}).map(func(p: Dictionary) -> String: return String(p["id"]))
+	Save.set_setting(PARTS_KEY, parts)
 
 
 # Wipe all progress: forget the level's car, parts, parked spot and explored map, which live in the
@@ -1193,7 +1272,7 @@ func _add_effects(car: VehicleBody3D) -> TireMarks:
 	_car = car
 	if _spectators != null:
 		_spectators.car = car
-	apply_weather(Config.data.level_weather)
+	LevelWeather.attach(self, func() -> float: return _streamer.snow_at(car.global_position.x, car.global_position.z) if _streamer != null else 0.0)
 	return marks
 
 
@@ -1292,6 +1371,7 @@ func _exit_tree() -> void:
 	save_pose()
 	set_snow(Config.data, 0.0)
 	HeadlightCone.reset()
+	LevelWeather.reset()
 	WindSway.reset()
 	Config.data.weather = WeatherLibrary.DEFAULT_ID
 
@@ -1525,7 +1605,8 @@ func _render_off() -> void:
 	_streamer.cover.set_reach_override(0.0)
 	var env := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if env != null:
-		env.environment.fog_depth_end = cfg.level_fog_end_m
+		var weather := get_parent().get_node_or_null("LevelWeather") as LevelWeather
+		env.environment.fog_depth_end = weather.fog_end() if weather != null else cfg.level_fog_end_m
 	if is_instance_valid(_render_cam):
 		_render_cam.far = _render_far0
 		_render_cam.render_active = false

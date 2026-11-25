@@ -84,6 +84,15 @@ func test_a_display_car_bakes_no_engine_voice() -> void:
 	assert_null(car.get_node("EngineAudio")._synth)
 
 
+func test_a_display_car_rests_its_wheels_below_their_raised_mounts() -> void:
+	var parent := Node3D.new()
+	add_child_autofree(parent)
+	var car: Node = CarProp.spawn(parent, Scenes.car_scene(), {"index": 0, "stop_physics": true})
+	for w in car.find_children("*", "VehicleWheel3D", false):
+		assert_lt(w.position.y, car.wheel_mount(w).y, "a parked wheel hangs below its mount, not up in the body")
+		assert_almost_eq(w.position.y, car.rest_wheel_y(w), 0.0001)
+
+
 # A page queue_free()d WITHOUT parking its previews leaves the preview parented under that
 # (still-alive-until-end-of-frame) page; the caller's add_child would fail on it.
 func test_get_or_build_unparents_a_preview_left_inside_a_dying_page() -> void:

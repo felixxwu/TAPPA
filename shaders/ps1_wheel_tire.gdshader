@@ -33,8 +33,8 @@ void vertex() {
 	vec3 ambient = mix(ground_color, sky_color, hemi);
 	float ndl = max(dot(wn, normalize(light_dir)), 0.0);
 	vec3 lit = ambient + sun_color * ndl;
-	v_light = mix(vec3(1.0), lit, light_amount);
-	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn);
+	v_light = mix(vec3(1.0), lit, light_amount) * world_light;
+	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn) + flash_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
 }
 
 void fragment() {

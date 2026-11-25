@@ -475,7 +475,7 @@ turntable-rotates a **frozen `CarProp`** (`car_prop.gd`, the same "display/froze
 recipe) around a `Node3D` pivot each
 `_process` frame. This is the cheap-by-construction shape the task asked for: one
 `SubViewport` per card, not a full scene reinstantiation per frame — only the pivot's
-Y-rotation changes after setup. `CarProp.spawn` is called with `stop_physics: true` and
+Y-rotation changes after setup. `CarProp.spawn` also calls `car.seat_wheels_at_rest()` (wheels drop to `rest_wheel_y`: mount minus rest length plus static sag), since a frozen car never runs the vehicle solver and wheels would otherwise sit up in the body (garage/shop parked cars). `CarProp.spawn` is called with `stop_physics: true` and
 `disable_process: true`, so the underlying `car.gd` instance does no physics or process
 work at all; the only per-frame cost is the pivot's `rotate_y` and the SubViewport's own
 render.

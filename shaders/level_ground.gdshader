@@ -215,9 +215,9 @@ void fragment() {
 	}
 	surface *= tree_ao;
 	surface *= ao_at(u);
-	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world));
+	ALBEDO = surface * (COLOR.rgb * world_light + hl_color * headlight_lit(world) + flash_lit(world));
 	if (UV2.x < -0.5) {
 		// a skirt: one flat colour per 8 m of its length, never the ground texture stretched down its face
-		ALBEDO = grass_at((floor(world.xz / 8.0) + 0.5) * 8.0 * ground_uv_per_m) * (COLOR.rgb + hl_color * headlight_lit(world));
+		ALBEDO = grass_at((floor(world.xz / 8.0) + 0.5) * 8.0 * ground_uv_per_m) * (COLOR.rgb * world_light + hl_color * headlight_lit(world) + flash_lit(world));
 	}
 }

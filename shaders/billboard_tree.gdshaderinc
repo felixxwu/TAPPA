@@ -81,7 +81,7 @@ void vertex() {
 	// sitting unlit inside the headlight pool would read as a hole in the light.
 	// Per-vertex is exact enough — cards are small in world space — and it avoids
 	// paying the cone per fragment across a dense tree field.
-	v_tint += hl_color * headlight_lit(world_pos);
+	v_tint = v_tint * world_light + hl_color * headlight_lit(world_pos) + flash_lit(world_pos);
 	// Rewrite to clip space directly; the default MODELVIEW path is bypassed.
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(world_pos, 1.0);
 }

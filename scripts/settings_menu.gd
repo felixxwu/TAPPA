@@ -758,22 +758,33 @@ func _refresh_legacy_island() -> void:
 	_legacy_island_button.text = "Legacy free-roam island: %s" % ("On" if Config.data.legacy_free_roam_island else "Off")
 
 
+func _level_weather() -> LevelWeather:
+	var scene := get_tree().current_scene
+	return scene.get_node_or_null("LevelWeather") as LevelWeather if scene != null else null
+
+
 func _cycle_dev_weather() -> void:
 	var director := _biome_director()
-	if director == null:
+	var level := _level_weather()
+	if director == null and level == null:
 		_dev_status.text = "No world yet."
 		return
-	var ids: Array = [""]
-	for entry in WeatherLibrary.all():
-		ids.append(String(entry["id"]))
-	director.forced_weather = ids[(ids.find(director.forced_weather) + 1) % ids.size()]
-	director.update_now()
+	if director != null:
+		var ids: Array = [""]
+		for entry in WeatherLibrary.all():
+			ids.append(String(entry["id"]))
+		director.forced_weather = ids[(ids.find(director.forced_weather) + 1) % ids.size()]
+		director.update_now()
+	else:
+		var ids: Array = [""] + level.pool_ids()
+		level.forced_weather = ids[(ids.find(level.forced_weather) + 1) % ids.size()]
 	_refresh_dev_weather()
 
 
 func _refresh_dev_weather() -> void:
 	var director := _biome_director() if is_inside_tree() else null
-	var id := director.forced_weather if director != null else ""
+	var level := _level_weather() if is_inside_tree() else null
+	var id := director.forced_weather if director != null else (level.forced_weather if level != null else "")
 	_dev_weather_button.text = "Weather: %s" % (id.capitalize() if id != "" else "Auto")
 
 

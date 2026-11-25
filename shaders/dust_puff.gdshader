@@ -43,10 +43,10 @@ void vertex() {
 	float hemi = wn.y * 0.5 + 0.5;
 	vec3 ambient = mix(ground_color, sky_color, hemi);
 	float ndl = max(dot(wn, normalize(light_dir)), 0.0);
-	vec3 lit = mix(vec3(1.0), ambient + sun_color * ndl, light_amount);
+	vec3 lit = mix(vec3(1.0), ambient + sun_color * ndl, light_amount) * world_light;
 	// The headlight cone, ADDED like every lit shader's (ps1_models_lit), so a puff the car throws
 	// up at night shows in its own lights instead of hanging dark in the beam.
-	lit += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn);
+	lit += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn) + flash_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	// Per-instance colour (mm.use_colors) arrives in COLOR.
 	v_color = COLOR.rgb * lit;
 }

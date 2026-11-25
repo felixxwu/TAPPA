@@ -84,6 +84,14 @@ func open_shop() -> void:
 	_show(View.SHOP)
 
 
+# Just the engines page, over a host's own menu: Back closes it.
+func open_engines() -> void:
+	_root = View.ENGINES
+	dirty = false
+	_fielded_id = int(owned.get("instance_id", -1))
+	_show(View.ENGINES)
+
+
 # Just the tuning sliders, over a host's own menu: Back closes it.
 func open_tune() -> void:
 	_root = View.TUNE
@@ -231,7 +239,7 @@ func _build_shop() -> void:
 		{"title": "Tires", "subtitle": _shop_text(LootRules.is_tire), "icon": "tire", "action": _show.bind(View.TIRES)},
 		{"title": "Engine swaps", "icon": "engine_swap", "action": _show.bind(View.ENGINES)},
 		{"title": "Drivetrain", "subtitle": _shop_text(LootRules.is_drivetrain), "icon": "drivetrain", "action": _show.bind(View.DRIVETRAINS)},
-	], _header())
+	].filter(func(e: Dictionary) -> bool: return not (free and engine_cars.is_empty() and e["title"] == "Engine swaps")), _header())
 
 
 func _header() -> Array:

@@ -201,7 +201,7 @@ function pack(l) {
   if (!out.spectators?.length) delete out.spectators;
   if (out.fences?.length) out.fences = out.fences.map(f => ({ kind: f.kind, pts: f.pts.map(([x, z]) => [r1(x), r1(z)]) })); else delete out.fences;
   if (out.teleports?.length) out.teleports = out.teleports.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), ...(q.deliveries?.length ? { deliveries: q.deliveries.map(m => ({ to: m.to, ...(m.cargo ? { cargo: m.cargo } : {}), ...(m.kg > 0 ? { kg: m.kg } : {}), ...(m.pay > 0 ? { pay: Math.round(m.pay) } : {}) })) } : {}) })); else delete out.teleports;
-  if (out.shops?.length) out.shops = out.shops.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), stock: (q.stock ?? []).map(m => ({ ...("car" in m ? { car: m.car } : { part: m.part }), price: Math.max(0, Math.round(m.price) || 0) })), ...(q.model ? { model: q.model } : {}) })); else delete out.shops;
+  if (out.shops?.length) out.shops = out.shops.map(q => ({ x: r1(q.x), z: r1(q.z), ...(q.name ? { name: q.name } : {}), ...("heading" in q ? { heading: Math.round(q.heading) } : {}), stock: (q.stock ?? []).map(m => ({ ...("car" in m ? { car: m.car } : m.engine_swap ? { engine_swap: true } : { part: m.part }), price: Math.max(0, Math.round(m.price) || 0) })), ...(q.model ? { model: q.model } : {}) })); else delete out.shops;
   if (out.gravelPatches?.length) out.gravelPatches = out.gravelPatches.map(p => p.map(q => ({ x: r1(q.x), z: r1(q.z) }))); else delete out.gravelPatches;
   if (out.size === 600) delete out.size;
   if (l.heightmap) {

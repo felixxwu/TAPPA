@@ -34,7 +34,7 @@ var _options_in := -1.0
 
 # Whether this boot is a new world's cold open.
 static func due() -> bool:
-	return WorldSession.cold_open_pending() and not Benchmark.active \
+	return Config.data.legacy_free_roam_island and WorldSession.cold_open_pending() and not Benchmark.active \
 		and not "--auto-drive" in OS.get_cmdline_user_args()
 
 

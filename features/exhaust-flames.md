@@ -194,6 +194,15 @@ Being an editor-only dev scene, it is outside the "every menu is keyboard + game
 navigable" rule in `CLAUDE.md` — but car cycling is wired to `ui_left`/`ui_right` anyway,
 so a pad works.
 
+## Light flash
+
+When a flame lights (or a limiter cut retriggers), `ExhaustFlames` starts a fake light
+flash at the midpoint of the pipes: it writes the `fl_pos` / `fl_color` / `fl_range`
+shader globals and fades `fl_color` to black over `exhaust_flash_s`, then stops writing.
+Nitrous holds it at full while the flame is on. Tunables: `exhaust_flash_color`,
+`exhaust_flash_strength`, `exhaust_flash_range_m`, `exhaust_flash_s`.
+`HeadlightCone.reset()` zeroes `fl_color` on scene exit.
+
 ## Tests
 
 - `tests/headless/test_exhaust_flames.gd` — triggers, the retriggerable hold, per-pipe

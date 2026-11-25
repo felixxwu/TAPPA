@@ -28,6 +28,7 @@ const ROUTE_PX := 4.0
 const ROAD_EDGE := Color(0.25, 0.15, 0.08)
 const WASD := {KEY_W: Vector2.UP, KEY_A: Vector2.LEFT, KEY_S: Vector2.DOWN, KEY_D: Vector2.RIGHT}
 const PAN_SPEED_PX := 600.0
+const PICK_PX := 20.0  # how close the pointer (or the pad's crosshair) must be to a point or shop to hover and pick it
 const NAME_GAP_PX := 12.0  # from a teleport's centre to its name
 const NAME_PAD_PX := 3.0   # the dark box round a teleport's name
 const NAME_BACK := Color(0.0, 0.0, 0.0, 0.6)
@@ -234,6 +235,17 @@ func nearest_teleport(w: Vector2) -> Vector2:
 	return best
 
 
+# The found teleport point or shop under screen spot `s` (within PICK_PX), the one hovered and picked; INF when none is.
+func hovered(s: Vector2) -> Vector2:
+	var best := Vector2.INF
+	for t: Dictionary in known_teleports() + known_shops():
+		var p := Vector2(float(t["x"]), float(t["z"]))
+		var d := to_screen(p).distance_to(s)
+		if d <= PICK_PX and (best == Vector2.INF or d < to_screen(best).distance_to(s)):
+			best = p
+	return best
+
+
 # Screen boxes for the names of the teleports and shops, one per anchor (its marker's screen spot): right of the
 # marker, else left, else nudged a line up or down (then further) so names close together stack instead of covering
 # each other. A name with no free spot left (one already placed, another marker or the screen's edge in every one) gets
@@ -418,7 +430,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), FOG)
 	paint(self, xf, zoom, 1.0, _route)
 	var aim := get_local_mouse_position() if _mouse_inside() else size / 2.0
-	var target := nearest_teleport(to_world(aim))
+	var target := hovered(aim)
 	var teleports := known_teleports()
 	var shops := known_shops()
 	var names: Array = teleports.map(func(t: Dictionary) -> String: return String(t.get("name", ""))) \
@@ -436,11 +448,14 @@ func _draw() -> void:
 		widths.append(font.get_string_size(String(t.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
 		if wp == target:
 			first = i
-	for t: Dictionary in shops:
-		var sp := to_screen(Vector2(float(t["x"]), float(t["z"])))
+	for i in shops.size():
+		var wp := Vector2(float(shops[i]["x"]), float(shops[i]["z"]))
+		var sp := to_screen(wp)
 		draw_shop(self, sp, 7.0)
 		anchors.append(sp)
-		widths.append(font.get_string_size(String(t.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
+		widths.append(font.get_string_size(String(shops[i].get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
+		if wp == target:
+			first = teleports.size() + i
 	var line_h := float(UITheme.FONT_SIZE)
 	var rects := place_names(anchors, widths, line_h, Rect2(Vector2.ZERO, size), first)
 	for i in rects.size():
@@ -541,9 +556,14 @@ func zoom_by(f: float, at: Vector2) -> void:
 	queue_redraw()
 
 
+# A card page (a point's page, a shop) or a yes / no popup is up over the map: it takes the input, and the map stays put.
+func covered() -> bool:
+	return (view.deliveries_page != null and view.deliveries_page.visible) or view.store != null or ConfirmPopup.any_open(get_tree()) != null
+
+
 func _input(event: InputEvent) -> void:
-	if view.deliveries_page != null and view.deliveries_page.visible:
-		return  # a clicked point's page is up over the map and takes the input
+	if covered():
+		return
 	var toggle_key: bool = (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_M) \
 		or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_BACK)
 	if toggle_key:
@@ -575,7 +595,7 @@ func _input(event: InputEvent) -> void:
 				_pinched = _touches.size() >= 2
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		if event.position.distance_to(_drag_from) < 6.0 and not _pinched:
-			pick(nearest_teleport(to_world(event.position)))
+			pick(hovered(event.position))
 	elif event is InputEventPanGesture:  # a Mac trackpad's two-finger scroll
 		if _touches.size() < 2:  # a phone's own pinch already zooms through `touch`
 			zoom_by(pow(1.1, -event.delta.y), event.position)
@@ -594,7 +614,7 @@ func _input(event: InputEvent) -> void:
 		if _start.is_valid():
 			_end_preview(true)
 		else:
-			pick(nearest_teleport(center))
+			pick(hovered(size / 2.0))
 	elif (event is InputEventKey and event.pressed and event.keycode in [KEY_EQUAL, KEY_KP_ADD]) \
 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_RIGHT_SHOULDER):
 		zoom_by(1.5, size / 2.0)
@@ -640,6 +660,8 @@ func _process(delta: float) -> void:
 		if _reveal_clock >= REVEAL_TICK_S and not get_tree().paused:
 			_reveal_clock = 0.0
 			reveal_at_car()
+		return
+	if covered():
 		return
 	var dir := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 	for key: Key in WASD:
@@ -687,13 +709,19 @@ func update_fog() -> void:
 		_fog.diffuse_texture = ImageTexture.create_from_image(img)
 
 
-# Opens the page of the found teleport point at `p` (LevelView.open_point): its deliveries, or teleport there.
+# Opens the page of the found teleport point at `p` (LevelView.open_point): its deliveries, or teleport there; or the
+# found shop there, its stock to buy.
 func pick(p: Vector2) -> void:
 	if _busy or _start.is_valid():
 		return
 	for t: Dictionary in known_teleports():
 		if Vector2(float(t["x"]), float(t["z"])) == p:
 			view.open_point(t)
+			return
+	var shops: Array = view.level.get("shops", [])
+	for t: Dictionary in known_shops():
+		if Vector2(float(t["x"]), float(t["z"])) == p:
+			view.open_store(shops.find(t), true)
 			return
 
 

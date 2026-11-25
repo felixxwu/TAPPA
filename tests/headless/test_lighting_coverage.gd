@@ -14,6 +14,12 @@ const EXEMPT := {
 	"res://shaders/spike_id_pass_2sided.gdshader": "debug id pass, never seen by the player",
 	"res://scripts/exhaust_flames.gd": "flames glow on their own",
 	"res://scripts/exhaust_lab.gd": "standalone dev scene",
+	"res://scripts/log_pile_lab.gd": "standalone dev scene",
+	"res://scripts/route_arrow.gd": "a navigation guide, kept bright",
+	"res://shaders/car_shadow.gdshader": "a dark contact shadow, not a lit surface",
+	"res://shaders/level_tree_id.gdshader": "an id pass, never seen by the player",
+	"res://scripts/free_roam/road_crowds.gd": "legacy free roam",
+	"res://scripts/free_roam/road_poles.gd": "legacy free roam",
 	"res://scripts/chunk_border_debug.gd": "debug overlay",
 	"res://scripts/wheel_force_debug.gd": "debug overlay",
 	"res://models/rocks/rock_largeA.glb": "foliage.gd draws rocks with ps1_models_lit",
@@ -21,6 +27,13 @@ const EXEMPT := {
 	"res://models/rocks/rock_smallA.glb": "foliage.gd draws rocks with ps1_models_lit",
 	"res://models/vegetation/groundcover_opaque.glb": "foliage.gd draws it with tree_canopy",
 	"res://models/spectators/spectators.glb": "crowd.gd level_meshes puts the level spectators on ps1_models_lit",
+	"res://models/shops/cwmbiga_motors.glb": "level_view.gd _shade_base puts shop models on level_prop",
+	"res://models/shops/gethin_autos.glb": "level_view.gd _shade_base puts shop models on level_prop",
+	"res://models/shops/groes_garage.glb": "level_view.gd _shade_base puts shop models on level_prop",
+	"res://models/shops/maesnant_tuning.glb": "level_view.gd _shade_base puts shop models on level_prop",
+	"res://models/shops/severn_performance.glb": "level_view.gd _shade_base puts shop models on level_prop",
+	"res://models/shops/tor_du_specials.glb": "level_view.gd _shade_base puts shop models on level_prop",
+	"res://scripts/teleport_beacons.gd": "the obelisk is on level_prop; only its icon stays plain, a glowing marker",
 	"res://blender/911/911.glb": "car.gd puts car bodies on ps1_models_lit",
 	"res://blender/acty/acty.glb": "car.gd puts car bodies on ps1_models_lit",
 	"res://blender/charger/charger.glb": "car.gd puts car bodies on ps1_models_lit",
@@ -45,6 +58,15 @@ const KNOWN_GAPS := [
 	"res://free_roam.tscn",  # the Water mesh's StandardMaterial3D
 	"res://models/cabin/log_cabin.glb",
 	"res://blender/spectator/spectator.glb",
+]
+
+const WORLD_LIGHT_EXEMPT := [
+	"res://shaders/car_lamp.gdshader",
+	"res://shaders/car_shadow.gdshader",
+	"res://shaders/billboard_particle.gdshader",
+	"res://shaders/level_tree_id.gdshader",
+	"res://shaders/spike_id_pass.gdshader",
+	"res://shaders/spike_id_pass_2sided.gdshader",
 ]
 
 # Folders whose scenes and models never reach the game's world.
@@ -78,6 +100,20 @@ func _reaches_headlights(path: String, seen := {}) -> bool:
 		if _reaches_headlights(m.get_string(1), seen):
 			return true
 	return false
+
+
+func test_every_headlight_shader_also_takes_the_exhaust_flash() -> void:
+	var missing := PackedStringArray()
+	for path in _files("res://shaders", ".gdshader"):
+		if _is_world_shader(path) and _reaches_headlights(path):
+			var src := FileAccess.get_file_as_string(path)
+			if src.contains("headlight_lit(") and not src.contains("flash_lit("):
+				missing.append(path)
+	for path in _files("res://shaders", ".gdshaderinc"):
+		var src := FileAccess.get_file_as_string(path)
+		if path != HEADLIGHT_INCLUDE and src.contains("headlight_lit(") and not src.contains("flash_lit("):
+			missing.append(path)
+	assert_eq(missing, PackedStringArray(), "these shaders add the headlight cone but not flash_lit()")
 
 
 func _is_world_shader(path: String) -> bool:
@@ -183,3 +219,30 @@ func test_the_lists_name_only_things_that_are_still_unlit() -> void:
 		assert_true(unlit.has(path), "%s is listed but is lit (or gone): drop it from the list" % path)
 
 
+
+
+func _reaches_world_light(path: String, seen := {}) -> bool:
+	if seen.has(path):
+		return false
+	seen[path] = true
+	var text := FileAccess.get_file_as_string(path)
+	if text.contains("world_light"):
+		return true
+	var rx := RegEx.create_from_string("#include\\s+\"([^\"]+)\"")
+	for m in rx.search_all(text):
+		if _reaches_world_light(m.get_string(1), seen):
+			return true
+	return false
+
+
+func test_every_world_shader_dims_with_world_light_or_is_exempt() -> void:
+	for path in _files("res://shaders", ".gdshader"):
+		if _is_world_shader(path) and not WORLD_LIGHT_EXEMPT.has(path):
+			assert_true(_reaches_world_light(path), "%s draws in the world but ignores world_light: multiply its light term by it, or list it in WORLD_LIGHT_EXEMPT" % path)
+
+
+func test_every_inline_world_shader_dims_with_world_light() -> void:
+	for path in _files("res://scripts", ".gd"):
+		var text := FileAccess.get_file_as_string(path)
+		if text.contains("shader_type spatial"):
+			assert_true(text.contains("world_light"), "%s builds a 3D shader that ignores world_light: multiply its light term by it" % path)

@@ -20,9 +20,8 @@ var _t := 0.0
 func setup(points: Array, height_at: Callable, tint := Color.BLACK, icon_path := ICON) -> void:
 	var body := MeshInstance3D.new()
 	body.mesh = obelisk_mesh(tint)
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # like the level's buildings: shading baked per face
-	mat.vertex_color_use_as_albedo = true
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/level_prop.gdshader")
 	body.material_override = mat
 	var icon := QuadMesh.new()
 	icon.size = Vector2.ONE * ICON_SIZE

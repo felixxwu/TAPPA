@@ -195,6 +195,16 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(lv_view.money_label.visible, "the money shows over the map")
 	map._input(m)
 	assert_true(map.visible, "the map under the point's page ignores input")
+	var center0 := map.center
+	Input.action_press("ui_right")
+	map._process(0.1)
+	assert_eq(map.center, center0, "and doesn't pan while the page's cards are browsed")
+	lv_view.deliveries_page.visible = false
+	map._process(0.1)
+	assert_ne(map.center, center0, "it pans once nothing covers it")
+	Input.action_release("ui_right")
+	lv_view.deliveries_page.visible = true
+	map.center = center0
 	var map_back := InputEventAction.new()
 	map_back.action = "ui_cancel"
 	map_back.pressed = true
@@ -206,6 +216,32 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 		"every delivery from the found points, with no teleport or navigate")
 	MenuNav.of(lv_view.deliveries_page)._unhandled_input(map_back)
 	assert_true(lv_view.deliveries_page == null and map.visible, "and Back returns to the map")
+	assert_eq(map.hovered(map.to_screen(Vector2(35, 3)) + Vector2(LevelMap.PICK_PX - 2.0, 0)), Vector2(35, 3), "the pointer near a found shop hovers it")
+	assert_eq(map.hovered(map.to_screen(Vector2(35, 3)) + Vector2(0, LevelMap.PICK_PX * 3.0)), Vector2.INF, "empty ground hovers nothing, however near a point")
+	var empty_click := InputEventMouseButton.new()
+	empty_click.button_index = MOUSE_BUTTON_LEFT
+	empty_click.position = map.to_screen(Vector2(35, 3)) + Vector2(0, LevelMap.PICK_PX * 3.0)
+	empty_click.pressed = true
+	map._input(empty_click)
+	empty_click.pressed = false
+	map._input(empty_click)
+	assert_true(lv_view.store == null and lv_view.deliveries_page == null, "so a click there opens nothing")
+	map.pick(Vector2(35, 3))
+	assert_not_null(lv_view.store, "picking a shop on the map opens its stock")
+	assert_eq(CardUI.titles(lv_view.store.find_children("*", "CardCarousel", true, false)[0]).size(), 2, "its car and its part")
+	var bay_body: Node = lv_view.shop_cars[for_sale].get_parent()
+	var driving_id := Config.data.level_car_id
+	Save.set_setting(LevelView.MONEY_KEY, 60)
+	CardUI.pick(lv_view.store.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.by_id(for_sale)["name"]))
+	(ConfirmPopup.any_open(get_tree()) as ConfirmPopup)._on_action(1)
+	assert_true(for_sale in LevelView.owned_cars() and LevelView.money() == 10, "a car bought from the map joins the garage")
+	assert_eq(Config.data.level_car_id, driving_id, "without swapping to it")
+	assert_ne(Scenes.last_blocked_path, Scenes.WORLD, "or reloading the level")
+	assert_not_null(lv_view.store, "the shop stays open")
+	MenuNav.of(lv_view.store)._unhandled_input(map_back)
+	assert_true(lv_view.store == null and map.visible and get_tree().paused, "Back from the shop returns to the map")
+	Save.set_setting(LevelView.CARS_KEY, [driving_id])
+	lv_view.park_stock(bay_body, lv_view.level["shops"][0])
 	map.pick(map.nearest_teleport(Vector2(45, 25)))
 	Save.set_setting(LevelView.MONEY_KEY, Config.data.level_teleport_cost - 1)
 	CardUI.pick(lv_view.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Teleport")
@@ -939,3 +975,14 @@ func test_every_shop_model_in_the_shipped_level_exists() -> void:
 	for sh: Dictionary in lv.get("shops", []):
 		if sh.get("model") is Dictionary:
 			assert_true(ResourceLoader.exists(String(sh["model"]["path"])), "%s's model is in the project" % sh.get("name", "a shop"))
+
+
+func test_bought_parts_belong_to_one_car() -> void:
+	var driving := Config.data.level_car_id
+	Save.set_setting(LevelView.PARTS_KEY, {"car_a": ["part_x"]})
+	Config.data.level_car_id = "car_a"
+	assert_eq(LevelView.bought_parts(), ["part_x"], "the car driven has the parts bought for it")
+	Config.data.level_car_id = "car_b"
+	assert_eq(LevelView.bought_parts(), [], "another car has none of them")
+	Config.data.level_car_id = driving
+	Save.erase_setting(LevelView.PARTS_KEY)

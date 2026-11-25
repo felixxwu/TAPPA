@@ -15,6 +15,7 @@ var _junction: Array[bool] = []
 var _to := ""
 var _from := Vector2.INF
 var _t := 0.0
+var _warming := false
 
 
 func _ready() -> void:
@@ -27,7 +28,21 @@ func _ready() -> void:
 	visible = false
 
 
+# Drawn once in front of the camera behind the loading cover, so its material compiles before the first delivery.
+func warm_up(pos: Vector3) -> void:
+	_warming = true
+	global_position = pos
+	visible = true
+
+
+func clear_warm_up() -> void:
+	_warming = false
+	visible = false
+
+
 func _process(dt: float) -> void:
+	if _warming:
+		return
 	_t += dt
 	var car := view._car as Node3D
 	var to := LevelView.nav_target()

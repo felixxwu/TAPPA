@@ -146,5 +146,5 @@ void fragment() {
 	vec3 surface = mix(ground, road, road_t) * tint.rgb;
 	// lane paint keeps its own colour rather than taking the ground tint
 	surface = mix(surface, marking.rgb, lines * road_t);
-	ALBEDO = surface * (COLOR.rgb + hl_color * headlight_lit(world_pos));
+	ALBEDO = surface * (COLOR.rgb * world_light + hl_color * headlight_lit(world_pos) + flash_lit(world_pos));
 }

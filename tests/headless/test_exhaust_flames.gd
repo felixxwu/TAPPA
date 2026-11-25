@@ -252,3 +252,38 @@ func test_the_flame_cycles_frames_while_it_burns() -> void:
 		_flames._timed_physics_process(Config.data.exhaust_flame_frame_seconds * 1.5)
 		seen[_flames.current_frame()] = true
 	assert_gt(seen.size(), 1, "a sustained flame should not sit on one frame")
+
+
+func _bang() -> void:
+	_engine.limiter_cut_count += 1
+	_flames._physics_process(TICK)
+
+
+func test_flash_starts_when_a_flame_lights() -> void:
+	Config.data.exhaust_flash_s = 0.5
+	assert_eq(_flames.flash_strength(), 0.0)
+	_bang()
+	assert_gt(_flames.flash_strength(), 0.0)
+
+
+func test_flash_fades_to_zero_and_stops_writing() -> void:
+	Config.data.exhaust_flash_s = 0.2
+	_bang()
+	var before := _flames.flash_strength()
+	for i in 4:
+		_flames._physics_process(TICK)
+	assert_lt(_flames.flash_strength(), before)
+	for i in 30:
+		_flames._physics_process(TICK)
+	assert_eq(_flames.flash_strength(), 0.0)
+	assert_false(_flames._flash_left > 0.0)
+
+
+func test_retrigger_restarts_the_flash() -> void:
+	Config.data.exhaust_flash_s = 0.5
+	_bang()
+	for i in 10:
+		_flames._physics_process(TICK)
+	var faded := _flames.flash_strength()
+	_bang()
+	assert_gt(_flames.flash_strength(), faded)

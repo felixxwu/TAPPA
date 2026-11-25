@@ -256,15 +256,8 @@ static func _leaf_texture() -> Texture2D:
 
 
 static func _materials() -> Dictionary:
-	var solid := StandardMaterial3D.new()
-	solid.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	solid.vertex_color_use_as_albedo = true
-	solid.vertex_color_is_srgb = true
-	solid.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var plain := solid.duplicate() as StandardMaterial3D
-	solid.albedo_texture = _leaf_texture()
-	solid.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	solid.texture_repeat = true
+	var solid := _prop_material()
+	solid.set_shader_parameter("albedo_texture_linear", _leaf_texture())
 	# One 0.15 m mesh cell of stock netting, its wires one pixel thick (about a centimetre) and closer together near the ground.
 	var rows := [0, 8, 20, 36, 56, 80, 108, 127]
 	var img := Image.create(16, 128, false, Image.FORMAT_RGBA8)
@@ -274,11 +267,16 @@ static func _materials() -> Dictionary:
 	for r: int in rows:
 		for x in 16:
 			img.set_pixel(x, 127 - r, Color.WHITE)
-	var net := plain
+	var net := _prop_material()
 	img.generate_mipmaps()
-	net.albedo_texture = ImageTexture.create_from_image(img)
-	net.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	net.texture_repeat = true
-	net.alpha_scissor_threshold = 0.25
-	net.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	net.set_shader_parameter("albedo_texture_linear", ImageTexture.create_from_image(img))
+	net.set_shader_parameter("alpha_scissor", 0.25)
 	return {"solid": solid, "net": net}
+
+
+static func _prop_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/level_prop.gdshader")
+	mat.set_shader_parameter("linear_filter", true)
+	mat.set_shader_parameter("vertex_color_is_srgb", true)
+	return mat

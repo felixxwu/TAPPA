@@ -71,6 +71,9 @@ var _forced := false
 # parent and stack the offset twice.
 var _follow_car := true
 var _warming := false
+# Seconds of the light flash left; > 0 means fl_color is being written.
+var _flash_left := 0.0
+var _flash_pos := Vector3.ZERO
 
 
 func setup(car: Node) -> void:
@@ -263,14 +266,51 @@ func _timed_physics_process(delta: float) -> void:
 		global_transform = _car.global_transform
 	# Any new limiter cut re-arms the hold; holding the trigger down (a limiter bounce)
 	# therefore keeps re-lighting rather than queueing.
-	if _consume_new_cuts():
+	var fresh := _consume_new_cuts()
+	if fresh:
 		_burn_timer = cfg.exhaust_flame_pop_seconds
 	elif _burn_timer > 0.0:
 		_burn_timer = maxf(_burn_timer - delta, 0.0)
 	var lit := _forced or _burn_timer > 0.0 or _nitrous_on()
+	var was_lit := is_lit()
 	_set_lit(lit)
+	if lit and (not was_lit or fresh):
+		_start_flash(cfg)
+	_tick_flash(delta, cfg, lit)
 	if lit:
 		_advance_frame(delta, cfg)
+
+
+# Restart the flash at the midpoint of the lit pipes.
+func _start_flash(cfg: GameConfig) -> void:
+	_flash_left = cfg.exhaust_flash_s
+	var sum := Vector3.ZERO
+	for p in _pipes:
+		sum += p.global_position
+	_flash_pos = sum / maxf(_pipes.size(), 1)
+
+
+# Fade the flash and push it to the shaders; writes nothing once it is out. Held at full while a continuous flame burns.
+func _tick_flash(delta: float, cfg: GameConfig, lit: bool) -> void:
+	if _flash_left <= 0.0:
+		return
+	_flash_left = maxf(_flash_left - delta, 0.0)
+	if lit and _burn_timer <= 0.0:
+		_flash_left = cfg.exhaust_flash_s
+	var k := _flash_left / maxf(cfg.exhaust_flash_s, 1e-4)
+	_write_flash(cfg, k)
+
+
+func flash_strength() -> float:
+	return _flash_left / maxf(Config.data.exhaust_flash_s, 1e-4) if _flash_left > 0.0 else 0.0
+
+
+func _write_flash(cfg: GameConfig, k: float) -> void:
+	var c: Color = cfg.exhaust_flash_color
+	var v := Vector3(c.r, c.g, c.b) * cfg.exhaust_flash_strength * k
+	RenderingServer.global_shader_parameter_set("fl_pos", _flash_pos)
+	RenderingServer.global_shader_parameter_set("fl_color", v)
+	RenderingServer.global_shader_parameter_set("fl_range", cfg.exhaust_flash_range_m)
 
 
 # True if the engine has banged since last tick.

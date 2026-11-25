@@ -270,9 +270,25 @@ hl_cos_outer={
 "type": "float",
 "value": 0.89
 }
+fl_pos={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+fl_color={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+fl_range={
+"type": "float",
+"value": 6.0
+}
 headlight_amount={
 "type": "float",
 "value": 0.0
+}
+world_light={
+"type": "vec3",
+"value": Vector3(1, 1, 1)
 }
 wind_strength={
 "type": "float",

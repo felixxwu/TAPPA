@@ -88,3 +88,8 @@ func test_snowy_ground_is_drawn_white_and_raised_off_the_road_only() -> void:
 	assert_gt(job.uvs[0].y, 0.0, "snow off the road is drawn raised")
 	assert_almost_eq(job.uvs[1].y, 0.0, 0.001, "the road itself is never raised")
 	assert_eq(job.uvs[2], Vector2.ZERO, "forest is neither white nor raised")
+
+
+func test_cover_sits_on_the_baked_ground_even_where_only_coarse_terrain_is_loaded() -> void:
+	var p := Vector2(90.0, 90.0)
+	assert_eq(_streamer.cover.height_fn.call(p.x, p.y), _bake.height(p.x, p.y))

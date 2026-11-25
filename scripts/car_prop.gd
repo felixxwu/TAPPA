@@ -48,6 +48,7 @@ static func spawn(parent: Node, scene: PackedScene, opts: Dictionary) -> Node3D:
 	car.prune_inactive_bodies()
 	dup_meshes(car)
 	car.silence_engine_audio()
+	car.seat_wheels_at_rest()
 	car.freeze = true
 	if bool(opts.get("stop_physics", false)):
 		car.set_physics_process(false)

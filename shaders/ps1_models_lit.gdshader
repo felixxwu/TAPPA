@@ -34,7 +34,7 @@ void vertex() {
 	float ndl = max(dot(wn, normalize(light_dir)), 0.0);
 	vec3 lit = ambient + sun_color * ndl;
 	// light_amount == 0 → exactly vec3(1.0), i.e. a no-op multiply.
-	v_light = mix(vec3(1.0), lit, light_amount);
+	v_light = mix(vec3(1.0), lit, light_amount) * world_light;
 	// Fake headlight cone (night weather), ADDED to the light term for the same
 	// reason as everywhere else: at night this term is already dark, so a multiply
 	// could not brighten it. Per-vertex, reusing the existing varying — no new
@@ -43,7 +43,7 @@ void vertex() {
 	// Facing-aware overload (passing wn) so a car's REAR panels — e.g. a rival
 	// ahead of the player, still geometrically inside the cone volume — don't
 	// light up from behind.
-	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn);
+	v_light += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn) + flash_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
 }
 
 void fragment() {

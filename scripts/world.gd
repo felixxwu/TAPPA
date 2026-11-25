@@ -1142,6 +1142,7 @@ func _process(_delta: float) -> void:
 # every exit path regardless of destination, which a per-destination reset would not.
 func _exit_tree() -> void:
 	HeadlightCone.reset()
+	LevelWeather.reset()
 	# Same leak the cone guards against: the podium/menu showcase render trees with
 	# the same shader, so a storm-strength sway must not keep blowing after this
 	# stage is exited. Unlike the cone, WindSway.reset() lands on the shared BASE

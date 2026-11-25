@@ -3,13 +3,16 @@
 // UV2.x is 0 on bark (UV = around, metres along) and 1 on a cut end (UV = metres from centre).
 shader_type spatial;
 render_mode cull_disabled;
+#include "res://shaders/headlight_cone.gdshaderinc"
 
 uniform float base_dark = 0.0;
 uniform float base_height = 0.8;
 varying float height;
+varying vec3 world_pos;
 
 void vertex() {
 	height = VERTEX.y;
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -41,5 +44,5 @@ void fragment() {
 		col *= 1.0 - 0.5 * crack;
 		ROUGHNESS = 0.9;
 	}
-	ALBEDO = col * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, height));
+	ALBEDO = col * mix(1.0 - base_dark, 1.0, smoothstep(0.0, base_height, height)) * (world_light + hl_color * headlight_lit(world_pos) + flash_lit(world_pos));
 }

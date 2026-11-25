@@ -56,3 +56,15 @@ func test_the_arrow_shows_the_next_junction_within_reach() -> void:
 	assert_eq(RouteArrow.next_junction(pts, junction, 0, 25.0), -1, "too far ahead yet")
 	assert_eq(RouteArrow.next_junction(pts, junction, 3, 50.0), -1, "gone once the car has passed it")
 	assert_eq(RouteArrow.nearest_point(pts, Vector2(21, 3)), 2)
+
+
+func test_arrow_warm_up_shows_it_then_hides_it() -> void:
+	var a := RouteArrow.new()
+	add_child_autofree(a)
+	a.warm_up(Vector3(1, 2, 3))
+	assert_true(a.visible)
+	assert_eq(a.global_position, Vector3(1, 2, 3))
+	a._process(0.1)
+	assert_true(a.visible, "the sat-nav pass doesn't hide it mid warm-up")
+	a.clear_warm_up()
+	assert_false(a.visible)

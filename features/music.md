@@ -64,7 +64,7 @@ The result is re-queued via `play_song`, which is idempotent and **latches the s
 next 8-bar handoff**, so the change lands beat-aligned. The `MusicDirector` autoload persists
 across scene changes, so playback is continuous throughout. The one exception is a new
 world's cold open: while `ColdOpen.due()`, `_tick` stops any voices and plays nothing, so the music
-starts when the first checkpoint is reached (free-roam.md → *Cold open*).
+starts when the first checkpoint is reached (free-roam.md → *Cold open*). `ColdOpen.due()` is only ever true on the legacy island (`GameConfig.legacy_free_roam_island`); Hafren has no cold open, so a new world there must not leave the music waiting on one.
 
 ### Random menu song and rally song (per visit / per event)
 

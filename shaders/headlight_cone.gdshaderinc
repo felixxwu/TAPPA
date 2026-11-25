@@ -35,6 +35,18 @@ global uniform float hl_separation; // metres between the two lamps; 0 = a singl
 // condition whose world is only half-dark (storm) authors this low, because the cone
 // is ADDED to a light term that is already brighter than night's.
 global uniform float headlight_amount;
+// The world's brightness (vec3(1) = full day), tweened only while the weather fades; every lit shader multiplies its light term by it.
+global uniform vec3 world_light;
+
+// Fake light flash (exhaust flames): fl_color is black when no flash is running.
+global uniform vec3 fl_pos;
+global uniform vec3 fl_color;  // strength baked in
+global uniform float fl_range;
+
+// Light a flash adds at a world position, shown only as far as the weather has darkened the world (none in full day).
+vec3 flash_lit(vec3 world_pos) {
+	return fl_color * (1.0 - world_light) * (1.0 - smoothstep(0.0, fl_range, distance(world_pos, fl_pos)));
+}
 
 // One cone, from one apex.
 float _headlight_cone_at(vec3 world_pos, vec3 apex) {

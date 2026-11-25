@@ -13,6 +13,7 @@ var _car: VehicleBody3D
 var _streamer: TerrainStreamer
 var _rest: RestStops
 var _options := [0]
+var _was_legacy := false
 
 
 func _settings() -> FreeRoamSettings:
@@ -30,6 +31,8 @@ func before_all() -> void:
 	_save.save_disabled = false
 	_save.profile = _save._default_profile()
 	CarFixtures.install()
+	_was_legacy = Config.data.legacy_free_roam_island
+	Config.data.legacy_free_roam_island = true
 	var s := _settings()
 	ColdOpen.new_world(s.world_seed, s)
 	_scene = load("res://free_roam.tscn").instantiate()
@@ -49,6 +52,7 @@ func after_all() -> void:
 	Input.action_release("accelerate")
 	_scene.free()
 	CarFixtures.restore()
+	Config.data.legacy_free_roam_island = _was_legacy
 	_save.profile_path = _save.DEFAULT_PROFILE_PATH
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(TEST_PATH + suffix):
@@ -264,6 +268,9 @@ func test_only_a_pending_world_is_due() -> void:
 	assert_false(ColdOpen.due())
 	WorldSession.set_cold_open_pending(true)
 	assert_true(ColdOpen.due())
+	Config.data.legacy_free_roam_island = false
+	assert_false(ColdOpen.due(), "the Hafren level has no cold open, so nothing waits on one")
+	Config.data.legacy_free_roam_island = true
 	Benchmark.active = true
 	assert_false(ColdOpen.due(), "never under the benchmark")
 	Benchmark.active = false

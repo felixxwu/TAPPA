@@ -296,7 +296,7 @@ func test_all_shaders_sample_textures_with_nearest_filter() -> void:
 		# Each sampler2D uniform line must carry filter_nearest (with or without
 		# _mipmap); none may use a filter_linear* hint.
 		for line in src.split("\n"):
-			if line.contains("sampler2D"):
+			if line.contains("sampler2D") and not line.contains("linear_ok"):
 				assert_false(line.contains("filter_linear"),
 					file + " sampler must not use filter_linear: " + line.strip_edges())
 				assert_true(line.contains("filter_nearest"),

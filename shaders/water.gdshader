@@ -31,5 +31,5 @@ void fragment() {
 	float t = 0.5 * (texture(water_tex, uv_a).r + texture(water_tex, uv_b).r);
 	vec3 col = mix(water_color.rgb, shore_color.rgb, t);
 	col += sparkle_strength * pow(t, 6.0);  // occasional bright glint on the crests
-	ALBEDO = col * (1.0 + hl_color * headlight_lit(v_world_pos));
+	ALBEDO = col * (world_light + hl_color * headlight_lit(v_world_pos) + flash_lit(v_world_pos));
 }
