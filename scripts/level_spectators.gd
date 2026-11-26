@@ -12,7 +12,9 @@ var groups: Array = []
 var _view: Node
 var _bake: LevelBake
 var _buildings: LevelBuildings
+var _pool: CrowdPool
 var _live := {}
+var _pending := {}  # group index -> its placement job while a worker thread works it out
 var _since := 0.0
 var _own := -1  # how many of `groups` are the save's own; set_extra's follow them
 
@@ -28,6 +30,9 @@ func setup(list: Array, view: Node, bake: LevelBake, buildings: LevelBuildings) 
 func set_extra(list: Array) -> void:
 	if _own < 0:
 		_own = groups.size()
+	for i: int in _pending.keys():
+		if i >= _own:
+			_pending[i]["dropped"] = true
 	for i: int in _live.keys():
 		if i >= _own:
 			if is_instance_valid(_live[i]):
@@ -37,11 +42,39 @@ func set_extra(list: Array) -> void:
 
 
 func _process(dt: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(dt)
+	PerfLog.track(&"level_spectators", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(dt: float) -> void:
+	_collect_placed()
 	_since += dt
 	if car == null or _since < CHECK_S:
 		return
 	_since = 0.0
 	refresh(Vector2(car.global_position.x, car.global_position.z))
+
+
+func _threaded() -> bool:
+	return OS.has_feature("threads")
+
+
+func _collect_placed() -> void:
+	for i: int in _pending.keys():
+		var job: Dictionary = _pending[i]
+		if not WorkerThreadPool.is_task_completed(job["task"]):
+			continue
+		WorkerThreadPool.wait_for_task_completion(job["task"])
+		_pending.erase(i)
+		if not job.get("dropped", false):
+			_live[i] = _build(job)
+
+
+func _exit_tree() -> void:
+	for job: Dictionary in _pending.values():
+		WorkerThreadPool.wait_for_task_completion(job["task"])
+	_pending.clear()
 
 
 # Spawns the groups the car has come near and frees the ones it has left.
@@ -50,13 +83,20 @@ func refresh(car_xz: Vector2) -> void:
 	for i in groups.size():
 		var g: Dictionary = groups[i]
 		var d := car_xz.distance_to(Vector2(g.x, g.z))
-		var alive := _live.has(i)  # a group that placed nobody is kept as null, so it isn't rebuilt every check
+		var alive: bool = _live.has(i) or (_pending.has(i) and not _pending[i].get("dropped", false))  # a group that placed nobody is kept as null, so it isn't rebuilt every check
 		if wants_alive(alive, d, cfg.level_spectator_spawn_m, cfg.level_spectator_despawn_m) == alive:
 			continue
+		if _pending.has(i):
+			_pending[i]["dropped"] = true
 		if alive:
 			if is_instance_valid(_live[i]):
 				_live[i].queue_free()
 			_live.erase(i)
+		elif _threaded():
+			if not _pending.has(i) and Config.data.spectators_enabled:
+				var job := {"i": i, "g": g, "p": Config.data.spectator_params()}
+				job["task"] = WorkerThreadPool.add_task(_place_job.bind(job), false, "crowd placement")
+				_pending[i] = job
 		else:
 			_live[i] = _spawn(i, g)
 
@@ -70,10 +110,19 @@ func live_count() -> int:
 
 
 func _spawn(i: int, g: Dictionary) -> SpectatorGroup:
-	var cfg: GameConfig = Config.data
-	if not cfg.spectators_enabled:
+	if not Config.data.spectators_enabled:
 		return null
-	var p := cfg.spectator_params()
+	var job := {"i": i, "g": g, "p": Config.data.spectator_params()}
+	_place_job(job)
+	return _build(job)
+
+
+# Where a group's members stand: pure data from the bake and buildings, so it can run on a worker thread.
+func _place_job(job: Dictionary) -> void:
+	var cfg: GameConfig = Config.data
+	var i: int = job["i"]
+	var g: Dictionary = job["g"]
+	var p: Dictionary = job["p"]
 	var centre := Vector2(g.x, g.z)
 	var r := float(g.r)
 	var reach: float = r + p["road_probe_m"] + 2.0
@@ -86,17 +135,33 @@ func _spawn(i: int, g: Dictionary) -> SpectatorGroup:
 	var grid := SpectatorScatter.build_point_grid(obstacles, p["tree_cell_m"])
 	var seed_value := int(ScatterMath.hash01(i, 0, 0, 71) * 1_000_000.0)
 	var members := place(centre, r, int(g.n), cfg.spectator_separation_m, road, grid, p["tree_cell_m"], p["tree_avoid_m"], seed_value)
+	job["members"] = members
+	job["road"] = road
+	job["grid"] = grid
 	if members.is_empty():
-		return null
-	var meshes := Crowd.level_meshes()
+		return
 	p["homes"] = edge_homes(members, road, cfg.level_spectator_edge_gap_m, cfg.spectator_separation_m * 1.5)
 	p["road_probe_m"] = cfg.level_spectator_road_probe_m
 	p["w_anchor"] = cfg.level_spectator_walk_mps
 	p["seed"] = seed_value
 	p["ragdoll_pool_size"] = 0
 	p["face_car"] = true
+
+
+func _build(job: Dictionary) -> SpectatorGroup:
+	var members: PackedVector2Array = job["members"]
+	if members.is_empty():
+		return null
+	var i: int = job["i"]
+	var p: Dictionary = job["p"]
+	var meshes := Crowd.level_meshes()
 	p["meshes"] = meshes
-	p["models"] = assign_models(members.size(), meshes.size(), seed_value)
+	if _pool == null:
+		_pool = CrowdPool.new(self, meshes)
+	p["pool"] = _pool
+	p["models"] = assign_models(members.size(), meshes.size(), int(p["seed"]))
+	var road: Dictionary = job["road"]
+	var grid: Dictionary = job["grid"]
 	var group := SpectatorGroup.new()
 	group.name = "Spectators%d" % i
 	add_child(group)

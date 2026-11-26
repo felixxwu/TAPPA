@@ -120,19 +120,149 @@ func test_edge_homes_without_road_keeps_members() -> void:
 
 class _NobodyPlaced extends LevelSpectators:
 	var tries := 0
-	func _spawn(_i: int, _g: Dictionary) -> SpectatorGroup:
+	func _place_job(job: Dictionary) -> void:
 		tries += 1
-		return null
+		job["members"] = PackedVector2Array()
+
+	func settle_refresh(at: Vector2) -> void:
+		refresh(at)
+		while not _pending.is_empty():
+			_collect_placed()
 
 
 func test_a_group_that_places_nobody_is_not_retried_until_the_car_leaves() -> void:
 	var s := _NobodyPlaced.new()
 	add_child_autofree(s)
 	s.groups = [{"x": 0.0, "z": 0.0, "r": 5.0, "n": 3}]
-	s.refresh(Vector2.ZERO)
-	s.refresh(Vector2.ZERO)
+	s.settle_refresh(Vector2.ZERO)
+	s.settle_refresh(Vector2.ZERO)
 	assert_eq(s.tries, 1)
-	s.refresh(Vector2(Config.data.level_spectator_despawn_m + 1.0, 0.0))
-	s.refresh(Vector2.ZERO)
+	s.settle_refresh(Vector2(Config.data.level_spectator_despawn_m + 1.0, 0.0))
+	s.settle_refresh(Vector2.ZERO)
 	assert_eq(s.tries, 2, "coming back tries again")
 	assert_eq(s.live_count(), 0)
+
+
+func _steer_group(n: int) -> SpectatorGroup:
+	var car := Node3D.new()
+	add_child_autofree(car)
+	var p := Config.data.spectator_params()
+	p["meshes"] = [BoxMesh.new()]
+	p["models"] = PackedInt32Array(range(n)).duplicate()
+	p["models"].fill(0)
+	p["ragdoll_pool_size"] = 0
+	var homes := PackedVector2Array()
+	for i in n:
+		homes.append(Vector2(i * 0.3, (i % 3) * 0.2))
+	var g := SpectatorGroup.new()
+	add_child_autofree(g)
+	g.setup(homes, car, null, {}, {}, p)
+	return g
+
+
+func _steer_inputs(g: SpectatorGroup) -> Dictionary:
+	var p := g._p
+	var r: float = p["separation_m"]
+	return {"car": Vector2(1.0, 0.5), "step": 0.05, "max_speed": p["max_speed_mps"], "accel": p["accel_mps2"],
+		"sep_grid": SpectatorGroup.build_separation_grid(g._pos, g._upright, r), "sep_radius": r,
+		"flee_radius": p["flee_radius_m"], "w_flee": p["w_flee"], "road_probe": p["road_probe_m"], "w_road": p["w_road"],
+		"tree_cell": p["tree_cell_m"], "tree_avoid": p["tree_avoid_m"], "w_obstacle": p["w_obstacle"],
+		"w_separation": p["w_separation"], "dead_zone": p["anchor_dead_zone_m"], "w_anchor": p["w_anchor"]}
+
+
+func test_wide_steering_matches_steering_members_one_by_one() -> void:
+	var g := _steer_group(12)
+	var k := _steer_inputs(g)
+	g._steer_wide(k)
+	var wide := g._nvel.duplicate()
+	var one := _steer_group(12)
+	one._nvel.resize(12)
+	for i in 12:
+		one._steer_member(i, _steer_inputs(one))
+	assert_eq(wide, one._nvel)
+
+
+func test_wide_steering_is_off_below_the_member_threshold_and_with_the_toggle_off() -> void:
+	var g := _steer_group(4)
+	var saved_min: int = Config.data.threaded_spectator_min_members
+	var saved_on: bool = Config.data.threaded_spectators
+	Config.data.threaded_spectators = true
+	Config.data.threaded_spectator_min_members = 5
+	assert_false(g._wide_ok())
+	Config.data.threaded_spectator_min_members = 4
+	assert_eq(g._wide_ok(), OS.has_feature("threads"))
+	Config.data.threaded_spectators = false
+	assert_false(g._wide_ok())
+	Config.data.threaded_spectator_min_members = saved_min
+	Config.data.threaded_spectators = saved_on
+
+
+func _pooled_group(pool: CrowdPool, at: Array, models: Array) -> SpectatorGroup:
+	var p := Config.data.spectator_params()
+	p["pool"] = pool
+	p["meshes"] = [BoxMesh.new(), SphereMesh.new()]
+	p["models"] = PackedInt32Array(models)
+	p["ragdoll_pool_size"] = 0
+	var g := SpectatorGroup.new()
+	add_child_autofree(g)
+	g.setup(PackedVector2Array(at), null, null, {}, {}, p)
+	return g
+
+
+func _pool() -> CrowdPool:
+	var host := Node3D.new()
+	add_child_autofree(host)
+	return CrowdPool.new(host, [BoxMesh.new(), SphereMesh.new()] as Array[Mesh])
+
+
+func test_groups_share_one_multimesh_per_model() -> void:
+	var pool := _pool()
+	var a := _pooled_group(pool, [Vector2(0, 0), Vector2(5, 0)], [0, 1])
+	var b := _pooled_group(pool, [Vector2(50, 0), Vector2(55, 0)], [0, 1])
+	assert_eq(a._mms.size(), 0)
+	assert_eq(a._pool, b._pool)
+	assert_eq(pool.model_count(), 2)
+	assert_ne(a._slot[0], b._slot[0])
+	assert_gte(pool.multimesh(0).instance_count, 2)
+
+
+func test_members_write_their_own_slots() -> void:
+	var pool := _pool()
+	var a := _pooled_group(pool, [Vector2(0, 0), Vector2(5, 0)], [0, 0])
+	var b := _pooled_group(pool, [Vector2(50, 0)], [0])
+	assert_almost_eq(pool.slot_xf(0, a._slot[1]).origin.x, 5.0, 0.001)
+	assert_almost_eq(pool.slot_xf(0, b._slot[0]).origin.x, 50.0, 0.001)
+	a._pos[0] = Vector2(9, 0)
+	a._write_instance(0)
+	assert_almost_eq(pool.slot_xf(0, a._slot[0]).origin.x, 9.0, 0.001)
+	assert_almost_eq(pool.slot_xf(0, a._slot[1]).origin.x, 5.0, 0.001)
+	assert_almost_eq(pool.slot_xf(0, b._slot[0]).origin.x, 50.0, 0.001)
+
+
+func test_despawned_group_releases_slots_for_reuse() -> void:
+	var pool := _pool()
+	var a := _pooled_group(pool, [Vector2(0, 0), Vector2(5, 0)], [0, 0])
+	var slots := [a._slot[0], a._slot[1]]
+	var free_before := pool.free_count(0)
+	remove_child(a)
+	assert_eq(pool.free_count(0), free_before + 2)
+	for s in slots:
+		assert_eq(pool.slot_xf(0, s).basis, Basis(Vector3.ZERO, Vector3.ZERO, Vector3.ZERO))
+	var cap := pool.multimesh(0).instance_count
+	var b := _pooled_group(pool, [Vector2(20, 0), Vector2(25, 0)], [0, 0])
+	assert_eq(pool.multimesh(0).instance_count, cap)
+	assert_true(b._slot[0] in slots and b._slot[1] in slots)
+	a.free()
+
+
+func test_growth_keeps_existing_transforms() -> void:
+	var pool := _pool()
+	var a := _pooled_group(pool, [Vector2(7, 0)], [0])
+	var big: Array = []
+	for k in 100:
+		big.append(Vector2(100 + k, 0))
+	var models: Array = []
+	models.resize(100)
+	models.fill(0)
+	_pooled_group(pool, big, models)
+	assert_almost_eq(pool.slot_xf(0, a._slot[0]).origin.x, 7.0, 0.001)

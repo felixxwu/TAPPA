@@ -18,11 +18,31 @@ func _rally(name: String, at: Vector2) -> Dictionary:
 	return {"name": name, "start": {"x": at.x, "z": at.y, "yaw": 0.3}, "finish": {"x": at.x + 500.0, "z": at.y, "yaw": -1.2}}
 
 
+func _buildings_with_lines(seeds: Array) -> LevelBuildings:
+	var entry := {"kind": "start_line", "texts": [], "p": [0, 0, 0, 1, 0, 0, 0, 3, 0], "n": [0, 0, 1, 0, 0, 1, 0, 0, 1], "uv": [0, 0, 1, 0, 0, 1], "c": [1, 1, 1, 1, 1, 1, 1, 1, 1]}
+	var list := []
+	for s: int in seeds:
+		var e := entry.duplicate()
+		e.seed = s
+		list.append(e)
+	var f := FileAccess.open("user://test_rallies_level.buildings.json", FileAccess.WRITE)
+	f.store_string(JSON.stringify(list))
+	f.close()
+	var b := LevelBuildings.new()
+	add_child_autofree(b)
+	b.setup("user://test_rallies_level.json", func(_x: float, _z: float) -> float: return 0.0)
+	return b
+
+
+func after_all() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://test_rallies_level.buildings.json"))
+
+
 func test_only_the_active_rally_shows_its_two_lines() -> void:
 	var r := LevelRallies.new()
 	add_child_autofree(r)
 	LevelRallies.active = ""
-	r.setup([_rally("A", Vector2.ZERO), _rally("B", Vector2(0, 900))], Callable(), null)
+	r.setup([_rally("A", Vector2.ZERO), _rally("B", Vector2(0, 900))], Callable(), null, _buildings_with_lines([1, 2]))
 	assert_eq(r.get_child_count(), 0)
 	LevelRallies.active = "B"
 	r.show_active()
@@ -37,21 +57,35 @@ func test_only_the_active_rally_shows_its_two_lines() -> void:
 	assert_eq(r.get_child_count(), 0)
 
 
-func test_line_turned_to_its_yaw_on_the_ground() -> void:
-	var line := LevelRallies.line_model({"x": 3.0, "z": 4.0, "yaw": 1.1}, LevelRallies.MODELS[0], func(_x: float, _z: float) -> float: return 7.5)
+func test_line_is_one_mesh_turned_to_its_yaw_on_the_ground() -> void:
+	var b := _buildings_with_lines([9])
+	var line := LevelRallies.line_model({"x": 3.0, "z": 4.0, "yaw": 1.1}, b.start_lines[9], func(_x: float, _z: float) -> float: return 7.5)
 	assert_almost_eq(line.rotation.y, 1.1, 1e-5)
 	assert_eq(line.position, Vector3(3.0, 7.5, 4.0))
-	assert_gt(line.get_child_count(), 0, "the model loads")
+	assert_eq(line.find_children("*", "MeshInstance3D", true, false).size(), 1, "one draw call")
+	assert_eq(line.find_children("*", "CollisionShape3D", true, false).size(), 1)
 	line.free()
 
 
-func test_model_pick_is_stable_and_from_the_pool() -> void:
+func test_variant_pick_is_stable_and_from_the_baked_seeds() -> void:
+	assert_eq(LevelRallies.variant_for("A", "start", []), -1)
+	var seeds := [21, 5, 12]
 	for name in ["A", "Long Rally Name", ""]:
 		for end in ["start", "finish"]:
-			assert_eq(LevelRallies.model_for(name, end), LevelRallies.model_for(name, end))
-			assert_has(LevelRallies.MODELS, LevelRallies.model_for(name, end))
-	for path: String in LevelRallies.MODELS:
-		assert_true(ResourceLoader.exists(path), path)
+			var v := LevelRallies.variant_for(name, end, seeds)
+			assert_eq(v, LevelRallies.variant_for(name, end, seeds.duplicate()))
+			assert_has(seeds, v)
+
+
+func test_every_rally_end_in_the_shipped_level_has_a_baked_line_to_draw() -> void:
+	var d: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SAVE))
+	var baked := LevelBuildings.parse_bin(FileAccess.get_file_as_bytes(SAVE.replace(".json", ".buildings.bin")))
+	var seeds := baked.filter(func(e: Dictionary) -> bool: return e.get("kind", "") == "start_line").map(func(e: Dictionary) -> int: return int(e.seed))
+	if not d.get("rallies", []).is_empty():
+		assert_false(seeds.is_empty(), "re-run tools/bake_buildings.js")
+	for r: Dictionary in d.get("rallies", []):
+		for end in ["start", "finish"]:
+			assert_has(seeds, LevelRallies.variant_for(r.name, end, seeds))
 
 
 func test_crowds_flank_the_line_and_skip_the_start_control() -> void:
@@ -107,19 +141,3 @@ func test_rallies_are_left_out_of_the_bake_key() -> void:
 	f.close()
 	assert_eq(LevelBake.key_of(path), before)
 	DirAccess.remove_absolute(path)
-
-
-func test_collider_keeps_standing_triangles_and_drops_flat_paint() -> void:
-	var model := Node3D.new()
-	var tall := MeshInstance3D.new()
-	tall.mesh = BoxMesh.new()
-	tall.position.y = 1.0
-	model.add_child(tall)
-	var paint := MeshInstance3D.new()
-	paint.mesh = PlaneMesh.new()
-	model.add_child(paint)
-	var body := LevelRallies.collider(model)
-	var shape := (body.get_child(0) as CollisionShape3D).shape as ConcavePolygonShape3D
-	assert_eq(shape.get_faces().size(), tall.mesh.get_faces().size(), "only the box above the road is solid")
-	body.free()
-	model.free()

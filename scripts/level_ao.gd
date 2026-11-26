@@ -1,5 +1,7 @@
 class_name LevelAO
 extends RefCounted
+# Docs: features/level-ao.md — update in the same change as this file.
+# Tests: tests/headless/test_level_ao.gd — extend in the same change.
 # Fake ambient occlusion for the level view: a coarse map of ground darkening round trees, buildings and log piles, read by level_ground.gdshader.
 
 var size := 600.0

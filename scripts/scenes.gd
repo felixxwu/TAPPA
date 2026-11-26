@@ -87,7 +87,16 @@ static func change_to(tree: SceneTree, path: String, cover_title := "") -> void:
 		if not cover_title.is_empty():
 			cover.pin_title(cover_title)
 		tree.root.add_child(cover)
-	tree.change_scene_to_file(path)
+	if ResourceLoader.load_threaded_request(path) != OK:
+		tree.change_scene_to_file(path)
+		return
+	while ResourceLoader.load_threaded_get_status(path) == ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+		await tree.process_frame
+	var scene := ResourceLoader.load_threaded_get(path) as PackedScene
+	if scene:
+		tree.change_scene_to_packed(scene)
+	else:
+		tree.change_scene_to_file(path)
 
 
 # A load cut short (a cloud download rebooting the world) leaves its cover on the root. The new

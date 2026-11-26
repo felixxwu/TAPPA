@@ -32,7 +32,7 @@ come from moving *our* work to `WorkerThreadPool`, which needs threads first:
 ### Phase 0 — does a threaded build work at all for us? (spike, nothing ships)
 
 1. Export a second preset, `Web (threads)`, with `variant/thread_support=true`; leave the shipping `Web` preset alone.
-2. `serve_web.sh` sends `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`
+2. `start_web.sh` sends `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`
    (`tools/bench_collector.py` serves the files; add the headers there, behind a flag).
 3. Run the level replay on the Pixel 8 and the Mac (same paired baseline method as the sweeps), threads vs no threads.
 4. Check, by hand: **Google sign-in** (`scripts/cloud/google_sign_in.gd` → `_sign_in_web`; it relies on the popup

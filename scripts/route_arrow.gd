@@ -41,6 +41,12 @@ func clear_warm_up() -> void:
 
 
 func _process(dt: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(dt)
+	PerfLog.track(&"route_arrow", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(dt: float) -> void:
 	if _warming:
 		return
 	_t += dt

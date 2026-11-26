@@ -33,6 +33,7 @@ var _spectators: LevelSpectators
 var rallies: LevelRallies
 var garage: MenuPage
 var deliveries_page: MenuPage
+static var load_ms: Dictionary = {}  # how long each load stage took, in ms; the benchmark report carries it
 static var _next_pose: Variant = null  # where the car stands after a car-change reload
 static var owned: Dictionary = {}  # the level's car and the parts bought for it, kept across reloads
 const TUTOR := "res://textures/npc/tutorial.webp"  # the tutorial guy's portrait, from tools/render_npc.sh tutorial 7578
@@ -65,6 +66,7 @@ var _orbit_t0 := 0
 var _orbit_prev: Camera3D  # the driving camera to hand back to
 var _menu_point := Vector2.INF  # the teleport point or shop whose menu is open: leaving it puts the car there, facing its way
 var _first_buy_at := -1  # the start shop, once a new player has bought their first car there and is still shopping
+var _buildings: LevelBuildings  # the level's houses and shops, one merged mesh
 var shop_cars: Dictionary = {}  # car id -> the display cars parked at the shops that sell it
 var _shop_return := Callable()  # what a rest-stop page opened from a shop does on closing, instead of reopening the service menu
 var _store_dirty := false  # a part was bought, so the car is re-fielded when the shop closes
@@ -103,8 +105,10 @@ func _ready() -> void:
 		GraphicsSettings.apply(Config.data)
 	var path := level_path if not level_path.is_empty() else Config.data.level_path
 	var t_parse := Time.get_ticks_msec()
+	load_ms = {"engine_to_ready": t_parse}
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
-	print("level view: parse %d ms" % (Time.get_ticks_msec() - t_parse))
+	load_ms["parse"] = Time.get_ticks_msec() - t_parse
+	print("level view: parse %d ms" % load_ms.parse)
 	if not parsed is Dictionary:
 		push_error("LevelView: couldn't read %s" % path)
 		# Say so on the loading cover rather than leave it spinning forever (an export that left
@@ -123,7 +127,8 @@ func _ready() -> void:
 	parsed = null  # the raw save is large and this function waits below
 	if _bake == null:
 		return
-	print("level view: %s built in %d ms" % [path, Time.get_ticks_msec() - t0])
+	load_ms["built"] = Time.get_ticks_msec() - t0
+	print("level view: %s built in %d ms" % [path, load_ms.built])
 	var env := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if env != null:
 		env.environment.fog_depth_end = Config.data.level_fog_end_m
@@ -181,7 +186,8 @@ func _ready() -> void:
 		_streamer.brush = car
 		var t_fill := Time.get_ticks_msec()
 		await _streamer.prefill_async()
-		print("level view: prefill %d ms" % (Time.get_ticks_msec() - t_fill))
+		load_ms["prefill"] = Time.get_ticks_msec() - t_fill
+		print("level view: prefill %d ms" % load_ms.prefill)
 	beacons = TeleportBeacons.new()
 	beacons.setup(teleport_points(), height_at)
 	add_child(beacons)
@@ -190,11 +196,12 @@ func _ready() -> void:
 	add_child(shop_beacons)
 	nav_beam = _nav_beam()
 	add_child(nav_beam)
-	for sh: Dictionary in level.get("shops", []):
-		if sh.get("model") is Dictionary:
-			var body := shop_model(sh["model"], height_at)
-			add_child(body)
-			park_stock(body, sh)
+	var shop_list: Array = level.get("shops", [])
+	for i in shop_list.size():
+		var built: Dictionary = _buildings.shops.get(i, {})
+		if not built.is_empty():
+			shop_list[i]["model"]["box"] = built.box
+			park_stock(built.body, shop_list[i])
 	var arrow := RouteArrow.new()
 	arrow.view = self
 	add_child(arrow)
@@ -225,7 +232,9 @@ func _ready() -> void:
 	if not Platform.is_headless():  # nothing renders, so there is nothing to compile
 		var t_warm := Time.get_ticks_msec()
 		await _warm_up(car)
-		print("level view: warm-up %d ms" % (Time.get_ticks_msec() - t_warm))
+		load_ms["warm_up"] = Time.get_ticks_msec() - t_warm
+		print("level view: warm-up %d ms" % load_ms.warm_up)
+	load_ms["ready_at"] = Time.get_ticks_msec()  # engine-clock time the level finished loading; minus engine_to_ready is the whole load
 	WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	if not has_car():
 		_start_without_car(car)
@@ -424,31 +433,6 @@ static func delivery_info_on(level: Dictionary, roads: LevelData, t: Dictionary,
 	return {"cargo": cargo, "kg": kg, "km": km, "pay": pay}
 
 
-# A shop's building from tools/shop_lab.html (a .glb, its front facing the road), standing on the ground at its origin, with
-# a box collider over the building itself; the yard, fence and props have none.
-static func shop_model(m: Dictionary, ground: Callable) -> StaticBody3D:
-	var body := StaticBody3D.new()
-	body.position = Vector3(float(m["x"]), float(ground.call(float(m["x"]), float(m["z"]))), float(m["z"]))
-	body.rotation.y = float(m.get("yaw", 0.0))
-	var path := String(m.get("path", ""))
-	var scene := load(path) as PackedScene if ResourceLoader.exists(path) else null
-	if scene != null:
-		var model := scene.instantiate()
-		_shade_base(model)
-		body.add_child(model)
-	for t: Dictionary in m.get("texts", []):
-		body.add_child(_shop_text(t))
-	var b: Array = m.get("box", [])
-	if b.size() == 5:
-		var shape := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = Vector3(b[1] - b[0], b[4], b[3] - b[2])
-		shape.shape = box
-		shape.position = Vector3((b[0] + b[1]) * 0.5, b[4] * 0.5, (b[2] + b[3]) * 0.5)
-		body.add_child(shape)
-	return body
-
-
 # Parks a frozen display copy of every car the shop sells, and the player doesn't own, in rows on the yard in front of it.
 func park_stock(body: Node3D, sh: Dictionary) -> void:
 	var have := owned_cars()
@@ -472,6 +456,7 @@ func park_stock(body: Node3D, sh: Dictionary) -> void:
 		var car := cars[i]
 		car.position = Vector3(spots[i].x, 0.0, spots[i].y)
 		car.position.y -= CarCardPreview._visible_mesh_aabb(car, body).position.y  # wheels on the ground
+		MeshUtil.merge_static(car)
 		if not shop_cars.has(ids[i]):
 			shop_cars[ids[i]] = []
 		shop_cars[ids[i]].append(car)
@@ -502,76 +487,6 @@ static func yard_layout(sizes: Array[Vector2], box: Array) -> Array[Vector2]:
 		z += depth + 1.8
 		i += row.size()
 	return out
-
-
-# One piece of a shop's text (its sign, a price board, a bay's car name) drawn in the game's font, so the model needs no
-# images: `p` and `q` place it in the model (facing its +z), `w` x `h` metres is the room it fits in.
-static func _shop_text(t: Dictionary) -> Label3D:
-	var l := Label3D.new()
-	l.text = String(t.get("text", ""))
-	l.font = load(UITheme.FONT_PATH)
-	l.font_size = UITheme.FONT_SIZE * 2
-	l.outline_size = 0
-	l.modulate = Color(String(t.get("color", "#ffffff")))
-	l.shaded = false
-	l.double_sided = false
-	l.alpha_cut = Label3D.ALPHA_CUT_DISCARD
-	l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	var p: Array = t.get("p", [0, 0, 0])
-	var q: Array = t.get("q", [0, 0, 0, 1])
-	l.transform = Transform3D(Basis(Quaternion(q[0], q[1], q[2], q[3])), Vector3(p[0], p[1], p[2]))
-	var em := l.font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.font_size)  # the text's size in font pixels
-	l.pixel_size = minf(float(t.get("h", 0.2)) / maxf(em.y, 1.0), float(t.get("w", 1.0)) / maxf(em.x, 1.0))
-	return l
-
-
-# Darkens a model toward the ground the way the level's buildings are (LevelBuildings._building): baked into vertex colours.
-static func _shade_base(root: Node) -> void:
-	var dark: float = Config.data.level_ao_building_base
-	var reach: float = maxf(Config.data.level_ao_building_base_height_m, 0.01)
-	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
-		if mi.mesh == null:
-			continue
-		var xf := Transform3D.IDENTITY  # the mesh's place in the model, so heights are above the model's ground
-		var n: Node = mi
-		while n != root and n is Node3D:
-			xf = (n as Node3D).transform * xf
-			n = n.get_parent()
-		var out := ArrayMesh.new()
-		for si in mi.mesh.get_surface_count():
-			var arrays := mi.mesh.surface_get_arrays(si)
-			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-			var cols := PackedColorArray(arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else [])
-			if cols.size() != verts.size():
-				cols.resize(verts.size())
-				cols.fill(Color.WHITE)
-			for i in verts.size():
-				var shade := 1.0 - dark * (1.0 - smoothstep(0.0, reach, (xf * verts[i]).y))
-				cols[i] = Color(cols[i].r * shade, cols[i].g * shade, cols[i].b * shade, cols[i].a)
-			arrays[Mesh.ARRAY_COLOR] = cols
-			out.add_surface_from_arrays(mi.mesh.surface_get_primitive_type(si), arrays)
-			var mat := mi.get_active_material(si)
-			if mat is BaseMaterial3D:
-				mat = _prop_material(mat)
-			out.surface_set_material(si, mat)
-		mi.mesh = out
-		for si in out.get_surface_count():
-			mi.set_surface_override_material(si, null)
-
-
-# The shop model's imported material as a level_prop one: same texture, colour, scissor and culling, now lit by the weather and headlights.
-static func _prop_material(src: BaseMaterial3D) -> ShaderMaterial:
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/level_prop.gdshader" if src.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED else "res://shaders/level_prop_sunlit.gdshader")
-	mat.set_shader_parameter("roughness", src.roughness)
-	mat.set_shader_parameter("metallic", src.metallic)
-	if src.albedo_texture != null:
-		mat.set_shader_parameter("albedo_texture", src.albedo_texture)
-	mat.set_shader_parameter("albedo_color", src.albedo_color)
-	if src.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
-		mat.set_shader_parameter("alpha_scissor", src.alpha_scissor_threshold)
-	mat.set_shader_parameter("backface_cull", src.cull_mode == BaseMaterial3D.CULL_BACK)
-	return mat
 
 
 # A shop building's footprint on the map, for the ground's ambient occlusion: centre, its x axis and half extents.
@@ -1494,6 +1409,12 @@ static var _base: GameConfig  # the untouched grip values the snow blends away f
 # The snow biome's handling follows the ground under the car, as free roam's snow ring does (BiomeDirector.apply_handling):
 # snow grip, deep-snow drag (car.gd feathers it per wheel off the road), and the snow side of the tyre compound rule.
 func _physics_process(dt: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_physics_process(dt)
+	PerfLog.track(&"level_view_physics", Time.get_ticks_usec() - __t)
+
+
+func _timed_physics_process(dt: float) -> void:
 	heal_at_points(dt)
 	if _car != null and _streamer != null:
 		var snow := _streamer.snow_at(_car.global_position.x, _car.global_position.z)
@@ -1535,7 +1456,7 @@ func load_level(d: Dictionary) -> void:
 	level = data.level
 	_spawn_nodes = spawn_override(d.get("roads", []), Config.data.level_spawn)
 	if _bake == null:
-		if not _save_path.is_empty() and not OS.has_feature("web") and not Platform.is_headless():
+		if not _save_path.is_empty() and OS.has_feature("threads") and not Platform.is_headless():
 			var baking := get_tree().get_first_node_in_group("loading_screen") as LoadingScreen
 			if baking == null:
 				baking = LoadingScreen.new()
@@ -1550,7 +1471,9 @@ func load_level(d: Dictionary) -> void:
 			baking.set_step("")
 		else:
 			_bake = LevelBake.load_or_bake(_save_path, data)
-	print("level view: bake load %d ms, decode %d ms" % [t1 - t0, Time.get_ticks_msec() - t1])
+	load_ms["bake_load"] = t1 - t0
+	load_ms["decode"] = Time.get_ticks_msec() - t1
+	print("level view: bake load %d ms, decode %d ms" % [load_ms.bake_load, load_ms.decode])
 	if _bake == null:
 		push_error("LevelView: %s" % LevelBake.last_error)
 		var cover := LoadingScreen.new()
@@ -1563,11 +1486,12 @@ func load_level(d: Dictionary) -> void:
 	var t_trees := Time.get_ticks_msec()
 	_trees.setup(_bake)
 	add_child(_trees)
-	print("level view: tree setup %d ms" % (Time.get_ticks_msec() - t_trees))
-	var buildings := LevelBuildings.new()
-	buildings.name = "Buildings"
-	add_child(buildings)
-	buildings.setup(_save_path, height_at)
+	load_ms["tree_setup"] = Time.get_ticks_msec() - t_trees
+	print("level view: tree setup %d ms" % load_ms.tree_setup)
+	_buildings = LevelBuildings.new()
+	_buildings.name = "Buildings"
+	add_child(_buildings)
+	_buildings.setup(_save_path, height_at)
 	var fences := LevelFences.new()
 	fences.name = "Fences"
 	add_child(fences)
@@ -1575,12 +1499,8 @@ func load_level(d: Dictionary) -> void:
 	var ao := LevelAO.new(_bake.size, _bake.frame_n)
 	var cfg: GameConfig = Config.data
 	ao.stamp_trees(_bake.tree_xf, cfg.level_ao_tree_radius_scale)
-	for b: Dictionary in buildings.boxes:
+	for b: Dictionary in _buildings.boxes:
 		ao.stamp_box(b.centre, b.axis, b.half, cfg.level_ao_building_reach_m, cfg.level_ao_building_ground)
-	for sh: Dictionary in d.get("shops", []):
-		var sb := shop_box(sh["model"]) if sh.get("model") is Dictionary else {}
-		if not sb.is_empty():
-			ao.stamp_box(sb.centre, sb.axis, sb.half, cfg.level_ao_building_reach_m, cfg.level_ao_building_ground)
 	for i in d.get("logPiles", []).size():
 		var pile := _log_pile(d["logPiles"][i], i)
 		add_child(pile)
@@ -1591,11 +1511,11 @@ func load_level(d: Dictionary) -> void:
 	_spectators = LevelSpectators.new()
 	_spectators.name = "Spectators"
 	add_child(_spectators)
-	_spectators.setup(d.get("spectators", []), self, _bake, buildings)
+	_spectators.setup(d.get("spectators", []), self, _bake, _buildings)
 	rallies = LevelRallies.new()
 	rallies.name = "Rallies"
 	add_child(rallies)
-	rallies.setup(d.get("rallies", []), height_at, _spectators)
+	rallies.setup(d.get("rallies", []), height_at, _spectators, _buildings)
 
 # A roadside timber pile from the save's `logPiles` ({x, z}), sawn ends facing the nearest road, kept clear of its surface.
 func _log_pile(p: Dictionary, seed: int) -> StaticBody3D:
@@ -1634,6 +1554,12 @@ func _build_streamer() -> void:
 
 
 func _process(_dt: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(_dt)
+	PerfLog.track(&"level_view", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(_dt: float) -> void:
 	_check_delivery()
 	_place_nav_beam()
 	if delivery_label != null:

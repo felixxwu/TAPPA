@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Static file server for the web build + a POST sink for benchmark reports.
 
-Used by serve_web.sh so the LAN profiling loop is zero-config: the game is served
+Used by start_web.sh so the LAN profiling loop is zero-config: the game is served
 from here, and a benchmark run POSTs its results JSON back to the SAME origin at
 `/bench` (features/benchmark.md -> "Feedback loop"). Each report is written to
 the results directory as `<utc-timestamp>-<label>.json` and its headline printed
@@ -12,7 +12,7 @@ to the terminal, so Claude can read build/bench-results/*.json and iterate.
 If a cert file (containing both the certificate and its private key) is given,
 the server runs over HTTPS. Godot 4.6 web exports refuse to boot outside a
 "secure context", which a plain-HTTP LAN IP is not — so serving the build to a
-phone over the LAN requires HTTPS (see serve_web.sh).
+phone over the LAN requires HTTPS (see start_web.sh).
 """
 import http.server
 import json
@@ -75,6 +75,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == "/build-id":
+            # Changes whenever start_web.sh's watcher re-exports the build; the page uses it only to retitle its tab.
+            pck = Path(WEB_DIR) / "index.pck"
+            body = str(pck.stat().st_mtime_ns if pck.exists() else 0).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.rstrip("/") == "/reload-token":
             body = f"{_START}-{_reload_counter}".encode()
             self.send_response(200)
@@ -120,6 +130,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         # Discourage the browser from caching a stale build during rapid iteration.
         self.send_header("Cache-Control", "no-store")
+        # The web build is threaded, and browsers only allow threads on a cross-origin isolated page.
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         super().end_headers()
 
 

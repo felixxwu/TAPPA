@@ -37,3 +37,8 @@ func test_toggle_shows_and_hides_the_readout() -> void:
 
 func test_frame_line_averages_the_frames_and_reports_the_slowest() -> void:
 	assert_eq(LevelStats.frame_line(PackedFloat32Array([10.0, 10.0, 40.0])), "50 fps  avg 20.0 ms  worst 40.0 ms")
+
+
+func test_threads_line_says_whether_threads_are_on() -> void:
+	assert_eq(LevelStats.threads_line(false, 3), "threads off")
+	assert_string_contains(LevelStats.threads_line(true, 3), "3")

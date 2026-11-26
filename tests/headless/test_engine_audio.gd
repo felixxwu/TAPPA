@@ -930,3 +930,84 @@ func test_inaudible_only_at_the_attenuation_floor() -> void:
 	assert_true(EngineAudioScript.is_audio_inaudible(far, floor_db), "clamped at the floor")
 	assert_false(EngineAudioScript.is_audio_inaudible(near, floor_db), "at the listener")
 	assert_false(EngineAudioScript.is_audio_inaudible(mid, floor_db), "audible mid-range")
+
+
+# --- EngineAudioFeed: main-thread snapshot handed to the (optionally threaded) fill ---
+
+func _feed_args(bov := false, trig := false, empty := false) -> Array:
+	return [3000.0, 0.7, false, false, false, 0.4, 0.5, bov, false, true, trig, empty, 12.0]
+
+
+func test_feed_matches_direct_synth_fill() -> void:
+	var a := _make_synth()
+	var b := _make_synth()
+	var feed := EngineAudioFeed.new(b)
+	var got := PackedVector2Array()
+	var want := PackedVector2Array()
+	got.resize(256)
+	want.resize(256)
+	for i in 4:
+		var bov := i == 1
+		var trig := i == 2
+		feed.callv("publish", _feed_args(bov, trig, false))
+		feed.render(got, 256)
+		a.fill(want, 3000.0, 0.7, false, 256, false, false, 0.4, 0.5, bov, false, true, trig, false, 12.0)
+		assert_eq(got, want, "block %d identical to a direct fill" % i)
+
+
+func test_feed_cues_fire_once_across_renders() -> void:
+	var feed := EngineAudioFeed.new(_make_synth())
+	var buf := PackedVector2Array()
+	buf.resize(64)
+	feed.callv("publish", _feed_args(true, true, true))
+	assert_eq(feed._bov_seq, feed._bov_seen + 1, "pending before render")
+	feed.render(buf, 64)
+	assert_eq(feed._bov_seq, feed._bov_seen, "consumed by first render")
+	assert_eq(feed._trigger_seq, feed._trigger_seen)
+	assert_eq(feed._empty_seq, feed._empty_seen)
+	feed.render(buf, 64)
+	assert_eq(feed._bov_seq, feed._bov_seen, "second render does not re-fire")
+	feed.callv("publish", _feed_args(true, false, false))
+	feed.callv("publish", _feed_args(true, false, false))
+	assert_eq(feed._bov_seq - feed._bov_seen, 2, "two publishes before a render are both counted")
+
+
+func test_feed_silent_renders_zeros_and_keeps_cues_pending() -> void:
+	var feed := EngineAudioFeed.new(_make_synth())
+	var buf := PackedVector2Array()
+	buf.resize(32)
+	buf.fill(Vector2.ONE)
+	feed.callv("publish", _feed_args(true, false, false))
+	feed.set_silent(true)
+	feed.render(buf, 32)
+	assert_eq(buf[0], Vector2.ZERO)
+	assert_ne(feed._bov_seq, feed._bov_seen, "cue not eaten while silent")
+
+
+func test_feed_thread_fills_stops_and_restarts() -> void:
+	var feed := EngineAudioFeed.new(_make_synth())
+	feed.callv("publish", _feed_args())
+	var state := {"pushed": 0}
+	var mutex := Mutex.new()
+	var push := func(b: PackedVector2Array) -> void:
+		mutex.lock()
+		state["pushed"] += b.size()
+		mutex.unlock()
+	var avail := func() -> int: return 128
+	for round in 2:
+		feed.start(avail, push)
+		assert_true(feed.is_running())
+		var waited := 0
+		while waited < 2000:
+			mutex.lock()
+			var p: int = state["pushed"]
+			mutex.unlock()
+			if p > 0:
+				break
+			OS.delay_msec(5)
+			waited += 5
+		feed.stop()
+		assert_false(feed.is_running())
+		assert_gt(state["pushed"], 0, "worker pushed frames (round %d)" % round)
+		state["pushed"] = 0
+	feed.stop()

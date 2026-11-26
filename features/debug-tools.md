@@ -137,7 +137,8 @@ actually runs in `main.tscn` — the root's 3D is disabled there). Toggled with
 **Hafren level stats** — `scripts/level_stats.gd` (`class_name LevelStats`), added by
 `LevelView._ready` as `perf_stats` and toggled by P in `LevelView._unhandled_input` (all builds).
 Shows fps / frame ms, the frame's total triangles, draw calls and objects (`RenderingServer`
-rendering info), then trees and ground cover: `LevelStats.tally` walks the `Trees` and
+rendering info), whether the engine got threads (`OS.has_feature("threads")`, the check that a web
+build really runs threaded) with how many terrain chunks are building on workers, then trees and ground cover: `LevelStats.tally` walks the `Trees` and
 `Ground/Cover` nodes' MultiMeshes and counts instances and triangles within each one's
 `visibility_range_end` of the camera (frustum culling not subtracted), plus trees packed
 (`LevelTrees.drawn_count`) and cover tiles built.

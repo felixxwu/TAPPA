@@ -213,3 +213,50 @@ func test_more_species_than_one_draw_holds_split_into_more_multimeshes() -> void
 	var t := _trees.tile(_bake.tree_tile_at(_idx(0.0, 50.0)))
 	assert_eq(t.mmis.size(), 2)
 	assert_eq(_trees.drawn_count(), LevelTrees.KINDS_PER_DRAW + 1, "every tree still drawn")
+
+
+func _buffers() -> Array:
+	var out: Array = []
+	for i in _bake.tree_tile_first.size() - 1:
+		var t := _trees.tile(i)
+		if t != null:
+			for mmi in t.mmis:
+				out.append(mmi.multimesh.buffer)
+				out.append(mmi.multimesh.visible_instance_count)
+	return out
+
+
+func _drawn_far_from_car(threaded: bool) -> Array:
+	Config.data.threaded_tree_build = threaded
+	_make(_near_trees())
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(-290.0, 0.0, -290.0))
+	var dispatched := _trees._inflight.size()
+	_trees.settle()
+	assert_eq(_trees._inflight.size(), 0, "settle collects everything")
+	var out := _buffers()
+	out.append(dispatched)
+	_trees.free()
+	return out
+
+
+func test_a_tile_packed_on_a_worker_matches_one_packed_on_the_main_thread() -> void:
+	var saved: bool = Config.data.threaded_tree_build
+	var main := _drawn_far_from_car(false)
+	var wide := _drawn_far_from_car(true)
+	Config.data.threaded_tree_build = saved
+	assert_eq(main.back(), 0, "toggle off dispatches nothing")
+	main.pop_back()
+	wide.pop_back()
+	assert_gt(main.size(), 0)
+	assert_eq(wide, main)
+
+
+func test_freeing_trees_with_packs_in_flight_is_safe() -> void:
+	var saved: bool = Config.data.threaded_tree_build
+	Config.data.threaded_tree_build = true
+	_make(_near_trees())
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(-290.0, 0.0, -290.0))
+	_trees.get_parent().remove_child(_trees)
+	_trees.free()
+	Config.data.threaded_tree_build = saved
+	pass_test("freed with tasks pending")

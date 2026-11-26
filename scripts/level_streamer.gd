@@ -1,5 +1,7 @@
 class_name LevelStreamer
 extends TerrainStreamer
+# Docs: features/terrain.md — update in the same change as this file.
+# Tests: tests/headless/test_level_streamer.gd — extend in the same change.
 # Streams a saved level's ground (baked heights, 1.5 m near mesh, collision) through the free-roam streamer's scheduler, with no island under it.
 
 const SUN := Vector3(-1.0, 1.4, 0.6)
@@ -41,6 +43,7 @@ func _skirt_uv2(uv2: Vector2) -> Vector2:
 
 
 func setup(p_data: LevelData, p_bake: LevelBake, p_material: Material) -> void:
+	ground_casts_shadow = false  # the ground barely shadows itself in this look, and it was a second draw call per chunk
 	data = p_data
 	bake = p_bake
 	ground_material = p_material
@@ -54,6 +57,7 @@ func setup(p_data: LevelData, p_bake: LevelBake, p_material: Material) -> void:
 	(p_material as ShaderMaterial).set_shader_parameter("snow_depth_m", Config.data.snow_visual_depth_m)
 	(p_material as ShaderMaterial).set_shader_parameter("snow_road_lighten", Config.data.level_snow_road_lighten)
 	bake.apply_to(p_material as ShaderMaterial)
+	bake.road_nearest(0.0, 0.0)  # builds the road index now, not racing on a worker
 	cover = GroundCover.new()
 	cover.name = "Cover"
 	# The baked height, not height_at: a cover tile often builds before the near mesh, and the coarse mid/far grids smooth over road cuttings.
@@ -81,17 +85,26 @@ func _ready() -> void:
 # The ground first, then every cover tile in reach, so the spawn shows cover from its first frame.
 func prefill_async() -> void:
 	await super()
-	while focus != null and not cover.missing(_focus_xz()).is_empty():
-		cover.stream(_focus_xz(), Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0), _brush())
+	cover.max_inflight = OS.get_processor_count()
+	while focus != null and (not cover.missing(_focus_xz()).is_empty() or cover.pending() > 0):
+		var deadline := Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0)
+		cover.stream(_focus_xz(), deadline, _brush())
+		while cover.pending() > 0 and Time.get_ticks_usec() < deadline:
+			OS.delay_usec(200)
+			cover.stream(_focus_xz(), deadline, _brush())
 		await get_tree().process_frame
+	cover.max_inflight = GroundCover.MAX_INFLIGHT
 
 
 # Cover tiles are built from whatever the frame budget has left after the ground queue.
 func _process(delta: float) -> void:
 	var start := Time.get_ticks_usec()
 	super(delta)
+	var mid := Time.get_ticks_usec()
+	PerfLog.track(&"terrain_streamer", mid - start)
 	if focus != null:
 		cover.stream(_focus_xz(), start + budget_us(delta), _brush())
+	PerfLog.track(&"ground_cover", Time.get_ticks_usec() - mid)
 
 
 func _brush() -> Node3D:
@@ -110,8 +123,13 @@ func _prep_samples(_job: ChunkJob) -> void:
 	pass
 
 
-func _begin_pack(_job: ChunkJob) -> void:
-	pass
+func _begin_pack(job: ChunkJob) -> void:
+	job.ao_bush = Config.data.level_ao_bush_ground
+	job.bank_m = Config.data.snow_bank_width_m
+
+
+func _can_thread_build() -> bool:
+	return true
 
 
 func _sample(_job: ChunkJob, x: float, z: float, _vi: int) -> float:
@@ -166,11 +184,11 @@ func _pack_vertex(job: ChunkJob, i: int, px: float, pz: float, normal: Vector3) 
 	var tint := GroundCover.ground_multiplier(_cover, int(bake.size), _cover_tints, px, pz)
 	# UV is (snow, lift): how white the ground is drawn, and how much of the snow depth it is drawn raised off the road.
 	var snow := snow_at(px, pz)
-	light *= lerpf(GroundCover.bush_shade(_cover, int(bake.size), _bush_ids, px, pz, Config.data.level_ao_bush_ground), 1.0, snow)  # snow covers the bushes' shade
+	light *= lerpf(GroundCover.bush_shade(_cover, int(bake.size), _bush_ids, px, pz, job.ao_bush), 1.0, snow)  # snow covers the bushes' shade
 	var lift := 0.0
 	if snow > 0.0:
 		tint = tint.lerp(Color.WHITE, snow)
 		var near := bake.road_nearest(px, pz)
-		lift = snow * smoothstep(near.z + 0.5, near.z + 0.5 + Config.data.snow_bank_width_m, near.x)
+		lift = snow * smoothstep(near.z + 0.5, near.z + 0.5 + job.bank_m, near.x)
 	job.uvs[i] = Vector2(snow, lift)
 	job.colors[i] = Color(light * tint.r, light * tint.g, light * tint.b, normal.y)

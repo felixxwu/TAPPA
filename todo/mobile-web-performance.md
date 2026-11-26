@@ -207,7 +207,7 @@ picking.
 **Threads — narrowed claim.** `grep` for `Thread` / `WorkerThreadPool` / `Mutex` /
 `Semaphore` / `load_threaded` across `scripts/` and `tools/` returns **zero** hits (only
 `addons/gut/`, excluded from every export). `variant/thread_support = false` is correct
-and `serve_web.sh`'s "no SAB, no COOP/COEP needed" note is correct.
+and `start_web.sh`'s "no SAB, no COOP/COEP needed" note is correct.
 
 > **This only clears *user* threading code.** It does **not** clear engine-internal async
 > APIs that silently fall back to the main loop when threads are unavailable — and 2.5 is

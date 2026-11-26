@@ -49,6 +49,40 @@ changed, which seams not to work around, and where the decision record
   direction changes. `todo/2026-10-19-free-roam-pivot.md` is the settled decision
   record and wins over `gameplay.md` on any disagreement.
 
+## Draw calls (web is draw-call bound)
+
+- **Every visible MeshInstance3D / MultiMeshInstance3D costs a draw call per surface,
+  and another per surface if it casts a shadow.** WebGL can only issue them from the
+  main thread, so they — not scripts — set the web frame rate. In November 2026 the
+  Hafren replay hit 3,100 draw calls and 70 ms frames from things that each looked
+  harmless: shops of 300 separate meshes, a 3-mesh node per teleport beacon, a
+  MultiMesh per crowd group.
+- When adding anything drawn more than once or made of parts: merge static parts into
+  one mesh with one material (vertex colours for colour, the shared atlas for
+  textures), draw repeated things from one MultiMesh shared across every copy, give
+  far things a `visibility_range_end`, and turn shadows off for anything flat,
+  floating, tiny or self-shadowing (`cast_shadow = SHADOW_CASTING_SETTING_OFF`).
+  Never ship a node-per-instance or mesh-per-part design for something that repeats.
+- **Check it:** run the web replay benchmark (`./start_web.sh`, open
+  `?replay=1&full=1`; `features/benchmark.md`). Its report's `draw_breakdown` lists
+  the on-screen meshes per node at the draw-call peak, and `frames[*].scripts_ms`
+  attributes each slow frame. A change that adds draw calls at the peak needs a reason.
+
+## Procedurally generated models (labs)
+
+- **A lab that generates models (`tools/*_lab.html`) must not ship them as exported
+  `.glb` files.** Put the generator in a shared module under `tools/` (like
+  `tools/buildings.js`, `tools/shops.js`) that the lab page AND the bake script both
+  load, and have `tools/bake_buildings.js` generate the model from its seed into the
+  level's `.buildings.bin`: one material, the shared atlas
+  (`tools/levels/buildings_atlas.png`), colour in vertex colours, see-through parts as
+  alpha-cut atlas cells. `LevelBuildings` then draws it in the merged mesh (or, if it
+  must show and hide at runtime, as its own single-surface mesh with the same
+  material). Why: a `GLTFExporter` export turns every part into its own mesh and every
+  colour into its own material — the shops were 240–390 meshes and ~100 materials
+  each, about 3,300 draw calls, the game's worst frame-time spikes on web. See
+  `tools/shops.js` / `tools/start_lines.js` and `features/shop-lab.md` for the pattern.
+
 ## UI text
 
 - **Jersey 10 (the game's font) is only ever drawn at 18 px or an exact multiple
@@ -229,6 +263,11 @@ changed, which seams not to work around, and where the decision record
   unavoidable (external state the harness can't track), use ONE loop whose
   condition matches only a true terminal marker (`TESTS PASSED|TESTS FAILED`),
   and never a second watcher for the same task.
+- **Fix every failing test you see, including ones that were already failing
+  before your change.** The user is the only person working on this project, so a
+  red test is never "someone else's" to leave alone — "pre-existing" is not a reason
+  to skip it. Fix it in the same piece of work (by the rules below: fix the code
+  unless the test's expectation is what should change) and say what you fixed.
 - If an existing test breaks, treat the NEW CHANGES as the prime suspect, not
   the test. The tests encode agreed behavior (e.g. W drives the car forward,
   reset returns to start), so a previously-green test failing usually means

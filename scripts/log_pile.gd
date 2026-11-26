@@ -1,5 +1,7 @@
 class_name LogPile
 extends RefCounted
+# Docs: features/buildings.md — update in the same change as this file.
+# Tests: tests/headless/test_log_pile.gd — extend in the same change.
 # Procedural roadside timber piles (felled, cut logs stacked by a forestry track), built
 # as one vertex-coloured mesh so a pile is a single draw call wherever it is placed.
 # Tune and preview them in log_pile_lab.tscn.

@@ -20,7 +20,7 @@ const SCHEMA := "rally-bench/1"
 #   timestamp — an ISO-ish string stamped by the caller (Time.get_datetime_*)
 #   label     — short run identifier (build version + disabled toggles)
 static func build(stats: Dictionary, scripts: Dictionary, device: Dictionary,
-		timestamp: String, label: String) -> Dictionary:
+		timestamp: String, label: String, load_ms: Dictionary = {}) -> Dictionary:
 	return {
 		"schema": SCHEMA,
 		"timestamp": timestamp,
@@ -29,6 +29,7 @@ static func build(stats: Dictionary, scripts: Dictionary, device: Dictionary,
 		"disabled_toggles": stats.get("disabled", []),
 		"stats": stats,
 		"scripts": scripts,
+		"load_ms": load_ms,
 	}
 
 

@@ -289,3 +289,16 @@ func test_shops_not_in_bake_key() -> void:
 	var a := LevelBake.key_of(path)
 	write.call([{"x": 1, "z": 2, "name": "A shop", "stock": [{"part": "turbo", "price": 100}]}])
 	assert_eq(LevelBake.key_of(path), a)
+
+
+func test_decoding_a_row_off_the_shared_cache_matches_the_cached_answer() -> void:
+	var rows := []
+	for r in LevelBake.VIS_KEY * 2 + 5:
+		rows.append([r % 7, 10 + r % 3, 20 + r])
+	var b := _tree_bake()
+	b.set_visibility(4, rows)
+	for r in rows.size():
+		var fresh := b.decoded_row(r)
+		assert_eq(fresh, b.visible_in(r, 0, 1 << 30), "row %d from its keyframe" % r)
+		if r + 1 < rows.size():
+			assert_eq(b.decoded_row(r + 1, r, fresh), b.visible_in(r + 1, 0, 1 << 30), "row %d stepped on from %d" % [r + 1, r])

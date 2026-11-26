@@ -816,3 +816,8 @@ no region ships them yet.
 
 `terrain_layer{1,2,3}_{wavelength,amplitude}`, `terrain_tile_per_meter`. See
 [configuration.md](configuration.md).
+
+
+## Threaded chunk builds (level streamer)
+
+`TerrainStreamer._run_queue` hands a job's HEIGHTS and ARRAYS stages to `WorkerThreadPool` (`_dispatch_build` -> `_build_job`, which runs the budget-free `_compute_heights` / `_compute_arrays` / `_finish_arrays` that the budgeted `_heights` / `_arrays` also use) when `_threads_ok()`: the platform has `threads`, `_can_thread_build()` (true only in `LevelStreamer`; the free-roam `_sample` writes shared `terrain.last_road_*`) and `GameConfig.threaded_chunk_build`. At most `chunk_build_tasks_web` / `chunk_build_tasks_desktop` jobs are in flight (`_inflight`); the queue skips them, and `_poll_builds` collects each finished one exactly once (`_collect_build`) into UPLOAD, or drops it if `cancelled` (the worker checks that per row). Everything the worker reads is captured on the `ChunkJob` at dispatch (`road_slack`, `paint_reach`, `ao_bush`, `bank_m`, `stitch`), so `_pack_vertex` touches no streamer scratch; `LevelStreamer.setup` warms the lazy road index so workers only read it. `_rush_collision` waits on its job if it is in flight, `prefill*` loop until the queue and `_inflight` are empty, and `_exit_tree` cancels and drains every task. With threads off the budgeted main-thread path runs exactly as before. Tests: `test_level_streamer.gd`.

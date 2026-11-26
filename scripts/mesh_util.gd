@@ -68,3 +68,36 @@ static func _find_mesh_instance(n: Node) -> MeshInstance3D:
 		if found != null:
 			return found
 	return null
+
+
+# Merges every visible MeshInstance3D under `root` into one mesh (a surface per material) on a new child, freeing the
+# originals: for props whose parts never move, so they cost a draw call per material instead of one per part.
+static func merge_static(root: Node3D) -> MeshInstance3D:
+	var tools := {}
+	var parts: Array[MeshInstance3D] = []
+	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null or not mi.is_visible_in_tree():
+			continue
+		var xf := root.global_transform.affine_inverse() * mi.global_transform
+		for si in mi.mesh.get_surface_count():
+			if mi.mesh is ArrayMesh and (mi.mesh as ArrayMesh).surface_get_primitive_type(si) != Mesh.PRIMITIVE_TRIANGLES:
+				continue
+			var mat := mi.get_active_material(si)
+			if not tools.has(mat):
+				var st := SurfaceTool.new()
+				st.begin(Mesh.PRIMITIVE_TRIANGLES)
+				tools[mat] = st
+			(tools[mat] as SurfaceTool).append_from(mi.mesh, si, xf)
+		parts.append(mi)
+	var out := ArrayMesh.new()
+	for mat: Material in tools:
+		(tools[mat] as SurfaceTool).commit(out)
+		out.surface_set_material(out.get_surface_count() - 1, mat)
+	for mi in parts:
+		mi.get_parent().remove_child(mi)
+		mi.free()
+	var merged := MeshInstance3D.new()
+	merged.name = "Merged"
+	merged.mesh = out
+	root.add_child(merged)
+	return merged

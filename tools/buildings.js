@@ -7,12 +7,12 @@ const X = V(1, 0, 0), Y = V(0, 1, 0), Z = V(0, 0, 1);
 // The atlas is a stack of horizontal strips, each 16 m wide (wraps in U so walls tile along their length)
 // and 8 m tall (V never wraps, so nothing taller than 8 m may use one face).
 const PPM = 32, STRIP_M = 8, ATLAS_W = 512;
-const STRIPS = ["stone", "render", "clad", "darkwood", "slate", "rust", "bluetin", "detail"];
+const STRIPS = ["stone", "render", "clad", "darkwood", "slate", "rust", "bluetin", "detail", "chain"];
 const STRIP_PX = STRIP_M * PPM, ATLAS_H = STRIPS.length * STRIP_PX;
 // Cut-out pieces in the "detail" strip, in pixels; sizes are metres x PPM.
 const DETAIL = {
   door: [0, 0, 32, 64], doorRed: [36, 0, 32, 64], sash: [72, 0, 32, 38], small: [108, 0, 26, 32],
-  arch: [138, 0, 32, 51], roller: [174, 0, 83, 77], solar: [262, 0, 77, 38], pot: [344, 0, 8, 12],
+  arch: [138, 0, 32, 51], roller: [174, 0, 83, 77], solar: [262, 0, 77, 38], pot: [344, 0, 8, 12], white: [356, 0, 8, 8],
 };
 
 function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -112,10 +112,16 @@ function paintAtlas() {
     for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) rect(x + 2 + i * 12.3, y + 2 + j * 11.5, 11, 10.5, shadeHex("#2a3f78", rnd(0.9, 1.15)));
   });
   at("pot", (x, y, w, h) => rect(x, y, w, h, "#9a5a3a"));
+  at("white", (x, y, w, h) => rect(x, y, w, h, "#ffffff"));
+
+  // Chain-link mesh for shop fences: wires on a transparent strip, an 8 px diamond repeat so it tiles along and up.
+  y0 = top("chain");
+  g.clearRect(0, y0, ATLAS_W, STRIP_PX);
+  for (let x = 0; x < ATLAS_W; x += 8) for (let y = 0; y < STRIP_PX; y += 8) for (let k = 0; k < 8; k++) { rect(x + k, y0 + y + k, 2, 1, "#ffffff"); rect(x + 7 - k, y0 + y + k, 2, 1, "#ffffff"); }
 
   // Fine per-pixel grain so flat colours don't read as plastic.
   const img = g.getImageData(0, 0, ATLAS_W, ATLAS_H), d = img.data;
-  for (let i = 0; i < d.length; i += 4) { const n = (r() - 0.5) * 14; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  for (let i = 0; i < d.length; i += 4) { if (!d[i + 3]) continue; const n = (r() - 0.5) * 14; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
   g.putImageData(img, 0, 0);
   return c;
 }
@@ -257,5 +263,8 @@ const TYPES = {
 // Builds one building as a BufferGeometry, ridge along X, centred on the origin at ground level.
 // size (optional): { L: length along the ridge, W: depth, h: eaves-ish height } in metres, e.g. from a map footprint.
 const build = (type, seed, size = {}) => TYPES[type](rng(seed), size).geometry();
-return { TYPES, build, paintAtlas, ATLAS_W, ATLAS_H, PPM };
+// UV of a point `um`, `vm` metres along a strip (V counts from the bottom of the strip), or of the centre of a detail cell.
+const stripUV = (strip, um, vm) => [um * PPM / ATLAS_W, 1 - (STRIPS.indexOf(strip) * STRIP_PX + STRIP_PX - Math.min(STRIP_M, vm) * PPM) / ATLAS_H];
+const detailUV = key => { const [x, y, w, h] = DETAIL[key]; return [(x + w / 2) / ATLAS_W, 1 - (STRIPS.indexOf("detail") * STRIP_PX + y + h / 2) / ATLAS_H]; };
+return { TYPES, build, paintAtlas, stripUV, detailUV, ATLAS_W, ATLAS_H, PPM };
 })();

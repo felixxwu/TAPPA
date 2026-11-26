@@ -928,7 +928,7 @@ func has_nitrous() -> bool:
 @export var debug_assist_arrow_scale := 0.0001
 ## Where a benchmark run POSTs its results JSON (features/benchmark.md → feedback
 ## loop). Empty = auto: on a web build, POST to "/bench" on the page's own origin
-## (the serve_web.sh collector), so the LAN loop needs no config. On an installed
+## (the start_web.sh collector), so the LAN loop needs no config. On an installed
 ## APK set this to your dev machine, e.g. "http://192.168.1.50:8080/bench".
 @export var bench_report_url := ""
 
@@ -2372,6 +2372,9 @@ func has_nitrous() -> bool:
 ## Changing this changes the generator buffer frame counts — re-check the
 ## benchmark's skip_count() after. See engine_audio.gd's MIX_RATE.
 @export var engine_mix_rate_web_touch := 11025.0
+## Fill the engine generator from a worker thread (where threads exist) so the buffer
+## no longer has to outlast a slow main-thread frame. Off = fill from _process.
+@export var threaded_engine_audio := true
 
 ## Terrain LOD far-cutoff distances (metres), one per level boundary — the
 ## coarsest level draws to the ring edge with no cutoff, so this has (levels - 1)
@@ -3278,6 +3281,17 @@ func spectator_params() -> Dictionary:
 ## How far (m) the ground darkening reaches past a building's or log pile's footprint.
 @export var level_ao_building_reach_m := 3.0
 @export var level_ao_log_reach_m := 1.5
+## Builds chunk heights and vertex arrays on worker threads where the platform has them (level view only).
+@export var threaded_chunk_build := true
+## Most chunk builds in flight at once, on the web build and elsewhere.
+@export var chunk_build_tasks_web := 2
+@export var chunk_build_tasks_desktop := 4
+## Packs the level's tree tiles on worker threads where the platform has them.
+@export var threaded_tree_build := true
+## Steers a crowd's members on worker threads once it has this many (and the platform has threads).
+## Off: on the web build handing each member to the two workers cost ~25 ms a tick against ~1 ms on one thread.
+@export var threaded_spectators := false
+@export var threaded_spectator_min_members := 40
 ## How much darker the ground is under bush cover.
 @export var level_ao_bush_ground := 0.25
 ## The level view's deep-snow drag in its snow biome (free roam's is snow_deep_drag).

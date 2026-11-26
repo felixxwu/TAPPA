@@ -1,5 +1,7 @@
 class_name NpcDialogue
 extends CanvasLayer
+# Docs: features/npc-dialogue.md — update in the same change as this file.
+# Tests: tests/headless/test_npc_dialogue.gd — extend in the same change.
 # A character talking: their portrait leans out over a black box at the bottom of the screen and each page of
 # their lines types out letter by letter. Confirm (or a click/tap) shows the rest of the page, then the next page;
 # after the last page it closes and emits `finished`. It swallows all input while open, so the menu under it waits.

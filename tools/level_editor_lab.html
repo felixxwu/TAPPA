@@ -62,6 +62,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="groundcover_tufts.js"></script>
 <script src="buildings.js"></script>
+<script src="shops.js"></script>
 <script src="spectators.js"></script>
 <script>
 // A hand-editable patch of world: a 2D top-down editor (left) and the same patch rendered in 3D the way the game draws it (right).
@@ -1731,15 +1732,17 @@ const beaconMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.
 const beaconIcon = new THREE.PlaneGeometry(BEACON.icon, BEACON.icon);
 const beaconIconMat = new THREE.MeshBasicMaterial(served ? { map: loader.load("../icons/cards/rest_stop.png", t => { t.magFilter = THREE.NearestFilter; }), alphaTest: 0.5 } : { color: 0xffffff });
 const shopIconMat = new THREE.MeshBasicMaterial(served ? { map: loader.load("../icons/cards/shop.png", t => { t.magFilter = THREE.NearestFilter; }), alphaTest: 0.5 } : { color: 0xffffff });
-// A shop's model (its .glb from the shop lab, the same file the game loads) is fetched once per path, so only when served.
+// A shop's model is built from its seed by tools/shops.js, the same generator the bake uses, cached per model.
 const shopModels = new Map();
-function shopModel(path) {
-  if (!served || !THREE.GLTFLoader) return null;
-  if (!shopModels.has(path)) {
-    shopModels.set(path, null);
-    new THREE.GLTFLoader().load("../" + path.replace("res://", ""), g => { shopModels.set(path, g.scene); treesDirty = true; }, undefined, () => {});
+function shopModel(m) {
+  const key = JSON.stringify([m.seed, m.style, m.pal, m.size, m.sign, m.bunting]);
+  if (m.seed === undefined) return null;
+  if (!shopModels.has(key)) {
+    const root = Shops.build(m.seed, { ...m, noPad: true, noText: true }).root;
+    root.traverse(o => { if (o.isMesh) o.material = new THREE.MeshBasicMaterial({ color: o.material.color, transparent: o.material.transparent, opacity: o.material.opacity, side: THREE.DoubleSide }); });
+    shopModels.set(key, root);
   }
-  return shopModels.get(path);
+  return shopModels.get(key);
 }
 let beacons = [], shopMeshes = [];
 function rebuild3DTeleports() {
@@ -1748,7 +1751,7 @@ function rebuild3DTeleports() {
   beacons = []; shopMeshes = [];
   for (const q of level.shops ?? []) {
     const m = q.model; if (!m || !inWin(m.x, m.z, 40)) continue;
-    const src = shopModel(m.path); if (!src) continue;
+    const src = shopModel(m); if (!src) continue;
     const o = src.clone(); o.position.set(m.x, heightAt(m.x, m.z), m.z); o.rotation.y = m.yaw ?? 0;
     scene.add(o); shopMeshes.push(o);
   }

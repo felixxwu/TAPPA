@@ -1,5 +1,7 @@
 class_name LevelWeather
 extends Node
+# Docs: features/weather.md — update in the same change as this file.
+# Tests: tests/headless/test_level_weather.gd — extend in the same change.
 # Drifts the Hafren level between weather conditions and cross-fades fog, sky and brightness; it writes nothing between fades.
 
 const SWAP_FOG_SWELL := 2.5

@@ -266,10 +266,13 @@ func test_a_found_car_is_not_parked_again_when_the_world_next_loads() -> void:
 
 func test_no_car_is_found_during_the_cold_open() -> void:
 	var scene := await _boot()
+	var was := Config.data.legacy_free_roam_island
+	Config.data.legacy_free_roam_island = true
 	WorldSession.set_cold_open_pending(true)
 	var site := _car_site(scene)
 	_drive_onto(scene, site)
 	WorldSession.set_cold_open_pending(false)
+	Config.data.legacy_free_roam_island = was
 	assert_true((scene.get_node("ParkedCars") as ParkedCars).waiting(site), "it waits for the cold open to end")
 
 

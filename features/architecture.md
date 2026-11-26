@@ -37,6 +37,9 @@ source of truth for scene paths and for **where the front door is**:
   run-scoped kill switch the test pre-run hook arms so no production transition can park a
   live scene under `/root` mid-run. It records the blocked destination, so a test can
   assert where a transition was headed without performing it.
+  Real changes load the scene with `ResourceLoader.load_threaded_request` and wait frame by
+  frame (so the loading cover keeps animating) before `change_scene_to_packed`; a failed
+  threaded load falls back to `change_scene_to_file`.
 
 Tests should compare captured paths against `Scenes.TITLE`, not a literal.
 

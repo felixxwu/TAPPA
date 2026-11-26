@@ -9,6 +9,18 @@ const BUSH := {"shape": "bush", "bushRadius": 0.6, "bushHeight": 0.5, "leaves": 
 	"flowers": 0, "colourVar": 0.1, "base": "#335522", "tip": "#88aa44"}
 
 
+var _was_threaded := true
+
+
+func before_each() -> void:
+	_was_threaded = Config.data.threaded_chunk_build
+	Config.data.threaded_chunk_build = false
+
+
+func after_each() -> void:
+	Config.data.threaded_chunk_build = _was_threaded
+
+
 func _tris(m: ArrayMesh) -> int:
 	return (m.surface_get_arrays(0)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
 
@@ -288,3 +300,56 @@ func test_a_tiles_draw_box_wraps_its_tufts_where_the_ground_is_not_around_the_or
 	for y in [300.0, 310.0]:
 		assert_true(box.has_point(Vector3(40.0, y, 50.0)), "the tuft is inside the box")
 	assert_almost_eq(box.get_center().y, 305.0, 5.0, "the draw range is measured to the box's middle, so it must sit at the tufts")
+
+
+func _tuft_buffers(gc: GroundCover) -> Dictionary:
+	var out := {}
+	for t: Vector2i in gc.tiles:
+		var bufs := []
+		for mmi: MultiMeshInstance3D in gc.tiles[t].find_children("*", "MultiMeshInstance3D", false, false):
+			bufs.append(mmi.multimesh.buffer)
+		out[t] = bufs
+	return out
+
+
+func test_threaded_tiles_equal_the_main_thread_tiles() -> void:
+	if not OS.has_feature("threads"):
+		pending("no threads on this platform")
+		return
+	var kinds := {"1": [[BLADES, 2.0], [BUSH, 1.0]]}
+	var sync := _cover_node(kinds)
+	sync.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	Config.data.threaded_chunk_build = true
+	var gc := _cover_node(kinds)
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	assert_gt(gc.pending(), 0, "the tiles were handed to workers")
+	var tries := 0
+	while gc.pending() > 0 and tries < 600:
+		await get_tree().process_frame
+		gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+		tries += 1
+	assert_eq(gc.pending(), 0)
+	assert_eq(_tuft_buffers(gc), _tuft_buffers(sync))
+
+
+func test_toggle_off_dispatches_nothing() -> void:
+	var gc := _cover_node({"1": [[BLADES, 2.0]]})
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	assert_eq(gc.pending(), 0)
+	assert_gt(gc.tiles.size(), 0)
+
+
+func test_dropping_and_freeing_tiles_with_work_in_flight_is_safe() -> void:
+	if not OS.has_feature("threads"):
+		pending("no threads on this platform")
+		return
+	Config.data.threaded_chunk_build = true
+	var gc := _cover_node({"1": [[BLADES, 2.0]]})
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	assert_gt(gc.pending(), 0)
+	gc.stream(Vector2(1.0e5, 0.0), 0)
+	assert_eq(gc.pending(), 0, "tiles dropped mid-build are cancelled")
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	gc.get_parent().remove_child(gc)
+	gc.free()
+	assert_true(true, "freeing with tasks in flight drained them")

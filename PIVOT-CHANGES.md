@@ -103,6 +103,8 @@ hub-only widgets (car cards, stat bars, the car list).
    authored values on every ring change.
 3. **The frame budget.** Terrain work in `TerrainStreamer` must stay inside units its scheduler
    can measure and stop between. A stage that runs out of frame returns `false` from `_step`.
+   Exception: the level streamer's HEIGHTS and ARRAYS stages run on `WorkerThreadPool` (outside
+   the budget) where the platform has threads; see `features/terrain.md`, "Threaded chunk builds".
 4. **`WorldSession` is the only writer of the world block.** JSON hands numbers back as floats;
    readers normalise.
 5. **Every menu is a flat `MenuPage` + `MenuNav.attach`** (unchanged), with a nav test.

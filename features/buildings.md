@@ -23,7 +23,7 @@ square (oriented bounding box of each outline), height from LiDAR DSM - DTM, and
 satellite crop and footprint size. The 30 beside the teleport points added for the delivery career (a farm, cottage and garage, or forestry hut per point) were placed by script along the road, clear of other roads, buildings and shop yards. The level editor lab draws them as footprints in 2D and as meshes in 3D
 (`rebuild3DBuildings`). 
 In the game: `node tools/bake_buildings.js tools/levels/<level>.json` runs `buildings.js` under node (tiny three.js and
-canvas stand-ins) and writes `<level>.buildings.json` (each building's triangles, already sized) and
+canvas stand-ins) and writes `<level>.buildings.bin` (each building's triangles, already sized: a u32 header length, a JSON header of each entry's fields plus its float count `np`, then every entry's p/n/uv/c as little-endian float32; `LevelBuildings.parse_bin` decodes it with one `to_float32_array`, since parsing the old 8.9 MB JSON dominated the load; `.json` is still read if there is no `.bin`) and
 `tools/levels/buildings_atlas.png`. Re-run it after changing a level's buildings or `buildings.js`. `LevelView.load_level`
 adds a `LevelBuildings` node (`scripts/level_buildings.gd`) that builds one `StaticBody3D` per building: a box collider over
 the footprint, seated on the lowest ground under it. The meshes (unshaded with the baked sun shading in vertex colours,

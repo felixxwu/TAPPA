@@ -5,11 +5,9 @@
 #   ./build_web.sh --debug    # debug export (larger, with debug symbols)
 #
 # The zip's main file is index.html (required by itch.io). The "Web" export
-# preset is single-threaded (thread_support=false) so the build needs no
-# SharedArrayBuffer / cross-origin isolation: it boots on any browser (incl. old
-# / low-memory phones) and you do NOT need to enable itch.io's "SharedArrayBuffer
-# support" option. Terrain generation runs on a frame-budgeted main-thread queue
-# on web (see features/terrain.md) so chunk loading stays smooth without threads.
+# preset is multi-threaded (thread_support=true), which needs SharedArrayBuffer:
+# the itch.io page MUST have its "SharedArrayBuffer support" option ticked, or the
+# game won't boot. Browsers without cross-origin isolation can't run it.
 #
 # The preset also sets variant/extensions_support=false. That flag selects Godot's
 # GDExtension-capable web template, which is built with Emscripten DYNAMIC LINKING

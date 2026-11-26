@@ -9,6 +9,7 @@ extends GutTest
 const HEADLIGHT_INCLUDE := "res://shaders/headlight_cone.gdshaderinc"
 
 const EXEMPT := {
+	"res://scripts/level_view.gd": "the sat-nav beam is a faint additive glow, meant to read at night",
 	"res://shaders/car_lamp.gdshader": "the lamp flare is a light source itself",
 	"res://shaders/spike_id_pass.gdshader": "debug id pass, never seen by the player",
 	"res://shaders/spike_id_pass_2sided.gdshader": "debug id pass, never seen by the player",
@@ -27,12 +28,6 @@ const EXEMPT := {
 	"res://models/rocks/rock_smallA.glb": "foliage.gd draws rocks with ps1_models_lit",
 	"res://models/vegetation/groundcover_opaque.glb": "foliage.gd draws it with tree_canopy",
 	"res://models/spectators/spectators.glb": "crowd.gd level_meshes puts the level spectators on ps1_models_lit",
-	"res://models/shops/cwmbiga_motors.glb": "level_view.gd _shade_base puts shop models on level_prop",
-	"res://models/shops/gethin_autos.glb": "level_view.gd _shade_base puts shop models on level_prop",
-	"res://models/shops/groes_garage.glb": "level_view.gd _shade_base puts shop models on level_prop",
-	"res://models/shops/maesnant_tuning.glb": "level_view.gd _shade_base puts shop models on level_prop",
-	"res://models/shops/severn_performance.glb": "level_view.gd _shade_base puts shop models on level_prop",
-	"res://models/shops/tor_du_specials.glb": "level_view.gd _shade_base puts shop models on level_prop",
 	"res://scripts/teleport_beacons.gd": "the obelisk is on level_prop; only its icon stays plain, a glowing marker",
 	"res://blender/911/911.glb": "car.gd puts car bodies on ps1_models_lit",
 	"res://blender/acty/acty.glb": "car.gd puts car bodies on ps1_models_lit",

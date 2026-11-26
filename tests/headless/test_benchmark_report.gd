@@ -95,3 +95,8 @@ func test_label_omits_the_default_render_height() -> void:
 	# 0 = authored default: no height part, so baseline labels are unchanged.
 	var label := BenchmarkReport.make_label("0.5", [])
 	assert_false(label.contains("h0"), "no h part at the default height: %s" % label)
+
+
+func test_report_carries_the_load_timings() -> void:
+	var r := BenchmarkReport.build({}, {}, {}, "t", "l", {"parse": 5})
+	assert_eq(r["load_ms"], {"parse": 5})

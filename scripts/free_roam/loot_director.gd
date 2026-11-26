@@ -175,6 +175,8 @@ func _trees_near() -> Dictionary:
 		sphere.radius = streamer.settings.near_miss_radius_m + car.half_width()
 		_near_query.shape = sphere
 		_near_query.exclude = [(car as CollisionObject3D).get_rid()]
+		# With physics on its own thread a new shape only reaches it next frame.
+		return {}
 	_near_query.transform = Transform3D(Basis.IDENTITY, car.global_position)
 	var out := {}
 	var at := Vector2(car.global_position.x, car.global_position.z)

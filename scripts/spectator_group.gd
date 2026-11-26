@@ -48,6 +48,8 @@ var _yaw: PackedFloat32Array      # facing, radians
 # re-sample every half metre of travel.
 var _avoid: PackedVector2Array    # cached weighted road+tree push
 var _avoid_at: PackedVector2Array # position the cached push was sampled at
+var _nvel := PackedVector2Array()  # velocities from the last wide steering pass, applied on the main thread
+var _fresh := PackedByteArray()  # 1 where the member re-probed its avoidance this pass
 var _avoid_ok: PackedByteArray    # 1 = _avoid[i] holds a sample
 var _avoid_samples := 0           # live probes taken (tests / debug)
 
@@ -70,6 +72,8 @@ var _meshes: Array[Mesh] = []     # the model of each _mms entry
 var _foots := PackedFloat32Array()  # per _mms entry, lifts the mesh so its feet sit on the ground
 var _model := PackedInt32Array()  # per member, its index into _mms
 var _slot := PackedInt32Array()   # per member, its instance index inside its MultiMesh
+var _pool: CrowdPool              # shared MultiMeshes (level crowds); null = this group owns its own
+var _leased: Array[PackedInt32Array] = []  # per model, the pool slots this group holds
 var _face_car := false            # upright members turn to face the car (models with a front)
 var _capsule_height := 1.6
 var _capsule_radius := 0.3
@@ -129,6 +133,7 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	_sim_stagger = absi(int(_center.x) + int(_center.y) * 7)
 
 	_face_car = bool(params.get("face_car", false))
+	_pool = params.get("pool", null)
 	var models: PackedInt32Array = params.get("models", PackedInt32Array())
 	var meshes: Array = params.get("meshes", [])
 	if meshes.is_empty():
@@ -149,7 +154,15 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 			var aabb := mesh.get_aabb()
 			_capsule_height = maxf(aabb.size.y, 0.2) if m == 0 else maxf(_capsule_height, aabb.size.y)
 			_capsule_radius = maxf(_capsule_radius if m > 0 else 0.1, maxf(aabb.size.x, aabb.size.z) * 0.5)
-		_build_multimesh(mesh, counts[m])
+		if _pool != null:
+			_leased.append(_pool.acquire(m, counts[m]))
+		else:
+			_build_multimesh(mesh, counts[m])
+	if _pool != null:
+		var used := PackedInt32Array(); used.resize(meshes.size())
+		for i in n:
+			_slot[i] = _leased[_model[i]][used[_model[i]]]
+			used[_model[i]] += 1
 	if _face_car and car is Node3D:
 		var at: Vector3 = car.global_transform.origin
 		for i in n:
@@ -159,6 +172,21 @@ func setup(member_positions: PackedVector2Array, car: Node, terrain: Node,
 	_ragdoll_pool_cap = maxi(int(params.get("ragdoll_pool_size", 0)), 0)
 	for _k in _ragdoll_pool_cap:
 		_ragdoll_pool.append(_build_ragdoll())
+
+
+func _exit_tree() -> void:
+	if _pool != null:
+		for m in _leased.size():
+			_pool.release(m, _leased[m])
+		_leased.clear()
+		_pool = null
+
+
+func _set_xf(i: int, xf: Transform3D) -> void:
+	if _pool != null:
+		_pool.set_xf(_model[i], _slot[i], xf)
+	elif not _mms.is_empty():
+		_mms[_model[i]].set_instance_transform(_slot[i], xf)
 
 
 func _build_multimesh(mesh: Mesh, n: int) -> void:
@@ -308,13 +336,13 @@ static func obstacle_force(pos: Vector2, grid: Dictionary, cell: float, radius: 
 # the ground truth the per-member cache below approximates; nothing in it depends on the
 # car or on the other members, which is exactly why it can be cached.
 func live_avoid_force(pos: Vector2) -> Vector2:
+	_avoid_samples += 1
 	return _sample_avoid(pos, _p["road_probe_m"], _p["w_road"],
 		_p["tree_cell_m"], _p["tree_avoid_m"], _p["w_obstacle"])
 
 
 func _sample_avoid(pos: Vector2, road_probe: float, w_road: float,
 		tree_cell: float, tree_avoid: float, w_obstacle: float) -> Vector2:
-	_avoid_samples += 1
 	return road_force(pos, _road_cells, road_probe) * w_road \
 		+ obstacle_force(pos, _tree_grid, tree_cell, tree_avoid) * w_obstacle
 
@@ -331,6 +359,10 @@ func _cached_avoid_force(i: int, road_probe: float, w_road: float,
 	_avoid[i] = f
 	_avoid_at[i] = here
 	_avoid_ok[i] = 1
+	if _fresh.size() > i:
+		_fresh[i] = 1
+	else:
+		_avoid_samples += 1
 	return f
 
 
@@ -424,6 +456,7 @@ func _timed_physics_process(delta: float) -> void:
 	# responsive even at high car speed) — a cheap per-member distance check,
 	# independent of the decimated steering below. The car moves every tick, so
 	# testing it against the (possibly stale) positions still catches contact.
+	var t_knock := Time.get_ticks_usec()
 	var knock_r: float = _p["knock_radius_m"]
 	var knock_r2 := knock_r * knock_r  # squared test: no sqrt per member per tick
 	var to_knock: Array[int] = []
@@ -432,6 +465,7 @@ func _timed_physics_process(delta: float) -> void:
 			to_knock.append(i)
 	for i in to_knock:
 		_knock_over(i)
+	PerfLog.track(&"crowd_knock", Time.get_ticks_usec() - t_knock)
 
 	# Sim decimation: steer only every Nth physics tick (staggered per group so the
 	# cost spreads across ticks), integrating the accumulated delta so crowd motion
@@ -465,6 +499,22 @@ func _timed_physics_process(delta: float) -> void:
 	var anchor_dead_zone: float = _p["anchor_dead_zone_m"]
 	var w_anchor: float = _p["w_anchor"]
 
+	var t_steer := Time.get_ticks_usec()
+	if _wide_ok():
+		var k := {"car": car_xz, "step": step, "max_speed": max_speed, "accel": accel, "sep_grid": sep_grid,
+			"sep_radius": sep_radius, "flee_radius": flee_radius, "w_flee": w_flee, "road_probe": road_probe,
+			"w_road": w_road, "tree_cell": tree_cell, "tree_avoid": tree_avoid, "w_obstacle": w_obstacle,
+			"w_separation": w_separation, "dead_zone": anchor_dead_zone, "w_anchor": w_anchor}
+		_steer_wide(k)
+		PerfLog.track(&"crowd_steer_wide", Time.get_ticks_usec() - t_steer)
+		for i in _pos.size():
+			if _upright[i] == 1:
+				_vel[i] = _nvel[i]
+				_pos[i] += _vel[i] * step
+				_after_move(i, car_xz)
+		_age_ragdolls(car_xf)
+		return
+
 	for i in _pos.size():
 		if _upright[i] == 0:
 			continue
@@ -482,26 +532,59 @@ func _timed_physics_process(delta: float) -> void:
 		# delta since the last steered tick — see the decimation gate above).
 		_vel[i] = clamp_speed(_vel[i].move_toward(desired, accel * step), max_speed)
 		_pos[i] += _vel[i] * step
-		if _face_car:
-			_yaw[i] = face_yaw(_pos[i], car_xz)
-		elif _vel[i].length_squared() > 0.0004:
-			_yaw[i] = atan2(_vel[i].x, _vel[i].y)
-		_write_instance(i)
+		_after_move(i, car_xz)
+	PerfLog.track(&"crowd_steer_loop", Time.get_ticks_usec() - t_steer)
 
 	_age_ragdolls(car_xf)
 
 
+func _after_move(i: int, car_xz: Vector2) -> void:
+	if _face_car:
+		_yaw[i] = face_yaw(_pos[i], car_xz)
+	elif _vel[i].length_squared() > 0.0004:
+		_yaw[i] = atan2(_vel[i].x, _vel[i].y)
+	_write_instance(i)
+
+
+func _wide_ok() -> bool:
+	return OS.has_feature("threads") and Config.data.threaded_spectators \
+		and _pos.size() >= Config.data.threaded_spectator_min_members
+
+
+# Steering needs nothing but member state and read-only grids, so each member's new velocity is worked out on its own task.
+func _steer_wide(k: Dictionary) -> void:
+	var n := _pos.size()
+	_nvel.resize(n)
+	_fresh.resize(n)
+	_fresh.fill(0)
+	var id := WorkerThreadPool.add_group_task(_steer_member.bind(k), n, -1, false, "spectator steering")
+	WorkerThreadPool.wait_for_group_task_completion(id)
+	for f in _fresh:
+		_avoid_samples += f
+	_fresh = PackedByteArray()
+
+
+func _steer_member(i: int, k: Dictionary) -> void:
+	if _upright[i] == 0:
+		return
+	var car: Vector2 = k["car"]
+	var flee: Vector2 = flee_force(_pos[i], car, k["flee_radius"]) * float(k["w_flee"])
+	var avoid := _cached_avoid_force(i, k["road_probe"], k["w_road"], k["tree_cell"], k["tree_avoid"], k["w_obstacle"])
+	var sep: Vector2 = separation_force(i, _pos, _upright, k["sep_radius"], k["sep_grid"], k["sep_radius"]) * float(k["w_separation"])
+	var anchor: Vector2 = anchor_force(_pos[i], _home[i], k["dead_zone"]) * float(k["w_anchor"])
+	var desired := combine(flee, avoid, sep, anchor, k["max_speed"])
+	_nvel[i] = clamp_speed(_vel[i].move_toward(desired, float(k["accel"]) * float(k["step"])), k["max_speed"])
+
+
 # Position one MultiMesh instance from agent i's state (feet on the ground).
 func _write_instance(i: int) -> void:
-	if _mms.is_empty():
-		return
 	var x := _pos[i].x
 	var z := _pos[i].y
 	var y := _ground(x, z) + _foots[_model[i]]
 	var yaw_basis := Basis(Vector3.UP, _yaw[i])
 	# Local to the MMI node (anchored at the centroid) so visibility_range measures
 	# camera→crowd, not camera→world-origin.
-	_mms[_model[i]].set_instance_transform(_slot[i], Transform3D(yaw_basis, Vector3(x, y, z) - _mm_origin))
+	_set_xf(i, Transform3D(yaw_basis, Vector3(x, y, z) - _mm_origin))
 
 
 func _refresh_all_instances() -> void:
@@ -546,8 +629,7 @@ func _knock_over(i: int) -> void:
 		return
 	_upright[i] = 0
 	# Hide the upright instance by collapsing it to zero scale.
-	if not _mms.is_empty():
-		_mms[_model[i]].set_instance_transform(_slot[i], Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+	_set_xf(i, CrowdPool.HIDDEN)
 
 	var x := _pos[i].x
 	var z := _pos[i].y

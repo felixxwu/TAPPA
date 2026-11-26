@@ -1,5 +1,7 @@
 class_name LevelStats
 extends CanvasLayer
+# Docs: features/debug-tools.md — update in the same change as this file.
+# Tests: tests/headless/test_level_stats.gd — extend in the same change.
 # The Hafren level's performance readout, toggled with P: frame time, draw calls and triangles, and how much of that the trees and ground cover account for.
 
 const REFRESH_S := 0.25
@@ -47,6 +49,7 @@ func text(cam_pos: Vector3) -> String:
 	lines.append(frame_line(_frames))
 	lines.append("tris %s  draws %d  objects %d" % [_k(info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)),
 		info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME), info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)])
+	lines.append(threads_line(OS.has_feature("threads"), view._streamer._inflight.size() if view._streamer != null else 0))
 	var trees := view.get_node_or_null("Trees")
 	if trees != null:
 		var t := tally(trees, cam_pos)
@@ -56,6 +59,10 @@ func text(cam_pos: Vector3) -> String:
 		var c := tally(cover, cam_pos)
 		lines.append("cover %d tiles  %d tufts in range  tris %s" % [cover.tiles.size(), c.y, _k(c.z)])
 	return "\n".join(lines)
+
+
+static func threads_line(threads: bool, building: int) -> String:
+	return "threads on  %d chunks building" % building if threads else "threads off"
 
 
 # Measured from each frame's own time, not Engine's one-second fps average, so a single slow frame shows up as the worst.

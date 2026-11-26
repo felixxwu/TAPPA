@@ -128,14 +128,23 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var for_sale := String(unowned[1])
 	var part := String(BoostLibrary.CATALOGUE.keys()[0])
 	lv["shops"] = [{"x": 35.0, "z": 3.0, "name": "Corner Shop", "stock": [{"car": for_sale, "price": 50}, {"part": part, "price": 50}],
-		"model": {"path": "", "x": 35.0, "z": 60.0, "yaw": 0.0, "box": [-4.0, 4.0, -3.0, 3.0, 3.0]}},
+		"model": {"seed": 1, "x": 35.0, "z": 60.0, "yaw": 0.0}},
 		{"x": 90.0, "z": 3.0, "name": "Other Shop", "stock": [{"car": for_sale, "price": 50}],
-		"model": {"path": "", "x": 90.0, "z": 60.0, "yaw": 0.0, "box": [-4.0, 4.0, -3.0, 3.0, 3.0]}}]
+		"model": {"seed": 2, "x": 90.0, "z": 60.0, "yaw": 0.0}}]
 	lv["teleports"] = [{"x": 10.0, "z": 3.0, "name": "Alpha"},
 		{"x": 60.0, "z": 4.0, "heading": 90.0, "name": "Beta", "deliveries": [{"to": "Alpha"}]}]
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(JSON.stringify(lv))
 	f.close()
+	var tri := {"p": [0, 0, 0, 1, 0, 0, 0, 3, 0], "n": [0, 0, 1, 0, 0, 1, 0, 0, 1], "uv": [0, 0, 1, 0, 0, 1], "c": [1, 1, 1, 1, 1, 1, 1, 1, 1]}
+	var baked := []
+	for i in 2:
+		var shop := tri.duplicate()
+		shop.merge({"kind": "shop", "shop": i, "x": [35.0, 90.0][i], "z": 60.0, "yaw": 0.0, "box": [-4.0, 4.0, -3.0, 3.0, 3.0], "texts": []})
+		baked.append(shop)
+	var bf := FileAccess.open(path.replace(".json", ".buildings.json"), FileAccess.WRITE)
+	bf.store_string(JSON.stringify(baked))
+	bf.close()
 	var world: Node = (load(Scenes.WORLD) as PackedScene).instantiate()
 	world.get_node("Level").level_path = path
 	add_child_autofree(world)
@@ -351,8 +360,8 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(lpause.is_open(), "and leaving it returns to the pause menu")
 	lpause.resume()
 	var lv_node: LevelView = world.get_node("Level")
-	assert_eq(lv_node.beacons.get_child_count(), 2, "an obelisk over every teleport point")
-	assert_eq(lv_node.shop_beacons.get_child_count(), 2, "and over every shop")
+	assert_eq(lv_node.beacons.count(), 2, "an obelisk over every teleport point")
+	assert_eq(lv_node.shop_beacons.count(), 2, "and over every shop")
 	assert_true(lv_node.shop_cars.has(for_sale), "the car on sale is parked in its bay")
 	assert_eq(lv_node.shop_cars[for_sale].size(), 2, "and at every shop that sells it")
 	var parked: Node3D = lv_node.shop_cars[for_sale][0]
@@ -592,6 +601,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	at_car.global_position = car_pos0
 	Config.data.level_car_id = start_car
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path.replace(".json", ".buildings.json")))
 
 
 func test_a_new_player_owns_no_car_and_unknown_ids_are_dropped() -> void:
@@ -1027,31 +1037,6 @@ func _back_event() -> InputEventAction:
 	return e
 
 
-func test_a_shop_model_stands_on_the_ground_with_a_collider_over_the_building() -> void:
-	var body := LevelView.shop_model({"path": "res://models/shops/cwmbiga_motors.glb", "x": 1.0, "z": 2.0, "yaw": 0.5,
-		"box": [-1.0, 2.0, -3.0, 3.0, 4.0], "texts": [{"text": "$1500", "color": "#b02a1a", "w": 0.5, "h": 0.2, "p": [1.0, 2.0, 3.0], "q": [0, 0, 0, 1]}]},
-		func(_x: float, _z: float) -> float: return 7.0)
-	assert_eq(body.position, Vector3(1.0, 7.0, 2.0), "seated on the ground at its origin")
-	assert_almost_eq(body.rotation.y, 0.5, 0.0001, "turned to face the road")
-	var shapes := body.find_children("*", "CollisionShape3D", false, false)
-	assert_eq(shapes.size(), 1, "one collider")
-	assert_eq((shapes[0].shape as BoxShape3D).size, Vector3(3.0, 4.0, 6.0), "over the building's box")
-	assert_eq(shapes[0].position, Vector3(0.5, 2.0, 0.0))
-	assert_eq(body.get_child_count(), 3, "and the model itself and its text")
-	var label: Label3D = body.find_children("*", "Label3D", false, false)[0]
-	assert_eq(label.text, "$1500", "the text is drawn by the game, not baked into the model")
-	assert_eq(label.position, Vector3(1.0, 2.0, 3.0))
-	var em := label.font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.font_size)
-	assert_true(em.x * label.pixel_size <= 0.5 + 1e-4 and em.y * label.pixel_size <= 0.2 + 1e-4, "sized to fit its board")
-	var meshes := body.find_children("*", "MeshInstance3D", true, false)
-	assert_gt(meshes.size(), 0)
-	for mi: MeshInstance3D in meshes:
-		for si in mi.mesh.get_surface_count():
-			assert_eq((mi.mesh.surface_get_arrays(si)[Mesh.ARRAY_COLOR] as PackedColorArray).size(),
-				(mi.mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size(), "base shading baked into vertex colours")
-	body.free()
-
-
 func test_a_shop_box_is_its_building_footprint_turned_with_the_model() -> void:
 	var b := LevelView.shop_box({"x": 10.0, "z": 20.0, "yaw": PI / 2.0, "box": [-1.0, 3.0, -2.0, 2.0, 4.0]})
 	assert_almost_eq(b.half, Vector2(2.0, 2.0), Vector2.ONE * 0.001)
@@ -1062,13 +1047,6 @@ func test_a_shop_box_is_its_building_footprint_turned_with_the_model() -> void:
 	var x := probe.transform.basis.x
 	assert_almost_eq(b.axis, Vector2(x.x, x.z), Vector2.ONE * 0.001, "its x axis turned the same way")
 	probe.free()
-
-
-func test_every_shop_model_in_the_shipped_level_exists() -> void:
-	var lv: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(Config.data.level_path))
-	for sh: Dictionary in lv.get("shops", []):
-		if sh.get("model") is Dictionary:
-			assert_true(ResourceLoader.exists(String(sh["model"]["path"])), "%s's model is in the project" % sh.get("name", "a shop"))
 
 
 func test_bought_parts_belong_to_one_car() -> void:

@@ -20,7 +20,10 @@ RPM/throttle/shift state.
   - `MIX_RATE = 22050` Hz; the generator buffer depth is chosen **per-device** by
     `engine_audio.gd`'s `buffer_seconds()` — `BUFFER_SECONDS_TOUCH = 0.2` on a touch device,
     `BUFFER_SECONDS_DESKTOP = 0.05` on desktop (native or desktop web), mirroring
-    `Platform.is_touch()`. The fill runs in `_process` on the main thread, so the
+    `Platform.is_touch()`. That split only applies without threads: with them (the web
+    export is threaded, and `GameConfig.threaded_engine_audio` is on) the fill runs on
+    `EngineAudioFeed`'s own thread and every device uses `0.05` (see "Threaded fill").
+    Without threads the fill runs in `_process` on the main thread, so the
     buffer is all that keeps audio alive across a slow frame — if the gap between
     `_process` calls exceeds it, the buffer drains and the engine note crackles. On a
     single-threaded web **touch** build, at the 30 fps web cap (`target_fps_web`) a
@@ -30,6 +33,16 @@ RPM/throttle/shift state.
     throttle→rev latency (≈ `BUFFER_SECONDS_*` + the WebAudio `output_latency.web`), so
     desktop trades the unneeded headroom for a more responsive note. Don't raise the
     touch value past what the underruns need.
+  - **Threaded fill** (`GameConfig.threaded_engine_audio`, default on, needs
+    `OS.has_feature("threads")`): `engine_audio_feed.gd` (`EngineAudioFeed`) owns the
+    synth. `_process` only `publish()`es a snapshot of the inputs (mutex-guarded); a
+    worker `Thread` loops `get_frames_available()` -> `render()` -> `push_buffer()`
+    then sleeps 3 ms, never touching nodes. One-shot cues (bov, nitrous trigger/empty)
+    are counters, so each fires on exactly one render. Pause / inaudible / killed
+    publish `set_silent(true)` (worker pushes zeros). `reconfigure()` and `_exit_tree`
+    stop + join the worker (restart after rebuild). With the thread, `buffer_seconds()`
+    is the desktop `0.05` everywhere; without it (or toggle off) the old `_process`
+    fill and the touch `0.2` apply. Tests: `test_engine_audio.gd` `test_feed_*`.
   - `_ready()` creates an `AudioStreamGenerator`, builds the synth, starts play.
   - `_process(delta)` reads engine state, asks the generator playback how many
     frames it needs, fills them via the synth, and pushes the buffer.
@@ -501,46 +514,18 @@ main-thread frame (e.g. a terrain chunk-crossing build on web) can underrun the
 generator buffer — hence the `buffer_seconds()` headroom above and the terrain work
 to keep crossing frames short (see [terrain.md](terrain.md)).
 
-On web this stacks with a second, engine-level buffer: because the export is
-single-threaded (`thread_support=false`), Godot mixes **all** audio (this synth
-plus every sample bus) on the main thread and pushes it to the browser's WebAudio
-ring buffer. The browser drains that ring buffer on its own audio-worklet thread
-while a long main-thread frame blocks every refill, so `output_latency.web` is the
-*only* underrun protection on web — the generator buffer sits upstream of the mixer
-(also on the blocked main thread) and **cannot** substitute for it. With the 30 fps
-web cap (`target_fps_web`, see `world.gd`) the main thread sleeps ~33 ms between
-frames, so the default 15 ms output buffer would drain before the next refill and
-the *whole mix* crackles — not just the engine note. `project.godot` therefore sets
-`audio/driver/output_latency.web=150` so the WebAudio buffer survives the inter-frame
-gap plus jitter (≈4.5 frames of 30 fps headroom). This is read at driver init (engine
-boot) — one baked value for the **whole** web build (desktop web + web-touch alike),
-with no runtime setter (`AudioServer` exposes only `get_output_latency()`), so it lives
-in project settings, not runtime code. That's why it can't be made desktop-web-only:
-150 ms is a compromise — deep enough to keep web-touch clean at 30 fps, short enough
-that desktop web isn't sluggish.
-
-Why the two web buffers can't be collapsed into one knob: they sit at different
-**layers** of the pipeline, on different **threads**, with different **lifetimes** and
-**scopes**. The generator buffer is upstream of the `AudioServer` mixer and — with
-`variant/thread_support=false` (`export_presets.cfg`) — is filled on the *same* main
-thread that runs the mixer, so a blocked frame stalls both; its samples can't reach
-the speakers while the mixer that drains it is frozen. `output_latency.web` sizes the
-downstream WebAudio ring buffer, which the browser's audio-worklet thread drains
-*independently* of the main thread — the only handoff that survives a stalled frame,
-hence the only real underrun protection on web. They also can't share a value: the
-generator buffer is a per-`AudioStreamPlayer` `AudioStreamGenerator.buffer_length` set
-at runtime and split per-device (web-touch vs desktop web), while `output_latency` is
-one global audio-*driver* setting baked at boot for the whole web build with no runtime
-setter. Merging would force the downstream, cross-thread, global, boot-baked buffer and
-the upstream, same-thread, per-device, runtime buffer to be the same thing — they
-aren't. On native (real audio thread) the mixer runs off-thread, so the generator
-buffer alone suffices and `output_latency` stays at the engine default; the split only
-exists because single-threaded web collapses the mixer onto the main thread.
-
-Together the two web buffers make the low web frame cap audible without gaps. The
-`output_latency.web=150` half is global; the generator half is per-device
-(`engine_audio.gd`'s `buffer_seconds()`: `0.2` on web-touch, `0.05` on desktop web), so
-desktop web lands at ≈200 ms throttle→sound and web-touch at ≈350 ms. Raise the touch
+On web this stacks with a second, engine-level buffer: `audio/driver/output_latency.web`
+in `project.godot`, the browser's WebAudio ring buffer. It is read once at engine boot,
+for the whole web build, with no runtime setter. It was 150 ms while the web export was
+single-threaded: Godot mixed all audio on the main thread then, so that buffer had to
+outlast a whole 30 fps frame plus hitches. The export is now threaded
+(`variant/thread_support=true`, November 2026), so Godot mixes on its own AudioWorklet
+thread independent of the main thread, and the setting is down to **50 ms**. The engine
+generator buffer is still filled from `_process` on the main thread, so it alone has to
+bridge main-thread hitches: `buffer_seconds()` gives `0.2` on touch devices and `0.05`
+on desktop. Throttle→sound is now ≈100 ms on desktop web and ≈250 ms on web-touch. If
+the whole mix (not just the engine) crackles on a slow device, raise
+`output_latency.web` first. Raise the touch
 generator value (at the cost of latency) before dropping `target_fps_web` lower. The
 native Android APK has a real audio thread, so it is unaffected and keeps its 60 fps
 cap (`target_fps_mobile`).

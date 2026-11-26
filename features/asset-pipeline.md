@@ -216,7 +216,7 @@ The game has **no shadow-casting lights**, so this buys import time and memory a
 
 ## Dev-only live reload
 
-`serve_web.sh` injects the `/reload-token` poller into `build/web/index.html` **after**
+`start_web.sh` injects the `/reload-token` poller into `build/web/index.html` **after**
 the export. It used to live in the Web preset's `html/head_include`, which shipped it
 to itch.io and to every player's phone: a `fetch` per second for the whole session
 (battery + radio wake), a 404/second against the host, and a reload hazard on any host

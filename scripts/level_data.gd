@@ -1,5 +1,7 @@
 class_name LevelData
 extends RefCounted
+# Docs: features/level-editor.md — update in the same change as this file.
+# Tests: tests/headless/test_level_data.gd — extend in the same change.
 # A level save's data and its road/terrain queries, with no nodes: LevelView builds the scene from it, and the lab's maths is pinned to it by tests/headless/fixtures/level_parity.json.
 
 const FALLOFF := 1.0         # how far beyond the road's edge the ground blends back to its own height

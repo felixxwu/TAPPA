@@ -138,6 +138,12 @@ class Arrow:
 	var mini: LevelMinimap
 
 	func _process(_dt: float) -> void:
+		var __t := Time.get_ticks_usec()
+		_timed_process(_dt)
+		PerfLog.track(&"level_minimap", Time.get_ticks_usec() - __t)
+
+
+	func _timed_process(_dt: float) -> void:
 		queue_redraw()
 
 	func _draw() -> void:

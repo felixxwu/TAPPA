@@ -1,5 +1,7 @@
 class_name LevelTrees
 extends Node3D
+# Docs: features/level-editor.md — update in the same change as this file.
+# Tests: tests/headless/test_level_trees.gd — extend in the same change.
 # The level's trees, drawn from the bake: one MultiMesh of star-tree cards per tile (up to KINDS_PER_DRAW species in one; the
 # shader picks each card's texture and tint from INSTANCE_CUSTOM.r), repacked to what the camera's stretch of road can see, with collision boxes only on tiles near the car.
 
@@ -30,6 +32,18 @@ class Hitboxes extends Node3D:
 		trees.knock_down(first + shape_idx, dir, duration)
 
 
+# One tile's repack: the inputs (visible ids, fallen poses) are frozen when it is made so a worker can fill bufs/counts while the main thread carries on.
+class PackJob:
+	var owner_tile: Tile
+	var row := -1
+	var poses := {}
+	var ids := PackedInt32Array()
+	var bufs: Array[PackedFloat32Array] = []
+	var counts := PackedInt32Array()
+	var task_id := -1
+	var decode := false
+
+
 class Tile:
 	var index := 0
 	var first := 0
@@ -40,6 +54,7 @@ class Tile:
 	var slots: Array[PackedInt32Array] = []  # per MultiMesh, each species' slot in its material (-1: not in it)
 	var shown_row := -2
 	var hit: Hitboxes
+	var job: PackJob
 
 var bake: LevelBake
 var _card := Foliage._alpha_card_mesh()
@@ -54,6 +69,7 @@ var _dirty := {}   # tiles that need repacking whatever the row
 var _queue: Array[int] = []
 var _row := -2
 var _cam_cell := Vector2i(-100000, -100000)
+var _inflight: Array[PackJob] = []
 var _draw_override := 0.0  # photo mode's render: a longer draw distance for a few seconds (0: GameConfig's)
 
 
@@ -94,8 +110,12 @@ func update(cam_pos: Vector3, car_pos: Vector3, free_view := false) -> void:
 		_row = row
 		_cam_cell = cell
 		_queue_tiles_near(cam_pos)
+	var t0 := Time.get_ticks_usec()
 	_update_collision(car_pos)
+	var t1 := Time.get_ticks_usec()
 	_pump(REPACKS_PER_FRAME)
+	PerfLog.track(&"trees_collision", t1 - t0)
+	PerfLog.track(&"trees_pump", Time.get_ticks_usec() - t1)
 
 
 # How far trees are drawn: GameConfig.level_tree_draw_m, or the render override while it is set.
@@ -117,7 +137,7 @@ func set_draw_override(metres: float) -> void:
 
 # Repacks everything still waiting, at once; for the first frame and for tests.
 func settle() -> void:
-	_pump(1 << 30)
+	_pump(1 << 30, true)
 
 
 func tile(i: int) -> Tile:
@@ -157,6 +177,12 @@ func is_fallen(idx: int) -> bool:
 
 
 func _process(dt: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(dt)
+	PerfLog.track(&"level_trees", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(dt: float) -> void:
 	if not _falling.is_empty():
 		_step_falls(dt)
 
@@ -209,55 +235,120 @@ func _queue_tiles_near(cam_pos: Vector3) -> void:
 		_queue.append(t.index)
 
 
-func _pump(budget: int) -> void:
-	while budget > 0 and not _dirty.is_empty():
-		var i: int = _dirty.keys()[0]
+func _threads_ok() -> bool:
+	return OS.has_feature("threads") and Config.data.threaded_tree_build
+
+
+func _pump(budget: int, sync := false) -> void:
+	if sync:
+		_finish_all()
+	elif not _inflight.is_empty():
+		_collect_done()
+	var wide := _threads_ok() and not sync
+	for i: int in _dirty.keys():
+		if budget <= 0:
+			break
+		if wide and _tiles[i].job != null:
+			continue
 		_dirty.erase(i)
 		if _tiles.has(i):
-			_repack(_tiles[i])
+			_repack(_tiles[i], wide)
 		budget -= 1
 	while budget > 0 and not _queue.is_empty():
 		var t: Tile = _tiles[_queue.pop_back()]
-		if t.shown_row != _row:
-			_repack(t)
+		if t.shown_row != _row and t.job == null:
+			_repack(t, wide)
 		budget -= 1
 
 
 # Shows exactly the trees the two viewpoint rows round the camera's stretch of road can see (every tree if no visibility was baked), packed to the front of each MultiMesh.
-func _repack(t: Tile) -> void:
-	var ids := PackedInt32Array()
-	if bake.has_visibility() and _row >= 0:
-		ids = _union(bake.visible_in(_row, t.first, t.end), bake.visible_in(_row + 1, t.first, t.end))
-	else:
-		ids = PackedInt32Array(range(t.first, t.end))
-	var bufs: Array[PackedFloat32Array] = []
-	var counts := PackedInt32Array()
+func _repack(t: Tile, wide := false) -> void:
+	_finish(t)
+	var job := PackJob.new()
+	job.owner_tile = t
+	job.row = _row
+	job.poses = _fall_pose.duplicate()
+	var by_view := bake.has_visibility() and _row >= 0
+	if not by_view:
+		job.ids = PackedInt32Array(range(t.first, t.end))
+	elif not wide:
+		job.ids = _union(bake.visible_in(_row, t.first, t.end), bake.visible_in(_row + 1, t.first, t.end))
+	job.decode = by_view and wide
+	if wide:
+		job.task_id = WorkerThreadPool.add_task(_compute.bind(job), false, "tree tile pack")
+		t.job = job
+		_inflight.append(job)
+		return
+	_compute(job)
+	_apply(job)
+
+
+func _finish(t: Tile) -> void:
+	var job := t.job
+	if job == null:
+		return
+	WorkerThreadPool.wait_for_task_completion(job.task_id)
+	job.task_id = -1
+	t.job = null
+	_inflight.erase(job)
+	_apply(job)
+
+
+func _finish_all() -> void:
+	for job in _inflight.duplicate():
+		_finish(job.owner_tile)
+
+
+func _collect_done() -> void:
+	for job in _inflight.duplicate():
+		if WorkerThreadPool.is_task_completed(job.task_id):
+			_finish(job.owner_tile)
+
+
+func _exit_tree() -> void:
+	for job in _inflight:
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+		job.task_id = -1
+		job.owner_tile.job = null
+	_inflight.clear()
+
+
+func _compute(job: PackJob) -> void:
+	var t := job.owner_tile
+	if job.decode:
+		var a := bake.decoded_row(job.row)
+		var b := bake.decoded_row(job.row + 1, job.row, a)
+		job.ids = _union(a.slice(a.bsearch(t.first), a.bsearch(t.end)), b.slice(b.bsearch(t.first), b.bsearch(t.end)))
 	for _r in t.mmis.size():
-		bufs.append(PackedFloat32Array())
-		counts.append(0)
+		job.bufs.append(PackedFloat32Array())
+		job.counts.append(0)
 	var run := 0
 	var custom := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
-	for id in ids:
+	for id in job.ids:
 		while id >= t.run_end[run]:
 			run += 1
-		bufs[run].append_array(_pose_floats(id))
+		job.bufs[run].append_array(_pose_floats(id, job.poses))
 		custom[0] = t.slots[run][bake.tree_kind[id]]
-		bufs[run].append_array(custom)
-		counts[run] += 1
+		job.bufs[run].append_array(custom)
+		job.counts[run] += 1
+
+
+func _apply(job: PackJob) -> void:
+	var t := job.owner_tile
 	var from := t.first
 	for r in t.mmis.size():
-		bufs[r].resize((t.run_end[r] - from) * STRIDE)
-		t.mmis[r].multimesh.buffer = bufs[r]
-		t.mmis[r].multimesh.visible_instance_count = counts[r]
-		t.mmis[r].visible = counts[r] > 0
+		job.bufs[r].resize((t.run_end[r] - from) * STRIDE)
+		t.mmis[r].multimesh.buffer = job.bufs[r]
+		t.mmis[r].multimesh.visible_instance_count = job.counts[r]
+		t.mmis[r].visible = job.counts[r] > 0
 		from = t.run_end[r]
-	t.shown_row = _row
+	t.shown_row = job.row
 
 
-func _pose_floats(id: int) -> PackedFloat32Array:
-	if not _fall_pose.has(id):
+func _pose_floats(id: int, poses: Dictionary) -> PackedFloat32Array:
+	if not poses.has(id):
 		return bake.tree_xf.slice(id * 12, id * 12 + 12)
-	var x: Transform3D = _fall_pose[id]
+	var x: Transform3D = poses[id]
 	var b := x.basis
 	return PackedFloat32Array([b.x.x, b.y.x, b.z.x, x.origin.x, b.x.y, b.y.y, b.z.y, x.origin.y, b.x.z, b.y.z, b.z.z, x.origin.z])
 
@@ -340,9 +431,11 @@ func _update_collision(car_pos: Vector3) -> void:
 	for i in _tile_cells_near(car_pos, near):
 		var t := _tile_or_make(i)
 		if t != null and t.hit == null and _distance_to(t, car_pos) <= near:
-			if t.shown_row != _row:
-				_repack(t)
+			if t.shown_row != _row and t.job == null:
+				_repack(t, _threads_ok() and t.shown_row != -2)  # a tile never drawn yet is drawn at once
+			var t0 := Time.get_ticks_usec()
 			_build_hitboxes(t)
+			PerfLog.track(&"trees_hitboxes", Time.get_ticks_usec() - t0)
 			return
 
 

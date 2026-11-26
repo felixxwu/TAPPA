@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "description": "Node tooling for the level bakes (tools/bake_*.js)",
+  "devDependencies": { "three": "0.128.0" }
+}

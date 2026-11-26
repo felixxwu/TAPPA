@@ -59,6 +59,7 @@ var _pad_used := false  # a gamepad aims with the centre crosshair instead of th
 var _drag_from := Vector2.ZERO
 var _touches := {}       # finger index -> screen position, for two-finger pinch zoom on a touch screen
 var _pinched := false    # this touch gesture pinched, so lifting the fingers doesn't teleport
+var _painted: Image  # the image when painted on the main thread (no thread support)
 var _painter: Thread  # paints the map image in the background from load, so the first M opens instantly
 var discovery: LevelDiscovery  # where the car has driven: only ground near it is drawn, the rest is under fog
 var _fog: CanvasTexture        # discovery's fog, linear filtered so its edge is soft at any zoom
@@ -93,8 +94,11 @@ func _ready() -> void:
 	var cfg: GameConfig = Config.data
 	discovery = LevelDiscovery.new(size_m(), cfg.level_map_reveal_cell_m)
 	discovery.load_save(Save.get_setting(SEEN_KEY), view._save_path)
-	_painter = Thread.new()
-	_painter.start(_paint)
+	if OS.has_feature("threads"):
+		_painter = Thread.new()
+		_painter.start(_paint)
+	else:
+		_painted = _paint()
 
 
 func _exit_tree() -> void:
@@ -283,10 +287,12 @@ static func place_names(anchors: PackedVector2Array, widths: PackedFloat32Array,
 
 # Uploads the painted image and traces the road lines; the level view calls it behind the loading screen, since the upload alone stalls a frame for tens of ms.
 func build() -> void:
-	if _texture != null or _painter == null:
+	if _texture != null or (_painter == null and _painted == null):
 		return
-	_texture = ImageTexture.create_from_image(_painter.wait_to_finish())  # waits only if the painting isn't done yet
+	var img: Image = _painter.wait_to_finish() if _painter != null else _painted  # waits only if the painting isn't done yet
+	_texture = ImageTexture.create_from_image(img)
 	_painter = null
+	_painted = null
 	var b := view._bake
 	var line := PackedVector2Array()
 	for i in b.sx.size():
@@ -653,6 +659,12 @@ func _pinch() -> Array:
 
 
 func _process(delta: float) -> void:
+	var __t := Time.get_ticks_usec()
+	_timed_process(delta)
+	PerfLog.track(&"level_map", Time.get_ticks_usec() - __t)
+
+
+func _timed_process(delta: float) -> void:
 	if _painter != null and not _painter.is_alive():
 		build()
 	if not visible:

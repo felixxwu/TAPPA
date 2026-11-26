@@ -1,5 +1,7 @@
 class_name LevelBake
 extends Resource
+# Docs: features/level-editor.md — update in the same change as this file.
+# Tests: tests/headless/test_level_bake.gd — extend in the same change.
 # Everything about a level that is worked out once, offline: final ground heights, the road frame textures the ground shader reads, the road samples, the trees in tiles and which of them each stretch of road can see. Saved beside the level as <name>.bake.res and loaded instead of running LevelData's road build.
 # The big arrays live decoded in memory but are stored as zstd blobs (see _get_property_list), and visibility stays as row-to-row diffs.
 
@@ -84,13 +86,13 @@ static func bake(data: LevelData, key := "") -> LevelBake:
 	b.source_key = key
 	b.size = data.size
 	b.n = roundi(b.size / b.step) + 1
-	var cell := b.size / (b.n - 1)
+	var step := b.size / (b.n - 1)
 	var hs := PackedFloat32Array()
 	hs.resize(b.n * b.n)
 	for r in b.n:
 		progress = 0.5 * r / b.n
 		for c in b.n:
-			hs[r * b.n + c] = data.ground(c * cell - b.size / 2, r * cell - b.size / 2)
+			hs[r * b.n + c] = data.ground(c * step - b.size / 2, r * step - b.size / 2)
 	b.height_base = hs[0]
 	for h in hs:
 		b.height_base = minf(b.height_base, h)
@@ -268,30 +270,45 @@ func visible_in(row: int, first: int, end: int) -> PackedInt32Array:
 
 
 func _decode_row(row: int) -> void:
+	_cur = decoded_row(row, _cur_row, _cur)
+	_cur_row = row
+
+
+# Every tree `row` sees, decoded without touching shared state so worker threads can call it; pass a row
+# already decoded as `from_row`/`from` to step on from it instead of from the row's keyframe.
+func decoded_row(row: int, from_row := -2, from := PackedInt32Array()) -> PackedInt32Array:
+	if row < 0 or row >= vis_row_count():
+		return PackedInt32Array()
 	var key := row - row % VIS_KEY
-	if _cur_row < key or _cur_row > row:
-		_cur_row = key - 1
-		_cur = PackedInt32Array()
-	while _cur_row < row:
-		_cur_row += 1
-		var base := _cur if _cur_row % VIS_KEY != 0 else PackedInt32Array()
-		var out := PackedInt32Array()
-		var j := vis_rem_start[_cur_row]
-		var je := vis_rem_start[_cur_row + 1]
-		var k := vis_add_start[_cur_row]
-		var ke := vis_add_start[_cur_row + 1]
-		for v in base:
-			if j < je and vis_rem[j] == v:
-				j += 1
-				continue
-			while k < ke and vis_add[k] < v:
-				out.append(vis_add[k])
-				k += 1
-			out.append(v)
-		while k < ke:
+	var r := from_row
+	var cur := from
+	if r < key or r > row:
+		r = key - 1
+		cur = PackedInt32Array()
+	while r < row:
+		r += 1
+		cur = _step_row(r, cur if r % VIS_KEY != 0 else PackedInt32Array())
+	return cur
+
+
+func _step_row(r: int, base: PackedInt32Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var j := vis_rem_start[r]
+	var je := vis_rem_start[r + 1]
+	var k := vis_add_start[r]
+	var ke := vis_add_start[r + 1]
+	for v in base:
+		if j < je and vis_rem[j] == v:
+			j += 1
+			continue
+		while k < ke and vis_add[k] < v:
 			out.append(vis_add[k])
 			k += 1
-		_cur = out
+		out.append(v)
+	while k < ke:
+		out.append(vis_add[k])
+		k += 1
+	return out
 
 
 func nearest_sample(x: float, z: float) -> int:

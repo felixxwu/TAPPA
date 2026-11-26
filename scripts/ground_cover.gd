@@ -175,6 +175,79 @@ static func ground_multiplier(cov: PackedByteArray, grid: int, tint_d: Dictionar
 	return Color(minf((t as Color).r * TINT_GAIN, 1.5), minf((t as Color).g * TINT_GAIN, 1.5), minf((t as Color).b * TINT_GAIN, 1.5))
 
 
+const MAX_INFLIGHT := 4
+var max_inflight := MAX_INFLIGHT
+
+class TileJob:
+	var t: Vector2i
+	var car: Node3D
+	var task_id := -1
+	var cancelled := false
+	var placed := {}
+	var far_placed := {}
+	var spots := []
+
+var _inflight: Array[TileJob] = []
+
+
+func _exit_tree() -> void:
+	for job in _inflight:
+		job.cancelled = true
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+	_inflight.clear()
+
+
+func _threads_ok() -> bool:
+	return OS.has_feature("threads") and Config.data.threaded_chunk_build
+
+
+# Registers an empty tile node at once (so it counts as built) and fills it when its worker finishes.
+func _dispatch_tile(t: Vector2i, car: Node3D) -> void:
+	var node := Node3D.new()
+	node.name = "Tile_%d_%d" % [t.x, t.y]
+	add_child(node)
+	tiles[t] = node
+	var job := TileJob.new()
+	job.t = t
+	job.car = car
+	job.task_id = WorkerThreadPool.add_task(_build_job.bind(job), false, "cover tile")
+	_inflight.append(job)
+
+
+func _build_job(job: TileJob) -> void:
+	var rect := Rect2(Vector2(job.t) * TILE, Vector2.ONE * TILE)
+	job.placed = placements(cover, size, kinds, Vector2.ZERO, 1.0, height_fn, 1.0, job.far_placed, rect)
+	if job.car != null and not job.cancelled:
+		job.spots = bush_spots(cover, size, kinds, rect)
+
+
+func _poll_tiles() -> void:
+	var i := 0
+	while i < _inflight.size():
+		var job := _inflight[i]
+		if WorkerThreadPool.is_task_completed(job.task_id):
+			WorkerThreadPool.wait_for_task_completion(job.task_id)
+			_inflight.remove_at(i)
+			if not job.cancelled and tiles.has(job.t):
+				_fill_tile(tiles[job.t], job.t, job.placed, job.far_placed, job.spots, job.car if is_instance_valid(job.car) else null)
+		else:
+			i += 1
+
+
+func _cancel_tile(t: Vector2i) -> void:
+	for job in _inflight:
+		if job.t == t:
+			job.cancelled = true
+			WorkerThreadPool.wait_for_task_completion(job.task_id)
+			_inflight.erase(job)
+			return
+
+
+# Tiles still being computed on workers.
+func pending() -> int:
+	return _inflight.size()
+
+
 func setup(d: Dictionary, height: Callable, mat_size := 600) -> void:
 	size = mat_size
 	cover = decode_cover(d)
@@ -224,16 +297,23 @@ func update_centre(pos: Vector3) -> void:
 func stream(centre: Vector2, deadline_us: int, car: Node3D = null) -> void:
 	if not has_cover():
 		return
+	_poll_tiles()
 	var reach := far_reach() + TILE * 0.71
 	for t: Vector2i in tiles.keys():
 		if tile_centre(t).distance_to(centre) > reach + TILE:
+			_cancel_tile(t)
 			(tiles[t] as Node).queue_free()
 			tiles.erase(t)
 	var core := Vector2i((centre / TILE).floor())
 	for t in missing(centre):
 		var is_core := maxi(absi(t.x - core.x), absi(t.y - core.y)) <= 1
 		if is_core or Time.get_ticks_usec() < deadline_us:
-			build_tile(t, car)
+			if _threads_ok():
+				if _inflight.size() >= max_inflight:
+					break
+				_dispatch_tile(t, car)
+			else:
+				build_tile(t, car)
 
 
 # The tiles within reach of `centre` that aren't built yet, nearest first.
@@ -266,6 +346,11 @@ func build_tile(t: Vector2i, car: Node3D = null) -> void:
 	var rect := Rect2(Vector2(t) * TILE, Vector2.ONE * TILE)
 	var far_placed := {}
 	var placed := placements(cover, size, kinds, Vector2.ZERO, 1.0, height_fn, 1.0, far_placed, rect)
+	var spots := bush_spots(cover, size, kinds, rect) if car != null else []
+	_fill_tile(node, t, placed, far_placed, spots, car)
+
+
+func _fill_tile(node: Node3D, t: Vector2i, placed: Dictionary, far_placed: Dictionary, spots_list: Array, car: Node3D) -> void:
 	var diag := TILE * 0.71
 	for key: String in placed:
 		_add_layer(node, t, placed[key], _mesh_for(key), material, Config.data.ground_cover_reach + diag)
@@ -274,7 +359,7 @@ func build_tile(t: Vector2i, car: Node3D = null) -> void:
 	if car == null:
 		return
 	var cfg: GameConfig = Config.data
-	for spots: Array in bush_spots(cover, size, kinds, rect):
+	for spots: Array in spots_list:
 		var field := BushField.new()
 		field.name = "BushInteraction"
 		node.add_child(field)

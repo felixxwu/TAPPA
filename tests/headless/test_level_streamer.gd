@@ -35,9 +35,9 @@ func after_all() -> void:
 
 
 func test_collision_is_built_under_the_spawn() -> void:
-	var space := _streamer.get_world_3d().direct_space_state
 	var q := PhysicsRayQueryParameters3D.create(Vector3(0.0, 20.0, 0.0), Vector3(0.0, -20.0, 0.0))
 	await wait_physics_frames(2)
+	var space := _streamer.get_world_3d().direct_space_state
 	assert_false(space.intersect_ray(q).is_empty())
 
 
@@ -54,8 +54,8 @@ func test_surface_is_road_on_the_road_and_not_in_the_field() -> void:
 func test_an_edge_wall_surrounds_the_square() -> void:
 	var wall := _streamer.get_node("EdgeWall") as StaticBody3D
 	assert_not_null(wall)
-	var space := _streamer.get_world_3d().direct_space_state
 	await wait_physics_frames(2)
+	var space := _streamer.get_world_3d().direct_space_state
 	var q := PhysicsRayQueryParameters3D.create(Vector3(SIZE, 5.0, 0.0), Vector3(0.0, 5.0, 0.0))
 	assert_false(space.intersect_ray(q).is_empty(), "a ray crossing the edge hits the wall")
 
@@ -64,6 +64,7 @@ func test_vertex_alpha_carries_how_upright_the_ground_is() -> void:
 	var job := TerrainStreamer.ChunkJob.new()
 	job.colors = PackedColorArray([Color(), Color()])
 	job.uvs = PackedVector2Array([Vector2(), Vector2()])
+	_streamer._begin_pack(job)
 	_streamer._pack_vertex(job, 0, 0.0, 0.0, Vector3.UP)
 	_streamer._pack_vertex(job, 1, 0.0, 0.0, Vector3(1.0, 1.0, 0.0).normalized())
 	assert_almost_eq(job.colors[0].a, 1.0, 0.001)
@@ -81,6 +82,7 @@ func test_snowy_ground_is_drawn_white_and_raised_off_the_road_only() -> void:
 	var job := TerrainStreamer.ChunkJob.new()
 	job.colors = PackedColorArray([Color(), Color(), Color()])
 	job.uvs = PackedVector2Array([Vector2(), Vector2(), Vector2()])
+	_streamer._begin_pack(job)
 	_streamer._pack_vertex(job, 0, 0.0, -50.0, Vector3.UP)
 	_streamer._pack_vertex(job, 1, 0.0, 0.0, Vector3.UP)
 	_streamer._pack_vertex(job, 2, 0.0, 50.0, Vector3.UP)
@@ -93,3 +95,69 @@ func test_snowy_ground_is_drawn_white_and_raised_off_the_road_only() -> void:
 func test_cover_sits_on_the_baked_ground_even_where_only_coarse_terrain_is_loaded() -> void:
 	var p := Vector2(90.0, 90.0)
 	assert_eq(_streamer.cover.height_fn.call(p.x, p.y), _bake.height(p.x, p.y))
+
+
+func _prepped_job(streamer: LevelStreamer, coord := Vector2i.ZERO) -> TerrainStreamer.ChunkJob:
+	var job := streamer._new_job(coord, TerrainStreamer.Level.MID, false)
+	streamer._queue.erase(job)
+	streamer._prep(job)
+	return job
+
+
+func _fresh_streamer() -> LevelStreamer:
+	var s := LevelStreamer.new()
+	s.setup(_data, _bake, ShaderMaterial.new())
+	add_child(s)
+	return s
+
+
+func test_a_threaded_build_matches_the_same_build_on_the_main_thread() -> void:
+	var a := _prepped_job(_streamer)
+	var b := _prepped_job(_streamer)
+	_streamer._begin_pack(a)
+	_streamer._build_job(a)
+	_streamer._dispatch_build(b)
+	assert_eq(_streamer._inflight.size(), 1)
+	_streamer._collect_build(b)
+	assert_eq(_streamer._inflight.size(), 0)
+	assert_eq(b.stage, TerrainStreamer.Stage.UPLOAD)
+	assert_eq(b.verts, a.verts)
+	assert_eq(b.colors, a.colors)
+	assert_eq(b.uvs, a.uvs)
+	assert_eq(b.uv2s, a.uv2s)
+
+
+func test_a_cancelled_build_is_dropped_and_never_attached() -> void:
+	var job := _prepped_job(_streamer)
+	_streamer._dispatch_build(job)
+	job.cancelled = true
+	_streamer._collect_build(job)
+	assert_eq(_streamer._inflight.size(), 0)
+	assert_eq(job.stage, TerrainStreamer.Stage.DONE)
+	assert_null(job.mesh)
+
+
+func test_freeing_a_streamer_with_builds_in_flight_is_safe() -> void:
+	var s := _fresh_streamer()
+	for x in 3:
+		s._dispatch_build(_prepped_job(s, Vector2i(x, 0)))
+	remove_child(s)
+	s.free()
+	assert_true(true, "no crash waiting on the workers")
+
+
+func test_with_threaded_building_off_nothing_is_dispatched_and_the_ground_still_builds() -> void:
+	var was := Config.data.threaded_chunk_build
+	Config.data.threaded_chunk_build = false
+	var s := _fresh_streamer()
+	var car := RigidBody3D.new()
+	car.freeze = true
+	add_child(car)
+	car.global_position = Vector3(0.0, 1.0, 0.0)
+	s.focus = car
+	s.prefill()
+	Config.data.threaded_chunk_build = was
+	assert_eq(s._inflight.size(), 0)
+	assert_true(s.has_collision_at(0.0, 0.0), "built synchronously")
+	s.free()
+	car.free()

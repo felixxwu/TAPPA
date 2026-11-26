@@ -32,9 +32,17 @@ const BUFFER_SECONDS_DESKTOP := 0.05 # ~3 frames at 60 fps — responsive, still
 # desktop web) takes the tight, low-latency buffer. Mirrors Platform.is_touch(), the
 # same split the frame cap and touch-control picker use.
 static func buffer_seconds() -> float:
+	if use_thread():
+		return BUFFER_SECONDS_DESKTOP
 	return BUFFER_SECONDS_TOUCH if Platform.is_touch() else BUFFER_SECONDS_DESKTOP
 
+
+# With a worker thread the fill no longer waits on the main loop, so every device can use the small buffer.
+static func use_thread() -> bool:
+	return Config.data.threaded_engine_audio and OS.has_feature("threads")
+
 var _synth: EngineAudioSynth
+var _feed: EngineAudioFeed
 var _playback: AudioStreamGeneratorPlayback
 var _scratch := PackedVector2Array()
 var _scratch_silent := false  # true while _scratch holds the all-zero silence buffer
@@ -118,19 +126,42 @@ func _ready() -> void:
 		return
 	play()
 	_playback = get_stream_playback() as AudioStreamGeneratorPlayback
+	_start_worker()
 
 
 # Rebuild the synth from the current config — call after a car swap changes the
 # engine (cylinder count + firing order), which the synth caches at init.
 func reconfigure() -> void:
+	_stop_worker()
 	_resolve_refs()
 	_build_synth()
+	_start_worker()
+
+
+func _exit_tree() -> void:
+	_stop_worker()
+
+
+func _notification(what: int) -> void:
+	if _feed != null and (what == NOTIFICATION_PAUSED or what == NOTIFICATION_UNPAUSED):
+		_feed.set_silent(what == NOTIFICATION_PAUSED)
+
+
+func _start_worker() -> void:
+	if _feed != null and _playback != null and use_thread():
+		_feed.start(_playback.get_frames_available, _playback.push_buffer)
+
+
+func _stop_worker() -> void:
+	if _feed != null:
+		_feed.stop()
 
 
 # A silenced display car never plays its voice, and baking one is slow: a garage spawns a whole roster at once.
 func _build_synth() -> void:
 	if process_mode != Node.PROCESS_MODE_DISABLED:
 		_synth = EngineAudioSynth.new(_cfg, _mix_rate)
+		_feed = EngineAudioFeed.new(_synth)
 
 
 # Cumulative generator buffer underruns ("skips"): each one is a frame that drained
@@ -176,12 +207,13 @@ func _timed_process(_delta: float) -> void:
 		if _engine == null:
 			return
 	var engine: EngineSim = _engine
-	var n := _playback.get_frames_available()
-	if n <= 0:
+	var threaded := _feed.is_running()
+	var n := 0 if threaded else _playback.get_frames_available()
+	if n <= 0 and not threaded:
 		return
 	# Size the scratch buffer to exactly n frames so we can push it directly,
 	# avoiding a per-frame slice() allocation. resize only fires when n changes.
-	if _scratch.size() != n:
+	if not threaded and _scratch.size() != n:
 		_scratch.resize(n)
 		_scratch_silent = false  # a grown buffer keeps its old (non-zero) head samples
 	var cfg: GameConfig = _cfg
@@ -204,8 +236,11 @@ func _timed_process(_delta: float) -> void:
 	# latched bov_event still has to be consumed so the sim re-arms.
 	# A killed engine (the car gave up) makes no sound at all.
 	if engine.killed or is_audio_inaudible(volume_db, cfg.engine_audio_max_attenuation_db):
-		_push_silence()
 		engine.bov_event = false
+		if threaded:
+			_feed.set_silent(true)
+		else:
+			_push_silence()
 		return
 	# fuel_cut (limiter OR damage misfire) ducks the note; the crackle burst is
 	# limiter-only (engine.limiting) — a damaged engine sputters without the pop.
@@ -241,6 +276,9 @@ func _timed_process(_delta: float) -> void:
 	_prev_nitrous_empty = nitrous_empty
 	_prev_nitrous_on = nitrous_on
 	var wheel_speed := _drivetrain.driveline_omega() * cfg.wheel_radius
-	_synth.fill(_scratch, engine.rpm(), engine.throttle, engine.shift_timer > 0.0, n, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active, nitrous_on, nitrous_trigger, nitrous_empty, wheel_speed)
+	_feed.publish(engine.rpm(), engine.throttle, engine.shift_timer > 0.0, engine.fuel_cut, engine.limiting, engine.boost, turbo_spin, bov, engine.antilag_active, nitrous_on, nitrous_trigger, nitrous_empty, wheel_speed)
+	if threaded:
+		return
+	_feed.render(_scratch, n)
 	_scratch_silent = false
 	_playback.push_buffer(_scratch)

@@ -1,7 +1,7 @@
 // The level view's minimap (scripts/level_minimap.gd): a north-up map picture, turned heading-up round the car, seen tilted, cut to a circle.
 shader_type canvas_item;
 
-uniform sampler2D map_tex : filter_linear, repeat_disable;
+uniform sampler2D map_tex : filter_linear, repeat_disable;  // linear_ok: the minimap turns with the car, and nearest sampling shimmers as it rotates
 uniform vec4 fog_color : source_color = vec4(0.06, 0.058, 0.05, 1.0);
 uniform vec4 rim_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 // Far edge width over near edge width.

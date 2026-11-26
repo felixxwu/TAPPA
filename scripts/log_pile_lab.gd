@@ -1,4 +1,6 @@
 extends Node3D
+# Docs: features/debug-tools.md — update in the same change as this file.
+# Tests: tests/headless/test_log_pile.gd — extend in the same change.
 # Dev scene for previewing LogPile variants: run log_pile_lab.tscn from the editor, tweak
 # the parameters live, and copy the printed LogPile.build(...) call into the game.
 
@@ -71,8 +73,10 @@ func _pose_camera() -> void:
 
 
 func _adjust(key: String, step: float, lo: float, hi: float) -> void:
-	_params[key] = clampf(_params[key] + step, lo, hi) if _params[key] is float \
-			else clampi(_params[key] + int(step), int(lo), int(hi))
+	if _params[key] is float:
+		_params[key] = clampf(_params[key] + step, lo, hi)
+	else:
+		_params[key] = clampi(_params[key] + int(step), int(lo), int(hi))
 	_rebuild()
 
 

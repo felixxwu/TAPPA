@@ -162,7 +162,12 @@ class ChunkJob:
 	var priority := 0.0
 	var dist := 0.0  # distance from the car, in chunks, at the last plan
 	var cancelled := false
+	var task_id := -1  # the WorkerThreadPool task building this job's heights and arrays, -1 when none
 	var stitch := 0
+	var road_slack := 0.0
+	var paint_reach := 0.0
+	var ao_bush := 0.0
+	var bank_m := 0.0
 	var cands := PackedInt32Array()
 	# Near and mid chunks sample a one-sample border so edge normals match their neighbours; far chunks
 	# skip it and take one-sided slopes at their edges, which fog hides.
@@ -208,8 +213,34 @@ class PlantGround:
 		return streamer._light_with(height_at, x, z)
 
 
-var _road_slack := 0.0
-var _paint_reach := 0.0
+var _inflight: Array[ChunkJob] = []
+
+
+func _exit_tree() -> void:
+	for job in _inflight:
+		job.cancelled = true
+		WorkerThreadPool.wait_for_task_completion(job.task_id)
+		job.task_id = -1
+	_inflight.clear()
+
+
+# Whether a chunk's heights and arrays may be built off the main thread: false when sampling writes state shared with other chunks.
+func _can_thread_build() -> bool:
+	return false
+
+
+func _threads_ok() -> bool:
+	return OS.has_feature("threads") and _can_thread_build() and Config.data.threaded_chunk_build
+
+
+var _prefilling := false
+var ground_casts_shadow := true
+
+
+func _max_builds() -> int:
+	if _prefilling:
+		return OS.get_processor_count()
+	return Config.data.chunk_build_tasks_web if OS.has_feature("web") else Config.data.chunk_build_tasks_desktop
 
 
 func _ready() -> void:
@@ -466,16 +497,29 @@ func _process(delta: float) -> void:
 # Build everything the planner wants with no budget: used once at boot, behind the spawn.
 func prefill() -> void:
 	_plan()
-	var start := Time.get_ticks_usec()
-	_run_queue(start + 60_000_000)
+	_run_all()
+
+
+func _run_all() -> void:
+	var deadline := Time.get_ticks_usec() + 60_000_000
+	_run_queue(deadline)
+	while (not _queue.is_empty() or not _inflight.is_empty()) and Time.get_ticks_usec() < deadline:
+		OS.delay_usec(200)
+		_run_queue(deadline)
 
 
 # prefill() in slices of prefill_slice_ms with a frame between, so the loading screen keeps drawing.
 func prefill_async() -> void:
 	_plan()
-	while not _queue.is_empty():
-		_run_queue(Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0))
+	_prefilling = true
+	while not _queue.is_empty() or not _inflight.is_empty():
+		var deadline := Time.get_ticks_usec() + int(settings.prefill_slice_ms * 1000.0)
+		_run_queue(deadline)
+		while not _inflight.is_empty() and Time.get_ticks_usec() < deadline:
+			OS.delay_usec(200)
+			_run_queue(deadline)
 		await get_tree().process_frame
+	_prefilling = false
 
 
 # Prefill around a point the car is about to be moved to (a respawn or a rest-stop travel), so it
@@ -484,7 +528,7 @@ func prefill_async() -> void:
 func prefill_at(p: Vector2) -> void:
 	_plan_override = p
 	_plan()
-	_run_queue(Time.get_ticks_usec() + 60_000_000)
+	_run_all()
 	_plan_override = null
 
 
@@ -613,6 +657,7 @@ func has_collision_at(x: float, z: float) -> bool:
 
 func _run_queue(deadline: int) -> void:
 	_ran_this_frame = false
+	_poll_builds()
 	for coord: Vector2i in _holes_due.keys():
 		if not _atomic("holes", deadline, _cut_holes.bind(coord)):
 			return
@@ -632,7 +677,7 @@ func _run_queue(deadline: int) -> void:
 		if job.cancelled or job.stage == Stage.DONE:
 			_queue.remove_at(i)
 			continue
-		if blocked.has(job):
+		if blocked.has(job) or job.task_id >= 0:
 			i += 1
 			continue
 		# A mid build stops once its mesh and collision are in: its trees, bushes and rocks go
@@ -640,10 +685,17 @@ func _run_queue(deadline: int) -> void:
 		# into the planting kept the next chunk's collision waiting behind this chunk's
 		# foliage, which is how a fast car outran its collision and fell through the world.
 		var planting := job.stage > Stage.COLLIDE
-		if not _step(job, deadline, Stage.DONE if planting else Stage.PLANT):
+		var threaded := job.stage <= Stage.HEIGHTS and job.cursor == 0 and _threads_ok()
+		var stop := Stage.HEIGHTS if threaded else (Stage.DONE if planting else Stage.PLANT)
+		if not _step(job, deadline, stop):
 			if job.priority < SKIPPABLE_PRIORITY:
 				return
 			blocked[job] = true
+			i += 1
+			continue
+		if threaded and job.stage == Stage.HEIGHTS:
+			if _inflight.size() < _max_builds():
+				_dispatch_build(job)
 			i += 1
 			continue
 		if job.stage == Stage.DONE:
@@ -659,6 +711,43 @@ func _run_queue(deadline: int) -> void:
 			i = 0  # it may have gone in ahead of jobs already passed over
 		if Time.get_ticks_usec() >= deadline:
 			return
+
+
+func _dispatch_build(job: ChunkJob) -> void:
+	_begin_pack(job)
+	if job.tile:
+		job.stitch = _stitch_mask(job.coord)
+	job.task_id = WorkerThreadPool.add_task(_build_job.bind(job), false, "chunk build")
+	_inflight.append(job)
+
+
+func _build_job(job: ChunkJob) -> void:
+	_compute_heights(job)
+	if job.cancelled:
+		return
+	_start_arrays(job)
+	_compute_arrays(job)
+	if not job.cancelled:
+		_finish_arrays(job)
+
+
+# Hands every finished build back to the queue (to UPLOAD), or drops it if it was cancelled meanwhile.
+func _poll_builds() -> void:
+	var i := 0
+	while i < _inflight.size():
+		var job := _inflight[i]
+		if WorkerThreadPool.is_task_completed(job.task_id):
+			_collect_build(job)
+		else:
+			i += 1
+
+
+func _collect_build(job: ChunkJob) -> void:
+	WorkerThreadPool.wait_for_task_completion(job.task_id)
+	job.task_id = -1
+	_inflight.erase(job)
+	if job.cancelled:
+		job.stage = Stage.DONE
 
 
 # Queue order, lowest first (d = distance from the car in chunks, at most far_radius + 0.5):
@@ -745,6 +834,8 @@ func _rush_collision(t: Vector2i) -> bool:
 	if st.mid_job == null:
 		st.mid_job = _new_job(st.coord, Level.MID, true)
 	var job := st.mid_job
+	if job.task_id >= 0:
+		_collect_build(job)
 	job.with_collision = true
 	job.priority = -3000.0
 	var saved := _ran_this_frame
@@ -858,8 +949,6 @@ func _cands_of(coord: Vector2i) -> PackedInt32Array:
 func _heights(job: ChunkJob, deadline: int) -> bool:
 	var m := job.n + 2 * job.halo
 	var total := m * m
-	var ox := job.origin.x
-	var oy := job.origin.y
 	var t0 := Time.get_ticks_usec()
 	var done := 0
 	_last_kind = "heights"
@@ -869,13 +958,7 @@ func _heights(job: ChunkJob, deadline: int) -> bool:
 		# Never start a sample that would not fit, judged by the dearest recent sample.
 		if (_ran_this_frame or done > 0) and t_prev + peak >= deadline:
 			break
-		var gx := job.cursor % m - job.halo
-		@warning_ignore("integer_division")
-		var gz := job.cursor / m - job.halo
-		var vi := -1
-		if gx >= 0 and gz >= 0 and gx < job.n and gz < job.n:
-			vi = gz * job.n + gx
-		job.heights[job.cursor] = _sample(job, ox + gx * job.stride, oy + gz * job.stride, vi)
+		job.heights[job.cursor] = _height_for(job, job.cursor)
 		job.cursor += 1
 		done += 1
 		var t_now := Time.get_ticks_usec()
@@ -889,6 +972,28 @@ func _heights(job: ChunkJob, deadline: int) -> bool:
 		return false
 	_start_arrays(job)
 	return true
+
+
+func _height_for(job: ChunkJob, k: int) -> float:
+	var m := job.n + 2 * job.halo
+	var gx := k % m - job.halo
+	@warning_ignore("integer_division")
+	var gz := k / m - job.halo
+	var vi := -1
+	if gx >= 0 and gz >= 0 and gx < job.n and gz < job.n:
+		vi = gz * job.n + gx
+	return _sample(job, job.origin.x + gx * job.stride, job.origin.y + gz * job.stride, vi)
+
+
+func _compute_heights(job: ChunkJob) -> void:
+	var m := job.n + 2 * job.halo
+	for row in m:
+		if job.cancelled:
+			return
+		for col in m:
+			var k := row * m + col
+			job.heights[k] = _height_for(job, k)
+	job.cursor = m * m
 
 
 # One height sample; `vi` is the vertex index when the sample is a vertex (not the halo), else -1.
@@ -915,13 +1020,6 @@ func _start_arrays(job: ChunkJob) -> void:
 
 func _arrays(job: ChunkJob, deadline: int) -> bool:
 	var n := job.n
-	var hl := job.halo
-	var m := n + 2 * hl
-	var lo := -hl
-	var top := n - 1 + hl
-	var s := job.stride
-	var ox := job.origin.x
-	var oy := job.origin.y
 	var done := 0
 	_begin_pack(job)
 	_last_kind = "arrays"
@@ -935,36 +1033,57 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 			t_prev = t_now
 			if (_ran_this_frame or done > 0) and t_now + peak >= deadline:
 				break
-		var i := job.cursor
-		var gx := i % n
-		@warning_ignore("integer_division")
-		var gz := i / n
-		var row := (gz + hl) * m
-		var h := job.heights[row + gx + hl]
-		# central differences, falling back to one-sided at an edge with no border sample
-		var xl := maxi(gx - 1, lo)
-		var xr := mini(gx + 1, top)
-		var zd := maxi(gz - 1, lo)
-		var zu := mini(gz + 1, top)
-		var dhx := (job.heights[row + xr + hl] - job.heights[row + xl + hl]) / ((xr - xl) * s)
-		var dhz := (job.heights[(zu + hl) * m + gx + hl] - job.heights[(zd + hl) * m + gx + hl]) / ((zu - zd) * s)
-		var normal := Vector3(-dhx, 1.0, -dhz).normalized()
-		var px := ox + gx * s
-		var pz := oy + gz * s
-		job.verts[i] = Vector3(gx * s, h, gz * s)
-		_pack_vertex(job, i, px, pz, normal)
+		_pack_at(job, job.cursor)
 		job.cursor += 1
 		done += 1
 	_peak_us["arrays"] = peak
 	_ran_this_frame = _ran_this_frame or done > 0
 	if job.cursor < n * n:
 		return false
-	# Skirts: a strip hanging below the edge, so neighbouring chunks at different detail never
-	# show a crack between them.
 	if job.tile:
 		job.stitch = _stitch_mask(job.coord)
-		if job.stitch != 0:
-			_stitch(job.verts, job.heights, n, hl, job.stride, job.stitch)
+	_finish_arrays(job)
+	return true
+
+
+func _pack_at(job: ChunkJob, i: int) -> void:
+	var n := job.n
+	var hl := job.halo
+	var m := n + 2 * hl
+	var s := job.stride
+	var gx := i % n
+	@warning_ignore("integer_division")
+	var gz := i / n
+	var row := (gz + hl) * m
+	var h := job.heights[row + gx + hl]
+	# central differences, falling back to one-sided at an edge with no border sample
+	var xl := maxi(gx - 1, -hl)
+	var xr := mini(gx + 1, n - 1 + hl)
+	var zd := maxi(gz - 1, -hl)
+	var zu := mini(gz + 1, n - 1 + hl)
+	var dhx := (job.heights[row + xr + hl] - job.heights[row + xl + hl]) / ((xr - xl) * s)
+	var dhz := (job.heights[(zu + hl) * m + gx + hl] - job.heights[(zd + hl) * m + gx + hl]) / ((zu - zd) * s)
+	var normal := Vector3(-dhx, 1.0, -dhz).normalized()
+	job.verts[i] = Vector3(gx * s, h, gz * s)
+	_pack_vertex(job, i, job.origin.x + gx * s, job.origin.y + gz * s, normal)
+
+
+func _compute_arrays(job: ChunkJob) -> void:
+	var n := job.n
+	for gz in n:
+		if job.cancelled:
+			return
+		for gx in n:
+			_pack_at(job, gz * n + gx)
+	job.cursor = n * n
+
+
+# Skirts: a strip hanging below the edge, so neighbouring chunks at different detail never
+# show a crack between them. `job.stitch` is already set.
+func _finish_arrays(job: ChunkJob) -> void:
+	var n := job.n
+	if job.stitch != 0:
+		_stitch(job.verts, job.heights, n, job.halo, job.stride, job.stitch)
 	var drop: float = [3.0, 6.0, 12.0, HORIZON_SKIRT_M][job.level]
 	var perim := _perimeter(n)
 	for k in perim.size():
@@ -974,7 +1093,6 @@ func _arrays(job: ChunkJob, deadline: int) -> bool:
 		job.uvs[n * n + k] = job.uvs[src]
 		job.uv2s[n * n + k] = _skirt_uv2(job.uv2s[src])
 	job.stage = Stage.UPLOAD
-	return true
 
 
 # What a skirt vertex carries in UV2; a ground shader may use it to draw skirts flat.
@@ -1062,9 +1180,9 @@ func _restitch(ts: TileState, mask: int) -> void:
 # Once per _arrays call: values _pack_vertex reuses for every vertex.
 func _begin_pack(job: ChunkJob) -> void:
 	# how far the interpolated unsigned distance can overshoot the true one across a centreline
-	_road_slack = 0.75 * job.stride
+	job.road_slack = 0.75 * job.stride
 	# a vertex within one triangle of painted road carries the tarmac weight the pixels blend with
-	_paint_reach = terrain.paint_mid_m() + terrain.paint_half_m() + job.stride
+	job.paint_reach = terrain.paint_mid_m() + terrain.paint_half_m() + job.stride
 
 
 # Fills colour, UVs and UV2 of vertex `i` (verts[i] is already set); also widens the job's ring span.
@@ -1081,17 +1199,17 @@ func _pack_vertex(job: ChunkJob, i: int, px: float, pz: float, normal: Vector3) 
 	#          interpolates exactly over a triangle that straddles the road;
 	#   UV.y   unsigned distance less _road_slack. Where the side flips between two roads (in a
 	#          junction, or midway between parallel roads) UV.x interpolates through a false
-	#          zero and UV.y does not; the shader takes max(|UV.x|, UV.y). _road_slack covers
+	#          zero and UV.y does not; the shader takes max(|UV.x|, UV.y). road_slack covers
 	#          how far UV.y overshoots across a real centreline, so there it never wins;
 	#   UV2    x tarmac weight, y arc length along the road (dashes);
 	#   COLOR.a  lane-marking weight (0 on rest-stop pads and in junctions).
 	col.a = job.road_info[3 * i + 2]
 	var tarmac := 0.0
-	if job.road_d[i] < _paint_reach:
+	if job.road_d[i] < job.paint_reach:
 		tarmac = terrain.tarmac_weight(px, pz)
 	job.uv2s[i] = Vector2(tarmac, job.road_info[3 * i + 1])
 	job.colors[i] = col
-	job.uvs[i] = Vector2(job.road_info[3 * i], job.road_d[i] - _road_slack)
+	job.uvs[i] = Vector2(job.road_info[3 * i], job.road_d[i] - job.road_slack)
 
 
 func _upload(job: ChunkJob) -> void:
@@ -1120,6 +1238,8 @@ func _attach(job: ChunkJob) -> void:
 	mi.mesh = job.mesh
 	mi.material_override = _ground_material(job)
 	mi.position = Vector3(job.origin.x, 0.0, job.origin.y)
+	if not ground_casts_shadow:
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.add_to_group(&"id_terrain")  # outlines treat all ground as one surface, with no line at chunk seams
 	add_child(mi)
 	var arrays := [job.verts, job.colors, job.uvs, job.uv2s]

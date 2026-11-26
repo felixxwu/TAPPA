@@ -49,3 +49,28 @@ func test_apply_visibility_range_noop_when_uncapped() -> void:
 	assert_eq(touched, 0, "nothing touched when uncapped")
 	assert_almost_eq(root.visibility_range_end, 0.0, 1e-4, "end left at the unlimited default")
 	root.free()
+
+
+func test_merge_static_draws_every_visible_part_from_one_mesh_a_surface_per_material() -> void:
+	var root := Node3D.new()
+	add_child_autofree(root)
+	var red := StandardMaterial3D.new()
+	var blue := StandardMaterial3D.new()
+	var parts := [[BoxMesh.new(), red, Vector3(1, 0, 0)], [CylinderMesh.new(), red, Vector3(-1, 0, 0)], [BoxMesh.new(), blue, Vector3(0, 2, 0)]]
+	for p in parts:
+		var mi := MeshInstance3D.new()
+		mi.mesh = p[0]
+		mi.material_override = p[1]
+		mi.position = p[2]
+		root.add_child(mi)
+	var hidden := MeshInstance3D.new()
+	hidden.mesh = BoxMesh.new()
+	hidden.visible = false
+	root.add_child(hidden)
+	var merged := MeshUtil.merge_static(root)
+	var left := root.find_children("*", "MeshInstance3D", true, false)
+	assert_eq(left.size(), 2, "the merged mesh and the hidden part, which is left alone")
+	assert_eq(merged.mesh.get_surface_count(), 2, "one surface per material")
+	var aabb := merged.mesh.get_aabb()
+	assert_true(aabb.has_point(Vector3(1, 0, 0)) and aabb.has_point(Vector3(-1, 0, 0)) and aabb.has_point(Vector3(0, 2, 0)),
+		"each part where it stood")

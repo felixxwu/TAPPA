@@ -13,16 +13,15 @@ const SHOP_ICON := "res://icons/cards/shop.png"
 const SHOP_TINT := Color(0.45, 0.12, 0.5)
 const ICON_SIZE := 0.7
 
-var _bases: PackedFloat32Array = []
+var _spots := PackedVector3Array()
+var _bodies: MultiMesh
+var _icons: MultiMesh
 var _t := 0.0
 
 
 func setup(points: Array, height_at: Callable, tint := Color.BLACK, icon_path := ICON) -> void:
-	var body := MeshInstance3D.new()
-	body.mesh = obelisk_mesh(tint)
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/level_prop.gdshader")
-	body.material_override = mat
 	var icon := QuadMesh.new()
 	icon.size = Vector2.ONE * ICON_SIZE
 	var icon_mat := StandardMaterial3D.new()
@@ -32,27 +31,49 @@ func setup(points: Array, height_at: Callable, tint := Color.BLACK, icon_path :=
 	icon_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	icon.material = icon_mat
 	for p: Vector2 in points:
-		var beacon := Node3D.new()
-		beacon.position = Vector3(p.x, float(height_at.call(p.x, p.y)) + HOVER + TIP, p.y)
-		_bases.append(beacon.position.y)
-		beacon.add_child(body.duplicate())
-		for side in [1.0, -1.0]:
-			var face := MeshInstance3D.new()
-			face.mesh = icon
-			face.position = Vector3(0.0, BODY * 0.6, side * (DEPTH * 0.5 + 0.01))
-			face.rotation.y = 0.0 if side > 0.0 else PI  # the back icon turned round so it doesn't read mirrored
-			beacon.add_child(face)
-		add_child(beacon)
-	body.free()
+		_spots.append(Vector3(p.x, float(height_at.call(p.x, p.y)) + HOVER + TIP, p.y))
+	# Every beacon in two MultiMeshes (bodies, icons) so the lot is two draw calls however many there are.
+	_bodies = _field("Bodies", obelisk_mesh(tint), mat, _spots.size())
+	_icons = _field("Icons", icon, null, _spots.size() * 2)
+	_place()
+
+
+func count() -> int:
+	return _spots.size()
+
+
+func _field(field_name: String, mesh: Mesh, mat: Material, n: int) -> MultiMesh:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = n
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = field_name
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
+	return mm
 
 
 func _process(dt: float) -> void:
 	_t += dt
+	_place()
+
+
+func _place() -> void:
 	var cfg := Config.data
-	for i in get_child_count():
-		var b := get_child(i) as Node3D
-		b.rotation.y = _t * cfg.teleport_beacon_spin
-		b.position.y = _bases[i] + sin((_t * cfg.teleport_beacon_bob_hz + i * 0.37) * TAU) * cfg.teleport_beacon_bob_m
+	var turn := Basis(Vector3.UP, _t * cfg.teleport_beacon_spin)
+	for i in _spots.size():
+		var at := _spots[i]
+		at.y += sin((_t * cfg.teleport_beacon_bob_hz + i * 0.37) * TAU) * cfg.teleport_beacon_bob_m
+		var xf := Transform3D(turn, at)
+		_bodies.set_instance_transform(i, xf)
+		for k in 2:
+			var side := 1.0 if k == 0 else -1.0
+			# the back icon turned round so it doesn't read mirrored
+			var face := Transform3D(Basis(Vector3.UP, 0.0 if k == 0 else PI), Vector3(0.0, BODY * 0.6, side * (DEPTH * 0.5 + 0.01)))
+			_icons.set_instance_transform(i * 2 + k, xf * face)
 
 
 # A tall box whose bottom narrows to a downward point, flat-shaded, with its origin where box meets point.

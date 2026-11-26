@@ -7,7 +7,7 @@ extends Node
 #       extra flags: --until=<seconds> (default 15), --full for the whole drive, --off=DustPuffs,TireMarks,BushInteraction* frees the nodes with those names or script classes first (PostProcess
 #       renders straight to the screen), --flat-sky swaps the panorama sky for a plain colour, --no-timers leaves the
 #       renderer's timing off, --empty samples a bare camera for the engine's own floor
-#     in a browser (./serve_web.sh): https://localhost:8080/?replay=1, with &until=30 or &full=1
+#     in a browser (./start_web.sh): https://localhost:8080/?replay=1, with &until=30 or &full=1
 #
 # Each physics tick stores the car's pose, velocities and the driver's inputs. The replay feeds the
 # inputs back through the car's AI controls and snaps the pose each tick, so the car (and its dust,
@@ -29,6 +29,9 @@ var _started := false
 var _warmup_left := WARMUP_FRAMES
 var _samples := {}
 var _view_rid: RID
+var _last_cap := {}
+var _peak_draws := 0
+var _draw_breakdown := {}
 var _last_usec := 0
 var _frame_start_usec := 0  # when this frame's first physics or process step began; 0 until it has
 var _tick_start_usec := 0     # this physics tick's start, before any _physics_process runs
@@ -111,7 +114,7 @@ func _ready() -> void:
 	if _recording:
 		print("level replay: recording to %s — quit to save" % _path)
 	else:
-		print("level replay: replaying %s (%.1f s)" % [_path, _ticks.size() / STRIDE / float(Engine.physics_ticks_per_second)])
+		print("level replay: replaying %s (%.1f s)" % [_path, _ticks.size() / float(STRIDE) / Engine.physics_ticks_per_second])
 		_car.ai_controlled = true
 		var cams := _level.get_node("CameraManager")
 		cams._index = cams.ORDER.find(CameraManager.Mode.CHASE)  # not set_mode: that would save over the player's choice
@@ -157,7 +160,8 @@ func _start_sampling(view: Viewport) -> void:
 	_samples["physics_step_ms"] = []
 	RenderingServer.frame_post_draw.connect(_on_frame_drawn)
 	_samples["busy_ms"] = []
-	for stream in ["frame_ms", "draws", "objects", "prims", "render_cpu_ms", "render_gpu_ms", "process_ms", "physics_ms"]:
+	for stream in ["frame_ms", "draws", "objects", "prims", "render_cpu_ms", "render_gpu_ms", "process_ms", "physics_ms",
+			"t_s", "car_x", "car_z", "chunks_building", "chunks_queued", "cover_building", "scripts_ms"]:
 		_samples[stream] = []
 
 
@@ -234,12 +238,32 @@ func _process(_delta: float) -> void:
 		print("  spike %.1f ms at %.2f s, car (%.0f, %.0f), render cpu %.1f ms" % [frame_ms,
 			_tick / float(Engine.physics_ticks_per_second), p.x, p.z, RenderingServer.viewport_get_measured_render_time_cpu(_view_rid)])
 	_samples["draws"].append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+	var draws := int(_samples["draws"][-1])
+	if draws > _peak_draws:
+		_peak_draws = draws
+		_draw_breakdown = {"draws": draws, "t_s": _tick / float(Engine.physics_ticks_per_second), "by_owner": _visible_by_owner()}
 	_samples["objects"].append(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 	_samples["prims"].append(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 	_samples["render_cpu_ms"].append(RenderingServer.viewport_get_measured_render_time_cpu(_view_rid))
 	_samples["render_gpu_ms"].append(RenderingServer.viewport_get_measured_render_time_gpu(_view_rid))
 	_samples["process_ms"].append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
 	_samples["physics_ms"].append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+	var car_at := _car.global_position if _car != null else Vector3.ZERO
+	_samples["t_s"].append(_tick / float(Engine.physics_ticks_per_second))
+	_samples["car_x"].append(car_at.x)
+	_samples["car_z"].append(car_at.z)
+	var cap: Dictionary = PerfLog._cap_us
+	var slow := {}
+	for key in cap:
+		var ms := (int(cap[key]) - int(_last_cap.get(key, 0))) / 1000.0
+		if ms >= 0.5:
+			slow[String(key)] = snappedf(ms, 0.1)
+	_last_cap = cap.duplicate()
+	_samples["scripts_ms"].append(slow)
+	var streamer: LevelStreamer = _level.get("_streamer")
+	_samples["chunks_building"].append(streamer._inflight.size() if streamer != null else 0)
+	_samples["chunks_queued"].append(streamer._queue.size() if streamer != null else 0)
+	_samples["cover_building"].append(streamer.cover.pending() if streamer != null and streamer.cover != null else 0)
 
 
 func _mark_frame_start() -> void:
@@ -290,7 +314,7 @@ func _finish() -> void:
 	print("\n=== level replay benchmark: %s ===" % _path)
 	BenchmarkStats.print_summary(stats, DisplayServer.get_name() == "headless")
 	if Platform.is_web():
-		await _post(stats, scripts)  # the browser has no terminal: the results go to serve_web.sh's collector
+		await _post(stats, scripts)  # the browser has no terminal: the results go to start_web.sh's collector
 	get_tree().quit()
 
 
@@ -305,7 +329,9 @@ func _post(stats: Dictionary, scripts: Dictionary) -> void:
 		label += "-notimers"
 	if _empty:
 		label = "level-replay-empty"
-	var report := BenchmarkReport.build(stats, scripts, device, Time.get_datetime_string_from_system(true), label)
+	var report := BenchmarkReport.build(stats, scripts, device, Time.get_datetime_string_from_system(true), label, LevelView.load_ms)
+	report["draw_breakdown"] = _draw_breakdown
+	report["frames"] = _samples  # every frame's samples, to line a spike up with what was happening then
 	var http := HTTPRequest.new()
 	add_child(http)
 	var origin := String(JavaScriptBridge.eval("window.location.origin", true))
@@ -322,7 +348,7 @@ func _exit_tree() -> void:
 		push_error("level replay: can't write %s" % _path)
 		return
 	file.store_var({"level": Config.data.level_path, "car": _car_id, "hz": Engine.physics_ticks_per_second, "ticks": _ticks})
-	print("level replay: saved %.1f s to %s" % [_ticks.size() / STRIDE / float(Engine.physics_ticks_per_second), _path])
+	print("level replay: saved %.1f s to %s" % [_ticks.size() / float(STRIDE) / Engine.physics_ticks_per_second, _path])
 	_ticks = PackedFloat32Array()
 
 
@@ -339,3 +365,36 @@ func _load() -> bool:
 	_ticks = d["ticks"]
 	_car_id = String(d.get("car", ""))
 	return true
+
+
+# At the frame with the most draw calls: how many on-screen meshes each of the level's top-level nodes contributes, as "Owner/Class" -> [meshes, multimesh instances, shadow casters].
+func _visible_by_owner() -> Dictionary:
+	var cam := get_viewport().get_camera_3d()
+	var out := {}
+	if cam == null:
+		return out
+	var stack: Array[Node] = [_level]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.append(c)
+		var g := n as GeometryInstance3D
+		if g == null or not g.is_visible_in_tree():
+			continue
+		var centre := g.global_transform * g.get_aabb().get_center()
+		var far := g.visibility_range_end
+		if far > 0.0 and centre.distance_to(cam.global_position) > far + g.get_aabb().size.length():
+			continue
+		if not cam.is_position_in_frustum(centre) and centre.distance_to(cam.global_position) > g.get_aabb().size.length():
+			continue
+		var path := String(_level.get_path_to(g)).split("/")
+		var key := "%s/%s" % ["/".join(path.slice(0, mini(3, path.size() - 1))).rstrip("0123456789_"), g.get_class()]
+		var row: Array = out.get(key, [0, 0, 0])
+		row[0] += 1
+		var mmi := g as MultiMeshInstance3D
+		if mmi != null and mmi.multimesh != null:
+			row[1] += mmi.multimesh.visible_instance_count if mmi.multimesh.visible_instance_count >= 0 else mmi.multimesh.instance_count
+		if g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			row[2] += 1
+		out[key] = row
+	return out

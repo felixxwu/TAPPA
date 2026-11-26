@@ -95,3 +95,6 @@ __pycache__/
 *.bake.res
 
 /logs/
+
+# Node tooling dependencies (npm install in tools/)
+/tools/node_modules/

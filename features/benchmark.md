@@ -33,9 +33,9 @@ after `WARMUP_FRAMES`, and `BenchmarkStats.print_summary` prints the stats befor
 car and the chase camera, not your save. A replay stops after `DEFAULT_UNTIL_S` (15 s); `--full` plays the whole
 drive, `--until=<s>` any length, and `--off=DustPuffs,BushInteraction*,GroundCover` hides and stops the scene nodes with those names (wildcards) or script classes first (hidden ground cover also builds no tiles), to isolate a feature's
 cost. Every frame over `BenchmarkStats.SPIKE_MS` is printed with its time and the car's position. In a browser
-(`./serve_web.sh`, a web build includes the level and `benchmark/runs/`), `?replay=1` boots straight into it
+(`./start_web.sh`, a web build includes the level and `benchmark/runs/`), `?replay=1` boots straight into it
 (`title_boot.gd`) and takes the same flags from the URL (`&until=30`, `&full=1`); the report POSTs to the collector
-like the in-game benchmark's, labelled `level-replay-<recording>` (plus `-off-<nodes>`). A browser holds the frame to
+like the in-game benchmark's, labelled `level-replay-<recording>` (plus `-off-<nodes>`). The replay's report also carries `frames`: every sampled stream frame by frame, plus the replay time, the car's position and the streamer's in-flight chunk builds, queued chunk jobs and in-flight cover tiles, and `scripts_ms` (each `PerfLog.track` key over 0.5 ms since the previous frame; the level's per-frame scripts `level_view`, `level_trees`, `terrain_streamer`, `ground_cover`, `level_spectators`, `level_minimap`, `level_map`, `route_arrow` are tracked), so a spike can be lined up with what was loading at the time. It also carries `load_ms` (`LevelView.load_ms`, via `BenchmarkReport.build`'s last argument): `parse`, `bake_load`, `decode`, `tree_setup`, `buildings_read`, `built`, `prefill`, `warm_up` in ms, `engine_to_ready` (engine clock when the level's `_ready` began) and `ready_at` (when loading ended; the difference is the whole load). A browser holds the frame to
 the screen's refresh, so `frame_ms` hides headroom; the replay also samples `busy_ms`, the main-thread time from a
 frame's first physics or process step to `RenderingServer.frame_post_draw` (scripts, physics and draw submission,
 not GPU time), which `BenchmarkStats.summarise` reports as `busy_avg_ms` / `_p95` / `_p99` / `_max`. The web
@@ -158,7 +158,7 @@ viewer). Normal play is untouched.
 
 The boot hook is `title_boot.gd` → `Benchmark.autostart_requested()` /
 `fetch_sweep_config()` / `apply_sweep()`. The reload poller is injected into the served
-`index.html` by `serve_web.sh` (never into a shipped build).
+`index.html` by `start_web.sh` (never into a shipped build).
 
 For hands-off iteration on a real phone, load the web build with **`?bench=1`** in
 the URL. On boot the title scene launches straight into a benchmark run instead of
@@ -167,9 +167,17 @@ the world, and the run POSTs its result back (below). Two pieces make it a loop 
 - **Reload listener.** The page polls
   `GET /reload-token` each second and reloads the page when the token changes. The
   collector's token embeds its start time, so a **rebuild** (which restarts
-  `serve_web.sh`) flips it automatically; `POST /reload` bumps it to force a reload
+  `start_web.sh`) flips it automatically; `POST /reload` bumps it to force a reload
   without a rebuild. So a dev's edit→rebuild cycle re-runs the benchmark on the
   phone unattended.
+- **Rebuild on save.** While serving, `start_web.sh` watches the game's source
+  (`watch_and_rebuild`: a fingerprint of scripts, shaders, scenes, models, icons,
+  levels and project settings, checked every 2 s) and re-exports `build/web` when it
+  changes, re-injecting the reload poller. It deliberately does NOT change the reload
+  token, so open pages keep running until refreshed by hand (or a `POST /reload`).
+  `--no-watch` turns it off. The injected poller also checks `GET /build-id` (the
+  collector's `index.pck` modification time) each second and, once it changes,
+  prefixes the tab title with "⟳ New build, refresh" so a waiting rebuild is visible.
 - **Remote toggle sweep.** On a `?bench=1` boot the game fetches `GET /bench-config`
   (a synchronous XHR) and disables the benchmark toggles it names
   (`{"disabled": ["spectators", ...]}`) before starting — so a dev drives a full
@@ -207,13 +215,13 @@ the world, and the run POSTs its result back (below). Two pieces make it a loop 
 in `scripts/perf_log.gd`, the POST in `scripts/benchmark_runner.gd`
 (`_report`/`_resolve_report_url`), the status line in `scripts/benchmark_results.gd`
 (`set_report_status`), and the collector `tools/bench_collector.py` (wired into
-`serve_web.sh`).
+`start_web.sh`).
 
 The point of this loop is to profile per-system cost **on the actual phone** and
 get the numbers back to a dev machine (or Claude) to iterate — no push to prod:
 
 ```
-edit code → ./serve_web.sh → open https://<mac-LAN-IP>:8080 on the phone (accept
+edit code → ./start_web.sh → open https://<mac-LAN-IP>:8080 on the phone (accept
 the one-time self-signed-cert warning) → run Settings → Benchmark → results POST
 back → build/bench-results/*.json → analyse → edit → repeat
 ```
@@ -237,12 +245,12 @@ back → build/bench-results/*.json → analyse → edit → repeat
   `GameConfig.bench_report_url` wins (set it on an installed **APK** to reach your
   dev machine, e.g. `http://192.168.1.50:8080/bench`); otherwise on a **web**
   build it POSTs to `/bench` on the page's own origin (`window.location.origin`
-  via `JavaScriptBridge`) — so the `serve_web.sh` LAN loop is zero-config.
+  via `JavaScriptBridge`) — so the `start_web.sh` LAN loop is zero-config.
   Skipped headless / when nothing resolves (desktop dev). The results panel shows
   `reporting…` → `reported ✓` / `report failed …`.
 - **The collector.** `tools/bench_collector.py` serves `build/web` **and** accepts
   `POST /bench`, writing each report to `build/bench-results/<utc>-<label>.json`
-  (git-ignored) and printing a one-line headline to the terminal. `serve_web.sh`
+  (git-ignored) and printing a one-line headline to the terminal. `start_web.sh`
   runs it, so the game is served and reports are collected on the same origin/port.
 - **Isolating a system.** Two attribution paths feed the same collector: a single
   run already separates CPU (per-script + physics ms) from GPU (draws/prims/render

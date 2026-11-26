@@ -276,7 +276,7 @@ func _on_report_done(_result: int, code: int, _headers: PackedStringArray,
 
 # The endpoint to POST results to. An explicit GameConfig.bench_report_url wins
 # (set it on an installed APK to reach your dev machine). Otherwise, on a web
-# build, POST to "/bench" on the page's own origin — the serve_web.sh collector —
+# build, POST to "/bench" on the page's own origin — the start_web.sh collector —
 # so the LAN loop is zero-config. Empty everywhere else (desktop dev).
 func _resolve_report_url() -> String:
 	var configured := String(Config.data.bench_report_url)

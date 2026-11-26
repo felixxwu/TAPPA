@@ -335,7 +335,7 @@ points at terrain contacts after items 3 and 8. Low priority.
   `car.gd` `_any_wheel_airborne`), not `find_children`'d per frame.
 - Terrain generation is threaded with a per-frame integration cap
   (`MAX_INTEGRATIONS_PER_FRAME = 1`) and a synchronous fallback already exists.
-- The web export's threading configuration is settled (`serve_web.sh`,
+- The web export's threading configuration is settled (`start_web.sh`,
   `export_presets.cfg`): the build ships **single-threaded**, so it needs no
   `SharedArrayBuffer` / cross-origin isolation.
 
