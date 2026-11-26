@@ -347,13 +347,18 @@ photographs the overlay.
 **Gestures**, layered underneath the widgets: a one-finger drag anywhere off a widget
 looks around (`PhotoModeCamera.look_by`, same sign convention as the mouse path — dragging
 right turns the view left), and a two-finger pinch anywhere zooms the fov
-(`PhotoModeCamera.zoom_by`). Every look input (mouse, drag, look stick, gamepad) goes through
+(`PhotoModeCamera.zoom_by`). On desktop the mouse wheel zooms through the same `zoom_by`, one
+`photo_wheel_zoom_step` per notch; a Mac trackpad's two-finger scroll (`InputEventPanGesture`) and pinch (`InputEventMagnifyGesture`) zoom too. Every look input (mouse, drag, look stick, gamepad) goes through
 `PhotoModeCamera.look_by`, which slows it by `zoom_look_scale` — the ratio of the current lens's view
 width to the one photo mode opened with, capped at 1 — so zoomed in, a drag moves the picture by the
 same share of the screen. The one-finger look is suppressed for as long as a second
 finger is down, so a pinch can never also swing the camera (`_register_free_pointer`
 promotes the pair to a pinch and drops `_look_owner`). When one finger lifts, the other goes
 back to looking.
+
+**Controls legend:** off touch, `PhotoModeCamera._build_legend` lists the keyboard / gamepad controls in a panel bottom-left; H hides it (touch has the widgets instead).
+
+**Taking a photo:** P or gamepad X (`PhotoModeCamera.take_photo`) saves the frame as a PNG in the system Pictures folder's `Rally Photos` (the user data folder where there is no Pictures folder), shows "Saved to <path>" (home folder as ~) for four seconds, hiding the legend and that note for the frame it saves and emits `photo_taken(path)`.
 
 **While hidden, a plain TAP restores the widgets** — but a drag still looks and a pinch
 still zooms, so a player can compose a shot with the chrome completely gone and only tap

@@ -136,7 +136,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   only its finest built mesh (`_show_finest`), and the horizon past them:
   - **near**, `near_stride_m` (2 m), drawn in `near_tile_m` (32 m) **tiles** smaller than a chunk
     (`TileState`, in `_tiles`): every tile whose closest point is within
-    `NEAR_REACH_M` (70 m) of the car (`near_tiles_of`). Drawn and
+    `near_reach()` of the car (`near_tiles_of`): `NEAR_REACH_M` (70 m), or the whole far ring while `full_detail` is on (photo mode's render). Drawn and
     driven on, nothing planted. A tile is kept until its closest point is `NEAR_REACH_M` + `NEAR_KEEP_MARGIN_M` (16 m)
     from the car, so wavering on a tile's middle line doesn't rebuild it. Tiles halve the near
     work per metre against 64 m near chunks (it is two new near squares per square driven, so it

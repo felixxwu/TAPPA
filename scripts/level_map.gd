@@ -595,7 +595,7 @@ func _input(event: InputEvent) -> void:
 				_pinched = _touches.size() >= 2
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		if event.position.distance_to(_drag_from) < 6.0 and not _pinched:
-			pick(hovered(event.position))
+			_pick_at(event.position)
 	elif event is InputEventPanGesture:  # a Mac trackpad's two-finger scroll
 		if _touches.size() < 2:  # a phone's own pinch already zooms through `touch`
 			zoom_by(pow(1.1, -event.delta.y), event.position)
@@ -614,7 +614,7 @@ func _input(event: InputEvent) -> void:
 		if _start.is_valid():
 			_end_preview(true)
 		else:
-			pick(hovered(size / 2.0))
+			_pick_at(size / 2.0)
 	elif (event is InputEventKey and event.pressed and event.keycode in [KEY_EQUAL, KEY_KP_ADD]) \
 			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_RIGHT_SHOULDER):
 		zoom_by(1.5, size / 2.0)
@@ -707,6 +707,15 @@ func update_fog() -> void:
 		tex.update(img)
 	else:
 		_fog.diffuse_texture = ImageTexture.create_from_image(img)
+
+
+# Picks what's under screen spot `s`; with Settings → Dev → "Teleport anywhere" on, empty ground teleports straight there.
+func _pick_at(s: Vector2) -> void:
+	var p := hovered(s)
+	if p == Vector2.INF and Config.data.dev_teleport_anywhere and not _start.is_valid() and not covered():
+		await teleport(to_world(s))
+	else:
+		pick(p)
 
 
 # Opens the page of the found teleport point at `p` (LevelView.open_point): its deliveries, or teleport there; or the

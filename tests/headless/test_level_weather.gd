@@ -71,9 +71,11 @@ func test_a_look_thickens_the_fog_by_pulling_its_far_end_in() -> void:
 	var node := _node(0.0)
 	node.start()
 	var entry: Dictionary = WeatherLibrary.CONDITIONS.filter(func(e: Dictionary) -> bool: return e.get("look", {}).has("fog_density_mult"))[0]
+	var density0 := holder.environment.fog_density
 	node._show(String(entry["id"]), true)
 	var mult := float(Config.data.get(String(entry["look"]["fog_density_mult"])))
 	assert_almost_eq(holder.environment.fog_depth_end * mult, Config.data.level_fog_end_m, 0.01)
+	assert_eq(holder.environment.fog_density, density0, "not by raising the density, which over-brightens depth fog past its colour")
 
 
 func test_the_headlights_switch_only_late_in_the_fade() -> void:

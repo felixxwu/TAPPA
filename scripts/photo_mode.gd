@@ -26,6 +26,8 @@ extends Camera3D
 signal exited
 # R, gamepad Y or the touch RENDER button: the host's render mode (only when can_render).
 signal render_requested
+# P or gamepad X saved a photo to `path`.
+signal photo_taken(path: String)
 
 const PITCH_LIMIT_DEG := 89.0
 const STICK_DEADZONE := 0.2
@@ -46,6 +48,8 @@ var _prev_mouse_mode := Input.MOUSE_MODE_VISIBLE
 # capture — so the request, not the platform's answer, is what mouse look gates on and
 # what the suite can assert.
 var _wants_capture := false
+var _legend: CanvasLayer
+var _saved_note: CanvasLayer
 
 # Movement axis pushed by PhotoModeControls (touch thumbstick + up/down buttons), in the
 # same x=right/y=up/z=forward camera-local convention as input_axis(). Added to the
@@ -95,6 +99,7 @@ func enter(from: Camera3D) -> void:
 		_prev_mouse_mode = Input.mouse_mode
 		_wants_capture = true
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_build_legend()
 	_entered = true
 
 
@@ -214,11 +219,108 @@ func _unhandled_input(event: InputEvent) -> void:
 		render_requested.emit()
 		get_viewport().set_input_as_handled()
 		return
+	if event is InputEventMouseButton and event.pressed \
+			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		var step: float = Config.data.photo_wheel_zoom_step
+		zoom_by(step if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / step)
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventPanGesture:  # a Mac trackpad's two-finger scroll sends this, not wheel clicks
+		zoom_by(pow(Config.data.photo_wheel_zoom_step, -event.delta.y))
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventMagnifyGesture:
+		zoom_by(event.factor)
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_H \
+			and is_instance_valid(_legend):
+		_legend.visible = not _legend.visible
+		get_viewport().set_input_as_handled()
+		return
+	if (event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_P) \
+			or (event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_X):
+		take_photo()
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
 		# Fetched first: exit() takes this camera out of the tree.
 		var vp := get_viewport()
 		exit()
 		vp.set_input_as_handled()
+
+
+# Saves the current frame as a PNG in the system Pictures folder (the game's user folder where there is none); returns its path, or "" on failure.
+func take_photo() -> String:
+	var dir := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
+	dir = (dir if dir != "" else OS.get_user_data_dir()).path_join("Rally Photos")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var path := dir.path_join("photo_%s_%03d.png" % [Time.get_datetime_string_from_system().replace(":", "-"), Time.get_ticks_msec() % 1000])
+	# The legend and the last "saved" note mustn't end up in the picture.
+	var overlays := [_legend, _saved_note].filter(func(n: Node) -> bool: return is_instance_valid(n) and n.visible)
+	for n: CanvasLayer in overlays:
+		n.visible = false
+	if not overlays.is_empty() and DisplayServer.get_name() != "headless":
+		for _i in 2:  # the screen we can read back lags a frame behind the one being drawn
+			await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	for n: CanvasLayer in overlays:
+		n.visible = true
+	if img == null or img.save_png(path) != OK:
+		_show_note("Couldn't save the photo")
+		return ""
+	photo_taken.emit(path)
+	_show_note("Saved to %s" % _tidy_path(path))
+	return path
+
+
+# The home folder shortened to ~, so the note fits on screen.
+static func _tidy_path(path: String) -> String:
+	var home := OS.get_environment("HOME")
+	return "~" + path.substr(home.length()) if home != "" and path.begins_with(home) else path
+
+
+func _show_note(text: String) -> void:
+	if is_instance_valid(_saved_note):
+		_saved_note.queue_free()
+	_saved_note = CanvasLayer.new()
+	_saved_note.process_mode = Node.PROCESS_MODE_ALWAYS
+	var box := UITheme.panel(0.85)
+	var label := UITheme.label("")
+	label.text = text
+	box.add_child(label)
+	box.position = Vector2(18, 18)
+	_saved_note.add_child(box)
+	add_child(_saved_note)
+	var note := _saved_note
+	get_tree().create_timer(4.0, true).timeout.connect(func() -> void:
+		if is_instance_valid(note):
+			note.queue_free())
+
+
+# The keyboard / gamepad controls, bottom-left on desktop (touch has its own on-screen widgets); H hides it.
+func _build_legend() -> void:
+	_legend = CanvasLayer.new()
+	_legend.process_mode = Node.PROCESS_MODE_ALWAYS
+	var box := UITheme.panel(0.75)
+	var label := UITheme.label("")
+	label.text = "\n".join([
+		"WASD / left stick  move",
+		"Shift / Ctrl / triggers  up / down",
+		"Mouse / right stick  look",
+		"Wheel / trackpad  zoom",
+		"B / L3  boost",
+		"P / X  take photo",
+	] + (["R / Y  render"] if can_render else []) + [
+		"H  hide this",
+		"Esc / Start  exit",
+	])
+	box.add_child(label)
+	_legend.add_child(box)
+	add_child(_legend)
+	box.reset_size()
+	var vp := get_viewport().get_visible_rect().size
+	box.position = Vector2(18, roundf(vp.y - box.size.y - 18))
 
 
 # Turn the camera by a yaw/pitch DELTA in radians, slowed the further the lens is zoomed in so a

@@ -224,9 +224,11 @@ func test_puff_grows_then_disappears() -> void:
 	var b := i * DustPuffs.STRIDE
 	var col0 := Vector3(d._buffer[b], d._buffer[b + 4], d._buffer[b + 8])
 	var born := col0.length()
+	var born_age: float = d._buffer[b + 15]
 	d._physics_process(d._life[i] * 0.5)
 	col0 = Vector3(d._buffer[b], d._buffer[b + 4], d._buffer[b + 8])
 	assert_gt(col0.length(), born, "a puff grows over its life")
+	assert_gt(d._buffer[b + 15], born_age, "its age (the dither fade) rises in the colour alpha")
 	d._physics_process(Config.data.dust_puff_lifetime_s * 2.0)
 	assert_eq(d.live_count(), 0, "a puff past its lifetime is gone")
 	assert_eq(d._buffer[b + 7], CpuParticlePool.HIDE_Y, "and parked off-screen")

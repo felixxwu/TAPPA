@@ -77,6 +77,11 @@ static func resolve(id: String, snow: float) -> String:
 
 
 # The fog's far end the current weather wants, for photo mode to restore.
+# The weather showing (a WeatherLibrary id), or "" before the first.
+func shown() -> String:
+	return _shown
+
+
 func fog_end() -> float:
 	return float(_to.get("end", Config.data.level_fog_end_m))
 
@@ -129,6 +134,8 @@ func _show(id: String, instant: bool) -> void:
 			_to["panorama"] = _base["panorama"]
 		# the level fogs by distance, so a thicker look pulls the fog's far end in rather than raising density
 		_to["end"] = Config.data.level_fog_end_m * float(_base["density"]) / maxf(float(_to["density"]), 0.0001)
+		# depth fog's density is how opaque the fog gets at its far end, so above 1 it over-brightens past the fog colour
+		_to["density"] = _base["density"]
 	_to["sun_mult"] = _look_light(id)
 	if instant:
 		Config.data.lights_weather = id
@@ -182,7 +189,7 @@ func _apply(from: Dictionary, to: Dictionary, k: float, swell := 1.0) -> void:
 		return
 	_env.background_color = (from["bg"] as Color).lerp(to["bg"], k)
 	_env.fog_light_color = (from["fog"] as Color).lerp(to["fog"], k)
-	_env.fog_density = lerpf(from["density"], to["density"], k) * swell
+	_env.fog_density = lerpf(from["density"], to["density"], k)
 	_env.fog_sky_affect = lerpf(from["sky_affect"], to["sky_affect"], k)
 	_env.fog_depth_end = lerpf(from["end"], to["end"], k) / swell
 	if k >= 1.0:

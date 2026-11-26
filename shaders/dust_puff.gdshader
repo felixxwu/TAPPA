@@ -29,7 +29,12 @@ uniform vec3 ground_color : source_color = vec3(0.35);
 uniform float camera_hide_m = 1.5;
 uniform float camera_show_m = 3.5;
 
+// Past this life fraction a puff dissolves: more pixels are discarded in a fixed 4x4
+// pattern as it ages, so it fades out while staying opaque (no transparency sorting).
+uniform float dither_start = 0.4;
+
 varying vec3 v_color;
+varying float v_age;
 
 #include "res://shaders/headlight_cone.gdshaderinc"
 
@@ -49,8 +54,15 @@ void vertex() {
 	lit += hl_color * headlight_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz, wn) + flash_lit((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	// Per-instance colour (mm.use_colors) arrives in COLOR.
 	v_color = COLOR.rgb * lit;
+	v_age = COLOR.a;
 }
 
 void fragment() {
+	const float BAYER[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+	ivec2 px = ivec2(FRAGCOORD.xy) % 4;
+	float fade = clamp((v_age - dither_start) / max(1.0 - dither_start, 0.001), 0.0, 1.0);
+	if ((BAYER[px.y * 4 + px.x] + 0.5) / 16.0 < fade) {
+		discard;
+	}
 	ALBEDO = v_color;
 }

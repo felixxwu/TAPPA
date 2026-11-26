@@ -1736,10 +1736,13 @@ func photo_render(cam: PhotoModeCamera) -> void:
 	_render_cam = cam
 	_render_far0 = cam.far
 	cam.far = maxf(_render_far0, cfg.photo_render_tree_m + LevelBake.TREE_TILE_M)
-	if env != null:
+	var weather := get_parent().get_node_or_null("LevelWeather") as LevelWeather
+	# Only dry weather's haze is pushed out to the render distance; every other weather keeps its fog.
+	if env != null and (weather == null or weather.shown() in ["", WeatherLibrary.DEFAULT_ID]):
 		env.environment.fog_depth_end = maxf(cfg.level_fog_end_m, cfg.photo_render_tree_m)
 	_trees.set_draw_override(cfg.photo_render_tree_m)
 	_streamer.cover.set_reach_override(cfg.photo_render_cover_touch_m if Platform.is_touch() else cfg.photo_render_cover_m)
+	_streamer.full_detail = true
 	_trees.update(cam.global_position, _car.global_position if _car != null else cam.global_position, true)
 	_trees.settle()
 	for t in _streamer.cover.missing(Vector2(cam.global_position.x, cam.global_position.z)):
@@ -1760,6 +1763,7 @@ func _render_off() -> void:
 	var cfg: GameConfig = Config.data
 	_trees.set_draw_override(0.0)
 	_streamer.cover.set_reach_override(0.0)
+	_streamer.full_detail = false
 	var env := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if env != null:
 		var weather := get_parent().get_node_or_null("LevelWeather") as LevelWeather

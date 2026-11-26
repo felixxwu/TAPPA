@@ -389,3 +389,56 @@ func test_boost_button_toggles_the_camera_boost() -> void:
 	_controls._press(0, at)
 	_controls._release(0)
 	assert_false(_camera.boost, "the next turns it off")
+
+
+func test_mouse_wheel_zooms() -> void:
+	var wide := _camera.fov
+	var wheel := InputEventMouseButton.new()
+	wheel.pressed = true
+	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
+	_camera._unhandled_input(wheel)
+	assert_lt(_camera.fov, wide, "wheel up zooms in")
+	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	_camera._unhandled_input(wheel)
+	assert_almost_eq(_camera.fov, wide, 0.01, "wheel down undoes it")
+
+
+func test_trackpad_scroll_zooms() -> void:
+	var wide := _camera.fov
+	var pan := InputEventPanGesture.new()
+	pan.delta = Vector2(0, -3)
+	_camera._unhandled_input(pan)
+	assert_lt(_camera.fov, wide, "two-finger scroll up zooms in")
+	pan.delta = Vector2(0, 3)
+	_camera._unhandled_input(pan)
+	assert_almost_eq(_camera.fov, wide, 0.01, "and scrolling back undoes it")
+
+
+func test_p_key_saves_a_photo() -> void:
+	if DisplayServer.get_name() == "headless":
+		pending("the headless renderer draws no frame to save")
+		return
+	watch_signals(_camera)
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.physical_keycode = KEY_P
+	_camera._unhandled_input(key)
+	await wait_frames(2)
+	assert_signal_emitted(_camera, "photo_taken")
+	var path: String = get_signal_parameters(_camera, "photo_taken")[0]
+	assert_true(FileAccess.file_exists(path), "the PNG is on disk")
+	DirAccess.remove_absolute(path)
+
+
+func test_h_toggles_the_controls_legend_off_touch() -> void:
+	if Platform.is_touch():
+		pending("touch shows the widgets instead of the legend")
+		return
+	assert_true(is_instance_valid(_camera._legend) and _camera._legend.visible, "the legend shows on entry")
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.physical_keycode = KEY_H
+	_camera._unhandled_input(key)
+	assert_false(_camera._legend.visible, "H hides it")
+	_camera._unhandled_input(key)
+	assert_true(_camera._legend.visible, "and brings it back")

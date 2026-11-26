@@ -298,6 +298,14 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	await map.teleport(map.nearest_teleport(Vector2(10, 3)))
 	assert_false(map.visible or get_tree().paused or lpause.is_open(), "teleporting from the pause menu's map goes straight back to driving")
 	assert_true(lpause.is_armed(), "with the pause menu armed again")
+	map.toggle()
+	map._pick_at(map.to_screen(Vector2(-30, -40)))
+	assert_true(map.visible, "with the dev toggle off, empty ground does nothing")
+	Config.data.dev_teleport_anywhere = true
+	await map._pick_at(map.to_screen(Vector2(-30, -40)))
+	Config.data.dev_teleport_anywhere = false
+	assert_almost_eq(Vector2(car.global_position.x, car.global_position.z), Vector2(-30, -40), Vector2.ONE * 0.5, "the dev toggle teleports onto any clicked spot")
+	assert_false(map.visible or get_tree().paused, "and drives on")
 	# Photo Mode from the level's pause menu really opens the photo camera — it used to hide the
 	# menu with nothing listening, stranding the player on a frozen frame — and leaving comes back.
 	lpause.open()
@@ -315,16 +323,26 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	photo.render_requested.emit()  # headless shows no loading screen, so the build runs at once
 	assert_true(lview.is_rendering() and photo.render_active, "the render is on")
 	assert_gt(lview._trees.draw_m(), draw0, "drawing trees further out")
+	assert_true(lview._streamer.full_detail, "and full-detail ground out over the whole loaded ring")
+	assert_gt(lview._streamer.near_reach(), TerrainStreamer.NEAR_REACH_M)
 	assert_gt(lview._streamer.cover.far_reach(), Config.data.ground_cover_far_reach, "and cover")
 	await get_tree().create_timer(0.3, true).timeout  # the tree is paused: GUT's own waits would stall
 	assert_true(lview.is_rendering(), "and stays on: no timer")
 	photo.render_requested.emit()
 	assert_false(lview.is_rendering() or photo.render_active, "pressing it again turns it off")
+	assert_false(lview._streamer.full_detail, "and the ground back to its normal detail")
 	assert_eq(lview._trees.draw_m(), draw0, "back to the normal tree distance")
 	assert_eq(lview._streamer.cover.far_reach(), Config.data.ground_cover_far_reach, "and cover reach")
 	assert_eq(photo.far, far0, "and the camera's far plane")
+	var weather := world.get_node("LevelWeather") as LevelWeather
+	var fog_env := (world.get_node("WorldEnvironment") as WorldEnvironment).environment
+	var kept_shown := weather._shown
+	weather._shown = "night"
+	fog_env.fog_depth_end = 123.0
 	photo.render_requested.emit()
 	assert_true(lview.is_rendering(), "on again")
+	assert_eq(fog_env.fog_depth_end, 123.0, "rendering leaves any weather but dry's fog alone")
+	weather._shown = kept_shown
 	photo.exit()
 	assert_false(lview.is_rendering(), "leaving photo mode turns the render off")
 	assert_eq(lview._trees.draw_m(), draw0)

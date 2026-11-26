@@ -36,6 +36,11 @@ var barriers := RoadBarriers.new()
 var poles := RoadPoles.new()
 var crowds := RoadCrowds.new()
 var focus: Node3D
+# Photo mode's render: build full-detail tiles over the whole far ring, nearest first, a few a frame.
+var full_detail := false:
+	set(v):
+		full_detail = v
+		_plan_timer = 0.0
 # Frame time not taken by anything but terrain (µs), smoothed over recent frames; set by the HUD side.
 var spare_us := 2000.0
 
@@ -2157,11 +2162,11 @@ func _plan() -> void:
 			if st.plant_job != null:
 				st.plant_job.dist = d
 				st.plant_job.priority = _plant_priority(coord, d)
-	# Near tiles: every tile within NEAR_REACH_M of the car, kept a little past it.
+	# Near tiles: every tile within near_reach() of the car, kept a little past it.
 	var tm := settings.near_tile_m
 	for t: Vector2i in _tiles.keys():
 		var ts: TileState = _tiles[t]
-		if _tile_gap(t, here) > NEAR_REACH_M + NEAR_KEEP_MARGIN_M:
+		if _tile_gap(t, here) > near_reach() + NEAR_KEEP_MARGIN_M:
 			_drop_near_tile(t, ts)
 		if ts.near_mesh == null and ts.near_job == null and ts.body == null and ts.col_job == null:
 			_tiles.erase(t)
@@ -2324,14 +2329,20 @@ func collision_block_of(p: Vector2) -> Rect2i:
 	return Rect2i(corner - Vector2i.ONE, Vector2i(2, 2))
 
 
-# The near tiles drawn at full detail: those whose closest point is within NEAR_REACH_M of `p`.
+# How far near (full) detail reaches: NEAR_REACH_M, or out to the whole far ring while full_detail is on.
+func near_reach() -> float:
+	return settings.far_radius * settings.chunk_m if full_detail else NEAR_REACH_M
+
+
+# The near tiles drawn at full detail: those whose closest point is within near_reach() of `p`.
 func near_tiles_of(p: Vector2) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []
-	var lo := _tile_of(p - Vector2.ONE * NEAR_REACH_M)
-	var hi := _tile_of(p + Vector2.ONE * NEAR_REACH_M)
+	var reach := near_reach()
+	var lo := _tile_of(p - Vector2.ONE * reach)
+	var hi := _tile_of(p + Vector2.ONE * reach)
 	for tz in range(lo.y, hi.y + 1):
 		for tx in range(lo.x, hi.x + 1):
-			if _tile_gap(Vector2i(tx, tz), p) <= NEAR_REACH_M:
+			if _tile_gap(Vector2i(tx, tz), p) <= reach:
 				out.append(Vector2i(tx, tz))
 	return out
 

@@ -1057,6 +1057,8 @@ func has_nitrous() -> bool:
 ## second (2.0 = the fov halves, or doubles, every second the button is held). Same clamp
 ## as the pinch: photo_fov_min..photo_fov_max.
 @export var photo_zoom_button_rate := 2.0
+## Photo mode: lens zoom factor per mouse-wheel notch (wheel up zooms in).
+@export var photo_wheel_zoom_step := 1.1
 ## Photo mode RENDER (the level only; LevelView.photo_render), a toggle: while on, trees draw out to
 ## photo_render_tree_m and ground cover out to photo_render_cover_m round the photo camera; the first
 ## build happens behind a loading screen.
@@ -1838,13 +1840,15 @@ func has_nitrous() -> bool:
 ## Per-puff random brightness variation, as a +/- fraction of the colour.
 @export var dust_puff_color_jitter := 0.1
 ## Hard cap on live puffs (ring-buffer size + MultiMesh instance count).
-@export var dust_puff_max := 128
+@export var dust_puff_max := 256
 ## Puff radius at birth, in metres (it grows over its life).
 @export var dust_puff_size_m := 0.3
 ## How much a puff grows over its life (final radius = birth radius x this).
-@export var dust_puff_growth := 2.8
+@export var dust_puff_growth := 4.0
+## Life fraction at which a dust puff starts dissolving (dithered); 1 = never.
+@export var dust_puff_dither_start := 0.4
 ## How long a puff lives before it disappears, in seconds (+/-20% per puff).
-@export var dust_puff_lifetime_s := 3
+@export var dust_puff_lifetime_s := 6.0
 ## Metres each wheel rolls on gravel between puffs (lower = denser trail).
 @export var dust_puff_spacing_m := 0.5
 ## Below this ground speed (m/s) a rolling tyre kicks up no dust (wheelspin still does).
@@ -1861,7 +1865,7 @@ func has_nitrous() -> bool:
 ## Random scatter speed added to each new puff, in m/s.
 @export var dust_puff_scatter_mps := 0.6
 ## Linear drag per second on a puff's velocity (fraction bled off each second).
-@export var dust_puff_drag := 2.0
+@export var dust_puff_drag := 10.0
 ## A puff closer than this to the camera (metres) is hidden...
 @export var dust_puff_camera_hide_m := 1.5
 ## ...and back to full size by this distance, so the chase camera never drives
@@ -3170,6 +3174,8 @@ func spectator_params() -> Dictionary:
 ## free-roam island (free_roam.tscn) instead of the authored level. Off by default — the level IS
 ## the game. Flipped at runtime by Settings → Dev → "Legacy free-roam island".
 @export var legacy_free_roam_island := false
+## Dev: clicking empty ground on the level map teleports the car there, not just to teleport points (Settings → Dev).
+@export var dev_teleport_anywhere := false
 ## The weather id (WeatherLibrary) the level view shows: its particles and wind only.
 @export var level_weather := "dry"
 ## Level view: the conditions the weather drifts between, "id:weight" pairs (dry, rain, fog, storm, night; rain turns to snow in the snow biome).

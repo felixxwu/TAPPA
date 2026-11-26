@@ -8,7 +8,7 @@ extends CpuParticlePool
 #
 # Each puff gets a random tumble and an uneven stretch at birth, so one mesh seen from
 # random angles reads as many different clouds. It then grows over its life and, at
-# the end, simply disappears (no fade). Size, stretch and tumble all live in the
+# the end dissolves away in a dither pattern (still opaque, so no sorting cost). Size, stretch and tumble all live in the
 # instance basis, so growing a puff rewrites 9 basis floats per tick — the mesh never
 # changes after load.
 #
@@ -77,6 +77,7 @@ func _build_pool() -> void:
 	cfg.apply_car_light(mat)
 	mat.set_shader_parameter("camera_hide_m", cfg.dust_puff_camera_hide_m)
 	mat.set_shader_parameter("camera_show_m", cfg.dust_puff_camera_show_m)
+	mat.set_shader_parameter("dither_start", cfg.dust_puff_dither_start)
 	material_override = mat
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -160,7 +161,7 @@ func _write_color(i: int, c: Color) -> void:
 	_buffer[b + 12] = c.r
 	_buffer[b + 13] = c.g
 	_buffer[b + 14] = c.b
-	_buffer[b + 15] = 1.0
+	_buffer[b + 15] = 0.0
 
 
 # Store slot i's birth shape: a random tumble times an uneven per-axis stretch.
@@ -249,7 +250,9 @@ func _advance(delta: float) -> bool:
 		var v := _vel[i] * drag
 		_vel[i] = v
 		_pos[i] += v * delta
-		_write_transform(i, _pos[i], size_at(cfg, 1.0 - _life[i] / _max_life[i]))
+		var t := 1.0 - _life[i] / _max_life[i]
+		_write_transform(i, _pos[i], size_at(cfg, t))
+		_buffer[i * STRIDE + 15] = t
 	return true
 
 

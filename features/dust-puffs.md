@@ -19,7 +19,7 @@ Big see-through puffs behind a chase camera are the classic mobile fill-rate tra
 every layer is blended over the same pixels and the pool has to be depth-sorted.
 Opaque, depth-writing puffs are drawn once per pixel with no sorting, and the
 flat-shaded facets fit the low-poly look. The cost is that a puff cannot fade: it
-**simply disappears** at the end of its life (parked at `HIDE_Y`, like every pool).
+dissolves in a 4×4 ordered dither from `dust_puff_dither_start` of its life (life fraction rides in the instance colour alpha; `dust_puff.gdshader` discards pixels, staying opaque), then is gone at the end of its life (parked at `HIDE_Y`, like every pool).
 
 ## One mesh, everything else in the transform
 

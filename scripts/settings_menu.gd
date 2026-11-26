@@ -86,6 +86,7 @@ var controls_rows: Array = []
 var _dev_weather_button: Button
 var _dev_rally_button: Button
 var _legacy_island_button: Button
+var _teleport_anywhere_button: Button
 # Benchmark toggle rows, exposed for tests: [{key: String, button: Button}].
 var benchmark_rows: Array = []
 
@@ -342,6 +343,9 @@ func _build_dev_page() -> void:
 	_legacy_island_button = _make_action_button("", _toggle_legacy_island)
 	_dev_page.add_child(_legacy_island_button)
 	_refresh_legacy_island()
+	_teleport_anywhere_button = _make_action_button("", _toggle_teleport_anywhere)
+	_dev_page.add_child(_teleport_anywhere_button)
+	_refresh_teleport_anywhere()
 
 
 # Reset progress sub-page — the player-facing "start over". One button, a standing
@@ -760,6 +764,15 @@ func _toggle_legacy_island() -> void:
 
 func _refresh_legacy_island() -> void:
 	_legacy_island_button.text = "Legacy free-roam island: %s" % ("On" if Config.data.legacy_free_roam_island else "Off")
+
+
+func _toggle_teleport_anywhere() -> void:
+	Config.data.dev_teleport_anywhere = not Config.data.dev_teleport_anywhere
+	_refresh_teleport_anywhere()
+
+
+func _refresh_teleport_anywhere() -> void:
+	_teleport_anywhere_button.text = "Teleport anywhere: %s" % ("On" if Config.data.dev_teleport_anywhere else "Off")
 
 
 func _level_weather() -> LevelWeather:

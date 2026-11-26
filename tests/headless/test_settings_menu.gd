@@ -185,7 +185,7 @@ func test_gearbox_is_always_automatic_and_not_in_the_menu() -> void:
 func _press_add_money() -> void:
 	var menu := _make_menu()
 	for child in menu._dev_page.get_children():
-		if child is Button and String(child.text).to_lower().begins_with("add $"):
+		if child is Button and String(child.text).to_lower().begins_with("add £"):
 			child.pressed.emit()
 
 
@@ -387,3 +387,13 @@ func test_the_legacy_island_toggle_on_the_title_waits_for_the_next_world_entry()
 	_dev_button(menu, "legacy free-roam island").pressed.emit()
 	Config.data.legacy_free_roam_island = was
 	assert_eq(Scenes.last_blocked_path, "")
+
+
+func test_teleport_anywhere_button_toggles_the_dev_flag() -> void:
+	var menu := _make_menu()
+	assert_false(Config.data.dev_teleport_anywhere)
+	menu._teleport_anywhere_button.pressed.emit()
+	assert_true(Config.data.dev_teleport_anywhere)
+	assert_string_contains(menu._teleport_anywhere_button.text, "On")
+	menu._teleport_anywhere_button.pressed.emit()
+	assert_false(Config.data.dev_teleport_anywhere)
