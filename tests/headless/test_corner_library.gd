@@ -56,17 +56,3 @@ func test_documented_shape_semantics() -> void:
 		var pts := curve.tessellate()
 		var endpoint := pts[pts.size() - 1]
 		assert_gte(endpoint.x, 0.0, who + " is a right-hand turn (ends at X >= 0)")
-
-
-func test_catalog_scene_makes_one_label_per_corner() -> void:
-	var scene: CornerCatalog = load("res://corner_catalog.tscn").instantiate()
-	add_child_autofree(scene)
-	await get_tree().process_frame  # let _ready() build the layout
-	var labels := 0
-	for child in scene.get_children():
-		if child is Label:
-			labels += 1
-	assert_eq(labels, CornerLibrary.CORNERS.size(),
-		"one name label per corner in the catalog")
-	# Layout spreads corners across positive X (left-to-right row).
-	assert_gt(scene.layout_width, 0.0, "catalog reports a positive laid-out width")

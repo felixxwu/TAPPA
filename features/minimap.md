@@ -5,8 +5,7 @@
 **Source:** `scripts/free_roam/mini_map.gd` (`MiniMap`), `shaders/mini_map.gdshader`, wired in
 `free_roam.tscn` (`MiniMapLayer/MiniMap`) and `scripts/free_roam/free_roam.gd`
 (`open_full_map`, the seen-sites tick). Tunables: `GameConfig` → *Minimap* group
-(`minimap_*`). Capture tool: `tools/minimap_capture.tscn` (drives with the `AutoDriver`, saves
-PNGs of the minimap and the full map, prints the costs).
+(`minimap_*`).
 
 **Tests:** `tests/headless/test_mini_map.gd`
 
@@ -54,7 +53,7 @@ Tap or click anywhere on the minimap's box (not only the tilted map inside it), 
 open_full_map` pauses the game, disarms the pause menu and shows `WorldPages.show_map`.
 Closing the map (Back, Esc / B, or M again) unpauses and goes straight back to driving.
 
-The full map's ground is a top-down terrain picture copied from `tools/road_network_lab.html`'s
+The full map's ground is a top-down terrain picture copied from the old road-network lab's
 2D view (`drawTerrain`): `MapTerrain` (`scripts/free_roam/map_terrain.gd`) samples heights
 over the map's view and `paint`s them: each biome ring in its `map_ring_colors` entry, shaded by
 slope, darkened along contour lines every `map_contour_m`, higher ground lighter (over

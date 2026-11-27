@@ -37,7 +37,7 @@ unticked, with `(in progress)` after it. Never delete a ticked step or the text 
 stays the record of how each step was done. The `CLAUDE.md` rule to ask before removing completed
 spec items still applies.
 
-- [ ] 0 Delete files nothing depends on
+- [x] 0 Delete files nothing depends on (2026-11-27)
 - [ ] 1 Remove the island benchmark
 - [ ] 2 Remove the first-run intro
 - [ ] 3 Make `LevelStreamer` stand alone

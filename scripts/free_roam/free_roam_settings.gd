@@ -3,12 +3,12 @@ extends Resource
 # Docs: features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_free_roam.gd — extend in the same change.
 # Every knob of the free-roam prototype: the island, the road network, the road-first terrain
-# and the streaming budget. Defaults are the preset liked in tools/road_network_lab.html
+# and the streaming budget. Defaults are the preset liked in the old road-network lab
 # (todo/2026-10-19-free-roam-pivot.md).
 
 @export var world_seed := 1011
 ## New World draws random seeds until the roads reach the outermost (snow) ring and total more
-## than this, measured junction to junction like tools/road_network_lab.html.
+## than this, measured junction to junction like the old road-network lab.
 @export var new_world_min_road_km := 40.0
 ## The car the game starts in, by CarLibrary id (the first car if it is missing).
 @export var car_id := "porsche911"

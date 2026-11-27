@@ -341,7 +341,7 @@ BACK button top-left (leaves photo mode, same as Esc), a BOOST toggle above the 
 every widget for a clean, chrome-free shot). The look stick and zoom buttons are the
 visible twins of the drag and pinch gestures below, so a player who never guesses that the
 empty screen is draggable still has a control for every axis. Each stick's knob carries its
-name (MOVE / LOOK). `tools/photo_mode_capture.tscn` boots free roam with touch forced on and
+name (MOVE / LOOK). `tools/photo_mode_capture.tscn` boots the Hafren level with touch forced on and
 photographs the overlay.
 
 **Gestures**, layered underneath the widgets: a one-finger drag anywhere off a widget

@@ -24,8 +24,7 @@ extends Node3D
 #     state (held AND charged AND combusting), not "a bottle is fitted", so an empty tank
 #     puts the flame out.
 #
-# Created + wired by the host scene (free_roam.gd, world.gd). The exhaust lab
-# (scripts/exhaust_lab.gd) drives it with both triggers forced on.
+# Created + wired by the host scene (free_roam.gd, world.gd).
 # See features/exhaust-flames.md.
 
 # --- Geometry ---------------------------------------------------------------
@@ -60,16 +59,6 @@ var _frame := 0
 var _frame_timer := 0.0
 # Deterministic frame generation + frame picking (tests can pin the seed).
 var _rng := RandomNumberGenerator.new()
-# Forced mode (the exhaust lab): lit continuously regardless of engine state, so the
-# pipes can be positioned against a steady flame. Never set in an event.
-var _forced := false
-# Whether to drive our own transform from the car's each tick. TRUE in an event, where
-# world.gd parents us to the world ROOT (reused across regenerations) and the pipe
-# offsets are car-LOCAL, so without this the flames would sit at the world origin while
-# the car drove away. FALSE in the lab, where we are parented to the car itself and the
-# scene tree already composes the transform for us — writing it there would fight the
-# parent and stack the offset twice.
-var _follow_car := true
 var _warming := false
 # Seconds of the light flash left; > 0 means fl_color is being written.
 var _flash_left := 0.0
@@ -78,18 +67,6 @@ var _flash_pos := Vector3.ZERO
 
 func setup(car: Node) -> void:
 	_car = car
-	_forced = false
-	_follow_car = true
-	_last_cut_count = _engine_cut_count()
-	_burn_timer = 0.0
-	_rebuild()
-
-
-# Set up for the exhaust lab: lit continuously, both triggers ignored.
-func setup_forced(car: Node) -> void:
-	_car = car
-	_forced = true
-	_follow_car = false
 	_last_cut_count = _engine_cut_count()
 	_burn_timer = 0.0
 	_rebuild()
@@ -125,7 +102,7 @@ func _rebuild() -> void:
 	for pipe in pipe_points(_car, cfg):
 		_pipes.append(_build_pipe(pipe, cfg))
 	_apply_frame()
-	_set_lit(_forced)
+	_set_lit(false)
 
 
 func _build_material(cfg: GameConfig) -> StandardMaterial3D:
@@ -262,7 +239,8 @@ func _timed_physics_process(delta: float) -> void:
 	var cfg: GameConfig = Config.data
 	if _warming:
 		return  # the warm-up holds the flames lit where it put them until clear_warm_up
-	if _follow_car and is_instance_valid(_car):
+	# The host parents the rig to the world root, not the car, so it copies the car's pose itself.
+	if is_instance_valid(_car):
 		global_transform = _car.global_transform
 	# Any new limiter cut re-arms the hold; holding the trigger down (a limiter bounce)
 	# therefore keeps re-lighting rather than queueing.
@@ -271,7 +249,7 @@ func _timed_physics_process(delta: float) -> void:
 		_burn_timer = cfg.exhaust_flame_pop_seconds
 	elif _burn_timer > 0.0:
 		_burn_timer = maxf(_burn_timer - delta, 0.0)
-	var lit := _forced or _burn_timer > 0.0 or _nitrous_on()
+	var lit := _burn_timer > 0.0 or _nitrous_on()
 	var was_lit := is_lit()
 	_set_lit(lit)
 	if lit and (not was_lit or fresh):

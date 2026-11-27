@@ -10,7 +10,7 @@ roam by `free_roam.gd._ready`, where `BiomeDirector._seat_particle_look` re-seat
 region colour on every ring change.
 
 **Tests:** `tests/headless/test_dust_puffs.gd`. **Look check:** `tools/dust_capture.tscn`
-(boots free roam, holds the throttle on a gravel road, writes a chase and a side
+(boots the Hafren level, holds the throttle from the spawn, writes a chase and a side
 screenshot to `tools/dust_capture_<n>.png`; run line in the script header).
 
 ## Why opaque meshes

@@ -38,7 +38,7 @@ func _road_midpoint(net: RoadNetwork) -> Vector2:
 	return pts[floori(pts.size() * 0.5)]
 
 
-# The game must build the same island as tools/road_network_lab.html, so its random stream and
+# The game must build the same island as the old road-network lab, so its random stream and
 # hash reproduce the lab's JavaScript bit for bit. These are that code's outputs.
 func test_the_random_stream_and_hash_match_the_lab_javascript() -> void:
 	var rng := LabNoise.Rng.new(7920)

@@ -14,8 +14,7 @@ const WORLD := "res://level_view.tscn"
 # in the game enters it unless GameConfig.legacy_free_roam_island is on (Settings → Dev), which
 # change_to redirects WORLD to. Don't build new features on it.
 const LEGACY_FREE_ROAM := "res://free_roam.tscn"
-# The player's car scene — spawned as the live drivable car, a frozen display prop, or a
-# dev-tool subject (exhaust_lab.gd).
+# The player's car scene — spawned as the live drivable car or a frozen display prop.
 const CAR := "res://car.tscn"
 
 # Cached PackedScene for CAR, loaded on first use. `preload()` needs a literal

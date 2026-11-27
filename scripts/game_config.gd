@@ -1928,7 +1928,7 @@ func has_nitrous() -> bool:
 ## outward — e.g. Vector4(0.94, -0.22, -0.1, 20.0) for a right-hand sill pipe.
 ##
 ## Per-car body data like this could reasonably move to CarLibrary (next to
-## bonnet_cam_offset); the exhaust lab (features/debug-tools.md) helps dial pipes in by eye.
+## bonnet_cam_offset).
 ##
 ## A car with no entry here falls back to exhaust_offset_fallback, mirrored across the
 ## centreline into two pipes.
@@ -3123,7 +3123,7 @@ func spectator_params() -> Dictionary:
 ## The full map frames what has been explored (plus a margin); this is the smallest stretch of
 ## ground across it shows, in metres, so the start isn't zoomed in to nothing.
 @export var map_min_view_m := 900.0
-## The full map's terrain picture (MapTerrain, copying tools/road_network_lab.html's 2D view):
+## The full map's terrain picture (MapTerrain, copying the old road-network lab's 2D view):
 ## cells across it, the colour of each biome ring's ground (repeating outward), lakes, the sea
 ## around the island, and the height between contour lines in metres.
 @export var map_terrain_cells := 150

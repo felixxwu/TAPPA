@@ -334,7 +334,7 @@ godot --headless --script tools/build_ui_theme.gd
 
 `fonts/Jersey10.ttf` is the UI face — a pixel-grid monospace bundled under the SIL
 Open Font License (`fonts/Jersey10-OFL.txt`). It replaced the previous face,
-Syne Mono (still in `fonts/` for reference, unused): Syne Mono is a hand-drawn
+Syne Mono (since deleted): Syne Mono is a hand-drawn
 face designed for smooth up-scaling, and at the game's low native resolution
 its curves rasterised inconsistently and read as blurry once anti-aliased.
 Jersey 10 is designed to be read unscaled at low pixel densities, so it stays

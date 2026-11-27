@@ -1,5 +1,5 @@
 extends Node
-# Verification aid: boot free roam with the touch controls forced on, open Photo Mode from the pause
+# Verification aid: boot the Hafren level with the touch controls forced on, open Photo Mode from the pause
 # menu and photograph its on-screen touch overlay. Pure tooling; not shipped. Writes
 # user://photo_mode_capture_<n>.png. CAP_TAP=1 opens Photo Mode with a real touch tap on its card
 # (the phone path) instead of calling the menu directly; CAP_SIZE=WxH sets the window. Run:
@@ -13,15 +13,10 @@ func _ready() -> void:
 	get_window().size = Vector2i(int(w.split("x")[0]), int(w.split("x")[1])) if w != "" else Vector2i(1280, 720)
 	Save.save_disabled = true
 	Config.data.mobile_controls_force = true
-	ColdOpen.new_world(7, Config.data.free_roam)
-	var world := (load("res://free_roam.tscn") as PackedScene).instantiate()
+	var world := (load("res://level_view.tscn") as PackedScene).instantiate()
 	add_child(world)
-	for _i in 2000:
-		await get_tree().process_frame
-		var co := world.get("cold_open") as ColdOpen
-		if co != null and co.running:
-			break
-	for _i in 90:
+	await (world.get_node("Level") as LevelView).loaded
+	for _i in 120:
 		await get_tree().process_frame
 	_shot("0_driving")
 	var menu := world.get_node("PauseMenu") as PauseMenu

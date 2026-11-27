@@ -135,9 +135,6 @@ The pipe offsets are car-**local**, and how they reach world space depends on pa
 - **Event mode** (`setup(car)`): `world.gd` parents this to the world **root** and reuses
   it across regenerations, so the rig copies `car.global_transform` each tick. Without
   that the flames would sit at the world origin while the car drove away.
-- **Lab mode** (`setup_forced(car)`): parented to the car itself, so the scene tree
-  already composes the transform — writing it here would fight the parent and stack the
-  offset twice. Only the exhaust lab uses this.
 
 ## Wiring
 
@@ -162,38 +159,6 @@ do not dim with the environment at night or in snow. That is deliberate — fire
 light rather than reflecting it — but it does mean they read as brighter at night than in
 daylight, which is the correct direction.
 
-## The exhaust lab
-
-**Source:** `scripts/exhaust_lab.gd` (`ExhaustLab`), scene `exhaust_lab.tscn`.
-
-A standalone dev scene for positioning each car's pipes by eye. Run it **directly from
-the editor** (F6 / Run Current Scene) or with
-`Godot res://exhaust_lab.tscn` — it is not the project's main scene and nothing in the
-game links to it, exactly like `corner_catalog.tscn`. See
-[debug-tools.md](debug-tools.md).
-
-One frozen car on a plain neutral apron, with its `ExhaustFlames` rig in **forced mode**
-(`setup_forced`) so the flame is lit continuously — you aim at
-a steady target instead of waiting for the car to bounce off the limiter. The rig is
-parented to the car, so what you see is the car-local offset directly, with no world
-transform in the way.
-
-| Input | Action |
-|-------|--------|
-| Drag (left mouse) | Orbit the camera |
-| Wheel | Zoom (clamped) |
-| `[` / `]`, or Left/Right (keyboard + pad) | Previous / next car |
-
-The on-screen readout names the car and its id, says whether its offsets are **authored
-or falling back**, and prints each pipe as a literal `Vector3(x, y, z)` ready to paste
-into `exhaust_offsets`. The camera pitch is clamped short of vertical so the orbit can
-never flip over the pole, and the framing distance is derived from the car's wheelbase so
-a long saloon and a city car both fill the view.
-
-Being an editor-only dev scene, it is outside the "every menu is keyboard + gamepad
-navigable" rule in `CLAUDE.md` — but car cycling is wired to `ui_left`/`ui_right` anyway,
-so a pad works.
-
 ## Light flash
 
 When a flame lights (or a limiter cut retriggers), `ExhaustFlames` starts a fake light
@@ -210,8 +175,7 @@ Nitrous holds it at full while the flame is on. Tunables: `exhaust_flash_color`,
   frames genuinely differ and are deterministic), against a stub car exposing
   `drivetrain.engine` (no vehicle, no rendering).
 - `tests/headless/test_exhaust_offsets.gd` — `GameConfig.exhaust_locals_for` against
-  synthetic specs (authored, single/quad pipe, every fallback and malformed branch), plus
-  the lab's camera clamp.
+  synthetic specs (authored, single/quad pipe, every fallback and malformed branch).
 - `tests/headless/test_engine_logic.gd` — `limiter_cut_count` counts bangs, not ticks,
   and survives a reset.
 

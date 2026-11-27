@@ -14,7 +14,6 @@ const EXEMPT := {
 	"res://shaders/spike_id_pass.gdshader": "debug id pass, never seen by the player",
 	"res://shaders/spike_id_pass_2sided.gdshader": "debug id pass, never seen by the player",
 	"res://scripts/exhaust_flames.gd": "flames glow on their own",
-	"res://scripts/exhaust_lab.gd": "standalone dev scene",
 	"res://scripts/log_pile_lab.gd": "standalone dev scene",
 	"res://scripts/route_arrow.gd": "a navigation guide, kept bright",
 	"res://shaders/car_shadow.gdshader": "a dark contact shadow, not a lit surface",

@@ -139,7 +139,6 @@ const BREADCRUMB_BASELINE := [
 	"crowd.gd",
 	"distant_terrain.gd",
 	"driving_context.gd",
-	"exhaust_lab.gd",
 	"headlight_cone.gd",
 	"input_remap.gd",
 	"loading_screen.gd",

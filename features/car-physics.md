@@ -331,9 +331,6 @@ Two consumers depend on it, and BOTH run on every drivetrain rebuild:
   per-axle **downforce** is applied at (so a drifted mount would quietly change the car's
   aero pitch lever as well as its grip).
 
-`exhaust_lab.gd` reads a wheel's live position deliberately and legitimately — it poses
-frozen props whose solver never runs, so nothing repaints them.
-
 `Car.wheel_mount()` **has no silent fallback**: a wheel with no recorded mount `push_error`s
 rather than quietly substituting the drifting live transform, because a plausible-looking
 wrong number is precisely how the original bug behaved. `_ready()` records the mount as the

@@ -15,7 +15,7 @@ pose, lit rest stops and map; see [world-session.md](world-session.md). The old 
 run are unreachable from the game. Drive with the usual controls; **R**
 puts the car back on the nearest road.
 
-**The game builds the same island as `tools/road_network_lab.html` for the same seed.**
+**The game builds the same island as the old road-network lab for the same seed.**
 `LabNoise` reproduces the lab's random stream (mulberry32), hash and value noise bit for bit,
 and `RoadNetwork` / `RoadTerrain` follow the lab's growth, wiggle and height maths step by step,
 holding coordinates in 64-bit floats (Vector2 is 32-bit). Checked on seed 1: identical
@@ -75,8 +75,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
    half-length `seg_half`) is further than the best found so far; the margin keeps near-ties in, so
    the answer is the full scan's. Measured 2026-10-26: 16.6 → 5.0 µs per query, a height sample
    35 → 24 µs on a desktop (it was the biggest single cost of a sample).
-2. **`RoadTerrain` — height built from the roads.** Same model as the lab
-   (`tools/road_network_lab.html`):
+2. **`RoadTerrain` — height built from the roads.** Same model as the old road-network lab:
    - **Base field:** low-frequency noise that ignores roads (`base_h`). It sets the roads' own
      height and decides lakes (`is_lake`: base below the water level, unless filled in). It is
      lifted near spawn so spawn is always dry.
@@ -299,7 +298,6 @@ in the border stretches or squeezes it in places):
   (`ring_tint_at` / `_tint_at_ring`), so the bushes' baked light matches.
 - `ring_materials()` includes the pair materials, so the weather tints both slots
   (`BiomeDirector.TINTED`) and the boot warm-up compiles them.
-- `tools/biome_fade_capture.tscn` photographs a few borders from above, to check them by eye.
 
 **Road width wanders.** `FreeRoamSettings.road_half_width_at(x, y)` is world-space noise
 (`road_width_wavelength_m`) scaling `road_half_width_m` between `road_width_min_scale` and
@@ -328,8 +326,7 @@ the *distance* to the road into each vertex, and the ground shader (`ps1_models.
 With `UV` taken, the ground texture is placed from the world position (`ground_uv_per_m`,
 which is `UV_PER_M`). The weight itself is `RoadTerrain.paint_weight` (the shader's uniforms
 are `paint_mid_m` / `paint_half_m`): the road's own edge, faded over `road_paint_fade_m`. Grip
-still reads the shoulder (`road_weight`, `surface_at`). `tools/road_paint_capture.tscn` takes
-screenshots of a gravel road, a tarmac road and a junction to check it by eye.
+still reads the shoulder (`road_weight`, `surface_at`).
 
 **Lane markings on tarmac** are drawn by the same shader pass: two solid edge lines
 `road_marking_edge_inset_m` inside the road's edge and a dashed centre line, sized by the
@@ -462,8 +459,7 @@ planted on it (`is_clear`).
   (`Lamp`, `FreeRoamSettings.cabin_lamp_range_m` / `cabin_lamp_energy`, no shadows) that lights the
   cabin front, pad and crowd. Meshes and materials are shared by every post; the post is solid (a
   second shape on the cabin's `Body`). It replaced (2026-10-31) a lamp hung inside lit cabins only,
-  which couldn't be seen at night even from the door (`tools/lamp_capture.tscn` photographs a cabin at
-  night from the door and down its road). Lit vs unlit shows on the minimap only.
+  which couldn't be seen at night even from the door. Lit vs unlit shows on the minimap only.
   `cabin_transform(i)` / `lantern_position(i)` give where a cabin and its lantern stand. A loot site or dead end
   holding a coin shows a spinning gold disc over the road (`_coin_marker`, `shaders/coin.gdshader`, rebuilt by `refresh_loot_markers` when coins are taken or come back). Both the queued
   marker spawn and the refresh go through `_place_loot_site_marker`, which removes the site's
@@ -736,8 +732,6 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   (`TitleScreen.options_only`), closing back into the game. The rest-stop page stays shut until then:
   a Garage pick or a parts change reloads the scene, which would lose the waiting options. An island with no roadside
   stop finishes in `start`, because its goal (spawn's stop) is already lit and `lit` would never fire.
-- **Seeing it:** `tools/cold_open_capture.tscn` boots a first-time world and photographs the start,
-  the drive, the arrival and the options.
 
 ## Not in the prototype yet
 

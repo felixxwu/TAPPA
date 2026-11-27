@@ -198,20 +198,15 @@ breakdown from the representative *release* web build. See [benchmark.md](benchm
 
 ## Standalone dev scenes
 
-Two scenes exist purely as dev rigs. Neither is the project's main scene and nothing in
-the game links to either — **run them directly from the editor** (F6 / Run Current Scene),
+These scenes exist purely as dev rigs. None is the project's main scene and nothing in
+the game links to them — **run them directly from the editor** (F6 / Run Current Scene),
 or with `Godot res://<scene>.tscn`. Being editor-only, they sit outside the "every menu is
 keyboard + gamepad navigable" rule in `CLAUDE.md`.
 
 | Scene | Script | What it's for |
 |-------|--------|---------------|
-| `corner_catalog.tscn` | `corner_catalog.gd` | Draws every `CornerLibrary` turn type side by side so the bezier shapes can be eyeballed. Pure 2D. |
-| `exhaust_lab.tscn` | `exhaust_lab.gd` | Positions each car's exhaust pipes by eye — one frozen car, flames forced permanently on, orbit camera. See [exhaust-flames.md](exhaust-flames.md). |
 | `log_pile_lab.tscn` | `log_pile_lab.gd` | Previews procedural roadside timber piles from `LogPile.build` (`log_pile.gd`) — reseed, cycle style (stack / tapered / loose), tweak rows/width/length/radius/sections, and copy the printed call into the game.|
 
-In the exhaust lab: drag to orbit, wheel to zoom, `[` / `]` (or Left/Right) to cycle cars;
-edit `GameConfig.exhaust_offsets` in `scripts/game_config.gd` and re-run the scene. The readout prints each pipe
-as a literal `Vector3(x, y, z)` ready to paste back into `exhaust_offsets`.
 
 ## Standalone performance benchmark
 

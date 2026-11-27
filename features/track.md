@@ -1,7 +1,6 @@
 # Track (corner shapes + generation)
 
 **Source:** `scripts/corner_library.gd` (`class_name CornerLibrary`),
-`scripts/corner_catalog.gd` (`class_name CornerCatalog`), `corner_catalog.tscn`,
 `scripts/track_generator.gd` (`class_name TrackGenerator`),
 `scripts/track_profile.gd` (`class_name TrackProfile` — the VERTICAL channel; see
 *Jumps* below).
@@ -33,19 +32,7 @@ dead-straight line whose character is entirely VERTICAL — see *Jumps* below) a
 **1**, **2**, **Square** and **Hairpin** carry a longer entry lead-in (a
 lengthened entry tangent) with their sharpness unchanged.
 
-## Catalog scene (`corner_catalog.tscn`)
-
-A standalone 2D debug viewer (not the project main scene — run it directly). It
-loads `CornerLibrary`, lays every corner out in a left-to-right row, and draws
-each one's centerline, control-point markers, tangent handles, a green entry
-dot, and a name label. Used to eyeball and tune the shapes.
-
-Two capture wrappers sit alongside it, because the row view auto-fits every shape
-and a single corner ends up too small to judge:
-
-| Tool | What it gives |
-|---|---|
-| `tools/corner_capture.tscn` | photographs the whole catalogue to a PNG in `tools/`, **and prints every corner's minimum radius plus the cornering-speed ceiling it implies**. Works headless for the numbers (no renderer needed); needs a window for the PNG. |
+## Measuring a corner
 
 **Minimum radius is the number that matters**, not how the curve looks:
 A cornering speed ceiling of `sqrt(mu*g/kappa)` off the *tightest* point means one
@@ -55,7 +42,7 @@ degree bend — its control handles were nearly as long as its diagonal, which k
 curve straight near both ends and dumps all the turning into the middle.
 
 **Measuring curvature off a `Curve2D` has a trap**, and the first version of
-`corner_capture` fell into it: `sample_baked` lerps between points baked at
+the old corner capture tool fell into it: `sample_baked` lerps between points baked at
 `bake_interval` (5 m by default), so probing finer than that reads zero curvature along
 each chord and then a whole chord's turn in one step — it reported turn 1 as a 0.39 m
 radius instead of 16.9 m. Set `bake_interval` small first, then probe at a step above it.

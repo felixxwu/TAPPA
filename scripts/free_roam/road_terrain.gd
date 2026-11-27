@@ -9,7 +9,7 @@ extends RefCounted
 # (fill_cut_lakes). Every query is a pure function of position, so any chunk can be built alone
 # and in any order.
 #
-# The maths mirrors heightAt() in tools/road_network_lab.html exactly, so a seed shows the
+# The maths mirrors heightAt() in the old road-network lab exactly, so a seed shows the
 # same mountains in both. The one addition is a fade to sea floor near the coast (stopping short
 # of the roads), which the lab never draws.
 
@@ -70,7 +70,7 @@ func is_filled(x: float, y: float) -> bool:
 
 # Run once the roads exist. Each lake a road touches is split along its roads; only the largest
 # piece stays water, the rest (and the water under the road) becomes land. Mirrors fillCutLakes()
-# in tools/road_network_lab.html.
+# in the old road-network lab.
 func fill_cut_lakes() -> void:
 	_filled.clear()
 	var lake_cache := {}

@@ -2,7 +2,7 @@ class_name LabNoise
 extends RefCounted
 # Docs: features/free-roam.md — update in the same change as this file.
 # Tests: tests/headless/test_free_roam.gd — extend in the same change.
-# The road-network lab's random numbers and noise (tools/road_network_lab.html), reproduced
+# The old road-network lab's random numbers and noise (the lab page is deleted), reproduced
 # bit for bit, so the game builds the same island as the lab for the same seed. JavaScript
 # does this maths in 32-bit integers, so every step here is masked back to 32 bits.
 

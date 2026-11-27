@@ -5,7 +5,7 @@ extends GutTest
 #
 # Every spec here is SYNTHETIC — the resolution reads only `id` and `wheelbase`, so a
 # hand-built dict is the honest input, and nothing here depends on the shipped roster or
-# on any authored offset. Also covers the exhaust lab's camera clamp.
+# on any authored offset.
 
 
 var _cfg: GameConfig
@@ -134,23 +134,3 @@ func test_a_spec_with_no_id_falls_back() -> void:
 	_cfg.exhaust_offsets = {"synth": [Vector3(0.5, 0.2, 1.8)]}
 	assert_eq(_cfg.exhaust_locals_for({"wheelbase": 2.5}).size(), 2,
 		"an id-less spec must not accidentally match an authored entry")
-
-
-# --- Exhaust lab camera ------------------------------------------------------
-
-
-# The orbit must never pass over the pole: past vertical the look_at up-vector degenerates
-# and the view flips, which is exactly the moment you lose track of which pipe you're aiming at.
-func test_orbit_clamps_the_pitch_at_both_ends() -> void:
-	var up := ExhaustLab.orbit_from(0.0, 0.0, Vector2(0.0, 100000.0))
-	var down := ExhaustLab.orbit_from(0.0, 0.0, Vector2(0.0, -100000.0))
-	assert_lt(up.y, PI * 0.5, "cannot orbit over the top")
-	assert_gt(down.y, -PI * 0.5, "cannot orbit under the bottom")
-	assert_gt(up.y, down.y, "the two clamps are on opposite sides")
-
-
-func test_orbit_yaw_is_unclamped_so_the_car_can_be_spun_freely() -> void:
-	var a := ExhaustLab.orbit_from(0.0, 0.0, Vector2(500.0, 0.0))
-	var b := ExhaustLab.orbit_from(0.0, 0.0, Vector2(-500.0, 0.0))
-	assert_ne(a.x, b.x, "dragging opposite ways yaws opposite ways")
-	assert_almost_eq(a.x, -b.x, 0.0001, "and symmetrically")

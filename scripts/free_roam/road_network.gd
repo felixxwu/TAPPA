@@ -6,7 +6,7 @@ extends RefCounted
 # junctions and links; each link then becomes a wiggled polyline. The terrain is built around
 # these roads (RoadTerrain), so everything downstream only asks "where is the nearest road".
 #
-# This mirrors tools/road_network_lab.html step for step (same random stream, same noise,
+# This mirrors the old road-network lab step for step (same random stream, same noise,
 # same order of decisions), so a seed builds the same roads in both. Coordinates are kept in
 # 64-bit floats for that reason: Vector2 is 32-bit and would round them differently.
 

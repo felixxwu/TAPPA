@@ -90,9 +90,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pose_camera()
 		return
 	if event is InputEventMouseMotion and _dragging:
-		var o := ExhaustLab.orbit_from(_yaw, _pitch, (event as InputEventMouseMotion).relative)
-		_yaw = o.x
-		_pitch = o.y
+		var rel := (event as InputEventMouseMotion).relative
+		_yaw -= rel.x * 0.006
+		_pitch = clampf(_pitch + rel.y * 0.006, -0.2, 1.3)
 		_pose_camera()
 		return
 	if event is InputEventKey and event.pressed and not event.echo:

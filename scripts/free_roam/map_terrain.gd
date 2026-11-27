@@ -2,7 +2,7 @@ class_name MapTerrain
 extends RefCounted
 # Docs: features/minimap.md — update in the same change as this file.
 # Tests: tests/headless/test_world_pages.gd — extend in the same change.
-# The full map's top-down terrain picture, drawn the way tools/road_network_lab.html's 2D view
+# The full map's top-down terrain picture, drawn the way the old road-network lab's 2D view
 # draws it (drawTerrain): ring colours, hill shading from the slope, contour lines, higher ground
 # lighter, lakes flat blue, the sea left out. Heights are slow to sample, so the picture is built
 # from square tiles, a little per frame, and every tile is kept for the session: a tile's detail

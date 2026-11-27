@@ -41,7 +41,7 @@ extends RefCounted
 # Jersey 10 is the UI face: a pixel-grid monospace built for low-res displays, so
 # stat read-outs and money columns line up and stay crisp/unblurred at the game's
 # native resolution instead of aliasing like a face designed for smooth scaling
-# (the old Syne Mono, still in fonts/ for reference). Import settings that keep it
+# (the old Syne Mono). Import settings that keep it
 # sharp (no antialiasing, no hinting, pixel-snapped positioning) live on
 # fonts/Jersey10.ttf.import — see features/ui-design-system.md.
 const FONT_PATH := "res://fonts/Jersey10.ttf"
