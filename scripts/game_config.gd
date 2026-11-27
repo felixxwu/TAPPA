@@ -132,20 +132,24 @@ var peak_torque_rpm := 4500.0
 ## bound on the wheel angle. The grip servo (Car._update_steering) finds the peak-grip angle
 ## by MEASURING the front tires rather than predicting a cap, so there is no longer a
 ## slip-derived limit or a low-speed blend to configure.
-@export var steer_limit := 0.8
+@export var steer_limit := 1.0
 ## How fast the front wheels can turn (rad/s) when winding MORE lock on — i.e. the target
 ## angle is further from center, in the same direction the wheel is already turned (or the
 ## wheel is starting from center). The model of how fast a hand can turn the wheel, and it is
 ## also the input smoothing; there is no separate easing stage. The grip servo needs to cover
 ## only the tire's slip angle (~8.6° on tarmac) rather than most of full lock, so this is the
 ## dominant feel parameter and is tuned much lower than a lock-to-lock rate would be.
-@export var steer_speed := 1.2
+@export var steer_speed := 1.3
 ## How fast the front wheels can turn (rad/s) when COUNTER-steering — the target angle is
 ## back toward center or across to the opposite lock from where the wheel currently sits.
 ## Real countersteering (winding the wheel the other way to catch a slide, or simply
 ## unwinding lock) happens faster than winding new lock on, so this is tuned higher than
 ## steer_speed.
-@export var counter_steer_speed := 3.0
+@export var counter_steer_speed_fwd := 1.3
+## Same as `counter_steer_speed_fwd`, for rear-wheel-drive cars.
+@export var counter_steer_speed_rwd := 5.0
+## Same as `counter_steer_speed_fwd`, for all-wheel-drive cars.
+@export var counter_steer_speed_awd := 1.3
 ## Steering demand below which the wheels servo to their zero-lateral-slip angle (pointing
 ## along their own travel — automatic countersteer). A deadzone rather than an exact-zero
 ## test because analogue sticks and the touch slider never return exactly 0.
@@ -353,6 +357,12 @@ var _foliage_lit := {} # the same, for apply_foliage_light: the trees and bushes
 ## weather (Drivetrain's per-contact resolver, alongside the weather multiplier). 1.0 is the
 ## authored grip; below 1.0 everything slides more. The one knob for "the cars are too grippy".
 @export var global_grip_mult := 0.8
+## LOW-SPEED GRIP BOOST: an artificial extra grip on every tyre of every car that fades out as the car
+## speeds up. At 0 km/h tyre grip is multiplied by low_speed_grip_boost_max; it falls linearly to 1.0
+## at low_speed_grip_boost_kmh, and above that speed there is no boost.
+@export var low_speed_grip_boost_max := 1.5
+## Speed (km/h) at and above which the low-speed grip boost is gone (1.0x).
+@export var low_speed_grip_boost_kmh := 20.0
 ## Global tyre μ multiplier applied on top of the surface grip when weather ==
 ## WEATHER_RAIN (Drivetrain.surface_tire_params). A single multiplier regardless of
 ## surface — see features/weather.md for the per-surface trade-off this defers.
@@ -742,7 +752,7 @@ func has_nitrous() -> bool:
 ## wheel-landings free while any solid crash (tens of g) clears it easily; the small
 ## drag impulse of a brushed bush/crowd just tips over it for a light chip. Raise it if
 ## hard landings feel too twitchy. This is the single sensitivity knob.
-@export var impact_threshold_g := 2.0
+@export var impact_threshold_g := 4.0
 ## Reference impact speed (km/h) — the velocity shed at which a hit costs
 ## impact_ref_hp_loss. HP loss grows with the SQUARE of the shed velocity (kinetic
 ## energy) up to here. For a full solid arrest the shed velocity ≈ the approach speed,
@@ -3195,8 +3205,6 @@ func spectator_params() -> Dictionary:
 @export var level_service_radius_m := 12.0
 ## Level view: what a delivery pays per km of road between its two teleport points, in pounds.
 @export var level_delivery_pay_per_km := 500.0
-## Level view: what a teleport picked on the map costs, in pounds (a wreck's respawn stays free).
-@export var level_teleport_cost := 30
 ## Level view: the money a new player starts with (they start with no car, at level_start_shop).
 @export var level_start_money := 3000
 ## Character dialogue: how fast a line types out, in characters a second.

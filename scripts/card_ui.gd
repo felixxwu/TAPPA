@@ -210,7 +210,8 @@ static func card_page(host: Node, opts: Dictionary = {}) -> MenuPage:
 #   "action"   (Callable) run when the card is confirmed (optional — a read-only card)
 # `header` is the plain lines shown above the cards, in the fixed-height header slot.
 # `selected` seats the cursor on that card (by index) without the snap animation.
-static func card_list(page: MenuPage, entries: Array, header: Array = [], selected := 0) -> CardCarousel:
+# `animate_in` false skips the cards' fade-in: pass it when rebuilding the menu the player is already on.
+static func card_list(page: MenuPage, entries: Array, header: Array = [], selected := 0, animate_in := true) -> CardCarousel:
 	if page.title_label() == null:
 		page.body().add_child(title_gap_spacer())
 	var slot := header_slot(page)
@@ -219,6 +220,8 @@ static func card_list(page: MenuPage, entries: Array, header: Array = [], select
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		slot.add_child(l)
 	var carousel := build_carousel(page)
+	carousel.animate_in = animate_in
+	carousel.min_card_width = widest_title_card(entries)
 	for e: Dictionary in entries:
 		text_card(carousel, String(e.get("title", "")), String(e.get("subtitle", "")),
 			bool(e.get("disabled", false)), String(e.get("icon", "generic")),
@@ -237,6 +240,15 @@ static func card_list(page: MenuPage, entries: Array, header: Array = [], select
 	if selected > 0 and selected < entries.size():
 		carousel.select(selected, false)
 	return carousel
+
+
+# The card width (whole pixels) that fits the longest single word among `entries`' titles.
+static func widest_title_card(entries: Array) -> float:
+	var widest := 0.0
+	for e: Dictionary in entries:
+		for word in String(e.get("title", "")).split(" ", false):
+			widest = maxf(widest, UITheme.font().get_string_size(UITheme.caps(word), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.TITLE_FONT_SIZE).x)
+	return ceilf(widest) + 2.0 * UITheme.PANEL_PAD + 2.0 * UITheme.GAP_TIGHT
 
 
 static func stats_line(hp: float, mass: float, drive_mode: int) -> String:

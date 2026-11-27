@@ -100,6 +100,8 @@ PY
 fi
 }
 inject_poller
+mark_build() { echo "$(date +%s)-$RANDOM" > build/web-build-id; }
+mark_build
 
 # Best-effort LAN IP (macOS): try common interfaces.
 LAN_IP=""
@@ -167,6 +169,7 @@ watch_and_rebuild() {
     echo "[watch] source changed, rebuilding build/web…"
     if ./build_web.sh >/dev/null 2>&1; then
       inject_poller >/dev/null
+      mark_build
       echo "[watch] rebuilt — refresh the page to load it."
     else
       echo "[watch] rebuild FAILED (run ./build_web.sh to see why)."

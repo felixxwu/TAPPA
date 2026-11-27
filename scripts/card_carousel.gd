@@ -73,6 +73,10 @@ class Card:
 var _cards: Array[Card] = []
 var _selected := 0
 var _strip: Control
+# False when the menu is rebuilt in place (after a purchase): cards then start fully faded in. Set before add_card.
+var animate_in := true
+var arrow_left: Label
+var arrow_right: Label
 # Scroll offset in pixels, 0 == card 0 centred. Positive moves the strip so later
 # cards come into view from the right.
 var _offset := 0.0
@@ -111,6 +115,17 @@ func _init() -> void:
 	_strip = Control.new()
 	_strip.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_strip)
+	arrow_left = _make_arrow("<", PRESET_CENTER_LEFT)
+	arrow_right = _make_arrow(">", PRESET_CENTER_RIGHT)
+
+
+# A floating arrow at one edge; _layout hides it when there is nothing further that way.
+func _make_arrow(glyph: String, preset: LayoutPreset) -> Label:
+	var arrow := UITheme.label(glyph)
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(arrow)
+	arrow.set_anchors_and_offsets_preset(preset, PRESET_MODE_KEEP_SIZE, UITheme.FONT_SIZE)
+	return arrow
 
 
 # Widen the carousel's minimum width to use `avail_width` — called by a host that wants
@@ -127,8 +142,12 @@ func fit_to_available_width(avail_width: float) -> void:
 	_layout()
 
 
+# Widest a single word on any card needs, set before the cards are added so no title breaks mid-word.
+var min_card_width := 0.0
+
+
 func _card_width() -> float:
-	return Config.data.card_carousel_card_width
+	return maxf(Config.data.card_carousel_card_width, min_card_width)
 
 
 func _card_height() -> float:
@@ -233,6 +252,8 @@ func add_card(disabled: bool = false) -> Card:
 	var index := _cards.size()
 	card.root.gui_input.connect(_on_card_gui_input.bind(index))
 	_cards.append(card)
+	if not animate_in:
+		card.entrance = 1.0
 	_layout()
 	# Deferred rather than immediate: a caller
 	# restores a remembered selection with select() AFTER its add_card loop finishes, in
@@ -251,7 +272,10 @@ func add_card(disabled: bool = false) -> Card:
 # card list is shown — including navigating back from a sub-menu — with no extra "has this
 # been shown before" state to track.
 func _animate_entrance(card: Card, index: int) -> void:
-	if card.entrance_started:
+	if card.entrance_started or not animate_in:
+		card.entrance_started = true
+		card.entrance = 1.0
+		_layout()
 		return  # finish_entrance_animation already settled this card — see its comment.
 	card.entrance_started = true
 	var tween := create_tween()
@@ -366,6 +390,8 @@ func _apply_snap_offset(value: float) -> void:
 func _layout() -> void:
 	if not is_inside_tree():
 		return
+	arrow_left.visible = _selected > 0
+	arrow_right.visible = _selected < _cards.size() - 1
 	var centre_x := size.x * 0.5
 	for i in _cards.size():
 		var card := _cards[i]

@@ -134,11 +134,9 @@ through the page's `_dev_status` line, and both editing the free-roam world sess
 - **Add $10000** — adds `SettingsMenu.DEV_MONEY_GRANT` (a dev amount, not a tunable) to
   the level's money (`LevelView.MONEY_KEY`, spent at shops and on teleports), or to `WorldSession.money` with the
   legacy free-roam island on.
-- **Unlock everything** — `_unlock_map`: every biome ring's stock goes on sale, every
-  `CarLibrary` model not yet owned is granted into the garage (`Save.grant_car`), and the live
-  free-roam scene's `unlock_map` lights every rest stop (`RestStops.light_all`, so Travel can
-  reach any of them), marks the outermost ring reached and every road driven, so the map shows
-  the whole island.
+- **Unlock whole map** — `_unlock_map`: `LevelMap.reveal_all` on the live level's map, so every teleport point
+  and map area counts as found (the same discovery the minimap and `known_teleports` read). Cars, parts and money
+  are untouched; with no level running it just says so.
 - **Weather: Auto** — `_cycle_dev_weather`: each press steps the live `BiomeDirector.forced_weather`
   through every `WeatherLibrary` condition and back to Auto (the rings' own draw), applied at once
   via `update_now`. Not saved; a new scene starts on Auto.

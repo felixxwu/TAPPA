@@ -99,6 +99,9 @@ effect" at every call site.
   terrain (flat fixtures) the shape falls back to the global `tire_slip_peak` /
   `sliding_grip_ratio`. `surface_grip(cp)` is now a thin wrapper returning the
   same query's μ multiplier.
+- **Low-speed grip boost** (`Drivetrain.low_speed_grip_boost`, applied to μ in `_tire_force` for every
+  car): `GameConfig.low_speed_grip_boost_max` at a standstill, falling linearly to 1.0 at
+  `low_speed_grip_boost_kmh`, none above it.
 - Peak grip scaled by `wheel_friction_slip_front` / `_rear` (μ), then by a
   **per-wheel surface multiplier** (`surface_grip`), then by a **per-wheel
   load-sensitivity factor** (`GameConfig.tire_load_factor`, see below).

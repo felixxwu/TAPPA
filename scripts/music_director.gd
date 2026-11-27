@@ -171,6 +171,9 @@ func _ready() -> void:
 		_playback = _player.get_stream_playback() as AudioStreamPlaybackPolyphonic
 		_apply_volume()
 	_apply_master_volume()  # bus 0 always exists, headless included
+	Save.replaced.connect(func() -> void:
+		_apply_volume()
+		_apply_master_volume())
 	_current_rally_song = MusicLibrary.random_rally_song()  # a song ready before the first loading screen
 	_current_menu_song = MusicLibrary.random_menu_song()  # a song ready before the first menu visit
 	# No hardcoded autostart — _process picks the song from the live scene state

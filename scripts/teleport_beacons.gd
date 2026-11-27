@@ -1,10 +1,11 @@
 class_name TeleportBeacons
 extends Node3D
 # Docs: features/level-editor.md — update in the same change as this file.
-# The level's teleport points (black) and shops (purple) as things in the world: a spinning, bobbing obelisk over each, an icon on both faces.
+# The level's teleport points (yellow) and shops (purple) as things in the world: a spinning, bobbing obelisk over each, an icon on both faces.
 
-const WIDTH := 1.0
-const DEPTH := 0.3
+const WIDTH := 1.5
+const DEPTH := 0.15
+const TELEPORT_TINT := UITheme.GOLD  # also the minimap's delivery point diamond
 const BODY := 2.4
 const TIP := 0.9
 const HOVER := 2.2  # the tip's height over the ground, so the car passes underneath
@@ -19,7 +20,7 @@ var _icons: MultiMesh
 var _t := 0.0
 
 
-func setup(points: Array, height_at: Callable, tint := Color.BLACK, icon_path := ICON) -> void:
+func setup(points: Array, height_at: Callable, tint := TELEPORT_TINT, icon_path := ICON, icon_color := Color.BLACK) -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://shaders/level_prop.gdshader")
 	var icon := QuadMesh.new()
@@ -27,6 +28,7 @@ func setup(points: Array, height_at: Callable, tint := Color.BLACK, icon_path :=
 	var icon_mat := StandardMaterial3D.new()
 	icon_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	icon_mat.albedo_texture = load(icon_path)
+	icon_mat.albedo_color = icon_color
 	icon_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 	icon_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	icon.material = icon_mat
@@ -77,7 +79,7 @@ func _place() -> void:
 
 
 # A tall box whose bottom narrows to a downward point, flat-shaded, with its origin where box meets point.
-static func obelisk_mesh(tint := Color.BLACK) -> ArrayMesh:
+static func obelisk_mesh(tint := TELEPORT_TINT) -> ArrayMesh:
 	var w := WIDTH * 0.5
 	var d := DEPTH * 0.5
 	var top: Array[Vector3] = [Vector3(-w, BODY, -d), Vector3(w, BODY, -d), Vector3(w, BODY, d), Vector3(-w, BODY, d)]

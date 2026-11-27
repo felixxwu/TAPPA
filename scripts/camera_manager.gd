@@ -13,17 +13,17 @@ enum Mode { CHASE, BONNET }
 
 # Cycle order; the first entry is the default for a fresh profile. Appending a
 # future Camera3D + Mode entry extends the cycle.
-const ORDER := [Mode.BONNET, Mode.CHASE]
+const ORDER := [Mode.CHASE, Mode.BONNET]
 
 # Save-profile key the chosen mode is stored under (Save.get_setting), plus the
 # display metadata for the settings page. `mode` is the Mode value; order matches
 # ORDER so the settings rows read in cycle order.
 const SETTING_KEY := "camera_mode"
 const MODES := [
-	{"mode": Mode.BONNET, "name": "Bonnet",
-		"desc": "Hood-mounted view looking straight ahead."},
 	{"mode": Mode.CHASE, "name": "Chase",
 		"desc": "Third-person camera that follows behind the car."},
+	{"mode": Mode.BONNET, "name": "Bonnet",
+		"desc": "Hood-mounted view looking straight ahead."},
 ]
 
 @export var chase_camera: Camera3D

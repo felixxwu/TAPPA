@@ -3,9 +3,9 @@ extends CanvasLayer
 # Docs: features/menus.md — update in the same change as this file.
 # Tests: tests/headless/test_pause_menu.gd, tests/headless/test_photo_mode.gd, tests/headless/test_menu_nav.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # In-run pause menu. A top-right Pause button freezes the game
-# (`get_tree().paused`) and opens an overlay offering Resume, Settings and Quit to title;
+# (`get_tree().paused`) and opens an overlay offering Resume, and Settings;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
-# controls). Quit to title saves and goes back to the title screen. The whole layer
+# controls). The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in free_roam.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu
@@ -16,6 +16,7 @@ extends CanvasLayer
 # the centerline beside its current position (TrackProgress.manual_reset_pose) and the
 # menu resumes. The menu itself has no car reference, so it delegates the reset upward.
 signal reset_to_track_requested
+signal closed  # the menu was resumed
 # Emitted when the player picks "Photo Mode". PhotoModeHost owns the free-fly camera (it
 # owns the scene's cameras and overlays); this menu only hides itself and disarms so
 # the frozen shot is unobstructed. The tree stays PAUSED throughout — leaving photo
@@ -39,7 +40,7 @@ signal quitting
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
-var _menu_panel: MenuPage      # PAUSED over a card list: Resume, after-Resume rows (Map), Reset, Photo Mode, extras, Settings, Quit
+var _menu_panel: MenuPage      # PAUSED over a card list: Resume, after-Resume rows (Map), Reset, Photo Mode, extras, Settings
 var _settings_panel: Control   # the shared SettingsMenu + Back
 var _cards: CardCarousel       # the menu's cards; MenuNav's opening focus (open() puts it on Resume)
 
@@ -97,6 +98,7 @@ func open() -> void:
 func resume() -> void:
 	get_tree().paused = false
 	_set_open(false)
+	closed.emit()
 
 
 # Reset to track: hand the reset to the host (which owns the car + TrackProgress),
@@ -146,18 +148,6 @@ func return_from_photo_mode() -> void:
 	set_input_enabled(true)
 	open()
 	_focus_card("Photo Mode")
-
-
-const QUIT_LABEL := "Quit to title"
-
-
-# Pop the quit confirm; quit_to_title() runs only if the player accepts.
-func confirm_quit_to_title() -> void:
-	ConfirmPopup.open(self, QUIT_LABEL + "?",
-		"Leave the island and return to the title screen? Your world is saved.",
-		[ {"label": "Cancel", "callback": Callable()},
-		  {"label": QUIT_LABEL, "callback": quit_to_title} ],
-		1, 0)  # focus stays on Quit as before; Back/Esc = Cancel (index 0)
 
 
 # Unfreeze, then go to the title. A benchmark run exits through Benchmark.exit_to_title so its
@@ -279,12 +269,11 @@ func _build_menu_panel() -> MenuPage:
 	for label in extra_rows:
 		entries.append({"title": label, "icon": EXTRA_ICONS.get(label, "generic"), "action": _on_extra_pressed.bind(label)})
 	entries.append({"title": "Settings", "icon": "settings", "action": _show_settings.bind(true)})
-	entries.append({"title": QUIT_LABEL, "icon": "quit", "action": confirm_quit_to_title})
 	_cards = CardUI.card_list(_menu_panel, entries)
 	return _menu_panel
 
 
-const EXTRA_ICONS := {"Map": "map", "Stats": "stats"}
+const EXTRA_ICONS := {"Map": "map", "Stats": "stats", "Garage": "car", "Parts": "parts", "Tune car": "tune"}
 
 
 # Put the cursor on the card titled `title` (the one the player left the menu from).

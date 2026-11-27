@@ -18,7 +18,7 @@ const PATCH := Color(0.72, 0.66, 0.55)
 const HEDGE := Color(0.16, 0.26, 0.12)
 const FENCE := Color(0.5, 0.38, 0.24)
 const LOG_PILE := Color(0.55, 0.36, 0.2)
-const TELEPORT := UITheme.GOLD
+const TELEPORT := TeleportBeacons.TELEPORT_TINT
 const SHOP := Color(0.62, 0.25, 0.68)  # the shop obelisks' purple (TeleportBeacons.SHOP_TINT, lightened to read on the map)
 const COVER_PX := 1024    # the ground cover is sampled this coarsely; it is only a faint wash under the trees
 const COVER_TINT := 0.3   # how far the ground leans toward each cover type's colour
@@ -50,6 +50,7 @@ var _route := PackedVector2Array()  # the sat-nav line to the active delivery's 
 var back_button: Button  # bottom-left "< Back": the way a touch screen (no M, no Esc) closes the map
 var deliveries_button: Button  # beside Back: every delivery from the points found so far
 var _buttons: HBoxContainer
+var _preview_labels := {}  # while previewing: teleport point position -> "START" / "END"; every other point goes unnamed
 var _start := Callable()  # set while a delivery's route is up for the player to confirm (preview); Back runs _cancel
 var _cancel := Callable()
 var _before := []  # the map's [visible, center, zoom, route] from before the preview, put back after it
@@ -84,7 +85,7 @@ func _init() -> void:
 	_buttons.add_theme_constant_override("separation", UITheme.FONT_SIZE)
 	add_child(_buttons)
 	back_button = UITheme.row_button(UITheme.caps("< Back"), close)
-	deliveries_button = UITheme.row_button(UITheme.caps("Deliveries"), _open_deliveries)
+	deliveries_button = UITheme.row_button(UITheme.caps("All Delivery Jobs"), _open_deliveries)
 	for b: Button in [back_button, deliveries_button]:
 		b.custom_minimum_size = Vector2(UITheme.BUTTON_MIN_W, UITheme.MENU_ROW_H)
 		_buttons.add_child(b)
@@ -158,13 +159,17 @@ func _open() -> void:
 		queue_redraw()
 
 
-# Shows a delivery's `route` fitted to the screen before it starts, its Deliveries button turned into Start: Start runs
+# Shows a delivery's `route` fitted to the screen before it starts, its All Delivery Jobs button turned into Start: Start runs
 # `start`, Back runs `cancel`, and either puts the map back as it was (closed, or open under the delivery's page).
 func preview(route: PackedVector2Array, start: Callable, cancel: Callable) -> void:
 	_before = [visible, center, zoom, _route]
 	_start = start
 	_cancel = cancel
 	_route = route
+	_preview_labels = {}
+	if route.size() > 1:
+		_preview_labels[_teleport_near(route[0])] = "START"
+		_preview_labels[_teleport_near(route[route.size() - 1])] = "END"
 	visible = true
 	build()
 	update_fog()
@@ -177,7 +182,18 @@ func preview(route: PackedVector2Array, start: Callable, cancel: Callable) -> vo
 	queue_redraw()
 
 
+# The position of the level's teleport point nearest `p` (a route's end is a teleport point).
+func _teleport_near(p: Vector2) -> Vector2:
+	var best := Vector2.INF
+	for t: Dictionary in view.level.get("teleports", []):
+		var at := Vector2(float(t["x"]), float(t["z"]))
+		if best == Vector2.INF or at.distance_to(p) < best.distance_to(p):
+			best = at
+	return best
+
+
 func _end_preview(started: bool) -> void:
+	_preview_labels = {}
 	var run := _start if started else _cancel
 	_start = Callable()
 	_cancel = Callable()
@@ -185,7 +201,7 @@ func _end_preview(started: bool) -> void:
 	center = _before[1]
 	zoom = _before[2]
 	_route = _before[3]
-	deliveries_button.text = UITheme.caps("Deliveries")
+	deliveries_button.text = UITheme.caps("All Delivery Jobs")
 	queue_redraw()
 	run.call()
 
@@ -221,7 +237,7 @@ func known_teleports() -> Array:
 		return discovery != null and discovery.shown(Vector2(float(t["x"]), float(t["z"]))) > 0.0)
 
 
-# Reveals the whole level, every teleport point with it (Settings → Dev → Unlock everything).
+# Reveals the whole level, every teleport point with it (Settings → Dev → Unlock whole map).
 func reveal_all() -> void:
 	discovery.stamp(Vector2.ZERO, size_m(), 0.0)
 	_fog_dirty = true
@@ -441,6 +457,9 @@ func _draw() -> void:
 	var shops := known_shops()
 	var names: Array = teleports.map(func(t: Dictionary) -> String: return String(t.get("name", ""))) \
 		+ shops.map(func(t: Dictionary) -> String: return String(t.get("name", "")))
+	if _start.is_valid():
+		for i in teleports.size():
+			names[i] = _preview_labels.get(Vector2(float(teleports[i]["x"]), float(teleports[i]["z"])), "")
 	var anchors := PackedVector2Array()
 	var widths := PackedFloat32Array()
 	var first := -1
@@ -451,7 +470,7 @@ func _draw() -> void:
 		var tp := to_screen(wp)
 		draw_diamond(self, tp, 8.0)
 		anchors.append(tp)
-		widths.append(font.get_string_size(String(t.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
+		widths.append(font.get_string_size(String(names[i]), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.FONT_SIZE).x)
 		if wp == target:
 			first = i
 	for i in shops.size():
@@ -465,7 +484,7 @@ func _draw() -> void:
 	var line_h := float(UITheme.FONT_SIZE)
 	var rects := place_names(anchors, widths, line_h, Rect2(Vector2.ZERO, size), first)
 	for i in rects.size():
-		if rects[i].size == Vector2.ZERO:
+		if rects[i].size == Vector2.ZERO or String(names[i]).is_empty():
 			continue
 		draw_rect(rects[i].grow(NAME_PAD_PX), NAME_BACK)
 		var base := (rects[i].position + Vector2(0, roundf((line_h + font.get_ascent(UITheme.FONT_SIZE) - font.get_descent(UITheme.FONT_SIZE)) / 2.0))).round()
@@ -564,7 +583,8 @@ func zoom_by(f: float, at: Vector2) -> void:
 
 # A card page (a point's page, a shop) or a yes / no popup is up over the map: it takes the input, and the map stays put.
 func covered() -> bool:
-	return (view.deliveries_page != null and view.deliveries_page.visible) or view.store != null or ConfirmPopup.any_open(get_tree()) != null
+	var page_up: bool = (view.deliveries_page != null and view.deliveries_page.visible) or view._from_service
+	return (page_up and not _start.is_valid()) or view.store != null or view.wreck_page != null or (view._pause != null and view._pause.is_open()) or ConfirmPopup.any_open(get_tree()) != null
 
 
 func _input(event: InputEvent) -> void:
@@ -616,7 +636,7 @@ func _input(event: InputEvent) -> void:
 		queue_redraw()
 	elif event is InputEventMouseMotion:
 		queue_redraw()
-	elif event.is_action_pressed("ui_accept"):
+	elif event.is_action_pressed("ui_accept") or event.is_action_pressed("menu_select"):
 		if _start.is_valid():
 			_end_preview(true)
 		else:
@@ -730,14 +750,19 @@ func _pick_at(s: Vector2) -> void:
 		pick(p)
 
 
-# Opens the page of the found teleport point at `p` (LevelView.open_point): its deliveries, or teleport there; or the
-# found shop there, its stock to buy.
+# Teleports straight to the found teleport point at `p`, free; or opens the found shop there, its stock to buy.
 func pick(p: Vector2) -> void:
 	if _busy or _start.is_valid():
 		return
 	for t: Dictionary in known_teleports():
 		if Vector2(float(t["x"]), float(t["z"])) == p:
-			view.open_point(t)
+			if LevelView.delivery.is_empty():
+				teleport(p)
+			else:
+				var popup := ConfirmPopup.open(view, "Abandon delivery?", "Teleporting drops the cargo you are carrying.", [{"label": "No", "callback": Callable()},
+					{"label": "Yes", "callback": teleport.bind(p)}], 1, 0)
+				if popup != null:
+					popup.process_mode = Node.PROCESS_MODE_ALWAYS
 			return
 	var shops: Array = view.level.get("shops", [])
 	for t: Dictionary in known_shops():

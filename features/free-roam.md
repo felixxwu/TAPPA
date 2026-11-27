@@ -626,8 +626,7 @@ node for node:
 - `MobileControls`, `CameraManager` with the bonnet camera, `PostProcess` and `SpeedLines`.
 - `PauseMenu`, armed once `prefill` is done. Its Photo Mode row flies a camera over the frozen
   world, up to the streamed range around where it started (`PhotoModeHost`, see
-  [camera.md](camera.md)). "Reset to road" calls `RoadRecovery.reset_now`, and "Quit to title" goes to
-  `title.tscn` with free roam's own confirm text (both set on the node in `free_roam.tscn`).
+  [camera.md](camera.md)). "Reset to road" calls `RoadRecovery.reset_now` (the pause menu has no Quit to title row).
 - `MiniMapLayer/MiniMap` (layer 2, with the HUD): the heading-up, perspective-tilted minimap,
   top-centre. Tap it (or M / gamepad Back) for the full map. See [minimap.md](minimap.md).
 - `WheelParticles` (made in `free_roam.gd._ready`, as `world.gd` makes the stage's): gravel

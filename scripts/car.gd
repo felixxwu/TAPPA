@@ -832,7 +832,7 @@ func chassis_slip_angle() -> float:
 # THE STEP is grip_servo_step(error) — see there for why it carries no gain.
 #
 # cfg.steer_speed is the rate limit for winding lock ON — the model of how fast a hand
-# can turn the wheel. cfg.counter_steer_speed is the (faster) rate for winding it back
+# can turn the wheel. cfg.counter_steer_speed_* (per drive mode) is the (faster) rate for winding it back
 # off toward center or across to the opposite lock, matching how a real countersteer or
 # slide-catch happens quicker than winding new lock on. Because the servo now only has to
 # cover the slip angle (~8.6° on tarmac) rather than most of full lock, steer_speed is the
@@ -898,7 +898,7 @@ func _update_steering(delta: float, steer_input: float, steer_demand: float) -> 
 	var counter_steering: bool = steering != null_angle and \
 		(signf(target - null_angle) != signf(steering - null_angle)
 			or absf(target - null_angle) < absf(steering - null_angle))
-	var rate: float = cfg.counter_steer_speed if counter_steering else cfg.steer_speed
+	var rate: float = _counter_steer_speed() if counter_steering else cfg.steer_speed
 	steering = clampf(
 		move_toward(steering, target, rate * delta),
 		-cfg.steer_limit, cfg.steer_limit)
@@ -1690,6 +1690,13 @@ func _relocate_wheels(spec: Dictionary) -> void:
 
 # The driven-axle layout to run: the player's bought conversion when one is being fielded,
 # else the car's authored stock layout. One resolver so every rebuild agrees about which mode a given fielding means.
+func _counter_steer_speed() -> float:
+	match drivetrain.drive_mode:
+		Drivetrain.DriveMode.FWD: return config.counter_steer_speed_fwd
+		Drivetrain.DriveMode.AWD: return config.counter_steer_speed_awd
+	return config.counter_steer_speed_rwd
+
+
 func _resolved_drive_mode(stock: Drivetrain.DriveMode) -> Drivetrain.DriveMode:
 	if _owned_drive_override >= 0:
 		return _owned_drive_override as Drivetrain.DriveMode

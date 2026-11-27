@@ -155,7 +155,7 @@ own **Engine** bus — also created here, by `_ensure_engine_bus`, and muted whi
 loading screen"). Volume is a **player setting** persisted in the save profile
 (`Save.set_setting("music_volume", …)`, linear [0,1], default `DEFAULT_VOLUME =
 0.6`) — the single source of truth (there is no `GameConfig` volume). `_ready`
-reads it via `Save.get_setting`; `Music.set_volume(position, persist := true)`
+reads it via `Save.get_setting` (and again on `Save.replaced`, so a cloud download or wipe doesn't leave the old level); `Music.set_volume(position, persist := true)`
 clamps, applies the taper (below) + `linear_to_db` to the bus live, and persists. The Settings menu's
 **Audio** page (`SettingsMenu`, shared by the HQ title screen and the pause menu)
 has a focusable `HSlider` (stepped in 5% increments, `step = 0.05`) that calls

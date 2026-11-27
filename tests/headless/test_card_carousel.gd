@@ -706,3 +706,34 @@ func test_every_loot_item_icon_exists() -> void:
 		for item: Dictionary in table:
 			var path := "res://icons/cards/%s.png" % LootRules.icon(item)
 			assert_true(ResourceLoader.exists(path), "%s has an icon (%s)" % [LootRules.item_key(item), path])
+
+
+func test_arrows_hide_at_each_end_of_the_list() -> void:
+	assert_false(_carousel.arrow_left.visible, "no left arrow on the first card")
+	assert_true(_carousel.arrow_right.visible, "right arrow while cards remain")
+	_carousel.select(3, false)
+	assert_true(_carousel.arrow_left.visible, "left arrow once past the first card")
+	assert_false(_carousel.arrow_right.visible, "no right arrow on the last card")
+
+
+func test_animate_in_false_starts_cards_fully_visible() -> void:
+	var rebuilt := CardCarousel.new()
+	rebuilt.animate_in = false
+	add_child_autofree(rebuilt)
+	rebuilt.size = Vector2(800, 300)
+	var card := rebuilt.add_card()
+	assert_eq(card.entrance, 1.0, "no fade-in on a rebuild, from the first frame")
+
+
+func test_card_width_fits_the_longest_word_of_every_car_and_part_title() -> void:
+	var entries: Array = []
+	for car: Dictionary in CarLibrary.CARS:
+		entries.append({"title": String(car["name"])})
+		for part: Dictionary in LootRules.parts_for({"model_id": car["id"]}):
+			entries.append({"title": LootRules.card_text(part)[0]})
+	var width := CardUI.widest_title_card(entries)
+	assert_eq(width, floorf(width), "on whole pixels")
+	for e: Dictionary in entries:
+		for word in String(e["title"]).split(" ", false):
+			var need := UITheme.font().get_string_size(UITheme.caps(word), HORIZONTAL_ALIGNMENT_LEFT, -1, UITheme.TITLE_FONT_SIZE).x
+			assert_true(width - 2.0 * UITheme.PANEL_PAD >= need, "'%s' fits on one line" % word)

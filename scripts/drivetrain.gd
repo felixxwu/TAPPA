@@ -745,7 +745,8 @@ func _tire_force(cfg: GameConfig, c: WheelContact, surface_vel: float, h: float)
 	c.slip_long_norm = s_long
 	if s < 0.0001:
 		return Vector2.ZERO
-	var f_scaled: Vector2 = scaled / s * c.mu * c.n_force * _grip_curve(c.slip_peak, c.slide_ratio, s)
+	var mu: float = c.mu * low_speed_grip_boost(cfg, car.linear_velocity.length())
+	var f_scaled: Vector2 = scaled / s * mu * c.n_force * _grip_curve(c.slip_peak, c.slide_ratio, s)
 	var f_long: float = f_scaled.x / er
 	var f_lat: float = f_scaled.y
 	# Stability caps: never push harder than would zero a slip component
@@ -760,6 +761,15 @@ func _tire_force(cfg: GameConfig, c: WheelContact, surface_vel: float, h: float)
 	f_long = clampf(f_long, -long_cap, long_cap)
 	f_lat = clampf(f_lat, -absf(s_lat_v) * share / h, absf(s_lat_v) * share / h)
 	return Vector2(f_long, f_lat)
+
+
+# Extra grip multiplier at low speed: low_speed_grip_boost_max at a standstill, falling linearly to 1.0 at
+# low_speed_grip_boost_kmh and staying 1.0 above it.
+static func low_speed_grip_boost(cfg: GameConfig, speed_mps: float) -> float:
+	var limit_mps := cfg.low_speed_grip_boost_kmh / 3.6
+	if limit_mps <= 0.0 or speed_mps >= limit_mps:
+		return 1.0
+	return lerpf(cfg.low_speed_grip_boost_max, 1.0, speed_mps / limit_mps)
 
 
 # Per-wheel surface grip multiplier on the base μ at a contact point. Asks the

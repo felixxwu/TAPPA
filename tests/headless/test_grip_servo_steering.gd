@@ -789,13 +789,14 @@ func test_a_slide_correction_crossing_centre_stays_on_the_fast_rate() -> void:
 	dt._contacts.append(c)
 
 	_car.steering = 0.05  # same side of centre as the null, but far short of it
-	assert_ne(cfg.counter_steer_speed, cfg.steer_speed,
+	var counter_speed: float = _car._counter_steer_speed()
+	assert_ne(counter_speed, cfg.steer_speed,
 		"precondition: this config actually distinguishes the two rates")
 	_car._update_steering(1.0 / 60.0, 0.0, 0.0)  # released input: deadzone branch, target = null
 	var moved := absf(_car.steering - 0.05)
-	var counter_step := cfg.counter_steer_speed / 60.0
+	var counter_step: float = counter_speed / 60.0
 	assert_almost_eq(moved, counter_step, counter_step * 0.05,
-		"converging on an off-centre null moves at counter_steer_speed, not steer_speed (%.5f vs expected %.5f)"
+		"converging on an off-centre null moves at the counter-steer speed, not steer_speed (%.5f vs expected %.5f)"
 			% [moved, counter_step])
 
 

@@ -209,26 +209,13 @@ func test_add_money_on_the_legacy_island_adds_to_the_world_money() -> void:
 	assert_eq(WorldSession.money(), 5 + SettingsMenu.DEV_MONEY_GRANT)
 
 
-class FakeFreeRoam extends Node:
-	func unlock_map() -> void:
-		pass
-
-
-func test_unlock_everything_puts_every_car_in_the_garage_once() -> void:
-	WorldSession.new_world(1, "fx_light_rwd")
+func test_unlock_whole_map_without_a_level_says_so_and_grants_nothing() -> void:
 	var menu := _make_menu()
-	var fake := FakeFreeRoam.new()
-	get_tree().root.add_child(fake)
-	var real_scene := get_tree().current_scene
-	get_tree().current_scene = fake
-	_dev_button(menu, "unlock everything").pressed.emit()
-	get_tree().current_scene = real_scene
-	fake.free()
-	var models: Array = []
-	for c: Dictionary in _save.profile[_save.KEY_CARS]:
-		models.append(String(c["model_id"]))
-	for spec: Dictionary in CarLibrary.all():
-		assert_eq(models.count(String(spec["id"])), 1, "%s owned exactly once" % spec["id"])
+	var cars_before: Array = _save.profile[_save.KEY_CARS].duplicate()
+	_dev_button(menu, "unlock whole map").pressed.emit()
+	assert_eq(menu._dev_status.text, "No level yet.")
+	assert_eq(_save.profile[_save.KEY_CARS], cars_before, "no cars are granted")
+
 
 # --- Reset progress ----------------------------------------------------------
 

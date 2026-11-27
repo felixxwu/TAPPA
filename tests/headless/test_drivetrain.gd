@@ -818,3 +818,13 @@ func test_the_tire_compound_reaches_the_off_terrain_and_ice_paths_too() -> void:
 
 	cfg.frozen_water_grip = 0.0
 	cfg.deep_snow_depth_m = 0.0
+
+
+func test_low_speed_grip_boost_is_one_at_the_threshold_and_larger_below() -> void:
+	var cfg := GameConfig.new()
+	var limit := cfg.low_speed_grip_boost_kmh / 3.6
+	assert_eq(Drivetrain.low_speed_grip_boost(cfg, limit), 1.0, "no boost at the threshold")
+	assert_eq(Drivetrain.low_speed_grip_boost(cfg, limit * 3.0), 1.0, "no boost above it")
+	var slow := Drivetrain.low_speed_grip_boost(cfg, limit * 0.5)
+	assert_gt(slow, 1.0, "boosted below it")
+	assert_lt(slow, Drivetrain.low_speed_grip_boost(cfg, 0.0), "and more the slower the car")

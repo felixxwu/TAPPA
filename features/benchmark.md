@@ -176,7 +176,9 @@ the world, and the run POSTs its result back (below). Two pieces make it a loop 
   changes, re-injecting the reload poller. It deliberately does NOT change the reload
   token, so open pages keep running until refreshed by hand (or a `POST /reload`).
   `--no-watch` turns it off. The injected poller also checks `GET /build-id` (the
-  collector's `index.pck` modification time) each second and, once it changes,
+  contents of `build/web-build-id`, which `start_web.sh` rewrites only after a rebuild
+  is exported AND re-injected — keying it off `index.pck` flipped the title mid-export,
+  and a refresh then loaded an un-patched page that never polled again) each second and, once it changes,
   prefixes the tab title with "⟳ New build, refresh" so a waiting rebuild is visible.
 - **Remote toggle sweep.** On a `?bench=1` boot the game fetches `GET /bench-config`
   (a synchronous XHR) and disables the benchmark toggles it names

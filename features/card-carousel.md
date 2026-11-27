@@ -582,3 +582,14 @@ the cards land at the same screen height on every page. A page built with no tit
 - **Card icons are real SVGs now** (`icons/cards/*.svg`) — white only, uniform 6px
   stroke, round caps/joins, one shape vocabulary across the set; see
   `features/ui-design-system.md` → *Card icons* before adding one.
+
+**Edge arrows:** `arrow_left` / `arrow_right` (floating < > labels at each side) show whether more cards lie that way; `_layout` hides each at its end of the list.
+
+**Rebuild without replaying the intro:** `CardUI.card_list(..., selected, animate_in)` (and `CardCarousel.animate_in`, set before `add_card`) with `animate_in = false` starts every card fully faded in. Pass it, with the old selected index, when rebuilding the menu the player is already on after a purchase or upgrade: `LevelView._reopen_store` (shop) and `RestStopPage._show` (rebuilding the same view: parts, tires, engines, garage, tune). Other menus keep the default fade-in.
+
+## A title never breaks mid-word
+
+`CardUI.card_list` sets `CardCarousel.min_card_width` from `CardUI.widest_title_card(entries)`
+(the longest single word of any title at `TITLE_FONT_SIZE`, plus the card's padding, on whole
+pixels), and `_card_width()` is the larger of that and `card_carousel_card_width`. A list with
+a long word ("SUPERCHARGER") gets slightly wider cards instead of wrapping its last letter.

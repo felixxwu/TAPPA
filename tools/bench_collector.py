@@ -76,9 +76,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         if path == "/build-id":
-            # Changes whenever start_web.sh's watcher re-exports the build; the page uses it only to retitle its tab.
-            pck = Path(WEB_DIR) / "index.pck"
-            body = str(pck.stat().st_mtime_ns if pck.exists() else 0).encode()
+            # start_web.sh rewrites this only once a rebuild is fully exported and patched; the page uses it to retitle its tab.
+            stamp = RESULTS_DIR.parent / "web-build-id"
+            if not stamp.exists():
+                self.send_error(404)
+                return
+            body = stamp.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", str(len(body)))

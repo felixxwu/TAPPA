@@ -196,11 +196,11 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_almost_eq(map.to_world(map.to_screen(Vector2(30, -20))), Vector2(30, -20), Vector2.ONE * 0.01)
 	assert_eq(map.nearest_teleport(Vector2(45, 25)), Vector2(60, 4), "a click picks the nearest teleport point, not the nearest road")
 	var lv_view: LevelView = world.get_node("Level")
-	map.pick(map.nearest_teleport(Vector2(45, 25)))
-	assert_not_null(lv_view.deliveries_page, "picking a point on the map opens its page instead of teleporting")
+	lv_view.open_deliveries()
+	assert_not_null(lv_view.deliveries_page, "the map's jobs page opens")
 	var point_cards: CardCarousel = lv_view.deliveries_page.find_children("*", "CardCarousel", true, false)[0]
 	var info := lv_view.delivery_info(lv_view.level["teleports"][1], lv_view.level["teleports"][1]["deliveries"][0])
-	assert_eq(CardUI.titles(point_cards), PackedStringArray(["Teleport", "Navigate to", String(info["cargo"])]), "teleport, navigate and the point's deliveries, named by their cargo")
+	assert_eq(CardUI.titles(point_cards), PackedStringArray([String(info["cargo"])]), "the deliveries, named by their cargo")
 	assert_true(String(info["cargo"]) in LevelView.CARGO, "a delivery carries something")
 	assert_gt(float(info["km"]), 0.0, "over the road's length between the points")
 	var authored := lv_view.delivery_info(lv_view.level["teleports"][1], {"to": "Alpha", "cargo": "Crate of eggs", "pay": 123, "kg": 7})
@@ -245,34 +245,36 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_eq(CardUI.titles(lv_view.store.find_children("*", "CardCarousel", true, false)[0]).size(), 2, "its car and its part")
 	var shop_bodies: Array = lv_view.shop_cars[for_sale].map(func(c: Node3D) -> Node: return c.get_parent())
 	var driving_id := Config.data.level_car_id
+	Scenes.last_blocked_path = ""
 	Save.set_setting(LevelView.MONEY_KEY, 60)
 	CardUI.pick(lv_view.store.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.by_id(for_sale)["name"]))
 	(ConfirmPopup.any_open(get_tree()) as ConfirmPopup)._on_action(1)
 	assert_true(for_sale in LevelView.owned_cars() and LevelView.money() == 10, "a car bought from the map joins the garage")
-	assert_eq(Config.data.level_car_id, driving_id, "without swapping to it")
-	assert_ne(Scenes.last_blocked_path, Scenes.WORLD, "or reloading the level")
+	assert_eq(Config.data.level_car_id, for_sale, "and is driven straight away")
+	assert_eq(Scenes.last_blocked_path, "", "the car swaps once the shop closes, so the map is not torn down mid-visit")
+	var bought_at := CardUI.index_of(lv_view.store.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.by_id(for_sale)["name"]))
+	assert_eq(lv_view.store.find_children("*", "CardCarousel", true, false)[0].get_meta("entries")[bought_at]["extra"], "DRIVING", "its shop card says DRIVING")
+	assert_true(lv_view._swap_car_on_close == for_sale and not lv_view._store_dirty, "the swap waits for the shop to close and nothing else is pending")
+	Config.data.level_car_id = driving_id
+	lv_view._swap_car_on_close = ""
+	Scenes.last_blocked_path = ""
 	assert_not_null(lv_view.store, "the shop stays open")
 	MenuNav.of(lv_view.store)._unhandled_input(map_back)
 	assert_true(lv_view.store == null and map.visible and get_tree().paused, "Back from the shop returns to the map")
 	Save.set_setting(LevelView.CARS_KEY, [driving_id])
 	for i in shop_bodies.size():
 		lv_view.park_stock(shop_bodies[i], lv_view.level["shops"][i])
+	var kept_delivery := LevelView.delivery
+	LevelView.delivery = {"from": "", "to": "Alpha"}
 	map.pick(map.nearest_teleport(Vector2(45, 25)))
-	Save.set_setting(LevelView.MONEY_KEY, Config.data.level_teleport_cost - 1)
-	CardUI.pick(lv_view.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Teleport")
-	var broke := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
-	assert_not_null(broke, "teleporting without the money says so")
-	broke._on_action(0)
-	assert_eq(LevelView.money(), Config.data.level_teleport_cost - 1, "and costs nothing")
-	Save.set_setting(LevelView.MONEY_KEY, Config.data.level_teleport_cost + 5)
-	CardUI.pick(lv_view.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Teleport")
-	var ask := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
-	assert_not_null(ask, "teleporting asks first")
-	ask.trigger_back()
-	assert_eq(LevelView.money(), Config.data.level_teleport_cost + 5, "No keeps the money")
-	CardUI.pick(lv_view.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Teleport")
-	(ConfirmPopup.any_open(get_tree()) as ConfirmPopup)._on_action(1)
-	assert_eq(LevelView.money(), 5, "Yes pays for the teleport")
+	var abandon := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(abandon, "teleporting with a delivery active asks first")
+	abandon._on_action(0)
+	assert_true(map.visible and not LevelView.delivery.is_empty(), "No keeps the delivery and the map")
+	LevelView.delivery = kept_delivery
+	var money_before := LevelView.money()
+	map.pick(map.nearest_teleport(Vector2(45, 25)))
+	assert_eq(LevelView.money(), money_before, "picking a point teleports straight there, free")
 	for _i in 120:
 		if not get_tree().paused:
 			break
@@ -390,8 +392,11 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	Scenes.last_blocked_path = ""
 	lv_node.open_store(0)
 	assert_true(lv_node.orbit_camera != null and lv_node.orbit_camera.current, "the camera circles the shop while browsing")
-	assert_eq(CardUI.index_of(lv_node.store.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.by_id(for_sale)["name"])), -1,
-		"a car the player owns is off sale")
+	store_cards = lv_node.store.find_children("*", "CardCarousel", true, false)[0]
+	var owned_at := CardUI.index_of(store_cards, String(CarLibrary.by_id(for_sale)["name"]))
+	assert_gt(owned_at, -1, "a car the player owns stays listed")
+	assert_false((store_cards.get_meta("entries")[owned_at]["action"] as Callable).is_valid(), "and cannot be bought again")
+	assert_eq(store_cards.get_meta("entries")[owned_at]["extra"], "OWNED", "an owned car that isn't being driven says OWNED")
 	CardUI.pick(lv_node.store.find_children("*", "CardCarousel", true, false)[0], String(BoostLibrary.CATALOGUE[part]["label"]))
 	(ConfirmPopup.any_open(get_tree()) as ConfirmPopup)._on_action(0)
 	assert_eq(LevelView.bought_parts(), [], "a part the player can't afford isn't bought")
@@ -408,9 +413,14 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_eq(lv_node.service_at(), 1, "stopped beside a teleport point")
 	await get_tree().process_frame
 	assert_true(lv_node.service_prompt.visible, "the prompt shows while driving")
+	assert_eq(lv_node._prompt_kind.text, UITheme.caps("Delivery point"), "labelled with what the place is")
+	assert_eq(lv_node._prompt_title.get_theme_font_size("font_size") % UITheme.FONT_SIZE, 0, "its name is a multiple of the font size")
 	lpause.open()
-	await get_tree().process_frame
-	assert_false(lv_node.service_prompt.visible, "but not over a menu")
+	for _i in 60:
+		if not lv_node.service_prompt.visible:
+			break
+		await get_tree().process_frame
+	assert_false(lv_node.service_prompt.visible, "but not over a menu, once it has faded out")
 	lpause.resume()
 	at_car.global_position = Vector3(60.0, at_car.global_position.y, 5.0)
 	at_car.linear_velocity = Vector3.ZERO
@@ -425,13 +435,11 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(get_tree().paused and not lpause.is_armed(), "frozen, with the pause menu out of the way")
 	assert_true(lv_node.orbit_camera != null and lv_node.orbit_camera.current, "the camera circles the teleport point")
 	var service_cards: CardCarousel = lv_node.service.find_children("*", "CardCarousel", true, false)[0]
-	CardUI.pick(service_cards, "Swap car")
-	assert_not_null(lv_node.garage, "Swap car opens the garage")
+	for gone in ["Swap car", "Garage", "Parts", "Tune car", "Delivery Jobs"]:
+		assert_eq(CardUI.index_of(service_cards, gone), -1, "the delivery point has no %s card" % gone)
 	var cancel := InputEventAction.new()
 	cancel.action = "ui_cancel"
 	cancel.pressed = true
-	MenuNav.of(lv_node.garage)._unhandled_input(cancel)
-	assert_not_null(lv_node.service, "backing out of the garage returns to the service menu")
 	var sdmg: DamageModel = at_car.damage
 	assert_eq(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Repair"), -1, "no Repair card: the point heals")
 	sdmg.apply_loss(sdmg.max_hp * 0.5)
@@ -449,52 +457,75 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_eq(sdmg.hp, sdmg.max_hp, "and it heals back to full")
 	MenuNav.of(lv_node.service)._unhandled_input(cancel)
 	assert_true(lv_node.service == null and not get_tree().paused, "Back closes the service menu")
+	at_car.global_position = Vector3(60.0, at_car.global_position.y, 5.0)
+	at_car.linear_velocity = Vector3.ZERO
+	lv_node.open_service()
+	assert_not_null(lv_node.service)
+	var esc := InputEventAction.new()
+	esc.action = "pause"
+	esc.pressed = true
+	lv_node._input(esc)
+	assert_true(lv_node.service == null and lpause.is_open(), "Esc replaces the service menu with the pause menu, never stacking")
+	lpause.resume()
+	await get_tree().physics_frame
 	assert_eq(LevelView.last_point, 1, "being at a teleport point makes it the respawn point")
 	assert_true(sdmg.thermal, "the engine can overheat here")
 	at_car.global_position = Vector3(-100.0, near_pos.y, 0.0)
 	sdmg.apply_loss(sdmg.max_hp)
 	assert_true(lv_node._wrecked and not lpause.is_armed(), "at 0 HP the car is wrecked")
-	await lv_node.respawn()
+	var wreck_at := at_car.global_position
+	var reset := InputEventAction.new()
+	reset.action = "reset_to_road"
+	reset.pressed = true
+	lv_node._unhandled_input(reset)
+	await get_tree().physics_frame
+	assert_almost_eq(at_car.global_position, wreck_at, Vector3.ONE * 0.1, "R does nothing to a wreck, whose engine stays cut")
+	assert_true(at_car.drivetrain.engine.killed)
+	lv_node.respawn()
+	lv_node.respawn()
+	while lv_node._respawning:
+		await get_tree().process_frame
+	assert_false(at_car.freeze, "a double-pressed respawn leaves the car unfrozen, free to drive")
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	assert_almost_eq(Vector2(at_car.global_position.x, at_car.global_position.z), Vector2(60, 4), Vector2.ONE * 0.5, "Respawn goes back to the last teleport point visited")
 	assert_true(sdmg.hp == sdmg.max_hp and not lv_node._wrecked and lpause.is_armed(), "mended and driving again")
 	lv_node._unhandled_input(select)
 	var cargo := String(lv_node.delivery_info(lv_node.level["teleports"][1], lv_node.level["teleports"][1]["deliveries"][0])["cargo"])
-	assert_eq(CardUI.titles(lv_node.service.find_children("*", "CardCarousel", true, false)[0])[0], "Deliveries",
-		"the point's deliveries sit behind one Deliveries card, first")
-	assert_eq(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], cargo), -1, "not listed on the service menu itself")
-	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Deliveries")
-	assert_gt(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], cargo), -1, "Deliveries lists the point's deliveries")
+	assert_gt(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], cargo), -1, "Enter on a delivery point lists its jobs directly")
 	MenuNav.of(lv_node.service)._unhandled_input(cancel)
-	assert_gt(CardUI.index_of(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Tune car"), -1, "Back returns to the service menu")
-	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Tune car")
-	assert_true(lv_node.shop != null and lv_node.shop.view == RestStopPage.View.TUNE, "Tune car opens the tuning sliders")
+	assert_true(lv_node.service == null and not get_tree().paused, "Back leaves it")
+	lpause.open()
+	lpause._on_extra_pressed("Tune car")
+	assert_true(lv_node.shop != null and lv_node.shop.view == RestStopPage.View.TUNE, "the pause menu's Tune car opens the tuning sliders")
 	MenuNav.of(lv_node.shop._page)._unhandled_input(cancel)
-	assert_true(lv_node.shop == null and lv_node.service != null, "Back from the tuning returns to the service menu")
-	CardUI.pick(lv_node.service.find_children("*", "CardCarousel", true, false)[0], "Swap car")
+	assert_true(lv_node.shop == null and lpause.is_open(), "Back from the tuning returns to the pause menu")
+	lpause._on_extra_pressed("Garage")
 	var garage_cards: CardCarousel = lv_node.garage.find_children("*", "CardCarousel", true, false)[0]
 	assert_eq(CardUI.index_of(garage_cards, String(CarLibrary.by_id(reward)["name"])), -1, "the garage lists only owned cars")
 	MenuNav.of(lv_node.garage)._unhandled_input(cancel)
-	lv_node.close_service()
+	assert_true(lv_node.garage == null and lpause.is_open(), "Back from the garage returns to the pause menu")
+	lpause.resume()
 	lv_node.map.reveal_all()
 	lv_node.map.toggle()
-	lv_node.map.pick(Vector2(60.0, 4.0))
+	lv_node.open_deliveries()
 	CardUI.pick(lv_node.deliveries_page.find_children("*", "CardCarousel", true, false)[0], String(lv_node.delivery_info(lv_node.level["teleports"][1], lv_node.level["teleports"][1]["deliveries"][0])["cargo"]))
 	assert_true(lv_node.map.visible and not lv_node.deliveries_page.visible and lv_node.map._route.size() > 1, "a delivery first shows its route on the map")
+	assert_eq(lv_node.map._preview_labels.values().size(), 2, "only the route's two ends are named while previewing")
+	assert_true(lv_node.map._preview_labels.values().has("START") and lv_node.map._preview_labels.values().has("END"), "as START and END")
 	assert_eq(lv_node.map.deliveries_button.text, UITheme.caps("Start"), "with Start to confirm it")
 	var preview_key := InputEventAction.new()
 	preview_key.action = "ui_cancel"
 	preview_key.pressed = true
 	lv_node.map._input(preview_key)
-	assert_true(lv_node.deliveries_page.visible and lv_node.map.deliveries_button.text == UITheme.caps("Deliveries"), "Back returns to the page without starting it")
+	assert_true(lv_node.deliveries_page.visible and lv_node.map.deliveries_button.text == UITheme.caps("All Delivery Jobs"), "Back returns to the page without starting it")
+	assert_true(lv_node.map._preview_labels.is_empty(), "and the names come back")
 	CardUI.pick(lv_node.deliveries_page.find_children("*", "CardCarousel", true, false)[0], String(lv_node.delivery_info(lv_node.level["teleports"][1], lv_node.level["teleports"][1]["deliveries"][0])["cargo"]))
-	preview_key.action = "ui_accept"
+	lv_node._from_service = true
+	assert_false(lv_node.map.covered(), "a preview is not covered by the page it came from")
+	preview_key.action = "menu_select"
+	lv_node._from_service = false
 	lv_node.map._input(preview_key)
-	assert_eq(CardUI.titles(lv_node.deliveries_page.find_children("*", "CardCarousel", true, false)[0]), PackedStringArray(["Teleport", "Navigate to"]),
-		"a delivery asks how to get to its pick-up point")
-	CardUI.pick(lv_node.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Navigate to")
-	assert_eq(LevelView.nav_target(), "Beta", "navigating leads the sat nav to the pick-up point first")
 	for _i in 120:
 		if not get_tree().paused:
 			break
@@ -543,17 +574,15 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	if lv_node.service != null:
 		lv_node.close_service()
 	lpause.open()
-	assert_eq(CardUI.index_of(lpause.cards(), "Deliveries"), -1, "deliveries are picked on the map, not the pause menu")
-	for row in ["Repair", "Garage", "Shop"]:
+	assert_eq(CardUI.index_of(lpause.cards(), "Delivery Jobs"), -1, "deliveries are picked on the map, not the pause menu")
+	for row in ["Repair", "Shop"]:
 		assert_eq(CardUI.index_of(lpause.cards(), row), -1, "the pause menu leaves %s to the teleport points" % row)
+	assert_gt(CardUI.index_of(lpause.cards(), "Garage"), -1, "the pause menu has the Garage")
 	CardUI.pick(lpause.cards(), "Map")
 	lv_node.map.reveal_all()
-	lv_node.map.pick(Vector2(60.0, 4.0))
+	lv_node.open_deliveries()
 	CardUI.pick(lv_node.deliveries_page.find_children("*", "CardCarousel", true, false)[0], String(lv_node.delivery_info(lv_node.level["teleports"][1], lv_node.level["teleports"][1]["deliveries"][0])["cargo"]))
 	lv_node.map.deliveries_button.pressed.emit()
-	Save.set_setting(LevelView.MONEY_KEY, Config.data.level_teleport_cost)
-	CardUI.pick(lv_node.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Teleport")
-	(ConfirmPopup.any_open(get_tree()) as ConfirmPopup)._on_action(1)
 	for _i in 120:
 		if not get_tree().paused:
 			break
@@ -569,14 +598,15 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	lpause.open()
 	CardUI.pick(lpause.cards(), "Map")
 	lv_node.map.pick(Vector2(10.0, 3.0))
-	CardUI.pick(lv_node.deliveries_page.find_children("*", "CardCarousel", true, false)[0], "Navigate to")
-	assert_eq(LevelView.delivery, {"from": "", "to": "Alpha"}, "Navigate to routes to the point with no cargo")
-	assert_false(get_tree().paused or lv_node.map.visible, "and drives on")
-	at_car.global_position = Vector3(10.0, at_car.global_position.y, 3.0)
-	at_car.linear_velocity = Vector3.ZERO
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_true(LevelView.delivery.is_empty() and lv_node.service == null, "arriving ends the navigation without a service menu")
+	var abandon_popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
+	assert_not_null(abandon_popup, "teleporting away from an active delivery asks first")
+	if abandon_popup != null:
+		abandon_popup._on_action(1)
+	for _i in 120:
+		if not get_tree().paused:
+			break
+		await get_tree().process_frame
+	assert_true(LevelView.delivery.is_empty() and not get_tree().paused and lv_node.service == null, "picking a point teleports and drives on")
 	LevelView.delivery = {}
 	lpause.open()
 	lpause.resume()
@@ -584,13 +614,14 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	var level := lv_node
 	assert_false(sdmg.invulnerable, "the level's car takes damage")
 	level._unhandled_input(select)
-	assert_eq(CardUI.index_of(level.service.find_children("*", "CardCarousel", true, false)[0], "Upgrade"), -1, "parts are bought at shops, not fitted here")
+	assert_not_null(level.service, "Enter at a point opens its page")
+	if level.service != null:
+		assert_eq(CardUI.index_of(level.service.find_children("*", "CardCarousel", true, false)[0], "Upgrade"), -1, "parts are bought at shops, not fitted here")
 	level.close_service()
 	LevelView.owned = {}
 	var other := 1 if CarLibrary.all()[0]["id"] == start_car else 0
 	Save.set_setting(LevelView.CARS_KEY, [start_car, CarLibrary.all()[other]["id"]])
-	level.open_service()  # in the game the reload has replaced the level by now
-	CardUI.pick(level.service.find_children("*", "CardCarousel", true, false)[0], "Swap car")
+	level.open_garage()  # in the game the reload has replaced the level by now
 	CardUI.pick(level.garage.find_children("*", "CardCarousel", true, false)[0], String(CarLibrary.all()[other]["name"]))
 	assert_eq(Config.data.level_car_id, String(CarLibrary.all()[other]["id"]), "picking a car makes it the level's car")
 	assert_eq(Scenes.last_blocked_path, Scenes.WORLD, "and reloads the level to field it")
@@ -638,6 +669,19 @@ func test_a_new_player_starts_at_the_shop_with_no_car_and_the_starting_money() -
 	assert_not_null(view.store, "then its stock opens")
 	assert_eq(view.store.find_children("*", "Button", true, false).filter(func(b: Button) -> bool: return b.text.contains("Back")), [],
 		"and no way back out to drive without a car")
+	var pm: PauseMenu = world.get_node("PauseMenu")
+	assert_true(pm.is_armed(), "the pause menu works in the intro")
+	MenuNav.of(view.store)._unhandled_input(_back_event())
+	assert_true(pm.is_open() and not view.store.get_parent().visible, "Back opens it in place of the shop, never over it")
+	assert_false(view.pointer_hidden(), "the pointer shows over a menu")
+	var esc := InputEventAction.new()
+	esc.action = "pause"
+	esc.pressed = true
+	view._input(esc)
+	assert_true(pm.is_open(), "Esc over the open pause menu is left to it, not turned into another open")
+	pm._unhandled_input(esc)
+	assert_false(pm.is_open(), "a second Esc closes it")
+	assert_true(view.store.get_parent().visible and get_tree().paused, "closing it brings the shop back")
 	await get_tree().process_frame
 	assert_false(view.minimap.visible, "no driving HUD")
 	Scenes.last_blocked_path = ""
@@ -669,6 +713,9 @@ class PauseStub extends Node:
 	func is_armed() -> bool:
 		return true
 
+	func is_open() -> bool:
+		return false
+
 
 func test_the_dispatcher_and_first_recipient_each_speak_once_with_their_job_counts() -> void:
 	var view := _built(_level())
@@ -686,6 +733,10 @@ func test_the_dispatcher_and_first_recipient_each_speak_once_with_their_job_coun
 	view._check_delivery()
 	assert_eq(view.find_children("*", "NpcDialogue", false, false).size(), 0, "driving through doesn't stop for the dispatcher")
 	car.linear_velocity = Vector3.ZERO
+	LevelView._shopped_since_drive = false
+	view._check_delivery()
+	assert_eq(view.find_children("*", "NpcDialogue", false, false).size(), 0, "the dispatcher waits until the player has been in a shop")
+	LevelView._shopped_since_drive = true
 	view._check_delivery()
 	view._driving = false
 	view._car = null
@@ -780,7 +831,7 @@ func test_teleport_points_stay_off_the_map_until_found_or_unlocked() -> void:
 	assert_eq(map.nearest_teleport(Vector2(80, 0)), Vector2(-80, 0), "the unfound one can't be teleported to")
 	var seen: Variant = Save.get_setting(LevelMap.SEEN_KEY)
 	map.reveal_all()
-	assert_eq(map.known_teleports().size(), 2, "unlock everything finds them all")
+	assert_eq(map.known_teleports().size(), 2, "reveal_all finds them all")
 	if seen == null:
 		Save.erase_setting(LevelMap.SEEN_KEY)
 	else:
@@ -1105,3 +1156,38 @@ func test_a_swapped_in_car_has_its_bought_parts_on_so_its_stats_show_them() -> v
 			if stats["hp"] != stock["hp"] or stats["mass"] != stock["mass"]:
 				return  # a part that changes power or weight shows in the stats the garage reads
 	pending("no part in the catalogue changes power or weight")
+
+
+func test_the_pointer_hides_only_while_driving() -> void:
+	var view := _built(_level())
+	add_child(view)
+	view._pause = autofree(PauseStub.new())
+	Save.set_setting(LevelView.CARS_KEY, [Config.data.level_car_id])
+	var car := VehicleBody3D.new()
+	view.add_child(car)
+	view._car = car
+	view._driving = true
+	view.map = LevelMap.new()
+	view.map.view = view
+	view.add_child(view.map)
+	assert_eq(view.pointer_hidden(), not Platform.is_touch(), "hidden while driving (touch has no pointer)")
+	get_tree().paused = true
+	assert_false(view.pointer_hidden(), "shown again over a menu")
+	get_tree().paused = false
+	view._driving = false
+	view._car = null
+	car.free()
+	LevelView.forget_progress()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func test_the_map_does_not_open_over_another_menu() -> void:
+	var view := _built(_level())
+	add_child(view)
+	view.map = LevelMap.new()
+	view.map.view = view
+	view.add_child(view.map)
+	assert_false(view.map.covered())
+	view._from_service = true
+	assert_true(view.map.covered(), "not over a point's menu")
+	view._from_service = false

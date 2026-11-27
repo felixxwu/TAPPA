@@ -41,8 +41,7 @@ The popup **builds its own CanvasLayer** under `host` (layer 101, above overlays
 independent of the hosting scene. It's **MenuNav-wired** (keyboard + gamepad navigable),
 emits `finished`, and **`queue_free`s on dismiss** — the host doesn't track it. **New
 confirm dialogs should use `ConfirmPopup.open()` instead of Godot's native
-`ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Examples: the **pause menu's
-quit-to-title confirm** (`PauseMenu.confirm_quit_to_title`) and the **"Update available"
+`ConfirmationDialog`**, which is unstyled and not `MenuNav`-wired. Example: the **"Update available"
 prompt** on the native builds (see [update-check.md](update-check.md)).
 
 **Body scrolls, buttons stay pinned.** A ConfirmPopup has no touch dismissal other than its

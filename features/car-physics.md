@@ -130,7 +130,7 @@ for each).
    - **`steer_limit`** is the mechanical stop and the only hard bound. There are two rate
      limits — the model of how fast a hand can turn the wheel, and also the input smoothing
      (there is no separate easing stage): **`steer_speed`** applies when the target angle winds
-     MORE lock on; **`counter_steer_speed`** applies when it winds lock back off, or flicks to
+     MORE lock on; **`counter_steer_speed_fwd/rwd/awd`** (by drive mode) applies when it winds lock back off, or flicks to
      the opposite side — real countersteering/slide-catching happens faster than winding lock
      on, so it is tuned higher. Both are measured **relative to `null_angle`, not center** —
      during a slide the null itself sits off zero, so a single continuous correction toward it

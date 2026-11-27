@@ -45,6 +45,7 @@ var dirty := false
 var _swapped_car := false
 var _swap_from := -1  # the car picked to swap its engine, waiting for the car to swap with
 var _keep_at := 0
+var _rebuilding := false
 var _root := View.MAIN  # the page whose Back closes this one
 var _page: MenuPage
 var _cards: CardCarousel
@@ -134,7 +135,8 @@ func _clear() -> void:
 
 func _show(v: View) -> void:
 	# Rebuilding the page the player is on (a part fitted, a car picked) keeps the cursor there.
-	_keep_at = _cards.selected_index() if _cards != null and v == view else 0
+	_rebuilding = _cards != null and v == view
+	_keep_at = _cards.selected_index() if _rebuilding else 0
 	_clear()
 	view = v
 	match v:
@@ -165,7 +167,7 @@ func _show(v: View) -> void:
 # `selected` < 0 keeps the cursor where it was on this page.
 func _card_page(title: String, entries: Array, header: Array = [], selected := -1, back := View.MAIN, on_back := Callable()) -> void:
 	_page = CardUI.card_page(self, {"title": title, "dim": true})
-	_cards = CardUI.card_list(_page, entries, header, mini(_keep_at, entries.size() - 1) if selected < 0 else selected)
+	_cards = CardUI.card_list(_page, entries, header, mini(_keep_at, entries.size() - 1) if selected < 0 else selected, not _rebuilding)
 	var go_back := on_back if on_back.is_valid() else close if view == _root else _show.bind(back)
 	if view != View.MAIN:
 		_page.add_action(UITheme.row_button("< Back", go_back))

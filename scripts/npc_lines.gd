@@ -14,7 +14,7 @@ const FIRST_DRIVE := [
 ]
 
 const DISPATCHER_GREETING := [
-	"Morning! I've got %d deliveries on offer here.", # deliveries at this point
+	"Morning! I've got %d delivery jobs on offer here.", # deliveries at this point
 	"Take any of them and I'll pay you when you get it there.",
 ]
 
