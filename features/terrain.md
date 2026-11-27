@@ -450,8 +450,7 @@ cache keeps* above; `track_weights` / `track_surface` are resident for the whole
   `sun_color`, `sky_color`, `ground_color`) are pushed from `GameConfig` by
   `world.gd` (`apply_terrain_light`) before the initial build. Valid because the
   terrain and sun never move; the car can't bake (it rotates) and lights in its shader.
-  The formula itself is the static `light_for_normal`, which free roam's streamer bakes
-  with too (see [free-roam.md](free-roam.md) → "Terrain shading").
+  The formula itself is the static `light_for_normal`.
 - `set_track(centerline, width, transition_m, tarmac_fraction, tarmac_first,
   surface_feather_m, should_yield=false)` — `await`
   `bake_track` (forwarding `should_yield`), and **rebuild any currently-loaded chunks** (full `setup()`, since
@@ -819,4 +818,4 @@ no region ships them yet.
 
 ## Threaded chunk builds (level streamer)
 
-The level's streamer builds chunks on worker threads: see [level-streamer.md](level-streamer.md) → Threads. The legacy island's `TerrainStreamer` never threads (`_can_thread_build()` is false: its `_sample` writes shared `terrain.last_road_*`).
+The level's streamer builds chunks on worker threads: see [level-streamer.md](level-streamer.md) → Threads.

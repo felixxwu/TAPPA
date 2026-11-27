@@ -1,19 +1,18 @@
 # Menus
 
-The game boots through `title.tscn` (`title_boot.gd`) straight into the world (`Scenes.WORLD`, the Hafren level; the legacy free-roam island only with the Dev toggle on), with the
-title menu drawn over it ([world-session.md](world-session.md)). The live menus are the title, the pause menu (with free roam's Map / Stats cards), the rest-stop
-page and the world pages. **Every menu that is a list of choices is a card list**
+The game boots through `title.tscn` (`title_boot.gd`) straight into the world (`Scenes.WORLD`, the Hafren level) ([world-session.md](world-session.md)). The live menus are the pause menu, the level's
+pages (map, shops, service, part pages) and the title menu, which nothing opens today. **Every menu that is a list of choices is a card list**
 (`CardCarousel` built through `CardUI.card_page` / `card_list`) — see
 [card-carousel.md](card-carousel.md) for which menus are cards and which stay plain pages.
 
 **Sources:** the scene-routing seam in `scripts/scenes.gd` (`class_name Scenes` —
-the path consts `TITLE` / `WORLD` (the game: the Hafren level) / `LEGACY_FREE_ROAM` (the old island, reference only) / `MAIN` / `CAR`, and
+the path consts `TITLE` / `WORLD` (the game: the Hafren level) / `MAIN` / `CAR`, and
 the `car_scene()` cached-load accessor, the ONE place `"res://car.tscn"` is spelled in
 production code; `preload(Scenes.CAR)` does not compile in GDScript 4.6, which is why
 callers use `Scenes.car_scene()`), the pause overlay in `scripts/pause_menu.gd`
 (`class_name PauseMenu`), the shared settings page in `scripts/settings_menu.gd`, the
 text input in `scripts/text_field.gd`, the cloud-save form in `scripts/account_menu.gd`,
-and the rest-stop page in `scripts/free_roam/rest_stop_page.gd`.
+and the level's part pages in `scripts/free_roam/rest_stop_page.gd`.
 
 **Tests:** `tests/headless/test_menu_nav.gd`, `tests/headless/test_menu_page.gd`,
 `tests/headless/test_pause_menu.gd`, `tests/headless/test_photo_mode.gd`, `tests/headless/test_settings_menu.gd`,
@@ -27,8 +26,8 @@ the test kill switch): pages that paused the tree (Settings' Wipe all progress f
 -> title) must not arrive at a scene whose carousel tweens and `MenuNav` need an unpaused tree.
 **The HUD hides under paused pages.** `hud.gd` runs `PROCESS_MODE_ALWAYS` and makes its Control
 children transparent (`modulate.a`, not `visible`, so photo mode / `hud_enabled` keep control)
-while `get_tree().paused`, so rest-stop / map / stats pages don't overlap the health gauge.
-Tests: `test_settings_menu.gd` (wipe unpauses), `test_hud.gd`, `test_world_pages.gd` (Stats page nav).
+while `get_tree().paused`, so the level's pages don't overlap the health gauge.
+Tests: `test_settings_menu.gd` (wipe unpauses), `test_hud.gd`.
 
 ## Button order — leaving is left, proceeding is right
 
@@ -89,39 +88,29 @@ currently hidden from the category list (see cloud-save.md). It exposes `at_root
 exactly like its own sub-pages — `SettingsMenu.go_back()` gives it first refusal before
 backing out of the page. See [cloud-save.md](cloud-save.md).
 
-## Title screen and world pages
+## Title screen and pause menu rows
 
-The title menu (`TitleScreen`) opens over the world at boot, and free roam's pause menu and rest-stop page open
-the map and stats pages (`WorldPages`). Both are described in [world-session.md](world-session.md),
-and their nav tests are `test_title_screen.gd` and `test_world_session.gd`. The pause menu has
+The title menu (`TitleScreen`) is described in [world-session.md](world-session.md); its nav test is
+`test_title_screen.gd`. The pause menu has
 host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
 `return_from_extra()` when its page closes; `closed` fires on `resume()`, which `LevelView` uses to bring back the intro shop), and **after-Resume rows** (`after_resume_rows`, the same but placed
-right after Resume: both hosts put Map second, since a touch screen has no M key; `open()` puts the
-cursor on Resume). Free roam's rows: Resume / Map / Reset to
-road / Photo Mode / Stats / Settings (no Quit to title); the level view has Map, Garage, Parts and Tune car after Resume (`after_resume_rows`; `LevelView._on_extra` opens `open_garage` / `open_parts` / `open_tune` via `CAR_PAGES`, needing a car, and Back returns to the menu through `_back_from_car_page` / `return_from_extra`; Map (`LevelMap.open_over_pause`: closing returns to the menu, a teleport goes straight back to driving) (deliveries are picked on the map: its All Delivery Jobs button, and a found shop picked there opens its stock to buy, see level-editor.md; the money shows top right), and no Repair / Shop: repair is at the teleport points (`LevelView.open_service`, see level-editor.md; Parts = `open_parts`, the rest-stop page's shop alone with `free` on and `engine_cars` empty (owned upgrades / tires / kits to switch, no engine swaps), Swap car = `open_garage` and Tune car = `open_tune`; a shop's Engine swap card opens `open_engine_swap` (`RestStopPage.open_engines`); repairing is just being near a point, `heal_at_points`). (There was a Journal row from 2026-10-23 to
+right after Resume: Map goes second, since a touch screen has no M key; `open()` puts the
+cursor on Resume). The level view has Map, Garage, Parts and Tune car after Resume (`after_resume_rows`; `LevelView._on_extra` opens `open_garage` / `open_parts` / `open_tune` via `CAR_PAGES`, needing a car, and Back returns to the menu through `_back_from_car_page` / `return_from_extra`; Map (`LevelMap.open_over_pause`: closing returns to the menu, a teleport goes straight back to driving) (deliveries are picked on the map: its All Delivery Jobs button, and a found shop picked there opens its stock to buy, see level-editor.md; the money shows top right), and no Repair / Shop: repair is at the teleport points (`LevelView.open_service`, see level-editor.md; Parts = `open_parts`, the part pages' shop alone with `engine_cars` empty (owned upgrades / tires / kits to switch, no engine swaps), Swap car = `open_garage` and Tune car = `open_tune`; a shop's Engine swap card opens `open_engine_swap` (`RestStopPage.open_engines`); repairing is just being near a point, `heal_at_points`). (There was a Journal row from 2026-10-23 to
 2026-10-25; the user had it taken out and the journal deleted.)
 
-## Rest-stop page (`free_roam/rest_stop_page.gd`)
+## Part pages (`free_roam/rest_stop_page.gd`)
 
-Free roam's `RestStopPage` (a `CanvasLayer` at layer 6, `PROCESS_MODE_ALWAYS`) opens when the car
-stops on a rest stop (`RestStops.opened`). Opening it repairs the car for
-free, freezes the game and disarms the pause menu. Every page but TUNE is a card list
-(`_card_page` → `CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)), with
-`MenuNav.attach`:
-- **MAIN:** the stop's name, "Car repaired" and the money held above the cards Continue / Shop /
-  Garage / Map / Tune car. Travel is on the map (the quick-travel picker).
-- **TUNE:** the shared `TuningPanel` (`car.retune` on the funnel view of the car) on a plain,
-  widened `MenuPage` — sliders, not a list.
-- **SHOP** (four cards opening UPGRADES / TIRES / DRIVETRAINS / ENGINES) **and GARAGE**: see [loot.md](loot.md).
-
-Back (Esc / gamepad B, or the `< Back` button under a sub-page's cards) steps a sub-page → its parent
-page → MAIN → closed. The same page hosts the **wreck page** (`View.WRECKED`, `open_wrecked`): when the car gives up it says only "You dropped $n here" (`LootDirector.lost`; nothing when there was no money), and its single Respawn card (or Back) respawns at the last lit stop. `RestStopPage.cards()` / `pick(title)` are the test readouts. Covered by
-`test_free_roam_rest_stops.gd` and `test_loot.gd`.
+`RestStopPage` (a `CanvasLayer` at layer 6, `PROCESS_MODE_ALWAYS`) is the level's Parts, Engine swap
+and Tune car pages, opened by `LevelView` (`open_shop` / `open_engines` / `open_tune`). Every page
+but TUNE is a card list (`_card_page`, [card-carousel.md](card-carousel.md)) with `MenuNav.attach`;
+TUNE is the shared `TuningPanel` on a plain, widened `MenuPage`. Back steps a part page → the shop →
+closed. See [loot.md](loot.md). `RestStopPage.cards()` / `pick(title)` are the test readouts.
+Covered by `test_level_view.gd` and `test_level_shop_specialties.gd`.
 
 ## Pause menu (`pause_menu.gd`)
 
 A `PauseMenu` `CanvasLayer`, `PROCESS_MODE_ALWAYS` so its UI keeps working while the tree is
-frozen, in both `free_roam.tscn` and the dev stage `main.tscn`. It owns a **top-right Pause
+frozen, in both `level_view.tscn` and the dev stage `main.tscn`. It owns a **top-right Pause
 button** bearing a pixel-art pause glyph (`icons/hud/pause.png` in a `PixelIcon`, since the font
 has no ⏸ glyph) that **freezes the game** (`get_tree().paused = true`) and shows **PAUSED** over a
 card list (`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**, **Reset**,

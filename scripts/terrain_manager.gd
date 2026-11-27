@@ -693,9 +693,8 @@ func _light_from_neighbours(hl: float, hr: float, hd: float, hu: float) -> Color
 
 # The lighting math itself: hemisphere ambient + one directional sun on a unit normal, blended
 # from white by `amount`. Parameterised over a light profile (sun direction/colour, sky/ground
-# ambient, amount) rather than reading the live fields, so the day bake, the night bake and free
-# roam's TerrainStreamer (whose normals come from its own height grid) all share this one
-# formula and can never drift apart — the island is shaded exactly like a stage. Mirrors
+# ambient, amount) rather than reading the live fields, so the day bake and the night bake share this one
+# formula and can never drift apart. Mirrors
 # shaders/ps1_models_lit.gdshader. Static and allocation-free: it is per-vertex work in every
 # bake. Callers already checked their own profile's `amount > 0.0` gate.
 static func light_for_normal(n: Vector3, dir: Vector3, sun: Color, sky: Color, ground: Color,

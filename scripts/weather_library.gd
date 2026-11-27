@@ -315,7 +315,7 @@ const WETNESS := {
 # override_for_test() that WETNESS does not name is likewise dry.
 # A ground colour as a condition's road tint leaves it: lerped `amount` toward `toward` when
 # `blend` (dust caking on), else multiplied by `amount` (a wet road darkens). Shared by the
-# stage (world.gd) and free roam (BiomeDirector).
+# stage (world.gd) and the level (LevelWeather).
 static func tinted(col: Color, amount: float, toward: Color, blend: bool) -> Color:
 	if blend:
 		return col.lerp(Color(toward.r, toward.g, toward.b, col.a), amount)

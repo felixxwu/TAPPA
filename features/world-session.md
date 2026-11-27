@@ -1,127 +1,43 @@
-# World session, title screen and world pages
+# World session and title screen
 
 **Source:** `scripts/world_session.gd` (the `WorldSession` autoload), `scripts/title_boot.gd`
-(`title.tscn`, the game's main scene), `scripts/title_screen.gd` (`TitleScreen`, the menu over the world), `scripts/free_roam/world_pages.gd`
-(`WorldPages`: the map and stats pages), and the session glue in `scripts/free_roam/free_roam.gd`.
+(`title.tscn`, the game's main scene) and `scripts/title_screen.gd` (`TitleScreen`).
 
-**Tests:** `tests/headless/test_world_session.gd`, `tests/headless/test_title_screen.gd`, `tests/headless/test_free_roam_shell.gd`
-
-The free-roam pivot's persistence (decisions 2, 19–22 and 26 in
-`todo/2026-10-19-free-roam-pivot.md`): **one persistent world per save** that never resets.
+**Tests:** `tests/headless/test_world_session.gd`, `tests/headless/test_title_screen.gd`
 
 ## The world block (`Save.KEY_WORLD`)
 
-`WorldSession` owns the block's shape and is its only writer. Progress (money, lit stops, coins,
-parts, cars) goes through `Save.save()` as it happens, so it is saved and uploaded. Churn — `pose`,
-`car_state`, `driven`, `seen`, `max_ring`, `last_site`, `drive_time` — only changes the dict;
-free roam's `save_world` (every 5 s and on every exit) writes it to disk with `Save.save(false)`,
-which doesn't mark the profile unsynced or ask the cloud for an upload ([cloud-save.md](cloud-save.md)).
-`driven` grows by one `"x,z"` key per 40 m cell visited and isn't pruned (a packed-int key would
-need a migration, so it stays as is).
+`WorldSession` owns the block's shape and is its only writer. Since the island was deleted
+(Phase 4 of `todo/2026-11-27-hafren-only-cleanup.md`) it holds only:
 
 | Key | What |
 |---|---|
-| `seed` | the island's world seed (`FreeRoamSettings.world_seed`) |
-| `car` | the active owned car's instance id (`Save.KEY_CARS`) |
-| `pose` | `[x, y, z, yaw]`, written every `FreeRoamSettings.save_every_s` (5 s) and when leaving the scene |
-| `car_state` | `{hp, max_hp, cooling_broken, engine_temp, toe}`, so a reload resumes the damage too; health carries over as a share of max HP, so a full car stays full after fitting a roll cage or swapping cars |
-| `lit` / `last_site` | lit rest stops (site ids; spawn 0 always) and the respawn point |
-| `driven` | map cells (`DRIVEN_CELL_M` = 40 m) the car has driven through, for the map |
-| `max_ring` | the furthest biome ring reached, a high-water mark (`reach_ring` returns true on a new one, which cues the region-name banner and puts the ring's roads on the map) |
-| `drive_time` | seconds driven: the weather timeline (`BiomeDirector`) runs on it |
-| `seen` | site ids (rest stops, loot slots, dead ends) the car has come within `GameConfig.minimap_seen_radius_m` of (`see`, `seen_sites`, `is_seen`; spawn 0 from the start). The minimap and the map show only these ([minimap.md](minimap.md)). A save without the key reads as `[0]` |
-| `money` | coins picked up and not yet spent (`money` / `set_money`); dropped when the car gives up |
-| `dropped` | the money left at the last wreck, `{pos: [x, y, z], money: n}`, or `{}` (`dropped` / `set_dropped`) |
-| `collected`, `revealed` | coin spots taken, rings whose stock is on sale ([loot.md](loot.md)). Parts live on each owned car (`parts`, each switched on or off), not here |
-| `sites_hash` | a fingerprint of the generated site list the ids above index into (`sites_fingerprint`: the hash of every site's kind and position in whole metres, so a retune that moves sites is caught too) |
+| `seed` | the world's seed; a profile has a world once this is set (`has_world`) |
+| `car` | the starter owned car's instance id (`Save.KEY_CARS`, `active_car`) |
 
-**Site ids are only good for the sites they were saved against.** The streamer rebuilds the site
-list from the seed every boot, so a retune of the road or site generation renumbers them. Free roam
-calls `check_sites` the moment the streamer has built its sites (on the Terrain's `ready`, before
-the rest stops and loot read anything): a world with no fingerprint yet is stamped; a different
-one resets `lit`, `last_site`, `seen`, `collected`, `revealed` and `pose` rather than misreading
-them. As a backstop, `RestStops.restore` drops any lit id that isn't a rest stop on this island,
-and the respawn pose uses the cleaned `RestStops.last_site`.
+Keys an older save left there (`pose`, `lit`, `money`, `driven`, …) are ignored. The Hafren level
+keeps its own progress in saved settings (`LevelView`: money, car, parts, pose; see
+[level-editor.md](level-editor.md)).
 
-**The world generation.** `WorldSession.generation` moves on (`invalidate()`, which also emits
-`world_changed`) whenever the profile's world is replaced: `new_world`, a whole-profile swap
-(`Save.replaced`: a cloud download, a wipe). Free roam captures it in `_ready`;
-once it differs, `save_world` and the per-tick map/ring/seen writes do nothing, so a scene still on
-screen for a frame after the swap (the title's New World, Use cloud) can't
-write its car into the world that replaced it. `CarPreviewCache` drops its owned-car previews on
-the same signal.
-
-- **New world** (`new_world`): a random seed whose roads reach the snow ring and total over `new_world_min_road_km` (`FreeRoamSettings.pick_world_seed`) and the start car (`TitleScreen.new_world`, `LootRules.start_car`). It replaces the old world **and the
-  old owned cars**, because a world is the whole save.
-- **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints;
-  `is_seen` / `see` keep an int set, rebuilt only when the stored list is a different one).
+- **New world** (`new_world(seed, model_id)`): replaces the world **and the old owned cars**, because
+  a world is the whole save, and grants the starter car. `TitleScreen.new_world` uses a random seed
+  and the level's authored start car (`Config.authored_value("level_car_id", …)`).
+- **The world generation.** `WorldSession.generation` moves on (`invalidate()`, which also emits
+  `world_changed`) whenever the profile's world is replaced: `new_world`, or a whole-profile swap
+  (`Save.replaced`: a cloud download, a wipe). `CarPreviewCache` drops its owned-car previews on it.
 - **Schema:** `Save.SCHEMA_VERSION` is 8. Every v7 (roguelike) profile is refused, not migrated,
-  and the player starts fresh (decision 26).
+  and the player starts fresh.
 
-## Free roam and the session (`free_roam.gd`)
+## Boot and the title screen
 
-- `_enter_tree` sets the island seed from the session before the streamer builds its network.
-- `_ready` makes a world if there is none (a dev boot straight into the scene), fields the
-  session's active car through `apply_owned` (so tuning persists through `Save.set_tuning`),
-  restores its damage, seeds `RestStops` from `lit` / `last_site`, and puts the car at its saved
-  pose, re-seated on the built ground.
-- While driving: driven cells, the ring reached and the sites seen (`MiniMap.mark_seen_near`) every 0.25 s; pose, condition, drive time
-  and the distance odometer (`LifetimeStats.DISTANCE_DRIVEN_M`) every 5 s, and on Quit or scene
-  exit (`tree_exiting`, window close request). The children leave the tree before the scene root's
-  `tree_exiting` fires, so `save_world` can't read the car then: it uses the pose cached on every
-  physics tick (damage and drive time stay readable). A travel from the rest-stop page's Map moves the car
-  first and the page closes after, so the reload's save holds the destination. `RestStops.lit` / `respawn_point_changed`
-  write straight through; a respawn bumps `TIMES_GAVE_UP`, and so does booting a world saved while wrecked (the Respawn that quitting skipped).
+The main scene (`project.godot → run/main_scene = res://title.tscn`) is just `title_boot.gd`: a
+first-time player (no world) gets one (`TitleScreen.new_world`), then it sets
+`WorldSession.title_pending` and enters `Scenes.WORLD`, the Hafren level (`level_view.tscn`), which
+drives straight in. **Nothing shows the title menu today:** the island was its only host, and
+nothing reads `title_pending` any more.
 
-## Title screen (`TitleScreen`, decision 20)
-
-The game boots straight into the world with the title menu over it. The main scene
-(`project.godot → run/main_scene = res://title.tscn`) is just `title_boot.gd`: it sets
-`WorldSession.title_pending` and enters `Scenes.WORLD`. **Today that is the Hafren level
-(`level_view.tscn`), which drives straight in: it shows no title menu** —
-the title and the world block below belong to the legacy free-roam island, which
-runs only with Settings → Dev → "Legacy free-roam island" on. There, free roam's `_ready` calls `show_title()` — a
-`TitleScreen` on a `CanvasLayer` (layer 10) over the paused world, with a light dim behind it. Behind the menu a `TitleOrbitCamera` circles
-the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_speed`, kept above the
-ground, its tween running while paused); closing hands back to the chosen camera
-(`CameraManager.activate_current`).
-A first-time player (no world) gets one built at boot (`TitleScreen.new_world`: the start car, `LootRules.start_car`, and a seed from `FreeRoamSettings.pick_world_seed`), then sees the title like anyone else. The title's New World makes its world the same way.
-Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
-- **MAIN:** Continue (only with a world) just closes the menu (`close`) and
-  unpauses; New World; Settings.
+`TitleScreen` itself is card lists (`CardUI.card_page` / `card_list`,
+[card-carousel.md](card-carousel.md)) with `MenuNav`:
+- **MAIN:** Continue (only with a world) closes the menu; New World (asks first over an existing
+  world); Settings.
 - **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
-
-Closing the title re-reads the camera and touch-layout choices (`CameraManager.activate_current`,
-`MobileControls.set_scheme` in `free_roam.gd` → `show_title`), so they apply without a reload.
-
-Free roam's pause menu quits to the title (`PauseMenu.quit_to_title`), saving first — which reloads
-the world with the menu over it. A rest-stop reload shows no menu.
-
-## World pages (`WorldPages`, decisions 21–22)
-
-A `CanvasLayer` (layer 7, always processing) over the frozen game:
-- **Map** (pause menu → Map, rest-stop page → Map, or the minimap: tap it, or **M** / gamepad
-  Back — `toggle_map`, which also closes it): the coast, the ring borders crossed (drawn
-  as average circles; the real border is noisy), the roads driven (segments whose midpoint
-  cell is driven) over, in grey, the undriven road within `GameConfig.minimap_nearby_road_m` of
-  a driven cell (`WorldPages.map_roads`), the rest stops come across (orange lit, grey not; `MiniMap.site_markers`, shared with the
-  minimap), the dropped money (a diamond in `drop_crystal_color`, `WorldPages.dropped_xz`) and the car. Opened
-  from the minimap it pauses the game itself and closing it goes straight back to driving
-  (`free_roam.gd → open_full_map`). The page body is transparent (`"alpha": 0.0`): only the
-  drawn map is opaque, over the dim. It **frames what has been explored** (`explored_view` →
-  `fit_view`: the driven roads, sites come across and the car, plus a margin, at least
-  `GameConfig.map_min_view_m` across, never more than the island), so the start isn't a speck.
-  **Wherever it's opened it is the quick-travel picker**: `<` / `>` (or a tap on a lit rest stop,
-  `tap_map_at`) pick a lit stop — every lit stop when opened on the road, the others when opened at
-  one — and Travel goes to the ringed one (`RestStops.travel_to`, which also repairs the car).
-  After a travel the host goes straight back to driving: the minimap's map unpauses, and the pause
-  menu's Map resumes instead of returning to the menu (`travelled`).
-  Travelling while not at a checkpoint (map opened on the road, `travel_drops_money`) with money
-  in hand first asks to confirm (`travel_warning`, which also names any earlier pile this will lose), then leaves the money where the car was (`LootDirector.drop_money`);
-  checkpoint to checkpoint keeps it.
-  The map is drawn as large as the frame allows (a plain `MenuPage` — a picture, not a list).
-- **Stats:** a read-only card each for distance driven, rest stops lit, times the car gave up,
-  and rings reached.
-
-The pause menu hosts them through its generic extra cards (`PauseMenu.after_resume_rows` for Map, second after Resume; `extra_rows` for Stats;
-`extra_requested`, `return_from_extra`).

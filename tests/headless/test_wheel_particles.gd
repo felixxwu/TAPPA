@@ -382,8 +382,7 @@ func test_the_square_override_still_honours_the_region_colour() -> void:
 
 
 func test_a_region_look_seats_both_overrides_and_an_empty_look_clears_them() -> void:
-	# apply_region_look is how world.gd (once per stage) and free roam's BiomeDirector (per
-	# ring) hand the region's particle look over. Synthetic look values, nothing authored.
+	# apply_region_look is how world.gd hands the region's particle look over, once per stage. Synthetic look values, nothing authored.
 	var wp := _make()
 	var cfg: GameConfig = Config.data
 	var tint := Color(0.3, 0.6, 0.9)

@@ -8,8 +8,8 @@ sees this node as its terrain (`height_at`, `surface_at`, `road_pose`, `spawn_po
 
 Tests: `tests/headless/test_level_streamer.gd`.
 
-Until November 2026 this class extended the free-roam `TerrainStreamer`
-(`scripts/free_roam/terrain_streamer.gd`); the scheduler below was folded in, minus the planting,
+Until November 2026 this class extended the free-roam `TerrainStreamer` (since deleted,
+with the island); the scheduler below was folded in, minus the planting,
 road-network and site code only the legacy island used.
 
 ## Settings

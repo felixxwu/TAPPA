@@ -12,7 +12,7 @@ extends RefCounted
 ##
 ## Unlike the camera / mobile-scheme settings (which drive scene-local state via a
 ## signal), the frame cap IS a global engine property, so the picker applies it by
-## writing Engine.max_fps directly and free roam's boot re-derives it on the next run.
+## writing Engine.max_fps directly and the level re-derives it on its next load.
 
 const SETTING_KEY := "fps_cap"
 

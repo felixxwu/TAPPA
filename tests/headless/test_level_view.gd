@@ -1,20 +1,17 @@
 extends GutTest
 # The level-editor save that is the game world (Scenes.WORLD, features/level-editor.md): unpacking the
-# lab's save format, the ground built around the road, the trees, and the legacy-island dev redirect.
+# lab's save format, the ground built around the road, the trees, and entering the world.
 # Every level here is synthetic; nothing reads the shipped Hafren save.
 
-var _toggle: bool
 var _handling: Array
 const _HANDLING := ["deep_snow_drag", "deep_snow_depth_m", "grass_grip", "gravel_grip", "tarmac_grip"]
 
 
 func before_each() -> void:
-	_toggle = Config.data.legacy_free_roam_island
 	_handling = _HANDLING.map(func(k: String) -> Variant: return Config.data.get(k))
 
 
 func after_each() -> void:
-	Config.data.legacy_free_roam_island = _toggle
 	for i in _HANDLING.size():
 		Config.data.set(_HANDLING[i], _handling[i])
 
@@ -99,20 +96,9 @@ func test_deliveries_to_unfound_points_lead_the_list_shortest_first() -> void:
 	assert_eq(order, ["NearNew", "FarNew", "Known", "Known2"])
 
 
-func test_world_entry_is_the_level_unless_the_legacy_island_is_on() -> void:
-	Config.data.legacy_free_roam_island = false
+func test_world_entry_is_the_level() -> void:
 	Scenes.change_to(get_tree(), Scenes.WORLD)
-	assert_eq(Scenes.last_blocked_path, Scenes.WORLD, "the level is the world by default")
-	Config.data.legacy_free_roam_island = true
-	Scenes.change_to(get_tree(), Scenes.WORLD)
-	assert_eq(Scenes.last_blocked_path, Scenes.LEGACY_FREE_ROAM, "the dev toggle swaps in the legacy island")
-	Config.data.legacy_free_roam_island = false
-	Scenes.change_to(get_tree(), Scenes.LEGACY_FREE_ROAM)
-	assert_eq(Scenes.last_blocked_path, Scenes.LEGACY_FREE_ROAM, "the legacy island reloads itself, never the level")
-
-
-func test_the_shipped_config_makes_the_level_the_default_world() -> void:
-	assert_false(GameConfig.new().legacy_free_roam_island, "the legacy island is off out of the box")
+	assert_eq(Scenes.last_blocked_path, Scenes.WORLD)
 
 
 func test_the_level_scene_arms_its_pause_menu() -> void:
@@ -841,7 +827,6 @@ func test_teleport_points_stay_off_the_map_until_found_or_unlocked() -> void:
 func test_engine_swaps_offer_only_the_cars_owned() -> void:
 	var ids: Array = CarLibrary.all().map(func(c: Dictionary) -> String: return String(c["id"]))
 	var page := RestStopPage.new()
-	page.free = true
 	page.owned = {"model_id": ids[0], "tuning": {}, "parts": []}
 	page.engine_cars = [ids[0], ids[1]]
 	add_child_autofree(page)
@@ -897,6 +882,22 @@ func test_off_the_road_for_the_timeout_resets_the_car() -> void:
 	assert_true(rec.off_road_step(t * 0.6), "off the road for the timeout")
 	car.global_position = Vector3(0.0, 0.0, 1.0)
 	assert_false(rec.off_road_step(t * 2.0), "back on the road stops the clock")
+
+
+# A car that has fallen through the ground is put back however fast it is falling.
+func test_a_car_far_below_the_ground_counts_as_fallen_out_of_the_world() -> void:
+	var view := _built(_level())
+	var car := VehicleBody3D.new()
+	add_child_autofree(car)
+	var rec := RoadRecovery.new()
+	rec.car = car
+	rec.streamer = view
+	autofree(rec)
+	var ground := view.height_at(10.0, 10.0)
+	car.global_position = Vector3(10.0, ground + 1.0, 10.0)
+	assert_false(rec.fell_out_of_world())
+	car.global_position = Vector3(10.0, ground - Config.data.recovery_void_depth_m - 1.0, 10.0)
+	assert_true(rec.fell_out_of_world())
 
 
 func test_the_spawn_override_picks_the_node_and_faces_along_the_road_or_falls_back() -> void:

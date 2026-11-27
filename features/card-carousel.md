@@ -8,7 +8,7 @@ pixel-art PNGs in `icons/cards/` (`PixelIcon`).
 
 **Tests:** `tests/headless/test_card_carousel.gd` (the widget, and `CardUI.card_list`'s entry →
 card → action wiring); each menu's own nav test covers its page (`test_title_screen`,
-`test_free_roam_rest_stops`, `test_loot`, `test_pause_menu`, `test_free_roam_shell`,
+`test_level_view`, `test_level_shop_specialties`, `test_pause_menu`,
 `test_photo_mode`, `test_world_session`).
 
 The shared horizontal, side-scrolling card widget. It was the roguelike hub's menu shape, was

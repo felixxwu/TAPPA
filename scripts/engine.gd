@@ -33,7 +33,7 @@ var limiting := false  # rev-limiter fuel cut latched on (see _update_limiter)
 # Combined fuel-cut state (rev limiter OR a damage misfire) for the audio synth:
 # while true, combustion has stopped this substep — the note ducks and crackles.
 var fuel_cut := false
-# Ignition off: the car gave up (free roam, RestStops). No combustion, the clutch stays open so
+# Ignition off: the car gave up. No combustion, the clutch stays open so
 # the car coasts with no drive or engine braking, the revs spin down to 0 (below the idle clamp)
 # and EngineAudio goes silent. Cleared by reset() (every respawn / teleport goes through it).
 var killed := false

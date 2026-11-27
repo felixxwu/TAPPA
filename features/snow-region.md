@@ -131,12 +131,8 @@ Either way the road is never lifted and the step reads as a plough bank at the v
 Collision is a separate `HeightMapShape3D` and is untouched, so the wheels rest at true
 ground level and the car sits *in* the snow.
 
-**Free roam wiring.** `TerrainStreamer._material_for` gives a ring the snow variant when its
-region authors deep snow (`TerrainStreamer.snow_depth_of`), with `snow_depth` from that
-block. A biome-border material (`_pair_material`) next to a snow ring also wears it, and fades
-the lift between `snow_depth` and `snow_depth_b` by the same per-vertex ring coordinate the
-textures use, so it meets the plain chunks on either side without a step. This was lost in the
-free-roam pivot (the streamer drew every ring with the base shader) and restored on 2026-10-30.
+The island's snow ring and its biome-border fade (`snow_depth_b`) were deleted with the island in
+November 2026; the shader keeps the uniforms.
 
 **Why a variant shader.** `ps1_models` is the shared terrain shader, terrain is the
 heaviest geometry in the game, and this renderer targets low-end phones — so it is
@@ -234,9 +230,6 @@ collider physics has.
   snowy region, so winter rubber is exactly what should pay off out on the ice.
 - **The water-drag query is not wired** on a frozen stage — dragging a car down on a
   surface it is meant to slide across is the opposite of the feature.
-- **Free roam** has no ice collider, only the grip. The grip test reads
-  `cfg.track_water_level_m`, so `BiomeDirector._wire_water` seats the island's
-  `FreeRoamSettings.water_level_m` there (and puts the stage value back on `_exit_tree`).
 - **Look** reuses the water shader with ice colours and `scroll_speed = 0`. Ice does not
   flow, and stopping the scroll is what separates it from water at a glance. No second
   shader.

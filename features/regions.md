@@ -1,16 +1,16 @@
 # Regions
 
-**Source:** `scripts/region_library.gd` (`RegionLibrary`), worn in free roam by the biome rings
-(`FreeRoamSettings.ring_regions`, `scripts/free_roam/biome_director.gd`, `TerrainStreamer`'s
-per-ring materials and foliage) and on the dev stage by `world.gd._apply_region_look`.
+**Source:** `scripts/region_library.gd` (`RegionLibrary`), worn on the dev stage by
+`world.gd._apply_region_look`; the Hafren level reads `look_of("home")` for its driving effects
+(`level_view.gd` → `_add_effects`).
 
-**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_assets.gd`, `tests/headless/test_free_roam_biomes.gd`
+**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_assets.gd`
 
-In free roam each **biome ring** of the island wears a region: its look, its handling and the
-loot / weather of that ring ([free-roam.md](free-roam.md) → *Biomes*). Region unlock gating,
-region pages and region runs are deleted.
+The island's biome rings that wore these regions were deleted in November 2026 (Phase 4 of
+`todo/2026-11-27-hafren-only-cleanup.md`), as were region unlock gating, region pages and region
+runs. The level has its own snow biome ([snow-region.md](snow-region.md)).
 
-**Adding a region:** an entry in `RegionLibrary.REGIONS` and a place in `ring_regions` for free roam to wear it.
+**Adding a region:** an entry in `RegionLibrary.REGIONS`.
 
 **A region that is a variant of another inherits, it does not clone.** Author
 `look_from` plus only the keys that differ — see
@@ -23,8 +23,7 @@ pick from it; the `-greece`/`-snow` naming convention makes fabricated names loo
 plausible, and a dangling path ships as an untextured world. Guarded by
 `test_region_assets.gd` → `test_every_authored_region_resource_path_resolves`.
 
-A **region is a LOOK plus a WATERLINE**, plus optional HANDLING. The game ships five (`RegionLibrary.ordered()` lists them in authored `order`; free roam's
-rings wear the ones named in `FreeRoamSettings.ring_regions`, spawn outward): `home` ("The
+A **region is a LOOK plus a WATERLINE**, plus optional HANDLING. The game ships five (`RegionLibrary.ordered()` lists them in authored `order`): `home` ("The
 Green", the original green forest/plain world), `greece` ("The Dunes", arid), `taiga` ("The
 Taiga", home's look with one much taller tree), `home_coast` ("The Lakes", the same forest
 look with the sea raised MUCH higher than every other region, so the lakes read as unmistakably
@@ -32,8 +31,7 @@ flooded) and `snow` ("The Alps" — see [snow-region.md](snow-region.md)).
 
 **A region is not look-only.** `snow` also carries HANDLING: per-surface grip overrides, a
 deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS` (exactly as
-`water_level` does) because they are consumed as handling — by `BiomeDirector.apply_handling`
-in free roam — not by the look pass.
+`water_level` does) because they are consumed as handling, not by the look pass.
 Each is a `has_*` / `*_of` pair (GDScript has no null, so "authors nothing" must never be
 confused with a real value), and none is inherited through `look_from`.
 
@@ -70,8 +68,7 @@ baseline), and an optional `look_from` (see below). Ships today:
   undergrowth). Being the one region with no ground cover at all, it is also the
   **stoniest**: it carries the catalogue's highest `rock_density`, and rocks are
   what fill a verge that would otherwise read as bare ([rocks.md](rocks.md)).
-  It also overrides `tarmac_color` (a dark, warm asphalt — its roads are
-  tarmac in free roam), `road_marking_color` (yellow
+  It also overrides `tarmac_color` (a dark, warm asphalt), `road_marking_color` (yellow
   lane paint instead of home's off-white) and `grass_particle_color` (a dry
   olive/tan wheel-dust blade, since home's green particle would read as a
   mismatch on this arid ground). Terrain tints are still **not** overridden —
@@ -143,9 +140,7 @@ thing that varies. See [rocks.md](rocks.md).
 
 **Where the look is applied depends on the world.** On the dev stage there is exactly one
 region, so `world.gd::_apply_region_look` pushes it wholesale (see "Theming the dev stage"
-below). In free roam the player crosses rings, so `TerrainStreamer` builds per-ring ground
-materials and reads the foliage/rock keys per chunk as it scatters, and `BiomeDirector` fades the
-sky and applies the handling of the ring the car is in ([free-roam.md](free-roam.md)).
+below).
 
 Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
 are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
@@ -162,18 +157,6 @@ for two different reasons:
 - **`water_level`** — authored per region as plain data, not a `LOOK_KEYS` entry and not
   inherited through `look_from` (`home_coast` is "same look, own waterline"). Nothing in
   production reads it today: the waterline the world uses is `cfg.track_water_level_m`.
-
-### Checkpoint spacing (`rest_stop_spacing_of`)
-
-`"rest_stop_spacing_m"` is the metres of free-roam road between checkpoints in the ring
-wearing this region (`RoadSites.rest_spacing_at`). A region without it uses
-`FreeRoamSettings.rest_stop_spacing_m`. Not inherited through `look_from`.
-
-### Road surface (`has_tarmac_roads`)
-
-`"road_surface": "tarmac"` makes a region's free-roam roads paved (default `"gravel"`). Like
-`water_level`, it is not inherited through `look_from`. Free roam reads it per ring
-(`RoadTerrain.tarmac_weight`, see [free-roam.md](free-roam.md) → "Biomes").
 
 ### `look_from` — one-level look inheritance
 
@@ -266,7 +249,7 @@ Called from `_ready` immediately after `env.fog_sky_affect = cfg.fog_sky_affect`
 settles):
 
 1. Resolve the driven stage's region. The dev stage always wears `"home"` (cached per world in
-   `_region_look_cache`); the free-roam ring look is `BiomeDirector`'s job.
+   `_region_look_cache`).
 2. `var look := RegionLibrary.look_of(region_id)`; if empty (home, or an
    unrecognised id), return — no-op, leaving `main.tscn`'s baseline untouched.
 3. Apply only the keys present:
@@ -282,7 +265,7 @@ settles):
    - `tarmac_color` is applied **not** here but a few lines later in `_ready`,
      where the floor's flat tarmac fill is set from `GameConfig` — that call now
      reads `_current_region_look().get("tarmac_color", cfg.tarmac_color)`, so a
-     region override wins and home/free-roam fall back to the config value. (It
+     region override wins and home falls back to the config value. (It
      lives there rather than in `_apply_region_look` because that shader param is
      already driven from `cfg` at that point; folding it into the region look
      would just be clobbered by the later `cfg` write.)
@@ -344,4 +327,3 @@ This is the single place the region look reaches the dev stage.
 inheritance against a **synthetic** region set installed via `RegionLibrary.override_for_test`,
 and the `tree_mix` / `spawns_bush_mesh` defaults.
 `tests/headless/test_region_assets.gd` — every authored `res://` path resolves.
-`tests/headless/test_free_roam_biomes.gd` — rings wearing regions in free roam.

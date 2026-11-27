@@ -89,8 +89,7 @@ const FWD := 2
 # from it (critically damped, see GameConfig.suspension_damping_*), not specified
 # per car. Soft & tall roadster/muscle (MX-5, Charger) vs stiff & low supercars
 # (911, Viper, XJS).
-# ring — the free-roam biome ring the car is found in, parked at the end of a side road
-# (LootRules.cars_to_find); ring 0 cars are the starter choice.
+# ring — left over from the island, where it was the biome ring the car was found in; unread.
 # abs — whether the real car came with anti-lock brakes; the rest can buy them (LootRules.fit_block_reason).
 const CARS: Array[Dictionary] = [
 	{

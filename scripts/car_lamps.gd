@@ -5,7 +5,7 @@ extends Node3D
 # The car's glowing head and tail lamps: one camera-facing flare (shaders/car_lamp.gdshader)
 # at each lamp centre the car exposes in `lamp_locals`. Headlights glow whenever the weather
 # switches the night headlight cone on; tail lamps run dim with them and glow fully under
-# the foot brake, day or night. Created and wired by free_roam.gd and world.gd, like ExhaustFlames.
+# the foot brake, day or night. Created and wired by level_view.gd and world.gd, like ExhaustFlames.
 
 const SHADER := preload("res://shaders/car_lamp.gdshader")
 

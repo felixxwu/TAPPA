@@ -141,11 +141,8 @@ into `_saved_max_fps` and a transient value must never land there.
 The stage harness (`main.tscn` / `world.gd`, dev + physics tests only) runs the DFS and
 every stage above live on each load; nothing is cached on disk.
 
-Free roam (`free_roam.tscn` / `free_roam.gd`) has no track and no DFS: it streams the island
-in chunks (`TerrainStreamer`). Boot calls `TerrainStreamer.prefill_async()` behind the
-"Building the island…" cover — the same queue as `prefill()`, run in `prefill_slice_ms`
-slices with a frame between so the cover keeps drawing; headless boots call the blocking
-`prefill()`. Always say which kind of load you measured.
+The Hafren level has no track and no DFS: it streams its tiles through `LevelStreamer`
+([level-streamer.md](level-streamer.md)). Always say which kind of load you measured.
 
 ## The `load_finished` hook
 

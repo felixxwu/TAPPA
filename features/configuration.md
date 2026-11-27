@@ -7,9 +7,6 @@ stay `@export` only so `Resource.duplicate()` copies them.
 - **Script / class:** `scripts/game_config.gd` (`class_name GameConfig extends Resource`)
 - **Autoload accessor:** `scripts/config.gd` (`Config` singleton) → `Config.data`
 
-**Free roam:** `free_roam` holds the island's `FreeRoamSettings` (road network, terrain streaming,
-feedback timings; see `features/free-roam.md`), built as `FreeRoamSettings.new()`.
-
 **Tests:** `tests/headless/test_config_applied.gd`, `tests/headless/test_config_isolation.gd`
 
 ```gdscript

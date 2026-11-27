@@ -1,7 +1,7 @@
 class_name PhotoModeHost
 extends Node
 # Docs: features/camera.md — update in the same change as this file.
-# Tests: tests/headless/test_photo_mode.gd, tests/headless/test_free_roam_shell.gd — extend in the same change.
+# Tests: tests/headless/test_photo_mode.gd — extend in the same change.
 # Gives a scene with a PauseMenu its photo mode: answers the menu's request with a free-fly camera
 # over the frozen world, clears the screen for the shot, and puts everything back on the way out.
 

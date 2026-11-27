@@ -1,10 +1,9 @@
 class_name RoadRecovery
 extends Node
-# Docs: features/free-roam.md — update in the same change as this file.
-# Tests: tests/headless/test_free_roam.gd — extend in the same change.
-# Puts the car back on the road network: on request (R, or the pause menu's "Reset to road"),
-# and by itself when the car is stuck. It's the free-roam stand-in for TrackProgress' recovery,
-# which assumes a single stage centreline. "Stuck" uses the same GameConfig rule and fields
+# Docs: features/level-editor.md — update in the same change as this file.
+# Tests: tests/headless/test_level_view.gd — extend in the same change.
+# Puts the car back on the level's roads: on request (R, or the pause menu's "Reset to road"),
+# and by itself when the car is stuck. "Stuck" uses the same GameConfig rule and fields
 # (recovery_*): stationary AND unable to get out by itself (flipped, flooring it and going
 # nowhere, or fallen below the ground) for recovery_timeout_s. A car far below the ground
 # (recovery_void_depth_m: it fell through a gap in the streamed collision) goes back at once,
@@ -12,7 +11,7 @@ extends Node
 # road for off_road_reset_timeout_s, moving or not, puts it back. A recovery is free: Car.reset_to suppresses impact damage.
 
 @export var car: VehicleBody3D
-@export var streamer: Node  # a TerrainStreamer, or any node with height_at and its own road_pose (LevelView)
+@export var streamer: Node  # any node with height_at and road_pose (LevelView)
 
 # A reset moved the car to this XZ (hosts reset their swept pickup / rest-stop checks).
 signal reset_done(p: Vector2)
@@ -96,20 +95,8 @@ func reset_now() -> void:
 	var charge: float = engine.nitrous_charge
 	var p := Vector2(car.global_position.x, car.global_position.z)
 	var facing := -car.global_transform.basis.z
-	var pose: Transform3D = streamer.road_pose(p, facing) if streamer.has_method("road_pose") else road_pose(streamer, p, facing)
+	var pose: Transform3D = streamer.road_pose(p, facing)
 	car.reset_to(pose)
 	engine.nitrous_charge = charge
 	reset_done.emit(Vector2(pose.origin.x, pose.origin.z))
 
-
-# A pose on the nearest road to `p`, facing along the road in the direction closest to `facing`.
-static func road_pose(st: TerrainStreamer, p: Vector2, facing: Vector3) -> Transform3D:
-	var net := st.network
-	if not net.nearest(p.x, p.y, 100000.0):
-		return Transform3D(Basis.IDENTITY, Vector3(p.x, st.height_at(p.x, p.y) + 2.0, p.y))
-	var q := net.hit_q
-	var dir := Vector3(net.hit_dir.x, 0.0, net.hit_dir.y)
-	if dir.dot(facing) < 0.0:
-		dir = -dir
-	var pos := Vector3(q.x, st.height_at(q.x, q.y) + 1.0, q.y)
-	return Transform3D(Basis.looking_at(dir, Vector3.UP), pos)

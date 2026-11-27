@@ -23,7 +23,7 @@ extends CpuParticlePool
 #
 # Created + wired by world.gd._generate_track on a stage (reused across event
 # regenerations, re-targeted on a car swap, exactly like TireMarks), and by
-# free_roam.gd._ready in free roam, where TerrainStreamer answers surface_at.
+# level_view.gd on the level.
 # See features/wheel-dust.md.
 
 # Screen-aligned billboard with a per-instance roll/size/colour. BaseMaterial3D's
@@ -81,8 +81,7 @@ func set_grass_square_override(square: bool) -> void:
 
 
 # Seat both region overrides (blade colour + shape) from a RegionLibrary look in one
-# call. world.gd calls it once per stage; free roam's BiomeDirector calls it on every
-# ring change, since there the region follows the car. A look that authors neither key
+# call. world.gd calls it once per stage. A look that authors neither key
 # falls back to the GameConfig default blade.
 func apply_region_look(look: Dictionary) -> void:
 	set_grass_color_override(look.get("grass_particle_color", Color(0, 0, 0, 0)))

@@ -102,7 +102,6 @@ func test_engine_swap_page_opens_from_the_shop_and_back_returns_to_it() -> void:
 	CardUI.pick(view.store.find_children("*", "CardCarousel", true, false)[0], "Engine swap")
 	assert_null(view.store, "the shop gives way to the engines page")
 	assert_not_null(view.shop)
-	assert_true(view.shop.free)
 	assert_eq(view.shop.view, RestStopPage.View.ENGINES)
 	MenuNav.of(view.shop._page)._unhandled_input(_back_event())
 	assert_not_null(view.store, "Back is the shop again")

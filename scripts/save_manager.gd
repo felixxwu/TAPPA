@@ -2,8 +2,8 @@ extends Node
 # Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md — update in the same change as this file.
 # Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'save_manager' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # Autoload "Save": the single source of truth for everything the player's progress
-# mutates — owned cars (each with its own tuning and parts), lifetime stats, the persistent
-# free-roam world (WorldSession) and settings — JSON at user://profile.json, so progress
+# mutates — owned cars (each with its own tuning and parts), lifetime stats, the
+# world (WorldSession) and settings — JSON at user://profile.json, so progress
 # survives a restart on both desktop and the web build.
 #
 # It is deliberately SEPARATE from the `Config` autoload: `Config` holds the
@@ -41,7 +41,7 @@ const SCHEMA_VERSION := 8
 const KEY_CARS := "cars"
 
 const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
-# The free-roam world (WorldSession owns its shape and is its only writer).
+# The world (WorldSession owns its shape and is its only writer).
 const KEY_WORLD := "world"
 
 # Default profile location. Kept as a settable property (not a hard const) so

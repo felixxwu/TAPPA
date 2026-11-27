@@ -24,7 +24,7 @@ extends Node3D
 #     state (held AND charged AND combusting), not "a bottle is fitted", so an empty tank
 #     puts the flame out.
 #
-# Created + wired by the host scene (free_roam.gd, world.gd).
+# Created + wired by the host scene (level_view.gd, world.gd).
 # See features/exhaust-flames.md.
 
 # --- Geometry ---------------------------------------------------------------

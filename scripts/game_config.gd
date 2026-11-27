@@ -235,9 +235,8 @@ var peak_torque_rpm := 4500.0
 ## HANDLING rather than only look. The region names these fields (it never authors
 ## numbers), exactly as a WeatherLibrary condition does, so all tuning stays here.
 ##
-## RegionLibrary.surface_grip_of resolves them; BiomeDirector seats
-## them onto grass_grip/gravel_grip/tarmac_grip for the ring. Every other region
-## leaves those at the authored baseline above, so this is an exact no-op elsewhere.
+## RegionLibrary.surface_grip_of resolves them. Every other region leaves those at the
+## authored baseline above, so this is an exact no-op elsewhere.
 ##
 ## Keep the grass < gravel < tarmac ordering; snow drops all three well below home.
 @export var snow_grass_grip := 0.45
@@ -304,11 +303,10 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## road itself is never raised and the step becomes a bank. Props are not lifted with it,
 ## so trees, bushes and rocks look buried in the snow.
 @export var snow_visual_depth_m := 0.35
-## Free roam: metres past the painted road edge over which the snow rises to full depth
+## Metres past the painted road edge over which the snow rises to full depth
 ## (the plough bank). A stage ramps over its baked road feather instead.
 @export var snow_bank_width_m := 2.0
-## LIVE per-stage values, seated by BiomeDirector from the current
-## region (0.0 for every region that authors no deep snow). Never author these — they
+## LIVE values, seated by LevelView from the snow under the car (0.0 off the snow). Never author these — they
 ## are the deep-snow counterpart to `weather`, written by the funnel and read by
 ## car.gd (drag) and world.gd (the shader uniform).
 @export var deep_snow_drag := 0.0
@@ -325,14 +323,12 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## and cold; the shore colour is what reads as the ice thinning at the bank.
 @export var ice_color := Color(0.80, 0.86, 0.90)
 @export var ice_shore_color := Color(0.88, 0.92, 0.95)
-## LIVE per-stage: the ice μ, or 0.0 when this stage's water is liquid. Seated by
-## BiomeDirector from the current region. 0.0 is the "not frozen"
+## LIVE per-stage: the ice μ, or 0.0 when this stage's water is liquid. 0.0 is the "not frozen"
 ## sentinel and is what every non-Alps stage runs, so the lake stays a soft hazard
 ## everywhere it always was.
 @export var frozen_water_grip := 0.0
 ## The LIVE weather condition (WeatherLibrary.WEATHER_*), seated by whoever drives the
-## weather. Session-less callers (free roam,
-## benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
+## weather. Session-less callers (benchmark, dev boot) reload the authored baseline and stay dry. See features/weather.md.
 @export var weather := WeatherLibrary.WEATHER_DRY
 # The active condition's sun_energy_mult, seated by world.gd::_apply_overcast_look
 # each stage boot (and reset to 1.0 there when the condition has no look block).
@@ -769,8 +765,7 @@ func has_nitrous() -> bool:
 ## self-limits; a real multi-bounce tumble racks up several capped hits, so a long fall
 ## down a drop can still empty it.
 @export var impact_max_loss := 640.0
-## --- Free-roam damage chain (DamageModel.thermal; todo/2026-10-19-free-roam-pivot.md
-## decision 8). Below this health fraction the cooling system breaks, and stays broken until a
+## --- Damage chain (DamageModel.thermal). Below this health fraction the cooling system breaks, and stays broken until a
 ## rest-stop repair.
 @export var cooling_failure_hp_fraction := 0.5
 ## Multiplies the car's authored max HP. Stays 1.0 here: only a fitted roll cage changes it.
@@ -788,22 +783,8 @@ func has_nitrous() -> bool:
 ## HP lost per second above the overheat threshold.
 @export var overheat_hp_drain_per_s := 15.0
 ## Seconds between the car giving up (0 HP: the engine cuts out and it coasts) and the wreck
-## page appearing (RestStops.step counts it down).
+## page appearing (LevelView).
 @export var wreck_page_delay_s := 3.0
-## Onlookers gathered at each rest stop: a live crowd in front of its cabin (TerrainStreamer._rest_crowd).
-@export var rest_stop_crowd_size := 14
-## How far each rest stop's log cabin stands back from its pad's centre, away from the road
-## (TerrainStreamer._site_marker). Past about 6 m it reaches into the crowd.
-@export var rest_stop_cabin_back_m := 6.0
-## How far down the road out of spawn the car starts (and respawns at the spawn rest stop), so
-## it sits clear of the cabin and its crowd, facing away from them (RestStops.pose_at).
-@export var spawn_ahead_m := 8.0
-## Share of max HP a checkpoint heals per second while the car is at it (RestStops._heal):
-## 0.25 takes a wreck to full in 4 s. Full HP also mends the cooling and straightens the wheels.
-@export var checkpoint_heal_fraction_per_s := 0.25
-## Share of a full nitrous tank a checkpoint refills per second while the car is at it
-## (RestStops._heal), alongside the HP. 0.25 refills an empty tank in 4 s, same as the heal.
-@export var checkpoint_nitrous_refill_fraction_per_s := 0.25
 ## HP regained per second while driving; 0.0 means nothing heals. Applied by
 ## DamageModel.regen on the same physics tick as impact damage. See features/damage.md.
 @export var damage_regen_hp_per_s := 0.0
@@ -895,7 +876,7 @@ func has_nitrous() -> bool:
 ## side/roof). 0.3 ≈ tipped more than ~70° from upright.
 @export var recovery_upright_dot := 0.3
 ## Metres below the ground that mean the car has fallen out of the world (through a gap
-## in the collision). Free roam's RoadRecovery puts it straight back on the road, moving
+## in the collision). RoadRecovery puts it straight back on the road, moving
 ## or not — a falling car is never "stationary", so the stuck rule alone would let it
 ## fall for ever.
 @export var recovery_void_depth_m := 25.0
@@ -2437,9 +2418,6 @@ func has_nitrous() -> bool:
 ## (prebake) the detail queue stays empty, so this is the escape-hatch path's knob.
 @export var terrain_detail_builds_per_frame := 1
 
-## The free-roam island, road network, terrain streaming and feedback timings.
-@export var free_roam: FreeRoamSettings = FreeRoamSettings.new()
-
 # --- Value snapshots (the live config's IDENTITY is load-bearing) -------------
 #
 # The active car — plus its Drivetrain and EngineSim — holds the live GameConfig BY
@@ -2456,7 +2434,7 @@ func has_nitrous() -> bool:
 # fielded values. Both functions below walk the SCRIPT property list, so every field is
 # captured and restored regardless of whether it is exported.
 
-# The config-driven base of every 3D world's Environment (free roam and the stage): fog,
+# The config-driven base of every 3D world's Environment (the level and the stage): fog,
 # backdrop and glow. Weather/region looks layer on top of this afterwards.
 func apply_environment(env: Environment) -> void:
 	env.fog_density = fog_density
@@ -2623,9 +2601,8 @@ func weather_lit(col: Color) -> Color:
 		col.b * weather_sun_mult, col.a)
 
 # Whether the ground under this stage is SNOW rather than dirt with snow painted on.
-# Derived from the deep-snow block BiomeDirector seats off the
-# region, which is 0.0 for every region that authors none — so this is exactly "the
-# stage is in a snowy region" with no second flag to keep in sync. Same shape as the
+# Derived from the deep-snow values seated live (0.0 off snow), so there is no second
+# flag to keep in sync. Same shape as the
 # `frozen_water_grip > 0.0` gate the drivetrain already uses for ice.
 func ground_is_snow() -> bool:
 	return deep_snow_depth_m > 0.0
@@ -3115,73 +3092,7 @@ func spectator_params() -> Dictionary:
 ## How many times the card flashes within card_carousel_confirm_flash_duration_s.
 @export var card_carousel_confirm_flash_count := 2
 
-## The full map frames what has been explored (plus a margin); this is the smallest stretch of
-## ground across it shows, in metres, so the start isn't zoomed in to nothing.
-@export var map_min_view_m := 900.0
-## The full map's terrain picture (MapTerrain, copying the old road-network lab's 2D view):
-## cells across it, the colour of each biome ring's ground (repeating outward), lakes, the sea
-## around the island, and the height between contour lines in metres.
-@export var map_terrain_cells := 150
-@export var map_ring_colors := PackedColorArray([Color("#5d8a4a"), Color("#b59b5a"), Color("#3f6f55"), Color("#5b8a8f"),
-	Color("#c9d6dc"), Color("#8a5b5b"), Color("#7a6a9a"), Color("#9a8a5a")])
-@export var map_lake_color := Color("#1d4f6a")
-@export var map_sea_color := Color("#0d2a3a")
-@export var map_contour_m := 135.0
-## Higher ground is lighter over this many metres above the water.
-@export var map_lift_range_m := 300.0
-## Time per frame the open map may spend drawing its terrain picture, and while driving, in
-## microseconds (driving, it draws ahead for the explored area so the map opens ready).
-@export var map_terrain_budget_us := 8000
-@export var map_terrain_driving_budget_us := 1000
-## How often, while driving, the map's explored area is worked out again. That walks every road.
-@export var map_terrain_refresh_s := 5.0
-## Free roam's heading-up minimap, top-centre (scripts/free_roam/mini_map.gd, features/minimap.md).
-## Off, only the rest-stop prompt under it shows; the full map still opens with M / Back.
-@export var minimap_enabled := true
-## How near a genuine fork in the road (3+ main roads meeting; not a parked car's side road) the
-## line under the minimap offers the full map ("M / Back: open map"). 0 turns the offer off.
-@export var map_fork_prompt_m := 60.0
-## Height of the minimap as a fraction of the screen height. Keep top + height under 0.2 of the
-## screen: below that, the simple touch scheme's steering halves begin (mobile_controls.gd).
-@export var minimap_height_frac := 0.175
-## Width / height of the minimap's frame (it narrows on a screen too thin to fit it between the
-## HUD readouts and the pause button).
-@export var minimap_aspect := 2.4
-## Gap above the minimap, in logical pixels.
-@export var minimap_top_px := 6.0
-## Side of the square of ground the minimap shows, in metres.
-@export var minimap_view_m := 100.0
-## Where the car sits in that square, front (0) to back (1): high values show mostly road ahead.
-@export var minimap_car_depth := 0.9
-## The perspective tilt: the far edge shows (1 + tilt) times the ground width of the near edge.
-@export var minimap_tilt := 4.0
-## A rest stop or loot slot counts as seen (and shows on the minimap and map) once the car has
-## come within this distance of it.
-@export var minimap_seen_radius_m := 150.0
-## Road not yet driven still shows (fainter) within this distance of a point a little ahead of
-## the car, so the road you're on and the junction coming up are on the map.
-@export var minimap_nearby_road_m := 0.0
-## Opacity of that not-yet-driven road (driven road is drawn fully opaque).
-@export var minimap_undriven_road_alpha := 0.85
-## Roads are drawn at their real width on the ground times this; their dark casing is 3.5 texture px wider.
-@export var minimap_road_width_scale := 1.0
-## Opacity of the dark outline under the not-yet-driven road, so it reads against bright ground.
-@export var minimap_undriven_road_outline_alpha := 0.45
-## Half-height of the car's chevron on the minimap, in logical pixels (scaled by the UI scale).
-@export var minimap_car_arrow_px := 4.0
-## Most road redraws per second (the map only redraws when the car has moved
-## minimap_redraw_move_m or a new stretch of road has been driven; turning is free).
-@export var minimap_redraw_hz := 15.0
-## How far the car moves before the road layer is redrawn around it, in metres.
-@export var minimap_redraw_move_m := 12.0
-## Resolution of the flat map texture the tilt is applied to, in pixels per side.
-@export var minimap_texture_px := 384
-
 # --- The game world: the authored level (level_view.tscn) ---
-## LEGACY, for reference only: when on, entering the world (Scenes.WORLD) loads the old procedural
-## free-roam island (free_roam.tscn) instead of the authored level. Off by default — the level IS
-## the game. Flipped at runtime by Settings → Dev → "Legacy free-roam island".
-@export var legacy_free_roam_island := false
 ## Dev: clicking empty ground on the level map teleports the car there, not just to teleport points (Settings → Dev).
 @export var dev_teleport_anywhere := false
 ## The weather id (WeatherLibrary) the level view shows: its particles and wind only.
@@ -3226,7 +3137,7 @@ func spectator_params() -> Dictionary:
 @export var level_spawn_teleport := "Cwmbiga"
 ## Level view: spawn at roads[x][y] of the save (0-based), facing node z of that road (-1: the next node, or the previous one at the end of a road); x = -1 keeps the default spawn. Used when level_spawn_teleport is empty or missing, and always by the benchmark, whose recording starts here.
 @export var level_spawn := Vector3i(31, 4, 3)
-## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
+## Level view: a tree this tall or taller fells like a full-size tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
 ## Level view: how far trees are drawn, in metres. They thin out over the last level_tree_fade_m in a dither (level_tree.gdshader), so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.
 @export var level_tree_draw_m := 1500.0
@@ -3271,7 +3182,7 @@ func spectator_params() -> Dictionary:
 @export var level_spectator_despawn_m := 200.0
 ## Level view: spectators with room drift to stand this far (m) off the road's edge.
 @export var level_spectator_edge_gap_m := 0.75
-## Level view: how far (m) a spectator looks for road to avoid; small so the verge is reachable. Free roam uses its own.
+## Level view: how far (m) a spectator looks for road to avoid; small so the verge is reachable.
 @export var level_spectator_road_probe_m := 1.0
 ## Level view: how fast (m/s) spectators walk to their spot by the road (and back to it after dodging the car).
 @export var level_spectator_walk_mps := 2.2
@@ -3299,7 +3210,7 @@ func spectator_params() -> Dictionary:
 @export var threaded_spectator_min_members := 40
 ## How much darker the ground is under bush cover.
 @export var level_ao_bush_ground := 0.25
-## The level view's deep-snow drag in its snow biome (free roam's is snow_deep_drag).
+## The level view's deep-snow drag in its snow biome.
 @export var level_snow_drag := 400.0
 ## How far the level view's gravel road is lightened toward white in its snow biome (0 none, 1 white).
 @export var level_snow_road_lighten := 0.45

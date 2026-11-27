@@ -196,17 +196,6 @@ levers, in order of payoff:
   `is_visible_in_tree()`, not mere node existence, and give the wait a seam a test can shorten
   rather than gating the logic.
 
-### Free roam boots
-
-Instantiating `free_roam.tscn` boots the whole streamed island: the `TerrainStreamer` plans and
-builds every chunk in range (`prefill()` when headless), then the road network, rest stops and
-car come up. That prefill is the cost, and it scales with the island and the ring radii.
-The lever is a shrunk `FreeRoamSettings` assigned to the `Terrain` node's `settings` before
-`add_child` (small `island_radius_m`, `mid_radius` / `far_radius`, as `_boot_free_roam` in
-`test_world_session.gd` does). Boot it once in `before_all` and share it across tests, as
-`test_free_roam_rest_stops.gd` and `test_free_roam_shell.gd` do; use a fresh boot per test
-only when the test mutates the world irreversibly.
-
 ### Test-catalogue seam — `CarFixtures`
 
 `CarLibrary` and `EngineLibrary` expose the same small `Array[Dictionary]` seam so

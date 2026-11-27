@@ -9,13 +9,9 @@ oriented before diving into source.
 (GL Compatibility renderer). **The game world is one authored level, Hafren Forest**
 (`Scenes.WORLD` = `level_view.tscn`, see [level-editor.md](level-editor.md)) — the default mode.
 
-The paragraph below describes the **legacy** procedural island (`Scenes.LEGACY_FREE_ROAM`,
-kept for reference behind Settings → Dev → "Legacy free-roam island"): one persistent procedural island per save: you drive outward from
-the spawn rest stop on a road network that streams in around you, through biome rings that get
-rarer further out, finding cars and parts. Damage is unforgiving: once the cooling fails you
-race the temperature gauge to the next rest stop, where you repair, buy and fit parts, swap cars and
-fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
-[world-session.md](world-session.md).
+The procedural free-roam island that came before it was deleted in November 2026
+(`todo/2026-11-27-hafren-only-cleanup.md`, Phase 4); its parts shop survives as the level's part
+pages ([loot.md](loot.md)).
 
 > **New to this codebase?** Read [`../PIVOT-CHANGES.md`](../PIVOT-CHANGES.md) first. The game
 > has pivoted twice: a rally *career* became a run-based roguelike (September 2026), and the
@@ -81,11 +77,9 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [music.md](music.md) | Interactive looping background music — `MusicSchedule` timing math, `MusicLibrary` catalogue, `MusicDirector` autoload (single-player polyphonic double-buffer), Music bus |
 | [forced-induction.md](forced-induction.md) | Turbocharger (inertia-based shaft sim, boost, lag/anti-lag) + supercharger (stateless rpm-linear belt drive, rpm-scaled drag) — engine property, stock or fitted as `BoostLibrary` `turbo` / `supercharger` loot parts |
 | [nitrous.md](nitrous.md) | Held-button torque multiplier with a per-stage tank — a loot part (`BoostLibrary` `nitrous`, `install_nitrous`), `EngineSim` delivery/drain, the violet HUD gauge, LEFT-Shift / joypad-X / mobile NOS input, and the all-hiss synth layer |
-| [loot.md](loot.md) | **Free-roam coins, shops and found cars** — `LootRules` (ring tables, prices, parts through the owned-car funnel), `LootDirector` (coins, money, the wreck loses it all, what's on sale), buying parts on the rest-stop Shop pages, cars parked at the ends of side roads (`ParkedCars`) |
-| [world-session.md](world-session.md) | **The persistent free-roam world** — `WorldSession` (the world block in the profile: seed, car, pose, lit rest stops, map), the title screen the game boots into, and the map / stats pages |
+| [loot.md](loot.md) | **Parts** — `LootRules` (the parts catalogue, parts through the owned-car funnel, fitting rules) and `RestStopPage`, the level's Parts / Engine swaps / Tune pages |
+| [world-session.md](world-session.md) | `WorldSession` (the profile's world block: seed and starter car), the boot scene and the title screen |
 | [hud.md](hud.md) | `hud.gd` — speed / gear / rpm readouts, the Health / boost / nitrous / temperature gauges, and the debug readouts (H) |
-| [minimap.md](minimap.md) | **Free roam's minimap** — `MiniMap` (heading-up, perspective-tilted nav-style map top-centre: driven roads, nearby road ahead, seen rest stops; tap / M opens the full map), the full map's lab-style terrain picture (`MapTerrain`), the `seen` sites record |
-| [free-roam.md](free-roam.md) | **LEGACY, reference only:** the procedural free-roam island (`free_roam.tscn`, `Scenes.LEGACY_FREE_ROAM`), reached only through the Dev page's legacy toggle — `RoadNetwork` (radial-growth road layout), `RoadTerrain` (height built from the roads, base-field lakes), `TerrainStreamer` (resumable chunk jobs under a strict per-frame time budget, two LODs, skirts, collision ring) |
 | [loading.md](loading.md) | Stage-load pipeline: `_stage` timing, cached vs live generation, the `load_finished` hook |
 | [terrain.md](terrain.md) | Infinite chunked Perlin terrain, collision, chunk loading |
 | [terrain-streaming.md](terrain-streaming.md) | `TerrainManager`'s streaming opt-ins for the stage harness — load radius, generate-on-miss, the LRU cap |

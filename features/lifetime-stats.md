@@ -1,13 +1,12 @@
 # Lifetime stats
 
-**Source:** `scripts/lifetime_stats.gd` (`LifetimeStats`), `Save.lifetime_stat` /
-`Save.add_lifetime_stat` (`scripts/save_manager.gd`), and the free-roam writers
-(`WorldSession.light`, `free_roam.gd`); the stats page is `WorldPages.show_stats`.
+**Source:** `scripts/lifetime_stats.gd` (`LifetimeStats`) and `Save.lifetime_stat` /
+`Save.add_lifetime_stat` (`scripts/save_manager.gd`).
 
 **Tests:** `tests/headless/test_lifetime_stats.gd`
 
 Persistent counters that track a player's whole save. Nothing is gated on them
-(decision 22); they are a read-out on the map page's Stats view.
+(decision 22); the island's map page showed them, and was deleted with it.
 
 ## The registry
 
@@ -22,13 +21,9 @@ and **only ever grows**:
 
 ## Which counters are wired, and where
 
-| Stat id | Written at |
-| --- | --- |
-| `distance_driven_m` | `free_roam.gd`'s odometer, every few seconds (teleports excluded) |
-| `rest_stops_lit` | `WorldSession.light()`, the first time a rest stop is lit |
-| `times_gave_up` | `free_roam.gd` on `RestStops.respawned` (the car hit 0 HP) |
-
-`WorldPages.STATS_SHOWN` picks which of them the Stats view shows.
+None today. `distance_driven_m`, `rest_stops_lit` and `times_gave_up` were written by the
+free-roam island (its odometer, its rest stops and its respawns), deleted in November 2026.
+The ids stay so saved counts survive; wiring them into the level, or dropping them, is open.
 
 **If you add an id, wire its writer in the same change:** an unwritten stat is a row
 pinned at zero forever, which a player reads as a broken counter.

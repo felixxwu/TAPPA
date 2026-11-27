@@ -5,7 +5,7 @@ extends Node3D
 # A level saved by tools/level_editor_lab.html, built as drivable ground: the lab's terrain and road
 # rebuilt at a finer grid with collision, its trees as the game's 6-card stars, and the car parked on
 # the road's first node. THIS IS THE GAME WORLD (Scenes.WORLD, the default mode): the Hafren level,
-# GameConfig.level_path. The old procedural island (free_roam.tscn) is legacy reference code.
+# GameConfig.level_path.
 # Trees come from the bake (LevelTrees): tiles near the camera, culled by what the bake saw from this stretch of road.
 
 const GROUND_SHADER := preload("res://shaders/level_ground.gdshader")
@@ -170,7 +170,7 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	add_child(layer)
-	off_road_label = UITheme.label("")  # styled as free roam's prompt box (MiniMap.prompt_label)
+	off_road_label = UITheme.label("")
 	off_road_label.add_theme_stylebox_override("normal", UITheme.panel_box(1.0, UITheme.px(4)))
 	off_road_label.visible = false
 	layer.add_child(off_road_label)
@@ -409,7 +409,6 @@ func open_engine_swap(at: int) -> void:
 
 func _rest_page() -> RestStopPage:
 	shop = RestStopPage.new()
-	shop.free = true
 	shop.engine_cars = owned_cars()
 	shop.owned = owned
 	shop.car = _car
@@ -723,7 +722,7 @@ func _on_pause_closed() -> void:
 
 # A tire or drivetrain kit a shop may list: a real one, and not the kit for the car's own layout.
 func _sellable(part: Dictionary) -> bool:
-	var pool: Array = LootRules.parts_for(owned) if has_car() else LootRules.ring_tables(1)[0]
+	var pool: Array = LootRules.parts_for(owned) if has_car() else LootRules.catalogue()
 	return pool.any(func(p: Dictionary) -> bool: return p["id"] == part["id"] and (LootRules.is_tire(p) or LootRules.is_drivetrain(p)))
 
 
@@ -1368,7 +1367,7 @@ func _reload(title: String) -> void:
 	Scenes.change_to(get_tree(), Scenes.WORLD, title)
 
 
-# Free roam's driving effects, set up the way free_roam.gd does; returns the tyre marks.
+# The car's driving effects (tyre marks, dust, lamps, flames); returns the tyre marks.
 func _add_effects(car: VehicleBody3D) -> TireMarks:
 	var look := RegionLibrary.look_of("home")
 	var wheels := WheelParticles.new()
@@ -1507,7 +1506,7 @@ func _warm_up(car: VehicleBody3D) -> void:
 static var _base: GameConfig  # the untouched grip values the snow blends away from
 
 
-# The snow biome's handling follows the ground under the car, as free roam's snow ring does (BiomeDirector.apply_handling):
+# The snow biome's handling follows the ground under the car:
 # snow grip, deep-snow drag (car.gd feathers it per wheel off the road), and the snow side of the tyre compound rule.
 func _physics_process(dt: float) -> void:
 	var __t := Time.get_ticks_usec()

@@ -64,7 +64,7 @@ func test_new_world_starts_in_the_start_car() -> void:
 	assert_true(CardUI.pick(t.cards(), "New world"))
 	await get_tree().process_frame
 	assert_true(WorldSession.has_world())
-	assert_eq(String(WorldSession.active_car()["model_id"]), LootRules.start_car(Config.data.free_roam))
+	assert_eq(String(WorldSession.active_car()["model_id"]), Config.authored_value("level_car_id", Config.data.level_car_id))
 	assert_eq(_entered[0], 1)
 
 
@@ -121,7 +121,7 @@ func test_the_build_version_label_is_never_in_the_nav_order() -> void:
 
 
 func test_every_settings_page_keeps_its_back_button_on_screen() -> void:
-	# Hosted on a CanvasLayer like free_roam.show_title, so the page fills the screen.
+	# Hosted on a CanvasLayer like LevelView shows the title, so the page fills the screen.
 	var layer := CanvasLayer.new()
 	add_child_autofree(layer)
 	_title = TitleScreen.new()

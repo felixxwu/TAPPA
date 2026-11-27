@@ -108,17 +108,6 @@ func test_restore_writes_in_place_and_shares_no_mutable_state() -> void:
 		"the restore undoes a container edit rather than sharing the array with the snapshot")
 
 
-func test_snapshot_does_not_share_the_free_roam_resource() -> void:
-	var cfg: GameConfig = Config.data
-	var snap := cfg.snapshot_values()
-	assert_not_same(snap["free_roam"], cfg.free_roam, "the snapshot holds its own copy of the resource")
-	var seed_before: int = cfg.free_roam.world_seed
-	cfg.free_roam.world_seed = seed_before + 1
-	cfg.restore_values(snap)
-	assert_eq(cfg.free_roam.world_seed, seed_before, "restore undoes an edit to the nested resource")
-	assert_not_same(snap["free_roam"], cfg.free_roam, "restoring does not hand the snapshot's copy to the live config")
-
-
 # --- Cross-FILE config hygiene ------------------------------------------------------------
 #
 # Config.data is a single global that outlives the script that mutated it, so a file which

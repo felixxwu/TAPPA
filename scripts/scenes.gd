@@ -10,10 +10,6 @@ const TITLE := "res://title.tscn"
 # THE GAME WORLD — the default. Entering the world means change_to(WORLD): the authored Hafren
 # level (GameConfig.level_path, a level-editor save) driven in level_view.tscn (LevelView).
 const WORLD := "res://level_view.tscn"
-# LEGACY, kept for reference only: the old procedural free-roam island (free_roam.tscn). Nothing
-# in the game enters it unless GameConfig.legacy_free_roam_island is on (Settings → Dev), which
-# change_to redirects WORLD to. Don't build new features on it.
-const LEGACY_FREE_ROAM := "res://free_roam.tscn"
 # The player's car scene — spawned as the live drivable car or a frozen display prop.
 const CAR := "res://car.tscn"
 
@@ -69,14 +65,11 @@ static var last_blocked_path := ""
 # stay paused across a change. Done before the test kill switch so tests can assert it.
 static func change_to(tree: SceneTree, path: String, cover_title := "") -> void:
 	tree.paused = false
-	if path == WORLD and Config.data.legacy_free_roam_island:
-		path = LEGACY_FREE_ROAM
 	if block_real_changes:
 		last_blocked_path = path
 		return
-	# The world builds for seconds before its first frame; without this cover (adopted and freed by
-	# free_roam.gd._warm_up) the screen sits blank grey meanwhile.
-	if path in [WORLD, LEGACY_FREE_ROAM] and not Platform.is_headless():
+	# The world builds for seconds before its first frame; without this cover the screen sits blank grey meanwhile.
+	if path == WORLD and not Platform.is_headless():
 		drop_stale_covers(tree)
 		var cover := LoadingScreen.new()
 		if not cover_title.is_empty():

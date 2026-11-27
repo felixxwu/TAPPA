@@ -8,15 +8,14 @@ extends RefCounted
 # damage fraction (which drives the engine misfire and the rev cap) and the per-wheel
 # toe the car reads each tick. See features/damage.md.
 #
-# Hitting 0 HP never wrecks a stage car: it keeps driving, misfiring and rev-capped. In free
-# roam `thermal` is on: an overheating engine drains HP, and at 0 HP the car gives up (`gave_up`).
+# Hitting 0 HP never wrecks a stage car: it keeps driving, misfiring and rev-capped. On the
+# level `thermal` is on: an overheating engine drains HP, and at 0 HP the car gives up (`gave_up`).
 # HP (and the wheel alignment with it) climbs back only via regen() (a tunable rate) or repair().
 
 # Lost HP per impact and the contact point, for the HUD impact cue / impact SFX
 # (todo/audio.md). Emitted only for hits that actually cost HP.
 signal damaged(hp_loss: float, contact_point: Vector3)
-# The car has given up: HP reached 0 with the thermal chain on (free roam,
-# todo/2026-10-19-free-roam-pivot.md decision 8). Emitted ONCE per fall to 0; repair() re-arms
+# The car has given up: HP reached 0 with the thermal chain on (the level). Emitted ONCE per fall to 0; repair() re-arms
 # it. Never emitted with `thermal` off, so the stage keeps "damage never wrecks".
 signal gave_up
 # Scene group every damage-dealing obstacle (tree/bush/sign collision body) joins,
@@ -49,7 +48,7 @@ var hp := 1000.0
 var wheel_toe: Dictionary = _zero_toe()
 
 
-## The free-roam damage chain: below cooling_failure_hp_fraction the cooling breaks and stays
+## The damage chain: below cooling_failure_hp_fraction the cooling breaks and stays
 ## broken until repair(); while broken, engine_temp only rises (faster at higher revs);
 ## above overheat_temp_threshold_c it drains HP; at 0 HP the car gives up (`gave_up`). Off by
 ## default, so the stage is untouched.

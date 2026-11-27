@@ -101,9 +101,6 @@ const TEST_CONFIG := {
 	"shop_tire_gravel_snow": 1.1,
 	"shop_tire_road_snow": 0.9,
 	"shop_tire_snow_flat": 1.1,
-	"minimap_view_m": 460.0,
-	"minimap_tilt": 1.7,
-	"minimap_nearby_road_m": 120.0,
 }
 
 

@@ -293,9 +293,8 @@ dev stage keeps HP as a pure degradation.
 3. **Drain:** above `overheat_temp_threshold_c` HP drains at `overheat_hp_drain_per_s`, and
    `overheat_ramp` feeds the same misfire / rev-cap ramp as damage (`damage_ramp` takes the
    larger), so an overheating engine sounds sick.
-4. **Giving up:** at 0 HP, `gave_up` fires once, and again only after HP has come back above 0. `RestStops` kills the engine (silent, no drive)
-   and, after `wreck_page_delay_s`, shows the wreck page whose Respawn puts the car at the last
-   lit rest stop (see `free-roam.md`).
+4. **Giving up:** at 0 HP, `gave_up` fires once, and again only after HP has come back above 0. The island's rest stops answered it with a wreck page;
+   they were deleted with the island, so nothing listens today.
 5. **`repair()`** (a rest stop, a respawn or a travel) restores full HP, fixes the cooling,
    straightens the wheels and re-arms `gave_up`.
 

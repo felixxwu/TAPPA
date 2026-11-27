@@ -8,9 +8,7 @@ own colour, dimensions and roll picked at emit time: slim green blades on grass 
 a region's square clods, e.g. snow), and **nothing on the road** — gravel and tarmac
 dust is the opaque blocky [DustPuffs](dust-puffs.md) trail, which replaced the old
 gravel clods (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
-across event regenerations), exactly like `TireMarks`, and in free roam by `free_roam.gd._ready`,
-where `TerrainStreamer.surface_at` answers the surface query (see [free-roam.md](free-roam.md) →
-"The shell").
+across event regenerations), exactly like `TireMarks`.
 
 **Tests:** `tests/headless/test_wheel_particles.gd`, `tests/headless/test_cpu_particle_pool.gd`
 
@@ -232,11 +230,7 @@ debris flies from a driven, spinning wheel off the road; none from an undriven w
 a wheel rolling no faster than the ground, or a wheel on gravel or tarmac; a wheel on grass throws grass; a spinning *and* sliding wheel
 still emits and throws backward + sideways; and the ring buffer caps the live count.
 
-`apply_region_look` seats both overrides and an empty look clears them. Free-roam coverage
-lives with free roam: `test_free_roam.gd` (the streamer's `surface_at` gives nothing on the road and
-grass off it), `test_free_roam_shell.gd` (the scene makes the pool, wires it to the car, and the
-car's terrain is the streamer) and `test_free_roam_biomes.gd` (each ring seats its region's
-particle).
+`apply_region_look` seats both overrides and an empty look clears them.
 
 The per-particle look has its own cases: every wheel shares one pool/cap,
 `_write_slot`'s basis encodes the half-extents as column lengths and the roll as

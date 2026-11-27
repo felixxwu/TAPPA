@@ -172,7 +172,6 @@ rest-stop page leaves it unset, so **the button is unreachable today**. See
 - `tests/headless/test_tuning_panel.gd` — the shared `TuningPanel` in isolation: a
   slider per axis, editing writes the axis + fires `on_change`, Reset clears the deltas,
   and a tune bakes into the config via `TuningLibrary.apply`.
-- `tests/headless/test_free_roam_rest_stops.gd` — the rest-stop TUNE page and its nav.
 - `tests/headless/test_retune.gd` — `Car.retune` applies a changed tuning to the
   live config, is idempotent (no compounding), and does NOT reshape/reset the body
   (the drop-through-floor regression).

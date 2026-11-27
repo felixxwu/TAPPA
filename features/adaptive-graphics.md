@@ -3,7 +3,7 @@
 **Source:** `scripts/adaptive/adaptive_graphics.gd` (`AdaptiveGraphics`), `scripts/adaptive/adaptive_controller.gd`
 (`AdaptiveController`), `scripts/adaptive/adaptive_knob.gd` (`AdaptiveKnob`), `scripts/adaptive/level_knobs.gd`
 (`LevelKnobs`), `scripts/adaptive/frame_sampler.gd` (`FrameSampler`), the near-tile lead in
-`scripts/free_roam/terrain_streamer.gd`, the adaptive page of `scripts/level_stats.gd`.
+`scripts/level_streamer.gd`, the adaptive page of `scripts/level_stats.gd`.
 
 **Tests:** `tests/headless/test_adaptive_controller.gd`, `tests/headless/test_adaptive_graphics.gd`,
 `tests/headless/test_live_graphics_setters.gd`, `tests/headless/test_level_streamer.gd`, `tests/headless/test_level_stats.gd`
@@ -28,7 +28,7 @@ nobody has to pick settings. There is no Graphics page. Design record: `todo/202
   |----|---------|----------|
   | `trees` | `level_tree_draw_m` | `LevelTrees.refresh_draw` |
   | `cover_near` / `cover_far` | `ground_cover_*` reach and fades (near never past far) | `GroundCover.refresh_reach` |
-  | `terrain` | far ring 3…authored, mid ring scaled with it; also cut when the car outruns full detail | `TerrainStreamer.apply_rings` |
+  | `terrain` | far ring 3…authored, mid ring scaled with it; also cut when the car outruns full detail | `LevelStreamer.apply_rings` |
   | `surface_fx` | dust + wheel spray pool share, tyre marks on/off | `CpuParticlePool.set_quality`, `TireMarks.set_shown` |
   | `smoke` | engine smoke pool share | `CpuParticlePool.set_quality` |
   | `flames`, `spectators` | on/off | their `*_enabled` field |
@@ -59,7 +59,7 @@ nobody has to pick settings. There is no Graphics page. Design record: `todo/202
 
 ## Full detail under the car
 
-`TerrainStreamer.wanted_near_tiles` queues near (full-detail) tiles in a corridor along the car's path
+`LevelStreamer.wanted_near_tiles` queues near (full-detail) tiles in a corridor along the car's path
 for `adaptive_near_lead_s` of travel as well as round it. Tiles on the path rank by seconds until the
 car reaches them (`NEAR_AHEAD_PRIORITY`), above everything but collision. When one would be reached
 before it can be built at this device's pace (`near_build_s`, `near_overdue`), the queue runs nothing

@@ -41,7 +41,7 @@ spec items still applies.
 - [x] 1 Remove the island benchmark (2026-11-27)
 - [x] 2 Remove the first-run intro (2026-11-27)
 - [x] 3 Make `LevelStreamer` stand alone (2026-11-27)
-- [ ] 4 Delete the island
+- [x] 4 Delete the island (2026-11-27)
 - [ ] 4b Remove outlines
 - [ ] 5 Retire the stage harness
 - [ ] 6 Docs and the final sweep, full test suite green

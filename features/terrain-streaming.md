@@ -7,8 +7,8 @@
 **Tests:** `tests/headless/test_terrain_manager_streaming.gd`
 
 **This file documents a producer-less consumer.** `TerrainManager` kept a few opt-ins from
-the deleted overworld hub. Nothing in production feeds them: free roam streams through its own
-`TerrainStreamer` ([free-roam.md](free-roam.md)), and the road carve, spawn budget and height
+the deleted overworld hub. Nothing in production feeds them: the level streams through `LevelStreamer`
+([level-streamer.md](level-streamer.md)), and the road carve, spawn budget and height
 quantum are deleted. The bounded-world mode (`set_bounds`, the coastline taper, the `chunk_source` store, flat pads and
 the region blend) has been deleted. All opt-ins are off by default, so behaviour is
 bit-identical to a stage.

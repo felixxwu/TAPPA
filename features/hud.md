@@ -1,7 +1,7 @@
 # HUD
 
 **Source:** `scripts/hud.gd` (extends `CanvasLayer`). Node `HUD` (layer 2) in
-`free_roam.tscn` and the dev stage `main.tscn`, with `car` wired to the `Car`.
+`level_view.tscn` and the dev stage `main.tscn`, with `car` wired to the `Car`.
 
 **Tests:** `tests/headless/test_hud.gd`,
 `tests/headless/test_hud_docs.gd` (a mechanical guard: parses `HUD.DEBUG_READOUT_NODES`

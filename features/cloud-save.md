@@ -537,7 +537,6 @@ data.
   resolutions, the `.conflict.bak`, failure classification, backoff growth and
   cap, the update mask, that the uploaded blob is not marked unsynced, an older-schema cloud copy
   being overwritten, a pull waiting out an upload in flight, and nothing syncing during a benchmark.
-- `tests/headless/test_free_roam_shell.gd` → `test_a_background_sync_conflict_is_put_to_the_player`.
 - `tests/headless/test_text_field.gd` — the nav support (see [menus.md](menus.md)).
 - `tests/headless/test_save_manager.gd` — the two new profile fields, their
   backfill onto older profiles, `profile_changed` / `flushed`, `adopt_profile`

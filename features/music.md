@@ -55,7 +55,7 @@ is only ever one song (~4 × 180 KB) at a time (`todo/mobile-web-performance.md`
 ## Context selection (scene state, not transitions)
 
 Which track plays is decided by live state, not by transition hooks (which are fragile). The
-title menu is drawn over `free_roam.tscn`, so the scene path says nothing about it: the
+title menu is drawn over the world scene, so the scene path says nothing about it: the
 `TitleScreen` joins the `MusicLibrary.MENU_GROUP` node group while it is open, and every frame
 `MusicDirector._process` asks `_menu_open()` and resolves `_song_for_context`: with a menu open
 it wants the **current menu song** — one entry of `MusicLibrary.MENU_SONGS` (`echo_chamber`,

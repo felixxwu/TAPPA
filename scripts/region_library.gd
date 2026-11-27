@@ -71,7 +71,6 @@ const REGIONS: Array[Dictionary] = [
 	# baseline unchanged, so the home world still looks byte-identical.
 	{
 		"id": "home", "order": 0, "name": "The Green",
-		"rest_stop_spacing_m": 750.0, # metres of road between free-roam checkpoints
 		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
 		"water_level": - 12.0,
 		# size_scale sets each species' size and card shape: height 9.375 m (the profile's 7.5
@@ -101,9 +100,7 @@ const REGIONS: Array[Dictionary] = [
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
 		"id": "greece", "order": 1, "name": "The Dunes",
-		"rest_stop_spacing_m": 1500.0, # metres of road between free-roam checkpoints
 		"water_level": - 12.0,
-		"road_surface": "tarmac",
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
 		"tree_mix": [
@@ -142,7 +139,6 @@ const REGIONS: Array[Dictionary] = [
 	# both drop ground cover.
 	{
 		"id": "taiga", "order": 2, "name": "The Taiga",
-		"rest_stop_spacing_m": 2000.0, # metres of road between free-roam checkpoints
 		"look_from": "home",
 		"water_level": - 12.0,
 		"tree_mix": [
@@ -172,7 +168,6 @@ const REGIONS: Array[Dictionary] = [
 	# grass blades flung off a snowfield.
 	{
 		"id": "snow", "order": 4, "name": "The Alps",
-		"rest_stop_spacing_m": 2500.0, # metres of road between free-roam checkpoints
 		"water_level": - 12.0,
 		"sky_panorama": "res://textures/sky-snow.jpg",
 		"grass_texture": "res://textures/snow-ground.jpg",
@@ -229,9 +224,8 @@ const REGIONS: Array[Dictionary] = [
 		# Lane paint is buried; road_marking_color is deliberately omitted rather than
 		# set to white, which would read as fresh paint on a snowy road.
 
-		# --- Handling. NOT LOOK_KEYS, and deliberately so: these are consumed by
-		# BiomeDirector when the ring changes, not by the look pass, so folding them into look_of would deliver them too late
-		# AND leak non-look keys into the dict world.gd treats as look overrides. Same
+		# --- Handling. NOT LOOK_KEYS, and deliberately so: folding them into look_of would
+		# leak non-look keys into the dict world.gd treats as look overrides. Same
 		# reasoning that keeps `water_level` out of the whitelist.
 		#
 		# They name GameConfig fields rather than authoring numbers (the WeatherLibrary
@@ -286,21 +280,9 @@ static func ordered() -> Array[Dictionary]:
 	return out
 
 
-# Metres of free-roam road between checkpoints in this region's ring, or `fallback`
-# (FreeRoamSettings.rest_stop_spacing_m) when it sets none. Not inherited through `look_from`.
-static func rest_stop_spacing_of(region_id: String, fallback: float) -> float:
-	return float(by_id(region_id).get("rest_stop_spacing_m", fallback))
-
-
-# Whether this region's free-roam roads are tarmac rather than the default gravel. Like
-# water_level, not inherited through `look_from`.
-static func has_tarmac_roads(region_id: String) -> bool:
-	return String(by_id(region_id).get("road_surface", "gravel")) == "tarmac"
-
-
 # --- Handling overrides (features/snow-region.md) -----------------------------
 # A region may override the per-surface grip scales and author a deep-snow block. Both
-# are read by BiomeDirector, NOT through look_of — see
+# are read directly, NOT through look_of — see
 # the comment on the snow entry for why they are not LOOK_KEYS.
 #
 # A region authoring no override resolves to {}.
@@ -360,7 +342,7 @@ static func _resolve_fields(cfg: GameConfig, block: Dictionary) -> Dictionary:
 
 
 # The tree species split for a resolved region look: the authored `tree_mix`, or the
-# default single home tree when a region authors none (free roam / unknown id). Each
+# default single home tree when a region authors none (unknown id). Each
 # entry is {texture, profile, weight}; see DEFAULT_TREE_MIX. Pure — takes the look
 # dict (from look_of), so callers don't re-resolve the region.
 static func tree_mix(look: Dictionary) -> Array:

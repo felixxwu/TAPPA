@@ -1,7 +1,6 @@
 extends GutTest
-# The persistent free-roam world (features/world-session.md): WorldSession's state and its round
-# trips through the profile, free roam resuming from it, and the world pages (map + stats) with
-# their keyboard/gamepad navigation.
+# The save's world (features/world-session.md): WorldSession's state and its round trips through
+# the profile.
 
 const TEST_PATH := "user://test_world_session_profile.json"
 
@@ -30,131 +29,45 @@ func _any_car() -> String:
 	return String(CarLibrary.all()[0]["id"])
 
 
-func test_the_travel_warning_names_an_earlier_pile_it_would_lose() -> void:
-	WorldSession.new_world(42, _any_car())
-	WorldSession.set_money(10)
-	var pages: WorldPages = autofree(WorldPages.new())
-	assert_false(pages.travel_warning().contains("5000"), "no earlier pile, nothing extra to say")
-	WorldSession.set_dropped({"pos": [0.0, 0.0, 0.0], "money": 5000})
-	assert_true(pages.travel_warning().contains("£5000"))
-
-
 func test_a_fresh_profile_has_no_world() -> void:
 	assert_false(WorldSession.has_world())
 
 
-func test_a_new_world_owns_its_starter_car_and_starts_at_spawn() -> void:
+func test_a_new_world_owns_its_starter_car() -> void:
 	WorldSession.new_world(42, _any_car())
 	assert_true(WorldSession.has_world())
 	assert_eq(WorldSession.world_seed(), 42)
 	assert_eq(String(WorldSession.active_car().get("model_id", "")), _any_car())
-	assert_eq(WorldSession.lit_sites(), [0])
-	assert_eq(WorldSession.last_site(), 0)
-	assert_eq(WorldSession.pose(), [])
 
 
 func test_a_new_world_replaces_the_old_one_and_its_cars() -> void:
 	WorldSession.new_world(1, _any_car())
-	WorldSession.light(5)
 	var second := String(CarLibrary.all()[1]["id"])
 	WorldSession.new_world(2, second)
 	assert_eq(WorldSession.world_seed(), 2)
-	assert_eq(WorldSession.lit_sites(), [0])
 	assert_eq((_save.profile[_save.KEY_CARS] as Array).size(), 1)
 	assert_eq(String(WorldSession.active_car()["model_id"]), second)
 
 
-func test_the_cars_pose_round_trips_facing_the_same_way() -> void:
-	WorldSession.new_world(1, _any_car())
-	var fwd := Vector3(1, 0, 1).normalized()
-	var xform := Transform3D(Basis.looking_at(fwd, Vector3.UP), Vector3(10, 2, -30))
-	WorldSession.save_pose(xform)
-	var back: Transform3D = WorldSession.pose_transform()
-	assert_almost_eq(back.origin, xform.origin, Vector3.ONE * 1e-4)
-	assert_almost_eq(-back.basis.z, fwd, Vector3.ONE * 1e-4)
-
-
-func test_non_finite_values_are_not_saved() -> void:
-	WorldSession.new_world(1, _any_car())
-	var pose := Transform3D(Basis.IDENTITY, Vector3(1, 2, 3))
-	WorldSession.save_pose(pose)
-	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(NAN, 0, 0)))
-	assert_almost_eq(WorldSession.pose_transform().origin, pose.origin, Vector3.ONE * 1e-4)
-	var d := DamageModel.new()
-	d.field(1000.0, 400.0)
-	WorldSession.save_car_state(d)
-	var saved: Dictionary = WorldSession._world()["car_state"]
-	d.engine_temp = NAN
-	WorldSession.save_car_state(d)
-	assert_eq(WorldSession._world()["car_state"], saved)
-
-
-func test_the_cars_condition_round_trips() -> void:
-	WorldSession.new_world(1, _any_car())
-	var d := DamageModel.new()
-	d.field(1000.0, 400.0)
-	d.cooling_broken = true
-	d.engine_temp = 117.0
-	d.wheel_toe["WheelRR"] = 0.02
-	WorldSession.save_car_state(d)
-	var e := DamageModel.new()
-	e.field(1000.0, 1000.0)
-	WorldSession.restore_car_state(e)
-	assert_eq(e.hp, 400.0)
-	assert_true(e.cooling_broken)
-	assert_eq(e.engine_temp, 117.0)
-	assert_almost_eq(float(e.wheel_toe["WheelRR"]), 0.02, 1e-6)
-
-
-func test_health_carries_over_as_a_share_when_max_hp_changes() -> void:
-	WorldSession.new_world(1, _any_car())
-	var d := DamageModel.new()
-	d.field(1000.0, 500.0)
-	WorldSession.save_car_state(d)
-	var e := DamageModel.new()
-	e.field(2000.0, 2000.0)
-	WorldSession.restore_car_state(e)
-	assert_almost_eq(e.hp, 1000.0, 0.001, "half health stays half health")
-
-
-func test_a_save_without_max_hp_restores_its_hp_as_is() -> void:
-	WorldSession.new_world(1, _any_car())
-	WorldSession._world()["car_state"] = {"hp": 400.0}
-	var e := DamageModel.new()
-	e.field(1000.0, 1000.0)
-	WorldSession.restore_car_state(e)
-	assert_eq(e.hp, 400.0)
-
-
-func test_lighting_a_rest_stop_is_remembered_once_and_counted_once() -> void:
-	WorldSession.new_world(1, _any_car())
-	WorldSession.light(3)
-	WorldSession.light(3)
-	assert_eq(WorldSession.lit_sites(), [0, 3])
-	assert_eq(_save.lifetime_stat(LifetimeStats.REST_STOPS_LIT), 1)
-
-
-func test_the_map_remembers_driven_cells_and_the_furthest_ring() -> void:
-	WorldSession.new_world(1, _any_car())
-	assert_true(WorldSession.mark_driven(5.0, 5.0))
-	assert_false(WorldSession.mark_driven(6.0, 6.0), "same cell")
-	assert_true(WorldSession.has_driven(1.0, 1.0))
-	assert_false(WorldSession.has_driven(500.0, 500.0))
-	assert_true(WorldSession.reach_ring(2), "a ring never reached is new")
-	assert_false(WorldSession.reach_ring(1), "an inner ring is not")
-	assert_false(WorldSession.reach_ring(2), "nor is the same ring again")
-	assert_eq(WorldSession.max_ring(), 2, "a high-water mark")
-
-
 func test_the_world_survives_a_save_and_reload() -> void:
 	WorldSession.new_world(77, _any_car())
-	WorldSession.light(9)
 	_save.save_now()
 	_save.profile = {}
 	_save.load_or_new()
 	assert_true(WorldSession.has_world())
 	assert_eq(WorldSession.world_seed(), 77)
-	assert_eq(WorldSession.lit_sites(), [0, 9])
+
+
+# An island-era world keeps loading: keys no longer read are ignored.
+func test_an_old_world_with_island_keys_still_loads() -> void:
+	WorldSession.new_world(3, _any_car())
+	var w: Dictionary = _save.profile[_save.KEY_WORLD]
+	w.merge({"pose": [1.0, 2.0, 3.0, 0.0], "lit": [0, 4], "seen": [0.0], "money": 12, "dropped": {}})
+	_save.save_now()
+	_save.profile = {}
+	_save.load_or_new()
+	assert_true(WorldSession.has_world())
+	assert_eq(String(WorldSession.active_car()["model_id"]), _any_car())
 
 
 # Any replacement of the world, from inside (a new world) or out (a downloaded or wiped profile),
@@ -171,347 +84,8 @@ func test_replacing_the_world_moves_the_generation_on() -> void:
 	assert_gt(WorldSession.generation, g, "a new world")
 
 
-func test_sites_seen_belong_to_their_world() -> void:
-	WorldSession.new_world(1, _any_car())
-	assert_true(WorldSession.see(5))
-	assert_false(WorldSession.see(5), "already seen")
-	assert_true(WorldSession.is_seen(5))
-	assert_true(WorldSession.is_seen(0), "spawn from the start")
-	WorldSession.new_world(2, _any_car())
-	assert_false(WorldSession.is_seen(5), "a new world has seen nothing yet")
-	(_save.profile[_save.KEY_WORLD] as Dictionary)["seen"] = [0.0, 7.0]  # as JSON hands it back
-	assert_true(WorldSession.is_seen(7))
-
-
-# Where the car is and what it has passed is not worth a cloud upload; real progress is.
-func test_only_progress_is_announced_to_the_cloud() -> void:
-	WorldSession.new_world(1, _any_car())
-	_save.mark_synced()
-	watch_signals(_save)
-	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(10, 0, 10)))
-	WorldSession.mark_driven(300.0, 300.0)
-	WorldSession.see(3)
-	WorldSession.reach_ring(4)
-	WorldSession.set_last_site(2)
-	WorldSession.save_car_state(DamageModel.new())
-	assert_signal_not_emitted(_save, "profile_changed", "driving around")
-	assert_false(_save.has_unsynced())
-	WorldSession.set_money(5)
-	assert_signal_emitted(_save, "profile_changed", "picking up money")
-
-
-func test_the_site_fingerprint_notices_a_moved_site_but_not_a_tiny_float_difference() -> void:
-	var sites := RoadSites.new()
-	sites.kind = PackedInt32Array([RoadSites.Kind.REST, RoadSites.Kind.LOOT])
-	sites.pos = PackedVector2Array([Vector2(10.2, 20.2), Vector2(300.2, -40.2)])
-	var before := WorldSession.sites_fingerprint(sites)
-	sites.pos[1] += Vector2(0.01, 0.0)
-	assert_eq(WorldSession.sites_fingerprint(sites), before)
-	sites.pos[1] += Vector2(50.0, 0.0)
-	assert_ne(WorldSession.sites_fingerprint(sites), before)
-
-
-func test_a_world_saved_against_other_sites_drops_its_site_progress() -> void:
-	WorldSession.new_world(1, _any_car())
-	WorldSession.light(3)
-	WorldSession.set_last_site(3)
-	WorldSession.see(3)
-	WorldSession.set_list("collected", [9])
-	WorldSession.save_pose(Transform3D.IDENTITY)
-	WorldSession.check_sites(111)
-	assert_eq(WorldSession.lit_sites(), [0, 3], "a world with no fingerprint yet is stamped, not reset")
-	WorldSession.check_sites(111)
-	assert_eq(WorldSession.lit_sites(), [0, 3], "the same sites keep it")
-	WorldSession.check_sites(222)
-	assert_eq(WorldSession.lit_sites(), [0])
-	assert_eq(WorldSession.last_site(), 0)
-	assert_false(WorldSession.is_seen(3))
-	assert_eq(WorldSession.list("collected"), [])
-	assert_eq(WorldSession.pose(), [])
-
-
 func test_a_pre_free_roam_profile_is_refused() -> void:
 	var old: Dictionary = _save._default_profile()
 	old["schema_version"] = 7
 	old[_save.KEY_WORLD] = {"seed": 5}
 	assert_true(_save._migrate(old).is_empty())
-
-
-# --- free roam resuming from the session, and the world pages ------------------------------------
-
-func _boot_free_roam() -> Node3D:
-	var scene: Node3D = load("res://free_roam.tscn").instantiate()
-	var s := FreeRoamSettings.new()
-	s.island_radius_m = 3000.0
-	# a dense layout of its own, so the map tests have several rest stops whatever the tuned preset
-	s.roads_from_spawn = 3
-	s.segment_m = 225.0
-	s.fork_chance = 0.5
-	s.prune_dead_ends_m = 0.0
-	s.mid_radius = 1
-	s.far_radius = 3
-	(scene.get_node("Terrain") as TerrainStreamer).settings = s
-	add_child_autofree(scene)
-	await get_tree().physics_frame
-	return scene
-
-
-func test_free_roam_resumes_the_saved_world() -> void:
-	WorldSession.new_world(8, _any_car())
-	WorldSession.light(1)
-	WorldSession.set_last_site(1)
-	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(40, 0, 25)))
-	var scene := await _boot_free_roam()
-	var st: TerrainStreamer = scene.get_node("Terrain")
-	var rest: RestStops = scene.get_node("RestStops")
-	assert_eq(st.settings.world_seed, 8, "the island is the saved world's")
-	assert_true(rest.is_lit(1))
-	assert_eq(rest.last_site, 1)
-	var car: Node3D = scene.get_node("Car")
-	assert_lt(Vector2(car.global_position.x, car.global_position.z).distance_to(Vector2(40, 25)), 2.0, "the car is where it was left")
-
-
-func test_a_car_saved_while_wrecked_comes_back_at_its_respawn_point_repaired() -> void:
-	WorldSession.new_world(8, _any_car())
-	WorldSession.light(1)
-	WorldSession.set_last_site(1)
-	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(40, 0, 25)))
-	(_save.profile[_save.KEY_WORLD] as Dictionary)["car_state"] = {"hp": 0.0}
-	var scene := await _boot_free_roam()
-	var rest: RestStops = scene.get_node("RestStops")
-	var car: Node3D = scene.get_node("Car")
-	var dmg: DamageModel = car.get("damage")
-	assert_eq(dmg.hp, dmg.max_hp, "the wreck was quit, not escaped: the car is repaired")
-	assert_eq(_save.lifetime_stat(LifetimeStats.TIMES_GAVE_UP), 1, "and it counts as giving up")
-	var pose := rest.pose_at(1)
-	assert_lt(Vector2(car.global_position.x, car.global_position.z).distance_to(Vector2(pose.origin.x, pose.origin.z)), 3.0,
-		"and starts at the last rest stop, not where it gave up")
-
-
-# The free-roam boot checks the site fingerprint before the loot and rest stops read their ids; and
-# once the world is replaced under a running scene, the scene stops writing into it.
-func test_free_roam_drops_stale_site_progress_and_leaves_a_replaced_world_alone() -> void:
-	WorldSession.new_world(8, _any_car())
-	WorldSession.light(1)
-	WorldSession.set_last_site(1)
-	WorldSession.set_list("collected", range(400))
-	(_save.profile[_save.KEY_WORLD] as Dictionary)["sites_hash"] = -1
-	var scene := await _boot_free_roam()
-	var rest: RestStops = scene.get_node("RestStops")
-	var loot: LootDirector = scene.get_node("LootDirector")
-	assert_false(rest.is_lit(1), "the old ids meant other places")
-	assert_eq(rest.last_site, 0)
-	assert_false(range(400).any(func(i: int) -> bool: return loot.is_collected(i)), "every coin is back")
-	WorldSession.invalidate()
-	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(900, 0, 900)))
-	scene.save_world()
-	await get_tree().physics_frame
-	var kept: Transform3D = WorldSession.pose_transform()
-	assert_eq(kept.origin, Vector3(900, 0, 900), "the replaced world is not written over")
-
-
-# Leaving the scene (a scene change, the window closing) still saves the car's place: the car has
-# left the tree by the time the root's tree_exiting fires, so the pose comes from the tick cache.
-func test_leaving_the_scene_saves_the_pose() -> void:
-	WorldSession.new_world(8, _any_car())
-	var scene := await _boot_free_roam()
-	var car: Node3D = scene.get_node("Car")
-	await get_tree().physics_frame
-	await get_tree().physics_frame
-	var where := car.global_position
-	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(900, 0, 900)))  # stale
-	remove_child(scene)
-	var saved: Transform3D = WorldSession.pose_transform()
-	assert_lt(Vector2(saved.origin.x, saved.origin.z).distance_to(Vector2(where.x, where.z)), 2.0,
-		"the exit path wrote the car's pose")
-	scene.queue_free()
-
-
-func test_the_map_is_the_travel_picker_at_a_rest_stop() -> void:
-	WorldSession.new_world(8, _any_car())
-	var scene := await _boot_free_roam()
-	var rest: RestStops = scene.get_node("RestStops")
-	var pages: WorldPages = scene.get_node("WorldPages")
-	var rests := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)
-	rest.lit_sites[rests[1]] = true
-	rest.lit_sites[rests[2]] = true
-	var closed := [false]
-	pages.show_map(func() -> void: closed[0] = true, 0)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var vp := pages.get_viewport()
-	var b := pages.action_buttons()  # back, prev, next, travel
-	assert_eq(vp.gui_get_focus_owner(), b[3], "Travel has the cursor")
-	var nav := MenuNav.of(pages._page)
-	var e := InputEventAction.new()
-	e.action = "menu_left"
-	e.pressed = true
-	nav._unhandled_input(e)
-	assert_eq(vp.gui_get_focus_owner(), b[2], "left walks along the action row")
-	var first := pages.selected_target()
-	b[2].pressed.emit()
-	assert_ne(pages.selected_target(), first, "Next picks another lit rest stop")
-	var target := pages.selected_target()
-	b[3].pressed.emit()
-	assert_true(closed[0])
-	assert_eq(rest.last_site, target, "Travel went there")
-
-
-func test_the_pause_menu_opens_the_map_and_stats_and_comes_back() -> void:
-	WorldSession.new_world(8, _any_car())
-	var scene := await _boot_free_roam()
-	var pause: PauseMenu = scene.get_node("PauseMenu")
-	var pages: WorldPages = scene.get_node("WorldPages")
-	pause.open()
-	assert_true(CardUI.pick(pause.cards(), "Map"))
-	assert_true(pages.is_open())
-	assert_false(pause.is_open(), "the map covers the pause menu")
-	assert_true(get_tree().paused)
-	var e := InputEventAction.new()
-	e.action = "ui_cancel"
-	e.pressed = true
-	MenuNav.of(pages._page)._unhandled_input(e)
-	assert_false(pages.is_open())
-	assert_true(pause.is_open(), "back returns to the pause menu")
-	assert_eq(CardUI.titles(pause.cards())[pause.cards().selected_index()], "Map", "the cursor is back on Map")
-	assert_true(CardUI.pick(pause.cards(), "Stats"))
-	assert_true(pages.is_open())
-	assert_eq(pages.cards().card_count(), WorldPages.STATS_SHOWN.size() + 1, "a card per stat, and the rings reached")
-	pages.close()
-	pause.resume()
-
-
-# The map frames what has been explored, not the whole island: nothing known yet shows the
-# island; a small explored patch is shown at least map_min_view_m across; a spread-out one
-# with a margin around it; and never more than the island.
-func test_the_map_frames_what_has_been_explored() -> void:
-	var whole := WorldPages.fit_view(PackedVector2Array(), 500.0, 3000.0)
-	assert_eq(whole.size, Vector2(6000, 6000), "nothing known: the whole island")
-	var small := WorldPages.fit_view(PackedVector2Array([Vector2(10, 10), Vector2(30, 20)]), 500.0, 3000.0)
-	assert_eq(small.size, Vector2(500, 500), "a small patch: the minimum view")
-	assert_true(small.has_point(Vector2(10, 10)) and small.has_point(Vector2(30, 20)))
-	var spread := WorldPages.fit_view(PackedVector2Array([Vector2(-800, 0), Vector2(800, 100)]), 500.0, 3000.0)
-	assert_gt(spread.size.x, 1600.0, "a margin around what's explored")
-	assert_true(spread.has_point(Vector2(-800, 0)) and spread.has_point(Vector2(800, 100)))
-	var huge := WorldPages.fit_view(PackedVector2Array([Vector2(-5000, 0), Vector2(5000, 0)]), 500.0, 3000.0)
-	assert_eq(huge.size.x, 6000.0, "never more than the island")
-
-
-# Quick travel works from the map wherever it is opened — here from the minimap, out on the road:
-# it offers every lit stop, a tap on one picks it, Travel goes there and play resumes.
-func test_quick_travel_from_the_map_opened_from_the_minimap() -> void:
-	WorldSession.new_world(8, _any_car())
-	var scene := await _boot_free_roam()
-	var rest: RestStops = scene.get_node("RestStops")
-	var pages: WorldPages = scene.get_node("WorldPages")
-	var pause: PauseMenu = scene.get_node("PauseMenu")
-	var rests := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)
-	rest.lit_sites[rests[2]] = true
-	(scene.get_node("MiniMapLayer/MiniMap") as MiniMap).open_requested.emit()
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_true(pages.is_open())
-	assert_true(get_tree().paused, "the map freezes the game")
-	assert_false(pause._input_enabled, "and the pause menu stands down while it's up")
-	assert_true(Array(pages._targets).has(rests[2]), "every lit stop is a travel target")
-	assert_true(pages.tap_map_at(pages._canvas.to_canvas(rest.streamer.sites.pos[rests[2]])), "a tap on a lit stop picks it")
-	assert_eq(pages.selected_target(), rests[2])
-	pages._travel()
-	assert_false(pages.is_open())
-	assert_eq(rest.last_site, rests[2], "travelled there")
-	assert_false(get_tree().paused, "and straight back to driving")
-	assert_true(pause._input_enabled)
-
-
-func test_the_minimap_map_closes_back_to_driving() -> void:
-	WorldSession.new_world(8, _any_car())
-	var scene := await _boot_free_roam()
-	var pages: WorldPages = scene.get_node("WorldPages")
-	var pause: PauseMenu = scene.get_node("PauseMenu")
-	(scene.get_node("MiniMapLayer/MiniMap") as MiniMap).open_requested.emit()
-	await get_tree().process_frame
-	var e := InputEventAction.new()
-	e.action = "toggle_map"
-	e.pressed = true
-	pages._unhandled_input(e)
-	assert_false(pages.is_open(), "M / gamepad Back closes it")
-	assert_false(get_tree().paused)
-	assert_true(pause._input_enabled)
-	assert_false(pause.is_open(), "not into the pause menu")
-
-
-func test_quick_travel_from_the_pause_menu_map_goes_back_to_driving() -> void:
-	WorldSession.new_world(8, _any_car())
-	var scene := await _boot_free_roam()
-	var rest: RestStops = scene.get_node("RestStops")
-	var pages: WorldPages = scene.get_node("WorldPages")
-	var pause: PauseMenu = scene.get_node("PauseMenu")
-	var rests := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)
-	rest.lit_sites[rests[2]] = true
-	pause.open()
-	assert_true(CardUI.pick(pause.cards(), "Map"))
-	pages._selected = Array(pages._targets).find(rests[2])
-	pages._travel()
-	assert_eq(rest.last_site, rests[2])
-	assert_false(pause.is_open(), "a travel doesn't drop you back in the pause menu")
-	assert_false(get_tree().paused)
-
-
-# Travel off a checkpoint leaves the money behind, after a confirm; from a checkpoint it keeps it.
-func test_travelling_from_the_road_asks_then_drops_the_money_there() -> void:
-	WorldSession.new_world(8, _any_car())
-	var scene := await _boot_free_roam()
-	var rest: RestStops = scene.get_node("RestStops")
-	var pages: WorldPages = scene.get_node("WorldPages")
-	var rests := (scene.get_node("Terrain") as TerrainStreamer).sites.of_kind(RoadSites.Kind.REST)
-	rest.lit_sites[rests[1]] = true
-	rest.lit_sites[rests[2]] = true
-	rest._on_site = -1
-	WorldSession.set_money(500)
-	(scene.get_node("MiniMapLayer/MiniMap") as MiniMap).open_requested.emit()
-	await get_tree().process_frame
-	pages._selected = Array(pages._targets).find(rests[2])
-	pages._travel()
-	var popup := ConfirmPopup.any_open(get_tree()) as ConfirmPopup
-	assert_not_null(popup, "a confirm first")
-	popup.trigger_back()
-	assert_true(pages.is_open(), "Cancel stays on the map")
-	assert_eq(WorldSession.money(), 500)
-	await get_tree().process_frame
-	pages._travel()
-	(ConfirmPopup.any_open(get_tree()) as ConfirmPopup)._on_action(1)
-	assert_eq(rest.last_site, rests[2], "Travel goes")
-	assert_eq(WorldSession.money(), 0, "without the money")
-	assert_eq(int(WorldSession.dropped().get("money", 0)), 500, "left where the car was")
-	WorldSession.set_money(300)
-	pages.show_map(func() -> void: pass, rests[2])
-	pages._selected = Array(pages._targets).find(rests[1])
-	pages._travel()
-	assert_null(ConfirmPopup.any_open(get_tree()), "no confirm at a checkpoint")
-	assert_eq(rest.last_site, rests[1])
-	assert_eq(WorldSession.money(), 300, "checkpoint to checkpoint keeps it")
-
-
-# The full map draws driven road, plus in grey only the undriven road within reach of it.
-func test_the_map_greys_in_undriven_road_near_driven_road_only() -> void:
-	WorldSession.new_world(42, _any_car())
-	var cell := WorldSession.DRIVEN_CELL_M
-	var net := RoadNetwork.new()
-	for x: float in [0.0, cell * 2.0, cell * 50.0]:  # driven, nearby, far
-		net.seg_ax.append(x + 1.0)
-		net.seg_ay.append(1.0)
-		net.seg_bx.append(x + 3.0)
-		net.seg_by.append(1.0)
-	WorldSession.mark_driven(2.0, 1.0)
-	var roads := WorldPages.map_roads(net, cell * 3.0)
-	assert_eq(roads[1], PackedInt32Array([0]), "the driven segment")
-	assert_eq(roads[0], PackedInt32Array([1]), "the nearby undriven one, not the far one")
-
-
-func test_the_map_marks_dropped_money_only_while_some_is_out_there() -> void:
-	WorldSession.new_world(1, _any_car())
-	assert_false(WorldPages.dropped_xz().is_finite(), "nothing dropped, nothing marked")
-	WorldSession.set_dropped({"pos": [12.0, 3.0, -40.0], "money": 25})
-	assert_eq(WorldPages.dropped_xz(), Vector2(12.0, -40.0), "the marker sits at the drop's x/z")
-	WorldSession.set_dropped({"pos": [12.0, 3.0, -40.0], "money": 0})
-	assert_false(WorldPages.dropped_xz().is_finite(), "an empty drop isn't marked")

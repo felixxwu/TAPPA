@@ -8,7 +8,6 @@
 .                          # repository root = Godot project root
 ├── title.tscn             # Boot scene (set in project.godot): hands straight over to the world (Scenes.WORLD)
 ├── level_view.tscn        # THE GAME WORLD (Scenes.WORLD): the authored Hafren level (see level-editor.md)
-├── free_roam.tscn         # LEGACY, reference only: the old procedural island (Scenes.LEGACY_FREE_ROAM, see free-roam.md)
 ├── main.tscn              # The dev stage and physics test harness (world.gd)
 ├── car.tscn               # VehicleBody3D car, instanced into both world scenes
 ├── project.godot          # Engine config: autoloads, input map, rendering
@@ -28,11 +27,9 @@
 `scripts/scenes.gd` (`class_name Scenes`, a static-only `RefCounted`) is the single
 source of truth for scene paths and for **where the front door is**:
 
-- `Scenes.TITLE` / `WORLD` / `LEGACY_FREE_ROAM` / `MAIN` / `CAR` — the canonical paths.
+- `Scenes.TITLE` / `WORLD` / `MAIN` / `CAR` — the canonical paths.
   `WORLD` (`level_view.tscn`, the Hafren level) is the game; enter it with
-  `change_to(tree, Scenes.WORLD)`. `LEGACY_FREE_ROAM` (`free_roam.tscn`) is the old procedural
-  island, kept for reference: `change_to` redirects `WORLD` to it only while
-  `GameConfig.legacy_free_roam_island` is on (Settings → Dev, off by default).
+  `change_to(tree, Scenes.WORLD)`. The procedural island it replaced was deleted in November 2026.
 - `Scenes.change_to(tree, path)` — **the single enforced scene-change point**, with a
   run-scoped kill switch the test pre-run hook arms so no production transition can park a
   live scene under `/root` mid-run. It records the blocked destination, so a test can
@@ -42,21 +39,6 @@ source of truth for scene paths and for **where the front door is**:
   threaded load falls back to `change_scene_to_file`.
 
 Tests should compare captured paths against `Scenes.TITLE`, not a literal.
-
-## Free-roam scene tree (`free_roam.tscn`) — legacy
-
-```
-FreeRoam [Node3D]                   script: free_roam/free_roam.gd
-├── WorldEnvironment
-├── Terrain [Node3D]                TerrainStreamer — streamed chunks, foliage, sites
-├── Car                             instance of car.tscn (+ BonnetCamera)
-├── ChaseCamera / CameraManager
-├── PostProcess / SpeedLines / HUD / MobileControls / PauseMenu
-├── RoadRecovery / BiomeDirector / RestStops / LootDirector
-└── RestStopPage / WorldPages / MiniMapLayer
-```
-
-See [free-roam.md](free-roam.md) for how they fit together.
 
 ## Dev stage scene tree (`main.tscn`)
 

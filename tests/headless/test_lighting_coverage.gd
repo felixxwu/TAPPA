@@ -18,8 +18,6 @@ const EXEMPT := {
 	"res://scripts/route_arrow.gd": "a navigation guide, kept bright",
 	"res://shaders/car_shadow.gdshader": "a dark contact shadow, not a lit surface",
 	"res://shaders/level_tree_id.gdshader": "an id pass, never seen by the player",
-	"res://scripts/free_roam/road_crowds.gd": "legacy free roam",
-	"res://scripts/free_roam/road_poles.gd": "legacy free roam",
 	"res://scripts/chunk_border_debug.gd": "debug overlay",
 	"res://scripts/wheel_force_debug.gd": "debug overlay",
 	"res://models/rocks/rock_largeA.glb": "foliage.gd draws rocks with ps1_models_lit",
@@ -47,9 +45,7 @@ const KNOWN_GAPS := [
 	"res://scripts/engine_smoke.gd",
 	"res://scripts/tire_marks.gd",
 	"res://scripts/road_markings.gd",
-	"res://scripts/free_roam/terrain_streamer.gd",
 	"res://blender/twingo/twingo.glb",  # car.gd re-shades the body, but its *_aero parts keep the imported material
-	"res://free_roam.tscn",  # the Water mesh's StandardMaterial3D
 	"res://models/cabin/log_cabin.glb",
 	"res://blender/spectator/spectator.glb",
 ]

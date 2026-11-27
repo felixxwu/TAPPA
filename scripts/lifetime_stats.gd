@@ -13,9 +13,8 @@ extends RefCounted
 # string, and ONLY EVER GROWS. Save owns the mutator (`add_lifetime_stat`) and the
 # reader (`lifetime_stat`); this file is pure content plus lookup.
 #
-# Every stat here is written (each entry's description names the call site). A
-# declared-but-unwritten stat is a Stats page row pinned at zero forever, which reads as
-# a broken counter: if you add an id here, wire its writer in the same change.
+# These three were written by the deleted free-roam island and have no writer or Stats page
+# today; saved counts are kept. Wiring them into the level (or dropping them) is still open.
 
 const DISTANCE_DRIVEN_M := "distance_driven_m"
 const REST_STOPS_LIT := "rest_stops_lit"
@@ -24,17 +23,15 @@ const TIMES_GAVE_UP := "times_gave_up"
 const STATS := {
 	DISTANCE_DRIVEN_M: {
 		"label": "Distance driven",
-		"description": "Metres driven in free roam (teleports excluded). Written by " +
-			"free_roam.gd's odometer every few seconds.",
+		"description": "Metres driven (teleports excluded).",
 	},
 	REST_STOPS_LIT: {
 		"label": "Checkpoints reached",
-		"description": "Free-roam checkpoints reached for the first time. Written by WorldSession.light().",
+		"description": "Checkpoints reached for the first time.",
 	},
 	TIMES_GAVE_UP: {
 		"label": "Times the car gave up",
-		"description": "Free-roam respawns: the car hit 0 HP (a crash or an overheat). " +
-			"Written by free_roam.gd on RestStops.respawned.",
+		"description": "Respawns after the car hit 0 HP (a crash or an overheat).",
 	},
 }
 

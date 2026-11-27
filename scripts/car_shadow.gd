@@ -4,7 +4,7 @@ extends MeshInstance3D
 # Tests: tests/headless/test_car_shadow.gd — extend in the same change.
 # A soft dark outline of the player's car body on the ground beneath it. The renderer has no real
 # shadows, so this stands in for one: laid on whatever is below the car, fading as the car leaves it.
-# Created and wired by free_roam.gd, level_view.gd and world.gd, like CarLamps.
+# Created and wired by level_view.gd and world.gd, like CarLamps.
 
 const SHADER := preload("res://shaders/car_shadow.gdshader")
 const LIFT_M := 0.04  # sits just above the ground so it never flickers into it

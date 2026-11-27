@@ -3,7 +3,7 @@ extends GutTest
 # menu is built from — and CardUI's card-list helpers (scripts/card_ui.gd). Covers
 # selection/confirm signals, tap-to-select vs tap-to-confirm, the nearest-card snap the drag
 # path uses, and card_list's entry → card → action wiring — NOT any page's wording/content,
-# which belongs to that page's own test (test_title_screen, test_free_roam_rest_stops, …).
+# which belongs to that page's own test (test_title_screen, test_level_shop_specialties, …).
 
 var _carousel: CardCarousel
 
@@ -700,12 +700,11 @@ func test_a_card_page_has_a_see_through_body_box() -> void:
 
 
 # Every loot item a card list can show names an authored card icon (not the generic fallback),
-# across the whole loot table — a missing shipped icon must be loud, not silently generic.
+# across the whole parts catalogue — a missing shipped icon must be loud, not silently generic.
 func test_every_loot_item_icon_exists() -> void:
-	for table: Array in LootRules.ring_tables(3):
-		for item: Dictionary in table:
-			var path := "res://icons/cards/%s.png" % LootRules.icon(item)
-			assert_true(ResourceLoader.exists(path), "%s has an icon (%s)" % [LootRules.item_key(item), path])
+	for item: Dictionary in LootRules.catalogue():
+		var path := "res://icons/cards/%s.png" % LootRules.icon(item)
+		assert_true(ResourceLoader.exists(path), "%s has an icon (%s)" % [LootRules.item_key(item), path])
 
 
 func test_arrows_hide_at_each_end_of_the_list() -> void:

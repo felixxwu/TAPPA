@@ -106,11 +106,8 @@ separate lines. `engine_smoke.gd` makes the same call for stacked puffs.
 ## Ungated mode (free roam)
 
 `setup(centerline, …)` accepts a **null** centerline, which switches the node into
-*ungated* mode (`_ungated`). Free roam (`free_roam.gd._ready`) uses it: the island has no single
-`Curve2D` — it has a road NETWORK — so there is no corridor to test against. (The mode was first
-written for the old overworld hub, since deleted.) The surface comes from
-`TerrainStreamer.surface_at`, whose road weight is 1 on the road and 0 off it; free roam's roads
-are all gravel. A teleport (travel, respawn, road reset) calls `break_ribbons()` so no mark
+*ungated* mode (`_ungated`). The Hafren level (`level_view.gd` → `_add_effects`) uses it: a road network has no single
+`Curve2D`, so there is no corridor to test against. The surface comes from `LevelView.surface_at`. A teleport (travel, respawn, road reset) calls `break_ribbons()` so no mark
 bridges the jump.
 In ungated mode:
 

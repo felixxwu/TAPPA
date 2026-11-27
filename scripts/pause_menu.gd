@@ -6,7 +6,7 @@ extends CanvasLayer
 # (`get_tree().paused`) and opens an overlay offering Resume, and Settings;
 # Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
 # controls). The whole layer
-# runs with PROCESS_MODE_ALWAYS (set in free_roam.tscn) so its button and the menu still
+# runs with PROCESS_MODE_ALWAYS (set in level_view.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu
 # too. See features/menus.md.
@@ -27,7 +27,7 @@ signal photo_mode_requested
 # The scene's MobileControls, so a touch-scheme pick in Settings rebuilds the live
 # on-screen controls immediately (rather than only taking effect on the next run).
 @export var mobile_controls: MobileControls
-# Extra rows the host handles itself (free roam: "Map", "Stats"), placed above Settings. Pressing
+# Extra rows the host handles itself (the level: "Map"), placed above Settings. Pressing
 # one emits extra_requested with its label; the menu stays open, still paused, for the host's page
 # to cover. The host calls return_from_extra() when its page closes.
 @export var extra_rows := PackedStringArray()

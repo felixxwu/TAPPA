@@ -2,8 +2,7 @@ extends Node
 # Dev tool: load every script in the project (with the autoloads present, unlike `--check-only`)
 # and report the ones that fail to compile. Exits 1 on any failure.
 #   godot --headless --path . res://tools/compile_check.tscn
-# Written for the free-roam demolition (todo/2026-10-19-free-roam-pivot.md stage 8), where
-# deleting a system must not leave a dangling reference that only a rarely-loaded script hits.
+# Deleting a system must not leave a dangling reference that only a rarely-loaded script hits.
 
 func _ready() -> void:
 	var failed: Array[String] = []

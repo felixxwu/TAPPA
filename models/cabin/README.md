@@ -1,8 +1,7 @@
 # Rest-stop log cabin
 
 One log cabin stands on every rest stop's pad (players call rest stops checkpoints). It
-replaced the placeholder post. Placement, collision and the lit glow are in
-`TerrainStreamer._site_marker`; see `features/free-roam.md`.
+replaced the placeholder post. It was placed by the island's `TerrainStreamer`, deleted in November 2026; nothing places it now.
 
 | File | What |
 | --- | --- |

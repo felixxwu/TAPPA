@@ -108,9 +108,8 @@ default white), `albedo_color`, `texture_tile`, `blend_road` (bool, default
 (the flat tarmac fill, set from `cfg.tarmac_color`). Fragment:
 `road = mix(road_texture, tarmac_color, UV2.x)` then
 `ALBEDO = mix(albedo_texture, road, blend_road ? COLOR.a : 0) × albedo_color × COLOR.rgb`.
-Free roam turns on `paint_road_per_pixel` instead, which works the road weight and the
-tarmac lane markings out per fragment from a road distance baked into `UV` (see
-[free-roam.md](free-roam.md), "Road paint is per pixel").
+The island turned on `paint_road_per_pixel` instead (lane markings per fragment from a road
+distance baked into `UV`); nothing sets it since the island was deleted.
 When `blend_road` is on (the terrain material sets it), the per-vertex `COLOR.a`
 cross-fades the ground texture (grass) to the road where the terrain bakes road
 weight into vertex-colour alpha, and the road itself fades from the gravel
@@ -176,7 +175,7 @@ the twin sync. Packing contract: `shaders/spike_id.gdshaderinc` ↔ the post sha
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
 Applied as the material of a `PostProcess` **SubViewportContainer**
 (`scripts/post_process_view.gd`), packaged as **`post_process.tscn`** and instanced by
-**every 3D scene: `free_roam.tscn` and the dev stage `main.tscn`** (as `PostProcess`). The 3D world stays in the main tree but
+**every 3D scene: `level_view.tscn` and the dev stage `main.tscn`** (as `PostProcess`). The 3D world stays in the main tree but
 is rendered through `PostProcess/View`, a `SubViewport` that shares the host's
 `World3D` (`own_world_3d = false`) and carries a `ViewCamera` mirror camera
 synced every frame to the active camera; the root viewport's own 3D pass is
@@ -806,8 +805,7 @@ The GL Compatibility backend compiles a shader program (and uploads its textures
 the **first time each material renders**, which on web stalls that frame — confirmed
 via the deleted island benchmark's cold-vs-warm two-pass (a fresh WebGL context spikes to ~80 ms on
 first-use draws; a warm second pass of the same stage drops to ~30 ms). Two load-time warm passes pay those compiles behind
-the loading cover instead of mid-drive. Free roam runs the same passes at its boot
-(`free_roam.gd._warm_up`, see [free-roam.md](free-roam.md) → "Boot"):
+the loading cover instead of mid-drive.:
 
 - **Contract walk** (`world.gd` warm block, ~line 517): after the world is built,
   `find_children()` discovers **every** node implementing the
@@ -965,9 +963,7 @@ terrain shader is deliberately kept free of any vertex stage — terrain is the 
 geometry in the game and this renderer targets low-end phones — a ban enforced by
 `test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage`. Same pattern as
 `ps1_models_lit.gdshader`, which exists so the car's fake lighting does not land on the
-terrain either. Only snow ground pays for it: a snow stage, and in free roam the snow ring and
-its border (`TerrainStreamer._material_for` / `_pair_material`; see
-`features/snow-region.md` for the lift itself). Props are not lifted with it, so they look
+terrain either. Only snow ground pays for it (see `features/snow-region.md` for the lift itself). Props are not lifted with it, so they look
 buried in the snow.
 
 **Everything but the vertex stage is a verbatim copy of `ps1_models`** — the fragment stage

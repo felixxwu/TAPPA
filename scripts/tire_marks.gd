@@ -40,7 +40,7 @@ extends Node3D
 # — but with black marks it means SOLID BLACK trails, so it is a measurement tool now
 # rather than an alternative look.
 #
-# Created + wired by the host scene (free_roam.gd, world.gd).
+# Created + wired by the host scene (level_view.gd, world.gd).
 # Marks are capped per wheel (a ring buffer).
 
 # Windowed nearest-offset search of the centerline (around the car's last offset),

@@ -12,8 +12,8 @@ extends VBoxContainer
 #     (MusicDirector.set_master_volume / set_volume).
 #   • Display — pick the frame-rate cap (30 / 60 / uncapped), persisted under
 #     FpsSetting.SETTING_KEY. Applied live via Engine.max_fps (a global engine
-#     property, so both hosts take effect immediately); free roam's boot re-derives
-#     it next run. Defaults to the platform's cap (web-touch 30, else 60).
+#     property, so both hosts take effect immediately); the level re-derives
+#     it on its next load. Defaults to the platform's cap (web-touch 30, else 60).
 #   • Camera — pick the camera angle (chase / bonnet), persisted under
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately.
@@ -78,7 +78,6 @@ var outline_button: Button = null
 var controls_rows: Array = []
 var _dev_weather_button: Button
 var _dev_rally_button: Button
-var _legacy_island_button: Button
 var _teleport_anywhere_button: Button
 
 # The swappable pages (only one visible at a time).
@@ -243,7 +242,7 @@ func _build_schemes_page() -> void:
 
 
 func _build_dev_page() -> void:
-	# Dev sub-page: money for the free-roam shop, and the whole map unlocked for travel. Wiping the save
+	# Dev sub-page: money for the level's shops, and the whole map unlocked for travel. Wiping the save
 	# is NOT here: it is a player setting, on its own Reset progress page (which dev
 	# builds see too), so there is exactly one route to it.
 	_dev_page = _make_page()
@@ -259,9 +258,6 @@ func _build_dev_page() -> void:
 	_dev_rally_button = _make_action_button("", _cycle_dev_rally)
 	_dev_page.add_child(_dev_rally_button)
 	_refresh_dev_rally()
-	_legacy_island_button = _make_action_button("", _toggle_legacy_island)
-	_dev_page.add_child(_legacy_island_button)
-	_refresh_legacy_island()
 	_teleport_anywhere_button = _make_action_button("", _toggle_teleport_anywhere)
 	_dev_page.add_child(_teleport_anywhere_button)
 	_refresh_teleport_anywhere()
@@ -596,13 +592,6 @@ const DEV_MONEY_GRANT := 10000
 
 
 func _add_dev_money() -> void:
-	if Config.data.legacy_free_roam_island:
-		if not WorldSession.has_world():
-			_dev_status.text = "No world yet."
-			return
-		WorldSession.set_money(WorldSession.money() + DEV_MONEY_GRANT)
-		_dev_status.text = "£%d." % WorldSession.money()
-		return
 	Save.set_setting(LevelView.MONEY_KEY, LevelView.money() + DEV_MONEY_GRANT)
 	_dev_status.text = "£%d." % LevelView.money()
 
@@ -615,31 +604,6 @@ func _unlock_map() -> void:
 		return
 	level.map.reveal_all()
 	_dev_status.text = "Whole map unlocked."
-
-
-# The live world's biome director, or null outside free roam.
-func _biome_director() -> BiomeDirector:
-	var scene := get_tree().current_scene
-	return scene.get_node_or_null("BiomeDirector") as BiomeDirector if scene != null else null
-
-
-# Step the forced weather through Auto (the rings' own draw) and every condition, applied at once.
-# Dev only: swap the world (the authored level, the default) for the LEGACY procedural free-roam
-# island, kept for reference. Flipped from inside either world, it swaps worlds at once; from the
-# title it applies to the next world entry.
-func _toggle_legacy_island() -> void:
-	Config.data.legacy_free_roam_island = not Config.data.legacy_free_roam_island
-	_refresh_legacy_island()
-	var scene := get_tree().current_scene
-	if scene == null or not scene.scene_file_path in [Scenes.LEGACY_FREE_ROAM, Scenes.WORLD]:
-		return
-	if scene.has_method("save_world"):
-		scene.save_world()
-	Scenes.change_to(get_tree(), Scenes.WORLD)
-
-
-func _refresh_legacy_island() -> void:
-	_legacy_island_button.text = "Legacy free-roam island: %s" % ("On" if Config.data.legacy_free_roam_island else "Off")
 
 
 func _toggle_teleport_anywhere() -> void:
@@ -656,28 +620,20 @@ func _level_weather() -> LevelWeather:
 	return scene.get_node_or_null("LevelWeather") as LevelWeather if scene != null else null
 
 
+# Step the forced weather through Auto (the level's own draw) and each condition in its pool.
 func _cycle_dev_weather() -> void:
-	var director := _biome_director()
 	var level := _level_weather()
-	if director == null and level == null:
+	if level == null:
 		_dev_status.text = "No world yet."
 		return
-	if director != null:
-		var ids: Array = [""]
-		for entry in WeatherLibrary.all():
-			ids.append(String(entry["id"]))
-		director.forced_weather = ids[(ids.find(director.forced_weather) + 1) % ids.size()]
-		director.update_now()
-	else:
-		var ids: Array = [""] + level.pool_ids()
-		LevelWeather.forced_weather = ids[(ids.find(LevelWeather.forced_weather) + 1) % ids.size()]
+	var ids: Array = [""] + level.pool_ids()
+	LevelWeather.forced_weather = ids[(ids.find(LevelWeather.forced_weather) + 1) % ids.size()]
 	_refresh_dev_weather()
 
 
 func _refresh_dev_weather() -> void:
-	var director := _biome_director() if is_inside_tree() else null
 	var level := _level_weather() if is_inside_tree() else null
-	var id := director.forced_weather if director != null else (LevelWeather.forced_weather if level != null else "")
+	var id := LevelWeather.forced_weather if level != null else ""
 	_dev_weather_button.text = "Weather: %s" % (id.capitalize() if id != "" else "Auto")
 
 

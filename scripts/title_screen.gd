@@ -2,12 +2,11 @@ class_name TitleScreen
 extends Control
 # Docs: features/world-session.md, features/menus.md — update in the same change as this file.
 # Tests: tests/headless/test_title_screen.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
-# The title screen (todo/2026-10-19-free-roam-pivot.md decision 20): the game's front door, shown
-# over the live, paused world (free_roam.gd → _show_title). Card pages (CardUI.card_page / card_list)
-# driven by MenuNav:
+# The title screen: the game's front door, shown over the live, paused world by its host scene.
+# Card pages (CardUI.card_page / card_list) driven by MenuNav:
 #   MAIN     — Continue (closes the menu; only with a world), New World (a fresh world, from the start car), Settings.
 #   SETTINGS — the shared SettingsMenu.
-# New World over an existing world asks first: the old world, its cars and its loot are lost.
+# New World over an existing world asks first: the old world and its cars are lost.
 
 enum View { MAIN, SETTINGS }
 
@@ -125,10 +124,9 @@ func _start() -> void:
 	enter_world.call()
 
 
-# Replaces the saved world with a fresh one in the start car (title_boot.gd for a first-time player too).
+# Replaces the saved world with a fresh one in the level's start car (title_boot.gd for a first-time player too).
 static func new_world() -> void:
-	var s: FreeRoamSettings = Config.data.free_roam
-	WorldSession.new_world(s.pick_world_seed(), LootRules.start_car(s))
+	WorldSession.new_world(randi(), Config.authored_value("level_car_id", Config.data.level_car_id))
 
 
 # Readout for tests and hosts: the current page's card list (null on SETTINGS).

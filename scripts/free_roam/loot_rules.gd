@@ -2,19 +2,16 @@ class_name LootRules
 extends RefCounted
 # Docs: features/loot.md — update in the same change as this file.
 # Tests: tests/headless/test_loot.gd — extend in the same change.
-# What the free-roam shops sell, and what it costs (todo/2026-10-19-free-roam-pivot.md, decision 3
-# and the coin economy). Pure: the same catalogue always gives the same stock.
+# What the level's shops sell, what it costs, and how fitted parts reach the car. Pure: the same
+# catalogue always gives the same stock.
 #
 # An ITEM is a small dict:
 #   {"kind": "part",   "id": <BoostLibrary id>, "level": <int>}       — a part (a former boost)
 #   {"kind": "part",   "id": "drivetrain:<Drivetrain.DriveMode int>"}  — a drivetrain kit
 #   {"kind": "part",   "id": "tire:<TIRES key>"}                       — a set of tires
 #
-# THE PACING SPLIT (decision 3: cars and parts should run out with the biomes): every boost part
-# names its own biome `ring` and `price` in its library entry, and drivetrain kits and tires in KITS
-# and TIRES. A ring's stock goes on sale once a checkpoint in it is lit. Cars aren't sold: each is
-# parked at the end of a side road in its own `ring` (cars_to_find, RoadNetwork._add_side_roads).
-# Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
+# Every boost part names its `price` in its library entry, and drivetrain kits and tires in KITS
+# and TIRES. Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
 # swapped_engine and drivetrain_override, which UpgradeLibrary / Car.apply_owned already read. Engines
 # aren't sold: cars swap them between each other (`engine_from`, Save.swap_engines).
 # (decision 51 — no parallel modifier path).
@@ -46,9 +43,9 @@ static func is_upgrade(item: Dictionary) -> bool:
 # `mass_kg` is what the layout's driveline weighs over a front-drive car's: a kit adds the difference
 # from the car's stock layout, so going from AWD to RWD makes it lighter.
 const KITS := {
-	Drivetrain.DriveMode.RWD: {"ring": 1, "price": 2500, "mass_kg": 30},
-	Drivetrain.DriveMode.AWD: {"ring": 2, "price": 5000, "mass_kg": 90},
-	Drivetrain.DriveMode.FWD: {"ring": 3, "price": 3000, "mass_kg": 0},
+	Drivetrain.DriveMode.RWD: {"price": 2500, "mass_kg": 30},
+	Drivetrain.DriveMode.AWD: {"price": 5000, "mass_kg": 90},
+	Drivetrain.DriveMode.FWD: {"price": 3000, "mass_kg": 0},
 }
 
 # The tires on sale; a car with none switched on runs its stock tires. `effect_fields` maps each
@@ -56,7 +53,7 @@ const KITS := {
 # level, so they stay out of BoostLibrary.
 const TIRES := {
 	"gravel": {
-		"ring": 0, "price": 800,
+		"price": 800,
 		"mass_kg": 8, "label": "Gravel tires", "blurb": "Best on loose roads.",
 		"effect_fields": {
 			"tire_grip_mult": "shop_tire_gravel_flat",
@@ -65,7 +62,7 @@ const TIRES := {
 		},
 	},
 	"road": {
-		"ring": 1, "price": 1500,
+		"price": 1500,
 		"mass_kg": 4, "label": "Road tires", "blurb": "Best on tarmac.",
 		"effect_fields": {
 			"tire_grip_mult": "shop_tire_road_flat",
@@ -74,7 +71,7 @@ const TIRES := {
 		},
 	},
 	"snow": {
-		"ring": 3, "price": 3000,
+		"price": 3000,
 		"mass_kg": 6, "label": "Snow tires", "blurb": "Best on snow and ice.",
 		"effect_fields": {
 			"tire_grip_mult": "shop_tire_snow_flat",
@@ -98,48 +95,16 @@ static func _tire_effect(item: Dictionary) -> Dictionary:
 	return effect
 
 
-# The car a new world starts with: FreeRoamSettings.start_car_id, or the first starter car if that
-# id isn't in the catalogue.
-static func start_car(s: FreeRoamSettings) -> String:
-	if s != null and CarLibrary.index_of(s.start_car_id) >= 0:
-		return s.start_car_id
-	return starter_cars()[0]
-
-
-# The cars waiting at the ends of side roads: every car but the one a new world starts with.
-static func cars_to_find(s: FreeRoamSettings) -> Array:
-	var start := start_car(s)
+# Every item the shops can sell: each part at level 0, each drivetrain kit and each set of tires.
+static func catalogue() -> Array:
 	var out: Array = []
-	for car: Dictionary in CarLibrary.all():
-		if String(car["id"]) != start:
-			out.append({"id": String(car["id"]), "ring": int(car.get("ring", 0))})
-	return out
-
-
-static func starter_cars() -> PackedStringArray:
-	var out := PackedStringArray()
-	for car: Dictionary in CarLibrary.all():
-		if int(car.get("ring", 0)) == 0:
-			out.append(String(car["id"]))
-	return out
-
-
-# What every ring sells, index = ring. A ring past ring_count folds into the last.
-static func ring_tables(ring_count: int) -> Array:
-	var tables: Array = []
-	for r in ring_count:
-		tables.append([])
-	if ring_count <= 0:
-		return tables
-	var last := ring_count - 1
 	for id in BoostLibrary.CATALOGUE.keys():
-		var r := mini(int(BoostLibrary.CATALOGUE[id].get("ring", 0)), last)
-		tables[r].append({"kind": "part", "id": String(id), "level": r})
+		out.append({"kind": "part", "id": String(id), "level": 0})
 	for mode in KITS:
-		tables[mini(int(KITS[mode]["ring"]), last)].append({"kind": "part", "id": "drivetrain:%d" % int(mode)})
+		out.append({"kind": "part", "id": "drivetrain:%d" % int(mode)})
 	for id in TIRES:
-		tables[mini(int(TIRES[id]["ring"]), last)].append({"kind": "part", "id": "tire:%s" % String(id)})
-	return tables
+		out.append({"kind": "part", "id": "tire:%s" % String(id)})
+	return out
 
 
 # What `item` costs in a shop, from its catalogue entry.
@@ -150,30 +115,6 @@ static func price(item: Dictionary) -> int:
 	if is_tire(item):
 		return int(_tire_entry(item).get("price", 0))
 	return int(BoostLibrary.CATALOGUE.get(id, {}).get("price", 0))
-
-
-# For each ring, the rings whose stock its checkpoints sell. `site_counts[r]` = rest stops in ring r:
-# a ring the road network gave no rest stop folds into the nearest ring that has one, or its stock
-# could never go on sale.
-static func pool_rings(site_counts: PackedInt32Array) -> Array:
-	var n := site_counts.size()
-	var out: Array = []
-	for r in n:
-		out.append([])
-	for r in n:
-		var host := -1
-		for d in n:
-			for c in [r - d, r + d]:
-				if host < 0 and c >= 0 and c < n and site_counts[c] > 0:
-					host = c
-		if host >= 0:
-			(out[host] as Array).append(r)
-	return out
-
-
-# The coins a coin spot in `ring` is worth.
-static func coin_value(settings: FreeRoamSettings, ring: int) -> int:
-	return settings.coin_value + settings.coin_value_per_ring * maxi(ring, 0)
 
 
 # --- parts on a car -------------------------------------------------------------------------------
@@ -214,7 +155,7 @@ static func _is_factory_abs(owned: Dictionary, part: Dictionary) -> bool:
 # own stock layout and ABS for a car born with it (which it can never fit). Includes the parts it has already unlocked.
 static func parts_for(owned: Dictionary) -> Array:
 	var out: Array = []
-	for item: Dictionary in ring_tables(1)[0]:
+	for item: Dictionary in catalogue():
 		if String(item["kind"]) != "part":
 			continue
 		if is_drivetrain(item) and int(String(item["id"]).substr("drivetrain:".length())) == UpgradeLibrary.stock_drive_mode(owned):

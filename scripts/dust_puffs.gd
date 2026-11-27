@@ -24,8 +24,8 @@ extends CpuParticlePool
 # where the deep snow is dragging the wheel it is white dust_puff_snow_color.
 # Grass raises nothing.
 #
-# Created + wired by world.gd._generate_track on a stage and free_roam.gd._ready in
-# free roam, next to WheelParticles.
+# Created + wired by world.gd._generate_track on a stage and level_view.gd on the
+# level, next to WheelParticles.
 
 const PUFF_SHADER := preload("res://shaders/dust_puff.gdshader")
 

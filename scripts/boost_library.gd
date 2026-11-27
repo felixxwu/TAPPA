@@ -33,8 +33,7 @@ extends RefCounted
 # (the part's real strength — boost gain); every other key is a FIXED characteristic of
 # the part (spool inertia, saturation point, parasitic drag) that never scales with
 # level. See magnitude_for for where this shape is read.
-# `ring` is the free-roam biome ring whose checkpoints sell the part, at level = ring, for `price`
-# (LootRules.ring_tables / price). `mass_kg` is what the part adds to the car (LootRules.fielded). Parts naming the same optional `slot` can't be on together
+# `price` and `ring` are left over from the island's shops and unread. `mass_kg` is what the part adds to the car (LootRules.fielded). Parts naming the same optional `slot` can't be on together
 # (LootRules.toggled); `icon` borrows another part's card icon.
 const CATALOGUE := {
 	"lightweight": {
