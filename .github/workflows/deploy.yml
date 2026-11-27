@@ -67,6 +67,7 @@ jobs:
         # With no GPU on the runner, Godot's GPU texture compressor sometimes freezes; override.cfg makes the import compress on the CPU.
         run: |
           printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
       - name: Load every script and scene with the autoloads present
@@ -102,6 +103,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
       # Level bakes are built locally and published as release assets (tools/publish_bake.sh). Every export bundles tools/levels (the game starts in the Hafren level), so every export job fetches them.
@@ -206,6 +208,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
       - name: Fetch level bakes
@@ -260,6 +263,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
       - name: Fetch level bakes
@@ -376,6 +380,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
       - name: Fetch level bakes
