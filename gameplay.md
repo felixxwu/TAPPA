@@ -9,10 +9,9 @@
 > game and *why* it is shaped this way. Where it names real systems it's to show feasibility, not
 > to prescribe code.
 >
-> The settled decision record is **`todo/2026-10-19-free-roam-pivot.md`**: decisions 1–32 agreed
-> with the user, and D33 onward made during the autonomous build and logged for review. **If this
-> file and that record ever disagree, the record wins.** It superseded the roguelike's record,
-> `todo/roguelike-pivot.md`, which is kept for history.
+> The free-roam decision record was `todo/2026-10-19-free-roam-pivot.md` and the roguelike's was
+> `todo/roguelike-pivot.md`, both deleted 2026-11-27; read them from git history
+> (`git log --all -- todo/<file>`).
 
 ## Tagline & fantasy
 

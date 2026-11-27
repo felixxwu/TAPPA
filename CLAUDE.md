@@ -4,8 +4,8 @@
 rally career, then a run-based roguelike (September 2026), then a free-roam game on
 one persistent procedural island (October 2026), and **is now driven on one authored
 level, Hafren Forest** (November 2026). That file is the two-minute map of what
-changed, which seams not to work around, and where the decision record
-(`todo/2026-10-19-free-roam-pivot.md`) lives.
+changed and which seams not to work around. The old decision records were deleted from
+`todo/` on 2026-11-27; read them from git history (`git log --all -- todo/<file>`).
 
 - **The default game mode is the Hafren level** — `Scenes.WORLD` (`level_view.tscn`,
   `LevelView`, `GameConfig.level_path`; see `features/level-editor.md`). Every "enter
@@ -46,8 +46,7 @@ changed, which seams not to work around, and where the decision record
   clock" — free roam) — the north star the `todo/` specs ladder up to. Read it for
   intent on the world, biome rings, the damage / temperature chain, rest stops and
   loot. It's design-level, not an implementation spec; keep it aligned when gameplay
-  direction changes. `todo/2026-10-19-free-roam-pivot.md` is the settled decision
-  record and wins over `gameplay.md` on any disagreement.
+  direction changes.
 
 ## Draw calls (web is draw-call bound)
 
@@ -95,7 +94,7 @@ changed, which seams not to work around, and where the decision record
 ## Todo / specs folder
 
 - The `todo/` folder holds planning specs for work to be implemented later
-  (e.g. `todo/performance-optimisations.md`). Read the relevant spec before
+  (e.g. `todo/2026-11-27-rust-native-migration.md`). Read the relevant spec before
   implementing anything it covers, and keep it in sync as items land.
 - When writing a new todo spec, ground it in REAL code: cite concrete files,
   line numbers, function/variable names, and config fields as they actually

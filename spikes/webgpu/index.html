@@ -1,0 +1,335 @@
+<!doctype html>
+<!-- Throwaway spike: how much main-thread time do per-object draws cost in WebGL2 vs WebGPU, and what does GPU-driven culling save? -->
+<html><head><meta charset="utf-8"><title>WebGPU draw-call spike</title>
+<style>body{margin:0;background:#111;color:#ddd;font:13px monospace}canvas{width:100%;max-width:1280px;display:block}pre{white-space:pre-wrap;padding:8px}</style>
+</head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<pre id="status">loading…</pre>
+<pre id="result"></pre>
+<script type="module">
+const P = new URLSearchParams(location.search);
+const SUITE = [];
+for (const n of [250, 1000, 3000]) for (const mode of ['webgl', 'webgpu', 'gpu']) SUITE.push({ mode, n });
+const suiteIdx = P.has('suite') ? +P.get('suite') : -1;
+const cfg = suiteIdx >= 0 ? SUITE[suiteIdx] : { mode: P.get('mode') || 'webgl', n: +(P.get('n') || 1000) };
+const MODE = cfg.mode, N = cfg.n, SECS = +(P.get('secs') || 30), WARM = 2;
+const W = 1280, HGT = 720, ASPECT = W / HGT, FOVY = Math.PI / 3, NEAR = 0.5, FAR = 1500;
+const FR = [0.3, 0.6, 0.1];           // terrain chunks / ground-cover clusters / tree clusters, as in Godot's draw_breakdown at the peak
+const COVER_PER = 132;                // ground-cover instances per cluster (Godot peak: 35516 over 269 multimeshes)
+const RADIUS_PAD = [40, 1, 15];
+const BASE_TINT = [[0.36, 0.42, 0.22], [0.45, 0.55, 0.25], [0.12, 0.28, 0.14]];
+const status = document.getElementById('status');
+
+const lvl = await (await fetch('../../tools/levels/hafren_5km.json')).json();
+const SIZE = lvl.size, HALF = SIZE / 2;
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const bmp = await createImageBitmap(new Blob([b64(lvl.heightWebp)], { type: 'image/webp' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+const DIM = bmp.width, TPM = (DIM - 1) / SIZE;
+const oc = new OffscreenCanvas(DIM, DIM).getContext('2d'); oc.drawImage(bmp, 0, 0);
+const px = oc.getImageData(0, 0, DIM, DIM).data;
+const heights = new Float32Array(DIM * DIM);
+for (let i = 0; i < heights.length; i++) heights[i] = ((px[i * 4] << 8 | px[i * 4 + 1]) - 32768) / 10;
+const hc = (x, z) => { const i = Math.min(DIM - 1, Math.max(0, (x + HALF) * TPM | 0)), j = Math.min(DIM - 1, Math.max(0, (z + HALF) * TPM | 0)); return heights[j * DIM + i]; };
+const tb = b64(lvl.treesBin), tdv = new DataView(tb.buffer), TREES = new Float32Array(tb.length / 7 * 4);
+for (let o = 0, t = 0; o + 7 <= tb.length; o += 7, t += 4) TREES.set([tdv.getUint16(o, true) / 10 - HALF, tdv.getUint16(o + 2, true) / 10 - HALF, tb[o + 5] / 100, tb[o + 4] * Math.PI / 128], t);
+
+// --- maths (column-major) ---
+const mul = (a, b) => { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; };
+const persp = gpu => { const f = 1 / Math.tan(FOVY / 2), m = new Float32Array(16); m[0] = f / ASPECT; m[5] = f; m[11] = -1;
+  if (gpu) { m[10] = FAR / (NEAR - FAR); m[14] = FAR * NEAR / (NEAR - FAR); } else { m[10] = (FAR + NEAR) / (NEAR - FAR); m[14] = 2 * FAR * NEAR / (NEAR - FAR); } return m; };
+const norm = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const lookAt = (e, t) => { const z = norm([e[0] - t[0], e[1] - t[1], e[2] - t[2]]), x = norm(cross([0, 1, 0], z)), y = cross(z, x);
+  return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]); };
+const planesOf = m => { const row = r => [m[r], m[4 + r], m[8 + r], m[12 + r]], [r0, r1, r2, r3] = [0, 1, 2, 3].map(row), out = new Float32Array(24);
+  [[1, r0], [-1, r0], [1, r1], [-1, r1], [1, r2], [-1, r2]].forEach(([s, r], i) => { const p = r3.map((v, k) => v + s * r[k]), l = Math.hypot(p[0], p[1], p[2]); out.set(p.map(v => v / l), i * 4); }); return out; };
+const PROJ_GL = persp(false), PROJ_GPU = persp(true);
+const camera = t => { // fixed loop, 40 m/s, a few metres above the ground like the chase cam
+  const R = 1500, a = t * 40 / R, p = [R * Math.cos(a), R * Math.sin(a)], f = [-Math.sin(a), Math.cos(a)];
+  const y = Math.max(hc(p[0], p[1]), hc(p[0] + f[0] * 30, p[1] + f[1] * 30)) + 4;
+  return { eye: [p[0], y, p[1]], target: [p[0] + f[0] * 100, y - 8, p[1] + f[1] * 100] };
+};
+
+// --- world: three grids of objects (one object = one draw today) ---
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function treeBins(s) { const g = Math.ceil(SIZE / s), bins = new Uint32Array(g * g + 1), order = new Uint32Array(TREES.length / 4), cell = new Uint32Array(order.length);
+  for (let t = 0; t < order.length; t++) { const i = Math.min(g - 1, (TREES[t * 4] + HALF) / s | 0), j = Math.min(g - 1, (TREES[t * 4 + 1] + HALF) / s | 0); cell[t] = j * g + i; bins[cell[t] + 1]++; }
+  for (let c = 0; c < g * g; c++) bins[c + 1] += bins[c];
+  const fill = bins.slice(0, g * g); for (let t = 0; t < order.length; t++) order[fill[cell[t]]++] = t; return { bins, order }; }
+// objs stride 6: firstInstance, instanceCount, sphere centre xyz, radius
+function build(k, s, withInst) {
+  const g = Math.ceil(SIZE / s), objs = [], tbin = k === 2 ? treeBins(s) : null, rnd = rng(k * 7919 + 1);
+  const total = k === 0 ? g * g : k === 1 ? g * g * COVER_PER : TREES.length / 4;
+  const inst = withInst ? new Float32Array(total * 4) : null; let n = 0;
+  for (let j = 0; j < g; j++) for (let i = 0; i < g; i++) {
+    const x0 = -HALF + i * s, z0 = -HALF + j * s, first = n;
+    if (k === 0) { if (inst) inst.set([x0, z0, s, 0], n * 4); n++; }
+    else if (k === 1) { if (inst) for (let c = 0; c < COVER_PER; c++) inst.set([x0 + rnd() * s, z0 + rnd() * s, 0.6 + rnd() * 0.6, rnd() * 6.28], (n + c) * 4); n += COVER_PER; }
+    else { const a = tbin.bins[j * g + i], b = tbin.bins[j * g + i + 1]; if (a === b) continue;
+      if (inst) for (let q = a; q < b; q++) inst.set(TREES.subarray(tbin.order[q] * 4, tbin.order[q] * 4 + 4), (n + q - a) * 4); n += b - a; }
+    objs.push(first, n - first, x0 + s / 2, hc(x0 + s / 2, z0 + s / 2) + (k === 2 ? 7 : 0), z0 + s / 2, s * 0.71 + RADIUS_PAD[k]);
+  }
+  return { objs: new Float32Array(objs), inst, s };
+}
+const cull = (objs, pl, out) => { let n = 0;
+  for (let o = 0; o < objs.length; o += 6) { const x = objs[o + 2], y = objs[o + 3], z = objs[o + 4], r = objs[o + 5]; let ok = true;
+    for (let p = 0; p < 24; p += 4) if (pl[p] * x + pl[p + 1] * y + pl[p + 2] * z + pl[p + 3] < -r) { ok = false; break; }
+    if (ok) out[n++] = o; } return n; };
+// Size each grid's cells so the visible draws along the path average out at N * FR[k].
+const calibCams = Array.from({ length: 8 }, (_, i) => { const c = camera(WARM + SECS * i / 8); return planesOf(mul(PROJ_GL, lookAt(c.eye, c.target))); });
+const KINDS = [0, 1, 2].map(k => {
+  const target = N * FR[k]; let s = Math.sqrt(FAR * FAR * Math.tan(Math.atan(Math.tan(FOVY / 2) * ASPECT)) / target);
+  for (let it = 0; it < 4; it++) { const { objs } = build(k, s, false), tmp = new Int32Array(objs.length / 6);
+    const v = calibCams.reduce((a, pl) => a + cull(objs, pl, tmp), 0) / calibCams.length; s *= Math.sqrt(v / target); }
+  return build(k, s, true);
+});
+// Terrain chunk mesh resolution follows chunk size so the triangle load stays roughly constant across N.
+const grid = G => { const v = [], ix = []; for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) v.push(i / G, 0, j / G, i / G, j / G);
+  for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const a = j * (G + 1) + i; ix.push(a, a + G + 1, a + 1, a + 1, a + G + 1, a + G + 2); }
+  return { v: new Float32Array(v), i: new Uint16Array(ix) }; };
+const cross2 = () => ({ v: new Float32Array([-.5, 0, 0, 0, 0, .5, 0, 0, 1, 0, .5, 1, 0, 1, 1, -.5, 1, 0, 0, 1, 0, 0, -.5, 0, 0, 0, 0, .5, 1, 0, 0, 1, .5, 1, 1, 0, 1, -.5, 0, 1]), i: new Uint16Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]) });
+const MESH = [grid(Math.max(4, Math.min(64, Math.round(KINDS[0].s / 5)))), cross2(), cross2()];
+const tintOf = (k, o) => { const f = 0.9 + 0.2 * ((o * 0.618) % 1); return BASE_TINT[k].map(c => c * f); };
+
+// --- shaders ---
+const WGSL_COMMON = `
+struct Frame { vp: mat4x4f, cam: vec4f, map: vec4f, planes: array<vec4f, 6> };
+@group(0) @binding(0) var<uniform> F: Frame;
+@group(0) @binding(1) var hm: texture_2d<f32>;
+override KIND: u32 = 0u;
+fn H(x: f32, z: f32) -> f32 {
+  let d = i32(F.map.z);
+  let u = clamp(vec2i(i32((x + F.map.x) * F.map.y), i32((z + F.map.x) * F.map.y)), vec2i(0), vec2i(d - 1));
+  return textureLoad(hm, u, 0).r;
+}`;
+const WGSL_RENDER = WGSL_COMMON + `
+struct Obj { model: mat4x4f, tint: vec4f };
+@group(1) @binding(0) var<uniform> O: Obj;
+@group(1) @binding(1) var<storage, read> vis: array<vec4f>;
+struct VO { @builtin(position) p: vec4f, @location(0) c: vec3f, @location(1) uv: vec2f };
+fn baseTint() -> vec3f { if (KIND == 0u) { return vec3f(0.36, 0.42, 0.22); } if (KIND == 1u) { return vec3f(0.45, 0.55, 0.25); } return vec3f(0.12, 0.28, 0.14); }
+fn place(pos: vec3f, uv: vec2f, s: vec4f, model: mat4x4f, tint: vec3f) -> VO {
+  var o: VO; var w: vec3f; var shade: f32;
+  if (KIND == 0u) {
+    let x = s.x + pos.x * s.z; let z = s.y + pos.z * s.z; let e = 4.0;
+    let n = normalize(vec3f(H(x - e, z) - H(x + e, z), 2.0 * e, H(x, z - e) - H(x, z + e)));
+    w = vec3f(x, H(x, z), z); shade = 0.35 + 0.65 * max(dot(n, normalize(vec3f(0.4, 0.8, 0.3))), 0.0);
+  } else {
+    let big = select(vec2f(0.6, 0.5), vec2f(8.0, 14.0), KIND == 2u) * s.z;
+    let c = cos(s.w); let sn = sin(s.w);
+    let r = vec2f(pos.x * c - pos.z * sn, pos.x * sn + pos.z * c) * big.x;
+    w = vec3f(s.x + r.x, H(s.x, s.y) + pos.y * big.y, s.y + r.y); shade = 0.6 + 0.4 * pos.y;
+  }
+  o.p = F.vp * model * vec4f(w, 1.0); o.c = tint * shade; o.uv = uv; return o;
+}
+@vertex fn vs_b(@location(0) pos: vec3f, @location(1) uv: vec2f, @location(2) s: vec4f) -> VO { return place(pos, uv, s, O.model, O.tint.rgb); }
+@vertex fn vs_c(@location(0) pos: vec3f, @location(1) uv: vec2f, @builtin(instance_index) i: u32) -> VO {
+  return place(pos, uv, vis[i], mat4x4f(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0), baseTint());
+}
+@fragment fn fs(v: VO) -> @location(0) vec4f {
+  if (KIND == 2u && abs(v.uv.x - 0.5) > 0.5 * (1.0 - v.uv.y)) { discard; }
+  if (KIND == 1u && length(v.uv - vec2f(0.5, 0.3)) > 0.5) { discard; }
+  return vec4f(v.c, 1.0);
+}`;
+const WGSL_CULL = WGSL_COMMON + `
+@group(1) @binding(0) var<storage, read> src: array<vec4f>;
+@group(1) @binding(1) var<storage, read_write> dst: array<vec4f>;
+@group(1) @binding(2) var<storage, read_write> args: array<atomic<u32>, 5>;
+@compute @workgroup_size(64) fn cull(@builtin(global_invocation_id) g: vec3u) {
+  let i = g.x + g.y * 4194240u;
+  if (i >= arrayLength(&src)) { return; }
+  let s = src[i]; var c: vec3f; var r: f32;
+  if (KIND == 0u) { c = vec3f(s.x + s.z * 0.5, H(s.x + s.z * 0.5, s.y + s.z * 0.5), s.y + s.z * 0.5); r = s.z * 0.71 + 40.0; }
+  else if (KIND == 1u) { c = vec3f(s.x, H(s.x, s.y) + 0.3, s.y); r = 0.6 * s.z; }
+  else { c = vec3f(s.x, H(s.x, s.y) + 7.0 * s.z, s.y); r = 8.0 * s.z; }
+  for (var p = 0; p < 6; p++) { let q = F.planes[p]; if (dot(q.xyz, c) + q.w < -r) { return; } }
+  dst[atomicAdd(&args[1], 1u)] = s;
+}`;
+const GLSL_VS = `#version 300 es
+precision highp float; precision highp int; precision highp sampler2D;
+layout(location=0) in vec3 pos; layout(location=1) in vec2 uv; layout(location=2) in vec4 s;
+uniform mat4 uVP; uniform mat4 uModel; uniform vec4 uTint; uniform vec4 uMap; uniform sampler2D hm;
+out vec3 vc; out vec2 vuv;
+float H(float x, float z) { int d = int(uMap.z); ivec2 u = clamp(ivec2(int((x + uMap.x) * uMap.y), int((z + uMap.x) * uMap.y)), ivec2(0), ivec2(d - 1)); return texelFetch(hm, u, 0).r; }
+void main() { vec3 w; float shade;
+#if KIND == 0
+  float x = s.x + pos.x * s.z, z = s.y + pos.z * s.z, e = 4.0;
+  vec3 n = normalize(vec3(H(x - e, z) - H(x + e, z), 2.0 * e, H(x, z - e) - H(x, z + e)));
+  w = vec3(x, H(x, z), z); shade = 0.35 + 0.65 * max(dot(n, normalize(vec3(0.4, 0.8, 0.3))), 0.0);
+#else
+  vec2 big = (KIND == 2 ? vec2(8.0, 14.0) : vec2(0.6, 0.5)) * s.z;
+  float c = cos(s.w), sn = sin(s.w); vec2 r = vec2(pos.x * c - pos.z * sn, pos.x * sn + pos.z * c) * big.x;
+  w = vec3(s.x + r.x, H(s.x, s.y) + pos.y * big.y, s.y + r.y); shade = 0.6 + 0.4 * pos.y;
+#endif
+  gl_Position = uVP * uModel * vec4(w, 1.0); vc = uTint.rgb * shade; vuv = uv; }`;
+const GLSL_FS = `#version 300 es
+precision highp float;
+in vec3 vc; in vec2 vuv; out vec4 o;
+void main() {
+#if KIND == 2
+  if (abs(vuv.x - 0.5) > 0.5 * (1.0 - vuv.y)) discard;
+#elif KIND == 1
+  if (length(vuv - vec2(0.5, 0.3)) > 0.5) discard;
+#endif
+  o = vec4(vc, 1.0); }`;
+const IDENT = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+// --- renderers: frame(vp, planes, visible, sampling) -> draw calls issued ---
+function initGL(canvas) {
+  const gl = canvas.getContext('webgl2', { antialias: false, powerPreference: 'high-performance' });
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info'), timer = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, DIM, DIM, 0, gl.RED, gl.FLOAT, heights);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const K = KINDS.map((kd, k) => {
+    const def = src => src.replace('\n', `\n#define KIND ${k}\n`), prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, def(GLSL_VS))); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, def(GLSL_FS))); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, MESH[k].v, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, MESH[k].i, gl.STATIC_DRAW);
+    const ib = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.bufferData(gl.ARRAY_BUFFER, kd.inst, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(2); gl.vertexAttribDivisor(2, 1);
+    const u = n => gl.getUniformLocation(prog, n);
+    return { prog, vao, ib, n: MESH[k].i.length, uVP: u('uVP'), uModel: u('uModel'), uTint: u('uTint'), uMap: u('uMap'), hm: u('hm') };
+  });
+  gl.enable(gl.DEPTH_TEST); gl.clearColor(0.55, 0.65, 0.75, 1); gl.viewport(0, 0, W, HGT);
+  const pending = [], gpu = [];
+  return { info: { renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), timer_query: !!timer }, gpu,
+    frame(vp, pl, visible, sampling) {
+      while (pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)) { const q = pending.shift(); if (!gl.getParameter(timer.GPU_DISJOINT_EXT)) gpu.push(gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6); gl.deleteQuery(q); }
+      let q = null; if (timer && sampling) { q = gl.createQuery(); gl.beginQuery(timer.TIME_ELAPSED_EXT, q); }
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); let draws = 0;
+      K.forEach((r, k) => {
+        const { objs } = KINDS[k], [list, cnt] = visible[k];
+        gl.useProgram(r.prog); gl.bindVertexArray(r.vao); gl.uniformMatrix4fv(r.uVP, false, vp); gl.uniform4f(r.uMap, HALF, TPM, DIM, 0); gl.uniform1i(r.hm, 0);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.bindBuffer(gl.ARRAY_BUFFER, r.ib);
+        for (let v = 0; v < cnt; v++) { const o = list[v], t = tintOf(k, o);
+          gl.uniformMatrix4fv(r.uModel, false, IDENT); gl.uniform4f(r.uTint, t[0], t[1], t[2], 1);
+          gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 16, objs[o] * 16);
+          gl.drawElementsInstanced(gl.TRIANGLES, r.n, gl.UNSIGNED_SHORT, 0, objs[o + 1]); draws++; }
+      });
+      if (q) { gl.endQuery(timer.TIME_ELAPSED_EXT); pending.push(q); }
+      return draws;
+    } };
+}
+
+async function initGPU(canvas, driven) {
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  const ts = adapter.features.has('timestamp-query');
+  const device = await adapter.requestDevice({ requiredFeatures: ts ? ['timestamp-query'] : [] });
+  device.addEventListener('uncapturederror', e => { status.textContent += '\nGPU error: ' + e.error.message; });
+  const ctx = canvas.getContext('webgpu'), format = navigator.gpu.getPreferredCanvasFormat(); ctx.configure({ device, format, alphaMode: 'opaque' });
+  const U = GPUBufferUsage, S = GPUShaderStage;
+  const depth = device.createTexture({ size: [W, HGT], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT }).createView();
+  const buf = (data, usage) => { const b = device.createBuffer({ size: Math.max(16, data.byteLength + 3 & ~3), usage: usage | U.COPY_DST }); device.queue.writeBuffer(b, 0, data); return b; };
+  const frameBuf = device.createBuffer({ size: 192, usage: U.UNIFORM | U.COPY_DST }), frameData = new Float32Array(48);
+  const hm = device.createTexture({ size: [DIM, DIM], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+  device.queue.writeTexture({ texture: hm }, heights, { bytesPerRow: DIM * 4 }, [DIM, DIM]);
+  const g0L = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: S.VERTEX | S.FRAGMENT | S.COMPUTE, buffer: {} }, { binding: 1, visibility: S.VERTEX | S.COMPUTE, texture: { sampleType: 'unfilterable-float' } }] });
+  const g0 = device.createBindGroup({ layout: g0L, entries: [{ binding: 0, resource: { buffer: frameBuf } }, { binding: 1, resource: hm.createView() }] });
+  const g1L = driven ? device.createBindGroupLayout({ entries: [{ binding: 1, visibility: S.VERTEX, buffer: { type: 'read-only-storage' } }] })
+    : device.createBindGroupLayout({ entries: [{ binding: 0, visibility: S.VERTEX, buffer: { type: 'uniform', hasDynamicOffset: true } }] });
+  const rmod = device.createShaderModule({ code: WGSL_RENDER }), layout = device.createPipelineLayout({ bindGroupLayouts: [g0L, g1L] });
+  const meshL = { arrayStride: 20, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x2' }] };
+  const instL = { arrayStride: 16, stepMode: 'instance', attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x4' }] };
+  const totalObjs = KINDS.reduce((a, kd) => a + kd.objs.length / 6, 0);
+  const objBuf = driven ? null : device.createBuffer({ size: totalObjs * 256, usage: U.UNIFORM | U.COPY_DST }), objData = driven ? null : new Float32Array(totalObjs * 64);
+  const objBG = driven ? null : device.createBindGroup({ layout: g1L, entries: [{ binding: 0, resource: { buffer: objBuf, size: 80 } }] });
+  let cullL, cmod; if (driven) { cmod = device.createShaderModule({ code: WGSL_CULL });
+    cullL = device.createPipelineLayout({ bindGroupLayouts: [g0L, device.createBindGroupLayout({ entries: [0, 1, 2].map(b => ({ binding: b, visibility: S.COMPUTE, buffer: { type: b ? 'storage' : 'read-only-storage' } })) })] }); }
+  const K = KINDS.map((kd, k) => {
+    const r = { vb: buf(MESH[k].v, U.VERTEX), ixb: buf(MESH[k].i, U.INDEX), n: MESH[k].i.length, count: kd.inst.length / 4 };
+    r.pipe = device.createRenderPipeline({ layout, vertex: { module: rmod, entryPoint: driven ? 'vs_c' : 'vs_b', constants: { KIND: k }, buffers: driven ? [meshL] : [meshL, instL] },
+      fragment: { module: rmod, entryPoint: 'fs', constants: { KIND: k }, targets: [{ format }] }, primitive: { topology: 'triangle-list' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' } });
+    if (!driven) { r.ib = buf(kd.inst, U.VERTEX); return r; }
+    const src = buf(kd.inst, U.STORAGE), dst = device.createBuffer({ size: kd.inst.byteLength, usage: U.STORAGE });
+    r.args = buf(new Uint32Array([r.n, 0, 0, 0, 0]), U.STORAGE | U.INDIRECT);
+    r.cull = device.createComputePipeline({ layout: cullL, compute: { module: cmod, entryPoint: 'cull', constants: { KIND: k } } });
+    r.cbg = device.createBindGroup({ layout: r.cull.getBindGroupLayout(1), entries: [src, dst, r.args].map((b, i) => ({ binding: i, resource: { buffer: b } })) });
+    r.rbg = device.createBindGroup({ layout: g1L, entries: [{ binding: 1, resource: { buffer: dst } }] });
+    const groups = Math.ceil(r.count / 64); r.disp = [Math.min(groups, 65535), Math.ceil(groups / 65535)];
+    return r;
+  });
+  const qs = ts ? device.createQuerySet({ type: 'timestamp', count: 4 }) : null, resolve = ts ? device.createBuffer({ size: 32, usage: U.QUERY_RESOLVE | U.COPY_SRC }) : null;
+  const free = [], gpu = [], zero = new Uint32Array([0]);
+  const info = adapter.info || {};
+  return { info: { vendor: info.vendor, architecture: info.architecture, description: info.description, timestamp_query: ts }, gpu,
+    frame(vp, pl, visible, sampling) {
+      frameData.set(vp, 0); frameData.set([HALF, TPM, DIM, 0], 20); frameData.set(pl, 24); device.queue.writeBuffer(frameBuf, 0, frameData);
+      const enc = device.createCommandEncoder(); let draws = 0, slot = 0;
+      const time = ts && sampling;
+      if (driven) {
+        K.forEach(r => device.queue.writeBuffer(r.args, 4, zero));
+        const cp = enc.beginComputePass(time ? { timestampWrites: { querySet: qs, beginningOfPassWriteIndex: 2, endOfPassWriteIndex: 3 } } : undefined);
+        cp.setBindGroup(0, g0); K.forEach(r => { cp.setPipeline(r.cull); cp.setBindGroup(1, r.cbg); cp.dispatchWorkgroups(r.disp[0], r.disp[1]); }); cp.end();
+      } else {
+        K.forEach((r, k) => { const [list, cnt] = visible[k]; for (let v = 0; v < cnt; v++, slot++) { objData.set(IDENT, slot * 64); objData.set(tintOf(k, list[v]), slot * 64 + 16); } });
+        if (slot) device.queue.writeBuffer(objBuf, 0, objData, 0, slot * 64);
+      }
+      const pass = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0.55, 0.65, 0.75, 1] }],
+        depthStencilAttachment: { view: depth, depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: 1 },
+        timestampWrites: time ? { querySet: qs, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } : undefined });
+      pass.setBindGroup(0, g0); slot = 0;
+      K.forEach((r, k) => {
+        pass.setPipeline(r.pipe); pass.setVertexBuffer(0, r.vb); pass.setIndexBuffer(r.ixb, 'uint16');
+        if (driven) { pass.setBindGroup(1, r.rbg); pass.drawIndexedIndirect(r.args, 0); draws++; return; }
+        const { objs } = KINDS[k], [list, cnt] = visible[k];
+        for (let v = 0; v < cnt; v++, slot++) { const o = list[v];
+          pass.setBindGroup(1, objBG, [slot * 256]); pass.setVertexBuffer(1, r.ib, objs[o] * 16, objs[o + 1] * 16);
+          pass.drawIndexed(r.n, objs[o + 1]); draws++; }
+      });
+      pass.end();
+      let rb = null;
+      if (time) { enc.resolveQuerySet(qs, 0, 4, resolve, 0); rb = free.pop() || device.createBuffer({ size: 32, usage: U.MAP_READ | U.COPY_DST }); enc.copyBufferToBuffer(resolve, 0, rb, 0, 32); }
+      device.queue.submit([enc.finish()]);
+      if (rb) rb.mapAsync(GPUMapMode.READ).then(() => { const t = new BigInt64Array(rb.getMappedRange()); const d = Number(t[1] - (driven ? t[2] : t[0])) / 1e6; if (d > 0 && d < 1000) gpu.push(d); rb.unmap(); free.push(rb); });
+      return draws;
+    } };
+}
+
+// --- run ---
+const canvas = document.getElementById('c');
+let R;
+try { R = MODE === 'webgl' ? initGL(canvas) : await initGPU(canvas, MODE === 'gpu'); }
+catch (e) { status.textContent = 'init failed: ' + e.message; throw e; }
+const visible = KINDS.map(kd => [new Int32Array(kd.objs.length / 6), 0]);
+const S = { cpu: [], frame: [], draws: [], vis: [] };
+let start = null, last = null;
+status.textContent = `running mode=${MODE} n=${N} for ${SECS}s…`;
+function tick(now) {
+  if (start === null) start = now;
+  const t = (now - start) / 1000, sampling = t > WARM;
+  const c0 = performance.now();
+  const cam = camera(t), view = lookAt(cam.eye, cam.target), pl = planesOf(mul(PROJ_GL, view));
+  let vis = 0;
+  if (MODE !== 'gpu') KINDS.forEach((kd, k) => { visible[k][1] = cull(kd.objs, pl, visible[k][0]); vis += visible[k][1]; });
+  const draws = R.frame(mul(MODE === 'webgl' ? PROJ_GL : PROJ_GPU, view), pl, visible, sampling);
+  const cpu = performance.now() - c0;
+  if (sampling && last !== null) { S.cpu.push(cpu); S.frame.push(now - last); S.draws.push(draws); S.vis.push(vis); }
+  last = now;
+  if (t < WARM + SECS) requestAnimationFrame(tick); else setTimeout(finish, 500);
+}
+const stat = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), q = p => s[Math.min(s.length - 1, Math.floor(p * s.length))], r = v => Math.round(v * 1000) / 1000;
+  return { avg: r(a.reduce((x, y) => x + y, 0) / a.length), p95: r(q(0.95)), p99: r(q(0.99)), max: r(s[s.length - 1]) }; };
+function finish() {
+  const res = { mode: MODE, n: N, secs: SECS, frames: S.cpu.length, cpu_ms: stat(S.cpu), frame_ms: stat(S.frame), gpu_ms: stat(R.gpu),
+    draws_avg: stat(S.draws).avg, visible_objects_avg: MODE === 'gpu' ? null : stat(S.vis).avg,
+    objects_total: KINDS.map(kd => kd.objs.length / 6), instances_total: KINDS.map(kd => kd.inst.length / 4), cell_m: KINDS.map(kd => Math.round(kd.s)),
+    terrain_grid: Math.round(Math.sqrt(MESH[0].i.length / 6)), canvas: [W, HGT], ua: navigator.userAgent, adapter: R.info };
+  const json = JSON.stringify(res);
+  console.log('SPIKE_RESULT ' + json); window.__spikeResult = res;
+  if (suiteIdx >= 0) {
+    let all = []; try { all = suiteIdx ? JSON.parse(localStorage.getItem('webgpu-spike-suite') || '[]') : []; } catch {}
+    all.push(res); try { localStorage.setItem('webgpu-spike-suite', JSON.stringify(all)); } catch {}
+    if (suiteIdx + 1 < SUITE.length) { location.search = `?suite=${suiteIdx + 1}&secs=${SECS}`; return; }
+    window.__spikeSuite = all; document.getElementById('result').textContent = JSON.stringify(all, null, 1); document.title = 'SUITE DONE'; status.textContent = 'suite done'; return;
+  }
+  document.getElementById('result').textContent = json; document.title = 'DONE'; status.textContent = 'done';
+}
+requestAnimationFrame(tick);
+</script></body></html>

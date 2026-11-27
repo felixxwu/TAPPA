@@ -12,7 +12,7 @@
 | If you want… | Read |
 | --- | --- |
 | The gist (you are here) | this file |
-| Why any given thing is the way it is | `todo/2026-10-19-free-roam-pivot.md`: decisions 1–32 agreed with the user, D33 onward logged during the autonomous build for review |
+| Why any given thing is the way it is | `todo/2026-10-19-free-roam-pivot.md` (deleted 2026-11-27; read it from git history with `git log --all -- <path>`): decisions 1–32 agreed with the user, D33 onward logged during the autonomous build for review |
 | The design north star | `gameplay.md` |
 | How any one system works today | `features/` (indexed in `features/README.md`); start with `free-roam.md`, `world-session.md`, `loot.md` |
 
@@ -126,13 +126,14 @@ two minutes instead of reading 1,661 lines of spec.
 | If you want… | Read |
 | --- | --- |
 | The gist (you are here) | this file |
-| Why any given thing is the way it is | `todo/roguelike-pivot.md` — **54 numbered decisions, authoritative** |
+| Why any given thing is the way it is | `todo/roguelike-pivot.md` (deleted 2026-11-27; read it from git history with `git log --all -- <path>`) — **54 numbered decisions** |
 | The task sequence that built it | `todo/roguelike-pivot-plan.md` (deleted — every stage landed) |
 | The design north star | `gameplay.md` |
 | How any one system works today | `features/` (indexed in `features/README.md`) |
 
 Decisions are cited by number from ~30 `features/` docs and dozens of code comments
-("decision 51", "decision 30"). Those numbers resolve to `todo/roguelike-pivot.md`.
+("decision 51", "decision 30"). Those numbers resolve to `todo/roguelike-pivot.md`, now only in git
+history.
 
 ---
 
@@ -257,7 +258,7 @@ survives only to backfill a key missing from a correctly-versioned profile.
 ## A second, smaller pivot: region stage slots (2026-09)
 
 After the roguelike pivot shipped, the authored-rally-pool model it introduced
-(decision 7) was itself replaced: `todo/region-stage-slots-redesign.md` swaps the
+(decision 7) was itself replaced: `todo/region-stage-slots-redesign.md` (deleted, in git history) swaps the
 flat per-region pool + difficulty-sort draw for a fixed 8-slot × 3-candidate grid
 per region. The `RallyLibrary.RALLIES` wrapper (named rallies, `restriction`,
 `special`, `map_pos` — all pre-pivot residue `features/rally-roster.md` had been

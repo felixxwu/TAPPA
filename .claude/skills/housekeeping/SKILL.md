@@ -225,8 +225,7 @@ else in this sweep.
 - If a PERSISTED KEY STRING was renamed (e.g. the skills rename keeping
   `"bought_perks"`), check the old name survives on disk deliberately and the
   const's comment says so — renaming the string is the data-loss trap here.
-- Check `todo/web-save-persistence.md` against what's landed (§5 rules apply), and
-  confirm `features/save-persistence.md` documents the current schema version.
+- Confirm `features/save-persistence.md` documents the current schema version.
 
 ### 14. Generated data caches
 
@@ -335,7 +334,7 @@ propose wins, don't delete assets or re-encode audio unasked.
 
 The game's design principle is that it's **inherently low-end** — one lean
 pipeline that must run on old phones, no quality-tier switch
-(`todo/performance-optimisations.md`, `features/rendering.md`). This pass is a
+(`features/rendering.md`). This pass is a
 **static regression check** that recent work hasn't quietly eroded that. It's a
 report — don't re-tune values, flag drift. (Actually *measuring* frame cost is a
 separate, heavier step: the in-game **Settings → Benchmark**
@@ -365,18 +364,16 @@ real suspect — the housekeeping pass itself is grep/read-level.)
 - **New MultiMesh / instanced fields stay bounded.** Any new instanced field must
   set `visible_instance_count` or a `visibility_range_*` / LOD cull (the pattern
   in `scripts/tree_mesh_field.gd`) — an unbounded `MultiMesh` that vertex-
-  processes every instance every frame is the single biggest GPU regression
-  (`todo/performance-optimisations.md` §2). Grep new/changed fields:
+  processes every instance every frame is the single biggest GPU regression. Grep new/changed fields:
   `grep -rn "MultiMesh\|instance_count\|visible_instance_count\|visibility_range" scripts/`.
 - **No new per-frame allocations in hot paths.** `_process` / `_physics_process`
   / the audio `fill()` should not allocate dicts/arrays per tick — GC pressure
-  hits low-end hardest (`todo/performance-optimisations.md` §6, §8, §10, §11,
-  all marked DONE; a regression re-introduces them). Spot-check
+  hits low-end hardest. Spot-check
   `car.gd`, `drivetrain.gd`, `engine_audio*.gd`, `hud.gd` for dict/array
   literals or `slice()`/`+`-concat inside per-tick bodies where a reused scratch
   belongs.
 - **New textures carry mipmaps.** A big instanced texture without mipmaps
-  thrashes the mobile texture cache and aliases (`todo/…` §1). Check that new
+  thrashes the mobile texture cache and aliases. Check that new
   entries under `textures/` have `mipmaps/generate=true` in their `.import`,
   especially anything instanced at distance (foliage, ground).
 - **New shaders stay mobile-cheap.** GL Compatibility, `unshaded`, no per-
@@ -387,17 +384,13 @@ real suspect — the housekeeping pass itself is grep/read-level.)
   stage.
 - **Single-threaded web export intact.** `export_presets.cfg` ships
   `variant/thread_support=false` for maximum device reach
-  (`todo/…` §7). Flag if it flipped back to `true`, or if new code makes a
+  Flag if it flipped back to `true`, or if new code makes a
   web-critical path depend on `WorkerThreadPool` (terrain gen already routes web
   through the frame-budgeted main-thread queue — new code shouldn't reintroduce a
   thread dependency there).
 - **No quality-tier switch crept in.** There is exactly one shipped value per
   knob — no "high/low graphics" branch. Flag any new code that forks the render
   path by device class instead of shipping the single lean value.
-- **Cross-reference the perf spec.** Skim `todo/performance-optimisations.md` for
-  still-open items (foliage view-cone cull + visible cap, a bush mesh, tree
-  collision-box culling) — note if recent work landed any of them (update the
-  spec per the `todo/` rules in `CLAUDE.md`) or made an open one more pressing.
 
 ### 18. Codebase-wide simplification pass
 
