@@ -105,14 +105,14 @@ var banner := CheckpointBanner.new()  # free roam's "Checkpoint reached" band, h
 var _service_point := -1
 var applied_fps_caps: Array[int] = []
 var perf_stats := LevelStats.new()
+var weather_ratio := 1.0  # share of each weather's particles drawn (adaptive graphics)
+var adaptive: AdaptiveGraphics
 var _driving := false  # true once loaded, so a half-built level never overwrites the saved spot
 const GROUP := &"level_view"
 
 
 func _ready() -> void:
 	add_to_group(GROUP)
-	if not Benchmark.active:
-		GraphicsSettings.apply(Config.data)
 	var path := level_path if not level_path.is_empty() else Config.data.level_path
 	var t_parse := Time.get_ticks_msec()
 	load_ms = {"engine_to_ready": t_parse}
@@ -266,6 +266,9 @@ func _ready() -> void:
 	timer.timeout.connect(save_pose)
 	add_child(timer)
 	timer.start()
+	adaptive = AdaptiveGraphics.new()
+	add_child(adaptive)
+	adaptive.setup(self)
 	perf_stats.view = self
 	add_child(perf_stats)
 	loaded.emit()
@@ -331,7 +334,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		open_store(shop_at())
 	elif event.is_action_pressed("toggle_perf_overlay") and not event.is_echo():
-		perf_stats.toggle()
+		perf_stats.cycle()
 
 
 func _on_extra(label: String) -> void:
@@ -524,8 +527,10 @@ static func money() -> int:
 
 
 # A player owns a car once they've bought one; until then the level opens on the start shop instead of driving.
+static var recording := false  # the level replay is recording a drive: always field a car
+
 static func has_car() -> bool:
-	return Benchmark.active or not owned_cars().is_empty()
+	return Benchmark.active or recording or not owned_cars().is_empty()
 
 
 # What delivery `m` from teleport point `t` carries, how far it drives along the roads, and what it pays.
@@ -1355,13 +1360,10 @@ func _drive(id: String) -> void:
 	_reload("Changing cars")
 
 
-# Settings → Graphics changed while driving: most of it is read while the level builds, so rebuild it here.
-func reload_for_graphics() -> void:
-	if _driving and is_instance_valid(_car):
-		_reload("Applying graphics settings")
-
-
 func _reload(title: String) -> void:
+	if adaptive != null and adaptive.controller.enabled:
+		adaptive.save()
+		adaptive.controller.enabled = false  # loading hitches aren't this device's normal frames
 	_next_pose = _car.global_transform
 	Scenes.change_to(get_tree(), Scenes.WORLD, title)
 
@@ -1428,10 +1430,39 @@ func apply_weather(id: String) -> void:
 		_particles = WeatherField.spawn(cam, kind, int(cfg.get(String(entry["particle_count"]))),
 			float(cfg.get(wind_field)) if wind_field != "" else 0.0,
 			float(cfg.get(speed_field)) if speed_field != "" else 0.0)
+		if _particles != null:
+			_particles.amount_ratio = weather_ratio
+	if adaptive != null:
+		adaptive.disturbed()
 	if HeadlightCone.has_headlights(cfg):
 		set_process(true)
 	else:
 		HeadlightCone.reset()
+
+
+## A node beside the level in its scene (the effects, the post-process view), or null.
+func effect(path: String) -> Node:
+	return get_parent().get_node_or_null(path) if get_parent() != null else null
+
+
+## How far the fog lets the camera see right now, in metres (0 when there is no fog).
+func fog_end_m() -> float:
+	var env := effect("WorldEnvironment") as WorldEnvironment
+	return env.environment.fog_depth_end if env != null and env.environment != null and env.environment.fog_enabled else 0.0
+
+
+func set_weather_ratio(f: float) -> void:
+	weather_ratio = clampf(f, 0.0, 1.0)
+	if is_instance_valid(_particles):
+		_particles.amount_ratio = weather_ratio
+
+
+## Renders the 3D world at this share of the screen's resolution (the UI stays sharp).
+func set_render_scale(f: float) -> void:
+	var view := effect("PostProcess/View") as SubViewport
+	if view != null:
+		view.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		view.scaling_3d_scale = f
 
 
 # Compiles every effect's first-use shader (and each weather's particles) before the car can be driven.
@@ -1632,8 +1663,12 @@ func _process(_dt: float) -> void:
 
 
 func _timed_process(_dt: float) -> void:
+	var __t := Time.get_ticks_usec()
 	_check_delivery()
+	PerfLog.track(&"level_view_delivery", Time.get_ticks_usec() - __t)
+	__t = Time.get_ticks_usec()
 	_place_nav_beam()
+	PerfLog.track(&"level_view_nav_beam", Time.get_ticks_usec() - __t)
 	if delivery_label != null:
 		delivery_label.text = "" if delivery.is_empty() else "Deliver %s to %s" % [delivery["cargo"], nav_target()] \
 			if delivery.has("cargo") else "Drive to %s" % nav_target()
@@ -1667,7 +1702,9 @@ func _timed_process(_dt: float) -> void:
 	if _car != null and HeadlightCone.has_headlights(Config.data):
 		HeadlightCone.push(Config.data, _car.global_transform, _car.half_width() * 2.0 if _car.has_method("half_width") else 1.8)
 	if _photo_cam == null:
+		__t = Time.get_ticks_usec()
 		_update_view(get_viewport().get_camera_3d(), false)
+		PerfLog.track(&"level_view_update_view", Time.get_ticks_usec() - __t)
 
 
 # Trees and ground cover round `cam`. `free_view` (photo mode) shows every tree in reach rather than

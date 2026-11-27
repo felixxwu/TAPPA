@@ -769,7 +769,7 @@ static func low_speed_grip_boost(cfg: GameConfig, speed_mps: float) -> float:
 	var limit_mps := cfg.low_speed_grip_boost_kmh / 3.6
 	if limit_mps <= 0.0 or speed_mps >= limit_mps:
 		return 1.0
-	return lerpf(cfg.low_speed_grip_boost_max, 1.0, speed_mps / limit_mps)
+	return lerpf(cfg.low_speed_grip_boost_max, 1.0, clampf(speed_mps / limit_mps, 0.0, 1.0))
 
 
 # Per-wheel surface grip multiplier on the base μ at a contact point. Asks the

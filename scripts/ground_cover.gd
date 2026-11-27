@@ -285,6 +285,21 @@ func set_reach_override(metres: float) -> void:
 				(mmi as MultiMeshInstance3D).visibility_range_end = far_reach() + TILE * 0.71
 
 
+## Puts the GameConfig ground_cover_* reaches and fades into effect on tiles already built.
+func refresh_reach() -> void:
+	if material == null:
+		return
+	var cfg: GameConfig = Config.data
+	var fade := Vector2(cfg.ground_cover_fade_start, cfg.ground_cover_fade_end)
+	material.set_shader_parameter("fade", fade)
+	far_material.set_shader_parameter("fade", fade)
+	set_reach_override(_reach_override)
+	for node: Node in tiles.values():
+		for mmi in node.get_children():
+			if mmi is MultiMeshInstance3D and (mmi as MultiMeshInstance3D).material_override == material:
+				(mmi as MultiMeshInstance3D).visibility_range_end = cfg.ground_cover_reach + TILE * 0.71
+
+
 func update_centre(pos: Vector3) -> void:
 	if not has_cover():
 		return

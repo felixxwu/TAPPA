@@ -360,9 +360,9 @@ var _foliage_lit := {} # the same, for apply_foliage_light: the trees and bushes
 ## LOW-SPEED GRIP BOOST: an artificial extra grip on every tyre of every car that fades out as the car
 ## speeds up. At 0 km/h tyre grip is multiplied by low_speed_grip_boost_max; it falls linearly to 1.0
 ## at low_speed_grip_boost_kmh, and above that speed there is no boost.
-@export var low_speed_grip_boost_max := 1.5
+@export var low_speed_grip_boost_max := 2
 ## Speed (km/h) at and above which the low-speed grip boost is gone (1.0x).
-@export var low_speed_grip_boost_kmh := 20.0
+@export var low_speed_grip_boost_kmh := 30.0
 ## Global tyre μ multiplier applied on top of the surface grip when weather ==
 ## WEATHER_RAIN (Drivetrain.surface_tire_params). A single multiplier regardless of
 ## surface — see features/weather.md for the per-surface trade-off this defers.
@@ -3234,7 +3234,7 @@ func spectator_params() -> Dictionary:
 ## Level view: a tree this tall or taller fells like a full-size free-roam tree; shorter ones fall over sooner (TreeFall).
 @export var level_tree_full_height_m := 22.0
 ## Level view: how far trees are drawn, in metres. They thin out over the last level_tree_fade_m in a dither (level_tree.gdshader), so the cut-off never shows. Also what the visibility bake (tools/bake_level.gd) sees.
-@export var level_tree_draw_m := 1000.0
+@export var level_tree_draw_m := 1500.0
 ## Level view: trees thin out over this many metres before level_tree_draw_m. 0 = a hard cut.
 @export var level_tree_fade_m := 60.0
 ## Level view: how far fences and hedges are drawn, in metres (they also fade over level_tree_fade_m). Posts and netting are small, so this is shorter than the trees.
@@ -3243,6 +3243,8 @@ func spectator_params() -> Dictionary:
 @export var level_fog_end_m := 1500.0
 ## Level view: the depth fog's curve (Environment.fog_depth_curve); above 1 keeps the near ground clearer.
 @export var level_fog_curve := 1.5
+## Level view: trees shorter than this (m) get no hitbox, so the car drives straight through saplings.
+@export var level_tree_min_hitbox_height_m := 6.0
 ## Level view: a tree tile gets collision boxes once the car is within this many metres of it, and loses them past twice this.
 @export var level_tree_collision_m := 60.0
 ## How far past the road's edge the level view keeps the ground flat at road height before it
@@ -3320,11 +3322,63 @@ func spectator_params() -> Dictionary:
 
 # --- Ground cover in the level view ---
 ## How far from the camera ground-cover tufts are drawn, in metres.
-@export var ground_cover_reach := 60.0
+@export var ground_cover_reach := 120.0
 ## Tufts dither out (pixel by pixel) between these two distances from the camera, in metres.
-@export var ground_cover_fade_start := 25.0
-@export var ground_cover_fade_end := 56.0
+@export var ground_cover_fade_start := 50.0
+@export var ground_cover_fade_end := 112.0
 ## Bush layers also get a cheap dome version out to this distance (metres), dithering out between the two fade distances.
-@export var ground_cover_far_reach := 90.0
-@export var ground_cover_far_fade_start := 70.0
-@export var ground_cover_far_fade_end := 90.0
+@export var ground_cover_far_reach := 200.0
+@export var ground_cover_far_fade_start := 160.0
+@export var ground_cover_far_fade_end := 200.0
+
+# --- Adaptive graphics (features/adaptive-graphics.md) ---
+## Master switch for the level view's self-tuning graphics.
+@export var adaptive_enabled := true
+## The controller aims to finish each frame within this share of the frame budget.
+@export var adaptive_margin := 0.85
+## Seconds of frames the controller judges cost over.
+@export var adaptive_window_s := 1.5
+## Over budget for this long (seconds) before a setting is cut.
+@export var adaptive_over_hold_s := 0.5
+## Spare time held for this long (seconds) before a setting is raised.
+@export var adaptive_raise_hold_s := 5.0
+## Spare time this many times a step's cost raises it without the hold.
+@export var adaptive_fast_climb_factor := 3.0
+## At least this long (seconds) between two cuts.
+@export var adaptive_drop_cooldown_s := 1.0
+## After a change, frames this long (seconds) are skipped before its effect is measured.
+@export var adaptive_settle_s := 0.75
+## Length (seconds) of the before and after windows a change is measured over.
+@export var adaptive_experiment_s := 2.0
+## A frame-time problem this soon (seconds) after a raise undoes that raise.
+@export var adaptive_revert_window_s := 4.0
+## Seconds a setting waits before another raise after its 1st, 2nd, 3rd, 4th+ failed one.
+@export var adaptive_backoff_s: Array[float] = [30.0, 60.0, 120.0, 300.0]
+## A setting's failure count falls by one after this long (seconds) without a failure.
+@export var adaptive_backoff_shrink_s := 120.0
+## Learned costs drift back to their guess over about this long (seconds) without a new measurement.
+@export var adaptive_estimate_decay_s := 300.0
+## A frame gap longer than this (ms) is a pause (hidden tab, hitch), not a slow frame.
+@export var adaptive_pause_ms := 250.0
+## A frame this many times the budget counts as a missed frame.
+@export var adaptive_miss_factor := 1.5
+## Missed frames within one window that count as over budget.
+@export var adaptive_miss_count := 3
+## How much each setting's step is worth to the look (higher is cut later). Keys are AdaptiveKnob ids.
+@export var adaptive_weights := {
+	"trees": 3.0, "cover_near": 2.0, "cover_far": 1.0, "terrain": 2.5, "surface_fx": 1.0,
+	"smoke": 0.8, "flames": 0.5, "spectators": 1.0, "weather": 0.8, "resolution": 10.0,
+}
+## A first guess (ms) at what one step of each setting costs, until it has been measured.
+@export var adaptive_priors_ms := {
+	"trees": 0.4, "cover_near": 0.5, "cover_far": 0.2, "terrain": 0.6, "surface_fx": 0.3,
+	"smoke": 0.2, "flames": 0.1, "spectators": 0.3, "weather": 0.3, "resolution": 1.0,
+}
+## A distance setting's steps: this many levels from its lowest share of the authored value up to it.
+@export var adaptive_distance_levels := 12
+## The lowest share of the authored distance a distance setting is cut to.
+@export var adaptive_distance_floor := 0.15
+## Lowest render resolution scale.
+@export var adaptive_resolution_floor := 0.5
+## Near terrain tiles are built ahead along the car's path for this many seconds of travel.
+@export var adaptive_near_lead_s := 2.5

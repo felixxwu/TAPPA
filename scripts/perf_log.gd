@@ -17,10 +17,13 @@ var _debug := OS.is_debug_build()
 # loop). `track()` always accumulates into it while `_capturing`, in any build.
 var _capturing := false
 var _cap_us: Dictionary = {}  # StringName -> accumulated usec since begin_capture
+# This frame's usec per key, in any build; the adaptive graphics sampler reads and clears it each frame.
+var _frame_us: Dictionary = {}
 
 ## Called by the timing wrappers around per-frame callbacks (see e.g.
 ## car.gd._physics_process). Accumulates cost per script between prints.
 func track(key: StringName, usec: int) -> void:
+	_frame_us[key] = int(_frame_us.get(key, 0)) + usec
 	if _capturing:
 		_cap_us[key] = int(_cap_us.get(key, 0)) + usec
 	if not _debug:
@@ -50,6 +53,14 @@ func end_capture(frame_count: int) -> Dictionary:
 	for key in keys:
 		out[String(key)] = float(_cap_us[key]) / 1000.0 / float(frame_count)
 	return out
+
+func frame_us(key: StringName) -> int:
+	return int(_frame_us.get(key, 0))
+
+
+func clear_frame() -> void:
+	_frame_us.clear()
+
 
 ## Override the cached debug flag. Exists so a test can exercise the release path
 ## (where the per-second logger is off and track() must not accumulate).

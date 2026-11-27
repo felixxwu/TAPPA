@@ -33,7 +33,7 @@ static func level_settings() -> FreeRoamSettings:
 	s.mid_stride_m = 6.0
 	s.far_stride_m = 12.0
 	s.mid_radius = 150.0 / 96.0
-	s.far_radius = 6
+	s.far_radius = 8
 	s.horizon_radius_m = 3000.0
 	return s
 

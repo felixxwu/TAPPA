@@ -128,7 +128,7 @@ func _paint(ci: CanvasItem) -> void:
 	var px := float(_vp.size.x)
 	var ui := px / maxf(size.x, 1.0) * 0.7 * Config.data.level_minimap_view_m / _pic_m  # marks the same size on screen as before the picture grew
 	ci.draw_rect(Rect2(Vector2.ZERO, Vector2(px, px)), LevelMap.FOG)
-	map.paint(ci, _xf, px / _pic_m, ui, _route)
+	map.paint(ci, _xf, px / _pic_m, ui, _route, Rect2(_drawn_at - Vector2.ONE * _pic_m * 0.5, Vector2.ONE * _pic_m))
 	map.paint_teleports(ci, _xf, ui)
 
 

@@ -132,7 +132,7 @@ overlay), passing the `Floor` terrain manager for correlation and pointing
 `measure_viewport` at the `PostProcess/View` SubViewport (where the 3D pass
 actually runs in `main.tscn` — the root's 3D is disabled there). Toggled with
 **P** (`toggle_perf_overlay`); hidden and idle by default. It lives on the dev stage only: in free roam P toggles
-`DebugStats` instead, and on the Hafren level (`LevelView`) it toggles `LevelStats` (below).
+`DebugStats` instead, and on the Hafren level (`LevelView`) it cycles `LevelStats` (below) through off → perf → adaptive graphics ([adaptive-graphics.md](adaptive-graphics.md)).
 
 **Hafren level stats** — `scripts/level_stats.gd` (`class_name LevelStats`), added by
 `LevelView._ready` as `perf_stats` and toggled by P in `LevelView._unhandled_input` (all builds).

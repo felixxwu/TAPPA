@@ -143,8 +143,11 @@ func test_launch_wheelspin() -> void:
 	# (scripts/game_config.gd) — test-only, gameplay tuning untouched.
 	var cfg: GameConfig = Config.data
 	cfg.global_torque_scale = 1.0
+	var boost := cfg.low_speed_grip_boost_max
+	cfg.low_speed_grip_boost_max = 1.0  # the low-speed grip boost holds launches back on purpose; this is about the drivetrain
 	Input.action_press("accelerate")
 	await _wait_physics(20)
+	cfg.low_speed_grip_boost_max = boost
 	var speed := _car.linear_velocity.length()
 	var slip: float = _car.drivetrain.rear_omega * cfg.wheel_radius - speed
 	assert_gt(slip, cfg.tire_slip_peak + 0.5,

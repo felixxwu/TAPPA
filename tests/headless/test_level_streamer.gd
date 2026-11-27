@@ -161,3 +161,48 @@ func test_with_threaded_building_off_nothing_is_dispatched_and_the_ground_still_
 	assert_true(s.has_collision_at(0.0, 0.0), "built synchronously")
 	s.free()
 	car.free()
+
+
+func test_tiles_ahead_of_a_fast_car_are_wanted_before_they_are_in_reach() -> void:
+	var here := Vector2.ZERO
+	var wanted := _streamer.wanted_near_tiles(here, Vector2(40.0, 0.0))
+	var ahead := _streamer._tile_of(Vector2(TerrainStreamer.NEAR_REACH_M + 30.0, 0.0))
+	var behind := _streamer._tile_of(Vector2(-TerrainStreamer.NEAR_REACH_M - 30.0, 0.0))
+	assert_true(wanted.has(ahead), "the road ahead past the near reach is queued")
+	assert_lt(float(wanted[ahead]), Config.data.adaptive_near_lead_s, "with a time until the car gets there")
+	assert_false(wanted.has(behind), "the road behind past the reach is not")
+	assert_eq(float(wanted[_streamer._tile_of(here)]), 0.0, "the tile under the car is due now")
+
+
+func test_a_tile_on_the_path_that_cannot_be_built_in_time_is_overdue() -> void:
+	var job := TerrainStreamer.ChunkJob.new()
+	job.tile = true
+	job.eta_s = 0.0
+	_streamer._queue.append(job)
+	_streamer._plan_us = Time.get_ticks_usec()
+	assert_true(_streamer.near_overdue())
+	job.cancelled = true
+	assert_false(_streamer.near_overdue(), "a cancelled one is not waited for")
+	_streamer._queue.erase(job)
+
+
+func test_rolling_onto_a_tile_without_full_detail_counts_a_miss() -> void:
+	var before := _streamer.stat_near_misses
+	_streamer._miss_tile = Vector2i(1 << 20, 0)
+	_streamer._count_near_miss()
+	assert_eq(_streamer.stat_near_misses, before, "the spawn's tile was built by the prefill")
+	_streamer._tiles.erase(_streamer._tile_of(Vector2.ZERO))
+	_streamer._miss_tile = Vector2i(1 << 20, 0)
+	_streamer._count_near_miss()
+	assert_eq(_streamer.stat_near_misses, before + 1)
+	_streamer.prefill()
+
+
+func test_shrinking_the_rings_frees_detail_at_once() -> void:
+	var mid0 := _streamer.settings.mid_radius
+	var far0 := _streamer.settings.far_radius
+	var before := _streamer.chunk_counts()
+	_streamer.apply_rings(0.0, 0)
+	assert_lt(_streamer.chunk_counts().x, before.x, "mid meshes outside the smaller ring are gone without the car moving")
+	_streamer.apply_rings(mid0, far0)
+	_streamer.prefill()

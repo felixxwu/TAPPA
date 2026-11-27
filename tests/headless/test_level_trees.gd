@@ -61,6 +61,25 @@ func test_only_tiles_near_the_car_have_collision() -> void:
 	assert_null(_trees.tile(near).hit)
 
 
+func test_a_tree_below_the_hitbox_height_has_no_box_to_hit() -> void:
+	var keep: float = Config.data.level_tree_min_hitbox_height_m
+	_make([_tree(0.0, 50.0, "tree.png", 1.0), _tree(10.0, 50.0, "tree.png", 3.0)])
+	var short := _bake.tree_xf[_idx(0.0, 50.0) * 12 + 5]
+	var tall := _bake.tree_xf[_idx(10.0, 50.0) * 12 + 5]
+	Config.data.level_tree_min_hitbox_height_m = (short + tall) * 0.5
+	_trees.update(Vector3(0.0, 0.0, 50.0), Vector3(0.0, 0.0, 50.0))
+	Config.data.level_tree_min_hitbox_height_m = keep
+	await wait_physics_frames(2)
+	assert_false(_ray_hits_trunk(0.0, 50.0), "a short tree is driven through")
+	assert_true(_ray_hits_trunk(10.0, 50.0), "a tall tree still blocks")
+
+
+func _ray_hits_trunk(x: float, z: float) -> bool:
+	var space := _trees.get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(Vector3(x - 2.0, 1.0, z), Vector3(x + 2.0, 1.0, z))
+	return not space.intersect_ray(q).is_empty()
+
+
 func test_a_felled_tree_stays_felled_after_its_tile_is_dropped_and_rebuilt() -> void:
 	_make(_near_trees())
 	var idx := _idx(0.0, 50.0)

@@ -124,6 +124,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [asset-pipeline.md](asset-pipeline.md) | Source art → PCK: texture import settings, the live/orphan car-texture trap, the 1024×512 sky-panorama house format, export exclude filters, PCK sizing |
 | [car-scanning.md](car-scanning.md) | `tools/car_scan/` — walk-around video of a car → Apple Object Capture photogrammetry → low-poly textured body glb |
 | [debug-tools.md](debug-tools.md) | Force-arrow visualization overlay |
+| [adaptive-graphics.md](adaptive-graphics.md) | The level tunes its own draw distances, effects and resolution live to hold the frame rate; full-detail terrain kept under the car; the P overlay's adaptive page |
 | [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven free-roam run at 50 km/h, end-of-run stats breakdown |
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |

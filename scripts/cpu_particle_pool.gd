@@ -32,6 +32,7 @@ var _buffer: PackedFloat32Array  # the live MultiMesh buffer (STRIDE floats/slot
 var _next := -1                # ring-buffer write cursor (advances, wraps, recycles oldest)
 var _alive := 0
 var _max := 0
+var _limit := -1  # slots in use (adaptive graphics); -1 is the whole pool
 
 
 # --- Virtuals subclasses override -------------------------------------------
@@ -103,12 +104,29 @@ func clear_warm_up() -> void:
 # _alive correct. The caller writes the slot's buffer layout (via its own slot writer)
 # and uploads the whole buffer once per tick.
 func _emit_slot(pos: Vector3, vel: Vector3, life: float) -> void:
-	_next = (_next + 1) % _max
+	_next = (_next + 1) % (_max if _limit < 0 else maxi(_limit, 1))
 	if _life[_next] <= 0.0:
 		_alive += 1  # reused a dead slot; overwriting a live one keeps the count
 	_pos[_next] = pos
 	_vel[_next] = vel
 	_life[_next] = life
+
+
+## Share of the pool in use, 0 to 1. Lower keeps fewer particles alive at once; 0 draws none.
+func set_quality(f: float) -> void:
+	if multimesh == null or _buffer.is_empty():
+		return
+	var n := clampi(roundi(_max * f), 0, _max)
+	_limit = -1 if n >= _max else n
+	for i in range(n, _max):
+		_life[i] = 0.0
+		_hide_slot(i)
+	_alive = 0
+	for i in n:
+		_alive += int(_life[i] > 0.0)
+	_next = mini(_next, n - 1)
+	multimesh.visible_instance_count = -1 if _limit < 0 else n
+	multimesh.buffer = _buffer
 
 
 # --- Readouts (tests) --------------------------------------------------------

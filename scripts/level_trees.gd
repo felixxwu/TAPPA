@@ -104,12 +104,16 @@ func _material_for(kinds: PackedInt32Array) -> ShaderMaterial:
 # Called every frame with the camera and the car: follows the viewpoint row, spreads the repacking over frames, and gives the car its nearby collision.
 # `free_view` (photo mode, the camera anywhere) skips the baked road visibility and shows every tree in reach.
 func update(cam_pos: Vector3, car_pos: Vector3, free_view := false) -> void:
+	var ts := Time.get_ticks_usec()
 	var row := bake.nearest_sample(cam_pos.x, cam_pos.z) / bake.vis_every if bake.has_visibility() and not free_view else -1
+	PerfLog.track(&"trees_nearest_row", Time.get_ticks_usec() - ts)
 	var cell := Vector2i(floori(cam_pos.x / LevelBake.TREE_TILE_M), floori(cam_pos.z / LevelBake.TREE_TILE_M))
 	if row != _row or cell != _cam_cell:
 		_row = row
 		_cam_cell = cell
+		ts = Time.get_ticks_usec()
 		_queue_tiles_near(cam_pos)
+		PerfLog.track(&"trees_requeue", Time.get_ticks_usec() - ts)
 	var t0 := Time.get_ticks_usec()
 	_update_collision(car_pos)
 	var t1 := Time.get_ticks_usec()
@@ -133,6 +137,11 @@ func set_draw_override(metres: float) -> void:
 		for mmi in t.mmis:
 			mmi.visibility_range_end = draw_m() + LevelBake.TREE_TILE_M
 	_cam_cell = Vector2i(-100000, -100000)
+
+
+## Puts a new GameConfig.level_tree_draw_m into effect on the tiles already built.
+func refresh_draw() -> void:
+	set_draw_override(_draw_override)
 
 
 # Repacks everything still waiting, at once; for the first frame and for tests.
@@ -223,16 +232,19 @@ func _distance_to(t: Tile, p: Vector3) -> float:
 
 
 func _queue_tiles_near(cam_pos: Vector3) -> void:
-	var draw := draw_m()
-	var found: Array[Tile] = []
-	for i in _tile_cells_near(cam_pos, draw + LevelBake.TREE_TILE_M):
+	var reach := draw_m() + LevelBake.TREE_TILE_M
+	var found: Array[Vector2] = []  # (distance, tile index), so the sort doesn't recompute distances
+	for i in _tile_cells_near(cam_pos, reach):
 		var t := _tile_or_make(i)
-		if t != null and _distance_to(t, cam_pos) <= draw + LevelBake.TREE_TILE_M and t.shown_row != _row:
-			found.append(t)
-	found.sort_custom(func(a: Tile, b: Tile) -> bool: return _distance_to(a, cam_pos) > _distance_to(b, cam_pos))
+		if t == null or t.shown_row == _row:
+			continue
+		var d := _distance_to(t, cam_pos)
+		if d <= reach:
+			found.append(Vector2(d, t.index))
+	found.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x > b.x)
 	_queue.clear()
-	for t in found:
-		_queue.append(t.index)
+	for f in found:
+		_queue.append(int(f.y))
 
 
 func _threads_ok() -> bool:
@@ -452,6 +464,6 @@ func _build_hitboxes(t: Tile) -> void:
 	h.shape = ObstacleBody.build(h, ground, cfg.tree_collision_radius_m, cfg.tree_collision_height_m)
 	h.body = h.get_node("Collision")
 	for id in range(t.first, t.end):
-		if _fallen.has(id):
+		if _fallen.has(id) or bake.tree_xf[id * 12 + 5] < cfg.level_tree_min_hitbox_height_m:
 			PhysicsServer3D.body_set_shape_disabled(h.body.get_rid(), id - t.first, true)
 	t.hit = h

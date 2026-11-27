@@ -268,6 +268,13 @@ func _timed_physics_process(_delta: float) -> void:
 			_last_pos[i] = wxz
 
 
+## Shows or hides the marks already laid (adaptive graphics); laying new ones follows tire_marks_enabled.
+func set_shown(on: bool) -> void:
+	for r in _ribbons:
+		if is_instance_valid(r):
+			(r as Node3D).visible = on
+
+
 # The car was teleported (free roam's travel, respawn or road reset): break every ribbon so the
 # next mark doesn't bridge from where the car was to where it is now. `_p` is the new position,
 # unused — it matches the teleport signals' shape so they can connect straight here.

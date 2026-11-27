@@ -500,29 +500,33 @@ func _draw() -> void:
 
 # Draws the map's content (ground, roads, buildings, log piles, fog, border, route) on any canvas item through `xf`
 # (world metres to that item's pixels, so it can be rotated); the minimap shares it. `ui` scales the fixed-pixel marks.
-func paint(ci: CanvasItem, xf: Transform2D, zm: float, ui: float, route: PackedVector2Array) -> void:
+## `clip` (world metres) skips everything outside it: the minimap shows a few hundred metres of a 5 km map.
+func paint(ci: CanvasItem, xf: Transform2D, zm: float, ui: float, route: PackedVector2Array, clip := Rect2()) -> void:
 	var half := size_m() / 2.0
 	var world := Rect2(Vector2(-half, -half), Vector2.ONE * size_m())
+	if not clip.has_area():
+		clip = world.grow(half)
+	_ensure_boxes()
 	ci.draw_set_transform_matrix(xf)
 	if _texture != null:  # build() uploads it behind the loading screen; a headless run never does
 		ci.draw_texture_rect(_texture, world, false)
-	for poly in view._bake.patches:
-		ci.draw_colored_polygon(poly, PATCH)
-	for f: Dictionary in view.level.get("fences", []):
-		var line := PackedVector2Array()
-		for p: Array in f.get("pts", []):
-			line.append(Vector2(float(p[0]), float(p[1])))
-		if line.size() > 1:
-			var hedge: bool = f.get("kind", "fence") == "hedge"
-			ci.draw_polyline(line, HEDGE if hedge else FENCE, 1.5 if hedge else maxf(0.5, ui / zm))
+	for i in view._bake.patches.size():
+		if _boxes["patches"][i].intersects(clip):
+			ci.draw_colored_polygon(view._bake.patches[i], PATCH)
+	for i in _fence_lines.size():
+		if _fence_lines[i].size() > 1 and _boxes["fences"][i].intersects(clip):
+			ci.draw_polyline(_fence_lines[i], HEDGE if _fence_hedge[i] else FENCE, 1.5 if _fence_hedge[i] else maxf(0.5, ui / zm))
 	for i in _chains.size():
-		if _chains[i].size() > 1:
+		if _chains[i].size() > 1 and _boxes["chains"][i].intersects(clip):
 			ci.draw_polyline(_chains[i], ROAD_EDGE, _widths[i] + 2.0 * ui / zm)
 	for i in _chains.size():
-		if _chains[i].size() > 1:
+		if _chains[i].size() > 1 and _boxes["chains"][i].intersects(clip):
 			ci.draw_polyline(_chains[i], TARMAC if _tarmac[i] else ROAD, _widths[i])
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
-	for fp in _buildings:
+	for b in _buildings.size():
+		if not _boxes["buildings"][b].intersects(clip):
+			continue
+		var fp = _buildings[b]
 		var pts := PackedVector2Array()
 		for corner in fp:
 			pts.append(xf * corner)
@@ -530,6 +534,8 @@ func paint(ci: CanvasItem, xf: Transform2D, zm: float, ui: float, route: PackedV
 		pts.append(pts[0])
 		ci.draw_polyline(pts, ROAD_EDGE, ui)
 	for pile: Dictionary in view.level.get("logPiles", []):
+		if not clip.has_point(Vector2(float(pile["x"]), float(pile["z"]))):
+			continue
 		ci.draw_circle(xf * Vector2(float(pile["x"]), float(pile["z"])), maxf(MIN_MARK_PX * ui, 4.0 * zm) / 2.0, LOG_PILE)
 	ci.draw_set_transform_matrix(xf)
 	if _fog != null:
@@ -541,6 +547,42 @@ func paint(ci: CanvasItem, xf: Transform2D, zm: float, ui: float, route: PackedV
 		for q in route:
 			pts.append(xf * q)
 		ci.draw_polyline(pts, ROUTE, ROUTE_PX * ui, true)
+
+
+var _boxes := {}  # what paint draws, as world-space bounding boxes, so a clipped paint can skip what's off the picture
+var _fence_lines: Array[PackedVector2Array] = []
+var _fence_hedge: Array[bool] = []
+
+
+static func box_of(pts: Variant) -> Rect2:
+	var r := Rect2()
+	var first := true
+	for p: Vector2 in pts:
+		if first:
+			r = Rect2(p, Vector2.ZERO)
+			first = false
+		else:
+			r = r.expand(p)
+	return r.grow(10.0)
+
+
+func _ensure_boxes() -> void:
+	if not _boxes.is_empty() and _boxes["chains"].size() == _chains.size():
+		return
+	_fence_lines.clear()
+	_fence_hedge.clear()
+	for f: Dictionary in view.level.get("fences", []):
+		var line := PackedVector2Array()
+		for p: Array in f.get("pts", []):
+			line.append(Vector2(float(p[0]), float(p[1])))
+		_fence_lines.append(line)
+		_fence_hedge.append(f.get("kind", "fence") == "hedge")
+	_boxes = {
+		"patches": view._bake.patches.map(box_of),
+		"fences": _fence_lines.map(box_of),
+		"chains": _chains.map(box_of),
+		"buildings": _buildings.map(box_of),
+	}
 
 
 static func draw_diamond(ci: CanvasItem, p: Vector2, r: float) -> void:

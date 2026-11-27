@@ -14,9 +14,6 @@ extends VBoxContainer
 #     FpsSetting.SETTING_KEY. Applied live via Engine.max_fps (a global engine
 #     property, so both hosts take effect immediately); free roam's boot re-derives
 #     it next run. Defaults to the platform's cap (web-touch 30, else 60).
-#   • Graphics — performance knobs (draw distances, particles, effects) from
-#     GraphicsSettings, each row cycling its choices, plus Reset to defaults. Saved in the
-#     profile; leaving the page after a change rebuilds a live level so it takes effect.
 #   • Camera — pick the camera angle (chase / bonnet), persisted under
 #     CameraManager.SETTING_KEY. Emits `camera_changed` so a live scene (the run's
 #     CameraManager) can switch immediately.
@@ -94,10 +91,6 @@ var benchmark_rows: Array = []
 var _list_page: VBoxContainer
 var _audio_page: VBoxContainer
 var _display_page: VBoxContainer
-var _graphics_page: VBoxContainer
-# Graphics option key -> its row button (exposed for tests).
-var graphics_rows: Dictionary = {}
-var _graphics_dirty := false
 # The Audio page's volume sliders + their live "%" labels (exposed for tests).
 # Master scales everything (bus 0); music is the Music bus on top of it.
 var master_slider: HSlider
@@ -134,7 +127,6 @@ func _build() -> void:
 	_build_list_page()
 	_build_audio_page()
 	_build_display_page()
-	_build_graphics_page()
 	_build_camera_page()
 	_build_controls_page()
 	_build_schemes_page()
@@ -148,7 +140,6 @@ func _build() -> void:
 	# this so adding a page only means adding an entry here.
 	_pages = {
 		"list": _list_page, "audio": _audio_page, "display": _display_page,
-		"graphics": _graphics_page,
 		"camera": _camera_page, "controls": _controls_page,
 		"schemes": _scheme_page, "benchmark": _benchmark_page, "dev": _dev_page,
 		"account": _account_page, "reset": _reset_page,
@@ -158,7 +149,6 @@ func _build() -> void:
 	_refresh_scheme_selection()
 	_refresh_fps_selection()
 	_refresh_outline_row()
-	_refresh_graphics_rows()
 	_refresh_controls_selection()
 	_refresh_benchmark_rows()
 
@@ -179,7 +169,6 @@ func _build_list_page() -> void:
 	_list_page.add_child(list_grid)
 	list_grid.add_child(_make_nav_button("Audio", show_audio))
 	list_grid.add_child(_make_nav_button("Display", show_page.bind("display")))
-	list_grid.add_child(_make_nav_button("Graphics", show_page.bind("graphics")))
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
@@ -229,50 +218,6 @@ func _build_display_page() -> void:
 	_build_option_page(_display_page, FpsSetting.OPTIONS, "value", fps_rows, select_fps)
 	outline_button = _make_action_button("", toggle_outlines)
 	_display_page.add_child(outline_button)
-
-
-func _build_graphics_page() -> void:
-	_graphics_page = _make_page()
-	add_child(_graphics_page)
-	_graphics_page.add_child(_make_heading("Graphics"))
-	_graphics_page.add_child(_make_sub("Lower these to speed the game up:"))
-	for o in GraphicsSettings.OPTIONS:
-		var key := String(o["key"])
-		graphics_rows[key] = _make_action_button("", cycle_graphics.bind(key))
-		_graphics_page.add_child(graphics_rows[key])
-	_graphics_page.add_child(_make_action_button("Reset to defaults", reset_graphics))
-
-
-func cycle_graphics(key: String) -> void:
-	GraphicsSettings.cycle(key)
-	_graphics_dirty = true
-	_refresh_graphics_rows()
-
-
-func reset_graphics() -> void:
-	GraphicsSettings.reset()
-	_graphics_dirty = true
-	_refresh_graphics_rows()
-
-
-func _refresh_graphics_rows() -> void:
-	for key in graphics_rows:
-		var button: Button = graphics_rows[key]
-		button.text = UITheme.caps("%s: %s" % [GraphicsSettings.option(key)["name"], GraphicsSettings.choice_label(key)])
-
-
-# Graphics changes are read while a level builds, so a live level reloads once the player leaves the page.
-func _apply_graphics_if_changed() -> void:
-	if not _graphics_dirty:
-		return
-	_graphics_dirty = false
-	# Deferred: the reload frees the host menu, which may still be mid-way through handling the Back press.
-	get_tree().call_group_flags(SceneTree.GROUP_CALL_DEFERRED, LevelView.GROUP, "reload_for_graphics")
-
-
-func _notification(what: int) -> void:
-	if what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree() and is_inside_tree():
-		_apply_graphics_if_changed()
 
 
 func _build_camera_page() -> void:
@@ -458,8 +403,6 @@ func show_dev() -> void:
 
 func _show_page(page: Control) -> void:
 	cancel_listen()  # leaving a page abandons any pending key capture
-	if page != _graphics_page:
-		_apply_graphics_if_changed()
 	for p in _pages.values():
 		(p as Control).visible = page == p
 	# Move the focus cursor onto the newly-shown page (deferred so it runs after the

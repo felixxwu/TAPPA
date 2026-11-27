@@ -62,6 +62,13 @@ var stat_spike_by := {}
 # Times collision under (or just ahead of) the car was missing and was built at once, over the
 # budget (_rush_collision). Rare when streaming keeps up; each one is a hitch instead of a fall.
 var stat_rushes := 0
+# Times the car rolled onto a near tile that had no full-detail mesh yet: the streamer fell behind.
+var stat_near_misses := 0
+# Running mean of how long a near tile takes from its first unit of work to its mesh going in.
+var near_build_s := 0.25
+var _miss_tile := Vector2i(1 << 30, 1 << 30)
+var _plan_us := 0
+var _starved := 0  # frames in a row the queue ran only the car's path
 var stat_restitches := 0  # near tiles whose edge stitching changed
 var stat_patch_us := 0  # time spent re-stitching them
 var _last_kind := ""
@@ -138,6 +145,7 @@ class HorizonState:
 # finest grid there (this tile's near grid, else the quarter of its chunk's mid grid under it).
 class TileState:
 	var near_mesh: MeshInstance3D
+	var wanted_us := 0  # when a plan last wanted this tile's full detail
 	var near_heights := PackedFloat32Array()  # halo grid
 	var near_road_d := PackedFloat32Array()
 	var near_job: ChunkJob
@@ -161,6 +169,8 @@ class ChunkJob:
 	var cursor := 0
 	var priority := 0.0
 	var dist := 0.0  # distance from the car, in chunks, at the last plan
+	var eta_s := INF  # a near tile's seconds until the car reaches it, at the last plan
+	var started_us := 0
 	var cancelled := false
 	var task_id := -1  # the WorkerThreadPool task building this job's heights and arrays, -1 when none
 	var stitch := 0
@@ -479,6 +489,7 @@ func _process(delta: float) -> void:
 	if cc != _plan_coord or _plan_timer <= 0.0:
 		_plan()
 	_guard_collision()
+	_count_near_miss()
 	_run_queue(start + budget)
 	var used := Time.get_ticks_usec() - start
 	stat_used_us = used
@@ -492,6 +503,61 @@ func _process(delta: float) -> void:
 		if used > budget * 1.5:
 			stat_spikes += 1
 			stat_spike_by[_last_kind] = int(stat_spike_by.get(_last_kind, 0)) + 1
+
+
+## Changes the mid and far detail rings live. A shrink frees what now lies outside them at once,
+## rather than when the car next drives away, so the saving shows straight away.
+func apply_rings(mid_radius: float, far_radius: int) -> void:
+	var shrink := far_radius < settings.far_radius or mid_radius < settings.mid_radius
+	settings.mid_radius = mid_radius
+	settings.far_radius = far_radius
+	_plan_timer = 0.0
+	if not shrink or focus == null:
+		return
+	var here := _focus_xz()
+	var centre := _chunk_of(here)
+	var cm := settings.chunk_m
+	var vel := Vector2.ZERO
+	if focus is RigidBody3D:
+		var v := (focus as RigidBody3D).linear_velocity
+		vel = Vector2(v.x, v.z)
+	var ahead := here + vel * 1.5
+	for coord: Vector2i in _chunks.keys():
+		var off := coord - centre
+		var mid := (Vector2(coord) + Vector2(0.5, 0.5)) * cm
+		if maxi(absi(off.x), absi(off.y)) > far_radius + 1:
+			_drop_chunk(coord, _chunks[coord])
+		elif minf(squashed_distance(mid - here, vel), squashed_distance(mid - ahead, vel)) / cm > mid_radius + 0.75:
+			_drop_mid(_chunks[coord])
+
+
+func _count_near_miss() -> void:
+	if not focus is RigidBody3D or _plan_override != null:
+		return
+	var t := _tile_of(_focus_xz())
+	if t == _miss_tile:
+		return
+	_miss_tile = t
+	var ts: TileState = _tiles.get(t)
+	if not _prefilling and (ts == null or ts.near_mesh == null):
+		stat_near_misses += 1
+
+
+## True while some near tile on the car's path would be reached before it can be built at this
+## device's pace; the queue then runs nothing but collision and those tiles.
+func near_overdue() -> bool:
+	return _path_due(near_build_s * NEAR_OVERDUE_FACTOR)
+
+
+# Some unbuilt near tile on the car's path is due within `within_s` seconds.
+func _path_due(within_s: float) -> bool:
+	var since_s := (Time.get_ticks_usec() - _plan_us) / 1e6
+	for list: Array[ChunkJob] in [_queue, _inflight]:
+		for job in list:
+			if job.tile and not job.with_collision and not job.cancelled and job.stage != Stage.DONE \
+					and job.eta_s - since_s < within_s:
+				return true
+	return false
 
 
 # Build everything the planner wants with no budget: used once at boot, behind the spawn.
@@ -662,7 +728,12 @@ func _run_queue(deadline: int) -> void:
 		if not _atomic("holes", deadline, _cut_holes.bind(coord)):
 			return
 		_holes_due.erase(coord)
+	var overdue := near_overdue() and _starved < MAX_STARVED_FRAMES
+	_starved = _starved + 1 if overdue else 0
+	var path_waiting := overdue or _path_due(_near_lead_s())
 	for b: Vector2i in _horizon_due.keys():
+		if overdue:
+			break
 		if not _atomic("horizon_holes", deadline, _cut_horizon.bind(b)):
 			return
 		_horizon_due.erase(b)
@@ -677,7 +748,7 @@ func _run_queue(deadline: int) -> void:
 		if job.cancelled or job.stage == Stage.DONE:
 			_queue.remove_at(i)
 			continue
-		if blocked.has(job) or job.task_id >= 0:
+		if blocked.has(job) or job.task_id >= 0 or (overdue and job.priority > STARVE_ABOVE):
 			i += 1
 			continue
 		# A mid build stops once its mesh and collision are in: its trees, bushes and rocks go
@@ -687,6 +758,8 @@ func _run_queue(deadline: int) -> void:
 		var planting := job.stage > Stage.COLLIDE
 		var threaded := job.stage <= Stage.HEIGHTS and job.cursor == 0 and _threads_ok()
 		var stop := Stage.HEIGHTS if threaded else (Stage.DONE if planting else Stage.PLANT)
+		if job.started_us == 0 and not threaded:
+			job.started_us = Time.get_ticks_usec()
 		if not _step(job, deadline, stop):
 			if job.priority < SKIPPABLE_PRIORITY:
 				return
@@ -694,7 +767,10 @@ func _run_queue(deadline: int) -> void:
 			i += 1
 			continue
 		if threaded and job.stage == Stage.HEIGHTS:
-			if _inflight.size() < _max_builds():
+			var slots := _max_builds()
+			if path_waiting and job.priority > STARVE_ABOVE and slots > 1:
+				slots -= 1  # one build thread is kept free for collision and the tiles on the car's path
+			if _inflight.size() < slots:
 				_dispatch_build(job)
 			i += 1
 			continue
@@ -717,7 +793,10 @@ func _dispatch_build(job: ChunkJob) -> void:
 	_begin_pack(job)
 	if job.tile:
 		job.stitch = _stitch_mask(job.coord)
-	job.task_id = WorkerThreadPool.add_task(_build_job.bind(job), false, "chunk build")
+		job.started_us = Time.get_ticks_usec()
+	# Godot runs low-priority tasks on under a third of its threads; the car's path and collision can't wait behind grass.
+	var urgent := job.priority <= STARVE_ABOVE
+	job.task_id = WorkerThreadPool.add_task(_build_job.bind(job), urgent, "chunk build")
 	_inflight.append(job)
 
 
@@ -752,6 +831,7 @@ func _collect_build(job: ChunkJob) -> void:
 
 # Queue order, lowest first (d = distance from the car in chunks, at most far_radius + 0.5):
 #   collision        d - 2000   (d - 3000 when rushed)
+#   near, on path    -1500 + seconds until the car gets there (NEAR_AHEAD_PRIORITY)
 #   mid + collision  d - 1000
 #   near mesh        d - 200
 #   mid mesh         d - 100
@@ -765,6 +845,21 @@ func _collect_build(job: ChunkJob) -> void:
 # at speed far jobs never ran and the horizon had gaps. A hole is never nearer than the mid ring's
 # edge, so with far_lead_chunks under 50 it stays behind every mid-mesh build.
 const PLANT_PRIORITY := -50.0
+# Near tiles the car reaches within near_lead_s outrank everything but collision, so full detail is
+# always under the wheels even if the ground round about has to wait.
+const NEAR_AHEAD_PRIORITY := -1500.0
+const NEAR_OVERDUE_FACTOR := 1.5
+# After this many frames of running only the car's path, one frame lets the rest of the queue run.
+const MAX_STARVED_FRAMES := 30
+# A near tile stays built this long after the car's path last wanted it, so steering doesn't churn it.
+const NEAR_WANT_HOLD_US := 1_000_000
+# Work at or past this priority (side near tiles, mid meshes, planting, far, horizon) waits while a
+# tile on the car's path is overdue, and leaves one build thread free.
+const STARVE_ABOVE := -900.0
+# A near tile this close to the car counts as under it.
+const NEAR_TOUCH_M := 4.0
+# The strip ahead narrows from a tile each side of the path to half a tile as the car reaches this speed.
+const NARROW_AT_MPS := 40.0
 # Jobs from here on (planting and far meshes) may be passed over when blocked; see _run_queue.
 const SKIPPABLE_PRIORITY := PLANT_PRIORITY - 30.0
 # Planting a chunk wholly beyond the foliage draw distance waits behind everything else: its trees
@@ -1253,6 +1348,9 @@ func _attach(job: ChunkJob) -> void:
 			ts.near_heights = job.heights
 			ts.near_road_d = job.road_d
 			ts.near_job = null
+			if job.started_us > 0 and job.eta_s <= _near_lead_s():
+				var took := minf((Time.get_ticks_usec() - job.started_us) / 1e6, _near_lead_s())
+				near_build_s = lerpf(near_build_s, took, 0.2)
 			# collision built from the coarser mid grid is redone from this one
 			job.with_collision = ts.body != null and ts.body_level != Level.NEAR
 			_cut_holes(_chunk_of_tile(job.coord))
@@ -2284,19 +2382,28 @@ func _plan() -> void:
 				st.plant_job.priority = _plant_priority(coord, d)
 	# Near tiles: every tile within near_reach() of the car, kept a little past it.
 	var tm := settings.near_tile_m
+	_plan_us = Time.get_ticks_usec()
+	var wanted := wanted_near_tiles(here, vel)
 	for t: Vector2i in _tiles.keys():
 		var ts: TileState = _tiles[t]
-		if _tile_gap(t, here) > near_reach() + NEAR_KEEP_MARGIN_M:
-			_drop_near_tile(t, ts)
+		if wanted.has(t):
+			ts.wanted_us = _plan_us
+		else:
+			var gap := _tile_gap(t, here)
+			var held := _plan_us - ts.wanted_us <= NEAR_WANT_HOLD_US and gap <= near_reach() + vel.length() * _near_lead_s() + settings.near_tile_m * 2.0
+			if gap > near_reach() + NEAR_KEEP_MARGIN_M and not held:
+				_drop_near_tile(t, ts)
 		if ts.near_mesh == null and ts.near_job == null and ts.body == null and ts.col_job == null:
 			_tiles.erase(t)
-	for t in near_tiles_of(here):
+	for t: Vector2i in wanted:
 		var ts := _tile(t)
 		if ts.near_mesh == null and ts.near_job == null:
 			ts.near_job = _new_job(t, Level.NEAR, false)
 		if ts.near_job != null:
+			var eta: float = wanted[t]
 			ts.near_job.dist = ((Vector2(t) + Vector2(0.5, 0.5)) * tm).distance_to(here) / cm
-			ts.near_job.priority = ts.near_job.dist - 200.0 
+			ts.near_job.eta_s = eta
+			ts.near_job.priority = NEAR_AHEAD_PRIORITY + eta if eta <= _near_lead_s() else ts.near_job.dist - 200.0
 	for t in near_tiles_of(here):
 		var ts: TileState = _tiles[t]
 		if ts.near_mesh != null and ts.near_job == null and ts.stitch != _stitch_mask(t):
@@ -2452,6 +2559,45 @@ func collision_block_of(p: Vector2) -> Rect2i:
 # How far near (full) detail reaches: NEAR_REACH_M, or out to the whole far ring while full_detail is on.
 func near_reach() -> float:
 	return settings.far_radius * settings.chunk_m if full_detail else NEAR_REACH_M
+
+
+func _near_lead_s() -> float:
+	return Config.data.adaptive_near_lead_s
+
+
+## The near tiles wanted now, each with the seconds until the car reaches it (INF for tiles round
+## about that it isn't heading onto): everything within near_reach(), plus a corridor a tile wide
+## each side along its path for adaptive_near_lead_s of travel.
+func wanted_near_tiles(here: Vector2, vel: Vector2) -> Dictionary:
+	var out := {}
+	for t in near_tiles_of(here):
+		out[t] = 0.0 if _tile_gap(t, here) <= NEAR_TOUCH_M else INF
+	if full_detail or vel.length() < 1.0:
+		return out
+	var speed := vel.length()
+	var tm := settings.near_tile_m
+	var dir := vel / speed
+	var length := speed * _near_lead_s()
+	var step := tm * 0.5
+	var d := 0.0
+	while d <= length:
+		var p := here + dir * d
+		for t in _tiles_round(p, lerpf(tm, tm * 0.5, clampf(speed / NARROW_AT_MPS, 0.0, 1.0))):
+			var along := maxf(0.0, (Vector2(t) + Vector2(0.5, 0.5)).dot(dir) * tm - here.dot(dir) - tm * 0.5)
+			out[t] = minf(float(out.get(t, INF)), along / speed)
+		d += step
+	return out
+
+
+func _tiles_round(p: Vector2, r: float) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	var lo := _tile_of(p - Vector2.ONE * r)
+	var hi := _tile_of(p + Vector2.ONE * r)
+	for tz in range(lo.y, hi.y + 1):
+		for tx in range(lo.x, hi.x + 1):
+			if _tile_gap(Vector2i(tx, tz), p) <= r:
+				out.append(Vector2i(tx, tz))
+	return out
 
 
 # The near tiles drawn at full detail: those whose closest point is within near_reach() of `p`.

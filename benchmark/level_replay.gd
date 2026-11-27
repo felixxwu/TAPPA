@@ -14,6 +14,7 @@ extends Node
 # marks and felled trees) follows the same path every run whatever the frame rate.
 
 const DEFAULT_PATH := "res://benchmark/runs/hafren.rec"
+const REPORT_PATH := "user://level_replay_report.json"  # a native replay's full report (the web one goes to the collector)
 const STRIDE := 21  # per tick: basis 9, origin 3, linear velocity 3, angular velocity 3, throttle, steer, handbrake
 const WARMUP_FRAMES := 60  # unsampled frames after the warm-up, while the first views settle
 const DEFAULT_UNTIL_S := 15.0  # enough to compare one change; --full replays all of it
@@ -43,6 +44,8 @@ var _draw_start_usec := 0
 var _until_s := DEFAULT_UNTIL_S
 var _off: PackedStringArray = []
 var _flat_sky := false
+var _record_car := ""  # --car=<id>: record with this car instead of the save's
+var _record_at := ""  # --at=<teleport name>: record from this teleport point
 var _no_timers := false  # leave the renderer's own timing off, to see what measuring it costs
 var _empty := false      # a camera and nothing else: the engine's and browser's own per-frame floor
 
@@ -78,6 +81,12 @@ func _ready() -> void:
 			_empty = true
 		elif arg == "--flat-sky" or arg == "--flat-sky=1":
 			_flat_sky = true
+		elif arg.begins_with("--at="):
+			_record_at = arg.get_slice("=", 1).uri_decode()
+		elif arg.begins_with("--car="):
+			_record_car = arg.get_slice("=", 1)
+		elif arg == "--adaptive" or arg == "--adaptive=1":
+			AdaptiveGraphics.force_on = true
 		elif arg.begins_with("--off="):
 			_off = arg.get_slice("=", 1).split(",")
 	if not _recording and DisplayServer.get_name() == "headless":
@@ -97,14 +106,17 @@ func _ready() -> void:
 	if not _recording and not _load():
 		get_tree().quit(1)
 		return
-	if _recording:  # start at GameConfig.level_spawn, not wherever the level view was last left
+	if _recording:  # start at the spawn teleport, not wherever the level view was last left
 		Save.set_setting(LevelView.SAVED_POSE_KEY, null)
+		LevelView.recording = true
 	_level = load(Scenes.WORLD).instantiate()
 	add_child(_level)
 	_car = _level.get_node("Car")
 	# The level has fielded the save's car by now (or none, with no save, as in a fresh browser); swap in the recorded one
 	# before its shader warm-up.
 	if _recording:
+		if _record_car != "" and CarLibrary.index_of(_record_car) >= 0:
+			_car.apply_car(CarLibrary.index_of(_record_car))
 		_car_id = String(CarLibrary.all()[_car._car_index]["id"]) if _car._car_index >= 0 else ""
 	else:
 		_car.apply_car(maxi(CarLibrary.index_of(_car_id), 0))
@@ -112,6 +124,7 @@ func _ready() -> void:
 	while not pause.is_armed():  # LevelView arms the pause menu once its shader warm-up is done
 		await get_tree().process_frame
 	if _recording:
+		_place_at_teleport(_level.get_node("Level") as LevelView, _record_at if _record_at != "" else Config.data.level_spawn_teleport)
 		print("level replay: recording to %s — quit to save" % _path)
 	else:
 		print("level replay: replaying %s (%.1f s)" % [_path, _ticks.size() / float(STRIDE) / Engine.physics_ticks_per_second])
@@ -161,8 +174,19 @@ func _start_sampling(view: Viewport) -> void:
 	RenderingServer.frame_post_draw.connect(_on_frame_drawn)
 	_samples["busy_ms"] = []
 	for stream in ["frame_ms", "draws", "objects", "prims", "render_cpu_ms", "render_gpu_ms", "process_ms", "physics_ms",
-			"t_s", "car_x", "car_z", "chunks_building", "chunks_queued", "cover_building", "scripts_ms"]:
+			"t_s", "car_x", "car_z", "chunks_building", "chunks_queued", "cover_building", "scripts_ms",
+			"speed_mps", "near_misses", "near_build_ms", "near_overdue", "due_near", "due_collision"]:
 		_samples[stream] = []
+
+
+func _place_at_teleport(view: LevelView, point: String) -> void:
+	for t: Dictionary in view.level.get("teleports", []):
+		if String(t.get("name", "")) == point:
+			var pose := view.teleport_pose(Vector2(float(t["x"]), float(t["z"])), Vector3.FORWARD)
+			_car.reset_to(pose)
+			print("level replay: recording from teleport %s at %s (Benchmark.active=%s)" % [point, pose.origin, Benchmark.active])
+			return
+	push_warning("level replay: no teleport named '%s'; starting where the level put the car (%s)" % [point, _car.global_position])
 
 
 # Hides and stops every node whose name (wildcards allowed: BushInteraction*) or script class (GroundCover) is in --off; not freed, since other nodes still call into some of them.
@@ -260,10 +284,17 @@ func _process(_delta: float) -> void:
 			slow[String(key)] = snappedf(ms, 0.1)
 	_last_cap = cap.duplicate()
 	_samples["scripts_ms"].append(slow)
-	var streamer: LevelStreamer = _level.get("_streamer")
+	var streamer: LevelStreamer = _level.get_node("Level").get("_streamer")
 	_samples["chunks_building"].append(streamer._inflight.size() if streamer != null else 0)
 	_samples["chunks_queued"].append(streamer._queue.size() if streamer != null else 0)
 	_samples["cover_building"].append(streamer.cover.pending() if streamer != null and streamer.cover != null else 0)
+	_samples["speed_mps"].append(_car.linear_velocity.length() if _car != null else 0.0)
+	_samples["near_misses"].append(streamer.stat_near_misses if streamer != null else 0)
+	_samples["near_build_ms"].append(streamer.near_build_s * 1000.0 if streamer != null else 0.0)
+	_samples["near_overdue"].append(int(streamer.near_overdue()) if streamer != null else 0)
+	var due := streamer.due_by_kind() if streamer != null else {}
+	_samples["due_near"].append(int(due.get("near", 0)))
+	_samples["due_collision"].append(int(due.get("collision", 0)))
 
 
 func _mark_frame_start() -> void:
@@ -315,10 +346,24 @@ func _finish() -> void:
 	BenchmarkStats.print_summary(stats, DisplayServer.get_name() == "headless")
 	if Platform.is_web():
 		await _post(stats, scripts)  # the browser has no terminal: the results go to start_web.sh's collector
+	else:
+		var f := FileAccess.open(REPORT_PATH, FileAccess.WRITE)
+		if f != null:
+			f.store_string(BenchmarkReport.to_json(_report(stats, scripts)))
+			print("level replay: report written to %s" % ProjectSettings.globalize_path(REPORT_PATH))
 	get_tree().quit()
 
 
 func _post(stats: Dictionary, scripts: Dictionary) -> void:
+	var report := _report(stats, scripts)
+	var http := HTTPRequest.new()
+	add_child(http)
+	var origin := String(JavaScriptBridge.eval("window.location.origin", true))
+	if http.request(origin + "/bench", ["Content-Type: application/json"], HTTPClient.METHOD_POST, BenchmarkReport.to_json(report)) == OK:
+		await http.request_completed
+
+
+func _report(stats: Dictionary, scripts: Dictionary) -> Dictionary:
 	var device := BenchmarkReport.probe_device()
 	var label := "level-replay-" + _path.get_file().get_basename()
 	if not _off.is_empty():
@@ -327,16 +372,16 @@ func _post(stats: Dictionary, scripts: Dictionary) -> void:
 		label += "-flatsky"
 	if _no_timers:
 		label += "-notimers"
+	if AdaptiveGraphics.force_on:
+		label += "-adaptive"
 	if _empty:
 		label = "level-replay-empty"
 	var report := BenchmarkReport.build(stats, scripts, device, Time.get_datetime_string_from_system(true), label, LevelView.load_ms)
 	report["draw_breakdown"] = _draw_breakdown
+	if AdaptiveGraphics.force_on:
+		report["adaptive"] = AdaptiveGraphics.events
 	report["frames"] = _samples  # every frame's samples, to line a spike up with what was happening then
-	var http := HTTPRequest.new()
-	add_child(http)
-	var origin := String(JavaScriptBridge.eval("window.location.origin", true))
-	if http.request(origin + "/bench", ["Content-Type: application/json"], HTTPClient.METHOD_POST, BenchmarkReport.to_json(report)) == OK:
-		await http.request_completed
+	return report
 
 
 func _exit_tree() -> void:

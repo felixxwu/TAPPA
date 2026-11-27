@@ -2,7 +2,8 @@ class_name LevelStats
 extends CanvasLayer
 # Docs: features/debug-tools.md — update in the same change as this file.
 # Tests: tests/headless/test_level_stats.gd — extend in the same change.
-# The Hafren level's performance readout, toggled with P: frame time, draw calls and triangles, and how much of that the trees and ground cover account for.
+# The Hafren level's performance readout, cycled with P: a perf page (frame time, draw calls and triangles, and how much of
+# that the trees and ground cover account for), then an adaptive graphics page (what the controller is doing and why).
 
 const REFRESH_S := 0.25
 
@@ -11,6 +12,8 @@ var _label: Label
 var _accum := 0.0
 var _tris := {}  # Mesh -> triangles per instance
 var _frames := PackedFloat32Array()  # every frame's ms since the last refresh
+enum Page { OFF, PERF, ADAPTIVE }
+var page := Page.OFF
 
 
 func _ready() -> void:
@@ -25,8 +28,10 @@ func _ready() -> void:
 	add_child(_label)
 
 
-func toggle() -> void:
-	visible = not visible
+## P: off → perf → adaptive → off.
+func cycle() -> void:
+	page = (page + 1) % Page.size() as Page
+	visible = page != Page.OFF
 	_accum = 0.0
 	_frames.clear()
 
@@ -40,7 +45,12 @@ func _process(dt: float) -> void:
 		return
 	_accum = 0.0
 	var cam := get_viewport().get_camera_3d()
-	_label.text = text(cam.global_position if cam != null else Vector3.ZERO)
+	if page == Page.ADAPTIVE:
+		_label.text = adaptive_text(view.adaptive.controller if view.adaptive != null else null, FrameSampler.budget_ms(),
+			OutlineSetting.resolve(), view._streamer.stat_near_misses if view._streamer != null else 0,
+			view._streamer.near_build_s * 1000.0 if view._streamer != null else 0.0)
+	else:
+		_label.text = text(cam.global_position if cam != null else Vector3.ZERO)
 	_frames.clear()
 
 
@@ -58,6 +68,26 @@ func text(cam_pos: Vector3) -> String:
 	if cover != null:
 		var c := tally(cover, cam_pos)
 		lines.append("cover %d tiles  %d tufts in range  tris %s" % [cover.tiles.size(), c.y, _k(c.z)])
+	return "\n".join(lines)
+
+
+## The adaptive graphics page: budget and headroom, the last decision, then one row per setting.
+static func adaptive_text(c: AdaptiveController, budget_ms: float, outlines: bool, near_misses: int, near_build_ms := 0.0) -> String:
+	if c == null:
+		return "adaptive graphics: not running"
+	var lines := PackedStringArray()
+	var now := Time.get_ticks_usec() / 1e6
+	var state := "off" if not c.enabled else ("at floor" if c.at_floor else "on")
+	lines.append("budget %.1f ms  p90 %.1f  spare %+.1f  [%s]" % [budget_ms, c.p90_ms(), c.headroom_ms(budget_ms), state])
+	if c.last_decision != "":
+		lines.append("last: %s  %ds ago" % [c.last_decision, int(now - c.last_decision_s)])
+	lines.append("terrain fell behind %d times  tile build %d ms  draw %.3f ms  ktri %.3f ms" % [near_misses, near_build_ms, c.ms_per_draw(), c.ms_per_kprim()])
+	for k in c.knobs:
+		var wait := c.raise_wait_s(k, now)
+		lines.append("%s %d/%d  %.2f ms%s  n%d  %s" % [k.name, k.level, k.top(), c.est_cost(k), "*" if k.from_fit else " ",
+			k.samples, ("wait %ds" % int(wait)) if wait > 0.0 else "-"])
+	if outlines:
+		lines.append("outlines on (fixed cost, Display settings)")
 	return "\n".join(lines)
 
 

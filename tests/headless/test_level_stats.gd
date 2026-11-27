@@ -26,13 +26,34 @@ func test_tally_counts_only_multimeshes_within_their_draw_range() -> void:
 	assert_eq(t, Vector3i(2, 9, 9 * box_tris), "the far one is out of range; -1 visible means every instance")
 
 
-func test_toggle_shows_and_hides_the_readout() -> void:
+func test_cycle_steps_off_perf_adaptive_off() -> void:
 	var stats: LevelStats = add_child_autofree(LevelStats.new())
 	assert_false(stats.visible)
-	stats.toggle()
+	stats.cycle()
+	assert_eq(stats.page, LevelStats.Page.PERF)
 	assert_true(stats.visible)
-	stats.toggle()
+	stats.cycle()
+	assert_eq(stats.page, LevelStats.Page.ADAPTIVE)
+	assert_true(stats.visible)
+	stats.cycle()
 	assert_false(stats.visible)
+
+
+func test_adaptive_text_lists_every_setting_and_the_floor() -> void:
+	var c := AdaptiveController.new()
+	for id in ["alpha", "beta"]:
+		var k := AdaptiveKnob.new()
+		k.id = StringName(id)
+		k.name = id.capitalize()
+		k.levels = 3
+		c.knobs.append(k)
+	c.at_floor = true
+	var text := LevelStats.adaptive_text(c, 16.7, true, 2)
+	assert_string_contains(text, "Alpha")
+	assert_string_contains(text, "Beta")
+	assert_string_contains(text, "at floor")
+	assert_string_contains(text, "outlines")
+	assert_string_contains(LevelStats.adaptive_text(null, 16.7, false, 0), "not running")
 
 
 func test_frame_line_averages_the_frames_and_reports_the_slowest() -> void:
