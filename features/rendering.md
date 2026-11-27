@@ -74,9 +74,8 @@ device aspect, and wider screens still reveal more world width — just fatter.
 The width math is the pure static `DisplayStretch.logical_size()`, unit-tested in
 `tests/headless/test_display_stretch.gd`. Its `design_height` parameter defaults to
 `DESIGN_HEIGHT`, with two overrides chosen by the pure
-`DisplayStretch.design_height_for()`: while a benchmark is active, the resolution
-sweep's `Benchmark.render_height` wins (see [benchmark.md](benchmark.md) →
-"Resolution sweep"); otherwise the `render_height` look value (GameConfig)
+`DisplayStretch.design_height_for()`: while a benchmark is active, a positive
+`Benchmark.render_height` wins (see [benchmark.md](benchmark.md)); otherwise the `render_height` look value (GameConfig)
 applies — a positive value is a fixed logical height, 0 follows the WINDOW
 height (device-native; measured effectively free on a low-end phone). UI/touch
 controls are laid out in logical units, so they draw smaller as the height
@@ -805,9 +804,8 @@ derived constant (at rain's density, objects at the shortened distance are still
 
 The GL Compatibility backend compiles a shader program (and uploads its textures)
 the **first time each material renders**, which on web stalls that frame — confirmed
-via the benchmark's cold-vs-warm two-pass (a fresh WebGL context spikes to ~80 ms on
-first-use draws; a warm second pass of the same stage drops to ~30 ms — see
-[benchmark.md](benchmark.md)). Two load-time warm passes pay those compiles behind
+via the deleted island benchmark's cold-vs-warm two-pass (a fresh WebGL context spikes to ~80 ms on
+first-use draws; a warm second pass of the same stage drops to ~30 ms). Two load-time warm passes pay those compiles behind
 the loading cover instead of mid-drive. Free roam runs the same passes at its boot
 (`free_roam.gd._warm_up`, see [free-roam.md](free-roam.md) → "Boot"):
 
@@ -877,8 +875,7 @@ shipped knobs in `GameConfig`:
   `select_fps`) writes `Engine.max_fps` **live** (the frame cap is a global engine
   property, so no live-scene signal is needed — both the HQ and pause hosts take
   effect immediately) and `world._ready()` re-derives it next run. During a benchmark
-  the config-driven cap wins (`Benchmark.active` → `default_cap()`), so the uncap
-  toggle still works regardless of the player's saved setting. **`target_fps`**
+  the config-driven cap wins (`Benchmark.active` → `default_cap()`), not the player's saved setting. **`target_fps`**
   (desktop/native, default 0 = uncapped) / **`target_fps_mobile`** (native mobile, default 0) /
   **`target_fps_web`** (web, default 0 — all three uncapped since 2026-11-23) remain the *default* source: the web cap
   applies only to a web **touch device** (phone/tablet browser); a **desktop browser**
@@ -943,8 +940,7 @@ which walks a subtree and sets the fields on every `GeometryInstance3D`
 (MeshInstance3D / MultiMeshInstance3D / Label3D); `end_m <= 0` leaves the subtree
 uncapped (flat test fixtures). The distance reaches spectators/signs via their
 `GameConfig` param dicts (`render_distance_m` / `render_fade_m`). Because it's one
-field, the benchmark's **Full render distance** toggle (which halves
-`tree_render_distance_m`) now scales every prop's cull together.
+field, changing `tree_render_distance_m` scales every prop's cull together.
 
 Rendering **setup** (environment, mesh shader materials, post-process shader,
 shader sources) is covered by `test_render_smoke.gd` — see

@@ -4,11 +4,6 @@ extends Node3D
 # Free roam: the streamed road-first island, driven in the world session's car from where it was
 # left (WorldSession). Press R to put the car back on the nearest road.
 # See todo/2026-10-19-free-roam-pivot.md.
-#
-# `-- --auto-drive` on the command line hands the car to an AutoDriver, which drives a route
-# across the island, prints its streaming report and quits (Benchmark.active does the same
-# drive with the benchmark's sampling instead):
-#   godot --headless --path . -- --auto-drive
 
 @onready var _streamer: TerrainStreamer = $Terrain
 @onready var _car: VehicleBody3D = $Car
@@ -65,9 +60,6 @@ func _enter_tree() -> void:
 	# Straight after the streamer builds its sites, before the rest stops and loot read their ids.
 	st.ready.connect(func() -> void: WorldSession.check_sites(WorldSession.sites_fingerprint(st.sites)),
 		CONNECT_ONE_SHOT)
-	if Benchmark.active:
-		st.settings = st.settings.duplicate()
-		st.settings.straight_road_m = Benchmark.ROAD_M
 
 
 func _ready() -> void:
@@ -267,19 +259,15 @@ func _loading_cover() -> LoadingScreen:
 	return cover
 
 
-# Boot is done: the pause menu, then the auto-driver or the title menu if either is due.
+# Boot is done: the pause menu, then the cold open or the title menu if either is due.
 func _hand_over() -> void:
 	_car.damage.thermal = true  # not sooner: an overheating car would lose health behind the loading cover
 	if not Benchmark.active:
 		WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	_rest_stops.input_enabled = true
 	_pause.set_input_enabled(true)
-	if Benchmark.active:
-		start_benchmark()
-	elif cold_open != null:
+	if cold_open != null:
 		cold_open.start()
-	elif "--auto-drive" in OS.get_cmdline_user_args():
-		start_auto_drive()
 	elif WorldSession.title_pending:
 		WorldSession.title_pending = false
 		show_title()
@@ -500,32 +488,6 @@ func _physics_process(delta: float) -> void:
 	if _save_t <= 0.0:
 		_save_t = _streamer.settings.save_every_s
 		save_world()
-
-
-func start_auto_drive() -> AutoDriver:
-	var driver := AutoDriver.new()
-	driver.name = "AutoDriver"
-	if "--auto-drive" in OS.get_cmdline_user_args():
-		driver.log_every_ticks = 300
-	add_child(driver)
-	driver.start(_car, _streamer)
-	driver.finished.connect(func(r: Dictionary) -> void:
-		print("auto drive: ", r)
-		if "--auto-drive" in OS.get_cmdline_user_args():
-			get_tree().quit())
-	return driver
-
-
-# The benchmark (features/benchmark.md): the auto-driver drives, the runner samples every frame.
-func start_benchmark() -> BenchmarkRunner:
-	WorldSession.title_pending = false
-	$DebugStats.visible = true
-	$CameraManager.set_mode(CameraManager.Mode.CHASE)
-	var runner := BenchmarkRunner.new()
-	runner.name = "BenchmarkRunner"
-	add_child(runner)
-	runner.setup(_car, start_auto_drive(), get_node_or_null("PostProcess/View") as Viewport, _streamer)
-	return runner
 
 
 func _process(_delta: float) -> void:

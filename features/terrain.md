@@ -721,8 +721,7 @@ per-frame delta.
   (process / physics / render-cpu) from GPU (render-gpu) and logs `[PERF SPIKE]`
   lines noting whether a chunk integrated that frame. Use this to tell a terrain
   hitch from a steady GPU-bound frame.
-- **On-demand benchmark:** `./run_benchmark.sh` (standalone, NOT a test — see
-  [debug-tools.md](debug-tools.md)) benchmarks `compute_chunk_data` (CPU:
+- **On-demand benchmark (deleted 2026-11-27 with the island benchmark):** `./run_benchmark.sh` benchmarked `compute_chunk_data` (CPU:
   noise + mesh arrays), `_spawn_chunk` (main-thread: ArrayMesh +
   `HeightMapShape3D`), the per-boundary-crossing integration cost, and —
   windowed — the real scene's render cpu/gpu time. Numbers are

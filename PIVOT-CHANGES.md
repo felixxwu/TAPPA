@@ -31,8 +31,8 @@ stand-in behind a toggle; on 2026-11-22 Felix made it the official default.
   (`TerrainStreamer`, `RoadNetwork`, rest stops, biome rings, the cold open, …) and
   `Scenes.LEGACY_FREE_ROAM` stay in the tree, with their tests, but nothing in the game enters
   them unless `GameConfig.legacy_free_roam_island` is on (Settings → Dev → "Legacy free-roam
-  island", off by default), which makes `Scenes.change_to` redirect `WORLD` to it. The in-game
-  benchmark (`BenchmarkMode`) still drives the island; the level has `benchmark/level_replay.gd`.
+  island", off by default), which makes `Scenes.change_to` redirect `WORLD` to it. The only
+  benchmark is the level's replay, `benchmark/level_replay.gd`.
 - **Shared pieces are not legacy:** the car, HUD, cameras, pause menu, the shop and
   `LootRules`, `DamageModel` and the title screen serve the level too.
 - The section below (and `gameplay.md`) describes the island game; read it as history plus the
@@ -67,7 +67,7 @@ stand-in behind a toggle; on 2026-11-22 Felix made it the official default.
 | `scripts/free_roam/biome_director.gd` | Ring → region look, handling and weather, following the car |
 | `scripts/free_roam/rest_stops.gd`, `rest_stop_page.gd`, `world_pages.gd` | Bonfires, the rest-stop page, the map and stats pages |
 | `scripts/free_roam/loot_rules.gd`, `loot_director.gd` | Shop stock and prices, coins, money, the wreck |
-| `scripts/free_roam/road_recovery.gd`, `auto_driver.gd` | Reset to road; the self-driving streaming test |
+| `scripts/free_roam/road_recovery.gd` | Reset to road |
 | `scripts/world_session.gd` (**autoload**) | The persistent world in the profile |
 | `scripts/title_screen.gd`, `title.tscn` | The front door (the main scene) |
 | `tools/compile_check.tscn` | Loads every script and scene with the autoloads present; the CI gate |

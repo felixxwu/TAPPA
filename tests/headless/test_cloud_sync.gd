@@ -169,7 +169,7 @@ func test_a_push_in_flight_when_a_benchmark_starts_records_on_the_uploaded_profi
 	_rest.queue_ok({})
 	var real: Dictionary = _save.profile
 	_sync.push()  # runs to its first await: the upload is in flight
-	_save.profile = real.duplicate(true)  # what Benchmark.begin does
+	_save.profile = real.duplicate(true)  # the profile swapped out mid-upload
 	while _sync._busy:
 		await get_tree().process_frame
 	var throwaway: Dictionary = _save.profile

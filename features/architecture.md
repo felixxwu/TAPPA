@@ -151,8 +151,8 @@ Declared in `project.godot` `[autoload]`:
    Before generation begins, `_ready` also sets `$Car.controls_locked = true` so
    the player can't press W and drive off behind the overlay during those awaited
    frames (the car is already in the tree and physics-processing); every
-   end-of-generation spawn path resets `controls_locked` (`StageManager.setup`,
-   `BenchmarkRunner.setup`), so the lock only governs the loading window.
+   end-of-generation spawn path resets `controls_locked` (`StageManager.setup`),
+   so the lock only governs the loading window.
 3. Per-system scripts (`car.gd`, `drivetrain.gd`, `engine.gd`, `chase_camera.gd`,
    `terrain_manager.gd`, `hud.gd`, `engine_audio.gd`) read `Config.data` directly for
    their own tunables.

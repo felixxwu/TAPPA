@@ -150,15 +150,11 @@ func return_from_photo_mode() -> void:
 	_focus_card("Photo Mode")
 
 
-# Unfreeze, then go to the title. A benchmark run exits through Benchmark.exit_to_title so its
-# config overrides and the real profile are restored.
+# Unfreeze, then go to the title.
 func quit_to_title() -> void:
 	get_tree().paused = false
 	quitting.emit()
-	if Benchmark.active:
-		Benchmark.exit_to_title()
-	else:
-		Scenes.change_to(get_tree(), Scenes.TITLE)
+	Scenes.change_to(get_tree(), Scenes.TITLE)
 
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -45,9 +45,9 @@ and the respawn pose uses the cleaned `RestStops.last_site`.
 
 **The world generation.** `WorldSession.generation` moves on (`invalidate()`, which also emits
 `world_changed`) whenever the profile's world is replaced: `new_world`, a whole-profile swap
-(`Save.replaced`: a cloud download, a wipe) and `Benchmark.end`. Free roam captures it in `_ready`;
+(`Save.replaced`: a cloud download, a wipe). Free roam captures it in `_ready`;
 once it differs, `save_world` and the per-tick map/ring/seen writes do nothing, so a scene still on
-screen for a frame after the swap (the benchmark ending, the title's New World, Use cloud) can't
+screen for a frame after the swap (the title's New World, Use cloud) can't
 write its car into the world that replaced it. `CarPreviewCache` drops its owned-car previews on
 the same signal.
 
@@ -57,8 +57,6 @@ the same signal.
   `is_seen` / `see` keep an int set, rebuilt only when the stored list is a different one).
 - **Schema:** `Save.SCHEMA_VERSION` is 8. Every v7 (roguelike) profile is refused, not migrated,
   and the player starts fresh (decision 26).
-- **Headless runs** can't write the real profile (Save's test sandbox), so a headless
-  `--auto-drive` boot does not persist.
 
 ## Free roam and the session (`free_roam.gd`)
 
@@ -102,7 +100,7 @@ Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.m
   `show_title(true)`, no orbit camera): the end closes them back into the game instead of MAIN.
 
 Free roam's pause menu quits to the title (`PauseMenu.quit_to_title`), saving first — which reloads
-the world with the menu over it. A rest-stop reload or `--auto-drive` boot shows no menu.
+the world with the menu over it. A rest-stop reload shows no menu.
 
 ## World pages (`WorldPages`, decisions 21–22)
 

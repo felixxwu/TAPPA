@@ -279,8 +279,7 @@ start appearing inside the barrier.
 
 ## Config (`GameConfig` › *Corner Barriers*)
 
-`barriers_enabled` (master switch — the benchmark's barriers toggle drives it, see
-[benchmark.md](benchmark.md)), `barrier_section_length_m` (the stitch pitch),
+`barriers_enabled` (master switch), `barrier_section_length_m` (the stitch pitch),
 `barrier_road_gap_m`, `barrier_lead_m`, `barrier_tarmac_threshold`,
 `barrier_sink_m`, plus the terrain rule: `barrier_slope_probe_m` (how far out from the
 road edge the hill-or-drop probe reads), `barrier_drop_min_m` (how far the ground must

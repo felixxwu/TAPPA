@@ -1,7 +1,7 @@
 class_name SettingsMenu
 extends VBoxContainer
 # Docs: features/settings.md (adding/changing a setting), features/menu-navigation.md (every row must be keyboard+gamepad navigable) — update in the same change as this file.
-# Tests: tests/headless/test_settings_menu.gd, tests/headless/test_menu_nav.gd, tests/headless/test_benchmark_ui.gd — extend in the same change. Others: grep -rl SettingsMenu tests/.
+# Tests: tests/headless/test_settings_menu.gd, tests/headless/test_menu_nav.gd — extend in the same change. Others: grep -rl SettingsMenu tests/.
 # A reusable settings panel shared by the title screen's Settings page and
 # the pause menu, so both present the SAME options. It opens on a LIST of
 # categories; each
@@ -28,10 +28,6 @@ extends VBoxContainer
 #   • Reset progress — wipe the save back to a fresh new game (local AND, when
 #     signed in, the cloud copy). Player-facing, NOT dev tooling: it is the only
 #     way to start over, so it sits in the ordinary list behind a confirm modal.
-#   • Benchmark — configure and launch the in-game performance benchmark
-#     (features/benchmark.md): one ON/OFF row per Benchmark.TOGGLES entry
-#     (vegetation, spectators, render distance, …) and a Start row that hands off
-#     to the Benchmark autoload (which owns the config overrides + scene change).
 # Navigation is internal: show_list()/show_camera()/show_schemes() swap which page
 # is visible. Choices are stored
 # via Save.set_setting. The host wraps this whole VBox in a (touch) ScrollContainer;
@@ -60,7 +56,7 @@ const RESET_WARNING := "Start a brand new game. Your world, cars, parts, money a
 static var dev_tools_override := -1
 
 
-# Are the developer-only settings pages (Benchmark / Dev) reachable,
+# Is the developer-only Dev settings page reachable,
 # and — via this same switch, checked at every OTHER dev-affordance site in the
 # project (car.gd, hud.gd, world.gd, terrain_manager.gd, perf_log.gd) — every other dev key/overlay/log too. One
 # switch, defaulting to true: dev features are exposed to every player, not just
@@ -84,8 +80,6 @@ var _dev_weather_button: Button
 var _dev_rally_button: Button
 var _legacy_island_button: Button
 var _teleport_anywhere_button: Button
-# Benchmark toggle rows, exposed for tests: [{key: String, button: Button}].
-var benchmark_rows: Array = []
 
 # The swappable pages (only one visible at a time).
 var _list_page: VBoxContainer
@@ -100,7 +94,6 @@ var music_value_label: Label
 var _camera_page: VBoxContainer
 var _controls_page: VBoxContainer
 var _scheme_page: VBoxContainer
-var _benchmark_page: VBoxContainer
 var _dev_page: VBoxContainer
 var _dev_status: Label  # feedback line on the dev page ("Added …", "Granted …")
 var _reset_page: VBoxContainer
@@ -130,7 +123,6 @@ func _build() -> void:
 	_build_camera_page()
 	_build_controls_page()
 	_build_schemes_page()
-	_build_benchmark_page()
 	_build_dev_page()
 	_build_account_page()
 	_build_reset_page()
@@ -141,7 +133,7 @@ func _build() -> void:
 	_pages = {
 		"list": _list_page, "audio": _audio_page, "display": _display_page,
 		"camera": _camera_page, "controls": _controls_page,
-		"schemes": _scheme_page, "benchmark": _benchmark_page, "dev": _dev_page,
+		"schemes": _scheme_page, "dev": _dev_page,
 		"account": _account_page, "reset": _reset_page,
 	}
 
@@ -150,7 +142,6 @@ func _build() -> void:
 	_refresh_fps_selection()
 	_refresh_outline_row()
 	_refresh_controls_selection()
-	_refresh_benchmark_rows()
 
 
 func _build_list_page() -> void:
@@ -181,7 +172,6 @@ func _build_list_page() -> void:
 	# show_* methods still work, which is how the tests reach them) — only the way
 	# in is removed, so nothing else has to learn about the distinction.
 	if dev_tools_enabled():
-		list_grid.add_child(_make_nav_button("Benchmark", show_benchmark))
 		list_grid.add_child(_make_nav_button("Dev", show_dev))
 
 
@@ -250,22 +240,6 @@ func _build_schemes_page() -> void:
 	_scheme_page.add_child(_make_sub("Pick a touch layout:"))
 	_build_option_page(_scheme_page, MobileControls.SCHEMES, "id", scheme_rows, select_scheme,
 		_make_scheme_row)
-
-
-func _build_benchmark_page() -> void:
-	# Benchmark sub-page — the pre-run feature toggles + Start (features/benchmark.md).
-	_benchmark_page = _make_page()
-	add_child(_benchmark_page)
-	_benchmark_page.add_child(_make_heading("Benchmark"))
-	_benchmark_page.add_child(_make_sub(
-		"Auto-drive a route across a fixed island and measure performance. Toggle features to isolate their cost:"))
-	benchmark_rows.clear()
-	for entry in Benchmark.TOGGLES:
-		var key := String(entry["key"])
-		var button := _make_action_button("", _toggle_benchmark.bind(key))
-		benchmark_rows.append({"key": key, "name": String(entry["name"]), "button": button})
-		_benchmark_page.add_child(button)
-	_benchmark_page.add_child(_make_action_button("Start benchmark  >", _start_benchmark))
 
 
 func _build_dev_page() -> void:
@@ -391,10 +365,6 @@ func show_controls() -> void:
 
 func show_schemes() -> void:
 	show_page("schemes")
-
-
-func show_benchmark() -> void:
-	show_page("benchmark")
 
 
 func show_dev() -> void:
@@ -556,30 +526,6 @@ func _capture_for_slot(event: InputEvent, slot: String) -> InputEvent:
 		m.axis_value = signf(event.axis_value)
 		return m
 	return null
-
-
-# --- Benchmark ---------------------------------------------------------------
-
-# Repaint every benchmark toggle row with its option's current ON/OFF state
-# (green-selected while ON, like the camera/scheme selections).
-func _refresh_benchmark_rows() -> void:
-	for row in benchmark_rows:
-		var on: bool = Benchmark.get_option(String(row["key"]))
-		row["button"].text = UITheme.caps("%s: %s" % [String(row["name"]), "On" if on else "Off"])
-		_highlight(row["button"], on)
-
-
-# Flip one benchmark toggle and repaint.
-func _toggle_benchmark(key: String) -> void:
-	Benchmark.set_option(key, not Benchmark.get_option(key))
-	_refresh_benchmark_rows()
-
-
-# Launch the benchmark. The Benchmark autoload owns the rest (unpause, config
-# overrides, the run-scene load), so this works the same from the title screen
-# and the pause menu.
-func _start_benchmark() -> void:
-	Benchmark.start()
 
 
 # --- Reset progress ----------------------------------------------------------
@@ -952,7 +898,7 @@ func _make_sub(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", UITheme.FONT_SIZE)
-	# Wrap long blurbs (e.g. the benchmark page's description) to the width the
+	# Wrap long blurbs to the width the
 	# page's rows set, instead of forcing the whole settings panel wider.
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -936,11 +936,6 @@ func has_nitrous() -> bool:
 ## Length of the combined steer-assist debug arrow (yellow, above the car,
 ## points left/right), in metres drawn per newton-metre of yaw-assist torque.
 @export var debug_assist_arrow_scale := 0.0001
-## Where a benchmark run POSTs its results JSON (features/benchmark.md → feedback
-## loop). Empty = auto: on a web build, POST to "/bench" on the page's own origin
-## (the start_web.sh collector), so the LAN loop needs no config. On an installed
-## APK set this to your dev machine, e.g. "http://192.168.1.50:8080/bench".
-@export var bench_report_url := ""
 
 @export var follow_distance := 5
 ## Chase camera height above the car, expressed as a multiple of
@@ -1407,7 +1402,7 @@ func has_nitrous() -> bool:
 ## at that fixed height; 0 follows the window height (device-native). Crisper
 ## image at higher values / native; UI/HUD/touch controls are laid out in logical
 ## units so they draw smaller as this rises. Applied by DisplayStretch
-## (scripts/display_stretch.gd); a benchmark's explicit resolution-sweep override
+## (scripts/display_stretch.gd); a positive Benchmark.render_height
 ## still wins while a benchmark is active. NOTE: the UI is authored against the
 ## original 400-tall canvas and re-inflated by UITheme.UI_SCALE — keep that
 ## constant equal to render_height / 400 when retuning this (see

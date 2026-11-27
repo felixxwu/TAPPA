@@ -1,6 +1,6 @@
 extends Node3D
-# Docs: features/benchmark.md, features/lakes.md — update in the same change as this file.
-# Tests: tests/headless/test_benchmark_ui.gd, tests/headless/test_lake_field.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'world' tests/headless/` and read the assertions that pin what you are about to change (8 test files touch this script).
+# Docs: features/lakes.md — update in the same change as this file.
+# Tests: tests/headless/test_lake_field.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'world' tests/headless/` and read the assertions that pin what you are about to change (8 test files touch this script).
 # Applies the central GameConfig to scene-owned resources at startup.
 # Car handling is applied by car.gd; camera follow by chase_camera.gd.
 
@@ -200,7 +200,7 @@ func _field_player_car() -> void:
 	# tree and physics-processing, so without this lock the player could press W and
 	# drive off behind the loading screen. Set BEFORE the car is fielded so it's
 	# inert the instant it exists (no fielding→lock gap). Every spawn path resets
-	# controls_locked at the end of generation — StageManager.setup and BenchmarkRunner.setup — so this only
+	# controls_locked at the end of generation (StageManager.setup) so this only
 	# governs the loading window itself.
 	$Car.controls_locked = true
 
@@ -972,8 +972,7 @@ func _build_persistent_managers(cfg: GameConfig, _result: Dictionary,
 
 	# Per-stage start/end flow: lock the car, count down, time the run, and signal
 	# completion when progress reaches the finish (todo/stage-start-and-end.md).
-	# A benchmark run skips the whole stage flow — the manager is left un-armed
-	# (no countdown, no control lock) and BenchmarkRunner drives instead.
+	# Benchmark.active leaves the manager un-armed (no countdown, no control lock).
 	_stage_manager = _ensure_child("StageManager",
 		func() -> Node: return StageManager.new()) as StageManager
 	if not Benchmark.active:

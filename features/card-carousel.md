@@ -57,7 +57,7 @@ Cache hygiene: `get_or_build` always hands back an UNPARENTED preview — it pul
 whatever still holds it (the graveyard, or a page that was `queue_free()`d without
 `park_previews`, which would otherwise make the caller's `add_child` fail). `drop_owned()` frees
 every `owned:*` entry and runs on `WorldSession.world_changed` (any replaced world — New World, a
-cloud download, a wipe, the benchmark ending — brings other owned cars, whose instance ids can
+cloud download, a wipe — brings other owned cars, whose instance ids can
 repeat the old ones); catalogue previews are kept.
 
 ## Shape

@@ -93,8 +93,7 @@ focus next frame.
 button — backs both the title-screen Settings page and the pause menu's), the **pause**
 menu (its card list, and the Settings page), `ConfirmPopup`
 (the modal layer — see [modals.md](modals.md)), the HUD's **stage-complete panel**'s single
-`NEXT` button (`hud.gd`, [hud.md](hud.md)), `AccountMenu` ([cloud-save.md](cloud-save.md)),
-and `BenchmarkResults` ([benchmark.md](benchmark.md)). Free roam's menus attach it too:
+`NEXT` button (`hud.gd`, [hud.md](hud.md)), and `AccountMenu` ([cloud-save.md](cloud-save.md)). Free roam's menus attach it too:
 the title screen, the rest-stop page and the world pages (map, stats) — each card page with
 `{first = <its CardCarousel>}`.
 

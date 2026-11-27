@@ -92,8 +92,8 @@ func _ready() -> void:
 	if not _recording and DisplayServer.get_name() == "headless":
 		push_warning("level replay: headless draws nothing, so these numbers leave out all rendering")
 	process_physics_priority = -100  # before the car reads its inputs this tick
-	# What the in-game benchmark sets: a landscape-sized frame and no rotate prompt even on a portrait phone,
-	# a fixed engine misfire seed, and no cloud sync. Only the flag: Benchmark.begin() would also swap the save out.
+	# A landscape-sized frame and no rotate prompt even on a portrait phone, a fixed engine misfire seed,
+	# and no cloud sync.
 	Benchmark.active = not _recording
 	if _empty:
 		var cam := Camera3D.new()

@@ -68,7 +68,7 @@ There is no Graphics page: the level tunes its own draw distances and effects li
 [adaptive-graphics.md](adaptive-graphics.md).
 
 Navigation lives inside the component: `show_list()` / `show_camera()` /
-`show_schemes()` / `show_benchmark()` / `show_dev()` swap which page is visible (only the visible page contributes
+`show_schemes()` / `show_dev()` swap which page is visible (only the visible page contributes
 height, so the long schemes page scrolls while the short list/camera pages don't). The saved choice in each section is highlighted and persisted via
 `Save.set_setting`. A first-time player sees the camera page, and on touch the Mobile
 controls page, at the end of the cold open (`title_screen.gd` → `View.FIRST_RUN`).
@@ -94,8 +94,8 @@ the tuning pages in [tuning.md](tuning.md), and the one-bottom-action-row rule i
 
 ## Developer-only pages
 
-**Benchmark, Dev and Seed lab are shown to everyone.** `_build_list_page` adds
-those three category buttons whenever `SettingsMenu.dev_tools_enabled()` — the
+**Dev is shown to everyone.** `_build_list_page` adds
+its category button whenever `SettingsMenu.dev_tools_enabled()` — the
 single switch `car.gd` / `hud.gd` / `world.gd` /
 `terrain_manager.gd` / `perf_log.gd` all key off for every other
 dev affordance (force arrows, grip grid, world-menu A/B,
@@ -103,8 +103,8 @@ skip-to-finish, chunk-border overlay, perf log). It defaults to **true** — dev
 tools are exposed in the exported release/web build, not just the editor and
 debug exports.
 
-The pages are still **built** either way, and `show_benchmark()` / `show_dev()`
-still work regardless of the switch — only the way in is gated.
+The page is still **built** either way, and `show_dev()`
+still works regardless of the switch — only the way in is gated.
 That keeps `_pages`, focus handling and the tests that drive those pages directly
 unchanged. `dev_tools_override` (static, `-1` = real default of `true`) exists so
 a test can still assert the **hidden** case, which the always-on default alone

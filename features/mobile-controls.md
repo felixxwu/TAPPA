@@ -209,7 +209,7 @@ rest stop, map, stats, wrecked page) pauses the tree, so `_sync_paused` (run fro
 `_notification` on `NOTIFICATION_PAUSED` / `UNPAUSED`, and once in `_ready`) hides the
 overlay while paused and shows it again on resume. It toggles an inner `Overlay` Control
 (`_overlay()`, which every widget is parented to) rather than the layer's own `visible`,
-because photo mode and the benchmark write that (`world.gd`), and the two must never
+because photo mode writes that (`world.gd`), and the two must never
 fight. Going in, it also releases every held action and forgets the tracked pointers,
 since a finger lifted while paused sends its release to a layer that isn't listening. On the web export `is_touchscreen_available()`
 reflects the browser's touch support, so it is true on phones and false on ordinary

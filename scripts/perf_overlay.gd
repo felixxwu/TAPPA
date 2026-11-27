@@ -146,7 +146,7 @@ func _set_active(on: bool) -> void:
 		_frames = PackedFloat32Array()
 		_spikes = 0
 		# Threshold relative to the fps cap so a 30 fps run's 33 ms frames aren't all
-		# flagged (the fixed 28 ms did exactly that). Matches BenchmarkRunner.
+		# flagged (the fixed 28 ms did exactly that).
 		_spike_ms = BenchmarkStats.spike_threshold_ms(Engine.max_fps)
 		_audio_skips = 0
 		if engine_audio != null and engine_audio.has_method("skip_count"):

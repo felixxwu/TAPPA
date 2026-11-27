@@ -313,8 +313,8 @@ func test_wipe_from_a_paused_tree_unpauses_on_the_way_to_the_title() -> void:
 # category list, and `dev_tools_override` is the seam that decides what goes in it.
 
 func test_players_do_not_see_the_developer_settings_pages() -> void:
-	# Benchmark / Dev are dev tooling — a release build must not offer them.
-	# The pages still exist (show_* still works); only the way in is gone.
+	# Dev is dev tooling — a release build must not offer it.
+	# The page still exists (show_* still works); only the way in is gone.
 	SettingsMenu.dev_tools_override = 0
 	var menu := SettingsMenu.new()
 	add_child_autofree(menu)
@@ -324,7 +324,6 @@ func test_players_do_not_see_the_developer_settings_pages() -> void:
 	var joined := _category_labels(menu)
 	SettingsMenu.dev_tools_override = -1
 
-	assert_false(joined.contains("BENCHMARK"), "no Benchmark entry for players")
 	assert_false(joined.contains("DEV"), "no Dev entry for players")
 	assert_true(joined.contains("AUDIO"), "the real settings are still there")
 	assert_false(joined.contains("ACCOUNT"), "the account page is hidden for now")
@@ -340,7 +339,7 @@ func test_developer_builds_still_reach_the_dev_pages() -> void:
 	var joined := _category_labels(menu)
 	SettingsMenu.dev_tools_override = -1
 
-	assert_true(joined.contains("BENCHMARK"))
+	assert_true(joined.contains("DEV"))
 
 
 class FakeWorld extends Node:

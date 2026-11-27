@@ -144,7 +144,7 @@ var finish_stop := false
 # countdown so the player can pull away at full revs on GO. Set by StageManager.
 var handbrake_locked := false
 
-# Scripted ("AI") control for non-player cars (benchmark_runner, auto_driver, the free-roam wreck).
+# Scripted ("AI") control for non-player cars (the level replay, the free-roam wreck).
 # When true the car ignores global Input and drives from these values (same axes/sign as the player).
 var ai_controlled := false
 var ai_throttle := 0.0    # -1..1, forward positive (brake_reverse..accelerate axis)

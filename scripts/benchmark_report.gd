@@ -7,7 +7,7 @@ extends RefCounted
 #
 # build()/to_json() are PURE (no scene / no engine singletons) so they're tested
 # headless; the runtime-only device probing lives in probe_device(), which the
-# runner calls and hands to build().
+# replay calls and hands to build().
 
 const SCHEMA := "rally-bench/1"
 
@@ -18,7 +18,7 @@ const SCHEMA := "rally-bench/1"
 #   scripts   — {script_name: ms/frame} from PerfLog.end_capture()
 #   device    — probe_device() output (adapter, os, cpu count, resolution, …)
 #   timestamp — an ISO-ish string stamped by the caller (Time.get_datetime_*)
-#   label     — short run identifier (build version + disabled toggles)
+#   label     — short run identifier
 static func build(stats: Dictionary, scripts: Dictionary, device: Dictionary,
 		timestamp: String, label: String, load_ms: Dictionary = {}) -> Dictionary:
 	return {
@@ -35,34 +35,6 @@ static func build(stats: Dictionary, scripts: Dictionary, device: Dictionary,
 
 static func to_json(report: Dictionary) -> String:
 	return JSON.stringify(report, "  ")
-
-
-# A short, filesystem-safe run label the collector uses in the filename and
-# Claude uses to tell runs apart: the build version plus which toggles were off
-# (so "baseline" vs "trees-off" runs are distinguishable at a glance). Pure.
-# `render_height` > 0 appends an "h<height>" part so resolution-sweep runs are
-# distinguishable in the results filenames (0 = authored default, no part).
-static func make_label(build_version: String, disabled_toggles: Array, render_height: int = 0) -> String:
-	var parts: PackedStringArray = []
-	if build_version != "":
-		parts.append(build_version)
-	if disabled_toggles.is_empty():
-		parts.append("baseline")
-	else:
-		for name in disabled_toggles:
-			parts.append("no-" + String(name))
-	if render_height > 0:
-		parts.append("h%d" % render_height)
-	return _sanitize("_".join(parts))
-
-
-# Keep only characters safe in a filename segment; everything else becomes "-".
-static func _sanitize(s: String) -> String:
-	const SAFE := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."
-	var out := ""
-	for i in s.length():
-		out += s[i] if s[i] in SAFE else "-"
-	return out
 
 
 # Runtime device/context probe (NOT pure — reads engine singletons). Kept out of

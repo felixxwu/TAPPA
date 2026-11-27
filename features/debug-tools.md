@@ -208,31 +208,6 @@ keyboard + gamepad navigable" rule in `CLAUDE.md`.
 | `log_pile_lab.tscn` | `log_pile_lab.gd` | Previews procedural roadside timber piles from `LogPile.build` (`log_pile.gd`) — reseed, cycle style (stack / tapered / loose), tweak rows/width/length/radius/sections, and copy the printed call into the game.|
 
 
-## Standalone performance benchmark
-
-**Source:** `benchmark/perf_benchmark.gd` + `benchmark/perf_benchmark.tscn`, run
-via `./run_benchmark.sh`. **NOT part of the test suite** — an on-demand tool for
-investigating choppiness, with no pass/fail gate (numbers are machine-dependent).
-It drives the SAME run as the player-facing, in-game benchmark (Settings →
-Benchmark: feature toggles, auto-driven run, results breakdown — see
-[benchmark.md](benchmark.md)), just headless/CLI instead of an on-screen results
-panel.
-
-```bash
-./run_benchmark.sh             # windowed: real frame timing + GPU/render time
-./run_benchmark.sh --headless  # CPU-only (no GPU timing), quick
-```
-
-It calls `Benchmark.begin()` and hosts `free_roam.tscn` as a child, so free roam
-runs the benchmark drive (straight road, `Benchmark.WORLD_SEED`) while
-`BenchmarkRunner` records per-frame samples. At the end it prints the `BenchmarkStats.summarise` breakdown to
-stdout — fps (avg + 1% low), frame ms (avg/p95/p99/max), process/physics ms,
-render cpu/gpu ms, draws/objects/prims, spike count and the `AutoDriver` streaming
-report — then calls `Benchmark.end()` and quits. GPU timers
-need a real display (skipped/zero under `--headless`) and aren't supported on
-every backend (e.g. OpenGL/macOS may report 0) — then infer GPU cost from the
-frame interval minus render-cpu.
-
 ## Tests
 
 `tests/headless/test_debug_arrows.gd` — verifies the force-arrow overlay updates

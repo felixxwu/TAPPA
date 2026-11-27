@@ -94,7 +94,7 @@ children ignore it.
 - Road lookup: segments are bucketed once at boot by the 40 m driven cell of their midpoint
   (`index_roads`), so a redraw makes one `has_driven` lookup per cell.
 - Measured on the default island (container CPU, 2026-10-20): a road rebuild's gathering
-  about 150–300 µs, about 2 rebuilds a second at auto-driver speed (50 km/h); a frame without a
+  about 150–300 µs, about 2 rebuilds a second at 50 km/h; a frame without a
   rebuild about 2 µs; the site-marker refresh (1 Hz, or
   when a site is newly seen) about 45 µs.
 - The tilt is a canvas_item shader (`ground` in the shader, `screen_of` / `ground_of` its

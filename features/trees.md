@@ -20,8 +20,8 @@ rendering path was removed.
 traced silhouette (`TreeSilhouette`, `billboard_opaque.gdshader`), 1 a plain "+" card cut out
 per pixel at half alpha (`billboard_alpha.gdshader`), 2 a plain card **blended** by its alpha
 (`billboard_blend.gdshader`, soft edges). The game uses **2** since 2026-10-27: measured on a
-phone it costs the same as the opaque silhouette (the half-alpha cutout was ~3 fps slower), see
-[benchmark.md](benchmark.md) → "Tree cutout sweep". The blended card writes depth and drops
+phone it costs the same as the opaque silhouette (the half-alpha cutout was ~3 fps slower): on an
+Android phone, three alternating rounds each, opaque 44.4 fps, half-alpha cutout 41.1, blend 46.0. The blended card writes depth and drops
 pixels under 0.1 alpha, because the web's Compatibility renderer has no depth prepass and the
 trees of a field otherwise drew over each other in spawn order; the cost is a faint halo where a
 soft edge is drawn before a tree behind it. All three share `billboard_tree.gdshaderinc`, and the
@@ -378,8 +378,7 @@ the tree field and the bush field back to back.
 
 `Trees` group in `GameConfig` (`scripts/game_config.gd` overrides some):
 `vegetation_enabled` (master switch — false skips the whole scatter + fields +
-bush hit volume; the benchmark's vegetation toggle drives it, see
-[benchmark.md](benchmark.md)),
+bush hit volume),
 `trees_per_turn` (density target), `tree_spawn_radius_m`, `tree_road_margin_m`
 (gap from the road edge), `tree_jitter` (how far trees wander from the grid; lower
 = more regular), `tree_size_m` (billboard card size, width `.x` × height `.y`),

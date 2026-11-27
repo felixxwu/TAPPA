@@ -45,10 +45,10 @@ static func base_design_height() -> float:
 
 
 var _last_window_size := Vector2i.ZERO
-# Benchmark state as last applied (active, render_height): the benchmark flips
+# Benchmark state as last applied (active, render_height): the replay flips
 # these without a window resize, so _process re-applies when they change — this
-# is what makes the portrait->landscape swap and the resolution-sweep height take
-# effect at Benchmark.start() rather than waiting for the next resize.
+# is what makes the portrait->landscape swap take effect as the replay starts
+# rather than waiting for the next resize.
 var _last_bench := [false, 0, 0]
 
 
@@ -94,7 +94,7 @@ func _apply() -> void:
 	# portrait (phone held upright / rotation locked). The 3D pass then does the
 	# representative landscape pixel count — otherwise a portrait window renders at
 	# ~1/4 the resolution and the benchmark under-measures GPU/fill cost. Visually
-	# squished into the portrait window, but the auto-driven run has no viewer.
+	# squished into the portrait window, but the replay has no viewer.
 	var effective := benchmark_window_size(size, Benchmark.active)
 	var height := design_height_for(
 		effective, Benchmark.active, Benchmark.render_height,
@@ -116,8 +116,7 @@ static func benchmark_window_size(size: Vector2i, benchmark_active: bool) -> Vec
 # the window has to scale it back out by that factor — a pure horizontal widening.
 # Pure + static so it's unit-testable without a real Window.
 # The logical height to lay the frame out against, in priority order: a
-# benchmark's explicit resolution-sweep height (features/benchmark.md ->
-# "Resolution sweep") wins while a benchmark is active; otherwise the
+# positive Benchmark.render_height (features/benchmark.md) wins while a benchmark is active; otherwise the
 # render_height look value (GameConfig) — positive = that fixed height,
 # 0 = follow the window height (device-native). A degenerate window falls
 # back to the authored DESIGN_HEIGHT. Pure + static for testing.
@@ -132,7 +131,7 @@ static func design_height_for(window_size: Vector2i, bench_active: bool,
 	return DESIGN_HEIGHT
 
 
-# `design_height` defaults to the authored height; the benchmark resolution sweep
+# `design_height` defaults to the authored height; Benchmark.render_height
 # and the native_render_height look value pass overrides.
 static func logical_size(window_size: Vector2i, stretch: float, design_height: float = DESIGN_HEIGHT) -> Vector2i:
 	var factor := maxf(stretch, 0.01)

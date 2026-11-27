@@ -38,7 +38,7 @@ stays the record of how each step was done. The `CLAUDE.md` rule to ask before r
 spec items still applies.
 
 - [x] 0 Delete files nothing depends on (2026-11-27)
-- [ ] 1 Remove the island benchmark
+- [x] 1 Remove the island benchmark (2026-11-27)
 - [ ] 2 Remove the first-run intro
 - [ ] 3 Make `LevelStreamer` stand alone
 - [ ] 4 Delete the island

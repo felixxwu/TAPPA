@@ -125,7 +125,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | [car-scanning.md](car-scanning.md) | `tools/car_scan/` — walk-around video of a car → Apple Object Capture photogrammetry → low-poly textured body glb |
 | [debug-tools.md](debug-tools.md) | Force-arrow visualization overlay |
 | [adaptive-graphics.md](adaptive-graphics.md) | The level tunes its own draw distances, effects and resolution live to hold the frame rate; full-detail terrain kept under the car; the P overlay's adaptive page |
-| [benchmark.md](benchmark.md) | In-game benchmark mode — Settings → Benchmark: pre-run feature toggles, auto-driven free-roam run at 50 km/h, end-of-run stats breakdown |
+| [benchmark.md](benchmark.md) | The Hafren replay benchmark (`run_level_replay.sh`, `?replay=1`): record a drive, replay it and measure every frame; the report and the phone profiling loop |
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |
 | [release-pipeline.md](release-pipeline.md) | The `Release` workflow — cache gate, itch/Play/Pages/Firestore jobs, the `install-butler` composite action, secrets |
@@ -172,8 +172,7 @@ fast-travel. See [free-roam.md](free-roam.md), [loot.md](loot.md) and
 | Weather dimming of fake-lit materials | `scripts/game_config.gd` (`weather_lit` — the rule; `apply_car_light` / `apply_foliage_light`; the runtime `weather_sun_mult`), `scripts/world.gd` (`_apply_overcast_look` seeds it, `_apply_weather_look` re-seeds 1.0, `_exit_tree` resets it), and the callers `scripts/billboard_field.gd`, `scripts/lake_field.gd` — see [weather.md](weather.md), [rendering.md](rendering.md) |
 | Sky panorama | `scripts/world.gd` (`_apply_region_look` seeds it unconditionally from the region look or `GameConfig.default_sky_panorama`; `_apply_weather_look` lets a condition override it — only night does, via `night_sky_panorama` / `textures/sky-night.jpg`), `main.tscn` (`WorldEnvironment`'s shared `PanoramaSkyMaterial`) — see [regions.md](regions.md), [weather.md](weather.md) |
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/perf_overlay.gd`, `scripts/level_stats.gd` |
-| Perf benchmark | `benchmark/perf_benchmark.gd`, `run_benchmark.sh` |
-| In-game benchmark | `scripts/benchmark_mode.gd` (`Benchmark` autoload), `scripts/benchmark_runner.gd`, `scripts/benchmark_stats.gd`, `scripts/benchmark_results.gd` |
+| Benchmark | `benchmark/level_replay.gd`, `run_level_replay.sh`, `scripts/benchmark_mode.gd` (`Benchmark` autoload), `scripts/benchmark_stats.gd`, `scripts/benchmark_report.gd` |
 | Tests | `tests/`, `run_tests.sh` |
 | Release / CI | `.github/workflows/deploy.yml`, `.github/actions/install-butler/action.yml`, `build_web.sh`, `build_android.sh`, `build_windows.sh`, `build_android_play.sh` |
 | Update check | `scripts/update_check.gd` (`UpdateCheck`; `title_screen.gd` → `_check_for_update` / `show_update_prompt` calls it), `deploy.yml` → `deploy-pages` (`docs/version.json`) |

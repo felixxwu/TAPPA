@@ -1,10 +1,9 @@
 class_name BenchmarkStats
 extends RefCounted
 # Docs: features/benchmark.md — update in the same change as this file.
-# Tests: tests/headless/test_benchmark_mode.gd, tests/headless/test_benchmark_report.gd, tests/headless/test_benchmark_ui.gd — extend in the same change.
-# Pure math for the benchmark results breakdown (features/benchmark.md): turns
-# the per-frame sample streams BenchmarkRunner records into the summary the
-# results screen shows. No scene access — everything here is testable headless.
+# Tests: tests/headless/test_benchmark_report.gd — extend in the same change.
+# Pure math for the replay benchmark's report (features/benchmark.md): turns
+# the per-frame sample streams benchmark/level_replay.gd records into its summary. No scene access — everything here is testable headless.
 
 # A frame interval at or over this counts as a dropped-frame spike — the same
 # threshold the PerfOverlay's spike log uses.
@@ -43,7 +42,7 @@ static func percentile(samples: Array, q: float) -> float:
 # The spike threshold: a frame this much slower than the target counts as a
 # dropped-frame spike. Relative to the frame cap so it's meaningful at any target —
 # a hardcoded 28 ms flags EVERY frame of a 30 fps (33 ms) run. `spike_ms` lets the
-# caller pass the cap-derived value (see BenchmarkRunner); it defaults to SPIKE_MS
+# caller pass the cap-derived value; it defaults to SPIKE_MS
 # (≈1.7× a 60 fps frame) so existing callers / uncapped runs are unchanged.
 static func spike_threshold_ms(target_fps: int) -> float:
 	if target_fps <= 0:

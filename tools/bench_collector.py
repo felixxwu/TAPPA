@@ -2,7 +2,7 @@
 """Static file server for the web build + a POST sink for benchmark reports.
 
 Used by start_web.sh so the LAN profiling loop is zero-config: the game is served
-from here, and a benchmark run POSTs its results JSON back to the SAME origin at
+from here, and a replay benchmark run (?replay=1) POSTs its results JSON back to the SAME origin at
 `/bench` (features/benchmark.md -> "Feedback loop"). Each report is written to
 the results directory as `<utc-timestamp>-<label>.json` and its headline printed
 to the terminal, so Claude can read build/bench-results/*.json and iterate.
@@ -62,19 +62,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0].rstrip("/")
-        if path == "/bench-config":
-            # The dev sweep controller: the game reads this on a ?bench=1 boot and
-            # applies its {"disabled": [...toggle keys...]} before starting the run,
-            # so a dev can drive a toggle sweep from here (write the file + POST
-            # /reload) with no shippable config change. Empty object = full baseline.
-            cfg = RESULTS_DIR.parent / "bench-config.json"
-            body = cfg.read_bytes() if cfg.exists() else b"{}"
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
         if path == "/build-id":
             # start_web.sh rewrites this only once a rebuild is fully exported and patched; the page uses it to retitle its tab.
             stamp = RESULTS_DIR.parent / "web-build-id"

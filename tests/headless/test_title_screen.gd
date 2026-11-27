@@ -181,14 +181,14 @@ func test_every_settings_page_keeps_its_back_button_on_screen() -> void:
 		var bottom := t._page.actions().get_global_rect().end.y
 		assert_lte(bottom, t._page.get_global_rect().end.y + 1.0,
 			"the Back button is on screen on the '%s' page" % id)
-	t._settings_menu.show_benchmark()
+	t._settings_menu.show_controls()
 	await get_tree().process_frame
-	var start: Button = t._settings_menu._benchmark_page.get_child(-1)
-	start.grab_focus()
+	var last: Button = t._settings_menu._controls_page.get_child(-1)
+	last.grab_focus()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	assert_lte(start.get_global_rect().end.y, t._page.panel().get_global_rect().end.y + 1.0,
-		"focusing the last benchmark row scrolls it into view")
+	assert_lte(last.get_global_rect().end.y, t._page.panel().get_global_rect().end.y + 1.0,
+		"focusing the last key-binding row scrolls it into view")
 
 
 # The end of the cold open: just the first-run options over the game, and Next (or Back) closes them

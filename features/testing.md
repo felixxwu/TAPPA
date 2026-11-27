@@ -382,8 +382,8 @@ Two traps worth knowing before writing another one:
   run has to be killed by hand. Put the `quit()` outside the body that can fail.
 
 Performance benchmarking is **separate** from the test suite — it's an on-demand
-investigation tool, not a pass/fail gate. See `run_benchmark.sh` /
-`benchmark/perf_benchmark.gd` (documented in [debug-tools.md](debug-tools.md)).
+investigation tool, not a pass/fail gate. See `run_level_replay.sh` /
+`benchmark/level_replay.gd` (documented in [benchmark.md](benchmark.md)).
 
 ### Known engine flake: audio-thread SIGSEGV on teardown
 

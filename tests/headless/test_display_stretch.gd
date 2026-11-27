@@ -74,10 +74,10 @@ func test_non_benchmark_never_swaps() -> void:
 
 
 
-# --- Benchmark resolution sweep (features/benchmark.md → "Resolution sweep") ----
+# --- Benchmark.render_height override (features/benchmark.md) ----
 
 func test_design_height_override_sets_logical_height() -> void:
-	# The sweep passes an explicit design height; the logical frame renders at it.
+	# An explicit design height (Benchmark.render_height); the logical frame renders at it.
 	var logical := DisplayStretch.logical_size(Vector2i(1995, 1078), 1.0, 720.0)
 	assert_eq(logical.y, 720, "override height becomes the logical height")
 

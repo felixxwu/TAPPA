@@ -147,7 +147,7 @@ fi
 echo "Serving $OUT_DIR over $(echo "$SCHEME" | tr '[:lower:]' '[:upper:]') (threaded build, cross-origin isolated)."
 echo "  This machine : $SCHEME://localhost:$PORT"
 echo "  On your phone: $SCHEME://$LAN_IP:$PORT   (same Wi-Fi; accept the cert warning once)"
-echo "Benchmark reports (Settings -> Benchmark on the phone) POST to /bench and"
+echo "Replay benchmark reports (open ?replay=1 on the phone) POST to /bench and"
 echo "land in $RESULTS_DIR/ for analysis (features/benchmark.md -> feedback loop)."
 echo "Press Ctrl+C to stop."
 

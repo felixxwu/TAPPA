@@ -98,7 +98,7 @@ host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host 
 `return_from_extra()` when its page closes; `closed` fires on `resume()`, which `LevelView` uses to bring back the intro shop), and **after-Resume rows** (`after_resume_rows`, the same but placed
 right after Resume: both hosts put Map second, since a touch screen has no M key; `open()` puts the
 cursor on Resume). Free roam's rows: Resume / Map / Reset to
-road / Photo Mode / Stats / Settings (no Quit to title; `quit_to_title` remains for the benchmark); the level view has Map, Garage, Parts and Tune car after Resume (`after_resume_rows`; `LevelView._on_extra` opens `open_garage` / `open_parts` / `open_tune` via `CAR_PAGES`, needing a car, and Back returns to the menu through `_back_from_car_page` / `return_from_extra`; Map (`LevelMap.open_over_pause`: closing returns to the menu, a teleport goes straight back to driving) (deliveries are picked on the map: its All Delivery Jobs button, and a found shop picked there opens its stock to buy, see level-editor.md; the money shows top right), and no Repair / Shop: repair is at the teleport points (`LevelView.open_service`, see level-editor.md; Parts = `open_parts`, the rest-stop page's shop alone with `free` on and `engine_cars` empty (owned upgrades / tires / kits to switch, no engine swaps), Swap car = `open_garage` and Tune car = `open_tune`; a shop's Engine swap card opens `open_engine_swap` (`RestStopPage.open_engines`); repairing is just being near a point, `heal_at_points`). (There was a Journal row from 2026-10-23 to
+road / Photo Mode / Stats / Settings (no Quit to title); the level view has Map, Garage, Parts and Tune car after Resume (`after_resume_rows`; `LevelView._on_extra` opens `open_garage` / `open_parts` / `open_tune` via `CAR_PAGES`, needing a car, and Back returns to the menu through `_back_from_car_page` / `return_from_extra`; Map (`LevelMap.open_over_pause`: closing returns to the menu, a teleport goes straight back to driving) (deliveries are picked on the map: its All Delivery Jobs button, and a found shop picked there opens its stock to buy, see level-editor.md; the money shows top right), and no Repair / Shop: repair is at the teleport points (`LevelView.open_service`, see level-editor.md; Parts = `open_parts`, the rest-stop page's shop alone with `free` on and `engine_cars` empty (owned upgrades / tires / kits to switch, no engine swaps), Swap car = `open_garage` and Tune car = `open_tune`; a shop's Engine swap card opens `open_engine_swap` (`RestStopPage.open_engines`); repairing is just being near a point, `heal_at_points`). (There was a Journal row from 2026-10-23 to
 2026-10-25; the user had it taken out and the journal deleted.)
 
 ## Rest-stop page (`free_roam/rest_stop_page.gd`)
@@ -150,9 +150,7 @@ the camera. Exiting re-opens the pause menu.
 immediately to the live `CameraManager` (`SettingsMenu.camera_changed` → `CameraManager.set_mode`)
 and a mobile-control pick to the live `MobileControls` (`scheme_changed` → `set_scheme`).
 
-**Quit to title** has no pause-menu row any more; `quit_to_title` (used by the benchmark) unfreezes, emits `quitting` (free roam saves on it) and goes to `Scenes.TITLE`;
-during a benchmark it exits through `Benchmark.exit_to_title` instead, so the config overrides and
-the real profile come back. Esc and gamepad **Start** (`pause`) toggle the
+**Quit to title** has no pause-menu row any more; `quit_to_title` unfreezes, emits `quitting` (free roam saves on it) and goes to `Scenes.TITLE`. Esc and gamepad **Start** (`pause`) toggle the
 menu; in Settings, Esc and gamepad B (`ui_cancel`) step out a level first, and B on the menu itself resumes.
 
 The menu is **default-inert** (`_input_enabled` starts `false`): the Pause button and `ui_cancel`

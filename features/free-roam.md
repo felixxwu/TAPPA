@@ -4,7 +4,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/auto_driver.gd` (`AutoDriver`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/road_poles.gd` (`RoadPoles`), `scripts/free_roam/road_crowds.gd` (`RoadCrowds`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/road_poles.gd` (`RoadPoles`), `scripts/free_roam/road_crowds.gd` (`RoadCrowds`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
@@ -202,10 +202,10 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   car, or the one it will be over in `collision_rush_s` (0.5 s), has no collision, it is built at
   once with no budget, only as far as the collision (`_rush_collision`; its foliage is left to
   the queue). Each one is a hitch of a few tens of ms instead of a fall, counted in
-  `stat_rushes` (HUD readout and the auto driver's report). The budget can't build a
+  `stat_rushes` (HUD readout). The budget can't build a
   3-chunk-wide collision band at much over 100 km/h in a straight line (a 2 m chunk's heights
   alone were about 45 ms of work), so very fast driving leans on this net: probe on the default
-  island, straight line at 144 km/h, one rush every 200–400 m; the auto driver on the roads
+  island, straight line at 144 km/h, one rush every 200–400 m; the deleted auto driver on the roads
   (up to about 80 km/h) needed none in 4 km.
 - **Fallen out of the world anyway:** `RoadRecovery.fell_out_of_world` puts the car back on the
   road as soon as it is `GameConfig.recovery_void_depth_m` below the ground, moving or not
@@ -237,7 +237,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   the queue at each plan (a queue that never drains used to carry them for ever).
 - **Settings:** the shipped `FreeRoamSettings` is `GameConfig.free_roam` (a sub-resource in
   `game_config.gd`); production code reads `Config.data.free_roam`, and `free_roam.gd` hands the
-  streamer a `duplicate()` since it sets `world_seed` (and the benchmark `straight_road_m`). The
+  streamer a `duplicate()` since it sets `world_seed`. The
   feedback timings (toast, banner, save / map cadence), dropped-money crystal, cabin lamp and rest
   stop crowd size are in its *Feedback* group. `GameConfig.snapshot_values` / `restore_values`
   deep-copy the resource.
@@ -257,8 +257,8 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   rock, a coin, a rest-stop cabin and one barrier module (both without their collision) (`warm_up_spawns`, on flat stand-in ground), and a
   throwaway camera turning full circle above the car and then looking down from high up
   (`WorldRuntime.look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
-  the auto-driver or the title menu take over (`_hand_over`). Headless skips the warm-up.
-- **Stats** (debug readout and the auto driver's report): overruns, the total overshoot, and
+  the cold open or the title menu take over (`_hand_over`). Headless skips the warm-up.
+- **Stats** (debug readout): overruns, the total overshoot, and
   **spikes** (frames over 1.5× budget), each broken down by the kind of unit that ran last.
 - **Height queries** (`height_at`, used by the chase camera) are answered from the loaded
   chunk under the point, interpolated across the same two triangles per cell as the mesh,
@@ -509,7 +509,7 @@ checkpoint reached under a region band hides that band until the checkpoint band
   where the car is (`_primed`), so nothing lights again, but the page can be opened straight away.
   Teleports (travel, respawn, the R reset) are not swept as drives: `RestStops.move_car_to`,
   `RoadRecovery.reset_done` → `car_teleported` on `RestStops` and `LootDirector` reset the swept
-  start, and `free_roam.gd` resets its odometer's start on the same two signals. The `RoadSites.TELEPORT_M` jump guard (shared by `RestStops`, `LootDirector` and the odometer) stays as the backstop for teleports with no signal (the boot placement, `AutoDriver.place_on_route`).
+  start, and `free_roam.gd` resets its odometer's start on the same two signals. The `RoadSites.TELEPORT_M` jump guard (shared by `RestStops`, `LootDirector` and the odometer) stays as the backstop for teleports with no signal (the boot placement).
 - **Opening the page:** at a rest stop, at any speed, `menu_select` (Enter /
   gamepad A) opens the rest-stop page (`features/menus.md`); `RestStops.can_open` says when (it is also false until `free_roam._hand_over`, `RestStops.input_enabled`, so nothing opens under the boot warm-up), and
   the minimap's line shows the prompt on a solid black bar (readable against a bright sky). On touch the prompt reads "Tap" and tapping it calls
@@ -649,39 +649,9 @@ along it the way the car was pointing (`road_pose`). By itself it uses the stage
 `GameConfig` fields (`recovery_*`): the car is stationary and can't get out (flipped, flooring
 it and going nowhere, or below the ground) for `recovery_timeout_s`. A wrecked car (0 HP with the thermal chain on) is never reset, by request or by itself, so a reset can't revive the engine before the Respawn; a reset keeps the nitrous tank's charge (only a respawn or travel, which go through `Car.reset_to`, refill it). `RestStops._on_gave_up` disarms the pause menu, so neither pause nor the map can be opened (and a quick travel started) in the seconds before the wreck page.
 
-## The auto driver
-
-`AutoDriver` drives the car by itself and keeps score of the streaming:
-- **holes:** physics ticks where the car is over a chunk with no collision yet. This must stay
-  0, and `test_the_auto_driver_never_reaches_ground_without_collision` checks it on a short
-  drive across a small synthetic island;
-- **rushes:** times the safety net had to build collision over budget (see *Streaming*). The
-  same test also asserts at most 3 rushes, since the safety net alone keeps holes at 0 whatever
-  the queue order: a planner or queue regression (a rush on nearly every chunk) shows up here
-  first. On the container CPU (2026-10-20) that drive needed 0–2 at the 1 ms budget (it varies
-  with machine load) and 4 at half the budget;
-- **overruns:** frames over the terrain budget;
-- **resets:** times it got stuck and was put back on the route.
-
-**Route** (`plan_route`): from the nearest junction it walks link to link, preferring links it
-hasn't driven that lead away from spawn, and avoiding dead ends. It stops at a dead end rather
-than turning round. **Steering** is pure pursuit (`BenchmarkRunner.steer_toward`) towards a
-point ahead on the route (`point_ahead`). The tracker (`advance`) only takes the nearest
-segment a few ahead, never one behind. **Speed** (`safe_speed`) is the fastest the car can go
-and still brake to every bend's limit, `sqrt(lateral_accel / curvature)`, within the next
-250 m. `top_speed_mps` / `lateral_accel` / `brake_decel` are per-driver vars, so the benchmark
-can drive calmer than the streaming test. `place_on_route(i)` puts the car on route point `i`
-(the unstick uses it, and the benchmark starts the car on the route's first point).
-
 **Straight-road island** (`FreeRoamSettings.straight_road_m` > 0): `RoadNetwork.build` skips
-growth and makes one dead-straight road of that length out from spawn; terrain, foliage, sites
-and rings build around it as usual. Only the benchmark uses it ([benchmark.md](benchmark.md)).
-
-Run it from the command line to drive 3 km of the real island and print the report:
-`godot --headless --path . --fixed-fps 60 -- --auto-drive`. On the default island
-(2026-10-20, container CPU, after the stage 2 fixes) it finished the 3 km with 0 holes at about
-50 km/h, with 2.2% of frames over the 1 ms budget (40 ms of overshoot in total) and 12 spikes
-over 1.5 ms (worst 3.2 ms) in 13,500 frames. Before the fixes, 36% of frames were over.
+growth and makes one dead-straight road of that length out from spawn. Nothing sets it since the
+island benchmark was deleted (2026-11-27).
 
 ## Cold open (every new world's start)
 
@@ -696,7 +666,7 @@ turning round (spawn's own cabin stands across its road's end, which is why it i
   set by `ColdOpen.new_world` (called by `title_boot.gd` for a first-time player and by the title's New World) when it makes a world in
   `ColdOpen.car_id` (the `FreeRoamSettings.cold_open_car_id` car, else the first starter) with
   `cold_open_start_money` (0 by default: cars are found, so there's nothing to buy a swap with) and cleared on arrival. Never
-  under the benchmark or `--auto-drive`. A quit midway drives it again from the start.
+  while `Benchmark.active`. A quit midway drives it again from the start.
 - **The opening lines:** instead of the loading screen's headline and tips, the cover shows
   `ColdOpen.story_lines` (`FreeRoamSettings.cold_open_story`, "%s" = the car's name) one after
   another, `cold_open_story_line_s` each (`LoadingScreen.story`; started in `Scenes.change_to`, or
