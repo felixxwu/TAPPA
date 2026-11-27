@@ -68,7 +68,7 @@ jobs:
         # (in project.godot: the editor ignores override.cfg).
         run: |
           printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
-          timeout 600 godot --headless --verbose --import --quit || true
+          timeout 600 godot --headless --import --quit || true
 
       - name: Load every script and scene with the autoloads present
         run: godot --headless --path . res://tools/compile_check.tscn
@@ -103,7 +103,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
-          timeout 600 godot --headless --verbose --import --quit || true
+          timeout 600 godot --headless --import --quit || true
 
       # Level bakes are built locally and published as release assets (tools/publish_bake.sh). Every export bundles tools/levels (the game starts in the Hafren level), so every export job fetches them.
       - name: Fetch level bakes
@@ -207,7 +207,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
-          timeout 600 godot --headless --verbose --import --quit || true
+          timeout 600 godot --headless --import --quit || true
 
       - name: Fetch level bakes
         env:
@@ -261,7 +261,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
-          timeout 600 godot --headless --verbose --import --quit || true
+          timeout 600 godot --headless --import --quit || true
 
       - name: Fetch level bakes
         env:
@@ -377,7 +377,7 @@ jobs:
       - name: Import project (build resource cache)
         run: |
           printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
-          timeout 600 godot --headless --verbose --import --quit || true
+          timeout 600 godot --headless --import --quit || true
 
       - name: Fetch level bakes
         env:
