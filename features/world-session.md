@@ -51,7 +51,7 @@ screen for a frame after the swap (the title's New World, Use cloud) can't
 write its car into the world that replaced it. `CarPreviewCache` drops its owned-car previews on
 the same signal.
 
-- **New world** (`new_world`): a random seed whose roads reach the snow ring and total over `new_world_min_road_km` (`FreeRoamSettings.pick_world_seed`) and the cold-open car (`ColdOpen.new_world`). It replaces the old world **and the
+- **New world** (`new_world`): a random seed whose roads reach the snow ring and total over `new_world_min_road_km` (`FreeRoamSettings.pick_world_seed`) and the start car (`TitleScreen.new_world`, `LootRules.start_car`). It replaces the old world **and the
   old owned cars**, because a world is the whole save.
 - **JSON returns numbers as floats**, so readers normalise (`lit_sites` and `seen_sites` return ints;
   `is_seen` / `see` keep an int set, rebuilt only when the stored list is a different one).
@@ -77,27 +77,22 @@ the same signal.
 
 The game boots straight into the world with the title menu over it. The main scene
 (`project.godot → run/main_scene = res://title.tscn`) is just `title_boot.gd`: it sets
-`WorldSession.title_pending` (unless the cold open is due — then there's no title, see
-free-roam.md → *Cold open*) and enters `Scenes.WORLD`. **Today that is the Hafren level
-(`level_view.tscn`), which drives straight in: it shows no title menu and runs no cold open** —
-the title, the cold open and the world block below belong to the legacy free-roam island, which
+`WorldSession.title_pending` and enters `Scenes.WORLD`. **Today that is the Hafren level
+(`level_view.tscn`), which drives straight in: it shows no title menu** —
+the title and the world block below belong to the legacy free-roam island, which
 runs only with Settings → Dev → "Legacy free-roam island" on. There, free roam's `_ready` calls `show_title()` — a
 `TitleScreen` on a `CanvasLayer` (layer 10) over the paused world, with a light dim behind it. Behind the menu a `TitleOrbitCamera` circles
 the car (`_start_title_orbit`: `GameConfig.start_orbit_radius` / `_height` / `_speed`, kept above the
 ground, its tween running while paused); closing hands back to the chosen camera
 (`CameraManager.activate_current`).
-A first-time player (no world) gets one built at boot with the cold-open car (`ColdOpen.car_id`) and a seed from `FreeRoamSettings.pick_world_seed`,
-marked `cold_open` pending (in the world block,
-`set_cold_open_pending`), so they start in the cold open instead of the menu. The title's New World makes its world the same way.
+A first-time player (no world) gets one built at boot (`TitleScreen.new_world`: the start car, `LootRules.start_car`, and a seed from `FreeRoamSettings.pick_world_seed`), then sees the title like anyone else. The title's New World makes its world the same way.
 Card lists (`CardUI.card_page` / `card_list`, [card-carousel.md](card-carousel.md)) with `MenuNav`:
 - **MAIN:** Continue (only with a world) just closes the menu (`close`) and
   unpauses; New World; Settings.
 - **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
-- **FIRST_RUN:** the `SettingsMenu` camera page, then on touch devices
-  (`Platform.is_touch`) its touch-layout page. Picking a row, Next or Back moves on. Closing the title re-reads both choices (`CameraManager.activate_current`,
-  `MobileControls.set_scheme` in `free_roam.gd` → `show_title`), so they apply without a reload.
-  At the end of the cold open the same pages show on their own (`options_only`, via
-  `show_title(true)`, no orbit camera): the end closes them back into the game instead of MAIN.
+
+Closing the title re-reads the camera and touch-layout choices (`CameraManager.activate_current`,
+`MobileControls.set_scheme` in `free_roam.gd` → `show_title`), so they apply without a reload.
 
 Free roam's pause menu quits to the title (`PauseMenu.quit_to_title`), saving first — which reloads
 the world with the menu over it. A rest-stop reload shows no menu.

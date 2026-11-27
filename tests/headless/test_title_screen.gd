@@ -1,6 +1,6 @@
 extends GutTest
 # The title screen (features/world-session.md → "Title screen"): Continue / New World / Settings,
-# New World going into the cold open, and keyboard/gamepad navigation.
+# New World, and keyboard/gamepad navigation.
 
 const TEST_PATH := "user://test_title_profile.json"
 
@@ -59,13 +59,12 @@ func test_continue_is_only_offered_with_a_world() -> void:
 	assert_eq(_entered[0], 0, "and doesn't reload it")
 
 
-func test_new_world_goes_into_the_cold_open() -> void:
+func test_new_world_starts_in_the_start_car() -> void:
 	var t := await _open()
 	assert_true(CardUI.pick(t.cards(), "New world"))
 	await get_tree().process_frame
 	assert_true(WorldSession.has_world())
-	assert_true(WorldSession.cold_open_pending())
-	assert_eq(String(WorldSession.active_car()["model_id"]), ColdOpen.car_id(Config.data.free_roam))
+	assert_eq(String(WorldSession.active_car()["model_id"]), LootRules.start_car(Config.data.free_roam))
 	assert_eq(_entered[0], 1)
 
 
@@ -99,48 +98,6 @@ func test_the_title_screen_is_keyboard_and_gamepad_navigable() -> void:
 	t._settings_back()
 	await get_tree().process_frame
 	assert_eq(t.view, TitleScreen.View.MAIN, "back from Settings returns to the title")
-
-
-func _first_run_title(touch: bool) -> TitleScreen:
-	Config.data.mobile_controls_force = touch
-	_title = TitleScreen.new()
-	_title.options_only = true
-	_title.enter_world = func() -> void: _entered[0] += 1
-	_title.close = func() -> void: _closed[0] += 1
-	add_child(_title)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	await get_tree().process_frame
-	return _title
-
-
-func test_a_new_player_picks_a_camera_first() -> void:
-	var force: bool = Config.data.mobile_controls_force
-	var t := await _first_run_title(false)
-	assert_eq(t.view, TitleScreen.View.FIRST_RUN)
-	assert_true(t._settings_menu.showing("camera"))
-	var row: Dictionary = t._settings_menu.camera_rows[-1]
-	assert_true(t._settings_menu.camera_rows.any(func(r: Dictionary) -> bool:
-		return r.button == t.get_viewport().gui_get_focus_owner()), "a camera row has the cursor")
-	row.button.pressed.emit()
-	await get_tree().process_frame
-	Config.data.mobile_controls_force = force
-	assert_eq(int(_save.get_setting(CameraManager.SETTING_KEY, -1)), int(row.key))
-	assert_eq(_closed[0], 1, "no touch layout to pick off a touch device, so it closes into the game")
-
-
-func test_a_new_player_on_touch_also_picks_a_layout() -> void:
-	var force: bool = Config.data.mobile_controls_force
-	var t := await _first_run_title(true)
-	MenuNav.of(t._page)._unhandled_input(_press("ui_cancel"))
-	await get_tree().process_frame
-	assert_true(t._settings_menu.showing("schemes"), "back keeps the default camera and moves on")
-	var row: Dictionary = t._settings_menu.scheme_rows[-1]
-	row.button.pressed.emit()
-	await get_tree().process_frame
-	Config.data.mobile_controls_force = force
-	assert_eq(int(_save.get_setting(MobileControls.SETTING_KEY, -1)), int(row.key))
-	assert_eq(_closed[0], 1, "the layout is the last page")
 
 
 func test_the_update_prompt_records_its_dismissal() -> void:
@@ -189,27 +146,3 @@ func test_every_settings_page_keeps_its_back_button_on_screen() -> void:
 	await get_tree().process_frame
 	assert_lte(last.get_global_rect().end.y, t._page.panel().get_global_rect().end.y + 1.0,
 		"focusing the last key-binding row scrolls it into view")
-
-
-# The end of the cold open: just the first-run options over the game, and Next (or Back) closes them
-# back into it — never on to the main menu. Keyboard/gamepad: the cursor starts on a camera row and
-# Back moves on.
-func test_the_options_after_the_cold_open_close_back_into_the_game() -> void:
-	var force: bool = Config.data.mobile_controls_force
-	Config.data.mobile_controls_force = false
-	_title = TitleScreen.new()
-	_title.options_only = true
-	_title.enter_world = func() -> void: _entered[0] += 1
-	_title.close = func() -> void: _closed[0] += 1
-	add_child(_title)
-	await get_tree().process_frame
-	await get_tree().process_frame
-	assert_eq(_title.view, TitleScreen.View.FIRST_RUN)
-	assert_true(_title._settings_menu.showing("camera"))
-	assert_true(_title._settings_menu.camera_rows.any(func(r: Dictionary) -> bool:
-		return r.button == _title.get_viewport().gui_get_focus_owner()), "a camera row has the cursor")
-	MenuNav.of(_title._page)._unhandled_input(_press("ui_cancel"))
-	await get_tree().process_frame
-	Config.data.mobile_controls_force = force
-	assert_eq(_closed[0], 1, "back closes them into the game")
-	assert_ne(_title.view, TitleScreen.View.MAIN, "not on to the main menu")

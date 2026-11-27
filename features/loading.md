@@ -47,11 +47,6 @@ player only ever sees one at a time. `_build_lakes` / `_build_foliage`
 dropped their now-unused `loading: LoadingScreen` parameters when the forwarding call was
 removed.
 
-**Story mode** (`LoadingScreen.story(lines, seconds_each)`): the headline and tip give way to a
-few lines shown in turn, the last held until `finish()`; `story_running()` / `story_finished` let
-the caller wait until every line has had its time. Used for a new world's cold open
-(free-roam.md → *Cold open*, started in `Scenes.change_to`).
-
 **Pinned headline** (`LoadingScreen.pin_title`, via `Scenes.change_to(tree, path, cover_title)`): names why
 the load is happening, and free roam's later "Building the island…" / "Warming shaders…" `set_title()` calls
 leave it in place. Used by the rest-stop reload (loot.md).

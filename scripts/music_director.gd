@@ -198,12 +198,6 @@ func _tick(now: float) -> void:
 	# on resume / next normal frame) uses the new song.
 	_update_loading_edge()
 
-	# A new world's first drive is silent; the music starts when ColdOpen.finish clears this.
-	if ColdOpen.due():
-		if current_song != "":
-			_stop_voices()
-		return
-
 	if _stall_recovery_enabled() and had_prev and gap > _stall_threshold():
 		_enter_suspend()
 		return

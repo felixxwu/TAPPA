@@ -27,7 +27,7 @@ Each boost part (`BoostLibrary.CATALOGUE`) names its own biome `ring` and `price
 (a car names only its `ring`, where it is found); drivetrain kits have
 no entry, so theirs live in `LootRules.KITS`, and tires in `LootRules.TIRES` (gravel from the start, road at The Dunes, snow in The Alps; grip strengths in `GameConfig`'s `shop_tire_*`). `ring_tables(ring_count)` collects them (a boost part
 at level = its ring; a ring past `ring_count` folds into the last), and `LootRules.price(item)`
-reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the cold open falls back on the first.
+reads the price back. Ring 0's cars are the starter cars (`starter_cars`). A new world starts in `start_car` (`FreeRoamSettings.start_car_id`, else the first starter).
 
 - **On sale once lit.** A ring's stock goes on sale at every checkpoint once one of its checkpoints
   is lit (`RestStops.lit` → `LootDirector.site_lit` → `unlock`, wired in `free_roam.gd`, kept in the world's `revealed`
@@ -57,7 +57,7 @@ reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the c
 `_drive_found_car`. **Tests:** `tests/headless/test_found_cars.gd`.
 
 - **Where:** every car but the one a new world starts with (`LootRules.cars_to_find`, which leaves
-  out `ColdOpen.car_id`) is parked at the end of its own short side road in its `ring`.
+  out `start_car`) is parked at the end of its own short side road in its `ring`.
 - **The model:** `ParkedCars` builds a frozen `CarProp` of each car still waiting, on its pad facing
   back up the road, once at boot behind the loading screen, and keeps it there (a prop is too dear to
   build while driving). The boot's warm-up shows them all to the camera for a few frames
@@ -75,7 +75,7 @@ reads the price back. Ring 0's cars are the starter cars (`starter_cars`): the c
   cars") with it standing where it was parked, facing the same way (`ParkedCars.pad_pose`, held in
   `free_roam.gd._next_pose` so the exit's `save_world` doesn't overwrite it). Leaving the pad withdraws the offer; the car
   waits in the Garage. Enter marks the input handled before switching, because the reload takes the
-  node out of the tree. Nothing is found while the cold open is due (`ColdOpen.due`). A car is
+  node out of the tree. A car is
   waiting while no owned car has its model (`ParkedCars.model_owned`), so a car bought in an older
   save is already found.
 - **On the maps:** a gold car key (`MiniMap.draw_key`, `Marker.CAR_KEY`) once the side road has

@@ -70,8 +70,7 @@ There is no Graphics page: the level tunes its own draw distances and effects li
 Navigation lives inside the component: `show_list()` / `show_camera()` /
 `show_schemes()` / `show_dev()` swap which page is visible (only the visible page contributes
 height, so the long schemes page scrolls while the short list/camera pages don't). The saved choice in each section is highlighted and persisted via
-`Save.set_setting`. A first-time player sees the camera page, and on touch the Mobile
-controls page, at the end of the cold open (`title_screen.gd` → `View.FIRST_RUN`).
+`Save.set_setting`.
 
 Every scrollable menu list uses **`TouchScrollContainer`** (`scripts/touch_scroll_container.gd`)
 in place of a plain `ScrollContainer`: it drag-scrolls under touch even when the

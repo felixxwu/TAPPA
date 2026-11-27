@@ -331,7 +331,7 @@ func _local_is_wiped() -> bool:
 	return not has_progress(Save.profile)
 
 
-# More than a new player's forced cold open gives: it lights spawn's stop and one cabin, in one stock car.
+# More than a new player's first drive gives: it lights spawn's stop and one cabin, in one stock car.
 static func has_progress(p: Dictionary) -> bool:
 	var lit: Array = (p.get(Save.KEY_WORLD, {}) as Dictionary).get("lit", [])
 	var cars: Array = p.get(Save.KEY_CARS, [])

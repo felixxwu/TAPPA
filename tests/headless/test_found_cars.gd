@@ -41,10 +41,8 @@ func _world(s: FreeRoamSettings, cars: Array) -> Array:
 	terrain.setup(s, net)
 	net.build(s, terrain)
 	terrain.fill_cut_lakes()
+	net.add_side_roads(cars)
 	var sites := RoadSites.new()
-	sites.build(s, net, terrain)
-	net.add_side_roads(cars, ColdOpen.roads_to_keep_clear(net, sites, s))
-	sites = RoadSites.new()
 	sites.build(s, net, terrain)
 	return [net, terrain, sites]
 
@@ -114,27 +112,6 @@ func test_side_roads_stay_on_dry_land_and_off_other_roads() -> void:
 			assert_eq(net.hit_edge, ei, "no other road is nearer than the side road itself, so it crosses none")
 
 
-func test_no_side_road_leaves_the_cold_opens_road() -> void:
-	var crowd := []
-	for k in 12:
-		crowd.append({"id": "car%d" % k, "ring": 0})
-	for seed_value in [3, 7, 11]:
-		var s := _settings(seed_value)
-		var w := _world(s, crowd)
-		var net: RoadNetwork = w[0]
-		var pick := ColdOpen.pick_start(net, w[2], func(_x: float, _z: float) -> float: return 0.0,
-			func(_g: int) -> Vector3: return Vector3.ZERO, s)
-		assert_false(pick.is_empty(), "seed %d has a cold open" % seed_value)
-		var path: PackedVector2Array = pick["path"]
-		for ei in net.edges.size():
-			if not net.is_side_road(ei):
-				continue
-			var b := net.node(net.edges[ei].x)
-			for k in path.size() - 1:
-				var gap := b.distance_to(Geometry2D.get_closest_point_to_segment(b, path[k], path[k + 1]))
-				assert_gt(gap, 1.0, "seed %d: side road %d branches off the cold open's drive" % [seed_value, ei])
-
-
 func test_no_cars_means_no_side_roads() -> void:
 	var net: RoadNetwork = _world(_settings(), [])[0]
 	assert_true(net.side_road_car.is_empty())
@@ -157,9 +134,9 @@ func test_the_end_of_a_side_road_holds_its_car_and_no_checkpoint_or_coin() -> vo
 func test_the_cars_to_find_are_every_car_but_the_one_a_new_world_starts_with() -> void:
 	var s := FreeRoamSettings.new()
 	var all := CarLibrary.all().map(func(c: Dictionary) -> String: return String(c["id"]))
-	s.cold_open_car_id = all[1]
+	s.start_car_id = all[1]
 	var ids := LootRules.cars_to_find(s).map(func(c: Dictionary) -> String: return String(c["id"]))
-	all.erase(ColdOpen.car_id(s))
+	all.erase(LootRules.start_car(s))
 	assert_eq(ids, all)
 
 
@@ -262,18 +239,6 @@ func test_a_found_car_is_not_parked_again_when_the_world_next_loads() -> void:
 	again.streamer = parked.streamer
 	add_child_autofree(again)
 	assert_false(again.parked(site), "found already: nothing on its pad next time")
-
-
-func test_no_car_is_found_during_the_cold_open() -> void:
-	var scene := await _boot()
-	var was := Config.data.legacy_free_roam_island
-	Config.data.legacy_free_roam_island = true
-	WorldSession.set_cold_open_pending(true)
-	var site := _car_site(scene)
-	_drive_onto(scene, site)
-	WorldSession.set_cold_open_pending(false)
-	Config.data.legacy_free_roam_island = was
-	assert_true((scene.get_node("ParkedCars") as ParkedCars).waiting(site), "it waits for the cold open to end")
 
 
 # --- on the maps -----------------------------------------------------------------------------------

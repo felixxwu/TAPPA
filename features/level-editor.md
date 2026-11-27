@@ -151,7 +151,7 @@ free roam's car, cameras, HUD and pause menu around one `LevelView` node, which 
 - parks the car on the first road's first node, facing the second; the pause menu's reset puts it back there.
 - puts the car back on the road with free roam's `RoadRecovery` (R, the pause menu's reset, off the road for `off_road_reset_timeout_s` via `LevelView.is_off_road`, with a top-centre `off_road_label` countdown in free roam's prompt-box style once `off_road_warning_after_s` has passed, stuck or fallen through, which
   includes driving off the square's edge), answering its `road_pose` with the nearest road point (`LevelView.road_pose`, which asks `LevelData.road_pose`);
-- loads behind a `LoadingScreen` (`Scenes.change_to` covers `LEVEL_VIEW` too, without the cold-open story) until the shader
+- loads behind a `LoadingScreen` (`Scenes.change_to` covers `LEVEL_VIEW` too) until the shader
   warm-up ends, then applies the player's frame cap (`FpsSetting.resolve`) and arms the pause menu
 
 The toggle is not saved: it resets to the `GameConfig` default on the next boot (currently ON, so every

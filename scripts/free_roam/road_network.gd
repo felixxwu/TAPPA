@@ -300,7 +300,7 @@ func is_side_road(ei: int) -> bool:
 # branching off at right angles from a random point on a road in its ring, ending where the car is
 # parked. A car whose ring has no room goes to the nearest ring that does, and if none has, the
 # rules relax (shorter, then closer to other roads) so every car is always placed. No side road
-# leaves the edges in `keep_clear` (the cold open's road, ColdOpen.roads_to_keep_clear).
+# leaves the edges in `keep_clear`.
 func add_side_roads(cars: Array, keep_clear := {}) -> void:
 	_add_side_roads(_poly_x, _poly_y, cars, keep_clear)
 	_flatten()

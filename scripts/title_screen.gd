@@ -5,18 +5,13 @@ extends Control
 # The title screen (todo/2026-10-19-free-roam-pivot.md decision 20): the game's front door, shown
 # over the live, paused world (free_roam.gd → _show_title). Card pages (CardUI.card_page / card_list)
 # driven by MenuNav:
-#   MAIN     — Continue (closes the menu; only with a world), New World (into the cold open), Settings.
+#   MAIN     — Continue (closes the menu; only with a world), New World (a fresh world, from the start car), Settings.
 #   SETTINGS — the shared SettingsMenu.
-#   FIRST_RUN — at the end of the cold open (ColdOpen, `options_only`): the SettingsMenu's camera page,
-#              then (on touch devices) its touch-layout page. Picking a row, Next or Back moves on,
-#              and the last closes into the game.
 # New World over an existing world asks first: the old world, its cars and its loot are lost.
 
-enum View { MAIN, SETTINGS, FIRST_RUN }
+enum View { MAIN, SETTINGS }
 
 var view := View.MAIN
-# Only the first-run options, closing back into the game when done (the end of the cold open).
-var options_only := false
 var _page: MenuPage
 var _cards: CardCarousel
 var _settings_menu: SettingsMenu
@@ -34,9 +29,8 @@ func _ready() -> void:
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
-	_show(View.FIRST_RUN if options_only else View.MAIN)
-	if not options_only:
-		_check_for_update()
+	_show(View.MAIN)
+	_check_for_update()
 
 
 func _show(v: View) -> void:
@@ -65,17 +59,6 @@ func _show(v: View) -> void:
 			var back := _page.add_action(UITheme.row_button("< Back", _settings_back))
 			MenuNav.attach(_page, {first = back, on_back = _settings_back})
 			_settings_menu.show_list.call_deferred()
-		View.FIRST_RUN:
-			_page = MenuPage.new({"title": "Welcome", "alpha": 0.0, "width": UITheme.px(560)})
-			add_child(_page)
-			_settings_menu = SettingsMenu.new()
-			_settings_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			_page.body().add_child(_settings_menu)
-			_settings_menu.camera_changed.connect(_first_run_next.unbind(1))
-			_settings_menu.scheme_changed.connect(_first_run_next.unbind(1))
-			var next := _page.add_action(UITheme.row_button("Next >", _first_run_next))
-			MenuNav.attach(_page, {first = next, on_back = _first_run_next})
-			_settings_menu.show_camera.call_deferred()
 	UITheme.enforce(_page)
 
 
@@ -128,13 +111,6 @@ func _settings_back() -> void:
 	_show(View.MAIN)
 
 
-func _first_run_next() -> void:
-	if Platform.is_touch() and not _settings_menu.showing("schemes"):
-		_settings_menu.show_schemes()
-		return
-	close.call()
-
-
 func _on_new_world() -> void:
 	if not WorldSession.has_world():
 		_start()
@@ -145,8 +121,14 @@ func _on_new_world() -> void:
 
 
 func _start() -> void:
-	ColdOpen.new_world(Config.data.free_roam.pick_world_seed(), Config.data.free_roam)
+	new_world()
 	enter_world.call()
+
+
+# Replaces the saved world with a fresh one in the start car (title_boot.gd for a first-time player too).
+static func new_world() -> void:
+	var s: FreeRoamSettings = Config.data.free_roam
+	WorldSession.new_world(s.pick_world_seed(), LootRules.start_car(s))
 
 
 # Readout for tests and hosts: the current page's card list (null on SETTINGS).

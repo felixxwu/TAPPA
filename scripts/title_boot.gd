@@ -1,7 +1,7 @@
 extends Node
 # Docs: features/world-session.md — update in the same change as this file.
 # The game's main scene: loads straight into the world, which shows the title menu over itself.
-# A first-time player gets a world built with the cold-open car and drives the cold open instead.
+# A first-time player gets a new world first.
 
 
 func _ready() -> void:
@@ -12,7 +12,6 @@ func _ready() -> void:
 		get_tree().change_scene_to_file.call_deferred("res://benchmark/level_replay.tscn")  # benchmark/level_replay.gd
 		return
 	if not WorldSession.has_world():
-		# A first-time player starts in the cold open (ColdOpen), in its car, with no title menu.
-		ColdOpen.new_world(Config.data.free_roam.pick_world_seed(), Config.data.free_roam)
-	WorldSession.title_pending = not ColdOpen.due()
+		TitleScreen.new_world()
+	WorldSession.title_pending = true
 	Scenes.change_to.call_deferred(get_tree(), Scenes.WORLD)

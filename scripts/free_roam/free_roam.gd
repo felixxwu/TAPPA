@@ -25,8 +25,6 @@ var owned: Dictionary = {}
 var wheel_particles: WheelParticles
 var dust_puffs: DustPuffs
 var region_banner: RegionBanner
-# A new world's cold open (ColdOpen), while it's due; null otherwise.
-var cold_open: ColdOpen
 var parked_cars: ParkedCars
 
 # How often the car's pose and condition are written to the world session, in seconds.
@@ -131,8 +129,6 @@ func _ready() -> void:
 	shadow.name = "CarShadow"
 	add_child(shadow)
 	shadow.setup(_car)
-	if ColdOpen.due():
-		_add_cold_open()
 	_rest_stops.restore(WorldSession.lit_sites(), WorldSession.last_site())
 	_rest_stops.lit.connect($LootDirector.site_lit)
 	for site: int in _rest_stops.lit_sites:
@@ -189,9 +185,6 @@ func _ready() -> void:
 	_minimap.open_requested.connect(open_full_map)
 	var spawn: Transform3D = _rest_stops.pose_at(_rest_stops.last_site if respawn_now else 0)  # facing down the road, the cabin behind
 	var saved: Variant = null if respawn_now else WorldSession.pose_transform()
-	if cold_open != null:
-		saved = null  # a quit midway drives the cold open again from its start
-		spawn = cold_open.begin($CameraManager)
 	if saved != null:
 		spawn = saved
 	_car.global_transform = spawn
@@ -207,7 +200,7 @@ func _ready() -> void:
 		await _streamer.prefill_async()
 		_car.freeze = false
 	print("free roam: prefill %d ms" % (Time.get_ticks_msec() - t0))
-	if saved != null or cold_open != null:
+	if saved != null:
 		# Re-seat on the built ground, so a pose saved mid-air or on a since-retuned surface
 		# can't drop the car through it.
 		spawn.origin.y = _streamer.height_at(spawn.origin.x, spawn.origin.z) + 1.0
@@ -241,11 +234,6 @@ func _warm_up() -> void:
 	await _streamer.warm_up_spawns(cam)
 	await WorldRuntime.look_around(self, _car.global_position)
 	$CameraManager.activate_current()
-	if cold_open != null and not cover.is_story():
-		var s := _streamer.settings
-		cover.story(ColdOpen.story_lines(s), s.cold_open_story_line_s)  # booted without Scenes' cover
-	if cover.story_running():
-		await cover.story_finished  # every opening line gets its time, however fast the load
 	cover.finish()
 	_car.controls_locked = false
 	_hand_over()
@@ -259,51 +247,30 @@ func _loading_cover() -> LoadingScreen:
 	return cover
 
 
-# Boot is done: the pause menu, then the cold open or the title menu if either is due.
+# Boot is done: the pause menu, then the title menu if it's due.
 func _hand_over() -> void:
 	_car.damage.thermal = true  # not sooner: an overheating car would lose health behind the loading cover
 	if not Benchmark.active:
 		WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	_rest_stops.input_enabled = true
 	_pause.set_input_enabled(true)
-	if cold_open != null:
-		cold_open.start()
-	elif WorldSession.title_pending:
+	if WorldSession.title_pending:
 		WorldSession.title_pending = false
 		show_title()
-
-
-# The cold open (ColdOpen): wired up before the car is placed, since it decides where that is.
-func _add_cold_open() -> void:
-	cold_open = ColdOpen.new()
-	cold_open.name = "ColdOpen"
-	cold_open.streamer = _streamer
-	cold_open.car = _car
-	cold_open.rest_stops = _rest_stops
-	cold_open.biome = $BiomeDirector
-	cold_open.minimap = _minimap
-	cold_open.mobile = $MobileControls
-	cold_open.checkpoint_banner = $CheckpointBanner
-	cold_open.show_options = func() -> void: show_title(true)
-	add_child(cold_open)
 
 
 # The title menu over the paused world, as the game boots, with a camera circling the car. Continue
 # just closes it; a new world reloads the scene (and save_world, seeing the world replaced, writes
 # nothing into it on the way out).
-#
-# `options_only`: just the first-run camera and control options, over the car where it stands, closing
-# back into the game (the end of the cold open).
-func show_title(options_only := false) -> TitleScreen:
+func show_title() -> TitleScreen:
 	get_tree().paused = true
 	_pause.set_input_enabled(false)
-	var orbit: Camera3D = null if options_only else _start_title_orbit()
+	var orbit: Camera3D = _start_title_orbit()
 	var layer := CanvasLayer.new()
 	layer.name = "TitleLayer"
 	layer.layer = 10
 	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	var title := TitleScreen.new()
-	title.options_only = options_only
 	title.close = func() -> void:
 		layer.queue_free()
 		if orbit != null:

@@ -63,7 +63,7 @@ var _prompt_text := ""
 var _drive_text := ""
 var _map_text := ""
 var _toast_text := ""
-# A standing hint shown when there's no prompt and no toast (the cold open's throttle button).
+# A standing hint shown when there's no prompt and no toast (nothing sets it since the first-run intro was removed).
 var hint := ""
 var _toast_left := 0.0
 var _mat: ShaderMaterial

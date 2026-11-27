@@ -4,7 +4,7 @@
 
 **Source:** `scripts/free_roam/free_roam.gd` (scene root), `scripts/free_roam/terrain_streamer.gd`
 (`TerrainStreamer`), `scripts/free_roam/road_terrain.gd` (`RoadTerrain`),
-`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/road_poles.gd` (`RoadPoles`), `scripts/free_roam/road_crowds.gd` (`RoadCrowds`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/cold_open.gd` (`ColdOpen`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
+`scripts/free_roam/road_network.gd` (`RoadNetwork`), `scripts/free_roam/road_recovery.gd` (`RoadRecovery`), `scripts/free_roam/road_sites.gd` (`RoadSites`), `scripts/free_roam/road_barriers.gd` (`RoadBarriers`), `scripts/free_roam/road_poles.gd` (`RoadPoles`), `scripts/free_roam/road_crowds.gd` (`RoadCrowds`), `scripts/free_roam/biome_director.gd` (`BiomeDirector`), `scripts/free_roam/rest_stops.gd` (`RestStops`), `scripts/free_roam/region_banner.gd` (`RegionBanner`), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`), `scripts/free_roam/lab_noise.gd` (`LabNoise`), `scripts/free_roam/free_roam_settings.gd`
 (`FreeRoamSettings`), `free_roam.tscn`
 
 **Tests:** `tests/headless/test_free_roam.gd`, `tests/headless/test_free_roam_shell.gd`, `tests/headless/test_free_roam_biomes.gd`, `tests/headless/test_free_roam_rest_stops.gd`
@@ -61,10 +61,8 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
    end of every `_flatten`) lists only nodes where 3+ main roads meet, and `fork_near` finds the
    nearest within a distance (the minimap's map offer, [minimap.md](minimap.md)). No room in its ring: the nearest ring with
    room; no room anywhere: shorter, closer to other roads, then closer to junctions, so every car
-   is always placed. Side roads keep off the cold open's road and every nearer cabin's
-   (`ColdOpen.roads_to_keep_clear`), which is why the sites are planned once without them, then
-   again with them. Seeded, so nothing about them is saved. The lab draws them too ("Radial growth,
-   dead ends pruned", a key and the car's name at each end), but without the cold-open rule.
+   is always placed. Seeded, so nothing about them is saved. The lab draws them too ("Radial growth,
+   dead ends pruned", a key and the car's name at each end).
    The polylines are flattened into segments in a 100 m grid (`_flatten`), and
    everything downstream asks one question: `nearest(p, max_d)`, which leaves its answer in
    `hit_d` / `hit_q` / `hit_s` / `hit_edge` / `hit_side` / `hit_dir` so a query allocates nothing.
@@ -257,7 +255,7 @@ often it turns). Then `_round_corners` cuts every bend sharper than `max_corner_
   rock, a coin, a rest-stop cabin and one barrier module (both without their collision) (`warm_up_spawns`, on flat stand-in ground), and a
   throwaway camera turning full circle above the car and then looking down from high up
   (`WorldRuntime.look_around`, the free-roam twin of the stage's corridor fly). Only then do the pause menu,
-  the cold open or the title menu take over (`_hand_over`). Headless skips the warm-up.
+  the title menu takes over (`_hand_over`). Headless skips the warm-up.
 - **Stats** (debug readout): overruns, the total overshoot, and
   **spikes** (frames over 1.5× budget), each broken down by the kind of unit that ran last.
 - **Height queries** (`height_at`, used by the chase camera) are answered from the loaded
@@ -652,56 +650,6 @@ it and going nowhere, or below the ground) for `recovery_timeout_s`. A wrecked c
 **Straight-road island** (`FreeRoamSettings.straight_road_m` > 0): `RoadNetwork.build` skips
 growth and makes one dead-straight road of that length out from spawn. Nothing sets it since the
 island benchmark was deleted (2026-11-27).
-
-## Cold open (every new world's start)
-
-`ColdOpen` (`scripts/free_roam/cold_open.gd`, spec `todo/2026-10-30-cold-open.md`). Every new world
-starts the same way, with no menu or car choice: the player is mid-drive at night, in the chase camera, on the road to
-the roadside rest stop nearest spawn, the cooling already gone and a cold engine whose gauge climbs on the way,
-with some money up front. Reaching the cabin lights it as usual, clears the
-night, and opens the camera and control options; past it the road carries on, so there is no
-turning round (spawn's own cabin stands across its road's end, which is why it isn't the goal).
-
-- **When:** `ColdOpen.due()`: the world block's `cold_open` flag (`WorldSession.cold_open_pending`),
-  set by `ColdOpen.new_world` (called by `title_boot.gd` for a first-time player and by the title's New World) when it makes a world in
-  `ColdOpen.car_id` (the `FreeRoamSettings.cold_open_car_id` car, else the first starter) with
-  `cold_open_start_money` (0 by default: cars are found, so there's nothing to buy a swap with) and cleared on arrival. Never
-  while `Benchmark.active`. A quit midway drives it again from the start.
-- **The opening lines:** instead of the loading screen's headline and tips, the cover shows
-  `ColdOpen.story_lines` (`FreeRoamSettings.cold_open_story`, "%s" = the car's name) one after
-  another, `cold_open_story_line_s` each (`LoadingScreen.story`; started in `Scenes.change_to`, or
-  by `free_roam._warm_up` when the scene was built without that cover). The story clock takes at most
-  0.1 s from a frame, so the frozen world-build frames don't eat a line. The island loads behind
-  them; `_warm_up` awaits `story_finished` before `cover.finish()`, so a fast load waits for the
-  lines and a slow one holds the last line, and the player drives the moment the cover goes.
-- **Wiring:** `free_roam.gd` → `_add_cold_open` (before `RestStops.restore`; spawn is lit as
-  normal), `begin()` for the
-  start pose (instead of spawn or a saved pose; it forces `BiomeDirector.forced_weather = "night"`
-  and the chase camera), `start()` in `_hand_over` (instead of the title).
-- **The goal and start** (`pick_start`, pure): the goal (`goal()`, `start_spot["site"]`) is the
-  roadside REST site (anchor off its road, `edge >= 0`) nearest spawn whose road leaves at least
-  `cold_open_min_distance_m` before it (`_roads_back`, the side towards spawn first; else the
-  roomiest). A road with a road coin on it is preferred, and the start is always at least
-  `cold_open_coin_lead_m` before the nearest one (`first_coin`), so the player picks up a coin on
-  the way (Felix, 2026-10-31). The start is on that road, as far out
-  (to `cold_open_max_distance_m`) as the lantern stays in view (the road back keeps within
-  `cold_open_view_corridor_m` of the straight line, and the ground stays under the sight line),
-  but never nearer than `cold_open_min_distance_m`. The roads near spawn wiggle, so on the islands
-  tried (2026-10-31) the lantern was in view from only 65–95 m: in practice the start is at the
-  minimum and the lantern comes into view on the last stretch.
-- **The car:** `start()` sets HP to `cold_open_start_hp_frac`, `cooling_broken`, the temperature to
-  `cold_open_start_temp_frac` of the overheat threshold (0.5: half-warm, so the gauge climbs from the middle), and `DamageModel.min_hp` to
-  `cold_open_hp_floor_frac` of max (see damage.md), so it limps but never gives up.
-- **The hint:** the throttle's bindings (`throttle_hint`, "W / RIGHT TRIGGER") in the minimap's line
-  (`MiniMap.hint`), or on touch a pulsing GAS button (`MobileControls.hint_gas`), until the first
-  `accelerate` press.
-- **Arrival** (`RestStops.lit(goal())` → `finish`): `min_hp` back to 0,
-  `forced_weather = "dry"` until the weather's next slot (then the rings' draw), `cold_open`
-  cleared, which also starts the music: `MusicDirector._tick` plays nothing while `ColdOpen.due()`. Once the "Checkpoint reached" band is gone (plus
-  `cold_open_options_delay_s`) `free_roam.show_title(true)` shows the first-run options on their own
-  (`TitleScreen.options_only`), closing back into the game. The rest-stop page stays shut until then:
-  a Garage pick or a parts change reloads the scene, which would lose the waiting options. An island with no roadside
-  stop finishes in `start`, because its goal (spawn's stop) is already lit and `lit` would never fire.
 
 ## Not in the prototype yet
 

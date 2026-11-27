@@ -818,7 +818,7 @@ func test_a_new_install_with_its_boot_built_world_takes_the_cloud() -> void:
 	# Boot builds a world and grants a starter car before the first pull can run.
 	_save.profile["cloud_revision"] = 1
 	_save.profile["cars"] = _remote_profile(1)["cars"]
-	# Everything the forced cold open gives: a long drive, spawn's stop and one cabin, one car.
+	# Everything a new player's first drive gives: a long drive, spawn's stop and one cabin, one car.
 	_save.profile[Save.KEY_WORLD] = {"seed": 1, "lit": [0, 4], "drive_time": 90.0,
 		"driven": {"0,0": true, "1,0": true, "2,0": true, "3,0": true}}
 	_save.save()
@@ -827,7 +827,7 @@ func test_a_new_install_with_its_boot_built_world_takes_the_cloud() -> void:
 
 	var result: Dictionary = await _sync.pull()
 
-	assert_eq(result.state, "applied", "a finished cold open is not progress worth asking about")
+	assert_eq(result.state, "applied", "a first drive is not progress worth asking about")
 	assert_signal_not_emitted(_sync, "conflict_detected")
 
 func test_a_fitted_part_counts_as_progress_worth_asking_about() -> void:

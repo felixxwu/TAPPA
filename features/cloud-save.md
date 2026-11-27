@@ -191,7 +191,7 @@ blank straight over it. So `CloudSync.pull` takes the cloud copy itself
 still writing the `profile.json.conflict.bak` backup.
 
 **Keyed on more than 2 lit stops or more than 1 car (`CloudSync.has_progress`), not ground driven
-or `drive_time`.** A new player's forced cold open drives hundreds of metres in one car and lights
+or `drive_time`.** A new player's first drive covers hundreds of metres in one car and lights
 spawn's stop and one cabin, so it must not count: a returning player signing in on a new device
 would otherwise be offered their intro save over their career. The prompt's cursor starts on
 "Decide later", and "Keep this device" writes the overwritten cloud copy to the same

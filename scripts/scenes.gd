@@ -76,13 +76,9 @@ static func change_to(tree: SceneTree, path: String, cover_title := "") -> void:
 		return
 	# The world builds for seconds before its first frame; without this cover (adopted and freed by
 	# free_roam.gd._warm_up) the screen sits blank grey meanwhile.
-	# A new world's cover tells the cold open's opening lines instead (ColdOpen.story_lines).
 	if path in [WORLD, LEGACY_FREE_ROAM] and not Platform.is_headless():
 		drop_stale_covers(tree)
 		var cover := LoadingScreen.new()
-		if path == LEGACY_FREE_ROAM and ColdOpen.due():
-			var s: FreeRoamSettings = Config.data.free_roam
-			cover.story(ColdOpen.story_lines(s), s.cold_open_story_line_s)
 		if not cover_title.is_empty():
 			cover.pin_title(cover_title)
 		tree.root.add_child(cover)

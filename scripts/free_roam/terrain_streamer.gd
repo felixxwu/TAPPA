@@ -260,11 +260,7 @@ func _ready() -> void:
 	terrain.setup(settings, network)
 	network.build(settings, terrain)
 	terrain.fill_cut_lakes()
-	sites.build(settings, network, terrain)
-	# The side roads go in once the cold open's road is known, so they can keep off it; the sites
-	# are then planned again around them.
-	network.add_side_roads(LootRules.cars_to_find(settings), ColdOpen.roads_to_keep_clear(network, sites, settings))
-	sites = RoadSites.new()
+	network.add_side_roads(LootRules.cars_to_find(settings))
 	sites.build(settings, network, terrain)
 	terrain.sites = sites
 	if Config.data.barriers_enabled:
@@ -1906,7 +1902,7 @@ func cabin_transform(i: int) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, atan2(-away.x, -away.y)), Vector3(at.x, sites.pad_h[i], at.y))
 
 
-# Where rest stop `i`'s lantern hangs, in the world (the cold open aims the car at it).
+# Where rest stop `i`'s lantern hangs, in the world.
 func lantern_position(i: int) -> Vector3:
 	return cabin_transform(i) * (LAMP_POST_AT + LANTERN_AT)
 
@@ -2140,7 +2136,7 @@ func _roadside_crowd(ci: int, parent: Node3D, g: PlantGround) -> void:
 		if poles.nearest(at, RoadCrowds.GAZEBO_HALF_M + 1.0) >= 0:
 			continue
 		var xf := Transform3D(Basis(Vector3.UP, atan2(-fwd.y, fwd.x)), Vector3(at.x, seat_exact(g, at.x, at.y), at.y))
-		parent.add_child(RoadCrowds.gazebo(xf, colour + k))
+		parent.add_child(RoadCrowds.gazebo(xf, colour + k), true)
 	var cfg: GameConfig = Config.data
 	if settings.crowd_size <= 0 or not cfg.spectators_enabled:
 		return

@@ -98,9 +98,17 @@ static func _tire_effect(item: Dictionary) -> Dictionary:
 	return effect
 
 
+# The car a new world starts with: FreeRoamSettings.start_car_id, or the first starter car if that
+# id isn't in the catalogue.
+static func start_car(s: FreeRoamSettings) -> String:
+	if s != null and CarLibrary.index_of(s.start_car_id) >= 0:
+		return s.start_car_id
+	return starter_cars()[0]
+
+
 # The cars waiting at the ends of side roads: every car but the one a new world starts with.
 static func cars_to_find(s: FreeRoamSettings) -> Array:
-	var start := ColdOpen.car_id(s)
+	var start := start_car(s)
 	var out: Array = []
 	for car: Dictionary in CarLibrary.all():
 		if String(car["id"]) != start:

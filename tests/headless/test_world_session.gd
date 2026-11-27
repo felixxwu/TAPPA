@@ -257,14 +257,14 @@ func _boot_free_roam() -> Node3D:
 
 
 func test_free_roam_resumes_the_saved_world() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	WorldSession.light(1)
 	WorldSession.set_last_site(1)
 	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(40, 0, 25)))
 	var scene := await _boot_free_roam()
 	var st: TerrainStreamer = scene.get_node("Terrain")
 	var rest: RestStops = scene.get_node("RestStops")
-	assert_eq(st.settings.world_seed, 7, "the island is the saved world's")
+	assert_eq(st.settings.world_seed, 8, "the island is the saved world's")
 	assert_true(rest.is_lit(1))
 	assert_eq(rest.last_site, 1)
 	var car: Node3D = scene.get_node("Car")
@@ -272,7 +272,7 @@ func test_free_roam_resumes_the_saved_world() -> void:
 
 
 func test_a_car_saved_while_wrecked_comes_back_at_its_respawn_point_repaired() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	WorldSession.light(1)
 	WorldSession.set_last_site(1)
 	WorldSession.save_pose(Transform3D(Basis.IDENTITY, Vector3(40, 0, 25)))
@@ -291,7 +291,7 @@ func test_a_car_saved_while_wrecked_comes_back_at_its_respawn_point_repaired() -
 # The free-roam boot checks the site fingerprint before the loot and rest stops read their ids; and
 # once the world is replaced under a running scene, the scene stops writing into it.
 func test_free_roam_drops_stale_site_progress_and_leaves_a_replaced_world_alone() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	WorldSession.light(1)
 	WorldSession.set_last_site(1)
 	WorldSession.set_list("collected", range(400))
@@ -313,7 +313,7 @@ func test_free_roam_drops_stale_site_progress_and_leaves_a_replaced_world_alone(
 # Leaving the scene (a scene change, the window closing) still saves the car's place: the car has
 # left the tree by the time the root's tree_exiting fires, so the pose comes from the tick cache.
 func test_leaving_the_scene_saves_the_pose() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	var scene := await _boot_free_roam()
 	var car: Node3D = scene.get_node("Car")
 	await get_tree().physics_frame
@@ -328,7 +328,7 @@ func test_leaving_the_scene_saves_the_pose() -> void:
 
 
 func test_the_map_is_the_travel_picker_at_a_rest_stop() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	var scene := await _boot_free_roam()
 	var rest: RestStops = scene.get_node("RestStops")
 	var pages: WorldPages = scene.get_node("WorldPages")
@@ -358,7 +358,7 @@ func test_the_map_is_the_travel_picker_at_a_rest_stop() -> void:
 
 
 func test_the_pause_menu_opens_the_map_and_stats_and_comes_back() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	var scene := await _boot_free_roam()
 	var pause: PauseMenu = scene.get_node("PauseMenu")
 	var pages: WorldPages = scene.get_node("WorldPages")
@@ -400,7 +400,7 @@ func test_the_map_frames_what_has_been_explored() -> void:
 # Quick travel works from the map wherever it is opened — here from the minimap, out on the road:
 # it offers every lit stop, a tap on one picks it, Travel goes there and play resumes.
 func test_quick_travel_from_the_map_opened_from_the_minimap() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	var scene := await _boot_free_roam()
 	var rest: RestStops = scene.get_node("RestStops")
 	var pages: WorldPages = scene.get_node("WorldPages")
@@ -424,7 +424,7 @@ func test_quick_travel_from_the_map_opened_from_the_minimap() -> void:
 
 
 func test_the_minimap_map_closes_back_to_driving() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	var scene := await _boot_free_roam()
 	var pages: WorldPages = scene.get_node("WorldPages")
 	var pause: PauseMenu = scene.get_node("PauseMenu")
@@ -441,7 +441,7 @@ func test_the_minimap_map_closes_back_to_driving() -> void:
 
 
 func test_quick_travel_from_the_pause_menu_map_goes_back_to_driving() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	var scene := await _boot_free_roam()
 	var rest: RestStops = scene.get_node("RestStops")
 	var pages: WorldPages = scene.get_node("WorldPages")
@@ -459,7 +459,7 @@ func test_quick_travel_from_the_pause_menu_map_goes_back_to_driving() -> void:
 
 # Travel off a checkpoint leaves the money behind, after a confirm; from a checkpoint it keeps it.
 func test_travelling_from_the_road_asks_then_drops_the_money_there() -> void:
-	WorldSession.new_world(7, _any_car())
+	WorldSession.new_world(8, _any_car())
 	var scene := await _boot_free_roam()
 	var rest: RestStops = scene.get_node("RestStops")
 	var pages: WorldPages = scene.get_node("WorldPages")

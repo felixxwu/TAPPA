@@ -93,8 +93,8 @@ func _physics_process(_delta: float) -> void:
 	if _offer_site >= 0 and streamer.sites.outside(_offer_site, p.x, p.y) > 0.0:
 		_offer = {}
 		_offer_site = -1
-	if ColdOpen.due() or _offer_site >= 0:
-		return  # nothing interrupts the cold open, and an offer stands until the car leaves its pad
+	if _offer_site >= 0:
+		return  # an offer stands until the car leaves its pad
 	_from = from
 	var i := streamer.sites.reached(from, p, 0.0, _parked_car)
 	if i >= 0:
