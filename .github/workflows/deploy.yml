@@ -64,9 +64,9 @@ jobs:
           godot --version
 
       - name: Import project (build resource cache)
-        # With no GPU on the runner, Godot's GPU texture compressor sometimes freezes; override.cfg makes the import compress on the CPU.
+        # Compressing VRAM textures on an import worker thread sometimes never returns on the runners; override.cfg imports on the main thread, on the CPU.
         run: |
-          printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          printf "[editor]\nimport/use_multiple_threads=false\n[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
           grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
@@ -102,7 +102,7 @@ jobs:
 
       - name: Import project (build resource cache)
         run: |
-          printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          printf "[editor]\nimport/use_multiple_threads=false\n[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
           grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
@@ -207,7 +207,7 @@ jobs:
 
       - name: Import project (build resource cache)
         run: |
-          printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          printf "[editor]\nimport/use_multiple_threads=false\n[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
           grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
@@ -262,7 +262,7 @@ jobs:
 
       - name: Import project (build resource cache)
         run: |
-          printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          printf "[editor]\nimport/use_multiple_threads=false\n[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
           grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
@@ -379,7 +379,7 @@ jobs:
 
       - name: Import project (build resource cache)
         run: |
-          printf "[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
+          printf "[editor]\nimport/use_multiple_threads=false\n[rendering]\ntextures/vram_compression/compress_with_gpu=false\n" > override.cfg
           grep -m1 "model name" /proc/cpuinfo; grep -o -m1 "avx512[a-z]*" /proc/cpuinfo | head -1
           timeout 600 godot --headless --verbose --import --quit || true
 
