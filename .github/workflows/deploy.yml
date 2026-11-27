@@ -64,8 +64,10 @@ jobs:
           godot --version
 
       - name: Import project (build resource cache)
-        # The import can hang on Linux without ever exiting; the next step still checks everything loads.
-        run: timeout 600 godot --headless --verbose --import --quit || true
+        # Godot's multithreaded import deadlocks on these runners now and then; override.cfg makes it import one file at a time.
+        run: |
+          printf "[editor]\nimport/use_multiple_threads=false\n" > override.cfg
+          timeout 600 godot --headless --import --quit || true
 
       - name: Load every script and scene with the autoloads present
         run: godot --headless --path . res://tools/compile_check.tscn
@@ -98,7 +100,9 @@ jobs:
           godot --version
 
       - name: Import project (build resource cache)
-        run: timeout 600 godot --headless --import --quit || true
+        run: |
+          printf "[editor]\nimport/use_multiple_threads=false\n" > override.cfg
+          timeout 600 godot --headless --import --quit || true
 
       # Level bakes are built locally and published as release assets (tools/publish_bake.sh). Every export bundles tools/levels (the game starts in the Hafren level), so every export job fetches them.
       - name: Fetch level bakes
@@ -200,7 +204,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Import project (build resource cache)
-        run: timeout 600 godot --headless --import --quit || true
+        run: |
+          printf "[editor]\nimport/use_multiple_threads=false\n" > override.cfg
+          timeout 600 godot --headless --import --quit || true
 
       - name: Fetch level bakes
         env:
@@ -252,7 +258,9 @@ jobs:
           godot --version
 
       - name: Import project (build resource cache)
-        run: timeout 600 godot --headless --import --quit || true
+        run: |
+          printf "[editor]\nimport/use_multiple_threads=false\n" > override.cfg
+          timeout 600 godot --headless --import --quit || true
 
       - name: Fetch level bakes
         env:
@@ -366,7 +374,9 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Import project (build resource cache)
-        run: timeout 600 godot --headless --import --quit || true
+        run: |
+          printf "[editor]\nimport/use_multiple_threads=false\n" > override.cfg
+          timeout 600 godot --headless --import --quit || true
 
       - name: Fetch level bakes
         env:
