@@ -22,7 +22,8 @@ repo is code or docs the game no longer uses.
   progress and cars carry over.
 - Car-physics tests that use the stage harness move to a small flat-ground fixture. Only tests that
   check stage generation itself are deleted.
-- `ref/`, `blender/` and `build/` are out of scope (art source and build output, not code).
+- `ref/` and `build/` are out of scope (art source and build output, not code). `blender/` is swept for
+  unused models only (it holds shipped car `.glb` models); its sources stay.
 
 **Relation to `todo/2026-11-27-rust-native-migration.md`:** this cleanup is that spec's prerequisite.
 Its Phase 0 starts only once this is done, so everything the port sees is the live game.
@@ -60,8 +61,8 @@ spec items still applies.
 - Island files that kept code still reaches, so they are **not** safe to delete outright:
   - `RegionBanner`: `rest_stop_page.gd` (the level's shop) calls `RegionBanner.name_for`.
   - `LabNoise`: `terrain_streamer.gd` and `free_roam_settings.gd` call it.
-  - `TreeScatter`: `terrain_streamer.gd` uses it for forest density, and `spectator_scatter.gd`
-    uses it too.
+  - `TreeScatter`: `terrain_streamer.gd` uses it for forest density. `spectator_scatter.gd` only
+    mentions it in a comment.
 - `ScatterMath` (`scripts/scatter_math.gd`) stays: live level code uses it (`tree_mesh_field`,
   `tree_fall`, `level_weather`, `level_spectators`, `spectator_group`, `spectator_scatter`,
   `billboard_field`).
@@ -70,13 +71,20 @@ spec items still applies.
   `SpectatorScatter`/`SpectatorGroup`, `BoostLibrary`/`UpgradeLibrary`/`TuningPanel`.
 - The island benchmark is launched from `benchmark_mode.gd` (`Scenes.change_to(...,
   LEGACY_FREE_ROAM)`) and `benchmark/perf_benchmark.gd`.
-- 31 test files in `tests/headless/` use `main.tscn` or `SceneTestHelpers.minimal_world()`.
+- 30 test files in `tests/headless/` use `main.tscn` or `SceneTestHelpers.minimal_world()`
+  (`grep -rlE "main\.tscn|minimal_world\(" tests/headless`).
 
 ## Phases
 
 The phases run one after another, because several of them edit the same shared files
 (`game_config.gd`, `settings_menu.gd`, `scenes.gd`). Each phase ends with a targeted test run;
 the full suite runs once, at the end.
+
+**Rule for every phase:** before deleting a class, script or field, grep for every reference to it
+across all of `scripts/`, `tools/`, `benchmark/` and `tests/` (calls, type hints, comments), and strip
+those uses in the same phase. Files that survive until a later phase (such as `free_roam.gd`,
+`terrain_streamer.gd` and `world_pages.gd`, which go in Phase 4) must not reference anything an
+earlier phase deleted, so the project still loads after each phase.
 
 ### 0. Delete files nothing depends on
 - The dev scenes `corner_catalog.tscn` / `scripts/corner_catalog.gd` and `exhaust_lab.tscn` /
@@ -94,16 +102,28 @@ the full suite runs once, at the end.
 - The HQ screenshots `docs/garage/` and `docs/map_table/`.
 
 ### 1. Remove the island benchmark
+- Strip the uses of `AutoDriver` and `BenchmarkRunner` from `scripts/free_roam/free_roam.gd`
+  (`start_auto_drive`, `start_benchmark` and the lines that call them), because that file lives until
+  Phase 4.
 - Delete `scripts/benchmark_runner.gd`, `scripts/benchmark_results.gd`, `benchmark/perf_benchmark.*`,
   `run_benchmark.sh`, `scripts/free_roam/auto_driver.gd`, the Settings benchmark page, and the
   `test_benchmark_*` tests.
 - Rewrite `features/benchmark.md` to cover only the replay benchmark.
-- Strip the `Benchmark` autoload (`scripts/benchmark_mode.gd`) down to whatever the title screen's
-  web probes (`benchmark/vtf_probe.*`) still use, or delete it if nothing does.
+- Strip the `Benchmark` autoload (`scripts/benchmark_mode.gd`) down to what the replay benchmark
+  needs. Keep `active`, `RNG_SEED` and `render_height`. Callers that stay:
+  `benchmark/level_replay.gd` (`Benchmark.active`), `engine.gd` (`RNG_SEED`), `level_view.gd`,
+  `display_stretch.gd` (`render_height`), `web_fullscreen.gd`, `cloud_sync.gd` and `pause_menu.gd`
+  (`exit_to_title`, if the replay still needs it).
+- Strip the sweep, the toggles and the autostart together with the Settings Benchmark page:
+  `settings_menu.gd` (`Benchmark.TOGGLES`), `title_boot.gd` (`Benchmark.autostart_requested`) and the
+  `exit_to_title` call in `pause_menu.gd` if nothing else needs it.
 - Keep `benchmark/level_replay.*` and `run_level_replay.sh`.
 
 ### 2. Remove the first-run intro
 - Delete `scripts/free_roam/cold_open.gd` and `tests/headless/test_cold_open.gd`.
+- Also strip the `ColdOpen` uses in files that live until Phase 4: `loot_rules.gd` (`ColdOpen.car_id`,
+  around line 103), `terrain_streamer.gd` (`ColdOpen.roads_to_keep_clear`, around line 266),
+  `parked_cars.gd`, `world_pages.gd` and `tools/photo_mode_capture.gd`.
 - Remove the `ColdOpen` calls from `scenes.gd` (the cover's story lines), `title_boot.gd`,
   `title_screen.gd` (the new-world seed path), `music_director.gd` (`ColdOpen.due()` mutes the
   music on a first run), `damage_model.gd` and `mobile_controls.gd` (the pulsing GAS hint), plus the `cold_open` flag in `world_session.gd`.
@@ -154,11 +174,15 @@ the full suite runs once, at the end.
    row (`settings_menu.gd`), and their uses in `game_config.gd` and `level_stats.gd`. Update
    `test_settings_menu.gd`, `test_lighting_coverage.gd`, `features/settings.md` and
    `features/rendering.md`. Leave the saved `outlines` key ignored rather than erroring on old saves.
+- `spike_id.gdshaderinc` is `#include`d by two live level shaders, `shaders/billboard_tree.gdshaderinc`
+  and `shaders/tree_canopy.gdshader`. Strip their `object_id` / `spike_id_color` / `spike_pack` paths
+  before deleting the include.
+- Remove `add_to_group(&"id_terrain")` from `terrain_streamer.gd` (two places).
 
 ### 5. Retire the stage harness
 - Add a small flat-ground fixture for physics tests, a replacement for
   `SceneTestHelpers.minimal_world()`. Keep `sim_test.gd`'s cached settle.
-- Move the car-physics tests among the 31 harness users onto the fixture. Delete the tests that
+- Move the car-physics tests among the 30 harness users onto the fixture. Delete the tests that
   check stage generation: `test_track_generator`, `test_track_profile`, `test_track_gen_*`,
   `test_barrier_*`, `test_tree_scatter` (if phase 3 removed its streamer use),
   `test_corner_library`, `test_road_markings`, `test_lakes_integration`, `test_stage_manager`,
@@ -166,10 +190,11 @@ the full suite runs once, at the end.
 - Then delete:
   - `main.tscn`, `scripts/world.gd` and `stage_manager.gd`.
   - The stage pipeline: `track_generator`, `track_profile`, `track_gen_params`,
-    `corner_library`, `barrier_layout` / `_section` / `_field`, `road_markings`, `tree_scatter`
-    (once `spectator_scatter.gd` no longer uses it), `terrain_noise`. Not `scatter_math` (see the
+    `corner_library`, `barrier_layout` / `_section` / `_field`, `road_markings`, `tree_scatter`,
+    `terrain_noise`. Not `scatter_math` (see the
     structural facts). Check `lake_field` (`car.gd`'s water predicate) and `bush_field` (used
     through `ground_cover.gd`) before deleting them.
+  - `tools/render_barriers.gd` / `.sh` (and its `.uid`) and the `docs/barriers/` screenshots.
   - Before deleting anything here, grep every remaining user of each class, including comments and
     type hints, not just calls.
   - The `TerrainManager` family: `terrain_manager`, `terrain_chunk*`, `terrain_lod`,
@@ -194,7 +219,8 @@ the full suite runs once, at the end.
   and the `gameplay.md` bullet) so it describes only the Hafren level. Check the skills under
   `.claude/skills/` for references to deleted files.
 - Run a search for assets that nothing loads any more (textures, models and sounds left with no
-  users), and delete them.
+  users), and delete them. Include `blender/`, which holds shipped car `.glb` models: delete only
+  unused models, not the sources.
 - Run the full test suite once.
 
 ## Open questions

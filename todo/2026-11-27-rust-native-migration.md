@@ -41,7 +41,7 @@ spec items still applies.
 - [ ] 1.6 Scene counts
 - [ ] 1.7 Save round-trip
 - [ ] 1.8 Device targets
-- [ ] 1.9 Godot feature freeze in place
+- [ ] 1.9 Re-bless rule for Godot changes during Phases 1–3
 - [ ] 1.10 Parity checklist written
 - [ ] **Exit:** every golden in CI and blessed; numbers recorded for every device class
 
@@ -57,6 +57,7 @@ spec items still applies.
 - [ ] 3.3 Runs on every browser and native target
 - [ ] 3.4 Rust replay benchmark
 - [ ] 3.5 Like-for-like comparison
+- [ ] 3.6 Check the Architecture's assumptions
 - [ ] **Gate:** build spike works and at least 2× headroom on phone web (go / no-go, with your call)
 
 **Phase 4 — Simulation core in Rust**
@@ -125,7 +126,7 @@ GDScript's. It used C as a stand-in for Rust, since Rust isn't installed (same L
 - **The streaming spikes are mostly not script time.** In the 19–31 ms frames, tracked scripts add up
   to 4–8 ms; the other 10–17 ms is untracked, probably Godot creating meshes, collision shapes and
   nodes. In our own engine that's a buffer upload and a Jolt shape, under our control, but nothing has
-  measured it yet. Attribute it before Phase 3.
+  measured it yet. Phase 3 step 6 attributes it.
 - **Of the ~5 ms of non-draw main-thread time**, maths-heavy scripts should become nearly free, while
   scripts that mostly call the engine gain less. A rough guess is a 2.5–3.5 ms saving; splitting the
   `scripts_ms` keys into maths and engine calls would pin it down.
@@ -222,7 +223,7 @@ Rules for keeping the two versions comparable:
   Firebase Hosting's free plan (about 360 MB a day, a few dozen game loads). Firebase stays on its free
   plan for sign-in and Firestore. Only the web build leaves itch: the
   Android APK and Windows `.exe` stay there, and `UpdateCheck.ITCH_URL` still sends native players
-  there.
+  there. Cloudflare Pages rejects files over 25 MiB, so the large files live in R2 (see Phase 0.1).
 - **iPhone version is free, with no real-money purchases** (2026-11-27), so no Paid Apps Agreement or
   in-app purchase work.
 - **No local save import.** Nobody plays yet, so saves carry over between the versions only through
@@ -236,12 +237,12 @@ Rules for keeping the two versions comparable:
 |---|---|---|
 | Language | Rust | WebAssembly with SIMD on web; `cargo test` replaces GUT |
 | GPU | wgpu, WGSL shaders | The GPU culls and picks LODs in compute shaders and fills indirect draw buffers. WebGPU core has no multi-draw indirect (wgpu turns it into one indirect draw per batch), no bindless textures (keep the shared atlas and texture-array approach), and a non-zero `firstInstance` in indirect draws needs the optional `indirect-first-instance` feature, so the culling pass hands instance offsets over in a storage buffer instead. wgpu's WebGPU objects can't be used from worker threads on web, so drawing stays on the main thread |
-| Physics | Jolt through Rust bindings | Rigid bodies and collision. Pin the same Jolt commit and solver settings Godot ships (Godot pins Jolt by commit in `thirdparty/`); see "The car" below. Jolt's cross-platform determinism option makes the Rust version match itself on native and WebAssembly. Check whether Godot builds Jolt with it (`JPH_CROSS_PLATFORM_DETERMINISTIC`); if not, turning it on changes the float results slightly, and the car tolerances have to absorb that. Jolt is C++. wgpu's WebGPU backend needs the `wasm32-unknown-unknown` target with wasm-bindgen, so Jolt is built with clang and the wasi-sdk sysroot (libc++) and linked into it. Jolt runs single-threaded (`JobSystemSingleThreaded`): it simulates one car, and its determinism doesn't depend on thread count. The Phase 3 build spike proves this |
+| Physics | Jolt through Rust bindings | Rigid bodies and collision. Pin the same Jolt commit and solver settings Godot ships (Godot pins Jolt by commit in `thirdparty/`); see "The car" below. Jolt's cross-platform determinism option makes the Rust version match itself on native and WebAssembly. Check whether Godot builds Jolt with it (`JPH_CROSS_PLATFORM_DETERMINISTIC`); if not, turning it on changes the float results slightly, and the car tolerances have to absorb that. Jolt is C++. wgpu's WebGPU backend needs the `wasm32-unknown-unknown` target with wasm-bindgen, so Jolt is built with clang and the wasi-sdk sysroot (libc++) and linked into it, compiled with `-matomics -mbulk-memory` (the wasi-sdk threads sysroot) so it links into a shared-memory module. Jolt runs single-threaded (`JobSystemSingleThreaded`): it simulates one car, and its determinism doesn't depend on thread count. The Phase 3 build spike proves this |
 | Window and input | winit; gilrs for gamepads on desktop and web | gilrs doesn't cover iOS or Android: there, gamepads come from Apple's GameController framework and Android's input events through android-activity, behind one input layer. Touch controls are ported from `features/mobile-controls.md`. Tilt steering (`tilt_input.gd`) needs CoreMotion on iOS, Android's sensors, and `deviceorientation` on web (with iOS Safari's permission request on a tap) |
 | Audio | cpal natively (CoreAudio on iOS), an AudioWorklet on web | `engine_audio_synth.gd` moves onto the audio thread. Also: music (`MusicDirector`), sound effects (`Audio`), decoding the `.ogg` files, and the bus volumes (`audio_buses.gd`). On iOS, set the audio session category so the game respects the silent switch as players expect |
 | UI | Small custom page-based UI | Same rules as today: Jersey 10 at multiples of 18 px, whole-pixel positions, every page navigable by keyboard and gamepad |
 | Tuning | `GameConfig` → one TOML file embedded in the build (`include_str!`), optionally reloaded while the game runs | `scripts/game_config.gd` (~3.4k lines of defaults) becomes a struct read from that file; the defaults live only in the TOML, not also in the struct. It also needs get and set by field name, because upgrades write config fields by name (`upgrade_library.gd` → `cfg.set(field, value)`, `Config.authored_value`); generate a field table with a derive macro |
-| Web threads | WebAssembly threads (SharedArrayBuffer) | The web export already uses threads (`variant/thread_support=true`). From Phase 0 the COOP/COEP headers come from Cloudflare Pages' `_headers` file. Rust WebAssembly threads currently need nightly Rust and `-Z build-std`; the Phase 3 build spike proves it |
+| Web threads | WebAssembly threads (SharedArrayBuffer) | The web export already uses threads (`variant/thread_support=true`). From Phase 0 the COOP/COEP headers come from Cloudflare Pages' `_headers` file. Rust WebAssembly threads currently need nightly Rust and `-Z build-std`; the Phase 3 build spike proves it. Rust workers on web are Web Workers, through a `wasm_thread` or `wasm-bindgen-rayon` style crate (`std::thread::spawn` doesn't work on `wasm32-unknown-unknown`) |
 
 ### The car is not just Jolt
 
@@ -265,14 +266,14 @@ The renderer has to reproduce these project settings and built-in behaviours, no
   `Config.data.horizontal_stretch`.
 - `limits/opengl/max_lights_per_object=4`.
 - Built-in materials, fog, shadows, the sky, and mesh LODs.
-- Our own shaders: 27 `.gdshader` files (one is `benchmark/vtf_probe.gdshader`, not shipped), 5
-  `.gdshaderinc` includes, and one shader `ground_cover.gd` builds inline.
+- Our own shaders: the `.gdshader` files left after the cleanup (`benchmark/vtf_probe.gdshader` isn't
+  shipped), the `.gdshaderinc` includes left, and one shader `ground_cover.gd` builds inline.
 
 ## Architecture
 
 The shape of the Rust codebase. It's a design, not code: Phase 3 builds the renderer half of it,
 Phase 4 the simulation crates, Phase 5 the rest. Where there's a real choice, the options are listed
-with a recommendation; the owner's open questions are at the end of the section.
+with a recommendation; the settled decisions are listed at the end of the section.
 
 The guiding rule is the same one the plan already follows: the simplest thing that keeps parity and
 the speed gain. Today's game is one level, one player car and a few thousand repeated things (trees,
@@ -292,28 +293,28 @@ One Cargo workspace. Each crate is a folder under `crates/`:
 | `terrain` | Chunk building as pure functions (`_compute_heights`, `_compute_arrays`, stitching, skirts), heightfields for collision, and the streaming planner (which chunks and tiles are wanted, in what order) | No |
 | `engine_sim` | `engine.gd` and `drivetrain.gd`: torque, gearbox, clutch, turbo, nitrous | No |
 | `synth` | `engine_audio_synth.gd`, music scheduling maths. Sample generation only, no audio device | No |
-| `physics` | The Jolt binding (a `-sys` module over the C++), Godot's `VehicleBody3D` wheel model, `car.gd`'s forces, the contact impulses damage reads | No |
+| `physics` | The Jolt binding (a `-sys` module over the C++), Godot's `VehicleBody3D` wheel model, `car.gd`'s forces, `DamageModel` (`damage_model.gd`) and the contact impulses it reads | No |
 | `ui` | The page UI toolkit: layout, widgets, focus and `MenuNav`'s rules, text measurement from the font's metrics. Produces a list of quads, not pixels | No |
 | `game` | The whole game: state, systems, events, the profile and its JSON, cloud sync logic, every menu page, the input action map, replays and snapshots | No |
-| `render` | The wgpu renderer | Yes |
-| `platform` | Everything that differs per platform: window and events (winit), gamepads, touch, tilt, audio output (cpal / AudioWorklet), file storage, HTTP, threads, app lifecycle (pause, tab hidden) | Yes |
-| `app` | The program itself: wires `game`, `render` and `platform` together, runs the frame loop, the replay benchmark. Builds as the native binary, the WebAssembly module, and the iOS / Android library | Yes |
 | `parity` | The golden runners and the `bless` command (see "Where the parity harness hooks in") | No |
+| `render` | The wgpu renderer | Yes |
+| `platform` | Everything that differs per platform: window and events (winit), gamepads, touch, tilt, audio output (cpal / AudioWorklet), file storage, HTTP, threads, text input and clipboard (a hidden DOM input on web; the native soft keyboard and clipboard on iOS and Android), app lifecycle (pause, tab hidden) | Yes |
+| `app` | The program itself: wires `game`, `render` and `platform` together, runs the frame loop, the replay benchmark. Builds as the native binary, the WebAssembly module, and the iOS / Android library | Yes |
 
-Dependencies only point down the table, with two exceptions: `render` depends only on `gdcompat` and
-`assets` (it never sees game state), and `app` depends on everything. So:
+Each crate depends only on rows above it. `render` is narrower still: it depends only on `gdcompat`
+and `assets` (it never sees game state). `app` depends on everything. So:
 
-- `cargo test` on every crate above `render` runs headless, with no GPU, no window and no audio device.
+- `cargo test` on every crate above `render` (that includes `parity`) runs headless, with no GPU, no window and no audio device.
   The car step golden, game-state trace, menu-flow replays, scene counts and save round-trip all live
   there.
-- A CI check fails if `cargo tree -p game` (or any crate above it) pulls in `wgpu`, `winit`, `cpal` or
+- A CI check fails if `cargo tree -p game` or `cargo tree -p parity` (or any crate above them) pulls in `wgpu`, `winit`, `cpal` or
   `web-sys`, so the line can't erode quietly.
 - `platform` is the only crate with `#[cfg(target_arch = "wasm32")]` or per-OS code, apart from small
   build tweaks. The game never asks which platform it's on except through the same "is this a touch
   device" style questions `Platform` answers today.
 
 Fifteen crates sounds like a lot. Most are a few files; the split exists so the slow-to-build and
-platform-specific parts (Jolt, wgpu, winit) stay out of the test builds. Option: merge `level`,
+platform-specific parts stay apart, and the dependency check keeps wgpu, winit and cpal out of the test builds. Option: merge `level`,
 `terrain`, `engine_sim` and `synth` into `game` and keep only `gdcompat`, `config`, `physics`, `ui`,
 `game`, `render`, `platform`, `app`. Recommendation: keep them separate, because Phase 4 ports and checks
 each of them on its own against Godot's recordings, and a crate per piece makes "this piece is done"
@@ -392,8 +393,9 @@ The autoloads:
   steer, handbrake, shifts, nitrous, reset and the rest), sampled from the input state at the tick's
   start. A recording is a list of them, so "replay" means feeding recorded `TickInput`s instead of live
   ones.
-- **Pose-fed replays** (as `level_replay.gd` → `_play_tick` does today) are one system that, after the
-  physics step, overwrites the car's pose and velocities from the recording.
+- **Pose-fed replays** (as `level_replay.gd` → `_play_tick` does today) are one system that runs
+  FIRST in `Game::tick`, before every other system and the physics step: `level_replay.gd` runs at
+  `process_physics_priority` -100 and writes the pose, velocities and inputs at the start of the tick.
 - **Snapshots.** The car, engine, drivetrain and damage model each have `snapshot()` and `restore()`,
   plus the world state the car changes (felled trees, spectator ragdolls). The snapshot struct is the
   one Phase 1.2 records from Godot, serialised the same way, so a Godot snapshot restores straight into
@@ -441,7 +443,7 @@ frames is probably mesh, collision-shape and node creation. In this design the m
 two things per chunk: a GPU buffer write and adding a Jolt body. Jolt's shape objects can be built on
 any thread, so if Phase 3 measures shape creation as expensive, workers build the heightfield shape
 and the main thread only adds the body. Both are spread across frames under a time budget, as
-`TerrainStreamer`'s scheduler does today, but the budget now covers only uploads and body adds, not
+the streamer's scheduler does today, but the budget now covers only uploads and body adds, not
 building.
 
 ### Renderer
@@ -467,7 +469,7 @@ building.
 - **Vertex data in storage buffers, read by index in the vertex shader** ("vertex pulling"), one buffer
   per vertex layout (terrain, static mesh, card). With vertex pulling, all terrain chunks of one level
   of detail are one batch: every chunk at a level has the same vertex count and shares one index
-  buffer (as `TerrainStreamer._indices` already does), so the instance record just says which slot
+  buffer (as the streamer's `_indices` already does), so the instance record just says which slot
   its vertices are in. Terrain slots are a fixed-size pool per level of detail, so streaming needs no
   general memory allocator.
 - **Instance records** in one storage buffer: transform, which mesh, draw distance and level-of-detail
@@ -505,9 +507,10 @@ causing a spike.
 **The rest of what Godot draws:**
 
 - **Lighting per vertex** (`force_vertex_shading=true`), at most 4 lights per object, and fog, are
-  written into our shaders. There's no general material system: each of the 27 `.gdshader` files
+  written into our shaders. There's no general material system: each `.gdshader` left after the cleanup
   becomes a WGSL pipeline, and Godot's built-in materials the game uses become a few more. All
-  pipelines are created at boot behind the loading screen (asynchronously on web), which replaces
+  pipelines are created at boot behind the loading screen, and warmed up by drawing each pipeline
+  once offscreen, which replaces
   today's shader warm-up protocol (`warm_up_materials`, `LevelView._warm_up`).
 - **Shadows:** the level has no shadow-casting light; the car's shadow is a blob (`CarShadow`). So no
   shadow map pass. Phase 3 confirms this against the Godot frame.
@@ -532,8 +535,8 @@ causing a spike.
   integer, bool, colour, vector, string), for `upgrade_library.gd`-style writes by name. An unknown name
   is an error in debug builds and a warning in release, as `Config.get_float` warns today.
 - `Config` keeps two copies, `live` (which `apply_car` reshapes per car) and `authored`, as now.
-- Reloading while the game runs: native dev builds watch the file; web dev builds re-fetch it on a key.
-  Release builds use only the embedded copy.
+- Reloading while the game runs: desktop dev builds watch the file; other builds use only the
+  embedded copy.
 
 ### Save and cloud
 
@@ -549,6 +552,9 @@ causing a spike.
   (`profile.json`, `auth.json`, `adaptive_graphics.json`) are small JSON, and `localStorage` is
   synchronous, which keeps the save path simple. Option: IndexedDB as Godot uses, which allows more
   data but is asynchronous. Recommendation: `localStorage`, with a size check in CI.
+- `save_manager.gd` also writes `profile.json.bak` (the rolling backup) and
+  `profile.json.conflict.bak` (`write_conflict_backup`, kept when a cloud conflict is resolved). Port
+  both.
 - Cloud sync is `cloud_sync.gd`, `auth_service.gd` and `firestore_codec.gd` ported as logic over a
   small HTTP interface, so tests can use a fake server.
 
@@ -560,7 +566,9 @@ Three layers:
    on iOS; android-activity input events; touch; tilt. Each becomes a raw device event.
 2. **Actions** (`game`): the `[input]` section of `project.godot` ported as a table of actions and
    their default bindings, overlaid by the player's saved bindings. Produces each action's state:
-   held, pressed this frame, strength (with deadzones as configured).
+   held, pressed since the last tick, strength (with deadzones as configured). Press and release edges
+   are latched until the next tick consumes them, like `is_action_just_pressed` in
+   `_physics_process`, so a tap shorter than a tick isn't lost. Menus keep per-frame edges.
 3. **Consumers:** the tick samples a `TickInput` from the action state; menus receive action presses
    (`ui_up`, `menu_back`, `ui_accept` and the rest).
 
@@ -644,6 +652,10 @@ recorded once.
    URL, and `felixxwu.github.io/TAPPA` is a project page whose domain root belongs to another repo.
    - Serve the web build from Cloudflare Pages, with the COOP/COEP headers that WebAssembly threads
      need set in its `_headers` file.
+   - Cloudflare Pages rejects files over 25 MiB per file, and `build/web/index.wasm` is 37 MB,
+     `index.pck` 62 MB and the level bake 28 MB. Keep those large files in Cloudflare R2 and serve them
+     through a Pages Function on the same origin, so COOP/COEP need no CORP or CORS changes. R2 egress
+     is free, so there's still no bandwidth cost.
    - Set `Cache-Control` so players never load an old build: no caching on `index.html`, and
      build-unique or hashed file names for the rest. `update_check.gd` skips web because itch serves
      each build from a build-unique path (see `build_web.sh`); keep that true on Pages and update
@@ -752,7 +764,7 @@ deleting the account work on every platform. The native iPhone frame-time number
      clock).
    - Make all streaming finish before each tick during replays. Several systems finish work to a time
      budget or on worker threads, so what exists at a given tick depends on the machine's speed:
-     terrain chunks (`LevelStreamer` / `TerrainStreamer`), trees and their hitboxes (`level_trees.gd`
+     terrain chunks (whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept)), trees and their hitboxes (`level_trees.gd`
      → `_pump`, plus `WorkerThreadPool` tile packs polled with `is_task_completed`), ground cover
      (`ground_cover.gd`) and spectators (`level_spectators.gd` spawns from `_process`). Audit every
      `_process` and every `WorkerThreadPool` use in `scripts/`, and record in the parity
@@ -774,22 +786,26 @@ deleting the account work on every platform. The native iPhone frame-time number
      per-wheel state `VehicleWheel3D` lets a script read, and for the rest either rebuild it from the
      transforms or accept a tolerance. The state captured: engine RPM, gear, clutch, turbo, nitrous, misfire timer,
      wheel spin, damage, temperatures, wheel bend, cooldowns. Include world state the car changes:
-     trees felled through `TreeFall` / `TreeMeshField` (which turn their hitboxes off), and the poses
-     and velocities of the spectator ragdolls `spectator_group.gd` builds, which the car can hit.
-   - Record a fresh free-running drive by hand with `run_level_replay.sh --record`, extended to log
-     every input action (the existing `AutoDriver` plans routes on the island's `RoadNetwork`, so it
-     can't drive the level) (shifting, nitrous and the rest, not just three). `hafren.rec` can't be reused: its
+     trees felled through `TreeFall` / `TreeMeshField` (which turn their hitboxes off), the poses
+     and velocities of the spectator ragdolls `spectator_group.gd` builds, and the log piles (rigid
+     bodies the car hits), which the car can hit.
+   - Record a fresh drive by hand with `run_level_replay.sh --record`, extended to log every input
+     action (shifting, nitrous and the rest, not just three). The hand session records only that full
+     input log (the existing `AutoDriver` plans routes on the island's `RoadNetwork`, so it can't drive
+     the level).
+   - CI then replays the log headless, free-running, to produce the blessed per-tick golden data
+     below, so the goldens come from the CI runner image. Check that this CI run stays on the road. `hafren.rec` can't be reused: its
      inputs only make sense along its pose-fed path, so a free-running car would leave the road within
      seconds and the golden would mostly cover crashes.
-   - Each tick, store the snapshot before the step, the inputs, and the result after it: pose,
+   - Each tick of the CI run, store the snapshot before the step, the inputs, and the result after it: pose,
      velocities, RPM, gear, wheel contacts, suspension compression, contact impulses.
    - The Rust comparison restores each tick's snapshot, steps once, and reports the first tick that
      differs past the tolerance.
    - Jolt keeps a contact cache between steps that can't be set from outside, so a restored state's
      next contact impulses differ slightly. Ticks with contacts get a wider tolerance, or are
      compared over a short window of a few ticks.
-3. **Car drift report.** Godot's reference is simply its own recording: from any tick onward, the
-   rest of the drive is what the car did freely. The Rust version restores the snapshot at a tick every
+3. **Car drift report.** Godot's reference is the blessed CI run from step 2: from any tick onward,
+   the rest of the drive is what the car did freely. The Rust version restores the snapshot at a tick every
    few seconds, runs freely on the recorded inputs for a few seconds, and is compared on path and
    whole-run figures (segment times, top speeds, where each segment ends) within a
    tolerance that widens over time, as a report you review rather than a pass/fail check.
@@ -809,6 +825,8 @@ deleting the account work on every platform. The native iPhone frame-time number
    state the press changed. Built on the nav tests in `features/menu-navigation.md`.
    - **Layout:** on each page, also log every widget's on-screen box in the logical frame. Boxes must
      match within a pixel, so layout drift is caught automatically, not only in the visual review.
+   - **Text input:** the account page's "type the email and paste the code" flow, as recorded text
+     and paste events.
    - **Touch and tilt:** a second script drives the touch controls (`features/mobile-controls.md`)
      and tilt steering (`tilt_input.gd`) with recorded touch points and device angles, and logs the
      resulting actions and `TickInput`, so phone controls are compared too.
@@ -872,14 +890,13 @@ decompression) equal Godot's in-memory data, read from a tool scene.
 
 ### Phase 3 — Renderer and build spike, and the go/no-go gate
 
-**Driven by:** Opus. It starts with the Architecture section below being written and agreed, then the build spike and stutter measurement, which are research rather than implementation. Sonnet can build the viewer's drawing once the renderer design is settled. **Your steps:** the go/no-go decision, TestFlight install.
+**Driven by:** Opus. The Architecture section above is settled. The build spike, the stutter measurement and the assumption checks are research rather than implementation. Sonnet can build the viewer's drawing once the renderer design is settled. **Your steps:** the go/no-go decision, TestFlight install.
 
 A standalone wgpu viewer, not yet a game. It loads Phase 2's data and flies the camera along
 `hafren.rec`'s path, the same recording the Godot comparison replays.
 
 1. Draw what the Godot frame draws, so the comparison is fair:
-   - terrain chunks at every LOD level (see `LevelStreamer`, `scripts/level_streamer.gd`,
-     `TerrainStreamer` and `features/terrain-streaming.md`), trees, ground cover and buildings;
+   - terrain chunks at every LOD level (see whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept), and its doc in `features/`), trees, ground cover and buildings;
    - the PS1-style post-process (`ps1_post_process.gdshader`), the panorama sky, water, and the car
      with its shadow;
    - the settings in "What Godot draws that we don't write".
@@ -891,7 +908,9 @@ A standalone wgpu viewer, not yet a game. It loads Phase 2's data and flies the 
 2. **Build spike.** Prove the parts of the stack nobody has tried here yet, in the same viewer:
    - a Rust Jolt binding at, or forkable to, Godot 4.6's Jolt commit (the available bindings wrap
      specific Jolt versions);
-   - that Jolt built for WebAssembly (single-threaded; see the Stack's physics row);
+   - that Jolt built for WebAssembly (single-threaded, compiled with `-matomics -mbulk-memory`; see
+     the Stack's physics row) links into the threaded shared-memory module, with a heightfield shape
+     built on a worker thread;
    - WebAssembly threads working for the streaming workers;
    - one body stepping in the browser;
    - the same steps on native and WebAssembly, with the cross-platform determinism option on, giving
@@ -906,6 +925,11 @@ A standalone wgpu viewer, not yet a game. It loads Phase 2's data and flies the 
 5. Compare like with like. The viewer runs no game scripts, so compare its frame time against the
    Godot replay with the game-script nodes turned off, and its draw cost against Godot's draw phase
    (Phase 1.8).
+
+6. **Check the Architecture's assumptions**, before the streaming design is finalised:
+   - Attribute the untracked 10–17 ms in Godot's streaming spikes (engine-side mesh, collision-shape and
+     node creation), as set out under "What the speed gain comes from".
+   - Confirm Godot's 36 px Jersey 10 equals a 2× scale of the 18 px glyphs (see the UI section).
 
 **Gate:** the build spike works, and on the phone-web device the viewer's main-thread time (p95) is at
 most half the matching Godot replay's. If either fails, stop here. At most Phase 0, Phase 1.8 and Phase 2 have been
@@ -924,18 +948,18 @@ check the crates just as well. The Godot game keeps shipping unchanged meanwhile
 
 The car needs a world to collide with, so its crate gets its own Jolt world, with the same commit and
 settings as Godot's (see "The car"), built from Phase 2's data: terrain chunks and the level's other
-collision (`level_trees.gd`, `level_buildings.gd`, `barrier_field.gd`, `obstacle_body.gd`,
-`level_fences.gd`). Phase 5 reuses that world.
+collision (`level_trees.gd`, `level_buildings.gd`, `obstacle_body.gd`, `level_fences.gd`). Phase 5 reuses that world.
 
 Port order, from easiest to check to riskiest:
 
 1. Engine audio synthesis (`engine_audio_synth.gd`, `engine_audio_feed.gd`). Compare samples against
    GDScript output for the same input.
-2. Terrain chunk building and level data decode: `TerrainStreamer`'s level path
-   (`_compute_heights`, `_compute_arrays`), `LevelStreamer`, `level_data.gd` and the `LevelBake` load,
+2. Terrain chunk building and level data decode: the level path of whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept)
+   (`_compute_heights`, `_compute_arrays` today), `level_data.gd` and the `LevelBake` load,
    reading Phase 2's format. Compare outputs exactly; these are also the biggest load-time wins.
 3. Engine and drivetrain (`engine.gd`, `drivetrain.gd`). Compare per-tick torque and RPM traces.
-4. The car: the `VehicleBody3D` wheel model plus `car.gd`'s forces. Compare against Phase 1's car step
+4. The car: the `VehicleBody3D` wheel model plus `car.gd`'s forces and `DamageModel`
+   (`damage_model.gd`, in `physics`). Compare against Phase 1's car step
    golden.
 
 The Godot feature freeze (see "The parity contract") starts here.
@@ -951,7 +975,7 @@ the car step golden before Phase 5 starts.
 Build the game around the Rust crates without Godot:
 
 1. Game loop with a fixed timestep, input (see the Stack's input row), cameras (`chase_camera.gd`,
-   `camera_manager.gd`), streaming (`LevelStreamer` / `TerrainStreamer`) on worker threads.
+   `camera_manager.gd`), streaming (whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept)) on worker threads.
 2. Physics on Phase 4's Jolt world, plus the rest of the dynamic world (spectator ragdolls, felled
    trees, log piles).
 3. The replay benchmark from Phase 3, now running the whole game.
@@ -1001,6 +1025,8 @@ the parity checklist is done. The Rust performance budget (see Testing) is then 
    the same app IDs and signing keys, and version numbers (`versionCode`, `CFBundleVersion`) above
    Godot's last release. Google Play requires 16 KB page alignment for native libraries: build the
    Rust and Jolt libraries with NDK r28+ (or `-Wl,-z,max-page-size=16384`) and check it in CI.
+   Cloudflare Pages' 25 MiB per-file limit applies: serve the large `.wasm` and data files from R2
+   through a Pages Function, as in Phase 0.1.
    Update `features/release-pipeline.md`.
 2. **iOS release.** The store listing, signing and macOS CI exist from Phase 0, and the Xcode project
    from Phase 3, so this is swapping the build: ship it as an update to the same App Store app, with
@@ -1017,7 +1043,7 @@ the parity checklist is done. The Rust performance budget (see Testing) is then 
 5. **A device checklist** for what can't be automated, run by hand on each platform before
    switch-over (and before each later release): app backgrounded and resumed mid-drive, the web audio
    unlocking on the first tap, fullscreen on and off, safe areas on a notched iPhone, the save
-   surviving a closed tab or killed app, and an email sign-in link opened from the device's mail app.
+   surviving a closed tab or killed app, an email sign-in link opened from the device's mail app, and typing the email and pasting the code.
    Keep it in `features/release-pipeline.md`.
 6. Switch over once Phase 5's exit checks, including the frame-time targets, pass on every platform, and
    the device checklist passes: ship the Rust build, keep the
@@ -1107,7 +1133,7 @@ Pixels and performance can't be shared, because the two renderers will never mat
 
 - Phase 0 needs the Hafren-only cleanup (`todo/2026-11-27-hafren-only-cleanup.md`) to be done. Phase 1
   needs Phase 0, so the goldens are recorded once, with the final feature
-  set. Phase 2 has none and can run alongside Phases 0 and 1.
+  set. Phase 2 needs only the cleanup and can run alongside Phases 0 and 1.
 - Phase 1.8 (the device numbers) needs only Phase 0.6, the iOS build, not the rest of Phase 0.
 - Phase 3 needs Phase 2's data, Phase 0's iOS signing, and only Phase 1.8, not the rest of Phase 1. So
   the go/no-go gate doesn't wait for the determinism work or App Store review.
