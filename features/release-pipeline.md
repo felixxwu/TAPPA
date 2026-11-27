@@ -155,3 +155,9 @@ not exist, despite sounding like it should.
   `fetch-depth: 0` like the export jobs. See [update-check.md](update-check.md).
 - **Pages needs its source set to "GitHub Actions"** (Settings → Pages), not the
   legacy `/docs` branch build.
+- **CI imports one file at a time.** Every "Import project" step appends
+  `editor/import/use_multiple_threads=false` to the runner's `project.godot` (never
+  committed): on the GitHub runners, compressing a VRAM texture (`grass.jpg`,
+  `gravel.jpg`, `sky_field.png`) on an import worker thread sometimes never returns,
+  and the import hung for hours. It has to go in `project.godot` because the editor
+  (`--import`) ignores `override.cfg`. `timeout 600` stays as a backstop.
