@@ -35,7 +35,7 @@ static func build(view: LevelView) -> Array[AdaptiveKnob]:
 		refresh_cover.call()
 	out.append(near)
 	out.append(far)
-	var rings := LevelStreamer.level_settings()
+	var rings := LevelStreamer.Settings.new()
 	var terrain := _knob(&"terrain", "Terrain detail", maxi(rings.far_radius - MIN_FAR_RADIUS, 0) + 1)
 	terrain.miss_target = true
 	terrain.apply = func(l: int) -> void:

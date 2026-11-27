@@ -335,7 +335,7 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 	assert_true(lview.is_rendering() and photo.render_active, "the render is on")
 	assert_gt(lview._trees.draw_m(), draw0, "drawing trees further out")
 	assert_true(lview._streamer.full_detail, "and full-detail ground out over the whole loaded ring")
-	assert_gt(lview._streamer.near_reach(), TerrainStreamer.NEAR_REACH_M)
+	assert_gt(lview._streamer.near_reach(), LevelStreamer.NEAR_REACH_M)
 	assert_gt(lview._streamer.cover.far_reach(), Config.data.ground_cover_far_reach, "and cover")
 	await get_tree().create_timer(0.3, true).timeout  # the tree is paused: GUT's own waits would stall
 	assert_true(lview.is_rendering(), "and stays on: no timer")

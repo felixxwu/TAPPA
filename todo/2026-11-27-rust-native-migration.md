@@ -764,7 +764,7 @@ deleting the account work on every platform. The native iPhone frame-time number
      clock).
    - Make all streaming finish before each tick during replays. Several systems finish work to a time
      budget or on worker threads, so what exists at a given tick depends on the machine's speed:
-     terrain chunks (whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept)), trees and their hitboxes (`level_trees.gd`
+     terrain chunks (`LevelStreamer` (features/level-streamer.md)), trees and their hitboxes (`level_trees.gd`
      → `_pump`, plus `WorkerThreadPool` tile packs polled with `is_task_completed`), ground cover
      (`ground_cover.gd`) and spectators (`level_spectators.gd` spawns from `_process`). Audit every
      `_process` and every `WorkerThreadPool` use in `scripts/`, and record in the parity
@@ -896,7 +896,7 @@ A standalone wgpu viewer, not yet a game. It loads Phase 2's data and flies the 
 `hafren.rec`'s path, the same recording the Godot comparison replays.
 
 1. Draw what the Godot frame draws, so the comparison is fair:
-   - terrain chunks at every LOD level (see whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept), and its doc in `features/`), trees, ground cover and buildings;
+   - terrain chunks at every LOD level (see `LevelStreamer` (features/level-streamer.md), and its doc in `features/`), trees, ground cover and buildings;
    - the PS1-style post-process (`ps1_post_process.gdshader`), the panorama sky, water, and the car
      with its shadow;
    - the settings in "What Godot draws that we don't write".
@@ -954,7 +954,7 @@ Port order, from easiest to check to riskiest:
 
 1. Engine audio synthesis (`engine_audio_synth.gd`, `engine_audio_feed.gd`). Compare samples against
    GDScript output for the same input.
-2. Terrain chunk building and level data decode: the level path of whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept)
+2. Terrain chunk building and level data decode: the level path of `LevelStreamer` (features/level-streamer.md)
    (`_compute_heights`, `_compute_arrays` today), `level_data.gd` and the `LevelBake` load,
    reading Phase 2's format. Compare outputs exactly; these are also the biggest load-time wins.
 3. Engine and drivetrain (`engine.gd`, `drivetrain.gd`). Compare per-tick torque and RPM traces.
@@ -975,7 +975,7 @@ the car step golden before Phase 5 starts.
 Build the game around the Rust crates without Godot:
 
 1. Game loop with a fixed timestep, input (see the Stack's input row), cameras (`chase_camera.gd`,
-   `camera_manager.gd`), streaming (whichever class the cleanup's Phase 3 leaves (`LevelStreamer`, or `TerrainStreamer` if kept)) on worker threads.
+   `camera_manager.gd`), streaming (`LevelStreamer` (features/level-streamer.md)) on worker threads.
 2. Physics on Phase 4's Jolt world, plus the rest of the dynamic world (spectator ragdolls, felled
    trees, log piles).
 3. The replay benchmark from Phase 3, now running the whole game.

@@ -11,6 +11,7 @@ func before_each() -> void:
 func after_each() -> void:
 	Config.data.level_weather_pool = _pool
 	LevelWeather.reset()
+	WeatherLibrary.reset()
 	LevelWeather.forced_weather = ""
 	LevelWeather.drive_time = 0.0
 
@@ -106,3 +107,23 @@ func test_the_weather_clock_survives_a_level_reload() -> void:
 	var node := _node(0.0)
 	node.start()
 	assert_eq(node._shown, LevelWeather.draw(Config.data.level_weather_pool, LevelWeather.seed_value, 2, Config.data.level_weather))
+
+
+func test_a_pool_drops_unknown_conditions_and_empty_weights() -> void:
+	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "rain"}, {"id": "fog"}] as Array[Dictionary])
+	assert_eq(LevelWeather.parse_pool("dry:2, nonsense:5, rain:0, fog"), [["dry", 2.0], ["fog", 1.0]])
+
+
+func test_the_target_look_keeps_the_scenes_colour_and_lays_the_weathers_overcast_on_top() -> void:
+	var cfg: GameConfig = Config.data
+	var base_env := {"bg": Color.BLACK, "fog": Color.BLACK, "density": 0.01, "sky_affect": 0.1}
+	WeatherLibrary.override_for_test([{"id": "dry"}, {"id": "murk", "look": {
+		"background_color": "mist_background_color", "sky_color": "mist_sky_color",
+		"sun_energy_mult": "mist_sun_energy_mult",
+		"fog_density_mult": "mist_fog_density_mult",
+		"fog_sky_affect": "mist_fog_sky_affect"}}] as Array[Dictionary])
+	assert_eq(LevelWeather.target_look(cfg, "dry", base_env)["bg"], Color.BLACK, "a weather with no look keeps the scene's")
+	var murk_look: Dictionary = WeatherLibrary.by_id("murk")["look"]
+	var wet := LevelWeather.target_look(cfg, "murk", base_env)
+	assert_eq(wet["bg"], cfg.get(String(murk_look["background_color"])))
+	assert_almost_eq(float(wet["density"]), 0.01 * float(cfg.get(String(murk_look["fog_density_mult"]))), 1e-6)

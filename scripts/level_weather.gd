@@ -51,7 +51,7 @@ static func reset() -> void:
 
 # The weather for a hold slot: slot 0 is `first`, and each later slot is a weighted pick that never repeats the one before.
 static func draw(pool_text: String, seed_value_: int, slot: int, first: String = WeatherLibrary.DEFAULT_ID) -> String:
-	var pool := BiomeDirector.parse_pool(pool_text)
+	var pool := parse_pool(pool_text)
 	if pool.is_empty():
 		return WeatherLibrary.DEFAULT_ID
 	var id := first
@@ -59,6 +59,39 @@ static func draw(pool_text: String, seed_value_: int, slot: int, first: String =
 		var others := pool.filter(func(e: Array) -> bool: return e[0] != id)
 		id = _pick(others if not others.is_empty() else pool, seed_value_, s)
 	return id
+
+
+# A weather pool string ("clear:3, rain:1") as [id, weight] pairs, dropping unknown ids and empty weights.
+static func parse_pool(text: String) -> Array:
+	var out: Array = []
+	for part in text.split(",", false):
+		var kv := part.strip_edges().split(":")
+		var id := kv[0].strip_edges()
+		var weight := float(kv[1]) if kv.size() > 1 else 1.0
+		if weight > 0.0 and not WeatherLibrary.by_id(id).is_empty() and WeatherLibrary.by_id(id)["id"] == id:
+			out.append([id, weight])
+	return out
+
+
+# The environment a weather should end up at: the scene's authored colours, then the weather's overcast look on top.
+static func target_look(cfg: GameConfig, weather_id: String, base_env: Dictionary) -> Dictionary:
+	var bg: Color = base_env.get("bg", Color.GRAY)
+	var out := {"bg": bg, "fog": base_env.get("fog", bg),
+		"density": float(base_env.get("density", cfg.fog_density)), "sky_affect": float(base_env.get("sky_affect", 0.15)),
+		"panorama": cfg.default_sky_panorama, "sun_mult": 1.0}
+	var entry := WeatherLibrary.by_id(weather_id)
+	var wl: Dictionary = entry.get("look", {})
+	if not wl.is_empty():
+		var wbg: Color = cfg.get(String(wl["background_color"]))
+		out["bg"] = wbg
+		out["fog"] = wbg
+		out["density"] = float(out["density"]) * float(cfg.get(String(wl["fog_density_mult"])))
+		out["sky_affect"] = float(cfg.get(String(wl["fog_sky_affect"])))
+		out["sun_mult"] = float(cfg.get(String(wl["sun_energy_mult"])))
+	var sky_field := String(entry.get("sky_panorama", ""))
+	if sky_field != "" and String(cfg.get(sky_field)) != "":
+		out["panorama"] = String(cfg.get(sky_field))
+	return out
 
 
 static func _pick(pool: Array, seed_value_: int, slot: int) -> String:
@@ -93,7 +126,7 @@ func is_fading() -> bool:
 
 
 func pool_ids() -> Array:
-	return BiomeDirector.parse_pool(Config.data.level_weather_pool).map(func(e: Array) -> String: return e[0])
+	return parse_pool(Config.data.level_weather_pool).map(func(e: Array) -> String: return e[0])
 
 
 func start() -> void:
@@ -131,7 +164,7 @@ func _show(id: String, instant: bool) -> void:
 	view.apply_weather(id)
 	_to = {}
 	if _env != null:
-		_to = BiomeDirector.target_look(Config.data, "", id, _base)
+		_to = target_look(Config.data, id, _base)
 		if String(WeatherLibrary.by_id(id).get("sky_panorama", "")) == "":
 			_to["panorama"] = _base["panorama"]
 		# the level fogs by distance, so a thicker look pulls the fog's far end in rather than raising density

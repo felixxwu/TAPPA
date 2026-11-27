@@ -40,7 +40,7 @@ spec items still applies.
 - [x] 0 Delete files nothing depends on (2026-11-27)
 - [x] 1 Remove the island benchmark (2026-11-27)
 - [x] 2 Remove the first-run intro (2026-11-27)
-- [ ] 3 Make `LevelStreamer` stand alone
+- [x] 3 Make `LevelStreamer` stand alone (2026-11-27)
 - [ ] 4 Delete the island
 - [ ] 4b Remove outlines
 - [ ] 5 Retire the stage harness
@@ -131,13 +131,14 @@ earlier phase deleted, so the project still loads after each phase.
   Update `test_title_screen.gd` to match.
 
 ### 3. Make `LevelStreamer` stand alone (Opus plans this before any code is written)
-- Give `LevelStreamer` its own small settings object in place of `FreeRoamSettings`.
-- Move `light_for_normal` out of `TerrainManager`, into the streamer or a small shared helper.
-- Strip the island-only parts of `TerrainStreamer`: the `RoadNetwork` / `RoadSites` /
-  `RoadBarriers` / `RoadPoles` / `RoadCrowds` job stages, the per-ring materials, the
-  `BiomeDirector` / `ParkedCars` / `LootDirector` markers, and the `LabNoise` island edge and
-  `TreeScatter` forest density. Alternatively, fold the shared chunk-job machinery into
-  `LevelStreamer` and delete the base class.
+- Fold the chunk scheduler into `LevelStreamer` (`extends Node3D`), minus the planting, road,
+  site and island code; its sizes become the inner `LevelStreamer.Settings` (`LevelKnobs` reads
+  `Settings.new()`). Documented in `features/level-streamer.md`.
+- `light_for_normal` needs no move: the level packs its own light in `_pack_vertex`.
+- The level's banner becomes `LevelBanner` (`scripts/level_banner.gd`), off `CheckpointBanner`.
+- `parse_pool` and a region-free `target_look` move from `BiomeDirector` into `LevelWeather`.
+- After this phase nothing in the level path references `TerrainStreamer`, `FreeRoamSettings`,
+  `CheckpointBanner` or `BiomeDirector`.
 - Keep everything the level relies on: the 1.5 m near ground mesh, collision, and the chunk
   scheduler with its budget.
 - `test_level_streamer.gd` guards this phase, along with `test_level_view.gd` and the level's
@@ -149,8 +150,8 @@ earlier phase deleted, so the project still loads after each phase.
   button (`settings_menu.gd` `_legacy_island_button` / `_toggle_legacy_island` /
   `_refresh_legacy_island`).
 - Delete the rest of `scripts/free_roam/` except `loot_rules.gd`, `rest_stop_page.gd` and
-  `road_recovery.gd`, and the streamer if phase 3 kept it. The deleted files include
-  `road_network`, `road_terrain`, `road_sites`, `road_*` decorations, `biome_director`,
+  `road_recovery.gd`. The deleted files include
+  `terrain_streamer`, `road_network`, `road_terrain`, `road_sites`, `road_*` decorations, `biome_director`,
   `rest_stops`, `parked_cars`, `loot_director`, `mini_map`, `world_pages`, `map_terrain`,
   `region_banner`, `checkpoint_banner`, `lab_noise` and `free_roam_settings`.
 - Trim what the kept files still use from the island: `RegionBanner.name_for` in
@@ -160,11 +161,18 @@ earlier phase deleted, so the project still loads after each phase.
   `adopt_old_stash` and the wreck loot. Keep the parts the title screen or the level still read.
   Old saves must still load (see the defaults above).
 - Remove `GameConfig.free_roam` and the island-only `GameConfig` fields: `map_*`, `minimap_*`,
-  `rest_stop_*`, `checkpoint_*`. Check each with `grep -w` before removing it.
+  `rest_stop_*`, `checkpoint_*`. Check each with `grep -w` before removing it (`minimap_*` must be
+  matched whole: the `level_minimap_*` fields are live).
 - Delete the island tests: `test_free_roam`, `test_free_roam_biomes`, `test_free_roam_rest_stops`,
   `test_free_roam_shell`, `test_found_cars`, `test_mini_map` and `test_world_pages`. Trim
   `test_loot`, `test_world_session`, `test_settings_menu` and `test_level_view` (the toggle
   redirect tests).
+- Gaps found while planning Phase 3, each to fix before its file goes:
+  - `title_screen.gd`'s `new_world` reads `Config.data.free_roam` and `LootRules.start_car(s)`.
+  - `RoadRecovery.road_pose(st: TerrainStreamer, …)` has a `TerrainStreamer` type hint, and its
+    `fell_out_of_world` test lives in `test_free_roam.gd`: port the test before deleting that file.
+  - `rest_stop_page.gd` (around line 400) reads `loot.streamer.sites` and `RoadSites.Kind.CAR`.
+  - `LootRules.start_car` / `cars_to_find` / `coin_value` take a `FreeRoamSettings`.
 
 ### 4b. Remove outlines
 - Delete the object-ID outline pass and its setting:
@@ -177,7 +185,7 @@ earlier phase deleted, so the project still loads after each phase.
 - `spike_id.gdshaderinc` is `#include`d by two live level shaders, `shaders/billboard_tree.gdshaderinc`
   and `shaders/tree_canopy.gdshader`. Strip their `object_id` / `spike_id_color` / `spike_pack` paths
   before deleting the include.
-- Remove `add_to_group(&"id_terrain")` from `terrain_streamer.gd` (two places).
+- Remove `add_to_group(&"id_terrain")` from `level_streamer.gd` (`_attach` and `_attach_horizon`).
 
 ### 5. Retire the stage harness
 - Add a small flat-ground fixture for physics tests, a replacement for
@@ -224,7 +232,6 @@ earlier phase deleted, so the project still loads after each phase.
 - Run the full test suite once.
 
 ## Open questions
-- Phase 3: trim `TerrainStreamer` in place, or fold it into `LevelStreamer` and delete the base
-  class? The Opus plan decides.
+- Phase 3 (resolved): `TerrainStreamer` is folded into `LevelStreamer`; the base class goes in Phase 4.
 - `exhaust_lab` and `log_pile_lab`: log piles are in the level, so `log_pile_lab` may still be worth
   keeping. Phase 0 deletes only `exhaust_lab` and `corner_catalog`.

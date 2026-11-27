@@ -101,7 +101,7 @@ var off_road_label: Label
 var delivery_label: Label
 var cargo_label: Label  # bottom middle while carrying cargo: its health, knocked down by the same hits the car takes
 var money_label: Label  # the player's money, top right over the pause menu and the map
-var banner := CheckpointBanner.new()  # free roam's "Checkpoint reached" band, here saying "Delivery complete"
+var banner := LevelBanner.new()
 var _service_point := -1
 var applied_fps_caps: Array[int] = []
 var perf_stats := LevelStats.new()
