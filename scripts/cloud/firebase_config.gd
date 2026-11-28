@@ -22,11 +22,11 @@ const API_KEY := "AIzaSyBbW4_34pecs85ffo7k5-gyo6KuwGyNVEs"
 # --- Endpoints ---------------------------------------------------------------
 
 # Where a sign-in email's link sends the player (Firebase appends the code as ?oobCode=).
-# PLACEHOLDERS until the Cloudflare Pages domain exists: Phase 0.1 of
-# todo/2026-11-27-rust-native-migration.md replaces both, and adds the domain to Firebase
-# Auth's authorised domains. Until then sendOobCode fails with UNAUTHORIZED_DOMAIN.
-const WEB_GAME_URL := "https://pages-domain-set-in-phase-0-1.invalid/"
-const SIGN_IN_LANDING_URL := "https://pages-domain-set-in-phase-0-1.invalid/sign-in.html"
+# Both are on Cloudflare Pages (features/release-pipeline.md); the domain must be in Firebase
+# Auth's authorised domains, or sendOobCode fails with UNAUTHORIZED_DOMAIN.
+const WEB_GAME_URL := "https://tappa.felixwu.me/"
+# Pages serves docs/sign-in.html here; /sign-in.html redirects to it, keeping the query.
+const SIGN_IN_LANDING_URL := "https://tappa.felixwu.me/sign-in"
 
 # `firebase emulators:exec` sets these two, which points every call at the local emulators
 # (the emulator test suite, tests/emulator/). Unset, the game talks to the real Firebase.

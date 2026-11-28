@@ -140,7 +140,7 @@ runs:
       # Only after a fresh download that just passed `butler -V`, so a broken
       # binary is never cached and a merely-restored copy is not re-saved.
       # A key collision here is a warning, not a failure — which is what we want
-      # when export-web / -android / -windows all miss and all download at once.
+      # when export-android and export-windows both miss and download at once.
       if: steps.download.outputs.fresh == 'true'
       uses: actions/cache/save@v4
       with:

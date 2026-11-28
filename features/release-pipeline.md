@@ -12,15 +12,15 @@ there is no manual upload step in the normal loop.
 | Job | Name in the Actions tab | Ships to |
 |-----|-------------------------|----------|
 | `compile-check` | Every script and scene compiles | nothing — it's the gate |
-| `export-web` | Export & deploy web build | itch.io channel `html5` |
+| `export-web` | Export & deploy web build | Cloudflare Pages, https://tappa.felixwu.me (big files in R2) |
 | `export-android` | Export & deploy Android APK | itch.io channel `android` (sideload) |
 | `export-windows` | Export & deploy Windows .exe | itch.io channel `windows` |
 | `publish-play` | Build AAB & upload to Play | Google Play, track from `env.TRACK` |
-| `deploy-pages` | Deploy /docs to GitHub Pages | GitHub Pages (a redirect page + `version.json`, *not* the game) |
+| `deploy-pages` | Deploy /docs to GitHub Pages | GitHub Pages (a redirect to the game + `version.json`, *not* the game) |
 | `deploy-rules` | Deploy Firestore rules | Firebase, only when the rules changed |
 
 `compile-check` gates the four export/publish jobs via `needs`; those four then
-run in parallel. `deploy-pages` waits on the three **itch** jobs — not because it
+run in parallel. `deploy-pages` waits on the three export jobs — not because it
 ships anything, but because it publishes `docs/version.json`, the document the
 native builds' update check reads, and announcing a build whose itch upload failed
 would point players at a page still serving the old download (see
@@ -45,11 +45,72 @@ derived from the commit count — a shallow clone would report every release as
 Godot is pinned to `env.GODOT_VERSION` (4.6.3) to match the local editor and to
 keep the Android build template on target API 36.
 
+## The web build on Cloudflare Pages
+
+`export-web` runs `./build_web.sh`, then `tools/deploy_pages.sh`, which stages
+`build/pages` and deploys it to the Pages project `tappa`, served at
+**https://tappa.felixwu.me**. The site's own files live in `cloudflare/`:
+`_headers`, `wrangler.toml` (project name and the R2 binding) and
+`functions/b/[[path]].js`.
+
+- **Cross-origin isolation.** The threaded web build needs `SharedArrayBuffer`, so
+  `cloudflare/_headers` sends `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: require-corp` on every path. Pages doesn't apply
+  `_headers` to Function responses, so the Function sets them itself.
+- **Files over 25 MiB go to R2.** Pages rejects bigger files, and `index.wasm` and
+  `index.pck` (which holds the level bake) are bigger. `deploy_pages.sh` uploads
+  every engine file over 25 MiB to the R2 bucket `tappa-builds` with
+  `wrangler r2 object put`, and the Function on `/b/*` streams them from the
+  `BUILDS` binding on the same origin, so COOP/COEP need no CORS or CORP. Anything
+  under `/b/` not in R2 falls through to Pages' static files.
+- **The R2 files are stored gzipped** (`--content-encoding gzip`; the wasm 37 MB →
+  9 MB). Cloudflare doesn't compress a Function's streamed R2 body or
+  `application/octet-stream`, so the Function sends the stored bytes as they are
+  (`encodeBody: "manual"`) and the browser unzips them. Godot's progress bar uses the
+  uncompressed sizes in `GODOT_CONFIG.fileSizes`, which still match.
+- **No stale builds.** Every engine file (`index.js`, the audio worklets, the wasm,
+  the pck) sits under `/b/<build-id>/` (a UTC timestamp plus the short SHA, new on
+  every run) with `Cache-Control: public, max-age=31536000, immutable`.
+  `deploy_pages.sh` rewrites `index.html` to load from there (`executable` and
+  `fileSizes` in `GODOT_CONFIG`, and the `index.js` script tag) and fails loudly if
+  Godot's shell no longer matches. `index.html` and the sign-in page are
+  `Cache-Control: no-cache`. R2 uploads go first, so a live `index.html` never
+  names a missing file. A `404.html` is staged so Pages doesn't answer unknown
+  paths with `index.html` (which would then be cached forever under `/b/`).
+- **Other pages.** `docs/sign-in.html` (the email-link landing page, served at
+  `/sign-in`; see [cloud-save.md](cloud-save.md)) and `docs/privacy-policy.html`
+  are copied in. Pages serves `/x.html` as a redirect to `/x`, query kept.
+  GitHub Pages still publishes both from `docs/` too, so their old URLs keep working.
+- **Try it locally.** `tools/deploy_pages.sh --dry-run` stages `build/pages` and
+  prints the upload and deploy commands instead of running them. To serve it, from
+  `cloudflare/`: `npx wrangler@4 r2 object put tappa-builds/b/<id>/index.wasm --file
+  ../build/pages-r2/index.wasm --content-encoding gzip --local` (and the pck), then
+  `npx wrangler@4 pages dev`.
+
+### One-off Cloudflare setup (by hand, once)
+
+Run with a logged-in wrangler (`npx wrangler@4 login`) or the same token CI uses:
+
+```sh
+npx wrangler@4 r2 bucket create tappa-builds
+# Old builds are only needed by tabs left open; drop them after 30 days (R2's free tier is 10 GB).
+npx wrangler@4 r2 bucket lifecycle add tappa-builds expire-old-builds b/ --expire-days 30
+npx wrangler@4 pages project create tappa --production-branch main
+```
+
+Then in the dashboard: Workers & Pages → `tappa` → Custom domains → add
+`tappa.felixwu.me` (Cloudflare creates the CNAME if `felixwu.me` is on the same
+account; otherwise add `tappa CNAME tappa.pages.dev` at the DNS host). Create an
+API token with **Cloudflare Pages: Edit** and **Workers R2 Storage: Edit** and add
+it and the account ID as the `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
+repository secrets. Finally add `tappa.felixwu.me` to Firebase Auth's authorised
+domains ([cloud-save.md](cloud-save.md) → setup).
+
 ## `install-butler` — why it's a composite action
 
-Three jobs push to itch, and all three need `butler`. That install lives in
-`.github/actions/install-butler/action.yml` rather than being copy-pasted three
-times, so there's one place to fix when itch's CDN misbehaves — which it does.
+Two jobs push to itch, and both need `butler`. That install lives in
+`.github/actions/install-butler/action.yml` rather than being copy-pasted per
+job, so there's one place to fix when itch's CDN misbehaves — which it does.
 
 itch publishes butler **only** through "broth", over two hostnames
 (`broth.itch.ovh`, `broth.itch.zone`) that share a backend and therefore fail
@@ -80,7 +141,7 @@ The action is built around that failure mode:
    as a failed attempt and moves to the other host.
 5. **Only cache what works.** `actions/cache/save` runs after `butler -V` has
    passed and only for a fresh download, so a broken binary is never cached and a
-   restored copy isn't pointlessly re-saved. A key collision when all three jobs
+   restored copy isn't pointlessly re-saved. A key collision when both jobs
    download at once is a warning, not a failure.
 
 It only fails hard when broth is unreachable *and* nothing was ever cached.
@@ -94,7 +155,7 @@ butler ends up on `PATH` (via `$GITHUB_PATH`), so the push steps can call
 
 ## `butler_push.sh` — retry while itch is still processing
 
-The three push steps go through `.github/scripts/butler_push.sh` rather than
+The itch push steps go through `.github/scripts/butler_push.sh` rather than
 calling `butler push` directly. itch keeps processing a channel's build for a
 while after butler returns, so when pushes to `main` land a few minutes apart
 the next run can reach the same channel first and get a 400 "channel X's latest
@@ -109,7 +170,8 @@ them too.
 
 | Secret | Used by |
 |--------|---------|
-| `BUTLER_API_KEY` | the three itch push steps |
+| `BUTLER_API_KEY` | the two itch push steps |
+| `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` | `export-web` (Pages deploy and R2 uploads) |
 | `ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_PASSWORD` | `export-android`, `publish-play` |
 | `PLAY_SERVICE_ACCOUNT_JSON` | `publish-play` |
 | `FIREBASE_SERVICE_ACCOUNT` | `deploy-rules` (a *different* project + far narrower role) |
@@ -147,9 +209,8 @@ not exist, despite sounding like it should.
   a workflow artifact *before* the Play step precisely so you can grab it when
   that step fails.
 - **`deploy-pages` does not publish the game.** `docs/index.html` is a redirect to
-  the itch page; the playable web build is what `export-web` pushes. Pages
-  headers are therefore irrelevant to load time — itch's are what matter. See the
-  header comment in `build_web.sh`. It *does* publish one thing the game reads:
+  https://tappa.felixwu.me/; the playable web build is what `export-web` deploys to
+  Cloudflare Pages. It *does* publish one thing the game reads:
   `docs/version.json`, generated in the job (not committed — its build number is
   the commit count of the commit being released), which is why that checkout uses
   `fetch-depth: 0` like the export jobs. See [update-check.md](update-check.md).

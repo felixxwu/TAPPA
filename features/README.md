@@ -107,7 +107,7 @@ git history has them. The island's parts shop survives as the level's part pages
 | [benchmark.md](benchmark.md) | The Hafren replay benchmark (`run_level_replay.sh`, `?replay=1`): record a drive, replay it and measure every frame; the report and the phone profiling loop |
 | [controls.md](controls.md) | Full input map / key bindings |
 | [testing.md](testing.md) | GUT test suite, render smoke test, `run_tests.sh` |
-| [release-pipeline.md](release-pipeline.md) | The `Release` workflow — cache gate, itch/Play/Pages/Firestore jobs, the `install-butler` composite action, secrets |
+| [release-pipeline.md](release-pipeline.md) | The `Release` workflow — cache gate, Cloudflare Pages (web), itch/Play/GitHub Pages/Firestore jobs, the `install-butler` composite action, secrets |
 | [update-check.md](update-check.md) | Launch-time "a newer build is out" prompt for every NATIVE build (Play included — a testing track doesn't self-update) — `UpdateCheck`, the Pages-published `version.json`, per-store destinations, why web is excluded |
 
 ## File-to-feature quick map
@@ -146,7 +146,7 @@ git history has them. The island's parts shop survives as the level's part pages
 | Debug | `scripts/wheel_force_debug.gd`, `scripts/level_stats.gd` |
 | Benchmark | `benchmark/level_replay.gd`, `run_level_replay.sh`, `scripts/benchmark_mode.gd` (`Benchmark` autoload), `scripts/benchmark_stats.gd`, `scripts/benchmark_report.gd` |
 | Tests | `tests/`, `run_tests.sh` |
-| Release / CI | `.github/workflows/deploy.yml`, `.github/actions/install-butler/action.yml`, `build_web.sh`, `build_android.sh`, `build_windows.sh`, `build_android_play.sh` |
+| Release / CI | `.github/workflows/deploy.yml`, `.github/actions/install-butler/action.yml`, `build_web.sh`, `tools/deploy_pages.sh`, `cloudflare/`, `build_android.sh`, `build_windows.sh`, `build_android_play.sh` |
 | Update check | `scripts/update_check.gd` (`UpdateCheck`; no screen hosts it since the title screen was deleted), `deploy.yml` → `deploy-pages` (`docs/version.json`) |
 
 > **Keep this current:** when you add or change a feature, update the matching

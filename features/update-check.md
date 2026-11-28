@@ -24,7 +24,7 @@ boot critical path, and every failure mode is a silent no-op.
 | itch Windows `.exe` | **yes** | itch page | nothing updates a downloaded exe for the player |
 | itch Android `.apk` (sideload) | **yes** | itch page | same — a sideloaded APK has no updater |
 | Google Play `.aab` | **yes** | its Play listing | **Play does not reliably update the app for the player.** A closed/internal testing track in particular can leave testers sitting on an old build indefinitely, which is exactly the case this feature exists for |
-| Web | no | — | `build_web.sh` uploads to a build-unique itch path, so a browser player is by construction on the newest build |
+| Web | no | — | `tools/deploy_pages.sh` serves the engine files from a build-unique `/b/<build-id>/` path and never caches `index.html`, so a browser player is by construction on the newest build |
 | Editor / test runner | no | — | the version is the unstamped `0.0-dev`, which has no build number |
 
 `UpdateCheck.applicable()` is the single gate (`Platform.is_headless()`,

@@ -46,10 +46,12 @@ save layer and its tests behave identically whether or not cloud save exists.
    `FirebaseConfig.sign_in_continue_url`) and stores the address as `pending_email` in
    `auth.json`, so the code can be finished after a restart.
 2. Firebase emails a link to the continue URL with `?oobCode=` appended.
-   - **Web:** the link opens the game itself (`FirebaseConfig.WEB_GAME_URL`).
+   - **Web:** the link opens the game itself (`FirebaseConfig.WEB_GAME_URL`,
+     `https://tappa.felixwu.me/`).
      `Cloud._take_code_from_page_url` reads `oobCode` at startup through JavaScriptBridge
      and strips it with `history.replaceState`, so a reload doesn't retry a spent code.
-   - **Native:** the link opens `docs/sign-in.html` (`FirebaseConfig.SIGN_IN_LANDING_URL`),
+   - **Native:** the link opens `docs/sign-in.html`, which Cloudflare Pages serves at
+     `https://tappa.felixwu.me/sign-in` (`FirebaseConfig.SIGN_IN_LANDING_URL`),
      which shows the code with a copy button; the player pastes it on the Account page.
      `AuthService.code_from` also accepts a whole pasted link.
 3. `AuthService.sign_in_with_link(code, address)` posts `accounts:signInWithEmailLink`
@@ -57,9 +59,10 @@ save layer and its tests behave identically whether or not cloud save exists.
    `pending_email`; if that's missing (link opened on another device or browser) the page
    asks for it again — on web the code waits in `Cloud.link_code` meanwhile.
 
-Both continue URLs are **constants in `firebase_config.gd` and nowhere else**. They are
-placeholders until Phase 0.1 creates the Pages domain; until then `sendOobCode` fails with
-`UNAUTHORIZED_DOMAIN`, which the page reports plainly.
+Both continue URLs are **constants in `firebase_config.gd` and nowhere else**. They point
+at the Cloudflare Pages site (see [release-pipeline.md](release-pipeline.md)); if
+`tappa.felixwu.me` is missing from Firebase Auth's authorised domains, `sendOobCode` fails
+with `UNAUTHORIZED_DOMAIN`, which the page reports plainly.
 
 **Anonymous ("guest") sign-in was deliberately NOT built**, despite Firebase
 offering it and it being an obvious third option. It would protect against
@@ -447,10 +450,11 @@ deliberately not a silent pick of either side.
    OAuth clients are no longer used by the game and can be switched off.
 2. Firestore → create the database (Native mode). The **rules deploy is
    automated** — see below.
-3. Auth → Settings → **Authorised domains** → add the web build's origin (the Pages
-   domain from Phase 0.1). Every continue URL must be on an authorised domain.
-4. Serve `docs/sign-in.html` at `FirebaseConfig.SIGN_IN_LANDING_URL`, and set both URLs in
-   `firebase_config.gd` once the domain exists (Phase 0.1).
+3. Auth → Settings → **Authorised domains** → add `tappa.felixwu.me`, the web build's
+   origin. Every continue URL must be on an authorised domain.
+4. `tools/deploy_pages.sh` copies `docs/sign-in.html` into every web deploy, so it is
+   served at `FirebaseConfig.SIGN_IN_LANDING_URL` (`/sign-in`; Pages redirects
+   `/sign-in.html` there and keeps the query string).
 5. Optionally edit the sign-in email template (Auth → Templates → Email address sign-in).
 
 Android needs `permissions/internet=true` on BOTH presets in `export_presets.cfg`,

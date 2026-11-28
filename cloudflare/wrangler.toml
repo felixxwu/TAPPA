@@ -1,0 +1,8 @@
+# Cloudflare Pages project for the web build; tools/deploy_pages.sh deploys from this folder.
+name = "tappa"
+pages_build_output_dir = "../build/pages"
+compatibility_date = "2025-01-01"
+
+[[r2_buckets]]
+binding = "BUILDS"
+bucket_name = "tappa-builds"

@@ -4,12 +4,13 @@ extends RefCounted
 # Tests: tests/headless/test_update_check.gd — extend in the same change.
 # "A newer build is out" check, for the NATIVE builds only.
 #
-# WHY ONLY NATIVE. The web build is served from a build-unique, cache-busted path
-# on itch (see the header of build_web.sh), so a browser player is by construction
-# already on the newest build — there is nothing to tell them. Every native build
-# needs telling: the itch .exe and the sideloaded itch .apk have no updater at all,
-# and the PLAY build does not reliably auto-update either — a closed/internal
-# testing track in particular leaves testers sitting on an old build indefinitely.
+# WHY ONLY NATIVE. The web build on Cloudflare Pages loads its engine files from a
+# build-unique path and never caches index.html (see tools/deploy_pages.sh), so a
+# browser player is by construction already on the newest build — there is nothing
+# to tell them. Every native build needs telling: the itch .exe and the sideloaded
+# itch .apk have no updater at all, and the PLAY build does not reliably
+# auto-update either — a closed/internal testing track in particular leaves
+# testers sitting on an old build indefinitely.
 # So Play is checked too; what changes is only WHERE the prompt sends the player
 # (store_url), because pointing a Play install at an off-store download is against
 # Play policy. See features/update-check.md.

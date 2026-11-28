@@ -90,3 +90,6 @@ __pycache__/
 
 # Firebase emulator logs (run_tests.sh --emulator)
 *-debug.log
+
+# Wrangler's local state (tools/deploy_pages.sh)
+/cloudflare/.wrangler/

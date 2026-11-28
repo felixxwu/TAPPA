@@ -2,14 +2,18 @@ name: Release
 
 # Single release pipeline triggered on every push to main. One shared
 # compile-check gate, then all export/publish targets run in parallel:
-#   - export-web      -> itch.io (html5)
+#   - export-web      -> Cloudflare Pages (https://tappa.felixwu.me)
 #   - export-android  -> itch.io (sideloadable .apk)
 #   - export-windows  -> itch.io (.exe)
 #   - publish-play    -> Google Play Console (.aab)
 #   - deploy-rules    -> Firestore security rules (only when they change)
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
-#   BUTLER_API_KEY             - itch.io butler API key (web/android/windows)
+#   BUTLER_API_KEY             - itch.io butler API key (android/windows)
+#   CLOUDFLARE_API_TOKEN       - Cloudflare API token with "Cloudflare Pages: Edit"
+#                                and "Workers R2 Storage: Edit" (export-web)
+#   CLOUDFLARE_ACCOUNT_ID      - the Cloudflare account that owns the "tappa" Pages
+#                                project and the "tappa-builds" R2 bucket (export-web)
 #   ANDROID_KEYSTORE_B64       - base64 of the upload keystore (android + play)
 #   ANDROID_KEYSTORE_PASSWORD  - that keystore's password
 #   PLAY_SERVICE_ACCOUNT_JSON  - full contents of the GCP service-account JSON key
@@ -36,7 +40,6 @@ env:
   GODOT_VERSION: "4.6.3"
   ITCH_USER: felixxwu        # <-- your itch.io username
   ITCH_GAME: tappa           # itch.io game slug -> https://felixxwu.itch.io/tappa
-  EXPORT_DIR: build/web
   PACKAGE_NAME: tappa.game
   # Play track to publish to:
   #   internal   - internal testing (<=100 testers, instant)
@@ -120,15 +123,12 @@ jobs:
           ./build_web.sh
           ls -la build/web
 
-      # Cached + multi-host; see .github/actions/install-butler for why.
-      - name: Install butler
-        uses: ./.github/actions/install-butler
-
-      - name: Push to itch.io
+      # Big files to R2, the rest to Pages; see features/release-pipeline.md.
+      - name: Deploy to Cloudflare Pages
         env:
-          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
-        run: |
-          .github/scripts/butler_push.sh "${EXPORT_DIR}" "${ITCH_USER}/${ITCH_GAME}:html5"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: tools/deploy_pages.sh
 
   export-android:
     name: Export & deploy Android APK
@@ -446,8 +446,8 @@ jobs:
     # and Pages was never in that path.
     needs: [export-web, export-android, export-windows]
     # Never fail the release over this job. It publishes the redirect page only
-    # (see the NOTE below) — the playable game ships from export-web to itch and
-    # from publish-play to Play, neither of which touches Pages. So a stuck
+    # (see the NOTE below) — the playable game ships from export-web to Cloudflare
+    # Pages and from publish-play to Play, neither of which touches GitHub Pages. So a stuck
     # Pages backend must not turn a perfectly good release red.
     #
     # This is not hypothetical: on 2026-08-06 four consecutive runs had their
@@ -465,14 +465,9 @@ jobs:
     # (Settings -> Pages -> Build and deployment -> Source).
     #
     # NOTE: this job does NOT publish the game. docs/index.html is a redirect to
-    # https://felixxwu.itch.io/tappa; the playable web build is uploaded to itch
-    # by export-web above and served from html.itch.zone behind Cloudflare. So
-    # Pages headers (compression, cache-control) are irrelevant to load time —
-    # itch's are what matter, and as of 2026-07-28 itch already gzips index.wasm
-    # (37.7 MB -> 9.93 MB) and index.pck (17.3 MB -> 9.28 MB), and serves each
-    # upload from a build-unique, inherently version-stamped path. See the
-    # header comment in build_web.sh for the measurements and why we must not
-    # pre-compress into build/web.
+    # https://tappa.felixwu.me/, the Cloudflare Pages site export-web deploys
+    # (tools/deploy_pages.sh, cloudflare/). GitHub Pages headers are irrelevant
+    # to load time.
     permissions:
       contents: read
       pages: write

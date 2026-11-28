@@ -1,0 +1,19 @@
+# Cloudflare Pages response headers for the web build (copied into build/pages by tools/deploy_pages.sh).
+# Godot's threaded web build needs cross-origin isolation (SharedArrayBuffer), so every page gets COOP + COEP.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+# Never cache the pages that name the current build, so a player always gets the newest one.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/sign-in
+  Cache-Control: no-cache
+/sign-in.html
+  Cache-Control: no-cache
+
+# Everything under /b/<build-id>/ is unique to one build, so it never changes.
+/b/*
+  Cache-Control: public, max-age=31536000, immutable
