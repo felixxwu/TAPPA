@@ -25,16 +25,29 @@ const API_KEY := "AIzaSyBbW4_34pecs85ffo7k5-gyo6KuwGyNVEs"
 # PLACEHOLDERS until the Cloudflare Pages domain exists: Phase 0.1 of
 # todo/2026-11-27-rust-native-migration.md replaces both, and adds the domain to Firebase
 # Auth's authorised domains. Until then sendOobCode fails with UNAUTHORIZED_DOMAIN.
-const WEB_GAME_URL := "https://PAGES-DOMAIN-SET-IN-PHASE-0.1/"
-const SIGN_IN_LANDING_URL := "https://PAGES-DOMAIN-SET-IN-PHASE-0.1/sign-in.html"
+const WEB_GAME_URL := "https://pages-domain-set-in-phase-0-1.invalid/"
+const SIGN_IN_LANDING_URL := "https://pages-domain-set-in-phase-0-1.invalid/sign-in.html"
 
-const IDENTITY_URL := "https://identitytoolkit.googleapis.com/v1"
-const TOKEN_URL := "https://securetoken.googleapis.com/v1/token"
-const FIRESTORE_URL := "https://firestore.googleapis.com/v1"
+# `firebase emulators:exec` sets these two, which points every call at the local emulators
+# (the emulator test suite, tests/emulator/). Unset, the game talks to the real Firebase.
+const AUTH_EMULATOR_ENV := "FIREBASE_AUTH_EMULATOR_HOST"
+const FIRESTORE_EMULATOR_ENV := "FIRESTORE_EMULATOR_HOST"
+
+
+# The Auth emulator serves both Google auth hosts on one port, each as a path prefix.
+static func _auth_base(path: String) -> String:
+	var host := OS.get_environment(AUTH_EMULATOR_ENV)
+	return "http://%s/%s" % [host, path] if host != "" else "https://" + path
+
+
+static func _firestore_base() -> String:
+	var host := OS.get_environment(FIRESTORE_EMULATOR_ENV)
+	return "http://%s/v1" % host if host != "" else "https://firestore.googleapis.com/v1"
+
 
 # Identity Toolkit endpoints all take the API key as a query parameter.
 static func identity(method: String) -> String:
-	return "%s/accounts:%s?key=%s" % [IDENTITY_URL, method, API_KEY]
+	return "%s/accounts:%s?key=%s" % [_auth_base("identitytoolkit.googleapis.com/v1"), method, API_KEY]
 
 
 # The web game reads the code from its own URL; everywhere else, and whenever the code must come
@@ -46,12 +59,12 @@ static func sign_in_continue_url(for_paste := false) -> String:
 
 
 static func token_url() -> String:
-	return "%s?key=%s" % [TOKEN_URL, API_KEY]
+	return "%s?key=%s" % [_auth_base("securetoken.googleapis.com/v1/token"), API_KEY]
 
 
 # The single Firestore document holding a player's profile.
 static func user_doc(uid: String) -> String:
-	return "%s/projects/%s/databases/(default)/documents/users/%s" % [FIRESTORE_URL, PROJECT_ID, uid]
+	return "%s/projects/%s/databases/(default)/documents/users/%s" % [_firestore_base(), PROJECT_ID, uid]
 
 
 # Short platform tag stored on the cloud document so the conflict prompt can say

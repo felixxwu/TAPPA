@@ -7,6 +7,12 @@
 
 **Tests:** `tests/headless/test_smoke.gd`
 
+**A second suite, `tests/emulator/`,** runs cloud save against the Firebase Auth and Firestore
+emulators. `./run_tests.sh` leaves it out; `./run_tests.sh --emulator` runs it instead of
+`tests/headless/`, and only inside `firebase emulators:exec` (see Commands). It runs without
+`--fixed-fps`, because `HTTPRequest`'s timeout counts game time and a fixed-fps loop would time
+real requests out almost at once. Details in [cloud-save.md](cloud-save.md) › Tests.
+
 > Per CLAUDE.md: run `./run_tests.sh` in the **background**, wait for the
 > completion notification, and never start a second run while one is active. All
 > tests must pass before declaring work complete.
@@ -313,6 +319,7 @@ the second.
 ./run_tests.sh --fast engine         # only files matching "engine" (quick iteration)
 ./run_tests.sh --fast menu_flow rally_flag   # multiple names -> one selection pass each
 ./run_tests.sh --fast "menu_flow rally_flag" # same, as one whitespace-separated string
+firebase emulators:exec --only auth,firestore "./run_tests.sh --emulator"   # tests/emulator/ (needs firebase-tools + Java 21)
 ```
 
 A `--fast` name that matches no test file fails the run rather than passing with nothing run.

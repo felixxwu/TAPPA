@@ -20,7 +20,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | File | Responsibility |
 |---|---|
 | `scripts/cloud/cloud_manager.gd` | The **`Cloud` autoload** — the facade the game talks to. Owns the other four. |
-| `scripts/cloud/firebase_config.gd` | `FirebaseConfig` — project id, API key, endpoint builders. |
+| `scripts/cloud/firebase_config.gd` | `FirebaseConfig` — project id, API key, endpoint builders. With `FIREBASE_AUTH_EMULATOR_HOST` / `FIRESTORE_EMULATOR_HOST` set (as `firebase emulators:exec` does), every endpoint points at the local emulators instead. |
 | `scripts/cloud/rest_client.gd` | `RestClient` — the ONLY `HTTPRequest` in the project. The test seam. |
 | `scripts/cloud/auth_service.gd` | `AuthService` — session adoption (`_identity_call`), token refresh, credential storage, error mapping. |
 | `scripts/cloud/cloud_sync.gd` | `CloudSync` — Firestore document encoding, the conflict model, debounce/backoff. |
@@ -28,7 +28,7 @@ web, Android, Windows and macOS, which is exactly the property this needs.
 | `scripts/text_field.gd` | `TextField` — the project's first text input (see [menus.md](menus.md)). |
 | `scripts/cloud/firestore_codec.gd` | `FirestoreCodec` — the Firestore REST value encode/decode + `update_mask()`. |
 | `firestore.rules` | Security rules, kept in git rather than only in the console, and deployed by CI. Only `users/{uid}` is reachable, owner-only. `stage_times`, `challenge_runs` and the two `lobby_*` collections went with their features; the file grants them nothing now. Structurally guarded by `tests/headless/test_firestore_rules.gd` — see below. |
-| `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project. |
+| `firebase.json` / `.firebaserc` | Point the Firebase CLI at `firestore.rules` and the `tapparally` project, and set the emulator ports (Auth 9099, Firestore 8080). |
 | `.github/workflows/deploy.yml` › `deploy-rules` | Deploys the rules on change (and on manual dispatch). |
 
 **Dependency direction: `Cloud` → `Save`, never the reverse.** `Save` emits
@@ -473,8 +473,8 @@ push from 2026-09-02 until someone read the log.
 `tests/headless/test_firestore_rules.gd` now guards the class of damage a deletion causes:
 the braces balance, no `allow`/`function` sits outside a `match` block, the deny-all
 catch-all is present, and no deleted collection still has a rule. It is deliberately
-STRUCTURAL — GDScript cannot evaluate the rules language, and real semantics need the
-Firebase emulator, which is CI's job.
+STRUCTURAL — GDScript cannot evaluate the rules language. The real semantics are checked
+against the Firestore emulator by `tests/emulator/` (see Tests below).
 
 `firestore.rules` is deployed by CI, not by hand, so the committed file is the
 single source of truth for who can read a player's save rather than something
@@ -537,6 +537,22 @@ data.
   backfill onto older profiles, `profile_changed` / `flushed`, `adopt_profile`
   refusing a newer schema, and the conflict backup outliving the rolling `.bak`.
 - `tests/headless/test_smoke.gd` — the `Cloud` autoload is registered and inert.
+
+### Against the Firebase emulators — `tests/emulator/`
+
+`tests/emulator/test_cloud_emulator.gd` runs the same flows through a private `Cloud` instance
+and the real `RestClient`, against the Auth and Firestore emulators loaded with the committed
+`firestore.rules`: email-link sign-in (the code comes from the Auth emulator's
+`/emulator/v1/projects/tapparally/oobCodes` list, since it sends no mail), a spent code refused,
+the first pull uploading, a push of local changes after a real token refresh, a newer cloud save
+applied, the rules refusing one player's token on another player's document (read, write,
+delete, and signed out), and both deletion paths (recent sign-in, and old sign-in confirmed by a
+fresh code) leaving no document and no account. Each test starts from emptied emulators; the
+Firestore emulator's `Bearer owner` token reads documents past the rules.
+
+It is not part of `./run_tests.sh`; it skips itself when the emulator variables are unset. Run it
+with `firebase emulators:exec --only auth,firestore "./run_tests.sh --emulator"` (needs
+firebase-tools and Java 21). CI runs it in the `emulator` job of `.github/workflows/test.yml`.
 
 ## Manual verification (needs a human)
 

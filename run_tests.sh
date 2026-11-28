@@ -9,6 +9,9 @@
 #                     args (--fast menu_flow rally_flag) or one whitespace-
 #                     separated string (--fast "menu_flow rally_flag") — and runs
 #                     each as its own selection. Final checks should run the full suite.
+#   --emulator        run tests/emulator/ (cloud save against the Firebase emulators) instead of
+#                     tests/headless/. Must come first, and run inside the emulators:
+#                     firebase emulators:exec --only auth,firestore "./run_tests.sh --emulator"
 # Env:
 #   TEST_TIMEOUT    hard wall-clock cap for the whole run, seconds (default 1800 = 30 min).
 #   TEST_STALL      per-test cap: kill the run if NO test output for this many seconds
@@ -164,6 +167,8 @@ stall_watchdog() {
 }
 
 SELECTS=()
+GUT_DIR=res://tests/headless
+FIXED_FPS=(--fixed-fps 60)
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --fast)
@@ -178,7 +183,18 @@ while [[ $# -gt 0 ]]; do
       done
       break
       ;;
-    *) echo "error: unknown flag $1 (known: --fast <name>...)" >&2; exit 2 ;;
+    --emulator)
+      if [[ -z "${FIREBASE_AUTH_EMULATOR_HOST:-}" || -z "${FIRESTORE_EMULATOR_HOST:-}" ]]; then
+        echo "error: --emulator needs the Firebase emulators; run it as:" >&2
+        echo '  firebase emulators:exec --only auth,firestore "./run_tests.sh --emulator"' >&2
+        exit 2
+      fi
+      GUT_DIR=res://tests/emulator
+      # Real network requests time out by game time, which a fixed-fps loop races through in
+      # milliseconds, so these tests run at wall-clock speed.
+      FIXED_FPS=()
+      ;;
+    *) echo "error: unknown flag $1 (known: --emulator, --fast <name>...)" >&2; exit 2 ;;
   esac
   shift
 done
@@ -292,7 +308,7 @@ run_pass with_timeout "$WARMUP_TIMEOUT" "$GODOT" --headless --path . res://tools
 #     transition cannot park a live scene under /root and corrupt the physics space for
 #     every file that runs afterwards.
 # See tests/headless/save_sandbox_pre_hook.gd for the full rationale on both.
-GUT_BASE=(--headless --fixed-fps 60 -d -s addons/gut/gut_cmdln.gd -gdir=res://tests/headless -ginclude_subdirs -gexit
+GUT_BASE=(--headless ${FIXED_FPS[@]+"${FIXED_FPS[@]}"} -d -s addons/gut/gut_cmdln.gd -gdir=$GUT_DIR -ginclude_subdirs -gexit
   -gpre_run_script=res://tests/headless/save_sandbox_pre_hook.gd
   -gpost_run_script=res://tests/headless/save_sandbox_post_hook.gd)
 

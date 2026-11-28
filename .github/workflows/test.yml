@@ -62,3 +62,41 @@ jobs:
         run: ./run_tests.sh
         env:
           GODOT: /usr/local/bin/godot
+
+  emulator:
+    name: Cloud save against the Firebase emulators
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      # The Firestore emulator is a Java program.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      # emulators:exec starts Auth and Firestore with firestore.rules (firebase.json), sets
+      # FIREBASE_AUTH_EMULATOR_HOST / FIRESTORE_EMULATOR_HOST for the runner, and stops them after.
+      - name: Run the emulator suite
+        run: firebase emulators:exec --only auth,firestore --project tapparally "./run_tests.sh --emulator"
+        env:
+          GODOT: /usr/local/bin/godot

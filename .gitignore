@@ -87,3 +87,6 @@ __pycache__/
 
 # Node tooling dependencies (npm install in tools/)
 /tools/node_modules/
+
+# Firebase emulator logs (run_tests.sh --emulator)
+*-debug.log

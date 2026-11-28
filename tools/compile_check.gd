@@ -7,7 +7,7 @@ extends Node
 func _ready() -> void:
 	var failed: Array[String] = []
 	var count := 0
-	for dir in ["res://scripts", "res://tests/headless", "res://tools"]:
+	for dir in ["res://scripts", "res://tests/headless", "res://tests/emulator", "res://tools"]:
 		for path in _scripts_under(dir):
 			count += 1
 			var s := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REUSE) as Script
