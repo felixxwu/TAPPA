@@ -20,6 +20,9 @@ var far_material: ShaderMaterial
 var _meshes := {}
 var _far_meshes := {}  # recipe index key -> ArrayMesh
 var tiles := {}  # Vector2i -> Node3D holding that tile's tufts and bush fields
+# Set by the neutral geometry export (tools/neutral_geometry.gd) to see each tile layer as it is built:
+# called with (tile, "<id>:<layer>", is far, 12-float MultiMesh buffer, tuft mesh). Unset in the game.
+static var on_layer_built: Callable
 
 
 static func decode_cover(d: Dictionary) -> PackedByteArray:
@@ -368,9 +371,9 @@ func build_tile(t: Vector2i, car: Node3D = null) -> void:
 func _fill_tile(node: Node3D, t: Vector2i, placed: Dictionary, far_placed: Dictionary, spots_list: Array, car: Node3D) -> void:
 	var diag := TILE * 0.71
 	for key: String in placed:
-		_add_layer(node, t, placed[key], _mesh_for(key), material, Config.data.ground_cover_reach + diag)
+		_add_layer(node, t, key, placed[key], _mesh_for(key), material, Config.data.ground_cover_reach + diag)
 	for key: String in far_placed:
-		_add_layer(node, t, far_placed[key], _far_mesh_for(key), far_material, far_reach() + diag)
+		_add_layer(node, t, key, far_placed[key], _far_mesh_for(key), far_material, far_reach() + diag)
 	if car == null:
 		return
 	var cfg: GameConfig = Config.data
@@ -395,7 +398,9 @@ static func tile_aabb(t: Vector2i, buf: PackedFloat32Array) -> AABB:
 	return AABB(Vector3(t.x * TILE, lo - 1.0, t.y * TILE), Vector3(TILE, hi - lo + 4.0, TILE))
 
 
-func _add_layer(parent: Node3D, t: Vector2i, buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial, reach: float) -> void:
+func _add_layer(parent: Node3D, t: Vector2i, key: String, buf: PackedFloat32Array, mesh: ArrayMesh, mat: ShaderMaterial, reach: float) -> void:
+	if on_layer_built.is_valid():
+		on_layer_built.call(t, key, mat == far_material, buf, mesh)
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh

@@ -9,6 +9,8 @@ maths), `scripts/obstacle_body.gd` (the hitbox body), `scripts/wind_sway.gd`
 are `scripts/ground_cover.gd` + `scripts/bush_field.gd` ([level-editor.md](level-editor.md)). Where trees and
 bushes stand is pinned by the scene counts golden (`benchmark/scene_counts.gd`, [benchmark.md](benchmark.md)).
 
+`GroundCover.on_layer_built` (static, unset in the game) reports each built tile layer's buffer and tuft mesh to the neutral geometry export ([level-streamer.md](level-streamer.md)).
+
 **Tests:** `tests/headless/test_foliage.gd`, `tests/headless/test_level_trees.gd`,
 `tests/headless/test_tree_fall.gd`, `tests/headless/test_wind_sway.gd`
 

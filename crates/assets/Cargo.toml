@@ -1,0 +1,11 @@
+[package]
+name = "assets"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = { version = "=1.0.149", features = ["float_roundtrip"] }
+ruzstd = "=0.8.1"
+sha2 = "=0.10.9"
+image-webp = "=0.2.4"

@@ -87,6 +87,14 @@ A square of ground is built by a resumable `ChunkJob` moving through stages:
   drains the same way every frame instead of spending `budget_us`. `_now_us()` (used for `_plan_us`,
   `wanted_us`, `_path_due` and `started_us`) returns `_clock_us`, the summed frame `delta`, instead of the wall clock.
 
+## Build hook (neutral export)
+
+`static var on_chunk_built: Callable` is called in `_upload` and `_restitch` with `(level, coord, n, stitch mask,
+arrays)` just before the `ArrayMesh` is made. `tools/neutral_geometry.gd` (`NeutralGeometry.export(dir)`, run by
+`tools/neutral_export.tscn -- --geometry=<dir>`) sets it, plus `GroundCover.on_layer_built`, and flies a marker along
+`benchmark/runs/hafren.rec` prefilling every 50 m, writing `level_geometry.tapn` (chunk arrays, one shared index list per
+`n`, cover buffers, tuft meshes) and its parity manifest lines. Unset, the hook costs one `is_valid()` check.
+
 ## Threads
 
 `_run_queue` hands a job's HEIGHTS and ARRAYS stages to `WorkerThreadPool` (`_dispatch_build` →

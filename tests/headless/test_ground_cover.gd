@@ -353,3 +353,24 @@ func test_dropping_and_freeing_tiles_with_work_in_flight_is_safe() -> void:
 	gc.get_parent().remove_child(gc)
 	gc.free()
 	assert_true(true, "freeing with tasks in flight drained them")
+
+
+func test_the_layer_hook_sees_every_tuft_layer_as_it_is_built() -> void:
+	var seen := []
+	GroundCover.on_layer_built = func(t: Vector2i, key: String, far: bool, buf: PackedFloat32Array, mesh: ArrayMesh) -> void:
+		seen.append([key, far, int(buf.size() / 12.0), mesh])
+	var gc := _cover_node({"1": [[BLADES, 2.0]]})
+	gc.stream(Vector2.ZERO, Time.get_ticks_usec() + 60_000_000)
+	GroundCover.on_layer_built = Callable()
+	var drawn := 0
+	var layers := 0
+	for node: Node3D in gc.tiles.values():
+		for mmi: MultiMeshInstance3D in node.get_children():
+			drawn += mmi.multimesh.instance_count
+			layers += 1
+	var tufts := 0
+	for s: Array in seen:
+		tufts += s[2]
+		assert_eq(s[3], gc._mesh_for(s[0]), "the layer's shared tuft mesh")
+	assert_eq(seen.size(), layers, "one call per drawn layer")
+	assert_eq(tufts, drawn)

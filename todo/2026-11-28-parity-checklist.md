@@ -60,6 +60,7 @@ The checks, by name:
 | [level-ao.md](../features/level-ao.md) | visual review | todo | Loose perceptual diff |
 | [level-editor.md](../features/level-editor.md) | events (deliveries, discovery); scene counts | todo (WP3/WP5) | none |
 | [level-streamer.md](../features/level-streamer.md) | golden replay (chunk counts per tick); scene counts | done (1.1); todo (WP5) | Streaming order and timing may differ in normal play; the drained golden result may not |
+| [neutral-format.md](../features/neutral-format.md) | neutral manifest diff (`tools/neutral_check.sh`, Phase 2): decoded data equals Godot's in memory | todo (Phase 2 WP7) | Lossy WebP decoding and LOD generation may differ by platform |
 | [loading.md](../features/loading.md) | device targets (load time) | allowed | Load time may differ (expected faster); the loading cover by visual review |
 | [loot.md](../features/loot.md) | events (`bought_part`); save round-trip; menu flow (shop pages) | todo (WP3/WP4/WP6) | none |
 | [menu-navigation.md](../features/menu-navigation.md) | menu flow, keyboard and gamepad | todo (WP6) | none |

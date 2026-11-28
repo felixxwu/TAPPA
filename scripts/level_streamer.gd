@@ -54,6 +54,9 @@ class Settings:
 
 var settings := Settings.new()
 var material: Material
+# Set by the neutral geometry export (tools/neutral_geometry.gd) to see each ground mesh's arrays as it is built:
+# called with (level, coord, n, stitch mask, arrays). Unset in the game.
+static var on_chunk_built: Callable
 
 
 var data: LevelData
@@ -895,7 +898,7 @@ func _stitch(verts: PackedVector3Array, heights: PackedFloat32Array, n: int, hl:
 
 # A neighbour's near mesh came or went: re-stitch the drawn tile's edge bands in place, from its
 # kept true heights, rebuilding only the mesh (no job, no collision change) and only if a vertex moved.
-func _restitch(ts: TileState, mask: int) -> void:
+func _restitch(t: Vector2i, ts: TileState, mask: int) -> void:
 	var verts: PackedVector3Array = ts.near_arrays[0]
 	var n := int(settings.near_tile_m / settings.near_stride_m) + 1
 	var hl := int((roundi(sqrt(ts.near_heights.size())) - n) / 2.0)
@@ -926,6 +929,8 @@ func _restitch(ts: TileState, mask: int) -> void:
 		arrays[Mesh.ARRAY_TEX_UV] = ts.near_arrays[2]
 		arrays[Mesh.ARRAY_TEX_UV2] = ts.near_arrays[3]
 		arrays[Mesh.ARRAY_INDEX] = _indices_for(n)
+		if on_chunk_built.is_valid():
+			on_chunk_built.call(Level.NEAR, t, n, mask, arrays)
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		ts.near_mesh.mesh = mesh
@@ -961,6 +966,8 @@ func _upload(job: ChunkJob) -> void:
 	arrays[Mesh.ARRAY_TEX_UV] = job.uvs
 	arrays[Mesh.ARRAY_TEX_UV2] = job.uv2s
 	arrays[Mesh.ARRAY_INDEX] = _indices_for(job.n)
+	if on_chunk_built.is_valid():
+		on_chunk_built.call(job.level, job.coord, job.n, job.stitch, arrays)
 	job.mesh = ArrayMesh.new()
 	job.mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	job.stage = Stage.ATTACH
@@ -1330,7 +1337,7 @@ func _plan() -> void:
 	for t in near_tiles_of(here):
 		var ts: TileState = _tiles[t]
 		if ts.near_mesh != null and ts.near_job == null and ts.stitch != _stitch_mask(t):
-			_restitch(ts, _stitch_mask(t))
+			_restitch(t, ts, _stitch_mask(t))
 	_plan_horizon(here)
 	# Cancelled and finished jobs leave now rather than when they reach the head: a queue that
 	# never drains (a car outdriving the far ring) would otherwise carry them for ever.

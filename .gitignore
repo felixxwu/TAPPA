@@ -94,3 +94,9 @@ __pycache__/
 # Wrangler's local state (tools/deploy_pages.sh)
 /cloudflare/.wrangler/
 /.wrangler/
+
+# Neutral (Godot-free) bake beside the .bake.res, published the same way
+*.bake.bin
+
+# Rust build output
+/target/

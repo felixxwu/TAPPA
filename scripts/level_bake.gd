@@ -12,6 +12,7 @@ const PATCH_HALF := 8.0      # a gravel patch is stored in the frame as a road t
 const ALONG_PERIOD := 64.0   # along is stored modulo this; the gravel noise repeats at it (level_ground.gdshader)
 const TREE_TILE_M := 100.0
 const VIS_KEY := 64          # every this many rows the visibility is stored whole, so decoding a row never walks far
+const KEY_IGNORES := ["coverKinds", "logPiles", "fences", "spectators", "teleports", "shops", "rallies", "biomeRle"]
 const BLOBS := ["z_heights", "z_frame", "z_road", "z_patches", "z_trees", "z_tree_first", "z_tree_kind", "z_vis_add", "z_vis_rem", "z_vis_add_start", "z_vis_rem_start"]
 const TREE_HEIGHT := {       # species heights, as in the lab's KINDS table; width comes from each atlas frame's aspect
 	"tree.png": 9.375, "tree-greece.webp": 4.0, "tree-taiga.webp": 22.5, "tree-snow.webp": 12.9,
@@ -65,14 +66,8 @@ static func key_of(save_path: String) -> String:
 	var d: Variant = JSON.parse_string(FileAccess.get_file_as_string(save_path))
 	if not d is Dictionary:
 		return "%s/v%d" % [FileAccess.get_md5(save_path), BAKE_VERSION]
-	(d as Dictionary).erase("coverKinds")
-	(d as Dictionary).erase("logPiles")
-	(d as Dictionary).erase("fences")
-	(d as Dictionary).erase("spectators")
-	(d as Dictionary).erase("teleports")
-	(d as Dictionary).erase("shops")
-	(d as Dictionary).erase("rallies")
-	(d as Dictionary).erase("biomeRle")
+	for k: String in KEY_IGNORES:
+		(d as Dictionary).erase(k)
 	return "%s/v%d" % [JSON.stringify(d).md5_text(), BAKE_VERSION]
 
 
@@ -169,6 +164,58 @@ static func load_or_bake(save_path: String, data: LevelData) -> LevelBake:
 	if ResourceSaver.save(b, path) != OK:
 		push_warning("LevelBake: couldn't save %s" % path)
 	return b
+
+
+static func neutral_path(save_path: String) -> String:
+	return save_path.get_basename() + ".bake.bin"
+
+
+# The bake as a NeutralFile for readers without Godot: the same zstd blobs the .bake.res stores, named and described in the header.
+func save_neutral(path: String, neutral_key: String) -> Error:
+	var spawn := []
+	for p in spawn_nodes:
+		spawn.append_array([p.x, p.y])
+	var header := {"kind": "level_bake", "bake_version": BAKE_VERSION, "source_key": source_key, "neutral_key": neutral_key,
+		"size": size, "step": step, "n": n, "height_base": height_base, "frame_n": frame_n, "tree_tile_n": tree_tile_n,
+		"vis_every": vis_every, "tree_kinds": Array(tree_kinds), "spawn_nodes": spawn,
+		"FRAME_RANGE": FRAME_RANGE, "FRAME_CELL": FRAME_CELL, "PATCH_HALF": PATCH_HALF, "ALONG_PERIOD": ALONG_PERIOD,
+		"TREE_TILE_M": TREE_TILE_M, "VIS_KEY": VIS_KEY}
+	var sections := []
+	for name: String in BLOBS:
+		var encoding := "raw"
+		if name == "z_heights":
+			encoding = "delta_u16_planes"
+		elif name in ["z_tree_first", "z_vis_add", "z_vis_rem", "z_vis_add_start", "z_vis_rem_start"]:
+			encoding = "delta_i32_planes"
+		sections.append([name, _get(name), {"encoding": encoding}])
+	return NeutralFile.write(path, header, sections)
+
+
+# The parity lines for this bake as Godot holds it in memory; a Rust reader of the .bake.bin must print the same.
+func manifest(file: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	for k in ["size", "step", "n", "height_base", "frame_n", "tree_tile_n", "vis_every"]:
+		out.append(NeutralFile.line(file, k, get(k)))
+	var flat := PackedFloat32Array()
+	for poly in patches:
+		flat.append(poly.size())
+		for q in poly:
+			flat.append_array([q.x, q.y])
+	var arrays := {"heights": heights, "frame": frame, "sx": sx.to_byte_array(), "sz": sz.to_byte_array(),
+		"sw": sw.to_byte_array(), "sh": sh.to_byte_array(), "sa": sa.to_byte_array(), "sc": sc.to_byte_array(),
+		"st": st.to_byte_array(), "patches": flat.to_byte_array(), "tree_xf": tree_xf.to_byte_array(),
+		"tree_tile_first": tree_tile_first.to_byte_array(), "tree_kind": tree_kind,
+		"vis_add": vis_add.to_byte_array(), "vis_rem": vis_rem.to_byte_array(),
+		"vis_add_start": vis_add_start.to_byte_array(), "vis_rem_start": vis_rem_start.to_byte_array()}
+	for k: String in arrays:
+		out.append(NeutralFile.line(file, k, arrays[k]))
+	var rows := vis_row_count()
+	for r in [0, 1, VIS_KEY - 1, VIS_KEY, VIS_KEY + 1, rows - 1]:
+		var line := NeutralFile.line(file, "row.%d" % r, decoded_row(r).to_byte_array())
+		if r >= 0 and r < rows and not line in out:
+			out.append(line)
+	out.sort()
+	return out
 
 
 static func tree_texture(kind: String) -> Texture2D:
@@ -440,12 +487,7 @@ func _roads() -> LevelData:
 
 
 static func _zip(raw: PackedByteArray) -> PackedByteArray:
-	var out := PackedByteArray()
-	out.resize(4)
-	out.encode_u32(0, raw.size())
-	if not raw.is_empty():
-		out.append_array(raw.compress(FileAccess.COMPRESSION_ZSTD))
-	return out
+	return NeutralFile.zip(raw)
 
 
 static func _unzip(z: PackedByteArray) -> PackedByteArray:

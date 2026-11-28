@@ -616,3 +616,27 @@ func test_an_edge_is_stitched_only_where_no_near_neighbour_is_coming() -> void:
 	st._tile(t + Vector2i(0, 1)).near_job = LevelStreamer.ChunkJob.new()
 	assert_eq(st._stitch_mask(t), 0b0101)
 	st._tile(t + Vector2i(1, 0)).near_mesh.free()
+
+
+func test_the_build_hook_sees_every_built_mesh_once_and_changes_nothing() -> void:
+	var seen := []
+	LevelStreamer.on_chunk_built = func(level: int, coord: Vector2i, n: int, mask: int, arrays: Array) -> void:
+		seen.append([level, coord, n, arrays])
+	var hooked := _small()
+	hooked.prefill()
+	LevelStreamer.on_chunk_built = Callable()
+	var plain := _small()
+	plain.prefill()
+	var built := 0
+	for ts: LevelStreamer.TileState in hooked._tiles.values():
+		built += int(ts.near_mesh != null)
+	for st: LevelStreamer.ChunkState in hooked._chunks.values():
+		built += int(st.mid_mesh != null) + int(st.far_mesh != null)
+	assert_gt(built, 0)
+	assert_eq(seen.size(), built, "one call per built mesh")
+	for s: Array in seen:
+		var n: int = s[2]
+		assert_eq((s[3][Mesh.ARRAY_VERTEX] as PackedVector3Array).size(), n * n + 4 * (n - 1), "grid plus skirt")
+	for t: Vector2i in hooked._tiles:
+		if hooked._tiles[t].near_mesh != null:
+			assert_eq(hooked._tiles[t].near_arrays[0], plain._tiles[t].near_arrays[0], "same ground with the hook set")

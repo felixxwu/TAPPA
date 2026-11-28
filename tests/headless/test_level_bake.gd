@@ -302,3 +302,22 @@ func test_decoding_a_row_off_the_shared_cache_matches_the_cached_answer() -> voi
 		assert_eq(fresh, b.visible_in(r, 0, 1 << 30), "row %d from its keyframe" % r)
 		if r + 1 < rows.size():
 			assert_eq(b.decoded_row(r + 1, r, fresh), b.visible_in(r + 1, 0, 1 << 30), "row %d stepped on from %d" % [r + 1, r])
+
+
+func test_the_key_ignores_every_key_ignores_entry_but_sees_a_road_move() -> void:
+	var path := "user://key_ignores_test.json"
+	var key_for := func(d: Dictionary) -> String:
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		f.store_string(JSON.stringify(d))
+		f.close()
+		return LevelBake.key_of(path)
+	var base := {"roads": [[_node(0.0, 0.0), _node(10.0, 0.0)]]}
+	var want: String = key_for.call(base)
+	for k: String in LevelBake.KEY_IGNORES:
+		var d := base.duplicate(true)
+		d[k] = [{"x": 1}]
+		assert_eq(key_for.call(d), want, "%s is ignored" % k)
+	var moved := base.duplicate(true)
+	moved["roads"][0][1]["x"] = 11.0
+	assert_ne(key_for.call(moved), want, "a moved road node changes the key")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
