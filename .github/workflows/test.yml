@@ -491,6 +491,8 @@ jobs:
       - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@v2
       - name: Build for iOS
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         run: |
           cargo build -p app --lib --target aarch64-apple-ios
           cargo build -p app --lib --target aarch64-apple-ios-sim
