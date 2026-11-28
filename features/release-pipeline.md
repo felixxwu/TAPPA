@@ -78,6 +78,7 @@ keep the Android build template on target API 36.
   `Cache-Control: no-cache`. R2 uploads go first, so a live `index.html` never
   names a missing file. A `404.html` is staged so Pages doesn't answer unknown
   paths with `index.html` (which would then be cached forever under `/b/`).
+- **The `bakes` release holds the neutral bake too.** `tools/publish_bake.sh` uploads each level's `<name>-<key>.bake.res` and its Godot-free `<name>-<neutral key>.bake.bin` (what the `neutral` CI job and `tools/fetch_neutral_bake.sh` read; `features/neutral-format.md`).
 - **Other pages.** `docs/sign-in.html` (the email-link landing page, served at
   `/sign-in`; see [cloud-save.md](cloud-save.md)) and `docs/privacy-policy.html`
   are copied in. Pages serves `/x.html` as a redirect to `/x`, query kept.

@@ -17,7 +17,7 @@ on:
   # Direct pushes to main that touch goldens/ still get the bless guard and the golden checks.
   push:
     branches: [main]
-    paths: ["goldens/**"]
+    paths: ["goldens/**", "crates/**", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "tools/neutral_*", "scripts/level_bake.gd", "scripts/neutral_file.gd"]
   workflow_dispatch:
     inputs:
       bless:
@@ -248,6 +248,82 @@ jobs:
         with:
           name: golden-diffs
           path: golden-logs/
+          if-no-files-found: ignore
+
+  # Phase 2 parity (features/neutral-format.md): Godot exports the neutral files, Rust reads them, manifests must match.
+  # Until a neutral bake is published, the job exports its own from the fetched .bake.res.
+  neutral:
+    name: Neutral format
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      - name: Import project and fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
+          timeout 600 godot --headless --import --quit || true
+          tools/fetch_bakes.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Fetch the published neutral bake
+        id: published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if tools/fetch_neutral_bake.sh; then
+            mkdir -p build/published && cp tools/levels/*.bake.bin build/published/
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::no neutral bake published yet, checking the one this job exports (run tools/publish_bake.sh to publish)"
+          fi
+
+      - name: Export, build and compare
+        env:
+          GODOT: /usr/local/bin/godot
+        run: tools/neutral_check.sh
+
+      - name: The published bake is the one this export writes
+        if: steps.published.outputs.found == 'true'
+        run: |
+          for f in build/published/*.bake.bin; do cmp "$f" "tools/levels/$(basename "$f")"; done
+
+      - name: Upload manifests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neutral-manifests
+          path: build/neutral/*.manifest
+          if-no-files-found: ignore
+
+      - name: Upload Cargo.lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock
+          path: Cargo.lock
           if-no-files-found: ignore
 
   # A commit that changes goldens/ must say why on a "Bless:" line in its message.

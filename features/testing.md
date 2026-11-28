@@ -325,6 +325,16 @@ command that checks it). They pin every tuned value, so they live outside `tests
   (Actions tab, `bless` = one golden or `all`). It skips the checks, writes the goldens and uploads them as the
   `goldens` artifact; review them, then commit them with a `Bless:` line.
 
+## Neutral format check — `tools/neutral_check.sh`
+
+Phase 2 parity, outside GUT. Godot exports the neutral files (`neutral_export.tscn`: `--bake`, `--assets`,
+`--geometry`) and writes `build/neutral/godot.manifest`; `cargo test -p assets` and the `asset_check` binary
+read them back into `rust.manifest`; the two must be equal line for line (the script prints the first 20
+differing lines). The `neutral` CI job runs it, needs no `xvfb`, exports its own `.bake.bin` from the fetched
+`.bake.res` until one is published (`tools/publish_bake.sh`), and once published also `cmp`s the published bake
+against the fresh export. On failure it uploads the manifests; it always uploads `Cargo.lock` as an artifact
+(until it's committed). It also runs on pushes to `main` touching `crates/**` or the neutral export files.
+
 ## A test that parses but errors at runtime
 
 The lesson worth keeping: **a test file that fails to PARSE is caught by the runner; one

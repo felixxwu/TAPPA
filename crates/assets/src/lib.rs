@@ -3,5 +3,10 @@
 pub mod bake;
 pub mod buildings;
 pub mod container;
+pub mod font;
+pub mod geometry;
 pub mod level_json;
 pub mod manifest;
+pub mod neutral;
+pub mod scene;
+pub mod texture;
