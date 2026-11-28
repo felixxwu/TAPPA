@@ -1,6 +1,6 @@
 class_name AccountMenu
 extends VBoxContainer
-# The optional-account UI: sign in, see sync status, resolve a conflict, sign out.
+# The optional-account UI: sign in by email link, see sync status, resolve a conflict, sign out, delete the account.
 #
 # A page inside Settings.
 #
@@ -14,6 +14,11 @@ var _busy := false
 var _busy_state: CloudBusy = null
 var _message := ""
 var _message_role := "dim"
+var _email_field: TextField
+var _code_field: TextField
+# What the player has typed, kept across the wholesale rebuilds.
+var _typed_email := ""
+var _typed_code := ""
 # NO modal latches here. "Is a prompt already up?" is asked of the scene tree via
 # ConfirmPopup.MODAL_GROUP — this page can be instantiated three times over, so a
 # per-instance bool was never able to answer it.
@@ -32,9 +37,15 @@ func _ready() -> void:
 
 # --- Host-facing API ----------------------------------------------------------
 
-# Returns true when it consumed the press: a request in flight holds the page.
+# Returns true when it consumed the press: a request in flight holds the page, and Back from
+# the deletion code form cancels the deletion rather than leaving sync switched off.
 func go_back() -> bool:
-	return _busy
+	if _busy:
+		return true
+	if Cloud.deletion_needs_link:
+		_on_cancel_delete_pressed()
+		return true
+	return false
 
 
 func focus_first() -> void:
@@ -49,6 +60,12 @@ func focus_first() -> void:
 # --- Building -----------------------------------------------------------------
 
 func rebuild() -> void:
+	if _email_field != null:
+		_typed_email = _email_field.text()
+	if _code_field != null:
+		_typed_code = _code_field.text()
+	_email_field = null
+	_code_field = null
 	for child in get_children():
 		# The in-flight cloud busy line survives a rebuild. It belongs to the call,
 		# not to the page, and every state change during a sign-in triggers one of
@@ -98,8 +115,10 @@ func _build_main() -> void:
 	add_child(_heading("Account"))
 
 	if not Cloud.is_signed_in():
-		add_child(_sub("Sign in to back your career up and continue it on another device. "
-			+ "This is optional — your progress is always saved on this device."))
+		_build_signed_out()
+		return
+	if Cloud.deletion_needs_link:
+		_build_confirm_deletion()
 		return
 
 	add_child(_sub("Signed in as %s" % Cloud.account_label()))
@@ -124,6 +143,47 @@ func _build_main() -> void:
 
 	add_child(_action("Sync now", _on_sync_now_pressed))
 	add_child(_action("Sign out", _on_sign_out_pressed))
+	add_child(_action("Delete account", _on_delete_pressed))
+
+
+# The web game signs itself in when the link opens it, so it only needs the code field for a
+# code that arrived without its address; everywhere else the player pastes the code.
+func _build_signed_out() -> void:
+	add_child(_sub("Sign in to back your career up and continue it on another device. "
+		+ "This is optional — your progress is always saved on this device."))
+	_email_field = TextField.new("Email", "you@example.com")
+	_email_field.set_text(_typed_email if _typed_email != "" else Cloud.auth.pending_email)
+	add_child(_email_field)
+	var send := _action("Email me a sign-in link", _on_send_link_pressed)
+	add_child(send)
+	_email_field.submitted.connect(_on_send_link_pressed)
+	var column: Array = [_email_field, send]
+	if not Platform.is_web() or Cloud.link_code != "":
+		_code_field = _add_code_field()
+		var sign_in := _action("Sign in", _on_sign_in_pressed)
+		add_child(sign_in)
+		_code_field.submitted.connect(_on_sign_in_pressed)
+		column.append_array([_code_field, sign_in])
+	TextField.wire_column(column)
+
+
+func _build_confirm_deletion() -> void:
+	add_child(_sub("To make sure it's you, we emailed a sign-in link to %s. Open it and "
+		% Cloud.account_label() + "paste the code here to delete your account."))
+	_code_field = _add_code_field()
+	var confirm := _action("Delete account", _on_confirm_delete_pressed)
+	add_child(confirm)
+	var cancel := _action("Cancel", _on_cancel_delete_pressed)
+	add_child(cancel)
+	_code_field.submitted.connect(_on_confirm_delete_pressed)
+	TextField.wire_column([_code_field, confirm, cancel])
+
+
+func _add_code_field() -> TextField:
+	var field := TextField.new("Code from the sign-in page", "paste it here")
+	field.set_text(_typed_code if _typed_code != "" else Cloud.link_code)
+	add_child(field)
+	return field
 
 
 # --- Actions ------------------------------------------------------------------
@@ -135,6 +195,62 @@ func _build_main() -> void:
 # these operations are coroutines (anything that touches the network) and some
 # are purely local, and awaiting a non-coroutine is both a warning and a lie
 # about what the code does. Spelling each one out keeps that honest.
+
+func _on_send_link_pressed() -> void:
+	var address := _email_field.text()
+	if not _begin("Sending…"):
+		return
+	if _finish(await Cloud.send_sign_in_link(address)):
+		var next := "Open it in this browser to sign in." if Platform.is_web() \
+			else "Open it, then paste the code here."
+		_set_message("We sent a sign-in link to %s. %s" % [address, next], "green")
+		rebuild()
+
+
+func _on_sign_in_pressed() -> void:
+	var code := _code_field.text()
+	var address := _email_field.text()
+	if not _begin("Signing in…"):
+		return
+	if _finish(await Cloud.sign_in_with_link(code, address)):
+		_typed_code = ""
+
+
+func _on_delete_pressed() -> void:
+	ConfirmPopup.open(self, "Delete your account?",
+		"This deletes your account and your cloud save for good. Your progress on this "
+		+ "device stays.",
+		[ {"label": "Cancel", "callback": Callable()},
+		  {"label": "Delete account", "callback": _on_delete_confirmed} ], 0, 0)
+
+
+func _on_delete_confirmed() -> void:
+	if not _begin("Deleting your account…"):
+		return
+	var result: Dictionary = await Cloud.start_account_deletion()
+	if _finish(result) and not result.get("needs_link", false):
+		_account_deleted()
+
+
+func _on_confirm_delete_pressed() -> void:
+	var code := _code_field.text()
+	if not _begin("Deleting your account…"):
+		return
+	if _finish(await Cloud.confirm_account_deletion(code)):
+		_account_deleted()
+
+
+func _on_cancel_delete_pressed() -> void:
+	Cloud.cancel_account_deletion()
+	_typed_code = ""
+	rebuild()
+
+
+func _account_deleted() -> void:
+	_typed_code = ""
+	_set_message("Account deleted. Your progress on this device is unchanged.", "dim")
+	rebuild()
+
 
 func _on_sync_now_pressed() -> void:
 	if not _begin("Syncing…"):

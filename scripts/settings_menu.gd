@@ -159,6 +159,7 @@ func _build_list_page() -> void:
 	list_grid.add_child(_make_nav_button("Camera", show_camera))
 	list_grid.add_child(_make_nav_button("Key bindings", show_controls))
 	list_grid.add_child(_make_nav_button("Mobile controls", show_schemes))
+	list_grid.add_child(_make_nav_button("Account", show_page.bind("account")))
 	# Reset progress is a PLAYER setting, not dev tooling: starting over is something
 	# anyone is allowed to do, so it is offered unconditionally (the destructive part
 	# is guarded by a confirm modal, not by hiding the button). It goes after the
@@ -293,7 +294,7 @@ func at_root() -> bool:
 func go_back() -> bool:
 	if at_root():
 		return false
-	# The account page holds Back while a cloud call is in flight.
+	# The account page holds Back while a cloud call is in flight, and uses it to cancel a deletion.
 	if _account_page != null and _account_page.visible and _account != null \
 			and _account.go_back():
 		return true

@@ -37,13 +37,29 @@ save layer and its tests behave identically whether or not cloud save exists.
 
 ## Authentication
 
-**No sign-in method is wired up right now.** Google sign-in and email + password
-were removed on 2026-11-28 (step 0.2 of `todo/2026-11-27-rust-native-migration.md`;
-read the old code from git history). Email-link sign-in (`accounts:sendOobCode` +
-`accounts:signInWithEmailLink`, step 0.3) replaces both. What stays is everything a
-sign-in method plugs into: `AuthService._identity_call` (POST to Identity Toolkit,
-adopt the returned session), token refresh, `auth.json` and Firestore sync, so an
-already-signed-in device keeps syncing.
+**Email-link sign-in is the only method** (steps 0.2–0.3 of
+`todo/2026-11-27-rust-native-migration.md`; Google and email + password were removed on
+2026-11-28, read the old code from git history). No password, no OAuth client:
+
+1. `AuthService.send_sign_in_link(address)` posts `accounts:sendOobCode`
+   (`requestType: EMAIL_SIGNIN`, `canHandleCodeInApp: true`, `continueUrl` from
+   `FirebaseConfig.sign_in_continue_url`) and stores the address as `pending_email` in
+   `auth.json`, so the code can be finished after a restart.
+2. Firebase emails a link to the continue URL with `?oobCode=` appended.
+   - **Web:** the link opens the game itself (`FirebaseConfig.WEB_GAME_URL`).
+     `Cloud._take_code_from_page_url` reads `oobCode` at startup through JavaScriptBridge
+     and strips it with `history.replaceState`, so a reload doesn't retry a spent code.
+   - **Native:** the link opens `docs/sign-in.html` (`FirebaseConfig.SIGN_IN_LANDING_URL`),
+     which shows the code with a copy button; the player pastes it on the Account page.
+     `AuthService.code_from` also accepts a whole pasted link.
+3. `AuthService.sign_in_with_link(code, address)` posts `accounts:signInWithEmailLink`
+   and adopts the session through `_identity_call`. The address falls back to
+   `pending_email`; if that's missing (link opened on another device or browser) the page
+   asks for it again — on web the code waits in `Cloud.link_code` meanwhile.
+
+Both continue URLs are **constants in `firebase_config.gd` and nowhere else**. They are
+placeholders until Phase 0.1 creates the Pages domain; until then `sendOobCode` fails with
+`UNAUTHORIZED_DOMAIN`, which the page reports plainly.
 
 **Anonymous ("guest") sign-in was deliberately NOT built**, despite Firebase
 offering it and it being an obvious third option. It would protect against
@@ -64,8 +80,32 @@ Tokens live in **`user://auth.json`**, never in the profile.
 `profile["settings"]` is *inside the blob uploaded to Firestore*. A refresh token
 parked there would publish a long-lived credential into the database and
 replicate it to every other device on the account. `auth.json` holds the refresh
-token, uid and email; the short-lived `id_token` is kept in memory
+token, uid, email and the pending sign-in address; the short-lived `id_token` is kept in memory
 only and never written. `test_cloud_auth.gd` asserts both.
+
+## Deleting the account
+
+Settings → Account → **Delete account** (a confirm popup first), in this order
+(`Cloud.start_account_deletion` / `confirm_account_deletion` / `_finish_account_deletion`):
+
+1. **Stop sync** — `CloudSync.stop()` sets `enabled = false` (`_can_sync` then refuses
+   every push and pull, and a pull already in flight re-checks it and abandons its upload)
+   and waits out any `_busy` / `_pulling` call, so nothing can recreate the document later.
+2. **Re-authenticate if needed.** `accounts:delete` refuses a sign-in older than about five
+   minutes (`CREDENTIAL_TOO_OLD_LOGIN_AGAIN`). The game tracks `AuthService.signed_in_at`
+   (in memory, never restored) and, when it's older than `RECENT_SIGN_IN_SEC`, emails a
+   fresh link to the account's address and shows a code field
+   (`Cloud.deletion_needs_link`). The link always goes to the landing page, even on web, so
+   the code comes back to this tab. That sign-in does **not** pull or push. A code for a
+   different account aborts without deleting anything.
+3. **Delete the Firestore document** (`CloudSync.delete_document`; a 404 counts as done).
+4. **`accounts:delete`** (`AuthService.delete_account`).
+5. **Clear `auth.json`** (`auth.sign_out()`), which turns sync back on for whoever signs in next.
+
+A failure before step 3 cancels the deletion and turns sync back on. A failure at step 4
+leaves sync off (pushing would bring the document back) — but only until the game restarts;
+the player retries from the same page. Back or Cancel on the code form cancels.
+The local profile is never touched.
 
 ## The Firestore document
 
@@ -282,18 +322,18 @@ it, first clearing `_driving` so leaving doesn't save this device's spot over th
 
 ## UI
 
-- **Settings → Account** (`settings_menu.gd`: `_build_account_page`,
-  an entry in `_pages`). **Hidden for now (2026-10-27):** the page is
-  still built but has no entry in the category grid, so players can't reach it; cloud
-  sync itself still runs for an already-signed-in profile. Re-add the grid entry in
-  `_build_list_page` to bring it back.
+- **Settings → Account** (`settings_menu.gd`: `_build_account_page`, an entry in
+  `_pages`, and the "Account" entry in `_build_list_page`'s category grid).
 It is the only host: two routes into one optional form is one more than the game needs.
 
-Signed out: a line explaining the account, and no sign-in button until email-link
-sign-in lands (step 0.3). There is deliberately no "continue without an account"
-button — that is what closing the page does. Signed in: identity, sync status,
-Sync now, Sign out. `AccountMenu.go_back` holds Back only while a cloud call is in
-flight.
+Signed out: a line explaining the account, an email field and "Email me a sign-in link",
+then (native, or web holding a code from the page URL) a code field and "Sign in". There
+is deliberately no "continue without an account" button — that is what closing the page
+does. Signed in: identity, sync status, Sync now, Sign out, Delete account. While a
+deletion waits for its link: a code field, Delete account, Cancel. The fields and buttons
+are one `TextField.wire_column`; typed text survives the page's wholesale rebuilds
+(`_typed_email` / `_typed_code`). `AccountMenu.go_back` holds Back while a cloud call is in
+flight, and cancels a deletion that is waiting for its link.
 
 **Row budget.** A host that puts `AccountMenu` in a CENTRED `VBoxContainer` with its
 Back button BELOW the widget lets any content that overflows a small screen push Back
@@ -401,12 +441,17 @@ deliberately not a silent pick of either side.
 
 ## Setup prerequisites (console work)
 
-1. Authentication → enable **Email/Password** with **Email link** sign-in.
+1. Authentication → Sign-in method → enable **Email/Password** AND tick
+   **Email link (passwordless sign-in)**.
    (Anonymous is deliberately unused — see above.) The Google provider and its
    OAuth clients are no longer used by the game and can be switched off.
 2. Firestore → create the database (Native mode). The **rules deploy is
    automated** — see below.
-3. Auth → Settings → **Authorised domains** → add the web build's origin.
+3. Auth → Settings → **Authorised domains** → add the web build's origin (the Pages
+   domain from Phase 0.1). Every continue URL must be on an authorised domain.
+4. Serve `docs/sign-in.html` at `FirebaseConfig.SIGN_IN_LANDING_URL`, and set both URLs in
+   `firebase_config.gd` once the domain exists (Phase 0.1).
+5. Optionally edit the sign-in email template (Auth → Templates → Email address sign-in).
 
 Android needs `permissions/internet=true` on BOTH presets in `export_presets.cfg`,
 or every `HTTPRequest` fails as "no connection".
@@ -473,12 +518,20 @@ data.
   takes against a live network.
 - `tests/headless/test_cloud_auth.gd` — session adoption through
   `_identity_call`, mapped **and unmapped** error codes, network-vs-auth refresh
-  failure, credential persistence and the "no credential in the profile" guard.
+  failure, credential persistence and the "no credential in the profile" guard, the
+  sendOobCode / signInWithEmailLink requests and the stored address, `code_from`,
+  `signed_in_recently` and the `accounts:delete` request.
+- `tests/headless/test_account_deletion.gd` — the deletion order through a private `Cloud`
+  instance, re-auth by fresh link without a pull, sync unable to recreate the document
+  mid-delete, failure handling and a code for the wrong account.
 - `tests/headless/test_cloud_sync.gd` — document encoding (incl. the
   integer-as-string trap), every row of the conflict matrix, all three
   resolutions, the `.conflict.bak`, failure classification, backoff growth and
   cap, the update mask, that the uploaded blob is not marked unsynced, an older-schema cloud copy
-  being overwritten, a pull waiting out an upload in flight, and nothing syncing during a benchmark.
+  being overwritten, a pull waiting out an upload in flight, nothing syncing during a benchmark,
+  and `stop()` / `delete_document()`.
+- `tests/headless/test_account_menu.gd` — the sign-in form, the deletion code form, Back
+  cancelling a deletion; `test_settings_menu.gd` — the Account entry's keyboard/gamepad nav.
 - `tests/headless/test_text_field.gd` — the nav support (see [menus.md](menus.md)).
 - `tests/headless/test_save_manager.gd` — the two new profile fields, their
   backfill onto older profiles, `profile_changed` / `flushed`, `adopt_profile`
@@ -493,6 +546,9 @@ Record results here as they land.
 - [ ] Two-device round trip: progress on desktop → sign in on phone → it appears.
 - [ ] Genuine divergence: play offline on both, reconnect, confirm the prompt.
 - [ ] Airplane mode mid-session: no hang, no data loss, sync resumes.
+- [ ] Email link sign-in on web (link opens the game) and native (paste the code).
+- [ ] Delete account, both fresh and after five minutes (re-auth link); the document and
+  the Auth user are gone in the console.
 
 ### Web persistence
 

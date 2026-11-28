@@ -19,6 +19,14 @@ signal auth_lost(reason: String)
 var rest: Node = null
 var auth: AuthService = null
 var sync: CloudSync = null
+# A sign-in code that arrived without a stored address (link opened on another device); the
+# Account page asks for the address and finishes with it.
+var link_code := ""
+# The account being deleted, while a deletion is under way; sync stays off throughout.
+var _deleting_uid := ""
+var _document_deleted := false
+# The deletion is waiting for the player to paste the code from a fresh sign-in link.
+var deletion_needs_link := false
 
 
 func _ready() -> void:
@@ -66,8 +74,11 @@ func _ready() -> void:
 	# only reads the local credential file; the token refresh and the first pull
 	# happen lazily just after boot, and failing either leaves the player in their
 	# local career rather than stuck on a spinner.
-	if auth.restore():
+	var code := _take_code_from_page_url()
+	if auth.restore() and code == "":
 		_kick_off_initial_pull.call_deferred()
+	if code != "":
+		_finish_link_from_page.call_deferred(code)
 
 
 func is_signed_in() -> bool:
@@ -91,6 +102,66 @@ func sign_out() -> void:
 	# career they were just playing. Wiping it here would turn "sign out" into
 	# "delete my game", which is not what the words say.
 	auth.sign_out()
+
+
+func send_sign_in_link(address: String) -> Dictionary:
+	return await auth.send_sign_in_link(address)
+
+
+# Finish an email-link sign-in. `address` falls back to the one stored when the link was sent.
+func sign_in_with_link(code: String, address := "") -> Dictionary:
+	var before := auth.uid
+	var result := await auth.sign_in_with_link(code, address)
+	if result.ok:
+		link_code = ""
+		if before != "" and auth.uid != before:
+			sync.reset_for_account()  # a link for another account replaced the session
+	return await _after_sign_in(result)
+
+
+# Account deletion, steps 1-2 of the order in features/cloud-save.md. Either finishes the
+# deletion or sends a fresh link and leaves deletion_needs_link set for confirm_account_deletion.
+func start_account_deletion() -> Dictionary:
+	if not is_signed_in():
+		return {"ok": false, "error": "Not signed in."}
+	_deleting_uid = auth.uid
+	await sync.stop()
+	if auth.signed_in_recently():
+		return await _finish_account_deletion()
+	var sent := await auth.send_sign_in_link(auth.email, true)
+	if not sent.ok:
+		cancel_account_deletion()
+		return sent
+	deletion_needs_link = true
+	state_changed.emit()
+	return {"ok": true, "error": "", "needs_link": true}
+
+
+func confirm_account_deletion(code: String) -> Dictionary:
+	if _deleting_uid == "":
+		return {"ok": false, "error": "No account deletion in progress."}
+	var result := await auth.sign_in_with_link(code, auth.email)
+	if not result.ok:
+		return result
+	if auth.uid != _deleting_uid:
+		_document_deleted = false
+		cancel_account_deletion()
+		sync.reset_for_account()
+		return {"ok": false, "error": "That code is for a different account. Nothing was deleted."}
+	return await _finish_account_deletion()
+
+
+func cancel_account_deletion() -> void:
+	_deleting_uid = ""
+	deletion_needs_link = false
+	# Once the document is gone, syncing again would write it straight back.
+	if not _document_deleted:
+		sync.enabled = true
+	state_changed.emit()
+
+
+func is_deleting_account() -> bool:
+	return _deleting_uid != ""
 
 
 # Player-initiated "Sync now".
@@ -135,6 +206,49 @@ func _after_sign_in(result: Dictionary) -> Dictionary:
 	return {"ok": true, "error": ""}
 
 
+# Steps 3-5: the document, then the account, then the stored credential.
+func _finish_account_deletion() -> Dictionary:
+	deletion_needs_link = false
+	var doc := await sync.delete_document()
+	if not doc.ok:
+		cancel_account_deletion()
+		return doc
+	_document_deleted = true
+	# ponytail: sync stays off only for this session; a restart before the retry succeeds re-uploads the career.
+	var gone := await auth.delete_account()
+	if not gone.ok:
+		return gone
+	_deleting_uid = ""
+	auth.sign_out()
+	return {"ok": true, "error": ""}
+
+
+# Web only: the sign-in link lands on the game page with ?oobCode=. Read it, then strip it from
+# the address bar so a reload doesn't retry a code that is already spent.
+func _take_code_from_page_url() -> String:
+	if not Platform.is_web():
+		return ""
+	var search := String(JavaScriptBridge.eval("window.location.search", true))
+	if not search.contains("oobCode="):
+		return ""
+	JavaScriptBridge.eval("""(function () {
+		var u = new URL(window.location.href);
+		['oobCode', 'mode', 'apiKey', 'lang', 'continueUrl', 'tenantId'].forEach(function (k) {
+			u.searchParams.delete(k);
+		});
+		window.history.replaceState(null, '', u.toString());
+	})();""", true)
+	return AuthService.code_from(search)
+
+
+func _finish_link_from_page(code: String) -> void:
+	if auth.pending_email == "":
+		link_code = code
+		state_changed.emit()
+		return
+	await sign_in_with_link(code)
+
+
 func _kick_off_initial_pull() -> void:
 	await sync.pull()
 
@@ -150,6 +264,9 @@ func _on_profile_changed() -> void:
 
 
 func _on_signed_out() -> void:
+	_deleting_uid = ""
+	_document_deleted = false
+	deletion_needs_link = false
 	sync.reset_for_account()
 	signed_out.emit()
 	state_changed.emit()

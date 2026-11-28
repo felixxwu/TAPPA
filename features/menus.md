@@ -51,7 +51,7 @@ choice — apply it to every new row without asking.
 
 **Vertical columns are a separate convention and are deliberately NOT changed by this
 rule:** they put the exit at the BOTTOM (last) — the pause menu's card list, 
-`account_menu.gd::_build_email_form` and the `< Back` at the foot of every scrolled modal
+`account_menu.gd`'s sign-in and deletion code forms (Cancel last) and the `< Back` at the foot of every scrolled modal
 page. Treat any change to it as its own decision.
 
 ## Text input (`text_field.gd`)
@@ -83,10 +83,13 @@ Covered by `tests/headless/test_text_field.gd`.
 
 ## Account page (`account_menu.gd`)
 
-`AccountMenu` is the optional cloud-save UI — a category page inside Settings
-currently hidden from the category list (see cloud-save.md). It exposes `at_root()` / `go_back()` so Settings treats its sub-forms
-exactly like its own sub-pages — `SettingsMenu.go_back()` gives it first refusal before
-backing out of the page. See [cloud-save.md](cloud-save.md).
+`AccountMenu` is the optional cloud-save UI — a category page inside Settings, reached
+from the "Account" entry in `_build_list_page`. Its fields and buttons are one
+`TextField.wire_column`, and `MenuNav.attach` handles focus and Back. It exposes `go_back()`,
+which `SettingsMenu.go_back()` asks first: it holds Back while a cloud call is in flight and
+cancels an account deletion that is waiting for its link. Nav is covered by
+`test_settings_menu.gd` (`test_the_account_page_is_reachable_by_keyboard_and_gamepad`) and
+`test_account_menu.gd`. See [cloud-save.md](cloud-save.md).
 
 ## Pause menu rows
 

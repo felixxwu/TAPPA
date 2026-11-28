@@ -293,9 +293,30 @@ func test_players_do_not_see_the_developer_settings_pages() -> void:
 
 	assert_false(joined.contains("DEV"), "no Dev entry for players")
 	assert_true(joined.contains("AUDIO"), "the real settings are still there")
-	assert_false(joined.contains("ACCOUNT"), "the account page is hidden for now")
+	assert_true(joined.contains("ACCOUNT"), "players can reach the account page")
 	assert_true(joined.contains("RESET PROGRESS"),
 		"starting over is a player setting, not dev tooling")
+
+
+# Keyboard / gamepad: the Account category opens its page with the cursor on it, and Back
+# returns to the list.
+func test_the_account_page_is_reachable_by_keyboard_and_gamepad() -> void:
+	var menu := _make_menu()
+	var entry: Button = null
+	for node in menu._list_page.find_children("*", "Button", true, false):
+		if String((node as Button).text).contains("ACCOUNT"):
+			entry = node
+	assert_not_null(entry, "the category list has an Account entry")
+	assert_ne(entry.focus_mode, Control.FOCUS_NONE, "which the cursor can reach")
+	entry.pressed.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_true(menu.showing("account"), "pressing it opens the account page")
+	var focused := get_viewport().gui_get_focus_owner()
+	assert_true(focused != null and menu._account_page.is_ancestor_of(focused),
+		"with the cursor on the page")
+	assert_true(menu.go_back(), "Back leaves the page")
+	assert_true(menu.at_root(), "for the category list")
 
 
 func test_developer_builds_still_reach_the_dev_pages() -> void:

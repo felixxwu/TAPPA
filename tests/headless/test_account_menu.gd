@@ -35,6 +35,10 @@ func after_each() -> void:
 	Cloud.auth.uid = _saved_uid
 	Cloud.auth.refresh_token = _saved_refresh
 	Cloud.auth.email = _saved_email
+	Cloud.auth.pending_email = ""
+	Cloud.link_code = ""
+	Cloud.deletion_needs_link = false
+	Cloud._deleting_uid = ""
 	var focused := get_tree().root.get_viewport().gui_get_focus_owner()
 	if focused != null:
 		focused.release_focus()
@@ -130,6 +134,64 @@ func test_signed_in_main_view_offers_every_action() -> void:
 	_sign_in_fake()
 	assert_true(_has_button_containing("sync now"))
 	assert_true(_has_button_containing("sign out"))
+	assert_true(_has_button_containing("delete account"))
+
+
+# --- Email link sign-in and account deletion ----------------------------------
+
+func _fields() -> Array:
+	return _menu.find_children("*", "TextField", true, false)
+
+
+func _assert_reachable(controls: Array) -> void:
+	for node in controls:
+		for focusable in [node] + (node as Node).find_children("*", "Control", true, false):
+			if focusable is LineEdit or focusable is Button:
+				assert_ne((focusable as Control).focus_mode, Control.FOCUS_NONE,
+					"%s must be reachable by keyboard/gamepad" % focusable)
+
+
+func test_signed_out_page_offers_an_email_field_and_a_send_button() -> void:
+	assert_gt(_fields().size(), 0, "somewhere to type the address")
+	assert_true(_has_button_containing("sign-in link"))
+	_assert_reachable(_fields())
+	_assert_reachable(_menu.find_children("*", "Button", true, false))
+
+
+func test_the_address_sent_to_is_filled_in_again() -> void:
+	Cloud.auth.pending_email = "player@example.com"
+	_menu.rebuild()
+	assert_eq((_fields()[0] as TextField).text(), "player@example.com")
+
+
+func test_a_code_from_the_page_url_waits_on_the_page_with_a_sign_in_button() -> void:
+	Cloud.link_code = "the-code"
+	_menu.rebuild()
+	assert_eq(_fields().size(), 2, "address and code")
+	assert_eq((_fields()[1] as TextField).text(), "the-code")
+	assert_true(_has_button_containing("sign in"))
+
+
+func test_typed_text_survives_a_rebuild() -> void:
+	(_fields()[0] as TextField).set_text("typed@example.com")
+	_menu.rebuild()
+	assert_eq((_fields()[0] as TextField).text(), "typed@example.com")
+
+
+func test_waiting_for_a_deletion_link_shows_a_code_form_and_back_cancels_it() -> void:
+	_sign_in_fake()
+	Cloud._deleting_uid = "test_uid"
+	Cloud.deletion_needs_link = true
+	_menu.rebuild()
+	assert_eq(_fields().size(), 1, "somewhere to paste the code")
+	assert_true(_has_button_containing("delete account"))
+	assert_true(_has_button_containing("cancel"))
+	_assert_reachable(_fields())
+	_assert_reachable(_menu.find_children("*", "Button", true, false))
+	assert_true(_menu.go_back(), "Back cancels the deletion rather than leaving the page")
+	assert_false(Cloud.deletion_needs_link)
+	assert_false(Cloud.is_deleting_account())
+	assert_true(Cloud.sync.enabled, "and the career syncs again")
 
 
 func test_signed_in_main_view_row_count_is_bounded() -> void:

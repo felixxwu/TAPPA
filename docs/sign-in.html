@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAPPA sign-in code</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         max-width: 560px; margin: 3rem auto; padding: 0 1rem; line-height: 1.6;
+         color: #1a1a1a; background: #fff; }
+  #code { width: 100%; box-sizing: border-box; font: 1rem monospace; padding: 0.6rem;
+          word-break: break-all; }
+  button { margin-top: 0.75rem; font-size: 1rem; padding: 0.5rem 1.2rem; }
+</style>
+</head>
+<body>
+<h1>Your TAPPA sign-in code</h1>
+<div id="found" hidden>
+  <p>Copy this code, go back to the game, and paste it on the Account page.</p>
+  <textarea id="code" rows="3" readonly></textarea>
+  <button id="copy" type="button">Copy code</button>
+  <p id="copied" hidden>Copied.</p>
+</div>
+<p id="missing" hidden>This page has no sign-in code. Open the link from your
+sign-in email again, or send a new one from the game.</p>
+<script>
+  var code = new URLSearchParams(location.search).get("oobCode");
+  document.getElementById(code ? "found" : "missing").hidden = false;
+  if (code) {
+    var box = document.getElementById("code");
+    box.value = code;
+    document.getElementById("copy").onclick = function () {
+      box.select();
+      (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject())
+        .catch(function () { document.execCommand("copy"); })
+        .then(function () { document.getElementById("copied").hidden = false; });
+    };
+  }
+</script>
+</body>
+</html>

@@ -26,8 +26,8 @@ spec items still applies.
 **Phase 0 — Godot feature set**
 - [ ] 0.1 Web build on Cloudflare Pages
 - [x] 0.2 Remove Google and password sign-in (2026-11-28)
-- [ ] 0.3 Email link sign-in
-- [ ] 0.4 Account deletion
+- [ ] 0.3 Email link sign-in (in progress: code done 2026-11-28; needs the 0.1 domain in `firebase_config.gd`, Firebase email-link provider on, Play Data safety form)
+- [ ] 0.4 Account deletion (in progress: code done 2026-11-28; needs live sign-in from 0.3)
 - [ ] 0.5 Cloud tests against the Firebase emulators
 - [ ] 0.6 iOS export
 - [ ] **Exit:** live on the App Store and Cloudflare Pages; sign-in and deletion work everywhere

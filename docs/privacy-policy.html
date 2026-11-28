@@ -16,25 +16,51 @@
 </head>
 <body>
 <h1>Privacy Policy for TAPPA</h1>
-<p><em>Last updated: 10 July 2026</em></p>
+<p><em>Last updated: 28 November 2026</em></p>
 
 <p>This privacy policy applies to the <strong>TAPPA</strong> game ("the game"),
-a single-player rally driving game published on Google Play and itch.io.</p>
+a single-player rally driving game for the web, desktop and mobile.</p>
 
-<h2>Data we collect</h2>
-<p>The game does <strong>not</strong> collect, transmit, or share any personal
-data. It contains no analytics, no advertising, no third-party SDKs, no user
-accounts, and makes no network requests to any server that we control.</p>
+<h2>Playing without an account</h2>
+<p>An account is optional. Without one the game collects, transmits and shares
+no personal data: it has no analytics, no advertising and no third-party
+tracking. Your progress (owned cars, upgrades and so on) is saved only on your
+device, in a file named <code>profile.json</code>, and uninstalling the game or
+clearing its site data removes it.</p>
 
-<h2>Data stored on your device</h2>
-<p>The game saves your progress — such as owned cars, upgrades, and completed
-rallies — locally on your device (in a file named <code>profile.json</code>).
-This information never leaves your device and is not accessible to us or to any
-third party. Uninstalling the game removes this data.</p>
+<h2>Optional account and cloud save</h2>
+<p>If you choose to sign in, the game uses Google Firebase (Firebase
+Authentication and Cloud Firestore), operated by Google, to back your progress
+up and let you continue it on another device. Signing in stores:</p>
+<ul>
+  <li><strong>Your email address</strong>, which you enter to receive a
+  one-time sign-in link. It is used only to sign you in and is never used for
+  marketing or shared with anyone else.</li>
+  <li><strong>An account ID</strong>, a random identifier Firebase assigns to
+  your account.</li>
+  <li><strong>Your cloud save</strong>: a copy of your game progress, stored in
+  Cloud Firestore under your account ID, with the time it was saved and the kind
+  of device that saved it (for example "web" or "android"). Only you, signed in,
+  can read or change it.</li>
+</ul>
+<p>On your device the game also keeps a small sign-in file so you stay signed in
+between sessions. Firebase may process technical data such as your IP address to
+deliver these services; see <a href="https://firebase.google.com/support/privacy">Firebase's
+privacy information</a>.</p>
+
+<h2>Deleting your account</h2>
+<p>You can delete your account at any time from inside the game: Settings →
+Account → Delete account. This permanently deletes your cloud save and your
+account, including your email address, from Firebase, and signs you out. If you
+have not signed in recently, the game first emails you a fresh sign-in link to
+confirm it is you. Your progress on the device you are using is left untouched.
+If you can no longer open the game, email us at the address below and we will
+delete your account for you.</p>
 
 <h2>Children</h2>
-<p>The game does not knowingly collect any information from anyone, including
-children.</p>
+<p>The game does not knowingly collect personal data from children. The optional
+account is not intended for children under 13; if you believe a child has created
+one, contact us and we will delete it.</p>
 
 <h2>Changes to this policy</h2>
 <p>If this policy changes, the updated version will be posted at this same URL

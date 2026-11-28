@@ -21,6 +21,13 @@ const API_KEY := "AIzaSyBbW4_34pecs85ffo7k5-gyo6KuwGyNVEs"
 
 # --- Endpoints ---------------------------------------------------------------
 
+# Where a sign-in email's link sends the player (Firebase appends the code as ?oobCode=).
+# PLACEHOLDERS until the Cloudflare Pages domain exists: Phase 0.1 of
+# todo/2026-11-27-rust-native-migration.md replaces both, and adds the domain to Firebase
+# Auth's authorised domains. Until then sendOobCode fails with UNAUTHORIZED_DOMAIN.
+const WEB_GAME_URL := "https://PAGES-DOMAIN-SET-IN-PHASE-0.1/"
+const SIGN_IN_LANDING_URL := "https://PAGES-DOMAIN-SET-IN-PHASE-0.1/sign-in.html"
+
 const IDENTITY_URL := "https://identitytoolkit.googleapis.com/v1"
 const TOKEN_URL := "https://securetoken.googleapis.com/v1/token"
 const FIRESTORE_URL := "https://firestore.googleapis.com/v1"
@@ -28,6 +35,14 @@ const FIRESTORE_URL := "https://firestore.googleapis.com/v1"
 # Identity Toolkit endpoints all take the API key as a query parameter.
 static func identity(method: String) -> String:
 	return "%s/accounts:%s?key=%s" % [IDENTITY_URL, method, API_KEY]
+
+
+# The web game reads the code from its own URL; everywhere else, and whenever the code must come
+# back to THIS tab (re-confirming an account deletion), the landing page shows it for pasting.
+static func sign_in_continue_url(for_paste := false) -> String:
+	if Platform.is_web() and not for_paste:
+		return WEB_GAME_URL
+	return SIGN_IN_LANDING_URL
 
 
 static func token_url() -> String:

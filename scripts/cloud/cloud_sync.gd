@@ -52,6 +52,8 @@ var pending := false
 var blocked_by_conflict := false
 # Set while the cloud copy is one this build must not overwrite (unreadable, or from a newer build).
 var _remote_refused := false
+# Off while the account is being deleted, so nothing can write the document back.
+var enabled := true
 
 var _debounce: Timer
 var _retry: Timer
@@ -106,8 +108,33 @@ func reset_for_account() -> void:
 	blocked_by_conflict = false
 	_remote_refused = false
 	pending = false
+	enabled = true
 	_backoff = BACKOFF_START_SEC
 	_set_status(Status.IDLE, "")
+
+
+# Turn sync off and wait out any upload or pull already under way, so none lands after this.
+func stop() -> void:
+	enabled = false
+	_debounce.stop()
+	_retry.stop()
+	while _busy or _pulling:
+		await get_tree().process_frame
+
+
+# Delete this player's cloud document (account deletion). A document that is already gone is fine.
+func delete_document() -> Dictionary:
+	if auth == null or rest == null or not auth.is_signed_in():
+		return {"ok": false, "error": "Not signed in."}
+	var fresh := await auth.ensure_fresh_token()
+	if not fresh.ok:
+		return _fail_from_auth(fresh)
+	var response = await rest.request_json(
+		HTTPClient.METHOD_DELETE, FirebaseConfig.user_doc(auth.uid),
+		RestClient.json_headers(auth.id_token))
+	if not response.ok and response.status != 404:
+		return _fail_from_response(response)
+	return {"ok": true, "error": ""}
 
 
 # Read the cloud document and reconcile it with the local profile. Returns
@@ -531,7 +558,7 @@ func _parse_profile(blob: String) -> Variant:
 
 # Off during a benchmark: its throwaway world sits in Save.profile and must never upload.
 func _can_sync() -> bool:
-	return auth != null and rest != null and auth.is_signed_in() and not Benchmark.active
+	return enabled and auth != null and rest != null and auth.is_signed_in() and not Benchmark.active
 
 
 func _on_debounce() -> void:

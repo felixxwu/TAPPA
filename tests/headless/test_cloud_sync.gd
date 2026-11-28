@@ -521,6 +521,52 @@ func test_nothing_syncs_while_signed_out() -> void:
 	assert_eq(_rest.requests.size(), 0)
 
 
+# --- Stopped for account deletion -----------------------------------------------
+
+func test_a_stopped_sync_cannot_write_the_document() -> void:
+	await _sync.stop()
+	_save.save()
+	_sync.request_push()
+	_sync.flush()
+	await _sync.pull()
+	await _sync.push(true)
+	await _sync.push_wipe()
+	assert_eq(_rest.requests.size(), 0, "nothing at all reaches the cloud")
+
+
+func test_stopping_waits_out_a_sync_already_under_way_and_it_writes_nothing() -> void:
+	_rest.queue_error(404)
+	_save.save()
+	_sync.request_push()
+	_sync.flush()
+	assert_eq(_rest.requests.size(), 1, "the read before the upload is on its way")
+	await _sync.stop()
+	assert_false(_sync._busy or _sync._pulling, "stop returns only once it has finished")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	assert_eq(_rest.requests.size(), 1, "and the upload it was heading for never goes out")
+
+
+func test_deleting_the_document_targets_the_players_document() -> void:
+	_rest.queue_ok({})
+	var result: Dictionary = await _sync.delete_document()
+	assert_true(result.ok)
+	assert_eq(int(_rest.last().method), HTTPClient.METHOD_DELETE)
+	assert_string_contains(String(_rest.last().url), "/documents/users/uid123")
+
+
+func test_deleting_a_document_that_is_already_gone_succeeds() -> void:
+	_rest.queue_error(404)
+	var result: Dictionary = await _sync.delete_document()
+	assert_true(result.ok)
+
+
+func test_signing_out_turns_a_stopped_sync_back_on() -> void:
+	await _sync.stop()
+	_sync.reset_for_account()
+	assert_true(_sync.enabled, "the next account syncs normally")
+
+
 # --- The uploaded payload -----------------------------------------------------
 
 func test_the_upload_targets_the_users_document_with_an_update_mask() -> void:

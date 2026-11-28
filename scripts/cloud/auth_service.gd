@@ -27,11 +27,18 @@ const AUTH_PATH := "user://auth.json"
 # Refresh this far ahead of the stated expiry so a request never races the clock.
 const REFRESH_MARGIN_SEC := 300.0
 
+# Firebase refuses accounts:delete once the last sign-in is over 5 minutes old; stay inside that.
+const RECENT_SIGN_IN_SEC := 240.0
+
 var uid := ""
 var email := ""
 var id_token := ""
 var refresh_token := ""
 var expires_at := 0.0
+# The address the last sign-in link went to: signInWithEmailLink needs it with the code.
+var pending_email := ""
+# When this session last signed in (not refreshed); 0 for a session restored from disk.
+var signed_in_at := 0.0
 
 # Injected by Cloud; a test substitutes a fake exposing request_json().
 var rest = null
@@ -75,6 +82,72 @@ func _refuse_real_file(op: String) -> bool:
 
 func is_signed_in() -> bool:
 	return uid != "" and refresh_token != ""
+
+
+# --- Email link sign-in -------------------------------------------------------
+# Each returns {ok: bool, error: String} where `error` is already player-facing.
+
+func send_sign_in_link(address: String, for_paste := false) -> Dictionary:
+	if not _looks_like_email(address):
+		return {"ok": false, "error": "That doesn't look like an email address."}
+	if rest == null:
+		return {"ok": false, "error": "Cloud is unavailable."}
+	var response = await rest.request_json(
+		HTTPClient.METHOD_POST, FirebaseConfig.identity("sendOobCode"),
+		RestClient.json_headers(), JSON.stringify({
+			"requestType": "EMAIL_SIGNIN", "email": address,
+			"continueUrl": FirebaseConfig.sign_in_continue_url(for_paste),
+			"canHandleCodeInApp": true,
+		}))
+	if not response.ok:
+		return {"ok": false, "error": _message_for(response)}
+	pending_email = address
+	_write_credentials()
+	return {"ok": true, "error": ""}
+
+
+# `code` may be the bare code or a whole pasted link.
+func sign_in_with_link(code: String, address := "") -> Dictionary:
+	var oob := code_from(code)
+	if oob == "":
+		return {"ok": false, "error": "Paste the code from the sign-in page."}
+	if address == "":
+		address = pending_email
+	if not _looks_like_email(address):
+		return {"ok": false, "error": "Enter the email address the link was sent to."}
+	var result := await _identity_call("signInWithEmailLink", {
+		"email": address, "oobCode": oob, "returnSecureToken": true,
+	})
+	if result.ok and pending_email != "":
+		pending_email = ""
+		_write_credentials()
+	return result
+
+
+func signed_in_recently() -> bool:
+	return signed_in_at > 0.0 \
+		and Time.get_unix_time_from_system() - signed_in_at < RECENT_SIGN_IN_SEC
+
+
+func delete_account() -> Dictionary:
+	var fresh := await ensure_fresh_token()
+	if not fresh.ok:
+		return fresh
+	var response = await rest.request_json(
+		HTTPClient.METHOD_POST, FirebaseConfig.identity("delete"),
+		RestClient.json_headers(), JSON.stringify({"idToken": id_token}))
+	if not response.ok:
+		return {"ok": false, "error": _message_for(response)}
+	return {"ok": true, "error": ""}
+
+
+# The sign-in code out of whatever was given: a bare code, or a URL carrying ?oobCode=.
+static func code_from(text: String) -> String:
+	text = text.strip_edges()
+	var at := text.find("oobCode=")
+	if at == -1:
+		return text
+	return text.substr(at + "oobCode=".length()).split("&")[0].split("#")[0].uri_decode()
 
 
 # --- Token lifecycle ---------------------------------------------------------
@@ -131,7 +204,9 @@ func restore() -> bool:
 	expires_at = 0.0
 	if not is_signed_in():
 		_clear_state()
+		pending_email = String(stored.get("pending_email", ""))
 		return false
+	pending_email = String(stored.get("pending_email", ""))
 	signed_in.emit(uid)
 	return true
 
@@ -158,6 +233,8 @@ func _clear_state() -> void:
 	id_token = ""
 	refresh_token = ""
 	expires_at = 0.0
+	pending_email = ""
+	signed_in_at = 0.0
 
 
 # --- Internals ---------------------------------------------------------------
@@ -188,11 +265,12 @@ func _adopt_session(data: Variant) -> void:
 	email = String(d.get("email", ""))
 	var lifetime := String(d.get("expiresIn", "3600")).to_int()
 	expires_at = Time.get_unix_time_from_system() + float(lifetime)
+	signed_in_at = Time.get_unix_time_from_system()
 	_write_credentials()
 
 
 func _write_credentials() -> void:
-	if not is_signed_in():
+	if not is_signed_in() and pending_email == "":
 		return
 	# Same atomic .tmp -> rename dance as save_manager.save_now(), so a crash
 	# mid-write cannot leave a truncated credential file that fails to parse and
@@ -208,6 +286,7 @@ func _write_credentials() -> void:
 		"uid": uid,
 		"refresh_token": refresh_token,
 		"email": email,
+		"pending_email": pending_email,
 	}, "\t"))
 	f.close()
 	var dir := DirAccess.open(_path().get_base_dir())
@@ -264,6 +343,12 @@ func _message_for(response: Dictionary) -> String:
 			return "Your session expired. Please sign in again."
 		"INVALID_EMAIL":
 			return "That doesn't look like an email address."
+		"INVALID_OOB_CODE", "EXPIRED_OOB_CODE":
+			return "That sign-in code has expired or was already used. Send a new link."
+		"CREDENTIAL_TOO_OLD_LOGIN_AGAIN":
+			return "Please sign in again, then try once more."
+		"UNAUTHORIZED_DOMAIN", "INVALID_CONTINUE_URI":
+			return "Sign-in links aren't set up for this build yet (%s)." % head
 		_:
 			if code != "":
 				return "Sign-in failed (%s)." % code

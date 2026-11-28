@@ -53,6 +53,92 @@ func test_a_sign_in_stores_the_session() -> void:
 	assert_true(_auth.is_signed_in())
 
 
+# --- Email link sign-in --------------------------------------------------------
+
+func test_sending_a_link_asks_firebase_for_an_email_sign_in_and_remembers_the_address() -> void:
+	_rest.queue_ok({})
+	var result: Dictionary = await _auth.send_sign_in_link("player@example.com")
+	assert_true(result.ok)
+	assert_string_contains(String(_rest.last().url), "accounts:sendOobCode")
+	var body := _rest.last_body()
+	assert_eq(body.get("requestType"), "EMAIL_SIGNIN")
+	assert_eq(body.get("email"), "player@example.com")
+	assert_eq(body.get("continueUrl"), FirebaseConfig.sign_in_continue_url())
+	assert_eq(body.get("canHandleCodeInApp"), true)
+
+	var restored := AuthService.new()
+	restored.auth_path = TEST_AUTH_PATH
+	assert_false(restored.restore(), "sending a link signs nobody in")
+	assert_eq(restored.pending_email, "player@example.com",
+		"the address survives a restart, so the code can be finished later")
+
+
+func test_a_bad_address_sends_nothing() -> void:
+	var result: Dictionary = await _auth.send_sign_in_link("not-an-address")
+	assert_false(result.ok)
+	assert_eq(_rest.requests.size(), 0)
+
+
+func test_a_code_signs_in_with_the_stored_address() -> void:
+	_rest.queue_ok({})
+	await _auth.send_sign_in_link("player@example.com")
+	_rest.queue_ok(_session())
+	var result: Dictionary = await _auth.sign_in_with_link("the-code")
+	assert_true(result.ok)
+	assert_string_contains(String(_rest.last().url), "accounts:signInWithEmailLink")
+	assert_eq(_rest.last_body().get("email"), "player@example.com")
+	assert_eq(_rest.last_body().get("oobCode"), "the-code")
+	assert_true(_auth.is_signed_in())
+	assert_eq(_auth.pending_email, "", "a used address is forgotten")
+
+
+func test_a_code_without_a_known_address_asks_for_it_instead_of_sending() -> void:
+	var result: Dictionary = await _auth.sign_in_with_link("the-code")
+	assert_false(result.ok)
+	assert_ne(String(result.error), "")
+	assert_eq(_rest.requests.size(), 0)
+	_rest.queue_ok(_session())
+	result = await _auth.sign_in_with_link("the-code", "player@example.com")
+	assert_true(result.ok, "an address typed in again finishes the sign-in")
+
+
+func test_a_pasted_link_yields_its_code() -> void:
+	assert_eq(AuthService.code_from("  abc123  "), "abc123")
+	assert_eq(AuthService.code_from("https://x.dev/sign-in.html?mode=signIn&oobCode=a%2Bb&lang=en"), "a+b")
+	assert_eq(AuthService.code_from("?oobCode=xyz#top"), "xyz")
+
+
+func test_only_a_fresh_sign_in_counts_as_recent() -> void:
+	_rest.queue_ok(_session())
+	await _sign_in()
+	assert_true(_auth.signed_in_recently())
+	_auth.signed_in_at -= AuthService.RECENT_SIGN_IN_SEC + 1.0
+	assert_false(_auth.signed_in_recently(), "an old sign-in needs confirming again")
+	var restored := AuthService.new()
+	restored.auth_path = TEST_AUTH_PATH
+	restored.restore()
+	assert_false(restored.signed_in_recently(), "a session restored from disk is never recent")
+
+
+func test_deleting_the_account_sends_the_id_token() -> void:
+	_rest.queue_ok(_session())
+	await _sign_in()
+	_rest.queue_ok({})
+	var result: Dictionary = await _auth.delete_account()
+	assert_true(result.ok)
+	assert_string_contains(String(_rest.last().url), "accounts:delete")
+	assert_eq(_rest.last_body().get("idToken"), "id-token")
+
+
+func test_a_too_old_sign_in_is_named_plainly() -> void:
+	_rest.queue_ok(_session())
+	await _sign_in()
+	_rest.queue_error(400, "CREDENTIAL_TOO_OLD_LOGIN_AGAIN")
+	var result: Dictionary = await _auth.delete_account()
+	assert_false(result.ok)
+	assert_false(String(result.error).contains("CREDENTIAL_TOO_OLD"))
+
+
 # --- Error mapping ------------------------------------------------------------
 
 func test_a_known_error_code_becomes_a_player_facing_message() -> void:
