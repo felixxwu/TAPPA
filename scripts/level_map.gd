@@ -508,7 +508,7 @@ func paint(ci: CanvasItem, xf: Transform2D, zm: float, ui: float, route: PackedV
 		clip = world.grow(half)
 	_ensure_boxes()
 	ci.draw_set_transform_matrix(xf)
-	if _texture != null:  # build() uploads it behind the loading screen; a headless run never does
+	if _texture != null:  # build() uploads it behind the loading screen
 		ci.draw_texture_rect(_texture, world, false)
 	for i in view._bake.patches.size():
 		if _boxes["patches"][i].intersects(clip):
@@ -736,8 +736,6 @@ func _physics_process(delta: float) -> void:
 
 
 func _timed_process(delta: float) -> void:
-	if _painter != null and not _painter.is_alive():
-		build()
 	if not visible:
 		return
 	if covered():

@@ -32,3 +32,16 @@ Already-seeded local generators (`ground_cover.build_tuft`, `log_pile.build`, `l
 scans `scripts/` and fails on a global `randf()`/`randi()`/`randomize()`/`seed()` call, on
 `.shuffle()` / `.pick_random()`, and on a `var x := RandomNumberGenerator.new()` whose file never
 sets `x.seed =` or `x.state =`.
+
+## Threads finishing on a wall-clock frame
+
+A background thread's result must not change game state on "whichever frame it finished": that frame
+depends on CPU load, so two replays diverge (the `--golden-check` B run is under `yes` load for this).
+Example fixed in November 2026: `LevelMap` paints its image on a thread (`_painter`), and the
+minimap only shows once `LevelMap.build()` has uploaded it (`LevelMinimap._tick` gates on
+`map._texture`). Each minimap redraw calls `LevelMap.reveal_at_car`, which stamps discovery and
+moves the `_revealed_at` gate, so the map's own `REVEAL_TICK_S` stamps shift too. Headless skips
+`LevelView._warm_up` (where `build()` used to be the only load-time call), so the texture appeared
+when `_timed_process` noticed the thread had ended, and the `discovered` event landed on different
+ticks between runs (only on CI's 2-core runners). `LevelView` now calls `map.build()` after the
+warm-up in every mode, which waits for the painter before the level reports loaded.

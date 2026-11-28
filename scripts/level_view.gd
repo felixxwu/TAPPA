@@ -251,6 +251,7 @@ func _ready() -> void:
 		await _warm_up(car)
 		load_ms["warm_up"] = Time.get_ticks_msec() - t_warm
 		print("level view: warm-up %d ms" % load_ms.warm_up)
+	map.build()  # headless skips the warm-up; left to the painter thread, the minimap would appear on a wall-clock-dependent frame
 	load_ms["ready_at"] = Time.get_ticks_msec()  # engine-clock time the level finished loading; minus engine_to_ready is the whole load
 	WorldRuntime.apply_fps_cap(applied_fps_caps, FpsSetting.resolve(), Platform.is_headless())
 	if not has_car():
