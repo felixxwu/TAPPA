@@ -93,3 +93,4 @@ __pycache__/
 
 # Wrangler's local state (tools/deploy_pages.sh)
 /cloudflare/.wrangler/
+/.wrangler/
