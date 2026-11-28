@@ -412,6 +412,13 @@ jobs:
           key: ${{ env.NIGHTLY }}
       - name: Install wasm-bindgen-cli (same version as the crate) and wasm-tools
         run: cargo install wasm-bindgen-cli@"$WGBG" wasm-tools --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright and Chromium
+        run: |
+          npm install -g playwright@1.52.0
+          playwright install --with-deps chromium
       - name: wasi-sdk
         run: tools/wasi_sdk.sh
       - name: Build the viewer (R2 link, R5 compile)
@@ -423,13 +430,6 @@ jobs:
           grep -E '\(import "[^"]+" "memory" \(memory [^)]*shared' build/viewer/viewer.wat
           if grep -E 'import "wasi_snapshot_preview1"' build/viewer/viewer.wat; then echo "stray wasi imports"; exit 1; fi
           grep -oE '\(import "[^"]+"' build/viewer/viewer.wat | sort | uniq -c | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Install Playwright and Chromium
-        run: |
-          npm install -g playwright@1.52.0
-          playwright install --with-deps chromium
       - name: Native reference trace for R3
         run: |
           mkdir -p build

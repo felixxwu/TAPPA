@@ -21,7 +21,8 @@ async function loadPlaywright() {
     return await import('playwright');
   } catch {
     const root = execSync('npm root -g').toString().trim();
-    return (await import('node:module')).createRequire(`${root}/`)('playwright');
+    const req = (await import('node:module')).createRequire(`${root}/noop.js`);
+    return req(req.resolve('playwright', { paths: [root] }));
   }
 }
 
