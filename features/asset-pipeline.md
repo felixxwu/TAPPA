@@ -158,7 +158,7 @@ preview: **multiplied to 55% brightness**, saturation nudged **+18%**, then resi
 to 1024×512. The darkening is deliberate and belongs in the ASSET, not the
 environment — night's `fog_sky_affect` is already high so the horizon sinks into the
 fog, and a bright source panorama punched a lit dome through it. Consumed via
-`GameConfig.night_sky_panorama` (see [weather.md](weather.md) → "Night"). A new sky
+`GameConfig.night_sky_panorama` (see [weather.md](weather.md) → "On the level"). A new sky
 also needs `tools/align_sky_sun.py` run over it if it has a visible sun — see
 [rendering.md](rendering.md) → "Sun alignment".
 

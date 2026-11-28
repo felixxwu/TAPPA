@@ -18,8 +18,7 @@ WHY TWO SPECIES
     The pack's densest conifer has the best silhouette but almost no snow on it
     (measured: 0.4% of opaque pixels are bright), while the one that genuinely carries
     snow (6.7%) is shorter and scruffier. Neither alone makes a convincing alpine
-    stand, so the region mixes them — RegionLibrary's tree_mix already supports this
-    (Greece runs 70/30). See features/snow-region.md.
+    stand, so the Alps region's tree_mix in RegionLibrary mixes them.
 
 WHY THE SNOW IS PAINTED, NOT DRAWN
     Snow settles on UPWARD-FACING surfaces. On a billboard the usable proxy is "an
@@ -55,21 +54,10 @@ SEED = 20260816
 # shows up in game as a speck. 14 clears every gap in this pack with room to spare.
 _BLEED_PASSES = 14
 
-# Radius of the morphological close applied to the alpha before tracing.
-#
-# THIS VALUE HAS A CLIFF, and landing on the wrong side of it ships invisible trees.
-# TreeSilhouette traces the cutout's OUTLINE into the billboard's geometry; fed a
-# filigree of thin needle filaments it produces degenerate slivers with essentially no
-# area, so the tree renders as a scatter of specks with no body. Measured fill of the
-# traced mesh against its own bounding box, for the dense conifer:
-#
-#     close=3  ->   0.3%      close=7  -> 108%
-#     close=5  ->   0.2%      close=9  -> 111%
-#
-# There is no gentle degradation between 5 and 7 — it is a step. 7 is the first value
-# that works and the shipped trees sit there; do not lower it without re-measuring the
-# traced AREA (a bounding box stays full-size even when the mesh is empty, so bbox is
-# not a check). test_snow_region.gd asserts the area for exactly this reason.
+# Radius of the morphological close applied to the alpha, which joins the needle
+# islands into one tree body. The game draws these cutouts on star-tree cards whose
+# shader (level_tree.gdshader) discards texels below half alpha, so without the close
+# a photographed conifer draws as a scatter of disconnected needles with sky between.
 _CLOSE_RADIUS = 7
 
 
@@ -228,22 +216,16 @@ def _bright_fraction(img):
 
 
 def _consolidate_alpha(img, close=_CLOSE_RADIUS):
-    """Bridge the gaps in a photographic cutout's alpha so it traces to ONE body.
+    """Bridge the gaps in a photographic cutout's alpha so it draws as ONE body.
 
-    Foliage.tree_silhouette_mesh runs TreeSilhouette.build over the alpha to make the
-    billboard's geometry, and that tracer wants a coherent mass. A photographed conifer's
-    alpha is not one: it is hundreds of disconnected needle and branch islands with sky
-    between them. Fed that, the tracer skips island after island as degenerate and can
-    emit a mesh with almost no geometry at all — measured, the scruffier of the two trees
-    came out as 12 vertices 0.004 units tall, i.e. INVISIBLE IN GAME while looking
-    perfectly fine as a texture.
+    The game draws the cutout on star-tree cards that drop every texel below half alpha
+    (level_tree.gdshader). A photographed conifer's alpha is hundreds of disconnected
+    needle and branch islands with sky between them, which draws as a speckle with no
+    body rather than a tree.
 
     A morphological close (dilate then erode by the same radius) joins neighbouring
     islands without inflating the overall silhouette, so the tree keeps its shape and
     its photographic detail — only the sky gaps between adjacent needles close up.
-
-    Verify with the vertex counts, not by eye: a texture that looks right can still
-    trace to nothing.
     """
     img = img.convert("RGBA")
     w, h = img.size
@@ -251,16 +233,13 @@ def _consolidate_alpha(img, close=_CLOSE_RADIUS):
     # 1. EXTEND THE COLOUR OUTWARD, THOROUGHLY. This is not cosmetic — it is the fix for
     # dark specks floating around the trees in game.
     #
-    # The billboard is an OPAQUE cutout: TreeSilhouette traces a polygon from the alpha
-    # and there is no alpha test at draw time, so every pixel inside that polygon is
-    # drawn, including ones that were transparent. Closing the alpha (step 2) fills the
-    # sky gaps between branches, and a cutout's transparent pixels carry whatever RGB
-    # the encoder left — here, near-black. Fill them shallowly and the deeper gaps still
-    # render as black flecks hanging in mid-air.
+    # Closing the alpha (step 2) turns the sky gaps between branches opaque, and the
+    # card shader draws every texel above half alpha, so those pixels show whatever RGB
+    # the encoder left in them — here, near-black. Fill them shallowly and the deeper
+    # gaps still render as black flecks hanging in mid-air.
     #
     # So flood real foliage colour across every transparent pixel until nothing dark is
-    # left for the polygon to reveal. Cheap at billboard resolution and done once,
-    # offline.
+    # left to reveal. Cheap at billboard resolution and done once, offline.
     px = img.load()
     for _ in range(_BLEED_PASSES):
         snap = img.copy()
@@ -283,15 +262,14 @@ def _consolidate_alpha(img, close=_CLOSE_RADIUS):
         if not changed:
             break
 
-    # 2. Close the alpha so the tree traces to ONE body (see the note on the tracer).
+    # 2. Close the alpha so the tree draws as ONE body (see _CLOSE_RADIUS).
     r, g, b, a = img.split()
     a = a.filter(ImageFilter.MaxFilter(close))   # dilate: join neighbouring islands
     a = a.filter(ImageFilter.MinFilter(close))   # erode: give back the added margin
     img = Image.merge("RGBA", (r, g, b, a))
 
-    # 3. Drop anything still detached from the trunk. Each surviving island would be
-    # traced as its OWN little quad, which is a speck hanging in the air next to the
-    # tree. Measured, a conifer here is >99% one component and the strays are 3-7 px,
+    # 3. Drop anything still detached from the trunk. Each surviving island would draw
+    # as its own speck hanging in the air next to the tree. Measured, a conifer here is >99% one component and the strays are 3-7 px,
     # so this removes visual noise and nothing else.
     return _largest_island_only(img)
 

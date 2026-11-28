@@ -1,329 +1,89 @@
 # Regions
 
-**Source:** `scripts/region_library.gd` (`RegionLibrary`), worn on the dev stage by
-`world.gd._apply_region_look`; the Hafren level reads `look_of("home")` for its driving effects
-(`level_view.gd` → `_add_effects`).
+**Source:** `scripts/region_library.gd` (`RegionLibrary`).
 
-**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_assets.gd`
+**Tests:** `tests/headless/test_region_library.gd`, `tests/headless/test_region_assets.gd`,
+`tests/headless/test_region_docs.gd` (every region id below must appear in this file).
 
-The island's biome rings that wore these regions were deleted in November 2026 (Phase 4 of
-`todo/2026-11-27-hafren-only-cleanup.md`), as were region unlock gating, region pages and region
-runs. The level has its own snow biome ([snow-region.md](snow-region.md)).
+A region is an authored **look** (sky, ground textures, tree species, particle colours) plus,
+for `snow`, a block of **handling** overrides. Regions came from the procedural island's biome
+rings, which were deleted in the Hafren-only cleanup of November 2026 (in git history). The
+Hafren level is one authored place, so today almost all of the table is unread: see
+"What the live game reads" below before building on any of it. The level's snow is its own
+biome map, not this table ([snow-region.md](snow-region.md)).
 
-**Adding a region:** an entry in `RegionLibrary.REGIONS`.
+The game ships five, each with an `order` (`RegionLibrary.ordered()` sorts by it): `home`
+("The Green", the original green forest), `greece` ("The Dunes", arid: its own sky, grass,
+gravel and a Mediterranean tree), `taiga` ("The Taiga", home's look with a much taller spruce),
+`home_coast` ("The Lakes", home's look under another name) and `snow` ("The Alps": snow
+ground, sky and conifers, plus handling; see [snow-region.md](snow-region.md)).
 
-**A region that is a variant of another inherits, it does not clone.** Author
-`look_from` plus only the keys that differ — see
-[`look_from` — one-level look inheritance](#look_from--one-level-look-inheritance)
-below; `taiga` and `home_coast` are the worked examples.
+## What the live game reads
 
-**Never invent an asset filename.** Every `res://` path a region authors (sky, grass,
-gravel, trees) must be a file that already exists in the repo — list `textures/` and
-pick from it; the `-greece`/`-snow` naming convention makes fabricated names look
-plausible, and a dangling path ships as an untextured world. Guarded by
-`test_region_assets.gd` → `test_every_authored_region_resource_path_resolves`.
+Exactly one call: `level_view.gd` → `LevelView._add_effects` resolves
+`RegionLibrary.look_of("home")` and hands that look to the car's driving effects:
 
-A **region is a LOOK plus a WATERLINE**, plus optional HANDLING. The game ships five (`RegionLibrary.ordered()` lists them in authored `order`): `home` ("The
-Green", the original green forest/plain world), `greece` ("The Dunes", arid), `taiga` ("The
-Taiga", home's look with one much taller tree), `home_coast` ("The Lakes", the same forest
-look with the sea raised MUCH higher than every other region, so the lakes read as unmistakably
-flooded) and `snow` ("The Alps" — see [snow-region.md](snow-region.md)).
+- `wheel_particles.gd` → `WheelParticles.apply_region_look` reads `grass_particle_color` and
+  `grass_particle_square` (the off-road debris colour and shape).
+- `dust_puffs.gd` → `DustPuffs.apply_region_look` reads `dust_color` (the gravel dust colour).
 
-**A region is not look-only.** `snow` also carries HANDLING: per-surface grip overrides, a
-deep-snow block and a frozen waterline. Those live OUTSIDE `LOOK_KEYS` (exactly as
-`water_level` does) because they are consumed as handling, not by the look pass.
-Each is a `has_*` / `*_of` pair (GDScript has no null, so "authors nothing" must never be
-confused with a real value), and none is inherited through `look_from`.
+`home` authors none of those three keys, so both fall back to their `GameConfig` defaults.
+After boot, `LevelView._timed_physics_process` calls `DustPuffs.apply_region_look` every
+physics tick with a synthetic `{"dust_color": ...}` look (`LevelView.snow_dust`, lightened by
+the snow under the car), not a region's.
+
+Snow handling on the level does not go through `RegionLibrary.surface_grip_of` /
+`deep_snow_of` either: `LevelView.set_snow` reads the same `snow_*` `GameConfig` fields that
+the `snow` region's `surface_grip` / `deep_snow` blocks name, directly, and blends them by
+`LevelStreamer.snow_at`.
+
+Hafren's sky, fog and ground come from the level scene and the bake, its trees from
+`LevelTrees` (species set per level in the editor, see [level-editor.md](level-editor.md)),
+and its weather from `LevelWeather` ([weather.md](weather.md)). None of those read a region.
 
 ## `RegionLibrary` (`scripts/region_library.gd`)
 
-An authored catalogue, parallel to `CarLibrary`: `const REGIONS:
-Array[Dictionary]`. **Array order carries no meaning** — each entry's `order` field is what
-`ordered()` sorts by. Each entry has an `id` + `name`, an optional `water_level`,
-optional look-override keys (a missing key inherits the scene/`GameConfig`
-baseline), and an optional `look_from` (see below). Ships today:
+An authored catalogue, `const REGIONS: Array[Dictionary]`, behind a `Registry.Seam` like
+`CarLibrary`, so tests install a synthetic set with `override_for_test(regions)` and `reset()`
+after. Never pin the shipped regions' values or asset paths in a test (see CLAUDE.md).
 
-- `home` — the original world: the green pine forest and open plain that cover
-  the centre and east of the map. Authors its **foliage split
-  explicitly** (`tree_mix` = 100% `res://textures/tree.png` at the home
-  profile, `spawn_bush_mesh` = `true`) so the split is config-driven
-  everywhere; every OTHER look field is left at the scene/`GameConfig`
-  baseline. Its `water_level` is the original baseline (`-12.0`).
+An entry has an `id`, `order`, `name`, optional look keys (a missing key means "keep the
+baseline"), an optional `look_from`, and optionally the handling blocks `surface_grip` and
+`deep_snow`.
 
-  Its one species carries `size_scale` `Vector2(1.25, 1.25)` — the forest 25%
-  bigger than the profile card, so **9.375 x 9.375 m**. Note this is the reason
-  home is no longer byte-identical to the pre-regions world, which it was for a
-  long time and which several older comments still claim. The scale lives on the
-  species rather than on `GameConfig.tree_size_m` because that profile is shared
-  with Greece's 30% of ordinary trees, both Alps conifers and the taiga spire,
-  all of which are tuned against its current value; raising the profile would
-  scale all four. See [trees.md](trees.md).
-- `greece` ("The Dunes", the arid look — the SW/S desert) — `sky_panorama`, `grass_texture`,
-  `gravel_texture` (all `res://textures/*`), plus a Greek tree **split**:
-  `tree_mix` = 70% `res://textures/tree-greece.webp` (the `region` sizing
-  profile) + 30% `res://textures/tree.png` (the `home` profile), and
-  `spawn_bush_mesh` = `false`. The mix reads as mostly the large low
-  Mediterranean canopy with a few ordinary trees mixed in, and the 3D
-  ground-cover bushes are dropped entirely (the arid map has no lush
-  undergrowth). Being the one region with no ground cover at all, it is also the
-  **stoniest**: it carries the catalogue's highest `rock_density`, and rocks are
-  what fill a verge that would otherwise read as bare ([rocks.md](rocks.md)).
-  It also overrides `tarmac_color` (a dark, warm asphalt), `road_marking_color` (yellow
-  lane paint instead of home's off-white) and `grass_particle_color` (a dry
-  olive/tan wheel-dust blade, since home's green particle would read as a
-  mismatch on this arid ground). Terrain tints are still **not** overridden —
-  Greece inherits the home tints. Its own `water_level` is `-12.0` (the same
-  baseline as home — an unrelated corner, not "home but drier").
-- `home_coast` ("The Lakes") — the same forest look with the water raised: it
-  authors `look_from: "home"` (so it inherits home's `tree_mix` /
-  `spawn_bush_mesh` / everything else in `LOOK_KEYS`) plus its own,
-  **much higher** `water_level` (`3.0`, against every other region's `-12.0`
-  baseline — clearly above ground level, not merely "a bit wetter"). It authors
-  no look keys of its own — the whole point of this corner is "home, but
-  flooded."
-- `snow` ("The Alps", the NE alpine massif) — `sky_panorama`, `grass_texture`
-  (snow), `gravel_texture` (packed snow), a lightened `tarmac_color` (a dusting
-  over asphalt, not a different material), a white `grass_particle_color` (the
-  home green would read as grass blades flung off a snowfield),
-  `spawn_bush_mesh` = `false` (nothing grows through snow) and a 60/40
-  `tree_mix` of two CC0 photographic conifers. It carries the catalogue's
-  **lowest** `rock_density` for the same reason the bushes are gone — deep snow
-  buries loose stone — but deliberately not `0.0`: the boulders too big to cover
-  still belong in the Alps ([rocks.md](rocks.md)). `road_marking_color` is
-  deliberately OMITTED rather than set to white — buried lane paint, not fresh
-  paint. It is also the ONLY region carrying handling blocks
-  (`surface_grip` / `deep_snow` / `frozen_water`); see
-  [snow-region.md](snow-region.md).
-- `taiga` ("The Taiga", the NW boreal corner) — the THINNEST entry in the
-  catalogue, and deliberately so. It authors `look_from: "home"`, its own
-  `water_level` (`-12.0`, the same baseline) and **one** look key: `tree_mix`.
-  Sky, gravel, tarmac, lane paint, terrain tints, grass and 3D ground cover are
-  all home's, untouched. The whole region is one swapped tree.
+- **`LOOK_KEYS`** is the whitelist `look_of` returns: `sky_panorama`, `grass_texture`,
+  `gravel_texture`, `tree_mix`, `bush_billboard`, `spawn_bush_mesh`, `background_color`,
+  `terrain_tint`, `grass_particle_color`, `grass_particle_square`, `dust_color`.
+- **`look_from`** is the authoring idiom for "region X, but different": author
+  `"look_from": "<other id>"` plus only the keys that differ (`taiga`, `home_coast`). `look_of`
+  resolves the parent's keys, then overlays the region's own. Exactly one level deep, so
+  chains and cycles cannot happen. `look_from` is not a look key and never appears in the
+  result.
+- **`surface_grip` / `deep_snow`** name `GameConfig` fields rather than numbers, and are kept
+  out of `LOOK_KEYS` so handling never leaks into a look dict. They are not inherited through
+  `look_from`.
+- **Never invent an asset filename.** Every `res://` path a region authors must exist; a
+  dangling one loads as null. Guarded by `test_region_assets.gd` →
+  `test_every_authored_region_resource_path_resolves`.
+- **`"home"` is load-bearing**: `LevelView._add_effects` asks for it by id. Do not rename it.
 
-  That tree is `textures/tree-taiga.webp` at 100%, on the `home` sizing profile,
-  with `size_scale` `Vector2(0.90, 3.0)` — **6.75 x 22.5 m**, against the home
-  broadleaf's 7.5 x 7.5 and the Alps' ~12.9 m conifers. The x is not a free
-  choice: the cutout's natural w/h is 0.30, and the profile card is square, so
-  `x = 0.30 * y` is what draws it at its own proportions instead of stretched
-  (the same rule the snow species document). The y is the design — at three
-  times the height of the forest either side of it, the silhouette alone
-  carries the region, which is what lets every other look key stay inherited.
+### Helper API (all static)
 
-  `spawn_bush_mesh` is inherited (`true`) rather than dropped, unlike Greece and
-  the Alps: a bare-trunked spire leaves a lot of open ground, and real taiga has
-  a low shrub mat under the canopy.
+- `all()` / `by_id(id)` / `index_of(id)` / `ordered()`: lookups.
+- `look_of(region_id)`: only the `LOOK_KEYS` the region (and its `look_from` parent) authors,
+  not a dict merged against the baseline. Callers check each key and keep their own default
+  when it is absent.
+- `tree_mix(look)`: the look's `tree_mix`, or `DEFAULT_TREE_MIX` (one home `tree.png`) when
+  it has none. Each species is `{texture, profile, weight}` plus an optional `size_scale`.
+- `spawns_bush_mesh(look)`: the `spawn_bush_mesh` flag, default `true`.
+- `surface_grip_of(cfg, id)` / `deep_snow_of(cfg, id)`: the handling blocks resolved to
+  `GameConfig` values; `{}` when a region authors none. A block naming a missing field is
+  skipped with a warning, never defaulted to 0.
 
-  See [trees.md](trees.md) for the billboard and `tools/gen_taiga_tree.py` for
-  how the cutout is made (same CC0 pack as the Alps, already cached in-repo).
+## Adding a region
 
-Note on ids: `home` and `greece` were **not renamed** when the map went from
-two swapped regions to four map corners, because `"home"` in particular is a
-load-bearing literal hardcoded in `world.gd._current_region_look()` as the
-default/challenge/fallback region id. Never rename it without also fixing that
-call site (and auditing for other hardcoded `"home"` checks).
+1. Add a row to `RegionLibrary.REGIONS` (list `textures/` and use real files).
+2. Mention its id in backticks in the list near the top of this file and update the count;
+   `test_region_docs.gd` fails otherwise.
 
-`LOOK_KEYS` is the whitelist of override fields a region may carry:
-`sky_panorama`, `grass_texture`, `gravel_texture`, `tree_mix`,
-`bush_billboard`, `spawn_bush_mesh`, `background_color`, `terrain_tint`,
-`terrain_layers`, `tarmac_color`, `road_marking_color`,
-`grass_particle_color`, `grass_particle_square`, `rock_density`, `dust_color`
-(the [dust puff](dust-puffs.md) colour on gravel, the average of the region's `gravel_texture`; Greece and the Alps author it).
-`bush_billboard`/`terrain_tint`/`terrain_layers` are
-reserved slots — schema support exists, nothing authors them yet.
-
-`rock_density` is the odd one out: every other key changes what a region LOOKS like,
-while this one changes how MUCH of something it has. It multiplies
-`GameConfig.rock_groups_per_turn` and defaults to `1.0`, so a region that authors nothing
-still gets rocks. Greece is stoniest, the Alps sparsest, everything else the middle;
-rock models, colours and hitboxes are shared across all regions, so density is the only
-thing that varies. See [rocks.md](rocks.md).
-
-**Where the look is applied depends on the world.** On the dev stage there is exactly one
-region, so `world.gd::_apply_region_look` pushes it wholesale (see "Theming the dev stage"
-below).
-
-Three further keys a region may carry — `surface_grip`, `deep_snow` and `frozen_water` —
-are deliberately NOT in this whitelist, for the same pipeline-ordering reason as
-`water_level`; see the handling note at the top and [snow-region.md](snow-region.md).
-
-Two fields a region can author are **deliberately excluded** from `LOOK_KEYS`,
-for two different reasons:
-
-- **`map_image`** — there is now one world map (`textures/map_world.jpg`,
-  `RegionLibrary.DEFAULT_MAP_IMAGE`) shared by every region, so a region no
-  longer owns a map texture of its own. (Before the four-corner map, `greece`
-  authored its own `map_image` and the HQ table swapped textures per viewed
-  region — that machinery is gone; see "One world map, no table swap" below.)
-- **`water_level`** — authored per region as plain data, not a `LOOK_KEYS` entry and not
-  inherited through `look_from` (`home_coast` is "same look, own waterline"). Nothing in
-  production reads it today: the waterline the world uses is `cfg.track_water_level_m`.
-
-### `look_from` — one-level look inheritance
-
-This is the **authoring idiom for "region X, but different"** — reach for it
-before copying a look block. A region may author
-`"look_from": "<other_region_id>"` to inherit that
-region's `LOOK_KEYS` block wholesale, instead of repeating it. `look_of`
-resolves the parent's whitelisted keys first, then overlays the region's own
-on top — so the region's own keys win over anything it also inherited.
-Resolution is **exactly one level**: a parent's own `look_from` (if it had
-one) is not followed, so chains and cycles are structurally impossible.
-
-`home_coast` inherits `home`'s block wholesale and adds only its own, much
-higher `water_level` (handled outside `look_of`, per above). `taiga` is the
-other pattern: `look_from: "home"` plus a single overridden `tree_mix`, i.e.
-"home with taller trees" in two authored keys
-instead of a duplicated block.
-
-`look_from` is itself deliberately **NOT** a `LOOK_KEYS` entry — if it were,
-it would leak into the dict `world.gd` consumes as a real override field
-(there being no `look_from` handling on the world-gd side, it would just sit
-there inert at best, or collide with a real key at worst). It is read
-directly off the region dict, never through the whitelist — an exclusion from
-`LOOK_KEYS` is a note about the resolution order, not a hint that authors
-should avoid the field.
-
-`tree_mix` and `spawn_bush_mesh` need no special handling in this scheme —
-both take the *already-resolved* look dict as their argument (see below), so
-whether a value came from the region itself or was inherited via `look_from`
-is transparent to them by the time they're called.
-
-### Tree species split (`tree_mix`)
-
-`tree_mix` is a weighted list of billboard tree **species** — each entry is
-`{"texture": <res path>, "profile": "home" | "region", "weight": <float>}`.
-`world.gd` splits the scattered tree positions across the species by weight
-(`TreeScatter.partition_by_weight`) and spawns **one `BillboardField` per
-species**, so a stage can be a mix (Greece: 70/30). The `profile` selects the
-`GameConfig` sizing/jitter block that species renders at — `"home"` →
-`tree_size_m` et al., `"region"` → `region_tree_billboard_size_m` et al. — so
-the mixed-in home tree.png keeps its smaller home size while Greece's own tree
-uses the tall canopy size. **All balance values stay in `GameConfig`**; the
-region only authors WHICH texture, WHICH profile, and the WEIGHT. Helpers:
-`RegionLibrary.tree_mix(look)` returns the authored mix or
-`DEFAULT_TREE_MIX` (single home tree at 100%) when a region authors none (free
-roam / unknown id); `RegionLibrary.spawns_bush_mesh(look)` returns the
-`spawn_bush_mesh` flag, defaulting `true`. The partition is deterministic per
-`track_seed` (hashed off each point's grid cell), so felling-restore keeps a
-tree its species.
-
-Like `CarLibrary`, `RegionLibrary` sits behind a `Registry.Seam`
-(`static var _seam := Registry.Seam.new(REGIONS)`) so tests can
-`override_for_test(regions)` a synthetic catalogue and `reset()` after —
-**never** pin the shipped `REGIONS` values or Greek asset paths in a test (see
-CLAUDE.md's catalogue-testing rule).
-
-### Helper API (all static, catalogue-driven)
-
-- `all()` / `by_id(id)` / `index_of(id)` / `count()` / `ordered()` — lookups.
-- `look_of(region_id)` — returns **only the keys the region (and, via
-  `look_from`, its parent) actually overrides** (filtered through
-  `LOOK_KEYS`), not a fully-merged dict against the `GameConfig`/scene
-  baseline. `home` returns just its foliage keys (`tree_mix` +
-  `spawn_bush_mesh`), which resolve to the unchanged home look; every
-  non-foliage field is still absent, so sky/ground stay at the scene
-  baseline. Callers (`world.gd`) check `.has(key)` per field and only touch
-  what's present, leaving everything else at its existing scene/`GameConfig`
-  value.
-
-**Deviation from the original design doc:** the spec described a
-`resolve_look(region_id)` that *merges* each field with an explicit
-`GameConfig` baseline. The shipped code is `look_of`, which returns
-override-only keys — because the grass/gravel/sky **baselines live in
-the scene** (the floor's `chunk_material` shader params, the
-`WorldEnvironment`'s sky), not in `GameConfig` fields. Merging against a
-`GameConfig` baseline that doesn't hold those values wasn't possible; instead
-`world.gd` applies overrides selectively, so home's un-overridden scene values
-are the baseline by construction.
-
-**One field has since moved to the merged model:** `sky_panorama` now HAS a
-`GameConfig` baseline (`default_sky_panorama`) and is applied unconditionally,
-because leaving the sky at "whatever the shared scene material currently holds"
-leaked the previous stage's sky — see "The sky no longer leaks between stages"
-below. Grass and gravel still follow the override-only rule.
-
-## Theming the dev stage (`world.gd._apply_region_look`)
-
-Called from `_ready` immediately after `env.fog_sky_affect = cfg.fog_sky_affect`
-(so it runs after the base environment is built, before the level otherwise
-settles):
-
-1. Resolve the driven stage's region. The dev stage always wears `"home"` (cached per world in
-   `_region_look_cache`).
-2. `var look := RegionLibrary.look_of(region_id)`; if empty (home, or an
-   unrecognised id), return — no-op, leaving `main.tscn`'s baseline untouched.
-3. Apply only the keys present:
-   - `grass_texture` → `$Floor.chunk_material.set_shader_parameter("albedo_texture", ...)`.
-   - `gravel_texture` → the same material's `"road_texture"` parameter.
-   - `sky_panorama` → `$WorldEnvironment.environment.sky.sky_material.panorama`
-     (cast to `PanoramaSkyMaterial`). **This one is the exception to "apply only
-     the keys present": it is assigned unconditionally, falling back to
-     `GameConfig.default_sky_panorama` when the region names none** — see below.
-   - `background_color` → `env.background_color` **and** `env.fog_light_color`.
-   - `terrain_tint` / `terrain_layers` — reserved; no region ships them yet, so
-     there's no application code for them beyond a comment marking the hook.
-   - `tarmac_color` is applied **not** here but a few lines later in `_ready`,
-     where the floor's flat tarmac fill is set from `GameConfig` — that call now
-     reads `_current_region_look().get("tarmac_color", cfg.tarmac_color)`, so a
-     region override wins and home falls back to the config value. (It
-     lives there rather than in `_apply_region_look` because that shader param is
-     already driven from `cfg` at that point; folding it into the region look
-     would just be clobbered by the later `cfg` write.)
-4. Foliage is region-aware in `world.gd`'s stage-generation (NOT
-   `_apply_region_look`, which only touches materials/sky/fog): it reads the
-   same `_current_region_look()` before scattering.
-   - `tree_mix` → `world.gd` splits the scattered points by weight
-     (`TreeScatter.partition_by_weight`) and calls `Foliage.spawn_trees(...)`
-     once per species, passing that species' `texture` and a
-     `use_region_profile` flag (from its `profile`). Trees are always opaque
-     billboards; an unauthored region falls back to the default single
-     `textures/tree.png` home tree. See the `tree_mix` section above +
-     [trees.md](trees.md).
-   - `spawn_bush_mesh` → when false, `world.gd` skips the entire bush pass
-     (no `Foliage.spawn_bushes`, no `BushField` interaction node); defaults true.
-   - `bush_billboard` is still a reserved slot — nothing authors it yet.
-
-### The sky no longer leaks between stages
-
-`sky_panorama` used to be applied like every other key — `if look.has(...)` — and
-that was a **bug**. The `PanoramaSkyMaterial` hanging off `main.tscn`'s
-`WorldEnvironment` is a **shared sub-resource with no `resource_local_to_scene`**, so
-it is the same object for every instantiation of the scene in the process; and
-`home` / `home_coast` author no `sky_panorama` at all. Drive a Greece or snow stage,
-then a home stage, and the home stage skipped the assign — leaving Greece's or the
-Alps' sky overhead, permanently, for the rest of the session.
-
-The fix, in `world.gd._apply_region_look`, is to assign **always**:
-`look.get("sky_panorama", Config.data.default_sky_panorama)`, loaded onto the
-material (an empty path is still skipped). Every stage boot therefore seeds a clean
-sky exactly once, which is the same idempotence `albedo_color` and `tarmac_color`
-already get — and the same class of bug as the compounding road tint documented in
-[weather.md](weather.md) → "Look", with the same shape of fix: **re-seed a clean
-baseline every stage boot rather than conditionally overriding a shared resource.**
-Any future look key that writes to a shared `main.tscn` sub-resource needs the same
-treatment.
-
-`GameConfig.default_sky_panorama` holds that baseline (the open-field sky
-`main.tscn` was authored with), so home's "un-overridden scene value" is now an
-explicit config value rather than whatever the material happened to be carrying. The
-weather look runs **after** this and may override the sky again — night does, and
-only night — so the ordering is: default → region → condition, re-derived from
-scratch on every stage. See [weather.md](weather.md) → "Look" and
-[rendering.md](rendering.md) → "Skybox". Guarded by
-`tests/headless/test_headlight_cone.gd` →
-`test_there_is_a_default_sky_for_regions_that_name_none`.
-5. Road paint is region-aware in `world.gd._build_persistent_managers` (also NOT
-   `_apply_region_look`, since the paint mesh is built at track generation, not
-   with the materials): before calling `_road_markings.build`, it takes
-   `cfg.road_marking_params()` and, if `_current_region_look()` carries a
-   `road_marking_color`, replaces the params' `"color"` with it — so Greece paints
-   yellow lane lines while home keeps the config off-white.
-
-This is the single place the region look reaches the dev stage.
-
-## Tests
-
-`tests/headless/test_region_library.gd` — `look_of`'s override-vs-omit and `look_from`
-inheritance against a **synthetic** region set installed via `RegionLibrary.override_for_test`,
-and the `tree_mix` / `spawns_bush_mesh` defaults.
-`tests/headless/test_region_assets.gd` — every authored `res://` path resolves.
+Nothing on Hafren will show it until something live reads it.

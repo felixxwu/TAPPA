@@ -181,7 +181,7 @@ worst. Both live in `scripts/game_config.gd` and are free to be retuned.
 
 **Why black rather than an authored grey.** Every material in this renderer is
 `unshaded`, so nothing dims because the world got darker — the bug class
-[weather.md](weather.md) → *Unshaded means nothing dims for free* documents. A constant
+[weather.md](weather.md) → *On the level* documents. A constant
 grey rut was exactly that bug: it stayed as bright at night, in fog and on snow as it
 did on a sunlit gravel road, and so it read as a stripe of **paint sitting on top of
 the world** rather than a scuff *in* it. Black at partial opacity instead **darkens

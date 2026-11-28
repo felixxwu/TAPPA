@@ -366,8 +366,7 @@ Route any new fake-lit material through it. The existing users:
 `apply_car_light` (`ps1_models_lit.gdshader` — cars, cargo, dust puffs) and the engine
 smoke colour. On the Hafren level nothing
 sets `weather_sun_mult`, so it stays 1: the level dims everything through `world_light`
-instead (end of this file). Full write-up in [weather.md](weather.md) → "Unshaded means nothing
-dims for free".
+instead (end of this file). Full write-up in [weather.md](weather.md) → "On the level".
 
 **Every new fake-lit material must route through here — a hardcoded literal is
 a bug, not a style choice.** The (since deleted) barrier modules once shipped with a copy-pasted block
@@ -494,7 +493,7 @@ also adds `+ flash_lit(<same pos>)`. It is scaled by `1 - world_light`, so it sh
 
 A dark weather condition re-lights a wedge in front of the player's car. (The
 design spec `todo/night-weather-and-headlights.md` is gone; the weather-table
-half is in [weather.md](weather.md) → "Night".)
+half is in [weather.md](weather.md) → "Headlights".)
 
 **Which conditions have it is authored, not hardcoded.** The cone is armed by the
 weather table's optional `headlights` key, naming the GameConfig field that holds
@@ -629,7 +628,7 @@ condition that authors no cone.
 the maths is right, but whether `global_shader_parameter_set` actually reaches
 shaders under this project's `gl_compatibility` renderer has not been observed in
 a running frame. The level's weather pool can draw night (see
-[weather.md](weather.md) → "Night"), so this is checkable simply by driving one;
+[weather.md](weather.md) → "Headlights"), so this is checkable simply by driving one;
 do that before trusting any of it. Known open risks, all from the design doc: the
 PS1 post-process grade
 and 5-bit quantise were never tuned for a near-black frame (banding), fog is environment-side
