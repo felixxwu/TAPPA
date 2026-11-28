@@ -8,7 +8,7 @@
 ## The world block (`Save.KEY_WORLD`)
 
 `WorldSession` owns the block's shape and is its only writer. Since the island was deleted
-(Phase 4 of `todo/2026-11-27-hafren-only-cleanup.md`) it holds only:
+(the November 2026 Hafren-only cleanup) it holds only:
 
 | Key | What |
 |---|---|

@@ -21,7 +21,7 @@ stays the record of how each step was done. The `CLAUDE.md` rule to ask before r
 spec items still applies.
 
 **Prerequisite**
-- [ ] The Hafren-only cleanup (`todo/2026-11-27-hafren-only-cleanup.md`) is finished
+- [x] The Hafren-only cleanup is finished (2026-11-28; spec deleted, see git history)
 
 **Phase 0 — Godot feature set**
 - [ ] 0.1 Web build on Cloudflare Pages
@@ -133,7 +133,7 @@ GDScript's. It used C as a stand-in for Rust, since Rust isn't installed (same L
 
 ## Prerequisite: the Hafren-only cleanup
 
-`todo/2026-11-27-hafren-only-cleanup.md` runs first, in Godot. It deletes the legacy procedural
+The Hafren-only cleanup (done 2026-11-28; spec in git history) ran first, in Godot. It deletes the legacy procedural
 island, the `main.tscn` dev stage, the island benchmark, the first-run intro and outlines, makes
 `LevelStreamer` stand on its own, and moves the car-physics tests onto a flat-ground fixture. After it,
 everything left in the repo is the game being ported, so this plan has no "not ported" list.
@@ -1131,7 +1131,7 @@ Pixels and performance can't be shared, because the two renderers will never mat
 
 ## Dependencies
 
-- Phase 0 needs the Hafren-only cleanup (`todo/2026-11-27-hafren-only-cleanup.md`) to be done. Phase 1
+- Phase 0 needs the Hafren-only cleanup (done 2026-11-28) to be done. Phase 1
   needs Phase 0, so the goldens are recorded once, with the final feature
   set. Phase 2 needs only the cleanup and can run alongside Phases 0 and 1.
 - Phase 1.8 (the device numbers) needs only Phase 0.6, the iOS build, not the rest of Phase 0.

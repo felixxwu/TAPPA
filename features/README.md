@@ -10,7 +10,7 @@ oriented before diving into source.
 (`Scenes.WORLD` = `level_view.tscn`, see [level-editor.md](level-editor.md)) — the default mode.
 
 Earlier versions (a rally career, a run-based roguelike, a procedural free-roam island with a
-generated-stage harness) were deleted in November 2026 (`todo/2026-11-27-hafren-only-cleanup.md`);
+generated-stage harness) were deleted in November 2026 (the Hafren-only cleanup; its spec is in git history);
 git history has them. The island's parts shop survives as the level's part pages ([loot.md](loot.md)).
 
 ## How to use this folder

@@ -8,7 +8,7 @@ pages the level opens), and the level's shops and money in `scripts/level_view.g
 **Tests:** `tests/headless/test_loot.gd`, `tests/headless/test_level_shop_specialties.gd`, `tests/headless/test_level_view.gd`
 
 The island's coins, rings, found cars, stunt money and rest stops were deleted with the island
-(Phase 4 of `todo/2026-11-27-hafren-only-cleanup.md`). The level keeps its own money
+(the November 2026 Hafren-only cleanup). The level keeps its own money
 (`LevelView.MONEY_KEY`) and sells parts at its shops.
 
 ## Items
