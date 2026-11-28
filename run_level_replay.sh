@@ -69,11 +69,16 @@ def walk(a, b, path):
         if r: return r
     return None
 with open(sys.argv[1]) as fa, open(sys.argv[2]) as fb:
-    for n, (la, lb) in enumerate(zip(fa, fb), 1):
+    A, B = fa.readlines(), fb.readlines()
+    for n, (la, lb) in enumerate(zip(A, B), 1):
         if la != lb:
             ja, jb = json.loads(la), json.loads(lb)
             path, va, vb = walk(ja, jb, "") or ("", la, lb)
             print(f"first difference on line {n} (tick {ja.get('tick', 'header')}), at {path or 'the whole row'}:\n  A: {va}\n  B: {vb}")
+            for name, lines in (("A", A), ("B", B)):
+                print(f"{name} lines {max(n - 2, 2)}-{n + 2}:")
+                for l in lines[max(n - 3, 1):n + 2]:
+                    print("  " + l.rstrip()[:400])
             break
     else:
         print("one file is a prefix of the other")
