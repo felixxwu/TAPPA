@@ -42,7 +42,15 @@ func _init(label_text: String, placeholder := "") -> void:
 	line.virtual_keyboard_enabled = true
 	line.caret_blink = true
 	line.text_submitted.connect(func(_t: String) -> void: submitted.emit())
+	line.gui_input.connect(_on_line_input)
 	add_child(line)
+
+
+# Godot only starts editing a keyboard-focused field on Enter, so a gamepad's A would never open it for typing.
+func _on_line_input(event: InputEvent) -> void:
+	if not line.is_editing() and line.editable and event.is_action_pressed("ui_accept"):
+		line.edit()
+		line.accept_event()
 
 
 func text() -> String:

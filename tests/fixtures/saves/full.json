@@ -1,0 +1,61 @@
+{
+	"schema_version": 8,
+	"created_utc": "2026-11-01T09:30:00",
+	"updated_utc": "2026-11-27T18:04:12",
+	"next_instance_id": 3,
+	"cars": [
+		{
+			"instance_id": 1,
+			"model_id": "fx_light_rwd",
+			"tuning": {"brake_bias": 0.62, "final_drive": 4.1, "spring_front": 38.5},
+			"parts": [
+				{"id": "fx_turbo", "slot": "turbo", "price": 1200, "on": true},
+				{"id": "fx_tires", "slot": "tires", "price": 300, "on": false}
+			]
+		},
+		{
+			"instance_id": 2,
+			"model_id": "fx_awd",
+			"tuning": {"diff_lock": 0.35},
+			"parts": [
+				{"id": "fx_kit", "slot": "kit", "price": 450, "on": true}
+			]
+		}
+	],
+	"world": {
+		"seed": 918273,
+		"car": 2,
+		"car_state": {"hp": 412.5, "toe": [0.01, -0.02, 0.0, 0.0]}
+	},
+	"settings": {
+		"camera_mode": 1,
+		"mobile_control_scheme": 2,
+		"fps_cap": 60,
+		"speed_lines": false,
+		"music_volume": 0.4,
+		"master_volume": 0.85,
+		"input_bindings": {
+			"accelerate": {
+				"keyboard": {"type": "key", "keycode": 87},
+				"controller": {"type": "motion", "axis": 5, "axis_value": 1.0}
+			},
+			"handbrake": {
+				"controller": {"type": "button", "button_index": 0}
+			}
+		},
+		"level_car": {
+			"model_id": "fx_awd",
+			"tuning": {"diff_lock": 0.35},
+			"parts": [{"id": "fx_kit", "slot": "kit", "price": 450, "on": true}]
+		},
+		"level_cars": ["fx_light_rwd", "fx_awd"],
+		"level_money": 2750,
+		"level_deliveries_done": ["depot>farm", "farm>quarry"],
+		"level_parts": {"fx_light_rwd": ["fx_turbo", "fx_tires"], "fx_awd": ["fx_kit"]},
+		"level_pose": {"level": "res://levels/fixture.level", "x": 120.25, "z": -64.5, "yaw": 1.5707},
+		"level_map_seen": {"level": "res://levels/fixture.level", "size": 2048.0, "cell": 16.0, "grid": "eJxjYGBgAAAABAAB"}
+	},
+	"cloud_revision": 7,
+	"cloud_uid": "fixture-uid-0001",
+	"unsynced": true
+}

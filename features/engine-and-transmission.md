@@ -262,3 +262,7 @@ coasting engine braking and the rev limiter's pull-down (see "Coasting vs. fuel
 cut vs. mid-shift" above) — retuning them moves limiter bounce as well as
 off-throttle feel. Engine catalog: `scripts/engine_library.gd`
 (`EngineLibrary`).
+
+**Snapshot:** `EngineSim.snapshot()` returns every per-tick engine variable plus the misfire RNG's
+`rng_state`. `test_car_snapshot.gd` fails if a variable that changes while stepping is missing from it
+(or from its `NOT_STATE` list of config-derived caches).

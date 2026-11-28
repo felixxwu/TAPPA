@@ -296,6 +296,12 @@ func _talk(portrait: String, pages: Array) -> void:
 
 # Esc / Start with a shop or point menu up opens the pause menu in its place: one menu at a time.
 func _input(event: InputEvent) -> void:
+	# The map's All Delivery Jobs page sits over the map, not the game: Esc / Start steps back to the map.
+	if not _from_service and deliveries_page != null and deliveries_page.visible and event.is_action_pressed("pause") \
+			and not event.is_echo() and ConfirmPopup.any_open(get_tree()) == null:
+		get_viewport().set_input_as_handled()
+		_close_deliveries()
+		return
 	if _pause == null or not _from_service or _pause.is_open() or wreck_page != null or not event.is_action_pressed("pause") or event.is_echo():
 		return
 	if ConfirmPopup.any_open(get_tree()) != null or not find_children("*", "NpcDialogue", false, false).is_empty():

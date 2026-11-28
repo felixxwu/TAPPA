@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://benchmark/menu_flow.gd" id="1_flow"]
+
+[node name="MenuFlow" type="Node"]
+script = ExtResource("1_flow")

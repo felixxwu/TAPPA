@@ -415,3 +415,6 @@ A region may override `grass_grip` / `gravel_grip` /
   `tarmac_grip`. `LevelView.set_snow` seats the
   values, so `surface_tire_params` needs no change at all — it reads the same live config
   fields it always did.
+
+**Snapshot:** `Drivetrain.snapshot()` returns the axle/wheel spins, spin angles and ABS latches keyed by
+wheel name, the weather-μ memo and `engine.snapshot()`; part of `car.gd` → `snapshot()` (see car-physics.md).

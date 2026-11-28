@@ -232,8 +232,9 @@ func test_input_blocked_follows_text_editing() -> void:
 	add_child_autofree(page)
 	assert_false(MenuNav.input_blocked(page), "not blocked while nothing is focused")
 	line.grab_focus()
+	line.edit()
 	await get_tree().process_frame
-	assert_true(MenuNav.is_text_editing(), "setup: the field has the cursor")
+	assert_true(MenuNav.is_text_editing(), "setup: the field is being typed into")
 	assert_true(MenuNav.input_blocked(page), "blocked while the player is typing")
 	line.release_focus()
 	await get_tree().process_frame
@@ -384,3 +385,34 @@ func test_a_menunav_menu_does_not_also_grab_focus_in_open() -> void:
 		+ "UITheme.focus_grab from open() and pass what you want through "
 		+ "MenuNav.attach(root, {first = ...}); see features/menus.md "
 		+ "-> \"Menu navigation\" -> \"One owner for opening focus\"")
+
+
+func test_an_empty_card_list_hands_the_opening_cursor_to_back() -> void:
+	var page := VBoxContainer.new()
+	add_child_autofree(page)
+	var cards := CardCarousel.new()
+	page.add_child(cards)
+	var back := Button.new()
+	page.add_child(back)
+	MenuNav.attach(page, {first = cards})
+	await get_tree().process_frame
+	assert_eq(page.get_viewport().gui_get_focus_owner(), back, "a list with no cards can't hold the cursor")
+
+
+func test_back_on_a_text_field_stops_typing_first_then_leaves() -> void:
+	var page := VBoxContainer.new()
+	add_child_autofree(page)
+	var field := TextField.new("Email")
+	page.add_child(field)
+	var hits := [0]
+	var nav := MenuNav.attach(page, {on_back = func() -> void: hits[0] += 1})
+	await get_tree().process_frame
+	field.line.grab_focus()
+	field.line.edit()
+	nav._unhandled_input(_press("menu_back"))
+	assert_false(field.line.is_editing(), "Back while typing stops typing")
+	assert_eq(page.get_viewport().gui_get_focus_owner(), field.line, "and leaves the cursor on the field")
+	assert_eq(hits[0], 0, "without leaving the page")
+	nav._unhandled_input(_press("menu_back"))
+	assert_eq(hits[0], 1, "a second Back, with the cursor merely resting on the field, leaves the page")
+	field.line.release_focus()

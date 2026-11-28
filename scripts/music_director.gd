@@ -258,6 +258,12 @@ func _try_resume(now: float) -> void:
 		_launch(want, 0, 0.0)
 
 
+# What the music is doing, for the replay's per-tick audio rows (GameTrace); reads only.
+func trace_state() -> Dictionary:
+	return {"song": current_song, "requested": requested_song, "segment": current_segment,
+		"next_handoff": next_handoff, "now": _audio_now(), "suspended": _suspended}
+
+
 # The scene_file_path of the running scene ("" if none yet). Reading the live
 # scene is the state the music context keys off.
 func _current_scene_path() -> String:

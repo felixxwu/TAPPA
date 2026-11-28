@@ -1,0 +1,9 @@
+[
+	{"tick": 30, "do": "money", "args": {"amount": 100000}},
+	{"tick": 60, "do": "start_delivery", "args": {"teleport": 9, "delivery": 0}},
+	{"tick": 120, "do": "buy_part", "args": {"shop": 0, "item": 3}},
+	{"tick": 180, "do": "buy_car", "args": {"shop": 0, "item": 1}},
+	{"tick": 240, "do": "set_rally", "args": {"name": "Pen Rhiw Stages"}},
+	{"tick": 300, "do": "wreck", "args": {"hp": 50}},
+	{"tick": 840, "do": "wreck", "args": {"hp": 100000}}
+]

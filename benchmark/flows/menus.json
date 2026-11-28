@@ -1,0 +1,269 @@
+{
+ "devices": [
+  "key",
+  "pad"
+ ],
+ "steps": [
+  {
+   "press": "toggle_map"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "pause"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "press": "ui_up"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "type": "player@example.com"
+  },
+  {
+   "press": "ui_cancel",
+   "only": "key"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_down"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "paste": "123456"
+  },
+  {
+   "press": "ui_cancel",
+   "only": "key"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "call": "place_car_on",
+   "args": [
+    {
+     "teleport": 0
+    }
+   ],
+   "wait": 240
+  },
+  {
+   "call": "open_service"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_cancel",
+   "only": "key"
+  },
+  {
+   "call": "open_store",
+   "args": [
+    0
+   ]
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_cancel",
+   "only": "key"
+  },
+  {
+   "call": "_on_gave_up",
+   "wait": 300
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_accept"
+  },
+  {
+   "wait": 240
+  },
+  {
+   "press": "toggle_map"
+  },
+  {
+   "key": "Tab"
+  },
+  {
+   "press": "ui_right"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_cancel"
+  },
+  {
+   "press": "ui_cancel",
+   "only": "key"
+  }
+ ]
+}

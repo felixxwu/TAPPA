@@ -33,16 +33,16 @@ spec items still applies.
 - [ ] **Exit:** live on the App Store and Cloudflare Pages; sign-in and deletion work everywhere
 
 **Phase 1 — Yardsticks**
-- [ ] 1.1 Deterministic replays (in progress: whole drive matches on Mac and CI since 2026-11-28; break test passed 2026-11-28 (a wall-clock read in the weather clock was caught at tick 1, threaded crowd placement at tick 31); left: recording the audit in the parity checklist (1.10); see `todo/2026-11-28-phase-1-1-determinism-plan.md`)
-- [ ] 1.2 Car step golden
-- [ ] 1.3 Car drift report
-- [ ] 1.4 Game-state trace
-- [ ] 1.5 Menu-flow, layout and touch replays
-- [ ] 1.6 Scene counts
-- [ ] 1.7 Save round-trip
-- [ ] 1.8 Device targets
-- [ ] 1.9 Re-bless rule for Godot changes during Phases 1–3
-- [ ] 1.10 Parity checklist written
+- [x] 1.1 Deterministic replays (2026-11-28) (whole drive matches on Mac and CI; break test caught a wall-clock read in the weather clock at tick 1 and threaded crowd placement at tick 31; audit recorded in `todo/2026-11-28-parity-checklist.md`; see `todo/2026-11-28-phase-1-1-determinism-plan.md`)
+- [ ] 1.2 Car step golden (in progress: snapshot, input recording, free replay and `--car-golden` built 2026-11-28, two runs match and a 1% air-density change is caught; left: the hand-recorded drive `benchmark/runs/hafren_free.rec` (needs the user; a scripted stand-in runs until then) and blessing on CI)
+- [ ] 1.3 Car drift report (in progress: `tools/drift_report.py` built 2026-11-28; left: the user reviews its tolerances against the hand drive)
+- [ ] 1.4 Game-state trace (in progress: event log + scripted actions built 2026-11-28, two full runs match; left: blessing on CI)
+- [ ] 1.5 Menu-flow, layout and touch replays (in progress: key/pad menu flow and touch/tilt flow built 2026-11-28; the flow found and we fixed 4 menu nav bugs; left: blessing on CI)
+- [ ] 1.6 Scene counts (in progress: built 2026-11-28, two runs match; left: blessing on CI)
+- [x] 1.7 Save round-trip (2026-11-28)
+- [ ] 1.8 Device targets (in progress: `tools/device_targets.py` built 2026-11-28; left: real device runs, needs the user)
+- [ ] 1.9 Re-bless rule for Godot changes during Phases 1–3 (in progress: `bless.sh`, CI bless input and `bless-guard` job built 2026-11-28; left: the CLAUDE.md rule, waiting on the user)
+- [x] 1.10 Parity checklist written (2026-11-28)
 - [ ] **Exit:** every golden in CI and blessed; numbers recorded for every device class
 
 **Phase 2 — Neutral data format**

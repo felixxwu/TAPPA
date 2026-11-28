@@ -2,7 +2,8 @@
 
 **Source:** `scripts/save_manager.gd` (`Save` autoload).
 
-**Tests:** `tests/headless/test_save_manager.gd`, `tests/headless/test_save_web_lifecycle.gd`
+**Tests:** `tests/headless/test_save_manager.gd`, `tests/headless/test_save_web_lifecycle.gd`,
+`tests/headless/test_save_round_trip.gd`
 
 The **`Save` autoload** (registered in `project.godot [autoload]` alongside `Config`) is the
 single source of truth for everything the player's progress mutates: owned cars (each with
@@ -129,3 +130,19 @@ the shared `flush_and_sync()` entry point writes immediately (bypassing the debo
 round-trips, the desktop close notification reaches that same entry point, a disabled store
 stays in-memory, and `install_web_lifecycle()` is inert off web. Both
 run against a throwaway `user://test_profile.json`.
+
+`tests/headless/test_save_round_trip.gd` — the save round-trip (migration plan step 1.7). Fixture
+profiles in `tests/fixtures/saves/` are loaded through `load_or_new()`, written back with
+`save_now()`, and compared as parsed values (`normalise`: every number a float, `updated_utc`
+dropped; not a text compare), so a field the loader or writer drops or reshapes fails with its path:
+
+- `full.json` — every `_default_profile()` key, two owned cars with tuning and parts, a world with
+  `car_state`, and every settings key the game writes, including `input_bindings` with a key, a
+  joypad button and a joypad axis (`input_remap.gd` → `_event_to_dict`).
+- `minimal.json` — only `schema_version`; the rest is the key backfill.
+- `odd_numbers.json` — ints written as floats, `1e-7`, ids near 2^52.
+
+**Adding a setting?** Add its key to `full.json`'s `settings`: the test scans `scripts/**/*.gd` for
+`set_setting(` calls (a string literal, a same-file `const`, or `ClassName.CONST`) and fails on any
+written key the fixture lacks. Fixture cars use `CarFixtures` ids (the test installs that roster so
+`_sanitise` keeps them); numbers in the fixtures are opaque data, never real tuning.

@@ -194,6 +194,23 @@ func _init(p_car: VehicleBody3D) -> void:
 			front_omega[wheel] = 0.0
 
 
+# Every piece of per-tick drivetrain state (engine included), keyed by wheel name so it serialises as JSON.
+func snapshot() -> Dictionary:
+	var front := {}
+	for wheel in front_omega:
+		front[String(wheel.name)] = front_omega[wheel]
+	var spin := {}
+	var abs_on := {}
+	for wheel in all_wheels:
+		spin[String(wheel.name)] = spin_angle[wheel]
+		abs_on[String(wheel.name)] = _contact_pool[wheel].abs_active
+	return {
+		rear_omega = rear_omega, front_omega = front, spin_angle = spin, abs_active = abs_on,
+		_weather_mu = _weather_mu, _weather_mu_id = _weather_mu_id, _weather_mu_global = _weather_mu_global,
+		engine = engine.snapshot(),
+	}
+
+
 # throttle: 0..1 drive request (reverse comes from the engine's gear).
 # brake: 0..1 foot brake. handbrake: bool (rear brake torque + AWD centre-diff open).
 # declutch: open the engine clutch (normally = handbrake, so a held handbrake lets the

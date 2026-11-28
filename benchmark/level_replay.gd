@@ -9,6 +9,11 @@ extends Node
 #       renderer's timing off, --empty samples a bare camera for the engine's own floor
 #     in a browser (./start_web.sh): https://localhost:8080/?replay=1, with &until=30 or &full=1
 #     ./run_level_replay.sh --golden-check   # replays twice (one under CPU load) and checks the per-tick traces match
+#     ... --free   # drives the car from the recorded inputs alone (a format 2 recording), no pose writes
+#     ... --script=<json> --record=<path> --car=<id>   # writes a synthetic format 2 recording and quits
+#     ... --free --golden --car-trace=<file>   # writes the car's full state per tick (the car-step golden)
+#     ... --golden --events=<file> --game-script=<json>   # writes game events, audio rows and the final save
+#     ./run_level_replay.sh --car-golden | --events-golden [rec] [--check | --bless]   # compare with or rewrite goldens/
 #
 # Each physics tick stores the car's pose, velocities and the driver's inputs. The replay feeds the
 # inputs back through the car's AI controls and snaps the pose each tick, so the car (and its dust,
@@ -20,12 +25,17 @@ const STRIDE := 21  # per tick: basis 9, origin 3, linear velocity 3, angular ve
 const WARMUP_FRAMES := 60  # unsampled frames after the warm-up, while the first views settle
 const DEFAULT_UNTIL_S := 15.0  # enough to compare one change; --full replays all of it
 const FIXTURE_PROFILE_PATH := "user://level_replay_profile.json"  # never written: save_disabled is on
+const FORMAT := 2  # 2 adds a TickInput row per tick; format 1 files (hafren.rec) hold poses only
 
 var _path := DEFAULT_PATH
 var _recording := false
 var _level: Node
 var _car: VehicleBody3D
 var _ticks := PackedFloat32Array()
+var _inputs: Array[PackedFloat32Array] = []  # one TickInput row per tick (format 2)
+var _free := false  # --free: the car drives itself from _inputs; no pose is written
+var _script_path := ""  # --script=<json>: build a synthetic recording from timed action presses
+var _auto_gearbox := true
 var _car_id := ""  # the CarLibrary model driven, so every replay draws and drives the same car
 var _tick := 0
 var _started := false
@@ -53,6 +63,21 @@ var _empty := false      # a camera and nothing else: the engine's and browser's
 var _trace_path := ""   # --trace=<file>: golden runs write one JSON line of game state per tick here
 var _trace: FileAccess
 var _frame_skew := -1   # process frames minus physics frames at the first traced tick; must never change
+var _car_trace_path := ""  # --car-trace=<file>: a free golden run writes {tick, input, snap, world} per tick
+var _car_trace: FileAccess
+var _events_path := ""  # --events=<file>: a golden run writes GameTrace events, audio rows and the final save
+var _events: FileAccess
+var _game_script: Array = []  # --game-script=<json>: [{tick, do, args}] run through GameTrace.act
+var _game_script_path := ""
+var _game_step := 0
+var _prev_state := {}
+var _last_audio := {}
+var _driven := 0.0  # a free run's distance, summed from the car's own positions
+var _last_pos := Vector3.INF
+var _off_road_run := 0  # ticks the free-running car has been off the road in a row, and the longest run so far
+var _off_road_max := 0
+var _road_resets := 0
+var _exit_code := 0
 
 
 # Runs after every other node's _physics_process, marking where the physics engine's step begins.
@@ -96,6 +121,16 @@ func _ready() -> void:
 			Benchmark.golden = true
 		elif arg.begins_with("--trace="):
 			_trace_path = arg.get_slice("=", 1)
+		elif arg == "--free":
+			_free = true
+		elif arg.begins_with("--script="):
+			_script_path = arg.get_slice("=", 1)
+		elif arg.begins_with("--car-trace="):
+			_car_trace_path = arg.get_slice("=", 1)
+		elif arg.begins_with("--events="):
+			_events_path = arg.get_slice("=", 1)
+		elif arg.begins_with("--game-script="):
+			_game_script_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--off="):
 			_off = arg.get_slice("=", 1).split(",")
 	if not _recording and DisplayServer.get_name() == "headless":
@@ -104,9 +139,17 @@ func _ready() -> void:
 	# A landscape-sized frame and no rotate prompt even on a portrait phone, a fixed engine misfire seed,
 	# and no cloud sync.
 	Benchmark.active = not _recording
-	if not _recording:
-		_use_fixture_profile()
-		RngStreams.reseed(Benchmark.RNG_SEED)
+	if _script_path != "":
+		get_tree().quit(0 if _write_script_recording() else 1)
+		return
+	if _recording and _record_car == "":
+		push_error("level replay: --record needs --car=<id>, so a free replay can field the same car")
+		get_tree().quit(1)
+		return
+	# A recording starts from the same profile and seeds as its free replay will.
+	_use_fixture_profile()
+	RngStreams.reseed(Benchmark.RNG_SEED)
+	_auto_gearbox = Config.data.auto_gearbox
 	if Benchmark.golden and not _golden_ready():
 		get_tree().quit(1)
 		return
@@ -121,6 +164,11 @@ func _ready() -> void:
 	if not _recording and not _load():
 		get_tree().quit(1)
 		return
+	if _free and _inputs.is_empty():
+		push_error("level replay --free: %s has no recorded inputs (format 1); record a new one" % _path)
+		get_tree().quit(1)
+		return
+	Config.data.auto_gearbox = _auto_gearbox
 	if _recording:  # start at the spawn teleport, not wherever the level view was last left
 		Save.set_setting(LevelView.SAVED_POSE_KEY, null)
 		LevelView.recording = true
@@ -142,8 +190,15 @@ func _ready() -> void:
 		_place_at_teleport(_level.get_node("Level") as LevelView, _record_at if _record_at != "" else Config.data.level_spawn_teleport)
 		print("level replay: recording to %s — quit to save" % _path)
 	else:
-		print("level replay: replaying %s (%.1f s)" % [_path, _ticks.size() / float(STRIDE) / Engine.physics_ticks_per_second])
-		_car.ai_controlled = true
+		print("level replay: replaying %s (%.1f s)%s" % [_path, _tick_count() / float(Engine.physics_ticks_per_second),
+			" free" if _free else ""])
+		if _free:
+			_place_at_teleport(_level.get_node("Level") as LevelView, _record_at if _record_at != "" else Config.data.level_spawn_teleport)
+			var recovery := _level.find_child("RoadRecovery", true, false) as RoadRecovery
+			if recovery != null:
+				recovery.reset_done.connect(func(_p: Vector2) -> void: _road_resets += 1)
+		else:
+			_car.ai_controlled = true
 		var cams := _level.get_node("CameraManager")
 		cams._index = cams.ORDER.find(CameraManager.Mode.CHASE)  # not set_mode: that would save over the player's choice
 		cams._apply()
@@ -156,7 +211,27 @@ func _ready() -> void:
 		if view != null and view.get_parent().is_queued_for_deletion():  # --off=PostProcess: the root view renders the world
 			view = null
 		_start_sampling(view if view != null else get_viewport())
+	if _free and not _recording:
+		_start_free_inputs()
+	if _car_trace != null:
+		_car.record_contacts = true
+		_car_trace.store_line(JSON.stringify(_golden_header(), "", true, true))
+	if _events != null:
+		_events.store_line(JSON.stringify(_golden_header(), "", true, true))
+		GameTrace.listen()
 	_started = true
+
+
+# A press made during a physics tick only reads as just-pressed on the next tick, so each tick's
+# recorded row is pressed at the end of the tick before it (the first one before ticks start).
+func _start_free_inputs() -> void:
+	TickInput.apply(_inputs[0])
+	var tail := _Tail.new()
+	tail.process_physics_priority = (1 << 20) + 1
+	tail.on_tick = func() -> void:
+		if _started and _tick < _inputs.size():
+			TickInput.apply(_inputs[_tick])
+	add_child(tail)
 
 
 # Uncaps the frame rate and hooks every per-frame timer; `view` is the viewport whose render time is read.
@@ -242,12 +317,32 @@ func _golden_ready() -> bool:
 		return false
 	Config.data.threaded_chunk_build = false
 	Config.data.threaded_tree_build = false
-	if _trace_path != "":
-		_trace = FileAccess.open(_trace_path, FileAccess.WRITE)
-		if _trace == null:
-			push_error("level replay --golden: can't write %s" % _trace_path)
+	if _car_trace_path != "" and not _free:
+		push_error("level replay --golden: --car-trace needs --free")
+		return false
+	if _game_script_path != "":
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(_game_script_path))
+		if not parsed is Array:
+			push_error("level replay --golden: %s isn't a JSON list of {tick, do, args}" % _game_script_path)
 			return false
+		_game_script = parsed
+		_game_script.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["tick"]) < int(b["tick"]))
+	for pair: Array in [[_trace_path, "_trace"], [_car_trace_path, "_car_trace"], [_events_path, "_events"]]:
+		if pair[0] == "":
+			continue
+		var f := FileAccess.open(pair[0], FileAccess.WRITE)
+		if f == null:
+			push_error("level replay --golden: can't write %s" % pair[0])
+			return false
+		set(pair[1], f)
 	return true
+
+
+# Line 1 of every golden file: what produced it, so a mismatch caused by another machine or recording shows at once.
+func _golden_header() -> Dictionary:
+	return {"format": 1, "level_path": Config.data.level_path, "car": _car_id, "seed": Benchmark.RNG_SEED,
+		"godot_version": Engine.get_version_info()["string"], "platform": "%s/%s" % [OS.get_name(), Engine.get_architecture_name()],
+		"recording": _path.get_file(), "free": _free}
 
 
 func _physics_process(_delta: float) -> void:
@@ -257,9 +352,16 @@ func _physics_process(_delta: float) -> void:
 		_record_tick()
 	elif _empty and _tick < _until_s * Engine.physics_ticks_per_second:
 		_tick += 1
-	elif _tick * STRIDE < _ticks.size() and _tick < _until_s * Engine.physics_ticks_per_second:
+	elif _tick < _tick_count() and _tick < _until_s * Engine.physics_ticks_per_second:
 		if Benchmark.golden and not _trace_tick(_tick):
 			return
+		if _free:
+			_check_on_road()
+		if _car_trace != null:
+			_car_trace.store_line(JSON.stringify({"tick": _tick, "input": Array(_inputs[_tick]),
+				"snap": _car.snapshot(), "world": _world_state()}, "", true, true))
+		if _events != null:
+			_events_tick(_tick)
 		_play_tick(_tick)
 		_tick += 1
 	else:
@@ -331,6 +433,60 @@ static func _vec(v: Vector3) -> Array:
 	return [v.x, v.y, v.z]
 
 
+# What the car can change outside itself: the trees it felled and every ragdoll it knocked over.
+func _world_state() -> Dictionary:
+	var view := _level.get_node("Level") as LevelView
+	var fallen: Array = view._trees._fallen.keys() if view._trees != null else []
+	fallen.sort()
+	var ragdolls := []
+	var crowd: LevelSpectators = view._spectators
+	if crowd != null:
+		var ids := crowd._live.keys()
+		ids.sort()
+		for id in ids:
+			if not is_instance_valid(crowd._live[id]):
+				continue
+			for b: RigidBody3D in (crowd._live[id] as SpectatorGroup)._ragdolls:
+				if is_instance_valid(b):
+					var basis := b.global_transform.basis
+					ragdolls.append({"group": id, "basis": _vec(basis.x) + _vec(basis.y) + _vec(basis.z),
+						"origin": _vec(b.global_position), "linear_velocity": _vec(b.linear_velocity),
+						"angular_velocity": _vec(b.angular_velocity), "sleeping": b.sleeping})
+	return {"fallen_trees": fallen, "ragdolls": ragdolls}
+
+
+# A free run must stay on the road: no off-road stretch long enough for RoadRecovery to step in, and no reset.
+func _check_on_road() -> void:
+	var p := _car.global_position
+	if _last_pos != Vector3.INF:
+		_driven += p.distance_to(_last_pos)
+	_last_pos = p
+	var view := _level.get_node("Level") as LevelView
+	_off_road_run = _off_road_run + 1 if view.is_off_road(Vector2(p.x, p.z)) else 0
+	_off_road_max = maxi(_off_road_max, _off_road_run)
+
+
+# The events seen at the start of tick `i` (so caused by ticks before it), then this tick's scripted actions.
+func _events_tick(i: int) -> void:
+	var view := _level.get_node("Level") as LevelView
+	var now := GameTrace.read(view, _car)
+	if i == 0:
+		_prev_state = now
+	for e: Dictionary in GameTrace.diff(_prev_state, now, i):
+		_events.store_line(JSON.stringify(e, "", true, true))
+	_prev_state = now
+	# Only when it changes: the music and bus levels sit still for most ticks.
+	var audio := GameTrace.audio_row(i)
+	audio.erase("tick")
+	if audio != _last_audio:
+		_last_audio = audio.duplicate(true)
+		_events.store_line(JSON.stringify(audio.merged({"tick": i, "kind": "audio"}), "", true, true))
+	while _game_step < _game_script.size() and int(_game_script[_game_step]["tick"]) <= i:
+		if int(_game_script[_game_step]["tick"]) == i:
+			GameTrace.act(view, _car, _game_script[_game_step])
+		_game_step += 1
+
+
 func _record_tick() -> void:
 	var t := _car.global_transform
 	var b := t.basis
@@ -340,9 +496,16 @@ func _record_tick() -> void:
 		t.origin.x, t.origin.y, t.origin.z, v.x, v.y, v.z, w.x, w.y, w.z,
 		Input.get_axis("brake_reverse", "accelerate"), Input.get_axis("steer_right", "steer_left"),
 		1.0 if Input.is_action_pressed("handbrake") else 0.0])
+	_inputs.append(TickInput.sample())
+
+
+func _tick_count() -> int:
+	return _inputs.size() if _free else floori(_ticks.size() / float(STRIDE))
 
 
 func _play_tick(i: int) -> void:
+	if _free:
+		return
 	var f := _ticks.slice(i * STRIDE, (i + 1) * STRIDE)
 	var t := Transform3D(Basis(Vector3(f[0], f[1], f[2]), Vector3(f[3], f[4], f[5]), Vector3(f[6], f[7], f[8])),
 		Vector3(f[9], f[10], f[11]))
@@ -453,9 +616,26 @@ func _close_step() -> void:
 
 func _finish() -> void:
 	_started = false
+	if _free:
+		TickInput.release_all()
 	if _trace != null:
 		_trace.close()
 		print("level replay: trace written to %s" % _trace_path)
+	if _car_trace != null:
+		_car_trace.close()
+		print("level replay: car trace written to %s" % _car_trace_path)
+	if _events != null:
+		_events_tick(_tick)  # what the last tick did
+		_events.store_line(JSON.stringify({"tick": _tick, "kind": "final_save", "save": GameTrace.final_save()}, "", true, true))
+		_events.close()
+		GameTrace.stop()
+		print("level replay: events written to %s" % _events_path)
+	if _free:
+		var limit := roundi(Config.data.off_road_reset_timeout_s * Engine.physics_ticks_per_second)
+		print("level replay: longest off-road stretch %d ticks (RoadRecovery resets at %d), %d road resets" % [_off_road_max, limit, _road_resets])
+		if _road_resets > 0 or _off_road_max >= limit:
+			push_error("level replay --free: the car left the road; record a drive that stays on it")
+			_exit_code = 1
 	var stats := BenchmarkStats.summarise(_samples)
 	stats["distance_m"] = _driven_m()
 	var scripts := PerfLog.end_capture(_samples["frame_ms"].size())
@@ -468,11 +648,13 @@ func _finish() -> void:
 		if f != null:
 			f.store_string(BenchmarkReport.to_json(_report(stats, scripts)))
 			print("level replay: report written to %s" % ProjectSettings.globalize_path(REPORT_PATH))
-	get_tree().quit()
+	get_tree().quit(_exit_code)
 
 
 # How far the car went over the ticks played, from the recorded positions.
 func _driven_m() -> float:
+	if _free:
+		return _driven
 	var d := 0.0
 	for i in range(1, mini(_tick, floori(_ticks.size() / float(STRIDE)))):
 		var a := i * STRIDE + 9
@@ -519,9 +701,58 @@ func _exit_tree() -> void:
 	if file == null:
 		push_error("level replay: can't write %s" % _path)
 		return
-	file.store_var({"level": Config.data.level_path, "car": _car_id, "hz": Engine.physics_ticks_per_second, "ticks": _ticks})
+	file.store_var(_header(_record_at if _record_at != "" else Config.data.level_spawn_teleport).merged({"ticks": _ticks, "inputs": _inputs}))
 	print("level replay: saved %.1f s to %s" % [_ticks.size() / float(STRIDE) / Engine.physics_ticks_per_second, _path])
 	_ticks = PackedFloat32Array()
+
+
+func _header(at: String) -> Dictionary:
+	return {"format": FORMAT, "level": Config.data.level_path, "car": _car_id, "hz": Engine.physics_ticks_per_second,
+		"seed": Benchmark.RNG_SEED, "at": at, "auto_gearbox": _auto_gearbox}
+
+
+# --script: [{from_s, to_s, action, strength}], or {car, auto_gearbox, steps: [...]}; a step lasts at least one tick.
+func _write_script_recording() -> bool:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(_script_path))
+	var steps: Array = parsed.get("steps", []) if parsed is Dictionary else (parsed if parsed is Array else [])
+	if steps.is_empty():
+		push_error("level replay: no steps in %s" % _script_path)
+		return false
+	_auto_gearbox = bool(parsed.get("auto_gearbox", Config.data.auto_gearbox)) if parsed is Dictionary else Config.data.auto_gearbox
+	if parsed is Dictionary and parsed.has("car"):
+		_record_car = String(parsed["car"])
+	if CarLibrary.index_of(_record_car) < 0:
+		push_error("level replay --script: needs --car=<id> (or a \"car\" key) naming a real car")
+		return false
+	_car_id = _record_car
+	if _path == DEFAULT_PATH:  # never overwrite the hand-driven benchmark
+		_path = "res://benchmark/runs/synthetic_%s.rec" % _script_path.get_file().get_basename()
+	var hz := Engine.physics_ticks_per_second
+	var spans := []  # [action, first tick, end tick, strength]
+	var last := 0
+	for step: Dictionary in steps:
+		var from := roundi(float(step["from_s"]) * hz)
+		var to := maxi(roundi(float(step["to_s"]) * hz), from + 1)
+		spans.append([StringName(step["action"]), from, to, float(step.get("strength", 1.0))])
+		last = maxi(last, to)
+	var prev := {}
+	for t in last:
+		var now := {}
+		for h: Array in spans:
+			if t >= h[1] and t < h[2]:
+				now[h[0]] = h[3]
+		var down: Array = now.keys().filter(func(a: StringName) -> bool: return float(prev.get(a, 0.0)) <= 0.0)
+		_inputs.append(TickInput.pack(now, down))
+		prev = now
+	DirAccess.make_dir_recursive_absolute(_path.get_base_dir())
+	var file := FileAccess.open(_path, FileAccess.WRITE)
+	if file == null:
+		push_error("level replay: can't write %s" % _path)
+		return false
+	file.store_var(_header(_record_at if _record_at != "" else Config.data.level_spawn_teleport).merged({"ticks": _ticks, "inputs": _inputs}))
+	print("level replay: wrote %d synthetic ticks to %s" % [_inputs.size(), _path])
+	_inputs.clear()
+	return true
 
 
 func _load() -> bool:
@@ -536,6 +767,11 @@ func _load() -> bool:
 		push_warning("level replay: recorded at %s Hz physics, running at %d" % [d.get("hz"), Engine.physics_ticks_per_second])
 	_ticks = d["ticks"]
 	_car_id = String(d.get("car", ""))
+	if int(d.get("format", 1)) >= 2:
+		_inputs.assign(d["inputs"])
+		_auto_gearbox = bool(d["auto_gearbox"])
+		if _record_at == "":
+			_record_at = String(d["at"])
 	return true
 
 

@@ -71,7 +71,7 @@ static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 	nav._make_focusable(root)
 	nav._enable_scroll_follow(root)
 	nav._first = opts.get("first", null)
-	if nav._first == null:
+	if nav._first == null or nav._first.focus_mode == Control.FOCUS_NONE:  # e.g. an empty card list: land on Back instead
 		nav._first = UITheme.first_focusable(root)
 	# Grab focus after the host finishes showing/laying out the menu.
 	#
@@ -166,7 +166,8 @@ static func is_text_editing() -> bool:
 		var vp := (loop as SceneTree).root.get_viewport()
 		if vp != null:
 			var focused := vp.gui_get_focus_owner()
-			return focused is LineEdit or focused is TextEdit
+			# A field the cursor merely rests on is not being typed into: Back there leaves the page.
+			return (focused is LineEdit and (focused as LineEdit).is_editing()) or focused is TextEdit
 	return false
 
 
@@ -208,7 +209,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if is_text_editing() \
 			and (event.is_action_pressed("ui_cancel") or event.is_action_pressed("menu_back")):
 		var editing := get_viewport().gui_get_focus_owner()
-		if editing != null:
+		if editing is LineEdit:
+			(editing as LineEdit).unedit()  # the cursor stays on the field, as it does for Esc on a keyboard
+		elif editing != null:
 			editing.release_focus()
 		get_viewport().set_input_as_handled()
 		return

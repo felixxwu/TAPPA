@@ -157,6 +157,10 @@ var _hold_anchor_set := false
 # up pointing the wrong way by the time the countdown reached GO.
 var _hold_anchor_yaw := 0.0
 
+# Off in normal play so _integrate_forces allocates nothing; the replay turns it on to record each
+# tick's body contacts into last_contacts ({collider, shape, local_pos, normal, impulse}).
+var record_contacts := false
+var last_contacts: Array = []
 
 # True when the human driver's live inputs should be read: not locked (staging/finish),
 # not scripted (AI / opponent). One predicate so a future
@@ -984,6 +988,8 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# From here on VehicleBody3D is repainting the wheel transforms every step, so the live
 	# wheel.position is no longer the authored mount. See _assert_wheel_geometry_is_fresh().
 	_has_simulated = true
+	if record_contacts:
+		_record_contacts(state)
 	# Apply a queued reset_to teleport here — the physics-authoritative write point. Setting
 	# state.transform makes the pose stick regardless of which frame phase reset_to was
 	# called from (a menu/signal callback runs outside the physics step, where a plain
@@ -1059,6 +1065,49 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			var red: float = maxf(float(cfg.redline_rpm), 1.0)
 			@warning_ignore("return_value_discarded")
 			damage.thermal_step(state.step, float(eng.rpm()) / red, cfg)
+
+
+func _record_contacts(state: PhysicsDirectBodyState3D) -> void:
+	var n := state.get_contact_count()
+	last_contacts.resize(n)
+	for i in n:
+		var c: Dictionary = last_contacts[i] if last_contacts[i] is Dictionary else {}
+		var collider := state.get_contact_collider_object(i) as Node
+		# The collider's name, not its instance id: ids differ between runs, names don't.
+		c.collider = String(collider.name) if collider != null else ""
+		c.shape = state.get_contact_collider_shape(i)
+		c.local_pos = _vec(state.get_contact_local_position(i))
+		c.normal = _vec(state.get_contact_local_normal(i))
+		c.impulse = _vec(state.get_contact_impulse(i))
+		last_contacts[i] = c
+
+
+static func _vec(v: Vector3) -> Array:
+	return [v.x, v.y, v.z]
+
+
+# Every piece of per-tick car state (body, wheels, drivetrain, damage) as JSON-safe plain values,
+# so a replay can record a tick and a port can restore it. World state (ragdolls, trees) is not here.
+func snapshot() -> Dictionary:
+	var b := global_transform.basis
+	var wheels := {}
+	for wheel in drivetrain.all_wheels:
+		wheels[String(wheel.name)] = {
+			in_contact = wheel.is_in_contact(), contact_point = _vec(wheel.get_contact_point()),
+			contact_normal = _vec(wheel.get_contact_normal()), steering = wheel.steering,
+			position = _vec(wheel.position),
+		}
+	return {
+		basis = _vec(b.x) + _vec(b.y) + _vec(b.z), origin = _vec(global_position),
+		linear_velocity = _vec(linear_velocity), angular_velocity = _vec(angular_velocity),
+		sleeping = sleeping, steering = steering, mass = mass,
+		_hold_anchor = _vec(_hold_anchor), _hold_anchor_set = _hold_anchor_set,
+		_hold_anchor_yaw = _hold_anchor_yaw, _suppress_impact_frames = _suppress_impact_frames,
+		_pending_reset = _pending_reset, _wind_odometer = _wind_odometer, _wind_gust = _wind_gust,
+		_wind_id = _wind_id, controls_locked = controls_locked, handbrake_locked = handbrake_locked,
+		wheels = wheels, last_contacts = last_contacts.duplicate(true),
+		drivetrain = drivetrain.snapshot(), damage = damage.snapshot(),
+	}
 
 
 # True when at least one wheel is not touching the ground — the trigger for the

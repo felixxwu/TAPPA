@@ -1,0 +1,14 @@
+{
+	"car": "focus",
+	"auto_gearbox": false,
+	"steps": [
+		{"from_s": 0.5, "to_s": 7.0, "action": "accelerate", "strength": 0.8},
+		{"from_s": 2.0, "to_s": 2.02, "action": "shift_up"},
+		{"from_s": 4.0, "to_s": 4.02, "action": "shift_up"},
+		{"from_s": 4.5, "to_s": 5.5, "action": "nitrous"},
+		{"from_s": 5.0, "to_s": 6.0, "action": "steer_left", "strength": 0.3},
+		{"from_s": 7.0, "to_s": 9.0, "action": "brake_reverse"},
+		{"from_s": 7.5, "to_s": 7.52, "action": "shift_down"},
+		{"from_s": 9.0, "to_s": 9.5, "action": "handbrake"}
+	]
+}

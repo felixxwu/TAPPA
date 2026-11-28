@@ -1,0 +1,14 @@
+{
+	"schema_version": 8.0,
+	"next_instance_id": 4503599627370496.0,
+	"cars": [
+		{"instance_id": 4503599627370495, "model_id": "fx_fwd_hatch", "tuning": {"brake_bias": 1e-7, "toe": -0.0}, "parts": []}
+	],
+	"world": {"seed": 4294967296.0, "car": 4503599627370495.0, "car_state": {"hp": 1.0e3}},
+	"settings": {
+		"fps_cap": 30.0,
+		"level_money": 9007199254740.0,
+		"level_pose": {"level": "res://levels/fixture.level", "x": 1e-7, "z": -123456.789, "yaw": 3.0}
+	},
+	"cloud_revision": 2.0e1
+}

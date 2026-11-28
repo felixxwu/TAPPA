@@ -29,8 +29,10 @@ forget) the per-widget setup.
 
 1. **Focus** — walks `root` and sets every interactive Control to `FOCUS_ALL` (a widget
    opts OUT with the `menu_nav_skip` meta).
-2. **Grab** — deferred-grabs the cursor onto `first` (or the first focusable descendant),
-   and re-grabs whenever the menu is re-shown.
+2. **Grab** — deferred-grabs the cursor onto `first` (or the first focusable descendant,
+   also when `first` can't take focus — an empty `CardCarousel` is `FOCUS_NONE` until its
+   first `add_card`, so an empty list's page opens on its `< Back`), and re-grabs whenever
+   the menu is re-shown.
 3. **WASD** — fills the one gap in Godot's defaults: the built-in `ui_up/down/left/right`
    actions bind arrow keys + D-pad + left-stick but **not WASD**, so `MenuNav` translates
    the game's `menu_up/down/left/right` actions (which bind W/A/S/D) into focus-neighbour
@@ -111,6 +113,11 @@ the title screen, the rest-stop page and the world pages (map, stats) — each c
 > **own** the thing that was being refreshed and re-apply it from its own `rebuild()`, so
 > `attach` runs once per build and nobody re-attaches from outside.
 
+**Esc over the map's All Delivery Jobs page.** Esc is bound to both `pause` and `ui_cancel`, and
+the pause menu would take the `pause` half and open over the map. `LevelView._input` catches
+`pause` while that page is up (and no shop / point page owns the screen) and closes the page back
+to the map, the same as `< Back` and pad B. Guarded by `test_level_view.gd`.
+
 ## Nested card pages: the level's part pages
 
 `RestStopPage._card_page` gives each page a Back that steps one level: part page → Shop → closed
@@ -129,8 +136,13 @@ the title screen, the rest-stop page and the world pages (map, stats) — each c
   Godot's automatic neighbour search.
 - **WASD is safe by construction**: a focused `LineEdit` consumes printable keys in the GUI
   phase, before `_unhandled_input`. **Esc is not**, so `MenuNav._unhandled_input` turns
-  Back-while-typing into "release the field" instead of "leave the page", via the shared
-  **`MenuNav.is_text_editing()`** static.
+  Back-while-typing into "stop typing, cursor stays on the field" instead of "leave the page",
+  via the shared **`MenuNav.is_text_editing()`** static. That asks `LineEdit.is_editing()`,
+  not just focus: since Godot 4.4 a field the cursor merely rests on is not being typed into,
+  so Back there leaves the page like on any other row.
+- **Enter / gamepad A start typing.** A keyboard-focused `LineEdit` only enters edit mode on
+  Enter (`ui_text_submit`), so `TextField._on_line_input` calls `edit()` on `ui_accept` too —
+  otherwise a pad can reach a field but never type in it.
 - **Enter submits** (`submitted` signal) — on a phone the on-screen keyboard can cover the
   button, so this is sometimes the only way to submit at all. `virtual_keyboard_enabled` is
   on for Android/web.
@@ -157,3 +169,44 @@ appears, and because of two obligations that are easy to miss:
   the kind of pointer-only menu the project's nav rule forbids.
 
 Reach for this only at one action. At two, use `MenuNav.attach`.
+
+## Menu-flow replays (keyboard and gamepad golden)
+
+**Sources:** `benchmark/menu_flow.gd` (`class_name MenuFlow`) + `benchmark/menu_flow.tscn`, the script
+`benchmark/flows/menus.json`, the blessed log `goldens/menus.jsonl.gz` (see `goldens/README.md`).
+**Tests:** `tests/headless/test_menu_flow_log.gd` (the log-line builder on a hand-built page, not the flow).
+
+A change detector for the Rust migration (step 1.5 of `todo/2026-11-27-rust-native-migration.md`). It boots
+`Scenes.WORLD` the way a golden level replay does (`Benchmark.active` + `golden`, the blank fixture profile,
+`RngStreams.reseed`, streaming on the main thread) at a fixed 1280×720 logical frame (`DisplayStretch` is
+switched off for the run), then plays `menus.json`'s steps once per entry in `devices` (`key`, then `pad`),
+on a freshly booted world each time so a page one device leaves open can't skew the next:
+
+- `{"press": action}` sends the action's first `InputEventKey` (or, for `pad`, its first joypad button or
+  stick event; the key when the pad has none) through `Input.parse_input_event`, press then release, as
+  device 0 (InputMap copies carry device -1, which built-in actions like `ui_text_submit` don't match);
+  `{"key": "Tab"}` sends one raw key for bindings that aren't actions (the map's deliveries key);
+- `{"type": text}` sends unicode key events; `{"paste": text}` uses `DisplayServer.clipboard_set` and the
+  platform's `ui_paste` key, or — when the headless clipboard keeps nothing — writes the focused field and
+  emits `text_changed`, and the log's `press` says which path ran;
+- `"only": "key"|"pad"` on a step plays it on that device alone (Esc and B differ in how many presses leave a page);
+- `{"call": method, "args": [...]}` calls a `LevelView` method, for pages no press reaches headless (the wreck
+  page needs a dead engine, the service menu a stop at a teleport point); an arg `{"teleport": i}` becomes
+  `teleport_points()[i]`; `{"wait": frames}` (default 2). A card confirm's flash is skipped
+  (`CardCarousel.skip_confirm_flash`) so the next press lands on the page it opened.
+
+There is no title menu any more (`title.tscn` boots straight into the world), so the flow starts in the world.
+After each step it logs `page` (`MenuFlow.page_id`: the focused menu's `MenuPage` title plus the nearest script
+class, no node paths), `focus` (the focused control's text, a `CardCarousel`'s selected card title, or for a
+textless widget its nearby label and class, e.g. `Master (HSlider)`),
+`changed` (`MenuFlow.diff` of `Save.profile.settings`, the `LevelView` session statics, `paused` and the map; not `level_pose` / `level_map_seen`, which change on every drive) and
+`boxes` (every visible Control under the page, `[text or class, [x, y, w, h]]` in whole logical pixels).
+The flow never presses Send link / Sign in, and `Cloud` stays off under `Benchmark.active`, so it never
+touches the network.
+
+    $GODOT --headless --fixed-fps 60 res://benchmark/menu_flow.tscn -- --golden --seed=90210 --out=/tmp/m.jsonl
+    ./bless.sh menus                                                  # rewrites goldens/menus.jsonl.gz
+    $GODOT --headless --fixed-fps 60 res://benchmark/menu_flow.tscn -- --golden --seed=90210 --check   # exit 1 on the first differing line
+
+A menu change that moves focus or a widget shows up as the first differing line's `focus` or `boxes`; if the
+change was meant, re-bless.

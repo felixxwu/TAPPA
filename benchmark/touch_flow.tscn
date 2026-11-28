@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://benchmark/touch_flow.gd" id="1_touch"]
+
+[node name="TouchFlow" type="Node"]
+script = ExtResource("1_touch")

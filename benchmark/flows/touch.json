@@ -1,0 +1,24 @@
+{
+	"ticks": 240,
+	"events": [
+		{"tick": 10, "touch": 0, "down": true, "at": [0.9, 0.73]},
+		{"tick": 40, "touch": 0, "down": false, "at": [0.9, 0.73]},
+		{"tick": 50, "touch": 1, "down": true, "at": [0.9, 0.95]},
+		{"tick": 70, "touch": 1, "down": false, "at": [0.9, 0.95]},
+		{"tick": 80, "touch": 0, "down": true, "at": [0.1, 0.92]},
+		{"tick": 90, "drag": 0, "at": [0.4, 0.92]},
+		{"tick": 100, "drag": 0, "at": [0.25, 0.92]},
+		{"tick": 110, "touch": 0, "down": false, "at": [0.25, 0.92]},
+		{"tick": 120, "touch": 0, "down": true, "at": [0.9, 0.73]},
+		{"tick": 130, "touch": 1, "down": true, "at": [0.1, 0.92]},
+		{"tick": 150, "touch": 0, "down": false, "at": [0.9, 0.73]},
+		{"tick": 150, "touch": 1, "down": false, "at": [0.1, 0.92]},
+		{"tick": 160, "touch": 0, "down": true, "at": [0.1, 0.5]},
+		{"tick": 165, "touch": 1, "down": true, "at": [0.6, 0.5]},
+		{"tick": 180, "touch": 0, "down": false, "at": [0.1, 0.5]},
+		{"tick": 180, "touch": 1, "down": false, "at": [0.6, 0.5]},
+		{"tick": 190, "tilt": "3.0:0.0:-9.3"},
+		{"tick": 210, "tilt": "-3.0:0.0:-9.3"},
+		{"tick": 230, "tilt": "0.0:0.0:-9.8"}
+	]
+}

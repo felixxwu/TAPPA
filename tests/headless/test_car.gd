@@ -773,7 +773,7 @@ func test_bent_front_wheels_veer_the_car_via_physics() -> void:
 	assert_almost_eq(fl.steering, _car.steering + t, 0.02, "front wheel carries base steer + toe")
 	assert_almost_eq(rl.steering, 0.0, 0.02, "an unbent rear wheel stays straight")
 	var start_yaw := _car.global_transform.basis.get_euler().y
-	seed(1)  # small bumps on the drive nudge the toe by a random amount, so the result depended on earlier files
+	_car.damage._rng.seed = 1  # small bumps on the drive nudge the toe by a random amount, so the result depended on earlier files
 	Input.action_press("accelerate")
 	await _wait_physics(150)
 	Input.action_release("accelerate")

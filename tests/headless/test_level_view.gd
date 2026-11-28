@@ -216,6 +216,13 @@ func test_the_level_scene_arms_its_pause_menu() -> void:
 		"every delivery from the found points, with no teleport or navigate")
 	MenuNav.of(lv_view.deliveries_page)._unhandled_input(map_back)
 	assert_true(lv_view.deliveries_page == null and map.visible, "and Back returns to the map")
+	map.deliveries_button.pressed.emit()
+	var start := InputEventAction.new()
+	start.action = "pause"
+	start.pressed = true
+	lv_view._input(start)
+	assert_true(lv_view.deliveries_page == null and map.visible and not lv_view._pause.is_open(),
+		"Esc / Start on the jobs page also returns to the map rather than opening the pause menu over it")
 	assert_eq(map.hovered(map.to_screen(Vector2(35, 3)) + Vector2(LevelMap.PICK_PX - 2.0, 0)), Vector2(35, 3), "the pointer near a found shop hovers it")
 	assert_eq(map.hovered(map.to_screen(Vector2(35, 3)) + Vector2(0, LevelMap.PICK_PX * 3.0)), Vector2.INF, "empty ground hovers nothing, however near a point")
 	var empty_click := InputEventMouseButton.new()

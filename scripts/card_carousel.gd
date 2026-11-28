@@ -110,7 +110,7 @@ func _init() -> void:
 		Config.data.card_carousel_card_width * Config.data.card_carousel_visible_width_factor,
 		_card_height() + 8.0)
 	clip_contents = true
-	focus_mode = Control.FOCUS_ALL
+	focus_mode = Control.FOCUS_NONE  # an empty list is nothing to put the cursor on; add_card makes it focusable
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_strip = Control.new()
 	_strip.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -171,6 +171,7 @@ func _card_stylebox() -> StyleBoxFlat:
 # `disabled` cards are shown (dimmed, per the project's "locked rows stay visible"
 # convention) but skip both selection landing and confirm.
 func add_card(disabled: bool = false) -> Card:
+	focus_mode = Control.FOCUS_ALL
 	var card := Card.new()
 	card.disabled = disabled
 	# Added to _strip BEFORE card.root so they draw underneath it (siblings paint in tree

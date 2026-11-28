@@ -68,6 +68,15 @@ func field(p_max_hp: float, p_hp: float, p_toe: Array = []) -> void:
 	set_toe_from_array(p_toe)
 
 
+# Every piece of per-tick damage state as plain values, so a replay can record it and a port can restore it.
+func snapshot() -> Dictionary:
+	return {
+		max_hp = max_hp, hp = hp, wheel_toe = wheel_toe.duplicate(), thermal = thermal,
+		invulnerable = invulnerable, cooling_broken = cooling_broken, engine_temp = engine_temp,
+		_gave_up = _gave_up, rng_state = _rng.state,
+	}
+
+
 # A fresh all-zero toe map (no wheel bent). Used as the default and by a repair.
 static func _zero_toe() -> Dictionary:
 	var d := {}

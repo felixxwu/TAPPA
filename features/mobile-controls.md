@@ -398,6 +398,23 @@ Fix: stop subtracting from engine state and derive the state itself from the bro
 positions included — which takes the id mapping, the release event, and the engine's
 event delivery out of the critical path in one move.
 
+## Touch and tilt flow (golden)
+
+`benchmark/touch_flow.gd` (`TouchFlow`, scene `benchmark/touch_flow.tscn`) is the touch half of the Phase 1.5
+parity golden (`goldens/touch.jsonl.gz`, see `goldens/README.md`). It plays one recording,
+`benchmark/flows/touch.json`, through every scheme in `SCHEMES`: screen touches and drags at fixed fractions of a
+1280×720 screen (`TouchFlow.SCREEN`), fed to `_input` as `InputEventScreenTouch` / `InputEventScreenDrag`, and
+phone tilts fed to `TiltInput.adopt` in the web bridge's `"x:y:z"` format. Each physics tick it logs
+`TickInput.sample()` (every gameplay action's strength and just-pressed bit) as the car reads it, on the tick
+after the touch, since Godot only reports a press as just-pressed then. The points are fixed positions, not
+region names, so moving or swapping a scheme's rects changes the log.
+
+    godot --headless --fixed-fps 60 res://benchmark/touch_flow.tscn -- [--golden] [--seed=90210] [--out=<file>] [--check[=<golden>]] [--bless]
+
+`--check` compares each tick's row with the golden and prints the first that differs; `--bless` (only through
+`./bless.sh touch`) rewrites the golden. `TouchFlow.play` steps the overlay itself (its `_process` is turned off)
+and lays the rects out for `SCREEN`, not the headless window. Tests: `tests/headless/test_touch_flow.gd`.
+
 ## Tests
 
 `tests/headless/test_mobile_controls.gd` — visibility gating, the default scheme

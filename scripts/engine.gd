@@ -154,6 +154,21 @@ static func is_lifting_off(throttle_value: float) -> bool:
 	return throttle_value <= THROTTLE_DEADBAND
 
 
+# Every piece of per-tick engine state as plain values, so a replay can record it and a port can restore it.
+func snapshot() -> Dictionary:
+	return {
+		omega = omega, gear = gear, auto = auto, shift_timer = shift_timer, throttle = throttle,
+		_torque_ramp = _torque_ramp, limiting = limiting, fuel_cut = fuel_cut, killed = killed,
+		omega_turbo = omega_turbo, boost = boost, bov_event = bov_event, antilag_active = antilag_active,
+		sc_boost = sc_boost, nitrous_charge = nitrous_charge, nitrous_active = nitrous_active,
+		nitrous_delivering = nitrous_delivering, nitrous_event = nitrous_event,
+		nitrous_emptied = nitrous_emptied, _prev_nitrous = _prev_nitrous, _prev_throttle = _prev_throttle,
+		_prev_shifting = _prev_shifting, misfire_level = misfire_level, _misfire_timer = _misfire_timer,
+		rev_limit_scale = rev_limit_scale, misfire_count = misfire_count,
+		limiter_cut_count = limiter_cut_count, rng_state = _rng.state,
+	}
+
+
 func idle_omega() -> float:
 	return config.idle_rpm * TAU / 60.0
 

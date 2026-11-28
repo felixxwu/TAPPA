@@ -6,7 +6,8 @@ MultiMeshes packed from the bake, hitboxes near the car, felling), `shaders/leve
 used by `tools/bake_level.gd`), `scripts/tree_fall.gd` (`class_name TreeFall`, the felling
 maths), `scripts/obstacle_body.gd` (the hitbox body), `scripts/wind_sway.gd`
 (`class_name WindSway`) + `shaders/wind_sway.gdshaderinc` (the wind sway). Ground-cover bushes
-are `scripts/ground_cover.gd` + `scripts/bush_field.gd` ([level-editor.md](level-editor.md)).
+are `scripts/ground_cover.gd` + `scripts/bush_field.gd` ([level-editor.md](level-editor.md)). Where trees and
+bushes stand is pinned by the scene counts golden (`benchmark/scene_counts.gd`, [benchmark.md](benchmark.md)).
 
 **Tests:** `tests/headless/test_foliage.gd`, `tests/headless/test_level_trees.gd`,
 `tests/headless/test_tree_fall.gd`, `tests/headless/test_wind_sway.gd`

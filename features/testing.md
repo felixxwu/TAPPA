@@ -309,6 +309,22 @@ can't read back pixels) and was chronically flaky and slow to regenerate.
 `test_render_smoke.gd` covers the meaningful half — rendering setup integrity —
 without pixels.
 
+## Goldens — `goldens/`, outside GUT
+
+Goldens are byte-for-byte change detectors for the Rust migration (`goldens/README.md` lists each file and the
+command that checks it). They pin every tuned value, so they live outside `tests/headless/`, which forbids that.
+
+- **Only `./bless.sh <car-step|events|scene-counts|menus|touch>` writes them.** Bless only for an intended
+  behaviour change, never to make a Rust port pass. The commit that changes `goldens/` carries a `Bless:` line
+  saying what changed and why; in Phases 1–3 an intended Godot change re-blesses in that one commit.
+- **CI** (`.github/workflows/test.yml`): the `goldens` job reruns each mode with `--check` and uploads the logs
+  (with the first differing line) as the `golden-diffs` artifact on failure; a golden not yet blessed is skipped
+  with a notice. The `bless-guard` job fails any commit in the PR or push range that touches `goldens/` without a
+  `Bless:` line.
+- **Bless on CI's Linux image**, since floating point may differ elsewhere: run the Tests workflow by hand
+  (Actions tab, `bless` = one golden or `all`). It skips the checks, writes the goldens and uploads them as the
+  `goldens` artifact; review them, then commit them with a `Bless:` line.
+
 ## A test that parses but errors at runtime
 
 The lesson worth keeping: **a test file that fails to PARSE is caught by the runner; one

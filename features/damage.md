@@ -387,3 +387,6 @@ scaling, enter/leave one-shot **soft drag**, min-speed gate), `test_spectator_da
 knockdown applies **soft drag** to the car), `test_car.gd` (contact monitor
 wiring, plus a **head-on collision costs HP** regression that drives the car into
 an obstacle to guard the approach-speed keying above), `test_hud.gd` (health gauge).
+
+**Snapshot:** `DamageModel.snapshot()` returns HP, toe, the thermal chain, `_gave_up` and the RNG's
+`rng_state`; guarded for completeness by `test_car_snapshot.gd`.

@@ -4,6 +4,9 @@ Crowds of low-poly people standing trackside that react to the car: they shuffle
 with simple steering preferences while upright, and are knocked flying when the
 car hits them. The level authors where each group stands (see "Level spectator groups").
 
+**Source:** `scripts/level_spectators.gd` (`LevelSpectators`), `scripts/spectator_group.gd` (`SpectatorGroup`);
+where crowds stand at load is pinned by the scene counts golden (`benchmark/scene_counts.gd`, [benchmark.md](benchmark.md)).
+
 Placement/steering share the low-level scatter helpers: `ScatterMath`
 (`scripts/scatter_math.gd`, seeded `hash01` + road-cell tests) and `SpatialGrid`
 (`scripts/spatial_grid.gd`, point/index binning + 3x3 proximity). `build_point_grid`

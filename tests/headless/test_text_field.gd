@@ -37,7 +37,7 @@ func test_is_text_editing_is_false_with_nothing_focused() -> void:
 	assert_false(MenuNav.is_text_editing())
 
 
-func test_is_text_editing_is_true_only_while_a_field_has_focus() -> void:
+func test_is_text_editing_is_true_only_while_a_field_is_being_typed_into() -> void:
 	var field := TextField.new("Email")
 	_root.add_child(field)
 	var button := Button.new()
@@ -45,6 +45,9 @@ func test_is_text_editing_is_true_only_while_a_field_has_focus() -> void:
 	_root.add_child(button)
 
 	field.line.grab_focus()
+	field.line.unedit()  # grab_focus starts typing; arrow-key focus (what a pad or keyboard player does) doesn't
+	assert_false(MenuNav.is_text_editing(), "a cursor resting on a field is not typing")
+	field.line.edit()
 	assert_true(MenuNav.is_text_editing(), "typing into a field must suppress menu keys")
 
 	button.grab_focus()
@@ -133,3 +136,14 @@ func test_submitting_a_field_emits_submitted() -> void:
 	watch_signals(field)
 	field.line.text_submitted.emit("anything")
 	assert_signal_emitted(field, "submitted", "Enter must submit the form")
+
+
+func test_gamepad_a_on_a_field_starts_typing() -> void:
+	var field := TextField.new("Email")
+	_root.add_child(field)
+	field.line.grab_focus()
+	var a := InputEventJoypadButton.new()
+	a.button_index = JOY_BUTTON_A
+	a.pressed = true
+	field.line.gui_input.emit(a)
+	assert_true(field.line.is_editing(), "A opens the field for typing, as Enter does on a keyboard")

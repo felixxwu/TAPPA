@@ -535,3 +535,11 @@ makes it **bog**, and neither alone reads as deep snow. `cfg.deep_snow_drag` is 
 outside the Alps, so elsewhere it costs one float compare. Player-only — no drag term
 exists in the lap-time model and a rival never leaves the road. See
 [snow-region.md](snow-region.md).
+
+## Snapshot
+
+`car.gd` → `snapshot()` returns every piece of per-tick car state (pose, velocities, sleeping, steering, mass,
+parking-hold anchor, reset/impact counters, crosswind odometer, locks, each wheel's contact by name,
+`last_contacts`, then `drivetrain.snapshot()` and `damage.snapshot()`) as JSON-safe plain values, for the
+replay goldens and a future port to restore. `last_contacts` is only filled while `record_contacts` is on
+(`_record_contacts`), so normal play allocates nothing. Tests: `tests/headless/test_car_snapshot.gd`.

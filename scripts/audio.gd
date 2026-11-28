@@ -52,6 +52,9 @@ const DEFAULT_MIX_RATE := 22050.0
 # rendered in one push; anything past the buffer is dropped.
 const BUFFER_SECONDS := 1.0
 
+# Called with (frequency_hz, duration_sec, volume_db) on every play_beep, headless too, so the replay's event log (GameTrace) sees each cue.
+static var on_beep: Callable
+
 var _player: AudioStreamPlayer = null
 var _playback: AudioStreamGeneratorPlayback = null
 var _mix_rate := DEFAULT_MIX_RATE
@@ -97,6 +100,8 @@ func is_available() -> bool:
 # blocks the caller. Idempotent in the sense that repeated calls only ever queue more
 # audio; they never rebuild or invalidate the player.
 func play_beep(frequency_hz := 0.0, duration_sec := 0.0, volume_db := 0.0) -> bool:
+	if on_beep.is_valid():
+		on_beep.call(frequency_hz, duration_sec, volume_db)
 	if _playback == null:
 		return false  # headless / no audio device
 	var spec := beep_spec(frequency_hz, duration_sec, volume_db)

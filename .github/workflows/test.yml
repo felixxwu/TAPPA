@@ -14,7 +14,17 @@ name: Tests
 on:
   pull_request:
     branches: [main]
-  workflow_dispatch: {}
+  # Direct pushes to main that touch goldens/ still get the bless guard and the golden checks.
+  push:
+    branches: [main]
+    paths: ["goldens/**"]
+  workflow_dispatch:
+    inputs:
+      bless:
+        description: "Re-bless goldens on this Linux image and upload them as an artifact (nothing is committed)"
+        type: choice
+        default: none
+        options: [none, all, car-step, events, scene-counts, menus, touch]
 
 # Read-only is all a test run needs.
 permissions:
@@ -155,3 +165,116 @@ jobs:
         run: ./run_level_replay.sh --golden-check --full
         env:
           GODOT: /usr/local/bin/godot
+
+  # Goldens (goldens/README.md): a fresh run of each mode must match its blessed file byte for byte.
+  # A golden that hasn't been blessed yet is skipped with a notice. A manual run with "bless" set
+  # writes the goldens here instead and uploads them for review, since goldens are blessed on this image.
+  goldens:
+    name: Goldens
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless)
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o godot.zip "${BASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          godot --version
+
+      - name: Import project and fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
+          timeout 600 godot --headless --import --quit || true
+          tools/fetch_bakes.sh
+
+      - name: Bless goldens
+        if: github.event_name == 'workflow_dispatch' && inputs.bless != 'none'
+        env:
+          GODOT: /usr/local/bin/godot
+          WHICH: ${{ inputs.bless }}
+        run: |
+          set -euo pipefail
+          if [[ $WHICH == all ]]; then set -- car-step events scene-counts menus touch; else set -- "$WHICH"; fi
+          for name in "$@"; do ./bless.sh "$name"; done
+
+      - name: Upload blessed goldens for review
+        if: github.event_name == 'workflow_dispatch' && inputs.bless != 'none'
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldens
+          path: goldens/*.jsonl.gz
+
+      - name: Check goldens
+        if: github.event_name != 'workflow_dispatch' || inputs.bless == 'none'
+        env:
+          GODOT: /usr/local/bin/godot
+        run: |
+          set -uo pipefail
+          mkdir -p golden-logs
+          FAILED=()
+          check() {  # check <name> <golden file> <command...>
+            local name=$1 file=$2; shift 2
+            if [[ ! -f $file ]]; then
+              echo "::notice::$file isn't blessed yet, skipping (run this workflow by hand with bless=$name)"
+              return
+            fi
+            echo "::group::$name"
+            "$@" 2>&1 | tee "golden-logs/$name.log" || FAILED+=("$name")
+            echo "::endgroup::"
+          }
+          check car-step goldens/car_step.jsonl.gz ./run_level_replay.sh --car-golden --check
+          check events goldens/events.jsonl.gz ./run_level_replay.sh --events-golden --check
+          # The scene modes need the physics thread off, which only an override.cfg can do (as in bless.sh).
+          printf '[physics]\n3d/run_on_separate_thread=false\n' > override.cfg
+          scene() { "$GODOT" --headless --fixed-fps 60 "res://$1" -- --golden --seed=90210 --check; }
+          check scene-counts goldens/scene_counts.jsonl.gz scene benchmark/scene_counts.tscn
+          check menus goldens/menus.jsonl.gz scene benchmark/menu_flow.tscn
+          check touch goldens/touch.jsonl.gz scene benchmark/touch_flow.tscn
+          rm -f override.cfg
+          if (( ${#FAILED[@]} )); then echo "::error::goldens differ: ${FAILED[*]}"; exit 1; fi
+
+      - name: Upload golden diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-diffs
+          path: golden-logs/
+          if-no-files-found: ignore
+
+  # A commit that changes goldens/ must say why on a "Bless:" line in its message.
+  bless-guard:
+    name: Bless guard
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch'
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Every commit touching goldens/ has a Bless line
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # A new branch's first push has no "before"; then check just the pushed commit.
+          if [[ $BASE =~ ^0+$ ]] || ! git cat-file -e "$BASE" 2>/dev/null; then RANGE="$HEAD^!"; else RANGE="$BASE..$HEAD"; fi
+          BAD=0
+          for c in $(git rev-list "$RANGE" -- goldens/); do
+            if ! git log -1 --format=%B "$c" | grep -q '^Bless:'; then
+              echo "::error::$(git log -1 --format='%h %s' "$c") changes goldens/ without a Bless: line"
+              BAD=1
+            fi
+          done
+          exit $BAD
