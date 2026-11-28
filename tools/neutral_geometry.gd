@@ -29,7 +29,8 @@ static func export(dir: String) -> PackedStringArray:
 	Save.save_disabled = true
 	var tree := Engine.get_main_loop() as SceneTree
 	var world: Node = (load(Scenes.WORLD) as PackedScene).instantiate()
-	tree.root.add_child(world)
+	tree.root.add_child.call_deferred(world)
+	await tree.process_frame
 	var view := world.get_node("Level") as LevelView
 	await view.loaded
 	var streamer := view._streamer
