@@ -48,7 +48,8 @@ static func export(dir: String) -> PackedStringArray:
 		await streamer.prefill_async()  # one synchronous pass in a golden run: ground, then cover
 	LevelStreamer.on_chunk_built = Callable()
 	GroundCover.on_layer_built = Callable()
-	world.free()
+	world.queue_free()
+	await tree.process_frame
 	Benchmark.golden = was_golden
 	return _write(dir.path_join(FILE), chunks, cover, tufts)
 
