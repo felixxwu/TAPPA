@@ -44,7 +44,7 @@ spec items still applies.
 - [x] 4 Delete the island (2026-11-27)
 - [x] 4b Remove outlines (2026-11-28)
 - [x] 5 Retire the stage harness (2026-11-28)
-- [ ] 6 Docs and the final sweep, full test suite green
+- [x] 6 Docs and the final sweep, full test suite green (2026-11-28)
 
 ## Key structural facts (verified 2026-11-23)
 

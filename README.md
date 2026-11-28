@@ -1,23 +1,10 @@
 # TAPPA
 
-A rally roguelike built in Godot — **eight stages, one clock, no second chances.**
-Pick a region, pick a car, and drive eight point-to-point stages back to back.
-Every stage carries a target time: beat it and you bank money and take a boost;
-miss it and the run ends on the spot. There is no rival field and no placement —
-there is the clock, the car you brought, and how much of that car is still working
-by stage six, because damage never destroys a car but always slows it.
-
-A failed run costs you the run and nothing else: money, owned cars, purchased
-perks, boost levels and lifetime stats all survive it. You lose runs and get
-stronger anyway. See [`gameplay.md`](gameplay.md) for the full design vision —
-it's the north star the implementation ladders up to.
-
-> **The pivot has landed.** The game was a Gran-Turismo-style rally career and is
-> now the roguelike above; roughly half the old codebase was deleted in September
-> 2026. [`PIVOT-CHANGES.md`](PIVOT-CHANGES.md) is the two-minute map of what
-> changed, and `todo/roguelike-pivot.md` is the settled decision record that wins
-> over every other document. A few feature docs under `features/` may still
-> describe deleted systems — fix them as you find them.
+A PS1-style rally game built in Godot, driven on one hand-built level: **Hafren
+Forest**, a few kilometres of Welsh forestry roads rebuilt from real map data. Drive
+it freely, take on rallies at its start lines, and spend what you earn on parts and
+cars. Earlier versions (a rally career, a run-based roguelike, a procedural island)
+are deleted; git history has them.
 
 **Describing the game anywhere?** [`docs/store-listing.md`](docs/store-listing.md)
 is the single source of truth for the pitch — tagline, short and full store
@@ -37,7 +24,7 @@ subdirectory to `cd` into.
 
 For how the codebase itself works, start at [`features/README.md`](features/README.md) —
 an agent-oriented index of the feature docs (car physics, drivetrain, engine,
-terrain, rendering, menus, testing, and more).
+the level, rendering, menus, testing, and more).
 
 ## Running the tests
 
@@ -71,6 +58,5 @@ export to Google Play.
 ## Where to go next
 
 - [`features/README.md`](features/README.md) — the map of how the codebase works.
-- [`gameplay.md`](gameplay.md) — the design north star.
 - [`CLAUDE.md`](CLAUDE.md) — project rules for working in this repo (docs-in-sync,
   menu navigation, testing conventions, environment notes).

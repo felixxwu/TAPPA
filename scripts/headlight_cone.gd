@@ -14,7 +14,7 @@ extends RefCounted
 # blow the lit pool out to white.
 #
 # WHY GLOBALS, not material parameters: the materials that read the cone are built
-# in several different scripts (billboard_field, foliage, sign_field, mesh_util) with
+# in several different scripts (level_trees, ground_cover, sign_field, mesh_util) with
 # no common registry, and streamed content appears continuously, so a per-material
 # push would need re-registration bookkeeping on every load.
 # There are only ~10-30 live materials, so this is a correctness choice rather than

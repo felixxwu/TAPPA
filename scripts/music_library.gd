@@ -86,7 +86,7 @@ const SONGS: Array[Dictionary] = [
 ]
 
 # Which song plays in which context. Driven by live state, not transition hooks: while a
-# node is in MENU_GROUP (the title screen) the menu pool plays, otherwise a RALLY song.
+# node is in MENU_GROUP (a front-door menu) the menu pool plays, otherwise a RALLY song.
 # MusicDirector re-picks both at every loading screen and holds each for the whole
 # menu visit / drive; swaps latch at the next 8-bar handoff so they land beat-aligned.
 const MENU_GROUP := "menu_music"

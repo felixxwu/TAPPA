@@ -261,8 +261,7 @@ fighting the per-frame `volume_db` writer: `car.gd`'s `silence_engine_audio()`
 ## Muted during the loading screen
 
 Cars (and their `EngineAudio` children) are placed and `apply_car()`'d — and start
-`_process`ing — well before track/terrain generation runs (`world.gd._ready`: `$Car.apply_car(...)`
-happens, then `await _generate_track(cfg, loading)`), so the engine note would otherwise
+`_process`ing — well before the level finishes loading behind the loading screen, so the engine note would otherwise
 be audible under the loading overlay for the whole load. `engine_audio.gd._ready()` routes
 its `AudioStreamPlayer` through a dedicated **Engine** bus (`bus = &"Engine"`, mirroring how
 `MusicDirector` sets up the Music bus). `MusicDirector` creates that bus (`_ensure_engine_bus`,
@@ -270,9 +269,7 @@ in `_ready`, alongside `_ensure_music_bus`; skipped headless, matching `EngineAu
 calling `play()` there) and mutes/unmutes it every frame in `_update_loading_edge` off the
 `loading_screen` group's presence (`AudioServer.set_bus_mute("Engine", …)`) — the SAME signal
 already used there to re-pick the rally/HQ song on the rising edge, and the one that tracks
-exactly when the overlay is on screen (unlike `world.gd`'s `applied_fps_caps` transition,
-which lands at a different point relative to `loading.finish()` on the staged vs. non-staged
-path). One bus mute covers every `EngineAudio` instance alive at once (player, opponent
+exactly when the overlay is on screen. One bus mute covers every `EngineAudio` instance alive at once (player, opponent
 wreck, HQ display cars) without threading a flag through each. Music/UI sfx are unaffected —
 only the Engine bus is touched.
 
@@ -281,7 +278,7 @@ only the Engine bus is touched.
 `EngineAudio.MIX_RATE` (22050) is the **base/full** rate. The effective rate is resolved
 once per instance through `GameConfig.engine_mix_rate_for(web, touch, MIX_RATE)`, which
 returns `engine_mix_rate_web_touch` on a web TOUCH device and the base rate everywhere
-else — the same `(web and touch)` split as `tree_render_distance_for`. `reconfigure()`
+else. `reconfigure()`
 re-resolves it and re-seats the playback only when the rate actually changed, so the
 synth and the generator can never run detuned relative to each other.
 
@@ -510,9 +507,8 @@ several interpreted ops loses. The wavetable wins because it replaces the *entir
 These are guarded by the existing `test_engine_audio*` tests (which build the
 synth from `GameConfig.new()`, i.e. the code defaults, so they are unaffected by
 the shipped `engine_harmonics` override). Because the fill is frame-coupled, a slow
-main-thread frame (e.g. a terrain chunk-crossing build on web) can underrun the
-generator buffer — hence the `buffer_seconds()` headroom above and the terrain work
-to keep crossing frames short (see [terrain.md](terrain.md)).
+main-thread frame (e.g. a level tile streaming in on web) can underrun the
+generator buffer — hence the `buffer_seconds()` headroom above.
 
 On web this stacks with a second, engine-level buffer: `audio/driver/output_latency.web`
 in `project.godot`, the browser's WebAudio ring buffer. It is read once at engine boot,

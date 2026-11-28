@@ -1,7 +1,7 @@
 # Damage Model
 
 **Source:** `scripts/damage_model.gd` (`DamageModel`, a `RefCounted` helper owned
-by `car.gd` like `Drivetrain`). Design intent in `gameplay.md` › *Damage model*.
+by `car.gd` like `Drivetrain`).
 
 **Tests:** `tests/headless/test_damage_model.gd`, `tests/headless/test_spectator_damage.gd`, `tests/headless/test_engine_logic.gd`
 
@@ -24,8 +24,8 @@ stage `DamageModel.thermal` is off, and **damage never takes the car out**: HP b
 
 `field(max_hp, hp, wheel_toe)` configures all of the above for a run.
 `car.gd` calls it (full HP, straight wheels) from `apply_car`; `apply_owned`
-re-fields it from the OwnedCar (stored HP + persisted `wheel_toe`) when a run
-takes the car to the line (`world.gd::_field_car`).
+re-fields it from the OwnedCar (stored HP + persisted `wheel_toe`) when the car is
+fielded.
 
 ## Damage → HP loss (unified deceleration model)
 
@@ -49,8 +49,7 @@ contact inspection**.
 
 > **NOT skipped while the car is held.** The measurement runs unconditionally (bar the
 > couple of post-teleport ticks `_suppress_impact_frames` covers) — including while the
-> car is deliberately held at the line by `controls_locked` / `handbrake_locked` (see
-> [stage.md](stage.md)). There was briefly an `is_held()` exemption here, because revving
+> car is deliberately held by `controls_locked` / `handbrake_locked`. There was briefly an `is_held()` exemption here, because revving
 > against the old velocity-cancel parking hold made the chassis jitter and creep every
 > tick and `_integrate_forces` faithfully charged that as impact damage for the whole
 > countdown. That was a gate over a physics bug: the hold is now a damped spring to an
@@ -164,8 +163,7 @@ on the `VehicleWheel3D` nodes themselves.
   (`DamageModel.reset_wheel_toe`).
 
 The solid props that arrest the car and so cost HP through the rule above are the
-trees ([trees.md](trees.md)) and the **corner barriers** ([barriers.md](barriers.md)),
-both tagged `OBSTACLE_GROUP` via `ObstacleBody`. Roadside signs are deliberately not
+trees ([trees.md](trees.md)), tagged `OBSTACLE_GROUP` via `ObstacleBody`. Roadside signs are deliberately not
 among them (signs.md (deleted with the free-roam pivot)).
 
 ## Soft contacts — bushes & spectators (`apply_soft_drag`)
@@ -181,7 +179,7 @@ per tick, so ploughing a dense line doesn't wildly over-count — no soft-hit co
 needed.
 
 - **Bushes** (`scripts/bush_field.gd`, `BushField`). Bushes are pure visual scatter
-  (a `TreeMeshField` built `with_collision=false`), so a dedicated node does a
+  (`GroundCover` draws them with no collider), so a dedicated node does a
   per-tick **proximity query**: bush XZ positions binned into a grid (cell = hit
   radius) so only the ~handful in the car's 3×3 neighbourhood are tested. Entering a
   bush (one-shot — tracked in an "inside" set, re-arms on leave) calls

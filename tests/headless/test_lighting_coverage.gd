@@ -17,10 +17,6 @@ const EXEMPT := {
 	"res://shaders/car_shadow.gdshader": "a dark contact shadow, not a lit surface",
 	"res://shaders/level_tree_id.gdshader": "an id pass, never seen by the player",
 	"res://scripts/wheel_force_debug.gd": "debug overlay",
-	"res://models/rocks/rock_largeA.glb": "foliage.gd draws rocks with ps1_models_lit",
-	"res://models/rocks/rock_largeD.glb": "foliage.gd draws rocks with ps1_models_lit",
-	"res://models/rocks/rock_smallA.glb": "foliage.gd draws rocks with ps1_models_lit",
-	"res://models/vegetation/groundcover_opaque.glb": "foliage.gd draws it with tree_canopy",
 	"res://models/spectators/spectators.glb": "crowd.gd level_meshes puts the level spectators on ps1_models_lit",
 	"res://scripts/teleport_beacons.gd": "the obelisk is on level_prop; only its icon stays plain, a glowing marker",
 	"res://blender/911/911.glb": "car.gd puts car bodies on ps1_models_lit",
@@ -42,7 +38,6 @@ const KNOWN_GAPS := [
 	"res://scripts/engine_smoke.gd",
 	"res://scripts/tire_marks.gd",
 	"res://blender/twingo/twingo.glb",  # car.gd re-shades the body, but its *_aero parts keep the imported material
-	"res://models/cabin/log_cabin.glb",
 	"res://blender/spectator/spectator.glb",
 ]
 

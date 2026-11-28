@@ -116,8 +116,7 @@ gas pedal of [mobile-controls.md](mobile-controls.md).
 
 ## Build version
 
-The build version is shown on the **title screen only** (`title_screen.gd`, via
-`UpdateCheck.display_version`) — not on the in-run HUD. It is derived automatically as `0.<git commit count>` with the
+The build version is not shown in game since the title screen was deleted. It is derived automatically as `0.<git commit count>` with the
 short SHA appended (e.g. `v0.61 (b154d5c)`). `build_web.sh` computes this from git
 and stamps it into `application/config/version` in `project.godot` for the
 duration of the export (reverting the file afterwards), so it is baked into the

@@ -47,8 +47,7 @@ prompt** on the native builds (see [update-check.md](update-check.md)).
 **Body scrolls, buttons stay pinned.** A ConfirmPopup has no touch dismissal other than its
 own action buttons (`trigger_back` is reachable only from `ui_cancel`/`menu_back` — Escape
 or gamepad B) and its dim backdrop swallows taps, so a long caller-supplied body (server
-error text via `cloud_busy.gd::report_failure`, a computed multi-line reward via
-`world.gd`) must never be able to push the buttons past reach. `_build` wraps the body
+error text via `cloud_busy.gd::report_failure`, a computed multi-line reward) must never be able to push the buttons past reach. `_build` wraps the body
 `Label` in a `TouchScrollContainer` (`scripts/touch_scroll_container.gd`, `horizontal_scroll_mode
 = SCROLL_MODE_DISABLED`); the button row stays a sibling OUTSIDE the scroll so focus never
 has to enter it. Because a `ScrollContainer` doesn't report its child's minimum size on an

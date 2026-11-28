@@ -129,13 +129,6 @@ var _debug_overlay: WheelForceDebug  # the wheel-force arrow overlay (toggled by
 # simulation (drag, suspension, camera) keeps running so the car settles naturally.
 var controls_locked := false
 
-# When true (alongside controls_locked), the car brakes itself to a stop: full foot brake + the forced handbrake while it's
-# still rolling, then the foot brake releases once stopped. The engine clutch stays
-# ENGAGED through the stop so the engine winds down with the braking wheels (the
-# auto-clutch opens at standstill), instead of free-revving on the handbrake's open
-# clutch. Cleared on re-arm (setup / a car swap).
-var finish_stop := false
-
 # When true, the handbrake is forced on but driver input is otherwise LIVE — the
 # player can rev the engine (the held handbrake opens the clutch, so revs climb
 # freely) and steer, then launch the instant the brake releases.
@@ -533,19 +526,9 @@ func _resolve_drive_inputs(engine, speed: float, steer_demand: float) -> Diction
 			brake_input = 1.0  # parking brake: hold the car on slopes
 			brake_hold = true
 	var handbrake := ai_handbrake if ai_controlled else (is_held() or Input.is_action_pressed("handbrake"))
-	# Declutch normally follows the handbrake (a held handbrake opens the clutch so the
-	# engine can rev free — used for launches). The finish stop is the exception.
+	# A held handbrake opens the clutch so the engine can rev free — used for launches.
 	var declutch := handbrake
 	brake_lamp = 0.0 if brake_hold else brake_input
-	if finish_stop:
-		# Brake to a stop with the foot brake + the forced handbrake, but keep the
-		# clutch ENGAGED so the engine engine-brakes down with the wheels (the auto-clutch
-		# opens at standstill and the engine settles to idle) rather than free-revving on
-		# the open handbrake clutch. Release the foot brake once stopped.
-		declutch = false
-		brake_input = 1.0 if speed > config.finish_stop_speed else 0.0
-		brake_hold = true
-		brake_lamp = brake_input
 	_inputs_scratch["handbrake"] = handbrake
 	# Longitudinal effort and cornering spend ONE friction budget on the front tires, and on a
 	# keyboard or a touch screen every input is 0% or 100% — so the player cannot express the

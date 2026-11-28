@@ -25,7 +25,7 @@ grow/fade slot writer (`_write_slot`), an extra `_max_life` array for the fade
 fraction, and its misfire emission.
 
 Like the wheel dust, it exposes `warm_up(pos)` / `clear_warm_up()` so
-`world.gd._generate_track` can compile its shader variant behind the loading
+`level_view.gd`'s `_warm_up` can compile its shader variant behind the loading
 overlay instead of hitching on the first misfire — see
 [wheel-dust.md → Shader warm-up](wheel-dust.md).
 
@@ -58,7 +58,7 @@ overlay instead of hitching on the first misfire — see
 
 ## Wiring (in-event)
 
-Created + wired by `world.gd` (reused across event regenerations). `setup(car)` syncs the
+Created + wired by `level_view.gd` (`_add_effects`). `setup(car)` syncs the
 last-seen misfire count to the engine's counter so a fresh engine doesn't puff a spurious
 backlog.
 

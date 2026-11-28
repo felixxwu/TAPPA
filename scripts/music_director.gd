@@ -269,7 +269,7 @@ func _current_scene_path() -> String:
 	return t.current_scene.scene_file_path
 
 
-# True while a front-door menu (the title screen) is up; it joins MusicLibrary.MENU_GROUP.
+# True while a front-door menu is up (it joins MusicLibrary.MENU_GROUP); none does today.
 func _menu_open() -> bool:
 	return is_inside_tree() and not get_tree().get_nodes_in_group(MusicLibrary.MENU_GROUP).is_empty()
 

@@ -1,15 +1,15 @@
 # Engine Swap & Detune
 
-**Sources:** `scripts/free_roam/rest_stop_page.gd` (`_build_engines`, the Shop's Engine swaps page),
-`Save.swap_engines`, `scripts/free_roam/loot_rules.gd` (`engine_owner`, `engine_name`; `fielded` writes the
+**Sources:** `scripts/free_roam/rest_stop_page.gd` (`_build_engines` / `_fit_engine`, a shop's Engine swaps page),
+`scripts/free_roam/loot_rules.gd` (`engine_owner`, `engine_name`; `fielded` writes the
 car's `swapped_engine`), `scripts/engine_swap.gd` (`EngineSwap`, pure math/lookup module) and the
 `_apply_engine_swap` fielding step in `scripts/car.gd`.
 
 **Tests:** `tests/headless/test_engine_swap.gd`, `tests/headless/test_loot.gd`, `tests/headless/test_car.gd`
 
-**In free roam two owned cars trade engines; engines aren't sold.** The Engine swaps page lists every
-owned car and the engine in it ("Fjord F-15 engine"). Picking a car marks it with a green "Swap with..."
-line, and picking another swaps their engines (picking the same car or going back drops the mark). A car
+**A car can run any owned car's engine; engines aren't sold.** A shop's Engine swaps page lists every
+owned car and the engine it came with ("Fjord F-15 engine"); picking one fits that engine to the car
+being driven, free (`_fit_engine`; picking the car's own model puts its own engine back). A car
 saves whose engine it has as `engine_from` (a model id; absent means its own), and
 `LootRules.fielded(owned)` turns that into `swapped_engine` on the duplicate that fields the car. The
 persisted car never carries `swapped_engine` itself. Parts and tuning stay with the car.

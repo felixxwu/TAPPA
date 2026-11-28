@@ -20,7 +20,7 @@ extends GutTest
 # the far nastier failure of a file that loads but silhouettes to nothing.
 
 
-# `profile` selects which GameConfig sizing block Foliage.spawn_trees uses, and it does
+# `profile` selects which GameConfig sizing block a species uses, and it does
 # so by comparing against "region" — so ANY other string silently means the home
 # profile. A typo'd profile is therefore not an error, just a tree that is quietly the
 # wrong size, which is worth failing loudly instead.

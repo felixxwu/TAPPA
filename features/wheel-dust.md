@@ -7,8 +7,7 @@ spinning slide. **One pool serves every surface**, with each particle carrying i
 own colour, dimensions and roll picked at emit time: slim green blades on grass (or
 a region's square clods, e.g. snow), and **nothing on the road** — gravel and tarmac
 dust is the opaque blocky [DustPuffs](dust-puffs.md) trail, which replaced the old
-gravel clods (see "Per-particle look" below). Created + wired by `world.gd._generate_track` (reused
-across event regenerations), exactly like `TireMarks`.
+gravel clods (see "Per-particle look" below). Created + wired by `level_view.gd` (`_add_effects`), exactly like `TireMarks`.
 
 **Tests:** `tests/headless/test_wheel_particles.gd`, `tests/headless/test_cpu_particle_pool.gd`
 
@@ -51,14 +50,11 @@ rather than one flat smear.
 
 The grass blade colour is per-region: `_grass_look` uses `wheel_particle_grass_color`
 (`game_config.gd`, tuned to the home world's `textures/grass.jpg`) unless
-`world.gd` has set `WheelParticles._grass_color_override` from the driven rally's
+the level has set `WheelParticles._grass_color_override` from
 `RegionLibrary.look_of()["grass_particle_color"]` (e.g. Greece's dry olive/tan,
 tuned to `textures/grass-greece.jpg`, instead of the home green). Both region
 overrides (this colour and the shape below) are seated together by
-`apply_region_look(look)`: `world.gd` calls it once right after `_wheel_particles.setup()`,
-since a stage's region is fixed for the world's lifetime, and free roam's `BiomeDirector`
-calls it on every ring change (`_seat_particle_look`), since there the region follows the
-car. A region that authors no override falls back to the GameConfig default (alpha-0
+`apply_region_look(look)`: `level_view.gd` (`_add_effects`) calls it once with the home look. A region that authors no override falls back to the GameConfig default (alpha-0
 `Color()` is the "unset" sentinel).
 
 A region may also override the off-road particle's SHAPE, via
@@ -82,7 +78,7 @@ re-applies the instance *scale* after the fact, but never a roll.
 
 So the billboard is done by hand in `shaders/billboard_particle.gdshader`
 (screen-aligned off `INV_VIEW_MATRIX`'s right/up columns, direct `POSITION`
-rewrite — the same approach as `shaders/billboard_opaque.gdshader`), and the instance
+rewrite), and the instance
 basis is *read* instead of thrown away:
 
     column 0 = (cos * half_w,  sin * half_w, 0)   -> length = half_w, direction = roll
@@ -116,7 +112,7 @@ visible draw**. Because the pool sits off-screen at `HIDE_Y` until the first
 gravel wheelspin, that compile used to land as a one-frame stutter the moment a
 car crossed onto gravel. `warm_up(pos)` parks one full-size clod in front of the
 camera so the variant compiles up front, and `clear_warm_up()` hides it again;
-`world.gd._generate_track` calls this (for the dust, smoke, and tyre-mark
+`level_view.gd`'s `_warm_up` calls this (for the dust, smoke, and tyre-mark
 materials) while the loading overlay still covers the view, so the compile is
 hidden. It only runs when a loading screen is up — on a bare regeneration the
 variant is already cached (identical renderer settings) and there's no overlay to
@@ -135,7 +131,7 @@ per-instance engine round-trips a frame is the classic MultiMesh trap — it mur
 mobile/WebGL; one bulk upload sidesteps it. The upload is **skipped entirely when
 nothing changed**: `_advance` is a no-op while `_alive == 0`, so an idle car (or
 one driving cleanly with no wheelspin) does ~zero per-frame particle work. The
-surface gate is a single `TerrainManager.surface_at` dictionary lookup (no
+surface gate is a single `LevelView.surface_at` lookup (no
 centerline search), evaluated only after a wheel has already passed the wheelspin
 test.
 

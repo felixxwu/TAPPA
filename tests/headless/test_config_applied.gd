@@ -44,19 +44,6 @@ func test_target_fps_for_selects_by_platform() -> void:
 	assert_eq(cfg.target_fps_for(true, true, false), 60, "web desktop gets the desktop cap, not the web one")
 
 
-func test_render_distance_for_selects_by_platform() -> void:
-	# Contract, not the shipped numbers: only a web TOUCH device gets the web-touch
-	# distance; every other target gets the main one. Sentinel values so retuning
-	# the shipped 60/120 can't break this.
-	var cfg := GameConfig.new()
-	cfg.tree_render_distance_m = 999.0
-	cfg.tree_render_distance_web_touch_m = 111.0
-	assert_eq(cfg.tree_render_distance_for(false, false), 999.0, "desktop gets the main distance")
-	assert_eq(cfg.tree_render_distance_for(false, true), 999.0, "native touch (non-web) gets the main distance")
-	assert_eq(cfg.tree_render_distance_for(true, false), 999.0, "web desktop (non-touch) gets the main distance")
-	assert_eq(cfg.tree_render_distance_for(true, true), 111.0, "web touch gets the shorter web-touch distance")
-
-
 func test_target_fps_for_passes_through_uncapped() -> void:
 	# 0 means uncapped; the selector must not coerce it (the cap is applied only when > 0).
 	var cfg := GameConfig.new()

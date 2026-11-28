@@ -1,6 +1,6 @@
 # Parts and the level's shop pages
 
-**Source:** `scripts/free_roam/loot_rules.gd` (`LootRules`: the parts catalogue, prices, fitting,
+**Source:** `scripts/free_roam/loot_rules.gd` (`LootRules`: the parts catalogue, fitting,
 names), `scripts/free_roam/rest_stop_page.gd` (`RestStopPage`: the Parts, Engine swaps and Tune
 pages the level opens), and the level's shops and money in `scripts/level_view.gd` (see
 [level-editor.md](level-editor.md)).
@@ -22,7 +22,7 @@ The island's coins, rings, found cars, stunt money and rest stops were deleted w
 `LootRules.catalogue()` lists every part once: each boost part (`BoostLibrary.CATALOGUE`, at level
 0), each drivetrain kit (`LootRules.KITS`) and each tire (`LootRules.TIRES`; grip strengths in
 `GameConfig`'s `shop_tire_*`). The level's shops price what they sell in the level file (each
-shop item's `price`); `LootRules.price(item)` and the catalogue's `price` keys have no live reader. The `ring` keys still in `CarLibrary` / `BoostLibrary` are left over from the island and unread.
+shop item's `price`); the catalogue itself carries no prices.
 
 - **A part is unlocked for one car, then switched on or off.** Each owned car's `parts` are the
   parts unlocked for it, each with an `on` flag (`LootRules.is_on`; only switched-on parts reach the

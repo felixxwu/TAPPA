@@ -117,7 +117,7 @@ should not re-derive them from scratch:
 
 Its 17 tests went with it; the 20 host-free ones in
 `tests/headless/test_wheel_customization.gd` remain and cover the whole feature minus its
-UI. See [testing.md](testing.md) → *The `test_menu_flow.gd` salvage*.
+UI.
 
 ## Navigation, when it is rebuilt
 

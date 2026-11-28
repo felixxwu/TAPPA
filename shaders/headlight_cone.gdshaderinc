@@ -1,6 +1,5 @@
 // Fake headlight cone — the ONE source of truth, included by every shader the
-// headlights can fall on (level_ground, level_prop, level_tree, ps1_models_lit,
-// billboard_opaque, tree_canopy). See
+// headlights can fall on (level_ground, level_prop, level_tree, ps1_models_lit). See
 // todo/night-weather-and-headlights.md.
 //
 // WHY THIS EXISTS AT ALL: the renderer has NO light nodes anywhere — every shader
@@ -144,7 +143,7 @@ float headlight_lit(vec3 world_pos, vec3 world_normal) {
 // "headlights" value in that condition's table entry.
 //
 // Every shader here already separates surface from light (COLOR.rgb on terrain,
-// v_light in ps1_models_lit, v_tint in billboard_opaque), so the cone is always
+// v_light in ps1_models_lit), so the cone is always
 // `+ hl_color * headlight_lit(...)` on the LIGHT term, leaving the surface term
 // untouched:
 //

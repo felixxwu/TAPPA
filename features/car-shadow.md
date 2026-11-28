@@ -15,4 +15,4 @@ side of the outline) on the ground under it.
   car's own axes, so it matches the body's width, length and heading; a car change resizes it.
 - It darkens to `car_shadow_alpha` and fades linearly with the car's height above the ground,
   vanishing at `car_shadow_fade_height_m` (also the ray length) — so jumps read as airtime.
-- Wired like `CarLamps` in `free_roam.gd`, `level_view.gd` (`_add_effects`) and `world.gd`.
+- Wired like `CarLamps` in `level_view.gd` (`_add_effects`).

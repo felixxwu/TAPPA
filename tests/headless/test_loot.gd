@@ -26,14 +26,6 @@ func after_each() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(TEST_PATH + suffix))
 
 
-# --- catalogue and prices ----------------------------------------------------------------------
-
-
-func test_a_price_comes_from_the_items_own_entry() -> void:
-	var id: String = BoostLibrary.CATALOGUE.keys()[0]
-	assert_eq(LootRules.price({"kind": "part", "id": id, "level": 0}), int(BoostLibrary.CATALOGUE[id]["price"]))
-
-
 # --- parts on a car ---------------------------------------------------------------------------------
 
 func test_switched_on_parts_reach_the_car_only_through_the_funnel_keys() -> void:
@@ -75,7 +67,7 @@ func test_one_of_each_part_and_no_kit_for_the_cars_own_layout() -> void:
 	assert_false(LootRules.can_fit(owned, {"kind": "car", "id": "anything"}), "a car isn't a part")
 
 
-func test_a_cars_upgrade_count_is_its_unlocked_parts_on_or_off_out_of_every_part_it_could_have() -> void:
+func test_a_car_could_have_every_part_but_the_ones_it_came_with() -> void:
 	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [
 		{"kind": "part", "id": _part_id(0), "level": 0, "on": true}, {"kind": "part", "id": _part_id(1), "level": 0, "on": false}]}
 	var own := UpgradeLibrary.stock_drive_mode(owned)
@@ -92,8 +84,6 @@ func test_a_cars_upgrade_count_is_its_unlocked_parts_on_or_off_out_of_every_part
 			catalogue += 1
 	var factory_abs := 1 if CarLibrary.has_abs(CarLibrary.for_owned(owned)) else 0
 	assert_eq(all.size(), catalogue - 1 - factory_abs, "every other part in the catalogue counts")
-	assert_eq(LootRules.upgrades_text(owned), "2 / %d upgrades" % all.size(), "switched-off parts still count as bought")
-	assert_eq(LootRules.upgrades_text({"model_id": owned["model_id"]}), "0 / %d upgrades" % all.size())
 
 
 func test_switching_a_kit_on_switches_the_other_one_off() -> void:
@@ -228,28 +218,6 @@ func test_fitted_stats_follow_the_parts_switched_on() -> void:
 
 # --- engine swaps --------------------------------------------------------------------------------
 
-func test_swapping_twice_puts_both_engines_back() -> void:
-	var a: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
-	var b: Dictionary = _save.grant_car(String(CarLibrary.all()[2]["id"]))
-	_save.swap_engines(a["instance_id"], b["instance_id"])
-	assert_eq(LootRules.engine_owner(a), b["model_id"])
-	assert_eq(LootRules.engine_owner(b), a["model_id"])
-	assert_eq(LootRules.fielded(a)["swapped_engine"], CarLibrary.all()[2]["engine"], "the car is fielded with the other's engine")
-	_save.swap_engines(a["instance_id"], b["instance_id"])
-	assert_eq(LootRules.engine_owner(a), a["model_id"])
-	assert_eq(LootRules.engine_owner(b), b["model_id"])
-
-
-func test_a_swap_passes_each_engine_on_rather_than_copying_it() -> void:
-	var a: Dictionary = _save.grant_car(String(CarLibrary.all()[0]["id"]))
-	var b: Dictionary = _save.grant_car(String(CarLibrary.all()[1]["id"]))
-	var c: Dictionary = _save.grant_car(String(CarLibrary.all()[2]["id"]))
-	_save.swap_engines(a["instance_id"], b["instance_id"])
-	_save.swap_engines(b["instance_id"], c["instance_id"])
-	assert_eq([LootRules.engine_owner(a), LootRules.engine_owner(b), LootRules.engine_owner(c)],
-		[b["model_id"], c["model_id"], a["model_id"]])
-
-
 func test_a_cars_weight_and_power_follow_its_swapped_engine() -> void:
 	var a := {"model_id": String(CarLibrary.all()[0]["id"]), "engine_from": String(CarLibrary.all()[2]["id"])}
 	var donor_engine := String(CarLibrary.all()[2]["engine"])
@@ -263,7 +231,6 @@ func test_a_cars_weight_and_power_follow_its_swapped_engine() -> void:
 func test_an_old_saves_bought_engine_does_nothing() -> void:
 	var owned := {"model_id": String(CarLibrary.all()[0]["id"]), "parts": [{"kind": "part", "id": "engine_swap:old", "on": true}]}
 	assert_false(LootRules.fielded(owned).has("swapped_engine"))
-	assert_true(LootRules.upgrades_text(owned).begins_with("0 / "), "and doesn't count as an upgrade")
 
 
 # --- tires ---------------------------------------------------------------------------------------

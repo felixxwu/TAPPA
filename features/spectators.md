@@ -2,8 +2,7 @@
 
 Crowds of low-poly people standing trackside that react to the car: they shuffle
 with simple steering preferences while upright, and are knocked flying when the
-car hits them. Three groups per stage — one at the **start**, one at the **end**,
-and one at a **seeded mid-stage point** (between 30% and 70% progress).
+car hits them. The level authors where each group stands (see "Level spectator groups").
 
 Placement/steering share the low-level scatter helpers: `ScatterMath`
 (`scripts/scatter_math.gd`, seeded `hash01` + road-cell tests) and `SpatialGrid`
@@ -18,7 +17,7 @@ is a thin wrapper over `SpatialGrid.of_points`.
 |------|------|
 | `scripts/crowd.gd` | `Crowd` — the ONE place that owns the shared figure mesh (`mesh()`) and the ground foot-offset (`foot_offset()`). Every crowd goes through it (like `Foliage` for trees/bushes); `SpectatorGroup` pulls the mesh + foot offset through it too, so no crowd can drift from the others. |
 | `scripts/crowd_pool.gd` | `CrowdPool` — Hafren level only: ONE MultiMesh + instance per character model, shared by every `SpectatorGroup` (passed as `params["pool"]`). Groups lease slots (`acquire`) in `setup` and return them (`release`, hidden at zero scale, reusable) when they leave the tree; the pool grows by doubling and rewrites kept transforms. Pooled MMIs sit at world origin with no per-crowd visibility range. Without a pool (the dev stage) a group still owns its own MultiMesh. |
-| `scripts/spectator_scatter.gd` | Pure, seeded placement — `mid_offset()` (where the mid group goes) + `members()` (off-road, tree-avoiding, separated standing positions). Headless, no scene. |
+| `scripts/spectator_scatter.gd` | Pure, seeded placement — `members()` (off-road, tree-avoiding, separated standing positions) and the tree-point grid. Headless, no scene. |
 | `scripts/spectator_group.gd` | `SpectatorGroup` (Node3D) — owns one LIVE crowd: steering, its own dynamic MultiMesh (rewritten each frame), LOD, knockdown→ragdoll, despawn. Pure steering forces are static (unit-tested). Shares the figure via `Crowd.mesh()`/`Crowd.foot_offset()`. |
 | `scripts/level_spectators.gd` | `LevelSpectators` spawns the level's saved spectator groups while the car is near. |
 | `scripts/game_config.gd` | `spectator_params()`. |
@@ -75,7 +74,7 @@ are the test readouts.
 The other first-hit cost, the shader program for the ragdoll's **single**-instance draw
 of the crowd mesh (a different `gl_compatibility` program than the upright crowd's
 MultiMesh, so `_prewarm_corridor`'s flythrough never compiles it), is primed by
-`SpectatorGroup.warm_up` / `clear_warm_up` via world.gd's warm-up contract walk — see
+`SpectatorGroup.warm_up` / `clear_warm_up` via `level_view.gd`'s warm-up contract walk (`_warm_up`) — see
 [rendering.md](rendering.md) → *Shader pre-warm*.
 
 ### Steering (boids on the XZ plane)
@@ -148,17 +147,10 @@ it stands among instead of drawing across the whole stage. See
 
 ### Placement
 
-`mid_offset()` picks a seeded along-track distance in
-`[spectator_mid_progress_min, spectator_mid_progress_max]`. Each group is a band
-**centred on the road** at its anchor, oriented along the local heading:
-`members()` lays a jittered grid (cell = separation) over a
-`spectator_area_length_m` × `spectator_area_width_m` rectangle that straddles the
-carriageway, rejecting on-road cells and points within `spectator_tree_avoid_m` of a
-tree, thinned to `spectator_group_size`. Because the road cells in the middle are
-rejected, the crowd lines **both verges** over that stretch. All deterministic per
-`track_seed` (each group gets a distinct salt). Groups are named
-(`SpectatorStart` / `SpectatorMid` / `SpectatorEnd`) so an in-place regeneration
-replaces rather than stacks them (mirrors `_place_arch`).
+`SpectatorScatter.members()` lays a jittered grid (cell = separation) over an oriented band,
+rejecting on-road cells and points within `spectator_tree_avoid_m` of a tree, thinned to
+the requested count. The level places its groups with `LevelSpectators.place` instead
+(below); `members()` is only exercised by tests now.
 
 ## Level spectator groups
 
@@ -187,8 +179,7 @@ distance). Disable with
 
 ## Tests
 
-- `tests/headless/test_spectator_scatter.gd` — placement: mid-offset band +
-  determinism; member count cap, determinism, within-radius, separation floor,
+- `tests/headless/test_spectator_scatter.gd` — placement: member count cap, determinism, within-radius, separation floor,
   off-road, tree-avoid, grid bucketing.
 - `tests/headless/test_spectator_steering.gd` — each steering force's direction +
   radius cutoff, the speed clamp, and the static-field cache (cached push equals the

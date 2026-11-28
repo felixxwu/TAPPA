@@ -1,7 +1,6 @@
 extends Node
 # Docs: features/world-session.md — update in the same change as this file.
-# The game's main scene: loads straight into the world, which shows the title menu over itself.
-# A first-time player gets a new world first.
+# The game's main scene: loads straight into the world, giving a first-time player a new world first.
 
 
 func _ready() -> void:
@@ -12,6 +11,5 @@ func _ready() -> void:
 		get_tree().change_scene_to_file.call_deferred("res://benchmark/level_replay.tscn")  # benchmark/level_replay.gd
 		return
 	if not WorldSession.has_world():
-		TitleScreen.new_world()
-	WorldSession.title_pending = true
+		WorldSession.new_world(randi(), Config.authored_value("level_car_id", Config.data.level_car_id))
 	Scenes.change_to.call_deferred(get_tree(), Scenes.WORLD)

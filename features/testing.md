@@ -399,9 +399,9 @@ everything that ran.
 
 ## Trap: async work that outlives the node that started it
 
-An async `TrackGenerator.generate()` polls the callables it was handed *across its own
-`await` boundaries*, so if their owner is freed while a search is still in flight, the
-generator calls a lambda whose owner is half-destroyed. The consequences are nastier than a
+Async work that polls the callables it was handed *across its own `await` boundaries* (the
+old track generator, since deleted, was the case that bit) — if their owner is freed while it
+is still in flight, it calls a lambda whose owner is half-destroyed. The consequences are nastier than a
 failed assertion — the corrupted return value aborts the **whole run** with no `Totals`
 block, and since GUT's exit status is still 0 the run masquerades as a fast pass
 (`run_tests.sh` only catches it via `TEST_ERROR_PATTERN`). It is timing-dependent, so it

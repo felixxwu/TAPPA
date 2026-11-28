@@ -162,8 +162,8 @@ fog, and a bright source panorama punched a lit dome through it. Consumed via
 also needs `tools/align_sky_sun.py` run over it if it has a visible sun — see
 [rendering.md](rendering.md) → "Sun alignment".
 
-Still mode 2 (VRAM) on purpose: `grass.jpg`, `gravel.jpg`, `sky_field.png`,
-`groundcover_opaque__albedo.png`, `blender/mx5/wheel.png`. Still mode 1: the tree
+Still mode 2 (VRAM) on purpose: `grass.jpg`, `sky_field.png`,
+`blender/mx5/wheel.png`. Still mode 1: the tree
 atlas and the UI/garage textures — foliage alpha edges block-compress badly, and
 mode 1 keeps them iOS-safe.
 

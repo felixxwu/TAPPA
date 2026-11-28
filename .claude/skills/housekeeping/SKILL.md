@@ -57,9 +57,9 @@ run only those sections. A bare `/housekeeping` runs everything.
 ### 2. Test-suite runtime hasn't regressed
 
 - If the full run took noticeably longer than ~5 min, flag it. Per
-  `features/testing.md` the usual culprit is a test re-instantiating
-  `main.tscn` (full terrain + track generation, ~15 s each) in `before_each`
-  where a shared `before_all` or `SceneTestHelpers.minimal_world()` would do.
+  `features/testing.md` the usual culprit is a test re-instantiating a world
+  (or loading the full Hafren level) in `before_each` where a shared
+  `before_all` with `SceneTestHelpers.add_level_world()` would do.
 - Grep for the smell: `grep -rn "before_each" tests/headless/` and check which
   ones build a full world per test.
 - **Over budget → hand off to [`/optimise-test-suite`](../optimise-test-suite/SKILL.md)**
@@ -78,7 +78,7 @@ Per `CLAUDE.md` (Testing section), flag tests that:
   ordering across authored entries, or an exported enum hint string. Ask "would
   a designer retuning this break this test?"
 - **Depend on a specific catalogue entry** — `CarLibrary.by_id("mx5")`,
-  `EngineLibrary.by_id(...)`, `RallyLibrary`/`UpgradeLibrary` lookups by id in a
+  `EngineLibrary.by_id(...)`, `UpgradeLibrary` lookups by id in a
   logic/physics test. Grep: `grep -rn "by_id(" tests/headless/`. Iterating a
   whole table as opaque input is fine; leaning on one entry's identity is not.
 - **Skip `CarFixtures.install()`** where a synthetic roster belongs (catalogue-
@@ -99,17 +99,12 @@ Point at it instead of deleting anything in this sweep.
 - Check for broken cross-reference links between feature files and to
   `scripts/*.gd` paths that no longer exist.
 - **Docs outside `features/` drift too** — don't stop at the index:
-  - `gameplay.md` is the north star `CLAUDE.md` says to keep aligned when
-    gameplay direction changes. If progression / damage / rewards / tuning moved,
-    check it still describes the game that exists.
   - `README.md` — do the documented setup steps and script names
     (`./run_tests.sh`, `./build_web.sh`, the Godot version) still match reality?
-  - `docs/`, `good-seeds.md` — flag content referencing removed systems, and
-    seeds that no longer generate what they claim (track generation changes
-    invalidate them silently).
+  - `docs/` — flag content referencing removed systems.
   - `CLAUDE.md` and `.claude/skills/*` (**including this file**) — the rules
     cite concrete paths, symbols and helpers (`CarFixtures.install()`,
-    `SceneTestHelpers.minimal_world()`, `MenuNav.attach`, `scripts/menu_nav.gd`).
+    `SceneTestHelpers.add_level_world()`, `MenuNav.attach`, `scripts/menu_nav.gd`).
     When one gets renamed or removed, the instructions rot and quietly mislead
     every future session. Verify the cited symbols still exist.
 
@@ -133,11 +128,9 @@ Point at it instead of deleting anything in this sweep.
 ### 7. Oversized scripts / refactor candidates
 
 - `wc -l scripts/*.gd | sort -rn | head`. **Measure, don't trust this list** —
-  it moves every month. As of 2026-09 (post-pivot: the 3D hub, overworld and
-  rally career scripts are deleted) the giants, descending, are
-  `game_config.gd` (~4200), `terrain_manager.gd` (~3080), `car.gd` (~2520),
-  `world.gd` (~2400), `rally_library.gd` (~1610), `save_manager.gd` (~1520),
-  then `settings_menu.gd` (~1380) and `mobile_controls.gd` (~1120). Flag scripts that have
+  it moves every month. As of 2026-11 (Hafren only) the giants, descending, are
+  `game_config.gd` (~2800), `car.gd` (~2200), `level_view.gd` (~1900),
+  `level_streamer.gd` (~1700), then `mobile_controls.gd` (~1250). Flag scripts that have
   grown a lot since the last sweep or that mix several responsibilities — these
   are refactor candidates. Don't refactor here; note it and suggest a split.
 - Also worth flagging: a single function that's very long, deeply nested
@@ -181,9 +174,8 @@ green in tests and broken in the editor.
   (binary per `CLAUDE.md`; `$GODOT` overrides). Surface every parse error and
   script warning it prints — these are the ones nobody sees until they open the
   editor.
-- Enumerate the root scenes explicitly (`ls *.tscn` — currently `main.tscn`,
-  `hub.tscn`, `menu_showcase.tscn`, `garage.tscn`, `corner_catalog.tscn`,
-  `exhaust_lab.tscn`, `car.tscn`) and check
+- Enumerate the root scenes explicitly (`ls *.tscn` — currently `level_view.tscn`,
+  `title.tscn`, `car.tscn`, `post_process.tscn`, `log_pile_lab.tscn`) and check
   each `ext_resource` path in them still exists on disk. A dangling
   `ext_resource` is the classic post-refactor rot.
 - Check `.uid` files whose sibling script is gone, and scripts with no `.uid`.
@@ -202,7 +194,7 @@ silently when scripts move or features are removed.
   loaded on every boot, including on the weakest phone.
 - **Input actions** — the `[input]` block defines the gameplay map
   (`accelerate`, `brake_reverse`, `steer_left`, `steer_right`, `pause`,
-  `toggle_debug_arrows`, `toggle_perf_overlay`, `skip_to_finish`, …). Check both
+  `toggle_debug_arrows`, `toggle_perf_overlay`, …). Check both
   directions: an action defined in `project.godot` that no code reads (commit
   `ed4a9a8` replaced `reset_car` with `pause` — exactly this shape of leftover),
   and an `is_action_pressed("…")` in code naming an action that isn't defined.
@@ -227,38 +219,15 @@ else in this sweep.
   const's comment says so — renaming the string is the data-loss trap here.
 - Confirm `features/save-persistence.md` documents the current schema version.
 
-### 14. Generated data caches
+### 14. Generated level data
 
-`data/` holds three committed generated artifacts:
-
-- **`data/track_cache.json`** — the track-turn lockfile, baked by
-  `./cache_tracks.sh` (which `./cache_all.sh` now just wraps). Read by
-  `scripts/track_cache.gd`.
-- **`data/eligibility.json`** — the rally × car eligibility matrix, baked by
-  `./export_eligibility.sh` (`tools/export_eligibility.gd`) for
-  `tools/fit_map_pins.py`. Regenerate after any change to a restriction band,
-  car or engine.
-- **`data/menu_showcase_cache.res`** — the hub's 3D background track cache
-  (spec deleted; see `features/menu-showcase.md`), baked by `./cache_menu_showcase.sh`. Stale
-  after any track-generation change; same re-check rule as below.
-
-If generation code changed after the bake, the game ships content that no longer
-matches the generator — invisible in tests.
-
-- Compare mtimes / last-commit dates: is either cache older than the code that
-  produces it (track generation in `world.gd` / `track_generator.gd`;
-  `RallyLibrary.is_eligible` / `ineligibility_reason` and the car/engine tables
-  for the matrix)? If so, flag it and suggest re-running `./cache_all.sh` /
-  `./export_eligibility.sh` — don't regenerate unasked, since it rewrites
-  committed content.
-- Check the cache schema still matches what the loader reads (a renamed field
-  makes entries silently default). `track_cache.gd` also carries a
-  `constants_fingerprint()` guard — note if it's stale.
-- **There is no opponent-field cache, and adding one back is wrong.** The old
-  `data/opponent_cache.json` / `cache_opponents.sh` are gone: post-pivot the
-  only "rival" is a pace-line ghost (`scripts/rival_ghost.gd`) that the stage
-  target time is computed from — there is no grid to prebake. If a sweep
-  "finds" the cache missing, that's the design, not drift.
+The Hafren level's baked files (`tools/levels/`, the `.buildings.bin` and friends
+from `tools/bake_buildings.js` / `pack_level.js`) are committed generated content.
+If a generator under `tools/` changed after the bake, the game ships content that no
+longer matches it — invisible in tests. Compare last-commit dates of each baked file
+against the generator that writes it, and flag stale ones (see
+`features/level-editor.md`); don't regenerate unasked, since it rewrites committed
+content.
 
 ### 15. Build, export presets and CI health
 
@@ -311,7 +280,7 @@ propose wins, don't delete assets or re-encode audio unasked.
 - **Duplicate model payloads.** Where a car ships both `.gltf` + `.bin` and a
   `.glb`, only the imported one is needed at runtime. Flag the redundant pair.
 - **Oversized textures.** Check the largest entries under `textures/` (e.g.
-  `greece.png`, `sky_field.png`, `sky-greece.jpg`) against the resolution the
+  `sky_field.png`, `sky-greece.jpg`) against the resolution the
   game actually samples at — a sky or ground texture authored larger than it's
   displayed is pure download. Note candidates and let the user decide; keep §17's
   mipmap requirement intact if anything is re-imported.
@@ -339,14 +308,13 @@ pipeline that must run on old phones, no quality-tier switch
 report — don't re-tune values, flag drift. (Actually *measuring* frame cost is a
 separate, heavier step: the in-game **Settings → Benchmark**
 ([benchmark.md](../../../features/benchmark.md)), the standalone
-`./run_benchmark.sh`, and the in-run **P** perf overlay
-(`scripts/perf_overlay.gd`). Only suggest running one if a check below turns up a
+web replay benchmark (`?replay=1&full=1`), and the in-run **P** perf readout
+(`LevelView.perf_stats`). Only suggest running one if a check below turns up a
 real suspect — the housekeeping pass itself is grep/read-level.)
 
-- **Frame cap still applied.** `world.gd._ready()` must still cap the render loop
-  via `Engine.max_fps`, now sourced through `FpsSetting` (`scripts/fps_setting.gd`):
-  `FpsSetting.default_cap() if Benchmark.active else FpsSetting.resolve()`, applied
-  unless `Platform.is_headless()`. `FpsSetting.resolve()` returns the player's saved
+- **Frame cap still applied.** `LevelView` must still cap the render loop via
+  `WorldRuntime.apply_fps_cap(..., FpsSetting.resolve(), Platform.is_headless())`
+  (`scripts/world_runtime.gd`, `scripts/fps_setting.gd`), skipped when headless. `FpsSetting.resolve()` returns the player's saved
   Settings → Display choice, falling back to `FpsSetting.default_cap()`, which is
   `Config.data.target_fps_for(Platform.is_mobile_or_web(), Platform.is_web(),
   Platform.is_touch())` (`target_fps` = 60 desktop, `target_fps_mobile` = 60 native
@@ -354,13 +322,11 @@ real suspect — the housekeeping pass itself is grep/read-level.)
   unconditional `Engine.max_fps = 0`, a removed cap, the headless guard gone, or the
   web/mobile branch lost. Grep:
   `grep -rn "max_fps\|target_fps\|FpsSetting" scripts/`.
-- **Foliage / draw budget hasn't ballooned.** The scene builds roughly
-  `track_turn_count × trees_per_turn` instances (`world.gd`). Check
-  `scripts/game_config.gd` for upward drift in `trees_per_turn`,
-  `track_turn_count`, `tree_render_distance_m`, `tree_spawn_radius_m` since the
-  last sweep — bigger numbers = more vertices/fill/collision every frame on the
-  weakest device. These are designer values, so *flag drift*, don't "fix"; but a
-  large jump is worth surfacing.
+- **Draw budget hasn't ballooned.** The level's trees, ground cover and buildings
+  come from the baked level files and `LevelStreamer`; check `scripts/game_config.gd`
+  for upward drift in the tree / cover render distances since the last sweep. These
+  are designer values, so *flag drift*, don't "fix"; but a large jump is worth
+  surfacing.
 - **New MultiMesh / instanced fields stay bounded.** Any new instanced field must
   set `visible_instance_count` or a `visibility_range_*` / LOD cull (the pattern
   in `scripts/tree_mesh_field.gd`) — an unbounded `MultiMesh` that vertex-
@@ -403,12 +369,12 @@ an existing utility already covers, dead abstractions, needless indirection.
 
 - **Fan out — don't read the tree serially.** `scripts/` alone has multi-
   thousand-line files — run `wc -l scripts/*.gd | sort -rn | head -12` to get
-  the current shape rather than trusting a list; as of 2026-09 that is
-  `game_config.gd` (~4200), `terrain_manager.gd` (~3080), `car.gd` (~2520),
-  `world.gd` (~2400) and `rally_library.gd` (~1610).
+  the current shape rather than trusting a list; as of 2026-11 that is
+  `game_config.gd` (~2800), `car.gd` (~2200), `level_view.gd` (~1900) and
+  `level_streamer.gd` (~1700).
   Spawn several `Explore` / `general-purpose` subagents, each owning a slice
   (a big script, or a cluster of related ones — e.g. the drivetrain/tire files,
-  the menu scripts, the terrain files), each returning candidate simplifications
+  the menu scripts, the level files), each returning candidate simplifications
   as `file:line · what · suggested change`. Keep only the findings here; don't
   echo whole files back.
 - **What to surface** (the `/simplify` categories):
@@ -476,7 +442,7 @@ What to look for, cheapest first:
   gravity, physics tick rate, orientation, window size — and recommend reading it.
 - **Scene literals shadowing `GameConfig`.** A node/material property authored in
   a `.tscn` that a script also writes from `cfg` at boot: the scene value is a
-  dead fallback that reads as authoritative. `main.tscn`'s
+  dead fallback that reads as authoritative. `post_process.tscn`'s
   `shader_parameter/virtual_resolution` vs `cfg.virtual_resolution` is the type
   case. Check `test_config_applied.gd` covers each such pair — that test IS the
   pin; a config→scene pair with no assertion there is the finding.

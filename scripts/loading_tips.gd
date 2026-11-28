@@ -11,7 +11,7 @@ extends RefCounted
 # the same rule CLAUDE.md applies to code comments.
 
 # Written for the Hafren level (level_view.gd, features/level-editor.md "In the game"), the
-# world the title screen leads into (Scenes.WORLD): no
+# game world (Scenes.WORLD): no
 # checkpoints or coins there; the engine overheats and a wreck respawns at the last teleport point visited.
 const TIPS: Array[String] = [
 	# --- Teleport points: healing (LevelView.heal_at_points), Upgrade, Swap car, Tune car (LevelView.open_service) ---

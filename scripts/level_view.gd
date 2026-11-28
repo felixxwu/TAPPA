@@ -108,6 +108,7 @@ var perf_stats := LevelStats.new()
 var weather_ratio := 1.0  # share of each weather's particles drawn (adaptive graphics)
 var adaptive: AdaptiveGraphics
 var _driving := false  # true once loaded, so a half-built level never overwrites the saved spot
+var _conflict_due := false  # a cloud sync conflict is waiting to be put to the player
 const GROUP := &"level_view"
 
 
@@ -242,6 +243,9 @@ func _ready() -> void:
 				_recovery.reset_now())
 		_pause.closed.connect(_on_pause_closed)
 		_pause.extra_requested.connect(_on_extra)
+	Cloud.conflict_detected.connect(func(_summary: Dictionary) -> void: _conflict_due = true)
+	Cloud.profile_replaced.connect(_on_profile_replaced)
+	_conflict_due = ConflictPrompt.is_blocked()  # raised before the level loaded, or left for later
 	if not Platform.is_headless():  # nothing renders, so there is nothing to compile
 		var t_warm := Time.get_ticks_msec()
 		await _warm_up(car)
@@ -1657,6 +1661,31 @@ func _build_streamer() -> void:
 	add_child(_streamer)
 
 
+# A sync conflict found in the background (at boot, or on coming back to the app) is put to the
+# player as soon as they are driving with nothing else on screen.
+func _offer_conflict() -> void:
+	if not _driving or _pause == null or get_tree().paused or not _pause.is_armed() \
+			or ConfirmPopup.any_open(get_tree()) != null:
+		return
+	_conflict_due = false
+	get_tree().paused = true
+	_pause.set_input_enabled(false)
+	var done := func() -> void:
+		if not is_inside_tree():
+			return  # taking the cloud copy reloaded the level
+		get_tree().paused = false
+		_pause.set_input_enabled(true)
+	if ConflictPrompt.open(_pause, done) == null:
+		done.call()
+
+
+# A cloud download replaced the save (the player chose the cloud copy, or signed in on a new
+# device): load the level again on it.
+func _on_profile_replaced() -> void:
+	_driving = false  # so leaving doesn't write this device's spot over the downloaded one
+	Scenes.change_to(get_tree(), Scenes.WORLD)
+
+
 func _process(_dt: float) -> void:
 	var __t := Time.get_ticks_usec()
 	_timed_process(_dt)
@@ -1664,6 +1693,8 @@ func _process(_dt: float) -> void:
 
 
 func _timed_process(_dt: float) -> void:
+	if _conflict_due and not Benchmark.active:  # the benchmark's profile is a throwaway
+		_offer_conflict()
 	var __t := Time.get_ticks_usec()
 	_check_delivery()
 	PerfLog.track(&"level_view_delivery", Time.get_ticks_usec() - __t)

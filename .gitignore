@@ -68,11 +68,6 @@ tools/.cache/
 # Python bytecode cache from running tools/*.py
 __pycache__/
 *.pyc
-# Free-roam beacon and cabin screenshots (tools/beacon_capture.tscn, tools/cabin_capture.tscn)
-/tools/beacon_capture_*.png
-/tools/beacon_capture_*.png.import
-/tools/cabin_capture_*.png
-/tools/cabin_capture_*.png.import
 
 # Python bytecode
 __pycache__/

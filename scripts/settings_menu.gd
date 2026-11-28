@@ -2,8 +2,7 @@ class_name SettingsMenu
 extends VBoxContainer
 # Docs: features/settings.md (adding/changing a setting), features/menu-navigation.md (every row must be keyboard+gamepad navigable) — update in the same change as this file.
 # Tests: tests/headless/test_settings_menu.gd, tests/headless/test_menu_nav.gd — extend in the same change. Others: grep -rl SettingsMenu tests/.
-# A reusable settings panel shared by the title screen's Settings page and
-# the pause menu, so both present the SAME options. It opens on a LIST of
+# The settings panel the pause menu shows. It opens on a LIST of
 # categories; each
 # row drills into its own sub-page:
 #   • Audio — a Master volume slider (AudioServer bus 0, so it scales everything:

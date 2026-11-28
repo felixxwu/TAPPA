@@ -113,7 +113,7 @@ func rebuild() -> void:
 	# A conflict raised while this page was closed still needs answering; show it
 	# on OPEN — but only when this page is genuinely on screen. The modal is a
 	# layer-101 CanvasLayer that seizes focus, so raising it from a page parked
-	# inside a hidden overlay would throw a dialog over the title screen (or, in
+	# inside a hidden overlay would throw a dialog over the game (or, in
 	# a test run, over whatever the test was driving).
 	if at_root() and MenuNav.is_on_screen(self) \
 			and Cloud.sync != null and Cloud.sync.blocked_by_conflict:
@@ -282,7 +282,7 @@ func _on_conflict_detected(summary: Dictionary) -> void:
 		_prompt_conflict(summary)
 
 
-# Delegates to the SHARED prompt (scripts/cloud/conflict_prompt.gd): free roam raises the
+# Delegates to the SHARED prompt (scripts/cloud/conflict_prompt.gd): the level raises the
 # same prompt for a conflict found while this page is closed, so the copy, the choices and
 # the resolution calls come from one place. ConfirmPopup.MODAL_GROUP, not a private latch,
 # keeps two hosts from stacking it.

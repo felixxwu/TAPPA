@@ -1,6 +1,6 @@
 extends GutTest
 # SpectatorScatter: pure, seeded placement of roadside spectator groups in the
-# world-XZ plane. mid_offset() picks the random mid-stage distance; members() lays
+# world-XZ plane. members() lays
 # a group out over an oriented band that STRADDLES the road (so the crowd lines both
 # verges), on a jittered grid (cell = separation), off the road and clear of trees,
 # thinned to the requested count. Reads only in-memory data, no scene.
@@ -11,26 +11,6 @@ const CELL := ScatterMath.CELL_M
 
 func _cell_of(p: Vector2) -> Vector2i:
 	return Vector2i(floori(p.x / CELL), floori(p.y / CELL))
-
-
-# --- mid_offset ---------------------------------------------------------------
-
-func test_mid_offset_within_fraction_band() -> void:
-	var baked := 1000.0
-	for s in range(20):
-		var off := SpectatorScatter.mid_offset(baked, 0.30, 0.70, s)
-		assert_between(off, 300.0, 700.0, "mid group lands in [30%%, 70%%] for seed %d" % s)
-
-
-func test_mid_offset_deterministic() -> void:
-	assert_eq(SpectatorScatter.mid_offset(1000.0, 0.3, 0.7, 7),
-		SpectatorScatter.mid_offset(1000.0, 0.3, 0.7, 7), "same seed -> same offset")
-
-
-func test_mid_offset_varies_with_seed() -> void:
-	var a := SpectatorScatter.mid_offset(1000.0, 0.3, 0.7, 1)
-	var b := SpectatorScatter.mid_offset(1000.0, 0.3, 0.7, 2)
-	assert_ne(a, b, "different seed -> different mid offset")
 
 
 # --- members ------------------------------------------------------------------

@@ -1,8 +1,8 @@
 extends Node
-# Docs: features/engine-swap.md, features/save-persistence.md, features/lifetime-stats.md — update in the same change as this file.
+# Docs: features/engine-swap.md, features/save-persistence.md — update in the same change as this file.
 # Tests: tests/headless/test_cloud_sync.gd, tests/headless/test_engine_swap.gd, tests/headless/test_save_manager.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'save_manager' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # Autoload "Save": the single source of truth for everything the player's progress
-# mutates — owned cars (each with its own tuning and parts), lifetime stats, the
+# mutates — owned cars (each with its own tuning and parts), the
 # world (WorldSession) and settings — JSON at user://profile.json, so progress
 # survives a restart on both desktop and the web build.
 #
@@ -40,7 +40,6 @@ const SCHEMA_VERSION := 8
 # On-disk key: changing its value breaks every existing profile unless SCHEMA_VERSION bumps too.
 const KEY_CARS := "cars"
 
-const KEY_LIFETIME := "lifetime"              # stat id -> running total, never reset
 # The world (WorldSession owns its shape and is its only writer).
 const KEY_WORLD := "world"
 
@@ -476,7 +475,6 @@ func _default_profile() -> Dictionary:
 		"updated_utc": "",
 		"next_instance_id": 1,
 		KEY_CARS: [],
-		KEY_LIFETIME: {},
 		# The one persistent free-roam world, {} until New World (WorldSession).
 		KEY_WORLD: {},
 		"settings": {},
@@ -548,18 +546,6 @@ func set_car_parts(instance_id: int, parts: Array) -> void:
 	save()
 
 
-# Swap the engines of two owned cars. Each keeps its parts and tuning.
-func swap_engines(id_a: int, id_b: int) -> void:
-	var a := get_car(id_a)
-	var b := get_car(id_b)
-	if a.is_empty() or b.is_empty() or id_a == id_b:
-		return
-	var a_engine := LootRules.engine_owner(a)
-	a["engine_from"] = LootRules.engine_owner(b)
-	b["engine_from"] = a_engine
-	save()
-
-
 func set_tuning(instance_id: int, tuning: Dictionary) -> void:
 	var car := get_car(instance_id)
 	if car.is_empty():
@@ -590,24 +576,3 @@ func set_setting(key: String, value: Variant) -> void:
 	save(false)  # device-local and never uploaded, so nothing is owed to the cloud
 
 
-# --- Lifetime stats (todo/roguelike-pivot.md "Lifetime global stats") -----------
-#
-# The registry itself — which ids exist, their labels, which call site writes each —
-# lives in LifetimeStats (scripts/lifetime_stats.gd); this is only the persistence,
-# exactly the CarLibrary/Save split every other authored table already follows.
-#
-# Every stat only ever grows.
-
-func lifetime_stat(id: String) -> int:
-	return int((profile.get(KEY_LIFETIME, {}) as Dictionary).get(id, 0))
-
-
-# Add `amount` (default 1) to stat `id`'s running total. A non-positive amount is a
-# no-op — this only ever adds. `sync` as for save().
-func add_lifetime_stat(id: String, amount: int = 1, sync := true) -> void:
-	if amount <= 0:
-		return
-	var stats: Dictionary = profile.get(KEY_LIFETIME, {})
-	stats[id] = int(stats.get(id, 0)) + amount
-	profile[KEY_LIFETIME] = stats
-	save(sync)

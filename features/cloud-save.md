@@ -161,11 +161,9 @@ so **no `SCHEMA_VERSION` bump was needed**:
   local clean" and quietly discard a whole offline session.
 
 `Save.save()` sets `unsynced`; `Save.mark_synced()` clears it and writes
-immediately. `Save.save(false)` (the car's pose, the map driven, sites seen, the odometer —
-`free_roam.save_world` every 5 s) writes to disk WITHOUT setting `unsynced` or emitting
-`profile_changed`: none of it is progress, so it rides up with the next real change instead of
-costing an upload every few seconds of driving, and a device that only drove around can't raise
-a conflict against one that made progress.
+immediately. `Save.save(false)` writes to disk WITHOUT setting `unsynced` or emitting `profile_changed`,
+for state that is not progress, so it rides up with the next real change instead of costing an
+upload. Nothing calls it since free roam's periodic world save was deleted.
 
 | Cloud | Local | Action |
 |---|---|---|
@@ -312,10 +310,10 @@ correctly.
 
 A pull that REPLACES the local profile (first sign-in on a new device, or "Use cloud" on a
 conflict) changes the save out from under the running game. `CloudSync` emits
-**`profile_replaced`**, re-emitted by `Cloud`. `free_roam.gd` → `_on_profile_replaced` reboots
-through `title.tscn` onto the downloaded world. Its exit save writes nothing: `Save.adopt_profile` emits
-`Save.replaced`, which moves `WorldSession.generation` on, and `save_world` only writes the world
-it was built on ([world-session.md](world-session.md)).
+**`profile_replaced`**, re-emitted by `Cloud`. `LevelView._on_profile_replaced` reloads the level on
+it, first clearing `_driving` so leaving doesn't save this device's spot over the downloaded one.
+`Save.adopt_profile` emits `Save.replaced`, which moves `WorldSession.generation` on
+([world-session.md](world-session.md)).
 
 ## Error handling
 
@@ -366,7 +364,7 @@ again by signing back in.
 ## Boot-time pull
 
 `Cloud._ready` calls `auth.restore()` then defers `_kick_off_initial_pull` (one `sync.pull()`).
-Nothing waits for it: free roam starts immediately. The old "await the boot pull" gate
+Nothing waits for it: the level starts immediately. The old "await the boot pull" gate
 (`await_initial_sync` and friends) was deleted as it had no consumer, and
 `CloudSync.has_progress` covers the race it existed for (a fresh local profile never counts as
 progress, so it cannot raise a false conflict against a real cloud career).
@@ -424,14 +422,15 @@ nothing, and `cloud_sync` then refused every later push with "Resolve the sync c
 first." Cloud saving silently stopped, with the only thing that could clear it hidden
 behind a page the player had no reason to visit.
 
-**Two hosts raise it.** The account page, while it is open; and free roam (`free_roam.gd` →
-`_offer_conflict`) for a conflict found in the background — at boot or on coming back to the
-app. Free roam latches `Cloud.conflict_detected` and opens the prompt on its pause menu as soon
-as nothing else is on screen (not under the title, a page, the pause menu or another modal),
-pausing the game and disarming the pause menu until the chosen action has finished, upload included. "Decide later" clears the latch,
-so it is not asked again until the next conflict or the next free-roam scene load (a car swap,
-a new world), which re-latches from `ConflictPrompt.is_blocked()` so a conflict raised during a
-scene change is never lost. The account page's private copy of the resolution
+**Two hosts raise it:** the account page, while it is open, and the level (`LevelView`) for a
+conflict found in the background — at boot or on coming back to the app. The level latches
+`Cloud.conflict_detected` (`_conflict_due`) and `_offer_conflict` opens the prompt on its pause
+menu as soon as the player is driving with nothing else on screen (no page, pause menu or other
+modal), pausing the game and disarming the pause menu until the chosen action has finished,
+upload included. "Decide later" clears the latch, so it is not asked again until the next
+conflict or the next level load, which re-latches from `ConflictPrompt.is_blocked()` so a conflict
+raised during a scene change is never lost. The prompt is a `ConfirmPopup`, so it is
+`MenuNav`-navigable (keyboard + gamepad) like every modal. The account page's private copy of the resolution
 handlers was DELETED rather than kept in parallel; keeping it is what let the behaviour
 drift in the first place.
 

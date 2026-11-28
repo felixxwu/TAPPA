@@ -1,9 +1,9 @@
-# World session and title screen
+# World session and boot
 
 **Source:** `scripts/world_session.gd` (the `WorldSession` autoload), `scripts/title_boot.gd`
-(`title.tscn`, the game's main scene) and `scripts/title_screen.gd` (`TitleScreen`).
+(`title.tscn`, the game's main scene).
 
-**Tests:** `tests/headless/test_world_session.gd`, `tests/headless/test_title_screen.gd`
+**Tests:** `tests/headless/test_world_session.gd`
 
 ## The world block (`Save.KEY_WORLD`)
 
@@ -20,7 +20,7 @@ keeps its own progress in saved settings (`LevelView`: money, car, parts, pose; 
 [level-editor.md](level-editor.md)).
 
 - **New world** (`new_world(seed, model_id)`): replaces the world **and the old owned cars**, because
-  a world is the whole save, and grants the starter car. `TitleScreen.new_world` uses a random seed
+  a world is the whole save, and grants the starter car. `title_boot.gd` uses a random seed
   and the level's authored start car (`Config.authored_value("level_car_id", …)`).
 - **The world generation.** `WorldSession.generation` moves on (`invalidate()`, which also emits
   `world_changed`) whenever the profile's world is replaced: `new_world`, or a whole-profile swap
@@ -28,16 +28,9 @@ keeps its own progress in saved settings (`LevelView`: money, car, parts, pose; 
 - **Schema:** `Save.SCHEMA_VERSION` is 8. Every v7 (roguelike) profile is refused, not migrated,
   and the player starts fresh.
 
-## Boot and the title screen
+## Boot
 
-The main scene (`project.godot → run/main_scene = res://title.tscn`) is just `title_boot.gd`: a
-first-time player (no world) gets one (`TitleScreen.new_world`), then it sets
-`WorldSession.title_pending` and enters `Scenes.WORLD`, the Hafren level (`level_view.tscn`), which
-drives straight in. **Nothing shows the title menu today:** the island was its only host, and
-nothing reads `title_pending` any more.
-
-`TitleScreen` itself is card lists (`CardUI.card_page` / `card_list`,
-[card-carousel.md](card-carousel.md)) with `MenuNav`:
-- **MAIN:** Continue (only with a world) closes the menu; New World (asks first over an existing
-  world); Settings.
-- **SETTINGS:** the shared `SettingsMenu`, on a plain widened `MenuPage` (a form, not a list).
+The main scene (`project.godot → run/main_scene = res://title.tscn`, `Scenes.TITLE`) is just
+`title_boot.gd`: a first-time player (no world) gets one, then it enters `Scenes.WORLD`, the
+Hafren level (`level_view.tscn`), which drives straight in. There is no title menu. The settings
+page's Wipe goes back through `Scenes.TITLE`, so a wiped profile boots as a new player's would.

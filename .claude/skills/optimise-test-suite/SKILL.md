@@ -101,7 +101,7 @@ EOF
 missing ~170 s was `before_all` world builds and script loading, invisible in the
 XML. So a file with a heavy `before_all` and cheap tests **looks free and isn't**.
 Reconcile the two totals every time; if there's a large gap, hunt the `before_all`
-builds separately (`grep -n 'func before_all' -A6 tests/headless/*.gd | grep main.tscn`)
+builds separately (`grep -n 'func before_all' -A6 tests/headless/*.gd | grep add_level_world`)
 and treat the wall-clock number as the real one.
 
 Rules for this step:
@@ -127,10 +127,10 @@ authoritative version; internalise it before touching anything. The short form:
 - `--fixed-fps 60` (in `run_tests.sh`'s `GUT_BASE`) already collapses time spent
   **awaiting frames** — frames run at CPU speed with an unchanged 1/60 delta. So
   "this test awaits 600 frames" is **not** automatically the problem.
-- What's left is genuine CPU. The dominant cost is **`main.tscn` generation**:
-  `world.gd._ready()` runs the track DFS (~7 s) and scatters trees + bushes
-  (~7 s), so a full instantiate is **~15 s of CPU each**.
-  `SceneTestHelpers.minimal_world()` cuts that to **<1 s**.
+- What's left is genuine CPU. The dominant cost is **booting the game world**:
+  `SceneTestHelpers.add_level_world()` loads `level_view.tscn` on a tiny flat
+  synthetic level (well under a second), and the real Hafren level must never be
+  loaded in a test.
 - Second is **physics solver work per step** — settling a car from its spawn
   clearance is ~150 frames of solver, which is why `sim_test.gd` caches the
   settled pose and restores in ~10.
@@ -148,13 +148,10 @@ and apply it.
 
 Before reaching for any scene-level lever, read what the expensive call actually
 *returns* versus what the test actually *asserts*. The biggest single win in the
-2026-08 pass was this, not a world build:
-`test_track_cache.gd::test_committed_cache_covers_every_event` swept all ~97 rally
-events through `TrackCache.lookup()`, which **rebuilds each track's full geometry**
-— while asserting only that the entry exists and its `complete` flag is set. Both
-are properties of the stored dict. Adding a rebuild-free `TrackCache.raw_entry()`
-seam took that one test from **47.6 s to under a second** with zero coverage lost
-(the rebuild path is covered on a small synthetic track by two neighbouring tests).
+2026-08 pass was this, not a world build: a test swept every rally event through a
+lookup that **rebuilt each track's full geometry** while asserting only that the
+stored entry existed. A rebuild-free seam exposing the stored dict took it from
+**47.6 s to under a second** with zero coverage lost.
 
 The pattern to look for: a convenience API that does *retrieve + reconstruct*,
 *generate + measure*, or *load + validate*, where the assertion only needs the
@@ -165,51 +162,32 @@ scaffolding, as long as the expensive path still exists and is still tested.
 Ask of every slow test: **"what is the cheapest call that could still fail this
 assertion?"** If the answer is much cheaper than what it calls, that's the fix.
 
-### 2b. Full generation where `minimal_world()` would do
+### 2b. A world booted where a flat fixture would do
 
-The biggest *scene-level* win, at ~14 s recovered per instantiate. Find the files
-still paying full generation:
+Find the files booting the game world:
 
 ```bash
-for f in $(grep -rln 'main\.tscn' tests/headless/*.gd); do
-  grep -q 'minimal_world' "$f" || echo "$f"
-done
+grep -rln 'add_level_world' tests/headless/*.gd
 ```
 
-For each hit, read what it actually asserts. If it never inspects the
-**track shape, terrain heightfield, or foliage**, switch it to
-`SceneTestHelpers.minimal_world()` immediately before instantiating (in place of
-`Config.reset()`), and add `Config.reset()` to `after_each`/`after_all` so the
-trimmed track doesn't leak into later files.
-
-Note that `minimal_world()` does **not** touch the `$Floor` heightfield, so a
-terrain test can still use it and get real terrain (`test_car_terrain.gd` is the
-canary that relies on exactly that; `test_terrain.gd`'s spawn test was converted
-on exactly that basis, 10.6 s → <1 s).
-
-**Read the whole file before converting a shared scene, not just the test names.**
-`test_smoke.gd` looks like a pile of structural node-existence checks — but one
-test counts colliding vs non-colliding `TreeMeshField` children of the shared
-scene, so `trees_per_turn = 0` would silently turn it vacuous or red. It and
-`test_loading_screen.gd` are the files that legitimately pay full generation. The
-grep finds candidates; only reading the assertions confirms one.
-
-Cheaper still: a test that only needs the car + flat ground should instantiate
-`res://tests/fixtures/test_track.tscn` directly and skip `main.tscn` entirely —
-the `test_debug_arrows.gd` pattern.
+For each hit, read what it actually asserts. If it never touches the HUD, cameras,
+pause menu or `LevelView` itself and only needs a car on flat ground, instantiate
+`res://tests/fixtures/test_track.tscn` directly instead — the `test_debug_arrows.gd`
+pattern. **Read the whole file before converting, not just the test names**: one
+assertion on a level node is enough to need the real scene. The grep finds
+candidates; only reading the assertions confirms one.
 
 ### 2c. `before_each` building a world that `before_all` could build once
 
 A world built per test in a 10-test file costs 10× what it needs to. Find them:
 
 ```bash
-grep -rn -A12 'func before_each' tests/headless/*.gd | grep -n 'main\.tscn'
+grep -rn -A12 'func before_each' tests/headless/*.gd | grep -n 'add_level_world\|test_track\.tscn'
 ```
 
 Convert to a shared `before_all` (plain `add_child`, freed in `after_all`) and
-restore only the per-test *state* in `before_each`. `test_world_engine_mute.gd`
-and `test_load_finished.gd` are the shape to copy; `test_world_water_reconcile.gd`,
-`test_car_water.gd` and `test_turbo_fielding.gd` are the shape to fix.
+restore only the per-test *state* in `before_each`. `test_hud.gd` and
+`test_smoke.gd` are the shape to copy.
 
 **The catch that makes this a judgement call:** a shared world means tests now
 share mutable state. Only do this where the tests don't mutate the world in ways
@@ -242,14 +220,12 @@ exactly this reason (its header comment says so). `test_engine_logic.gd` (bare
 Several small files each building their own world pay the setup N times for a
 handful of assertions. Where they share the *same* setup and are cohesive, merge
 them into one file with a single `before_all`. Good candidates cluster by subject
-— e.g. the tiny `test_world_*.gd` files each boot `minimal_world()` + `main.tscn`
-for 1–3 assertions.
+— e.g. small files that each call `add_level_world()` for 1–3 assertions.
 
 Keep this honest: **merge only what belongs together.** A 6000-line grab-bag is
-its own maintenance cost, and `test_menu_flow.gd` (~5900 lines) is already at the
-edge of that. If merging would produce a file with no coherent subject, don't —
+its own maintenance cost. If merging would produce a file with no coherent subject, don't —
 take the `before_all` win inside each file instead. Never merge a file that needs
-a *different* config baseline (`use_test_config()` vs `minimal_world()`) or a
+a *different* config baseline (`use_test_config()` vs the shipped config) or a
 different catalogue override; you'll create cross-test leakage.
 
 ### 2g. Frame counts — the careful case
@@ -335,28 +311,15 @@ test *looks* low-value and isn't:
 ## 3b. When both prongs aren't enough
 
 Sometimes the honest answer is that the remaining cost is irreducible without an
-architectural change. This suite's floor is set by a handful of **full-library
-generation sweeps** — every authored rally event generated live, ~0.7 s each:
-
-- `test_track_generator.gd::test_every_rally_event_generates_a_complete_track_quickly`
-  (~69 s) — the regression guard for the seed-3002 blow-up, where one seed once
-  took ~474 s. Its own header explains that the honest baseline moved to ~70–80 s
-  when the events were authored ~15% longer, and DFS cost is not linear in
-  `turn_count`.
-- `test_lakes_integration.gd`, `test_track_gen_frame_consistency.gd`, and the
-  challenge-stage generation test in `test_smoke.gd`.
-
-**Do not weaken these to hit the budget.** Sampling a subset of events defeats the
-point (the original bug was a *single* seed), and the guard covers something the
-lockfile cannot: a DFS *control-flow* regression that `constants_fingerprint()`
-doesn't capture, so a fresh `data/track_cache.json` does not imply live generation
-is still fast.
+architectural change — a guard that must sweep a whole authored table, or a physics
+sweep across every car. **Do not weaken these to hit the budget**: sampling a subset
+defeats the point when the bug they guard was in a single entry.
 
 When you land here, say so plainly and put the structural options in front of the
 user rather than silently accepting a red budget or quietly gutting a guard:
 
-1. **Move the full-library sweeps into a separate slow lane** — a CI/pre-release
-   pass like `run_benchmark.sh` is to the suite, leaving the per-change dev loop
+1. **Move the full-table sweeps into a separate slow lane** — a CI/pre-release
+   pass, leaving the per-change dev loop
    fast. This is usually the right answer, but it edits the CI contract, so
    propose it and let the user decide rather than doing it under this skill.
 2. **Re-base the budget** in `CLAUDE.md` and `features/testing.md` with the
@@ -387,11 +350,10 @@ You changed tests without asking, so the proof has to be complete:
 6. **Expect to shake out latent async races, and prove ownership before blaming
    yourself — or absolving yourself.** Speeding the suite up changes when things
    interleave, so a pre-existing race can start firing on the run that validates your
-   work. This happened here: `test_seedlab.gd` left an async `TrackGenerator` search
-   in flight (its abort/progress callables are lambdas capturing the menu), GUT then
-   autofreed the menu, and the generator polled a half-destroyed owner — faulting
-   inside `track_generator._search` and taking the whole run down. It passed under
-   `--fast seedlab` every time.
+   work. This happened here: a since-deleted test left an async search in flight (its
+   abort/progress callables were lambdas capturing a menu), GUT then autofreed the
+   menu, and the search polled a half-destroyed owner — taking the whole run down. It
+   passed under `--fast` every time.
    Establish causality by **ordering and reachability**, not by reverting (which
    `CLAUDE.md` forbids): the failing script was #107 of 164, the test files you edited
    were #121 and #131 (so they had not run yet), and the one production file touched
@@ -462,9 +424,10 @@ pad the report to look like a win.
   restructuring a file that installs a synthetic roster. A leaked override
   breaks every file that runs after it — a mandatory rule in
   `features/testing.md`.
-- **Leaving `Config` trimmed.** A file that calls `minimal_world()` must
-  `Config.reset()` in `after_each`/`after_all`, or later files silently run on a
-  1-turn, tree-free world and their assertions stop meaning what they say.
+- **Leaving the world behind.** A file that calls `add_level_world()` must free the
+  scene and call `SceneTestHelpers.remove_level_world()` in `after_all`, and a file
+  that edits `Config` must `Config.reset()`, or later files run on leaked state and
+  their assertions stop meaning what they say.
 - **Counting the warmup as suite time.** The `--import` class-cache warmup is a
   fixed ~15 s that isn't test cost and isn't yours to optimise; report it
   separately.

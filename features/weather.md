@@ -168,7 +168,7 @@ list it in `config_fields`.
     named by the entry's `foliage_wind` key. Above the shared base, below storm's
     (dust carries no rain). See [trees.md](trees.md) → "Wind sway".
 
-- The tree wind-sway base, near `foliage_light_amount` in the Lighting group —
+- The tree wind-sway base, in the Lighting group —
   shared by EVERY condition unless it names its own `foliage_wind` field:
   - `foliage_wind_strength` — sway at a tree's tip, as a fraction of its height.
   - `foliage_wind_speed` — sway oscillations per second.
@@ -423,7 +423,6 @@ defaults to 1.0 so a session-less boot is unaffected.
 |---|---|
 | Terrain / road | the bake — `TerrainManager.sun_color`/`sky_color` are scaled directly and baked into vertex colours at chunk generation (never via `weather_lit`) |
 | Car (chassis, cabin, wheels, swapped-in body models) | `GameConfig.apply_car_light` → `weather_lit(sun_color)` / `weather_lit(sky_color)` |
-| Foliage billboards (trees) | `GameConfig.apply_foliage_light` → same two colours, `billboard_opaque.gdshader` |
 | Wheel debris and engine smoke (`wheel_particles.gd` → `_emit`, `engine_smoke.gd` → `_write_slot`) | `weather_lit` on each particle's colour as it's written |
 
 **The other way out of this bug class: don't author a colour at all.** Tire marks hit
@@ -437,26 +436,18 @@ world rather than as a lit colour, prefer that — there is nothing left to re-s
 [tire-marks.md](tire-marks.md) → *Colour*.
 
 `ground_color` — the bounce off the surface below — is deliberately **not**
-dimmed in either `apply_car_light` or `apply_foliage_light`: it is dominated by
+dimmed in `apply_car_light`: it is dominated by
 the ground's own albedo, not by the sun.
 
 **Why signs need `albedo_color` specifically**: unlike the terrain, signs carry
 **no baked vertex light** (their `COLOR` is the default white), so `albedo_color`
 is the *only* channel the weather has into them.
 
-**Why foliage needed its own helper**: `scripts/billboard_field.gd` used to push
-five raw `Config.data` values at the billboard shader inline. The directional
-term there is `sun_color * ndl`, so a raw `sun_color` left every tree lit on its
-sunward side at night — where there is no sun. `apply_foliage_light` mirrors
-`apply_car_light` exactly, so trees, car and ground now agree on the light by
-construction rather than by three copies staying in sync.
-
 **The reset**: `world.gd::_exit_tree` sets `Config.data.weather_sun_mult = 1.0`
 alongside the existing `HeadlightCone.reset()`. `weather_sun_mult` is a runtime
 value on the **shared** `Config.data` and nothing anywhere calls
 `Config.reset()`, so without this a night stage would leave the next scene
-dimmed — it spawns trees through `Foliage.spawn_trees`, which now reads it via
-`apply_foliage_light`. `_exit_tree` covers every exit path regardless of
+dimmed. `_exit_tree` covers every exit path regardless of
 destination, and runs before the incoming scene's `_ready`.
 
 **This visibly changes rain and storm** as well as night, which is intended:
@@ -579,9 +570,7 @@ announces itself in the world the moment the stage loads. See [loading.md](loadi
   field; `apply_car_light` scales with `weather_sun_mult` and defaults to no
   dimming; `weather_lit` dims RGB and leaves **alpha untouched** (a scaled alpha
   would make a dim lake transparent instead of dark);
-  `apply_foliage_light` dims the trees' sun with the weather (strictly darker,
-  proportionally); and trees and car take the **same** sun colour on every
-  channel, so the two helpers can't drift apart; every night-lit shader `#include`s the cone and ADDS it to the light
+  every night-lit shader `#include`s the cone and ADDS it to the light
   term rather than multiplying; and `ps1_models` still has no vertex stage. No
   authored angle, range, colour or strength is pinned. Plus the sky override:
   `test_night_names_a_sky_and_no_other_condition_does` — night's `sky_panorama`

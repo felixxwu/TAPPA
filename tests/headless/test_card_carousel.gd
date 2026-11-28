@@ -3,7 +3,7 @@ extends GutTest
 # menu is built from — and CardUI's card-list helpers (scripts/card_ui.gd). Covers
 # selection/confirm signals, tap-to-select vs tap-to-confirm, the nearest-card snap the drag
 # path uses, and card_list's entry → card → action wiring — NOT any page's wording/content,
-# which belongs to that page's own test (test_title_screen, test_level_shop_specialties, …).
+# which belongs to that page's own test (test_level_shop_specialties, …).
 
 var _carousel: CardCarousel
 

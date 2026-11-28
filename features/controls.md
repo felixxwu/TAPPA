@@ -16,10 +16,10 @@ HUD buttons mirror the gearbox/drive-mode toggles.
 | `handbrake` | Space | — | A / Cross (South) | Rear-axle handbrake (drift) |
 | `nitrous` | Left Shift | — | X / Square (West) | Held: spray nitrous while on throttle (see [nitrous.md](nitrous.md)) |
 | `cycle_camera` | C | — | Y / Triangle (North) | Cycle through cameras |
-| `reset_to_road` | R | — | Right stick click (R3) | Free roam: put the car back on the nearest road (`free_roam.gd._unhandled_input` → `RoadRecovery.reset_now`) |
+| `reset_to_road` | R | — | Right stick click (R3) | Put the car back on the nearest road (`level_view.gd._unhandled_input` → `RoadRecovery`) |
 | `look_left` / `look_right` | — | — | Right stick ← / → | Chase cam only: swivel the camera round the car (free look; the mouse and a touch drag do the same, see [camera.md](camera.md) › *Free look*). Not rebindable |
 | `pause` | — | — | Start | Open the pause menu (Esc / B also toggle it) |
-| `toggle_map` | M | — | Back | Free roam: opens the full map while driving (`MiniMap._unhandled_input` → `free_roam.gd → open_full_map`) and closes it again (`WorldPages._unhandled_input`). Out of `InputRemap.ACTIONS` (that list is the driving controls) |
+| `toggle_map` | M | — | Back | Declared in `project.godot` but nothing handles it since the free-roam map was deleted. Out of `InputRemap.ACTIONS` (that list is the driving controls) |
 | `toggle_debug_arrows` | H | — | — | Show/hide force debug overlay + the speed/gear/rpm readout |
 | `toggle_perf_overlay` | P | — | — | Show/hide frame profiler overlay (Hafren level: tree / cover / triangle stats) |
 | `menu_up` | W | ↑ | D-pad up | Menu navigation: move up |
@@ -41,7 +41,7 @@ is still present but unreachable, so the shift actions are not offered for rebin
 
 There is **no direct "reset car" input** — resetting the car onto the track is only
 available from the pause menu's "Reset to track" (`scripts/pause_menu.gd` →
-`_on_reset_to_track_pressed`, routed through `world.gd`). In free roam R / R3 (`reset_to_road`) puts the car on the nearest road.
+`_on_reset_to_track_pressed`, routed through `level_view.gd`). R / R3 (`reset_to_road`) puts the car on the nearest road.
 
 ## Rebinding (settings → Key bindings)
 

@@ -3,7 +3,7 @@ class_name ObstacleBody
 # per instance, all sharing a SINGLE BoxShape3D resource instanced via the physics
 # server (cheap — one shape, N transforms). The body joins the damage OBSTACLE_GROUP so
 # the car's damage model counts hits against it (and not the ground/road). Used by the
-# tree fields (TreeMeshField, BillboardField). The ground-cover bushes and scenery rings
+# level's trees (LevelTrees). The ground-cover bushes and scenery rings
 # skip collision entirely, and roadside signs use their own per-body RigidBody shape.
 
 

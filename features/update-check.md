@@ -1,25 +1,18 @@
 # Update check (native builds)
 
 On launch, the **native** builds ask whether a newer build has shipped and — if
-one has — raise a single dismissible prompt over the title screen's MAIN page with a link to
+one has — raise a single dismissible prompt with a link to
 the store they came from. Nothing else about the game changes: it is one GET, off the
 boot critical path, and every failure mode is a silent no-op.
 
-The title screen's MAIN page also shows the raw stamped `application/config/version` string
-as a small passive label in the bottom-right corner (`TitleScreen._build_version_label`),
-so a player — a Play tester especially — can read off which build they're on without
-any network request. It reuses `UpdateCheck.display_version` to decide WHETHER to
-show anything: an unstamped/unparseable version (the editor's `0.0-dev`, empty in a
-local run) hides the label instead of rendering an empty box or a stray "()". It is
-plain chrome, not a `MenuNav` widget — never focusable, never in the nav order.
+> **Not shown anywhere today.** The title screen was its only host and was deleted; `UpdateCheck`
+> is kept as a library for whichever screen hosts the prompt next.
 
-**Tests:** `tests/headless/test_update_check.gd` (the policy + `display_version`), `tests/headless/test_title_screen.gd` (the placement)
+**Tests:** `tests/headless/test_update_check.gd` (the policy + `display_version`)
 
 | Piece | Where |
 |---|---|
 | The policy (parsing, the decision, the fetch, the destination) | `scripts/update_check.gd` (`UpdateCheck`) |
-| Placement + the modal | `scripts/title_screen.gd` → `_check_for_update` / `show_update_prompt`, fired from the title's `_ready` off the boot critical path, MAIN-only re-checked after the await |
-| The corner build-version label | `scripts/title_screen.gd` → `_build_version_label` (MAIN only, on the page outside the body); `GameConfig.hub_version_label_margin_px` sets its corner margin |
 | The published document | `.github/workflows/deploy.yml` → `deploy-pages` → *Generate docs/version.json* |
 | The "this is a Play build" marker | `export_presets.cfg` → `preset.2` (`custom_features="play"`) |
 | Tests | `tests/headless/test_update_check.gd` |

@@ -40,7 +40,7 @@ static func summary() -> Dictionary:
 # Returns the popup, or null when there is nothing to ask about OR when a modal is
 # already on screen. Callers must not assume a popup came back.
 #
-# Two hosts raise this prompt (the account page, and free roam for a conflict found in the
+# Two hosts raise this prompt (the account page, and LevelView for a conflict found in the
 # background). ConfirmPopup.MODAL_GROUP keeps them from stacking: open returns null instead.
 static func open(host: Node, on_finished := Callable()) -> Node:
 	var info := summary()

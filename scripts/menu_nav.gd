@@ -79,7 +79,7 @@ static func attach(root: Control, opts: Dictionary = {}) -> MenuNav:
 	# sight. UITheme.focus_grab only checks the Control chain, and a Control
 	# inside a hidden CanvasLayer still reports is_visible_in_tree() == true, so
 	# an unguarded re-attach yanks the cursor off whatever is actually on screen
-	# (the account page did this to the HQ title screen). Default stays true:
+	# (the account page once did this to the menu behind it). Default stays true:
 	# most hosts attach once, while hidden, and show immediately after.
 	if bool(opts.get("grab", true)):
 		UITheme.focus_grab.bind(nav._first).call_deferred()
@@ -132,7 +132,7 @@ func _enable_scroll_follow(root: Node) -> void:
 #
 # Static because this is not only MenuNav's problem: anything that grabs focus
 # from a panel that might be parked inside a hidden overlay needs the same
-# question answered (AccountMenu does, and stole focus from the HQ title screen
+# question answered (AccountMenu does, and stole focus from the menu behind it
 # before it asked it).
 static func is_on_screen(node: Node) -> bool:
 	if not is_instance_valid(node):

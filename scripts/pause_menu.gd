@@ -4,8 +4,7 @@ extends CanvasLayer
 # Tests: tests/headless/test_pause_menu.gd, tests/headless/test_photo_mode.gd, tests/headless/test_menu_nav.gd — extend in the same change (every menu change needs a keyboard+gamepad nav test).
 # In-run pause menu. A top-right Pause button freezes the game
 # (`get_tree().paused`) and opens an overlay offering Resume, and Settings;
-# Settings shows the SAME shared SettingsMenu as the title screen (camera angle + mobile
-# controls). The whole layer
+# Settings shows the shared SettingsMenu (camera angle + mobile controls). The whole layer
 # runs with PROCESS_MODE_ALWAYS (set in level_view.tscn) so its button and the menu still
 # respond while the tree is paused. A camera pick in Settings applies immediately via the
 # scene's CameraManager (wired below); ui_cancel (Esc / gamepad B) toggles the menu
@@ -35,7 +34,6 @@ signal photo_mode_requested
 @export var after_resume_rows := PackedStringArray()
 
 signal extra_requested(label: String)
-signal quitting
 
 var _pause_button: Button
 var _overlay: Control          # dim backdrop + panels, hidden until paused
@@ -148,17 +146,10 @@ func return_from_photo_mode() -> void:
 	_focus_card("Photo Mode")
 
 
-# Unfreeze, then go to the title.
-func quit_to_title() -> void:
-	get_tree().paused = false
-	quitting.emit()
-	Scenes.change_to(get_tree(), Scenes.TITLE)
-
-
 func _unhandled_input(event: InputEvent) -> void:
 	if not _input_enabled:
 		return  # Esc / gamepad B do nothing while the world is loading
-	# A ConfirmPopup (the "Quit to title?" confirm) is MODAL and hosted on THIS node, as
+	# A ConfirmPopup is MODAL and hosted on THIS node, as
 	# its own CanvasLayer (layer 101) above the pause overlay (layer 5). Its own
 	# MenuNav consumes ui_cancel/menu_back and directional input, but NOT `pause` —
 	# so without this guard, pressing gamepad Start while the confirm is up fell

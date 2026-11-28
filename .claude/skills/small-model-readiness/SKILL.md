@@ -860,9 +860,8 @@ Not code beauty. Not smaller files as an end in themselves. This:
   unrelated scripts), consider restructuring it into one-concern template files
   in a shared folder — cloning a 30-line neighbour is the task small models are
   best at.
-- **Explicit over clever.** Typed params over duck-typed `Object` seams
-  (`terrain_manager.gd` has four `*_source: Object` injection points a split can
-  break with no compile error). A little straight-through repetition beats an
+- **Explicit over clever.** Typed params over duck-typed `Object` seams (an
+  injection point typed `Object` can be broken by a split with no compile error). A little straight-through repetition beats an
   abstraction to reverse-engineer.
 - **Convention at the point of use.** A one-line comment where a literal is
   declared ("tunables live in `scripts/game_config.gd`") beats another paragraph
@@ -891,9 +890,9 @@ Check these against anything you move. All verified present in this repo:
   `snapshot_values()`/`restore_values()` walk *one* script's property list
   (relied on by `car.gd`'s `_live_baseline`, `start_line.gd`'s `_spawn_grid`).
   `Config.data` identity-by-reference is load-bearing — never reassign it.
-- **"Private" is not private.** Tests reach into privates of `world.gd` (43 test
-  files), `hq.gd`, `car.gd`, `terrain_manager.gd`, `overworld.gd`. A rename
-  inside any of them is a test-breaking API change.
+- **"Private" is not private.** Tests reach into privates of `level_view.gd`,
+  `level_streamer.gd` and `car.gd`. A rename inside any of them is a test-breaking
+  API change.
 - **Save schema** — `SCHEMA_VERSION` and the `_migrate_step` chain; a newly
   persisted field needs a migration.
 

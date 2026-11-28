@@ -1,12 +1,9 @@
 extends Node
 # Docs: features/world-session.md — update in the same change as this file.
 # Tests: tests/headless/test_world_session.gd — extend in the same change.
-# The save's world: whether the player has started one (the title screen's New World / Continue) and
+# The save's world: whether the player has started one (title_boot.gd makes one on first boot) and
 # which owned car it began with. Kept in the profile under Save.KEY_WORLD as {seed, car}; keys left
 # by older saves are ignored. The level keeps its own progress (LevelView's saved settings).
-
-# Set by the boot scene (title_boot.gd) so the next world load opens the title menu over itself.
-var title_pending := false
 
 signal world_changed()
 

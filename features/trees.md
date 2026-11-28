@@ -1,284 +1,41 @@
-# Trees (billboard scatter around turns)
+# Trees
 
-**Source:** `scripts/foliage.gd` (`class_name Foliage` — the ONE place that owns
-the shared tree/bush meshes + materials), `scripts/billboard_field.gd`
-(`class_name BillboardField`, trees), `scripts/tree_mesh_field.gd`
-(`class_name TreeMeshField`, bushes), `scripts/wind_sway.gd` (`class_name WindSway`)
-+ `shaders/wind_sway.gdshaderinc` (the wind sway), `textures/tree.png` (home tree
-cutout), `models/vegetation/groundcover_opaque.glb` (bush ground cover).
+**Source:** `scripts/level_trees.gd` (`class_name LevelTrees`, the level's trees: tiles of
+MultiMeshes packed from the bake, hitboxes near the car, felling), `shaders/level_tree.gdshader`,
+`scripts/foliage.gd` (`Foliage._alpha_card_mesh`, the 6-card star every tree is drawn on, also
+used by `tools/bake_level.gd`), `scripts/tree_fall.gd` (`class_name TreeFall`, the felling
+maths), `scripts/obstacle_body.gd` (the hitbox body), `scripts/wind_sway.gd`
+(`class_name WindSway`) + `shaders/wind_sway.gdshaderinc` (the wind sway). Ground-cover bushes
+are `scripts/ground_cover.gd` + `scripts/bush_field.gd` ([level-editor.md](level-editor.md)).
 
-**Tests:** `tests/headless/test_billboard_field.gd`,
-`tests/headless/test_wind_sway.gd`
+**Tests:** `tests/headless/test_foliage.gd`, `tests/headless/test_level_trees.gd`,
+`tests/headless/test_tree_fall.gd`, `tests/headless/test_wind_sway.gd`
 
-Trees are ALWAYS billboards (`BillboardField`); bushes are ALWAYS low-poly 3D meshes
-(`TreeMeshField`). There is no longer any billboard-vs-mesh toggle — the mesh-tree
-rendering path was removed.
+How the level bakes, streams and draws its trees is in [level-editor.md](level-editor.md)
+("Tree tiles"). This file covers felling, wind sway, the labs the tree art comes from and the
+star-card layout.
 
-**How a tree is cut out of its texture** is `GameConfig.tree_cutout_mode`: 0 the opaque
-traced silhouette (`TreeSilhouette`, `billboard_opaque.gdshader`), 1 a plain "+" card cut out
-per pixel at half alpha (`billboard_alpha.gdshader`), 2 a plain card **blended** by its alpha
-(`billboard_blend.gdshader`, soft edges). The game uses **2** since 2026-10-27: measured on a
-phone it costs the same as the opaque silhouette (the half-alpha cutout was ~3 fps slower): on an
-Android phone, three alternating rounds each, opaque 44.4 fps, half-alpha cutout 41.1, blend 46.0. The blended card writes depth and drops
-pixels under 0.1 alpha, because the web's Compatibility renderer has no depth prepass and the
-trees of a field otherwise drew over each other in spawn order; the cost is a faint halo where a
-soft edge is drawn before a tree behind it. All three share `billboard_tree.gdshaderinc`, and the
-card mesh is `Foliage._alpha_card_mesh` (same "+" layout and plane flags as the silhouette).
-
-> **Rocks are not covered here.** The roadside boulders also live in `Foliage` and
-> also render through `TreeMeshField`, but they are meshes rather than billboards,
-> they collide, and they are lit live per-vertex instead of taking the ground's baked
-> light. See [rocks.md](rocks.md).
-
-**Centralised spawning (`Foliage`).** Every place that spawns foliage (the dev stage's
-`world.gd`) goes through `Foliage.spawn_trees()` / `Foliage.spawn_bushes()`. So the shared
-meshes and the size normalization all live in exactly one file: a tree is the same kind of
-tree wherever it appears, and a tree/bush is scaled to
-`cfg.tree_size_m` / `cfg.bush_height_m` everywhere.
-
-Shared low-level helpers used across the scatter/field code: `ScatterMath`
-(`scripts/scatter_math.gd`) — seeded `hash01` + road-cell `cell_of`/`on_road`;
-`SpatialGrid` (`scripts/spatial_grid.gd`) — bin points into cells and query a
-3x3 neighbourhood; `ObstacleBody` (`scripts/obstacle_body.gd`) — the shared
-single-`BoxShape3D` StaticBody obstacle builder used by `TreeMeshField` and
-`BillboardField`.
-
-After the track is generated and baked, foliage is scattered around each turn.
-**Trees** are billboards (`BillboardField`); **bushes** are solid
-low-poly 3D meshes (`TreeMeshField`). Both share the same `TreeScatter` placement.
-
-**Per-region tree species split.** A region authors a weighted `tree_mix` of
-billboard species (`{texture, profile, weight}` — see
-[regions.md](regions.md) → "Tree species split"). `world.gd` splits the
-scattered positions by weight (`TreeScatter.partition_by_weight`) and calls
-`Foliage.spawn_trees()` once per species, passing that species' `texture` and a
-`use_region_profile` flag (from its `profile`) — decoupled from the texture, so a
-region's mix can carry the home `tree.png` at `home` sizing (`cfg.tree_size_m`)
-alongside its own tree at `region` sizing (`cfg.region_tree_billboard_size_m`).
-Greece is 70% `textures/tree-greece.webp` (a large, low canopy at the region
-profile) + 30% `textures/tree.png` (the home profile). Each species traces the
-same "+" cross silhouette;
-the mesh is cached per source-texture path in `Foliage.tree_silhouette_mesh(tex)`
-so each distinct cutout (home `tree.png` + any region texture) is built once. Both
-billboard paths (home + region) get **per-instance random size jitter**: each tree
-is scaled by a deterministic factor in `[floor, 1.0]` (hashed off its world XZ in
-`BillboardField._size_factor`), so a stand varies in height instead of every tree
-being identical. The floor is a separate tunable per path —
-`cfg.tree_billboard_min_scale` for the home path and
-`cfg.region_tree_billboard_min_scale` for the region path (e.g. Greece). `1.0`
-disables the jitter. The factor is recomputed on felling-restore so it stays
-consistent.
-
-On top of that uniform size, each tree also gets **aspect jitter**: width (x/z)
-and height (y) are scaled by *independent* random factors in `[1 - k, 1 + k]`
-(distinct hash salts in `BillboardField._instance_scale`), so some trees read
-taller-and-narrower and others shorter-and-wider. The amplitude `k` is the
-"how drastic" dial, a separate tunable per path —
-`cfg.tree_billboard_aspect_jitter` (home) and
-`cfg.region_tree_billboard_aspect_jitter` (region) — clamped to `[0, 0.9]`; `0`
-disables the shape variation. Like the size factor it's deterministic per world XZ,
-so felling-restore keeps the same stretched shape.
-
-Each billboard path also has its own **ground-sink offset** (`BillboardField.build`'s
-`y_offset`, added to the terrain height per instance): `cfg.tree_billboard_ground_offset_m`
-for the home path and `cfg.region_tree_billboard_ground_offset_m` for the region path.
-A negative value pushes the card's bottom edge below the terrain to hide the seam where
-the trunk meets a sloped surface; positive lifts it.
-
-The billboard cutout is baked into GEOMETRY, not the shader: `TreeSilhouette`
-(`scripts/tree_silhouette.gd`) traces the tree texture's alpha (home:
-`textures/tree.png`) into a
-low-poly silhouette `ArrayMesh` once at load (cached by `Foliage.tree_silhouette_mesh()`),
-triangulating every opaque cluster `opaque_to_polygons` returns so the gaps
-between clusters are real geometry holes. The silhouette is emitted as a **"+"
-(cross)** — the traced triangles are added twice, once in the XY plane and once
-rotated 90° about Y into the ZY plane (sharing the same UVs), and each vertex
-carries a **plane flag** in its vertex `COLOR.r` (0 = XY plane, 1 = ZY plane) so
-the shader can treat the two planes differently. `BillboardField`
-instances that mesh in **per-bin MultiMeshes** (one per `tree_bin_size_m` grid
-cell, like `TreeMeshField`) with
-`shaders/billboard_opaque.gdshader` — `unshaded, cull_disabled,
-depth_draw_opaque`, **no `discard`**. Because there is no per-fragment
-alpha test, early-Z stays enabled and overdraw collapses to actual coverage,
-which is the win on tile-based mobile-web GPUs (an alpha-`discard` billboard
-disables early-Z for the whole draw and pays overdraw every frame).
-
-**Standing = one camera-facing card; felled = locked cross.** Each instance
-carries a **felled flag** in its MultiMesh custom data (`INSTANCE_CUSTOM.x`: 0
-standing, 1 knocked over), and `billboard_opaque.gdshader` branches on it:
-- **Standing** — plane 0 (XY) is Y-billboarded about world Y so its face always
-  points at the camera (upright, cylindrical), and plane 1 (ZY, the
-  vertex-`COLOR.r == 1` plane) is **collapsed to a point**. A standing tree is thus
-  a single camera-facing card — no "+" grid look, and no doubled overdraw. The
-  instance basis carries only the `tree_size_m` scale (identity rotation), which the
-  shader reads from the column lengths.
-- **Felled** — the flag flips (`BillboardField.knock_down`), so the shader stops
-  billboarding and locks BOTH planes in place, applying the instance's MODEL
-  transform (a **topple tilt** about the base + the size scale) verbatim. The card
-  snaps into the fixed "+" cross and topples, so a fallen tree reads as a solid 3D
-  shape instead of a flat sheet lying on the ground.
-
-**Sun shading (matches the terrain).** Standing billboards are no longer flat:
-`billboard_opaque.gdshader` runs the same hemisphere-ambient + one-directional-sun
-model the terrain bakes (`terrain_manager._bake_light` / `ps1_models_lit.gdshader`).
-The card normal is the horizontal to-camera direction `to_cam`, so `hemi` is fixed at
-`0.5` (a vertical surface sees half sky, half ground) and only the sun's **horizontal**
-component drives the directional term `ndl = max(dot(to_cam, sun_dir), 0)` — sun on the
-camera's side brightens the visible face, sun beyond the tree falls to pure ambient. The
-factor is computed once per card in `vertex()` (where `to_cam` already lives), passed as
-`varying v_tint`, and multiplied into `ALBEDO`. **Felled** trees skip the directional term
-and take **ambient-only** (they lie flat and are a rare, transient minority). The five
-uniforms (`sun_dir`, `sun_color`, `sky_color`, `ground_color`, `light_amount`) are pushed
-from `Config.data` in `BillboardField.build` (opaque path only); the shader deliberately
-**omits** the `source_color` hint on the colour uniforms so it consumes the same raw
-`Color` floats the terrain bakes (adding it would sRGB-decode and make trees diverge from
-the ground). Strength is the new `foliage_light_amount` config knob — default `1.0`,
-independent of but conventionally kept equal to `terrain_light_amount`; `light_amount = 0`
-is an exact no-op so an unset material renders as before. Because the normal is horizontal,
-the effect is coupled to a low sun: if `sun_direction`'s elevation were raised a lot, trees
-would react progressively less while terrain/cars keep reacting.
-
-Distance
-fade is a vertex **shrink-out** over `tree_render_fade_m` before
-`tree_render_distance_m` (opaque, replacing the old screen-door dither, which
-needed `discard`): the shader scales the whole normalized vertex toward the
-bottom-centre pivot. Trees (and bushes) have **no near-camera shrink**: they keep their full size however
-close the camera gets. The fade multiplies into one
-`scale` in `vertex()`, so `billboard_opaque.gdshader` has **no `discard` at all** —
-the mesh-baked cutout keeps it fully opaque, which keeps early-Z / hidden-surface
-removal ON for the draw (the old per-fragment near dither forced HSR off on
-tile-based mobile GPUs). Near-fade range is still wired in `BillboardField.build`
-for the opaque path only (the quad path has its own alpha-cutout distance fade). Trees
-keep the same `TreeScatter` placement and box collision.
-
-On top of the shader shrink-out, the per-bin split gives the engine a real **cull**:
-each bin's `MultiMeshInstance3D` carries `visibility_range_end = tree_render_distance_m`
-(fade `tree_render_fade_m`) and a compact bin-centred AABB, so far bins are
-frustum- and distance-culled *whole* — their instances aren't vertex-processed or
-submitted at all. (A single field-wide MultiMesh, which is what `BillboardField` used
-to be, submits and vertex-shades every billboard every frame; its one track-spanning
-AABB is always on-screen so it never frustum-culls.) Collision stays one
-`StaticBody3D` in build order, so a contact's shape index still equals the global
-instance index; `_slot_of` bridges that index back to the binned MultiMesh for
-felling. The silhouette
-airiness/triangle budget is set by `TREE_SILHOUETTE_ALPHA` / `TREE_SILHOUETTE_EPSILON`
-in `Foliage`.
-
-## Placement (`TreeScatter`)
-
-Pure, headless, seeded — same world-XZ plane as `TrackGenerator`
-(`x → world x`, `y → world z`).
-
-- `turn_anchor(piece)` — centroid of the piece's rasterized `cells` (world XZ),
-  i.e. roughly where the turn is.
-- `scatter(pieces, road_cells, params, seed_value)` — places foliage on a **global
-  jittered grid**, not by rejection sampling. The grid cell size
-  (`grid_cell_size`) is derived from the target density —
-  `spawn_radius_m * sqrt(PI / trees_per_turn)` — so one point per cell over a turn
-  disc yields ~`trees_per_turn` trees. For each turn, it walks the grid cells its
-  disc covers; each cell emits a single point at the cell centre plus a **seeded
-  jitter** of up to ±`jitter`/2 of a cell, then keeps it only if the point lands
-  inside the disc and its 0.5 m cell is not a road cell (`_on_road`, one dict
-  lookup). The grid is **global** — a `used` set means overlapping turn discs share
-  cells, so a cell is never placed twice and spacing stays even across the whole
-  track. Because there's one point per cell, two trees are **never closer than
-  `(1 - jitter) * cell`** (axis-adjacent worst case) — spacing is guaranteed by
-  construction with **no neighbour scan**, so the cost is O(cells), not the old
-  O(N²). The jitter (and a per-seed whole-lattice **phase**) are pure hashes of
-  `(cell, seed_value)`, so placement is deterministic and order-independent, and a
-  different seed (the bush offset) lands on an interleaved grid rather than the same
-  cells. Reads only the in-memory `pieces` + `road_cells` — never the placed scene.
-- **Forest patches** — trees are then gated by a low-frequency Perlin field so a stage
-  reads as stands of forest broken by clearings, not one continuous tree line. The
-  optional `forestiness` (0–1) + `forest_wavelength` args build a seeded
-  `make_forest_noise` (wavelength in metres, default 300); a tree is kept only where
-  `forest_density(p)` (the noise remapped to [0,1]) exceeds `1 - forestiness`. So
-  `forestiness = 1` keeps everything (the noise is skipped), `0` keeps nothing, and
-  values between thin the trees into patches.
-
-  **The in-between is nowhere near linear, and the usable band is narrow.** The field is
-  a SINGLE-OCTAVE Perlin, which never approaches its nominal extremes — measured across
-  the shipped seeds it spans about 0.18–0.83, clustered around 0.5 — so most of the
-  authoring range does nothing at all:
-
-  | forestiness | 0.15 | 0.20 | 0.30 | 0.40 | 0.45 | 0.55 | 0.70 |
-  |---|---|---|---|---|---|---|---|
-  | area kept | none | ~0.01% | ~1% | ~14% | ~30% | ~70% | ~99% |
-
-  This has already shipped a bug: the Alps were authored at 0.15–0.30 reading those as
-  "sparse alpine forest", and several stages generated with **no trees at all**. Anything
-  below roughly 0.35 means *none*, not *few*; author sparse-but-present around 0.38–0.48.
-  See `TreeScatter.forest_density`.
-
-  It's `cfg.track_forestiness`, which defaults to 1.0 (fully wooded). **Bushes pass the default
-  1.0**, so undergrowth covers the whole stage regardless of the forest pattern.
-
-  **`road_cells` is the visible road footprint inflated by the margin**,
-  rasterized at `track_width + 2*tree_road_margin_m` via
-  `TrackGenerator.rasterize_cells(centerline.tessellate(), …)` in `world.gd`.
-  `tree_road_margin_m` is the tunable gap kept between the nearest trees and the
-  road edge. The footprint is deliberately NOT `TrackGenerator.generate`'s
-  returned `cells`, which are the collision set inflated to `track_width +
-  2*track_clearance` — using those would push every tree `track_clearance`
-  metres back from the real road edge.
-
-## Rendering — trees (`BillboardField`)
-
-Trees render as billboards through `BillboardField`
-(`scripts/billboard_field.gd`) — see the silhouette / "+"-cross / shader detail
-above. All instances share a single MultiMesh (one draw call), with a compact
-per-field AABB and a `visibility_range` cull past `tree_render_distance_m` over a
-`tree_render_fade_m` band. `build()` records each placed world position in
-`instance_positions: PackedVector3Array` — a renderer-independent mirror, since
-the MultiMesh transform buffer lives in the RenderingServer (a no-op stub under
-`--headless`, so tests read this instead). The opaque billboard shader avoids the
-per-fragment `discard` (early-Z stays on, overdraw collapses to coverage), the win
-on tile-based mobile-web GPUs.
-
-**Foliage light goes through `GameConfig.apply_foliage_light`.** `BillboardField`
-used to push the five sun/ambient uniforms at `billboard_opaque.gdshader` as raw
-`Config.data` values; it now hands the material to `apply_foliage_light`, which
-mirrors `apply_car_light` and dims sun + sky by the weather's `weather_sun_mult`
-(see [weather.md](weather.md) → "Unshaded means nothing dims for free"). So trees
-dim with the ground and the car instead of keeping a lit sunward side on a night
-stage, where there is no sun to light them. `ground_color` (the bounce) is
-deliberately not dimmed. Anything new that fakes lighting should route its
-authored colours through `GameConfig.weather_lit` for the same reason.
-
-## Collision (`BillboardField` + `ObstacleBody`)
-
-For stage trees (`with_collision = true`), `BillboardField` builds a child
-`StaticBody3D` named `Collision` holding one box hitbox per tree, via the shared
-`ObstacleBody` builder. All boxes share a single `BoxShape3D` resource instanced
-via `PhysicsServer3D.body_add_shape(body_rid, shape_rid, transform)` — one shape,
-N transforms, so thousands of trees add negligible node/memory overhead. Each box
-is `2*tree_collision_radius_m` wide (square footprint), `tree_collision_height_m`
-tall, and centred half its height above the ground so it rests on the surface.
-The body stays on `collision_layer = 1` like `TerrainChunk`, so the car collides
-with trees the same way it collides with the ground. Decorative fields pass `with_collision = false` and build no body.
-
-## Felling — crash a tree over at speed (`TreeFall` + `BillboardField`)
+## Felling — crash a tree over at speed (`TreeFall` + `LevelTrees`)
 
 Crash into a tree carrying real speed and it topples over and loses its hitbox, so
 you can drive on through where it stood. Hit one slowly and it stays a solid
-obstacle (the collision above, unchanged).
+obstacle.
 
 - **Threshold (size-aware).** `TreeFall.should_fell_sized(speed_mps, size, cfg)`
   (`scripts/tree_fall.gd`, a pure static module like `ScatterMath`) returns true when
   the km/h-converted approach speed is `>= TreeFall.fell_speed_kmh(size, cfg)`, which
   scales **linearly** with the tree's visual `size`: `cfg.tree_fell_speed_kmh * size`
-  (0 disables felling). So a small billboard tree topples at a low speed while a
+  (0 disables felling). `LevelTrees.size_factor` is the tree's baked height over
+  `level_tree_full_height_m`, clamped to 1, so a small tree topples at a low speed while a
   full-size tree keeps the configured threshold. Keyed to the car's **pre-solve**
   `_approach_speed` / `_approach_dir` (`car.gd`), captured at the top of
   `_physics_process` — a head-on hit's post-solve velocity is ~0, so reading it later
   would never fell (same rationale as the damage speed).
 - **Trigger.** `car.gd._integrate_forces`'s object-reaction loop (contact-driven, and
   now run **before** the global deceleration-damage tick): for each obstacle contact
-  it reads the struck instance's `field.size_factor(shape_idx)` and, if the approach
+  it reads the struck tree's `LevelTrees.size_factor(shape_idx)` and, if the approach
   speed fells a tree that size, calls
-  `field.knock_down(state.get_contact_collider_shape(i), _approach_dir, cfg.tree_fell_duration_s)`.
-  The contact's **shape index equals the tree's global index** (boxes are added in
-  build order; see `ObstacleBody`). Ploughing into a line of trees drops each one.
+  `knock_down(state.get_contact_collider_shape(i), _approach_dir, cfg.tree_fell_duration_s)`. Ploughing into a line of trees drops each one.
 - **Plough-through (size-aware collision).** A felled tree no longer necessarily stops
   the car dead. Because Godot's solver arrests the car head-on *before*
   `_integrate_forces` runs, the loop restores a size-scaled slice of the shed **forward
@@ -294,203 +51,24 @@ obstacle (the collision above, unchanged).
   or a non-tree obstacle) legitimately stops the car (`solid_wall` guard). Across
   several felled contacts the **largest** felled tree governs (`keep` is the `min`).
   `cfg.tree_plough_keep_max == 0` disables plough-through entirely (every felled tree
-  hard-stops). `size_factor()` returns the billboard's per-instance jitter scale.
-- **`knock_down(idx, dir, duration)`** (idempotent). Disables that tree's box in
-  place via `PhysicsServer3D.body_set_shape_disabled(body_rid, idx, true)` — never
-  `body_remove_shape`, which would shift every higher shape index and break the
-  index→tree mapping. Then it queues a fall record; `is_fallen(idx)` reports the
-  bookkeeping (the physics server has no public "is disabled" getter). The field is
-  one unbinned MultiMesh, so the contact shape index IS the instance index. Only the
-  **opaque tree path** is fellable: `knock_down` flips the instance's **felled flag**
-  (`INSTANCE_CUSTOM.x`) so `billboard_opaque.gdshader` locks the "+" cross and stops
-  billboarding, then the topple tilt shows. An unknown idx is a safe no-op.
-- **Animation.** `BillboardField._process` advances each fall, rebuilding only that
-  instance's MODEL transform: `Basis(axis, TreeFall.fall_angle(elapsed, duration)) *
-  _upright_basis(idx)` at the unchanged base origin, so it pivots about the trunk
-  base. `topple_axis(dir)` is horizontal and perpendicular to travel (falls along
-  `dir`). `fall_angle` is an eased 0 → `FLAT_ANGLE` (just past PI/2), monotone,
-  clamped. Records retire when flat and `set_process(false)` when none remain, so a
-  settled forest costs nothing per frame.
-- **Persistence.** Transient: felled trees stay felled until the field is rebuilt.
+  hard-stops).
+- **`LevelTrees.knock_down(idx, dir, duration)`** (idempotent). Disables that tree's box
+  via `PhysicsServer3D.body_set_shape_disabled` (never `body_remove_shape`, which would shift
+  every later shape index), then queues a fall record; `is_fallen(idx)` reports it.
+  `_step_falls` rebuilds the tree's pose each frame as `Basis(axis,
+  TreeFall.fall_angle(elapsed, duration)) * standing basis` at the trunk base and marks its
+  tile for a repack. `topple_axis(dir)` is horizontal and perpendicular to travel;
+  `fall_angle` eases from 0 to just past PI/2.
+- **Persistence.** Transient: felled trees stand again when the level reloads.
 
 Config knobs `tree_fell_speed_kmh` / `tree_fell_duration_s` are balance values (see
 Configuration); tests assert the felling *logic*, never the chosen numbers.
 
-## Bushes (low-poly 3D ground-cover mesh, `TreeMeshField`)
-
-Bushes are the low ground-cover patch in
-`models/vegetation/groundcover_opaque.glb` (see `models/vegetation/README.md`),
-rendered through `TreeMeshField` (`scripts/tree_mesh_field.gd`) as **solid
-low-poly 3D meshes**. `TreeMeshField` spatially bins instances into a grid of
-`tree_bin_size_m` cells, one `MultiMeshInstance3D` per non-empty bin (one draw
-call per bin), so the engine drops far bins to the importer-generated mesh LODs
-(`meshes/generate_lods=true` on the `.glb`) and fades them out past
-`visibility_range_end = tree_render_distance_m` over a
-`visibility_range_end_margin = tree_render_fade_m` band. Each instance sits at
-`(x, Floor.height_at(x,z), z)` with a deterministic per-instance yaw and a uniform
-scale so the mesh height matches `bush_height_m`; `build()` records
-`instance_positions` + `instance_scale` (renderer-independent mirrors for headless
-tests). Two `build()` flags adapt it for ground cover:
-
-- `with_collision = false` — bushes are non-colliding *pass-through* scenery, so no
-  `StaticBody3D`/hitboxes are built (unlike trees, they are not solid obstacles). A
-  separate `BushField` node (`scripts/bush_field.gd`) does a per-tick proximity query
-  off the same scattered positions to make brushing a bush cost a little HP + apply a
-  drag torque — see [damage.md](damage.md) → "Soft contacts".
-- `bake_terrain_light = true` — each instance's MultiMesh colour is set to the
-  terrain's baked light at its position (`light_at`), and the bush material has
-  `vertex_color_use_as_albedo` enabled, so `ALBEDO = foliage_texture × COLOR`
-  exactly as before — the patches keep tracking the ground tint everywhere.
-
-Differences from trees: they scatter with `track_seed + 1013` so the per-seed grid
-phase puts them on an interleaved grid (not the trees' cells), they are NOT
-forest-gated (default forestiness 1.0, so undergrowth covers the whole stage),
-they have no collision, and they scale to `bush_height_m` instead of
-`tree_size_m.y`. They reuse the trees' scatter knobs (count, radius, jitter),
-bin size and render distance/fade.
-
-**Road keep-out (no mesh on the road).** The bush mesh is a *wide* flat patch, so
-uniform-scaling it to `bush_height_m` blows its world footprint up well past a
-tree trunk's. A bush is rejected not on the trees' `track_width + 2*tree_road_margin_m`
-footprint but on one **also inflated by the bush's own world-space radius**:
-`track_width + 2*(tree_road_margin_m + bush_radius)`, where
-`bush_radius = TreeMeshField.xz_radius(bush_mesh, bush_height_m)` (half the larger
-horizontal AABB extent × the height scale). That keeps the bush *centre* far
-enough out that no part of the scaled mesh spills onto the road at any
-per-instance yaw, while still leaving the `tree_road_margin_m` gap from the road
-edge. `world.gd` rasterizes this wider footprint into a bush-specific
-`road_cells`; the trees keep the un-inflated one.
-
-`Foliage.bush_mesh()` builds the render mesh: it takes the GLB's mesh, keeps the
-imported (tone-matched) foliage texture, and rebuilds the surface as the **shared
-foliage `ShaderMaterial`** (`shaders/tree_canopy.gdshader`). It's unshaded
-and **double-sided** (`cull_disabled`, so the single-sided foliage cards don't vanish
-from behind — `cull_back` is NOT safe here), multiplies the texture by the
-per-instance MultiMesh `COLOR` (the baked-light instance tint) and by a `tint` uniform
-set to `bush_tint` (lifted a touch above the model's authored green so the ground cover
-reads against the grass). Like the trees, bushes keep their full size however close
-the camera gets. With no `discard` the shader keeps early-Z / HSR on for the draw (a mobile-GPU win). `world.gd` builds
-the tree field and the bush field back to back.
-
-## Configuration
-
-`Trees` group in `GameConfig` (`scripts/game_config.gd` overrides some):
-`vegetation_enabled` (master switch — false skips the whole scatter + fields +
-bush hit volume),
-`trees_per_turn` (density target), `tree_spawn_radius_m`, `tree_road_margin_m`
-(gap from the road edge), `tree_jitter` (how far trees wander from the grid; lower
-= more regular), `tree_size_m` (billboard card size, width `.x` × height `.y`),
-`tree_billboard_min_scale` / `tree_billboard_ground_offset_m` (per-instance size
-jitter floor + ground-sink for home billboard trees), `tree_bin_size_m` (bush
-render bin grid size, default 25 m — smaller = finer LOD/cull granularity but more
-draw calls),
-`tree_collision_radius_m` (box half-extent in X/Z), `tree_collision_height_m`
-(box height), `tree_fell_speed_kmh` (approach speed at/above which a crash topples
-the tree and removes its hitbox — 0 disables felling), `tree_fell_duration_s`
-(seconds a felled tree takes to tilt flat), `tree_render_distance_m` (cull
-distance), `tree_render_fade_m`
-(shrink-out band), `bush_height_m` (height the ground-cover bush mesh is scaled to),
-`bush_tint` (albedo tint lifting the bush colour a touch against the grass).
-`GameConfig.tree_params()` packs the scalar scatter knobs for
-`TreeScatter.scatter`; the collision knobs are passed straight to
-`TreeMeshField.build`.
-
-The **forest-patch** knobs live in the `Track` group instead, since they're per-stage:
-`track_forestiness` (0–1) and
-`forest_wavelength_m` (Perlin wavelength, default 300). `world.gd` passes them to the
-tree scatter; the bush scatter omits them (forestiness 1.0).
-
-## Tests
-
-`tests/headless/test_smoke.gd` — the billboard shader loads with code; a built
-`BillboardField` has one MultiMesh instance per position (with/without collision);
-`Foliage.spawn_trees()` always produces a `BillboardField`, and a region texture
-selects that texture's cutout; the silhouette cutout is cached per texture; a
-`TreeMeshField` built for bushes (`with_collision = false`, `bake_terrain_light =
-true`) bins instances, skips the collision body, and enables per-instance MultiMesh
-colour; and the live world carries a colliding tree field (`BillboardField`) plus a
-non-colliding bush field (`TreeMeshField`).
-
-
-## Per-species baseline proportions (`size_scale`)
-
-Both sizing profiles describe a **square** card (`tree_size_m` 7.5 x 7.5,
-`region_tree_billboard_size_m` 4.0 x 4.0), so a billboard is stretched to a 1:1 ratio
-whatever shape its cutout actually is. That is invisible on a broad deciduous tree and
-very obvious on a conifer: the Alps' dense spruce is a 125x256 cutout (natural w/h 0.49)
-and was being drawn at roughly twice its real width.
-
-A `tree_mix` species may therefore author `"size_scale": Vector2(w, h)`, a multiplier on
-its profile's base size:
-
-```gdscript
-{"texture": "res://textures/tree-snow.webp", "profile": "home", "weight": 0.6,
- "size_scale": Vector2(0.825, 1.725)},   # 6.2 x 12.9 m, ratio 0.48
-```
-
-- Defaults to `Vector2.ONE`, so every species that omits it — the Greece species, and
-  the ordinary trees Greece mixes in — is completely unaffected.
-- It scales the BASE size only. Per-instance size jitter (`*_min_scale`) and aspect
-  jitter (`*_aspect_jitter`) still apply on top, so a stand still varies; this sets what
-  it varies *around*.
-- It is deliberately authored on the SPECIES rather than in `GameConfig`, because it
-  describes that texture's own proportions — art metadata, not a balance value. It sits
-  alongside `weight` and `profile` for the same reason.
-
-This is the lightweight alternative to a third sizing profile: it gives a region control
-of its trees' shape without touching the two shared profiles (retuning `home` would move
-every tree in the game, and `region` is shared with Greece's olive canopy).
-
-### It is a SIZE lever too, not only a correction
-
-The snow species use `size_scale` to undo a distortion. Home and the taiga use it to set
-size outright, which makes the "art metadata, not balance" framing above only half the
-story — treat it as *whatever this species' size is, relative to its profile*.
-
-Home is the plain case: `Vector2(1.25, 1.25)`, uniform, the forest 25% bigger with its
-drawn proportions unchanged. It is authored here and NOT as a bump to
-`GameConfig.tree_size_m` for the reason that matters whenever you reach for the profile
-instead — **`tree_size_m` is shared**. Greece's 30% of ordinary trees, both Alps conifers
-and the taiga spire all sit on the home profile with their own `size_scale` tuned against
-its current value, so raising it scales four regions at once. Per-species is how you move
-one forest.
-
-The taiga is the loud case:
-
-```gdscript
-{"texture": "res://textures/tree-taiga.webp", "profile": "home", "weight": 1.0,
- "size_scale": Vector2(0.90, 3.0)},   # 6.75 x 22.5 m, ratio 0.30
-```
-
-At `y = 3.0` the spire stands **three times** the home broadleaf, and that single number is
-the whole of what separates the taiga region from home — it inherits every other look
-key (see [regions.md](regions.md)). Two things follow that are worth knowing before
-retuning it:
-
-- **The x is derived, not chosen.** It must stay `natural_ratio * y` (here `0.30 * 3.0`)
-  or the tree is stretched. Raise the height without raising the width and you get a
-  needle; raise both by hand and you will drift off the cutout's real proportions. If
-  you change `y`, recompute `x`.
-- **Height comes out of the size lever, not the texture.** The cutout is rendered at 384
-  px rather than the usual 256 purely so a tree drawn this large is not visibly softer
-  than its neighbours — that is a texel-density decision and has no effect on world
-  size. See the header of `tools/gen_taiga_tree.py`.
-- **`size_scale` changes the VISUAL only.** Neither collision nor felling scales with
-  it, and both were checked rather than assumed: the collision shape comes from the
-  global `cfg.tree_collision_radius_m` / `tree_collision_height_m` (`Foliage.spawn_trees`),
-  and `BillboardField.size_factor` — the value `car.gd` feeds to
-  `TreeFall.should_fell_sized` — is the per-instance size JITTER, relative to whatever
-  the species authored, not a height in metres. So a 22.5 m taiga spire has the same
-  trunk to hit and the same fell threshold as a 7.5 m home tree. That is the intended
-  behaviour (you hit the trunk, not the canopy), but it is genuinely surprising, so
-  don't "fix" it by scaling collision off `size_scale` without deciding that felling
-  should change too.
-
 ## Wind sway
 
 Standing trees bend in the wind — a per-vertex offset in
-`shaders/billboard_opaque.gdshader`'s STANDING branch (`#include
-"res://shaders/wind_sway.gdshaderinc"`, `wind_sway_offset(origin, VERTEX.y, height)`),
+`shaders/level_tree.gdshader` (`#include "res://shaders/wind_sway.gdshaderinc"`,
+`wind_sway_offset(origin, VERTEX.y, height)`),
 computed in the vertex stage so it costs zero CPU per frame: trees are `MultiMesh`
 instances with no per-instance CPU object to animate, so the alternative would be
 touching every live tree's transform buffer every frame for a purely cosmetic wobble.
@@ -503,9 +81,8 @@ profile so the base stays planted and only the crown moves.
 
 **Transport is `global uniform`**, exactly like the headlight cone
 ([rendering.md](rendering.md) → "The fake headlight cone") and for the same reason:
-foliage materials are built in several scripts with no common registry and trees
-stream in continuously as terrain chunks generate, so a per-material push would need
-re-registration bookkeeping on every chunk load that a global sidesteps entirely.
+tree materials are built per streamed tile with no common registry, so a per-material
+push would need re-registration bookkeeping on every tile load that a global sidesteps.
 `scripts/wind_sway.gd` (`class_name WindSway`) is the driver — pure transport, no
 logic beyond what `WeatherLibrary` names.
 
@@ -518,36 +95,15 @@ base — a stormy sky, not just a stormy road. This is pure authoring: no
 `weather == "storm"` branch exists anywhere in the sway path, the same discipline
 `WeatherLibrary`'s header requires of every consumer.
 
-`world.gd._apply_weather_look` pushes the live condition's sway (it's a look, so
-that's its home); `_exit_tree` resets it — but, unlike the headlight cone, to the
-**base** wind, not zero: foliage outside a stage should still look alive rather than perfectly still.
-`Foliage.spawn_trees` also seeds the base wind at spawn (`WindSway.seed_base`), since
-it's the one call site for every tree field in the game and callers
-outside a stage never run `_apply_weather_look` to push anything of their own. `seed_base` pushes ONLY when the global is still 0, and that guard is
-load-bearing: on a stage `_apply_weather_look` runs BEFORE `_generate_track` scatters
-the trees, so an unconditional seed here would land afterwards and flatten a storm
-back to calm.
-
-**FELLED trees deliberately do not sway** — a toppled tree lies on the ground and its
-mesh-space `VERTEX.y` is no longer "up" (see the FELLED branch in
-`billboard_opaque.gdshader`), so bending by `height_frac` would swing the fallen trunk
-sideways along the ground rather than leaving it still. The collapsed plane-1 branch
-(zero-area, never rasterised) is skipped for the same reason the headlight cone skips
-it — there's nothing there to move.
-
-**Bushes do NOT sway — an open seam.** `shaders/tree_canopy.gdshader` (the bush
-canopy) animates `VERTEX` in *model space*, not world space (see
-[rendering.md](rendering.md)'s bush section), so a world-space offset like
-`wind_sway_offset` would need a model→world basis transform to apply correctly, which
-this change does not add. Left for a later pass — see `shaders/tree_canopy.gdshader`
-if picking this up.
+`LevelView` pushes the live condition's sway (`WindSway.push`) when the weather changes and
+`WindSway.reset()`s it on leaving the level.
 
 ## Tree Lab (procedural tree playground)
 
 `tools/tree_lab.html` is a standalone browser page (open the file directly, three.js from CDN)
 for designing procedural trees: recursive tapered branches with alpha-cut leaf cards, sliders
 for trunk / branching / growth / leaves, presets, and seeds. It exports a `.glb` mesh or a
-transparent side-on PNG, the latter in the same shape as the billboard sprites above. Beside
+transparent side-on PNG. Beside
 the real tree it shows a cheap "star" version, rebuilt on every change (`buildImpostor`): N
 (slider, default 6) transparent renders taken evenly around the tree, each on a double-sided card (mirrored on the back) facing the
 direction it was shot from, all crossing at the trunk. All cards always draw. The game's tree textures were generated with it. `?preset=<name>` opens a preset and `&render=1` hides the star version and sway, for headless screenshots; the Welsh-forest presets (Sitka spruce, young spruce, birch, rowan, alder, roadside scrub) were tuned against a Hafren Forest roadside photo. The Snow section adds snowy leaf cards (`paintSnow`, the same pass the shipped snow atlases use) and low-poly snow clumps sitting on top of every twig (`snowGeometry`); the snow presets (snow-laden / young / dusted spruce, snow-bowed birch) were tuned against a photo of a snowy Nordic forest road. Their atlases are `tools/levels/trees/snow_laden_spruce.png`, `snowy_young_spruce.png`, `dusted_spruce.png` and `snow_bowed_birch.png`, registered (height, `low`) in the lab's `KINDS`, `LevelBake.TREE_HEIGHT` and `tools/tree_low_reach.py`. Their atlases in `tools/levels/trees/` are re-rendered one preset at a time: `--dump-dom` the lab headless with `?preset=<name>&atlas=1` and decode the data URL in `<pre id="atlasOut">` (default seed 1, 256 px tall).
@@ -578,16 +134,10 @@ Standing trees are a static star, not a camera-facing billboard. Every tree text
 (`tree.png`, `tree-greece/taiga/snow/snow-laden.webp`) is a horizontal ATLAS of 6 equal frames; frame
 i is the tree seen from direction (sin(i*60), 0, cos(i*60)), trunk centred, base at the bottom.
 `Foliage._alpha_card_mesh` builds 6 vertical cards through the trunk at i*60 degrees (card i maps to
-frame i, UV.x = (i+u)/6, per-vertex normals set); all draw at once and nothing faces the camera
-(the alpha/blend shaders cull back faces: opposite cards share a plane, and drawing both sides
-made them flicker against each other). `billboard_tree.gdshaderinc`
-places them with the instance transform, lights with the card normal flipped toward the camera, and
-keeps the wind sway and distance shrink. `BillboardField._yaw` (hash of world XZ) gives each
-instance a fixed yaw; felling composes the topple tilt on top of it. Cutout mode 0 traces frame 0
-only (`tree_silhouette_mesh` crops the image and squeezes UVs into the frame). `region_library`
-`size_scale` keeps each species' height and sets width = height x frame aspect. The old
+frame i, UV.x = (i+u)/6, per-vertex normals set); all draw at once and nothing faces the camera.
+`level_tree.gdshader` places them with the baked instance transform (which carries each tree's
+yaw); felling composes the topple tilt on top of it. The old
 `tools/gen_*` outputs were replaced by tree_lab atlases. The settings (params + seed + snow share) for every
 shipped tree live in `GAME_TREES` in `tools/tree_lab.html`; `tools/export_tree_atlases.sh [height]`
 re-renders all five in headless Chrome and overwrites `textures/` (default 512 px tall frames, taiga
-1.5x). `Foliage.TREE_SILHOUETTE_EPSILON` is in pixels of a 256 px frame and scales with the texture
-height, so a re-export at another resolution keeps the cutout's triangle count.
+1.5x).

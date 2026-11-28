@@ -148,13 +148,12 @@ Each wheel's μ is scaled by the surface under ITS OWN contact point, so the car
 can run e.g. two wheels on grass and two on gravel and feel the split. `car.gd`
 hands the drivetrain the `Floor` (`drivetrain.terrain`, found as the sibling
 exposing `surface_at`; null on the flat test fixtures → multiplier 1.0).
-`surface_grip(cfg, cp)` asks `TerrainManager.surface_at(x, z)` for the
+`surface_grip(cfg, cp)` asks `LevelView.surface_at(x, z)` for the
 `(road_weight, tarmac_weight)` there and blends the configured scales:
 `lerp(grass_grip, lerp(gravel_grip, tarmac_grip, tarmac_weight), road_weight)`.
 So **gravel = `gravel_grip` (1.0, the baseline)**, **grass = `grass_grip` (0.7)**,
 **tarmac = `tarmac_grip` (1.3)**, cross-faded across the same feathered bands the
-road colour uses (grass↔road and gravel↔tarmac — see [terrain.md](terrain.md) /
-[track.md](track.md)).
+road colour uses (grass↔road and gravel↔tarmac — see [level-streamer.md](level-streamer.md)).
 
 **Weather.** `surface_tire_params` multiplies the resolved `mu_mult` by
 `WeatherLibrary.grip_mult(cfg, cfg.weather)` — **unconditionally**, because dry
@@ -413,6 +412,6 @@ config by `apply_car`).
 
 The per-surface μ scales can be replaced for snow (see [snow-region.md](snow-region.md)).
 A region may override `grass_grip` / `gravel_grip` /
-  `tarmac_grip` for every stage tagged to it. `BiomeDirector` seats the
+  `tarmac_grip`. `LevelView.set_snow` seats the
   values, so `surface_tire_params` needs no change at all — it reads the same live config
   fields it always did.

@@ -29,7 +29,7 @@ flat colors, nearest-neighbor textures, color quantization + dithering, and fog.
   `texture_filter = TEXTURE_FILTER_NEAREST_WITH_MIPMAPS` (nearest magnification,
   mipmaps kept for distance — see the mipmap note below). This includes
   GLB-baked materials whose importer-default linear filter is overridden to
-  nearest, e.g. the ground-cover bush in `Foliage.bush_mesh()`. The sole
+  nearest. The sole
   exception is the panorama sky, a smooth
   gradient where filtering is intended.
 - **Anisotropic filtering is off** (`textures/default_filters/anisotropic_filtering_level=0`).
@@ -84,59 +84,17 @@ rises — an accepted trade. A degenerate window falls back to the authored
 
 ## Shaders (`shaders/`)
 
-### `water.gdshader` — `spatial`, `unshaded`
-Lake surface (see [lakes.md](lakes.md)). **Flat and opaque** — a solid PS1 colour
-block, because a screen-door dither read as noise against the low-res pixelation. No
-reflections, no transparency, no screen-texture read (preserves the Compatibility
-no-backbuffer choice). A faint scrolling ripple tint (world position × `TIME`) plus
-a sparkle band give the surface a little life. One shared material across all of a
-stage's lake meshes. `cull_back` (the lake is only ever seen from above, so back
-faces are pure waste).
-
-### `ps1_models.gdshader` — `spatial`, `unshaded`
-Terrain material. The shader itself runs no lighting math and has **no
-`vertex()` stage** — a deliberate performance choice, since the terrain is the
-heaviest geometry in the scene (tens of thousands of vertices across the loaded
-chunk ring) and must keep its pass-through vertex path. Its shading is instead
-**baked into the vertex colours** at generation time (see below / [terrain.md](terrain.md)),
-which the fragment already multiplies in for free. Car lighting, which can't be
-baked, lives in the separate `ps1_models_lit.gdshader` (below).
-Uniforms: `albedo_texture` and `road_texture` (both source_color, nearest,
-default white), `albedo_color`, `texture_tile`, `blend_road` (bool, default
-`false`), `road_uv_scale` (road tiling relative to the ground; set from
-`road_tile_per_meter / terrain_tile_per_meter` in `world.gd`), and `tarmac_color`
-(the flat tarmac fill, set from `cfg.tarmac_color`). Fragment:
-`road = mix(road_texture, tarmac_color, UV2.x)` then
-`ALBEDO = mix(albedo_texture, road, blend_road ? COLOR.a : 0) × albedo_color × COLOR.rgb`.
-The island turned on `paint_road_per_pixel` instead (lane markings per fragment from a road
-distance baked into `UV`); nothing sets it since the island was deleted.
-When `blend_road` is on (the terrain material sets it), the per-vertex `COLOR.a`
-cross-fades the ground texture (grass) to the road where the terrain bakes road
-weight into vertex-colour alpha, and the road itself fades from the gravel
-texture to the flat tarmac colour by the per-vertex tarmac weight in **UV2.x**
-(0 = gravel, 1 = tarmac), feathered across the gravel↔tarmac switch (see
-[terrain.md](terrain.md)/[track.md](track.md)). Tarmac is a placeholder solid
-grey — [../todo/tarmac-texture.md](../todo/tarmac-texture.md). `COLOR.rgb` is the
-ground tint **times the baked static lighting** (`terrain_manager._bake_light`,
-mirroring the car shader's math) — so the hills (and tarmac) get the same
-hemisphere+sun shading as the car at zero per-frame cost, valid because the
-terrain and sun never move.
-
-It `#include`s `shaders/headlight_cone.gdshaderinc` and adds the night cone into
-that light term in the fragment — `ALBEDO = surface * (COLOR.rgb + hl_color *
-headlight_lit(world_pos))`, with `world_pos` recovered from `INV_VIEW_MATRIX`
-since there is no vertex stage to hand one down. The no-`vertex()` rule is
-untouched by this and stays test-enforced. See "The fake headlight cone" below.
-
-Used by: the terrain floor.
+### `level_ground.gdshader` — the level's ground
+The Hafren ground: its texture blend, baked light and snow lift are covered in
+[level-streamer.md](level-streamer.md), [level-ao.md](level-ao.md) and
+[snow-region.md](snow-region.md). It `#include`s `shaders/headlight_cone.gdshaderinc` and adds
+the night cone into its light term in the fragment; see "The fake headlight cone" below.
 
 ### `ps1_models_lit.gdshader` — `spatial`, `unshaded`
-Car-only variant of `ps1_models.gdshader` with cheap fake per-vertex (Gouraud)
-lighting. Kept SEPARATE from the terrain shader on purpose: only the handful of
-car/wheel/MX-5 vertices run the `vertex()` stage, so the terrain pays nothing
-for a feature it doesn't use. (Folding the `vertex()` stage into the shared
-shader was a real mobile regression — every terrain vertex ran the lighting math
-each frame even though `light_amount` discarded it.)
+Car-only shader with cheap fake per-vertex (Gouraud)
+lighting. Kept SEPARATE from the ground shader on purpose: only the handful of
+car/wheel/body vertices run its `vertex()` stage, so the ground pays nothing
+for a feature it doesn't use.
 
 The material stays `unshaded` — the engine runs *no* lighting pass, casts no
 shadows, and there are still no light nodes. `vertex()` computes a PS1/PS2-style
@@ -147,11 +105,10 @@ vertex, interpolated for free by the rasteriser. `light_amount`
 (`mix(vec3(1.0), lit, light_amount)`) blends the whole effect in: 0 = flat,
 1 = full. Uniforms `albedo_texture`, `albedo_color`, `texture_tile`,
 `light_amount`, `light_dir`, `sun_color`, `sky_color`, `ground_color`.
-`world.gd` calls `cfg.apply_car_light()` on the chassis/cabin/wheel
-materials, and `car.gd._apply_model_material()` does the same for the authored bodies (MX-5, Focus, Twingo).
+`car.gd` calls `cfg.apply_car_light()` on the chassis/cabin/wheel
+materials and, in `_apply_model_material()`, on the authored bodies (MX-5, Focus, Twingo).
 The values (`car_light_amount` + the shared `sun_direction`, `sun_color`,
-`sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group,
-alongside `terrain_light_amount` for the baked terrain shading. `sun_color` and
+`sky_color`, `ground_color`) live in `GameConfig` under the **Lighting** group. `sun_color` and
 `sky_color` are pushed **scaled by the runtime `GameConfig.weather_sun_mult`**,
 so the car dims with the world on an overcast/dark condition instead of staying
 at full daylight. The scaling itself is `GameConfig.weather_lit` — the shared rule
@@ -167,7 +124,7 @@ Used by: car chassis/cabin/wheels, and the authored body models (MX-5, Focus, Tw
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
 Applied as the material of a `PostProcess` **SubViewportContainer**
 (`scripts/post_process_view.gd`), packaged as **`post_process.tscn`** and instanced by
-**every 3D scene: `level_view.tscn` and the dev stage `main.tscn`** (as `PostProcess`). The 3D world stays in the main tree but
+**`level_view.tscn`** (as `PostProcess`). The 3D world stays in the main tree but
 is rendered through `PostProcess/View`, a `SubViewport` that shares the host's
 `World3D` (`own_world_3d = false`) and carries a `ViewCamera` mirror camera
 synced every frame to the active camera; the root viewport's own 3D pass is
@@ -247,9 +204,8 @@ tool's maths must stay in step with the shader's `fragment()`.
 
 Several world colours in `GameConfig` were authored against the *ungraded* image
 and read a little oddly under warm brown — the fog/horizon most of all. Note the
-fog is tuned via **`GameConfig.background_color`** and the per-region look tables,
-NOT `main.tscn`: `world.gd` overwrites `env.fog_light_color` from
-`cfg.background_color` every boot and `_apply_region_look` overrides it again.
+fog is authored in `level_view.tscn`'s environment, and `LevelWeather` fades it
+toward each weather's own colours (`LevelWeather.target_look`).
 
 ### `billboard_particle.gdshader` — `spatial`, `unshaded`, `depth_draw_opaque`
 Screen-aligned billboard with a **per-instance roll, size and colour** — the
@@ -265,9 +221,7 @@ are the quad's half-extents and column 0's **direction** is `(cos, sin)` of the
 roll, which keeps the MultiMesh stride at the standard 12 transform floats (+4 for
 `use_colors`) with no `INSTANCE_CUSTOM` stream. The vertex shader scales the unit
 quad, rolls it in the billboard plane, then projects onto `INV_VIEW_MATRIX`'s
-right/up columns and rewrites `POSITION` directly (same bypass as
-`billboard_opaque.gdshader`). Fully screen-aligned (spherical) rather than the
-world-Y-up cylindrical form the tree billboards use — a flung clod has no
+right/up columns and rewrites `POSITION` directly. Fully screen-aligned (spherical) — a flung clod has no
 meaningful "upright". Per-instance `COLOR` goes straight to `ALBEDO` (unshaded).
 Opaque, so a pool at its cap costs no transparency sorting. **The basis layout is a
 contract shared with `wheel_particles.gd._write_slot` — change both together.**
@@ -385,8 +339,7 @@ a `wheel_texture` (the cars that
 still render boxes) gets a **blank dark disc** — a shared 1×1 near-black
 `ImageTexture` — so the cap reads as a plain hubcap until that car gets a real
 model. Each per-car material also carries the tread `albedo_color`
-(`cfg.wheel_color`) and the fake-light uniforms (`cfg.apply_car_light`), which
-`world.gd` previously set on the single shared tire material.
+(`cfg.wheel_color`) and the fake-light uniforms (`cfg.apply_car_light`).
 
 ## Materials & colors
 
@@ -410,17 +363,14 @@ is the one place that knows the rule: multiply RGB by the runtime
 a dim lake transparent rather than dark).
 
 Route any new fake-lit material through it. The existing users:
-`apply_car_light` (`ps1_models_lit.gdshader` — cars, rocks (`Foliage.rock_mesh`),
-barrier modules (`BarrierSection._mat`, see [barriers.md](barriers.md))),
-`apply_foliage_light` (`billboard_opaque.gdshader`, mirroring the car helper so
-trees and car can't drift apart), `LakeField.build` (`water.gdshader` colours +
-the sun-glint sparkle). Terrain
-is the exception — it takes the same dimming through the vertex-colour bake
-instead. Full write-up in [weather.md](weather.md) → "Unshaded means nothing
+`apply_car_light` (`ps1_models_lit.gdshader` — cars, cargo, dust puffs) and the engine
+smoke colour. On the Hafren level nothing
+sets `weather_sun_mult`, so it stays 1: the level dims everything through `world_light`
+instead (end of this file). Full write-up in [weather.md](weather.md) → "Unshaded means nothing
 dims for free".
 
 **Every new fake-lit material must route through here — a hardcoded literal is
-a bug, not a style choice.** Barrier modules once shipped with a copy-pasted block
+a bug, not a style choice.** The (since deleted) barrier modules once shipped with a copy-pasted block
 hardcoding `sun_color`/`sky_color`/`ground_color`/`light_dir` as literals instead of calling
 `apply_car_light`, so they never dimmed on a night or storm stage while every other prop
 around them did. Before adding another hand-built `ShaderMaterial` on
@@ -428,40 +378,23 @@ this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
 
 ## Environment
 
-- **Shared environment base**: `GameConfig.apply_environment(env)` sets fog,
-  backdrop colour and glow from config. `BiomeDirector._ready` (free roam) and
-  `world.gd` → `_apply_scene_config` (the stage) call it; weather/region looks layer on top. The garage builds
-  its own env and does not use it.
-- **Glow (bloom)**: Godot's built-in `Environment` glow, from the `glow_*`
-  exports in `GameConfig` ("World" group). It is a mip-chain downsample/upsample blur. Materials are unshaded LDR, so
-  `glow_hdr_threshold` sits below 1.0 so the brightest pixels still bleed. Toggle with
-  `glow_enabled`.
+- **Environment**: authored in `level_view.tscn`; `level_view.gd` sets the fog's end distance
+  (`level_fog_end_m`, `level_fog_curve`) and `LevelWeather` layers each weather's look on top.
 - No light nodes and no engine lighting pass — the materials stay `unshaded`.
   Car meshes get cheap fake per-vertex (Gouraud) lighting from the car-only
-  `ps1_models_lit.gdshader` (computed live, since the car rotates). The terrain
-  gets the same hemisphere+sun look **baked into its vertex colours** once at
-  generation time, so its shader keeps a pass-through vertex path and the
-  heaviest geometry pays nothing per frame. Trees/bushes/signs stay flat.
+  `ps1_models_lit.gdshader` (computed live, since the car rotates). The level's
+  ground light is baked offline (see [level-ao.md](level-ao.md)).
   **This still holds with the night headlight cone** — the cone added no light
   node either; it is arithmetic in the fragment/vertex code. What it did add is
   a *named mechanism* for fake LOCAL lighting, so "we have no lights" no longer
   means "we cannot light a spot": see "The fake headlight cone" below.
-- **Skybox** (`main.tscn` env `background_mode = Sky`): a `PanoramaSkyMaterial`
+- **Skybox** (`level_view.tscn` env `background_mode = Sky`): a `PanoramaSkyMaterial`
   with a CC0 photographic open-field sky equirect (`textures/sky_field.png`, a tonemapped
   LDR downscale of a Poly Haven HDRI). The full-screen post-process quantizes it
   to the same 5-bit + dither look, so it reads as native PS1, not a pasted photo.
-  **The panorama is re-seeded every stage boot, not conditionally overridden.**
-  `world.gd._apply_region_look` assigns it unconditionally, falling back to
-  `GameConfig.default_sky_panorama` when the region names none, then
-  `_apply_weather_look` may swap it again for the condition — **night does, and
-  only night** (`textures/sky-night.jpg`, via `GameConfig.night_sky_panorama`
-  named by the night entry's optional `sky_panorama` key). The material is a
-  shared `main.tscn` sub-resource with no `resource_local_to_scene`, so without
-  that unconditional re-seed a Greece/snow/night sky followed the player into the
-  next home stage and stayed — the same leak the ground-material re-seed below
-  prevents. See [regions.md](regions.md) → "The sky no longer leaks between
-  stages".
-- **Sun alignment.** The car/terrain fake light (`sun_direction`) must point at
+  `LevelWeather` swaps the panorama for a condition that names one (`sky_panorama` — only
+  night does, `textures/sky-night.jpg`) and back afterwards.
+- **Sun alignment.** The car's fake light (`sun_direction`) must point at
   the visible sun. Convention: panoramas are pre-rolled with
   `tools/align_sky_sun.py` so the sun sits at the image CENTRE — which is `+Z` in
   Godot's panorama mapping (verified in-engine) — so `sun_direction`'s azimuth is
@@ -472,38 +405,17 @@ this shader, grep for the literal `Color(0.55, 0.52, 0.48)` to catch a repeat.
 - **Fog** is thin aerial haze, not an edge-hider: `fog_density` (0.012), `fog_sky_affect` (0.15, so the sky reads above
   the haze), `fog_light_color = background_color` — and `background_color`
   (0.589, 0.544, 0.520) is **matched to the skybox's horizon** so the distant
-  terrain dissolves into the sky seam. All applied in `world._ready()` from config.
+  terrain dissolves into the sky seam.
 - No bloom, no shadows.
 
-### Weather look override (`world.gd::_apply_weather_look`)
+### Weather look (`LevelWeather`)
 
-A second override layered on top of the region look, driven by the condition's entry
-in **`WeatherLibrary`** (`scripts/weather_library.gd`) — looked up once from
-`GameConfig.weather` (seated per event — see `weather.md`). There is **no
-per-condition branching here**: the entry's `look` block names the GameConfig fields
-to read, its `road_tint` block names the field and the mode, and its `particles` key
-names the particle kind. It is called **after** `_apply_region_look()`
-and after `apply_terrain_light()` / the `tarmac_color` push, so it gets the last word
-on both the sky and the ground, while still landing before the initial terrain build
-in `_generate_track()` (so the darker sun/ambient is baked into the first chunks'
-vertex colours). The two ground-material parameters the road tint modifies
-(`tarmac_color`, `albedo_color`) are **re-seeded from the authored baseline** in
-`_ready` just before this runs — the floor `ShaderMaterial` is a shared sub-resource
-of `main.tscn`, so a read-modify-write tint would otherwise compound across stages
-and leak into later dry ones (see [weather.md](weather.md) → "Look"). **A dry stage touches nothing** — dry's table entry has no `look`,
-no `road_tint` and no `particles`, so all three blocks are skipped, nothing is
-written and no node is built.
-
-Wet applies `rain_background_color` (to `background_color` + `fog_light_color`),
-`rain_fog_density_mult` × the config `fog_density`, `rain_fog_sky_affect`,
-`rain_sky_color` and `rain_sun_energy_mult` onto the `TerrainManager`'s baked-light
-inputs (written onto the manager, never onto the shared `GameConfig`, so a later dry
-stage isn't left dimmed), and scales the floor material's `albedo_color` /
-`tarmac_color` by `rain_road_darken`.
-
-Night is the exception that proves the fog rule below: it is the one condition whose
-entry names a `sky_panorama`, applied here **after** the region look so it wins, and
-it is the only extra sky texture in the bundle.
+The level's weather look is driven by each condition's entry in **`WeatherLibrary`**
+(`scripts/weather_library.gd`). There is **no per-condition branching**: the entry's `look`
+block names the GameConfig fields to read and its `particles` key names the particle kind.
+`LevelWeather.target_look` builds the environment a weather should end at, and `LevelWeather`
+cross-fades fog, sky and `world_light` toward it; between fades it writes nothing. See
+[weather.md](weather.md).
 
 **Overcast/dust look is made of fog, not a second sky.** Dry keeps `fog_sky_affect`
 low (0.15) so the panorama reads above the haze; rain and sandstorm each invert that
@@ -513,9 +425,7 @@ featureless dome. No second sky texture to author, import or carry in the Androi
 bundle (download size gates installs on the low-end phones this game targets) and no
 extra draw call — the environment half of any condition is free (but see "Fog does
 not shorten the cull" below: it is not *cheaper* than dry, because nothing culls on
-fog density). `world.gd._apply_weather_look` applies this override via the shared
-`_apply_overcast_look`/`_tint_road` helpers, fed the field names from the condition's
-table entry — so every condition is one mechanism with its own colour/parameter set,
+fog density). Every condition is one mechanism with its own colour/parameter set,
 not a copy-pasted path per condition.
 
 **Particle field** (`scripts/rain_field.gd`, class `WeatherField` — kept under its
@@ -523,13 +433,13 @@ original filename to avoid churning the res:// path/uid rain shipped under, but 
 class now covers both conditions): one `GPUParticles3D` parented to the **chase
 camera**, so `rain_particle_count`/`sand_particle_count` quads cover the whole
 visible field without simulating the world. Unshaded billboards, `SHADOW_CASTING_OFF`,
-`COLLISION_DISABLED`, a single draw pass. `world.gd` calls
+`COLLISION_DISABLED`, a single draw pass. `level_view.gd` → `apply_weather` calls
 `WeatherField.spawn(camera, kind, count, wind_deg, speed)` — every value including the
 travel speed comes from the field the entry names, so `WeatherField` reads no
 condition's config field itself — and it dispatches on the table's
 particle KIND to `spawn_rain` / `spawn_sandstorm` (both still public, and used
 directly by tests); an empty kind — dry, and any future no-particle condition such as
-fog — spawns nothing at all, so a dry stage builds no node and pays exactly zero new
+fog — spawns nothing at all, so dry weather builds no node and pays exactly zero new
 per-frame cost — asserted by
 `test_render_smoke.gd::test_no_weather_field_on_a_dry_stage`.
 
@@ -555,14 +465,10 @@ as a streak rather than a dot.
 direction (`GameConfig.sand_wind_dir_deg`, a compass heading — 0 = world +X, 90 =
 world +Z — resolved once at spawn) at the speed the entry's `particle_speed` names
 (`sand_wind_speed`), using a squarer/softer
-quad (`_SAND_QUAD_SIZE`) than rain's thin drop. The road tint that goes with it lerps
-the ground albedo toward `sand_road_tint_color` — a config value the entry's
-`road_tint` block names, not a literal in `world.gd`, which is why a future snow
-condition could whiten the ground with no code change at all. A fixed world direction only reads
+quad (`_SAND_QUAD_SIZE`) than rain's thin drop. A fixed world direction only reads
 correctly under world-space simulation — under the old `local_coords = true` scheme
 the "wind" would have rotated with the camera, which is exactly backwards. Covered
 by `test_render_smoke.gd::test_sandstorm_field_is_a_single_cheap_draw_with_wind_direction`.
-Sandstorm is authored only onto `region == "greece"` stages and pools.
 
 **Fog** is the cheapest condition in the table and the purest use of this section's
 "look is made of fog" mechanism: it is *only* a look block. `mist_fog_density_mult`
@@ -575,19 +481,8 @@ making it dark reads as dusk rather than fog — and `mist_sun_energy_mult` stay
 it. Fog names no `particles`, no `grip_mult` and no `road_tint` (a foggy road is
 dry), so it constructs no node at all.
 
-**Lightning** (storm only, `world.gd::_start_lightning`): a brief spike in the same
-environment colours the look block already drives — `fog_light_color` /
-`background_color` tweened up by `storm_lightning_flash` and back (fast rise, slower
-fall), re-armed by one self-scheduling `Timer` at a random interval in
-`[storm_lightning_interval_min_s, storm_lightning_interval_max_s]`. The tween is
-`TWEEN_PAUSE_STOP`, so a paused game is visually still rather than flashing behind the
-pause menu. Deliberately
-**not a light node**: this renderer is unshaded with baked vertex lighting and ships
-with no lights at all (see "Environment" above), so a real flash would mean adding
-the one thing the pipeline is built to avoid. It never touches the `TerrainManager`'s
-baked sun/ambient (that would need a chunk rebake, not a per-frame tween). Kept
-subtle and infrequent by authoring — a flash that blanks the screen mid-corner is a
-gameplay event, not an effect — and purely cosmetic, so it may use `randf()`.
+**Lightning:** the storm entry still authors a `lightning` block, but nothing on the level
+reads it — the flash belonged to the deleted stage.
 
 ### The fake headlight cone (`shaders/headlight_cone.gdshaderinc`)
 
@@ -618,12 +513,9 @@ runs no lighting pass at all — a `SpotLight3D` would have literally zero effec
 on any existing material. That is not a limitation to route around; it is the
 design, and the cone respects it.
 
-**Why it is not a vertex-colour rebake.** Terrain shading is baked on the CPU by
-`TerrainManager.vertex_colors` (RGB = light, alpha = road blend). Driving a
-*moving* light that way would mean regenerating `ARRAY_COLOR` for the whole
-loaded ring — ~49 chunks × 51×51 verts, ~127k verts at LOD0 — **every frame**.
-That is chunk-*generation* cost paid per frame. It is the one approach the
-design exists to rule out.
+**Why it is not a light rebake.** The ground's light is baked offline; driving a
+*moving* light that way would mean re-baking every loaded tile **every frame**. It is
+the one approach the design exists to rule out.
 
 **What it is instead:** an analytic cone pair, evaluated in the shaders from nine
 global uniforms. No geometry, no draw calls, no per-frame CPU work beyond one
@@ -671,8 +563,7 @@ detail. The darkening is not done in any shader: it comes from the low
 the time a shader runs the bake is near-zero, and a near-zero light term
 multiplied by a bright cone factor is still near-zero — **a multiplicative cone
 cannot re-light a darkened bake.** Every shader here already separates surface
-from light (`COLOR.rgb` on terrain, `v_light` in `ps1_models_lit`, `v_tint` in
-`billboard_opaque`), so the form is always:
+from light (`COLOR.rgb` on terrain, `v_light` in `ps1_models_lit`), so the form is always:
 
 ```glsl
 ALBEDO = surface * (light + hl_color * headlight_lit(world_pos));
@@ -688,22 +579,20 @@ fraction, not near-zero) lands the same additive cone on a much brighter light
 term. Night's strength there sums past 1 and clips the pool to white. The fix is
 authored — a lower `headlights` value on that entry — never a shader change.
 
-**Fragment on terrain, vertex everywhere else:**
+**Fragment on the ground, vertex everywhere else:**
 
 | Shader | Stage | Why |
 |---|---|---|
-| `ps1_models` (terrain), `ps1_terrain_snow` | **fragment** | Terrain cells reach 25 m across at the coarsest LOD band, so a per-vertex cone would snap its soft edge to triangle boundaries. World position comes from `(INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz` — a mat4 multiply per fragment, accepted because `ps1_models` is banned from having a `vertex()` stage to hand one down. |
-| `ps1_models_lit` (cars, barriers) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. Passes its world normal into the facing-aware overload so rear panels reject the cone. |
-| `billboard_opaque` (trees) | vertex | Folded into the existing `varying vec3 v_tint`, in **both** branches — the felled branch computes an ambient-only tint, so a knocked-over tree would otherwise sit unlit inside the pool. Cards are small, so per-vertex is visually identical. |
-| `tree_canopy` (bushes) | vertex + fragment | Had no lighting term at all, so it gets a new `varying float v_headlight`; `hl_color` is applied in the fragment so the varying stays scalar. |
+| `level_ground` (the ground) | **fragment** | The ground's triangles are large, so a per-vertex cone would snap its soft edge to triangle boundaries. |
+| `ps1_models_lit` (cars) | vertex | Folded into the existing `varying vec3 v_light` — no new interpolator. Passes its world normal into the facing-aware overload so rear panels reject the cone. |
+| `level_tree` (trees) | vertex | `v_lamps = hl_color * headlight_lit(world_pos)`, added to the tree's light in the fragment. Cards are small, so per-vertex is visually identical. |
 
-Fragment cost therefore lands only on terrain — the one surface with near-total
+Fragment cost therefore lands only on the ground — the one surface with near-total
 screen coverage — while everything else rides an existing vertex computation.
 
-**Tree wind sway follows the identical pattern**, one shader over: `billboard_opaque`
+**Tree wind sway follows the identical pattern**, one shader over: `level_tree`
 also `#include`s `shaders/wind_sway.gdshaderinc` and adds `wind_sway_offset(origin,
-VERTEX.y, height)` straight into `world_pos` in its STANDING branch, entirely in the
-vertex stage. Its globals (`wind_strength`, `wind_speed`, `wind_dir`) are declared
+VERTEX.y, height)` straight into `world_pos`, entirely in the vertex stage. Its globals (`wind_strength`, `wind_speed`, `wind_dir`) are declared
 alongside the cone's in `project.godot`'s `[shader_globals]` and driven by
 `scripts/wind_sway.gd` (`class_name WindSway`) — see [trees.md](trees.md) → "Wind
 sway" for the full writeup and [weather.md](weather.md) for the per-condition
@@ -714,19 +603,16 @@ authoring (`WeatherLibrary`'s `foliage_wind` key).
 `RenderingServer.global_shader_parameter_set`. The rationale is **correctness
 under streaming, not speed**: materials are already shared per batch, so a
 per-material push would only be ~10–30 calls a frame — but those materials are
-built in five different scripts with no common registry, and terrain chunks
+built in several scripts with no common registry, and level tiles
 stream in continuously, so a per-material push would need re-registration
-bookkeeping on every chunk load. Globals cannot go stale when a chunk appears
+bookkeeping on every tile load. Globals cannot go stale when a tile appears
 mid-frame.
 
 **The scene-leak trap:** global shader parameters **persist across scene
-changes**. A stage that lit its headlights and did not clear up after itself
-would leave a stray cone burning on whatever scene comes next (the hub's 3D
-menu showcase included). `world.gd::_exit_tree` therefore calls `HeadlightCone.reset()`
-unconditionally — every exit path, regardless of destination — which a
-per-destination reset would not cover. Same reasoning as
-`WorldRuntime.apply_deep_snow` being called unconditionally each stage boot (via each host's
-`_apply_deep_snow_ground` wrapper).
+changes**. A level that lit its headlights and did not clear up after itself
+would leave a stray cone burning on whatever scene comes next. `level_view.gd` → `_exit_tree`
+therefore calls `HeadlightCone.reset()` unconditionally — every exit path, regardless of
+destination — which a per-destination reset would not cover.
 
 **The driver** is `scripts/headlight_cone.gd` (`class_name HeadlightCone`), all
 statics: `amount(cfg)` is the live condition's strength straight out of the
@@ -735,48 +621,30 @@ data, so no consumer tests `== WEATHER_x`; `params(cfg, xform)` returns
 the name→value dictionary (split out from the push so the maths is testable
 without a live `RenderingServer`, and so it can force the outer half-angle
 strictly wider than the inner one however the two are authored); `push()` is
-pure transport; `reset()` zeroes `headlight_amount`. `world.gd::_process` calls
-`push()` once per frame with `$Car.global_transform` and early-outs on a
-condition that authors no cone, and `world.gd::_ready` seeds it once so the opening frame is already
-correct rather than dark for a tick.
+pure transport; `reset()` zeroes `headlight_amount`. `level_view.gd` → `_timed_process` calls
+`push()` once per frame with the car's transform and skips it on a
+condition that authors no cone.
 
 **Not yet verified on a real GPU.** Headless tests confirm the shaders parse and
 the maths is right, but whether `global_shader_parameter_set` actually reaches
 shaders under this project's `gl_compatibility` renderer has not been observed in
-a running frame. Five stages now author night (one per region — see
+a running frame. The level's weather pool can draw night (see
 [weather.md](weather.md) → "Night"), so this is checkable simply by driving one;
 do that before trusting any of it. Known open risks, all from the design doc: the
 PS1 post-process grade
-and 5-bit quantise were never tuned for a near-black frame (banding), the baked
-light quantises to RGB8 so dark ambient steps coarsely, fog is environment-side
+and 5-bit quantise were never tuned for a near-black frame (banding), fog is environment-side
 so the cone lights the ground but not the haze above it, and night is the
 *most* expensive weather, not the cheapest — full render distance still draws a
 nearly-black frame, plus the cone ALU on top.
 
 ### Fog does not shorten the cull (an unclaimed performance win)
 
-**Known gap, verified — do not assume the fog "pays for itself".** Fog density is
-*only* an `Environment` write. Nothing in the cull reads it:
-
-- the terrain chunk ring is a compile-time `TerrainManager.RADIUS` (7×7 × 50 m
-  chunks), and the LOD cutoffs come from `GameConfig.terrain_lod_bands_m` via
-  `apply_terrain_lod()` — see [terrain.md](terrain.md);
-- tree/bush/sign/spectator/arch draw distance is the single shared
-  `GameConfig.tree_render_distance_m`, resolved once at boot by
-  `tree_render_distance_for(web, touch)` and written back in `world.gd::_ready` —
-  see "Shared render distance" below and [trees.md](trees.md).
-
-So on a rain (×1.5), sandstorm (×2.0) or fog (much higher) stage the game still
-builds, submits and shades every chunk and every tree the thickened fog then hides.
-The smallest safe fix, if it is ever wanted, is a single multiplier on
-`cfg.tree_render_distance_m` at the one `world.gd::_ready` write-back (it runs before
-every foliage/prop spawn, and they all read that one field) — sourced from the
-condition's `look["fog_density_mult"]`, since `_apply_weather_look` has not run yet
-at that point. It was **deliberately not done here**: shortening the tree cull is a
-visible pop-in/quality trade-off that needs tuning and playtesting rather than a
-derived constant (at rain's density, objects at the shortened distance are still
-~45% visible), and touching the terrain LOD bands additionally perturbs
-`TerrainManager.detail_ring()` and the corridor precompute pruning.
+**Known gap — do not assume the fog "pays for itself".** Fog density is *only* an
+`Environment` write. Nothing in the cull reads it: the level's tiles stream by distance
+(`LevelStreamer`) and the trees cull at the shared `GameConfig.tree_render_distance_m`. So
+on a thick-fog weather the game still draws everything the fog then hides. Shortening the
+cull with the fog would be a visible pop-in trade-off that needs playtesting, so it was not
+done.
 
 ## Tests
 
@@ -788,7 +656,7 @@ via the deleted island benchmark's cold-vs-warm two-pass (a fresh WebGL context 
 first-use draws; a warm second pass of the same stage drops to ~30 ms). Two load-time warm passes pay those compiles behind
 the loading cover instead of mid-drive.:
 
-- **Contract walk** (`world.gd` warm block, ~line 517): after the world is built,
+- **Contract walk** (`level_view.gd` → `_warm_up`): after the level is built,
   `find_children()` discovers **every** node implementing the
   `warm_up(pos)`/`clear_warm_up()` contract and primes each — instead of a hardcoded
   list. Each `warm_up()` draws one throwaway instance **through its real draw path**
@@ -797,54 +665,31 @@ the loading cover instead of mid-drive.:
   after the rendered frame. Implementers today: `tire_marks.gd`, `wheel_particles.gd`,
   `engine_smoke.gd` (via `cpu_particle_pool.gd`), `spectator_group.gd` (the
   ragdoll's single-instance crowd-mesh variant, distinct from the crowd MultiMesh),
-  `biome_director.gd` (a small field of every weather particle kind, since free roam
-  only builds one when the weather turns) and `car.gd` (a speck of every catalogue
+  and `car.gd` (a speck of every catalogue
   car's body + wheel texture, so a rest-stop car switch uploads nothing).
+  `_warm_up` also spawns a small field of every weather particle kind, since the level only
+  builds one when the weather turns.
   **Any new effect is included automatically just by implementing the contract** — no
-  edit to `world.gd` — which is the guardrail against future first-use spikes silently
+  edit to `level_view.gd` — which is the guardrail against future first-use spikes silently
   shipping. (A runtime-only variant that isn't in the tree at load must still be
   primed by a node that IS in the tree — e.g. `SpectatorGroup` warms its own ragdoll.)
-- **Corridor pre-warm** (`world._prewarm_corridor`, every platform): flies a
-  throwaway camera along the whole built road centreline while loading, so the
-  static-world materials (terrain, trees, signs, the crowd MultiMesh) all render —
-  and compile — once up front. Runs behind the loading cover (its call site inside
-  `_generate_track` is gated on `loading != null and not _headless`, before the
-  overlay drops, so the fly is never visible). Measured to cut cold-run benchmark
-  spikes ~3× (9 → 3).
-  Residual spikes are gameplay-only draw variants that a static camera fly can't
-  reproduce; these are web-only (the native APK keeps a persistent shader cache) and
-  need on-device GL tooling (chrome://inspect) to pin further. NOTE: the knocked
-  spectator's single-instance ragdoll mesh — long cited here as the example — now
-  implements the warm-up contract and is primed by the contract walk, so it is no
-  longer a residual. The last known gap was the **speed-lines overlay**, which is a
-  `CanvasLayer` the corridor fly structurally cannot reach (see below); it now
-  implements the contract too.
+- **Look-around** (`WorldRuntime.look_around`): after the contract walk, `_warm_up` turns
+  a throwaway camera around the car (and once from above), so the level's static materials
+  render — and compile — behind the cover.
 
-  **Anything a camera fly can't bring into view needs the contract, not the
-  corridor.** The corridor pre-warm only compiles 3D materials that fall inside a
-  forward-looking frustum along the racing line. A screen-space overlay, or anything
-  hidden until a gameplay event fires, must implement `warm_up()`/`clear_warm_up()`
-  or it will compile mid-drive. `speed_lines.gd` is the worked example: it starts
-  hidden (`_apply_intensity(0.0)` hides the rect so a stationary car never shades a
-  transparent full screen), so its full-screen program used to compile the first
-  time the car crossed `speed_lines_start_kmh` — mid-acceleration off the start
-  line. Its `warm_up()` simply shows the rect for the warmed frame with `intensity`
-  still at 0, so the compile lands while the shader outputs fully transparent.
-- **Per-chunk terrain resolution** (`terrain_manager.gd`, behind the loading cover):
-  the corridor precompute classifies each chunk near/far from the racing line and
-  only builds the LOD levels a far chunk can ever display — far chunks skip the full
-  `SAMPLES²` grid + collision entirely, cutting precompute (and cache size) sharply.
-  The on-the-fly runtime chunk build was removed at the same time: a corridor cache
-  miss leaves a **hole** rather than a mid-drive hitch. Tunables:
-  `terrain_precompute_prune_enabled` (master toggle) and
-  `terrain_precompute_safety_slack_m` (extra reach so replay-camera shots never expose
-  a pruned level). See [terrain.md](terrain.md) → per-chunk classification.
+  **Anything the camera can't bring into view needs the contract.** A screen-space overlay,
+  or anything hidden until a gameplay event fires, must implement
+  `warm_up()`/`clear_warm_up()` or it will compile mid-drive. `speed_lines.gd` is the worked
+  example: it starts hidden, so its full-screen program used to compile the first time the
+  car crossed `speed_lines_start_kmh`. Its `warm_up()` shows the rect for the warmed frame
+  with `intensity` still at 0, so the compile lands while the shader outputs fully
+  transparent.
 
 ## Performance defaults (inherently low-end)
 
 The game ships one lean pipeline for every device (no quality tiers). Relevant
 shipped knobs in `GameConfig`:
-- **Frame cap** — the applied `Engine.max_fps`, resolved in `world._ready()`
+- **Frame cap** — the applied `Engine.max_fps`, resolved in `level_view.gd` → `_ready`
   (skipped under `--headless`, so it never throttles the test runner) from
   **`FpsSetting`** (`scripts/fps_setting.gd`): the player's **Settings → Display**
   choice of **30 / 60 / uncapped**, persisted under `FpsSetting.SETTING_KEY`
@@ -853,7 +698,7 @@ shipped knobs in `GameConfig`:
   Platform.is_web(), Platform.is_touch())`. The picker (`settings_menu.gd` →
   `select_fps`) writes `Engine.max_fps` **live** (the frame cap is a global engine
   property, so no live-scene signal is needed — both the HQ and pause hosts take
-  effect immediately) and `world._ready()` re-derives it next run. During a benchmark
+  effect immediately) and the level re-derives it next load. During a benchmark
   the config-driven cap wins (`Benchmark.active` → `default_cap()`), not the player's saved setting. **`target_fps`**
   (desktop/native, default 0 = uncapped) / **`target_fps_mobile`** (native mobile, default 0) /
   **`target_fps_web`** (web, default 0 — all three uncapped since 2026-11-23) remain the *default* source: the web cap
@@ -874,15 +719,10 @@ shipped knobs in `GameConfig`:
   lowering the web cap further; the tradeoff is added throttle→sound latency. The
   native Android APK has a real audio thread and runs fine at 60. `0` = uncapped.
   Physics stays at the project physics tick. See [engine-audio.md](engine-audio.md).
-- **`texture_lod_bias`** (default 0.75) — biases distant foliage sampling toward
-  cheaper mip levels (a `lod_bias` uniform in `shaders/billboard_opaque.gdshader`, set
-  from `BillboardField.build()`). The tree/bush textures now have **mipmaps
-  enabled** — every texture in `textures/` does, including the snow/taiga trees
-  (`tree-snow.webp`, `tree-snow-laden.webp`, `tree-taiga.webp`) and the snow ground
-  and road tiles; see [asset-pipeline.md](asset-pipeline.md) → "Texture import
-  settings" — so distant
-  billboards no longer thrash the texture cache. `filter_nearest` is kept (PS1
-  look) — mipmapping is independent of the magnification filter.
+- **Mipmaps**: every texture in `textures/` has mipmaps enabled (see
+  [asset-pipeline.md](asset-pipeline.md) → "Texture import settings"), so distant trees
+  don't thrash the texture cache. `filter_nearest` is kept (PS1 look) — mipmapping is
+  independent of the magnification filter.
 
 ### Shared render distance
 
@@ -891,25 +731,10 @@ Every roadside prop culls at **one shared distance** — `cfg.tree_render_distan
 arches all pop in at the same range instead of each system choosing its own (or
 drawing across the whole stage).
 
-That shared distance is **per-target**: a web **touch** device (phone/tablet browser
-— the same low-end target as the 30fps `target_fps_web` cap) gets the shorter
-`tree_render_distance_web_touch_m`; every other target (native mobile, desktop,
-desktop browser) gets the longer `tree_render_distance_m`. `free_roam.gd._enter_tree`
-(and `world.gd._ready` on the dev stage) resolves the effective value ONCE at boot via `GameConfig.tree_render_distance_for(web,
-touch)` and writes it back onto `cfg.tree_render_distance_m`, so all the readers below
-stay unchanged. The terrain LOD bands split the same way —
-`terrain_lod_bands_for(web, touch)` picks `terrain_lod_bands_web_touch_m`
-(`[40,70,80,90]`, finer levels dropped sooner) for web-touch vs the higher-quality
-`terrain_lod_bands_m` (`[60,100,115,120]`, finer terrain held out to the longer
-desktop render distance) for everyone else — resolved into `cfg.terrain_lod_bands_m`
-before `apply_terrain_lod()` (see [terrain.md](terrain.md)).
-
 The mechanism is a `GeometryInstance3D`
 `visibility_range_end` + `visibility_range_end_margin` (fade mode `SELF`, so the
 cull dithers rather than pops):
 
-- **Trees / bushes** set it per-bin in `TreeMeshField` (`foliage.gd` passes the
-  distance).
 - **Spectators** set it on the group `MultiMeshInstance3D` (anchored at the crowd
   centroid so the single test measures camera→crowd distance) — see
   [spectators.md](spectators.md).
@@ -934,28 +759,10 @@ pixel-for-pixel. Eyeball intentional look changes in the running app.
 > skips the `set_shader_parameter` when the value hasn't changed.
 
 
-## The snow terrain shader variant
+## Snow on the ground
 
-`shaders/ps1_terrain_snow.gdshader` is `ps1_models.gdshader` plus a single vertex stage
-that raises the ground off-road, so the car visibly sinks into deep snow.
-
-It exists as a **separate shader** rather than a uniform on the shared one because the
-terrain shader is deliberately kept free of any vertex stage — terrain is the heaviest
-geometry in the game and this renderer targets low-end phones — a ban enforced by
-`test_render_smoke.gd::test_terrain_shader_has_no_vertex_stage`. Same pattern as
-`ps1_models_lit.gdshader`, which exists so the car's fake lighting does not land on the
-terrain either. Only snow ground pays for it (see `features/snow-region.md` for the lift itself). Props are not lifted with it, so they look
-buried in the snow.
-
-**Everything but the vertex stage is a verbatim copy of `ps1_models`** — the fragment stage
-and the uniform set — checked by `test_render_smoke.gd::test_snow_terrain_shader_matches_the_base_shader` — `ps1_terrain_snow` `#include`s `headlight_cone.gdshaderinc` and applies
-the cone exactly as `ps1_models` does, because the swap below relies on
-`ShaderMaterial` keeping its by-name parameter map across a shader change. A
-uniform added to one and not the other silently drops its value on a snow stage.
-`WorldRuntime.apply_deep_snow` (called from `world.gd._apply_deep_snow_ground`)
-swaps the floor material between them every stage boot, including restoring the base
-shader, because that material is a shared `main.tscn` sub-resource that survives scene
-instantiation. See [snow-region.md](snow-region.md).
+The level's snow lift is in `level_ground.gdshader` itself (`snow_depth_m`, with the
+snowiness in `UV`); see [snow-region.md](snow-region.md).
 
 ## Level view ambient occlusion
 

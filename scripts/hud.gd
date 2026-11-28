@@ -1,5 +1,5 @@
 extends CanvasLayer
-# Docs: features/hud.md, features/stage.md — update in the same change as this file.
+# Docs: features/hud.md — update in the same change as this file.
 # Tests: tests/headless/test_hud.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'hud' tests/headless/` and read the assertions that pin what you are about to change (6 test files touch this script).
 # On-screen readout of the car's airspeed — the chassis velocity magnitude,
 # not wheel rotation, so wheelspin and lockup don't affect the number.

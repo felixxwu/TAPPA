@@ -8,9 +8,8 @@ extends RefCounted
 # MeshInstance3D, and return that instance's `.mesh` (or null if the scene is
 # null or contains no MeshInstance3D). The temporary instance is always freed.
 #
-# Mirrors the extraction logic used across the project (Foliage.tree_mesh /
-# Foliage.bush_mesh, spectator_group._extract_mesh, and the car/hq/podium mesh
-# pulls): a depth-first search that returns the first mesh found.
+# Mirrors the extraction logic used across the project (spectator_group._extract_mesh
+# and the car mesh pulls): a depth-first search that returns the first mesh found.
 static func first_mesh(scene: PackedScene) -> Mesh:
 	if scene == null:
 		return null

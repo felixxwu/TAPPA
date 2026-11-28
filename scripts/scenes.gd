@@ -4,7 +4,7 @@ extends RefCounted
 # Tests: tests/headless/test_world_isolation.gd, tests/headless/test_menu_nav.gd, tests/headless/test_menu_page.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'Scenes' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # The canonical scene paths and the one scene-change point.
 
-# The title screen (the game's main scene).
+# The boot scene (the game's main scene): makes a world if there is none, then enters WORLD.
 const TITLE := "res://title.tscn"
 # THE GAME WORLD — the default. Entering the world means change_to(WORLD): the authored Hafren
 # level (GameConfig.level_path, a level-editor save) driven in level_view.tscn (LevelView).

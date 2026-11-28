@@ -5,9 +5,8 @@ leaves a trail of **opaque, flat-shaded low-poly clouds** behind all four wheels
 the car drives on a road: gravel-coloured on gravel, near-white on tarmac. It **replaced** the gravel clods that
 [`WheelParticles`](wheel-dust.md) used to throw on wheelspin; that pool now throws
 only off-road debris (grass blades, snow clods). Created + wired by
-`world.gd._generate_track` (`_dust_puffs`, reused across regenerations) and in free
-roam by `free_roam.gd._ready`, where `BiomeDirector._seat_particle_look` re-seats the
-region colour on every ring change.
+`level_view.gd` (`_add_effects`), which re-seats its colour toward white over the snow
+(`snow_dust`).
 
 **Tests:** `tests/headless/test_dust_puffs.gd`. **Look check:** `tools/dust_capture.tscn`
 (boots the Hafren level, holds the throttle from the spawn, writes a chase and a side
@@ -111,7 +110,7 @@ real path and the shader compiles behind the loading cover.
 ## Colour
 
 Gravel dust is the gravel's own colour. `GameConfig.dust_puff_color` is the average
-of `textures/gravel.jpg`; a region with its own `gravel_texture` authors the matching
+of the island's old gravel texture (since deleted); a region with its own `gravel_texture` authors the matching
 average as its `dust_color` look key (in `RegionLibrary.LOOK_KEYS`), read by
 `apply_region_look(look)`: Greece (`gravel-greece.jpg`) and the Alps
 (`snow-road.jpg`). **If you change a region's gravel texture, re-average it** (e.g.

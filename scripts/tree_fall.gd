@@ -3,7 +3,7 @@ class_name TreeFall
 # speed threshold (see todo/trees-falling-on-impact.md). Kept static + stateless so
 # it's unit-testable headless, in the same spirit as ScatterMath. The stateful part
 # (mutating the struck MultiMesh instance, disabling its hitbox) lives in
-# TreeMeshField; this module only answers "should it fall?", "how far has it fallen
+# LevelTrees; this module only answers "should it fall?", "how far has it fallen
 # by now?", and "about which axis?".
 
 

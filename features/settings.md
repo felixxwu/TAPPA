@@ -1,7 +1,7 @@
 # Settings — adding one, and where it lives
 
 **Sources:** `scripts/settings_menu.gd` (`class_name SettingsMenu` — the shared settings
-page used by BOTH the title screen and the pause menu), the per-setting apply-owner modules
+page on the pause menu), the per-setting apply-owner modules
 (`scripts/fps_setting.gd`, `scripts/camera_manager.gd`, `scripts/music_director.gd` and
 siblings — one module per persisted setting), and `Save.get_setting` / `Save.set_setting`
 in `scripts/save_manager.gd`.
@@ -10,7 +10,7 @@ in `scripts/save_manager.gd`.
 
 How to add or change a **persisted setting**. This is its own area doc rather than a
 subsection of the HQ screen because a setting is not an HQ concern: the same
-`SettingsMenu` backs the title screen and the pause menu, and the thing that actually owns
+`SettingsMenu` backs the pause menu, and the thing that actually owns
 a setting is its apply module, not any screen.
 
 **Two things every new setting needs, both easy to miss:**
@@ -18,8 +18,8 @@ a setting is its apply module, not any screen.
 1. **It must be RE-APPLIED AT BOOT.** Writing `Save.set_setting` at toggle time only means
    the setting silently will not survive a restart. The apply-owner pattern below is what
    carries it; `camera_manager.gd`, `fps_setting.gd` and `music_director.gd` are the
-   canonical examples to clone. The frame cap is applied by free roam's boot
-   (`free_roam.gd` → `_hand_over`), after a raised cap for the load (`WorldRuntime.loading_cap`).
+   canonical examples to clone. The frame cap is applied by the level's boot
+   (`level_view.gd` → `WorldRuntime.apply_fps_cap`), after a raised cap for the load (`WorldRuntime.loading_cap`).
 2. **Its row must be keyboard + gamepad navigable**, with a nav test — see
    [menu-navigation.md](menu-navigation.md). This is a CLAUDE.md rule for every menu change.
 
@@ -93,10 +93,8 @@ the tuning pages in [tuning.md](tuning.md), and the one-bottom-action-row rule i
 
 **Dev is shown to everyone.** `_build_list_page` adds
 its category button whenever `SettingsMenu.dev_tools_enabled()` — the
-single switch `car.gd` / `hud.gd` / `world.gd` /
-`terrain_manager.gd` / `perf_log.gd` all key off for every other
-dev affordance (force arrows, grip grid, world-menu A/B,
-skip-to-finish, chunk-border overlay, perf log). It defaults to **true** — dev
+single switch `car.gd` / `hud.gd` key off for every other
+dev affordance (force arrows, grip grid). It defaults to **true** — dev
 tools are exposed in the exported release/web build, not just the editor and
 debug exports.
 
@@ -122,9 +120,8 @@ through the page's `_dev_status` line, and both editing the free-roam world sess
 - **Unlock whole map** — `_unlock_map`: `LevelMap.reveal_all` on the live level's map, so every teleport point
   and map area counts as found (the same discovery the minimap and `known_teleports` read). Cars, parts and money
   are untouched; with no level running it just says so.
-- **Weather: Auto** — `_cycle_dev_weather`: each press steps the live `BiomeDirector.forced_weather`
-  through every `WeatherLibrary` condition and back to Auto (the rings' own draw), applied at once
-  via `update_now`. Not saved; a new scene starts on Auto.
+- **Weather: Auto** — `_cycle_dev_weather`: each press steps `LevelWeather.forced_weather`
+  through the level's weather pool and back to Auto (the level's own draw). Not saved; a new scene starts on Auto.
 
 `Save.grant_car` remains the plain mutator tests use to seed a fixture car.
 
@@ -142,8 +139,7 @@ so without a reload the player kept driving their old car through a
 now-nonsensical (fully dark) overworld: nothing re-ran the "no starter car
 yet" setup a real new game boots into. The reload routes through
 `Scenes.change_to(get_tree(), Scenes.TITLE)`, the same seam every other
-hub transition uses, so it re-instantiates the hub fresh against the
-just-wiped profile (starter-car picker included) exactly like a brand-new
-player's first boot, and stays inert under `Scenes.block_real_changes` in
+hub transition uses, so the boot scene makes a fresh world on the
+just-wiped profile exactly like a brand-new player's first boot, and stays inert under `Scenes.block_real_changes` in
 tests.
 

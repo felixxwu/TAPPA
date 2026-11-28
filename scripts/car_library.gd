@@ -89,14 +89,13 @@ const FWD := 2
 # from it (critically damped, see GameConfig.suspension_damping_*), not specified
 # per car. Soft & tall roadster/muscle (MX-5, Charger) vs stiff & low supercars
 # (911, Viper, XJS).
-# ring — left over from the island, where it was the biome ring the car was found in; unread.
 # abs — whether the real car came with anti-lock brakes; the rest can buy them (LootRules.fit_block_reason).
 const CARS: Array[Dictionary] = [
 	{
 		"name": "Miot Roadster", # parody of the Mazda MX-5. ND: ~1058 kg, 181 hp, 2.0 i4, light RWD roadster
 		# Durability ~8/10: bulletproof Skyactiv reliability + trivially cheap/easy to fix,
 		# but a ~1058 kg flyweight roadster with little crash mass — reliable, not a tank.
-		"id": "mx5", "ring": 0, "max_hp": 1050.0, "abs": true,
+		"id": "mx5", "max_hp": 1050.0, "abs": true,
 		"mass": 1058.0, "engine": "mazda_20_i4", "weight_front": 0.50, "engine_pos": 0.85, # ND: famous 50/50
 		"tire_compound": 0.9, # sport touring tyres (transmission lives on the engine — EngineLibrary)
 		"brake_bias": 0.43,
@@ -120,7 +119,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Fjord Focal", # parody of the Ford Focus. 2009 (US Mk2.5): ~1190 kg, 140 hp, 2.0 NA Duratec i4, FWD compact
 		# Durability ~8/10: unstressed NA Duratec, dead-simple/cheap to repair, parts
 		# everywhere, sturdy modern compact unibody — the durable everyday workhorse.
-		"id": "focus", "ring": 0, "max_hp": 1200.0, "abs": true,
+		"id": "focus", "max_hp": 1200.0, "abs": true,
 		"mass": 1190.0, "engine": "ford_20_i4", "weight_front": 0.62, "engine_pos": 0.85, # transverse NA I4, nose-heavy FWD
 		"tire_compound": 0.88, # economy / touring all-season tyres
 		"brake_bias": 0.49,
@@ -144,7 +143,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Fjord F-15", # parody of the 1986 Ford F-150. Regular cab short bed: ~1800 kg, 4.9 straight-six, RWD pickup
 		# Durability ~9/10: an unkillable low-stressed straight-six in a body-on-frame work truck,
 		# parts everywhere and fixable with a hammer — slow, but it shrugs off punishment.
-		"id": "f150", "ring": 0, "max_hp": 1700.0, "abs": false,
+		"id": "f150", "max_hp": 1700.0, "abs": false,
 		"mass": 1800.0, "engine": "ford_49_i6", "weight_front": 0.57, "engine_pos": 0.85, # long-nosed truck, empty bed: nose-heavy
 		"tire_compound": 0.85, # all-terrain light-truck tyres
 		"brake_bias": 0.51,
@@ -169,7 +168,7 @@ const CARS: Array[Dictionary] = [
 		# Durability ~3/10: heavy solid GT shell, but a notorious money-pit — the V12 cooks
 		# head gaskets, the wiring bakes and fails, and everything is complex, cramped and
 		# costly to fix. Reliability/repairability drag it down despite the mass.
-		"id": "xjs", "ring": 1, "max_hp": 600.0, "abs": false,
+		"id": "xjs", "max_hp": 600.0, "abs": false,
 		"mass": 1755.0, "engine": "jaguar_53_v12", "weight_front": 0.53, "engine_pos": 0.75, # front V12, nose-heavy ~53/47
 		"tire_compound": 0.95, # period touring / GT tyres
 		"brake_bias": 0.48,
@@ -191,7 +190,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Honcho Actus", # parody of the Honda Acty. HA4 kei truck: ~780 kg, 656cc mid-engine triple
 		# Durability ~7/10: hardy simple Honda kei drivetrain, easy to maintain, but a
 		# ~780 kg rust-prone cab-over with no crash mass — reliable little truck, frail body.
-		"id": "acty", "ring": 1, "max_hp": 950.0, "abs": false,
+		"id": "acty", "max_hp": 950.0, "abs": false,
 		"mass": 780.0, "engine": "honda_066_i3", "weight_front": 0.45, "engine_pos": 0.35, # mid-engine cab-over kei, tail-heavy
 		"tire_compound": 0.8, # hard commercial tyres, skinny
 		"brake_bias": 0.40,
@@ -215,7 +214,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Surger R/T", # parody of the '69 Dodge Charger R/T: ~1670 kg, 440 Magnum V8, RWD muscle
 		# Durability ~9/10: famously stout low-stressed 440 big-block, brutally simple to
 		# fix, huge aftermarket, and a ~1670 kg heavy-steel body that shrugs off abuse — a tank.
-		"id": "charger", "ring": 1, "max_hp": 1300.0, "abs": false,
+		"id": "charger", "max_hp": 1300.0, "abs": false,
 		"mass": 1670.0, "engine": "mopar_440_v8", "weight_front": 0.56, "engine_pos": 0.85, # big-block V8 up front, nose-heavy
 		"tire_compound": 0.95, # touring tyres
 		"brake_bias": 0.50,
@@ -239,7 +238,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Rondel Twist", # parody of the Renault Twingo (Renault's emblem is a rondel/diamond). Mk1 (C06) 1.2 16V: ~950 kg, 75 PS, light FWD city car
 		# Durability ~5/10: mechanically OK but French electrical gremlins, cheap flimsy
 		# build and a tiny lightly-built shell that flexes/deforms easily — cheap-and-cheerful.
-		"id": "twingo", "ring": 2, "max_hp": 900.0, "abs": true,
+		"id": "twingo", "max_hp": 900.0, "abs": true,
 		"mass": 950.0, "engine": "renault_12_i4", "weight_front": 0.62, "engine_pos": 0.85, # transverse FWD city car, nose-heavy
 		"tire_compound": 0.85, # hard economy tyres, skinny
 		"brake_bias": 0.49,
@@ -262,7 +261,7 @@ const CARS: Array[Dictionary] = [
 		"name": "Porker Turbo", # parody of the Porsche 911 Turbo. 1975 930 Turbo 3.0: ~1140 kg, 260 PS, turbo flat-6, RWD, 4-speed
 		# Durability ~4/10: rigid well-built shell, but a high-strung turbo flat-6 needing
 		# scheduled valve/turbo rebuilds and pricey specialist-only work — high-maintenance.
-		"id": "porsche911", "ring": 2, "max_hp": 750.0, "abs": false,
+		"id": "porsche911", "max_hp": 750.0, "abs": false,
 		"mass": 1140.0, "engine": "porsche_30_flat6", "weight_front": 0.41, "engine_pos": 0.10, # rear-engine flat-6, tail-heavy ~41/59
 		"tire_compound": 0.92,
 		"brake_bias": 0.41,
@@ -285,7 +284,7 @@ const CARS: Array[Dictionary] = [
 		# Durability ~6/10: deliberately simple low-revving V10 that's hard to kill and
 		# cheap to service, rigid tube frame + ~1520 kg mass, but crude build and composite
 		# panels that crack — a reliable brute held back by rawness.
-		"id": "viper", "ring": 3, "max_hp": 800.0, "abs": false,
+		"id": "viper", "max_hp": 800.0, "abs": false,
 		"mass": 1520.0, "engine": "dodge_80_v10", "weight_front": 0.49, "engine_pos": 0.60, # front-mid V10, ~49/51
 		"tire_compound": 0.9, # sticky performance tyres (period bias-belted rubber)
 		"brake_bias": 0.45,
@@ -308,7 +307,7 @@ const CARS: Array[Dictionary] = [
 		# Durability ~2/10: monstrously overbuilt mass (~1900 kg, 27 L aero V12) but
 		# effectively unmaintainable — a bespoke one-off with no parts shelf, no manual,
 		# every repair one-off fabrication. A glass-cannon showpiece: huge but unkeepable.
-		"id": "beast", "ring": 3, "max_hp": 750.0, "abs": false,
+		"id": "beast", "max_hp": 750.0, "abs": false,
 		"mass": 1900.0, "engine": "merlin_v27_v12", "weight_front": 0.55, "engine_pos": 0.85, # vast V12 slung out front, nose-heavy
 		"tire_compound": 1.05, # period touring tyres
 		"brake_bias": 0.46,

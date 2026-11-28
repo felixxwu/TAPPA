@@ -4,27 +4,25 @@ extends RefCounted
 # Tests: tests/headless/test_region_library.gd, tests/headless/test_menu_nav.gd — extend in the same change. These are the PRIMARY ones, not all of them: before you change behaviour here, `grep -rn 'RegionLibrary' tests/headless/` and read the assertions that pin what you are about to change (5 test files touch this script).
 # Authored catalogue of REGIONS (parallel to RallyLibrary.RALLIES). A region is one
 # CORNER of the single world map: it groups rallies by their `region` tag and carries
-# optional look overrides for the driven world (grass/gravel/sky/fog/tints/layers) — a
-# missing key inherits the scene / GameConfig baseline — plus its own waterline.
-# Regions do NOT unlock in sequence; every corner is open from the start, and a region
-# gates nothing — it owns only its look and its waterline. See features/regions.md.
+# optional look overrides for the driven world (grass/gravel/sky/fog/tints) — a
+# missing key inherits the scene / GameConfig baseline. Regions do NOT unlock in
+# sequence; every corner is open from the start, and a region gates nothing — it owns
+# only its look. See features/regions.md.
 
 
 # Whitelisted look-override keys (used by look_of + the level). Deliberately NOT here:
 # `map_image` (there is one world map now), `look_from` (the inherit-another-region's-look
-# idiom, resolved by look_of before this filter — see the note above REGIONS) and
-# `water_level` (region data, not a look).
+# idiom, resolved by look_of before this filter — see the note above REGIONS).
 const LOOK_KEYS := [
 	"sky_panorama", "grass_texture", "gravel_texture",
 	"tree_mix", "bush_billboard", "spawn_bush_mesh", "background_color",
-	"terrain_tint", "terrain_layers", "tarmac_color", "road_marking_color",
-	"grass_particle_color", "grass_particle_square", "rock_density", "dust_color",
+	"terrain_tint", "grass_particle_color", "grass_particle_square", "dust_color",
 ]
 
 # The home region's billboard tree (also the fallback when a region authors no
 # `tree_mix`). Its "profile" selects the GameConfig sizing/jitter block a species
 # uses — "home" → tree_size_m et al., "region" → region_tree_billboard_size_m et al.
-# (see Foliage.spawn_trees). Balance values stay in GameConfig; a species authors WHICH
+# Balance values stay in GameConfig; a species authors WHICH
 # texture, WHICH profile, the mix WEIGHT, and optionally `size_scale` — a Vector2
 # width/height multiplier on the profile's base size, stating that TEXTURE'S OWN
 # proportions. That last one is art metadata rather than balance: the profile card is
@@ -56,14 +54,11 @@ const DEFAULT_TREE_MIX: Array = [
 # A REGION THAT IS A VARIANT OF ANOTHER MUST NOT CLONE ITS LOOK BLOCK. Author
 # `"look_from": "<other_region_id>"` and then only the keys that DIFFER — that is this
 # table's authoring idiom, not internal plumbing. Worked examples below: `taiga` is home
-# with its own trees, `home_coast` is home with its own (much higher) waterline. `water_level` is
-# never inherited — every corner authors its own (a corner's `water_level` is its own). Ids are
-# load-bearing: "home" is the default region, so never rename it.
+# with its own trees. Ids are load-bearing: "home" is the default region, so never rename it.
 #
 # ADDING A ROW HERE:
 #   1. the row below (never invent a filename — `ls textures/`, see above);
-#   2. features/regions.md — the prose region list (test_region_docs.gd fails on this);
-#      features/terrain.md too, if the row changes how terrain is built.
+#   2. features/regions.md — the prose region list (test_region_docs.gd fails on this).
 const REGIONS: Array[Dictionary] = [
 	# The existing world. It authors its foliage split explicitly so the split is
 	# config-driven everywhere (100% home tree.png, 3D ground-cover bushes on); every
@@ -72,7 +67,6 @@ const REGIONS: Array[Dictionary] = [
 	{
 		"id": "home", "order": 0, "name": "The Green",
 		# ^ progression order: country(0), peninsula(1), taiga(2), lakes(3), Alps(4).
-		"water_level": - 12.0,
 		# size_scale sets each species' size and card shape: height 9.375 m (the profile's 7.5
 		# x 1.25), width = height x the atlas frame's aspect. It is done here, not on the
 		# shared GameConfig profile, so the other species keep their tuned sizes.
@@ -92,15 +86,12 @@ const REGIONS: Array[Dictionary] = [
 	# Mediterranean canopy — the "region" sizing profile) and 30% the home tree.png
 	# (the smaller "home" profile), so the arid stands read as mostly-olive with a few
 	# ordinary trees mixed in. spawn_bush_mesh = false drops the green 3D ground-cover
-	# bushes entirely (the arid map has no lush undergrowth). Terrain tints inherit home
-	# for now; the tarmac is a dark warm asphalt, and its lane paint is yellow rather than
-	# home's off-white.
+	# bushes entirely (the arid map has no lush undergrowth). Terrain tints inherit home.
 	# grass_particle_color overrides GameConfig's home-green wheel-dust blade with
 	# the dry olive/tan of grass-greece.jpg (samples average ~(0.53, 0.50, 0.42);
 	# the home green read as a mismatch flung off wheels on this arid ground).
 	{
 		"id": "greece", "order": 1, "name": "The Dunes",
-		"water_level": - 12.0,
 		"sky_panorama": "res://textures/sky-greece.jpg",
 		"grass_texture": "res://textures/grass-greece.jpg",
 		"tree_mix": [
@@ -109,19 +100,13 @@ const REGIONS: Array[Dictionary] = [
 			{"texture": "res://textures/tree.png", "profile": "home", "weight": 0.3},
 		],
 		"spawn_bush_mesh": false,
-		# The stoniest region in the catalogue. It is the one place that authors NO 3D
-		# ground cover (spawn_bush_mesh false above), so the verge here is bare in a way
-		# no other region's is — rocks are what fills it, and the arid look wants them.
-		"rock_density": 2.5,
 		"gravel_texture": "res://textures/gravel-greece.jpg",
-		"tarmac_color": Color(0.26, 0.25, 0.23),
-		"road_marking_color": Color(0.85, 0.70, 0.16),
 		"grass_particle_color": Color(0.52, 0.49, 0.38),
 		# Dust puffs on gravel take the gravel's colour (gravel-greece.jpg averages this).
 		"dust_color": Color(0.74, 0.73, 0.65),
 	},
 	# The taiga — the NW corner. Deliberately the THINNEST region in the catalogue:
-	# `look_from: "home"` takes home's sky, gravel, tarmac, lane paint, terrain tints
+	# `look_from: "home"` takes home's sky, gravel, terrain tints
 	# and ground cover wholesale, and the ONLY thing overridden is which tree grows
 	# there. That is the entire design. A boreal forest is not a different planet from
 	# a temperate one — same grey overcast, same dirt, same green ground — it is the
@@ -140,20 +125,15 @@ const REGIONS: Array[Dictionary] = [
 	{
 		"id": "taiga", "order": 2, "name": "The Taiga",
 		"look_from": "home",
-		"water_level": - 12.0,
 		"tree_mix": [
 			{"texture": "res://textures/tree-taiga.webp", "profile": "home", "weight": 1.0,
 			 "size_scale": Vector2(0.93, 3.0)}, # 6.98 x 22.5 m, frame aspect 0.310
 		],
 	},
-	# The same forest look with the sea raised — a lakeland / forested shore.
-	# `water_level` is set MUCH higher than every other region's (all -12.0) so the
-	# lakes read as unmistakably flooded rather than merely "a bit wetter" — see
-	# features/regions.md.
+	# Home's look under another name; it used to differ only in its (now deleted) sea level.
 	{
 		"id": "home_coast", "order": 3, "name": "The Lakes",
 		"look_from": "home",
-		"water_level": 3.0,
 	},
 	# The alpine NE corner. The one region that does more than look different: it is
 	# also the first to influence HANDLING, via the two non-LOOK_KEYS blocks below.
@@ -161,14 +141,12 @@ const REGIONS: Array[Dictionary] = [
 	#
 	# Look: the road and the open ground are both snow — near-white, deliberately
 	# textured rather than flat, because this renderer is unshaded with baked vertex
-	# lighting and a dead-flat albedo reads as a silhouette with no form. Tarmac is
-	# home's asphalt lightened, as a dusting rather than a different material.
+	# lighting and a dead-flat albedo reads as a silhouette with no form.
 	# Conifers only, and no 3D ground cover at all (nothing grows through snow).
 	# grass_particle_color turns the wheel spray white — the home green would read as
 	# grass blades flung off a snowfield.
 	{
 		"id": "snow", "order": 4, "name": "The Alps",
-		"water_level": - 12.0,
 		"sky_panorama": "res://textures/sky-snow.jpg",
 		"grass_texture": "res://textures/snow-ground.jpg",
 		"gravel_texture": "res://textures/snow-road.jpg",
@@ -193,13 +171,6 @@ const REGIONS: Array[Dictionary] = [
 		# dropped — it read as debris scattered on the snow rather than as buried
 		# shrubs, and the clean snow surface is the better look.
 		"spawn_bush_mesh": false,
-		# The sparsest rocks in the catalogue, for the same reason there is no
-		# undergrowth: deep snow BURIES loose stone. What survives reads as the odd
-		# boulder too big to be covered, so the few that remain are still worth having
-		# — 0.0 would say this landscape has no rock in it at all, which is wrong for
-		# the Alps. Kept low rather than absent.
-		"rock_density": 0.3,
-		"tarmac_color": Color(0.46, 0.47, 0.50),
 		"grass_particle_color": Color(0.90, 0.92, 0.95),
 		# ...and grass_particle_square makes it the right SHAPE as well as the right
 		# colour. The off-road particle is modelled as a torn-up blade of grass — slim
@@ -223,8 +194,7 @@ const REGIONS: Array[Dictionary] = [
 		"background_color": Color(0.567, 0.604, 0.658),
 
 		# --- Handling. NOT LOOK_KEYS, and deliberately so: folding them into look_of would
-		# leak non-look keys into the dict the level treats as look overrides. Same
-		# reasoning that keeps `water_level` out of the whitelist.
+		# leak non-look keys into the dict the level treats as look overrides.
 		#
 		# They name GameConfig fields rather than authoring numbers (the WeatherLibrary
 		# pattern), so every tunable stays in scripts/game_config.gd.
@@ -338,17 +308,6 @@ static func tree_mix(look: Dictionary) -> Array:
 # defaults true (a region that authors nothing keeps the bushes, like the base scene).
 static func spawns_bush_mesh(look: Dictionary) -> bool:
 	return bool(look.get("spawn_bush_mesh", true))
-
-# How many rocks this region scatters, as a MULTIPLIER on the base count
-# (see features/rocks.md). 1.0 is the unremarkable middle every region gets by default;
-# stony regions author more, and a region whose ground is buried under snow authors
-# less. Clamped non-negative — 0.0 is a legitimate authoring choice meaning "no rocks
-# here", and negative would otherwise flip the scatter's cell maths.
-#
-# Density is the ONLY thing a region varies about rocks: the models, colours and
-# hitboxes are shared everywhere, so a boulder reads the same wherever you meet it.
-static func rock_density(look: Dictionary) -> float:
-	return maxf(float(look.get("rock_density", 1.0)), 0.0)
 
 # The region's look overrides, filtered through the LOOK_KEYS whitelist. A region may
 # author `"look_from": "<other_region_id>"` to inherit that region's look block (the

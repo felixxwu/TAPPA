@@ -3,27 +3,13 @@ class_name SpectatorScatter
 # (x -> world x, y -> world z), headless and deterministic. Nothing here touches the scene — it reads only in-memory track
 # data (the road_cells set and a grid of tree points), so it unit-tests cheaply.
 #
-# Two concerns:
-#  - mid_offset(): pick the along-track distance for the random mid-stage group,
-#    seeded into [frac_min, frac_max] of the baked centerline length.
-#  - members(): the individual standing positions within one group — a seeded
-#    jittered grid (cell = separation) over a disc, rejecting road cells and
-#    points too close to a tree, then thinned to `count`. Spacing is inherent
-#    (no O(n^2) neighbour scan), they stay off the carriageway, and they never
-#    spawn inside a tree.
+# members() gives the standing positions within one group — a seeded jittered grid
+# (cell = separation) rejecting road cells and points too close to a tree, thinned to
+# `count`. Spacing is inherent (no O(n^2) neighbour scan).
 
 const _JITTER := 0.5                   # jitter as a fraction of a cell (±0.25 cell)
 const _SALT_Z := 0x165667B1            # decorrelates the two jitter axes
 const _SALT_PICK := 0x9E3779B1         # decorrelates the thinning shuffle
-
-
-# Along-track distance (m) for the random mid-stage group: a seeded fraction of
-# the baked length within [frac_min, frac_max]. Deterministic per seed.
-static func mid_offset(baked_length: float, frac_min: float, frac_max: float, seed_value: int) -> float:
-	var lo := clampf(minf(frac_min, frac_max), 0.0, 1.0)
-	var hi := clampf(maxf(frac_min, frac_max), 0.0, 1.0)
-	var t := ScatterMath.hash01(0, 0, seed_value, 0)
-	return baked_length * (lo + (hi - lo) * t)
 
 
 # Build a uniform spatial grid of points (e.g. tree positions) keyed by cell, so

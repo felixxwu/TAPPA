@@ -25,7 +25,7 @@ bonnet.
 
 `activate_current()` re-asserts the player's chosen camera as the active one. It's
 used when another system temporarily took over the viewport with its own `Camera3D` —
-the title screen's orbiting camera (`free_roam.gd` → `_start_title_orbit`) — and must hand control back once
+the level's shop / teleport orbit camera (`level_view.gd` → `orbit_camera`) — and must hand control back once
 done. The hand-off goes through the manager (not a hard-coded chase camera), so a
 player who picked **bonnet** keeps it through any of these instead of being snapped
 back to chase.

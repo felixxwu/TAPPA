@@ -1,7 +1,6 @@
 class_name BushField
 extends Node3D
-# Interaction (NOT rendering) for the ground-cover bushes. The bushes are drawn by a
-# TreeMeshField built with_collision=false — pure visual scatter with no
+# Interaction (NOT rendering) for the ground-cover bushes. GroundCover draws them with no
 # physics body, so the car drives THROUGH them. This node makes that drive-through
 # cost something: brushing a bush deals a small flat HP loss and applies a side-based
 # yaw drag torque, as if the bush snagged and dragged a corner of the car. See
@@ -40,7 +39,7 @@ var _inside_next: Dictionary = {}
 
 # Wire the field. `positions` are the same scattered bush XZ points passed to the
 # renderer; `hit_radius` is already the leeway-reduced radius (a fraction of the
-# bush's visual width — computed by the caller from TreeMeshField.xz_radius).
+# bush's visual width, computed by the caller).
 func setup(positions: PackedVector2Array, car: Node, hit_radius: float,
 		drag_strength: float, drag_torque_magnitude: float, min_speed_mps: float) -> void:
 	_car = car

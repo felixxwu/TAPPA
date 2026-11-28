@@ -1,7 +1,7 @@
 # Menus
 
 The game boots through `title.tscn` (`title_boot.gd`) straight into the world (`Scenes.WORLD`, the Hafren level) ([world-session.md](world-session.md)). The live menus are the pause menu, the level's
-pages (map, shops, service, part pages) and the title menu, which nothing opens today. **Every menu that is a list of choices is a card list**
+pages (map, shops, service, part pages) and the cloud-save conflict prompt the level raises ([cloud-save.md](cloud-save.md)). **Every menu that is a list of choices is a card list**
 (`CardCarousel` built through `CardUI.card_page` / `card_list`) — see
 [card-carousel.md](card-carousel.md) for which menus are cards and which stay plain pages.
 
@@ -88,10 +88,9 @@ currently hidden from the category list (see cloud-save.md). It exposes `at_root
 exactly like its own sub-pages — `SettingsMenu.go_back()` gives it first refusal before
 backing out of the page. See [cloud-save.md](cloud-save.md).
 
-## Title screen and pause menu rows
+## Pause menu rows
 
-The title menu (`TitleScreen`) is described in [world-session.md](world-session.md); its nav test is
-`test_title_screen.gd`. The pause menu has
+There is no title menu (see [world-session.md](world-session.md) → Boot). The pause menu has
 host-driven **extra rows** (`extra_rows` → `extra_requested(label)`; the host calls
 `return_from_extra()` when its page closes; `closed` fires on `resume()`, which `LevelView` uses to bring back the intro shop), and **after-Resume rows** (`after_resume_rows`, the same but placed
 right after Resume: Map goes second, since a touch screen has no M key; `open()` puts the
@@ -118,8 +117,7 @@ card list (`_build_menu_panel` → `CardUI.card_page` / `card_list`): **Resume**
 photo mode or an extra page puts the cursor back on the card that left (`_focus_card`). The
 settings page starts hidden, and `open()` selects the first card, so every opening lands the cursor on Resume.
 
-**Per-host options** (exports, set in the hosting scene): `after_resume_rows`, `extra_rows`. The rows' text is free roam's ("Reset to
-road", "Quit to title") for every host.
+**Per-host options** (exports, set in the hosting scene): `after_resume_rows`, `extra_rows`. The rows' text is the same for every host.
 
 **Reset** emits `reset_to_track_requested`; the menu owns no car reference, so the host performs
 it — `RoadRecovery.reset_now`. It is the **only** player-facing reset — there is no
@@ -137,7 +135,7 @@ the camera. Exiting re-opens the pause menu.
 immediately to the live `CameraManager` (`SettingsMenu.camera_changed` → `CameraManager.set_mode`)
 and a mobile-control pick to the live `MobileControls` (`scheme_changed` → `set_scheme`).
 
-**Quit to title** has no pause-menu row any more; `quit_to_title` unfreezes, emits `quitting` (free roam saves on it) and goes to `Scenes.TITLE`. Esc and gamepad **Start** (`pause`) toggle the
+Esc and gamepad **Start** (`pause`) toggle the
 menu; in Settings, Esc and gamepad B (`ui_cancel`) step out a level first, and B on the menu itself resumes.
 
 The menu is **default-inert** (`_input_enabled` starts `false`): the Pause button and `ui_cancel`
@@ -147,8 +145,8 @@ can't freeze the tree mid-build. Covered by `tests/headless/test_pause_menu.gd`.
 ## Tests
 
 - `tests/headless/test_pause_menu.gd` — the Pause button freezes the game and opens the
-  menu; Resume unfreezes; Settings exposes the shared `SettingsMenu`; Quit leaves and
-  unfreezes; picking a camera applies live to the `CameraManager` and persists.
+  menu; Resume unfreezes; Settings exposes the shared `SettingsMenu`; the level's sync-conflict
+  prompt pauses the game and Back hands it back; picking a camera applies live to the `CameraManager` and persists.
 - `tests/headless/test_menu_nav.gd` / `test_menu_page.gd` — the navigation framework and
   the page shape ([menu-navigation.md](menu-navigation.md), [modals.md](modals.md)).
 - `tests/headless/test_text_field.gd` — the text input rules above.

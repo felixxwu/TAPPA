@@ -300,7 +300,7 @@ const TIRE_SURFACE_AXES: Array[Dictionary] = [
 ## Metres the VISUAL ground is drawn above the collision surface off-road, so the car
 ## visibly sinks in. Collision is untouched, so the wheels rest at true ground level.
 ## Applied in level_ground.gdshader's vertex stage, so the road itself is never raised. Props are not lifted with it,
-## so trees, bushes and rocks look buried in the snow.
+## so trees and bushes look buried in the snow.
 @export var snow_visual_depth_m := 0.35
 ## Metres past the painted road edge over which the snow rises to full depth
 ## (the plough bank). A stage ramps over its baked road feather instead.
@@ -327,11 +327,9 @@ var weather_sun_mult := 1.0:
 		if value != weather_sun_mult:
 			weather_sun_mult = value
 			_relight(_car_lit, apply_car_light)
-			_relight(_foliage_lit, apply_foliage_light)
 # Every live material apply_car_light has lit, so a weather change reaches them all at once:
-# the car, rocks and barriers. Material instance id -> WeakRef.
+# the car and the level's props. Material instance id -> WeakRef.
 var _car_lit := {}
-var _foliage_lit := {} # the same, for apply_foliage_light: the trees and bushes
 ## GLOBAL GRIP: one multiplier on every tyre's μ, for every car, on every surface and in every
 ## weather (Drivetrain's per-contact resolver, alongside the weather multiplier). 1.0 is the
 ## authored grip; below 1.0 everything slides more. The one knob for "the cars are too grippy".
@@ -402,10 +400,6 @@ var _foliage_lit := {} # the same, for apply_foliage_light: the trees and bushes
 ## (_apply_parking_hold) that cancels residual creep. Above it the car is rolling
 ## and the hold stays off.
 @export var handbrake_lock_speed := 0.5
-## Speed (m/s) below which the auto finish-stop releases the foot brake once the car
-## has effectively halted at the finish (car.gd _resolve_drive_inputs). Above it the
-## brake stays pinned to bring the car to rest.
-@export var finish_stop_speed := 0.8
 @export var suspension_travel := 0.6 # also used as the wheel rest length (ray length)
 ## Per-axle spring travel / rest length (m) OVERRIDES. 0 = inherit suspension_travel
 ## (the common case); a positive value lets a body run a longer front or rear stroke
@@ -694,18 +688,6 @@ func has_nitrous() -> bool:
 ## Synthesis/mix rate (Hz) for procedural SFX. Matches engine_audio.gd's MIX_RATE;
 ## higher costs more CPU in the GDScript render loop for no audible gain on a blip.
 @export var sfx_mix_rate := 22050.0
-## Pitch (Hz) of the coin pickup chime, set apart from sfx_beep_frequency_hz so a coin reads
-## as its own brighter sound.
-@export var coin_pickup_sfx_freq_hz := 1600.0
-## Length (s) of the coin pickup chime.
-@export var coin_pickup_sfx_duration_sec := 0.1
-
-## Orbit camera angular speed (rad/s) around the car during the start reveal.
-@export var start_orbit_speed := 0.5
-## Orbit camera radius (m) out from the car.
-@export var start_orbit_radius := 7.0
-## Orbit camera height (m) above the car it looks at.
-@export var start_orbit_height := 2.4
 
 # Per-car HP attrition (features/damage.md). Max HP is CarLibrary metadata
 # (mass-keyed), NOT here; these are the global magnitudes that govern how impacts
@@ -1030,14 +1012,6 @@ func has_nitrous() -> bool:
 ## Photo mode BOOST (touch button, B key, gamepad L3; a toggle): fly speed multiplier on photo_move_speed.
 @export var photo_boost_multiplier := 4.0
 
-## Built-in Environment glow (bloom). A mip-chain downsample/upsample blur, cheap on
-## the Compatibility renderer. Materials are unshaded LDR, so the threshold sits
-## below 1.0 — only the brightest pixels (sky, lights, flames) bleed.
-@export var glow_enabled := false
-@export var glow_intensity := 1.6
-@export var glow_strength := 1.2
-@export var glow_bloom := 0.1
-@export var glow_hdr_threshold := 0.7
 ## Exponential distance fog: thin aerial haze, low enough to see the distant hills
 ## and skybox.
 @export var fog_density := 0.0025
@@ -1047,7 +1021,6 @@ func has_nitrous() -> bool:
 ## Fog / backdrop colour. Matched to the skybox's HORIZON (sampled from
 ## textures/sky_field.png) so the distant terrain dissolves into the field seam.
 @export var background_color := Color(0.482, 0.498, 0.403)
-@export var terrain_tile_per_meter := 0.5 # ground texture tiles per metre, baked into terrain UVs
 ## Gravel/road texture tiles per metre. Independent of the ground tiling so the
 ## road can be finer or coarser than the surrounding grass.
 @export var road_tile_per_meter := 1.0
@@ -1259,7 +1232,7 @@ func has_nitrous() -> bool:
 @export var night_sky_panorama := "res://textures/sky-night.jpg"
 ## The sky every stage falls back to when its region does not name one (home and
 ## home_coast do not). Re-seeded on every stage boot BEFORE the region and weather
-## looks are layered on, for the same reason `albedo_color` and `tarmac_color` are:
+## looks are layered on, for the same reason `albedo_color` is:
 ## the PanoramaSkyMaterial is a shared sub-resource of the scene with no
 ## resource_local_to_scene, so without a re-seed a Greece or night sky would follow
 ## the player into the next home stage.
@@ -1412,8 +1385,6 @@ func has_nitrous() -> bool:
 # below; each has its own amount.
 ## 0 = flat (unlit), 1 = full shading. Strength on the car.
 @export var car_light_amount := 1.0
-## 0 = flat (unlit), 1 = full shading. Strength on billboard trees.
-@export var foliage_light_amount := 1.0
 ## Base wind sway at a tree's tip, as a fraction of its height — every weather
 ## condition unless it names its own "foliage_wind" field in WeatherLibrary (storm,
 ## sandstorm). See scripts/wind_sway.gd.
@@ -1436,12 +1407,8 @@ func has_nitrous() -> bool:
 ## Ambient colour on downward-facing surfaces (ground bounce).
 @export var ground_color := Color(0.35, 0.35, 0.35)
 
-## Seed for the deterministic track search.
+## The world seed: the HUD shows it and the crosswind gusts are seeded from it.
 @export var track_seed := 2
-## Solid fill colour for tarmac sections. TODO: replace with a proper tarmac
-## texture (see todo/tarmac-texture.md) — for now a flat grey under the same
-## baked terrain lighting as the rest of the floor.
-@export var tarmac_color := Color(0.36, 0.36, 0.38, 1)
 ## Neutral multiplier over the ground texture — the floor material's `albedo_color`
 ## BASELINE. Re-seeded onto the material on every level boot, which
 ## is what makes the weather road tint idempotent: it always modifies the authored
@@ -1818,31 +1785,9 @@ func has_nitrous() -> bool:
 ## around the lamp doesn't cut it in half while hills and other cars still hide it.
 @export var lamp_depth_bias_m := 0.3
 
-## How trees are cut out of their texture: the opaque traced silhouette, or a plain card cut out
-## per pixel at half alpha (the old way), or a plain card blended by its alpha (soft edges). On a
-## phone (2026-10-27) blend and opaque cost the same and the half-alpha cutout ~3 fps more; the
-## benchmark can run any of them (features/benchmark.md).
-@export var tree_cutout_mode := 2
 ## Tree size in metres: width (x) by height (y). Trees are opaque billboard
 ## cutouts, scaled so the card's height matches y and its width matches x.
 @export var tree_size_m := Vector2(7.5, 7.5)
-## Minimum per-instance size multiplier for HOME billboard trees
-## (`textures/tree.png`): each one is scaled by a random
-## factor in [this, 1.0] (hashed off its position), so a home stand varies in height
-## instead of every tree being identical. 1.0 disables the jitter. The region-forced
-## billboard path has its own floor (`region_tree_billboard_min_scale`).
-@export var tree_billboard_min_scale := 0.3
-## Vertical offset (m) applied to HOME billboard trees to sink them into the
-## ground: negative pushes the card's bottom edge below the terrain (hiding the
-## seam where the trunk meets the slope), positive lifts it. Region billboards have
-## their own offset (`region_tree_billboard_ground_offset_m`).
-@export var tree_billboard_ground_offset_m := -0.5
-## Aspect-jitter amplitude for HOME billboard trees: on top of the uniform size
-## jitter, width and height each get an independent random multiplier in
-## [1 - this, 1 + this], so some trees read taller-and-narrower and others
-## shorter-and-wider. This dial sets how DRASTIC the shape variation is; 0 disables
-## it. Region billboards have their own (`region_tree_billboard_aspect_jitter`).
-@export var tree_billboard_aspect_jitter := 0.15
 ## Half-extent (m) in X/Z of each tree's box hitbox — a square trunk footprint.
 @export var tree_collision_radius_m := 0.1
 ## Height (m) of each tree's box hitbox.
@@ -1865,87 +1810,15 @@ func has_nitrous() -> bool:
 ## ploughs on through. 0 disables plough-through entirely (every felled tree
 ## hard-stops). See TreeFall.plough_keep and features/trees.md.
 @export var tree_plough_keep_max := 0.8
-## Distance (m) past which trees are fully culled — the value used on every target
-## EXCEPT a web TOUCH device (see tree_render_distance_web_touch_m). The level
-## resolves the effective value once at boot via tree_render_distance_for() and writes it back
-## here, so all downstream readers (foliage, spectators) see it.
+## Distance (m) past which trees are fully culled.
 @export var tree_render_distance_m := 120.0
-## Foliage/world-prop cull distance (m) on a web TOUCH device (phone/tablet browser
-## — the same low-end target as the 30fps default target_fps_web). Kept shorter than
-## the desktop/native distance to hold the frame budget; picked by
-## tree_render_distance_for(web, touch).
-@export var tree_render_distance_web_touch_m := 90.0
 ## Width (m) of the dithered dissolve band just before the render cutoff.
 @export var tree_render_fade_m := 15.0
-## Grid cell size (m) trees are binned into for rendering. Each bin is its own
-## MultiMesh, so the engine can drop far bins to the mesh's importer LODs and
-## cull them past tree_render_distance_m. Smaller = finer LOD/cull granularity
-## but more draw calls; ~25 m balances both against the ~75 m loaded terrain.
-@export var tree_bin_size_m := 25.0
-## Height (m) the ground-cover bush mesh (models/vegetation/groundcover_opaque.glb)
-## is scaled to. Bushes are 3D low-poly meshes rendered through TreeMeshField
-## (binned, LOD/visibility-culled) but without collision; everything else about
-## their scatter/render reuses the tree_* params.
-@export var bush_height_m := 1.5
-## Albedo tint multiplied into the bush mesh (on top of the tone-matched foliage
-## texture and the per-instance baked terrain light). Lifted a touch above the
-## model's authored green so the ground cover reads a bit more against the grass.
-@export var bush_tint := Color(1.25, 1.25, 1.25)
 ## Size (width x height, m) of a region billboard tree — the star-shaped cutout a
 ## `tree_mix` species selects with the `region` profile (e.g. Greece's
 ## tree-greece.webp). Larger than the home tree_size_m: a big, low Mediterranean
 ## canopy that stands in for the home region's trees on that map.
 @export var region_tree_billboard_size_m := Vector2(4.0, 4.0)
-## Minimum per-instance size multiplier for region billboard trees: each one is
-## scaled by a random factor in [this, 1.0] (hashed off its position), so a Greece
-## stand varies in height instead of every tree being identical. 1.0 disables the
-## jitter. Only affects the region-forced billboard path (e.g. tree-greece.webp).
-@export var region_tree_billboard_min_scale := 0.5
-## Vertical offset (m) applied to REGION billboard trees (e.g. Greece) to sink them
-## into the ground: negative pushes the card's bottom edge below the terrain (hiding
-## the seam where the trunk meets the slope), positive lifts it. The home billboard
-## path has its own offset (`tree_billboard_ground_offset_m`).
-@export var region_tree_billboard_ground_offset_m := -0.5
-## Aspect-jitter amplitude for REGION billboard trees (e.g. Greece): on top of the
-## uniform size jitter, width and height each get an independent random multiplier in
-## [1 - this, 1 + this], so silhouettes vary in shape (taller-and-narrower vs
-## shorter-and-wider). Sets how DRASTIC that variation is; 0 disables it. The home
-## billboard path has its own (`tree_billboard_aspect_jitter`).
-@export var region_tree_billboard_aspect_jitter := 0.15
-
-# Roadside boulders — low-poly Kenney meshes scattered like the bushes but WITH
-# collision. Density is per-region (RegionLibrary's `rock_density`), so only the
-# shared shape/size/hitbox knobs live here. See features/rocks.md.
-## Master switch for the rock scatter. Off removes the meshes AND their hitboxes.
-@export var rocks_enabled := true
-## Height (m) of a rock at species scale 1.0 — THE size knob for the whole scatter.
-## Each species multiplies this by its own entry in Foliage.ROCK_HEIGHT_SCALES,
-## because the three models have very different aspect ratios (see that constant).
-@export var rock_height_m := 2.25
-## How far a rock is sunk INTO the ground, as a fraction of its own height. Rocks are
-## whole boulders resting on the surface as authored, which reads as if they were
-## dropped on the terrain rather than sitting in it; sinking the field buries the base
-## so the silhouette meets the ground instead of balancing on it.
-##
-## A fraction rather than a metre value so it survives resizing — the same reasoning as
-## rock_collision_radius_frac. Applied per species (each field is offset by its own
-## height x this), and the collision body sinks with the mesh, since it is a child of
-## the same field node. 0 sits them flat on the surface.
-@export var rock_sink_frac := 0.32
-## Collision-box half-width as a fraction of the rock's actual scaled horizontal
-## half-extent. Below 1.0 so the box is inscribed in the silhouette rather than
-## boxing its corners — clipping a rock's edge is far less jarring than hitting a
-## wall of air beside it. The box is derived from the mesh, so resizing rocks
-## resizes their hitbox automatically.
-@export var rock_collision_radius_frac := 0.8
-## Body colour of a rock, written into its vertex colours at mesh-merge time.
-## Replaces Kenney's authored orange; a neutral, desaturated stone grey that sits in
-## the same tonal band as the tree billboards rather than competing with them.
-@export var rock_body_color := Color(0.42, 0.41, 0.39)
-## Colour of the rock's TOP cap (Kenney authors it as a separate "grass" material).
-## Replaces their turquoise with a muted lichen green, so the cap reads as weathering
-## rather than as a second object sitting on the stone.
-@export var rock_cap_color := Color(0.36, 0.40, 0.31)
 
 # Crowds of low-poly people trackside that react to the car (todo/roadside-spectators.md):
 # one group at the start, one at the end, and one at a random mid-stage point. While
@@ -1955,15 +1828,6 @@ func has_nitrous() -> bool:
 @export var spectators_enabled := true
 ## People per group.
 @export var spectator_group_size := 50
-## The mid-stage group spawns at a seeded progress fraction in this range.
-@export var spectator_mid_progress_min := 0.30
-@export var spectator_mid_progress_max := 0.70
-## Length (m) of the crowd band along the track — the group spreads this far up and
-## down the road (split half ahead, half behind the anchor point).
-@export var spectator_area_length_m := 36.0
-## Total width (m) of the crowd band across the track. It straddles the road centre,
-## so the carriageway stays clear and spectators line BOTH verges.
-@export var spectator_area_width_m := 24.0
 ## Minimum comfortable spacing (m) between neighbours — initial placement and the
 ## separation steering both use it. ("Don't like being too close.")
 @export var spectator_separation_m := 0.5
@@ -2029,10 +1893,6 @@ func has_nitrous() -> bool:
 ## bridge a ~33 ms inter-frame gap plus jitter — raise those before lowering this
 ## further. 0 = uncapped. See features/rendering.md and features/engine-audio.md.
 @export var target_fps_web := 0
-## Texture LOD bias for the foliage/ground shaders: positive values pull distant
-## sampling toward cheaper (lower) mip levels, saving texture bandwidth on
-## tile-based mobile GPUs. Keep modest so the alpha-cutout silhouettes don't blur.
-@export var texture_lod_bias := 0.75
 
 # --- Web-touch quality tier (todo/mobile-web-performance.md) -----------------
 # Every field below follows the SAME split as tree_render_distance_m: a web TOUCH device (phone/tablet browser — the low-end
@@ -2073,19 +1933,6 @@ func has_nitrous() -> bool:
 # fielded values. Both functions below walk the SCRIPT property list, so every field is
 # captured and restored regardless of whether it is exported.
 
-# The config-driven base of every 3D world's Environment (the level and the stage): fog,
-# backdrop and glow. Weather/region looks layer on top of this afterwards.
-func apply_environment(env: Environment) -> void:
-	env.fog_density = fog_density
-	env.background_color = background_color
-	env.fog_light_color = background_color
-	env.fog_sky_affect = fog_sky_affect
-	env.glow_enabled = glow_enabled
-	env.glow_intensity = glow_intensity
-	env.glow_strength = glow_strength
-	env.glow_bloom = glow_bloom
-	env.glow_hdr_threshold = glow_hdr_threshold
-
 ## Every script variable on this config as a { property_name: value } map. Arrays and
 ## dictionaries are deep-copied, so the snapshot never shares mutable state with the live
 ## object. Pair with restore_values().
@@ -2124,14 +1971,6 @@ func target_fps_for(mobile_or_web: bool, web: bool = false, touch: bool = true) 
 	if web:
 		return target_fps_web if touch else target_fps
 	return target_fps_mobile if mobile_or_web else target_fps
-
-# Foliage/world-prop cull distance for the current target: a web TOUCH device
-# (phone/tablet browser — the same low-end target as target_fps_web) gets the
-# shorter tree_render_distance_web_touch_m; every other target (native mobile,
-# desktop, desktop browser) gets the longer tree_render_distance_m. Pure so
-# the level resolves it once at boot and tests can pin either branch.
-func tree_render_distance_for(web: bool, touch: bool) -> float:
-	return tree_render_distance_web_touch_m if (web and touch) else tree_render_distance_m
 
 # Engine-synth mix rate for the current target, split the same way: a web TOUCH
 # device gets engine_mix_rate_web_touch, every other target the full rate. Pure
@@ -2412,18 +2251,6 @@ func _relight(lit: Dictionary, apply: Callable) -> void:
 			apply.call(mat)
 
 
-# The same fake sun/ambient block for FOLIAGE billboards (billboard_opaque.gdshader).
-# Mirrors apply_car_light so trees sit in the same light as the ground and the car —
-# in particular so a tree's sunward side stops being lit on a night stage, where
-# there is no sun to light it.
-func apply_foliage_light(mat: ShaderMaterial) -> void:
-	mat.set_shader_parameter("sun_dir", sun_direction.normalized())
-	mat.set_shader_parameter("sun_color", weather_lit(sun_color))
-	mat.set_shader_parameter("sky_color", weather_lit(sky_color))
-	mat.set_shader_parameter("ground_color", ground_color)
-	mat.set_shader_parameter("light_amount", foliage_light_amount)
-	_foliage_lit[mat.get_instance_id()] = weakref(mat)
-
 # Everything SpectatorGroup.setup needs (todo/roadside-spectators.md). The collision
 # bits are structural, not tuned: ragdolls live on their own layer (5) and only mask
 # the world layer (1, terrain+trees) — never the car, which SpectatorGroup also adds
@@ -2480,10 +2307,6 @@ func spectator_params() -> Dictionary:
 ## A cheap stand-in for real exposure — there is deliberately no shelter/occlusion
 ## model (open ground vs. tree cover); see features/car-physics.md.
 @export var crosswind_nose_on_fraction := 0.35
-
-## Screen margin (pixels) around the build-version label in the title screen's corner.
-## Passive chrome only, not a MenuNav widget.
-@export var hub_version_label_margin_px := 8.0
 
 # The frame cap held for the DURATION of world generation only (WorldRuntime.loading_cap, used
 # by LevelView). Loading awaits hundreds of frames, and a LOW cap makes each of

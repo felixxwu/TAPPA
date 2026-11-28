@@ -2,9 +2,9 @@
 
 **This file is the single source of truth for how the game is described.** When the
 pitch changes, change it here first, then push it out to every surface in the
-[checklist](#where-this-copy-has-to-go) at the bottom. Everything below reflects the
-post-pivot game (run-based roguelike, not the old rally career) — see
-[`../PIVOT-CHANGES.md`](../PIVOT-CHANGES.md) and [`../gameplay.md`](../gameplay.md).
+[checklist](#where-this-copy-has-to-go) at the bottom. Everything below still describes
+the run-based roguelike; the game is now driven on one authored level, Hafren Forest, so
+this copy needs rewriting.
 
 Nothing here should describe a rival field, placements, a world map, a star economy
 or a career — all of that is deleted.

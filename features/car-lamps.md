@@ -63,7 +63,7 @@ The flare shape is procedural (no texture): `lamp_core_radius`, `lamp_halo` and
 
 ## Wiring
 
-Created by `free_roam.gd` (and the stage `world.gd`) next to `ExhaustFlames` and driven the same way: parented to the
+Created by `level_view.gd` (`_add_effects`) next to `ExhaustFlames` and driven the same way: parented to the
 world, it copies the car's transform every physics tick. It rebuilds its quads whenever
 the car's `lamp_locals` change (the garage swapping cars). It implements the
 `warm_up()` / `clear_warm_up()` pair so the shader compiles behind the loading overlay.

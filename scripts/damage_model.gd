@@ -20,7 +20,7 @@ signal damaged(hp_loss: float, contact_point: Vector3)
 signal gave_up
 # Scene group every damage-dealing obstacle (tree/bush/sign collision body) joins,
 # so the car can tell a real obstacle contact from the ground/road in
-# _integrate_forces. BillboardField tags its collision body with this.
+# _integrate_forces. LevelTrees tags its tree hitboxes with this.
 const OBSTACLE_GROUP := "obstacle"
 
 # m/s -> km/h, so the speed-keyed damage maths can work in the km/h the GameConfig

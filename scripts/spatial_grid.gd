@@ -4,8 +4,7 @@ class_name SpatialGrid
 # A uniform 2D bin grid over the world-XZ plane (x -> world x, y -> world z): bin points
 # into square cells keyed by Vector2i, then answer proximity / neighbourhood queries by
 # touching only the 3x3 cells around a point instead of every point. Shared by the
-# scatter / field code (SpectatorScatter tree grid, TreeMeshField bins, BushField hit
-# grid, SpectatorGroup obstacle avoidance).
+# scatter / field code (SpectatorScatter tree grid, BushField hit grid, SpectatorGroup obstacle avoidance).
 #
 # Build with a cell size >= the largest query radius so the 3x3 neighbourhood is
 # guaranteed to cover the radius. `of_points` stores the points themselves (for

@@ -177,14 +177,6 @@ servo measures the grip limit instead of predicting it. See
 | `fog_density` | 0.02 | Environment fog thickness |
 | `background_color` | (0.35,0.3,0.45) | Sky + fog color |
 
-### Stage
-| Property | Default | Purpose |
-|----------|---------|---------|
-| `stage_countdown_seconds` | 3.0 | Countdown before controls unlock at the start of a stage |
-| `stage_complete_percent` | 99.0 | Track-progress % (0..100) that ends the stage |
-
-See [stage.md](stage.md).
-
 ### Surface grip
 | Property | Default | Purpose |
 |----------|---------|---------|
@@ -214,7 +206,7 @@ Per-car `max_hp` is CarLibrary metadata, not a `GameConfig` field. See
 [damage.md](damage.md).
 
 ### Recovery
-Automatic stuck-car recovery (see [progress.md](progress.md)).
+Automatic stuck-car recovery (`scripts/free_roam/road_recovery.gd`).
 | Property | Default | Purpose |
 |----------|---------|---------|
 | `recovery_enabled` | true | Master toggle for the stuck watchdog (the timed off-track reset runs regardless) |
@@ -222,34 +214,6 @@ Automatic stuck-car recovery (see [progress.md](progress.md)).
 | `recovery_speed_mps` | 0.7 | Below this speed the car counts as "not moving" |
 | `recovery_depth_m` | 3.0 | Metres below the road surface that count as fallen-into-a-pit (recovers even with no throttle) |
 | `recovery_upright_dot` | 0.3 | up·UP below which the car counts as flipped |
-
-### Terrain Layers
-Three (wavelength, amplitude) pairs — `terrain_layerN_wavelength` /
-`terrain_layerN_amplitude` for N = 1,2,3 (large hills → fine bumps). See
-[terrain.md](terrain.md).
-
-### Water
-Roadside lakes (see [lakes.md](lakes.md)). `water_enabled` (off by default),
-`track_water_level_m` (per-event flood height), `water_shore_clearance_m` (start-pad
-margin), `water_drag` (soft-hazard drag), and the
-`water_color` / `water_shore_color` / `water_ripple_speed` / `water_sparkle_strength`
-look knobs.
-
-### Cliffs
-Track-side cliffs & drops (see [terrain.md](terrain.md) → *Cliffs & drops*).
-| Property | Default | Purpose |
-|----------|---------|---------|
-| `cliff_enabled` | true | Master toggle; off ⇒ the bake skips the cliff pass entirely |
-| `cliff_wavelength_m` | 60.0 | Along-track period of the camber noise (**global**, same every event) |
-| `cliff_gain` | 1.6 | Camber-noise scale before the `[-1,1]` clamp (higher ⇒ more full-height cliffs) |
-| `cliff_max_height_m` | 8.0 | Global height ceiling at `\|camber\|=1` (= drop depth); scaled per event |
-| `cliff_run_m` | 6.0 | Horizontal run road-edge band → full height (small ⇒ steep) |
-| `cliff_fade_m` | 6.0 | Horizontal run full height → back to grade (bounds the influence radius R) |
-| `cliff_open_radius_m` | 4.0 | Radius of the post-bake morphological open that knocks down thin tall walls (narrower than ~2× this); 0 disables |
-| `cliff_amount` | 1.0 | Runtime per-stage scale on `cliff_max_height_m` (`[0,1]`) |
-
-Pushed onto the terrain by `GameConfig.apply_cliffs(tm)` before `set_track` (mirrors
-`apply_terrain_light`). `cliff_seed = track_seed`.
 
 ### Loading
 The frame cap held for the duration of world generation only, via
@@ -284,4 +248,3 @@ only writer of these fields. See
 - `suspension_damping_compression(rate)` → √rate (critically damped; defaults to `suspension_stiffness`)
 - `suspension_damping_relaxation(rate)` → 1.5× compression (stiffer rebound)
 - `engine_firing_phases()` → firing angles normalized to 0..1 crank cycle
-- `terrain_layers()` → `[Vector2(wavelength, amplitude), ...]`

@@ -14,9 +14,8 @@ extends RefCounted
 # violent. This is pure authoring, exactly like HeadlightCone's "headlights" key: no
 # `weather == "storm"` branch lives here or anywhere downstream.
 #
-# WHY GLOBALS, not material parameters: foliage materials are built in several scripts
-# (foliage.gd, billboard_field.gd) with no common registry, and trees stream in
-# continuously as terrain chunks generate — see shaders/wind_sway.gdshaderinc's header
+# WHY GLOBALS, not material parameters: tree materials are built per streamed tile
+# with no common registry — see shaders/wind_sway.gdshaderinc's header
 # for the full argument (identical to HeadlightCone's).
 #
 # THE GLOBALS PERSIST ACROSS SCENES. That is the trap reset() exists to guard: the
@@ -84,23 +83,6 @@ static func push(cfg: GameConfig, id: String) -> void:
 # storm value.
 static func base(cfg: GameConfig) -> void:
 	push(cfg, WeatherLibrary.DEFAULT_ID)
-
-
-# Seed the base wind ONLY if nothing has pushed one yet (the global is still at its
-# project.godot default of 0). Called from Foliage.spawn_trees, the one call site for
-# every tree field in the game, so a scene that never thinks about weather still gets
-# living trees.
-#
-# THE GUARD IS LOAD-BEARING, not a micro-optimisation. The level pushes the
-# condition's own strength BEFORE its trees are spawned — an unconditional base() here would land afterwards and quietly flatten a
-# storm back to calm. Reading the live global instead of tracking a flag is what makes
-# that ordering-proof: reset() leaves the base behind on stage exit, so by the time a
-# podium or showcase spawns, the value is already non-zero and this is a no-op.
-static func seed_base(cfg: GameConfig) -> void:
-	var current: Variant = RenderingServer.global_shader_parameter_get(G_STRENGTH)
-	if current != null and float(current) > 0.0:
-		return
-	base(cfg)
 
 
 # Reset to the base wind, NOT to zero. Unlike the headlight cone (which must go dark

@@ -7,15 +7,15 @@ const R_A := "ra"
 const R_B := "rb"
 const R_C := "rc"
 const R_D := "rd"  # inherits R_B's look via look_from
-const R_E := "re"  # authors nothing at all (no rallies, no look, no waterline)
+const R_E := "re"  # authors nothing at all (no rallies, no look)
 
 func _regions() -> Array[Dictionary]:
 	return [
-		{"id": R_A, "name": "A", "water_level": -9.0},
+		{"id": R_A, "name": "A"},
 		{
 			"id": R_B, "name": "B", "grass_texture": "res://x.png",
-			"tarmac_color": Color(0.5, 0.4, 0.3),
-			"road_marking_color": Color(0.9, 0.8, 0.1),
+			"dust_color": Color(0.5, 0.4, 0.3),
+			"grass_particle_color": Color(0.9, 0.8, 0.1),
 		},
 		{
 			"id": R_C, "name": "C",
@@ -27,7 +27,7 @@ func _regions() -> Array[Dictionary]:
 		},
 		{
 			"id": R_D, "name": "D", "look_from": R_B,
-			"tarmac_color": Color(0.1, 0.1, 0.1),  # own key overlays B's
+			"dust_color": Color(0.1, 0.1, 0.1),  # own key overlays B's
 		},
 		{"id": R_E, "name": "E"},
 	]
@@ -45,18 +45,18 @@ func test_look_of_returns_only_present_overrides() -> void:
 	assert_false(look.has("sky_panorama"))
 
 func test_look_of_surfaces_color_overrides() -> void:
-	# tarmac_color / road_marking_color are whitelisted look keys: a region that
+	# dust_color / grass_particle_color are whitelisted look keys: a region that
 	# authors them has them surfaced by look_of (synthetic values, not the shipped
 	# catalogue), and a region that doesn't leaves them absent so callers fall back.
 	var look := RegionLibrary.look_of(R_B)
-	assert_true(look.has("tarmac_color"), "authored tarmac_color is surfaced")
-	assert_true(look.has("road_marking_color"), "authored road_marking_color is surfaced")
-	assert_eq(look["tarmac_color"], Color(0.5, 0.4, 0.3))
-	assert_eq(look["road_marking_color"], Color(0.9, 0.8, 0.1))
+	assert_true(look.has("dust_color"), "authored dust_color is surfaced")
+	assert_true(look.has("grass_particle_color"), "authored grass_particle_color is surfaced")
+	assert_eq(look["dust_color"], Color(0.5, 0.4, 0.3))
+	assert_eq(look["grass_particle_color"], Color(0.9, 0.8, 0.1))
 	# A region that authors neither leaves both out — callers use their fallback.
 	var bare := RegionLibrary.look_of(R_A)
-	assert_false(bare.has("tarmac_color"))
-	assert_false(bare.has("road_marking_color"))
+	assert_false(bare.has("dust_color"))
+	assert_false(bare.has("grass_particle_color"))
 
 func test_look_from_inherits_parent_block_and_own_keys_win() -> void:
 	var parent := RegionLibrary.look_of(R_B)
@@ -64,11 +64,11 @@ func test_look_from_inherits_parent_block_and_own_keys_win() -> void:
 	# Inherited: a parent key the child doesn't author comes through unchanged.
 	assert_eq(child.get("grass_texture", ""), parent.get("grass_texture", ""),
 		"the inheriting region resolves its parent's look")
-	assert_eq(child.get("road_marking_color"), parent.get("road_marking_color"))
+	assert_eq(child.get("grass_particle_color"), parent.get("grass_particle_color"))
 	# Overlaid: the child's own key wins over the parent's.
-	assert_eq(child.get("tarmac_color"), Color(0.1, 0.1, 0.1),
+	assert_eq(child.get("dust_color"), Color(0.1, 0.1, 0.1),
 		"the inheriting region's own key overrides the parent's")
-	assert_ne(child.get("tarmac_color"), parent.get("tarmac_color"))
+	assert_ne(child.get("dust_color"), parent.get("dust_color"))
 	# The plumbing key never leaks into the look dict.
 	assert_false(child.has("look_from"), "look_from is not a look key")
 

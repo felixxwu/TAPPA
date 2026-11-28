@@ -1,19 +1,11 @@
 # rally — project rules for Claude
 
-**`PIVOT-CHANGES.md` is the orientation file — read it first.** This game was a
-rally career, then a run-based roguelike (September 2026), then a free-roam game on
-one persistent procedural island (October 2026), and **is now driven on one authored
-level, Hafren Forest** (November 2026). That file is the two-minute map of what
-changed and which seams not to work around. The old decision records were deleted from
-`todo/` on 2026-11-27; read them from git history (`git log --all -- todo/<file>`).
-
-- **The default game mode is the Hafren level** — `Scenes.WORLD` (`level_view.tscn`,
-  `LevelView`, `GameConfig.level_path`; see `features/level-editor.md`). Every "enter
-  the world" goes to `Scenes.WORLD`. The procedural island (`free_roam.tscn`,
-  `scripts/free_roam/`, `Scenes.LEGACY_FREE_ROAM`) is **legacy, kept for reference
-  only**: nothing reaches it unless `GameConfig.legacy_free_roam_island` (Settings →
-  Dev → "Legacy free-roam island", off by default) is on. Don't build new features on
-  it; parts of it the level reuses (car, HUD, pause menu, shop, `LootRules`) stay live.
+**The game is driven on one authored level, Hafren Forest** — `Scenes.WORLD`
+(`level_view.tscn`, `LevelView`, `LevelStreamer`, `GameConfig.level_path`; see
+`features/level-editor.md` and `features/level-streamer.md`). Every "enter the world" goes
+to `Scenes.WORLD`. Earlier versions (a rally career, a run-based roguelike, a procedural
+free-roam island with a generated-stage harness) are deleted; read them from git history
+(`git log --all -- <path>`) if you need the background.
 
 ## Feature documentation
 
@@ -42,11 +34,6 @@ changed and which seams not to work around. The old decision records were delete
   framework for flat widget lists). The diegetic 3D HQ and its
   `hq.gd._unhandled_input` spatial pattern are DELETED — every menu is a flat
   page now. Don't ship a menu reachable only by pointer.
-- `gameplay.md` is the high-level gameplay design / vision doc ("One island, no
-  clock" — free roam) — the north star the `todo/` specs ladder up to. Read it for
-  intent on the world, biome rings, the damage / temperature chain, rest stops and
-  loot. It's design-level, not an implementation spec; keep it aligned when gameplay
-  direction changes.
 
 ## Draw calls (web is draw-call bound)
 
@@ -229,14 +216,12 @@ changed and which seams not to work around. The old decision records were delete
   longer than expected — investigate and bring it back down before declaring the
   work complete, rather than shrugging it off or accepting the regression. The
   cost is CPU-bound (the runner uses `--fixed-fps 60`, so awaited frames are
-  cheap); the usual culprits are full-world generation (instantiating `main.tscn`
-  runs `world.gd._ready()`, which generates the track + scatters trees/bushes for
-  ~15 s per instance) and a `before_each` re-instantiating it per test where a
-  shared `before_all` would do. Reach for the cheap patterns first:
-  `SceneTestHelpers.minimal_world()` for tests that don't inspect the
-  track/terrain/foliage (cuts a build to <1 s), `sim_test.gd`'s cached settle/
-  warm-restore for physics tests, and bare-logic tests (no scene) where possible.
-  Reserve full generation for the few files that genuinely assert on it. See
+  cheap); the usual culprits are loading the full Hafren level and a `before_each`
+  re-instantiating a world per test where a shared `before_all` would do. Reach for
+  the cheap patterns first: `SceneTestHelpers.add_level_world()` (`level_view.tscn`
+  on a tiny flat synthetic level, well under a second), `sim_test.gd`'s cached
+  settle/warm-restore for physics tests, and bare-logic tests (no scene) where
+  possible. Reserve the real level for the few files that genuinely assert on it. See
   `features/testing.md` for the full cost model and the available levers.
   **When a full run does come in over ~5 minutes, invoke the
   `/optimise-test-suite` skill** (`.claude/skills/optimise-test-suite/`) rather
@@ -398,7 +383,7 @@ changed and which seams not to work around. The old decision records were delete
   `git switch -c`, or otherwise start a new branch on your own initiative.
 - All gameplay/look tuning values live in `scripts/game_config.gd` as plain
   `var` defaults (there is no `.tres` and no editor inspector workflow) —
-  change values there, not in other scripts or `main.tscn`.
+  change values there, not in other scripts or scenes.
 - If you're running in a managed remote execution environment (Claude Code on
   the web — an isolated cloud container, not the user's local machine), keep
   developing on whatever feature branch the harness assigned, but ALWAYS merge

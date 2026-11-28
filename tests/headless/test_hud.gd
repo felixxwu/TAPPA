@@ -320,8 +320,6 @@ func _corner_of(drivetrain: Drivetrain, wheel: VehicleWheel3D) -> int:
 
 
 func test_hud_has_no_version_label() -> void:
-	# The build version now lives on the title screen only (see test_hq.gd); the
-	# in-run HUD must not carry it.
 	assert_null(_scene.get_node_or_null("HUD/VersionLabel"),
 		"driving HUD no longer shows the build version")
 

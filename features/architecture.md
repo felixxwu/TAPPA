@@ -8,14 +8,13 @@
 .                          # repository root = Godot project root
 ├── title.tscn             # Boot scene (set in project.godot): hands straight over to the world (Scenes.WORLD)
 ├── level_view.tscn        # THE GAME WORLD (Scenes.WORLD): the authored Hafren level (see level-editor.md)
-├── main.tscn              # The dev stage and physics test harness (world.gd)
-├── car.tscn               # VehicleBody3D car, instanced into both world scenes
+├── car.tscn               # VehicleBody3D car, instanced into the level
 ├── project.godot          # Engine config: autoloads, input map, rendering
 ├── run_tests.sh           # Test runner (headless + visual passes)
 ├── config/
 │   └── game_config.gd   # GameConfig resource — all tuning values
 ├── scripts/               # All GDScript (see file map below)
-├── shaders/               # ps1_models.gdshader, ps1_post_process.gdshader
+├── shaders/               # level_ground.gdshader, ps1_post_process.gdshader
 ├── textures/              # terrain, sky, sign and car textures
 ├── tests/                 # GUT tests (headless/, fixtures/)
 ├── addons/gut/            # Vendored GUT unit-test framework
@@ -27,7 +26,7 @@
 `scripts/scenes.gd` (`class_name Scenes`, a static-only `RefCounted`) is the single
 source of truth for scene paths and for **where the front door is**:
 
-- `Scenes.TITLE` / `WORLD` / `MAIN` / `CAR` — the canonical paths.
+- `Scenes.TITLE` / `WORLD` / `CAR` — the canonical paths.
   `WORLD` (`level_view.tscn`, the Hafren level) is the game; enter it with
   `change_to(tree, Scenes.WORLD)`. The procedural island it replaced was deleted in November 2026.
 - `Scenes.change_to(tree, path)` — **the single enforced scene-change point**, with a
@@ -39,22 +38,6 @@ source of truth for scene paths and for **where the front door is**:
   threaded load falls back to `change_scene_to_file`.
 
 Tests should compare captured paths against `Scenes.TITLE`, not a literal.
-
-## Dev stage scene tree (`main.tscn`)
-
-```
-Main [Node3D]                       script: world.gd
-├── WorldEnvironment                fog + background color from config
-├── Floor [Node3D]                  script: terrain_manager.gd (chunk manager)
-│   └── (TerrainChunk children)     spawned at runtime, 3×3 around the car
-├── Car [VehicleBody3D]             instance of car.tscn, at (0,1,0)
-├── ChaseCamera [Camera3D]          script: chase_camera.gd, targets Car
-├── PostProcess [SubViewportContainer] script: post_process_view.gd; material: ps1_post_process.gdshader (colour grade + dither)
-│   └── View [SubViewport]          shares the main World3D; renders the 3D frame
-│       └── ViewCamera [Camera3D]   mirror of the active gameplay camera
-└── HUD [CanvasLayer]               script: hud.gd, layer 2
-    └── SpeedLabel / GearLabel / RPMLabel
-```
 
 ## Car scene tree (`car.tscn`)
 
@@ -83,7 +66,7 @@ Declared in `project.godot` `[autoload]`:
   reading the clobbered values — snapshot + restore `Config.data` around any
   secondary `apply_car()`. See [configuration.md](configuration.md).
 - **`Save`** → `scripts/save_manager.gd`. Loads the player profile (owned cars, settings,
-  lifetime stats, the world block) from `user://profile.json` at boot and autosaves on every meaningful change. Per-player *mutable progress*, kept
+  the world block) from `user://profile.json` at boot and autosaves on every meaningful change. Per-player *mutable progress*, kept
   distinct from `Config`'s authored baseline. See
   [save-persistence.md](save-persistence.md).
 - **`Cloud`** → `scripts/cloud/cloud_manager.gd`. Optional Firebase account +
@@ -112,39 +95,22 @@ Declared in `project.godot` `[autoload]`:
 ## Data flow
 
 1. `Config` autoload loads `game_config.gd` before any scene runs.
-2. In the dev stage, `world.gd._ready()` pushes config values into scene-owned resources
-   (environment fog/color, terrain layers, material colors, post-process res —
-   `_apply_scene_config`), fields the player's car (`_field_player_car`), then
-   generates the world. `_ready` and `_generate_track` are both phase sequences
-   over private per-phase coroutines; see [loading.md](loading.md). Behaviour the
-   world host shares with any future one lives in `scripts/world_runtime.gd`
-   (`WorldRuntime`, all statics). It first puts up a full-screen `LoadingScreen`
-   (`scripts/loading_screen.gd`, created in code) and advances its step label
-   across generation stages (track → carve road into terrain → precompute
-   terrain → trees → bushes), yielding a frame between each so the message paints
-   before the blocking work. The road-carving bake (`TerrainManager.set_track`,
-   the heaviest single step) additionally yields frames *within* itself on the
-   interactive path (`should_yield`), so the overlay keeps painting instead of
-   freezing under the "generating track" label as it used to. Godot's
-   boot bar only covers engine + `.pck` load; this overlay covers the heavy
-   world-gen that runs afterwards. Under headless the per-step `await`s are
-   no-ops, so generation stays synchronous (tests see a fully-built world right
-   after instantiating `main.tscn`). The overlay is freed once the world is up.
-   Before generation begins, `_ready` also sets `$Car.controls_locked = true` so
-   the player can't press W and drive off behind the overlay during those awaited
-   frames (the car is already in the tree and physics-processing); every
-   end-of-generation spawn path resets `controls_locked` (`StageManager.setup`),
-   so the lock only governs the loading window.
+2. `level_view.gd._ready()` reads the level file (`GameConfig.level_path`), raises the
+   frame cap for the load (`WorldRuntime.loading_cap`), then awaits `load_level`, which builds
+   the level behind the `LoadingScreen` (`scripts/loading_screen.gd`). The car is
+   `controls_locked` while the cover is up, so W can't drive it off behind the overlay. See
+   [loading.md](loading.md). Behaviour shared by world hosts lives in
+   `scripts/world_runtime.gd` (`WorldRuntime`, all statics).
 3. Per-system scripts (`car.gd`, `drivetrain.gd`, `engine.gd`, `chase_camera.gd`,
-   `terrain_manager.gd`, `hud.gd`, `engine_audio.gd`) read `Config.data` directly for
+   `hud.gd`, `engine_audio.gd`) read `Config.data` directly for
    their own tunables.
 4. Gameplay loop runs in `_physics_process` (car/drivetrain/engine/camera) and
    `_process` (HUD, audio buffering).
 
 ### Principle: push heavy one-time work behind a loading screen
 
-There is one opaque loading cover in the game — the **stage / world-gen** one
-(`world.gd._ready`, above, via `scripts/loading_screen.gd`). **Anything expensive that can be done up front should be
+There is one opaque loading cover in the game — the **level load** one
+(`level_view.gd._ready`, above, via `scripts/loading_screen.gd`). **Anything expensive that can be done up front should be
 done behind whichever cover is already up, rather than lazily on a button press or the
 first frame it's needed** — especially work that would otherwise cause a visible lag spike
 or stutter mid-interaction. The player already expects to wait at a loading screen; a beat

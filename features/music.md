@@ -1,6 +1,6 @@
 # Music
 
-> **Free-roam pivot (2026-10):** the menu context is the title screen, detected by the `MENU_GROUP` node group.
+> **Nothing joins `MENU_GROUP` since the title screen was deleted**, so the menu context never fires today.
 
 Interactive, looping background music. A single track loops into itself
 seamlessly; the system is built so context tracks (HQ / event) can later swap on
@@ -54,9 +54,9 @@ is only ever one song (~4 × 180 KB) at a time (`todo/mobile-web-performance.md`
 
 ## Context selection (scene state, not transitions)
 
-Which track plays is decided by live state, not by transition hooks (which are fragile). The
-title menu is drawn over the world scene, so the scene path says nothing about it: the
-`TitleScreen` joins the `MusicLibrary.MENU_GROUP` node group while it is open, and every frame
+Which track plays is decided by live state, not by transition hooks (which are fragile). A
+front-door menu would join the `MusicLibrary.MENU_GROUP` node group while it is open (none does
+today), and every frame
 `MusicDirector._process` asks `_menu_open()` and resolves `_song_for_context`: with a menu open
 it wants the **current menu song** — one entry of `MusicLibrary.MENU_SONGS` (`echo_chamber`,
 `skillz`); otherwise the **current rally song** — one entry of `MusicLibrary.RALLY_SONGS`.
@@ -155,7 +155,7 @@ loading screen"). Volume is a **player setting** persisted in the save profile
 0.6`) — the single source of truth (there is no `GameConfig` volume). `_ready`
 reads it via `Save.get_setting` (and again on `Save.replaced`, so a cloud download or wipe doesn't leave the old level); `Music.set_volume(position, persist := true)`
 clamps, applies the taper (below) + `linear_to_db` to the bus live, and persists. The Settings menu's
-**Audio** page (`SettingsMenu`, shared by the HQ title screen and the pause menu)
+**Audio** page (`SettingsMenu`, on the pause menu)
 has a focusable `HSlider` (stepped in 5% increments, `step = 0.05`) that calls
 `set_volume` as you drag — live even while paused (`PROCESS_MODE_ALWAYS`). Each
 volume row (`SettingsMenu._make_volume_row`) sits inside its own
@@ -202,7 +202,7 @@ desyncing) — relevant to the single-threaded web build.
 
 The scheduler runs on a wall clock (`_audio_now()` = `Time.get_ticks_usec()`),
 because an `AudioStreamPolyphonic` has no single playback position to read. On the
-**web build** the loading screen (`world.gd._ready()` → `_generate_track`) blocks
+**web build** the loading screen (`LevelView` loading the level) blocks
 the single main thread for seconds; the web audio pipeline underruns and goes
 **silent**, while the wall clock keeps advancing. On resume the scheduler would
 otherwise fire the next segment against time the audio never played — "goes silent,
@@ -216,9 +216,8 @@ clock; `_tick` is the testable seam):
   a stall is inferred.
 - **Suspend (edge-triggered):** stop the polyphonic playback (killing the now-dead
   voices), clear `current_song`/`requested_song`, and early-return each frame so the
-  scene auto-restart path stays disabled. `world.gd` yields a frame between every
-  generation stage, so the stop/clear runs only on the transition into suspend;
-  later stall frames just reset the stable window.
+  scene auto-restart path stays disabled. The stop/clear runs only on the transition
+  into suspend; later stall frames just reset the stable window.
 - **Resume (clean):** once frames have flowed normally for
   `GameConfig.music_resume_stable_sec` (~0.4 s) AND no `LoadingScreen` is present
   (it joins the `loading_screen` group), re-seed from the current clock and launch

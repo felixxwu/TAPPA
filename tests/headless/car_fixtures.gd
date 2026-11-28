@@ -28,7 +28,7 @@ static func engines() -> Array[Dictionary]:
 			"low_octave_mix": 0.6, "volume_db": 6.0, "noise_db": -54.0, "soft_clip_post_gain": 0.1,
 			"gear_ratios": [3.0, 1.8, 1.3, 1.0, 0.75], "final_drive": 3.5, "shift_time": 0.25,
 			# Flagged like the shipped swap tier engines (see engine_library.gd).
-			"swap_tier": true, "ring": 1, "price": 2500,
+			"swap_tier": true,
 		},
 	]
 	return _deep_copy(list)
@@ -37,7 +37,7 @@ static func engines() -> Array[Dictionary]:
 static func cars() -> Array[Dictionary]:
 	var list: Array[Dictionary] = [
 		{
-			"name": "Fixture Roadster", "id": "fx_light_rwd", "ring": 0,
+			"name": "Fixture Roadster", "id": "fx_light_rwd",
 			"max_hp": 800.0, "mass": 1050.0, "engine": "fx_i4",
 			"weight_front": 0.50, "engine_pos": 0.85, "tire_compound": 1.0,
 			"drive_mode": RWD, "downforce_rear": 0, "frontal_area": 2.0, "bonnet_cam_offset": Vector3.ZERO,
@@ -47,7 +47,7 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.42, "suspension_stiffness": 10.0,
 		},
 		{
-			"name": "Fixture Hatch", "id": "fx_fwd_hatch", "ring": 0,
+			"name": "Fixture Hatch", "id": "fx_fwd_hatch",
 			"max_hp": 950.0, "mass": 900.0, "engine": "fx_i4",
 			"weight_front": 0.62, "engine_pos": 0.85, "tire_compound": 1.05,
 			"brake_bias": 0.62,  # the only fixture car that authors a default brake bias
@@ -58,7 +58,7 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.40, "suspension_stiffness": 11.0,
 		},
 		{
-			"name": "Fixture Coupe", "id": "fx_rwd_coupe", "ring": 1,
+			"name": "Fixture Coupe", "id": "fx_rwd_coupe",
 			"max_hp": 1100.0, "mass": 1600.0, "engine": "fx_v8",
 			"weight_front": 0.45, "engine_pos": 0.40, "tire_compound": 1.20,
 			"drive_mode": RWD, "downforce_rear": 0, "frontal_area": 2.0, "bonnet_cam_offset": Vector3.ZERO,
@@ -68,7 +68,7 @@ static func cars() -> Array[Dictionary]:
 			"suspension_travel": 0.38, "suspension_stiffness": 16.0,
 		},
 		{
-			"name": "Fixture AWD", "id": "fx_awd", "ring": 2,
+			"name": "Fixture AWD", "id": "fx_awd",
 			"max_hp": 1000.0, "mass": 1500.0, "engine": "fx_v8",
 			"weight_front": 0.55, "engine_pos": 0.60, "tire_compound": 1.15,
 			"drive_mode": AWD, "downforce_rear": 0, "frontal_area": 2.0, "bonnet_cam_offset": Vector3.ZERO,

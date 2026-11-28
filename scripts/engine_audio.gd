@@ -21,8 +21,7 @@ const MIX_RATE := 22050.0
 # desktop web at the full 60 fps cap with far fewer hitches) needs nowhere near
 # that, and the buffer is pure throttle→rev latency — roughly BUFFER_SECONDS_* plus
 # the WebAudio output_latency.web from project.godot — so desktop uses a much
-# tighter buffer to keep the sound responsive. Terrain is precomputed at load (see
-# features/terrain.md) so chunk crossings are cheap; the touch margin covers the
+# tighter buffer to keep the sound responsive. The touch margin covers the
 # sustained low frame rate plus web-export/GC hitches.
 const BUFFER_SECONDS_TOUCH := 0.2    # single-threaded web on a phone: ~6 frames of 30 fps headroom
 const BUFFER_SECONDS_DESKTOP := 0.05 # ~3 frames at 60 fps — responsive, still covers a hitch

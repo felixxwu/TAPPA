@@ -421,31 +421,19 @@ enables contact monitoring and reads obstacle-contact impulses in
 
 `_physics_process` reads its throttle / steer / handbrake from one of three sources:
 - **Player** (default) — global `Input` actions.
-- **Locked** (`controls_locked`, set by [`StageManager`](stage.md)) — input neutralised
-  and the handbrake forced, so the car holds fully still (staged at the line, or after
-  the finish) while the rest of the sim (suspension, drag, camera) keeps running.
+- **Locked** (`controls_locked`, set by `LevelView` while the level loads or a menu owns
+  the input) — input neutralised and the handbrake forced, so the car holds fully still
+  while the rest of the sim (suspension, drag, camera) keeps running.
 - **Scripted** (`ai_controlled`) — the car ignores `Input` and drives from
   `ai_throttle` / `ai_steer` / `ai_handbrake` (same axes/sign as the player inputs).
   Used for the start-line (deleted with the free-roam pivot) queue cars, which run full physics (real
   suspension load) under script while axis-locked to a straight line. Discrete actions
   (shift / mode / reset) are ignored when locked or scripted.
 
-A lighter **handbrake-only hold** (`handbrake_locked`, also set by `StageManager`)
-forces the handbrake while leaving driver input fully live — used during the
-**countdown** so the player can rev the engine (a held handbrake opens the clutch in
-[`Engine.step`](engine-and-transmission.md), so the revs climb freely) and steer, then launch the
-instant the brake releases on GO.
-
-The **finish stop** (`finish_stop`, set by `StageManager` on crossing the line
-alongside `controls_locked`) brakes the car to a halt cleanly: while it's still
-rolling (> `FINISH_STOP_SPEED`, 0.8 m/s) it forces the **full foot brake** on top of
-the forced handbrake, then releases the foot brake once stopped (the handbrake /
-parking hold still holds it put). Crucially the engine **clutch stays engaged**
-through the stop — `_physics_process` computes `declutch` as the handbrake by default
-but overrides it to `false` here, and passes it to `Drivetrain.step` separately from
-the handbrake's brake torque — so the engine **winds down with the braking wheels**
-(the speed-gated auto-clutch opens at standstill and it settles to idle) instead of
-free-revving on the handbrake's open clutch.
+A lighter **handbrake-only hold** (`handbrake_locked`) forces the handbrake while leaving
+driver input fully live, so the player can rev the engine (a held handbrake opens the
+clutch in [`Engine.step`](engine-and-transmission.md)) and steer. Nothing in the game sets
+it since the stage countdown was deleted; the tests still use it as a hold.
 
 Regardless of source, a car that is fully braked (handbrake **or** the low-speed
 parking brake) and below `GameConfig.handbrake_lock_speed` gets a **static-friction

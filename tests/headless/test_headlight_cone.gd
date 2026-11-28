@@ -381,40 +381,6 @@ func test_weather_lit_dims_colour_and_keeps_alpha() -> void:
 	assert_almost_eq(out.a, 0.9, 0.001, "alpha is untouched")
 
 
-func test_foliage_light_dims_with_the_weather() -> void:
-	# Trees were lit on their sunward side at night, when there is no sun. The
-	# directional term is sun_color * ndl, so dimming sun_color is what removes it.
-	var cfg := GameConfig.new()
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/billboard_opaque.gdshader")
-	cfg.weather_sun_mult = 1.0
-	cfg.apply_foliage_light(mat)
-	var full: Color = mat.get_shader_parameter("sun_color")
-	cfg.weather_sun_mult = 0.25
-	cfg.apply_foliage_light(mat)
-	var dim: Color = mat.get_shader_parameter("sun_color")
-	assert_almost_eq(dim.r, full.r * 0.25, 0.001, "a dark stage dims the trees' sun")
-	assert_lt(dim.r, full.r, "strictly darker")
-
-
-func test_foliage_and_car_agree_on_the_light() -> void:
-	# Trees, car and terrain must dim together or the scene comes apart — a lit tree
-	# beside an unlit car is more obviously wrong than either alone. Pinning that they
-	# derive from the same values, not that those values are anything in particular.
-	var cfg := GameConfig.new()
-	cfg.weather_sun_mult = 0.4
-	var tree := ShaderMaterial.new()
-	tree.shader = load("res://shaders/billboard_opaque.gdshader")
-	var car := ShaderMaterial.new()
-	car.shader = load("res://shaders/ps1_models_lit.gdshader")
-	cfg.apply_foliage_light(tree)
-	cfg.apply_car_light(car)
-	var t: Color = tree.get_shader_parameter("sun_color")
-	var c: Color = car.get_shader_parameter("sun_color")
-	assert_almost_eq(t.r, c.r, 0.001, "trees and car take the same sun")
-	assert_almost_eq(t.g, c.g, 0.001, "on every channel")
-
-
 func test_a_weather_change_relights_materials_already_lit() -> void:
 	var cfg := GameConfig.new()
 	var mat := ShaderMaterial.new()
@@ -425,14 +391,6 @@ func test_a_weather_change_relights_materials_already_lit() -> void:
 	gone = null  # a material freed since it was lit must not get in the way
 	cfg.weather_sun_mult = 0.5
 	assert_ne(mat.get_shader_parameter("sun_color"), before, "the lit material follows the weather")
-	assert_eq(mat.get_shader_parameter("sun_color"), cfg.weather_lit(cfg.sun_color))
-
-
-func test_a_weather_change_relights_foliage_already_lit() -> void:
-	var cfg := GameConfig.new()
-	var mat := ShaderMaterial.new()
-	cfg.apply_foliage_light(mat)
-	cfg.weather_sun_mult = 0.5
 	assert_eq(mat.get_shader_parameter("sun_color"), cfg.weather_lit(cfg.sun_color))
 
 
@@ -452,8 +410,6 @@ func test_every_night_lit_shader_includes_the_cone() -> void:
 	var lit_at_night: PackedStringArray = [
 		"res://shaders/level_ground.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
-		"res://shaders/billboard_tree.gdshaderinc",  # shared by every billboard tree variant
-		"res://shaders/tree_canopy.gdshader",
 	]
 	for path in lit_at_night:
 		var shader: Resource = load(path)
@@ -461,10 +417,6 @@ func test_every_night_lit_shader_includes_the_cone() -> void:
 		var code: String = shader.get("code")
 		assert_true(code.contains("headlight_cone.gdshaderinc"),
 			"%s includes the shared cone" % path)
-	for variant in ["opaque", "alpha", "blend"]:
-		var path := "res://shaders/billboard_%s.gdshader" % variant
-		assert_true((load(path) as Shader).code.contains("billboard_tree.gdshaderinc"),
-			"%s gets the cone through the shared tree include" % path)
 	for path in lit_at_night:
 		var code: String = load(path).get("code")
 		assert_true(code.contains("headlight_lit("),
@@ -478,16 +430,11 @@ func test_the_cone_is_added_to_the_light_term_never_multiplied() -> void:
 	var lit_at_night: PackedStringArray = [
 		"res://shaders/level_ground.gdshader",
 		"res://shaders/ps1_models_lit.gdshader",
-		"res://shaders/billboard_tree.gdshaderinc",  # shared by every billboard tree variant
-		"res://shaders/tree_canopy.gdshader",
 	]
 	for path in lit_at_night:
 		var code: String = load(path).get("code")
-		# Two shapes are legitimate: applying headlight_lit() inline, or (tree_canopy)
-		# computing it in vertex() and applying hl_color to the carried varying in
-		# fragment(). Both must APPEND to the light term — what this rules out is a
-		# `* hl_color` anywhere, which is the mistake that would silently produce no
-		# visible headlight at all.
+		# What this rules out is a `* hl_color` anywhere, the mistake that would silently
+		# produce no visible headlight at all.
 		assert_true(code.contains("+ hl_color *") or code.contains("+= hl_color *"),
 			"%s adds the cone to the light term" % path)
 		assert_false(code.contains("* hl_color"),

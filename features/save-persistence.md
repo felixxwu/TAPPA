@@ -6,7 +6,7 @@
 
 The **`Save` autoload** (registered in `project.godot [autoload]` alongside `Config`) is the
 single source of truth for everything the player's progress mutates: owned cars (each with
-its own HP, tuning and fitted parts), lifetime stats, the persistent free-roam world and
+its own HP, tuning and fitted parts), the world and
 settings. It persists as JSON at `user://profile.json` so progress survives a restart on both
 desktop and the web build.
 
@@ -25,8 +25,8 @@ whole schema):
   fielded whole and straight before that is restored over it. Two cars of the same model can diverge. A car's
   `boosts` / `swapped_engine` / `drivetrain_override` are written onto a DUPLICATE at
   fielding time by `LootRules.fielded` and never reach the profile.
-- `lifetime` (`Save.KEY_LIFETIME`) — `{stat_id: int}`, only ever grows
-  ([lifetime-stats.md](lifetime-stats.md)).
+- An old profile may still carry a `lifetime` block of stat counters; nothing reads it since
+  `LifetimeStats` was deleted.
 - `world` (`Save.KEY_WORLD`) — the persistent free-roam world, `{}` until New World. Its only
   writer is `WorldSession` ([world-session.md](world-session.md)).
 - `settings` — a flat `{ key -> value }` bag of player/device preferences, read/written via
@@ -36,7 +36,7 @@ whole schema):
   bookkeeping ([cloud-save.md](cloud-save.md)). `unsynced` is PERSISTED deliberately:
   progress made offline must still read as unsynced after a relaunch.
 
-**The named keys are on-disk strings.** Use `Save.KEY_CARS` / `KEY_LIFETIME` / `KEY_WORLD`
+**The named keys are on-disk strings.** Use `Save.KEY_CARS` / `KEY_WORLD`
 rather than the literal; the cloud-sync copy is why a missed rename would be a cross-device
 DATA bug rather than a crash. **Declare every key you write in `_default_profile()`** — the
 key backfill only knows that dict, and `Save` pushes an error naming any undeclared key it
@@ -57,7 +57,6 @@ Max-HP is **CarLibrary metadata, not stored**. The world's terrain, roads and si
   the wipe's upload lands above the old cloud copy).
 - Cars: `grant_car(model_id)`, `get_car(instance_id)`,
   `set_tuning`, `set_car_parts`.
-- Lifetime stats: `lifetime_stat(id)`, `add_lifetime_stat(id, amount := 1)`.
 - Settings: `get_setting(key, default)`, `set_setting(key, value)`.
 - `replaced` — emitted when the whole profile is swapped (`adopt_profile`, `reset_new_game`);
   `WorldSession` turns it into `invalidate()`.

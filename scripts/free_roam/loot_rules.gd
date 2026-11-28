@@ -10,10 +10,9 @@ extends RefCounted
 #   {"kind": "part",   "id": "drivetrain:<Drivetrain.DriveMode int>"}  — a drivetrain kit
 #   {"kind": "part",   "id": "tire:<TIRES key>"}                       — a set of tires
 #
-# Every boost part names its `price` in its library entry, and drivetrain kits and tires in KITS
-# and TIRES. Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
+# Fitted parts reach the car ONLY through the owned-car funnel keys (`fielded`): boosts,
 # swapped_engine and drivetrain_override, which UpgradeLibrary / Car.apply_owned already read. Engines
-# aren't sold: cars swap them between each other (`engine_from`, Save.swap_engines).
+# aren't sold: a car can run another owned car's engine (`engine_from`).
 # (decision 51 — no parallel modifier path).
 
 static func item_key(item: Dictionary) -> String:
@@ -43,9 +42,9 @@ static func is_upgrade(item: Dictionary) -> bool:
 # `mass_kg` is what the layout's driveline weighs over a front-drive car's: a kit adds the difference
 # from the car's stock layout, so going from AWD to RWD makes it lighter.
 const KITS := {
-	Drivetrain.DriveMode.RWD: {"price": 2500, "mass_kg": 30},
-	Drivetrain.DriveMode.AWD: {"price": 5000, "mass_kg": 90},
-	Drivetrain.DriveMode.FWD: {"price": 3000, "mass_kg": 0},
+	Drivetrain.DriveMode.RWD: {"mass_kg": 30},
+	Drivetrain.DriveMode.AWD: {"mass_kg": 90},
+	Drivetrain.DriveMode.FWD: {"mass_kg": 0},
 }
 
 # The tires on sale; a car with none switched on runs its stock tires. `effect_fields` maps each
@@ -53,7 +52,6 @@ const KITS := {
 # level, so they stay out of BoostLibrary.
 const TIRES := {
 	"gravel": {
-		"price": 800,
 		"mass_kg": 8, "label": "Gravel tires", "blurb": "Best on loose roads.",
 		"effect_fields": {
 			"tire_grip_mult": "shop_tire_gravel_flat",
@@ -62,7 +60,6 @@ const TIRES := {
 		},
 	},
 	"road": {
-		"price": 1500,
 		"mass_kg": 4, "label": "Road tires", "blurb": "Best on tarmac.",
 		"effect_fields": {
 			"tire_grip_mult": "shop_tire_road_flat",
@@ -71,7 +68,6 @@ const TIRES := {
 		},
 	},
 	"snow": {
-		"price": 3000,
 		"mass_kg": 6, "label": "Snow tires", "blurb": "Best on snow and ice.",
 		"effect_fields": {
 			"tire_grip_mult": "shop_tire_snow_flat",
@@ -106,15 +102,6 @@ static func catalogue() -> Array:
 		out.append({"kind": "part", "id": "tire:%s" % String(id)})
 	return out
 
-
-# What `item` costs in a shop, from its catalogue entry.
-static func price(item: Dictionary) -> int:
-	var id := String(item.get("id", ""))
-	if is_drivetrain(item):
-		return int(KITS.get(int(id.substr("drivetrain:".length())), {}).get("price", 0))
-	if is_tire(item):
-		return int(_tire_entry(item).get("price", 0))
-	return int(BoostLibrary.CATALOGUE.get(id, {}).get("price", 0))
 
 
 # --- parts on a car -------------------------------------------------------------------------------
@@ -166,13 +153,6 @@ static func parts_for(owned: Dictionary) -> Array:
 	return out
 
 
-# The garage card's "x / y upgrades" line: parts unlocked for `owned` (on or off) out of every
-# part it could have.
-static func upgrades_text(owned: Dictionary) -> String:
-	var unlocked := (owned.get("parts", []) as Array).filter(func(p: Dictionary) -> bool: return not is_engine(p))
-	return "%d / %d upgrades" % [unlocked.size(), parts_for(owned).size()]
-
-
 # Which slot a part shares with others of its kind, or "" if it can be on alongside anything.
 static func _slot(part: Dictionary) -> String:
 	if is_drivetrain(part):
@@ -182,7 +162,7 @@ static func _slot(part: Dictionary) -> String:
 	return String(BoostLibrary.CATALOGUE.get(String(part.get("id", "")), {}).get("slot", ""))
 
 
-# Which owned model's engine `owned` is running: its own until a swap (Save.swap_engines).
+# Which owned model's engine `owned` is running: its own unless `engine_from` names another.
 static func engine_owner(owned: Dictionary) -> String:
 	return String(owned.get("engine_from", owned.get("model_id", "")))
 

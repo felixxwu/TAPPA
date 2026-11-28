@@ -185,7 +185,6 @@ func test_reset_to_track_emits_and_resumes() -> void:
 
 func test_settings_exposes_the_shared_menu() -> void:
 	_pause.open()
-	# The same SettingsMenu component as the title screen: camera + control rows.
 	assert_not_null(_pause.settings_menu, "the pause menu embeds a SettingsMenu")
 	assert_eq(_pause.settings_menu.camera_rows.size(), CameraManager.MODES.size(),
 		"one row per camera angle")
@@ -265,3 +264,25 @@ func test_the_pause_button_hides_while_the_menu_is_disarmed() -> void:
 	assert_false(_pause.is_open(), "and open() is refused while disarmed")
 	_pause.set_input_enabled(true)
 	assert_true(_pause._pause_button.visible, "re-arming brings it back")
+
+
+# A sync conflict found in the background is put to the player by the level itself, on its pause
+# menu, freezing the game until they choose; Back ("Decide later") hands the game back.
+func test_the_level_puts_a_background_sync_conflict_to_the_player() -> void:
+	Cloud.sync._conflict = {"profile": "{}", "device": "test-device", "updated_utc": ""}
+	Cloud.sync.blocked_by_conflict = true
+	var view: LevelView = _scene.get_node("Level")
+	view._conflict_due = true
+	view._offer_conflict()
+	var popup := ConfirmPopup.any_open(get_tree())
+	assert_not_null(popup, "the conflict prompt is shown")
+	assert_true(get_tree().paused, "the game freezes under it")
+	assert_false(_pause.is_armed(), "and the pause menu stands down while it is up")
+	popup.trigger_back()
+	await get_tree().process_frame
+	assert_null(ConfirmPopup.any_open(get_tree()), "Back closes it")
+	assert_false(get_tree().paused, "the game runs again")
+	assert_true(_pause.is_armed(), "and the pause menu is live again")
+	assert_false(view._conflict_due, "it is not asked again until the next conflict")
+	Cloud.sync._conflict = {}
+	Cloud.sync.blocked_by_conflict = false

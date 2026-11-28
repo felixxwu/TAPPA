@@ -33,17 +33,16 @@ extends RefCounted
 # (the part's real strength — boost gain); every other key is a FIXED characteristic of
 # the part (spool inertia, saturation point, parasitic drag) that never scales with
 # level. See magnitude_for for where this shape is read.
-# `price` and `ring` are left over from the island's shops and unread. `mass_kg` is what the part adds to the car (LootRules.fielded). Parts naming the same optional `slot` can't be on together
+# `mass_kg` is what the part adds to the car (LootRules.fielded). Parts naming the same optional `slot` can't be on together
 # (LootRules.toggled); `icon` borrows another part's card icon.
 const CATALOGUE := {
 	"lightweight": {
-		"ring": 0, "price": 1200,
 		"label": "Lightweight", "blurb": "Sheds weight.",
 		"effect_fields": {"mass_mult": "run_boost_mass_mult"},
 		"level_direction": - 1, # lower mass_mult = lighter = more boost
 	},
 	"turbo": {
-		"ring": 0, "price": 1200, "slot": "turbo",
+		"slot": "turbo",
 		"mass_kg": 25, "label": "Small turbo", "blurb": "Quick, mild boost.",
 		"effect_fields": {"install_turbo": {
 			"turbo_boost_gain": "run_boost_turbo_boost_gain",
@@ -61,7 +60,7 @@ const CATALOGUE := {
 		"level_direction": 1, # higher turbo_boost_gain = more boost
 	},
 	"big_turbo": {
-		"ring": 2, "price": 4500, "slot": "turbo", "icon": "turbo",
+		"slot": "turbo", "icon": "turbo",
 		"mass_kg": 40, "label": "Big turbo", "blurb": "Laggy, huge boost.",
 		"effect_fields": {"install_turbo": {
 			"turbo_boost_gain": "run_boost_big_turbo_boost_gain",
@@ -76,19 +75,16 @@ const CATALOGUE := {
 		"level_direction": 1, # higher turbo_boost_gain = more boost
 	},
 	"radiator": {
-		"ring": 0, "price": 1000,
 		"mass_kg": 5, "label": "Radiator", "blurb": "Cooling lasts longer.",
 		"effect_fields": {"cooling_failure_mult": "run_boost_radiator_failure_mult"},
 		"level_direction": - 1, # lower failure point = cooling survives more damage
 	},
 	"rollcage": {
-		"ring": 1, "price": 2500,
 		"mass_kg": 45, "label": "Roll cage", "blurb": "Takes more damage.",
 		"effect_fields": {"max_hp_mult": "run_boost_rollcage_hp_mult"},
 		"level_direction": 1, # more max HP = more boost
 	},
 	"gearbox": {
-		"ring": 1, "price": 2500,
 		"mass_kg": 2, "label": "Quick shifter", "blurb": "Faster gear changes.",
 		"effect_fields": {
 			"shift_time_set": "run_boost_shift_time_s",
@@ -100,7 +96,6 @@ const CATALOGUE := {
 		# exist.
 	},
 	"nitrous": {
-		"ring": 1, "price": 3000,
 		"mass_kg": 12, "label": "Nitrous", "blurb": "Hold for extra power.",
 		"effect_fields": {"install_nitrous": {
 			"nitrous_boost_gain": "run_boost_nitrous_boost_gain",
@@ -110,7 +105,6 @@ const CATALOGUE := {
 		"level_direction": 1, # higher nitrous_boost_gain = more boost
 	},
 	"aero": {
-		"ring": 2, "price": 4000,
 		"mass_kg": 15, "label": "Aero kit", "blurb": "Grip at high speed.",
 		"effect_fields": {
 			"downforce_front": "run_boost_downforce_n",
@@ -122,7 +116,6 @@ const CATALOGUE := {
 		# the same number.
 	},
 	"brakes": {
-		"ring": 1, "price": 2500,
 		"mass_kg": 10, "label": "Big brakes", "blurb": "Stronger braking.",
 		# Fixed absolute brake_torque ("set", not a multiplier) — strong enough to push
 		# ABS into play on every car in the roster, including the heaviest
@@ -134,12 +127,11 @@ const CATALOGUE := {
 		# exist.
 	},
 	"abs": {
-		"ring": 1, "price": 500, "icon": "brakes",
+		"icon": "brakes",
 		"mass_kg": 4, "label": "ABS", "blurb": "Stops wheels locking.",
 		"effect_fields": {"install_abs": {}}, # on or off, so a level has nothing to scale
 	},
 	"supercharger": {
-		"ring": 2, "price": 5000,
 		"mass_kg": 30, "label": "Supercharger", "blurb": "Boost with no lag.",
 		"effect_fields": {"install_supercharger": {
 			"supercharger_boost_gain": "run_boost_supercharger_boost_gain",

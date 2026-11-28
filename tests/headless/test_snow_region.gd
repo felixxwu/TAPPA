@@ -95,56 +95,6 @@ func test_the_shipped_snow_region_names_only_real_config_properties() -> void:
 				assert_not_null(cfg.get(String(key)),
 					"%s names GameConfig.%s, which does not exist" % [block_key, key])
 	assert_gt(named, 0, "at least one region authors a handling block")
-
-
-# Total solid area of a silhouette mesh, as a fraction of its own bounding box.
-#
-# This, NOT the bounding box, is the measure that matters. A tree billboard is an opaque
-# cutout — TreeSilhouette traces the geometry from the alpha — and a failed trace
-# produces degenerate SLIVERS spread across a full-size bounding box. Such a mesh has a
-# perfectly healthy width and height and renders as nothing but a scatter of specks.
-func _silhouette_fill(mesh: Mesh) -> float:
-	if mesh.get_surface_count() == 0:
-		return 0.0
-	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var area := 0.0
-	for i in range(0, verts.size(), 3):
-		if i + 2 < verts.size():
-			area += (verts[i + 1] - verts[i]).cross(verts[i + 2] - verts[i]).length() * 0.5
-	var bb := mesh.get_aabb()
-	return area / maxf(0.0001, bb.size.x * bb.size.y)
-
-
-func test_every_region_tree_texture_traces_to_a_solid_silhouette() -> void:
-	# THE REGRESSION GUARD FOR TWO REAL BUGS, both of which shipped invisible trees while
-	# the textures looked perfectly fine in an image viewer:
-	#
-	#   1. A fragmented alpha traced to 12 vertices 0.004 units tall — nothing at all.
-	#   2. A *less* fragmented alpha traced to 92 triangles filling 0.3% of a FULL-SIZE
-	#      bounding box: degenerate slivers, which render as dark specks floating where
-	#      the tree should be. The first version of this test asserted bounding-box
-	#      height and PASSED that tree, which is why it now measures solid area.
-	#
-	# The threshold is deliberately far below any real tree — the shipped four trace to
-	# 80-134% fill — so this catches "traced to nothing", it does not police art. Fill
-	# can exceed 100%: the tracer emits overlapping triangles.
-	RegionLibrary.reset()
-	var checked := 0
-	for region in RegionLibrary.all():
-		for species in RegionLibrary.tree_mix(RegionLibrary.look_of(String(region["id"]))):
-			var path := String((species as Dictionary).get("texture", ""))
-			var tex: Texture2D = load(path)
-			assert_not_null(tex, "%s loads" % path)
-			var mesh := Foliage.tree_silhouette_mesh(tex)
-			assert_gt(mesh.get_surface_count(), 0, "%s traces to a surface" % path)
-			assert_gt(mesh.get_aabb().size.y, 0.1, "%s traces to real height" % path)
-			assert_gt(_silhouette_fill(mesh), 0.25,
-				"%s traces to a SOLID body, not slivers (a near-zero fill renders as "
-				% path + "floating specks with no tree)")
-			checked += 1
-	assert_gt(checked, 0, "at least one region tree was actually checked")
-
-
 # --- Snowfall is a look condition, not a grip one -------------------------------
 
 func test_the_snowfall_condition_carries_no_grip_multiplier() -> void:

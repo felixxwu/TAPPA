@@ -132,15 +132,13 @@ expose.
 
 The pipe offsets are car-**local**, and how they reach world space depends on parenting:
 
-- **Event mode** (`setup(car)`): `world.gd` parents this to the world **root** and reuses
-  it across regenerations, so the rig copies `car.global_transform` each tick. Without
+- **World mode** (`setup(car)`): `level_view.gd` parents this to the world **root**, so the rig copies `car.global_transform` each tick. Without
   that the flames would sit at the world origin while the car drove away.
 
 ## Wiring
 
-Created + wired by `world.gd` alongside `WheelParticles` / `TireMarks` / `EngineSmoke`
-(reused across event regenerations via `_ensure_child`, re-targeted on a car swap).
-Shader warm-up is **automatic**: `world.gd`'s warm-up pass auto-discovers every node
+Created + wired by `level_view.gd` (`_add_effects`) alongside `WheelParticles` / `TireMarks` / `EngineSmoke`.
+Shader warm-up is **automatic**: `level_view.gd`'s warm-up pass (`_warm_up`) auto-discovers every node
 implementing the `warm_up()`/`clear_warm_up()` contract, and this implements that pair
 directly (the pass keys on the methods, not on the type, so it works even though this is
 no longer a particle pool) — the shader variant compiles behind the loading overlay

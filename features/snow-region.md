@@ -1,12 +1,12 @@
 # The snow region (The Alps)
 
-The one region that does more than look different: it influences **handling**. In free roam it
-is the outermost biome ring; on the dev stage it is a region's stage grid.
+The one region that does more than look different: it influences **handling**. On the Hafren
+level the snow is painted into the level's biome map, and the handling follows the snow under the car.
 
 **Tests:** `tests/headless/test_snow_region.gd`, `tests/headless/test_deep_snow_drag.gd`
 
 - **Region entry:** `scripts/region_library.gd` → `REGIONS` id `"snow"`
-- **Handling seat:** `BiomeDirector.apply_handling`
+- **Handling seat:** `LevelView.set_snow` (from `_timed_physics_process`, off `LevelStreamer.snow_at`)
 - **Grip:** `Drivetrain.surface_tire_params`
 - **Deep snow:** `shaders/level_ground.gdshader` (`snow_depth_m`), `car.gd._apply_deep_snow_drag`
 - **Snowfall:** `WeatherLibrary` id `"snow"`, `WeatherField.spawn_snow`
@@ -60,9 +60,9 @@ have, instead of silently yielding 0.0 — which would read as "no grip at all".
 
 ### Seating it
 
-`BiomeDirector.apply_handling` resolves the ring's region and re-seeds grip and deep snow from the authored baseline on every ring change, so a non-snow ring gets
-baseline grip and a zero deep-snow block and one ring's slippery override cannot leak into
-the next.
+`LevelView.set_snow` blends grip and deep-snow drag every physics tick between an untouched
+`GameConfig` baseline and the `snow_*_grip` / `level_snow_drag` values, by how much snow is under
+the car, so leaving the snow always lands back on baseline grip.
 
 ### The region override is no longer the only snow lever
 
@@ -198,9 +198,9 @@ while the one that genuinely carries snow is shorter and scruffier.
 
 ### Three traps that cost real bugs, all guarded now
 
-The billboard is an **opaque cutout** — `TreeSilhouette` traces a polygon from the alpha
-and there is no alpha test at draw time — which makes the source photo's properties
-load-bearing in non-obvious ways:
+These date from when trees were drawn as an **opaque cutout** traced from the alpha (the
+tracer has since been deleted; trees are now tree-lab atlases on star cards, see
+[trees.md](trees.md)), which made the source photo's properties load-bearing:
 
 1. **Fragmented alpha traces to nothing.** A photographed conifer's alpha is hundreds of
    disconnected needle islands. The tracer skipped them all as degenerate and emitted

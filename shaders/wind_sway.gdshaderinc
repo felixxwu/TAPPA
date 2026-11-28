@@ -1,9 +1,8 @@
-// Vertex-shader wind sway for billboard TREES — the ONE source of truth, included
-// by shaders/billboard_opaque.gdshader. See features/trees.md.
+// Vertex-shader wind sway for TREES — the ONE source of truth, included
+// by shaders/level_tree.gdshader. See features/trees.md.
 //
-// WHY THIS EXISTS AT ALL: foliage materials are built in several scripts (foliage.gd,
-// billboard_field.gd, and anything else that scatters a tree field) with no common
-// registry, and terrain chunks stream trees in continuously — the same situation
+// WHY THIS EXISTS AT ALL: tree materials are built per streamed tile with no common
+// registry — the same situation
 // headlight_cone.gdshaderinc argues from. A per-material push would need
 // re-registration bookkeeping on every chunk load; a `global uniform` has none.
 //
