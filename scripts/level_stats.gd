@@ -47,7 +47,7 @@ func _process(dt: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if page == Page.ADAPTIVE:
 		_label.text = adaptive_text(view.adaptive.controller if view.adaptive != null else null, FrameSampler.budget_ms(),
-			OutlineSetting.resolve(), view._streamer.stat_near_misses if view._streamer != null else 0,
+			view._streamer.stat_near_misses if view._streamer != null else 0,
 			view._streamer.near_build_s * 1000.0 if view._streamer != null else 0.0)
 	else:
 		_label.text = text(cam.global_position if cam != null else Vector3.ZERO)
@@ -72,7 +72,7 @@ func text(cam_pos: Vector3) -> String:
 
 
 ## The adaptive graphics page: budget and headroom, the last decision, then one row per setting.
-static func adaptive_text(c: AdaptiveController, budget_ms: float, outlines: bool, near_misses: int, near_build_ms := 0.0) -> String:
+static func adaptive_text(c: AdaptiveController, budget_ms: float, near_misses: int, near_build_ms := 0.0) -> String:
 	if c == null:
 		return "adaptive graphics: not running"
 	var lines := PackedStringArray()
@@ -86,8 +86,6 @@ static func adaptive_text(c: AdaptiveController, budget_ms: float, outlines: boo
 		var wait := c.raise_wait_s(k, now)
 		lines.append("%s %d/%d  %.2f ms%s  n%d  %s" % [k.name, k.level, k.top(), c.est_cost(k), "*" if k.from_fit else " ",
 			k.samples, ("wait %ds" % int(wait)) if wait > 0.0 else "-"])
-	if outlines:
-		lines.append("outlines on (fixed cost, Display settings)")
 	return "\n".join(lines)
 
 

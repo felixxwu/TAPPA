@@ -1408,8 +1408,6 @@ func has_nitrous() -> bool:
 ## Master strength of the whole grade. 0 = off (exact passthrough, vignette
 ## included), 1 = full. Retuning any value below needs a stage restart.
 @export var grade_amount := 0.6
-## Default for the player's Outlines setting (OutlineSetting) when they haven't chosen.
-@export var outlines_enabled := false
 ## 1 = colours untouched, 0 = fully greyscale.
 @export var grade_saturation := 0.85
 ## Contrast around mid-grey. 1 = untouched. Pushing this hard makes the 5-bit

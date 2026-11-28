@@ -75,4 +75,4 @@ onto a tile without full detail (driving only, not photo mode's camera); a miss 
 P cycles off → perf page → adaptive page (`LevelStats.adaptive_text`): budget, p90 and spare time,
 the last decision and why, how often the terrain fell behind, the draw-call fit, then one row per
 setting: level, ms per step (`*` when the draw fit fed it), measurements, and any wait before its next
-raise. Outlines (Display settings) are the player's choice and show as a fixed cost.
+raise.

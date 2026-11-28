@@ -955,7 +955,6 @@ func _attach(job: ChunkJob) -> void:
 	mi.material_override = material
 	mi.position = Vector3(job.origin.x, 0.0, job.origin.y)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # the ground barely shadows itself in this look, and it was a second draw call per chunk
-	mi.add_to_group(&"id_terrain")  # outlines treat all ground as one surface, with no line at chunk seams
 	add_child(mi)
 	var arrays := [job.verts, job.colors, job.uvs, job.uv2s]
 	match job.level:
@@ -1384,7 +1383,6 @@ func _attach_horizon(job: ChunkJob) -> void:
 	mi.material_override = material
 	mi.position = Vector3(job.origin.x, 0.0, job.origin.y)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.add_to_group(&"id_terrain")
 	add_child(mi)
 	hs.mesh = mi
 	hs.arrays = [job.verts, job.colors, job.uvs, job.uv2s]

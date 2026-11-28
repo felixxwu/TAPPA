@@ -164,14 +164,6 @@ new interpolator and no fragment cost.
 Used by: car chassis/cabin/wheels, and the authored body models (MX-5, Focus, Twingo)
 (see below).
 
-### Outlines (SPIKE — `scripts/spike_id_pass.gd`)
-Object-ID edge outlines, still a throwaway spike. Every mesh gets an ID-coloured twin
-on render layer 20, drawn by a second mirror-camera SubViewport; `ps1_post_process.gdshader`
-edge-detects that buffer (object/sky boundaries, terrain creases past `crease_angle_deg`,
-faded by fog via the packed distance). Player toggle: **Settings → Display → Outlines**
-(`OutlineSetting`, default `GameConfig.outlines_enabled`); off stops the ID viewport and
-the twin sync. Packing contract: `shaders/spike_id.gdshaderinc` ↔ the post shader's decode.
-
 ### `ps1_post_process.gdshader` — `canvas_item` (full-screen)
 Applied as the material of a `PostProcess` **SubViewportContainer**
 (`scripts/post_process_view.gd`), packaged as **`post_process.tscn`** and instanced by

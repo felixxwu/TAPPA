@@ -37,7 +37,7 @@ A square of ground is built by a resumable `ChunkJob` moving through stages:
 | `HEIGHTS` | one baked height sample | stops before a sample that would not fit, judged by the decaying peak sample cost (`_peak_us`) |
 | `ARRAYS` | vertex packing (`_pack_vertex`: sun, cover tint, snow) | clock checked every few vertices |
 | `UPLOAD` | `ArrayMesh.add_surface_from_arrays` | atomic, measured per mesh size |
-| `ATTACH` | create and add the `MeshInstance3D` (no shadow, group `id_terrain`) | atomic, measured |
+| `ATTACH` | create and add the `MeshInstance3D` (no shadow) | atomic, measured |
 | `COLLIDE` | `HeightMapShape3D` + `StaticBody3D` | atomic, measured |
 
 - **A stage that stops short ends the frame** (`_step` returns false), rather than spinning on the

@@ -78,7 +78,6 @@ const TEST_CONFIG := {
 	"terrain_layer2_amplitude": 1.0,
 	"terrain_layer3_amplitude": 1.5,
 	"render_height": 0,
-	"outlines_enabled": true,
 	"track_runoff_m": 20.0,
 	"jump_span_m": 60.0,
 	"tarmac_color": Color(0.32, 0.32, 0.34, 1),

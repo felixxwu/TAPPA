@@ -72,7 +72,6 @@ static func dev_tools_enabled() -> bool:
 var camera_rows: Array = []
 var scheme_rows: Array = []
 var fps_rows: Array = []
-var outline_button: Button = null
 # Key-binding rows, exposed for tests / hosts:
 # [{action: String, keyboard_button: Button, controller_button: Button}].
 var controls_rows: Array = []
@@ -139,7 +138,6 @@ func _build() -> void:
 	_refresh_camera_selection()
 	_refresh_scheme_selection()
 	_refresh_fps_selection()
-	_refresh_outline_row()
 	_refresh_controls_selection()
 
 
@@ -198,15 +196,12 @@ func _build_audio_page() -> void:
 
 
 func _build_display_page() -> void:
-	# Display sub-page — the frame-rate cap (FpsSetting): 30 / 60 / uncapped, then the
-	# Outlines toggle (OutlineSetting).
+	# Display sub-page — the frame-rate cap (FpsSetting): 30 / 60 / uncapped.
 	_display_page = _make_page()
 	add_child(_display_page)
 	_display_page.add_child(_make_heading("Display"))
 	_display_page.add_child(_make_sub("Limit the frame rate:"))
 	_build_option_page(_display_page, FpsSetting.OPTIONS, "value", fps_rows, select_fps)
-	outline_button = _make_action_button("", toggle_outlines)
-	_display_page.add_child(outline_button)
 
 
 func _build_camera_page() -> void:
@@ -419,18 +414,6 @@ func _refresh_camera_selection() -> void:
 
 func _refresh_scheme_selection() -> void:
 	_refresh_selection(scheme_rows, MobileControls.SETTING_KEY, MobileControls.DEFAULT_SCHEME)
-
-
-# Flip the Outlines setting (OutlineSetting) and repaint its row.
-func toggle_outlines() -> void:
-	OutlineSetting.apply(get_tree(), not OutlineSetting.resolve())
-	_refresh_outline_row()
-
-
-func _refresh_outline_row() -> void:
-	var on := OutlineSetting.resolve()
-	outline_button.text = UITheme.caps("Outlines: %s" % ("On" if on else "Off"))
-	_highlight(outline_button, on)
 
 
 func _refresh_fps_selection() -> void:

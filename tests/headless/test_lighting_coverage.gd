@@ -11,8 +11,6 @@ const HEADLIGHT_INCLUDE := "res://shaders/headlight_cone.gdshaderinc"
 const EXEMPT := {
 	"res://scripts/level_view.gd": "the sat-nav beam is a faint additive glow, meant to read at night",
 	"res://shaders/car_lamp.gdshader": "the lamp flare is a light source itself",
-	"res://shaders/spike_id_pass.gdshader": "debug id pass, never seen by the player",
-	"res://shaders/spike_id_pass_2sided.gdshader": "debug id pass, never seen by the player",
 	"res://scripts/exhaust_flames.gd": "flames glow on their own",
 	"res://scripts/log_pile_lab.gd": "standalone dev scene",
 	"res://scripts/route_arrow.gd": "a navigation guide, kept bright",
@@ -55,8 +53,6 @@ const WORLD_LIGHT_EXEMPT := [
 	"res://shaders/car_shadow.gdshader",
 	"res://shaders/billboard_particle.gdshader",
 	"res://shaders/level_tree_id.gdshader",
-	"res://shaders/spike_id_pass.gdshader",
-	"res://shaders/spike_id_pass_2sided.gdshader",
 ]
 
 # Folders whose scenes and models never reach the game's world.

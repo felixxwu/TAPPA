@@ -24,10 +24,6 @@ func _ready() -> void:
 	# The single writer of the dither grid + colour grade, so no two hosts can
 	# grade the game differently.
 	Config.data.apply_post_process(material as ShaderMaterial)
-	# SPIKE (throwaway): object-ID outline pass.
-	var spike := preload("res://scripts/spike_id_pass.gd").new()
-	add_child(spike)
-	spike.setup.call_deferred(self, $View, _view_camera)
 
 func _enter_tree() -> void:
 	get_viewport().disable_3d = true
@@ -38,8 +34,7 @@ func _exit_tree() -> void:
 func _process(_delta: float) -> void:
 	mirror_camera(_view_camera, get_viewport().get_camera_3d())
 
-# Copy what a mirror camera needs from the active gameplay camera (shared with the
-# outline pass's ID camera so the two can't drift).
+# Copy what a mirror camera needs from the active gameplay camera.
 static func mirror_camera(dst: Camera3D, src: Camera3D) -> void:
 	if src == null:
 		return

@@ -48,12 +48,11 @@ func test_adaptive_text_lists_every_setting_and_the_floor() -> void:
 		k.levels = 3
 		c.knobs.append(k)
 	c.at_floor = true
-	var text := LevelStats.adaptive_text(c, 16.7, true, 2)
+	var text := LevelStats.adaptive_text(c, 16.7, 2)
 	assert_string_contains(text, "Alpha")
 	assert_string_contains(text, "Beta")
 	assert_string_contains(text, "at floor")
-	assert_string_contains(text, "outlines")
-	assert_string_contains(LevelStats.adaptive_text(null, 16.7, false, 0), "not running")
+	assert_string_contains(LevelStats.adaptive_text(null, 16.7, 0), "not running")
 
 
 func test_frame_line_averages_the_frames_and_reports_the_slowest() -> void:
