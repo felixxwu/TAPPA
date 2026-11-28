@@ -28,7 +28,7 @@ spec items still applies.
 - [x] 0.2 Remove Google and password sign-in (2026-11-28)
 - [ ] 0.3 Email link sign-in (in progress: code done 2026-11-28; needs the 0.1 domain in `firebase_config.gd`, Firebase email-link provider on, Play Data safety form)
 - [ ] 0.4 Account deletion (in progress: code done 2026-11-28; needs live sign-in from 0.3)
-- [ ] 0.5 Cloud tests against the Firebase emulators (in progress: suite and CI job written 2026-11-28, not yet run)
+- [ ] 0.5 Cloud tests against the Firebase emulators (in progress: 6/6 pass locally 2026-11-28; the CI job has not run on GitHub yet)
 - [ ] 0.6 iOS export
 - [ ] **Exit:** live on the App Store and Cloudflare Pages; sign-in and deletion work everywhere
 
