@@ -54,6 +54,16 @@ jobs:
           chmod +x /usr/local/bin/godot
           godot --version
 
+      # Fresh checkouts have no imported assets, and the level tests need the baked level files.
+      - name: Import project and fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
+          timeout 600 godot --headless --import --quit || true
+          tools/fetch_bakes.sh
+
       # run_tests.sh is self-contained: it honours $GODOT, does its own
       # class-cache warmup with a timeout cap, sandboxes the player profile via
       # GUT run hooks, and applies TEST_TIMEOUT/TEST_STALL hang nets. No import
@@ -80,6 +90,16 @@ jobs:
           mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
           chmod +x /usr/local/bin/godot
           godot --version
+
+      # Fresh checkouts have no imported assets, and the level tests need the baked level files.
+      - name: Import project and fetch level bakes
+        env:
+          GODOT: /usr/local/bin/godot
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf "\n[editor]\nimport/use_multiple_threads=false\n" >> project.godot
+          timeout 600 godot --headless --import --quit || true
+          tools/fetch_bakes.sh
 
       # The Firestore emulator is a Java program.
       - uses: actions/setup-java@v4
